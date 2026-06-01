@@ -12,7 +12,6 @@ import type {
   Doc,
   Reference,
   Section,
-  Symbol as Sym,
 } from "./types";
 import { imageUrl as buildImageUrl } from "./api";
 
@@ -35,8 +34,6 @@ interface StoreValue {
   sectionOfBlock: Map<string, string>;
   citationsByBlock: Map<string, Citation[]>;
   crossrefsByBlock: Map<string, CrossRef[]>;
-  symbolsByBlock: Map<string, Sym[]>;
-  symbolByName: Map<string, Sym>;
   imageUrl: (imgPath?: string) => string | null;
   // reader element + viewport observation
   registerReader: (el: HTMLElement | null) => void;
@@ -261,20 +258,6 @@ function buildLookups(doc: Doc) {
   const citationsByBlock = groupBy(doc.citations, (c) => c.block_id);
   const crossrefsByBlock = groupBy(doc.crossrefs, (c) => c.block_id);
 
-  const symbolByName = new Map<string, Sym>();
-  const symbolsByBlock = new Map<string, Sym[]>();
-  for (const sym of doc.symbols) {
-    symbolByName.set(sym.symbol, sym);
-    const seen = new Set<string>();
-    for (const o of sym.occurrences) {
-      if (!o.block_id || seen.has(o.block_id)) continue;
-      seen.add(o.block_id);
-      const list = symbolsByBlock.get(o.block_id) ?? [];
-      list.push(sym);
-      symbolsByBlock.set(o.block_id, list);
-    }
-  }
-
   return {
     refById,
     blockById,
@@ -282,8 +265,6 @@ function buildLookups(doc: Doc) {
     sectionOfBlock,
     citationsByBlock,
     crossrefsByBlock,
-    symbolsByBlock,
-    symbolByName,
   };
 }
 

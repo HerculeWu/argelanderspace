@@ -2,7 +2,7 @@
   "doc_id": "2603.03522",
   "source": {
     "type": "pdf",
-    "path": "data/input/2603.03522.pdf",
+    "path": "/home/wwu/project/bibgraph/data/input/2603.03522.pdf",
     "filename": "2603.03522.pdf",
     "n_pages": 12
   },
@@ -10,9 +10,12 @@
     "title": "Most open clusters follow the radial acceleration relation (RAR) and the baryonic Tully-Fisher relation (BTFR)",
     "mineru": {
       "model_version": "vlm",
-      "language": "en",
-      "is_ocr": false,
-      "batch_id": "207032e8-582e-4d7b-b785-6c01f9e17044"
+      "language": "en"
+    },
+    "textfix": {
+      "gaps_before": 43,
+      "gaps_fixed": 35,
+      "holders_changed": 23
     }
   },
   "structure": [
@@ -88,7 +91,7 @@
             924.0,
             498.0
           ],
-          "text": "We test whether parsec-scale stellar systems in the Milky Way follow the galactic radial acceleration relation (RAR) or the baryonic Tully–Fisher relation (BTFR). We analyse 5646 Gaia DR3 open clusters from the Hunt & Reffert catalogue. Observed accelerations are derived from velocity dispersions and characteristic radii, and baryonic accelerations from stellar masses and characterisitc radii. The clusters are placed on the RAR and BTFR planes and compared with Newtonian and MOND expectations. Approximately 90 per cent of open clusters (those with ??★ ≤ 250) lie close to the RAR, albeit with significant scatter. In a first-of-its-kind test, a smaller fiducial sample is consistent with a best-fitting acceleration scale $g _ { \\dagger } \\approx 1 . 2 \\times 1 0 ^ { - 1 0 } \\mathrm { m } \\mathrm { s } ^ { - 2 } \\pm 0 . 5 \\mathrm { d e x }$ , compatible with canonical MOND values. More massive clusters approach the Newtonian virial expectation. No correlations are found between RAR residuals and galactocentric radii, distance to the Galactic disk midplane, age, or morphology. Tidal effects and unresolved binaries are insufficient to reproduce the observations without fine-tuning. Interpreted within a MOND framework, the alignment of most open clusters with the RAR and BTFR suggests that low-acceleration dynamics operate on parsec scales within the Milky Way. This implies that the Galactic gravitational field is not smooth on these scales and may include regions where the total gravitational acceleration falls below $a _ { 0 } .$ , partially mitigating the external field effect, thereby motivating higher-resolution modelling of the Galactic potential and informing other small-scale gravity tests within the Galaxy."
+          "text": "We test whether parsec-scale stellar systems in the Milky Way follow the galactic radial acceleration relation (RAR) or the baryonic Tully–Fisher relation (BTFR). We analyse 5646 Gaia DR3 open clusters from the Hunt & Reffert catalogue. Observed accelerations are derived from velocity dispersions and characteristic radii, and baryonic accelerations from stellar masses and characterisitc radii. The clusters are placed on the RAR and BTFR planes and compared with Newtonian and MOND expectations. Approximately 90 per cent of open clusters (those with 𝑁★ ≤ 250) lie close to the RAR, albeit with significant scatter. In a first-of-its-kind test, a smaller fiducial sample is consistent with a best-fitting acceleration scale $g _ { \\dagger } \\approx 1 . 2 \\times 1 0 ^ { - 1 0 } \\mathrm { m } \\mathrm { s } ^ { - 2 } \\pm 0 . 5 \\mathrm { d e x }$ , compatible with canonical MOND values. More massive clusters approach the Newtonian virial expectation. No correlations are found between RAR residuals and galactocentric radii, distance to the Galactic disk midplane, age, or morphology. Tidal effects and unresolved binaries are insufficient to reproduce the observations without fine-tuning. Interpreted within a MOND framework, the alignment of most open clusters with the RAR and BTFR suggests that low-acceleration dynamics operate on parsec scales within the Milky Way. This implies that the Galactic gravitational field is not smooth on these scales and may include regions where the total gravitational acceleration falls below $a _ { 0 } .$ , partially mitigating the external field effect, thereby motivating higher-resolution modelling of the Galactic potential and informing other small-scale gravity tests within the Galaxy."
         },
         {
           "id": "p-3",
@@ -171,7 +174,7 @@
             922.0,
             764.0
           ],
-          "text": "Under modified Newtonian dynamics (MOND), this environmental dependence is formalized through the external field effect (EFE). Because the MOND field equation is non-linear, the internal dynamics of a system depend on the total gravitational field, including any ambient external contribution. A system whose internal accelerations are below ?? can nevertheless behave in a (quasi-)Newtonian manner if it is embedded in an external field comparable to or exceeding ??0. In the context of the Milky Way disc, the typical large-scale gravitational field near the solar circle is ∼ 1.5??0. Under the standard AQUAL and QUMOND Lagrangian formulations of MOND, open clusters located in such an environment are therefore expected to exhibit no MOND effects."
+          "text": "Under modified Newtonian dynamics (MOND), this environmental dependence is formalized through the external field effect (EFE). Because the MOND field equation is non-linear, the internal dynamics of a system depend on the total gravitational field, including any ambient external contribution. A system whose internal accelerations are below 𝑎0 can nevertheless behave in a (quasi-)Newtonian manner if it is embedded in an external field comparable to or exceeding 𝑎0. In the context of the Milky Way disc, the typical large-scale gravitational field near the solar circle is ∼ 1.5𝑎0. Under the standard AQUAL and QUMOND Lagrangian formulations of MOND, open clusters located in such an environment are therefore expected to exhibit no MOND effects."
         },
         {
           "id": "p-7",
@@ -183,7 +186,7 @@
             922.0,
             865.0
           ],
-          "text": "This theoretical expectation leads to a sharp test. If open clusters in the Galactic disc systematically follow the deep-MOND branch of the RAR despite being embedded in an external field of order ?? , then either the EFE operates differently than currently formulated, or the level of small-scale density fluctuations present in the galactic disc (e.g. [[cite:ref-53]], [[cite:ref-17]]) lead to regions where the total gravitational potential is much smaller than ?? .",
+          "text": "This theoretical expectation leads to a sharp test. If open clusters in the Galactic disc systematically follow the deep-MOND branch of the RAR despite being embedded in an external field of order 𝑎0 , then either the EFE operates differently than currently formulated, or the level of small-scale density fluctuations present in the galactic disc (e.g. [[cite:ref-53]], [[cite:ref-17]]) lead to regions where the total gravitational potential is much smaller than 𝑎0 .",
           "citations": [
             {
               "ref_ids": [
@@ -302,7 +305,7 @@
             480.0,
             540.0
           ],
-          "text": "In MOND, the gravitational acceleration ???? experienced by a test particle deviates from the Newtonian value $g _ { N }$ when $g _ { N } \\lesssim a _ { 0 }$ . The modification is commonly written in implicit form as"
+          "text": "In MOND, the gravitational acceleration 𝑔𝑀 experienced by a test particle deviates from the Newtonian value $g _ { N }$ when $g _ { N } \\lesssim a _ { 0 }$ . The modification is commonly written in implicit form as"
         },
         {
           "id": "eq-1",
@@ -314,14 +317,7 @@
             478.0,
             578.0
           ],
-          "latex": "$$\n\\mu \\left(\\frac {g _ {M}}{a _ {0}}\\right) g _ {M} = g _ {N} \\tag {1}\n$$",
-          "symbols": [
-            "\\mu",
-            "g",
-            "M",
-            "a",
-            "N"
-          ]
+          "latex": "$$\n\\mu \\left(\\frac {g _ {M}}{a _ {0}}\\right) g _ {M} = g _ {N} \\tag {1}\n$$"
         },
         {
           "id": "p-14",
@@ -333,7 +329,7 @@
             480.0,
             626.0
           ],
-          "text": "where $\\mu ( x )$ is an interpolating function satisfying $\\mu ( x ) \\to 1$ for ?? ≫ 1 (recovering Newtonian gravity) and $\\mu ( x )  x$ for ?? ≪ 1 (the deep-MOND regime). In the limit $g _ { N } \\ll a _ { 0 }$ , this yields"
+          "text": "where $\\mu ( x )$ is an interpolating function satisfying $\\mu ( x ) \\to 1$ for 𝑥 ≫ 1 (recovering Newtonian gravity) and $\\mu ( x )  x$ for 𝑥 ≪ 1 (the deep-MOND regime). In the limit $g _ { N } \\ll a _ { 0 }$ , this yields"
         },
         {
           "id": "eq-2",
@@ -345,13 +341,7 @@
             478.0,
             648.0
           ],
-          "latex": "$$\ng _ {M} \\approx \\sqrt {g _ {N} a _ {0}} \\tag {2}\n$$",
-          "symbols": [
-            "g",
-            "M",
-            "N",
-            "a"
-          ]
+          "latex": "$$\ng _ {M} \\approx \\sqrt {g _ {N} a _ {0}} \\tag {2}\n$$"
         },
         {
           "id": "p-15",
@@ -363,7 +353,7 @@
             480.0,
             682.0
           ],
-          "text": "Equivalently, one may express the relation for convenience using the inverse interpolation function ??(??), defined such that"
+          "text": "Equivalently, one may express the relation for convenience using the inverse interpolation function 𝜈(𝑦), defined such that"
         },
         {
           "id": "eq-3",
@@ -375,14 +365,7 @@
             480.0,
             719.0
           ],
-          "latex": "$$\ng _ {M} = \\nu \\left(\\frac {g _ {N}}{a _ {0}}\\right) g _ {N} \\tag {3}\n$$",
-          "symbols": [
-            "g",
-            "M",
-            "\\nu",
-            "N",
-            "a"
-          ]
+          "latex": "$$\ng _ {M} = \\nu \\left(\\frac {g _ {N}}{a _ {0}}\\right) g _ {N} \\tag {3}\n$$"
         },
         {
           "id": "p-16",
@@ -406,7 +389,7 @@
             480.0,
             838.0
           ],
-          "text": "A principal consequence of the deep-MOND scaling $g _ { M } \\propto \\sqrt { g _ { N } }$ is that the gravitational field around an isolated mass declines asymptotically as $1 / r$ rather than $1 / r ^ { 2 }$ . For a point mass ??, the asymptotic circular velocity becomes radius-independent and satisfies"
+          "text": "A principal consequence of the deep-MOND scaling $g _ { M } \\propto \\sqrt { g _ { N } }$ is that the gravitational field around an isolated mass declines asymptotically as $1 / r$ rather than $1 / r ^ { 2 }$ . For a point mass 𝑀, the asymptotic circular velocity becomes radius-independent and satisfies"
         },
         {
           "id": "eq-4",
@@ -418,13 +401,7 @@
             480.0,
             861.0
           ],
-          "latex": "$$\nV ^ {4} = G M a _ {0} \\tag {4}\n$$",
-          "symbols": [
-            "V",
-            "G",
-            "M",
-            "a"
-          ]
+          "latex": "$$\nV ^ {4} = G M a _ {0} \\tag {4}\n$$"
         },
         {
           "id": "p-18",
@@ -492,15 +469,7 @@
             921.0,
             336.0
           ],
-          "latex": "$$\n\\mathcal {L} \\propto - a _ {0} ^ {2} F \\left(\\frac {\\left| \\nabla \\Phi_ {t o t} \\right| ^ {2}}{a _ {0} ^ {2}}\\right) \\tag {5}\n$$",
-          "symbols": [
-            "\\mathcal{L}",
-            "a",
-            "F",
-            "\\Phi",
-            "t",
-            "o"
-          ]
+          "latex": "$$\n\\mathcal {L} \\propto - a _ {0} ^ {2} F \\left(\\frac {\\left| \\nabla \\Phi_ {t o t} \\right| ^ {2}}{a _ {0} ^ {2}}\\right) \\tag {5}\n$$"
         },
         {
           "id": "p-21",
@@ -512,7 +481,7 @@
             922.0,
             384.0
           ],
-          "text": "where the function ?? is chosen so that the resulting field equation below reproduces the ??-interpolation relation. This yields a modified Poisson equation of the form"
+          "text": "where the function 𝐹 is chosen so that the resulting field equation below reproduces the 𝜇-interpolation relation. This yields a modified Poisson equation of the form"
         },
         {
           "id": "eq-6",
@@ -524,17 +493,7 @@
             921.0,
             421.0
           ],
-          "latex": "$$\n\\nabla \\cdot \\left[ \\mu \\left(\\frac {| \\nabla \\Phi_ {t o t} |}{a _ {0}}\\right) \\nabla \\Phi_ {t o t} \\right] = 4 \\pi G \\rho \\tag {6}\n$$",
-          "symbols": [
-            "\\mu",
-            "\\Phi",
-            "t",
-            "o",
-            "a",
-            "\\pi",
-            "G",
-            "\\rho"
-          ]
+          "latex": "$$\n\\nabla \\cdot \\left[ \\mu \\left(\\frac {| \\nabla \\Phi_ {t o t} |}{a _ {0}}\\right) \\nabla \\Phi_ {t o t} \\right] = 4 \\pi G \\rho \\tag {6}\n$$"
         },
         {
           "id": "p-22",
@@ -546,7 +505,7 @@
             922.0,
             567.0
           ],
-          "text": "An alternative but dynamically equivalent formulation by [[cite:ref-47]], QUMOND (quasi-linear MOND), derives from a Lagrangian constructed so that the non-linear aspects are shifted into an algebraic relation involving the Newtonian potential. In QUMOND, one first computes the Newtonian potential from the baryonic mass distribution and then applies the ??-function to obtain the MOND correction, leading to a linear Poisson equation with an effective source term. Both AQUAL and QUMOND are non-relativistic Lagrangian realizations of MOND and ensure the usual conservation of energy and momentum within the modified gravitational framework.",
+          "text": "An alternative but dynamically equivalent formulation by [[cite:ref-47]], QUMOND (quasi-linear MOND), derives from a Lagrangian constructed so that the non-linear aspects are shifted into an algebraic relation involving the Newtonian potential. In QUMOND, one first computes the Newtonian potential from the baryonic mass distribution and then applies the 𝜈-function to obtain the MOND correction, leading to a linear Poisson equation with an effective source term. Both AQUAL and QUMOND are non-relativistic Lagrangian realizations of MOND and ensure the usual conservation of energy and momentum within the modified gravitational framework.",
           "citations": [
             {
               "ref_ids": [
@@ -607,7 +566,7 @@
             922.0,
             924.0
           ],
-          "text": "Because the MOND field equation is non-linear and depends on the total gravitational field, the internal dynamics of a self-gravitating system depend not only on its own mass distribution but also on any ambient gravitational field in which it is embedded. This phenomenon, known as the external field effect (EFE), arises even if the external field is spatially uniform and tidal forces are absent. Such behaviour has no equivalent in Newtonian gravity. A system whose internal accelerations are below $a _ { 0 }$ may nonetheless behave in a Newtonian manner if it resides in an external field exceeding ??0. The external field effectively suppresses the deep-MOND enhancement. When $g _ { i n t } < g _ { e x t } < a _ { 0 }$ the Milgromian enhancement is only partially suppressed and causes the internal dynamics to interpolate between Newtonian and Milgromian behaviour according to the total gravitational environment. This is called the quasi-Newtonian regime and is effectively equivalent to rescaling the gravitational constant G. For a graphical overview of the possible regimes see [[xref:fig-1]].",
+          "text": "Because the MOND field equation is non-linear and depends on the total gravitational field, the internal dynamics of a self-gravitating system depend not only on its own mass distribution but also on any ambient gravitational field in which it is embedded. This phenomenon, known as the external field effect (EFE), arises even if the external field is spatially uniform and tidal forces are absent. Such behaviour has no equivalent in Newtonian gravity. A system whose internal accelerations are below $a _ { 0 }$ may nonetheless behave in a Newtonian manner if it resides in an external field exceeding 𝑎0. The external field effectively suppresses the deep-MOND enhancement. When $g _ { i n t } < g _ { e x t } < a _ { 0 }$ the Milgromian enhancement is only partially suppressed and causes the internal dynamics to interpolate between Newtonian and Milgromian behaviour according to the total gravitational environment. This is called the quasi-Newtonian regime and is effectively equivalent to rescaling the gravitational constant G. For a graphical overview of the possible regimes see [[xref:fig-1]].",
           "crossrefs": [
             {
               "kind": "figure",
@@ -708,15 +667,7 @@
             480.0,
             519.0
           ],
-          "latex": "$$\ng _ {\\mathrm{M}} = \\left(g _ {\\mathrm{N,int}} + g _ {\\mathrm{N,ext}}\\right) \\nu \\left(\\frac {g _ {\\mathrm{N,int}} + g _ {\\mathrm{N,ext}}}{a _ {0}}\\right) - g _ {\\mathrm{N,ext}} \\nu \\left(\\frac {g _ {\\mathrm{N,ext}}}{a _ {0}}\\right) \\tag {7}\n$$",
-          "symbols": [
-            "\\mathrm{M}",
-            "\\mathrm{N,int}",
-            "\\mathrm{N,ext}",
-            "g",
-            "\\nu",
-            "a"
-          ]
+          "latex": "$$\ng _ {\\mathrm{M}} = \\left(g _ {\\mathrm{N,int}} + g _ {\\mathrm{N,ext}}\\right) \\nu \\left(\\frac {g _ {\\mathrm{N,int}} + g _ {\\mathrm{N,ext}}}{a _ {0}}\\right) - g _ {\\mathrm{N,ext}} \\nu \\left(\\frac {g _ {\\mathrm{N,ext}}}{a _ {0}}\\right) \\tag {7}\n$$"
         },
         {
           "id": "p-27",
@@ -860,7 +811,7 @@
             922.0,
             632.0
           ],
-          "text": "The sample of 3618 open clusters is divided into three parts for analysis based on the number of resolved stars ??★. The first group has ??★ ≤ 250 and comprises 90% of the full science sample. The second group has 250 < ??★ ≤ 500 and accounts for another 6%. The third and final group has ??★ > 500 and consists of the remaining 4% of clusters."
+          "text": "The sample of 3618 open clusters is divided into three parts for analysis based on the number of resolved stars 𝑁★. The first group has 𝑁★ ≤ 250 and comprises 90% of the full science sample. The second group has 250 < 𝑁★ ≤ 500 and accounts for another 6%. The third and final group has 𝑁★ > 500 and consists of the remaining 4% of clusters."
         },
         {
           "id": "p-33",
@@ -872,7 +823,7 @@
             922.0,
             787.0
           ],
-          "text": "A further fiducial high quality sample was selected from the ??★ ≤ 250 group which contained 2423 open clusters by requiring that each have a colour-magnitude diagram quality index exceeding 75%. This index, used by HR134, compares the CMD of an observed cluster to the best-fitting isochrone for it and estimates the fraction of stars which are consistent with this optimal isochrone, given observational errors, and the fraction which are likely foreground or background field contaminant stars. A value of 100% denotes all stars being likely cluster members consistent with the optimal isochrone, while a value of 0 would denote a cluster where all assigned member stars are probably contaminant non-cluster members."
+          "text": "A further fiducial high quality sample was selected from the 𝑁★ ≤ 250 group which contained 2423 open clusters by requiring that each have a colour-magnitude diagram quality index exceeding 75%. This index, used by HR134, compares the CMD of an observed cluster to the best-fitting isochrone for it and estimates the fraction of stars which are consistent with this optimal isochrone, given observational errors, and the fraction which are likely foreground or background field contaminant stars. A value of 100% denotes all stars being likely cluster members consistent with the optimal isochrone, while a value of 0 would denote a cluster where all assigned member stars are probably contaminant non-cluster members."
         }
       ]
     },
@@ -955,12 +906,7 @@
             478.0,
             649.0
           ],
-          "latex": "$$\nd = 1 0 ^ {(m - M) / 5 + 1}, \\tag {8}\n$$",
-          "symbols": [
-            "d",
-            "m",
-            "M"
-          ]
+          "latex": "$$\nd = 1 0 ^ {(m - M) / 5 + 1}, \\tag {8}\n$$"
         },
         {
           "id": "p-37",
@@ -996,19 +942,7 @@
             480.0,
             823.0
           ],
-          "latex": "$$\nd _ {\\text { joint }} = \\frac {d _ {\\text { phot }} w _ {\\text { phot }} + d _ {\\pi} w _ {\\pi}}{w _ {\\text { phot }} + w _ {\\pi}}, \\tag {9}\n$$",
-          "symbols": [
-            "d",
-            "j",
-            "o",
-            "i",
-            "n",
-            "t",
-            "p",
-            "h",
-            "w",
-            "\\pi"
-          ]
+          "latex": "$$\nd _ {\\text { joint }} = \\frac {d _ {\\text { phot }} w _ {\\text { phot }} + d _ {\\pi} w _ {\\pi}}{w _ {\\text { phot }} + w _ {\\pi}}, \\tag {9}\n$$"
         },
         {
           "id": "eq-10",
@@ -1020,20 +954,7 @@
             478.0,
             875.0
           ],
-          "latex": "$$\n\\sigma_ {d, \\text { joint }} = \\sqrt {\\frac {1}{w _ {\\text { phot }} + w _ {\\pi}}}  . \\tag {10}\n$$",
-          "symbols": [
-            "\\sigma",
-            "d",
-            "j",
-            "o",
-            "i",
-            "n",
-            "t",
-            "w",
-            "p",
-            "h",
-            "\\pi"
-          ]
+          "latex": "$$\n\\sigma_ {d, \\text { joint }} = \\sqrt {\\frac {1}{w _ {\\text { phot }} + w _ {\\pi}}}  . \\tag {10}\n$$"
         },
         {
           "id": "p-39",
@@ -1110,7 +1031,7 @@
             480.0,
             304.0
           ],
-          "text": "Following HR134, these recalculations corrected the raw Gaia proper motions for the proper motion bias of bright Gaia sources identified by [[cite:ref-8]]. A further correction for the secular aberration drift due to the solar system’s acceleration towards ?????? ??∗ identified by [[cite:ref-27]] was also tested which did not noticeably alter the velocity dispersion when applied or not.",
+          "text": "Following HR134, these recalculations corrected the raw Gaia proper motions for the proper motion bias of bright Gaia sources identified by [[cite:ref-8]]. A further correction for the secular aberration drift due to the solar system’s acceleration towards 𝑆𝑔𝑟𝐴∗ identified by [[cite:ref-27]] was also tested which did not noticeably alter the velocity dispersion when applied or not.",
           "citations": [
             {
               "ref_ids": [
@@ -1162,16 +1083,7 @@
             478.0,
             397.0
           ],
-          "latex": "$$\ng _ {\\mathrm{obs}} = - \\nabla \\Phi_ {t o t} (R _ {1 / 2}) = \\frac {\\left(\\sqrt {3} \\sigma_ {\\star}\\right) ^ {2}}{R _ {1 / 2}} \\tag {11}\n$$",
-          "symbols": [
-            "\\mathrm{obs}",
-            "g",
-            "\\Phi",
-            "t",
-            "o",
-            "R",
-            "\\sigma"
-          ]
+          "latex": "$$\ng _ {\\mathrm{obs}} = - \\nabla \\Phi_ {t o t} (R _ {1 / 2}) = \\frac {\\left(\\sqrt {3} \\sigma_ {\\star}\\right) ^ {2}}{R _ {1 / 2}} \\tag {11}\n$$"
         },
         {
           "id": "p-44",
@@ -1205,7 +1117,7 @@
             480.0,
             656.0
           ],
-          "text": "The baryonic gravitational acceleration is computed from the total cluster mass ?? (in solar masses), assuming spherical symmetry and evaluating the Newtonian acceleration at the same characteristic radius as used above. Following [[cite:ref-33]], we adopt the factor 2 in the denominator appropriate for using the half-mass radius proxy:",
+          "text": "The baryonic gravitational acceleration is computed from the total cluster mass 𝑀 (in solar masses), assuming spherical symmetry and evaluating the Newtonian acceleration at the same characteristic radius as used above. Following [[cite:ref-33]], we adopt the factor 2 in the denominator appropriate for using the half-mass radius proxy:",
           "citations": [
             {
               "ref_ids": [
@@ -1227,17 +1139,7 @@
             478.0,
             708.0
           ],
-          "latex": "$$\ng _ {\\text { bar }} = - \\nabla \\Phi_ {b a r} (R _ {1 / 2}) = \\frac {G M}{2 R _ {1 / 2} ^ {2}} \\tag {12}\n$$",
-          "symbols": [
-            "g",
-            "b",
-            "a",
-            "r",
-            "\\Phi",
-            "R",
-            "G",
-            "M"
-          ]
+          "latex": "$$\ng _ {\\text { bar }} = - \\nabla \\Phi_ {b a r} (R _ {1 / 2}) = \\frac {G M}{2 R _ {1 / 2} ^ {2}} \\tag {12}\n$$"
         },
         {
           "id": "p-46",
@@ -1249,7 +1151,7 @@
             480.0,
             755.0
           ],
-          "text": "Hence, as described in this section, we obtain a set of $( \\sigma _ { s t a r } .$ , ??, $R _ { 1 / 2 } , g _ { \\mathrm { o b s } } , g _ { \\mathrm { b a r } } )$ parameters for each of the 3618 open clusters clearing the quality cuts imposed on the HR134 catalogue."
+          "text": "Hence, as described in this section, we obtain a set of $( \\sigma _ { s t a r } .$ , 𝑀, $R _ { 1 / 2 } , g _ { \\mathrm { o b s } } , g _ { \\mathrm { b a r } } )$ parameters for each of the 3618 open clusters clearing the quality cuts imposed on the HR134 catalogue."
         }
       ]
     },
@@ -1375,7 +1277,7 @@
             921.0,
             773.0
           ],
-          "text": "Although it might be more physically motivated to divide the sample based on the inferred stellar mass of the cluster, this would add numerous inferential steps each with its own assumptions and uncertainties. In practice, it was found that using the observational quantity ??★ provides a cleaner separation in the acceleration plane."
+          "text": "Although it might be more physically motivated to divide the sample based on the inferred stellar mass of the cluster, this would add numerous inferential steps each with its own assumptions and uncertainties. In practice, it was found that using the observational quantity 𝑁★ provides a cleaner separation in the acceleration plane."
         },
         {
           "id": "p-51",
@@ -1409,13 +1311,7 @@
             921.0,
             892.0
           ],
-          "latex": "$$\ng _ {\\mathrm{obs}} = \\frac {g _ {\\mathrm{bar}}}{1 - e ^ {- \\sqrt {g _ {\\mathrm{bar}} / g _ {\\dagger}}}}. \\tag {13}\n$$",
-          "symbols": [
-            "\\mathrm{obs}",
-            "\\mathrm{bar}",
-            "g",
-            "e"
-          ]
+          "latex": "$$\ng _ {\\mathrm{obs}} = \\frac {g _ {\\mathrm{bar}}}{1 - e ^ {- \\sqrt {g _ {\\mathrm{bar}} / g _ {\\dagger}}}}. \\tag {13}\n$$"
         },
         {
           "id": "p-52",
@@ -1793,7 +1689,7 @@
             478.0,
             636.0
           ],
-          "text": "If interlopers were responsible for the elevated dispersions, one would expect clusters with cleaner colour–magnitude diagrams to move closer to the Newtonian virial expectation. However, the fiducial high-quality subsample restricted to high CMD quality (> 75%) continues to follow the radial acceleration relation. The systematic alignment of low-??★ clusters with the RAR therefore cannot plausibly be attributed to residual field-star contamination."
+          "text": "If interlopers were responsible for the elevated dispersions, one would expect clusters with cleaner colour–magnitude diagrams to move closer to the Newtonian virial expectation. However, the fiducial high-quality subsample restricted to high CMD quality (> 75%) continues to follow the radial acceleration relation. The systematic alignment of low-𝑁★ clusters with the RAR therefore cannot plausibly be attributed to residual field-star contamination."
         },
         {
           "id": "p-62",
@@ -2049,7 +1945,7 @@
             480.0,
             826.0
           ],
-          "text": "Aside from tidal heating from the radial galactic tides, vertical tidal shocking on crossing the midplane of the disc could also be present. This would be more pronounced for the clusters which rise (or dip) most above (or below) the Galactic midplane. Our quality cut at $| Z | < 1 5 0$ pc was explicitly chosen to eliminate this source of excess velocity dispersion. Increasing the severity of this cut to |??| < 100 pc or even $| Z | < 5 0$ pc does not change the fact that $N _ { \\star } \\leq 2 5 0$ clusters lie along the RAR. As can be seen in panel e) in [[xref:fig-10]], no systematic correlation in RAR residuals is seen for any |?? | value below 100 pc, which contains the overwhelming fraction of our sample. Keeping as close to the Galactic midplane as desired preserves the RAR and BTFR scalings.",
+          "text": "Aside from tidal heating from the radial galactic tides, vertical tidal shocking on crossing the midplane of the disc could also be present. This would be more pronounced for the clusters which rise (or dip) most above (or below) the Galactic midplane. Our quality cut at $| Z | < 1 5 0$ pc was explicitly chosen to eliminate this source of excess velocity dispersion. Increasing the severity of this cut to |𝑍| < 100 pc or even $| Z | < 5 0$ pc does not change the fact that $N _ { \\star } \\leq 2 5 0$ clusters lie along the RAR. As can be seen in panel e) in [[xref:fig-10]], no systematic correlation in RAR residuals is seen for any |𝑍 | value below 100 pc, which contains the overwhelming fraction of our sample. Keeping as close to the Galactic midplane as desired preserves the RAR and BTFR scalings.",
           "crossrefs": [
             {
               "kind": "figure",
@@ -2282,7 +2178,7 @@
             480.0,
             349.0
           ],
-          "text": "As explained in [[xref:sec-5]], under a MOND description, whenever a system having internal accelerations below $a _ { 0 }$ is immersed in an external acceleration field comparable or larger than $^ { a _ { 0 } , }$ MOND effects are suppressed and internally the system behaves in a quasi-Newtonian way. Describing the Galaxy as a purely baryonic system including only the Galactic bulge and a smooth Galactic disc matter distribution, this last typically modelled as a double exponential disc, implies external accelerations at the Solar Radius of slightly above ??0, e.g. Chae (2024a). Thus, the expectation has been for disc open clusters to behave in the quasi-Newtonian regime, and not to present any of the deep-MOND phenomenology associated with the RAR and BTFR galactic scalings. However, the Galactic disc is not in fact a smooth double exponential matter distribution.",
+          "text": "As explained in [[xref:sec-5]], under a MOND description, whenever a system having internal accelerations below $a _ { 0 }$ is immersed in an external acceleration field comparable or larger than $^ { a _ { 0 } , }$ MOND effects are suppressed and internally the system behaves in a quasi-Newtonian way. Describing the Galaxy as a purely baryonic system including only the Galactic bulge and a smooth Galactic disc matter distribution, this last typically modelled as a double exponential disc, implies external accelerations at the Solar Radius of slightly above 𝑎0, e.g. Chae (2024a). Thus, the expectation has been for disc open clusters to behave in the quasi-Newtonian regime, and not to present any of the deep-MOND phenomenology associated with the RAR and BTFR galactic scalings. However, the Galactic disc is not in fact a smooth double exponential matter distribution.",
           "crossrefs": [
             {
               "kind": "section",
@@ -2375,7 +2271,7 @@
             480.0,
             826.0
           ],
-          "text": "To zeroth order, we can calculate from a Newtonian perspective that the 220 km/s of local Galactic rotation at a Galactocentric radius of 8.5 ?? ???? implies a total central mass of $1 0 ^ { 1 1 } M _ { \\odot }$ , the resulting gravitational force pointing towards the Galactic centre could then be balanced locally by a $1 0 ^ { 5 } M _ { \\odot }$ molecular cloud at a distance of some 10 pc in the direction of the Galactic anti-centre. Thus, it is not impossible, indeed unavoidable, that the inhomogeneities of the small-scale Galactic disc matter distribution will lead to the existence of small scale pockets of overall gravitational potential minima where the external gravitational field will be much smaller than its mean value. Within these pockets, from a MOND perspective, one should expect a much reduced, or even zero EFE, and hence the existence of low internal acceleration systems showing deep-MOND phenomenology."
+          "text": "To zeroth order, we can calculate from a Newtonian perspective that the 220 km/s of local Galactic rotation at a Galactocentric radius of 8.5 𝑘𝑝𝑐 implies a total central mass of $1 0 ^ { 1 1 } M _ { \\odot }$ , the resulting gravitational force pointing towards the Galactic centre could then be balanced locally by a $1 0 ^ { 5 } M _ { \\odot }$ molecular cloud at a distance of some 10 pc in the direction of the Galactic anti-centre. Thus, it is not impossible, indeed unavoidable, that the inhomogeneities of the small-scale Galactic disc matter distribution will lead to the existence of small scale pockets of overall gravitational potential minima where the external gravitational field will be much smaller than its mean value. Within these pockets, from a MOND perspective, one should expect a much reduced, or even zero EFE, and hence the existence of low internal acceleration systems showing deep-MOND phenomenology."
         },
         {
           "id": "p-82",
@@ -2610,7 +2506,7 @@
             480.0,
             939.0
           ],
-          "text": "A further consideration concerns the convergence of the acceleration scale ?? across independent empirical domains. As emphasized in philosophical analyses of theory assessment such as [[cite:ref-43]], a parameter that repeatedly emerges from distinct phenomena carries greater evidential weight than one inferred multiple times from essentially the same class of data. Within the Milgromian framework,",
+          "text": "A further consideration concerns the convergence of the acceleration scale 𝑎0 across independent empirical domains. As emphasized in philosophical analyses of theory assessment such as [[cite:ref-43]], a parameter that repeatedly emerges from distinct phenomena carries greater evidential weight than one inferred multiple times from essentially the same class of data. Within the Milgromian framework,",
           "citations": [
             {
               "ref_ids": [
@@ -2651,7 +2547,7 @@
             921.0,
             563.0
           ],
-          "text": "??0 has been recovered from several independent scaling relations, including the baryonic Tully–Fisher relation, the radial acceleration relation, and the central surface density relation. [[xref:tab-1]] reproduces and updates [[xref:table-8?]].1 of [[cite:ref-43]], which is based on different galaxy samples and methodologies and yet cluster around a common value.",
+          "text": "𝑎0 has been recovered from several independent scaling relations, including the baryonic Tully–Fisher relation, the radial acceleration relation, and the central surface density relation. [[xref:tab-1]] reproduces and updates [[xref:table-8?]].1 of [[cite:ref-43]], which is based on different galaxy samples and methodologies and yet cluster around a common value.",
           "citations": [
             {
               "ref_ids": [
@@ -2777,7 +2673,7 @@
             480.0,
             488.0
           ],
-          "text": "The consistency of the inferred acceleration scale with values obtained from galaxies extends the convergence of ?? to a distinct dynamical regime characterised by pressure-supported stellar systems embedded within a galactic disc. The quantitative consistency we find between OC properties and the galactic BTFR and RAR scalings motivates improved modelling of cluster masses, velocity dispersions, and the local external field. Higher-resolution studies of the Galactic potential and independent analyses of molecular clouds and wide binaries will be essential to clarify whether the observed behaviour represents a small-scale manifestation of the same acceleration scale that governs galactic dynamics."
+          "text": "The consistency of the inferred acceleration scale with values obtained from galaxies extends the convergence of 𝑎0 to a distinct dynamical regime characterised by pressure-supported stellar systems embedded within a galactic disc. The quantitative consistency we find between OC properties and the galactic BTFR and RAR scalings motivates improved modelling of cluster masses, velocity dispersions, and the local external field. Higher-resolution studies of the Galactic potential and independent analyses of molecular clouds and wide binaries will be essential to clarify whether the observed behaviour represents a small-scale manifestation of the same acceleration scale that governs galactic dynamics."
         }
       ]
     },
@@ -4140,1451 +4036,6 @@
       ]
     }
   ],
-  "symbols": [
-    {
-      "symbol": "g",
-      "count": 43,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-13",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-14",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-2",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-3",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-17",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-7",
-          "page_idx": 2,
-          "source": "equation"
-        },
-        {
-          "block_id": "fig-2",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-47",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-51",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-13",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-83",
-          "page_idx": 8,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-95",
-          "page_idx": 9,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "a",
-      "count": 35,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-5",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-10",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-12",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-13",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-14",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-2",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-3",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-4",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-18",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-5",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-7",
-          "page_idx": 2,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-29",
-          "page_idx": 2,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-79",
-          "page_idx": 8,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-83",
-          "page_idx": 8,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-86",
-          "page_idx": 8,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-90",
-          "page_idx": 9,
-          "source": "inline"
-        },
-        {
-          "block_id": "tab-1",
-          "page_idx": 9,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-93",
-          "page_idx": 9,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-95",
-          "page_idx": 9,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-97",
-          "page_idx": 10,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "N",
-      "count": 27,
-      "occurrences": [
-        {
-          "block_id": "p-13",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-14",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-2",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-3",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-17",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "fig-2",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "fig-3",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-51",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "fig-4",
-          "page_idx": 5,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-54",
-          "page_idx": 5,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-55",
-          "page_idx": 5,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-56",
-          "page_idx": 5,
-          "source": "inline"
-        },
-        {
-          "block_id": "fig-10",
-          "page_idx": 6,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-62",
-          "page_idx": 6,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-68",
-          "page_idx": 7,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-71",
-          "page_idx": 7,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-78",
-          "page_idx": 7,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-95",
-          "page_idx": 9,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "t",
-      "count": 17,
-      "occurrences": [
-        {
-          "block_id": "eq-5",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "M",
-      "count": 16,
-      "occurrences": [
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-2",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-3",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-17",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-4",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-8",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-75",
-          "page_idx": 7,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-81",
-          "page_idx": 8,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "o",
-      "count": 10,
-      "occurrences": [
-        {
-          "block_id": "eq-5",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "R",
-      "count": 9,
-      "occurrences": [
-        {
-          "block_id": "p-40",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-41",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-44",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\sigma",
-      "count": 9,
-      "occurrences": [
-        {
-          "block_id": "p-38",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-40",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-41",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-44",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-47",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-55",
-          "page_idx": 5,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "d",
-      "count": 9,
-      "occurrences": [
-        {
-          "block_id": "eq-8",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-38",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "w",
-      "count": 8,
-      "occurrences": [
-        {
-          "block_id": "p-38",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\pi",
-      "count": 7,
-      "occurrences": [
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-38",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "m",
-      "count": 7,
-      "occurrences": [
-        {
-          "block_id": "p-5",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-8",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-63",
-          "page_idx": 6,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "s",
-      "count": 7,
-      "occurrences": [
-        {
-          "block_id": "p-5",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-63",
-          "page_idx": 6,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "x",
-      "count": 7,
-      "occurrences": [
-        {
-          "block_id": "p-14",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{obs}",
-      "count": 6,
-      "occurrences": [
-        {
-          "block_id": "fig-2",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-47",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-13",
-          "page_idx": 4,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\odot",
-      "count": 6,
-      "occurrences": [
-        {
-          "block_id": "p-75",
-          "page_idx": 7,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-81",
-          "page_idx": 8,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\Phi",
-      "count": 5,
-      "occurrences": [
-        {
-          "block_id": "eq-5",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-11",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{bar}",
-      "count": 5,
-      "occurrences": [
-        {
-          "block_id": "fig-2",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-47",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-13",
-          "page_idx": 4,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mu",
-      "count": 5,
-      "occurrences": [
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-14",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\nu",
-      "count": 5,
-      "occurrences": [
-        {
-          "block_id": "eq-3",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-16",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-7",
-          "page_idx": 2,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "r",
-      "count": 5,
-      "occurrences": [
-        {
-          "block_id": "p-17",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-46",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "y",
-      "count": 5,
-      "occurrences": [
-        {
-          "block_id": "p-16",
-          "page_idx": 1,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "G",
-      "count": 4,
-      "occurrences": [
-        {
-          "block_id": "eq-4",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-41",
-          "page_idx": 4,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{N,ext}",
-      "count": 4,
-      "occurrences": [
-        {
-          "block_id": "eq-7",
-          "page_idx": 2,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{s}",
-      "count": 4,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-12",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-76",
-          "page_idx": 7,
-          "source": "inline"
-        },
-        {
-          "block_id": "tab-1",
-          "page_idx": 9,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "e",
-      "count": 4,
-      "occurrences": [
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-13",
-          "page_idx": 4,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "h",
-      "count": 4,
-      "occurrences": [
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "p",
-      "count": 4,
-      "occurrences": [
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "E",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "p-40",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-41",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "U",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "p-40",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-41",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "W",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "p-40",
-          "page_idx": 3,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-41",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{m}",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "p-12",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "tab-1",
-          "page_idx": 9,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\rho",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "eq-6",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-75",
-          "page_idx": 7,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "i",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "n",
-      "count": 3,
-      "occurrences": [
-        {
-          "block_id": "p-24",
-          "page_idx": 1,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "D",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "p-75",
-          "page_idx": 7,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "V",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "eq-4",
-          "page_idx": 1,
-          "source": "equation"
-        },
-        {
-          "block_id": "p-55",
-          "page_idx": 5,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "Z",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "p-71",
-          "page_idx": 7,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{N,int}",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "eq-7",
-          "page_idx": 2,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{pc}",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "p-75",
-          "page_idx": 7,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{phot}",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "p-38",
-          "page_idx": 3,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "b",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "eq-12",
-          "page_idx": 4,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "j",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "eq-9",
-          "page_idx": 3,
-          "source": "equation"
-        },
-        {
-          "block_id": "eq-10",
-          "page_idx": 3,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "F",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "eq-5",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\bar{\\sigma}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-38",
-          "page_idx": 3,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\gtrsim",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-63",
-          "page_idx": 6,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\lesssim",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-13",
-          "page_idx": 1,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathbf{a}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-80",
-          "page_idx": 8,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathcal{L}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "eq-5",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathfrak{pc}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-75",
-          "page_idx": 7,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{10^{-10}ms^{-2}}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-95",
-          "page_idx": 9,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{10^{-10}}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{M}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "eq-7",
-          "page_idx": 2,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{OCs}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-48",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{RUWE}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-59",
-          "page_idx": 5,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{by}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{dex}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{ext}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-83",
-          "page_idx": 8,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{int}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-83",
-          "page_idx": 8,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{tot}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-83",
-          "page_idx": 8,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\mathrm{~>~}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-68",
-          "page_idx": 7,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "\\uparrow",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-52",
-          "page_idx": 4,
-          "source": "inline"
-        }
-      ]
-    },
-    {
-      "symbol": "c",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-55",
-          "page_idx": 5,
-          "source": "inline"
-        }
-      ]
-    }
-  ],
   "citations": [
     {
       "ref_ids": [
@@ -6369,7 +4820,6 @@
     "n_code": 0,
     "n_algorithms": 0,
     "n_references": 66,
-    "n_symbols": 63,
     "n_citations": 56,
     "n_citations_resolved": 55,
     "n_crossrefs": 29,

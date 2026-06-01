@@ -1,7 +1,7 @@
 """FastAPI backend for the bibgraph reader.
 
-Serves the structured paper JSON (with on-the-fly symbol-definition guessing)
-and the figure/table images extracted by MinerU, plus the built React app.
+Serves the structured paper JSON and the figure/table images extracted by
+MinerU, plus the built React app.
 
 Run (dev, with the Vite dev server proxying to this on :8000):
     /home/wwu/miniforge3/envs/astro/bin/python -m uvicorn server.app:app \
@@ -24,8 +24,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
-from .symbols import enrich_symbols
 
 ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = ROOT / "data" / "output"
@@ -56,11 +54,9 @@ def _paper_path(doc_id: str) -> Path:
 
 @lru_cache(maxsize=16)
 def _load_paper(doc_id: str, cache_key: tuple) -> dict:
-    """Load + enrich a paper. `cache_key` (mtime_ns, size) busts the cache when
-    the file changes (ns avoids float rounding; size catches same-mtime edits)."""
-    doc = json.loads(_paper_path(doc_id).read_text())
-    enrich_symbols(doc)
-    return doc
+    """Load a paper. `cache_key` (mtime_ns, size) busts the cache when the file
+    changes (ns avoids float rounding; size catches same-mtime edits)."""
+    return json.loads(_paper_path(doc_id).read_text())
 
 
 @app.get("/api/papers")

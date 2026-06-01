@@ -3,12 +3,12 @@
 A localhost reader for the structured JSON produced by the Phase-1 ingestion
 pipeline. Three-panel layout: left = table of contents (+ figure/table/equation
 lists), center = the rendered article, right = a live "in view" panel showing the
-figures / equations / tables / citations / symbols referenced by the text you are
+figures / equations / tables / citations referenced by the text you are
 currently reading (updates as you scroll).
 
 ## Stack
-- **Backend:** FastAPI (conda `astro` env) — serves the paper JSON (with on-the-fly
-  heuristic symbol descriptions) and the MinerU-extracted images.
+- **Backend:** FastAPI (conda `astro` env) — serves the paper JSON and the
+  MinerU-extracted images.
 - **Frontend:** React + TypeScript + Vite, KaTeX for math, framer-motion for the
   card transitions.
 

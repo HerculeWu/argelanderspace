@@ -13,6 +13,11 @@
       "language": "en",
       "is_ocr": false,
       "batch_id": "test-batch"
+    },
+    "textfix": {
+      "gaps_before": 0,
+      "gaps_fixed": 0,
+      "holders_changed": 0
     }
   },
   "structure": [
@@ -191,13 +196,7 @@
           ],
           "number": "2",
           "label": "Equation 2",
-          "latex": "a = \\frac{G M_\\odot}{r^2} \\tag{2}",
-          "symbols": [
-            "a",
-            "G",
-            "M_\\odot",
-            "r^2"
-          ]
+          "latex": "a = \\frac{G M_\\odot}{r^2} \\tag{2}"
         }
       ]
     },
@@ -536,68 +535,6 @@
       ]
     }
   ],
-  "symbols": [
-    {
-      "symbol": "M_\\odot",
-      "count": 2,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        },
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "G",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "a",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "r^2",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "eq-1",
-          "page_idx": 1,
-          "source": "equation"
-        }
-      ]
-    },
-    {
-      "symbol": "v_{rot}",
-      "count": 1,
-      "occurrences": [
-        {
-          "block_id": "p-2",
-          "page_idx": 0,
-          "source": "inline"
-        }
-      ]
-    }
-  ],
   "citations": [
     {
       "ref_ids": [
@@ -741,7 +678,6 @@
     "n_code": 1,
     "n_algorithms": 1,
     "n_references": 2,
-    "n_symbols": 5,
     "n_citations": 5,
     "n_citations_resolved": 5,
     "n_crossrefs": 9,

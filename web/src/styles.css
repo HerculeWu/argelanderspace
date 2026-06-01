@@ -228,15 +228,12 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 .k-equation { color: #6d28d9; background: #efe7fd; }
 .k-code { color: #0e7490; background: #dbf2f7; }
 .k-citation { color: var(--accent); background: var(--accent-soft); }
-.k-symbol { color: #b91c1c; background: #fde8e8; }
 
 .refcard-main { flex: 1 1 auto; min-width: 0; font-family: var(--font-ui); font-size: 13px; line-height: 1.45; }
 .refcard-main .title-line { font-weight: 600; }
 .refcard-main img { max-width: 100%; height: auto; border-radius: 4px; display: block; }
 .refcard-main .one-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.refcard-main .sym-glyph { font-size: 18px; }
-.refcard-main .sym-def { color: #333; }
-.refcard-main .sym-meta { color: var(--muted); font-size: 11.5px; }
+.card-meta { color: var(--muted); font-size: 11.5px; }
 .refcard-clip { max-height: 96px; overflow: hidden; position: relative; }
 .refcard-clip::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 22px;
   background: linear-gradient(transparent, var(--card-bg)); }

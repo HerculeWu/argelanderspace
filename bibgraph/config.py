@@ -42,6 +42,9 @@ class PipelineConfig:
     # When True, harvest PDF link annotations with PyMuPDF and use them to
     # authoritatively resolve citations / cross-references (hybrid mode).
     use_pdf_links: bool = True
+    # When True, repair MinerU's '?'-gaps in body text from the PDF text layer
+    # (see ingest/textfix.py). No-op on scanned PDFs (no text layer).
+    use_textfix: bool = True
     # Drop None / empty fields from the emitted JSON for compactness.
     compact_json: bool = True
     # Poll interval (s) and overall timeout (s) for the MinerU async task.

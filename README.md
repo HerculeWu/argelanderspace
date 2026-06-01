@@ -2,8 +2,8 @@
 
 Turns a research-paper **PDF** into a structured JSON document for a literature
 reading app: section structure, floats (figures / tables / equations / code /
-pseudocode), a structured reference list, inline-tokenized in-text **citations**
-and **cross-references**, and a lightweight **symbol** inventory.
+pseudocode), a structured reference list, and inline-tokenized in-text
+**citations** and **cross-references**.
 
 Phase 1 targets the *PDF-only* case (including scanned/old papers). LaTeX-source,
 EPUB and publisher-HTML ingestion are future phases.
@@ -17,8 +17,8 @@ EPUB and publisher-HTML ingestion are future phases.
   ├─ MinerU v4 VLM  → content_list.json + middle.json + images/   (high-precision OCR)
   ├─ structure      → section tree + floats + captions
   ├─ references     → structured bibliography (best-effort fields)
-  ├─ annotate       → inline [[cite:ref-N]] / [[xref:fig-N]] tokens (regex + hyperlinks)
-  └─ symbols        → atomic math-symbol inventory
+  ├─ textfix        → repair MinerU '?'-gaps in body text from the PDF text layer
+  └─ annotate       → inline [[cite:ref-N]] / [[xref:fig-N]] tokens (regex + hyperlinks)
  → Document → <out_dir>/<stem>.json
 ```
 
@@ -90,7 +90,6 @@ Artifacts land in `<pdf_dir>/<stem>/`: the MinerU unzip under `mineru/`
                   "code":[...], "algorithms":[...], "sections":[...] },
   "references": [ { "id": "ref-1", "raw": "...", "authors": ["Hunt","Reffert"],
                    "year": 2021, "doi": "10...", "arxiv_id": null, ... } ],
-  "symbols":    [ { "symbol": "M_\\odot", "count": 7, "occurrences": [...] } ],
   "citations":  [ /* flattened, each + block_id */ ],
   "crossrefs":  [ /* flattened, each + block_id */ ],
   "stats":      { "n_sections": 6, "n_citations": 84,
@@ -121,14 +120,17 @@ Block types: `paragraph`, `list`, `figure`, `table`, `equation`, `code`,
 ```
 
 Offline suite (no API, no pytest) covering structure, references, citations,
-cross-refs, symbols, hybrid hyperlink resolution, named-destination handling,
-and JSON serialization, using `tests/fixtures/sample_content_list.json`.
+cross-refs, text-layer `?`-gap correction, hybrid hyperlink resolution,
+named-destination handling, and JSON serialization, using
+`tests/fixtures/sample_content_list.json`.
 
 ## Known limitations (Phase 1)
 
 - Link→text alignment is block-granular, not per-character.
 - Reference `title`/`venue`/`volume`/`pages` are heuristic and often `null`
   (author/year/DOI/arXiv and citation linking are reliable).
-- Symbols are collected, not defined (semantic symbol→definition was deferred).
+- `?`-gap correction needs the PDF text layer to actually contain the glyph at
+  the block's bbox; where a caption/footnote bbox overlaps the float body the
+  gap is left as-is rather than risk splicing the wrong text.
 - Superscript-numeral citation styles (e.g. Nature) are not yet detected by regex.
 - The document title is also emitted as the first top-level section.

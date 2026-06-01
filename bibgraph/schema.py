@@ -9,7 +9,6 @@ The emitted JSON has this top-level shape::
       "structure":[ <section> ... ],     # ordered section tree (reading order)
       "index":    {figures, tables, equations, code, algorithms, sections},
       "references":[ <reference> ... ],  # global, structured
-      "symbols":  [ <symbol> ... ],      # lightweight inventory
       "citations":[ <citation occurrence + block_id> ... ],  # flattened
       "crossrefs":[ <crossref occurrence + block_id> ... ],  # flattened
       "stats":    {...}
@@ -256,12 +255,11 @@ class EquationBlock(Block):
     number: str | None = None
     label: str | None = None
     latex: str = ""
-    symbols: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = self._base()
         d.update({"number": self.number, "label": self.label,
-                  "latex": self.latex, "symbols": self.symbols})
+                  "latex": self.latex})
         return d
 
 
@@ -340,7 +338,7 @@ class Section:
 
 
 # --------------------------------------------------------------------------- #
-# References & symbols
+# References
 # --------------------------------------------------------------------------- #
 
 @dataclass
@@ -373,28 +371,6 @@ class Reference:
         }
 
 
-@dataclass
-class SymbolOccurrence:
-    block_id: str
-    page_idx: int | None = None
-    source: str = "inline"              # "inline" | "equation"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"block_id": self.block_id, "page_idx": self.page_idx,
-                "source": self.source}
-
-
-@dataclass
-class Symbol:
-    symbol: str                         # LaTeX form, e.g. "M_\\odot"
-    count: int = 0
-    occurrences: list[SymbolOccurrence] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"symbol": self.symbol, "count": self.count,
-                "occurrences": [o.to_dict() for o in self.occurrences]}
-
-
 # --------------------------------------------------------------------------- #
 # Document
 # --------------------------------------------------------------------------- #
@@ -406,7 +382,6 @@ class Document:
     meta: dict[str, Any] = field(default_factory=dict)
     structure: list[Section] = field(default_factory=list)
     references: list[Reference] = field(default_factory=list)
-    symbols: list[Symbol] = field(default_factory=list)
 
     # ---- convenience iterators -------------------------------------------- #
     def iter_sections(self):
@@ -481,7 +456,6 @@ class Document:
             "n_code": len(idx["code"]),
             "n_algorithms": len(idx["algorithms"]),
             "n_references": len(self.references),
-            "n_symbols": len(self.symbols),
             "n_citations": len(cites),
             "n_citations_resolved": sum(1 for c in cites if c.get("resolved")),
             "n_crossrefs": len(xrefs),
@@ -497,7 +471,6 @@ class Document:
             "structure": [s.to_dict() for s in self.structure],
             "index": self._build_index(),
             "references": [r.to_dict() for r in self.references],
-            "symbols": [s.to_dict() for s in self.symbols],
             "citations": cites,
             "crossrefs": xrefs,
             "stats": self._stats(cites, xrefs),

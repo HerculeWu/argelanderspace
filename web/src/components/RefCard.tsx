@@ -4,7 +4,6 @@ import type {
   Equation,
   Figure,
   Reference,
-  Symbol as Sym,
   TableBlock,
 } from "../types";
 import { useStore } from "../store";
@@ -13,14 +12,13 @@ import { Math, htmlWithMath, flattenLatex } from "../lib/math";
 import { captionText } from "./Block";
 import { limitTable, parseTable, type ParsedTable } from "../lib/tableparse";
 
-export type CardKind = "figure" | "table" | "equation" | "code" | "citation" | "symbol";
+export type CardKind = "figure" | "table" | "equation" | "code" | "citation";
 
 export interface Card {
   key: string;
   kind: CardKind;
   block?: Figure | TableBlock | Equation | CodeBlock;
   ref?: Reference;
-  sym?: Sym;
 }
 
 const KIND_LABEL: Record<CardKind, string> = {
@@ -29,7 +27,6 @@ const KIND_LABEL: Record<CardKind, string> = {
   equation: "Equation",
   code: "Code",
   citation: "Citation",
-  symbol: "Symbol",
 };
 
 interface Props {
@@ -47,8 +44,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
   const canGoto = card.kind !== "citation";
   const canExpand = card.kind !== "citation";
 
-  const gotoId =
-    card.kind === "symbol" ? card.sym?.first_block_id ?? undefined : card.block?.id;
+  const gotoId = card.block?.id;
 
   return (
     <div className={"refcard" + (focused ? " focused" : "")} ref={ref}>
@@ -135,18 +131,6 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
       const r = card.ref!;
       return <CitationLine r={r} />;
     }
-    case "symbol": {
-      const s = card.sym!;
-      const desc = s.def_guess || s.context || null;
-      return (
-        <div>
-          <span className="sym-glyph">
-            <Math latex={s.symbol} />
-          </span>{" "}
-          {desc ? <span className="sym-def">{desc}</span> : <span className="sym-meta">(no description)</span>}
-        </div>
-      );
-    }
   }
 }
 
@@ -186,7 +170,7 @@ function cardExpand(card: Card, store: ReturnType<typeof useStore>) {
         <div>
           <MiniTable t={limited} />
           {clipped && (
-            <div className="sym-meta" style={{ marginTop: 4 }}>
+            <div className="card-meta" style={{ marginTop: 4 }}>
               showing {limited.rows.length}×{shownCols} of {parsed.totalRows}×
               {parsed.totalCols}
             </div>
@@ -202,20 +186,8 @@ function cardExpand(card: Card, store: ReturnType<typeof useStore>) {
         <div>
           <pre className="code">{lines.slice(0, 5).join("\n")}</pre>
           {lines.length > 5 && (
-            <div className="sym-meta">showing 5 of {lines.length} lines</div>
+            <div className="card-meta">showing 5 of {lines.length} lines</div>
           )}
-        </div>
-      );
-    }
-    case "symbol": {
-      const s = card.sym!;
-      return (
-        <div>
-          <div className="sym-meta">
-            used {s.count}×
-            {s.first_page != null ? ` · first on p.${s.first_page + 1}` : ""}
-          </div>
-          {s.context ? <RichText text={s.context} /> : <em>(no context found)</em>}
         </div>
       );
     }

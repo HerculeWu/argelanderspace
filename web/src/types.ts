@@ -1,5 +1,5 @@
 // Mirrors the structured JSON produced by the bibgraph ingestion pipeline
-// (see bibgraph/schema.py) plus the backend symbol enrichment (server/symbols.py).
+// (see bibgraph/schema.py).
 
 export interface RichText {
   text: string; // carries inline tokens [[cite:ref-N]] / [[xref:fig-N]] and $math$
@@ -21,7 +21,6 @@ export interface Equation extends BlockBase {
   type: "equation";
   latex: string;
   number?: string;
-  symbols?: string[];
 }
 export interface Figure extends BlockBase {
   type: "figure";
@@ -115,23 +114,6 @@ export interface CrossRef {
   url?: string;
 }
 
-export interface SymbolOccurrence {
-  block_id: string;
-  page_idx: number;
-  source: string; // "inline" | "equation"
-}
-export interface Symbol {
-  symbol: string; // LaTeX atom, e.g. "\\mu", "g", "a_0"
-  count: number;
-  occurrences: SymbolOccurrence[];
-  // backend enrichment (server/symbols.py)
-  def_guess?: string | null;
-  def_block_id?: string | null;
-  context?: string | null;
-  first_block_id?: string | null;
-  first_page?: number | null;
-}
-
 export interface IndexFloat {
   id: string;
   page_idx: number;
@@ -159,7 +141,6 @@ export interface Doc {
     sections: IndexSection[];
   };
   references: Reference[];
-  symbols: Symbol[];
   citations: Citation[];
   crossrefs: CrossRef[];
   stats: Record<string, number>;

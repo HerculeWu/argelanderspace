@@ -81,13 +81,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  title       : {doc.meta.get('title')}")
     print(f"  pages       : {doc.source.get('n_pages')}")
     for k in ("n_sections", "n_paragraphs", "n_figures", "n_tables",
-              "n_equations", "n_code", "n_algorithms", "n_references",
-              "n_symbols"):
+              "n_equations", "n_code", "n_algorithms", "n_references"):
         print(f"  {k:<12}: {s.get(k, 0)}")
     print(f"  citations   : {s.get('n_citations', 0)} "
           f"({s.get('n_citations_resolved', 0)} resolved)")
     print(f"  crossrefs   : {s.get('n_crossrefs', 0)} "
           f"({s.get('n_crossrefs_resolved', 0)} resolved)")
+    tf = doc.meta.get("textfix")
+    if tf:
+        print(f"  textfix     : repaired {tf.get('gaps_fixed', 0)}/"
+              f"{tf.get('gaps_before', 0)} ?-gaps from the PDF text layer")
     return 0
 
 

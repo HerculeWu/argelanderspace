@@ -44,12 +44,6 @@ export function RightPanel() {
         seen.add(key);
         out.push({ key, kind, block: t as Card["block"] });
       }
-      for (const s of store.symbolsByBlock.get(bid) ?? []) {
-        const key = "sym:" + s.symbol;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push({ key, kind: "symbol", sym: s });
-      }
     }
     return out;
   }, [visibleIds, store]);
@@ -108,7 +102,7 @@ export function RightPanel() {
       {cards.length === 0 && (
         <div className="right-empty">
           Nothing referenced in the current view. Scroll the article — figures,
-          equations, citations and symbols mentioned nearby appear here.
+          equations, tables and citations mentioned nearby appear here.
         </div>
       )}
       <AnimatePresence initial={false}>

@@ -5,8 +5,8 @@
      ├─ MinerU (VLM)   -> content_list.json + middle.json + images/
      ├─ structure      -> section tree + floats
      ├─ references     -> structured bibliography
-     ├─ annotate       -> inline [[cite:..]] / [[xref:..]] tokens (regex+links)
-     └─ symbols        -> lightweight symbol inventory
+     ├─ textfix        -> repair VLM '?'-gaps from the PDF text layer
+     └─ annotate       -> inline [[cite:..]] / [[xref:..]] tokens (regex+links)
     -> Document -> <out_dir>/<stem>.json
 """
 
@@ -28,7 +28,7 @@ from .ingest.citations import (ReferenceResolver, detect_citations,
 from .ingest.crossrefs import XrefIndex, detect_crossrefs, enrich_crossrefs_with_links
 from .ingest.references import parse_references
 from .ingest.structure import build_structure
-from .ingest.symbols import extract_symbols, fill_equation_symbols
+from .ingest.textfix import apply_textfix
 
 log = logging.getLogger("bibgraph.pipeline")
 
@@ -103,13 +103,15 @@ def build_document(mineru: MineruResult, pdf_path: Path,
         references=references,
     )
 
+    # Repair MinerU '?'-gaps from the PDF text layer *before* tokenizing, so the
+    # corrector operates on raw body text (no inline cite/xref tokens yet).
+    if config.use_textfix:
+        doc.meta["textfix"] = apply_textfix(doc, pdf_path)
+
     resolver = ReferenceResolver(references)
     xindex = XrefIndex(doc)
     _annotate_document(doc, resolver, xindex, pdf_links,
                        use_links=config.use_pdf_links)
-
-    fill_equation_symbols(doc)
-    doc.symbols = extract_symbols(doc)
     return doc
 
 

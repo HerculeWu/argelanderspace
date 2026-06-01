@@ -18,7 +18,7 @@ from bibgraph.mineru_client import MineruResult                   # noqa: E402
 from bibgraph.pdf_links import LinkAnnot, PdfLinks                 # noqa: E402
 from bibgraph.pipeline import build_document                      # noqa: E402
 from bibgraph.schema import (CitationOccurrence, CrossRefOccurrence,  # noqa: E402
-                             EquationBlock, Reference)
+                             Reference)
 from bibgraph.ingest.annotate import Match, apply_matches         # noqa: E402
 from bibgraph.ingest.citations import (ReferenceResolver,         # noqa: E402
                                        detect_citations,
@@ -27,7 +27,6 @@ from bibgraph.ingest.crossrefs import (XrefIndex, detect_crossrefs,  # noqa: E40
                                        enrich_crossrefs_with_links)
 from bibgraph.ingest.references import parse_references            # noqa: E402
 from bibgraph.ingest.structure import build_structure             # noqa: E402
-from bibgraph.ingest.symbols import extract_symbols               # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 
@@ -199,20 +198,6 @@ def test_list_and_caption_annotation() -> None:
           f"caption label not stripped: {fig.caption.text}")
 
 
-def test_symbols() -> None:
-    doc = _build(with_links=False)
-    syms = {s.symbol for s in doc.symbols}
-    for expected in ("M_\\odot", "v_{rot}", "r^2", "G", "a"):
-        check(expected in syms, f"symbol {expected!r} not found in {sorted(syms)}")
-    check("\\frac" not in syms and "\\tag" not in syms,
-          "operator macro leaked into symbols")
-    eq = _first_block(doc, "equation")
-    check(isinstance(eq, EquationBlock) and "M_\\odot" in eq.symbols,
-          f"equation symbols {getattr(eq,'symbols',None)}")
-    msym = next(s for s in doc.symbols if s.symbol == "M_\\odot")
-    check(msym.count >= 2, f"M_odot count {msym.count}")
-
-
 def test_hybrid_links_citation() -> None:
     doc = _build(with_links=True)
     intro = _find_paragraph(doc, "radial acceleration relation")
@@ -363,14 +348,45 @@ def test_citation_link_no_reuse() -> None:
           f"link target reused (should be ref-2): {m2.occ.ref_ids}")
 
 
-def test_accent_symbol_subscript() -> None:
-    from bibgraph.ingest.symbols import _atoms
-    atoms = _atoms(r"\hat{v}_{rot} + \mathbf{x}^2 + n_{i}")
-    check("\\hat{v}_{rot}" in atoms, f"accent+subscript lost: {atoms}")
-    check("\\mathbf{x}^2" in atoms, f"font+superscript lost: {atoms}")
-    check("r" not in atoms and "o" not in atoms and "t" not in atoms,
-          f"stray subscript letters leaked: {atoms}")
-    check("n_{i}" in atoms, f"nested-brace subscript broken: {atoms}")
+def test_textfix_repair() -> None:
+    from bibgraph.ingest.textfix import repair_text
+    # a ?-gap is filled from the aligned text layer
+    new, n = repair_text("field of order ?? then", "field of order a0 then")
+    check(new == "field of order a0 then" and n == 1, f"gap not repaired: {new!r} ({n})")
+    # multiple gaps in one string
+    new, n = repair_text("with ?? and ????", "with N and Sgr")
+    check("?" not in new and n == 2, f"multi-gap repair wrong: {new!r} ({n})")
+    # single '?' (real question mark / unresolved token) is left untouched
+    new, n = repair_text("is it true? yes", "is it true? yes")
+    check(new == "is it true? yes" and n == 0, f"single ? touched: {new!r}")
+    # if the text layer also failed (still '?'), leave the OCR gap as-is
+    new, n = repair_text("order ?? then", "order ?? then")
+    check(new == "order ?? then" and n == 0, f"dirty layer spliced: {new!r}")
+    # OCR baseline preserved where OCR/layer legitimately differ (British vs US)
+    new, n = repair_text("the colour ?? value", "the color a0 value")
+    check(new == "the colour a0 value" and n == 1, f"baseline not preserved: {new!r}")
+    # REGRESSION: when the layer does NOT correspond to the OCR, real words next
+    # to a gap must never be deleted/overwritten — leave the gap untouched.
+    new, n = repair_text("keep?? drop", "GONE")
+    check(new == "keep?? drop" and n == 0, f"real text destroyed: {new!r} ({n})")
+    # REGRESSION (the shipped footnote bug): a mismatched layer (e.g. a footnote
+    # bbox returning table cells) must not splice garbage over real prose — the
+    # correspondence gate leaves the whole holder untouched.
+    ocr = "Gas-rich galaxies only. ?? Corrected for X. ?? Based on density."
+    new, n = repair_text(ocr, "Reference Na a0 Begeman (1991) Stark (2009) Lelli")
+    check(new == ocr and n == 0, f"mismatched-layer holder altered: {new!r} ({n})")
+    # REGRESSION: a pure-symbol holder (no alphanumerics) cannot have its
+    # correspondence verified -> fail closed, never splice.
+    new, n = repair_text("(??)", "(see Eq. 4 below)")
+    check(new == "(??)" and n == 0, f"zero-alnum holder spliced: {new!r} ({n})")
+    # PERF: oversized / mid-large repetitive holders must return promptly
+    # (no super-linear hang) — exercises the hard cap and the autojunk path.
+    big = "word ?? " * 2000           # ~16k chars, over the hard length cap
+    new, n = repair_text(big, "word X0 " * 2000)
+    check(new == big and n == 0, "oversized holder not skipped")
+    mid = "alpha ?? beta " * 500      # ~7k chars, over the autojunk threshold
+    check(isinstance(repair_text(mid, "alpha qq beta " * 500)[0], str),
+          "mid-large input did not return")
 
 
 def test_caption_minus_preserved() -> None:
