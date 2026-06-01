@@ -1,0 +1,21 @@
+[
+  {"type": "text", "text": "On the dynamics of low-mass open clusters", "text_level": 1, "page_idx": 0, "bbox": [100, 80, 900, 120]},
+  {"type": "text", "text": "Abstract. We study clusters following Hunt & Reffert (2021) and (Cantat-Gaudin et al. 2020).", "page_idx": 0, "bbox": [100, 140, 900, 190]},
+  {"type": "text", "text": "1 Introduction", "text_level": 1, "page_idx": 0, "bbox": [100, 200, 900, 225]},
+  {"type": "text", "text": "As shown in Fig. 1 and Table 1, the radial acceleration relation holds (Hunt & Reffert 2021; Cantat-Gaudin et al. 2020). See also Section 2 and Eq. (2). Numbers like [0, 1] are not citations. The mass is $M_\\odot$ and velocity $v_{rot}$.", "page_idx": 0, "bbox": [100, 240, 900, 330]},
+  {"type": "image", "img_path": "images/fig1.jpg", "img_caption": ["Figure 1: The radial acceleration relation for clusters (adapted from Hunt & Reffert 2021)."], "img_footnote": [], "page_idx": 0, "bbox": [150, 350, 850, 560]},
+  {"type": "table", "table_body": "<table><tr><td>a</td></tr></table>", "table_caption": ["Table 1: Cluster parameters."], "table_footnote": ["Notes on the table."], "page_idx": 1, "bbox": [150, 80, 850, 200]},
+  {"type": "equation", "text": "a = \\frac{G M_\\odot}{r^2} \\tag{2}", "page_idx": 1, "bbox": [300, 220, 700, 260]},
+  {"type": "text", "text": "2 Methods", "text_level": 1, "page_idx": 1, "bbox": [100, 300, 900, 325]},
+  {"type": "text", "text": "We use the algorithm in Algorithm 1 and the code in Listing 1.", "page_idx": 1, "bbox": [100, 340, 900, 380]},
+  {"type": "text", "text": "2.1 Data", "text_level": 2, "page_idx": 1, "bbox": [100, 400, 900, 420]},
+  {"type": "text", "text": "Subsection content referencing Appendix A and Sect. 2.1.", "page_idx": 1, "bbox": [100, 430, 900, 460]},
+  {"type": "algorithm", "code_body": "for x in data: process(x)", "code_caption": ["Algorithm 1: Processing."], "sub_type": "algorithm", "page_idx": 1, "bbox": [150, 480, 850, 560]},
+  {"type": "code", "code_body": "print('hi')", "code_caption": ["Listing 1: Hello."], "guess_lang": "python", "page_idx": 2, "bbox": [150, 80, 850, 160]},
+  {"type": "list", "items": ["First item references Fig. 1.", "Second item cites (Hunt & Reffert 2021)."], "page_idx": 2, "bbox": [100, 180, 900, 260]},
+  {"type": "text", "text": "Appendix A Extra material", "text_level": 1, "page_idx": 2, "bbox": [100, 300, 900, 325]},
+  {"type": "text", "text": "Appendix content here.", "page_idx": 2, "bbox": [100, 340, 900, 370]},
+  {"type": "text", "text": "References", "text_level": 1, "page_idx": 2, "bbox": [100, 400, 900, 420]},
+  {"type": "ref_text", "text": "Hunt, E. L. & Reffert, S. 2021, A&A, 646, A104. doi:10.1051/0004-6361/202039341", "page_idx": 2, "bbox": [100, 430, 900, 470]},
+  {"type": "ref_text", "text": "Cantat-Gaudin, T., Anders, F., Castro-Ginard, A. et al. 2020, A&A, 640, A1.", "page_idx": 2, "bbox": [100, 475, 900, 515]}
+]

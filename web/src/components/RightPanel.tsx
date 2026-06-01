@@ -1,0 +1,141 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useStore, useVisibleIds } from "../store";
+import { RefCard, type Card, type CardKind } from "./RefCard";
+
+function floatKind(t: string): CardKind | null {
+  if (t === "figure") return "figure";
+  if (t === "table") return "table";
+  if (t === "equation") return "equation";
+  if (t === "code" || t === "algorithm") return "code";
+  return null; // sections etc. are not shown as cards
+}
+
+export function RightPanel() {
+  const store = useStore();
+  const visibleIds = useVisibleIds();
+  const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [focusedKey, setFocusedKey] = useState<string | null>(null);
+  const cardEls = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  const cards = useMemo<Card[]>(() => {
+    const seen = new Set<string>();
+    const out: Card[] = [];
+    for (const bid of visibleIds) {
+      for (const c of store.citationsByBlock.get(bid) ?? []) {
+        if (!c.resolved) continue;
+        for (const rid of c.ref_ids ?? []) {
+          const key = "cite:" + rid;
+          if (seen.has(key)) continue;
+          const ref = store.refById.get(rid);
+          if (!ref) continue;
+          seen.add(key);
+          out.push({ key, kind: "citation", ref });
+        }
+      }
+      for (const x of store.crossrefsByBlock.get(bid) ?? []) {
+        if (!x.resolved || !x.target_id) continue;
+        const t = store.blockById.get(x.target_id);
+        if (!t) continue;
+        const kind = floatKind(t.type);
+        if (!kind) continue;
+        const key = kind + ":" + x.target_id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ key, kind, block: t as Card["block"] });
+      }
+      for (const s of store.symbolsByBlock.get(bid) ?? []) {
+        const key = "sym:" + s.symbol;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push({ key, kind: "symbol", sym: s });
+      }
+    }
+    return out;
+  }, [visibleIds, store]);
+
+  // Pin the expanded card: keep a reference to its Card object so it stays
+  // rendered even after its source text scrolls out of the reading band. Per the
+  // spec, an expanded card persists until IT leaves the (right-panel) viewport.
+  const expandedCardRef = useRef<Card | null>(null);
+  const expandedInList = expandedKey
+    ? cards.find((c) => c.key === expandedKey) ?? null
+    : null;
+  if (expandedInList) expandedCardRef.current = expandedInList;
+
+  const displayCards = useMemo<Card[]>(() => {
+    if (
+      expandedKey &&
+      expandedCardRef.current &&
+      !cards.some((c) => c.key === expandedKey)
+    ) {
+      return [...cards, expandedCardRef.current];
+    }
+    return cards;
+  }, [cards, expandedKey]);
+
+  // Collapse the expanded card only when the card element itself leaves the
+  // right-panel's scroll viewport (not when its source text leaves the reader).
+  useEffect(() => {
+    if (!expandedKey) return;
+    const el = cardEls.current.get(expandedKey);
+    if (!el) return;
+    const root = el.closest(".panel-body") as HTMLElement | null;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) if (!e.isIntersecting) setExpandedKey(null);
+      },
+      { root, threshold: 0 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [expandedKey, displayCards]);
+
+  // Cross-panel: a cite chip in the body focuses its reference card here.
+  useEffect(() => {
+    return store.subscribeFocus((refId) => {
+      const key = "cite:" + refId;
+      setFocusedKey(key);
+      const el = cardEls.current.get(key);
+      if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      window.setTimeout(() => setFocusedKey((k) => (k === key ? null : k)), 1600);
+    });
+  }, [store]);
+
+  return (
+    <div className="right">
+      <div className="panel-title">In view · {cards.length}</div>
+      {cards.length === 0 && (
+        <div className="right-empty">
+          Nothing referenced in the current view. Scroll the article — figures,
+          equations, citations and symbols mentioned nearby appear here.
+        </div>
+      )}
+      <AnimatePresence initial={false}>
+        {displayCards.map((card) => (
+          <motion.div
+            key={card.key}
+            layout
+            initial={{ y: -6 }}
+            animate={{ y: 0 }}
+            exit={{ opacity: 0, height: 0, marginBottom: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            ref={(el) => {
+              if (el) cardEls.current.set(card.key, el);
+              else cardEls.current.delete(card.key);
+            }}
+          >
+            <RefCard
+              card={card}
+              expanded={expandedKey === card.key}
+              focused={focusedKey === card.key}
+              onToggleExpand={() =>
+                setExpandedKey((k) => (k === card.key ? null : card.key))
+              }
+            />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}

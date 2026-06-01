@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Node / frontend build
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+*.log
+
+# Tooling / indexes
+.codegraph/
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
