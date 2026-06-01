@@ -82,10 +82,12 @@ def get_image(doc_id: str, filename: str) -> FileResponse:
         raise HTTPException(400, "bad filename")
     if "/" in doc_id or "\\" in doc_id or doc_id.startswith("."):
         raise HTTPException(400, "bad doc id")
-    img = OUTPUT_DIR / doc_id / "mineru" / "images" / filename
-    if not img.is_file():
-        raise HTTPException(404, "image not found")
-    return FileResponse(img)
+    # PDF docs keep images under mineru/images/; HTML docs under assets/.
+    for sub in ("mineru/images", "assets"):
+        img = OUTPUT_DIR / doc_id / sub / filename
+        if img.is_file():
+            return FileResponse(img)
+    raise HTTPException(404, "image not found")
 
 
 # Serve the built SPA last so it doesn't shadow the API routes.

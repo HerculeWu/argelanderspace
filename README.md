@@ -1,12 +1,55 @@
-# bibgraph — literature ingestion (Phase 1: PDF)
+# bibgraph — literature ingestion (PDF + publisher HTML)
 
 Turns a research-paper **PDF** into a structured JSON document for a literature
 reading app: section structure, floats (figures / tables / equations / code /
 pseudocode), a structured reference list, and inline-tokenized in-text
 **citations** and **cross-references**.
 
-Phase 1 targets the *PDF-only* case (including scanned/old papers). LaTeX-source,
-EPUB and publisher-HTML ingestion are future phases.
+Phase 1 targets the *PDF-only* case (including scanned/old papers). Phase 4
+(**publisher HTML**) is now started — see *HTML pipeline* below. LaTeX-source and
+EPUB ingestion are still future phases.
+
+## HTML pipeline (Phase 4)
+
+Modern journals publish a clean, semantically-marked-up HTML full text — the most
+stable source there is. Each publisher ships a different front-end, so each gets
+its own adapter under `bibgraph/ingest_html/`; the **first is Astronomy &
+Astrophysics** (`aanda.py`). The adapter walks the DOM and emits the *same*
+`Document` JSON the PDF pipeline produces, so the reader UI is unchanged.
+
+```
+ DOI / URL
+  ├─ fetch          → full-text HTML (cached on disk under <root>/.htmlcache)
+  ├─ adapter (A&A)  → section tree + floats + references
+  │                   • citations  = <a href="#R..">  → authoritative ref link
+  │                   • cross-refs = <a href="#F/#T/#FD/#S/#APP">  → float/section
+  │                   • equations  = MathML → pandoc → KaTeX-clean LaTeX
+  │                                  (data-latex used as a fallback)
+  │                   • tables      = fetched from the per-table T<n>.html sub-page
+  │                   • figures     = full-res image downloaded to assets/
+  ├─ annotate       → splice [[cite:..]] / [[xref:..]]; regex only for *unlinked* mentions
+  └─ → Document → <root>/<doc_id>/<doc_id>.json
+```
+
+Unlike the PDF path, citation/cross-reference resolution is **authoritative**:
+the page's own anchors say exactly which reference or float each one points at,
+so resolution is character-precise rather than regex-guessed. Inline math is
+handled *conservatively* — only `<sub>`/`<sup>` and single-letter italic
+variables become `$…$`; prose italics (journal/object names) stay plain text;
+footnote markers are dropped.
+
+```bash
+PY=/home/wwu/miniforge3/envs/astro/bin/python
+$PY -m bibgraph 10.1051/0004-6361/202039341      # a DOI (resolves to A&A full HTML)
+$PY -m bibgraph https://www.aanda.org/articles/aa/full_html/2021/02/aa39341-20/aa39341-20.html
+# options: --inline-math {conservative,plain}  --no-assets  --no-subpages  --no-cache
+#          --out-root DIR   (default data/output, so the reader picks it up)
+```
+
+Output lands in `<root>/<doc_id>/<doc_id>.json` with figure images in
+`<doc_id>/assets/` (served by the reader's `/images/<doc_id>/<file>` route). The
+HTML deps are `requests` + `beautifulsoup4` (both in the `astro` env) and
+`pandoc` (system, for MathML→LaTeX).
 
 ## How it works
 

@@ -46,7 +46,7 @@ function SectionView({
           {sec.heading}
         </Heading>
       )}
-      {sec.blocks.map((b) => (
+      {(sec.blocks ?? []).map((b) => (
         <BlockView key={b.id} block={b} />
       ))}
       {sec.children?.map((c) => (

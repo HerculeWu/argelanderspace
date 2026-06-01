@@ -245,12 +245,12 @@ function buildLookups(doc: Doc) {
       // the heading itself is a jump target + ordering anchor
       blockOrder.set(sec.id, order++);
       sectionOfBlock.set(sec.id, sec.id);
-      for (const b of sec.blocks) {
+      for (const b of sec.blocks ?? []) {
         blockById.set(b.id, b);
         blockOrder.set(b.id, order++);
         sectionOfBlock.set(b.id, sec.id);
       }
-      walk(sec.children);
+      walk(sec.children ?? []);
     }
   };
   walk(doc.structure);

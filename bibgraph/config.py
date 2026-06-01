@@ -37,8 +37,40 @@ class MineruConfig:
 
 
 @dataclass
+class HtmlConfig:
+    """Options for ingesting a publisher's HTML full-text (Phase 4).
+
+    Unlike the PDF path there is no OCR: the publisher already gives us clean,
+    semantically-marked-up HTML. We only fetch (with on-disk caching), walk the
+    DOM with a per-publisher adapter, and convert the bits that aren't plain
+    text (display-equation LaTeX, table sub-pages, figure images).
+    """
+
+    user_agent: str = (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120 Safari/537.36"
+    )
+    request_timeout: float = 30.0
+    # Cache fetched pages/sub-pages on disk so re-runs need no network.
+    use_cache: bool = True
+    # Download figure images / equation GIFs locally (served via /images);
+    # when False, the remote publisher URL is kept in img_path instead.
+    download_assets: bool = True
+    # Follow the per-float sub-pages (A&A puts table bodies on T<n>.html and the
+    # full-resolution figure on F<n>.html). Off => caption-only floats.
+    fetch_subpages: bool = True
+    # Inline-math representation in body text. "conservative" wraps only clear
+    # math (sub/sup, single-letter italic variables) in $...$ for KaTeX and
+    # flattens prose italics; "plain" drops all inline-math markup.
+    inline_math: str = "conservative"
+    # Polite delay (s) between network requests to the publisher.
+    request_delay: float = 0.3
+
+
+@dataclass
 class PipelineConfig:
     mineru: MineruConfig = field(default_factory=MineruConfig)
+    html: HtmlConfig = field(default_factory=HtmlConfig)
     # When True, harvest PDF link annotations with PyMuPDF and use them to
     # authoritatively resolve citations / cross-references (hybrid mode).
     use_pdf_links: bool = True

@@ -448,6 +448,187 @@ def test_full_json_serialization() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# HTML pipeline (A&A adapter) — offline, parses a saved fixture page.
+# --------------------------------------------------------------------------- #
+
+def _build_html():
+    from bs4 import BeautifulSoup
+    from bibgraph.config import HtmlConfig
+    from bibgraph.ingest_html import adapter_for
+    from bibgraph.ingest_html.fetch import Fetcher
+    from bibgraph.pipeline_html import _annotate_document
+    from bibgraph.schema import Document
+
+    import tempfile
+    base = "https://www.aanda.org/articles/aa/full_html/x/x.html"
+    soup = BeautifulSoup((FIX / "sample_aanda.html").read_text("utf-8"), "html.parser")
+    adapter = adapter_for(base, soup)
+    cfg = HtmlConfig(download_assets=False, fetch_subpages=False,
+                     use_cache=False, request_delay=0)
+    tmp = Path(tempfile.mkdtemp(prefix="bibgraph-test-"))
+    fetcher = Fetcher(tmp / "cache", user_agent="test", use_cache=False, delay=0)
+    parsed = adapter.parse(soup, base_url=base, fetcher=fetcher,
+                           asset_dir=(tmp / "assets"), config=cfg)
+    doc = Document(doc_id="x", source={"type": "html", "n_pages": 1},
+                   meta={"title": parsed.title, "html": parsed.meta},
+                   structure=parsed.sections, references=parsed.references)
+    _annotate_document(doc)
+    return doc
+
+
+def test_html_adapter_selected() -> None:
+    from bs4 import BeautifulSoup
+    from bibgraph.ingest_html import adapter_for
+    soup = BeautifulSoup("<html></html>", "html.parser")
+    a = adapter_for("https://www.aanda.org/articles/aa/full_html/x/x.html", soup)
+    check(a is not None and a.name == "aanda", f"A&A adapter not selected: {a}")
+
+
+def test_html_structure_and_title() -> None:
+    doc = _build_html()
+    check(doc.meta["title"] == "A Sample A&A Paper - I. Testing the HTML pipeline",
+          f"title wrong: {doc.meta['title']}")
+    headings = [s.heading for s in doc.iter_sections()]
+    check("Introduction" in headings, f"missing Introduction: {headings}")
+    check("Results" in headings, f"missing Results: {headings}")
+    check("Acknowledgments" in headings, "missing Acknowledgments")
+    # title/subtitle are NOT sections; References/All Figures galleries excluded
+    check("A Sample A&A Paper" not in headings, "article title leaked as section")
+    check(not any("All Figures" in h for h in headings), "All Figures gallery not skipped")
+    check(any(s.heading == "Abstract" for s in doc.iter_sections()), "abstract section missing")
+
+
+def test_html_abstract_multipart() -> None:
+    doc = _build_html()
+    sec = next((s for s in doc.iter_sections() if s.heading == "Abstract"), None)
+    check(sec is not None, "no Abstract section")
+    text = " ".join(b.text for b in sec.blocks if b.type == "paragraph")
+    for part in ("Context.", "Aims.", "Methods.", "Results.", "Conclusions."):
+        check(part in text, f"abstract missing {part!r} part: {text[:80]!r}")
+    # affiliation / received / keywords must NOT bleed into the abstract
+    check("Received" not in text and "Key words" not in text
+          and "Some Institute" not in text, f"non-abstract text leaked: {text!r}")
+    check(len(sec.blocks) >= 5, f"abstract parts collapsed: {len(sec.blocks)} blocks")
+    # front-matter copyright line between header and first section is dropped
+    alltext = " ".join(b.text for b in doc.iter_blocks() if b.type == "paragraph")
+    check("ESO 2020" not in alltext, "copyright/front-matter leaked into body")
+
+
+def test_html_authoritative_citation() -> None:
+    doc = _build_html()
+    p = _find_paragraph(doc, "magnitude")          # 'Smith' becomes a cite token
+    check(p is not None, "intro paragraph not found")
+    check("[[cite:ref-1]]" in p.text, f"cite token missing: {p.text!r}")
+    occ = p.citations[0]
+    check(occ.via == "hyperlink" and occ.resolved, f"cite not authoritative: {occ.via}")
+    check(occ.ref_ids == ["ref-1"], f"cite ref_ids {occ.ref_ids}")
+
+
+def test_html_crossref_resolution() -> None:
+    doc = _build_html()
+    text = " ".join(b.text for b in doc.iter_blocks() if b.type == "paragraph")
+    check("[[xref:fig-1]]" in text, "figure xref not resolved")
+    check("[[xref:eq-1]]" in text, "equation xref not resolved")
+    check("[[xref:tab-1]]" in text, "table xref not resolved")
+    # an unlinked "Sect. 1" still resolves via the regex fallback + XrefIndex
+    kinds = {(x.kind, x.resolved) for b in doc.iter_blocks()
+             for x in getattr(b, "crossrefs", [])}
+    check(("section", True) in kinds, f"unlinked Sect. 1 not resolved: {kinds}")
+
+
+def test_html_inline_math_conservative() -> None:
+    doc = _build_html()
+    p = _find_paragraph(doc, "magnitude")
+    # single-letter var + sub -> $G_{\mathrm{BP}}$ ; prose italic 'Gaia' stays plain
+    check("$G_{\\mathrm{BP}}$" in p.text, f"inline math not wrapped: {p.text!r}")
+    check("Gaia" in p.text and "$Gaia$" not in p.text, "prose italic wrongly mathified")
+    # footnote marker dropped (no stray superscript '1' glued to the word)
+    check("matters for" in p.text, f"footnote not dropped: {p.text!r}")
+    # unit superscript yr^{-1} (in the post-equation paragraph)
+    alltext = " ".join(b.text for b in doc.iter_blocks() if b.type == "paragraph")
+    check("\\mathrm{yr}^{-1}" in alltext, f"unit exponent missing: {alltext!r}")
+
+
+def test_html_equation_split_from_prose() -> None:
+    doc = _build_html()
+    eq = _first_block(doc, "equation")
+    check(eq is not None, "embedded equation not extracted as a block")
+    check("mc^" in eq.latex, f"equation latex wrong: {eq.latex!r}")
+    check(eq.number == "1", f"equation number {eq.number}")
+    # the prose around the embedded equation is preserved as paragraphs
+    check(_find_paragraph(doc, "The energy is") is not None
+          or _find_paragraph(doc, "as in") is not None,
+          "prose around embedded equation lost")
+
+
+def test_html_reference_parse() -> None:
+    doc = _build_html()
+    check(len(doc.references) == 1, f"ref count {len(doc.references)}")
+    r = doc.references[0]
+    check(r.id == "ref-1", f"ref id {r.id}")
+    check(r.year == 2020, f"ref year {r.year}")
+    check(r.doi == "10.1051/0004-6361/200000002", f"ref doi {r.doi}")
+    check(r.venue == "A&A", f"ref venue {r.venue}")
+    check(r.volume == "600", f"ref volume {r.volume}")
+    check(r.pages == "A1", f"ref pages {r.pages}")
+    check("Smith" in r.authors, f"ref authors {r.authors}")
+
+
+def test_html_figure_and_table_floats() -> None:
+    doc = _build_html()
+    fig = _first_block(doc, "figure")
+    check(fig is not None and fig.number == "1", "figure not captured")
+    check(fig.caption and "test figure caption" in fig.caption.text,
+          "figure caption missing")
+    tab = _first_block(doc, "table")
+    check(tab is not None and tab.number == "1", "table not captured")
+
+
+def _render_inline(html_snippet: str) -> str:
+    from bs4 import BeautifulSoup
+    from bibgraph.ingest_html.inline import render_inline, InlineContext
+    from bibgraph.ingest.annotate import apply_matches
+    soup = BeautifulSoup(html_snippet, "html.parser")
+    node = soup.find(["p", "span", "div"]) or soup
+    text, matches = render_inline(node, InlineContext(resolve=lambda f: None))
+    out, _, _ = apply_matches(text, matches)
+    return out
+
+
+def test_html_inline_subsup_word_boundary() -> None:
+    # mid-word sub/sup must NOT be mathified (would mangle prose)
+    check(_render_inline("<p>value<sub>2</sub>here</p>") == "value2here",
+          f"mid-word sub mathified: {_render_inline('<p>value<sub>2</sub>here</p>')!r}")
+    check(_render_inline("<p>equation<sub>10</sub>e done</p>") == "equation10e done",
+          "mid-word multi-letter base mathified")
+    # at a word boundary, a unit exponent IS valid math
+    check("$\\mathrm{yr}^{-1}$" in _render_inline("<p>0.3 mas yr<sup>&#8722;1</sup> total</p>"),
+          "unit exponent at boundary not mathified")
+    check("$10^{4}$" in _render_inline("<p>about 10<sup>4</sup> stars</p>"),
+          "numeric exponent at boundary not mathified")
+
+
+def test_html_inline_variable_base() -> None:
+    # an explicit single-letter italic variable is a math base even before text
+    check("$G_{\\mathrm{BP}}$" in _render_inline("<p><i>G</i><sub>BP</sub> band</p>"),
+          "italic variable + sub not mathified")
+    # variant Greek glyph (lunate epsilon U+03F5) is recognised as a variable
+    out = _render_inline("<p><i>ϵ</i><sub>ACG</sub> value</p>")
+    check("$\\epsilon_{\\mathrm{ACG}}$" in out, f"variant greek not handled: {out!r}")
+    check("\\mathrm{ACG}" not in out.replace("$\\epsilon_{\\mathrm{ACG}}$", ""),
+          "stray latex leaked outside math delimiters")
+
+
+def test_html_no_internal_attrs_in_json() -> None:
+    doc = _build_html()
+    d = doc.to_dict(compact_json=True)
+    blob = json.dumps(d)
+    check("_anchor_matches" not in blob, "internal _anchor_matches leaked into JSON")
+    check(d["stats"]["n_citations_resolved"] == d["stats"]["n_citations"],
+          "some citations unresolved in HTML doc")
+
+
+# --------------------------------------------------------------------------- #
 def _find_paragraph(doc, needle: str):
     for b in doc.iter_blocks():
         if b.type == "paragraph" and needle in b.text:

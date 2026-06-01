@@ -71,7 +71,7 @@ export interface Section {
   number?: string;
   page_idx: number;
   bbox?: number[];
-  blocks: Block[];
+  blocks?: Block[]; // absent when a section has only sub-sections (compacted out)
   children?: Section[];
 }
 

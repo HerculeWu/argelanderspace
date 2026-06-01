@@ -14,6 +14,12 @@ from pathlib import Path
 
 from .config import MineruConfig, PipelineConfig
 from .pipeline import ingest_pdf
+from .ingest_html.fetch import looks_like_doi
+
+
+def _is_html_source(arg: str) -> bool:
+    """A positional that is a DOI or http(s) URL routes to the HTML pipeline."""
+    return looks_like_doi(arg) or arg.startswith(("http://", "https://"))
 
 
 def _build_config(args) -> PipelineConfig:
@@ -34,10 +40,24 @@ def _build_config(args) -> PipelineConfig:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="bibgraph",
-                                description="Ingest a PDF into structured JSON.")
-    p.add_argument("pdf", help="path to the input PDF")
+    p = argparse.ArgumentParser(
+        prog="bibgraph",
+        description="Ingest a paper into structured JSON. The positional may be "
+                    "a PDF path, or a DOI / publisher URL (HTML pipeline).")
+    p.add_argument("pdf", metavar="input",
+                   help="PDF path, or a DOI / publisher URL (e.g. A&A)")
     p.add_argument("-o", "--output", help="output JSON path")
+    # HTML pipeline options
+    p.add_argument("--out-root", default="data/output",
+                   help="HTML: output root; doc lands in <root>/<doc_id>/ (default data/output)")
+    p.add_argument("--inline-math", choices=["conservative", "plain"],
+                   default="conservative", help="HTML: inline-math rendering")
+    p.add_argument("--no-assets", action="store_true",
+                   help="HTML: do not download figure images locally")
+    p.add_argument("--no-subpages", action="store_true",
+                   help="HTML: do not fetch table sub-pages (caption-only tables)")
+    p.add_argument("--no-cache", action="store_true",
+                   help="HTML: ignore the on-disk page cache (re-fetch)")
     p.add_argument("--out-dir", help="working/cache dir (default: <pdf_dir>/<stem>)")
     p.add_argument("--model", default="vlm", help="MinerU model_version (default vlm)")
     p.add_argument("--lang", default="en", help="document language (default en)")
@@ -61,6 +81,24 @@ def main(argv: list[str] | None = None) -> int:
         datefmt="%H:%M:%S")
 
     config = _build_config(args)
+
+    if _is_html_source(args.pdf):
+        from .config import HtmlConfig
+        from .pipeline_html import ingest_html
+        config.html = HtmlConfig(
+            inline_math=args.inline_math,
+            download_assets=not args.no_assets,
+            fetch_subpages=not args.no_subpages,
+            use_cache=not args.no_cache,
+        )
+        try:
+            doc = ingest_html(args.pdf, out_root=args.out_root, config=config,
+                              write_json=True)
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        return _summarize(doc, config, args)
+
     out_dir = Path(args.out_dir) if args.out_dir else None
     try:
         doc = ingest_pdf(args.pdf, out_dir=out_dir, config=config,
@@ -68,6 +106,10 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    return _summarize(doc, config, args)
+
+
+def _summarize(doc, config, args) -> int:
 
     if args.output:
         import json

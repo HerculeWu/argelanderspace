@@ -14,6 +14,11 @@ web/dist/
 # Tooling / indexes
 .codegraph/
 
+# Generated ingestion outputs (regenerable; large binaries / fetch cache).
+# The PDF sample under data/output/2603.03522 was committed earlier and stays
+# tracked; this only ignores newly-generated artifacts (HTML docs, .htmlcache).
+data/output/
+
 # OS / editor
 .DS_Store
 *.swp
