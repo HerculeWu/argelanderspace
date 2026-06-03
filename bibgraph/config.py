@@ -68,9 +68,39 @@ class HtmlConfig:
 
 
 @dataclass
+class LatexConfig:
+    """Options for ingesting an arXiv LaTeX source package (Phase 5).
+
+    arXiv gives us the author's own LaTeX, which is the most faithful source
+    there is: the maths is already LaTeX (no MathML/OCR round-trip) and — most
+    valuable — every citation is a ``\\cite`` key and every cross-reference a
+    ``\\ref``/``\\label`` pair, so resolution is *authoritative*. We let
+    ``pandoc`` parse the LaTeX into its document AST, then walk that AST into the
+    same :class:`~bibgraph.schema.Document` the PDF/HTML pipelines emit.
+    """
+
+    user_agent: str = (
+        "bibgraph/0.1 (https://arxiv.org; mailto:wuwenjiegogo@gmail.com)"
+    )
+    request_timeout: float = 60.0
+    # Cache the downloaded e-print tarball + extracted tree so re-runs are offline.
+    use_cache: bool = True
+    # Rasterise vector figures (PDF/EPS) to PNG for the web reader; served via
+    # /images like the PDF/HTML pipelines. When False, figures are caption-only.
+    download_assets: bool = True
+    # Raster DPI for vector-figure -> PNG conversion (PyMuPDF / Ghostscript).
+    figure_dpi: int = 200
+    # Hard cap on a rasterised figure's longest side (px) to keep payloads sane.
+    figure_max_px: int = 2200
+    # Polite delay (s) between arXiv requests.
+    request_delay: float = 1.0
+
+
+@dataclass
 class PipelineConfig:
     mineru: MineruConfig = field(default_factory=MineruConfig)
     html: HtmlConfig = field(default_factory=HtmlConfig)
+    latex: LatexConfig = field(default_factory=LatexConfig)
     # When True, harvest PDF link annotations with PyMuPDF and use them to
     # authoritatively resolve citations / cross-references (hybrid mode).
     use_pdf_links: bool = True

@@ -643,6 +643,203 @@ def _first_block(doc, btype: str):
     return None
 
 
+# --------------------------------------------------------------------------- #
+# LaTeX pipeline (Phase 5)
+# --------------------------------------------------------------------------- #
+
+import shutil as _shutil                                            # noqa: E402
+HAVE_PANDOC = _shutil.which("pandoc") is not None
+_LATEX_DOC = None
+
+
+def _build_latex():
+    """Ingest the self-contained LaTeX fixture (no network, no assets)."""
+    global _LATEX_DOC
+    if _LATEX_DOC is not None:
+        return _LATEX_DOC
+    import tempfile
+    from bibgraph.config import LatexConfig, PipelineConfig
+    from bibgraph.pipeline_latex import ingest_latex
+    cfg = PipelineConfig()
+    cfg.latex = LatexConfig(download_assets=False, use_cache=False, request_delay=0)
+    tmp = Path(tempfile.mkdtemp(prefix="bibgraph-latex-test-"))
+    _LATEX_DOC = ingest_latex(str(FIX / "sample_latex.tex"), out_root=tmp,
+                              config=cfg, write_json=False)
+    return _LATEX_DOC
+
+
+def test_latex_arxiv_detection() -> None:
+    from bibgraph.ingest_latex import arxiv_id, looks_like_arxiv
+    check(looks_like_arxiv("2501.17225"), "bare id not detected")
+    check(looks_like_arxiv("arXiv:2603.03522v2"), "arXiv: prefix not detected")
+    check(looks_like_arxiv("https://arxiv.org/abs/1234.5678"), "abs URL not detected")
+    check(looks_like_arxiv("astro-ph/0701001"), "old-style id not detected")
+    check(not looks_like_arxiv("paper.pdf"), "a .pdf path wrongly detected as arXiv")
+    check(not looks_like_arxiv("10.1051/0004-6361/123"), "a DOI wrongly detected")
+    check(arxiv_id("https://arxiv.org/pdf/2501.17225v2.pdf") == "2501.17225v2",
+          "version-suffixed pdf URL id extraction")
+
+
+def test_latex_structure_and_title() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    check(doc.source["type"] == "latex", f"source type {doc.source.get('type')}")
+    check("Sample LaTeX Paper" in (doc.meta["title"] or ""), f"title: {doc.meta['title']}")
+    heads = [s.heading for s in doc.iter_sections()]
+    check("Abstract" in heads, f"no Abstract section: {heads}")
+    check("Introduction" in heads and "Methods" in heads, f"sections: {heads}")
+    nums = {s.heading: s.number for s in doc.iter_sections()}
+    check(nums.get("Introduction") == "1" and nums.get("Methods") == "2",
+          f"section numbering wrong: {nums}")
+    check(nums.get("Abstract") is None, "abstract should be unnumbered")
+
+
+def test_latex_authoritative_citation() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    p = _find_paragraph(doc, "magnitude")
+    check(p is not None, "intro paragraph not found")
+    check("[[cite:ref-1]]" in p.text, f"\\citet token missing: {p.text!r}")
+    occ = p.citations[0]
+    check(occ.via == "hyperlink" and occ.resolved, f"cite not authoritative: {occ.via}")
+    check("Smith" in occ.raw and "(2020)" in occ.raw,
+          f"narrative cite raw not reconstructed: {occ.raw!r}")
+
+
+def test_latex_citation_multi_key() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    both = [c for b in doc.iter_blocks() for c in getattr(b, "citations", [])
+            if set(c.ref_ids) == {"ref-1", "ref-2"}]
+    check(bool(both), "\\citep{KeyA, KeyB} not merged into one token with both refs")
+
+
+def test_latex_crossref_resolution() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    alltext = " ".join(b.text for b in doc.iter_blocks() if b.type == "paragraph")
+    for tok in ("[[xref:eq-1]]", "[[xref:fig-1]]", "[[xref:tab-1]]"):
+        check(tok in alltext, f"{tok} not resolved in body: {alltext[:120]!r}")
+    kinds = {(x.kind, x.resolved) for b in doc.iter_blocks()
+             for x in getattr(b, "crossrefs", [])}
+    check(("section", True) in kinds, f"section xref not resolved: {kinds}")
+    check(("equation", True) in kinds, f"equation xref not resolved: {kinds}")
+
+
+def test_latex_equation_numbering_and_cleanup() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    eqs = {b.id: b for b in doc.iter_blocks() if b.type == "equation"}
+    check(len(eqs) == 4, f"expected 4 equations, got {len(eqs)}")
+    check(eqs["eq-1"].number == "1", f"first numbered eq has no number: {eqs['eq-1'].number}")
+    check(eqs["eq-2"].number is None, "equation* must be unnumbered")
+    check(eqs["eq-4"].number is None, "\\[ \\] must be unnumbered")
+    check("\\begin{equation}" not in eqs["eq-1"].latex
+          and "\\label" not in eqs["eq-1"].latex,
+          f"equation wrapper/label not stripped: {eqs['eq-1'].latex!r}")
+    check("\\begin{aligned}" in eqs["eq-3"].latex,
+          f"multi-row align not rewrapped as aligned: {eqs['eq-3'].latex!r}")
+
+
+def test_latex_katex_cleanup() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    p = _find_paragraph(doc, "magnitude")
+    txt = p.text
+    check("\\textsubscript" not in txt, f"\\textsubscript leaked: {txt!r}")
+    check("_{c}" in txt, f"text subscript not converted to _{{c}}: {txt!r}")
+    check("M_\\odot" in txt, f"user macro \\msun not expanded: {txt!r}")
+    check("\\arcsec" not in txt, f"\\arcsec astro-macro not mapped: {txt!r}")
+    check("\\ $" not in txt and "\\$" not in txt and "\\ pc" not in txt,
+          f"control-space left a dangling backslash: {txt!r}")
+
+
+def test_latex_references_bbl() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    check(len(doc.references) == 2, f"expected 2 refs, got {len(doc.references)}")
+    r1 = doc.references[0]
+    check(r1.year == 2020, f"ref-1 year {r1.year}")
+    check(r1.doi == "10.1051/0004-6361/200000001", f"ref-1 doi {r1.doi}")
+    check(r1.authors and "Smith" in r1.authors[0], f"ref-1 authors {r1.authors}")
+    check("MNRAS" in r1.raw, f"\\mnras journal macro not expanded: {r1.raw!r}")
+
+
+def test_latex_footnote_dropped_link_kept() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _build_latex()
+    alltext = " ".join(b.text for b in doc.iter_blocks() if b.type == "paragraph")
+    check("must be dropped" not in alltext, "footnote text not dropped")
+    check("example.org" in alltext, "external \\url visible text was dropped")
+
+
+def test_latex_abstract_command() -> None:
+    from bibgraph.ingest_latex.walk import _extract_command_abstract
+    raw = "\\abstract  % header comment\n  {Ctx text}\n  {Aims text}{Meth}{Res}{Concl}\n"
+    groups = _extract_command_abstract(raw)
+    check(len(groups) == 5, f"expected 5 A&A abstract groups, got {len(groups)}: {groups}")
+    check("Ctx text" in groups[0] and "Aims text" in groups[1],
+          f"abstract groups misparsed: {groups[:2]}")
+
+
+def _ingest_latex_str(tex: str):
+    import tempfile
+    from bibgraph.config import LatexConfig, PipelineConfig
+    from bibgraph.pipeline_latex import ingest_latex
+    tmp = Path(tempfile.mkdtemp(prefix="bibgraph-latex-syn-"))
+    (tmp / "main.tex").write_text(tex, "utf-8")
+    cfg = PipelineConfig()
+    cfg.latex = LatexConfig(download_assets=False, use_cache=False, request_delay=0)
+    return ingest_latex(str(tmp / "main.tex"), out_root=tmp / "out",
+                        config=cfg, write_json=False)
+
+
+def test_latex_title_math_and_literal_dollar() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _ingest_latex_str(
+        "\\documentclass{article}\\usepackage{amsmath}\n"
+        "\\title{The $z>6$ Universe}\n\\begin{document}\\maketitle\n"
+        "\\section{S}\\label{sec:s}\nA gadget costs \\$5 today.\n\\end{document}\n")
+    check("$z>6$" in (doc.meta["title"] or ""),
+          f"title inline-math was dropped: {doc.meta['title']!r}")
+    txt = " ".join(b.text for b in doc.iter_blocks() if b.type == "paragraph")
+    check("\\char36" in txt, f"literal '$' not neutralised for the scanner: {txt!r}")
+
+
+def test_latex_perrow_equation_numbering() -> None:
+    if not HAVE_PANDOC:
+        return
+    doc = _ingest_latex_str(
+        "\\documentclass{article}\\usepackage{amsmath}\n\\begin{document}\n"
+        "\\section{S}\\label{sec:s}\nSee \\eqref{eq:second} and \\eqref{eq:after}.\n"
+        "\\begin{align} a&=b\\label{eq:first}\\\\ c&=d\\label{eq:second}\\\\ "
+        "e&=f\\label{eq:third}\\end{align}\n"
+        "\\begin{equation}\\label{eq:after} g=h\\end{equation}\n\\end{document}\n")
+    xr = {x["raw"] for x in doc.to_dict()["crossrefs"] if x["kind"] == "equation"}
+    check("(2)" in xr, f"\\eqref to align row 2 should render (2): {xr}")
+    check("(4)" in xr, f"equation after a 3-row align should be (4), no drift: {xr}")
+
+
+def test_latex_no_internal_attrs_in_json() -> None:
+    if not HAVE_PANDOC:
+        return
+    import json as _json
+    doc = _build_latex()
+    s = _json.dumps(doc.to_dict(True), ensure_ascii=False)
+    check("_inl" not in s and "_anchor_matches" not in s,
+          "internal walker attributes leaked into JSON")
+    check(bool(doc.references) and bool(doc.structure), "document is empty")
+
+
 def main() -> int:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for t in tests:

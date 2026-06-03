@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { Section } from "../types";
 import { useStore } from "../store";
 import { BlockView } from "./Block";
+import { RichText } from "../lib/richtext";
 
 export function Reader() {
   const store = useStore();
@@ -38,12 +39,12 @@ function SectionView({
     <section>
       {first ? (
         <h1 className="doc-title block" id={sec.id} data-block-id={sec.id}>
-          {sec.heading}
+          <RichText as="span" text={sec.heading} />
         </h1>
       ) : (
         <Heading className="sec block" id={sec.id} data-block-id={sec.id}>
           {num && <span className="sec-num">{num}</span>}
-          {sec.heading}
+          <RichText as="span" text={sec.heading} />
         </Heading>
       )}
       {(sec.blocks ?? []).map((b) => (

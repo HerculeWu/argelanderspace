@@ -242,9 +242,11 @@ function buildLookups(doc: Doc) {
   const walk = (secs: Section[] | undefined) => {
     if (!secs) return;
     for (const sec of secs) {
-      // the heading itself is a jump target + ordering anchor
+      // the heading itself is a jump target + ordering anchor; registering it in
+      // blockById lets section cross-refs (\ref{sec:..}, "Sect. 3") resolve too.
       blockOrder.set(sec.id, order++);
       sectionOfBlock.set(sec.id, sec.id);
+      blockById.set(sec.id, sec as unknown as Block);
       for (const b of sec.blocks ?? []) {
         blockById.set(b.id, b);
         blockOrder.set(b.id, order++);

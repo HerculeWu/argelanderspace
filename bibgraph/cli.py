@@ -15,6 +15,12 @@ from pathlib import Path
 from .config import MineruConfig, PipelineConfig
 from .pipeline import ingest_pdf
 from .ingest_html.fetch import looks_like_doi
+from .ingest_latex.fetch import looks_like_arxiv
+
+
+def _is_arxiv_source(arg: str) -> bool:
+    """A positional that is an arXiv id / arxiv.org URL routes to the LaTeX path."""
+    return looks_like_arxiv(arg)
 
 
 def _is_html_source(arg: str) -> bool:
@@ -45,8 +51,12 @@ def main(argv: list[str] | None = None) -> int:
         description="Ingest a paper into structured JSON. The positional may be "
                     "a PDF path, or a DOI / publisher URL (HTML pipeline).")
     p.add_argument("pdf", metavar="input",
-                   help="PDF path, or a DOI / publisher URL (e.g. A&A)")
+                   help="PDF path, a DOI / publisher URL (HTML), or an arXiv "
+                        "id / URL / .tex source (LaTeX)")
     p.add_argument("-o", "--output", help="output JSON path")
+    # LaTeX pipeline options
+    p.add_argument("--figure-dpi", type=int, default=200,
+                   help="LaTeX: DPI for rasterising vector figures (default 200)")
     # HTML pipeline options
     p.add_argument("--out-root", default="data/output",
                    help="HTML: output root; doc lands in <root>/<doc_id>/ (default data/output)")
@@ -81,6 +91,22 @@ def main(argv: list[str] | None = None) -> int:
         datefmt="%H:%M:%S")
 
     config = _build_config(args)
+
+    if _is_arxiv_source(args.pdf):
+        from .config import LatexConfig
+        from .pipeline_latex import ingest_latex
+        config.latex = LatexConfig(
+            download_assets=not args.no_assets,
+            use_cache=not args.no_cache,
+            figure_dpi=args.figure_dpi,
+        )
+        try:
+            doc = ingest_latex(args.pdf, out_root=args.out_root, config=config,
+                               write_json=True)
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        return _summarize(doc, config, args)
 
     if _is_html_source(args.pdf):
         from .config import HtmlConfig

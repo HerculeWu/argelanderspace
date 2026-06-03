@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Block, IndexFloat } from "../types";
 import { useStore, useActiveSectionId } from "../store";
 import { captionText } from "./Block";
+import { RichText } from "../lib/richtext";
 
 export function TocPanel() {
   const store = useStore();
@@ -41,7 +42,7 @@ export function TocPanel() {
               title={s.heading}
             >
               {s.number && <span className="num">{s.number}</span>}
-              {s.heading}
+              <RichText as="span" text={s.heading} />
             </button>
           ))}
       </nav>
