@@ -11,6 +11,7 @@ import type {
 import { useStore } from "../store";
 import { RichText } from "../lib/richtext";
 import { Math, htmlWithMath } from "../lib/math";
+import { FigureImage } from "./FigureImage";
 
 export function captionText(cap: Caption | undefined): string {
   if (!cap) return "";
@@ -69,7 +70,7 @@ function FigureView({ b }: { b: Figure }) {
   const cap = captionText(b.caption);
   return (
     <figure className="block fig" id={b.id} data-block-id={b.id}>
-      {src && <img src={src} alt={b.label || "figure"} loading="lazy" />}
+      {src && <FigureImage src={src} alt={b.label || "figure"} controls />}
       {cap && (
         <figcaption className="fig-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}
@@ -105,7 +106,9 @@ function TableView({ b }: { b: TableBlock }) {
           dangerouslySetInnerHTML={{ __html: htmlWithMath(b.table_body) }}
         />
       ) : (
-        store.imageUrl(b.img_path) && <img src={store.imageUrl(b.img_path)!} alt="table" />
+        store.imageUrl(b.img_path) && (
+          <FigureImage src={store.imageUrl(b.img_path)!} alt="table" />
+        )
       )}
     </div>
   );

@@ -10,6 +10,7 @@ import { useStore } from "../store";
 import { RichText } from "../lib/richtext";
 import { Math, htmlWithMath, flattenLatex } from "../lib/math";
 import { captionText } from "./Block";
+import { FigureImage } from "./FigureImage";
 import { limitTable, parseTable, type ParsedTable } from "../lib/tableparse";
 
 export type CardKind = "figure" | "table" | "equation" | "code" | "citation";
@@ -95,7 +96,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
     case "figure": {
       const f = card.block as Figure;
       const src = store.imageUrl(f.img_path);
-      return src ? <img src={src} alt={f.label || "figure"} /> : <em>(no image)</em>;
+      return src ? <FigureImage src={src} alt={f.label || "figure"} /> : <em>(no image)</em>;
     }
     case "equation": {
       const e = card.block as Equation;
