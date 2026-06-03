@@ -1,4 +1,8 @@
-:root {
+/* The document reader is hosted as HubbleSpace's 文档 pane: its design tokens
+   and layout root are scoped under .reader-root so the shell (hubble.css) owns
+   global theming. The reader keeps its light "paper" look, consistent with the
+   design's own doc-page on dark chrome. */
+.reader-root {
   --left-w: 290px;
   --right-w: 380px;
   --rail-w: 34px;
@@ -16,18 +20,15 @@
   --flash: #fff3bf;
   --font-body: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
 
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   font-family: var(--font-ui);
   color: var(--ink);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
-
-.app { display: flex; flex-direction: column; height: 100vh; }
 
 /* ---------- top bar ---------- */
 .topbar {
@@ -63,7 +64,7 @@ body {
 }
 
 /* ---------- main 3-column layout ---------- */
-.main { flex: 1 1 auto; display: flex; min-height: 0; overflow: hidden; }
+.reader-main { flex: 1 1 auto; display: flex; min-height: 0; overflow: hidden; }
 
 .panel {
   position: relative;

@@ -1,4 +1,4 @@
-# bibgraph — literature ingestion (PDF + publisher HTML)
+# bibgraph — literature ingestion (PDF + publisher HTML + arXiv LaTeX)
 
 Turns a research-paper **PDF** into a structured JSON document for a literature
 reading app: section structure, floats (figures / tables / equations / code /
@@ -6,8 +6,47 @@ pseudocode), a structured reference list, and inline-tokenized in-text
 **citations** and **cross-references**.
 
 Phase 1 targets the *PDF-only* case (including scanned/old papers). Phase 4
-(**publisher HTML**) is now started — see *HTML pipeline* below. LaTeX-source and
-EPUB ingestion are still future phases.
+(**publisher HTML**) and Phase 5 (**arXiv LaTeX source**) are now in — see the
+*HTML pipeline* and *LaTeX pipeline* sections below. EPUB ingestion is a future
+phase. All three pipelines emit the *same* `Document` JSON, so the reader UI and
+downstream tooling are shared.
+
+## HubbleSpace workspace (reader + literature manager)
+
+The `web/` app is a **HubbleSpace** workspace shell (activity bar + split panes +
+⌘K palette + theme/accent/density tweaks). Two panes are built:
+
+* **文档 / Doc** — the document reader for the ingested `Document` JSON (TOC,
+  serif "paper" body, KaTeX math, clickable citation/cross-ref chips, references
+  rail). It's a pane, so you can open the **graph and the paper side-by-side**.
+* **文献 / Library** — a citation-map-first reference manager (à la
+  Connected Papers / Zotero): a side list with right-click color labels and
+  read/unread state, a **force-directed citation graph** (node size ∝ citations,
+  hue ∝ year, saved = filled / suggested = hollow, depth + count sliders), a
+  detail panel (详情 / 摘要 / BibTeX / 笔记 / 附件), and an add-to-library flow.
+
+The library backend (`bibgraph/library/`) is a small set of files under
+`data/library/` (`library.json` source-of-truth + `library.bib`). It **seeds
+works from the papers you've already ingested** (the PDF / LaTeX / HTML
+renderings of one paper collapse into a single work), matches their parsed
+bibliographies for offline citation edges, and **enriches** via **OpenAlex**
+(citation counts, references, recommendations — free, no key) and **NASA ADS**
+(authoritative astro metrics — set a token in `~/.ads/dev_key` or `$ADS_DEV_KEY`;
+optional, degrades gracefully).
+
+```
+# 1. build the library from ingested papers + OpenAlex/ADS
+python -m bibgraph.library            # full (network);  --offline = cache only
+
+# 2. backend (serves /api/paper, /images, and /api/library*)
+python -m uvicorn server.app:app --port 8000
+
+# 3. frontend dev server (proxies /api → :8000)
+cd web && npm install && npm run dev   # → http://localhost:5173
+```
+
+The Library reads `/api/library`; until it's built (or the backend is down) the
+UI falls back to a bundled demo fixture and shows a "演示数据" badge.
 
 ## HTML pipeline (Phase 4)
 
@@ -50,6 +89,48 @@ Output lands in `<root>/<doc_id>/<doc_id>.json` with figure images in
 `<doc_id>/assets/` (served by the reader's `/images/<doc_id>/<file>` route). The
 HTML deps are `requests` + `beautifulsoup4` (both in the `astro` env) and
 `pandoc` (system, for MathML→LaTeX).
+
+## LaTeX pipeline (Phase 5)
+
+arXiv ships the author's own LaTeX — the most faithful source of all: the maths
+is already LaTeX (no MathML/OCR round-trip), and every citation is a `\cite` key
+and every cross-reference a `\ref`/`\label` pair, so resolution is **authoritative**.
+`pandoc` parses the LaTeX into its document AST (expanding preamble macros,
+following `\input`); we walk that AST into the *same* `Document` JSON.
+
+```
+ arXiv id / URL / local .tex
+  ├─ fetch          → e-print tarball, unpacked (cached under <root>/.latexcache)
+  ├─ pandoc         → LaTeX document AST (-f latex -t json)
+  ├─ references     → .bbl / thebibliography \bibitem[..]{key}, or .bib via csljson
+  │                   (pruned to cited keys); builds a key → ref-id map
+  ├─ walk           → section tree + floats + equations
+  │                   • citations  = \cite key  → authoritative ref-id
+  │                   • cross-refs = \ref/\label → float/section, numbered by us
+  │                   • equations  = DisplayMath → KaTeX-clean LaTeX (env/label
+  │                                  stripped, multi-row → aligned, astro macros)
+  │                   • figures     = \includegraphics rasterised (PDF/EPS → PNG)
+  ├─ annotate       → splice [[cite:..]] / [[xref:..]]; regex only for *unlinked* mentions
+  └─ → Document (source.type="latex") → <root>/<doc_id>/<doc_id>.json
+```
+
+```bash
+PY=/home/wwu/miniforge3/envs/astro/bin/python
+$PY -m bibgraph 2501.17225                 # an arXiv id (downloads the source)
+$PY -m bibgraph arXiv:2603.03522v2
+$PY -m bibgraph https://arxiv.org/abs/2501.17225
+$PY -m bibgraph path/to/source/main.tex    # a local .tex / dir / .tar.gz
+# options: --figure-dpi N   --no-assets   --no-cache   --out-root DIR
+```
+
+The doc id is namespaced `arxiv-<id>` so a LaTeX ingest coexists with the same
+paper's PDF / HTML doc in the reader's paper-switcher (handy for cross-checking).
+Figures (usually vector PDF) are rasterised to PNG via **PyMuPDF** (EPS via
+**Ghostscript**) and served from `assets/`. Deps: `requests` + `PyMuPDF` (in the
+`astro` env) and `pandoc` (system). **Known gaps:** AASTeX `deluxetable` tables
+and the deprecated `\figcaption` are not captured (pandoc doesn't model them);
+some custom document classes (e.g. a few Gaia-collaboration `.cls` files) fail to
+parse and report a clear error.
 
 ## How it works
 

@@ -19,6 +19,9 @@ web/dist/
 # tracked; this only ignores newly-generated artifacts (HTML docs, .htmlcache).
 data/output/
 
+# Library: local literature store + API enrichment cache (user data / regenerable)
+data/library/
+
 # OS / editor
 .DS_Store
 *.swp

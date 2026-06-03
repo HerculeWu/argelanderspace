@@ -20,7 +20,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -74,6 +74,70 @@ def get_paper(doc_id: str) -> dict:
     p = _paper_path(doc_id)
     st = p.stat()
     return _load_paper(doc_id, (st.st_mtime_ns, st.st_size))
+
+
+# --------------------------------------------------------------------------- #
+# Library (HubbleSpace 文献 manager)
+# --------------------------------------------------------------------------- #
+
+_ALLOWED_ORIGINS = {
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:8000", "http://127.0.0.1:8000",
+}
+
+
+def _guard_csrf(request: Request) -> None:
+    """Reject cross-site mutations. Browsers always send Origin on POST/PATCH;
+    a malicious page's request carries its own origin and is rejected. Same-origin
+    requests and local tools (no Origin header) pass."""
+    origin = request.headers.get("origin")
+    if origin and origin not in _ALLOWED_ORIGINS:
+        raise HTTPException(403, "cross-site request rejected")
+
+
+@app.get("/api/library")
+def get_library() -> dict:
+    from bibgraph.library import library_payload
+
+    return library_payload()
+
+
+@app.post("/api/library/refs")
+def add_library_ref(body: dict, request: Request) -> dict:
+    _guard_csrf(request)
+    from bibgraph.library.build import add_node_to_library
+
+    node_id = (body or {}).get("nodeId")
+    if not node_id:
+        raise HTTPException(400, "nodeId required")
+    ref = add_node_to_library(node_id)
+    if ref is None:
+        raise HTTPException(404, f"graph node {node_id!r} not found")
+    return {"ref": ref}
+
+
+@app.patch("/api/library/refs")
+def patch_library_ref(body: dict, request: Request) -> dict:
+    # work ids contain slashes/colons (e.g. "doi:10.1051/..."), so the id rides
+    # in the body rather than the path.
+    _guard_csrf(request)
+    from bibgraph.library.build import patch_work
+
+    work_id = (body or {}).get("id")
+    if not work_id:
+        raise HTTPException(400, "id required")
+    patch = {k: v for k, v in (body or {}).items() if k != "id"}
+    if not patch_work(work_id, patch):
+        raise HTTPException(404, f"work {work_id!r} not found")
+    return {"ok": True}
+
+
+@app.post("/api/library/refresh")
+def refresh_library(request: Request, offline: bool = False) -> dict:
+    _guard_csrf(request)
+    from bibgraph.library import rebuild
+
+    return rebuild(enrich_remote=not offline)
 
 
 @app.get("/images/{doc_id}/{filename}")
