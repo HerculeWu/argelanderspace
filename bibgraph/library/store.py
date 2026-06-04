@@ -51,6 +51,22 @@ def norm_arxiv(arxiv: str | None) -> str | None:
     return a or None
 
 
+_ARXIV_DOI_RE = re.compile(r"^10\.48550/arxiv\.(.+)$", re.I)
+
+
+def arxiv_from_doi(doi: str | None) -> str | None:
+    """The arXiv id behind a DataCite arXiv DOI (``10.48550/arXiv.2603.03522``).
+
+    OpenAlex returns this DOI for an arXiv-only record; it is *not* a journal DOI
+    and must never drive publisher classification or work identity.
+    """
+    d = norm_doi(doi)
+    if not d:
+        return None
+    m = _ARXIV_DOI_RE.match(d)
+    return norm_arxiv(m.group(1)) if m else None
+
+
 def norm_title(title: str | None) -> str:
     if not title:
         return ""
@@ -116,8 +132,13 @@ class Work:
     read: bool = False
     note: str | None = None
     star: bool = False
-    origin: str = "ingested"  # ingested | manual | graph-node
+    origin: str = "ingested"  # ingested | manual | graph-node | bib
     added_at: str | None = None
+    journal: str | None = None  # short label, e.g. "A&A" (publisher-classified)
+    # acquisition: where to read the full text (planner output, see acquire/)
+    acquisition: dict | None = None
+    # resolution: which source answered for citation metadata (ads|crossref|openalex)
+    resolution: dict | None = None
 
     def identity_keys(self) -> set[str]:
         """All keys by which this work may be matched to another (for dedup)."""
@@ -230,7 +251,7 @@ class LibraryStore:
 def _merge_into(dst: Work, src: Work) -> None:
     """Fold *src* into *dst*, filling blanks and unioning lists (dst wins on scalars)."""
     for f in ("title", "venue", "doi", "arxiv_id", "bibcode", "openalex_id",
-              "abstract", "cite_key"):
+              "abstract", "cite_key", "journal", "acquisition", "resolution"):
         if not getattr(dst, f) and getattr(src, f):
             setattr(dst, f, getattr(src, f))
     for f in ("year", "cited_by_count"):  # numeric: 0 is a real value, not "blank"

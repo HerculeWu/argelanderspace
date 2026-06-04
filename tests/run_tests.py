@@ -27,6 +27,11 @@ from bibgraph.ingest.crossrefs import (XrefIndex, detect_crossrefs,  # noqa: E40
                                        enrich_crossrefs_with_links)
 from bibgraph.ingest.references import parse_references            # noqa: E402
 from bibgraph.ingest.structure import build_structure             # noqa: E402
+from bibgraph.acquire.bibtex import parse_bibtex_text             # noqa: E402
+from bibgraph.acquire.planner import classify, plan_sources       # noqa: E402
+from bibgraph.acquire.resolve import resolve_work                 # noqa: E402
+from bibgraph.library.sources.crossref import Crossref            # noqa: E402
+from bibgraph.library.store import Work                           # noqa: E402
 
 FIX = ROOT / "tests" / "fixtures"
 
@@ -838,6 +843,206 @@ def test_latex_no_internal_attrs_in_json() -> None:
     check("_inl" not in s and "_anchor_matches" not in s,
           "internal walker attributes leaked into JSON")
     check(bool(doc.references) and bool(doc.structure), "document is empty")
+
+
+# --------------------------------------------------------------------------- #
+# Acquisition layer: bibtex parser, source planner, resolution chain
+# --------------------------------------------------------------------------- #
+
+_SAMPLE_BIB = r"""
+@article{HR1,
+  author  = {Hunt, E.~L. and Reffert, S.},
+  title   = {Improving the open cluster census. I.},
+  journal = {Astronomy \& Astrophysics},
+  year    = {2021},
+  doi     = {10.1051/0004-6361/202039341}
+}
+@article{Kroupa2001,
+  author  = {Kroupa, P.},
+  title   = {On the variation of the initial mass function},
+  journal = {Monthly Notices of the Royal Astronomical Society},
+  year    = {2001},
+  doi     = {10.1046/j.1365-8711.2001.04022.x}
+}
+@article{Huisjes2025,
+  author  = {Huisjes, M. and Hern{\'a}ndez, X.},
+  title   = {On the dynamics of low-mass open clusters},
+  journal = {arXiv e-prints},
+  year    = {2025},
+  eprint  = {2603.03522},
+  archivePrefix = {arXiv}
+}
+@article{GaiaDR3,
+  author  = {{Gaia Collaboration} and Vallenari, A. and others},
+  title   = {Gaia Data Release 3},
+  journal = {Astronomy \& Astrophysics},
+  year    = {2023},
+  doi     = {10.1051/0004-6361/202243940},
+  eprint  = {2208.00211},
+  archivePrefix = {arXiv}
+}
+@article{Milgrom1983,
+  author  = {Milgrom, M.},
+  title   = {A modification of the Newtonian dynamics},
+  journal = {Astrophysical Journal},
+  year    = {1983},
+  doi     = {10.1086/161130}
+}
+@article{Perryman1998,
+  author  = {Perryman, M.~A.~C. and Brown, A.~G.~A. and others},
+  title   = {The Hyades: distance, structure, dynamics, and age},
+  journal = {Astronomy \& Astrophysics},
+  year    = {1998}
+}
+"""
+
+
+def test_acq_bibtex_parse() -> None:
+    recs = {r.key: r for r in parse_bibtex_text(_SAMPLE_BIB)}
+    check(len(recs) == 6, f"parsed 6 entries, got {len(recs)}")
+    hr1 = recs["HR1"]
+    check(hr1.authors == ["Hunt", "Reffert"], f"HR1 authors {hr1.authors}")
+    check(hr1.doi == "10.1051/0004-6361/202039341", f"HR1 doi {hr1.doi}")
+    check(bool(hr1.journal) and "Astronomy" in hr1.journal, "HR1 journal kept")
+    hu = recs["Huisjes2025"]
+    check(hu.arxiv_id == "2603.03522", f"Huisjes arxiv {hu.arxiv_id}")
+    check(hu.journal is None, "arXiv e-prints journal flattened to None")
+    check("á" in hu.authors[1], f"latex accent decoded: {hu.authors}")
+    g = recs["GaiaDR3"]
+    check(g.authors[0] == "Gaia Collaboration", f"group author kept whole: {g.authors[0]}")
+    check(g.arxiv_id == "2208.00211" and g.doi.endswith("202243940"), "GaiaDR3 ids")
+    check("others" not in recs["Perryman1998"].authors, "'others' dropped from authors")
+
+
+def test_acq_planner_aanda_ready() -> None:
+    p = plan_sources(doi="10.1051/0004-6361/202039341", title="x", year=2021, journal="A&A")
+    check(p.chosen.tier == "journal_html", f"A&A chosen {p.chosen.tier}")
+    check(p.chosen.status == "ready", f"A&A html ready, got {p.chosen.status}")
+    check(p.publisher == "EDP Sciences", f"publisher {p.publisher}")
+
+
+def test_acq_planner_mnras_ready_via_oup() -> None:
+    # MNRAS (incl. legacy Wiley DOIs) is served by the OUP adapter now.
+    p = plan_sources(doi="10.1046/j.1365-8711.2001.04022.x", title="imf", year=2001, journal="MNRAS")
+    check(p.chosen.tier == "journal_html", f"MNRAS chosen {p.chosen.tier}")
+    check(p.chosen.status == "ready", f"MNRAS ready via oup, got {p.chosen.status}")
+    check("adapter=oup" in (p.chosen.note or ""), f"oup adapter noted: {p.chosen.note}")
+    tiers = [c.tier for c in p.candidates]
+    check("journal_pdf" in tiers, f"tiers {tiers}")
+    check("ads_scan" not in tiers, f"modern MNRAS has no ADS-scan tier: {tiers}")
+
+
+def test_acq_planner_iop_blocked_routes_to_arxiv() -> None:
+    p = plan_sources(doi="10.3847/1538-4357/836/2/152", arxiv_id="1610.08981",
+                     title="rar", year=2017)
+    check(p.chosen.tier == "arxiv_latex", f"IOP blocked → arXiv chosen, got {p.chosen.tier}")
+    html = next(c for c in p.candidates if c.tier == "journal_html")
+    check(html.status == "blocked", f"IOP html blocked, got {html.status}")
+
+
+def test_acq_planner_aps_blocked_no_arxiv_needs_upload() -> None:
+    p = plan_sources(doi="10.1103/PhysRevLett.117.201101", title="rar", year=2016)
+    d = p.to_dict()
+    check(d["status"] == "blocked", f"APS no-arxiv → blocked head, got {d['status']}")
+    check(d["needs_upload"] is True, f"needs_upload set, got {d}")
+    check(d["chosen"] == "journal_html", f"blocked tier surfaced as chosen, got {d['chosen']}")
+
+
+def test_acq_planner_arxiv_only() -> None:
+    p = plan_sources(arxiv_id="2603.03522", title="x", year=2025)
+    check(p.chosen.tier == "arxiv_latex" and p.chosen.status == "ready",
+          f"arxiv-only chosen {p.chosen.tier}/{p.chosen.status}")
+
+
+def test_acq_planner_old_chicago_scan() -> None:
+    p = plan_sources(doi="10.1086/161130", title="mond", year=1983)
+    check(p.chosen.tier == "ads_scan", f"1086 chosen {p.chosen.tier}")
+    tiers = [c.tier for c in p.candidates]
+    check("journal_html" not in tiers and "journal_pdf" not in tiers,
+          f"legacy UChicago has no digital tiers: {tiers}")
+
+
+def test_acq_planner_html_beats_arxiv() -> None:
+    p = plan_sources(doi="10.1051/0004-6361/202243940", arxiv_id="2208.00211",
+                     title="gaia dr3", year=2023, journal="A&A")
+    check(p.chosen.tier == "journal_html", f"html beats arxiv: {p.chosen.tier}")
+    check(p.ready.tier == "journal_html", f"ready {p.ready.tier}")
+
+
+def test_acq_classify_aas_subjournal() -> None:
+    pub, label = classify("10.3847/1538-4365/abc", None)
+    check(label == "ApJS", f"AAS sub-journal label {label}")
+    pub, label = classify("10.3847/1538-3881/abd806", None)
+    check(label == "AJ", f"AAS AJ label {label}")
+
+
+def test_crossref_normalize() -> None:
+    msg = {
+        "DOI": "10.1051/0004-6361/202039341",
+        "title": ["Improving the open cluster census. I."],
+        "author": [{"family": "Hunt", "given": "E. L."}, {"family": "Reffert", "given": "S."}],
+        "container-title": ["Astronomy & Astrophysics"],
+        "issued": {"date-parts": [[2021, 2]]},
+        "type": "journal-article",
+        "is-referenced-by-count": 142,
+        "references-count": 60,
+        "reference": [{"DOI": "10.1051/0004-6361/201833476"}, {"key": "ref2-no-doi"}],
+        "link": [{"URL": "https://www.aanda.org/aa39341-20.html",
+                  "content-type": "text/html", "intended-application": "text-mining"}],
+        "resource": {"primary": {"URL": "https://doi.org/10.1051/0004-6361/202039341"}},
+    }
+    n = Crossref.normalize(msg)
+    check(n["cited_by_count"] == 142, f"count {n['cited_by_count']}")
+    check(n["year"] == 2021, f"year {n['year']}")
+    check(n["authors"] == ["Hunt", "Reffert"], f"authors {n['authors']}")
+    check(n["reference_dois"] == ["10.1051/0004-6361/201833476"], f"refs {n['reference_dois']}")
+    check(len(n["links"]) == 1 and n["links"][0]["content_type"] == "text/html", "links captured")
+
+
+class _StubSrc:
+    def __init__(self, payload, status="ok"):
+        self.payload = payload
+        self.status = status
+
+    def resolve(self, **kw):
+        return self.payload
+
+
+def test_resolve_chain_ads_count_wins() -> None:
+    w = Work(id="doi:10.1051/0004-6361/202039341",
+             doi="10.1051/0004-6361/202039341", title="x")
+    ads = _StubSrc({"bibcode": "2021A&A...646A.104H", "doi": None, "title": "x",
+                    "authors": ["Hunt", "Reffert"], "year": 2021, "venue": "A&A",
+                    "citation_count": 200, "abstract": None, "references": ["a", "b", "c"]})
+    cr = _StubSrc({"doi": "10.1051/0004-6361/202039341", "title": "x", "authors": [],
+                   "year": 2021, "venue": "A&A", "type": "article", "cited_by_count": 150,
+                   "reference_dois": ["x", "y"], "n_references": 2, "abstract": None,
+                   "links": [{"url": "u"}], "resource_url": None})
+    oa = _StubSrc({"openalex_id": "W1", "doi": "10.1051/0004-6361/202039341", "title": "x",
+                   "authors": [], "year": 2021, "venue": "A&A", "type": "article",
+                   "cited_by_count": 100, "referenced_works": ["W2", "W3"], "abstract": None})
+    prov = resolve_work(w, ads=ads, crossref=cr, oa=oa)
+    check(w.cited_by_count == 200, f"ADS count wins: {w.cited_by_count}")
+    check(prov["count"] == "ads", f"count source {prov['count']}")
+    check(w.bibcode == "2021A&A...646A.104H", "bibcode set from ADS")
+    check(w.openalex_id == "W1" and w.referenced_works == ["W2", "W3"], "OpenAlex ids kept for graph")
+    check(prov["providers"] == ["ads", "crossref", "openalex"], f"providers {prov['providers']}")
+
+
+def test_resolve_chain_crossref_when_ads_empty() -> None:
+    w = Work(id="doi:x", doi="10.1093/mnras/xxx", title="y")
+    ads = _StubSrc(None, status="no-token")
+    cr = _StubSrc({"doi": "10.1093/mnras/xxx", "title": "y", "authors": ["Kroupa"],
+                   "year": 2001, "venue": "MNRAS", "type": "article", "cited_by_count": 5000,
+                   "reference_dois": [], "n_references": 0, "abstract": None, "links": []})
+    oa = _StubSrc({"openalex_id": "W9", "doi": None, "title": "y", "authors": [],
+                   "year": 2001, "venue": "MNRAS", "type": "article", "cited_by_count": 4800,
+                   "referenced_works": [], "abstract": None})
+    prov = resolve_work(w, ads=ads, crossref=cr, oa=oa)
+    check(w.cited_by_count == 5000 and prov["count"] == "crossref",
+          f"crossref count wins when ADS empty: {w.cited_by_count}/{prov['count']}")
+    check(w.authors == ["Kroupa"], "authors filled from crossref")
+    check(prov["providers"] == ["crossref", "openalex"], f"providers {prov['providers']}")
 
 
 def main() -> int:

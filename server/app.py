@@ -140,6 +140,35 @@ def refresh_library(request: Request, offline: bool = False) -> dict:
     return rebuild(enrich_remote=not offline)
 
 
+@app.post("/api/library/upload")
+async def upload_pdf(request: Request, id: str | None = None,
+                     doi: str | None = None, arxiv: str | None = None) -> dict:
+    """Attach a user-supplied PDF to a work and OCR it (MinerU).
+
+    The PDF rides in the raw request body (``Content-Type: application/pdf``) and
+    the target work is named by query param — so no python-multipart dependency.
+    Synchronous: the response waits for the OCR to finish (can take minutes)."""
+    _guard_csrf(request)
+    if not (id or doi or arxiv):
+        raise HTTPException(400, "id, doi, or arxiv query param required")
+    data = await request.body()
+    if not data[:5].startswith(b"%PDF"):
+        raise HTTPException(400, "request body is not a PDF")
+    import tempfile
+    from bibgraph.acquire.upload import attach_pdf
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tf:
+        tf.write(data)
+        tf.flush()
+        try:
+            ref = attach_pdf(tf.name, work_id=id, doi=doi, arxiv=arxiv)
+        except (ValueError, FileNotFoundError) as e:
+            raise HTTPException(404, str(e))
+        except Exception as e:  # MinerU / pipeline failure
+            raise HTTPException(500, f"ingest failed: {e}")
+    return {"ref": ref}
+
+
 @app.get("/images/{doc_id}/{filename}")
 def get_image(doc_id: str, filename: str) -> FileResponse:
     if "/" in filename or "\\" in filename or filename.startswith("."):

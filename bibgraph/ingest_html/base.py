@@ -36,6 +36,11 @@ class HtmlAdapter(ABC):
     name: str = "generic"
     #: substrings any of which, in the host/url, claim a page for this adapter
     host_hints: tuple[str, ...] = ()
+    #: human label for the journal this adapter serves (e.g. "A&A")
+    publisher: str = ""
+    #: DOI prefixes this adapter can render; lets the acquisition planner know a
+    #: journal-HTML source is actually fetchable for a given paper.
+    doi_prefixes: tuple[str, ...] = ()
 
     @classmethod
     def matches(cls, url: str, soup: BeautifulSoup) -> bool:

@@ -10,10 +10,13 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections import Counter
+from pathlib import Path
 
-from .graph import _cite_key, build_graph, enrich, work_to_ref
+from .graph import _cite_key, build_graph, work_to_ref
 from .seed import seed_from_output
 from .sources.ads import ADS
+from .sources.crossref import Crossref
 from .sources.openalex import OpenAlex
 from .store import CACHE_DIR, LibraryStore, Work, canonical_id
 
@@ -25,30 +28,68 @@ GRAPH_JSON = CACHE_DIR / "graph.json"
 _WRITE_LOCK = threading.Lock()
 
 
-def rebuild(enrich_remote: bool = True) -> dict:
-    """Full rebuild from ingested papers + OpenAlex/ADS. Returns a summary."""
+def rebuild(enrich_remote: bool = True, bib_path: str | Path | None = None) -> dict:
+    """Rebuild from ingested papers (+ optional ``.bib``) through the resolution
+    chain (ADS▸Crossref▸OpenAlex) and the source planner. Returns a summary."""
     with _WRITE_LOCK:
-        return _rebuild_locked(enrich_remote)
+        return _rebuild_locked(enrich_remote, bib_path)
 
 
-def _rebuild_locked(enrich_remote: bool) -> dict:
+def acquire_references(bib_path: str | Path, enrich_remote: bool = True) -> dict:
+    """Add every entry of *bib_path* to the library (resolve + plan + graph)."""
+    return rebuild(enrich_remote=enrich_remote, bib_path=bib_path)
+
+
+def _rebuild_locked(enrich_remote: bool, bib_path: str | Path | None) -> dict:
+    # imported here (not at module top) to break the library↔acquire import cycle
+    from ..acquire.bibtex import parse_bibtex
+    from ..acquire.run import add_bib_records, enrich_and_plan
+
     store = LibraryStore.load()
     seed_from_output(store)
+    n_bib = 0
+    if bib_path:
+        records = parse_bibtex(bib_path)
+        add_bib_records(store, records)
+        n_bib = len(records)
     oa = OpenAlex(enabled=enrich_remote)
+    cr = Crossref(enabled=enrich_remote)
     ads = ADS()
-    if enrich_remote:
-        enrich(store, oa, ads)
+    enrich_and_plan(store, ads=ads, crossref=cr, oa=oa)
     graph = build_graph(store, oa)
     store.save()
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     GRAPH_JSON.write_text(json.dumps(graph, ensure_ascii=False), "utf-8")
-    return {
+    summary = {
         "works": len(store.works),
+        "bib_entries": n_bib,
         "saved_nodes": sum(1 for n in graph["nodes"] if n.get("ref")),
         "nodes": len(graph["nodes"]),
         "links": len(graph["links"]),
         "ads_status": ads.status,
+        "acquisition": _acquisition_summary(store),
+        "resolution": _resolution_summary(store),
     }
+    return summary
+
+
+def _tally(values) -> dict:
+    return dict(Counter(v if v is not None else "—" for v in values))
+
+
+def _acquisition_summary(store: LibraryStore) -> dict:
+    acq = [w.acquisition or {} for w in store.works]
+    return {
+        "chosen": _tally(a.get("chosen") for a in acq),
+        "ready_now": _tally(a.get("ready") for a in acq),
+        "status": _tally(a.get("status") for a in acq),
+        "ingested": sum(1 for a in acq if a.get("ingested_doc")),
+    }
+
+
+def _resolution_summary(store: LibraryStore) -> dict:
+    return {"count_source": _tally((w.resolution or {}).get("count")
+                                   for w in store.works)}
 
 
 def load_graph() -> dict:

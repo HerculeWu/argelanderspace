@@ -58,6 +58,8 @@ class _IdGen:
 @register
 class AandaAdapter(HtmlAdapter):
     name = "aanda"
+    publisher = "A&A"
+    doi_prefixes = ("10.1051/0004-6361",)
     host_hints = ("aanda.org",)
 
     @classmethod

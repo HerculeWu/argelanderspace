@@ -13,6 +13,7 @@ web/dist/
 
 # Tooling / indexes
 .codegraph/
+.serena/
 
 # Generated ingestion outputs (regenerable; large binaries / fetch cache).
 # The PDF sample under data/output/2603.03522 was committed earlier and stays

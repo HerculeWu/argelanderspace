@@ -88,6 +88,20 @@ class OpenAlex:
 
     # ---- normalization ----
     @staticmethod
+    def _arxiv_from_locations(w: dict) -> str | None:
+        """OpenAlex lists every hosting location; the published record links back
+        to its arXiv preprint, so we can recover the arXiv id for a paper whose
+        publisher HTML is bot-walled (IOP/APS) without any extra request."""
+        pat = re.compile(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}|[a-z\-]+/\d{7})",
+                         re.I)
+        for L in (w.get("locations") or []):
+            for u in (L.get("landing_page_url"), L.get("pdf_url")):
+                m = pat.search(u or "")
+                if m:
+                    return norm_arxiv(m.group(1))
+        return None
+
+    @staticmethod
     def normalize(w: dict) -> dict:
         loc = (w.get("primary_location") or {}).get("source") or {}
         venue = loc.get("display_name")
@@ -109,6 +123,7 @@ class OpenAlex:
             "cited_by_count": w.get("cited_by_count"),
             "referenced_works": [_short_id(x) for x in (w.get("referenced_works") or [])],
             "abstract": _reconstruct_abstract(w.get("abstract_inverted_index")),
+            "arxiv_id": OpenAlex._arxiv_from_locations(w),
         }
 
     # ---- resolution ----

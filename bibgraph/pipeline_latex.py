@@ -109,8 +109,9 @@ def ingest_latex(source: str, out_root: str | Path = "data/output",
 
     n_blocks = sum(1 for _ in doc.iter_blocks())
     if n_blocks == 0:
-        log.warning("%s: parsed 0 content blocks from %s — empty/unsupported "
-                    "source?", src.doc_id, src.main_tex.name)
+        raise ValueError(
+            f"{src.doc_id}: parsed 0 content blocks from {src.main_tex.name} — "
+            "empty/unsupported source; fall back to the PDF.")
 
     if write_json:
         out_json = out_dir / f"{src.doc_id}.json"

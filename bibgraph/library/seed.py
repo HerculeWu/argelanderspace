@@ -54,7 +54,17 @@ def seed_from_output(store: LibraryStore) -> LibraryStore:
             origin="ingested",
         )
         store.upsert(w)
+    _prune_missing_docs(store)
     return store
+
+
+def _prune_missing_docs(store: LibraryStore) -> None:
+    """Drop ``doc_ids`` whose output dir no longer exists (e.g. a hollow doc that
+    was removed) so a deleted/failed ingest stops masquerading as coverage."""
+    for w in store.works:
+        kept = [d for d in w.doc_ids if (OUTPUT_DIR / d / f"{d}.json").is_file()]
+        if kept != w.doc_ids:
+            w.doc_ids = kept
 
 
 def doc_reference_ids(doc_id: str) -> list[dict]:

@@ -17,7 +17,6 @@ from __future__ import annotations
 import logging
 
 from .seed import doc_reference_ids
-from .sources.ads import ADS
 from .sources.openalex import OpenAlex
 from .store import LibraryStore, Work, display_authors, norm_arxiv, norm_doi, norm_title, slug
 
@@ -51,39 +50,9 @@ def _cite_key(w: Work, used: set[str]) -> str:
     return key
 
 
-def enrich(store: LibraryStore, oa: OpenAlex, ads: ADS) -> LibraryStore:
-    """Fill each saved work's metadata + citation edges from OpenAlex and ADS."""
-    used_keys: set[str] = set()
-    for w in store.works:
-        r = oa.resolve(doi=w.doi, arxiv=w.arxiv_id, title=w.title, year=w.year)
-        if r:
-            w.openalex_id = w.openalex_id or r["openalex_id"]
-            w.doi = w.doi or r["doi"]
-            w.year = w.year or r["year"]
-            w.venue = w.venue or r["venue"]
-            if r["type"]:
-                w.type = r["type"]
-            if not w.authors and r["authors"]:
-                w.authors = r["authors"]
-            if r["cited_by_count"] is not None:
-                w.cited_by_count = r["cited_by_count"]
-            if r["referenced_works"]:
-                w.referenced_works = r["referenced_works"]
-            w.abstract = w.abstract or r["abstract"]
-        a = ads.resolve(doi=w.doi, arxiv=w.arxiv_id, title=w.title)
-        if a:
-            w.bibcode = a["bibcode"]
-            if a["citation_count"] is not None:  # ADS is authoritative for astronomy
-                w.cited_by_count = a["citation_count"]
-            if not w.authors and a["authors"]:
-                w.authors = a["authors"]
-            w.year = w.year or a["year"]
-            w.venue = w.venue or a["venue"]
-            w.abstract = w.abstract or a["abstract"]
-        w.cite_key = _cite_key(w, used_keys)
-        log.info("enriched %s → oa=%s cby=%s refs=%d", w.id, w.openalex_id,
-                 w.cited_by_count, len(w.referenced_works))
-    return store
+# Metadata enrichment now lives in the acquisition layer's resolution chain
+# (ADS▸Crossref▸OpenAlex); see bibgraph.acquire.resolve / bibgraph.acquire.run.
+# This module keeps _cite_key (shared) plus offline edge + graph assembly.
 
 
 # --------------------------------------------------------------------------- #
@@ -217,6 +186,7 @@ def work_to_ref(w: Work) -> dict:
         "note": bool(w.note),
         "star": w.star,
     }
+    acq = w.acquisition or {}
     optional = {
         "abstract": w.abstract,
         "doi": w.doi,
@@ -224,6 +194,14 @@ def work_to_ref(w: Work) -> dict:
         "doc_id": w.doc_ids[0] if w.doc_ids else None,
         "citedBy": w.cited_by_count,
         "label": w.label,
+        "journal": w.journal,
+        # acquisition: which full-text source is planned + whether it's ready now
+        "source": acq.get("chosen"),
+        "sourceLabel": acq.get("chosen_label"),
+        "sourceStatus": acq.get("status"),
+        "sourceReady": acq.get("ready"),
+        # resolution: which provider supplied the citation count (ads/crossref/openalex)
+        "resolvedBy": (w.resolution or {}).get("count"),
     }
     ref.update({k: v for k, v in optional.items() if v is not None and v != ""})
     return ref

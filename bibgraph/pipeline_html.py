@@ -80,12 +80,15 @@ def ingest_html(source: str, out_root: str | Path = "data/output",
     _annotate_document(doc)
 
     # Guard against silently ingesting a hollow page (e.g. an abstract-only or
-    # paywalled page that still had the expected container): a real article has
-    # body text. Warn loudly rather than write a useless empty JSON unnoticed.
+    # paywalled page, or an old template our adapter can't read): a real article
+    # has body text. Refuse to write a useless empty JSON — raise so the caller
+    # (e.g. the acquisition executor) records a failure and falls back to a PDF
+    # rather than linking a hollow doc that masquerades as full-text coverage.
     n_blocks = sum(1 for _ in doc.iter_blocks())
     if n_blocks == 0:
-        log.warning("%s: parsed 0 content blocks — the fetched page (%s) is "
-                    "likely not the full text (abstract/paywall?).", doc_id, final_url)
+        raise ValueError(
+            f"{doc_id}: parsed 0 content blocks from {final_url} — not the full "
+            "text (abstract/paywall, or an unsupported old template).")
 
     if write_json:
         out_json = out_dir / f"{doc_id}.json"

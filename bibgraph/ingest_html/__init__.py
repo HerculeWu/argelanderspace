@@ -16,5 +16,6 @@ from __future__ import annotations
 
 from .base import ADAPTERS, HtmlAdapter, adapter_for
 from . import aanda  # noqa: F401  (registers the A&A adapter)
+from . import oup    # noqa: F401  (registers the OUP / MNRAS adapter)
 
 __all__ = ["ADAPTERS", "HtmlAdapter", "adapter_for"]
