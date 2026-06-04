@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
 import { useWorkspace } from "../hubble/workspace";
 import { fetchLibrary, addRef as apiAddRef } from "../api/library";
@@ -49,18 +49,15 @@ export function LibraryView() {
   const [payload, setPayload] = useState<LibraryData | null>(null);
   const [live, setLive] = useState(false);
 
-  useEffect(() => {
-    let alive = true;
-    (async () => {
-      const { data, live } = await fetchLibrary();
-      if (!alive) return;
-      setPayload(data);
-      setLive(live);
-    })();
-    return () => {
-      alive = false;
-    };
+  const reload = useCallback(async () => {
+    const { data, live } = await fetchLibrary();
+    setPayload(data);
+    setLive(live);
   }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   if (!payload) {
     return (
@@ -70,17 +67,19 @@ export function LibraryView() {
       </div>
     );
   }
-  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} />;
+  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} onReload={reload} />;
 }
 
 function LibraryBody({
   payload,
   live,
   onOpenDoc,
+  onReload,
 }: {
   payload: LibraryData;
   live: boolean;
   onOpenDoc: (docId?: string) => void;
+  onReload: () => void;
 }) {
   const { refs, graph } = payload;
   const byId = useMemo(() => Object.fromEntries(graph.nodes.map((n) => [n.id, n])), [graph]);
@@ -245,6 +244,9 @@ function LibraryBody({
                     <span className="side-ref-title">{r.title}</span>
                     <span className="side-ref-meta mono">
                       {r.authors.split(/ (?:&|et) /)[0].replace(/,$/, "")} · {r.year} · {r.venue}
+                      {!r.doc_id && r.needs_upload && (
+                        <span style={{ color: "oklch(0.80 0.13 78)" }}> · 需 PDF</span>
+                      )}
                     </span>
                   </span>
                 </button>
@@ -327,7 +329,13 @@ function LibraryBody({
       </div>
 
       {curRef ? (
-        <RefDetail r={curRef} node={curNode} onClose={() => setSelNode(null)} onOpenDoc={onOpenDoc} />
+        <RefDetail
+          r={curRef}
+          node={curNode}
+          onClose={() => setSelNode(null)}
+          onOpenDoc={onOpenDoc}
+          onReload={onReload}
+        />
       ) : curNode ? (
         <GraphNodeDetail
           node={curNode}

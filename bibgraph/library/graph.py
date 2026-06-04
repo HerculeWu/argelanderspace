@@ -200,6 +200,8 @@ def work_to_ref(w: Work) -> dict:
         "sourceLabel": acq.get("chosen_label"),
         "sourceStatus": acq.get("status"),
         "sourceReady": acq.get("ready"),
+        # bot-walled & no auto source → the UI offers a PDF upload
+        "needs_upload": acq.get("needs_upload") or None,
         # resolution: which provider supplied the citation count (ads/crossref/openalex)
         "resolvedBy": (w.resolution or {}).get("count"),
     }

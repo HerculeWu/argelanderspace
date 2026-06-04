@@ -1,10 +1,51 @@
-import { useState } from "react";
+import { type ChangeEvent, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
+import { uploadPdf } from "../api/library";
 import { cgKfmt } from "./CitationGraph";
 import type { GraphNode, LibraryRef } from "./types";
 
 function Tag({ children }: { children: string }) {
   return <span className="tag mono">{children.replace(/^#/, "")}</span>;
+}
+
+const RESOLVED_LABEL: Record<string, string> = {
+  ads: "NASA ADS",
+  crossref: "Crossref",
+  openalex: "OpenAlex",
+};
+
+// Where the full text is / would come from, with a tone color.
+function sourceBadge(r: LibraryRef): { text: string; color: string } {
+  const lbl = r.sourceLabel || "";
+  const GREEN = "oklch(0.74 0.13 158)", AMBER = "oklch(0.80 0.13 78)", BLUE = "oklch(0.70 0.12 235)";
+  if (r.doc_id || r.pdf) return { text: lbl ? `已入库 · ${lbl}` : "已入库", color: GREEN };
+  if (r.needs_upload) return { text: "需上传 PDF", color: AMBER };
+  if (r.sourceStatus === "blocked") return { text: lbl ? `反爬墙 · ${lbl}` : "被反爬墙", color: AMBER };
+  if (r.sourceStatus === "ready" || r.sourceReady) return { text: lbl ? `可获取 · ${lbl}` : "可获取", color: BLUE };
+  return { text: lbl || "未知来源", color: "var(--text-dim, #8a8a8a)" };
+}
+
+function SourcePill({ r }: { r: LibraryRef }) {
+  const b = sourceBadge(r);
+  return (
+    <span
+      className="src-pill mono"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "1px 7px",
+        borderRadius: 999,
+        fontSize: 11,
+        lineHeight: "16px",
+        color: b.color,
+        border: `1px solid color-mix(in oklch, ${b.color} 45%, transparent)`,
+        background: `color-mix(in oklch, ${b.color} 12%, transparent)`,
+      }}
+    >
+      {b.text}
+    </span>
+  );
 }
 
 function bibtexOf(r: LibraryRef): string {
@@ -41,15 +82,32 @@ export function RefDetail({
   node,
   onClose,
   onOpenDoc,
+  onReload,
 }: {
   r: LibraryRef;
   node: GraphNode | null;
   onClose: () => void;
   onOpenDoc: (docId?: string) => void;
+  onReload?: () => void;
 }) {
   const [tab, setTab] = useState("meta");
   const [copied, setCopied] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const cited = node?.c ?? r.citedBy;
+
+  const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setUploading(true);
+    setUploadErr(false);
+    const ref = await uploadPdf(r.id, file);
+    setUploading(false);
+    if (ref) onReload?.();
+    else setUploadErr(true);
+  };
 
   const copyBib = async () => {
     try {
@@ -90,6 +148,21 @@ export function RefDetail({
           </>
         )}
       </div>
+      <div className="ref-detail-meta" style={{ marginTop: 6, gap: 8, flexWrap: "wrap" }}>
+        <SourcePill r={r} />
+        {r.resolvedBy && RESOLVED_LABEL[r.resolvedBy] && (
+          <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>
+            引用数据 · {RESOLVED_LABEL[r.resolvedBy]}
+          </span>
+        )}
+      </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/pdf"
+        style={{ display: "none" }}
+        onChange={onPickFile}
+      />
       <div className="ref-detail-tabs">
         {TABS.map(([k, l]) => (
           <button key={k} className={"rdt" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
@@ -189,8 +262,39 @@ export function RefDetail({
                 <Icon name="arrow-up-right" cls="ico-sm" />
               </button>
             ) : (
-              <div className="placeholder-text ph-note" style={{ height: 64 }}>
-                <span className="mono">暂无附件</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
+                  <SourcePill r={r} />
+                </div>
+                <button
+                  className="btn"
+                  disabled={uploading}
+                  onClick={() => fileInput.current?.click()}
+                  style={{ justifyContent: "center" }}
+                >
+                  {uploading ? (
+                    <>
+                      <Icon name="loader" cls="ico-sm spin" />
+                      正在 OCR 入库…
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="file-up" cls="ico-sm" />
+                      上传 PDF
+                    </>
+                  )}
+                </button>
+                <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
+                  {r.needs_upload
+                    ? "该来源被反爬墙 / 无开放源，上传 PDF 后自动 OCR 入库并关联"
+                    : "也可手动上传 PDF（自动 OCR 入库并关联到本条）"}
+                </div>
+                {uploadErr && (
+                  <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
+                    上传失败，请重试
+                  </div>
+                )}
               </div>
             )}
           </div>

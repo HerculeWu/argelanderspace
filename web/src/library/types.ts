@@ -44,6 +44,14 @@ export interface LibraryRef {
   doc_id?: string; // reader doc id, when this work is ingested (→ open in 文档)
   citedBy?: number;
   label?: string; // color-label key (red|amber|green|blue|violet)
+  // acquisition: where the full text is / would come from (planner output)
+  journal?: string; // short label, e.g. "A&A"
+  source?: string; // chosen tier: journal_html | journal_pdf | arxiv_latex | ads_scan
+  sourceLabel?: string; // human label, e.g. "A&A HTML"
+  sourceStatus?: string; // ready | blocked | needs_adapter | needs_access
+  sourceReady?: string; // top tier fetchable now, if any
+  needs_upload?: boolean; // bot-walled & no auto source → user must upload a PDF
+  resolvedBy?: string; // citation-count provenance: ads | crossref | openalex
 }
 
 export interface LibraryProject {

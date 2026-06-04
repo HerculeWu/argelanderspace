@@ -35,6 +35,24 @@ export async function addRef(nodeId: string): Promise<AddRefResponse | null> {
   });
 }
 
+/** Attach a user-supplied PDF to a work and OCR it (MinerU, server-side).
+ *  The PDF rides as the raw request body; the work id is a query param. Slow:
+ *  the response waits for OCR. Returns the updated ref, or null on failure. */
+export async function uploadPdf(workId: string, file: File | Blob): Promise<LibraryRef | null> {
+  try {
+    const r = await fetch("/api/library/upload?id=" + encodeURIComponent(workId), {
+      method: "POST",
+      headers: { "Content-Type": "application/pdf" },
+      body: file,
+    });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { ref?: LibraryRef };
+    return j.ref ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Persist a per-reference state change (color label, read flag, note, tags). */
 export async function patchRef(
   id: string,
