@@ -1,0 +1,1971 @@
+{
+  "doc_id": "ads-1983ApJ...270..365M",
+  "source": {
+    "type": "pdf",
+    "path": "/home/wwu/project/bibgraph/data/output/ads-1983ApJ...270..365M/ads-1983ApJ...270..365M.pdf",
+    "filename": "ads-1983ApJ...270..365M.pdf",
+    "n_pages": 6,
+    "doi": "10.1086/161130",
+    "acquired_via": "ads_scan"
+  },
+  "meta": {
+    "title": "A MODIFICATION OF THE NEWTONIAN DYNAMICS AS A POSSIBLE ALTERNATIVE TO THE HIDDEN MASS HYPOTHESIS $^{1}$",
+    "mineru": {
+      "model_version": "vlm",
+      "language": "en",
+      "is_ocr": true,
+      "batch_id": "14ec3277-bba6-43fc-a8eb-d6909504a6e9"
+    },
+    "textfix": {
+      "gaps_before": 0,
+      "gaps_fixed": 0,
+      "holders_changed": 0
+    }
+  },
+  "structure": [
+    {
+      "id": "sec-1",
+      "type": "section",
+      "level": 1,
+      "heading": "MODIFICATION OF THE NEWTONIAN DYNAMICS AS A POSSIBLE ALTERNATIVE TO THE HIDDEN MASS HYPOTHESIS $^{1}$",
+      "heading_raw": "A MODIFICATION OF THE NEWTONIAN DYNAMICS AS A POSSIBLE ALTERNATIVE TO THE HIDDEN MASS HYPOTHESIS $^{1}$",
+      "number": "A",
+      "page_idx": 0,
+      "bbox": [
+        225.0,
+        165.0,
+        779.0,
+        195.0
+      ],
+      "blocks": [
+        {
+          "id": "p-1",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            452.0,
+            207.0,
+            552.0,
+            220.0
+          ],
+          "text": "M. MILGROM"
+        },
+        {
+          "id": "p-2",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            276.0,
+            220.0,
+            727.0,
+            234.0
+          ],
+          "text": "Department of Physics, The Weizmann Institute of Science, Rehovot, Israel; and"
+        },
+        {
+          "id": "p-3",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            406.0,
+            234.0,
+            596.0,
+            246.0
+          ],
+          "text": "The Institute for Advanced Study"
+        },
+        {
+          "id": "p-4",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            352.0,
+            247.0,
+            651.0,
+            258.0
+          ],
+          "text": "Received 1982 February 4; accepted 1982 December 28"
+        }
+      ],
+      "children": [
+        {
+          "id": "sec-2",
+          "type": "section",
+          "level": 2,
+          "heading": "ABSTRACT",
+          "heading_raw": "ABSTRACT",
+          "page_idx": 0,
+          "bbox": [
+            455.0,
+            270.0,
+            545.0,
+            282.0
+          ],
+          "blocks": [
+            {
+              "id": "p-5",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                163.0,
+                287.0,
+                836.0,
+                358.0
+              ],
+              "text": "I consider the possibility that there is not, in fact, much hidden mass in galaxies and galaxy systems. If a certain modified version of the Newtonian dynamics is used to describe the motion of bodies in a gravitational field (of a galaxy, say), the observational results are reproduced with no need to assume hidden mass in appreciable quantities. Various characteristics of galaxies result with no further assumptions."
+            },
+            {
+              "id": "p-6",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                165.0,
+                358.0,
+                836.0,
+                400.0
+              ],
+              "text": "In the basis of the modification is the assumption that in the limit of small acceleration $a \\ll a_{0}$ , the acceleration of a particle at distance r from a mass M satisfies approximately $a^{2}/a_{0} \\approx M Gr^{-2}$ , where $a_{0}$ is a constant of the dimensions of an acceleration."
+            },
+            {
+              "id": "p-7",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                165.0,
+                400.0,
+                836.0,
+                440.0
+              ],
+              "text": "A success of this modified dynamics in explaining the data may be interpreted as implying a need to change the law of inertia in the limit of small accelerations or a more limited change of gravity alone."
+            },
+            {
+              "id": "p-8",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                165.0,
+                441.0,
+                836.0,
+                470.0
+              ],
+              "text": "I discuss various observational constraints on possible theories for the modified dynamics from data which exist already and suggest other systems which may provide useful constraints."
+            },
+            {
+              "id": "p-9",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                166.0,
+                472.0,
+                720.0,
+                487.0
+              ],
+              "text": "Subject headings: cosmology — galaxies: internal motions — stars: stellar dynamics"
+            }
+          ]
+        },
+        {
+          "id": "sec-3",
+          "type": "section",
+          "level": 2,
+          "heading": "INTRODUCTION",
+          "heading_raw": "I. INTRODUCTION",
+          "number": "I",
+          "page_idx": 0,
+          "bbox": [
+            235.0,
+            500.0,
+            357.0,
+            511.0
+          ],
+          "blocks": [
+            {
+              "id": "p-10",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                107.0,
+                516.0,
+                486.0,
+                656.0
+              ],
+              "text": "The hidden mass hypothesis (HMH) explains the dynamics in galaxies and systems of galaxies by assuming that much of the mass in these systems is in, as yet, unobserved form [[cite:ref-2;ref-7]]. This hypothesis has not yet encountered any fatal objection. However, in order to explain the observations in the framework of this idea, one finds it necessary to make a large number of ad hoc assumptions concerning the nature of the hidden mass and its distribution in space.",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-2",
+                    "ref-7"
+                  ],
+                  "raw": "(for recent reviews see, for example, Faber and Gallagher 1979 and Rood 1981)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-11",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                107.0,
+                657.0,
+                486.0,
+                739.0
+              ],
+              "text": "The large amounts of data on galaxies and galaxy systems which have been collected to date, and in particular the various regularities which have emerged from these data (each requiring new ad hoc assumptions about the hidden mass) make, I believe, the time ripe for considering alternatives to the HMH."
+            },
+            {
+              "id": "p-12",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                107.0,
+                739.0,
+                486.0,
+                824.0
+              ],
+              "text": "All determinations of dynamical mass within galaxies and galaxy systems make use of a virial relation of the form $V^{2} = MGr^{-1}$ , where V is some typical velocity of particles in the system, r is of the order of the size of the system, M is the mass to be determined, and G is the gravitational constant."
+            },
+            {
+              "id": "p-13",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                107.0,
+                864.0,
+                485.0,
+                888.0
+              ],
+              "text": "$^{1}$ Supported in part by the US-Israel Binational Science Foundation."
+            },
+            {
+              "id": "p-14",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                514.0,
+                500.0,
+                893.0,
+                708.0
+              ],
+              "text": "The main assumptions on which the above relation is based are the following: (a) The force which governs the dynamics is gravity. (b) The gravitational force on a particle depends, in the conventional way, on the mass of the particle and on the distribution of the mass which produces this force. (c) Newton's second law holds (All along I take the second law to include the proportionality of inertial and gravitational masses). These are assumed to hold in the nonrelativistic regime (which is justified for galaxy dynamics). In addition, one assumes that particle velocities are correctly measured by line spectral shifts with the usual Doppler relation, and one also makes various “astrophysical” assumptions about the nature of the systems under study (their being isolated bound systems etc.)."
+            },
+            {
+              "id": "p-15",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                516.0,
+                709.0,
+                893.0,
+                792.0
+              ],
+              "text": "It must have occurred to many that there may, in fact, not be much hidden mass in the universe and that the dynamical masses determined on the basis of the above virial relation are gross overestimates of the true gravitational masses. Such an overestimation can result from a breakdown of one or more of the assumptions $(a)-(c)$ ."
+            },
+            {
+              "id": "p-16",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                516.0,
+                792.0,
+                895.0,
+                890.0
+              ],
+              "text": "Assumptions $(a)-(c)$ rest on very strong evidences from laboratory and solar system experiments. However, various system parameters (such as masses, angular momenta, distances, accelerations, etc.) take up values which, for galaxy systems, differ by many orders of magnitude from those in the laboratory and the solar system. It may be then that deviations from assumptions (a)-(c), which are important for galaxy dynamics, have escaped detection in the laboratory and/or the solar system."
+            },
+            {
+              "id": "p-17",
+              "type": "paragraph",
+              "page_idx": 0,
+              "bbox": [
+                29.0,
+                35.0,
+                47.0,
+                157.0
+              ],
+              "text": "1983ApJ...270..365M"
+            },
+            {
+              "id": "p-18",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                104.0,
+                150.0,
+                482.0,
+                233.0
+              ],
+              "text": "Perhaps the first possibility which comes to mind is that the distance dependence of the gravitational force deviates from the $r^{-2}$ law. I believe that this possibility can now be ruled out if it is to be the sole modification of assumptions (a)-(c) above. This point is discussed in Milgrom (1983a, hereafter Paper II, § III)."
+            },
+            {
+              "id": "p-19",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                106.0,
+                234.0,
+                483.0,
+                330.0
+              ],
+              "text": "I have considered the possibility that Newton's second law does not describe the motion of objects under the conditions which prevail in galaxies and systems of galaxies. In particular I allowed for the inertia term not to be proportional to the acceleration of the object but rather be a more general function of it. With some simplifying assumptions I was led to the form"
+            },
+            {
+              "id": "eq-1",
+              "type": "equation",
+              "page_idx": 1,
+              "bbox": [
+                228.0,
+                339.0,
+                480.0,
+                356.0
+              ],
+              "latex": "$$\nm _ {g} \\mu (a / a _ {0}) \\boldsymbol {a} = \\boldsymbol {F}, \\tag {1}\n$$"
+            },
+            {
+              "id": "eq-2",
+              "type": "equation",
+              "page_idx": 1,
+              "bbox": [
+                181.0,
+                364.0,
+                406.0,
+                382.0
+              ],
+              "latex": "$$\n\\mu (x \\gg 1) \\approx 1, \\quad \\mu (x \\ll 1) \\approx x,\n$$"
+            },
+            {
+              "id": "p-20",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                104.0,
+                388.0,
+                482.0,
+                500.0
+              ],
+              "text": "replacing $m_{g}a = F$ . Here $m_{g}$ is the gravitational mass of a body moving in an arbitrary static force field F with acceleration $\\boldsymbol{a}(a = |\\boldsymbol{a}|)$ . The force field F is assumed to depend on its sources and to couple to the body, in the conventional way. [[xref:equation-1?]] is assumed to hold in some fundamental frame of reference. For accelerations much larger than the acceleration constant $(a_{0})$ , $\\mu \\approx 1$ , and the Newtonian dynamics is restored.",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "Equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-21",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                104.0,
+                501.0,
+                482.0,
+                680.0
+              ],
+              "text": "In two accompanying papers I study the implications of this modification for various aspects of the dynamics within galaxies (Paper II) and systems of galaxies (Milgrom 1983b, hereafter Paper III). As far as I have checked, the use of the modified form of the dynamics removes the necessity to assume the existence of mass besides that which is observed directly. In addition, a number of the observed regularities in the properties of galaxies result most naturally from [[xref:equation-1?]]. I determine, in Paper II, the acceleration constant, in a few independent ways, and find $a_0 \\approx 2 \\times 10^{-8} \\mathrm{~cm} \\mathrm{~s}^{-2}$ which turns out to be of the same order as $CH_0 = 5 \\times 10^{-8}$ ( $H_0 / 50 \\mathrm{~km} \\mathrm{~s}^{-1} \\mathrm{Mpc}^{-1}$ ) cm s $^{-2}$ .",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-22",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                104.0,
+                680.0,
+                482.0,
+                819.0
+              ],
+              "text": "In this paper I discuss matters of principle concerning mainly the possible interpretation of [[xref:equation-1?]]. In particular, it is emphasized that the analysis of galaxies and systems of galaxies only makes use of a set of assumptions which is weaker than [[xref:equation-1?]]. Various interpretations and formulations of the modified dynamics are possible at this stage. [[xref:equation-1?]] is only an effective working formula, of limited validity, which is based on these assumptions and, as I explain below, it does not constitute a theory.",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "Equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-23",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                104.0,
+                819.0,
+                482.0,
+                888.0
+              ],
+              "text": "In § II, I discuss the basic assumptions and possible interpretations of the modified dynamics. In § III, I discuss observational constraints on possible theories. In § IV, I consider briefly constraints from solar system experiments. Section V is a discussion."
+            }
+          ]
+        },
+        {
+          "id": "sec-4",
+          "type": "section",
+          "level": 2,
+          "heading": "POSSIBLE INTERPRETATIONS",
+          "heading_raw": "II. POSSIBLE INTERPRETATIONS",
+          "number": "II",
+          "page_idx": 1,
+          "bbox": [
+            604.0,
+            109.0,
+            807.0,
+            119.0
+          ],
+          "blocks": [
+            {
+              "id": "p-24",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                514.0,
+                126.0,
+                893.0,
+                404.0
+              ],
+              "text": "I arrived at [[xref:equation-1?]] by considering the possibility that, in the limit of small accelerations, the inertia force is not proportional to the acceleration, as a mean of doing away with the hidden mass. As the simplest working hypothesis for the nonrelativistic regime, I assumed that (i) the inertia force of an object is still proportional to the gravitational mass of that object, (ii) that the acceleration still depends only on the force at the position of the object F as deduced conventionally from the distribution of its sources, (iii) that the inertia force is still in the direction of the acceleration (isotropy), and the most crucial assumption was (iv) that in the limit of small accelerations the inertia becomes quadratic in the acceleration so that the rotation curve of a finite galaxy becomes flat asymptotically. As a result of assumption (iv) a new constant of the dimensions of acceleration, $a_{0}$ , must be introduced. Defining $a_{0}$ such that for $a \\to 0: m_{g}(a/a_{0})a = F$ and requiring that the conventional dynamics is restored for $a \\to \\infty$ we get [[xref:equation-1?]].",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-25",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                514.0,
+                404.0,
+                893.0,
+                474.0
+              ],
+              "text": "It should be stressed that [[xref:equation-1?]] can at most be considered an effective working formula. As I discuss below it must have a limited applicability. We are thus still in need of a theory for the modified dynamics even in the nonrelativistic regime.",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-26",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                514.0,
+                474.0,
+                893.0,
+                556.0
+              ],
+              "text": "The analysis in Papers II and III, which demonstrates the success of the modified dynamics in explaining the dynamics in galaxies and galaxy systems and which, at the moment, is the only justification for introducing it, actually makes use of a set of assumptions weaker than [[xref:equation-1?]]. I shall list these assumptions below.",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-27",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                514.0,
+                556.0,
+                893.0,
+                669.0
+              ],
+              "text": "In the first place, all the applications in Papers II and III deal with purely gravitational systems. It is thus possible that the dynamics need be modified only when gravitational forces are involved, in which case we will consider the modification one of gravity and not of the law of inertia. For example, the specific formulation of [[xref:equation-1?]] can be rewritten in terms of a modified gravitational field g:",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "eq-3",
+              "type": "equation",
+              "page_idx": 1,
+              "bbox": [
+                624.0,
+                680.0,
+                890.0,
+                698.0
+              ],
+              "latex": "$$\n\\boldsymbol {g} = a _ {0} I ^ {- 1} \\left(g _ {N} / a _ {0}\\right) \\boldsymbol {e} _ {N}, \\tag {2}\n$$"
+            },
+            {
+              "id": "p-28",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                514.0,
+                708.0,
+                893.0,
+                820.0
+              ],
+              "text": "where $g_{N}$ is the conventional gravitational acceleration field in the direction $e_{N}$ , and $I^{-1}$ is the inverse function of $I(x)=x\\mu(x)$ . The acceleration of a particle in the modified field is then given by a=g. This formulation has all the limitations of [[xref:equation-1?]] I discuss below. Note, for example, that g is not always derivable from a potential (it is, when we have a problem with spherical, plane or cylindrical symmetry).",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-29",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                514.0,
+                820.0,
+                893.0,
+                888.0
+              ],
+              "text": "If it turns out that the conventional dynamics has to be modified, in the limit of small acceleration, for whatever combination of forces produces this acceleration (the forces are always assumed to depend on their respective sources and to couple to matter in the conventional way), we will consider the modification to be one of inertia. In principle it is easy to distinguish between the two possibilities by considering, say, a charged particle subject to an electric field which almost balances a gravitational force with $g_{N} \\gg a_{0}$ such that the resulting acceleration, $a$ , satisfies $a \\ll a_{0}$ ."
+            },
+            {
+              "id": "p-30",
+              "type": "paragraph",
+              "page_idx": 1,
+              "bbox": [
+                27.0,
+                35.0,
+                47.0,
+                154.0
+              ],
+              "text": "1983ApJ...270..365M"
+            },
+            {
+              "id": "p-31",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                104.0,
+                193.0,
+                482.0,
+                398.0
+              ],
+              "text": "The assumptions from which the results of Papers II and III follow and which, I think, should form the basis of a theory are the following: (a) The Newtonian dynamics of a gravitating system (and perhaps of an arbitrary one) break down in the limit of small accelerations. (b) In this limit the acceleration, $a$ , of a test particle is given by $a^2 / a_0 \\approx g_N$ ( $g_N$ being the conventional gravitational acceleration). (c) The acceleration constant $a_0$ plays all the possible roles of such a constant in the modified dynamics (that of the proportionality factor as defined above, the transition acceleration from the Newtonian to the non-Newtonian regime and the width of the transition regime). The different determinations of $a_0$ in Paper II, which give similar results, are based on these different roles."
+            },
+            {
+              "id": "p-32",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                106.0,
+                400.0,
+                486.0,
+                553.0
+              ],
+              "text": "These basic assumptions apply to the motion of a test particle in the static mean field of a system as in all the applications in Papers II and III. As is demonstrated in these papers, the basic assumptions already have some strong and inevitable predictions concerning galaxy dynamics. However, these assumptions are not sufficient for describing the dynamics of an arbitrary N-body system, for which we shall need a theory. There are many theories which one can build around the above assumptions. In the next two sections I discuss various constraints on such theories."
+            }
+          ]
+        },
+        {
+          "id": "sec-5",
+          "type": "section",
+          "level": 2,
+          "heading": "OBSERVATIONAL CONSTRAINTS ON THE THEORY",
+          "heading_raw": "III. OBSERVATIONAL CONSTRAINTS ON THE THEORY",
+          "number": "III",
+          "page_idx": 2,
+          "bbox": [
+            129.0,
+            566.0,
+            464.0,
+            580.0
+          ],
+          "blocks": [
+            {
+              "id": "p-33",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                106.0,
+                585.0,
+                485.0,
+                808.0
+              ],
+              "text": "In looking for tests and constraints on various possible theories I found it useful to consider many-body systems S within which a subsystem s can be defined over the extent of which, the acceleration field of S (s excluded) can be considered constant. For example, s can be a star or a binary in the field of a galaxy S. Let g be the (modified) gravitational acceleration produced by S at the position of s, and $a_{i}$ the typical internal acceleration within s (that of particles within s, with respect to its c.m.). Classify the systems according to whether $a_{i}$ and/or g are smaller or larger than $a_{0}$ and whether $a_{i} > g$ or $a_{i} < g$ . Cases for which all these inequalities are strong, provide particularly clear-cut constraints. In [[xref:figure-1?]] I show schematically regions in the $a_{i}$ -g plane which correspond to astrophysical systems of particular interest.",
+              "crossrefs": [
+                {
+                  "kind": "figure",
+                  "raw": "Figure 1",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-34",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                107.0,
+                808.0,
+                486.0,
+                863.0
+              ],
+              "text": "Important tests are obtained, for example, by comparing the implications of the theory with the observed behavior of actual systems related to the following questions."
+            },
+            {
+              "id": "p-35",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                107.0,
+                863.0,
+                486.0,
+                892.0
+              ],
+              "text": "1. How is the c.m. acceleration of s within S affected by the internal dynamics in s? In particular, is the c.m."
+            },
+            {
+              "id": "fig-1",
+              "type": "figure",
+              "page_idx": 2,
+              "bbox": [
+                557.0,
+                111.0,
+                867.0,
+                344.0
+              ],
+              "img_path": "images/5bce4f0e7fa88bae50104bb7d56c20c387aaabe1ba6cfa4fac59e6367c7427e1.jpg"
+            },
+            {
+              "id": "p-36",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                519.0,
+                489.0,
+                897.0,
+                517.0
+              ],
+              "text": "acceleration always equal to $g$ (like that of a test particle) even when $a_{i} \\gg a_{0}$ ?"
+            },
+            {
+              "id": "p-37",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                519.0,
+                517.0,
+                898.0,
+                559.0
+              ],
+              "text": "2. How is the internal dynamics within $s$ affected by the external field $g$ ? In particular, if $a_i \\ll a_0$ , should the modified dynamics be implemented even when $g \\gg a_0$ ?"
+            },
+            {
+              "id": "p-38",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                519.0,
+                558.0,
+                898.0,
+                642.0
+              ],
+              "text": "These questions are related to each other at least because they find a common answer, for the large acceleration limit, in the strong equivalence principle (SEP) [[cite:ref-11]]. It is not clear to what extent the theory of the modified dynamics should obey this principle.",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-11"
+                  ],
+                  "raw": "(see, for example, Weinberg 1972 for a definition of the SEP)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-39",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                519.0,
+                642.0,
+                898.0,
+                670.0
+              ],
+              "text": "A third question concerns the behavior of photons in a gravitational field with $g \\ll a_{0}$ ."
+            },
+            {
+              "id": "p-40",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                519.0,
+                670.0,
+                900.0,
+                892.0
+              ],
+              "text": "Consider first question 1 above. The bodies, the motions of which are assumed in Papers II and III to be described by [[xref:equation-1?]] (or equivalently eq. [2]) are not structureless. Stars, gas clouds, binary stars, galaxies, etc. are all composite, and the internal accelerations of their constituents, down to the level of elementary particles, much exceed $a_0$ (for example, the gravitational acceleration within atomic nuclei are larger than $10^2 a_0$ ). If we use [[xref:equation-1?]] to obtain the acceleration of the constituents when this is much larger than $a_0$ we will not get the correct answer for the c.m. acceleration of the whole body when this is much smaller than $a_0$ . It is mainly for this reason that [[xref:equation-1?]] cannot be considered a satisfying theory. [[xref:equation-1?]] may give the acceleration of the constituents correctly to a high accuracy. However, as the c.m. acceleration is only a relatively very small remnant left after the cancellation of the internal contributions to the acceleration, it may come out in large error. In applying [[xref:equation-1?]] in Papers II and III I have implicitly assumed that it does describe the motion of the c.m. of objects in the static mean field of a larger system, even when their internal accelerations are large.",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "Equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-41",
+              "type": "paragraph",
+              "page_idx": 2,
+              "bbox": [
+                29.0,
+                35.0,
+                47.0,
+                157.0
+              ],
+              "text": "1983ApJ...270..365M"
+            },
+            {
+              "id": "p-42",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                107.0,
+                207.0,
+                486.0,
+                441.0
+              ],
+              "text": "Evidence exists that objects of very different structure have the same acceleration at a given position in a galaxy. This evidence is based, for example, on the agreement between rotation curves derived from the 21 cm line, from stellar lines, from H II region lines, etc. Also, the velocity distributions of different classes of disk objects near the Sun all have the same center to within the observational errors (a few percent). Thus, at least near the Sun, these various objects (disk stars of various types, binaries, H I clouds, etc.) have approximately the same galactic rotational velocity. The theory one seeks should thus obey the SEP in region B of [[xref:figure-1?]] ( $a_i \\gg a_0$ ) at least to the accuracy needed to justify its use as in Papers II and III. [[cite:ref-1]] describe a nonrelativistic theory which satisfies the basic assumptions of the modified dynamics and also satisfies this last constraint.",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-1"
+                  ],
+                  "raw": "Bekenstein and Milgrom (1983)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ],
+              "crossrefs": [
+                {
+                  "kind": "figure",
+                  "raw": "Fig. 1",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-43",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                107.0,
+                441.0,
+                486.0,
+                761.0
+              ],
+              "text": "Consider now the question of how an external acceleration affects the internal dynamics of a system. Had the SEP been valid in the modified dynamics, there would be no such effects at all. If this was the case, the rotation curves of galaxies should stay flat to very large radii even when these galaxies are accelerated in the field of a cluster, say (assuming that tidal effects can be neglected). The validity of the SEP would also imply that stellar systems with very small internal accelerations $a_{i} \\ll a_{0}$ would always exhibit a large mass discrepancy when analyzed with the conventional dynamics. The data on open clusters in the solar neighborhood (region H in [[xref:figure-1?]]) appear to be in conflict with this result. (I am grateful to E. Salpeter and to S. Tremaine for pointing out the importance of these systems.) Jones (1970a,b) finds a dynamically deduced mass for the Pleiades and Praesepe which is only about a factor 1.5 larger than the mass accounted for by stars in these clusters. The internal accelerations in these clusters are, however, a few times (5–10) smaller than $a_{0}$ , and if the SEP is obeyed by the modified dynamics, we would expect a larger mass discrepancy than is observed.",
+              "crossrefs": [
+                {
+                  "kind": "figure",
+                  "raw": "Fig. 1",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-44",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                106.0,
+                762.0,
+                486.0,
+                888.0
+              ],
+              "text": "Note, however, that an open cluster, near the Sun, is accelerated in the field of the Galaxy with $g = V_{\\odot}^{2}/r_{\\odot} = 2 \\times 10^{-8} (V_{\\odot}/220 \\text{ km s}^{-1})^{2} (r_{\\odot}/8 \\text{ kpc})^{-1} \\text{ cm s}^{-2} \\approx a_{0}$ . We are then compelled to conclude that the internal dynamics of the open clusters embedded in the field of the Galaxy is different from that of a similar but isolated cluster. When the external field g (and hence the resultant acceleration) become comparable to or larger than $a_{0}$ , the internal dynamics approaches and eventually becomes Newtonian even when the internal accelerations themselves are much smaller than $a_{0}$ . In this case we would expect only a small mass discrepancy in the open clusters. A theory which satisfies this constraint will not obey the strong equivalence principle. An observer in an elevator freely falling in an external homogeneous field can measure effects of this field."
+            },
+            {
+              "id": "p-45",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                517.0,
+                208.0,
+                898.0,
+                333.0
+              ],
+              "text": "For example, the model Lagrangian theory discussed by [[cite:ref-1]] obeys this constraint. The existence of such a theory is of prime importance. However close to the truth this theory is found to be eventually, it already serves to show that the basic assumptions of the modified dynamics needed for the applications in Papers II and III, the additional observational constraints I discussed above, and the usual conservation laws, are not inconsistent with each other.",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-1"
+                  ],
+                  "raw": "Bekenstein and Milgrom (1983)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-46",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                517.0,
+                334.0,
+                898.0,
+                556.0
+              ],
+              "text": "Generalizing the implication from open clusters, I think one should adopt the following working prescription for describing the internal dynamics of a system in an external field $g \\gg a_{i}$ : the internal dynamics is quasi-Newtonian, namely, internal accelerations are approximately proportional to $MGr^{-2}$ (and not to its square root). However, particles behave as if their inertial masses are about a factor $\\mu(g/a_{0})$ smaller than their gravitational masses (or as if G is effectively a factor $[\\mu(g/a_{0})]^{-1}$ larger. This is the prescription implied by [[xref:equation-1?]]: If $g_{N}^{i}$ is the conventional internal gravitational acceleration produced by the mass in a system s which itself is in an external modified field g: $\\mu(g/a_{0})\\mathbf{g} = \\mathbf{g}_{N}$ , where $g_{N}$ is the external field calculated in the conventional way, and if $g \\gg a_{i}$ , we can expand [[xref:equation-1?]] to first order in $a_{i} = a - g$ to get",
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                },
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "eq-4",
+              "type": "equation",
+              "page_idx": 3,
+              "bbox": [
+                586.0,
+                566.0,
+                895.0,
+                585.0
+              ],
+              "latex": "$$\n\\boldsymbol {a} _ {i} + L \\boldsymbol {e} (\\boldsymbol {e} \\cdot \\boldsymbol {a} _ {i}) = [ \\mu (g / a _ {0}) ] ^ {- 1} \\boldsymbol {g} _ {N} ^ {i}. \\tag {3}\n$$"
+            },
+            {
+              "id": "p-47",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                517.0,
+                597.0,
+                895.0,
+                710.0
+              ],
+              "text": "Here e is a unit vector in the direction of g and $L = d \\ln [\\mu(x)]/d \\ln x$ at $x = g/a_{0}$ . For $g \\gg a_{0}$ , $\\mu = 1$ and L = 0 and the internal dynamics is exactly Newtonian ( $a_{i} = g_{N}^{i}$ ) even when $a_{i} \\ll a_{0}$ . In general $0 \\leq L \\leq 1$ and $a_{i}$ is still proportional to $g_{N}^{i}$ (although it is not in the same direction as $g_{N}^{i}$ ). The main deviation from the conventional dynamics is the increase of a by a factor $[\\mu(g/a_{0})]^{-1}$ which can be very large if $g \\ll a_{0}$ ."
+            },
+            {
+              "id": "p-48",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                517.0,
+                710.0,
+                895.0,
+                834.0
+              ],
+              "text": "For example, an open cluster of a given mass and radius will have to have different velocity dispersions to support itself when put at different locations in the galaxy. It has to have the conventional value $(\\sigma^{2} \\sim MGr^{-1})$ when the external field of the galaxy is Newtonian $(g \\gg a_{0})$ and a larger value $\\sigma^{2} \\sim (MG/r)[\\mu(g/a_{0})]^{-1}$ when $a_{0} > g \\gg a_{i}$ . When the external field becomes smaller than $a_{i}$ , the internal dynamics is not quasi-Newtonian any more."
+            },
+            {
+              "id": "p-49",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                517.0,
+                834.0,
+                895.0,
+                888.0
+              ],
+              "text": "The best potential test of these suggestions I can think of involves the dwarf elliptical galaxies in the vicinity of the Milky Way (region I in [[xref:figure-1?]]). They are discussed in Paper II.",
+              "crossrefs": [
+                {
+                  "kind": "figure",
+                  "raw": "Fig. 1",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-50",
+              "type": "paragraph",
+              "page_idx": 3,
+              "bbox": [
+                27.0,
+                35.0,
+                47.0,
+                157.0
+              ],
+              "text": "1983ApJ...270..365M"
+            },
+            {
+              "id": "p-51",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                106.0,
+                111.0,
+                485.0,
+                194.0
+              ],
+              "text": "The study of open clusters seems to imply that the modified dynamics cannot obey the strong equivalence principle. The study of the effects of a constant, external acceleration field on the internal dynamics of a system, if feasible, may thus provide a most powerful test of the modified dynamics."
+            },
+            {
+              "id": "p-52",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                106.0,
+                195.0,
+                486.0,
+                417.0
+              ],
+              "text": "I cannot offer a prescription for evaluating the behavior of photons in a gravitational field with $g \\lesssim a_{0}$ . The recently discovered phenomena of gravitational lensing of quasar images by the gravitational fields of galaxies and galaxy clusters [[cite:ref-12]] may be used to study this question observationally. An interesting question arises in this connection: if the modified dynamics is valid, do photons and massive particles give the same (fictitious) mass distribution when their trajectories in the field of this mass are analyzed with the conventional dynamics? For example, if we first obtain the mass distribution in a galaxy from the rotation curve, using the conventional dynamics, and then use this mass to calculate light bending, do we get the correct answer according to the modified dynamics?",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-12"
+                  ],
+                  "raw": "(e.g., Walsh, Carswell, and Weyman 1979 and Young et al. 1980)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "sec-6",
+          "type": "section",
+          "level": 2,
+          "heading": "SOLAR SYSTEM EXPERIMENTS",
+          "heading_raw": "IV. SOLAR SYSTEM EXPERIMENTS",
+          "number": "IV",
+          "page_idx": 4,
+          "bbox": [
+            191.0,
+            431.0,
+            403.0,
+            444.0
+          ],
+          "blocks": [
+            {
+              "id": "p-53",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                107.0,
+                449.0,
+                485.0,
+                477.0
+              ],
+              "text": "At the moment I cannot suggest a feasible laboratory experiment to test the ideas discussed above."
+            },
+            {
+              "id": "p-54",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                109.0,
+                477.0,
+                486.0,
+                547.0
+              ],
+              "text": "The effects of the modification on solar system dynamics depend strongly on the way $\\mu$ approaches 1 asymptotically. If $\\mu(x)$ can be expanded in powers of 1/x for $x \\to \\infty$ (i.e., it is not, for example, of the form $1 - e^{-x}$ ), I write to lowest order in $x^{-1}$ , $\\mu(x) \\approx 1 - Ax^{-n}$ ."
+            },
+            {
+              "id": "p-55",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                109.0,
+                547.0,
+                485.0,
+                574.0
+              ],
+              "text": "I considered two effects for which there exist accurate data:"
+            },
+            {
+              "id": "p-56",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                109.0,
+                574.0,
+                486.0,
+                616.0
+              ],
+              "text": "1. The perihelion precession of Mercury: The shift per revolution due to the proposed modification is (to lowest order in the eccentricity of the orbit)"
+            },
+            {
+              "id": "eq-5",
+              "type": "equation",
+              "page_idx": 4,
+              "bbox": [
+                138.0,
+                625.0,
+                485.0,
+                646.0
+              ],
+              "latex": "$$\n\\delta \\phi_ {n} \\approx 2 (4 n + 1) (2 n - 1) ^ {- 1} \\pi A \\left(M _ {\\odot} G / r ^ {2} a _ {0}\\right) ^ {- n}. \\tag {4}\n$$"
+            },
+            {
+              "id": "p-57",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                109.0,
+                654.0,
+                486.0,
+                792.0
+              ],
+              "text": "Here r is the radius of the orbit. The effect due to general relativity is [[cite:ref-11]] $\\delta\\phi_{g}\\approx6\\pi(M_{\\odot}G/rC^{2})$ . For Mercury $\\delta\\phi_{1}/\\delta\\phi_{g}\\approx0.28$ A (for $a_{0}=2\\times10^{-8}$ cm s $^{-2}$ ). As the observed precession agrees with the prediction of general relativity to within $5\\times10^{-3}$ [[cite:ref-9]], the effect of the modification I have discussed would be easily detected if $A\\sim1$ and n=1. The case n=1 can thus be ruled out if A>0.02. For n=2 the effect for Mercury is smaller by $3\\times10^{-9}$ and would be practically undetectable.",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-11"
+                  ],
+                  "raw": "(Weinberg 1972)",
+                  "via": "regex",
+                  "resolved": true
+                },
+                {
+                  "ref_ids": [
+                    "ref-9"
+                  ],
+                  "raw": "(Shapiro 1980 and references therein)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-58",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                109.0,
+                794.0,
+                486.0,
+                891.0
+              ],
+              "text": "2. As $\\mu(a/a_{0})$ differs from body to body in the solar system (and may be time dependent), we get effects similar to those of variations in the ratio of inertial to gravitational mass from body to body. The situation here is also quite clear cut. The case n=1 can be ruled out by the upper limit on the difference between the ratios of inertial to gravitational masses of the Earth and"
+            },
+            {
+              "id": "p-59",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                517.0,
+                109.0,
+                895.0,
+                208.0
+              ],
+              "text": "Moon (the Nordvedt effect) [[cite:ref-9]]. For n = 2 the effect in the Earth-Moon system is about $10^{-4}$ times smaller than what could be detected by the experiment. In estimating the size of the effect I assumed (to maximize the effect) that the Earth and Moon's motions are described separately by [[xref:equation-1?]].",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-9"
+                  ],
+                  "raw": "(Shapiro 1980 and references therein)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ],
+              "crossrefs": [
+                {
+                  "kind": "equation",
+                  "raw": "equation (1)",
+                  "number": "1",
+                  "via": "regex",
+                  "resolved": false
+                }
+              ]
+            },
+            {
+              "id": "p-60",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                519.0,
+                208.0,
+                897.0,
+                305.0
+              ],
+              "text": "One class of objects, in the solar system, our view of which is greatly affected by the proposed modification is that of the long-period comets. A popular view is that they come from a spherical storage shell between $3 \\times 10^{4}$ AU and $10^{5}$ AU centered on the solar system (the Oort cloud) [[cite:ref-6;ref-4]].",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-6",
+                    "ref-4"
+                  ],
+                  "raw": "(see, for example, Oort 1963 and Marsden 1974 and references therein)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-61",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                519.0,
+                305.0,
+                898.0,
+                500.0
+              ],
+              "text": "The transition radius at which the conventional gravitational acceleration produced by the Sun is $a_{0}$ is given by $r_{t} = (M_{\\odot}G/a_{0})^{1/2} \\approx 8.2 \\times 10^{16} \\, \\text{cm} = 5.5 \\times 10^{3} \\, \\text{AU}$ and is much smaller than the radius of the Oort cloud deduced with the conventional dynamics. It can be shown that, if the modified dynamics is valid, the long-period comets come in fact from the vicinity of $r_{t}$ . Comets with parameters which, with the conventional dynamics, would give aphelion distances between $r_{t}$ and infinity (and even some of the apparently unbound ones), all have aphelion distances of order $r_{t}$ in the modified dynamics. All bodies are bound in the gravitational field of any mass, as the effective potential is logarithmic at large distances."
+            },
+            {
+              "id": "p-62",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                521.0,
+                500.0,
+                898.0,
+                527.0
+              ],
+              "text": "I have not yet studied this problem enough to make it a useful test."
+            }
+          ]
+        },
+        {
+          "id": "sec-7",
+          "type": "section",
+          "level": 2,
+          "heading": "DISCUSSION",
+          "heading_raw": "V. DISCUSSION",
+          "number": "V",
+          "page_idx": 4,
+          "bbox": [
+            663.0,
+            539.0,
+            764.0,
+            551.0
+          ],
+          "blocks": [
+            {
+              "id": "p-63",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                522.0,
+                556.0,
+                901.0,
+                654.0
+              ],
+              "text": "I find that by using a certain modification of the Newtonian dynamics, in the limit of small accelerations, those observational aspects of galaxies and galaxy systems which I have looked into can be understood with no need to assume hidden mass. At the moment, the appeal of the proposed modification rests on its phenomenological success."
+            },
+            {
+              "id": "p-64",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                522.0,
+                654.0,
+                901.0,
+                722.0
+              ],
+              "text": "It is not clear, at the moment, whether the modification is to be interpreted as a modification of gravity only or whether it need be implemented whenever the accelerations are very small for whatever combination of forces is involved."
+            },
+            {
+              "id": "p-65",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                522.0,
+                723.0,
+                901.0,
+                834.0
+              ],
+              "text": "Practically all the results of Papers II and III can be derived from a minimal set of assumptions on the basis of which one may be able to build many different theories. An example of a nonrelativistic effective Lagrangian theory which satisfies the basic assumptions and the additional observational constraints discussed in this paper will be described by [[cite:ref-1]].",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-1"
+                  ],
+                  "raw": "Bekenstein and Milgrom (1983)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-66",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                522.0,
+                834.0,
+                901.0,
+                891.0
+              ],
+              "text": "It seems to me that in looking for an ultimate theory, the Mach principle may serve as a most useful guide. The fact that the value of $a_{0}$ turns out to be of the order $CH_{0}$ appears to be particularly significant in this connection. Note that $a_{0}$ is also of order of the gravitational acceleration produced by a particle of mass $\\sim100$ MeV at a distance equal to its Compton wavelength. This fact, however, follows from the near equality of $a_{0}$ and $CH_{0}$ and from a well known coincidence which connects the mass scale of particles to a cosmological mass parameter [[cite:ref-11]]. The possible connection between such numerical “coincidences,” which relate parameters of “local” physics to cosmological parameters and the Mach principle, is quite obvious. If, for example, the inertia force is due to the interaction of the accelerated particle with an inertia field produced by totality of mass in the universe [[cite:ref-8]] such that the inertia force is not proportional to the accelerations any more, the introduction of an acceleration constant into the local equations of dynamics is implied and $CH_{0}$ (perhaps up to a function of $q_{0}$ ) is the natural cosmological acceleration parameter which can play this role.",
+              "citations": [
+                {
+                  "ref_ids": [
+                    "ref-11"
+                  ],
+                  "raw": "(see Weinberg 1972, chap. 16)",
+                  "via": "regex",
+                  "resolved": true
+                },
+                {
+                  "ref_ids": [
+                    "ref-8"
+                  ],
+                  "raw": "(see, for example, Sciama 1961)",
+                  "via": "regex",
+                  "resolved": true
+                }
+              ]
+            },
+            {
+              "id": "p-67",
+              "type": "paragraph",
+              "page_idx": 4,
+              "bbox": [
+                27.0,
+                35.0,
+                47.0,
+                157.0
+              ],
+              "text": "1983ApJ...270..365M"
+            },
+            {
+              "id": "p-68",
+              "type": "paragraph",
+              "page_idx": 5,
+              "bbox": [
+                104.0,
+                372.0,
+                483.0,
+                429.0
+              ],
+              "text": "Hopefully, a theory can be found in which $a_{0}$ , which appears in the local dynamics and, for that matter, the function $\\mu(x)$ will be derivable from the theory and will turn out to depend on the distribution of mass in the universe (density) and its manner of expansion (very much in the vein of theories like that of Brans and Dicke). Such a picture immediately brings to mind the possibility that $a_{0}$ (together with G), as it appears in the local dynamics, vary with cosmic time. This will have important implications for galaxy evolution, cosmology, etc."
+            },
+            {
+              "id": "p-69",
+              "type": "paragraph",
+              "page_idx": 5,
+              "bbox": [
+                517.0,
+                205.0,
+                898.0,
+                361.0
+              ],
+              "text": "It is clear that the laws which describe the cosmological evolution in terms of the material content of the universe will be different with the modified dynamics. In addition, if the ideas presented in this paper are basically correct, there is much less mass in the universe than is thought. It is best to wait until we have a relativistic theory for the modified dynamics before its cosmological implications are discussed. In view of the fact that $a_{0} \\sim CH_{0}$ , the universe is the only massive system which is both relativistic and involves accelerations not much larger than $a_{0}$ ."
+            },
+            {
+              "id": "p-70",
+              "type": "paragraph",
+              "page_idx": 5,
+              "bbox": [
+                519.0,
+                386.0,
+                898.0,
+                428.0
+              ],
+              "text": "The hospitality of The Institute for Advanced Study in Princeton is gratefully acknowledged. I thank Jacob Bekenstein for useful discussions."
+            }
+          ]
+        },
+        {
+          "id": "sec-8",
+          "type": "section",
+          "level": 2,
+          "heading": "REFERENCES",
+          "heading_raw": "REFERENCES",
+          "page_idx": 5,
+          "bbox": [
+            450.0,
+            441.0,
+            545.0,
+            453.0
+          ],
+          "blocks": [
+            {
+              "id": "p-71",
+              "type": "paragraph",
+              "page_idx": 5,
+              "bbox": [
+                104.0,
+                589.0,
+                732.0,
+                606.0
+              ],
+              "text": "M. MILGROM: Department of Physics, Weizmann Institute of Science, Rehovot 76100, Israel"
+            },
+            {
+              "id": "p-72",
+              "type": "paragraph",
+              "page_idx": 5,
+              "bbox": [
+                29.0,
+                35.0,
+                47.0,
+                157.0
+              ],
+              "text": "1983ApJ...270..365M"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "index": {
+    "figures": [
+      {
+        "id": "fig-1",
+        "page_idx": 2
+      }
+    ],
+    "equations": [
+      {
+        "id": "eq-1",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-2",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-3",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-4",
+        "page_idx": 3
+      },
+      {
+        "id": "eq-5",
+        "page_idx": 4
+      }
+    ],
+    "sections": [
+      {
+        "id": "sec-1",
+        "level": 1,
+        "number": "A",
+        "heading": "MODIFICATION OF THE NEWTONIAN DYNAMICS AS A POSSIBLE ALTERNATIVE TO THE HIDDEN MASS HYPOTHESIS $^{1}$",
+        "page_idx": 0
+      },
+      {
+        "id": "sec-2",
+        "level": 2,
+        "heading": "ABSTRACT",
+        "page_idx": 0
+      },
+      {
+        "id": "sec-3",
+        "level": 2,
+        "number": "I",
+        "heading": "INTRODUCTION",
+        "page_idx": 0
+      },
+      {
+        "id": "sec-4",
+        "level": 2,
+        "number": "II",
+        "heading": "POSSIBLE INTERPRETATIONS",
+        "page_idx": 1
+      },
+      {
+        "id": "sec-5",
+        "level": 2,
+        "number": "III",
+        "heading": "OBSERVATIONAL CONSTRAINTS ON THE THEORY",
+        "page_idx": 2
+      },
+      {
+        "id": "sec-6",
+        "level": 2,
+        "number": "IV",
+        "heading": "SOLAR SYSTEM EXPERIMENTS",
+        "page_idx": 4
+      },
+      {
+        "id": "sec-7",
+        "level": 2,
+        "number": "V",
+        "heading": "DISCUSSION",
+        "page_idx": 4
+      },
+      {
+        "id": "sec-8",
+        "level": 2,
+        "heading": "REFERENCES",
+        "page_idx": 5
+      }
+    ]
+  },
+  "references": [
+    {
+      "id": "ref-1",
+      "raw": "Bekenstein, J., and Milgrom, M. 1983, in preparation.",
+      "authors": [
+        "Bekenstein",
+        "Milgrom"
+      ],
+      "year": 1983,
+      "keys": [
+        "Bekenstein 1983",
+        "Bekenstein et al. 1983",
+        "Bekenstein & Milgrom 1983"
+      ]
+    },
+    {
+      "id": "ref-2",
+      "raw": "Faber, S. M., and Gallagher, J. S. 1979, Ann. Rev. Astr. Ap., 17, 135.",
+      "authors": [
+        "Faber",
+        "Gallagher"
+      ],
+      "year": 1979,
+      "volume": "17",
+      "keys": [
+        "Faber 1979",
+        "Faber et al. 1979",
+        "Faber & Gallagher 1979"
+      ]
+    },
+    {
+      "id": "ref-3",
+      "raw": "Jones, B. F. 1970a, A.J., 75, 563. 1970b, A.J., 76, 470.",
+      "authors": [
+        "Jones",
+        "1970a",
+        "75",
+        "563. 1970b",
+        "76",
+        "470"
+      ],
+      "volume": "75"
+    },
+    {
+      "id": "ref-4",
+      "raw": "Marsden, B. G. 1974, Ann. Rev. Astr. Ap., 12, 1.",
+      "authors": [
+        "Marsden"
+      ],
+      "year": 1974,
+      "volume": "12",
+      "keys": [
+        "Marsden 1974",
+        "Marsden et al. 1974"
+      ]
+    },
+    {
+      "id": "ref-5",
+      "raw": "Milgrom, M. 1983a, Ap. J., 270, 371 (Paper II). 1983b, Ap. J., 270, 384 (Paper III).",
+      "authors": [
+        "Milgrom",
+        "1983a",
+        "Ap",
+        "270",
+        "371 . 1983b",
+        "384"
+      ],
+      "volume": "270"
+    },
+    {
+      "id": "ref-6",
+      "raw": "Oort, J. H. 1963, in The Moon, Meteorites, and Comets. ed. B. M. Middlehurst and G. P. Kuiper (Chicago; University of Chicago Press).",
+      "authors": [
+        "Oort"
+      ],
+      "year": 1963,
+      "keys": [
+        "Oort 1963",
+        "Oort et al. 1963"
+      ]
+    },
+    {
+      "id": "ref-7",
+      "raw": "Rood, H. J. 1981, Rept. Prog. Phys., 44, 1077.",
+      "authors": [
+        "Rood"
+      ],
+      "year": 1981,
+      "volume": "44",
+      "keys": [
+        "Rood 1981",
+        "Rood et al. 1981"
+      ]
+    },
+    {
+      "id": "ref-8",
+      "raw": "Sciama, D. W. 1961, The Unity of the Universe (New York: Doubleday), p. 115.",
+      "authors": [
+        "Sciama"
+      ],
+      "year": 1961,
+      "keys": [
+        "Sciama 1961",
+        "Sciama et al. 1961"
+      ]
+    },
+    {
+      "id": "ref-9",
+      "raw": "Shapiro, I. I. 1980, in Some Stangeness in the Proportion, ed. H. Woolf (Addison-Wesley).",
+      "authors": [
+        "Shapiro"
+      ],
+      "year": 1980,
+      "keys": [
+        "Shapiro 1980",
+        "Shapiro et al. 1980"
+      ]
+    },
+    {
+      "id": "ref-10",
+      "raw": "Walsh, D., Carswell, R. F., and Weymann, R. J. 1979, Nature, 279, 381.",
+      "authors": [
+        "Walsh",
+        "Carswell",
+        "Weymann"
+      ],
+      "year": 1979,
+      "volume": "279",
+      "keys": [
+        "Walsh 1979",
+        "Walsh et al. 1979",
+        "Walsh & Carswell 1979"
+      ]
+    },
+    {
+      "id": "ref-11",
+      "raw": "Weinberg, S. 1972, Gravitation and Cosmology (New York: John Wiley).",
+      "authors": [
+        "Weinberg"
+      ],
+      "year": 1972,
+      "keys": [
+        "Weinberg 1972",
+        "Weinberg et al. 1972"
+      ]
+    },
+    {
+      "id": "ref-12",
+      "raw": "Young, P., Gunn, G. E., Kristian, J., Oke, J. B., and Westphal, J. A. 1980, Ap. J., 241, 507.",
+      "authors": [
+        "Young",
+        "Gunn",
+        "Kristian",
+        "Oke",
+        "Westphal"
+      ],
+      "year": 1980,
+      "volume": "241",
+      "keys": [
+        "Young 1980",
+        "Young et al. 1980",
+        "Young & Gunn 1980"
+      ]
+    }
+  ],
+  "citations": [
+    {
+      "ref_ids": [
+        "ref-2",
+        "ref-7"
+      ],
+      "raw": "(for recent reviews see, for example, Faber and Gallagher 1979 and Rood 1981)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-10"
+    },
+    {
+      "ref_ids": [
+        "ref-11"
+      ],
+      "raw": "(see, for example, Weinberg 1972 for a definition of the SEP)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-38"
+    },
+    {
+      "ref_ids": [
+        "ref-1"
+      ],
+      "raw": "Bekenstein and Milgrom (1983)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-42"
+    },
+    {
+      "ref_ids": [
+        "ref-1"
+      ],
+      "raw": "Bekenstein and Milgrom (1983)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-45"
+    },
+    {
+      "ref_ids": [
+        "ref-12"
+      ],
+      "raw": "(e.g., Walsh, Carswell, and Weyman 1979 and Young et al. 1980)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-52"
+    },
+    {
+      "ref_ids": [
+        "ref-11"
+      ],
+      "raw": "(Weinberg 1972)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-57"
+    },
+    {
+      "ref_ids": [
+        "ref-9"
+      ],
+      "raw": "(Shapiro 1980 and references therein)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-57"
+    },
+    {
+      "ref_ids": [
+        "ref-9"
+      ],
+      "raw": "(Shapiro 1980 and references therein)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-59"
+    },
+    {
+      "ref_ids": [
+        "ref-6",
+        "ref-4"
+      ],
+      "raw": "(see, for example, Oort 1963 and Marsden 1974 and references therein)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-60"
+    },
+    {
+      "ref_ids": [
+        "ref-1"
+      ],
+      "raw": "Bekenstein and Milgrom (1983)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-65"
+    },
+    {
+      "ref_ids": [
+        "ref-11"
+      ],
+      "raw": "(see Weinberg 1972, chap. 16)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-66"
+    },
+    {
+      "ref_ids": [
+        "ref-8"
+      ],
+      "raw": "(see, for example, Sciama 1961)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-66"
+    }
+  ],
+  "crossrefs": [
+    {
+      "kind": "equation",
+      "raw": "Equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-20"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-21"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-22"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-22"
+    },
+    {
+      "kind": "equation",
+      "raw": "Equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-22"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-24"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-24"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-25"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-26"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-27"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-28"
+    },
+    {
+      "kind": "figure",
+      "raw": "Figure 1",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-33"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-40"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-40"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-40"
+    },
+    {
+      "kind": "equation",
+      "raw": "Equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-40"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-40"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 1",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-42"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 1",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-43"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-46"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-46"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 1",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-49"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation (1)",
+      "number": "1",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-59"
+    }
+  ],
+  "stats": {
+    "n_sections": 8,
+    "n_paragraphs": 72,
+    "n_figures": 1,
+    "n_tables": 0,
+    "n_equations": 5,
+    "n_code": 0,
+    "n_algorithms": 0,
+    "n_references": 12,
+    "n_citations": 12,
+    "n_citations_resolved": 12,
+    "n_crossrefs": 23,
+    "n_crossrefs_resolved": 0
+  }
+}

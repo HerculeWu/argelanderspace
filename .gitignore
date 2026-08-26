@@ -6,8 +6,9 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Node / frontend build
-web/node_modules/
+node_modules/
 web/dist/
+packages/*/dist/
 *.tsbuildinfo
 *.log
 

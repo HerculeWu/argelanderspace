@@ -1,0 +1,4828 @@
+{
+  "doc_id": "2603.03522",
+  "source": {
+    "type": "pdf",
+    "path": "/home/wwu/project/bibgraph/data/input/2603.03522.pdf",
+    "filename": "2603.03522.pdf",
+    "n_pages": 12
+  },
+  "meta": {
+    "title": "Most open clusters follow the radial acceleration relation (RAR) and the baryonic Tully-Fisher relation (BTFR)",
+    "mineru": {
+      "model_version": "vlm",
+      "language": "en"
+    },
+    "textfix": {
+      "gaps_before": 43,
+      "gaps_fixed": 35,
+      "holders_changed": 23
+    }
+  },
+  "structure": [
+    {
+      "id": "sec-1",
+      "type": "section",
+      "level": 1,
+      "heading": "Most open clusters follow the radial acceleration relation (RAR) and the baryonic Tully-Fisher relation (BTFR)",
+      "heading_raw": "Most open clusters follow the radial acceleration relation (RAR) and the baryonic Tully-Fisher relation (BTFR)",
+      "page_idx": 0,
+      "bbox": [
+        65.0,
+        93.0,
+        894.0,
+        140.0
+      ],
+      "blocks": [
+        {
+          "id": "p-1",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            68.0,
+            158.0,
+            357.0,
+            176.0
+          ],
+          "text": "Mark D. Huisjes,1★ X. Hernandez2"
+        },
+        {
+          "id": "list-1",
+          "type": "list",
+          "page_idx": 0,
+          "bbox": [
+            68.0,
+            176.0,
+            650.0,
+            200.0
+          ],
+          "ordered": false,
+          "items": [
+            {
+              "text": "1CSG De Goudse Waarden Lyceum, Heemskerkstraat 105, 2805SN Gouda"
+            },
+            {
+              "text": "2Universidad Nacional Autónoma de México, Instituto de Astronomía, A. P. 70-264, 04510, CDMX, México"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-2",
+      "type": "section",
+      "level": 1,
+      "heading": "ABSTRACT",
+      "heading_raw": "ABSTRACT",
+      "page_idx": 0,
+      "bbox": [
+        65.0,
+        274.0,
+        152.0,
+        286.0
+      ],
+      "blocks": [
+        {
+          "id": "p-2",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            63.0,
+            287.0,
+            924.0,
+            498.0
+          ],
+          "text": "We test whether parsec-scale stellar systems in the Milky Way follow the galactic radial acceleration relation (RAR) or the baryonic Tully–Fisher relation (BTFR). We analyse 5646 Gaia DR3 open clusters from the Hunt & Reffert catalogue. Observed accelerations are derived from velocity dispersions and characteristic radii, and baryonic accelerations from stellar masses and characterisitc radii. The clusters are placed on the RAR and BTFR planes and compared with Newtonian and MOND expectations. Approximately 90 per cent of open clusters (those with 𝑁★ ≤ 250) lie close to the RAR, albeit with significant scatter. In a first-of-its-kind test, a smaller fiducial sample is consistent with a best-fitting acceleration scale $g _ { \\dagger } \\approx 1 . 2 \\times 1 0 ^ { - 1 0 } \\mathrm { m } \\mathrm { s } ^ { - 2 } \\pm 0 . 5 \\mathrm { d e x }$ , compatible with canonical MOND values. More massive clusters approach the Newtonian virial expectation. No correlations are found between RAR residuals and galactocentric radii, distance to the Galactic disk midplane, age, or morphology. Tidal effects and unresolved binaries are insufficient to reproduce the observations without fine-tuning. Interpreted within a MOND framework, the alignment of most open clusters with the RAR and BTFR suggests that low-acceleration dynamics operate on parsec scales within the Milky Way. This implies that the Galactic gravitational field is not smooth on these scales and may include regions where the total gravitational acceleration falls below $a _ { 0 } .$ , partially mitigating the external field effect, thereby motivating higher-resolution modelling of the Galactic potential and informing other small-scale gravity tests within the Galaxy."
+        },
+        {
+          "id": "p-3",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            65.0,
+            503.0,
+            922.0,
+            520.0
+          ],
+          "text": "Key words: kinematics and dynamics – open clusters and associations – proper motions – gravitation – acceleration of particles"
+        }
+      ]
+    },
+    {
+      "id": "sec-3",
+      "type": "section",
+      "level": 1,
+      "heading": "INTRODUCTION",
+      "heading_raw": "1 INTRODUCTION",
+      "number": "1",
+      "page_idx": 0,
+      "bbox": [
+        65.0,
+        565.0,
+        206.0,
+        579.0
+      ],
+      "blocks": [
+        {
+          "id": "p-4",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            63.0,
+            586.0,
+            482.0,
+            755.0
+          ],
+          "text": "Empirical scaling relations have played a central role in shaping our understanding of galactic dynamics. Two of the most striking are the baryonic Tully–Fisher relation (BTFR), [[cite:ref-40]], and the radial acceleration relation (RAR), [[cite:ref-41]]. The RAR links the observed gravitational acceleration in galaxies to that predicted from their baryonic mass distribution, while the BTFR connects total baryonic mass to asymptotic rotation velocity through a tight power-law relation. These relations hold across many decades in mass and surface density, with remarkably small intrinsic scatter. They are commonly interpreted either as emergent regularities of galaxy formation within dark matter halos or as manifestations of a modified law of gravity operative at low accelerations.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-40"
+              ],
+              "raw": "McGaugh et al. (2000)",
+              "via": "hyperlink+regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-41"
+              ],
+              "raw": "McGaugh et al. (2016)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-5",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            63.0,
+            755.0,
+            482.0,
+            883.0
+          ],
+          "text": "To date, these relations have primarily been tested on kiloparsec scales in rotating disc galaxies, dwarf spheroidals, and galaxy groups. Much less attention has been paid to whether analogous behaviour persists on parsec scales within galaxies. Open clusters (OCs) provide an opportunity to probe this regime. OCs are self-gravitating systems with characteristic internal accelerations that fall below Milgrom’s constant, $a _ { 0 } \\sim 1 . 2 \\times 1 0 ^ { - 1 0 } m s ^ { - 2 }$ , Milgrom (1983a). Unlike galaxies, however, they reside deep within the gravitational potential of the Milky Way. Their internal dynamics are therefore not only determined by their own mass distributions but also by the external Galactic field in which they are embedded."
+        },
+        {
+          "id": "p-6",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            505.0,
+            595.0,
+            922.0,
+            764.0
+          ],
+          "text": "Under modified Newtonian dynamics (MOND), this environmental dependence is formalized through the external field effect (EFE). Because the MOND field equation is non-linear, the internal dynamics of a system depend on the total gravitational field, including any ambient external contribution. A system whose internal accelerations are below 𝑎0 can nevertheless behave in a (quasi-)Newtonian manner if it is embedded in an external field comparable to or exceeding 𝑎0. In the context of the Milky Way disc, the typical large-scale gravitational field near the solar circle is ∼ 1.5𝑎0. Under the standard AQUAL and QUMOND Lagrangian formulations of MOND, open clusters located in such an environment are therefore expected to exhibit no MOND effects."
+        },
+        {
+          "id": "p-7",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            505.0,
+            767.0,
+            922.0,
+            865.0
+          ],
+          "text": "This theoretical expectation leads to a sharp test. If open clusters in the Galactic disc systematically follow the deep-MOND branch of the RAR despite being embedded in an external field of order 𝑎0 , then either the EFE operates differently than currently formulated, or the level of small-scale density fluctuations present in the galactic disc (e.g. [[cite:ref-53]], [[cite:ref-17]]) lead to regions where the total gravitational potential is much smaller than 𝑎0 .",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-53"
+              ],
+              "raw": "Poggio et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-17"
+              ],
+              "raw": "Ge et al. (2024)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-8",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            505.0,
+            868.0,
+            922.0,
+            939.0
+          ],
+          "text": "Conversely, if their dynamics are fully consistent with Newtonian expectations once tidal heating and the kinematic effects of unresolved binaries on the observed velocity dispersion are accounted for, then parsec-scale systems do not provide additional constraints on theories of gravity."
+        },
+        {
+          "id": "p-9",
+          "type": "paragraph",
+          "page_idx": 0,
+          "bbox": [
+            21.0,
+            246.0,
+            60.0,
+            750.0
+          ],
+          "text": "arXiv:2603.03522v1 [astro-ph.GA] 3 Mar 2026"
+        },
+        {
+          "id": "p-10",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            63.0,
+            67.0,
+            480.0,
+            249.0
+          ],
+          "text": "The central question addressed in this paper is therefore whether open clusters, when placed in the acceleration plane defined by the RAR and in the mass–velocity plane defined by the BTFR, align or not with the same relations observed in galaxies, and what this implies for the structure of the Galactic gravitational field. We analyse a large, homogeneous sample of 5646 open clusters from [[cite:ref-24;ref-25;ref-26]] to determine their observed kinematic accelerations and baryonic gravitational accelerations using consistent definitions. By comparing their locations in the RAR and BTFR planes to both Newtonian and MOND expectations, we test whether parsec-scale systems behave as if they are embedded in a smooth external field or instead generally occupy regions where the effective acceleration drops below $a _ { 0 }$ .",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-24",
+                "ref-25",
+                "ref-26"
+              ],
+              "raw": "Hunt & Reffert (2021, 2023, 2024)",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-11",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            250.0,
+            480.0,
+            292.0
+          ],
+          "text": "This approach allows us to analyse the relation between internal dynamics, external gravitational environment, and empirical scaling relations that were originally established on galactic scales."
+        }
+      ]
+    },
+    {
+      "id": "sec-4",
+      "type": "section",
+      "level": 1,
+      "heading": "MOND THEORY AND THE EXTERNAL FIELD EFFECT",
+      "heading_raw": "2 MOND THEORY AND THE EXTERNAL FIELD EFFECT",
+      "number": "2",
+      "page_idx": 1,
+      "bbox": [
+        65.0,
+        323.0,
+        475.0,
+        336.0
+      ],
+      "blocks": [
+        {
+          "id": "p-12",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            63.0,
+            343.0,
+            480.0,
+            498.0
+          ],
+          "text": "Modified Newtonian Dynamics (MOND) is a modification of classical gravity proposed by Mordehai Milgrom in 1983 to account for the observed kinematics of galaxies without invoking non-baryonic dark matter (Milgrom 1983a,b,c). The central empirical motivation is the persistence of approximately flat rotation curves in disc galaxies at large radii, where the Newtonian gravitational acceleration inferred from the observed baryonic mass distribution would predict a declining orbital velocity. MOND posits that the law of gravity is modified only in regimes where the characteristic acceleration falls below a universal constant $a _ { 0 } \\approx 1 . 2 { \\times } 1 0 ^ { - 1 0 } \\mathrm { m } \\mathrm { s } ^ { - 2 }$ , while standard Newtonian gravity is recovered at accelerations well above this scale."
+        },
+        {
+          "id": "p-13",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            500.0,
+            480.0,
+            540.0
+          ],
+          "text": "In MOND, the gravitational acceleration 𝑔𝑀 experienced by a test particle deviates from the Newtonian value $g _ { N }$ when $g _ { N } \\lesssim a _ { 0 }$ . The modification is commonly written in implicit form as"
+        },
+        {
+          "id": "eq-1",
+          "type": "equation",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            547.0,
+            478.0,
+            578.0
+          ],
+          "latex": "$$\n\\mu \\left(\\frac {g _ {M}}{a _ {0}}\\right) g _ {M} = g _ {N} \\tag {1}\n$$"
+        },
+        {
+          "id": "p-14",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            583.0,
+            480.0,
+            626.0
+          ],
+          "text": "where $\\mu ( x )$ is an interpolating function satisfying $\\mu ( x ) \\to 1$ for 𝑥 ≫ 1 (recovering Newtonian gravity) and $\\mu ( x )  x$ for 𝑥 ≪ 1 (the deep-MOND regime). In the limit $g _ { N } \\ll a _ { 0 }$ , this yields"
+        },
+        {
+          "id": "eq-2",
+          "type": "equation",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            632.0,
+            478.0,
+            648.0
+          ],
+          "latex": "$$\ng _ {M} \\approx \\sqrt {g _ {N} a _ {0}} \\tag {2}\n$$"
+        },
+        {
+          "id": "p-15",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            654.0,
+            480.0,
+            682.0
+          ],
+          "text": "Equivalently, one may express the relation for convenience using the inverse interpolation function 𝜈(𝑦), defined such that"
+        },
+        {
+          "id": "eq-3",
+          "type": "equation",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            689.0,
+            480.0,
+            719.0
+          ],
+          "latex": "$$\ng _ {M} = \\nu \\left(\\frac {g _ {N}}{a _ {0}}\\right) g _ {N} \\tag {3}\n$$"
+        },
+        {
+          "id": "p-16",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            726.0,
+            480.0,
+            781.0
+          ],
+          "text": "with $\\nu ( y ) \\to 1$ for $y \\gg 1$ and $\\nu ( y ) \\to y ^ { - 1 / 2 }$ for $y \\ll 1$ . This formulation emphasizes that MOND modifies the effective gravitational field at low accelerations rather than introducing additional unseen mass."
+        },
+        {
+          "id": "p-17",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            783.0,
+            480.0,
+            838.0
+          ],
+          "text": "A principal consequence of the deep-MOND scaling $g _ { M } \\propto \\sqrt { g _ { N } }$ is that the gravitational field around an isolated mass declines asymptotically as $1 / r$ rather than $1 / r ^ { 2 }$ . For a point mass 𝑀, the asymptotic circular velocity becomes radius-independent and satisfies"
+        },
+        {
+          "id": "eq-4",
+          "type": "equation",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            845.0,
+            480.0,
+            861.0
+          ],
+          "latex": "$$\nV ^ {4} = G M a _ {0} \\tag {4}\n$$"
+        },
+        {
+          "id": "p-18",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            65.0,
+            868.0,
+            480.0,
+            939.0
+          ],
+          "text": "which directly yields the baryonic Tully–Fisher relation with Milgrom’s constant as the normalization parameter. More generally, MOND permits rotation curves to be computed from the observed baryonic mass distribution with essentially one additional constant, $a _ { 0 } .$ . Conversely, observed rotation curves can be inverted to infer baryonic surface density profiles. On galactic scales, this predictive capacity is a defining empirical feature of the theory."
+        },
+        {
+          "id": "p-19",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            505.0,
+            95.0,
+            922.0,
+            221.0
+          ],
+          "text": "At galaxy cluster scales, however, MOND has typically been seen to fall short in fully explaining observed dynamics by still requiring a factor of 2 more mass than present in the baryons, although recently [[cite:ref-66]] have shown that for IMF choices restricted by the observed metallicities of the cluster galaxies, enough stellar remnants might be expected in the intra-cluster medium to significantly ameliorate this issue. Further, as a non-relativistic theory, MOND is unsuitable for addressing cosmological or gravitational lensing observations in general.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-66"
+              ],
+              "raw": "Zhang et al. (2026)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-20",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            505.0,
+            222.0,
+            922.0,
+            292.0
+          ],
+          "text": "MOND can be formulated as a modified gravity theory derived from a Lagrangian. The original non-relativistic formulation, known as AQUAL (AQUAdratic Lagrangian) by [[cite:ref-4]], replaces the Newtonian gravitational action with a non-linear functional of the gradient of the potential:",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-4"
+              ],
+              "raw": "Bekenstein & Milgrom (1984)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "eq-5",
+          "type": "equation",
+          "page_idx": 1,
+          "bbox": [
+            507.0,
+            297.0,
+            921.0,
+            336.0
+          ],
+          "latex": "$$\n\\mathcal {L} \\propto - a _ {0} ^ {2} F \\left(\\frac {\\left| \\nabla \\Phi_ {t o t} \\right| ^ {2}}{a _ {0} ^ {2}}\\right) \\tag {5}\n$$"
+        },
+        {
+          "id": "p-21",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            505.0,
+            342.0,
+            922.0,
+            384.0
+          ],
+          "text": "where the function 𝐹 is chosen so that the resulting field equation below reproduces the 𝜇-interpolation relation. This yields a modified Poisson equation of the form"
+        },
+        {
+          "id": "eq-6",
+          "type": "equation",
+          "page_idx": 1,
+          "bbox": [
+            507.0,
+            390.0,
+            921.0,
+            421.0
+          ],
+          "latex": "$$\n\\nabla \\cdot \\left[ \\mu \\left(\\frac {| \\nabla \\Phi_ {t o t} |}{a _ {0}}\\right) \\nabla \\Phi_ {t o t} \\right] = 4 \\pi G \\rho \\tag {6}\n$$"
+        },
+        {
+          "id": "p-22",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            505.0,
+            427.0,
+            922.0,
+            567.0
+          ],
+          "text": "An alternative but dynamically equivalent formulation by [[cite:ref-47]], QUMOND (quasi-linear MOND), derives from a Lagrangian constructed so that the non-linear aspects are shifted into an algebraic relation involving the Newtonian potential. In QUMOND, one first computes the Newtonian potential from the baryonic mass distribution and then applies the 𝜈-function to obtain the MOND correction, leading to a linear Poisson equation with an effective source term. Both AQUAL and QUMOND are non-relativistic Lagrangian realizations of MOND and ensure the usual conservation of energy and momentum within the modified gravitational framework.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-47"
+              ],
+              "raw": "Milgrom (2010)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-23",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            505.0,
+            567.0,
+            922.0,
+            650.0
+          ],
+          "text": "While MOND has occasionally been explored as a modification of inertia, e.g. [[cite:ref-49]], in which the force–acceleration relation itself is altered, this interpretation remains less developed. The standard treatment regards MOND primarily as a non-linear modification of the gravitational field operative below a universal acceleration scale.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-49"
+              ],
+              "raw": "Milgrom (2022)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-5",
+      "type": "section",
+      "level": 1,
+      "heading": "The external field effect",
+      "heading_raw": "2.1 The external field effect",
+      "number": "2.1",
+      "page_idx": 1,
+      "bbox": [
+        507.0,
+        679.0,
+        690.0,
+        691.0
+      ],
+      "blocks": [
+        {
+          "id": "p-24",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            505.0,
+            700.0,
+            922.0,
+            924.0
+          ],
+          "text": "Because the MOND field equation is non-linear and depends on the total gravitational field, the internal dynamics of a self-gravitating system depend not only on its own mass distribution but also on any ambient gravitational field in which it is embedded. This phenomenon, known as the external field effect (EFE), arises even if the external field is spatially uniform and tidal forces are absent. Such behaviour has no equivalent in Newtonian gravity. A system whose internal accelerations are below $a _ { 0 }$ may nonetheless behave in a Newtonian manner if it resides in an external field exceeding 𝑎0. The external field effectively suppresses the deep-MOND enhancement. When $g _ { i n t } < g _ { e x t } < a _ { 0 }$ the Milgromian enhancement is only partially suppressed and causes the internal dynamics to interpolate between Newtonian and Milgromian behaviour according to the total gravitational environment. This is called the quasi-Newtonian regime and is effectively equivalent to rescaling the gravitational constant G. For a graphical overview of the possible regimes see [[xref:fig-1]].",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 1",
+              "target_id": "fig-1",
+              "number": "1",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-25",
+          "type": "paragraph",
+          "page_idx": 1,
+          "bbox": [
+            522.0,
+            925.0,
+            922.0,
+            939.0
+          ],
+          "text": "The EFE reflects a violation of the strong equivalence principle while preserving the weak equivalence principle1, as all test bodies still follow identical trajectories in a given gravitational field. The EFE has concrete implications for open clusters in galactic discs, dwarf satellite galaxies within host systems, and wide binary stars in the Milky Way, where the background galactic field can influence internal kinematics."
+        },
+        {
+          "id": "fig-1",
+          "type": "figure",
+          "page_idx": 2,
+          "bbox": [
+            67.0,
+            66.0,
+            480.0,
+            271.0
+          ],
+          "number": "1",
+          "label": "Figure 1",
+          "caption": {
+            "text": "The four regimes of MOND, based on figure one of [[cite:ref-2]].",
+            "citations": [
+              {
+                "ref_ids": [
+                  "ref-2"
+                ],
+                "raw": "Banik & Zhao (2022)",
+                "via": "regex",
+                "resolved": true
+              }
+            ]
+          },
+          "img_path": "images/d80b374d8e7ccbd37e4e8a7b0af370412617ca299acefac5ce5a8d7f9e3aabf9.jpg",
+          "chart_type": "line",
+          "content": "| Newtonian gravity, g_N,int log(ms⁻²) | Newtonian gravity, g_M log(ms⁻²) | Deep-MOND gravity, g_M log(ms⁻²) | Quasi-Newtonian gravity, g_M log(ms⁻²) | Forced Newtonian gravity, g_M log(ms⁻²) |\n| ------------------------------------- | ---------------------------------- | -------------------------------- | -------------------------------------- | --------------------------------------- |\n| -16                                   | -7                                 | -13                              | -13                                    | -13                                     |\n| -15                                   | -8                                 | -12                              | -12                                    | -12                                     |\n| -14                                   | -9                                 | -11                              | -11                                    | -11                                     |\n| -13                                   | -10                                | -10                              | -10                                    | -10                                     |\n| -12                                   | -11                                | -9                               | -9                                     | -9                                      |\n| -11                                   | -12                                | -8                               | -8                                     | -8                                      |\n| -10                                   | -13                                | -7                               | -7                                     | -7                                      |\nThe data is used to plot four distinct lines representing different Newtonian models and forces. The labels for each line correspond to the model names and their corresponding values. The equation 'Using: g_N,ext = 10⁻¹³, 10⁻¹², 10⁻¹¹' is noted in the chart."
+        },
+        {
+          "id": "p-26",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            65.0,
+            425.0,
+            480.0,
+            480.0
+          ],
+          "text": "The EFE can be approximated to first order for a system consisting of an internal and external Newtonian gravitational field contribution by changing [[xref:equation-3?]] to the form below based on [[xref:equation-60?]] by [[cite:ref-16]].",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-16"
+              ],
+              "raw": "Famaey & McGaugh (2012)",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ],
+          "crossrefs": [
+            {
+              "kind": "equation",
+              "raw": "equation 3",
+              "number": "3",
+              "via": "regex",
+              "resolved": false
+            },
+            {
+              "kind": "equation",
+              "raw": "equation 60",
+              "number": "60",
+              "via": "regex",
+              "resolved": false
+            }
+          ]
+        },
+        {
+          "id": "eq-7",
+          "type": "equation",
+          "page_idx": 2,
+          "bbox": [
+            65.0,
+            488.0,
+            480.0,
+            519.0
+          ],
+          "latex": "$$\ng _ {\\mathrm{M}} = \\left(g _ {\\mathrm{N,int}} + g _ {\\mathrm{N,ext}}\\right) \\nu \\left(\\frac {g _ {\\mathrm{N,int}} + g _ {\\mathrm{N,ext}}}{a _ {0}}\\right) - g _ {\\mathrm{N,ext}} \\nu \\left(\\frac {g _ {\\mathrm{N,ext}}}{a _ {0}}\\right) \\tag {7}\n$$"
+        },
+        {
+          "id": "p-27",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            63.0,
+            524.0,
+            480.0,
+            746.0
+          ],
+          "text": "There is now considerable observational evidence in favor of the EFE under MOND interpretations of astronomical data. For example observations by McGaugh & Milgrom (2013a,b) support the EFE in the velocity dispersions of dwarf satellite galaxies embedded in the gravitational field of their host. The EFE has also been detected in the outer edges of spiral galaxies by [[cite:ref-36]] where rotation curves are affected by the gravitational field of the large scale structure of the universe. Recently, studies of the anomalous relative velocity between components of wide binaries in the Solar neighbourhood have yielded results consistent with the presence of standard MOND EFE phenomenology e.g. [[cite:ref-22]], Chae (2024b). Finally laboratory Cavendish experiments using a torsion pendulum also point to the absence of any enhanced motion at low internal accelerations indicating either ordinary Newtonian mechanics or the presence of the external field effect due to the very strong gravitational field of the Earth [[cite:ref-19]].",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-36"
+              ],
+              "raw": "Chae et al. (2020)",
+              "via": "hyperlink",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-22"
+              ],
+              "raw": "Hernandez et al. (2024)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-19"
+              ],
+              "raw": "(Gundlach et al. 2007)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-28",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            63.0,
+            748.0,
+            480.0,
+            888.0
+          ],
+          "text": "Although open clusters were already mentioned in the foundational papers on MOND (Milgrom 1983a), analyses of these systems has remained sparse until recently. Open clusters have long been considered nearly Newtonian because of relatively small excess velocity dispersions and the dominant influence of the Galactic gravitational field. Indeed, open clusters were the original motivation for including the EFE in the initial development of MOND (Milgrom 1983a). According to Milgrom, Salpeter and Tremaine pointed out that open clusters in the solar neighbourhood showed no appreciable mismatch between their kinematic and stellar masses, despite having internal"
+        },
+        {
+          "id": "p-29",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            67.0,
+            922.0,
+            179.0
+          ],
+          "text": "baryonic accelerations well below $a _ { 0 } .$ . Of course, it is well known that under a Newtonian interpretation, open clusters are in the process of dissolving into the field, and indeed, abundant evidence exists showing these systems not to be equilibrium bound self-gravitating objects often presenting clear tidal features. It remains to be seen to what degree their present internal kinematics might retain information of their formation processes, a point which we investigate in detail in what follows."
+        }
+      ]
+    },
+    {
+      "id": "sec-6",
+      "type": "section",
+      "level": 1,
+      "heading": "SAMPLE SELECTION",
+      "heading_raw": "3 SAMPLE SELECTION",
+      "number": "3",
+      "page_idx": 2,
+      "bbox": [
+        507.0,
+        221.0,
+        682.0,
+        234.0
+      ],
+      "blocks": [
+        {
+          "id": "p-30",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            242.0,
+            922.0,
+            355.0
+          ],
+          "text": "We begin with the star cluster catalogue compiled by [[cite:ref-24;ref-25;ref-26]], henceforth HR134. This enables a systematic investigation of the dynamics of stellar subsystems in the Milky Way. The catalogue of clusters created by HR134 contains several types of over-densities such as what HR134 classifies as open clusters, moving groups, globular clusters and a \"rejected\" category that was classified as such manually. In this study we will only consider the 5646 clusters HR134 classifies as open clusters.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-24",
+                "ref-25",
+                "ref-26"
+              ],
+              "raw": "Hunt & Reffert (2021, 2023, 2024)",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-7",
+      "type": "section",
+      "level": 1,
+      "heading": "Data quality cuts",
+      "heading_raw": "3.1 Data quality cuts",
+      "number": "3.1",
+      "page_idx": 2,
+      "bbox": [
+        507.0,
+        387.0,
+        648.0,
+        401.0
+      ],
+      "blocks": [
+        {
+          "id": "p-31",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            407.0,
+            922.0,
+            548.0
+          ],
+          "text": "Two quality cuts were applied to the HR134 open clusters. The first is a distance cut, eliminating all clusters with a heliocentric distance greater than 3 kpc because beyond this distance completeness decreases and faint magnitude systematics become important contributors to the measured proper motion. This removes 1573 clusters from the sample. The second cut is to remove all clusters more than 150 pc away from the midplane of the disc as these are likely on orbits which cross the disc periodically and are particularly prone to tidal disruption. This removes another 454 clusters from the sample leaving a total of 3618 open clusters to be analysed."
+        },
+        {
+          "id": "p-32",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            549.0,
+            922.0,
+            632.0
+          ],
+          "text": "The sample of 3618 open clusters is divided into three parts for analysis based on the number of resolved stars 𝑁★. The first group has 𝑁★ ≤ 250 and comprises 90% of the full science sample. The second group has 250 < 𝑁★ ≤ 500 and accounts for another 6%. The third and final group has 𝑁★ > 500 and consists of the remaining 4% of clusters."
+        },
+        {
+          "id": "p-33",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            632.0,
+            922.0,
+            787.0
+          ],
+          "text": "A further fiducial high quality sample was selected from the 𝑁★ ≤ 250 group which contained 2423 open clusters by requiring that each have a colour-magnitude diagram quality index exceeding 75%. This index, used by HR134, compares the CMD of an observed cluster to the best-fitting isochrone for it and estimates the fraction of stars which are consistent with this optimal isochrone, given observational errors, and the fraction which are likely foreground or background field contaminant stars. A value of 100% denotes all stars being likely cluster members consistent with the optimal isochrone, while a value of 0 would denote a cluster where all assigned member stars are probably contaminant non-cluster members."
+        }
+      ]
+    },
+    {
+      "id": "sec-8",
+      "type": "section",
+      "level": 1,
+      "heading": "Derived quantities",
+      "heading_raw": "3.2 Derived quantities",
+      "number": "3.2",
+      "page_idx": 2,
+      "bbox": [
+        507.0,
+        818.0,
+        658.0,
+        832.0
+      ],
+      "blocks": [
+        {
+          "id": "p-34",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            840.0,
+            921.0,
+            910.0
+          ],
+          "text": "The heliocentric distance to each open cluster is estimated independently using two methods: a photometric method based on the distance modulus, and a geometric method based on parallax. An accurate distance is necessary to convert the measured proper motions to physical velocities."
+        },
+        {
+          "id": "p-35",
+          "type": "paragraph",
+          "page_idx": 2,
+          "bbox": [
+            505.0,
+            910.0,
+            922.0,
+            939.0
+          ],
+          "text": "For the photometric estimate, the 16th, 50th, and 84th percentiles of the distance modulus distribution given by the HR134 catalogue"
+        },
+        {
+          "id": "fig-2",
+          "type": "figure",
+          "page_idx": 3,
+          "bbox": [
+            67.0,
+            67.0,
+            922.0,
+            500.0
+          ],
+          "number": "2",
+          "label": "Figure 2",
+          "caption": {
+            "text": "Comparison of observed kinetic accelerations, $g _ { \\mathrm { o b s } }$ , and Newtonian virial equilibrium accelerations, $g _ { \\mathrm { b a r } }$ for the inferred masses, velocity dispersions and radii for the 3618 open clusters after our quality cuts from the HR134 catalogue. The colour number density shading gives the position of the 3251 $N _ { \\star } \\leq 2 5 0$ clusters which accurately trace the galactic RAR relation given by the solid curve. The solid squares show the 145 most massive $N _ { \\star } \\geq 5 0 0$ clusters, mostly tracing the Newtonian virial expectations, while the dots give the positions of the 222 intermediate mass $2 5 0 \\leq N _ { \\star } \\leq 5 0 0$ clusters, filling the region in between the two previous populations."
+          },
+          "img_path": "images/ca92c92d1dd75c731ae725e355c4b2c5d0371997f837cedb3d6b9dde3bf5920a.jpg",
+          "chart_type": "scatter"
+        },
+        {
+          "id": "p-36",
+          "type": "paragraph",
+          "page_idx": 3,
+          "bbox": [
+            65.0,
+            613.0,
+            260.0,
+            626.0
+          ],
+          "text": "are converted into distances via"
+        },
+        {
+          "id": "eq-8",
+          "type": "equation",
+          "page_idx": 3,
+          "bbox": [
+            65.0,
+            632.0,
+            478.0,
+            649.0
+          ],
+          "latex": "$$\nd = 1 0 ^ {(m - M) / 5 + 1}, \\tag {8}\n$$"
+        },
+        {
+          "id": "p-37",
+          "type": "paragraph",
+          "page_idx": 3,
+          "bbox": [
+            63.0,
+            656.0,
+            478.0,
+            727.0
+          ],
+          "text": "yielding three corresponding distance estimates. A symmetric uncertainty is then defined as the mean of the upper and lower absolute deviations from the median distance. An analogous procedure is applied to the parallax-based distance estimate, again defining a central value and a symmetric uncertainty from its percentile range."
+        },
+        {
+          "id": "p-38",
+          "type": "paragraph",
+          "page_idx": 3,
+          "bbox": [
+            65.0,
+            727.0,
+            480.0,
+            787.0
+          ],
+          "text": "The two distance estimates are then combined using inversevariance weighting. Defining the weights as $w _ { \\mathrm { p h o t } } = 1 / \\bar { \\sigma } _ { d , \\mathrm { p h o t } } ^ { 2 }$ and $w _ { \\pi } = 1 / \\sigma _ { d , \\pi } ^ { 2 }$ , the joint distance with standard error propagation is given by"
+        },
+        {
+          "id": "eq-9",
+          "type": "equation",
+          "page_idx": 3,
+          "bbox": [
+            65.0,
+            791.0,
+            480.0,
+            823.0
+          ],
+          "latex": "$$\nd _ {\\text { joint }} = \\frac {d _ {\\text { phot }} w _ {\\text { phot }} + d _ {\\pi} w _ {\\pi}}{w _ {\\text { phot }} + w _ {\\pi}}, \\tag {9}\n$$"
+        },
+        {
+          "id": "eq-10",
+          "type": "equation",
+          "page_idx": 3,
+          "bbox": [
+            65.0,
+            838.0,
+            478.0,
+            875.0
+          ],
+          "latex": "$$\n\\sigma_ {d, \\text { joint }} = \\sqrt {\\frac {1}{w _ {\\text { phot }} + w _ {\\pi}}}  . \\tag {10}\n$$"
+        },
+        {
+          "id": "p-39",
+          "type": "paragraph",
+          "page_idx": 3,
+          "bbox": [
+            63.0,
+            882.0,
+            480.0,
+            939.0
+          ],
+          "text": "For the sample considered in this work, the photometric and parallax distances are nearly identical for most open clusters. Only beyond heliocentric distances of approximately 3 kpc do the two methods begin to diverge at the order-of-unity level. As a result, the joint estimator typically differs only marginally from either individual estimate within the bulk of the sample. As in HR134, raw Gaia parallaxes were corrected for the parallax zero point bias described by [[cite:ref-35]] when calculating parallax distances.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-35"
+              ],
+              "raw": "Lindegren et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-40",
+          "type": "paragraph",
+          "page_idx": 3,
+          "bbox": [
+            505.0,
+            671.0,
+            922.0,
+            939.0
+          ],
+          "text": "The velocity dispersion given by the HR134 catalogue is calculated by taking the standard deviation of the proper motions. According to [[xref:section-3.3?]] of [[cite:ref-25]] mean cluster parameters were calculated over only those stars assigned to the cluster that have membership probabilities larger than 50% and are within the tidal radius of the cluster, so as to exclude any tidally perturbed stars within the tidal tails. This tidal radius is defined in a model independent way as the radius at which the overall cluster has the best contrast to field stars using the CST parameter produced by the HDBSCAN clustering algorithm. According to HR134, this is similar to the King (1962) definition of tidal radius as the radius at which a cluster’s density begins to exceed that of the density of the field. This was verified by recalculating the velocity dispersion from the individual member star proper motions using the \"inrt\" and \"inrj\" parameters of the catalogue which classify a star as being in- or outside of the tidal or Jacobi radius respectively. Further excluded are all those stars with $R U W E > 1 . 4$ . The catalogue does not weight the proper motions by their uncertainties in calculating the velocity dispersion. Here we adopt the velocity dispersion given by HR134 for each cluster, $\\sigma _ { \\star }$ .",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-25"
+              ],
+              "raw": "Hunt & Reffert (2023)",
+              "via": "regex",
+              "resolved": true
+            }
+          ],
+          "crossrefs": [
+            {
+              "kind": "section",
+              "raw": "Section 3.3",
+              "number": "3.3",
+              "via": "regex",
+              "resolved": false
+            }
+          ]
+        },
+        {
+          "id": "p-41",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            63.0,
+            67.0,
+            478.0,
+            207.0
+          ],
+          "text": "We further recalculated $\\sigma _ { \\star }$ for each cluster directly from the individual member stars to test its sensitivity to using different selection criteria and methods of calculation. To test how sensitive the velocity dispersion is to the HDBSCAN derived membership probability, a magnitude cut $1 2 > G > 1 7$ was used instead, along with excluding all stars outside the tidal radius and with a $R U W E > 1 . 4$ and any with an available non-single star solution in Gaia DR3. This alternative selection did not significantly alter the velocity dispersion inferred for the clusters. A further cut excluding stars with $R U W E > 1 . 2$ only lowered the velocity dispersion by about 10%."
+        },
+        {
+          "id": "p-42",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            63.0,
+            207.0,
+            480.0,
+            304.0
+          ],
+          "text": "Following HR134, these recalculations corrected the raw Gaia proper motions for the proper motion bias of bright Gaia sources identified by [[cite:ref-8]]. A further correction for the secular aberration drift due to the solar system’s acceleration towards 𝑆𝑔𝑟𝐴∗ identified by [[cite:ref-27]] was also tested which did not noticeably alter the velocity dispersion when applied or not.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-8"
+              ],
+              "raw": "Cantat-Gaudin & Brandt (2021)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-27"
+              ],
+              "raw": "Klioner et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-43",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            63.0,
+            305.0,
+            480.0,
+            347.0
+          ],
+          "text": "For each open cluster the baryonic gravitational and observed kinematic acceleration were determined based on the definitions of [[cite:ref-33]]:",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-33"
+              ],
+              "raw": "Lelli et al. (2017)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "eq-11",
+          "type": "equation",
+          "page_idx": 4,
+          "bbox": [
+            65.0,
+            354.0,
+            478.0,
+            397.0
+          ],
+          "latex": "$$\ng _ {\\mathrm{obs}} = - \\nabla \\Phi_ {t o t} (R _ {1 / 2}) = \\frac {\\left(\\sqrt {3} \\sigma_ {\\star}\\right) ^ {2}}{R _ {1 / 2}} \\tag {11}\n$$"
+        },
+        {
+          "id": "p-44",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            63.0,
+            402.0,
+            478.0,
+            584.0
+          ],
+          "text": "Where $\\sigma _ { \\star }$ is the mean one dimensional velocity dispersion of the stars, $R _ { 1 / 2 }$ is the half member radius and the factor $\\sqrt { 3 }$ converts the one dimensional velocity dispersion to the full 3D velocity dispersion assuming isotropy. Instead of the factor ${ \\sqrt { 3 } } ,$ [[cite:ref-42]] suggests to use 2 as this empirically shifts dwarf galaxies onto the baryonic Tully-Fisher relation. He also notes that MOND predicts a factor of 2.12 for this parameter for deep-MOND isolated systems. Here we adhere to Lelli’s definition through the assumption of isotropy, in order to use a strict kinematic acceleration measure without introducing any relations like the RAR or the BTFR or any assumptions on the possible validity of MOND a priori. To convert the proper motions to physical units the joint distance mentioned previously was used.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-42"
+              ],
+              "raw": "McGaugh et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-45",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            63.0,
+            584.0,
+            480.0,
+            656.0
+          ],
+          "text": "The baryonic gravitational acceleration is computed from the total cluster mass 𝑀 (in solar masses), assuming spherical symmetry and evaluating the Newtonian acceleration at the same characteristic radius as used above. Following [[cite:ref-33]], we adopt the factor 2 in the denominator appropriate for using the half-mass radius proxy:",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-33"
+              ],
+              "raw": "Lelli et al. (2017)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "eq-12",
+          "type": "equation",
+          "page_idx": 4,
+          "bbox": [
+            65.0,
+            672.0,
+            478.0,
+            708.0
+          ],
+          "latex": "$$\ng _ {\\text { bar }} = - \\nabla \\Phi_ {b a r} (R _ {1 / 2}) = \\frac {G M}{2 R _ {1 / 2} ^ {2}} \\tag {12}\n$$"
+        },
+        {
+          "id": "p-46",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            65.0,
+            713.0,
+            480.0,
+            755.0
+          ],
+          "text": "Hence, as described in this section, we obtain a set of $( \\sigma _ { s t a r } .$ , 𝑀, $R _ { 1 / 2 } , g _ { \\mathrm { o b s } } , g _ { \\mathrm { b a r } } )$ parameters for each of the 3618 open clusters clearing the quality cuts imposed on the HR134 catalogue."
+        }
+      ]
+    },
+    {
+      "id": "sec-9",
+      "type": "section",
+      "level": 1,
+      "heading": "RESULTS",
+      "heading_raw": "4 RESULTS",
+      "number": "4",
+      "page_idx": 4,
+      "bbox": [
+        65.0,
+        790.0,
+        154.0,
+        804.0
+      ],
+      "blocks": [
+        {
+          "id": "p-47",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            63.0,
+            812.0,
+            480.0,
+            939.0
+          ],
+          "text": "We begin with [[xref:fig-2]] which shows the inferred $g _ { \\mathrm { o b s } }$ and $g _ { \\mathrm { b a r } }$ values for the three populations described previously, selected through a ranking on the number of stars present per cluster. We see the most massive ones well described by Newtonian virial equilibrium expectations, with the addition of a small distribution towards super-virial values in $g _ { \\mathrm { o b s } }$ reflecting higher $\\sigma _ { \\star }$ values than what corresponds to the dashed Newtonian line shown. At the other extreme, the smallest clusters present a distribution following the radial acceleration relation, an empirical scaling well established at galactic scales, and",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 2",
+              "target_id": "fig-2",
+              "number": "2",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "fig-3",
+          "type": "figure",
+          "page_idx": 4,
+          "bbox": [
+            509.0,
+            83.0,
+            904.0,
+            367.0
+          ],
+          "caption": {
+            "text": "Radial acceleration relation & OCs [[xref:figure-3?]]. Same data as shown in [[xref:fig-2]] but only for the smallest $N _ { \\star } \\leq 2 5 0$ clusters. The thin dotted line gives the resulting fit to these clusters to [[xref:equation-13?]], yielding an optimal fit acceleration scale almost identical to the standard ??0 value of MOND, which in turn results in the galactic RAR given by the solid curve. The equivalent fit using the fiducial $N _ { \\star } < 2 5 0$ sub-sample with CMD quality> 75% clusters actually coincides with this solid curve.",
+            "crossrefs": [
+              {
+                "kind": "figure",
+                "raw": "Figure 3",
+                "number": "3",
+                "via": "regex",
+                "resolved": false
+              },
+              {
+                "kind": "figure",
+                "raw": "Fig. 2",
+                "target_id": "fig-2",
+                "number": "2",
+                "via": "regex",
+                "resolved": true
+              },
+              {
+                "kind": "equation",
+                "raw": "eq. 13",
+                "number": "13",
+                "via": "regex",
+                "resolved": false
+              }
+            ]
+          },
+          "img_path": "images/edc5b81095b4650781e52a68599f73778972fa50186b557b51885433f4b43772.jpg",
+          "chart_type": "heatmap",
+          "content": "| g_bar log(ms⁻²) | g_obs log(ms⁻²) | Counts |\n| --------------- | --------------- | ------ |\n| -13 to -10      | -12 to -9       | N★ ≤ 250, R₅₀ = 3.83 pc, σ₃D = 1.47 km/s, M_median = 314.76 M☉, 90% of full sample |"
+        },
+        {
+          "id": "p-48",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            505.0,
+            492.0,
+            922.0,
+            589.0
+          ],
+          "text": "clearly tracing MOND predictions of four decades ago. This RAR was originally found at baryonic mass scales some eight orders of magnitude above the small $\\mathrm { O C s }$ studied here. In between the previous two populations we find intermediate mass clusters which populate the region between the two previously described, with a small dispersion extending towards either of the other two regions, as seen in [[xref:fig-2]]",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 2",
+              "target_id": "fig-2",
+              "number": "2",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-49",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            505.0,
+            590.0,
+            922.0,
+            700.0
+          ],
+          "text": "This division of the sample into three groups was done because they show markedly different positions in the acceleration plane. The exact boundaries between these groups are somewhat arbitrary as the characteristics of these clusters change smoothly up towards the highest number of resolved stars (and highest mass). While the specific membership thresholds chosen are arbitrary, the three distinct populations shown are robust to small changes in the details of these thresholds."
+        },
+        {
+          "id": "p-50",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            505.0,
+            702.0,
+            921.0,
+            773.0
+          ],
+          "text": "Although it might be more physically motivated to divide the sample based on the inferred stellar mass of the cluster, this would add numerous inferential steps each with its own assumptions and uncertainties. In practice, it was found that using the observational quantity 𝑁★ provides a cleaner separation in the acceleration plane."
+        },
+        {
+          "id": "p-51",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            505.0,
+            773.0,
+            922.0,
+            843.0
+          ],
+          "text": "We now turn our attention to a more careful exploration of the $N _ { \\star } \\leq 2 5 0$ sample, shown in [[xref:fig-3]]. This figure presents a zoom of the previous figure, together with, for the first time in the literature, a fit using this sample to the radial acceleration relation leaving $g _ { \\dagger }$ as a free parameter,",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 3",
+              "target_id": "fig-3",
+              "number": "3",
+              "via": "hyperlink",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "eq-13",
+          "type": "equation",
+          "page_idx": 4,
+          "bbox": [
+            507.0,
+            861.0,
+            921.0,
+            892.0
+          ],
+          "latex": "$$\ng _ {\\mathrm{obs}} = \\frac {g _ {\\mathrm{bar}}}{1 - e ^ {- \\sqrt {g _ {\\mathrm{bar}} / g _ {\\dagger}}}}. \\tag {13}\n$$"
+        },
+        {
+          "id": "p-52",
+          "type": "paragraph",
+          "page_idx": 4,
+          "bbox": [
+            507.0,
+            897.0,
+            921.0,
+            939.0
+          ],
+          "text": "The inferred value we obtain is of an acceleration scale $g _ { \\dagger } =$ $1 . 4 \\times 1 0 ^ { - 1 0 } m s ^ { - 2 } \\pm 0 . 5 d e x$ . Turning to the fiducial $N _ { \\star } \\leq 2 5 0$ subsample with a cleaned CMD the result of this inference becomes $g _ { \\uparrow } = 1 . 2 \\times 1 0 ^ { - 1 0 } m s ^ { - 2 } \\pm 0 . 5 d e x$ . This matches the canonical MOND value for this quantity as first measured by [[cite:ref-3]], namely $a _ { 0 } = 1 . 2 1 \\times \\mathrm { 1 0 ^ { - 1 0 } } m s ^ { - 2 }$ but vastly less precise than modern values such as $a _ { 0 } = 1 . 2 0 \\pm 0 . 0 2 \\times 1 0 ^ { - 1 0 } m s ^ { - 2 } \\mathrm { b y }$ y [[cite:ref-33]]. In [[xref:figure-3?]] the first fit is shown by the small dotted line, while the second is indistinguishable from the standard galactic RAR (again shown by the solid curve). The inset in [[xref:figure-3?]] gives the distribution of residuals from the best fit RAR relation, which closely follow a Gaussian distribution, showing the data to be consistent with the fit presented to within effective errors in the determination of the plotted quantities.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-3"
+              ],
+              "raw": "Begeman et al. (1991)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-33"
+              ],
+              "raw": "Lelli et al. (2017)",
+              "via": "regex",
+              "resolved": true
+            }
+          ],
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 3",
+              "number": "3",
+              "via": "regex",
+              "resolved": false
+            },
+            {
+              "kind": "figure",
+              "raw": "Fig. 3",
+              "number": "3",
+              "via": "regex",
+              "resolved": false
+            }
+          ]
+        },
+        {
+          "id": "fig-4",
+          "type": "figure",
+          "page_idx": 5,
+          "bbox": [
+            67.0,
+            65.0,
+            477.0,
+            543.0
+          ],
+          "number": "4",
+          "label": "Figure 4",
+          "caption": {
+            "text": "Open clusters with $N \\star < 2 5 0$ compared to the baryonic Tully-Fisher relation. The error bars indicate the 1 σ spread of the data for each mass bin. The dotted lines are the systematic uncertainty expected due to the presence of unresolved binary contamination, as modelled by HR134. Other data included: galaxy groups [[cite:ref-48;ref-52]], rotating galaxies [[cite:ref-59;ref-34;ref-42]]; dwarf galaxies [[cite:ref-42]]; weak lensing [[cite:ref-50]].",
+            "citations": [
+              {
+                "ref_ids": [
+                  "ref-48",
+                  "ref-52"
+                ],
+                "raw": "(Milgrom 2019; Müller et al. 2022)",
+                "via": "regex",
+                "resolved": true
+              },
+              {
+                "ref_ids": [
+                  "ref-59",
+                  "ref-34",
+                  "ref-42"
+                ],
+                "raw": "(Teodoro et al. 2021; Lelli et al. 2019; McGaugh et al. 2021)",
+                "via": "regex",
+                "resolved": true
+              },
+              {
+                "ref_ids": [
+                  "ref-42"
+                ],
+                "raw": "(McGaugh et al. 2021)",
+                "via": "regex",
+                "resolved": true
+              },
+              {
+                "ref_ids": [
+                  "ref-50"
+                ],
+                "raw": "(Mistele et al. 2024)",
+                "via": "regex",
+                "resolved": true
+              }
+            ]
+          },
+          "img_path": "images/ad041c737b61a89cacc3b8ec98c5d23ccc59f0167bbb90249d52e336bc65c6cd.jpg",
+          "chart_type": "scatter",
+          "content": "| Galaxy Type       | M_b (M☉) | V_c (km s⁻¹) |\n| ----------------- | -------- | ------------ |\n| Rotating galaxies | 10^2     | 0.5          |\n| Rotating galaxies | 10^3     | 1.0          |\n| Rotating galaxies | 10^4     | 2.0          |\n| Rotating galaxies | 10^5     | 5.0          |\n| Rotating galaxies | 10^6     | 10.0         |\n| Rotating galaxies | 10^7     | 20.0         |\n| Rotating galaxies | 10^8     | 50.0         |\n| Rotating galaxies | 10^9     | 100.0        |\n| Rotating galaxies | 10^10    | 200.0        |\n| Rotating galaxies | 10^11    | 300.0        |\n| Rotating galaxies | 10^12    | 500.0        |\n| Galaxy groups     | 10^2     | 0.5          |\n| Galaxy groups     | 10^3     | 1.0          |\n| Galaxy groups     | 10^4     | 2.0          |\n| Galaxy groups     | 10^5     | 5.0          |\n| Galaxy groups     | 10^6     | 10.0         |\n| Galaxy groups     | 10^7     | 20.0         |\n| Galaxy groups     | 10^8     | 50.0         |\n| Galaxy groups     | 10^9     | 100.0        |\n| Galaxy groups     | 10^10    | 200.0        |\n| Galaxy groups     | 10^11    | 300.0        |\n| Galaxy groups     | 10^12    | 500.0        |\n| Weak lensing      | 10^2     | 0.5          |\n| Weak lensing      | 10^3     | 1.0          |\n| Weak lensing      | 10^4     | 2.0          |\n| Weak lensing      | 10^5     | 5.0          |\n| Weak lensing      | 10^6     | 10.0         |\n| Weak lensing      | 10^7     | 20.0         |\n| Weak lensing      | 10^8     | 50.0         |\n| Weak lensing      | 10^9     | 100.0        |\n| Weak lensing      | 10^10    | 200.0        |\n| Weak lensing      | 10^11    | 300.0        |\n| Weak lensing      | 10^12    | 500.0        |\n| Dwarf galaxies    | 10^2     | 0.5          |\n| Dwarf galaxies    | 10^3     | 1.0          |\n| Dwarf galaxies    | 10^4     | 2.0          |\n| Dwarf galaxies    | 10^5     | 5.0          |\n| Dwarf galaxies    | 10^6     | 10.0         |\n| Dwarf galaxies    | 10^7     | 20.0         |\n| Dwarf galaxies    | 10^8     | 50.0         |\n| Dwarf galaxies    | 10^9     | 100.0        |\n| Dwarf galaxies    | 10^10    | 200.0        |\n| Dwarf galaxies    | 10^11    | 300.0        |\n| Dwarf galaxies    | 10^12    | 500.0        |"
+        },
+        {
+          "id": "p-53",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            65.0,
+            840.0,
+            478.0,
+            896.0
+          ],
+          "text": "It is impressive that taking a sample of Galactic open clusters with a typical mass of a couple hundred stars, this fit should yield a central inferred acceleration scale almost indistinguishable from what results when describing the rotation curves of spiral galaxies."
+        },
+        {
+          "id": "p-54",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            65.0,
+            896.0,
+            480.0,
+            939.0
+          ],
+          "text": "Comparing [[xref:fig-2]] with [[xref:fig-1]] under a MOND perspective, we would be forced to conclude that the $N _ { \\star } \\leq 2 5 0$ population lies in (or retains memory of a formation phase under) the deep-MOND regime, the $2 5 0 < N \\star \\leq 5 0 0$ population resides within the quasi-Newtonian regime and the $N _ { \\star } > 5 0 0$ population probes the forced Newtonian regime, the latter two of which are expressions of the external field effect.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 2",
+              "target_id": "fig-2",
+              "number": "2",
+              "via": "hyperlink+regex",
+              "resolved": true
+            },
+            {
+              "kind": "figure",
+              "raw": "Fig. 1",
+              "target_id": "fig-1",
+              "number": "1",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-55",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            505.0,
+            122.0,
+            922.0,
+            361.0
+          ],
+          "text": "A final test of the emergent deep-MOND character of our $N _ { \\star } \\leq$ 250 population is explored in [[xref:fig-4]], where we plot the mass and geometric equivalent rotation velocities of these clusters, $V _ { c } = \\sqrt { 3 } \\sigma _ { \\star }$ , large blue squares, in comparison, the corresponding values for galactic systems defining the baryonic Tully-Fisher relation. The dotted lines give 500 m/s error ranges on the data presented, where this value represents the expected uncertainty due to the presence of unresolved binaries. While this uncertainty will only result in a possible reduction of the true cluster velocity dispersion, we include it symmetrically as a generous estimate of the systematic error budget of the problem. Under a MOND perspective it has been shown (e.g. [[cite:ref-42]]), that a conversion factor between line-ofsight velocity dispersion and equivalent BTFR circular velocity of 2.12 rather than 3 is better physically motivated, using this slightly larger factor brings the mean velocity values for the open clusters treated into even better agreement with the galactic BTFR than what is shown in [[xref:fig-4]].",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-42"
+              ],
+              "raw": "McGaugh et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            }
+          ],
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 4",
+              "target_id": "fig-4",
+              "number": "4",
+              "via": "hyperlink+regex",
+              "resolved": true
+            },
+            {
+              "kind": "figure",
+              "raw": "Fig. 4",
+              "target_id": "fig-4",
+              "number": "4",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-56",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            505.0,
+            361.0,
+            921.0,
+            474.0
+          ],
+          "text": "We note also that the masses we are using were derived by HR134 through integrating an assumed IMF suitable to the observed stellar population of these clusters. However, no allowance for mass segregation was included, so that if any relevant stellar mass segregation processes have taken place, a systematic error in mass will be introduced. Of course, any such effect is expected to be relevant only for the densest and oldest clusters treated here, and not for the very small and young $N _ { \\star } \\leq 2 5 0$ objects shown in this figure."
+        }
+      ]
+    },
+    {
+      "id": "sec-10",
+      "type": "section",
+      "level": 1,
+      "heading": "NEWTONIAN INTERPRETATIONS OF THE SCALING RELATIONS FOUND",
+      "heading_raw": "5 NEWTONIAN INTERPRETATIONS OF THE SCALING RELATIONS FOUND",
+      "number": "5",
+      "page_idx": 5,
+      "bbox": [
+        505.0,
+        506.0,
+        904.0,
+        533.0
+      ],
+      "blocks": [
+        {
+          "id": "p-57",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            505.0,
+            540.0,
+            921.0,
+            668.0
+          ],
+          "text": "The galactic radial acceleration relation and the baryonic Tully-Fisher relation are predictions of MOND for isolated systems which have been confirmed empirically. Under a Newtonian framework, these are interpreted as the presence of a dominant dark matter halo with properties tightly correlated with those of the observed baryonic galaxies. Since the open clusters examined here clearly follow these relations, one possible interpretation for the observed velocity dispersion excess compared to the Newtonian expectation is that the isolated deep-MOND regime is at work."
+        },
+        {
+          "id": "p-58",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            505.0,
+            668.0,
+            922.0,
+            822.0
+          ],
+          "text": "Before interpreting the data presented as evidence for MOND, we must consider that the excess velocity dispersions of open clusters can also arise from several mechanisms unrelated to modified gravity. It is hence necessary to examine whether observational biases, dynamical misclassification, stellar multiplicity, or the presence of a hypothetical dark matter component could plausibly account for the effect within standard gravitational dynamics. The following subsections assess all these possibilities in turn, focusing on whether they can reproduce not only an overall elevation above the Newtonian virial line, but specifically considering the observed alignment with the radial acceleration relation."
+        }
+      ]
+    },
+    {
+      "id": "sec-11",
+      "type": "section",
+      "level": 1,
+      "heading": "Interloper stars",
+      "heading_raw": "5.1 Interloper stars",
+      "number": "5.1",
+      "page_idx": 5,
+      "bbox": [
+        507.0,
+        847.0,
+        640.0,
+        861.0
+      ],
+      "blocks": [
+        {
+          "id": "p-59",
+          "type": "paragraph",
+          "page_idx": 5,
+          "bbox": [
+            505.0,
+            868.0,
+            921.0,
+            939.0
+          ],
+          "text": "Cluster membership in the catalogue of HR134 is determined using the HDBSCAN clustering algorithm applied in position–proper motion–parallax space. Only stars with membership probabilities larger than 50% are retained for the computation of mean cluster parameters, and only those lying within a model-independent tidal radius defined via the cluster–field contrast (CST parameter) are included. In addition, stars with $\\mathrm { R U W E } > 1 . 4$ are excluded in order to suppress astrometric outliers."
+        },
+        {
+          "id": "fig-5",
+          "type": "figure",
+          "page_idx": 6,
+          "bbox": [
+            67.0,
+            65.0,
+            361.0,
+            209.0
+          ],
+          "img_path": "images/aa6fedbd2378667c67749fe679e65d64cc66ed2fad5e0faa05acd34b633d12b3.jpg",
+          "chart_type": "scatter",
+          "content": "| CMD quality | RAR residuals (dex) |\n| ----------- | ------------------- |\n| 0.0         | ~0.5                |\n| 0.2         | ~0.3                |\n| 0.4         | ~0.1                |\n| 0.6         | ~0.0                |\n| 0.8         | ~-0.2               |\n| 1.0         | ~-0.5               |"
+        },
+        {
+          "id": "fig-6",
+          "type": "figure",
+          "page_idx": 6,
+          "bbox": [
+            364.0,
+            65.0,
+            640.0,
+            209.0
+          ],
+          "img_path": "images/9b8ba17b92e12eca10a1ae6ee942801117d4e84470a3d75da1165114c4eea029.jpg",
+          "chart_type": "scatter",
+          "content": "| Fraction of stars in the tidal tail | Value |\n| ----------------------------------- | ----- |\n| 0.0                                 | 0.0   |\n| 0.2                                 | 0.0   |\n| 0.4                                 | 0.0   |\n| 0.6                                 | 0.0   |\n| 0.8                                 | 0.0   |"
+        },
+        {
+          "id": "fig-7",
+          "type": "figure",
+          "page_idx": 6,
+          "bbox": [
+            643.0,
+            66.0,
+            919.0,
+            209.0
+          ],
+          "img_path": "images/0875fb4c6a8a9e7c3e30269731ef206fc7dd98a00ea4de165d5dc9a4382c61b3.jpg",
+          "chart_type": "scatter",
+          "content": "| Ellipticity | c    |\n| ----------- | ---- |\n| 0.0         | 1.0  |\n| 0.2         | 0.0  |\n| 0.4         | -1.0 |\n| 0.6         | 0.0  |\n| 0.8         | 1.0  |"
+        },
+        {
+          "id": "fig-8",
+          "type": "figure",
+          "page_idx": 6,
+          "bbox": [
+            65.0,
+            209.0,
+            361.0,
+            354.0
+          ],
+          "img_path": "images/f8e9e108e51ed83552c760ff4e5fd1ec2c79928b5eaee35966be498aec96689b.jpg",
+          "chart_type": "scatter",
+          "content": "| R_gal (kpc) | RAR residuals (dex) |\n| ----------- | ------------------- |\n| 6           | ~0                  |\n| 8           | ~0                  |\n| 10          | ~0                  |"
+        },
+        {
+          "id": "fig-9",
+          "type": "figure",
+          "page_idx": 6,
+          "bbox": [
+            364.0,
+            209.0,
+            640.0,
+            352.0
+          ],
+          "img_path": "images/99a5679c132c818624308358183976e4ffcdac5e2b5215d2c7759dea2c76f97b.jpg",
+          "chart_type": "scatter"
+        },
+        {
+          "id": "fig-10",
+          "type": "figure",
+          "page_idx": 6,
+          "bbox": [
+            643.0,
+            209.0,
+            919.0,
+            352.0
+          ],
+          "number": "5",
+          "label": "Figure 5",
+          "caption": {
+            "text": "Residuals with respect to the radial acceleration relation for our main $N _ { \\star } \\leq 2 5 0$ open cluster sample, plotted against various independent cluster characteristics."
+          },
+          "img_path": "images/e4d2cbd7a617370fac48e5a1919cbd80a19536113a166280f1bfe631f57ca6f6.jpg",
+          "chart_type": "scatter",
+          "content": "| Cluster Age log(yr) | Value |\n| ------------------- | ----- |\n| 7                   | ~0    |\n| 8                   | ~0    |\n| 9                   | ~0    |\n| 10                  | ~0    |"
+        },
+        {
+          "id": "p-60",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            63.0,
+            470.0,
+            480.0,
+            539.0
+          ],
+          "text": "Recomputing the velocity dispersions using alternative selection criteria, including magnitude cuts and stricter RUWE thresholds, does not significantly change the inferred dispersions. This indicates that contamination by field interlopers is not the dominant driver of the excess velocity dispersion."
+        },
+        {
+          "id": "p-61",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            63.0,
+            540.0,
+            478.0,
+            636.0
+          ],
+          "text": "If interlopers were responsible for the elevated dispersions, one would expect clusters with cleaner colour–magnitude diagrams to move closer to the Newtonian virial expectation. However, the fiducial high-quality subsample restricted to high CMD quality (> 75%) continues to follow the radial acceleration relation. The systematic alignment of low-𝑁★ clusters with the RAR therefore cannot plausibly be attributed to residual field-star contamination."
+        },
+        {
+          "id": "p-62",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            63.0,
+            638.0,
+            480.0,
+            750.0
+          ],
+          "text": "This is tested explicitly in [[xref:fig-10]] panel a), where we plot the residuals from the best fit RAR as a function of the CMD quality index of the full $N _ { \\star } < 2 5 0$ sample. We see that only for the lowest CMD-quality values below 25% a correlation of the residuals to this quantity appears, for all CMD-quality values above 75%, residuals to the best fit RAR are distributed symmetrically about the zero line. No minimum CMD quality threshold will remove the clear RAR scaling reported.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-12",
+      "type": "section",
+      "level": 1,
+      "heading": "Unresolved binaries",
+      "heading_raw": "5.2 Unresolved binaries",
+      "number": "5.2",
+      "page_idx": 6,
+      "bbox": [
+        65.0,
+        776.0,
+        225.0,
+        789.0
+      ],
+      "blocks": [
+        {
+          "id": "p-63",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            63.0,
+            797.0,
+            480.0,
+            939.0
+          ],
+          "text": "Unresolved binary stars with unequal mass ratios shift the system’s centre of light as the components orbit one another. This motion propagates into the measured velocity dispersion of the cluster, inflating it and biasing virial analyses of open clusters if not properly modelled [[cite:ref-18]]. HR134 attempted to correct for unresolved binaries by adopting mean binary parameters (e.g. period and eccentricity) for field stars from [[cite:ref-51]] but found this to be impossible. They warn that the velocity dispersions are easily contaminated and that this can contribute $\\gtrsim 5 0 0 m s ^ { - 1 }$ . This range is included as the dotted lines in [[xref:fig-4]] and corresponds very well to the observed scatter in the data. It is inconsistent as an explanation for the observed trend.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-18"
+              ],
+              "raw": "(Gieles et al. 2010)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-51"
+              ],
+              "raw": "Moe & Stefano (2017)",
+              "via": "regex",
+              "resolved": true
+            }
+          ],
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 4",
+              "target_id": "fig-4",
+              "number": "4",
+              "via": "hyperlink+regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-64",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            505.0,
+            455.0,
+            921.0,
+            567.0
+          ],
+          "text": "HR134 notes that, for their sample of open clusters, the simulations used to estimate the influence of unresolved binaries may overestimate the effect. Stars likely to be binaries with poor-quality astrometry were already removed by the [[cite:ref-56]] selection, in addition to the exclusion of stars with RUWE > 1.4 in the velocity dispersion analysis. Indeed, [[cite:ref-5]] identify this RUWE threshold as a secure limit to exclude unresolved binaries from the Gaia catalogue.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-56"
+              ],
+              "raw": "Rybizki et al. (2022)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-5"
+              ],
+              "raw": "Belokurov et al. (2020)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-65",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            505.0,
+            567.0,
+            921.0,
+            679.0
+          ],
+          "text": "Tightening the RUWE threshold to 1.25 or even 1.0 reduced the inferred cluster velocity dispersions only by about 10%, and does not alter any of the scalings described in the previous section. Nevertheless, the binary fraction may be higher in denser environments such as open clusters. HR134 concludes that a definitive removal of the impact of unresolved binaries on cluster velocity dispersions may not be possible before Gaia DR4, which is expected to provide substantially more non-single-star solutions than Gaia DR3."
+        },
+        {
+          "id": "p-66",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            505.0,
+            680.0,
+            921.0,
+            833.0
+          ],
+          "text": "Although unresolved binaries cannot presently be ruled out as a systematic leading to the high virial parameters of open clusters, this interpretation appears unlikely as it would not result in the precise RAR and BTFR scalings we obtain. Open clusters with lower internal baryonic accelerations exhibit higher virial parameters; attributing this trend to unresolved binaries would imply that more diffuse clusters host a larger binary fraction, while denser clusters contain fewer binaries. Attributing the scalings described to unresolved binaries would be contrived and require highly fine-tuned unresolved binary parameters to be adjusted as a function of the number of stars and radii of each open cluster, across the cluster population examined."
+        }
+      ]
+    },
+    {
+      "id": "sec-13",
+      "type": "section",
+      "level": 1,
+      "heading": "Dissolution dynamics and tidal heating",
+      "heading_raw": "5.3 Dissolution dynamics and tidal heating",
+      "number": "5.3",
+      "page_idx": 6,
+      "bbox": [
+        505.0,
+        861.0,
+        789.0,
+        875.0
+      ],
+      "blocks": [
+        {
+          "id": "p-67",
+          "type": "paragraph",
+          "page_idx": 6,
+          "bbox": [
+            505.0,
+            882.0,
+            921.0,
+            939.0
+          ],
+          "text": "One possible explanation for the fact that the sample of HR134 lies above the Newtonian line of virial equilibrium is that these systems are not bound open clusters but unbound associations, since we know that the origin of disc field stars is precisely open cluster dissolution."
+        },
+        {
+          "id": "p-68",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            63.0,
+            67.0,
+            480.0,
+            305.0
+          ],
+          "text": "Given that the cluster finding algorithm of HR134 does not select over-densities that lack coherent proper motions the sample cannot be comprised of mere chance associations, as clusters are selected on a position-velocity space. However, tidally disrupted formerly bound systems would certainly present a velocity dispersion excess over Newtonian virial expectations. Actually a majority of the open clusters examined do have some tidal features, even if for most these comprise only a small fraction of the stars. In fact, such tidal features themselves offer interesting tests of gravity. [[cite:ref-60]]; [[cite:ref-29]] have shown that tidal tail asymmetries in carefully observed open clusters conflict with Newtonian expectations, while being consistent with MOND expectations. If open clusters are heavily tidally disrupted, it would have to be viewed as an uncanny coincidence that the excess velocities found for the small systems land them on the galactic RAR and BTFR, while then only the more sturdy massive clusters with $N \\star \\mathrm { ~ > ~ } 5 0 0$ would be gravitationally bound structures.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-60"
+              ],
+              "raw": "Thomas et al. (2018)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-29"
+              ],
+              "raw": "Kroupa et al. (2022)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-69",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            63.0,
+            306.0,
+            480.0,
+            530.0
+          ],
+          "text": "However, contrary to the above explanation, most systems in the sample are rather spherical and have only a small fraction of stars in what HR134 classifies as a tidal tail, so that tidal disruption does not appear to be a sufficient explanation. This is shown in [[xref:fig-10]], panel b), where we plot the residuals from the best fit RAR against the fraction of stars in the tidal tails of the clusters studied. As can be seen, this fraction is smaller than 0.3 for the greater majority of our sample, and for any tidal tail fraction threshold below 0.2, no systematic trend is present, with clusters showing a symmetric residual distribution about zero. Clearly, no tidal tail fraction exclusion criterion will remove the galactic RAR and BTFR scalings we see. Indeed, the distribution of ellipticities of the open clusters defining the galactic scalings mentioned can be seen in [[xref:fig-10]], panel c), and shows most are not highly elongated with ellipticities below 0.5, showing no systematic trend of the RAR residuals with this tidally sensitive shape parameter.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-70",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            63.0,
+            531.0,
+            480.0,
+            656.0
+          ],
+          "text": "Also, if the excess velocity dispersion were caused by tidal disruption by the smooth galactic gravitational field, this would necessitate such an effect to grow with decreasing galactocentric radius, as the galactic tidal field increases with decreasing galactocentric radius. This is not the case, as can be explicitly seen in panel d) of [[xref:fig-10]] where the RAR residuals are shown against the galactocentric radii of our open clusters. For any value of this quantity below 10 kpc, residuals show no trend at all and present a symmetric distribution about zero.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-71",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            63.0,
+            658.0,
+            480.0,
+            826.0
+          ],
+          "text": "Aside from tidal heating from the radial galactic tides, vertical tidal shocking on crossing the midplane of the disc could also be present. This would be more pronounced for the clusters which rise (or dip) most above (or below) the Galactic midplane. Our quality cut at $| Z | < 1 5 0$ pc was explicitly chosen to eliminate this source of excess velocity dispersion. Increasing the severity of this cut to |𝑍| < 100 pc or even $| Z | < 5 0$ pc does not change the fact that $N _ { \\star } \\leq 2 5 0$ clusters lie along the RAR. As can be seen in panel e) in [[xref:fig-10]], no systematic correlation in RAR residuals is seen for any |𝑍 | value below 100 pc, which contains the overwhelming fraction of our sample. Keeping as close to the Galactic midplane as desired preserves the RAR and BTFR scalings.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-72",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            63.0,
+            827.0,
+            480.0,
+            939.0
+          ],
+          "text": "Interpreting these systems as unbound associations does not explain why they scatter around the two relations predicted by MOND for systems in which the external field is negligible and followed by galactic systems. In principle, unbound stellar associations could occupy any position above the Newtonian virial equilibrium line (dashed line in [[xref:fig-3]]). It would be a remarkable coincidence if most such associations happened to be observed at precisely the stage in their dissolution at which they acquire the additional dispersion required to lie close to the radial acceleration relation at the time of observation.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 3",
+              "target_id": "fig-3",
+              "number": "3",
+              "via": "hyperlink",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-73",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            505.0,
+            95.0,
+            922.0,
+            152.0
+          ],
+          "text": "Since none of the residuals shown in [[xref:fig-10]] show any systematic deviations from the RAR, it appears that the galactic scalings which we have found to apply to these clusters within their tidal radii, are not driven by tidal heating and/or dissolution dynamics.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-14",
+      "type": "section",
+      "level": 1,
+      "heading": "Dark matter",
+      "heading_raw": "5.4 Dark matter",
+      "number": "5.4",
+      "page_idx": 7,
+      "bbox": [
+        507.0,
+        187.0,
+        621.0,
+        200.0
+      ],
+      "blocks": [
+        {
+          "id": "p-74",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            505.0,
+            209.0,
+            922.0,
+            278.0
+          ],
+          "text": "Since the scalings of the RAR and the BTFR found to describe the clusters treated (within their tidal radii) are interpreted within a galactic standard gravity outlook as reflecting the presence of dominant dark matter halos, it might be tempting to explore such an explanation for the open clusters studied here."
+        },
+        {
+          "id": "p-75",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            505.0,
+            280.0,
+            922.0,
+            586.0
+          ],
+          "text": "Historically, open clusters have been regarded as systems in which dark matter is negligible. The seminal review on open cluster formation by [[cite:ref-30]] does not even mention dark matter at all. More recent reviews e.g. [[cite:ref-1;ref-28]] even explicitly define open clusters as systems containing no dark matter. This partly follows from independent bounds on the local dark matter density within the galactic disc. For example, at the Solar Neighbourhood, it is well established that any local dark matter density above 0.01 $M _ { \\odot } \\mathfrak { p c } ^ { - 3 }$ is excluded by the observed vertical distribution and measured vertical velocities of stars, e.g. [[cite:ref-54]] found $0 . 0 0 5 < \\rho _ { D M } < 0 . 0 1 5$ and more recently using Gaia, [[cite:ref-7]] derive $\\rho _ { D M } = 0 . 0 1 2 8 \\pm 0 . 0 0 0 8$ , both in units of $M _ { \\odot } \\mathrm { p c } ^ { - 3 }$ , for the Solar Neighbourhood. This value would increase slightly towards the galactic centre, but decrease away, so that on average, the open clusters we examine would be expected to coexist with the smooth Galactic dark matter halo having a density of close to 0.01 $M _ { \\odot } \\mathrm { p c } ^ { - 3 }$ , at most. Given the scales of our systems of below some 10 pc, within their tidal radii, where we derive the scalings described, they would be expected to contain at most 10 $M _ { \\odot }$ of dark matter, which would represent less than some 10% of the cluster’s mass and hence would not explain any velocity boost above a mere 5%.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-30"
+              ],
+              "raw": "(Lada & Lada 2003)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-1",
+                "ref-28"
+              ],
+              "raw": "(Adamo et al. 2020; Krause et al. 2020)",
+              "via": "hyperlink+regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-54"
+              ],
+              "raw": "Read (2014)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-7"
+              ],
+              "raw": "Bienaymé et al. (2024)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-76",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            505.0,
+            588.0,
+            922.0,
+            712.0
+          ],
+          "text": "Aside from the hypothetical smooth dark matter halo component, structure formation simulations predict also the presence of small and dense dark matter sub-halos, e.g. [[cite:ref-57]], which depending on the assumed detailed physics for this component, could extend down to the mass range of open clusters. However, any such hypothetical sub-halos would form part of the overall Galactic dark halo distribution and hence cross the Galactic disc practically vertically at close to the virial velocity of the halo of close to 160 km s−1 $\\mathrm { s } ^ { - 1 }$",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-57"
+              ],
+              "raw": "(Springel et al. 2008)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-77",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            505.0,
+            714.0,
+            922.0,
+            881.0
+          ],
+          "text": "In fact, such dark matter sub-halos have been envisioned as potential sources of dynamical heating for the Galactic disc e.g. [[cite:ref-6]], and would have no chance of serving as seeds of open cluster formation or becoming embedded with the small stellar structures we are examining. We see that the standard explanation within classical gravity for the galactic scalings we have found at open cluster scales, dominant dark matter distributions, has no place at the scales and Galactic disc settings at which we are currently working. Indeed, beyond the continual lack of any dark matter detection, recently [[cite:ref-20]] have shown that dynamical friction constraints across astronomical scales make the dark matter hypothesis in itself rather dubious.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-6"
+              ],
+              "raw": "Benson et al. (2004)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-20"
+              ],
+              "raw": "Hernandez & Kroupa (2025)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-78",
+          "type": "paragraph",
+          "page_idx": 7,
+          "bbox": [
+            505.0,
+            883.0,
+            922.0,
+            939.0
+          ],
+          "text": "Finally, the option of the OCs studied having internal dynamics which do not reflect an internal equilibrium dynamical state can also be dismissed. Clusters from the $N _ { \\star } \\leq 2 5 0$ sample have ages that are much longer than their crossing times. The median age of this sample is 100 million years while the mean crossing time of these clusters are of the order of a million years, see panel f) in [[xref:fig-10]].",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-15",
+      "type": "section",
+      "level": 1,
+      "heading": "MONDIAN INTERPRETATIONS OF THE SCALING RELATIONS FOUND",
+      "heading_raw": "6 MONDIAN INTERPRETATIONS OF THE SCALING RELATIONS FOUND",
+      "number": "6",
+      "page_idx": 8,
+      "bbox": [
+        65.0,
+        132.0,
+        440.0,
+        159.0
+      ],
+      "blocks": [
+        {
+          "id": "p-79",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            65.0,
+            168.0,
+            480.0,
+            349.0
+          ],
+          "text": "As explained in [[xref:sec-5]], under a MOND description, whenever a system having internal accelerations below $a _ { 0 }$ is immersed in an external acceleration field comparable or larger than $^ { a _ { 0 } , }$ MOND effects are suppressed and internally the system behaves in a quasi-Newtonian way. Describing the Galaxy as a purely baryonic system including only the Galactic bulge and a smooth Galactic disc matter distribution, this last typically modelled as a double exponential disc, implies external accelerations at the Solar Radius of slightly above 𝑎0, e.g. Chae (2024a). Thus, the expectation has been for disc open clusters to behave in the quasi-Newtonian regime, and not to present any of the deep-MOND phenomenology associated with the RAR and BTFR galactic scalings. However, the Galactic disc is not in fact a smooth double exponential matter distribution.",
+          "crossrefs": [
+            {
+              "kind": "section",
+              "raw": "section 2.1",
+              "target_id": "sec-5",
+              "number": "2.1",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-80",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            65.0,
+            350.0,
+            480.0,
+            629.0
+          ],
+          "text": "Aside from the presence of spiral structure, when looking at recent maps of matter distribution within 3 kpc of the Sun, typically using Gaia data (e.g. [[cite:ref-53]], [[cite:ref-65]], [[cite:ref-17]]), a strong level of small-scale density fluctuations are apparent. The exact spiral structure of the Milky Way is still uncertain due to observational difficulties arising from our position within the Galaxy [[cite:ref-23;ref-64]]. However recent measurements using Gaia have enabled mapping the spiral structure in the solar neighbourhood with a resolution of about 300 parsecs [[cite:ref-62]]. This measurement shows that spiral arms cause $\\mathbf { a } ~ \\pm 2 0 \\%$ density perturbation. Combining the bulge and disc potential of [[cite:ref-14]] with the spiral potential of [[cite:ref-13]] assuming a ±20% density perturbation shows that this alone is incapable of generating the necessary small-scale low-acceleration regions to explain the open cluster data arising from the deep-MOND regime. Smaller scale features such as HI clouds, molecular clouds, tidal streams and open clusters themselves also have their own gravitational fields which can counteract the galactic gravitational field if of sufficient mass and in the right proximity to a region of interest.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-53"
+              ],
+              "raw": "Poggio et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-65"
+              ],
+              "raw": "Zari et al. (2021)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-17"
+              ],
+              "raw": "Ge et al. (2024)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-23",
+                "ref-64"
+              ],
+              "raw": "(Hou & Han 2014; Xu et al. 2016)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-62"
+              ],
+              "raw": "(Widmark & Naik 2024)",
+              "via": "hyperlink+regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-14"
+              ],
+              "raw": "Dehnen & Binney (1998)",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "ref_ids": [
+                "ref-13"
+              ],
+              "raw": "Cox & Gomez (2002)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-81",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            65.0,
+            631.0,
+            480.0,
+            826.0
+          ],
+          "text": "To zeroth order, we can calculate from a Newtonian perspective that the 220 km/s of local Galactic rotation at a Galactocentric radius of 8.5 𝑘𝑝𝑐 implies a total central mass of $1 0 ^ { 1 1 } M _ { \\odot }$ , the resulting gravitational force pointing towards the Galactic centre could then be balanced locally by a $1 0 ^ { 5 } M _ { \\odot }$ molecular cloud at a distance of some 10 pc in the direction of the Galactic anti-centre. Thus, it is not impossible, indeed unavoidable, that the inhomogeneities of the small-scale Galactic disc matter distribution will lead to the existence of small scale pockets of overall gravitational potential minima where the external gravitational field will be much smaller than its mean value. Within these pockets, from a MOND perspective, one should expect a much reduced, or even zero EFE, and hence the existence of low internal acceleration systems showing deep-MOND phenomenology."
+        },
+        {
+          "id": "p-82",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            65.0,
+            827.0,
+            480.0,
+            939.0
+          ],
+          "text": "We propose that small low density gas clouds in the Galactic disc will generally be stable against their internal gravity, being mostly in the EFE dominated regime, but will become gravitationally unstable when entering any gravitational potential minima pockets, where they will find themselves close to the deep-MOND limit. These will then experience star formation and lead to small stellar open clusters with dynamical properties reflecting the BTFR and RAR scalings of galaxies. Indeed, it has long been held that molecular clouds and hence open clusters, form in spiral arm potential minima where material piles up as it passes through the arm on its orbit around the galaxy e.g. [[cite:?]]. On leaving these formation pockets small OCs enter again the EFE dominated regime and begin to dissolve into the field. This dissolution process will proceed through tidal effects, which are typically very sensitive to a tidal radius threshold. For example, when describing Roche lobe overflow in tight binary stars, tidal effects are ignored when describing the stellar structure within the Jacobi radius of the star being tidally stripped, while any material beyond this critical radius is lost to the tidal field of the accreting star.",
+          "citations": [
+            {
+              "raw": "(Roberts & Stewart 1987)",
+              "via": "regex",
+              "resolved": false
+            }
+          ]
+        },
+        {
+          "id": "p-83",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            505.0,
+            221.0,
+            922.0,
+            445.0
+          ],
+          "text": "Similarly, the dynamical properties of the small OCs studied here, which closely follow the deep-MOND BTFR and RAR galactic scalings, have been determined exclusively within the tidal radii of each cluster. Stars in the tidal tails have been excluded from the analysis. The dynamics we describe therefore pertain only to the bound (or most nearly bound) inner regions that remain shielded from ongoing tidal stripping, as illustrated in [[xref:fig-10]]. For the more massive open clusters, the relevant distinction is not that their internal accelerations necessarily exceed $a _ { 0 }$ in isolation, but that the total gravitational field experienced by the system, $g _ { \\mathrm { t o t } } \\simeq g _ { \\mathrm { i n t } } + g _ { \\mathrm { e x t } } ,$ , can lie closer to or above $^ { a _ { 0 } , }$ either currently or during formation. In such conditions MOND effects are expected to be strongly suppressed and the internal dynamics to approach the Newtonian virial expectation according to the forced Newtonian regime, with subsequent dissolution and tidal heating capable of driving some systems toward super-virial velocity dispersion values.",
+          "crossrefs": [
+            {
+              "kind": "figure",
+              "raw": "Fig. 5",
+              "target_id": "fig-10",
+              "number": "5",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-84",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            505.0,
+            446.0,
+            922.0,
+            558.0
+          ],
+          "text": "If the alignment of open clusters with the RAR and BTFR reflects low-acceleration MOND dynamics within the Galactic disc, this result has consequences that extend beyond cluster kinematics and bear directly on other probes of gravity and on the interpretation of the acceleration scale itself. For example OCs could afford a far stronger EFE test than [[cite:ref-10]] if the external field could be quantified. This is because a much larger range of internal and external gravitational fields would be at play.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-10"
+              ],
+              "raw": "Chae et al. (2020)",
+              "via": "hyperlink",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-16",
+      "type": "section",
+      "level": 1,
+      "heading": "Mapping the galactic gravitational field",
+      "heading_raw": "6.1 Mapping the galactic gravitational field",
+      "number": "6.1",
+      "page_idx": 8,
+      "bbox": [
+        505.0,
+        586.0,
+        793.0,
+        601.0
+      ],
+      "blocks": [
+        {
+          "id": "p-85",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            505.0,
+            608.0,
+            922.0,
+            819.0
+          ],
+          "text": "If open cluster velocity dispersions can be measured with improved precision and if some of these systems are confirmed to be in approximate dynamical equilibrium at least within their tidal radii, they could provide an additional method to map the Galactic gravitational field. In the MOND framework, their internal dynamics depend not only on their own baryonic mass distribution but also on the local external field through the external field effect. This introduces an environmental sensitivity that can, in principle, be inverted: given reliable cluster masses and velocity dispersions, the local external acceleration can be constrained. Open clusters would then serve as discrete, parsec-scale probes of the gravitational field within the disc. This approach is complementary to determinations based on the vertical motions of stars in the solar neighbourhood, such as those by [[cite:ref-62]], which infer the gravitational potential through large-scale kinematic modelling.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-62"
+              ],
+              "raw": "Widmark & Naik (2024)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sec-17",
+      "type": "section",
+      "level": 1,
+      "heading": "Molecular clouds",
+      "heading_raw": "6.2 Molecular clouds",
+      "number": "6.2",
+      "page_idx": 8,
+      "bbox": [
+        507.0,
+        847.0,
+        650.0,
+        859.0
+      ],
+      "blocks": [
+        {
+          "id": "p-86",
+          "type": "paragraph",
+          "page_idx": 8,
+          "bbox": [
+            505.0,
+            869.0,
+            921.0,
+            939.0
+          ],
+          "text": "If the Galactic gravitational field varies on parsec scales and includes regions where the total external gravitational acceleration drops below $^ { a _ { 0 } , }$ molecular clouds can provide an independent test of this hypothesis. As the progenitors of open clusters and systems of comparable mass, they allow the same acceleration-based diagnostics to be applied in the gaseous phase. Modern Galactic cloud catalogues measure cloud sizes, line widths, and distances, permitting estimates of baryonic accelerations from the mass distribution and dynamical accelerations from CO line–derived velocity dispersions. Molecular clouds can therefore be placed in the same acceleration planes as stellar systems and directly compared with Newtonian and MOND expectations."
+        },
+        {
+          "id": "p-87",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            63.0,
+            166.0,
+            480.0,
+            347.0
+          ],
+          "text": "However, not all molecular clouds are suitable for such an analysis. Surveys that focus on dense cores primarily trace regions already affected by stellar feedback, pressure confinement, and local turbulence, where the dynamics are not dominated solely by self-gravity. At the opposite extreme, giant molecular cloud complexes identified at low angular resolution may blend multiple substructures, obscuring their true dynamical state. Meaningful tests therefore require clouds that are spatially resolved, trace the full extent of the system rather than only its densest parts, and are not strongly perturbed by active star formation. If such systems also exhibit alignment with the RAR or BTFR, this would strengthen the case that low-acceleration regions operate within the Milky Way disc and influence both gaseous and stellar self-gravitating systems."
+        }
+      ]
+    },
+    {
+      "id": "sec-18",
+      "type": "section",
+      "level": 1,
+      "heading": "Wide binaries",
+      "heading_raw": "6.3 Wide binaries",
+      "number": "6.3",
+      "page_idx": 9,
+      "bbox": [
+        65.0,
+        375.0,
+        186.0,
+        388.0
+      ],
+      "blocks": [
+        {
+          "id": "p-88",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            63.0,
+            398.0,
+            480.0,
+            496.0
+          ],
+          "text": "Similar to studies of molecular clouds, our current results could also be important to wide binary gravity tests. In these, the relative separations and velocities of wide binary stars are statistically compared to predictions under Newtonian and Milgromian gravity, [[cite:ref-21]]. Since wide binaries experience very low internal gravitational accelerations, they are expected to present a Newtonian gravitational anomaly.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-21"
+              ],
+              "raw": "Hernandez et al. (2012)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-89",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            63.0,
+            496.0,
+            480.0,
+            677.0
+          ],
+          "text": "Wide binary gravity tests explicitly exclude any objects being part or close to any stellar over-densities, open clusters or stellar associations, as part of requiring the wide binaries studied to be as isolated from any ambient dynamical perturbations as possible. Further, the clear presence of tidal tails in almost all OCs shows these systems are currently dissolving, under the MOND interpretation presented, we expect them to have been formed in local pockets of low EFE with dynamics which are still reflected in the kinematics of their stars inside their current tidal radii. The OCs’ current positions do not necessarily reflect their initial formation sites a few hundred million years ago. Hence, tracing the regions where OCs show more or less deep-MOND effects will probably not be very relevant to wide binary gravity tests."
+        },
+        {
+          "id": "p-90",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            63.0,
+            677.0,
+            480.0,
+            805.0
+          ],
+          "text": "However, if the Galactic gravitational field is spatially variable and includes regions where it falls below $^ { a _ { 0 } , }$ , as our current results suggest, then MOND predicts wide binaries to exhibit a substantial range of external field effect strengths. This suggests significant variations in wide binary gravity results might be expected, particularly once observational accuracy increases to the point where these tests can extend beyond the current ∼ 150 pc volume probed, out to kpcscales where a greater range of total gravitational acceleration will be probed."
+        }
+      ]
+    },
+    {
+      "id": "sec-19",
+      "type": "section",
+      "level": 1,
+      "heading": "Acceleration scale convergence",
+      "heading_raw": "6.4 Acceleration scale convergence",
+      "number": "6.4",
+      "page_idx": 9,
+      "bbox": [
+        65.0,
+        833.0,
+        294.0,
+        847.0
+      ],
+      "blocks": [
+        {
+          "id": "p-91",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            63.0,
+            854.0,
+            480.0,
+            939.0
+          ],
+          "text": "A further consideration concerns the convergence of the acceleration scale 𝑎0 across independent empirical domains. As emphasized in philosophical analyses of theory assessment such as [[cite:ref-43]], a parameter that repeatedly emerges from distinct phenomena carries greater evidential weight than one inferred multiple times from essentially the same class of data. Within the Milgromian framework,",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-43"
+              ],
+              "raw": "Merritt (2020)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "tab-1",
+          "type": "table",
+          "page_idx": 9,
+          "bbox": [
+            534.0,
+            95.0,
+            897.0,
+            365.0
+          ],
+          "number": "1",
+          "label": "Table 1",
+          "caption": {
+            "text": "Determinations of Milgrom’s constant $a _ { 0 } ( 1 0 ^ { - 1 0 } \\mathrm { m } \\mathrm { s } ^ { - 2 } )$ ."
+          },
+          "footnote": "?? Number of galaxies. ?? From McGaugh (2012). ?? Gas-rich galaxies only. ?? Corrected for non-point-mass potential. ?? Based on assumed projected dark matter density. ℎ Least-squares fit to Lelli et al. $( 2 0 1 6 \\mathrm { b } ) . \\dot { \\iota } \\ \\nu ( \\bar { y } )$ with $n = 1$ . $\\textit { \\textbf { j } } _ { \\nu } ( y ) = ( \\bar { 1 { \\ - } e ^ { - \\sqrt { y } } } ) ^ { - 1 } . \\bar { \\kappa } \\ \\nu ( y )$ with $n = 2 . ^ { l }$ Random error. ?? Systematic error. ?? Note that individual galaxies are usually measured at 20-50 points along the disc so the total number of data points is actually similar between galaxies and open clusters.",
+          "table_body": "<table><tr><td>Reference</td><td> $N^{a}$ </td><td> $a_{0}$ </td></tr><tr><td colspan=\"3\">Baryonic Tully-Fisher relation</td></tr><tr><td>Begeman et al. (1991)</td><td>10</td><td> $1.21 \\pm 0.24$ </td></tr><tr><td>Stark et al. (2009) $^{e}$ </td><td>28</td><td> $1.18^{d}$ </td></tr><tr><td>Trachternach et al. (2009) $^{e}$ </td><td>34</td><td> $1.30^{d}$ </td></tr><tr><td>McGaugh (2011) $^{e}$ </td><td>47</td><td> $1.24 \\pm 0.14$ </td></tr><tr><td>Lelli et al. (2016a)</td><td>118</td><td> $1.29 \\pm 0.06^{f}$ </td></tr><tr><td colspan=\"3\">Central surface density relation</td></tr><tr><td>Donato et al. (2009)</td><td> $\\sim 10^{3}$ </td><td> $1.3^{g}$ </td></tr><tr><td>Lelli et al. (2016b) $^{h}$ </td><td>135</td><td> $1.27 \\pm 0.05^{i}$  $1.27 \\pm 0.05^{j}$ </td></tr><tr><td colspan=\"3\">Radial acceleration relation</td></tr><tr><td>Wu &amp; Kroupa (2015)</td><td>74</td><td> $0.94 \\pm 0.03^{i}$  $1.21 \\pm 0.03^{k}$ </td></tr><tr><td>McGaugh et al. (2016)</td><td>153</td><td> $1.20 \\pm 0.02^{l} \\pm 0.24^{m}$ </td></tr><tr><td>Lelli et al. (2017)</td><td></td><td></td></tr><tr><td>Open clusters  $N_{\\star} \\leq 250$ </td><td> $3251^{n}$ </td><td> $\\sim 1.4 \\pm 0.54 \\text{dex}$ </td></tr><tr><td>Open clusters fiducial</td><td> $2423^{n}$ </td><td> $\\sim 1.2 \\pm 0.52 \\text{dex}$ </td></tr></table>",
+          "img_path": "images/a8f2dfd6dfecb970a23d9f98efb671123edb41fc78f678c0d589af9ee573b181.jpg"
+        },
+        {
+          "id": "p-92",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            505.0,
+            480.0,
+            921.0,
+            563.0
+          ],
+          "text": "𝑎0 has been recovered from several independent scaling relations, including the baryonic Tully–Fisher relation, the radial acceleration relation, and the central surface density relation. [[xref:tab-1]] reproduces and updates [[xref:table-8?]].1 of [[cite:ref-43]], which is based on different galaxy samples and methodologies and yet cluster around a common value.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-43"
+              ],
+              "raw": "Merritt (2020)",
+              "via": "regex",
+              "resolved": true
+            }
+          ],
+          "crossrefs": [
+            {
+              "kind": "table",
+              "raw": "Table 1",
+              "target_id": "tab-1",
+              "number": "1",
+              "via": "regex",
+              "resolved": true
+            },
+            {
+              "kind": "table",
+              "raw": "Table 8",
+              "number": "8",
+              "via": "regex",
+              "resolved": false
+            }
+          ]
+        },
+        {
+          "id": "p-93",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            505.0,
+            563.0,
+            921.0,
+            677.0
+          ],
+          "text": "The consistency of the best-fit $a _ { 0 }$ obtained from open clusters extends this convergence to a qualitatively different dynamical regime. Open clusters are parsec-scale stellar systems embedded within the Galactic disc and characterised by velocity dispersions rather than rotation curves. Agreement in the inferred acceleration scale across these distinct systems and observables strengthens the interpretation of $a _ { 0 }$ as a genuine dynamical constant rather than a parameter adjusted to fit a particular dataset."
+        }
+      ]
+    },
+    {
+      "id": "sec-20",
+      "type": "section",
+      "level": 1,
+      "heading": "CONCLUSIONS",
+      "heading_raw": "7 CONCLUSIONS",
+      "number": "7",
+      "page_idx": 9,
+      "bbox": [
+        507.0,
+        705.0,
+        636.0,
+        719.0
+      ],
+      "blocks": [
+        {
+          "id": "p-94",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            505.0,
+            728.0,
+            921.0,
+            826.0
+          ],
+          "text": "We have investigated whether open clusters in the Milky Way follow the radial acceleration relation (RAR) and the baryonic Tully–Fisher relation (BTFR), scaling laws that were originally established for galaxies on kiloparsec scales. Using 3618 Gaia DR3 open clusters from the HR134 catalogue, we computed baryonic and observed accelerations in a manner consistent with [[cite:ref-33]] and placed these systems in the acceleration and mass–velocity planes.",
+          "citations": [
+            {
+              "ref_ids": [
+                "ref-33"
+              ],
+              "raw": "Lelli et al. (2017)",
+              "via": "regex",
+              "resolved": true
+            }
+          ]
+        },
+        {
+          "id": "p-95",
+          "type": "paragraph",
+          "page_idx": 9,
+          "bbox": [
+            505.0,
+            826.0,
+            921.0,
+            939.0
+          ],
+          "text": "Approximately 90% of open clusters (those with $N _ { \\star } \\leq 2 5 0 )$ lie close to the RAR, albeit with substantial scatter. A first fit of the RAR to a high-quality subsample yields a best-fit acceleration scale $g _ { \\dagger } \\approx 1 . 2 \\times \\mathrm { 1 0 ^ { - 1 0 } m s ^ { - 2 } }$ with an uncertainty of about 0.5 dex. This value is consistent with canonical determinations of $a _ { 0 } ,$ , though far less precise. More massive clusters tend to approach the Newtonian virial expectation, suggesting a transition regime that is qualitatively compatible with an external field contribution. No correlations are present between RAR residuals and galactocentric radius, distance to the Galactic disc midplane, age, ellipticity, tidal tail fraction or cleanliness of the CMD."
+        },
+        {
+          "id": "p-96",
+          "type": "paragraph",
+          "page_idx": 10,
+          "bbox": [
+            63.0,
+            109.0,
+            478.0,
+            219.0
+          ],
+          "text": "Alternative explanations for the elevated velocity dispersions were examined. Interloper contamination and unresolved binaries would increase the inferred stellar velocity dispersions of the OCs explored, but explaining the observed trends would require fine-tuning these effects in a contrived manner. Reclassifying the majority of systems as unbound associations does not naturally explain their concentration along the RAR, since dissolving systems could in principle occupy a broad region above the Newtonian virial line."
+        },
+        {
+          "id": "p-97",
+          "type": "paragraph",
+          "page_idx": 10,
+          "bbox": [
+            63.0,
+            221.0,
+            480.0,
+            333.0
+          ],
+          "text": "If the alignment of most open clusters with the RAR and BTFR reflects MOND low-acceleration dynamics, this implies that parsecscale systems within the Milky Way disc experience gravitational environments that are not adequately described by a spatially smooth field of order $a _ { 0 } .$ . This would indicate that the effective external field varies on small scales, reducing the suppressive impact of the external field effect in some regions. Open clusters would then serve as discrete probes of the Galactic gravitational field on parsec scales."
+        },
+        {
+          "id": "p-98",
+          "type": "paragraph",
+          "page_idx": 10,
+          "bbox": [
+            63.0,
+            333.0,
+            480.0,
+            488.0
+          ],
+          "text": "The consistency of the inferred acceleration scale with values obtained from galaxies extends the convergence of 𝑎0 to a distinct dynamical regime characterised by pressure-supported stellar systems embedded within a galactic disc. The quantitative consistency we find between OC properties and the galactic BTFR and RAR scalings motivates improved modelling of cluster masses, velocity dispersions, and the local external field. Higher-resolution studies of the Galactic potential and independent analyses of molecular clouds and wide binaries will be essential to clarify whether the observed behaviour represents a small-scale manifestation of the same acceleration scale that governs galactic dynamics."
+        }
+      ]
+    },
+    {
+      "id": "sec-21",
+      "type": "section",
+      "level": 1,
+      "heading": "ACKNOWLEDGEMENTS",
+      "heading_raw": "ACKNOWLEDGEMENTS",
+      "page_idx": 10,
+      "bbox": [
+        65.0,
+        521.0,
+        247.0,
+        534.0
+      ],
+      "blocks": [
+        {
+          "id": "p-99",
+          "type": "paragraph",
+          "page_idx": 10,
+          "bbox": [
+            65.0,
+            542.0,
+            480.0,
+            598.0
+          ],
+          "text": "Gratitude goes to Anthony Brown for comments that helped to understand the systematics of Gaia DR3. X.H. acknowledges financial assistance from SECIHTI SNII and UNAM DGAPA PAPIIT grant IN-102624."
+        }
+      ]
+    },
+    {
+      "id": "sec-22",
+      "type": "section",
+      "level": 1,
+      "heading": "DATA AVAILABILITY",
+      "heading_raw": "DATA AVAILABILITY",
+      "page_idx": 10,
+      "bbox": [
+        65.0,
+        631.0,
+        223.0,
+        643.0
+      ],
+      "blocks": [
+        {
+          "id": "p-100",
+          "type": "paragraph",
+          "page_idx": 10,
+          "bbox": [
+            65.0,
+            653.0,
+            477.0,
+            668.0
+          ],
+          "text": "All data used will be shared upon reasonable request to the authors."
+        }
+      ]
+    },
+    {
+      "id": "sec-23",
+      "type": "section",
+      "level": 1,
+      "heading": "REFERENCES",
+      "heading_raw": "REFERENCES",
+      "page_idx": 10,
+      "bbox": [
+        65.0,
+        700.0,
+        173.0,
+        713.0
+      ],
+      "blocks": [
+        {
+          "id": "p-101",
+          "type": "paragraph",
+          "page_idx": 11,
+          "bbox": [
+            65.0,
+            67.0,
+            465.0,
+            81.0
+          ],
+          "text": "This paper has been typeset from a TEX/LATEX file prepared by the author."
+        }
+      ]
+    }
+  ],
+  "index": {
+    "figures": [
+      {
+        "id": "fig-1",
+        "page_idx": 2,
+        "number": "1",
+        "label": "Figure 1",
+        "caption": "The four regimes of MOND, based on figure one of [[cite:ref-2]]."
+      },
+      {
+        "id": "fig-2",
+        "page_idx": 3,
+        "number": "2",
+        "label": "Figure 2",
+        "caption": "Comparison of observed kinetic accelerations, $g _ { \\mathrm { o b s } }$ , and Newtonian virial equilibrium accelerations, $g _ { \\mathrm { b a r } }$ for the inferred masses, velocity dispersions and radii for the 3618 open clusters after our quality cuts from the HR134 catalogue. The colour number density shading gives the position of the 3251 $N _ { \\star } \\leq 2 5 0$ clusters which accurately trace the galactic RAR relation given by the solid curve. The solid squares show the 145 most massive $N _ { \\star } \\geq 5 0 0$ clusters, mostly tracing the Newtonian virial expectations, while the dots give the positions of the 222 intermediate mass $2 5 0 \\leq N _ { \\star } \\leq 5 0 0$ clusters, filling the region in between the two previous populations."
+      },
+      {
+        "id": "fig-3",
+        "page_idx": 4,
+        "caption": "Radial acceleration relation & OCs [[xref:figure-3?]]. Same data as shown in [[xref:fig-2]] but only for the smallest $N _ { \\star } \\leq 2 5 0$ clusters. The thin dotted line gives the resulting fit to these clusters to [[xref:equation-13?]], yielding an optimal fit acceleration scale almost identical to the standard ??0 value of MOND, which in turn results in the galactic RAR given by the solid curve. The equivalent fit using the fiducial $N _ { \\star } < 2 5 0$ sub-sample with CMD quality> 75% clusters actually coincides with this solid curve."
+      },
+      {
+        "id": "fig-4",
+        "page_idx": 5,
+        "number": "4",
+        "label": "Figure 4",
+        "caption": "Open clusters with $N \\star < 2 5 0$ compared to the baryonic Tully-Fisher relation. The error bars indicate the 1 σ spread of the data for each mass bin. The dotted lines are the systematic uncertainty expected due to the presence of unresolved binary contamination, as modelled by HR134. Other data included: galaxy groups [[cite:ref-48;ref-52]], rotating galaxies [[cite:ref-59;ref-34;ref-42]]; dwarf galaxies [[cite:ref-42]]; weak lensing [[cite:ref-50]]."
+      },
+      {
+        "id": "fig-5",
+        "page_idx": 6
+      },
+      {
+        "id": "fig-6",
+        "page_idx": 6
+      },
+      {
+        "id": "fig-7",
+        "page_idx": 6
+      },
+      {
+        "id": "fig-8",
+        "page_idx": 6
+      },
+      {
+        "id": "fig-9",
+        "page_idx": 6
+      },
+      {
+        "id": "fig-10",
+        "page_idx": 6,
+        "number": "5",
+        "label": "Figure 5",
+        "caption": "Residuals with respect to the radial acceleration relation for our main $N _ { \\star } \\leq 2 5 0$ open cluster sample, plotted against various independent cluster characteristics."
+      }
+    ],
+    "tables": [
+      {
+        "id": "tab-1",
+        "page_idx": 9,
+        "number": "1",
+        "label": "Table 1",
+        "caption": "Determinations of Milgrom’s constant $a _ { 0 } ( 1 0 ^ { - 1 0 } \\mathrm { m } \\mathrm { s } ^ { - 2 } )$ ."
+      }
+    ],
+    "equations": [
+      {
+        "id": "eq-1",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-2",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-3",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-4",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-5",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-6",
+        "page_idx": 1
+      },
+      {
+        "id": "eq-7",
+        "page_idx": 2
+      },
+      {
+        "id": "eq-8",
+        "page_idx": 3
+      },
+      {
+        "id": "eq-9",
+        "page_idx": 3
+      },
+      {
+        "id": "eq-10",
+        "page_idx": 3
+      },
+      {
+        "id": "eq-11",
+        "page_idx": 4
+      },
+      {
+        "id": "eq-12",
+        "page_idx": 4
+      },
+      {
+        "id": "eq-13",
+        "page_idx": 4
+      }
+    ],
+    "sections": [
+      {
+        "id": "sec-1",
+        "level": 1,
+        "heading": "Most open clusters follow the radial acceleration relation (RAR) and the baryonic Tully-Fisher relation (BTFR)",
+        "page_idx": 0
+      },
+      {
+        "id": "sec-2",
+        "level": 1,
+        "heading": "ABSTRACT",
+        "page_idx": 0
+      },
+      {
+        "id": "sec-3",
+        "level": 1,
+        "number": "1",
+        "heading": "INTRODUCTION",
+        "page_idx": 0
+      },
+      {
+        "id": "sec-4",
+        "level": 1,
+        "number": "2",
+        "heading": "MOND THEORY AND THE EXTERNAL FIELD EFFECT",
+        "page_idx": 1
+      },
+      {
+        "id": "sec-5",
+        "level": 1,
+        "number": "2.1",
+        "heading": "The external field effect",
+        "page_idx": 1
+      },
+      {
+        "id": "sec-6",
+        "level": 1,
+        "number": "3",
+        "heading": "SAMPLE SELECTION",
+        "page_idx": 2
+      },
+      {
+        "id": "sec-7",
+        "level": 1,
+        "number": "3.1",
+        "heading": "Data quality cuts",
+        "page_idx": 2
+      },
+      {
+        "id": "sec-8",
+        "level": 1,
+        "number": "3.2",
+        "heading": "Derived quantities",
+        "page_idx": 2
+      },
+      {
+        "id": "sec-9",
+        "level": 1,
+        "number": "4",
+        "heading": "RESULTS",
+        "page_idx": 4
+      },
+      {
+        "id": "sec-10",
+        "level": 1,
+        "number": "5",
+        "heading": "NEWTONIAN INTERPRETATIONS OF THE SCALING RELATIONS FOUND",
+        "page_idx": 5
+      },
+      {
+        "id": "sec-11",
+        "level": 1,
+        "number": "5.1",
+        "heading": "Interloper stars",
+        "page_idx": 5
+      },
+      {
+        "id": "sec-12",
+        "level": 1,
+        "number": "5.2",
+        "heading": "Unresolved binaries",
+        "page_idx": 6
+      },
+      {
+        "id": "sec-13",
+        "level": 1,
+        "number": "5.3",
+        "heading": "Dissolution dynamics and tidal heating",
+        "page_idx": 6
+      },
+      {
+        "id": "sec-14",
+        "level": 1,
+        "number": "5.4",
+        "heading": "Dark matter",
+        "page_idx": 7
+      },
+      {
+        "id": "sec-15",
+        "level": 1,
+        "number": "6",
+        "heading": "MONDIAN INTERPRETATIONS OF THE SCALING RELATIONS FOUND",
+        "page_idx": 8
+      },
+      {
+        "id": "sec-16",
+        "level": 1,
+        "number": "6.1",
+        "heading": "Mapping the galactic gravitational field",
+        "page_idx": 8
+      },
+      {
+        "id": "sec-17",
+        "level": 1,
+        "number": "6.2",
+        "heading": "Molecular clouds",
+        "page_idx": 8
+      },
+      {
+        "id": "sec-18",
+        "level": 1,
+        "number": "6.3",
+        "heading": "Wide binaries",
+        "page_idx": 9
+      },
+      {
+        "id": "sec-19",
+        "level": 1,
+        "number": "6.4",
+        "heading": "Acceleration scale convergence",
+        "page_idx": 9
+      },
+      {
+        "id": "sec-20",
+        "level": 1,
+        "number": "7",
+        "heading": "CONCLUSIONS",
+        "page_idx": 9
+      },
+      {
+        "id": "sec-21",
+        "level": 1,
+        "heading": "ACKNOWLEDGEMENTS",
+        "page_idx": 10
+      },
+      {
+        "id": "sec-22",
+        "level": 1,
+        "heading": "DATA AVAILABILITY",
+        "page_idx": 10
+      },
+      {
+        "id": "sec-23",
+        "level": 1,
+        "heading": "REFERENCES",
+        "page_idx": 10
+      }
+    ]
+  },
+  "references": [
+    {
+      "id": "ref-1",
+      "raw": "Adamo A., et al., 2020, Space Sci. Rev., 216",
+      "authors": [
+        "Adamo"
+      ],
+      "year": 2020,
+      "volume": "2020",
+      "keys": [
+        "Adamo 2020",
+        "Adamo et al. 2020"
+      ]
+    },
+    {
+      "id": "ref-2",
+      "raw": "Banik I., Zhao H., 2022, Symmetry, 14",
+      "authors": [
+        "Banik",
+        "Zhao"
+      ],
+      "year": 2022,
+      "volume": "2022",
+      "keys": [
+        "Banik 2022",
+        "Banik et al. 2022",
+        "Banik & Zhao 2022"
+      ]
+    },
+    {
+      "id": "ref-3",
+      "raw": "Begeman K. G., Broeils A. H., Sanders R. H., 1991, MNRAS, 249, 523",
+      "authors": [
+        "Begeman",
+        "Broeils",
+        "Sanders"
+      ],
+      "year": 1991,
+      "volume": "1991",
+      "keys": [
+        "Begeman 1991",
+        "Begeman et al. 1991",
+        "Begeman & Broeils 1991"
+      ]
+    },
+    {
+      "id": "ref-4",
+      "raw": "Bekenstein J., Milgrom M., 1984, ApJ, 286, 7",
+      "authors": [
+        "Bekenstein",
+        "Milgrom"
+      ],
+      "year": 1984,
+      "volume": "1984",
+      "keys": [
+        "Bekenstein 1984",
+        "Bekenstein et al. 1984",
+        "Bekenstein & Milgrom 1984"
+      ]
+    },
+    {
+      "id": "ref-5",
+      "raw": "Belokurov V., et al., 2020, MNRAS, 496, 1922",
+      "authors": [
+        "Belokurov"
+      ],
+      "year": 2020,
+      "volume": "2020",
+      "keys": [
+        "Belokurov 2020",
+        "Belokurov et al. 2020"
+      ]
+    },
+    {
+      "id": "ref-6",
+      "raw": "Benson A. J., Lacey C. G., Frenk C. S., Baugh C. M., Cole S., 2004, MNRAS, 351, 1215",
+      "authors": [
+        "Benson",
+        "Lacey",
+        "Frenk",
+        "Baugh",
+        "Cole"
+      ],
+      "year": 2004,
+      "volume": "2004",
+      "keys": [
+        "Benson 2004",
+        "Benson et al. 2004",
+        "Benson & Lacey 2004"
+      ]
+    },
+    {
+      "id": "ref-7",
+      "raw": "Bienaymé O., Robin A. C., Salomon J.-B., Reylé C., 2024, A&A, 689, A280",
+      "authors": [
+        "Bienaymé",
+        "Robin",
+        "Salomon J.-B",
+        "Reylé"
+      ],
+      "year": 2024,
+      "volume": "2024",
+      "keys": [
+        "Bienaymé 2024",
+        "Bienaymé et al. 2024",
+        "Bienaymé & Robin 2024"
+      ]
+    },
+    {
+      "id": "ref-8",
+      "raw": "Cantat-Gaudin T., Brandt T. D., 2021, A&A, 649",
+      "authors": [
+        "Cantat-Gaudin",
+        "Brandt"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Cantat-Gaudin 2021",
+        "Cantat-Gaudin et al. 2021",
+        "Cantat-Gaudin & Brandt 2021"
+      ]
+    },
+    {
+      "id": "ref-9",
+      "raw": "Casola E. D., Liberati S., Sonego S., 2015, Am. J. Phys., 83, 39",
+      "authors": [
+        "Casola",
+        "Liberati",
+        "Sonego"
+      ],
+      "year": 2015,
+      "volume": "2015",
+      "keys": [
+        "Casola 2015",
+        "Casola et al. 2015",
+        "Casola & Liberati 2015"
+      ]
+    },
+    {
+      "id": "ref-10",
+      "raw": "Chae K.-H., 2024a, ApJ, 960, 114",
+      "authors": [
+        "Chae K.-H",
+        "2024a",
+        "ApJ",
+        "960",
+        "114"
+      ],
+      "volume": "960"
+    },
+    {
+      "id": "ref-11",
+      "raw": "Chae K.-H., 2024b, ApJ, 972, 186",
+      "authors": [
+        "Chae K.-H",
+        "2024b",
+        "ApJ",
+        "972",
+        "186"
+      ],
+      "volume": "972"
+    },
+    {
+      "id": "ref-12",
+      "raw": "Chae K.-H., Lelli F., Desmond H., McGaugh S. S., Li P., Schombert J. M., 2020, ApJ, 904, 51",
+      "authors": [
+        "Chae K.-H",
+        "Lelli",
+        "Desmond",
+        "McGaugh",
+        "Li",
+        "Schombert"
+      ],
+      "year": 2020,
+      "volume": "2020",
+      "keys": [
+        "Chae K.-H 2020",
+        "Chae K.-H et al. 2020",
+        "Chae K.-H & Lelli 2020"
+      ]
+    },
+    {
+      "id": "ref-13",
+      "raw": "Cox D. P., Gomez G. C., 2002, ApJS, 142, 261",
+      "authors": [
+        "Cox",
+        "Gomez"
+      ],
+      "year": 2002,
+      "volume": "2002",
+      "keys": [
+        "Cox 2002",
+        "Cox et al. 2002",
+        "Cox & Gomez 2002"
+      ]
+    },
+    {
+      "id": "ref-14",
+      "raw": "Dehnen W., Binney J., 1998, MNRAS, 294, 429",
+      "authors": [
+        "Dehnen",
+        "Binney"
+      ],
+      "year": 1998,
+      "volume": "1998",
+      "keys": [
+        "Dehnen 1998",
+        "Dehnen et al. 1998",
+        "Dehnen & Binney 1998"
+      ]
+    },
+    {
+      "id": "ref-15",
+      "raw": "Donato F., et al., 2009, MNRAS, 397, 1169",
+      "authors": [
+        "Donato"
+      ],
+      "year": 2009,
+      "volume": "2009",
+      "keys": [
+        "Donato 2009",
+        "Donato et al. 2009"
+      ]
+    },
+    {
+      "id": "ref-16",
+      "raw": "Famaey B., McGaugh S. S., 2012, Living Rev. Relativ., 15, 10",
+      "authors": [
+        "Famaey",
+        "McGaugh"
+      ],
+      "year": 2012,
+      "volume": "2012",
+      "keys": [
+        "Famaey 2012",
+        "Famaey et al. 2012",
+        "Famaey & McGaugh 2012"
+      ]
+    },
+    {
+      "id": "ref-17",
+      "raw": "Ge Q. A., Li J. J., Hao C. J., Lin Z. H., Hou L. G., Liu D. J., Li Y. J., Bian S. B., 2024, AJ, 168, 25",
+      "authors": [
+        "Ge",
+        "Li",
+        "Hao",
+        "Lin",
+        "Hou",
+        "Liu",
+        "Bian"
+      ],
+      "year": 2024,
+      "volume": "2024",
+      "keys": [
+        "Ge 2024",
+        "Ge et al. 2024",
+        "Ge & Li 2024"
+      ]
+    },
+    {
+      "id": "ref-18",
+      "raw": "Gieles M., Sana H., Zwart S. F. P., 2010, MNRAS, 402, 1750",
+      "authors": [
+        "Gieles",
+        "Sana",
+        "Zwart"
+      ],
+      "year": 2010,
+      "volume": "2010",
+      "keys": [
+        "Gieles 2010",
+        "Gieles et al. 2010",
+        "Gieles & Sana 2010"
+      ]
+    },
+    {
+      "id": "ref-19",
+      "raw": "Gundlach J. H., Schlamminger S., Spitzer C. D., Choi K. Y., Woodahl B. A., Coy J. J., Fischbach E., 2007, Phys. Rev. Lett., 98",
+      "authors": [
+        "Gundlach",
+        "Schlamminger",
+        "Spitzer",
+        "Choi",
+        "Woodahl",
+        "Coy",
+        "Fischbach"
+      ],
+      "year": 2007,
+      "volume": "2007",
+      "keys": [
+        "Gundlach 2007",
+        "Gundlach et al. 2007",
+        "Gundlach & Schlamminger 2007"
+      ]
+    },
+    {
+      "id": "ref-20",
+      "raw": "Hernandez X., Kroupa P., 2025, Universe, 11, 367",
+      "authors": [
+        "Hernandez",
+        "Kroupa"
+      ],
+      "year": 2025,
+      "volume": "2025",
+      "keys": [
+        "Hernandez 2025",
+        "Hernandez et al. 2025",
+        "Hernandez & Kroupa 2025"
+      ]
+    },
+    {
+      "id": "ref-21",
+      "raw": "Hernandez X., Jiménez M. A., Allen C., 2012, Eur. Phys. J. C., 72, 1884",
+      "authors": [
+        "Hernandez",
+        "Jiménez",
+        "Allen"
+      ],
+      "year": 2012,
+      "volume": "2012",
+      "keys": [
+        "Hernandez 2012",
+        "Hernandez et al. 2012",
+        "Hernandez & Jiménez 2012"
+      ]
+    },
+    {
+      "id": "ref-22",
+      "raw": "Hernandez X., Verteletskyi V., Nasser L., Aguayo-Ortiz A., 2024, MNRAS, 528, 4720",
+      "authors": [
+        "Hernandez",
+        "Verteletskyi",
+        "Nasser",
+        "Aguayo-Ortiz"
+      ],
+      "year": 2024,
+      "volume": "2024",
+      "keys": [
+        "Hernandez 2024",
+        "Hernandez et al. 2024",
+        "Hernandez & Verteletskyi 2024"
+      ]
+    },
+    {
+      "id": "ref-23",
+      "raw": "Hou L. G., Han J. L., 2014, A&A, 569",
+      "authors": [
+        "Hou",
+        "Han"
+      ],
+      "year": 2014,
+      "volume": "2014",
+      "keys": [
+        "Hou 2014",
+        "Hou et al. 2014",
+        "Hou & Han 2014"
+      ]
+    },
+    {
+      "id": "ref-24",
+      "raw": "Hunt E. L., Reffert S., 2021, A&A, 646",
+      "authors": [
+        "Hunt",
+        "Reffert"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Hunt 2021",
+        "Hunt et al. 2021",
+        "Hunt & Reffert 2021"
+      ]
+    },
+    {
+      "id": "ref-25",
+      "raw": "Hunt E. L., Reffert S., 2023, A&A, 673",
+      "authors": [
+        "Hunt",
+        "Reffert"
+      ],
+      "year": 2023,
+      "volume": "2023",
+      "keys": [
+        "Hunt 2023",
+        "Hunt et al. 2023",
+        "Hunt & Reffert 2023"
+      ]
+    },
+    {
+      "id": "ref-26",
+      "raw": "Hunt E. L., Reffert S., 2024, A&A, 686",
+      "authors": [
+        "Hunt",
+        "Reffert"
+      ],
+      "year": 2024,
+      "volume": "2024",
+      "keys": [
+        "Hunt 2024",
+        "Hunt et al. 2024",
+        "Hunt & Reffert 2024"
+      ]
+    },
+    {
+      "id": "ref-27",
+      "raw": "Klioner S. A., et al., 2021, A&A, 649",
+      "authors": [
+        "Klioner"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Klioner 2021",
+        "Klioner et al. 2021"
+      ]
+    },
+    {
+      "id": "ref-28",
+      "raw": "Krause M. G., et al., 2020, Space Sci. Rev., 216",
+      "authors": [
+        "Krause"
+      ],
+      "year": 2020,
+      "volume": "2020",
+      "keys": [
+        "Krause 2020",
+        "Krause et al. 2020"
+      ]
+    },
+    {
+      "id": "ref-29",
+      "raw": "Kroupa P., et al., 2022, MNRAS, 517, 3613",
+      "authors": [
+        "Kroupa"
+      ],
+      "year": 2022,
+      "volume": "2022",
+      "keys": [
+        "Kroupa 2022",
+        "Kroupa et al. 2022"
+      ]
+    },
+    {
+      "id": "ref-30",
+      "raw": "Lada C. J., Lada E. A., 2003, ARA&A, 41, 57",
+      "authors": [
+        "Lada"
+      ],
+      "year": 2003,
+      "volume": "2003",
+      "keys": [
+        "Lada 2003",
+        "Lada et al. 2003"
+      ]
+    },
+    {
+      "id": "ref-31",
+      "raw": "Lelli F., McGaugh S. S., Schombert J. M., 2016a, ApJ, 816, L14",
+      "authors": [
+        "Lelli",
+        "McGaugh",
+        "Schombert",
+        "2016a",
+        "ApJ",
+        "816",
+        "L14"
+      ],
+      "volume": "816"
+    },
+    {
+      "id": "ref-32",
+      "raw": "Lelli F., McGaugh S. S., Schombert J. M., Pawlowski M. S., 2016b, ApJ, 827, L19",
+      "authors": [
+        "Lelli",
+        "McGaugh",
+        "Schombert",
+        "Pawlowski",
+        "2016b",
+        "ApJ",
+        "827",
+        "L19"
+      ],
+      "volume": "827"
+    },
+    {
+      "id": "ref-33",
+      "raw": "Lelli F., McGaugh S. S., Schombert J. M., Pawlowski M. S., 2017, ApJ, 836, 152",
+      "authors": [
+        "Lelli",
+        "McGaugh",
+        "Schombert",
+        "Pawlowski"
+      ],
+      "year": 2017,
+      "volume": "2017",
+      "keys": [
+        "Lelli 2017",
+        "Lelli et al. 2017",
+        "Lelli & McGaugh 2017"
+      ]
+    },
+    {
+      "id": "ref-34",
+      "raw": "Lelli F., McGaugh S. S., Schombert J. M., Desmond H., Katz H., 2019, MNRAS, 484, 3267",
+      "authors": [
+        "Lelli",
+        "McGaugh",
+        "Schombert",
+        "Desmond",
+        "Katz"
+      ],
+      "year": 2019,
+      "volume": "2019",
+      "keys": [
+        "Lelli 2019",
+        "Lelli et al. 2019",
+        "Lelli & McGaugh 2019"
+      ]
+    },
+    {
+      "id": "ref-35",
+      "raw": "Lindegren L., et al., 2021, A&A, 649",
+      "authors": [
+        "Lindegren"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Lindegren 2021",
+        "Lindegren et al. 2021"
+      ]
+    },
+    {
+      "id": "ref-36",
+      "raw": "McGaugh S. S., 2011, Phys. Rev. Lett., 106",
+      "authors": [
+        "McGaugh"
+      ],
+      "year": 2011,
+      "volume": "2011",
+      "keys": [
+        "McGaugh 2011",
+        "McGaugh et al. 2011"
+      ]
+    },
+    {
+      "id": "ref-37",
+      "raw": "McGaugh S. S., 2012, AJ, 143",
+      "authors": [
+        "McGaugh"
+      ],
+      "year": 2012,
+      "volume": "2012",
+      "keys": [
+        "McGaugh 2012",
+        "McGaugh et al. 2012"
+      ]
+    },
+    {
+      "id": "ref-38",
+      "raw": "McGaugh S., Milgrom M., 2013a, ApJ, 766",
+      "authors": [
+        "McGaugh",
+        "Milgrom",
+        "2013a",
+        "ApJ",
+        "766"
+      ]
+    },
+    {
+      "id": "ref-39",
+      "raw": "McGaugh S., Milgrom M., 2013b, ApJ, 775",
+      "authors": [
+        "McGaugh",
+        "Milgrom",
+        "2013b",
+        "ApJ",
+        "775"
+      ]
+    },
+    {
+      "id": "ref-40",
+      "raw": "McGaugh S. S., Schombert J. M., Bothun G. D., de Blok W. J. G., 2000, ApJ, 533, L99",
+      "authors": [
+        "McGaugh",
+        "Schombert",
+        "Bothun",
+        "de Blok"
+      ],
+      "year": 2000,
+      "volume": "2000",
+      "keys": [
+        "McGaugh 2000",
+        "McGaugh et al. 2000",
+        "McGaugh & Schombert 2000"
+      ]
+    },
+    {
+      "id": "ref-41",
+      "raw": "McGaugh S. S., Lelli F., Schombert J. M., 2016, Phys. Rev. Lett., 117",
+      "authors": [
+        "McGaugh",
+        "Lelli",
+        "Schombert"
+      ],
+      "year": 2016,
+      "volume": "2016",
+      "keys": [
+        "McGaugh 2016",
+        "McGaugh et al. 2016",
+        "McGaugh & Lelli 2016"
+      ]
+    },
+    {
+      "id": "ref-42",
+      "raw": "McGaugh S. S., Lelli F., Schombert J. M., Li P., Visgaitis T., Parker K. S., Pawlowski M. S., 2021, AJ, 162, 202",
+      "authors": [
+        "McGaugh",
+        "Lelli",
+        "Schombert",
+        "Li",
+        "Visgaitis",
+        "Parker",
+        "Pawlowski"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "McGaugh 2021",
+        "McGaugh et al. 2021",
+        "McGaugh & Lelli 2021"
+      ]
+    },
+    {
+      "id": "ref-43",
+      "raw": "Merritt D., 2020, A Philosophical Approach to MOND. Cambridge University Press, doi:10.1017/9781108610926, https://www.cambridge.org/ core/product/identifier/9781108610926/type/book",
+      "authors": [
+        "Merritt"
+      ],
+      "year": 2020,
+      "volume": "2020",
+      "doi": "10.1017/9781108610926",
+      "url": "https://www.cambridge.org/",
+      "keys": [
+        "Merritt 2020",
+        "Merritt et al. 2020"
+      ]
+    },
+    {
+      "id": "ref-44",
+      "raw": "Milgrom M., 1983a, ApJ, 270, 365",
+      "authors": [
+        "Milgrom",
+        "1983a",
+        "ApJ",
+        "270",
+        "365"
+      ],
+      "volume": "270"
+    },
+    {
+      "id": "ref-45",
+      "raw": "Milgrom M., 1983b, ApJ, 270, 371",
+      "authors": [
+        "Milgrom",
+        "1983b",
+        "ApJ",
+        "270",
+        "371"
+      ],
+      "volume": "270"
+    },
+    {
+      "id": "ref-46",
+      "raw": "Milgrom M., 1983c, ApJ, 270, 384",
+      "authors": [
+        "Milgrom",
+        "1983c",
+        "ApJ",
+        "270",
+        "384"
+      ],
+      "volume": "270"
+    },
+    {
+      "id": "ref-47",
+      "raw": "Milgrom M., 2010, MNRAS, 403, 886",
+      "authors": [
+        "Milgrom"
+      ],
+      "year": 2010,
+      "volume": "2010",
+      "keys": [
+        "Milgrom 2010",
+        "Milgrom et al. 2010"
+      ]
+    },
+    {
+      "id": "ref-48",
+      "raw": "Milgrom M., 2019, Phys. Rev. D, 99",
+      "authors": [
+        "Milgrom"
+      ],
+      "year": 2019,
+      "volume": "2019",
+      "keys": [
+        "Milgrom 2019",
+        "Milgrom et al. 2019"
+      ]
+    },
+    {
+      "id": "ref-49",
+      "raw": "Milgrom M., 2022, Phys. Rev. D, 106, 064060",
+      "authors": [
+        "Milgrom"
+      ],
+      "year": 2022,
+      "volume": "2022",
+      "keys": [
+        "Milgrom 2022",
+        "Milgrom et al. 2022"
+      ]
+    },
+    {
+      "id": "ref-50",
+      "raw": "Mistele T., McGaugh S., Lelli F., Schombert J., Li P., 2024, ApJ, 969, L3",
+      "authors": [
+        "Mistele",
+        "McGaugh",
+        "Lelli",
+        "Schombert",
+        "Li"
+      ],
+      "year": 2024,
+      "volume": "2024",
+      "keys": [
+        "Mistele 2024",
+        "Mistele et al. 2024",
+        "Mistele & McGaugh 2024"
+      ]
+    },
+    {
+      "id": "ref-51",
+      "raw": "Moe M., Stefano R. D., 2017, ApJS, 230, 55",
+      "authors": [
+        "Moe",
+        "Stefano"
+      ],
+      "year": 2017,
+      "volume": "2017",
+      "keys": [
+        "Moe 2017",
+        "Moe et al. 2017",
+        "Moe & Stefano 2017"
+      ]
+    },
+    {
+      "id": "ref-52",
+      "raw": "Müller O., Lelli F., Famaey B., Pawlowski M. S., Fahrion K., Rejkuba M., Hilker M., Jerjen H., 2022, A&A, 662",
+      "authors": [
+        "Müller",
+        "Lelli",
+        "Famaey",
+        "Pawlowski",
+        "Fahrion",
+        "Rejkuba",
+        "Hilker",
+        "Jerjen"
+      ],
+      "year": 2022,
+      "volume": "2022",
+      "keys": [
+        "Müller 2022",
+        "Müller et al. 2022",
+        "Müller & Lelli 2022"
+      ]
+    },
+    {
+      "id": "ref-53",
+      "raw": "Poggio E., et al., 2021, A&A, 651, A104",
+      "authors": [
+        "Poggio"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Poggio 2021",
+        "Poggio et al. 2021"
+      ]
+    },
+    {
+      "id": "ref-54",
+      "raw": "Read J. I., 2014, J. Phys. G, 41, 063101",
+      "authors": [
+        "Read"
+      ],
+      "year": 2014,
+      "volume": "2014",
+      "keys": [
+        "Read 2014",
+        "Read et al. 2014"
+      ]
+    },
+    {
+      "id": "ref-55",
+      "raw": "Roberts William W. J., Stewart G. R., 1987, ApJ, 314, 10",
+      "authors": [
+        "Roberts William",
+        "Stewart"
+      ],
+      "year": 1987,
+      "volume": "1987",
+      "keys": [
+        "Roberts William 1987",
+        "Roberts William et al. 1987",
+        "Roberts William & Stewart 1987"
+      ]
+    },
+    {
+      "id": "ref-56",
+      "raw": "Rybizki J., et al., 2022, MNRAS, 510, 2597",
+      "authors": [
+        "Rybizki"
+      ],
+      "year": 2022,
+      "volume": "2022",
+      "keys": [
+        "Rybizki 2022",
+        "Rybizki et al. 2022"
+      ]
+    },
+    {
+      "id": "ref-57",
+      "raw": "Springel V., et al., 2008, MNRAS, 391, 1685",
+      "authors": [
+        "Springel"
+      ],
+      "year": 2008,
+      "volume": "2008",
+      "keys": [
+        "Springel 2008",
+        "Springel et al. 2008"
+      ]
+    },
+    {
+      "id": "ref-58",
+      "raw": "Stark D. V., McGaugh S. S., Swaters R. A., 2009, AJ, 138, 392",
+      "authors": [
+        "Stark",
+        "McGaugh",
+        "Swaters"
+      ],
+      "year": 2009,
+      "volume": "2009",
+      "keys": [
+        "Stark 2009",
+        "Stark et al. 2009",
+        "Stark & McGaugh 2009"
+      ]
+    },
+    {
+      "id": "ref-59",
+      "raw": "Teodoro E. M. D., Posti L., Ogle P. M., Fall S. M., Jarrett T., 2021, MNRAS, 507, 5820",
+      "authors": [
+        "Teodoro",
+        "Posti",
+        "Ogle",
+        "Fall",
+        "Jarrett"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Teodoro 2021",
+        "Teodoro et al. 2021",
+        "Teodoro & Posti 2021"
+      ]
+    },
+    {
+      "id": "ref-60",
+      "raw": "Thomas G. F., Famaey B., Ibata R., Renaud F., Martin N. F., Kroupa P., 2018, A&A, 609",
+      "authors": [
+        "Thomas",
+        "Famaey",
+        "Ibata",
+        "Renaud",
+        "Martin",
+        "Kroupa"
+      ],
+      "year": 2018,
+      "volume": "2018",
+      "keys": [
+        "Thomas 2018",
+        "Thomas et al. 2018",
+        "Thomas & Famaey 2018"
+      ]
+    },
+    {
+      "id": "ref-61",
+      "raw": "Trachternach C., Blok W. J. D., McGaugh S. S., Hulst J. M. V. D., Dettmar R. J., 2009, A&A, 505, 577",
+      "authors": [
+        "Trachternach",
+        "Blok",
+        "McGaugh",
+        "Hulst",
+        "Dettmar"
+      ],
+      "year": 2009,
+      "volume": "2009",
+      "keys": [
+        "Trachternach 2009",
+        "Trachternach et al. 2009",
+        "Trachternach & Blok 2009"
+      ]
+    },
+    {
+      "id": "ref-62",
+      "raw": "Widmark A., Naik A. P., 2024, A&A, 686",
+      "authors": [
+        "Widmark",
+        "Naik"
+      ],
+      "year": 2024,
+      "volume": "2024",
+      "keys": [
+        "Widmark 2024",
+        "Widmark et al. 2024",
+        "Widmark & Naik 2024"
+      ]
+    },
+    {
+      "id": "ref-63",
+      "raw": "Wu X., Kroupa P., 2015, MNRAS, 446, 330",
+      "authors": [
+        "Wu",
+        "Kroupa"
+      ],
+      "year": 2015,
+      "volume": "2015",
+      "keys": [
+        "Wu 2015",
+        "Wu et al. 2015",
+        "Wu & Kroupa 2015"
+      ]
+    },
+    {
+      "id": "ref-64",
+      "raw": "Xu Y., et al., 2016, Sci. Adv., 2",
+      "authors": [
+        "Xu"
+      ],
+      "year": 2016,
+      "volume": "2016",
+      "keys": [
+        "Xu 2016",
+        "Xu et al. 2016"
+      ]
+    },
+    {
+      "id": "ref-65",
+      "raw": "Zari E., Rix H.-W., Frankel N., Xiang M., Poggio E., Drimmel R., Tkachenko A., 2021, A&A, 650, A112",
+      "authors": [
+        "Zari",
+        "Rix H.-W",
+        "Frankel",
+        "Xiang",
+        "Poggio",
+        "Drimmel",
+        "Tkachenko"
+      ],
+      "year": 2021,
+      "volume": "2021",
+      "keys": [
+        "Zari 2021",
+        "Zari et al. 2021",
+        "Zari & Rix H.-W 2021"
+      ]
+    },
+    {
+      "id": "ref-66",
+      "raw": "Zhang D., Zonoozi A. H., Kroupa P., 2026, Phys. Rev. D, 113, 043027",
+      "authors": [
+        "Zhang",
+        "Zonoozi",
+        "Kroupa"
+      ],
+      "year": 2026,
+      "volume": "2026",
+      "keys": [
+        "Zhang 2026",
+        "Zhang et al. 2026",
+        "Zhang & Zonoozi 2026"
+      ]
+    }
+  ],
+  "citations": [
+    {
+      "ref_ids": [
+        "ref-40"
+      ],
+      "raw": "McGaugh et al. (2000)",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-4"
+    },
+    {
+      "ref_ids": [
+        "ref-41"
+      ],
+      "raw": "McGaugh et al. (2016)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-4"
+    },
+    {
+      "ref_ids": [
+        "ref-53"
+      ],
+      "raw": "Poggio et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-7"
+    },
+    {
+      "ref_ids": [
+        "ref-17"
+      ],
+      "raw": "Ge et al. (2024)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-7"
+    },
+    {
+      "ref_ids": [
+        "ref-24",
+        "ref-25",
+        "ref-26"
+      ],
+      "raw": "Hunt & Reffert (2021, 2023, 2024)",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-10"
+    },
+    {
+      "ref_ids": [
+        "ref-66"
+      ],
+      "raw": "Zhang et al. (2026)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-19"
+    },
+    {
+      "ref_ids": [
+        "ref-4"
+      ],
+      "raw": "Bekenstein & Milgrom (1984)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-20"
+    },
+    {
+      "ref_ids": [
+        "ref-47"
+      ],
+      "raw": "Milgrom (2010)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-22"
+    },
+    {
+      "ref_ids": [
+        "ref-49"
+      ],
+      "raw": "Milgrom (2022)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-23"
+    },
+    {
+      "ref_ids": [
+        "ref-2"
+      ],
+      "raw": "Banik & Zhao (2022)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "fig-1",
+      "in": "caption"
+    },
+    {
+      "ref_ids": [
+        "ref-16"
+      ],
+      "raw": "Famaey & McGaugh (2012)",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-26"
+    },
+    {
+      "ref_ids": [
+        "ref-36"
+      ],
+      "raw": "Chae et al. (2020)",
+      "via": "hyperlink",
+      "resolved": true,
+      "block_id": "p-27"
+    },
+    {
+      "ref_ids": [
+        "ref-22"
+      ],
+      "raw": "Hernandez et al. (2024)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-27"
+    },
+    {
+      "ref_ids": [
+        "ref-19"
+      ],
+      "raw": "(Gundlach et al. 2007)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-27"
+    },
+    {
+      "ref_ids": [
+        "ref-24",
+        "ref-25",
+        "ref-26"
+      ],
+      "raw": "Hunt & Reffert (2021, 2023, 2024)",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-30"
+    },
+    {
+      "ref_ids": [
+        "ref-35"
+      ],
+      "raw": "Lindegren et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-39"
+    },
+    {
+      "ref_ids": [
+        "ref-25"
+      ],
+      "raw": "Hunt & Reffert (2023)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-40"
+    },
+    {
+      "ref_ids": [
+        "ref-8"
+      ],
+      "raw": "Cantat-Gaudin & Brandt (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-42"
+    },
+    {
+      "ref_ids": [
+        "ref-27"
+      ],
+      "raw": "Klioner et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-42"
+    },
+    {
+      "ref_ids": [
+        "ref-33"
+      ],
+      "raw": "Lelli et al. (2017)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-43"
+    },
+    {
+      "ref_ids": [
+        "ref-42"
+      ],
+      "raw": "McGaugh et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-44"
+    },
+    {
+      "ref_ids": [
+        "ref-33"
+      ],
+      "raw": "Lelli et al. (2017)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-45"
+    },
+    {
+      "ref_ids": [
+        "ref-3"
+      ],
+      "raw": "Begeman et al. (1991)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-52"
+    },
+    {
+      "ref_ids": [
+        "ref-33"
+      ],
+      "raw": "Lelli et al. (2017)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-52"
+    },
+    {
+      "ref_ids": [
+        "ref-48",
+        "ref-52"
+      ],
+      "raw": "(Milgrom 2019; Müller et al. 2022)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "fig-4",
+      "in": "caption"
+    },
+    {
+      "ref_ids": [
+        "ref-59",
+        "ref-34",
+        "ref-42"
+      ],
+      "raw": "(Teodoro et al. 2021; Lelli et al. 2019; McGaugh et al. 2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "fig-4",
+      "in": "caption"
+    },
+    {
+      "ref_ids": [
+        "ref-42"
+      ],
+      "raw": "(McGaugh et al. 2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "fig-4",
+      "in": "caption"
+    },
+    {
+      "ref_ids": [
+        "ref-50"
+      ],
+      "raw": "(Mistele et al. 2024)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "fig-4",
+      "in": "caption"
+    },
+    {
+      "ref_ids": [
+        "ref-42"
+      ],
+      "raw": "McGaugh et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-55"
+    },
+    {
+      "ref_ids": [
+        "ref-18"
+      ],
+      "raw": "(Gieles et al. 2010)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-63"
+    },
+    {
+      "ref_ids": [
+        "ref-51"
+      ],
+      "raw": "Moe & Stefano (2017)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-63"
+    },
+    {
+      "ref_ids": [
+        "ref-56"
+      ],
+      "raw": "Rybizki et al. (2022)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-64"
+    },
+    {
+      "ref_ids": [
+        "ref-5"
+      ],
+      "raw": "Belokurov et al. (2020)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-64"
+    },
+    {
+      "ref_ids": [
+        "ref-60"
+      ],
+      "raw": "Thomas et al. (2018)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-68"
+    },
+    {
+      "ref_ids": [
+        "ref-29"
+      ],
+      "raw": "Kroupa et al. (2022)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-68"
+    },
+    {
+      "ref_ids": [
+        "ref-30"
+      ],
+      "raw": "(Lada & Lada 2003)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-75"
+    },
+    {
+      "ref_ids": [
+        "ref-1",
+        "ref-28"
+      ],
+      "raw": "(Adamo et al. 2020; Krause et al. 2020)",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-75"
+    },
+    {
+      "ref_ids": [
+        "ref-54"
+      ],
+      "raw": "Read (2014)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-75"
+    },
+    {
+      "ref_ids": [
+        "ref-7"
+      ],
+      "raw": "Bienaymé et al. (2024)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-75"
+    },
+    {
+      "ref_ids": [
+        "ref-57"
+      ],
+      "raw": "(Springel et al. 2008)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-76"
+    },
+    {
+      "ref_ids": [
+        "ref-6"
+      ],
+      "raw": "Benson et al. (2004)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-77"
+    },
+    {
+      "ref_ids": [
+        "ref-20"
+      ],
+      "raw": "Hernandez & Kroupa (2025)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-77"
+    },
+    {
+      "ref_ids": [
+        "ref-53"
+      ],
+      "raw": "Poggio et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "ref_ids": [
+        "ref-65"
+      ],
+      "raw": "Zari et al. (2021)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "ref_ids": [
+        "ref-17"
+      ],
+      "raw": "Ge et al. (2024)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "ref_ids": [
+        "ref-23",
+        "ref-64"
+      ],
+      "raw": "(Hou & Han 2014; Xu et al. 2016)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "ref_ids": [
+        "ref-62"
+      ],
+      "raw": "(Widmark & Naik 2024)",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "ref_ids": [
+        "ref-14"
+      ],
+      "raw": "Dehnen & Binney (1998)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "ref_ids": [
+        "ref-13"
+      ],
+      "raw": "Cox & Gomez (2002)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-80"
+    },
+    {
+      "raw": "(Roberts & Stewart 1987)",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-82"
+    },
+    {
+      "ref_ids": [
+        "ref-10"
+      ],
+      "raw": "Chae et al. (2020)",
+      "via": "hyperlink",
+      "resolved": true,
+      "block_id": "p-84"
+    },
+    {
+      "ref_ids": [
+        "ref-62"
+      ],
+      "raw": "Widmark & Naik (2024)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-85"
+    },
+    {
+      "ref_ids": [
+        "ref-21"
+      ],
+      "raw": "Hernandez et al. (2012)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-88"
+    },
+    {
+      "ref_ids": [
+        "ref-43"
+      ],
+      "raw": "Merritt (2020)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-91"
+    },
+    {
+      "ref_ids": [
+        "ref-43"
+      ],
+      "raw": "Merritt (2020)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-92"
+    },
+    {
+      "ref_ids": [
+        "ref-33"
+      ],
+      "raw": "Lelli et al. (2017)",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-94"
+    }
+  ],
+  "crossrefs": [
+    {
+      "kind": "figure",
+      "raw": "Fig. 1",
+      "target_id": "fig-1",
+      "number": "1",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-24"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation 3",
+      "number": "3",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-26"
+    },
+    {
+      "kind": "equation",
+      "raw": "equation 60",
+      "number": "60",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-26"
+    },
+    {
+      "kind": "section",
+      "raw": "Section 3.3",
+      "number": "3.3",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-40"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 2",
+      "target_id": "fig-2",
+      "number": "2",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-47"
+    },
+    {
+      "kind": "figure",
+      "raw": "Figure 3",
+      "number": "3",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "fig-3",
+      "in": "caption"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 2",
+      "target_id": "fig-2",
+      "number": "2",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "fig-3",
+      "in": "caption"
+    },
+    {
+      "kind": "equation",
+      "raw": "eq. 13",
+      "number": "13",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "fig-3",
+      "in": "caption"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 2",
+      "target_id": "fig-2",
+      "number": "2",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-48"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 3",
+      "target_id": "fig-3",
+      "number": "3",
+      "via": "hyperlink",
+      "resolved": true,
+      "block_id": "p-51"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 3",
+      "number": "3",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-52"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 3",
+      "number": "3",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-52"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 2",
+      "target_id": "fig-2",
+      "number": "2",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-54"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 1",
+      "target_id": "fig-1",
+      "number": "1",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-54"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 4",
+      "target_id": "fig-4",
+      "number": "4",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-55"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 4",
+      "target_id": "fig-4",
+      "number": "4",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-55"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-62"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 4",
+      "target_id": "fig-4",
+      "number": "4",
+      "via": "hyperlink+regex",
+      "resolved": true,
+      "block_id": "p-63"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-69"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-69"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-70"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-71"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 3",
+      "target_id": "fig-3",
+      "number": "3",
+      "via": "hyperlink",
+      "resolved": true,
+      "block_id": "p-72"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-73"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-78"
+    },
+    {
+      "kind": "section",
+      "raw": "section 2.1",
+      "target_id": "sec-5",
+      "number": "2.1",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-79"
+    },
+    {
+      "kind": "figure",
+      "raw": "Fig. 5",
+      "target_id": "fig-10",
+      "number": "5",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-83"
+    },
+    {
+      "kind": "table",
+      "raw": "Table 1",
+      "target_id": "tab-1",
+      "number": "1",
+      "via": "regex",
+      "resolved": true,
+      "block_id": "p-92"
+    },
+    {
+      "kind": "table",
+      "raw": "Table 8",
+      "number": "8",
+      "via": "regex",
+      "resolved": false,
+      "block_id": "p-92"
+    }
+  ],
+  "stats": {
+    "n_sections": 23,
+    "n_paragraphs": 101,
+    "n_figures": 10,
+    "n_tables": 1,
+    "n_equations": 13,
+    "n_code": 0,
+    "n_algorithms": 0,
+    "n_references": 66,
+    "n_citations": 56,
+    "n_citations_resolved": 55,
+    "n_crossrefs": 29,
+    "n_crossrefs_resolved": 21
+  }
+}
