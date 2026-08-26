@@ -20,6 +20,13 @@
       "preset": "recommended"
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/tests/fixtures/**"],
+      "linter": { "enabled": false },
+      "formatter": { "enabled": false }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
