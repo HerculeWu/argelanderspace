@@ -7,7 +7,6 @@ __pycache__/
 
 # Node / frontend build
 node_modules/
-web/dist/
 packages/*/dist/
 *.tsbuildinfo
 *.log

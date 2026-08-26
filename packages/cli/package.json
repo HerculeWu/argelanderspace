@@ -3,6 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "description": "ArgelanderSpace command line: ingest (PDF/HTML/LaTeX), library build, acquire, serve.",
+  "bin": {
+    "argelanderspace": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -13,7 +17,21 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
+    "pretest": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@argelanderspace/contracts": "workspace:*",
+    "@argelanderspace/core": "workspace:*",
+    "@argelanderspace/infra": "workspace:*",
+    "@argelanderspace/server": "workspace:*",
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.11"
   }
 }

@@ -1,3 +1,7 @@
-// @argelanderspace/cli — commander CLI (ingest / library / serve).
-// Placeholder for M0 workspace topology; real CLI lands in milestone M5.
-export const PKG = "@argelanderspace/cli" as const;
+// @argelanderspace/cli — the `argelanderspace` commander program (M5):
+// `ingest` (PDF / publisher HTML / arXiv LaTeX auto-detected like the Python
+// cli.py), `library build`, `acquire`, and `serve` (the M4 Hono server).
+
+export * from "./detect.js";
+export * from "./program.js";
+export * from "./summary.js";

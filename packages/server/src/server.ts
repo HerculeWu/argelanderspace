@@ -6,8 +6,8 @@
  * Config resolution (decision 3): `--data-dir` > `ARGELANDERSPACE_DATA_DIR` >
  * `./data`. Port: `--port` > `ARGELANDERSPACE_PORT` > 8000 (uvicorn's
  * convention). Web dist: `--web-dist` > `ARGELANDERSPACE_WEB_DIST` >
- * `packages/web/dist` then `web/dist` if present (M5 moves the SPA into
- * packages/web; the legacy location still works until then).
+ * `packages/web/dist` (the M5 location; the pre-M5 `web/dist` path is still
+ * accepted for old checkouts).
  */
 
 import { existsSync } from "node:fs";
@@ -133,7 +133,7 @@ export function resolveServerConfig(
   if (webRaw !== undefined) {
     webDist = resolve(webRaw);
   } else {
-    // M5 moves the SPA into packages/web; accept either location for now.
+    // packages/web/dist is the M5 location; web/dist is the pre-M5 checkout.
     const candidates = [join(cwd, "packages", "web", "dist"), join(cwd, "web", "dist")];
     webDist = candidates.find((p) => existsSync(p)) ?? null;
   }
