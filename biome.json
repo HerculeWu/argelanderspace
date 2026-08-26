@@ -25,6 +25,40 @@
       "includes": ["**/tests/fixtures/**"],
       "linter": { "enabled": false },
       "formatter": { "enabled": false }
+    },
+    {
+      "includes": ["packages/web/**"],
+      "formatter": { "enabled": false },
+      "assist": { "actions": { "source": { "organizeImports": "off" } } },
+      "linter": {
+        "rules": {
+          "style": {
+            "useTemplate": "off",
+            "noNonNullAssertion": "off",
+            "useConst": "off",
+            "useImportType": "off",
+            "noDescendingSpecificity": "off"
+          },
+          "suspicious": {
+            "useIterableCallbackReturn": "off",
+            "noArrayIndexKey": "off",
+            "noShadowRestrictedNames": "off",
+            "noAssignInExpressions": "off",
+            "noGlobalIsFinite": "off",
+            "noExplicitAny": "off"
+          },
+          "correctness": { "useExhaustiveDependencies": "off" },
+          "complexity": { "noImportantStyles": "off", "useOptionalChain": "off" },
+          "security": { "noDangerouslySetInnerHtml": "off" },
+          "a11y": {
+            "useButtonType": "off",
+            "noStaticElementInteractions": "off",
+            "useKeyWithClickEvents": "off",
+            "useSemanticElements": "off",
+            "noSvgWithoutTitle": "off"
+          }
+        }
+      }
     }
   ],
   "javascript": {
