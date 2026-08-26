@@ -1,4 +1,12 @@
-// @argelanderspace/server — Hono server (8 REST endpoints), static hosting,
-// CSRF guard, job runner + WebSocket progress.
-// Placeholder for M0 workspace topology; real server lands in milestone M4.
-export const PKG = "@argelanderspace/server" as const;
+// @argelanderspace/server — the Hono port of `server/app.py` plus the M4
+// runtime pieces: the serial job runner (JSON-persisted under
+// `<dataDir>/jobs/`), the `/ws` WebSocket progress channel, the library.json
+// write lock, the mtime+size paper cache, and the infra composition root.
+
+export * from "./app.js";
+export * from "./deps.js";
+export * from "./jobs.js";
+export * from "./lock.js";
+export * from "./paper-cache.js";
+export * from "./server.js";
+export * from "./ws.js";

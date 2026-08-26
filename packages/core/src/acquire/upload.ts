@@ -17,8 +17,8 @@
 
 import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { LibraryRef } from "@argelanderspace/contracts";
-import { rebuild } from "../library/build.js";
+import type { LibraryRef, RefreshResponse } from "@argelanderspace/contracts";
+import { type RebuildOptions, rebuild } from "../library/build.js";
 import { workToRef } from "../library/graph.js";
 import type { MetadataSources } from "../library/sources.js";
 import {
@@ -76,7 +76,18 @@ export async function attachPdf(
     /** null → auto-detect text layer */
     forceOcr?: boolean | null;
   },
-  deps: { paths: LibraryPaths; pipelines: IngestPipelines; sources: MetadataSources }
+  deps: {
+    paths: LibraryPaths;
+    pipelines: IngestPipelines;
+    sources: MetadataSources;
+    /**
+     * Composition seam (defaults to the real {@link rebuild}): the M4 server
+     * injects a lock-wrapped rebuild so the relink load→save stays mutually
+     * exclusive with `patchWork`/`addNodeToLibrary` (Python's `_WRITE_LOCK`),
+     * without holding that lock across the OCR itself.
+     */
+    rebuild?: (paths: LibraryPaths, opts: RebuildOptions) => Promise<RefreshResponse>;
+  }
 ): Promise<LibraryRef | Record<string, unknown>> {
   if (!existsSync(pdfPath) || !statSync(pdfPath).isFile()) {
     throw new Error(pdfPath); // FileNotFoundError(pdf_path)
@@ -101,7 +112,7 @@ export async function attachPdf(
   await deps.pipelines.ingestPdf(dest, { outDir, isOcr: query.forceOcr ?? null });
   stampSource(join(outDir, `${docId}.json`), w, "user_pdf");
 
-  await rebuild(deps.paths, { sources: deps.sources }); // relink doc_ids + refresh graph
+  await (deps.rebuild ?? rebuild)(deps.paths, { sources: deps.sources }); // relink doc_ids + refresh graph
   const store2 = LibraryStore.load(deps.paths);
   const w2 = findWork(store2, { workId: w.id, doi: w.doi, arxiv: w.arxiv_id });
   return w2 ? workToRef(w2) : { id: w.id, doc_id: docId };
