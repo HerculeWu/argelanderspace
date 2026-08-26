@@ -1,0 +1,627 @@
+{
+ "status": "ok",
+ "message-type": "work",
+ "message-version": "1.0.0",
+ "message": {
+  "indexed": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     8
+    ]
+   ],
+   "date-time": "2026-04-08T06:53:02Z",
+   "timestamp": 1775631182675,
+   "version": "3.50.1"
+  },
+  "reference-count": 228,
+  "publisher": "American Astronomical Society",
+  "issue": "2",
+  "license": [
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "tdm",
+    "delay-in-days": 6,
+    "URL": "https://iopscience.iop.org/info/page/text-and-data-mining"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   },
+   {
+    "start": {
+     "date-parts": [
+      [
+       2026,
+       4,
+       7
+      ]
+     ],
+     "date-time": "2026-04-07T00:00:00Z",
+     "timestamp": 1775520000000
+    },
+    "content-version": "vor",
+    "delay-in-days": 6,
+    "URL": "https://creativecommons.org/licenses/by/4.0/"
+   }
+  ],
+  "content-domain": {
+   "domain": [
+    "iopscience.iop.org"
+   ],
+   "crossmark-restriction": false
+  },
+  "short-container-title": [
+   "ApJS"
+  ],
+  "published-print": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     1
+    ]
+   ]
+  },
+  "abstract": "<jats:title>Abstract</jats:title>\n                  <jats:p>\n                    We report the results of a radial velocity monitoring program in the Hyades region, carried out at the Center for Astrophysics over a period of more than 45\u00a0yr. Nearly 12,000 spectra were gathered for 625 stars brighter than\n                    <jats:italic>V</jats:italic>\n                    \u00a0\u2248\u00a014.5, of which 55% are members or possible members of the cluster. New or updated spectroscopic orbital solutions are presented for more than 100 members and nonmembers, including several triple systems. In a few cases, we incorporate available astrometry. The frequency of binaries in the Hyades with periods up to 10\n                    <jats:sup>4</jats:sup>\n                    days is determined to be 40%\u00a0\u00b1\u00a05%, after corrections for incompleteness. This is marginally higher than in other open clusters. The orbital period and eccentricity distributions are found to be similar to those of solar-type binaries in the field. The mass ratio distribution is essentially flat, or slightly rising toward mass ratios of unity. We revisit the determination of the tidal circularization period, obtaining a longer\n                    <jats:italic>P</jats:italic>\n                    <jats:sub>circ</jats:sub>\n                    value of 5.9\u00a0\u00b1\u00a01.1 days compared to the previous estimate of 3.2 days, still somewhat short of the value expected if most or all of the action of tides happens during the pre-main-sequence phase. We estimate a line-of-sight velocity dispersion of 0.21\u00a0\u00b1\u00a00.05 km s\n                    <jats:sup>\u22121</jats:sup>\n                    within 5.5\u00a0pc of the cluster center (approximately the half-mass radius) and a larger dispersion beyond that distance. Our velocity measurements are accurate enough to clearly reveal the signatures of gravitational redshift and convective blueshift among the dwarfs and giants in the Hyades.\n                  </jats:p>",
+  "DOI": "10.3847/1538-4365/ae4fbb",
+  "type": "journal-article",
+  "created": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     8
+    ]
+   ],
+   "date-time": "2026-04-08T06:01:32Z",
+   "timestamp": 1775628092000
+  },
+  "page": "81",
+  "update-policy": "https://doi.org/10.1088/crossmark-policy",
+  "source": "Crossref",
+  "is-referenced-by-count": 0,
+  "title": [
+   "Long-term Spectroscopic Survey of the Hyades Cluster: The Binary Population"
+  ],
+  "prefix": "10.3847",
+  "volume": "283",
+  "author": [
+   {
+    "ORCID": "https://orcid.org/0000-0002-5286-0251",
+    "authenticated-orcid": true,
+    "given": "Guillermo",
+    "family": "Torres",
+    "sequence": "first",
+    "affiliation": [],
+    "role": [
+     {
+      "role": "author",
+      "vocabulary": "crossref"
+     }
+    ]
+   },
+   {
+    "given": "Robert P.",
+    "family": "Stefanik",
+    "sequence": "additional",
+    "affiliation": [],
+    "role": [
+     {
+      "role": "author",
+      "vocabulary": "crossref"
+     }
+    ]
+   },
+   {
+    "ORCID": "https://orcid.org/0000-0001-9911-7388",
+    "authenticated-orcid": true,
+    "given": "David W.",
+    "family": "Latham",
+    "sequence": "additional",
+    "affiliation": [],
+    "role": [
+     {
+      "role": "author",
+      "vocabulary": "crossref"
+     }
+    ]
+   }
+  ],
+  "member": "2208",
+  "published-online": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     7
+    ]
+   ]
+  },
+  "reference": [
+   {
+    "key": "apjsae4fbbbib1",
+    "doi-asserted-by": "publisher",
+    "first-page": "52",
+    "DOI": "10.5479/ADS/bib/1914LicOB.8.52A",
+    "type": "journal-article",
+    "volume": "251",
+    "author": "Aitken",
+    "year": "1914",
+    "journal-title": "LicOB"
+   },
+   {
+    "key": "apjsae4fbbbib2",
+    "doi-asserted-by": "publisher",
+    "first-page": "6211",
+    "DOI": "10.1093/mnras/stae425",
+    "type": "journal-article",
+    "volume": "528",
+    "author": "Albrow",
+    "year": "2024",
+    "journal-title": "MNRAS"
+   },
+   {
+    "key": "apjsae4fbbbib3",
+    "doi-asserted-by": "publisher",
+    "first-page": "L4",
+    "DOI": "10.1051/0004-6361/201730393",
+    "type": "journal-article",
+    "volume": "600",
+    "author": "Altmann",
+    "year": "2017",
+    "journal-title": "A&A"
+   }
+  ],
+  "container-title": [
+   "The Astrophysical Journal Supplement Series"
+  ],
+  "original-title": [],
+  "link": [
+   {
+    "URL": "https://iopscience.iop.org/article/10.3847/1538-4365/ae4fbb",
+    "content-type": "text/html",
+    "content-version": "vor",
+    "intended-application": "text-mining"
+   },
+   {
+    "URL": "https://iopscience.iop.org/article/10.3847/1538-4365/ae4fbb/pdf",
+    "content-type": "application/pdf",
+    "content-version": "vor",
+    "intended-application": "text-mining"
+   },
+   {
+    "URL": "https://iopscience.iop.org/article/10.3847/1538-4365/ae4fbb/pdf",
+    "content-type": "application/pdf",
+    "content-version": "vor",
+    "intended-application": "syndication"
+   },
+   {
+    "URL": "https://iopscience.iop.org/article/10.3847/1538-4365/ae4fbb/pdf",
+    "content-type": "application/pdf",
+    "content-version": "vor",
+    "intended-application": "similarity-checking"
+   }
+  ],
+  "deposited": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     8
+    ]
+   ],
+   "date-time": "2026-04-08T06:01:44Z",
+   "timestamp": 1775628104000
+  },
+  "score": 1,
+  "resource": {
+   "primary": {
+    "URL": "https://iopscience.iop.org/article/10.3847/1538-4365/ae4fbb"
+   }
+  },
+  "subtitle": [],
+  "short-title": [],
+  "issued": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     1
+    ]
+   ]
+  },
+  "references-count": 228,
+  "journal-issue": {
+   "issue": "2",
+   "published-online": {
+    "date-parts": [
+     [
+      2026,
+      4,
+      7
+     ]
+    ]
+   },
+   "published-print": {
+    "date-parts": [
+     [
+      2026,
+      4,
+      1
+     ]
+    ]
+   }
+  },
+  "URL": "https://doi.org/10.3847/1538-4365/ae4fbb",
+  "relation": {},
+  "ISSN": [
+   "0067-0049",
+   "1538-4365"
+  ],
+  "issn-type": [
+   {
+    "value": "0067-0049",
+    "type": "print"
+   },
+   {
+    "value": "1538-4365",
+    "type": "electronic"
+   }
+  ],
+  "subject": [],
+  "published": {
+   "date-parts": [
+    [
+     2026,
+     4,
+     1
+    ]
+   ]
+  },
+  "assertion": [
+   {
+    "value": "Long-term Spectroscopic Survey of the Hyades Cluster: The Binary Population",
+    "name": "article_title",
+    "label": "Article Title"
+   },
+   {
+    "value": "The Astrophysical Journal Supplement Series",
+    "name": "journal_title",
+    "label": "Journal Title"
+   },
+   {
+    "value": "paper",
+    "name": "article_type",
+    "label": "Article Type"
+   },
+   {
+    "value": "\u00a9 2026. The Author(s). Published by the American Astronomical Society.",
+    "name": "copyright_information",
+    "label": "Copyright Information"
+   },
+   {
+    "value": "2026-01-15",
+    "name": "date_received",
+    "label": "Date Received",
+    "group": {
+     "name": "publication_dates",
+     "label": "Publication dates"
+    }
+   },
+   {
+    "value": "2026-02-23",
+    "name": "date_accepted",
+    "label": "Date Accepted",
+    "group": {
+     "name": "publication_dates",
+     "label": "Publication dates"
+    }
+   },
+   {
+    "value": "2026-04-07",
+    "name": "date_epub",
+    "label": "Online publication date",
+    "group": {
+     "name": "publication_dates",
+     "label": "Publication dates"
+    }
+   }
+  ]
+ }
+}
