@@ -1,0 +1,224 @@
+\begin{thebibliography}{}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+\providecommand{\url}[1]{\href{#1}{#1}}
+\providecommand{\dodoi}[1]{doi:~\href{http://doi.org/#1}{\nolinkurl{#1}}}
+\providecommand{\doeprint}[1]{\href{http://ascl.net/#1}{\nolinkurl{http://ascl.net/#1}}}
+\providecommand{\doarXiv}[1]{\href{https://arxiv.org/abs/#1}{\nolinkurl{https://arxiv.org/abs/#1}}}
+
+\bibitem[{{Anders} {et~al.}(2019){Anders}, {Khalatyan}, {Chiappini}, {Queiroz},
+  {Santiago}, {Jordi}, {Girardi}, {Brown}, {Matijevi{\v{c}}}, {Monari},
+  {Cantat-Gaudin}, {Weiler}, {Khan}, {Miglio}, {Carrillo}, {Romero-G{\'o}mez},
+  {Minchev}, {de Jong}, {Antoja}, {Ramos}, {Steinmetz}, \&
+  {Enke}}]{2019A&A...628A..94A}
+{Anders}, F., {Khalatyan}, A., {Chiappini}, C., {et~al.} 2019, \aap, 628, A94,
+  \dodoi{10.1051/0004-6361/201935765}
+
+\bibitem[{{Arenou} {et~al.}(2018){Arenou}, {Luri}, {Babusiaux}, {Fabricius},
+  {Helmi}, {Muraveva}, {Robin}, {Spoto}, {Vallenari}, {Antoja},
+  {Cantat-Gaudin}, {Jordi}, {Leclerc}, {Reyl{\'e}}, {Romero-G{\'o}mez}, {Shih},
+  {Soria}, {Barache}, {Bossini}, {Bragaglia}, {Breddels}, {Fabrizio},
+  {Lambert}, {Marrese}, {Massari}, {Moitinho}, {Robichon}, {Ruiz-Dern},
+  {Sordo}, {Veljanoski}, {Eyer}, {Jasniewicz}, {Pancino}, {Soubiran}, {Spagna},
+  {Tanga}, {Turon}, \& {Zurbach}}]{2018A&A...616A..17A}
+{Arenou}, F., {Luri}, X., {Babusiaux}, C., {et~al.} 2018, \aap, 616, A17,
+  \dodoi{10.1051/0004-6361/201833234}
+
+\bibitem[{{Astraatmadja} \&
+  {Bailer-Jones}(2016{\natexlab{a}})}]{2016ApJ...832..137A}
+{Astraatmadja}, T.~L., \& {Bailer-Jones}, C. A.~L. 2016{\natexlab{a}}, \apj,
+  832, 137, \dodoi{10.3847/0004-637X/832/2/137}
+
+\bibitem[{{Astraatmadja} \&
+  {Bailer-Jones}(2016{\natexlab{b}})}]{2016ApJ...833..119A}
+{Astraatmadja}, T.~L., \& {Bailer-Jones}, C.~A.~L. 2016{\natexlab{b}}, \apj,
+  833, 119.
+\newblock \doarXiv{1609.07369}
+
+\bibitem[{{Bailer-Jones}(2015)}]{2015PASP..127..994B}
+{Bailer-Jones}, C.~A.~L. 2015, \pasp, 127, 994, \dodoi{10.1086/683116}
+
+\bibitem[{{Bailer-Jones} {et~al.}(2018){Bailer-Jones}, {Rybizki}, {Fouesneau},
+  {Mantelet}, \& {Andrae}}]{2018AJ....156...58B}
+{Bailer-Jones}, C.~A.~L., {Rybizki}, J., {Fouesneau}, M., {Mantelet}, G., \&
+  {Andrae}, R. 2018, \aj, 156, 58, \dodoi{10.3847/1538-3881/aacb21}
+
+\bibitem[{{Bovy} {et~al.}(2014){Bovy}, {Nidever}, {Rix}, {Girardi}, {Zasowski},
+  {Chojnowski}, {Holtzman}, {Epstein}, {Frinchaboy}, {Hayden}, {Rodrigues},
+  {Majewski}, {Johnson}, {Pinsonneault}, {Stello}, {Allende Prieto}, {Andrews},
+  {Basu}, {Beers}, {Bizyaev}, {Burton}, {Chaplin}, {Cunha}, {Elsworth},
+  {Garc{\'\i}a}, {Garc{\'\i}a-Her{\'n}andez}, {Garc{\'\i}a P{\'e}rez},
+  {Hearty}, {Hekker}, {Kallinger}, {Kinemuchi}, {Koesterke},
+  {M{\'e}sz{\'a}ros}, {Mosser}, {O'Connell}, {Oravetz}, {Pan}, {Robin},
+  {Schiavon}, {Schneider}, {Schultheis}, {Serenelli}, {Shetrone}, {Silva
+  Aguirre}, {Simmons}, {Skrutskie}, {Smith}, {Stassun}, {Weinberg}, {Wilson},
+  \& {Zamora}}]{2014ApJ...790..127B}
+{Bovy}, J., {Nidever}, D.~L., {Rix}, H.-W., {et~al.} 2014, \apj, 790, 127,
+  \dodoi{10.1088/0004-637X/790/2/127}
+
+\bibitem[{{Breddels} \& {Veljanoski}(2018)}]{2018A&A...618A..13B}
+{Breddels}, M.~A., \& {Veljanoski}, J. 2018, \aap, 618, A13,
+  \dodoi{10.1051/0004-6361/201732493}
+
+\bibitem[{{Cantat-Gaudin} {et~al.}(2018){Cantat-Gaudin}, {Jordi}, {Vallenari},
+  {Bragaglia}, {Balaguer-N{\'u}{\~n}ez}, {Soubiran}, {Bossini}, {Moitinho},
+  {Castro-Ginard}, {Krone-Martins}, {Casamiquela}, {Sordo}, \&
+  {Carrera}}]{2018A&A...618A..93C}
+{Cantat-Gaudin}, T., {Jordi}, C., {Vallenari}, A., {et~al.} 2018, \aap, 618,
+  A93, \dodoi{10.1051/0004-6361/201833476}
+
+\bibitem[{{Fabricius} {et~al.}(2020){Fabricius}, {Luri}, {Arenou}, {Babusiaux,
+  C.}, {Helmi, A.}, {Muraveva, T.}, {Reyl\'e, C.}, {Spoto, F.}, \& {Vallenari,
+  A.}}]{fabricius_etal_gedr3_validation}
+{Fabricius}, C., {Luri}, X., {Arenou}, F., {et~al.} 2020, A\&A,
+  \dodoi{10.1051/0004-6361/202039834}
+
+\bibitem[{{Foreman-Mackey} {et~al.}(2013){Foreman-Mackey}, {Hogg}, {Lang}, \&
+  {Goodman}}]{2013PASP..125..306F}
+{Foreman-Mackey}, D., {Hogg}, D.~W., {Lang}, D., \& {Goodman}, J. 2013, \pasp,
+  125, 306, \dodoi{10.1086/670067}
+
+\bibitem[{{Gaia Collaboration}(2016{\natexlab{a}})}]{2016A&A...595A...1G}
+{Gaia Collaboration}. 2016{\natexlab{a}}, \aap, 595, A1,
+  \dodoi{10.1051/0004-6361/201629272}
+
+\bibitem[{{Gaia Collaboration}(2016{\natexlab{b}})}]{2016A&A...595A...2G}
+---. 2016{\natexlab{b}}, \aap, 595, A2, \dodoi{10.1051/0004-6361/201629512}
+
+\bibitem[{{Gaia Collaboration}(2018)}]{2018A&A...616A...1G}
+---. 2018, \aap, 616, A1, \dodoi{10.1051/0004-6361/201833051}
+
+\bibitem[{{Gaia Collaboration}(2020{\natexlab{a}})}]{gedr3_release}
+---. 2020{\natexlab{a}}, arXiv:2012.01533.
+\newblock \doarXiv{2012.01533}
+
+\bibitem[{{Gaia Collaboration}(2020{\natexlab{b}})}]{gedr3_nearbystars}
+---. 2020{\natexlab{b}}, arXiv:2012.02061.
+\newblock \doarXiv{2012.02061}
+
+\bibitem[{{G{\'o}rski} {et~al.}(2005){G{\'o}rski}, {Hivon}, {Banday},
+  {Wandelt}, {Hansen}, {Reinecke}, \& {Bartelmann}}]{2005ApJ...622..759G}
+{G{\'o}rski}, K.~M., {Hivon}, E., {Banday}, A.~J., {et~al.} 2005, \apj, 622,
+  759, \dodoi{10.1086/427976}
+
+\bibitem[{{Hall} {et~al.}(2019){Hall}, {Davies}, {Elsworth}, {Miglio},
+  {Bedding}, {Brown}, {Khan}, {Hawkins}, {Garc{\'\i}a}, {Chaplin}, \&
+  {North}}]{2019MNRAS.486.3569H}
+{Hall}, O.~J., {Davies}, G.~R., {Elsworth}, Y.~P., {et~al.} 2019, \mnras, 486,
+  3569, \dodoi{10.1093/mnras/stz1092}
+
+\bibitem[{Hartigan \& Hartigan(1985)}]{hartigan1985}
+Hartigan, J.~A., \& Hartigan, P.~M. 1985, Ann. Statist., 13, 70,
+  \dodoi{10.1214/aos/1176346577}
+
+\bibitem[{Hunter(2007)}]{Hunter:2007}
+Hunter, J.~D. 2007, Computing In Science \& Engineering, 9, 90
+
+\bibitem[{{Leung} \& {Bovy}(2019)}]{2019MNRAS.489.2079L}
+{Leung}, H.~W., \& {Bovy}, J. 2019, \mnras, 489, 2079,
+  \dodoi{10.1093/mnras/stz2245}
+
+\bibitem[{{Lindegren}
+  {et~al.}(2020{\natexlab{a}})}]{lindegren_etal_gedr3_parallaxzp}
+{Lindegren}, L., {et~al.} 2020{\natexlab{a}}, arXiv:2012.01742.
+\newblock \doarXiv{2012.01742}
+
+\bibitem[{{Lindegren} {et~al.}(2020{\natexlab{b}}){Lindegren}, {Klioner},
+  {Hern\'andez}, {Bombrun, A.}, {Ramos-Lerate, M.}, {Steidelm\"uller, H.},
+  {Bastian, U.}, {Biermann, M.}, {de Torres, A.}, {Gerlach, E.}, {Geyer, R.},
+  {Hilger, T.}, {Hobbs, D.}, {Lammers, U.}, {McMillan, P. J.}, {Stephenson, C.
+  A.}, {Casta\~neda, J.}, \& {Davidson, M.}}]{lindegren_etal_gedr3_astrometry}
+{Lindegren}, L., {Klioner}, S.~A., {Hern\'andez}, J., {et~al.}
+  2020{\natexlab{b}}, A\&A, \dodoi{10.1051/0004-6361/202039709}
+
+\bibitem[{{Luri} {et~al.}(2018){Luri}, {Brown}, {Sarro}, {Arenou},
+  {Bailer-Jones}, {Castro-Ginard}, {de Bruijne}, {Prusti}, {Babusiaux}, \&
+  {Delgado}}]{2018A&A...616A...9L}
+{Luri}, X., {Brown}, A.~G.~A., {Sarro}, L.~M., {et~al.} 2018, \aap, 616, A9,
+  \dodoi{10.1051/0004-6361/201832964}
+
+\bibitem[{{Majewski} {et~al.}(2017){Majewski}, {Schiavon}, {Frinchaboy},
+  {Allende Prieto}, {Barkhouser}, {Bizyaev}, {Blank}, {Brunner}, {Burton},
+  {Carrera}, {Chojnowski}, {Cunha}, {Epstein}, {Fitzgerald}, {Garc{\'\i}a
+  P{\'e}rez}, {Hearty}, {Henderson}, {Holtzman}, {Johnson}, {Lam}, {Lawler},
+  {Maseman}, {M{\'e}sz{\'a}ros}, {Nelson}, {Nguyen}, {Nidever}, {Pinsonneault},
+  {Shetrone}, {Smee}, {Smith}, {Stolberg}, {Skrutskie}, {Walker}, {Wilson},
+  {Zasowski}, {Anders}, {Basu}, {Beland}, {Blanton}, {Bovy}, {Brownstein},
+  {Carlberg}, {Chaplin}, {Chiappini}, {Eisenstein}, {Elsworth}, {Feuillet},
+  {Fleming}, {Galbraith-Frew}, {Garc{\'\i}a}, {Garc{\'\i}a-Hern{\'a}ndez},
+  {Gillespie}, {Girardi}, {Gunn}, {Hasselquist}, {Hayden}, {Hekker}, {Ivans},
+  {Kinemuchi}, {Klaene}, {Mahadevan}, {Mathur}, {Mosser}, {Muna}, {Munn},
+  {Nichol}, {O'Connell}, {Parejko}, {Robin}, {Rocha-Pinto}, {Schultheis},
+  {Serenelli}, {Shane}, {Silva Aguirre}, {Sobeck}, {Thompson}, {Troup},
+  {Weinberg}, \& {Zamora}}]{2017AJ....154...94M}
+{Majewski}, S.~R., {Schiavon}, R.~P., {Frinchaboy}, P.~M., {et~al.} 2017, \aj,
+  154, 94, \dodoi{10.3847/1538-3881/aa784d}
+
+\bibitem[{{McMillan}(2018)}]{2018RNAAS...2...51M}
+{McMillan}, P.~J. 2018, Research Notes of the American Astronomical Society, 2,
+  51, \dodoi{10.3847/2515-5172/aaca93}
+
+\bibitem[{{Olivares} {et~al.}(2020){Olivares}, {Sarro}, {Bouy}, {Miret-Roig},
+  {Casamiquela}, {Galli}, {Berihuete}, \& {Tarricq}}]{2020arXiv201000272O}
+{Olivares}, J., {Sarro}, L.~M., {Bouy}, H., {et~al.} 2020, arXiv e-prints,
+  arXiv:2010.00272.
+\newblock \doarXiv{2010.00272}
+
+\bibitem[{{Palmer} {et~al.}(2014){Palmer}, {Arenou}, {Luri}, \&
+  {Masana}}]{2014A&A...564A..49P}
+{Palmer}, M., {Arenou}, F., {Luri}, X., \& {Masana}, E. 2014, \aap, 564, A49,
+  \dodoi{10.1051/0004-6361/201323037}
+
+\bibitem[{{Queiroz} {et~al.}(2020){Queiroz}, {Anders}, {Chiappini},
+  {Khalatyan}, {Santiago}, {Steinmetz}, {Valentini}, {Miglio}, {Bossini},
+  {Barbuy}, {Minchev}, {Minniti}, {Garc{\'\i}a Hern{\'a}ndez}, {Schultheis},
+  {Beaton}, {Beers}, {Bizyaev}, {Brownstein}, {Cunha},
+  {Fern{\'a}ndez-Trincado}, {Frinchaboy}, {Lane}, {Majewski}, {Nataf},
+  {Nitschelm}, {Pan}, {Roman-Lopes}, {Sobeck}, {Stringfellow}, \&
+  {Zamora}}]{2020A&A...638A..76Q}
+{Queiroz}, A.~B.~A., {Anders}, F., {Chiappini}, C., {et~al.} 2020, \aap, 638,
+  A76, \dodoi{10.1051/0004-6361/201937364}
+
+\bibitem[{{Riello} {et~al.}(2020)}]{riello_etal_gedr3_photometry}
+{Riello}, M., {et~al.} 2020, arXiv:2012.01916.
+\newblock \doarXiv{2012.01916}
+
+\bibitem[{{Rybizki} {et~al.}(2018){Rybizki}, {Demleitner}, {Fouesneau},
+  {Bailer-Jones}, {Rix}, \& {Andrae}}]{2018PASP..130g4101R}
+{Rybizki}, J., {Demleitner}, M., {Fouesneau}, M., {et~al.} 2018, \pasp, 130,
+  074101, \dodoi{10.1088/1538-3873/aabd70}
+
+\bibitem[{{Rybizki} \& {Drimmel}(2018)}]{2018ascl.soft11018R}
+{Rybizki}, J., \& {Drimmel}, R. 2018, {gdr2\_completeness: GaiaDR2 data
+  retrieval and manipulation}.
+\newblock \doeprint{1811.018}
+
+\bibitem[{{Rybizki} {et~al.}(2020){Rybizki}, {Demleitner}, {Bailer-Jones},
+  {Tio}, {Cantat-Gaudin}, {Fouesneau}, {Chen}, {Andrae}, {Girardi}, \&
+  {Sharma}}]{2020PASP..132g4501R}
+{Rybizki}, J., {Demleitner}, M., {Bailer-Jones}, C. A.~L., {et~al.} 2020,
+  \pasp, 132, 074501, \dodoi{10.1088/1538-3873/ab8cb0}
+
+\bibitem[{{Sanders} \& {Das}(2018)}]{2018MNRAS.481.4093S}
+{Sanders}, J.~L., \& {Das}, P. 2018, \mnras, 481, 4093,
+  \dodoi{10.1093/mnras/sty2490}
+
+\bibitem[{{Sch{\"o}nrich} \& {Aumer}(2017)}]{2017MNRAS.472.3979S}
+{Sch{\"o}nrich}, R., \& {Aumer}, M. 2017, \mnras, 472, 3979,
+  \dodoi{10.1093/mnras/stx2189}
+
+\bibitem[{{Taylor}(2005)}]{2005ASPC..347...29T}
+{Taylor}, M.~B. 2005, in Astronomical Society of the Pacific Conference Series,
+  Vol. 347, Astronomical Data Analysis Software and Systems XIV, ed.
+  P.~{Shopbell}, M.~{Britton}, \& R.~{Ebert}, 29
+
+\bibitem[{{Zonca} {et~al.}(2019){Zonca}, {Singer}, {Lenz}, {Reinecke},
+  {Rosset}, {Hivon}, \& {Gorski}}]{2019JOSS....4.1298Z}
+{Zonca}, A., {Singer}, L., {Lenz}, D., {et~al.} 2019, The Journal of Open
+  Source Software, 4, 1298, \dodoi{10.21105/joss.01298}
+
+\bibitem[{{Zucker} {et~al.}(2018){Zucker}, {Schlafly}, {Speagle}, {Green},
+  {Portillo}, {Finkbeiner}, \& {Goodman}}]{2018ApJ...869...83Z}
+{Zucker}, C., {Schlafly}, E.~F., {Speagle}, J.~S., {et~al.} 2018, \apj, 869,
+  83, \dodoi{10.3847/1538-4357/aae97c}
+
+\end{thebibliography}

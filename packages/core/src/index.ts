@@ -10,6 +10,11 @@
 // planner, ADS▸Crossref▸OpenAlex resolution chain, .bib parsing, upload/PDF
 // fetch orchestration). Metadata sources and the ingest pipelines arrive through
 // the port interfaces in library/sources.ts and acquire/pipelines.ts (M2/M3).
+//
+// pipelines/latex/: the arXiv LaTeX ingestion pipeline (pandoc-AST walk,
+// .bbl/.bib references, asset resolution) composed from the documents-domain
+// stages; pandoc / rasterization / arXiv acquisition are injected ports
+// (packages/core/src/pipelines/latex/ports.ts), wired by infra.
 
 export * from "./acquire/bibtex.js";
 export * from "./acquire/execute.js";
@@ -36,3 +41,8 @@ export * from "./library/graph.js";
 export * from "./library/seed.js";
 export * from "./library/sources.js";
 export * from "./library/store.js";
+export * from "./pipelines/latex/assets.js";
+export * from "./pipelines/latex/pipeline.js";
+export * from "./pipelines/latex/ports.js";
+export * from "./pipelines/latex/references.js";
+export * from "./pipelines/latex/walk.js";

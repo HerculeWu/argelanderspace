@@ -1,0 +1,1 @@
+% fixture image bytes trimmed for hermetic tests; rasterization is covered by infra's M2 suite (the Document JSON only carries the output basename)

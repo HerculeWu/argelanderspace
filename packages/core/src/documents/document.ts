@@ -178,8 +178,11 @@ function annotateDocument(
   }
 }
 
-/** Return the rich-text holders of a block (each has text/citations/crossrefs). */
-function annotatable(block: Block): RichText[] {
+/**
+ * Return the rich-text holders of a block (each has text/citations/crossrefs).
+ * Shared with the LaTeX/HTML pipelines (`bibgraph/pipeline.py::_annotatable`).
+ */
+export function annotatable(block: Block): RichText[] {
   if (block.type === "paragraph") return [block];
   if (block.type === "list") return block.items;
   if (block.type === "equation") return [];

@@ -137,7 +137,8 @@ function firstGroup(m: RegExpExecArray): string | undefined {
   return m.slice(1).find((g) => g);
 }
 
-function parseOne(refId: string, raw: string, label: string | undefined): ParsedReference {
+/** `_parse_one` — also used by the LaTeX pipeline's .bbl reference builder. */
+export function parseOne(refId: string, raw: string, label: string | undefined): ParsedReference {
   let doi: string | undefined;
   const dm = DOI_RE.exec(raw);
   if (dm && dm[0] !== undefined) doi = cleanDoi(dm[0]);
@@ -243,7 +244,8 @@ function parseAuthors(raw: string, year: number | undefined): string[] {
   return uniq.slice(0, 12);
 }
 
-function matchKeys(
+/** `_match_keys` — also used by the LaTeX pipeline's CSL-JSON reference builder. */
+export function matchKeys(
   authors: string[],
   year: number | undefined,
   label: string | undefined

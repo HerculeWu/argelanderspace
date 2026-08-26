@@ -9,6 +9,7 @@ export * from "./html/fetcher.js";
 export * from "./latex/arxiv-source.js";
 export * from "./latex/assets.js";
 export * from "./latex/pandoc.js";
+export * from "./latex/pipeline.js";
 export * from "./lib/http.js";
 export * from "./lib/proc.js";
 export * from "./lib/pyjson.js";

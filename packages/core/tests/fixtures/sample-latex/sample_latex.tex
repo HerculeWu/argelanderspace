@@ -1,0 +1,55 @@
+\documentclass{article}
+\usepackage{amsmath}
+\newcommand{\msun}{M_\odot}
+\title{A Sample LaTeX Paper for the Phase 5 Pipeline}
+\author{Jane Doe\thanks{E-mail: jane@example.org} \and John Roe}
+\begin{document}
+\maketitle
+\begin{abstract}
+We describe a minimal LaTeX source used to exercise the arXiv ingest pipeline.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+As shown by \citet{KeyA} and \citep[see][p.~5]{KeyB}, the magnitude matters; see
+also \citep{KeyA, KeyB}. The mass is $m = \msun$ and the cut was $|Z|<150\ $pc with
+$\alpha\textsubscript{c}$ near $11\arcsec$. The energy follows Eq.~\eqref{eq:e},
+discussed further in Sect.~\ref{sec:methods}, Fig.~\ref{fig:x}, and Table~\ref{tab:t}.
+A note here.\footnote{This footnote must be dropped.} See \url{https://example.org}.
+
+\begin{equation}\label{eq:e}
+E = m c^2
+\end{equation}
+\begin{equation*}
+x = 1
+\end{equation*}
+\begin{align}
+a &= b \\
+c &= d \label{eq:al}
+\end{align}
+\[ y = 2 \]
+
+\section{Methods}\label{sec:methods}
+We refer back to Sect.~\ref{sec:intro}.
+
+\begin{figure}
+\centering
+\includegraphics[width=\linewidth]{nonexistent_figure.pdf}
+\caption{A sample figure caption citing \citet{KeyA}.}
+\label{fig:x}
+\end{figure}
+
+\begin{table}
+\caption{A sample table caption.}
+\label{tab:t}
+\begin{tabular}{ll}
+Header A & Header B \\
+1 & 2 \\
+\end{tabular}
+\end{table}
+
+\begin{thebibliography}{9}
+\bibitem[Smith et al.(2020)]{KeyA} Smith, J., Doe, J., \& Roe, J. 2020, \mnras, 600, 1
+  \doi{10.1051/0004-6361/200000001}
+\bibitem[Jones \& Roe(2019)]{KeyB} Jones, A., \& Roe, B. 2019, \aap, 590, 12
+\end{thebibliography}
+\end{document}
