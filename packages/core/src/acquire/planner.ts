@@ -185,7 +185,11 @@ export interface HtmlAdapterInfo {
 
 /**
  * Static snapshot of the Python `ingest_html.ADAPTERS` registry at migration
- * time (`aanda.py`, `oup.py`). M3 replaces this with the live TS registry.
+ * time (`aanda.py`, `oup.py`). The live TS registry landed with M3c:
+ * `pipelines/html/base.ts` `htmlAdapterInfos()` returns the same slice from
+ * the actually-registered adapters; composition layers (CLI/server, M5) should
+ * pass that in — this constant stays the default so the planner works without
+ * the pipeline modules loaded.
  */
 export const DEFAULT_HTML_ADAPTERS: readonly HtmlAdapterInfo[] = [
   { name: "aanda", doiPrefixes: ["10.1051/0004-6361"] },

@@ -1,0 +1,745 @@
+<br />
+<b>Notice</b>:  Undefined offset: 1 in <b>/home/web/htdocs/site-source-j25/libraries/joomla/environment/browser.php</b> on line <b>378</b><br />
+<!DOCTYPE html>
+<html xml:lang="en-gb" lang="en-gb" dir="ltr">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+      <base href="https://www.aanda.org/articles/aa/full_html/2021/02/aa39341-20/T1.html" />
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+  <meta name="keywords" content="Astronomy &amp; Astrophysics, A&amp;A, ESO, EDP Sciences" />
+  <meta name="robots" content="index, follow, noarchive" />
+  <meta name="description" content="Astronomy &amp; Astrophysics (A&amp;A) is an international journal which publishes papers on all aspects of astronomy and astrophysics" />
+  <title>Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data | Astronomy &amp; Astrophysics (A&amp;A)</title>
+  <link rel="stylesheet" href="/libraries/jquery/jquery.multiselect.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/libraries/jquery/jquery.qtip/jquery.qtip.min.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/libraries/jquery/jquery.magnific-popup.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.0/themes/smoothness/jquery-ui.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/templates/template1/css/com_article.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/templates/template1/css/com_article_hljs_github.min.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/templates/template1/css/mod_article_bookmarking.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/templates/template1/css/mod_article_purchase.css?v=6.5.0" type="text/css" />
+  <link rel="stylesheet" href="/templates/template1/css/mod_solr.css?v=6.5.0" type="text/css" />
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js?v=6.5.0" type="text/javascript"></script>
+  <script src="/plugins/system/jqueryeasy/jquerynoconflict.js?v=6.5.0" type="text/javascript"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.12.0/jquery-ui.min.js?v=6.5.0" type="text/javascript"></script>
+  <script src="/libraries/jquery/jquery.multiselect.min.js?v=6.5.0" type="text/javascript"></script>
+  <script src="/libraries/jquery/jquery.magnific-popup.min.js?v=6.5.0" type="text/javascript"></script>
+  <script src="/libraries/jquery/jquery.qtip/jquery.qtip.min.js?v=6.5.0" type="text/javascript"></script>
+  <script src="https://www.aanda.org/components/com_article/assets/js/highlight/highlight.min.js?v=6.5.0" type="text/javascript"></script>
+  <script src="https://www.aanda.org/components/com_article/assets/js/article.js?v=6.5.0" type="text/javascript"></script>
+  <script src="https://www.aanda.org/components/com_article/assets/js/highlight/highlight.js?v=6.5.0" type="text/javascript"></script>
+  <script src="https://www.googletagmanager.com/gtag/js?id=G-S2LKMZBHJL&v=6.5.0" type="text/javascript"></script>
+  <script src="https://js.datadome.co/tags.js?v=6.5.0" type="text/javascript" async="async"></script>
+  <script src="/modules/mod_article_bookmarking/assets/js/bookmarking.js?v=6.5.0" type="text/javascript"></script>
+  <script src="/modules/mod_solr/assets/js/mod_solr.js?v=6.5.0" type="text/javascript"></script>
+  <script src="/libraries/jquery/jquery.autocomplete.js?v=6.5.0" type="text/javascript"></script>
+  <script type="text/javascript">
+var ARTICLE_CLICK_VIEW = "Click to view fullscreen";
+var ARTICLE_CLICK_HIDE = "Click anywhere to hide the fullscreen overlay";
+var ARTICLE_CLICK_MOVIE = "Click to play the movie";
+var COM_ARTICLE_DISPLAY_EQUATION_AS = "Display equations as";
+var COM_ARTICLE_COPY_IN_CLIPBOARD = "LaTeX copied in clipboard!";
+const MATHML_DISPLAY = "mathml";
+window.dataLayer = window.dataLayer || [];
+function gtag() {dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('consent', 'default', {
+  'ad_storage': 'denied',
+  'ad_user_data': 'denied',
+  'ad_personalization': 'denied',
+  'analytics_storage': 'denied',
+  'wait_for_update': 500
+});
+gtag('config', 'G-S2LKMZBHJL', { 
+    'edpsname': 'aa',
+    'site_name': 'Astronomy & Astrophysics (A&A)',
+    'plateform': 'journal',
+    'plateform_type': 'edp',
+    'server_host': 'ovh-france'
+});gtag('config', 'G-T2TE0Y7XE9', {
+    'edpsname': 'aa',
+    'site_name': 'Astronomy & Astrophysics (A&A)',
+    'plateform': 'journal',
+    'plateform_type': 'edp',
+    'server_host': 'ovh-france'
+});gtag('config', 'user_properties', {
+    'edpsname': 'aa',
+    'site_name': 'Astronomy & Astrophysics (A&A)',
+    'plateform': 'journal',
+    'plateform_type': 'edp',
+    'server_host': 'ovh-france'
+});window.ddjskey = '5FA9BA255E291F8E5C305B6DB0D777';
+window.ddoptions = {};
+  </script>
+
+    <link href="/templates/template1/images/aa/favicon.ico" rel="shortcut icon" type="image/vnd.microsoft.icon" />
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+      <link href="https://fonts.googleapis.com/css2?family=Crimson+Text&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+        
+    <link href="/templates/source/css/article.css?v=6.5.0" rel="stylesheet" type="text/css"/>
+    <link href="/templates/template1/css/cookie.css?v=6.5.0" rel="stylesheet" type="text/css"/>
+    <link href="/templates/template1/css/commun_v3.css?v=6.5.0" rel="stylesheet" type="text/css"/>
+    <link href="/templates/template1/css/template1.css?v=6.5.0" rel="stylesheet" type="text/css"/>
+    <link href="/templates/source/css/flags25.css?v=6.5.0" rel="stylesheet" type="text/css"/>    
+
+        <link href="/templates/template1/css/aa.css?v=6.5.0" rel="stylesheet" type="text/css"/>
+        <link href="/templates/source/js/mmenu2/dist/css/jquery.mmenu.all.css" rel="stylesheet" type="text/css"/>
+    <!--[if IE]>
+    <link rel="stylesheet" href="/templates/template1/css/ie.css" type="text/css" />
+    <script src="/templates/template1/html5-ie.js"></script>
+    <![endif]-->
+</head>
+
+
+
+<body id="com_article" class="aa marketing " server="ovh-france">
+    <div id="journal-webpage">
+        <header>
+                          <div class="header-edp">
+    <div class="wrap ">
+
+                    <div class="logo-edp">
+
+                                    <a href="https://www.edpsciences.org" target="_blank"><img src="/templates/source/images/logos/logo_edp_105.svg" alt="EDP Sciences logo"></a>
+                            </div>
+                            <nav class="edp-nav">
+                    <ul>
+                        <li><a href="https://publications.edpsciences.org/">Journals</a></li>
+                        <li><a href="https://www.edpsciences.org/en/books">Books</a></li>
+                        <li><a href="https://www.webofconferences.org/">Conferences</a></li>
+                    </ul>
+                </nav>
+                    
+
+
+                    <div class="header_cart">
+                <a href="#" class="cart-box" id="cart-info" title="Display your shopping cart">
+  <span class="ico ico-cart"></span> <span class="cart-counter hidden">0</span>
+</a>
+
+            </div>
+        
+        
+
+                        
+        <div class="reg_info auth">
+            <div class="btn-nav">
+            <span class="ico16 white subs"></span><span>Subscriber Authentication Point  </span>
+            <nav class="user">
+                <ul>
+                                            <li>
+                            <a href="/component/authenticate/?task=login">
+                                Sign in with login/password
+                            </a>
+                        </li>
+                                        <li>
+                        <a href="/component/authenticate/?task=access">
+                            Your subscription
+                        </a>
+                    </li>
+                                    </ul>
+            </nav>
+        </div>
+    </div>
+<div class="reg_info account">
+    <div class="btn-nav">
+                    <span class="ico16 white login"></span> <span class="reg_info-user">EDPS Account</span>
+                <nav class="user">
+                        <ul>
+                <li><a href="/component/services/">Login</a></li>
+            </ul>
+                    </nav>
+    </div>
+</div>
+
+
+        
+        
+        <div class="clear"></div>
+    </div>
+</div>
+
+
+                                                            
+
+	    
+
+            <div class="header-nav">
+
+              
+              <div class="wrap">
+                        
+                                <a href="/" class="logo" title="Journal homepage"><img src="/templates/template1/images/aa/logo_aa.svg" alt="Astronomy & Astrophysics (A&A)"></a>
+                
+                <nav class="menu">
+                  
+<ul class="menu">
+<li class="item-122"><a href="/component/issues/?task=all&amp;Itemid=122" >All volumes</a></li><li class="item-443"><a href="/for-authors" >For authors</a></li></ul>
+
+                </nav>
+
+
+                            
+                
+
+<div class="custom search default">
+<span class="ico ico-search" title="Display the search engine">Search</span>
+</div>
+
+
+                <a href="#menu-mobile" class="nav-mobile-link">Menu</a>
+                
+              </div>
+
+               
+            <nav id="menu-mobile">
+<ul class="menu">
+<li class="item-145 deeper parent"><span class="separator">About A&amp;A</span>
+<ul><li class="item-137"><a href="/about-aa/aims-and-scope" >Aims and scope</a></li><li class="item-143"><a href="/about-aa/history" >History</a></li><li class="item-136"><a href="/about-aa/editors-of-aa" >Editors of A&amp;A</a></li><li class="item-140"><a href="/about-aa/board-of-directors" >Board of Directors</a></li><li class="item-138"><a href="/about-aa/indexed-in" >Indexed in</a></li><li class="item-139"><a href="/about-aa/copyright" >Copyright</a></li><li class="item-162"><a href="/images/stories/leaflet/aa_leaflet.pdf" target="_blank" >A&amp;A leaflet (PDF)</a></li><li class="item-530"><a href="https://www.edpsciences.org/images/stories/librarians/EDP-AA-S2O.pdf" target="_blank" >A&amp;A S2O leaflet (PDF)</a></li><li class="item-197"><a href="/about-aa/masthead" >Masthead</a></li></ul></li><li class="item-424 deeper parent"><span class="separator">Browse articles</span>
+<ul><li class="item-427"><a href="/component/issues/?task=all" >All volumes</a></li><li class="item-429"><a href="/component/list/?task=topic" >Special issues</a></li><li class="item-535"><a href="/browse/review-articles" >Review articles</a></li><li class="item-432"><a href="/component/forthcoming/" >Forthcoming</a></li><li class="item-435"><a href="/highlights" >Highlights</a></li><li class="item-221"><a href="/2026-press-releases" >Press releases</a></li><li class="item-533"><a href="/component/issues/?task=images" >Featured images</a></li></ul></li><li class="item-396 deeper parent"><a href="/for-authors" >For authors</a><ul><li class="item-161 deeper parent"><span class="separator">Author information</span>
+<ul><li class="item-186"><a href="/for-authors/author-information/paper-organization" >Paper organization</a></li><li class="item-232"><a href="/for-authors/author-information/news-from-the-editorial-office" >News from the Editorial Office</a></li><li class="item-192"><a href="/for-authors/author-information/page-charges" >Page charges</a></li><li class="item-173"><a href="/for-authors/author-information/acceptance-stage" >Acceptance stage</a></li><li class="item-159"><a href="/for-authors/author-information/production-stage" >Production stage</a></li><li class="item-233"><a href="/for-authors/author-information/copyright" >Copyright</a></li><li class="item-231"><a href="/for-authors/author-information/open-access" >Open Access</a></li></ul></li><li class="item-189 deeper parent"><span class="separator">Language editing</span>
+<ul><li class="item-539"><a href="/for-authors/language-editing/a-a-language-guide-for-authors" >A&amp;A language guide for authors</a></li><li class="item-499"><a href="/images/stories/author/AA_English-Guide.pdf" target="_blank" >Full Guide (PDF file)</a></li></ul></li><li class="item-178 deeper parent"><span class="separator">LaTeX issues</span>
+<ul><li class="item-370"><a href="/for-authors/latex-issues/texnical-background-information" >TeXnical background information </a></li><li class="item-369"><a href="/for-authors/latex-issues/the-preamble-of-your-tex-file" >The preamble of your TEX file</a></li><li class="item-371"><a href="/for-authors/latex-issues/the-manuscript-header" >The manuscript header</a></li><li class="item-391"><a href="/for-authors/latex-issues/including-author-names-using-non-roman-alphabets" >Including author names using non-Roman alphabets</a></li><li class="item-372"><a href="/for-authors/latex-issues/the-main-text" >The main text</a></li><li class="item-373"><a href="/for-authors/latex-issues/figures" >Figures</a></li><li class="item-374"><a href="/for-authors/latex-issues/tables" >Tables</a></li><li class="item-375"><a href="/for-authors/latex-issues/multi-media" >Multimedia </a></li><li class="item-376"><a href="/for-authors/latex-issues/references" >References </a></li><li class="item-377"><a href="/for-authors/latex-issues/typography" >Typography</a></li><li class="item-378"><a href="/for-authors/latex-issues/appendices" >Appendices </a></li><li class="item-380"><a href="/for-authors/latex-issues/astronomical-objects-linking-to-databases" >Astronomical objects: linking to databases </a></li><li class="item-381"><a href="/for-authors/latex-issues/latex-examples" >LaTeX examples</a></li><li class="item-466"><a href="/for-authors/latex-issues/information-files" >Information files</a></li></ul></li><li class="item-456"><a href="https://writingstudio.aws.edpsciences.org/login" target="_blank" >Writing studio</a></li><li class="item-459"><a href="/for-authors/submit-an-article" >Submit an article</a></li></ul></li><li class="item-440"><a href="/component/journal_price/" >Subscriber information</a></li><li class="item-514"><a href="/subscribe-to-open-faqs" >Subscribe to Open (S2O) FAQs</a></li><li class="item-437"><a href="/component/services/" >Reader's services</a></li><li class="item-127"><a href="/news" >News</a></li></ul>
+</nav>
+            </div>
+
+            <div id="search" class="hidden">
+    <div class="wrap-search">
+        <form action="/component/solr/?task=quick_search" method="post">
+            <div class="wrap">
+                <div class="inputs">
+                    <input type="text" name="q" />
+                    <button type="submit" value="search">
+                        <span class="ico ico-search" title="Search"></span>
+                    </button>
+                </div> 
+                                    <div class="s_volume_page">
+                        <a href="/component/searcharticle/?by=vol-page">Access by volume/page</a>
+                    </div>
+                                <div class="advanced"><a href="/component/solr/">Advanced Search</a></div>
+            </div>
+
+        </form>
+    </div>
+</div>
+<script type="text/javascript">
+	jQuery(function ($) {
+	    var source = function (request, callback) {
+	        var term = request.term;
+            $.ajax({
+                url: '/index.php',
+                dataType: 'json',
+                method: 'GET',
+                data: {
+                    option: 'com_solr',
+                    task: 'auto_complete',
+                    query: term
+                },
+                success: function (data) {
+                    var suggestions = [];
+                    try {
+                        data.suggest.default[term].suggestions.forEach(function (s) { suggestions.push(s.term)}) } catch (e) {
+                    }
+
+                    callback(suggestions);
+                },
+                error: function (err) {
+                    callback([]);
+                }
+            });
+        };
+
+		$('#search').find('input[name=q]').autocomplete({
+			source: source
+		});
+	});
+</script>
+
+                          <div class="header-cover">
+                <div class="wrap">                                  </div>                  
+              </div>
+                    </header>
+
+        <main class="aa" id="main">
+
+            <!--div class="wrap">
+             <p>Message placeholder</p>
+            </div-->
+
+            
+            
+            
+              
+              
+            
+            
+            <div class="wrap" >
+                              
+<div class="breadcrumbs">
+
+
+
+<a href="/" class="pathway">Home</a> <img src="/media/system/images/arrow.png" alt=""  /> <a href="/component/issues/" class="pathway">All issues</a> <img src="/media/system/images/arrow.png" alt=""  /> <a href="/articles/aa/abs/2021/02/contents/contents.html" class="pathway">Volume 646 (February 2021)</a> <img src="/media/system/images/arrow.png" alt=""  /> <a href="/articles/aa/abs/2021/02/aa39341-20/aa39341-20.html" class="pathway">A&amp;A, 646 (2021) A104</a> <img src="/media/system/images/arrow.png" alt=""  /> <span>Full HTML</span></div>
+
+              
+                                                    <div id="content" class="id-101  full">
+                    <div>
+                                           
+                        <nav class="nav-article nav-buttons">
+                          
+<ul class="menu">
+<li class="item-145 deeper parent"><span class="separator">About A&amp;A</span>
+<ul><li class="item-137"><a href="/about-aa/aims-and-scope" >Aims and scope</a></li><li class="item-143"><a href="/about-aa/history" >History</a></li><li class="item-136"><a href="/about-aa/editors-of-aa" >Editors of A&amp;A</a></li><li class="item-140"><a href="/about-aa/board-of-directors" >Board of Directors</a></li><li class="item-138"><a href="/about-aa/indexed-in" >Indexed in</a></li><li class="item-139"><a href="/about-aa/copyright" >Copyright</a></li><li class="item-162"><a href="/images/stories/leaflet/aa_leaflet.pdf" target="_blank" >A&amp;A leaflet (PDF)</a></li><li class="item-530"><a href="https://www.edpsciences.org/images/stories/librarians/EDP-AA-S2O.pdf" target="_blank" >A&amp;A S2O leaflet (PDF)</a></li><li class="item-197"><a href="/about-aa/masthead" >Masthead</a></li></ul></li><li class="item-424 deeper parent"><span class="separator">Browse articles</span>
+<ul><li class="item-427"><a href="/component/issues/?task=all" >All volumes</a></li><li class="item-429"><a href="/component/list/?task=topic" >Special issues</a></li><li class="item-535"><a href="/browse/review-articles" >Review articles</a></li><li class="item-432"><a href="/component/forthcoming/" >Forthcoming</a></li><li class="item-435"><a href="/highlights" >Highlights</a></li><li class="item-221"><a href="/2026-press-releases" >Press releases</a></li><li class="item-533"><a href="/component/issues/?task=images" >Featured images</a></li></ul></li><li class="item-396 deeper parent"><a href="/for-authors" >For authors</a><ul><li class="item-161 deeper parent"><span class="separator">Author information</span>
+<ul><li class="item-186"><a href="/for-authors/author-information/paper-organization" >Paper organization</a></li><li class="item-232"><a href="/for-authors/author-information/news-from-the-editorial-office" >News from the Editorial Office</a></li><li class="item-192"><a href="/for-authors/author-information/page-charges" >Page charges</a></li><li class="item-173"><a href="/for-authors/author-information/acceptance-stage" >Acceptance stage</a></li><li class="item-159"><a href="/for-authors/author-information/production-stage" >Production stage</a></li><li class="item-233"><a href="/for-authors/author-information/copyright" >Copyright</a></li><li class="item-231"><a href="/for-authors/author-information/open-access" >Open Access</a></li></ul></li><li class="item-189 deeper parent"><span class="separator">Language editing</span>
+<ul><li class="item-539"><a href="/for-authors/language-editing/a-a-language-guide-for-authors" >A&amp;A language guide for authors</a></li><li class="item-499"><a href="/images/stories/author/AA_English-Guide.pdf" target="_blank" >Full Guide (PDF file)</a></li></ul></li><li class="item-178 deeper parent"><span class="separator">LaTeX issues</span>
+<ul><li class="item-370"><a href="/for-authors/latex-issues/texnical-background-information" >TeXnical background information </a></li><li class="item-369"><a href="/for-authors/latex-issues/the-preamble-of-your-tex-file" >The preamble of your TEX file</a></li><li class="item-371"><a href="/for-authors/latex-issues/the-manuscript-header" >The manuscript header</a></li><li class="item-391"><a href="/for-authors/latex-issues/including-author-names-using-non-roman-alphabets" >Including author names using non-Roman alphabets</a></li><li class="item-372"><a href="/for-authors/latex-issues/the-main-text" >The main text</a></li><li class="item-373"><a href="/for-authors/latex-issues/figures" >Figures</a></li><li class="item-374"><a href="/for-authors/latex-issues/tables" >Tables</a></li><li class="item-375"><a href="/for-authors/latex-issues/multi-media" >Multimedia </a></li><li class="item-376"><a href="/for-authors/latex-issues/references" >References </a></li><li class="item-377"><a href="/for-authors/latex-issues/typography" >Typography</a></li><li class="item-378"><a href="/for-authors/latex-issues/appendices" >Appendices </a></li><li class="item-380"><a href="/for-authors/latex-issues/astronomical-objects-linking-to-databases" >Astronomical objects: linking to databases </a></li><li class="item-381"><a href="/for-authors/latex-issues/latex-examples" >LaTeX examples</a></li><li class="item-466"><a href="/for-authors/latex-issues/information-files" >Information files</a></li></ul></li><li class="item-456"><a href="https://writingstudio.aws.edpsciences.org/login" target="_blank" >Writing studio</a></li><li class="item-459"><a href="/for-authors/submit-an-article" >Submit an article</a></li></ul></li><li class="item-440"><a href="/component/journal_price/" >Subscriber information</a></li><li class="item-514"><a href="/subscribe-to-open-faqs" >Subscribe to Open (S2O) FAQs</a></li><li class="item-437"><a href="/component/services/" >Reader's services</a></li><li class="item-127"><a href="/news" >News</a></li></ul>
+
+                        </nav>
+                                            
+                      
+<div id="system-message-container">
+</div>
+                      
+
+                      
+                                              <div class="flexme flexme-article">
+                        <div class="article-content">
+                                <div>
+    
+<div class="special_article green">Free Access</div>
+    
+
+
+
+
+
+
+
+
+
+
+
+</div>
+
+
+
+<div id="article" lang="en">
+    <?xml version="1.0" encoding="ASCII" standalone="yes"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "">
+
+    <div id="annex">
+      <h2 class="sec">Table 1. </h2>
+      <p>Algorithms considered for inclusion by this study.</p>
+      <div class="tab">
+        <table width="100%" class="fm" frame="hsides" rules="groups">
+<thead>
+<tr>
+<th align="left"></th>
+<th align="center">Runtime</th>
+<th align="center">Deals with</th>
+<th align="center">Open-</th>
+</tr>
+<tr>
+<th align="left">Algorithm</th>
+<th align="center">scaling <sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN1">(a)</a></sup></th>
+<th align="center">noise</th>
+<th align="center">source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">KMeans</td>
+<td align="center"><i>n</i></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Affinity propagation</td>
+<td align="center"><i>n</i><sup>2</sup></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Mean-shift</td>
+<td align="center"><i>n</i><sup>2</sup></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Spectral</td>
+<td align="center"><i>n</i><sup>3</sup></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Ward</td>
+<td align="center"><i>n</i><sup>3</sup></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Agglomerative</td>
+<td align="center"><i>n</i><sup>3</sup></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">DBSCAN</td>
+<td align="center"><i>n</i>log <i>n</i></td>
+<td align="center">Yes</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">OPTICS</td>
+<td align="center"><i>n</i><sup>2</sup></td>
+<td align="center">Yes</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Gaussian mixtures</td>
+<td align="center"><i>n</i></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Birch</td>
+<td align="center"><i>n</i></td>
+<td align="center">No</td>
+<td align="center"><tt>sklearn</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN2">(b)</a></sup></td>
+</tr>
+<tr>
+<td align="left">Friend of Friends</td>
+<td align="center"><i>n</i>log <i>n</i></td>
+<td align="center">No</td>
+<td align="center"><tt>pyfof</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN3">(c)</a></sup></td>
+</tr>
+<tr>
+<td align="left">HDBSCAN</td>
+<td align="center"><i>n</i>log <i>n</i></td>
+<td align="center">Yes</td>
+<td align="center"><tt>HDBSCAN</tt><sup><a href="/articles/aa/full_html/2021/02/aa39341-20/T1.html#TFN4">(d)</a></sup></td>
+</tr>
+</tbody>
+</table>
+      </div>
+      <div class="history">
+<p><b>Notes.</b></p>
+<div><a name="TFN1" id="TFN1"></a><sup>(a)</sup> <p class="ligne">Runtime scalings are best case estimates and are only given with respect to number of data points <i>n</i>.</p></div>
+<div><a name="TFN2" id="TFN2"></a><sup>(b)</sup> <p class="ligne"><a href="https://scikit-learn.org/" target="_blank">https://scikit-learn.org/</a>.</p></div>
+<div><a name="TFN3" id="TFN3"></a><sup>(c)</sup> <p class="ligne"><a href="https://pypi.org/project/pyfof/" target="_blank">https://pypi.org/project/pyfof/</a>.</p></div>
+<div><a name="TFN4" id="TFN4"></a><sup>(d)</sup> <p class="ligne"><a href="https://pypi.org/project/hdbscan/" target="_blank">https://pypi.org/project/hdbscan/</a>.</p></div>
+</div>
+    </div>
+  
+
+</div>
+
+    <div id="metrics-tabs" data-doi="10.1051/0004-6361/202039341" data-edps_ref="aa39341-20">
+<nav class="toolbar">
+	<button class="toolbar-item" id="metrics-siq">Current usage metrics</button>
+	<button class="toolbar-item" id="info">About article metrics</button>
+    
+	
+	<button class="toolbar-item" id="return">Return to article</button>
+</nav>
+
+<div class="panel" data-for="metrics-siq">
+</div>
+
+<div class="panel" data-for="metrics-alm"></div>
+
+<div class="panel" data-for="info">
+	
+
+	<p>Current usage metrics show cumulative count of Article Views (full-text article views including HTML views, PDF and ePub downloads, according to the available data)  and Abstracts Views on Vision4Press platform.</p>
+
+	<p>Data correspond to usage on the plateform after 2015. The current usage metrics is available 48-96 hours after online publication and is updated daily on week days.</p>
+
+	<div class="msg msg-info">
+		<span class="ico ico-info"></span>
+		<div>
+			<p>Initial download of the metrics may take a while.</p>
+		</div>
+	</div>
+
+
+</div>
+
+
+
+
+</div>
+<script type="text/javascript" src="/templates/source/js/metrics-tab.js"></script>
+
+
+
+
+
+
+                                                    </div>
+                        <nav class="article">
+                           
+  
+ 
+  <div class="module_title">
+    <a href="/">Homepage</a>
+</div>
+<div class="nav-section"><div class="title_toc">
+<ul class="menu browse">
+<li class="item-452"><a class=" link-volumes" href="/component/issues/?task=all" >All volumes</a></li><li class="item-453"><a href="/component/list/?task=topic" >Special issues</a></li><li class="item-534"><a class="link-forth" href="/browse/review-articles" >Review articles</a></li><li class="item-451"><a class=" link-forth" href="/component/forthcoming/" >Forthcoming articles</a></li><li class="item-448"><a class=" link-pr" href="/2025-press-releases" >Press releases</a></li></ul>
+<a href="/articles/aa/abs/2021/02/contents/contents.html">Table of Contents</a></div></div> 
+
+    <div class="nav-section files"> <h2>Article contents</h2><div class="article_doc"><ul><li><a href="/articles/aa/abs/2021/02/aa39341-20/aa39341-20.html" title="Abstract">Abstract</a></li><li><a href="/articles/aa/full_html/2021/02/aa39341-20/aa39341-20.html" title="Full HTML" class="current">Full HTML</a></li><li><a href="/articles/aa/pdf/2021/02/aa39341-20.pdf" title="PDF (11.97 MB)">PDF (11.97 MB)</a></li><li><a href="/articles/aa/epub2/2021/02/aa39341-20/aa39341-20.epub" title="ePUB (19.45 MB)">ePUB (19.45 MB)</a></li><li><a href="/articles/aa/ref/2021/02/aa39341-20/aa39341-20.html" title="References">References</a></li></ul>
+    </div>
+
+</div>
+
+<div class="nav-section databases"> <h2>Database links</h2><div class="article_doc"><ul><li><a href="http://cdsarc.u-strasbg.fr/viz-bin/cat/J/A+A/646/A104" title="Tables available from the Strasbourg astronomical Data Center (CDS)" class="related-database-link" target="_blank">Tables at CDS</a></li><li><a href="http://simbad.u-strasbg.fr/simbo.pl?bibcode=2021A%26A...646A.104H" title="Data on astronomical objects available from the Strasbourg astronomical Data Center (CDS)" class="related-database-link" target="_blank">Simbad Objects</a></li><li><a href="https://ui.adsabs.harvard.edu/#abs/2021A%26A...646A.104H" title="Article abstracts available on the Astrophysics Data System" class="related-database-link" target="_blank">NASA ADS Abstract Service</a></li></ul>
+        </div>
+    
+</div>
+
+
+
+    <div class="nav-section stats"><h2>Metrics</h2><script type='text/javascript' src='https://d1bxh8uas1mnw7.cloudfront.net/assets/embed.js'></script><ul><li><a id="show-metrics">Show article metrics</a></li><li class="altmetrics"><div class='altmetric-embed' data-doi="10.1051/0004-6361/202039341" data-hide-no-mentions="true"></div></li></ul>
+    </div>
+
+
+<div class="nav-section servs"><h2>Services</h2><ul><li><strong>Articles citing this article</strong><br /><div style="margin-left:8px"><a href="https://www.aanda.org/component/citedby/?task=crossref&amp;doi=10.1051/0004-6361/202039341">CrossRef (113)</a></div></li><li><strong>Same authors</strong><br /><div style="margin-left:8px">- <a href="https://www.aanda.org/component/solr/?task=authors&amp;tool=google&amp;dkey=10.1051/0004-6361/202039341" target="_blank">Google Scholar</a></div><div style="margin-left:8px">- <a href="https://www.aanda.org/component/solr/?task=authors&amp;tool=ads&amp;dkey=10.1051/0004-6361/202039341" target="_blank">NASA ADS</a></div><div style="margin-left:8px">- <a href="https://www.aanda.org/component/solr/?task=authors&amp;dkey=10.1051/0004-6361/202039341" target="_blank">EDP Sciences database</a></div></li><div class="separator"></div><li><a href="https://www.aanda.org/component/recommend/?type=article&amp;dkey=10.1051/0004-6361/202039341">Recommend this article</a></li><li><a href="https://www.aanda.org/component/kindle/?dkey=10.1051/0004-6361/202039341" title="Send this article to my Kindle">Send to my Kindle</a></li><li><a href="https://www.aanda.org/component/makeref/?task=show&amp;type=html&amp;doi=10.1051/0004-6361/202039341">Download citation</a></li></ul>
+</div>
+ 
+
+
+ 
+  <div class="nav-section related">
+  <h2>Related Articles</h2>
+  <script type="text/javascript">
+    jQuery(function ($) {
+      $(document).ready(function() {
+        $('.nav-toggle').click(function() {
+          var collapse_content_selector = $(this).attr('href');
+          var toggle_switch = $(this);
+          $(collapse_content_selector).toggle(function() {
+            if ($(this).css('display') == 'none') {
+              toggle_switch.html('More');
+            } else {
+              toggle_switch.html('Less');
+            }
+          });
+        });
+      });
+    });
+  </script>
+            <div class="articles">
+                      <a href="https://www.aanda.org/articles/aa/full_html/2023/05/aa46285-23/aa46285-23.html" class="title">Improving the open cluster census — II. An all-sky cluster catalogue with Gaia DR3</a>
+            <br />
+    
+          A&A 673, A114 (2023)<br />
+        <div class="separator"></div>
+                            <a href="https://www.aanda.org/articles/aa/abs/2022/05/aa42568-21/aa42568-21.html" class="title">Hunting for open clusters in Gaia EDR3: 628 new open clusters found with OCfinder</a>
+            <br />
+    
+          A&A 661, A118 (2022)<br />
+        <div class="separator"></div>
+                            <a href="https://www.aanda.org/articles/aa/abs/2022/04/aa43091-22/aa43091-22.html" class="title">Newly detected open clusters in the Galactic disk using Gaia EDR3</a>
+            <br />
+    
+          A&A 660, A4 (2022)<br />
+        <div class="separator"></div>
+                </div>
+      <div id="searchmlt" class="articles" style="display:none">
+      <div class="separator"></div>
+                      <a href="https://www.aanda.org/articles/aa/full_html/2025/09/aa55040-25/aa55040-25.html" class="title">Open cluster members in APOGEE DR17 — I. Dynamics and star members</a>
+            <br />
+    
+          A&A, 701, A100 (2025)<br />
+        <div class="separator"></div>
+                            <a href="https://www.aanda.org/articles/aa/abs/2019/07/aa35531-19/aa35531-19.html" class="title">Hunting for open clusters in Gaia DR2: the Galactic anticentre</a>
+            <br />
+    
+          A&A 627, A35 (2019)<br />
+        <div class="separator"></div>
+          </div>
+        </ul>
+  <button href="#searchmlt" class="nav-toggle">More</button>
+</div>
+
+ 
+  <div class="nav-section bookmark">
+	<h2>Bookmarking</h2>
+	<ul>
+		<li>
+			<a href="https://www.facebook.com/share.php?u=https://doi.org/10.1051/0004-6361/202039341" onclick="return fbs_click('https://doi.org/10.1051/0004-6361/202039341', 'Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data');" title="Share on Facebook" target="_blank" onclick="_gaq.push(['_trackPageview', '/bookmarking/Facebook/Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data']);">
+				<span class="ico ico-s ico-facebook"></span> 
+			</a>
+		</li>
+		<li>
+			<a title="Share on Twitter" href="https://twitter.com/intent/tweet?text=Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data.%20https://doi.org/10.1051/0004-6361/202039341%20via%20@AandA_journal" class="twitter-share-button" data-count="none" target="_blank" onclick="_gaq.push(['_trackPageview', '/bookmarking/Twitter/Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data']);">
+				<span class="ico ico-s ico-twitter"></span>
+			</a>
+		</li>
+		<li>
+			<a title="Share on LinkedIn" href="https://www.linkedin.com/shareArticle?mini=true&url=https://doi.org/10.1051/0004-6361/202039341" onclick="_gaq.push(['_trackPageview', '/bookmarking/LinkedIn/Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data']);">
+				<span class="ico ico-s ico-linkedin"></span>
+			</a>
+		</li>
+		<li>
+			<a title="Share on Sina Weibo" href="https://service.weibo.com/share/share.php?title=Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data&url=https://doi.org/10.1051/0004-6361/202039341" target="_blank" onclick="_gaq.push(['_trackPageview', '/bookmarking/Weibo/Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data']);">
+				<span class="ico ico-s ico-sinaweibo"></span>
+			</a>
+		</li>
+		<li>
+			<a title="Add this article to your Mendeley library" href="https://www.mendeley.com/import/?doi=10.1051/0004-6361/202039341" onclick="_gaq.push(['_trackPageview', '/bookmarking/Mendeley/Improving the open cluster census - I. Comparison of clustering algorithms applied to Gaia DR2 data']);">
+				<span class="ico ico-s ico-mendeley"></span>
+				<svg class="share-icon-svg" viewBox="0 0 32 32" xmlns="https://www.w3.org/2000/svg">
+					<title>Mendeley</title>
+					<path class="share-icon-svg-mendeley" d="M0 0h32v32H0z"/>
+					<path class="share-icon-svg" d="M25.9 19.14a2.85 2.85 0 0 1 .1.86 2.64 2.64 0 0 1-.2.8 1.82 1.82 0 0 1-.42.67 2.1 2.1 0 0 1-.64.42 1.65 1.65 0 0 1-1.65-.2 2 2 0 0 1-.88-1.53 2.57 2.57 0 0 1 0-.6 3.24 3.24 0 0 1 .15-.57 3.17 3.17 0 0 0 .14-.37 1.42 1.42 0 0 0 .07-.4 1.58 1.58 0 0 0-.1-.7 1.52 1.52 0 0 0-.4-.53 1.67 1.67 0 0 0-.36-.28 2.94 2.94 0 0 0-.4-.2 3.58 3.58 0 0 0-2.44 0l-.34.18a1.65 1.65 0 0 0-.3.2 1.42 1.42 0 0 0-.47.68 1.6 1.6 0 0 0 0 .83 1.22 1.22 0 0 0 .16.44 2.18 2.18 0 0 1 .2 1.47 2.07 2.07 0 0 1-.77 1.25 1.62 1.62 0 0 1-.56.3 2.48 2.48 0 0 1-.62.13h-.48a1.54 1.54 0 0 1-.48-.12 2.2 2.2 0 0 1-.84-.64 2.17 2.17 0 0 1-.42-1 1.7 1.7 0 0 1 0-.7 2.58 2.58 0 0 1 .22-.66 1.8 1.8 0 0 0 .18-.56 1.56 1.56 0 0 0 0-.6 1.15 1.15 0 0 0-.15-.37 1.68 1.68 0 0 0-.32-.33 2.4 2.4 0 0 0-.42-.3 1.8 1.8 0 0 0-.46-.2 3.8 3.8 0 0 0-1.28-.18 3.3 3.3 0 0 0-1.26.32.84.84 0 0 0-.22.12l-.24.16a1.54 1.54 0 0 0-.53.73 1.6 1.6 0 0 0 0 .93 1.47 1.47 0 0 0 .06.23 1.84 1.84 0 0 0 .1.24 2.33 2.33 0 0 1 .17.9 2.55 2.55 0 0 1-.2.94 1.94 1.94 0 0 1-.74.85 1.7 1.7 0 0 1-1 .26 1.57 1.57 0 0 1-.7-.2 2.45 2.45 0 0 1-.6-.48 1.6 1.6 0 0 1-.33-.56 2.94 2.94 0 0 1-.23-.62 3 3 0 0 1 0-.55 2.06 2.06 0 0 1 .1-.54 1.2 1.2 0 0 1 .12-.35 1.37 1.37 0 0 1 .22-.28l.3-.28a2 2 0 0 1 .36-.22 1.82 1.82 0 0 1 .4-.15 1.4 1.4 0 0 1 .44 0 1.27 1.27 0 0 0 .35 0 1.17 1.17 0 0 0 .32-.1.94.94 0 0 0 .38-.28 1.06 1.06 0 0 0 .2-.4 1.3 1.3 0 0 0 .14-.42 3.4 3.4 0 0 0 0-.44v-.24q0-.37-.06-.73t-.1-.7a.12.12 0 0 0 0-.08.12.12 0 0 1 0-.08 2.6 2.6 0 0 1-.18-.9 4.14 4.14 0 0 1 0-.63 4.26 4.26 0 0 1 .1-.63 3.45 3.45 0 0 1 .8-1.35 2.83 2.83 0 0 1 1.3-.74 2.57 2.57 0 0 1 1.7.12 2.9 2.9 0 0 1 1.35 1.15l.12.18.14.18.33.3.32.34a1 1 0 0 0 .27.22 1.2 1.2 0 0 0 .33.13 1.17 1.17 0 0 0 .5 0 1.15 1.15 0 0 0 .46-.22l.23-.2.2-.23.27-.3.26-.3v-.14a3.08 3.08 0 0 1 .88-.92 2.7 2.7 0 0 1 3.2.13A2.93 2.93 0 0 1 23 12.63a4.53 4.53 0 0 1 0 .9 3.67 3.67 0 0 1-.17.86 1.9 1.9 0 0 0-.06.28v.28a5.7 5.7 0 0 0-.08.66 5.8 5.8 0 0 0 0 .66 1.65 1.65 0 0 0 0 .24v.24a1.3 1.3 0 0 0 .33.66 1.13 1.13 0 0 0 .63.3h.38a1.88 1.88 0 0 1 1.07.27 1.66 1.66 0 0 1 .8 1.17zM16 17.68a1.73 1.73 0 0 0 1.44-.68 2.25 2.25 0 0 0 .56-1.43 2.18 2.18 0 0 0-.6-1.5 1.83 1.83 0 0 0-1.4-.63 1.8 1.8 0 0 0-1.4.63 2.16 2.16 0 0 0-.56 1.5A2.3 2.3 0 0 0 14.6 17a1.7 1.7 0 0 0 1.4.68z"/>
+				</svg>
+			</a>
+		</li>
+	</ul>
+</div>
+
+ 
+  <div class="nav-section account">
+    <ul>
+        <li>
+            <a href="/component/services/"><span class="ico ico-account"></span> Reader's services</a>
+        </li>
+        <li>
+            <a href="/component/services/?label=toc_email"><span class="ico ico-alert"></span> Email-alert</a>
+        </li>
+    </ul>
+</div>
+
+                        </nav>
+                        </div>
+                                          
+                    
+
+
+
+                                                            <div class="clear"></div>
+                  </div>
+                    
+               
+                </div>
+
+                                     
+
+                
+
+                                  
+        </main>
+
+        <footer>
+                  <div class="footer-journal">
+            <div class="wrap">
+              <div class="footer-infos">
+              <h3>Astronomy & Astrophysics (A&A)</h3>
+              
+
+<div class="flexme flexme3">
+
+<div class="c13">
+<p>
+Editor-in-Chief: T. Forveille<br />
+Letters Editor-in-Chief: J. Alves<br />
+Managing Editor: D. Elbaz <br />
+</p>
+</div>
+
+<div class="c13">
+<p>ISSN: 0004-6361 ; e-ISSN: 1432-0746<br />
+Frequency: 12 volumes per year<br />
+Published by: EDP Sciences<br />
+</p>
+</div>
+
+<div class="c13">
+<p>
+
+&copy; The European Southern Observatory (<a target="_blank" href="http://www.eso.org/">ESO</a>) 
+</p>
+
+</div>
+</div>
+</div>
+              <div class="footer-social">
+
+<ul class="ico-social">
+<li><a class="bluesky" title="Follow us on Bluesky" target="_blank" href="https://bsky.app/profile/aanda-journal.bsky.social"></a></li>
+<li><a class="facebook" title="Follow us on Facebook" target="_blank" href="https://www.facebook.com/Astronomy-Astrophysics-192738067986000/"></a></li>
+<!--li><a class="linkedin" title="Follow us on LinkedIn" target="_blank" href="https://www.linkedin.com/company/edp-sciences"></a></li-->
+<!--li><a class="google" title="Follow us on Google+" target="_blank" href="https://plus.google.com/+EdpsciencesOrg"></a></li-->
+<li><a class="rss" title="Access the RSS feed" href="/component/rsslist/?task=journal"></a></li>
+<li><a class="alert" title="email alert" href="/component/services/?label=toc_email"></a></li>
+</ul>
+</div>
+            </div>
+          </div>
+          <div>
+            
+          </div>
+          <div class="footer-edp">
+            <div class="wrap">
+                              <a href="https://www.edpsciences.org/" target="_blank" title="EDP Sciences website"><img src="/templates/source/images/logos/logo_edp_fff.svg" alt="EDP Sciences"></a>
+                                            
+<ul class="menu">
+<li class="item-175"><a href="/mentions-legales" >Mentions légales</a></li><li class="item-174"><a href="https://www.edpsciences.org/en/contact-us/contact-form?subject=Astronomy%20%26%20Astrophysics&amp;contactid=5" >Contacts</a></li><li class="item-442"><a href="https://www.edpsciences.org/en/privacy-policy" target="_blank" >Privacy policy</a></li></ul>
+
+                          </div>
+          </div>
+                        <div class="footer-ptf">
+               <div class="wrap">
+                <div class="position-footer-ptf"></div>
+                <div class="link-vfp"><a href="https://www.vision4press.org" target="_blank">A Vision4Press website</a></div>
+               </div>
+               </div>
+                </footer>
+    </div>
+    <script src="/templates/source/js/mmenu2/dist/js/jquery.mmenu.all.min.js"></script>
+    <script src="/templates/template1/js/script.js?v=6.5.0"></script>
+    
+<span class="translations" data-name="separator_and" data-value="and"></span>
+<span class="translations" data-name="select_all" data-value="Select all"></span>
+<span class="translations" data-name="unselect_all" data-value="Unselect all"></span>
+<span class="translations" data-name="show_short_summary" data-value="Show short summary"></span>
+<span class="translations" data-name="hide_short_summary" data-value="Hide short summary"></span>
+<span class="translations" data-name="cookie_text" data-value="By using this website, you agree that EDP Sciences may store web audience measurement cookies and, on some pages, cookies from social networks. <a href='/component/cookie_policy/'>More information and setup</a>"></span>
+<span class="translations" data-name="cookie_accept_title" data-value="Click to accept all cookies and close this notification"></span>
+<span class="translations" data-name="cookie_refuse_title" data-value="Click to refuse optionnal cookies and close this notification"></span>
+<span class="translations" data-name="cookie_accept_text" data-value="Yes"></span>
+<span class="translations" data-name="cookie_refuse_text" data-value="No"></span>
+<span class="translations" data-name="loading" data-value="Loading author..."></span>
+<span class="translations" data-name="view_fullscreen" data-value="Click to view fullscreen"></span>
+<span class="translations" data-name="hide_fullscreen" data-value="Click anywhere to hide the fullscreen overlay"></span>
+<span class="translations" data-name="play_movie" data-value="Click to play the movie"></span>
+<span class="translations" data-name="cookie_is_mobile" data-value=""></span>
+<span class="translations" data-name="add_to_cart" data-value="Add to cart"></span>
+<span class="translations" data-name="remove_from_cart" data-value="Remove from cart"></span>
+<span class="translations" data-name="loading_cart" data-value="Loading..."></span>
+<span class="translations" data-name="empty_cart" data-value="Your cart is empty"></span>
+<span class="translations" data-name="terms_agreeement" data-value="You must agree the Purchase Agreement Terms and Conditions."></span>
+<span class="translations" data-name="makeref_url" data-value="/component/makeref/?task=show&amp;type=html&amp;doi="></span>
+<span class="translations" data-name="set_cart_article_status_url" data-value="/component/services/?task=set_cart_article_status"></span>
+<span class="translations" data-name="get_shopping_cart_url" data-value="/component/services/?task=get_shopping_cart_list"></span>
+<span class="translations" data-name="clear_shopping_cart_url" data-value="/component/services/?task=clear_shopping_cart"></span>
+<span class="translations" data-name="get_billing_url" data-value="/component/services/?label=ppv&amp;task=get_billing"></span>
+<span class="translations" data-name="authors_url" data-value="/component/article/?task=get_authors"></span>
+
+
+
+  <span id="google_analytics" data-domain="www.aanda.org" class="hidden"></span>
+<div id="wait" style="display:none"></div>
+
+
+	<script src="/templates/source/js/cookie.js?v=6.5.0"></script>
+
+<script src="/templates/source/js/common.js?v=6.5.0"></script>
+
+</body>
+</html>

@@ -6,6 +6,7 @@
 
 export * from "./acquire/pdf-downloader.js";
 export * from "./html/fetcher.js";
+export * from "./html/pipeline.js";
 export * from "./latex/arxiv-source.js";
 export * from "./latex/assets.js";
 export * from "./latex/pandoc.js";

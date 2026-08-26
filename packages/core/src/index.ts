@@ -20,6 +20,11 @@
 // hybrid link resolution, JSON emission) composed around the documents-domain
 // buildDocument; MinerU / mupdf links / mupdf text layer are injected ports
 // (packages/core/src/pipelines/pdf/ports.ts), wired by infra.
+//
+// pipelines/html/: the publisher-HTML ingestion pipeline (per-publisher cheerio
+// adapters — A&A, OUP — over the shared inline renderer and annotate stages);
+// page/asset fetching and the pandoc MathML conversion are injected ports
+// (packages/core/src/pipelines/html/ports.ts), wired by infra.
 
 export * from "./acquire/bibtex.js";
 export * from "./acquire/execute.js";
@@ -46,6 +51,7 @@ export * from "./library/graph.js";
 export * from "./library/seed.js";
 export * from "./library/sources.js";
 export * from "./library/store.js";
+export * from "./pipelines/html/index.js";
 export * from "./pipelines/latex/assets.js";
 export * from "./pipelines/latex/pipeline.js";
 export * from "./pipelines/latex/ports.js";

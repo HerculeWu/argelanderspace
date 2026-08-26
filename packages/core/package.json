@@ -19,7 +19,10 @@
   },
   "dependencies": {
     "@argelanderspace/contracts": "workspace:*",
-    "@retorquere/bibtex-parser": "^10.0.1"
+    "@retorquere/bibtex-parser": "^10.0.1",
+    "cheerio": "^1.2.0",
+    "domhandler": "^5.0.3",
+    "htmlparser2": "^10.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
