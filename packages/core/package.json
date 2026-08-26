@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@argelanderspace/contracts": "workspace:*"
+    "@argelanderspace/contracts": "workspace:*",
+    "@retorquere/bibtex-parser": "^10.0.1"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

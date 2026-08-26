@@ -49,6 +49,11 @@ export function pyOr(...values: unknown[]): unknown {
   return undefined;
 }
 
+/** Mirror Python truthiness on arbitrary JSON values (`None`/`False`/`0`/`""`/`[]`/`{}` are falsy). */
+export function pyTruthy(v: unknown): boolean {
+  return pyOr(v) !== undefined;
+}
+
 function escapeClass(chars: string): string {
   return chars.replace(/[\\\]^-]/g, "\\$&");
 }

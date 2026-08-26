@@ -1,0 +1,344 @@
+/**
+ * Vitest port of the library/acquisition-domain tests from
+ * `<repo>/tests/run_tests.py` (the offline Python suite is the specification;
+ * one `test(...)` per Python test function, same checks, same order), plus the
+ * M1b store round-trip test against the real `data/library/library.json`.
+ *
+ * Python baseline (2026-08-26, astro env): 210 checks / 0 fail across 58 test
+ * functions. The 12 library-domain functions deferred from M1a are ported here:
+ * - test_acq_* (9) — bibtex parser + source planner + publisher classify
+ * - test_crossref_normalize (1) — Crossref message normalization
+ * - test_resolve_chain_* (2 — the task brief says 3, but the Python file only
+ *   ever defined 2; see tests/run_tests.py:1011,1032)
+ *
+ * The resolution-chain tests stub the MetadataSource ports
+ * (`library/sources.ts`) exactly like Python's `_StubSrc`.
+ */
+
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, test } from "vitest";
+import { parseBibtexText } from "../src/acquire/bibtex.js";
+import { classify, planSources, planToDict } from "../src/acquire/planner.js";
+import { resolveWork } from "../src/acquire/resolve.js";
+import type {
+  AdsResolution,
+  CrossrefResolution,
+  OpenAlexResolution,
+} from "../src/library/sources.js";
+import { normalizeCrossref } from "../src/library/sources.js";
+import { emptyWork, LibraryStore, libraryPaths, type Work } from "../src/library/store.js";
+
+const FIXTURES = fileURLToPath(new URL("fixtures", import.meta.url));
+
+// --------------------------------------------------------------------------- //
+// Acquisition layer: bibtex parser, source planner, resolution chain
+// --------------------------------------------------------------------------- //
+
+const SAMPLE_BIB = String.raw`
+@article{HR1,
+  author  = {Hunt, E.~L. and Reffert, S.},
+  title   = {Improving the open cluster census. I.},
+  journal = {Astronomy \& Astrophysics},
+  year    = {2021},
+  doi     = {10.1051/0004-6361/202039341}
+}
+@article{Kroupa2001,
+  author  = {Kroupa, P.},
+  title   = {On the variation of the initial mass function},
+  journal = {Monthly Notices of the Royal Astronomical Society},
+  year    = {2001},
+  doi     = {10.1046/j.1365-8711.2001.04022.x}
+}
+@article{Huisjes2025,
+  author  = {Huisjes, M. and Hern{\'a}ndez, X.},
+  title   = {On the dynamics of low-mass open clusters},
+  journal = {arXiv e-prints},
+  year    = {2025},
+  eprint  = {2603.03522},
+  archivePrefix = {arXiv}
+}
+@article{GaiaDR3,
+  author  = {{Gaia Collaboration} and Vallenari, A. and others},
+  title   = {Gaia Data Release 3},
+  journal = {Astronomy \& Astrophysics},
+  year    = {2023},
+  doi     = {10.1051/0004-6361/202243940},
+  eprint  = {2208.00211},
+  archivePrefix = {arXiv}
+}
+@article{Milgrom1983,
+  author  = {Milgrom, M.},
+  title   = {A modification of the Newtonian dynamics},
+  journal = {Astrophysical Journal},
+  year    = {1983},
+  doi     = {10.1086/161130}
+}
+@article{Perryman1998,
+  author  = {Perryman, M.~A.~C. and Brown, A.~G.~A. and others},
+  title   = {The Hyades: distance, structure, dynamics, and age},
+  journal = {Astronomy \& Astrophysics},
+  year    = {1998}
+}
+`;
+
+describe("library domain (tests/run_tests.py port)", () => {
+  test("test_acq_bibtex_parse", () => {
+    const recs = new Map(parseBibtexText(SAMPLE_BIB).map((r) => [r.key, r]));
+    expect(recs.size, `parsed 6 entries, got ${recs.size}`).toBe(6);
+    const hr1 = recs.get("HR1");
+    expect(hr1?.authors).toEqual(["Hunt", "Reffert"]);
+    expect(hr1?.doi).toBe("10.1051/0004-6361/202039341");
+    expect(hr1?.journal?.includes("Astronomy")).toBeTruthy();
+    const hu = recs.get("Huisjes2025");
+    expect(hu?.arxivId).toBe("2603.03522");
+    expect(hu?.journal, "arXiv e-prints journal flattened to None").toBeNull();
+    expect(hu?.authors[1]?.includes("á"), `latex accent decoded: ${hu?.authors}`).toBe(true);
+    const g = recs.get("GaiaDR3");
+    expect(g?.authors[0], `group author kept whole: ${g?.authors[0]}`).toBe("Gaia Collaboration");
+    expect(g?.arxivId === "2208.00211" && (g.doi?.endsWith("202243940") ?? false)).toBe(true);
+    expect(recs.get("Perryman1998")?.authors).not.toContain("others");
+  });
+
+  test("test_acq_planner_aanda_ready", () => {
+    const p = planSources({
+      doi: "10.1051/0004-6361/202039341",
+      title: "x",
+      year: 2021,
+      journal: "A&A",
+    });
+    expect(p.chosen?.tier).toBe("journal_html");
+    expect(p.chosen?.status).toBe("ready");
+    expect(p.publisher).toBe("EDP Sciences");
+  });
+
+  test("test_acq_planner_mnras_ready_via_oup", () => {
+    // MNRAS (incl. legacy Wiley DOIs) is served by the OUP adapter now.
+    const p = planSources({
+      doi: "10.1046/j.1365-8711.2001.04022.x",
+      title: "imf",
+      year: 2001,
+      journal: "MNRAS",
+    });
+    expect(p.chosen?.tier).toBe("journal_html");
+    expect(p.chosen?.status).toBe("ready");
+    expect(p.chosen?.note ?? "", `oup adapter noted: ${p.chosen?.note}`).toContain("adapter=oup");
+    const tiers = p.candidates.map((c) => c.tier);
+    expect(tiers).toContain("journal_pdf");
+    expect(tiers, `modern MNRAS has no ADS-scan tier: ${tiers}`).not.toContain("ads_scan");
+  });
+
+  test("test_acq_planner_iop_blocked_routes_to_arxiv", () => {
+    const p = planSources({
+      doi: "10.3847/1538-4357/836/2/152",
+      arxivId: "1610.08981",
+      title: "rar",
+      year: 2017,
+    });
+    expect(p.chosen?.tier).toBe("arxiv_latex");
+    const html = p.candidates.find((c) => c.tier === "journal_html");
+    expect(html?.status).toBe("blocked");
+  });
+
+  test("test_acq_planner_aps_blocked_no_arxiv_needs_upload", () => {
+    const p = planSources({ doi: "10.1103/PhysRevLett.117.201101", title: "rar", year: 2016 });
+    const d = planToDict(p);
+    expect(d.status).toBe("blocked");
+    expect(d.needs_upload).toBe(true);
+    expect(d.chosen, "blocked tier surfaced as chosen").toBe("journal_html");
+  });
+
+  test("test_acq_planner_arxiv_only", () => {
+    const p = planSources({ arxivId: "2603.03522", title: "x", year: 2025 });
+    expect(p.chosen?.tier).toBe("arxiv_latex");
+    expect(p.chosen?.status).toBe("ready");
+  });
+
+  test("test_acq_planner_old_chicago_scan", () => {
+    const p = planSources({ doi: "10.1086/161130", title: "mond", year: 1983 });
+    expect(p.chosen?.tier).toBe("ads_scan");
+    const tiers = p.candidates.map((c) => c.tier);
+    expect(tiers, `legacy UChicago has no digital tiers: ${tiers}`).not.toContain("journal_html");
+    expect(tiers).not.toContain("journal_pdf");
+  });
+
+  test("test_acq_planner_html_beats_arxiv", () => {
+    const p = planSources({
+      doi: "10.1051/0004-6361/202243940",
+      arxivId: "2208.00211",
+      title: "gaia dr3",
+      year: 2023,
+      journal: "A&A",
+    });
+    expect(p.chosen?.tier).toBe("journal_html");
+    expect(p.ready?.tier).toBe("journal_html");
+  });
+
+  test("test_acq_classify_aas_subjournal", () => {
+    let [, label] = classify("10.3847/1538-4365/abc", null);
+    expect(label).toBe("ApJS");
+    [, label] = classify("10.3847/1538-3881/abd806", null);
+    expect(label).toBe("AJ");
+  });
+
+  test("test_crossref_normalize", () => {
+    const msg = {
+      DOI: "10.1051/0004-6361/202039341",
+      title: ["Improving the open cluster census. I."],
+      author: [
+        { family: "Hunt", given: "E. L." },
+        { family: "Reffert", given: "S." },
+      ],
+      "container-title": ["Astronomy & Astrophysics"],
+      issued: { "date-parts": [[2021, 2]] },
+      type: "journal-article",
+      "is-referenced-by-count": 142,
+      "references-count": 60,
+      reference: [{ DOI: "10.1051/0004-6361/201833476" }, { key: "ref2-no-doi" }],
+      link: [
+        {
+          URL: "https://www.aanda.org/aa39341-20.html",
+          "content-type": "text/html",
+          "intended-application": "text-mining",
+        },
+      ],
+      resource: { primary: { URL: "https://doi.org/10.1051/0004-6361/202039341" } },
+    };
+    const n = normalizeCrossref(msg);
+    expect(n.cited_by_count).toBe(142);
+    expect(n.year).toBe(2021);
+    expect(n.authors).toEqual(["Hunt", "Reffert"]);
+    expect(n.reference_dois).toEqual(["10.1051/0004-6361/201833476"]);
+    expect(n.links).toHaveLength(1);
+    expect(n.links[0]?.content_type).toBe("text/html");
+  });
+
+  // Python `_StubSrc`: a MetadataSource stub whose resolve returns a fixed payload.
+  function stubSrc<T>(
+    payload: T | null,
+    status: "ok" | "no-token" | "unauthorized" | "error" = "ok"
+  ) {
+    return {
+      status,
+      resolve: async () => payload,
+      fetchMany: async () => new Map<string, OpenAlexResolution>(),
+    };
+  }
+
+  test("test_resolve_chain_ads_count_wins", async () => {
+    const w: Work = {
+      ...emptyWork("doi:10.1051/0004-6361/202039341"),
+      doi: "10.1051/0004-6361/202039341",
+      title: "x",
+    };
+    const ads = stubSrc<AdsResolution>({
+      bibcode: "2021A&A...646A.104H",
+      doi: null,
+      title: "x",
+      authors: ["Hunt", "Reffert"],
+      year: 2021,
+      venue: "A&A",
+      citation_count: 200,
+      abstract: null,
+      references: ["a", "b", "c"],
+    });
+    const cr = stubSrc<CrossrefResolution>({
+      doi: "10.1051/0004-6361/202039341",
+      title: "x",
+      authors: [],
+      year: 2021,
+      venue: "A&A",
+      type: "article",
+      cited_by_count: 150,
+      reference_dois: ["x", "y"],
+      n_references: 2,
+      abstract: null,
+      links: [{ url: "u", content_type: "", intended: "" }],
+      resource_url: null,
+    });
+    const oa = stubSrc<OpenAlexResolution>({
+      openalex_id: "W1",
+      doi: "10.1051/0004-6361/202039341",
+      title: "x",
+      authors: [],
+      year: 2021,
+      venue: "A&A",
+      type: "article",
+      cited_by_count: 100,
+      referenced_works: ["W2", "W3"],
+      abstract: null,
+      arxiv_id: null,
+    });
+    const prov = await resolveWork(w, { ads, crossref: cr, oa });
+    expect(w.cited_by_count, "ADS count wins").toBe(200);
+    expect(prov.count).toBe("ads");
+    expect(w.bibcode, "bibcode set from ADS").toBe("2021A&A...646A.104H");
+    expect(w.openalex_id).toBe("W1");
+    expect(w.referenced_works, "OpenAlex ids kept for graph").toEqual(["W2", "W3"]);
+    expect(prov.providers).toEqual(["ads", "crossref", "openalex"]);
+  });
+
+  test("test_resolve_chain_crossref_when_ads_empty", async () => {
+    const w: Work = { ...emptyWork("doi:x"), doi: "10.1093/mnras/xxx", title: "y" };
+    const ads = stubSrc<AdsResolution>(null, "no-token");
+    const cr = stubSrc<CrossrefResolution>({
+      doi: "10.1093/mnras/xxx",
+      title: "y",
+      authors: ["Kroupa"],
+      year: 2001,
+      venue: "MNRAS",
+      type: "article",
+      cited_by_count: 5000,
+      reference_dois: [],
+      n_references: 0,
+      abstract: null,
+      links: [],
+      resource_url: null,
+    });
+    const oa = stubSrc<OpenAlexResolution>({
+      openalex_id: "W9",
+      doi: null,
+      title: "y",
+      authors: [],
+      year: 2001,
+      venue: "MNRAS",
+      type: "article",
+      cited_by_count: 4800,
+      referenced_works: [],
+      abstract: null,
+      arxiv_id: null,
+    });
+    const prov = await resolveWork(w, { ads, crossref: cr, oa });
+    expect(w.cited_by_count, "crossref count wins when ADS empty").toBe(5000);
+    expect(prov.count).toBe("crossref");
+    expect(w.authors, "authors filled from crossref").toEqual(["Kroupa"]);
+    expect(prov.providers).toEqual(["crossref", "openalex"]);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// Store round-trip against the real data/library/library.json (fixture copy)
+// --------------------------------------------------------------------------- //
+
+describe("library store round-trip", () => {
+  test("library.json + library.bib round-trip losslessly", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "m1b-store-"));
+    const paths = libraryPaths(dataDir);
+    mkdirSync(paths.libraryDir, { recursive: true });
+    copyFileSync(join(FIXTURES, "library.json"), paths.libraryJson);
+
+    const store = LibraryStore.load(paths);
+    store.save(paths);
+
+    const want = JSON.parse(readFileSync(join(FIXTURES, "library.json"), "utf8"));
+    const got = JSON.parse(readFileSync(paths.libraryJson, "utf8"));
+    expect(got).toEqual(want);
+
+    // the regenerated BibTeX export is byte-identical to the Python-written one
+    const bib = readFileSync(paths.libraryBib, "utf8");
+    expect(bib).toBe(readFileSync(join(FIXTURES, "library.bib"), "utf8"));
+    expect(bib).toBe(store.toBibtex());
+  });
+});

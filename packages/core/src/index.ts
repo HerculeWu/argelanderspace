@@ -4,7 +4,22 @@
 // (structure, references, citations, crossrefs, annotate, textfix) plus the pure
 // helpers they share with pdf_links.py and schema.py. Bug-for-bug compatible with
 // the Python originals; PDF/MinerU/network access stays behind ports in infra.
+//
+// library/ + acquire/: TS ports of the literature-library domain (store, seed,
+// citation graph, /api payload builders) and the acquisition layer (source
+// planner, ADS▸Crossref▸OpenAlex resolution chain, .bib parsing, upload/PDF
+// fetch orchestration). Metadata sources and the ingest pipelines arrive through
+// the port interfaces in library/sources.ts and acquire/pipelines.ts (M2/M3).
 
+export * from "./acquire/bibtex.js";
+export * from "./acquire/execute.js";
+export * from "./acquire/fetch-pdf.js";
+export { latexToUnicode } from "./acquire/latexenc.js";
+export * from "./acquire/pipelines.js";
+export * from "./acquire/planner.js";
+export * from "./acquire/resolve.js";
+export * from "./acquire/run.js";
+export * from "./acquire/upload.js";
 export * from "./documents/annotate.js";
 export * from "./documents/citations.js";
 export * from "./documents/crossrefs.js";
@@ -16,3 +31,8 @@ export * from "./documents/structure.js";
 export * from "./documents/textfix.js";
 export * from "./documents/tokens.js";
 export * from "./documents/traverse.js";
+export * from "./library/build.js";
+export * from "./library/graph.js";
+export * from "./library/seed.js";
+export * from "./library/sources.js";
+export * from "./library/store.js";
