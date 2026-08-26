@@ -32,18 +32,45 @@ export function pageTextOf(page: mupdf.Page): string {
 /**
  * `page.get_text("text", clip=rect)`: characters whose glyph quad *center*
  * lies inside `rect`, with a newline at each line that contributed a char.
+ *
+ * Non-BMP workaround: `walk`'s `onChar` marshals the rune with
+ * `String.fromCharCode`, truncating code points > U+FFFF to their low 16 bits
+ * (e.g. U+1D441 MATHEMATICAL ITALIC CAPITAL N arrives as U+D441). `asText`/
+ * `asJSON` are full-fidelity, so the true runes are taken from the `asJSON`
+ * line texts, zipped onto the walk's chars by position — both enumerate the
+ * same stext lines/chars in order (verified on the golden PDFs: line and
+ * per-line char counts equal, low 16 bits always match). On any mismatch the
+ * walk char is kept (pre-workaround behaviour).
  */
 export function clippedTextOf(page: mupdf.Page, rect: PageRect): string {
   const st = page.toStructuredText();
   try {
+    const trueLines: number[][] = [];
+    const json = JSON.parse(st.asJSON(1)) as {
+      blocks?: Array<{ type?: string; lines?: Array<{ text?: string }> }>;
+    };
+    for (const b of json.blocks ?? []) {
+      if (b.type !== "text") continue;
+      for (const l of b.lines ?? []) {
+        trueLines.push([...(l.text ?? "")].map((ch) => ch.codePointAt(0) ?? 0));
+      }
+    }
+    let li = 0;
+    let ci = 0;
     let text = "";
     let lineHas = false;
     st.walk({
       onChar(c, _origin, _font, _size, quad) {
+        let ch = c;
+        const cp = trueLines[li]?.[ci];
+        if (cp !== undefined && (cp & 0xffff) === c.charCodeAt(0)) {
+          ch = String.fromCodePoint(cp);
+        }
+        ci += 1; // the cursor tracks walk position, not clip membership
         const cx = (quad[0] + quad[2] + quad[4] + quad[6]) / 4;
         const cy = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
         if (cx >= rect.x0 && cx <= rect.x1 && cy >= rect.y0 && cy <= rect.y1) {
-          text += c;
+          text += ch;
           lineHas = true;
         }
       },
@@ -52,6 +79,8 @@ export function clippedTextOf(page: mupdf.Page, rect: PageRect): string {
           text += "\n";
           lineHas = false;
         }
+        li += 1;
+        ci = 0;
       },
     });
     return text;

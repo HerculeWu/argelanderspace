@@ -17,6 +17,7 @@ export * from "./lib/untar.js";
 export * from "./lib/unzip.js";
 export * from "./mineru/client.js";
 export * from "./pdf/links.js";
+export * from "./pdf/pipeline.js";
 export * from "./pdf/raster.js";
 export * from "./pdf/text-provider.js";
 export * from "./sources/ads.js";

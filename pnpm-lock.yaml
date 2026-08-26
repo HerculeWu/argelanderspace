@@ -48,6 +48,9 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+      mupdf:
+        specifier: 1.28.0
+        version: 1.28.0
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

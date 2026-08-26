@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "mupdf": "1.28.0",
     "typescript": "~5.9.3",
     "vitest": "^4.1.11"
   }

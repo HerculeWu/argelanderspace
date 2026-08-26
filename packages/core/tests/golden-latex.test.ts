@@ -23,7 +23,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { ingestLatex } from "../src/pipelines/latex/pipeline.js";
+import { diffJson, type Json } from "./helpers/diff-json.js";
 import { HAVE_PANDOC, testAcquire, testPandoc, testRaster } from "./helpers/latex-ports.js";
+
+// The reporter lives in tests/helpers/diff-json.ts, shared with golden-pdf.test.ts.
+export { diffJson } from "./helpers/diff-json.js";
 
 // packages/core/tests/ → repo root
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -44,52 +48,8 @@ const MAX_REPORTED_DIFFS = 50;
 const GOLDEN_ALLOWLIST: ReadonlyArray<{ pathPrefix: string; why: string }> = [];
 
 // --------------------------------------------------------------------------- //
-// recursive field-by-field diff
+// recursive field-by-field diff — shared reporter in tests/helpers/diff-json.ts
 // --------------------------------------------------------------------------- //
-
-type Json = null | boolean | number | string | Json[] | { [k: string]: Json };
-
-function isObj(v: Json): v is { [k: string]: Json } {
-  return v !== null && typeof v === "object" && !Array.isArray(v);
-}
-
-/** Collect human-readable paths where `got` and `want` diverge (in-order). */
-export function diffJson(got: Json, want: Json, path = "$", out: string[] = []): string[] {
-  if (isObj(got) && isObj(want)) {
-    for (const k of Object.keys(want)) {
-      const w = want[k] as Json;
-      if (!(k in got)) {
-        out.push(`${path}.${k} — missing in emitted (golden: ${preview(w)})`);
-      } else {
-        diffJson(got[k] as Json, w, `${path}.${k}`, out);
-      }
-    }
-    for (const k of Object.keys(got)) {
-      if (!(k in want)) {
-        out.push(`${path}.${k} — extra in emitted (${preview(got[k] as Json)})`);
-      }
-    }
-    return out;
-  }
-  if (Array.isArray(got) && Array.isArray(want)) {
-    if (got.length !== want.length) {
-      out.push(`${path} — array length ${got.length} != golden ${want.length}`);
-    }
-    for (let i = 0; i < Math.min(got.length, want.length); i++) {
-      diffJson(got[i] as Json, want[i] as Json, `${path}[${i}]`, out);
-    }
-    return out;
-  }
-  if (got !== want) {
-    out.push(`${path} — ${preview(got)} != golden ${preview(want)}`);
-  }
-  return out;
-}
-
-function preview(v: Json): string {
-  const s = JSON.stringify(v);
-  return s.length > 120 ? `${s.slice(0, 117)}…` : s;
-}
 
 function allowlisted(path: string): boolean {
   return GOLDEN_ALLOWLIST.some((e) => path.startsWith(e.pathPrefix));

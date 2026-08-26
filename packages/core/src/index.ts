@@ -15,6 +15,11 @@
 // .bbl/.bib references, asset resolution) composed from the documents-domain
 // stages; pandoc / rasterization / arXiv acquisition are injected ports
 // (packages/core/src/pipelines/latex/ports.ts), wired by infra.
+//
+// pipelines/pdf/: the PDF ingestion pipeline (OCR auto-detect, MinerU extraction,
+// hybrid link resolution, JSON emission) composed around the documents-domain
+// buildDocument; MinerU / mupdf links / mupdf text layer are injected ports
+// (packages/core/src/pipelines/pdf/ports.ts), wired by infra.
 
 export * from "./acquire/bibtex.js";
 export * from "./acquire/execute.js";
@@ -46,3 +51,5 @@ export * from "./pipelines/latex/pipeline.js";
 export * from "./pipelines/latex/ports.js";
 export * from "./pipelines/latex/references.js";
 export * from "./pipelines/latex/walk.js";
+export * from "./pipelines/pdf/pipeline.js";
+export * from "./pipelines/pdf/ports.js";

@@ -12,6 +12,7 @@ import { MupdfTextProvider, openPdfTextProvider } from "../src/pdf/text-provider
 const FIXTURES = fileURLToPath(new URL("fixtures", import.meta.url));
 const PDF_1610 = `${FIXTURES}/arxivpdf-1610.08981.pdf`;
 const PDF_ADS = `${FIXTURES}/ads-1983ApJ...270..365M.pdf`;
+const PDF_2603 = `${FIXTURES}/2603.03522.pdf`; // carries non-BMP math-italic glyphs
 
 // Spike ground truth (text_py.py / text_js.mjs agree).
 const CHARS_PER_PAGE_1610 = [5659, 5671, 6346, 6565, 4058, 2797];
@@ -46,6 +47,18 @@ describe("MupdfTextProvider (PdfTextProvider port)", () => {
       expect(p.clippedText(1, { x0: 65.47, y0: 75.36, x1: 161.49, y1: 85.32 })).toBe(
         "chosing an optimal Υ\n"
       );
+    } finally {
+      p.close();
+    }
+  });
+
+  test("clippedText preserves non-BMP code points (walk onChar 16-bit truncation workaround)", () => {
+    const p = new MupdfTextProvider(PDF_2603);
+    try {
+      // page 3 (index 2), a U+1D454 MATHEMATICAL ITALIC SMALL G span (PyMuPDF
+      // ground truth: clip of the span bbox is "𝑔\n"). Without the asJSON zip,
+      // walk's onChar marshals the rune via String.fromCharCode → U+D454.
+      expect(p.clippedText(2, { x0: 42.17, y0: 388.55, x1: 46.65, y1: 397.52 })).toBe("𝑔\n");
     } finally {
       p.close();
     }
