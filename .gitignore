@@ -28,6 +28,9 @@ data/output/
 # Library: local literature store + API enrichment cache (user data / regenerable)
 data/library/
 
+# Job runner runtime state (spooled uploads, job history)
+data/jobs/
+
 # OS / editor
 .DS_Store
 *.swp
