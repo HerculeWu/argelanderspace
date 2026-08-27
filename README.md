@@ -170,12 +170,12 @@ Testing notes:
   gate the port field-by-field. The publisher-HTML fixtures are archived fetch
   caches — the live sites are bot-walled, these copies are the only ones.
 - The pre-migration Python tree (`bibgraph/`, `server/`, `tests/run_tests.py`)
-  is kept for reference until the manual smoke test of the TS app completes;
-  it is legacy and scheduled for deletion.
+  was removed after the manual smoke test of the TS app (2026-08); it lives on
+  in git history.
 
 ## License
 
-MIT (see `LICENSE`; copyright holder: "ArgelanderSpace contributors").
+MIT (see `LICENSE`; copyright holder: Wenjie Wu).
 
 One dependency is **not** MIT: [`mupdf`](https://www.npmjs.com/package/mupdf)
 is AGPL-3.0-or-later (Artifex, commercial licenses available). It is installed
