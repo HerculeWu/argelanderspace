@@ -22,8 +22,8 @@ text-layer pass over MinerU's OCR gaps. PDF rendering and text extraction use
 the official `mupdf` WASM build — no Python anywhere.
 
 ArgelanderSpace is a local single-user tool: the server binds `127.0.0.1` and
-there is no authentication. An agent extension (bidirectional automation over
-the same WebSocket channel) is planned for Stage 2.
+there is no authentication. LLM agents integrate through the CLI plus the pi
+skills in `skills/` — see **Agent integration (skills)** below.
 
 ## Requirements
 
@@ -60,6 +60,53 @@ Global option: `--data-dir <dir>` (may appear before or after the subcommand).
 Useful ingest flags: `--ocr` / `--no-ocr` (default: auto-detect from the text
 layer), `--fresh` (ignore the MinerU cache), `--no-assets`, `--no-subpages`,
 `--no-cache`, `-o out.json` (also write the Document JSON to a path).
+
+**MinerU quota**: the PDF pipeline calls the hosted MinerU API on every cache
+miss, and the free tier is roughly **1000 pages/day**. Single papers are fine,
+but a heavy batch of PDF ingests can burn a day's quota — plan batches
+accordingly. Extractions are cached on disk, so re-ingesting an already-seen
+PDF is free (unless `--fresh`).
+
+## Agent integration (skills)
+
+LLM agents (pi-style CLI agents) drive ArgelanderSpace through the same CLI —
+no MCP. The repo ships three pi skills under `skills/` that encode the
+workflows:
+
+| Skill | What it does |
+|---|---|
+| `argelander-paper-ingest` | arXiv id / DOI / URL / local LaTeX / PDF → `ingest` → `library build` → confirm in `search` → asks the user for a note (agent drafts the suggestion) for every paper |
+| `argelander-read-paper` | Deep-read one ingested doc: resolves equations/figures/tables via `show`, citations via `ref`, keeps paper claims vs cited work apart, cites evidence as deep links |
+| `argelander-query-paper-library` | Ranks the whole library against a research question (`note` is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
+
+Install by symlinking into pi's skills directory (`~/.pi/agent/skills/`
+globally, or `.pi/skills/` in a project):
+
+```bash
+mkdir -p ~/.pi/agent/skills
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library; do
+  ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
+done
+```
+
+The CLI–agent contract in one table (details + output conventions in
+`skills/README.md`):
+
+| Command | Purpose | Output |
+|---|---|---|
+| `search` | every work as one JSON line — full index, the agent judges relevance (no server-side filtering) | JSONL |
+| `list` | library overview + one line per ingested doc | text |
+| `read <docId> [--section id] [--manifest refs\|bib]` | LLM-friendly markdown, or JSONL manifests | markdown / JSONL |
+| `show <docId> <floatId>` | one figure/table/equation/code/algorithm as JSON (+ `link`) | JSON |
+| `ref <docId> <refIdOrKey>` | one bibliography entry as JSON (+ `cited_in`, `link`) | JSON |
+| `note <workId> [text...]` | set / print a work's note | JSON |
+| `label <workId> [--label c] [--read b] [--star b] [--tags a,b]` | patch user state | JSON |
+
+Every doc-referencing command prints a deep link
+`http://localhost:<port>/doc/<docId>[#<anchor>]` (anchors: `#sec-N`, floats
+`#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`) that opens the web
+reader at exactly that spot. Agents may also trigger PDF OCR freely — but see
+the MinerU quota note above before letting one loose on a batch of PDFs.
 
 ## Data directory
 

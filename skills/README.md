@@ -1,0 +1,90 @@
+# ArgelanderSpace agent skills
+
+A three-skill suite that gives a pi-style CLI agent a **personal, queryable
+paper library** on top of the `argelanderspace` CLI: ingest papers, deep-read
+single papers with correct cross-reference/citation resolution, and answer
+research questions across the whole library.
+
+These replace the old `literature-library-skills/` suite (which drove
+pandoc/latexmk and a file-layout contract directly). The methodology is the
+same; the mechanics are now plain CLI calls.
+
+## The trio
+
+| Skill | Role | Entry point for |
+|---|---|---|
+| `argelander-paper-ingest/` | **A — write path.** Ingest an arXiv id / DOI / URL / local LaTeX / local PDF, rebuild the library, then register a user-confirmed note (the agent drafts the suggestion) for every paper. | "add/ingest this paper", "下载 arxiv ... 加入文献库" |
+| `argelander-read-paper/` | **B — deep read.** Answer questions about one ingested paper: resolves `[ref: ...]` floats via `show`, expands `[cite: ...]` via `ref`, separates the paper's own claims from cited-work metadata, cites evidence with deep links. | a specifically named paper; also the hand-off target of C |
+| `argelander-query-paper-library/` | **C — retrieval across the library.** Ranks works against a research question (note is the primary signal), shows a shortlist, dispatches B per pick, synthesizes. | open-ended "用我文献库回答 ..." questions |
+
+Data flow: **A** builds the library → **C** selects from it → **B** reads what
+C selected. B and C never ingest; A never answers questions.
+
+## Install
+
+pi discovers skills in `~/.pi/agent/skills/` (global) or `.pi/skills/`
+(project-local). Symlink (preferred — stays in sync with the repo) or copy:
+
+```bash
+# global, symlinked from this repo
+mkdir -p ~/.pi/agent/skills
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library; do
+  ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
+done
+
+# …or project-local (run from the project you work in, not this repo):
+mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
+```
+
+## Prerequisites
+
+- **The `argelanderspace` CLI**: either installed (`npm i -g argelanderspace`)
+  or from a built repo checkout — `corepack pnpm -r build`, then the skills use
+  `node packages/app/dist/bin.js` in place of `argelanderspace`.
+- **pandoc** on PATH for the LaTeX (arXiv) ingest pipeline.
+- **`MINERU_API_KEY`** (env or config.toml) for the PDF pipeline — see the
+  quota warning in the root README.
+- Optional: `ADS_DEV_KEY` / `OPENALEX_API_KEY` for richer library enrichment.
+- A running server (`argelanderspace serve`) only for the deep links to open —
+  the CLI itself works without it.
+
+## The CLI–agent contract
+
+| Command | Purpose | Output |
+|---|---|---|
+| `ingest <source>` | PDF path \| DOI/URL \| arXiv id/URL \| .tex/dir/tarball → Document JSON under `<data>/output/` | human summary |
+| `library build [--offline]` | seed works from ingested docs → enrich (ADS▸Crossref▸OpenAlex) → plan → graph. **Required after ingest** — `note`/`label`/`search` only see works | JSON summary |
+| `search` | every work as one JSON line (id/title/year/venue/authors/note/tags/read/star/doc_ids) — full index, the agent judges relevance | JSONL |
+| `list` | library overview + one line per ingested doc (doc ids + deep links) | text |
+| `read <docId> [--section id] [--manifest refs\|bib]` | LLM-friendly markdown (whole doc / section subtree), or JSONL manifests | markdown / JSONL |
+| `show <docId> <floatId>` | one float (fig/tab/eq/code/alg) as JSON: full latex/caption/body/image + `link` | JSON |
+| `ref <docId> <refIdOrKey>` | one bibliography entry as JSON: metadata + `cited_in` + `link` | JSON |
+| `note <workId> [text...]` | set (or print) a work's note | JSON |
+| `label <workId> [--label c] [--read b] [--star b] [--tags a,b]` | patch user state, print the result | JSON |
+
+Conventions the skills rely on:
+
+- **`--data-dir` everywhere**: flag > `ARGELANDERSPACE_DATA_DIR` > config.toml
+  `data_dir` > `./data`. The old `LITERATURE_LIBRARY` env var is dead.
+- **Two id families**: works (`arxiv:…` / `doi:…` — `search`, `note`, `label`)
+  vs docs (`arxiv-…` — `read`, `show`, `ref`, `list`). `search` rows map one to
+  the other via `doc_ids`.
+- **Deep links**: every doc-referencing command prints
+  `http://localhost:<port>/doc/<docId>[#<anchor>]` (anchors: `#sec-N`,
+  `#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`). Port:
+  `ARGELANDERSPACE_PORT` > config `port` > 8000 — if `serve` runs on a custom
+  `--port`, export `ARGELANDERSPACE_PORT` so printed links match.
+- **Machine-clean stdout**: JSONL streams (`search`, `read --manifest`) stay
+  pure; headers go to stderr. Errors are `error: <message>` on stderr with
+  exit code 1, and "unknown id" errors list the available candidates.
+- **Out-of-band writes don't push**: CLI writes (`note`/`label`/`library
+  build`) update `library.json` but do not broadcast `library.changed` to a
+  running webui — reload the browser page to see them.
+
+## Operational lessons carried over (still true)
+
+1. **Verify arXiv ids before ingest** — never guess an id from author+year.
+2. **arXiv is the only fully-automatic source** — publisher HTML is bot-walled
+   (DataDome/Cloudflare/Radware); a user-supplied PDF is the fallback.
+3. **Notes are load-bearing** — every ingested paper gets a user-confirmed
+   note, or C can't rank it.

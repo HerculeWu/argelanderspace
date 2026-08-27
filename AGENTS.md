@@ -15,6 +15,8 @@ ArgelanderSpace（原 bibgraph）：论文摄入（PDF / 出版商 HTML / arXiv 
 
 **Python 旧树已于 2026-08-27 删除**（人工冒烟验收通过后；git history 可查）。当前主线的背景与计划见 memory 目录。
 
+**Stage 2（2026-08-27 完成）**：agent 接入 = CLI agent 子命令（`search/read/show/ref/note/label/list`）+ pi skills 三件套 `skills/argelander-*`（symlink/cp 到 `~/.pi/agent/skills/` 或 `.pi/skills/`；webui 深链接 `/doc/<id>#<anchor>`）。无 MCP。旧 `literature-library-skills/` 已被取代，去留由用户决定。手动验收步骤见 `docs/manual-test-stage2.md`。
+
 ## 环境
 
 - Node v24+ / npm 11+；pnpm 经 `corepack pnpm` 调用（pnpm 11.24.0，见根 package.json `packageManager`）
