@@ -5,8 +5,9 @@
  * `bibgraph/acquire/__main__.py` on top of the M1–M4 packages.
  *
  * `--data-dir` (decision 3) is global and may appear before or after the
- * subcommand; resolution is flag > `ARGELANDERSPACE_DATA_DIR` > `./data`.
- * The ingest pipelines root at `<dataDir>/output` (Python's `data/output`).
+ * subcommand; resolution is flag > `ARGELANDERSPACE_DATA_DIR` > config file
+ * (decision 23) > `./data`. The ingest pipelines root at `<dataDir>/output`
+ * (Python's `data/output`).
  */
 
 import { writeFileSync } from "node:fs";
@@ -26,18 +27,26 @@ import {
   rebuild,
   type Work,
 } from "@argelanderspace/core";
-import { FetchPdfDownloader, ingestHtml, ingestLatex, ingestPdf } from "@argelanderspace/infra";
+import {
+  type AppConfig,
+  FetchPdfDownloader,
+  getConfig,
+  ingestHtml,
+  ingestLatex,
+  ingestPdf,
+} from "@argelanderspace/infra";
 import { realPipelines, realSources, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
 import { detectSource } from "./detect.js";
 import { formatIngestSummary, formatPlanRow, planSortKey } from "./summary.js";
 
-/** flag > env > ./data (decision 3; same chain as the server's). */
+/** flag > env > config file (decision 23) > ./data (same chain as the server's). */
 export function resolveDataDir(
   opts: { dataDir?: string | undefined },
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  config: AppConfig = getConfig()
 ): string {
-  return resolve(opts.dataDir ?? env.ARGELANDERSPACE_DATA_DIR ?? "./data");
+  return resolve(opts.dataDir ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./data");
 }
 
 function errorMessage(e: unknown): string {
@@ -287,7 +296,7 @@ export function buildProgram(): Command {
       "ArgelanderSpace — ingest papers (PDF / publisher HTML / arXiv LaTeX) into " +
         "structured JSON and manage the citation-graph library."
     )
-    .version("0.0.0")
+    .version("0.1.0")
     .option("--data-dir <dir>", "data directory (default ./data; env ARGELANDERSPACE_DATA_DIR)");
 
   withDataDir(program.command("ingest"))

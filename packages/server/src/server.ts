@@ -3,16 +3,19 @@
  * + job runner + WS hub wired together) and `startServer` (CLI-friendly:
  * argv/env config resolution, listen, log).
  *
- * Config resolution (decision 3): `--data-dir` > `ARGELANDERSPACE_DATA_DIR` >
- * `./data`. Port: `--port` > `ARGELANDERSPACE_PORT` > 8000 (uvicorn's
- * convention). Web dist: `--web-dist` > `ARGELANDERSPACE_WEB_DIST` >
- * `packages/web/dist` (the M5 location; the pre-M5 `web/dist` path is still
- * accepted for old checkouts).
+ * Config resolution (decisions 3 + 23): `--data-dir` >
+ * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./data`; the port chain is
+ * the same shape with default 8000 (uvicorn's convention). Web dist:
+ * `--web-dist` > `ARGELANDERSPACE_WEB_DIST` > the first existing of
+ * `<this module>/web` (the bundled single-package layout, decision 22) and
+ * `<cwd>/packages/web/dist` (the repo dev layout).
  */
 
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
+import { type AppConfig, getConfig } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -119,22 +122,34 @@ function argValue(argv: readonly string[], name: string): string | undefined {
   return undefined;
 }
 
-/** `--data-dir` > env > `./data`; same pattern for port and web-dist. */
+/**
+ * flag > env > config file (decision 23) > ./data; same pattern for port and
+ * web-dist. `config` is injectable for tests; production callers leave it to
+ * `getConfig()` (a missing config file is `{}`).
+ */
 export function resolveServerConfig(
   argv: readonly string[] = [],
   env: NodeJS.ProcessEnv = process.env,
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
+  config: AppConfig = getConfig()
 ): ResolvedConfig {
-  const dataDir = resolve(argValue(argv, "data-dir") ?? env.ARGELANDERSPACE_DATA_DIR ?? "./data");
+  const dataDir = resolve(
+    argValue(argv, "data-dir") ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./data"
+  );
   const portRaw = argValue(argv, "port") ?? env.ARGELANDERSPACE_PORT;
-  const port = portRaw === undefined ? 8000 : Number.parseInt(portRaw, 10);
+  const port = portRaw === undefined ? (config.port ?? 8000) : Number.parseInt(portRaw, 10);
   const webRaw = argValue(argv, "web-dist") ?? env.ARGELANDERSPACE_WEB_DIST;
   let webDist: string | null;
   if (webRaw !== undefined) {
     webDist = resolve(webRaw);
   } else {
-    // packages/web/dist is the M5 location; web/dist is the pre-M5 checkout.
-    const candidates = [join(cwd, "packages", "web", "dist"), join(cwd, "web", "dist")];
+    // The bundled single package ships the SPA at <bundle>/web (import.meta
+    // of every module is the one bundle file); the repo dev layout builds it
+    // at <cwd>/packages/web/dist.
+    const candidates = [
+      fileURLToPath(new URL("./web", import.meta.url)),
+      join(cwd, "packages", "web", "dist"),
+    ];
     webDist = candidates.find((p) => existsSync(p)) ?? null;
   }
   return { dataDir, port: Number.isNaN(port) ? 8000 : port, webDist };

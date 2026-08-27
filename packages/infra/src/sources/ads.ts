@@ -3,7 +3,7 @@
  * citation metrics, token-gated. Without a valid token the client degrades to
  * a no-op (`status` records why) so the rest of the library keeps working.
  *
- * Token: `$ADS_DEV_KEY`, else `~/.ads/dev_key`.
+ * Token: `$ADS_DEV_KEY`, else config `ads_dev_key`, else `~/.ads/dev_key`.
  *
  * Parity notes:
  * - The disk cache key is `sha1(query-string)`, byte-identical to Python.
@@ -18,6 +18,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AdsResolution, AdsSource, AdsStatus } from "@argelanderspace/core";
 import { normDoi, normTitle } from "@argelanderspace/core";
+import { type AppConfig, getConfig } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
 import { SourceCache, sha1Hex } from "./cache.js";
 
@@ -25,13 +26,16 @@ const BASE = "https://api.adsabs.harvard.edu/v1/search/query";
 const FL = "bibcode,title,author,year,citation_count,pub,doi,abstract,reference";
 const TIMEOUT = 30;
 
-/** `_read_token`: `$ADS_DEV_KEY`, else `~/.ads/dev_key`, stripped. */
+/** `_read_token`: `$ADS_DEV_KEY`, else config `ads_dev_key`, else `~/.ads/dev_key` — stripped. */
 export function readAdsToken(
   env: NodeJS.ProcessEnv = process.env,
-  home: string = homedir()
+  home: string = homedir(),
+  config: AppConfig = getConfig()
 ): string | null {
   const tok = env.ADS_DEV_KEY;
   if (tok?.trim()) return tok.trim();
+  const fromConfig = config.ads_dev_key?.trim();
+  if (fromConfig) return fromConfig;
   try {
     return readFileSync(join(home, ".ads", "dev_key"), "utf-8").trim() || null;
   } catch {

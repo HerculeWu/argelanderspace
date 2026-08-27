@@ -93,8 +93,9 @@ describe("AdsClient (library/sources/ads.py)", () => {
   });
 
   test("readAdsToken prefers env, falls back to ~/.ads/dev_key, else null", () => {
-    expect(readAdsToken({ ADS_DEV_KEY: "  abc  " }, "/nonexistent-home")).toBe("abc");
-    expect(readAdsToken({}, "/nonexistent-home")).toBeNull();
+    // explicit empty config: the config-file fallback is tested in config.test.ts
+    expect(readAdsToken({ ADS_DEV_KEY: "  abc  " }, "/nonexistent-home", {})).toBe("abc");
+    expect(readAdsToken({}, "/nonexistent-home", {})).toBeNull();
   });
 });
 

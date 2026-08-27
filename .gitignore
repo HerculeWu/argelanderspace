@@ -11,6 +11,11 @@ packages/*/dist/
 *.tsbuildinfo
 *.log
 
+# M6 bundle package: copied into packages/app at build time (sources of
+# truth live at the repo root — see packages/app/scripts/copy-assets.mjs)
+packages/app/README.md
+packages/app/LICENSE
+
 # Tooling / indexes
 .codegraph/
 .serena/

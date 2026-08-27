@@ -15,6 +15,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { MineruArtifacts, MineruContentList } from "@argelanderspace/core";
+import { type AppConfig, configFilePath, getConfig } from "../config.js";
 import { type FetchImpl, fetchBytes, sleep } from "../lib/http.js";
 import { extractZip } from "../lib/unzip.js";
 
@@ -49,11 +50,21 @@ export interface MineruResult extends MineruArtifacts {
   imagesDir?: string;
 }
 
-/** `MineruConfig.api_key()`: `$MINERU_API_KEY`, or throw. */
-export function mineruApiKey(env: NodeJS.ProcessEnv = process.env): string {
+/**
+ * `MineruConfig.api_key()`: `$MINERU_API_KEY`, else `mineru_api_key` from the
+ * config file (decision 23), or throw. The key value is never echoed.
+ */
+export function mineruApiKey(
+  env: NodeJS.ProcessEnv = process.env,
+  config: AppConfig = getConfig()
+): string {
   const key = (env[MINERU_API_KEY_ENV] ?? "").trim();
-  if (!key) throw new MineruError(`Environment variable ${MINERU_API_KEY_ENV} is not set.`);
-  return key;
+  if (key) return key;
+  const fromConfig = config.mineru_api_key?.trim();
+  if (fromConfig) return fromConfig;
+  throw new MineruError(
+    `No MinerU API key: set ${MINERU_API_KEY_ENV} or mineru_api_key in ${configFilePath(env)}.`
+  );
 }
 
 /** Sorted recursive glob (`sorted(root.rglob(pattern))`, `*` suffix patterns). */

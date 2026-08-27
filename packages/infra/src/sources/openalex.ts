@@ -2,7 +2,8 @@
  * OpenAlex client (`bibgraph/library/sources/openalex.py`): resolve a work,
  * fetch metadata in batches, disk-cached. Free; polite pool via `mailto`.
  *
- * Deliberate divergence (approved): when `$OPENALEX_API_KEY` is set it is sent
+ * Deliberate divergence (approved): when `$OPENALEX_API_KEY` (or the config
+ * file's `openalex_api_key`, decision 23) is set it is sent
  * as the `api_key` query param on every request — the Python client ignores
  * the key entirely (OpenAlex's premium pool needs it). The key is NOT part of
  * the disk-cache key: the response content is key-independent, so cache
@@ -16,6 +17,7 @@
 
 import type { OpenAlexResolution, OpenAlexSource } from "@argelanderspace/core";
 import { normArxiv, normDoi, normTitle } from "@argelanderspace/core";
+import { getConfig } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
 import { pyJsonStable } from "../lib/pyjson.js";
 import { SourceCache, sha1Hex } from "./cache.js";
@@ -128,7 +130,10 @@ export class OpenAlexClient implements OpenAlexSource {
     this.delay = opts.delay ?? 0.12;
     this.enabled = opts.enabled ?? true;
     this.mailto = opts.mailto ?? defaultMailto();
-    this.apiKey = opts.apiKey !== undefined ? opts.apiKey : (process.env.OPENALEX_API_KEY ?? null);
+    this.apiKey =
+      opts.apiKey !== undefined
+        ? opts.apiKey
+        : (process.env.OPENALEX_API_KEY ?? getConfig().openalex_api_key ?? null);
     // Python UA kept verbatim for the polite pool (rebrand sweep is M5/M6).
     this.userAgent = `HubbleSpace/0.1 (mailto:${this.mailto})`;
     this.cache = new SourceCache(opts.cacheDir);

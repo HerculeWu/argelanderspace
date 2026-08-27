@@ -1,0 +1,43 @@
+{
+  "name": "argelanderspace",
+  "version": "0.1.0",
+  "description": "Ingest papers (PDF / publisher HTML / arXiv LaTeX) into structured JSON, manage a citation-graph library, and read in a local web workspace.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/<you>/argelanderspace.git"
+  },
+  "keywords": [
+    "literature",
+    "papers",
+    "citation-graph",
+    "arxiv",
+    "pdf",
+    "astronomy"
+  ],
+  "bin": {
+    "argelanderspace": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mupdf": "1.28.0"
+  },
+  "devDependencies": {
+    "@argelanderspace/cli": "workspace:*",
+    "@argelanderspace/server": "workspace:*",
+    "@argelanderspace/web": "workspace:*",
+    "@types/node": "^24.13.3",
+    "tsup": "^8.5.1",
+    "typescript": "~5.9.3"
+  }
+}

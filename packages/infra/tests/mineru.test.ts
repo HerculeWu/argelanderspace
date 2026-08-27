@@ -184,12 +184,17 @@ describe("MineruClient (mineru_client.py)", () => {
   });
 
   test("missing API key is a clear error", () => {
-    const saved = process.env.MINERU_API_KEY;
+    const savedKey = process.env.MINERU_API_KEY;
+    const savedXdg = process.env.XDG_CONFIG_HOME;
     delete process.env.MINERU_API_KEY;
+    // an empty XDG dir pins the config-file fallback to "no key" too
+    process.env.XDG_CONFIG_HOME = mkdtempSync(join(tmpdir(), "aspace-xdg-"));
     try {
       expect(() => new MineruClient({})).toThrow(/MINERU_API_KEY/);
     } finally {
-      if (saved !== undefined) process.env.MINERU_API_KEY = saved;
+      if (savedKey !== undefined) process.env.MINERU_API_KEY = savedKey;
+      if (savedXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = savedXdg;
     }
   });
 

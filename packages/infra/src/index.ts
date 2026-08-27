@@ -5,6 +5,7 @@
 // @argelanderspace/core; everything here does fs / network / subprocess.
 
 export * from "./acquire/pdf-downloader.js";
+export * from "./config.js";
 export * from "./html/fetcher.js";
 export * from "./html/pipeline.js";
 export * from "./latex/arxiv-source.js";

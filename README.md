@@ -1,260 +1,184 @@
-# bibgraph — literature ingestion (PDF + publisher HTML + arXiv LaTeX)
+# ArgelanderSpace
 
-Turns a research-paper **PDF** into a structured JSON document for a literature
-reading app: section structure, floats (figures / tables / equations / code /
-pseudocode), a structured reference list, and inline-tokenized in-text
-**citations** and **cross-references**.
+Ingest research papers into a structured **Document JSON** — section tree,
+floats (figures / tables / equations / code / algorithms), a structured
+bibliography, and inline-tokenized citations and cross-references — and manage
+them in a **citation-graph library** with a local **reader workspace** (web UI
+with document reader, force-directed citation graph, and live ingest progress
+over WebSocket).
 
-Phase 1 targets the *PDF-only* case (including scanned/old papers). Phase 4
-(**publisher HTML**) and Phase 5 (**arXiv LaTeX source**) are now in — see the
-*HTML pipeline* and *LaTeX pipeline* sections below. EPUB ingestion is a future
-phase. All three pipelines emit the *same* `Document` JSON, so the reader UI and
-downstream tooling are shared.
+Three ingestion pipelines emit the *same* Document JSON:
 
-## HubbleSpace workspace (reader + literature manager)
+| Pipeline | Input | Status (2026-08) |
+|---|---|---|
+| **arXiv LaTeX** | arXiv id / URL / local `.tex` / dir / tarball | ✅ the working fully-automatic source |
+| **PDF** | local PDF (born-digital or scan) | ✅ via the [MinerU](https://mineru.net) API (`MINERU_API_KEY` required); extractions are cached on disk |
+| **Publisher HTML** | DOI / publisher URL | ⚠️ A&A and OUP adapters exist, but both sites are bot-walled (DataDome / Cloudflare) as of 2026-08 — kept as standby capability, not currently fetchable |
 
-The `web/` app is a **HubbleSpace** workspace shell (activity bar + split panes +
-⌘K palette + theme/accent/density tweaks). Two panes are built:
+Citation/cross-reference resolution is authoritative for LaTeX (`\cite` /
+`\ref`) and publisher HTML (page anchors); for PDFs it combines hyperlink
+annotations (hyperref named destinations) with a regex fallback, repaired by a
+text-layer pass over MinerU's OCR gaps. PDF rendering and text extraction use
+the official `mupdf` WASM build — no Python anywhere.
 
-* **文档 / Doc** — the document reader for the ingested `Document` JSON (TOC,
-  serif "paper" body, KaTeX math, clickable citation/cross-ref chips, references
-  rail). It's a pane, so you can open the **graph and the paper side-by-side**.
-* **文献 / Library** — a citation-map-first reference manager (à la
-  Connected Papers / Zotero): a side list with right-click color labels and
-  read/unread state, a **force-directed citation graph** (node size ∝ citations,
-  hue ∝ year, saved = filled / suggested = hollow, depth + count sliders), a
-  detail panel (详情 / 摘要 / BibTeX / 笔记 / 附件), and an add-to-library flow.
+ArgelanderSpace is a local single-user tool: the server binds `127.0.0.1` and
+there is no authentication. An agent extension (bidirectional automation over
+the same WebSocket channel) is planned for Stage 2.
 
-The library backend (`bibgraph/library/`) is a small set of files under
-`data/library/` (`library.json` source-of-truth + `library.bib`). It **seeds
-works from the papers you've already ingested** (the PDF / LaTeX / HTML
-renderings of one paper collapse into a single work), matches their parsed
-bibliographies for offline citation edges, and **enriches** via **OpenAlex**
-(citation counts, references, recommendations — free, no key) and **NASA ADS**
-(authoritative astro metrics — set a token in `~/.ads/dev_key` or `$ADS_DEV_KEY`;
-optional, degrades gracefully).
+## Requirements
 
-```
-# 1. build the library from ingested papers + OpenAlex/ADS
-python -m bibgraph.library            # full (network);  --offline = cache only
+- **Node.js ≥ 20**
+- Optional: **pandoc** (LaTeX pipeline parsing + MathML→LaTeX), **Ghostscript**
+  (EPS figures in old arXiv sources)
 
-# 2. backend (serves /api/paper, /images, and /api/library*)
-python -m uvicorn server.app:app --port 8000
-
-# 3. frontend dev server (proxies /api → :8000)
-cd web && npm install && npm run dev   # → http://localhost:5173
-```
-
-The Library reads `/api/library`; until it's built (or the backend is down) the
-UI falls back to a bundled demo fixture and shows a "演示数据" badge.
-
-## HTML pipeline (Phase 4)
-
-Modern journals publish a clean, semantically-marked-up HTML full text — the most
-stable source there is. Each publisher ships a different front-end, so each gets
-its own adapter under `bibgraph/ingest_html/`; the **first is Astronomy &
-Astrophysics** (`aanda.py`). The adapter walks the DOM and emits the *same*
-`Document` JSON the PDF pipeline produces, so the reader UI is unchanged.
-
-```
- DOI / URL
-  ├─ fetch          → full-text HTML (cached on disk under <root>/.htmlcache)
-  ├─ adapter (A&A)  → section tree + floats + references
-  │                   • citations  = <a href="#R..">  → authoritative ref link
-  │                   • cross-refs = <a href="#F/#T/#FD/#S/#APP">  → float/section
-  │                   • equations  = MathML → pandoc → KaTeX-clean LaTeX
-  │                                  (data-latex used as a fallback)
-  │                   • tables      = fetched from the per-table T<n>.html sub-page
-  │                   • figures     = full-res image downloaded to assets/
-  ├─ annotate       → splice [[cite:..]] / [[xref:..]]; regex only for *unlinked* mentions
-  └─ → Document → <root>/<doc_id>/<doc_id>.json
-```
-
-Unlike the PDF path, citation/cross-reference resolution is **authoritative**:
-the page's own anchors say exactly which reference or float each one points at,
-so resolution is character-precise rather than regex-guessed. Inline math is
-handled *conservatively* — only `<sub>`/`<sup>` and single-letter italic
-variables become `$…$`; prose italics (journal/object names) stay plain text;
-footnote markers are dropped.
+## Quickstart
 
 ```bash
-PY=/home/wwu/miniforge3/envs/astro/bin/python
-$PY -m bibgraph 10.1051/0004-6361/202039341      # a DOI (resolves to A&A full HTML)
-$PY -m bibgraph https://www.aanda.org/articles/aa/full_html/2021/02/aa39341-20/aa39341-20.html
-# options: --inline-math {conservative,plain}  --no-assets  --no-subpages  --no-cache
-#          --out-root DIR   (default data/output, so the reader picks it up)
+npx argelanderspace serve          # → http://127.0.0.1:8000
 ```
 
-Output lands in `<root>/<doc_id>/<doc_id>.json` with figure images in
-`<doc_id>/assets/` (served by the reader's `/images/<doc_id>/<file>` route). The
-HTML deps are `requests` + `beautifulsoup4` (both in the `astro` env) and
-`pandoc` (system, for MathML→LaTeX).
-
-## LaTeX pipeline (Phase 5)
-
-arXiv ships the author's own LaTeX — the most faithful source of all: the maths
-is already LaTeX (no MathML/OCR round-trip), and every citation is a `\cite` key
-and every cross-reference a `\ref`/`\label` pair, so resolution is **authoritative**.
-`pandoc` parses the LaTeX into its document AST (expanding preamble macros,
-following `\input`); we walk that AST into the *same* `Document` JSON.
-
-```
- arXiv id / URL / local .tex
-  ├─ fetch          → e-print tarball, unpacked (cached under <root>/.latexcache)
-  ├─ pandoc         → LaTeX document AST (-f latex -t json)
-  ├─ references     → .bbl / thebibliography \bibitem[..]{key}, or .bib via csljson
-  │                   (pruned to cited keys); builds a key → ref-id map
-  ├─ walk           → section tree + floats + equations
-  │                   • citations  = \cite key  → authoritative ref-id
-  │                   • cross-refs = \ref/\label → float/section, numbered by us
-  │                   • equations  = DisplayMath → KaTeX-clean LaTeX (env/label
-  │                                  stripped, multi-row → aligned, astro macros)
-  │                   • figures     = \includegraphics rasterised (PDF/EPS → PNG)
-  ├─ annotate       → splice [[cite:..]] / [[xref:..]]; regex only for *unlinked* mentions
-  └─ → Document (source.type="latex") → <root>/<doc_id>/<doc_id>.json
-```
+Then ingest a paper and open it in the reader:
 
 ```bash
-PY=/home/wwu/miniforge3/envs/astro/bin/python
-$PY -m bibgraph 2501.17225                 # an arXiv id (downloads the source)
-$PY -m bibgraph arXiv:2603.03522v2
-$PY -m bibgraph https://arxiv.org/abs/2501.17225
-$PY -m bibgraph path/to/source/main.tex    # a local .tex / dir / .tar.gz
-# options: --figure-dpi N   --no-assets   --no-cache   --out-root DIR
+npx argelanderspace ingest 2501.17225            # arXiv id → LaTeX pipeline
+npx argelanderspace ingest paper.pdf             # PDF → MinerU pipeline
+npx argelanderspace library build                # seed + enrich the citation graph
 ```
 
-The doc id is namespaced `arxiv-<id>` so a LaTeX ingest coexists with the same
-paper's PDF / HTML doc in the reader's paper-switcher (handy for cross-checking).
-Figures (usually vector PDF) are rasterised to PNG via **PyMuPDF** (EPS via
-**Ghostscript**) and served from `assets/`. Deps: `requests` + `PyMuPDF` (in the
-`astro` env) and `pandoc` (system). **Known gaps:** AASTeX `deluxetable` tables
-and the deprecated `\figcaption` are not captured (pandoc doesn't model them);
-some custom document classes (e.g. a few Gaia-collaboration `.cls` files) fail to
-parse and report a clear error.
-
-## How it works
+## CLI
 
 ```
- PDF
-  ├─ PyMuPDF        → text-layer probe (OCR auto-detect) + hyperlink annotations
-  │                   (incl. hyperref named destinations: cite.* / figure.* / section.* …)
-  ├─ MinerU v4 VLM  → content_list.json + middle.json + images/   (high-precision OCR)
-  ├─ structure      → section tree + floats + captions
-  ├─ references     → structured bibliography (best-effort fields)
-  ├─ textfix        → repair MinerU '?'-gaps in body text from the PDF text layer
-  └─ annotate       → inline [[cite:ref-N]] / [[xref:fig-N]] tokens (regex + hyperlinks)
- → Document → <out_dir>/<stem>.json
+argelanderspace ingest <input>      PDF path | DOI / publisher URL | arXiv id/URL | local .tex/dir/tarball
+argelanderspace library build       rebuild the library (seed → enrich ADS▸Crossref▸OpenAlex → plan → graph)
+                                    [--offline] [--bib refs.bib]
+argelanderspace acquire <refs.bib>  add a .bib's works and print the acquisition plan
+                                    [--dry-run] [--fetch] [--fetch-remaining] [--offline]
+argelanderspace serve               API + web UI + WebSocket progress  [--port N] [--web-dist DIR]
 ```
 
-**Hybrid citation/cross-ref resolution.** MinerU's OCR→markdown output drops the
-PDF's embedded links, so we read them straight from the original file with
-PyMuPDF. For LaTeX/hyperref PDFs the named destinations are semantic
-(`cite.<bibkey>`, `section.7`, `figure.3`, …): citation links point into the
-bibliography (resolved spatially to the matching reference entry) and cross-ref
-links point at the target float. Regex detection runs in parallel and is the
-fallback for scanned PDFs that have no links. Resolution is **block-granular**
-(a link overlapping a text block is paired with that block's citation/xref
-sites), not character-precise.
+Global option: `--data-dir <dir>` (may appear before or after the subcommand).
+Useful ingest flags: `--ocr` / `--no-ocr` (default: auto-detect from the text
+layer), `--fresh` (ignore the MinerU cache), `--no-assets`, `--no-subpages`,
+`--no-cache`, `-o out.json` (also write the Document JSON to a path).
 
-## Setup
+## Data directory
 
-```bash
-# interpreter (conda 'astro' env). PyMuPDF is the only extra dependency.
-/home/wwu/miniforge3/envs/astro/bin/python -m pip install "PyMuPDF>=1.24"
-export MINERU_API_KEY=...        # MinerU v4 token (already set in this env)
+Default `./data`; override with `--data-dir`, `ARGELANDERSPACE_DATA_DIR`, or
+the config file (below).
+
+```
+data/
+  output/    one <doc_id>/ per ingested paper: <doc_id>.json + assets/ + fetch caches
+  library/   library.json (source of truth), library.bib, cache/ (graph.json + ads/crossref/openalex)
+  jobs/      asynchronous ingest/upload job records and the upload spool
 ```
 
-## Usage
+## Configuration
 
-```bash
-PY=/home/wwu/miniforge3/envs/astro/bin/python
+Precedence, everywhere: **CLI flag > environment variable > config file >
+default.**
 
-# full run (calls the MinerU API, then parses)
-$PY -m bibgraph data/input/paper.pdf
+The config file is optional: `$XDG_CONFIG_HOME/argelanderspace/config.toml`
+(default `~/.config/argelanderspace/config.toml`). Unknown keys are ignored; a
+known key with a wrong type is a startup error naming the key (values are
+never logged or echoed).
 
-# reuse a cached MinerU result (no API call) — handy while iterating
-$PY -m bibgraph data/input/paper.pdf --reuse
+```toml
+data_dir = "/srv/papers"     # default ./data
+port = 8000                  # server port
 
-# options
-$PY -m bibgraph paper.pdf -o out.json --lang en --pages 1-12 \
-    --no-links            # regex-only resolution
-    --ocr / --no-ocr      # force OCR (default: auto-detect from text layer)
-    --fresh               # ignore cache, re-call API
+# API-key fallbacks (the env vars win when both are set):
+mineru_api_key = "..."       # env MINERU_API_KEY
+openalex_api_key = "..."     # env OPENALEX_API_KEY
+ads_dev_key = "..."          # env ADS_DEV_KEY, itself a fallback for ~/.ads/dev_key
 ```
 
-Artifacts land in `<pdf_dir>/<stem>/`: the MinerU unzip under `mineru/`
-(cached) and the final `<stem>.json`.
+Environment variables:
 
-## Output JSON
+| Variable | Purpose |
+|---|---|
+| `ARGELANDERSPACE_DATA_DIR` | data directory |
+| `ARGELANDERSPACE_PORT` | server port (default 8000) |
+| `ARGELANDERSPACE_WEB_DIST` | override the bundled web UI directory |
+| `MINERU_API_KEY` | MinerU v4 extraction (PDF pipeline; only needed on a cache miss) |
+| `OPENALEX_API_KEY` | OpenAlex premium pool (sent as `api_key`; optional) |
+| `OPENALEX_MAILTO` | polite-pool identity for OpenAlex/Crossref |
+| `ADS_DEV_KEY` | NASA ADS token; without any token ADS degrades to `no-token` and the rest of the library keeps working |
+
+ADS additionally reads `~/.ads/dev_key` (the ADS convention), after the env var
+and the config file.
+
+## Output JSON (sketch)
 
 ```jsonc
 {
-  "doc_id": "...",
-  "source":  { "type": "pdf", "filename": "...", "n_pages": 12 },
-  "meta":    { "title": "...", "mineru": { "model_version": "vlm", ... } },
-
-  "structure": [                       // ordered section tree (reading order)
-    { "id": "sec-2", "type": "section", "level": 1, "number": "1",
-      "heading": "Introduction", "page_idx": 0,
-      "blocks": [
-        { "id": "p-3", "type": "paragraph", "page_idx": 0, "bbox": [...],
-          "text": "As shown in [[xref:fig-1]] ... holds [[cite:ref-1;ref-2]].",
-          "citations": [ { "ref_ids": ["ref-1","ref-2"], "raw": "(...)",
-                           "via": "hyperlink+regex", "resolved": true } ],
-          "crossrefs": [ { "kind": "figure", "target_id": "fig-1",
-                           "raw": "Fig. 1", "via": "regex", "resolved": true } ] },
-        { "id": "fig-1", "type": "figure", "number": "1", "label": "Figure 1",
-          "caption": { "text": "...", "citations": [...], "crossrefs": [...] },
-          "img_path": "images/...", "page_idx": 0, "bbox": [...] }
-      ],
-      "children": [ /* nested sections */ ] }
-  ],
-
-  "index":      { "figures":[...], "tables":[...], "equations":[...],
-                  "code":[...], "algorithms":[...], "sections":[...] },
-  "references": [ { "id": "ref-1", "raw": "...", "authors": ["Hunt","Reffert"],
-                   "year": 2021, "doi": "10...", "arxiv_id": null, ... } ],
-  "citations":  [ /* flattened, each + block_id */ ],
-  "crossrefs":  [ /* flattened, each + block_id */ ],
-  "stats":      { "n_sections": 6, "n_citations": 84,
-                  "n_citations_resolved": 80, ... }
+  "doc_id": "arxiv-2501.17225",
+  "source":  { "type": "latex", ... },
+  "meta":    { "title": "...", ... },
+  "structure": [ /* ordered section tree; blocks: paragraph/list/figure/table/
+                    equation/code/algorithm, each with text + citations +
+                    crossrefs */ ],
+  "references": [ { "id": "ref-1", "raw": "...", "authors": [...], "year": 2021,
+                    "doi": "10...", "arxiv_id": null, ... } ],
+  "stats":   { "n_sections": 6, "n_citations": 84, ... }
 }
 ```
 
-### Inline tokens
+In-text citations and cross-references are replaced *in place* with inline
+tokens and also recorded structurally:
 
-In-text citations and cross-references are replaced *in place* inside each text
-body and also recorded structurally:
+| token | meaning |
+|---|---|
+| `[[cite:ref-12]]` | citation → reference `ref-12` |
+| `[[cite:ref-3;ref-4]]` | grouped citation |
+| `[[xref:fig-3]]` / `[[xref:eq-2]]` / `[[xref:sec-5]]` | cross-ref → figure / equation / section |
+| `[[xref:figure-9?]]` | detected but unresolved cross-ref |
 
-| token                       | meaning                                      |
-|-----------------------------|----------------------------------------------|
-| `[[cite:ref-12]]`           | citation → reference `ref-12`                |
-| `[[cite:ref-3;ref-4]]`      | grouped citation → several references        |
-| `[[xref:fig-3]]`            | cross-ref → figure block `fig-3`             |
-| `[[xref:eq-2]]` / `sec-5`   | cross-ref → equation / section               |
-| `[[xref:figure-9?]]`        | detected but **unresolved** cross-ref (typed)|
+## Development
 
-Block types: `paragraph`, `list`, `figure`, `table`, `equation`, `code`,
-`algorithm`. `bbox` is MinerU's `[x0,y0,x1,y1]` normalized to 0–1000.
+pnpm workspace (use `corepack pnpm`; Node ≥ 20):
 
-## Tests
+| Package | Role |
+|---|---|
+| `packages/contracts` | zod contracts: Document JSON, library payloads, job/WS DTOs |
+| `packages/core` | pure domain logic: documents, pipelines, library/graph/planner (no I/O) |
+| `packages/infra` | side-effect adapters: mupdf, pandoc, MinerU, ADS/Crossref/OpenAlex, fetchers, config file |
+| `packages/server` | Hono server: 8 REST endpoints, static SPA, job runner, `/ws` |
+| `packages/cli` | the commander program (`ingest` / `library build` / `acquire` / `serve`) |
+| `packages/web` | React reader workspace (vite) |
+| `packages/app` | the publishable `argelanderspace` npm package: bundles cli+server+core+infra into one ESM file + the built SPA (mupdf stays an external dependency) |
 
 ```bash
-/home/wwu/miniforge3/envs/astro/bin/python tests/run_tests.py
+corepack pnpm install
+corepack pnpm -r build        # all packages, incl. the SPA and the app bundle
+corepack pnpm -r test         # vitest suites (offline)
+corepack pnpm -r typecheck
+corepack pnpm lint            # biome
 ```
 
-Offline suite (no API, no pytest) covering structure, references, citations,
-cross-refs, text-layer `?`-gap correction, hybrid hyperlink resolution,
-named-destination handling, and JSON serialization, using
-`tests/fixtures/sample_content_list.json`.
+Packing the npm tarball (kept out of the repo):
 
-## Known limitations (Phase 1)
+```bash
+corepack pnpm -r build
+cd packages/app && npm pack
+```
 
-- Link→text alignment is block-granular, not per-character.
-- Reference `title`/`venue`/`volume`/`pages` are heuristic and often `null`
-  (author/year/DOI/arXiv and citation linking are reliable).
-- `?`-gap correction needs the PDF text layer to actually contain the glyph at
-  the block's bbox; where a caption/footnote bbox overlaps the float body the
-  gap is left as-is rather than risk splicing the wrong text.
-- Superscript-numeral citation styles (e.g. Nature) are not yet detected by regex.
-- The document title is also emitted as the first top-level section.
+Testing notes:
+
+- **Golden-file policy**: the TS pipelines are a bug-for-bug port of the
+  original Python implementation; golden Document JSONs under `tests/golden/`
+  gate the port field-by-field. The publisher-HTML fixtures are archived fetch
+  caches — the live sites are bot-walled, these copies are the only ones.
+- The pre-migration Python tree (`bibgraph/`, `server/`, `tests/run_tests.py`)
+  is kept for reference until the manual smoke test of the TS app completes;
+  it is legacy and scheduled for deletion.
+
+## License
+
+MIT (see `LICENSE`; copyright holder: "ArgelanderSpace contributors").
+
+One dependency is **not** MIT: [`mupdf`](https://www.npmjs.com/package/mupdf)
+is AGPL-3.0-or-later (Artifex, commercial licenses available). It is installed
+as a normal npm dependency — its code is not bundled into this package — the
+same relationship the Python original had with PyMuPDF. If that matters to
+your use, review it before distributing.
