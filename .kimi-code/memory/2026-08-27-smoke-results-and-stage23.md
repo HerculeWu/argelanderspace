@@ -16,3 +16,10 @@
 
 - GitHub repo: https://github.com/HerculeWu/argelanderspace
 - LICENSE 版权人：Wenjie Wu
+
+## Stage 3 候选（Stage 2 实施中发现的 webui 缺口，2026-08-27）
+
+1. **CLI 写入不推 `library.changed`**：agent 经 CLI 改库后 webui 要手动 F5。修法：server 加文件监听（library.json mtime）广播，或 CLI 写入后回调 server 端点。
+2. **webui "笔记" tab 是占位符**：`workToRef` 把 note 降成布尔，只显示"已有 1 条笔记"。修法：payload 带 note 全文 + 笔记 tab 渲染/编辑。
+3. **`label --label <color>` 不渲染**：色点从 star 播种，不读 label 字段。修法：LibraryView 色点读 `label`。
+4. 冒烟 bug（Stage 1 遗留）：上传进度条不真实；上传的 PDF 实际未 attach 成功。
