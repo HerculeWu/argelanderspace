@@ -2,7 +2,9 @@
  * The `argelanderspace` commander program (milestone M5): `ingest` /
  * `library build` / `acquire` / `serve`, a commander port of the Python entry
  * points `bibgraph/cli.py`, `bibgraph/library/__main__.py`, and
- * `bibgraph/acquire/__main__.py` on top of the M1–M4 packages.
+ * `bibgraph/acquire/__main__.py` on top of the M1–M4 packages — plus the
+ * Stage 2 / MS1 agent subcommands (`search` / `read` / `show` / `ref` /
+ * `note` / `label` / `list`, registered from `./agent.js`).
  *
  * `--data-dir` (decision 3) is global and may appear before or after the
  * subcommand; resolution is flag > `ARGELANDERSPACE_DATA_DIR` > config file
@@ -11,7 +13,7 @@
  */
 
 import { writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { Document } from "@argelanderspace/contracts";
 import {
   acquireReferences,
@@ -27,37 +29,17 @@ import {
   rebuild,
   type Work,
 } from "@argelanderspace/core";
-import {
-  type AppConfig,
-  FetchPdfDownloader,
-  getConfig,
-  ingestHtml,
-  ingestLatex,
-  ingestPdf,
-} from "@argelanderspace/infra";
+import { FetchPdfDownloader, ingestHtml, ingestLatex, ingestPdf } from "@argelanderspace/infra";
 import { realPipelines, realSources, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
+import { registerAgentCommands } from "./agent.js";
+import { fail, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
 import { formatIngestSummary, formatPlanRow, planSortKey } from "./summary.js";
 
-/** flag > env > config file (decision 23) > ./data (same chain as the server's). */
-export function resolveDataDir(
-  opts: { dataDir?: string | undefined },
-  env: NodeJS.ProcessEnv = process.env,
-  config: AppConfig = getConfig()
-): string {
-  return resolve(opts.dataDir ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./data");
-}
-
-function errorMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
-
-/** Print `error: <msg>` like the Python CLI and fail the process (no stack). */
-function fail(e: unknown): void {
-  console.error(`error: ${errorMessage(e)}`);
-  process.exitCode = 1;
-}
+// re-exported: the resolution chain now lives in ./common.js (shared with the
+// agent subcommands), but the public import path stays stable
+export { resolveDataDir };
 
 interface IngestOpts {
   output?: string;
@@ -280,14 +262,6 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   process.on("SIGTERM", shutdown);
 }
 
-/** Allow `--data-dir` after the subcommand as well as before it. */
-function withDataDir(cmd: Command): Command {
-  return cmd.option(
-    "--data-dir <dir>",
-    "data directory (default ./data; env ARGELANDERSPACE_DATA_DIR)"
-  );
-}
-
 export function buildProgram(): Command {
   const program = new Command();
   program
@@ -390,6 +364,9 @@ export function buildProgram(): Command {
         fail(e);
       }
     });
+
+  // Stage 2 / MS1: agent-facing subcommands (search/read/show/ref/note/label/list)
+  registerAgentCommands(program);
 
   return program;
 }

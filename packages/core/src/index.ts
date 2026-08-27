@@ -42,6 +42,7 @@ export * from "./documents/document.js";
 export * from "./documents/mineru.js";
 export * from "./documents/pdf-links.js";
 export * from "./documents/references.js";
+export * from "./documents/render.js";
 export * from "./documents/structure.js";
 export * from "./documents/textfix.js";
 export * from "./documents/tokens.js";
