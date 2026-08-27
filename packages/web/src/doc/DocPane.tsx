@@ -6,6 +6,7 @@ import { Reader } from "../components/Reader";
 import { TocPanel } from "../components/TocPanel";
 import { RightPanel } from "../components/RightPanel";
 import { RichText } from "../lib/richtext";
+import { applyAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 
 // The document reader, hosted as ArgelanderSpace's 文档 pane. Which paper is shown
@@ -74,8 +75,20 @@ function DocWorkspace({
   onSelect: (id: string) => void;
 }) {
   const { doc } = useStore();
+  const store = useStore();
+  const ws = useWorkspace();
   const [collapsedLeft, setCollapsedLeft] = useState(false);
   const [collapsedRight, setCollapsedRight] = useState(false);
+
+  // Deep link: land on the URL's #anchor once the doc has rendered (the blocks
+  // are in the DOM by the time this effect runs). Unknown anchors just leave
+  // the doc open at the top.
+  const anchor = ws.pendingAnchor;
+  useEffect(() => {
+    if (!anchor) return;
+    ws.clearPendingAnchor();
+    applyAnchor(store, anchor);
+  }, [anchor, store, ws]);
 
   return (
     <div className="reader-root">

@@ -18,7 +18,6 @@ import { imageUrl as buildImageUrl } from "./api";
 // rootMargin defining the "currently reading" band inside the reader viewport.
 // Blocks whose box lies in the bottom 38% don't count until they scroll up.
 const READING_BAND = "-2% 0px -38% 0px";
-const JUMP_PAD = 16;
 const FLASH_MS = 1600;
 // While a smooth-scroll jump is still animating, scrollTop is a mid-flight value;
 // don't overwrite the saved undo origin with it during rapid consecutive jumps.
@@ -172,12 +171,8 @@ export function StoreProvider({ doc, children }: { doc: Doc; children: React.Rea
         lastJumpAt.current = now;
         canUndo.current = true;
         notifyUndo();
-        const delta =
-          el.getBoundingClientRect().top -
-          root.getBoundingClientRect().top +
-          root.scrollTop -
-          JUMP_PAD;
-        root.scrollTo({ top: Math.max(0, delta), behavior: "smooth" });
+        // scroll-margin-top on .block/.sec supplies the pad under the top edge
+        el.scrollIntoView({ block: "start", behavior: "smooth" });
         el.classList.remove("flash");
         // force reflow so the animation restarts even on repeated jumps
         void el.offsetWidth;

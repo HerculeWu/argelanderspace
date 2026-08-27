@@ -48,7 +48,12 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
   const gotoId = card.block?.id;
 
   return (
-    <div className={"refcard" + (focused ? " focused" : "")} ref={ref}>
+    // citation cards carry the ref's id so `#ref-N` deep links have a DOM anchor
+    <div
+      className={"refcard" + (focused ? " focused" : "")}
+      ref={ref}
+      id={card.kind === "citation" ? card.ref!.id : undefined}
+    >
       <div className="refcard-head">
         <span className={"refcard-kind k-" + card.kind}>{badge(card)}</span>
         <div className="refcard-main">{cardMain(card, store)}</div>

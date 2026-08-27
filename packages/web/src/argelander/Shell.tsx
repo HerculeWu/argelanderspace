@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
 import { fetchPapers } from "../api";
+import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { useTweaks } from "./theme";
 import { WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
@@ -43,6 +44,8 @@ export function Shell() {
 
   const [papers, setPapers] = useState<string[]>([]);
   const [currentDoc, setCurrentDocState] = useState<string | null>(null);
+  const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
+  const clearPendingAnchor = useCallback(() => setPendingAnchor(null), []);
 
   const [panes, setPanes] = useState<Pane[]>([{ id: 1, view: "library", size: 1 }]);
   const [activeId, setActiveId] = useState(1);
@@ -51,18 +54,26 @@ export function Shell() {
   const multi = panes.length > 1;
   const activePane = panes.find((p) => p.id === activeId) || panes[0];
 
-  // load the ingested-papers list once, pick an initial document
+  // load the ingested-papers list once, pick an initial document; a
+  // `/doc/<id>[#anchor]` deep link takes precedence and opens the doc pane
   useEffect(() => {
     let alive = true;
+    const route = parseDocRoute(window.location.pathname, window.location.hash);
     (async () => {
+      let list: string[] = [];
       try {
-        const list = await fetchPapers();
-        if (!alive) return;
-        setPapers(list);
-        const want = new URL(window.location.href).searchParams.get("doc");
-        setCurrentDocState(want && list.includes(want) ? want : list[0] ?? null);
+        list = await fetchPapers();
       } catch {
         /* reader may be offline; Library still works on fixture data */
+      }
+      if (!alive) return;
+      setPapers(list);
+      if (route) {
+        // unknown ids are opened anyway: DocPane shows its normal load error
+        openDocRef.current(route.docId, route.anchor);
+      } else {
+        const want = new URL(window.location.href).searchParams.get("doc");
+        setCurrentDocState(want && list.includes(want) ? want : list[0] ?? null);
       }
     })();
     return () => {
@@ -105,18 +116,15 @@ export function Shell() {
 
   const setCurrentDoc = useCallback((id: string) => {
     setCurrentDocState(id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("doc", id);
-    window.history.replaceState(null, "", url);
+    replaceDocUrl(id); // UI-driven switch: any stale #anchor no longer applies
   }, []);
 
   const openDoc = useCallback(
-    (docId?: string) => {
+    (docId?: string, anchor?: string | null) => {
       setCurrentDocState((cur) => docId ?? cur ?? papers[0] ?? null);
       if (docId) {
-        const url = new URL(window.location.href);
-        url.searchParams.set("doc", docId);
-        window.history.replaceState(null, "", url);
+        replaceDocUrl(docId, anchor);
+        setPendingAnchor(anchor ?? null);
       }
       // ensure a pane shows the document: prefer an existing doc pane, else the active one
       setPanes((ps) => {
@@ -126,6 +134,22 @@ export function Shell() {
     },
     [activeId, papers]
   );
+
+  // deep links: react to browser back/forward and manual hash edits
+  const openDocRef = useRef(openDoc);
+  openDocRef.current = openDoc;
+  useEffect(() => {
+    const onNav = () => {
+      const route = parseDocRoute(window.location.pathname, window.location.hash);
+      if (route) openDocRef.current(route.docId, route.anchor);
+    };
+    window.addEventListener("popstate", onNav);
+    window.addEventListener("hashchange", onNav);
+    return () => {
+      window.removeEventListener("popstate", onNav);
+      window.removeEventListener("hashchange", onNav);
+    };
+  }, []);
 
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {
@@ -175,8 +199,8 @@ export function Shell() {
   }, [activeId, splitFrom]);
 
   const workspace: Workspace = useMemo(
-    () => ({ papers, currentDoc, setCurrentDoc, openDoc, tweaks }),
-    [papers, currentDoc, setCurrentDoc, openDoc, tweaks]
+    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, tweaks }),
+    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, tweaks]
   );
 
   const renderView = (p: Pane) => {
