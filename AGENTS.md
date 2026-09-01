@@ -17,10 +17,10 @@ ArgelanderSpace（原 bibgraph）：论文摄入（PDF / 出版商 HTML / arXiv 
 
 **Stage 2（2026-08-27 完成）**：agent 接入 = CLI agent 子命令（`search/read/show/ref/note/label/list`）+ pi skills 三件套 `skills/argelander-*`（symlink/cp 到 `~/.pi/agent/skills/` 或 `.pi/skills/`；webui 深链接 `/doc/<id>#<anchor>`）。无 MCP。旧 `literature-library-skills/` 已删除（2026-09-01，方法论已吸收进新三件套）。手动验收步骤见 `docs/manual-test-stage2.md`（已被 Stage 3 取代）。
 
-**Stage 3（2026-09-01，MS1–MS4 代码完成，待 commit + 手动验收）**：存储契约默认 `./data` → **`./literatures`**（项目级库、cwd 相对、**无向上查找**）；渲染 IR 三端共用（core `buildDocIr` → server `/api/paper/:id/ir` → web/CLI 消费，`richtext.tsx`/web 手写类型镜像退役）；server 轮询 `literatures/` 广播 `library.changed`（webui 免 F5）；webui 笔记 tab 全文只读、label 色点/已读标识渲染、upload 真实进度 + 失败可见；CLI `search` 空 note 往 stderr 打 hint；skills 契约改为"项目根跑 CLI、不传 `--data-dir`、不读源码"。手动验收见 `docs/manual-test-stage3.md`。
+**Stage 3（2026-09-01 完成，手动验收通过、已 push）**：存储契约默认 `./data` → **`./literatures`**（项目级库、cwd 相对、**无向上查找**）；渲染 IR 三端共用（core `buildDocIr` → server `/api/paper/:id/ir` → web/CLI 消费，`richtext.tsx`/web 手写类型镜像退役）；server 轮询 `literatures/` 广播 `library.changed`（webui 免 F5）；webui 笔记 tab 全文只读、label 色点/已读标识渲染、upload 真实进度 + 失败可见；CLI `search` 空 note 往 stderr 打 hint；skills 契约改为"项目根跑 CLI、不传 `--data-dir`、不读源码"。**深链接锚点 `sec-N` 是结构 id 非印刷节号**。下一步 Stage 3.1（OCR 代码隔离进 `ocr-features` 分支 + 移除空页面）/3.2（公式编号与渲染修复），远期 Stage 4/5——见 memory `2026-09-01-stage3x-roadmap.md`。
 
 ## 环境
 
 - Node v24+ / npm 11+；pnpm 经 `corepack pnpm` 调用（pnpm 11.24.0，见根 package.json `packageManager`）
 - pandoc 在 `/home/wwu/miniforge3/envs/astro/bin/`，跑 LaTeX/HTML 管线（含相关测试）前需加入 PATH。**坑**：不要把整个 astro bin 前置 PATH——astro 自带的 node v20 会抢先系统 node（pnpm 11 需 node ≥22.13，会起不来）；用只含 pandoc 的 shim 目录前置（如 `/tmp/ms1-bin/pandoc` → astro pandoc 的单独 symlink）
-- keys：`MINERU_API_KEY`（~/.zshrc）、ADS token（`~/.ads/dev_key`）、`OPENALEX_API_KEY`（~/.zshrc）；也可写进 `~/.config/argelanderspace/config.toml`（env 优先）
+- keys：`MINERU_API_KEY`（~/.zshrc；**2026-09-01 实测返回 401 鉴权失败**，OCR 已降级为"开发中"，启用前自查）、ADS token（`~/.ads/dev_key`）、`OPENALEX_API_KEY`（~/.zshrc）；也可写进 `~/.config/argelanderspace/config.toml`（env 优先）

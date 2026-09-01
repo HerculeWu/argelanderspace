@@ -86,4 +86,5 @@
 
 ## 当前状态
 
-- Stage 3 代码侧全部完成（MS1–MS4），全部改动在工作区未 commit——commit/push 由用户逐批确认；手动验收（`docs/manual-test-stage3.md`）待用户执行。
+- Stage 3 代码侧全部完成（MS1–MS4），**已 commit 三个**（本地 main 在 origin 之前 3 个，未 push）：`18d4d58` MS1、`f23e0e1` MS2+MS3、`ace4d9f` MS4。工作区干净。主代理复跑四道门确认：426 测试绿、lint 零 warning。
+- **待用户**：按 `docs/manual-test-stage3.md` 手动验收；验收通过后落完成 memory；push 逐次问。
