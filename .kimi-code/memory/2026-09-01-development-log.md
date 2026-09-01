@@ -20,6 +20,12 @@
 - 验收：426 测试绿、lint 零 warning；用户手动验收基本通过（MinerU 401 = env 问题；`sec-N` 语义澄清 = 结构 id；新发现公式编号全丢 + 单公式丢失 → 进 3.1）。
 - commit：`18d4d58`（MS1）/`f23e0e1`（MS2+3）/`ace4d9f`（MS4）/`021ddde`（memory），已 push origin main。
 
+## Stage 3.1 设计定稿（2026-09-01，grilling 三轮 Q1–Q18）
+
+- 5 路子代理取证翻盘两条 Stage 3 验收观察：公式"丢失/无编号"真根因 = 验收环境 pandoc 3.1.3 剥环境外壳（`ENV_RE` 失效 + 误咬内层 cases 削残 eq-3）；`deluxetable`/`table*` 表格丢失独立成立（两版 pandoc 皆降级）。item 5 改案为表格修复，item 6 已读标识撤销（用户：现状满意）。
+- 关键决策：webui 上传只收 zip（复用 infra `extractZip`，零新依赖）+ attach-only + 幂等 docId + 身份焊死/直挂/校验；公式全量顺序编号（\tag 优先、不推进计数器、`\nonumber` 尊重）；pandoc 硬下限进管线入口；documents/ 抠 5 符号；golden 全换 latex；`/images` MinerU 分支删。
+- 定稿全文（MS0–MS4 切分、取证存档、推后事项）见 `2026-09-01-stage3x-roadmap.md`。
+
 ## 下一步
 
-Stage 3.1（已合并原 3.2）：OCR 代码隔离进 `ocr-features` 分支 + 空 stub pane 移除 + 公式编号/丢失修复 + 已读标识复查——详见 `2026-09-01-stage3x-roadmap.md`。远期 Stage 4（计划页面 + agent 操作）/Stage 5（论文写作）。
+执行 Stage 3.1 定稿（MS0 分支封存 → MS1 隔离 → MS2 上传 → MS3 公式/表格 → MS4 收尾）——`2026-09-01-stage3x-roadmap.md` 自足可续。远期 Stage 4/5 及推后事项见同文件。

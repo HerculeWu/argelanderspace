@@ -15,7 +15,7 @@ ArgelanderSpace（原 bibgraph）：单用户科研文献工具——arXiv LaTeX
 
 **历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01 验收通过、已 push）。
 
-**下一步**：Stage 3.1（OCR/非 LaTeX 摄入隔离进 `ocr-features` 分支 + 移除"终端/浏览器"空 stub pane + 上传入口改 LaTeX 源码包 + 公式编号保留/丢失修复 + 已读标识复查；原 3.2 已并入）——**开工前读 `.kimi-code/memory/2026-09-01-stage3x-roadmap.md`（自足，可直接续）**。远期 Stage 4（计划页面 + agent 操作）/Stage 5（论文写作）。
+**下一步**：Stage 3.1 已定稿开工（2026-09-01 grilling 三轮拍板）：OCR/非 LaTeX 摄入隔离进 `ocr-features` 分支 + 上传入口改 LaTeX zip 包 + 公式全量编号（\tag 优先）+ deluxetable/table* 表格修复 + pandoc 版本硬下限 + 移除"终端/浏览器"空 stub pane（已读标识项撤销）——**续作前读 `.kimi-code/memory/2026-09-01-stage3x-roadmap.md`（定稿自足，可直接续）**。远期 Stage 4（计划页面 + agent 操作）/Stage 5（论文写作）与推后事项（README pandoc 版本说明、CLI 未识别源建条目）见同文件。
 
 ## 环境
 
