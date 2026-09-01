@@ -9,15 +9,13 @@
 
 ## 项目速览
 
-ArgelanderSpace（原 bibgraph）：论文摄入（PDF / 出版商 HTML / arXiv LaTeX → 统一 Document JSON）+ 引文图谱文献管理 + React 阅读器。细节见 `README.md`。
+ArgelanderSpace（原 bibgraph）：单用户科研文献工具——arXiv LaTeX 摄入 → 项目级文献库/引文图谱 → React 阅读器 → agent 协作（CLI + pi skills）。产品形态/架构/使用语义详见 `.kimi-code/memory/2026-09-01-product-and-architecture.md`；对外介绍见 `README.md`。
 
-**主线是 TypeScript（已合并 `main`，M0–M6 完成）**：pnpm workspace 在 `packages/` 下——`contracts`（zod 契约）/ `core`（纯领域）/ `infra`（mupdf、pandoc、MinerU、ADS/Crossref/OpenAlex、config.toml）/ `server`（Hono + job runner + WS）/ `cli`（commander）/ `web`（React 阅读器）/ `app`（发布用的单包 bundle，`argelanderspace` on npm）。构建/测试/检查一律 `corepack pnpm -r build|test|typecheck` + 根 `corepack pnpm lint`（无 per-package lint script；本机裸 `pnpm` 不在 PATH，必须走 corepack）。
+**工程**：pnpm workspace（`packages/`：contracts / core / infra / server / cli / web / app 发布单包）。验收门：`corepack pnpm -r build|test|typecheck` + 根 `corepack pnpm lint`（无 per-package lint script；本机裸 `pnpm` 不在 PATH，必须走 corepack）。**重构期已于 2026-09-01 宣告结束**：bug-for-bug 兼容与 golden 逐字段 diff 基线退役，golden 夹具转为普通回归测试（行为变更由 TS 管线自洽重冻 + 人工抽查）。
 
-**Python 旧树已于 2026-08-27 删除**（人工冒烟验收通过后；git history 可查）。当前主线的背景与计划见 memory 目录。
+**历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01 验收通过、已 push）。
 
-**Stage 2（2026-08-27 完成）**：agent 接入 = CLI agent 子命令（`search/read/show/ref/note/label/list`）+ pi skills 三件套 `skills/argelander-*`（symlink/cp 到 `~/.pi/agent/skills/` 或 `.pi/skills/`；webui 深链接 `/doc/<id>#<anchor>`）。无 MCP。旧 `literature-library-skills/` 已删除（2026-09-01，方法论已吸收进新三件套）。手动验收步骤见 `docs/manual-test-stage2.md`（已被 Stage 3 取代）。
-
-**Stage 3（2026-09-01 完成，手动验收通过、已 push）**：存储契约默认 `./data` → **`./literatures`**（项目级库、cwd 相对、**无向上查找**）；渲染 IR 三端共用（core `buildDocIr` → server `/api/paper/:id/ir` → web/CLI 消费，`richtext.tsx`/web 手写类型镜像退役）；server 轮询 `literatures/` 广播 `library.changed`（webui 免 F5）；webui 笔记 tab 全文只读、label 色点/已读标识渲染、upload 真实进度 + 失败可见；CLI `search` 空 note 往 stderr 打 hint；skills 契约改为"项目根跑 CLI、不传 `--data-dir`、不读源码"。**深链接锚点 `sec-N` 是结构 id 非印刷节号**。下一步 Stage 3.1（OCR 代码隔离进 `ocr-features` 分支 + 移除空页面）/3.2（公式编号与渲染修复），远期 Stage 4/5——见 memory `2026-09-01-stage3x-roadmap.md`。
+**下一步**：Stage 3.1（OCR/非 LaTeX 摄入隔离进 `ocr-features` 分支 + 移除"终端/浏览器"空 stub pane + 上传入口改 LaTeX 源码包 + 公式编号保留/丢失修复 + 已读标识复查；原 3.2 已并入）——**开工前读 `.kimi-code/memory/2026-09-01-stage3x-roadmap.md`（自足，可直接续）**。远期 Stage 4（计划页面 + agent 操作）/Stage 5（论文写作）。
 
 ## 环境
 
