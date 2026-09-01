@@ -35,8 +35,6 @@ export function CommandPalette({
     { ic: "library", t: "转到 · 文献库", run: () => onNav("library"), grp: "导航" },
     { ic: "file-text", t: "转到 · 文档查看器", run: () => onNav("doc"), grp: "导航" },
     { ic: "telescope", t: "转到 · 计划", run: () => onNav("plan"), grp: "导航" },
-    { ic: "terminal", t: "转到 · 终端", run: () => onNav("terminal"), grp: "导航" },
-    { ic: "globe", t: "转到 · 浏览器", run: () => onNav("browser"), grp: "导航" },
     { ic: "columns-2", t: "向右分屏", run: () => onSplit(), grp: "操作" },
   ];
   const f = cmds.filter((c) => !q || c.t.toLowerCase().includes(q.toLowerCase()));

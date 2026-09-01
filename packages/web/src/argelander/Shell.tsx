@@ -21,8 +21,6 @@ const NAV: NavItem[] = [
   { k: "plan", ic: "telescope", label: "计划", grp: "core", stub: true },
   { k: "library", ic: "library", label: "文献", grp: "core" },
   { k: "doc", ic: "file-text", label: "文档", grp: "core" },
-  { k: "terminal", ic: "terminal", label: "终端", grp: "core", stub: true },
-  { k: "browser", ic: "globe", label: "浏览器", grp: "core", stub: true },
 ];
 const NAV_MARKET: NavItem = { k: "ext", ic: "blocks", label: "扩展", grp: "ext", stub: true };
 const NAV_MAP: Record<string, NavItem> = Object.fromEntries(
