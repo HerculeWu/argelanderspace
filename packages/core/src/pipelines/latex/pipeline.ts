@@ -48,6 +48,12 @@ export interface IngestLatexOptions {
   config?: Partial<LatexPipelineConfig>;
   /** Write `<out_root>/<doc_id>/<doc_id>.json` (Python `write_json`). */
   writeJson?: boolean;
+  /**
+   * Fixed doc id, short-circuiting the source-derived `docIdFor` — the web
+   * upload path pins `upload-<slug>-<hash>` so a re-upload overwrites the same
+   * doc instead of deriving a fresh id from the unpacked tree.
+   */
+  docId?: string;
 }
 
 export async function ingestLatex(
@@ -62,7 +68,7 @@ export async function ingestLatex(
   const outRoot = opts.outRoot ?? "data/output";
   mkdirSync(outRoot, { recursive: true });
 
-  const src = await ports.acquire(source, outRoot, config);
+  const src = await ports.acquire(source, outRoot, config, opts.docId);
 
   const raw = readTextLossy(src.mainTex);
   let ast: Record<string, unknown>;

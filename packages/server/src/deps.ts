@@ -13,7 +13,13 @@
 
 import { join } from "node:path";
 import type { IngestPipelines, LibraryPaths, MetadataSources } from "@argelanderspace/core";
-import { AdsClient, CrossrefClient, ingestLatex, OpenAlexClient } from "@argelanderspace/infra";
+import {
+  AdsClient,
+  CrossrefClient,
+  ingestLatex,
+  ingestLatexZip,
+  OpenAlexClient,
+} from "@argelanderspace/infra";
 
 /** The resolution-chain sources; `offline` skips remote enrichment. */
 export function realSources(paths: LibraryPaths, offline: boolean): MetadataSources {
@@ -28,5 +34,7 @@ export function realSources(paths: LibraryPaths, offline: boolean): MetadataSour
 export function realPipelines(paths: LibraryPaths): IngestPipelines {
   return {
     ingestLatex: (arxivId) => ingestLatex(arxivId, { outRoot: paths.outputDir }),
+    // attachLatexZip passes outRoot/docId through; the composition binds nothing extra.
+    ingestLatexZip: (zipPath, opts) => ingestLatexZip(zipPath, opts),
   };
 }

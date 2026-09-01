@@ -102,9 +102,9 @@ export const RefreshResponseSchema = z.object({
 /**
  * Query params identify the target work (exactly one is required); the payload
  * rides as the raw request body (not JSON — hence no body schema here).
- * Suspended on main while the PDF/OCR ingest is archived (`ocr-features`);
- * Stage 3.1 MS2 rebuilds the endpoint for LaTeX source zips
- * (`Content-Type: application/zip`) with the same query/job shape.
+ * Stage 3.1 MS2: the body is a LaTeX source **zip**
+ * (`Content-Type: application/zip`), attach-only — the named work must already
+ * exist. (The PDF/OCR variant is archived on the `ocr-features` branch.)
  */
 export const UploadQuerySchema = z
   .object({

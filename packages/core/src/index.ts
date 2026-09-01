@@ -25,6 +25,7 @@ export * from "./acquire/pipelines.js";
 export * from "./acquire/planner.js";
 export * from "./acquire/resolve.js";
 export * from "./acquire/run.js";
+export * from "./acquire/upload.js";
 export * from "./documents/annotate.js";
 export * from "./documents/citations.js";
 export * from "./documents/crossrefs.js";

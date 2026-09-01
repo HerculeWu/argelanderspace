@@ -16,4 +16,13 @@ import type { Document } from "@argelanderspace/contracts";
 export interface IngestPipelines {
   /** `ingest_latex(arxiv_id, config=…, write_json=True)` — arXiv e-print → Document. */
   ingestLatex(arxivId: string): Promise<Document>;
+  /**
+   * Unpack a user-supplied LaTeX source zip into `<outRoot>/<docId>/src`
+   * (clearing any previous tree — a re-upload overwrites) and ingest it in
+   * directory mode with the doc id pinned (Stage 3.1 MS2 web upload).
+   */
+  ingestLatexZip(
+    zipPath: string,
+    opts: { outRoot: string; docId: string; onProgress?: (message: string) => void }
+  ): Promise<Document>;
 }

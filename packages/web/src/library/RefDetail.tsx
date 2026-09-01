@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
+import { uploadLatexZip } from "../api/library";
+import { onJobEvent } from "../api/ws";
 import { cgKfmt } from "./CitationGraph";
 import type { GraphNode, LibraryRef } from "./types";
 
@@ -18,7 +21,7 @@ function sourceBadge(r: LibraryRef): { text: string; color: string } {
   const lbl = r.sourceLabel || "";
   const GREEN = "oklch(0.74 0.13 158)", AMBER = "oklch(0.80 0.13 78)", BLUE = "oklch(0.70 0.12 235)";
   if (r.doc_id || r.pdf) return { text: lbl ? `已入库 · ${lbl}` : "已入库", color: GREEN };
-  if (r.needs_upload) return { text: "需上传 PDF", color: AMBER };
+  if (r.needs_upload) return { text: "需上传源码包", color: AMBER };
   if (r.sourceStatus === "blocked") return { text: lbl ? `反爬墙 · ${lbl}` : "被反爬墙", color: AMBER };
   if (r.sourceStatus === "ready" || r.sourceReady) return { text: lbl ? `可获取 · ${lbl}` : "可获取", color: BLUE };
   return { text: lbl || "未知来源", color: "var(--text-dim, #8a8a8a)" };
@@ -76,20 +79,118 @@ const TABS: [string, string][] = [
   ["files", "附件"],
 ];
 
+/** The upload job's target work id rides in `payload.workId` (server app.ts). */
+function uploadJobWorkId(job: Job): string | null {
+  const p = job.payload;
+  if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
+  const w = (p as Record<string, unknown>).workId;
+  return typeof w === "string" && w !== "" ? w : null;
+}
+
 export function RefDetail({
   r,
   node,
   onClose,
   onOpenDoc,
+  onReload,
 }: {
   r: LibraryRef;
   node: GraphNode | null;
   onClose: () => void;
   onOpenDoc: (docId?: string) => void;
+  onReload?: () => void;
 }) {
   const [tab, setTab] = useState("meta");
   const [copied, setCopied] = useState(false);
+  // async upload (202 + job): progress arrives over /ws; `uploadJob` is the
+  // queued/running job, null once a terminal state was handled. The ref mirror
+  // lets the WS subscriber see the latest value; `seenJobs` remembers every
+  // event snapshot so a job.* frame that beats the upload POST's fetch
+  // response (fast failure) is never overwritten by the stale 202 body.
+  const [uploadJob, setUploadJobState] = useState<Job | null>(null);
+  const uploadJobRef = useRef<Job | null>(null);
+  const seenJobs = useRef(new Map<string, Job>());
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const cited = node?.c ?? r.citedBy;
+
+  const setUploadJob = useCallback((job: Job | null) => {
+    uploadJobRef.current = job;
+    setUploadJobState(job);
+  }, []);
+
+  // switching references drops the other ref's upload state
+  useEffect(() => {
+    setUploadJob(null);
+    setUploadErr(null);
+  }, [r.id, setUploadJob]);
+
+  const failMsg = (job: Job | null): string =>
+    job?.error ? `上传失败：${job.error}` : "上传失败，请重试";
+
+  const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setUploadErr(null);
+    const job = await uploadLatexZip(r.id, file);
+    if (!job) {
+      setUploadErr(failMsg(null));
+      return;
+    }
+    const seen = seenJobs.current.get(job.id);
+    if (!seen || seen.status === "queued" || seen.status === "running") {
+      setUploadJob(seen ?? job); // prefer the newer event snapshot
+    } else if (seen.status === "done") {
+      onReload?.();
+    } else {
+      // terminal frame beat the fetch response: surface it, don't resurrect
+      setUploadErr(failMsg(seen));
+    }
+  };
+
+  // Track this work's upload job.* events. `hello` replays (reconnect /
+  // refresh) adopt a queued/running job even without a local uploadJob, so
+  // tracking resumes; a replayed failed/interrupted job surfaces its recorded
+  // error (the failure probe: the error must still be visible after F5).
+  const adoptedFailure = useRef(false);
+  useEffect(() => {
+    adoptedFailure.current = false;
+  }, [r.id]);
+  useEffect(
+    () =>
+      onJobEvent((job) => {
+        if (job.kind !== "upload" || uploadJobWorkId(job) !== r.id) return;
+        seenJobs.current.set(job.id, job);
+        const cur = uploadJobRef.current;
+        if (cur && job.id === cur.id) setUploadJob(job);
+        else if (!cur && (job.status === "queued" || job.status === "running")) {
+          setUploadJob(job);
+        } else if (
+          !cur &&
+          (job.status === "failed" || job.status === "interrupted") &&
+          !adoptedFailure.current
+        ) {
+          // untracked terminal failure (typically a hello replay of the
+          // persisted job table, newest first): show the newest one, once
+          adoptedFailure.current = true;
+          setUploadErr(failMsg(job));
+        }
+      }),
+    [r.id, setUploadJob]
+  );
+
+  // react to the terminal states (kept out of the subscriber, which must stay pure)
+  useEffect(() => {
+    if (!uploadJob) return;
+    if (uploadJob.status === "done") {
+      setUploadJob(null);
+      onReload?.();
+    } else if (uploadJob.status === "failed" || uploadJob.status === "interrupted") {
+      setUploadJob(null);
+      setUploadErr(failMsg(uploadJob));
+    }
+  }, [uploadJob, onReload, setUploadJob]);
 
   const copyBib = async () => {
     try {
@@ -138,6 +239,13 @@ export function RefDetail({
           </span>
         )}
       </div>
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".zip"
+        style={{ display: "none" }}
+        onChange={onPickFile}
+      />
       <div className="ref-detail-tabs">
         {TABS.map(([k, l]) => (
           <button key={k} className={"rdt" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
@@ -163,7 +271,7 @@ export function RefDetail({
             {cited != null && (
               <div className="rml-row">
                 <span className="rml-k">被引量</span>
-                <span className="rml-v mono">{cgKfmt(cited)}</span>
+                <span className="rml-v mono">{cited}</span>
               </div>
             )}
             {r.doi && (
@@ -205,7 +313,7 @@ export function RefDetail({
               </div>
             )}
             {r.tags.length > 0 && (
-              <div className="ref-tags">
+              <div className="ref-tags" style={{ marginTop: 4 }}>
                 {r.tags.map((t) => (
                   <Tag key={t}>{t}</Tag>
                 ))}
@@ -247,10 +355,37 @@ export function RefDetail({
                   <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
                   <SourcePill r={r} />
                 </div>
+                <button
+                  className="btn"
+                  disabled={uploadJob !== null}
+                  onClick={() => fileInput.current?.click()}
+                  style={{ justifyContent: "center" }}
+                >
+                  {uploadJob ? (
+                    <>
+                      <Icon name="loader" cls="ico-sm spin" />
+                      {uploadJob.status === "queued"
+                        ? "排队等待摄入…"
+                        : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
+                          "正在摄入 LaTeX 源码…")}
+                    </>
+                  ) : (
+                    <>
+                      <Icon name="file-up" cls="ico-sm" />
+                      上传 LaTeX 源码包（zip）
+                    </>
+                  )}
+                </button>
                 <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
-                  LaTeX 源码包（zip）上传入口开发中；可先入库 arXiv 源码（CLI `ingest
-                  &lt;arxiv-id&gt;`）
+                  {r.needs_upload
+                    ? "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条"
+                    : "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）"}
                 </div>
+                {uploadErr && (
+                  <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
+                    {uploadErr}
+                  </div>
+                )}
               </div>
             )}
           </div>

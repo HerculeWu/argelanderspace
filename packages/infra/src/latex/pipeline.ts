@@ -7,9 +7,11 @@
  * subprocess/network/mupdf I/O; the pipeline itself stays dep-clean in core.
  */
 
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { ingestLatex as coreIngestLatex, type IngestLatexOptions } from "@argelanderspace/core";
 import type { FetchImpl } from "../lib/http.js";
+import { extractZip } from "../lib/unzip.js";
 import { epsToPng, pdfToPng } from "../pdf/raster.js";
 import { ArxivFetcher, acquireSource } from "./arxiv-source.js";
 import { bibtexToCsl, fragmentToBlocks, havePandoc, latexToAst } from "./pandoc.js";
@@ -32,7 +34,7 @@ export async function ingestLatex(
     source,
     {
       pandoc: { havePandoc, latexToAst, fragmentToBlocks, bibtexToCsl },
-      acquire: (src, outRoot, config) =>
+      acquire: (src, outRoot, config, docId) =>
         acquireSource(src, outRoot, {
           fetcher: new ArxivFetcher(join(outRoot, ".latexcache"), {
             userAgent: config.userAgent,
@@ -41,9 +43,45 @@ export async function ingestLatex(
             delay: config.requestDelay,
             fetchImpl,
           }),
+          docId,
         }),
       raster: { pdfToPng, epsToPng },
     },
     coreOpts
   );
+}
+
+export interface IngestLatexZipOptions {
+  /** Pipeline output root; the source tree lands at `<outRoot>/<docId>/src`. */
+  outRoot: string;
+  /** Pinned doc id (idempotent upload: the same work always maps to it). */
+  docId: string;
+  /** `LatexConfig` overrides, forwarded to the pipeline. */
+  config?: IngestLatexOptions["config"];
+  /** HTTP implementation for the (unused in directory mode) arXiv fetcher. */
+  fetchImpl?: FetchImpl;
+  /** Stage sink — the upload job's progress reporter. */
+  onProgress?: (message: string) => void;
+}
+
+/**
+ * Unpack a user-supplied LaTeX source zip and ingest it in directory mode —
+ * the Stage 3.1 MS2 web-upload path (`IngestPipelines.ingestLatexZip`). A
+ * re-upload clears `<outRoot>/<docId>/src` before unpacking, so the doc is
+ * overwritten in place, exactly like a re-fetched arXiv tarball.
+ */
+export async function ingestLatexZip(
+  zipPath: string,
+  opts: IngestLatexZipOptions
+): Promise<IngestedLatexDocument> {
+  const srcDir = join(opts.outRoot, opts.docId, "src");
+  rmSync(srcDir, { recursive: true, force: true });
+  extractZip(new Uint8Array(readFileSync(zipPath)), srcDir);
+  opts.onProgress?.("Ingesting LaTeX source");
+  return ingestLatex(srcDir, {
+    outRoot: opts.outRoot,
+    docId: opts.docId,
+    config: opts.config,
+    fetchImpl: opts.fetchImpl,
+  });
 }

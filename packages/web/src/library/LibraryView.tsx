@@ -87,17 +87,19 @@ export function LibraryView() {
       </div>
     );
   }
-  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} />;
+  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} onReload={reload} />;
 }
 
 function LibraryBody({
   payload,
   live,
   onOpenDoc,
+  onReload,
 }: {
   payload: LibraryData;
   live: boolean;
   onOpenDoc: (docId?: string) => void;
+  onReload: () => void;
 }) {
   const { refs, graph } = payload;
   const byId = useMemo(() => Object.fromEntries(graph.nodes.map((n) => [n.id, n])), [graph]);
@@ -256,7 +258,7 @@ function LibraryBody({
                       {r.authors.split(/ (?:&|et) /)[0].replace(/,$/, "")} · {r.year} · {r.venue}
                       {r.read && <span className="read-flag"> · 已读</span>}
                       {!r.doc_id && r.needs_upload && (
-                        <span style={{ color: "oklch(0.80 0.13 78)" }}> · 需 PDF</span>
+                        <span style={{ color: "oklch(0.80 0.13 78)" }}> · 需源码包</span>
                       )}
                     </span>
                   </span>
@@ -340,7 +342,13 @@ function LibraryBody({
       </div>
 
       {curRef ? (
-        <RefDetail r={curRef} node={curNode} onClose={() => setSelNode(null)} onOpenDoc={onOpenDoc} />
+        <RefDetail
+          r={curRef}
+          node={curNode}
+          onClose={() => setSelNode(null)}
+          onOpenDoc={onOpenDoc}
+          onReload={onReload}
+        />
       ) : curNode ? (
         <GraphNodeDetail
           node={curNode}

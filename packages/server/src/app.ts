@@ -5,9 +5,11 @@
  * mtime+size paper cache, and static SPA hosting with API precedence.
  *
  * Intentional divergences from app.py (all flagged in the M4 memory note):
- * - `POST /api/library/upload` is suspended on main: the PDF/OCR ingest path
- *   is archived on the `ocr-features` branch; a LaTeX-zip upload endpoint is
- *   rebuilt in Stage 3.1 MS2 (same `?id/?doi/?arxiv` + async-job shape).
+ * - `POST /api/library/upload` accepts a LaTeX source **zip** (not a PDF —
+ *   the OCR path is archived on `ocr-features`): PK magic + a trial unpack
+ *   gate the body, then the doc is ingested and attached to the work named by
+ *   `?id/?doi/?arxiv` (async job by default, `?sync=1` keeps the legacy
+ *   wait-for-it shape).
  * - `POST /api/library/refresh` keeps its synchronous summary response, but
  *   the rebuild runs inside the serial job runner (mutual exclusion with
  *   other library writes, decisions 13/16) — WS clients see it as a
@@ -20,19 +22,23 @@
  *   (Starlette's StaticFiles answered 404) — required for client-side routes.
  */
 
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Document, RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
 import {
   addNodeToLibrary,
+  attachLatexZip,
   buildDocIr,
+  type IngestPipelines,
   type LibraryPaths,
   libraryPayload,
   type MetadataSources,
   patchWork,
   rebuild,
 } from "@argelanderspace/core";
+import { extractZip, ZipError } from "@argelanderspace/infra";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -48,6 +54,8 @@ export interface AppDeps {
   paths: LibraryPaths;
   /** Sources factory: `offline` toggles remote enrichment (Crossref/OpenAlex). */
   makeSources: (offline: boolean) => MetadataSources;
+  /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
+  pipelines: IngestPipelines;
   runner: JobRunner;
   /** WS sink; when absent, events are simply dropped (tests without a hub). */
   broadcast?: (msg: WsServerMessage) => void;
@@ -321,6 +329,106 @@ export function createApp(deps: AppDeps): Hono {
     }
     libraryChanged("refresh");
     return c.json(done.result as Record<string, unknown>);
+  });
+
+  // ---- POST /api/library/upload?id=|doi=|arxiv= ------------------------------ //
+
+  // Attach-only: the target work must already exist (attachLatexZip fails the
+  // job / 404s otherwise — the endpoint never creates works). The payload is a
+  // LaTeX source zip; tarballs/bare .tex stay with the CLI local ingest.
+  app.post("/api/library/upload", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = c.req.query("id");
+    const doi = c.req.query("doi");
+    const arxiv = c.req.query("arxiv");
+    if (!(id || doi || arxiv)) {
+      const e = detail("id, doi, or arxiv query param required", 400);
+      return c.json(e.body, e.status);
+    }
+    const data = new Uint8Array(await c.req.arrayBuffer());
+    // Cheap gate first: every zip starts with a PK local-header/empty-archive
+    // magic (the old `%PDF` check's counterpart).
+    if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
+      const e = detail("request body is not a zip", 400);
+      return c.json(e.body, e.status);
+    }
+    // …then prove it: a PK header alone says nothing about the rest. A valid
+    // zip with no LaTeX inside passes here and fails later in the job
+    // (`findMainTex`), where the error reaches the detail panel.
+    const probe = mkdtempSync(join(tmpdir(), "argelanderspace-upload-probe-"));
+    try {
+      extractZip(data, probe);
+    } catch (err) {
+      if (!(err instanceof ZipError)) throw err; // fs trouble: not a 400
+      const e = detail("request body is not a zip", 400);
+      return c.json(e.body, e.status);
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
+    const query = { workId: id ?? null, doi: doi ?? null, arxiv: arxiv ?? null };
+    const runAttach = (zipPath: string, onProgress?: (message: string) => void) =>
+      attachLatexZip(zipPath, query, {
+        paths,
+        pipelines: deps.pipelines,
+        sources: deps.makeSources(false),
+        rebuild: lockedRebuild,
+        onProgress,
+      });
+
+    const syncRaw = c.req.query("sync");
+    const sync = parseBoolQuery(syncRaw);
+    if (sync === null) {
+      const e = detail("invalid boolean value for query param 'sync'", 422);
+      return c.json(e.body, e.status);
+    }
+    if (sync) {
+      // Legacy behavior (app.py verbatim): the response waits for the ingest.
+      const tmp = join(
+        tmpdir(),
+        `argelanderspace-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`
+      );
+      try {
+        writeFileSync(tmp, data);
+        const ref = await runAttach(tmp);
+        return c.json({ ref });
+      } catch (e) {
+        // Python: ValueError/FileNotFoundError → 404, anything else → 500.
+        const msg = e instanceof Error ? e.message : String(e);
+        const err = msg.startsWith("no matching work in the library")
+          ? detail(msg, 404)
+          : detail(`ingest failed: ${msg}`, 500);
+        return c.json(err.body, err.status);
+      } finally {
+        rmSync(tmp, { force: true });
+      }
+    }
+
+    // Async (new default): spool the bytes, queue the ingest job, answer 202.
+    // The runner's `report` rides attachLatexZip's onProgress straight through,
+    // so every stage transition lands in job.progress (WS job.progress).
+    const job = runner.submit(
+      "upload",
+      async (j, report) => {
+        const zip = runner.spoolPath(j.id);
+        try {
+          const ref = await runAttach(zip, report);
+          return { ref };
+        } finally {
+          rmSync(zip, { force: true });
+        }
+      },
+      query
+    );
+    // Synchronous spool write: guaranteed to land before the serial chain
+    // (a microtask) can start the handler.
+    writeFileSync(runner.spoolPath(job.id), data);
+    // `library.changed` must follow `job.done` on the wire (runner emits
+    // done before resolving waiters).
+    void runner.waitFor(job.id).then((j) => {
+      if (j.status === "done") libraryChanged("upload");
+    });
+    return c.json({ job }, 202);
   });
 
   // ---- GET /images/{doc_id}/{filename} --------------------------------------- //

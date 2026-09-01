@@ -8,8 +8,8 @@ import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WsServerMessage } from "@argelanderspace/contracts";
-import type { MetadataSources } from "@argelanderspace/core";
+import type { Document, WsServerMessage } from "@argelanderspace/contracts";
+import type { IngestPipelines, MetadataSources } from "@argelanderspace/core";
 
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const GOLDEN = join(REPO_ROOT, "tests", "golden");
@@ -89,6 +89,32 @@ export function stubSources(): MetadataSources {
     ads: { status: "no-token", resolve: async () => null },
     crossref: { resolve: async () => null },
     oa: { resolve: async () => null, fetchMany: async () => new Map() },
+  };
+}
+
+/**
+ * Pipelines whose `ingestLatexZip` mimics the real one minimally: write a tiny
+ * Document to `<outRoot>/<docId>/<docId>.json` (what `attachLatexZip`'s
+ * `stampSource` + the seed merge expect). No pandoc involved.
+ */
+export function stubPipelines(): IngestPipelines {
+  return {
+    ingestLatex: async () => {
+      throw new Error("not used in server tests");
+    },
+    ingestLatexZip: async (_zipPath: string, opts: { outRoot: string; docId: string }) => {
+      const dir = join(opts.outRoot, opts.docId);
+      mkdirSync(dir, { recursive: true });
+      const doc = {
+        doc_id: opts.docId,
+        meta: { title: `Stub LaTeX of ${opts.docId}` },
+        source: {},
+        blocks: [],
+        references: [],
+      };
+      writeFileSync(join(dir, `${opts.docId}.json`), JSON.stringify(doc));
+      return doc as unknown as Document;
+    },
   };
 }
 

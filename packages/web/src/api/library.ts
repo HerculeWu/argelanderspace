@@ -1,3 +1,4 @@
+import type { Job } from "@argelanderspace/contracts";
 import type { AddRefResponse, LibraryData, LibraryRef } from "../library/types";
 import { LIBRARY_FIXTURE } from "../library/fixture";
 
@@ -33,6 +34,26 @@ export async function addRef(nodeId: string): Promise<AddRefResponse | null> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source: "graph-node", nodeId }),
   });
+}
+
+/** Attach a user-supplied LaTeX source zip to a work (server-side ingest).
+ *  The zip rides as the raw request body; the work id is a query param.
+ *  Async: the server answers 202 with the queued job immediately;
+ *  watch /ws (`onJobEvent` in ./ws) for progress and the done/failed outcome,
+ *  then reload the library. Returns the job, or null when the POST failed. */
+export async function uploadLatexZip(workId: string, file: File | Blob): Promise<Job | null> {
+  try {
+    const r = await fetch(`/api/library/upload?id=${encodeURIComponent(workId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/zip" },
+      body: file,
+    });
+    if (r.status !== 202) return null;
+    const j = (await r.json()) as { job?: Job };
+    return j.job ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Persist a per-reference state change (color label, read flag, note, tags). */

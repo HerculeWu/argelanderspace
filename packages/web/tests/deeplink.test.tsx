@@ -180,7 +180,7 @@ describe("DocPane deep-link anchors", () => {
   it("unknown anchor still opens the doc without scrolling", async () => {
     const { container, clearPendingAnchor } = renderDocPane("fig-999");
     await waitFor(() => expect(container.querySelector("#fig-1")).toBeTruthy());
-    expect(clearPendingAnchor).toHaveBeenCalled();
+    await waitFor(() => expect(clearPendingAnchor).toHaveBeenCalled());
     expect(scrolled.length).toBe(0);
   });
 });

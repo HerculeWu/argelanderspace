@@ -48,11 +48,16 @@ export interface LatexSource {
   origin: string;
 }
 
-/** `acquire_source`: resolve a source spec to an unpacked LatexSource. */
+/**
+ * `acquire_source`: resolve a source spec to an unpacked LatexSource. A fixed
+ * `docId` (the upload path pins `upload-<slug>-<hash>`) short-circuits the
+ * source-derived `docIdFor`.
+ */
 export type LatexAcquisitionPort = (
   source: string,
   outRoot: string,
-  config: LatexPipelineConfig
+  config: LatexPipelineConfig,
+  docId?: string
 ) => Promise<LatexSource>;
 
 /** `LatexConfig` (+ the pipeline-wide `compact_json`) with Python defaults. */

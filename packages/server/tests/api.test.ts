@@ -1,8 +1,8 @@
 /**
  * The REST endpoints + images + SPA hosting + CSRF/CORS, against a fixture
  * data dir, using Hono's `app.request` (no socket). The WS channel has its
- * own suite (ws.test.ts); the upload endpoint is suspended until Stage 3.1
- * MS2 rebuilds it for LaTeX zips.
+ * own suite (ws.test.ts); the LaTeX-zip upload endpoint lives in
+ * upload.test.ts.
  *
  * Every assertion on status/body mirrors `server/app.py` byte-semantically.
  */
@@ -20,6 +20,7 @@ import {
   KNOWN_WORK_ID,
   makeDataDir,
   makeWebDist,
+  stubPipelines,
   stubSources,
 } from "./helpers.js";
 
@@ -40,6 +41,7 @@ beforeEach(() => {
   app = createApp({
     paths: libraryPaths(dataDir),
     makeSources: () => stubSources(),
+    pipelines: stubPipelines(),
     runner,
     broadcast: collector.broadcast,
     webDist,

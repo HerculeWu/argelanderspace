@@ -213,12 +213,13 @@ export function findMainTex(srcDir: string): string {
 /**
  * Resolve `source` (arXiv id/url or local path) to an unpacked LatexSource.
  * `workRoot` is the pipeline output root (Python `out_root`); extracted trees
- * land in `<workRoot>/<docId>/src`.
+ * land in `<workRoot>/<docId>/src`. A fixed `opts.docId` (the web-upload path
+ * pre-extracts the zip there itself) short-circuits `docIdFor`.
  */
 export async function acquireSource(
   source: string,
   workRoot: string,
-  opts: { fetcher: ArxivFetcher }
+  opts: { fetcher: ArxivFetcher; docId?: string }
 ): Promise<LatexSource> {
   const arx = arxivId(source);
   if (arx === null) {
@@ -227,7 +228,7 @@ export async function acquireSource(
     if (!existsSync(p)) {
       throw new Error(`'${source}' is neither an arXiv id/URL nor an existing path`);
     }
-    const docId = docIdFor(null, p);
+    const docId = opts.docId ?? docIdFor(null, p);
     if (statSync(p).isDirectory()) {
       return { srcDir: p, mainTex: findMainTex(p), docId, arxivId: null, origin: p };
     }
@@ -239,7 +240,7 @@ export async function acquireSource(
     return { srcDir: dest, mainTex: findMainTex(dest), docId, arxivId: null, origin: p };
   }
 
-  const docId = docIdFor(arx, null);
+  const docId = opts.docId ?? docIdFor(arx, null);
   const archive = await opts.fetcher.downloadEprint(arx);
   const dest = join(workRoot, docId, "src");
   // Re-extract only when empty (cheap idempotence; the tarball itself is cached).
