@@ -2266,6 +2266,19 @@
               "type": "table",
               "number": "1",
               "label": "Table 1",
+              "caption": {
+                "text": "The format of the distance catalogue showing results on five fictitious sources. The source_id is the same as in EDR3. r_med_geo, r_lo_geo, and r_hi_geo are the median, 16th percentile, and 84th percentile of the geometric distance posterior in parsec. r_med_photogeo, r_lo_photogeo, and r_hi_photogeo are the median, 16th percentile, and 84th percentile of the photogeometric distance posterior in parsec. Flag is defined in Table [[xref:tab-2]]. The distances are shown here rounded to three decimal places, but are provided in the catalogue with 32-bit floating point precision, which guarantees a precision of at least 1 part in $2^{24}$ (17 million). The photogeometric fields can be missing, indicated here with NA.",
+                "crossrefs": [
+                  {
+                    "kind": "table",
+                    "raw": "2",
+                    "target_id": "tab-2",
+                    "number": "2",
+                    "via": "hyperlink",
+                    "resolved": true
+                  }
+                ]
+              },
               "table_body": "<table><tr><td>source_id</td><td>r_med_geo</td><td>r_lo_geo</td><td>r_hi_geo</td><td>r_med_photogeo</td><td>r_lo_photogeo</td><td>r_hi_photogeo</td><td>flag</td></tr><tr><td></td><td>pc</td><td>pc</td><td>pc</td><td>pc</td><td>pc</td><td>pc</td><td></td></tr><tr><td>4295806720</td><td>3547.973</td><td>2478.490</td><td>4741.725</td><td>2705.790</td><td>2307.170</td><td>3357.151</td><td>10033</td></tr><tr><td>34361129088</td><td>291.709</td><td>275.786</td><td>306.577</td><td>290.840</td><td>277.130</td><td>304.291</td><td>10033</td></tr><tr><td>38655544960</td><td>318.105</td><td>312.888</td><td>323.334</td><td>318.807</td><td>313.264</td><td>323.045</td><td>10033</td></tr><tr><td>5835726683934945280</td><td>7547.806</td><td>4509.953</td><td>11817.191</td><td>5299.187</td><td>4060.932</td><td>7178.086</td><td>10033</td></tr><tr><td>5835726688222520960</td><td>6316.000</td><td>3860.044</td><td>10591.593</td><td>NA</td><td>NA</td><td>NA</td><td>10099</td></tr></table>"
             },
             {
@@ -2286,7 +2299,7 @@
             {
               "id": "p-72",
               "type": "paragraph",
-              "text": "The fields in our catalogue are defined in Table [[xref:?]]. 3% of the sources have changed their source_id identifier from GDR2 to EDR3 [[cite:ref-10]], so the source_id cross-match table dr2_neighbourhood provided with EDR3 should be used to find the best match before doing source-by-source comparisons between the two releases. r_med_geo in Table [[xref:?]] is the median ($\\ensuremath{r}_{\\rm med}$) of the geometric distance posterior and should be taken as the geometric distance estimate. r_lo_geo ($\\ensuremath{r}_{\\rm lo}$) and r_hi_geo ($\\ensuremath{r}_{\\rm hi}$) are the 16th and 84th percentiles of the posterior and so together form a 68% confidence interval around the median. $\\ensuremath{\\ensuremath{r}_{\\rm hi}}- \\ensuremath{\\ensuremath{r}_{\\rm med}}$ and $\\ensuremath{\\ensuremath{r}_{\\rm med}}- \\ensuremath{\\ensuremath{r}_{\\rm lo}}$ are therefore both 1$\\sigma$-like uncertainties on the distance estimate, and are generally unequal due to asymmetry of the posterior. The fields r_med_photogeo, r_lo_photogeo, and r_hi_photogeo are defined in the same way for the photogeometric distance posterior.",
+              "text": "The fields in our catalogue are defined in Table [[xref:tab-1]]. 3% of the sources have changed their source_id identifier from GDR2 to EDR3 [[cite:ref-10]], so the source_id cross-match table dr2_neighbourhood provided with EDR3 should be used to find the best match before doing source-by-source comparisons between the two releases. r_med_geo in Table [[xref:tab-1]] is the median ($\\ensuremath{r}_{\\rm med}$) of the geometric distance posterior and should be taken as the geometric distance estimate. r_lo_geo ($\\ensuremath{r}_{\\rm lo}$) and r_hi_geo ($\\ensuremath{r}_{\\rm hi}$) are the 16th and 84th percentiles of the posterior and so together form a 68% confidence interval around the median. $\\ensuremath{\\ensuremath{r}_{\\rm hi}}- \\ensuremath{\\ensuremath{r}_{\\rm med}}$ and $\\ensuremath{\\ensuremath{r}_{\\rm med}}- \\ensuremath{\\ensuremath{r}_{\\rm lo}}$ are therefore both 1$\\sigma$-like uncertainties on the distance estimate, and are generally unequal due to asymmetry of the posterior. The fields r_med_photogeo, r_lo_photogeo, and r_hi_photogeo are defined in the same way for the photogeometric distance posterior.",
               "citations": [
                 {
                   "ref_ids": [
@@ -2299,16 +2312,20 @@
               ],
               "crossrefs": [
                 {
-                  "kind": "unknown",
-                  "raw": "[tab:catalogue_extract]",
+                  "kind": "table",
+                  "raw": "1",
+                  "target_id": "tab-1",
+                  "number": "1",
                   "via": "hyperlink",
-                  "resolved": false
+                  "resolved": true
                 },
                 {
-                  "kind": "unknown",
-                  "raw": "[tab:catalogue_extract]",
+                  "kind": "table",
+                  "raw": "1",
+                  "target_id": "tab-1",
+                  "number": "1",
                   "via": "hyperlink",
-                  "resolved": false
+                  "resolved": true
                 }
               ]
             },
@@ -3027,7 +3044,8 @@
       {
         "id": "tab-1",
         "number": "1",
-        "label": "Table 1"
+        "label": "Table 1",
+        "caption": "The format of the distance catalogue showing results on five fictitious sources. The source_id is the same as in EDR3. r_med_geo, r_lo_geo, and r_hi_geo are the median, 16th percentile, and 84th percentile of the geometric distance posterior in parsec. r_med_photogeo, r_lo_photogeo, and r_hi_photogeo are the median, 16th percentile, and 84th percentile of the photogeometric distance posterior in parsec. Flag is defined in Table [[xref:tab-2]]. The distances are shown here rounded to three decimal places, but are provided in the catalogue with 32-bit floating point precision, which guarantees a precision of at least 1 part in $2^{24}$ (17 million). The photogeometric fields can be missing, indicated here with NA."
       },
       {
         "id": "tab-2",
@@ -5489,17 +5507,31 @@
       "block_id": "p-70"
     },
     {
-      "kind": "unknown",
-      "raw": "[tab:catalogue_extract]",
+      "kind": "table",
+      "raw": "2",
+      "target_id": "tab-2",
+      "number": "2",
       "via": "hyperlink",
-      "resolved": false,
+      "resolved": true,
+      "block_id": "tab-1",
+      "in": "caption"
+    },
+    {
+      "kind": "table",
+      "raw": "1",
+      "target_id": "tab-1",
+      "number": "1",
+      "via": "hyperlink",
+      "resolved": true,
       "block_id": "p-72"
     },
     {
-      "kind": "unknown",
-      "raw": "[tab:catalogue_extract]",
+      "kind": "table",
+      "raw": "1",
+      "target_id": "tab-1",
+      "number": "1",
       "via": "hyperlink",
-      "resolved": false,
+      "resolved": true,
       "block_id": "p-72"
     },
     {
@@ -5671,7 +5703,7 @@
     "n_references": 38,
     "n_citations": 57,
     "n_citations_resolved": 57,
-    "n_crossrefs": 124,
-    "n_crossrefs_resolved": 120
+    "n_crossrefs": 125,
+    "n_crossrefs_resolved": 123
   }
 }

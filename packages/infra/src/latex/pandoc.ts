@@ -29,6 +29,77 @@ export class PandocError extends Error {
 /** The astro env's bin dir, named in the missing-pandoc error for actionability. */
 export const ASTRO_BIN_HINT = "/home/wwu/miniforge3/envs/astro/bin";
 
+/**
+ * Hard floor for LaTeX ingest: pandoc < 3.9 strips the display-math
+ * environment shell (\begin{equation}…), which kills equation numbering and
+ * lets the walker's environment regex bite an inner `\begin{cases}` (Stage
+ * 3.1, decision #9 — verified against 3.1.3 vs 3.9.0.2).
+ */
+export const PANDOC_MIN_VERSION: readonly [number, number] = [3, 9];
+
+/**
+ * Parse the first line of `pandoc --version` ("pandoc 3.9.0.2 …") into
+ * `[major, minor]`; null when the output is not recognized.
+ */
+export function parsePandocVersion(versionOutput: string): [number, number] | null {
+  return parsePandocVersionFull(versionOutput)?.version ?? null;
+}
+
+/** The parsed `[major, minor]` plus the raw version token (for messages). */
+function parsePandocVersionFull(
+  versionOutput: string
+): { version: [number, number]; raw: string } | null {
+  const line = versionOutput.split("\n", 1)[0] ?? "";
+  const m = /^pandoc(?:\.exe)?\s+(\d+(?:\.\d+)*)/i.exec(line.trim());
+  const parts = m?.[1]?.split(".").map(Number);
+  const major = parts?.[0];
+  const minor = parts?.[1];
+  if (m === null || major === undefined || minor === undefined) return null;
+  return { version: [major, minor], raw: m[1] ?? "" };
+}
+
+/** `[major, minor]` >= {@link PANDOC_MIN_VERSION}? */
+export function pandocMeetsFloor(v: readonly [number, number]): boolean {
+  return (
+    v[0] > PANDOC_MIN_VERSION[0] ||
+    (v[0] === PANDOC_MIN_VERSION[0] && v[1] >= PANDOC_MIN_VERSION[1])
+  );
+}
+
+function missingPandocError(): PandocError {
+  return new PandocError(
+    "pandoc is not installed (required for LaTeX ingest): no `pandoc` on PATH. " +
+      `It ships with the astro conda env — add ${ASTRO_BIN_HINT} to PATH.`
+  );
+}
+
+/**
+ * Throw unless the `pandoc` on PATH satisfies {@link PANDOC_MIN_VERSION}.
+ * The error names the found version/path and the shim remedy (prepending the
+ * whole astro bin dir would let its node v20 shadow the system node, so a
+ * single-binary shim dir is the safe route). The probe result is memoized
+ * per resolved binary so repeat calls cost nothing.
+ */
+let floorCheckedBin: string | undefined;
+export function assertPandocVersion(): void {
+  const bin = pandocPath();
+  if (!bin) throw missingPandocError();
+  if (bin === floorCheckedBin) return;
+  const proc = runCapture([bin, "--version"], { timeout: 20 });
+  const parsed = proc.status === 0 && !proc.error ? parsePandocVersionFull(proc.stdout) : null;
+  if (parsed === null || !pandocMeetsFloor(parsed.version)) {
+    const found = parsed === null ? "an unparseable version" : `pandoc ${parsed.raw}`;
+    throw new PandocError(
+      `pandoc >= ${PANDOC_MIN_VERSION.join(".")} is required for LaTeX ingest (older pandoc ` +
+        `strips display-math environments and mangles equations); found ${found} at ${bin}. ` +
+        `The astro conda env ships a new enough pandoc — point PATH at a shim dir instead: ` +
+        `mkdir -p /tmp/ms1-bin && ln -sf ${ASTRO_BIN_HINT}/pandoc /tmp/ms1-bin/pandoc && ` +
+        "export PATH=/tmp/ms1-bin:$PATH"
+    );
+  }
+  floorCheckedBin = bin;
+}
+
 /** `shutil.which("pandoc")`, resolved lazily. */
 export function pandocPath(): string | null {
   return findOnPath("pandoc");
@@ -42,12 +113,10 @@ function runPandoc(
   args: readonly string[],
   opts: { cwd?: string; stdin?: string; timeout?: number } = {}
 ): string {
+  assertPandocVersion();
   const bin = pandocPath();
   if (!bin) {
-    throw new PandocError(
-      "pandoc is not installed (required for LaTeX ingest): no `pandoc` on PATH. " +
-        `It ships with the astro conda env — add ${ASTRO_BIN_HINT} to PATH.`
-    );
+    throw missingPandocError();
   }
   const timeout = opts.timeout ?? 180;
   const proc = runCapture([bin, ...args], { cwd: opts.cwd, stdin: opts.stdin, timeout });

@@ -37,17 +37,7 @@ import type { Match } from "../../documents/annotate.js";
 import { pyRe } from "../../documents/pyregex.js";
 import type { LatexPandocPort } from "./ports.js";
 
-// Numbered display-math environments (the `*` variants are unnumbered).
-const NUMBERED_ENVS = new Set([
-  "equation",
-  "align",
-  "alignat",
-  "eqnarray",
-  "gather",
-  "multline",
-  "flalign",
-]);
-// …of those, the ones that number EVERY row (equation/multline get one number).
+// Display-math environments that number EVERY row (equation/multline get one).
 const PERROW_ENVS = new Set(["align", "alignat", "eqnarray", "gather", "flalign"]);
 // Multi-row environments we re-wrap as KaTeX-safe `aligned`.
 const MULTILINE_ENVS = new Set([
@@ -64,8 +54,15 @@ const MULTILINE_ENVS = new Set([
   "flalign",
   "flalign*",
 ]);
-const ENV_RE = /\\begin\{([a-zA-Z*]+)\}([\s\S]*)\\end\{\1\}/;
+// Anchored to the START of the math string: pandoc (>= 3.9) keeps the display
+// environment shell around the body, and only a leading \begin{…} is that
+// shell — an unanchored match would bite an inner `\begin{cases}`/… and rewrap
+// the body as if the inner env were the shell.
+const ENV_RE = /^\s*\\begin\{([a-zA-Z*]+)\}([\s\S]*)\\end\{\1\}/;
 const LABEL_RE = /\\label\s*\{([^}]*)\}/g;
+// amsmath `\tag{…}` / `\tag*{…}` — the author-supplied equation number.
+const TAG_RE = /\\tag\*?\s*\{([^}]*)\}/;
+const TAG_RE_G = /\\tag\*?\s*\{[^}]*\}/g;
 const MSPACE_RE = /\\mspace\s*\{[^}]*\}/g;
 // text-mode sub/superscript commands authors sometimes use *inside* math
 const TEXTSUB_RE = /\\textsubscript\s*\{([^{}]*)\}/g;
@@ -426,7 +423,13 @@ export class Walker {
     if (t === "Figure") {
       return [this.figureBlock(asObj(blk) ?? {})];
     }
-    return []; // HorizontalRule, RawBlock, …
+    // HorizontalRule is benign; anything else reaching this fallthrough is
+    // silently dropped content — log the node type so a degraded pandoc parse
+    // (e.g. an environment it can't read) is diagnosable.
+    if (t !== "HorizontalRule") {
+      console.warn(`latex walk: dropped unsupported pandoc AST block "${t ?? "?"}"`);
+    }
+    return [];
   }
 
   /** Split a paragraph at display equations into [Para, Eq, Para, …]. */
@@ -457,25 +460,30 @@ export class Walker {
     const [body, env, rawInner] = normalizeEquation(latex);
     const eid = this.ids.next("eq");
     const envBase = env?.replace(/\*+$/, "");
-    const numbered =
-      !!env && !env.endsWith("*") && envBase !== undefined && NUMBERED_ENVS.has(envBase);
     let number: string | undefined;
-    if (numbered && envBase !== undefined && PERROW_ENVS.has(envBase)) {
-      // align/eqnarray/gather/… number every row (sans \nonumber/\notag),
-      // so assign one number per row and map each row's \label to its number
+    if (envBase !== undefined && PERROW_ENVS.has(envBase)) {
+      // align/eqnarray/gather/… number EVERY row (sans \nonumber/\notag), so
+      // assign one number per row and map each row's \label to its number
       // (else \eqref shows the wrong number and later equations all drift).
+      // A \tag{…} row displays the tag text and does NOT advance the counter.
       const nums: string[] = [];
       for (const row of rawInner.split("\\\\")) {
         if (!row.trim() || NONUMBER_RE.test(row)) continue;
-        this.eq += 1;
-        const n = String(this.eq);
+        const tag = eqTag(row);
+        let n: string;
+        if (tag !== undefined) {
+          n = tag; // tagged row: display the tag, don't advance the counter
+        } else {
+          this.eq += 1;
+          n = String(this.eq);
+        }
         nums.push(n);
         for (const m of row.matchAll(LABEL_RE)) {
           if (m[1] !== undefined) this.labelMap.set(m[1], [eid, "equation", n]);
         }
       }
       if (nums.length === 0) {
-        // numbered env, no countable row
+        // no countable row (every row \nonumber)
         this.eq += 1;
         nums.push(String(this.eq));
       }
@@ -487,17 +495,20 @@ export class Walker {
         }
       }
       number = nums.length === 1 ? nums[0] : `${nums[0]}–${nums[nums.length - 1]}`;
-    } else if (numbered) {
-      // equation / multline → ONE number
-      this.eq += 1;
-      number = String(this.eq);
+    } else {
+      // Everything else — equation, multline, equation*, \[…\], $$…$$, unknown
+      // envs (dmath, …) — gets ONE number in order of appearance. A \tag{…}
+      // overrides the display number and, per amsmath, does not advance the
+      // counter (the next auto-numbered equation continues the sequence).
+      const tag = eqTag(rawInner);
+      if (tag !== undefined) {
+        number = tag;
+      } else {
+        this.eq += 1;
+        number = String(this.eq);
+      }
       for (const m of rawInner.matchAll(LABEL_RE)) {
         if (m[1] !== undefined) this.labelMap.set(m[1], [eid, "equation", number]);
-      }
-    } else {
-      // unnumbered (equation*, \[ \])
-      for (const m of rawInner.matchAll(LABEL_RE)) {
-        if (m[1] !== undefined) this.labelMap.set(m[1], [eid, "equation", null]);
       }
     }
     return { id: eid, type: "equation", number, latex: body };
@@ -935,9 +946,10 @@ function findImages(blocks: unknown[]): string[] {
 /**
  * `(katexBody, env, rawInner)` for a display-math string.
  *
- * *rawInner* keeps the `\label`/`\nonumber` markers so the caller can do
- * per-row numbering; *katexBody* has them stripped and multi-row align-family
- * bodies rewrapped as KaTeX-safe `aligned`.
+ * *rawInner* keeps the `\label`/`\nonumber`/`\tag` markers so the caller can
+ * do per-row numbering; *katexBody* has them stripped (KaTeX implements none
+ * of them — a leftover `\tag` is a hard render error) and multi-row
+ * align-family bodies rewrapped as KaTeX-safe `aligned`.
  */
 function normalizeEquation(latex: string): [string, string | undefined, string] {
   const s = latex.trim();
@@ -946,11 +958,18 @@ function normalizeEquation(latex: string): [string, string | undefined, string] 
   const inner = m?.[2] ?? s;
   const rawInner = inner;
   let body = inner.replace(LABEL_RE, "");
+  body = body.replace(TAG_RE_G, "");
   body = body.replace(NONUMBER_RE_G, "").trim();
   if (env !== undefined && MULTILINE_ENVS.has(env) && !body.trimStart().startsWith("\\begin{")) {
     body = `\\begin{aligned}\n${body}\n\\end{aligned}`;
   }
   return [katexify(body).trim(), env, rawInner];
+}
+
+/** The `\tag{…}`/`\tag*{…}` text of a math string (trimmed), else undefined. */
+function eqTag(s: string): string | undefined {
+  const t = TAG_RE.exec(s)?.[1]?.trim();
+  return t ? t : undefined;
 }
 
 /** The 1–5 brace groups of an A&A-style `\abstract{…}…` command. */

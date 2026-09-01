@@ -18,7 +18,7 @@
  * {@link LatexPipelinePorts}; infra wires the real adapters.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { Document } from "@argelanderspace/contracts";
 import type { Match } from "../../documents/annotate.js";
@@ -28,6 +28,7 @@ import { detectCrossrefs, XrefIndex } from "../../documents/crossrefs.js";
 import { annotatable, documentToJson } from "../../documents/document.js";
 import { pyRe, stripChars } from "../../documents/pyregex.js";
 import { iterBlocks } from "../../documents/traverse.js";
+import { preprocessAastex } from "./aastex.js";
 import { AssetResolver } from "./assets.js";
 import { readTextLossy } from "./fs-util.js";
 import {
@@ -65,21 +66,35 @@ export async function ingestLatex(
   if (!ports.pandoc.havePandoc()) {
     throw new Error("pandoc is required for the LaTeX pipeline but was not found on PATH.");
   }
+  // Hard version floor — an old pandoc parses "successfully" but silently
+  // degrades the AST, so this must fail before any real work.
+  ports.pandoc.assertPandocVersion?.();
   const outRoot = opts.outRoot ?? "data/output";
   mkdirSync(outRoot, { recursive: true });
 
   const src = await ports.acquire(source, outRoot, config, opts.docId);
 
   const raw = readTextLossy(src.mainTex);
+  // AASTeX table environments pandoc degrades (deluxetable, table*) are
+  // rewritten to plain table/tabular before pandoc sees the source — a
+  // deterministic mechanical transform (aastex.ts). pandoc reads files, so
+  // the rewrite goes to a temp file NEXT TO main.tex (\input includes must
+  // still resolve); the on-disk source is never touched.
+  const rewritten = preprocessAastex(raw);
+  const astPath =
+    rewritten === raw ? src.mainTex : join(src.srcDir, `.aastex-${basename(src.mainTex)}`);
+  if (astPath !== src.mainTex) writeFileSync(astPath, rewritten, "utf-8");
   let ast: Record<string, unknown>;
   try {
-    ast = ports.pandoc.latexToAst(src.mainTex);
+    ast = ports.pandoc.latexToAst(astPath);
   } catch (e) {
     throw new Error(
       `pandoc could not parse ${basename(src.mainTex)}: ${e}. The source may ` +
         "use a class/macro pandoc's LaTeX reader does not support.",
       { cause: e }
     );
+  } finally {
+    if (astPath !== src.mainTex) rmSync(astPath, { force: true });
   }
 
   const meta = (ast.meta ?? {}) as Record<string, unknown>;

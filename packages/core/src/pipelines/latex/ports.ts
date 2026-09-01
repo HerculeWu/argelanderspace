@@ -20,6 +20,12 @@
 /** pandoc CLI surface the pipeline needs (`ingest_latex/pandoc_ast.py`). */
 export interface LatexPandocPort {
   havePandoc(): boolean;
+  /**
+   * Throw an actionable error when the resolved pandoc is older than the
+   * supported floor (pandoc < 3.9 strips display-math environments). Called
+   * once at the pipeline entry; optional so minimal test doubles stay valid.
+   */
+  assertPandocVersion?(): void;
   /** Parse `mainTex` into the pandoc JSON AST (run from its directory). */
   latexToAst(mainTex: string): Record<string, unknown>;
   /** A free-standing LaTeX fragment → AST blocks; [] on parse failure. */

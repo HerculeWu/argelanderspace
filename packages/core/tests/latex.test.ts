@@ -135,16 +135,59 @@ describe.skipIf(!HAVE_PANDOC)("latex pipeline (test_latex_*, pandoc-gated)", () 
     expect(eqs.size).toBe(4);
     const eq1 = eqs.get("eq-1");
     expect(eq1 && "number" in eq1 ? eq1.number : undefined).toBe("1");
+    // every display-math block is numbered in order — equation* included
     const eq2 = eqs.get("eq-2");
-    expect(eq2 && "number" in eq2 ? eq2.number : undefined).toBeUndefined();
+    expect(eq2 && "number" in eq2 ? eq2.number : undefined).toBe("2");
+    // align numbers every row → "3–4"
+    const eq3 = eqs.get("eq-3");
+    expect(eq3 && "number" in eq3 ? eq3.number : undefined).toBe("3–4");
+    // …and so does \[ … \]
     const eq4 = eqs.get("eq-4");
-    expect(eq4 && "number" in eq4 ? eq4.number : undefined).toBeUndefined();
+    expect(eq4 && "number" in eq4 ? eq4.number : undefined).toBe("5");
     const eq1Latex = eq1 && "latex" in eq1 ? eq1.latex : "";
     expect(eq1Latex).not.toContain("\\begin{equation}");
     expect(eq1Latex).not.toContain("\\label");
-    const eq3 = eqs.get("eq-3");
     const eq3Latex = eq3 && "latex" in eq3 ? eq3.latex : "";
     expect(eq3Latex).toContain("\\begin{aligned}");
+  });
+
+  test("\\tag overrides the number and does not advance the counter", async () => {
+    const doc = await ingestLatexStr(
+      "\\documentclass{article}\\usepackage{amsmath}\n\\begin{document}\n" +
+        "\\section{S}\\label{sec:s}\nSee \\eqref{eq:tagged} and \\eqref{eq:after}.\n" +
+        "\\begin{equation}\\label{eq:before} a=1\\end{equation}\n" +
+        "\\begin{equation}\\tag{S1}\\label{eq:tagged} b=2\\end{equation}\n" +
+        "\\begin{equation}\\label{eq:after} c=3\\end{equation}\n\\end{document}\n"
+    );
+    const eqs = [...iterBlocks(doc)].filter((b) => b.type === "equation");
+    expect(eqs.map((b) => ("number" in b ? b.number : undefined))).toEqual(["1", "S1", "2"]);
+    // the tag text is the display number and is stripped from the KaTeX body
+    const tagged = eqs[1];
+    expect(tagged && "latex" in tagged ? tagged.latex : "").not.toContain("\\tag");
+    const json = documentToJson(doc);
+    const crossrefs = (json.crossrefs ?? []) as Array<{ kind?: string; raw?: string }>;
+    const xr = new Set(crossrefs.filter((x) => x.kind === "equation").map((x) => x.raw));
+    expect(xr.has("(S1)")).toBe(true);
+    expect(xr.has("(2)")).toBe(true);
+  });
+
+  test("per-row \\tag in align: tagged row shows the tag, next row continues the count", async () => {
+    const doc = await ingestLatexStr(
+      "\\documentclass{article}\\usepackage{amsmath}\n\\begin{document}\n" +
+        "\\section{S}\\label{sec:s}\nSee \\eqref{eq:r1} and \\eqref{eq:r2}.\n" +
+        "\\begin{align} a&=b \\tag{A1}\\label{eq:r1}\\\\ c&=d\\label{eq:r2}\\end{align}\n" +
+        "\\begin{equation}\\label{eq:r3} e=f\\end{equation}\n\\end{document}\n"
+    );
+    const eqs = [...iterBlocks(doc)].filter((b) => b.type === "equation");
+    // one align block covering A1 + 1, then the equation at 2
+    expect(eqs.map((b) => ("number" in b ? b.number : undefined))).toEqual(["A1–1", "2"]);
+    const tagged = eqs[0];
+    expect(tagged && "latex" in tagged ? tagged.latex : "").not.toContain("\\tag");
+    const json = documentToJson(doc);
+    const crossrefs = (json.crossrefs ?? []) as Array<{ kind?: string; raw?: string }>;
+    const xr = new Set(crossrefs.filter((x) => x.kind === "equation").map((x) => x.raw));
+    expect(xr.has("(A1)")).toBe(true);
+    expect(xr.has("(1)")).toBe(true);
   });
 
   test("katex cleanup", async () => {

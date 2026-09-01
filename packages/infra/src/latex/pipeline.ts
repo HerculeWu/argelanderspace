@@ -14,7 +14,13 @@ import type { FetchImpl } from "../lib/http.js";
 import { extractZip } from "../lib/unzip.js";
 import { epsToPng, pdfToPng } from "../pdf/raster.js";
 import { ArxivFetcher, acquireSource } from "./arxiv-source.js";
-import { bibtexToCsl, fragmentToBlocks, havePandoc, latexToAst } from "./pandoc.js";
+import {
+  assertPandocVersion,
+  bibtexToCsl,
+  fragmentToBlocks,
+  havePandoc,
+  latexToAst,
+} from "./pandoc.js";
 
 export interface WiredIngestLatexOptions extends IngestLatexOptions {
   /** HTTP implementation for the arXiv fetcher (defaults to global fetch). */
@@ -33,7 +39,7 @@ export async function ingestLatex(
   return coreIngestLatex(
     source,
     {
-      pandoc: { havePandoc, latexToAst, fragmentToBlocks, bibtexToCsl },
+      pandoc: { havePandoc, assertPandocVersion, latexToAst, fragmentToBlocks, bibtexToCsl },
       acquire: (src, outRoot, config, docId) =>
         acquireSource(src, outRoot, {
           fetcher: new ArxivFetcher(join(outRoot, ".latexcache"), {

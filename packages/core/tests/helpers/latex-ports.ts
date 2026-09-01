@@ -37,17 +37,50 @@ import type {
 
 const FIXTURES = fileURLToPath(new URL("../fixtures", import.meta.url));
 const ASTRO_BIN = "/home/wwu/miniforge3/envs/astro/bin";
+// Same hard floor as infra's latex/pandoc.ts (decision #9): pandoc < 3.9
+// strips display-math environment shells and silently degrades every test
+// that runs through latexToAst.
+const PANDOC_MIN: readonly [number, number] = [3, 9];
+
+interface PandocProbe {
+  found: boolean;
+  version: [number, number] | null;
+}
+
+function probePandoc(): PandocProbe {
+  const r = spawnSync("pandoc", ["--version"], { encoding: "utf-8" });
+  if (r.error || r.status !== 0) return { found: false, version: null };
+  const m = /^pandoc\s+(\d+)\.(\d+)/.exec((r.stdout ?? "").split("\n", 1)[0] ?? "");
+  return { found: true, version: m ? [Number(m[1]), Number(m[2])] : null };
+}
+
+function belowFloor(v: readonly [number, number] | null): boolean {
+  return v === null || v[0] < PANDOC_MIN[0] || (v[0] === PANDOC_MIN[0] && v[1] < PANDOC_MIN[1]);
+}
+
+function pandocFloorError(): Error {
+  return new Error(
+    `pandoc ${probe.version?.join(".") ?? "with unparseable version"} on PATH is below the ` +
+      `${PANDOC_MIN.join(".")} floor the LaTeX pipeline requires (older pandoc strips ` +
+      "display-math environments). Run against a shim dir instead (do NOT prepend the whole " +
+      `astro bin — its node v20 shadows the system node): mkdir -p /tmp/ms1-bin && ` +
+      `ln -sf ${ASTRO_BIN}/pandoc /tmp/ms1-bin/pandoc && PATH=/tmp/ms1-bin:$PATH …`
+  );
+}
 
 // Make the astro env's pandoc discoverable BEFORE collection: `skipIf` is
 // evaluated when the test module loads, so a beforeAll would run too late.
-function probePandoc(): boolean {
-  const r = spawnSync("pandoc", ["--version"], { encoding: "utf-8" });
-  return !r.error && r.status === 0;
-}
-if (!probePandoc() && existsSync(`${ASTRO_BIN}/pandoc`)) {
+let probe = probePandoc();
+if (!probe.found && existsSync(`${ASTRO_BIN}/pandoc`)) {
   process.env.PATH = `${ASTRO_BIN}${delimiter}${process.env.PATH ?? ""}`;
+  probe = probePandoc();
 }
-export const HAVE_PANDOC = probePandoc();
+if (probe.found && belowFloor(probe.version)) {
+  // A found-but-ancient pandoc (e.g. a system 3.1.3) used to be used
+  // silently; that produced garbage ASTs. Fail loudly instead.
+  throw pandocFloorError();
+}
+export const HAVE_PANDOC = probe.found;
 
 // --------------------------------------------------------------------------- //
 // pandoc (CLI contract mirrors infra's latex/pandoc.ts)
@@ -70,6 +103,10 @@ function runPandoc(args: readonly string[], opts: { cwd?: string; stdin?: string
 
 export const testPandoc: LatexPandocPort = {
   havePandoc: () => HAVE_PANDOC,
+  assertPandocVersion() {
+    if (!probe.found) throw new Error("pandoc is not on PATH");
+    if (belowFloor(probe.version)) throw pandocFloorError();
+  },
   latexToAst(mainTex) {
     const name = mainTex.split("/").pop() ?? mainTex;
     const arg = name.startsWith("-") ? `./${name}` : name;
