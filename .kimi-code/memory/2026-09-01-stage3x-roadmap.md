@@ -4,7 +4,9 @@
 
 ## 状态
 
-2026-09-01：设计 grilling 完成（Q1–Q18 全锁定），用户确认"先更新记忆再推进"。5 路子代理取证归档于本文件"取证存档"，开工直接采信。范围由原 roadmap 六项修订为五项：
+**2026-09-02：执行完毕、全部 push，待用户手动验收（`docs/manual-test-stage3.1.md`）。** commit 序列（main，除注明外）：memory 定稿 `97fc51a` → MS1 隔离 `954b0c2`（−49881 行，270 测试绿；5 符号归置 `documents/geom.ts` + references.ts 内联；raster 内联 openMupdf/pageSizeOf；planner 裁 HTML 适配器）→ MS2 zip 上传 `0a22d1e`（302 绿；失败探针自动化；顺手修 deeplink unknown-anchor flake：effect 异步 flush → waitFor）→ MS3 公式/表格/下限 `4982451`（313 绿；golden 2012.05220 重冻 +48/−16、2501.17225 零 diff；2607.17040 端到端 crossref 34/49→**49/49**、11 表全恢复、eq-3 完整；pandoc 3.1.3 负测拦截）→ MS4 收尾 `fc80aa7`（stub pane 3 文件 +1/−5；manual-test-stage3.1.md 278 行关键预期全部预实测；323 测试绿）。MS0 = `ocr-features` 分支 `9f0efce`（封存说明，分支已 push origin，不维护）。
+
+2026-09-01：设计 grilling 完成（Q1–Q18 全锁定）。范围由原 roadmap 六项修订为五项：
 
 - **item 5「公式丢失」改案**：实测真根因 = **pandoc 版本敏感**（验收环境系统 pandoc 3.1.3 剥 DisplayMath 环境外壳 → walk `ENV_RE` 失效 → 编号全无 + 误咬内层 `\begin{cases}` 削残公式），修复入口 = 硬下限 + ENV_RE 锚定 + 全量编号；**独立成立**的真丢失是 AASTeX `deluxetable`/`table*` 表格被 pandoc 降级（两版 pandoc 都发生），改案为"表格丢失修复"。
 - **item 6「已读标识复查」撤销**（用户 2026-09-01：现状满意，非问题，从遗留清单删除）。取证附带确认：渲染链路无断点；web 无 read 写入口（仅 CLI `lib patch --read`）。

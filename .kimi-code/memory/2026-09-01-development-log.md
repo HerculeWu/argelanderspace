@@ -26,6 +26,15 @@
 - 关键决策：webui 上传只收 zip（复用 infra `extractZip`，零新依赖）+ attach-only + 幂等 docId + 身份焊死/直挂/校验；公式全量顺序编号（\tag 优先、不推进计数器、`\nonumber` 尊重）；pandoc 硬下限进管线入口；documents/ 抠 5 符号；golden 全换 latex；`/images` MinerU 分支删。
 - 定稿全文（MS0–MS4 切分、取证存档、推后事项）见 `2026-09-01-stage3x-roadmap.md`。
 
+## Stage 3.1 执行（2026-09-01→02，全部 landed + push；待用户手动验收）
+
+- **MS0**：`ocr-features` 分支从 `5c0e93e` 建出 + 封存说明 `9f0efce`，push origin（一次性快照，不维护）。
+- **MS1 隔离 `954b0c2`**：−49881 行、270 测试绿。documents/ 抠 5 符号（新 `geom.ts` + `ARXIV_RE/DOI_RE` 内联 references.ts；`readBbox` 因 parseReferences 唯一消费者被删而无需抠留）；`raster.ts` 内联 openMupdf/pageSizeOf；planner 裁 HTML 适配器（journal_html 永标 needs_adapter）；contracts golden 断言改 2 颗 latex；deeplink/ir/render 测试换 latex fixture；依赖净删 22 包（cheerio 系/domhandler/htmlparser2/core devDep mupdf）。
+- **MS2 zip 上传 `0a22d1e`**：302 绿。server 端点重建（PK 魔数 + extractZip 试解）；`attachLatexZip`（核心在 `core/src/acquire/upload.ts`）：幂等 docId `upload-<slug44>-<hash6>`、stamp 焊死（无 doi/arxiv 时 work.title 覆盖 doc meta.title）、直挂 doc_ids + 返回前校验；`LatexAcquisitionPort` 加可选 docId 参；失败探针自动化（job error 持久化 + WS hello 回放红字）。顺手修 deeplink unknown-anchor flake（`clearPendingAnchor` 是 useEffect 异步 flush → 断言包 waitFor）。
+- **MS3 公式/表格/下限 `4982451`**：313 绿。walk 全量顺序编号（一切 display-math 发号、labelMap 不再写 null、渲染层零改动自动跟随）；`\tag` 提取为显示号/剥出 body/不推进计数器；ENV_RE 加 `^\s*` 锚点；新 `aastex.ts` 机械预处理（deluxetable(*)→table+tabular 保 caption/label/表头、table*→table、tablecomments 降级尾随段；裁决：`\startdata` 身兼表头终止符，header 无 `\\` 结尾时补 ` \\`）；pandoc ≥3.9 硬下限（infra `latex/pandoc.ts` `assertPandocVersion`，管线入口在 acquire 联网前调用；测试 helper 低版本即抛错）；golden 2012.05220 重冻 +48/−16（tab-1 caption 恢复、2 处 tab xref 转 resolved），2501.17225 零 diff；**2607.17040 端到端：crossref 34/49→49/49、11 表全成表、eq 1-5 完整**；3.1.3 负测拦截报错。
+- **MS4 收尾 `fc80aa7`**：stub pane 移除（Shell NAV 两行 + CommandPalette 两条 + CSS 注释；terminal 图标实无独立定义可删）+ `docs/manual-test-stage3.1.md`（278 行，§0-8，关键预期全部预实测过）。323 测试绿、lint 零警告。
+- **遗留边界**（拍板不修/后续再议）：subequations 合并丢 label（known-issue）；align 内 tag 行与自动号混排时块级 number 呈 `"A1–1"` 区间串（行级 label 精确，真实论文极罕见）；pathological 空归一化标题的 title-only work 上传会在 seed 侧产生重复 work（直挂保证原 work 拿到 doc，无事故）。
+
 ## 下一步
 
-执行 Stage 3.1 定稿（MS0 分支封存 → MS1 隔离 → MS2 上传 → MS3 公式/表格 → MS4 收尾）——`2026-09-01-stage3x-roadmap.md` 自足可续。远期 Stage 4/5 及推后事项见同文件。
+用户按 `docs/manual-test-stage3.1.md` 手动验收 → 通过后 Stage 3.1 关闭。远期 Stage 4（计划页面 + agent 操作）/Stage 5（论文写作）与推后事项（README pandoc 版本说明 + 安装检验脚本、CLI 未识别源先建条目）见 `2026-09-01-stage3x-roadmap.md` 推后事项节。
