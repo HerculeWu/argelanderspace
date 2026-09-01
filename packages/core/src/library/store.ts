@@ -1,7 +1,7 @@
 /**
  * The ArgelanderSpace literature store (bibgraph/library/store.py).
  *
- * The library is a small set of files on disk under `data/library/`:
+ * The library is a small set of files on disk under `literatures/library/`:
  * - `library.json` — the source of truth: saved works + per-work user state
  *   (tags, color label, read flag, note, star) + the project header;
  * - `library.bib` — a regenerated BibTeX export of the saved works;
@@ -16,7 +16,7 @@
  * - `Work` fields keep the Python dataclass's snake_case names: they ARE the
  *   `library.json` keys, so round-tripping stays exact.
  * - Python's module-level `ROOT`/`LIBRARY_DIR` constants become an injected
- *   {@link LibraryPaths} (decision 3: `--data-dir` configurable, default `./data`).
+ *   {@link LibraryPaths} (decision 3: `--data-dir` configurable, default `./literatures`).
  * - Python `Work.identity_keys()` returns a `set` whose iteration order is
  *   hash-dependent; the TS port iterates in insertion order (doi ▸ arxiv ▸
  *   openalex ▸ title). This only matters when one upsert bridges several
@@ -37,21 +37,21 @@ import { pyOr, pyTruthy, stripChars } from "../documents/pyregex.js";
 /** The on-disk layout of a library (Python's module constants, made injectable). */
 export interface LibraryPaths {
   dataDir: string;
-  /** `data/library` */
+  /** `literatures/library` */
   libraryDir: string;
-  /** `data/library/library.json` */
+  /** `literatures/library/library.json` */
   libraryJson: string;
-  /** `data/library/library.bib` */
+  /** `literatures/library/library.bib` */
   libraryBib: string;
-  /** `data/library/cache` */
+  /** `literatures/library/cache` */
   cacheDir: string;
-  /** `data/library/cache/graph.json` */
+  /** `literatures/library/cache/graph.json` */
   graphJson: string;
-  /** `data/output` (ingested reader documents) */
+  /** `literatures/output` (ingested reader documents) */
   outputDir: string;
 }
 
-/** The standard layout under *dataDir* (default `./data`, decision 3). */
+/** The standard layout under *dataDir* (default `./literatures`, decision 3). */
 export function libraryPaths(dataDir: string): LibraryPaths {
   const libraryDir = join(dataDir, "library");
   const cacheDir = join(libraryDir, "cache");

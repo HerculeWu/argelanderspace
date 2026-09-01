@@ -14,10 +14,10 @@ import { resolveServerConfig } from "../src/server.js";
 const NO_ENV: NodeJS.ProcessEnv = {};
 
 describe("resolveServerConfig", () => {
-  test("defaults: ./data, port 8000, web dist null outside the repo", () => {
+  test("defaults: ./literatures, port 8000, web dist null outside the repo", () => {
     const cwd = mkdtempSync(join(tmpdir(), "aspace-cfg-"));
     const cfg = resolveServerConfig([], NO_ENV, cwd, {});
-    expect(cfg.dataDir).toBe(resolve("./data"));
+    expect(cfg.dataDir).toBe(resolve("./literatures"));
     expect(cfg.port).toBe(8000);
     expect(cfg.webDist).toBeNull();
   });

@@ -4,7 +4,7 @@
  * `~/.config/argelanderspace/config.toml`). Flat TOML subset — every key is
  * optional:
  *
- *   data_dir          string   default "./data"
+ *   data_dir          string   default "./literatures"
  *   port              integer  default 8000
  *   mineru_api_key    string   fallback for $MINERU_API_KEY
  *   openalex_api_key  string   fallback for $OPENALEX_API_KEY

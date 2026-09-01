@@ -71,12 +71,13 @@ export const WsJobEventSchema = z.object({
 
 /**
  * Fired after any mutation that rewrote the library (refresh / patch /
- * add-ref / upload-done); `cause` names the trigger. M5's frontend reloads
- * `/api/library` on this.
+ * add-ref / upload-done) or when the library poller spotted an external
+ * write (agent CLI, Stage 3); `cause` names the trigger. M5's frontend
+ * reloads `/api/library` on this.
  */
 export const WsLibraryChangedSchema = z.object({
   type: z.literal("library.changed"),
-  cause: z.enum(["refresh", "patch", "add", "upload"]),
+  cause: z.enum(["refresh", "patch", "add", "upload", "external"]),
   /** ISO-8601 timestamp. */
   at: z.string(),
 });

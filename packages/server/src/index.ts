@@ -9,4 +9,5 @@ export * from "./jobs.js";
 export * from "./lock.js";
 export * from "./paper-cache.js";
 export * from "./server.js";
+export * from "./watch.js";
 export * from "./ws.js";

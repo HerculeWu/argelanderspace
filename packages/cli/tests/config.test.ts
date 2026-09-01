@@ -1,6 +1,6 @@
 /**
  * `resolveDataDir` precedence (decision 23): `--data-dir` flag >
- * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./data`. Pure unit tests
+ * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./literatures`. Pure unit tests
  * (the config object is injected; the smoke suite covers the built binary).
  */
 
@@ -9,8 +9,8 @@ import { describe, expect, test } from "vitest";
 import { resolveDataDir } from "../src/program.js";
 
 describe("resolveDataDir", () => {
-  test("defaults to ./data (process cwd)", () => {
-    expect(resolveDataDir({}, {}, {})).toBe(resolve("./data"));
+  test("defaults to ./literatures (process cwd)", () => {
+    expect(resolveDataDir({}, {}, {})).toBe(resolve("./literatures"));
   });
 
   test("config file beats the default; env beats config; flag beats env", () => {

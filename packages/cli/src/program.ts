@@ -8,7 +8,7 @@
  *
  * `--data-dir` (decision 3) is global and may appear before or after the
  * subcommand; resolution is flag > `ARGELANDERSPACE_DATA_DIR` > config file
- * (decision 23) > `./data`. The ingest pipelines root at `<dataDir>/output`
+ * (decision 23) > `./literatures`. The ingest pipelines root at `<dataDir>/output`
  * (Python's `data/output`).
  */
 
@@ -271,7 +271,10 @@ export function buildProgram(): Command {
         "structured JSON and manage the citation-graph library."
     )
     .version("0.1.0")
-    .option("--data-dir <dir>", "data directory (default ./data; env ARGELANDERSPACE_DATA_DIR)");
+    .option(
+      "--data-dir <dir>",
+      "data directory (default ./literatures; env ARGELANDERSPACE_DATA_DIR)"
+    );
 
   withDataDir(program.command("ingest"))
     .description(
@@ -355,7 +358,10 @@ export function buildProgram(): Command {
     .command("serve")
     .description("Start the ArgelanderSpace server (API + web UI + WebSocket progress).")
     .option("--port <n>", "port (default 8000; env ARGELANDERSPACE_PORT)")
-    .option("--data-dir <dir>", "data directory (default ./data; env ARGELANDERSPACE_DATA_DIR)")
+    .option(
+      "--data-dir <dir>",
+      "data directory (default ./literatures; env ARGELANDERSPACE_DATA_DIR)"
+    )
     .option("--web-dist <dir>", "built SPA directory (default packages/web/dist)")
     .action(async (opts: ServeOpts, cmd: Command) => {
       try {

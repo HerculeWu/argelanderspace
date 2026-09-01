@@ -21,15 +21,15 @@ packages/app/LICENSE
 .serena/
 
 # Generated ingestion outputs (regenerable; large binaries / fetch cache).
-# The PDF sample under data/output/2603.03522 was committed earlier and stays
-# tracked; this only ignores newly-generated artifacts (HTML docs, .htmlcache).
-data/output/
+# The PDF sample under literatures/output/2603.03522 was committed earlier and
+# stays tracked; this only ignores newly-generated artifacts (HTML docs, .htmlcache).
+literatures/output/
 
 # Library: local literature store + API enrichment cache (user data / regenerable)
-data/library/
+literatures/library/
 
 # Job runner runtime state (spooled uploads, job history)
-data/jobs/
+literatures/jobs/
 
 # OS / editor
 .DS_Store

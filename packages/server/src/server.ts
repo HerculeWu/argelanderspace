@@ -1,10 +1,10 @@
 /**
  * Server entry: `createServer` (programmatic; the Hono app + node http server
- * + job runner + WS hub wired together) and `startServer` (CLI-friendly:
- * argv/env config resolution, listen, log).
+ * + job runner + WS hub + external-write library poller wired together) and
+ * `startServer` (CLI-friendly: argv/env config resolution, listen, log).
  *
  * Config resolution (decisions 3 + 23): `--data-dir` >
- * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./data`; the port chain is
+ * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./literatures`; the port chain is
  * the same shape with default 8000 (uvicorn's convention). Web dist:
  * `--web-dist` > `ARGELANDERSPACE_WEB_DIST` > the first existing of
  * `<this module>/web` (the bundled single-package layout, decision 22) and
@@ -22,6 +22,7 @@ import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
 import { realPipelines, realSources } from "./deps.js";
 import { JobRunner } from "./jobs.js";
+import { startLibraryWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
 
 export interface ServerOptions {
@@ -79,6 +80,17 @@ export function createServer(opts: ServerOptions): RunningServer {
     snapshot: () => runner.list(),
   });
 
+  // Agent/CLI writes mutate the library behind the server's back (Stage 3):
+  // poll for them and rebroadcast as `library.changed` "external". The first
+  // poll only establishes the baseline, and `hub` is assigned long before
+  // any later poll can fire (the closure-timing argument of `broadcast`
+  // above). The server's own writes re-trigger this too — accepted.
+  const watcher = startLibraryWatcher({
+    dataDir: opts.dataDir,
+    onChange: () =>
+      hub.broadcast({ type: "library.changed", cause: "external", at: new Date().toISOString() }),
+  });
+
   const ready = new Promise<number>((resolveReady, rejectReady) => {
     server.on("listening", () => {
       const addr = server.address();
@@ -96,6 +108,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     ready: () => ready,
     close: () =>
       new Promise((resolveClose, rejectClose) => {
+        watcher.stop();
         hub.close();
         server.close((err) => (err ? rejectClose(err) : resolveClose()));
       }),
@@ -123,7 +136,7 @@ function argValue(argv: readonly string[], name: string): string | undefined {
 }
 
 /**
- * flag > env > config file (decision 23) > ./data; same pattern for port and
+ * flag > env > config file (decision 23) > ./literatures; same pattern for port and
  * web-dist. `config` is injectable for tests; production callers leave it to
  * `getConfig()` (a missing config file is `{}`).
  */
@@ -134,7 +147,7 @@ export function resolveServerConfig(
   config: AppConfig = getConfig()
 ): ResolvedConfig {
   const dataDir = resolve(
-    argValue(argv, "data-dir") ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./data"
+    argValue(argv, "data-dir") ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./literatures"
   );
   const portRaw = argValue(argv, "port") ?? env.ARGELANDERSPACE_PORT;
   const port = portRaw === undefined ? (config.port ?? 8000) : Number.parseInt(portRaw, 10);
