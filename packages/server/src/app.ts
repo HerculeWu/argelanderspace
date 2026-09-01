@@ -24,10 +24,11 @@ import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:f
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import type { RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
+import type { Document, RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
 import {
   addNodeToLibrary,
   attachPdf,
+  buildDocIr,
   htmlAdapterInfos,
   type IngestPipelines,
   type LibraryPaths,
@@ -73,6 +74,15 @@ function detail(msg: string, status: ContentfulStatusCode) {
 /** Python `_paper_path` / `get_image` traversal guards. */
 function badId(id: string): boolean {
   return id.includes("/") || id.includes("\\") || id.startsWith(".");
+}
+
+/**
+ * Traversal guard for multi-segment image paths (img_path verbatim, e.g.
+ * `assets/foo.jpg`): no empty / `.…` / `..` segments, no backslashes.
+ */
+function badImagePath(rel: string): boolean {
+  if (rel.includes("\\")) return true;
+  return rel.split("/").some((s) => s === "" || s === ".." || s.startsWith("."));
 }
 
 /**
@@ -216,6 +226,28 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(doc as Record<string, unknown>);
   });
 
+  // ---- GET /api/paper/{doc_id}/ir -------------------------------------------- //
+
+  // The shared render IR (Stage 3 / MS2a). Computed on demand from the cached
+  // document: buildDocIr is a cheap pure projection and the PaperCache's
+  // mtimeNs+size key already tracks edits, so there is no separate IR cache.
+  app.get("/api/paper/:doc_id/ir", (c) => {
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    const p = join(outputDir, docId, `${docId}.json`);
+    if (!existsSync(p) || !statSync(p).isFile()) {
+      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    const st = statSync(p, { bigint: true });
+    // trusted pipeline output, same trust level as the passthrough above
+    const doc = paperCache.load(docId, p, { mtimeNs: st.mtimeNs, size: st.size }) as Document;
+    return c.json(buildDocIr(doc));
+  });
+
   // ---- GET /api/library ------------------------------------------------------ //
 
   app.get("/api/library", (c) => c.json(libraryPayload(paths)));
@@ -316,12 +348,13 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     const query = { workId: id ?? null, doi: doi ?? null, arxiv: arxiv ?? null };
-    const runOcr = (pdfPath: string) =>
+    const runOcr = (pdfPath: string, onProgress?: (message: string) => void) =>
       attachPdf(pdfPath, query, {
         paths,
         pipelines: deps.pipelines,
         sources: deps.makeSources(false),
         rebuild: lockedRebuild,
+        onProgress,
       });
 
     const syncRaw = c.req.query("sync");
@@ -353,13 +386,14 @@ export function createApp(deps: AppDeps): Hono {
     }
 
     // Async (new default): spool the bytes, queue the OCR job, answer 202.
+    // The runner's `report` rides attachPdf's onProgress straight through, so
+    // every pipeline stage transition lands in job.progress (WS job.progress).
     const job = runner.submit(
       "upload",
       async (j, report) => {
         const pdf = runner.spoolPath(j.id);
         try {
-          report("MinerU OCR");
-          const ref = await runOcr(pdf);
+          const ref = await runOcr(pdf, report);
           return { ref };
         } finally {
           rmSync(pdf, { force: true });
@@ -397,6 +431,35 @@ export function createApp(deps: AppDeps): Hono {
       if (existsSync(img) && statSync(img).isFile()) {
         return c.body(new Uint8Array(await readFile(img)), 200, {
           "Content-Type": mimeFor(filename),
+        });
+      }
+    }
+    const e = detail("image not found", 404);
+    return c.json(e.body, e.status);
+  });
+
+  // ---- GET /images/{doc_id}/{...subpath} ------------------------------------- //
+
+  // img_path verbatim (Stage 3 / MS2a): values carry their subdirectory —
+  // "assets/foo.jpg" for HTML docs (doc-dir relative), "images/<hash>.jpg" for
+  // MinerU docs (relative to mineru/). The single-segment route above keeps
+  // its two-directory lookup for the current web client.
+  app.get("/images/:doc_id/:filepath{.+}", async (c) => {
+    const docId = c.req.param("doc_id");
+    const rel = c.req.param("filepath");
+    if (badImagePath(rel)) {
+      const e = detail("bad filename", 400);
+      return c.json(e.body, e.status);
+    }
+    if (badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    const docDir = join(outputDir, docId);
+    for (const img of [join(docDir, rel), join(docDir, "mineru", rel)]) {
+      if (existsSync(img) && statSync(img).isFile()) {
+        return c.body(new Uint8Array(await readFile(img)), 200, {
+          "Content-Type": mimeFor(rel),
         });
       }
     }

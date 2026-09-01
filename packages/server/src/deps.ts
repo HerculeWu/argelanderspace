@@ -37,6 +37,7 @@ export function realPipelines(paths: LibraryPaths): IngestPipelines {
       ingestPdf(pdfPath, {
         outDir: opts.outDir,
         config: { mineru: { isOcr: opts.isOcr } },
+        onProgress: opts.onProgress,
       }),
     ingestHtml: (doi) => ingestHtml(doi, { outRoot: paths.outputDir }),
     ingestLatex: (arxivId) => ingestLatex(arxivId, { outRoot: paths.outputDir }),

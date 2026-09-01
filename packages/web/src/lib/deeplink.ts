@@ -67,9 +67,8 @@ export function applyAnchor(store: Store, anchor: string): boolean {
 function firstCitingBlockId(store: Store, refId: string): string | null {
   let best: string | null = null;
   let bestOrder = Number.POSITIVE_INFINITY;
-  for (const [blockId, cits] of store.citationsByBlock) {
-    const cites = cits.some((c) => c.resolved && (c.ref_ids ?? []).includes(refId));
-    if (!cites) continue;
+  for (const [blockId, refIds] of store.citationsByBlock) {
+    if (!refIds.includes(refId)) continue;
     const order = store.blockOrder.get(blockId) ?? Number.POSITIVE_INFINITY;
     if (order < bestOrder) {
       bestOrder = order;

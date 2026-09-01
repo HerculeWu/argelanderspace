@@ -23,6 +23,7 @@ import { describe, expect, test } from "vitest";
 import { parseBibtexText } from "../src/acquire/bibtex.js";
 import { classify, planSources, planToDict } from "../src/acquire/planner.js";
 import { resolveWork } from "../src/acquire/resolve.js";
+import { workToRef } from "../src/library/graph.js";
 import type {
   AdsResolution,
   CrossrefResolution,
@@ -340,5 +341,21 @@ describe("library store round-trip", () => {
     const bib = readFileSync(paths.libraryBib, "utf8");
     expect(bib).toBe(readFileSync(join(FIXTURES, "library.bib"), "utf8"));
     expect(bib).toBe(store.toBibtex());
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// API projection: note passthrough (Stage 3 / MS3 — no longer a boolean)
+// --------------------------------------------------------------------------- //
+
+describe("workToRef note projection", () => {
+  test("the note text passes through verbatim; the key is absent when unset/empty", () => {
+    const w = emptyWork("work:noted");
+    w.note = "line one\nline two";
+    expect(workToRef(w).note).toBe("line one\nline two");
+    expect("note" in workToRef(emptyWork("work:plain"))).toBe(false);
+    const wEmpty = emptyWork("work:empty-note");
+    wEmpty.note = "";
+    expect("note" in workToRef(wEmpty)).toBe(false);
   });
 });

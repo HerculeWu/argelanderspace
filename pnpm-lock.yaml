@@ -198,6 +198,9 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
+      '@argelanderspace/core':
+        specifier: workspace:*
+        version: link:../core
       '@testing-library/dom':
         specifier: ^10.4.1
         version: 10.4.1

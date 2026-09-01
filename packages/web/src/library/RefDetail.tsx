@@ -1,4 +1,4 @@
-import { type ChangeEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { uploadPdf } from "../api/library";
@@ -79,6 +79,14 @@ const TABS: [string, string][] = [
   ["files", "附件"],
 ];
 
+/** The upload job's target work id rides in `payload.workId` (server app.ts). */
+function uploadJobWorkId(job: Job): string | null {
+  const p = job.payload;
+  if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
+  const w = (p as Record<string, unknown>).workId;
+  return typeof w === "string" && w !== "" ? w : null;
+}
+
 export function RefDetail({
   r,
   node,
@@ -95,29 +103,67 @@ export function RefDetail({
   const [tab, setTab] = useState("meta");
   const [copied, setCopied] = useState(false);
   // async upload (202 + job): progress arrives over /ws; `uploadJob` is the
-  // queued/running job, null once a terminal state was handled
-  const [uploadJob, setUploadJob] = useState<Job | null>(null);
-  const [uploadErr, setUploadErr] = useState(false);
+  // queued/running job, null once a terminal state was handled. The ref mirror
+  // lets the WS subscriber see the latest value; `seenJobs` remembers every
+  // event snapshot so a job.* frame that beats the upload POST's fetch
+  // response (fast failure) is never overwritten by the stale 202 body.
+  const [uploadJob, setUploadJobState] = useState<Job | null>(null);
+  const uploadJobRef = useRef<Job | null>(null);
+  const seenJobs = useRef(new Map<string, Job>());
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const cited = node?.c ?? r.citedBy;
+
+  const setUploadJob = useCallback((job: Job | null) => {
+    uploadJobRef.current = job;
+    setUploadJobState(job);
+  }, []);
+
+  // switching references drops the other ref's upload state
+  useEffect(() => {
+    setUploadJob(null);
+    setUploadErr(null);
+  }, [r.id, setUploadJob]);
+
+  const failMsg = (job: Job | null): string =>
+    job?.error ? `上传失败：${job.error}` : "上传失败，请重试";
 
   const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file
     if (!file) return;
-    setUploadErr(false);
+    setUploadErr(null);
     const job = await uploadPdf(r.id, file);
-    if (job) setUploadJob(job);
-    else setUploadErr(true);
+    if (!job) {
+      setUploadErr(failMsg(null));
+      return;
+    }
+    const seen = seenJobs.current.get(job.id);
+    if (!seen || seen.status === "queued" || seen.status === "running") {
+      setUploadJob(seen ?? job); // prefer the newer event snapshot
+    } else if (seen.status === "done") {
+      onReload?.();
+    } else {
+      // terminal frame beat the fetch response: surface it, don't resurrect
+      setUploadErr(failMsg(seen));
+    }
   };
 
-  // track this upload's job.* events (hello replays a running job after reload)
+  // Track this work's upload job.* events. `hello` replays (reconnect /
+  // refresh) adopt a queued/running job even without a local uploadJob, so
+  // tracking resumes; live events update the tracked job by id.
   useEffect(
     () =>
       onJobEvent((job) => {
-        setUploadJob((cur) => (cur && job.id === cur.id ? job : cur));
+        if (job.kind !== "upload" || uploadJobWorkId(job) !== r.id) return;
+        seenJobs.current.set(job.id, job);
+        const cur = uploadJobRef.current;
+        if (cur && job.id === cur.id) setUploadJob(job);
+        else if (!cur && (job.status === "queued" || job.status === "running")) {
+          setUploadJob(job);
+        }
       }),
-    []
+    [r.id, setUploadJob]
   );
 
   // react to the terminal states (kept out of the subscriber, which must stay pure)
@@ -128,9 +174,9 @@ export function RefDetail({
       onReload?.();
     } else if (uploadJob.status === "failed" || uploadJob.status === "interrupted") {
       setUploadJob(null);
-      setUploadErr(true);
+      setUploadErr(failMsg(uploadJob));
     }
-  }, [uploadJob, onReload]);
+  }, [uploadJob, onReload, setUploadJob]);
 
   const copyBib = async () => {
     try {
@@ -270,11 +316,16 @@ export function RefDetail({
             <pre className="mono">{bibtexOf(r)}</pre>
           </div>
         )}
-        {tab === "notes" && (
-          <div className="placeholder-text ph-note">
-            <span className="mono">{r.note ? "已有 1 条笔记" : "添加笔记…"}</span>
-          </div>
-        )}
+        {tab === "notes" &&
+          (r.note ? (
+            <div className="ref-abstract ref-note">
+              <p>{r.note}</p>
+            </div>
+          ) : (
+            <div className="placeholder-text ph-note">
+              <span className="mono">暂无笔记</span>
+            </div>
+          ))}
         {tab === "files" && (
           <div className="ref-files">
             {r.doc_id ? (
@@ -318,7 +369,7 @@ export function RefDetail({
                 </div>
                 {uploadErr && (
                   <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
-                    上传失败，请重试
+                    {uploadErr}
                   </div>
                 )}
               </div>

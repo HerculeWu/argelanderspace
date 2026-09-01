@@ -87,6 +87,8 @@ export async function attachPdf(
      * without holding that lock across the OCR itself.
      */
     rebuild?: (paths: LibraryPaths, opts: RebuildOptions) => Promise<RefreshResponse>;
+    /** Coarse progress sink (Stage 3 / MS3): the upload job's `report`. */
+    onProgress?: (message: string) => void;
   }
 ): Promise<LibraryRef | Record<string, unknown>> {
   if (!existsSync(pdfPath) || !statSync(pdfPath).isFile()) {
@@ -109,9 +111,15 @@ export async function attachPdf(
     copyFileSync(pdfPath, dest);
   }
 
-  await deps.pipelines.ingestPdf(dest, { outDir, isOcr: query.forceOcr ?? null });
+  deps.onProgress?.("Ingesting PDF (MinerU OCR)");
+  await deps.pipelines.ingestPdf(dest, {
+    outDir,
+    isOcr: query.forceOcr ?? null,
+    onProgress: deps.onProgress,
+  });
   stampSource(join(outDir, `${docId}.json`), w, "user_pdf");
 
+  deps.onProgress?.("Rebuilding library");
   await (deps.rebuild ?? rebuild)(deps.paths, { sources: deps.sources }); // relink doc_ids + refresh graph
   const store2 = LibraryStore.load(deps.paths);
   const w2 = findWork(store2, { workId: w.id, doi: w.doi, arxiv: w.arxiv_id });

@@ -51,6 +51,8 @@ export type PdfMineruExtract = (
     pollInterval: number;
     pollTimeout: number;
     useCache: boolean;
+    /** Coarse progress sink (Stage 3 / MS3): extraction-state transitions. */
+    onProgress?: (message: string) => void;
   }
 ) => Promise<MineruArtifacts>;
 

@@ -2,19 +2,24 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
+import { buildDocIr } from "@argelanderspace/core";
+import type { Document } from "@argelanderspace/contracts";
 import { docRouteUrl, parseDocRoute } from "../src/lib/deeplink";
 import { DocPane } from "../src/doc/DocPane";
 import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
-// Golden reader doc (same shape as GET /api/paper/<id>): sections sec-1..8,
-// floats fig-1..13 / tab-1..8 / eq-1..10, refs ref-1..62; ref-6 is first cited
-// in block p-14. (node:url's URL, not happy-dom's, so fs accepts it.)
+// Golden reader doc (aa39341-20): sections sec-1..8, floats fig-1..13 /
+// tab-1..8 / eq-1..10, refs ref-1..62; ref-6 is first cited in block p-14.
+// The reader now fetches the render IR (GET /api/paper/<id>/ir), so the mock
+// below serves what the server would: buildDocIr(golden).
+// (node:url's URL, not happy-dom's, so fs accepts it.)
 const goldenDoc = JSON.parse(
   readFileSync(
     fileURLToPath(new NodeURL("../../../tests/golden/aa39341-20.json", import.meta.url)),
     "utf8"
   )
-);
+) as Document;
+const goldenIr = buildDocIr(goldenDoc);
 
 // ---------------------------------------------------------------------------
 // URL parsing
@@ -113,8 +118,8 @@ describe("DocPane deep-link anchors", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.startsWith("/api/paper/")) {
-          return { ok: true, json: async () => goldenDoc } as Response;
+        if (url.startsWith("/api/paper/") && url.endsWith("/ir")) {
+          return { ok: true, json: async () => goldenIr } as Response;
         }
         return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
       })
@@ -164,6 +169,12 @@ describe("DocPane deep-link anchors", () => {
       { timeout: 3000 }
     );
     expect(scrolled.some((el) => el === card || el.contains(card))).toBe(true);
+  });
+
+  it("the topbar shows the page count again (nPages, MS3 regression)", async () => {
+    const { container } = renderDocPane(null);
+    await waitFor(() => expect(container.querySelector(".doc-meta")).toBeTruthy());
+    expect(container.querySelector(".doc-meta")?.textContent).toBe("1 pp · 62 refs · 13 figs");
   });
 
   it("unknown anchor still opens the doc without scrolling", async () => {

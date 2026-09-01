@@ -6,13 +6,12 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import type {
-  Block,
-  Citation,
-  CrossRef,
-  Doc,
+  BibManifestRow,
+  DocIr,
+  IrBlock,
+  IrSection,
   Reference,
-  Section,
-} from "./types";
+} from "@argelanderspace/contracts";
 import { imageUrl as buildImageUrl } from "./api";
 
 // rootMargin defining the "currently reading" band inside the reader viewport.
@@ -24,15 +23,15 @@ const FLASH_MS = 1600;
 const JUMP_ANIM_MS = 700;
 
 interface StoreValue {
-  doc: Doc;
+  ir: DocIr;
   docId: string;
   // lookups
   refById: Map<string, Reference>;
-  blockById: Map<string, Block>;
+  bibById: Map<string, BibManifestRow>;
+  blockById: Map<string, IrBlock>;
   blockOrder: Map<string, number>;
   sectionOfBlock: Map<string, string>;
-  citationsByBlock: Map<string, Citation[]>;
-  crossrefsByBlock: Map<string, CrossRef[]>;
+  citationsByBlock: Map<string, string[]>;
   imageUrl: (imgPath?: string) => string | null;
   // reader element + viewport observation
   registerReader: (el: HTMLElement | null) => void;
@@ -58,8 +57,8 @@ export function useStore(): StoreValue {
   return v;
 }
 
-export function StoreProvider({ doc, children }: { doc: Doc; children: React.ReactNode }) {
-  const lookups = useMemo(() => buildLookups(doc), [doc]);
+export function StoreProvider({ ir, children }: { ir: DocIr; children: React.ReactNode }) {
+  const lookups = useMemo(() => buildLookups(ir), [ir]);
 
   // --- mutable refs (do not trigger renders) ---
   const readerEl = useRef<HTMLElement | null>(null);
@@ -132,10 +131,10 @@ export function StoreProvider({ doc, children }: { doc: Doc; children: React.Rea
     };
 
     return {
-      doc,
-      docId: doc.doc_id,
+      ir,
+      docId: ir.docId,
       ...lookups,
-      imageUrl: (p) => buildImageUrl(doc.doc_id, p),
+      imageUrl: (p) => buildImageUrl(ir.docId, p),
 
       registerReader: (el) => {
         readerEl.current = el;
@@ -200,7 +199,7 @@ export function StoreProvider({ doc, children }: { doc: Doc; children: React.Rea
         return () => focusSubs.current.delete(cb);
       },
     };
-  }, [doc, lookups]);
+  }, [ir, lookups]);
 
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }
@@ -225,23 +224,26 @@ export function useCanUndo(): boolean {
 }
 
 // --------------------------------------------------------------------------
-function buildLookups(doc: Doc) {
+function buildLookups(ir: DocIr) {
   const refById = new Map<string, Reference>();
-  for (const r of doc.references) refById.set(r.id, r);
+  for (const r of ir.references ?? []) refById.set(r.id, r);
 
-  const blockById = new Map<string, Block>();
+  const bibById = new Map<string, BibManifestRow>();
+  for (const b of ir.bib) bibById.set(b.id, b);
+
+  const blockById = new Map<string, IrBlock>();
   const blockOrder = new Map<string, number>();
   const sectionOfBlock = new Map<string, string>();
   let order = 0;
 
-  const walk = (secs: Section[] | undefined) => {
+  const walk = (secs: IrSection[] | undefined) => {
     if (!secs) return;
     for (const sec of secs) {
       // the heading itself is a jump target + ordering anchor; registering it in
       // blockById lets section cross-refs (\ref{sec:..}, "Sect. 3") resolve too.
       blockOrder.set(sec.id, order++);
       sectionOfBlock.set(sec.id, sec.id);
-      blockById.set(sec.id, sec as unknown as Block);
+      blockById.set(sec.id, sec as unknown as IrBlock);
       for (const b of sec.blocks ?? []) {
         blockById.set(b.id, b);
         blockOrder.set(b.id, order++);
@@ -250,31 +252,20 @@ function buildLookups(doc: Doc) {
       walk(sec.children ?? []);
     }
   };
-  walk(doc.structure);
+  walk(ir.sections);
 
-  const citationsByBlock = groupBy(doc.citations, (c) => c.block_id);
-  const crossrefsByBlock = groupBy(doc.crossrefs, (c) => c.block_id);
+  // core precomputes the per-block citation ref-id groups (order preserved,
+  // deduped) — includes hyperlink-found occurrences without an inline token.
+  const citationsByBlock = new Map<string, string[]>(Object.entries(ir.citationsByBlock));
 
   return {
     refById,
+    bibById,
     blockById,
     blockOrder,
     sectionOfBlock,
     citationsByBlock,
-    crossrefsByBlock,
   };
-}
-
-function groupBy<T>(items: T[], key: (t: T) => string | undefined): Map<string, T[]> {
-  const m = new Map<string, T[]>();
-  for (const it of items) {
-    const k = key(it);
-    if (!k) continue;
-    const list = m.get(k) ?? [];
-    list.push(it);
-    m.set(k, list);
-  }
-  return m;
 }
 
 function cssEscape(s: string): string {

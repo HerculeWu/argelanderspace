@@ -22,9 +22,13 @@ export interface IngestPipelines {
    * MinerU (+OCR) → Document written into `opts.outDir`.
    *
    * `opts.isOcr` is `config.mineru.is_ocr`: `null` auto-detects the text layer,
-   * `true`/`false` forces OCR on/off.
+   * `true`/`false` forces OCR on/off. `opts.onProgress` (Stage 3 / MS3) is a
+   * coarse progress sink for the upload job's WS progress feed.
    */
-  ingestPdf(pdfPath: string, opts: { outDir: string; isOcr: boolean | null }): Promise<Document>;
+  ingestPdf(
+    pdfPath: string,
+    opts: { outDir: string; isOcr: boolean | null; onProgress?: (message: string) => void }
+  ): Promise<Document>;
 }
 
 /**

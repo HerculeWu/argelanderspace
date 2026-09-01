@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import type { Doc } from "../types";
+import type { DocIr } from "@argelanderspace/contracts";
 import { fetchPaper } from "../api";
 import { StoreProvider, useStore, useCanUndo } from "../store";
 import { Reader } from "../components/Reader";
 import { TocPanel } from "../components/TocPanel";
 import { RightPanel } from "../components/RightPanel";
-import { RichText } from "../lib/richtext";
+import { MathText } from "../lib/segments";
 import { applyAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 
@@ -15,21 +15,21 @@ import { useWorkspace } from "../argelander/workspace";
 export function DocPane() {
   const ws = useWorkspace();
   const id = ws.currentDoc;
-  const [doc, setDoc] = useState<Doc | null>(null);
+  const [ir, setIr] = useState<DocIr | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
-      setDoc(null);
+      setIr(null);
       return;
     }
     let alive = true;
-    setDoc(null);
+    setIr(null);
     setError(null);
     (async () => {
       try {
         const d = await fetchPaper(id);
-        if (alive) setDoc(d);
+        if (alive) setIr(d);
       } catch (e) {
         if (alive) setError(String(e));
       }
@@ -51,7 +51,7 @@ export function DocPane() {
         <div className="error">Failed to load paper:{"\n"}{error}</div>
       </div>
     );
-  if (!doc)
+  if (!ir)
     return (
       <div className="reader-root">
         <div className="loading">Loading paper…</div>
@@ -59,8 +59,8 @@ export function DocPane() {
     );
 
   return (
-    <StoreProvider key={doc.doc_id} doc={doc}>
-      <DocWorkspace papers={ws.papers} currentId={doc.doc_id} onSelect={ws.setCurrentDoc} />
+    <StoreProvider key={ir.docId} ir={ir}>
+      <DocWorkspace papers={ws.papers} currentId={ir.docId} onSelect={ws.setCurrentDoc} />
     </StoreProvider>
   );
 }
@@ -74,7 +74,7 @@ function DocWorkspace({
   currentId: string;
   onSelect: (id: string) => void;
 }) {
-  const { doc } = useStore();
+  const { ir } = useStore();
   const store = useStore();
   const ws = useWorkspace();
   const [collapsedLeft, setCollapsedLeft] = useState(false);
@@ -90,11 +90,14 @@ function DocWorkspace({
     applyAnchor(store, anchor);
   }, [anchor, store, ws]);
 
+  // ref/fig counts are derived from the IR; the page count rides it (nPages)
+  const nFigs = ir.refsManifest.filter((r) => r.kind === "figure").length;
+
   return (
     <div className="reader-root">
       <header className="topbar">
-        <h1 title={doc.meta.title}>
-          {doc.meta.title ? <RichText as="span" text={doc.meta.title} /> : doc.doc_id}
+        <h1 title={ir.title}>
+          {ir.title ? <MathText as="span" text={ir.title} /> : ir.docId}
         </h1>
         {papers.length > 1 && (
           <select
@@ -111,7 +114,8 @@ function DocWorkspace({
           </select>
         )}
         <span className="doc-meta">
-          {doc.source.n_pages} pp · {doc.stats.n_references} refs · {doc.stats.n_figures} figs
+          {ir.nPages !== undefined && `${ir.nPages} pp · `}
+          {ir.bib.length} refs · {nFigs} figs
         </span>
       </header>
 

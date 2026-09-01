@@ -40,6 +40,13 @@ export interface IngestPdfOptions {
   useMineruCache?: boolean;
   /** Write `<out_dir>/<stem>.json` (Python `write_json`). */
   writeJson?: boolean;
+  /**
+   * Coarse progress sink (Stage 3 / MS3): one line per stage transition
+   * (MinerU extraction / link harvest / document build / JSON write), plus the
+   * MinerU port's own extraction-state transitions. The upload job wires this
+   * to the job runner's `report`.
+   */
+  onProgress?: (message: string) => void;
 }
 
 /** `ingest_pdf(pdf_path, out_dir, config, use_mineru_cache, write_json)`. */
@@ -69,17 +76,20 @@ export async function ingestPdf(
   }
 
   // 2) MinerU extraction (cached if available)
+  opts.onProgress?.("MinerU extraction");
   const mineru = await ports.mineru(pdfPath, outDir, {
     config: mineruConfig,
     pollInterval: config.pollInterval,
     pollTimeout: config.pollTimeout,
     useCache: opts.useMineruCache ?? true,
+    onProgress: opts.onProgress,
   });
 
   // 3) PDF hyperlink annotations (hybrid resolution) — a failed extraction never
   // fails the whole run; resolution degrades to regex-only.
   let pdfLinks: PdfLinks | null = null;
   if (config.usePdfLinks) {
+    opts.onProgress?.("Extracting PDF links");
     try {
       pdfLinks = ports.links.extract(pdfPath);
     } catch {
@@ -98,6 +108,7 @@ export async function ingestPdf(
     }
   }
 
+  opts.onProgress?.("Building document");
   const doc = buildDocument(
     mineru,
     { stem, path: pdfPath, filename: basename(pdfPath) },
@@ -115,6 +126,7 @@ export async function ingestPdf(
   );
 
   if (opts.writeJson ?? true) {
+    opts.onProgress?.("Writing document JSON");
     const outJson = join(outDir, `${stem}.json`);
     writeFileSync(
       outJson,

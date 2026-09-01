@@ -106,6 +106,40 @@ describe("async flow (new default)", () => {
     expect(messages.some((m) => m.type === "library.changed")).toBe(false);
   });
 
+  test("pipeline onProgress accumulates in job.progress (attachPdf + pipeline + MinerU lines)", async () => {
+    const pipelines = stubPipelines();
+    const baseIngest = pipelines.ingestPdf;
+    pipelines.ingestPdf = async (pdfPath, opts) => {
+      opts.onProgress?.("MinerU task state: running (elapsed 0s)");
+      return baseIngest(pdfPath, opts);
+    };
+    const collector = collectBroadcasts();
+    const app2 = createApp({
+      paths: libraryPaths(dataDir),
+      makeSources: () => stubSources(),
+      pipelines,
+      runner,
+      broadcast: collector.broadcast,
+    });
+    const res = await app2.request(`/api/library/upload?id=${KNOWN_WORK_ID}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/pdf" },
+      body: PDF,
+    });
+    expect(res.status).toBe(202);
+    const { job } = (await res.json()) as { job: Job };
+    const done = await runner.waitFor(job.id);
+    expect(done.status).toBe("done");
+    expect(done.progress.map((p) => p.message)).toEqual([
+      "Ingesting PDF (MinerU OCR)",
+      "MinerU task state: running (elapsed 0s)",
+      "Rebuilding library",
+    ]);
+    // every report was broadcast as its own job.progress event
+    const progressed = collector.messages.filter((m) => m.type === "job.progress");
+    expect(progressed).toHaveLength(3);
+  });
+
   test("two uploads run strictly serially", async () => {
     const r1 = await upload(`?id=${KNOWN_WORK_ID}`);
     const r2 = await upload(`?id=${KNOWN_WORK_ID}`);

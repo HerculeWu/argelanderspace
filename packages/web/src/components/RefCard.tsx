@@ -1,15 +1,15 @@
 import { forwardRef } from "react";
 import type {
-  CodeBlock,
-  Equation,
-  Figure,
+  IrAlgorithmBlock,
+  IrCodeBlock,
+  IrEquationBlock,
+  IrFigureBlock,
+  IrTableBlock,
   Reference,
-  TableBlock,
-} from "../types";
+} from "@argelanderspace/contracts";
 import { useStore } from "../store";
-import { RichText } from "../lib/richtext";
+import { Segments } from "../lib/segments";
 import { Math, htmlWithMath, flattenLatex } from "../lib/math";
-import { captionText } from "./Block";
 import { FigureImage } from "./FigureImage";
 import { limitTable, parseTable, type ParsedTable } from "../lib/tableparse";
 
@@ -18,7 +18,7 @@ export type CardKind = "figure" | "table" | "equation" | "code" | "citation";
 export interface Card {
   key: string;
   kind: CardKind;
-  block?: Figure | TableBlock | Equation | CodeBlock;
+  block?: IrFigureBlock | IrTableBlock | IrEquationBlock | IrCodeBlock | IrAlgorithmBlock;
   ref?: Reference;
 }
 
@@ -81,7 +81,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
         )}
       </div>
       {expanded && canExpand && (
-        <div className="refcard-expand">{cardExpand(card, store)}</div>
+        <div className="refcard-expand">{cardExpand(card)}</div>
       )}
     </div>
   );
@@ -90,7 +90,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
 function badge(card: Card): string {
   const lbl = KIND_LABEL[card.kind];
   if (card.kind === "figure" || card.kind === "table") {
-    const b = card.block as Figure | TableBlock;
+    const b = card.block as IrFigureBlock | IrTableBlock;
     return b?.number ? `${lbl} ${b.number}` : lbl;
   }
   return lbl;
@@ -99,12 +99,12 @@ function badge(card: Card): string {
 function cardMain(card: Card, store: ReturnType<typeof useStore>) {
   switch (card.kind) {
     case "figure": {
-      const f = card.block as Figure;
-      const src = store.imageUrl(f.img_path);
+      const f = card.block as IrFigureBlock;
+      const src = store.imageUrl(f.imgPath);
       return src ? <FigureImage src={src} alt={f.label || "figure"} /> : <em>(no image)</em>;
     }
     case "equation": {
-      const e = card.block as Equation;
+      const e = card.block as IrEquationBlock;
       return (
         <div className="one-line" style={{ overflowX: "auto" }}>
           <Math latex={flattenLatex(e.latex)} />
@@ -112,8 +112,8 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
       );
     }
     case "table": {
-      const t = card.block as TableBlock;
-      const parsed = parseTable(t.table_body);
+      const t = card.block as IrTableBlock;
+      const parsed = parseTable(t.tableBody ?? "");
       const small = parsed.totalRows <= 3 && parsed.totalCols <= 4;
       const prev = small ? parsed : limitTable(parsed, 3, parsed.totalCols);
       return (
@@ -123,7 +123,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
       );
     }
     case "code": {
-      const c = card.block as CodeBlock;
+      const c = card.block as IrCodeBlock | IrAlgorithmBlock;
       const code = c.body ?? "";
       const lines = code.split("\n");
       const small = lines.length <= 3;
@@ -135,31 +135,27 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
     }
     case "citation": {
       const r = card.ref!;
-      return <CitationLine r={r} />;
+      return <CitationLine r={r} short={store.bibById.get(r.id)?.short} />;
     }
   }
 }
 
-function cardExpand(card: Card, store: ReturnType<typeof useStore>) {
+function cardExpand(card: Card) {
   switch (card.kind) {
     case "figure": {
-      const f = card.block as Figure;
-      const cap = captionText(f.caption);
-      return cap ? (
+      const f = card.block as IrFigureBlock;
+      const cap = f.captionSegments;
+      return cap !== undefined && cap.length > 0 ? (
         <div className="fig-cap">
           {f.label && <span className="cap-label">{f.label}. </span>}
-          <RichText
-            text={cap}
-            citations={store.citationsByBlock.get(f.id)}
-            crossrefs={store.crossrefsByBlock.get(f.id)}
-          />
+          <Segments segments={cap} />
         </div>
       ) : (
         <em>(no caption)</em>
       );
     }
     case "equation": {
-      const e = card.block as Equation;
+      const e = card.block as IrEquationBlock;
       return (
         <div style={{ overflowX: "auto", textAlign: "center" }}>
           <Math display latex={e.latex} />
@@ -167,8 +163,8 @@ function cardExpand(card: Card, store: ReturnType<typeof useStore>) {
       );
     }
     case "table": {
-      const t = card.block as TableBlock;
-      const parsed = parseTable(t.table_body);
+      const t = card.block as IrTableBlock;
+      const parsed = parseTable(t.tableBody ?? "");
       const limited = limitTable(parsed, 8, 4);
       const shownCols = parsed.totalCols > 4 ? 4 : parsed.totalCols;
       const clipped = parsed.totalRows > 8 || parsed.totalCols > 4;
@@ -185,7 +181,7 @@ function cardExpand(card: Card, store: ReturnType<typeof useStore>) {
       );
     }
     case "code": {
-      const c = card.block as CodeBlock;
+      const c = card.block as IrCodeBlock | IrAlgorithmBlock;
       const code = c.body ?? "";
       const lines = code.split("\n");
       return (
@@ -218,16 +214,10 @@ function MiniTable({ t }: { t: ParsedTable }) {
   );
 }
 
-function CitationLine({ r }: { r: Reference }) {
-  const authors = r.authors ?? [];
-  let who = "";
-  if (authors.length === 1) who = authors[0];
-  else if (authors.length === 2) who = `${authors[0]} & ${authors[1]}`;
-  else if (authors.length > 2) who = `${authors[0]} et al.`;
-  const head = [who, r.year].filter(Boolean).join(" ");
+function CitationLine({ r, short }: { r: Reference; short?: string }) {
   return (
     <div>
-      {head && <span className="title-line">{head}. </span>}
+      {short && <span className="title-line">{short}. </span>}
       <span>{r.raw}</span>
       {r.doi && (
         <>

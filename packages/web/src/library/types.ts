@@ -36,7 +36,7 @@ export interface LibraryRef {
   tags: string[];
   pdf: boolean;
   read: boolean;
-  note: boolean;
+  note?: string; // full note text (absent when unset)
   star: boolean;
   abstract?: string;
   doi?: string;

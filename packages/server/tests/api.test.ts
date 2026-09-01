@@ -8,6 +8,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { DocIrSchema } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
 import type { Hono } from "hono";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -123,6 +124,37 @@ describe("GET /api/paper/:doc_id", () => {
     writeFileSync(p, JSON.stringify({ ...first, edited: true }));
     const second = await (await get("/api/paper/demo")).json();
     expect(second).toMatchObject({ doc_id: "demo", edited: true });
+  });
+});
+
+describe("GET /api/paper/:doc_id/ir", () => {
+  test("returns the render IR, consistent with the document JSON", async () => {
+    const res = await get("/api/paper/arxiv-2501.17225/ir");
+    expect(res.status).toBe(200);
+    const ir = DocIrSchema.parse(await res.json());
+    expect(ir.docId).toBe("arxiv-2501.17225");
+    expect(typeof ir.title).toBe("string");
+    expect(ir.sections.length).toBeGreaterThan(0);
+    const doc = (await (await get("/api/paper/arxiv-2501.17225")).json()) as {
+      references?: unknown[];
+    };
+    expect(ir.bib).toHaveLength((doc.references ?? []).length);
+  });
+
+  test("the minimal demo doc yields an empty IR", async () => {
+    const res = await get("/api/paper/demo/ir");
+    expect(res.status).toBe(200);
+    const ir = DocIrSchema.parse(await res.json());
+    expect(ir).toMatchObject({ docId: "demo", title: "Demo paper", sections: [], bib: [] });
+  });
+
+  test("404/400 semantics mirror /api/paper/:doc_id", async () => {
+    const res = await get("/api/paper/nope/ir");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ detail: "paper 'nope' not found" });
+    const bad = await get("/api/paper/.hidden/ir");
+    expect(bad.status).toBe(400);
+    expect(await bad.json()).toEqual({ detail: "bad doc id" });
   });
 });
 
@@ -329,6 +361,44 @@ describe("GET /images/:doc_id/:filename", () => {
       detail: "bad filename",
     });
     expect(await (await get("/images/.hidden/x.png")).json()).toEqual({ detail: "bad doc id" });
+  });
+});
+
+describe("GET /images/:doc_id/<subpath> (img_path verbatim)", () => {
+  test("serves subdirectory paths: assets/… doc-relative, images/… under mineru/", async () => {
+    const png = await get("/images/demo/assets/logo.png");
+    expect(png.status).toBe(200);
+    expect(png.headers.get("content-type")).toBe("image/png");
+    const nested = await get("/images/demo/assets/nested/deep.png");
+    expect(nested.status).toBe(200);
+    expect(new Uint8Array(await nested.arrayBuffer())).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x48])
+    );
+    const jpg = await get("/images/demo/images/pic.jpg");
+    expect(jpg.status).toBe(200);
+    expect(new Uint8Array(await jpg.arrayBuffer())).toEqual(
+      new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
+    );
+  });
+
+  test("404 for a missing subpath", async () => {
+    const res = await get("/images/demo/assets/missing.png");
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ detail: "image not found" });
+  });
+
+  test("traversal never escapes the doc dir", async () => {
+    // literal/encoded dot segments are normalized away by the URL layer: the
+    // remainder 404s inside another doc's lookup, no file is ever served
+    const normalized = await get("/images/demo/assets/../../library/library.json");
+    expect(normalized.status).toBe(404);
+    // an encoded slash smuggles ".." past the URL layer → the guard 400s
+    const smuggled = await get("/images/demo/assets/%2e%2e%2Flibrary.json");
+    expect(smuggled.status).toBe(400);
+    expect(await smuggled.json()).toEqual({ detail: "bad filename" });
+    // backslash separators are rejected too
+    const backslash = await get("/images/demo/assets/%5Cnested/deep.png");
+    expect(backslash.status).toBe(400);
   });
 });
 

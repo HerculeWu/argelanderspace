@@ -6,7 +6,7 @@
  * `_suggested_node()`, and the frontend's `web/src/library/types.ts`.
  *
  * Serialization notes (bug-for-bug):
- * - `LibraryRef`: the 12 base keys are always present (never stripped);
+ * - `LibraryRef`: the 11 base keys are always present (never stripped);
  *   optional keys are *absent* when unset (None/"" are filtered out).
  * - `GraphNode`: the graph JSON is dumped *without* compaction, so saved
  *   nodes carry explicit `null` for unset `doi` / `arxiv_id` / `doc_id`
@@ -37,10 +37,11 @@ export const LibraryRefSchema = z.object({
   tags: z.array(z.string()),
   pdf: z.boolean(),
   read: z.boolean(),
-  note: z.boolean(),
   star: z.boolean(),
   // ---- optional (absent when unset) ---- //
   abstract: z.string().optional(),
+  /** Full note text (Stage 3 / MS3: no longer squashed to a boolean). */
+  note: z.string().optional(),
   doi: z.string().optional(),
   arxiv_id: z.string().optional(),
   /** Reader doc id, when this work is ingested. */

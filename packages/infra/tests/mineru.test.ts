@@ -183,6 +183,40 @@ describe("MineruClient (mineru_client.py)", () => {
     ).rejects.toThrow(/Timed out after 0\.05s/);
   });
 
+  test("log hook reports poll state transitions with elapsed time (upload progress channel)", async () => {
+    let polls = 0;
+    const { fetchImpl } = stubFetch((c) => {
+      if (c.url.endsWith("file-urls/batch")) {
+        return jsonResponse({
+          code: 0,
+          data: { batch_id: "b", file_urls: ["https://put.example/s"] },
+        });
+      }
+      if (c.url === "https://put.example/s") return new Response(null, { status: 200 });
+      if (c.url.includes("extract-results")) {
+        polls += 1;
+        return polls === 1
+          ? jsonResponse({ code: 0, data: { extract_result: [{ state: "running" }] } })
+          : jsonResponse({
+              code: 0,
+              data: {
+                extract_result: [{ state: "done", full_zip_url: "https://dl.example/r.zip" }],
+              },
+            });
+      }
+      if (c.url === "https://dl.example/r.zip") return bytesResponse(ZIP);
+      throw new Error(`unexpected call: ${c.url}`);
+    });
+    const logs: string[] = [];
+    const client = new MineruClient({ apiKey: "K", fetchImpl, log: (m) => logs.push(m) });
+    await client.extract(fakePdf(), join(tmp(), "o"), { pollInterval: 0, pollTimeout: 10 });
+    expect(logs).toEqual([
+      "MinerU task state: running (elapsed 0s)",
+      "MinerU task state: done (elapsed 0s)",
+      "Downloading result zip",
+    ]);
+  });
+
   test("missing API key is a clear error", () => {
     const savedKey = process.env.MINERU_API_KEY;
     const savedXdg = process.env.XDG_CONFIG_HOME;

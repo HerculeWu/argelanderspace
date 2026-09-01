@@ -1,24 +1,28 @@
 import type {
-  Block,
-  Caption,
-  CodeBlock,
-  Equation,
-  Figure,
-  ListBlock,
-  Paragraph,
-  TableBlock,
-} from "../types";
+  IrAlgorithmBlock,
+  IrBlock,
+  IrCodeBlock,
+  IrEquationBlock,
+  IrFigureBlock,
+  IrListBlock,
+  IrParagraphBlock,
+  IrSegment,
+  IrTableBlock,
+} from "@argelanderspace/contracts";
 import { useStore } from "../store";
-import { RichText } from "../lib/richtext";
+import { Segments } from "../lib/segments";
 import { Math, htmlWithMath } from "../lib/math";
 import { FigureImage } from "./FigureImage";
 
-export function captionText(cap: Caption | undefined): string {
-  if (!cap) return "";
-  return typeof cap === "string" ? cap : cap.text ?? "";
+/** True when a caption/body segment run carries any visible content. */
+function hasContent(segments: IrSegment[] | undefined): segments is IrSegment[] {
+  return (
+    segments !== undefined &&
+    segments.some((s) => s.type !== "text" || s.text.trim() !== "")
+  );
 }
 
-export function BlockView({ block }: { block: Block }) {
+export function BlockView({ block }: { block: IrBlock }) {
   switch (block.type) {
     case "paragraph":
       return <ParagraphView b={block} />;
@@ -38,22 +42,19 @@ export function BlockView({ block }: { block: Block }) {
   }
 }
 
-function ParagraphView({ b }: { b: Paragraph }) {
-  const store = useStore();
-  if (!b.text?.trim()) return null;
+function ParagraphView({ b }: { b: IrParagraphBlock }) {
+  if (!hasContent(b.segments)) return null;
   return (
-    <RichText
+    <Segments
       as="p"
       className="block para"
-      text={b.text}
-      citations={store.citationsByBlock.get(b.id)}
-      crossrefs={store.crossrefsByBlock.get(b.id)}
+      segments={b.segments}
       {...({ id: b.id, "data-block-id": b.id } as Record<string, string>)}
     />
   );
 }
 
-function EquationView({ b }: { b: Equation }) {
+function EquationView({ b }: { b: IrEquationBlock }) {
   return (
     <div className="block eqn" id={b.id} data-block-id={b.id}>
       <div className="eqn-body">
@@ -64,78 +65,67 @@ function EquationView({ b }: { b: Equation }) {
   );
 }
 
-function FigureView({ b }: { b: Figure }) {
+function FigureView({ b }: { b: IrFigureBlock }) {
   const store = useStore();
-  const src = store.imageUrl(b.img_path);
-  const cap = captionText(b.caption);
+  const src = store.imageUrl(b.imgPath);
   return (
     <figure className="block fig" id={b.id} data-block-id={b.id}>
       {src && <FigureImage src={src} alt={b.label || "figure"} controls />}
-      {cap && (
+      {hasContent(b.captionSegments) && (
         <figcaption className="fig-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}
-          <RichText
-            text={cap}
-            citations={store.citationsByBlock.get(b.id)}
-            crossrefs={store.crossrefsByBlock.get(b.id)}
-          />
+          <Segments segments={b.captionSegments} />
         </figcaption>
       )}
     </figure>
   );
 }
 
-function TableView({ b }: { b: TableBlock }) {
+function TableView({ b }: { b: IrTableBlock }) {
   const store = useStore();
-  const cap = captionText(b.caption);
   return (
     <div className="block tableblock" id={b.id} data-block-id={b.id}>
-      {cap && (
+      {hasContent(b.captionSegments) && (
         <div className="tab-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}
-          <RichText
-            text={cap}
-            citations={store.citationsByBlock.get(b.id)}
-            crossrefs={store.crossrefsByBlock.get(b.id)}
-          />
+          <Segments segments={b.captionSegments} />
         </div>
       )}
-      {b.table_body ? (
+      {b.tableBody ? (
         <div
           className="tbl-scroll"
-          dangerouslySetInnerHTML={{ __html: htmlWithMath(b.table_body) }}
+          dangerouslySetInnerHTML={{ __html: htmlWithMath(b.tableBody) }}
         />
       ) : (
-        store.imageUrl(b.img_path) && (
-          <FigureImage src={store.imageUrl(b.img_path)!} alt="table" />
+        store.imageUrl(b.imgPath) && (
+          <FigureImage src={store.imageUrl(b.imgPath)!} alt="table" />
         )
       )}
     </div>
   );
 }
 
-function ListView({ b }: { b: ListBlock }) {
+function ListView({ b }: { b: IrListBlock }) {
   const Tag = b.ordered ? "ol" : "ul";
   return (
     <Tag className="doc-list block" id={b.id} data-block-id={b.id}>
       {b.items.map((it, i) => (
         <li key={i}>
-          <RichText text={it.text} citations={it.citations} crossrefs={it.crossrefs} />
+          <Segments segments={it.segments} />
         </li>
       ))}
     </Tag>
   );
 }
 
-function CodeView({ b }: { b: CodeBlock }) {
-  const cap = captionText(b.caption);
+function CodeView({ b }: { b: IrCodeBlock | IrAlgorithmBlock }) {
   const code = b.body ?? "";
   return (
     <div className="block codeblock" id={b.id} data-block-id={b.id}>
-      {cap && (
+      {hasContent(b.captionSegments) && (
         <div className="tab-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}
-          {cap}
+          <Segments segments={b.captionSegments} />
         </div>
       )}
       <pre className="code">{code}</pre>

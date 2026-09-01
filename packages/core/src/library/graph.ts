@@ -240,12 +240,12 @@ export function workToRef(w: Work): LibraryRef {
     tags: w.tags,
     pdf: w.doc_ids.length > 0,
     read: w.read,
-    note: pyOr(w.note) !== undefined,
     star: w.star,
   };
   const acq = w.acquisition ?? {};
   const optional: Record<string, unknown> = {
     abstract: w.abstract,
+    note: w.note,
     doi: w.doi,
     arxiv_id: w.arxiv_id,
     doc_id: w.doc_ids.length > 0 ? w.doc_ids[0] : null,

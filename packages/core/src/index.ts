@@ -39,6 +39,7 @@ export * from "./documents/annotate.js";
 export * from "./documents/citations.js";
 export * from "./documents/crossrefs.js";
 export * from "./documents/document.js";
+export * from "./documents/ir.js";
 export * from "./documents/mineru.js";
 export * from "./documents/pdf-links.js";
 export * from "./documents/references.js";

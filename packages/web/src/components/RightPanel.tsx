@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useStore, useVisibleIds } from "../store";
+import { xrefTargetIds } from "../lib/segments";
 import { RefCard, type Card, type CardKind } from "./RefCard";
 
 function floatKind(t: string): CardKind | null {
@@ -22,24 +23,24 @@ export function RightPanel() {
     const seen = new Set<string>();
     const out: Card[] = [];
     for (const bid of visibleIds) {
-      for (const c of store.citationsByBlock.get(bid) ?? []) {
-        if (!c.resolved) continue;
-        for (const rid of c.ref_ids ?? []) {
-          const key = "cite:" + rid;
-          if (seen.has(key)) continue;
-          const ref = store.refById.get(rid);
-          if (!ref) continue;
-          seen.add(key);
-          out.push({ key, kind: "citation", ref });
-        }
+      // core pre-grouped the citing ref ids per block; refById doubles as the
+      // resolved check (unknown ids are simply absent)
+      for (const rid of store.citationsByBlock.get(bid) ?? []) {
+        const key = "cite:" + rid;
+        if (seen.has(key)) continue;
+        const ref = store.refById.get(rid);
+        if (!ref) continue;
+        seen.add(key);
+        out.push({ key, kind: "citation", ref });
       }
-      for (const x of store.crossrefsByBlock.get(bid) ?? []) {
-        if (!x.resolved || !x.target_id) continue;
-        const t = store.blockById.get(x.target_id);
+      const block = store.blockById.get(bid);
+      if (!block) continue;
+      for (const tid of xrefTargetIds(block)) {
+        const t = store.blockById.get(tid);
         if (!t) continue;
         const kind = floatKind(t.type);
         if (!kind) continue;
-        const key = kind + ":" + x.target_id;
+        const key = kind + ":" + tid;
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({ key, kind, block: t as Card["block"] });

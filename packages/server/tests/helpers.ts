@@ -21,7 +21,8 @@ export const KNOWN_WORK_ID = "arxiv:2603.03522";
 /**
  * Fresh data dir:
  *   output/arxiv-2501.17225/…  (a real golden reader doc)
- *   output/demo/{demo.json, mineru/images/pic.jpg, assets/logo.png}
+ *   output/demo/{demo.json, mineru/images/pic.jpg, assets/logo.png,
+ *                assets/nested/deep.png}
  *   library/library.json       (core fixture; contains KNOWN_WORK_ID)
  *   library/cache/graph.json   (one suggested node `oa:W999`)
  */
@@ -50,6 +51,11 @@ export function makeDataDir(): string {
     Buffer.from([0xff, 0xd8, 0xff, 0xd9])
   );
   writeFileSync(join(demoDir, "assets", "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  mkdirSync(join(demoDir, "assets", "nested"), { recursive: true });
+  writeFileSync(
+    join(demoDir, "assets", "nested", "deep.png"),
+    Buffer.from([0x89, 0x50, 0x4e, 0x48])
+  );
 
   const libDir = join(dataDir, "library");
   mkdirSync(join(libDir, "cache"), { recursive: true });

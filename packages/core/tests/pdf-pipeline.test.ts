@@ -168,6 +168,23 @@ describe("ingestPdf composition", () => {
     });
   });
 
+  test("onProgress receives the stage transitions and reaches the MinerU port", async () => {
+    const { ports, calls } = fakePorts();
+    const seen: string[] = [];
+    const onProgress = (m: string): void => {
+      seen.push(m);
+    };
+    const outDir = mkdtempSync(join(tmpdir(), "pdf-pipeline-out-"));
+    await ingestPdf(tmpPdf(), ports, { outDir, onProgress });
+    expect(seen).toEqual([
+      "MinerU extraction",
+      "Extracting PDF links",
+      "Building document",
+      "Writing document JSON",
+    ]);
+    expect(calls.mineru[0]?.opts.onProgress).toBe(onProgress);
+  });
+
   test("doc id / source come from the PDF filename", async () => {
     const { ports } = fakePorts();
     const pdf = tmpPdf();

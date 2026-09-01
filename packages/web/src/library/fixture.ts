@@ -13,14 +13,14 @@ const project = {
 const tags = ["#CNN", "#galaxy-zoo", "#uncertainty", "#SDSS", "#ViT", "#benchmark", "#augmentation"];
 
 const refs: LibraryRef[] = [
-  { id: "r1", title: "Rotation-invariant convolutional neural networks for galaxy morphology prediction", authors: "Dieleman, Willett & Dambre", year: 2015, venue: "MNRAS", type: "article", cite: "dieleman2015", tags: ["#CNN", "#galaxy-zoo"], pdf: true, read: true, note: true, star: true },
-  { id: "r2", title: "Improving galaxy morphologies for SDSS with Deep Learning", authors: "Domínguez Sánchez et al.", year: 2018, venue: "MNRAS", type: "article", cite: "dominguez2018", tags: ["#CNN", "#SDSS", "#benchmark"], pdf: true, read: true, note: false, star: false },
-  { id: "r3", title: "Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning", authors: "Gal & Ghahramani", year: 2016, venue: "ICML", type: "conf", cite: "gal2016", tags: ["#uncertainty"], pdf: true, read: true, note: true, star: true },
-  { id: "r4", title: "Galaxy Zoo: probabilistic morphological classification", authors: "Willett et al.", year: 2013, venue: "MNRAS", type: "article", cite: "willett2013", tags: ["#galaxy-zoo", "#benchmark"], pdf: true, read: true, note: false, star: false },
-  { id: "r5", title: "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale", authors: "Dosovitskiy et al.", year: 2021, venue: "ICLR", type: "conf", cite: "dosovitskiy2021", tags: ["#ViT", "#benchmark"], pdf: true, read: false, note: false, star: false },
-  { id: "r6", title: "Data augmentation strategies for galaxy image classification", authors: "Kim & Brunner", year: 2017, venue: "MNRAS", type: "article", cite: "kim2017", tags: ["#augmentation", "#SDSS"], pdf: false, read: false, note: false, star: false },
-  { id: "r7", title: "The Sloan Digital Sky Survey: Technical Summary", authors: "York et al.", year: 2000, venue: "AJ", type: "article", cite: "york2000", tags: ["#SDSS"], pdf: true, read: true, note: false, star: false },
-  { id: "r8", title: "Deep Residual Learning for Image Recognition", authors: "He, Zhang, Ren & Sun", year: 2016, venue: "CVPR", type: "conf", cite: "he2016", tags: ["#CNN", "#benchmark"], pdf: true, read: true, note: true, star: false },
+  { id: "r1", title: "Rotation-invariant convolutional neural networks for galaxy morphology prediction", authors: "Dieleman, Willett & Dambre", year: 2015, venue: "MNRAS", type: "article", cite: "dieleman2015", tags: ["#CNN", "#galaxy-zoo"], pdf: true, read: true, note: "Reproduce on the GM-CNN sample; compare with Willett 2013 labels.", star: true },
+  { id: "r2", title: "Improving galaxy morphologies for SDSS with Deep Learning", authors: "Domínguez Sánchez et al.", year: 2018, venue: "MNRAS", type: "article", cite: "dominguez2018", tags: ["#CNN", "#SDSS", "#benchmark"], pdf: true, read: true, star: false },
+  { id: "r3", title: "Dropout as a Bayesian Approximation: Representing Model Uncertainty in Deep Learning", authors: "Gal & Ghahramani", year: 2016, venue: "ICML", type: "conf", cite: "gal2016", tags: ["#uncertainty"], pdf: true, read: true, note: "Cite in the uncertainty section.", star: true },
+  { id: "r4", title: "Galaxy Zoo: probabilistic morphological classification", authors: "Willett et al.", year: 2013, venue: "MNRAS", type: "article", cite: "willett2013", tags: ["#galaxy-zoo", "#benchmark"], pdf: true, read: true, star: false },
+  { id: "r5", title: "An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale", authors: "Dosovitskiy et al.", year: 2021, venue: "ICLR", type: "conf", cite: "dosovitskiy2021", tags: ["#ViT", "#benchmark"], pdf: true, read: false, star: false },
+  { id: "r6", title: "Data augmentation strategies for galaxy image classification", authors: "Kim & Brunner", year: 2017, venue: "MNRAS", type: "article", cite: "kim2017", tags: ["#augmentation", "#SDSS"], pdf: false, read: false, star: false },
+  { id: "r7", title: "The Sloan Digital Sky Survey: Technical Summary", authors: "York et al.", year: 2000, venue: "AJ", type: "article", cite: "york2000", tags: ["#SDSS"], pdf: true, read: true, star: false },
+  { id: "r8", title: "Deep Residual Learning for Image Recognition", authors: "He, Zhang, Ren & Sun", year: 2016, venue: "CVPR", type: "conf", cite: "he2016", tags: ["#CNN", "#benchmark"], pdf: true, read: true, note: "Baseline architecture.", star: false },
 ];
 
 const graph: GraphData = {

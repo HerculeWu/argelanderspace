@@ -35,7 +35,14 @@ export async function ingestPdf(
     pdfPath,
     {
       mineru: (path, outDir, o) =>
-        new MineruClient({ config: o.config, apiKey, baseUrl, fetchImpl }).extract(path, outDir, o),
+        // the client's log hook carries the poll state transitions to onProgress
+        new MineruClient({
+          config: o.config,
+          apiKey,
+          baseUrl,
+          fetchImpl,
+          log: o.onProgress,
+        }).extract(path, outDir, o),
       links: { hasTextLayer: hasPdfTextLayer, extract: extractPdfLinks },
       openText: openPdfTextProvider,
     },

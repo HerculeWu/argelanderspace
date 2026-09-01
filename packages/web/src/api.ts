@@ -1,4 +1,4 @@
-import type { Doc } from "./types";
+import type { DocIr } from "@argelanderspace/contracts";
 
 export async function fetchPapers(): Promise<string[]> {
   const r = await fetch("/api/papers");
@@ -6,40 +6,19 @@ export async function fetchPapers(): Promise<string[]> {
   return (await r.json()).papers as string[];
 }
 
-export async function fetchPaper(docId: string): Promise<Doc> {
-  const r = await fetch(`/api/paper/${encodeURIComponent(docId)}`);
-  if (!r.ok) throw new Error(`/api/paper/${docId} ${r.status}`);
-  return normalizeDoc(await r.json());
+// The reader consumes the shared render IR (Stage 3 / MS2): the server builds
+// it with core's buildDocIr, so the shape is guaranteed and no client-side
+// normalization is needed. Optional fields are handled defensively in the
+// components instead.
+export async function fetchPaper(docId: string): Promise<DocIr> {
+  const r = await fetch(`/api/paper/${encodeURIComponent(docId)}/ir`);
+  if (!r.ok) throw new Error(`/api/paper/${docId}/ir ${r.status}`);
+  return (await r.json()) as DocIr;
 }
 
-// The ingestion pipelines (PDF / HTML / LaTeX) emit *sparse* docs: a paper with
-// no tables simply omits `index.tables`, an arXiv-PDF doc may omit `references`
-// entirely. The reader's Doc type declares those arrays as required, so the
-// components read `doc.index.tables.length` / iterate `doc.references` without
-// guards — which threw and blanked the whole pane (no error boundary). Fill the
-// gaps once, here at the boundary, so every consumer sees the shape it expects.
-function normalizeDoc(d: Partial<Doc> & { doc_id: string }): Doc {
-  const ix = (d.index ?? {}) as Partial<Doc["index"]>;
-  return {
-    ...d,
-    structure: d.structure ?? [],
-    index: {
-      figures: ix.figures ?? [],
-      tables: ix.tables ?? [],
-      equations: ix.equations ?? [],
-      sections: ix.sections ?? [],
-    },
-    references: d.references ?? [],
-    citations: d.citations ?? [],
-    crossrefs: d.crossrefs ?? [],
-    stats: d.stats ?? {},
-  } as Doc;
-}
-
-/** Resolve a MinerU img_path ("images/<hash>.jpg") to a backend URL. */
+/** Resolve a MinerU img_path ("images/<hash>.jpg", may carry a subdirectory)
+ *  to a backend URL. The path is used verbatim — the server supports subpaths. */
 export function imageUrl(docId: string, imgPath?: string): string | null {
   if (!imgPath) return null;
-  const file = imgPath.split("/").pop();
-  if (!file) return null;
-  return `/images/${encodeURIComponent(docId)}/${encodeURIComponent(file)}`;
+  return `/images/${encodeURIComponent(docId)}/${imgPath}`;
 }

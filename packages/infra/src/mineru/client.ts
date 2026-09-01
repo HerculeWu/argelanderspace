@@ -215,10 +215,13 @@ export class MineruClient {
 
   private async upload(putUrl: string, pdfPath: string): Promise<void> {
     // IMPORTANT: no Authorization and no Content-Type on the signed PUT.
+    // 1800s: large PDFs over slow links blew the original 300s budget (observed
+    // job: aborted at 302s); aligned with the poll loop's overall timeout. The
+    // Python original (`requests`) set no explicit timeout here at all.
     const res = await this.fetchImpl(putUrl, {
       method: "PUT",
       body: new Uint8Array(readFileSync(pdfPath)),
-      signal: AbortSignal.timeout(300_000),
+      signal: AbortSignal.timeout(1_800_000),
     });
     if (res.status !== 200 && res.status !== 201) {
       const text = (await res.text().catch(() => "")).slice(0, 300);
@@ -241,7 +244,8 @@ export class MineruClient {
       if (r) {
         const state = r.state as string | undefined;
         if (state !== lastState) {
-          this.log?.(`MinerU task state: ${state}`);
+          // one line per batch-state transition, with elapsed poll time
+          this.log?.(`MinerU task state: ${state} (elapsed ${Math.round(elapsed)}s)`);
           lastState = state;
         }
         if (state === "done") {
@@ -267,7 +271,8 @@ export class MineruClient {
     batchId: string
   ): Promise<MineruResult> {
     this.log?.("Downloading result zip");
-    const { bytes } = await fetchBytes(this.fetchImpl, zipUrl, { timeout: 300 });
+    // 1800s like the upload PUT: result zips of image-heavy papers are large.
+    const { bytes } = await fetchBytes(this.fetchImpl, zipUrl, { timeout: 1800 });
     mkdirSync(cacheDir, { recursive: true });
     extractZip(bytes, cacheDir);
     const result = MineruClient.loadCached(cacheDir);

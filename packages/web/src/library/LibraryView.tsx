@@ -17,6 +17,23 @@ const LABEL_COLORS = [
 ];
 const LABEL_HEX: Record<string, string> = Object.fromEntries(LABEL_COLORS.map((l) => [l.k, l.c]));
 
+/** Label key (or an already-CSS color value) → the dot's CSS color. */
+export function labelColor(lab: string): string {
+  return LABEL_HEX[lab] ?? lab;
+}
+
+/**
+ * The dot's effective label: the session-local overlay (right-click menu)
+ * wins; otherwise the persisted `label` field; unset refs keep the
+ * star→amber seeding. Overlay `null` = explicitly cleared.
+ */
+export function effectiveLabel(
+  r: LibraryRef,
+  overlay: Record<string, string | null>
+): string | undefined {
+  return r.id in overlay ? (overlay[r.id] ?? undefined) : (r.label ?? (r.star ? "amber" : undefined));
+}
+
 function nodeToRef(n: GraphNode): LibraryRef {
   return {
     id: n.id,
@@ -29,7 +46,6 @@ function nodeToRef(n: GraphNode): LibraryRef {
     tags: [],
     pdf: false,
     read: false,
-    note: false,
     star: false,
     citedBy: n.c,
     doi: n.doi,
@@ -100,22 +116,13 @@ function LibraryBody({
   const [q, setQ] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
 
-  // color labels: refId → color key (seed from previously-starred refs)
-  const [labels, setLabels] = useState<Record<string, string>>(() => {
-    const m: Record<string, string> = {};
-    refs.forEach((r) => {
-      if (r.star) m[r.id] = "amber";
-    });
-    return m;
-  });
+  // color labels: session-local overlay (refId → color key; null = cleared) on
+  // top of the persisted `label` field; unset refs keep the star→amber seeding
+  const [labels, setLabels] = useState<Record<string, string | null>>({});
+  const effLabel = (r: LibraryRef): string | undefined => effectiveLabel(r, labels);
   const [labelMenu, setLabelMenu] = useState<{ x: number; y: number; refId: string } | null>(null);
   const setLabel = (refId: string, k: string | null) => {
-    setLabels((m) => {
-      const n = { ...m };
-      if (k) n[refId] = k;
-      else delete n[refId];
-      return n;
-    });
+    setLabels((m) => ({ ...m, [refId]: k }));
     setLabelMenu(null);
   };
   useEffect(() => {
@@ -183,6 +190,7 @@ function LibraryBody({
       ? addedRefs.current[curNode.id] ?? nodeToRef(curNode)
       : null
     : null;
+  const menuRef = labelMenu ? (allRefs.find((r) => r.id === labelMenu.refId) ?? null) : null;
 
   return (
     <div className="view-row">
@@ -227,11 +235,11 @@ function LibraryBody({
           <div className="side-reflist">
             {list.map((r) => {
               const nid = refToNode[r.id] || r.id;
-              const lab = labels[r.id];
+              const lab = effLabel(r);
               return (
                 <button
                   key={r.id}
-                  className={"side-ref" + (nid === selNode ? " sel" : "") + (r.read ? "" : " unread")}
+                  className={"side-ref" + (nid === selNode ? " sel" : "") + (r.read ? " read" : " unread")}
                   onClick={() => setSelNode(nid)}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -240,7 +248,7 @@ function LibraryBody({
                 >
                   <span className="side-ref-mark">
                     {lab ? (
-                      <span className="label-dot" style={{ background: LABEL_HEX[lab] }} />
+                      <span className="label-dot" style={{ background: labelColor(lab) }} />
                     ) : !r.read ? (
                       <span className="unread-dot" />
                     ) : null}
@@ -249,6 +257,7 @@ function LibraryBody({
                     <span className="side-ref-title">{r.title}</span>
                     <span className="side-ref-meta mono">
                       {r.authors.split(/ (?:&|et) /)[0].replace(/,$/, "")} · {r.year} · {r.venue}
+                      {r.read && <span className="read-flag"> · 已读</span>}
                       {!r.doc_id && r.needs_upload && (
                         <span style={{ color: "oklch(0.80 0.13 78)" }}> · 需 PDF</span>
                       )}
@@ -273,7 +282,7 @@ function LibraryBody({
             {LABEL_COLORS.map((l) => (
               <button
                 key={l.k}
-                className={"label-swatch" + (labels[labelMenu.refId] === l.k ? " on" : "")}
+                className={"label-swatch" + (menuRef && effLabel(menuRef) === l.k ? " on" : "")}
                 title={l.t}
                 style={{ background: l.c }}
                 onClick={() => setLabel(labelMenu.refId, l.k)}
