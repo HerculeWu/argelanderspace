@@ -1,8 +1,9 @@
 /**
- * Render-IR tests (Stage 3 / MS2a): `buildDocIr` against the 6 frozen golden
- * Documents — contracts validation, lossless segment partitioning, cite/xref
- * resolution (incl. the occurrence pairing), defensive mismatch handling, and
- * the `citationsByBlock` grouping.
+ * Render-IR tests (Stage 3 / MS2a): `buildDocIr` against the 2 frozen latex
+ * golden Documents — contracts validation, lossless segment partitioning,
+ * cite/xref resolution (incl. the occurrence pairing), defensive mismatch
+ * handling, and the `citationsByBlock` grouping. (The PDF/HTML goldens left
+ * with the OCR pipelines — archived on the `ocr-features` branch.)
  */
 
 import { readFileSync } from "node:fs";
@@ -32,10 +33,6 @@ const GOLDEN_DIR = join(REPO_ROOT, "tests", "golden");
 const DOC_IDS = [
   "arxiv-2501.17225", // latex
   "arxiv-2012.05220", // latex (code blocks)
-  "2603.03522", // pdf (unresolved xrefs)
-  "ads-1983ApJ...270..365M", // pdf (OCR)
-  "962260", // html
-  "aa39341-20", // html
 ] as const;
 
 function loadDoc(docId: string): Document {
@@ -292,13 +289,15 @@ describe("xref segments (goldens)", () => {
     });
   });
 
-  test("trailing-? marker strips and stays unresolved (2603.03522)", () => {
-    const { xrefs } = collectSegments(DOCS.get("2603.03522") as Document);
-    const fig3 = xrefs.find((x) => x.target.id === "figure-3");
-    expect(fig3).toBeDefined();
-    expect(fig3?.target).toEqual({ id: "figure-3", resolved: false });
-    const eq3 = xrefs.find((x) => x.target.id === "equation-3");
-    expect(eq3?.target).toEqual({ id: "equation-3", resolved: false });
+  test("unresolved [[xref:…?]] marker strips and stays unresolved (synthetic)", () => {
+    const doc = synthDoc([
+      { id: "p-1", type: "paragraph", text: "x [[xref:figure-3?]] y [[xref:equation-3?]] z" },
+    ]);
+    const segs = firstParagraphSegments(doc);
+    expect(xrefSegments(segs).map((x) => x.target)).toEqual([
+      { id: "figure-3", resolved: false },
+      { id: "equation-3", resolved: false },
+    ]);
   });
 });
 

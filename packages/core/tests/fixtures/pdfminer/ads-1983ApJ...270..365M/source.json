@@ -1,9 +1,0 @@
-{
-  "doc_id": "ads-1983ApJ...270..365M",
-  "pdf": "ads-1983ApJ...270..365M.pdf",
-  "golden": "ads-1983ApJ...270..365M.json",
-  "is_ocr": true,
-  "batch_id": "14ec3277-bba6-43fc-a8eb-d6909504a6e9",
-  "stamp": { "doi": "10.1086/161130", "arxiv_id": null, "acquired_via": "ads_scan" },
-  "provenance": "ADS scan (OCR text layer present, zero link annotations). Golden frozen via acquire.fetch_pdf.ads_scan_doc: ingest_pdf with mineru.is_ocr forced True (auto-detect skipped) + a live MinerU API run (batch_id recorded here from the frozen output), then _stamp_source added source.doi/acquired_via to the written JSON. The golden test injects both the batch_id and the stamp from this manifest."
-}

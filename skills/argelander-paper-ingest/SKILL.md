@@ -1,6 +1,6 @@
 ---
 name: argelander-paper-ingest
-description: Ingest a paper (arXiv id / DOI / publisher URL / local .tex source / local PDF) into the ArgelanderSpace library via the `argelanderspace` CLI. Use this whenever the user wants to "add a paper to the library", "ingest this paper", "下载 arxiv ... 加入文献库", "把这篇论文加进我的文献库", or provides a PDF / LaTeX source and asks for it to be processed for later LLM-based reading. Runs ingest → library build → confirmation, then asks the user for a note (with a drafted suggestion) for every ingested paper.
+description: Ingest a paper (arXiv id / local .tex source / source dir / tarball) into the ArgelanderSpace library via the `argelanderspace` CLI. Use this whenever the user wants to "add a paper to the library", "ingest this paper", "下载 arxiv ... 加入文献库", "把这篇论文加进我的文献库", or provides a LaTeX source and asks for it to be processed for later LLM-based reading. (DOI/publisher-URL/PDF ingestion is in development — archived on the `ocr-features` branch; the CLI answers such inputs with a friendly in-development error.) Runs ingest → library build → confirmation, then asks the user for a note (with a drafted suggestion) for every ingested paper.
 ---
 
 # argelander-paper-ingest
@@ -17,7 +17,11 @@ Trigger whenever the user wants to make a paper available in their library:
 
 - "add this paper to my library / 加入文献库 / 加进库里"
 - "ingest the paper at <path>" / "下载 arxiv 2607.17040 加进库里"
-- providing a local `.tex` file / source dir / tarball / PDF and asking you to "process" or "ingest" it
+- providing a local `.tex` file / source dir / tarball and asking you to "process" or "ingest" it
+
+A local PDF or a DOI/publisher URL is NOT ingestible right now (that pipeline
+is in development): the CLI will say so — don't retry it; look for the arXiv
+version instead.
 
 Do NOT use this skill to answer questions about a paper — that's `argelander-read-paper` (one paper) or `argelander-query-paper-library` (the whole library).
 
@@ -26,14 +30,12 @@ Do NOT use this skill to answer questions about a paper — that's `argelander-r
 - **The CLI**: run `argelanderspace`. If it is not on PATH, use the built bundle from the repo checkout by absolute path — `node /path/to/repo/packages/app/dist/bin.js` (build once with `corepack pnpm -r build` inside the repo). All examples below write `argelanderspace` — substitute as needed.
 - **Data directory**: one library per project, at `./literatures` under the **project root** (the directory that contains `literatures/`). The default resolves against the *current working directory* with **no upward search**, so **run every CLI command from the project root** — if your shell is somewhere else, `cd` there first. Do **not** pass `--data-dir`; it survives only as an escape hatch for unusual layouts (chain: `--data-dir` flag > `ARGELANDERSPACE_DATA_DIR` env > `config.toml` `data_dir` > `./literatures`). The old `LITERATURE_LIBRARY` env var is dead; do not look for it.
 - **LaTeX pipeline prerequisite**: `pandoc` must be on PATH for arXiv / local-LaTeX ingest.
-- **PDF pipeline prerequisite**: `MINERU_API_KEY` (env or config.toml), needed on a MinerU cache miss.
 
 ## Inputs the user might give
 
 1. **An arXiv id** (`2607.17040`, `2607.17040v2`) or arXiv URL → LaTeX pipeline. *The reliable path.*
-2. **A DOI or publisher URL** → publisher-HTML pipeline. ⚠️ Often bot-walled — see "Bot-wall reality" below.
-3. **A local `.tex` file, source directory, or tarball** → LaTeX pipeline.
-4. **A local PDF** → PDF pipeline (MinerU OCR). Burns MinerU quota — see below.
+2. **A local `.tex` file, source directory, or tarball** → LaTeX pipeline.
+3. **A DOI, publisher URL, or local PDF** → not ingestible on main (in development, archived on `ocr-features`). Find the arXiv version instead — most astro papers have one.
 
 The CLI auto-detects the pipeline from the input form; you do not pick it yourself.
 
@@ -58,8 +60,6 @@ argelanderspace ingest <source>
 ```
 
 Watch the trailing summary: `n_sections`, `n_references`, `citations: N (M resolved)`, `crossrefs: N (M resolved)`. If resolution rates look broken (e.g. most citations unresolved), say honestly which parts of the paper will be unreliable to read — don't pretend success.
-
-**MinerU quota (PDF only)**: PDF ingest calls the MinerU API on a cache miss; the free tier is roughly **1000 pages/day**. A single paper is fine; before a *batch* of PDFs, tell the user the estimated page count and confirm. Re-ingesting a cached PDF is free (the cache is reused unless `--fresh`).
 
 ### Step 3 — Library build (REQUIRED — ingest alone is not enough)
 
@@ -124,9 +124,10 @@ http://localhost:<port>/doc/<doc_id>
 
 (`<port>` is what the user's `serve` runs on; the CLI prints links using `ARGELANDERSPACE_PORT` > config `port` > 8000.)
 
-## Bot-wall reality (2026-08, measured)
+## No arXiv version? (2026-08, measured)
 
-Publisher full text is mostly **not** machine-fetchable right now:
+Publisher full text is mostly **not** machine-fetchable (bot walls), and the
+PDF/HTML ingestion pipelines are off main while being reworked:
 
 | Site | Status |
 |---|---|
@@ -135,19 +136,20 @@ Publisher full text is mostly **not** machine-fetchable right now:
 | iopscience.iop.org (AAS/IOP) | human-verification page — Radware |
 | journals.aps.org | 403 — Cloudflare |
 
-So: **prefer the arXiv path.** When the user hands you a DOI/publisher URL, first look for the arXiv version (most astro papers have one) and ingest that instead. When there is no arXiv version, the fallback is a **user-provided PDF** ingested through MinerU — ask the user to download the PDF themselves (their browser passes the bot wall) and give you the path. A DOI ingest that ends in `HTTP 403` is the wall, not a transient error — do not retry it in a loop.
+So: **prefer the arXiv path.** When the user hands you a DOI/publisher URL,
+first look for the arXiv version (most astro papers have one) and ingest that
+instead. When there is genuinely no arXiv version, tell the user PDF ingestion
+is in development and stop — do not retry the DOI in a loop.
 
 ## Failure modes and what to do
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| `error: HTTP 404 for https://arxiv.org/e-print/<id>` | wrong/fake arXiv id, or the paper has no LaTeX source on arXiv | Re-verify the id (Step 1). If the id is right but source-less, ask the user for the PDF |
-| `error: HTTP 403 for https://doi.org/...` (body mentions enabling JS / captcha) | publisher bot wall (DataDome/Cloudflare) | Expected — find the arXiv version or ask for a PDF; do not retry |
-| `error: No MinerU API key: set MINERU_API_KEY or mineru_api_key in <config.toml>` on PDF ingest | no key configured, cache miss | Tell the user to set `MINERU_API_KEY` (env or config.toml) |
-| MinerU quota / rate errors on PDF ingest | free tier ~1000 pages/day burned | Stop the batch, tell the user, resume tomorrow or trim page ranges (`--pages`) |
+| `error: HTTP 404 for https://arxiv.org/e-print/<id>` | wrong/fake arXiv id, or the paper has no LaTeX source on arXiv | Re-verify the id (Step 1). If the id is right but source-less, tell the user there is no ingestible source right now |
+| `error: cannot ingest DOI/publisher URL … in development …` | PDF/HTML ingestion is off main | Expected — find the arXiv version; do not retry |
 | `error: unknown work "<id>"` from `note`/`label` | you skipped Step 3, or used a doc id where a work id belongs | Run `library build`; use the `id` field from `search`, not `doc_ids` |
 | Re-ingesting an already-ingested source | normal (idempotent; the doc is rewritten, the work merges by DOI/arXiv/title) | Tell the user before overwriting; the existing note is kept by the merge, confirm whether to keep or replace it |
-| Ingest summary shows most citations/crossrefs unresolved | conversion artifacts (macro-heavy source, OCR gaps) | Say honestly which sections will read unreliably; offer to inspect specific sections |
+| Ingest summary shows most citations/crossrefs unresolved | conversion artifacts (macro-heavy source) | Say honestly which sections will read unreliably; offer to inspect specific sections |
 
 ## Why the workflow is structured this way
 

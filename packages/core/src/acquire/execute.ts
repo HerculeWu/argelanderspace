@@ -2,23 +2,21 @@
  * Acquisition executor: fetch full text for ready works per their plan
  * (bibgraph/acquire/execute.py).
  *
- * The planner decided *where* to read each paper; the executor *does* it, routing
- * each ready work to the matching ingestion pipeline:
- * - `journal_html` → `ingestHtml` (DOI → publisher page → reader Document);
- * - `arxiv_latex`  → `ingestLatex` (arXiv id → e-print LaTeX → reader Document);
- * - `journal_pdf` / `ads_scan` → PDF fetch + MinerU OCR ({@link arxivPdfDoc} /
- *   {@link adsScanDoc}).
+ * The planner decided *where* to read each paper; the executor *does* it,
+ * routing each ready work to the matching ingestion pipeline. On main the only
+ * auto-fetchable tier is `arxiv_latex` → `ingestLatex` (arXiv id → e-print
+ * LaTeX → reader Document); the PDF/OCR tiers (`arxiv_pdf`, `ads_scan`) and
+ * publisher HTML left with the `ocr-features` branch.
  *
- * It only touches works whose chosen tier is `ready` (an adapter/fetcher exists)
- * and that don't already have a reader rendering. Each result reports the produced
- * `doc_id` and block count so a hollow page (old template, paywall) is visible.
- * After fetching, the caller rebuilds the library so the new docs link back to
- * their works via `doc_ids`.
+ * It only touches works whose chosen tier is `ready` and that don't already
+ * have a reader rendering. Each result reports the produced `doc_id` and block
+ * count so a hollow page is visible. After fetching, the caller rebuilds the
+ * library so the new docs link back to their works via `doc_ids`.
  *
  * Port notes (bug-for-bug):
- * - The pipelines are the M2/M3 {@link IngestPipelines} port; `PipelineConfig()`
- *   is constructed per attempt in Python — the TS ports carry their own config,
- *   so the executor just calls them.
+ * - The pipeline is the {@link IngestPipelines} port; `PipelineConfig()` is
+ *   constructed per attempt in Python — the TS port carries its own config,
+ *   so the executor just calls it.
  * - Python stringifies exceptions with `str(e)` (the bare message); the port
  *   uses `e.message` for `Error`s to the same effect.
  * - Result dicts keep Python's key order and explicit `null`s
@@ -29,27 +27,22 @@ import type { Document } from "@argelanderspace/contracts";
 import { pyOr } from "../documents/pyregex.js";
 import { iterBlocks } from "../documents/traverse.js";
 import type { LibraryStore, Work } from "../library/store.js";
-import { adsScanDoc, arxivPdfDoc, type PdfFetchDeps } from "./fetch-pdf.js";
 import type { IngestPipelines } from "./pipelines.js";
 
-/** tiers the executor can fetch without MinerU (free, no OCR budget) */
-export const FREE_TIERS: readonly string[] = ["journal_html", "arxiv_latex"];
+/** tiers the executor can fetch automatically */
+export const FREE_TIERS: readonly string[] = ["arxiv_latex"];
 
 /** One per-work outcome of a fetch pass (the Python result dicts). */
 export type FetchResult = Record<string, unknown>;
 
 function ingestFor(w: Work, pipelines: IngestPipelines): Promise<Document> {
   const tier = ((w.acquisition ?? {}) as Record<string, unknown>).chosen;
-  if (tier === "journal_html") {
-    if (!w.doi) throw new Error("journal_html chosen but work has no DOI");
-    return pipelines.ingestHtml(w.doi);
-  }
   if (tier === "arxiv_latex") {
     if (!w.arxiv_id) throw new Error("arxiv_latex chosen but work has no arXiv id");
     return pipelines.ingestLatex(w.arxiv_id);
   }
   const repr = typeof tier === "string" ? `'${tier}'` : "None";
-  throw new Error(`tier ${repr} is not auto-fetchable here (needs Phase-3 OCR)`);
+  throw new Error(`tier ${repr} is not auto-fetchable (main ingests arXiv LaTeX only)`);
 }
 
 /** Python `str(e)`: the bare message for Error instances. */
@@ -73,7 +66,7 @@ export async function fetchReadyFulltext(
     if (limit !== null && n >= limit) break;
     n += 1;
     const tier = acq.chosen as string;
-    const loc = tier === "journal_html" ? w.doi : w.arxiv_id;
+    const loc = w.arxiv_id;
     try {
       const doc = await ingestFor(w, deps.pipelines);
       const blocks = [...iterBlocks(doc)].length;
@@ -99,15 +92,16 @@ export async function fetchReadyFulltext(
 }
 
 /**
- * Fallback chain for pending works whose primary source failed/blocked:
- * free **arXiv LaTeX** → **arXiv PDF** (MinerU) → **ADS scan** (MinerU OCR).
+ * Fallback for pending works whose planned source failed/blocked: retry via
+ * free **arXiv LaTeX** (the only auto-fetchable tier on main; the arXiv-PDF /
+ * ADS-scan rungs of the Python chain are archived on `ocr-features`).
  *
- * Used after {@link fetchReadyFulltext} for the stragglers (old-template
- * journal pages, AASTeX papers pandoc can't parse, legacy scans).
+ * Used after {@link fetchReadyFulltext} for the stragglers (works whose plan
+ * never marked an arXiv tier ready).
  */
 export async function fetchRemaining(
   store: LibraryStore,
-  deps: PdfFetchDeps & { skip?: Iterable<string>; limit?: number | null }
+  deps: { pipelines: IngestPipelines; skip?: Iterable<string>; limit?: number | null }
 ): Promise<FetchResult[]> {
   const skip = new Set(deps.skip ?? []);
   const limit = deps.limit ?? null;
@@ -120,23 +114,13 @@ export async function fetchRemaining(
     n += 1;
     let doc: Document | null = null;
     let via: string | null = null;
-    const errs: string[] = [];
-    const attempts: [string, () => Promise<Document>][] = [];
+    let err: string | null = null;
     if (w.arxiv_id) {
-      const arxivId = w.arxiv_id;
-      attempts.push(["arxiv_latex", () => deps.pipelines.ingestLatex(arxivId)]);
-      attempts.push(["arxiv_pdf", () => arxivPdfDoc(w, deps)]);
-    }
-    if (w.bibcode) {
-      attempts.push(["ads_scan", () => adsScanDoc(w, deps)]);
-    }
-    for (const [name, fn] of attempts) {
       try {
-        doc = await fn();
-        via = name;
-        break;
+        doc = await deps.pipelines.ingestLatex(w.arxiv_id);
+        via = "arxiv_latex";
       } catch (e) {
-        errs.push(`${name}: ${strOf(e).slice(0, 90)}`);
+        err = `arxiv_latex: ${strOf(e).slice(0, 90)}`;
       }
     }
     if (doc !== null) {
@@ -153,7 +137,7 @@ export async function fetchRemaining(
       results.push({
         id: w.id,
         ok: false,
-        error: errs.join("; "),
+        error: err ?? "no arXiv id",
         title: (w.title || "").slice(0, 46),
       });
     }

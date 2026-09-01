@@ -13,7 +13,7 @@ same; the mechanics are now plain CLI calls.
 
 | Skill | Role | Entry point for |
 |---|---|---|
-| `argelander-paper-ingest/` | **A — write path.** Ingest an arXiv id / DOI / URL / local LaTeX / local PDF, rebuild the library, then register a user-confirmed note (the agent drafts the suggestion) for every paper. | "add/ingest this paper", "下载 arxiv ... 加入文献库" |
+| `argelander-paper-ingest/` | **A — write path.** Ingest an arXiv id / local LaTeX source, rebuild the library, then register a user-confirmed note (the agent drafts the suggestion) for every paper. (DOI/URL/PDF ingestion is in development, archived on the `ocr-features` branch.) | "add/ingest this paper", "下载 arxiv ... 加入文献库" |
 | `argelander-read-paper/` | **B — deep read.** Answer questions about one ingested paper: resolves `[ref: ...]` floats via `show`, expands `[cite: ...]` via `ref`, separates the paper's own claims from cited-work metadata, cites evidence with deep links. | a specifically named paper; also the hand-off target of C |
 | `argelander-query-paper-library/` | **C — retrieval across the library.** Ranks works against a research question (note is the primary signal), shows a shortlist, dispatches B per pick, synthesizes. | open-ended "用我文献库回答 ..." questions |
 
@@ -43,8 +43,6 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
   `node <repo>/packages/app/dist/bin.js` (absolute path) in place of
   `argelanderspace`.
 - **pandoc** on PATH for the LaTeX (arXiv) ingest pipeline.
-- **`MINERU_API_KEY`** (env or config.toml) for the PDF pipeline — see the
-  quota warning in the root README.
 - Optional: `ADS_DEV_KEY` / `OPENALEX_API_KEY` for richer library enrichment.
 - A running server (`argelanderspace serve`) only for the deep links to open —
   the CLI itself works without it.
@@ -53,7 +51,7 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 
 | Command | Purpose | Output |
 |---|---|---|
-| `ingest <source>` | PDF path \| DOI/URL \| arXiv id/URL \| .tex/dir/tarball → Document JSON under `<data>/output/` | human summary |
+| `ingest <source>` | arXiv id/URL \| .tex/dir/tarball → Document JSON under `<data>/output/` | human summary |
 | `library build [--offline]` | seed works from ingested docs → enrich (ADS▸Crossref▸OpenAlex) → plan → graph. **Required after ingest** — `note`/`label`/`search` only see works | JSON summary |
 | `search` | every work as one JSON line (id/title/year/venue/authors/note/tags/read/star/doc_ids) — full index, the agent judges relevance | JSONL |
 | `list` | library overview + one line per ingested doc (doc ids + deep links) | text |
@@ -96,7 +94,8 @@ Conventions the skills rely on:
 ## Operational lessons carried over (still true)
 
 1. **Verify arXiv ids before ingest** — never guess an id from author+year.
-2. **arXiv is the only fully-automatic source** — publisher HTML is bot-walled
-   (DataDome/Cloudflare/Radware); a user-supplied PDF is the fallback.
+2. **arXiv is the only fully-automatic source** — publisher HTML/PDF ingestion
+   is in development (archived on the `ocr-features` branch); a LaTeX source
+   package upload (zip) in the web UI is being rebuilt.
 3. **Notes are load-bearing** — every ingested paper gets a user-confirmed
    note, or C can't rank it.

@@ -22,14 +22,13 @@ import {
   enrichAndPlan,
   fetchReadyFulltext,
   fetchRemaining,
-  htmlAdapterInfos,
   LibraryStore,
   libraryPaths,
   parseBibtex,
   rebuild,
   type Work,
 } from "@argelanderspace/core";
-import { FetchPdfDownloader, ingestHtml, ingestLatex, ingestPdf } from "@argelanderspace/infra";
+import { ingestLatex } from "@argelanderspace/infra";
 import { realPipelines, realSources, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
@@ -45,73 +44,24 @@ interface IngestOpts {
   output?: string;
   outRoot?: string;
   figureDpi: string;
-  inlineMath: string;
   assets: boolean;
-  subpages: boolean;
   cache: boolean;
-  outDir?: string;
-  model: string;
-  lang: string;
-  pages?: string;
-  formula: boolean;
-  table: boolean;
-  links: boolean;
-  ocr?: boolean;
-  reuse?: boolean;
-  fresh?: boolean;
   verbose?: boolean;
 }
 
 async function runIngest(input: string, opts: IngestOpts, dataDir: string): Promise<void> {
   const outRoot = opts.outRoot ?? join(dataDir, "output");
-  let doc: Document;
-  switch (detectSource(input)) {
-    case "latex":
-      doc = await ingestLatex(input, {
-        outRoot,
-        config: {
-          downloadAssets: opts.assets,
-          useCache: opts.cache,
-          figureDpi: Number.parseInt(opts.figureDpi, 10),
-        },
-        writeJson: true,
-      });
-      break;
-    case "html":
-      doc = await ingestHtml(input, {
-        outRoot,
-        config: {
-          inlineMath: opts.inlineMath,
-          downloadAssets: opts.assets,
-          fetchSubpages: opts.subpages,
-          useCache: opts.cache,
-        },
-        writeJson: true,
-        log: opts.verbose ? (m) => console.error(m) : undefined,
-      });
-      break;
-    case "pdf":
-      doc = await ingestPdf(input, {
-        outDir: opts.outDir,
-        config: {
-          mineru: {
-            modelVersion: opts.model,
-            language: opts.lang,
-            enableFormula: opts.formula,
-            enableTable: opts.table,
-            pageRanges: opts.pages,
-            // --ocr / --no-ocr / (neither) → true / false / null (auto-detect)
-            isOcr: opts.ocr ?? null,
-          },
-          usePdfLinks: opts.links,
-        },
-        // Python `use_mineru_cache=not args.fresh` (--reuse is a no-op there:
-        // reuse is already the default; the flag is accepted for parity).
-        useMineruCache: !opts.fresh,
-        writeJson: true,
-      });
-      break;
-  }
+  // latex-only on main; detectSource throws a friendly error for DOI/URL/PDF inputs
+  detectSource(input);
+  const doc: Document = await ingestLatex(input, {
+    outRoot,
+    config: {
+      downloadAssets: opts.assets,
+      useCache: opts.cache,
+      figureDpi: Number.parseInt(opts.figureDpi, 10),
+    },
+    writeJson: true,
+  });
   // Python `_summarize` reads `doc.to_dict(config.compact_json)`: serialize
   // once (stats are computed here) and reuse for `-o` and the summary.
   const docJson = documentToJson(doc, true);
@@ -136,7 +86,6 @@ async function runLibraryBuild(opts: { offline?: boolean; bib?: string }, dataDi
   const summary = await rebuild(paths, {
     sources: realSources(paths, opts.offline ?? false),
     bibPath: opts.bib ?? null,
-    htmlAdapters: htmlAdapterInfos(),
   });
   console.log(JSON.stringify(summary, null, 2));
   if (summary.ads_status !== "ok") printAdsWarning(summary.ads_status);
@@ -172,15 +121,12 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
     // Plan only: an in-memory store, no library write (acquire/__main__.py).
     const store = new LibraryStore();
     addBibRecords(store, parseBibtex(bib));
-    await enrichAndPlan(store, sources, htmlAdapterInfos());
+    await enrichAndPlan(store, sources);
     printPlanTable(store.works);
     return;
   }
 
-  let summary = await acquireReferences(paths, bib, {
-    sources,
-    htmlAdapters: htmlAdapterInfos(),
-  });
+  let summary = await acquireReferences(paths, bib, { sources });
   const pipelines = realPipelines(paths);
 
   if (opts.fetch) {
@@ -200,7 +146,7 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
       }
     }
     // relink the new reader docs to their works + refresh plans/graph
-    summary = await rebuild(paths, { sources, htmlAdapters: htmlAdapterInfos() });
+    summary = await rebuild(paths, { sources });
   }
 
   if (opts.fetchRemaining) {
@@ -212,8 +158,6 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
         .filter((s) => s !== "")
     );
     const results = await fetchRemaining(store, {
-      paths,
-      downloader: new FetchPdfDownloader(),
       pipelines,
       skip,
       limit,
@@ -230,7 +174,7 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
         console.log(`  ✗ ${String(r.id)}  ${String(r.error)}`);
       }
     }
-    summary = await rebuild(paths, { sources, htmlAdapters: htmlAdapterInfos() });
+    summary = await rebuild(paths, { sources });
   }
 
   console.log(JSON.stringify(summary, null, 2));
@@ -267,7 +211,7 @@ export function buildProgram(): Command {
   program
     .name("argelanderspace")
     .description(
-      "ArgelanderSpace — ingest papers (PDF / publisher HTML / arXiv LaTeX) into " +
+      "ArgelanderSpace — ingest papers (arXiv / local LaTeX sources) into " +
         "structured JSON and manage the citation-graph library."
     )
     .version("0.1.0")
@@ -278,32 +222,15 @@ export function buildProgram(): Command {
 
   withDataDir(program.command("ingest"))
     .description(
-      "Ingest a paper into structured JSON. <input> may be a PDF path, a DOI / " +
-        "publisher URL (HTML), or an arXiv id / URL / local .tex source (LaTeX)."
+      "Ingest a paper into structured JSON. <input> may be an arXiv id / URL or " +
+        "a local LaTeX source (.tex file / source dir / tarball)."
     )
-    .argument("<input>", "PDF path | DOI | publisher URL | arXiv id/URL | .tex/dir/tarball")
+    .argument("<input>", "arXiv id/URL | .tex/dir/tarball")
     .option("-o, --output <path>", "also write the document JSON to this path")
-    .option("--out-root <dir>", "HTML/LaTeX: output root (default <data-dir>/output)")
-    .option("--figure-dpi <n>", "LaTeX: DPI for rasterising vector figures (default 200)", "200")
-    .option(
-      "--inline-math <mode>",
-      "HTML: inline-math rendering (conservative|plain)",
-      "conservative"
-    )
-    .option("--no-assets", "HTML/LaTeX: do not download figure images locally")
-    .option("--no-subpages", "HTML: do not fetch table sub-pages (caption-only tables)")
-    .option("--no-cache", "HTML/LaTeX: ignore the on-disk fetch cache (re-fetch)")
-    .option("--out-dir <dir>", "PDF: working/cache dir (default <pdf_dir>/<stem>)")
-    .option("--model <version>", "PDF: MinerU model_version (default vlm)", "vlm")
-    .option("--lang <lang>", "PDF: document language (default en)", "en")
-    .option("--pages <ranges>", "PDF: page ranges, e.g. '1-10'")
-    .option("--no-formula", "PDF: disable formula OCR")
-    .option("--no-table", "PDF: disable table OCR")
-    .option("--no-links", "PDF: disable hyperlink resolution (regex only)")
-    .option("--ocr", "PDF: force OCR on")
-    .option("--no-ocr", "PDF: force OCR off")
-    .option("--reuse", "PDF: reuse cached MinerU artifacts (already the default; no-op)")
-    .option("--fresh", "PDF: ignore the MinerU cache and re-call the API")
+    .option("--out-root <dir>", "output root (default <data-dir>/output)")
+    .option("--figure-dpi <n>", "DPI for rasterising vector figures (default 200)", "200")
+    .option("--no-assets", "do not download figure images locally")
+    .option("--no-cache", "ignore the on-disk fetch cache (re-fetch)")
     .option("-v, --verbose", "verbose progress on stderr")
     .action(async (input: string, opts: IngestOpts, cmd: Command) => {
       try {
@@ -338,10 +265,10 @@ export function buildProgram(): Command {
     .argument("<bib>", "path to a .bib file")
     .option("--offline", "use cached metadata only")
     .option("--dry-run", "plan only; do not write the library")
-    .option("--fetch", "after planning, fetch full text for ready works (A&A HTML + arXiv LaTeX)")
+    .option("--fetch", "after planning, fetch full text for ready works (arXiv LaTeX)")
     .option(
       "--fetch-remaining",
-      "fallback chain for stragglers: arXiv LaTeX → arXiv PDF → ADS scan (MinerU OCR)"
+      "retry pending works via arXiv LaTeX (the only auto-fetchable tier on main)"
     )
     .option("--skip <ids>", "comma-separated work ids to skip when fetching", "")
     .option("--limit <n>", "cap how many works --fetch ingests")

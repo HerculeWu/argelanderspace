@@ -1,15 +1,14 @@
 /**
- * Document assembly + JSON serialization (bibgraph/pipeline.py `build_document` and
- * the serialization half of bibgraph/schema.py).
- *
- * `buildDocument` composes the pure stages — structure, references, textfix,
- * annotate — exactly as the Python PDF pipeline does, minus the MinerU API call and
- * PDF opening (M2/M3; the PDF text layer arrives through a {@link PdfTextProvider}).
+ * Document JSON serialization (the serialization half of bibgraph/schema.py)
+ * plus the `annotatable` rich-text-holder walk shared by the pipelines.
  *
  * `documentToJson` mirrors `Document.to_dict(compact_json=...)`: explicit per-type
  * field assembly (non-schema fields like `Reference.src_page` are never serialized)
  * followed by `compact`, which recursively drops null/empty values but preserves
  * `0` and `false`.
+ *
+ * `buildDocument` (the MinerU/PDF orchestration half) left with the PDF
+ * pipeline — archived on the `ocr-features` branch.
  */
 
 import type {
@@ -17,26 +16,11 @@ import type {
   CitationOccurrence,
   CrossRefOccurrence,
   Document,
-  DocumentMeta,
   DocumentStats,
   Reference,
   RichText,
   Section,
 } from "@argelanderspace/contracts";
-import { applyMatches } from "./annotate.js";
-import { detectCitations, enrichCitationsWithLinks, ReferenceResolver } from "./citations.js";
-import { detectCrossrefs, enrichCrossrefsWithLinks, XrefIndex } from "./crossrefs.js";
-import type { MineruArtifacts, MineruContentItem } from "./mineru.js";
-import {
-  bbox1000ToFrac,
-  type LinkAnnot,
-  linksOnPage,
-  overlapFraction,
-  type PdfLinks,
-} from "./pdf-links.js";
-import { parseReferences } from "./references.js";
-import { buildStructure } from "./structure.js";
-import { applyTextfix, type PdfTextProvider } from "./textfix.js";
 import { iterBlocks, iterSections } from "./traverse.js";
 
 // --------------------------------------------------------------------------- //
@@ -71,136 +55,15 @@ export function compact(value: unknown): unknown {
   return value;
 }
 
-// --------------------------------------------------------------------------- //
-// build_document (pipeline.py, pure stages only)
-// --------------------------------------------------------------------------- //
-
-/** Filesystem identity of the source PDF (what the Python pipeline derives from pdf_path). */
-export interface PdfSourceInfo {
-  /** `Path(pdf_path).stem` — becomes the doc id. */
-  stem: string;
-  path: string;
-  filename: string;
-}
-
-export interface BuildDocumentConfig {
-  /** Harvested PDF link annotations resolve citations/xrefs authoritatively (default true). */
-  usePdfLinks?: boolean;
-  /** Repair MinerU '?'-gaps from the PDF text layer before tokenizing (default true).
-   *  Without a `pdfText` provider this records zeroed stats, mirroring the Python
-   *  "cannot open the PDF -> skip" path. */
-  useTextfix?: boolean;
-  mineru?: {
-    modelVersion?: string;
-    language?: string;
-    isOcr?: boolean | null;
-  };
-  /** Port for the PDF text layer; when absent, textfix is a recorded no-op. */
-  pdfText?: PdfTextProvider;
-}
-
-/**
- * Assemble a Document from already-extracted artifacts.
- *
- * Separated from the MinerU/PDF-fetching pipeline so the offline parsing stages can
- * be exercised without any external service.
- */
-export function buildDocument(
-  mineru: MineruArtifacts,
-  pdf: PdfSourceInfo,
-  pdfLinks: PdfLinks | null,
-  config: BuildDocumentConfig = {}
-): Document {
-  const usePdfLinks = config.usePdfLinks ?? true;
-  const useTextfix = config.useTextfix ?? true;
-
-  const structure = buildStructure(mineru.contentList);
-  const references = parseReferences(structure.refTextItems);
-
-  const nPages = pdfLinks ? pdfLinks.nPages : maxPage(mineru.contentList);
-  // meta.title: Python stores None when no level-1 heading was seen; "" compacts
-  // away identically and satisfies the contract type.
-  const meta: DocumentMeta = {
-    title: structure.titleGuess ?? "",
-    mineru: {
-      model_version: config.mineru?.modelVersion ?? "vlm",
-      language: config.mineru?.language ?? "en",
-      is_ocr: config.mineru?.isOcr ?? undefined,
-      batch_id: mineru.batchId ?? undefined,
-    },
-  };
-  const doc: Document = {
-    doc_id: pdf.stem,
-    source: { type: "pdf", path: pdf.path, filename: pdf.filename, n_pages: nPages },
-    meta,
-    structure: structure.sections,
-    references,
-  };
-
-  // Repair MinerU '?'-gaps from the PDF text layer *before* tokenizing, so the
-  // corrector operates on raw body text (no inline cite/xref tokens yet).
-  if (useTextfix) {
-    meta.textfix = config.pdfText
-      ? applyTextfix(doc, config.pdfText)
-      : { gaps_before: 0, gaps_fixed: 0, holders_changed: 0 };
-  }
-
-  const resolver = new ReferenceResolver(references);
-  const xindex = new XrefIndex(doc);
-  annotateDocument(doc, resolver, xindex, pdfLinks, usePdfLinks);
-  return doc;
-}
-
-function annotateDocument(
-  doc: Document,
-  resolver: ReferenceResolver,
-  xindex: XrefIndex,
-  pdfLinks: PdfLinks | null,
-  useLinks: boolean
-): void {
-  for (const block of iterBlocks(doc)) {
-    const holders = annotatable(block);
-    if (holders.length === 0) continue;
-    const blockLinks = useLinks ? linksForBlock(block, pdfLinks) : [];
-    for (const holder of holders) {
-      if (!holder.text) continue;
-      const cmatches = detectCitations(holder.text, resolver);
-      const xmatches = detectCrossrefs(holder.text, xindex);
-      if (blockLinks.length > 0) {
-        enrichCitationsWithLinks(cmatches, blockLinks, resolver);
-        enrichCrossrefsWithLinks(xmatches, blockLinks, xindex);
-      }
-      const result = applyMatches(holder.text, [...cmatches, ...xmatches]);
-      holder.text = result.text;
-      holder.citations = result.citations;
-      holder.crossrefs = result.crossrefs;
-    }
-  }
-}
-
 /**
  * Return the rich-text holders of a block (each has text/citations/crossrefs).
- * Shared with the LaTeX/HTML pipelines (`bibgraph/pipeline.py::_annotatable`).
+ * Shared with the LaTeX pipeline (`bibgraph/pipeline.py::_annotatable`).
  */
 export function annotatable(block: Block): RichText[] {
   if (block.type === "paragraph") return [block];
   if (block.type === "list") return block.items;
   if (block.type === "equation") return [];
   return "caption" in block && block.caption !== undefined ? [block.caption] : [];
-}
-
-function linksForBlock(block: Block, pdfLinks: PdfLinks | null): LinkAnnot[] {
-  if (pdfLinks === null || block.page_idx === undefined) return [];
-  const bbox = bbox1000ToFrac(block.bbox);
-  if (bbox === undefined) return [];
-  return linksOnPage(pdfLinks, block.page_idx).filter((ln) => overlapFraction(ln.rect, bbox) > 0.5);
-}
-
-function maxPage(contentList: MineruContentItem[]): number {
-  const pages = contentList
-    .map((it) => it.page_idx)
-    .filter((p): p is number => typeof p === "number");
-  return pages.length > 0 ? Math.max(...pages) + 1 : 0;
 }
 
 // --------------------------------------------------------------------------- //

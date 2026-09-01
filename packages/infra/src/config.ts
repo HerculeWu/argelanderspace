@@ -6,7 +6,6 @@
  *
  *   data_dir          string   default "./literatures"
  *   port              integer  default 8000
- *   mineru_api_key    string   fallback for $MINERU_API_KEY
  *   openalex_api_key  string   fallback for $OPENALEX_API_KEY
  *   ads_dev_key       string   fallback for $ADS_DEV_KEY (itself a fallback
  *                              for ~/.ads/dev_key)
@@ -28,7 +27,6 @@ import { parse as parseToml } from "smol-toml";
 export interface AppConfig {
   data_dir?: string;
   port?: number;
-  mineru_api_key?: string;
   openalex_api_key?: string;
   ads_dev_key?: string;
 }
@@ -49,7 +47,7 @@ export function configFilePath(
   return join(xdg ? xdg : join(home, ".config"), "argelanderspace", "config.toml");
 }
 
-const STRING_KEYS = ["data_dir", "mineru_api_key", "openalex_api_key", "ads_dev_key"] as const;
+const STRING_KEYS = ["data_dir", "openalex_api_key", "ads_dev_key"] as const;
 
 /** Parse config TOML text; throws ConfigError (path + reason, never values). */
 export function parseConfigToml(text: string, path: string = "<config>"): AppConfig {

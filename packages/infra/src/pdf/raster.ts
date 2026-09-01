@@ -10,11 +10,21 @@
  * - Writes are atomic (`<dest>.part` → rename) like the Python converter.
  */
 
-import { renameSync, statSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as mupdf from "mupdf";
 import { findOnPath, runCapture } from "../lib/proc.js";
-import { openMupdf, pageSizeOf } from "./text-provider.js";
+
+/** Page size in points (CropBox width/height), like `page.rect`. */
+function pageSizeOf(page: mupdf.Page): { width: number; height: number } {
+  const b = page.getBounds();
+  return { width: b[2] - b[0], height: b[3] - b[1] };
+}
+
+/** Open a PDF through mupdf's WASM build (`fitz.open`). Throws on unreadable input. */
+function openMupdf(pdfPath: string): mupdf.Document {
+  return mupdf.Document.openDocument(readFileSync(pdfPath), "pdf");
+}
 
 export interface RasterOptions {
   /** Render DPI (Python `figure_dpi`, default 200). */

@@ -1,8 +1,9 @@
 /**
  * User config file (decision 23): XDG path resolution, TOML parsing + error
  * quality, and the env-first-then-config fallback wiring for the API keys
- * (MinerU / OpenAlex / ADS). Hermetic: every disk-touching test points
- * `$XDG_CONFIG_HOME` at a fresh tmp dir and restores env afterwards.
+ * (OpenAlex / ADS; the MinerU key left with the PDF pipeline). Hermetic:
+ * every disk-touching test points `$XDG_CONFIG_HOME` at a fresh tmp dir and
+ * restores env afterwards.
  */
 
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -17,7 +18,6 @@ import {
   loadConfigFile,
   parseConfigToml,
 } from "../src/config.js";
-import { mineruApiKey } from "../src/mineru/client.js";
 import { readAdsToken } from "../src/sources/ads.js";
 import { OpenAlexClient } from "../src/sources/openalex.js";
 import { jsonResponse, stubFetch } from "./helpers.js";
@@ -74,9 +74,9 @@ describe("parseConfigToml", () => {
       [
         'data_dir = "/srv/papers"',
         "port = 8123",
-        'mineru_api_key = "m"',
         'openalex_api_key = "o"',
         'ads_dev_key = "a"',
+        'mineru_api_key = "ignored-now"', // known key before MS1, unknown since
         'future_key = "ignored"',
         "",
       ].join("\n"),
@@ -85,7 +85,6 @@ describe("parseConfigToml", () => {
     expect(cfg).toEqual({
       data_dir: "/srv/papers",
       port: 8123,
-      mineru_api_key: "m",
       openalex_api_key: "o",
       ads_dev_key: "a",
     });
@@ -96,11 +95,11 @@ describe("parseConfigToml", () => {
     expect(() => parseConfigToml('data_dir = ["x"]', "/p")).toThrow(/"data_dir" must be a string/);
     expect(() => parseConfigToml("port = 70000", "/p")).toThrow(ConfigError);
     try {
-      parseConfigToml("mineru_api_key = 42", "/p");
+      parseConfigToml("openalex_api_key = 42", "/p");
       expect.unreachable();
     } catch (e) {
       expect(e).toBeInstanceOf(ConfigError);
-      expect((e as Error).message).toContain('"mineru_api_key" must be a string');
+      expect((e as Error).message).toContain('"openalex_api_key" must be a string');
       expect((e as Error).message).not.toContain("42");
     }
   });
@@ -138,27 +137,6 @@ describe("loadConfigFile", () => {
 // --------------------------------------------------------------------------- //
 // API-key fallbacks: env var > config file (values never logged)
 // --------------------------------------------------------------------------- //
-
-describe("mineruApiKey", () => {
-  test("env wins over config; config is the fallback; neither throws", () => {
-    const cfg: AppConfig = { mineru_api_key: "from-config" };
-    expect(mineruApiKey({ MINERU_API_KEY: " from-env " }, cfg)).toBe("from-env");
-    expect(mineruApiKey({}, cfg)).toBe("from-config");
-    // a blank env value is treated as unset (Python parity) and falls through
-    expect(mineruApiKey({ MINERU_API_KEY: "  " }, cfg)).toBe("from-config");
-    expect(() => mineruApiKey({}, {})).toThrow(/MINERU_API_KEY/);
-    expect(() => mineruApiKey({}, {})).toThrow(/mineru_api_key/);
-  });
-
-  test("the thrown hint names the config path but no key material", () => {
-    try {
-      mineruApiKey({}, {});
-      expect.unreachable();
-    } catch (e) {
-      expect((e as Error).message).toContain("argelanderspace/config.toml");
-    }
-  });
-});
 
 describe("readAdsToken chain", () => {
   test("env > config > ~/.ads/dev_key > null", () => {

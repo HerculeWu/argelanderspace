@@ -1,27 +1,33 @@
 /**
- * Parse MinerU `ref_text` blocks into structured Reference entries
- * (bibgraph/ingest/references.py).
+ * Bibliography-entry parsing (bibgraph/ingest/references.py).
  *
- * Reference strings are wildly inconsistent across publishers, so extraction is
- * deliberately best-effort and layered: the fields we can get *reliably* (raw text,
- * DOI, arXiv id, URL, year, author surnames, numbered label) are always populated;
- * title / venue / volume / pages are heuristic and frequently left undefined. The
- * reliable fields are exactly what the in-text citation matcher needs (numbered
- * label, or first-author surname + year).
+ * What lives here is the per-entry parser the LaTeX pipeline's .bbl/.bib
+ * reference builder reuses (`parseOne`, `matchKeys`). Reference strings are
+ * wildly inconsistent across publishers, so extraction is deliberately
+ * best-effort and layered: the fields we can get *reliably* (raw text, DOI,
+ * arXiv id, URL, year, author surnames, numbered label) are always populated;
+ * title / venue / volume / pages are heuristic and frequently left undefined.
+ * The reliable fields are exactly what the in-text citation matcher needs
+ * (numbered label, or first-author surname + year).
+ *
+ * The MinerU `ref_text` block splitter (`parseReferences` over OCR blocks)
+ * left with the PDF pipeline (archived on the `ocr-features` branch).
  */
 
 import type { Reference } from "@argelanderspace/contracts";
-import { type MineruContentItem, readBbox } from "./mineru.js";
-import { ARXIV_RE, DOI_RE } from "./pdf-links.js";
 import { pyRe, rstripChars, stripChars } from "./pyregex.js";
 
 /** A parsed bibliography entry; `src_*` locates the entry for GoTo-hyperlink resolution
  *  and is never serialized into the output JSON. */
 export type ParsedReference = Reference & {
   src_page?: number;
-  /** MinerU 0..1000 bbox of the source block. */
+  /** 0..1000 page-grid bbox of the source block. */
   src_bbox?: [number, number, number, number];
 };
+
+/** DOI / arXiv-id patterns shared with the (archived) link harvester. */
+export const DOI_RE = /10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/iu;
+export const ARXIV_RE = /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})/iu;
 
 const ARXIV_ID_RE = /arxiv\s*:?\s*(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})/iu;
 const URL_RE = /https?:\/\/[^\s,);]+/iu;
@@ -29,37 +35,6 @@ const YEAR_RE = pyRe("\\b(1[89]\\d{2}|20\\d{2})\\b", "g");
 const YEAR_PAREN_RE = /\((1[89]\d{2}|20\d{2})[a-z]?\)/u;
 const QUOTED_RE = /["“]([^"”]{6,})["”]/u;
 const VOLUME_RE = /,\s*(?:vol\.?\s*)?(\d{1,4})\s*[,:]/u;
-
-// Numbered-entry markers. Bracket/paren forms may appear mid-line (MinerU often
-// merges the whole bibliography into one block); the bare "n." form is only trusted
-// at line starts to avoid splitting on sentence-final numbers.
-const LEADING_MARK_RE = /^\s*(?:\[(\d{1,3})\]|\((\d{1,3})\)|(\d{1,3})[.)])\s+/u;
-const BRACKET_MARK_RE = /(?:^|(?<=\s))\[(\d{1,3})\]\s+/gu;
-const PAREN_MARK_RE = /(?:^|(?<=\s))\((\d{1,3})\)\s+/gu;
-const DOT_MARK_RE = /^\s*(\d{1,3})[.)]\s+/gmu;
-
-export function parseReferences(refItems: MineruContentItem[]): ParsedReference[] {
-  const items: Array<{ text: string; page?: number; bbox?: [number, number, number, number] }> = [];
-  for (const it of refItems) {
-    let t = it.text;
-    if (Array.isArray(t)) t = t.map((x) => String(x)).join(" ");
-    const text = (typeof t === "string" ? t : "").trim();
-    if (text) {
-      items.push({
-        text,
-        page: typeof it.page_idx === "number" ? it.page_idx : undefined,
-        bbox: readBbox(it),
-      });
-    }
-  }
-  const entries = splitEntries(items);
-  return entries.map((e, i) => {
-    const ref = parseOne(`ref-${i + 1}`, e.raw, e.label);
-    ref.src_page = e.page;
-    ref.src_bbox = e.bbox;
-    return ref;
-  });
-}
 
 /** Python `_clean_doi`. */
 function cleanDoi(s: string): string {
@@ -69,72 +44,6 @@ function cleanDoi(s: string): string {
     out = out.slice(0, -1);
   }
   return out;
-}
-
-interface RawEntry {
-  label?: string;
-  raw: string;
-  page?: number;
-  bbox?: [number, number, number, number];
-}
-
-/**
- * Return `[{label, raw, page, bbox}, ...]`.
- *
- * Numbered bibliographies (possibly merged into few MinerU blocks) are split on their
- * `[n]` / `n.` markers; for those the per-entry source bbox is unknown, so page/bbox
- * are undefined (numbered citations resolve by label). Author-year bibliographies keep
- * one entry per MinerU block, retaining that block's page/bbox for GoTo-hyperlink
- * resolution.
- */
-function splitEntries(
-  items: Array<{ text: string; page?: number; bbox?: [number, number, number, number] }>
-): RawEntry[] {
-  const combined = items.map((it) => it.text).join("\n");
-  for (const rx of [BRACKET_MARK_RE, PAREN_MARK_RE, DOT_MARK_RE]) {
-    const markers = [...combined.matchAll(rx)];
-    if (markers.length >= 2) {
-      const entries: RawEntry[] = [];
-      for (let j = 0; j < markers.length; j++) {
-        const m = markers[j];
-        if (!m || m[0] === undefined) continue;
-        const label = firstGroup(m);
-        const start = m.index + m[0].length;
-        const next = markers[j + 1];
-        const end = next ? next.index : combined.length;
-        const body = combined
-          .slice(start, end)
-          .replaceAll("\n", " ")
-          .replace(/\s{2,}/gu, " ")
-          .trim();
-        if (body) entries.push({ label, raw: body });
-      }
-      return entries;
-    }
-  }
-  // Author-year (or unknown): one entry per MinerU ref_text block, keeping that
-  // block's source page/bbox for GoTo-hyperlink resolution.
-  const out: RawEntry[] = [];
-  for (const item of items) {
-    let t = item.text;
-    let label: string | undefined;
-    const m = LEADING_MARK_RE.exec(t);
-    if (m && m[0] !== undefined) {
-      label = firstGroup(m);
-      t = t.slice(m[0].length);
-    }
-    const body = t
-      .replaceAll("\n", " ")
-      .replace(/\s{2,}/gu, " ")
-      .trim();
-    if (body) out.push({ label, raw: body, page: item.page, bbox: item.bbox });
-  }
-  return out;
-}
-
-/** First participating (non-empty) capture group, mirroring `next((g for g in m.groups() if g), None)`. */
-function firstGroup(m: RegExpExecArray): string | undefined {
-  return m.slice(1).find((g) => g);
 }
 
 /** `_parse_one` — also used by the LaTeX pipeline's .bbl reference builder. */

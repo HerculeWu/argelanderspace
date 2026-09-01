@@ -1,7 +1,8 @@
 /**
  * Renderer tests (Stage 2 / MS1): `renderDocMarkdown` / `renderSectionMarkdown`
- * / `renderRefsManifest` / `renderBibManifest` against the 6 frozen golden
- * Documents (latex / pdf / html pipelines).
+ * / `renderRefsManifest` / `renderBibManifest` against the 2 frozen latex
+ * golden Documents (the PDF/HTML goldens left with the OCR pipelines —
+ * archived on the `ocr-features` branch).
  *
  * The assertions are agent-perspective: the token formats an agent greps for
  * (`[cite: …]` / `[ref: …]` / `[Figure omitted | …]`), the heading structure,
@@ -30,10 +31,6 @@ const GOLDEN_DIR = join(REPO_ROOT, "tests", "golden");
 const DOC_IDS = [
   "arxiv-2501.17225", // latex
   "arxiv-2012.05220", // latex (code blocks)
-  "2603.03522", // pdf (unresolved xrefs)
-  "ads-1983ApJ...270..365M", // pdf (OCR)
-  "962260", // html
-  "aa39341-20", // html
 ] as const;
 
 function loadDoc(docId: string): Document {
@@ -77,7 +74,7 @@ describe("renderDocMarkdown (all goldens)", () => {
 });
 
 // --------------------------------------------------------------------------- //
-// Token conversion formats (regex-level, one latex + one pdf golden)
+// Token conversion formats (regex-level, latex golden)
 // --------------------------------------------------------------------------- //
 
 describe("inline token conversion (arxiv-2501.17225, latex)", () => {
@@ -142,10 +139,22 @@ describe("inline token conversion (arxiv-2501.17225, latex)", () => {
   });
 });
 
-describe("unresolved xrefs (2603.03522, pdf)", () => {
-  const md = renderDocMarkdown(DOCS.get("2603.03522") as Document);
-
+describe("unresolved xrefs (token format)", () => {
   test("[[xref:figure-3?]] → [ref: figure-3 | unresolved]", () => {
+    const doc: Document = {
+      doc_id: "syn",
+      structure: [
+        {
+          id: "sec-1",
+          type: "section",
+          level: 1,
+          blocks: [
+            { id: "p-1", type: "paragraph", text: "x [[xref:figure-3?]] and [[xref:equation-3?]]" },
+          ],
+        },
+      ],
+    };
+    const md = renderDocMarkdown(doc);
     expect(md).toContain("[ref: figure-3 | unresolved]");
     expect(md).toContain("[ref: equation-3 | unresolved]");
   });
@@ -268,7 +277,7 @@ describe("renderRefsManifest (all goldens)", () => {
   });
 
   test("deterministic", () => {
-    const doc = DOCS.get("2603.03522") as Document;
+    const doc = DOCS.get("arxiv-2012.05220") as Document;
     expect(renderRefsManifest(doc)).toEqual(renderRefsManifest(doc));
   });
 });

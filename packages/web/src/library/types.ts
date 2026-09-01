@@ -50,7 +50,7 @@ export interface LibraryRef {
   sourceLabel?: string; // human label, e.g. "A&A HTML"
   sourceStatus?: string; // ready | blocked | needs_adapter | needs_access
   sourceReady?: string; // top tier fetchable now, if any
-  needs_upload?: boolean; // bot-walled & no auto source → user must upload a PDF
+  needs_upload?: boolean; // bot-walled & no auto source → user must upload a source package (MS2: LaTeX zip)
   resolvedBy?: string; // citation-count provenance: ads | crossref | openalex
 }
 

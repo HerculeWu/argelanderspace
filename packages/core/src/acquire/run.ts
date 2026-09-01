@@ -21,14 +21,7 @@ import type { MetadataSources } from "../library/sources.js";
 import { canonicalId, emptyWork, type LibraryStore, type Work } from "../library/store.js";
 import type { BibRecord } from "./bibtex.js";
 import { isConf } from "./bibtex.js";
-import {
-  type AcquisitionPlan,
-  classify,
-  DEFAULT_HTML_ADAPTERS,
-  type HtmlAdapterInfo,
-  planSources,
-  planToDict,
-} from "./planner.js";
+import { type AcquisitionPlan, classify, planSources, planToDict } from "./planner.js";
 import { resolveWork } from "./resolve.js";
 
 /** Build a library {@link Work} from one parsed `.bib` entry. */
@@ -61,29 +54,22 @@ export function addBibRecords(store: LibraryStore, records: readonly BibRecord[]
 }
 
 /** Compute the acquisition plan for a (resolved) work. */
-export function planFor(
-  w: Work,
-  adapters: readonly HtmlAdapterInfo[] = DEFAULT_HTML_ADAPTERS
-): AcquisitionPlan {
-  return planSources(
-    {
-      doi: w.doi,
-      arxivId: w.arxiv_id,
-      bibcode: w.bibcode,
-      title: w.title,
-      year: w.year,
-      journal: w.journal,
-      venue: w.venue,
-    },
-    adapters
-  );
+export function planFor(w: Work): AcquisitionPlan {
+  return planSources({
+    doi: w.doi,
+    arxivId: w.arxiv_id,
+    bibcode: w.bibcode,
+    title: w.title,
+    year: w.year,
+    journal: w.journal,
+    venue: w.venue,
+  });
 }
 
 /** Resolve metadata + compute the source plan for every saved work. */
 export async function enrichAndPlan(
   store: LibraryStore,
-  sources: MetadataSources,
-  adapters: readonly HtmlAdapterInfo[] = DEFAULT_HTML_ADAPTERS
+  sources: MetadataSources
 ): Promise<LibraryStore> {
   const usedKeys = new Set<string>();
   for (const w of store.works) {
@@ -93,7 +79,7 @@ export async function enrichAndPlan(
     const [pub, label] = classify(w.doi, w.journal || w.venue);
     if (pub && label && !w.journal) w.journal = label;
     w.cite_key = citeKey(w, usedKeys);
-    const acq = planToDict(planFor(w, adapters));
+    const acq = planToDict(planFor(w));
     if (w.doc_ids.length > 0) {
       // already has a reader rendering
       acq.ingested_doc = w.doc_ids[0];

@@ -8,14 +8,14 @@ import { docRouteUrl, parseDocRoute } from "../src/lib/deeplink";
 import { DocPane } from "../src/doc/DocPane";
 import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
-// Golden reader doc (aa39341-20): sections sec-1..8, floats fig-1..13 /
-// tab-1..8 / eq-1..10, refs ref-1..62; ref-6 is first cited in block p-14.
-// The reader now fetches the render IR (GET /api/paper/<id>/ir), so the mock
-// below serves what the server would: buildDocIr(golden).
-// (node:url's URL, not happy-dom's, so fs accepts it.)
+// Golden reader doc (arxiv-2501.17225, latex): sections sec-1..39, floats
+// fig-1..25 / tab-1..4 / eq-1..12, refs ref-1..76; ref-6 (Bok 1934) is first
+// cited in block p-7. The reader now fetches the render IR (GET
+// /api/paper/<id>/ir), so the mock below serves what the server would:
+// buildDocIr(golden). (node:url's URL, not happy-dom's, so fs accepts it.)
 const goldenDoc = JSON.parse(
   readFileSync(
-    fileURLToPath(new NodeURL("../../../tests/golden/aa39341-20.json", import.meta.url)),
+    fileURLToPath(new NodeURL("../../../tests/golden/arxiv-2501.17225.json", import.meta.url)),
     "utf8"
   )
 ) as Document;
@@ -27,8 +27,8 @@ const goldenIr = buildDocIr(goldenDoc);
 
 describe("parseDocRoute", () => {
   it("parses doc id and anchor", () => {
-    expect(parseDocRoute("/doc/aa39341-20", "#fig-1")).toEqual({
-      docId: "aa39341-20",
+    expect(parseDocRoute("/doc/arxiv-2501.17225", "#fig-1")).toEqual({
+      docId: "arxiv-2501.17225",
       anchor: "fig-1",
     });
   });
@@ -57,8 +57,8 @@ describe("parseDocRoute", () => {
 
 describe("docRouteUrl", () => {
   it("builds deep links", () => {
-    expect(docRouteUrl("aa39341-20", "fig-1")).toBe("/doc/aa39341-20#fig-1");
-    expect(docRouteUrl("aa39341-20")).toBe("/doc/aa39341-20");
+    expect(docRouteUrl("arxiv-2501.17225", "fig-1")).toBe("/doc/arxiv-2501.17225#fig-1");
+    expect(docRouteUrl("arxiv-2501.17225")).toBe("/doc/arxiv-2501.17225");
     expect(docRouteUrl("doi:10.1/abc")).toBe("/doc/doi%3A10.1%2Fabc");
   });
 });
@@ -91,8 +91,8 @@ class IOStub {
 function renderDocPane(pendingAnchor: string | null) {
   const clearPendingAnchor = vi.fn();
   const ws: Workspace = {
-    papers: ["aa39341-20"],
-    currentDoc: "aa39341-20",
+    papers: ["arxiv-2501.17225"],
+    currentDoc: "arxiv-2501.17225",
     setCurrentDoc: vi.fn(),
     openDoc: vi.fn(),
     pendingAnchor,
@@ -156,9 +156,9 @@ describe("DocPane deep-link anchors", () => {
 
   it("lands a ref anchor on the citing block, then focuses the rail card", async () => {
     const { container } = renderDocPane("ref-6");
-    // the reader jumps to the first block citing ref-6 (p-14) so its card
+    // the reader jumps to the first block citing ref-6 (p-7) so its card
     // enters the rail, then the card itself is focused (after the jump settles)
-    await waitFor(() => expect(scrolled.some((el) => el.id === "p-14")).toBe(true));
+    await waitFor(() => expect(scrolled.some((el) => el.id === "p-7")).toBe(true));
     const card = await waitFor(
       () => {
         const c = container.querySelector("#ref-6");
@@ -171,10 +171,10 @@ describe("DocPane deep-link anchors", () => {
     expect(scrolled.some((el) => el === card || el.contains(card))).toBe(true);
   });
 
-  it("the topbar shows the page count again (nPages, MS3 regression)", async () => {
+  it("the topbar shows the ref/fig counts (no nPages for latex docs)", async () => {
     const { container } = renderDocPane(null);
     await waitFor(() => expect(container.querySelector(".doc-meta")).toBeTruthy());
-    expect(container.querySelector(".doc-meta")?.textContent).toBe("1 pp · 62 refs · 13 figs");
+    expect(container.querySelector(".doc-meta")?.textContent).toBe("76 refs · 25 figs");
   });
 
   it("unknown anchor still opens the doc without scrolling", async () => {

@@ -1,5 +1,5 @@
 {
-  "description": "Golden files: Python 管线的冻结输出, TS 移植的逐字段 diff 验收基准",
+  "description": "Golden files: Python 管线的冻结输出, TS 管线的普通回归基准（重构期结束后不再是逐字段 diff 验收门）。PDF/HTML 五颗随 OCR 管线封存于 ocr-features 分支。",
   "papers": [
     {
       "doc_id": "arxiv-2501.17225",
@@ -39,86 +39,6 @@
         "n_citations_resolved": 57,
         "n_crossrefs": 124,
         "n_crossrefs_resolved": 120
-      }
-    },
-    {
-      "doc_id": "2603.03522",
-      "pipeline": "pdf",
-      "note": "born-digital 用户 PDF",
-      "frozen_from": "data/output/2603.03522/2603.03522.json",
-      "frozen_at": "2026-08-26",
-      "generator": "python-bibgraph (pre-TS-migration)",
-      "stats": {
-        "n_sections": 23,
-        "n_paragraphs": 101,
-        "n_figures": 10,
-        "n_tables": 1,
-        "n_equations": 13,
-        "n_references": 66,
-        "n_citations": 56,
-        "n_citations_resolved": 55,
-        "n_crossrefs": 29,
-        "n_crossrefs_resolved": 21
-      }
-    },
-    {
-      "doc_id": "ads-1983ApJ...270..365M",
-      "pipeline": "pdf",
-      "note": "ADS 扫描件 / OCR 路径",
-      "frozen_from": "data/output/ads-1983ApJ...270..365M/ads-1983ApJ...270..365M.json",
-      "frozen_at": "2026-08-26",
-      "generator": "python-bibgraph (pre-TS-migration)",
-      "stats": {
-        "n_sections": 8,
-        "n_paragraphs": 72,
-        "n_figures": 1,
-        "n_tables": 0,
-        "n_equations": 5,
-        "n_references": 12,
-        "n_citations": 12,
-        "n_citations_resolved": 12,
-        "n_crossrefs": 23,
-        "n_crossrefs_resolved": 0
-      }
-    },
-    {
-      "doc_id": "aa39341-20",
-      "pipeline": "html",
-      "note": "aanda 适配器",
-      "frozen_from": "data/output/aa39341-20/aa39341-20.json",
-      "frozen_at": "2026-08-26",
-      "generator": "python-bibgraph (pre-TS-migration)",
-      "stats": {
-        "n_sections": 40,
-        "n_paragraphs": 164,
-        "n_figures": 13,
-        "n_tables": 8,
-        "n_equations": 10,
-        "n_references": 62,
-        "n_citations": 158,
-        "n_citations_resolved": 158,
-        "n_crossrefs": 57,
-        "n_crossrefs_resolved": 57
-      }
-    },
-    {
-      "doc_id": "962260",
-      "pipeline": "html",
-      "note": "oup 适配器",
-      "frozen_from": "data/output/962260/962260.json",
-      "frozen_at": "2026-08-26",
-      "generator": "python-bibgraph (pre-TS-migration)",
-      "stats": {
-        "n_sections": 29,
-        "n_paragraphs": 222,
-        "n_figures": 23,
-        "n_tables": 0,
-        "n_equations": 0,
-        "n_references": 106,
-        "n_citations": 144,
-        "n_citations_resolved": 144,
-        "n_crossrefs": 134,
-        "n_crossrefs_resolved": 94
       }
     }
   ]

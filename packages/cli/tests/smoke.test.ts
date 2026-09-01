@@ -3,7 +3,7 @@
  * `ingest` on a local LaTeX fixture (offline; pandoc-gated), `library build
  * --offline` against a fixture data dir, and `serve` boot + `/api/papers`
  * probe + clean SIGTERM shutdown. Plus unit tests for the source
- * auto-detection (the `cli.py` routing).
+ * auto-detection (latex-only routing; DOI/URL gets a friendly error).
  *
  * Hermeticity: the spawned CLI gets `HOME=<tmp>` so the ADS token file is
  * absent (ADS self-degrades to "no-token", no network) and the ambient
@@ -69,22 +69,22 @@ test("CLI is built (dist/bin.js exists — run `pnpm --filter @argelanderspace/c
   expect(existsSync(BIN)).toBe(true);
 });
 
-describe("source auto-detection (cli.py routing)", () => {
+describe("source auto-detection (latex-only routing)", () => {
   test("arXiv id / prefix / URL → latex", () => {
     expect(detectSource("2501.17225")).toBe("latex");
     expect(detectSource("arXiv:2603.03522v2")).toBe("latex");
     expect(detectSource("https://arxiv.org/abs/2501.17225")).toBe("latex");
     expect(detectSource("astro-ph/0701001")).toBe("latex");
   });
-  test("DOI / publisher URL → html", () => {
-    expect(detectSource("10.1051/0004-6361/123")).toBe("html");
-    expect(
+  test("DOI / publisher URL → recognized, friendly error (HTML/PDF in development)", () => {
+    expect(() => detectSource("10.1051/0004-6361/123")).toThrow(/in development/);
+    expect(() =>
       detectSource("https://www.aanda.org/articles/aa/full_html/2020/01/aa39341-20/aa39341-20.html")
-    ).toBe("html");
+    ).toThrow(/ocr-features/);
   });
-  test("PDF path → pdf; nonexistent path → pdf (pipeline reports it missing)", () => {
-    expect(detectSource("paper.pdf")).toBe("pdf");
-    expect(detectSource("does/not/exist.tex")).toBe("pdf");
+  test("PDF path / nonexistent path → friendly error", () => {
+    expect(() => detectSource("paper.pdf")).toThrow(/unrecognized source/);
+    expect(() => detectSource("does/not/exist.tex")).toThrow(/unrecognized source/);
   });
   test("existing local .tex / dir / tarball → latex", () => {
     const root = mkdtempSync(join(tmpdir(), "aspace-cli-detect-"));
@@ -118,14 +118,14 @@ describe.skipIf(!PANDOC)("ingest smoke (built CLI, offline)", () => {
     expect(existsSync(join(dataDir, "output", "latex-main", "latex-main.json"))).toBe(true);
   }, 180_000);
 
-  test("a missing PDF is an actionable error, exit 1", () => {
+  test("a DOI input is an actionable in-development error, exit 1", () => {
     const root = mkdtempSync(join(tmpdir(), "aspace-cli-ingest-"));
     const r = runCli(
-      ["ingest", join(root, "nope.pdf"), "--data-dir", join(root, "data")],
+      ["ingest", "10.1051/0004-6361/202039341", "--data-dir", join(root, "data")],
       childEnv(root)
     );
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain("error: PDF not found");
+    expect(r.stderr).toContain("in development");
   });
 });
 

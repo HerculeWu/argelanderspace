@@ -1,23 +1,21 @@
 /**
  * Positional-source auto-detection for `ingest` (port of `bibgraph/cli.py`'s
- * routing, extended for local LaTeX sources):
+ * routing, extended for local LaTeX sources). Main ingests LaTeX only:
  *
  *   arXiv id / arXiv: prefix / arxiv.org URL  → latex pipeline
- *   DOI / http(s) URL                          → html pipeline
- *   existing local .tex / dir / tarball        → latex pipeline  (see below)
- *   anything else                              → pdf pipeline (a local PDF path)
- *
- * Python's `cli.py` only routed arXiv ids/URLs to the LaTeX pipeline — a local
- * `.tex` fell through to `ingest_pdf` and died there despite the help text
- * advertising ".tex source". `acquireSource` (infra) accepts local .tex files,
- * source directories, and tarballs, so the CLI detects them explicitly.
+ *   existing local .tex / dir / tarball        → latex pipeline
+ *   DOI / http(s) URL                          → friendly error (publisher
+ *     HTML/PDF ingestion is in development, archived on `ocr-features`)
+ *   anything else                              → friendly error
  */
 
 import { existsSync, statSync } from "node:fs";
-import { looksLikeDoi } from "@argelanderspace/core";
 import { looksLikeArxiv } from "@argelanderspace/infra";
 
-export type SourceKind = "latex" | "html" | "pdf";
+/** Bare DOI, e.g. `10.1051/0004-6361/202038192` (inlined from the archived html pipeline). */
+function looksLikeDoi(s: string): boolean {
+  return /^10\.\d{4,9}\/\S+$/.test(s.trim());
+}
 
 /** Tarball-ish extensions `extractArxivSource` can unpack (gzipped tar / plain tar / lone gzip). */
 const TARBALL_RE = /\.(tar|tar\.gz|tgz|tar\.bz2|tbz2?|gz)$/i;
@@ -27,8 +25,8 @@ export function isArxivSource(arg: string): boolean {
   return looksLikeArxiv(arg);
 }
 
-/** A positional that is a DOI or http(s) URL routes to the HTML pipeline. */
-export function isHtmlSource(arg: string): boolean {
+/** A positional that is a DOI or http(s) publisher URL — recognized, but not ingestible on main. */
+export function isDoiOrUrl(arg: string): boolean {
   return looksLikeDoi(arg) || arg.startsWith("http://") || arg.startsWith("https://");
 }
 
@@ -43,10 +41,23 @@ export function isLocalLatexSource(arg: string): boolean {
   return arg.toLowerCase().endsWith(".tex") || TARBALL_RE.test(arg);
 }
 
-/** Route the positional to a pipeline, mirroring `cli.py main()`'s if-chain. */
-export function detectSource(arg: string): SourceKind {
+const HTML_HINT =
+  "publisher HTML/PDF ingestion is in development (archived on the ocr-features branch); " +
+  "use an arXiv id, or upload a LaTeX source zip in the web UI";
+
+/**
+ * Route the positional to a pipeline. Returns "latex" for arXiv / local LaTeX
+ * sources; throws a friendly, actionable error for DOIs / publisher URLs and
+ * unrecognized inputs.
+ */
+export function detectSource(arg: string): "latex" {
   if (isArxivSource(arg)) return "latex";
-  if (isHtmlSource(arg)) return "html";
   if (isLocalLatexSource(arg)) return "latex";
-  return "pdf";
+  if (isDoiOrUrl(arg)) {
+    throw new Error(`cannot ingest DOI/publisher URL ${arg}: ${HTML_HINT}`);
+  }
+  throw new Error(
+    `unrecognized source '${arg}': expected an arXiv id/URL or a local .tex/dir/tarball ` +
+      `(PDF ingestion is in development — ${HTML_HINT})`
+  );
 }

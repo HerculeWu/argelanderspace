@@ -100,9 +100,11 @@ export const RefreshResponseSchema = z.object({
 // ---- POST /api/library/upload ---------------------------------------------- //
 
 /**
- * Query params identify the target work (exactly one is required); the PDF
- * rides as the raw request body (`Content-Type: application/pdf`) and is not
- * JSON — hence no body schema here.
+ * Query params identify the target work (exactly one is required); the payload
+ * rides as the raw request body (not JSON — hence no body schema here).
+ * Suspended on main while the PDF/OCR ingest is archived (`ocr-features`);
+ * Stage 3.1 MS2 rebuilds the endpoint for LaTeX source zips
+ * (`Content-Type: application/zip`) with the same query/job shape.
  */
 export const UploadQuerySchema = z
   .object({

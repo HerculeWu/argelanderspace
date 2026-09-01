@@ -1,21 +1,21 @@
 /**
  * Shared fixtures for the server tests: a hermetic `<tmp>/data` tree built
  * from the repo's golden reader docs + the core library fixture, plus stub
- * `MetadataSources` / `IngestPipelines` (no MinerU, no network).
+ * `MetadataSources` (no network).
  */
 
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Document, WsServerMessage } from "@argelanderspace/contracts";
-import type { IngestPipelines, MetadataSources } from "@argelanderspace/core";
+import type { WsServerMessage } from "@argelanderspace/contracts";
+import type { MetadataSources } from "@argelanderspace/core";
 
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const GOLDEN = join(REPO_ROOT, "tests", "golden");
 const CORE_FIXTURES = join(REPO_ROOT, "packages", "core", "tests", "fixtures");
 
-/** A work that exists in the library fixture (for upload/patch tests). */
+/** A work that exists in the library fixture (for patch tests). */
 export const KNOWN_WORK_ID = "arxiv:2603.03522";
 
 /**
@@ -25,6 +25,9 @@ export const KNOWN_WORK_ID = "arxiv:2603.03522";
  *                assets/nested/deep.png}
  *   library/library.json       (core fixture; contains KNOWN_WORK_ID)
  *   library/cache/graph.json   (one suggested node `oa:W999`)
+ *
+ * The `mineru/images/pic.jpg` file pins the MS1 removal: the MinerU image
+ * branch of /images is gone with the PDF pipeline, so it must 404 now.
  */
 export function makeDataDir(): string {
   const dataDir = join(mkdtempSync(join(tmpdir(), "aspace-server-")), "data");
@@ -86,37 +89,6 @@ export function stubSources(): MetadataSources {
     ads: { status: "no-token", resolve: async () => null },
     crossref: { resolve: async () => null },
     oa: { resolve: async () => null, fetchMany: async () => new Map() },
-  };
-}
-
-/**
- * Pipelines whose `ingestPdf` mimics MinerU minimally: write a tiny Document
- * to `<outDir>/<stem>.json` (what the real pipeline + `stampSource` expect).
- */
-export function stubPipelines(): IngestPipelines {
-  return {
-    ingestPdf: async (pdfPath: string, opts: { outDir: string }) => {
-      const stem =
-        pdfPath
-          .split("/")
-          .pop()
-          ?.replace(/\.pdf$/i, "") ?? "doc";
-      const doc = {
-        doc_id: stem,
-        meta: { title: `Stub OCR of ${stem}` },
-        source: {},
-        blocks: [],
-        references: [],
-      };
-      writeFileSync(join(opts.outDir, `${stem}.json`), JSON.stringify(doc));
-      return doc as unknown as Document;
-    },
-    ingestHtml: async () => {
-      throw new Error("not used in server tests");
-    },
-    ingestLatex: async () => {
-      throw new Error("not used in server tests");
-    },
   };
 }
 

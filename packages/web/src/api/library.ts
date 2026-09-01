@@ -1,4 +1,3 @@
-import type { Job } from "@argelanderspace/contracts";
 import type { AddRefResponse, LibraryData, LibraryRef } from "../library/types";
 import { LIBRARY_FIXTURE } from "../library/fixture";
 
@@ -34,26 +33,6 @@ export async function addRef(nodeId: string): Promise<AddRefResponse | null> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source: "graph-node", nodeId }),
   });
-}
-
-/** Attach a user-supplied PDF to a work and OCR it (MinerU, server-side).
- *  The PDF rides as the raw request body; the work id is a query param.
- *  Async (M4/M5): the server answers 202 with the queued job immediately;
- *  watch /ws (`onJobEvent` in ./ws) for progress and the done/failed outcome,
- *  then reload the library. Returns the job, or null when the POST failed. */
-export async function uploadPdf(workId: string, file: File | Blob): Promise<Job | null> {
-  try {
-    const r = await fetch(`/api/library/upload?id=${encodeURIComponent(workId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/pdf" },
-      body: file,
-    });
-    if (r.status !== 202) return null;
-    const j = (await r.json()) as { job?: Job };
-    return j.job ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /** Persist a per-reference state change (color label, read flag, note, tags). */

@@ -7,19 +7,18 @@ them in a **citation-graph library** with a local **reader workspace** (web UI
 with document reader, force-directed citation graph, and live ingest progress
 over WebSocket).
 
-Three ingestion pipelines emit the *same* Document JSON:
+One ingestion pipeline emits the Document JSON:
 
-| Pipeline | Input | Status (2026-08) |
+| Pipeline | Input | Status |
 |---|---|---|
 | **arXiv LaTeX** | arXiv id / URL / local `.tex` / dir / tarball | ✅ the working fully-automatic source |
-| **PDF** | local PDF (born-digital or scan) | ✅ via the [MinerU](https://mineru.net) API (`MINERU_API_KEY` required); extractions are cached on disk |
-| **Publisher HTML** | DOI / publisher URL | ⚠️ A&A and OUP adapters exist, but both sites are bot-walled (DataDome / Cloudflare) as of 2026-08 — kept as standby capability, not currently fetchable |
+
+PDF (MinerU OCR) and publisher-HTML ingestion are **in development** — the code
+is archived on the `ocr-features` branch and not part of `main` right now.
 
 Citation/cross-reference resolution is authoritative for LaTeX (`\cite` /
-`\ref`) and publisher HTML (page anchors); for PDFs it combines hyperlink
-annotations (hyperref named destinations) with a regex fallback, repaired by a
-text-layer pass over MinerU's OCR gaps. PDF rendering and text extraction use
-the official `mupdf` WASM build — no Python anywhere.
+`\ref`). Figure rasterization uses the official `mupdf` WASM build — no Python
+anywhere.
 
 ArgelanderSpace is a local single-user tool: the server binds `127.0.0.1` and
 there is no authentication. LLM agents integrate through the CLI plus the pi
@@ -41,14 +40,13 @@ Then ingest a paper and open it in the reader:
 
 ```bash
 npx argelanderspace ingest 2501.17225            # arXiv id → LaTeX pipeline
-npx argelanderspace ingest paper.pdf             # PDF → MinerU pipeline
 npx argelanderspace library build                # seed + enrich the citation graph
 ```
 
 ## CLI
 
 ```
-argelanderspace ingest <input>      PDF path | DOI / publisher URL | arXiv id/URL | local .tex/dir/tarball
+argelanderspace ingest <input>      arXiv id/URL | local .tex/dir/tarball
 argelanderspace library build       rebuild the library (seed → enrich ADS▸Crossref▸OpenAlex → plan → graph)
                                     [--offline] [--bib refs.bib]
 argelanderspace acquire <refs.bib>  add a .bib's works and print the acquisition plan
@@ -57,15 +55,8 @@ argelanderspace serve               API + web UI + WebSocket progress  [--port N
 ```
 
 Global option: `--data-dir <dir>` (may appear before or after the subcommand).
-Useful ingest flags: `--ocr` / `--no-ocr` (default: auto-detect from the text
-layer), `--fresh` (ignore the MinerU cache), `--no-assets`, `--no-subpages`,
-`--no-cache`, `-o out.json` (also write the Document JSON to a path).
-
-**MinerU quota**: the PDF pipeline calls the hosted MinerU API on every cache
-miss, and the free tier is roughly **1000 pages/day**. Single papers are fine,
-but a heavy batch of PDF ingests can burn a day's quota — plan batches
-accordingly. Extractions are cached on disk, so re-ingesting an already-seen
-PDF is free (unless `--fresh`).
+Useful ingest flags: `--no-assets`, `--no-cache`, `--figure-dpi`,
+`-o out.json` (also write the Document JSON to a path).
 
 ## Agent integration (skills)
 
@@ -75,7 +66,7 @@ workflows:
 
 | Skill | What it does |
 |---|---|
-| `argelander-paper-ingest` | arXiv id / DOI / URL / local LaTeX / PDF → `ingest` → `library build` → confirm in `search` → asks the user for a note (agent drafts the suggestion) for every paper |
+| `argelander-paper-ingest` | arXiv id / local LaTeX → `ingest` → `library build` → confirm in `search` → asks the user for a note (agent drafts the suggestion) for every paper |
 | `argelander-read-paper` | Deep-read one ingested doc: resolves equations/figures/tables via `show`, citations via `ref`, keeps paper claims vs cited work apart, cites evidence as deep links |
 | `argelander-query-paper-library` | Ranks the whole library against a research question (`note` is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
 
@@ -105,8 +96,7 @@ The CLI–agent contract in one table (details + output conventions in
 Every doc-referencing command prints a deep link
 `http://localhost:<port>/doc/<docId>[#<anchor>]` (anchors: `#sec-N`, floats
 `#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`) that opens the web
-reader at exactly that spot. Agents may also trigger PDF OCR freely — but see
-the MinerU quota note above before letting one loose on a batch of PDFs.
+reader at exactly that spot.
 
 ## Data directory
 
@@ -119,14 +109,13 @@ the CLI and `serve` from the project root). Override with `--data-dir`,
 literatures/
   output/    one <doc_id>/ per ingested paper: <doc_id>.json + assets/ + fetch caches
   library/   library.json (source of truth), library.bib, cache/ (graph.json + ads/crossref/openalex)
-  jobs/      asynchronous ingest/upload job records and the upload spool
+  jobs/      asynchronous refresh/ingest job records and the upload spool
 ```
 
 The server polls the data dir and broadcasts `library.changed`, so a running
 web UI picks up out-of-band CLI writes (`note`, `label`, `library build`)
 without a manual reload. Notes render full-text (read-only) in the web UI's
-note tab; color labels, read markers, and real upload progress (with visible
-failures) are rendered in the library view.
+note tab; color labels and read markers are rendered in the library view.
 
 ## Configuration
 
@@ -143,7 +132,6 @@ data_dir = "/srv/papers"     # default ./literatures
 port = 8000                  # server port
 
 # API-key fallbacks (the env vars win when both are set):
-mineru_api_key = "..."       # env MINERU_API_KEY
 openalex_api_key = "..."     # env OPENALEX_API_KEY
 ads_dev_key = "..."          # env ADS_DEV_KEY, itself a fallback for ~/.ads/dev_key
 ```
@@ -155,7 +143,6 @@ Environment variables:
 | `ARGELANDERSPACE_DATA_DIR` | data directory |
 | `ARGELANDERSPACE_PORT` | server port (default 8000) |
 | `ARGELANDERSPACE_WEB_DIST` | override the bundled web UI directory |
-| `MINERU_API_KEY` | MinerU v4 extraction (PDF pipeline; only needed on a cache miss) |
 | `OPENALEX_API_KEY` | OpenAlex premium pool (sent as `api_key`; optional) |
 | `OPENALEX_MAILTO` | polite-pool identity for OpenAlex/Crossref |
 | `ADS_DEV_KEY` | NASA ADS token; without any token ADS degrades to `no-token` and the rest of the library keeps working |
@@ -196,8 +183,8 @@ pnpm workspace (use `corepack pnpm`; Node ≥ 20):
 | Package | Role |
 |---|---|
 | `packages/contracts` | zod contracts: Document JSON, library payloads, job/WS DTOs |
-| `packages/core` | pure domain logic: documents, pipelines, library/graph/planner (no I/O) |
-| `packages/infra` | side-effect adapters: mupdf, pandoc, MinerU, ADS/Crossref/OpenAlex, fetchers, config file |
+| `packages/core` | pure domain logic: documents, latex pipeline, library/graph/planner (no I/O) |
+| `packages/infra` | side-effect adapters: mupdf rasterization, pandoc, ADS/Crossref/OpenAlex, arXiv fetcher, config file |
 | `packages/server` | Hono server: 8 REST endpoints, static SPA, job runner, `/ws` |
 | `packages/cli` | the commander program (`ingest` / `library build` / `acquire` / `serve`) |
 | `packages/web` | React reader workspace (vite) |
@@ -220,10 +207,10 @@ cd packages/app && npm pack
 
 Testing notes:
 
-- **Golden-file policy**: the TS pipelines are a bug-for-bug port of the
-  original Python implementation; golden Document JSONs under `tests/golden/`
-  gate the port field-by-field. The publisher-HTML fixtures are archived fetch
-  caches — the live sites are bot-walled, these copies are the only ones.
+- **Golden-file policy**: golden Document JSONs under `tests/golden/` (two
+  arXiv LaTeX papers) are regression fixtures for the TS pipeline. The
+  PDF/HTML goldens and their fixtures moved to the `ocr-features` branch with
+  the OCR pipelines.
 - The pre-migration Python tree (`bibgraph/`, `server/`, `tests/run_tests.py`)
   was removed after the manual smoke test of the TS app (2026-08); it lives on
   in git history.

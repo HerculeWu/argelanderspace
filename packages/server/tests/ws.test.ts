@@ -1,6 +1,6 @@
 /**
  * The `/ws` channel over a real socket (ephemeral port): hello snapshot, the
- * ordered job event stream, `library.changed` after an upload, and upgrade
+ * ordered job event stream, `library.changed` after a mutation, and upgrade
  * rejection off-path.
  */
 
@@ -8,7 +8,7 @@ import type { WsServerMessage } from "@argelanderspace/contracts";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
 import { createServer, type RunningServer } from "../src/server.js";
-import { KNOWN_WORK_ID, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
+import { makeDataDir, stubSources } from "./helpers.js";
 
 let srv: RunningServer;
 let port: number;
@@ -21,7 +21,7 @@ beforeEach(async () => {
     port: 0,
     heartbeatMs: 0,
     webDist: null,
-    deps: { makeSources: () => stubSources(), pipelines: stubPipelines() },
+    deps: { makeSources: () => stubSources() },
   });
   port = await srv.ready();
 });
@@ -89,32 +89,6 @@ describe("WS /ws", () => {
       expect(p2.job.progress.map((p) => p.message)).toEqual(["step 1", "step 2"]);
     }
     expect(doneMsg.job).toMatchObject({ status: "done", result: { ingested: 2 }, error: null });
-  });
-
-  test("upload over HTTP broadcasts job events + library.changed", async () => {
-    const { ready, done } = collectUntil((m) => m.type === "library.changed");
-    await ready;
-    const res = await fetch(`http://127.0.0.1:${port}/api/library/upload?id=${KNOWN_WORK_ID}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/pdf" },
-      body: "%PDF-1.4\nstub\n",
-    });
-    expect(res.status).toBe(202);
-    const messages = await done;
-    const types = messages.map((m) => m.type);
-    expect(types[0]).toBe("hello");
-    expect(types).toContain("job.created");
-    expect(types).toContain("job.done");
-    expect(types.indexOf("job.done")).toBeLessThan(types.indexOf("library.changed"));
-    expect(messages[messages.length - 1]).toMatchObject({
-      type: "library.changed",
-      cause: "upload",
-    });
-    // a second client connecting now sees the finished job in its snapshot
-    const late = collectUntil(() => true);
-    const hello = (await late.done)[0];
-    if (hello?.type !== "hello") throw new Error("no hello");
-    expect(hello.jobs.some((j) => j.kind === "upload" && j.status === "done")).toBe(true);
   });
 
   test("upgrade requests off /ws are refused", async () => {

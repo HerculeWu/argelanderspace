@@ -1,17 +1,17 @@
 /**
- * The Hono port of `server/app.py` (FastAPI): the 8 REST endpoints with paths
+ * The Hono port of `server/app.py` (FastAPI): the REST endpoints with paths
  * and response shapes preserved verbatim (decision 15), the image route, CORS
  * for the Vite dev origin, the Origin-check CSRF guard on mutations, the
  * mtime+size paper cache, and static SPA hosting with API precedence.
  *
  * Intentional divergences from app.py (all flagged in the M4 memory note):
- * - `POST /api/library/upload` is now async: `202 {"job": ...}` immediately;
- *   the PDF is spooled under `<dataDir>/jobs/spool/` and OCR runs as a serial
- *   job (WS `job.*` events carry the outcome). The old minutes-long
- *   synchronous wait stays available behind `?sync=1`.
+ * - `POST /api/library/upload` is suspended on main: the PDF/OCR ingest path
+ *   is archived on the `ocr-features` branch; a LaTeX-zip upload endpoint is
+ *   rebuilt in Stage 3.1 MS2 (same `?id/?doi/?arxiv` + async-job shape).
  * - `POST /api/library/refresh` keeps its synchronous summary response, but
  *   the rebuild runs inside the serial job runner (mutual exclusion with
- *   upload ingest, decisions 13/16) — WS clients see it as a `refresh` job.
+ *   other library writes, decisions 13/16) — WS clients see it as a
+ *   `refresh` job.
  * - The CSRF allowlist gains the server's own port (`localhost`/`127.0.0.1`)
  *   so same-origin SPA POSTs work on ports other than the hardcoded 8000.
  * - Malformed `?offline=` values answer `422 {"detail": string}` (FastAPI's
@@ -20,17 +20,13 @@
  *   (Starlette's StaticFiles answered 404) — required for client-side routes.
  */
 
-import { existsSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Document, RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
 import {
   addNodeToLibrary,
-  attachPdf,
   buildDocIr,
-  htmlAdapterInfos,
-  type IngestPipelines,
   type LibraryPaths,
   libraryPayload,
   type MetadataSources,
@@ -52,7 +48,6 @@ export interface AppDeps {
   paths: LibraryPaths;
   /** Sources factory: `offline` toggles remote enrichment (Crossref/OpenAlex). */
   makeSources: (offline: boolean) => MetadataSources;
-  pipelines: IngestPipelines;
   runner: JobRunner;
   /** WS sink; when absent, events are simply dropped (tests without a hub). */
   broadcast?: (msg: WsServerMessage) => void;
@@ -143,12 +138,11 @@ export function createApp(deps: AppDeps): Hono {
   const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload"): void => {
     broadcast({ type: "library.changed", cause, at: new Date().toISOString() });
   };
-  /** rebuild through the lock + the planner's live HTML-adapter registry. */
+  /** rebuild through the lock. */
   const lockedRebuild = (
     p: LibraryPaths,
     opts: { sources: MetadataSources }
-  ): Promise<RefreshResponse> =>
-    libraryLock.run(() => rebuild(p, { ...opts, htmlAdapters: htmlAdapterInfos() }));
+  ): Promise<RefreshResponse> => libraryLock.run(() => rebuild(p, opts));
 
   // app.py's `_ALLOWED_ORIGINS` + the server's own port (see header note).
   const allowedOrigins = new Set([
@@ -329,89 +323,6 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(done.result as Record<string, unknown>);
   });
 
-  // ---- POST /api/library/upload?id=|doi=|arxiv= ------------------------------ //
-
-  app.post("/api/library/upload", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
-    const id = c.req.query("id");
-    const doi = c.req.query("doi");
-    const arxiv = c.req.query("arxiv");
-    if (!(id || doi || arxiv)) {
-      const e = detail("id, doi, or arxiv query param required", 400);
-      return c.json(e.body, e.status);
-    }
-    const data = Buffer.from(await c.req.arrayBuffer());
-    // Python `data[:5].startswith(b"%PDF")`: the first four bytes decide.
-    if (data.length < 4 || data.subarray(0, 4).toString("latin1") !== "%PDF") {
-      const e = detail("request body is not a PDF", 400);
-      return c.json(e.body, e.status);
-    }
-    const query = { workId: id ?? null, doi: doi ?? null, arxiv: arxiv ?? null };
-    const runOcr = (pdfPath: string, onProgress?: (message: string) => void) =>
-      attachPdf(pdfPath, query, {
-        paths,
-        pipelines: deps.pipelines,
-        sources: deps.makeSources(false),
-        rebuild: lockedRebuild,
-        onProgress,
-      });
-
-    const syncRaw = c.req.query("sync");
-    const sync = parseBoolQuery(syncRaw);
-    if (sync === null) {
-      const e = detail("invalid boolean value for query param 'sync'", 422);
-      return c.json(e.body, e.status);
-    }
-    if (sync) {
-      // Legacy behavior (app.py verbatim): the response waits for the OCR.
-      const tmp = join(
-        tmpdir(),
-        `argelanderspace-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`
-      );
-      try {
-        writeFileSync(tmp, data);
-        const ref = await runOcr(tmp);
-        return c.json({ ref });
-      } catch (e) {
-        // Python: ValueError/FileNotFoundError → 404, anything else → 500.
-        const msg = e instanceof Error ? e.message : String(e);
-        const err = msg.startsWith("no matching work in the library")
-          ? detail(msg, 404)
-          : detail(`ingest failed: ${msg}`, 500);
-        return c.json(err.body, err.status);
-      } finally {
-        rmSync(tmp, { force: true });
-      }
-    }
-
-    // Async (new default): spool the bytes, queue the OCR job, answer 202.
-    // The runner's `report` rides attachPdf's onProgress straight through, so
-    // every pipeline stage transition lands in job.progress (WS job.progress).
-    const job = runner.submit(
-      "upload",
-      async (j, report) => {
-        const pdf = runner.spoolPath(j.id);
-        try {
-          const ref = await runOcr(pdf, report);
-          return { ref };
-        } finally {
-          rmSync(pdf, { force: true });
-        }
-      },
-      query
-    );
-    // Synchronous spool write: guaranteed to land before the serial chain
-    // (a microtask) can start the handler.
-    writeFileSync(runner.spoolPath(job.id), data);
-    // `library.changed` must follow `job.done` on the wire (runner emits
-    // done before resolving waiters).
-    void runner.waitFor(job.id).then((j) => {
-      if (j.status === "done") libraryChanged("upload");
-    });
-    return c.json({ job }, 202);
-  });
-
   // ---- GET /images/{doc_id}/{filename} --------------------------------------- //
 
   app.get("/images/:doc_id/:filename", async (c) => {
@@ -425,14 +336,14 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
-    // PDF docs keep images under mineru/images/; HTML docs under assets/.
-    for (const sub of ["mineru/images", "assets"]) {
-      const img = join(outputDir, docId, sub, filename);
-      if (existsSync(img) && statSync(img).isFile()) {
-        return c.body(new Uint8Array(await readFile(img)), 200, {
-          "Content-Type": mimeFor(filename),
-        });
-      }
+    // LaTeX docs keep images under assets/. (The MinerU `mineru/images/`
+    // branch left with the PDF pipeline — re-ingest old PDF docs to restore
+    // their images.)
+    const img = join(outputDir, docId, "assets", filename);
+    if (existsSync(img) && statSync(img).isFile()) {
+      return c.body(new Uint8Array(await readFile(img)), 200, {
+        "Content-Type": mimeFor(filename),
+      });
     }
     const e = detail("image not found", 404);
     return c.json(e.body, e.status);
@@ -441,9 +352,7 @@ export function createApp(deps: AppDeps): Hono {
   // ---- GET /images/{doc_id}/{...subpath} ------------------------------------- //
 
   // img_path verbatim (Stage 3 / MS2a): values carry their subdirectory —
-  // "assets/foo.jpg" for HTML docs (doc-dir relative), "images/<hash>.jpg" for
-  // MinerU docs (relative to mineru/). The single-segment route above keeps
-  // its two-directory lookup for the current web client.
+  // "assets/foo.jpg", doc-dir relative.
   app.get("/images/:doc_id/:filepath{.+}", async (c) => {
     const docId = c.req.param("doc_id");
     const rel = c.req.param("filepath");
@@ -455,13 +364,11 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
-    const docDir = join(outputDir, docId);
-    for (const img of [join(docDir, rel), join(docDir, "mineru", rel)]) {
-      if (existsSync(img) && statSync(img).isFile()) {
-        return c.body(new Uint8Array(await readFile(img)), 200, {
-          "Content-Type": mimeFor(rel),
-        });
-      }
+    const img = join(outputDir, docId, rel);
+    if (existsSync(img) && statSync(img).isFile()) {
+      return c.body(new Uint8Array(await readFile(img)), 200, {
+        "Content-Type": mimeFor(rel),
+      });
     }
     const e = detail("image not found", 404);
     return c.json(e.body, e.status);

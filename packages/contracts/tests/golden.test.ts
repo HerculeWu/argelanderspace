@@ -1,7 +1,8 @@
 /**
- * Golden acceptance: the 6 frozen Python-pipeline outputs in
+ * Golden acceptance: the 2 frozen LaTeX-pipeline outputs in
  * `<repo>/tests/golden/` must all validate against the Document zod schema
- * (M0 acceptance gate), plus a few negative cases.
+ * (M0 acceptance gate), plus a few negative cases. (The PDF/HTML goldens left
+ * with the OCR pipelines — archived on the `ocr-features` branch.)
  */
 
 import { readFileSync } from "node:fs";
@@ -28,8 +29,9 @@ function loadGolden(docId: string): unknown {
 }
 
 describe("DocumentSchema vs golden pipeline outputs", () => {
-  it("manifest lists exactly the 6 golden papers", () => {
-    expect(manifest.papers).toHaveLength(6);
+  it("manifest lists exactly the 2 latex golden papers", () => {
+    expect(manifest.papers).toHaveLength(2);
+    expect(manifest.papers.every((p) => p.pipeline === "latex")).toBe(true);
   });
 
   for (const entry of manifest.papers) {
@@ -54,13 +56,13 @@ describe("DocumentSchema vs golden pipeline outputs", () => {
 
 describe("DocumentSchema negative cases", () => {
   it("rejects a document without doc_id", () => {
-    const doc = { ...(loadGolden("aa39341-20") as Record<string, unknown>) };
+    const doc = { ...(loadGolden("arxiv-2501.17225") as Record<string, unknown>) };
     delete doc.doc_id;
     expect(DocumentSchema.safeParse(doc).success).toBe(false);
   });
 
   it("rejects an unknown block type", () => {
-    const doc = DocumentSchema.parse(loadGolden("aa39341-20"));
+    const doc = DocumentSchema.parse(loadGolden("arxiv-2501.17225"));
     const section = doc.structure?.find((s) => s.blocks?.length);
     expect(section).toBeDefined();
     const bad = {

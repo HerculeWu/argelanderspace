@@ -1,7 +1,8 @@
 /**
- * The 8 REST endpoints + images + SPA hosting + CSRF/CORS, against a fixture
- * data dir, using Hono's `app.request` (no socket). Upload's async flow and
- * the WS channel have their own suites (upload.test.ts / ws.test.ts).
+ * The REST endpoints + images + SPA hosting + CSRF/CORS, against a fixture
+ * data dir, using Hono's `app.request` (no socket). The WS channel has its
+ * own suite (ws.test.ts); the upload endpoint is suspended until Stage 3.1
+ * MS2 rebuilds it for LaTeX zips.
  *
  * Every assertion on status/body mirrors `server/app.py` byte-semantically.
  */
@@ -19,7 +20,6 @@ import {
   KNOWN_WORK_ID,
   makeDataDir,
   makeWebDist,
-  stubPipelines,
   stubSources,
 } from "./helpers.js";
 
@@ -40,7 +40,6 @@ beforeEach(() => {
   app = createApp({
     paths: libraryPaths(dataDir),
     makeSources: () => stubSources(),
-    pipelines: stubPipelines(),
     runner,
     broadcast: collector.broadcast,
     webDist,
@@ -272,15 +271,6 @@ describe("CSRF guard (Origin check on mutations)", () => {
     ["POST /api/library/refs", (h) => post("/api/library/refs", { nodeId: "oa:W999" }, h)],
     ["PATCH /api/library/refs", (h) => patch("/api/library/refs", { id: KNOWN_WORK_ID }, h)],
     ["POST /api/library/refresh", (h) => post("/api/library/refresh?offline=true", undefined, h)],
-    [
-      "POST /api/library/upload",
-      async (h) =>
-        app.request(`/api/library/upload?id=${KNOWN_WORK_ID}&sync=1`, {
-          method: "POST",
-          headers: { "Content-Type": "application/pdf", ...h },
-          body: "%PDF-1.4 stub",
-        }),
-    ],
   ];
   for (const [name, call] of cases) {
     test(`${name}: evil Origin → 403`, async () => {
@@ -336,16 +326,13 @@ describe("CORS (Vite dev origin, GET only)", () => {
 // --------------------------------------------------------------------------- //
 
 describe("GET /images/:doc_id/:filename", () => {
-  test("serves from mineru/images and assets with content types", async () => {
-    const jpg = await get("/images/demo/pic.jpg");
-    expect(jpg.status).toBe(200);
-    expect(jpg.headers.get("content-type")).toBe("image/jpeg");
-    expect(new Uint8Array(await jpg.arrayBuffer())).toEqual(
-      new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
-    );
+  test("serves from assets/ with content types; the removed mineru branch 404s", async () => {
     const png = await get("/images/demo/logo.png");
     expect(png.status).toBe(200);
     expect(png.headers.get("content-type")).toBe("image/png");
+    // MS1: the MinerU `mineru/images/` lookup left with the PDF pipeline
+    const jpg = await get("/images/demo/pic.jpg");
+    expect(jpg.status).toBe(404);
   });
 
   test("404 for a missing image", async () => {
@@ -365,7 +352,7 @@ describe("GET /images/:doc_id/:filename", () => {
 });
 
 describe("GET /images/:doc_id/<subpath> (img_path verbatim)", () => {
-  test("serves subdirectory paths: assets/… doc-relative, images/… under mineru/", async () => {
+  test("serves subdirectory paths doc-relative; the removed mineru variant 404s", async () => {
     const png = await get("/images/demo/assets/logo.png");
     expect(png.status).toBe(200);
     expect(png.headers.get("content-type")).toBe("image/png");
@@ -374,11 +361,9 @@ describe("GET /images/:doc_id/<subpath> (img_path verbatim)", () => {
     expect(new Uint8Array(await nested.arrayBuffer())).toEqual(
       new Uint8Array([0x89, 0x50, 0x4e, 0x48])
     );
+    // MS1: "images/…" was resolved under mineru/; gone with the PDF pipeline
     const jpg = await get("/images/demo/images/pic.jpg");
-    expect(jpg.status).toBe(200);
-    expect(new Uint8Array(await jpg.arrayBuffer())).toEqual(
-      new Uint8Array([0xff, 0xd8, 0xff, 0xd9])
-    );
+    expect(jpg.status).toBe(404);
   });
 
   test("404 for a missing subpath", async () => {

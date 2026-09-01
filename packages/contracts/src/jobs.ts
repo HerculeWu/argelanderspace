@@ -16,7 +16,7 @@ import { z } from "zod";
 
 // ---- jobs ------------------------------------------------------------------ //
 
-/** The long operations the runner executes (`upload` = user PDF OCR). */
+/** The long operations the runner executes (`upload` = user LaTeX-zip attach, MS2). */
 export const JobKindSchema = z.enum(["upload", "refresh", "ingest"]);
 
 /**
@@ -91,9 +91,9 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
 // ---- async upload (202) ------------------------------------------------------ //
 
 /**
- * `POST /api/library/upload` without `?sync=1` now answers `202` immediately
- * with the queued job; watch `/ws` (or re-GET until M5 grows a jobs endpoint)
- * for the outcome. The legacy synchronous response stays {@link UploadResponseSchema}.
+ * `POST /api/library/upload` (rebuilt in MS2 for LaTeX zips) answers `202`
+ * immediately with the queued job; watch `/ws` for the outcome. The legacy
+ * synchronous response stays {@link UploadResponseSchema}.
  */
 export const UploadAcceptedResponseSchema = z.object({
   job: JobSchema,

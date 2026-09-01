@@ -1,8 +1,5 @@
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
-import type { Job } from "@argelanderspace/contracts";
+import { useState } from "react";
 import { Icon } from "../lib/icons";
-import { uploadPdf } from "../api/library";
-import { onJobEvent } from "../api/ws";
 import { cgKfmt } from "./CitationGraph";
 import type { GraphNode, LibraryRef } from "./types";
 
@@ -79,104 +76,20 @@ const TABS: [string, string][] = [
   ["files", "附件"],
 ];
 
-/** The upload job's target work id rides in `payload.workId` (server app.ts). */
-function uploadJobWorkId(job: Job): string | null {
-  const p = job.payload;
-  if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
-  const w = (p as Record<string, unknown>).workId;
-  return typeof w === "string" && w !== "" ? w : null;
-}
-
 export function RefDetail({
   r,
   node,
   onClose,
   onOpenDoc,
-  onReload,
 }: {
   r: LibraryRef;
   node: GraphNode | null;
   onClose: () => void;
   onOpenDoc: (docId?: string) => void;
-  onReload?: () => void;
 }) {
   const [tab, setTab] = useState("meta");
   const [copied, setCopied] = useState(false);
-  // async upload (202 + job): progress arrives over /ws; `uploadJob` is the
-  // queued/running job, null once a terminal state was handled. The ref mirror
-  // lets the WS subscriber see the latest value; `seenJobs` remembers every
-  // event snapshot so a job.* frame that beats the upload POST's fetch
-  // response (fast failure) is never overwritten by the stale 202 body.
-  const [uploadJob, setUploadJobState] = useState<Job | null>(null);
-  const uploadJobRef = useRef<Job | null>(null);
-  const seenJobs = useRef(new Map<string, Job>());
-  const [uploadErr, setUploadErr] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const cited = node?.c ?? r.citedBy;
-
-  const setUploadJob = useCallback((job: Job | null) => {
-    uploadJobRef.current = job;
-    setUploadJobState(job);
-  }, []);
-
-  // switching references drops the other ref's upload state
-  useEffect(() => {
-    setUploadJob(null);
-    setUploadErr(null);
-  }, [r.id, setUploadJob]);
-
-  const failMsg = (job: Job | null): string =>
-    job?.error ? `上传失败：${job.error}` : "上传失败，请重试";
-
-  const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file
-    if (!file) return;
-    setUploadErr(null);
-    const job = await uploadPdf(r.id, file);
-    if (!job) {
-      setUploadErr(failMsg(null));
-      return;
-    }
-    const seen = seenJobs.current.get(job.id);
-    if (!seen || seen.status === "queued" || seen.status === "running") {
-      setUploadJob(seen ?? job); // prefer the newer event snapshot
-    } else if (seen.status === "done") {
-      onReload?.();
-    } else {
-      // terminal frame beat the fetch response: surface it, don't resurrect
-      setUploadErr(failMsg(seen));
-    }
-  };
-
-  // Track this work's upload job.* events. `hello` replays (reconnect /
-  // refresh) adopt a queued/running job even without a local uploadJob, so
-  // tracking resumes; live events update the tracked job by id.
-  useEffect(
-    () =>
-      onJobEvent((job) => {
-        if (job.kind !== "upload" || uploadJobWorkId(job) !== r.id) return;
-        seenJobs.current.set(job.id, job);
-        const cur = uploadJobRef.current;
-        if (cur && job.id === cur.id) setUploadJob(job);
-        else if (!cur && (job.status === "queued" || job.status === "running")) {
-          setUploadJob(job);
-        }
-      }),
-    [r.id, setUploadJob]
-  );
-
-  // react to the terminal states (kept out of the subscriber, which must stay pure)
-  useEffect(() => {
-    if (!uploadJob) return;
-    if (uploadJob.status === "done") {
-      setUploadJob(null);
-      onReload?.();
-    } else if (uploadJob.status === "failed" || uploadJob.status === "interrupted") {
-      setUploadJob(null);
-      setUploadErr(failMsg(uploadJob));
-    }
-  }, [uploadJob, onReload, setUploadJob]);
 
   const copyBib = async () => {
     try {
@@ -225,13 +138,6 @@ export function RefDetail({
           </span>
         )}
       </div>
-      <input
-        ref={fileInput}
-        type="file"
-        accept="application/pdf"
-        style={{ display: "none" }}
-        onChange={onPickFile}
-      />
       <div className="ref-detail-tabs">
         {TABS.map(([k, l]) => (
           <button key={k} className={"rdt" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
@@ -341,37 +247,10 @@ export function RefDetail({
                   <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
                   <SourcePill r={r} />
                 </div>
-                <button
-                  className="btn"
-                  disabled={uploadJob !== null}
-                  onClick={() => fileInput.current?.click()}
-                  style={{ justifyContent: "center" }}
-                >
-                  {uploadJob ? (
-                    <>
-                      <Icon name="loader" cls="ico-sm spin" />
-                      {uploadJob.status === "queued"
-                        ? "排队等待 OCR…"
-                        : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
-                          "正在 OCR 入库…")}
-                    </>
-                  ) : (
-                    <>
-                      <Icon name="file-up" cls="ico-sm" />
-                      上传 PDF
-                    </>
-                  )}
-                </button>
                 <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
-                  {r.needs_upload
-                    ? "该来源被反爬墙 / 无开放源，上传 PDF 后自动 OCR 入库并关联"
-                    : "也可手动上传 PDF（自动 OCR 入库并关联到本条）"}
+                  LaTeX 源码包（zip）上传入口开发中；可先入库 arXiv 源码（CLI `ingest
+                  &lt;arxiv-id&gt;`）
                 </div>
-                {uploadErr && (
-                  <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
-                    {uploadErr}
-                  </div>
-                )}
               </div>
             )}
           </div>

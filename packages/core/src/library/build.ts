@@ -27,7 +27,6 @@ import type {
   RefreshResponse,
 } from "@argelanderspace/contracts";
 import { parseBibtex } from "../acquire/bibtex.js";
-import type { HtmlAdapterInfo } from "../acquire/planner.js";
 import { addBibRecords, enrichAndPlan } from "../acquire/run.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
 import { buildGraph, citeKey, workToRef } from "./graph.js";
@@ -41,8 +40,6 @@ export interface RebuildOptions {
   sources: MetadataSources;
   /** Optional `.bib` file whose entries are added before enriching. */
   bibPath?: string | null;
-  /** HTML-adapter registry override (defaults to the static migration snapshot). */
-  htmlAdapters?: readonly HtmlAdapterInfo[];
 }
 
 /**
@@ -58,7 +55,7 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
     addBibRecords(store, records);
     nBib = records.length;
   }
-  await enrichAndPlan(store, opts.sources, opts.htmlAdapters);
+  await enrichAndPlan(store, opts.sources);
   const graph = await buildGraph(store, opts.sources.oa, paths.outputDir);
   store.save(paths);
   mkdirSync(paths.cacheDir, { recursive: true });

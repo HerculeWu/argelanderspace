@@ -10,21 +10,18 @@
  *   4. ADS-archived scan PDF   (old papers; needs OCR)
  *
  * For one resolved record we emit a ranked list of {@link Candidate} sources and
- * pick the highest-priority one we can realistically obtain. "Realistically" is
- * checked against the HTML-adapter registry — a journal-HTML candidate is
- * `ready` only once an adapter for that publisher exists (today: A&A, MNRAS).
+ * pick the highest-priority one we can realistically obtain. On main, journal
+ * HTML is never `ready`: the per-publisher adapters are archived on the
+ * `ocr-features` branch (the sites are all bot-walled anyway — see
+ * `.kimi-code/memory/2026-08-26-publisher-access-status.md`), so arXiv LaTeX is
+ * the only automatically fetchable tier.
  *
- * Port notes (bug-for-bug):
- * - The publisher table is ported AS-IS, including the EDP/A&A `ready` marking
- *   and the bot-wall annotations that no longer match reality (decision 2; the
- *   publisher-access reality is documented in
- *   `.kimi-code/memory/2026-08-26-publisher-access-status.md` and deliberately
- *   NOT fixed here).
- * - Python consults the live `ingest_html.ADAPTERS` registry for
- *   `html_adapter_for_doi`. The adapters are M3; the port takes an injectable
- *   registry and defaults to {@link DEFAULT_HTML_ADAPTERS}, a static snapshot of
- *   the Python registry at migration time (aanda + oup, with their doi_prefixes
- *   from `bibgraph/ingest_html/{aanda,oup}.py`). M3 wires the live registry in.
+ * Port notes:
+ * - The publisher table is ported AS-IS from the Python original, including the
+ *   EDP/A&A markings and the bot-wall annotations (decision 2).
+ * - Python consulted the live `ingest_html.ADAPTERS` registry for
+ *   `html_adapter_for_doi`; with the HTML pipeline archived, journal-HTML
+ *   candidates are always `needs_adapter`.
  */
 
 import { arxivFromDoi } from "../library/store.js";
@@ -174,45 +171,6 @@ export function classify(
 }
 
 // --------------------------------------------------------------------------- //
-// HTML-adapter availability (the registry is M3; a static snapshot is the default)
-// --------------------------------------------------------------------------- //
-
-/** One registered HTML adapter (the slice of `HtmlAdapter` the planner needs). */
-export interface HtmlAdapterInfo {
-  name: string;
-  doiPrefixes: readonly string[];
-}
-
-/**
- * Static snapshot of the Python `ingest_html.ADAPTERS` registry at migration
- * time (`aanda.py`, `oup.py`). The live TS registry landed with M3c:
- * `pipelines/html/base.ts` `htmlAdapterInfos()` returns the same slice from
- * the actually-registered adapters; composition layers (CLI/server, M5) should
- * pass that in — this constant stays the default so the planner works without
- * the pipeline modules loaded.
- */
-export const DEFAULT_HTML_ADAPTERS: readonly HtmlAdapterInfo[] = [
-  { name: "aanda", doiPrefixes: ["10.1051/0004-6361"] },
-  {
-    name: "oup",
-    doiPrefixes: ["10.1093/mnras", "10.1093/mnrasl", "10.1111/j.1365-2966", "10.1046/j.1365-8711"],
-  },
-];
-
-/** Name of the registered HTML adapter that can render *doi*, if any. */
-export function htmlAdapterForDoi(
-  doi: string | null | undefined,
-  adapters: readonly HtmlAdapterInfo[] = DEFAULT_HTML_ADAPTERS
-): string | null {
-  if (!doi) return null;
-  const d = doi.toLowerCase();
-  for (const ad of adapters) {
-    if (ad.doiPrefixes.some((pre) => d.startsWith(pre.toLowerCase()))) return ad.name;
-  }
-  return null;
-}
-
-// --------------------------------------------------------------------------- //
 // Candidates + plan
 // --------------------------------------------------------------------------- //
 
@@ -292,18 +250,15 @@ export function planToDict(p: AcquisitionPlan): Record<string, unknown> {
 }
 
 /** Rank full-text sources for one (already metadata-resolved) paper. */
-export function planSources(
-  query: {
-    doi?: string | null;
-    arxivId?: string | null;
-    bibcode?: string | null;
-    title?: string | null;
-    year?: number | null;
-    journal?: string | null;
-    venue?: string | null;
-  },
-  adapters: readonly HtmlAdapterInfo[] = DEFAULT_HTML_ADAPTERS
-): AcquisitionPlan {
+export function planSources(query: {
+  doi?: string | null;
+  arxivId?: string | null;
+  bibcode?: string | null;
+  title?: string | null;
+  year?: number | null;
+  journal?: string | null;
+  venue?: string | null;
+}): AcquisitionPlan {
   // an arXiv DOI is not a journal DOI: don't let it spawn journal tiers, and
   // fold it into the arXiv id instead.
   let { doi } = query;
@@ -327,26 +282,16 @@ export function planSources(
         note: "bot-walled; needs a user-uploaded PDF",
       });
     } else {
-      const adapter = htmlAdapterForDoi(doi, adapters);
-      if (adapter) {
-        cands.push({
-          tier: "journal_html",
-          label: `${label} HTML`,
-          status: READY,
-          locator: doi,
-          publisher: publisher.name,
-          note: `adapter=${adapter}`,
-        });
-      } else {
-        cands.push({
-          tier: "journal_html",
-          label: `${label} HTML`,
-          status: NEEDS_ADAPTER,
-          locator: doi,
-          publisher: publisher.name,
-          note: "no HTML adapter yet",
-        });
-      }
+      // The publisher-HTML adapters are archived on the `ocr-features` branch
+      // (and the live sites are bot-walled anyway) — never READY on main.
+      cands.push({
+        tier: "journal_html",
+        label: `${label} HTML`,
+        status: NEEDS_ADAPTER,
+        locator: doi,
+        publisher: publisher.name,
+        note: "HTML ingestion in development (archived on the ocr-features branch)",
+      });
     }
   }
 

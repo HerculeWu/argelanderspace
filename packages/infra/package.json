@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@argelanderspace/core": "workspace:*",
-    "cheerio": "^1.2.0",
     "mupdf": "1.28.0",
     "smol-toml": "^1.8.0"
   },

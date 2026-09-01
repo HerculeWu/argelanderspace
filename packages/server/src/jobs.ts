@@ -1,10 +1,11 @@
 /**
  * The hand-rolled serial job runner (decisions 13/16: 内存队列 + JSON 落盘,
- * 串行). Long library mutations — upload OCR, refresh, acquisition ingest —
- * run one at a time, FIFO, each persisted as `<dataDir>/jobs/<id>.json` on
- * every transition so state survives a restart: on boot, jobs still
- * `queued`/`running` are rewritten to the terminal `interrupted` status
- * (they are never re-run; leftover upload spool files are cleaned up too).
+ * 串行). Long library mutations — refresh, acquisition ingest, the (MS2)
+ * LaTeX-zip upload — run one at a time, FIFO, each persisted as
+ * `<dataDir>/jobs/<id>.json` on every transition so state survives a
+ * restart: on boot, jobs still `queued`/`running` are rewritten to the
+ * terminal `interrupted` status (they are never re-run; leftover upload spool
+ * files are cleaned up too).
  *
  * Why server-local and not `core/src/jobs/`: nothing here is domain logic —
  * it is execution orchestration for the HTTP/WS layer (queueing, progress
@@ -13,10 +14,10 @@
  * package (or we promote the module then).
  *
  * Concurrency split with `library/lock.ts`: the runner serializes whole jobs
- * (MinerU quota + local CPU, decision 16); the lock separately guards the
- * library.json load→save critical sections against the *immediate* PATCH/POST
- * endpoints — mirroring Python, where `_WRITE_LOCK` covers rebuild's
- * load→save but never the OCR itself.
+ * (decision 16); the lock separately guards the library.json load→save
+ * critical sections against the *immediate* PATCH/POST endpoints — mirroring
+ * Python, where `_WRITE_LOCK` covers rebuild's load→save but never the ingest
+ * itself.
  */
 
 import { randomUUID } from "node:crypto";
@@ -79,7 +80,7 @@ export class JobRunner {
       }
       this.jobs.set(job.id, job);
     }
-    // Spooled PDFs of interrupted upload jobs are dead weight.
+    // Spooled payloads of interrupted upload jobs are dead weight.
     rmSync(join(this.dir, "spool"), { recursive: true, force: true });
   }
 
@@ -125,11 +126,11 @@ export class JobRunner {
     });
   }
 
-  /** Where an upload job's PDF bytes wait for their turn. */
+  /** Where an upload job's spooled payload waits for its turn (MS2: LaTeX zip). */
   spoolPath(jobId: string): string {
     const dir = join(this.dir, "spool");
     mkdirSync(dir, { recursive: true });
-    return join(dir, `${jobId}.pdf`);
+    return join(dir, `${jobId}.zip`);
   }
 
   private async run(job: Job, handler: JobHandler): Promise<void> {

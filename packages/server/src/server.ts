@@ -20,7 +20,7 @@ import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
-import { realPipelines, realSources } from "./deps.js";
+import { realSources } from "./deps.js";
 import { JobRunner } from "./jobs.js";
 import { startLibraryWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
@@ -34,7 +34,7 @@ export interface ServerOptions {
   /** Built SPA directory; `null` disables static hosting. */
   webDist?: string | null;
   /** Composition seam: stub the infra wiring (offline tests). */
-  deps?: Partial<Pick<AppDeps, "makeSources" | "pipelines">>;
+  deps?: Partial<Pick<AppDeps, "makeSources">>;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
 }
@@ -61,7 +61,6 @@ export function createServer(opts: ServerOptions): RunningServer {
   const app = createApp({
     paths,
     makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline)),
-    pipelines: opts.deps?.pipelines ?? realPipelines(paths),
     runner,
     broadcast: (msg) => hub.broadcast(msg),
     webDist: opts.webDist,

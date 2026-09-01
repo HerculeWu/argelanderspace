@@ -56,7 +56,6 @@ function nodeToRef(n: GraphNode): LibraryRef {
 
 const IMPORTS = [
   { ic: "hash", t: "从 DOI / arXiv ID", d: "粘贴标识符自动抓取元数据" },
-  { ic: "file-up", t: "从 PDF 导入", d: "拖入 PDF，自动识别题录" },
   { ic: "globe", t: "从浏览器抓取", d: "内置浏览器一键保存当前页" },
   { ic: "file-code-2", t: "导入 BibTeX / RIS", d: "批量导入既有文献库" },
 ];
@@ -88,19 +87,17 @@ export function LibraryView() {
       </div>
     );
   }
-  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} onReload={reload} />;
+  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} />;
 }
 
 function LibraryBody({
   payload,
   live,
   onOpenDoc,
-  onReload,
 }: {
   payload: LibraryData;
   live: boolean;
   onOpenDoc: (docId?: string) => void;
-  onReload: () => void;
 }) {
   const { refs, graph } = payload;
   const byId = useMemo(() => Object.fromEntries(graph.nodes.map((n) => [n.id, n])), [graph]);
@@ -343,13 +340,7 @@ function LibraryBody({
       </div>
 
       {curRef ? (
-        <RefDetail
-          r={curRef}
-          node={curNode}
-          onClose={() => setSelNode(null)}
-          onOpenDoc={onOpenDoc}
-          onReload={onReload}
-        />
+        <RefDetail r={curRef} node={curNode} onClose={() => setSelNode(null)} onOpenDoc={onOpenDoc} />
       ) : curNode ? (
         <GraphNodeDetail
           node={curNode}

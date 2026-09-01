@@ -103,7 +103,9 @@ describe("library domain (tests/run_tests.py port)", () => {
     expect(recs.get("Perryman1998")?.authors).not.toContain("others");
   });
 
-  test("test_acq_planner_aanda_ready", () => {
+  test("test_acq_planner_aanda_needs_adapter", () => {
+    // MS1: the HTML adapters are archived (ocr-features) and the live sites are
+    // bot-walled — journal HTML is never READY on main.
     const p = planSources({
       doi: "10.1051/0004-6361/202039341",
       title: "x",
@@ -111,12 +113,12 @@ describe("library domain (tests/run_tests.py port)", () => {
       journal: "A&A",
     });
     expect(p.chosen?.tier).toBe("journal_html");
-    expect(p.chosen?.status).toBe("ready");
+    expect(p.chosen?.status).toBe("needs_adapter");
     expect(p.publisher).toBe("EDP Sciences");
   });
 
-  test("test_acq_planner_mnras_ready_via_oup", () => {
-    // MNRAS (incl. legacy Wiley DOIs) is served by the OUP adapter now.
+  test("test_acq_planner_mnras_needs_adapter", () => {
+    // MNRAS (incl. legacy Wiley DOIs) had the OUP adapter; archived now.
     const p = planSources({
       doi: "10.1046/j.1365-8711.2001.04022.x",
       title: "imf",
@@ -124,8 +126,7 @@ describe("library domain (tests/run_tests.py port)", () => {
       journal: "MNRAS",
     });
     expect(p.chosen?.tier).toBe("journal_html");
-    expect(p.chosen?.status).toBe("ready");
-    expect(p.chosen?.note ?? "", `oup adapter noted: ${p.chosen?.note}`).toContain("adapter=oup");
+    expect(p.chosen?.status).toBe("needs_adapter");
     const tiers = p.candidates.map((c) => c.tier);
     expect(tiers).toContain("journal_pdf");
     expect(tiers, `modern MNRAS has no ADS-scan tier: ${tiers}`).not.toContain("ads_scan");
@@ -165,7 +166,10 @@ describe("library domain (tests/run_tests.py port)", () => {
     expect(tiers).not.toContain("journal_pdf");
   });
 
-  test("test_acq_planner_html_beats_arxiv", () => {
+  test("test_acq_planner_arxiv_is_the_ready_tier", () => {
+    // was test_acq_planner_html_beats_arxiv: with the adapters archived, the
+    // journal-HTML candidate stays top-priority *chosen* (needs_adapter) but
+    // arXiv LaTeX is the tier fetchable now.
     const p = planSources({
       doi: "10.1051/0004-6361/202243940",
       arxivId: "2208.00211",
@@ -174,7 +178,8 @@ describe("library domain (tests/run_tests.py port)", () => {
       journal: "A&A",
     });
     expect(p.chosen?.tier).toBe("journal_html");
-    expect(p.ready?.tier).toBe("journal_html");
+    expect(p.chosen?.status).toBe("needs_adapter");
+    expect(p.ready?.tier).toBe("arxiv_latex");
   });
 
   test("test_acq_classify_aas_subjournal", () => {

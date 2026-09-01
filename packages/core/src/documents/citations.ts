@@ -18,7 +18,7 @@
 
 import type { CitationOccurrence, Reference } from "@argelanderspace/contracts";
 import type { Match } from "./annotate.js";
-import { bbox1000ToFrac, type FracRect, type LinkAnnot, pointInRect } from "./pdf-links.js";
+import { bbox1000ToFrac, type FracRect, type LinkAnnot, pointInRect } from "./geom.js";
 import { pyRe, stripChars } from "./pyregex.js";
 import type { ParsedReference } from "./references.js";
 

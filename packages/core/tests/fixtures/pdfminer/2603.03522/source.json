@@ -1,9 +1,0 @@
-{
-  "doc_id": "2603.03522",
-  "pdf": "2603.03522.pdf",
-  "golden": "2603.03522.json",
-  "is_ocr": null,
-  "batch_id": null,
-  "stamp": null,
-  "provenance": "Born-digital user PDF (data/input/2603.03522.pdf). Golden frozen via scripts/reprocess.py: MineruClient.load_cached + build_document with a default PipelineConfig, so meta.mineru carries no is_ocr (auto-detect lives in ingest_pdf, which reprocess bypasses) and no batch_id (load_cached never sets one). The end-to-end ingestPdf auto-detects the text layer and emits is_ocr=false — the golden test asserts that exact delta."
-}
