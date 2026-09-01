@@ -2,7 +2,8 @@
  * Agent-facing subcommands (Stage 2 / MS1; design decisions 2, 5, 6 and 8 in
  * `.kimi-code/memory/2026-08-27-stage2-design.md`):
  *
- *   search                          every work as one JSON line (no filtering)
+ *   search                          every work as one JSON line (no filtering);
+ *                                   an empty-note hint goes to stderr when any
  *   read <docId> [--section] [--manifest refs|bib]
  *                                   LLM-friendly markdown, or a JSONL manifest
  *   show <docId> <floatId>          one float as JSON (caption/latex/body/image)
@@ -16,6 +17,9 @@
  * - structured output is JSON/JSONL on stdout, kept machine-clean: when a
  *   command's stdout is a JSONL stream (`search`, `read --manifest`), the doc
  *   header + deep link goes to stderr instead of corrupting the stream;
+ *   `search` likewise reports `hint: N/M works have empty notes` on stderr
+ *   (only when N > 0 — works without notes are invisible to note-driven
+ *   ranking, so the query skill treats the hint as its cue to offer backfill);
  * - every command that references a doc location also prints a deep link
  *   `http://localhost:<port>/doc/<docId>#<anchor>` (decision 8; the web route
  *   itself is MS2). The port follows serve's chain minus its `--port` flag:
@@ -168,6 +172,12 @@ function runSearch(dataDir: string): void {
         doc_ids: w.doc_ids,
       })
     );
+  }
+  // Empty = undefined/null/empty/whitespace-only. stdout stays pure JSONL;
+  // the hint follows the other JSONL streams' header-on-stderr precedent.
+  const empty = store.works.filter((w) => (w.note ?? "").trim() === "").length;
+  if (empty > 0) {
+    console.error(`hint: ${empty}/${store.works.length} works have empty notes`);
   }
 }
 

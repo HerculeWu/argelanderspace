@@ -7,16 +7,20 @@ description: Read a single ingested paper from the ArgelanderSpace library and a
 
 Answer questions about one specific paper that has been ingested into ArgelanderSpace. The goal is **accuracy**, not reproducing PDF layout. Everything goes through the `argelanderspace` CLI.
 
+## Non-negotiable: the CLI is the only interface
+
+**Never read source code — not the ArgelanderSpace repo's, not any other project's — to answer a question about a paper.** If you catch yourself opening `.ts`/`.py` files, grepping a repository, or hand-reading the Document JSON under `literatures/output/`, you are on the wrong path: stop and run the CLI instead. The rendered markdown / manifests / JSON the CLI prints are the sanctioned, tested views of the paper; reading source is how wrong answers happen.
+
 ## When to use
 
 - The user names a specific paper (title, arXiv id, doc id, or "这篇" with an obvious referent) and asks something about its content.
 - `argelander-query-paper-library` hands off a doc id with a targeted sub-question.
 
-The paper must be ingested first. Check with `argelanderspace list --data-dir <root>` (one line per doc); if the paper only exists as a library work without a doc (or doesn't exist at all), say so and offer `argelander-paper-ingest`.
+The paper must be ingested first. Check with `argelanderspace list` (one line per doc); if the paper only exists as a library work without a doc (or doesn't exist at all), say so and offer `argelander-paper-ingest`.
 
 ## Configuration
 
-- **CLI**: `argelanderspace` (or `node packages/app/dist/bin.js` inside the repo). Pass `--data-dir <root>` explicitly on every command — it must match the user's `serve` data dir. Resolution chain: flag > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./data`.
+- **CLI**: `argelanderspace` (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` — the built bundle, by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently hits an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts (chain: flag > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`).
 - **Doc id vs work id**: `read` / `show` / `ref` take a **doc id** (e.g. `arxiv-2501.17225`; see `list`, or the `doc_ids` field of `search` rows). `note` / `label` take a **work id** (`arxiv:...` / `doi:...`). Don't mix them up.
 - **Deep-link port**: the CLI prints links as `http://localhost:<port>/doc/...` with port = `ARGELANDERSPACE_PORT` env > config.toml `port` > 8000. If the user's server runs on a custom `--port`, the printed port may not match — set `ARGELANDERSPACE_PORT` in your shell before running CLI commands, or rewrite the port when quoting links.
 
@@ -123,9 +127,9 @@ Anchors: `#sec-N` (section), `#eq-N` / `#fig-N` / `#tab-N` / `#code-N` / `#alg-N
 ## Minimal operating procedure
 
 ```bash
-argelanderspace list --data-dir <root>                              # find the doc id
-argelanderspace read <docId> --manifest refs --data-dir <root>      # section/float map
-argelanderspace read <docId> --section <secId> --data-dir <root>    # read the relevant part
-argelanderspace show <docId> <floatId> --data-dir <root>            # resolve floats
-argelanderspace ref <docId> <refIdOrKey> --data-dir <root>          # resolve citations
+argelanderspace list                              # find the doc id
+argelanderspace read <docId> --manifest refs      # section/float map
+argelanderspace read <docId> --section <secId>    # read the relevant part
+argelanderspace show <docId> <floatId>            # resolve floats
+argelanderspace ref <docId> <refIdOrKey>          # resolve citations
 ```

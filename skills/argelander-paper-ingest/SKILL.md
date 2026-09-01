@@ -7,6 +7,10 @@ description: Ingest a paper (arXiv id / DOI / publisher URL / local .tex source 
 
 Add a paper to the user's ArgelanderSpace library so that `argelander-read-paper` (deep reading) and `argelander-query-paper-library` (cross-library questions) can use it. Everything goes through the `argelanderspace` CLI — there is no file-layout contract to maintain by hand.
 
+## Non-negotiable: the CLI is the only interface
+
+**Never read source code — not the ArgelanderSpace repo's, not any other project's — to answer a question about the user's papers or library.** If you catch yourself opening `.ts`/`.py` files, grepping a repository, or hand-reading `literatures/library.json` / Document JSON files, you are on the wrong path: stop and run the CLI instead. Reading source to answer library questions is how stale, wrong, or fabricated answers happen.
+
 ## When to use
 
 Trigger whenever the user wants to make a paper available in their library:
@@ -19,8 +23,8 @@ Do NOT use this skill to answer questions about a paper — that's `argelander-r
 
 ## Configuration
 
-- **The CLI**: run `argelanderspace`. If the command is not on PATH and you are inside the ArgelanderSpace repo, use `node packages/app/dist/bin.js` instead (build once with `corepack pnpm -r build`). All examples below write `argelanderspace` — substitute as needed.
-- **Data directory**: every command takes `--data-dir <dir>` (it may appear before or after the subcommand). Resolution chain: `--data-dir` flag > `ARGELANDERSPACE_DATA_DIR` env > `config.toml` `data_dir` > `./data`. **Pass `--data-dir` explicitly every time** — the `./data` default is relative to the current working directory, and the data dir must match the one the user's `argelanderspace serve` is running on. The old `LITERATURE_LIBRARY` env var is dead; do not look for it.
+- **The CLI**: run `argelanderspace`. If it is not on PATH, use the built bundle from the repo checkout by absolute path — `node /path/to/repo/packages/app/dist/bin.js` (build once with `corepack pnpm -r build` inside the repo). All examples below write `argelanderspace` — substitute as needed.
+- **Data directory**: one library per project, at `./literatures` under the **project root** (the directory that contains `literatures/`). The default resolves against the *current working directory* with **no upward search**, so **run every CLI command from the project root** — if your shell is somewhere else, `cd` there first. Do **not** pass `--data-dir`; it survives only as an escape hatch for unusual layouts (chain: `--data-dir` flag > `ARGELANDERSPACE_DATA_DIR` env > `config.toml` `data_dir` > `./literatures`). The old `LITERATURE_LIBRARY` env var is dead; do not look for it.
 - **LaTeX pipeline prerequisite**: `pandoc` must be on PATH for arXiv / local-LaTeX ingest.
 - **PDF pipeline prerequisite**: `MINERU_API_KEY` (env or config.toml), needed on a MinerU cache miss.
 
@@ -35,9 +39,9 @@ The CLI auto-detects the pipeline from the input form; you do not pick it yourse
 
 ## Workflow
 
-### Step 0 — Resolve CLI and data dir
+### Step 0 — Resolve the CLI and the working directory
 
-Decide the `argelanderspace` invocation and the `--data-dir` once; use them consistently for the whole session. If you don't know which data dir the user's server uses, ask.
+Decide the `argelanderspace` invocation once, and `cd` to the project root (the directory containing `literatures/`) before running anything — use both consistently for the whole session. If you don't know which directory the user's server runs on, ask.
 
 ### Step 1 — Verify the arXiv id BEFORE ingesting (arXiv inputs only)
 
@@ -50,7 +54,7 @@ Decide the `argelanderspace` invocation and the `--data-dir` once; use them cons
 ### Step 2 — Ingest
 
 ```bash
-argelanderspace ingest <source> --data-dir <root>
+argelanderspace ingest <source>
 ```
 
 Watch the trailing summary: `n_sections`, `n_references`, `citations: N (M resolved)`, `crossrefs: N (M resolved)`. If resolution rates look broken (e.g. most citations unresolved), say honestly which parts of the paper will be unreliable to read — don't pretend success.
@@ -59,10 +63,10 @@ Watch the trailing summary: `n_sections`, `n_references`, `citations: N (M resol
 
 ### Step 3 — Library build (REQUIRED — ingest alone is not enough)
 
-`ingest` only writes the document JSON under `<root>/output/<doc_id>/`. The paper does **not** exist as a library work — and `note`/`label` will fail with `error: unknown work ...` — until you rebuild:
+`ingest` only writes the document JSON under `literatures/output/<doc_id>/`. The paper does **not** exist as a library work — and `note`/`label` will fail with `error: unknown work ...` — until you rebuild:
 
 ```bash
-argelanderspace library build --data-dir <root>
+argelanderspace library build
 ```
 
 - Plain `library build` enriches online (ADS ▸ Crossref ▸ OpenAlex): citation counts, venue, DOI, graph edges. Prefer this when the network is fine.
@@ -71,7 +75,7 @@ argelanderspace library build --data-dir <root>
 ### Step 4 — Confirm the work exists
 
 ```bash
-argelanderspace search --data-dir <root> | grep -i <title word or arxiv id>
+argelanderspace search | grep -i <title word or arxiv id>
 ```
 
 Find the new row. Record two different ids — you will need both:
@@ -79,7 +83,7 @@ Find the new row. Record two different ids — you will need both:
 - the **work id** (`id` field, canonical: `doi:...` > `arxiv:...` > `openalex:...` > `work:<slug>`) — for `note` / `label`;
 - the **doc id(s)** (`doc_ids` field, e.g. `arxiv-2607.17040`) — for `read` / `show` / `ref` and deep links.
 
-If the row is missing, the build didn't pick the doc up — check that the ingest summary actually printed and that `--data-dir` matched in both commands.
+If the row is missing, the build didn't pick the doc up — check that the ingest summary actually printed and that both commands ran from the project root.
 
 ### Step 5 — The note (for EVERY paper, no exceptions)
 
@@ -93,7 +97,7 @@ The note is the primary relevance signal for `argelander-query-paper-library` ("
 3. Write the confirmed text:
 
    ```bash
-   argelanderspace note <work_id> <the note text> --data-dir <root>
+   argelanderspace note <work_id> <the note text>
    ```
 
    The text is variadic — no quoting needed. Running `note` with no text prints the current note (use this to verify the write).
@@ -105,7 +109,7 @@ If the user explicitly declines the note, record that they declined and move on 
 If the user gave tags (or the topic clearly maps to their existing tag conventions):
 
 ```bash
-argelanderspace label <work_id> --tags tidal-tails,gaia --data-dir <root>
+argelanderspace label <work_id> --tags tidal-tails,gaia
 ```
 
 `--tags` replaces the whole set; comma-separated; empty string clears.

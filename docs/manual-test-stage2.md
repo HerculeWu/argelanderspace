@@ -1,5 +1,7 @@
 # Stage 2 手动验收指南（pi + skills 三件套）
 
+> ⚠️ **已废弃**：Stage 3 起默认数据目录从 `./data` 变为 **`./literatures`**（项目根相对、无向上查找），文中 `--data-dir ./data` 示例及"webui 需 F5 / 笔记 tab 是占位符 / label 色点不渲染"等已知限制均已过时。最新验收见 `docs/manual-test-stage3.md`。
+
 本指南验证 Stage 2 的三条 agent 工作流（摄入 / 查询 / 阅读）+ 维护回路 + 失败探针。
 每一步给出：**要输入的 prompt**、**应该发生什么**、**出现什么说明有 bug**。
 

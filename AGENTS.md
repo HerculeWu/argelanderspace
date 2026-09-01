@@ -11,14 +11,16 @@
 
 ArgelanderSpace（原 bibgraph）：论文摄入（PDF / 出版商 HTML / arXiv LaTeX → 统一 Document JSON）+ 引文图谱文献管理 + React 阅读器。细节见 `README.md`。
 
-**主线是 TypeScript（已合并 `main`，M0–M6 完成）**：pnpm workspace 在 `packages/` 下——`contracts`（zod 契约）/ `core`（纯领域）/ `infra`（mupdf、pandoc、MinerU、ADS/Crossref/OpenAlex、config.toml）/ `server`（Hono + job runner + WS）/ `cli`（commander）/ `web`（React 阅读器）/ `app`（发布用的单包 bundle，`argelanderspace` on npm）。构建/测试/检查一律 `corepack pnpm -r build|test|typecheck|lint`（本机裸 `pnpm` 不在 PATH，必须走 corepack）。
+**主线是 TypeScript（已合并 `main`，M0–M6 完成）**：pnpm workspace 在 `packages/` 下——`contracts`（zod 契约）/ `core`（纯领域）/ `infra`（mupdf、pandoc、MinerU、ADS/Crossref/OpenAlex、config.toml）/ `server`（Hono + job runner + WS）/ `cli`（commander）/ `web`（React 阅读器）/ `app`（发布用的单包 bundle，`argelanderspace` on npm）。构建/测试/检查一律 `corepack pnpm -r build|test|typecheck` + 根 `corepack pnpm lint`（无 per-package lint script；本机裸 `pnpm` 不在 PATH，必须走 corepack）。
 
 **Python 旧树已于 2026-08-27 删除**（人工冒烟验收通过后；git history 可查）。当前主线的背景与计划见 memory 目录。
 
-**Stage 2（2026-08-27 完成）**：agent 接入 = CLI agent 子命令（`search/read/show/ref/note/label/list`）+ pi skills 三件套 `skills/argelander-*`（symlink/cp 到 `~/.pi/agent/skills/` 或 `.pi/skills/`；webui 深链接 `/doc/<id>#<anchor>`）。无 MCP。旧 `literature-library-skills/` 已被取代，去留由用户决定。手动验收步骤见 `docs/manual-test-stage2.md`。
+**Stage 2（2026-08-27 完成）**：agent 接入 = CLI agent 子命令（`search/read/show/ref/note/label/list`）+ pi skills 三件套 `skills/argelander-*`（symlink/cp 到 `~/.pi/agent/skills/` 或 `.pi/skills/`；webui 深链接 `/doc/<id>#<anchor>`）。无 MCP。旧 `literature-library-skills/` 已删除（2026-09-01，方法论已吸收进新三件套）。手动验收步骤见 `docs/manual-test-stage2.md`（已被 Stage 3 取代）。
+
+**Stage 3（2026-09-01，MS1–MS4 代码完成，待 commit + 手动验收）**：存储契约默认 `./data` → **`./literatures`**（项目级库、cwd 相对、**无向上查找**）；渲染 IR 三端共用（core `buildDocIr` → server `/api/paper/:id/ir` → web/CLI 消费，`richtext.tsx`/web 手写类型镜像退役）；server 轮询 `literatures/` 广播 `library.changed`（webui 免 F5）；webui 笔记 tab 全文只读、label 色点/已读标识渲染、upload 真实进度 + 失败可见；CLI `search` 空 note 往 stderr 打 hint；skills 契约改为"项目根跑 CLI、不传 `--data-dir`、不读源码"。手动验收见 `docs/manual-test-stage3.md`。
 
 ## 环境
 
 - Node v24+ / npm 11+；pnpm 经 `corepack pnpm` 调用（pnpm 11.24.0，见根 package.json `packageManager`）
-- pandoc 在 `/home/wwu/miniforge3/envs/astro/bin/`，跑 LaTeX/HTML 管线（含相关测试）前需加入 PATH
+- pandoc 在 `/home/wwu/miniforge3/envs/astro/bin/`，跑 LaTeX/HTML 管线（含相关测试）前需加入 PATH。**坑**：不要把整个 astro bin 前置 PATH——astro 自带的 node v20 会抢先系统 node（pnpm 11 需 node ≥22.13，会起不来）；用只含 pandoc 的 shim 目录前置（如 `/tmp/ms1-bin/pandoc` → astro pandoc 的单独 symlink）
 - keys：`MINERU_API_KEY`（~/.zshrc）、ADS token（`~/.ads/dev_key`）、`OPENALEX_API_KEY`（~/.zshrc）；也可写进 `~/.config/argelanderspace/config.toml`（env 优先）

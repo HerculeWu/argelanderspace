@@ -40,7 +40,8 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 
 - **The `argelanderspace` CLI**: either installed (`npm i -g argelanderspace`)
   or from a built repo checkout — `corepack pnpm -r build`, then the skills use
-  `node packages/app/dist/bin.js` in place of `argelanderspace`.
+  `node <repo>/packages/app/dist/bin.js` (absolute path) in place of
+  `argelanderspace`.
 - **pandoc** on PATH for the LaTeX (arXiv) ingest pipeline.
 - **`MINERU_API_KEY`** (env or config.toml) for the PDF pipeline — see the
   quota warning in the root README.
@@ -64,8 +65,15 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 
 Conventions the skills rely on:
 
-- **`--data-dir` everywhere**: flag > `ARGELANDERSPACE_DATA_DIR` > config.toml
-  `data_dir` > `./data`. The old `LITERATURE_LIBRARY` env var is dead.
+- **The CLI is the only interface**: agents never read repo source code or the
+  JSON files under `literatures/` to answer library questions — each skill
+  carries this as a hard rule up front.
+- **One library per project**: the default data dir is `./literatures` under
+  the project root, resolved against the *current working directory* with **no
+  upward search** — run the CLI from the project root and don't pass
+  `--data-dir` (it survives only as an escape hatch; chain: flag >
+  `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`). The
+  old `LITERATURE_LIBRARY` env var is dead.
 - **Two id families**: works (`arxiv:…` / `doi:…` — `search`, `note`, `label`)
   vs docs (`arxiv-…` — `read`, `show`, `ref`, `list`). `search` rows map one to
   the other via `doc_ids`.
@@ -75,11 +83,15 @@ Conventions the skills rely on:
   `ARGELANDERSPACE_PORT` > config `port` > 8000 — if `serve` runs on a custom
   `--port`, export `ARGELANDERSPACE_PORT` so printed links match.
 - **Machine-clean stdout**: JSONL streams (`search`, `read --manifest`) stay
-  pure; headers go to stderr. Errors are `error: <message>` on stderr with
-  exit code 1, and "unknown id" errors list the available candidates.
-- **Out-of-band writes don't push**: CLI writes (`note`/`label`/`library
-  build`) update `library.json` but do not broadcast `library.changed` to a
-  running webui — reload the browser page to see them.
+  pure; headers go to stderr. `search` also prints
+  `hint: N/M works have empty notes` on stderr when any works lack notes — the
+  query skill treats it as the cue to offer note backfill. Errors are
+  `error: <message>` on stderr with exit code 1, and "unknown id" errors list
+  the available candidates.
+- **Out-of-band writes are picked up automatically**: the server polls
+  `library.json` + `output/` and broadcasts `library.changed`, so a running
+  webui refreshes itself after CLI writes (`note` / `label` /
+  `library build`) — no manual reload needed.
 
 ## Operational lessons carried over (still true)
 

@@ -3,9 +3,10 @@
  * (`dist/bin.js`) against a throwaway data dir — one golden reader doc under
  * `output/` plus a copy of the core fixture `library.json` (34 works).
  *
- * Covers: `search` JSONL shape, `read` markdown (+ `--section` / `--manifest`),
- * `show` / `ref` happy paths and unknown-id error quality, `note` / `label`
- * store mutation, and the `list` overview.
+ * Covers: `search` JSONL shape + its empty-note stderr hint (Stage 3 / MS4),
+ * `read` markdown (+ `--section` / `--manifest`), `show` / `ref` happy paths
+ * and unknown-id error quality, `note` / `label` store mutation, and the
+ * `list` overview.
  *
  * Hermeticity: same conventions as smoke.test.ts — `HOME` in a tmp dir,
  * ambient `ARGELANDERSPACE_*` scrubbed, and `XDG_CONFIG_HOME` pointed at the
@@ -13,7 +14,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,12 +83,23 @@ function parseJsonl(stdout: string): Record<string, unknown>[] {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
+/** Rewrite each work's note in the fixture library via `fn(workId)`. */
+function rewriteNotes(dataDir: string, fn: (id: string) => string): void {
+  const file = join(dataDir, "library", "library.json");
+  const data = JSON.parse(readFileSync(file, "utf8")) as {
+    works: { id: string; note?: string | null }[];
+  };
+  for (const w of data.works) w.note = fn(w.id);
+  writeFileSync(file, JSON.stringify(data));
+}
+
 describe("search", () => {
   test("prints one JSON index row per library work", () => {
     const { dataDir, env } = makeDataDir();
     const r = runCli(["search", "--data-dir", dataDir], env);
     expect(r.status).toBe(0);
-    expect(r.stderr).toBe("");
+    // the fixture library ships 34 works, all with note: null → hint on stderr
+    expect(r.stderr).toBe("hint: 34/34 works have empty notes\n");
     const rows = parseJsonl(r.stdout);
     expect(rows.length).toBe(34);
     for (const row of rows) {
@@ -121,6 +133,26 @@ describe("search", () => {
       read: false,
       star: false,
     });
+  });
+
+  test("stderr hint counts only empty notes (whitespace-only counts as empty)", () => {
+    const { dataDir, env } = makeDataDir();
+    // one real note; the other 33 get whitespace-only notes → still empty
+    rewriteNotes(dataDir, (id) => (id === WORK_ID ? "tidal-tail reference" : "   "));
+    const r = runCli(["search", "--data-dir", dataDir], env);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("hint: 33/34 works have empty notes\n");
+    // stdout stays pure JSONL
+    expect(parseJsonl(r.stdout).length).toBe(34);
+  });
+
+  test("no hint when every work has a note", () => {
+    const { dataDir, env } = makeDataDir();
+    rewriteNotes(dataDir, () => "noted");
+    const r = runCli(["search", "--data-dir", dataDir], env);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(parseJsonl(r.stdout).length).toBe(34);
   });
 });
 

@@ -7,6 +7,10 @@ description: Answer research questions using the user's ArgelanderSpace library 
 
 The entry point for question-driven reading: rank the library against the user's question, drive `argelander-read-paper` on the top candidates, and synthesize an answer with traceable evidence.
 
+## Non-negotiable: the CLI is the only interface
+
+**Never read source code — not the ArgelanderSpace repo's, not any other project's — to answer a question about the user's library.** If you catch yourself opening `.ts`/`.py` files, grepping a repository, or hand-reading `literatures/library.json`, you are on the wrong path: stop and run the CLI instead. `search` is the library index; reading source is how wrong answers happen.
+
 ## When to use vs. when NOT to use
 
 **Use when:**
@@ -20,7 +24,7 @@ The entry point for question-driven reading: rank the library against the user's
 
 ## Configuration
 
-`argelanderspace` CLI (or `node packages/app/dist/bin.js` in the repo), always with an explicit `--data-dir <root>` matching the user's server. The old `LITERATURE_LIBRARY` env var is dead.
+`argelanderspace` CLI (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently queries an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts. The old `LITERATURE_LIBRARY` env var is dead.
 
 ## Why notes are the primary signal
 
@@ -33,7 +37,7 @@ When a paper was ingested, the user (with the ingest skill) wrote a **note**: "i
 ### Step 1 — Load the whole index
 
 ```bash
-argelanderspace search --data-dir <root>
+argelanderspace search
 ```
 
 One JSON object per line, per work:
@@ -44,7 +48,23 @@ One JSON object per line, per work:
 
 Read **every** row — the library is sized for tens-to-low-hundreds of papers, so a full read is the intended use. Don't pre-filter with grep before reading; keyword filtering is exactly the failure mode this design avoids.
 
-### Step 2 — Rank candidates (judgment, not regex)
+### Step 2 — Check for empty notes (and offer to backfill)
+
+`search` keeps stdout pure JSONL, but when any works lack notes it prints a machine-layer signal on **stderr**:
+
+```
+hint: N/M works have empty notes
+```
+
+Treat that hint — or empty/`null`/whitespace `note` fields you spot in the rows — as a required finding, not background noise: works with empty notes are nearly invisible to note-driven ranking (they can only match on title/tags). **Tell the user proactively**, before or alongside the shortlist: "N of M works have no note; they rank poorly by design." Then offer to backfill, using the same discipline as ingest: **you draft a suggested note** from the title (and, if a doc exists, a quick `read` of the abstract), the user confirms or edits, then:
+
+```bash
+argelanderspace note <work_id> <confirmed text>
+```
+
+Never silently write your own drafts as if they were the user's words — the note's value is that it's user-curated.
+
+### Step 3 — Rank candidates (judgment, not regex)
 
 Score relevance of each row to the question, weighing signals in this order:
 
@@ -58,7 +78,7 @@ Also weigh **`doc_ids`**: a work with an ingested doc can be deep-read immediate
 
 Pick a shortlist of **2–5** works. Clearly more than 5 strong matches → surface the count and ask whether to read all or trim.
 
-### Step 3 — Show the shortlist BEFORE reading
+### Step 4 — Show the shortlist BEFORE reading
 
 ```
 Found N candidate papers:
@@ -72,11 +92,11 @@ Found N candidate papers:
 
 Then ask "Read all of these, or narrow further?" — unless the user's framing already authorized proceeding ("用文献库回答…" usually does; "看看库里有没有相关的" leans toward listing first). One round-trip is cheap; reading 5 wrong papers is not.
 
-### Step 4 — Hand off to `argelander-read-paper` per pick
+### Step 5 — Hand off to `argelander-read-paper` per pick
 
 For each chosen work, take a doc id from its `doc_ids` and invoke the **argelander-read-paper** skill with `(doc id, targeted sub-question)` — the specific aspect of the user's question you want answered *from that paper*. Don't replicate its reading logic here; it knows how to resolve refs/citations correctly. If the question decomposes ("compare how A and B handle X"), give each paper a different sub-question rather than one generic prompt.
 
-### Step 5 — Synthesize across papers
+### Step 6 — Synthesize across papers
 
 - Present per-paper findings briefly, each with its work id.
 - Then synthesize: **agreements, disagreements, complementary contributions, gaps**.
@@ -85,16 +105,6 @@ For each chosen work, take a doc id from its `doc_ids` and invoke the **argeland
 - A top candidate that turns out irrelevant after reading → say so honestly and move on, or pull a replacement from the shortlist's tail.
 
 If the shortlist can't fully answer the question, say so and suggest: ingesting a specific missing paper (argelander-paper-ingest), loosening the ranking (weigh titles/tags more), or accepting that the library doesn't cover this aspect.
-
-## The empty-note caveat (and backfill)
-
-Works with `note: null` are nearly invisible to note-driven ranking — they can only match on title/tags. If you notice many strong-looking candidates have empty notes, tell the user and offer to backfill. Backfilling uses the same discipline as ingest: **you draft a suggested note** from the title (and, if a doc exists, a quick `read` of the abstract), the user confirms or edits, then:
-
-```bash
-argelanderspace note <work_id> <confirmed text> --data-dir <root>
-```
-
-Never silently write your own drafts as if they were the user's words — the note's value is that it's user-curated.
 
 ## Practical notes
 
@@ -107,7 +117,7 @@ Never silently write your own drafts as if they were the user's words — the no
 User: "我想了解 CP 方法测潮汐尾的现状，我文献库里有相关的吗？"
 
 You:
-1. `search` → read all rows.
+1. `search` → read all rows; if stderr printed `hint: N/M works have empty notes`, tell the user and offer to backfill (Step 2).
 2. Shortlist 3 works whose notes/tags mention tidal-tail detection, CP/CCP methods, or Gaia cluster mapping.
 3. Show the shortlist with one-line reasons; proceed (framing authorized it).
 4. Hand each doc id to argelander-read-paper with a targeted sub-question ("这篇如何用 CP 方法定义成员/尾巴？", "它的样本和完备性怎样？").

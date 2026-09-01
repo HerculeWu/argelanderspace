@@ -94,7 +94,7 @@ The CLI–agent contract in one table (details + output conventions in
 
 | Command | Purpose | Output |
 |---|---|---|
-| `search` | every work as one JSON line — full index, the agent judges relevance (no server-side filtering) | JSONL |
+| `search` | every work as one JSON line — full index, the agent judges relevance (no server-side filtering); an empty-note `hint:` goes to stderr when applicable | JSONL |
 | `list` | library overview + one line per ingested doc | text |
 | `read <docId> [--section id] [--manifest refs\|bib]` | LLM-friendly markdown, or JSONL manifests | markdown / JSONL |
 | `show <docId> <floatId>` | one figure/table/equation/code/algorithm as JSON (+ `link`) | JSON |
@@ -110,15 +110,23 @@ the MinerU quota note above before letting one loose on a batch of PDFs.
 
 ## Data directory
 
-Default `./data`; override with `--data-dir`, `ARGELANDERSPACE_DATA_DIR`, or
-the config file (below).
+One library per project: the default is `./literatures` under the project
+root, resolved against the current working directory (no upward search — run
+the CLI and `serve` from the project root). Override with `--data-dir`,
+`ARGELANDERSPACE_DATA_DIR`, or the config file (below).
 
 ```
-data/
+literatures/
   output/    one <doc_id>/ per ingested paper: <doc_id>.json + assets/ + fetch caches
   library/   library.json (source of truth), library.bib, cache/ (graph.json + ads/crossref/openalex)
   jobs/      asynchronous ingest/upload job records and the upload spool
 ```
+
+The server polls the data dir and broadcasts `library.changed`, so a running
+web UI picks up out-of-band CLI writes (`note`, `label`, `library build`)
+without a manual reload. Notes render full-text (read-only) in the web UI's
+note tab; color labels, read markers, and real upload progress (with visible
+failures) are rendered in the library view.
 
 ## Configuration
 
@@ -131,7 +139,7 @@ known key with a wrong type is a startup error naming the key (values are
 never logged or echoed).
 
 ```toml
-data_dir = "/srv/papers"     # default ./data
+data_dir = "/srv/papers"     # default ./literatures
 port = 8000                  # server port
 
 # API-key fallbacks (the env vars win when both are set):
