@@ -15,6 +15,9 @@
 // stages; pandoc / rasterization / arXiv acquisition are injected ports
 // (packages/core/src/pipelines/latex/ports.ts), wired by infra.
 //
+// plans/: the plan-page store (Stage 4) — plans.json load/save (atomic write,
+// optimistic-lock rev), id generation, and the pure CRUD helpers.
+//
 // The PDF (MinerU OCR) and publisher-HTML pipelines are archived on the
 // `ocr-features` branch; main ingests LaTeX sources only.
 
@@ -46,3 +49,4 @@ export * from "./pipelines/latex/pipeline.js";
 export * from "./pipelines/latex/ports.js";
 export * from "./pipelines/latex/references.js";
 export * from "./pipelines/latex/walk.js";
+export * from "./plans/store.js";
