@@ -22,6 +22,7 @@ function mkTask(id: string, status: Task["status"] = "todo"): Task {
     id,
     title: id,
     status,
+    due: "2026-12-31",
     links: [],
     focused: false,
     created_at: "2026-09-01T08:00:00.000Z",

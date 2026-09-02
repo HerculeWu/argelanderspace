@@ -31,6 +31,9 @@ literatures/library/
 # Job runner runtime state (spooled uploads, job history)
 literatures/jobs/
 
+# Plan page store (user data; Stage 4)
+status/
+
 # OS / editor
 .DS_Store
 *.swp

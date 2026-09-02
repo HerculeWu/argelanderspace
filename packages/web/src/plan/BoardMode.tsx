@@ -10,19 +10,18 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { StatusBtn, StatusDot } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
-import { DueBadge, PinBtn, QuickAdd, TaskFlags } from "./taskBits";
+import { DueBadge, PinBtn, TaskFlags } from "./taskBits";
 
 // Board mode (Stage 4): four status columns, always rendered. A drag is the
 // one gesture for cross-column status change + position inside the column
 // (dropping on a card takes its place, dropping on the column body appends
-// after its last card). Each column bottom carries an inline quick-add that
-// inherits the column status. Tasks never move across plans.
+// after its last card). Tasks never move across plans; they are created only
+// via the 新建任务 modal (Stage-4 smoke ruling).
 
 interface BoardCallbacks {
   onCycle: (planId: string, taskId: string) => void;
   onOpen: (taskId: string) => void;
   onTogglePin: (planId: string, taskId: string) => void;
-  onQuickAdd: (planId: string, title: string, status: TaskStatus) => void;
   onMove: (planId: string, activeId: string, status: TaskStatus, overId: string | null) => void;
 }
 
@@ -87,7 +86,6 @@ function BoardColumn({
             <SortableCard key={t.id} task={t} planId={plan.id} today={today} cb={cb} />
           ))}
         </SortableContext>
-        <QuickAdd status={col.key} onAdd={(title, st) => cb.onQuickAdd(plan.id, title, st)} />
       </div>
     </div>
   );

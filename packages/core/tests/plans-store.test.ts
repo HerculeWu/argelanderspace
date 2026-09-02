@@ -34,6 +34,7 @@ function mkTask(id: string, overrides: Partial<Task> = {}): Task {
     id,
     title: `task ${id}`,
     status: "todo",
+    due: "2026-12-31",
     links: [],
     focused: false,
     created_at: "2026-09-02T10:00:00.000Z",
@@ -96,6 +97,71 @@ describe("loadPlans", () => {
     const loaded = loadPlans(dir);
     expect(loaded.plans[0]?.icon).toBe("target");
     expect(loaded.plans[0]?.tasks[0]?.links).toEqual([]);
+  });
+
+  it("migrates pre-smoke files: a due-less task inherits its plan's due (rev untouched)", () => {
+    const dir = tmpStatusDir();
+    writeFileSync(
+      plansPath(dir),
+      JSON.stringify({
+        version: 1,
+        rev: 3,
+        plans: [
+          {
+            id: "p_89abcdef",
+            name: "旧格式计划",
+            due: "2026-11-15",
+            icon: "target",
+            created_at: "2026-09-02T10:00:00.000Z",
+            tasks: [
+              {
+                // pre-smoke shape: no due at all
+                id: "t_0123abcd",
+                title: "无 due 旧任务",
+                status: "todo",
+                focused: false,
+                created_at: "2026-09-02T10:00:00.000Z",
+              },
+              {
+                // non-string due is migrated too
+                id: "t_4567dead",
+                title: "坏 due 任务",
+                status: "doing",
+                due: 123,
+                focused: false,
+                created_at: "2026-09-02T10:00:00.000Z",
+              },
+              {
+                // a valid due is kept as-is
+                id: "t_89abcdef",
+                title: "正常任务",
+                status: "done",
+                due: "2026-09-20",
+                focused: true,
+                created_at: "2026-09-02T10:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      })
+    );
+    const loaded = loadPlans(dir);
+    const tasks = loaded.plans[0]?.tasks ?? [];
+    expect(tasks[0]?.due).toBe("2026-11-15"); // inherited from the plan
+    expect(tasks[1]?.due).toBe("2026-11-15"); // non-string replaced
+    expect(tasks[2]?.due).toBe("2026-09-20"); // valid one untouched
+    expect(loaded.rev).toBe(3); // migration never bumps rev
+    // …and nothing is persisted until the next save
+    const onDisk = JSON.parse(readFileSync(plansPath(dir), "utf8")) as {
+      plans: { tasks: { due?: unknown }[] }[];
+    };
+    expect(onDisk.plans[0]?.tasks[0]?.due).toBeUndefined();
+    // the next save persists the migrated form
+    savePlans(dir, loaded);
+    const saved = JSON.parse(readFileSync(plansPath(dir), "utf8")) as {
+      plans: { tasks: { due?: unknown }[] }[];
+    };
+    expect(saved.plans[0]?.tasks[0]?.due).toBe("2026-11-15");
   });
 
   it("throws a named error on corrupt JSON (never silently resets)", () => {

@@ -37,11 +37,12 @@ describe("TaskSchema", () => {
     expect(TaskSchema.safeParse(VALID_TASK).success).toBe(true);
   });
 
-  it("accepts a minimal task and defaults links to []", () => {
+  it("accepts a minimal task (required fields only) and defaults links to []", () => {
     const minimal = {
       id: "t_0123abcd",
-      title: "title-only 快速添加",
+      title: "最小任务",
       status: "doing",
+      due: "2026-09-10",
       focused: false,
       created_at: "2026-09-02T10:00:00.000Z",
     };
@@ -49,9 +50,13 @@ describe("TaskSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.links).toEqual([]);
-      expect(result.data.due).toBeUndefined();
       expect(result.data.note).toBeUndefined();
     }
+  });
+
+  it("rejects a task without due (required since the Stage-4 smoke ruling)", () => {
+    const { due: _d, ...noDue } = VALID_TASK;
+    expect(TaskSchema.safeParse(noDue).success).toBe(false);
   });
 
   it("rejects a missing or empty title", () => {

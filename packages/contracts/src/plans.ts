@@ -2,11 +2,12 @@
  * Zod schemas for the plan page (Stage 4) — the on-disk shape of
  * `<statusDir>/plans.json` and the `plan.changed` WebSocket message.
  *
- * Data model (locked 2026-09-02, see `.kimi-code/memory/2026-09-02-stage4-roadmap.md`):
+ * Data model (locked 2026-09-02, see `.kimi-code/memory/2026-09-02-stage4-roadmap.md`;
+ * `Task.due` upgraded to REQUIRED by the Stage-4 smoke ruling, same
+ * deadline semantics as `Plan.due`):
  * - two levels: plans embed their tasks; the tasks array index IS the display
  *   order (no `order` field — drag-reorder persists the reordered array);
- * - `due` is deadline semantics (ISO date) on both Plan (required) and Task
- *   (optional);
+ * - `due` is deadline semantics (ISO date), required on both Plan and Task;
  * - `PlansFile.rev` is persisted in the file and bumped by the server on every
  *   successful PUT (optimistic lock: a PUT whose body `rev` doesn't match the
  *   current one is rejected with 409);
@@ -30,8 +31,8 @@ export const TaskSchema = z.object({
   id: z.string().regex(/^t_[0-9a-f]{8}$/),
   title: z.string().min(1),
   status: TaskStatusSchema,
-  /** Optional deadline, ISO date (`YYYY-MM-DD`). */
-  due: z.iso.date().optional(),
+  /** Deadline, ISO date (`YYYY-MM-DD`) — required (Stage-4 smoke ruling). */
+  due: z.iso.date(),
   /** Optional note (markdown, may carry `$…$`/`$$…$$` math). */
   note: z.string().optional(),
   links: z.array(TaskLinkSchema).default([]),

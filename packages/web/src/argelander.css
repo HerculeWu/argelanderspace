@@ -495,10 +495,6 @@ input, textarea { font-family: inherit; color: inherit; }
 .plan-noteflag .ico-sm { width: 13px; height: 13px; }
 .plan-linkn { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-xs); color: var(--text-faint); }
 .plan-linkn .ico-sm { width: 12px; height: 12px; }
-.plan-quick-add { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 7px 10px; border-radius: var(--radius); border: 1px dashed var(--border); color: var(--text-faint); }
-.plan-quick-add:focus-within { border-color: var(--accent-line); color: var(--text-dim); }
-.plan-quick-add input { flex: 1; min-width: 0; background: none; border: none; outline: none; font-size: var(--fs-sm); color: var(--text); }
-.plan-quick-add input::placeholder { color: var(--text-faint); }
 
 /* ---------- list mode ---------- */
 .plan-list-mode { max-width: 860px; }
@@ -676,8 +672,6 @@ input, textarea { font-family: inherit; color: inherit; }
 .plan-field-input::placeholder { color: var(--text-faint); }
 .plan-field-input[type="date"] { color-scheme: dark; }
 [data-theme="light"] .plan-field-input[type="date"] { color-scheme: light; }
-.plan-field-duerow { display: flex; align-items: center; gap: 8px; }
-.plan-field-duerow .plan-field-input { flex: 1; }
 .plan-icon-grid { display: flex; flex-wrap: wrap; gap: 7px; }
 .plan-icon-opt { width: 38px; height: 38px; display: grid; place-items: center; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); transition: border-color .12s, color .12s, background .12s; }
 .plan-icon-opt:hover { color: var(--text); border-color: var(--accent-line); }

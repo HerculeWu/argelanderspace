@@ -14,6 +14,10 @@
  * Writes assume the single-user setup with the server serializing mutations
  * (planLock, MS2): the fixed tmp name is not safe for concurrent writers.
  *
+ * `Task.due` became required with the Stage-4 smoke ruling; `loadPlans`
+ * migrates pre-smoke files on read (a due-less task inherits its plan's due)
+ * — in-memory only, persisted by the next save. See {@link migrateTaskDue}.
+ *
  * The CRUD helpers are pure: they never mutate the input `PlansFile`, they
  * return a new one, and they never touch `rev` (bumping is a save-time
  * concern). Unknown plan/task ids and duplicate-id inserts throw — a silent
@@ -43,6 +47,35 @@ function formatIssues(error: { issues: { path: PropertyKey[]; message: string }[
 }
 
 /**
+ * Pre-schema migration for pre-Stage-4-smoke files (`Task.due` was optional
+ * until the smoke ruling made it required): a task whose `due` is missing
+ * (or not a string) inherits its parent plan's `due` (plan.due is required
+ * and always present). In-memory only — no rev bump, no write; the next PUT
+ * persists the migrated form. Malformed shapes are passed through untouched
+ * so schema validation reports them as before.
+ */
+function migrateTaskDue(data: unknown): unknown {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return data;
+  const doc = data as Record<string, unknown>;
+  if (!Array.isArray(doc.plans)) return data;
+  const plans = doc.plans.map((p) => {
+    if (p === null || typeof p !== "object" || Array.isArray(p)) return p;
+    const plan = p as Record<string, unknown>;
+    if (typeof plan.due !== "string" || !Array.isArray(plan.tasks)) return p;
+    let changed = false;
+    const tasks = plan.tasks.map((t) => {
+      if (t === null || typeof t !== "object" || Array.isArray(t)) return t;
+      const task = t as Record<string, unknown>;
+      if (typeof task.due === "string") return t;
+      changed = true;
+      return { ...task, due: plan.due };
+    });
+    return changed ? { ...plan, tasks } : p;
+  });
+  return { ...doc, plans };
+}
+
+/**
  * Read `<statusDir>/plans.json`. A missing file yields the empty document;
  * corrupt JSON or a schema-invalid document throws (never silently reset —
  * the file may be the user's only copy).
@@ -56,7 +89,7 @@ export function loadPlans(statusDir: string): PlansFile {
   } catch (err) {
     throw new Error(`plans store: ${file} is not valid JSON: ${(err as Error).message}`);
   }
-  const result = PlansFileSchema.safeParse(data);
+  const result = PlansFileSchema.safeParse(migrateTaskDue(data));
   if (!result.success) {
     throw new Error(`plans store: ${file} failed schema validation: ${formatIssues(result.error)}`);
   }

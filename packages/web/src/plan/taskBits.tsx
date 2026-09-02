@@ -1,10 +1,9 @@
-import { useState } from "react";
 import { Icon } from "../lib/icons";
-import { dueState, fmtDate, type Task, type TaskStatus } from "./model";
+import { dueState, fmtDate, type Task } from "./model";
 
 // Bits shared by the list rows and the board cards (Stage 4): the due badge
-// (今天 amber / 逾期 red / 其余 gray), the hover pin button, the note/link
-// flags, and the inline quick-add input (title-only, Enter creates).
+// (今天 amber / 逾期 red / 其余 gray), the hover pin button, and the
+// note/link flags.
 
 export function DueBadge({ due, today }: { due: string; today: string }) {
   const st = dueState(due, today);
@@ -49,36 +48,5 @@ export function TaskFlags({ task }: { task: Task }) {
         </span>
       )}
     </>
-  );
-}
-
-/** Inline quick add (title-only, Enter creates with the group/column status). */
-export function QuickAdd({
-  status,
-  onAdd,
-}: {
-  status: TaskStatus;
-  onAdd: (title: string, status: TaskStatus) => void;
-}) {
-  const [v, setV] = useState("");
-  const submit = () => {
-    const t = v.trim();
-    if (!t) return;
-    onAdd(t, status);
-    setV("");
-  };
-  return (
-    <div className="plan-quick-add">
-      <Icon name="plus" cls="ico-sm" />
-      <input
-        value={v}
-        onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return; // IME 组词中的 Enter 只是上屏，不是提交
-          if (e.key === "Enter") submit();
-        }}
-        placeholder="添加任务，回车创建"
-      />
-    </div>
   );
 }

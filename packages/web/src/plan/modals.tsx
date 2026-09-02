@@ -135,17 +135,22 @@ export function PlanModal({
 export interface TaskFormValues {
   title: string;
   status: TaskStatus;
-  due?: string; // ISO date; absent when cleared
+  /** ISO date — required (Stage-4 smoke ruling); the create form prefills plan.due. */
+  due: string;
 }
 
 export function TaskModal({
   planName,
+  planDue,
   initial,
   defaultStatus = "todo",
   onCancel,
   onSubmit,
 }: {
   planName: string;
+  /** The owning plan's due — the create form's due prefills from it (Stage-4
+   *  smoke ruling: task.due is required, defaulting to the plan's deadline). */
+  planDue: string;
   /** Absent = create; present = edit (prefilled). */
   initial?: Task;
   defaultStatus?: TaskStatus;
@@ -155,15 +160,16 @@ export function TaskModal({
   const edit = Boolean(initial);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [status, setStatus] = useState<TaskStatus>(initial?.status ?? defaultStatus);
-  const [due, setDue] = useState(initial?.due ?? "");
+  const [due, setDue] = useState(initial?.due ?? planDue);
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
-  const valid = title.trim() !== "";
+  // due is REQUIRED (the 3b smoke bug: title-only tasks must not be creatable)
+  const valid = title.trim() !== "" && due !== "";
   const submit = () => {
     if (!valid) return;
-    onSubmit({ title: title.trim(), status, due: due || undefined });
+    onSubmit({ title: title.trim(), status, due });
   };
   return (
     <Modal
@@ -205,23 +211,16 @@ export function TaskModal({
       </div>
       <div className="plan-field">
         <label className="plan-field-label" htmlFor="task-f-due">
-          截止 <span className="plan-field-opt">可选</span>
+          截止日期
         </label>
-        <div className="plan-field-duerow">
-          <input
-            id="task-f-due"
-            className="plan-field-input"
-            type="date"
-            value={due}
-            onChange={(e) => setDue(e.target.value)}
-          />
-          {due && (
-            <button className="btn ghost" onClick={() => setDue("")} title="清除截止">
-              <Icon name="x" cls="ico-sm" />
-              清除
-            </button>
-          )}
-        </div>
+        <input
+          id="task-f-due"
+          className="plan-field-input"
+          type="date"
+          required
+          value={due}
+          onChange={(e) => setDue(e.target.value)}
+        />
       </div>
     </Modal>
   );

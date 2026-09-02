@@ -1,6 +1,6 @@
 /**
- * PlanView behavior (Stage 4 / MS3): empty state → create plan → inline
- * quick-add → status cycle → drawer edit → pin → 今日聚焦 grouping → link
+ * PlanView behavior (Stage 4 / MS3): empty state → create plan → modal add
+ * task → status cycle → drawer edit → pin → 今日聚焦 grouping → link
  * picker filtering → missing-doc graying → delete + undo → board/timeline
  * smoke → 409 reload — plus the MS3-review regressions (IME composition
  * Enter, deferred external reload, load-failure state, modal prefills).
@@ -94,6 +94,7 @@ function mkTask(over: Partial<Task> = {}): Task {
     id: `t_${String(seq).padStart(8, "0")}`,
     title: `任务${seq}`,
     status: "todo",
+    due: "2026-12-31",
     links: [],
     focused: false,
     created_at: "2026-09-01T08:00:00.000Z",
@@ -245,24 +246,38 @@ describe("PlanView: plans empty → create → inline add", () => {
     await waitFor(() => byText(container, ".plan-tb-title", "误差分析"));
   });
 
-  it("inline quick-add creates a title-only task in the group's status", async () => {
-    serverDoc = mkDoc([mkTask({ title: "已有任务" })]);
+  it("新建任务 modal: due prefills from the plan and is required (3b regression)", async () => {
+    serverDoc = mkDoc([]);
     const { container } = renderPlan();
-    await waitFor(() => rowOf(container, "已有任务"));
+    await waitFor(() => byText(container, ".plan-tb-title", "采样计划"));
+    fireEvent.click(byText(container, "button", "新建任务"));
 
-    const input = container.querySelector(".plan-quick-add input") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "  跑一遍基线  " } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const dueInput = modal.querySelector<HTMLInputElement>("#task-f-due")!;
+    expect(dueInput.value).toBe("2026-12-31"); // prefilled from the plan's due
+    expect(dueInput.required).toBe(true);
+    const submit = byText(modal, "button", "添加任务") as HTMLButtonElement;
 
-    await waitFor(() => rowOf(container, "跑一遍基线"));
+    const titleInput = modal.querySelector<HTMLInputElement>("#task-f-title")!;
+    fireEvent.change(titleInput, { target: { value: "复核公式推导" } });
+    await waitFor(() => expect(submit.disabled).toBe(false));
+
+    // 3b 回归：清空日期后无法提交（title-only 任务不能再被创建）
+    fireEvent.change(dueInput, { target: { value: "" } });
+    await waitFor(() => expect(submit.disabled).toBe(true));
+    expect(putBodies).toHaveLength(0);
+
+    // 改回一个日期即可提交
+    fireEvent.change(dueInput, { target: { value: "2026-10-01" } });
+    await waitFor(() => expect(submit.disabled).toBe(false));
+    fireEvent.click(submit);
+
     await waitFor(() => expect(putBodies.length).toBe(1));
-    const task = lastPut().plans[0]!.tasks.find((t) => t.title === "跑一遍基线")!;
+    const task = lastPut().plans[0]!.tasks[0]!;
+    expect(task.title).toBe("复核公式推导");
+    expect(task.due).toBe("2026-10-01");
+    expect(task.status).toBe("todo");
     expect(task.id).toMatch(/^t_[0-9a-f]{8}$/);
-    expect(task.status).toBe("todo"); // 状态随所在组
-    expect(task.links).toEqual([]);
-    expect(task.focused).toBe(false);
-    // input clears for consecutive adds
-    expect(input.value).toBe("");
   });
 });
 
@@ -414,7 +429,7 @@ describe("PlanView: delete + 6s undo", () => {
 });
 
 describe("PlanView: board + timeline smoke", () => {
-  it("board mode renders the four columns with quick-add each", async () => {
+  it("board mode renders the four columns", async () => {
     serverDoc = mkDoc([mkTask({ title: "看板任务" })]);
     const { container } = renderPlan();
     await waitFor(() => rowOf(container, "看板任务"));
@@ -423,7 +438,6 @@ describe("PlanView: board + timeline smoke", () => {
     const heads = [...container.querySelectorAll(".plan-board-col-head")].map((e) => e.textContent);
     expect(heads.join()).toEqual(expect.stringContaining("待办"));
     expect(heads.join()).toEqual(expect.stringContaining("已完成"));
-    expect(container.querySelectorAll(".plan-board-col .plan-quick-add")).toHaveLength(4);
     expect(container.querySelector(".plan-board-card-title")?.textContent).toBe("看板任务");
   });
 
@@ -465,11 +479,15 @@ describe("PlanView: 409 → reload", () => {
 
 describe("PlanView: IME composition Enter (B2)", () => {
   it("an Enter with isComposing=true only confirms the IME candidate — no submit", async () => {
-    serverDoc = mkDoc([mkTask({ title: "已有任务" })]);
+    serverDoc = mkDoc([]);
     const { container } = renderPlan();
-    await waitFor(() => rowOf(container, "已有任务"));
+    await waitFor(() => byText(container, ".plan-tb-title", "采样计划"));
+    fireEvent.click(byText(container, "button", "新建任务"));
 
-    const input = container.querySelector(".plan-quick-add input") as HTMLInputElement;
+    // the modal title input keeps the IME guard (QuickAdd is gone; the modal
+    // is the only creation path now)
+    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const input = modal.querySelector<HTMLInputElement>("#task-f-title")!;
     fireEvent.change(input, { target: { value: "组词中" } });
     fireEvent.keyDown(input, { key: "Enter", isComposing: true }); // IME 上屏
     await new Promise((r) => setTimeout(r, 30));
@@ -552,7 +570,7 @@ describe("PlanView: modals (review ⑨)", () => {
     expect(plan.tasks.map((t) => t.title)).toEqual(["保留我"]); // tasks untouched
   });
 
-  it("TaskModal's due can be cleared; saving drops the due", async () => {
+  it("TaskModal edit prefills the task's due; clearing it disables submit (due required)", async () => {
     serverDoc = mkDoc([mkTask({ title: "有截止", due: "2026-10-01" })]);
     const { container } = renderPlan();
     fireEvent.click((await waitFor(() => rowOf(container, "有截止"))).querySelector(".plan-task-title")!);
@@ -561,15 +579,15 @@ describe("PlanView: modals (review ⑨)", () => {
 
     const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
     const dueInput = modal.querySelector<HTMLInputElement>("#task-f-due")!;
-    expect(dueInput.value).toBe("2026-10-01");
-    fireEvent.click(byText(modal, "button", "清除"));
-    expect(dueInput.value).toBe("");
-    fireEvent.click(byText(modal, "button", "保存"));
+    expect(dueInput.value).toBe("2026-10-01"); // 编辑预填任务现有 due
+    const submit = byText(modal, "button", "保存") as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
 
-    await waitFor(() => {
-      const t = lastPut().plans[0]!.tasks[0]!;
-      expect(t.due).toBeUndefined();
-    });
+    // due 必填：清空后无法保存（不再有"清除"按钮，只能改日期）
+    expect(modal.textContent).not.toContain("清除");
+    fireEvent.change(dueInput, { target: { value: "" } });
+    await waitFor(() => expect(submit.disabled).toBe(true));
+    expect(putBodies).toHaveLength(0);
   });
 
   it("DeletePlanModal warns with the open-task count; confirm removes the plan", async () => {
@@ -588,27 +606,6 @@ describe("PlanView: modals (review ⑨)", () => {
 
     await waitFor(() => byText(container, ".plan-empty button", "新建第一个研究计划"));
     expect(lastPut().plans).toEqual([]);
-  });
-});
-
-describe("PlanView: board quick-add inherits the column status (review ⑨)", () => {
-  it("typing in the 进行中 column's quick-add creates a doing task", async () => {
-    serverDoc = mkDoc([mkTask({ title: "看板任务" })]);
-    const { container } = renderPlan();
-    await waitFor(() => rowOf(container, "看板任务"));
-    fireEvent.click(byText(container, ".plan-seg-btn", "看板"));
-    await waitFor(() => expect(container.querySelectorAll(".plan-board-col")).toHaveLength(4));
-
-    const doingCol = [...container.querySelectorAll<HTMLElement>(".plan-board-col")].find((c) =>
-      c.querySelector(".plan-board-col-head")?.textContent?.includes("进行中")
-    )!;
-    const input = doingCol.querySelector(".plan-quick-add input") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "列底新增" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    await waitFor(() => expect(putBodies.length).toBe(1));
-    const task = lastPut().plans[0]!.tasks.find((t) => t.title === "列底新增")!;
-    expect(task.status).toBe("doing");
   });
 });
 

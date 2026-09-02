@@ -220,7 +220,7 @@ export function PlanView() {
                     id: newTaskId(),
                     title: values.title,
                     status: values.status,
-                    ...(values.due ? { due: values.due } : {}),
+                    due: values.due,
                     links: [],
                     focused: false,
                     created_at: new Date().toISOString(),
@@ -475,7 +475,6 @@ export function PlanView() {
                       onCycle: cycleTask,
                       onOpen: setOpenTaskId,
                       onTogglePin: drawerCb.onTogglePin,
-                      onQuickAdd: (planId, title, status) => addTask(planId, { title, status }),
                       onReorder: (planId, status, activeId, overId) =>
                         patchTasks(planId, (tasks) => reorderWithinStatus(tasks, status, activeId, overId)),
                     }}
@@ -488,7 +487,6 @@ export function PlanView() {
                       onCycle: cycleTask,
                       onOpen: setOpenTaskId,
                       onTogglePin: drawerCb.onTogglePin,
-                      onQuickAdd: (planId, title, status) => addTask(planId, { title, status }),
                       onMove: (planId, activeId, status, overId) =>
                         patchTasks(planId, (tasks) => moveToColumn(tasks, activeId, status, overId)),
                     }}
@@ -539,6 +537,7 @@ export function PlanView() {
           return (
             <TaskModal
               planName={modalPlan.name}
+              planDue={modalPlan.due}
               initial={modal.task}
               defaultStatus={modal.defaultStatus}
               onCancel={() => setModal(null)}
