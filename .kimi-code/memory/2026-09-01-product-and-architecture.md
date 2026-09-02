@@ -11,6 +11,7 @@
 - **存储**：项目级库 `<项目根>/literatures/`（内部 output/library/jobs/input）。cwd 相对、**无向上查找**；解析链 `--data-dir` > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`。全局库复用摄入产物 = 未来方向（未做）。
 - **webui**（`serve` 默认 8000）：文献看板（label 色点——色板 red 重点/amber 待读/green 已精读/blue 方法/violet 灵感，优先级：会话右键 overlay > 持久化 `label` > star 播种；已读标识——标题灰化 + `· 已读`，未读有小蓝点；笔记全文只读 tab）+ 三栏阅读器 + **四级深链接** `/doc/<id>#<anchor>`（⚠️ 锚点 `sec-N`/`fig-N`/`eq-N`/`ref-N` 是管线结构 id，**不是印刷编号**）。活动栏剩 计划/文献/文档 + 底部扩展（"终端/浏览器"空 stub 已于 Stage 3.1 移除）。server 轮询 `literatures/` 指纹广播 `library.changed`，CLI 写入后前端免 F5。
 - **agent 接入（无 MCP，刻意）**：pi 作者明说不支持 MCP（工具 schema 每轮灌上下文、token 税高），原生方式 = CLI + skills。CLI agent 子命令 `search/read/show/ref/note/label/list`；pi skills 三件套 `skills/argelander-*`（symlink 到 `~/.pi/agent/skills/`）。契约：**项目根跑 CLI、不传 `--data-dir`、不读源码回答文献问题**；`search` stderr 打 `hint: N/M works have empty notes`；CLI 打印深链接端口 = `ARGELANDERSPACE_PORT` > config `port` > 8000。pi 验收/日常用 `pi -nc`（不读 context files，防被本 repo 的 memory 协议带跑）。
+- **webui 定位演进（2026-09-02 用户明确，开放方向）**：webui 目标形态是**独立应用**——不与 agent 强绑定、不是纯看板，无 agent 的用户也要能完成全部操作。当前写路径（label 持久化、note 写入等）仍归 CLI/agent，后续 stage 逐步把操作面补进 webui；Stage 4/5 设计遵循此原则。
 
 ## 关键使用语义（用户/agent 都会踩）
 

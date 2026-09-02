@@ -4,7 +4,7 @@
 
 ## 状态
 
-**2026-09-02：执行完毕、全部 push，待用户手动验收（`docs/manual-test-stage3.1.md`）。** commit 序列（main，除注明外）：memory 定稿 `97fc51a` → MS1 隔离 `954b0c2`（−49881 行，270 测试绿；5 符号归置 `documents/geom.ts` + references.ts 内联；raster 内联 openMupdf/pageSizeOf；planner 裁 HTML 适配器）→ MS2 zip 上传 `0a22d1e`（302 绿；失败探针自动化；顺手修 deeplink unknown-anchor flake：effect 异步 flush → waitFor）→ MS3 公式/表格/下限 `4982451`（313 绿；golden 2012.05220 重冻 +48/−16、2501.17225 零 diff；2607.17040 端到端 crossref 34/49→**49/49**、11 表全恢复、eq-3 完整；pandoc 3.1.3 负测拦截）→ MS4 收尾 `fc80aa7`（stub pane 3 文件 +1/−5；manual-test-stage3.1.md 278 行关键预期全部预实测；323 测试绿）。MS0 = `ocr-features` 分支 `9f0efce`（封存说明，分支已 push origin，不维护）。
+**2026-09-02：Stage 3.1 关闭——执行完毕、手动验收全部通过（含 re-upload 修复 `bfac790`）、全部 push。** commit 序列（main，除注明外）：memory 定稿 `97fc51a` → MS1 隔离 `954b0c2`（−49881 行，270 测试绿；5 符号归置 `documents/geom.ts` + references.ts 内联；raster 内联 openMupdf/pageSizeOf；planner 裁 HTML 适配器）→ MS2 zip 上传 `0a22d1e`（302 绿；失败探针自动化；顺手修 deeplink unknown-anchor flake：effect 异步 flush → waitFor）→ MS3 公式/表格/下限 `4982451`（313 绿；golden 2012.05220 重冻 +48/−16、2501.17225 零 diff；2607.17040 端到端 crossref 34/49→**49/49**、11 表全恢复、eq-3 完整；pandoc 3.1.3 负测拦截）→ MS4 收尾 `fc80aa7`（stub pane 3 文件 +1/−5；manual-test-stage3.1.md 278 行关键预期全部预实测；323 测试绿）→ 验收修复 `bfac790`（re-upload 按钮；325 绿）+ memory `9c7d1f3`。MS0 = `ocr-features` 分支 `9f0efce`（封存说明，分支已 push origin，不维护）。
 
 2026-09-01：设计 grilling 完成（Q1–Q18 全锁定）。范围由原 roadmap 六项修订为五项：
 
@@ -42,6 +42,8 @@
 
 - **正式发布前**：README 写明 pandoc 版本要求 + 提供安装检验脚本（Q17 用户指定）。
 - **未来 stage**：CLI 收到未识别源时先创建条目、等待用户上传（Q14 用户指定方向）。
+- **re-upload 推广到所有条目**（2026-09-02 验收提出，用户定为**必须保留更新通道**）：场景 = 文章先 arXiv 发布、后有正式出版版、arXiv 自身也会更新——并不罕见。当前实现只给 `upload-` 家族 doc 显示重传按钮（理由：zip 上传到非 upload 文档不会覆盖、而是在 arXiv/latex doc 旁产生并行第二 doc，"替换"预期落空且引入"哪份是正文"歧义；且 `LibraryRef` 只有单一 `doc_id` 可做前缀判断，payload 无 `doc_ids` 列表）。推广时需拍板：zip 对非 upload 文档的语义（替换主 doc / 并行第二 doc + UI 选主）、payload 补 `doc_ids`、已知盲区（先 zip 后 arXiv 摄入的条目主 doc_id 切换后按钮消失）。
+- **webui 独立应用原则**（2026-09-02 用户明确）：webui 目标 = **独立应用**，不是 agent 的看板，无 agent 的用户也要能完成全部操作，不与 agent 强绑定。当前写路径（label 持久化、note 写入等）归 CLI/agent——后续 stage 逐步把操作面补进 webui，Stage 4/5 设计遵循此原则。
 - Stage 4：计划页面（webui `计划` stub）+ agent 操作计划页面。Stage 5：论文写作。
 
 ## 取证存档（2026-09-01 五路子代理，直接采信）

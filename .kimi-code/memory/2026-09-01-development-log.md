@@ -36,6 +36,11 @@
 - **遗留边界**（拍板不修/后续再议）：subequations 合并丢 label（known-issue）；align 内 tag 行与自动号混排时块级 number 呈 `"A1–1"` 区间串（行级 label 精确，真实论文极罕见）；pathological 空归一化标题的 title-only work 上传会在 seed 侧产生重复 work（直挂保证原 work 拿到 doc，无事故）。
 - **手动验收（2026-09-02）**：§1/§2/§4/§5/§6/§7 全部通过，§3a/3b 通过；§3c 暴露缺陷——上传按钮只在 `doc_id` 为空时渲染，上传成功后无法重传（传错文件/更新版无路）。**验收修复**：doc 来自 zip 上传（`upload-` 前缀）的条目在"附件" tab 同时显示文档链接与"重新上传 LaTeX 源码包（zip）"按钮（覆盖语义；arXiv 摄入条目不显示，attach 保持补缺口）；补 2 个 web 用例（325 测试绿），手册 §3/§3c 同步。
 
+## Stage 3.1 关闭（2026-09-02）
+
+- 手动验收全部通过（含 §3c/3d 复测），re-upload 修复 `bfac790` + memory `9c7d1f3` 已 push。Stage 3.1 正式关闭。
+- 验收遗留两个开放问题（用户拍板记录、**不挡 Stage 4/5**，详见 roadmap 推后事项节）：① re-upload 应推广到**所有条目**——arXiv 先发、后出正式出版版、arXiv 自身也更新，更新通道必须保留；② **webui 定位 = 独立应用**（非纯看板、不与 agent 强绑定，无 agent 用户也要能操作）——影响后续写路径设计（label 持久化/note 写入等现归 CLI）。
+
 ## 下一步
 
-用户按 `docs/manual-test-stage3.1.md` 手动验收 → 通过后 Stage 3.1 关闭。远期 Stage 4（计划页面 + agent 操作）/Stage 5（论文写作）与推后事项（README pandoc 版本说明 + 安装检验脚本、CLI 未识别源先建条目）见 `2026-09-01-stage3x-roadmap.md` 推后事项节。
+Stage 4：计划页面（webui `计划` stub）+ agent 操作计划页面——新 session 开工，先 grilling 定稿。远期 Stage 5（论文写作）。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节。
