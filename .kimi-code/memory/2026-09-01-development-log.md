@@ -46,6 +46,7 @@
 - 设计 grilling 三轮 Q1–Q17 拍板（定稿 `2026-09-02-stage4-roadmap.md`）：两层 plans→tasks、plan.due 必填/task.due 可选（deadline 语义）、聚焦=pin+派生组、时间线只读、链接只到 doc_id、note markdown+数学（编辑/展示分离）、粗粒度 GET/PUT+rev 乐观锁、`status/plans.json` 与 literatures 平级。**定位升级同步全 memory：产品 = 科研工作台 + 用户与 AI agent 协作的 interface**（取代"文献工具"）。
 - 执行：MS1 `eea2c9c`（contracts+core plans store）→ MS2 `2747197`（server GET/PUT+planLock+watcher 双子指纹）→ MS3 `84ed5ec`（web 全家桶：列表/看板/时间线/聚焦/抽屉/弹窗复用/@dnd-kit/marked+mdWithMath + landing 改计划页）→ MS4（smoke 手册 429 行）。**新流程首航**：每 MS 四道门 + subagent 独立对抗审查后自行 commit（用户授权，不逐次问）。审查战绩：MS1 1 阻断（WS union 打断 web 编译）、MS2 0 阻断（15 项 boot 对抗全过）、MS3 3 阻断（mdWithMath 腐蚀两轮——code/货币/URL、IME Enter 误提交、noop 拖拽死代码）、MS4 0 阻断（~40 处手册文案逐字核对）。测试 325→**444 绿**（web 44→102）。
 - **待用户手动 smoke**（`docs/manual-test-stage4.md` §0-12）；push 待 smoke 通过后确认。
+- **smoke 第 1 轮（2026-09-02）**：§0-11 大部通过；2 阻塞修复（`8804470`，审查 0 阻断）——① **task.due 改必填**（推翻定稿"可选"；创建唯一入口 = 新建任务弹窗，QuickAdd 组件/看板列底移除，旧无 due 任务 load 迁移补 plan.due）；② 列表跨组拖拽拒绝失效（根因 = dnd-kit 多容器碰撞检测 + 边界落点误判；修 = sameGroupCollision 过滤 + dropPoint 命中测试）。`.gitignore` 补 `status/`；手册同步修订（§0c 可跳过标注、§3 重写、§11d DevTools 步骤、§12 迁移说明）。测试 444→448。
 
 ## 下一步
 
