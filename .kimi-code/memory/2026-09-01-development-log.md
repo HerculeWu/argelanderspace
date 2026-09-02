@@ -47,6 +47,7 @@
 - 执行：MS1 `eea2c9c`（contracts+core plans store）→ MS2 `2747197`（server GET/PUT+planLock+watcher 双子指纹）→ MS3 `84ed5ec`（web 全家桶：列表/看板/时间线/聚焦/抽屉/弹窗复用/@dnd-kit/marked+mdWithMath + landing 改计划页）→ MS4（smoke 手册 429 行）。**新流程首航**：每 MS 四道门 + subagent 独立对抗审查后自行 commit（用户授权，不逐次问）。审查战绩：MS1 1 阻断（WS union 打断 web 编译）、MS2 0 阻断（15 项 boot 对抗全过）、MS3 3 阻断（mdWithMath 腐蚀两轮——code/货币/URL、IME Enter 误提交、noop 拖拽死代码）、MS4 0 阻断（~40 处手册文案逐字核对）。测试 325→**444 绿**（web 44→102）。
 - **待用户手动 smoke**（`docs/manual-test-stage4.md` §0-12）；push 待 smoke 通过后确认。
 - **smoke 第 1 轮（2026-09-02）**：§0-11 大部通过；2 阻塞修复（`8804470`，审查 0 阻断）——① **task.due 改必填**（推翻定稿"可选"；创建唯一入口 = 新建任务弹窗，QuickAdd 组件/看板列底移除，旧无 due 任务 load 迁移补 plan.due）；② 列表跨组拖拽拒绝失效（根因 = dnd-kit 多容器碰撞检测 + 边界落点误判；修 = sameGroupCollision 过滤 + dropPoint 命中测试）。`.gitignore` 补 `status/`；手册同步修订（§0c 可跳过标注、§3 重写、§11d DevTools 步骤、§12 迁移说明）。测试 444→448。
+- **smoke 第 2 轮（2026-09-02）**：用户报"跨组拖拽还是没有被拒绝"。真实 Chrome 复现证明机制拒绝已生效（0 PUT），真缺口 = **拒绝不可感知**（行跟手进别组、源组让位，静默回弹读作"没拒绝"）。修复（`24c77ac`，审查 0 阻断）：拖动时其他组变暗 + 禁落光标 + 被拒落点 nudge 提示；加固静态缓存头（index `no-cache`、hashed assets `immutable`）。新未解决问题记录：**task.due 可晚于 plan.due**（本阶段不修，known-issues 已收）。测试 448→449。
 
 ## 下一步
 

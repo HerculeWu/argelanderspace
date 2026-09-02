@@ -18,6 +18,8 @@
 
 ## 已接受的行为边界（勿再当 bug 报）
 
+- **task.due 可以晚于 plan.due**（2026-09-02 Stage 4 smoke 发现，用户拍板**本阶段不修、记为未解决问题**）：TaskModal 与 PUT schema 都不校验任务截止日期 ≤ 所属计划截止日期。语义未定（计划延期的正当场景 vs 数据错误），未来若要约束需先拍板语义，校验点 = TaskModal submit + contracts schema。
+
 - 深链接锚点（`sec-N`/`fig-N`/`eq-N`/`ref-N`）= **管线结构 id**，非印刷节号。
 - TOC float 预览遇 caption 内 cite/xref 会显示 `[cite:…]` 展开记号（cosmetic，暂不修）。
 - hyperlink-only xref（正文无 token，纯超链接发现）不产生右栏 float 卡（IR 数据边界）。
