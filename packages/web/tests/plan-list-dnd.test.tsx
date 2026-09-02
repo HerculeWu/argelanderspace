@@ -231,6 +231,13 @@ describe("list-mode drag rejection (Stage 4 smoke bug)", () => {
     expect(cls("todo")).toContain("plan-no-target");
     expect(cls("done")).toContain("plan-no-target");
     expect(cls("doing")).not.toContain("plan-no-target");
+    // …and the no-drop cursor rides the DRAGGED ROW once the pointer leaves its group
+    const rootCls = () => container.querySelector(".plan-list-mode")?.className ?? "";
+    expect(rootCls()).not.toContain("plan-nodrop-active"); // still inside own group
+    fireEvent.pointerMove(document, { clientX: 50, clientY: 120, isPrimary: true, pointerId: 1 });
+    expect(rootCls()).toContain("plan-nodrop-active"); // over the todo group now
+    fireEvent.pointerMove(document, { clientX: 50, clientY: 60, isPrimary: true, pointerId: 1 });
+    expect(rootCls()).not.toContain("plan-nodrop-active"); // back home
     fireEvent.pointerUp(document, { clientX: 50, clientY: 60, isPrimary: true, pointerId: 1 });
     await new Promise((r) => setTimeout(r, 60));
     expect(cls("todo")).not.toContain("plan-no-target"); // cleared after the drop

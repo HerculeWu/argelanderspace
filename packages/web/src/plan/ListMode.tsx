@@ -3,6 +3,7 @@ import {
   type CollisionDetection,
   DndContext,
   type DragEndEvent,
+  type DragMoveEvent,
   type DragStartEvent,
   PointerSensor,
   useSensor,
@@ -51,8 +52,12 @@ const sameGroupCollision: CollisionDetection = (args) => {
 };
 
 /** Drop point = pointer position at activation + the drag delta (null when
- *  the event carries no pointer info — the hit-test is then skipped). */
-function dropPoint(e: DragEndEvent): { x: number; y: number } | null {
+ *  the event carries no pointer info — the hit-test is then skipped). Works
+ *  for both DragMoveEvent and DragEndEvent (same pointer fields). */
+function dropPoint(e: {
+  activatorEvent: Event;
+  delta: { x: number; y: number };
+}): { x: number; y: number } | null {
   const ev = e.activatorEvent as Partial<PointerEvent> | undefined;
   if (typeof ev?.clientX !== "number" || typeof ev?.clientY !== "number") return null;
   const delta = e.delta ?? { x: 0, y: 0 };
@@ -69,6 +74,7 @@ const GROUPS: { key: TaskStatus; label: string }[] = [
 export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: ListCallbacks }) {
   const [doneOpen, setDoneOpen] = useState(false);
   const [dragStatus, setDragStatus] = useState<TaskStatus | null>(null);
+  const [noDrop, setNoDrop] = useState(false);
   const [nudge, setNudge] = useState(false);
   const nudgeTimer = useRef<number | undefined>(undefined);
   const listRef = useRef<HTMLDivElement>(null);
@@ -76,13 +82,23 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
 
   useEffect(() => () => window.clearTimeout(nudgeTimer.current), []);
 
-  // Rejection must be PERCEPTIBLE (smoke round-2: a silent snap-back reads as
-  // "drag not rejected"): foreign groups dim + no-drop cursor mid-drag, and a
-  // rejected drop flashes a hint naming the real path for cross-group moves.
+  // Rejection must be PERCEPTIBLE (smoke rounds 2-3: a silent snap-back reads
+  // as "drag not rejected", and a no-drop cursor painted on the target group
+  // is invisible under the dragged row): foreign groups dim, the DRAGGED ROW
+  // wears no-drop whenever the pointer leaves its own group, and a rejected
+  // drop flashes a hint naming the real path for cross-group moves.
   const flashNudge = () => {
     setNudge(true);
     window.clearTimeout(nudgeTimer.current);
     nudgeTimer.current = window.setTimeout(() => setNudge(false), 2500);
+  };
+
+  /** Is the point inside the status group's element? null = can't tell. */
+  const inOwnGroup = (status: TaskStatus, point: { x: number; y: number } | null): boolean | null => {
+    const groupEl = listRef.current?.querySelector(`[data-group="${status}"]`);
+    if (!point || !groupEl) return null;
+    const r = groupEl.getBoundingClientRect();
+    return point.x >= r.left && point.x <= r.right && point.y >= r.top && point.y <= r.bottom;
   };
 
   const onDragStart = (e: DragStartEvent) => {
@@ -90,20 +106,23 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
     setDragStatus(status ?? null);
   };
 
+  const onDragMove = (e: DragMoveEvent) => {
+    const status = e.active.data.current?.status as TaskStatus | undefined;
+    if (!status) return;
+    const inside = inOwnGroup(status, dropPoint(e));
+    if (inside !== null) setNoDrop((prev) => (prev === !inside ? prev : !inside));
+  };
+
   const onDragEnd = (e: DragEndEvent) => {
     setDragStatus(null);
+    setNoDrop(false);
     const status = e.active.data.current?.status as TaskStatus | undefined;
     if (!status) return;
     // The drop must land inside the ACTIVE row's own group; released anywhere
     // else → snap back + nudge, no mutation (跨组改状态走状态按钮/抽屉).
-    const point = dropPoint(e);
-    const groupEl = listRef.current?.querySelector(`[data-group="${status}"]`);
-    if (point && groupEl) {
-      const r = groupEl.getBoundingClientRect();
-      if (point.x < r.left || point.x > r.right || point.y < r.top || point.y > r.bottom) {
-        flashNudge();
-        return;
-      }
+    if (inOwnGroup(status, dropPoint(e)) === false) {
+      flashNudge();
+      return;
     }
     const over = e.over;
     if (!over) return;
@@ -123,10 +142,14 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
       sensors={sensors}
       collisionDetection={sameGroupCollision}
       onDragStart={onDragStart}
+      onDragMove={onDragMove}
       onDragEnd={onDragEnd}
-      onDragCancel={() => setDragStatus(null)}
+      onDragCancel={() => {
+        setDragStatus(null);
+        setNoDrop(false);
+      }}
     >
-      <div className="plan-list-mode" ref={listRef}>
+      <div className={`plan-list-mode${noDrop ? " plan-nodrop-active" : ""}`} ref={listRef}>
         {GROUPS.map((g) => {
           const items = plan.tasks.filter((t) => t.status === g.key);
           if (items.length === 0) return null;
