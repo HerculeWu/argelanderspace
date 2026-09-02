@@ -188,6 +188,8 @@ describe("list-mode drag rejection (Stage 4 smoke bug)", () => {
     await new Promise((r) => setTimeout(r, 60));
     expect(putBodies).toHaveLength(0); // no PUT at all
     expect(titles(container)).toEqual(before); // and nothing moved
+    // …but the rejection is not silent: the nudge names the real path
+    expect(container.textContent).toContain("跨组移动请用状态圆钮或抽屉改状态");
     restore();
   });
 
@@ -198,6 +200,7 @@ describe("list-mode drag rejection (Stage 4 smoke bug)", () => {
     drag(container, "待办一", 60, 175); // release on the collapsed 已完成 head
     await new Promise((r) => setTimeout(r, 60));
     expect(putBodies).toHaveLength(0);
+    expect(container.textContent).toContain("跨组移动请用状态圆钮或抽屉改状态");
     restore();
   });
 
@@ -214,6 +217,23 @@ describe("list-mode drag rejection (Stage 4 smoke bug)", () => {
       "已完一",
     ]);
     expect(titles(container)).toEqual(["在做一", "待办二", "待办一"]);
+    expect(container.textContent).not.toContain("跨组移动"); // accepted drags stay silent
+    restore();
+  });
+
+  it("mid-drag, foreign groups are dimmed as non-targets (and restored after)", async () => {
+    const { container } = await renderPlan();
+    const restore = stubGeometry(container);
+    const row = rowOf(container, "在做一");
+    fireEvent.pointerDown(row, { clientX: 50, clientY: 20, button: 0, isPrimary: true, pointerId: 1 });
+    fireEvent.pointerMove(document, { clientX: 50, clientY: 60, isPrimary: true, pointerId: 1 });
+    const cls = (k: string) => container.querySelector(`[data-group="${k}"]`)?.className ?? "";
+    expect(cls("todo")).toContain("plan-no-target");
+    expect(cls("done")).toContain("plan-no-target");
+    expect(cls("doing")).not.toContain("plan-no-target");
+    fireEvent.pointerUp(document, { clientX: 50, clientY: 60, isPrimary: true, pointerId: 1 });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(cls("todo")).not.toContain("plan-no-target"); // cleared after the drop
     restore();
   });
 });

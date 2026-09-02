@@ -30,7 +30,7 @@
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { extname, join, normalize, relative, resolve, sep } from "node:path";
 import type { Document, RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
 import { PlansFileSchema } from "@argelanderspace/contracts";
 import {
@@ -134,6 +134,15 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".pdf": "application/pdf",
 };
+
+/** Vite emits content-hashed files under `assets/` (safe to cache forever);
+ *  everything else — index.html above all — must revalidate so a fresh build
+ *  is picked up on the next plain refresh (smoke round-2 stale-bundle guard). */
+function cacheControlFor(filePath: string, root: string): string {
+  return relative(root, filePath).startsWith(`assets${sep}`)
+    ? "public, max-age=31536000, immutable"
+    : "no-cache";
+}
 
 function mimeFor(path: string): string {
   return MIME[extname(path).toLowerCase()] ?? "application/octet-stream";
@@ -558,12 +567,14 @@ export function createApp(deps: AppDeps): Hono {
       ) {
         return c.body(new Uint8Array(await readFile(candidate)), 200, {
           "Content-Type": mimeFor(candidate),
+          "Cache-Control": cacheControlFor(candidate, root),
         });
       }
       const index = join(root, "index.html");
       if (existsSync(index)) {
         return c.body(new Uint8Array(await readFile(index)), 200, {
           "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache",
         });
       }
       const e = detail("Not Found", 404);

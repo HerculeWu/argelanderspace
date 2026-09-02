@@ -407,6 +407,7 @@ describe("SPA static hosting (API takes precedence)", () => {
     const root = await get("/");
     expect(root.status).toBe(200);
     expect(root.headers.get("content-type")).toContain("text/html");
+    expect(root.headers.get("cache-control")).toBe("no-cache"); // always pick up a fresh build
     expect(await root.text()).toContain("ArgelanderSpace");
     const deep = await get("/reader/arxiv-2501.17225");
     expect(deep.status).toBe(200);
@@ -417,6 +418,8 @@ describe("SPA static hosting (API takes precedence)", () => {
     const res = await get("/assets/app.js");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("text/javascript");
+    // content-hashed assets are immutable forever; index.html is not (see above)
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
   });
 
   test("unknown /api paths 404 as JSON, never the SPA", async () => {

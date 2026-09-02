@@ -498,7 +498,10 @@ input, textarea { font-family: inherit; color: inherit; }
 
 /* ---------- list mode ---------- */
 .plan-list-mode { max-width: 860px; }
-.plan-list-group { margin-bottom: 18px; }
+.plan-list-group { margin-bottom: 18px; transition: opacity .15s; }
+.plan-no-target { opacity: .38; }
+.plan-no-target, .plan-no-target * { cursor: no-drop !important; }
+.plan-reject-nudge { bottom: 114px; } /* sit above PlanView's write-flash notice (68px) */
 .plan-list-group-head { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: var(--fs-sm); font-weight: 600; color: var(--text-dim); }
 .plan-list-group-n { color: var(--text-faint); font-weight: 500; }
 .plan-list-fold { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; color: var(--text-faint); }

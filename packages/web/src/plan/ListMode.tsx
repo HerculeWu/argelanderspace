@@ -3,13 +3,14 @@ import {
   type CollisionDetection,
   DndContext,
   type DragEndEvent,
+  type DragStartEvent,
   PointerSensor,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icon } from "../lib/icons";
 import { StatusBtn, StatusDot } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
@@ -67,23 +68,47 @@ const GROUPS: { key: TaskStatus; label: string }[] = [
 
 export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: ListCallbacks }) {
   const [doneOpen, setDoneOpen] = useState(false);
+  const [dragStatus, setDragStatus] = useState<TaskStatus | null>(null);
+  const [nudge, setNudge] = useState(false);
+  const nudgeTimer = useRef<number | undefined>(undefined);
   const listRef = useRef<HTMLDivElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const onDragEnd = (e: DragEndEvent) => {
-    const over = e.over;
-    if (!over) return;
+  useEffect(() => () => window.clearTimeout(nudgeTimer.current), []);
+
+  // Rejection must be PERCEPTIBLE (smoke round-2: a silent snap-back reads as
+  // "drag not rejected"): foreign groups dim + no-drop cursor mid-drag, and a
+  // rejected drop flashes a hint naming the real path for cross-group moves.
+  const flashNudge = () => {
+    setNudge(true);
+    window.clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = window.setTimeout(() => setNudge(false), 2500);
+  };
+
+  const onDragStart = (e: DragStartEvent) => {
     const status = e.active.data.current?.status as TaskStatus | undefined;
-    const overStatus = over.data.current?.status as TaskStatus | undefined;
-    if (!status || overStatus !== status) return; // 跨组拖拽不做
-    // …and the pointer must have landed inside the ACTIVE row's own group:
-    // released anywhere else → snap back, no mutation (回弹).
+    setDragStatus(status ?? null);
+  };
+
+  const onDragEnd = (e: DragEndEvent) => {
+    setDragStatus(null);
+    const status = e.active.data.current?.status as TaskStatus | undefined;
+    if (!status) return;
+    // The drop must land inside the ACTIVE row's own group; released anywhere
+    // else → snap back + nudge, no mutation (跨组改状态走状态按钮/抽屉).
     const point = dropPoint(e);
     const groupEl = listRef.current?.querySelector(`[data-group="${status}"]`);
     if (point && groupEl) {
       const r = groupEl.getBoundingClientRect();
-      if (point.x < r.left || point.x > r.right || point.y < r.top || point.y > r.bottom) return;
+      if (point.x < r.left || point.x > r.right || point.y < r.top || point.y > r.bottom) {
+        flashNudge();
+        return;
+      }
     }
+    const over = e.over;
+    if (!over) return;
+    const overStatus = over.data.current?.status as TaskStatus | undefined;
+    if (overStatus !== status) return; // 跨组拖拽不做
     cb.onReorder(plan.id, status, String(e.active.id), String(over.id));
   };
 
@@ -94,14 +119,24 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={sameGroupCollision} onDragEnd={onDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={sameGroupCollision}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => setDragStatus(null)}
+    >
       <div className="plan-list-mode" ref={listRef}>
         {GROUPS.map((g) => {
           const items = plan.tasks.filter((t) => t.status === g.key);
           if (items.length === 0) return null;
           const isDone = g.key === "done";
           return (
-            <div key={g.key} className="plan-list-group" data-group={g.key}>
+            <div
+              key={g.key}
+              className={`plan-list-group${dragStatus !== null && g.key !== dragStatus ? " plan-no-target" : ""}`}
+              data-group={g.key}
+            >
               <div className="plan-list-group-head">
                 {isDone ? (
                   <button className="plan-list-fold" onClick={() => setDoneOpen((o) => !o)}>
@@ -123,6 +158,9 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
             </div>
           );
         })}
+        {nudge && (
+          <div className="plan-notice plan-reject-nudge view-in">跨组移动请用状态圆钮或抽屉改状态。</div>
+        )}
       </div>
     </DndContext>
   );
