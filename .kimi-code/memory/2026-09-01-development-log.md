@@ -34,6 +34,7 @@
 - **MS3 公式/表格/下限 `4982451`**：313 绿。walk 全量顺序编号（一切 display-math 发号、labelMap 不再写 null、渲染层零改动自动跟随）；`\tag` 提取为显示号/剥出 body/不推进计数器；ENV_RE 加 `^\s*` 锚点；新 `aastex.ts` 机械预处理（deluxetable(*)→table+tabular 保 caption/label/表头、table*→table、tablecomments 降级尾随段；裁决：`\startdata` 身兼表头终止符，header 无 `\\` 结尾时补 ` \\`）；pandoc ≥3.9 硬下限（infra `latex/pandoc.ts` `assertPandocVersion`，管线入口在 acquire 联网前调用；测试 helper 低版本即抛错）；golden 2012.05220 重冻 +48/−16（tab-1 caption 恢复、2 处 tab xref 转 resolved），2501.17225 零 diff；**2607.17040 端到端：crossref 34/49→49/49、11 表全成表、eq 1-5 完整**；3.1.3 负测拦截报错。
 - **MS4 收尾 `fc80aa7`**：stub pane 移除（Shell NAV 两行 + CommandPalette 两条 + CSS 注释；terminal 图标实无独立定义可删）+ `docs/manual-test-stage3.1.md`（278 行，§0-8，关键预期全部预实测过）。323 测试绿、lint 零警告。
 - **遗留边界**（拍板不修/后续再议）：subequations 合并丢 label（known-issue）；align 内 tag 行与自动号混排时块级 number 呈 `"A1–1"` 区间串（行级 label 精确，真实论文极罕见）；pathological 空归一化标题的 title-only work 上传会在 seed 侧产生重复 work（直挂保证原 work 拿到 doc，无事故）。
+- **手动验收（2026-09-02）**：§1/§2/§4/§5/§6/§7 全部通过，§3a/3b 通过；§3c 暴露缺陷——上传按钮只在 `doc_id` 为空时渲染，上传成功后无法重传（传错文件/更新版无路）。**验收修复**：doc 来自 zip 上传（`upload-` 前缀）的条目在"附件" tab 同时显示文档链接与"重新上传 LaTeX 源码包（zip）"按钮（覆盖语义；arXiv 摄入条目不显示，attach 保持补缺口）；补 2 个 web 用例（325 测试绿），手册 §3/§3c 同步。
 
 ## 下一步
 
