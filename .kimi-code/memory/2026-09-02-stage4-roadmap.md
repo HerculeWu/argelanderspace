@@ -4,7 +4,7 @@
 
 ## 状态
 
-2026-09-02：设计 grilling 完成（三轮 Q1–Q17 全锁定，用户确认"达成共识"，定稿写入本文件）。**MS1 `eea2c9c`、MS2 `2747197`、MS3 `84ed5ec`、MS4 全部 landed**（MS4 = `docs/manual-test-stage4.md` 429 行 smoke 手册，§0-12，8 项 API/WS 预实测 + 审查 5 处增量；各 MS 审查结论见审查记录节；定稿 memory `5f11101`）。**Stage 4 执行完毕，待用户手动 smoke（手册即清单）；push 待 smoke 通过后确认。**
+**2026-09-02：Stage 4 关闭——MS1–MS4 landed + 手动 smoke 三轮全部通过（含三轮修复），全部 push origin main。** 设计 grilling 完成（三轮 Q1–Q17 全锁定，用户确认"达成共识"，定稿写入本文件）。commit 序列（main）：定稿 memory `5f11101` → MS1 `eea2c9c`（contracts+core）→ MS2 `2747197`（server+watcher）→ MS3 `84ed5ec`（web 全家桶）→ MS4 `ef3ef41`（smoke 手册 429 行）→ smoke R1 修复 `8804470`（task.due 必填+创建唯一入口+跨组拖拽机制）→ R2 修复 `24c77ac`（拒绝可感知三件套+静态缓存头）→ R3 修复 `8f5338d`（禁落光标上被拖行）+ 各 memory commit。各轮审查记录见文末。
 
 ## 定位前提（2026-09-02 用户明确，覆盖旧表述）
 

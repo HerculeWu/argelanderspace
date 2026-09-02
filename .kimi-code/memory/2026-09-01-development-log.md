@@ -43,13 +43,14 @@
 
 ## Stage 4（2026-09-02）：计划页面
 
-- 设计 grilling 三轮 Q1–Q17 拍板（定稿 `2026-09-02-stage4-roadmap.md`）：两层 plans→tasks、plan.due 必填/task.due 可选（deadline 语义）、聚焦=pin+派生组、时间线只读、链接只到 doc_id、note markdown+数学（编辑/展示分离）、粗粒度 GET/PUT+rev 乐观锁、`status/plans.json` 与 literatures 平级。**定位升级同步全 memory：产品 = 科研工作台 + 用户与 AI agent 协作的 interface**（取代"文献工具"）。
+- 设计 grilling 三轮 Q1–Q17 拍板（定稿 `2026-09-02-stage4-roadmap.md`）：两层 plans→tasks、plan.due 必填/task.due 必填（deadline 语义；task 级为 smoke R1 改判）、聚焦=pin+派生组、时间线只读、链接只到 doc_id、note markdown+数学（编辑/展示分离）、粗粒度 GET/PUT+rev 乐观锁、`status/plans.json` 与 literatures 平级。**定位升级同步全 memory：产品 = 科研工作台 + 用户与 AI agent 协作的 interface**（取代"文献工具"）。
 - 执行：MS1 `eea2c9c`（contracts+core plans store）→ MS2 `2747197`（server GET/PUT+planLock+watcher 双子指纹）→ MS3 `84ed5ec`（web 全家桶：列表/看板/时间线/聚焦/抽屉/弹窗复用/@dnd-kit/marked+mdWithMath + landing 改计划页）→ MS4（smoke 手册 429 行）。**新流程首航**：每 MS 四道门 + subagent 独立对抗审查后自行 commit（用户授权，不逐次问）。审查战绩：MS1 1 阻断（WS union 打断 web 编译）、MS2 0 阻断（15 项 boot 对抗全过）、MS3 3 阻断（mdWithMath 腐蚀两轮——code/货币/URL、IME Enter 误提交、noop 拖拽死代码）、MS4 0 阻断（~40 处手册文案逐字核对）。测试 325→**444 绿**（web 44→102）。
 - **待用户手动 smoke**（`docs/manual-test-stage4.md` §0-12）；push 待 smoke 通过后确认。
 - **smoke 第 1 轮（2026-09-02）**：§0-11 大部通过；2 阻塞修复（`8804470`，审查 0 阻断）——① **task.due 改必填**（推翻定稿"可选"；创建唯一入口 = 新建任务弹窗，QuickAdd 组件/看板列底移除，旧无 due 任务 load 迁移补 plan.due）；② 列表跨组拖拽拒绝失效（根因 = dnd-kit 多容器碰撞检测 + 边界落点误判；修 = sameGroupCollision 过滤 + dropPoint 命中测试）。`.gitignore` 补 `status/`；手册同步修订（§0c 可跳过标注、§3 重写、§11d DevTools 步骤、§12 迁移说明）。测试 444→448。
 - **smoke 第 2 轮（2026-09-02）**：用户报"跨组拖拽还是没有被拒绝"。真实 Chrome 复现证明机制拒绝已生效（0 PUT），真缺口 = **拒绝不可感知**（行跟手进别组、源组让位，静默回弹读作"没拒绝"）。修复（`24c77ac`，审查 0 阻断）：拖动时其他组变暗 + 禁落光标 + 被拒落点 nudge 提示；加固静态缓存头（index `no-cache`、hashed assets `immutable`）。新未解决问题记录：**task.due 可晚于 plan.due**（本阶段不修，known-issues 已收）。测试 448→449。
 - **smoke 第 3 轮（2026-09-02）**：用户确认列表拦截生效，但①问看板跨列不拦截是否故意——**是**（定稿 Q11 不对称语义：列表拖拽只调序、看板拖拽即改状态，手册 §5b/§12-3 已写精确）；②**看不到禁落光标**——真 bug：no-drop 打在目标组元素上，但拖拽中被拖行恒覆盖指针正下方，浏览器显示最上层元素的光标，组级规则实际不可见。修复（`8f5338d`，审查 0 阻断）：`onDragMove` 跟踪指针是否离开本组 → root `plan-nodrop-active` → **禁落光标打到被拖行及其子元素**（含状态钮/pin 钮——全局 `button{cursor:pointer}` 的声明值需 `*` 选择器覆盖，审查抓的窄残余）。真实 Chrome 验证：本组内 cursor=pointer、越界=no-drop、drop 后复位。测试 449（mid-drag 用例原地扩展）。**拖拽教训沉淀**：dnd-kit 拖拽中"指针下的元素"永远是被拖行——任何想给用户看的 hover 反馈（光标/高亮）必须打到被拖行或用 overlay，打在落点目标上不可见。
+- **Stage 4 关闭（2026-09-02）**：smoke 三轮全部通过，用户确认收尾，全部 push origin main。commit 序列见 `2026-09-02-stage4-roadmap.md` 状态节。
 
 ## 下一步
 
-Stage 4.1：agent 操作计划页面（CLI/skills 读写 `status/plans.json`；数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数）。远期 Stage 5（论文写作）。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节。
+**Stage 5：论文写作**——下一 session 开工，先 grilling 定稿（用户 2026-09-02 指定）。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**——数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`（task.due 可晚于 plan.due 等）。

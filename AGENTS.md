@@ -13,9 +13,9 @@ ArgelanderSpace（原 bibgraph）：单用户**科研工作台**（不只是文�
 
 **工程**：pnpm workspace（`packages/`：contracts / core / infra / server / cli / web / app 发布单包）。验收门：`corepack pnpm -r build|test|typecheck` + 根 `corepack pnpm lint`（无 per-package lint script；本机裸 `pnpm` 不在 PATH，必须走 corepack）。**重构期已于 2026-09-01 宣告结束**：bug-for-bug 兼容与 golden 逐字段 diff 基线退役，golden 夹具转为普通回归测试（行为变更由 TS 管线自洽重冻 + 人工抽查）。
 
-**历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01 验收通过、已 push）。
+**历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01）→ Stage 3.1 摄入收窄 LaTeX + zip 上传 + 公式/表格修复（2026-09-02）→ Stage 4 计划页面（2026-09-02 关闭）。
 
-**下一步**：**Stage 4 计划页面 MS1–MS4 已全部 landed**（2026-09-02；定稿/里程碑/审查记录见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`）——**待用户手动 smoke**（清单 = `docs/manual-test-stage4.md`），push 待 smoke 通过后确认。Stage 3.1 已关闭（commit 序列见 `2026-09-01-stage3x-roadmap.md` 状态节）。之后：**Stage 4.1 = agent 操作计划页面**（CLI/skills 读写 `status/plans.json`，数据层已预留稳定 id/pretty JSON/watcher/plan.changed）。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目）见 `2026-09-01-stage3x-roadmap.md` 推后事项节。远期 Stage 5（论文写作）。
+**下一步**：**Stage 5 = 论文写作**——下一 session 开工，先 grilling 定稿（用户 2026-09-02 指定）。Stage 4 已关闭（MS1–MS4 + smoke 三轮修复全过、已 push；定稿/里程碑/审查记录见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`）。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**（数据层已预留：稳定 id/pretty JSON/watcher/plan.changed/CRUD 纯函数）。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目、**task.due 可晚于 plan.due**）见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`。
 
 ## 环境
 
