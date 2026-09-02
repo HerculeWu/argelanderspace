@@ -124,7 +124,8 @@ node packages/app/dist/bin.js ingest literatures/input/2603.03522.pdf
 
 ## 3. zip 上传：成功 / 幂等 / 失败探针
 
-上传入口是**详情页 attach-only**：目标 work 必须已存在（库里"需上传源码包"的条目）。
+上传入口是**详情页 attach-only**：目标 work 必须已存在（库里"需上传源码包"的条目）；
+已上传过的条目（doc 来自 zip）保留"重新上传"入口（覆盖同一 doc 的幂等语义）。
 本节约内容对不上的物料做管路测试——上传的 zip 是 Pal 5 论文源码，挂到 Hyades 那条 work 上，
 **内容不匹配是预期的**；身份焊死保证它挂到目标 work 而不会新建重复 work。
 
@@ -147,10 +148,12 @@ cd literatures/output/arxiv-2607.17040/src && zip -rq /tmp/pal5-src.zip . && cd 
    `upload-doi-10-1051-0004-6361-201117315-a70331`（幂等 docId = `upload-<slug44>-<hash6>`），
    works 总数仍是 **35**（没有重复 work）；条目点击可进阅读器看全文。
 
-**3c. 幂等重传。** 同一条目再传一次同一个 zip。
+**3c. 幂等重传。** 上传成功后，该条目详情页的"附件" tab 里**同时**有"已入库"文档链接和
+**"重新上传 LaTeX 源码包（zip）"**按钮（传错文件/有更新版时的替换入口）。点"重新上传"，再传同一个 zip。
 
 **应该发生：** 再次成功，`literatures/output/` 下仍只有一个 `upload-doi-…-a70331` 目录
-（重传=覆盖同一 doc），文库仍 35 条。
+（重传=覆盖同一 doc），文库仍 35 条。按钮 hint 写明"重新上传会覆盖同一文档"。
+（注意：只有 doc 来自 zip 上传的条目才有"重新上传"按钮；arXiv 摄入的条目不显示——attach 保持补缺口语义。）
 
 **3d. 失败探针（两种都要试）。**
 

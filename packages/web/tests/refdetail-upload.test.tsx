@@ -106,6 +106,32 @@ describe("RefDetail upload tracking", () => {
     expect(screen.getByRole("button", { name: /上传 LaTeX 源码包/ })).toBeTruthy();
   });
 
+  it("re-upload: an entry whose doc came from a zip upload keeps the upload button (replace semantics)", () => {
+    const { container } = renderDetail({
+      ...REF,
+      doc_id: "upload-doi-10-1-x-a1b2c3",
+      needs_upload: false,
+    });
+    openFilesTab();
+    // the doc link stays, and the re-upload button is offered alongside it
+    expect(screen.getByRole("button", { name: /doe2020/ })).toBeTruthy();
+    const btn = screen.getByRole("button", {
+      name: /重新上传 LaTeX 源码包/,
+    }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(screen.getByText(/重新上传会覆盖同一文档/)).toBeTruthy();
+    // picking a zip drives the same upload path (idempotent overwrite server-side)
+    pickZip(container);
+    expect(h.uploadLatexZip).toHaveBeenCalledWith(REF.id, expect.any(File));
+  });
+
+  it("no upload button for arXiv-ingested docs (attach stays gap-filling)", () => {
+    renderDetail({ ...REF, doc_id: "arxiv-2603.03522", needs_upload: false });
+    openFilesTab();
+    expect(screen.getByRole("button", { name: /doe2020/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /LaTeX 源码包/ })).toBeNull();
+  });
+
   it("tracks job frames that arrive before the fetch response (no rewind on 202)", async () => {
     let resolveFetch: (j: Job | null) => void = () => {};
     h.uploadLatexZip.mockImplementation(

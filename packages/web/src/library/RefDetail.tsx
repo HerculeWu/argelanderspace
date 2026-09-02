@@ -342,19 +342,29 @@ export function RefDetail({
           ))}
         {tab === "files" && (
           <div className="ref-files">
-            {r.doc_id ? (
+            {r.doc_id && (
               <button className="ref-file" title="在文档中打开" onClick={() => onOpenDoc(r.doc_id)}>
                 <Icon name="file-text" cls="ico-sm" />
                 <span className="mono">{r.cite}</span>
                 <span className="ref-file-ok">已入库</span>
                 <Icon name="arrow-up-right" cls="ico-sm" />
               </button>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
-                  <SourcePill r={r} />
-                </div>
+            )}
+            {(!r.doc_id || r.doc_id.startsWith("upload-")) && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  ...(r.doc_id ? { marginTop: 8 } : {}),
+                }}
+              >
+                {!r.doc_id && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
+                    <SourcePill r={r} />
+                  </div>
+                )}
                 <button
                   className="btn"
                   disabled={uploadJob !== null}
@@ -372,14 +382,16 @@ export function RefDetail({
                   ) : (
                     <>
                       <Icon name="file-up" cls="ico-sm" />
-                      上传 LaTeX 源码包（zip）
+                      {r.doc_id ? "重新上传 LaTeX 源码包（zip）" : "上传 LaTeX 源码包（zip）"}
                     </>
                   )}
                 </button>
                 <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
-                  {r.needs_upload
-                    ? "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条"
-                    : "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）"}
+                  {r.doc_id
+                    ? "重新上传会覆盖同一文档（传错文件或有更新版时使用）"
+                    : r.needs_upload
+                      ? "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条"
+                      : "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）"}
                 </div>
                 {uploadErr && (
                   <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
