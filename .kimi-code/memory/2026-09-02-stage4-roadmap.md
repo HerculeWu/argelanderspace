@@ -4,7 +4,7 @@
 
 ## 状态
 
-2026-09-02：设计 grilling 完成（三轮 Q1–Q17 全锁定，用户确认"达成共识"，定稿写入本文件）。**MS1 `eea2c9c`、MS2 `2747197` 已 landed**（MS1：contracts plans schema + plan.changed WS + core plans store；MS2：GET/PUT /api/plans + planLock + plan.changed 广播 + watcher 双子指纹；各自 1 阻断/0 阻断，见审查记录节；定稿 memory `5f11101`）。MS3–MS4 待执行。
+2026-09-02：设计 grilling 完成（三轮 Q1–Q17 全锁定，用户确认"达成共识"，定稿写入本文件）。**MS1 `eea2c9c`、MS2 `2747197`、MS3 `84ed5ec` 已 landed**（MS1 contracts+core；MS2 server 端点+watcher；MS3 web 计划页面全家桶+landing 切换；各 MS 审查结论见审查记录节；定稿 memory `5f11101`）。MS4 待执行。
 
 ## 定位前提（2026-09-02 用户明确，覆盖旧表述）
 
@@ -78,3 +78,4 @@
 
 - **MS1 审查通过**（2026-09-02）：1 阻断已修——WS union 加 `plan.changed` 打断 web 编译（`web/src/api/ws.ts` else 分支假定非 hello/library.changed 必为 job 事件），修为显式 `plan.changed` 分支（MS3 在此接 listener）；store.ts 头注补"单用户+planLock 串行"前提、删预决 4.1 的一句。非阻断观察两条：① **MS3 注意**——`Plan.icon` schema 层是任意字符串（8 选 1 只是 UI 约束），web 按名查 lucide 图标必须对未知名兜底；② **4.1 前评估**——plans.json 未知键被 zod 默认 strip（load 丢弃、save 抹掉），agent 写的前向兼容字段会被 round-trip 抹掉，届时评估 `.loose()` 或文档化。
 - **MS2 审查通过**（2026-09-02）：0 阻断；15 项真实 boot 对抗运行验证全过（10 并发 PUT 恰 1×200+9×409、WS 序列 [put,external] 恰好一次无自激、外部写双侧隔离、40MB body 接受等）。顺手修复：ws.ts 头注补 plan.changed、plans.test.ts 补两个 500 用例（PUT 遇盘上损坏文件锁不楔死、GET 遇 schema 非法）。非阻断存档：PUT body 无大小限制（与 upload 端点先例一致，单用户可接受；要限则 Hono bodyLimit 是挂点）；JSON body 不带 Content-Type 也解析（与既有端点同款）；loadPlans 遇 EISDIR 报错措辞误导但只在 server 日志。
+- **MS3 审查通过**（2026-09-02，审查+修复+复核+终修四轮）：阻断 3 项全修——① mdWithMath 无差别抽取腐蚀 code span/货币/`\$`/URL（初修四步管线：code 哨兵+texmath 边界+熵 token；**复核再抓链接目的地哨兵毁 marked 词法**（`%01` href）→ 终修改为 URL dest stash + href 钉断言，主 agent 独立抽查 11 组过）；② 中文 IME 组词 Enter 误提交（4 处 `isComposing` guard，TaskDrawer ⌘↵ 天然免疫）；③ noop 拖拽空涨 rev 的跳过是死代码（patchTasks 改引用传递后真正生效）。非阻断 9 项全修（pendingExternal defer+排空补 reload、loadFailed 显式失败态、"N 项未完成"、月刻度带年、md table CSS、toast 错位、测试补 27+9 例）。web 测试 44→102。**存照**：deferred reload 与链上排队写交织时可能多闪一次 409 flash（结果收敛，单用户可接受）；多反引号 code span/~~~ fence 已覆盖，更怪的 markdown 构造（setext 标题里 `$` 等）未逐一枚举——mdWithMath 管线是启发式不是完整 md parser，遇到新腐蚀按"加保护区/stash"模式扩展。
