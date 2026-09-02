@@ -5,7 +5,8 @@
  *
  * Every client receives, in order: a `hello` snapshot of the job table on
  * connect, then every job transition (`job.created|progress|done|failed`
- * carrying the full job record) and `library.changed` as they happen.
+ * carrying the full job record), `library.changed`, and `plan.changed`
+ * (Stage 4) as they happen.
  * Heartbeat is protocol-level ping/pong: the server pings every
  * `heartbeatMs` and terminates clients that miss a pong.
  */

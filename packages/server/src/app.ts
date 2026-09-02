@@ -20,6 +20,11 @@
  *   validation body is a `detail` *array*; the string shape is kept uniform).
  * - The SPA fallback serves `index.html` for unknown non-API GET paths
  *   (Starlette's StaticFiles answered 404) — required for client-side routes.
+ * - Stage 4 adds `GET`/`PUT /api/plans`: the plan page's whole-document
+ *   read/replace against `<statusDir>/plans.json`, with the `rev` optimistic
+ *   lock (mismatch → 409) and a `plan.changed` broadcast. Writes serialize on
+ *   a dedicated planLock, never the library lock (they must not block each
+ *   other).
  */
 
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -27,6 +32,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import type { Document, RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
+import { PlansFileSchema } from "@argelanderspace/contracts";
 import {
   addNodeToLibrary,
   attachLatexZip,
@@ -34,9 +40,11 @@ import {
   type IngestPipelines,
   type LibraryPaths,
   libraryPayload,
+  loadPlans,
   type MetadataSources,
   patchWork,
   rebuild,
+  savePlans,
 } from "@argelanderspace/core";
 import { extractZip, ZipError } from "@argelanderspace/infra";
 import { Hono } from "hono";
@@ -52,6 +60,8 @@ import { PaperCache } from "./paper-cache.js";
 
 export interface AppDeps {
   paths: LibraryPaths;
+  /** The plan page's status dir (holds `plans.json`); `statusDirFor(dataDir)`. */
+  statusDir: string;
   /** Sources factory: `offline` toggles remote enrichment (Crossref/OpenAlex). */
   makeSources: (offline: boolean) => MetadataSources;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
@@ -139,12 +149,17 @@ export function createApp(deps: AppDeps): Hono {
   const paperCache = new PaperCache();
   /** Python `_WRITE_LOCK`: rebuild vs PATCH/POST refs (see lock.ts). */
   const libraryLock = new AsyncLock();
+  /** Plans writes: separate from the library lock — the two never block each other. */
+  const planLock = new AsyncLock();
   const broadcast = deps.broadcast ?? (() => {});
   // Job transitions flow to the same bus as library.changed (createServer's
   // hub is just another broadcast consumer).
   runner.onEvent = (type, job) => broadcast({ type, job });
   const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload"): void => {
     broadcast({ type: "library.changed", cause, at: new Date().toISOString() });
+  };
+  const planChanged = (cause: "put" | "external"): void => {
+    broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
   };
   /** rebuild through the lock. */
   const lockedRebuild = (
@@ -253,6 +268,42 @@ export function createApp(deps: AppDeps): Hono {
   // ---- GET /api/library ------------------------------------------------------ //
 
   app.get("/api/library", (c) => c.json(libraryPayload(paths)));
+
+  // ---- GET /api/plans -------------------------------------------------------- //
+
+  // The plan page's whole document (Stage 4): a missing plans.json reads as
+  // the empty document (core loadPlans); a corrupt one surfaces as a 500 —
+  // never a silent reset.
+  app.get("/api/plans", (c) => c.json(loadPlans(deps.statusDir)));
+
+  // ---- PUT /api/plans -------------------------------------------------------- //
+
+  // Whole-document replace with the persisted `rev` optimistic lock: the body
+  // must carry the current rev, the save bumps it, and the updated document
+  // (new rev) is returned. A mismatch answers 409 with the current rev so the
+  // client can reload + rebase. The rev check and the save are one critical
+  // section on planLock.
+  app.put("/api/plans", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = PlansFileSchema.safeParse(body);
+    if (!parsed.success) {
+      const e = detail("request body is not a valid plans document", 400);
+      return c.json(e.body, e.status);
+    }
+    const outcome = await planLock.run(() => {
+      const current = loadPlans(deps.statusDir);
+      if (parsed.data.rev !== current.rev) return { conflictRev: current.rev } as const;
+      savePlans(deps.statusDir, parsed.data, { bumpRev: true });
+      return { saved: { ...parsed.data, rev: parsed.data.rev + 1 } } as const;
+    });
+    if ("conflictRev" in outcome) {
+      return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
+    }
+    planChanged("put");
+    return c.json(outcome.saved);
+  });
 
   // ---- POST /api/library/refs ---------------------------------------------- //
 

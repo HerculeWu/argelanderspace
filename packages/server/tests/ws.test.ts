@@ -1,12 +1,16 @@
 /**
  * The `/ws` channel over a real socket (ephemeral port): hello snapshot, the
- * ordered job event stream, `library.changed` after a mutation, and upgrade
- * rejection off-path.
+ * ordered job event stream, `library.changed` after a mutation, Stage 4's
+ * `plan.changed` (after a PUT and after an external plans.json write), and
+ * upgrade rejection off-path.
  */
 
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { WsServerMessage } from "@argelanderspace/contracts";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
+import { statusDirFor } from "../src/deps.js";
 import { createServer, type RunningServer } from "../src/server.js";
 import { makeDataDir, stubSources } from "./helpers.js";
 
@@ -22,6 +26,7 @@ beforeEach(async () => {
     heartbeatMs: 0,
     webDist: null,
     deps: { makeSources: () => stubSources() },
+    watchIntervalMs: 50,
   });
   port = await srv.ready();
 });
@@ -99,5 +104,32 @@ describe("WS /ws", () => {
         ws.on("error", (err) => rejectPromise(err));
       })
     ).rejects.toThrow();
+  });
+
+  test("PUT /api/plans broadcasts plan.changed(put) right after the write", async () => {
+    const { ready, done } = collectUntil((m) => m.type === "plan.changed");
+    await ready; // socket live before the PUT fires
+    const res = await fetch(`http://127.0.0.1:${port}/api/plans`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: 1, rev: 0, plans: [] }),
+    });
+    expect(res.status).toBe(200);
+    const messages = await done;
+    const changed = messages.find((m) => m.type === "plan.changed");
+    // the in-request broadcast lands first; the watcher's external re-trigger
+    // (accepted behavior) would follow ≥ one poll interval later
+    expect(changed).toMatchObject({ type: "plan.changed", cause: "put" });
+  });
+
+  test("an external plans.json write broadcasts plan.changed(external)", async () => {
+    const { ready, done } = collectUntil((m) => m.type === "plan.changed");
+    await ready; // socket live + the baseline poll already done at server start
+    const statusDir = statusDirFor(dataDir);
+    mkdirSync(statusDir, { recursive: true });
+    writeFileSync(join(statusDir, "plans.json"), '{"version":1,"rev":0,"plans":[]}');
+    const messages = await done;
+    const changed = messages.find((m) => m.type === "plan.changed");
+    expect(changed).toMatchObject({ type: "plan.changed", cause: "external" });
   });
 });

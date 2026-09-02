@@ -11,7 +11,7 @@
  * true)` still returns a live ADS client.
  */
 
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { IngestPipelines, LibraryPaths, MetadataSources } from "@argelanderspace/core";
 import {
   AdsClient,
@@ -20,6 +20,15 @@ import {
   ingestLatexZip,
   OpenAlexClient,
 } from "@argelanderspace/infra";
+
+/**
+ * The status dir (Stage 4) always sits next to the effective data dir:
+ * `./literatures` → `./status`, a `--data-dir` elsewhere gets a `status/`
+ * sibling. It holds the plan page's `plans.json` (core `plans/store.ts`).
+ */
+export function statusDirFor(dataDir: string): string {
+  return resolve(dataDir, "..", "status");
+}
 
 /** The resolution-chain sources; `offline` skips remote enrichment. */
 export function realSources(paths: LibraryPaths, offline: boolean): MetadataSources {

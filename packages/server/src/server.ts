@@ -1,14 +1,16 @@
 /**
  * Server entry: `createServer` (programmatic; the Hono app + node http server
- * + job runner + WS hub + external-write library poller wired together) and
- * `startServer` (CLI-friendly: argv/env config resolution, listen, log).
+ * + job runner + WS hub + external-write library/plans poller wired together)
+ * and `startServer` (CLI-friendly: argv/env config resolution, listen, log).
  *
  * Config resolution (decisions 3 + 23): `--data-dir` >
  * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./literatures`; the port chain is
  * the same shape with default 8000 (uvicorn's convention). Web dist:
  * `--web-dist` > `ARGELANDERSPACE_WEB_DIST` > the first existing of
  * `<this module>/web` (the bundled single-package layout, decision 22) and
- * `<cwd>/packages/web/dist` (the repo dev layout).
+ * `<cwd>/packages/web/dist` (the repo dev layout). The status dir (Stage 4)
+ * has no flag: it always sits next to the effective data dir
+ * (`statusDirFor`).
  */
 
 import { existsSync } from "node:fs";
@@ -20,9 +22,9 @@ import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
-import { realPipelines, realSources } from "./deps.js";
+import { realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
-import { startLibraryWatcher } from "./watch.js";
+import { startWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
 
 export interface ServerOptions {
@@ -37,6 +39,8 @@ export interface ServerOptions {
   deps?: Partial<Pick<AppDeps, "makeSources">>;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
+  /** External-write poll interval (default 1500); tests inject ~50. */
+  watchIntervalMs?: number;
 }
 
 export interface RunningServer {
@@ -52,6 +56,7 @@ export interface RunningServer {
 
 export function createServer(opts: ServerOptions): RunningServer {
   const paths = libraryPaths(opts.dataDir);
+  const statusDir = statusDirFor(opts.dataDir);
   const runner = new JobRunner({ dir: join(opts.dataDir, "jobs") });
   const port = opts.port ?? 8000;
 
@@ -60,6 +65,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   let hub: WsHub;
   const app = createApp({
     paths,
+    statusDir,
     makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline)),
     pipelines: realPipelines(paths),
     runner,
@@ -80,15 +86,20 @@ export function createServer(opts: ServerOptions): RunningServer {
     snapshot: () => runner.list(),
   });
 
-  // Agent/CLI writes mutate the library behind the server's back (Stage 3):
-  // poll for them and rebroadcast as `library.changed` "external". The first
-  // poll only establishes the baseline, and `hub` is assigned long before
-  // any later poll can fire (the closure-timing argument of `broadcast`
-  // above). The server's own writes re-trigger this too — accepted.
-  const watcher = startLibraryWatcher({
+  // Agent/CLI writes mutate the library and plans.json behind the server's
+  // back (Stage 3 / Stage 4): poll for them and rebroadcast as
+  // `library.changed` / `plan.changed` "external". The first poll only
+  // establishes the baseline, and `hub` is assigned long before any later
+  // poll can fire (the closure-timing argument of `broadcast` above). The
+  // server's own writes re-trigger this too — accepted.
+  const watcher = startWatcher({
     dataDir: opts.dataDir,
-    onChange: () =>
+    statusDir,
+    intervalMs: opts.watchIntervalMs,
+    onLibraryChange: () =>
       hub.broadcast({ type: "library.changed", cause: "external", at: new Date().toISOString() }),
+    onPlansChange: () =>
+      hub.broadcast({ type: "plan.changed", cause: "external", at: new Date().toISOString() }),
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {

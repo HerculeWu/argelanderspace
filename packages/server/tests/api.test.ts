@@ -14,6 +14,7 @@ import { libraryPaths } from "@argelanderspace/core";
 import type { Hono } from "hono";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createApp } from "../src/app.js";
+import { statusDirFor } from "../src/deps.js";
 import { JobRunner } from "../src/jobs.js";
 import {
   collectBroadcasts,
@@ -40,6 +41,7 @@ beforeEach(() => {
   messages = collector.messages;
   app = createApp({
     paths: libraryPaths(dataDir),
+    statusDir: statusDirFor(dataDir),
     makeSources: () => stubSources(),
     pipelines: stubPipelines(),
     runner,
@@ -68,6 +70,16 @@ const patch = async (
 ): Promise<Response> =>
   app.request(path, {
     method: "PATCH",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(body),
+  });
+const put = async (
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<Response> =>
+  app.request(path, {
+    method: "PUT",
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
@@ -273,6 +285,7 @@ describe("CSRF guard (Origin check on mutations)", () => {
     ["POST /api/library/refs", (h) => post("/api/library/refs", { nodeId: "oa:W999" }, h)],
     ["PATCH /api/library/refs", (h) => patch("/api/library/refs", { id: KNOWN_WORK_ID }, h)],
     ["POST /api/library/refresh", (h) => post("/api/library/refresh?offline=true", undefined, h)],
+    ["PUT /api/plans", (h) => put("/api/plans", { version: 1, rev: 0, plans: [] }, h)],
   ];
   for (const [name, call] of cases) {
     test(`${name}: evil Origin → 403`, async () => {

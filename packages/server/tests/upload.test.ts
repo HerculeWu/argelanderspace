@@ -12,6 +12,7 @@ import { libraryPaths, uploadDocId } from "@argelanderspace/core";
 import type { Hono } from "hono";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createApp } from "../src/app.js";
+import { statusDirFor } from "../src/deps.js";
 import { JobRunner } from "../src/jobs.js";
 import {
   collectBroadcasts,
@@ -89,6 +90,7 @@ beforeEach(() => {
   messages = collector.messages;
   app = createApp({
     paths: libraryPaths(dataDir),
+    statusDir: statusDirFor(dataDir),
     makeSources: () => stubSources(),
     pipelines: stubPipelines(),
     runner,
@@ -212,6 +214,7 @@ describe("async flow (new default)", () => {
     const collector = collectBroadcasts();
     const app2 = createApp({
       paths: libraryPaths(dataDir),
+      statusDir: statusDirFor(dataDir),
       makeSources: () => stubSources(),
       pipelines,
       runner,
@@ -259,6 +262,7 @@ describe("?sync=1 (legacy synchronous behavior)", () => {
     };
     const app2 = createApp({
       paths: libraryPaths(dataDir),
+      statusDir: statusDirFor(dataDir),
       makeSources: () => stubSources(),
       pipelines: failing,
       runner,
