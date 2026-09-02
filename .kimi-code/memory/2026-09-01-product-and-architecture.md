@@ -1,8 +1,8 @@
-# 产品形态与架构（2026-09-02 Stage 3.1 落地后修订；取代重构期全部架构/设计文档）
+# 产品形态与架构（2026-09-02 Stage 3.1 落地后修订；2026-09-02 Stage 4 定位升级；取代重构期全部架构/设计文档）
 
 ## 产品是什么
 
-**ArgelanderSpace**（npm 包 `argelanderspace`；repo github.com/HerculeWu/argelanderspace；LICENSE MIT © Wenjie Wu）：单用户科研文献工具——摄入 → 文献库/引文图谱 → 阅读器 → agent 协作。终极目标场景：terminal 里跑 pi-agent 基底的科研助手，webui 做图形化看板 + 阅读原文载体（"不剥夺用户看论文的权利"）。
+**ArgelanderSpace**（npm 包 `argelanderspace`；repo github.com/HerculeWu/argelanderspace；LICENSE MIT © Wenjie Wu）：单用户**科研工作台**，承担用户与 AI agent 协作的 interface——**不只是文献工具**（2026-09-02 用户明确的定位升级，取代"单用户科研文献工具"旧表述）。已落地核心能力 = 文献工具链：摄入 → 文献库/引文图谱 → 阅读器 → agent 协作；Stage 4 计划页面是工作台化第一步。终极目标场景：terminal 里跑 pi-agent 基底的科研助手 + webui 工作台（计划/文献/文档），"不剥夺用户看论文的权利"。
 
 - **摄入（Stage 3.1 起收窄定型）**：arXiv LaTeX 源（含本地 .tex/目录/tarball）→ 统一 Document JSON。**PDF / 出版商 HTML 摄入已隔离出 main**（MinerU OCR、A&A/OUP 适配器等封存于 `ocr-features` 分支，2026-09-01 MS1；反爬/配额/401，~90% 论文 arXiv 可得一致内容；`/images` 的 MinerU 分支同删，存量 PDF 摄入文档的图失效，重摄入恢复）。CLI 收 DOI/出版商 URL → 识别并友好报错指路（不建条目——"未识别源先建条目等上传"是推后事项）。
 - **pandoc ≥3.9 硬下限**（管线入口 `assertPandocVersion`）：旧版剥 DisplayMath 环境外壳 → 公式编号全灭 + 公式削残（机制见 pitfalls）。报错点名版本/路径/shim 指引。README 版本说明 + 安装检验脚本是推后事项（发布前做）。
@@ -11,7 +11,7 @@
 - **存储**：项目级库 `<项目根>/literatures/`（内部 output/library/jobs/input）。cwd 相对、**无向上查找**；解析链 `--data-dir` > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`。全局库复用摄入产物 = 未来方向（未做）。
 - **webui**（`serve` 默认 8000）：文献看板（label 色点——色板 red 重点/amber 待读/green 已精读/blue 方法/violet 灵感，优先级：会话右键 overlay > 持久化 `label` > star 播种；已读标识——标题灰化 + `· 已读`，未读有小蓝点；笔记全文只读 tab）+ 三栏阅读器 + **四级深链接** `/doc/<id>#<anchor>`（⚠️ 锚点 `sec-N`/`fig-N`/`eq-N`/`ref-N` 是管线结构 id，**不是印刷编号**）。活动栏剩 计划/文献/文档 + 底部扩展（"终端/浏览器"空 stub 已于 Stage 3.1 移除）。server 轮询 `literatures/` 指纹广播 `library.changed`，CLI 写入后前端免 F5。
 - **agent 接入（无 MCP，刻意）**：pi 作者明说不支持 MCP（工具 schema 每轮灌上下文、token 税高），原生方式 = CLI + skills。CLI agent 子命令 `search/read/show/ref/note/label/list`；pi skills 三件套 `skills/argelander-*`（symlink 到 `~/.pi/agent/skills/`）。契约：**项目根跑 CLI、不传 `--data-dir`、不读源码回答文献问题**；`search` stderr 打 `hint: N/M works have empty notes`；CLI 打印深链接端口 = `ARGELANDERSPACE_PORT` > config `port` > 8000。pi 验收/日常用 `pi -nc`（不读 context files，防被本 repo 的 memory 协议带跑）。
-- **webui 定位演进（2026-09-02 用户明确，开放方向）**：webui 目标形态是**独立应用**——不与 agent 强绑定、不是纯看板，无 agent 的用户也要能完成全部操作。当前写路径（label 持久化、note 写入等）仍归 CLI/agent，后续 stage 逐步把操作面补进 webui；Stage 4/5 设计遵循此原则。
+- **webui 定位演进（2026-09-02 用户明确，开放方向）**：webui 目标形态是**独立应用**——不与 agent 强绑定、不是纯看板，无 agent 的用户也要能完成全部操作。当前写路径（label 持久化、note 写入等）仍归 CLI/agent，后续 stage 逐步把操作面补进 webui；Stage 4/5 设计遵循此原则。（同日进一步升级为项目级定位：产品 = 科研工作台 + 用户与 agent 协作的 interface，见上文"产品是什么"。）
 
 ## 关键使用语义（用户/agent 都会踩）
 

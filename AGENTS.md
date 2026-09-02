@@ -9,13 +9,13 @@
 
 ## 项目速览
 
-ArgelanderSpace（原 bibgraph）：单用户科研文献工具——arXiv LaTeX 摄入 → 项目级文献库/引文图谱 → React 阅读器 → agent 协作（CLI + pi skills）。产品形态/架构/使用语义详见 `.kimi-code/memory/2026-09-01-product-and-architecture.md`；对外介绍见 `README.md`。
+ArgelanderSpace（原 bibgraph）：单用户**科研工作台**（不只是文献工具）——承担用户与 AI agent 协作的 interface；已落地核心 = arXiv LaTeX 摄入 → 项目级文献库/引文图谱 → React 阅读器 → agent 协作（CLI + pi skills）。产品形态/架构/使用语义详见 `.kimi-code/memory/2026-09-01-product-and-architecture.md`；对外介绍见 `README.md`。
 
 **工程**：pnpm workspace（`packages/`：contracts / core / infra / server / cli / web / app 发布单包）。验收门：`corepack pnpm -r build|test|typecheck` + 根 `corepack pnpm lint`（无 per-package lint script；本机裸 `pnpm` 不在 PATH，必须走 corepack）。**重构期已于 2026-09-01 宣告结束**：bug-for-bug 兼容与 golden 逐字段 diff 基线退役，golden 夹具转为普通回归测试（行为变更由 TS 管线自洽重冻 + 人工抽查）。
 
 **历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01 验收通过、已 push）。
 
-**下一步**：Stage 3.1 已关闭（2026-09-02 手动验收全过；MS0–MS4 + 验收修复 commit 序列见 `2026-09-01-stage3x-roadmap.md` 状态节）。**Stage 4 = 计划页面（webui `计划` stub）+ agent 操作计划页面**——新 session 开工先 grilling 定稿。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目）见同文件推后事项节。远期 Stage 5（论文写作）。
+**下一步**：Stage 3.1 已关闭（2026-09-02 手动验收全过；MS0–MS4 + 验收修复 commit 序列见 `2026-09-01-stage3x-roadmap.md` 状态节）。**Stage 4 = 计划页面**：2026-09-02 grilling 定稿完成（webui 完整可交互 CRUD；agent 操作计划页面拆为 Stage 4.1），定稿/里程碑/流程见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`——按 MS1–MS4 执行，每 MS 四道门 + subagent 对抗审查后自行 commit，push 待用户 smoke 通过。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目）见 `2026-09-01-stage3x-roadmap.md` 推后事项节。远期 Stage 5（论文写作）。
 
 ## 环境
 

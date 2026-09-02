@@ -39,8 +39,8 @@
 ## Stage 3.1 关闭（2026-09-02）
 
 - 手动验收全部通过（含 §3c/3d 复测），re-upload 修复 `bfac790` + memory `9c7d1f3` 已 push。Stage 3.1 正式关闭。
-- 验收遗留两个开放问题（用户拍板记录、**不挡 Stage 4/5**，详见 roadmap 推后事项节）：① re-upload 应推广到**所有条目**——arXiv 先发、后出正式出版版、arXiv 自身也更新，更新通道必须保留；② **webui 定位 = 独立应用**（非纯看板、不与 agent 强绑定，无 agent 用户也要能操作）——影响后续写路径设计（label 持久化/note 写入等现归 CLI）。
+- 验收遗留两个开放问题（用户拍板记录、**不挡 Stage 4/5**，详见 roadmap 推后事项节）：① re-upload 应推广到**所有条目**——arXiv 先发、后出正式出版版、arXiv 自身也更新，更新通道必须保留；② **webui 定位 = 独立应用**（非纯看板、不与 agent 强绑定，无 agent 用户也要能操作）——影响后续写路径设计（label 持久化/note 写入等现归 CLI）。（② 同日升级为项目级定位：**科研工作台 + 用户与 AI agent 协作的 interface**，取代"文献工具"表述——见 `2026-09-01-product-and-architecture.md`。）
 
 ## 下一步
 
-Stage 4：计划页面（webui `计划` stub）+ agent 操作计划页面——新 session 开工，先 grilling 定稿。远期 Stage 5（论文写作）。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节。
+Stage 4：计划页面——**2026-09-02 grilling 三轮定稿完成、用户确认开工**（webui 完整可交互 CRUD；agent 协作拆 Stage 4.1），定稿/里程碑/流程见 `2026-09-02-stage4-roadmap.md`。远期 Stage 5（论文写作）。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节。

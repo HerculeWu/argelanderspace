@@ -43,8 +43,8 @@
 - **正式发布前**：README 写明 pandoc 版本要求 + 提供安装检验脚本（Q17 用户指定）。
 - **未来 stage**：CLI 收到未识别源时先创建条目、等待用户上传（Q14 用户指定方向）。
 - **re-upload 推广到所有条目**（2026-09-02 验收提出，用户定为**必须保留更新通道**）：场景 = 文章先 arXiv 发布、后有正式出版版、arXiv 自身也会更新——并不罕见。当前实现只给 `upload-` 家族 doc 显示重传按钮（理由：zip 上传到非 upload 文档不会覆盖、而是在 arXiv/latex doc 旁产生并行第二 doc，"替换"预期落空且引入"哪份是正文"歧义；且 `LibraryRef` 只有单一 `doc_id` 可做前缀判断，payload 无 `doc_ids` 列表）。推广时需拍板：zip 对非 upload 文档的语义（替换主 doc / 并行第二 doc + UI 选主）、payload 补 `doc_ids`、已知盲区（先 zip 后 arXiv 摄入的条目主 doc_id 切换后按钮消失）。
-- **webui 独立应用原则**（2026-09-02 用户明确）：webui 目标 = **独立应用**，不是 agent 的看板，无 agent 的用户也要能完成全部操作，不与 agent 强绑定。当前写路径（label 持久化、note 写入等）归 CLI/agent——后续 stage 逐步把操作面补进 webui，Stage 4/5 设计遵循此原则。
-- Stage 4：计划页面（webui `计划` stub）+ agent 操作计划页面。Stage 5：论文写作。
+- **webui 独立应用原则**（2026-09-02 用户明确）：webui 目标 = **独立应用**，不是 agent 的看板，无 agent 的用户也要能完成全部操作，不与 agent 强绑定。当前写路径（label 持久化、note 写入等）归 CLI/agent——后续 stage 逐步把操作面补进 webui，Stage 4/5 设计遵循此原则。（同日升级：该原则已并入项目级定位"科研工作台 + agent 协作 interface"，见 `2026-09-01-product-and-architecture.md`。）
+- Stage 4：计划页面——**2026-09-02 grilling 定稿完成**（webui 完整可交互 CRUD；agent 操作计划页面拆为 Stage 4.1），定稿/里程碑/执行流程见 `2026-09-02-stage4-roadmap.md`。Stage 5：论文写作。
 
 ## 取证存档（2026-09-01 五路子代理，直接采信）
 
