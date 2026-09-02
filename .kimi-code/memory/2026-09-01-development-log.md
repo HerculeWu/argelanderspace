@@ -41,6 +41,12 @@
 - 手动验收全部通过（含 §3c/3d 复测），re-upload 修复 `bfac790` + memory `9c7d1f3` 已 push。Stage 3.1 正式关闭。
 - 验收遗留两个开放问题（用户拍板记录、**不挡 Stage 4/5**，详见 roadmap 推后事项节）：① re-upload 应推广到**所有条目**——arXiv 先发、后出正式出版版、arXiv 自身也更新，更新通道必须保留；② **webui 定位 = 独立应用**（非纯看板、不与 agent 强绑定，无 agent 用户也要能操作）——影响后续写路径设计（label 持久化/note 写入等现归 CLI）。（② 同日升级为项目级定位：**科研工作台 + 用户与 AI agent 协作的 interface**，取代"文献工具"表述——见 `2026-09-01-product-and-architecture.md`。）
 
+## Stage 4（2026-09-02）：计划页面
+
+- 设计 grilling 三轮 Q1–Q17 拍板（定稿 `2026-09-02-stage4-roadmap.md`）：两层 plans→tasks、plan.due 必填/task.due 可选（deadline 语义）、聚焦=pin+派生组、时间线只读、链接只到 doc_id、note markdown+数学（编辑/展示分离）、粗粒度 GET/PUT+rev 乐观锁、`status/plans.json` 与 literatures 平级。**定位升级同步全 memory：产品 = 科研工作台 + 用户与 AI agent 协作的 interface**（取代"文献工具"）。
+- 执行：MS1 `eea2c9c`（contracts+core plans store）→ MS2 `2747197`（server GET/PUT+planLock+watcher 双子指纹）→ MS3 `84ed5ec`（web 全家桶：列表/看板/时间线/聚焦/抽屉/弹窗复用/@dnd-kit/marked+mdWithMath + landing 改计划页）→ MS4（smoke 手册 429 行）。**新流程首航**：每 MS 四道门 + subagent 独立对抗审查后自行 commit（用户授权，不逐次问）。审查战绩：MS1 1 阻断（WS union 打断 web 编译）、MS2 0 阻断（15 项 boot 对抗全过）、MS3 3 阻断（mdWithMath 腐蚀两轮——code/货币/URL、IME Enter 误提交、noop 拖拽死代码）、MS4 0 阻断（~40 处手册文案逐字核对）。测试 325→**444 绿**（web 44→102）。
+- **待用户手动 smoke**（`docs/manual-test-stage4.md` §0-12）；push 待 smoke 通过后确认。
+
 ## 下一步
 
-Stage 4：计划页面——**2026-09-02 grilling 三轮定稿完成、用户确认开工**（webui 完整可交互 CRUD；agent 协作拆 Stage 4.1），定稿/里程碑/流程见 `2026-09-02-stage4-roadmap.md`。远期 Stage 5（论文写作）。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节。
+Stage 4.1：agent 操作计划页面（CLI/skills 读写 `status/plans.json`；数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数）。远期 Stage 5（论文写作）。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节。

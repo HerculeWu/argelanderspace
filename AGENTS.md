@@ -15,7 +15,7 @@ ArgelanderSpace（原 bibgraph）：单用户**科研工作台**（不只是文�
 
 **历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01 验收通过、已 push）。
 
-**下一步**：Stage 3.1 已关闭（2026-09-02 手动验收全过；MS0–MS4 + 验收修复 commit 序列见 `2026-09-01-stage3x-roadmap.md` 状态节）。**Stage 4 = 计划页面**：2026-09-02 grilling 定稿完成（webui 完整可交互 CRUD；agent 操作计划页面拆为 Stage 4.1），定稿/里程碑/流程见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`——按 MS1–MS4 执行，每 MS 四道门 + subagent 对抗审查后自行 commit，push 待用户 smoke 通过。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目）见 `2026-09-01-stage3x-roadmap.md` 推后事项节。远期 Stage 5（论文写作）。
+**下一步**：**Stage 4 计划页面 MS1–MS4 已全部 landed**（2026-09-02；定稿/里程碑/审查记录见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`）——**待用户手动 smoke**（清单 = `docs/manual-test-stage4.md`），push 待 smoke 通过后确认。Stage 3.1 已关闭（commit 序列见 `2026-09-01-stage3x-roadmap.md` 状态节）。之后：**Stage 4.1 = agent 操作计划页面**（CLI/skills 读写 `status/plans.json`，数据层已预留稳定 id/pretty JSON/watcher/plan.changed）。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目）见 `2026-09-01-stage3x-roadmap.md` 推后事项节。远期 Stage 5（论文写作）。
 
 ## 环境
 
