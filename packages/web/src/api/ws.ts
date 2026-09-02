@@ -5,15 +5,17 @@ import type { Job, WsServerMessage } from "@argelanderspace/contracts";
 //
 // Protocol (server → client JSON frames): `hello` (job-table snapshot on
 // connect), `job.created|progress|done|failed` (full job each time),
-// `library.changed`, and `plan.changed` (Stage 4; listeners wired in MS3).
+// `library.changed`, and `plan.changed` (Stage 4).
 // Reconnects with exponential backoff (1s → 2s → … → 15s)
 // so a server restart silently re-subscribes.
 
 type JobListener = (job: Job, event: string) => void;
 type LibraryListener = () => void;
+type PlanListener = () => void;
 
 const jobListeners = new Set<JobListener>();
 const libraryListeners = new Set<LibraryListener>();
+const planListeners = new Set<PlanListener>();
 
 const RETRY_MAX_MS = 15000;
 
@@ -36,7 +38,7 @@ function dispatch(msg: WsServerMessage): void {
   } else if (msg.type === "library.changed") {
     for (const cb of libraryListeners) cb();
   } else if (msg.type === "plan.changed") {
-    // plan listeners are wired in MS3
+    for (const cb of planListeners) cb();
   } else {
     for (const cb of jobListeners) cb(msg.job, msg.type);
   }
@@ -96,5 +98,14 @@ export function onLibraryChanged(cb: LibraryListener): () => void {
   ensureStarted();
   return () => {
     libraryListeners.delete(cb);
+  };
+}
+
+/** Subscribe to plan mutations (`PUT /api/plans` or an external plans.json write). */
+export function onPlanChanged(cb: PlanListener): () => void {
+  planListeners.add(cb);
+  ensureStarted();
+  return () => {
+    planListeners.delete(cb);
   };
 }

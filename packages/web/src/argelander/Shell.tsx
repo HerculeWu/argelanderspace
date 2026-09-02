@@ -8,6 +8,7 @@ import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
 import { LibraryView } from "../library/LibraryView";
+import { PlanView } from "../plan/PlanView";
 
 interface NavItem {
   k: string;
@@ -18,7 +19,7 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { k: "plan", ic: "telescope", label: "计划", grp: "core", stub: true },
+  { k: "plan", ic: "telescope", label: "计划", grp: "core" },
   { k: "library", ic: "library", label: "文献", grp: "core" },
   { k: "doc", ic: "file-text", label: "文档", grp: "core" },
 ];
@@ -45,7 +46,7 @@ export function Shell() {
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
   const clearPendingAnchor = useCallback(() => setPendingAnchor(null), []);
 
-  const [panes, setPanes] = useState<Pane[]>([{ id: 1, view: "library", size: 1 }]);
+  const [panes, setPanes] = useState<Pane[]>([{ id: 1, view: "plan", size: 1 }]);
   const [activeId, setActiveId] = useState(1);
   const nextId = useRef(2);
   const panesRef = useRef<HTMLDivElement>(null);
@@ -203,6 +204,8 @@ export function Shell() {
 
   const renderView = (p: Pane) => {
     switch (p.view) {
+      case "plan":
+        return <PlanView />;
       case "library":
         return <LibraryView />;
       case "doc":
