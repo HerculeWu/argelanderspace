@@ -51,6 +51,11 @@
 - **smoke 第 3 轮（2026-09-02）**：用户确认列表拦截生效，但①问看板跨列不拦截是否故意——**是**（定稿 Q11 不对称语义：列表拖拽只调序、看板拖拽即改状态，手册 §5b/§12-3 已写精确）；②**看不到禁落光标**——真 bug：no-drop 打在目标组元素上，但拖拽中被拖行恒覆盖指针正下方，浏览器显示最上层元素的光标，组级规则实际不可见。修复（`8f5338d`，审查 0 阻断）：`onDragMove` 跟踪指针是否离开本组 → root `plan-nodrop-active` → **禁落光标打到被拖行及其子元素**（含状态钮/pin 钮——全局 `button{cursor:pointer}` 的声明值需 `*` 选择器覆盖，审查抓的窄残余）。真实 Chrome 验证：本组内 cursor=pointer、越界=no-drop、drop 后复位。测试 449（mid-drag 用例原地扩展）。**拖拽教训沉淀**：dnd-kit 拖拽中"指针下的元素"永远是被拖行——任何想给用户看的 hover 反馈（光标/高亮）必须打到被拖行或用 overlay，打在落点目标上不可见。
 - **Stage 4 关闭（2026-09-02）**：smoke 三轮全部通过，用户确认收尾，全部 push origin main。commit 序列见 `2026-09-02-stage4-roadmap.md` 状态节。
 
+## Stage 5 重定义（2026-09-04，用户拍板）
+
+- 原 Stage 5（论文写作）**删除**，不顺延。新 **Stage 5 = LaTeX 解析线路重构（IR 化）**：废弃 pandoc/mupdf，改走 latexmk 编译产物（.aux/.bbl/.toc/.fls + 自写插桩 .sty 的 jsonl）+ unified-latex 源码树的双通道融合出新 IR；**IR 即存储形式**，streamView 与 agent markdown 均从 IR 渲染；UX 不增不减；编号改**印刷忠实**（未编号公式不再带自产 (N)）。
+- grilling 三轮 Q1–Q13 全锁定（2026-09-04 用户确认），定稿/里程碑/取证存档见 `2026-09-04-stage5-roadmap.md`。prototype（原 /media/wwu/MyPassport/texToHTML）已全量转移至 `/tmp/texToHTML` 备参考（⚠️ 其自身 git 未追踪核心代码，/tmp 副本可能是孤本且会被系统清理）。
+
 ## 下一步
 
-**Stage 5：论文写作**——下一 session 开工，先 grilling 定稿（用户 2026-09-02 指定）。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**——数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`（task.due 可晚于 plan.due 等）。
+**Stage 5 执行**：MS1 编译执行层 → MS2 融合层+golden 重冻 → MS3 存储切换+旧代码全删 → MS4 收尾（切分/流程详见定稿）。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**——数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`（task.due 可晚于 plan.due 等）。

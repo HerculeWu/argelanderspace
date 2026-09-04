@@ -15,7 +15,7 @@ ArgelanderSpace（原 bibgraph）：单用户**科研工作台**（不只是文�
 
 **历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01）→ Stage 3.1 摄入收窄 LaTeX + zip 上传 + 公式/表格修复（2026-09-02）→ Stage 4 计划页面（2026-09-02 关闭）。
 
-**下一步**：**Stage 5 = 论文写作**——下一 session 开工，先 grilling 定稿（用户 2026-09-02 指定）。Stage 4 已关闭（MS1–MS4 + smoke 三轮修复全过、已 push；定稿/里程碑/审查记录见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`）。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**（数据层已预留：稳定 id/pretty JSON/watcher/plan.changed/CRUD 纯函数）。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目、**task.due 可晚于 plan.due**）见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`。
+**下一步**：**Stage 5 = LaTeX 解析线路重构（IR 化）**——废弃 pandoc/mupdf，latexmk 编译产物 + unified-latex 源码树双通道融合出新 IR，**IR 即存储**，streamView/agent 内容均从 IR 渲染；UX 不增不减；编号改印刷忠实。2026-09-04 grilling 定稿（三轮 Q1–Q13，用户确认），详见 `.kimi-code/memory/2026-09-04-stage5-roadmap.md`。**原论文写作 stage 已删除（不顺延）**。Stage 4 已关闭（MS1–MS4 + smoke 三轮修复全过、已 push；定稿/里程碑/审查记录见 `.kimi-code/memory/2026-09-02-stage4-roadmap.md`）。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**（数据层已预留：稳定 id/pretty JSON/watcher/plan.changed/CRUD 纯函数）。开放问题/推后事项（**全条目 re-upload**、**webui 独立应用原则**、README pandoc 版本说明 + 检验脚本、CLI 未识别源建条目、**task.due 可晚于 plan.due**、**tikz/pgfplots 不渲染**）见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`。
 
 ## 环境
 
