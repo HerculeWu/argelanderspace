@@ -11,6 +11,8 @@
 
 **2026-09-04：MS1 对抗审查一轮（BLOCK → 全部修复，四门复测全绿，未 commit）。** B1 hyperref+`\tag` 击穿插桩（`\Hy@make@anchor` 在 `\protected@edef` 内爆炸）→ 捕获 group 内 `\let\Hy@make@anchor\@empty` + `\protected@xdef`，新增 hyperref 回归 fixture（冻结 + 真编译）；B2 预扫描误伤注释行 → 逐行剥注释 + 整文匹配（多行 `\usepackage{% minted}` 仍拒）。非阻塞：N1 伪 mathnum（含宏号）parser 层丢弃+计数；N2 `\tag*` 不捕获=已知限制；N3 事件加 `file` 字段（`\CurrentFile`，主/子文件可靠、生成文件回读滞留主文件名——去重不可靠，已文档化）；N4 裸 DOI 需后缀含字母；N5/N6 交叉注释+缺失资产测试。详见 `2026-09-04-stage5-ms1.md` 审查修复记录节。
 
+**2026-09-04：MS1 landed + push 前关闭。** 复核 APPROVE（独立 fixture 复验 B1：事件值与 pdftotext 真值逐一对齐 `(1)(B)(2)(T1)(3)(4)(A*)(5)(6)`；B2 边界全过；两文档行补记：verbatim 过匹配存照、hyperref 下 aux 带 label 的 tag 号有外层花括号 `"{B}"` vs 事件 `"B"`，MS2 join 须剥）。commit：memory `edd8fb6` + MS1 代码 `d91471d`（测试 541→610 左右：core 177/infra 84，真编译用例本机全跑零 skip）。
+
 ## 范围变更（Q8）
 
 原 Stage 5（论文写作）**删除**，不顺延。新 Stage 5 = 重新定义文档解析后的 IR，**IR 即存储形式**，streamView（网页流式渲染）与 agent 内容均从 IR 渲染；**UX 不增不减**；pagedView（prototype 的 SVG 伪 PDF 视图）**不进 repo**，仅为 prototype 开发期验证手段。
