@@ -1,0 +1,7 @@
+{"type":"section","id":"section-000001","name":"section","number":"1","title":"Kernel Only","file":"main.tex","line":5,"page":"1"}
+{"type":"label","id":"label-000001","key":"sec:k","file":"main.tex","line":6,"page":"1"}
+{"type":"citation","id":"cite-000001","keys":["knuth1984texbook"],"file":"main.tex","line":9,"page":"1"}
+{"type":"label","id":"label-000002","key":"eq:k","file":"main.tex","line":11,"page":"1"}
+{"type":"mathnum","id":"math-000001","env":"equation","number":"1","file":"main.tex","line":11,"page":"1"}
+{"type":"mathnum","id":"math-000002","env":"equation","number":"2","file":"main.tex","line":12,"page":"1"}
+{"type":"mathnum","id":"math-000003","env":"eqnarray","number":"3","file":"main.tex","line":13,"page":"1"}

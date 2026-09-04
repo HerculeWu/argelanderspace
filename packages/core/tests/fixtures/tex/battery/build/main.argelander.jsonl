@@ -1,0 +1,26 @@
+{"type":"section","id":"section-000001","name":"section","number":"1","title":"Introduction","file":"main.tex","line":13,"page":"1"}
+{"type":"label","id":"label-000001","key":"sec:intro","file":"main.tex","line":14,"page":"1"}
+{"type":"citation","id":"cite-000001","keys":["knuth1984texbook"],"file":"main.tex","line":16,"page":"1"}
+{"type":"citation","id":"cite-000002","keys":["lamport1994latex"],"file":"main.tex","line":16,"page":"1"}
+{"type":"citation","id":"cite-000003","keys":["dijkstra1968letters"],"file":"main.tex","line":17,"page":"1"}
+{"type":"citation","id":"cite-000004","keys":["knuth1984texbook"],"file":"main.tex","line":18,"page":"1"}
+{"type":"section","id":"section-000002","name":"subsection","number":"1.1","title":"Background","file":"main.tex","line":20,"page":"1"}
+{"type":"label","id":"label-000002","key":"sec:background","file":"main.tex","line":21,"page":"1"}
+{"type":"section","id":"section-000003","name":"section","number":"2","title":"Math battery","file":"main.tex","line":32,"page":"1"}
+{"type":"label","id":"label-000004","key":"sec:math","file":"main.tex","line":33,"page":"1"}
+{"type":"mathnum","id":"math-000001","env":"equation","number":"1","file":"main.tex","line":36,"page":"1"}
+{"type":"label","id":"label-000005","key":"eq:a","file":"main.tex","line":36,"page":"1"}
+{"type":"mathnum","id":"math-000002","env":"equation","number":"2","file":"main.tex","line":40,"page":"1"}
+{"type":"mathnum","id":"math-000003","env":"equation","number":"A1","file":"main.tex","line":44,"page":"1"}
+{"type":"label","id":"label-000003","key":"fig:placeholder","file":"main.tex","line":29,"page":"1"}
+{"type":"mathnum","id":"math-000004","env":"align","number":"3","file":"main.tex","line":50,"page":"2"}
+{"type":"label","id":"label-000006","key":"eq:al1","file":"main.tex","line":50,"page":"2"}
+{"type":"mathnum","id":"math-000005","env":"align","number":"X","file":"main.tex","line":50,"page":"2"}
+{"type":"mathnum","id":"math-000006","env":"gather","number":"4","file":"main.tex","line":55,"page":"2"}
+{"type":"mathnum","id":"math-000007","env":"gather","number":"5","file":"main.tex","line":55,"page":"2"}
+{"type":"mathnum","id":"math-000008","env":"multline","number":"6","file":"main.tex","line":60,"page":"2"}
+{"type":"mathnum","id":"math-000009","env":"eqnarray","number":"7","file":"main.tex","line":64,"page":"2"}
+{"type":"mathnum","id":"math-000010","env":"eqnarray","number":"8","file":"main.tex","line":65,"page":"2"}
+{"type":"citation","id":"cite-000005","keys":["lamport1994latex"],"file":"child.tex","line":1,"page":"2"}
+{"type":"label","id":"label-000007","key":"child:mark","file":"child.tex","line":2,"page":"2"}
+{"type":"mathnum","id":"math-000011","env":"equation","number":"9","file":"child.tex","line":5,"page":"2"}

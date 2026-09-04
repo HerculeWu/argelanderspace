@@ -15,6 +15,10 @@
 // stages; pandoc / rasterization / arXiv acquisition are injected ports
 // (packages/core/src/pipelines/latex/ports.ts), wired by infra.
 //
+// pipelines/tex/ (Stage 5, parallel build): the latexmk compile-execution
+// ports and the pure parsers for the engine-agnostic compiler artifacts
+// (.aux/.bbl/.toc/.fls + .argelander.jsonl event stream).
+//
 // plans/: the plan-page store (Stage 4) — plans.json load/save (atomic write,
 // optimistic-lock rev), id generation, and the pure CRUD helpers.
 //
@@ -49,4 +53,6 @@ export * from "./pipelines/latex/pipeline.js";
 export * from "./pipelines/latex/ports.js";
 export * from "./pipelines/latex/references.js";
 export * from "./pipelines/latex/walk.js";
+export * from "./pipelines/tex/facts/index.js";
+export * from "./pipelines/tex/ports.js";
 export * from "./plans/store.js";

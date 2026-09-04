@@ -1,0 +1,20 @@
+\documentclass[twocolumn]{article}
+
+\begin{document}
+
+\section{Kernel Only}
+\label{sec:k}
+
+No amsmath and no natbib here: the kernel adapters run instead. A kernel
+citation \cite{knuth1984texbook}, then math through the kernel
+\texttt{\char`\\@eqnnum} path:
+\begin{equation}\label{eq:k} y=x^2 \end{equation}
+\begin{equation} z=w \end{equation}
+\begin{eqnarray} a&=&b \nonumber\\ c&=&d \end{eqnarray}
+Unnumbered: \[ q=0 \]
+
+\begin{thebibliography}{9}
+\bibitem{knuth1984texbook} D.~E. Knuth, \emph{The TeXbook}, 1984.
+\end{thebibliography}
+
+\end{document}

@@ -1,0 +1,343 @@
+%% argelander.sty — observational TeX instrumentation for ArgelanderSpace
+%% Stage 5 (roadmap Q10/Q11; blueprint: /tmp/texToHTML
+%% src/instrumentation/argelander-test.sty, extended with the mathnum
+%% event family; the dvisvgm bbox specials of the prototype are dropped —
+%% they only served its pagedView, which is out of scope).
+%%
+%% Loaded via a generated wrapper (\RequirePackage before \documentclass).
+%% It patches NOTHING at load time; every patch is applied inside
+%% \AddToHook{begindocument/end}, i.e. after class and user packages have
+%% finished their own \AtBeginDocument setup.
+%%
+%% Backend adapters:
+%%   - citations: natbib loaded → patch the common dispatch layer
+%%                \@citex[#1][#2]{#3} (all of \cite/\citep/\citet, starred
+%%                and capital forms, funnel through \NAT@citetp → \@citex);
+%%                otherwise the kernel adapter \@citex[#1]#2.
+%%   - labels:    \label plus amsmath's \ltx@label display path.
+%%   - sections:  \@sect (numbered section/subsection; starred forms use
+%%                \@ssect and are out of scope).
+%%   - mathnum:   every printed display-math number. Kernel \@eqnnum when
+%%                amsmath is absent (equation/eqnarray); amsmath \tagform@
+%%                otherwise (amsmath redefines \@eqnnum to call \tagform@,
+%%                so equation/eqnarray/align/gather/multline/flalign all
+%%                funnel through it). The \tagform@ wrapper skips measuring
+%%                passes (\ifmeasuring@) and non-display \tagform@ users
+%%                (\eqref/\thetag in prose) via an environment whitelist on
+%%                \@currenvir. The reported number is the \tagform@
+%%                argument: \theequation for counter rows, the literal tag
+%%                text for \tag{...} (which does not advance the counter).
+%%                Capture is done in a group with hyperref's
+%%                \Hy@make@anchor neutralized — hyperref wraps \tag values
+%%                in it, and its \Hy@raisedlink machinery explodes inside
+%%                a \protected@edef (MS1 review, B1).
+%%
+%% Each event is one JSON line in \jobname.argelander.jsonl, written with
+%% \protected@write (expands its text now — \inputlineno, \CurrentFile and
+%% the id freeze at event time — while \thepage resolves at shipout). Ids
+%% are stable, per-family, zero-padded: cite-000001, label-000001,
+%% section-000001, math-000001.
+%%
+%% KNOWN LIMITS (MS2 must filter defensively):
+%%   - \tag*{X} routes through \maketag@@@, not \tagform@: starred tags
+%%     print a number we do NOT capture (deliberate — patching more of
+%%     amsmath is not worth the interference risk).
+%%   - \eqref/\tag{...\eqref...} INSIDE a display env passes the whitelist
+%%     and emits a mathnum event whose "number" is an unexpanded macro
+%%     string (contains a backslash); the events parser drops these.
+%%     Since ids are assigned at TeX-event time, filtered events leave id
+%%     gaps in the parsed stream — never assume contiguity.
+%%   - "file" is \CurrentFile: correct for the master file and \input /
+%%     \include children, but STALE (master file name) while generated
+%%     files are read back (\listoffigures & friends use \@starttoc →
+%%     \@input → primitive \@@input without file-hook bookkeeping). A
+%%     \cite inside a \caption therefore fires twice when \listoffigures
+%%     is present — once with the caption's source line, once with a line
+%%     number pointing into the .lof; both carry the master's file name.
+%%
+%% Interference profile: only whatsits are inserted (\write nodes); no
+%% box/glue/counter changes. Verified property (standing test): an
+%% instrumented compile and a clean compile produce a byte-identical .aux
+%% and the same exit status. Whatsits can in principle interact with line
+%% breaking in exotic constructs, so "zero layout side effects" is a claim
+%% about the tested corpus, not a theorem. Missing patch targets degrade
+%% to package warnings instead of errors.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{argelander}[2026/09/04 v0.1 ArgelanderSpace instrumentation]
+
+%% ---------------------------------------------------------------------
+%% jsonl output stream (own stream, never touches \@auxout).
+%% ---------------------------------------------------------------------
+\newwrite\argelander@out
+\immediate\openout\argelander@out=\jobname.argelander.jsonl\relax
+
+%% ---------------------------------------------------------------------
+%% Event counters and stable IDs.
+%% ---------------------------------------------------------------------
+\newcount\argelander@citecount
+\newcount\argelander@labelcount
+\newcount\argelander@sectioncount
+\newcount\argelander@mathcount
+
+%% Zero-pad a count register to 6 digits. Conditionals are safe inside the
+%% \edef performed by \protected@write.
+\def\argelander@padnum#1{%
+  \ifnum#1<10 00000%
+  \else\ifnum#1<100 0000%
+  \else\ifnum#1<1000 000%
+  \else\ifnum#1<10000 00%
+  \else\ifnum#1<100000 0%
+  \fi\fi\fi\fi\fi
+  \number#1}
+
+%% ---------------------------------------------------------------------
+%% Key-list → JSON array fragment ("a","b"). Spaces are zapped first
+%% (bib keys cannot contain spaces). Keys are assumed free of `"` and
+%% `\` (standard bibkey charset).
+%% ---------------------------------------------------------------------
+\def\argelander@addkey#1{%
+  \ifx\argelander@keysjson\@empty
+    \xdef\argelander@keysjson{"#1"}%
+  \else
+    \xdef\argelander@keysjson{\argelander@keysjson,"#1"}%
+  \fi}
+\def\argelander@buildkeys#1{%
+  \edef\argelander@keylist{\zap@space#1 \@empty}%
+  \let\argelander@keysjson\@empty
+  \@for\argelander@key:=\argelander@keylist\do{%
+    \expandafter\argelander@addkey\expandafter{\argelander@key}}}
+
+%% ---------------------------------------------------------------------
+%% JSON string escaping. Section titles (and \tag values) may contain
+%% arbitrary user macros; \detokenize-style stringification turns them into
+%% literal backslash characters, which are INVALID JSON escapes (\c, \m,
+%% ...). Escape `\` → `\\` and `"` → `\"` on the stringified value. The
+%% result lands in \argelander@escjson (catcode-12 chars, safe to write).
+%% ---------------------------------------------------------------------
+%% mathnum: the display-math environments whose printed numbers we record.
+%% (\eqref/\thetag also call \tagform@ but run in "document" or other
+%% non-math environments, so the whitelist excludes them.)
+\ExplSyntaxOn
+\str_new:N \l__argelander_esc_str
+%% The search/replacement args of \str_replace_all are NOT expanded in the
+%% n signature, so \c_backslash_str must be force-expanded via an e variant.
+\cs_generate_variant:Nn \str_replace_all:Nnn { Nee }
+\cs_new_protected:Npn \argelander@escapejson #1
+  {
+    \str_set:Nn \l__argelander_esc_str {#1}
+    \str_replace_all:Nee \l__argelander_esc_str
+      { \c_backslash_str } { \c_backslash_str \c_backslash_str }
+    \str_replace_all:Nnn \l__argelander_esc_str
+      { " } { \" }
+    \tl_set:NV \argelander@escjson \l__argelander_esc_str
+  }
+\clist_const:Nn \c__argelander_mathenvs_clist
+  { equation, align, gather, multline, flalign, alignat, eqnarray }
+\cs_generate_variant:Nn \clist_if_in:NnTF { NV }
+\cs_new_protected:Npn \argelander_if_mathenv:TF #1 #2
+  { \clist_if_in:NVTF \c__argelander_mathenvs_clist \@currenvir {#1} {#2} }
+%% letters-only alias so the LaTeX2e part of this file can call it
+\cs_new_eq:NN \argelanderIfMathenvTF \argelander_if_mathenv:TF
+\ExplSyntaxOff
+
+%% ---------------------------------------------------------------------
+%% jsonl emitters. "file" is \CurrentFile (see KNOWN LIMITS above): a file
+%% name never contains a JSON-breaking character in practice.
+%% ---------------------------------------------------------------------
+\def\argelander@cite@event#1{%
+  \global\advance\argelander@citecount\@ne
+  \xdef\argelander@eid{cite-\argelander@padnum\argelander@citecount}%
+  \argelander@buildkeys{#1}%
+  \protected@write\argelander@out{}{%
+    \string{"type":"citation","id":"\argelander@eid",%
+    "keys":[\argelander@keysjson],%
+    "file":"\CurrentFile",%
+    "line":\the\inputlineno,"page":"\thepage"\string}}%
+}
+
+\def\argelander@label@event#1{%
+  \global\advance\argelander@labelcount\@ne
+  \protected@write\argelander@out{}{%
+    \string{"type":"label",%
+    "id":"label-\argelander@padnum\argelander@labelcount",%
+    "key":"\detokenize{#1}",%
+    "file":"\CurrentFile",%
+    "line":\the\inputlineno,"page":"\thepage"\string}}%
+}
+
+%% #1 = sectioning unit name (section/subsection), #2 = title.
+%% Emitted AFTER the original \@sect ran, so \the<name> is the new number.
+\def\argelander@section@event#1#2{%
+  \global\advance\argelander@sectioncount\@ne
+  \argelander@escapejson{#2}%
+  \protected@write\argelander@out{}{%
+    \string{"type":"section",%
+    "id":"section-\argelander@padnum\argelander@sectioncount",%
+    "name":"#1",%
+    "number":"\csname the#1\endcsname",%
+    "title":"\argelander@escjson",%
+    "file":"\CurrentFile",%
+    "line":\the\inputlineno,"page":"\thepage"\string}}%
+}
+
+%% #1 = environment name (\@currenvir). The printed value was frozen into
+%% \argelander@mathnum by \argelander@mathnum@capture.
+\def\argelander@math@event#1{%
+  \global\advance\argelander@mathcount\@ne
+  \protected@write\argelander@out{}{%
+    \string{"type":"mathnum",%
+    "id":"math-\argelander@padnum\argelander@mathcount",%
+    "env":"#1",%
+    "number":"\argelander@escjson",%
+    "file":"\CurrentFile",%
+    "line":\the\inputlineno,"page":"\thepage"\string}}%
+}
+
+%% ---------------------------------------------------------------------
+%% Backend adapters (patched at begindocument/end only).
+%% ---------------------------------------------------------------------
+
+%% natbib: every user command (\cite \citep \citet + starred/capital
+%% forms) reaches \@citex[#1][#2]{#3} (let to \NAT@citex or
+%% \NAT@citexnum by \NAT@set@cites at \AtBeginDocument). #3 = key list.
+\def\argelander@patch@natbib{%
+  \ifx\@citex\@undefined
+    \PackageWarning{argelander}{natbib loaded but \string\@citex\space
+      undefined; citation instrumentation disabled}%
+  \else
+    \let\argelander@orig@citex\@citex
+    \def\@citex[##1][##2]##3{%
+      \argelander@cite@event{##3}%
+      \argelander@orig@citex[##1][##2]{##3}}%
+    \PackageInfo{argelander}{natbib adapter installed on \string\@citex}%
+  \fi}
+
+%% kernel LaTeX: standard \@citex[#1]#2 (latex.ltx). #2 = key list.
+\def\argelander@patch@kernel{%
+  \ifx\@citex\@undefined
+    \PackageWarning{argelander}{\string\@citex\space undefined;
+      citation instrumentation disabled}%
+  \else
+    \let\argelander@orig@citex\@citex
+    \def\@citex[##1]##2{%
+      \argelander@cite@event{##2}%
+      \argelander@orig@citex[##1]{##2}}%
+    \PackageInfo{argelander}{kernel adapter installed on \string\@citex}%
+  \fi}
+
+%% \label: fixed user-level signature, safe to wrap. amsmath math
+%% environments save the kernel \label as \ltx@label at package load time
+%% and route display labels through it (\label@in@display), so patch that
+%% path as well when present — the two paths never overlap.
+\def\argelander@patch@label{%
+  \ifx\label\@undefined
+    \PackageWarning{argelander}{\string\label\space undefined;
+      label instrumentation disabled}%
+  \else
+    \let\argelander@orig@label\label
+    \def\label##1{%
+      \argelander@label@event{##1}%
+      \argelander@orig@label{##1}}%
+  \fi
+  \ifx\ltx@label\@undefined\else
+    \let\argelander@orig@ltxlabel\ltx@label
+    \def\ltx@label##1{%
+      \argelander@label@event{##1}%
+      \argelander@orig@ltxlabel{##1}}%
+  \fi}
+
+%% \@sect{name}{level}{indent}{beforeskip}{afterskip}{style}[toc]{title}
+%% is the common dispatch for numbered \section/\subsection (article &
+%% friends). Starred forms use \@ssect and are out of scope.
+\def\argelander@patch@sections{%
+  \ifx\@sect\@undefined
+    \PackageWarning{argelander}{\string\@sect\space undefined;
+      section instrumentation disabled}%
+  \else
+    \let\argelander@orig@sect\@sect
+    \def\@sect##1##2##3##4##5##6[##7]##8{%
+      \argelander@orig@sect{##1}{##2}{##3}{##4}{##5}{##6}[{##7}]{##8}%
+      \def\argelander@secname{##1}%
+      \def\argelander@sec@section{section}%
+      \def\argelander@sec@subsection{subsection}%
+      \ifx\argelander@secname\argelander@sec@section
+        \argelander@section@event{##1}{##8}%
+      \else
+        \ifx\argelander@secname\argelander@sec@subsection
+          \argelander@section@event{##1}{##8}%
+        \fi
+      \fi}%
+  \fi}
+
+%% ---------------------------------------------------------------------
+%% mathnum: one event per printed display-math number.
+%%
+%% amsmath loaded → patch \tagform@ (its every printed number funnels
+%% there, including \@eqnnum which amsmath redefines to call \tagform@).
+%% The wrapper emits only outside measuring passes and only inside the
+%% numbered display environments, so \eqref/\thetag (which call \tagform@
+%% in prose) do not leak events.
+%%
+%% amsmath absent → patch the kernel \@eqnnum (equation/eqnarray), which
+%% prints (\theequation); no \eqref exists to guard against.
+%%
+%% \argelander@mathnum@capture expands the printed value into
+%% \argelander@mathnum inside a group where hyperref's \Hy@make@anchor is
+%% neutralized: hyperref's amsmath hook wraps every \tag argument in it
+%% (\tagform@{\Hy@make@anchor X}), and its \Hy@raisedlink machinery
+%% explodes inside \protected@edef (MS1 review B1: instrumented compile
+%% broke → silent fallback). The capture is \protected@xdef so the value
+%% survives the group; the tag actually printed still carries the anchor.
+%% ---------------------------------------------------------------------
+\def\argelander@mathnum@capture#1{%
+  \begingroup
+    \ifx\Hy@make@anchor\@undefined\else\let\Hy@make@anchor\@empty\fi
+    \protected@xdef\argelander@mathnum{#1}%
+  \endgroup
+  \expandafter\argelander@escapejson\expandafter{\argelander@mathnum}%
+}
+
+\def\argelander@mathnum@emit#1{%
+  \ifmeasuring@\else
+    \argelanderIfMathenvTF
+      {\argelander@mathnum@capture{#1}%
+       \argelander@math@event{\@currenvir}}%
+      {}%
+  \fi}
+
+\def\argelander@patch@mathnum{%
+  \ifx\tagform@\@undefined
+    \ifx\@eqnnum\@undefined
+      \PackageWarning{argelander}{neither \string\tagform@\space nor
+        \string\@eqnnum\space defined; mathnum instrumentation disabled}%
+    \else
+      \let\argelander@orig@eqnnum\@eqnnum
+      \def\@eqnnum{%
+        \argelander@mathnum@capture{\theequation}%
+        \argelander@math@event{\@currenvir}%
+        \argelander@orig@eqnnum}%
+      \PackageInfo{argelander}{kernel mathnum adapter installed on
+        \string\@eqnnum}%
+    \fi
+  \else
+    \let\argelander@orig@tagform\tagform@
+    \def\tagform@##1{%
+      \argelander@mathnum@emit{##1}%
+      \argelander@orig@tagform{##1}}%
+    \PackageInfo{argelander}{amsmath mathnum adapter installed on
+      \string\tagform@}%
+  \fi}
+
+%% ---------------------------------------------------------------------
+%% Apply all patches after class/packages are fully set up.
+%% ---------------------------------------------------------------------
+\AddToHook{begindocument/end}{%
+  \@ifpackageloaded{natbib}
+    {\argelander@patch@natbib}
+    {\argelander@patch@kernel}%
+  \argelander@patch@label
+  \argelander@patch@sections
+  \argelander@patch@mathnum
+}
+
+\endinput

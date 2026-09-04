@@ -106,6 +106,11 @@ export class AssetResolver {
   }
 
   private outName(src: string, suffix: string): string {
+    // NOTE: duplicated in the Stage 5 parallel implementation
+    // `packages/infra/src/tex/figures.ts` (texFigureOutName) — keep the
+    // naming convention identical until MS3 deletes this file. Both share
+    // the inherited edge that the "/" → "__" encoding is not injective
+    // (`a/b.png` vs `a__b.png` collide); MS1 review N5.
     const rel = relative(this.srcDir, src);
     const relPath = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? rel : basename(src);
     // Encode the source extension so e.g. fig.pdf and fig.png (which the

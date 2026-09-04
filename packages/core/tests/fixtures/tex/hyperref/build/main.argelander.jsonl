@@ -1,0 +1,14 @@
+{"type":"section","id":"section-000001","name":"section","number":"1","title":"Adversarial \\emph {Math} \\& $x^2$ Cases","file":"main.tex","line":6,"page":"1"}
+{"type":"label","id":"label-000001","key":"sec:adv","file":"main.tex","line":7,"page":"1"}
+{"type":"mathnum","id":"math-000001","env":"equation","number":"1","file":"main.tex","line":8,"page":"1"}
+{"type":"label","id":"label-000002","key":"eq:one","file":"main.tex","line":8,"page":"1"}
+{"type":"mathnum","id":"math-000002","env":"equation","number":"B","file":"main.tex","line":10,"page":"1"}
+{"type":"mathnum","id":"math-000003","env":"equation","number":"2","file":"main.tex","line":12,"page":"1"}
+{"type":"label","id":"label-000003","key":"eq:two","file":"main.tex","line":12,"page":"1"}
+{"type":"mathnum","id":"math-000004","env":"equation","number":"3a","file":"main.tex","line":20,"page":"1"}
+{"type":"label","id":"label-000004","key":"eq:sub-a","file":"main.tex","line":20,"page":"1"}
+{"type":"mathnum","id":"math-000005","env":"equation","number":"3b","file":"main.tex","line":21,"page":"1"}
+{"type":"mathnum","id":"math-000006","env":"equation","number":"4","file":"main.tex","line":26,"page":"1"}
+{"type":"label","id":"label-000005","key":"eq:aligned","file":"main.tex","line":26,"page":"1"}
+{"type":"citation","id":"cite-000001","keys":["knuth1984texbook"],"file":"main.tex","line":28,"page":"1"}
+{"type":"citation","id":"cite-000002","keys":["lamport1994latex"],"file":"main.tex","line":28,"page":"1"}

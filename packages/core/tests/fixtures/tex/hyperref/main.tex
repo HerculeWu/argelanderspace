@@ -1,0 +1,33 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage[colorlinks=true]{hyperref}
+\usepackage[numbers]{natbib}
+\begin{document}
+\section{Adversarial \emph{Math} \& $x^2$ Cases}
+\label{sec:adv}
+\begin{equation}\label{eq:one} a=1 \end{equation}
+Tagged (counter must NOT advance):
+\begin{equation} b=2 \tag{B} \end{equation}
+This must print (2):
+\begin{equation}\label{eq:two} c=3 \end{equation}
+Align with ALL rows nonumber (expect ZERO events):
+\begin{align}
+  u &= 1 \nonumber \\
+  v &= 2 \nonumber
+\end{align}
+Subequations:
+\begin{subequations}
+\begin{equation}\label{eq:sub-a} s_1=1 \end{equation}
+\begin{equation} s_2=2 \end{equation}
+\end{subequations}
+Aligned inside equation (expect ONE event):
+\begin{equation}\label{eq:aligned}
+\begin{aligned} p &= 1 \\ q &= 2 \end{aligned}
+\end{equation}
+Eqref in prose: \eqref{eq:one}. Refs: \ref{sec:adv}.
+A citation \citep{knuth1984texbook} and another \citet[see][chap.~2]{lamport1994latex}.
+\begin{thebibliography}{9}
+\bibitem{knuth1984texbook} D.~E. Knuth, \emph{The TeXbook}, 1984.
+\bibitem{lamport1994latex} L. Lamport, \emph{LaTeX}, 1994.
+\end{thebibliography}
+\end{document}

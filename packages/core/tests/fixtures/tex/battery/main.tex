@@ -1,0 +1,75 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{natbib}
+
+\title{Stage 5 Fixture Battery}
+\author{ArgelanderSpace}
+\date{2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Introduction}
+\label{sec:intro}
+
+Intro text cites \citet{knuth1984texbook} and \citep{lamport1994latex},
+plus a starred form \citep*{dijkstra1968letters} and one with notes
+\citep[see][chap.~2]{knuth1984texbook}.
+
+\subsection{Background}
+\label{sec:background}
+
+More text with a figure reference.
+
+\begin{figure}
+  \centering
+  \rule{2cm}{1cm}
+  \caption{A placeholder figure}
+  \label{fig:placeholder}
+\end{figure}
+
+\section{Math battery}
+\label{sec:math}
+
+Labeled equation:
+\begin{equation}\label{eq:a} a^2+b^2=c^2 \end{equation}
+Unlabeled:
+\begin{equation}
+  e^{i\pi}+1=0
+\end{equation}
+Tagged (counter must not advance):
+\begin{equation}
+  x=1 \tag{A1}
+\end{equation}
+Align, three rows, middle nonumber, third tagged:
+\begin{align}
+  u &= 1 \label{eq:al1} \\
+  v &= 2 \nonumber \\
+  w &= 3 \tag{X}
+\end{align}
+Gather:
+\begin{gather}
+  g_1 = 1 \\
+  g_2 = 2
+\end{gather}
+Multline:
+\begin{multline}
+  m = 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12 + 13 + 14 + 15 \\
+    + 16 + 17
+\end{multline}
+Eqnarray:
+\begin{eqnarray}
+  p &=& 1 \\
+  q &=& 2
+\end{eqnarray}
+Unnumbered displays and refs: \[ z = 0 \] and Eq.~\eqref{eq:a},
+\eqref{eq:al1}, plus section~\ref{sec:math}.
+\begin{align*} s &= 1 \end{align*}
+
+\input{child.tex}
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}
