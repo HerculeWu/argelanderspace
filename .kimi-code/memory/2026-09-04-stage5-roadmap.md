@@ -21,6 +21,8 @@
 
 **2026-09-08：MS3b（旧管线全删+依赖清理）完成，四门全绿，未 commit。** 详见 `2026-09-08-stage5-ms3b.md`：`pipelines/latex/`、infra latex{pandoc,pipeline,assets}、infra/pdf、documents{annotate,citations,crossrefs,geom,document}、旧测试套件/旧 golden/孤儿 fixtures 全删；mupdf 依赖+tsup external 移除（**createRequire banner 保留——真消费者是 `ws`，移除实测炸 bundle**）；DocumentSchema/buildDocIr 与两个投影回退点保留至 MS4，两颗旧 golden 转桥接 fixture（`core/tests/fixtures/document-*.json`）。**pandoc shim 退役**（无 shim 全绿）；测试 622→511。
 
+**2026-09-08：MS4a（发布打包修复+文档换代+memory 收尾）完成，四门全绿，未 commit。** app bundle 随包 `dist/argelander.sty`（`copy-assets.mjs`；缺失时插桩静默降级已实测并修复）；npm pack 复验：67 文件、零 mupdf、createRequire banner 在、pristine prefix 摄入带事件流。README/skills/AGENTS.md/web README 换代 pandoc→TeX Live（外部依赖只剩 TeX Live + 可选 dvisvgm）；memory 四件同步（product-and-architecture 管线/存储段重写、pitfalls 增补（stale dist/banner=ws/dvisvgm 传递依赖/插桩资产随包）、development-log Stage 5 执行记录、known-issues subequations 条目关闭）。**MS4b 待做**：存量迁移执行（Q5/Q12）+ 旧形投影回退删除。测试计数持平（511）。
+
 ## 范围变更（Q8）
 
 原 Stage 5（论文写作）**删除**，不顺延。新 Stage 5 = 重新定义文档解析后的 IR，**IR 即存储形式**，streamView（网页流式渲染）与 agent 内容均从 IR 渲染；**UX 不增不减**；pagedView（prototype 的 SVG 伪 PDF 视图）**不进 repo**，仅为 prototype 开发期验证手段。

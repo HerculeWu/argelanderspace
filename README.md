@@ -1,13 +1,13 @@
 # ArgelanderSpace
 
-Ingest research papers into a structured **Document JSON** — section tree,
+Ingest research papers into a structured **render IR** — section tree,
 floats (figures / tables / equations / code / algorithms), a structured
-bibliography, and inline-tokenized citations and cross-references — and manage
+bibliography, and natively segmented citations and cross-references — and manage
 them in a **citation-graph library** with a local **reader workspace** (web UI
 with document reader, force-directed citation graph, and live ingest progress
 over WebSocket).
 
-One ingestion pipeline emits the Document JSON:
+One ingestion pipeline emits the IR:
 
 | Pipeline | Input | Status |
 |---|---|---|
@@ -16,9 +16,15 @@ One ingestion pipeline emits the Document JSON:
 PDF (MinerU OCR) and publisher-HTML ingestion are **in development** — the code
 is archived on the `ocr-features` branch and not part of `main` right now.
 
-Citation/cross-reference resolution is authoritative for LaTeX (`\cite` /
-`\ref`). Figure rasterization uses the official `mupdf` WASM build — no Python
-anywhere.
+Each source tree is compiled in an isolated workspace (latexmk, pdflatex
+first with an automatic xelatex retry) and fused with its own source AST
+(unified-latex): the compiler's artifacts (.aux/.bbl/.toc/.fls plus an
+instrumentation event stream of citations/labels/sections/equation numbers)
+anchor print-faithful numbering — displayed numbers are the paper's true
+printed numbers; unnumbered displays get none. Compile failures surface with
+the error taxonomy and the `!`-line log excerpt. Figures materialize via
+`dvisvgm` to SVG (optional; missing or failed conversions degrade the figure
+gracefully, never the ingest). No Python anywhere.
 
 ArgelanderSpace is a local single-user tool: the server binds `127.0.0.1` and
 there is no authentication. LLM agents integrate through the CLI plus the pi
@@ -27,8 +33,10 @@ skills in `skills/` — see **Agent integration (skills)** below.
 ## Requirements
 
 - **Node.js ≥ 20**
-- Optional: **pandoc** (LaTeX pipeline parsing + MathML→LaTeX), **Ghostscript**
-  (EPS figures in old arXiv sources)
+- **TeX Live** (`latexmk` + `pdflatex`/`xelatex` + `bibtex`/`biber` on PATH) —
+  required for ingest.
+- Optional: **dvisvgm** (vector PDF/EPS figures → SVG; figures degrade without
+  it, ingests still succeed).
 
 ## Quickstart
 
@@ -55,8 +63,10 @@ argelanderspace serve               API + web UI + WebSocket progress  [--port N
 ```
 
 Global option: `--data-dir <dir>` (may appear before or after the subcommand).
-Useful ingest flags: `--no-assets`, `--no-cache`, `--figure-dpi`,
-`-o out.json` (also write the Document JSON to a path).
+Useful ingest flags: `--no-assets` (skip figure materialization), `--no-cache`,
+`-o out.json` (also write the stored IR — a `TexDocIr` document — to a path).
+(`--figure-dpi` is still accepted for compatibility but ignored: figures are
+vector SVG now.)
 
 ## Agent integration (skills)
 
@@ -107,7 +117,7 @@ the CLI and `serve` from the project root). Override with `--data-dir`,
 
 ```
 literatures/
-  output/    one <doc_id>/ per ingested paper: <doc_id>.json + assets/ + fetch caches
+  output/    one <doc_id>/ per ingested paper: <doc_id>.json + src/ + build/ + assets/ + fetch caches
   library/   library.json (source of truth), library.bib, cache/ (graph.json + ads/crossref/openalex)
   jobs/      asynchronous refresh/ingest job records and the upload spool
 ```
@@ -150,31 +160,38 @@ Environment variables:
 ADS additionally reads `~/.ads/dev_key` (the ADS convention), after the env var
 and the config file.
 
-## Output JSON (sketch)
+## Stored IR (sketch)
+
+Each `<doc_id>.json` IS the render IR (`version: 1`) — the same object the web
+reader and the CLI markdown consume:
 
 ```jsonc
 {
-  "doc_id": "arxiv-2501.17225",
-  "source":  { "type": "latex", ... },
-  "meta":    { "title": "...", ... },
-  "structure": [ /* ordered section tree; blocks: paragraph/list/figure/table/
-                    equation/code/algorithm, each with text + citations +
-                    crossrefs */ ],
+  "version": 1,
+  "docId": "arxiv-2501.17225",
+  "title": "...",
+  "source":  { "type": "latex", "origin": "...", "main_tex": "...", "arxiv_id": "..." },
+  "meta":    { "title": "...", "authors": [...], "engine": "pdflatex" },
+  "sections": [ /* ordered section tree with print-faithful numbers; blocks:
+                   paragraph/list/figure/table/equation/code/algorithm with
+                   native text|math|cite|xref segments */ ],
+  "refsManifest": [ /* section + float anchors for the refs manifest */ ],
+  "bib":          [ /* bibliography manifest rows */ ],
   "references": [ { "id": "ref-1", "raw": "...", "authors": [...], "year": 2021,
                     "doi": "10...", "arxiv_id": null, ... } ],
-  "stats":   { "n_sections": 6, "n_citations": 84, ... }
+  "citationsByBlock": { "p-7": ["ref-6"] }
 }
 ```
 
-In-text citations and cross-references are replaced *in place* with inline
-tokens and also recorded structurally:
+In the agent-facing markdown (the `read` command), citations and
+cross-references render as:
 
 | token | meaning |
 |---|---|
-| `[[cite:ref-12]]` | citation → reference `ref-12` |
-| `[[cite:ref-3;ref-4]]` | grouped citation |
-| `[[xref:fig-3]]` / `[[xref:eq-2]]` / `[[xref:sec-5]]` | cross-ref → figure / equation / section |
-| `[[xref:figure-9?]]` | detected but unresolved cross-ref |
+| `[cite: ref-12 | Author Year]` | citation → reference `ref-12` |
+| `[ref: fig-3 | figure | number: 3 | <preview>]` | cross-ref → figure/equation/section |
+| `[ref: figure-9 | unresolved]` | detected but unresolved cross-ref |
+| `[Figure omitted | id: fig-3 | number: 3 | caption: … | path: …]` | a figure/table placeholder |
 
 ## Development
 
@@ -182,13 +199,13 @@ pnpm workspace (use `corepack pnpm`; Node ≥ 20):
 
 | Package | Role |
 |---|---|
-| `packages/contracts` | zod contracts: Document JSON, library payloads, job/WS DTOs |
-| `packages/core` | pure domain logic: documents, latex pipeline, library/graph/planner (no I/O) |
-| `packages/infra` | side-effect adapters: mupdf rasterization, pandoc, ADS/Crossref/OpenAlex, arXiv fetcher, config file |
-| `packages/server` | Hono server: 8 REST endpoints, static SPA, job runner, `/ws` |
+| `packages/contracts` | zod contracts: stored render IR (`TexDocIr`), library payloads, job/WS DTOs |
+| `packages/core` | pure domain logic: the tex ingest pipeline (compile ports, source tree, fusion, IR assembly), library/graph/planner (no I/O) |
+| `packages/infra` | side-effect adapters: latexmk compile + dvisvgm figures, arXiv fetcher, ADS/Crossref/OpenAlex, config file |
+| `packages/server` | Hono server: REST endpoints, static SPA, job runner, `/ws` |
 | `packages/cli` | the commander program (`ingest` / `library build` / `acquire` / `serve`) |
 | `packages/web` | React reader workspace (vite) |
-| `packages/app` | the publishable `argelanderspace` npm package: bundles cli+server+core+infra into one ESM file + the built SPA (mupdf stays an external dependency) |
+| `packages/app` | the publishable `argelanderspace` npm package: bundles cli+server+core+infra into one ESM file + the built SPA + the `argelander.sty` instrumentation asset |
 
 ```bash
 corepack pnpm install
@@ -207,10 +224,12 @@ cd packages/app && npm pack
 
 Testing notes:
 
-- **Golden-file policy**: golden Document JSONs under `tests/golden/` (two
-  arXiv LaTeX papers) are regression fixtures for the TS pipeline. The
-  PDF/HTML goldens and their fixtures moved to the `ocr-features` branch with
-  the OCR pipelines.
+- **Golden-file policy**: frozen stored-IR documents under `tests/golden/tex/`
+  (two arXiv LaTeX papers, re-frozen from real latexmk compiles by the tex
+  pipeline) are regression fixtures; a compiler-free re-run gate replays the
+  fusion half over the frozen compile artifacts. Most fusion/parser unit tests
+  consume frozen compile artifacts and need no TeX toolchain; real-compile
+  tests gate on a `HAVE_LATEXMK`-style availability probe.
 - The pre-migration Python tree (`bibgraph/`, `server/`, `tests/run_tests.py`)
   was removed after the manual smoke test of the TS app (2026-08); it lives on
   in git history.
@@ -218,9 +237,3 @@ Testing notes:
 ## License
 
 MIT (see `LICENSE`; copyright holder: Wenjie Wu).
-
-One dependency is **not** MIT: [`mupdf`](https://www.npmjs.com/package/mupdf)
-is AGPL-3.0-or-later (Artifex, commercial licenses available). It is installed
-as a normal npm dependency — its code is not bundled into this package — the
-same relationship the Python original had with PyMuPDF. If that matters to
-your use, review it before distributing.

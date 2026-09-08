@@ -39,6 +39,6 @@ node packages/cli/dist/bin.js serve --port 8000
 
 ## Endpoints
 - `GET /api/papers` — available doc ids (scans `data/output/`)
-- `GET /api/paper/{id}` — enriched structured JSON
-- `GET /images/{id}/{file}` — a MinerU-extracted image
+- `GET /api/paper/{id}/ir` — the stored render IR (the reader's document model)
+- `GET /images/{id}/{file}` — an ingested figure asset (raster passthrough or dvisvgm-converted SVG)
 - `/ws` — WebSocket: job progress + `library.changed` (see `src/api/ws.ts`)

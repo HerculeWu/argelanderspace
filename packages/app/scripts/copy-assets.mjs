@@ -2,6 +2,11 @@
 //  - the built SPA (packages/web/dist) is copied to dist/web — the server's
 //    import.meta-relative web-dist candidate finds it there in the packed
 //    layout;
+//  - packages/infra/src/tex/argelander.sty is copied to dist/ next to the
+//    bundle — tsup inlines infra's instrument.ts into bin.js, so its
+//    `new URL("./argelander.sty", import.meta.url)` resolves to
+//    dist/argelander.sty (MS4 checkpoint; missing asset = silent
+//    clean-compile fallback that loses the event stream);
 //  - the root README.md / LICENSE are copied to the package root because npm
 //    only auto-includes them from there (both are git-ignored here).
 // The @argelanderspace/web devDependency exists purely so `pnpm -r build`
@@ -21,7 +26,13 @@ const target = join(appRoot, "dist", "web");
 rmSync(target, { recursive: true, force: true });
 cpSync(webDist, target, { recursive: true });
 
+const stySrc = join(repoRoot, "packages", "infra", "src", "tex", "argelander.sty");
+if (!existsSync(stySrc)) {
+  throw new Error("packages/infra/src/tex/argelander.sty is missing");
+}
+copyFileSync(stySrc, join(appRoot, "dist", "argelander.sty"));
+
 for (const name of ["README.md", "LICENSE"]) {
   copyFileSync(join(repoRoot, name), join(appRoot, name));
 }
-console.log("copied dist/web + README.md + LICENSE into packages/app");
+console.log("copied dist/web + dist/argelander.sty + README.md + LICENSE into packages/app");

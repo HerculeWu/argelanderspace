@@ -1,7 +1,7 @@
 {
   "name": "argelanderspace",
   "version": "0.1.0",
-  "description": "Ingest papers (PDF / publisher HTML / arXiv LaTeX) into structured JSON, manage a citation-graph library, and read in a local web workspace.",
+  "description": "Ingest arXiv LaTeX sources into a structured render IR, manage a citation-graph library, and read in a local web workspace.",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -16,7 +16,7 @@
     "papers",
     "citation-graph",
     "arxiv",
-    "pdf",
+    "latex",
     "astronomy"
   ],
   "bin": {

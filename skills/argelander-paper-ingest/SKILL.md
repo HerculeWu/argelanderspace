@@ -29,7 +29,7 @@ Do NOT use this skill to answer questions about a paper — that's `argelander-r
 
 - **The CLI**: run `argelanderspace`. If it is not on PATH, use the built bundle from the repo checkout by absolute path — `node /path/to/repo/packages/app/dist/bin.js` (build once with `corepack pnpm -r build` inside the repo). All examples below write `argelanderspace` — substitute as needed.
 - **Data directory**: one library per project, at `./literatures` under the **project root** (the directory that contains `literatures/`). The default resolves against the *current working directory* with **no upward search**, so **run every CLI command from the project root** — if your shell is somewhere else, `cd` there first. Do **not** pass `--data-dir`; it survives only as an escape hatch for unusual layouts (chain: `--data-dir` flag > `ARGELANDERSPACE_DATA_DIR` env > `config.toml` `data_dir` > `./literatures`). The old `LITERATURE_LIBRARY` env var is dead; do not look for it.
-- **LaTeX pipeline prerequisite**: `pandoc` must be on PATH for arXiv / local-LaTeX ingest.
+- **LaTeX pipeline prerequisite**: **TeX Live** (`latexmk` + `pdflatex`/`xelatex` on PATH) for arXiv / local-LaTeX ingest. `dvisvgm` is optional (vector figures → SVG; figures degrade without it).
 
 ## Inputs the user might give
 
