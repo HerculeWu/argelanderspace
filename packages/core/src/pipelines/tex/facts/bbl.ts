@@ -17,6 +17,8 @@ import { readTexGroup, skipTexWhitespace, texCommandPositions } from "./scan.js"
 export interface TexReferenceFact {
   key: string;
   raw: string;
+  /** The optional \bibitem[label] marker (e.g. "Knuth(1984)"), when present. */
+  label?: string;
   doi?: string;
   arxiv?: string;
   url?: string;
@@ -79,17 +81,26 @@ export function parseBbl(content: string): TexBblFacts {
   const endMark = content.indexOf("\\end{thebibliography}", begin);
   const body = endMark === -1 ? content.slice(begin) : content.slice(begin, endMark);
 
-  const items: { key: string; cmdStart: number; rawStart: number }[] = [];
+  const items: { key: string; label?: string; cmdStart: number; rawStart: number }[] = [];
   for (const at of texCommandPositions(body, "bibitem")) {
     let i = skipTexWhitespace(body, at);
+    let label: string | undefined;
     if (body[i] === "[") {
       const close = body.indexOf("]", i);
       if (close === -1) continue;
+      const inner = body.slice(i + 1, close).trim();
+      if (inner !== "") label = inner;
       i = skipTexWhitespace(body, close + 1);
     }
     const key = readTexGroup(body, i);
     if (!key) continue;
-    items.push({ key: key.content, cmdStart: at - "\\bibitem".length, rawStart: key.end });
+    const item: { key: string; label?: string; cmdStart: number; rawStart: number } = {
+      key: key.content,
+      cmdStart: at - "\\bibitem".length,
+      rawStart: key.end,
+    };
+    if (label !== undefined) item.label = label;
+    items.push(item);
   }
 
   const references = items.map((item, n) => {
@@ -97,6 +108,7 @@ export function parseBbl(content: string): TexBblFacts {
     const rawEnd = next !== undefined ? next.cmdStart : body.length;
     const raw = body.slice(item.rawStart, rawEnd).trim();
     const ref: TexReferenceFact = { key: item.key, raw };
+    if (item.label !== undefined) ref.label = item.label;
     const doi = extractDoi(raw);
     const arxiv = extractArxiv(raw);
     const url = extractUrl(raw);

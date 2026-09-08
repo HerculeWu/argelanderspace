@@ -15,8 +15,8 @@
 %%                and capital forms, funnel through \NAT@citetp → \@citex);
 %%                otherwise the kernel adapter \@citex[#1]#2.
 %%   - labels:    \label plus amsmath's \ltx@label display path.
-%%   - sections:  \@sect (numbered section/subsection; starred forms use
-%%                \@ssect and are out of scope).
+%%   - sections:  \@sect (numbered section/subsection/subsubsection;
+%%                starred forms use \@ssect and are out of scope).
 %%   - mathnum:   every printed display-math number. Kernel \@eqnnum when
 %%                amsmath is absent (equation/eqnarray); amsmath \tagform@
 %%                otherwise (amsmath redefines \@eqnnum to call \tagform@,
@@ -247,8 +247,10 @@
   \fi}
 
 %% \@sect{name}{level}{indent}{beforeskip}{afterskip}{style}[toc]{title}
-%% is the common dispatch for numbered \section/\subsection (article &
-%% friends). Starred forms use \@ssect and are out of scope.
+%% is the common dispatch for numbered \section/\subsection/\subsubsection
+%% (article & friends; subsubsection coverage added in MS2 — the golden
+%% papers need their print numbers). Starred forms use \@ssect and are out
+%% of scope.
 \def\argelander@patch@sections{%
   \ifx\@sect\@undefined
     \PackageWarning{argelander}{\string\@sect\space undefined;
@@ -260,11 +262,16 @@
       \def\argelander@secname{##1}%
       \def\argelander@sec@section{section}%
       \def\argelander@sec@subsection{subsection}%
+      \def\argelander@sec@subsubsection{subsubsection}%
       \ifx\argelander@secname\argelander@sec@section
         \argelander@section@event{##1}{##8}%
       \else
         \ifx\argelander@secname\argelander@sec@subsection
           \argelander@section@event{##1}{##8}%
+        \else
+          \ifx\argelander@secname\argelander@sec@subsubsection
+            \argelander@section@event{##1}{##8}%
+          \fi
         \fi
       \fi}%
   \fi}

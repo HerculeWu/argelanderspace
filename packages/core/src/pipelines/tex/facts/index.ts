@@ -34,6 +34,9 @@ export interface TexFactFiles {
   aux?: string;
   bbl?: string;
   toc?: string;
+  /** .lof/.lot: the compiler's printed figure/table numbers (float truth). */
+  lof?: string;
+  lot?: string;
   fls?: string;
   events?: string;
 }
@@ -43,6 +46,10 @@ export interface TexFacts {
   citations: string[];
   bibcites: Record<string, string>;
   toc: TexTocEntry[];
+  /** .lof entries: figures in printed order with their true numbers. */
+  lof: TexTocEntry[];
+  /** .lot entries: tables in printed order with their true numbers. */
+  lot: TexTocEntry[];
   /** Normalized, deduped INPUT path list from the -recorder .fls. */
   inputs: string[];
   references: TexReferenceFact[];
@@ -61,6 +68,8 @@ export function parseTexFacts(files: TexFactFiles): TexFacts {
     citations: [],
     bibcites: {},
     toc: [],
+    lof: [],
+    lot: [],
     inputs: [],
     references: [],
     events: [],
@@ -72,7 +81,11 @@ export function parseTexFacts(files: TexFactFiles): TexFacts {
     try {
       return { name: basename(path), content: readLossy(path) };
     } catch (err) {
-      facts.warnings.push(`${basename(path)}: unreadable (${String(err)})`);
+      // An absent artifact (no .toc without \tableofcontents, no .bbl without
+      // a bibliography) is normal — silent. Anything else is a real problem.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        facts.warnings.push(`${basename(path)}: unreadable (${String(err)})`);
+      }
       return null;
     }
   };
@@ -84,6 +97,10 @@ export function parseTexFacts(files: TexFactFiles): TexFacts {
       facts.labels = parsed.labels;
       facts.citations = parsed.citations;
       facts.bibcites = parsed.bibcites;
+      // float print-truth: real .lof/.lot files when present, else the
+      // \@writefile records embedded in the .aux
+      facts.lof = parsed.lof;
+      facts.lot = parsed.lot;
     } catch (err) {
       facts.warnings.push(`${aux.name}: .aux parse failed (${String(err)})`);
     }
@@ -106,6 +123,24 @@ export function parseTexFacts(files: TexFactFiles): TexFacts {
       facts.toc = parseToc(toc.content);
     } catch (err) {
       facts.warnings.push(`${toc.name}: .toc parse failed (${String(err)})`);
+    }
+  }
+
+  const lofFile = read(files.lof);
+  if (lofFile) {
+    try {
+      facts.lof = parseToc(lofFile.content); // real file overrides aux-derived
+    } catch (err) {
+      facts.warnings.push(`${lofFile.name}: .lof parse failed (${String(err)})`);
+    }
+  }
+
+  const lotFile = read(files.lot);
+  if (lotFile) {
+    try {
+      facts.lot = parseToc(lotFile.content);
+    } catch (err) {
+      facts.warnings.push(`${lotFile.name}: .lot parse failed (${String(err)})`);
     }
   }
 

@@ -193,9 +193,10 @@ describe("compileTex: real compilations", () => {
         "equation:3a", // subequations
         "equation:3b",
         "equation:4", // aligned-inside-equation: one event
+        "equation:T1", // labeled \tag{T1} (aux brace-strip regression, MS2)
       ]);
       expect(events.filter((e) => e.type === "citation")).toHaveLength(2);
-      expect(events.filter((e) => e.type === "label")).toHaveLength(5);
+      expect(events.filter((e) => e.type === "label")).toHaveLength(6);
       expect(events.every((e) => e.file === "main.tex")).toBe(true);
     }
   );

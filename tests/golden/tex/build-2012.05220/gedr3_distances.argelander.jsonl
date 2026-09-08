@@ -1,0 +1,156 @@
+{"type":"label","id":"label-000001","key":"FirstPage","file":"gedr3_distances.tex","line":100,"page":"1"}
+{"type":"section","id":"section-000001","name":"section","number":"1","title":"Introduction","file":"gedr3_distances.tex","line":100,"page":"1"}
+{"type":"label","id":"label-000002","key":"sec:introduction","file":"gedr3_distances.tex","line":100,"page":"1"}
+{"type":"citation","id":"cite-000001","keys":["2016A&A...595A...1G"],"file":"gedr3_distances.tex","line":103,"page":"1"}
+{"type":"citation","id":"cite-000002","keys":["2016A&A...595A...2G","2018A&A...616A...1G"],"file":"gedr3_distances.tex","line":103,"page":"1"}
+{"type":"citation","id":"cite-000003","keys":["gedr3_release"],"file":"gedr3_distances.tex","line":103,"page":"1"}
+{"type":"citation","id":"cite-000004","keys":["2018A&A...616A...9L"],"file":"gedr3_distances.tex","line":111,"page":"1"}
+{"type":"citation","id":"cite-000005","keys":["2015PASP..127..994B"],"file":"gedr3_distances.tex","line":112,"page":"1"}
+{"type":"citation","id":"cite-000006","keys":["2018AJ....156...58B"],"file":"gedr3_distances.tex","line":118,"page":"2"}
+{"type":"citation","id":"cite-000007","keys":["2016ApJ...832..137A","2018RNAAS...2...51M","2019A&A...628A..94A","2019MNRAS.489.2079L"],"file":"gedr3_distances.tex","line":121,"page":"2"}
+{"type":"citation","id":"cite-000008","keys":["2017MNRAS.472.3979S","2018ApJ...869...83Z"],"file":"gedr3_distances.tex","line":122,"page":"2"}
+{"type":"citation","id":"cite-000009","keys":["2018MNRAS.481.4093S","2020A&A...638A..76Q"],"file":"gedr3_distances.tex","line":123,"page":"2"}
+{"type":"citation","id":"cite-000010","keys":["2019MNRAS.486.3569H"],"file":"gedr3_distances.tex","line":124,"page":"2"}
+{"type":"citation","id":"cite-000011","keys":["2015PASP..127..994B","2016ApJ...832..137A"],"file":"gedr3_distances.tex","line":128,"page":"2"}
+{"type":"citation","id":"cite-000012","keys":["2016ApJ...833..119A"],"file":"gedr3_distances.tex","line":129,"page":"2"}
+{"type":"citation","id":"cite-000013","keys":["2018AJ....156...58B"],"file":"gedr3_distances.tex","line":131,"page":"2"}
+{"type":"citation","id":"cite-000014","keys":["2020PASP..132g4501R"],"file":"gedr3_distances.tex","line":138,"page":"2"}
+{"type":"citation","id":"cite-000015","keys":["2018ascl.soft11018R","gedr3_nearbystars"],"file":"gedr3_distances.tex","line":145,"page":"2"}
+{"type":"citation","id":"cite-000016","keys":["2018PASP..130g4101R"],"file":"gedr3_distances.tex","line":153,"page":"2"}
+{"type":"citation","id":"cite-000017","keys":["2020PASP..132g4501R"],"file":"gedr3_distances.tex","line":153,"page":"2"}
+{"type":"section","id":"section-000002","name":"section","number":"2","title":"Method","file":"gedr3_distances.tex","line":185,"page":"3"}
+{"type":"label","id":"label-000003","key":"sec:method","file":"gedr3_distances.tex","line":185,"page":"3"}
+{"type":"section","id":"section-000003","name":"subsection","number":"2.1","title":"Geometric distance","file":"gedr3_distances.tex","line":206,"page":"3"}
+{"type":"mathnum","id":"math-000001","env":"equation","number":"1","file":"gedr3_distances.tex","line":212,"page":"3"}
+{"type":"label","id":"label-000004","key":"eqn:distpost_geo","file":"gedr3_distances.tex","line":212,"page":"3"}
+{"type":"section","id":"section-000004","name":"subsection","number":"2.2","title":"Likelihood","file":"gedr3_distances.tex","line":218,"page":"3"}
+{"type":"label","id":"label-000005","key":"sec:likelihood","file":"gedr3_distances.tex","line":218,"page":"3"}
+{"type":"mathnum","id":"math-000002","env":"equation","number":"2","file":"gedr3_distances.tex","line":224,"page":"3"}
+{"type":"label","id":"label-000006","key":"eqn:likelihood","file":"gedr3_distances.tex","line":224,"page":"3"}
+{"type":"citation","id":"cite-000018","keys":["lindegren_etal_gedr3_parallaxzp"],"file":"gedr3_distances.tex","line":225,"page":"3"}
+{"type":"citation","id":"cite-000019","keys":["gedr3_release"],"file":"gedr3_distances.tex","line":225,"page":"3"}
+{"type":"citation","id":"cite-000020","keys":["lindegren_etal_gedr3_astrometry"],"file":"gedr3_distances.tex","line":225,"page":"3"}
+{"type":"citation","id":"cite-000021","keys":["lindegren_etal_gedr3_astrometry"],"file":"gedr3_distances.tex","line":226,"page":"3"}
+{"type":"section","id":"section-000005","name":"subsection","number":"2.3","title":"Distance prior","file":"gedr3_distances.tex","line":231,"page":"3"}
+{"type":"label","id":"label-000007","key":"sec:distance_prior","file":"gedr3_distances.tex","line":231,"page":"3"}
+{"type":"mathnum","id":"math-000003","env":"equation","number":"3","file":"gedr3_distances.tex","line":252,"page":"3"}
+{"type":"label","id":"label-000010","key":"eqn:GGDprior","file":"gedr3_distances.tex","line":252,"page":"3"}
+{"type":"label","id":"label-000009","key":"fig:GGDprior_fits","file":"gedr3_distances.tex","line":239,"page":"4"}
+{"type":"label","id":"label-000012","key":"fig:GGDprior_median_sky","file":"gedr3_distances.tex","line":265,"page":"4"}
+{"type":"section","id":"section-000006","name":"subsection","number":"2.4","title":"Photogeometric distance","file":"gedr3_distances.tex","line":277,"page":"4"}
+{"type":"label","id":"label-000013","key":"sec:photogeometric_distance","file":"gedr3_distances.tex","line":277,"page":"4"}
+{"type":"mathnum","id":"math-000004","env":"equation","number":"4","file":"gedr3_distances.tex","line":293,"page":"4"}
+{"type":"label","id":"label-000016","key":"eqn:continuity","file":"gedr3_distances.tex","line":293,"page":"4"}
+{"type":"citation","id":"cite-000022","keys":["gedr3_release"],"file":"gedr3_distances.tex","line":296,"page":"4"}
+{"type":"label","id":"label-000015","key":"fig:mockCQD","file":"gedr3_distances.tex","line":285,"page":"5"}
+{"type":"citation","id":"cite-000023","keys":["gedr3_release"],"file":"gedr3_distances.tex","line":301,"page":"5"}
+{"type":"mathnum","id":"math-000005","env":"equation","number":"5","file":"gedr3_distances.tex","line":306,"page":"5"}
+{"type":"label","id":"label-000017","key":"eqn:distpost_unnormalized","file":"gedr3_distances.tex","line":306,"page":"5"}
+{"type":"citation","id":"cite-000024","keys":["lindegren_etal_gedr3_astrometry"],"file":"gedr3_distances.tex","line":307,"page":"5"}
+{"type":"mathnum","id":"math-000006","env":"alignat","number":"6","file":"gedr3_distances.tex","line":313,"page":"5"}
+{"type":"label","id":"label-000018","key":"eqn:distpost_part","file":"gedr3_distances.tex","line":313,"page":"5"}
+{"type":"mathnum","id":"math-000007","env":"alignat","number":"7","file":"gedr3_distances.tex","line":324,"page":"5"}
+{"type":"label","id":"label-000019","key":"eqn:distpost_unnormalized_2","file":"gedr3_distances.tex","line":324,"page":"5"}
+{"type":"section","id":"section-000007","name":"subsection","number":"2.5","title":"\\QG \\ prior","file":"gedr3_distances.tex","line":330,"page":"5"}
+{"type":"label","id":"label-000020","key":"sec:QG_prior","file":"gedr3_distances.tex","line":330,"page":"5"}
+{"type":"label","id":"label-000022","key":"fig:QGmodels1","file":"gedr3_distances.tex","line":336,"page":"6"}
+{"type":"label","id":"label-000023","key":"fig:QGmodels2","file":"gedr3_distances.tex","line":344,"page":"6"}
+{"type":"citation","id":"cite-000025","keys":["riello_etal_gedr3_photometry"],"file":"gedr3_distances.tex","line":366,"page":"7"}
+{"type":"section","id":"section-000008","name":"subsection","number":"2.6","title":"Posterior sampling and summary","file":"gedr3_distances.tex","line":371,"page":"7"}
+{"type":"label","id":"label-000024","key":"sec:sampling","file":"gedr3_distances.tex","line":371,"page":"7"}
+{"type":"section","id":"section-000009","name":"subsubsection","number":"2.6.1","title":"Markov Chain Monte Carlo","file":"gedr3_distances.tex","line":387,"page":"7"}
+{"type":"label","id":"label-000025","key":"sec:MCMC","file":"gedr3_distances.tex","line":387,"page":"7"}
+{"type":"section","id":"section-000010","name":"subsubsection","number":"2.6.2","title":"Multimodality","file":"gedr3_distances.tex","line":408,"page":"8"}
+{"type":"label","id":"label-000026","key":"sec:multimodality","file":"gedr3_distances.tex","line":408,"page":"8"}
+{"type":"citation","id":"cite-000026","keys":["hartigan1985"],"file":"gedr3_distances.tex","line":416,"page":"8"}
+{"type":"section","id":"section-000011","name":"section","number":"3","title":"Performance on the mock catalogue","file":"gedr3_distances.tex","line":425,"page":"8"}
+{"type":"label","id":"label-000027","key":"sec:results_mock","file":"gedr3_distances.tex","line":425,"page":"8"}
+{"type":"section","id":"section-000012","name":"subsection","number":"3.1","title":"Example posteriors","file":"gedr3_distances.tex","line":433,"page":"8"}
+{"type":"section","id":"section-000013","name":"subsection","number":"3.2","title":"Comparison to truth","file":"gedr3_distances.tex","line":451,"page":"8"}
+{"type":"section","id":"section-000014","name":"subsubsection","number":"3.2.1","title":"Qualitative analysis","file":"gedr3_distances.tex","line":454,"page":"8"}
+{"type":"label","id":"label-000030","key":"sec:mock_qualitative_analysis","file":"gedr3_distances.tex","line":454,"page":"8"}
+{"type":"label","id":"label-000029","key":"fig:mock_inference_posteriors","file":"gedr3_distances.tex","line":442,"page":"9"}
+{"type":"section","id":"section-000015","name":"subsubsection","number":"3.2.2","title":"Quantitative analysis","file":"gedr3_distances.tex","line":494,"page":"9"}
+{"type":"label","id":"label-000034","key":"sec:mock_quantitative_analysis","file":"gedr3_distances.tex","line":494,"page":"9"}
+{"type":"label","id":"label-000032","key":"fig:mock_inference_1","file":"gedr3_distances.tex","line":462,"page":"10"}
+{"type":"label","id":"label-000033","key":"fig:mock_inference_2","file":"gedr3_distances.tex","line":471,"page":"11"}
+{"type":"section","id":"section-000016","name":"subsection","number":"3.3","title":"Inferred CQDs","file":"gedr3_distances.tex","line":520,"page":"12"}
+{"type":"label","id":"label-000035","key":"sec:mock_inferered_CQDs","file":"gedr3_distances.tex","line":520,"page":"12"}
+{"type":"section","id":"section-000017","name":"section","number":"4","title":"Analysis of distance results in \\release ","file":"gedr3_distances.tex","line":546,"page":"12"}
+{"type":"label","id":"label-000039","key":"sec:results","file":"gedr3_distances.tex","line":546,"page":"12"}
+{"type":"section","id":"section-000018","name":"subsection","number":"4.1","title":"Analysis of two HEALpixels","file":"gedr3_distances.tex","line":552,"page":"12"}
+{"type":"label","id":"label-000040","key":"sec:analysis_two_healpixels","file":"gedr3_distances.tex","line":552,"page":"12"}
+{"type":"section","id":"section-000019","name":"subsubsection","number":"4.1.1","title":"Distance distributions and uncertainties","file":"gedr3_distances.tex","line":555,"page":"12"}
+{"type":"label","id":"label-000037","key":"fig:mock_inference_CQDs_1","file":"gedr3_distances.tex","line":526,"page":"13"}
+{"type":"label","id":"label-000038","key":"fig:mock_inference_CQDs_2","file":"gedr3_distances.tex","line":534,"page":"14"}
+{"type":"label","id":"label-000042","key":"fig:real_inference_1","file":"gedr3_distances.tex","line":569,"page":"15"}
+{"type":"label","id":"label-000043","key":"fig:real_inference_2","file":"gedr3_distances.tex","line":578,"page":"16"}
+{"type":"section","id":"section-000020","name":"subsubsection","number":"4.1.2","title":"Colour--\\QG \\ diagrams","file":"gedr3_distances.tex","line":604,"page":"17"}
+{"type":"citation","id":"cite-000027","keys":["2018A&A...616A..17A"],"file":"gedr3_distances.tex","line":637,"page":"17"}
+{"type":"citation","id":"cite-000028","keys":["fabricius_etal_gedr3_validation","gedr3_nearbystars"],"file":"gedr3_distances.tex","line":637,"page":"17"}
+{"type":"citation","id":"cite-000029","keys":["lindegren_etal_gedr3_astrometry"],"file":"gedr3_distances.tex","line":638,"page":"17"}
+{"type":"citation","id":"cite-000030","keys":["gedr3_release"],"file":"gedr3_distances.tex","line":644,"page":"17"}
+{"type":"label","id":"label-000045","key":"fig:real_inference_CQDs_1","file":"gedr3_distances.tex","line":613,"page":"18"}
+{"type":"label","id":"label-000046","key":"fig:real_inference_CQDs_1b","file":"gedr3_distances.tex","line":621,"page":"19"}
+{"type":"label","id":"label-000048","key":"fig:real_inference_CQDs_2","file":"gedr3_distances.tex","line":654,"page":"20"}
+{"type":"citation","id":"cite-000031","keys":["fabricius_etal_gedr3_validation"],"file":"gedr3_distances.tex","line":674,"page":"20"}
+{"type":"section","id":"section-000021","name":"subsection","number":"4.2","title":"All sources","file":"gedr3_distances.tex","line":678,"page":"20"}
+{"type":"label","id":"label-000050","key":"fig:real_inference_CQDs_2b","file":"gedr3_distances.tex","line":662,"page":"21"}
+{"type":"label","id":"label-000052","key":"fig:distance_histogram_allhp","file":"gedr3_distances.tex","line":687,"page":"22"}
+{"type":"section","id":"section-000022","name":"subsubsection","number":"4.2.1","title":"Colour--\\QG \\ diagrams","file":"gedr3_distances.tex","line":717,"page":"22"}
+{"type":"section","id":"section-000023","name":"subsubsection","number":"4.2.2","title":"Distribution on the sky","file":"gedr3_distances.tex","line":735,"page":"22"}
+{"type":"section","id":"section-000024","name":"subsubsection","number":"4.2.3","title":"Galactic spatial distribution","file":"gedr3_distances.tex","line":756,"page":"22"}
+{"type":"section","id":"section-000025","name":"subsection","number":"4.3","title":"Validation using clusters","file":"gedr3_distances.tex","line":794,"page":"22"}
+{"type":"label","id":"label-000054","key":"fig:fdu_vs_distance_allhp","file":"gedr3_distances.tex","line":705,"page":"23"}
+{"type":"label","id":"label-000056","key":"fig:CQG_allsky","file":"gedr3_distances.tex","line":726,"page":"24"}
+{"type":"label","id":"label-000058","key":"fig:distance_allsky","file":"gedr3_distances.tex","line":745,"page":"24"}
+{"type":"label","id":"label-000060","key":"fig:distance_galprojection","file":"gedr3_distances.tex","line":768,"page":"25"}
+{"type":"label","id":"label-000061","key":"fig:distance_uncertainty_galprojection","file":"gedr3_distances.tex","line":777,"page":"25"}
+{"type":"label","id":"label-000063","key":"fig:cluster_validation_geo","file":"gedr3_distances.tex","line":808,"page":"26"}
+{"type":"label","id":"label-000065","key":"fig:cluster_validation_photogeo","file":"gedr3_distances.tex","line":819,"page":"27"}
+{"type":"citation","id":"cite-000033","keys":["2014ApJ...790..127B"],"file":"gedr3_distances.tex","line":844,"page":"28"}
+{"type":"label","id":"label-000067","key":"fig:apogee_rc","file":"gedr3_distances.tex","line":844,"page":"28"}
+{"type":"section","id":"section-000026","name":"subsection","number":"4.4","title":"Comparison to other distance estimates","file":"gedr3_distances.tex","line":833,"page":"28"}
+{"type":"citation","id":"cite-000034","keys":["2014ApJ...790..127B"],"file":"gedr3_distances.tex","line":850,"page":"28"}
+{"type":"citation","id":"cite-000035","keys":["2017AJ....154...94M"],"file":"gedr3_distances.tex","line":850,"page":"28"}
+{"type":"citation","id":"cite-000036","keys":["2020A&A...638A..76Q"],"file":"gedr3_distances.tex","line":854,"page":"28"}
+{"type":"citation","id":"cite-000039","keys":["2020A&A...638A..76Q"],"file":"gedr3_distances.tex","line":872,"page":"28"}
+{"type":"citation","id":"cite-000038","keys":["2020A&A...638A..76Q"],"file":"gedr3_distances.tex","line":868,"page":"29"}
+{"type":"label","id":"label-000069","key":"fig:starhorse","file":"gedr3_distances.tex","line":868,"page":"29"}
+{"type":"section","id":"section-000027","name":"section","number":"5","title":"Distance catalogue","file":"gedr3_distances.tex","line":883,"page":"29"}
+{"type":"label","id":"label-000070","key":"sec:catalogue","file":"gedr3_distances.tex","line":883,"page":"29"}
+{"type":"section","id":"section-000028","name":"subsection","number":"5.1","title":"Content","file":"gedr3_distances.tex","line":887,"page":"29"}
+{"type":"label","id":"label-000071","key":"sec:catalogue_content","file":"gedr3_distances.tex","line":887,"page":"29"}
+{"type":"citation","id":"cite-000040","keys":["fabricius_etal_gedr3_validation"],"file":"gedr3_distances.tex","line":954,"page":"29"}
+{"type":"label","id":"label-000073","key":"tab:catalogue_extract","file":"gedr3_distances.tex","line":899,"page":"30"}
+{"type":"label","id":"label-000075","key":"tab:flag","file":"gedr3_distances.tex","line":919,"page":"30"}
+{"type":"section","id":"section-000029","name":"subsection","number":"5.2","title":"Filtering","file":"gedr3_distances.tex","line":976,"page":"30"}
+{"type":"citation","id":"cite-000041","keys":["2015PASP..127..994B"],"file":"gedr3_distances.tex","line":978,"page":"30"}
+{"type":"citation","id":"cite-000042","keys":["fabricius_etal_gedr3_validation"],"file":"gedr3_distances.tex","line":983,"page":"30"}
+{"type":"citation","id":"cite-000043","keys":["lindegren_etal_gedr3_astrometry"],"file":"gedr3_distances.tex","line":985,"page":"30"}
+{"type":"section","id":"section-000030","name":"subsection","number":"5.3","title":"Use cases","file":"gedr3_distances.tex","line":989,"page":"31"}
+{"type":"citation","id":"cite-000044","keys":["riello_etal_gedr3_photometry"],"file":"gedr3_distances.tex","line":1006,"page":"31"}
+{"type":"citation","id":"cite-000045","keys":["lindegren_etal_gedr3_astrometry","fabricius_etal_gedr3_validation"],"file":"gedr3_distances.tex","line":1015,"page":"31"}
+{"type":"section","id":"section-000031","name":"subsection","number":"5.4","title":"Access","file":"gedr3_distances.tex","line":1019,"page":"31"}
+{"type":"label","id":"label-000076","key":"sec:access","file":"gedr3_distances.tex","line":1019,"page":"31"}
+{"type":"section","id":"section-000032","name":"subsection","number":"5.5","title":"Limitations","file":"gedr3_distances.tex","line":1053,"page":"32"}
+{"type":"citation","id":"cite-000046","keys":["lindegren_etal_gedr3_astrometry","fabricius_etal_gedr3_validation"],"file":"gedr3_distances.tex","line":1070,"page":"32"}
+{"type":"citation","id":"cite-000047","keys":["lindegren_etal_gedr3_parallaxzp"],"file":"gedr3_distances.tex","line":1071,"page":"32"}
+{"type":"citation","id":"cite-000048","keys":["fabricius_etal_gedr3_validation"],"file":"gedr3_distances.tex","line":1072,"page":"32"}
+{"type":"citation","id":"cite-000049","keys":["gedr3_release"],"file":"gedr3_distances.tex","line":1073,"page":"32"}
+{"type":"citation","id":"cite-000050","keys":["riello_etal_gedr3_photometry"],"file":"gedr3_distances.tex","line":1073,"page":"32"}
+{"type":"citation","id":"cite-000051","keys":["riello_etal_gedr3_photometry"],"file":"gedr3_distances.tex","line":1086,"page":"32"}
+{"type":"citation","id":"cite-000052","keys":["2014A&A...564A..49P"],"file":"gedr3_distances.tex","line":1096,"page":"33"}
+{"type":"citation","id":"cite-000053","keys":["2018A&A...618A..93C"],"file":"gedr3_distances.tex","line":1096,"page":"33"}
+{"type":"citation","id":"cite-000054","keys":["2020arXiv201000272O"],"file":"gedr3_distances.tex","line":1096,"page":"33"}
+{"type":"section","id":"section-000033","name":"section","number":"6","title":"Summary","file":"gedr3_distances.tex","line":1106,"page":"33"}
+{"type":"label","id":"label-000077","key":"sec:summary","file":"gedr3_distances.tex","line":1106,"page":"33"}
+{"type":"citation","id":"cite-000055","keys":["2005ASPC..347...29T"],"file":"gedr3_distances.tex","line":1122,"page":"33"}
+{"type":"citation","id":"cite-000056","keys":["2018A&A...618A..13B"],"file":"gedr3_distances.tex","line":1122,"page":"33"}
+{"type":"citation","id":"cite-000057","keys":["Hunter:2007"],"file":"gedr3_distances.tex","line":1122,"page":"33"}
+{"type":"citation","id":"cite-000058","keys":["2005ApJ...622..759G"],"file":"gedr3_distances.tex","line":1122,"page":"33"}
+{"type":"citation","id":"cite-000059","keys":["2019JOSS....4.1298Z"],"file":"gedr3_distances.tex","line":1122,"page":"33"}
+{"type":"section","id":"section-000034","name":"section","number":"A","title":"Thoughts on a better distance prior","file":"gedr3_distances.tex","line":1134,"page":"33"}
+{"type":"label","id":"label-000078","key":"sec:thoughts_prior","file":"gedr3_distances.tex","line":1134,"page":"33"}
+{"type":"section","id":"section-000035","name":"section","number":"B","title":"The limit of poor parallaxes","file":"gedr3_distances.tex","line":1146,"page":"33"}
+{"type":"label","id":"label-000079","key":"sec:poor_parallax_limit","file":"gedr3_distances.tex","line":1146,"page":"33"}

@@ -11,6 +11,8 @@
  * numbering); duplicate keys: last wins.
  */
 import { readTexGroup, readTexGroups, skipTexWhitespace, texCommandPositions } from "./scan.js";
+import type { TexTocEntry } from "./toc.js";
+import { parseToc } from "./toc.js";
 
 export interface TexLabelFact {
   number: string;
@@ -25,6 +27,13 @@ export interface TexAuxFacts {
   citations: string[];
   /** \bibcite key → bibliography number. */
   bibcites: Record<string, string>;
+  /**
+   * `\@writefile{lof}{\contentsline…}` records: figures in print order with
+   * their true numbers — present in the .aux whether or not \listoffigures ran.
+   */
+  lof: TexTocEntry[];
+  /** Same for tables (.lot). */
+  lot: TexTocEntry[];
 }
 
 export function parseAux(content: string): TexAuxFacts {
@@ -72,5 +81,17 @@ export function parseAux(content: string): TexAuxFacts {
     bibcites[key.content] = num.content;
   }
 
-  return { labels, citations, bibcites };
+  const lof: TexTocEntry[] = [];
+  const lot: TexTocEntry[] = [];
+  for (const at of texCommandPositions(content, "@writefile")) {
+    const groups = readTexGroups(content, at, 2);
+    const which = groups?.[0];
+    const payload = groups?.[1];
+    if (!which || !payload) continue;
+    const target = which.content === "lof" ? lof : which.content === "lot" ? lot : null;
+    if (target === null) continue;
+    for (const entry of parseToc(payload.content)) target.push(entry);
+  }
+
+  return { labels, citations, bibcites, lof, lot };
 }

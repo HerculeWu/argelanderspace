@@ -19,7 +19,12 @@
   },
   "dependencies": {
     "@argelanderspace/contracts": "workspace:*",
-    "@retorquere/bibtex-parser": "^10.0.1"
+    "@retorquere/bibtex-parser": "^10.0.1",
+    "@unified-latex/unified-latex": "1.8.4",
+    "@unified-latex/unified-latex-types": "1.8.4",
+    "@unified-latex/unified-latex-util-macros": "1.8.4",
+    "@unified-latex/unified-latex-util-parse": "1.8.4",
+    "@unified-latex/unified-latex-util-print-raw": "1.8.4"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

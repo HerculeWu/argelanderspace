@@ -1,0 +1,260 @@
+{"type":"section","id":"section-000001","name":"section","number":"1","title":"Introduction","file":"Arxiv.tex","line":97,"page":"1"}
+{"type":"label","id":"label-000001","key":"sec:introduction","file":"Arxiv.tex","line":97,"page":"1"}
+{"type":"citation","id":"cite-000001","keys":["1934HarCi.384....1B"],"file":"Arxiv.tex","line":102,"page":"1"}
+{"type":"citation","id":"cite-000002","keys":["1940MNRAS.100..396S"],"file":"Arxiv.tex","line":102,"page":"1"}
+{"type":"citation","id":"cite-000003","keys":["1995AJ....109.2553Grillmair","1997A&A...320..776Lehmann","kharchenko1997membership","2001ApJ...548L.165Odenkirchen","2002AJ....124..349Rockosi","2006ApJ...637L..29Belokurov","lee2003wide","ibata2019streams"],"file":"Arxiv.tex","line":103,"page":"1"}
+{"type":"citation","id":"cite-000004","keys":["2007A&A...473..429Federici"],"file":"Arxiv.tex","line":103,"page":"1"}
+{"type":"citation","id":"cite-000005","keys":["2016A&A...595A...1_Gaia_Instrument","2018A&A...616A...1Gaia_DR2_Cit","2021_Gaia_EDR_3","Gaia2023A&A...674A...1G"],"file":"Arxiv.tex","line":103,"page":"1"}
+{"type":"citation","id":"cite-000006","keys":["2019A&A...621L...3Meingast"],"file":"Arxiv.tex","line":105,"page":"1"}
+{"type":"citation","id":"cite-000007","keys":["2019A&A...621L...2Roser_Hyades"],"file":"Arxiv.tex","line":105,"page":"1"}
+{"type":"citation","id":"cite-000008","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":105,"page":"1"}
+{"type":"citation","id":"cite-000009","keys":["2019A&A...621L...3Meingast"],"file":"Arxiv.tex","line":105,"page":"1"}
+{"type":"citation","id":"cite-000010","keys":["2020A&A...640A..84Dinnbier"],"file":"Arxiv.tex","line":106,"page":"1"}
+{"type":"citation","id":"cite-000011","keys":["2020A&A...640A..84Dinnbier","2020MNRAS.497..536Wang"],"file":"Arxiv.tex","line":107,"page":"2"}
+{"type":"citation","id":"cite-000012","keys":["2019A&A...621L...2Roser_Hyades"],"file":"Arxiv.tex","line":107,"page":"2"}
+{"type":"citation","id":"cite-000013","keys":["2009A&A...497..209V"],"file":"Arxiv.tex","line":107,"page":"2"}
+{"type":"citation","id":"cite-000014","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":107,"page":"2"}
+{"type":"citation","id":"cite-000015","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":109,"page":"2"}
+{"type":"citation","id":"cite-000016","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":109,"page":"2"}
+{"type":"citation","id":"cite-000017","keys":["2024arXiv240618767Kos"],"file":"Arxiv.tex","line":109,"page":"2"}
+{"type":"citation","id":"cite-000018","keys":["2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":111,"page":"2"}
+{"type":"citation","id":"cite-000019","keys":["2019A&A...624L..11Furnkranz","2019ApJ...877...12Tang","2021ApJ...912..162Pang"],"file":"Arxiv.tex","line":111,"page":"2"}
+{"type":"citation","id":"cite-000020","keys":["2019AJ....157..115Yeh"],"file":"Arxiv.tex","line":111,"page":"2"}
+{"type":"citation","id":"cite-000021","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":111,"page":"2"}
+{"type":"citation","id":"cite-000022","keys":["2020ApJ...894...48Gao"],"file":"Arxiv.tex","line":111,"page":"2"}
+{"type":"citation","id":"cite-000023","keys":["2020A&A...635A..45Castro-Ginard"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000024","keys":["2020ApJ...889...99Zhang","2021ApJ...912..162Pang","2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000025","keys":["2020AJ....160..142Nikiforova","2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000026","keys":["2021ApJ...912..162Pang"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000027","keys":["2021RNAAS...5..173Li","2021A&A...645A..84Meingast","2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000028","keys":["2021AJ....162..171Ye"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000029","keys":["2021MNRAS.505.1607Bhattacharya","2022MNRAS.514.3579Boffin"],"file":"Arxiv.tex","line":112,"page":"2"}
+{"type":"citation","id":"cite-000030","keys":["LectureNotesKroupa"],"file":"Arxiv.tex","line":115,"page":"2"}
+{"type":"citation","id":"cite-000031","keys":["2020A&A...640A..84Dinnbier"],"file":"Arxiv.tex","line":115,"page":"2"}
+{"type":"citation","id":"cite-000032","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":115,"page":"2"}
+{"type":"citation","id":"cite-000033","keys":["2020A&A...640A..84Dinnbier"],"file":"Arxiv.tex","line":115,"page":"2"}
+{"type":"citation","id":"cite-000034","keys":["2008MNRAS.387.1248Kupper","2010MNRAS.401..105K"],"file":"Arxiv.tex","line":115,"page":"2"}
+{"type":"citation","id":"cite-000035","keys":["2020A&A...640A..84Dinnbier"],"file":"Arxiv.tex","line":115,"page":"2"}
+{"type":"citation","id":"cite-000036","keys":["2008MNRAS.387.1248Kupper","2010MNRAS.401..105K","2009MNRAS.392..969Just"],"file":"Arxiv.tex","line":117,"page":"2"}
+{"type":"citation","id":"cite-000037","keys":["2010MNRAS.401..105K"],"file":"Arxiv.tex","line":117,"page":"2"}
+{"type":"citation","id":"cite-000038","keys":["2010MNRAS.401..105K"],"file":"Arxiv.tex","line":117,"page":"2"}
+{"type":"citation","id":"cite-000039","keys":["2021A&A...655A..71Wang"],"file":"Arxiv.tex","line":119,"page":"2"}
+{"type":"citation","id":"cite-000040","keys":["2021A&A...647A.137Jerabkova","2023A&A...673A.128Garcia"],"file":"Arxiv.tex","line":119,"page":"2"}
+{"type":"citation","id":"cite-000041","keys":["2015ApJ...803...80Kupper"],"file":"Arxiv.tex","line":120,"page":"2"}
+{"type":"citation","id":"cite-000042","keys":["2024A&A...691A.227Wirth"],"file":"Arxiv.tex","line":121,"page":"2"}
+{"type":"citation","id":"cite-000043","keys":["2022MNRAS.517.3613Kroupa","2024ApJ...970...94Kroupa","2024arXiv241113675Pflamm"],"file":"Arxiv.tex","line":121,"page":"2"}
+{"type":"section","id":"section-000002","name":"section","number":"2","title":"Data","file":"Arxiv.tex","line":127,"page":"3"}
+{"type":"label","id":"label-000002","key":"sec:data","file":"Arxiv.tex","line":127,"page":"3"}
+{"type":"section","id":"section-000003","name":"subsection","number":"2.1","title":"Gaia data","file":"Arxiv.tex","line":128,"page":"3"}
+{"type":"label","id":"label-000003","key":"Sec:Gaia_Data","file":"Arxiv.tex","line":128,"page":"3"}
+{"type":"citation","id":"cite-000044","keys":["Gaia2023A&A...674A...1G"],"file":"Arxiv.tex","line":129,"page":"3"}
+{"type":"mathnum","id":"math-000001","env":"equation","number":"1","file":"Arxiv.tex","line":132,"page":"3"}
+{"type":"label","id":"label-000004","key":"eq:Dist_err","file":"Arxiv.tex","line":132,"page":"3"}
+{"type":"section","id":"section-000004","name":"subsection","number":"2.2","title":"Sample selection","file":"Arxiv.tex","line":136,"page":"3"}
+{"type":"citation","id":"cite-000045","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":138,"page":"3"}
+{"type":"citation","id":"cite-000046","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":138,"page":"3"}
+{"type":"section","id":"section-000005","name":"section","number":"3","title":"Methods","file":"Arxiv.tex","line":142,"page":"3"}
+{"type":"label","id":"label-000005","key":"sec:methods","file":"Arxiv.tex","line":142,"page":"3"}
+{"type":"section","id":"section-000006","name":"subsection","number":"3.1","title":"CP method","file":"Arxiv.tex","line":144,"page":"3"}
+{"type":"label","id":"label-000006","key":"sec: CP","file":"Arxiv.tex","line":144,"page":"3"}
+{"type":"citation","id":"cite-000047","keys":["1971MNRAS.152..231J","1999MNRAS.306..381D","2009A&A...497..209V"],"file":"Arxiv.tex","line":146,"page":"3"}
+{"type":"citation","id":"cite-000048","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":146,"page":"3"}
+{"type":"citation","id":"cite-000049","keys":["1971MNRAS.152..231J","1999MNRAS.306..381D"],"file":"Arxiv.tex","line":146,"page":"3"}
+{"type":"citation","id":"cite-000050","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":148,"page":"3"}
+{"type":"mathnum","id":"math-000002","env":"equation","number":"2","file":"Arxiv.tex","line":151,"page":"3"}
+{"type":"label","id":"label-000007","key":"eq:v_parallal_obs","file":"Arxiv.tex","line":151,"page":"3"}
+{"type":"mathnum","id":"math-000003","env":"equation","number":"3","file":"Arxiv.tex","line":155,"page":"3"}
+{"type":"mathnum","id":"math-000004","env":"equation","number":"4","file":"Arxiv.tex","line":159,"page":"3"}
+{"type":"mathnum","id":"math-000005","env":"equation","number":"5","file":"Arxiv.tex","line":163,"page":"3"}
+{"type":"mathnum","id":"math-000006","env":"equation","number":"6","file":"Arxiv.tex","line":166,"page":"3"}
+{"type":"label","id":"label-000008","key":"eq:v_per_pred","file":"Arxiv.tex","line":166,"page":"3"}
+{"type":"citation","id":"cite-000051","keys":["1999MNRAS.306..381D"],"file":"Arxiv.tex","line":167,"page":"3"}
+{"type":"mathnum","id":"math-000007","env":"equation","number":"7","file":"Arxiv.tex","line":171,"page":"3"}
+{"type":"mathnum","id":"math-000008","env":"equation","number":"8","file":"Arxiv.tex","line":176,"page":"3"}
+{"type":"section","id":"section-000007","name":"subsection","number":"3.2","title":"Finding phase-space overdensities","file":"Arxiv.tex","line":183,"page":"4"}
+{"type":"label","id":"label-000009","key":"sec:finding_overdensity","file":"Arxiv.tex","line":183,"page":"4"}
+{"type":"citation","id":"cite-000052","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":185,"page":"4"}
+{"type":"citation","id":"cite-000053","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":185,"page":"4"}
+{"type":"citation","id":"cite-000054","keys":["astropy:2022"],"file":"Arxiv.tex","line":185,"page":"4"}
+{"type":"citation","id":"cite-000055","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":188,"page":"4"}
+{"type":"mathnum","id":"math-000009","env":"equation","number":"9","file":"Arxiv.tex","line":191,"page":"4"}
+{"type":"label","id":"label-000010","key":"eq: space","file":"Arxiv.tex","line":191,"page":"4"}
+{"type":"mathnum","id":"math-000010","env":"equation","number":"10","file":"Arxiv.tex","line":195,"page":"4"}
+{"type":"label","id":"label-000011","key":"eq: vel","file":"Arxiv.tex","line":195,"page":"4"}
+{"type":"citation","id":"cite-000056","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":199,"page":"4"}
+{"type":"citation","id":"cite-000057","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":199,"page":"4"}
+{"type":"citation","id":"cite-000058","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":200,"page":"4"}
+{"type":"section","id":"section-000008","name":"subsection","number":"3.3","title":"SCCP method","file":"Arxiv.tex","line":219,"page":"4"}
+{"type":"label","id":"label-000012","key":"sec: SCCP","file":"Arxiv.tex","line":219,"page":"4"}
+{"type":"citation","id":"cite-000059","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":221,"page":"4"}
+{"type":"citation","id":"cite-000060","keys":["2022MNRAS.514.3579Boffin"],"file":"Arxiv.tex","line":221,"page":"4"}
+{"type":"citation","id":"cite-000061","keys":["2024arXiv240618767Kos"],"file":"Arxiv.tex","line":221,"page":"4"}
+{"type":"citation","id":"cite-000062","keys":["2022MNRAS.514.3579Boffin"],"file":"Arxiv.tex","line":221,"page":"4"}
+{"type":"citation","id":"cite-000063","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":223,"page":"4"}
+{"type":"citation","id":"cite-000064","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":228,"page":"5"}
+{"type":"section","id":"section-000009","name":"subsection","number":"3.4","title":"$L_{Z}-E$ secondary phase-space test","file":"Arxiv.tex","line":231,"page":"5"}
+{"type":"label","id":"label-000013","key":"sec: LzE_test","file":"Arxiv.tex","line":231,"page":"5"}
+{"type":"citation","id":"cite-000065","keys":["McMillan2017MNRAS.465...76M"],"file":"Arxiv.tex","line":233,"page":"5"}
+{"type":"citation","id":"cite-000066","keys":["Bovy2015ApJS..216...29B"],"file":"Arxiv.tex","line":233,"page":"5"}
+{"type":"citation","id":"cite-000067","keys":["Bonaca_2021"],"file":"Arxiv.tex","line":233,"page":"5"}
+{"type":"citation","id":"cite-000068","keys":["2024ApJ...964..104Malhan"],"file":"Arxiv.tex","line":233,"page":"5"}
+{"type":"section","id":"section-000010","name":"section","number":"4","title":"Results","file":"Arxiv.tex","line":242,"page":"5"}
+{"type":"label","id":"label-000014","key":"sec:results","file":"Arxiv.tex","line":242,"page":"5"}
+{"type":"citation","id":"cite-000069","keys":["2021ApJ...912..162Pang"],"file":"Arxiv.tex","line":285,"page":"5"}
+{"type":"label","id":"label-000016","key":"sec: LzE_results","file":"Arxiv.tex","line":303,"page":"5"}
+{"type":"section","id":"section-000011","name":"subsection","number":"4.1","title":"The $L_Z-E$ phase-space test. \\label {sec: LzE_results}","file":"Arxiv.tex","line":303,"page":"5"}
+{"type":"label","id":"label-000015","key":"fig:All_in_one_XY","file":"Arxiv.tex","line":300,"page":"5"}
+{"type":"section","id":"section-000012","name":"subsection","number":"4.2","title":"Improvement through the of CP + SCCP combined sample","file":"Arxiv.tex","line":314,"page":"5"}
+{"type":"section","id":"section-000013","name":"subsection","number":"4.3","title":"Corrected samples","file":"Arxiv.tex","line":320,"page":"5"}
+{"type":"label","id":"label-000017","key":"sec: Corrected Samples","file":"Arxiv.tex","line":320,"page":"5"}
+{"type":"mathnum","id":"math-000011","env":"equation","number":"11","file":"Arxiv.tex","line":329,"page":"6"}
+{"type":"label","id":"label-000018","key":"eq:MGlim","file":"Arxiv.tex","line":329,"page":"6"}
+{"type":"section","id":"section-000014","name":"subsection","number":"4.4","title":"ASCC 101","file":"Arxiv.tex","line":345,"page":"6"}
+{"type":"citation","id":"cite-000070","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":346,"page":"6"}
+{"type":"section","id":"section-000015","name":"subsection","number":"4.5","title":"Alessi 3","file":"Arxiv.tex","line":348,"page":"6"}
+{"type":"citation","id":"cite-000071","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":349,"page":"6"}
+{"type":"section","id":"section-000016","name":"subsection","number":"4.6","title":"Blanco 1 (zeta Scl)","file":"Arxiv.tex","line":352,"page":"6"}
+{"type":"citation","id":"cite-000072","keys":["2020ApJ...889...99Zhang"],"file":"Arxiv.tex","line":353,"page":"6"}
+{"type":"citation","id":"cite-000073","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":353,"page":"6"}
+{"type":"section","id":"section-000017","name":"subsection","number":"4.7","title":"Collinder 350","file":"Arxiv.tex","line":355,"page":"6"}
+{"type":"citation","id":"cite-000074","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":356,"page":"6"}
+{"type":"citation","id":"cite-000075","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":356,"page":"6"}
+{"type":"section","id":"section-000018","name":"subsection","number":"4.8","title":"Melotte 111 (Coma Berenices, Collinder 256)","file":"Arxiv.tex","line":358,"page":"6"}
+{"type":"citation","id":"cite-000076","keys":["2019A&A...624L..11Furnkranz","2019ApJ...877...12Tang","2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":359,"page":"6"}
+{"type":"citation","id":"cite-000077","keys":["2019A&A...624L..11Furnkranz"],"file":"Arxiv.tex","line":359,"page":"6"}
+{"type":"citation","id":"cite-000078","keys":["2019ApJ...877...12Tang"],"file":"Arxiv.tex","line":361,"page":"6"}
+{"type":"citation","id":"cite-000079","keys":["2019ApJ...877...12Tang"],"file":"Arxiv.tex","line":363,"page":"6"}
+{"type":"citation","id":"cite-000080","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":363,"page":"6"}
+{"type":"citation","id":"cite-000081","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":363,"page":"6"}
+{"type":"section","id":"section-000019","name":"subsection","number":"4.9","title":"Melotte 22 (Pleiades, Collinder 42, M 45, Theia 369)","file":"Arxiv.tex","line":365,"page":"6"}
+{"type":"citation","id":"cite-000082","keys":["2021RNAAS...5..173Li","2021A&A...645A..84Meingast","2021MNRAS.505.1607Bhattacharya"],"file":"Arxiv.tex","line":367,"page":"6"}
+{"type":"citation","id":"cite-000083","keys":["2021RNAAS...5..173Li"],"file":"Arxiv.tex","line":367,"page":"6"}
+{"type":"citation","id":"cite-000084","keys":["2021MNRAS.505.1607Bhattacharya"],"file":"Arxiv.tex","line":367,"page":"6"}
+{"type":"citation","id":"cite-000085","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":367,"page":"6"}
+{"type":"citation","id":"cite-000086","keys":["2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":370,"page":"6"}
+{"type":"citation","id":"cite-000088","keys":["2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":371,"page":"6"}
+{"type":"citation","id":"cite-000087","keys":["2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":370,"page":"6"}
+{"type":"citation","id":"cite-000089","keys":["2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":371,"page":"7"}
+{"type":"citation","id":"cite-000090","keys":["2023A&A...679A.105Vaher"],"file":"Arxiv.tex","line":372,"page":"7"}
+{"type":"section","id":"section-000020","name":"subsection","number":"4.10","title":"Melotte 25 (Hyades)","file":"Arxiv.tex","line":375,"page":"7"}
+{"type":"citation","id":"cite-000091","keys":["2019A&A...621L...2Roser_Hyades"],"file":"Arxiv.tex","line":376,"page":"7"}
+{"type":"citation","id":"cite-000092","keys":["2019A&A...621L...2Roser_Hyades"],"file":"Arxiv.tex","line":376,"page":"7"}
+{"type":"citation","id":"cite-000093","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":379,"page":"7"}
+{"type":"citation","id":"cite-000094","keys":["1977A&A....59..411Weidemann","1992AJ....104.1876Weidemann","2001AJ....122..257Kalirai"],"file":"Arxiv.tex","line":382,"page":"7"}
+{"type":"citation","id":"cite-000095","keys":["2003ApJ...595L..53Fellhauer"],"file":"Arxiv.tex","line":382,"page":"7"}
+{"type":"section","id":"section-000021","name":"subsection","number":"4.11","title":"NGC 2632 (Praesepe, M 44, Melotte 88) ","file":"Arxiv.tex","line":391,"page":"7"}
+{"type":"citation","id":"cite-000096","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":392,"page":"7"}
+{"type":"citation","id":"cite-000097","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":392,"page":"7"}
+{"type":"citation","id":"cite-000098","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":392,"page":"7"}
+{"type":"citation","id":"cite-000099","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":392,"page":"7"}
+{"type":"citation","id":"cite-000100","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":393,"page":"7"}
+{"type":"citation","id":"cite-000101","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":394,"page":"7"}
+{"type":"citation","id":"cite-000102","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":395,"page":"7"}
+{"type":"section","id":"section-000022","name":"subsection","number":"4.12","title":"NGC 6633 (Collinder 380, Melotte 201)","file":"Arxiv.tex","line":397,"page":"7"}
+{"type":"citation","id":"cite-000103","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":398,"page":"7"}
+{"type":"label","id":"label-000019","key":"fig:Melotte_25_comparison","file":"Arxiv.tex","line":388,"page":"7"}
+{"type":"section","id":"section-000023","name":"subsection","number":"4.13","title":"Roslund 6 (RSG 6)","file":"Arxiv.tex","line":401,"page":"7"}
+{"type":"citation","id":"cite-000104","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":402,"page":"7"}
+{"type":"citation","id":"cite-000105","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":402,"page":"7"}
+{"type":"section","id":"section-000024","name":"subsection","number":"4.14","title":"Theia 517 (Collinder 438, M 39, Melotte 236, NGC 7092)","file":"Arxiv.tex","line":405,"page":"7"}
+{"type":"citation","id":"cite-000106","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"citation","id":"cite-000107","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"citation","id":"cite-000108","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"citation","id":"cite-000109","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"citation","id":"cite-000110","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"citation","id":"cite-000111","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"citation","id":"cite-000112","keys":["2021A&A...645A..84Meingast"],"file":"Arxiv.tex","line":406,"page":"7"}
+{"type":"section","id":"section-000025","name":"subsection","number":"4.15","title":"Halo around OC NGC 6475 ","file":"Arxiv.tex","line":410,"page":"7"}
+{"type":"citation","id":"cite-000113","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":411,"page":"7"}
+{"type":"citation","id":"cite-000114","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":411,"page":"7"}
+{"type":"label","id":"label-000020","key":"fig:Comp_with_Lit","file":"Arxiv.tex","line":416,"page":"8"}
+{"type":"section","id":"section-000026","name":"section","number":"5","title":"Discussion","file":"Arxiv.tex","line":426,"page":"8"}
+{"type":"label","id":"label-000022","key":"sec:discussion","file":"Arxiv.tex","line":426,"page":"8"}
+{"type":"section","id":"section-000027","name":"subsection","number":"5.1","title":"Analysis in $\\phi _1$ - $\\phi _2$ space","file":"Arxiv.tex","line":429,"page":"8"}
+{"type":"label","id":"label-000023","key":"sec: phi1-phi2","file":"Arxiv.tex","line":429,"page":"8"}
+{"type":"citation","id":"cite-000115","keys":["2010ApJ...712..260Koposov"],"file":"Arxiv.tex","line":432,"page":"8"}
+{"type":"citation","id":"cite-000116","keys":["2019MNRAS.485.4726Koposov"],"file":"Arxiv.tex","line":432,"page":"8"}
+{"type":"citation","id":"cite-000117","keys":["2019MNRAS.487.2685Erkal"],"file":"Arxiv.tex","line":432,"page":"8"}
+{"type":"citation","id":"cite-000118","keys":["2023MNRAS.521.4936Koposov"],"file":"Arxiv.tex","line":433,"page":"8"}
+{"type":"citation","id":"cite-000119","keys":["2017JOSS....2..388Price"],"file":"Arxiv.tex","line":436,"page":"8"}
+{"type":"label","id":"label-000021","key":"fig: CP_SCCP_Comp","file":"Arxiv.tex","line":423,"page":"9"}
+{"type":"section","id":"section-000028","name":"subsection","number":"5.2","title":"Possible biases and incompleteness","file":"Arxiv.tex","line":463,"page":"10"}
+{"type":"label","id":"label-000024","key":"sec: Possible biases ","file":"Arxiv.tex","line":463,"page":"10"}
+{"type":"citation","id":"cite-000120","keys":["2020A&A...640A..84Dinnbier","2021A&A...647A.137Jerabkova","2023A&A...671A..88Pflamm-Altenburg"],"file":"Arxiv.tex","line":465,"page":"10"}
+{"type":"section","id":"section-000029","name":"subsection","number":"5.3","title":"Moving groups within the tidal tails","file":"Arxiv.tex","line":471,"page":"10"}
+{"type":"label","id":"label-000025","key":"sec: Moving Groups","file":"Arxiv.tex","line":471,"page":"10"}
+{"type":"citation","id":"cite-000121","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":473,"page":"10"}
+{"type":"citation","id":"cite-000122","keys":["2024A&A...691A.293Zhou"],"file":"Arxiv.tex","line":473,"page":"10"}
+{"type":"section","id":"section-000030","name":"subsection","number":"5.4","title":"Luminosity function","file":"Arxiv.tex","line":477,"page":"10"}
+{"type":"label","id":"label-000026","key":"sec: LF","file":"Arxiv.tex","line":478,"page":"10"}
+{"type":"mathnum","id":"math-000012","env":"equation","number":"12","file":"Arxiv.tex","line":492,"page":"10"}
+{"type":"citation","id":"cite-000124","keys":["2001MNRAS.322..231KroupaIMF"],"file":"Arxiv.tex","line":493,"page":"10"}
+{"type":"citation","id":"cite-000123","keys":["2001MNRAS.322..231KroupaIMF"],"file":"Arxiv.tex","line":483,"page":"11"}
+{"type":"label","id":"label-000027","key":"fig: LF_slopes_img","file":"Arxiv.tex","line":484,"page":"11"}
+{"type":"section","id":"section-000031","name":"subsection","number":"5.5","title":"S-shaped tails that contradict known theory ","file":"Arxiv.tex","line":496,"page":"11"}
+{"type":"citation","id":"cite-000125","keys":["2020A&A...640A..84Dinnbier","2020MNRAS.497..536Wang","2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":497,"page":"11"}
+{"type":"citation","id":"cite-000126","keys":["2021A&A...647A.137Jerabkova"],"file":"Arxiv.tex","line":499,"page":"11"}
+{"type":"section","id":"section-000032","name":"section","number":"6","title":"Conclusions","file":"Arxiv.tex","line":510,"page":"11"}
+{"type":"label","id":"label-000028","key":"sec:conclusions","file":"Arxiv.tex","line":510,"page":"11"}
+{"type":"citation","id":"cite-000127","keys":["2020A&A...640A..84Dinnbier","2021A&A...647A.137Jerabkova","2010MNRAS.401..105K","2009MNRAS.392..969Just"],"file":"Arxiv.tex","line":524,"page":"11"}
+{"type":"citation","id":"cite-000128","keys":["2022MNRAS.517.3613Kroupa","2024ApJ...970...94Kroupa"],"file":"Arxiv.tex","line":524,"page":"11"}
+{"type":"citation","id":"cite-000129","keys":["astropy:2022"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"citation","id":"cite-000130","keys":["2017JOSS....2..388Price"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"citation","id":"cite-000131","keys":["Bovy2015ApJS..216...29B"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"citation","id":"cite-000132","keys":["2007CSE.....9...90Hunter"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"citation","id":"cite-000133","keys":["2020SciPy-NMeth"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"citation","id":"cite-000134","keys":["2020Natur.585..357Harris"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"citation","id":"cite-000135","keys":["2005ASPC..347...29TOPCAT"],"file":"Arxiv.tex","line":607,"page":"12"}
+{"type":"section","id":"section-000033","name":"section","number":"A","title":"Supplementary query and tables","file":"Arxiv.tex","line":614,"page":"13"}
+{"type":"label","id":"label-000029","key":"Appendix:Appendix_B","file":"Arxiv.tex","line":614,"page":"13"}
+{"type":"section","id":"section-000034","name":"subsection","number":"A.1","title":"ADQL query","file":"Arxiv.tex","line":616,"page":"13"}
+{"type":"label","id":"label-000030","key":"sec:adql","file":"Arxiv.tex","line":616,"page":"13"}
+{"type":"section","id":"section-000035","name":"subsection","number":"A.2","title":"Tables","file":"Arxiv.tex","line":646,"page":"13"}
+{"type":"label","id":"label-000031","key":"Table: phi_org_pole","file":"Arxiv.tex","line":651,"page":"13"}
+{"type":"label","id":"label-000032","key":"Table: Clusters_basics_params","file":"Arxiv.tex","line":693,"page":"14"}
+{"type":"citation","id":"cite-000136","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":753,"page":"14"}
+{"type":"citation","id":"cite-000137","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":753,"page":"14"}
+{"type":"citation","id":"cite-000138","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":753,"page":"14"}
+{"type":"citation","id":"cite-000139","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":753,"page":"14"}
+{"type":"citation","id":"cite-000140","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":753,"page":"14"}
+{"type":"citation","id":"cite-000141","keys":["10.1093/mnras/stac2906"],"file":"Arxiv.tex","line":754,"page":"14"}
+{"type":"citation","id":"cite-000142","keys":["2022ApJ...931..156Pang"],"file":"Arxiv.tex","line":755,"page":"14"}
+{"type":"citation","id":"cite-000143","keys":["2019A&A...621L...3Meingast"],"file":"Arxiv.tex","line":757,"page":"14"}
+{"type":"citation","id":"cite-000144","keys":["2019ApJ...877...12Tang"],"file":"Arxiv.tex","line":758,"page":"14"}
+{"type":"citation","id":"cite-000145","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":759,"page":"14"}
+{"type":"citation","id":"cite-000146","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":760,"page":"14"}
+{"type":"citation","id":"cite-000147","keys":["2019AJ....157..115Yeh"],"file":"Arxiv.tex","line":761,"page":"14"}
+{"type":"citation","id":"cite-000148","keys":["2021AJ....162..171Ye"],"file":"Arxiv.tex","line":762,"page":"14"}
+{"type":"citation","id":"cite-000149","keys":["2023yCat..36720187Just"],"file":"Arxiv.tex","line":763,"page":"14"}
+{"type":"citation","id":"cite-000150","keys":["2011A&A...531A..92RoserHyades_Not_tails"],"file":"Arxiv.tex","line":764,"page":"14"}
+{"type":"label","id":"label-000033","key":"Table: Tidal tails","file":"Arxiv.tex","line":771,"page":"15"}
+{"type":"citation","id":"cite-000151","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":821,"page":"15"}
+{"type":"label","id":"label-000034","key":"Table: Moving_Groups","file":"Arxiv.tex","line":828,"page":"15"}
+{"type":"citation","id":"cite-000152","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":841,"page":"15"}
+{"type":"citation","id":"cite-000153","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":842,"page":"15"}
+{"type":"citation","id":"cite-000154","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":842,"page":"15"}
+{"type":"citation","id":"cite-000155","keys":["2019A&A...627A...4Roser_Praesepe"],"file":"Arxiv.tex","line":842,"page":"15"}
+{"type":"section","id":"section-000036","name":"subsection","number":"A.3","title":"Appendix Figures of individual clusters and their description","file":"Arxiv.tex","line":894,"page":"16"}
+{"type":"label","id":"label-000035","key":"sec:Fig_Desc","file":"Arxiv.tex","line":894,"page":"16"}
+{"type":"citation","id":"cite-000156","keys":["2024arXiv240305143H"],"file":"Arxiv.tex","line":898,"page":"16"}
+{"type":"citation","id":"cite-000157","keys":["2012MNRAS.427..127Bressan_Parsec_iso"],"file":"Arxiv.tex","line":898,"page":"16"}
+{"type":"label","id":"label-000036","key":"fig:ASCC_101","file":"Arxiv.tex","line":919,"page":"17"}
+{"type":"label","id":"label-000037","key":"fig:Alessi_3","file":"Arxiv.tex","line":925,"page":"17"}
+{"type":"label","id":"label-000038","key":"fig:Alessi_9","file":"Arxiv.tex","line":931,"page":"18"}
+{"type":"label","id":"label-000039","key":"fig:Alessi_96","file":"Arxiv.tex","line":937,"page":"18"}
+{"type":"label","id":"label-000040","key":"fig:Blanco_1","file":"Arxiv.tex","line":943,"page":"19"}
+{"type":"label","id":"label-000041","key":"fig:Collinder_350","file":"Arxiv.tex","line":949,"page":"19"}
+{"type":"label","id":"label-000042","key":"fig:Melotte_111","file":"Arxiv.tex","line":956,"page":"20"}
+{"type":"label","id":"label-000043","key":"fig:Melotte_22","file":"Arxiv.tex","line":962,"page":"20"}
+{"type":"label","id":"label-000044","key":"fig:Melotte_25","file":"Arxiv.tex","line":968,"page":"21"}
+{"type":"label","id":"label-000045","key":"fig:NGC_2632","file":"Arxiv.tex","line":974,"page":"21"}
+{"type":"label","id":"label-000046","key":"fig:NGC_6633","file":"Arxiv.tex","line":980,"page":"22"}
+{"type":"label","id":"label-000047","key":"fig:Platais_10","file":"Arxiv.tex","line":986,"page":"22"}
+{"type":"label","id":"label-000048","key":"fig:RSG_4","file":"Arxiv.tex","line":992,"page":"23"}
+{"type":"label","id":"label-000049","key":"fig:Roslund_6","file":"Arxiv.tex","line":998,"page":"23"}
+{"type":"label","id":"label-000050","key":"fig:Ruprecht_147","file":"Arxiv.tex","line":1004,"page":"24"}
+{"type":"label","id":"label-000051","key":"fig:Stock_10","file":"Arxiv.tex","line":1010,"page":"24"}
+{"type":"label","id":"label-000052","key":"fig:Stock_2","file":"Arxiv.tex","line":1016,"page":"25"}
+{"type":"label","id":"label-000053","key":"fig:Theia_517","file":"Arxiv.tex","line":1022,"page":"25"}
+{"type":"label","id":"label-000054","key":"fig:UPK_545","file":"Arxiv.tex","line":1028,"page":"26"}
+{"type":"label","id":"label-000055","key":"fig:lb","file":"Arxiv.tex","line":1051,"page":"26"}

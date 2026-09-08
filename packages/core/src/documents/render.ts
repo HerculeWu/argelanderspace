@@ -30,6 +30,7 @@
 
 import type {
   BibManifestRow,
+  DocIr,
   Document,
   IrAlgorithmBlock,
   IrBlock,
@@ -170,6 +171,16 @@ function* iterIrSections(sections: IrSection[]): Generator<IrSection> {
 /** The whole document body as LLM-friendly markdown (no doc-level header). */
 export function renderDocMarkdown(doc: Document, opts: RenderOptions = {}): string {
   const ir = buildDocIr(doc, opts);
+  const ctx: MdCtx = { docId: ir.docId, preview: opts.previewLength ?? DEFAULT_PREVIEW };
+  return `${ir.sections.map((s) => sectionMarkdown(s, ctx)).join("\n\n")}\n`;
+}
+
+/**
+ * The same markdown assembled straight from a DocIr — the Stage 5 stored-IR
+ * path (the stored object IS the IR, no Document projection needed).
+ * Byte-conventions identical to {@link renderDocMarkdown}.
+ */
+export function renderIrMarkdown(ir: DocIr, opts: RenderOptions = {}): string {
   const ctx: MdCtx = { docId: ir.docId, preview: opts.previewLength ?? DEFAULT_PREVIEW };
   return `${ir.sections.map((s) => sectionMarkdown(s, ctx)).join("\n\n")}\n`;
 }

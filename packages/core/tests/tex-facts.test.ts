@@ -64,6 +64,22 @@ describe("parseAux", () => {
     expect(citations).toEqual(["ok"]);
     expect(Object.keys(labels)).toEqual([]);
   });
+
+  test("\\@writefile{lof}/{lot} records parse into print-order float numbers", () => {
+    const aux = [
+      "\\newlabel{fig:a}{{1}{1}{}{}{}}",
+      "\\@writefile{lof}{\\contentsline {figure}{\\numberline {1}First}{1}{}%}",
+      "\\@writefile{lof}{\\contentsline {figure}{\\numberline {2}Second}{2}{}%}",
+      "\\@writefile{lot}{\\contentsline {table}{\\numberline {A.1}Tab}{3}{}%}",
+      "\\@writefile{toc}{\\contentsline {section}{\\numberline {1}Intro}{1}{}%}",
+    ].join("\n");
+    const { lof, lot } = parseAux(aux);
+    expect(lof).toEqual([
+      { level: "figure", number: "1", title: "First", page: "1" },
+      { level: "figure", number: "2", title: "Second", page: "2" },
+    ]);
+    expect(lot).toEqual([{ level: "table", number: "A.1", title: "Tab", page: "3" }]);
+  });
 });
 
 // --------------------------------------------------------------------------- //
@@ -147,6 +163,8 @@ describe("parseBbl", () => {
     const { references, warnings } = parseBbl(bbl);
     expect(warnings).toEqual([]);
     expect(references.map((r) => r.key)).toEqual(["dijkstra1968", "webref", "preprint"]);
+    expect(references[0]?.label).toBe("Dijkstra(1968)"); // [label] captured
+    expect(references[1]?.label).toBeUndefined();
     expect(references[0]?.raw).toContain("Go to statement considered harmful.");
     expect(references[0]?.raw).not.toContain("\\bibitem");
     expect(references[2]?.raw).toContain("arXiv:2101.00001v2.");
@@ -192,7 +210,10 @@ describe("parseBbl", () => {
 
   test("titles/authors are never guessed (absent from the fact shape)", () => {
     const { references } = parseBbl(bbl);
-    expect(Object.keys(references[0] ?? {}).sort()).toEqual(["key", "raw"]);
+    const keys0 = Object.keys(references[0] ?? {}).sort();
+    expect(keys0).not.toContain("title");
+    expect(keys0).not.toContain("authors");
+    expect(keys0).toEqual(["key", "label", "raw"]);
   });
 
   test("biblatex-style .bbl (no thebibliography) → empty + warning", () => {
@@ -463,9 +484,9 @@ describe("parseTexFacts on frozen hyperref build (amsmath + hyperref + natbib, \
     events: `${build}/main.argelander.jsonl`,
   });
 
-  test("no warnings, 14 events, all from main.tex", () => {
+  test("no warnings, 16 events, all from main.tex", () => {
     expect(facts.warnings).toEqual([]);
-    expect(facts.events).toHaveLength(14);
+    expect(facts.events).toHaveLength(16);
     expect(facts.events.every((e) => e.file === "main.tex")).toBe(true);
   });
 
@@ -478,6 +499,7 @@ describe("parseTexFacts on frozen hyperref build (amsmath + hyperref + natbib, \
       "equation:3a", // subequations
       "equation:3b",
       "equation:4", // aligned-inside-equation: exactly one event for the outer number
+      "equation:T1", // labeled \tag{T1}
     ]);
   });
 
@@ -490,6 +512,7 @@ describe("parseTexFacts on frozen hyperref build (amsmath + hyperref + natbib, \
       "eq:aligned",
       "eq:one",
       "eq:sub-a",
+      "eq:tagged",
       "eq:two",
       "sec:adv",
     ]);
@@ -497,19 +520,29 @@ describe("parseTexFacts on frozen hyperref build (amsmath + hyperref + natbib, \
     const advTitle = "Adversarial \\emph {Math} \\& $x^2$ Cases";
     expect(facts.labels["eq:two"]).toEqual({ number: "2", page: "1", title: advTitle });
     expect(facts.labels["eq:sub-a"]).toEqual({ number: "3a", page: "1", title: advTitle });
+    // labeled \tag: aux wraps the number in braces ("{T1}") — MS2 joins strip them
+    expect(facts.labels["eq:tagged"]?.number).toBe("{T1}");
   });
 });
 
 describe("parseTexFacts degradation", () => {
-  test("missing files degrade to empty facts + unreadable warnings, never throw", () => {
+  test("absent artifacts (missing files) are silent, never throw", () => {
+    // ENOENT = the artifact simply wasn't produced (no .toc without
+    // \tableofcontents) — normal, no warning (MS2 review N2).
     const facts = parseTexFacts({
       aux: `${FIXTURES}/does-not-exist/main.aux`,
       bbl: `${FIXTURES}/does-not-exist/main.bbl`,
     });
     expect(facts.labels).toEqual({});
     expect(facts.references).toEqual([]);
-    expect(facts.warnings).toHaveLength(2);
-    expect(facts.warnings[0]).toContain("main.aux");
+    expect(facts.warnings).toEqual([]);
+  });
+
+  test("unreadable artifacts (a directory as .aux) warn", () => {
+    const facts = parseTexFacts({ aux: FIXTURES });
+    expect(facts.labels).toEqual({});
+    expect(facts.warnings).toHaveLength(1);
+    expect(facts.warnings[0]).toContain("unreadable");
   });
 
   test("absent artifacts (undefined paths) are simply skipped", () => {

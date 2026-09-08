@@ -19,6 +19,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import type { TexFigureOutcome, TexFigurePort, TexFigureRequest } from "@argelanderspace/core";
+import { texFigureOutName } from "@argelanderspace/core";
 import { findOnPath } from "../lib/proc.js";
 import { runTexProcess, type TexProcResult } from "./proc.js";
 
@@ -37,23 +38,17 @@ export function haveDvisvgm(): boolean {
 
 /**
  * Output basename for a figure source: relative-path stem with "__"
- * separators + `__<srcext>` + `suffix` (exported for tests).
+ * separators + `__<srcext>` + `suffix`. The convention is OWNED by core
+ * (`@argelanderspace/core` `pipelines/tex/fuse/figures.ts`, MS2) — this
+ * re-export keeps the port and its tests on one implementation.
  *
- * NOTE: this duplicates the Stage 3.1 `outName` in
- * `packages/core/src/pipelines/latex/assets.ts` by design (same naming
- * convention, separate namespace until MS3 deletes the old one). Both
- * share the inherited edge that `a/b.png` and `a__b.png` map to the same
- * output name — the "/" → "__" encoding is not injective (MS1 review N5).
+ * NOTE: the same convention exists in the retired Stage 3.1 `outName`
+ * (`packages/core/src/pipelines/latex/assets.ts`) until MS3 deletes it.
+ * All three share the inherited edge that `a/b.png` and `a__b.png` map to
+ * the same output name — the "/" → "__" encoding is not injective (MS1
+ * review N5).
  */
-export function texFigureOutName(srcDir: string, src: string, suffix: string): string {
-  const rel = path.relative(srcDir, src);
-  const relPath =
-    rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : path.basename(src);
-  const ext = path.extname(relPath);
-  const stemmed = (ext ? relPath.slice(0, -ext.length) : relPath).split("/").join("__");
-  const srcExt = path.extname(src).slice(1).toLowerCase() || "img";
-  return `${stemmed}__${srcExt}${suffix}`;
-}
+export { texFigureOutName };
 
 async function convertVector(
   kind: "pdf" | "eps",
