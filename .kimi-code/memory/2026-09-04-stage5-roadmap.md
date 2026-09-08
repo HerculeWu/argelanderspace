@@ -17,6 +17,8 @@
 
 **2026-09-04：MS2 对抗审查一轮（BLOCK → 修复，四门复测全绿，未 commit）。** B1 plain-table 题注丢失（holder 注册条件错用 opts 字段）/B2 center 包裹 tabular 空表体（findTabularDeep 递归布局透明 env）/B3 comment 环境内容混入 code 块（verbatim 节点按 env 名丢弃 + 附带修复 `\small{…}`/`{\small…}` 剥壳使 2012.05220 的 ADQL code 块回归旧 golden 库存）全修复+复冻；N1 宏展开 pass 上限警告、N2 缺产物静默化、N3 golden 抽查补题注/表体/code 库存断言。详见 `2026-09-04-stage5-ms2.md` 审查修复记录节。测试 core 222→228。
 
+**2026-09-08：MS3a（存储切换+消费侧重接）完成，四门全绿，未 commit。** 详见 `2026-09-08-stage5-ms3a.md`：CLI/acquire/upload 全链路接新 tex 管线（`IngestPipelines` 端口改返 TexDocIr）；`/api/paper/:id/ir` 落盘即读（旧形投影容忍至 MS4）；raw `/api/paper/:id` 删除；agent read/show/ref/list 直读存 IR（token 约定不变，ref 锚点 p-7→p-6 属段落切分差异）；seed/graph 零改动（references 字段对照：共享条目 authors/year/title/doi/arxiv_id 全同，2012.05220 编译态 .bbl 少一条=印刷真值）；warnings 经 onProgress 进 job log；顺带修出行尾注释空格丢失 bug（已复冻 golden）。E2E smoke 全过（CLI ingest→library build→agent 命令→server curl）。测试 core 228→229、其余持平。
+
 ## 范围变更（Q8）
 
 原 Stage 5（论文写作）**删除**，不顺延。新 Stage 5 = 重新定义文档解析后的 IR，**IR 即存储形式**，streamView（网页流式渲染）与 agent 内容均从 IR 渲染；**UX 不增不减**；pagedView（prototype 的 SVG 伪 PDF 视图）**不进 repo**，仅为 prototype 开发期验证手段。
