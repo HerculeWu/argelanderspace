@@ -28,21 +28,24 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Document, DocumentSchema } from "@argelanderspace/contracts";
 import {
+  type DocIr,
+  DocumentSchema,
+  type IrBlock,
+  type IrSection,
+  TexDocIrSchema,
+} from "@argelanderspace/contracts";
+import {
+  buildDocIr,
   citeShort,
   displayAuthors,
-  type FloatBlock,
-  iterSections,
   type LibraryPaths,
   LibraryStore,
   libraryPaths,
   patchWork,
-  renderBibManifest,
-  renderDocMarkdown,
-  renderInlineText,
-  renderRefsManifest,
-  renderSectionMarkdown,
+  renderIrMarkdown,
+  renderIrSectionMarkdown,
+  segmentsMarkdown,
   type Work,
 } from "@argelanderspace/core";
 import { type AppConfig, getConfig } from "@argelanderspace/infra";
@@ -100,18 +103,40 @@ function unknownMsg(kind: string, query: string, candidates: readonly string[]):
   return `unknown ${kind} "${query}" — available: ${show.join(", ")}${more}`;
 }
 
-function loadDoc(paths: LibraryPaths, docId: string): Document {
+/**
+ * The stored file IS the render IR (Stage 5 MS3a). Docs in the retired
+ * Document JSON shape (pre-rebuild) are projected on demand — same tolerance
+ * as the server's /ir route until the MS4 migration re-ingests them.
+ */
+function loadDocIr(paths: LibraryPaths, docId: string): DocIr {
   const file = join(paths.outputDir, docId, `${docId}.json`);
   if (!existsSync(file)) {
     throw new Error(unknownMsg("doc", docId, listDocIds(paths.outputDir)));
   }
-  return DocumentSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+  const raw = JSON.parse(readFileSync(file, "utf8")) as unknown;
+  if (
+    raw !== null &&
+    typeof raw === "object" &&
+    typeof (raw as Record<string, unknown>).version === "number"
+  ) {
+    return TexDocIrSchema.parse(raw);
+  }
+  return buildDocIr(DocumentSchema.parse(raw));
 }
 
-function docFloats(doc: Document): FloatBlock[] {
-  const out: FloatBlock[] = [];
-  for (const s of iterSections(doc)) {
-    for (const b of s.blocks ?? []) {
+function* iterIrSections(sections: IrSection[]): Generator<IrSection> {
+  for (const s of sections) {
+    yield s;
+    yield* iterIrSections(s.children);
+  }
+}
+
+type IrFloat = Extract<IrBlock, { type: "figure" | "table" | "equation" | "code" | "algorithm" }>;
+
+function docFloats(ir: DocIr): IrFloat[] {
+  const out: IrFloat[] = [];
+  for (const s of iterIrSections(ir.sections)) {
+    for (const b of s.blocks) {
       if (
         b.type === "figure" ||
         b.type === "table" ||
@@ -189,16 +214,16 @@ interface ReadOpts {
 
 function runRead(docId: string, opts: ReadOpts, dataDir: string): void {
   const paths = libraryPaths(dataDir);
-  const doc = loadDoc(paths, docId);
+  const ir = loadDocIr(paths, docId);
   const port = resolveLinkPort();
-  const title = doc.meta?.title ?? docId;
+  const title = ir.title ?? docId;
   if (opts.manifest !== undefined) {
     if (opts.manifest !== "refs" && opts.manifest !== "bib") {
       throw new Error(`--manifest must be refs|bib, got "${opts.manifest}"`);
     }
     // stdout stays pure JSONL; the doc header + deep link goes to stderr
     console.error(`doc: ${docId} | ${title} | ${docLink(port, docId)}`);
-    const rows = opts.manifest === "refs" ? renderRefsManifest(doc) : renderBibManifest(doc);
+    const rows = opts.manifest === "refs" ? ir.refsManifest : ir.bib;
     for (const r of rows) console.log(JSON.stringify(r));
     return;
   }
@@ -207,20 +232,20 @@ function runRead(docId: string, opts: ReadOpts, dataDir: string): void {
       `# ${title}\n\n> doc: ${docId} | section: ${opts.section} | ` +
         `link: ${docLink(port, docId, opts.section)}\n`
     );
-    process.stdout.write(renderSectionMarkdown(doc, opts.section));
+    process.stdout.write(renderIrSectionMarkdown(ir, opts.section));
     return;
   }
   console.log(
-    `# ${title}\n\n> doc: ${docId} | source: ${doc.source?.type ?? "?"} | ` +
+    `# ${title}\n\n> doc: ${docId} | source: ${"source" in ir ? ((ir.source as { type?: string }).type ?? "?") : "?"} | ` +
       `link: ${docLink(port, docId)}\n`
   );
-  process.stdout.write(renderDocMarkdown(doc));
+  process.stdout.write(renderIrMarkdown(ir));
 }
 
 function runShow(docId: string, floatId: string, dataDir: string): void {
   const paths = libraryPaths(dataDir);
-  const doc = loadDoc(paths, docId);
-  const floats = docFloats(doc);
+  const ir = loadDocIr(paths, docId);
+  const floats = docFloats(ir);
   const b = floats.find((f) => f.id === floatId);
   if (b === undefined) {
     throw new Error(
@@ -237,12 +262,17 @@ function runShow(docId: string, floatId: string, dataDir: string): void {
   if (b.type === "equation") {
     out.latex = b.latex;
   } else {
-    if (b.caption !== undefined) out.caption = renderInlineText(b.caption.text, doc);
+    if (
+      (b.type === "figure" || b.type === "table" || b.type === "code" || b.type === "algorithm") &&
+      b.captionSegments !== undefined
+    ) {
+      out.caption = segmentsMarkdown(b.captionSegments);
+    }
     if (b.type === "figure" || b.type === "table") {
       if (b.footnote !== undefined) out.footnote = b.footnote;
-      if (b.img_path !== undefined) out.image = `/images/${docId}/${b.img_path}`;
+      if (b.imgPath !== undefined) out.image = `/images/${docId}/${b.imgPath}`;
     }
-    if (b.type === "table" && b.table_body !== undefined) out.table_body = b.table_body;
+    if (b.type === "table" && b.tableBody !== undefined) out.table_body = b.tableBody;
     if ((b.type === "code" || b.type === "algorithm") && b.body !== undefined) {
       if (b.type === "code" && b.lang !== undefined) out.lang = b.lang;
       out.body = b.body;
@@ -254,8 +284,8 @@ function runShow(docId: string, floatId: string, dataDir: string): void {
 
 function runRef(docId: string, refIdOrKey: string, dataDir: string): void {
   const paths = libraryPaths(dataDir);
-  const doc = loadDoc(paths, docId);
-  const refs = doc.references ?? [];
+  const ir = loadDocIr(paths, docId);
+  const refs = ir.references ?? [];
   const ref =
     refs.find((r) => r.id === refIdOrKey) ??
     refs.find((r) => r.label === refIdOrKey || r.keys?.includes(refIdOrKey) === true);
@@ -268,13 +298,9 @@ function runRef(docId: string, refIdOrKey: string, dataDir: string): void {
       )
     );
   }
-  const citedIn = [
-    ...new Set(
-      (doc.citations ?? [])
-        .filter((c) => c.ref_ids?.includes(ref.id) === true && c.block_id !== undefined)
-        .map((c) => c.block_id as string)
-    ),
-  ];
+  const citedIn = Object.entries(ir.citationsByBlock)
+    .filter(([, refIds]) => refIds.includes(ref.id))
+    .map(([blockId]) => blockId);
   const out: Record<string, unknown> = {
     doc_id: docId,
     id: ref.id,
@@ -354,13 +380,13 @@ function runList(dataDir: string): void {
   const port = resolveLinkPort();
   for (const id of docIds) {
     try {
-      const doc = loadDoc(paths, id);
-      const title = (doc.meta?.title ?? "").replaceAll("|", "/");
-      const nSec = doc.stats?.n_sections ?? [...iterSections(doc)].length;
-      const nRefs = doc.stats?.n_references ?? (doc.references ?? []).length;
+      const ir = loadDocIr(paths, id);
+      const title = (ir.title ?? "").replaceAll("|", "/");
+      const nSec = [...iterIrSections(ir.sections)].length;
+      const nRefs = (ir.references ?? []).length;
       console.log(
-        `doc: ${id} | ${doc.source?.type ?? "?"} | sec=${nSec} | refs=${nRefs} | ` +
-          `${title} | ${docLink(port, id)}`
+        `doc: ${id} | ${"source" in ir ? ((ir.source as { type?: string })?.type ?? "?") : "?"} | ` +
+          `sec=${nSec} | refs=${nRefs} | ${title} | ${docLink(port, id)}`
       );
     } catch {
       console.log(`doc: ${id} | (unreadable doc JSON) | ${docLink(port, id)}`);

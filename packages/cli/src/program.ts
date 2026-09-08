@@ -14,11 +14,9 @@
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Document } from "@argelanderspace/contracts";
 import {
   acquireReferences,
   addBibRecords,
-  documentToJson,
   enrichAndPlan,
   fetchReadyFulltext,
   fetchRemaining,
@@ -28,13 +26,13 @@ import {
   rebuild,
   type Work,
 } from "@argelanderspace/core";
-import { ingestLatex } from "@argelanderspace/infra";
+import { ingestTexSource } from "@argelanderspace/infra";
 import { realPipelines, realSources, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { fail, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
-import { formatIngestSummary, formatPlanRow, planSortKey } from "./summary.js";
+import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
 
 // re-exported: the resolution chain now lives in ./common.js (shared with the
 // agent subcommands), but the public import path stays stable
@@ -53,23 +51,25 @@ async function runIngest(input: string, opts: IngestOpts, dataDir: string): Prom
   const outRoot = opts.outRoot ?? join(dataDir, "output");
   // latex-only on main; detectSource throws a friendly error for DOI/URL/PDF inputs
   detectSource(input);
-  const doc: Document = await ingestLatex(input, {
+  // --no-assets skips figure materialization (block+caption kept, no image);
+  // --figure-dpi is accepted for interface stability but ignored (dvisvgm
+  // emits SVG — no raster DPI anymore, MS4 docs sweep).
+  const r = await ingestTexSource(input, {
     outRoot,
-    config: {
-      downloadAssets: opts.assets,
-      useCache: opts.cache,
-      figureDpi: Number.parseInt(opts.figureDpi, 10),
+    noCache: !opts.cache,
+    assets: opts.assets,
+    onProgress: (m) => {
+      if (opts.verbose) console.error(m);
+      else if (m.startsWith("warning: ")) console.error(m);
     },
-    writeJson: true,
   });
-  // Python `_summarize` reads `doc.to_dict(config.compact_json)`: serialize
-  // once (stats are computed here) and reuse for `-o` and the summary.
-  const docJson = documentToJson(doc, true);
   if (opts.output) {
-    writeFileSync(opts.output, JSON.stringify(docJson, null, 2), "utf-8");
+    writeFileSync(opts.output, JSON.stringify(r.ir, null, 2), "utf-8");
     console.log(`wrote ${opts.output}`);
   }
-  console.log(`\n${formatIngestSummary(docJson)}`);
+  console.log(
+    `\n${formatTexIngestSummary(r.ir, { engine: r.engine, warnings: r.warnings.length })}`
+  );
 }
 
 /** The trailing ADS hint of `library/__main__.py` (status != "ok"). */

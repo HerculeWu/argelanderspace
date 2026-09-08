@@ -32,6 +32,8 @@ export const TexIrSourceSchema = z.object({
   arxiv_id: z.string().optional(),
   doi: z.string().optional(),
   publisher: z.string().optional(),
+  /** Provenance for uploads (the upload attach stamps "user_latex_zip"). */
+  acquired_via: z.string().optional(),
 });
 
 export const TexIrMetaSchema = z.object({

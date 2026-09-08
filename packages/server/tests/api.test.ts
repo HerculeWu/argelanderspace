@@ -96,21 +96,18 @@ describe("GET /api/papers", () => {
   });
 });
 
-describe("GET /api/paper/:doc_id", () => {
-  test("returns the parsed document JSON", async () => {
+describe("GET /api/paper/:doc_id (retired in MS3a)", () => {
+  // the raw Document-JSON endpoint left with the retired schema; only /ir stays.
+  test("gone: 404 with the SPA-fallback's JSON body", async () => {
     const res = await get("/api/paper/arxiv-2501.17225");
-    expect(res.status).toBe(200);
-    const doc = (await res.json()) as Record<string, unknown>;
-    expect(doc.doc_id).toBe("arxiv-2501.17225");
-    // byte-semantic: deep-equal to what the fixture file holds
-    const onDisk = JSON.parse(
-      readFileSync(join(dataDir, "output", "arxiv-2501.17225", "arxiv-2501.17225.json"), "utf8")
-    );
-    expect(doc).toEqual(onDisk);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ detail: "Not Found" });
   });
+});
 
+describe("GET /api/paper/:doc_id/ir edge semantics (former raw-route tests)", () => {
   test("404 with FastAPI's repr-quoted detail", async () => {
-    const res = await get("/api/paper/nope");
+    const res = await get("/api/paper/nope/ir");
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ detail: "paper 'nope' not found" });
   });
@@ -121,7 +118,7 @@ describe("GET /api/paper/:doc_id", () => {
     // app.request and in @hono/node-server's Request construction); the
     // request 404s instead of 400ing. Safe either way: no traversal.
     for (const bad of [".hidden", ".config", "a%2Fb", "a%5Cb"]) {
-      const res = await get(`/api/paper/${bad}`);
+      const res = await get(`/api/paper/${bad}/ir`);
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ detail: "bad doc id" });
     }
@@ -129,32 +126,44 @@ describe("GET /api/paper/:doc_id", () => {
 
   test("mtime+size cache: edits are picked up, unmodified reads stay equal", async () => {
     const p = join(dataDir, "output", "demo", "demo.json");
-    const first = (await (await get("/api/paper/demo")).json()) as Record<string, unknown>;
-    expect(first).toMatchObject({ doc_id: "demo" });
+    // put a stored-IR-shaped doc in place (the passthrough path)
+    const irDoc = {
+      version: 1,
+      docId: "demo",
+      sections: [],
+      refsManifest: [],
+      bib: [],
+      citationsByBlock: {},
+      source: { type: "latex", origin: "/tmp/demo", main_tex: "main.tex" },
+      meta: { title: "Demo paper" },
+    };
+    writeFileSync(p, JSON.stringify(irDoc));
+    const first = (await (await get("/api/paper/demo/ir")).json()) as Record<string, unknown>;
+    expect(first).toMatchObject({ docId: "demo", version: 1 });
     // same content → same payload (cached path)
-    expect(await (await get("/api/paper/demo")).json()).toEqual(first);
+    expect(await (await get("/api/paper/demo/ir")).json()).toEqual(first);
     // rewrite with a new field (mtime AND size change busts the cache)
-    writeFileSync(p, JSON.stringify({ ...first, edited: true }));
-    const second = await (await get("/api/paper/demo")).json();
-    expect(second).toMatchObject({ doc_id: "demo", edited: true });
+    writeFileSync(p, JSON.stringify({ ...irDoc, edited: true }));
+    const second = await (await get("/api/paper/demo/ir")).json();
+    expect(second).toMatchObject({ docId: "demo", edited: true });
   });
 });
 
 describe("GET /api/paper/:doc_id/ir", () => {
-  test("returns the render IR, consistent with the document JSON", async () => {
+  test("returns the stored render IR byte-identically (it IS the file)", async () => {
     const res = await get("/api/paper/arxiv-2501.17225/ir");
     expect(res.status).toBe(200);
     const ir = DocIrSchema.parse(await res.json());
     expect(ir.docId).toBe("arxiv-2501.17225");
     expect(typeof ir.title).toBe("string");
     expect(ir.sections.length).toBeGreaterThan(0);
-    const doc = (await (await get("/api/paper/arxiv-2501.17225")).json()) as {
-      references?: unknown[];
-    };
-    expect(ir.bib).toHaveLength((doc.references ?? []).length);
+    const onDisk = JSON.parse(
+      readFileSync(join(dataDir, "output", "arxiv-2501.17225", "arxiv-2501.17225.json"), "utf8")
+    ) as { references?: unknown[] };
+    expect(ir.bib).toHaveLength((onDisk.references ?? []).length);
   });
 
-  test("the minimal demo doc yields an empty IR", async () => {
+  test("a retired-Document-shaped file still projects (migration tolerance)", async () => {
     const res = await get("/api/paper/demo/ir");
     expect(res.status).toBe(200);
     const ir = DocIrSchema.parse(await res.json());

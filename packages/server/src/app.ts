@@ -232,31 +232,12 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ papers: ids });
   });
 
-  // ---- GET /api/paper/{doc_id} --------------------------------------------- //
-
-  app.get("/api/paper/:doc_id", (c) => {
-    const docId = c.req.param("doc_id");
-    // `:doc_id` never matches an empty segment; trim() catches whitespace-only.
-    if (!docId.trim() || badId(docId)) {
-      const e = detail("bad doc id", 400);
-      return c.json(e.body, e.status);
-    }
-    const p = join(outputDir, docId, `${docId}.json`);
-    if (!existsSync(p) || !statSync(p).isFile()) {
-      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
-      return c.json(e.body, e.status);
-    }
-    // bigint stats: `mtimeNs` only exists on the bigint view.
-    const st = statSync(p, { bigint: true });
-    const doc = paperCache.load(docId, p, { mtimeNs: st.mtimeNs, size: st.size });
-    return c.json(doc as Record<string, unknown>);
-  });
-
   // ---- GET /api/paper/{doc_id}/ir -------------------------------------------- //
 
-  // The shared render IR (Stage 3 / MS2a). Computed on demand from the cached
-  // document: buildDocIr is a cheap pure projection and the PaperCache's
-  // mtimeNs+size key already tracks edits, so there is no separate IR cache.
+  // Stage 5 MS3a: the stored file IS the render IR — return it as-is (the
+  // PaperCache's mtimeNs+size key tracks edits). Pre-rebuild docs in the
+  // retired Document shape are projected on demand (migration tolerance until
+  // the MS4 re-ingest, same trust level as before).
   app.get("/api/paper/:doc_id/ir", (c) => {
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badId(docId)) {
@@ -269,9 +250,14 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     const st = statSync(p, { bigint: true });
-    // trusted pipeline output, same trust level as the passthrough above
-    const doc = paperCache.load(docId, p, { mtimeNs: st.mtimeNs, size: st.size }) as Document;
-    return c.json(buildDocIr(doc));
+    const doc = paperCache.load(docId, p, { mtimeNs: st.mtimeNs, size: st.size }) as Record<
+      string,
+      unknown
+    >;
+    if (typeof doc.version === "number") {
+      return c.json(doc);
+    }
+    return c.json(buildDocIr(doc as unknown as Document));
   });
 
   // ---- GET /api/library ------------------------------------------------------ //

@@ -2,24 +2,22 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
-import { buildDocIr } from "@argelanderspace/core";
-import type { Document } from "@argelanderspace/contracts";
+import type { TexDocIr } from "@argelanderspace/contracts";
 import { docRouteUrl, parseDocRoute } from "../src/lib/deeplink";
 import { DocPane } from "../src/doc/DocPane";
 import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
-// Golden reader doc (arxiv-2501.17225, latex): sections sec-1..39, floats
-// fig-1..25 / tab-1..4 / eq-1..12, refs ref-1..76; ref-6 (Bok 1934) is first
-// cited in block p-7. The reader now fetches the render IR (GET
-// /api/paper/<id>/ir), so the mock below serves what the server would:
-// buildDocIr(golden). (node:url's URL, not happy-dom's, so fs accepts it.)
-const goldenDoc = JSON.parse(
+// Golden stored IR (Stage 5 tex pipeline, arxiv-2501.17225): sections sec-1..38,
+// floats fig-1..25 / tab-1..4 / eq-1..12, refs ref-1..76; ref-6 (Bok 1934) is
+// first cited in block p-7. The stored file IS the render IR the server
+// passes through (GET /api/paper/<id>/ir), so the mock below serves it
+// verbatim. (node:url's URL, not happy-dom's, so fs accepts it.)
+const goldenIr = JSON.parse(
   readFileSync(
-    fileURLToPath(new NodeURL("../../../tests/golden/arxiv-2501.17225.json", import.meta.url)),
+    fileURLToPath(new NodeURL("../../../tests/golden/tex/arxiv-2501.17225.json", import.meta.url)),
     "utf8"
   )
-) as Document;
-const goldenIr = buildDocIr(goldenDoc);
+) as TexDocIr;
 
 // ---------------------------------------------------------------------------
 // URL parsing
@@ -156,9 +154,10 @@ describe("DocPane deep-link anchors", () => {
 
   it("lands a ref anchor on the citing block, then focuses the rail card", async () => {
     const { container } = renderDocPane("ref-6");
-    // the reader jumps to the first block citing ref-6 (p-7) so its card
+    // the reader jumps to the first block citing ref-6 (p-6 in the tex IR —
+    // the old pandoc pipeline split this paragraph as p-7), so its card
     // enters the rail, then the card itself is focused (after the jump settles)
-    await waitFor(() => expect(scrolled.some((el) => el.id === "p-7")).toBe(true));
+    await waitFor(() => expect(scrolled.some((el) => el.id === "p-6")).toBe(true));
     const card = await waitFor(
       () => {
         const c = container.querySelector("#ref-6");

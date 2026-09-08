@@ -747,6 +747,26 @@ describe("fuse synthetic sources", () => {
     expect(allSections(ir.sections).map((s) => s.number)).toEqual(["1", "A", "B"]);
   });
 
+  test("end-of-line comments: the space before % survives, % without space joins", async () => {
+    const { ir } = await fuseSynthetic(
+      [
+        "\\documentclass{article}",
+        "\\begin{document}",
+        "\\section{S}",
+        "because the %various processes concerned%",
+        "energy joins. Also a%x",
+        "b concatenates.",
+        "\\end{document}",
+      ].join("\n"),
+      emptyFacts()
+    );
+    const p = [...walkBlocks(ir.sections)].find((b) => b.type === "paragraph");
+    if (p?.type !== "paragraph") throw new Error("no paragraph");
+    const text = p.segments.map((s) => (s.type === "text" ? s.text : "")).join("");
+    expect(text).toContain("because the energy joins");
+    expect(text).toContain("ab concatenates");
+  });
+
   test("float numbers join the .lot/.lof (print truth beats the label-before-caption aux quirk)", async () => {
     const { ir, warnings } = await fuseSynthetic(
       [

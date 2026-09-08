@@ -30,6 +30,7 @@ export * from "./sources/crossref.js";
 export * from "./sources/openalex.js";
 export * from "./tex/compile.js";
 export * from "./tex/figures.js";
+export * from "./tex/ingest.js";
 export * from "./tex/instrument.js";
 export * from "./tex/proc.js";
 export * from "./tex/workspace.js";

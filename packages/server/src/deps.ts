@@ -16,8 +16,8 @@ import type { IngestPipelines, LibraryPaths, MetadataSources } from "@argelander
 import {
   AdsClient,
   CrossrefClient,
-  ingestLatex,
-  ingestLatexZip,
+  ingestTexSource,
+  ingestTexZip,
   OpenAlexClient,
 } from "@argelanderspace/infra";
 
@@ -39,11 +39,12 @@ export function realSources(paths: LibraryPaths, offline: boolean): MetadataSour
   };
 }
 
-/** The ingest pipeline writing under `<dataDir>/output`. */
+/** The ingest pipeline writing under `<dataDir>/output` (Stage 5 tex pipeline). */
 export function realPipelines(paths: LibraryPaths): IngestPipelines {
   return {
-    ingestLatex: (arxivId) => ingestLatex(arxivId, { outRoot: paths.outputDir }),
+    ingestLatex: async (arxivId) =>
+      (await ingestTexSource(arxivId, { outRoot: paths.outputDir })).ir,
     // attachLatexZip passes outRoot/docId through; the composition binds nothing extra.
-    ingestLatexZip: (zipPath, opts) => ingestLatexZip(zipPath, opts),
+    ingestLatexZip: async (zipPath, opts) => (await ingestTexZip(zipPath, opts)).ir,
   };
 }

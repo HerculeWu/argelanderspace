@@ -2,20 +2,22 @@
  * Port interface for the ingestion pipeline the acquisition executor routes
  * through (Python's `pipeline_latex.py::ingest_latex`).
  *
- * The pipeline itself is infra (pandoc / arXiv fetch / rasterization); it
- * ingests a source into `data/output/<doc_id>/` and returns the reader
- * `Document` (contracts type, JSON-written with `write_json=True`).
+ * Stage 5 MS3a: the pipeline returns the stored render IR (`TexDocIr` —
+ * DocIr superset with `version` + `source`/`meta` identity) and writes it to
+ * `<outRoot>/<docId>/<docId>.json` itself. The implementation is the new
+ * latexmk-based tex pipeline (core `pipelines/tex`, infra `tex/ingest.ts`);
+ * the pandoc pipeline it replaces stays present (and tested) until MS3b.
  *
  * The PDF (MinerU) and publisher-HTML pipelines are archived on the
  * `ocr-features` branch; main ingests LaTeX sources only.
  */
 
-import type { Document } from "@argelanderspace/contracts";
+import type { TexDocIr } from "@argelanderspace/contracts";
 
 /** The ingestion pipeline, keyed by what it consumes. */
 export interface IngestPipelines {
-  /** `ingest_latex(arxiv_id, config=…, write_json=True)` — arXiv e-print → Document. */
-  ingestLatex(arxivId: string): Promise<Document>;
+  /** arXiv e-print → stored IR (id derived as `arxiv-<id>`). */
+  ingestLatex(arxivId: string): Promise<TexDocIr>;
   /**
    * Unpack a user-supplied LaTeX source zip into `<outRoot>/<docId>/src`
    * (clearing any previous tree — a re-upload overwrites) and ingest it in
@@ -24,5 +26,5 @@ export interface IngestPipelines {
   ingestLatexZip(
     zipPath: string,
     opts: { outRoot: string; docId: string; onProgress?: (message: string) => void }
-  ): Promise<Document>;
+  ): Promise<TexDocIr>;
 }

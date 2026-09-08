@@ -14,7 +14,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Document } from "@argelanderspace/contracts";
+import type { TexDocIr } from "@argelanderspace/contracts";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { IngestPipelines } from "../src/acquire/pipelines.js";
 import { attachLatexZip, uploadDocId } from "../src/acquire/upload.js";
@@ -55,17 +55,20 @@ function stubPipelines(opts: StubOpts = {}): IngestPipelines {
       const dir = join(outRoot, docId);
       mkdirSync(join(dir, "src"), { recursive: true });
       writeFileSync(join(dir, "src", "main.tex"), "\\documentclass{article}\n");
-      const doc = {
-        doc_id: docId,
+      const ir: TexDocIr = {
+        version: 1,
+        docId,
+        sections: [],
+        refsManifest: [],
+        bib: [],
+        citationsByBlock: {},
+        source: { type: "latex", origin: join(dir, "src"), main_tex: "main.tex" },
         meta: { title: opts.docTitle ?? "The Uploaded Title" },
-        source: { type: "latex", path: join(dir, "src") },
-        blocks: [],
-        references: [],
       };
-      writeFileSync(join(dir, `${docId}.json`), JSON.stringify(doc));
+      writeFileSync(join(dir, `${docId}.json`), JSON.stringify(ir));
       onProgress?.("stub ingest");
       if (opts.vanish) rmSync(dir, { recursive: true, force: true });
-      return doc as unknown as Document;
+      return ir;
     },
   };
 }

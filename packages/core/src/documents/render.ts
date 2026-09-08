@@ -185,6 +185,22 @@ export function renderIrMarkdown(ir: DocIr, opts: RenderOptions = {}): string {
   return `${ir.sections.map((s) => sectionMarkdown(s, ctx)).join("\n\n")}\n`;
 }
 
+/** One IR section subtree as markdown (DocIr twin of {@link renderSectionMarkdown}). */
+export function renderIrSectionMarkdown(
+  ir: DocIr,
+  sectionId: string,
+  opts: RenderOptions = {}
+): string {
+  const all = [...iterIrSections(ir.sections)];
+  const sec = all.find((s) => s.id === sectionId);
+  if (sec === undefined) {
+    const avail = all.map((s) => s.id).join(", ");
+    throw new Error(`unknown section "${sectionId}" in doc ${ir.docId}; available: ${avail}`);
+  }
+  const ctx: MdCtx = { docId: ir.docId, preview: opts.previewLength ?? DEFAULT_PREVIEW };
+  return `${sectionMarkdown(sec, ctx)}\n`;
+}
+
 /**
  * One section subtree (heading + own blocks + children) as markdown.
  * Throws with the available section ids when *sectionId* is unknown.

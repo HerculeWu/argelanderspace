@@ -5,6 +5,7 @@
  * can assert on the exact strings.
  */
 
+import type { IrSection, TexDocIr } from "@argelanderspace/contracts";
 import type { Work } from "@argelanderspace/core";
 
 /** Python `f"{k:<12}"` (left-justify, pad with spaces). */
@@ -64,6 +65,64 @@ export function formatIngestSummary(docJson: Record<string, unknown>): string {
     lines.push(
       `  ${pad("textfix", 12)}: repaired ${fixed}/${before} ?-gaps from the PDF text layer`
     );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The `=== ingest summary ===` block for the Stage 5 stored IR (MS3a): same
+ * label layout as the Document-JSON version, with stats computed from the
+ * IR (the retired `stats` bucket is gone) and the compile engine + warning
+ * count appended.
+ */
+export function formatTexIngestSummary(
+  ir: TexDocIr,
+  info: { engine?: string; warnings?: number } = {}
+): string {
+  let paragraphs = 0;
+  let figures = 0;
+  let tables = 0;
+  let equations = 0;
+  let code = 0;
+  let algorithms = 0;
+  let nBlocks = 0;
+  let nSections = 0;
+  const walk = (secs: IrSection[]): void => {
+    for (const s of secs) {
+      nSections += 1;
+      for (const b of s.blocks) {
+        nBlocks += 1;
+        if (b.type === "paragraph") paragraphs += 1;
+        else if (b.type === "figure") figures += 1;
+        else if (b.type === "table") tables += 1;
+        else if (b.type === "equation") equations += 1;
+        else if (b.type === "code") code += 1;
+        else if (b.type === "algorithm") algorithms += 1;
+      }
+      walk(s.children);
+    }
+  };
+  walk(ir.sections);
+  const counts: Array<[string, number]> = [
+    ["n_sections", nSections],
+    ["n_paragraphs", paragraphs],
+    ["n_figures", figures],
+    ["n_tables", tables],
+    ["n_equations", equations],
+    ["n_code", code],
+    ["n_algorithms", algorithms],
+    ["n_references", ir.references?.length ?? 0],
+  ];
+  const lines: string[] = ["=== ingest summary ==="];
+  lines.push(`  ${pad("title", 12)}: ${pyStr(ir.title)}`);
+  lines.push(`  ${pad("pages", 12)}: ${pyStr(ir.nPages)}`);
+  for (const [k, v] of counts) {
+    lines.push(`  ${pad(k, 12)}: ${String(v)}`);
+  }
+  lines.push(`  ${pad("blocks", 12)}: ${String(nBlocks)}`);
+  if (info.engine !== undefined) lines.push(`  ${pad("engine", 12)}: ${info.engine}`);
+  if (info.warnings !== undefined && info.warnings > 0) {
+    lines.push(`  ${pad("warnings", 12)}: ${String(info.warnings)} (see stderr)`);
   }
   return lines.join("\n");
 }

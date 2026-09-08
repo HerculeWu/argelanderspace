@@ -11,7 +11,15 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,12 +31,15 @@ const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const BIN = join(PKG, "dist", "bin.js");
 const ASTRO_BIN_HINT = "/home/wwu/miniforge3/envs/astro/bin";
 
-function havePandoc(env: NodeJS.ProcessEnv): boolean {
-  const r = spawnSync("pandoc", ["--version"], { env, stdio: "ignore" });
-  return r.status === 0;
+function haveLatexmk(env: NodeJS.ProcessEnv): boolean {
+  return (
+    spawnSync("latexmk", ["--version"], { env, stdio: "ignore" }).status === 0 &&
+    spawnSync("pdflatex", ["--version"], { env, stdio: "ignore" }).status === 0
+  );
 }
 
-/** Child env: scrubbed ARGELANDERSPACE_*, HOME in a tmp dir, astro bin on PATH. */
+/** Child env: scrubbed ARGELANDERSPACE_*, HOME in a tmp dir, astro bin on PATH
+ *  (pandoc is only needed by the retired pandoc-gated suites elsewhere). */
 function childEnv(home: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
   for (const k of Object.keys(env)) {
@@ -53,13 +64,13 @@ function runCli(args: string[], env: NodeJS.ProcessEnv): RunResult {
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
 
-/** A fresh fixture data dir holding one golden reader doc. */
+/** A fresh fixture data dir holding one golden stored-IR doc (tex pipeline). */
 function makeDataDir(root: string): string {
   const dataDir = join(root, "data");
   const docDir = join(dataDir, "output", "arxiv-2501.17225");
   mkdirSync(docDir, { recursive: true });
   copyFileSync(
-    join(REPO_ROOT, "tests", "golden", "arxiv-2501.17225.json"),
+    join(REPO_ROOT, "tests", "golden", "tex", "arxiv-2501.17225.json"),
     join(docDir, "arxiv-2501.17225.json")
   );
   return dataDir;
@@ -98,22 +109,45 @@ describe("source auto-detection (latex-only routing)", () => {
   });
 });
 
-const PANDOC = havePandoc(childEnv(mkdtempSync(join(tmpdir(), "aspace-cli-home-"))));
+const LATEXMK = haveLatexmk(childEnv(mkdtempSync(join(tmpdir(), "aspace-cli-home-"))));
 
-describe.skipIf(!PANDOC)("ingest smoke (built CLI, offline)", () => {
+describe.skipIf(!LATEXMK)("ingest smoke (built CLI, real latexmk compile)", () => {
   test("local .tex ingests and prints the summary", () => {
     const root = mkdtempSync(join(tmpdir(), "aspace-cli-ingest-"));
     const env = childEnv(root);
     const tex = join(root, "main.tex");
-    cpSync(join(PKG, "..", "infra", "tests", "fixtures", "sample_latex.tex"), tex);
+    // the pandoc-era sample needs its implicit packages + aastex macros
+    // spelled out for latexmk (pandoc tolerated them); patch the tmp copy.
+    const sampleSrc = readFileSync(
+      join(REPO_ROOT, "packages", "core", "tests", "fixtures", "sample-latex", "sample_latex.tex"),
+      "utf8"
+    )
+      .replace(
+        "\\documentclass{article}",
+        "\\documentclass{article}\n" +
+          "\\usepackage{natbib}\n\\usepackage{graphicx}\n\\usepackage{url}\n" +
+          "\\providecommand{\\arcsec}{''}\n\\providecommand{\\mnras}{MNRAS}\n" +
+          "\\providecommand{\\aap}{A\\&A}\n\\providecommand{\\doi}[1]{doi: #1}"
+      )
+      .replace("$\\alpha\\textsubscript{c}$", "$\\alpha_{\\mathrm{c}}$");
+    writeFileSync(tex, sampleSrc);
+    // the sample's \includegraphics needs a real file for latexmk (pandoc
+    // tolerated the dangling name); provide it.
+    cpSync(
+      join(PKG, "..", "infra", "tests", "fixtures", "fig-vector.pdf"),
+      join(root, "nonexistent_figure.pdf")
+    );
     const dataDir = join(root, "data");
 
     const r = runCli(["ingest", tex, "--data-dir", dataDir, "--no-assets"], env);
-    expect(r.stderr).toBe("");
+    // warnings (compile/fuse degradations) surface on stderr; --no-assets
+    // emits exactly the no-figure-port one
+    expect(r.stderr).toContain("warning: no figure port wired");
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("=== ingest summary ===");
     expect(r.stdout).toContain("title       : A Sample LaTeX Paper for the Phase 5 Pipeline");
     expect(r.stdout).toContain("n_references: 2");
+    expect(r.stdout).toContain("engine      : pdflatex");
     // the doc landed under <data-dir>/output/<doc_id>/<doc_id>.json
     expect(existsSync(join(dataDir, "output", "latex-main", "latex-main.json"))).toBe(true);
   }, 180_000);

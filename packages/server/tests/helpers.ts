@@ -8,11 +8,11 @@ import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Document, WsServerMessage } from "@argelanderspace/contracts";
+import type { TexDocIr, WsServerMessage } from "@argelanderspace/contracts";
 import type { IngestPipelines, MetadataSources } from "@argelanderspace/core";
 
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
-const GOLDEN = join(REPO_ROOT, "tests", "golden");
+const GOLDEN = join(REPO_ROOT, "tests", "golden", "tex");
 const CORE_FIXTURES = join(REPO_ROOT, "packages", "core", "tests", "fixtures");
 
 /** A work that exists in the library fixture (for patch tests). */
@@ -94,8 +94,8 @@ export function stubSources(): MetadataSources {
 
 /**
  * Pipelines whose `ingestLatexZip` mimics the real one minimally: write a tiny
- * Document to `<outRoot>/<docId>/<docId>.json` (what `attachLatexZip`'s
- * `stampSource` + the seed merge expect). No pandoc involved.
+ * stored-IR doc to `<outRoot>/<docId>/<docId>.json` (what `attachLatexZip`'s
+ * `stampSource` + the seed merge expect). No latexmk involved.
  */
 export function stubPipelines(): IngestPipelines {
   return {
@@ -105,15 +105,18 @@ export function stubPipelines(): IngestPipelines {
     ingestLatexZip: async (_zipPath: string, opts: { outRoot: string; docId: string }) => {
       const dir = join(opts.outRoot, opts.docId);
       mkdirSync(dir, { recursive: true });
-      const doc = {
-        doc_id: opts.docId,
+      const ir: TexDocIr = {
+        version: 1,
+        docId: opts.docId,
+        sections: [],
+        refsManifest: [],
+        bib: [],
+        citationsByBlock: {},
+        source: { type: "latex", origin: dir, main_tex: "main.tex" },
         meta: { title: `Stub LaTeX of ${opts.docId}` },
-        source: {},
-        blocks: [],
-        references: [],
       };
-      writeFileSync(join(dir, `${opts.docId}.json`), JSON.stringify(doc));
-      return doc as unknown as Document;
+      writeFileSync(join(dir, `${opts.docId}.json`), JSON.stringify(ir));
+      return ir;
     },
   };
 }

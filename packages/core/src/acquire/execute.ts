@@ -23,11 +23,34 @@
  *   (`sections`/`figures`/`refs` are present even when unknown).
  */
 
-import type { Document } from "@argelanderspace/contracts";
-import { pyOr } from "../documents/pyregex.js";
-import { iterBlocks } from "../documents/traverse.js";
+import type { IrBlock, IrSection, TexDocIr } from "@argelanderspace/contracts";
 import type { LibraryStore, Work } from "../library/store.js";
 import type { IngestPipelines } from "./pipelines.js";
+
+/** Doc stats from the stored IR (the old Document `stats` bucket is retired). */
+function irStats(ir: TexDocIr): {
+  blocks: number;
+  sections: number;
+  figures: number;
+  refs: number;
+} {
+  let blocks = 0;
+  let sections = 0;
+  let figures = 0;
+  const countBlock = (b: IrBlock): void => {
+    blocks += 1;
+    if (b.type === "figure") figures += 1;
+  };
+  const walk = (secs: IrSection[]): void => {
+    for (const s of secs) {
+      sections += 1;
+      for (const b of s.blocks) countBlock(b);
+      walk(s.children);
+    }
+  };
+  walk(ir.sections);
+  return { blocks, sections, figures, refs: ir.references?.length ?? 0 };
+}
 
 /** tiers the executor can fetch automatically */
 export const FREE_TIERS: readonly string[] = ["arxiv_latex"];
@@ -35,7 +58,7 @@ export const FREE_TIERS: readonly string[] = ["arxiv_latex"];
 /** One per-work outcome of a fetch pass (the Python result dicts). */
 export type FetchResult = Record<string, unknown>;
 
-function ingestFor(w: Work, pipelines: IngestPipelines): Promise<Document> {
+function ingestFor(w: Work, pipelines: IngestPipelines): Promise<TexDocIr> {
   const tier = ((w.acquisition ?? {}) as Record<string, unknown>).chosen;
   if (tier === "arxiv_latex") {
     if (!w.arxiv_id) throw new Error("arxiv_latex chosen but work has no arXiv id");
@@ -68,20 +91,19 @@ export async function fetchReadyFulltext(
     const tier = acq.chosen as string;
     const loc = w.arxiv_id;
     try {
-      const doc = await ingestFor(w, deps.pipelines);
-      const blocks = [...iterBlocks(doc)].length;
-      const stats = doc.stats ?? {};
+      const ir = await ingestFor(w, deps.pipelines);
+      const stats = irStats(ir);
       results.push({
         id: w.id,
         tier,
         loc,
-        doc_id: doc.doc_id,
-        blocks,
-        ok: blocks > 0,
-        title: ((pyOr(doc.meta?.title) as string | undefined) ?? "").slice(0, 48),
-        sections: stats.n_sections ?? null,
-        figures: stats.n_figures ?? null,
-        refs: stats.n_references ?? null,
+        doc_id: ir.docId,
+        blocks: stats.blocks,
+        ok: stats.blocks > 0,
+        title: (ir.title ?? "").slice(0, 48),
+        sections: stats.sections,
+        figures: stats.figures,
+        refs: stats.refs,
       });
     } catch (e) {
       // one failure must not abort the batch
@@ -112,25 +134,25 @@ export async function fetchRemaining(
     if (acq.ingested_doc || skip.has(w.id)) continue;
     if (limit !== null && n >= limit) break;
     n += 1;
-    let doc: Document | null = null;
+    let ir: TexDocIr | null = null;
     let via: string | null = null;
     let err: string | null = null;
     if (w.arxiv_id) {
       try {
-        doc = await deps.pipelines.ingestLatex(w.arxiv_id);
+        ir = await deps.pipelines.ingestLatex(w.arxiv_id);
         via = "arxiv_latex";
       } catch (e) {
         err = `arxiv_latex: ${strOf(e).slice(0, 90)}`;
       }
     }
-    if (doc !== null) {
-      const blocks = [...iterBlocks(doc)].length;
+    if (ir !== null) {
+      const stats = irStats(ir);
       results.push({
         id: w.id,
         via,
-        doc_id: doc.doc_id,
-        blocks,
-        ok: blocks > 0,
+        doc_id: ir.docId,
+        blocks: stats.blocks,
+        ok: stats.blocks > 0,
         title: (w.title || "").slice(0, 46),
       });
     } else {

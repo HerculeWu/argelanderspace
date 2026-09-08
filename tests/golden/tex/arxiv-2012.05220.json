@@ -162,7 +162,7 @@
             },
             {
               "type": "text",
-              "text": ". A suitable prior ensures that the posterior converges to something sensible as the precision of the parallax degrades. This is important when working with Gaia data, because its truly revolutionary nature notwithstanding, in EDR3 43% of the sourceshave parallax uncertainties greater than 50% (63% greater than 20%), and a further 24% have negative parallaxes.The shape and scale of the prior distribution should reflect the expected distribution of stars in the sample, including observational selection effects such as magnitude limits. The prior’s characteristic length scale will typically need to vary with direction in the Galaxy "
+              "text": ". A suitable prior ensures that the posterior converges to something sensible as the precision of the parallax degrades. This is important when working with Gaia data, because its truly revolutionary nature notwithstanding, in EDR3 43% of the sources have parallax uncertainties greater than 50% (63% greater than 20%), and a further 24% have negative parallaxes.The shape and scale of the prior distribution should reflect the expected distribution of stars in the sample, including observational selection effects such as magnitude limits. The prior’s characteristic length scale will typically need to vary with direction in the Galaxy "
             },
             {
               "type": "cite",
@@ -532,7 +532,7 @@
               "segments": [
                 {
                   "type": "text",
-                  "text": "In paper IV we summarized each posterior with the mode and the highest density interval (HDI).The mode has the disadvantage that it is not invariant under nonlinear transformations. This means that if we inferred "
+                  "text": "In paper IV we summarized each posterior with the mode and the highest density interval (HDI). The mode has the disadvantage that it is not invariant under nonlinear transformations. This means that if we inferred "
                 },
                 {
                   "type": "math",
@@ -2339,7 +2339,7 @@
                 },
                 {
                   "type": "text",
-                  "text": ". We use the three quantiles at 0.159, 0.5, and 0.841,which we label "
+                  "text": ". We use the three quantiles at 0.159, 0.5, and 0.841, which we label "
                 },
                 {
                   "type": "math",
@@ -2483,7 +2483,7 @@
                   "segments": [
                     {
                       "type": "text",
-                      "text": "This scheme allows relatively short burn-ins: we use just 50. We experimented with chains of various chain lengths, employing various tests of convergence. Longer chains are always better, but as we need to sample around three billion posteriors, some parsimony is called for. We settled on 500 samples (post burn-in). Although the chains are not always settled, they are generally good enough to compute the required quantiles with reasonable precision. To quantify this we obtained 20 different MCMC chainsand computed the standard deviation of the median distance estimates and half the mean of the confidence intervals. The ratio of these is a measure of the convergence noise. Doing this for thousands of stars we find this to be between 0.1 and 0.2 in general. For the geometric posteriors in particular it can be larger for fractional parallax uncertainties larger than 0.3."
+                      "text": "This scheme allows relatively short burn-ins: we use just 50. We experimented with chains of various chain lengths, employing various tests of convergence. Longer chains are always better, but as we need to sample around three billion posteriors, some parsimony is called for. We settled on 500 samples (post burn-in). Although the chains are not always settled, they are generally good enough to compute the required quantiles with reasonable precision. To quantify this we obtained 20 different MCMC chains and computed the standard deviation of the median distance estimates and half the mean of the confidence intervals. The ratio of these is a measure of the convergence noise. Doing this for thousands of stars we find this to be between 0.1 and 0.2 in general. For the geometric posteriors in particular it can be larger for fractional parallax uncertainties larger than 0.3."
                     }
                   ]
                 }
@@ -2749,7 +2749,7 @@
                     },
                     {
                       "type": "text",
-                      "text": ".We see a good correlation between the inferred and true distances out to several kpc (left columns). The degradation at larger distances is mostly due to stars with larger fpu, as can be seen in the middle columns of these figures. The fractional residual is defined as the estimated minus true distance, divided by the true distance. Note that these middle columns show the true fpu, i.e. as computed from the noise-free parallax, which is not the same as the measured (noisy) fpu that the inference algorithm encounters. (See section "
+                      "text": ". We see a good correlation between the inferred and true distances out to several kpc (left columns). The degradation at larger distances is mostly due to stars with larger fpu, as can be seen in the middle columns of these figures. The fractional residual is defined as the estimated minus true distance, divided by the true distance. Note that these middle columns show the true fpu, i.e. as computed from the noise-free parallax, which is not the same as the measured (noisy) fpu that the inference algorithm encounters. (See section "
                     },
                     {
                       "type": "xref",
@@ -3476,7 +3476,7 @@
                     },
                     {
                       "type": "text",
-                      "text": " show how the fractional symmetrized distance uncertainty varies with fpu. At small (positive) fpu they are nearly equal for both geometric and photogeometric distances, because here the likelihood dominates the posterior. At larger fpu the geometric distances become more uncertain, which is commensurate with their lower expected accuracy.For very large fpu ("
+                      "text": " show how the fractional symmetrized distance uncertainty varies with fpu. At small (positive) fpu they are nearly equal for both geometric and photogeometric distances, because here the likelihood dominates the posterior. At larger fpu the geometric distances become more uncertain, which is commensurate with their lower expected accuracy. For very large fpu ("
                     },
                     {
                       "type": "math",
@@ -3677,7 +3677,7 @@
                     },
                     {
                       "type": "text",
-                      "text": " distribution more than the geometric distance do.The puffing-up of the geometric CQD is due to sources with large fpu: their distances tend to be underestimated (see section "
+                      "text": " distribution more than the geometric distance do. The puffing-up of the geometric CQD is due to sources with large fpu: their distances tend to be underestimated (see section "
                     },
                     {
                       "type": "xref",
@@ -4050,7 +4050,7 @@
                     },
                     {
                       "type": "text",
-                      "text": " is quite washed out, due in part to large fpus and spurious parallaxes, although an extincted red clump is visible. The photogeometric CQDs are cleaner, with a better defined main sequence.The CQD for the "
+                      "text": " is quite washed out, due in part to large fpus and spurious parallaxes, although an extincted red clump is visible. The photogeometric CQDs are cleaner, with a better defined main sequence. The CQD for the "
                     },
                     {
                       "type": "math",
@@ -4073,7 +4073,7 @@
                     },
                     {
                       "type": "text",
-                      "text": ") again shows the removal of spurious sources. Section 3.2of "
+                      "text": ") again shows the removal of spurious sources. Section 3.2 of "
                     },
                     {
                       "type": "cite",
@@ -4199,7 +4199,7 @@
                 },
                 {
                   "type": "text",
-                  "text": " for three different magnitude ranges.As noted earlier, the photogeometric distance uncertainties are generally smaller than the geometric ones, at least for fainter sources. This plot also shows again that photogeometric estimates extend to larger distances."
+                  "text": " for three different magnitude ranges. As noted earlier, the photogeometric distance uncertainties are generally smaller than the geometric ones, at least for fainter sources. This plot also shows again that photogeometric estimates extend to larger distances."
                 }
               ]
             }
@@ -5219,7 +5219,7 @@
                 },
                 {
                   "type": "text",
-                  "text": ".We find that 2% of geometric posteriors and 3% of photogeometric posteriors may not be unimodal according to this test, although this test is not particularly accurate, so this is only a rough guide. Even when the sampled posterior shows a true, significant bimodality (or even multimodality), the 68% confidence interval sometimes spans all modes."
+                  "text": ". We find that 2% of geometric posteriors and 3% of photogeometric posteriors may not be unimodal according to this test, although this test is not particularly accurate, so this is only a rough guide. Even when the sampled posterior shows a true, significant bimodality (or even multimodality), the 68% confidence interval sometimes spans all modes."
                 }
               ]
             },
@@ -5260,7 +5260,7 @@
                 },
                 {
                   "type": "text",
-                  "text": ". If only one of them is 0 then only a single model was used. If both flags are 0 then there is no non-null model within 0.1 mag colour of the source, so the photogeometric posterior is not computed. There are is one special value of this flag:99 means the star lacked the necessary data to compute the photogeometric distance."
+                  "text": ". If only one of them is 0 then only a single model was used. If both flags are 0 then there is no non-null model within 0.1 mag colour of the source, so the photogeometric posterior is not computed. There are is one special value of this flag: 99 means the star lacked the necessary data to compute the photogeometric distance."
                 }
               ]
             },
@@ -5472,7 +5472,7 @@
               "segments": [
                 {
                   "type": "text",
-                  "text": "The choice of whether to use our geometric or photogeometric distance depends on the specific situation and what assumptions you are willing to accept. In the limit of negligible parallax uncertainties they will agree.At large fractional parallax uncertainties our photogeometric distances will generally be more precise than geometric ones, because they use more information and have a stronger prior (see Figures "
+                  "text": "The choice of whether to use our geometric or photogeometric distance depends on the specific situation and what assumptions you are willing to accept. In the limit of negligible parallax uncertainties they will agree. At large fractional parallax uncertainties our photogeometric distances will generally be more precise than geometric ones, because they use more information and have a stronger prior (see Figures "
                 },
                 {
                   "type": "xref",
@@ -6241,7 +6241,7 @@
             },
             {
               "type": "text",
-              "text": ", but found that this did not help (see the technical note GAIA-C8-TN-MPIA-CBJ-089 with the auxiliary information online). One may achieve something close to what is desired by simply shifting the distance prior to greater distances, so that it better represents stars with a larger true fpu, which is where the prior is needed more.Yet this would detrimentally affect the distance estimates for nearby stars. It seems a poor trade-off to sacrifice accuracy on high-quality data for a better prior on low-quality data. Conditioning the prior on the star’s magnitude may help, and this is what our photogeometric distances do (section "
+              "text": ", but found that this did not help (see the technical note GAIA-C8-TN-MPIA-CBJ-089 with the auxiliary information online). One may achieve something close to what is desired by simply shifting the distance prior to greater distances, so that it better represents stars with a larger true fpu, which is where the prior is needed more. Yet this would detrimentally affect the distance estimates for nearby stars. It seems a poor trade-off to sacrifice accuracy on high-quality data for a better prior on low-quality data. Conditioning the prior on the star’s magnitude may help, and this is what our photogeometric distances do (section "
             },
             {
               "type": "xref",

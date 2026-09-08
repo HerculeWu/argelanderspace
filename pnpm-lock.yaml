@@ -123,6 +123,9 @@ importers:
 
   packages/infra:
     dependencies:
+      '@argelanderspace/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@argelanderspace/core':
         specifier: workspace:*
         version: link:../core

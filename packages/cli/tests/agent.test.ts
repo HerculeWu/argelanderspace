@@ -63,7 +63,7 @@ function makeDataDir(): { root: string; dataDir: string; env: NodeJS.ProcessEnv 
   const docDir = join(dataDir, "output", DOC_ID);
   mkdirSync(docDir, { recursive: true });
   copyFileSync(
-    join(REPO_ROOT, "tests", "golden", `${DOC_ID}.json`),
+    join(REPO_ROOT, "tests", "golden", "tex", `${DOC_ID}.json`),
     join(docDir, `${DOC_ID}.json`)
   );
   mkdirSync(join(dataDir, "library"), { recursive: true });
@@ -194,7 +194,7 @@ describe("read", () => {
     expect(r.status).toBe(0);
     expect(r.stderr).toContain(LINK);
     const rows = parseJsonl(r.stdout);
-    expect(rows.length).toBe(80); // 39 sections + 25 figs + 4 tables + 12 eqs
+    expect(rows.length).toBe(79); // 38 sections + 25 figs + 4 tables + 12 eqs
     for (const row of rows) {
       expect(typeof row.id).toBe("string");
       expect(typeof row.kind).toBe("string");
@@ -240,7 +240,7 @@ describe("show", () => {
       id: "fig-1",
       kind: "figure",
       number: "1",
-      image: `/images/${DOC_ID}/figures__All_in_one_XY__pdf.png`,
+      image: `/images/${DOC_ID}/figures__All_in_one_XY__pdf.svg`,
       link: `${LINK}#fig-1`,
     });
     expect(out.caption).toContain("$X-Y$ plot of all the clusters");
@@ -280,7 +280,7 @@ describe("ref", () => {
       link: `${LINK}#ref-6`,
     });
     expect(out.raw).toContain("Bok, B. J. 1934");
-    expect(out.cited_in).toContain("p-7");
+    expect(out.cited_in).toContain("p-6");
   });
 
   test("by match key resolves to the same entry", () => {
@@ -373,7 +373,7 @@ describe("list", () => {
     const lines = r.stdout.trim().split("\n");
     expect(lines[0]).toBe("library: works=34 docs=1 read=0 unread=34 labeled=0");
     expect(lines[1]).toBe(
-      `doc: ${DOC_ID} | latex | sec=39 | refs=76 | ` +
+      `doc: ${DOC_ID} | latex | sec=38 | refs=76 | ` +
         `Tidal tails of nearby open clusters — I. Mapping with Gaia DR3 | ${LINK}`
     );
   });

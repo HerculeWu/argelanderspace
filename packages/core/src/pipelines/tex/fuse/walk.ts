@@ -1161,6 +1161,9 @@ export class Fuser {
             text += " ";
             break;
           case "comment":
+            // TeX: the char before % is preserved — the comment node's start
+            // position points at it (the space, or the % when adjacent).
+            if (this.commentHasPrecedingSpace(n)) text += " ";
             break;
           case "group":
             walk(n.content);
@@ -1443,6 +1446,7 @@ export class Fuser {
             break;
           }
           case "comment":
+            if (this.commentHasPrecedingSpace(n)) parts.push(" ");
             break;
           default:
             walk(nodeContent(n));
@@ -1452,6 +1456,22 @@ export class Fuser {
     };
     walk(nodes);
     return textify(parts.join("")).trim();
+  }
+
+  /**
+   * True when a space/tab precedes the comment's `%` (TeX preserves it as a
+   * word separator; `a%x\nb` joins). The comment node's start position
+   * points at that character (the space, or the % when adjacent).
+   */
+  private commentHasPrecedingSpace(node: Ast.Node): boolean {
+    const pos = node.position;
+    if (pos === undefined || pos === null) return false;
+    const file = this.tree.fileOf(node);
+    if (file === undefined) return false;
+    const line = this.tree.linesOf(file)?.[pos.start.line - 1];
+    if (line === undefined) return false;
+    const ch = line[pos.start.column - 1]; // 0-based index of the start char
+    return ch === " " || ch === "\t";
   }
 
   // ------------------------------------------------------------------ //
