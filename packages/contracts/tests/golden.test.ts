@@ -1,8 +1,11 @@
 /**
- * Golden acceptance: the 2 frozen LaTeX-pipeline outputs in
- * `<repo>/tests/golden/` must all validate against the Document zod schema
- * (M0 acceptance gate), plus a few negative cases. (The PDF/HTML goldens left
- * with the OCR pipelines — archived on the `ocr-features` branch.)
+ * DocumentSchema unit tests (the retired Document JSON shape, kept for the
+ * MS4-bridge fallback): structural negative cases. The golden-file
+ * acceptance half left with the retired `tests/golden/arxiv-*.json` in MS3b;
+ * the new stored-IR goldens are validated in `tex-golden.test.ts`.
+ *
+ * The two retired-shape golden Documents now live as the MS4-bridge fixtures
+ * `packages/core/tests/fixtures/document-arxiv-*.json`.
  */
 
 import { readFileSync } from "node:fs";
@@ -12,57 +15,29 @@ import { DocumentSchema } from "../src/document.js";
 
 // packages/contracts/tests/ → repo root
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
-const GOLDEN_DIR = `${REPO_ROOT}/tests/golden`;
+const BRIDGE = `${REPO_ROOT}/packages/core/tests/fixtures/document-arxiv-2501.17225.json`;
 
-interface ManifestEntry {
-  doc_id: string;
-  pipeline: string;
-  stats: Record<string, number>;
+function loadBridge(): unknown {
+  return JSON.parse(readFileSync(BRIDGE, "utf8"));
 }
 
-const manifest = JSON.parse(readFileSync(`${GOLDEN_DIR}/manifest.json`, "utf8")) as {
-  papers: ManifestEntry[];
-};
-
-function loadGolden(docId: string): unknown {
-  return JSON.parse(readFileSync(`${GOLDEN_DIR}/${docId}.json`, "utf8"));
-}
-
-describe("DocumentSchema vs golden pipeline outputs", () => {
-  it("manifest lists exactly the 2 latex golden papers", () => {
-    expect(manifest.papers).toHaveLength(2);
-    expect(manifest.papers.every((p) => p.pipeline === "latex")).toBe(true);
+describe("DocumentSchema", () => {
+  it("still parses the MS4-bridge Document fixture", () => {
+    const result = DocumentSchema.safeParse(loadBridge());
+    if (!result.success) {
+      expect.unreachable(`schema rejected the bridge fixture: ${result.error.message}`);
+    }
+    expect(result.data.doc_id).toBe("arxiv-2501.17225");
   });
 
-  for (const entry of manifest.papers) {
-    it(`parses ${entry.doc_id} (${entry.pipeline} pipeline)`, () => {
-      const raw = loadGolden(entry.doc_id);
-      const result = DocumentSchema.safeParse(raw);
-      if (!result.success) {
-        // Surface a readable diff instead of a bare assertion failure.
-        expect.unreachable(`schema rejected ${entry.doc_id}: ${result.error.message}`);
-      }
-      expect(result.data.doc_id).toBe(entry.doc_id);
-    });
-
-    it(`preserves ${entry.doc_id} stats (manifest cross-check)`, () => {
-      const doc = DocumentSchema.parse(loadGolden(entry.doc_id));
-      for (const [key, value] of Object.entries(entry.stats)) {
-        expect(doc.stats?.[key as keyof typeof doc.stats]).toBe(value);
-      }
-    });
-  }
-});
-
-describe("DocumentSchema negative cases", () => {
   it("rejects a document without doc_id", () => {
-    const doc = { ...(loadGolden("arxiv-2501.17225") as Record<string, unknown>) };
+    const doc = { ...(loadBridge() as Record<string, unknown>) };
     delete doc.doc_id;
     expect(DocumentSchema.safeParse(doc).success).toBe(false);
   });
 
   it("rejects an unknown block type", () => {
-    const doc = DocumentSchema.parse(loadGolden("arxiv-2501.17225"));
+    const doc = DocumentSchema.parse(loadBridge());
     const section = doc.structure?.find((s) => s.blocks?.length);
     expect(section).toBeDefined();
     const bad = {

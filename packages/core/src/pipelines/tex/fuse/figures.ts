@@ -1,10 +1,10 @@
 /**
  * Figure asset naming convention for the Stage 5 tex pipeline — owned by
  * core (the fuser predicts asset names; the infra `TexFigurePort` applies
- * the same convention mechanically). Mirrors the Stage 3.1 `outName` in
- * `pipelines/latex/assets.ts` (see the cross-reference notes in both files;
- * MS1 review N5: the "/" → "__" encoding is not injective — `a/b.png` vs
- * `a__b.png` collide — inherited, not a regression).
+ * the same convention mechanically). Mirrors the Stage 3.1 `outName`
+ * (deleted with the old pipeline in MS3b; MS1 review N5: the "/" → "__"
+ * encoding is not injective — `a/b.png` vs `a__b.png` collide — inherited,
+ * not a regression).
  */
 import * as path from "node:path";
 

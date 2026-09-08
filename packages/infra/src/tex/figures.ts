@@ -10,8 +10,8 @@
  * (the caller keeps the figure block + caption without an image); this
  * module never throws.
  *
- * Output naming follows the Stage 3.1 convention
- * (`packages/core/src/pipelines/latex/assets.ts`): the source path relative
+ * Output naming follows the Stage 3.1 convention (owned by core in
+ * `packages/core/src/pipelines/tex/fuse/figures.ts`): the source path relative
  * to srcDir, stemmed, "/" → "__", then `__<srcext>` + the output suffix —
  * `fig.pdf` → `fig__pdf.svg`, `fig.png` → `fig__png.png` — so a basename
  * shared across extensions can't collide onto one output file.

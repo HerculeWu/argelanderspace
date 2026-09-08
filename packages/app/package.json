@@ -29,9 +29,7 @@
     "build": "tsup && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "mupdf": "1.28.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@argelanderspace/cli": "workspace:*",
     "@argelanderspace/server": "workspace:*",

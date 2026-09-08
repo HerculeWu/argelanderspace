@@ -26,9 +26,10 @@ import { describe, expect, test } from "vitest";
 import { buildDocIr } from "../src/documents/ir.js";
 import { iterBlocks } from "../src/documents/traverse.js";
 
-// packages/core/tests/ → repo root
-const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
-const GOLDEN_DIR = join(REPO_ROOT, "tests", "golden");
+// MS4-bridge fixtures: the two retired Document-JSON goldens, kept ONLY
+// to exercise buildDocIr/DocumentSchema (the fallback projection consumed by
+// server /ir and the CLI until the MS4 migration re-ingests everything).
+const GOLDEN_DIR = fileURLToPath(new URL("fixtures", import.meta.url));
 
 const DOC_IDS = [
   "arxiv-2501.17225", // latex
@@ -36,7 +37,7 @@ const DOC_IDS = [
 ] as const;
 
 function loadDoc(docId: string): Document {
-  const raw = JSON.parse(readFileSync(join(GOLDEN_DIR, `${docId}.json`), "utf8"));
+  const raw = JSON.parse(readFileSync(join(GOLDEN_DIR, `document-${docId}.json`), "utf8"));
   return DocumentSchema.parse(raw);
 }
 

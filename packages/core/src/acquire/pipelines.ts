@@ -6,7 +6,7 @@
  * DocIr superset with `version` + `source`/`meta` identity) and writes it to
  * `<outRoot>/<docId>/<docId>.json` itself. The implementation is the new
  * latexmk-based tex pipeline (core `pipelines/tex`, infra `tex/ingest.ts`);
- * the pandoc pipeline it replaces stays present (and tested) until MS3b.
+ * the pandoc pipeline it replaced was deleted in MS3b.
  *
  * The PDF (MinerU) and publisher-HTML pipelines are archived on the
  * `ocr-features` branch; main ingests LaTeX sources only.

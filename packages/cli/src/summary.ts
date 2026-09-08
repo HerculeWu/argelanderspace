@@ -25,50 +25,6 @@ function pyOr(v: unknown, fallback: string): string {
   return String(v);
 }
 
-const STAT_KEYS = [
-  "n_sections",
-  "n_paragraphs",
-  "n_figures",
-  "n_tables",
-  "n_equations",
-  "n_code",
-  "n_algorithms",
-  "n_references",
-] as const;
-
-/**
- * The `=== ingest summary ===` block (without the leading blank line).
- * Takes the *serialized* document (`documentToJson(doc)` — Python's
- * `doc.to_dict(compact_json)`): stats are computed at serialization time.
- */
-export function formatIngestSummary(docJson: Record<string, unknown>): string {
-  const meta = (docJson.meta ?? {}) as Record<string, unknown>;
-  const source = (docJson.source ?? {}) as Record<string, unknown>;
-  const stats = (docJson.stats ?? {}) as Record<string, unknown>;
-  const num = (k: string): unknown => stats[k] ?? 0;
-  const lines: string[] = ["=== ingest summary ==="];
-  lines.push(`  ${pad("title", 12)}: ${pyStr(meta.title)}`);
-  lines.push(`  ${pad("pages", 12)}: ${pyStr(source.n_pages)}`);
-  for (const k of STAT_KEYS) {
-    lines.push(`  ${pad(k, 12)}: ${String(num(k))}`);
-  }
-  lines.push(
-    `  ${pad("citations", 12)}: ${String(num("n_citations"))} (${String(num("n_citations_resolved"))} resolved)`
-  );
-  lines.push(
-    `  ${pad("crossrefs", 12)}: ${String(num("n_crossrefs"))} (${String(num("n_crossrefs_resolved"))} resolved)`
-  );
-  const tf = meta.textfix as Record<string, unknown> | undefined;
-  if (tf) {
-    const fixed = typeof tf.gaps_fixed === "number" ? tf.gaps_fixed : 0;
-    const before = typeof tf.gaps_before === "number" ? tf.gaps_before : 0;
-    lines.push(
-      `  ${pad("textfix", 12)}: repaired ${fixed}/${before} ?-gaps from the PDF text layer`
-    );
-  }
-  return lines.join("\n");
-}
-
 /**
  * The `=== ingest summary ===` block for the Stage 5 stored IR (MS3a): same
  * label layout as the Document-JSON version, with stats computed from the

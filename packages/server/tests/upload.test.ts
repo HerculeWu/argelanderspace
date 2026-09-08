@@ -208,7 +208,7 @@ describe("async flow (new default)", () => {
     const pipelines = stubPipelines();
     const baseIngest = pipelines.ingestLatexZip;
     pipelines.ingestLatexZip = async (zipPath, opts) => {
-      opts.onProgress?.("pandoc walk");
+      opts.onProgress?.("latexmk compile");
       return baseIngest(zipPath, opts);
     };
     const collector = collectBroadcasts();
@@ -231,7 +231,7 @@ describe("async flow (new default)", () => {
     expect(done.status).toBe("done");
     expect(done.progress.map((p) => p.message)).toEqual([
       "Unpacking LaTeX source zip",
-      "pandoc walk",
+      "latexmk compile",
       "Rebuilding library",
     ]);
     // every report was broadcast as its own job.progress event
@@ -258,7 +258,7 @@ describe("?sync=1 (legacy synchronous behavior)", () => {
   test("500 'ingest failed: …' for pipeline errors", async () => {
     const failing = stubPipelines();
     failing.ingestLatexZip = async () => {
-      throw new Error("pandoc exploded");
+      throw new Error("compile exploded");
     };
     const app2 = createApp({
       paths: libraryPaths(dataDir),
@@ -273,6 +273,6 @@ describe("?sync=1 (legacy synchronous behavior)", () => {
       body: ZIP,
     });
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ detail: "ingest failed: pandoc exploded" });
+    expect(await res.json()).toEqual({ detail: "ingest failed: compile exploded" });
   });
 });

@@ -1,8 +1,10 @@
 // @argelanderspace/core — pure domain logic.
 //
-// documents/: TS ports of the bibgraph document stages (references, citations,
-// crossrefs, annotate) plus the serialization/render helpers (document, ir,
-// render) and the fractional-rect geometry they share (geom).
+// documents/: the surviving document stages — the render IR projection
+// (ir.ts, buildDocIr for the retired Document shape kept until the MS4
+// migration), the markdown renderers (render.ts), reference-field extraction
+// (references.ts, used by the tex pipeline), tree traversal (traverse.ts),
+// and the regex helpers they share (pyregex.ts, tokens.ts).
 //
 // library/ + acquire/: TS ports of the literature-library domain (store, seed,
 // citation graph, /api payload builders) and the acquisition layer (source
@@ -10,20 +12,17 @@
 // sources and the ingest pipeline arrive through the port interfaces in
 // library/sources.ts and acquire/pipelines.ts.
 //
-// pipelines/latex/: the arXiv LaTeX ingestion pipeline (pandoc-AST walk,
-// .bbl/.bib references, asset resolution) composed from the documents-domain
-// stages; pandoc / rasterization / arXiv acquisition are injected ports
-// (packages/core/src/pipelines/latex/ports.ts), wired by infra.
-//
-// pipelines/tex/ (Stage 5, parallel build): the latexmk compile-execution
-// ports and the pure parsers for the engine-agnostic compiler artifacts
-// (.aux/.bbl/.toc/.fls + .argelander.jsonl event stream).
+// pipelines/tex/ (Stage 5): the latexmk compile-execution + fusion pipeline
+// (source tree, bounded macros, numbering/cite/xref anchoring, IR assembly)
+// and the pure parsers for the engine-agnostic compiler artifacts
+// (.aux/.bbl/.toc/.lof/.lot/.fls + .argelander.jsonl event stream).
 //
 // plans/: the plan-page store (Stage 4) — plans.json load/save (atomic write,
 // optimistic-lock rev), id generation, and the pure CRUD helpers.
 //
-// The PDF (MinerU OCR) and publisher-HTML pipelines are archived on the
-// `ocr-features` branch; main ingests LaTeX sources only.
+// The pandoc LaTeX pipeline was deleted in Stage 5 MS3b (the tex pipeline
+// replaced it); PDF (MinerU OCR) and publisher-HTML pipelines are archived
+// on the `ocr-features` branch.
 
 export * from "./acquire/bibtex.js";
 export * from "./acquire/execute.js";
@@ -33,11 +32,6 @@ export * from "./acquire/planner.js";
 export * from "./acquire/resolve.js";
 export * from "./acquire/run.js";
 export * from "./acquire/upload.js";
-export * from "./documents/annotate.js";
-export * from "./documents/citations.js";
-export * from "./documents/crossrefs.js";
-export * from "./documents/document.js";
-export * from "./documents/geom.js";
 export * from "./documents/ir.js";
 export * from "./documents/references.js";
 export * from "./documents/render.js";
@@ -48,11 +42,6 @@ export * from "./library/graph.js";
 export * from "./library/seed.js";
 export * from "./library/sources.js";
 export * from "./library/store.js";
-export * from "./pipelines/latex/assets.js";
-export * from "./pipelines/latex/pipeline.js";
-export * from "./pipelines/latex/ports.js";
-export * from "./pipelines/latex/references.js";
-export * from "./pipelines/latex/walk.js";
 export * from "./pipelines/tex/facts/index.js";
 export * from "./pipelines/tex/fuse/cite-format.js";
 export * from "./pipelines/tex/fuse/figures.js";

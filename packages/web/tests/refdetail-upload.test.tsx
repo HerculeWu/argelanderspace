@@ -227,13 +227,13 @@ describe("RefDetail upload tracking", () => {
         makeJob({
           status: "failed",
           finishedAt: "2026-09-01T00:01:00.000Z",
-          error: "pandoc could not parse main.tex",
+          error: "TeX compilation failed: main.tex",
         }),
         "hello"
       )
     );
     openFilesTab();
-    expect(screen.getByText(/上传失败：pandoc could not parse main\.tex/)).toBeTruthy();
+    expect(screen.getByText(/上传失败：TeX compilation failed: main\.tex/)).toBeTruthy();
     // the upload button stays usable (the failure is not a live job)
     expect(
       (screen.getByRole("button", { name: /上传 LaTeX 源码包/ }) as HTMLButtonElement).disabled

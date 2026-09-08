@@ -6,7 +6,9 @@
  * so these schemas are the shared contract between server and web.
  *
  *   GET  /api/papers                     → PapersListResponse
- *   GET  /api/paper/{doc_id}             → PaperResponse (= Document)
+ *   GET  /api/paper/{doc_id}/ir          → TexDocIr (= the stored render IR;
+ *     the retired raw `GET /api/paper/{doc_id}` Document passthrough was
+ *     removed in MS3a, and its alias left this file in MS3b)
  *   GET  /api/library                    → LibraryResponse (= LibraryPayload)
  *   POST /api/library/refs               → AddRefRequest / AddRefResponse
  *   PATCH /api/library/refs              → PatchRefRequest / PatchRefResponse
@@ -18,7 +20,6 @@
  */
 
 import { z } from "zod";
-import { DocumentSchema } from "./document.js";
 import { LibraryPayloadSchema, LibraryRefSchema } from "./library.js";
 
 // ---- GET /api/papers ------------------------------------------------------- //
@@ -26,10 +27,6 @@ import { LibraryPayloadSchema, LibraryRefSchema } from "./library.js";
 export const PapersListResponseSchema = z.object({
   papers: z.array(z.string()),
 });
-
-// ---- GET /api/paper/{doc_id} ----------------------------------------------- //
-
-export const PaperResponseSchema = DocumentSchema;
 
 // ---- GET /api/library ------------------------------------------------------ //
 
@@ -140,7 +137,6 @@ export const ApiErrorSchema = z.object({
 // --------------------------------------------------------------------------- //
 
 export type PapersListResponse = z.infer<typeof PapersListResponseSchema>;
-export type PaperResponse = z.infer<typeof PaperResponseSchema>;
 export type LibraryResponse = z.infer<typeof LibraryResponseSchema>;
 export type AddRefRequest = z.infer<typeof AddRefRequestSchema>;
 export type AddRefResponse = z.infer<typeof AddRefResponseSchema>;

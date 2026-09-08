@@ -1,29 +1,21 @@
 // @argelanderspace/infra — side-effect adapters behind the core ports:
-// pandoc + arXiv source acquisition + mupdf/Ghostscript rasterization (the
-// LaTeX pipeline), the ADS / Crossref / OpenAlex metadata sources, and the
-// config file. Pure logic stays in @argelanderspace/core; everything here
-// does fs / network / subprocess.
+// the Stage 5 tex compile-execution layer (tex/: latexmk workspaces, the
+// argelander.sty instrumentation wrapper, dvisvgm figures, the wired ingest),
+// arXiv source acquisition (latex/arxiv-source.ts), the ADS / Crossref /
+// OpenAlex metadata sources, and the config file. Pure logic stays in
+// @argelanderspace/core; everything here does fs / network / subprocess.
 //
-// The MinerU client, publisher-HTML fetcher, PDF downloader, and the mupdf
-// text-layer/link adapters left with the PDF/HTML pipelines — archived on the
-// `ocr-features` branch. (lib/unzip.ts stays: the LaTeX-zip upload reuses it.)
-//
-// tex/ (Stage 5, parallel build): the latexmk compile-execution layer behind
-// the pipelines/tex ports — isolated tmpdir workspaces, the argelander.sty
-// instrumentation wrapper, engine fallback + error taxonomy, and dvisvgm
-// figure materialization.
+// The pandoc pipeline and mupdf/Ghostscript rasterization were deleted in
+// Stage 5 MS3b (the tex pipeline replaced them); the MinerU client,
+// publisher-HTML fetcher, and PDF downloader are archived on `ocr-features`.
 
 export * from "./config.js";
 export * from "./latex/arxiv-source.js";
-export * from "./latex/assets.js";
-export * from "./latex/pandoc.js";
-export * from "./latex/pipeline.js";
 export * from "./lib/http.js";
 export * from "./lib/proc.js";
 export * from "./lib/pyjson.js";
 export * from "./lib/untar.js";
 export * from "./lib/unzip.js";
-export * from "./pdf/raster.js";
 export * from "./sources/ads.js";
 export * from "./sources/cache.js";
 export * from "./sources/crossref.js";

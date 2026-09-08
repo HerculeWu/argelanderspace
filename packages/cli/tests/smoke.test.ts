@@ -1,6 +1,6 @@
 /**
  * M5 smoke tests: invoke the *built* CLI (`dist/bin.js`) end-to-end —
- * `ingest` on a local LaTeX fixture (offline; pandoc-gated), `library build
+ * `ingest` on a local LaTeX fixture (offline; latexmk-gated), `library build
  * --offline` against a fixture data dir, and `serve` boot + `/api/papers`
  * probe + clean SIGTERM shutdown. Plus unit tests for the source
  * auto-detection (latex-only routing; DOI/URL gets a friendly error).
