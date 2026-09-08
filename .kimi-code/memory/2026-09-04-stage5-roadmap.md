@@ -13,6 +13,10 @@
 
 **2026-09-04：MS1 landed + push 前关闭。** 复核 APPROVE（独立 fixture 复验 B1：事件值与 pdftotext 真值逐一对齐 `(1)(B)(2)(T1)(3)(4)(A*)(5)(6)`；B2 边界全过；两文档行补记：verbatim 过匹配存照、hyperref 下 aux 带 label 的 tag 号有外层花括号 `"{B}"` vs 事件 `"B"`，MS2 join 须剥）。commit：memory `edd8fb6` + MS1 代码 `d91471d`（测试 541→610 左右：core 177/infra 84，真编译用例本机全跑零 skip）。
 
+**2026-09-04：MS2（融合层）实现完成，四道门全绿，未 commit（待对抗审查）。** 详见 `2026-09-04-stage5-ms2.md`。要点：contracts `TexDocIrSchema`（DocIr.extend + version + source/meta，seed 字段同名）；unified-latex 源树（自管 signature 表 + \input 合并 + 有界宏展开，含 undelimited 单 token 参数）；编号 join = mathnum 事件（env 块+序）/section 事件（\@sect 已扩 subsubsection）/**lot/lof（\@writefile 记录，修掉 label-before-caption 笔误）**/aux/计数回退；两 golden 重冻至 `tests/golden/tex/`（figure stub 换真实最小字节，旧管线复跑不敏感已证），人工抽查对 ar5iv 全对（节/式/图/表/refs）。测试 core 177→222、contracts 32→39。
+
+**2026-09-04：MS2 对抗审查一轮（BLOCK → 修复，四门复测全绿，未 commit）。** B1 plain-table 题注丢失（holder 注册条件错用 opts 字段）/B2 center 包裹 tabular 空表体（findTabularDeep 递归布局透明 env）/B3 comment 环境内容混入 code 块（verbatim 节点按 env 名丢弃 + 附带修复 `\small{…}`/`{\small…}` 剥壳使 2012.05220 的 ADQL code 块回归旧 golden 库存）全修复+复冻；N1 宏展开 pass 上限警告、N2 缺产物静默化、N3 golden 抽查补题注/表体/code 库存断言。详见 `2026-09-04-stage5-ms2.md` 审查修复记录节。测试 core 222→228。
+
 ## 范围变更（Q8）
 
 原 Stage 5（论文写作）**删除**，不顺延。新 Stage 5 = 重新定义文档解析后的 IR，**IR 即存储形式**，streamView（网页流式渲染）与 agent 内容均从 IR 渲染；**UX 不增不减**；pagedView（prototype 的 SVG 伪 PDF 视图）**不进 repo**，仅为 prototype 开发期验证手段。
