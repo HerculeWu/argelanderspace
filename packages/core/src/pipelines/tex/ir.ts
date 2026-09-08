@@ -25,7 +25,7 @@ import type {
 } from "@argelanderspace/contracts";
 import { TexDocIrSchema } from "@argelanderspace/contracts";
 import type * as Ast from "@unified-latex/unified-latex-types";
-import { citeShort, segmentsMarkdown, segmentsPlainText } from "../../documents/ir.js";
+import { citeShort, segmentsMarkdown, segmentsPlainText } from "../../documents/render.js";
 import { parseBbl } from "./facts/bbl.js";
 import type { TexFacts } from "./facts/index.js";
 import { buildTexReferences } from "./fuse/references.js";

@@ -30,13 +30,11 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type DocIr,
-  DocumentSchema,
   type IrBlock,
   type IrSection,
   TexDocIrSchema,
 } from "@argelanderspace/contracts";
 import {
-  buildDocIr,
   citeShort,
   displayAuthors,
   type LibraryPaths,
@@ -104,9 +102,8 @@ function unknownMsg(kind: string, query: string, candidates: readonly string[]):
 }
 
 /**
- * The stored file IS the render IR (Stage 5 MS3a). Docs in the retired
- * Document JSON shape (pre-rebuild) are projected on demand — same tolerance
- * as the server's /ir route until the MS4 migration re-ingests them.
+ * The stored file IS the render IR; a file without the `version` marker is a
+ * pre-migration Document JSON (fallback deleted in MS4b) and errors out.
  */
 function loadDocIr(paths: LibraryPaths, docId: string): DocIr {
   const file = join(paths.outputDir, docId, `${docId}.json`);
@@ -121,7 +118,7 @@ function loadDocIr(paths: LibraryPaths, docId: string): DocIr {
   ) {
     return TexDocIrSchema.parse(raw);
   }
-  return buildDocIr(DocumentSchema.parse(raw));
+  throw new Error(`doc "${docId}" is a pre-migration document — re-ingest it (fallback removed)`);
 }
 
 function* iterIrSections(sections: IrSection[]): Generator<IrSection> {

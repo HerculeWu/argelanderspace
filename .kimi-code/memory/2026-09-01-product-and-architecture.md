@@ -1,4 +1,4 @@
-# 产品形态与架构（2026-09-02 Stage 3.1 落地后修订；2026-09-02 Stage 4 定位升级；2026-09-08 Stage 5 MS1–MS4a 管线换代；取代重构期全部架构/设计文档）
+# 产品形态与架构（2026-09-02 Stage 3.1 落地后修订；2026-09-02 Stage 4 定位升级；2026-09-08 Stage 5 MS1–MS4b 管线换代+迁移收尾；取代重构期全部架构/设计文档）
 
 ## 产品是什么
 
@@ -21,11 +21,11 @@
 
 ## 架构（pnpm monorepo，ESM-only，TS strict + noUncheckedIndexedAccess，Biome，Vitest）
 
-- `packages/contracts`：zod schema——**TexDocIr**（渲染 IR 即存储：version + DocIr 同构块/段 + source/meta 身份块）、DocIr（其子 schema 被复用）、Document JSON（**旧形，MS4 桥回退专用**）、library payload、job/WS 消息。
-- `packages/core`：纯领域。**pipelines/tex/**（新摄入主管线：facts 纯解析（.aux/.bbl/.toc/.lof/.lot/.fls/.argelander.jsonl）+ source 源树（unified-latex + \input 合并 + 有界宏展开）+ fuse 融合（编号/cite/xref/表格/图片）+ ir 组装 + pipeline 编排 `ingestTex`/`fuseTexDoc`）；documents 收窄为 render/ir（**buildDocIr = MS4 桥回退**，迁移后删）/references（parseOne）/traverse/tokens；library（store/seed/graph/build）；acquire（含 `upload.ts` attachLatexZip）。**渲染 SOT 只有一套：web 与 CLI 都消费 IR**。
+- `packages/contracts`：zod schema——**TexDocIr**（渲染 IR 即存储：version + DocIr 同构块/段 + source/meta 身份块；Reference schema 同居 `doc-ir.ts`）、DocIr（其子 schema 被复用）、library payload、job/WS 消息。**旧 Document JSON schema 已随 MS4b 删除**。
+- `packages/core`：纯领域。**pipelines/tex/**（新摄入主管线：facts 纯解析（.aux/.bbl/.toc/.lof/.lot/.fls/.argelander.jsonl）+ source 源树（unified-latex + \input 合并 + 有界宏展开）+ fuse 融合（编号/cite/xref/表格/图片）+ ir 组装 + pipeline 编排 `ingestTex`/`fuseTexDoc`）；**documents = render 单文件**（MS4b 起：buildDocIr/Document 桥与 ir/tokens/traverse 三件套已删，`citeShort`/`segmentsMarkdown`/`segmentsPlainText` 收养进 render）/references（parseOne）；library（store/seed/graph/build）；acquire（含 `upload.ts` attachLatexZip）。**渲染 SOT 只有一套：web 与 CLI 都消费 IR**。
 - `packages/infra`：适配器——**tex/ 编译执行层**（workspace 隔离、latexmk runner（引擎回退/错误分类/超时）、插桩 `argelander.sty`（cite/label/section/mathnum 事件包）、dvisvgm 图片物化、`tex/ingest.ts` 接线）、`latex/arxiv-source.ts`（e-print 抓取/解包 + tar 安全）、ADS/Crossref/OpenAlex（pyjson 缓存键兼容）、`lib/unzip.ts` zip 解包、config.toml（smol-toml；XDG_CONFIG_HOME 优先；键 data_dir/port/openalex_api_key/ads_dev_key；出错从不回显值）。
 - `packages/server`：Hono。REST（旧端点 + `/api/paper/:id/ir` + `/api/library/upload`（zip）+ images 子路径路由）+ SPA + `/ws`（hello 快照 + job.* + library.changed）+ 串行 job runner（`<dataDir>/jobs/` 落盘；boot 时未完 job → `interrupted` 绝不重跑；wire 顺序 job.done 先于 library.changed）+ `watch.ts` 轮询指纹。
-- `packages/web`：React 阅读器，消费 IR（`segments.tsx` 段渲染器；`deeplink.ts` 手卷单路由复用 jumpTo/focusReference）。dev 依赖 core 仅供测试 buildDocIr。
+- `packages/web`：React 阅读器，消费 IR（`segments.tsx` 段渲染器；`deeplink.ts` 手卷单路由复用 jumpTo/focusReference）。
 - `packages/app`：发布单包（tsup bundle `dist/bin.js` + `dist/web` + **`dist/argelander.sty`**（插桩资产随包——缺失时插桩静默降级为干净编译丢事件流，MS4a 修复；`copy-assets.mjs` 负责）；**mupdf 已随 MS3b 移除**；createRequire banner 保留——活人 = `ws`（CJS 运行期 require("events")），非原注释的 cheerio 链）。
 
 ## 工程质量惯例

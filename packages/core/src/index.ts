@@ -1,10 +1,10 @@
 // @argelanderspace/core — pure domain logic.
 //
-// documents/: the surviving document stages — the render IR projection
-// (ir.ts, buildDocIr for the retired Document shape kept until the MS4
-// migration), the markdown renderers (render.ts), reference-field extraction
-// (references.ts, used by the tex pipeline), tree traversal (traverse.ts),
-// and the regex helpers they share (pyregex.ts, tokens.ts).
+// documents/: the surviving document stages — the markdown renderers and
+// segment helpers (render.ts) and reference-field extraction (references.ts,
+// used by the tex pipeline). The buildDocIr fallback and the old
+// annotate/citations/crossrefs/tokens/traverse layers were deleted in
+// Stage 5 (MS3b/MS4b).
 //
 // library/ + acquire/: TS ports of the literature-library domain (store, seed,
 // citation graph, /api payload builders) and the acquisition layer (source
@@ -32,11 +32,8 @@ export * from "./acquire/planner.js";
 export * from "./acquire/resolve.js";
 export * from "./acquire/run.js";
 export * from "./acquire/upload.js";
-export * from "./documents/ir.js";
 export * from "./documents/references.js";
 export * from "./documents/render.js";
-export * from "./documents/tokens.js";
-export * from "./documents/traverse.js";
 export * from "./library/build.js";
 export * from "./library/graph.js";
 export * from "./library/seed.js";

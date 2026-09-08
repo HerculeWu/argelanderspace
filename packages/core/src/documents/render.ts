@@ -1,55 +1,40 @@
 /**
- * LLM-friendly markdown renderer + agent manifests (Stage 2 / MS1; design
- * decisions 4, 5 and 8 in `.kimi-code/memory/2026-08-27-stage2-design.md`).
+ * LLM-friendly markdown renderer + segment helpers (agent surface).
  *
- * Since Stage 3 / MS2a this module is a thin export layer over the shared
- * render IR (`./ir.ts` → `buildDocIr`): the token expansion and block/section
- * walk assemble markdown from IR segments, byte-for-byte identical to the
- * original `replace`-based implementation (the golden suite in
- * `core/tests/render.test.ts` pins this). The web reader consumes the same IR
- * directly — the IR is the single source of truth of the render pipeline.
+ * The stored render IR (`TexDocIr`) IS the single source of truth; this
+ * module only assembles markdown from it (`renderIrMarkdown` /
+ * `renderIrSectionMarkdown`) and hosts the segment-level helpers the tex
+ * pipeline and the CLI consume (`citeShort`, `segmentsMarkdown`,
+ * `segmentsPlainText` — adopted from the retired `ir.ts` in MS4b).
  *
  * Output formats (token style of the read-paper skill's `article_llm.md`):
- * - `[[cite:ref-1]]` → `[cite: ref-1 | Bok 1934 | title: …]` (title segment
- *   only when the reference carries one); unresolved → `[cite: ? | unresolved]`;
- *   a `;`-group expands to one bracket per ref, adjacent.
- * - `[[xref:fig-3]]` → `[ref: fig-3 | figure | number: 3 | <caption excerpt>]`;
- *   the pipeline's unresolved marker (`[[xref:figure-9?]]` / `[[xref:?]]`) →
- *   `[ref: figure-9 | unresolved]` / `[ref: ? | unresolved]`.
+ * - cite segments → `[cite: ref-1 | Bok 1934 | title: …]` (title segment only
+ *   when the reference carries one); unresolved → `[cite: ? | unresolved]`.
+ * - xref segments → `[ref: fig-3 | figure | number: 3 | <caption excerpt>]`;
+ *   unresolved → `[ref: figure-9 | unresolved]` / `[ref: ? | unresolved]`.
  * - Figures/tables render as `[Figure omitted | id: … | number: … |
  *   caption: … | path: /images/<doc_id>/<img>]` placeholder lines; equations
  *   as display `$$…$$` plus a `[ref: …]` anchor line; code/algorithms as a
  *   `[ref: …]` anchor line plus a fenced body.
- *
- * `renderRefsManifest` / `renderBibManifest` return the IR's manifest rows
- * (the CLI serializes them as JSONL). `RefManifestRow` / `BibManifestRow` live
- * in `@argelanderspace/contracts` since MS2a and are re-exported here; the
- * IR machinery (`buildDocIr`, `citeShort`, `FloatBlock`, segment helpers)
- * lives in `./ir.ts` and is re-exported via the package index.
  */
 
 import type {
-  BibManifestRow,
   DocIr,
-  Document,
   IrAlgorithmBlock,
   IrBlock,
+  IrCiteRef,
   IrCodeBlock,
   IrFigureBlock,
   IrSection,
+  IrSegment,
   IrTableBlock,
-  RefManifestRow,
+  IrXrefTarget,
+  Reference,
 } from "@argelanderspace/contracts";
 
 export type { BibManifestRow, RefManifestRow } from "@argelanderspace/contracts";
 
-import {
-  buildDocIr,
-  buildIrLookups,
-  segmentInline,
-  segmentsMarkdown,
-  segmentsPlainText,
-} from "./ir.js";
+import { displayAuthors } from "../library/store.js";
 
 export interface RenderOptions {
   /** Max chars of an inline `[ref: …]` preview / manifest `short` (default 80). */
@@ -70,15 +55,6 @@ function san(s: string): string {
     .replaceAll("[", "(")
     .replaceAll("]", ")")
     .trim();
-}
-
-// --------------------------------------------------------------------------- //
-// Inline tokens
-// --------------------------------------------------------------------------- //
-
-/** Convert every inline token in *text* (standalone helper; doc-wide lookup). */
-export function renderInlineText(text: string, doc: Document): string {
-  return segmentsMarkdown(segmentInline(text, buildIrLookups(doc)));
 }
 
 // --------------------------------------------------------------------------- //
@@ -168,18 +144,7 @@ function* iterIrSections(sections: IrSection[]): Generator<IrSection> {
   }
 }
 
-/** The whole document body as LLM-friendly markdown (no doc-level header). */
-export function renderDocMarkdown(doc: Document, opts: RenderOptions = {}): string {
-  const ir = buildDocIr(doc, opts);
-  const ctx: MdCtx = { docId: ir.docId, preview: opts.previewLength ?? DEFAULT_PREVIEW };
-  return `${ir.sections.map((s) => sectionMarkdown(s, ctx)).join("\n\n")}\n`;
-}
-
-/**
- * The same markdown assembled straight from a DocIr — the Stage 5 stored-IR
- * path (the stored object IS the IR, no Document projection needed).
- * Byte-conventions identical to {@link renderDocMarkdown}.
- */
+/** The whole document body as LLM-friendly markdown straight from a DocIr. */
 export function renderIrMarkdown(ir: DocIr, opts: RenderOptions = {}): string {
   const ctx: MdCtx = { docId: ir.docId, preview: opts.previewLength ?? DEFAULT_PREVIEW };
   return `${ir.sections.map((s) => sectionMarkdown(s, ctx)).join("\n\n")}\n`;
@@ -201,39 +166,75 @@ export function renderIrSectionMarkdown(
   return `${sectionMarkdown(sec, ctx)}\n`;
 }
 
-/**
- * One section subtree (heading + own blocks + children) as markdown.
- * Throws with the available section ids when *sectionId* is unknown.
- */
-export function renderSectionMarkdown(
-  doc: Document,
-  sectionId: string,
-  opts: RenderOptions = {}
-): string {
-  const ir = buildDocIr(doc, opts);
-  const all = [...iterIrSections(ir.sections)];
-  const sec = all.find((s) => s.id === sectionId);
-  if (sec === undefined) {
-    const avail = all.map((s) => s.id).join(", ");
-    throw new Error(`unknown section "${sectionId}" in doc ${doc.doc_id}; available: ${avail}`);
+// --------------------------------------------------------------------------- //
+// Segment helpers (adopted from the retired `ir.ts`, MS4b)
+// --------------------------------------------------------------------------- //
+
+function citeRefMarkdown(r: IrCiteRef): string {
+  if (!r.resolved) {
+    return r.id === "?" ? "[cite: ? | unresolved]" : `[cite: ${san(r.id)} | unresolved]`;
   }
-  const ctx: MdCtx = { docId: ir.docId, preview: opts.previewLength ?? DEFAULT_PREVIEW };
-  return `${sectionMarkdown(sec, ctx)}\n`;
+  const parts = [san(r.id), san(r.short ?? "")];
+  if (r.title !== undefined) parts.push(`title: ${san(r.title)}`);
+  return `[cite: ${parts.join(" | ")}]`;
 }
 
-// --------------------------------------------------------------------------- //
-// Manifests (article_refs.jsonl / article_bib.jsonl row shapes)
-// --------------------------------------------------------------------------- //
+function xrefTargetMarkdown(t: IrXrefTarget): string {
+  if (!t.resolved || t.targetType === undefined) return `[ref: ${san(t.id)} | unresolved]`;
+  const parts = [san(t.id), t.targetType];
+  if (t.number !== undefined) parts.push(`number: ${san(t.number)}`);
+  if (t.targetType === "section") {
+    if (t.heading !== undefined) parts.push(san(t.heading));
+  } else if (t.preview !== undefined && t.preview !== "") {
+    parts.push(t.preview); // already sanitized + truncated plain text
+  }
+  return `[ref: ${parts.join(" | ")}]`;
+}
 
 /**
- * The refs-manifest rows: section rows first (reading order), then one row
- * per float (reading order). Mirrors the skill's `article_refs.jsonl` schema.
+ * The token-expanded inline text of a segment run (the markdown renderer's
+ * inline notation).
  */
-export function renderRefsManifest(doc: Document, opts: RenderOptions = {}): RefManifestRow[] {
-  return buildDocIr(doc, opts).refsManifest;
+export function segmentsMarkdown(segments: IrSegment[]): string {
+  return segments.map(segmentMarkdown).join("");
 }
 
-/** The bib-manifest rows, one per reference (the skill's `article_bib.jsonl`). */
-export function renderBibManifest(doc: Document): BibManifestRow[] {
-  return buildDocIr(doc).bib;
+function segmentMarkdown(seg: IrSegment): string {
+  switch (seg.type) {
+    case "text":
+      return seg.text;
+    case "math":
+      return `$${seg.latex}$`;
+    case "cite":
+      return seg.refs.map(citeRefMarkdown).join("");
+    case "xref":
+      return xrefTargetMarkdown(seg.target);
+  }
+}
+
+/** The plain text of a segment run with cite/xref tokens dropped. */
+export function segmentsPlainText(segments: IrSegment[]): string {
+  return segments.map(segmentPlainText).join("");
+}
+
+function segmentPlainText(seg: IrSegment): string {
+  switch (seg.type) {
+    case "text":
+      return seg.text;
+    case "math":
+      return `$${seg.latex}$`;
+    case "cite":
+    case "xref":
+      return "";
+  }
+}
+
+/** `"Bok 1934"` / `"Belokurov et al. 2006"`; falls back to label, then raw. */
+export function citeShort(ref: Reference): string {
+  const who = displayAuthors(ref.authors ?? []);
+  const year = ref.year !== undefined ? String(ref.year) : "";
+  const s = [who, year].filter((x) => x !== "").join(" ");
+  if (s !== "") return s;
+  if (ref.label !== undefined && ref.label !== "") return san(ref.label);
+  return truncate(san(ref.raw), 40);
 }

@@ -163,11 +163,12 @@ describe("GET /api/paper/:doc_id/ir", () => {
     expect(ir.bib).toHaveLength((onDisk.references ?? []).length);
   });
 
-  test("a retired-Document-shaped file still projects (migration tolerance)", async () => {
+  test("a pre-migration Document-shaped file 404s (fallback deleted in MS4b)", async () => {
     const res = await get("/api/paper/demo/ir");
-    expect(res.status).toBe(200);
-    const ir = DocIrSchema.parse(await res.json());
-    expect(ir).toMatchObject({ docId: "demo", title: "Demo paper", sections: [], bib: [] });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({
+      detail: "paper 'demo' is a pre-migration document, re-ingest it",
+    });
   });
 
   test("404/400 semantics mirror /api/paper/:doc_id", async () => {

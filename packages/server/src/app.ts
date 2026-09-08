@@ -31,12 +31,11 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync }
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, relative, resolve, sep } from "node:path";
-import type { Document, RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
+import type { RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
 import { PlansFileSchema } from "@argelanderspace/contracts";
 import {
   addNodeToLibrary,
   attachLatexZip,
-  buildDocIr,
   type IngestPipelines,
   type LibraryPaths,
   libraryPayload,
@@ -235,9 +234,12 @@ export function createApp(deps: AppDeps): Hono {
   // ---- GET /api/paper/{doc_id}/ir -------------------------------------------- //
 
   // Stage 5 MS3a: the stored file IS the render IR — return it as-is (the
-  // PaperCache's mtimeNs+size key tracks edits). Pre-rebuild docs in the
-  // retired Document shape are projected on demand (migration tolerance until
-  // the MS4 re-ingest, same trust level as before).
+  // ---- GET /api/paper/{doc_id}/ir -------------------------------------------- //
+
+  // The stored file IS the render IR — return it as-is (the PaperCache's
+  // mtimeNs+size key tracks edits). A file without the `version` marker is a
+  // pre-migration Document JSON (deleted in MS4b): 404, same trust level as
+  // before.
   app.get("/api/paper/:doc_id/ir", (c) => {
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badId(docId)) {
@@ -254,10 +256,11 @@ export function createApp(deps: AppDeps): Hono {
       string,
       unknown
     >;
-    if (typeof doc.version === "number") {
-      return c.json(doc);
+    if (typeof doc.version !== "number") {
+      const e = detail(`paper ${pyRepr(docId)} is a pre-migration document, re-ingest it`, 404);
+      return c.json(e.body, e.status);
     }
-    return c.json(buildDocIr(doc as unknown as Document));
+    return c.json(doc);
   });
 
   // ---- GET /api/library ------------------------------------------------------ //

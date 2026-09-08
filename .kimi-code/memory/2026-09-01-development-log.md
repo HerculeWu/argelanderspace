@@ -56,13 +56,13 @@
 - 原 Stage 5（论文写作）**删除**，不顺延。新 **Stage 5 = LaTeX 解析线路重构（IR 化）**：废弃 pandoc/mupdf，改走 latexmk 编译产物（.aux/.bbl/.toc/.fls + 自写插桩 .sty 的 jsonl）+ unified-latex 源码树的双通道融合出新 IR；**IR 即存储形式**，streamView 与 agent markdown 均从 IR 渲染；UX 不增不减；编号改**印刷忠实**（未编号公式不再带自产 (N)）。
 - grilling 三轮 Q1–Q13 全锁定（2026-09-04 用户确认），定稿/里程碑/取证存档见 `2026-09-04-stage5-roadmap.md`。prototype（原 /media/wwu/MyPassport/texToHTML）已全量转移至 `/tmp/texToHTML` 备参考（⚠️ 其自身 git 未追踪核心代码，/tmp 副本可能是孤本且会被系统清理）。
 
-## Stage 5 执行记录（MS1–MS4a landed；MS4b 待做）
+## Stage 5 执行记录（MS1–MS4b 全部 landed，Stage 5 代码侧完成；待用户 smoke + commit 拍板）
 
 - **MS1 编译执行层**（2026-09-04 landed，commit `d91471d` + memory `edd8fb6`）：`pipelines/tex` ports+facts、infra tex/（workspace/latexmk/argelander.sty/dvisvgm）；mathnum 插桩实测成立；一轮 BLOCK 审查全修复。测试 541→610。
 - **MS2 融合层**（2026-09-04 landed）：unified-latex 源树 + 有界宏展开 + 编号/cite/xref 锚定 + TexDocIr schema + 两 golden 重冻至 `tests/golden/tex/`（人工抽查对 ar5iv 全对）；一轮 BLOCK 审查（B1 表注丢失/B2 center 空表体/B3 comment 混 code）全修复。测试 core 177→228、contracts 32→39。
 - **MS3a 存储切换+消费侧重接**（2026-09-08 landed）：CLI/acquire/upload/server/agent/seed 全链路改吃新 IR；`/api/paper/:id/ir` 落盘即读 + raw 路由删除；warnings 进 job log；顺带修出行尾注释空格丢失 bug。测试 core 228→229。
 - **MS3b 旧管线全删+依赖清理**（2026-09-08 landed）：`pipelines/latex/`、infra latex{pandoc,pipeline,assets}、infra/pdf、documents{annotate,citations,crossrefs,geom,document}、旧套件/旧 golden 全删；mupdf 依赖移除（tsup banner 保留，活人 = `ws`）；**pandoc shim 退役**。测试 622→511。
 - **MS4a 发布打包修复+文档换代+memory 收尾**（2026-09-08 本项）：app bundle 随包 `dist/argelander.sty`（copy-assets.mjs，缺失=插桩静默降级已实测）；npm pack 复验（67 文件、零 mupdf、banner 在、sty 在、pristine prefix 摄入带事件）；README/skills/AGENTS.md/web README 的 pandoc→TeX Live 换代；product-and-architecture/pitfalls/development-log/known-issues 同步。
-- **MS4b 待做**：存量迁移执行（Q5/Q12：删旧 `<doc_id>.json` + 旧 `assets/`，保留 `src/`+`.latexcache`，全部条目免用户操作自动重摄入）+ 旧形投影回退（buildDocIr/DocumentSchema）删除。
+- **MS4b 存量迁移+fallback 删除+smoke 手册**（2026-09-08 本项）：备份 `literatures.stage5-backup.tar.gz`（358MB）→ 清旧 `.json`+`assets/`（留 `src/`+`.latexcache`）→ 缓存离线重摄入：arxiv 12 颗 7 成功 / 5 编译失败按缺失附件（根因逐个诊断：老 aa.cls×现代 natbib、emulateapj-rtx4/aa.cls 不在 TeX Live、aas_macros 缺、plain TeX 非 LaTeX）；28 颗非 LaTeX 时代残留（pdf 5/html 21/upload 2）同按缺失附件。`library build --offline`（两轮）零悬空 doc_ids、works 35→36（+1=Palomar 正典 work 显现，非 bug）、8 work 带 doc（7 文档全覆盖）、works 元数据（note/label/star/read/tags）逐字节 parity。fallback 删除：contracts `document.ts`（Reference 移入 doc-ir.ts）+ core `documents/{ir,tokens,traverse}` + 桥 fixtures + server/cli 两回退点（→ 404/throw）。手册 `docs/manual-test-stage5.md`。测试 511→455。
 
 Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**——数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`（task.due 可晚于 plan.due 等）。

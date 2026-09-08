@@ -21,7 +21,30 @@
  */
 
 import { z } from "zod";
-import { ReferenceSchema } from "./document.js";
+
+/**
+ * A bibliography entry (the shared Reference contract used by the stored IR's
+ * `references` and by library/graph consumers). Moved here from the retired
+ * `document.ts` in MS4b — the only surviving part of that file.
+ */
+export const ReferenceSchema = z.object({
+  id: z.string(),
+  /** Raw bibliography entry text. */
+  raw: z.string(),
+  /** In-text marker for numbered styles ("12"). */
+  label: z.string().optional(),
+  authors: z.array(z.string()).optional(),
+  year: z.number().int().optional(),
+  title: z.string().optional(),
+  venue: z.string().optional(),
+  volume: z.string().optional(),
+  pages: z.string().optional(),
+  doi: z.string().optional(),
+  arxiv_id: z.string().optional(),
+  url: z.string().optional(),
+  /** Textual forms used for matching citations to this reference. */
+  keys: z.array(z.string()).optional(),
+});
 
 // --------------------------------------------------------------------------- //
 // Inline segments
@@ -313,3 +336,4 @@ export type RefManifestKind = z.infer<typeof RefManifestKindSchema>;
 export type RefManifestRow = z.infer<typeof RefManifestRowSchema>;
 export type BibManifestRow = z.infer<typeof BibManifestRowSchema>;
 export type DocIr = z.infer<typeof DocIrSchema>;
+export type Reference = z.infer<typeof ReferenceSchema>;

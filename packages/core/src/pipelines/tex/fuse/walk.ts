@@ -34,7 +34,7 @@ import type {
   Reference,
 } from "@argelanderspace/contracts";
 import type * as Ast from "@unified-latex/unified-latex-types";
-import { citeShort } from "../../../documents/ir.js";
+import { citeShort } from "../../../documents/render.js";
 import type { TexFacts } from "../facts/index.js";
 import type { TexSourceTree } from "../source/tree.js";
 import { envName, lastArgText, printRawNodes } from "../source/tree.js";
