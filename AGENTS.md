@@ -20,5 +20,5 @@ ArgelanderSpace（原 bibgraph）：单用户**科研工作台**（不只是文�
 ## 环境
 
 - Node v24+ / npm 11+；pnpm 经 `corepack pnpm` 调用（pnpm 11.24.0，见根 package.json `packageManager`）
-- **TeX Live 全家在 `/usr/bin`**（latexmk/pdflatex/xelatex/bibtex/biber/dvisvgm，摄入与真编译测试的硬前提；真编译用例走 `HAVE_LATEXMK` 风格探测 gating，缺工具自动 skip）。**pandoc 已于 Stage 5 MS3b 随旧管线删除**——旧 shim 说明（astro env `/tmp/ms1-bin`）只具历史意义（其提示仍适用：不要把整个 astro bin 前置 PATH，其 node v20 会抢先系统 node）
+- **TeX Live 全家在 `/usr/bin`**（latexmk/pdflatex/xelatex/bibtex/biber，摄入与真编译测试的硬前提；真编译用例走 `HAVE_LATEXMK` 风格探测 gating，缺工具自动 skip）。图转换 = **poppler-utils（pdftocairo）+ ghostscript（gs，EPS 用）**（可选，缺失降级为无图；dvisvgm 已于 smoke R1 弃用——真图丢全部文字与内嵌位图）。**pandoc 已于 Stage 5 MS3b 随旧管线删除**——旧 shim 说明（astro env `/tmp/ms1-bin`）只具历史意义（其提示仍适用：不要把整个 astro bin 前置 PATH，其 node v20 会抢先系统 node）
 - keys：`MINERU_API_KEY`（~/.zshrc；**2026-09-01 实测返回 401 鉴权失败**，OCR 已降级为"开发中"，启用前自查）、ADS token（`~/.ads/dev_key`）、`OPENALEX_API_KEY`（~/.zshrc）；也可写进 `~/.config/argelanderspace/config.toml`（env 优先）

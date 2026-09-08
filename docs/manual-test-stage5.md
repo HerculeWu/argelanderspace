@@ -6,7 +6,7 @@
 **应该发生什么**、**出现什么说明有 bug**。
 
 > 约定：下文 CLI 一律写 `node packages/app/dist/bin.js`（repo 内的打包产物），在 **repo 根目录**运行。
-> 摄入硬前提 = **TeX Live**（latexmk + pdflatex/xelatex + bibtex/biber 在 PATH）；dvisvgm 可选（矢量图→SVG）。
+> 摄入硬前提 = **TeX Live**（latexmk + pdflatex/xelatex + bibtex/biber 在 PATH）；**poppler-utils（pdftocairo）+ ghostscript（gs，仅 EPS 需要）** 可选（矢量图→SVG；dvisvgm 已于 smoke R1 弃用——真图丢全部文字与内嵌位图）。
 > 不再需要 pandoc（已随 MS3b 删除）。
 > Stage 3/3.1/4 的验收指南留档作回归参照（`manual-test-stage3.md` / `manual-test-stage3.1.md` / `manual-test-stage4.md`）。
 
@@ -21,7 +21,7 @@
 ```bash
 cd /home/wwu/project/bibgraph
 corepack pnpm -r build        # 7 包全 Done；app bundle 含 dist/argelander.sty
-which latexmk pdflatex xelatex bibtex dvisvgm   # 必须全部存在（/usr/bin，TeX Live 2023+）
+which latexmk pdflatex xelatex bibtex pdftocairo gs   # 前四者必须（/usr/bin，TeX Live 2023+）；pdftocairo/gs 可选但缺了图不转
 ```
 
 **0b. 确认 app bundle 携带插桩资产（已预实测）**
@@ -53,7 +53,7 @@ ls packages/app/dist/argelander.sty   # 必须存在（缺失 → 插桩静默�
 **手动验证**：
 
 1. `node packages/app/dist/bin.js serve`（默认 ./literatures）→ `GET /api/papers` 应恰好列出 7 个重摄入文档（**已预实测**：7 颗全部列出——1609.05917 / 1610.08981 / 1804.10121 / 2012.05220 / 2501.17225 / 2603.03522 / 2607.17040）。
-2. 每颗 doc 目录应有 `<doc_id>.json` + `src/` + `build/`（.aux/.bbl/.toc/.fls/.argelander.jsonl）+ `assets/`（dvisvgm SVG）。
+2. 每颗 doc 目录应有 `<doc_id>.json` + `src/` + `build/`（.aux/.bbl/.toc/.fls/.argelander.jsonl）+ `assets/`（pdftocairo/gs 转换的 SVG）。
 3. `GET /api/library` → refs 36 条、graph 重建（本机实测 nodes=156 / links=647）。
 4. **bug 信号**：`/api/papers` 出现旧时代 id（aa*/arxivpdf/2603.03522 无 json）→ 说明删除没执行干净；
    `/api/library` 出现 `doc_id` 指向不存在文档 → 悬空引用，迁移漏网。
@@ -102,7 +102,11 @@ upload job 报 no matching work）。
 2. **cite chips**：正文 `(Author Year)` 可点，右栏 ref 卡带作者/年份/DOI。
 3. **xref chips**：`Fig. N`/`(N)`/`Section N` 可跳转；TOC 与节号一致（1,2,2.1,…,A.1–A.3）。
 4. **图**：`/images/arxiv-2501.17225/figures__All_in_one_XY__pdf.svg` 返回 `image/svg+xml`
-   （**已预实测 200**）；暗色模式下图反色正常。
+   （**已预实测 200**）；**图内文字（标题/轴标签/刻度/星团标注）必须在阅读器里真实可见**——
+   smoke R1 的缺陷就是 dvisvgm 转换丢全部文字（现已改 pdftocairo，本机 Chrome 对比
+   pdftoppm 真值逐图核对过：文字 + 内嵌位图齐全）；暗色模式下图反色正常。
+   **bug 信号**：图只有散点/曲线没有字，或天空图整块缺失 → 转换器退化，查
+   `which pdftocairo` 与摄入 job log 的 figure warning。
 5. **深链接**：`/doc/arxiv-2501.17225#eq-1` 滚动到公式 1；`#ref-6` 落引用块并聚焦右栏卡。
 6. **表**：A.1–A.4 表格渲染（th/td 正确分隔），题注在。
 

@@ -52,8 +52,8 @@ async function runIngest(input: string, opts: IngestOpts, dataDir: string): Prom
   // latex-only on main; detectSource throws a friendly error for DOI/URL/PDF inputs
   detectSource(input);
   // --no-assets skips figure materialization (block+caption kept, no image);
-  // --figure-dpi is accepted for interface stability but ignored (dvisvgm
-  // emits SVG — no raster DPI anymore, MS4 docs sweep).
+  // --figure-dpi is accepted for interface stability but ignored (figures
+  // become SVG — no raster DPI anymore, MS4 docs sweep).
   const r = await ingestTexSource(input, {
     outRoot,
     noCache: !opts.cache,

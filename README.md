@@ -22,9 +22,9 @@ first with an automatic xelatex retry) and fused with its own source AST
 instrumentation event stream of citations/labels/sections/equation numbers)
 anchor print-faithful numbering — displayed numbers are the paper's true
 printed numbers; unnumbered displays get none. Compile failures surface with
-the error taxonomy and the `!`-line log excerpt. Figures materialize via
-`dvisvgm` to SVG (optional; missing or failed conversions degrade the figure
-gracefully, never the ingest). No Python anywhere.
+the error taxonomy and the `!`-line log excerpt. Figures materialize to SVG
+via `pdftocairo` (poppler; Ghostscript for EPS) — optional; missing or failed
+conversions degrade the figure gracefully, never the ingest. No Python anywhere.
 
 ArgelanderSpace is a local single-user tool: the server binds `127.0.0.1` and
 there is no authentication. LLM agents integrate through the CLI plus the pi
@@ -35,8 +35,9 @@ skills in `skills/` — see **Agent integration (skills)** below.
 - **Node.js ≥ 20**
 - **TeX Live** (`latexmk` + `pdflatex`/`xelatex` + `bibtex`/`biber` on PATH) —
   required for ingest.
-- Optional: **dvisvgm** (vector PDF/EPS figures → SVG; figures degrade without
-  it, ingests still succeed).
+- Optional: **poppler-utils** (`pdftocairo`; vector PDF figures → SVG) and
+  **ghostscript** (`gs`; EPS figures) — figures degrade without them, ingests
+  still succeed.
 
 ## Quickstart
 
@@ -201,7 +202,7 @@ pnpm workspace (use `corepack pnpm`; Node ≥ 20):
 |---|---|
 | `packages/contracts` | zod contracts: stored render IR (`TexDocIr`), library payloads, job/WS DTOs |
 | `packages/core` | pure domain logic: the tex ingest pipeline (compile ports, source tree, fusion, IR assembly), library/graph/planner (no I/O) |
-| `packages/infra` | side-effect adapters: latexmk compile + dvisvgm figures, arXiv fetcher, ADS/Crossref/OpenAlex, config file |
+| `packages/infra` | side-effect adapters: latexmk compile + pdftocairo/gs figures, arXiv fetcher, ADS/Crossref/OpenAlex, config file |
 | `packages/server` | Hono server: REST endpoints, static SPA, job runner, `/ws` |
 | `packages/cli` | the commander program (`ingest` / `library build` / `acquire` / `serve`) |
 | `packages/web` | React reader workspace (vite) |

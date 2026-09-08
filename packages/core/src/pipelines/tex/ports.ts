@@ -13,9 +13,9 @@
  *   pdflatex first, xelatex retry on compile failure; instrumentation
  *   failure degrades to a clean compile, never to a hard failure).
  * - {@link TexFigurePort} — figure materialization: raster/SVG byte
- *   passthrough, PDF/EPS vector conversion to SVG via dvisvgm. Missing
- *   dvisvgm or a failed conversion degrades the figure (block + caption
- *   kept, no image), it never fails the ingest.
+ *   passthrough, PDF/EPS vector conversion to SVG via pdftocairo (+ gs for
+ *   EPS). Missing tools or a failed conversion degrade the figure (block +
+ *   caption kept, no image), they never fail the ingest.
  *
  * Shapes here are structural twins of the infra adapters, so core never
  * imports infra (same convention as `pipelines/latex/ports.ts`).
@@ -112,7 +112,7 @@ export interface TexFigureRequest {
  * Outcome of materializing one figure. `file` is the basename written under
  * `destDir`, named `<stem>__<srcext>.svg|.<ext>` following the Stage 3.1
  * convention (`pipelines/latex/assets.ts`): raster and .svg sources are
- * byte-passthrough copies, .pdf/.eps become dvisvgm-converted SVG.
+ * byte-passthrough copies, .pdf/.eps become pdftocairo/gs-converted SVG.
  */
 export type TexFigureOutcome = { ok: true; file: string } | { ok: false; reason: string };
 

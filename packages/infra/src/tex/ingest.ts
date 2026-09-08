@@ -1,7 +1,7 @@
 /**
  * The Stage 5 (MS3a) wiring layer for the new tex pipeline — the
  * `latex/pipeline.ts` counterpart: compose core's `ingestTex` with the infra
- * adapters (latexmk compile, dvisvgm figures, the arXiv e-print
+ * adapters (latexmk compile, pdftocairo/gs figures, the arXiv e-print
  * fetcher/extractor, the zip unpacker), and write the stored IR to
  * `<outRoot>/<docId>/<docId>.json`.
  *

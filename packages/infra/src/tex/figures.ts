@@ -1,14 +1,22 @@
 /**
- * Figure materialization (Stage 5 MS1, roadmap Q9): the {@link TexFigurePort}
- * implementation.
+ * Figure materialization (Stage 5 MS1, roadmap Q9 — amended after smoke R1):
+ * the {@link TexFigurePort} implementation.
  *
  * - raster sources (png/jpg/jpeg/gif/webp) and .svg: byte-passthrough copy;
- * - .pdf: `dvisvgm --pdf` → SVG (text as paths, page 1);
- * - .eps: `dvisvgm --eps` → SVG.
+ * - .pdf: `pdftocairo -svg` (poppler) → SVG (first page);
+ * - .eps: two-step — `gs -sDEVICE=pdfwrite` (Ghostscript) → tmp PDF, then
+ *   `pdftocairo -svg`.
  *
- * dvisvgm missing or any conversion failure degrades to `{ ok: false }`
- * (the caller keeps the figure block + caption without an image); this
- * module never throws.
+ * Smoke round 1 replaced dvisvgm with pdftocairo: `dvisvgm --pdf --no-fonts`
+ * is not faithful on real figure PDFs (all text lost — 32k paths but zero
+ * rendered glyphs in a real browser — and embedded raster XObjects dropped
+ * wholesale), while `pdftocairo -svg` renders pixel-faithfully. The trivial
+ * one-triangle fixture could not catch that; the fixtures here are real
+ * matplotlib PDFs with text and an embedded raster.
+ *
+ * pdftocairo/gs missing or any conversion failure degrades to
+ * `{ ok: false }` (the caller keeps the figure block + caption without an
+ * image); this module never throws.
  *
  * Output naming follows the Stage 3.1 convention (owned by core in
  * `packages/core/src/pipelines/tex/fuse/figures.ts`): the source path relative
@@ -17,6 +25,7 @@
  * shared across extensions can't collide onto one output file.
  */
 import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { TexFigureOutcome, TexFigurePort, TexFigureRequest } from "@argelanderspace/core";
 import { texFigureOutName } from "@argelanderspace/core";
@@ -25,15 +34,23 @@ import { runTexProcess, type TexProcResult } from "./proc.js";
 
 const RASTER_EXTS: ReadonlySet<string> = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
-/** dvisvgm conversions are sub-second; the bound only guards against hangs. */
-const DVISVGM_TIMEOUT_MS = 30_000;
+/** pdftocairo/gs conversions are seconds at most; the bound only guards against hangs. */
+const CONVERT_TIMEOUT_MS = 60_000;
 
-export function dvisvgmPath(): string | null {
-  return findOnPath("dvisvgm");
+export function pdftocairoPath(): string | null {
+  return findOnPath("pdftocairo");
 }
 
-export function haveDvisvgm(): boolean {
-  return dvisvgmPath() !== null;
+export function havePdftocairo(): boolean {
+  return pdftocairoPath() !== null;
+}
+
+export function ghostscriptPath(): string | null {
+  return findOnPath("gs");
+}
+
+export function haveGhostscript(): boolean {
+  return ghostscriptPath() !== null;
 }
 
 /**
@@ -42,41 +59,105 @@ export function haveDvisvgm(): boolean {
  * (`@argelanderspace/core` `pipelines/tex/fuse/figures.ts`, MS2) — this
  * re-export keeps the port and its tests on one implementation.
  *
- * NOTE: the same convention exists in the retired Stage 3.1 `outName`
- * (`packages/core/src/pipelines/latex/assets.ts`) until MS3 deletes it.
- * All three share the inherited edge that `a/b.png` and `a__b.png` map to
- * the same output name — the "/" → "__" encoding is not injective (MS1
+ * NOTE: the inherited edge that `a/b.png` and `a__b.png` map to the same
+ * output name stands — the "/" → "__" encoding is not injective (MS1
  * review N5).
  */
 export { texFigureOutName };
+
+async function runStep(
+  cmd: string,
+  args: readonly string[],
+  label: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let result: TexProcResult;
+  try {
+    result = await runTexProcess(cmd, args, { timeoutMs: CONVERT_TIMEOUT_MS });
+  } catch (err) {
+    return { ok: false, reason: `${label} invocation failed: ${String(err)}` };
+  }
+  if (result.timedOut || result.code !== 0) {
+    const detail = (result.stderr || result.stdout).trim().split("\n").slice(-3).join("; ");
+    return {
+      ok: false,
+      reason:
+        `${label} failed` +
+        (result.timedOut ? ` (timeout after ${CONVERT_TIMEOUT_MS}ms)` : ` (exit ${result.code})`) +
+        (detail ? `: ${detail}` : ""),
+    };
+  }
+  return { ok: true };
+}
+
+async function producedFile(p: string): Promise<boolean> {
+  const stat = await fs.stat(p).catch(() => null);
+  return stat?.isFile() === true && stat.size > 0;
+}
+
+/** `pdftocairo -svg <src> <dest>` — writes `<dest>` exactly as named (first page only). */
+async function pdfToSvg(
+  src: string,
+  dest: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const ran = await runStep("pdftocairo", ["-svg", src, dest], "pdftocairo pdf→svg");
+  if (!ran.ok) return ran;
+  if (!(await producedFile(dest))) {
+    return { ok: false, reason: "pdftocairo pdf→svg produced no output file" };
+  }
+  return { ok: true };
+}
+
+/**
+ * EPS → SVG in two steps: Ghostscript `pdfwrite` (the old pipeline's EPS
+ * practice: `-dSAFER -dEPSCrop`, absolute source path) into a temp PDF, then
+ * the pdftocairo route above.
+ */
+async function epsToSvg(
+  src: string,
+  dest: string
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!haveGhostscript()) {
+    return { ok: false, reason: "gs (ghostscript) not on PATH; EPS figure not converted" };
+  }
+  const tmp = await fs.mkdtemp(path.join(tmpdir(), "tex-eps-"));
+  const tmpPdf = path.join(tmp, "in.pdf");
+  try {
+    const gs = await runStep(
+      "gs",
+      [
+        "-q",
+        "-dSAFER",
+        "-dBATCH",
+        "-dNOPAUSE",
+        "-dEPSCrop",
+        "-sDEVICE=pdfwrite",
+        `-sOutputFile=${tmpPdf}`,
+        src,
+      ],
+      "gs eps→pdf"
+    );
+    if (!gs.ok) return gs;
+    if (!(await producedFile(tmpPdf))) {
+      return { ok: false, reason: "gs eps→pdf produced no output file" };
+    }
+    return await pdfToSvg(tmpPdf, dest);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+  }
+}
 
 async function convertVector(
   kind: "pdf" | "eps",
   src: string,
   dest: string
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  if (!haveDvisvgm()) {
-    return { ok: false, reason: "dvisvgm not on PATH; vector figure not converted" };
-  }
-  const args = [kind === "pdf" ? "--pdf" : "--eps", "--no-fonts", "-p", "1", "-o", dest, src];
-  let result: TexProcResult;
-  try {
-    result = await runTexProcess("dvisvgm", args, { timeoutMs: DVISVGM_TIMEOUT_MS });
-  } catch (err) {
-    return { ok: false, reason: `dvisvgm invocation failed: ${String(err)}` };
-  }
-  const outStat = await fs.stat(dest).catch(() => null);
-  if (result.timedOut || result.code !== 0 || !outStat?.isFile() || outStat.size === 0) {
-    const detail = (result.stderr || result.stdout).trim().split("\n").slice(-3).join("; ");
+  if (!havePdftocairo()) {
     return {
       ok: false,
-      reason:
-        `dvisvgm ${kind}→svg failed` +
-        (result.timedOut ? ` (timeout after ${DVISVGM_TIMEOUT_MS}ms)` : ` (exit ${result.code})`) +
-        (detail ? `: ${detail}` : ""),
+      reason: "pdftocairo (poppler-utils) not on PATH; vector figure not converted",
     };
   }
-  return { ok: true };
+  return kind === "pdf" ? pdfToSvg(src, dest) : epsToSvg(src, dest);
 }
 
 export async function materializeTexFigure(req: TexFigureRequest): Promise<TexFigureOutcome> {

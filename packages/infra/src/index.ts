@@ -1,6 +1,6 @@
 // @argelanderspace/infra — side-effect adapters behind the core ports:
 // the Stage 5 tex compile-execution layer (tex/: latexmk workspaces, the
-// argelander.sty instrumentation wrapper, dvisvgm figures, the wired ingest),
+// argelander.sty instrumentation wrapper, pdftocairo/gs figures, the wired ingest),
 // arXiv source acquisition (latex/arxiv-source.ts), the ADS / Crossref /
 // OpenAlex metadata sources, and the config file. Pure logic stays in
 // @argelanderspace/core; everything here does fs / network / subprocess.

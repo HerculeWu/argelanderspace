@@ -1,10 +1,11 @@
 /**
  * Golden regression for the Stage 5 tex pipeline (roadmap Q10):
  * `tests/golden/tex/arxiv-<id>.{json,md}` were frozen from a real compile
- * (`ingestTex` + dvisvgm figures). This suite re-runs the COMPILER-FREE
- * half (`fuseTexDoc` over the frozen build artifacts in `build-<id>/` with
- * a naming-faithful figure-port stub) and requires byte-identical IR JSON
- * and regenerated markdown — a deterministic re-run diff.
+ * (`ingestTex` + figure materialization). This suite re-runs the
+ * COMPILER-FREE half (`fuseTexDoc` over the frozen build artifacts in
+ * `build-<id>/` with a naming-faithful figure-port stub) and requires
+ * byte-identical IR JSON and regenerated markdown — a deterministic re-run
+ * diff.
  *
  * Spot checks of print-faithful numbering live in the per-paper assertions
  * below (they encode the human review of the freeze).
@@ -31,7 +32,8 @@ const PAPERS = [
 
 /**
  * Naming-faithful figure stub: computes exactly the name the real
- * `materializeTexFigure` produced at freeze time, without dvisvgm.
+ * `materializeTexFigure` produced at freeze time, without running the
+ * converters.
  */
 const stubFigures: TexFigurePort = {
   materialize: (req) => {

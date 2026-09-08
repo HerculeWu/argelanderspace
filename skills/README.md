@@ -42,7 +42,7 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
   or from a built repo checkout — `corepack pnpm -r build`, then the skills use
   `node <repo>/packages/app/dist/bin.js` (absolute path) in place of
   `argelanderspace`.
-- **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) on PATH for the LaTeX (arXiv) ingest pipeline; optional `dvisvgm` for vector figures.
+- **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) on PATH for the LaTeX (arXiv) ingest pipeline; optional `pdftocairo` (poppler-utils) + `gs` (ghostscript, EPS only) for vector figures.
 - Optional: `ADS_DEV_KEY` / `OPENALEX_API_KEY` for richer library enrichment.
 - A running server (`argelanderspace serve`) only for the deep links to open —
   the CLI itself works without it.

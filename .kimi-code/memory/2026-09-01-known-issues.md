@@ -12,7 +12,7 @@
 - **MinerU `use_cache` 死代码**：缓存探测用字面量 `content_list.json`，真实解包是 `<uuid>_content_list.json` → 短路从不命中，重摄入必重跑全流程（烧配额）。OCR 模块复活时修。**（2026-09-01 Stage 3.1 起随 `ocr-features` 分支迁出 main）**
 - **MineruClient 构造即解析 API key**（而非首次调用时）：暖缓存 + 无 env 场景直接 throw。**（同上，已迁出 main）**
 - ~~subequations 被 pandoc 合并成一条 DisplayMath~~（**2026-09-08 随 pandoc 删除关闭**）：该机制（pandoc 3.1.3/3.9 合并 subequations 为单条 DisplayMath、丢 `\label`）不再适用。新管线经 amsmath 通道出 subequations 逐条公式与真号（3a/3b 实测正确，MS1 `tex/hyperref` fixture 锁死；xref/eqref 亦正确）。
-- **TikZ/pgfplots 图不渲染**（2026-09-04 Stage 5 grilling Q9 用户拍板，明确记为遗留问题）：旧管线（pandoc RawBlock 被 walk 静默丢弃）与新管线（不做独立物化）均不渲染 tikz 图——streamView 中此类图不可见，功能不增。未来若要支持需对 tikz 环境做独立编译物化（如 standalone 编译 + dvisvgm）。
+- **TikZ/pgfplots 图不渲染**（2026-09-04 Stage 5 grilling Q9 用户拍板，明确记为遗留问题）：旧管线（pandoc RawBlock 被 walk 静默丢弃）与新管线（不做独立物化）均不渲染 tikz 图——streamView 中此类图不可见，功能不增。未来若要支持需对 tikz 环境做独立编译物化（如 standalone 编译 + pdftocairo）。
 - **`enrichAndPlan` 每次 rebuild 无条件重排 `cite_key`**——会覆盖用户可见键。
 - **attachPdf 两个隐患**（已实锤）：① 目标 work 无 doi/arxiv 时 seed 退用提取标题算 canonical id，标题失配则 doc 落到新建重复 work，且返回前不校验 `doc_ids`；② `upload-<slug>` 截 48 字符有 docId 撞车风险。**Stage 3.1 MS2 修复**：stamp 焊死目标 work 身份（无 doi/arxiv 时 work.title 覆盖 doc meta.title）+ 直挂 `doc_ids` + 返回前校验 + 幂等 docId `upload-<slug44>-<hash6>`。
 - acquire planner 的 EDP/A&A `READY` 标记与现实脱节（站全墙）；plan 输出的 journal_html READY 不可信。**（Stage 3.1 MS1 随 HTML 面裁剪）**
