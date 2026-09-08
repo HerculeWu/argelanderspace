@@ -19,6 +19,8 @@
 
 **2026-09-08：MS3a（存储切换+消费侧重接）完成，四门全绿，未 commit。** 详见 `2026-09-08-stage5-ms3a.md`：CLI/acquire/upload 全链路接新 tex 管线（`IngestPipelines` 端口改返 TexDocIr）；`/api/paper/:id/ir` 落盘即读（旧形投影容忍至 MS4）；raw `/api/paper/:id` 删除；agent read/show/ref/list 直读存 IR（token 约定不变，ref 锚点 p-7→p-6 属段落切分差异）；seed/graph 零改动（references 字段对照：共享条目 authors/year/title/doi/arxiv_id 全同，2012.05220 编译态 .bbl 少一条=印刷真值）；warnings 经 onProgress 进 job log；顺带修出行尾注释空格丢失 bug（已复冻 golden）。E2E smoke 全过（CLI ingest→library build→agent 命令→server curl）。测试 core 228→229、其余持平。
 
+**2026-09-08：MS3b（旧管线全删+依赖清理）完成，四门全绿，未 commit。** 详见 `2026-09-08-stage5-ms3b.md`：`pipelines/latex/`、infra latex{pandoc,pipeline,assets}、infra/pdf、documents{annotate,citations,crossrefs,geom,document}、旧测试套件/旧 golden/孤儿 fixtures 全删；mupdf 依赖+tsup external 移除（**createRequire banner 保留——真消费者是 `ws`，移除实测炸 bundle**）；DocumentSchema/buildDocIr 与两个投影回退点保留至 MS4，两颗旧 golden 转桥接 fixture（`core/tests/fixtures/document-*.json`）。**pandoc shim 退役**（无 shim 全绿）；测试 622→511。
+
 ## 范围变更（Q8）
 
 原 Stage 5（论文写作）**删除**，不顺延。新 Stage 5 = 重新定义文档解析后的 IR，**IR 即存储形式**，streamView（网页流式渲染）与 agent 内容均从 IR 渲染；**UX 不增不减**；pagedView（prototype 的 SVG 伪 PDF 视图）**不进 repo**，仅为 prototype 开发期验证手段。
