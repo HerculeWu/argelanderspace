@@ -69,4 +69,4 @@
 
 ## 下一步
 
-**Stage 6（用户 2026-09-09 指定，先 grilling 定稿）**：修复 known-issues「Stage 6 重点」录的 4 项阅读器问题（宽度自适应/多引用折行/右栏定位/参考文献元数据），**硬约束 = agent 侧工具延续当前功能**（CLI/skills 命令面、输出契约、深链接不得回退）。**Stage 7 预告**：标记功能——渲染页面直接标记到精确位置，标记对 agent 可见。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**——数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`（task.due 可晚于 plan.due 等）。
+**Stage 6（2026-09-09 grilling 定稿完成，三轮 Q1–Q13 全锁定，用户确认开工）**：修复 4 项阅读器问题——①宽度自适应 ②多引用折行 ③右栏定位 ④**当前文献作者块**（④ 经 Q8 重定义："参考文献元数据填充"系 memory 误读，用户确认砍掉）。**硬约束 = agent 侧输出字节冻结**。MS 切分：MS1 = ①+②（纯 web）/ MS2 = ③（图尺寸预留+落地校正）/ MS3 = ④ + 存量离线重摄入迁移 / MS4 = smoke 手册 + memory。定稿/决策/取证见 `2026-09-09-stage6-roadmap.md`。**阶段重编号**：其余 known-issues → **Stage 7**；标记功能（原 Stage 7 预告）→ **Stage 8**。Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**——数据层已预留：稳定 `p_/t_` id、pretty JSON、watcher 覆盖、`plan.changed`、CRUD 纯函数。推后事项/开放问题见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`（task.due 可晚于 plan.due 等）。

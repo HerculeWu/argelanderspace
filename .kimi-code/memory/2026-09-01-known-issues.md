@@ -17,16 +17,16 @@
 - **attachPdf 两个隐患**（已实锤）：① 目标 work 无 doi/arxiv 时 seed 退用提取标题算 canonical id，标题失配则 doc 落到新建重复 work，且返回前不校验 `doc_ids`；② `upload-<slug>` 截 48 字符有 docId 撞车风险。**Stage 3.1 MS2 修复**：stamp 焊死目标 work 身份（无 doi/arxiv 时 work.title 覆盖 doc meta.title）+ 直挂 `doc_ids` + 返回前校验 + 幂等 docId `upload-<slug44>-<hash6>`。
 - acquire planner 的 EDP/A&A `READY` 标记与现实脱节（站全墙）；plan 输出的 journal_html READY 不可信。**（Stage 3.1 MS1 随 HTML 面裁剪）**
 
-## Stage 6 重点（2026-09-08 smoke R2 用户提出，2026-09-09 用户定为 Stage 6 范围；先 grilling 定稿）
+## Stage 6（2026-09-09 grilling 定稿完成，三轮 Q1–Q13；执行中——定稿全文见 `2026-09-09-stage6-roadmap.md`）
 
-**硬约束（用户指定）：agent 侧工具延续当前功能**——CLI/skills 命令面、输出契约、深链接在修复中不得回退。
+**硬约束（用户指定）：agent 侧输出字节冻结**——CLI/skills 命令面、markdown token、bib/ref JSON、深链接逐字节不变；golden .md 不重冻、当冻结守卫。
 
-1. **阅读器宽度不自适应**：正文列宽固定，收起侧边栏后内容不随页面宽度重排。期望：侧栏收起后主区自适应填满。
-2. **多引用罗列折行问题**：`\cite{a,b,c}` 多文献并列（如 [1,2,3] 长串）时折行不能顺利进行（渲染布局缺陷）。
-3. **右边栏跳转定位不准**：右栏卡片点击跳正文，有时落点偏离目标位置（jumpTo/reading-band 定位精度，stage 3 的 jumpTo 机制在新 IR 块序下复验）。
-4. **参考文献缺 title/authors/institution 等元数据**：`.bbl` facts 层刻意不猜（"unknown beats guessed-wrong"，MS1 定）；补全路径候选 = `.bib` 结构化解析（core 已有 `@retorquere/bibtex-parser`，prototype DESIGN §4 同款预留）或 ADS/Crossref 富化回填。涉及 ref 卡/右栏/搜索联动的显示面。
+1. **阅读器宽度不自适应** → 流式 + ~90-100ch 可读上限，只动阅读器（MS1）。
+2. **多引用罗列折行** → 拆 per-ref chip、chip 间折行（MS1）。
+3. **右边栏跳转定位不准** → 图尺寸预留进 IR + 落地有界重校正（MS2）。注：用户曾疑左右栏跳转模块不同——实为同一 `store.jumpTo`，差异来自目标类型（右栏跳图/表块、图异步加载推偏），用户已认可可能看错。
+4. **~~参考文献缺 title/authors/institution~~ → 重定义 = 当前文献作者块**（2026-09-09 Q8 用户拍板）：authors + affiliation + email，arXiv HTML 式，数据全部来自 LaTeX 源（现 meta 抽取刻意丢弃的 `\affiliation`/`\email` 等）。"参考文献条目元数据填充（.bib 解析/ADS 富化）"系 memory 误读，**用户确认非其诉求、砍掉**；"搜索联动"澄清 = 就是第 3 项本身。
 
-**Stage 7 预告（用户 2026-09-09 指定）**：**标记功能**——通过渲染页面直接标记到需要的位置（锚点级），标记对 agent 可见（agent 可读取/消费）。
+**阶段重编号（2026-09-09 Q1）**：上方"代码遗存"与其他 known-issues 条目 → **Stage 7**；标记功能（原 Stage 7 预告：渲染页面直接标记到精确位置、标记对 agent 可见）→ **Stage 8**。
 
 ## 已接受的行为边界（勿再当 bug 报）
 
