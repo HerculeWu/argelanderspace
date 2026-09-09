@@ -1,5 +1,6 @@
 import type { IrSection } from "@argelanderspace/contracts";
 import { useStore } from "../store";
+import { AuthorBlock } from "./AuthorBlock";
 import { BlockView } from "./Block";
 import { MathText } from "../lib/segments";
 
@@ -10,6 +11,7 @@ export function Reader() {
   return (
     <main className="reader" ref={store.registerReader}>
       <div className="reader-inner">
+        <AuthorBlock />
         {ir.sections.map((sec, i) => (
           <SectionView key={sec.id} sec={sec} first={i === 0} />
         ))}

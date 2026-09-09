@@ -39,3 +39,4 @@ status/
 *.swp
 .idea/
 .vscode/
+literatures.*-backup.tar.gz

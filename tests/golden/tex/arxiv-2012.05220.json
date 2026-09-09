@@ -8131,6 +8131,42 @@
       "M. Demleitner",
       "R. Andrae"
     ],
-    "engine": "pdflatex"
+    "engine": "pdflatex",
+    "authorDetails": [
+      {
+        "name": "C.A.L. Bailer-Jones",
+        "affiliations": [
+          1
+        ]
+      },
+      {
+        "name": "J. Rybizki",
+        "affiliations": [
+          1
+        ]
+      },
+      {
+        "name": "M. Fouesneau",
+        "affiliations": [
+          1
+        ]
+      },
+      {
+        "name": "M. Demleitner",
+        "affiliations": [
+          2
+        ]
+      },
+      {
+        "name": "R. Andrae",
+        "affiliations": [
+          1
+        ]
+      }
+    ],
+    "affiliations": [
+      "Max Planck Institute for Astronomy, Heidelberg, Germany",
+      "Astronomisches Rechen-Institut, Zentrum für Astronomie der Universität Heidelberg, Germany"
+    ]
   }
 }

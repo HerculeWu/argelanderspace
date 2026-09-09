@@ -36,6 +36,13 @@ export const TexIrSourceSchema = z.object({
   acquired_via: z.string().optional(),
 });
 
+export const TexIrAuthorSchema = z.object({
+  name: z.string(),
+  /** 1-based indices into meta.affiliations (= printed superscripts). */
+  affiliations: z.array(z.number().int()).optional(),
+  email: z.string().optional(),
+});
+
 export const TexIrMetaSchema = z.object({
   /** Identity title (may carry the subtitle: "Title — Subtitle"). */
   title: z.string().optional(),
@@ -43,6 +50,15 @@ export const TexIrMetaSchema = z.object({
   authors: z.array(z.string()).optional(),
   /** The engine that produced the compile artifacts ("pdflatex"/"xelatex"). */
   engine: z.string().optional(),
+  /** Structured author block (Stage 6): affiliations/emails recovered from
+   *  the source (AASTeX/revtex sequential \affiliation, aa.cls \institute
+   *  positional, \email/\thanks addresses). Agent-invisible: not rendered by
+   *  renderIrMarkdown/bib/ref. */
+  authorDetails: z.array(TexIrAuthorSchema).optional(),
+  /** Affiliation list referenced by authorDetails.affiliations (1-based). */
+  affiliations: z.array(z.string()).optional(),
+  /** Corresponding email that couldn't be attached to one author (aa.cls). */
+  email: z.string().optional(),
 });
 
 export const TexDocIrSchema = DocIrSchema.extend({

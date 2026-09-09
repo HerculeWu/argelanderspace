@@ -10049,8 +10049,35 @@
   "meta": {
     "title": "Tidal tails of nearby open clusters — I. Mapping with Gaia DR3",
     "authors": [
-      "Dhanraj Risbud1, Vikrant V. Jadhav2, Pavel Kroupa2,3"
+      "Dhanraj Risbud, Vikrant V. Jadhav, Pavel Kroupa"
     ],
-    "engine": "pdflatex"
+    "engine": "pdflatex",
+    "authorDetails": [
+      {
+        "name": "Dhanraj Risbud",
+        "affiliations": [
+          1
+        ]
+      },
+      {
+        "name": "Vikrant V. Jadhav",
+        "affiliations": [
+          2
+        ]
+      },
+      {
+        "name": "Pavel Kroupa",
+        "affiliations": [
+          2,
+          3
+        ]
+      }
+    ],
+    "affiliations": [
+      "Rheinische Friedrich-Wilhelms-Universität Bonn, Regina-Pacis-Weg 3, D-53113 Bonn, Germany",
+      "Helmholtz-Institut für Strahlen- und Kernphysik, Universität Bonn, Nussallee 14-16, D-53115 Bonn, Germany",
+      "Astronomical Institute, Faculty of Mathematics and Physics, Charles University, V Holešovičkách 2, CZ-180 00 Praha 8, Czech Republic"
+    ],
+    "email": "s14drisb@uni-bonn.de"
   }
 }

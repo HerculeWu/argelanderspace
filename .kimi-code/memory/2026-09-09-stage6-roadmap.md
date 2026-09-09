@@ -10,6 +10,8 @@
 
 **2026-09-09：MS2（③定位）landed。** contracts figure 块加 optional `imgWidth/imgHeight`；core `texFigureAssetSize`（SVG 绝对单位换算 + viewBox 防御兜底 + PNG IHDR，best-effort undefined）+ ir.ts 物化后提取；golden 两颗 .json 重冻（仅 +50/+52 两字段，.md 逐字节不变=agent 冻结实证）；web FigureImage attrs + Block 传参 + store 落地校正（900/400ms、≤2、取消面含 undo）。对抗审查 APPROVE（0 阻断，8 非阻断：N1 措辞/N2 `\bwidth`咬`stroke-width`/N3 PNG 松校验/N6 undo 无测 已修——undo 取消前移顺带修出"early return 跳过取消"真 bug；N5 jpg/gif/webp 直通图无尺寸→推后 Stage 7；N7 滚动条拖拽/超长平滑滚动途中校正窗口已知盲区立此存照；N8 决策措辞已修订）。审查 Chrome 探针实证：attrs 预留不改变最终渲染、不加载时预留生效、viewBox-only 情形生产不可达。测试 core 138→151、web 105→123，四门全绿零警告。
 
+**2026-09-09：MS3（④作者块 + 存量迁移）landed。** contracts meta 加 optional `authorDetails[{name, affiliations?: 1-based int[], email?}]`/`affiliations[]`/`email`（文档级）；core `extractAuthorBlock` 三族机械还原：aa.cls 位置系（\inst↔\institute、≥2 标记才逗号切分、机构内嵌 \email 剥出文档级）、AASTeX/revtex 顺序系（\affiliation/\affil/\altaffiliation 挂最近组、\email/顶层 \thanks 挂最近作者、\thanks 明显邮箱）、**手写数学上标族**（`$^{1,2,\star}$` 入名、`$^{N}$` 领头的 \affil 按 `\\` 切分、出现序=印刷号解析）；降级 = 平铺；签名表补 `inst/altaffiliation`；逗号切分带"逗号后修饰吸收"（sup-marker/\thanks/\email 归前位，\inst/\orcidlink 不吸收）+ Jr./Sr. 后缀归并（审查 N2 加固）。`\\` 截断手写块机构尾巴。**副作用（立此存照）：`meta.authors` 净化——`\inst` 参数不再泄入姓名、sup-marker 不再粘名（零消费字段，agent 不可见，golden 已重冻）**。web `AuthorBlock`（阅读列顶部折叠作者块）+ Reader 接线 + CSS。**迁移**：备份 `literatures.stage6-backup.tar.gz`（225MB）→ 7 篇离线重摄入（两轮：初版后抽取强化再一轮）→ `library build --offline` parity：works 36→37（+1=smoke R2 期间落在 output/ 的 latex-battery 首次入种子，非 drift）、36 篇既有 works 元数据逐字节零漂移、零悬空 doc_ids、9 works 带 doc。**真实数据验收**：7/7 作者块正确（1610.08981 全量重构、2603.03522 平铺降级、2607.17040 四封 email 归属正确）。审查两轮 APPROVE（初版 0 阻断/N1–N10；增量复审 0 阻断/R2-N1 乱序跳号静默错配、R2-N2 单机构内 \\ 误切、N2 Jr. 已加固、N6 测试缺口大部分关闭→补 6 例）。golden 两颗 .json 重冻（仅 meta 增量，.md 逐字节不变）。测试 core 138→165、web 105→128，四门全绿零警告。
+
 ## 范围与硬约束
 
 - 范围 = 原 known-issues「Stage 6 重点」4 项（①宽度自适应 ②多引用折行 ③右栏定位 ④作者块——④ 经 Q8 重定义，见下）；其余 known-issues 全部推后到 **Stage 7**（新编号）；标记功能（原 Stage 7 预告）顺延为 **Stage 8**。
@@ -50,3 +52,4 @@
 - 参考文献条目元数据填充（.bib 解析/ADS 富化）——Q8 用户确认非其诉求；若未来想要，单独立项。
 - **Stage 7（新编号）** = 其余 known-issues（tikz/re-upload 推广/CLI 未识别源建条目/task.due 语义/TOC 预览 `[cite:…]`/hyperlink-only xref 卡）；**Stage 8** = 标记功能。Stage 4.1 仍推后。
 - PlanView 固定宽维持（Q4 只动阅读器）。
+- **作者块已知边界（MS3 审查立此存照，Stage 7 候选）**：`\affil` 乱序/跳号时"出现序=印刷号"静默错配（被剥的 `$^{N}$` 编号含真值却丢弃，廉价改进路径=带 marker 条目用 N 当 index）；单一机构内含 `\\` 换行会被切成两条目；2603.03522 式粘在 `\author` `\\` 之后的机构行不解析（平铺降级）；`Name,\inst{1}` 逗号前置 \inst 风格不吸收（A&A 主导风格优先）；orphan `\affiliation` 占位；尾标点敏感去重；jpg/gif/webp 直通图无尺寸预留（MS2 N5）。
