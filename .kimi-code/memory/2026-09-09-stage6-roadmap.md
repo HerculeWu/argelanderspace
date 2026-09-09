@@ -4,6 +4,8 @@
 
 ## 状态
 
+**2026-09-09：Stage 6 关闭——MS1–MS4 全部 landed + smoke R1 修复 + 用户验收通过，已 push origin main。** commit 序列（main）：定稿 memory `82c19f9` → MS1 `b518f56`（宽度+多引用）→ MS2 `b39ec86`（图尺寸+落地校正）→ MS3 `9480c6f`（作者块+迁移）→ scrollend 中间态 `5762e2f` → MS4 `0fda682`（停稳检测+手册）→ smoke R1 `69d4eda`（revtex 宏汤+\ensuremath）→ 收尾 memory（本次）。迁移备份 tarball 已删（用户验收后）。
+
 **2026-09-09：设计 grilling 完成（三轮 Q1–Q13 全锁定，用户确认"确认"），MS1 开工。** commit/执行进度随 milestone 追加在本节。
 
 **2026-09-09：MS1（①宽度+②多引用）landed。** 定稿 memory `82c19f9` + 代码 `b518f56`：`.reader-inner` 760px→100ch（border-box，文本列 ≈91ch）；cite 组拆 per-ref chip（raw 按 `; ` 拆分保真、wrapper/分隔符纯文本、per-ref focus/tooltip/灰化、病态 raw 回退旧单 chip 语义）。对抗审查 APPROVE（0 阻断；补 5 断言：raw+unresolved 拆分灰化/回退组灰化/键盘/prefix-suffix/方括号；roadmap Q5 措辞校正"short→可见片段"）。测试 web 105→115，四门全绿。
