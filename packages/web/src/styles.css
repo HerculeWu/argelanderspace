@@ -168,7 +168,9 @@
   background: var(--bg);
 }
 .reader-inner {
-  max-width: 760px;
+  /* fluid: reflows as side panels collapse or the pane is resized; the ch cap
+     (border-box, so minus the 80px padding ≈ 91ch of text) keeps lines readable */
+  max-width: 100ch;
   margin: 0 auto;
   padding: 28px 40px 60vh;
   font-family: var(--font-body);
