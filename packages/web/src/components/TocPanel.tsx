@@ -118,6 +118,33 @@ function FloatGroup({
   );
 }
 
-function stripMath(s: string): string {
-  return s.replace(/\$[^$]*\$/g, "").replace(/\[\[[^\]]+\]\]/g, "").replace(/\s+/g, " ").trim();
+/**
+ * Plain-text cleanup of a caption's token-expanded markdown (core
+ * `segmentsMarkdown` output) for the TOC float preview/tooltip — display
+ * only. Cite tokens keep their readable short label (`[cite: ref-1 | Bok
+ * 1934 | title: …]` → "Bok 1934"; unresolved/short-less ones drop), xref
+ * tokens keep their printed number (`[ref: f | figure | number: 3 | …]` →
+ * "3"; resolved but unnumbered falls back to the trailing heading/preview
+ * text), math and `[[…]]` links are stripped, whitespace collapses. Kept
+ * fragments carry a leading space so adjacent tokens (`\citep{a,b}`) don't
+ * fuse into one word.
+ */
+export function stripMath(s: string): string {
+  return s
+    .replace(/\[cite: ([^\]]+)\]/g, (_m, inner: string) => {
+      const short = inner.split(" | ")[1];
+      return short && short !== "unresolved" ? ` ${short}` : "";
+    })
+    .replace(/\[ref: ([^\]]+)\]/g, (_m, inner: string) => {
+      const parts = inner.split(" | ");
+      const num = parts.find((p) => p.startsWith("number: "));
+      if (num !== undefined) return ` ${num.slice("number: ".length)}`;
+      // resolved but unnumbered: the trailing part is the heading/preview text
+      if (parts[1] !== "unresolved" && parts[2]) return ` ${parts[2]}`;
+      return "";
+    })
+    .replace(/\$[^$]*\$/g, "")
+    .replace(/\[\[[^\]]+\]\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }

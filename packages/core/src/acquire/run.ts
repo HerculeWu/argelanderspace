@@ -71,14 +71,20 @@ export async function enrichAndPlan(
   store: LibraryStore,
   sources: MetadataSources
 ): Promise<LibraryStore> {
+  // cite_key is assign-only (Stage 7 MS1): an existing user-visible key is
+  // never rewritten; new works are assigned keys that avoid every key
+  // already in the store.
   const usedKeys = new Set<string>();
+  for (const w of store.works) {
+    if (w.cite_key) usedKeys.add(w.cite_key);
+  }
   for (const w of store.works) {
     await resolveWork(w, sources);
     // backfill the short journal label now that resolution may have found a
     // DOI (e.g. an arXiv-only ApJS work gains its 10.3847 DOI → "ApJS").
     const [pub, label] = classify(w.doi, w.journal || w.venue);
     if (pub && label && !w.journal) w.journal = label;
-    w.cite_key = citeKey(w, usedKeys);
+    if (!w.cite_key) w.cite_key = citeKey(w, usedKeys);
     const acq = planToDict(planFor(w));
     if (w.doc_ids.length > 0) {
       // already has a reader rendering

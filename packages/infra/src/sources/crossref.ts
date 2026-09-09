@@ -51,8 +51,9 @@ export class CrossrefClient implements CrossrefSource {
     this.delay = opts.delay ?? 0.15;
     this.enabled = opts.enabled ?? true;
     this.mailto = opts.mailto ?? defaultMailto();
-    // Python UA kept verbatim for the polite pool (rebrand sweep is M5/M6).
-    this.userAgent = `HubbleSpace/0.1 (https://github.com/; mailto:${this.mailto})`;
+    // Descriptive UA for the polite pool (renamed from the Python
+    // `HubbleSpace/0.1` in Stage 7 MS1).
+    this.userAgent = `ArgelanderSpace/0.1 (https://github.com/; mailto:${this.mailto})`;
     this.cache = new SourceCache(opts.cacheDir);
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.log = opts.log;

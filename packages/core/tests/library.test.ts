@@ -23,6 +23,7 @@ import { describe, expect, test } from "vitest";
 import { parseBibtexText } from "../src/acquire/bibtex.js";
 import { classify, planSources, planToDict } from "../src/acquire/planner.js";
 import { resolveWork } from "../src/acquire/resolve.js";
+import { enrichAndPlan } from "../src/acquire/run.js";
 import { workToRef } from "../src/library/graph.js";
 import type {
   AdsResolution,
@@ -362,5 +363,50 @@ describe("workToRef note projection", () => {
     const wEmpty = emptyWork("work:empty-note");
     wEmpty.note = "";
     expect("note" in workToRef(wEmpty)).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// enrichAndPlan cite_key semantics (Stage 7 MS1: assign-only, never rewrite)
+// --------------------------------------------------------------------------- //
+
+describe("enrichAndPlan cite_key (assign-only)", () => {
+  const nullSources = {
+    ads: { status: "no-token" as const, resolve: async () => null },
+    crossref: { status: "ok" as const, resolve: async () => null },
+    oa: {
+      status: "ok" as const,
+      resolve: async () => null,
+      fetchMany: async () => new Map(),
+    },
+  };
+
+  function kroupa(id: string): Work {
+    const w = emptyWork(id);
+    w.title = "On the variation of the initial mass function";
+    w.authors = ["Kroupa"];
+    w.year = 2001;
+    return w;
+  }
+
+  test("an existing cite_key is never rewritten", async () => {
+    const store = new LibraryStore([kroupa("work:a"), kroupa("work:b")]);
+    const [a, b] = store.works;
+    if (a === undefined || b === undefined) throw new Error("works missing");
+    a.cite_key = "custom-key";
+    await enrichAndPlan(store, nullSources);
+    expect(a.cite_key).toBe("custom-key");
+    expect(b.cite_key).toBe("kroupa2001");
+  });
+
+  test("a new work's assignment avoids keys already in the store", async () => {
+    const store = new LibraryStore([kroupa("work:a"), kroupa("work:b"), kroupa("work:c")]);
+    const [a, b, c] = store.works;
+    if (a === undefined || b === undefined || c === undefined) throw new Error("works missing");
+    a.cite_key = "kroupa2001";
+    await enrichAndPlan(store, nullSources);
+    expect(a.cite_key).toBe("kroupa2001");
+    expect(b.cite_key).toBe("kroupa2001a");
+    expect(c.cite_key).toBe("kroupa2001b");
   });
 });

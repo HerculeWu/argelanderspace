@@ -54,15 +54,22 @@ export function texFigureOutName(srcDir: string, src: string, suffix: string): s
  * container instead (so it does NOT mirror the browser there), and mixed
  * absolute/viewBox roots get both dims from the viewBox — both shapes can't
  * survive a real pdflatex compile as passthrough sources, so neither occurs
- * in practice. PNG dims come from the IHDR header. Best-effort — returns
- * undefined for unsupported formats (jpg/gif/webp passthrough) and unreadable
- * files (stub ports in tests may not write anything).
+ * in practice. PNG dims come from the IHDR header; JPEG/GIF/WebP dims are
+ * parsed best-effort from the file header (Stage 7 MS1: JPEG = SOF segment
+ * scan, GIF = logical screen descriptor, WebP = VP8X/VP8/VP8L chunk). All
+ * raster branches are defensive header peeks — undefined for malformed files
+ * and unreadable paths (stub ports in tests may not write anything).
  */
 export function texFigureAssetSize(filePath: string): { w: number; h: number } | undefined {
   try {
     const lower = filePath.toLowerCase();
     if (lower.endsWith(".svg")) return svgIntrinsicSize(fs.readFileSync(filePath, "utf8"));
     if (lower.endsWith(".png")) return pngIntrinsicSize(fs.readFileSync(filePath));
+    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+      return jpegIntrinsicSize(fs.readFileSync(filePath));
+    }
+    if (lower.endsWith(".gif")) return gifIntrinsicSize(fs.readFileSync(filePath));
+    if (lower.endsWith(".webp")) return webpIntrinsicSize(fs.readFileSync(filePath));
     return undefined;
   } catch {
     return undefined;
@@ -128,4 +135,90 @@ function pngIntrinsicSize(buf: Buffer): { w: number; h: number } | undefined {
   const w = buf.readUInt32BE(16);
   const h = buf.readUInt32BE(20);
   return w > 0 && h > 0 ? { w, h } : undefined;
+}
+
+// SOF markers (C0–CF) carry the frame dimensions, except these three which
+// are not SOFs (DHT/JPG-reserved/DAC — see ITU T.81 table B.1).
+const JPEG_NON_SOF: ReadonlySet<number> = new Set([0xc4, 0xc8, 0xcc]);
+
+function jpegIntrinsicSize(buf: Buffer): { w: number; h: number } | undefined {
+  // SOI, then a marker-segment walk until the first SOF (which always
+  // precedes the entropy-coded data).
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return undefined;
+  let off = 2;
+  while (off + 1 < buf.length) {
+    if (buf[off] !== 0xff) return undefined; // marker prefix expected
+    let marker = buf[off + 1] as number;
+    let skip = 2;
+    while (marker === 0xff && off + skip < buf.length) {
+      // fill bytes before the real marker
+      marker = buf[off + skip] as number;
+      skip += 1;
+    }
+    if (marker === 0xda) return undefined; // SOS: SOF must have come earlier
+    if (
+      marker === 0x01 ||
+      marker === 0xd8 ||
+      marker === 0xd9 ||
+      (marker >= 0xd0 && marker <= 0xd7)
+    ) {
+      off += skip; // standalone markers carry no length field
+      continue;
+    }
+    if (off + skip + 2 > buf.length) return undefined;
+    const len = buf.readUInt16BE(off + skip);
+    if (len < 2 || off + skip + len > buf.length) return undefined;
+    if (marker >= 0xc0 && marker <= 0xcf && !JPEG_NON_SOF.has(marker)) {
+      if (len < 7) return undefined;
+      const h = buf.readUInt16BE(off + skip + 3);
+      const w = buf.readUInt16BE(off + skip + 5);
+      return w > 0 && h > 0 ? { w, h } : undefined;
+    }
+    off += skip + len;
+  }
+  return undefined;
+}
+
+function gifIntrinsicSize(buf: Buffer): { w: number; h: number } | undefined {
+  // 6-byte signature + logical screen descriptor: u16 width + u16 height (LE)
+  if (buf.length < 10) return undefined;
+  const sig = buf.toString("ascii", 0, 6);
+  if (sig !== "GIF87a" && sig !== "GIF89a") return undefined;
+  const w = buf.readUInt16LE(6);
+  const h = buf.readUInt16LE(8);
+  return w > 0 && h > 0 ? { w, h } : undefined;
+}
+
+function webpIntrinsicSize(buf: Buffer): { w: number; h: number } | undefined {
+  // RIFF u32 size + "WEBP" + first chunk fourcc; chunk data starts at 20.
+  if (buf.length < 21) return undefined;
+  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP") {
+    return undefined;
+  }
+  const chunk = buf.toString("ascii", 12, 16);
+  if (chunk === "VP8X") {
+    // canvas width/height: 24-bit LE minus one, at chunk-data offsets 4/7
+    if (buf.length < 30) return undefined;
+    const w = buf.readUIntLE(24, 3) + 1;
+    const h = buf.readUIntLE(27, 3) + 1;
+    return { w, h };
+  }
+  if (chunk === "VP8 ") {
+    // lossy bitstream: 3-byte frame tag, 9d 01 2a start code, then 14-bit
+    // width/height (LE, top two bits are the scale factor)
+    if (buf.length < 30) return undefined;
+    if (buf[23] !== 0x9d || buf[24] !== 0x01 || buf[25] !== 0x2a) return undefined;
+    const w = buf.readUInt16LE(26) & 0x3fff;
+    const h = buf.readUInt16LE(28) & 0x3fff;
+    return w > 0 && h > 0 ? { w, h } : undefined;
+  }
+  if (chunk === "VP8L") {
+    // lossless: 0x2f signature, then packed 14-bit (width-1)/(height-1)
+    if (buf.length < 25 || buf[20] !== 0x2f) return undefined;
+    const bits = buf.readUInt32LE(21);
+    const w = (bits & 0x3fff) + 1;
+    const h = ((bits >> 14) & 0x3fff) + 1;
+    return { w, h };
+  }
+  return undefined;
 }

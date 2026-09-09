@@ -221,6 +221,9 @@ export function TaskModal({
           value={due}
           onChange={(e) => setDue(e.target.value)}
         />
+        {due !== "" && planDue !== "" && due > planDue && (
+          <div className="plan-field-hint">任务截止晚于计划截止（{planDue}）</div>
+        )}
       </div>
     </Modal>
   );
