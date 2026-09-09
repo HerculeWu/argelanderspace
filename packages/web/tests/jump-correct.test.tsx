@@ -136,6 +136,25 @@ describe("jumpTo landing correction", () => {
     expect(scrollCalls).toHaveLength(1); // only the initial smooth scroll
   });
 
+  it("re-arms while the scroll is still moving, corrects once settled", () => {
+    const { reader, el } = setup();
+    reader.getBoundingClientRect = () => rect(0);
+    el.getBoundingClientRect = () => rect(184);
+    // fake an in-flight smooth scroll: scrollTop keeps changing between samples
+    let pos = 100;
+    Object.defineProperty(reader, "scrollTop", { get: () => pos, configurable: true });
+    store.jumpTo("fig-1");
+    pos = 500; // moved since the sample taken at schedule time
+    vi.advanceTimersByTime(900); // first check: still moving → re-arm, no correction
+    expect(scrollCalls).toEqual([{ behavior: "smooth" }]);
+    pos = 900;
+    vi.advanceTimersByTime(250); // re-arm check: moved again → re-arm
+    expect(scrollCalls).toHaveLength(1);
+    // pos now holds still → next check corrects
+    vi.advanceTimersByTime(250);
+    expect(scrollCalls).toEqual([{ behavior: "smooth" }, { behavior: "auto" }]);
+  });
+
   it("undo cancels a pending correction", () => {
     const { reader, el } = setup();
     reader.getBoundingClientRect = () => rect(0);
