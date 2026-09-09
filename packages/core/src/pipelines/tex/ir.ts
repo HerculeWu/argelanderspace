@@ -28,6 +28,7 @@ import type * as Ast from "@unified-latex/unified-latex-types";
 import { citeShort, segmentsMarkdown, segmentsPlainText } from "../../documents/render.js";
 import { parseBbl } from "./facts/bbl.js";
 import type { TexFacts } from "./facts/index.js";
+import { texFigureAssetSize } from "./fuse/figures.js";
 import { buildTexReferences } from "./fuse/references.js";
 import { Fuser } from "./fuse/walk.js";
 import type { TexFigurePort } from "./ports.js";
@@ -423,6 +424,11 @@ export async function buildTexDocIr(input: BuildTexDocIrInput): Promise<BuildTex
       });
       if (r.ok) {
         block.imgPath = r.file;
+        const size = texFigureAssetSize(resolve(input.assetsDir, r.file));
+        if (size !== undefined) {
+          block.imgWidth = size.w;
+          block.imgHeight = size.h;
+        }
       } else {
         warnings.push(`figure ${job.src}: ${r.reason}`);
       }

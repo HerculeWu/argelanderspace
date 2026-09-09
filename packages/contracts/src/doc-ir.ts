@@ -154,6 +154,10 @@ export const IrFigureBlockSchema = z.object({
   footnote: z.string().optional(),
   /** As stored in the Document JSON (may carry a subdirectory). */
   imgPath: z.string().optional(),
+  /** Intrinsic size of the materialized image (CSS px) — lets the reader
+   *  reserve the figure's box before the image loads (jump accuracy). */
+  imgWidth: z.number().optional(),
+  imgHeight: z.number().optional(),
   /** MinerU chart sub_type: line/bar/scatter… */
   chartType: z.string().optional(),
   /** MinerU's extracted chart data, if any. */

@@ -3143,7 +3143,9 @@
               "text": " direction (upwards), and the Sun is at the origin. A 3D interactive display can be found in the supplementary material of this article."
             }
           ],
-          "imgPath": "figures__All_in_one_XY__pdf.svg"
+          "imgPath": "figures__All_in_one_XY__pdf.svg",
+          "imgWidth": 200,
+          "imgHeight": 100
         }
       ],
       "children": [
@@ -4182,7 +4184,9 @@
                   "text": " coordinate for clarity."
                 }
               ],
-              "imgPath": "figures__Melotte_25_comparison__pdf.svg"
+              "imgPath": "figures__Melotte_25_comparison__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             }
           ],
           "children": []
@@ -4660,7 +4664,9 @@
                   "text": ". Successive +100 pc offsets were added to studies from the literature for clarity."
                 }
               ],
-              "imgPath": "figures__Comp_with_Lit__pdf.svg"
+              "imgPath": "figures__Comp_with_Lit__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-4",
@@ -4681,7 +4687,9 @@
                   "text": " coordinates for the comparison between the tidal tails traced by the CP and SCCP methods."
                 }
               ],
-              "imgPath": "figures__CP_SCCP_Comp__pdf.svg"
+              "imgPath": "figures__CP_SCCP_Comp__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             }
           ],
           "children": []
@@ -5625,7 +5633,9 @@
                   "text": " initial mass function."
                 }
               ],
-              "imgPath": "figures__LF_img__pdf.svg"
+              "imgPath": "figures__LF_img__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "p-71",
@@ -6659,7 +6669,9 @@
                   "raw": "A.3"
                 }
               ],
-              "imgPath": "figures__ASCC_101__pdf.svg"
+              "imgPath": "figures__ASCC_101__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-7",
@@ -6687,7 +6699,9 @@
                   "text": " for Alessi 3"
                 }
               ],
-              "imgPath": "figures__Alessi_3__pdf.svg"
+              "imgPath": "figures__Alessi_3__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-8",
@@ -6715,7 +6729,9 @@
                   "text": " for Alessi 9"
                 }
               ],
-              "imgPath": "figures__Alessi_9__pdf.svg"
+              "imgPath": "figures__Alessi_9__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-9",
@@ -6743,7 +6759,9 @@
                   "text": " for Alessi 96"
                 }
               ],
-              "imgPath": "figures__Alessi_96__pdf.svg"
+              "imgPath": "figures__Alessi_96__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-10",
@@ -6771,7 +6789,9 @@
                   "text": " for Blanco 1"
                 }
               ],
-              "imgPath": "figures__Blanco_1__pdf.svg"
+              "imgPath": "figures__Blanco_1__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-11",
@@ -6799,7 +6819,9 @@
                   "text": " for Collinder 350"
                 }
               ],
-              "imgPath": "figures__Collinder_350__pdf.svg"
+              "imgPath": "figures__Collinder_350__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-12",
@@ -6827,7 +6849,9 @@
                   "text": " for Melotte 111"
                 }
               ],
-              "imgPath": "figures__Melotte_111__pdf.svg"
+              "imgPath": "figures__Melotte_111__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-13",
@@ -6855,7 +6879,9 @@
                   "text": " for Melotte 22"
                 }
               ],
-              "imgPath": "figures__Melotte_22__pdf.svg"
+              "imgPath": "figures__Melotte_22__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-14",
@@ -6883,7 +6909,9 @@
                   "text": " for Melotte 25"
                 }
               ],
-              "imgPath": "figures__Melotte_25__pdf.svg"
+              "imgPath": "figures__Melotte_25__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-15",
@@ -6911,7 +6939,9 @@
                   "text": " for NGC 2632"
                 }
               ],
-              "imgPath": "figures__NGC_2632__pdf.svg"
+              "imgPath": "figures__NGC_2632__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-16",
@@ -6939,7 +6969,9 @@
                   "text": " for NGC 6633"
                 }
               ],
-              "imgPath": "figures__NGC_6633__pdf.svg"
+              "imgPath": "figures__NGC_6633__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-17",
@@ -6967,7 +6999,9 @@
                   "text": " for Platais 10"
                 }
               ],
-              "imgPath": "figures__Platais_10__pdf.svg"
+              "imgPath": "figures__Platais_10__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-18",
@@ -6995,7 +7029,9 @@
                   "text": " for RSG 4"
                 }
               ],
-              "imgPath": "figures__RSG_4__pdf.svg"
+              "imgPath": "figures__RSG_4__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-19",
@@ -7023,7 +7059,9 @@
                   "text": " for Roslund 6"
                 }
               ],
-              "imgPath": "figures__Roslund_6__pdf.svg"
+              "imgPath": "figures__Roslund_6__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-20",
@@ -7051,7 +7089,9 @@
                   "text": " for Ruprecht 147"
                 }
               ],
-              "imgPath": "figures__Ruprecht_147__pdf.svg"
+              "imgPath": "figures__Ruprecht_147__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-21",
@@ -7079,7 +7119,9 @@
                   "text": " for Stock 10"
                 }
               ],
-              "imgPath": "figures__Stock_10__pdf.svg"
+              "imgPath": "figures__Stock_10__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-22",
@@ -7107,7 +7149,9 @@
                   "text": " for Stock 2"
                 }
               ],
-              "imgPath": "figures__Stock_2__pdf.svg"
+              "imgPath": "figures__Stock_2__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-23",
@@ -7135,7 +7179,9 @@
                   "text": " for Theia 517"
                 }
               ],
-              "imgPath": "figures__Theia_517__pdf.svg"
+              "imgPath": "figures__Theia_517__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-24",
@@ -7163,7 +7209,9 @@
                   "text": " for UPK 545"
                 }
               ],
-              "imgPath": "figures__UPK_545__pdf.svg"
+              "imgPath": "figures__UPK_545__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-25",
@@ -7176,7 +7224,9 @@
                   "text": "Distribution of cluster and their tail stars in galactic coordinates."
                 }
               ],
-              "imgPath": "figures__Cluster_lb__pdf.svg"
+              "imgPath": "figures__Cluster_lb__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             }
           ],
           "children": []

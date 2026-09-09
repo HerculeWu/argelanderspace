@@ -6,6 +6,10 @@
 
 **2026-09-09：设计 grilling 完成（三轮 Q1–Q13 全锁定，用户确认"确认"），MS1 开工。** commit/执行进度随 milestone 追加在本节。
 
+**2026-09-09：MS1（①宽度+②多引用）landed。** 定稿 memory `82c19f9` + 代码 `b518f56`：`.reader-inner` 760px→100ch（border-box，文本列 ≈91ch）；cite 组拆 per-ref chip（raw 按 `; ` 拆分保真、wrapper/分隔符纯文本、per-ref focus/tooltip/灰化、病态 raw 回退旧单 chip 语义）。对抗审查 APPROVE（0 阻断；补 5 断言：raw+unresolved 拆分灰化/回退组灰化/键盘/prefix-suffix/方括号；roadmap Q5 措辞校正"short→可见片段"）。测试 web 105→115，四门全绿。
+
+**2026-09-09：MS2（③定位）landed。** contracts figure 块加 optional `imgWidth/imgHeight`；core `texFigureAssetSize`（SVG 绝对单位换算 + viewBox 防御兜底 + PNG IHDR，best-effort undefined）+ ir.ts 物化后提取；golden 两颗 .json 重冻（仅 +50/+52 两字段，.md 逐字节不变=agent 冻结实证）；web FigureImage attrs + Block 传参 + store 落地校正（900/400ms、≤2、取消面含 undo）。对抗审查 APPROVE（0 阻断，8 非阻断：N1 措辞/N2 `\bwidth`咬`stroke-width`/N3 PNG 松校验/N6 undo 无测 已修——undo 取消前移顺带修出"early return 跳过取消"真 bug；N5 jpg/gif/webp 直通图无尺寸→推后 Stage 7；N7 滚动条拖拽/超长平滑滚动途中校正窗口已知盲区立此存照；N8 决策措辞已修订）。审查 Chrome 探针实证：attrs 预留不改变最终渲染、不加载时预留生效、viewBox-only 情形生产不可达。测试 core 138→151、web 105→123，四门全绿零警告。
+
 ## 范围与硬约束
 
 - 范围 = 原 known-issues「Stage 6 重点」4 项（①宽度自适应 ②多引用折行 ③右栏定位 ④作者块——④ 经 Q8 重定义，见下）；其余 known-issues 全部推后到 **Stage 7**（新编号）；标记功能（原 Stage 7 预告）顺延为 **Stage 8**。
@@ -17,7 +21,7 @@
 2. **MS 切分（Q3）**：MS1 = ①+②（纯 web）；MS2 = ③（contracts+core+web）；MS3 = ④ + 存量迁移；MS4 = smoke 手册 + memory 收尾。
 3. **① 宽度（Q4）**：`.reader-inner` max-width 760px → 流式 + 可读上限 ~90-100ch，居中留白；只动阅读器（LibraryView 主区本已流式、PlanView 固定宽维持现状）。
 4. **② 多引用（Q5）**：多 key cite 组拆 **per-ref chip**——外层括号/方括号与分隔符（`; `）从 raw 保留为纯文本，chip label = 各 ref 的**可见片段**（raw 按 `; ` 拆分，打印形态逐字节不变；raw 缺失时回退 short 逐 ref 成 chip；raw 拆不成 ref 数的病态情形保持旧单 chip 语义）；chip 间自然折行、chip 内永不折断；每 chip 各点各的 ref、tooltip = 该 ref raw；同组件面（正文/caption/右栏展开 caption）一并生效。TOC float 预览用 stripMath 纯文本、无 chip，不涉及。
-5. **③ 定位（Q9/Q10）**：根因 = 图异步加载无尺寸占位 + 侧栏 240ms 过渡 reflow（smooth scroll 对调用瞬间的布局算终点，途中目标被推偏）。修复 = float 块 IR 加 optional 宽高比（摄入时从 SVG viewBox 提取；`FigureImage` 用 aspect-ratio 预留位置）+ jumpTo 落地后有界重校正（≤2 次；侧栏过渡期间的跳转待 transitionend 重校正）。保持平滑滚动（Q9 选 A）。**左右栏本已共用 `store.jumpTo`**（`TocPanel.tsx:55` / `RefCard.tsx:71-79`），用户 Q10 的"模块不同"观察系误判（本人已认可可能看错），无需合并模块——修复后两边行为自然一致。
+5. **③ 定位（Q9/Q10）**：根因 = 图异步加载无尺寸占位 + 侧栏 240ms 过渡 reflow（smooth scroll 对调用瞬间的布局算终点，途中目标被推偏）。修复 = float 块 IR 加 optional `imgWidth/imgHeight`（CSS px，摄入时从物化资产提取：SVG 根 width/height 单位换算、PNG IHDR；web `<img>` 带 width/height attrs + `height:auto` 标准响应式预留——**最终渲染尺寸不变**，Chrome 探针实证）+ jumpTo 落地后有界重校正（900ms 首查 + 400ms 复查，>4px 才 instant 校正，≤2 次封顶；wheel/touchstart/keydown/undo/新 jump 取消；rect 全零跳过=测试环境）。保持平滑滚动（Q9 选 A）。**左右栏本已共用 `store.jumpTo`**（`TocPanel.tsx:55` / `RefCard.tsx:71-79`），用户 Q10 的"模块不同"观察系误判（本人已认可可能看错），无需合并模块——修复后两边行为自然一致。**（MS2 落地修订：原定"宽高比字段 + aspect-ratio + 待 transitionend 重校正"，实现改为"绝对 px 字段 + attrs + 固定定时器"——attrs+height:auto 是标准响应式预留模式，固定定时器天然覆盖过渡场景，语义等价；viewBox 兜底在审查中证为生产不可达（pdftocairo 恒出绝对单位、pdflatex 不能吃 .svg 直通源），仅防御保留。）**
 6. **④ 作者块（Q8/Q11/Q12）**：对象 = **当前文献自己的作者块**（authors + affiliation + email，arXiv HTML 式）；参考文献条目的 title/authors 填充系 memory 误读，**用户确认砍掉**。数据 100% 来自 LaTeX 源（现 meta 抽取刻意丢弃 affiliation/email，`ir.ts:286-352`）——AASTeX/revtex（`\affiliation`/`\email` 顺序关联）、aa.cls（`\institute`+`\inst` 标记）机械还原作者↔机构上标关联；email 取 `\email` + `\thanks` 里的明显邮箱；未知类降级平铺。contracts meta 加 optional 字段（agent 不可见）。显示 = 阅读列顶部（topbar 之下、Abstract 之前，随内容滚动）：默认折叠为第一作者 + "et al. (N authors)"，点击展开完整列表 + 上标关联机构 + email；无作者数据不渲染。边界：ORCID 图标/corresponding 标记/`\thanks` 脚注文本不做精细还原。
 7. **存量迁移（Q13）**：备份 tarball → 7 篇可编译文档离线重摄入（一次带上 ③ 图尺寸 + ④ 作者块）→ `library build --offline` parity 校验（works 数、note/label/star/read/tags 逐字节、零悬空 doc_ids）。latex-battery 无 src 不参与。golden JSON 因 meta/图尺寸增字段重冻 + 人工抽查（普通回归流程）。
 8. **"搜索联动"（Q10）**：用户澄清 = 就是 ③ 本身（右栏跳转错位），无额外事项。

@@ -21,6 +21,15 @@ const FLASH_MS = 1600;
 // While a smooth-scroll jump is still animating, scrollTop is a mid-flight value;
 // don't overwrite the saved undo origin with it during rapid consecutive jumps.
 const JUMP_ANIM_MS = 700;
+// Post-jump landing correction: images lazy-loading en route (and side-panel
+// width transitions) can push the target off the landing spot mid-scroll, so
+// re-measure after the animation settles and correct — bounded (first check
+// after the animation + settle slack, one quick re-check after a correction,
+// then stop) so it can't oscillate.
+const JUMP_CORRECT_MS = 900;
+const JUMP_RECHECK_MS = 400;
+const JUMP_CORRECT_MAX = 2;
+const JUMP_CORRECT_TOLERANCE = 4;
 
 interface StoreValue {
   ir: DocIr;
@@ -72,6 +81,7 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
   const undoTop = useRef<number | null>(null);
   const canUndo = useRef(false);
   const lastJumpAt = useRef(0);
+  const pendingCorrect = useRef<{ timer: number } | null>(null);
   const undoSubs = useRef<Set<() => void>>(new Set());
 
   const focusSubs = useRef<Set<(refId: string) => void>>(new Set());
@@ -130,6 +140,31 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
       scheduleRecompute();
     };
 
+    const cancelJumpCorrect = () => {
+      if (pendingCorrect.current !== null) {
+        window.clearTimeout(pendingCorrect.current.timer);
+        pendingCorrect.current = null;
+      }
+    };
+
+    const scheduleJumpCorrect = (el: HTMLElement, attempt: number) => {
+      cancelJumpCorrect();
+      const delay = attempt === 1 ? JUMP_CORRECT_MS : JUMP_RECHECK_MS;
+      const timer = window.setTimeout(() => {
+        pendingCorrect.current = null;
+        const root = readerEl.current;
+        if (root === null || !el.isConnected) return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return; // no layout (test envs)
+        const margin = Number.parseFloat(window.getComputedStyle(el).scrollMarginTop) || 0;
+        const off = rect.top - (root.getBoundingClientRect().top + margin);
+        if (Math.abs(off) <= JUMP_CORRECT_TOLERANCE || attempt > JUMP_CORRECT_MAX) return;
+        el.scrollIntoView({ block: "start", behavior: "auto" });
+        scheduleJumpCorrect(el, attempt + 1);
+      }, delay);
+      pendingCorrect.current = { timer };
+    };
+
     return {
       ir,
       docId: ir.docId,
@@ -141,6 +176,11 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
         if (el) {
           // content is static; observe once after it's in the DOM
           requestAnimationFrame(attachObserver);
+          // a pending landing correction must never yank the page once the
+          // user takes over scrolling
+          for (const type of ["wheel", "touchstart", "keydown"] as const) {
+            el.addEventListener(type, cancelJumpCorrect, { passive: true });
+          }
         } else {
           observer.current?.disconnect();
           observer.current = null;
@@ -172,6 +212,7 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
         notifyUndo();
         // scroll-margin-top on .block/.sec supplies the pad under the top edge
         el.scrollIntoView({ block: "start", behavior: "smooth" });
+        scheduleJumpCorrect(el, 1);
         el.classList.remove("flash");
         // force reflow so the animation restarts even on repeated jumps
         void el.offsetWidth;
@@ -181,6 +222,7 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
 
       undo: () => {
         const root = readerEl.current;
+        cancelJumpCorrect();
         if (!root || undoTop.current === null) return;
         root.scrollTo({ top: undoTop.current, behavior: "smooth" });
         undoTop.current = null;

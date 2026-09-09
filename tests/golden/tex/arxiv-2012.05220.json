@@ -1050,7 +1050,9 @@
                   "text": ". Similar plots for all HEALpixels are available with the auxiliary information online."
                 }
               ],
-              "imgPath": "plots__GGDfit_6200__pdf.svg"
+              "imgPath": "plots__GGDfit_6200__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "p-16",
@@ -1177,7 +1179,9 @@
                   "text": "The variation of the median of the distance prior over the sky shown in Galactic coordinates on a Mollweide equal-area projection. The LMC/SMC are excluded from our prior."
                 }
               ],
-              "imgPath": "plots__GGDprior_median_sky__png.png"
+              "imgPath": "plots__GGDprior_median_sky__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "p-18",
@@ -1318,7 +1322,9 @@
                   "text": ". Similar plots for all HEALpixels are available with the auxiliary information online."
                 }
               ],
-              "imgPath": "plots__mockCQD_6200__pdf.svg"
+              "imgPath": "plots__mockCQD_6200__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "p-20",
@@ -1926,7 +1932,9 @@
                   "text": " at discrete colours before imposing the minimum threshold which ensures the prior density is always greater than zero. Similar plots for all colour strips in HEALpixels are available with the auxiliary information online."
                 }
               ],
-              "imgPath": "plots__QGmodels_6200__pdf.svg"
+              "imgPath": "plots__QGmodels_6200__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-5",
@@ -1969,7 +1977,9 @@
                   "text": "."
                 }
               ],
-              "imgPath": "plots__QGmodels_7593__pdf.svg"
+              "imgPath": "plots__QGmodels_7593__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "p-28",
@@ -2605,7 +2615,9 @@
                   "text": ". Stars are ordered by increasing fpu. The two posteriors coincide in the top-left panel."
                 }
               ],
-              "imgPath": "plots__mock_inference_posteriors_6200__pdf.svg"
+              "imgPath": "plots__mock_inference_posteriors_6200__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "p-41",
@@ -2683,7 +2695,9 @@
                       "text": ". The blue and black lines virtually coincide. The smooth red curve is a unit Gaussian for comparison."
                     }
                   ],
-                  "imgPath": "plots__mock_inference_6200__png.png"
+                  "imgPath": "plots__mock_inference_6200__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "fig-8",
@@ -2711,7 +2725,9 @@
                       "text": " but now for HEALpixel 7593. The median fpu is 1.18 and the 90% range is 0.21–3.57."
                     }
                   ],
-                  "imgPath": "plots__mock_inference_7593__png.png"
+                  "imgPath": "plots__mock_inference_7593__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-42",
@@ -3152,7 +3168,9 @@
                   "text": "The CQD inferred for mock catalogue HEALpixel 6200 using the median geometric distance (top row) and median photogeometric distance (bottom row) for three ranges of the true fractional parallax uncertainty (fpu): all (left), 0–1.0 (middle) and 0–0.2 (right). The colour scale is a logarithmic (base 10) density scale relative to the highest density cell in each panel."
                 }
               ],
-              "imgPath": "plots__mock_inference_CQDs_6200__png.png"
+              "imgPath": "plots__mock_inference_CQDs_6200__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "fig-10",
@@ -3180,7 +3198,9 @@
                   "text": " but now for HEALpixel 7593."
                 }
               ],
-              "imgPath": "plots__mock_inference_CQDs_7593__png.png"
+              "imgPath": "plots__mock_inference_CQDs_7593__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "p-49",
@@ -3324,7 +3344,9 @@
                       "text": ". The colour scale in the density plots is logarithmic (base 10) relative to the highest density cell in each panel. The top-left panel compares the median geometric and photogeometric distances. The bottom-left panel shows normalized histograms on a linear scale of the median geometric (blue) and photogeometric (orange) distances, compared to the distance prior (black). The middle column shows the ratio of the inferred distance to the inverse parallax distance as a function of the measured fractional parallax uncertainty (fpu). Note that the apparent lack of sources in the lower panel at fpus above about 1.0 is mostly a plotting artefact: regions with too-low a density of sources are white. The two panels in the right column show the fractional symmetrized distance uncertainty also as a function of fpu (note the different scales). This plot is available for all HEALpixels with the auxiliary information online."
                     }
                   ],
-                  "imgPath": "plots__gedr3__real_inference_6200__png.png"
+                  "imgPath": "plots__gedr3__real_inference_6200__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "fig-12",
@@ -3360,7 +3382,9 @@
                       "text": "."
                     }
                   ],
-                  "imgPath": "plots__gedr3__real_inference_7593__png.png"
+                  "imgPath": "plots__gedr3__real_inference_7593__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-51",
@@ -3579,7 +3603,9 @@
                       "text": "The CQD inferred for EDR3 HEALpixel 6200 using the median geometric distance (top row) and median photogeometric distance (bottom row) for three ranges of the measured fpu: all (left), 0–1.0 (middle) and 0–0.2 (right). In total there are 24 007 sources with geometric distances and 23 829 with photogeometric distances. No other filtering has been applied. The colour scale is a logarithmic (base 10) density scale relative to the highest density cell in each panel, so is not comparable across panels. This plot (including also a comparison with the prior CQD) is available for all HEALpixels with the auxiliary information online."
                     }
                   ],
-                  "imgPath": "plots__gedr3__real_inference_CQDs_6200__png.png"
+                  "imgPath": "plots__gedr3__real_inference_CQDs_6200__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "fig-14",
@@ -3615,7 +3641,9 @@
                       "text": " mag."
                     }
                   ],
-                  "imgPath": "plots__gedr3__real_inference_CQDs_6200_Glt19p0__png.png"
+                  "imgPath": "plots__gedr3__real_inference_CQDs_6200_Glt19p0__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-54",
@@ -3946,7 +3974,9 @@
                       "text": " but now for HEALpixel 7593. All sources are shown (no magnitude cut). In total there are 385 902 sources with geometric distances and 369 608 with photogeometric distances."
                     }
                   ],
-                  "imgPath": "plots__gedr3__real_inference_CQDs_7593__png.png"
+                  "imgPath": "plots__gedr3__real_inference_CQDs_7593__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "fig-16",
@@ -3982,7 +4012,9 @@
                       "text": " mag to remove spurious sources."
                     }
                   ],
-                  "imgPath": "plots__gedr3__real_inference_CQDs_7593_Glt19p0__png.png"
+                  "imgPath": "plots__gedr3__real_inference_CQDs_7593_Glt19p0__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-57",
@@ -4132,7 +4164,9 @@
                   "text": ", in EDR3. This plot uses a random sample of 0.5% of all sources in each HEALpixel."
                 }
               ],
-              "imgPath": "plots__gedr3__distance_histogram_allhp__pdf.svg"
+              "imgPath": "plots__gedr3__distance_histogram_allhp__pdf.svg",
+              "imgWidth": 200,
+              "imgHeight": 100
             },
             {
               "id": "fig-18",
@@ -4161,7 +4195,9 @@
                   "text": " ranges. The colour scale is a logarithmic density (base 10) scale relative to the highest density cell in each panel. This plot uses a random sample of 0.5% of all sources in each HEALpixel."
                 }
               ],
-              "imgPath": "plots__gedr3__fdu_vs_distance_allhp__png.png"
+              "imgPath": "plots__gedr3__fdu_vs_distance_allhp__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "p-59",
@@ -4222,7 +4258,9 @@
                       "text": "The EDR3 CQD over the whole sky using the geometric distances (top) and photogeometric distances (bottom). This plot uses a random sample of 0.5% of all sources in each HEALpixel. These plots include sources of all magnitude and fpu, and so include sources with spurious parallaxes."
                     }
                   ],
-                  "imgPath": "plots__gedr3__CQD_geo_allsky__png.png"
+                  "imgPath": "plots__gedr3__CQD_geo_allsky__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-60",
@@ -4323,7 +4361,9 @@
                       "text": "(geo/photogeo). This plot uses a random sample of 0.5% of all sources in each HEALpixel."
                     }
                   ],
-                  "imgPath": "plots__gedr3__distance_geo_allsky__png.png"
+                  "imgPath": "plots__gedr3__distance_geo_allsky__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-61",
@@ -4394,7 +4434,9 @@
                       "text": " kpc. Galactic longitude increase anticlockwise from the positive x-axis. The top plots are the view from the Galactic North Pole. The bottom plots are a side view. This plot uses a random sample of 0.5% of all sources in each HEALpixel."
                     }
                   ],
-                  "imgPath": "plots__gedr3__distance_galprojection__png.png"
+                  "imgPath": "plots__gedr3__distance_galprojection__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "fig-22",
@@ -4430,7 +4472,9 @@
                       "text": "."
                     }
                   ],
-                  "imgPath": "plots__gedr3__distance_uncertainty_galprojection__png.png"
+                  "imgPath": "plots__gedr3__distance_uncertainty_galprojection__png.png",
+                  "imgWidth": 1,
+                  "imgHeight": 1
                 },
                 {
                   "id": "p-62",
@@ -4599,7 +4643,9 @@
                   "text": ") bounds of the confidence intervals.The distance range spans everything in the plotted fpu range, but a few stars lie outside of the plotted fpu range for some clusters. The dashed horizontal line is the inverse of the variance-weighted mean parallax for all cluster members (including any beyond the fpu limits plotted). The solid horizontal (blue) line is the weighted mean geometric distance for the same stars, where the weight is the inverse square of the symmetrized distance uncertainty. The clusters are ordered by increasing parallax distance."
                 }
               ],
-              "imgPath": "plots__gedr3__cluster_validation_geo__png.png"
+              "imgPath": "plots__gedr3__cluster_validation_geo__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "fig-24",
@@ -4627,7 +4673,9 @@
                   "text": " but now for photogeometric distances. The solid horizontal (orange) line is the weighted mean photogeometric distance."
                 }
               ],
-              "imgPath": "plots__gedr3__cluster_validation_photogeo__png.png"
+              "imgPath": "plots__gedr3__cluster_validation_photogeo__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "p-65",
@@ -4714,7 +4762,9 @@
                   "text": " to our geometric estimates (top panel) and to our photogeometric estimates (bottom panel) for a common sample of 36 858 sources."
                 }
               ],
-              "imgPath": "plots__gedr3__apogee_rc_geo__png.png"
+              "imgPath": "plots__gedr3__apogee_rc_geo__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "p-67",
@@ -4870,7 +4920,9 @@
                   "text": " to our geometric estimates (top panel) and to our photogeometric estimates (bottom panel) for a common sample of 307 105 sources."
                 }
               ],
-              "imgPath": "plots__gedr3__starhorse_geo__png.png"
+              "imgPath": "plots__gedr3__starhorse_geo__png.png",
+              "imgWidth": 1,
+              "imgHeight": 1
             },
             {
               "id": "p-69",

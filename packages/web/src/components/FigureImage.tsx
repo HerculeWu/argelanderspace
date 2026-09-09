@@ -80,11 +80,17 @@ export function FigureImage({
   src,
   alt,
   controls = false,
+  width,
+  height,
 }: {
   src: string;
   alt: string;
   /** Render the per-figure invert toggle (for main figures, not previews). */
   controls?: boolean;
+  /** Intrinsic size (IR imgWidth/imgHeight): reserves the box before the
+   *  image loads so lazy-loading can't push jump targets around. */
+  width?: number;
+  height?: number;
 }) {
   const theme = useThemeName();
   const dark = theme === "dark";
@@ -135,6 +141,8 @@ export function FigureImage({
       src={src}
       alt={alt}
       loading="lazy"
+      width={width}
+      height={height}
       className={inverted ? "fig-invert" : undefined}
     />
   );

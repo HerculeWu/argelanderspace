@@ -70,7 +70,15 @@ function FigureView({ b }: { b: IrFigureBlock }) {
   const src = store.imageUrl(b.imgPath);
   return (
     <figure className="block fig" id={b.id} data-block-id={b.id}>
-      {src && <FigureImage src={src} alt={b.label || "figure"} controls />}
+      {src && (
+        <FigureImage
+          src={src}
+          alt={b.label || "figure"}
+          controls
+          width={b.imgWidth}
+          height={b.imgHeight}
+        />
+      )}
       {hasContent(b.captionSegments) && (
         <figcaption className="fig-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}
