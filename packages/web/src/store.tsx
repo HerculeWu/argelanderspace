@@ -23,9 +23,10 @@ const FLASH_MS = 1600;
 const JUMP_ANIM_MS = 700;
 // Post-jump landing correction: images lazy-loading en route (and side-panel
 // width transitions) can push the target off the landing spot mid-scroll, so
-// re-measure after the animation settles and correct — bounded (first check
-// after the animation + settle slack, one quick re-check after a correction,
-// then stop) so it can't oscillate.
+// re-measure once the smooth scroll ENDS (`scrollend`; timers are the
+// fallback for already-there jumps / engines without the event) and correct
+// — bounded (one re-check after a correction) so it can't oscillate.
+// Corrections fired mid-animation get swallowed by the running smooth scroll.
 const JUMP_CORRECT_MS = 900;
 const JUMP_RECHECK_MS = 400;
 const JUMP_CORRECT_MAX = 2;
@@ -81,7 +82,7 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
   const undoTop = useRef<number | null>(null);
   const canUndo = useRef(false);
   const lastJumpAt = useRef(0);
-  const pendingCorrect = useRef<{ timer: number } | null>(null);
+  const pendingCorrect = useRef<{ el: HTMLElement; timer: number; run: () => void } | null>(null);
   const undoSubs = useRef<Set<() => void>>(new Set());
 
   const focusSubs = useRef<Set<(refId: string) => void>>(new Set());
@@ -143,17 +144,26 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
     const cancelJumpCorrect = () => {
       if (pendingCorrect.current !== null) {
         window.clearTimeout(pendingCorrect.current.timer);
+        pendingCorrect.current.el?.removeEventListener("scrollend", pendingCorrect.current.run);
         pendingCorrect.current = null;
       }
     };
 
+    // Landing correction: re-measure the target once the smooth scroll has
+    // actually ENDED (`scrollend`; the timer is the fallback for already-
+    // there jumps and engines without the event) — instant corrections fired
+    // mid-animation get swallowed by the still-running smooth scroll, so
+    // checking earlier is wasted. A correction's own instant scroll ends
+    // instantly, which chains the bounded re-check.
     const scheduleJumpCorrect = (el: HTMLElement, attempt: number) => {
       cancelJumpCorrect();
-      const delay = attempt === 1 ? JUMP_CORRECT_MS : JUMP_RECHECK_MS;
-      const timer = window.setTimeout(() => {
+      const root = readerEl.current;
+      if (root === null) return;
+      const run = () => {
+        window.clearTimeout(timer);
+        root.removeEventListener("scrollend", run);
         pendingCorrect.current = null;
-        const root = readerEl.current;
-        if (root === null || !el.isConnected) return;
+        if (!el.isConnected) return;
         const rect = el.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return; // no layout (test envs)
         const margin = Number.parseFloat(window.getComputedStyle(el).scrollMarginTop) || 0;
@@ -161,8 +171,10 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
         if (Math.abs(off) <= JUMP_CORRECT_TOLERANCE || attempt > JUMP_CORRECT_MAX) return;
         el.scrollIntoView({ block: "start", behavior: "auto" });
         scheduleJumpCorrect(el, attempt + 1);
-      }, delay);
-      pendingCorrect.current = { timer };
+      };
+      root.addEventListener("scrollend", run);
+      const timer = window.setTimeout(run, attempt === 1 ? JUMP_CORRECT_MS : JUMP_RECHECK_MS);
+      pendingCorrect.current = { el, timer, run };
     };
 
     return {
