@@ -290,6 +290,9 @@ const SUP_MARKER_RE = /^\s*\^\s*\{([^}]*)\}\s*$/;
 /** Leading `$^{N}$` runs in \affil text (rendered through plain/katexify). */
 const AFFIL_MARKER_TEXT_RE = /^(?:\s*\$\^\s*\{?[^}$]*\}?\$)+/;
 
+/** Trailing `$^{N}$` runs (a second author's marker glued at a piece's end). */
+const AFFIL_MARKER_TAIL_RE = /(?:\s*\$\^\s*\{?[^}$]*\}?\$)+\s*$/;
+
 /** Digit refs inside a superscript-marker inline-math node (skips \star/\dag). */
 function supMarkerRefs(n: Ast.Node): number[] | undefined {
   if (n.type !== "inlinemath") return undefined;
@@ -306,27 +309,76 @@ function isSupMarker(n: Ast.Node): boolean {
   return SUP_MARKER_RE.test(n.type === "inlinemath" ? printRawNodes(n.content) : "");
 }
 
+function isLineBreak(n: Ast.Node): boolean {
+  return n.type === "macro" && n.content === "\\";
+}
+
+/** Drop leading `\\` (and surrounding whitespace): after `\and` a chunk may
+ *  open with a layout line break, which is not a name/affiliation separator. */
+function stripLeadingLineBreaks(chunk: readonly Ast.Node[]): readonly Ast.Node[] {
+  let i = 0;
+  while (i < chunk.length) {
+    const n = chunk[i];
+    if (n === undefined) break;
+    if (
+      isLineBreak(n) ||
+      n.type === "whitespace" ||
+      (n.type === "string" && n.content.trim() === "")
+    ) {
+      i++;
+    } else {
+      break;
+    }
+  }
+  return chunk.slice(i);
+}
+
 /** Author-list content up to the first `\\` (hand-rolled blocks glue
- *  affiliation lines after it — names never carry line breaks). */
+ *  affiliation lines after it — names never carry line breaks). A leading
+ *  `\\` is layout, not a separator, and is skipped first. */
 function truncateAtLineBreak(chunk: readonly Ast.Node[]): Ast.Node[] {
   const out: Ast.Node[] = [];
-  for (const n of chunk) {
-    if (n.type === "macro" && n.content === "\\") break;
+  for (const n of stripLeadingLineBreaks(chunk)) {
+    if (isLineBreak(n)) break;
     out.push(n);
   }
   return out;
 }
 
+/** Content after the first (non-leading) `\\`: hand-rolled blocks glue the
+ *  affiliation lines there. */
+function tailAfterLineBreak(chunk: readonly Ast.Node[]): readonly Ast.Node[] {
+  const body = stripLeadingLineBreaks(chunk);
+  const idx = body.findIndex(isLineBreak);
+  return idx < 0 ? [] : body.slice(idx + 1);
+}
+
+/** Split macro-arg content on `\\` (always pushes the final piece). */
+function splitOnLineBreaks(content: readonly Ast.Node[]): Ast.Node[][] {
+  const pieces: Ast.Node[][] = [];
+  let current: Ast.Node[] = [];
+  for (const n of content) {
+    if (isLineBreak(n)) {
+      pieces.push(current);
+      current = [];
+    } else {
+      current.push(n);
+    }
+  }
+  pieces.push(current);
+  return pieces;
+}
+
 /** Clean one \author chunk: drop affiliation commands + superscript markers,
  *  cut the tail; a `\\` ends the author list (hand-rolled blocks glue the
- *  affiliation lines after it). */
+ *  affiliation lines after it; a leading `\\` is layout and skipped). */
 function cleanAuthor(
   nodes: readonly Ast.Node[],
   plain: (ns: readonly Ast.Node[]) => string
 ): string {
   const kept: Ast.Node[] = [];
-  for (const n of nodes) {
-    if (n.type === "macro" && n.content === "\\") break;
+  for (const n of stripLeadingLineBreaks(nodes)) {
+    if (isLineBreak(n)) break;
     if (isSupMarker(n)) continue;
     if (
       n.type === "macro" &&
@@ -496,6 +548,16 @@ function splitOnCommas(chunk: readonly Ast.Node[]): Ast.Node[][] {
   return out;
 }
 
+/** Loose name normalization for matching \correspondingauthor{X} against the
+ *  parsed author names (initials/punctuation differences tolerated by the
+ *  caller's includes-check). */
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z]+/g, " ")
+    .trim();
+}
+
 /** Name suffixes that a comma split may mistake for a standalone author. */
 const SUFFIX_TOKEN_RE = /^(?:Jr|Sr|II|III|IV)\.?$/;
 
@@ -522,8 +584,13 @@ function mergeSuffixChunks(
  * list split on \and, \email wherever it appears is document-level — aa
  * prints it as the corresponding address without naming the author) and
  * AASTeX/revtex sequential (\affiliation/\affil/\altaffiliation attaches to
- * the authors of the most recent \author, \email to the most recent author).
- * Anything unrecognized degrades to a flat author list (no affiliation links).
+ * the whole open author group — every \author since the group was opened;
+ * the group closes lazily once an \affiliation has attached and the next
+ * \author arrives, so consecutive \affiliation macros stack on the same
+ * authors —, \email to the most recent author). Hand-rolled blocks
+ * glue affiliation lines after a `\\` inside \author; the tail is parsed as
+ * pseudo-\affil pieces. Anything unrecognized degrades to a flat author list
+ * (no affiliation links).
  */
 export function extractAuthorBlock(
   tree: TexSourceTree,
@@ -592,15 +659,90 @@ export function extractAuthorBlock(
   const affiliations: string[] = [];
   const affIndex = new Map<string, number>(); // normalized text → 1-based index
   // Hand-rolled blocks carry the links as math superscripts (`$^{1,2}$` in
-  // \author, `$^{N}$` leading the \affil text): resolve them after the full
-  // affiliation list is known (appearance index == printed number).
+  // \author, `$^{N}$` leading the \affil text). The printed number is not
+  // always the appearance index (out-of-order or skipped numbers), so each
+  // \affil piece's leading marker is recorded as an explicit
+  // printed-number → list-index map; author refs resolve through it after
+  // the full affiliation list is known.
   const markerRefs = new Map<TexAuthorEntry, number[]>();
+  // Known issue (N9): two pieces printing the same number collide here —
+  // the later piece silently wins.
+  const printedToIndex = new Map<number, number>();
+  // revtex/emulateapj semantics: an \affiliation attaches to the whole open
+  // author group. The group closes lazily — only once an affiliation has
+  // attached and the next \author arrives — so consecutive \affiliation
+  // macros stack on the same authors while \author commands separated by an
+  // \affiliation start a new group.
   let currentGroup: TexAuthorEntry[] = [];
+  let groupHasAffil = false;
   let lastAuthor: TexAuthorEntry | undefined;
+  // \email/\thanks seen before any \author (AASTeX 6.x/7 places
+  // \correspondingauthor{X}\email{…} ahead of the author list). Known issue
+  // (N8): a pre-author \thanks address goes through the same
+  // \correspondingauthor matching, though it names no author.
+  const pendingEmails: string[] = [];
+
+  /** One affiliation entry (an \affiliation arg piece or a \author `\\`-tail
+   *  piece): dedupe into the list, record its printed marker number, attach
+   *  to `targets` (the open group, or the entries of one \author chunk).
+   *  A piece that is just an email line routes to the last author instead.
+   *  Returns false when the piece produced no affiliation entry. */
+  const addAffiliationPiece = (
+    piece: readonly Ast.Node[],
+    targets: readonly TexAuthorEntry[]
+  ): boolean => {
+    // \email inside a piece is not part of an address; a piece that is only
+    // an email line (macro, or bare address as the whole text) belongs to
+    // the most recent author.
+    const emailNode = piece.find(
+      (pn): pn is Ast.Macro => pn.type === "macro" && pn.content === "email"
+    );
+    const nodeEmail =
+      emailNode !== undefined ? EMAIL_RE.exec(macroArgText(emailNode, plain))?.[0] : undefined;
+    const raw = plain(piece);
+    const markerRun = AFFIL_MARKER_TEXT_RE.exec(raw)?.[0];
+    const text = raw.replace(AFFIL_MARKER_TEXT_RE, "").replace(AFFIL_MARKER_TAIL_RE, "").trim();
+    const wholeEmail = EMAIL_RE.exec(text)?.[0];
+    const email = nodeEmail ?? (wholeEmail === text ? wholeEmail : undefined);
+    if (email !== undefined) {
+      if (lastAuthor !== undefined && lastAuthor.email === undefined) lastAuthor.email = email;
+      return false;
+    }
+    if (text === "") return false;
+    const norm = text.toLowerCase().replace(/\s+/g, " ");
+    let idx = affIndex.get(norm);
+    if (idx === undefined) {
+      affiliations.push(text);
+      idx = affiliations.length;
+      affIndex.set(norm, idx);
+    }
+    if (markerRun !== undefined) {
+      for (const d of markerRun.match(/\d+/g) ?? []) {
+        printedToIndex.set(Number.parseInt(d, 10), idx);
+      }
+    } else {
+      // Mixed blocks number only some pieces: infer the unnumbered ones as
+      // the smallest printed number not taken yet (== appearance order in
+      // fully unnumbered blocks).
+      let inferred = 1;
+      while (printedToIndex.has(inferred)) inferred++;
+      printedToIndex.set(inferred, idx);
+    }
+    for (const a of targets) {
+      if (markerRefs.has(a)) continue; // linked via its own superscripts
+      a.affiliations = a.affiliations ?? [];
+      if (!a.affiliations.includes(idx)) a.affiliations.push(idx);
+    }
+    return true;
+  };
+
   for (const n of [...tree.preamble, ...tree.body]) {
     if (n.type !== "macro") continue;
     if (n.content === "author") {
-      currentGroup = [];
+      if (groupHasAffil) {
+        currentGroup = [];
+        groupHasAffil = false;
+      }
       for (const chunk of splitOnAnd(n.args?.[n.args.length - 1]?.content ?? [])) {
         const truncated = truncateAtLineBreak(chunk);
         const supCount = truncated.filter((cn) => isSupMarker(cn)).length;
@@ -608,60 +750,105 @@ export function extractAuthorBlock(
           supCount >= 2 ? splitOnCommas(truncated) : [truncated],
           plain
         );
+        const chunkEntries: TexAuthorEntry[] = [];
         for (const sub of subChunks) {
           const name = cleanAuthor(sub, plain);
           if (name === "") continue;
           const entry: TexAuthorEntry = { name };
           const refs = [...new Set(sub.flatMap((cn) => supMarkerRefs(cn) ?? []))];
-          if (refs.length > 0) markerRefs.set(entry, refs);
+          // Authors carrying ANY superscript marker resolve through their
+          // own refs (possibly non-numeric, e.g. `$^{\star}$` → no numeric
+          // refs) and must not absorb group affiliations.
+          if (refs.length > 0 || sub.some((cn) => isSupMarker(cn))) {
+            markerRefs.set(entry, refs);
+          }
           const email = chunkEmail(sub, plain);
           if (email !== undefined) entry.email = email;
           authors.push(entry);
           currentGroup.push(entry);
+          chunkEntries.push(entry);
           lastAuthor = entry;
+        }
+        // Hand-rolled blocks glue the affiliation lines after a `\\` inside
+        // \author: parse the tail as pseudo-\affil pieces. They attach to
+        // THIS chunk's authors, not the whole open group (a chunk's tail is
+        // that chunk's own affiliation line). Known issue (N7): a chunk
+        // holding only `\\`-glued affiliations (`\author{ \\ Inst X}`) is
+        // indistinguishable from a layout break and yields no author.
+        const tail = tailAfterLineBreak(chunk);
+        if (tail.length > 0) {
+          for (const piece of splitOnLineBreaks(tail)) {
+            if (addAffiliationPiece(piece, chunkEntries)) groupHasAffil = true;
+          }
         }
       }
     } else if (["affiliation", "affil", "altaffiliation"].includes(n.content)) {
       // hand-rolled blocks pack several entries into one arg, \\-separated
-      const pieces: Ast.Node[][] = [];
-      let current: Ast.Node[] = [];
-      for (const an of n.args?.[n.args.length - 1]?.content ?? []) {
-        if (an.type === "macro" && an.content === "\\") {
-          pieces.push(current);
-          current = [];
-        } else {
-          current.push(an);
-        }
-      }
-      pieces.push(current);
-      for (const piece of pieces) {
-        const text = plain(piece).replace(AFFIL_MARKER_TEXT_RE, "").trim();
-        if (text === "") continue;
-        const norm = text.toLowerCase().replace(/\s+/g, " ");
-        let idx = affIndex.get(norm);
-        if (idx === undefined) {
-          affiliations.push(text);
-          idx = affiliations.length;
-          affIndex.set(norm, idx);
-        }
-        for (const a of currentGroup) {
-          if (markerRefs.has(a)) continue; // linked via its own superscripts
-          a.affiliations = a.affiliations ?? [];
-          if (!a.affiliations.includes(idx)) a.affiliations.push(idx);
-        }
+      for (const piece of splitOnLineBreaks(n.args?.[n.args.length - 1]?.content ?? [])) {
+        if (addAffiliationPiece(piece, currentGroup)) groupHasAffil = true;
       }
     } else if (n.content === "email" || n.content === "thanks") {
       const m = EMAIL_RE.exec(macroArgText(n, plain))?.[0];
-      if (m !== undefined && lastAuthor !== undefined && lastAuthor.email === undefined) {
-        lastAuthor.email = m;
+      if (m === undefined) continue;
+      if (lastAuthor !== undefined) {
+        if (lastAuthor.email === undefined) lastAuthor.email = m;
+      } else {
+        pendingEmails.push(m);
       }
     }
   }
   for (const [entry, refs] of markerRefs) {
-    const linked = refs.filter((k) => k <= affiliations.length).sort((a, b) => a - b);
+    const linked = [
+      ...new Set(
+        refs
+          .map((k) => printedToIndex.get(k) ?? (k <= affiliations.length ? k : undefined))
+          .filter((k): k is number => k !== undefined)
+      ),
+    ].sort((a, b) => a - b);
     if (linked.length > 0) entry.affiliations = linked;
   }
-  return { authors, affiliations };
+  let docEmail: string | undefined;
+  const [firstPending, ...extraPending] = pendingEmails;
+  if (firstPending !== undefined) {
+    // Attach to the author named by \correspondingauthor: exact normalized
+    // match first; otherwise token-level containment (either direction)
+    // only when it singles out exactly one author — anything looser
+    // mis-attaches (`{Wang}` with two Wangs, `{B.}` matching every "b").
+    // No unique match → the address stays document-level.
+    const corr = findTopMacro(tree, "correspondingauthor");
+    const corrName = corr !== undefined ? normalizeName(macroArgText(corr, plain)) : "";
+    let target: TexAuthorEntry | undefined;
+    if (corrName !== "") {
+      const exact = authors.filter((a) => normalizeName(a.name) === corrName);
+      if (exact.length > 0) {
+        target = exact[0];
+      } else {
+        const corrTokens = new Set(corrName.split(" ").filter((t) => t !== ""));
+        const contained = authors.filter((a) => {
+          const tokens = new Set(
+            normalizeName(a.name)
+              .split(" ")
+              .filter((t) => t !== "")
+          );
+          const sub = [...corrTokens].every((t) => tokens.has(t));
+          const sup = [...tokens].every((t) => corrTokens.has(t));
+          return sub || sup;
+        });
+        if (contained.length === 1) target = contained[0];
+      }
+    }
+    if (target !== undefined) {
+      if (target.email === undefined) target.email = firstPending;
+    } else {
+      docEmail = firstPending;
+    }
+  }
+  // Further pre-author emails never evaporate: first spare lands at the
+  // document level when nothing else did.
+  if (docEmail === undefined && extraPending.length > 0) docEmail = extraPending[0];
+  const out: TexAuthorBlock = { authors, affiliations };
+  if (docEmail !== undefined) out.email = docEmail;
+  return out;
 }
 
 // --------------------------------------------------------------------------- //

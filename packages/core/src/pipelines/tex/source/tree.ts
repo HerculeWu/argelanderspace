@@ -89,7 +89,7 @@ const MACRO_SIGNATURES: Record<string, string> = {
   author: "o m",
   date: "m",
   thanks: "m",
-  email: "m",
+  email: "o m",
   institute: "m",
   inst: "m",
   affiliation: "m",
@@ -97,7 +97,9 @@ const MACRO_SIGNATURES: Record<string, string> = {
   altaffiliation: "m",
   and: "",
   orcidlink: "m",
-  correspondingauthor: "m m",
+  // AASTeX: one mandatory arg (the named author). "m m" would swallow the
+  // following token (typically \email{…}) as a phantom second argument.
+  correspondingauthor: "m",
   // text formatting (unwrapped at fuse time)
   textbf: "m",
   emph: "m",
