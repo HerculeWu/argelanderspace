@@ -97,6 +97,21 @@ describe("AdsClient (library/sources/ads.py)", () => {
     expect(readAdsToken({ ADS_DEV_KEY: "  abc  " }, "/nonexistent-home", {})).toBe("abc");
     expect(readAdsToken({}, "/nonexistent-home", {})).toBeNull();
   });
+
+  test("disabled client returns null without network (offline parity)", async () => {
+    const { fetchImpl, calls } = stubFetch(() => {
+      throw new Error("network must not be touched");
+    });
+    const ads = new AdsClient({
+      cacheDir: tmpCache(),
+      token: "TEST-TOKEN",
+      delay: 0,
+      enabled: false,
+      fetchImpl,
+    });
+    expect(await ads.resolve({ doi: "10.1086/161130" })).toBeNull();
+    expect(calls.length).toBe(0);
+  });
 });
 
 // --------------------------------------------------------------------------- //

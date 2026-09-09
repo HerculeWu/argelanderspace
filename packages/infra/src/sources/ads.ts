@@ -50,6 +50,8 @@ export interface AdsClientOptions {
   token?: string | null;
   /** Fixed pre-request sleep in seconds (Python default 0.25). */
   delay?: number;
+  /** false = disk cache only, no network (mirrors CrossrefClient.enabled). */
+  enabled?: boolean;
   fetchImpl?: FetchImpl;
   log?: (msg: string) => void;
 }
@@ -92,6 +94,7 @@ export class AdsClient implements AdsSource {
   readonly token: string | null;
   status: AdsStatus;
   private readonly delay: number;
+  private readonly enabled: boolean;
   private readonly cache: SourceCache;
   private readonly fetchImpl: FetchImpl;
   private readonly log?: (msg: string) => void;
@@ -99,6 +102,7 @@ export class AdsClient implements AdsSource {
   constructor(opts: AdsClientOptions) {
     this.token = opts.token !== undefined ? opts.token : readAdsToken();
     this.delay = opts.delay ?? 0.25;
+    this.enabled = opts.enabled ?? true;
     this.status = this.token ? "ok" : "no-token";
     this.cache = new SourceCache(opts.cacheDir);
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -110,7 +114,7 @@ export class AdsClient implements AdsSource {
     const key = sha1Hex(q);
     const hit = this.cache.read(key);
     if (hit !== undefined) return hit as Array<Record<string, unknown>>;
-    if (!this.token || this.status !== "ok") return null;
+    if (!this.token || this.status !== "ok" || !this.enabled) return null;
     try {
       await sleep(this.delay); // Python: fixed sleep, not a throttle
       const { text } = await fetchText(this.fetchImpl, withQuery(BASE, { q, fl: FL, rows: 1 }), {

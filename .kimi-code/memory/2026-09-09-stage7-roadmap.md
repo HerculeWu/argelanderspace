@@ -4,7 +4,11 @@
 
 ## 状态
 
-**2026-09-09：设计 grilling 完成（三轮 Q1–Q10 全锁定，用户逐轮"按推荐"）。** 待用户最终确认后 MS1 开工。commit/执行进度随 milestone 追加在本节。
+**2026-09-10：MS2（作者块 G）+ MS2b（重摄入迁移）landed。** 代码 `437299e`：六项修复（revtex 分组**懒重置**——实害验证发现字面"挂接后即重置"会回归 2607.17040 连续 `\affiliation`，改为 affiliation 挂接置位、下一 `\author` 到达才关组；`\email[show]` 签名 `"o m"`；前置 `\email` 缓存入队 + `\correspondingauthor` 严格匹配（精确相等或 token 包含且唯一命中，否则落 meta.email）+ `correspondingauthor` 签名 `"m m"→"m"` 修幻影第二参；`\and \\` 剥前导 `\\`/whitespace 节点；`\author` 块 `\\` 尾机构行当伪 `\affil` piece；`\affil` printedToIndex 印刷号映射 + 无号 piece 最小未占用号推断）。对抗审查 1 BLOCKER（B1 教科书 article-class `\and` chunk 级错挂——tail piece 改挂本 chunk entries）+ N1–N6 顺手修（piece 尾 sup-marker/严格匹配/多前置 email/混合号推断/尾部 email 行/非数字 marker 跳组挂接），N7–N9 记录不修。测试 core 168→197，四门全绿，**golden 零 diff 未重冻**（agent 冻结守住）。MS2b 迁移（详见 `2026-09-10-stage7-ms2b-migration.md`）：备份 tarball 215MB → 4 篇受害者离线重摄入验收全过（1609.05917 McGaugh [1]、1804.10121 calj@mpia.de、2603.03522 两机构、2607.17040 Long Wang email——2607.17040 正文大 diff 已归因=旧 IR 垃圾段 `show]wanglong8@…` 消失引发 block id 级联，逐 token 对账非回归）；**5 篇 src-only 全部失败于 latexmk**（缺 aa.cls/emulateapj-rtx4.cls/aas_macros.sty 等 arXiv 自带类——1307.8124 探针实证一旦能编译即 18 作者受益；挂 known-issue 不投入修）；parity works 41=41、用户数据逐字节零漂移、零悬空 doc_ids。**顺手修 `--offline` 不 gate ADS**（deps.ts 旧 bug-for-bug 注释退役；AdsClient 加 `enabled` 镜像 Crossref 语义：缓存照读网络跳过；infra 59→60）。
+
+**2026-09-09：MS1（小修集合 C+E+H+J+D）landed。** 定稿 memory `e4222a2` + 代码 `d7ead2d`：cite_key 只增不改（run.ts 预灌 usedKeys + `if (!w.cite_key)`）；UA HubbleSpace→ArgelanderSpace（crossref.ts:55/openalex.ts:138）；texFigureAssetSize 补 JPEG/GIF/WebP 直通图解析；TocPanel stripMath 剥 `[cite:…]`/xref 展开记号（cite→short、xref→number、无编号降级 heading/preview）；TaskModal due>planDue 软警告（`.plan-field-hint`，schema 不动）。对抗审查 1 BLOCKER（JPEG 填充字节 off-by-one：APPn 长度高字节 0xC0 可伪造 SOF 尺寸——已修+2 探针测试）+ N1（相邻 token 粘连）/N2（无编号 xref 消失）顺手修。测试 core 168→180、web 131→142，四门全绿，golden 未重冻。
+
+**2026-09-09：设计 grilling 完成（三轮 Q1–Q10 全锁定，用户逐轮"按推荐"），用户确认开工。** commit/执行进度随 milestone 追加在本节。
 
 ## 范围与硬约束
 

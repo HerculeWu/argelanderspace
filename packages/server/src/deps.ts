@@ -5,10 +5,10 @@
  * `IngestPipelines` (LaTeX only; PDF/HTML are archived on `ocr-features`)
  * rooted at `<dataDir>/output`.
  *
- * Bug-for-bug note (`library/build.py::_rebuild_locked`): `offline` disables
- * Crossref + OpenAlex (`enabled=False`) but ADS is constructed unconditionally
- * upstream — it self-degrades via its token/cache. So `realSources(paths,
- * true)` still returns a live ADS client.
+ * `offline` disables the network side of all three sources (ADS/Crossref/
+ * OpenAlex keep reading their disk caches). The Python original left ADS live
+ * under `--offline` (bug-for-bug note, retired in Stage 7 MS2b after a parity
+ * run showed live ADS writes during an offline rebuild).
  */
 
 import { join, resolve } from "node:path";
@@ -33,7 +33,7 @@ export function statusDirFor(dataDir: string): string {
 /** The resolution-chain sources; `offline` skips remote enrichment. */
 export function realSources(paths: LibraryPaths, offline: boolean): MetadataSources {
   return {
-    ads: new AdsClient({ cacheDir: join(paths.cacheDir, "ads") }),
+    ads: new AdsClient({ cacheDir: join(paths.cacheDir, "ads"), enabled: !offline }),
     crossref: new CrossrefClient({ cacheDir: join(paths.cacheDir, "crossref"), enabled: !offline }),
     oa: new OpenAlexClient({ cacheDir: join(paths.cacheDir, "openalex"), enabled: !offline }),
   };
