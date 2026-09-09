@@ -31,6 +31,10 @@ export function renderMathToString(latex: string, displayMode = false): string {
       strict: "ignore",
       output: "html",
       errorColor: "#b00020",
+      // \ensuremath{…} survives macro expansion (unit/quantity shorthands like
+      // \gobs); KaTeX has no such function — as a macro it is the identity in
+      // the math contexts we always render in.
+      macros: { "\\ensuremath": "#1" },
     });
   } catch {
     return `<span class="math-error">${escapeHtml(latex)}</span>`;

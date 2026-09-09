@@ -71,14 +71,20 @@ const JOURNAL_RE = pyRe(
   "g"
 );
 const FORMAT_CMD_RE = pyRe(
-  "\\\\(?:textit|textbf|textsc|textrm|emph|mbox|text|hbox|it|bf|natexlab)\\s*\\{",
+  "\\\\(?:textit|textbf|textsc|textrm|emph|mbox|text|hbox|it|bf|natexlab|citenamefont|bibfnamefont|bibnamefont)\\s*\\{",
   "y"
 );
 const DOI_CMD_RE = /\\doi\s*\{([^}]*)\}/g;
-const HREF_RE = /\\href\s*\{[^}]*\}\s*\{([^}]*)\}/g;
+const HREF_RE = /\\href(?:@noop)?\s*\{[^}]*\}\s*\{([^}]*)\}/g;
 const URL_CMD_RE = /\\url\s*\{([^}]*)\}/g;
 const EPRINT_RE = /\\eprint\s*\{([^}]*)\}/g;
-const LEFTOVER_CMD_RE = pyRe("\\\\[a-zA-Z]+\\b", "g");
+const LEFTOVER_CMD_RE = pyRe("\\\\@?[a-zA-Z]+\\b", "g");
+// revtex/aps .bbl markup: \bibinfo/\bibfield pass their SECOND group through
+// (two-arg bibtex wrappers); \BibitemOpen/\BibitemShut/\bibitem(No)Stop/\EOS
+// are pure layout noise.
+const BIB_TWO_ARG_RE = pyRe("\\\\(?:bibinfo|bibfield)\\b", "g");
+const BIB_NOISE_CMD_RE = pyRe("\\\\(?:BibitemOpen|bibitemStop|bibitemNoStop|EOS)\\b", "g");
+const TEX_COMMENT_RE = /(?<!\\)%[^\n]*/g;
 
 /** If `s[i]===lo`, return (inner, index-after-matching-hi); else undefined. */
 function balanced(
@@ -99,9 +105,74 @@ function balanced(
   return [s.slice(i + 1), s.length];
 }
 
+/** Unwrap two-argument bibtex wrappers \bibinfo{X}{Y} / \bibfield{X}{Y} → Y. */
+function unwrapTwoArg(s: string): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < s.length) {
+    BIB_TWO_ARG_RE.lastIndex = i;
+    const m = BIB_TWO_ARG_RE.exec(s);
+    if (m === null) {
+      out.push(s.slice(i));
+      break;
+    }
+    let j = m.index + m[0].length;
+    out.push(s.slice(i, m.index));
+    j += /^\s*/.exec(s.slice(j))?.[0].length ?? 0;
+    const g1 = balanced(s, j, "{", "}");
+    if (g1 === undefined) {
+      out.push(m[0]);
+      i = j;
+      continue;
+    }
+    let k = g1[1];
+    k += /^\s*/.exec(s.slice(k))?.[0].length ?? 0;
+    const g2 = balanced(s, k, "{", "}");
+    if (g2 === undefined) {
+      out.push(s.slice(m.index, g1[1]));
+      i = g1[1];
+      continue;
+    }
+    out.push(g2[0]);
+    i = g2[1];
+  }
+  return out.join("");
+}
+
+/** Drop \cmd plus its one balanced brace group entirely (\BibitemShut{NoStop}). */
+function dropArgCmd(s: string, re: RegExp): string {
+  const out: string[] = [];
+  let i = 0;
+  while (i < s.length) {
+    re.lastIndex = i;
+    const m = re.exec(s);
+    if (m !== null && m.index === i) {
+      let j = i + m[0].length;
+      j += /^\s*/.exec(s.slice(j))?.[0].length ?? 0;
+      const inner = balanced(s, j, "{", "}");
+      i = inner !== undefined ? inner[1] : j;
+      continue;
+    }
+    out.push(s[i] ?? "");
+    i += 1;
+  }
+  return out.join("");
+}
+
 /** Turn a raw `\bibitem` body into readable text (preserving DOI/arXiv). */
 export function cleanBblText(s0: string): string {
-  let s = s0.replaceAll("\\newblock", " ").replaceAll("\\nobreak", " ");
+  let s = s0.replace(TEX_COMMENT_RE, "");
+  s = s.replaceAll("\\\\", " "); // linebreak macro
+  s = s.replace(/\\(?=\s)/g, " "); // lone-backslash line continuation
+  s = s.replaceAll("\\newblock", " ").replaceAll("\\nobreak", " ");
+  // revtex \bibinfo/\bibfield: fixpoint — the payload of one wrapper nests more
+  for (let i = 0; i < 4; i++) {
+    const next = unwrapTwoArg(s);
+    if (next === s) break;
+    s = next;
+  }
+  s = dropArgCmd(s, pyRe("\\\\BibitemShut\\b", "y"));
+  s = s.replace(BIB_NOISE_CMD_RE, " ");
   s = s.replace(JOURNAL_RE, (m, name: string) => JOURNAL_BY_NAME.get(name) ?? m);
   s = s.replace(DOI_CMD_RE, " doi:$1 ");
   s = s.replace(HREF_RE, "$1");

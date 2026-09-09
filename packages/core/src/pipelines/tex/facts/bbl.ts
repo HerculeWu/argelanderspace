@@ -44,7 +44,7 @@ function stripTrailing(s: string): string {
  */
 function extractDoi(raw: string): string | undefined {
   const m =
-    /(?:\\doi\{|doi[:\s]\s*|doi\.org\/)(10\.\d{4,9}\/[^\s}]+)/i.exec(raw) ??
+    /(?:\\doi\{|\\doibase\s*|doi[:\s]\s*|doi\.org\/)(10\.\d{4,9}\/[^\s}]+)/i.exec(raw) ??
     /\b(10\.\d{4,9}\/[^\s,}]*[a-zA-Z][^\s,}]*)/.exec(raw);
   return m?.[1] !== undefined ? stripTrailing(m[1]) : undefined;
 }

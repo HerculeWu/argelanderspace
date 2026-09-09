@@ -18,7 +18,7 @@
  *    fixpoint passes; anything left raw afterwards is reported.
  */
 import type * as Ast from "@unified-latex/unified-latex-types";
-import { printRawNodes, texParser } from "./tree.js";
+import { envName, printRawNodes, texParser } from "./tree.js";
 
 export const MAX_EXPANSIONS = 2000;
 export const MAX_PASSES = 10;
@@ -311,6 +311,14 @@ function expandPass(nodes: Ast.Node[], ctx: ExpansionCtx): { nodes: Ast.Node[]; 
     // never expand inside macro DEFINITIONS (the name group holds the defined
     // macro itself, which would self-expand)
     if (node.type === "macro" && DEF_MACROS.has(node.content)) {
+      out.push(node);
+      continue;
+    }
+    // never expand inside thebibliography: bibtex-generated markup's
+    // \providecommand defs (\bibinfo = \@secondoftwo, …) are catcode-era
+    // tricks, not real macros — expanding them mangles the entries that the
+    // inline-fallback parser reads as verbatim text (Stage 6 smoke).
+    if (node.type === "environment" && envName(node) === "thebibliography") {
       out.push(node);
       continue;
     }
