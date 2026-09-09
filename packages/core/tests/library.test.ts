@@ -367,6 +367,21 @@ describe("workToRef note projection", () => {
 });
 
 // --------------------------------------------------------------------------- //
+// API projection: doc_ids version list (Stage 7 MS3 — doc_ids[0] = main doc)
+// --------------------------------------------------------------------------- //
+
+describe("workToRef doc_ids projection", () => {
+  test("all docs listed in stored order, doc_id mirrors doc_ids[0]; absent when none", () => {
+    const w = emptyWork("work:versioned");
+    w.doc_ids = ["upload-work-versioned-a1b2c3", "arxiv-2603.03522"];
+    const ref = workToRef(w);
+    expect(ref.doc_ids).toEqual(["upload-work-versioned-a1b2c3", "arxiv-2603.03522"]);
+    expect(ref.doc_id).toBe("upload-work-versioned-a1b2c3");
+    expect("doc_ids" in workToRef(emptyWork("work:plain"))).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------------- //
 // enrichAndPlan cite_key semantics (Stage 7 MS1: assign-only, never rewrite)
 // --------------------------------------------------------------------------- //
 

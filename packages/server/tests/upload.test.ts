@@ -5,7 +5,7 @@
  * `<dataDir>/jobs/<id>.json` and replayed via the WS hello snapshot).
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, WsServerMessage } from "@argelanderspace/contracts";
 import { libraryPaths, uploadDocId } from "@argelanderspace/core";
@@ -177,6 +177,42 @@ describe("async flow (new default)", () => {
     expect(ref2.doc_id).toBe(ref1.doc_id);
     // strictly serial, and the doc is still singly attached
     expect(d1.finishedAt && d2.startedAt && d2.startedAt >= d1.finishedAt).toBe(true);
+  });
+
+  // Stage 7 MS3: the endpoint was never prefix-gated — any work may be
+  // uploaded to. The new doc becomes the main doc (doc_ids[0]); the older
+  // versions stay attached for look-back.
+  test("upload to a work with existing docs: new doc becomes main, old versions retained", async () => {
+    // put the fixture work's two docs on disk so the seed keeps them attached
+    for (const [docId, src] of [
+      ["2603.03522", {}],
+      ["arxiv-2603.03522", { arxiv_id: "2603.03522" }],
+    ] as const) {
+      const dir = join(dataDir, "output", docId);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, `${docId}.json`),
+        JSON.stringify({
+          version: 1,
+          docId,
+          sections: [],
+          refsManifest: [],
+          bib: [],
+          citationsByBlock: {},
+          source: { type: "latex", ...src },
+          meta: { title: "Stub doc" },
+        })
+      );
+    }
+    const res = await upload(`?id=${KNOWN_WORK_ID}`);
+    expect(res.status).toBe(202);
+    const { job } = (await res.json()) as { job: Job };
+    const done = await runner.waitFor(job.id);
+    expect(done.status).toBe("done");
+    const ref = (done.result as { ref: { doc_id?: string; doc_ids?: string[] } }).ref;
+    const docId = uploadDocId(KNOWN_WORK_ID);
+    expect(ref.doc_id).toBe(docId);
+    expect(ref.doc_ids).toEqual([docId, "2603.03522", "arxiv-2603.03522"]);
   });
 
   test("an unknown work fails the job with attach's message (and it persists)", async () => {

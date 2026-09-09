@@ -20,13 +20,18 @@
  *    `w.doc_ids` directly, and the post-rebuild store is validated to contain
  *    it — otherwise the attach throws (a "successful" upload that left the
  *    work without full text must surface as a failed job).
+ *
+ * Stage 7 MS3: the upload endpoint is open to EVERY work (no more `upload-`
+ * prefix gating — that restriction was web-UI-only). The new doc is prepended
+ * to `doc_ids`, i.e. it becomes the main doc (`doc_ids[0]`); older versions
+ * stay listed for look-back. No physical delete, no archive.
  */
 
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LibraryRef, RefreshResponse } from "@argelanderspace/contracts";
-import { type RebuildOptions, rebuild } from "../library/build.js";
+import { patchWork, type RebuildOptions, rebuild } from "../library/build.js";
 import { workToRef } from "../library/graph.js";
 import type { MetadataSources } from "../library/sources.js";
 import {
@@ -125,6 +130,16 @@ export async function attachLatexZip(
      * without holding that lock across the ingest itself.
      */
     rebuild?: (paths: LibraryPaths, opts: RebuildOptions) => Promise<RefreshResponse>;
+    /**
+     * Re-assert the uploaded doc's main-doc slot AFTER the rebuild, inside the
+     * caller's writer lock (Stage 7 MS3 review N1). The weld below runs
+     * OUTSIDE that lock — the ingest must not hold it — so a concurrent PATCH
+     * can clobber it, in which case the seed merge re-attaches the doc at the
+     * TAIL of `doc_ids`. This hook's move-to-front (idempotent) repairs the
+     * order with no race window. The server injects a `libraryLock`-wrapped
+     * patchWork; the default is the plain patchWork (single-writer callers).
+     */
+    reassertMainDoc?: (paths: LibraryPaths, workId: string, docId: string) => Promise<boolean>;
     /** Coarse progress sink: unpack → ingest → rebuild (the job's `report`). */
     onProgress?: (message: string) => void;
   }
@@ -151,13 +166,34 @@ export async function attachLatexZip(
   stampSource(join(deps.paths.outputDir, docId, `${docId}.json`), w, "user_latex_zip");
 
   // Weld the link directly: the seed merge below then only *confirms* it.
-  if (!w.doc_ids.includes(docId)) {
-    w.doc_ids = [...w.doc_ids, docId];
-    store.save(deps.paths);
-  }
+  // Stage 7 MS3 (re-upload for every work): the uploaded doc becomes the MAIN
+  // doc — doc_ids[0] is the main-doc pointer — while older docs (e.g. the
+  // arXiv-ingested one) stay in the list for look-back. The move-to-front also
+  // covers re-uploads after the user switched the main doc back: an upload
+  // always reclaims the main slot. The order survives the rebuild because the
+  // seed merge keeps the stored order and only appends new docs (mergeInto:
+  // dst first), so no extra "sticky main" marker is needed.
+  w.doc_ids = [docId, ...w.doc_ids.filter((d) => d !== docId)];
+  store.save(deps.paths);
 
   deps.onProgress?.("Rebuilding library");
   await (deps.rebuild ?? rebuild)(deps.paths, { sources: deps.sources }); // relink + refresh graph
+
+  // Re-assert the main slot through the writer lock (see the dep's doc): the
+  // weld above is outside that lock, so a clobbered weld would leave the
+  // upload doc at the tail. Idempotent — a no-op on the fast path.
+  const attached = findWork(LibraryStore.load(deps.paths), {
+    workId: w.id,
+    doi: w.doi,
+    arxiv: w.arxiv_id,
+  });
+  if (attached?.doc_ids.includes(docId)) {
+    const reassert =
+      deps.reassertMainDoc ??
+      (async (p: LibraryPaths, workId: string, d: string) => patchWork(p, workId, { doc_id: d }));
+    await reassert(deps.paths, attached.id, docId);
+  }
+
   const store2 = LibraryStore.load(deps.paths);
   const w2 = findWork(store2, { workId: w.id, doi: w.doi, arxiv: w.arxiv_id });
   if (w2 === undefined || !w2.doc_ids.includes(docId)) {

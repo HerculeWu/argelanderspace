@@ -173,7 +173,7 @@ export function addNodeToLibrary(paths: LibraryPaths, nodeId: string): LibraryRe
   return workToRef(w);
 }
 
-/** Update per-work user state (label / read / star / tags / note), validated. */
+/** Update per-work user state (label / read / star / tags / note / main doc), validated. */
 export function patchWork(
   paths: LibraryPaths,
   workId: string,
@@ -182,24 +182,47 @@ export function patchWork(
   const store = LibraryStore.load(paths);
   const w = store.get(workId);
   if (w === undefined) return false;
+  // `changed` tracks whether any field was applied; a patch that changes
+  // nothing is a side-effect-free no-op (no save, returns false — Stage 7 MS3
+  // review N5, so a rejected main-doc switch can't rewrite the store or
+  // broadcast library.changed).
+  let changed = false;
   // Python `patch.get(k) is not None`: present and non-null.
   if (patch.label !== undefined && patch.label !== null) {
     w.label = String(patch.label).slice(0, 32) || null;
+    changed = true;
   }
   if (patch.read !== undefined && patch.read !== null) {
     // Python bool(); JSON `[]`/`{}` diverge (truthy in JS) — the API contract
     // only admits booleans, so this is unreachable in practice.
     w.read = Boolean(patch.read);
+    changed = true;
   }
   if (patch.star !== undefined && patch.star !== null) {
     w.star = Boolean(patch.star);
+    changed = true;
   }
   if (patch.note !== undefined && patch.note !== null) {
     w.note = String(patch.note).slice(0, 10000) || null;
+    changed = true;
   }
   if (patch.tags !== undefined && patch.tags !== null && Array.isArray(patch.tags)) {
     w.tags = patch.tags.map((t) => String(t).slice(0, 64)).slice(0, 64);
+    changed = true;
   }
+  // Main-doc switch (Stage 7 MS3): the main doc is `doc_ids[0]`, so "set main"
+  // moves the named doc to the front. The order then survives rebuilds: the
+  // seed merge keeps the existing work's doc_ids order and only appends
+  // genuinely new docs (mergeInto: dst first). A doc the work does not hold —
+  // or one that already IS the main doc — changes nothing (no-op per N5).
+  if (patch.doc_id !== undefined && patch.doc_id !== null) {
+    const d = String(patch.doc_id);
+    if (w.doc_ids.indexOf(d) > 0) {
+      w.doc_ids = [d, ...w.doc_ids.filter((x) => x !== d)];
+      changed = true;
+    }
+  }
+  if (!changed) return false;
   store.save(paths);
   return true;
 }

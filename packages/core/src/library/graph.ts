@@ -249,6 +249,8 @@ export function workToRef(w: Work): LibraryRef {
     doi: w.doi,
     arxiv_id: w.arxiv_id,
     doc_id: w.doc_ids.length > 0 ? w.doc_ids[0] : null,
+    // all versions (Stage 7 MS3): doc_ids[0] IS the main doc (same as doc_id)
+    doc_ids: w.doc_ids.length > 0 ? w.doc_ids : null,
     citedBy: w.cited_by_count,
     label: w.label,
     journal: w.journal,

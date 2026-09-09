@@ -422,6 +422,10 @@ export function createApp(deps: AppDeps): Hono {
         pipelines: deps.pipelines,
         sources: deps.makeSources(false),
         rebuild: lockedRebuild,
+        // N1: the main-doc re-assert must be mutually exclusive with PATCH —
+        // attach's own weld runs outside the lock and can be clobbered.
+        reassertMainDoc: (p, workId, docId) =>
+          libraryLock.run(() => patchWork(p, workId, { doc_id: docId })),
         onProgress,
       });
 

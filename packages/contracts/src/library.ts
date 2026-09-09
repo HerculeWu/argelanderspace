@@ -44,8 +44,14 @@ export const LibraryRefSchema = z.object({
   note: z.string().optional(),
   doi: z.string().optional(),
   arxiv_id: z.string().optional(),
-  /** Reader doc id, when this work is ingested. */
+  /** Reader doc id, when this work is ingested. The main doc (= doc_ids[0]). */
   doc_id: z.string().optional(),
+  /**
+   * All reader docs of this work (versions; Stage 7 MS3 re-upload). `doc_ids[0]`
+   * is the main doc; absent when the work has no docs (CLI-safe: the agent
+   * surface never consumes this payload — `search`/`list` read the store).
+   */
+  doc_ids: z.array(z.string()).optional(),
   citedBy: z.number().int().optional(),
   /** Color-label key (red|amber|green|blue|violet). */
   label: z.string().optional(),

@@ -11,7 +11,7 @@
  * job listener is driven by hand, `uploadLatexZip` is a controlled promise.
  */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "@argelanderspace/contracts";
 import { RefDetail } from "../src/library/RefDetail";
@@ -20,6 +20,7 @@ import type { LibraryRef } from "../src/library/types";
 const h = vi.hoisted(() => ({
   listener: null as ((job: Job, event: string) => void) | null,
   uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<Job | null>>(),
+  patchRef: vi.fn<(id: string, patch: Record<string, unknown>) => Promise<boolean>>(),
 }));
 
 vi.mock("../src/api/ws", () => ({
@@ -33,6 +34,7 @@ vi.mock("../src/api/ws", () => ({
 
 vi.mock("../src/api/library", () => ({
   uploadLatexZip: h.uploadLatexZip,
+  patchRef: h.patchRef,
 }));
 
 /** A work with no reader doc → the files tab offers the upload button. */
@@ -92,6 +94,8 @@ describe("RefDetail upload tracking", () => {
   beforeEach(() => {
     h.listener = null;
     h.uploadLatexZip.mockReset();
+    h.patchRef.mockReset();
+    h.patchRef.mockResolvedValue(true);
     // never resolves unless the test says so
     h.uploadLatexZip.mockImplementation(() => new Promise<Job | null>(() => {}));
   });
@@ -110,6 +114,7 @@ describe("RefDetail upload tracking", () => {
     const { container } = renderDetail({
       ...REF,
       doc_id: "upload-doi-10-1-x-a1b2c3",
+      doc_ids: ["upload-doi-10-1-x-a1b2c3"],
       needs_upload: false,
     });
     openFilesTab();
@@ -125,11 +130,52 @@ describe("RefDetail upload tracking", () => {
     expect(h.uploadLatexZip).toHaveBeenCalledWith(REF.id, expect.any(File));
   });
 
-  it("no upload button for arXiv-ingested docs (attach stays gap-filling)", () => {
-    renderDetail({ ...REF, doc_id: "arxiv-2603.03522", needs_upload: false });
+  it("arXiv-ingested doc: the upload button is offered too (Stage 7 MS3 new-version semantics)", () => {
+    renderDetail({
+      ...REF,
+      doc_id: "arxiv-2603.03522",
+      doc_ids: ["arxiv-2603.03522"],
+      needs_upload: false,
+    });
     openFilesTab();
     expect(screen.getByRole("button", { name: /doe2020/ })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /LaTeX 源码包/ })).toBeNull();
+    const btn = screen.getByRole("button", {
+      name: /上传新版本 LaTeX 源码包/,
+    }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    expect(screen.getByText(/旧版本保留在上方列表可回看/)).toBeTruthy();
+  });
+
+  it("version list: every doc is listed, the main one is marked, others offer 设为主", async () => {
+    const { onReload } = renderDetail({
+      ...REF,
+      doc_id: "upload-doi-10-1-x-a1b2c3",
+      doc_ids: ["upload-doi-10-1-x-a1b2c3", "arxiv-2603.03522"],
+      needs_upload: false,
+    });
+    openFilesTab();
+    // main doc marked, old version listed by doc id with a 设为主 action
+    expect(screen.getByText("主文档")).toBeTruthy();
+    expect(screen.getByText("arxiv-2603.03522")).toBeTruthy();
+    const setMain = screen.getByRole("button", { name: "设为主" }) as HTMLButtonElement;
+    expect(setMain.disabled).toBe(false);
+    fireEvent.click(setMain);
+    expect(h.patchRef).toHaveBeenCalledWith(REF.id, { doc_id: "arxiv-2603.03522" });
+    await waitFor(() => expect(onReload).toHaveBeenCalledTimes(1));
+  });
+
+  it("a failed main-doc switch surfaces an error and does not reload", async () => {
+    h.patchRef.mockResolvedValue(false);
+    const { onReload } = renderDetail({
+      ...REF,
+      doc_id: "upload-doi-10-1-x-a1b2c3",
+      doc_ids: ["upload-doi-10-1-x-a1b2c3", "arxiv-2603.03522"],
+      needs_upload: false,
+    });
+    openFilesTab();
+    fireEvent.click(screen.getByRole("button", { name: "设为主" }));
+    expect(await screen.findByText("设为主文档失败，请重试")).toBeTruthy();
+    expect(onReload).not.toHaveBeenCalled();
   });
 
   it("tracks job frames that arrive before the fetch response (no rewind on 202)", async () => {

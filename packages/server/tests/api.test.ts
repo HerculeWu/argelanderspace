@@ -256,6 +256,40 @@ describe("PATCH /api/library/refs", () => {
     expect(w).toMatchObject({ label: "red", read: true, tags: ["dyn"] });
     expect(messages.some((m) => m.type === "library.changed" && m.cause === "patch")).toBe(true);
   });
+
+  // Stage 7 MS3: doc_id switches the main doc (move to doc_ids[0]). The
+  // fixture work holds two docs: ["2603.03522", "arxiv-2603.03522"].
+  test("doc_id switches the main doc; a no-op doc_id changes nothing (N5)", async () => {
+    const refOf = async () => {
+      const lib = (await (await get("/api/library")).json()) as {
+        refs: { id: string; doc_id?: string; doc_ids?: string[] }[];
+      };
+      return lib.refs.find((r) => r.id === KNOWN_WORK_ID);
+    };
+    expect((await refOf())?.doc_id).toBe("2603.03522");
+    expect((await refOf())?.doc_ids).toEqual(["2603.03522", "arxiv-2603.03522"]);
+
+    const res = await patch("/api/library/refs", {
+      id: KNOWN_WORK_ID,
+      doc_id: "arxiv-2603.03522",
+    });
+    expect(res.status).toBe(200);
+    expect((await refOf())?.doc_id).toBe("arxiv-2603.03522");
+    expect((await refOf())?.doc_ids).toEqual(["arxiv-2603.03522", "2603.03522"]);
+
+    // N5: a no-op doc_id patch has no side effects — patchWork returns false
+    // (→ 404 from the not-found mapping), no save, no library.changed
+    const nChanged = messages.filter((m) => m.type === "library.changed").length;
+    for (const body of [
+      { id: KNOWN_WORK_ID, doc_id: "arxiv-ghost" }, // foreign doc
+      { id: KNOWN_WORK_ID, doc_id: "arxiv-2603.03522" }, // already main
+    ]) {
+      const noop = await patch("/api/library/refs", body);
+      expect(noop.status).toBe(404);
+    }
+    expect((await refOf())?.doc_ids).toEqual(["arxiv-2603.03522", "2603.03522"]);
+    expect(messages.filter((m) => m.type === "library.changed")).toHaveLength(nChanged);
+  });
 });
 
 describe("POST /api/library/refresh", () => {

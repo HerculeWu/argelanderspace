@@ -56,10 +56,10 @@ export async function uploadLatexZip(workId: string, file: File | Blob): Promise
   }
 }
 
-/** Persist a per-reference state change (color label, read flag, note, tags). */
+/** Persist a per-reference state change (color label, read flag, note, tags, main doc). */
 export async function patchRef(
   id: string,
-  patch: Partial<Pick<LibraryRef, "label" | "read" | "star" | "tags">>
+  patch: Partial<Pick<LibraryRef, "label" | "read" | "star" | "tags" | "doc_id">>
 ): Promise<boolean> {
   // work ids contain slashes/colons → id rides in the body, not the path
   const r = await tryJson<unknown>("/api/library/refs", {

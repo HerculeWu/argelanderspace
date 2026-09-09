@@ -47,8 +47,8 @@ export const AddRefResponseSchema = z.object({
 
 /**
  * The work id rides in the body (ids contain slashes/colons, e.g.
- * "doi:10.1051/..."). Only these five user-state fields are applied
- * server-side; other keys are ignored.
+ * "doi:10.1051/..."). Only these user-state fields are applied server-side;
+ * other keys are ignored.
  */
 export const PatchRefRequestSchema = z.looseObject({
   id: z.string(),
@@ -59,6 +59,11 @@ export const PatchRefRequestSchema = z.looseObject({
   /** Note text; empty string clears it. */
   note: z.string().optional(),
   tags: z.array(z.string()).optional(),
+  /**
+   * Main-doc switch (Stage 7 MS3): move this reader doc to `doc_ids[0]`.
+   * A doc id the work does not hold is silently ignored.
+   */
+  doc_id: z.string().optional(),
 });
 
 export const PatchRefResponseSchema = z.object({

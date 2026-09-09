@@ -11,14 +11,22 @@
  * - the post-rebuild validation: a doc that never lands in `doc_ids` fails.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TexDocIr } from "@argelanderspace/contracts";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { IngestPipelines } from "../src/acquire/pipelines.js";
 import { attachLatexZip, uploadDocId } from "../src/acquire/upload.js";
-import { rebuild } from "../src/library/build.js";
+import { patchWork, rebuild } from "../src/library/build.js";
 import type { MetadataSources } from "../src/library/sources.js";
 import {
   canonicalId,
@@ -221,6 +229,125 @@ describe("attachLatexZip", () => {
     await rebuild(paths, { sources: stubSources() });
     const twice = readFileSync(paths.libraryJson, "utf8");
     expect(JSON.parse(twice)).toEqual(JSON.parse(once));
+  });
+
+  // Stage 7 MS3: the upload doc becomes the MAIN doc (doc_ids[0]); older
+  // versions stay listed for look-back, and the seed merge must not shuffle
+  // the main doc back on rebuild.
+  const OLD_DOC_ID = "arxiv-2401.09999";
+
+  /** Attach a fake arXiv-ingested doc to DOI_WORK (on disk + in doc_ids). */
+  function attachOldDoc(): void {
+    const dir = join(paths.outputDir, OLD_DOC_ID);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${OLD_DOC_ID}.json`),
+      JSON.stringify({
+        version: 1,
+        docId: OLD_DOC_ID,
+        source: { type: "latex", doi: "10.1234/example" },
+        meta: { title: "The DOI Paper" },
+      })
+    );
+    const store = LibraryStore.load(paths);
+    const w = store.get(DOI_WORK.id) as Work;
+    w.doc_ids = [OLD_DOC_ID];
+    store.save(paths);
+  }
+
+  test("work with an existing doc: upload becomes main, old version retained", async () => {
+    attachOldDoc();
+    const ref = await attachLatexZip(
+      zipPath,
+      { workId: DOI_WORK.id },
+      { paths, pipelines: stubPipelines(), sources: stubSources() }
+    );
+    const docId = uploadDocId(DOI_WORK.id);
+    expect(ref.doc_id).toBe(docId);
+    expect(ref.doc_ids).toEqual([docId, OLD_DOC_ID]);
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual([docId, OLD_DOC_ID]);
+    expect(workIds()).toHaveLength(2); // no duplicate work from the old doc
+    // a further rebuild keeps the uploaded doc in the main slot
+    await rebuild(paths, { sources: stubSources() });
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual([docId, OLD_DOC_ID]);
+  });
+
+  test("re-upload after a user main-doc switch reclaims the main slot", async () => {
+    attachOldDoc();
+    const docId = uploadDocId(DOI_WORK.id);
+    const deps = { paths, sources: stubSources() };
+    await attachLatexZip(zipPath, { workId: DOI_WORK.id }, { ...deps, pipelines: stubPipelines() });
+    // the user switches the main doc back to the arXiv version
+    expect(patchWork(paths, DOI_WORK.id, { doc_id: OLD_DOC_ID })).toBe(true);
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual([OLD_DOC_ID, docId]);
+    // a re-upload (new version, same idempotent doc id) is main again
+    await attachLatexZip(
+      zipPath,
+      { workId: DOI_WORK.id },
+      { ...deps, pipelines: stubPipelines({ docTitle: "Second Take" }) }
+    );
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual([docId, OLD_DOC_ID]);
+  });
+
+  test("weld clobbered mid-flight: the post-rebuild re-assert restores the main slot (N1)", async () => {
+    attachOldDoc();
+    const docId = uploadDocId(DOI_WORK.id);
+    // Simulate the race: a concurrent PATCH overwrote the weld's save, so the
+    // rebuild's seed merge re-attached the upload doc at the TAIL of doc_ids.
+    const clobberedRebuild: typeof rebuild = async (p) => {
+      const store = LibraryStore.load(p);
+      const w = store.get(DOI_WORK.id) as Work;
+      w.doc_ids = [OLD_DOC_ID, docId];
+      store.save(p);
+      return {
+        works: store.works.length,
+        bib_entries: 0,
+        saved_nodes: 0,
+        nodes: 0,
+        links: 0,
+        ads_status: "no-token",
+        acquisition: { chosen: {}, ready_now: {}, status: {}, ingested: 0 },
+        resolution: { count_source: {} },
+      };
+    };
+    // the server injects a lock-wrapped patchWork here; the spy both proves
+    // the delegation and applies the real move-to-front
+    const calls: [string, string][] = [];
+    const ref = await attachLatexZip(
+      zipPath,
+      { workId: DOI_WORK.id },
+      {
+        paths,
+        pipelines: stubPipelines(),
+        sources: stubSources(),
+        rebuild: clobberedRebuild,
+        reassertMainDoc: async (p, workId, d) => {
+          calls.push([workId, d]);
+          return patchWork(p, workId, { doc_id: d });
+        },
+      }
+    );
+    expect(calls).toEqual([[DOI_WORK.id, docId]]);
+    expect(ref.doc_ids).toEqual([docId, OLD_DOC_ID]);
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual([docId, OLD_DOC_ID]);
+  });
+
+  test("patchWork doc_id: move-to-front; a no-op doc_id neither saves nor returns true (N5)", () => {
+    attachOldDoc();
+    const store = LibraryStore.load(paths);
+    const w = store.get(DOI_WORK.id) as Work;
+    w.doc_ids = [OLD_DOC_ID, "upload-x"];
+    store.save(paths);
+    expect(patchWork(paths, DOI_WORK.id, { doc_id: "upload-x" })).toBe(true);
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual(["upload-x", OLD_DOC_ID]);
+    // foreign doc id: no state change → no save, returns false
+    const mtime = statSync(paths.libraryJson).mtimeMs;
+    expect(patchWork(paths, DOI_WORK.id, { doc_id: "arxiv-not-held" })).toBe(false);
+    expect(statSync(paths.libraryJson).mtimeMs).toBe(mtime);
+    // already-main doc id: same no-op semantics
+    expect(patchWork(paths, DOI_WORK.id, { doc_id: "upload-x" })).toBe(false);
+    expect(statSync(paths.libraryJson).mtimeMs).toBe(mtime);
+    expect(LibraryStore.load(paths).get(DOI_WORK.id)?.doc_ids).toEqual(["upload-x", OLD_DOC_ID]);
   });
 
   test("unknown work throws the identify-a-work message", async () => {

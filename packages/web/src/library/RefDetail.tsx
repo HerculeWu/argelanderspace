@@ -1,7 +1,7 @@
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
-import { uploadLatexZip } from "../api/library";
+import { patchRef, uploadLatexZip } from "../api/library";
 import { onJobEvent } from "../api/ws";
 import { cgKfmt } from "./CitationGraph";
 import type { GraphNode, LibraryRef } from "./types";
@@ -111,8 +111,17 @@ export function RefDetail({
   const uploadJobRef = useRef<Job | null>(null);
   const seenJobs = useRef(new Map<string, Job>());
   const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [settingMain, setSettingMain] = useState(false);
+  const [mainErr, setMainErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const cited = node?.c ?? r.citedBy;
+
+  // All reader docs of this work (Stage 7 MS3: parallel versions). The main
+  // doc is the payload's doc_id (= doc_ids[0]); older versions stay listed.
+  const versions = r.doc_ids ?? (r.doc_id ? [r.doc_id] : []);
+  const mainDoc = r.doc_id ?? versions[0];
+  const extraVersions = versions.filter((d) => d !== mainDoc);
+  const hasUploadDoc = versions.some((d) => d.startsWith("upload-"));
 
   const setUploadJob = useCallback((job: Job | null) => {
     uploadJobRef.current = job;
@@ -123,7 +132,17 @@ export function RefDetail({
   useEffect(() => {
     setUploadJob(null);
     setUploadErr(null);
+    setMainErr(null);
   }, [r.id, setUploadJob]);
+
+  const onSetMainDoc = async (docId: string) => {
+    setMainErr(null);
+    setSettingMain(true);
+    const ok = await patchRef(r.id, { doc_id: docId });
+    setSettingMain(false);
+    if (ok) onReload?.();
+    else setMainErr("设为主文档失败，请重试");
+  };
 
   const failMsg = (job: Job | null): string =>
     job?.error ? `上传失败：${job.error}` : "上传失败，请重试";
@@ -342,64 +361,99 @@ export function RefDetail({
           ))}
         {tab === "files" && (
           <div className="ref-files">
-            {r.doc_id && (
-              <button className="ref-file" title="在文档中打开" onClick={() => onOpenDoc(r.doc_id)}>
+            {mainDoc && (
+              <button
+                className="ref-file"
+                title="在文档中打开（主文档）"
+                onClick={() => onOpenDoc(mainDoc)}
+              >
                 <Icon name="file-text" cls="ico-sm" />
                 <span className="mono">{r.cite}</span>
-                <span className="ref-file-ok">已入库</span>
+                <span className="ref-file-ok">{extraVersions.length > 0 ? "主文档" : "已入库"}</span>
                 <Icon name="arrow-up-right" cls="ico-sm" />
               </button>
             )}
-            {(!r.doc_id || r.doc_id.startsWith("upload-")) && (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  ...(r.doc_id ? { marginTop: 8 } : {}),
-                }}
-              >
-                {!r.doc_id && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
-                    <SourcePill r={r} />
-                  </div>
-                )}
+            {extraVersions.map((d) => (
+              <div key={d} style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                <button
+                  className="ref-file"
+                  style={{ flex: 1 }}
+                  title="在文档中打开（旧版本）"
+                  onClick={() => onOpenDoc(d)}
+                >
+                  <Icon name="file-text" cls="ico-sm" />
+                  <span className="mono">{d}</span>
+                  <Icon name="arrow-up-right" cls="ico-sm" />
+                </button>
                 <button
                   className="btn"
-                  disabled={uploadJob !== null}
-                  onClick={() => fileInput.current?.click()}
-                  style={{ justifyContent: "center" }}
+                  disabled={settingMain}
+                  title="设为主文档"
+                  onClick={() => onSetMainDoc(d)}
                 >
-                  {uploadJob ? (
-                    <>
-                      <Icon name="loader" cls="ico-sm spin" />
-                      {uploadJob.status === "queued"
-                        ? "排队等待摄入…"
-                        : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
-                          "正在摄入 LaTeX 源码…")}
-                    </>
-                  ) : (
-                    <>
-                      <Icon name="file-up" cls="ico-sm" />
-                      {r.doc_id ? "重新上传 LaTeX 源码包（zip）" : "上传 LaTeX 源码包（zip）"}
-                    </>
-                  )}
+                  设为主
                 </button>
-                <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
-                  {r.doc_id
-                    ? "重新上传会覆盖同一文档（传错文件或有更新版时使用）"
+              </div>
+            ))}
+            {mainErr && (
+              <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
+                {mainErr}
+              </div>
+            )}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                ...(mainDoc ? { marginTop: 8 } : {}),
+              }}
+            >
+              {!mainDoc && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
+                  <SourcePill r={r} />
+                </div>
+              )}
+              <button
+                className="btn"
+                disabled={uploadJob !== null}
+                onClick={() => fileInput.current?.click()}
+                style={{ justifyContent: "center" }}
+              >
+                {uploadJob ? (
+                  <>
+                    <Icon name="loader" cls="ico-sm spin" />
+                    {uploadJob.status === "queued"
+                      ? "排队等待摄入…"
+                      : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
+                        "正在摄入 LaTeX 源码…")}
+                  </>
+                ) : (
+                  <>
+                    <Icon name="file-up" cls="ico-sm" />
+                    {hasUploadDoc
+                      ? "重新上传 LaTeX 源码包（zip）"
+                      : mainDoc
+                        ? "上传新版本 LaTeX 源码包（zip）"
+                        : "上传 LaTeX 源码包（zip）"}
+                  </>
+                )}
+              </button>
+              <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
+                {hasUploadDoc
+                  ? "重新上传会覆盖同一文档（传错文件或有更新版时使用）"
+                  : mainDoc
+                    ? "新版本上传后自动设为主文档；旧版本保留在上方列表可回看"
                     : r.needs_upload
                       ? "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条"
                       : "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）"}
-                </div>
-                {uploadErr && (
-                  <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
-                    {uploadErr}
-                  </div>
-                )}
               </div>
-            )}
+              {uploadErr && (
+                <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
+                  {uploadErr}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
