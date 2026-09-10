@@ -17,7 +17,7 @@
 - **attachPdf 两个隐患**（已实锤）：① 目标 work 无 doi/arxiv 时 seed 退用提取标题算 canonical id，标题失配则 doc 落到新建重复 work，且返回前不校验 `doc_ids`；② `upload-<slug>` 截 48 字符有 docId 撞车风险。**Stage 3.1 MS2 修复**：stamp 焊死目标 work 身份（无 doi/arxiv 时 work.title 覆盖 doc meta.title）+ 直挂 `doc_ids` + 返回前校验 + 幂等 docId `upload-<slug44>-<hash6>`。
 - acquire planner 的 EDP/A&A `READY` 标记与现实脱节（站全墙）；plan 输出的 journal_html READY 不可信。**（Stage 3.1 MS1 随 HTML 面裁剪）**
 
-## Stage 7（2026-09-10 执行中——MS1–MS4 landed，定稿/进度见 `2026-09-09-stage7-roadmap.md`）
+## Stage 7（2026-09-10 关闭——MS1–MS5 landed、用户验收通过、已 push；定稿/里程碑/审查见 `2026-09-09-stage7-roadmap.md`）
 
 **硬约束守住**：agent 侧输出逐字节不变（golden .md 零重冻；MS2 golden .json 也零 diff；MS3 核实 CLI 直读磁盘不消费 LibraryPayload；MS4 agent.ts 零改动）。
 

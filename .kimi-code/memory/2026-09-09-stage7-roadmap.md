@@ -1,8 +1,10 @@
-# Stage 7 定稿计划：known-issues 清账（2026-09-09 grilling 三轮 Q1–Q10 拍板，待用户最终确认开工）
+# Stage 7 定稿计划：known-issues 清账（2026-09-09 grilling 三轮 Q1–Q10 拍板；2026-09-10 关闭）
 
 > **恢复指南**：本文件自足。前置读 `product-and-architecture.md`、`pitfalls.md`、`2026-09-09-stage6-roadmap.md`。起点 = Stage 6 关闭后的 main（`69d4eda` + 收尾 memory）。
 
 ## 状态
+
+**2026-09-10：Stage 7 关闭——MS1–MS5 全部 landed、用户 smoke 验收通过、已 push origin main（`7550bd5`）、备份 tarball 已删。** commit 序列（main）：定稿 `e4222a2` → MS1 `d7ead2d`（小修集合）→ MS2 `437299e`（作者块六项 + 审查 B1/N1–N6）→ MS2b `f320c6b`（重摄入迁移 + ADS offline gating）→ MS3 `facf09d`（re-upload 推广）→ MS4 `0d7c8c3`（CLI 建条目）→ MS5 `3813ea5`（TOC 半截记号修复 + smoke 手册）→ 收尾 memory `7550bd5` + 本次。**Stage 8 = 标记功能（渲染页面直接标记到精确位置，agent 可见），为下一阶段。**
 
 **2026-09-10：MS5（收尾）landed，待用户 smoke。** commit `3813ea5`：手册 `docs/manual-test-stage7.md`（§0-9，关键预期全部真实 Chrome + 库副本 `/tmp/stage7-smoke` 预实测，真实 `literatures/`/`status/` 零改动）。**手册预实测抓出并修掉一处实测差异**：IR float 预览短文本摄入期截断（~60 字符）把内嵌长目标预览的 xref 记号从中间截断、stripMath 只匹配完整闭合记号 → 4 篇 34 条 `[ref:…` 半段残留（2501.17225/2012.05220/1610.08981/2603.03522）；修复 = 渲染层丢弃未闭合 `[cite:`/`[ref:` 尾巴（摄入期先净化再截断会改 agent 可见 manifest 字节，**违反冻结**，只能 web 层修）。预实测其余全过：作者块 4 篇、re-upload 双向切主、CLI 建条目三态、TaskModal 软警告、cite_key rebuild 逐字节稳定。known-issues 收尾（`ad9ecd0`）：关闭项划线、新挂项记录（脚注 DROP/作者块残留边界/src-only 缺类/主位三边界/SICI/1610.08981 重 label）。测试 web 144→145，四门全绿。**待用户 smoke（手册 §0-9）通过后 push + 删备份 tarball + 关阶段。**
 
