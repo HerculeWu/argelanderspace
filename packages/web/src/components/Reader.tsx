@@ -1,5 +1,7 @@
 import type { IrSection } from "@argelanderspace/contracts";
 import { useStore } from "../store";
+import { AnnBlockEdge } from "../annotations/AnnBlockEdge";
+import { AnnotationPopover } from "../annotations/AnnotationPopover";
 import { AuthorBlock } from "./AuthorBlock";
 import { BlockView } from "./Block";
 import { MathText } from "../lib/segments";
@@ -16,6 +18,9 @@ export function Reader() {
           <SectionView key={sec.id} sec={sec} first={i === 0} />
         ))}
       </div>
+      {/* Stage 8: the annotation popover lives inside <main class="reader"> so
+          its block lookups stay scoped to this pane in split-view. */}
+      <AnnotationPopover />
     </main>
   );
 }
@@ -27,11 +32,13 @@ function SectionView({ sec, first }: { sec: IrSection; first: boolean }) {
       {first ? (
         <h1 className="doc-title block" id={sec.id} data-block-id={sec.id}>
           <MathText as="span" text={sec.heading ?? ""} />
+          <AnnBlockEdge id={sec.id} />
         </h1>
       ) : (
         <Heading className="sec block" id={sec.id} data-block-id={sec.id}>
           {sec.number && <span className="sec-num">{sec.number}</span>}
           <MathText as="span" text={sec.heading ?? ""} />
+          <AnnBlockEdge id={sec.id} />
         </Heading>
       )}
       {sec.blocks.map((b) => (

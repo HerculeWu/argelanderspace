@@ -363,3 +363,167 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 /* KaTeX bakes the error colour into an inline style on .katex-error; the
    light-mode red is near-invisible on the dark sheet, so re-tint it in dark. */
 [data-theme="dark"] .reader-root .katex-error { color: var(--err) !important; }
+
+/* ---------- annotations (Stage 8) ---------- */
+/* Per-block affordance: the host block becomes the positioning context. The
+   visual treatment is edge-only (marker bars + an inset edge line) — the block
+   body is never tinted. */
+.block { position: relative; }
+.block.ann-has { box-shadow: inset 3px 0 0 color-mix(in oklch, var(--accent) 40%, transparent); }
+.block.ann-active { box-shadow: inset 3px 0 0 var(--accent); }
+
+.ann-edge { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.ann-edge-btn {
+  position: absolute; right: -30px; top: 0;
+  width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface-1); color: var(--muted); cursor: pointer;
+  opacity: 0; pointer-events: auto;
+  transition: opacity 0.14s ease, color 0.12s, border-color 0.12s;
+}
+.block:hover .ann-edge-btn, .ann-edge-btn:focus-visible { opacity: 1; }
+.ann-edge-btn:hover { color: var(--accent); border-color: var(--accent); }
+.ann-edge-btn svg { width: 14px; height: 14px; }
+
+.ann-markers {
+  position: absolute; left: -13px; top: 3px;
+  display: flex; flex-direction: column; gap: 3px;
+  pointer-events: auto;
+}
+.ann-marker {
+  display: block; width: 5px; height: 16px; padding: 0;
+  border: none; border-radius: 3px; background: var(--accent);
+  opacity: 0.5; cursor: pointer;
+  transition: opacity 0.12s, transform 0.12s;
+}
+.ann-marker:hover { opacity: 1; }
+.ann-marker.active { opacity: 1; transform: scaleX(1.7); }
+
+/* The creation/edit popover, fixed near the target block's edge. */
+.ann-popover {
+  position: fixed; z-index: 90; width: 320px; max-width: calc(100vw - 24px);
+  background: var(--surface-1); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32);
+  padding: 10px 12px 12px;
+  font-family: var(--font-ui); font-size: 14px; color: var(--ink);
+}
+.ann-popover-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.ann-popover-target {
+  flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ann-popover-head .btn.icon.ghost { border: none; background: none; color: var(--muted); cursor: pointer; padding: 2px; }
+.ann-popover-head .btn.icon.ghost:hover { color: var(--ink); }
+.ann-popover-body { font-size: 14px; line-height: 1.55; max-height: 40vh; overflow-y: auto; }
+.ann-popover-body p { margin: 0 0 8px; }
+.ann-popover-archived {
+  margin-bottom: 8px; padding: 6px 9px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--panel-bg);
+  font-size: 12px; line-height: 1.5; color: var(--muted);
+}
+.ann-popover-foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+/* The shared body editor (mirrors the plan note editor). */
+.ann-editor-textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 76px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card-bg); color: var(--ink);
+  font-size: 12.5px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ann-editor-textarea:focus { outline: none; border-color: var(--accent); }
+.ann-editor-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.ann-editor-hint { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
+.ann-editor-hint svg { width: 12px; height: 12px; }
+.ann-editor-btn {
+  display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--surface-1);
+  color: var(--ink); font-size: 12px; cursor: pointer; font-family: var(--font-ui);
+}
+.ann-editor-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ann-editor-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ann-editor-btn.primary:hover { filter: brightness(1.08); color: #fff; }
+.ann-editor-btn.primary:disabled { opacity: 0.45; cursor: default; filter: none; }
+.ann-editor-btn.danger:hover { color: var(--err); border-color: var(--err); }
+.ann-editor-btn svg { width: 13px; height: 13px; }
+
+/* Right-panel tabs: 引用 | 标注 */
+.right-tabs { display: flex; gap: 4px; margin: 0 0 10px; border-bottom: 1px solid var(--line); }
+.right-tab {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 6px 8px 7px; background: none; border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer;
+  font-family: var(--font-ui);
+}
+.right-tab:hover { color: var(--ink); }
+.right-tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+.ann-badge {
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* The 标注 tab list */
+.ann-add-doc {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 10px; margin-bottom: 10px;
+  border: 1px dashed var(--line); border-radius: 8px; background: none;
+  color: var(--muted); font-size: 12.5px; cursor: pointer; font-family: var(--font-ui);
+}
+.ann-add-doc:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.ann-add-doc:disabled { opacity: 0.5; cursor: default; }
+.ann-add-doc svg { width: 14px; height: 14px; }
+.ann-panel-editor { margin-bottom: 12px; }
+
+.ann-entry {
+  position: relative; display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card-bg);
+  margin-bottom: 8px; padding: 8px 10px;
+}
+.ann-entry.active { border-color: var(--accent); }
+.ann-entry-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;
+  background: none; border: none; padding: 0; cursor: pointer; text-align: left;
+  font-family: var(--font-ui); color: var(--ink);
+}
+.ann-entry-head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.ann-entry-kind { flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--accent); }
+.ann-entry-path {
+  flex: 1; min-width: 0; font-size: 10.5px; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ann-entry-quote {
+  font-size: 11.5px; color: var(--muted); font-style: italic;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ann-entry-preview {
+  font-size: 12.5px; line-height: 1.45; color: var(--ink);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  white-space: pre-wrap; word-break: break-word;
+}
+.ann-entry-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; }
+.ann-entry-actions button {
+  width: 22px; height: 22px; display: grid; place-items: center;
+  border: none; border-radius: 5px; background: none; color: var(--muted); cursor: pointer;
+}
+.ann-entry-actions button:hover { background: var(--hover-bg); color: var(--ink); }
+.ann-entry-actions button:disabled { opacity: 0.4; cursor: default; }
+.ann-entry-actions svg { width: 13px; height: 13px; }
+.ann-entry .ann-editor { flex-basis: 100%; margin-top: 6px; }
+
+/* The notice toast (409 reloads / save failures), over the reader column. */
+.ann-toast {
+  position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 80;
+  display: flex; align-items: center; gap: 10px; max-width: 92%;
+  padding: 8px 10px 8px 14px; border-radius: 10px;
+  background: var(--surface-1); border: 1px solid var(--line);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  font-size: 13px; color: var(--ink); font-family: var(--font-ui);
+}
+.ann-toast-x {
+  width: 22px; height: 22px; display: grid; place-items: center; flex: none;
+  border: none; border-radius: 5px; background: none; color: var(--muted); cursor: pointer;
+}
+.ann-toast-x:hover { background: var(--hover-bg); color: var(--ink); }

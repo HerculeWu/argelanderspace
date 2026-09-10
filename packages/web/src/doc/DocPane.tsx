@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import type { DocIr } from "@argelanderspace/contracts";
 import { fetchPaper } from "../api";
 import { StoreProvider, useStore, useCanUndo } from "../store";
+import { useAnnotations } from "../annotations/AnnotationStore";
 import { Reader } from "../components/Reader";
 import { TocPanel } from "../components/TocPanel";
 import { RightPanel } from "../components/RightPanel";
 import { MathText } from "../lib/segments";
-import { applyAnchor } from "../lib/deeplink";
+import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 
 // The document reader, hosted as ArgelanderSpace's 文档 pane. Which paper is shown
@@ -82,10 +83,11 @@ function DocWorkspace({
 
   // Deep link: land on the URL's #anchor once the doc has rendered (the blocks
   // are in the DOM by the time this effect runs). Unknown anchors just leave
-  // the doc open at the top.
+  // the doc open at the top. `#ann-<id>` anchors are NOT handled here — they
+  // resolve in AnnotationDeepLink once the annotations have loaded.
   const anchor = ws.pendingAnchor;
   useEffect(() => {
-    if (!anchor) return;
+    if (!anchor || isAnnotationAnchor(anchor)) return;
     ws.clearPendingAnchor();
     applyAnchor(store, anchor);
   }, [anchor, store, ws]);
@@ -137,6 +139,7 @@ function DocWorkspace({
         <div className="reader-col">
           <Reader />
           <UndoFab />
+          <AnnotationToast />
         </div>
 
         <aside className={"panel right" + (collapsedRight ? " collapsed" : "")}>
@@ -153,6 +156,40 @@ function DocWorkspace({
           </div>
         </aside>
       </div>
+      <AnnotationDeepLink />
+    </div>
+  );
+}
+
+/** Stage 8: resolve an `#ann-<id>` deep link once BOTH the IR and the
+ *  annotations file have loaded — jump to the target block, activate the
+ *  annotation, open its popover. Unknown/deleted ids are consumed silently
+ *  (the unknown-anchor philosophy: no archive search, no migration). */
+function AnnotationDeepLink() {
+  const ws = useWorkspace();
+  const store = useStore();
+  const ann = useAnnotations();
+  const anchor = ws.pendingAnchor;
+  useEffect(() => {
+    if (!anchor || !isAnnotationAnchor(anchor)) return;
+    if (ann.loadState === "loading") return; // annotations not loaded yet — wait
+    ws.clearPendingAnchor();
+    applyAnnotationAnchor(store, ann, anchor);
+  }, [anchor, ann, store, ws]);
+  return null;
+}
+
+/** Transient annotation notice (409 reloads / save failures), mirroring the
+ *  plan page's notice toast. */
+function AnnotationToast() {
+  const ann = useAnnotations();
+  if (!ann.notice) return null;
+  return (
+    <div className="ann-toast view-in" role="status">
+      <span>{ann.notice}</span>
+      <button className="ann-toast-x" title="关闭" onClick={ann.dismissNotice}>
+        ×
+      </button>
     </div>
   );
 }

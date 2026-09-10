@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useStore, useVisibleIds } from "../store";
+import { useAnnotations } from "../annotations/AnnotationStore";
+import { AnnotationsPanel } from "../annotations/AnnotationsPanel";
 import { xrefTargetIds } from "../lib/segments";
 import { RefCard, type Card, type CardKind } from "./RefCard";
 
@@ -12,7 +14,36 @@ function floatKind(t: string): CardKind | null {
   return null; // sections etc. are not shown as cards
 }
 
+// Right-panel tabs (Stage 8 MS3): 引用 (the pre-existing in-view cards, still
+// the default) | 标注 (the doc's annotations, with a count badge). Creating an
+// annotation never auto-switches the tab — feedback is the block marker, the
+// popover's saved state, and the badge count.
 export function RightPanel() {
+  const [tab, setTab] = useState<"refs" | "annotations">("refs");
+  const annCount = useAnnotations().annotations.length;
+  return (
+    <div className="right">
+      <div className="right-tabs">
+        <button
+          className={"right-tab" + (tab === "refs" ? " on" : "")}
+          onClick={() => setTab("refs")}
+        >
+          引用
+        </button>
+        <button
+          className={"right-tab" + (tab === "annotations" ? " on" : "")}
+          onClick={() => setTab("annotations")}
+        >
+          标注
+          {annCount > 0 && <span className="ann-badge">{annCount}</span>}
+        </button>
+      </div>
+      {tab === "refs" ? <RefsView /> : <AnnotationsPanel />}
+    </div>
+  );
+}
+
+function RefsView() {
   const store = useStore();
   const visibleIds = useVisibleIds();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -98,7 +129,7 @@ export function RightPanel() {
   }, [store]);
 
   return (
-    <div className="right">
+    <>
       <div className="panel-title">In view · {cards.length}</div>
       {cards.length === 0 && (
         <div className="right-empty">
@@ -131,6 +162,6 @@ export function RightPanel() {
           </motion.div>
         ))}
       </AnimatePresence>
-    </div>
+    </>
   );
 }

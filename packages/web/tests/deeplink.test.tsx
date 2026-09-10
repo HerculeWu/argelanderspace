@@ -95,6 +95,7 @@ function renderDocPane(pendingAnchor: string | null) {
     openDoc: vi.fn(),
     pendingAnchor,
     clearPendingAnchor,
+    docDeleted: () => {},
     tweaks: { theme: "dark", accent: "azure", density: "regular", labels: true },
   };
   const utils = render(

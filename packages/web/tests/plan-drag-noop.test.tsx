@@ -51,6 +51,7 @@ const WORKSPACE: Workspace = {
   openDoc: () => {},
   pendingAnchor: null,
   clearPendingAnchor: () => {},
+  docDeleted: () => {},
   tweaks: { theme: "dark", accent: "azure", density: "regular", labels: true },
 };
 

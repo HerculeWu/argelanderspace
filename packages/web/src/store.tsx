@@ -13,6 +13,7 @@ import type {
   Reference,
 } from "@argelanderspace/contracts";
 import { imageUrl as buildImageUrl } from "./api";
+import { AnnotationProvider } from "./annotations/AnnotationStore";
 
 // rootMargin defining the "currently reading" band inside the reader viewport.
 // Blocks whose box lies in the bottom 38% don't count until they scroll up.
@@ -45,6 +46,8 @@ interface StoreValue {
   blockById: Map<string, IrBlock>;
   blockOrder: Map<string, number>;
   sectionOfBlock: Map<string, string>;
+  /** Section id → its full heading path ("1 Introduction › 1.2 …"). */
+  sectionPath: Map<string, string>;
   citationsByBlock: Map<string, string[]>;
   imageUrl: (imgPath?: string) => string | null;
   // reader element + viewport observation
@@ -266,7 +269,9 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
     };
   }, [ir, lookups]);
 
-  return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={store}>
+    <AnnotationProvider>{children}</AnnotationProvider>
+  </Ctx.Provider>;
 }
 
 // ---- viewport hooks (only the panels that need them re-render on scroll) ----
@@ -299,11 +304,16 @@ function buildLookups(ir: DocIr) {
   const blockById = new Map<string, IrBlock>();
   const blockOrder = new Map<string, number>();
   const sectionOfBlock = new Map<string, string>();
+  const sectionPath = new Map<string, string>();
   let order = 0;
 
-  const walk = (secs: IrSection[] | undefined) => {
+  const walk = (secs: IrSection[] | undefined, parentPath: string | null) => {
     if (!secs) return;
     for (const sec of secs) {
+      const label =
+        ((sec.number ? sec.number + " " : "") + (sec.heading ?? "")).trim() || sec.id;
+      const path = parentPath ? parentPath + " › " + label : label;
+      sectionPath.set(sec.id, path);
       // the heading itself is a jump target + ordering anchor; registering it in
       // blockById lets section cross-refs (\ref{sec:..}, "Sect. 3") resolve too.
       blockOrder.set(sec.id, order++);
@@ -314,10 +324,10 @@ function buildLookups(ir: DocIr) {
         blockOrder.set(b.id, order++);
         sectionOfBlock.set(b.id, sec.id);
       }
-      walk(sec.children ?? []);
+      walk(sec.children ?? [], path);
     }
   };
-  walk(ir.sections);
+  walk(ir.sections, null);
 
   // core precomputes the per-block citation ref-id groups (order preserved,
   // deduped) — includes hyperlink-found occurrences without an inline token.
@@ -329,6 +339,7 @@ function buildLookups(ir: DocIr) {
     blockById,
     blockOrder,
     sectionOfBlock,
+    sectionPath,
     citationsByBlock,
   };
 }

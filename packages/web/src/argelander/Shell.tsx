@@ -3,7 +3,7 @@ import { Icon } from "../lib/icons";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { useTweaks } from "./theme";
-import { WorkspaceProvider, type Workspace } from "./workspace";
+import { applyDocDeletion, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
@@ -150,6 +150,28 @@ export function Shell() {
     };
   }, []);
 
+  // Stage 8 §8: a document delete lands here (the papers list is fetched only
+  // once at boot, so the deleted id must be dropped locally; currentDoc
+  // migrates per the three-state rule — the library.changed broadcast covers
+  // the OTHER library surfaces, not this local transition).
+  const papersRef = useRef(papers);
+  papersRef.current = papers;
+  const currentDocRef = useRef(currentDoc);
+  currentDocRef.current = currentDoc;
+  const docDeleted = useCallback((docId: string, remaining: string[]) => {
+    const next = applyDocDeletion(
+      { papers: papersRef.current, currentDoc: currentDocRef.current },
+      docId,
+      remaining
+    );
+    setPapers(next.papers);
+    if (next.currentDoc !== currentDocRef.current) {
+      setCurrentDocState(next.currentDoc);
+      if (next.currentDoc) replaceDocUrl(next.currentDoc);
+      else window.history.replaceState(null, "", "/"); // nothing left to show
+    }
+  }, []);
+
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {
     e.preventDefault();
@@ -198,8 +220,8 @@ export function Shell() {
   }, [activeId, splitFrom]);
 
   const workspace: Workspace = useMemo(
-    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, tweaks }),
-    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, tweaks]
+    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, tweaks }),
+    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, tweaks]
   );
 
   const renderView = (p: Pane) => {

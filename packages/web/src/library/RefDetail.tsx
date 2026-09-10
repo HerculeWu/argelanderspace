@@ -2,7 +2,9 @@ import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "reac
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { patchRef, uploadLatexZip } from "../api/library";
+import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { onJobEvent } from "../api/ws";
+import { Modal } from "../plan/atoms";
 import { cgKfmt } from "./CitationGraph";
 import type { GraphNode, LibraryRef } from "./types";
 
@@ -93,12 +95,17 @@ export function RefDetail({
   onClose,
   onOpenDoc,
   onReload,
+  onDocDeleted,
 }: {
   r: LibraryRef;
   node: GraphNode | null;
   onClose: () => void;
   onOpenDoc: (docId?: string) => void;
   onReload?: () => void;
+  /** Stage 8 §8: a doc was physically deleted; `remaining` is this work's
+   *  doc_ids after the deletion (its [0] is the new main). The LibraryView
+   *  wires this to the workspace's three-state transition. */
+  onDocDeleted?: (docId: string, remaining: string[]) => void;
 }) {
   const [tab, setTab] = useState("meta");
   const [copied, setCopied] = useState(false);
@@ -113,6 +120,12 @@ export function RefDetail({
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
+  // Stage 8 §8 document delete: the doc id pending confirmation, plus the
+  // in-flight DELETE state. A busy 409 keeps the dialog open with its message
+  // (the ingest task ends on its own; the user retries).
+  const [delDoc, setDelDoc] = useState<string | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const cited = node?.c ?? r.citedBy;
 
@@ -133,6 +146,9 @@ export function RefDetail({
     setUploadJob(null);
     setUploadErr(null);
     setMainErr(null);
+    setDelDoc(null);
+    setDelErr(null);
+    setDelBusy(false);
   }, [r.id, setUploadJob]);
 
   const onSetMainDoc = async (docId: string) => {
@@ -142,6 +158,27 @@ export function RefDetail({
     setSettingMain(false);
     if (ok) onReload?.();
     else setMainErr("设为主文档失败，请重试");
+  };
+
+  const onConfirmDelete = async (docId: string) => {
+    setDelBusy(true);
+    setDelErr(null);
+    const res = await deletePaperDoc(docId);
+    setDelBusy(false);
+    if (res.ok) {
+      setDelDoc(null);
+      onDocDeleted?.(docId, versions.filter((d) => d !== docId));
+      onReload?.();
+    } else if (res.busy) {
+      setDelErr("文档正在摄入，请稍后删除");
+    } else if (res.missing) {
+      // already deleted elsewhere: the desired end state — close the dialog
+      // and reload the library instead of showing an error
+      setDelDoc(null);
+      onReload?.();
+    } else {
+      setDelErr(res.detail);
+    }
   };
 
   const failMsg = (job: Job | null): string =>
@@ -362,16 +399,31 @@ export function RefDetail({
         {tab === "files" && (
           <div className="ref-files">
             {mainDoc && (
-              <button
-                className="ref-file"
-                title="在文档中打开（主文档）"
-                onClick={() => onOpenDoc(mainDoc)}
-              >
-                <Icon name="file-text" cls="ico-sm" />
-                <span className="mono">{r.cite}</span>
-                <span className="ref-file-ok">{extraVersions.length > 0 ? "主文档" : "已入库"}</span>
-                <Icon name="arrow-up-right" cls="ico-sm" />
-              </button>
+              <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                <button
+                  className="ref-file"
+                  style={{ flex: 1 }}
+                  title="在文档中打开（主文档）"
+                  onClick={() => onOpenDoc(mainDoc)}
+                >
+                  <Icon name="file-text" cls="ico-sm" />
+                  <span className="mono">{r.cite}</span>
+                  <span className="ref-file-ok">
+                    {extraVersions.length > 0 ? "主文档" : "已入库"}
+                  </span>
+                  <Icon name="arrow-up-right" cls="ico-sm" />
+                </button>
+                <button
+                  className="btn icon"
+                  title="删除此文档（含其标注）"
+                  onClick={() => {
+                    setDelErr(null);
+                    setDelDoc(mainDoc);
+                  }}
+                >
+                  <Icon name="trash-2" cls="ico-sm" />
+                </button>
+              </div>
             )}
             {extraVersions.map((d) => (
               <div key={d} style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
@@ -392,6 +444,16 @@ export function RefDetail({
                   onClick={() => onSetMainDoc(d)}
                 >
                   设为主
+                </button>
+                <button
+                  className="btn icon"
+                  title="删除此文档（含其标注）"
+                  onClick={() => {
+                    setDelErr(null);
+                    setDelDoc(d);
+                  }}
+                >
+                  <Icon name="trash-2" cls="ico-sm" />
                 </button>
               </div>
             ))}
@@ -457,7 +519,79 @@ export function RefDetail({
           </div>
         )}
       </div>
+      {delDoc && (
+        <DeleteDocDialog
+          docId={delDoc}
+          busy={delBusy}
+          error={delErr}
+          onCancel={() => setDelDoc(null)}
+          onConfirm={onConfirmDelete}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Stage 8 §8 delete confirmation. The annotation count N is fetched when the
+ * dialog opens (the annotations file is the doc's own, independent of the
+ * library); a failed count fetch degrades to "数量未知" instead of blocking
+ * the deletion. The server answer 409 "document busy" means a queued/running
+ * ingest pins the doc — the dialog stays open with the retry hint.
+ */
+function DeleteDocDialog({
+  docId,
+  busy,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  docId: string;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (docId: string) => void;
+}) {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setCount(null);
+    void fetchAnnotations(docId).then((r) => {
+      if (alive) setCount(r.ok ? r.file.annotations.length : null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [docId]);
+
+  return (
+    <Modal
+      title="删除文档"
+      sub={docId}
+      width={420}
+      onClose={onCancel}
+      footer={
+        <>
+          <button className="btn" onClick={onCancel}>
+            取消
+          </button>
+          <button className="btn plan-danger" disabled={busy} onClick={() => onConfirm(docId)}>
+            {busy ? "正在删除…" : "永久删除"}
+          </button>
+        </>
+      }
+    >
+      <div className="plan-modal-warning">
+        该文档及其
+        {count === null ? "标注（数量未知）" : ` ${count} 条标注`}
+        将永久删除，此文档将从所有关联文献条目中移除。
+      </div>
+      {error && (
+        <div className="mono" style={{ fontSize: 12, color: "oklch(0.70 0.16 25)" }}>
+          {error}
+        </div>
+      )}
+    </Modal>
   );
 }
 

@@ -13,7 +13,30 @@ export interface Workspace {
   /** Anchor from the current `/doc/<id>#<anchor>` URL, consumed by the doc pane. */
   pendingAnchor: string | null;
   clearPendingAnchor: () => void;
+  /** Stage 8 §8: a doc was physically deleted via DELETE /api/paper/:id.
+      `remaining` is the deleting work's doc_ids after the deletion (its new
+      main doc is remaining[0]). Drops the doc from the local papers list (the
+      Shell only fetches it once at boot) and migrates currentDoc per the
+      three-state rule (see applyDocDeletion). */
+  docDeleted: (docId: string, remaining: string[]) => void;
   tweaks: Tweaks;
+}
+
+/**
+ * The §8 three-state transition after a doc is deleted, as a pure function:
+ * - deleted ≠ currentDoc → only the papers list loses the id;
+ * - deleted == currentDoc and the work has docs left → current becomes the
+ *   work's new main (remaining[0]);
+ * - deleted == currentDoc and none left → currentDoc = null (empty state).
+ */
+export function applyDocDeletion(
+  state: { papers: string[]; currentDoc: string | null },
+  docId: string,
+  remaining: string[]
+): { papers: string[]; currentDoc: string | null } {
+  const papers = state.papers.filter((p) => p !== docId);
+  if (state.currentDoc !== docId) return { papers, currentDoc: state.currentDoc };
+  return { papers, currentDoc: remaining[0] ?? null };
 }
 
 const Ctx = createContext<Workspace | null>(null);

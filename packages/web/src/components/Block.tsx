@@ -10,6 +10,7 @@ import type {
   IrTableBlock,
 } from "@argelanderspace/contracts";
 import { useStore } from "../store";
+import { AnnBlockEdge } from "../annotations/AnnBlockEdge";
 import { Segments } from "../lib/segments";
 import { Math, htmlWithMath } from "../lib/math";
 import { FigureImage } from "./FigureImage";
@@ -50,7 +51,9 @@ function ParagraphView({ b }: { b: IrParagraphBlock }) {
       className="block para"
       segments={b.segments}
       {...({ id: b.id, "data-block-id": b.id } as Record<string, string>)}
-    />
+    >
+      <AnnBlockEdge id={b.id} />
+    </Segments>
   );
 }
 
@@ -61,6 +64,7 @@ function EquationView({ b }: { b: IrEquationBlock }) {
         <Math display latex={b.latex} />
       </div>
       {b.number && <span className="eqn-num">({b.number})</span>}
+      <AnnBlockEdge id={b.id} />
     </div>
   );
 }
@@ -85,6 +89,7 @@ function FigureView({ b }: { b: IrFigureBlock }) {
           <Segments segments={b.captionSegments} />
         </figcaption>
       )}
+      <AnnBlockEdge id={b.id} />
     </figure>
   );
 }
@@ -109,20 +114,27 @@ function TableView({ b }: { b: IrTableBlock }) {
           <FigureImage src={store.imageUrl(b.imgPath)!} alt="table" />
         )
       )}
+      <AnnBlockEdge id={b.id} />
     </div>
   );
 }
 
 function ListView({ b }: { b: IrListBlock }) {
   const Tag = b.ordered ? "ol" : "ul";
+  // The annotation edge affordance can't ride inside <ol>/<ul> (only <li> is
+  // a valid list child), so the block wrapper is a plain div; the visual
+  // result is identical (the list keeps its own margins).
   return (
-    <Tag className="doc-list block" id={b.id} data-block-id={b.id}>
-      {b.items.map((it, i) => (
-        <li key={i}>
-          <Segments segments={it.segments} />
-        </li>
-      ))}
-    </Tag>
+    <div className="block listblock" id={b.id} data-block-id={b.id}>
+      <Tag className="doc-list">
+        {b.items.map((it, i) => (
+          <li key={i}>
+            <Segments segments={it.segments} />
+          </li>
+        ))}
+      </Tag>
+      <AnnBlockEdge id={b.id} />
+    </div>
   );
 }
 
@@ -137,6 +149,7 @@ function CodeView({ b }: { b: IrCodeBlock | IrAlgorithmBlock }) {
         </div>
       )}
       <pre className="code">{code}</pre>
+      <AnnBlockEdge id={b.id} />
     </div>
   );
 }

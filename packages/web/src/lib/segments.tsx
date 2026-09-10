@@ -31,22 +31,27 @@ function prettifyXref(t: IrXrefTarget): string {
   return t.id;
 }
 
-/** Render an IR segment run with inline math + ref chips. */
+/** Render an IR segment run with inline math + ref chips. `children`, when
+ *  given, render AFTER the segment nodes inside the same element (Stage 8: the
+ *  per-block annotation affordance rides along without touching the text). */
 export function Segments({
   segments,
   as: Tag = "span",
   className,
+  children,
   ...rest
 }: {
   segments: IrSegment[];
   as?: keyof JSX.IntrinsicElements;
   className?: string;
+  children?: React.ReactNode;
 } & Record<string, unknown>) {
   const store = useStore();
   const nodes = React.useMemo(() => renderSegments(segments ?? [], store), [segments, store]);
   return (
     <Tag className={className} {...(rest as Record<string, unknown>)}>
       {nodes}
+      {children}
     </Tag>
   );
 }

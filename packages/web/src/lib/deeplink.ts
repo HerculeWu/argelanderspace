@@ -1,9 +1,11 @@
 // Deep links (Stage 2, decision 8): `/doc/<docId>#<anchor>` with four anchor
 // levels — doc (no hash) / section (sec-N) / floats (fig-N, tab-N, eq-N, also
-// code-N / alg-N) / references (ref-N). Hand-rolled: this is the SPA's only
-// route, so no router library. The M4 server already falls back to index.html
-// for non-API paths, so these URLs load the app directly.
+// code-N / alg-N) / references (ref-N). Stage 8 adds a fifth: annotations
+// (`ann-<id>`, the CLI `annot` link format). Hand-rolled: this is the SPA's
+// only route, so no router library. The M4 server already falls back to
+// index.html for non-API paths, so these URLs load the app directly.
 
+import type { Annotation } from "@argelanderspace/contracts";
 import type { useStore } from "../store";
 
 type Store = ReturnType<typeof useStore>;
@@ -76,4 +78,38 @@ function firstCitingBlockId(store: Store, refId: string): string | null {
     }
   }
   return best;
+}
+
+/** The annotation surface `applyAnnotationAnchor` drives (the reader's
+ *  annotation store — declared structurally to keep this module lean). */
+export interface AnnotationAnchorSurface {
+  annotations: Annotation[];
+  /** Activates the annotation and opens its popover. */
+  openView: (id: string) => void;
+}
+
+export function isAnnotationAnchor(anchor: string): boolean {
+  return anchor.startsWith("ann-");
+}
+
+/**
+ * Stage 8: land on an `#ann-<id>` deep link — jump to the target block (the
+ * usual scroll + flash), activate the annotation and open its popover. A
+ * document-level target has no block: no jump, just activate + open. An
+ * unknown/deleted id returns false and the caller leaves the doc open (the
+ * existing unknown-anchor philosophy — no archive search, no migration).
+ */
+export function applyAnnotationAnchor(
+  store: Store,
+  anns: AnnotationAnchorSurface,
+  anchor: string
+): boolean {
+  const id = anchor.slice("ann-".length);
+  const a = anns.annotations.find((x) => x.id === id);
+  if (!a) return false;
+  const t = a.target;
+  const blockId = t.type === "structure" ? t.id : t.type === "text" ? t.block : null;
+  if (blockId !== null && store.blockById.has(blockId)) store.jumpTo(blockId);
+  anns.openView(a.id);
+  return true;
 }

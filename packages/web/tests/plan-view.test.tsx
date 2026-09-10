@@ -35,6 +35,7 @@ const WORKSPACE: Workspace = {
   openDoc: vi.fn(),
   pendingAnchor: null,
   clearPendingAnchor: () => {},
+  docDeleted: () => {},
   tweaks: { theme: "dark", accent: "azure", density: "regular", labels: true },
 };
 

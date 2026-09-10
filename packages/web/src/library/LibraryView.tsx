@@ -87,7 +87,15 @@ export function LibraryView() {
       </div>
     );
   }
-  return <LibraryBody payload={payload} live={live} onOpenDoc={ws.openDoc} onReload={reload} />;
+  return (
+    <LibraryBody
+      payload={payload}
+      live={live}
+      onOpenDoc={ws.openDoc}
+      onReload={reload}
+      onDocDeleted={ws.docDeleted}
+    />
+  );
 }
 
 function LibraryBody({
@@ -95,11 +103,15 @@ function LibraryBody({
   live,
   onOpenDoc,
   onReload,
+  onDocDeleted,
 }: {
   payload: LibraryData;
   live: boolean;
   onOpenDoc: (docId?: string) => void;
   onReload: () => void;
+  /** Stage 8 §8: forwarded to RefDetail — the workspace three-state transition
+   *  after a document is physically deleted. */
+  onDocDeleted: (docId: string, remaining: string[]) => void;
 }) {
   const { refs, graph } = payload;
   const byId = useMemo(() => Object.fromEntries(graph.nodes.map((n) => [n.id, n])), [graph]);
@@ -348,6 +360,7 @@ function LibraryBody({
           onClose={() => setSelNode(null)}
           onOpenDoc={onOpenDoc}
           onReload={onReload}
+          onDocDeleted={onDocDeleted}
         />
       ) : curNode ? (
         <GraphNodeDetail
