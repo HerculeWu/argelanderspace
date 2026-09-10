@@ -5,17 +5,20 @@ import type { Job, WsServerMessage } from "@argelanderspace/contracts";
 //
 // Protocol (server → client JSON frames): `hello` (job-table snapshot on
 // connect), `job.created|progress|done|failed` (full job each time),
-// `library.changed`, and `plan.changed` (Stage 4).
+// `library.changed`, `plan.changed` (Stage 4), and `annotation.changed`
+// (Stage 8).
 // Reconnects with exponential backoff (1s → 2s → … → 15s)
 // so a server restart silently re-subscribes.
 
 type JobListener = (job: Job, event: string) => void;
 type LibraryListener = () => void;
 type PlanListener = () => void;
+type AnnotationListener = (docId: string) => void;
 
 const jobListeners = new Set<JobListener>();
 const libraryListeners = new Set<LibraryListener>();
 const planListeners = new Set<PlanListener>();
+const annotationListeners = new Set<AnnotationListener>();
 
 const RETRY_MAX_MS = 15000;
 
@@ -39,6 +42,11 @@ function dispatch(msg: WsServerMessage): void {
     for (const cb of libraryListeners) cb();
   } else if (msg.type === "plan.changed") {
     for (const cb of planListeners) cb();
+  } else if (msg.type === "annotation.changed") {
+    // Stage 8 MS1: the listener set is in place (the else branch must never
+    // treat this as a job event — the Stage-4 MS1 blocker precedent); MS3
+    // wires the reader's annotation store to it.
+    for (const cb of annotationListeners) cb(msg.doc_id);
   } else {
     for (const cb of jobListeners) cb(msg.job, msg.type);
   }
@@ -107,5 +115,15 @@ export function onPlanChanged(cb: PlanListener): () => void {
   ensureStarted();
   return () => {
     planListeners.delete(cb);
+  };
+}
+
+/** Subscribe to annotation mutations of one doc (`PUT` / invalidation /
+ *  external write; Stage 8 — MS1 listener set, the reader subscribes in MS3). */
+export function onAnnotationChanged(cb: AnnotationListener): () => void {
+  annotationListeners.add(cb);
+  ensureStarted();
+  return () => {
+    annotationListeners.delete(cb);
   };
 }

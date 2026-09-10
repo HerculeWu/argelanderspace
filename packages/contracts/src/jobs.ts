@@ -7,13 +7,14 @@
  * so state survives restarts (unfinished jobs boot as `interrupted`).
  *
  * The WebSocket channel (decision 14: full-duplex WS, not SSE) broadcasts
- * every job transition plus `library.changed` / `plan.changed` so the web
- * client can live-reload. Messages are JSON, one object per frame, all
- * server → client for now (the duplex half is reserved for Stage-2 agent
- * interaction).
+ * every job transition plus `library.changed` / `plan.changed` /
+ * `annotation.changed` (Stage 8) so the web client can live-reload.
+ * Messages are JSON, one object per frame, all server → client for now
+ * (the duplex half is reserved for Stage-2 agent interaction).
  */
 
 import { z } from "zod";
+import { WsAnnotationChangedSchema } from "./annotations.js";
 import { WsPlanChangedSchema } from "./plans.js";
 
 // ---- jobs ------------------------------------------------------------------ //
@@ -89,6 +90,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsJobEventSchema,
   WsLibraryChangedSchema,
   WsPlanChangedSchema,
+  WsAnnotationChangedSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

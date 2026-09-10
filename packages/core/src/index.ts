@@ -20,6 +20,12 @@
 // plans/: the plan-page store (Stage 4) — plans.json load/save (atomic write,
 // optimistic-lock rev), id generation, and the pure CRUD helpers.
 //
+// annotations/: the document-annotation store (Stage 8) —
+// annotations/<doc>/current.json load/save (atomic write, optimistic-lock
+// rev), id generation, pure CRUD, the content fingerprint (canonical
+// projection + asset hashing), and the idempotent ensureCurrentAnnotations
+// archive-on-mismatch guard.
+//
 // The pandoc LaTeX pipeline was deleted in Stage 5 MS3b (the tex pipeline
 // replaced it); PDF (MinerU OCR) and publisher-HTML pipelines are archived
 // on the `ocr-features` branch.
@@ -32,6 +38,7 @@ export * from "./acquire/planner.js";
 export * from "./acquire/resolve.js";
 export * from "./acquire/run.js";
 export * from "./acquire/upload.js";
+export * from "./annotations/store.js";
 export * from "./documents/references.js";
 export * from "./documents/render.js";
 export * from "./library/build.js";

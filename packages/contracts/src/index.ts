@@ -1,3 +1,4 @@
+export * from "./annotations.js";
 export * from "./api.js";
 export * from "./doc-ir.js";
 export * from "./jobs.js";
