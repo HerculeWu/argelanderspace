@@ -42,12 +42,20 @@ export interface AnnotationsValue {
   notice: string | null;
   /** A PUT is in flight (editors disable their save button). */
   busy: boolean;
+  /** Multi-hit chooser (Stage 8 MS4): overlapping text annotations at a click
+   *  point / a block's gutter count marker, positioned in viewport coords. */
+  chooser: { ids: string[]; x: number; y: number } | null;
   reload: () => Promise<void>;
   activate: (id: string | null) => void;
   openCreate: (target: AnnotationTarget) => void;
   openView: (id: string) => void;
   closePopover: () => void;
   dismissNotice: () => void;
+  /** Show a transient toast from outside the persist path (MS4 selection
+   *  rejections: cross-container / unsupported position). */
+  notify: (text: string) => void;
+  openChooser: (ids: string[], x: number, y: number) => void;
+  closeChooser: () => void;
   /** Create with an immutable target (+snapshot); body stored as raw bytes.
    *  Returns the new annotation's id on success, null otherwise. */
   createAnnotation: (target: AnnotationTarget, body: string) => Promise<string | null>;
@@ -78,8 +86,14 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
   const [popover, setPopover] = useState<AnnotationPopoverState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [chooser, setChooser] = useState<{ ids: string[]; x: number; y: number } | null>(null);
   const fileRef = useRef<AnnotationsFile | null>(null);
   fileRef.current = file;
+  // Ref mirror of `popover` (same fileRef/busyRef pattern): persist() must know
+  // synchronously whether the open create popover carries a TEXT target — its
+  // offsets belong to the dying fingerprint epoch and decide the toast wording.
+  const popoverRef = useRef<AnnotationPopoverState | null>(null);
+  popoverRef.current = popover;
   const noticeTimer = useRef<number | undefined>(undefined);
   // Ref mirror of `busy`: the double-submit guard must work within the same
   // tick (a second click can land before the state update re-renders the
@@ -147,15 +161,27 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
         // no longer anchor anywhere — the toast explains why). View/edit
         // popovers are reconciled by AnnotationPopover (a vanished annotation
         // closes the view; an in-progress edit keeps its draft).
+        //
+        // MS4: an open TEXT create can never be rebuilt — its offsets/quote
+        // address the dead epoch's canonical text, and target immutability
+        // forbids substituting a different target type. Close the popover
+        // (the block-gone precedent) and say so in the toast.
+        const closingTextCreate =
+          popoverRef.current?.mode === "create" && popoverRef.current.target.type === "text";
         setPopover((p) => {
           if (p?.mode !== "create") return p;
+          if (p.target.type === "text") return null;
           const bid = targetBlockId(p.target);
           if (bid === null) return p; // document target: nothing to rebuild
           const node = store.blockById.get(bid);
           if (!node) return null;
           return { ...p, target: buildStructureTarget(node) };
         });
-        showNotice("文档内容已变化，旧标注已归档");
+        showNotice(
+          closingTextCreate
+            ? "文档内容已变化，旧标注已归档；请重新选择文本"
+            : "文档内容已变化，旧标注已归档"
+        );
         return false;
       }
       if (r.kind === "rev-mismatch") {
@@ -248,6 +274,12 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
     setActiveId(null);
   }, []);
 
+  const openChooser = useCallback((ids: string[], x: number, y: number) => {
+    setChooser({ ids, x, y });
+  }, []);
+
+  const closeChooser = useCallback(() => setChooser(null), []);
+
   const value = useMemo<AnnotationsValue>(() => {
     const annotations = file?.annotations ?? [];
     const byBlock = new Map<string, Annotation[]>();
@@ -267,6 +299,7 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
       popover,
       notice,
       busy,
+      chooser,
       reload: load,
       activate: setActiveId,
       openCreate,
@@ -276,6 +309,9 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
         window.clearTimeout(noticeTimer.current);
         setNotice(null);
       },
+      notify: showNotice,
+      openChooser,
+      closeChooser,
       createAnnotation,
       updateBody,
       removeAnnotation,
@@ -287,10 +323,14 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
     popover,
     notice,
     busy,
+    chooser,
     load,
     openCreate,
     openView,
     closePopover,
+    showNotice,
+    openChooser,
+    closeChooser,
     createAnnotation,
     updateBody,
     removeAnnotation,

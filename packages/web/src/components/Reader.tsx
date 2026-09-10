@@ -2,6 +2,7 @@ import type { IrSection } from "@argelanderspace/contracts";
 import { useStore } from "../store";
 import { AnnBlockEdge } from "../annotations/AnnBlockEdge";
 import { AnnotationPopover } from "../annotations/AnnotationPopover";
+import { TextAnnotations } from "../annotations/TextAnnotations";
 import { AuthorBlock } from "./AuthorBlock";
 import { BlockView } from "./Block";
 import { MathText } from "../lib/segments";
@@ -21,6 +22,8 @@ export function Reader() {
       {/* Stage 8: the annotation popover lives inside <main class="reader"> so
           its block lookups stay scoped to this pane in split-view. */}
       <AnnotationPopover />
+      {/* Stage 8 MS4: text selection capture, highlight painting, chooser. */}
+      <TextAnnotations />
     </main>
   );
 }

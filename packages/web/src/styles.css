@@ -527,3 +527,51 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
   border: none; border-radius: 5px; background: none; color: var(--muted); cursor: pointer;
 }
 .ann-toast-x:hover { background: var(--hover-bg); color: var(--ink); }
+
+/* ---------- text annotations (Stage 8 MS4) ---------- */
+/* Range painting is NOT done here: the painter (annotations/highlights.ts)
+   generates per-annotation `::highlight(annhl-…)` rules into a managed style
+   element (registry names are unique, so one name per annotation id; the
+   active one gets its own name + stronger color + higher paint priority).
+   Overlapping registered highlights paint as independent layers, so the
+   translucent accent color deepens at intersections for free. */
+
+/* The aggregate gutter marker for a block's text annotations (structure
+   annotations keep their individual .ann-marker bars). */
+.ann-count {
+  min-width: 15px; height: 15px; padding: 0 3px;
+  border: none; border-radius: 8px;
+  background: color-mix(in oklch, var(--accent) 28%, transparent);
+  color: var(--accent); font-size: 10px; font-weight: 700; line-height: 1;
+  display: grid; place-items: center; cursor: pointer;
+  opacity: 0.75; transition: opacity 0.12s, background 0.12s;
+  font-family: var(--font-ui);
+}
+.ann-count:hover, .ann-count.active { opacity: 1; background: color-mix(in oklch, var(--accent) 45%, transparent); }
+
+/* The floating toolbar near a finished text selection. */
+.ann-selbar {
+  position: fixed; z-index: 92; transform: translateX(-50%);
+  padding: 5px; border-radius: 9px;
+  background: var(--surface-1); border: 1px solid var(--line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.32);
+  font-family: var(--font-ui);
+}
+
+/* The multi-hit chooser (overlapping text annotations at a click point or
+   behind a block's gutter count marker). */
+.ann-chooser {
+  position: fixed; z-index: 91; width: 250px; max-width: calc(100vw - 24px);
+  max-height: 40vh; overflow-y: auto;
+  padding: 5px; border-radius: 10px;
+  background: var(--surface-1); border: 1px solid var(--line);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32);
+  font-family: var(--font-ui);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.ann-chooser-entry {
+  display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 7px 9px; border: none; border-radius: 7px; background: none;
+  color: var(--ink); cursor: pointer; font-family: var(--font-ui);
+}
+.ann-chooser-entry:hover { background: var(--hover-bg); }
