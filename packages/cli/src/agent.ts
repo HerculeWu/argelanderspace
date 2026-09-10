@@ -12,6 +12,10 @@
  *   label <workId> [--label] [--read] [--star] [--tags]
  *                                   patch user state, print the result
  *   list                            library overview + one line per doc
+ *   annot <docId>                   the doc's current annotations as JSONL
+ *                                   (Stage 8 MS5; truly read-only — a content
+ *                                   mismatch hides them behind one fixed
+ *                                   stderr note, exit 0, no file written)
  *
  * Output conventions:
  * - structured output is JSON/JSONL on stdout, kept machine-clean: when a
@@ -29,6 +33,10 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type Annotation,
+  type AnnotationTarget,
+  canonicalContainerText,
+  canonicalSegmentsText,
   type DocIr,
   type IrBlock,
   type IrSection,
@@ -37,9 +45,11 @@ import {
 import {
   citeShort,
   displayAuthors,
+  docContentFingerprint,
   type LibraryPaths,
   LibraryStore,
   libraryPaths,
+  loadAnnotationsFile,
   patchWork,
   renderIrMarkdown,
   renderIrSectionMarkdown,
@@ -167,6 +177,139 @@ function parseBoolFlag(name: string, value: string): boolean {
   if (value === "true") return true;
   if (value === "false") return false;
   throw new Error(`--${name} must be true|false, got "${value}"`);
+}
+
+// --------------------------------------------------------------------------- //
+// Annotations (Stage 8 MS5; roadmap §6 — the `annot` output is frozen from birth)
+// --------------------------------------------------------------------------- //
+
+/**
+ * The fixed stderr note for a content-fingerprint mismatch: the stored
+ * annotations no longer address the current document content, so they are
+ * hidden — stdout stays empty, exit stays 0, and NO file is written (the
+ * server's access path owns the actual archiving).
+ */
+const ANNOT_STALE_NOTE =
+  "note: document content changed since its annotations were written; " +
+  "they are archived and not shown";
+
+/**
+ * The IR lookups `annot` needs (the same walk the web reader's store does):
+ * every block by id, every section/block's position in reading order (section
+ * first, then its blocks, then children), its owning section (a section owns
+ * itself), and each section's breadcrumb labels from the root down.
+ */
+interface IrIndex {
+  blockById: Map<string, IrBlock>;
+  /** Section/block id → position in reading order. */
+  order: Map<string, number>;
+  /** Block id → containing section id; a section id maps to itself. */
+  sectionOf: Map<string, string>;
+  /** Section id → breadcrumb (e.g. ["2 Data", "2.1 Gaia data"]), own label last. */
+  sectionPath: Map<string, string[]>;
+}
+
+function indexIr(ir: DocIr): IrIndex {
+  const idx: IrIndex = {
+    blockById: new Map(),
+    order: new Map(),
+    sectionOf: new Map(),
+    sectionPath: new Map(),
+  };
+  let order = 0;
+  const walk = (sections: IrSection[], parents: string[]): void => {
+    for (const s of sections) {
+      const label = ((s.number ? `${s.number} ` : "") + (s.heading ?? "")).trim() || s.id;
+      const path = [...parents, label];
+      idx.order.set(s.id, order++);
+      idx.sectionOf.set(s.id, s.id);
+      idx.sectionPath.set(s.id, path);
+      for (const b of s.blocks) {
+        idx.blockById.set(b.id, b);
+        idx.order.set(b.id, order++);
+        idx.sectionOf.set(b.id, s.id);
+      }
+      walk(s.children, path);
+    }
+  };
+  walk(ir.sections, []);
+  return idx;
+}
+
+/**
+ * Reading-order sort, web panel parity (`web/src/annotations/model.ts`
+ * `sortAnnotations`): document-level first, then by the target block's
+ * reading position, stored order breaks ties within one block; a target whose
+ * block is gone from the IR sorts last (the fingerprint gate should preclude
+ * that — the context builder below throws on it).
+ */
+function sortAnnotations(annotations: Annotation[], idx: IrIndex): Annotation[] {
+  const key = (a: Annotation): number => {
+    const t = a.target;
+    const bid = t.type === "document" ? null : t.type === "structure" ? t.id : t.block;
+    return bid === null ? -1 : (idx.order.get(bid) ?? Number.MAX_SAFE_INTEGER);
+  };
+  return annotations
+    .map((a, i) => ({ a, i }))
+    .sort((x, y) => key(x.a) - key(y.a) || x.i - y.i)
+    .map(({ a }) => a);
+}
+
+/**
+ * The `context` field of one `annot` row (roadmap §6; frozen key order
+ * `section_id`, `section_path`, `container_text`, each present only where
+ * listed):
+ * - `text` → the container's FULL canonical text (contracts
+ *   `canonicalContainerText`);
+ * - structure paragraph/list → the full target text (a list is its items'
+ *   canonical texts joined with "\n");
+ * - structure section/equation/figure/table/code/algorithm → location only
+ *   (the content comes from `read --section` / `show`; the target's snapshot
+ *   already records what was annotated);
+ * - `document` → `{title}` only (the full text comes from `read`).
+ * A target id missing from the IR means the store disagrees with the IR the
+ * fingerprint vouched for — a system error, not a row with half a context.
+ */
+function annotContext(
+  docId: string,
+  ir: DocIr,
+  idx: IrIndex,
+  target: AnnotationTarget
+): Record<string, unknown> {
+  if (target.type === "document") return { title: ir.title ?? docId };
+  const anchorId = target.type === "structure" ? target.id : target.block;
+  const secId = idx.sectionOf.get(anchorId);
+  const path = secId === undefined ? undefined : idx.sectionPath.get(secId);
+  if (secId === undefined || path === undefined) {
+    throw new Error(
+      `annotation target "${anchorId}" is not in doc "${docId}" (inconsistent store)`
+    );
+  }
+  const context: Record<string, unknown> = { section_id: secId, section_path: path };
+  if (target.type === "structure" && target.kind !== "paragraph" && target.kind !== "list") {
+    return context;
+  }
+  const block = idx.blockById.get(anchorId);
+  if (block === undefined) {
+    throw new Error(
+      `annotation target "${anchorId}" is not in doc "${docId}" (inconsistent store)`
+    );
+  }
+  if (target.type === "text") {
+    context.container_text = canonicalContainerText(block, target.container);
+  } else if (target.kind === "paragraph") {
+    context.container_text = canonicalContainerText(block, { type: "content" });
+  } else {
+    if (block.type !== "list") {
+      throw new Error(
+        `annotation target "${anchorId}" is not the list block of doc "${docId}" (inconsistent store)`
+      );
+    }
+    context.container_text = block.items
+      .map((item) => canonicalSegmentsText(item.segments))
+      .join("\n");
+  }
+  return context;
 }
 
 // --------------------------------------------------------------------------- //
@@ -391,6 +534,47 @@ function runList(dataDir: string): void {
   }
 }
 
+/**
+ * `annot <docId>` (roadmap §6): the doc's current annotations as JSONL, one
+ * row per annotation in reading order (document-level first), frozen fields
+ * `{id, doc_id, target, context, body, created_at, updated_at, link}`.
+ * TRULY read-only: a fingerprint mismatch hides the stale annotations behind
+ * one fixed stderr note (exit 0) without archiving anything — the server's
+ * access path owns invalidation. A missing or empty current file means "no
+ * annotations": empty stdout, no note, and no fingerprint is even computed
+ * (there is nothing a stale fingerprint could hide). Corrupt IR / corrupt
+ * store / uncomputable fingerprint → `error:` + exit 1, files untouched.
+ * All rows are materialized BEFORE anything prints, so an inconsistent store
+ * (a dangling target id the fingerprint couldn't catch) fails with stdout
+ * completely empty rather than half a stream.
+ */
+function runAnnot(docId: string, dataDir: string): void {
+  const paths = libraryPaths(dataDir);
+  const ir = loadDocIr(paths, docId);
+  const current = loadAnnotationsFile(dataDir, docId);
+  if (current === null || current.annotations.length === 0) return;
+  const fingerprint = docContentFingerprint(ir, { docDir: join(paths.outputDir, docId) });
+  if (current.content_fingerprint !== fingerprint) {
+    console.error(ANNOT_STALE_NOTE);
+    return;
+  }
+  const idx = indexIr(ir);
+  const port = resolveLinkPort();
+  const rows = sortAnnotations(current.annotations, idx).map((a) =>
+    JSON.stringify({
+      id: a.id,
+      doc_id: docId,
+      target: a.target,
+      context: annotContext(docId, ir, idx, a.target),
+      body: a.body,
+      created_at: a.created_at,
+      updated_at: a.updated_at,
+      link: docLink(port, docId, `ann-${a.id}`),
+    })
+  );
+  for (const row of rows) console.log(row);
+}
+
 // --------------------------------------------------------------------------- //
 // Registration
 // --------------------------------------------------------------------------- //
@@ -481,6 +665,20 @@ export function registerAgentCommands(program: Command): void {
     .action((_opts: { dataDir?: string }, cmd: Command) => {
       try {
         runList(resolveDataDir(cmd.optsWithGlobals()));
+      } catch (e) {
+        fail(e);
+      }
+    });
+
+  withDataDir(program.command("annot"))
+    .description(
+      "Print a doc's current annotations as JSONL (read-only; annotations written " +
+        "against a since-replaced document are hidden behind a stderr note)."
+    )
+    .argument("<docId>", "ingested doc id")
+    .action((docId: string, _opts: { dataDir?: string }, cmd: Command) => {
+      try {
+        runAnnot(docId, resolveDataDir(cmd.optsWithGlobals()));
       } catch (e) {
         fail(e);
       }

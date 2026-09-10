@@ -101,13 +101,14 @@ The CLI–agent contract in one table (details + output conventions in
 | `read <docId> [--section id] [--manifest refs\|bib]` | LLM-friendly markdown, or JSONL manifests | markdown / JSONL |
 | `show <docId> <floatId>` | one figure/table/equation/code/algorithm as JSON (+ `link`) | JSON |
 | `ref <docId> <refIdOrKey>` | one bibliography entry as JSON (+ `cited_in`, `link`) | JSON |
+| `annot <docId>` | a doc's current annotations as JSONL (reading order; `target` + `context` + `link` per row; read-only, stale-after-edit annotations hidden) | JSONL |
 | `note <workId> [text...]` | set / print a work's note | JSON |
 | `label <workId> [--label c] [--read b] [--star b] [--tags a,b]` | patch user state | JSON |
 
 Every doc-referencing command prints a deep link
 `http://localhost:<port>/doc/<docId>[#<anchor>]` (anchors: `#sec-N`, floats
-`#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`) that opens the web
-reader at exactly that spot.
+`#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`, `#ann-<id>`) that opens
+the web reader at exactly that spot.
 
 ## Data directory
 

@@ -58,6 +58,7 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 | `read <docId> [--section id] [--manifest refs\|bib]` | LLM-friendly markdown (whole doc / section subtree), or JSONL manifests | markdown / JSONL |
 | `show <docId> <floatId>` | one float (fig/tab/eq/code/alg) as JSON: full latex/caption/body/image + `link` | JSON |
 | `ref <docId> <refIdOrKey>` | one bibliography entry as JSON: metadata + `cited_in` + `link` | JSON |
+| `annot <docId>` | a doc's current annotations (the user's reading notes/requests) as JSONL rows `{id, doc_id, target, context, body, created_at, updated_at, link}` in reading order, document-level first — read-only; annotations bound to a since-replaced document are hidden (fixed `note:` on stderr, exit 0), archived ones are never exposed | JSONL |
 | `note <workId> [text...]` | set (or print) a work's note | JSON |
 | `label <workId> [--label c] [--read b] [--star b] [--tags a,b]` | patch user state, print the result | JSON |
 
@@ -77,7 +78,7 @@ Conventions the skills rely on:
   the other via `doc_ids`.
 - **Deep links**: every doc-referencing command prints
   `http://localhost:<port>/doc/<docId>[#<anchor>]` (anchors: `#sec-N`,
-  `#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`). Port:
+  `#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`, `#ann-<id>`). Port:
   `ARGELANDERSPACE_PORT` > config `port` > 8000 — if `serve` runs on a custom
   `--port`, export `ARGELANDERSPACE_PORT` so printed links match.
 - **Machine-clean stdout**: JSONL streams (`search`, `read --manifest`) stay

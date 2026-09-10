@@ -21,7 +21,7 @@ The paper must be ingested first. Check with `argelanderspace list` (one line pe
 ## Configuration
 
 - **CLI**: `argelanderspace` (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` — the built bundle, by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently hits an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts (chain: flag > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`).
-- **Doc id vs work id**: `read` / `show` / `ref` take a **doc id** (e.g. `arxiv-2501.17225`; see `list`, or the `doc_ids` field of `search` rows). `note` / `label` take a **work id** (`arxiv:...` / `doi:...`). Don't mix them up.
+- **Doc id vs work id**: `read` / `show` / `ref` / `annot` take a **doc id** (e.g. `arxiv-2501.17225`; see `list`, or the `doc_ids` field of `search` rows). `note` / `label` take a **work id** (`arxiv:...` / `doi:...`). Don't mix them up.
 - **Deep-link port**: the CLI prints links as `http://localhost:<port>/doc/...` with port = `ARGELANDERSPACE_PORT` env > config.toml `port` > 8000. If the user's server runs on a custom `--port`, the printed port may not match — set `ARGELANDERSPACE_PORT` in your shell before running CLI commands, or rewrite the port when quoting links.
 
 ## The command surface (reading priority)
@@ -34,6 +34,7 @@ The paper must be ingested first. Check with `argelanderspace list` (one line pe
 | 2 | `read <docId> --manifest bib` | JSONL: every bibliography entry (`{id, short, raw, author, year, title?…}`) |
 | 3 — exact lookup | `show <docId> <floatId>` | Pretty JSON for one figure/table/equation/code/algorithm: full `latex` / `caption` / `table_body` / `body` / `image` path + `link` |
 | 3 | `ref <docId> <refIdOrKey>` | Pretty JSON for one bibliography entry: metadata + `raw` + `cited_in` block ids + `link`. Matches by id (`ref-6`), label, or citation key |
+| 3 | `annot <docId>` | The user's own annotations on this doc as JSONL (`{id, doc_id, target, context, body, created_at, updated_at, link}` per row, reading order, document-level first) — where in the paper the user left notes/requests. Read-only; annotations written against a since-replaced document are hidden (a fixed `note:` on stderr, exit 0) and archived ones are never exposed. `context` locates each target (`section_id`/`section_path`, plus the full container text for text/paragraph/list targets); combine with `read`/`show` for the full section/float content |
 
 Reading order: `read` the relevant section first → resolve floats with `show` → resolve citations with `ref`. Use the manifests as maps (find ids/numbers), not as the primary text.
 
@@ -111,7 +112,7 @@ Every `read` header, `show`, and `ref` output carries a `link`:
 http://localhost:<port>/doc/<docId>#<anchor>
 ```
 
-Anchors: `#sec-N` (section), `#eq-N` / `#fig-N` / `#tab-N` / `#code-N` / `#alg-N` (floats), `#ref-N` (bibliography entry). Clicking one opens the webui reader at exactly that spot. **Whenever your answer rests on a specific passage, end the point with its deep link** so the user can verify you in one click:
+Anchors: `#sec-N` (section), `#eq-N` / `#fig-N` / `#tab-N` / `#code-N` / `#alg-N` (floats), `#ref-N` (bibliography entry), `#ann-<id>` (annotation — from `annot` output). Clicking one opens the webui reader at exactly that spot. **Whenever your answer rests on a specific passage, end the point with its deep link** so the user can verify you in one click:
 
 > 式 (2) 把观测自行投影到 CP 方向：…（变量定义见紧接的下一段）。http://localhost:8000/doc/arxiv-2501.17225#eq-2
 
