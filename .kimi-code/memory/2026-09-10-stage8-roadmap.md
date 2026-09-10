@@ -4,7 +4,9 @@
 
 ## 状态
 
-**2026-09-10：设计 grilling 完成（三轮 Q1–Q20 全锁定 + 用户终稿修正 4 点），待 MS1 开工。** commit/执行进度随 milestone 追加在本节。
+**2026-09-10：MS1（contracts+core）landed `a01e84c`。** contracts `annotations.ts`（target 三型 union + canonical text 纯函数 + AnnotationsFile + WsAnnotationChanged）+ jobs union + web ws.ts 显式分支编译修复（Stage 4 MS1 同类问题如约出现）；core `annotations/store.ts`（plans 范式 store + canonical projection/fingerprint 含 asset 内容 hash + `ensureCurrentAnnotations` 三态幂等归档 + 字节原样 archive）。对抗审查 2 阻断全修：①`literatures/` 并非整体 gitignore（定稿前提有误）→ 补 `literatures/annotations/` 规则；②archive 经 zod round-trip 丢外部编辑器未知键 → 改 `readFileSync` 字节拷贝（schema 校验仍在归档前 gate）。复核 APPROVE。测试 contracts 30→51、core 209→263，四门全绿。审查存照（MS2 注意）：`assetContentHash` 缺 `/images` 式路径穿越守卫（MS2 路由须 `badId(docId)` 类校验后再调 store）；corrupt-store 测试可补 archive 目录不存在断言；canonical text 放 contracts 而非定稿字面的 core（web runtime 只依赖 contracts，MS6 记录）；figure chartType/content 未入投影（MS6 补记）。
+
+**2026-09-10：设计 grilling 完成（三轮 Q1–Q20 全锁定 + 用户终稿修正 4 点）。** commit/执行进度随 milestone 追加在本节。
 
 ## 产品定位（用户原话收敛，勿再扩张）
 
@@ -39,7 +41,7 @@
 
 - 路径：`literatures/annotations/<doc_id>/current.json` + `literatures/annotations/<doc_id>/archive/<ts>-<fp8>.json`。**不写进 `<doc_id>.json` render IR**（标注是用户数据，与摄入产物分离）。
 - current = `{version, rev, content_fingerprint, annotations[]}`；pretty 2 空格；zod 双端校验；tmp+rename 原子写；rev 乐观锁（**新 fingerprint epoch 的 rev 从 0 重启**——故 PUT 必须双校验，见下）。
-- archive 文件名：`YYYYMMDDTHHmmssSSZ-<oldFingerprint8>.json`（**UTC 毫秒**、字典序可排序、文件系统安全；极端碰撞加 `-2`/`-3` 后缀，**绝不覆盖已有 archive**）。archive 内容 = 旧 current 原样。
+- archive 文件名：`YYYYMMDDTHHmmssSSSZ-<oldFingerprint8>.json`（如 `20260910T084530123Z-a1b2c3d4.json`；**UTC、3 位定长毫秒**、字典序可排序、文件系统安全；极端碰撞加 `-2`/`-3` 后缀，**绝不覆盖已有 archive**）。archive 内容 = 旧 current 原样。
 - `literatures/` 整体在 .gitignore 内，annotations/ 天然覆盖。
 - REST 粗粒度 `GET/PUT /api/paper/:doc_id/annotations`（单用户足够；CSRF guard + 专用 annotationLock，不与 libraryLock/planLock 互堵）。
 
