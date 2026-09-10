@@ -4,6 +4,8 @@
 
 ## 状态
 
+**2026-09-10：MS2（server REST + 文档删除）landed `b586d61`。** `GET/PUT /api/paper/:doc_id/annotations`（ensureCurrent 访问路径归档、409×2/500、annotationLock、put/invalidate 广播）+ watcher 第三指纹（per-doc current.json，archive 不观察）+ `DELETE /api/paper/:doc_id`（全局摘除 + 位置递补 + 即广播）+ `DocMutationRegistry` 生命周期互斥（upload 提交即 pin / refresh 全局 pin 保守拦全部 DELETE / DELETE tryBeginDelete 同步抢位 / 双向 409）。顺手修 MS1 存照：assetContentHash 穿越守卫。对抗审查 1 阻断（submit/spool 提交期失败 pin 永久泄漏两处——job 已 terminal 仍 409 永锁）已修（submit try/catch 直释 + waitFor 钩子上移至 spool 写前 + refresh pin 入 try），复核 APPROVE（无双重释放、好路径无回归）。测试 server 94→135、core 263→266，四门全绿。审查存照（后续 MS 注意）：annotations rm 失败的部分删除会留 ghost library 条目至下次 rebuild（手册记一笔）；GET ensure 在锁外可双归档（-N 后缀兜底无数据丢失）；no-op DELETE 也广播；watcher 会对被删 doc 的 current.json 消失发 external（MS3 web 须容忍）；chmod 失败注入以 root 运行时无效（用 file-where-dir 技巧）。
+
 **2026-09-10：MS1（contracts+core）landed `a01e84c`。** contracts `annotations.ts`（target 三型 union + canonical text 纯函数 + AnnotationsFile + WsAnnotationChanged）+ jobs union + web ws.ts 显式分支编译修复（Stage 4 MS1 同类问题如约出现）；core `annotations/store.ts`（plans 范式 store + canonical projection/fingerprint 含 asset 内容 hash + `ensureCurrentAnnotations` 三态幂等归档 + 字节原样 archive）。对抗审查 2 阻断全修：①`literatures/` 并非整体 gitignore（定稿前提有误）→ 补 `literatures/annotations/` 规则；②archive 经 zod round-trip 丢外部编辑器未知键 → 改 `readFileSync` 字节拷贝（schema 校验仍在归档前 gate）。复核 APPROVE。测试 contracts 30→51、core 209→263，四门全绿。审查存照（MS2 注意）：`assetContentHash` 缺 `/images` 式路径穿越守卫（MS2 路由须 `badId(docId)` 类校验后再调 store）；corrupt-store 测试可补 archive 目录不存在断言；canonical text 放 contracts 而非定稿字面的 core（web runtime 只依赖 contracts，MS6 记录）；figure chartType/content 未入投影（MS6 补记）。
 
 **2026-09-10：设计 grilling 完成（三轮 Q1–Q20 全锁定 + 用户终稿修正 4 点）。** commit/执行进度随 milestone 追加在本节。
