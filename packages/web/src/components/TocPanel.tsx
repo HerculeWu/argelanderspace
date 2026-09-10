@@ -127,10 +127,15 @@ function FloatGroup({
  * "3"; resolved but unnumbered falls back to the trailing heading/preview
  * text), math and `[[…]]` links are stripped, whitespace collapses. Kept
  * fragments carry a leading space so adjacent tokens (`\citep{a,b}`) don't
- * fuse into one word.
+ * fuse into one word. Tokens truncated mid-way by core's ingest-time preview
+ * truncation (`refsManifest` cuts `short` at ~60 chars, possibly inside an
+ * xref token whose embedded target preview makes it longer) never close, so
+ * a dangling `[cite:`/`[ref:` tail is dropped outright — nothing readable
+ * follows the cut.
  */
 export function stripMath(s: string): string {
   return s
+    .replace(/\[(cite|ref): [^\]]*$/g, "")
     .replace(/\[cite: ([^\]]+)\]/g, (_m, inner: string) => {
       const short = inner.split(" | ")[1];
       return short && short !== "unresolved" ? ` ${short}` : "";

@@ -64,4 +64,18 @@ describe("stripMath (TOC float preview)", () => {
   it("leaves token-free text unchanged", () => {
     expect(stripMath("A plain caption, no tokens.")).toBe("A plain caption, no tokens.");
   });
+
+  it("drops a token truncated mid-way by ingest-time preview truncation", () => {
+    // core refsManifest cuts `short` at ~60 chars, possibly inside an xref
+    // token whose embedded target preview pushes it past the limit — the
+    // unterminated tail must not leak into the preview (Stage 7 smoke §5b).
+    expect(stripMath("Same as the Figure [ref: fig-6 | figure | number: A.1 | Resu")).toBe(
+      "Same as the Figure"
+    );
+    expect(stripMath("the models of [cite: ref-12 | Hunt")).toBe("the models of");
+    // a complete token followed by a dangling one: only the tail drops
+    expect(stripMath("in [ref: fig-1 | figure | number: 2 | sketch] and [ref: fig-2 | fig")).toBe(
+      "in 2 and"
+    );
+  });
 });
