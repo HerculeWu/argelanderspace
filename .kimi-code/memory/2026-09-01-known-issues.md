@@ -17,6 +17,22 @@
 - **attachPdf 两个隐患**（已实锤）：① 目标 work 无 doi/arxiv 时 seed 退用提取标题算 canonical id，标题失配则 doc 落到新建重复 work，且返回前不校验 `doc_ids`；② `upload-<slug>` 截 48 字符有 docId 撞车风险。**Stage 3.1 MS2 修复**：stamp 焊死目标 work 身份（无 doi/arxiv 时 work.title 覆盖 doc meta.title）+ 直挂 `doc_ids` + 返回前校验 + 幂等 docId `upload-<slug44>-<hash6>`。
 - acquire planner 的 EDP/A&A `READY` 标记与现实脱节（站全墙）；plan 输出的 journal_html READY 不可信。**（Stage 3.1 MS1 随 HTML 面裁剪）**
 
+## Stage 8（2026-09-10 代码侧完成，MS1–MS6 landed、待用户 smoke；定稿/里程碑/审查见 `2026-09-10-stage8-roadmap.md`）
+
+**硬约束守住**：agent 侧既有输出零改动（`annot` 自诞生入冻结面；golden 零重冻）。**遗留/存照**：
+
+- **reader 在 `library.changed` 后不重取 IR**（既有缺口，Stage 8 前就有）：重摄入后打开中的阅读器仍显示旧 IR + 旧标注，失效要等下次访问/刷新；MS3 审查确认 snapshot 重建因此目前只是形式正确。手册 §6c-3 明示"手动刷新页面"。
+- **DELETE 中途 rm 失败的部分删除**留 ghost library 条目至下次 rebuild（MS2 审查存照；`library build` 重建即愈；no-op DELETE 也广播 library.changed 同挂账）。
+- **orphan annotations 不自动清理**：绕过删除入口手动 `rm -rf output/<doc>/` 时 `annotations/<doc>/` 成孤儿，Stage 8 无访问保证（终稿修正 3；不写"未来 migration 输入"既成事实）；archive 不对 reader/agent 开放。
+- **跨进程同 doc 并发 mutate 不支持**（CLI 与 server 同时写同一 doc = 操作边界；跨进程 filesystem lock 不做，手册明示）。
+- **GET ensure 在锁外可双归档**（MS2 存照）：archive 文件名碰撞加 `-N` 后缀兜底，绝不覆盖，无数据丢失。
+- **selbar-y 钳制 happy-dom pin 无牙**（MS4 存照）：测试环境零 rect 恒过；真实 Chrome rect 探针已实证双轴钳制。
+- **实现位置偏差记录**（MS1 存照）：canonical annotation text 纯函数实际放 **contracts**（roadmap 字面写 core——web runtime 只依赖 contracts 的约束）；figure 的 MinerU 遗存 `chartType`/`content` 字段**不进指纹投影**（OCR 事实非正文）。
+- **CLI `annot` 的 corrupt IR 报错不带文件路径**（MS5 存照）：复用既有 helper 的错误形态，受 agent 输出冻结约束，不改。
+- **CLI 无 docId 穿越防护**（MS5 存照）：与 `read`/`show`/`ref` 同一信任模型（本地单用户、CLI 直读磁盘），不加 `badId` 式校验。
+- **watcher 对被删 doc 的 current.json 消失发 external**（MS2 存照）：web 端 404 容忍（missing 态清空不报错）。
+- 归档 banner 文案在外部删除场景措辞欠准（MS3 存照，cosmetic）。
+
 ## Stage 7（2026-09-10 关闭——MS1–MS5 landed、用户验收通过、已 push；定稿/里程碑/审查见 `2026-09-09-stage7-roadmap.md`）
 
 **硬约束守住**：agent 侧输出逐字节不变（golden .md 零重冻；MS2 golden .json 也零 diff；MS3 核实 CLI 直读磁盘不消费 LibraryPayload；MS4 agent.ts 零改动）。

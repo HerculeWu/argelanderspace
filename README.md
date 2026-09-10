@@ -4,8 +4,9 @@ Ingest research papers into a structured **render IR** — section tree,
 floats (figures / tables / equations / code / algorithms), a structured
 bibliography, and natively segmented citations and cross-references — and manage
 them in a **citation-graph library** with a local **reader workspace** (web UI
-with document reader, force-directed citation graph, and live ingest progress
-over WebSocket).
+with document reader, per-document **annotations** (text/structure/whole-doc
+targets with Markdown+math bodies), force-directed citation graph, and live
+ingest progress over WebSocket).
 
 One ingestion pipeline emits the IR:
 
@@ -122,6 +123,7 @@ literatures/
   output/    one <doc_id>/ per ingested paper: <doc_id>.json + src/ + build/ + assets/ + fetch caches
   library/   library.json (source of truth), library.bib, cache/ (graph.json + ads/crossref/openalex)
   jobs/      asynchronous refresh/ingest job records and the upload spool
+  annotations/  per-doc user annotations: <doc_id>/current.json (+ archive/ after a content change)
 ```
 
 The server polls the data dir and broadcasts `library.changed`, so a running
