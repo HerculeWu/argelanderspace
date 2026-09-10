@@ -92,6 +92,10 @@ export function createServer(opts: ServerOptions): RunningServer {
   // establishes the baseline, and `hub` is assigned long before any later
   // poll can fire (the closure-timing argument of `broadcast` above). The
   // server's own writes re-trigger this too — accepted.
+  // Stage 8: the watcher's third fingerprint covers
+  // `annotations/<doc>/current.json` per doc, rebroadcast as one
+  // `annotation.changed` "external" per changed doc (it only notifies — the
+  // archive-on-mismatch write stays on the REST access path, roadmap §4).
   const watcher = startWatcher({
     dataDir: opts.dataDir,
     statusDir,
@@ -100,6 +104,12 @@ export function createServer(opts: ServerOptions): RunningServer {
       hub.broadcast({ type: "library.changed", cause: "external", at: new Date().toISOString() }),
     onPlansChange: () =>
       hub.broadcast({ type: "plan.changed", cause: "external", at: new Date().toISOString() }),
+    onAnnotationsChange: (docIds) => {
+      const at = new Date().toISOString();
+      for (const docId of docIds) {
+        hub.broadcast({ type: "annotation.changed", doc_id: docId, cause: "external", at });
+      }
+    },
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {

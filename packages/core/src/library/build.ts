@@ -298,3 +298,27 @@ export function patchWork(
   store.save(paths);
   return true;
 }
+
+/**
+ * Remove *docId* from EVERY work's `doc_ids` (Stage 8 §8 document delete): one
+ * doc can appear in several works through identity merge, so this is the same
+ * all-works traversal as the seed's `pruneMissingDocs`. Each work's remaining
+ * `doc_ids[0]` naturally stays/becomes its main doc (the main-doc pointer is
+ * positional). Pure library-store mutation under the caller's writer lock —
+ * no rebuild, no enrichment; saves (library.json + library.bib regen) only
+ * when something actually changed, per patchWork's no-op discipline. Returns
+ * whether anything changed.
+ */
+export function removeDocFromWorks(paths: LibraryPaths, docId: string): boolean {
+  const store = LibraryStore.load(paths);
+  let changed = false;
+  for (const w of store.works) {
+    if (w.doc_ids.includes(docId)) {
+      w.doc_ids = w.doc_ids.filter((d) => d !== docId);
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  store.save(paths);
+  return true;
+}

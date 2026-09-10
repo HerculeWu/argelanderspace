@@ -138,3 +138,59 @@ export function collectBroadcasts(): {
   const messages: WsServerMessage[] = [];
   return { messages, broadcast: (msg) => messages.push(msg) };
 }
+
+/**
+ * Build a minimal real zip (stored entries). CRC fields are zeroed —
+ * `extractZip` never verifies them. This keeps the upload tests free of any
+ * archiving dependency. (Same construction as upload.test.ts's local copy.)
+ */
+export function makeZip(entries: Record<string, string>): Buffer {
+  const locals: Buffer[] = [];
+  const centrals: Buffer[] = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(entries)) {
+    const nameBuf = Buffer.from(name, "utf8");
+    const data = Buffer.from(content, "utf8");
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0); // local file header
+    local.writeUInt16LE(20, 4); // version needed
+    local.writeUInt16LE(0, 8); // method 0 = stored
+    local.writeUInt32LE(data.length, 18); // compressed size
+    local.writeUInt32LE(data.length, 22); // uncompressed size
+    local.writeUInt16LE(nameBuf.length, 26);
+    locals.push(local, nameBuf, data);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0); // central directory header
+    central.writeUInt16LE(20, 4); // version made by
+    central.writeUInt16LE(20, 6); // version needed
+    central.writeUInt16LE(0, 10); // method
+    central.writeUInt32LE(data.length, 20); // compressed size
+    central.writeUInt32LE(data.length, 24); // uncompressed size
+    central.writeUInt16LE(nameBuf.length, 28);
+    central.writeUInt32LE(offset, 42); // local header offset
+    centrals.push(central, nameBuf);
+    offset += 30 + nameBuf.length + data.length;
+  }
+  const cd = Buffer.concat(centrals);
+  const count = Object.keys(entries).length;
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0); // end of central directory
+  eocd.writeUInt16LE(count, 8); // entries on this disk
+  eocd.writeUInt16LE(count, 10); // entries total
+  eocd.writeUInt32LE(cd.length, 12);
+  eocd.writeUInt32LE(offset, 16); // central directory offset
+  return Buffer.concat([...locals, cd, eocd]);
+}
+
+/** A minimal legal LaTeX project (the upload success path's payload). */
+export const UPLOAD_ZIP = makeZip({
+  "main.tex": [
+    "\\documentclass{article}",
+    "\\title{Uploaded Paper}",
+    "\\begin{document}",
+    "\\maketitle",
+    "Hello world.",
+    "\\end{document}",
+    "",
+  ].join("\n"),
+});

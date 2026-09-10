@@ -247,10 +247,22 @@ export interface DocContentContext {
  * `/images` routes exactly: a bare filename lives under `<docDir>/assets/`
  * (the Stage-5 tex pipeline convention, `app.ts` single-segment route); a
  * value carrying a subdirectory is doc-dir relative verbatim (`app.ts`
- * multi-segment route). A present-but-unreadable asset THROWS (fingerprint
- * failure, never a mismatch) — the caller must not touch annotations then.
+ * multi-segment route), guarded by the same traversal rule as that route
+ * (`badImagePath`: no backslash, no empty/`..`/leading-dot segments) so a
+ * hostile or corrupt IR can never make the fingerprint read outside the doc
+ * dir. A present-but-unreadable asset THROWS (fingerprint failure, never a
+ * mismatch) — the caller must not touch annotations then.
  */
 function assetContentHash(docDir: string, imgPath: string): string {
+  if (
+    imgPath.includes("\\") ||
+    imgPath.split("/").some((s) => s === "" || s === ".." || s.startsWith("."))
+  ) {
+    throw new AnnotationsError(
+      "fingerprint",
+      `annotations fingerprint: refusing unsafe asset path "${imgPath}"`
+    );
+  }
   const p = imgPath.includes("/") ? join(docDir, imgPath) : join(docDir, "assets", imgPath);
   let bytes: Buffer;
   try {

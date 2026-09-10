@@ -24,7 +24,7 @@ import { parseBibtexText } from "../src/acquire/bibtex.js";
 import { classify, planSources, planToDict } from "../src/acquire/planner.js";
 import { resolveWork } from "../src/acquire/resolve.js";
 import { enrichAndPlan } from "../src/acquire/run.js";
-import { addDoiWork } from "../src/library/build.js";
+import { addDoiWork, removeDocFromWorks } from "../src/library/build.js";
 import { workToRef } from "../src/library/graph.js";
 import type {
   AdsResolution,
@@ -547,5 +547,45 @@ describe("addDoiWork (Stage 7 MS4 DOI stub entries)", () => {
     const paths = tmpPaths();
     expect(await addDoiWork(paths, "not-a-doi", crStub(null))).toBeNull();
     expect(LibraryStore.load(paths).works).toHaveLength(0);
+  });
+});
+
+describe("removeDocFromWorks (Stage 8 document delete)", () => {
+  const tmpPaths = () => libraryPaths(mkdtempSync(join(tmpdir(), "ms8-rmdoc-")));
+
+  /** Two works both holding "shared-doc" (identity-merge precedent), plus a
+   *  third that doesn't. */
+  function seedLibrary(paths: ReturnType<typeof libraryPaths>): void {
+    const store = new LibraryStore();
+    store.upsert({
+      ...emptyWork("arxiv:2603.03522"),
+      title: "Work A",
+      doc_ids: ["shared-doc", "a-old"],
+    });
+    store.upsert({
+      ...emptyWork("doi:10.1051/0004-6361/202453302"),
+      title: "Work B",
+      doc_ids: ["b-main", "shared-doc"],
+    });
+    store.upsert({ ...emptyWork("arxiv:2603.00229"), title: "Work C", doc_ids: ["c-doc"] });
+    store.save(paths);
+  }
+
+  test("removes the doc from every work; remaining doc_ids[0] becomes the main doc", () => {
+    const paths = tmpPaths();
+    seedLibrary(paths);
+    expect(removeDocFromWorks(paths, "shared-doc")).toBe(true);
+    const store = LibraryStore.load(paths);
+    expect(store.get("arxiv:2603.03522")?.doc_ids).toEqual(["a-old"]);
+    expect(store.get("doi:10.1051/0004-6361/202453302")?.doc_ids).toEqual(["b-main"]);
+    expect(store.get("arxiv:2603.00229")?.doc_ids).toEqual(["c-doc"]); // untouched
+  });
+
+  test("an unknown doc is a side-effect-free no-op (no save, returns false)", () => {
+    const paths = tmpPaths();
+    seedLibrary(paths);
+    const before = readFileSync(paths.libraryJson, "utf8");
+    expect(removeDocFromWorks(paths, "ghost-doc")).toBe(false);
+    expect(readFileSync(paths.libraryJson, "utf8")).toBe(before);
   });
 });

@@ -483,6 +483,37 @@ describe("docContentFingerprint: figure/table assets", () => {
     expect((err as AnnotationsError).code).toBe("fingerprint");
     expect((err as AnnotationsError).message).toContain("gone.svg");
   });
+
+  // MS2: the traversal guard mirrors the server's badImagePath — the
+  // fingerprint must never read outside the doc dir, however plausible the
+  // target file may be.
+  it("rejects traversal-ish imgPath values without touching the filesystem", () => {
+    const root = tmpDataDir();
+    const docDir = join(root, "doc");
+    mkdirSync(docDir, { recursive: true });
+    writeFileSync(join(root, "secret.png"), "outside the doc dir");
+    const cases = [
+      "../secret.png", // escapes docDir
+      "assets/../secret.png", // escapes mid-path
+      "assets\\win.png", // backslash
+      ".hidden.png", // leading-dot bare name
+      "assets/.hidden/x.png", // leading-dot segment
+      "assets//x.png", // empty segment
+      "", // empty path
+    ];
+    for (const imgPath of cases) {
+      const ir = mkDocIr([mkSection([{ id: "fig-1", type: "figure", imgPath }])]);
+      let err: unknown;
+      try {
+        docContentFingerprint(ir, { docDir });
+      } catch (e) {
+        err = e;
+      }
+      expect(err, imgPath).toBeInstanceOf(AnnotationsError);
+      expect((err as AnnotationsError).code, imgPath).toBe("fingerprint");
+      expect((err as AnnotationsError).message, imgPath).toMatch(/unsafe asset path/);
+    }
+  });
 });
 
 // --------------------------------------------------------------------------- //

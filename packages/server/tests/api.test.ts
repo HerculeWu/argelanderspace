@@ -83,6 +83,8 @@ const put = async (
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
+const del = async (path: string, headers?: Record<string, string>): Promise<Response> =>
+  app.request(path, { method: "DELETE", headers });
 
 // --------------------------------------------------------------------------- //
 // papers
@@ -330,6 +332,16 @@ describe("CSRF guard (Origin check on mutations)", () => {
     ["PATCH /api/library/refs", (h) => patch("/api/library/refs", { id: KNOWN_WORK_ID }, h)],
     ["POST /api/library/refresh", (h) => post("/api/library/refresh?offline=true", undefined, h)],
     ["PUT /api/plans", (h) => put("/api/plans", { version: 1, rev: 0, plans: [] }, h)],
+    [
+      "PUT /api/paper/:doc_id/annotations",
+      (h) =>
+        put(
+          "/api/paper/demo/annotations",
+          { version: 1, rev: 0, content_fingerprint: "f".repeat(64), annotations: [] },
+          h
+        ),
+    ],
+    ["DELETE /api/paper/:doc_id", (h) => del("/api/paper/demo", h)],
   ];
   for (const [name, call] of cases) {
     test(`${name}: evil Origin → 403`, async () => {

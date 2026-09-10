@@ -25,30 +25,51 @@
  *   lock (mismatch → 409) and a `plan.changed` broadcast. Writes serialize on
  *   a dedicated planLock, never the library lock (they must not block each
  *   other).
+ * - Stage 8 adds `GET`/`PUT /api/paper/:doc_id/annotations` (the reader's
+ *   annotation store: fingerprint+rev double-checked PUT with 409×2, the
+ *   `annotation.changed` broadcast, a dedicated annotationLock) and
+ *   `DELETE /api/paper/:doc_id` (global physical delete + all-works doc_ids
+ *   removal). The DocMutationRegistry (doc-mutations.ts) is the §8 lifecycle
+ *   lock between document deletes and doc-writing jobs; upload/refresh pin
+ *   their targets, DELETE busy-checks (409, never waits).
  */
 
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, relative, resolve, sep } from "node:path";
-import type { RefreshResponse, WsServerMessage } from "@argelanderspace/contracts";
-import { PlansFileSchema } from "@argelanderspace/contracts";
+import type {
+  AnnotationsFile,
+  Job,
+  RefreshResponse,
+  WsServerMessage,
+} from "@argelanderspace/contracts";
+import { AnnotationsFileSchema, PlansFileSchema } from "@argelanderspace/contracts";
 import {
+  AnnotationsError,
   addNodeToLibrary,
+  annotationsDocDir,
   attachLatexZip,
+  ensureCurrentAnnotations,
+  findWork,
   type IngestPipelines,
   type LibraryPaths,
+  LibraryStore,
   libraryPayload,
   loadPlans,
   type MetadataSources,
   patchWork,
   rebuild,
+  removeDocFromWorks,
+  saveAnnotationsFile,
   savePlans,
+  uploadDocId,
 } from "@argelanderspace/core";
 import { extractZip, ZipError } from "@argelanderspace/infra";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
@@ -68,6 +89,9 @@ export interface AppDeps {
   runner: JobRunner;
   /** WS sink; when absent, events are simply dropped (tests without a hub). */
   broadcast?: (msg: WsServerMessage) => void;
+  /** Composition seam for the §8 delete↔job lifecycle lock (tests inject to
+   *  drive the reverse-direction exclusion); default is a fresh registry. */
+  docMutations?: DocMutationRegistry;
   /** Built SPA directory; served last (API routes take precedence). */
   webDist?: string | null;
   /** The server's own port — same-origin SPA POSTs carry it in `Origin`. */
@@ -159,6 +183,10 @@ export function createApp(deps: AppDeps): Hono {
   const libraryLock = new AsyncLock();
   /** Plans writes: separate from the library lock — the two never block each other. */
   const planLock = new AsyncLock();
+  /** Annotations writes: their own lock too (roadmap §2 — 不与 libraryLock/planLock 互堵). */
+  const annotationLock = new AsyncLock();
+  /** The §8 delete↔job lifecycle lock (see doc-mutations.ts). */
+  const docMutations = deps.docMutations ?? new DocMutationRegistry();
   const broadcast = deps.broadcast ?? (() => {});
   // Job transitions flow to the same bus as library.changed (createServer's
   // hub is just another broadcast consumer).
@@ -169,6 +197,13 @@ export function createApp(deps: AppDeps): Hono {
   const planChanged = (cause: "put" | "external"): void => {
     broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
   };
+  const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
+    broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
+  };
+  /** AnnotationsError → the route's response (roadmap §3: not_found → 404,
+   *  every other store failure → 500, never a silent reset). */
+  const annotationsError = (err: AnnotationsError) =>
+    detail(err.message, err.code === "not_found" ? 404 : 500);
   /** rebuild through the lock. */
   const lockedRebuild = (
     p: LibraryPaths,
@@ -261,6 +296,138 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     return c.json(doc);
+  });
+
+  // ---- GET /api/paper/{doc_id}/annotations ---------------------------------- //
+
+  // Stage 8 §4: the access path IS the invalidation trigger — every read runs
+  // the idempotent `ensureCurrentAnnotations` first (a fingerprint mismatch
+  // archives the old current and starts a new empty epoch; §3: the
+  // `invalidate` broadcast is allowed only after that new current exists).
+  app.get("/api/paper/:doc_id/annotations", (c) => {
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const result = ensureCurrentAnnotations(paths.dataDir, docId);
+      if (result.invalidated) annotationChanged(docId, "invalidate");
+      return c.json(result.file);
+    } catch (err) {
+      if (err instanceof AnnotationsError) {
+        const e = annotationsError(err);
+        return c.json(e.body, e.status);
+      }
+      throw err;
+    }
+  });
+
+  // ---- PUT /api/paper/{doc_id}/annotations ---------------------------------- //
+
+  // Whole-document replace with the §5 double check: the body must bind the
+  // CURRENT content fingerprint (a mismatch means the document was replaced —
+  // ensureCurrent has already archived the old epoch; 409 "document changed"
+  // carries the fresh file so the client reloads) AND the current rev (the
+  // plans-style optimistic lock; its 409 carries the current rev).
+  // Fingerprint/corruption failures are 500, NEVER 409. The ensure + checks +
+  // save are one critical section on annotationLock.
+  app.put("/api/paper/:doc_id/annotations", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = AnnotationsFileSchema.safeParse(body);
+    if (!parsed.success) {
+      const e = detail("request body is not a valid annotations document", 400);
+      return c.json(e.body, e.status);
+    }
+    type PutOutcome =
+      | { documentChanged: AnnotationsFile; invalidated: boolean }
+      | { conflictRev: number }
+      | { saved: AnnotationsFile };
+    let outcome: PutOutcome;
+    try {
+      outcome = await annotationLock.run(() => {
+        const ensured = ensureCurrentAnnotations(paths.dataDir, docId);
+        const current = ensured.file;
+        if (parsed.data.content_fingerprint !== current.content_fingerprint) {
+          return { documentChanged: current, invalidated: ensured.invalidated };
+        }
+        if (parsed.data.rev !== current.rev) return { conflictRev: current.rev };
+        saveAnnotationsFile(paths.dataDir, docId, parsed.data, { bumpRev: true });
+        return { saved: { ...parsed.data, rev: parsed.data.rev + 1 } };
+      });
+    } catch (err) {
+      if (err instanceof AnnotationsError) {
+        const e = annotationsError(err);
+        return c.json(e.body, e.status);
+      }
+      throw err;
+    }
+    if ("documentChanged" in outcome) {
+      if (outcome.invalidated) annotationChanged(docId, "invalidate");
+      return c.json({ detail: "document changed", file: outcome.documentChanged }, 409);
+    }
+    if ("conflictRev" in outcome) {
+      return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
+    }
+    annotationChanged(docId, "put");
+    return c.json(outcome.saved);
+  });
+
+  // ---- DELETE /api/paper/{doc_id} -------------------------------------------- //
+
+  // Stage 8 §8: GLOBAL physical delete — `output/<doc>/` + `annotations/<doc>/`
+  // (current + archive; missing dirs tolerated), then the doc is removed from
+  // EVERY work's `doc_ids` (one doc can appear in several works via identity
+  // merge; core `removeDocFromWorks` is the all-works traversal). "Doc exists"
+  // here means the output DIRECTORY (not its JSON, unlike the IR route): a
+  // retry after a mid-delete failure — which may already have unlinked the
+  // JSON — must be able to finish the cleanup, and a hollow failed-ingest dir
+  // is deletable too. A doc with no output dir at all 404s; its annotations,
+  // if any, stay behind as orphans (roadmap 推后: no access guarantee, no
+  // auto-cleanup). Ordering: busy-check before any mutation (a queued/running
+  // upload of this doc — or any refresh — answers 409 "document busy", never
+  // waits; the registry claim is atomic with the check); the physical delete
+  // runs BEFORE the library update, so a mid-delete failure reports 500 with
+  // library.json untouched; both run under libraryLock so no library write
+  // can interleave. No rebuild/enrich is triggered.
+  app.delete("/api/paper/:doc_id", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    const docDir = join(outputDir, docId);
+    if (!existsSync(docDir) || !statSync(docDir).isDirectory()) {
+      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if (!docMutations.tryBeginDelete(docId)) {
+      const e = detail("document busy", 409);
+      return c.json(e.body, e.status);
+    }
+    try {
+      await libraryLock.run(() => {
+        rmSync(docDir, { recursive: true, force: true });
+        rmSync(annotationsDocDir(paths.dataDir, docId), { recursive: true, force: true });
+        removeDocFromWorks(paths, docId);
+      });
+    } catch (err) {
+      const e = detail(`delete failed: ${(err as Error).message}`, 500);
+      return c.json(e.body, e.status);
+    } finally {
+      docMutations.endDelete(docId);
+    }
+    libraryChanged("patch");
+    return c.json({ ok: true });
   });
 
   // ---- GET /api/library ------------------------------------------------------ //
@@ -365,19 +532,27 @@ export function createApp(deps: AppDeps): Hono {
     }
     // The response shape is unchanged (the request still waits for the
     // summary), but the rebuild runs as a serial job: mutual exclusion with
-    // upload OCR and progress over WS.
-    const job = runner.submit(
-      "refresh",
-      () => lockedRebuild(paths, { sources: deps.makeSources(offline) }),
-      { offline }
-    );
-    const done = await runner.waitFor(job.id);
-    if (done.status !== "done") {
-      const e = detail(done.error ?? "refresh failed", 500);
-      return c.json(e.body, e.status);
+    // upload OCR and progress over WS. Stage 8 §8: the pin makes DELETE
+    // refuse to interleave (a rebuild re-derives every work's doc_ids — see
+    // doc-mutations.ts). The pin is taken INSIDE the try: a throwing
+    // `runner.submit` must not leak it (finally unpins either way).
+    try {
+      docMutations.pinRefresh();
+      const job = runner.submit(
+        "refresh",
+        () => lockedRebuild(paths, { sources: deps.makeSources(offline) }),
+        { offline }
+      );
+      const done = await runner.waitFor(job.id);
+      if (done.status !== "done") {
+        const e = detail(done.error ?? "refresh failed", 500);
+        return c.json(e.body, e.status);
+      }
+      libraryChanged("refresh");
+      return c.json(done.result as Record<string, unknown>);
+    } finally {
+      docMutations.unpinRefresh();
     }
-    libraryChanged("refresh");
-    return c.json(done.result as Record<string, unknown>);
   });
 
   // ---- POST /api/library/upload?id=|doi=|arxiv= ------------------------------ //
@@ -435,12 +610,25 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid boolean value for query param 'sync'", 422);
       return c.json(e.body, e.status);
     }
+    // Stage 8 §8 lifecycle lock (doc-mutations.ts): pin the upload's doc for
+    // the request's/job's whole lifetime so DELETE refuses to interleave, and
+    // refuse to start while a DELETE of that doc is in flight (the reverse
+    // direction). The doc id is computable NOW — uploadDocId is a pure
+    // function of the resolved work id. An unresolvable work pins nothing:
+    // the attach fails later exactly as before.
+    const targetWork = findWork(LibraryStore.load(paths), query);
+    const uploadDoc = targetWork === undefined ? undefined : uploadDocId(targetWork.id);
+    if (uploadDoc !== undefined && docMutations.isDeleting(uploadDoc)) {
+      const e = detail("document busy", 409);
+      return c.json(e.body, e.status);
+    }
     if (sync) {
       // Legacy behavior (app.py verbatim): the response waits for the ingest.
       const tmp = join(
         tmpdir(),
         `argelanderspace-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`
       );
+      if (uploadDoc !== undefined) docMutations.pinWriter(uploadDoc);
       try {
         writeFileSync(tmp, data);
         const ref = await runAttach(tmp);
@@ -453,6 +641,7 @@ export function createApp(deps: AppDeps): Hono {
           : detail(`ingest failed: ${msg}`, 500);
         return c.json(err.body, err.status);
       } finally {
+        if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
         rmSync(tmp, { force: true });
       }
     }
@@ -460,27 +649,43 @@ export function createApp(deps: AppDeps): Hono {
     // Async (new default): spool the bytes, queue the ingest job, answer 202.
     // The runner's `report` rides attachLatexZip's onProgress straight through,
     // so every stage transition lands in job.progress (WS job.progress).
-    const job = runner.submit(
-      "upload",
-      async (j, report) => {
-        const zip = runner.spoolPath(j.id);
-        try {
-          const ref = await runAttach(zip, report);
-          return { ref };
-        } finally {
-          rmSync(zip, { force: true });
-        }
-      },
-      query
-    );
+    // The §8 writer pin is held from submit until the job's terminal state, so
+    // a queued job already busy-blocks DELETE (it may write the doc).
+    if (uploadDoc !== undefined) docMutations.pinWriter(uploadDoc);
+    let job: Job;
+    try {
+      job = runner.submit(
+        "upload",
+        async (j, report) => {
+          const zip = runner.spoolPath(j.id);
+          try {
+            const ref = await runAttach(zip, report);
+            return { ref };
+          } finally {
+            rmSync(zip, { force: true });
+          }
+        },
+        query
+      );
+    } catch (err) {
+      // No job exists → no terminal hook will ever fire; release directly.
+      if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
+      throw err;
+    }
+    // `library.changed` must follow `job.done` on the wire (runner emits
+    // done before resolving waiters); the writer pin releases with the
+    // terminal state, whichever it is. The hook is registered BEFORE the
+    // spool write on purpose: if that write throws, the request 500s but the
+    // queued job still runs, fails on its missing spool file, and this hook
+    // releases the pin — the failed job is the honest record of the 500, so
+    // no explicit cancel/unpin here (which would also double-release).
+    void runner.waitFor(job.id).then((j) => {
+      if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
+      if (j.status === "done") libraryChanged("upload");
+    });
     // Synchronous spool write: guaranteed to land before the serial chain
     // (a microtask) can start the handler.
     writeFileSync(runner.spoolPath(job.id), data);
-    // `library.changed` must follow `job.done` on the wire (runner emits
-    // done before resolving waiters).
-    void runner.waitFor(job.id).then((j) => {
-      if (j.status === "done") libraryChanged("upload");
-    });
     return c.json({ job }, 202);
   });
 
