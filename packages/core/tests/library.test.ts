@@ -24,6 +24,7 @@ import { parseBibtexText } from "../src/acquire/bibtex.js";
 import { classify, planSources, planToDict } from "../src/acquire/planner.js";
 import { resolveWork } from "../src/acquire/resolve.js";
 import { enrichAndPlan } from "../src/acquire/run.js";
+import { addDoiWork } from "../src/library/build.js";
 import { workToRef } from "../src/library/graph.js";
 import type {
   AdsResolution,
@@ -423,5 +424,128 @@ describe("enrichAndPlan cite_key (assign-only)", () => {
     expect(a.cite_key).toBe("kroupa2001");
     expect(b.cite_key).toBe("kroupa2001a");
     expect(c.cite_key).toBe("kroupa2001b");
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// addDoiWork (Stage 7 MS4): CLI `ingest <doi>` → docless library stub entry
+// --------------------------------------------------------------------------- //
+
+describe("addDoiWork (Stage 7 MS4 DOI stub entries)", () => {
+  const CR: CrossrefResolution = {
+    doi: "10.1051/0004-6361/202039341",
+    title: "Improving the open cluster census. I.",
+    authors: ["Hunt", "Reffert"],
+    year: 2021,
+    venue: "Astronomy & Astrophysics",
+    type: "article",
+    cited_by_count: 142,
+    reference_dois: [],
+    n_references: 0,
+    abstract: null,
+    links: [],
+    resource_url: null,
+  };
+  const crStub = (payload: CrossrefResolution | null, calls?: { n: number }) => ({
+    resolve: async () => {
+      if (calls) calls.n += 1;
+      return payload;
+    },
+  });
+  const tmpPaths = () => libraryPaths(mkdtempSync(join(tmpdir(), "ms4-doi-")));
+
+  test("creates an enriched, docless, persisted work", async () => {
+    const paths = tmpPaths();
+    const r = await addDoiWork(paths, "10.1051/0004-6361/202039341", crStub(CR));
+    expect(r?.created).toBe(true);
+    expect(r?.enriched).toBe(true);
+    expect(r?.ref.id).toBe("doi:10.1051/0004-6361/202039341");
+    expect(r?.ref.pdf, "no reader doc yet").toBe(false);
+    const w = LibraryStore.load(paths).get("doi:10.1051/0004-6361/202039341");
+    expect(w?.title).toBe("Improving the open cluster census. I.");
+    expect(w?.authors).toEqual(["Hunt", "Reffert"]);
+    expect(w?.year).toBe(2021);
+    expect(w?.journal, "publisher-classified short label").toBe("A&A");
+    expect(w?.venue).toBe("A&A");
+    expect(w?.cited_by_count).toBe(142);
+    expect(w?.origin).toBe("manual");
+    expect(w?.cite_key).toBe("hunt2021");
+    expect(w?.doc_ids).toEqual([]);
+    expect(w?.acquisition, "acquisition plan stamped without a rebuild").not.toBeNull();
+  });
+
+  test("Crossref null (offline / no record) → bare stub, still persisted", async () => {
+    const paths = tmpPaths();
+    const r = await addDoiWork(paths, "10.9999/nowhere", crStub(null));
+    expect(r?.created).toBe(true);
+    expect(r?.enriched).toBe(false);
+    expect(r?.ref.id).toBe("doi:10.9999/nowhere");
+    const w = LibraryStore.load(paths).get("doi:10.9999/nowhere");
+    expect(w?.title).toBe("");
+    expect(w?.doi).toBe("10.9999/nowhere");
+    expect(w?.cite_key, "key assigned even without metadata").toBeTruthy();
+  });
+
+  test("a throwing Crossref client also degrades to a bare stub", async () => {
+    const paths = tmpPaths();
+    const r = await addDoiWork(paths, "10.9999/boom", {
+      resolve: async () => {
+        throw new Error("network down");
+      },
+    });
+    expect(r?.created).toBe(true);
+    expect(r?.enriched).toBe(false);
+    expect(LibraryStore.load(paths).works).toHaveLength(1);
+  });
+
+  test("DOI already saved → no fetch, no write, created:false", async () => {
+    const paths = tmpPaths();
+    await addDoiWork(paths, "10.1051/0004-6361/202039341", crStub(CR));
+    const before = readFileSync(paths.libraryJson, "utf8");
+    const calls = { n: 0 };
+    const r = await addDoiWork(paths, "10.1051/0004-6361/202039341", crStub(CR, calls));
+    expect(r?.created).toBe(false);
+    expect(r?.ref.id).toBe("doi:10.1051/0004-6361/202039341");
+    expect(calls.n, "Crossref not consulted for a known DOI").toBe(0);
+    expect(readFileSync(paths.libraryJson, "utf8"), "store untouched").toBe(before);
+    expect(LibraryStore.load(paths).works).toHaveLength(1);
+  });
+
+  test("DOI matching is case-insensitive (normDoi lowercases both sides)", async () => {
+    const paths = tmpPaths();
+    const r1 = await addDoiWork(paths, "10.3847/1538-4357/AB1234", crStub(null));
+    expect(r1?.created).toBe(true);
+    expect(r1?.ref.id, "stored lowercased").toBe("doi:10.3847/1538-4357/ab1234");
+    const calls = { n: 0 };
+    const r2 = await addDoiWork(paths, "10.3847/1538-4357/ab1234", crStub(null, calls));
+    expect(r2?.created).toBe(false);
+    expect(calls.n).toBe(0);
+    expect(LibraryStore.load(paths).works).toHaveLength(1);
+  });
+
+  test("bridges an existing title-only (bib) work instead of duplicating", async () => {
+    const paths = tmpPaths();
+    const store = new LibraryStore();
+    store.upsert({
+      ...emptyWork("work:improving-the-open-cluster-census-i-2021"),
+      title: "Improving the open cluster census. I.",
+      year: 2021,
+      origin: "bib",
+    });
+    store.save(paths);
+    const r = await addDoiWork(paths, "10.1051/0004-6361/202039341", crStub(CR));
+    const works = LibraryStore.load(paths).works;
+    expect(works, "one merged work, not a duplicate").toHaveLength(1);
+    const w = works[0];
+    expect(w?.doi).toBe("10.1051/0004-6361/202039341");
+    expect(w?.origin, "the existing work's origin wins").toBe("bib");
+    expect(w?.cite_key).toBe("hunt2021");
+    expect(r?.ref.id, "the ref points at the surviving work").toBe(w?.id);
+  });
+
+  test("invalid DOI → null (nothing written)", async () => {
+    const paths = tmpPaths();
+    expect(await addDoiWork(paths, "not-a-doi", crStub(null))).toBeNull();
+    expect(LibraryStore.load(paths).works).toHaveLength(0);
   });
 });

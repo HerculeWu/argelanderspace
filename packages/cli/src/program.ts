@@ -17,6 +17,7 @@ import { join } from "node:path";
 import {
   acquireReferences,
   addBibRecords,
+  addDoiWork,
   enrichAndPlan,
   fetchReadyFulltext,
   fetchRemaining,
@@ -49,12 +50,17 @@ interface IngestOpts {
 
 async function runIngest(input: string, opts: IngestOpts, dataDir: string): Promise<void> {
   const outRoot = opts.outRoot ?? join(dataDir, "output");
-  // latex-only on main; detectSource throws a friendly error for DOI/URL/PDF inputs
-  detectSource(input);
+  // latex-only on main. A DOI / DOI-carrying URL becomes a docless library
+  // entry (Stage 7 MS4); DOI-less URLs and bare strings throw a friendly error.
+  const detected = detectSource(input);
+  if (detected.kind === "doi-stub") {
+    await runAddDoiStub(detected.doi, detected.fromUrl, opts, dataDir);
+    return;
+  }
   // --no-assets skips figure materialization (block+caption kept, no image);
   // --figure-dpi is accepted for interface stability but ignored (figures
   // become SVG — no raster DPI anymore, MS4 docs sweep).
-  const r = await ingestTexSource(input, {
+  const r = await ingestTexSource(detected.input, {
     outRoot,
     noCache: !opts.cache,
     assets: opts.assets,
@@ -69,6 +75,54 @@ async function runIngest(input: string, opts: IngestOpts, dataDir: string): Prom
   }
   console.log(
     `\n${formatTexIngestSummary(r.ir, { engine: r.engine, warnings: r.warnings.length })}`
+  );
+}
+
+/**
+ * Stage 7 MS4: a DOI input creates (or finds) the docless library work for it.
+ * Crossref enriches immediately; offline / no-record degrades to a bare stub.
+ * `fromUrl` marks a DOI extracted from a publisher URL: when Crossref has no
+ * record for it the hint says so — the extraction may have caught a non-DOI.
+ */
+async function runAddDoiStub(
+  doi: string,
+  fromUrl: boolean,
+  opts: IngestOpts,
+  dataDir: string
+): Promise<void> {
+  // The latex-pipeline flags have no meaning for a docless entry; say so
+  // instead of silently dropping them (warnings go to stderr, like runIngest).
+  const ignored: string[] = [];
+  if (opts.output) ignored.push("--output");
+  if (opts.outRoot) ignored.push("--out-root");
+  if (!opts.assets) ignored.push("--no-assets");
+  if (!opts.cache) ignored.push("--no-cache");
+  if (ignored.length > 0) {
+    console.error(`note: ${ignored.join(" ")} ignored — a DOI entry has no ingest output`);
+  }
+  const paths = libraryPaths(dataDir);
+  const r = await addDoiWork(paths, doi, realSources(paths, false).crossref);
+  if (r === null) throw new Error(`invalid DOI: ${doi}`);
+  if (!r.created) {
+    console.log(`library entry already exists for this DOI: ${r.ref.id}`);
+  } else if (r.enriched) {
+    console.log(`created library entry ${r.ref.id} (no full text yet)`);
+  } else if (fromUrl) {
+    console.log(
+      `created library entry ${r.ref.id} ` +
+        "(bare stub — Crossref has no record for this DOI, or was unreachable; " +
+        "it was extracted from the URL and may not be a real DOI)"
+    );
+  } else {
+    console.log(
+      `created library entry ${r.ref.id} ` +
+        "(bare stub — Crossref had no record or was unreachable)"
+    );
+  }
+  if (r.created && r.ref.title) console.log(`  title: ${r.ref.title}`);
+  console.log(
+    "  next: upload a LaTeX source zip on this work's detail page in the web UI " +
+      "to attach the full text"
   );
 }
 
@@ -222,10 +276,12 @@ export function buildProgram(): Command {
 
   withDataDir(program.command("ingest"))
     .description(
-      "Ingest a paper into structured JSON. <input> may be an arXiv id / URL or " +
-        "a local LaTeX source (.tex file / source dir / tarball)."
+      "Ingest a paper into structured JSON. <input> may be an arXiv id / URL, " +
+        "a local LaTeX source (.tex file / source dir / tarball), or a DOI / " +
+        "DOI-carrying publisher URL (creates a docless library entry to attach " +
+        "a LaTeX zip to later in the web UI)."
     )
-    .argument("<input>", "arXiv id/URL | .tex/dir/tarball")
+    .argument("<input>", "arXiv id/URL | .tex/dir/tarball | DOI")
     .option("-o, --output <path>", "also write the document JSON to this path")
     .option("--out-root <dir>", "output root (default <data-dir>/output)")
     .option("--figure-dpi <n>", "DPI for rasterising vector figures (default 200)", "200")

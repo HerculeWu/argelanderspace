@@ -27,12 +27,20 @@ import type {
   RefreshResponse,
 } from "@argelanderspace/contracts";
 import { parseBibtex } from "../acquire/bibtex.js";
-import { addBibRecords, enrichAndPlan } from "../acquire/run.js";
+import { classify, planToDict } from "../acquire/planner.js";
+import { addBibRecords, enrichAndPlan, planFor } from "../acquire/run.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
 import { buildGraph, citeKey, workToRef } from "./graph.js";
 import { seedFromOutput } from "./seed.js";
-import type { MetadataSources } from "./sources.js";
-import { canonicalId, emptyWork, type LibraryPaths, LibraryStore, type Work } from "./store.js";
+import type { CrossrefResolution, CrossrefSource, MetadataSources } from "./sources.js";
+import {
+  canonicalId,
+  emptyWork,
+  type LibraryPaths,
+  LibraryStore,
+  normDoi,
+  type Work,
+} from "./store.js";
 
 /** Options for {@link rebuild} / {@link acquireReferences}. */
 export interface RebuildOptions {
@@ -171,6 +179,70 @@ export function addNodeToLibrary(paths: LibraryPaths, nodeId: string): LibraryRe
   }
   store.save(paths);
   return workToRef(w);
+}
+
+/** Result of {@link addDoiWork}. */
+export interface AddDoiWorkResult {
+  /** The work's API projection (existing or newly created). */
+  ref: LibraryRef;
+  /** false when the DOI already belonged to a saved work (no fetch, no write). */
+  created: boolean;
+  /** false when Crossref had no record / was unreachable — a bare stub was saved. */
+  enriched: boolean;
+}
+
+/**
+ * Create a docless library work anchored on a DOI (Stage 7 MS4: CLI `ingest`
+ * on a DOI / DOI-carrying publisher URL). Crossref is consulted immediately;
+ * when it has no record (or is unreachable) a bare stub is saved instead —
+ * the entry is never blocked on the network. No rebuild is triggered (the
+ * {@link addNodeToLibrary} precedent): the acquisition plan is stamped
+ * locally and the next `library build` runs the full ADS▸Crossref▸OpenAlex
+ * chain over the entry.
+ */
+export async function addDoiWork(
+  paths: LibraryPaths,
+  doi: string,
+  crossref: CrossrefSource
+): Promise<AddDoiWorkResult | null> {
+  const d = normDoi(doi);
+  // normDoi normalizes (case/prefixes) but does not validate the DOI shape.
+  if (!d || !/^10\.\d{4,9}\/\S+$/.test(d)) return null;
+  const store = LibraryStore.load(paths);
+  const existing = store.match(`doi:${d}`);
+  if (existing !== undefined) {
+    return { ref: workToRef(existing), created: false, enriched: false };
+  }
+  let c: CrossrefResolution | null = null;
+  try {
+    c = await crossref.resolve({ doi: d });
+  } catch {
+    c = null; // a client that throws (instead of returning null) still degrades to a stub
+  }
+  const [, label] = classify(d, c?.venue ?? null);
+  let w: Work = {
+    ...emptyWork(canonicalId({ doi: d, title: c?.title ?? null, year: c?.year ?? null })),
+    title: c?.title ?? "",
+    authors: c ? [...c.authors] : [],
+    year: c?.year ?? null,
+    venue: (pyOr(label, c?.venue ?? null) as string | undefined) ?? null,
+    type: c?.type === "conf" ? "conf" : "article",
+    doi: d,
+    abstract: c?.abstract ?? null,
+    cited_by_count: c?.cited_by_count ?? null,
+    origin: "manual",
+    journal: (pyOr(label) as string | undefined) ?? null,
+  };
+  w = store.upsert(w);
+  if (!w.cite_key) {
+    w.cite_key = citeKey(
+      w,
+      new Set(store.works.map((x) => x.cite_key).filter((x): x is string => x !== null))
+    );
+  }
+  w.acquisition = planToDict(planFor(w));
+  store.save(paths);
+  return { ref: workToRef(w), created: true, enriched: c !== null };
 }
 
 /** Update per-work user state (label / read / star / tags / note / main doc), validated. */
