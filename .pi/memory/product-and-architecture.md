@@ -1,0 +1,105 @@
+# 产品与架构：当前事实
+
+整理：2026-09-13。来源：Stage 3–8 已落地记录；后来的明确决定已替代旧方案，详见 [history](history.md)。本文件负责能力与数据布局，硬约束权威见 [contracts-and-decisions](contracts-and-decisions.md)。
+
+## 产品与能力
+
+**ArgelanderSpace**（npm `argelanderspace`，MIT，© Wenjie Wu；repo `HerculeWu/argelanderspace`）是单用户科研工作台，承担用户与 AI agent 协作的 interface。文献工具链是已落地核心，而非产品全部。目标形态是 terminal 科研助手 + webui 工作台，用户仍能亲自读论文。
+
+当前能力：
+
+- arXiv LaTeX / 本地源码摄入 → 项目级文献库与引文图谱 → React 三栏阅读器 → CLI + skills 协作。
+- 计划页已落地，默认 landing；webui 可独立 CRUD 计划、任务与文档标注，不依赖 agent。
+- 文献 note tab 目前只读，持久化 note/label 写入口仍主要是 CLI；右键色点 overlay 仅会话级。webui 独立应用是目标，不等于所有写路径已补齐。
+- PDF/OCR/出版商 HTML 摄入不在 main，封存于 `ocr-features` 一次性快照分支；不要把那里能力写成现行功能。
+
+## 摄入与 work/doc 身份
+
+- 支持 arXiv id/URL、本地 `.tex`、目录、tarball；webui 上传只收 LaTeX **zip**，入口在已存在 work 的详情页，attach-only。
+- **CLI 可解析 DOI 建 docless work**（Stage 7 已落地）：DOI、`doi:` 或 URL 路径中明确携带 DOI；Crossref 立即富化，失败保留裸条目，重复 DOI 不写盘、不触发 rebuild。无法解析 DOI 的出版商 URL、裸字符串仍报错，不能声称任意 URL 都能建条目。`10.48550/arXiv.*` 回 arXiv LaTeX 管线。
+- 文献条目 **work** 与具体正文 **doc** 分开；work 可以没有 doc，也可有多个 doc。同一 doc 经身份归并可能被多个 work 引用。
+- work id：`doi:` / `arxiv:` 等；canonicalId 优先级 doi > arxiv > openalex > title-slug。用于 search/note/label 等文献管理。
+- doc id：`arxiv-…` / 本地 `latex-…` / 上传 `upload-…`，用于 read/show/ref/list/annot 与阅读器。`search` 行的 `doc_ids` 做映射。
+- `ingest` 只写 output；**随后必须 `library build`** 才成为可 search/note/label 的 work。docless work 还可由 bib 导入、graph-node、DOI 手动建条目产生。
+- rebuild 的 `cite_key` **只增不改**：预灌已有键，只给缺失的新 work 分配并避让冲突；不能无条件重排（Stage 7 Q5）。DOI stub 可 title bridging 归并、就地 planFor 和分配键，不隐式触发全库 rebuild。
+
+### 上传、多 doc 与主位
+
+所有 work 都可上传；主 doc 为 **`doc_ids[0]`**。zip docId = `upload-<slug44>-<workId sha1前6>`，只随 work 身份变，同 work 重传覆盖同一 upload doc。向已有 arXiv/local doc 的 work 上传会增加独立 upload doc 并设主，旧 doc 保留可回看，UI 可“设为主”。这是并行 doc + 位置指针，**不是版本管理**。
+
+上传身份焊死：有 doi/arxiv 则 stamp source，没有则 work.title 覆盖 doc meta.title，随后直挂 `doc_ids` 并校验。主位在 lockedRebuild 后锁内 re-assert，防并发 PATCH 覆盖；已有 library 的 seed dst-first 保序。library 丢失后从零 rebuild 等残余边界见问题清单。
+
+## 存储与配置
+
+默认项目级 `./literatures`，**仅 cwd 相对，无向上查找**。配置优先级：
+
+`--data-dir` > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`。
+
+```text
+<有效 dataDir>/
+├── output/<doc_id>/
+│   ├── <doc_id>.json       # TexDocIr，version:1，渲染 IR 即存储
+│   ├── src/               # 源树
+│   ├── build/             # aux/bbl/toc/fls/argelander.jsonl 等编译事实
+│   └── assets/            # 直通图或 PDF/EPS 转 SVG
+├── output/.latexcache/    # arXiv 源包缓存
+├── library/               # library.json、bib、富化缓存等
+├── jobs/                  # 持久 job 与 spool
+├── input/
+└── annotations/<doc_id>/
+    ├── current.json       # 独立用户数据，不是摄入 IR
+    └── archive/           # 整批失效原文，正常 reader/agent 不暴露
+<有效 dataDir 的父目录>/status/plans.json
+```
+
+`statusDir = resolve(dataDir, "..", "status")`，不是无条件使用 repo/status。plans/annotations 用 pretty 2 空格、rev 乐观锁、tmp+rename。配置默认 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；env 优先，未知键忽略，已知键类型错报键名但不回显值。
+
+**`library build --offline` 已约束 ADS、Crossref、OpenAlex 网络调用**，缓存仍可读（Stage 7 `f320c6b` 修复；旧“ADS 恒活”作废）。不要由此推断所有 CLI 命令都全局断网；ingest 缓存命中、DOI stub 富化是各自路径。
+
+## LaTeX 双通道管线
+
+1. 隔离 tmpdir workspace，拒 symlink，2 GB / 10k 文件护栏。
+2. latexmk：pdflatex 优先，失败自动 xelatex；120s 超时杀进程组，不因超时再换引擎；minted/显式 write18 预扫描拒绝。插桩失败可回退干净编译；**编译本身失败硬报错，不做无编译全文降级**。
+3. `.aux/.bbl/.toc/.fls` 与 `argelander.sty` 的 cite/label/section/mathnum JSONL 事实，加 unified-latex 源码树（input 合并、有界宏展开）融合成 IR。
+4. 编号采用编译真值（mathnum/section 事件、lot/lof/aux 与有警告的回退），显示号与寻址 id 解耦；**未编号 display 无自产号**。
+5. 图物化：光栅/SVG 源字节直通；PDF → `pdftocairo -svg`；EPS → gs pdfwrite → pdftocairo。转换失败或工具缺失只降级图，caption/块保留。pandoc、mupdf、dvisvgm 路线已退役。
+6. `TexDocIr` 直接落盘；source/meta 身份块、references/bib/refsManifest/citationsByBlock、原生 text/math/cite/xref segments。旧 Document 桥与双轨 occurrences 已删。
+
+编译成功保必要产物，干净成功不留 log；降级成功保 log，失败分类与 `!` 摘录进入 job error。warning 经进度通道显示，不是 IR 字段。编号盲区、作者抽取、引用清洗等见 [tex-pipeline](../memory-reference/tex-pipeline.md)。
+
+## Web 与同步
+
+- `serve` 默认端口 8000。计划页：plans→tasks；列表/看板/时间线/今日聚焦，任务抽屉、文档链接、Markdown+数学 note。详见 [plans](../memory-reference/plans.md)。
+- 文献看板：label 色板 red重点 / amber待读 / green已精读 / blue方法 / violet灵感；overlay > 持久 label > star 播种。已读标题灰化及“已读”，未读蓝点。
+- 阅读器：中列流式 + 100ch 上限，顶部折叠当前论文作者块；多引用 per-ref chip（chip 间折行）；图尺寸预留 + jumpTo 停稳校正。
+- 右栏 `引用 | 标注`，默认引用；文本选区/结构边钮/整篇按钮可创建标注，正文 DOM 不嵌套高亮 span，使用 CSS Custom Highlight。完整数据契约见决策文件，交互细节见 [annotations](../memory-reference/annotations.md)。
+- 手卷深链接 `/doc/<doc_id>#<anchor>`：sec-N/fig-N/eq-N/tab-N/ref-N 等是管线结构 id，非印刷编号；`#ann-<annotation_id>` 定位标注。
+- Hono REST + `/ws`；server 轮询 library、plans、per-doc current annotations 的独立指纹，广播 `library.changed` / `plan.changed` / `annotation.changed`。server 自写可再收到 external 通知，前端重取幂等。
+- **免 F5 有边界**：打开中的 reader 在 library.changed 后不重取 IR；重摄入后需刷新才能换正文。不要把 watcher 通知等同于全 UI 完整刷新，见 I001。
+- Job 串行、落盘；boot 时未完 job 标 interrupted，不重跑；hello 回放状态，失败在详情刷新后仍可见；job.done 先于 library.changed。
+
+## Agent 接入
+
+CLI + repo `skills/argelander-*` 三件套（ingest/query-library/read-paper），无 MCP 是项目选择，不依赖对 pi 上游能力的永久断言。skills symlink 到 `~/.pi/agent/skills/`。
+
+- agent 命令：search/read/show/ref/note/label/list + 只读 annot；CLI 直读磁盘，不依赖 server HTTP。
+- **回答文献问题**必须走 CLI/skills，项目根运行，不传 `--data-dir`，不读内部 JSON/源码替代文献接口；这不是禁止开发任务读源码。
+- repo CLI：`node packages/app/dist/bin.js`；全局装后 `argelanderspace`。
+- 深链接端口：`ARGELANDERSPACE_PORT` > config `port` > 8000。
+- search 空 note hint 走 stderr，stdout 保持 JSONL；摄入后每篇询问 note 并给建议稿。接口冻结详见契约文件。
+
+## 模块边界
+
+pnpm workspace，ESM-only，TypeScript strict + noUncheckedIndexedAccess，Biome，Vitest：
+
+| 包 | 职责 |
+|---|---|
+| contracts | Zod：TexDocIr/DocIr、Reference（doc-ir.ts）、library/job/WS、plans、annotations；canonical annotation text 纯函数也在此，web runtime 可用 |
+| core | 领域：pipelines/tex facts/source/fuse/ir/编排；documents 渲染与 references 解析；library store/seed/graph/build；acquire/upload；plans/annotations store |
+| infra | tex workspace/compile/instrument/figures/ingest；latex/arxiv-source 抓取解包；ADS/Crossref/OpenAlex、config、zip、pyjson 缓存兼容 |
+| server | Hono REST/SPA/images/WS、job runner、watcher、各领域锁及 DocMutationRegistry |
+| cli | 命令注册、agent 冻结输出与磁盘读写 |
+| web | React 阅读器/文献/计划/标注；消费 IR；segments.tsx、deeplink.ts、store.jumpTo |
+| app | npm 单包，tsup dist/bin.js + dist/web + dist/argelander.sty；createRequire banner 仍必需 |
+
+`/api/paper/:id/ir` 直接读存 IR，旧 raw `/api/paper/:id` GET 已删（不要与新 DELETE 混淆）；旧无 version 文档需重摄入，不再投影。单用户文件存储，不使用 SQLite；截至 Stage 8 没有 CI。结构定位优先用 CodeGraph，再在不足时读源码。

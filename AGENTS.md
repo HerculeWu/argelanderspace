@@ -1,24 +1,48 @@
 # AGENTS.md
 
+## 语言与项目
+
+用户母语为中文，默认用中文交流。
+
+**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具；webui 目标是可独立操作的应用。Stage 8 已于 2026-09-12 关闭，**下一阶段由用户决定**，Stage 4.1 仍推后。当前能力与架构见正式记忆，对外说明见 `README.md`。
+
 ## 强制：session 启动协议
 
-**每个新 session 开始时，必须先完整阅读 `.kimi-code/memory/` 目录下的所有文件，再开始任何工作。** 该目录是本项目的长期记忆：里面记录了已完成的验证结论、技术决策和踩过的坑，避免重复劳动和结论漂移。
+开始工作、回应任务之前：
 
-- 读完后再响应用户的请求，把 memory 中的结论当作既定事实（除非用户明确要求重新验证）。
-- 工作中产生了有长期价值的结论（可行性验证、架构决策、环境坑、上游 API 变动等）时，在 `.kimi-code/memory/` 下新增一个 `YYYY-MM-DD-<主题>.md` 记录，保持自包含、可独立阅读。
+1. 完整阅读 `.pi/memory/` 的全部文件，先 [00-index.md](.pi/memory/00-index.md)，再按其中顺序读取；不能只读索引。
+2. 阅读 [.pi/inbox/README.md](.pi/inbox/README.md) 及全部未归并 session 文件，按事件时间补充最新状态；即使超过体量提醒阈值也不得跳读。
+3. 按任务读取 `.pi/memory-reference/` 对应专题。硬约束以正式记忆及有效的新决策为准，专题不能藏匿必读安全规则。
 
-## 项目速览
+**同事项、同范围内，有权的新决策覆盖旧决策**，包括尚未归并的 inbox 和用户本次明确决定；按决策发生时间，不按文件 mtime。事实按证据与环境更新，不机械按新旧排序。建议不等于决定，代码偏差不自动覆盖用户约束；有歧义时标记并询问，不能扩大授权或解除数据保护。详细规则以 inbox 协议为权威。
 
-ArgelanderSpace（原 bibgraph）：单用户**科研工作台**（不只是文献工具）——承担用户与 AI agent 协作的 interface；已落地核心 = arXiv LaTeX 摄入 → 项目级文献库/引文图谱 → React 阅读器（含 per-doc 文档标注层）→ agent 协作（CLI + pi skills）。产品形态/架构/使用语义详见 `.kimi-code/memory/2026-09-01-product-and-architecture.md`；对外介绍见 `README.md`。
+## 记忆写入与整理
 
-**工程**：pnpm workspace（`packages/`：contracts / core / infra / server / cli / web / app 发布单包）。验收门：`corepack pnpm -r build|test|typecheck` + 根 `corepack pnpm lint`（无 per-package lint script；本机裸 `pnpm` 不在 PATH，必须走 corepack）。**重构期已于 2026-09-01 宣告结束**：bug-for-bug 兼容与 golden 逐字段 diff 基线退役，golden 夹具转为普通回归测试（行为变更由 TS 管线自洽重冻 + 人工抽查）。
+- 所有记忆相关文件只放 `.pi/`；正式记忆 `memory/`、专题/获授权方案 `memory-reference/`、日常增量 `inbox/`。
+- 日常默认只写自己的 `YYYY-MM-DD-<session短标识>-<主题>.md`，关键节点及时更新，结束收尾；区分决策、事实、问题、待确认与交接状态。无值得交接内容不强制建文件。
+- 正式记忆/专题的更新、归并需要明确授权；新规则即使只在 inbox 仍有效。删除或裁剪原文前须确认已入可定位的 Git 历史；未提交原文不得因已写摘要而删除。
+- 启动/收尾发现 inbox 达8份或正文40 KB，及阶段交界时提醒整理；不自动归并、不自动截断。不引入后台任务/hook。
+- 保留结论、关键理由、范围与重新讨论条件；单一权威位置，其他引用。不得将 token/密码/完整敏感日志写入任何记忆文件。
+- **整理授权不等于 commit/push 授权；旧阶段的自动提交等执行授权不永久继承。**
 
-**历程**（详见 `.kimi-code/memory/2026-09-01-development-log.md`）：Stage 1 TS 重构（2026-08-27）→ Stage 2 agent 接入（2026-08-27）→ Stage 3 存储统一 `./literatures` + 渲染 IR 三端共用 + webui 补齐（2026-09-01）→ Stage 3.1 摄入收窄 LaTeX + zip 上传 + 公式/表格修复（2026-09-02）→ Stage 4 计划页面（2026-09-02 关闭）→ Stage 5 LaTeX 解析线路重构（IR 化）（2026-09-09 关闭）→ Stage 6 阅读器四项修复（2026-09-09 关闭）→ Stage 7 known-issues 清账（2026-09-10 关闭）→ Stage 8 文档标注（2026-09-12 关闭）。
+## 工程入口与约束
 
-**下一步**：**由用户拍板**。候选：known-issues 各节遗留（5 篇 src-only 缺 arXiv 类文件、脚注 DROP、tikz、作者块残留边界、Stage 8 节存照 8 项，见 `2026-09-01-known-issues.md`）、Stage 4.1（agent 操作计划页面：CLI/skills 读写 `status/plans.json`）**推后**（数据层已预留：稳定 id/pretty JSON/watcher/plan.changed/CRUD 纯函数）、标注层未来方向（migration skill / 编辑工作流 / 协作扩展，见 `2026-09-10-stage8-roadmap.md` 产品定位节）。Stage 8 已关闭（per-doc 标注层：文本/结构/文档三级 target + canonical 指纹失效归档 + 阅读器 CRUD + CSS Custom Highlight 重叠渲染 + CLI `annot` 只读 + 文档删除端点；agent 既有输出零改动、`annot` 自诞生冻结；定稿/里程碑/审查存照见 `2026-09-10-stage8-roadmap.md`）。**webui 独立应用原则**与其余推后事项见 `2026-09-01-stage3x-roadmap.md` 推后事项节 + `2026-09-01-known-issues.md`。
+pnpm workspace：contracts / core / infra / server / cli / web / app（发布单包 `argelanderspace`）。Node v24+；本机必须使用 `corepack pnpm`，裸 pnpm 不在 PATH。
 
-## 环境
+常规代码验收四门：
 
-- Node v24+ / npm 11+；pnpm 经 `corepack pnpm` 调用（pnpm 11.24.0，见根 package.json `packageManager`）
-- **TeX Live 全家在 `/usr/bin`**（latexmk/pdflatex/xelatex/bibtex/biber，摄入与真编译测试的硬前提；真编译用例走 `HAVE_LATEXMK` 风格探测 gating，缺工具自动 skip）。图转换 = **poppler-utils（pdftocairo）+ ghostscript（gs，EPS 用）**（可选，缺失降级为无图；dvisvgm 已于 smoke R1 弃用——真图丢全部文字与内嵌位图）。**pandoc 已于 Stage 5 MS3b 随旧管线删除**——旧 shim 说明（astro env `/tmp/ms1-bin`）只具历史意义（其提示仍适用：不要把整个 astro bin 前置 PATH，其 node v20 会抢先系统 node）
-- keys：`MINERU_API_KEY`（~/.zshrc；**2026-09-01 实测返回 401 鉴权失败**，OCR 已降级为"开发中"，启用前自查）、ADS token（`~/.ads/dev_key`）、`OPENALEX_API_KEY`（~/.zshrc）；也可写进 `~/.config/argelanderspace/config.toml`（env 优先）
+```bash
+corepack pnpm -r build
+corepack pnpm -r test
+corepack pnpm -r typecheck
+corepack pnpm lint
+```
+
+无 per-package lint。纯记忆整理做文档与保真检查，不默认运行全构建测试。
+
+- 摄入硬前提：TeX Live（latexmk/pdflatex/xelatex/bibtex/biber）；图转换可选 poppler-utils（pdftocairo）+ ghostscript（EPS）。pandoc/mupdf/dvisvgm 旧路线已退役。
+- 普通 golden 可按获批行为变更更新；**agent 既有输出冻结、annot 自诞生冻结**是独立契约，不因退出重构期自动解除。
+- 标注是 per-doc 用户数据：三态指纹规则不得合并简写或将系统错误当 mismatch；归档权威仅 server 访问路径，CLI annot 真只读；DELETE 全局物理删除；跨进程同 doc 并发写不支持。
+- 文献问答走 CLI/skills，不用内部 JSON/源码替代文献接口；开发任务可读代码，结构导航优先 CodeGraph。
+
+开始相关修改前读 [契约与决策](.pi/memory/contracts-and-decisions.md)、[工程教训](.pi/memory/engineering.md)及索引中的专题。当前问题、环境和历史只在其权威记忆文件维护，不在本文件重复堆积。
