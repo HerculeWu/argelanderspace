@@ -63,6 +63,11 @@ export class DocMutationRegistry {
     return this.writers.has(docId) || this.refreshPins > 0;
   }
 
+  /** Content reads exclude actual writers/deletion, NOT library-only refresh. */
+  isDocumentContentBusy(docId: string): boolean {
+    return this.writers.has(docId) || this.deletions.has(docId);
+  }
+
   /** True while a DELETE of this doc is executing (uploads must refuse). */
   isDeleting(docId: string): boolean {
     return this.deletions.has(docId);

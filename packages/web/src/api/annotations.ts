@@ -1,4 +1,4 @@
-import type { AnnotationsFile } from "@argelanderspace/contracts";
+import { CoherentAnnotationsReadSchema, AnnotationsFileSchema, type CoherentAnnotationsRead, type IrSection, type AnnotationsFile } from "@argelanderspace/contracts";
 
 // The reader's annotation store (Stage 8 MS3) talks to
 // `GET/PUT /api/paper/:doc_id/annotations`. Same discipline as api/plans.ts:
@@ -24,6 +24,40 @@ export async function fetchAnnotations(docId: string): Promise<FetchAnnotationsR
   }
 }
 
+export type CoherentReadResult =
+  | { ok: true; value: CoherentAnnotationsRead }
+  | { ok: false; status: number; busy: boolean };
+
+export async function fetchCoherentAnnotations(docId: string, signal: AbortSignal): Promise<CoherentReadResult> {
+  try {
+    const r = await fetch(`/api/paper/${encodeURIComponent(docId)}/annotations?coherent=1`, {
+      cache: "no-store", signal,
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => null);
+      return { ok: false, status: r.status, busy: r.status === 409 && body?.detail === "document busy" };
+    }
+    const value = CoherentAnnotationsReadSchema.parse(await r.json());
+    if (value.ir.docId !== docId) throw new Error("document identity mismatch");
+    const paths = new Set<string>();
+    const collect = (sections: IrSection[]) => {
+      for (const section of sections) {
+        for (const block of section.blocks) {
+          if ((block.type === "figure" || block.type === "table") && block.imgPath) paths.add(block.imgPath);
+        }
+        collect(section.children);
+      }
+    };
+    collect(value.ir.sections);
+    if (value.assets.length !== paths.size || value.assets.some((a) => !paths.delete(a.imgPath))) {
+      throw new Error("asset manifest does not match document");
+    }
+    return { ok: true, value };
+  } catch {
+    return { ok: false, status: 0, busy: false };
+  }
+}
+
 export type PutAnnotationsResult =
   | { ok: true; file: AnnotationsFile } // 200: persisted, rev bumped
   // 409 "document changed": the doc was re-ingested under our feet; the old
@@ -31,6 +65,7 @@ export type PutAnnotationsResult =
   | { ok: false; kind: "document-changed"; file: AnnotationsFile }
   // 409 "rev mismatch": another writer landed first; caller refetches.
   | { ok: false; kind: "rev-mismatch"; rev: number }
+  | { ok: false; kind: "busy" }
   // 500 / network: infrastructure failure — show the error, keep the UI.
   | { ok: false; kind: "error"; detail: string };
 
@@ -46,12 +81,13 @@ export async function putAnnotations(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(file),
     });
-    if (r.ok) return { ok: true, file: (await r.json()) as AnnotationsFile };
+    if (r.ok) return { ok: true, file: AnnotationsFileSchema.parse(await r.json()) };
     const body = (await r.json().catch(() => null)) as {
       detail?: string;
       file?: AnnotationsFile;
       rev?: number;
     } | null;
+    if (r.status === 409 && body?.detail === "document busy") return { ok: false, kind: "busy" };
     if (r.status === 409 && body?.detail === "document changed" && body.file) {
       return { ok: false, kind: "document-changed", file: body.file };
     }

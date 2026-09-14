@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useReaderSession } from "../doc/ReaderSession";
+import { useLayoutEffect, useState } from "react";
 import type { Annotation } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { useStore } from "../store";
 import { useAnnotations } from "./AnnotationStore";
-import { AnnotationEditor } from "./AnnotationEditor";
+import { CreateAnnotationEditor, EditAnnotationEditor } from "./AnnotationEditor";
 import { sortAnnotations, targetBlockId, targetSummary } from "./model";
 
 /**
@@ -19,6 +20,8 @@ export function AnnotationsPanel() {
   const store = useStore();
   const ann = useAnnotations();
   const [docCreating, setDocCreating] = useState(false);
+  const { controller, state } = useReaderSession();
+  useLayoutEffect(() => setDocCreating(false), [state.generation]);
 
   if (ann.loadState === "loading") {
     return <div className="right-empty">标注载入中…</div>;
@@ -42,24 +45,15 @@ export function AnnotationsPanel() {
     <div className="ann-panel">
       <button
         className="ann-add-doc"
-        onClick={() => setDocCreating(true)}
-        disabled={docCreating}
+        onClick={() => { controller.beginCreate(); setDocCreating(true); }}
+        disabled={docCreating || !ann.canAnnotate}
       >
         <Icon name="plus" cls="ico-sm" />
         添加文档标注
       </button>
       {docCreating && (
         <div className="ann-panel-editor">
-          <AnnotationEditor
-            initial=""
-            busy={ann.busy}
-            onSave={async (body) => {
-              const id = await ann.createAnnotation({ type: "document" }, body);
-              if (id) setDocCreating(false);
-              return id !== null;
-            }}
-            onCancel={() => setDocCreating(false)}
-          />
+          <CreateAnnotationEditor target={{ type: "document" }} onSaved={() => setDocCreating(false)} onCancel={() => setDocCreating(false)} />
         </div>
       )}
       {sorted.length === 0 && !docCreating && (
@@ -78,6 +72,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
   const store = useStore();
   const ann = useAnnotations();
   const [editing, setEditing] = useState(false);
+  const { controller } = useReaderSession();
   const sum = targetSummary(a, store);
   const active = ann.activeId === a.id;
 
@@ -89,7 +84,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
 
   return (
     <div className={"ann-entry" + (active ? " active" : "")} data-ann-id={a.id}>
-      <button className="ann-entry-main" onClick={openTarget} title={sum.path ?? sum.label}>
+      <button className="ann-entry-main" disabled={!ann.canAnnotate} onClick={openTarget} title={sum.path ?? sum.label}>
         <span className="ann-entry-head">
           <span className="ann-entry-kind">{sum.label}</span>
           {sum.path && <span className="ann-entry-path">{sum.path}</span>}
@@ -101,7 +96,8 @@ function AnnotationEntry({ a }: { a: Annotation }) {
         <button
           title="编辑标注"
           aria-label="编辑标注"
-          onClick={() => setEditing(true)}
+          disabled={!ann.canAnnotate}
+          onClick={() => { controller.beginEdit(a); setEditing(true); }}
         >
           <Icon name="pencil" cls="ico-sm" />
         </button>
@@ -115,16 +111,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
         </button>
       </span>
       {editing && (
-        <AnnotationEditor
-          initial={a.body}
-          busy={ann.busy}
-          onSave={async (body) => {
-            const ok = await ann.updateBody(a.id, body);
-            if (ok) setEditing(false);
-            return ok;
-          }}
-          onCancel={() => setEditing(false)}
-        />
+        <EditAnnotationEditor annotation={a} onSaved={() => setEditing(false)} onCancel={() => setEditing(false)} />
       )}
     </div>
   );

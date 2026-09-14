@@ -1,3 +1,5 @@
+vi.mock("../src/doc/ReaderSession", () => import("./reader-unit-session"));
+import { AnnotationProvider } from "../src/annotations/AnnotationStore";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import type { DocIr } from "@argelanderspace/contracts";
@@ -56,14 +58,14 @@ function rect(top: number): DOMRect {
 
 function setup() {
   const utils = render(
-    <StoreProvider ir={ir}>
+    <StoreProvider ir={ir}><AnnotationProvider>
       <Capture />
       <div className="reader">
         <div className="block" data-block-id="fig-1" id="fig-1">
           fig
         </div>
       </div>
-    </StoreProvider>
+    </AnnotationProvider></StoreProvider>
   );
   const reader = utils.container.querySelector(".reader") as HTMLElement;
   const el = utils.container.querySelector("#fig-1") as HTMLElement;
@@ -142,7 +144,7 @@ describe("jumpTo landing correction", () => {
     el.getBoundingClientRect = () => rect(184);
     // fake an in-flight smooth scroll: scrollTop keeps changing between samples
     let pos = 100;
-    Object.defineProperty(reader, "scrollTop", { get: () => pos, configurable: true });
+    Object.defineProperty(reader, "scrollTop", { get: () => pos, set: (v: number) => { pos = v; }, configurable: true });
     store.jumpTo("fig-1");
     pos = 500; // moved since the sample taken at schedule time
     vi.advanceTimersByTime(900); // first check: still moving → re-arm, no correction

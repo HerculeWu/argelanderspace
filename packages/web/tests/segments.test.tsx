@@ -1,3 +1,5 @@
+vi.mock("../src/doc/ReaderSession", () => import("./reader-unit-session"));
+import { AnnotationProvider } from "../src/annotations/AnnotationStore";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { DocIr, IrBlock, IrSegment } from "@argelanderspace/contracts";
@@ -35,10 +37,10 @@ function Capture() {
 
 function renderSegments(segments: IrSegment[]) {
   return render(
-    <StoreProvider ir={ir}>
+    <StoreProvider ir={ir}><AnnotationProvider>
       <Capture />
       <Segments segments={segments} />
-    </StoreProvider>
+    </AnnotationProvider></StoreProvider>
   );
 }
 

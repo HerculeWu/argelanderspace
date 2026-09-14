@@ -7,6 +7,7 @@ import type {
   IrTableBlock,
   Reference,
 } from "@argelanderspace/contracts";
+import { useReaderSession } from "../doc/ReaderSession";
 import { useStore } from "../store";
 import { Segments } from "../lib/segments";
 import { Math, htmlWithMath, flattenLatex } from "../lib/math";
@@ -42,17 +43,19 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
   ref
 ) {
   const store = useStore();
+  const { canAnnotate } = useReaderSession();
   const canGoto = card.kind !== "citation";
   const canExpand = card.kind !== "citation";
 
   const gotoId = card.block?.id;
 
   return (
-    // citation cards carry the ref's id so `#ref-N` deep links have a DOM anchor
+    // Like body blocks, reference cards must not be native fragment targets
+    // while the retained document is unavailable.
     <div
       className={"refcard" + (focused ? " focused" : "")}
       ref={ref}
-      id={card.kind === "citation" ? card.ref!.id : undefined}
+      id={canAnnotate && card.kind === "citation" ? card.ref!.id : undefined}
     >
       <div className="refcard-head">
         <span className={"refcard-kind k-" + card.kind}>{badge(card)}</span>
@@ -100,8 +103,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
   switch (card.kind) {
     case "figure": {
       const f = card.block as IrFigureBlock;
-      const src = store.imageUrl(f.imgPath);
-      return src ? <FigureImage src={src} alt={f.label || "figure"} /> : <em>(no image)</em>;
+      return f.imgPath ? <FigureImage imgPath={f.imgPath} width={f.imgWidth} height={f.imgHeight} alt={f.label || "figure"} /> : <em>(no image)</em>;
     }
     case "equation": {
       const e = card.block as IrEquationBlock;
@@ -113,6 +115,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
     }
     case "table": {
       const t = card.block as IrTableBlock;
+      if (!t.tableBody && t.imgPath) return <FigureImage imgPath={t.imgPath} alt={t.label || "table"} />;
       const parsed = parseTable(t.tableBody ?? "");
       const small = parsed.totalRows <= 3 && parsed.totalCols <= 4;
       const prev = small ? parsed : limitTable(parsed, 3, parsed.totalCols);
@@ -164,6 +167,7 @@ function cardExpand(card: Card) {
     }
     case "table": {
       const t = card.block as IrTableBlock;
+      if (!t.tableBody && t.imgPath) return <FigureImage imgPath={t.imgPath} alt={t.label || "table"} />;
       const parsed = parseTable(t.tableBody ?? "");
       const limited = limitTable(parsed, 8, 4);
       const shownCols = parsed.totalCols > 4 ? 4 : parsed.totalCols;

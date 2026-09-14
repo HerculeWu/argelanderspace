@@ -24,6 +24,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -769,8 +770,29 @@ describe("annot", () => {
     const r = runCli(["annot", DOC_ID, "--data-dir", f.dataDir], f.env);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toContain("error: annotations fingerprint: cannot read asset");
+    const asset = join(f.docDir, "assets", "figures__All_in_one_XY__pdf.svg");
+    expect(r.stderr).toBe(
+      `error: annotations fingerprint: cannot read asset "figures__All_in_one_XY__pdf.svg" (${asset}): ENOENT: no such file or directory, stat '${asset}'\n`
+    );
     expect(readFileSync(f.currentPath, "utf8")).toBe(before);
+  });
+
+  test("stable asset symlink outside doc keeps byte-exact normal CLI output and remains read-only", () => {
+    const f = setupAnnotatedDoc();
+    const before = readFileSync(f.currentPath);
+    const normal = runCli(["annot", DOC_ID, "--data-dir", f.dataDir], f.env);
+    const asset = join(f.docDir, "assets", "figures__All_in_one_XY__pdf.svg");
+    const outside = join(f.dataDir, "outside.svg");
+    copyFileSync(asset, outside);
+    rmSync(asset);
+    symlinkSync(outside, asset);
+    const linked = runCli(["annot", DOC_ID, "--data-dir", f.dataDir], f.env);
+    expect(linked).toEqual(normal);
+    expect(linked.status).toBe(0);
+    expect(linked.stderr).toBe("");
+    expect(linked.stdout).not.toBe("");
+    expect(readFileSync(f.currentPath)).toEqual(before);
+    expect(existsSync(join(f.dataDir, "annotations", DOC_ID, "archive"))).toBe(false);
   });
 
   test("corrupt doc IR is an error and leaves the store untouched", () => {

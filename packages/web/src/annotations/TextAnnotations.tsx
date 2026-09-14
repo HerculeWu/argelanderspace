@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useReaderSession } from "../doc/ReaderSession";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { AnnotationTextTarget } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { useStore } from "../store";
@@ -68,6 +69,7 @@ let paintInstanceCounter = 0;
 export function TextAnnotations() {
   const store = useStore();
   const ann = useAnnotations();
+  const { controller, state } = useReaderSession();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const [pending, setPending] = useState<{
     target: AnnotationTextTarget;
@@ -94,6 +96,7 @@ export function TextAnnotations() {
     if (!root) return;
 
     const finalize = () => {
+      if (!controller.canAnnotate()) return;
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
       const range = sel.getRangeAt(0);
@@ -213,6 +216,7 @@ export function TextAnnotations() {
     const root = getRoot();
     if (!root) return;
     const onClick = (e: MouseEvent) => {
+      if (!controller.canAnnotate()) return;
       const t = e.target as Element | null;
       if (!t || typeof t.closest !== "function") return;
       // chips / annotation UI / interactive elements keep their own behavior
@@ -246,12 +250,19 @@ export function TextAnnotations() {
     return () => root.removeEventListener("click", onClick);
   }, []);
 
+  useLayoutEffect(() => controller.onInvalidate(() => {
+    window.clearTimeout(timerRef.current); setPending(null);
+    painterRef.current?.paint([]);
+    window.getSelection()?.removeAllRanges();
+  }), [controller]);
+
   // ---- painting (CSS Custom Highlight API) -------------------------------- //
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = getRoot();
     if (!root) return;
     const painter = (painterRef.current ??= createHighlightPainter(document, instanceKey));
     if (!painter.supported) return; // degrade: list/popover/gutter keep working
+    if (!ann.canAnnotate) { painter.paint([]); return; }
     const entries: PaintEntry[] = [];
     for (const a of ann.annotations) {
       if (a.target.type !== "text") continue;
@@ -274,7 +285,7 @@ export function TextAnnotations() {
       entries.push({ id: a.id, range, active: a.id === ann.activeId });
     }
     painter.paint(entries);
-  }, [ann.annotations, ann.activeId, store, instanceKey]);
+  }, [ann.annotations, ann.activeId, ann.canAnnotate, store, instanceKey, state.generation]);
 
   // dispose the painter (registry entries + managed style element) on unmount
   useEffect(
@@ -290,7 +301,7 @@ export function TextAnnotations() {
   return (
     <>
       <span ref={anchorRef} hidden />
-      {pending && (
+      {pending && ann.canAnnotate && (
         <div
           className="ann-selbar view-in"
           style={{ top: pending.y, left: pending.x }}

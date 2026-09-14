@@ -50,7 +50,8 @@ import {
   addNodeToLibrary,
   annotationsDocDir,
   attachLatexZip,
-  ensureCurrentAnnotations,
+  DocumentAssetError,
+  ensureCurrentAnnotationsWithDocument,
   findWork,
   type IngestPipelines,
   type LibraryPaths,
@@ -59,6 +60,7 @@ import {
   loadPlans,
   type MetadataSources,
   patchWork,
+  readDocumentAsset,
   rebuild,
   removeDocFromWorks,
   saveAnnotationsFile,
@@ -66,7 +68,7 @@ import {
   uploadDocId,
 } from "@argelanderspace/core";
 import { extractZip, ZipError } from "@argelanderspace/infra";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { DocMutationRegistry } from "./doc-mutations.js";
@@ -304,16 +306,26 @@ export function createApp(deps: AppDeps): Hono {
   // the idempotent `ensureCurrentAnnotations` first (a fingerprint mismatch
   // archives the old current and starts a new empty epoch; §3: the
   // `invalidate` broadcast is allowed only after that new current exists).
-  app.get("/api/paper/:doc_id/annotations", (c) => {
+  app.get("/api/paper/:doc_id/annotations", async (c) => {
+    c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
     try {
-      const result = ensureCurrentAnnotations(paths.dataDir, docId);
-      if (result.invalidated) annotationChanged(docId, "invalidate");
-      return c.json(result.file);
+      return await annotationLock.run(() => {
+        if (docMutations.isDocumentContentBusy(docId)) {
+          return c.json({ detail: "document busy" }, 409);
+        }
+        const result = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
+        if (result.invalidated) annotationChanged(docId, "invalidate");
+        return c.json(
+          c.req.query("coherent") === "1"
+            ? { version: 1 as const, ir: result.ir, file: result.file, assets: result.assets }
+            : result.file
+        );
+      });
     } catch (err) {
       if (err instanceof AnnotationsError) {
         const e = annotationsError(err);
@@ -333,6 +345,7 @@ export function createApp(deps: AppDeps): Hono {
   // Fingerprint/corruption failures are 500, NEVER 409. The ensure + checks +
   // save are one critical section on annotationLock.
   app.put("/api/paper/:doc_id/annotations", async (c) => {
+    c.header("Cache-Control", "no-store");
     const rejected = guardCsrf(c.req.header("origin"));
     if (rejected) return c.json(rejected.body, rejected.status);
     const docId = c.req.param("doc_id");
@@ -347,16 +360,19 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     type PutOutcome =
-      | { documentChanged: AnnotationsFile; invalidated: boolean }
+      | { busy: true }
+      | { documentChanged: AnnotationsFile }
       | { conflictRev: number }
       | { saved: AnnotationsFile };
     let outcome: PutOutcome;
     try {
       outcome = await annotationLock.run(() => {
-        const ensured = ensureCurrentAnnotations(paths.dataDir, docId);
+        if (docMutations.isDocumentContentBusy(docId)) return { busy: true as const };
+        const ensured = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
+        if (ensured.invalidated) annotationChanged(docId, "invalidate");
         const current = ensured.file;
         if (parsed.data.content_fingerprint !== current.content_fingerprint) {
-          return { documentChanged: current, invalidated: ensured.invalidated };
+          return { documentChanged: current };
         }
         if (parsed.data.rev !== current.rev) return { conflictRev: current.rev };
         saveAnnotationsFile(paths.dataDir, docId, parsed.data, { bumpRev: true });
@@ -369,8 +385,8 @@ export function createApp(deps: AppDeps): Hono {
       }
       throw err;
     }
+    if ("busy" in outcome) return c.json({ detail: "document busy" }, 409);
     if ("documentChanged" in outcome) {
-      if (outcome.invalidated) annotationChanged(docId, "invalidate");
       return c.json({ detail: "document changed", file: outcome.documentChanged }, 409);
     }
     if ("conflictRev" in outcome) {
@@ -689,11 +705,41 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ job }, 202);
   });
 
+  // Opt-in image reads share the manifest's concrete precheck and return ONLY
+  // the buffer whose digest was compared. Entire read/check/send is synchronous.
+  function verifiedImage(c: Context, docId: string, imgPath: string, expected: string) {
+    c.header("Cache-Control", "no-store");
+    if (!docId.trim() || badId(docId) || docId.includes("\0")) {
+      return c.json({ detail: "bad doc id" }, 400);
+    }
+    if (!/^[0-9a-fA-F]{64}$/.test(expected)) {
+      return c.json({ detail: "bad asset sha256" }, 400);
+    }
+    if (docMutations.isDocumentContentBusy(docId)) {
+      return c.json({ detail: "document busy" }, 409);
+    }
+    try {
+      const asset = readDocumentAsset(join(outputDir, docId), imgPath);
+      if (asset.sha256 !== expected.toLowerCase()) {
+        return c.json({ detail: "asset changed" }, 409);
+      }
+      return c.body(new Uint8Array(asset.bytes), 200, { "Content-Type": mimeFor(imgPath) });
+    } catch (err) {
+      if (err instanceof DocumentAssetError) {
+        const status = err.code === "invalid" ? 400 : err.code === "missing" ? 404 : 500;
+        return c.json({ detail: err.code === "missing" ? "image not found" : err.message }, status);
+      }
+      throw err;
+    }
+  }
+
   // ---- GET /images/{doc_id}/{filename} --------------------------------------- //
 
   app.get("/images/:doc_id/:filename", async (c) => {
     const docId = c.req.param("doc_id");
     const filename = c.req.param("filename");
+    const expected = c.req.query("sha256");
+    if (expected !== undefined) return verifiedImage(c, docId, filename, expected);
     if (badId(filename)) {
       const e = detail("bad filename", 400);
       return c.json(e.body, e.status);
@@ -722,6 +768,8 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/images/:doc_id/:filepath{.+}", async (c) => {
     const docId = c.req.param("doc_id");
     const rel = c.req.param("filepath");
+    const expected = c.req.query("sha256");
+    if (expected !== undefined) return verifiedImage(c, docId, rel, expected);
     if (badImagePath(rel)) {
       const e = detail("bad filename", 400);
       return c.json(e.body, e.status);

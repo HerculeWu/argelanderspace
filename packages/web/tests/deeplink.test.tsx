@@ -74,6 +74,7 @@ const realScrollIntoView = Element.prototype.scrollIntoView;
 class IOStub {
   constructor(private cb: IntersectionObserverCallback) {}
   observe(target: Element) {
+    if (target.classList.contains("verified-figure")) return;
     this.cb(
       [{ isIntersecting: true, target } as IntersectionObserverEntry],
       this as unknown as IntersectionObserver
@@ -117,8 +118,8 @@ describe("DocPane deep-link anchors", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url.startsWith("/api/paper/") && url.endsWith("/ir")) {
-          return { ok: true, json: async () => goldenIr } as Response;
+        if (url.startsWith("/api/paper/") && url.endsWith("/annotations?coherent=1")) {
+          return { ok: true, json: async () => ({ version: 1, ir: goldenIr, file: { version: 1, rev: 0, content_fingerprint: "fp", annotations: [] }, assets: fixtureAssets(goldenIr) }) } as Response;
         }
         return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
       })
@@ -184,3 +185,10 @@ describe("DocPane deep-link anchors", () => {
     expect(scrolled.length).toBe(0);
   });
 });
+
+function fixtureAssets(ir: TexDocIr) {
+  const paths = new Set<string>();
+  const walk = (sections: TexDocIr["sections"]) => { for (const s of sections) { for (const b of s.blocks) if ((b.type === "figure" || b.type === "table") && b.imgPath) paths.add(b.imgPath); walk(s.children); } };
+  walk(ir.sections);
+  return [...paths].map((imgPath) => ({ imgPath, sha256: "a".repeat(64) }));
+}

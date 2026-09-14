@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useMemo,
+  useLayoutEffect,
   useRef,
   useSyncExternalStore,
 } from "react";
@@ -12,8 +13,7 @@ import type {
   IrSection,
   Reference,
 } from "@argelanderspace/contracts";
-import { imageUrl as buildImageUrl } from "./api";
-import { AnnotationProvider } from "./annotations/AnnotationStore";
+import { useReaderSession } from "./doc/ReaderSession";
 
 // rootMargin defining the "currently reading" band inside the reader viewport.
 // Blocks whose box lies in the bottom 38% don't count until they scroll up.
@@ -49,7 +49,6 @@ interface StoreValue {
   /** Section id → its full heading path ("1 Introduction › 1.2 …"). */
   sectionPath: Map<string, string>;
   citationsByBlock: Map<string, string[]>;
-  imageUrl: (imgPath?: string) => string | null;
   // reader element + viewport observation
   registerReader: (el: HTMLElement | null) => void;
   // viewport (subscribe via hooks below)
@@ -58,6 +57,7 @@ interface StoreValue {
   getActiveSectionId: () => string | null;
   // jump / single-slot undo
   jumpTo: (targetId: string) => void;
+  cancelNavigation: () => void;
   undo: () => void;
   subscribeUndo: (cb: () => void) => () => void;
   getCanUndo: () => boolean;
@@ -74,7 +74,8 @@ export function useStore(): StoreValue {
   return v;
 }
 
-export function StoreProvider({ ir, children }: { ir: DocIr; children: React.ReactNode }) {
+export function StoreProvider({ ir, children, anchorPending = false }: { ir: DocIr; children: React.ReactNode; anchorPending?: boolean }) {
+  const { controller } = useReaderSession();
   const lookups = useMemo(() => buildLookups(ir), [ir]);
 
   // --- mutable refs (do not trigger renders) ---
@@ -92,13 +93,24 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
   const pendingCorrect = useRef<{ timer: number } | null>(null);
   const undoSubs = useRef<Set<() => void>>(new Set());
 
+  const flashTimers = useRef<Set<number>>(new Set());
+  const navigationGeneration = useRef(0);
+  const storeIdentity = useRef<object>();
+  const position = readerEl.current?.scrollTop;
+
   const focusSubs = useRef<Set<(refId: string) => void>>(new Set());
 
   const store = useMemo<StoreValue>(() => {
     const notifyViewport = () => viewportSubs.current.forEach((f) => f());
     const notifyUndo = () => undoSubs.current.forEach((f) => f());
 
+    const identity = {}; storeIdentity.current = identity;
+    const lifecycle = navigationGeneration.current;
+    const current = () => lifecycle === navigationGeneration.current && storeIdentity.current === identity && !detached;
+    let registeredRoot: HTMLElement | null = null;
+    let detached = false;
     const recompute = () => {
+      if (!current()) return;
       rafPending.current = false;
       const arr = [...visibleSet.current].sort(
         (a, b) => (lookups.blockOrder.get(a) ?? 0) - (lookups.blockOrder.get(b) ?? 0)
@@ -127,12 +139,14 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
     };
 
     const attachObserver = () => {
+      if (!current()) return;
       observer.current?.disconnect();
       visibleSet.current.clear();
       const root = readerEl.current;
       if (!root) return;
       const obs = new IntersectionObserver(
         (entries) => {
+          if (!current()) return;
           for (const e of entries) {
             const id = (e.target as HTMLElement).dataset.blockId;
             if (!id) continue;
@@ -174,7 +188,7 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
             : JUMP_RECHECK_MS;
       const timer = window.setTimeout(() => {
         pendingCorrect.current = null;
-        if (!el.isConnected) return;
+        if (!current() || !controller.canAnnotate() || !el.isConnected) return;
         if (root.scrollTop !== sample) {
           // still moving — wait for stillness, don't burn a correction attempt
           if (rearm < JUMP_REARM_MAX) scheduleJumpCorrect(el, attempt, rearm + 1);
@@ -191,13 +205,27 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
       pendingCorrect.current = { timer };
     };
 
+    const clearNavigation = () => {
+        cancelJumpCorrect();
+        for (const timer of flashTimers.current) window.clearTimeout(timer);
+        flashTimers.current.clear();
+        readerEl.current?.querySelectorAll(".flash").forEach((el) => el.classList.remove("flash"));
+        const root = readerEl.current;
+        if (root) root.scrollTo({ top: root.scrollTop, behavior: "instant" });
+        undoTop.current = null; canUndo.current = false; lastJumpAt.current = 0; notifyUndo();
+        observer.current?.disconnect(); rafPending.current = false;
+    };
+
     return {
       ir,
       docId: ir.docId,
       ...lookups,
-      imageUrl: (p) => buildImageUrl(ir.docId, p),
 
       registerReader: (el) => {
+        detached = el === null;
+        if (!el) clearNavigation();
+        if (registeredRoot) for (const type of ["wheel", "touchstart", "keydown"]) registeredRoot.removeEventListener(type, cancelJumpCorrect);
+        registeredRoot = el;
         readerEl.current = el;
         if (el) {
           // content is static; observe once after it's in the DOM
@@ -210,6 +238,7 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
         } else {
           observer.current?.disconnect();
           observer.current = null;
+          cancelJumpCorrect();
         }
       },
 
@@ -220,7 +249,12 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
       getVisibleIds: () => visibleArr.current,
       getActiveSectionId: () => activeSection.current,
 
+      cancelNavigation: () => {
+        navigationGeneration.current++;
+        clearNavigation();
+      },
       jumpTo: (targetId) => {
+        if (!current() || !controller.canAnnotate()) return;
         const root = readerEl.current;
         if (!root) return;
         const el = root.querySelector<HTMLElement>(
@@ -243,10 +277,12 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
         // force reflow so the animation restarts even on repeated jumps
         void el.offsetWidth;
         el.classList.add("flash");
-        window.setTimeout(() => el.classList.remove("flash"), FLASH_MS);
+        const timer = window.setTimeout(() => { flashTimers.current.delete(timer); el.classList.remove("flash"); }, FLASH_MS);
+        flashTimers.current.add(timer);
       },
 
       undo: () => {
+        if (!current() || !controller.canAnnotate()) return;
         const root = readerEl.current;
         cancelJumpCorrect();
         if (!root || undoTop.current === null) return;
@@ -261,17 +297,22 @@ export function StoreProvider({ ir, children }: { ir: DocIr; children: React.Rea
       },
       getCanUndo: () => canUndo.current,
 
-      focusReference: (refId) => focusSubs.current.forEach((f) => f(refId)),
+      focusReference: (refId) => { if (current() && controller.canAnnotate()) focusSubs.current.forEach((f) => f(refId)); },
       subscribeFocus: (cb) => {
         focusSubs.current.add(cb);
         return () => focusSubs.current.delete(cb);
       },
     };
-  }, [ir, lookups]);
+  }, [ir, lookups, controller, controller.getSnapshot().generation]);
 
-  return <Ctx.Provider value={store}>
-    <AnnotationProvider>{children}</AnnotationProvider>
-  </Ctx.Provider>;
+  useLayoutEffect(() => controller.onInvalidate(store.cancelNavigation), [controller, store]);
+  useLayoutEffect(() => {
+    if (!anchorPending && position !== undefined && readerEl.current) {
+      const root = readerEl.current;
+      root.scrollTop = Math.max(0, Math.min(position, root.scrollHeight - root.clientHeight));
+    }
+  }, [ir]);
+  return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }
 
 // ---- viewport hooks (only the panels that need them re-render on scroll) ----

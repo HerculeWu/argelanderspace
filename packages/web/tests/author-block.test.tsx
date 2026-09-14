@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+vi.mock("../src/doc/ReaderSession", () => import("./reader-unit-session"));
+import { AnnotationProvider } from "../src/annotations/AnnotationStore";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import type { TexDocIr } from "@argelanderspace/contracts";
 import { AuthorBlock } from "../src/components/AuthorBlock";
@@ -19,9 +21,9 @@ const baseIr: TexDocIr = {
 function renderBlock(meta: TexDocIr["meta"]) {
   const ir: TexDocIr = { ...baseIr, meta };
   return render(
-    <StoreProvider ir={ir}>
+    <StoreProvider ir={ir}><AnnotationProvider>
       <AuthorBlock />
-    </StoreProvider>
+    </AnnotationProvider></StoreProvider>
   );
 }
 

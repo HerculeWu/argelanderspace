@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useReaderSession, type AssetBinding } from "../doc/ReaderSession";
+import { imageUrl } from "../api";
 import { useThemeName } from "../lib/theme-watch";
 
 // Document figures are a mix of line/text plots (white paper, a few coloured
@@ -10,10 +12,6 @@ import { useThemeName } from "../lib/theme-watch";
 // per-figure toggle is the escape hatch for the cases the heuristic gets wrong.
 
 type Klass = "diagram" | "photo";
-
-// Module-level cache keyed by src: classification is stable, and figures remount
-// as they scroll in/out of the reading band, so we never re-analyse the same URL.
-const classCache = new Map<string, Klass>();
 
 /** Decide whether an image is an invert-friendly diagram or a leave-alone photo.
  *  Diagram  = lots of near-white background AND little saturated colour, or a
@@ -76,98 +74,97 @@ function classify(img: HTMLImageElement): Klass {
   return "photo";
 }
 
-export function FigureImage({
-  src,
-  alt,
-  controls = false,
-  width,
-  height,
-}: {
-  src: string;
-  alt: string;
-  /** Render the per-figure invert toggle (for main figures, not previews). */
-  controls?: boolean;
-  /** Intrinsic size (IR imgWidth/imgHeight): reserves the box before the
-   *  image loads so lazy-loading can't push jump targets around. */
-  width?: number;
-  height?: number;
+export function FigureImage({ imgPath, alt, controls = false, width, height }: {
+  imgPath: string; alt: string; controls?: boolean; width?: number; height?: number;
 }) {
-  const theme = useThemeName();
-  const dark = theme === "dark";
-  const imgRef = useRef<HTMLImageElement>(null);
-  const [klass, setKlass] = useState<Klass | null>(() => classCache.get(src) ?? null);
-  // null = follow the heuristic; otherwise an explicit per-image override.
+  const { controller, state } = useReaderSession();
+  const sha256 = state.accepted?.assets.find((a) => a.imgPath === imgPath)?.sha256;
+  const generation = state.generation;
+  const ready = state.phase === "ready";
+  const root = useRef<HTMLSpanElement>(null);
+  const measured = useRef<{ width: number; height: number }>();
+  const [visible, setVisible] = useState(false);
+  const [loaded, setLoaded] = useState<{ url: string; binding: AssetBinding } | null>(null);
+  const [klass, setKlass] = useState<Klass | null>(null);
   const [override, setOverride] = useState<"invert" | "off" | null>(null);
+  const dark = useThemeName() === "dark";
 
-  // A new src means a different figure — drop any stale override/classification.
   useEffect(() => {
-    setOverride(null);
-    setKlass(classCache.get(src) ?? null);
-  }, [src]);
+    const el = root.current; if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { setVisible(true); observer.disconnect(); }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
-  // Classify once the bitmap is available (immediately if already cached/loaded).
   useEffect(() => {
-    if (classCache.has(src)) return;
-    const img = imgRef.current;
-    if (!img) return;
-    let cancelled = false;
-    const run = () => {
-      if (cancelled) return;
-      const c = classify(img);
-      classCache.set(src, c);
-      setKlass(c);
+    setLoaded(null); setKlass(null); setOverride(null);
+    if (!ready || !visible || !sha256) return;
+    const binding: AssetBinding = { docId: controller.docId, generation, imgPath, sha256 };
+    const abort = new AbortController();
+    let disposed = false;
+    let url: string | null = null;
+    const valid = () => !disposed && controller.isCurrentAsset(binding);
+    const dispose = () => {
+      const rect = root.current?.getBoundingClientRect();
+      if (rect && rect.width > 0 && rect.height > 0) measured.current = { width: rect.width, height: rect.height };
+      disposed = true; abort.abort();
+      if (url) { URL.revokeObjectURL(url); url = null; }
     };
-    if (img.complete && img.naturalWidth) {
-      run();
-    } else {
-      const onLoad = () => run();
-      img.addEventListener("load", onLoad, { once: true });
-      return () => {
-        cancelled = true;
-        img.removeEventListener("load", onLoad);
-      };
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [src]);
+    const off = controller.onInvalidate(dispose);
+    void (async () => {
+      try {
+        const r = await fetch(`${imageUrl(controller.docId, imgPath)}?sha256=${sha256}`, { cache: "no-store", signal: abort.signal });
+        if (!valid()) return;
+        if (r.status !== 200) {
+          const body = await r.json().catch(() => null);
+          if (valid()) controller.reportAssetFailure(binding, r.status === 409 && body?.detail === "asset changed" ? "changed" : r.status === 409 && body?.detail === "document busy" ? "busy" : "error");
+          return;
+        }
+        const bytes = await r.arrayBuffer();
+        if (!valid()) return;
+        if (crypto.subtle) {
+          const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+          if (!valid()) return;
+          if (hash !== sha256) { controller.reportAssetFailure(binding, "changed"); return; }
+        }
+        url = URL.createObjectURL(new Blob([bytes], { type: r.headers.get("Content-Type") ?? "application/octet-stream" }));
+        if (valid()) setLoaded({ url, binding }); else { URL.revokeObjectURL(url); url = null; }
+      } catch {
+        if (valid()) controller.reportAssetFailure(binding, "error");
+      }
+    })();
+    return () => { off(); dispose(); };
+  }, [controller, ready, generation, imgPath, sha256, visible]);
 
-  const autoInvert = klass === "diagram";
-  const inverted = dark && (override === "invert" || (override === null && autoInvert));
-
-  const img = (
-    <img
-      ref={imgRef}
-      src={src}
-      alt={alt}
-      loading="lazy"
-      width={width}
-      height={height}
+  // Render gate, not effect cleanup: a stale blob never survives a syncing render.
+  const current = ready && loaded && loaded.binding.generation === generation &&
+    loaded.binding.imgPath === imgPath && loaded.binding.sha256 === sha256 && controller.isCurrentAsset(loaded.binding) ? loaded : null;
+  const inverted = dark && (override === "invert" || (override === null && klass === "diagram"));
+  const boxWidth = width ?? measured.current?.width;
+  const boxHeight = height ?? measured.current?.height;
+  return <span ref={root} className="fig-img verified-figure" style={{ maxWidth: "100%" }}>
+    {current ? <img src={current.url} alt={alt} width={width} height={height}
       className={inverted ? "fig-invert" : undefined}
-    />
-  );
-
-  // Previews (refcards, table images) render a bare <img> — no wrapper/toggle —
-  // to avoid disturbing their existing layout selectors.
-  if (!controls) return img;
-
-  return (
-    <span className="fig-img">
-      {img}
-      {dark && (
-        <button
-          type="button"
-          className="fig-invert-btn"
-          title={inverted ? "显示原图" : "反色以适应深色背景"}
-          aria-label={inverted ? "显示原图" : "反色以适应深色背景"}
-          aria-pressed={inverted}
-          onClick={() => setOverride(inverted ? "off" : "invert")}
-        >
-          {inverted ? <SunIcon /> : <ContrastIcon />}
-        </button>
-      )}
-    </span>
-  );
+      onLoad={(e) => {
+        if (!controller.isCurrentAsset(current.binding)) return;
+        setKlass(classify(e.currentTarget));
+        const rect = e.currentTarget.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) measured.current = { width: rect.width, height: rect.height };
+      }}
+      onError={() => controller.reportAssetFailure(current.binding, "error")} /> :
+      <span className="figure-placeholder" role="img" aria-label={`${alt} · 图片暂不可用`}
+        style={{ width: boxWidth ?? "100%", aspectRatio: boxWidth && boxHeight ? `${boxWidth} / ${boxHeight}` : undefined, minHeight: boxHeight ? undefined : 120 }}>
+        {ready ? "图片待加载" : "图片暂不可用"}
+      </span>}
+    {controls && dark && current && <button type="button" className="fig-invert-btn"
+      title={inverted ? "显示原图" : "反色以适应深色背景"}
+      aria-label={inverted ? "显示原图" : "反色以适应深色背景"} aria-pressed={inverted}
+      onClick={() => setOverride(inverted ? "off" : "invert")}>
+      {inverted ? <SunIcon /> : <ContrastIcon />}
+    </button>}
+  </span>;
 }
 
 function ContrastIcon() {

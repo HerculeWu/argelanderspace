@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useReaderSession } from "../doc/ReaderSession";
+import { useAnnotations } from "./AnnotationStore";
+import { useEffect, useRef } from "react";
 import { Icon } from "../lib/icons";
 
 /**
@@ -12,13 +14,15 @@ import { Icon } from "../lib/icons";
  * close/switch the editor — a 409/500 keeps the draft on screen.
  */
 export function AnnotationEditor({
-  initial,
+  body: draft,
+  onChange,
   busy,
   saveDisabled = false,
   onSave,
   onCancel,
 }: {
-  initial: string;
+  body: string;
+  onChange: (body: string) => void;
   busy: boolean;
   /** Hard-disable saving (the archived-target state: the annotation is gone,
    *  so a save could never land — the banner above the editor explains why). */
@@ -26,7 +30,6 @@ export function AnnotationEditor({
   onSave: (body: string) => Promise<boolean>;
   onCancel: () => void;
 }) {
-  const [draft, setDraft] = useState(initial);
   const ta = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (ta.current) {
@@ -48,7 +51,7 @@ export function AnnotationEditor({
         ref={ta}
         className="ann-editor-textarea mono"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return; // IME 组词中的 Enter 只是上屏，不是提交
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
@@ -83,4 +86,47 @@ export function AnnotationEditor({
       </div>
     </div>
   );
+}
+
+/** Controlled drafts survive popover and inner reader unmounts. */
+export function CreateAnnotationEditor({ target, onSaved, onCancel }: {
+  target: import("@argelanderspace/contracts").AnnotationTarget;
+  onSaved: (id: string) => void;
+  onCancel: () => void;
+}) {
+  const { controller, state, canAnnotate } = useReaderSession();
+  const ann = useAnnotations();
+  return <>
+    {!state.createDraft.use && state.createDraft.body && <button className="ann-editor-btn" onClick={controller.useCreateDraft}>使用保留文字</button>}
+    <AnnotationEditor body={state.createDraft.use ? state.createDraft.body : ""} onChange={controller.setCreateBody}
+      busy={ann.busy} saveDisabled={!canAnnotate} onCancel={onCancel}
+      onSave={async (body) => {
+        const revision = controller.getSnapshot().createDraft.revision;
+        const generation = state.generation;
+        const id = await ann.createAnnotation(target, body);
+        const latest = controller.getSnapshot();
+        if (id && latest.generation === generation && latest.createDraft.revision === revision + 1 && !latest.createDraft.body) onSaved(id);
+        return id !== null;
+      }} />
+  </>;
+}
+export function EditAnnotationEditor({ annotation, onSaved, onCancel }: {
+  annotation: import("@argelanderspace/contracts").Annotation;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const { controller, state, canAnnotate } = useReaderSession();
+  const ann = useAnnotations();
+  const d = state.editDrafts[annotation.id];
+  if (!d) return null;
+  return <>
+    {d.blocked && <div className="ann-popover-archived">原目标或内容已变化，草稿不可保存；可复制或明确丢弃。</div>}
+    <AnnotationEditor body={d.body} onChange={(body) => controller.setEditBody(annotation.id, body)}
+      busy={ann.busy} saveDisabled={d.blocked || !canAnnotate} onCancel={onCancel}
+      onSave={async (body) => {
+        const ok = await ann.updateBody(annotation.id, body);
+        if (ok && !controller.getSnapshot().editDrafts[annotation.id]) onSaved();
+        return ok;
+      }} />
+  </>;
 }

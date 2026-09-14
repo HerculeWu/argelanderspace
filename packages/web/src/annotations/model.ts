@@ -1,6 +1,7 @@
 import {
   canonicalSegmentsText,
   type Annotation,
+  type AssetDigest,
   type AnnotationSnapshot,
   type AnnotationStructureKind,
   type AnnotationStructureTarget,
@@ -8,7 +9,7 @@ import {
   type IrBlock,
   type IrSection,
 } from "@argelanderspace/contracts";
-import { imageUrl } from "../api";
+
 
 // Pure annotation helpers (Stage 8 MS3): snapshot building from the render IR
 // (roadmap §1 per-kind fields, full and untruncated — the snapshot records
@@ -48,8 +49,8 @@ const cap = (segments: Parameters<typeof canonicalSegmentsText>[0] | undefined) 
 
 /**
  * The structure target for a section/block, snapshot included (per-kind fields
- * from roadmap §1; `asset_hash` is NOT built here — it needs an async fetch of
- * the asset bytes, see `withAssetHash`). `blockById` registers sections too
+ * from roadmap §1; `asset_hash` is added from the accepted manifest by
+ * `withAssetHash`). `blockById` registers sections too
  * (as the heading jump targets), so an `IrSection` arrives cast as a block —
  * distinguished by the `blocks` field.
  */
@@ -141,44 +142,18 @@ export function buildStructureTarget(node: IrBlock | IrSection): AnnotationStruc
   }
 }
 
-/**
- * sha256 hex of a figure/table asset's bytes — the same value core's
- * `assetContentHash` puts in the content fingerprint (matching algorithm,
- * matching bytes served at `/images/<doc>/<imgPath>`). Best-effort for the
- * creation-time snapshot: any failure (no asset, network, crypto) omits the
- * optional field; nothing is logged.
- */
-export async function assetContentHash(
-  docId: string,
-  imgPath: string | undefined
-): Promise<string | undefined> {
-  try {
-    const url = imageUrl(docId, imgPath);
-    if (!url) return undefined;
-    const r = await fetch(url);
-    if (!r.ok) return undefined;
-    const digest = await crypto.subtle.digest("SHA-256", await r.arrayBuffer());
-    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  } catch {
-    return undefined;
-  }
-}
-
-/** Add `asset_hash` to a figure/table structure target's snapshot when the IR
- *  block carries an image (best-effort — see `assetContentHash`). */
-export async function withAssetHash(
-  docId: string,
+/** Snapshot hashes come only from the accepted coherent manifest. */
+export function withAssetHash(
+  assets: AssetDigest[],
   blockById: Map<string, IrBlock>,
   target: AnnotationTarget
-): Promise<AnnotationTarget> {
-  if (target.type !== "structure") return target;
-  if (target.kind !== "figure" && target.kind !== "table") return target;
+): AnnotationTarget {
+  if (target.type !== "structure" || (target.kind !== "figure" && target.kind !== "table")) return target;
   const block = blockById.get(target.id);
-  const imgPath =
-    block && (block.type === "figure" || block.type === "table") ? block.imgPath : undefined;
+  const imgPath = block && (block.type === "figure" || block.type === "table") ? block.imgPath : undefined;
   if (!imgPath) return target;
-  const hash = await assetContentHash(docId, imgPath);
-  if (!hash) return target;
+  const hash = assets.find((a) => a.imgPath === imgPath)?.sha256;
+  if (!hash) throw new Error("Missing accepted asset digest");
   return { ...target, snapshot: { ...target.snapshot, asset_hash: hash } };
 }
 

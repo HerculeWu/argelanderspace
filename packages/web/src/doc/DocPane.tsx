@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import type { DocIr } from "@argelanderspace/contracts";
-import { fetchPaper } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { ReaderSession, useReaderSession } from "./ReaderSession";
+import { RetainedDrafts } from "./RetainedDrafts";
 import { StoreProvider, useStore, useCanUndo } from "../store";
-import { useAnnotations } from "../annotations/AnnotationStore";
+import { AnnotationProvider, useAnnotations } from "../annotations/AnnotationStore";
 import { Reader } from "../components/Reader";
 import { TocPanel } from "../components/TocPanel";
 import { RightPanel } from "../components/RightPanel";
@@ -16,54 +16,24 @@ import { useWorkspace } from "../argelander/workspace";
 export function DocPane() {
   const ws = useWorkspace();
   const id = ws.currentDoc;
-  const [ir, setIr] = useState<DocIr | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  if (!id) return <div className="reader-root"><div className="loading">没有可显示的文档。处理一篇论文，或从 文献 中打开。</div></div>;
+  return <ReaderSession key={id} docId={id}><SessionWorkspace /></ReaderSession>;
+}
 
-  useEffect(() => {
-    if (!id) {
-      setIr(null);
-      return;
-    }
-    let alive = true;
-    setIr(null);
-    setError(null);
-    (async () => {
-      try {
-        const d = await fetchPaper(id);
-        if (alive) setIr(d);
-      } catch (e) {
-        if (alive) setError(String(e));
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [id]);
-
-  if (!id)
-    return (
-      <div className="reader-root">
-        <div className="loading">没有可显示的文档。处理一篇论文，或从 文献 中打开。</div>
-      </div>
-    );
-  if (error)
-    return (
-      <div className="reader-root">
-        <div className="error">Failed to load paper:{"\n"}{error}</div>
-      </div>
-    );
-  if (!ir)
-    return (
-      <div className="reader-root">
-        <div className="loading">Loading paper…</div>
-      </div>
-    );
-
-  return (
-    <StoreProvider key={ir.docId} ir={ir}>
-      <DocWorkspace papers={ws.papers} currentId={ir.docId} onSelect={ws.setCurrentDoc} />
-    </StoreProvider>
-  );
+function SessionWorkspace() {
+  const ws = useWorkspace();
+  const { state, controller } = useReaderSession();
+  const ir = state.accepted?.ir;
+  return <div className="reader-session">
+    {state.phase !== "ready" && <div className="reader-sync-status" role="status">
+      {state.phase === "missing" ? "文档不存在。" : state.phase === "error" ? (ir ? "更新失败，当前为旧正文；图片及标注不可用。" : "文档载入失败，请手动重试。") : state.reason === "busy" ? "文档任务进行中，暂不可用。" : ir ? "正文更新中；保留旧文字，暂停图片及标注。" : "文档载入中…"}
+      <button onClick={controller.retry}>手动重试</button>
+    </div>}
+    <RetainedDrafts />
+    {ir && state.phase !== "missing" ? <StoreProvider ir={ir} anchorPending={!!ws.pendingAnchor}>
+      <AnnotationProvider><DocWorkspace papers={ws.papers} currentId={ir.docId} onSelect={ws.setCurrentDoc} /></AnnotationProvider>
+    </StoreProvider> : !ir && state.phase === "syncing" && <div className="loading">Loading paper…</div>}
+  </div>;
 }
 
 function DocWorkspace({
@@ -76,6 +46,7 @@ function DocWorkspace({
   onSelect: (id: string) => void;
 }) {
   const { ir } = useStore();
+  const { canAnnotate } = useReaderSession();
   const store = useStore();
   const ws = useWorkspace();
   const [collapsedLeft, setCollapsedLeft] = useState(false);
@@ -86,11 +57,14 @@ function DocWorkspace({
   // the doc open at the top. `#ann-<id>` anchors are NOT handled here — they
   // resolve in AnnotationDeepLink once the annotations have loaded.
   const anchor = ws.pendingAnchor;
+  const consumedAnchor = useRef<string | null>(null);
   useEffect(() => {
-    if (!anchor || isAnnotationAnchor(anchor)) return;
+    if (!anchor) { consumedAnchor.current = null; return; }
+    if (isAnnotationAnchor(anchor) || !canAnnotate || consumedAnchor.current === anchor) return;
+    consumedAnchor.current = anchor;
     ws.clearPendingAnchor();
     applyAnchor(store, anchor);
-  }, [anchor, store, ws]);
+  }, [anchor, store, ws, canAnnotate]);
 
   // ref/fig counts are derived from the IR; the page count rides it (nPages)
   const nFigs = ir.refsManifest.filter((r) => r.kind === "figure").length;
@@ -121,6 +95,7 @@ function DocWorkspace({
         </span>
       </header>
 
+      <span className="reader-position-note">更新后位置可能变化</span>
       <div className="reader-main">
         <aside className={"panel left" + (collapsedLeft ? " collapsed" : "")}>
           <button
@@ -170,9 +145,12 @@ function AnnotationDeepLink() {
   const store = useStore();
   const ann = useAnnotations();
   const anchor = ws.pendingAnchor;
+  const consumedAnchor = useRef<string | null>(null);
   useEffect(() => {
-    if (!anchor || !isAnnotationAnchor(anchor)) return;
-    if (ann.loadState === "loading") return; // annotations not loaded yet — wait
+    if (!anchor) { consumedAnchor.current = null; return; }
+    if (!isAnnotationAnchor(anchor) || consumedAnchor.current === anchor) return;
+    if (!ann.canAnnotate) return;
+    consumedAnchor.current = anchor; // annotations not loaded yet — wait
     ws.clearPendingAnchor();
     applyAnnotationAnchor(store, ann, anchor);
   }, [anchor, ann, store, ws]);

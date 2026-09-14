@@ -1,3 +1,4 @@
+import { useReaderSession } from "../doc/ReaderSession";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useStore, useVisibleIds } from "../store";
@@ -19,6 +20,7 @@ function floatKind(t: string): CardKind | null {
 // annotation never auto-switches the tab — feedback is the block marker, the
 // popover's saved state, and the badge count.
 export function RightPanel() {
+  const { state } = useReaderSession();
   const [tab, setTab] = useState<"refs" | "annotations">("refs");
   const annCount = useAnnotations().annotations.length;
   return (
@@ -38,7 +40,7 @@ export function RightPanel() {
           {annCount > 0 && <span className="ann-badge">{annCount}</span>}
         </button>
       </div>
-      {tab === "refs" ? <RefsView /> : <AnnotationsPanel />}
+      {tab === "refs" ? <RefsView key={state.generation} /> : <AnnotationsPanel />}
     </div>
   );
 }
@@ -119,13 +121,16 @@ function RefsView() {
 
   // Cross-panel: a cite chip in the body focuses its reference card here.
   useEffect(() => {
-    return store.subscribeFocus((refId) => {
+    let timer: number | undefined;
+    const off = store.subscribeFocus((refId) => {
       const key = "cite:" + refId;
       setFocusedKey(key);
       const el = cardEls.current.get(key);
       if (el) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      window.setTimeout(() => setFocusedKey((k) => (k === key ? null : k)), 1600);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setFocusedKey((k) => (k === key ? null : k)), 1600);
     });
+    return () => { off(); window.clearTimeout(timer); };
   }, [store]);
 
   return (

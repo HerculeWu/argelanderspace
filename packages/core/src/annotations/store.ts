@@ -40,12 +40,16 @@ import {
   type Annotation,
   type AnnotationsFile,
   AnnotationsFileSchema,
+  type AssetDigest,
   canonicalSegmentsText,
   type DocIr,
   type IrBlock,
   type IrSection,
+  type TexDocIr,
   TexDocIrSchema,
 } from "@argelanderspace/contracts";
+
+import { assetBytesHash, readAssetBytes, readDocumentAsset } from "./assets.js";
 
 // --------------------------------------------------------------------------- //
 // Errors
@@ -266,22 +270,21 @@ function assetContentHash(docDir: string, imgPath: string): string {
   const p = imgPath.includes("/") ? join(docDir, imgPath) : join(docDir, "assets", imgPath);
   let bytes: Buffer;
   try {
-    if (!statSync(p).isFile()) throw new Error("not a regular file");
-    bytes = readFileSync(p);
+    bytes = readAssetBytes(p);
   } catch (err) {
     throw new AnnotationsError(
       "fingerprint",
       `annotations fingerprint: cannot read asset "${imgPath}" (${p}): ${(err as Error).message}`
     );
   }
-  return createHash("sha256").update(bytes).digest("hex");
+  return assetBytesHash(bytes);
 }
 
 function captionProjection(segments: Parameters<typeof canonicalSegmentsText>[0] | undefined) {
   return segments === undefined ? null : canonicalSegmentsText(segments);
 }
 
-function blockProjection(b: IrBlock, ctx: DocContentContext): unknown[] {
+function blockProjection(b: IrBlock, assetHash: (imgPath: string) => string): unknown[] {
   switch (b.type) {
     case "paragraph":
       return ["paragraph", b.id, canonicalSegmentsText(b.segments)];
@@ -299,7 +302,7 @@ function blockProjection(b: IrBlock, ctx: DocContentContext): unknown[] {
         b.label ?? null,
         captionProjection(b.captionSegments),
         b.footnote ?? null,
-        b.imgPath === undefined ? null : assetContentHash(ctx.docDir, b.imgPath),
+        b.imgPath === undefined ? null : assetHash(b.imgPath),
       ];
     case "table":
       return [
@@ -310,7 +313,7 @@ function blockProjection(b: IrBlock, ctx: DocContentContext): unknown[] {
         captionProjection(b.captionSegments),
         b.footnote ?? null,
         b.tableBody ?? null,
-        b.imgPath === undefined ? null : assetContentHash(ctx.docDir, b.imgPath),
+        b.imgPath === undefined ? null : assetHash(b.imgPath),
       ];
     case "code":
       return [
@@ -348,11 +351,16 @@ function blockProjection(b: IrBlock, ctx: DocContentContext): unknown[] {
  * so `JSON.stringify(projection)` is a stable serialization.
  */
 export function docContentProjection(ir: DocIr, ctx: DocContentContext): unknown[] {
+  return contentProjection(ir, (imgPath) => assetContentHash(ctx.docDir, imgPath));
+}
+
+/** Shared pure projection; reader policy does not change its serialization. */
+function contentProjection(ir: DocIr, assetHash: (imgPath: string) => string): unknown[] {
   const out: unknown[] = [];
   const walk = (sections: IrSection[]): void => {
     for (const s of sections) {
       out.push(["section", s.id, s.level, s.number ?? null, s.heading ?? null]);
-      for (const b of s.blocks) out.push(blockProjection(b, ctx));
+      for (const b of s.blocks) out.push(blockProjection(b, assetHash));
       walk(s.children);
     }
   };
@@ -385,7 +393,7 @@ export interface EnsureCurrentAnnotationsResult {
  * no `version` marker → pre-migration document, `corrupt_ir`; schema-invalid
  * → `corrupt_ir`.
  */
-function loadStoredDocIr(dataDir: string, docId: string): DocIr {
+function loadStoredDocIr(dataDir: string, docId: string): TexDocIr {
   const p = docJsonPath(dataDir, docId);
   if (!existsSync(p) || !statSync(p).isFile()) {
     throw new AnnotationsError("not_found", `annotations: doc "${docId}" not found (${p})`);
@@ -494,6 +502,47 @@ export function ensureCurrentAnnotations(
 ): EnsureCurrentAnnotationsResult {
   const ir = loadStoredDocIr(dataDir, docId);
   const fingerprint = docContentFingerprint(ir, { docDir: docDirPath(dataDir, docId) });
+  return ensureForFingerprint(dataDir, docId, fingerprint, opts);
+}
+
+/** Server annotations access only: validate identity and hash each declared
+ * path once, deriving the manifest from the exact projection reads. */
+export function ensureCurrentAnnotationsWithDocument(
+  dataDir: string,
+  docId: string,
+  opts: EnsureCurrentAnnotationsOptions = {}
+): EnsureCurrentAnnotationsResult & { ir: TexDocIr; assets: AssetDigest[] } {
+  const ir = loadStoredDocIr(dataDir, docId);
+  if (ir.docId !== docId) {
+    throw new AnnotationsError("corrupt_ir", `annotations: doc id mismatch for "${docId}"`);
+  }
+  const digests = new Map<string, string>();
+  const projection = contentProjection(ir, (imgPath) => {
+    const known = digests.get(imgPath);
+    if (known !== undefined) return known;
+    try {
+      const { sha256 } = readDocumentAsset(docDirPath(dataDir, docId), imgPath);
+      digests.set(imgPath, sha256);
+      return sha256;
+    } catch (err) {
+      throw new AnnotationsError(
+        "fingerprint",
+        `annotations fingerprint: ${(err as Error).message}`
+      );
+    }
+  });
+  const fingerprint = createHash("sha256").update(JSON.stringify(projection)).digest("hex");
+  const assets = Array.from(digests, ([imgPath, sha256]) => ({ imgPath, sha256 }));
+  return { ir, assets, ...ensureForFingerprint(dataDir, docId, fingerprint, opts) };
+}
+
+// Private: no caller can supply a client fingerprint to authorize archival.
+function ensureForFingerprint(
+  dataDir: string,
+  docId: string,
+  fingerprint: string,
+  opts: EnsureCurrentAnnotationsOptions
+): EnsureCurrentAnnotationsResult {
   const current = loadAnnotationsFile(dataDir, docId);
   if (current === null) {
     return { file: emptyAnnotationsFile(fingerprint), invalidated: false };

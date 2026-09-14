@@ -1,3 +1,5 @@
+vi.mock("../src/doc/ReaderSession", () => import("./reader-unit-session"));
+import { AnnotationProvider } from "../src/annotations/AnnotationStore";
 /**
  * Stage 8 MS4: the offset ↔ DOM Range primitive (`annotations/textmap.ts`)
  * tested EXHAUSTIVELY against the real rendered DOM (StoreProvider + Reader,
@@ -74,9 +76,9 @@ function installFetch() {
 
 async function renderReader() {
   const utils = render(
-    <StoreProvider ir={fixtureIr}>
+    <StoreProvider ir={fixtureIr}><AnnotationProvider>
       <Reader />
-    </StoreProvider>
+    </AnnotationProvider></StoreProvider>
   );
   await waitFor(() => expect(utils.container.querySelector("[data-block-id='p-1']")).toBeTruthy());
   await act(async () => {}); // flush the annotation provider's load

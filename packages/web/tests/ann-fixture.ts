@@ -106,6 +106,8 @@ export const P7_SEGMENTS: IrSegment[] = [
 export const fixtureIr = {
   version: 1,
   docId: "testdoc",
+  source: { type: "latex", origin: "synthetic", main_tex: "main.tex" },
+  meta: {},
   title: "Test Doc",
   sections: [
     {

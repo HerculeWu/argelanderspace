@@ -1,4 +1,5 @@
 import type { IrSection } from "@argelanderspace/contracts";
+import { useReaderSession } from "../doc/ReaderSession";
 import { useStore } from "../store";
 import { AnnBlockEdge } from "../annotations/AnnBlockEdge";
 import { AnnotationPopover } from "../annotations/AnnotationPopover";
@@ -30,15 +31,16 @@ export function Reader() {
 
 function SectionView({ sec, first }: { sec: IrSection; first: boolean }) {
   const Heading = headingTag(sec.level);
+  const { canAnnotate } = useReaderSession();
   return (
     <section>
       {first ? (
-        <h1 className="doc-title block" id={sec.id} data-block-id={sec.id}>
+        <h1 className="doc-title block" id={canAnnotate ? sec.id : undefined} data-block-id={sec.id}>
           <MathText as="span" text={sec.heading ?? ""} />
           <AnnBlockEdge id={sec.id} />
         </h1>
       ) : (
-        <Heading className="sec block" id={sec.id} data-block-id={sec.id}>
+        <Heading className="sec block" id={canAnnotate ? sec.id : undefined} data-block-id={sec.id}>
           {sec.number && <span className="sec-num">{sec.number}</span>}
           <MathText as="span" text={sec.heading ?? ""} />
           <AnnBlockEdge id={sec.id} />

@@ -62,9 +62,9 @@ function installFetch() {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url === `/api/paper/${DOC}/ir`) return okJson(fixtureIr);
-      if (url === `/api/paper/${DOC}/annotations` && method === "GET") {
+      if (url === `/api/paper/${DOC}/annotations?coherent=1` && method === "GET") {
         getCount++;
-        return okJson(serverFile);
+        return okJson({ version: 1, ir: fixtureIr, file: serverFile, assets: [] });
       }
       if (url === `/api/paper/${DOC}/annotations` && method === "PUT") {
         const body = JSON.parse(String(init?.body)) as AnnotationsFile;
@@ -416,7 +416,7 @@ describe("B1: 409 document-changed with an open TEXT create popover", () => {
     expect(putBodies).toHaveLength(1);
   });
 
-  it("structure create popovers keep the MS3 rebuild semantics (control)", async () => {
+  it("structure targets are also discarded and require explicit reselection", async () => {
     const { container } = renderDocPane();
     await ready(container);
     fireEvent.click(
@@ -430,10 +430,13 @@ describe("B1: 409 document-changed with an open TEXT create popover", () => {
     await waitFor(() =>
       expect(container.querySelector(".ann-toast")?.textContent).toContain("文档内容已变化")
     );
-    // popover STAYS open in create mode; the retry persists the rebuilt structure target
-    expect(container.querySelector(".ann-popover")).toBeTruthy();
+    expect(container.querySelector(".ann-popover")).toBeNull();
     expect(container.querySelector(".ann-toast")?.textContent).not.toContain("请重新选择文本");
-    fireEvent.keyDown(pop.querySelector("textarea")!, { key: "Enter", ctrlKey: true });
+    fireEvent.click(block(container, "p-2").querySelector(".ann-edge-btn")!);
+    const fresh = container.querySelector(".ann-popover")!;
+    expect(fresh.querySelector("textarea")?.value).toBe("");
+    fireEvent.click([...fresh.querySelectorAll("button")].find((b) => b.textContent === "使用保留文字")!);
+    fireEvent.keyDown(fresh.querySelector("textarea")!, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(putBodies).toHaveLength(2));
     expect(putBodies[1]!.annotations[0]!.target).toEqual({
       type: "structure",

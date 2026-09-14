@@ -1,9 +1,10 @@
+import { useReaderSession } from "../doc/ReaderSession";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Annotation, AnnotationTarget } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { mdWithMath } from "../lib/mdWithMath";
 import { useAnnotations } from "./AnnotationStore";
-import { AnnotationEditor } from "./AnnotationEditor";
+import { CreateAnnotationEditor, EditAnnotationEditor } from "./AnnotationEditor";
 import { KIND_LABEL, targetBlockId } from "./model";
 
 // The annotation popover (Stage 8 MS3): creation and editing both go through
@@ -17,6 +18,7 @@ const POPOVER_W = 320;
 
 export function AnnotationPopover() {
   const ann = useAnnotations();
+  const { controller, state } = useReaderSession();
   const rootRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   // View → edit switch, held as a SNAPSHOT of the annotation being edited: if
@@ -26,6 +28,11 @@ export function AnnotationPopover() {
   // draft intact — user keystrokes are never silently dropped. Saving is then
   // impossible (the id is gone); 取消 closes.
   const [editSession, setEditSession] = useState<Annotation | null>(null);
+
+  // Discarding the controlled draft also exits this popover's local edit mode.
+  useLayoutEffect(() => {
+    if (editSession && !state.editDrafts[editSession.id]) setEditSession(null);
+  }, [editSession, state.editDrafts]);
 
   const popover = ann.popover;
   const viewed =
@@ -131,16 +138,7 @@ export function AnnotationPopover() {
       </div>
 
       {popover.mode === "create" && (
-        <AnnotationEditor
-          initial=""
-          busy={ann.busy}
-          onSave={async (body) => {
-            const id = await ann.createAnnotation(popover.target, body);
-            if (id) ann.openView(id); // saved state: the popover shows the body view
-            return id !== null;
-          }}
-          onCancel={ann.closePopover}
-        />
+        <CreateAnnotationEditor target={popover.target} onSaved={ann.openView} onCancel={ann.closePopover} />
       )}
 
       {popover.mode === "view" && viewed && !editSession && (
@@ -151,7 +149,7 @@ export function AnnotationPopover() {
             dangerouslySetInnerHTML={{ __html: mdWithMath(viewed.body) }}
           />
           <div className="ann-popover-foot">
-            <button className="ann-editor-btn" onClick={() => setEditSession(viewed)}>
+            <button className="ann-editor-btn" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }}>
               <Icon name="pencil" cls="ico-sm" />
               编辑
             </button>
@@ -174,17 +172,7 @@ export function AnnotationPopover() {
               此标注已随旧文档内容归档，无法再保存修改；可复制内容后关闭。
             </div>
           )}
-          <AnnotationEditor
-            initial={editSession.body}
-            busy={ann.busy}
-            saveDisabled={!viewed}
-            onSave={async (body) => {
-              const ok = await ann.updateBody(editSession.id, body);
-              if (ok) setEditSession(null);
-              return ok;
-            }}
-            onCancel={() => setEditSession(null)}
-          />
+          <EditAnnotationEditor annotation={editSession} onSaved={() => setEditSession(null)} onCancel={() => setEditSession(null)} />
         </>
       )}
     </div>

@@ -108,10 +108,13 @@ function installFetch() {
       const url = String(input);
       const method = init?.method ?? "GET";
       if (url === `/api/paper/${DOC}/ir`) return okJson(goldenIr);
-      if (url === `/api/paper/${DOC}/annotations` && method === "GET") {
+      if (url === `/api/paper/${DOC}/annotations?coherent=1` && method === "GET") {
         getCount++;
         if (getStatus !== 200) return okJson({ detail: "gone" }, getStatus);
-        return okJson(serverFile);
+        const assets: { imgPath: string; sha256: string }[] = [];
+        const walk = (sections: TexDocIr["sections"]) => { for (const s of sections) { for (const b of s.blocks) if ((b.type === "figure" || b.type === "table") && b.imgPath) assets.push({ imgPath: b.imgPath, sha256: createHash("sha256").update(assetBytes ?? "fixture").digest("hex") }); walk(s.children); } };
+        walk(goldenIr.sections);
+        return okJson({ version: 1, ir: goldenIr, file: serverFile, assets });
       }
       if (url === `/api/paper/${DOC}/annotations` && method === "PUT") {
         const body = JSON.parse(String(init?.body)) as AnnotationsFile;
@@ -152,6 +155,7 @@ const realScrollIntoView = Element.prototype.scrollIntoView;
 class IOStub {
   constructor(private cb: IntersectionObserverCallback) {}
   observe(target: Element) {
+    if (target.classList.contains("verified-figure")) return;
     this.cb(
       [{ isIntersecting: true, target } as IntersectionObserverEntry],
       this as unknown as IntersectionObserver
@@ -419,7 +423,7 @@ describe("structure annotation creation (hover edge button → popover)", () => 
     expect(a.target.snapshot.asset_hash).toBe(want);
   });
 
-  it("omits asset_hash when the asset fetch fails (best-effort, field optional)", async () => {
+  it("uses the accepted manifest without a separate snapshot asset fetch", async () => {
     assetBytes = null; // /images 404s
     const { container } = renderDocPane();
     await ready(container);
@@ -432,7 +436,8 @@ describe("structure annotation creation (hover edge button → popover)", () => 
     const a = putBodies[0].annotations[0];
     if (a.target.type !== "structure") throw new Error("unreachable");
     expect(a.target.kind).toBe("figure");
-    expect("asset_hash" in a.target.snapshot).toBe(false);
+    expect(a.target.snapshot.asset_hash).toBe(createHash("sha256").update("fixture").digest("hex"));
+    expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).startsWith("/images/"))).toHaveLength(0);
   });
 
   it("creation does not auto-switch/auto-expand the panel tab; the badge updates", async () => {
@@ -622,7 +627,7 @@ describe("document-level annotations via the panel-top editor", () => {
 // ---------------------------------------------------------------------------
 
 describe("PUT conflict flows (roadmap §5)", () => {
-  it('409 "document changed" → toast + reload from the response file', async () => {
+  it('409 "document changed" → toast + coherent reload, never accept the PUT file as IR', async () => {
     const { container } = renderDocPane();
     await ready(container);
     // the doc was re-ingested elsewhere: the server moved to a new epoch with
@@ -644,7 +649,7 @@ describe("PUT conflict flows (roadmap §5)", () => {
         "文档内容已变化，旧标注已归档"
       )
     );
-    // the list reloads from the 409's fresh file — the stale create is dropped
+    // Only the following coherent GET can restore the list; the stale target is dropped
     fireEvent.click(tabButton(container, "标注"));
     await waitFor(() => expect(annEntryIds(container)).toEqual(["a_00000009"]));
   });
@@ -667,7 +672,7 @@ describe("PUT conflict flows (roadmap §5)", () => {
     await waitFor(() => expect(putBodies).toHaveLength(1));
     await waitFor(() =>
       expect(container.querySelector(".ann-toast")?.textContent).toContain(
-        "标注已在其他位置更新，已重新载入"
+        "标注已在其他位置更新，请等待同步"
       )
     );
     // refetched: the other writer's annotation is now what the list shows
@@ -689,7 +694,9 @@ describe("PUT conflict flows (roadmap §5)", () => {
       expect(container.querySelector(".ann-toast")?.textContent).toContain("标注保存失败")
     );
     // the editor stays open with the draft; the annotation list is untouched
-    expect(pop.querySelector("textarea")?.value).toBe("会失败的标注");
+    expect(container.querySelector<HTMLTextAreaElement>("[aria-label='保留的创建草稿']")?.value).toBe("会失败的标注");
+    expect(container.querySelector(".ann-popover")).toBeNull();
+    expect(container.querySelector(".reader-sync-status")?.textContent).toContain("更新失败");
     expect(container.querySelector("[data-block-id='p-6'] .ann-marker")).toBeNull();
   });
 });
@@ -778,9 +785,8 @@ describe("annotation.changed refetch", () => {
     await waitFor(() =>
       expect(container.querySelector("[data-block-id='p-6'] .ann-marker")).toBeNull()
     );
-    // no error UI: the 标注 tab shows the empty state
-    fireEvent.click(tabButton(container, "标注"));
-    expect(container.querySelector(".ann-panel")?.textContent).toContain("暂无标注");
+    await waitFor(() => expect(container.querySelector(".reader-sync-status")?.textContent).toContain("文档不存在"));
+    expect(container.querySelector("main.reader")).toBeNull();
   });
 });
 
@@ -915,25 +921,14 @@ describe("review probes (MS3 fix round)", () => {
         "文档内容已变化，旧标注已归档"
       )
     );
-    // the popover survives in the archived state, draft intact
-    expect(container.querySelector(".ann-popover")).toBeTruthy();
-    expect(pop.querySelector("textarea")?.value).toBe("改了一半的内容");
-    expect(pop.textContent).toContain("归档");
-    // 保存 is disabled in the archived state (not a silent no-op)
-    const saveBtn = [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      b.textContent?.includes("保存")
-    )!;
-    expect(saveBtn.disabled).toBe(true);
-    // saving is impossible; cancelling leaves edit mode → auto-close fires
-    fireEvent.click(
-      [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("取消")
-      )!
-    );
-    await waitFor(() => expect(container.querySelector(".ann-popover")).toBeNull());
+    expect(container.querySelector(".ann-popover")).toBeNull();
+    expect(container.querySelector<HTMLTextAreaElement>("[aria-label='保留的编辑草稿 a_00000006']")?.value).toBe("改了一半的内容");
+    expect(container.querySelector(".reader-drafts")?.textContent).toContain("不可保存");
+    expect(putBodies).toHaveLength(1);
+
   });
 
-  it("a create popover retries against the new epoch with its target rebuilt from the current IR", async () => {
+  it("a create draft requires a fresh target and explicit reuse after coherent reload", async () => {
     const { container } = renderDocPane();
     await ready(container);
     fireEvent.click(
@@ -948,10 +943,14 @@ describe("review probes (MS3 fix round)", () => {
     await waitFor(() =>
       expect(container.querySelector(".ann-toast")?.textContent).toContain("文档内容已变化")
     );
-    // create mode survives with the draft
-    expect(pop.querySelector("textarea")?.value).toBe("跨纪元的创建");
-    // retry: out against the NEW epoch, target rebuilt from the store's IR
-    fireEvent.keyDown(pop.querySelector("textarea")!, { key: "Enter", ctrlKey: true });
+    await waitFor(() => expect(container.querySelector(".ann-popover")).toBeNull());
+    expect(container.querySelector<HTMLTextAreaElement>("[aria-label='保留的创建草稿']")?.value).toBe("跨纪元的创建");
+    fireEvent.click(container.querySelector("[data-block-id='eq-1'] .ann-edge-btn")!);
+    const fresh = await waitPopover(container);
+    expect(fresh.querySelector("textarea")?.value).toBe("");
+    fireEvent.click([...fresh.querySelectorAll("button")].find((b) => b.textContent === "使用保留文字")!);
+    expect(fresh.querySelector("textarea")?.value).toBe("跨纪元的创建");
+    fireEvent.keyDown(fresh.querySelector("textarea")!, { key: "Enter", ctrlKey: true });
     await waitFor(() => expect(putBodies).toHaveLength(2));
     const retry = putBodies[1];
     expect(retry.content_fingerprint).toBe("fp-epoch-2");
@@ -963,8 +962,8 @@ describe("review probes (MS3 fix round)", () => {
       snapshot: { number: "1", label: "eq:Dist_err", latex: goldenBlock("eq-1").latex },
     });
     // saved: the popover switches to the body view
-    await waitFor(() => expect(pop.querySelector("textarea")).toBeNull());
-    expect(pop.textContent).toContain("跨纪元的创建");
+    await waitFor(() => expect(fresh.querySelector("textarea")).toBeNull());
+    expect(fresh.textContent).toContain("跨纪元的创建");
   });
 
   it("double-clicking 保存 issues a single PUT (busy guards the async hash window)", async () => {

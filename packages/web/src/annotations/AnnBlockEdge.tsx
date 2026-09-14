@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { Icon } from "../lib/icons";
 import { useStore } from "../store";
 import { useAnnotations } from "./AnnotationStore";
@@ -28,7 +28,7 @@ export function AnnBlockEdge({ id }: { id: string }) {
   const activeHere = list.some((a) => a.id === ann.activeId);
   const ref = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const host = ref.current?.closest("[data-block-id]");
     if (!host) return;
     host.classList.toggle("ann-has", list.length > 0);
@@ -40,6 +40,8 @@ export function AnnBlockEdge({ id }: { id: string }) {
     <span ref={ref} className="ann-edge" contentEditable={false}>
       <button
         type="button"
+        disabled={!ann.canAnnotate}
+        hidden={!ann.canAnnotate}
         className="ann-edge-btn"
         title="添加标注"
         aria-label="添加标注"

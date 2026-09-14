@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+vi.mock("../src/doc/ReaderSession", () => import("./reader-unit-session"));
+import { AnnotationProvider } from "../src/annotations/AnnotationStore";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import type { DocIr, IrFigureBlock } from "@argelanderspace/contracts";
 import { BlockView } from "../src/components/Block";
@@ -14,14 +16,15 @@ const ir: DocIr = {
 };
 
 function renderFigure(block: IrFigureBlock) {
+  vi.stubGlobal("IntersectionObserver", class { observe() {} disconnect() {} });
   return render(
-    <StoreProvider ir={ir}>
+    <StoreProvider ir={ir}><AnnotationProvider>
       <BlockView block={block} />
-    </StoreProvider>
+    </AnnotationProvider></StoreProvider>
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("figure blocks: intrinsic dims reserve the image box (jump accuracy)", () => {
   it("sets width/height attrs from imgWidth/imgHeight", () => {
@@ -32,10 +35,10 @@ describe("figure blocks: intrinsic dims reserve the image box (jump accuracy)", 
       imgWidth: 936,
       imgHeight: 1296,
     });
-    const img = container.querySelector("img")!;
-    expect(img.getAttribute("width")).toBe("936");
-    expect(img.getAttribute("height")).toBe("1296");
-    expect(img.getAttribute("loading")).toBe("lazy");
+    const placeholder = container.querySelector<HTMLElement>(".figure-placeholder")!;
+    expect(placeholder.style.width).toBe("936px");
+    expect(placeholder.style.aspectRatio).toBe("936 / 1296");
+    expect(container.querySelector("img")).toBeNull();
   });
 
   it("omits the attrs when the IR carries no dims (pre-migration docs)", () => {
@@ -44,8 +47,8 @@ describe("figure blocks: intrinsic dims reserve the image box (jump accuracy)", 
       type: "figure",
       imgPath: "figures__a__pdf.svg",
     });
-    const img = container.querySelector("img")!;
-    expect(img.getAttribute("width")).toBeNull();
-    expect(img.getAttribute("height")).toBeNull();
+    const placeholder = container.querySelector<HTMLElement>(".figure-placeholder")!;
+    expect(placeholder.style.width).toBe("100%");
+    expect(placeholder.style.minHeight).toBe("120px");
   });
 });
