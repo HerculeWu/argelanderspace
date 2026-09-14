@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ReaderSession, useReaderSession } from "./ReaderSession";
 import { RetainedDrafts } from "./RetainedDrafts";
 import { StoreProvider, useStore, useCanUndo } from "../store";
@@ -10,29 +11,31 @@ import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 
-// The document reader, hosted as ArgelanderSpace's 文档 pane. Which paper is shown
-// is driven by the shared workspace (so the Library's "open in 文档" works);
+// The document reader, hosted as ArgelanderSpace's Doc pane. Which paper is shown
+// is driven by the shared workspace (so the Library's "open in Doc" works);
 // the in-pane switcher changes it too.
 export function DocPane() {
   const ws = useWorkspace();
+  const { t } = useTranslation();
   const id = ws.currentDoc;
-  if (!id) return <div className="reader-root"><div className="loading">没有可显示的文档。处理一篇论文，或从 文献 中打开。</div></div>;
+  if (!id) return <div className="reader-root"><div className="loading">{t("doc.empty")}</div></div>;
   return <ReaderSession key={id} docId={id}><SessionWorkspace /></ReaderSession>;
 }
 
 function SessionWorkspace() {
   const ws = useWorkspace();
   const { state, controller } = useReaderSession();
+  const { t } = useTranslation();
   const ir = state.accepted?.ir;
   return <div className="reader-session">
     {state.phase !== "ready" && <div className="reader-sync-status" role="status">
-      {state.phase === "missing" ? "文档不存在。" : state.phase === "error" ? (ir ? "更新失败，当前为旧正文；图片及标注不可用。" : "文档载入失败，请手动重试。") : state.reason === "busy" ? "文档任务进行中，暂不可用。" : ir ? "正文更新中；保留旧文字，暂停图片及标注。" : "文档载入中…"}
-      <button onClick={controller.retry}>手动重试</button>
+      {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
+      <button onClick={controller.retry}>{t("doc.sync.manualRetry")}</button>
     </div>}
     <RetainedDrafts />
     {ir && state.phase !== "missing" ? <StoreProvider ir={ir} anchorPending={!!ws.pendingAnchor}>
       <AnnotationProvider><DocWorkspace papers={ws.papers} currentId={ir.docId} onSelect={ws.setCurrentDoc} /></AnnotationProvider>
-    </StoreProvider> : !ir && state.phase === "syncing" && <div className="loading">Loading paper…</div>}
+    </StoreProvider> : !ir && state.phase === "syncing" && <div className="loading">{t("doc.loadingPaper")}</div>}
   </div>;
 }
 
@@ -49,6 +52,7 @@ function DocWorkspace({
   const { canAnnotate } = useReaderSession();
   const store = useStore();
   const ws = useWorkspace();
+  const { t } = useTranslation();
   const [collapsedLeft, setCollapsedLeft] = useState(false);
   const [collapsedRight, setCollapsedRight] = useState(false);
 
@@ -80,7 +84,7 @@ function DocWorkspace({
             className="paper-switch"
             value={currentId}
             onChange={(e) => onSelect(e.target.value)}
-            title="Switch paper"
+            title={t("doc.switchPaper")}
           >
             {papers.map((p) => (
               <option key={p} value={p}>
@@ -90,22 +94,22 @@ function DocWorkspace({
           </select>
         )}
         <span className="doc-meta">
-          {ir.nPages !== undefined && `${ir.nPages} pp · `}
-          {ir.bib.length} refs · {nFigs} figs
+          {ir.nPages !== undefined && t("doc.metaPages", { n: ir.nPages })}
+          {t("doc.metaRefsFigs", { refs: ir.bib.length, figs: nFigs })}
         </span>
       </header>
 
-      <span className="reader-position-note">更新后位置可能变化</span>
+      <span className="reader-position-note">{t("doc.positionNote")}</span>
       <div className="reader-main">
         <aside className={"panel left" + (collapsedLeft ? " collapsed" : "")}>
           <button
             className="panel-toggle"
-            title={collapsedLeft ? "Expand contents" : "Collapse contents"}
+            title={collapsedLeft ? t("doc.expandContents") : t("doc.collapseContents")}
             onClick={() => setCollapsedLeft((v) => !v)}
           >
             {collapsedLeft ? "»" : "«"}
           </button>
-          <span className="rail-label">Contents</span>
+          <span className="rail-label">{t("doc.railContents")}</span>
           <div className="panel-body">
             <TocPanel />
           </div>
@@ -120,12 +124,12 @@ function DocWorkspace({
         <aside className={"panel right" + (collapsedRight ? " collapsed" : "")}>
           <button
             className="panel-toggle"
-            title={collapsedRight ? "Expand references" : "Collapse references"}
+            title={collapsedRight ? t("doc.expandRefs") : t("doc.collapseRefs")}
             onClick={() => setCollapsedRight((v) => !v)}
           >
             {collapsedRight ? "«" : "»"}
           </button>
-          <span className="rail-label">References</span>
+          <span className="rail-label">{t("doc.railRefs")}</span>
           <div className="panel-body">
             <RightPanel />
           </div>
@@ -161,11 +165,12 @@ function AnnotationDeepLink() {
  *  plan page's notice toast. */
 function AnnotationToast() {
   const ann = useAnnotations();
+  const { t } = useTranslation();
   if (!ann.notice) return null;
   return (
     <div className="ann-toast view-in" role="status">
       <span>{ann.notice}</span>
-      <button className="ann-toast-x" title="关闭" onClick={ann.dismissNotice}>
+      <button className="ann-toast-x" title={t("common.close")} onClick={ann.dismissNotice}>
         ×
       </button>
     </div>
@@ -174,11 +179,12 @@ function AnnotationToast() {
 
 function UndoFab() {
   const store = useStore();
+  const { t } = useTranslation();
   const canUndo = useCanUndo();
   if (!canUndo) return null;
   return (
-    <button className="undo-fab" onClick={store.undo} title="Return to position before the jump">
-      ↩ Back
+    <button className="undo-fab" onClick={store.undo} title={t("doc.undoTitle")}>
+      {t("doc.undoBack")}
     </button>
   );
 }

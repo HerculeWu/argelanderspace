@@ -1,11 +1,12 @@
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { StatusBtn } from "./atoms";
-import { focusGroups, STATUS_LABEL, type Plan } from "./model";
+import { focusGroups, statusLabel, type Plan } from "./model";
 import { DueBadge } from "./taskBits";
 
-// 今日聚焦 (Stage 4): a derived view with no extra storage — 已聚焦 (pinned,
-// not done) → 已逾期 → 今天到期 → 明天到期; empty groups are not rendered,
-// and the all-empty case shows guidance. Cards open the task drawer.
+// Today's focus (Stage 4): a derived view with no extra storage — pinned
+// (not done) → overdue → due today → due tomorrow; empty groups are not
+// rendered, and the all-empty case shows guidance. Cards open the task drawer.
 
 export function FocusView({
   plans,
@@ -16,6 +17,7 @@ export function FocusView({
   today: string;
   onOpenTask: (taskId: string) => void;
 }) {
+  const { t } = useTranslation();
   const groups = focusGroups(plans, today);
   const total = groups.reduce((a, g) => a + g.items.length, 0);
   return (
@@ -25,14 +27,14 @@ export function FocusView({
           <span className="plan-sv-ic">
             <Icon name="calendar-days" cls="ico-lg" />
           </span>
-          今日聚焦
+          {t("plan.focus.title")}
         </div>
-        <div className="plan-sv-sub">按时间排布的下一步行动 · 共 {total} 项</div>
+        <div className="plan-sv-sub">{t("plan.focus.sub", { count: total })}</div>
       </div>
       <div className="plan-sv-scroll">
         {groups.length === 0 ? (
           <div className="plan-sv-empty">
-            今天没有需要聚焦的任务 — 在任务行上 pin 关注项，或为任务设置今天/明天的截止日期。
+            {t("plan.focus.empty")}
           </div>
         ) : (
           <div className="plan-focus-wrap">
@@ -50,7 +52,7 @@ export function FocusView({
                         <div className="plan-focus-card-title">{task.title}</div>
                         <div className="plan-focus-card-meta">
                           <span className="tag">{plan.name}</span>
-                          <span className={`plan-s-${task.status}`}>{STATUS_LABEL[task.status]}</span>
+                          <span className={`plan-s-${task.status}`}>{statusLabel(task.status)}</span>
                           {task.due && <DueBadge due={task.due} today={today} />}
                         </div>
                       </div>

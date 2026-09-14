@@ -9,6 +9,7 @@ import {
   type IrBlock,
   type IrSection,
 } from "@argelanderspace/contracts";
+import i18n from "../i18n";
 
 
 // Pure annotation helpers (Stage 8 MS3): snapshot building from the render IR
@@ -17,17 +18,28 @@ import {
 // never for automatic re-anchoring), document-order sorting, list summaries,
 // and the `a_<8hex>` id factory (same shape as core's randomBytes(4)).
 
-/** Chinese kind labels for the annotation UI (the reader UI is Chinese). */
-export const KIND_LABEL: Record<AnnotationStructureKind, string> = {
-  section: "章节",
-  paragraph: "段落",
-  list: "列表",
-  equation: "公式",
-  figure: "图",
-  table: "表",
-  code: "代码",
-  algorithm: "算法",
-};
+/** Localized kind label, resolved at call time so a language switch takes
+ *  effect (an explicit typed mapping — no key concatenation). */
+export function kindLabel(kind: AnnotationStructureKind): string {
+  switch (kind) {
+    case "section":
+      return i18n.t("annotation.kind.section");
+    case "paragraph":
+      return i18n.t("annotation.kind.paragraph");
+    case "list":
+      return i18n.t("annotation.kind.list");
+    case "equation":
+      return i18n.t("annotation.kind.equation");
+    case "figure":
+      return i18n.t("annotation.kind.figure");
+    case "table":
+      return i18n.t("annotation.kind.table");
+    case "code":
+      return i18n.t("annotation.kind.code");
+    case "algorithm":
+      return i18n.t("annotation.kind.algorithm");
+  }
+}
 
 /** `a_<8 hex>` — crypto.getRandomValues (browser + Node ≥19 share it). */
 export function newAnnotationId(): string {
@@ -187,7 +199,7 @@ function orderKey(a: Annotation, blockOrder: Map<string, number>): number {
 }
 
 export interface TargetSummary {
-  /** Kind label + number, e.g. "图 3" / "章节 1" / "整篇文档". */
+  /** Localized kind label + number (e.g. "Figure 3" / "Section 1"), or the whole-document label. */
   label: string;
   /** Creation-time snippet from the snapshot / quote (may be ""). */
   snippet: string;
@@ -210,17 +222,17 @@ export function targetSummary(
   const pathOf = (secId: string | null): string | null =>
     secId === null ? null : (ctx.sectionPath.get(secId) ?? null);
   if (a.target.type === "document") {
-    return { label: "整篇文档", snippet: "", path: null };
+    return { label: i18n.t("annotation.summary.document"), snippet: "", path: null };
   }
   if (a.target.type === "text") {
     return {
-      label: "文本标注",
-      snippet: snip(`「${a.target.quote}」`),
+      label: i18n.t("annotation.summary.text"),
+      snippet: snip(i18n.t("annotation.summary.quote", { quote: a.target.quote })),
       path: pathOf(ctx.sectionOfBlock.get(a.target.block) ?? null),
     };
   }
   const { kind, snapshot } = a.target;
-  const label = KIND_LABEL[kind] + (snapshot.number ? ` ${snapshot.number}` : "");
+  const label = kindLabel(kind) + (snapshot.number ? ` ${snapshot.number}` : "");
   const snippetSource =
     kind === "section"
       ? snapshot.heading

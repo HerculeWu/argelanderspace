@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { useStore } from "../store";
 import { useAnnotations } from "./AnnotationStore";
@@ -22,6 +23,7 @@ import { buildStructureTarget } from "./model";
 export function AnnBlockEdge({ id }: { id: string }) {
   const store = useStore();
   const ann = useAnnotations();
+  const { t } = useTranslation();
   const list = ann.byBlock.get(id) ?? [];
   const structList = list.filter((a) => a.target.type !== "text");
   const textList = list.filter((a) => a.target.type === "text");
@@ -43,8 +45,8 @@ export function AnnBlockEdge({ id }: { id: string }) {
         disabled={!ann.canAnnotate}
         hidden={!ann.canAnnotate}
         className="ann-edge-btn"
-        title="添加标注"
-        aria-label="添加标注"
+        title={t("annotation.action.add")}
+        aria-label={t("annotation.action.add")}
         onClick={(e) => {
           e.stopPropagation();
           const node = store.blockById.get(id);
@@ -60,8 +62,8 @@ export function AnnBlockEdge({ id }: { id: string }) {
               key={a.id}
               type="button"
               className={"ann-marker" + (a.id === ann.activeId ? " active" : "")}
-              title="查看标注"
-              aria-label="查看标注"
+              title={t("annotation.action.view")}
+              aria-label={t("annotation.action.view")}
               onClick={(e) => {
                 e.stopPropagation();
                 ann.openView(a.id);
@@ -74,8 +76,8 @@ export function AnnBlockEdge({ id }: { id: string }) {
               className={
                 "ann-count" + (textList.some((a) => a.id === ann.activeId) ? " active" : "")
               }
-              title={`${textList.length} 条文本标注`}
-              aria-label={`${textList.length} 条文本标注`}
+              title={t("annotation.edge.textCount", { count: textList.length })}
+              aria-label={t("annotation.edge.textCount", { count: textList.length })}
               onClick={(e) => {
                 e.stopPropagation();
                 if (textList.length === 1) {

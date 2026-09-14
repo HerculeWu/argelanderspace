@@ -1,6 +1,7 @@
 import { useReaderSession } from "../doc/ReaderSession";
 import { useAnnotations } from "./AnnotationStore";
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 
 /**
@@ -30,6 +31,7 @@ export function AnnotationEditor({
   onSave: (body: string) => Promise<boolean>;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const ta = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (ta.current) {
@@ -53,7 +55,7 @@ export function AnnotationEditor({
         value={draft}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.nativeEvent.isComposing) return; // IME 组词中的 Enter 只是上屏，不是提交
+          if (e.nativeEvent.isComposing) return; // an IME-composing Enter only commits the composition, never saves
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
             e.preventDefault();
             save();
@@ -63,17 +65,17 @@ export function AnnotationEditor({
             onCancel();
           }
         }}
-        placeholder="支持 Markdown 与 $…$ / $$…$$ 数学"
+        placeholder={t("annotation.editor.placeholder")}
         rows={4}
       />
       <div className="ann-editor-foot">
         <span className="ann-editor-hint">
           <Icon name="sparkles" cls="ico-sm" />
-          Markdown + 数学 · ⌘↵ 保存
+          {t("annotation.editor.hint")}
         </span>
         <div style={{ flex: 1 }} />
         <button className="ann-editor-btn" onClick={onCancel}>
-          取消
+          {t("common.cancel")}
         </button>
         <button
           className="ann-editor-btn primary"
@@ -81,7 +83,7 @@ export function AnnotationEditor({
           onClick={save}
         >
           <Icon name="check" cls="ico-sm" />
-          保存
+          {t("common.save")}
         </button>
       </div>
     </div>
@@ -96,8 +98,9 @@ export function CreateAnnotationEditor({ target, onSaved, onCancel }: {
 }) {
   const { controller, state, canAnnotate } = useReaderSession();
   const ann = useAnnotations();
+  const { t } = useTranslation();
   return <>
-    {!state.createDraft.use && state.createDraft.body && <button className="ann-editor-btn" onClick={controller.useCreateDraft}>使用保留文字</button>}
+    {!state.createDraft.use && state.createDraft.body && <button className="ann-editor-btn" onClick={controller.useCreateDraft}>{t("annotation.editor.useRetained")}</button>}
     <AnnotationEditor body={state.createDraft.use ? state.createDraft.body : ""} onChange={controller.setCreateBody}
       busy={ann.busy} saveDisabled={!canAnnotate} onCancel={onCancel}
       onSave={async (body) => {
@@ -117,10 +120,11 @@ export function EditAnnotationEditor({ annotation, onSaved, onCancel }: {
 }) {
   const { controller, state, canAnnotate } = useReaderSession();
   const ann = useAnnotations();
+  const { t } = useTranslation();
   const d = state.editDrafts[annotation.id];
   if (!d) return null;
   return <>
-    {d.blocked && <div className="ann-popover-archived">原目标或内容已变化，草稿不可保存；可复制或明确丢弃。</div>}
+    {d.blocked && <div className="ann-popover-archived">{t("annotation.editor.blocked")}</div>}
     <AnnotationEditor body={d.body} onChange={(body) => controller.setEditBody(annotation.id, body)}
       busy={ann.busy} saveDisabled={d.blocked || !canAnnotate} onCancel={onCancel}
       onSave={async (body) => {

@@ -8,6 +8,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useTranslation } from "react-i18next";
 import { StatusBtn, StatusDot } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
 import { DueBadge, PinBtn, TaskFlags } from "./taskBits";
@@ -16,7 +17,7 @@ import { DueBadge, PinBtn, TaskFlags } from "./taskBits";
 // one gesture for cross-column status change + position inside the column
 // (dropping on a card takes its place, dropping on the column body appends
 // after its last card). Tasks never move across plans; they are created only
-// via the 新建任务 modal (Stage-4 smoke ruling).
+// via the new-task modal (Stage-4 smoke ruling).
 
 interface BoardCallbacks {
   onCycle: (planId: string, taskId: string) => void;
@@ -25,12 +26,12 @@ interface BoardCallbacks {
   onMove: (planId: string, activeId: string, status: TaskStatus, overId: string | null) => void;
 }
 
-const COLS: { key: TaskStatus; label: string }[] = [
-  { key: "todo", label: "待办" },
-  { key: "doing", label: "进行中" },
-  { key: "blocked", label: "受阻" },
-  { key: "done", label: "已完成" },
-];
+const COLS = [
+  { key: "todo", labelKey: "plan.status.todo" },
+  { key: "doing", labelKey: "plan.status.doing" },
+  { key: "blocked", labelKey: "plan.status.blocked" },
+  { key: "done", labelKey: "plan.status.doneGroup" },
+] as const;
 
 export function BoardMode({ plan, today, cb }: { plan: Plan; today: string; cb: BoardCallbacks }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
@@ -66,18 +67,19 @@ function BoardColumn({
   today,
   cb,
 }: {
-  col: { key: TaskStatus; label: string };
+  col: (typeof COLS)[number];
   plan: Plan;
   today: string;
   cb: BoardCallbacks;
 }) {
+  const { t } = useTranslation();
   const items = plan.tasks.filter((t) => t.status === col.key);
   const { setNodeRef, isOver } = useDroppable({ id: `col-${col.key}`, data: { col: col.key } });
   return (
     <div className={`plan-board-col${isOver ? " over" : ""}`}>
       <div className="plan-board-col-head">
         <StatusDot status={col.key} />
-        <span>{col.label}</span>
+        <span>{t(col.labelKey)}</span>
         <span className="plan-board-col-n mono">{items.length}</span>
       </div>
       <div className="plan-board-col-body" ref={setNodeRef}>

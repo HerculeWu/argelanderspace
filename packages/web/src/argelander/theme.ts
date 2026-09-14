@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
+import i18n, { DEFAULT_LANGUAGE, type AppLanguage } from "../i18n";
 
 // Accent palette (oklch hue + chroma), ported from the design's app.jsx.
-export const ACCENTS: Record<string, { h: number; c: number; label: string }> = {
-  azure: { h: 235, c: 0.13, label: "深空蓝" },
-  teal: { h: 178, c: 0.11, label: "青绿" },
-  violet: { h: 292, c: 0.12, label: "靛紫" },
-  amber: { h: 64, c: 0.12, label: "暖琥珀" },
-  neutral: { h: 260, c: 0.02, label: "无彩" },
+// Display names live in the i18n catalog under shell.tweaks.accents.<key>.
+export const ACCENTS: Record<string, { h: number; c: number }> = {
+  azure: { h: 235, c: 0.13 },
+  teal: { h: 178, c: 0.11 },
+  violet: { h: 292, c: 0.12 },
+  amber: { h: 64, c: 0.12 },
+  neutral: { h: 260, c: 0.02 },
 };
 
 export type ThemeName = "dark" | "light";
@@ -17,9 +19,17 @@ export interface Tweaks {
   accent: string;
   density: Density;
   labels: boolean;
+  /** Optional so pre-M3 callers/tests can omit it; load() always fills it. */
+  language?: AppLanguage;
 }
 
-const DEFAULTS: Tweaks = { theme: "dark", accent: "azure", density: "regular", labels: true };
+const DEFAULTS: Tweaks = {
+  theme: "dark",
+  accent: "azure",
+  density: "regular",
+  labels: true,
+  language: DEFAULT_LANGUAGE,
+};
 const LS_KEY = "argelander.tweaks";
 
 function load(): Tweaks {
@@ -32,7 +42,8 @@ function load(): Tweaks {
   return DEFAULTS;
 }
 
-/** Theme/accent/density state, persisted to localStorage and applied to <html>. */
+/** Theme/accent/density/language state, persisted to localStorage, applied to
+ *  <html>, and synced into i18next. */
 export function useTweaks(): [Tweaks, <K extends keyof Tweaks>(k: K, v: Tweaks[K]) => void] {
   const [t, setT] = useState<Tweaks>(load);
 
@@ -40,9 +51,12 @@ export function useTweaks(): [Tweaks, <K extends keyof Tweaks>(k: K, v: Tweaks[K
     const root = document.documentElement;
     root.setAttribute("data-theme", t.theme);
     root.setAttribute("data-density", t.density);
+    const language = t.language ?? DEFAULT_LANGUAGE;
+    root.lang = language;
     const a = ACCENTS[t.accent] || ACCENTS.azure;
     root.style.setProperty("--accent-h", String(a.h));
     root.style.setProperty("--accent-c", String(a.c));
+    if (i18n.language !== language) void i18n.changeLanguage(language);
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(t));
     } catch {

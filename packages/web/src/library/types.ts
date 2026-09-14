@@ -41,7 +41,7 @@ export interface LibraryRef {
   abstract?: string;
   doi?: string;
   arxiv_id?: string;
-  doc_id?: string; // reader doc id, when this work is ingested (→ open in 文档); the main doc
+  doc_id?: string; // reader doc id, when this work is ingested (→ open in the doc view); the main doc
   doc_ids?: string[]; // all reader docs (versions); doc_ids[0] = main (Stage 7 MS3)
   citedBy?: number;
   label?: string; // color-label key (red|amber|green|blue|violet)

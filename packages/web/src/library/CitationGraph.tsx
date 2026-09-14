@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import type { GraphData, GraphLink, GraphNode } from "./types";
 
@@ -157,6 +158,7 @@ export function CitationGraph({
   added: addedSet,
   addingId,
 }: CitationGraphProps) {
+  const { t } = useTranslation();
   const nodes = graph.nodes,
     links = graph.links;
   const count = sugCount,
@@ -315,7 +317,7 @@ export function CitationGraph({
 
   useEffect(() => () => cancelAnimationFrame(sim.current.raf), []);
 
-  // when 推荐 turns on / count grows, sprout new papers from a saved neighbour
+  // when suggestions turn on / count grows, sprout new papers from a saved neighbour
   const prevActive = useRef<Set<string>>(new Set());
   useEffect(() => {
     let appeared = 0;
@@ -516,7 +518,7 @@ export function CitationGraph({
         <div className="cg-controls">
           <div className="cg-ctrl-row">
             <Icon name="git-fork" cls="ico-sm" />
-            <span className="cg-ctrl-lab">推荐深度</span>
+            <span className="cg-ctrl-lab">{t("library.graph.depth")}</span>
             <input
               className="cg-range"
               type="range"
@@ -526,11 +528,11 @@ export function CitationGraph({
               value={Math.min(depth, maxDepth)}
               onChange={(e) => onSugDepth(+e.target.value)}
             />
-            <span className="cg-ctrl-n mono">{Math.min(depth, maxDepth)} 跳</span>
+            <span className="cg-ctrl-n mono">{t("library.graph.depthHops", { n: Math.min(depth, maxDepth) })}</span>
           </div>
           <div className="cg-ctrl-row">
             <Icon name="sparkles" cls="ico-sm" />
-            <span className="cg-ctrl-lab">推荐数量</span>
+            <span className="cg-ctrl-lab">{t("library.graph.count")}</span>
             <input
               className="cg-range"
               type="range"
@@ -547,25 +549,25 @@ export function CitationGraph({
 
       <div className="cg-legend">
         <div className="cg-leg-row">
-          <span className="cg-leg-cap mono">年份</span>
+          <span className="cg-leg-cap mono">{t("library.detail.meta.year")}</span>
           <span className="cg-grad" />
           <span className="cg-leg-ends mono">{isFinite(minY) ? minY : ""}</span>
           <span className="cg-leg-ends mono">{isFinite(maxY) ? maxY : ""}</span>
         </div>
         <div className="cg-leg-row">
-          <span className="cg-leg-cap mono">引用</span>
+          <span className="cg-leg-cap mono">{t("library.graph.legendCitations")}</span>
           <span className="cg-size-dot" style={{ width: 12, height: 12, borderWidth: 1 }} />
           <span className="cg-size-dot" style={{ width: 19, height: 19, borderWidth: 4 }} />
-          <span className="cg-leg-note">越大 / 边框越粗 = 引用越高</span>
+          <span className="cg-leg-note">{t("library.graph.legendSize")}</span>
         </div>
         <div className="cg-leg-row">
-          <span className="cg-leg-cap mono">类型</span>
+          <span className="cg-leg-cap mono">{t("library.detail.meta.type")}</span>
           <span className="cg-leg-sample saved" />
-          <span className="cg-leg-note">已收录</span>
+          <span className="cg-leg-note">{t("library.graph.legendSaved")}</span>
           {showSug && (
             <>
               <span className="cg-leg-sample sug" />
-              <span className="cg-leg-note">推荐</span>
+              <span className="cg-leg-note">{t("library.graph.legendSug")}</span>
             </>
           )}
         </div>
@@ -574,22 +576,22 @@ export function CitationGraph({
       {loading && (
         <div className="cg-loading">
           <div className="cg-spinner" />
-          <div className="cg-loading-t">正在检索相关文献…</div>
-          <div className="cg-loading-d mono">分析引文网络 · 匹配相似研究</div>
+          <div className="cg-loading-t">{t("library.graph.loading")}</div>
+          <div className="cg-loading-d mono">{t("library.graph.loadingDesc")}</div>
         </div>
       )}
 
       <div className="cg-zoom">
-        <button className="cg-zbtn" title="放大" onClick={() => zoomBy(1.25)}>
+        <button className="cg-zbtn" title={t("library.graph.zoomIn")} onClick={() => zoomBy(1.25)}>
           <Icon name="plus" cls="ico-sm" />
         </button>
-        <button className="cg-zbtn" title="缩小" onClick={() => zoomBy(0.8)}>
+        <button className="cg-zbtn" title={t("library.graph.zoomOut")} onClick={() => zoomBy(0.8)}>
           <Icon name="minus" cls="ico-sm" />
         </button>
-        <button className="cg-zbtn" title="适配视图" onClick={fitView}>
+        <button className="cg-zbtn" title={t("library.graph.fitView")} onClick={fitView}>
           <Icon name="maximize" cls="ico-sm" />
         </button>
-        <button className="cg-zbtn" title="重新布局" onClick={relayout}>
+        <button className="cg-zbtn" title={t("library.graph.relayout")} onClick={relayout}>
           <Icon name="shuffle" cls="ico-sm" />
         </button>
       </div>

@@ -17,7 +17,7 @@ import { renderMathToString } from "./math";
 //    raw destination is slotted back after parsing:
 //    - inline link / image destinations `[t](dest)` / `![a](dest)`: only the
 //      DEST is stashed — marked still builds the <a>/<img>, and link VISIBLE
-//      text stays in the normal flow so `[公式 $x$](url)` keeps its math;
+//      text stays in the normal flow so `[math $x$](url)` keeps its math;
 //    - reference-definition destinations `[label]: dest`: the token becomes
 //      the registered href, use sites resolve normally, restore fixes href;
 //    - angle autolinks `<scheme://…>` and bare https?:// URLs with a `$`:
@@ -28,7 +28,7 @@ import { renderMathToString } from "./math";
 // 3. STASH math spans (texmath boundary rules, pandoc's): the opening `$`
 //    needs a non-space to its right and no `\` to its left (else `\$5`), the
 //    closing `$` a non-space to its left and no digit or `$` to its right
-//    (the digit rule keeps currency like `$100 到 $200` as text). Tokens
+//    (the digit rule keeps currency like `$100 to $200` as text). Tokens
 //    carry the per-run entropy suffix too, so a user-typed @@PLAN-…@@ can't
 //    collide with a live slot.
 // 4. marked runs on the remainder (running it first would let it chew on the

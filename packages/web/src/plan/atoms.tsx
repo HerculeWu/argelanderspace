@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Icon } from "../lib/icons";
-import { STATUS_ICON, STATUS_LABEL, type TaskStatus } from "./model";
+import { STATUS_ICON, statusLabel, type TaskStatus } from "./model";
 
 // Small shared atoms of the plan page (Stage 4): the status dot/button, the
 // progress ring, the modal shell, and the drawer's four-status pick row.
@@ -49,7 +49,7 @@ export function StatusBtn({ status, onCycle }: { status: TaskStatus; onCycle?: (
         e.stopPropagation();
         onCycle?.();
       }}
-      title={STATUS_LABEL[status]}
+      title={statusLabel(status)}
     >
       <Icon name={STATUS_ICON[status]} cls="ico-sm" />
     </button>
@@ -74,7 +74,7 @@ export function DrawerStatusRow({
           onClick={() => onSet(s)}
         >
           <Icon name={STATUS_ICON[s]} cls="ico-sm" />
-          {STATUS_LABEL[s]}
+          {statusLabel(s)}
         </button>
       ))}
     </div>

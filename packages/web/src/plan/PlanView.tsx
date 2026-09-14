@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchLibrary } from "../api/library";
 import { fetchPlans, putPlans } from "../api/plans";
@@ -27,8 +28,8 @@ import { TaskDrawer } from "./TaskDrawer";
 import { TimelineMode } from "./TimelineMode";
 
 // The plan page (Stage 4): left secondary sidebar (project head + overall
-// progress + plan list + 今日聚焦/时间线 entries), the main plan area
-// (toolbar with list/board toggle + 新建任务), and the task drawer.
+// progress + plan list + today's-focus/timeline entries), the main plan area
+// (toolbar with list/board toggle + new-task button), and the task drawer.
 //
 // State & write path: the whole {version, rev, plans} document is held in
 // state; every edit is an optimistic local update followed by a whole-doc
@@ -55,6 +56,7 @@ type ModalState =
 
 export function PlanView() {
   const ws = useWorkspace();
+  const { t } = useTranslation();
   const [doc, setDoc] = useState<PlansFile | null>(null);
   const docRef = useRef<PlansFile | null>(null);
   const writeChain = useRef<Promise<void>>(Promise.resolve());
@@ -147,7 +149,7 @@ export function PlanView() {
             applyDoc(docRef.current === snapshot ? res.doc : { ...(docRef.current as PlansFile), rev: res.doc.rev });
           } else {
             await reload();
-            flash(res.conflict ? "计划数据已被其他来源更新，已重新载入" : "保存失败，已重新载入");
+            flash(res.conflict ? t("plan.notice.conflict") : t("plan.notice.saveFailed"));
           }
         } finally {
           localWrites.current--;
@@ -253,7 +255,7 @@ export function PlanView() {
     patchTasks(undo.planId, (tasks) => {
       if (tasks.some((t) => t.id === undo.task.id)) return tasks;
       const out = [...tasks];
-      out.splice(Math.min(undo.index, out.length), 0, undo.task); // 原位插回
+      out.splice(Math.min(undo.index, out.length), 0, undo.task); // reinsert at the original index
       return out;
     });
     setUndo(null);
@@ -362,11 +364,11 @@ export function PlanView() {
           <div className="plan-empty-ic">
             <Icon name="cloud-off" cls="ico-lg" />
           </div>
-          <div className="plan-empty-title">无法连接服务器</div>
-          <div className="plan-empty-sub">计划数据暂时不可用 — 确认 serve 正在运行后重试。</div>
+          <div className="plan-empty-title">{t("plan.loadFailed.title")}</div>
+          <div className="plan-empty-sub">{t("plan.loadFailed.desc")}</div>
           <button className="btn primary" onClick={() => void reload()}>
             <Icon name="refresh-cw" cls="ico-sm" />
-            重试
+            {t("common.retry")}
           </button>
         </div>
       );
@@ -374,14 +376,14 @@ export function PlanView() {
     return (
       <div className="cg-loading" style={{ position: "relative", height: "100%" }}>
         <div className="cg-spinner" />
-        <div className="cg-loading-t">正在载入计划…</div>
+        <div className="cg-loading-t">{t("plan.loading")}</div>
       </div>
     );
   }
 
   const modes = [
-    { k: "list" as const, ic: "list", label: "列表" },
-    { k: "board" as const, ic: "columns-3", label: "看板" },
+    { k: "list" as const, ic: "list", label: t("plan.modes.list") },
+    { k: "board" as const, ic: "columns-3", label: t("plan.modes.board") },
   ];
 
   return (
@@ -415,7 +417,7 @@ export function PlanView() {
                         : undefined
                     }
                   >
-                    截止 {fmtDate(plan.due)}
+                    {t("plan.toolbar.due", { date: fmtDate(plan.due) })}
                   </span>
                 </div>
               </div>
@@ -436,14 +438,14 @@ export function PlanView() {
               </div>
               <button
                 className="btn icon ghost"
-                title="编辑计划"
+                title={t("plan.action.editPlan")}
                 onClick={() => setModal({ kind: "plan", plan })}
               >
                 <Icon name="pencil" cls="ico-sm" />
               </button>
               <button
                 className="btn icon ghost"
-                title="删除计划"
+                title={t("plan.action.deletePlan")}
                 onClick={() => setModal({ kind: "deletePlan", plan })}
               >
                 <Icon name="trash-2" cls="ico-sm" />
@@ -453,7 +455,7 @@ export function PlanView() {
                 onClick={() => setModal({ kind: "task", planId: plan.id, defaultStatus: "todo" })}
               >
                 <Icon name="plus" cls="ico-sm" />
-                <span className="plan-newlabel">新建任务</span>
+                <span className="plan-newlabel">{t("plan.action.newTask")}</span>
               </button>
             </div>
           </div>
@@ -499,11 +501,11 @@ export function PlanView() {
               <div className="plan-empty-ic">
                 <Icon name="target" cls="ico-lg" />
               </div>
-              <div className="plan-empty-title">还没有研究计划</div>
-              <div className="plan-empty-sub">用一个计划组织下一步的任务、文档与笔记。</div>
+              <div className="plan-empty-title">{t("plan.empty.title")}</div>
+              <div className="plan-empty-sub">{t("plan.empty.desc")}</div>
               <button className="btn primary" onClick={() => setModal({ kind: "plan" })}>
                 <Icon name="plus" cls="ico-sm" />
-                新建第一个研究计划
+                {t("plan.empty.cta")}
               </button>
             </div>
           )}
@@ -563,10 +565,10 @@ export function PlanView() {
       {undo && (
         <div className="plan-undo view-in">
           <Icon name="trash-2" cls="ico-sm" />
-          <span>已删除「{undo.task.title}」</span>
+          <span>{t("plan.undo.deleted", { title: undo.task.title })}</span>
           <button className="plan-undo-btn" onClick={undoDelete}>
             <Icon name="undo-2" cls="ico-sm" />
-            撤销
+            {t("plan.undo.action")}
           </button>
           <button className="plan-undo-x" onClick={() => setUndo(null)}>
             <Icon name="x" cls="ico-sm" />
@@ -597,12 +599,13 @@ function PlansSidebar({
   onSpecial: (k: Exclude<Special, null>) => void;
   onAddPlan: () => void;
 }) {
+  const { t } = useTranslation();
   const overall = plans.length
     ? Math.round(plans.reduce((a, p) => a + planProgress(p), 0) / plans.length)
     : 0;
   const specials = [
-    { k: "focus" as const, ic: "calendar-days", label: "今日聚焦" },
-    { k: "timeline" as const, ic: "gantt-chart", label: "时间线" },
+    { k: "focus" as const, ic: "calendar-days", label: t("plan.focus.title") },
+    { k: "timeline" as const, ic: "gantt-chart", label: t("plan.timeline.title") },
   ];
   return (
     <div className="plan-side">
@@ -611,7 +614,7 @@ function PlansSidebar({
           <Icon name="telescope" cls="ico-lg" />
         </div>
         <div className="plan-proj-meta">
-          <div className="plan-proj-name">{project?.name ?? "研究计划"}</div>
+          <div className="plan-proj-name">{project?.name ?? t("plan.side.plans")}</div>
           {project?.field && <div className="plan-proj-field">{project.field}</div>}
         </div>
       </div>
@@ -623,8 +626,8 @@ function PlansSidebar({
       </div>
 
       <div className="plan-side-section">
-        <div className="plan-side-label">研究计划</div>
-        <button className="plan-side-add" title="新建计划" onClick={onAddPlan}>
+        <div className="plan-side-label">{t("plan.side.plans")}</div>
+        <button className="plan-side-add" title={t("plan.action.newPlan")} onClick={onAddPlan}>
           <Icon name="plus" cls="ico-sm" />
         </button>
       </div>
@@ -634,8 +637,10 @@ function PlansSidebar({
           const prog = planProgress(p);
           const open = p.tasks.filter((t) => t.status !== "done").length;
           const sub = p.tasks.length
-            ? `${open > 0 ? `${open} 项未完成` : "已完成"} · ${fmtDate(p.due)}`
-            : `暂无任务 · ${fmtDate(p.due)}`;
+            ? open > 0
+              ? t("plan.progress.open", { count: open, date: fmtDate(p.due) })
+              : t("plan.progress.done", { date: fmtDate(p.due) })
+            : t("plan.progress.empty", { date: fmtDate(p.due) });
           return (
             <button
               key={p.id}
@@ -658,7 +663,7 @@ function PlansSidebar({
       </div>
 
       <div className="plan-side-section">
-        <div className="plan-side-label">视图</div>
+        <div className="plan-side-label">{t("plan.side.views")}</div>
       </div>
       <div className="plan-list">
         {specials.map((s) => (

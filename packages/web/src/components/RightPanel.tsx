@@ -1,5 +1,6 @@
 import { useReaderSession } from "../doc/ReaderSession";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "framer-motion";
 import { useStore, useVisibleIds } from "../store";
 import { useAnnotations } from "../annotations/AnnotationStore";
@@ -15,12 +16,13 @@ function floatKind(t: string): CardKind | null {
   return null; // sections etc. are not shown as cards
 }
 
-// Right-panel tabs (Stage 8 MS3): 引用 (the pre-existing in-view cards, still
-// the default) | 标注 (the doc's annotations, with a count badge). Creating an
-// annotation never auto-switches the tab — feedback is the block marker, the
-// popover's saved state, and the badge count.
+// Right-panel tabs (Stage 8 MS3): Refs (the pre-existing in-view cards, still
+// the default) | Annotations (the doc's annotations, with a count badge).
+// Creating an annotation never auto-switches the tab — feedback is the block
+// marker, the popover's saved state, and the badge count.
 export function RightPanel() {
   const { state } = useReaderSession();
+  const { t } = useTranslation();
   const [tab, setTab] = useState<"refs" | "annotations">("refs");
   const annCount = useAnnotations().annotations.length;
   return (
@@ -30,13 +32,13 @@ export function RightPanel() {
           className={"right-tab" + (tab === "refs" ? " on" : "")}
           onClick={() => setTab("refs")}
         >
-          引用
+          {t("components.rightPanel.refsTab")}
         </button>
         <button
           className={"right-tab" + (tab === "annotations" ? " on" : "")}
           onClick={() => setTab("annotations")}
         >
-          标注
+          {t("components.rightPanel.annotationsTab")}
           {annCount > 0 && <span className="ann-badge">{annCount}</span>}
         </button>
       </div>
@@ -47,6 +49,7 @@ export function RightPanel() {
 
 function RefsView() {
   const store = useStore();
+  const { t } = useTranslation();
   const visibleIds = useVisibleIds();
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -135,11 +138,10 @@ function RefsView() {
 
   return (
     <>
-      <div className="panel-title">In view · {cards.length}</div>
+      <div className="panel-title">{t("components.rightPanel.inView", { count: cards.length })}</div>
       {cards.length === 0 && (
         <div className="right-empty">
-          Nothing referenced in the current view. Scroll the article — figures,
-          equations, tables and citations mentioned nearby appear here.
+          {t("components.rightPanel.empty")}
         </div>
       )}
       <AnimatePresence initial={false}>

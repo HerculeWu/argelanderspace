@@ -1,9 +1,11 @@
 import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { patchRef, uploadLatexZip } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { onJobEvent } from "../api/ws";
+import i18n from "../i18n";
 import { Modal } from "../plan/atoms";
 import { cgKfmt } from "./CitationGraph";
 import type { GraphNode, LibraryRef } from "./types";
@@ -22,11 +24,29 @@ const RESOLVED_LABEL: Record<string, string> = {
 function sourceBadge(r: LibraryRef): { text: string; color: string } {
   const lbl = r.sourceLabel || "";
   const GREEN = "oklch(0.74 0.13 158)", AMBER = "oklch(0.80 0.13 78)", BLUE = "oklch(0.70 0.12 235)";
-  if (r.doc_id || r.pdf) return { text: lbl ? `已入库 · ${lbl}` : "已入库", color: GREEN };
-  if (r.needs_upload) return { text: "需上传源码包", color: AMBER };
-  if (r.sourceStatus === "blocked") return { text: lbl ? `反爬墙 · ${lbl}` : "被反爬墙", color: AMBER };
-  if (r.sourceStatus === "ready" || r.sourceReady) return { text: lbl ? `可获取 · ${lbl}` : "可获取", color: BLUE };
-  return { text: lbl || "未知来源", color: "var(--text-dim, #8a8a8a)" };
+  if (r.doc_id || r.pdf)
+    return {
+      text: lbl
+        ? i18n.t("library.detail.source.ingestedFrom", { label: lbl })
+        : i18n.t("library.detail.source.ingested"),
+      color: GREEN,
+    };
+  if (r.needs_upload) return { text: i18n.t("library.detail.source.needsUpload"), color: AMBER };
+  if (r.sourceStatus === "blocked")
+    return {
+      text: lbl
+        ? i18n.t("library.detail.source.blockedFrom", { label: lbl })
+        : i18n.t("library.detail.source.blocked"),
+      color: AMBER,
+    };
+  if (r.sourceStatus === "ready" || r.sourceReady)
+    return {
+      text: lbl
+        ? i18n.t("library.detail.source.readyFrom", { label: lbl })
+        : i18n.t("library.detail.source.ready"),
+      color: BLUE,
+    };
+  return { text: lbl || i18n.t("library.detail.source.unknown"), color: "var(--text-dim, #8a8a8a)" };
 }
 
 function SourcePill({ r }: { r: LibraryRef }) {
@@ -73,13 +93,16 @@ function bibtexOf(r: LibraryRef): string {
   );
 }
 
-const TABS: [string, string][] = [
-  ["meta", "详情"],
-  ["info", "摘要"],
-  ["bib", "BibTeX"],
-  ["notes", "笔记"],
-  ["files", "附件"],
-];
+const TABS = ["meta", "info", "bib", "notes", "files"] as const;
+
+// Tab labels resolve at render time; keys must stay in sync with TABS.
+const TAB_LABEL_KEYS = {
+  meta: "library.detail.tabs.meta",
+  info: "library.detail.tabs.info",
+  bib: "library.detail.tabs.bib",
+  notes: "library.detail.tabs.notes",
+  files: "library.detail.tabs.files",
+} as const;
 
 /** The upload job's target work id rides in `payload.workId` (server app.ts). */
 function uploadJobWorkId(job: Job): string | null {
@@ -107,6 +130,7 @@ export function RefDetail({
    *  wires this to the workspace's three-state transition. */
   onDocDeleted?: (docId: string, remaining: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState("meta");
   const [copied, setCopied] = useState(false);
   // async upload (202 + job): progress arrives over /ws; `uploadJob` is the
@@ -157,7 +181,7 @@ export function RefDetail({
     const ok = await patchRef(r.id, { doc_id: docId });
     setSettingMain(false);
     if (ok) onReload?.();
-    else setMainErr("设为主文档失败，请重试");
+    else setMainErr(i18n.t("library.detail.files.setMainFailed"));
   };
 
   const onConfirmDelete = async (docId: string) => {
@@ -170,7 +194,7 @@ export function RefDetail({
       onDocDeleted?.(docId, versions.filter((d) => d !== docId));
       onReload?.();
     } else if (res.busy) {
-      setDelErr("文档正在摄入，请稍后删除");
+      setDelErr(i18n.t("library.detail.deleteDoc.busy"));
     } else if (res.missing) {
       // already deleted elsewhere: the desired end state — close the dialog
       // and reload the library instead of showing an error
@@ -182,7 +206,9 @@ export function RefDetail({
   };
 
   const failMsg = (job: Job | null): string =>
-    job?.error ? `上传失败：${job.error}` : "上传失败，请重试";
+    job?.error
+      ? i18n.t("library.detail.upload.failed", { error: job.error })
+      : i18n.t("library.detail.upload.failedGeneric");
 
   const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -261,12 +287,12 @@ export function RefDetail({
   return (
     <div className="ref-detail view-in">
       <div className="ref-detail-head">
-        <div className="ref-type-badge">{r.type === "conf" ? "会议" : "期刊"}</div>
+        <div className="ref-type-badge">{r.type === "conf" ? t("library.detail.typeConf") : t("library.detail.typeArticle")}</div>
         <div className="ref-detail-actions">
-          <button className="btn icon ghost" title="在 文档 中打开" onClick={() => onOpenDoc(r.doc_id)}>
+          <button className="btn icon ghost" title={t("library.detail.openInDoc")} onClick={() => onOpenDoc(r.doc_id)}>
             <Icon name="file-text" cls="ico-sm" />
           </button>
-          <button className="btn icon ghost" title={r.star ? "已加星" : "加星"}>
+          <button className="btn icon ghost" title={r.star ? t("library.detail.starred") : t("library.detail.star")}>
             <Icon name="star" cls="ico-sm" />
           </button>
           <button className="btn icon ghost" onClick={onClose}>
@@ -283,7 +309,7 @@ export function RefDetail({
         {cited != null && (
           <>
             <span className="dotsep">·</span>
-            <span className="mono">被引 {cgKfmt(cited)}</span>
+            <span className="mono">{t("library.detail.citedBy", { count: cgKfmt(cited) })}</span>
           </>
         )}
       </div>
@@ -291,7 +317,7 @@ export function RefDetail({
         <SourcePill r={r} />
         {r.resolvedBy && RESOLVED_LABEL[r.resolvedBy] && (
           <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>
-            引用数据 · {RESOLVED_LABEL[r.resolvedBy]}
+            {t("library.detail.resolvedBy", { source: RESOLVED_LABEL[r.resolvedBy] })}
           </span>
         )}
       </div>
@@ -303,9 +329,9 @@ export function RefDetail({
         onChange={onPickFile}
       />
       <div className="ref-detail-tabs">
-        {TABS.map(([k, l]) => (
+        {TABS.map((k) => (
           <button key={k} className={"rdt" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
-            {l}
+            {t(TAB_LABEL_KEYS[k])}
           </button>
         ))}
       </div>
@@ -313,20 +339,20 @@ export function RefDetail({
         {tab === "meta" && (
           <div className="ref-meta-list">
             <div className="rml-row">
-              <span className="rml-k">类型</span>
-              <span className="rml-v">{r.type === "conf" ? "会议论文" : "期刊文章"}</span>
+              <span className="rml-k">{t("library.detail.meta.type")}</span>
+              <span className="rml-v">{r.type === "conf" ? t("library.detail.typeConfFull") : t("library.detail.typeArticleFull")}</span>
             </div>
             <div className="rml-row">
-              <span className="rml-k">年份</span>
+              <span className="rml-k">{t("library.detail.meta.year")}</span>
               <span className="rml-v mono">{r.year}</span>
             </div>
             <div className="rml-row">
-              <span className="rml-k">来源</span>
+              <span className="rml-k">{t("library.detail.meta.venue")}</span>
               <span className="rml-v">{r.venue}</span>
             </div>
             {cited != null && (
               <div className="rml-row">
-                <span className="rml-k">被引量</span>
+                <span className="rml-k">{t("library.detail.meta.citedBy")}</span>
                 <span className="rml-v mono">{cited}</span>
               </div>
             )}
@@ -343,12 +369,12 @@ export function RefDetail({
               </div>
             )}
             <div className="rml-row">
-              <span className="rml-k">引用键</span>
+              <span className="rml-k">{t("library.detail.meta.citeKey")}</span>
               <span className="rml-v mono">{r.cite}</span>
             </div>
             <div className="rml-row">
-              <span className="rml-k">附件</span>
-              <span className="rml-v">{r.pdf || r.doc_id ? "可在文档中打开" : "暂无"}</span>
+              <span className="rml-k">{t("library.detail.tabs.files")}</span>
+              <span className="rml-v">{r.pdf || r.doc_id ? t("library.detail.meta.filesOpen") : t("library.detail.meta.filesNone")}</span>
             </div>
             {r.tags.length > 0 && (
               <div className="ref-tags" style={{ marginTop: 4 }}>
@@ -365,7 +391,7 @@ export function RefDetail({
               <p>{r.abstract}</p>
             ) : (
               <div className="placeholder-text ph-abstract">
-                <span className="mono">摘要 / abstract</span>
+                <span className="mono">{t("library.detail.abstractPlaceholder")}</span>
               </div>
             )}
             {r.tags.length > 0 && (
@@ -381,7 +407,7 @@ export function RefDetail({
           <div className="bib-block">
             <button className="bib-copy" onClick={copyBib}>
               <Icon name={copied ? "check" : "copy"} cls="ico-sm" />
-              {copied ? "已复制" : "复制"}
+              {copied ? t("common.copied") : t("common.copy")}
             </button>
             <pre className="mono">{bibtexOf(r)}</pre>
           </div>
@@ -393,7 +419,7 @@ export function RefDetail({
             </div>
           ) : (
             <div className="placeholder-text ph-note">
-              <span className="mono">暂无笔记</span>
+              <span className="mono">{t("library.detail.notesEmpty")}</span>
             </div>
           ))}
         {tab === "files" && (
@@ -403,19 +429,19 @@ export function RefDetail({
                 <button
                   className="ref-file"
                   style={{ flex: 1 }}
-                  title="在文档中打开（主文档）"
+                  title={t("library.detail.files.openMain")}
                   onClick={() => onOpenDoc(mainDoc)}
                 >
                   <Icon name="file-text" cls="ico-sm" />
                   <span className="mono">{r.cite}</span>
                   <span className="ref-file-ok">
-                    {extraVersions.length > 0 ? "主文档" : "已入库"}
+                    {extraVersions.length > 0 ? t("library.detail.files.mainBadge") : t("library.detail.source.ingested")}
                   </span>
                   <Icon name="arrow-up-right" cls="ico-sm" />
                 </button>
                 <button
                   className="btn icon"
-                  title="删除此文档（含其标注）"
+                  title={t("library.detail.files.deleteDoc")}
                   onClick={() => {
                     setDelErr(null);
                     setDelDoc(mainDoc);
@@ -430,7 +456,7 @@ export function RefDetail({
                 <button
                   className="ref-file"
                   style={{ flex: 1 }}
-                  title="在文档中打开（旧版本）"
+                  title={t("library.detail.files.openOld")}
                   onClick={() => onOpenDoc(d)}
                 >
                   <Icon name="file-text" cls="ico-sm" />
@@ -440,14 +466,14 @@ export function RefDetail({
                 <button
                   className="btn"
                   disabled={settingMain}
-                  title="设为主文档"
+                  title={t("library.detail.files.setMainTitle")}
                   onClick={() => onSetMainDoc(d)}
                 >
-                  设为主
+                  {t("library.detail.files.setMain")}
                 </button>
                 <button
                   className="btn icon"
-                  title="删除此文档（含其标注）"
+                  title={t("library.detail.files.deleteDoc")}
                   onClick={() => {
                     setDelErr(null);
                     setDelDoc(d);
@@ -472,7 +498,7 @@ export function RefDetail({
             >
               {!mainDoc && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>全文来源</span>
+                  <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>{t("library.detail.files.sourceLabel")}</span>
                   <SourcePill r={r} />
                 </div>
               )}
@@ -486,29 +512,29 @@ export function RefDetail({
                   <>
                     <Icon name="loader" cls="ico-sm spin" />
                     {uploadJob.status === "queued"
-                      ? "排队等待摄入…"
+                      ? t("library.detail.upload.queued")
                       : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
-                        "正在摄入 LaTeX 源码…")}
+                        t("library.detail.upload.ingesting"))}
                   </>
                 ) : (
                   <>
                     <Icon name="file-up" cls="ico-sm" />
                     {hasUploadDoc
-                      ? "重新上传 LaTeX 源码包（zip）"
+                      ? t("library.detail.upload.reupload")
                       : mainDoc
-                        ? "上传新版本 LaTeX 源码包（zip）"
-                        : "上传 LaTeX 源码包（zip）"}
+                        ? t("library.detail.upload.newVersion")
+                        : t("library.detail.upload.initial")}
                   </>
                 )}
               </button>
               <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
                 {hasUploadDoc
-                  ? "重新上传会覆盖同一文档（传错文件或有更新版时使用）"
+                  ? t("library.detail.upload.hintReupload")
                   : mainDoc
-                    ? "新版本上传后自动设为主文档；旧版本保留在上方列表可回看"
+                    ? t("library.detail.upload.hintNewVersion")
                     : r.needs_upload
-                      ? "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条"
-                      : "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）"}
+                      ? t("library.detail.upload.hintNeedsUpload")
+                      : t("library.detail.upload.hintDefault")}
               </div>
               {uploadErr && (
                 <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
@@ -535,9 +561,10 @@ export function RefDetail({
 /**
  * Stage 8 §8 delete confirmation. The annotation count N is fetched when the
  * dialog opens (the annotations file is the doc's own, independent of the
- * library); a failed count fetch degrades to "数量未知" instead of blocking
- * the deletion. The server answer 409 "document busy" means a queued/running
- * ingest pins the doc — the dialog stays open with the retry hint.
+ * library); a failed count fetch degrades to an "unknown count" wording
+ * instead of blocking the deletion. The server answer 409 "document busy"
+ * means a queued/running ingest pins the doc — the dialog stays open with
+ * the retry hint.
  */
 function DeleteDocDialog({
   docId,
@@ -552,6 +579,7 @@ function DeleteDocDialog({
   onCancel: () => void;
   onConfirm: (docId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [count, setCount] = useState<number | null>(null);
   useEffect(() => {
     let alive = true;
@@ -566,25 +594,25 @@ function DeleteDocDialog({
 
   return (
     <Modal
-      title="删除文档"
+      title={t("library.detail.deleteDoc.title")}
       sub={docId}
       width={420}
       onClose={onCancel}
       footer={
         <>
           <button className="btn" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="btn plan-danger" disabled={busy} onClick={() => onConfirm(docId)}>
-            {busy ? "正在删除…" : "永久删除"}
+            {busy ? t("library.detail.deleteDoc.deleting") : t("library.detail.deleteDoc.confirm")}
           </button>
         </>
       }
     >
       <div className="plan-modal-warning">
-        该文档及其
-        {count === null ? "标注（数量未知）" : ` ${count} 条标注`}
-        将永久删除，此文档将从所有关联文献条目中移除。
+        {count === null
+          ? t("library.detail.deleteDoc.warningUnknown")
+          : t("library.detail.deleteDoc.warningCount", { count })}
       </div>
       {error && (
         <div className="mono" style={{ fontSize: 12, color: "oklch(0.70 0.16 25)" }}>
@@ -612,6 +640,7 @@ export function GraphNodeDetail({
   onAdd: () => void;
   adding: boolean;
 }) {
+  const { t } = useTranslation();
   const conn = links
     .filter(([a, b]) => a === node.id || b === node.id)
     .map(([a, b]) => byId[a === node.id ? b : a])
@@ -619,9 +648,9 @@ export function GraphNodeDetail({
   return (
     <div className="ref-detail view-in">
       <div className="ref-detail-head">
-        <div className="ref-type-badge sug">推荐 · 未收录</div>
+        <div className="ref-type-badge sug">{t("library.suggestion.badge")}</div>
         <div className="ref-detail-actions">
-          <button className="btn icon ghost" title="在新窗口打开">
+          <button className="btn icon ghost" title={t("library.suggestion.openExternal")}>
             <Icon name="external-link" cls="ico-sm" />
           </button>
           <button className="btn icon ghost" onClick={onClose}>
@@ -636,24 +665,24 @@ export function GraphNodeDetail({
         <span className="dotsep">·</span>
         <span className="mono">{node.y}</span>
         <span className="dotsep">·</span>
-        <span className="mono">被引 {cgKfmt(node.c)}</span>
+        <span className="mono">{t("library.detail.citedBy", { count: cgKfmt(node.c) })}</span>
       </div>
       <button className="btn primary add-to-lib" disabled={adding} onClick={onAdd}>
         {adding ? (
           <>
             <Icon name="loader" cls="ico-sm spin" />
-            正在抓取题录…
+            {t("library.suggestion.adding")}
           </>
         ) : (
           <>
             <Icon name="plus" cls="ico-sm" />
-            添加到文库
+            {t("library.suggestion.add")}
           </>
         )}
       </button>
-      {adding && <div className="add-hint mono">正在获取元数据并写入文库…</div>}
+      {adding && <div className="add-hint mono">{t("library.suggestion.addingHint")}</div>}
       <div className="ref-detail-tabs">
-        <div className="rdt on">引用关联 · {conn.length}</div>
+        <div className="rdt on">{t("library.suggestion.connTab", { count: conn.length })}</div>
       </div>
       <div className="cg-conn-list">
         {conn.map((c) => (

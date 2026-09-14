@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { LibraryRef } from "../library/types";
 import { Icon } from "../lib/icons";
 import { mdWithMath } from "../lib/mdWithMath";
@@ -8,8 +9,8 @@ import { DueBadge, PinBtn } from "./taskBits";
 
 // The task drawer (Stage 4): plan tag + title + four-state status row +
 // edit (TaskModal, prefilled) + pin toggle + linked documents (search-picker
-// add, library-title lookup, click-through to the 文档 pane; a doc the
-// library no longer knows renders grayed as 文档不存在 and is NOT
+// add, library-title lookup, click-through to the doc pane; a doc the
+// library no longer knows renders grayed as "doc missing" and is NOT
 // auto-removed) + the note (view ⇄ edit, markdown+math, ⌘↵ saves) + delete
 // (6s undo toast handled by PlanView).
 
@@ -38,17 +39,18 @@ export function TaskDrawer({
   refs: LibraryRef[];
   cb: DrawerCallbacks;
 }) {
+  const { t } = useTranslation();
   const byDocId = new Map(refs.filter((r) => r.doc_id).map((r) => [r.doc_id as string, r]));
   return (
     <div className="plan-drawer view-in">
       <div className="plan-drawer-head">
         <span className="tag">{plan.name}</span>
         <div className="plan-drawer-head-actions">
-          <button className="btn icon ghost" title="编辑任务" onClick={() => cb.onEdit(plan.id, task)}>
+          <button className="btn icon ghost" title={t("plan.action.editTask")} onClick={() => cb.onEdit(plan.id, task)}>
             <Icon name="pencil" cls="ico-sm" />
           </button>
           <PinBtn focused={task.focused} onToggle={() => cb.onTogglePin(plan.id, task.id)} />
-          <button className="btn icon ghost" title="关闭" onClick={cb.onClose}>
+          <button className="btn icon ghost" title={t("common.close")} onClick={cb.onClose}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
@@ -57,7 +59,7 @@ export function TaskDrawer({
       <div className="plan-drawer-duerow">{task.due && <DueBadge due={task.due} today={today} />}</div>
       <DrawerStatusRow status={task.status} onSet={(s) => cb.onSetStatus(plan.id, task.id, s)} />
 
-      <div className="plan-drawer-section">关联文档</div>
+      <div className="plan-drawer-section">{t("plan.drawer.links")}</div>
       {task.links.length > 0 && (
         <div className="plan-drawer-arts">
           {task.links.map((l) => {
@@ -67,11 +69,11 @@ export function TaskDrawer({
               return (
                 <div key={l.doc_id} className="plan-drawer-art missing" title={l.doc_id}>
                   <Icon name="file-x" cls="ico-sm" />
-                  <span className="mono">文档不存在</span>
+                  <span className="mono">{t("plan.drawer.docMissing")}</span>
                   <span className="plan-drawer-art-kind">{l.doc_id}</span>
                   <button
                     className="plan-drawer-art-x"
-                    title="移除链接"
+                    title={t("plan.drawer.removeLink")}
                     onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}
                   >
                     <Icon name="x" cls="ico-sm" />
@@ -83,7 +85,7 @@ export function TaskDrawer({
               <div key={l.doc_id} className="plan-drawer-art-wrap">
                 <button
                   className="plan-drawer-art"
-                  title={`打开 · ${ref.title}`}
+                  title={t("plan.drawer.openDoc", { title: ref.title })}
                   onClick={() => cb.onOpenDoc(l.doc_id)}
                 >
                   <Icon name="file-text" cls="ico-sm" />
@@ -92,7 +94,7 @@ export function TaskDrawer({
                 </button>
                 <button
                   className="plan-drawer-art-x"
-                  title="移除链接"
+                  title={t("plan.drawer.removeLink")}
                   onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}
                 >
                   <Icon name="x" cls="ico-sm" />
@@ -109,13 +111,13 @@ export function TaskDrawer({
         onPick={(docId) => cb.onAddLink(plan.id, task.id, docId)}
       />
 
-      <div className="plan-drawer-section">备注</div>
+      <div className="plan-drawer-section">{t("plan.drawer.note")}</div>
       <NoteEditor key={task.id} value={task.note} onSave={(v) => cb.onSetNote(plan.id, task.id, v)} />
 
       <div className="plan-drawer-spacer" />
       <button className="plan-drawer-delete" onClick={() => cb.onDelete(plan.id, task.id)}>
         <Icon name="trash-2" cls="ico-sm" />
-        删除任务
+        {t("plan.drawer.deleteTask")}
       </button>
     </div>
   );
@@ -129,6 +131,7 @@ function LinkPicker({
   candidates: LibraryRef[];
   onPick: (docId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const ref = useRef<HTMLInputElement>(null);
@@ -139,7 +142,7 @@ function LinkPicker({
     return (
       <button className="plan-drawer-art add" onClick={() => setOpen(true)}>
         <Icon name="plus" cls="ico-sm" />
-        添加关联文档
+        {t("plan.drawer.addLink")}
       </button>
     );
   }
@@ -164,9 +167,9 @@ function LinkPicker({
           onKeyDown={(e) => {
             if (e.key === "Escape") setOpen(false);
           }}
-          placeholder="搜索文献标题、作者…"
+          placeholder={t("plan.drawer.searchPlaceholder")}
         />
-        <button className="btn icon ghost" title="关闭" onClick={() => setOpen(false)}>
+        <button className="btn icon ghost" title={t("common.close")} onClick={() => setOpen(false)}>
           <Icon name="x" cls="ico-sm" />
         </button>
       </div>
@@ -185,13 +188,13 @@ function LinkPicker({
             <span className="plan-linkpick-t">{r.title}</span>
           </button>
         ))}
-        {filtered.length === 0 && <div className="plan-linkpick-empty">无匹配条目</div>}
+        {filtered.length === 0 && <div className="plan-linkpick-empty">{t("plan.drawer.noMatch")}</div>}
       </div>
     </div>
   );
 }
 
-/** note 查看/编辑分离：查看 = markdown+math 渲染；编辑 = textarea，⌘↵ 保存。 */
+/** The note's view/edit split: view = markdown+math render; edit = textarea, ⌘↵ saves. */
 function NoteEditor({
   value,
   onSave,
@@ -199,6 +202,7 @@ function NoteEditor({
   value: string | undefined;
   onSave: (v: string | undefined) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value ?? "");
   const ta = useRef<HTMLTextAreaElement>(null);
@@ -228,12 +232,12 @@ function NoteEditor({
               setEditing(false);
             }
           }}
-          placeholder="支持 Markdown 与 $…$ / $$…$$ 数学：# 标题 · **粗体** · - 列表"
+          placeholder={t("plan.drawer.notePlaceholder")}
         />
         <div className="plan-note-edit-foot">
           <span className="plan-note-hint">
             <Icon name="sparkles" cls="ico-sm" />
-            支持 Markdown 与数学 · ⌘↵ 保存
+            {t("plan.drawer.noteHint")}
           </span>
           <div style={{ flex: 1 }} />
           <button
@@ -243,7 +247,7 @@ function NoteEditor({
               setEditing(false);
             }}
           >
-            取消
+            {t("common.cancel")}
           </button>
           <button
             className="plan-note-btn primary"
@@ -253,7 +257,7 @@ function NoteEditor({
             }}
           >
             <Icon name="check" cls="ico-sm" />
-            保存
+            {t("common.save")}
           </button>
         </div>
       </div>
@@ -273,7 +277,7 @@ function NoteEditor({
             }}
           >
             <Icon name="pencil" cls="ico-sm" />
-            编辑
+            {t("common.edit")}
           </button>
         </>
       ) : (
@@ -285,7 +289,7 @@ function NoteEditor({
           }}
         >
           <Icon name="plus" cls="ico-sm" />
-          添加备注 — 记录思路、实验观察或下一步…
+          {t("plan.drawer.noteEmpty")}
         </button>
       )}
     </div>

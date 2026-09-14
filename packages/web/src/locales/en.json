@@ -1,0 +1,441 @@
+{
+  "shell": {
+    "nav": {
+      "plan": "Plan",
+      "library": "Literature",
+      "doc": "Document",
+      "ext": "Extensions",
+      "extMarket": "Extension marketplace"
+    },
+    "tagline": "Literature",
+    "split": "Split right",
+    "closePane": "Close pane",
+    "titlebar": {
+      "split": "Split right (⌘\\)",
+      "toggleTheme": "Toggle theme",
+      "tweaks": "Appearance settings"
+    },
+    "stub": {
+      "desc": "This is part of the ArgelanderSpace workbench, currently focused on Literature and Document. The {{view}} view will be connected in a later stage."
+    },
+    "palette": {
+      "placeholder": "Search commands, files, literature…",
+      "goLibrary": "Go to · Library",
+      "goDoc": "Go to · Document viewer",
+      "goPlan": "Go to · Plan",
+      "groupNav": "Navigation",
+      "groupActions": "Actions",
+      "empty": "No matching results",
+      "esc": "esc"
+    },
+    "tweaks": {
+      "theme": {
+        "label": "Theme",
+        "dark": "Dark",
+        "light": "Light"
+      },
+      "accents": {
+        "label": "Accent color",
+        "azure": "Deep space blue",
+        "teal": "Teal",
+        "violet": "Violet",
+        "amber": "Warm amber",
+        "neutral": "Neutral"
+      },
+      "density": {
+        "label": "Density",
+        "compact": "Compact",
+        "regular": "Regular",
+        "comfy": "Comfy"
+      },
+      "layout": {
+        "label": "Layout",
+        "activityLabels": "Activity bar text labels"
+      },
+      "language": {
+        "label": "Language",
+        "zhCN": "中文",
+        "en": "English"
+      }
+    }
+  },
+  "components": {
+    "figure": {
+      "unavailable": "Image unavailable",
+      "unavailableAria": "{{alt}} · Image unavailable",
+      "pending": "Image pending",
+      "showOriginal": "Show original",
+      "invert": "Invert colors for dark background"
+    },
+    "rightPanel": {
+      "refsTab": "References",
+      "annotationsTab": "Annotations",
+      "inView": "In view · {{count}}",
+      "empty": "Nothing referenced in the current view. Scroll the article — figures, equations, tables and citations mentioned nearby appear here."
+    }
+  },
+  "doc": {
+    "empty": "No document to display. Process a paper, or open one from Literature.",
+    "loadingPaper": "Loading paper…",
+    "switchPaper": "Switch paper",
+    "metaPages": "{{n}} pp · ",
+    "metaRefsFigs": "{{refs}} refs · {{figs}} figs",
+    "positionNote": "Position may change after an update",
+    "expandContents": "Expand contents",
+    "collapseContents": "Collapse contents",
+    "railContents": "Contents",
+    "expandRefs": "Expand references",
+    "collapseRefs": "Collapse references",
+    "railRefs": "References",
+    "undoTitle": "Return to position before the jump",
+    "undoBack": "↩ Back",
+    "sync": {
+      "missing": "Document not found.",
+      "errorRetained": "Update failed; showing the old body text. Images and annotations are unavailable.",
+      "error": "Failed to load the document; retry manually.",
+      "busy": "A document task is in progress; unavailable for now.",
+      "updatingRetained": "Updating the body text; keeping the old text and pausing images and annotations.",
+      "loading": "Loading document…",
+      "manualRetry": "Retry manually"
+    },
+    "drafts": {
+      "summary": "Retained drafts (copyable; re-select a location and reuse the draft text)",
+      "createLabel": "Create draft",
+      "createAria": "Retained create draft",
+      "discardCreate": "Discard create draft",
+      "editLabel": "Edit draft {{id}}",
+      "editLabelBlocked": "Edit draft {{id}} · Cannot save",
+      "editAria": "Retained edit draft {{id}}",
+      "discardEdit": "Discard edit draft"
+    }
+  },
+  "annotation": {
+    "kind": {
+      "section": "Section",
+      "paragraph": "Paragraph",
+      "list": "List",
+      "equation": "Equation",
+      "figure": "Figure",
+      "table": "Table",
+      "code": "Code",
+      "algorithm": "Algorithm"
+    },
+    "summary": {
+      "document": "Whole document",
+      "text": "Text annotation",
+      "quote": "\"{{quote}}\""
+    },
+    "action": {
+      "add": "Add annotation",
+      "addDoc": "Add document annotation",
+      "addText": "Add text annotation",
+      "addStructure": "Add annotation · {{kind}}",
+      "view": "View annotation",
+      "edit": "Edit annotation",
+      "delete": "Delete annotation"
+    },
+    "popover": {
+      "aria": "Annotation",
+      "viewDoc": "Document annotation",
+      "viewStructure": "{{kind}} annotation",
+      "archived": "This annotation was archived with the old document content; changes can no longer be saved. Copy the content, then close."
+    },
+    "editor": {
+      "placeholder": "Supports Markdown and $…$ / $$…$$ math",
+      "hint": "Markdown + math · ⌘↵ to save",
+      "useRetained": "Use retained text",
+      "blocked": "The original target or content has changed; the draft cannot be saved. Copy it, or discard it explicitly."
+    },
+    "panel": {
+      "loading": "Loading annotations…",
+      "error": "Failed to load annotations (server error).",
+      "empty": "No annotations yet. Hover over blocks like paragraphs, equations, or figures and tables in the body text, and click the button that appears on the right to add one; or use the button above to annotate the whole document."
+    },
+    "store": {
+      "docChangedReselectText": "The document content has changed and old annotations were archived; select the text again",
+      "docChangedReselectTarget": "The document content has changed and old annotations were archived; select the target again",
+      "revMismatch": "This annotation was updated elsewhere; wait for it to sync",
+      "saveFailed": "Failed to save the annotation; the draft was retained — retry manually"
+    },
+    "selection": {
+      "crossParagraph": "Cross-paragraph annotation is not supported yet",
+      "unsupported": "Text annotation is not supported here",
+      "chooserAria": "Select annotation"
+    },
+    "edge": {
+      "textCount": "{{count}} text annotations"
+    }
+  },
+  "library": {
+    "loading": "Loading library…",
+    "labels": {
+      "red": "Important",
+      "amber": "To read",
+      "green": "Read in depth",
+      "blue": "Method",
+      "violet": "Inspiration"
+    },
+    "import": {
+      "button": "Import literature",
+      "doi": {
+        "title": "From DOI / arXiv ID",
+        "desc": "Paste an identifier to fetch metadata automatically"
+      },
+      "browser": {
+        "title": "Capture from browser",
+        "desc": "Save the current page in one click with the built-in browser"
+      },
+      "bibtex": {
+        "title": "Import BibTeX / RIS",
+        "desc": "Batch import an existing library"
+      }
+    },
+    "side": {
+      "expand": "Expand literature list",
+      "collapse": "Collapse to the side",
+      "title": "Literature",
+      "readFlag": " · Read",
+      "needsSource": " · Needs source package",
+      "empty": "No matching literature"
+    },
+    "labelMenu": {
+      "head": "Label color",
+      "clear": "Clear label"
+    },
+    "toolbar": {
+      "searchPlaceholder": "Search literature · highlight in the graph…",
+      "demoBadge": "Demo data",
+      "demoTitle": "Backend not connected; showing demo data",
+      "sugLoading": "Searching…",
+      "sugOn": "Suggestions · On",
+      "sugOff": "Find suggested literature",
+      "exportBibtex": "Export BibTeX"
+    },
+    "graph": {
+      "depth": "Suggestion depth",
+      "depthHops": "{{n}} hops",
+      "count": "Suggestion count",
+      "legendCitations": "Citations",
+      "legendSize": "Bigger / thicker border = more citations",
+      "legendSaved": "In library",
+      "legendSug": "Suggested",
+      "loading": "Searching related literature…",
+      "loadingDesc": "Analyzing the citation network · matching similar research",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fitView": "Fit view",
+      "relayout": "Re-layout"
+    },
+    "detail": {
+      "typeConf": "Conference",
+      "typeArticle": "Journal",
+      "typeConfFull": "Conference paper",
+      "typeArticleFull": "Journal article",
+      "openInDoc": "Open in Document",
+      "star": "Star",
+      "starred": "Starred",
+      "citedBy": "Cited by {{count}}",
+      "resolvedBy": "Citation data · {{source}}",
+      "tabs": {
+        "meta": "Details",
+        "info": "Abstract",
+        "bib": "BibTeX",
+        "notes": "Notes",
+        "files": "Files"
+      },
+      "meta": {
+        "type": "Type",
+        "year": "Year",
+        "venue": "Venue",
+        "citedBy": "Cited by",
+        "citeKey": "Citation key",
+        "filesOpen": "Can open in Document",
+        "filesNone": "None"
+      },
+      "abstractPlaceholder": "Abstract",
+      "notesEmpty": "No notes yet",
+      "source": {
+        "ingested": "Ingested",
+        "ingestedFrom": "Ingested · {{label}}",
+        "needsUpload": "Needs source upload",
+        "blocked": "Blocked by anti-scraping wall",
+        "blockedFrom": "Anti-scraping wall · {{label}}",
+        "ready": "Available",
+        "readyFrom": "Available · {{label}}",
+        "unknown": "Unknown source"
+      },
+      "files": {
+        "openMain": "Open in Document (main document)",
+        "openOld": "Open in Document (old version)",
+        "mainBadge": "Main document",
+        "deleteDoc": "Delete this document (including its annotations)",
+        "setMain": "Set as main",
+        "setMainTitle": "Set as main document",
+        "setMainFailed": "Failed to set as main document; try again",
+        "sourceLabel": "Full-text source"
+      },
+      "upload": {
+        "queued": "Queued for ingestion…",
+        "ingesting": "Ingesting LaTeX source…",
+        "reupload": "Re-upload LaTeX source package (zip)",
+        "newVersion": "Upload new version of LaTeX source package (zip)",
+        "initial": "Upload LaTeX source package (zip)",
+        "hintReupload": "Re-uploading overwrites the same document (use when the wrong file was sent or an updated version exists)",
+        "hintNewVersion": "A new version is automatically set as the main document after upload; old versions stay in the list above for reference",
+        "hintNeedsUpload": "This source is blocked by an anti-scraping wall / has no open source; uploading a LaTeX source package (zip) automatically ingests it and links it to this entry",
+        "hintDefault": "You can also manually upload a LaTeX source package zip (automatically ingested and linked to this entry; re-uploading overwrites the same document)",
+        "failed": "Upload failed: {{error}}",
+        "failedGeneric": "Upload failed; try again"
+      },
+      "deleteDoc": {
+        "title": "Delete document",
+        "deleting": "Deleting…",
+        "confirm": "Delete permanently",
+        "warningCount": "This document and its {{count}} annotations will be permanently deleted, and the document will be removed from all associated literature entries.",
+        "warningUnknown": "This document and its annotations (count unknown) will be permanently deleted, and the document will be removed from all associated literature entries.",
+        "busy": "The document is being ingested; try deleting it later"
+      }
+    },
+    "suggestion": {
+      "badge": "Suggested · Not in library",
+      "openExternal": "Open in new window",
+      "adding": "Fetching metadata…",
+      "add": "Add to library",
+      "addingHint": "Fetching metadata and writing to the library…",
+      "connTab": "Citation links · {{count}}"
+    }
+  },
+  "plan": {
+    "loading": "Loading plans…",
+    "loadFailed": {
+      "title": "Unable to connect to the server",
+      "desc": "Plan data is temporarily unavailable — make sure serve is running, then retry."
+    },
+    "empty": {
+      "title": "No research plans yet",
+      "desc": "Use a plan to organize your next tasks, documents, and notes.",
+      "cta": "Create your first research plan"
+    },
+    "notice": {
+      "conflict": "Plan data was updated by another source and has been reloaded",
+      "saveFailed": "Save failed; data has been reloaded"
+    },
+    "undo": {
+      "deleted": "Deleted \"{{title}}\"",
+      "action": "Undo"
+    },
+    "status": {
+      "todo": "To do",
+      "doing": "In progress",
+      "blocked": "Blocked",
+      "done": "Done",
+      "doneGroup": "Done"
+    },
+    "modes": {
+      "list": "List",
+      "board": "Board"
+    },
+    "action": {
+      "newPlan": "New plan",
+      "editPlan": "Edit plan",
+      "deletePlan": "Delete plan",
+      "newTask": "New task",
+      "editTask": "Edit task"
+    },
+    "toolbar": {
+      "due": "Due {{date}}"
+    },
+    "side": {
+      "plans": "Research plans",
+      "views": "Views"
+    },
+    "progress": {
+      "open": "{{count}} open · {{date}}",
+      "done": "Done · {{date}}",
+      "empty": "No tasks yet · {{date}}"
+    },
+    "focus": {
+      "title": "Today",
+      "sub": "Next actions ordered by time · {{count}} total",
+      "empty": "Nothing to focus on today — pin items on a task row, or set a task's due date to today or tomorrow.",
+      "groups": {
+        "pinned": "Pinned",
+        "overdue": "Overdue",
+        "today": "Due today",
+        "tomorrow": "Due tomorrow"
+      }
+    },
+    "timeline": {
+      "title": "Timeline",
+      "empty": "No plans yet — the timeline will appear here after you create one.",
+      "sub": "Each plan from creation to due date · {{scale}} · read-only view",
+      "scaleWeekly": "Weekly scale",
+      "scaleMonthly": "Monthly scale",
+      "openPlan": "Open plan"
+    },
+    "list": {
+      "empty": "No tasks yet — click \"New task\" in the top right to create the first one.",
+      "crossGroupNudge": "To move a task across groups, use the status dot or the drawer to change its status."
+    },
+    "form": {
+      "due": "Due date"
+    },
+    "planModal": {
+      "create": "New research plan",
+      "subEdit": "Edit the name, due date, or description",
+      "name": "Plan name",
+      "namePlaceholder": "e.g. Error analysis · Submission prep",
+      "desc": "Description",
+      "optional": "Optional",
+      "descPlaceholder": "One sentence on this plan's goal…",
+      "icon": "Icon",
+      "submit": "Create plan"
+    },
+    "taskModal": {
+      "subEdit": "Editing in · {{name}}",
+      "subCreate": "Adding to · {{name}}",
+      "title": "Task title",
+      "titlePlaceholder": "Describe what this step does…",
+      "status": "Status",
+      "hintOverdue": "The task's due date is after the plan's due date ({{due}})",
+      "submit": "Add task"
+    },
+    "deletePlan": {
+      "confirm": "Confirm deletion",
+      "warning": "Delete the plan \"{{name}}\"?",
+      "warningOpen": " It still has {{count}} unfinished tasks, which will be deleted along with it.",
+      "warningNone": " The plan currently has no unfinished tasks.",
+      "warningIrreversible": "This cannot be undone."
+    },
+    "drawer": {
+      "links": "Linked documents",
+      "docMissing": "Document not found",
+      "removeLink": "Remove link",
+      "openDoc": "Open · {{title}}",
+      "addLink": "Add linked document",
+      "searchPlaceholder": "Search literature titles, authors…",
+      "noMatch": "No matching entries",
+      "note": "Note",
+      "notePlaceholder": "Supports Markdown and $…$ / $$…$$ math: # heading · **bold** · - list",
+      "noteHint": "Supports Markdown and math · ⌘↵ to save",
+      "noteEmpty": "Add a note — record ideas, experiment observations, or next steps…",
+      "deleteTask": "Delete task"
+    },
+    "bits": {
+      "due": "Due",
+      "pin": "Pin (add to Today)",
+      "unpin": "Unpin",
+      "hasNote": "Has note"
+    }
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "copied": "Copied",
+    "copy": "Copy",
+    "delete": "Delete",
+    "edit": "Edit",
+    "retry": "Retry",
+    "save": "Save"
+  }
+}

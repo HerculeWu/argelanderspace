@@ -1,5 +1,6 @@
 import { useReaderSession } from "../doc/ReaderSession";
 import { useLayoutEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Annotation } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { useStore } from "../store";
@@ -8,7 +9,7 @@ import { CreateAnnotationEditor, EditAnnotationEditor } from "./AnnotationEditor
 import { sortAnnotations, targetBlockId, targetSummary } from "./model";
 
 /**
- * The 标注 tab of the reader's right panel (Stage 8 MS3): document-level
+ * The Annotations tab of the reader's right panel (Stage 8 MS3): document-level
  * creation at the top (panel-top editor), then every annotation in document
  * order (document-level first, then by target block order). An entry shows the
  * target summary (kind+number / section path / quote for text targets) + a
@@ -19,19 +20,20 @@ import { sortAnnotations, targetBlockId, targetSummary } from "./model";
 export function AnnotationsPanel() {
   const store = useStore();
   const ann = useAnnotations();
+  const { t } = useTranslation();
   const [docCreating, setDocCreating] = useState(false);
   const { controller, state } = useReaderSession();
   useLayoutEffect(() => setDocCreating(false), [state.generation]);
 
   if (ann.loadState === "loading") {
-    return <div className="right-empty">标注载入中…</div>;
+    return <div className="right-empty">{t("annotation.panel.loading")}</div>;
   }
   if (ann.loadState === "error") {
     return (
       <div className="right-empty">
-        标注载入失败（服务器错误）。
+        {t("annotation.panel.error")}
         <button className="ann-editor-btn" onClick={() => void ann.reload()}>
-          重试
+          {t("common.retry")}
         </button>
       </div>
     );
@@ -49,7 +51,7 @@ export function AnnotationsPanel() {
         disabled={docCreating || !ann.canAnnotate}
       >
         <Icon name="plus" cls="ico-sm" />
-        添加文档标注
+        {t("annotation.action.addDoc")}
       </button>
       {docCreating && (
         <div className="ann-panel-editor">
@@ -58,7 +60,7 @@ export function AnnotationsPanel() {
       )}
       {sorted.length === 0 && !docCreating && (
         <div className="right-empty">
-          暂无标注。悬停正文中的段落 / 公式 / 图表等块，点击右侧出现的按钮添加；或用上方按钮标注整篇文档。
+          {t("annotation.panel.empty")}
         </div>
       )}
       {sorted.map((a) => (
@@ -71,6 +73,7 @@ export function AnnotationsPanel() {
 function AnnotationEntry({ a }: { a: Annotation }) {
   const store = useStore();
   const ann = useAnnotations();
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const { controller } = useReaderSession();
   const sum = targetSummary(a, store);
@@ -94,16 +97,16 @@ function AnnotationEntry({ a }: { a: Annotation }) {
       </button>
       <span className="ann-entry-actions">
         <button
-          title="编辑标注"
-          aria-label="编辑标注"
+          title={t("annotation.action.edit")}
+          aria-label={t("annotation.action.edit")}
           disabled={!ann.canAnnotate}
           onClick={() => { controller.beginEdit(a); setEditing(true); }}
         >
           <Icon name="pencil" cls="ico-sm" />
         </button>
         <button
-          title="删除标注"
-          aria-label="删除标注"
+          title={t("annotation.action.delete")}
+          aria-label={t("annotation.action.delete")}
           disabled={ann.busy}
           onClick={() => void ann.removeAnnotation(a.id)}
         >

@@ -1,8 +1,10 @@
 import { useReaderSession } from "../doc/ReaderSession";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { AnnotationTextTarget } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import { useStore } from "../store";
+import i18n from "../i18n";
 import { useAnnotations } from "./AnnotationStore";
 import { createHighlightPainter, type HighlightPainter, type PaintEntry } from "./highlights";
 import { targetSummary } from "./model";
@@ -27,11 +29,12 @@ import {
  *   (debounced, mouse-up) non-collapsed selection inside one logical container
  *   becomes a pending text target (canonical offsets via the textmap primitive,
  *   atom interiors expanded, quote = canonical slice) and shows the floating
- *   "添加标注" toolbar near the selection. Cross-container/cross-block → toast
- *   "暂不支持跨段落标注"; positions with no text container (equation/code/table
- *   bodies, section headings) → toast "此处不支持文本标注"; selections fully
- *   outside blocks are ignored silently. The toolbar dismisses on selection
- *   collapse, reader scroll, window resize, Escape, or an outside mousedown.
+ *   "add annotation" toolbar near the selection. Cross-container/cross-block →
+ *   the cross-paragraph toast; positions with no text container (equation/code/
+ *   table bodies, section headings) → the unsupported-position toast;
+ *   selections fully outside blocks are ignored silently. The toolbar
+ *   dismisses on selection collapse, reader scroll, window resize, Escape, or
+ *   an outside mousedown.
  * - PAINTING: every text annotation resolves its stored offsets to a live DOM
  *   Range (NO quote re-search — the fingerprint guarantees the content) and
  *   repaints through the Custom Highlight painter; the active annotation paints
@@ -70,6 +73,7 @@ export function TextAnnotations() {
   const store = useStore();
   const ann = useAnnotations();
   const { controller, state } = useReaderSession();
+  const { t } = useTranslation();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const [pending, setPending] = useState<{
     target: AnnotationTextTarget;
@@ -105,15 +109,15 @@ export function TextAnnotations() {
       if (!a || !b) {
         if (a || b) {
           // one endpoint in a legal container, the other outside it
-          annRef.current.notify("暂不支持跨段落标注");
+          annRef.current.notify(i18n.t("annotation.selection.crossParagraph"));
         } else if (touchesBlock(range.startContainer, root) || touchesBlock(range.endContainer, root)) {
           // both inside blocks but neither in a text-anchorable container
-          annRef.current.notify("此处不支持文本标注");
+          annRef.current.notify(i18n.t("annotation.selection.unsupported"));
         }
         return; // fully outside blocks: silent
       }
       if (a.blockId !== b.blockId || !sameContainer(a.container, b.container) || a.el !== b.el) {
-        annRef.current.notify("暂不支持跨段落标注");
+        annRef.current.notify(i18n.t("annotation.selection.crossParagraph"));
         return;
       }
       // A selection anchored in caption chrome (the cap-label) is not in
@@ -124,7 +128,7 @@ export function TextAnnotations() {
           ? (range.startContainer as Element)
           : range.startContainer.parentElement;
       if (startHost?.closest(".cap-label")) {
-        annRef.current.notify("此处不支持文本标注");
+        annRef.current.notify(i18n.t("annotation.selection.unsupported"));
         return;
       }
       let map: ContainerMap;
@@ -306,7 +310,7 @@ export function TextAnnotations() {
           className="ann-selbar view-in"
           style={{ top: pending.y, left: pending.x }}
           role="toolbar"
-          aria-label="文本标注"
+          aria-label={t("annotation.summary.text")}
         >
           <button
             type="button"
@@ -320,7 +324,7 @@ export function TextAnnotations() {
             }}
           >
             <Icon name="highlighter" cls="ico-sm" />
-            添加标注
+            {t("annotation.action.add")}
           </button>
         </div>
       )}
@@ -336,7 +340,7 @@ export function TextAnnotations() {
             left: clampFloatX(chooser.x, CHOOSER_W),
           }}
           role="listbox"
-          aria-label="选择标注"
+          aria-label={t("annotation.selection.chooserAria")}
         >
           {chooser.ids.map((id) => {
             const a = ann.annotations.find((x) => x.id === id);

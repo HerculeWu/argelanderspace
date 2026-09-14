@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchLibrary, addRef as apiAddRef } from "../api/library";
@@ -9,13 +10,23 @@ import type { GraphNode, LibraryData, LibraryRef } from "./types";
 
 // color labels users assign by right-clicking a reference (replaces the star)
 const LABEL_COLORS = [
-  { k: "red", c: "oklch(0.70 0.16 25)", t: "重点" },
-  { k: "amber", c: "oklch(0.80 0.13 78)", t: "待读" },
-  { k: "green", c: "oklch(0.74 0.13 158)", t: "已精读" },
-  { k: "blue", c: "oklch(0.70 0.12 235)", t: "方法" },
-  { k: "violet", c: "oklch(0.70 0.13 292)", t: "灵感" },
+  { k: "red", c: "oklch(0.70 0.16 25)" },
+  { k: "amber", c: "oklch(0.80 0.13 78)" },
+  { k: "green", c: "oklch(0.74 0.13 158)" },
+  { k: "blue", c: "oklch(0.70 0.12 235)" },
+  { k: "violet", c: "oklch(0.70 0.13 292)" },
 ];
 const LABEL_HEX: Record<string, string> = Object.fromEntries(LABEL_COLORS.map((l) => [l.k, l.c]));
+
+// Label display names resolve at render time; keys must stay in sync with
+// LABEL_COLORS above (an explicit typed mapping — no key concatenation).
+const LABEL_NAME_KEYS = {
+  red: "library.labels.red",
+  amber: "library.labels.amber",
+  green: "library.labels.green",
+  blue: "library.labels.blue",
+  violet: "library.labels.violet",
+} as const;
 
 /** Label key (or an already-CSS color value) → the dot's CSS color. */
 export function labelColor(lab: string): string {
@@ -55,13 +66,14 @@ function nodeToRef(n: GraphNode): LibraryRef {
 }
 
 const IMPORTS = [
-  { ic: "hash", t: "从 DOI / arXiv ID", d: "粘贴标识符自动抓取元数据" },
-  { ic: "globe", t: "从浏览器抓取", d: "内置浏览器一键保存当前页" },
-  { ic: "file-code-2", t: "导入 BibTeX / RIS", d: "批量导入既有文献库" },
-];
+  { ic: "hash", titleKey: "library.import.doi.title", descKey: "library.import.doi.desc" },
+  { ic: "globe", titleKey: "library.import.browser.title", descKey: "library.import.browser.desc" },
+  { ic: "file-code-2", titleKey: "library.import.bibtex.title", descKey: "library.import.bibtex.desc" },
+] as const;
 
 export function LibraryView() {
   const ws = useWorkspace();
+  const { t } = useTranslation();
   const [payload, setPayload] = useState<LibraryData | null>(null);
   const [live, setLive] = useState(false);
 
@@ -83,7 +95,7 @@ export function LibraryView() {
     return (
       <div className="cg-loading" style={{ position: "relative", height: "100%" }}>
         <div className="cg-spinner" />
-        <div className="cg-loading-t">正在载入文献库…</div>
+        <div className="cg-loading-t">{t("library.loading")}</div>
       </div>
     );
   }
@@ -114,6 +126,7 @@ function LibraryBody({
   onDocDeleted: (docId: string, remaining: string[]) => void;
 }) {
   const { refs, graph } = payload;
+  const { t } = useTranslation();
   const byId = useMemo(() => Object.fromEntries(graph.nodes.map((n) => [n.id, n])), [graph]);
   const refToNode = useMemo(() => {
     const m: Record<string, string> = {};
@@ -206,7 +219,7 @@ function LibraryBody({
   return (
     <div className="view-row">
       {sideCollapsed ? (
-        <button className="lib-rail" title="展开文献列表" onClick={() => setSideCollapsed(false)}>
+        <button className="lib-rail" title={t("library.side.expand")} onClick={() => setSideCollapsed(false)}>
           <Icon name="panel-left-open" cls="ico-sm" />
         </button>
       ) : (
@@ -218,18 +231,18 @@ function LibraryBody({
               onClick={() => setImportOpen((v) => !v)}
             >
               <Icon name="plus" cls="ico-sm" />
-              导入文献
+              {t("library.import.button")}
             </button>
             {importOpen && (
               <div className="import-menu view-in">
                 {IMPORTS.map((im) => (
-                  <button key={im.t} className="import-opt">
+                  <button key={im.titleKey} className="import-opt">
                     <span className="import-ic">
                       <Icon name={im.ic} cls="ico-sm" />
                     </span>
                     <span className="import-body">
-                      <span className="import-t">{im.t}</span>
-                      <span className="import-d">{im.d}</span>
+                      <span className="import-t">{t(im.titleKey)}</span>
+                      <span className="import-d">{t(im.descKey)}</span>
                     </span>
                   </button>
                 ))}
@@ -237,9 +250,9 @@ function LibraryBody({
             )}
           </div>
           <div className="lib-side-head">
-            <span className="lib-side-title">文献</span>
+            <span className="lib-side-title">{t("library.side.title")}</span>
             <span className="lib-side-count mono">{list.length}</span>
-            <button className="lib-side-collapse" title="收起到侧边" onClick={() => setSideCollapsed(true)}>
+            <button className="lib-side-collapse" title={t("library.side.collapse")} onClick={() => setSideCollapsed(true)}>
               <Icon name="panel-left-close" cls="ico-sm" />
             </button>
           </div>
@@ -268,16 +281,16 @@ function LibraryBody({
                     <span className="side-ref-title">{r.title}</span>
                     <span className="side-ref-meta mono">
                       {r.authors.split(/ (?:&|et) /)[0].replace(/,$/, "")} · {r.year} · {r.venue}
-                      {r.read && <span className="read-flag"> · 已读</span>}
+                      {r.read && <span className="read-flag">{t("library.side.readFlag")}</span>}
                       {!r.doc_id && r.needs_upload && (
-                        <span style={{ color: "oklch(0.80 0.13 78)" }}> · 需源码包</span>
+                        <span style={{ color: "oklch(0.80 0.13 78)" }}>{t("library.side.needsSource")}</span>
                       )}
                     </span>
                   </span>
                 </button>
               );
             })}
-            {!list.length && <div className="side-reflist-empty mono">无匹配文献</div>}
+            {!list.length && <div className="side-reflist-empty mono">{t("library.side.empty")}</div>}
           </div>
         </div>
       )}
@@ -288,13 +301,13 @@ function LibraryBody({
           style={{ left: labelMenu.x, top: labelMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="label-menu-head mono">标记颜色</div>
+          <div className="label-menu-head mono">{t("library.labelMenu.head")}</div>
           <div className="label-menu-row">
             {LABEL_COLORS.map((l) => (
               <button
                 key={l.k}
                 className={"label-swatch" + (menuRef && effLabel(menuRef) === l.k ? " on" : "")}
-                title={l.t}
+                title={t(LABEL_NAME_KEYS[l.k as keyof typeof LABEL_NAME_KEYS])}
                 style={{ background: l.c }}
                 onClick={() => setLabel(labelMenu.refId, l.k)}
               />
@@ -302,7 +315,7 @@ function LibraryBody({
           </div>
           <button className="label-clear" onClick={() => setLabel(labelMenu.refId, null)}>
             <Icon name="x" cls="ico-sm" />
-            清除标记
+            {t("library.labelMenu.clear")}
           </button>
         </div>
       )}
@@ -314,14 +327,14 @@ function LibraryBody({
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="检索文献 · 在图谱中高亮…"
+              placeholder={t("library.toolbar.searchPlaceholder")}
             />
           </div>
           <div style={{ flex: 1 }} />
           {!live && (
-            <span className="lib-banner" title="后端未连接，正在展示演示数据">
+            <span className="lib-banner" title={t("library.toolbar.demoTitle")}>
               <Icon name="flask-conical" cls="ico-sm" />
-              演示数据
+              {t("library.toolbar.demoBadge")}
             </span>
           )}
           <button
@@ -329,11 +342,11 @@ function LibraryBody({
             onClick={toggleSug}
           >
             <Icon name={sugLoading ? "loader" : "sparkles"} cls={"ico-sm" + (sugLoading ? " spin" : "")} />
-            {sugLoading ? "检索中…" : showSug ? "推荐 · 已开启" : "查找推荐文献"}
+            {sugLoading ? t("library.toolbar.sugLoading") : showSug ? t("library.toolbar.sugOn") : t("library.toolbar.sugOff")}
           </button>
           <button className="btn">
             <Icon name="download" cls="ico-sm" />
-            导出 BibTeX
+            {t("library.toolbar.exportBibtex")}
           </button>
         </div>
 

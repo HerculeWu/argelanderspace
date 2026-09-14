@@ -1,30 +1,31 @@
 import { useReaderSession } from "./ReaderSession";
+import { useTranslation } from "react-i18next";
 
 /** Always outside the disposable reader tree, including the missing-doc state. */
 export function RetainedDrafts() {
   const { state, controller } = useReaderSession();
+  const { t } = useTranslation();
   const edits = Object.values(state.editDrafts);
   if (!state.createDraft.body && !edits.length) return null;
   return (
     <details className="reader-drafts" open={state.phase !== "ready"}>
-      <summary>保留的草稿（可复制；重新选位后使用创建文字）</summary>
+      <summary>{t("doc.drafts.summary")}</summary>
       {state.createDraft.body && (
         <div>
           <label>
-            创建草稿
-            <textarea aria-label="保留的创建草稿" readOnly value={state.createDraft.body} />
+            {t("doc.drafts.createLabel")}
+            <textarea aria-label={t("doc.drafts.createAria")} readOnly value={state.createDraft.body} />
           </label>
-          <button onClick={() => controller.clearCreate()}>丢弃创建草稿</button>
+          <button onClick={() => controller.clearCreate()}>{t("doc.drafts.discardCreate")}</button>
         </div>
       )}
       {edits.map((d) => (
         <div key={d.annotationId}>
           <label>
-            编辑草稿 {d.annotationId}
-            {d.blocked ? " · 不可保存" : ""}
-            <textarea aria-label={`保留的编辑草稿 ${d.annotationId}`} readOnly value={d.body} />
+            {d.blocked ? t("doc.drafts.editLabelBlocked", { id: d.annotationId }) : t("doc.drafts.editLabel", { id: d.annotationId })}
+            <textarea aria-label={t("doc.drafts.editAria", { id: d.annotationId })} readOnly value={d.body} />
           </label>
-          <button onClick={() => controller.clearEdit(d.annotationId)}>丢弃编辑草稿</button>
+          <button onClick={() => controller.clearEdit(d.annotationId)}>{t("doc.drafts.discardEdit")}</button>
         </div>
       ))}
     </details>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { Modal, DrawerStatusRow } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
@@ -37,6 +38,7 @@ export function PlanModal({
   onCancel: () => void;
   onSubmit: (values: PlanFormValues) => void;
 }) {
+  const { t } = useTranslation();
   const edit = Boolean(initial);
   const [name, setName] = useState(initial?.name ?? "");
   const [due, setDue] = useState(initial?.due ?? "");
@@ -53,24 +55,24 @@ export function PlanModal({
   };
   return (
     <Modal
-      title={edit ? "编辑计划" : "新建研究计划"}
-      sub={edit ? "修改名称、截止或描述" : undefined}
+      title={edit ? t("plan.action.editPlan") : t("plan.planModal.create")}
+      sub={edit ? t("plan.planModal.subEdit") : undefined}
       onClose={onCancel}
       footer={
         <>
           <button className="btn" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="btn primary" disabled={!valid} onClick={submit}>
             <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
-            {edit ? "保存" : "创建计划"}
+            {edit ? t("common.save") : t("plan.planModal.submit")}
           </button>
         </>
       }
     >
       <div className="plan-field">
         <label className="plan-field-label" htmlFor="plan-f-name">
-          计划名称
+          {t("plan.planModal.name")}
         </label>
         <input
           ref={ref}
@@ -79,15 +81,15 @@ export function PlanModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return; // IME 组词中的 Enter 只是上屏，不是提交
+            if (e.nativeEvent.isComposing) return; // Enter mid-IME-composition confirms the candidate, not the form
             if (e.key === "Enter") submit();
           }}
-          placeholder="例如 误差分析 · 投稿准备"
+          placeholder={t("plan.planModal.namePlaceholder")}
         />
       </div>
       <div className="plan-field">
         <label className="plan-field-label" htmlFor="plan-f-due">
-          截止日期
+          {t("plan.form.due")}
         </label>
         <input
           id="plan-f-due"
@@ -99,7 +101,7 @@ export function PlanModal({
       </div>
       <div className="plan-field">
         <label className="plan-field-label" htmlFor="plan-f-desc">
-          描述 <span className="plan-field-opt">可选</span>
+          {t("plan.planModal.desc")} <span className="plan-field-opt">{t("plan.planModal.optional")}</span>
         </label>
         <input
           id="plan-f-desc"
@@ -107,14 +109,14 @@ export function PlanModal({
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return; // IME 组词中的 Enter 只是上屏，不是提交
+            if (e.nativeEvent.isComposing) return; // Enter mid-IME-composition confirms the candidate, not the form
             if (e.key === "Enter") submit();
           }}
-          placeholder="一句话说明这个计划的目标…"
+          placeholder={t("plan.planModal.descPlaceholder")}
         />
       </div>
       <div className="plan-field">
-        <div className="plan-field-label">图标</div>
+        <div className="plan-field-label">{t("plan.planModal.icon")}</div>
         <div className="plan-icon-grid">
           {PLAN_ICONS.map((ic) => (
             <button
@@ -157,6 +159,7 @@ export function TaskModal({
   onCancel: () => void;
   onSubmit: (values: TaskFormValues) => void;
 }) {
+  const { t } = useTranslation();
   const edit = Boolean(initial);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [status, setStatus] = useState<TaskStatus>(initial?.status ?? defaultStatus);
@@ -173,24 +176,24 @@ export function TaskModal({
   };
   return (
     <Modal
-      title={edit ? "编辑任务" : "新建任务"}
-      sub={`${edit ? "编辑于" : "添加到"} · ${planName}`}
+      title={edit ? t("plan.action.editTask") : t("plan.action.newTask")}
+      sub={edit ? t("plan.taskModal.subEdit", { name: planName }) : t("plan.taskModal.subCreate", { name: planName })}
       onClose={onCancel}
       footer={
         <>
           <button className="btn" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="btn primary" disabled={!valid} onClick={submit}>
             <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
-            {edit ? "保存" : "添加任务"}
+            {edit ? t("common.save") : t("plan.taskModal.submit")}
           </button>
         </>
       }
     >
       <div className="plan-field">
         <label className="plan-field-label" htmlFor="task-f-title">
-          任务标题
+          {t("plan.taskModal.title")}
         </label>
         <input
           ref={ref}
@@ -199,19 +202,19 @@ export function TaskModal({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return; // IME 组词中的 Enter 只是上屏，不是提交
+            if (e.nativeEvent.isComposing) return; // Enter mid-IME-composition confirms the candidate, not the form
             if (e.key === "Enter") submit();
           }}
-          placeholder="描述这一步要做什么…"
+          placeholder={t("plan.taskModal.titlePlaceholder")}
         />
       </div>
       <div className="plan-field">
-        <div className="plan-field-label">状态</div>
+        <div className="plan-field-label">{t("plan.taskModal.status")}</div>
         <DrawerStatusRow status={status} onSet={setStatus} />
       </div>
       <div className="plan-field">
         <label className="plan-field-label" htmlFor="task-f-due">
-          截止日期
+          {t("plan.form.due")}
         </label>
         <input
           id="task-f-due"
@@ -222,14 +225,14 @@ export function TaskModal({
           onChange={(e) => setDue(e.target.value)}
         />
         {due !== "" && planDue !== "" && due > planDue && (
-          <div className="plan-field-hint">任务截止晚于计划截止（{planDue}）</div>
+          <div className="plan-field-hint">{t("plan.taskModal.hintOverdue", { due: planDue })}</div>
         )}
       </div>
     </Modal>
   );
 }
 
-/** plan 删除的二次确认：有未 done 任务时警告带数量。 */
+/** Delete-plan double confirm: the warning names the open-task count. */
 export function DeletePlanModal({
   plan,
   onCancel,
@@ -239,27 +242,28 @@ export function DeletePlanModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useTranslation();
   const open = plan.tasks.filter((t) => t.status !== "done").length;
   return (
     <Modal
-      title="删除计划"
+      title={t("plan.action.deletePlan")}
       onClose={onCancel}
       footer={
         <>
           <button className="btn" onClick={onCancel}>
-            取消
+            {t("common.cancel")}
           </button>
           <button className="btn primary plan-danger" onClick={onConfirm}>
             <Icon name="trash-2" cls="ico-sm" />
-            确认删除
+            {t("plan.deletePlan.confirm")}
           </button>
         </>
       }
     >
       <div className="plan-modal-warning">
-        确定删除计划「{plan.name}」吗？
-        {open > 0 ? ` 其中还有 ${open} 项未完成的任务，将一并删除。` : " 该计划目前没有未完成的任务。"}
-        此操作不可撤销。
+        {t("plan.deletePlan.warning", { name: plan.name })}
+        {open > 0 ? t("plan.deletePlan.warningOpen", { count: open }) : t("plan.deletePlan.warningNone")}
+        {t("plan.deletePlan.warningIrreversible")}
       </div>
     </Modal>
   );

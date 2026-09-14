@@ -1,0 +1,441 @@
+{
+  "shell": {
+    "nav": {
+      "plan": "计划",
+      "library": "文献",
+      "doc": "文档",
+      "ext": "扩展",
+      "extMarket": "扩展市场"
+    },
+    "tagline": "文献工作台 · Literature",
+    "split": "向右分屏",
+    "closePane": "关闭窗格",
+    "titlebar": {
+      "split": "向右分屏 (⌘\\)",
+      "toggleTheme": "切换主题",
+      "tweaks": "外观设置"
+    },
+    "stub": {
+      "desc": "这是 ArgelanderSpace 工作台的一部分，目前聚焦于「文献」与「文档」。{{view}} 视图将在后续阶段接入。"
+    },
+    "palette": {
+      "placeholder": "搜索命令、文件、文献…",
+      "goLibrary": "转到 · 文献库",
+      "goDoc": "转到 · 文档查看器",
+      "goPlan": "转到 · 计划",
+      "groupNav": "导航",
+      "groupActions": "操作",
+      "empty": "无匹配结果",
+      "esc": "esc"
+    },
+    "tweaks": {
+      "theme": {
+        "label": "主题",
+        "dark": "深色",
+        "light": "浅色"
+      },
+      "accents": {
+        "label": "强调色",
+        "azure": "深空蓝",
+        "teal": "青绿",
+        "violet": "靛紫",
+        "amber": "暖琥珀",
+        "neutral": "无彩"
+      },
+      "density": {
+        "label": "信息密度",
+        "compact": "紧凑",
+        "regular": "标准",
+        "comfy": "宽松"
+      },
+      "layout": {
+        "label": "布局",
+        "activityLabels": "活动栏文字标签"
+      },
+      "language": {
+        "label": "语言",
+        "zhCN": "中文",
+        "en": "English"
+      }
+    }
+  },
+  "components": {
+    "figure": {
+      "unavailable": "图片暂不可用",
+      "unavailableAria": "{{alt}} · 图片暂不可用",
+      "pending": "图片待加载",
+      "showOriginal": "显示原图",
+      "invert": "反色以适应深色背景"
+    },
+    "rightPanel": {
+      "refsTab": "引用",
+      "annotationsTab": "标注",
+      "inView": "In view · {{count}}",
+      "empty": "Nothing referenced in the current view. Scroll the article — figures, equations, tables and citations mentioned nearby appear here."
+    }
+  },
+  "doc": {
+    "empty": "没有可显示的文档。处理一篇论文，或从 文献 中打开。",
+    "loadingPaper": "Loading paper…",
+    "switchPaper": "Switch paper",
+    "metaPages": "{{n}} pp · ",
+    "metaRefsFigs": "{{refs}} refs · {{figs}} figs",
+    "positionNote": "更新后位置可能变化",
+    "expandContents": "Expand contents",
+    "collapseContents": "Collapse contents",
+    "railContents": "Contents",
+    "expandRefs": "Expand references",
+    "collapseRefs": "Collapse references",
+    "railRefs": "References",
+    "undoTitle": "Return to position before the jump",
+    "undoBack": "↩ Back",
+    "sync": {
+      "missing": "文档不存在。",
+      "errorRetained": "更新失败，当前为旧正文；图片及标注不可用。",
+      "error": "文档载入失败，请手动重试。",
+      "busy": "文档任务进行中，暂不可用。",
+      "updatingRetained": "正文更新中；保留旧文字，暂停图片及标注。",
+      "loading": "文档载入中…",
+      "manualRetry": "手动重试"
+    },
+    "drafts": {
+      "summary": "保留的草稿（可复制；重新选位后使用创建文字）",
+      "createLabel": "创建草稿",
+      "createAria": "保留的创建草稿",
+      "discardCreate": "丢弃创建草稿",
+      "editLabel": "编辑草稿 {{id}}",
+      "editLabelBlocked": "编辑草稿 {{id}} · 不可保存",
+      "editAria": "保留的编辑草稿 {{id}}",
+      "discardEdit": "丢弃编辑草稿"
+    }
+  },
+  "annotation": {
+    "kind": {
+      "section": "章节",
+      "paragraph": "段落",
+      "list": "列表",
+      "equation": "公式",
+      "figure": "图",
+      "table": "表",
+      "code": "代码",
+      "algorithm": "算法"
+    },
+    "summary": {
+      "document": "整篇文档",
+      "text": "文本标注",
+      "quote": "「{{quote}}」"
+    },
+    "action": {
+      "add": "添加标注",
+      "addDoc": "添加文档标注",
+      "addText": "添加文本标注",
+      "addStructure": "添加标注 · {{kind}}",
+      "view": "查看标注",
+      "edit": "编辑标注",
+      "delete": "删除标注"
+    },
+    "popover": {
+      "aria": "标注",
+      "viewDoc": "文档标注",
+      "viewStructure": "{{kind}}标注",
+      "archived": "此标注已随旧文档内容归档，无法再保存修改；可复制内容后关闭。"
+    },
+    "editor": {
+      "placeholder": "支持 Markdown 与 $…$ / $$…$$ 数学",
+      "hint": "Markdown + 数学 · ⌘↵ 保存",
+      "useRetained": "使用保留文字",
+      "blocked": "原目标或内容已变化，草稿不可保存；可复制或明确丢弃。"
+    },
+    "panel": {
+      "loading": "标注载入中…",
+      "error": "标注载入失败（服务器错误）。",
+      "empty": "暂无标注。悬停正文中的段落 / 公式 / 图表等块，点击右侧出现的按钮添加；或用上方按钮标注整篇文档。"
+    },
+    "store": {
+      "docChangedReselectText": "文档内容已变化，旧标注已归档；请重新选择文本",
+      "docChangedReselectTarget": "文档内容已变化，旧标注已归档；请重新选择目标",
+      "revMismatch": "标注已在其他位置更新，请等待同步",
+      "saveFailed": "标注保存失败；草稿已保留，请手动重试"
+    },
+    "selection": {
+      "crossParagraph": "暂不支持跨段落标注",
+      "unsupported": "此处不支持文本标注",
+      "chooserAria": "选择标注"
+    },
+    "edge": {
+      "textCount": "{{count}} 条文本标注"
+    }
+  },
+  "library": {
+    "loading": "正在载入文献库…",
+    "labels": {
+      "red": "重点",
+      "amber": "待读",
+      "green": "已精读",
+      "blue": "方法",
+      "violet": "灵感"
+    },
+    "import": {
+      "button": "导入文献",
+      "doi": {
+        "title": "从 DOI / arXiv ID",
+        "desc": "粘贴标识符自动抓取元数据"
+      },
+      "browser": {
+        "title": "从浏览器抓取",
+        "desc": "内置浏览器一键保存当前页"
+      },
+      "bibtex": {
+        "title": "导入 BibTeX / RIS",
+        "desc": "批量导入既有文献库"
+      }
+    },
+    "side": {
+      "expand": "展开文献列表",
+      "collapse": "收起到侧边",
+      "title": "文献",
+      "readFlag": " · 已读",
+      "needsSource": " · 需源码包",
+      "empty": "无匹配文献"
+    },
+    "labelMenu": {
+      "head": "标记颜色",
+      "clear": "清除标记"
+    },
+    "toolbar": {
+      "searchPlaceholder": "检索文献 · 在图谱中高亮…",
+      "demoBadge": "演示数据",
+      "demoTitle": "后端未连接，正在展示演示数据",
+      "sugLoading": "检索中…",
+      "sugOn": "推荐 · 已开启",
+      "sugOff": "查找推荐文献",
+      "exportBibtex": "导出 BibTeX"
+    },
+    "graph": {
+      "depth": "推荐深度",
+      "depthHops": "{{n}} 跳",
+      "count": "推荐数量",
+      "legendCitations": "引用",
+      "legendSize": "越大 / 边框越粗 = 引用越高",
+      "legendSaved": "已收录",
+      "legendSug": "推荐",
+      "loading": "正在检索相关文献…",
+      "loadingDesc": "分析引文网络 · 匹配相似研究",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "fitView": "适配视图",
+      "relayout": "重新布局"
+    },
+    "detail": {
+      "typeConf": "会议",
+      "typeArticle": "期刊",
+      "typeConfFull": "会议论文",
+      "typeArticleFull": "期刊文章",
+      "openInDoc": "在 文档 中打开",
+      "star": "加星",
+      "starred": "已加星",
+      "citedBy": "被引 {{count}}",
+      "resolvedBy": "引用数据 · {{source}}",
+      "tabs": {
+        "meta": "详情",
+        "info": "摘要",
+        "bib": "BibTeX",
+        "notes": "笔记",
+        "files": "附件"
+      },
+      "meta": {
+        "type": "类型",
+        "year": "年份",
+        "venue": "来源",
+        "citedBy": "被引量",
+        "citeKey": "引用键",
+        "filesOpen": "可在文档中打开",
+        "filesNone": "暂无"
+      },
+      "abstractPlaceholder": "摘要 / abstract",
+      "notesEmpty": "暂无笔记",
+      "source": {
+        "ingested": "已入库",
+        "ingestedFrom": "已入库 · {{label}}",
+        "needsUpload": "需上传源码包",
+        "blocked": "被反爬墙",
+        "blockedFrom": "反爬墙 · {{label}}",
+        "ready": "可获取",
+        "readyFrom": "可获取 · {{label}}",
+        "unknown": "未知来源"
+      },
+      "files": {
+        "openMain": "在文档中打开（主文档）",
+        "openOld": "在文档中打开（旧版本）",
+        "mainBadge": "主文档",
+        "deleteDoc": "删除此文档（含其标注）",
+        "setMain": "设为主",
+        "setMainTitle": "设为主文档",
+        "setMainFailed": "设为主文档失败，请重试",
+        "sourceLabel": "全文来源"
+      },
+      "upload": {
+        "queued": "排队等待摄入…",
+        "ingesting": "正在摄入 LaTeX 源码…",
+        "reupload": "重新上传 LaTeX 源码包（zip）",
+        "newVersion": "上传新版本 LaTeX 源码包（zip）",
+        "initial": "上传 LaTeX 源码包（zip）",
+        "hintReupload": "重新上传会覆盖同一文档（传错文件或有更新版时使用）",
+        "hintNewVersion": "新版本上传后自动设为主文档；旧版本保留在上方列表可回看",
+        "hintNeedsUpload": "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条",
+        "hintDefault": "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）",
+        "failed": "上传失败：{{error}}",
+        "failedGeneric": "上传失败，请重试"
+      },
+      "deleteDoc": {
+        "title": "删除文档",
+        "deleting": "正在删除…",
+        "confirm": "永久删除",
+        "warningCount": "该文档及其 {{count}} 条标注将永久删除，此文档将从所有关联文献条目中移除。",
+        "warningUnknown": "该文档及其标注（数量未知）将永久删除，此文档将从所有关联文献条目中移除。",
+        "busy": "文档正在摄入，请稍后删除"
+      }
+    },
+    "suggestion": {
+      "badge": "推荐 · 未收录",
+      "openExternal": "在新窗口打开",
+      "adding": "正在抓取题录…",
+      "add": "添加到文库",
+      "addingHint": "正在获取元数据并写入文库…",
+      "connTab": "引用关联 · {{count}}"
+    }
+  },
+  "plan": {
+    "loading": "正在载入计划…",
+    "loadFailed": {
+      "title": "无法连接服务器",
+      "desc": "计划数据暂时不可用 — 确认 serve 正在运行后重试。"
+    },
+    "empty": {
+      "title": "还没有研究计划",
+      "desc": "用一个计划组织下一步的任务、文档与笔记。",
+      "cta": "新建第一个研究计划"
+    },
+    "notice": {
+      "conflict": "计划数据已被其他来源更新，已重新载入",
+      "saveFailed": "保存失败，已重新载入"
+    },
+    "undo": {
+      "deleted": "已删除「{{title}}」",
+      "action": "撤销"
+    },
+    "status": {
+      "todo": "待办",
+      "doing": "进行中",
+      "blocked": "受阻",
+      "done": "完成",
+      "doneGroup": "已完成"
+    },
+    "modes": {
+      "list": "列表",
+      "board": "看板"
+    },
+    "action": {
+      "newPlan": "新建计划",
+      "editPlan": "编辑计划",
+      "deletePlan": "删除计划",
+      "newTask": "新建任务",
+      "editTask": "编辑任务"
+    },
+    "toolbar": {
+      "due": "截止 {{date}}"
+    },
+    "side": {
+      "plans": "研究计划",
+      "views": "视图"
+    },
+    "progress": {
+      "open": "{{count}} 项未完成 · {{date}}",
+      "done": "已完成 · {{date}}",
+      "empty": "暂无任务 · {{date}}"
+    },
+    "focus": {
+      "title": "今日聚焦",
+      "sub": "按时间排布的下一步行动 · 共 {{count}} 项",
+      "empty": "今天没有需要聚焦的任务 — 在任务行上 pin 关注项，或为任务设置今天/明天的截止日期。",
+      "groups": {
+        "pinned": "已聚焦",
+        "overdue": "已逾期",
+        "today": "今天到期",
+        "tomorrow": "明天到期"
+      }
+    },
+    "timeline": {
+      "title": "时间线",
+      "empty": "暂无计划 — 新建计划后这里会显示时间线。",
+      "sub": "各计划的创建到截止 · {{scale}} · 只读视图",
+      "scaleWeekly": "按周刻度",
+      "scaleMonthly": "按月刻度",
+      "openPlan": "打开计划"
+    },
+    "list": {
+      "empty": "暂无任务 — 点击右上角「新建任务」创建第一项。",
+      "crossGroupNudge": "跨组移动请用状态圆钮或抽屉改状态。"
+    },
+    "form": {
+      "due": "截止日期"
+    },
+    "planModal": {
+      "create": "新建研究计划",
+      "subEdit": "修改名称、截止或描述",
+      "name": "计划名称",
+      "namePlaceholder": "例如 误差分析 · 投稿准备",
+      "desc": "描述",
+      "optional": "可选",
+      "descPlaceholder": "一句话说明这个计划的目标…",
+      "icon": "图标",
+      "submit": "创建计划"
+    },
+    "taskModal": {
+      "subEdit": "编辑于 · {{name}}",
+      "subCreate": "添加到 · {{name}}",
+      "title": "任务标题",
+      "titlePlaceholder": "描述这一步要做什么…",
+      "status": "状态",
+      "hintOverdue": "任务截止晚于计划截止（{{due}}）",
+      "submit": "添加任务"
+    },
+    "deletePlan": {
+      "confirm": "确认删除",
+      "warning": "确定删除计划「{{name}}」吗？",
+      "warningOpen": " 其中还有 {{count}} 项未完成的任务，将一并删除。",
+      "warningNone": " 该计划目前没有未完成的任务。",
+      "warningIrreversible": "此操作不可撤销。"
+    },
+    "drawer": {
+      "links": "关联文档",
+      "docMissing": "文档不存在",
+      "removeLink": "移除链接",
+      "openDoc": "打开 · {{title}}",
+      "addLink": "添加关联文档",
+      "searchPlaceholder": "搜索文献标题、作者…",
+      "noMatch": "无匹配条目",
+      "note": "备注",
+      "notePlaceholder": "支持 Markdown 与 $…$ / $$…$$ 数学：# 标题 · **粗体** · - 列表",
+      "noteHint": "支持 Markdown 与数学 · ⌘↵ 保存",
+      "noteEmpty": "添加备注 — 记录思路、实验观察或下一步…",
+      "deleteTask": "删除任务"
+    },
+    "bits": {
+      "due": "截止",
+      "pin": "聚焦（加入今日聚焦）",
+      "unpin": "取消聚焦",
+      "hasNote": "有备注"
+    }
+  },
+  "common": {
+    "cancel": "取消",
+    "close": "关闭",
+    "copied": "已复制",
+    "copy": "复制",
+    "delete": "删除",
+    "edit": "编辑",
+    "retry": "重试",
+    "save": "保存"
+  }
+}

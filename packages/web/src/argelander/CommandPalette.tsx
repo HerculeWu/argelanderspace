@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 
 interface Cmd {
@@ -20,6 +21,7 @@ export function CommandPalette({
   onSplit: () => void;
 }) {
   const [q, setQ] = useState("");
+  const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -32,10 +34,10 @@ export function CommandPalette({
   if (!open) return null;
 
   const cmds: Cmd[] = [
-    { ic: "library", t: "转到 · 文献库", run: () => onNav("library"), grp: "导航" },
-    { ic: "file-text", t: "转到 · 文档查看器", run: () => onNav("doc"), grp: "导航" },
-    { ic: "telescope", t: "转到 · 计划", run: () => onNav("plan"), grp: "导航" },
-    { ic: "columns-2", t: "向右分屏", run: () => onSplit(), grp: "操作" },
+    { ic: "library", t: t("shell.palette.goLibrary"), run: () => onNav("library"), grp: t("shell.palette.groupNav") },
+    { ic: "file-text", t: t("shell.palette.goDoc"), run: () => onNav("doc"), grp: t("shell.palette.groupNav") },
+    { ic: "telescope", t: t("shell.palette.goPlan"), run: () => onNav("plan"), grp: t("shell.palette.groupNav") },
+    { ic: "columns-2", t: t("shell.split"), run: () => onSplit(), grp: t("shell.palette.groupActions") },
   ];
   const f = cmds.filter((c) => !q || c.t.toLowerCase().includes(q.toLowerCase()));
   const groups = [...new Set(f.map((c) => c.grp))];
@@ -49,9 +51,9 @@ export function CommandPalette({
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="搜索命令、文件、文献…"
+            placeholder={t("shell.palette.placeholder")}
           />
-          <span className="kbd">esc</span>
+          <span className="kbd">{t("shell.palette.esc")}</span>
         </div>
         <div className="cmdk-list">
           {groups.map((g) => (
@@ -75,7 +77,7 @@ export function CommandPalette({
                 ))}
             </div>
           ))}
-          {!f.length && <div className="cmdk-empty">无匹配结果</div>}
+          {!f.length && <div className="cmdk-empty">{t("shell.palette.empty")}</div>}
         </div>
       </div>
     </div>

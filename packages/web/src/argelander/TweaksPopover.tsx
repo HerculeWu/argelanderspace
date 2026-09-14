@@ -1,8 +1,21 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
+import type { AppLanguage } from "../i18n";
 import { ACCENTS, accentHex, type Density, type ThemeName, type Tweaks } from "./theme";
 
 const DENSITIES: Density[] = ["compact", "regular", "comfy"];
 const THEMES: ThemeName[] = ["dark", "light"];
+const LANGUAGES: AppLanguage[] = ["zh-CN", "en"];
+
+// Accent display names resolve at render time; keys must stay in sync with
+// ACCENTS (theme.ts), whose entries drive the swatch list below.
+const ACCENT_LABEL_KEYS = {
+  azure: "shell.tweaks.accents.azure",
+  teal: "shell.tweaks.accents.teal",
+  violet: "shell.tweaks.accents.violet",
+  amber: "shell.tweaks.accents.amber",
+  neutral: "shell.tweaks.accents.neutral",
+} as const;
 
 export function TweaksPopover({
   tweaks,
@@ -14,6 +27,7 @@ export function TweaksPopover({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose();
@@ -24,7 +38,7 @@ export function TweaksPopover({
 
   return (
     <div className="tweaks-pop" ref={ref}>
-      <div className="tweak-sec">主题</div>
+      <div className="tweak-sec">{t("shell.tweaks.theme.label")}</div>
       <div className="tweak-seg">
         {THEMES.map((th) => (
           <button
@@ -32,25 +46,25 @@ export function TweaksPopover({
             className={"tweak-seg-btn" + (tweaks.theme === th ? " on" : "")}
             onClick={() => set("theme", th)}
           >
-            {th === "dark" ? "深色" : "浅色"}
+            {th === "dark" ? t("shell.tweaks.theme.dark") : t("shell.tweaks.theme.light")}
           </button>
         ))}
       </div>
 
-      <div className="tweak-sec">强调色</div>
+      <div className="tweak-sec">{t("shell.tweaks.accents.label")}</div>
       <div className="tweak-swatches">
         {Object.keys(ACCENTS).map((k) => (
           <button
             key={k}
             className={"tweak-swatch" + (tweaks.accent === k ? " on" : "")}
-            title={ACCENTS[k].label}
+            title={t(ACCENT_LABEL_KEYS[k as keyof typeof ACCENT_LABEL_KEYS])}
             style={{ background: accentHex(k, tweaks.theme) }}
             onClick={() => set("accent", k)}
           />
         ))}
       </div>
 
-      <div className="tweak-sec">信息密度</div>
+      <div className="tweak-sec">{t("shell.tweaks.density.label")}</div>
       <div className="tweak-seg">
         {DENSITIES.map((d) => (
           <button
@@ -58,18 +72,31 @@ export function TweaksPopover({
             className={"tweak-seg-btn" + (tweaks.density === d ? " on" : "")}
             onClick={() => set("density", d)}
           >
-            {d === "compact" ? "紧凑" : d === "regular" ? "标准" : "宽松"}
+            {d === "compact" ? t("shell.tweaks.density.compact") : d === "regular" ? t("shell.tweaks.density.regular") : t("shell.tweaks.density.comfy")}
           </button>
         ))}
       </div>
 
-      <div className="tweak-sec">布局</div>
+      <div className="tweak-sec">{t("shell.tweaks.layout.label")}</div>
       <button className="tweak-toggle" onClick={() => set("labels", !tweaks.labels)}>
-        <span>活动栏文字标签</span>
+        <span>{t("shell.tweaks.layout.activityLabels")}</span>
         <span className={"tweak-switch" + (tweaks.labels ? " on" : "")}>
           <span />
         </span>
       </button>
+
+      <div className="tweak-sec">{t("shell.tweaks.language.label")}</div>
+      <div className="tweak-seg">
+        {LANGUAGES.map((lang) => (
+          <button
+            key={lang}
+            className={"tweak-seg-btn" + (tweaks.language === lang ? " on" : "")}
+            onClick={() => set("language", lang)}
+          >
+            {lang === "zh-CN" ? t("shell.tweaks.language.zhCN") : t("shell.tweaks.language.en")}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

@@ -12,16 +12,18 @@ import {
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { StatusBtn, StatusDot } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
 import { DueBadge, PinBtn, TaskFlags } from "./taskBits";
 
-// List mode (Stage 4): tasks grouped by status (进行中/待办/受阻/已完成),
+// List mode (Stage 4): tasks grouped by status (doing/todo/blocked/done),
 // the done group collapsed by default, empty groups not rendered. Reordering
 // works WITHIN a group only — cross-group hovers must find NO drop target at
-// all (the design: 跨组改状态走状态按钮/抽屉, the single semantic entry).
-// Tasks are created only via the 新建任务 modal (Stage-4 smoke ruling).
+// all (the design: cross-group status changes go through the status
+// button/drawer, the single semantic entry). Tasks are created only via the
+// new-task modal (Stage-4 smoke ruling).
 
 interface ListCallbacks {
   onCycle: (planId: string, taskId: string) => void;
@@ -41,7 +43,7 @@ interface SortableData {
  * hovering another group opens no gap and dropping there resolves `over`
  * null (snap-back) — with dnd-kit's multi-container default the other group
  * would part its rows and LOOK accepted even though the mutation guard
- * blocked the write (the "跨组拖拽没有阻碍" smoke report).
+ * blocked the write (the "cross-group drag met no resistance" smoke report).
  */
 const sameGroupCollision: CollisionDetection = (args) => {
   const containerId = (args.active.data.current as SortableData | undefined)?.sortable?.containerId;
@@ -64,14 +66,15 @@ function dropPoint(e: {
   return { x: ev.clientX + delta.x, y: ev.clientY + delta.y };
 }
 
-const GROUPS: { key: TaskStatus; label: string }[] = [
-  { key: "doing", label: "进行中" },
-  { key: "todo", label: "待办" },
-  { key: "blocked", label: "受阻" },
-  { key: "done", label: "已完成" },
-];
+const GROUPS = [
+  { key: "doing", labelKey: "plan.status.doing" },
+  { key: "todo", labelKey: "plan.status.todo" },
+  { key: "blocked", labelKey: "plan.status.blocked" },
+  { key: "done", labelKey: "plan.status.doneGroup" },
+] as const;
 
 export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: ListCallbacks }) {
+  const { t } = useTranslation();
   const [doneOpen, setDoneOpen] = useState(false);
   const [dragStatus, setDragStatus] = useState<TaskStatus | null>(null);
   const [noDrop, setNoDrop] = useState(false);
@@ -119,7 +122,8 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
     const status = e.active.data.current?.status as TaskStatus | undefined;
     if (!status) return;
     // The drop must land inside the ACTIVE row's own group; released anywhere
-    // else → snap back + nudge, no mutation (跨组改状态走状态按钮/抽屉).
+    // else → snap back + nudge, no mutation (cross-group status changes go
+    // through the status button/drawer).
     if (inOwnGroup(status, dropPoint(e)) === false) {
       flashNudge();
       return;
@@ -127,13 +131,13 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
     const over = e.over;
     if (!over) return;
     const overStatus = over.data.current?.status as TaskStatus | undefined;
-    if (overStatus !== status) return; // 跨组拖拽不做
+    if (overStatus !== status) return; // no cross-group drops
     cb.onReorder(plan.id, status, String(e.active.id), String(over.id));
   };
 
   if (plan.tasks.length === 0) {
     return (
-      <div className="plan-list-empty">暂无任务 — 点击右上角「新建任务」创建第一项。</div>
+      <div className="plan-list-empty">{t("plan.list.empty")}</div>
     );
   }
 
@@ -168,7 +172,7 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
                 ) : (
                   <StatusDot status={g.key} />
                 )}
-                <span>{g.label}</span>
+                <span>{t(g.labelKey)}</span>
                 <span className="plan-list-group-n mono">{items.length}</span>
               </div>
               {(!isDone || doneOpen) && (
@@ -182,7 +186,7 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
           );
         })}
         {nudge && (
-          <div className="plan-notice plan-reject-nudge view-in">跨组移动请用状态圆钮或抽屉改状态。</div>
+          <div className="plan-notice plan-reject-nudge view-in">{t("plan.list.crossGroupNudge")}</div>
         )}
       </div>
     </DndContext>

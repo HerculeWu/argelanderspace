@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useReaderSession, type AssetBinding } from "../doc/ReaderSession";
 import { imageUrl } from "../api";
 import { useThemeName } from "../lib/theme-watch";
@@ -78,6 +79,7 @@ export function FigureImage({ imgPath, alt, controls = false, width, height }: {
   imgPath: string; alt: string; controls?: boolean; width?: number; height?: number;
 }) {
   const { controller, state } = useReaderSession();
+  const { t } = useTranslation();
   const sha256 = state.accepted?.assets.find((a) => a.imgPath === imgPath)?.sha256;
   const generation = state.generation;
   const ready = state.phase === "ready";
@@ -154,13 +156,13 @@ export function FigureImage({ imgPath, alt, controls = false, width, height }: {
         if (rect.width > 0 && rect.height > 0) measured.current = { width: rect.width, height: rect.height };
       }}
       onError={() => controller.reportAssetFailure(current.binding, "error")} /> :
-      <span className="figure-placeholder" role="img" aria-label={`${alt} · 图片暂不可用`}
+      <span className="figure-placeholder" role="img" aria-label={t("components.figure.unavailableAria", { alt })}
         style={{ width: boxWidth ?? "100%", aspectRatio: boxWidth && boxHeight ? `${boxWidth} / ${boxHeight}` : undefined, minHeight: boxHeight ? undefined : 120 }}>
-        {ready ? "图片待加载" : "图片暂不可用"}
+        {ready ? t("components.figure.pending") : t("components.figure.unavailable")}
       </span>}
     {controls && dark && current && <button type="button" className="fig-invert-btn"
-      title={inverted ? "显示原图" : "反色以适应深色背景"}
-      aria-label={inverted ? "显示原图" : "反色以适应深色背景"} aria-pressed={inverted}
+      title={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")}
+      aria-label={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")} aria-pressed={inverted}
       onClick={() => setOverride(inverted ? "off" : "invert")}>
       {inverted ? <SunIcon /> : <ContrastIcon />}
     </button>}

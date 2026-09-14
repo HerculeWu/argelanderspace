@@ -10,6 +10,7 @@ import React, {
 import type { Annotation, AnnotationsFile, AnnotationTarget } from "@argelanderspace/contracts";
 import { useStore } from "../store";
 import { useReaderSession } from "../doc/ReaderSession";
+import i18n from "../i18n";
 import { newAnnotationId, targetBlockId, withAssetHash } from "./model";
 
 export type AnnotationLoadState = "loading" | "ok" | "missing" | "error";
@@ -109,13 +110,12 @@ export function AnnotationProvider({ children }: { children: React.ReactNode }) 
         const failure = controller.getSnapshot().writeFailure;
         notify(
           failure === "document-changed"
-            ? "文档内容已变化，旧标注已归档；" +
-                (popover?.mode === "create" && popover.target.type === "text"
-                  ? "请重新选择文本"
-                  : "请重新选择目标")
+            ? (popover?.mode === "create" && popover.target.type === "text"
+                ? i18n.t("annotation.store.docChangedReselectText")
+                : i18n.t("annotation.store.docChangedReselectTarget"))
             : failure === "rev-mismatch"
-              ? "标注已在其他位置更新，请等待同步"
-              : "标注保存失败；草稿已保留，请手动重试"
+              ? i18n.t("annotation.store.revMismatch")
+              : i18n.t("annotation.store.saveFailed")
         );
       }
       return ok;

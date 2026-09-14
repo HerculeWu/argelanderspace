@@ -1,7 +1,8 @@
+import i18n, { DEFAULT_LANGUAGE, type AppLanguage } from "../i18n";
 import type { Plan, PlansFile, Task, TaskStatus } from "@argelanderspace/contracts";
 
 // Pure plan-domain helpers (Stage 4): status maps, local-date arithmetic,
-// progress, the 今日聚焦 grouping, the timeline scale, and the task-array
+// progress, the today's-focus grouping, the timeline scale, and the task-array
 // reorder operations the drag interactions persist. Everything here is a
 // pure function so the behaviors are unit-testable without the DOM.
 
@@ -9,12 +10,20 @@ export type { Plan, PlansFile, Task, TaskStatus };
 
 export const STATUS_ORDER: TaskStatus[] = ["todo", "doing", "blocked", "done"];
 
-export const STATUS_LABEL: Record<TaskStatus, string> = {
-  todo: "待办",
-  doing: "进行中",
-  blocked: "受阻",
-  done: "完成",
-};
+/** Localized status label, resolved at call time so a language switch takes
+ *  effect (an explicit typed mapping — no key concatenation). */
+export function statusLabel(s: TaskStatus): string {
+  switch (s) {
+    case "todo":
+      return i18n.t("plan.status.todo");
+    case "doing":
+      return i18n.t("plan.status.doing");
+    case "blocked":
+      return i18n.t("plan.status.blocked");
+    case "done":
+      return i18n.t("plan.status.done");
+  }
+}
 
 export const STATUS_ICON: Record<TaskStatus, string> = {
   todo: "circle",
@@ -67,10 +76,23 @@ export function todayISO(): string {
   return toISO(new Date());
 }
 
-/** ISO-date → "M月D日". */
+/** Per-locale Intl options: day = short date, month = timeline month ticks. */
+const DATE_FORMATS: Record<AppLanguage, { day: Intl.DateTimeFormatOptions; month: Intl.DateTimeFormatOptions }> = {
+  "zh-CN": { day: { month: "long", day: "numeric" }, month: { year: "numeric", month: "long" } },
+  en: { day: { month: "short", day: "numeric" }, month: { year: "numeric", month: "short" } },
+};
+
+/** The active i18next language narrowed to a known app locale. */
+function dateLocale(): AppLanguage {
+  const l = i18n.language;
+  return l === "zh-CN" || l === "en" ? l : DEFAULT_LANGUAGE;
+}
+
+/** ISO-date → localized short date (month + day) via Intl, resolved at call
+ *  time so a language switch takes effect. */
 export function fmtDate(iso: string): string {
-  const d = parseISODate(iso);
-  return `${d.getMonth() + 1}月${d.getDate()}日`;
+  const locale = dateLocale();
+  return new Intl.DateTimeFormat(locale, DATE_FORMATS[locale].day).format(parseISODate(iso));
 }
 
 /** ISO datetime (`created_at`) → its local calendar date. */
@@ -88,7 +110,7 @@ export function dueState(due: string | undefined, today: string): "overdue" | "t
 }
 
 // --------------------------------------------------------------------------- //
-// 今日聚焦 grouping
+// Today's-focus grouping
 // --------------------------------------------------------------------------- //
 
 export interface FocusItem {
@@ -103,17 +125,18 @@ export interface FocusGroup {
 }
 
 /**
- * Derived view (no extra storage): 已聚焦 (pinned, not done) → 已逾期 →
- * 今天到期 → 明天到期. A task lands in the FIRST group it matches; done
- * tasks never appear; empty groups are dropped by the caller.
+ * Derived view (no extra storage): pinned (not done) → overdue → due today →
+ * due tomorrow. A task lands in the FIRST group it matches; done tasks never
+ * appear; empty groups are dropped by the caller. Group labels resolve at
+ * call time so a language switch takes effect.
  */
 export function focusGroups(plans: Plan[], today: string): FocusGroup[] {
   const tomorrow = addDaysISO(today, 1);
   const groups: FocusGroup[] = [
-    { key: "pinned", label: "已聚焦", items: [] },
-    { key: "overdue", label: "已逾期", items: [] },
-    { key: "today", label: "今天到期", items: [] },
-    { key: "tomorrow", label: "明天到期", items: [] },
+    { key: "pinned", label: i18n.t("plan.focus.groups.pinned"), items: [] },
+    { key: "overdue", label: i18n.t("plan.focus.groups.overdue"), items: [] },
+    { key: "today", label: i18n.t("plan.focus.groups.today"), items: [] },
+    { key: "tomorrow", label: i18n.t("plan.focus.groups.tomorrow"), items: [] },
   ];
   for (const plan of plans) {
     for (const task of plan.tasks) {
@@ -142,7 +165,8 @@ export interface TimelineScale {
 
 /**
  * The axis covers every plan's created_at→due span, every task due, and
- * today. Ticks adapt: < 6 weeks → weekly ("M月D日"), otherwise monthly ("M月").
+ * today. Ticks adapt: < 6 weeks → weekly (localized short date via fmtDate),
+ * otherwise monthly (localized year+month via Intl in the active language).
  */
 export function timelineScale(plans: Plan[], today: string): TimelineScale | null {
   if (!plans.length) return null;
@@ -163,12 +187,14 @@ export function timelineScale(plans: Plan[], today: string): TimelineScale | nul
     for (let k = 0; k <= days; k += 7) ticks.push({ at: addDaysISO(lo, k), label: fmtDate(addDaysISO(lo, k)) });
   } else {
     // first of each month intersecting the span, labeled with the year —
-    // plain "M月" is ambiguous the moment the span crosses a year boundary
+    // a bare month number is ambiguous the moment the span crosses a year boundary
+    const locale = dateLocale();
+    const monthFmt = new Intl.DateTimeFormat(locale, DATE_FORMATS[locale].month);
     const d = parseISODate(lo);
     d.setDate(1);
     if (toISO(d) < lo) d.setMonth(d.getMonth() + 1);
     while (toISO(d) <= hi) {
-      ticks.push({ at: toISO(d), label: `${d.getFullYear()}年${d.getMonth() + 1}月` });
+      ticks.push({ at: toISO(d), label: monthFmt.format(d) });
       d.setMonth(d.getMonth() + 1);
     }
   }

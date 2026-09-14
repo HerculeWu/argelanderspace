@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import {
   dateOf,
@@ -25,9 +26,10 @@ export function TimelineMode({
   onOpenTask: (taskId: string) => void;
   onSelectPlan: (planId: string) => void;
 }) {
+  const { t } = useTranslation();
   const scale = timelineScale(plans, today);
   if (!scale) {
-    return <div className="plan-sv-empty">暂无计划 — 新建计划后这里会显示时间线。</div>;
+    return <div className="plan-sv-empty">{t("plan.timeline.empty")}</div>;
   }
   const todayPct = timelineFrac(today, scale) * 100;
   return (
@@ -37,10 +39,12 @@ export function TimelineMode({
           <span className="plan-sv-ic">
             <Icon name="gantt-chart" cls="ico-lg" />
           </span>
-          时间线
+          {t("plan.timeline.title")}
         </div>
         <div className="plan-sv-sub">
-          各计划的创建到截止 · {scale.weekly ? "按周刻度" : "按月刻度"} · 只读视图
+          {t("plan.timeline.sub", {
+            scale: scale.weekly ? t("plan.timeline.scaleWeekly") : t("plan.timeline.scaleMonthly"),
+          })}
         </div>
       </div>
       <div className="plan-sv-scroll">
@@ -67,7 +71,7 @@ export function TimelineMode({
             const overdue = p.due < today && p.tasks.some((t) => t.status !== "done");
             return (
               <div key={p.id} className="plan-tl-row">
-                <button className="plan-tl-label" title="打开计划" onClick={() => onSelectPlan(p.id)}>
+                <button className="plan-tl-label" title={t("plan.timeline.openPlan")} onClick={() => onSelectPlan(p.id)}>
                   <Icon name={p.icon} cls="ico-sm" />
                   <span>{p.name}</span>
                 </button>

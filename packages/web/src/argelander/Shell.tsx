@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
@@ -13,17 +14,17 @@ import { PlanView } from "../plan/PlanView";
 interface NavItem {
   k: string;
   ic: string;
-  label: string;
+  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.ext";
   grp: "core" | "ext";
   stub?: boolean;
 }
 
 const NAV: NavItem[] = [
-  { k: "plan", ic: "telescope", label: "计划", grp: "core" },
-  { k: "library", ic: "library", label: "文献", grp: "core" },
-  { k: "doc", ic: "file-text", label: "文档", grp: "core" },
+  { k: "plan", ic: "telescope", labelKey: "shell.nav.plan", grp: "core" },
+  { k: "library", ic: "library", labelKey: "shell.nav.library", grp: "core" },
+  { k: "doc", ic: "file-text", labelKey: "shell.nav.doc", grp: "core" },
 ];
-const NAV_MARKET: NavItem = { k: "ext", ic: "blocks", label: "扩展", grp: "ext", stub: true };
+const NAV_MARKET: NavItem = { k: "ext", ic: "blocks", labelKey: "shell.nav.ext", grp: "ext", stub: true };
 const NAV_MAP: Record<string, NavItem> = Object.fromEntries(
   [...NAV, NAV_MARKET].map((n) => [n.k, n])
 );
@@ -37,6 +38,7 @@ interface Pane {
 const MAX_PANES = 3;
 
 export function Shell() {
+  const { t } = useTranslation();
   const [tweaks, setTweak] = useTweaks();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
@@ -246,11 +248,11 @@ export function Shell() {
               <span className="wordmark-mark">✦</span>ArgelanderSpace
             </span>
           </div>
-          <div className="tb-center">文献工作台 · Literature</div>
+          <div className="tb-center">{t("shell.tagline")}</div>
           <div className="tb-right">
             <button
               className="btn icon ghost"
-              title="向右分屏 (⌘\)"
+              title={t("shell.titlebar.split")}
               onClick={() => splitFrom(activeId)}
               style={panes.length >= MAX_PANES ? { opacity: 0.35, pointerEvents: "none" } : undefined}
             >
@@ -258,14 +260,14 @@ export function Shell() {
             </button>
             <button
               className="btn icon ghost"
-              title="切换主题"
+              title={t("shell.titlebar.toggleTheme")}
               onClick={() => setTweak("theme", tweaks.theme === "dark" ? "light" : "dark")}
             >
               <Icon name={tweaks.theme === "dark" ? "sun" : "moon"} cls="ico-sm" />
             </button>
             <button
               className="btn icon ghost"
-              title="外观设置"
+              title={t("shell.titlebar.tweaks")}
               onClick={() => setTweaksOpen((o) => !o)}
             >
               <Icon name="sliders-horizontal" cls="ico-sm" />
@@ -294,20 +296,20 @@ export function Shell() {
                 key={n.k}
                 className={"act-btn" + (activePane.view === n.k ? " on" : "")}
                 onClick={() => setActiveView(n.k)}
-                title={n.label}
+                title={t(n.labelKey)}
               >
                 <Icon name={n.ic} cls="ico-lg" />
-                {tweaks.labels && <span className="act-label">{n.label}</span>}
+                {tweaks.labels && <span className="act-label">{t(n.labelKey)}</span>}
               </button>
             ))}
             <div style={{ flex: 1 }} />
             <button
               className={"act-btn" + (activePane.view === "ext" ? " on" : "")}
               onClick={() => setActiveView("ext")}
-              title="扩展市场"
+              title={t("shell.nav.extMarket")}
             >
               <Icon name="blocks" cls="ico-lg" />
-              {tweaks.labels && <span className="act-label">扩展</span>}
+              {tweaks.labels && <span className="act-label">{t("shell.nav.ext")}</span>}
             </button>
           </div>
 
@@ -413,6 +415,7 @@ function PaneHeader({
   canSplit: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
   const nav = NAV_MAP[pane.view] || NAV[0];
   useEffect(() => {
     if (!open) return;
@@ -425,7 +428,7 @@ function PaneHeader({
       <div className="pane-tool-wrap" onClick={(e) => e.stopPropagation()}>
         <button className="pane-tool" onClick={() => setOpen((o) => !o)}>
           <Icon name={nav.ic} cls="ico-sm" />
-          <span>{nav.label}</span>
+          <span>{t(nav.labelKey)}</span>
           <Icon name="chevron-down" cls="ico-sm" />
         </button>
         {open && (
@@ -440,7 +443,7 @@ function PaneHeader({
                 }}
               >
                 <Icon name={n.ic} cls="ico-sm" />
-                <span>{n.label}</span>
+                <span>{t(n.labelKey)}</span>
               </button>
             ))}
           </div>
@@ -448,12 +451,12 @@ function PaneHeader({
       </div>
       <div style={{ flex: 1 }} />
       {canSplit && (
-        <button className="pane-h-btn" title="向右分屏" onClick={onSplit}>
+        <button className="pane-h-btn" title={t("shell.split")} onClick={onSplit}>
           <Icon name="panel-right" cls="ico-sm" />
         </button>
       )}
       {canClose && (
-        <button className="pane-h-btn" title="关闭窗格" onClick={onClose}>
+        <button className="pane-h-btn" title={t("shell.closePane")} onClick={onClose}>
           <Icon name="x" cls="ico-sm" />
         </button>
       )}
@@ -462,14 +465,15 @@ function PaneHeader({
 }
 
 function StubPane({ nav }: { nav: NavItem }) {
+  const { t } = useTranslation();
   return (
     <div className="stub-pane">
       <div className="stub-ic">
         <Icon name={nav.ic} cls="ico-lg" />
       </div>
-      <div className="stub-title">{nav.label}</div>
+      <div className="stub-title">{t(nav.labelKey)}</div>
       <div className="stub-sub">
-        这是 ArgelanderSpace 工作台的一部分，目前聚焦于「文献」与「文档」。{nav.label} 视图将在后续阶段接入。
+        {t("shell.stub.desc", { view: t(nav.labelKey) })}
       </div>
     </div>
   );
