@@ -81,5 +81,6 @@
 
 ## 交接状态
 
-- 用户 smoke 通过（D7）；提交推送已授权，结果以 Git 实际为准。提交前不再重跑四门（最终树四门 exit 0 后仅改动 .pi 文档，无代码变动）。
+- **已提交并推送**：`42d52e3`（48 文件，+1947/−414），origin/main 已更新（`3e50860..42d52e3`）。推送用一次性 `git -c credential.helper='!gh auth git-credential'`（gh 已登录 HerculeWu，keyring），未落配置。工作区干净。
+- Stage 9 关闭：方案已标"已关闭"；本 inbox 记录随提交入 Git。
 - 提醒：epoch-review 与 mem-31b251a 两份旧 inbox 仍未归并（加上本份共 3 份，未达 8 份阈值；阶段已交界，建议近期安排一次归并整理授权）。
