@@ -16,6 +16,7 @@
 import { z } from "zod";
 import { WsAnnotationChangedSchema } from "./annotations.js";
 import { WsPlanChangedSchema } from "./plans.js";
+import { WsWriterChangedSchema } from "./writer.js";
 
 // ---- jobs ------------------------------------------------------------------ //
 
@@ -91,6 +92,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsLibraryChangedSchema,
   WsPlanChangedSchema,
   WsAnnotationChangedSchema,
+  WsWriterChangedSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

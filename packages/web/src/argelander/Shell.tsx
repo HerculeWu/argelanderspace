@@ -10,11 +10,12 @@ import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
 import { LibraryView } from "../library/LibraryView";
 import { PlanView } from "../plan/PlanView";
+import { WriterView } from "../writer/WriterView";
 
 interface NavItem {
   k: string;
   ic: string;
-  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.ext";
+  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write" | "shell.nav.ext";
   grp: "core" | "ext";
   stub?: boolean;
 }
@@ -23,6 +24,7 @@ const NAV: NavItem[] = [
   { k: "plan", ic: "telescope", labelKey: "shell.nav.plan", grp: "core" },
   { k: "library", ic: "library", labelKey: "shell.nav.library", grp: "core" },
   { k: "doc", ic: "file-text", labelKey: "shell.nav.doc", grp: "core" },
+  { k: "write", ic: "pen-line", labelKey: "shell.nav.write", grp: "core" },
 ];
 const NAV_MARKET: NavItem = { k: "ext", ic: "blocks", labelKey: "shell.nav.ext", grp: "ext", stub: true };
 const NAV_MAP: Record<string, NavItem> = Object.fromEntries(
@@ -234,6 +236,8 @@ export function Shell() {
         return <LibraryView />;
       case "doc":
         return <DocPane />;
+      case "write":
+        return <WriterView />;
       default:
         return <StubPane nav={NAV_MAP[p.view] || NAV[0]} />;
     }

@@ -5,6 +5,9 @@
  * runs take tens of seconds, so they must not block the event loop. The
  * child is spawned detached (own process group) so a timeout SIGKILL takes
  * the whole group down — latexmk otherwise orphans its engine children.
+ *
+ * `opts.env` (Stage 10 writer numbering compile) is merged over `process.env`
+ * so callers can add e.g. TEXINPUTS without rebuilding the environment.
  */
 
 import { spawn } from "node:child_process";
@@ -20,13 +23,16 @@ export interface TexProcResult {
 export function runTexProcess(
   cmd: string,
   args: readonly string[],
-  opts: { cwd?: string; timeoutMs: number }
+  opts: { cwd?: string; timeoutMs: number; env?: Record<string, string> }
 ): Promise<TexProcResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
+      // additive merge (Stage 10: writer numbering compile needs TEXINPUTS);
+      // existing callers pass no env and get the parent's unchanged.
+      ...(opts.env !== undefined ? { env: { ...process.env, ...opts.env } } : {}),
     });
 
     let timedOut = false;

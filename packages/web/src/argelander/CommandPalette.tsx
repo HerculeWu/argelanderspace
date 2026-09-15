@@ -37,6 +37,7 @@ export function CommandPalette({
     { ic: "library", t: t("shell.palette.goLibrary"), run: () => onNav("library"), grp: t("shell.palette.groupNav") },
     { ic: "file-text", t: t("shell.palette.goDoc"), run: () => onNav("doc"), grp: t("shell.palette.groupNav") },
     { ic: "telescope", t: t("shell.palette.goPlan"), run: () => onNav("plan"), grp: t("shell.palette.groupNav") },
+    { ic: "pen-line", t: t("shell.palette.goWrite"), run: () => onNav("write"), grp: t("shell.palette.groupNav") },
     { ic: "columns-2", t: t("shell.split"), run: () => onSplit(), grp: t("shell.palette.groupActions") },
   ];
   const f = cmds.filter((c) => !q || c.t.toLowerCase().includes(q.toLowerCase()));

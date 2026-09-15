@@ -110,6 +110,18 @@ export function createServer(opts: ServerOptions): RunningServer {
         hub.broadcast({ type: "annotation.changed", doc_id: docId, cause: "external", at });
       }
     },
+    // Stage 10: writer manuscripts/templates re-broadcast as writer.changed;
+    // a templates-dir change carries cause:"template" without an id. The
+    // server's own writes re-arrive here too — idempotent refetch precedent.
+    onWriterChange: ({ ids, templates }) => {
+      const at = new Date().toISOString();
+      for (const id of ids) {
+        hub.broadcast({ type: "writer.changed", cause: "external", id, at });
+      }
+      if (templates) {
+        hub.broadcast({ type: "writer.changed", cause: "template", at });
+      }
+    },
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {

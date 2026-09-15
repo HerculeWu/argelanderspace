@@ -34,6 +34,10 @@ literatures/jobs/
 # Document annotations (user data; Stage 8)
 literatures/annotations/
 
+# Writer manuscripts + user/agent templates (user data; Stage 10)
+literatures/manuscripts/
+literatures/templates/
+
 # Plan page store (user data; Stage 4)
 status/
 

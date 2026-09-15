@@ -4,6 +4,7 @@
       "plan": "Plan",
       "library": "Literature",
       "doc": "Document",
+      "write": "Write",
       "ext": "Extensions",
       "extMarket": "Extension marketplace"
     },
@@ -23,6 +24,7 @@
       "goLibrary": "Go to · Library",
       "goDoc": "Go to · Document viewer",
       "goPlan": "Go to · Plan",
+      "goWrite": "Go to · Write",
       "groupNav": "Navigation",
       "groupActions": "Actions",
       "empty": "No matching results",
@@ -426,6 +428,177 @@
       "pin": "Pin (add to Today)",
       "unpin": "Unpin",
       "hasNote": "Has note"
+    }
+  },
+  "writer": {
+    "list": {
+      "title": "Manuscripts",
+      "untitled": "Untitled manuscript",
+      "new": "New manuscript",
+      "empty": "No manuscripts yet",
+      "emptyHint": "Create a manuscript to start writing in cells.",
+      "colTemplate": "Template",
+      "colUpdated": "Updated",
+      "deleteTitle": "Delete manuscript",
+      "deleteBody": "Permanently delete \"{{title}}\". This cannot be undone.",
+      "loading": "Loading…",
+      "loadFailedTitle": "Could not load manuscripts",
+      "loadFailedHint": "The server is unreachable or errored. Try again later.",
+      "createFailed": "Failed to create the manuscript.",
+      "deleteFailed": "Failed to delete the manuscript.",
+      "deletedElsewhere": "This manuscript was deleted elsewhere."
+    },
+    "newModal": {
+      "title": "New manuscript",
+      "nameLabel": "Title",
+      "namePlaceholder": "Untitled manuscript",
+      "templateLabel": "Template",
+      "templatePlaceholder": "Select a template…",
+      "create": "Create"
+    },
+    "topbar": {
+      "back": "Back to list",
+      "saved": "✓ Saved",
+      "saving": "Saving…",
+      "saveError": "Save failed",
+      "info": "Info",
+      "preamble": "Preamble",
+      "export": "Export",
+      "template": "Template"
+    },
+    "editor": {
+      "notFound": "Manuscript not found.",
+      "loading": "Loading…",
+      "templateWarnings": "Template warnings: {{warnings}}",
+      "emptyCells": "No cells yet. Click ＋ to add the first one."
+    },
+    "cell": {
+      "edit": "Edit cell",
+      "comment": "Add comment",
+      "typeMenu": "Change type",
+      "deleteCell": "Delete cell",
+      "addCell": "Add cell",
+      "render": "Render",
+      "shiftEnterHint": "Shift+Enter to render · autosave is independent",
+      "unsupported": "The current template does not natively support this cell. It is preserved losslessly and can be converted to LaTeX."
+    },
+    "types": {
+      "latex": "LaTeX",
+      "abstractAa": "A&A abstract",
+      "figure": "Figure",
+      "table": "Table",
+      "code": "Code",
+      "ack": "Acknowledgements",
+      "appendix": "Appendix",
+      "recipient": "Recipient"
+    },
+    "abstract": {
+      "context": "Context",
+      "aims": "Aims",
+      "methods": "Methods",
+      "results": "Results",
+      "conclusions": "Conclusions"
+    },
+    "figure": {
+      "noImage": "Select an image in edit mode",
+      "figure": "Figure",
+      "table": "Table",
+      "listing": "Listing"
+    },
+    "ackTitle": "Acknowledgements",
+    "appendixMarker": "Appendix",
+    "field": {
+      "latexSource": "LaTeX",
+      "image": "Image",
+      "chooseImage": "Click to choose an image · drag/drop in the final product",
+      "placement": "Placement",
+      "width": "Width",
+      "caption": "Caption",
+      "label": "Label",
+      "headerCsv": "Header CSV",
+      "dataCsv": "Data CSV",
+      "language": "Language",
+      "code": "Code",
+      "lineNumbers": "Line numbers",
+      "ackSource": "Acknowledgements",
+      "appendixNote": "Appendix start directive",
+      "recipientName": "Recipient",
+      "organization": "Organization",
+      "address": "Address"
+    },
+    "outline": {
+      "title": "Outline",
+      "filter": "Filter structure…",
+      "sections": "Sections",
+      "equations": "Equations",
+      "figures": "Figures",
+      "tables": "Tables",
+      "code": "Code",
+      "insertLabel": "Insert label"
+    },
+    "tabs": {
+      "references": "References",
+      "crossrefs": "Crossrefs",
+      "comments": "Comments"
+    },
+    "refs": {
+      "title": "Library references",
+      "search": "Search title, author, key…",
+      "insert": "Insert \\cite{key}",
+      "loading": "Loading library…",
+      "error": "Failed to load the library.",
+      "empty": "No matching references."
+    },
+    "xref": {
+      "title": "Document targets",
+      "search": "Search labels…",
+      "noLabel": "no label",
+      "insert": "Insert reference"
+    },
+    "numbering": {
+      "refresh": "Refresh numbering",
+      "refreshFailed": "Numbering compile failed — showing last good numbers",
+      "stale": "Numbers may be stale"
+    },
+    "comments": {
+      "title": "Comments",
+      "forCell": " · {{type}}",
+      "empty": "No comments on the active cell.",
+      "placeholder": "Comment for collaborator or AI…",
+      "add": "Add comment",
+      "added": "Comment added"
+    },
+    "info": {
+      "title": "Document information",
+      "note": "The front matter is separate from the body cells. Templates can extend these structured fields.",
+      "titleLabel": "Title",
+      "authors": "Authors",
+      "affils": "Affiliations",
+      "addAuthor": "Author",
+      "addAffil": "Affiliation",
+      "namePh": "Name",
+      "affPh": "Aff.",
+      "emailPh": "Email"
+    },
+    "preamble": {
+      "title": "Preamble",
+      "templateLabel": "Template preamble",
+      "userLabel": "User preamble",
+      "note": "The template-managed preamble is read-only. The user preamble is inserted at the template-defined extension point."
+    },
+    "toast": {
+      "cellRendered": "Cell rendered",
+      "inserted": "Inserted {{text}}",
+      "noEditingCell": "Enter a cell's edit mode first",
+      "noCaret": "The current cell has no text caret to insert at",
+      "exported": "Downloaded {{file}}",
+      "templateSwitched": "Switched to {{label}}",
+      "templateUnsupported": "{{count}} cell(s) preserved, but the current template does not natively support them",
+      "conflict": "Updated elsewhere — loaded the latest version",
+      "saveFailed": "Save failed. Check the server and try again",
+      "uploadFailed": "Image upload failed",
+      "exportFailed": "Export failed. Check the server and try again",
+      "bibMissing": "Downloaded, but {{count}} citation(s) are missing from the library"
     }
   },
   "common": {

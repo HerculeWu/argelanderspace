@@ -4,6 +4,7 @@
       "plan": "计划",
       "library": "文献",
       "doc": "文档",
+      "write": "写作",
       "ext": "扩展",
       "extMarket": "扩展市场"
     },
@@ -23,6 +24,7 @@
       "goLibrary": "转到 · 文献库",
       "goDoc": "转到 · 文档查看器",
       "goPlan": "转到 · 计划",
+      "goWrite": "转到 · 写作",
       "groupNav": "导航",
       "groupActions": "操作",
       "empty": "无匹配结果",
@@ -426,6 +428,177 @@
       "pin": "聚焦（加入今日聚焦）",
       "unpin": "取消聚焦",
       "hasNote": "有备注"
+    }
+  },
+  "writer": {
+    "list": {
+      "title": "稿件",
+      "untitled": "Untitled manuscript",
+      "new": "新建稿件",
+      "empty": "还没有稿件",
+      "emptyHint": "新建一篇稿件，开始cell化写作。",
+      "colTemplate": "模板",
+      "colUpdated": "更新时间",
+      "deleteTitle": "删除稿件",
+      "deleteBody": "将永久删除「{{title}}」。此操作不可撤销。",
+      "loading": "加载中…",
+      "loadFailedTitle": "无法载入稿件",
+      "loadFailedHint": "服务不可达或出错，请稍后重试。",
+      "createFailed": "新建稿件失败。",
+      "deleteFailed": "删除稿件失败。",
+      "deletedElsewhere": "该稿件已在别处被删除。"
+    },
+    "newModal": {
+      "title": "新建稿件",
+      "nameLabel": "标题",
+      "namePlaceholder": "Untitled manuscript",
+      "templateLabel": "模板",
+      "templatePlaceholder": "选择模板…",
+      "create": "创建"
+    },
+    "topbar": {
+      "back": "返回列表",
+      "saved": "✓ 已保存",
+      "saving": "保存中…",
+      "saveError": "保存失败",
+      "info": "信息",
+      "preamble": "导言区",
+      "export": "导出",
+      "template": "模板"
+    },
+    "editor": {
+      "notFound": "稿件不存在。",
+      "loading": "加载中…",
+      "templateWarnings": "模板警告:{{warnings}}",
+      "emptyCells": "还没有内容块。点击 ＋ 添加第一个。"
+    },
+    "cell": {
+      "edit": "编辑 cell",
+      "comment": "添加评论",
+      "typeMenu": "更改类型",
+      "deleteCell": "删除 cell",
+      "addCell": "添加 cell",
+      "render": "渲染",
+      "shiftEnterHint": "Shift+Enter 渲染 · 自动保存独立进行",
+      "unsupported": "当前模板不原生支持此 cell。内容已无损保留，可转换为 LaTeX。"
+    },
+    "types": {
+      "latex": "LaTeX",
+      "abstractAa": "A&A 摘要",
+      "figure": "图",
+      "table": "表",
+      "code": "代码",
+      "ack": "致谢",
+      "appendix": "附录",
+      "recipient": "收件人"
+    },
+    "abstract": {
+      "context": "Context",
+      "aims": "Aims",
+      "methods": "Methods",
+      "results": "Results",
+      "conclusions": "Conclusions"
+    },
+    "figure": {
+      "noImage": "在编辑模式选择图片",
+      "figure": "图",
+      "table": "表",
+      "listing": "代码"
+    },
+    "ackTitle": "Acknowledgements",
+    "appendixMarker": "Appendix",
+    "field": {
+      "latexSource": "LaTeX",
+      "image": "图片",
+      "chooseImage": "点击选择图片 · 正式版支持拖拽",
+      "placement": "对齐",
+      "width": "宽度",
+      "caption": "Caption",
+      "label": "Label",
+      "headerCsv": "表头 CSV",
+      "dataCsv": "数据 CSV",
+      "language": "语言",
+      "code": "代码",
+      "lineNumbers": "行号",
+      "ackSource": "致谢",
+      "appendixNote": "Appendix 起始指令",
+      "recipientName": "收件人",
+      "organization": "机构",
+      "address": "地址"
+    },
+    "outline": {
+      "title": "大纲",
+      "filter": "过滤结构…",
+      "sections": "章节",
+      "equations": "公式",
+      "figures": "图",
+      "tables": "表",
+      "code": "代码",
+      "insertLabel": "插入 label"
+    },
+    "tabs": {
+      "references": "References",
+      "crossrefs": "Crossrefs",
+      "comments": "评论"
+    },
+    "refs": {
+      "title": "文献库引用",
+      "search": "搜索标题、作者、key…",
+      "insert": "插入 \\cite{key}",
+      "loading": "加载文献库…",
+      "error": "文献库加载失败。",
+      "empty": "无匹配文献。"
+    },
+    "xref": {
+      "title": "文档内目标",
+      "search": "搜索 label…",
+      "noLabel": "无 label",
+      "insert": "插入引用"
+    },
+    "numbering": {
+      "refresh": "刷新编号",
+      "refreshFailed": "编号编译失败，显示上次成功的编号",
+      "stale": "编号未更新"
+    },
+    "comments": {
+      "title": "评论",
+      "forCell": " · {{type}}",
+      "empty": "当前 cell 暂无评论。",
+      "placeholder": "给协作者或 AI 的评论…",
+      "add": "添加评论",
+      "added": "评论已添加"
+    },
+    "info": {
+      "title": "文档信息",
+      "note": "论文题头与正文 cell 分离。模板可以扩展这里的结构化字段。",
+      "titleLabel": "标题",
+      "authors": "作者",
+      "affils": "机构",
+      "addAuthor": "作者",
+      "addAffil": "机构",
+      "namePh": "Name",
+      "affPh": "Aff.",
+      "emailPh": "Email"
+    },
+    "preamble": {
+      "title": "导言区",
+      "templateLabel": "模板导言区",
+      "userLabel": "用户导言区",
+      "note": "模板管理的导言区为只读。用户导言区插入到模板定义的扩展点。"
+    },
+    "toast": {
+      "cellRendered": "Cell 已渲染",
+      "inserted": "已插入 {{text}}",
+      "noEditingCell": "先进入一个 cell 的编辑状态",
+      "noCaret": "当前 cell 没有可插入的文本光标",
+      "exported": "已下载 {{file}}",
+      "templateSwitched": "已切换到 {{label}}",
+      "templateUnsupported": "{{count}} 个 cell 被保留，但当前模板不原生支持",
+      "conflict": "稿件已在别处更新，已载入最新版本",
+      "saveFailed": "保存失败，请检查服务状态后重试",
+      "uploadFailed": "图片上传失败",
+      "exportFailed": "导出失败，请检查服务状态后重试",
+      "bibMissing": "已下载，但 references.bib 有 {{count}} 个引用未入库"
     }
   },
   "common": {

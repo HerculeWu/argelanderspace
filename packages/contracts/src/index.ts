@@ -6,3 +6,7 @@ export * from "./library.js";
 export * from "./plans.js";
 export * from "./reader-coherence.js";
 export * from "./tex-ir.js";
+export * from "./writer.js";
+export * from "./writer-bib.js";
+export * from "./writer-numbering.js";
+export * from "./writer-templates.js";

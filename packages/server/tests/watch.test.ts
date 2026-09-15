@@ -40,13 +40,16 @@ interface Fires {
   plans: () => number;
   /** Per-fire changed-doc id lists of the annotations sub-fingerprint. */
   annotations: () => string[][];
+  /** Per-fire writer payloads (Stage 10): changed manuscript ids + templates flag. */
+  writer: () => { ids: string[]; templates: boolean }[];
 }
 
-/** Watch the trio at the test interval; returns the per-domain fire counts. */
+/** Watch the quartet at the test interval; returns the per-domain fire counts. */
 function start(dataDir: string, statusDir: string): Fires {
   let library = 0;
   let plans = 0;
   const annotations: string[][] = [];
+  const writer: { ids: string[]; templates: boolean }[] = [];
   watcher = startWatcher({
     dataDir,
     statusDir,
@@ -54,8 +57,14 @@ function start(dataDir: string, statusDir: string): Fires {
     onLibraryChange: () => library++,
     onPlansChange: () => plans++,
     onAnnotationsChange: (docIds) => annotations.push(docIds),
+    onWriterChange: (changes) => writer.push(changes),
   });
-  return { library: () => library, plans: () => plans, annotations: () => annotations };
+  return {
+    library: () => library,
+    plans: () => plans,
+    annotations: () => annotations,
+    writer: () => writer,
+  };
 }
 
 /** `<tmp>/aspace-watch-XXX/{data,status}` — the server layout in miniature. */
@@ -224,5 +233,71 @@ describe("annotations watcher (Stage 8)", () => {
     rmSync(join(dataDir, "annotations", "foo"), { recursive: true });
     await waitFor(() => fires.annotations().length === 2);
     expect(fires.annotations()[1]).toEqual(["foo"]);
+  });
+});
+
+describe("writer watcher (Stage 10)", () => {
+  const MS =
+    '{"version":1,"id":"m_0123abcd","rev":0,"template":"aa","created_at":"2026-09-15T09:00:00.000Z","updated_at":"2026-09-15T09:00:00.000Z"}';
+
+  test("a manuscript.json create/rewrite fires with that id; quiet otherwise", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    const fires = start(dataDir, statusDir);
+    await sleep(150); // missing manuscripts/ is the baseline
+    mkdirSync(join(dataDir, "manuscripts", "m_0123abcd"), { recursive: true });
+    writeFileSync(join(dataDir, "manuscripts", "m_0123abcd", "manuscript.json"), MS);
+    await waitFor(() => fires.writer().length === 1);
+    expect(fires.writer()[0]).toEqual({ ids: ["m_0123abcd"], templates: false });
+    writeFileSync(join(dataDir, "manuscripts", "m_0123abcd", "manuscript.json"), `${MS}\n`);
+    await waitFor(() => fires.writer().length === 2);
+    expect(fires.library()).toBe(0); // never leaks into the other domains
+    expect(fires.plans()).toBe(0);
+    expect(fires.annotations()).toHaveLength(0);
+  });
+
+  test("a deleted manuscript dir fires once with its id", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    mkdirSync(join(dataDir, "manuscripts", "m_0123abcd"), { recursive: true });
+    writeFileSync(join(dataDir, "manuscripts", "m_0123abcd", "manuscript.json"), MS);
+    const fires = start(dataDir, statusDir);
+    await sleep(150); // baseline
+    rmSync(join(dataDir, "manuscripts", "m_0123abcd"), { recursive: true });
+    await waitFor(() => fires.writer().length === 1);
+    expect(fires.writer()[0]).toEqual({ ids: ["m_0123abcd"], templates: false });
+  });
+
+  test("templates/*.json changes fire with the templates flag, no ids", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    const fires = start(dataDir, statusDir);
+    await sleep(150);
+    mkdirSync(join(dataDir, "templates"), { recursive: true });
+    writeFileSync(join(dataDir, "templates", "mnras.json"), "{}");
+    await waitFor(() => fires.writer().length === 1);
+    expect(fires.writer()[0]).toEqual({ ids: [], templates: true });
+    writeFileSync(join(dataDir, "templates", "mnras.json"), "{}\n");
+    await waitFor(() => fires.writer().length === 2);
+    expect(fires.writer()[1]).toEqual({ ids: [], templates: true });
+  });
+
+  test("assets/ writes do NOT fire (epoch-review D4: no asset watching)", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    mkdirSync(join(dataDir, "manuscripts", "m_0123abcd"), { recursive: true });
+    writeFileSync(join(dataDir, "manuscripts", "m_0123abcd", "manuscript.json"), MS);
+    const fires = start(dataDir, statusDir);
+    await sleep(150); // baseline
+    mkdirSync(join(dataDir, "manuscripts", "m_0123abcd", "assets"), { recursive: true });
+    writeFileSync(join(dataDir, "manuscripts", "m_0123abcd", "assets", "fig.png"), "x");
+    await sleep(250);
+    expect(fires.writer()).toHaveLength(0);
+  });
+
+  test("non-manuscript dirs under manuscripts/ are ignored", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    const fires = start(dataDir, statusDir);
+    await sleep(150);
+    mkdirSync(join(dataDir, "manuscripts", "scratch"), { recursive: true });
+    writeFileSync(join(dataDir, "manuscripts", "scratch", "manuscript.json"), MS);
+    await sleep(250);
+    expect(fires.writer()).toHaveLength(0);
   });
 });

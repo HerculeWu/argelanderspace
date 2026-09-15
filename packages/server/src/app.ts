@@ -42,32 +42,48 @@ import type {
   AnnotationsFile,
   Job,
   RefreshResponse,
+  WriterManuscript,
   WsServerMessage,
 } from "@argelanderspace/contracts";
-import { AnnotationsFileSchema, PlansFileSchema } from "@argelanderspace/contracts";
+import {
+  AnnotationsFileSchema,
+  ManuscriptSchema,
+  PlansFileSchema,
+} from "@argelanderspace/contracts";
 import {
   AnnotationsError,
   addNodeToLibrary,
   annotationsDocDir,
   attachLatexZip,
+  buildWriterExport,
+  createManuscript,
   DocumentAssetError,
+  deleteManuscript,
   ensureCurrentAnnotationsWithDocument,
   findWork,
   type IngestPipelines,
   type LibraryPaths,
   LibraryStore,
   libraryPayload,
+  listManuscripts,
+  loadManuscript,
   loadPlans,
+  loadTemplates,
   type MetadataSources,
   patchWork,
   readDocumentAsset,
+  readManuscriptAsset,
   rebuild,
   removeDocFromWorks,
   saveAnnotationsFile,
+  saveManuscript,
   savePlans,
   uploadDocId,
+  type WriterExportBundle,
+  WriterExportError,
+  writeManuscriptAsset,
 } from "@argelanderspace/core";
-import { extractZip, ZipError } from "@argelanderspace/infra";
+import { extractZip, ZipError, zipEntries } from "@argelanderspace/infra";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -75,6 +91,13 @@ import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
+import {
+  cancelNumberingCompile,
+  getWriterNumbering,
+  runWriterNumberingNow,
+  scheduleNumberingCompile,
+  WriterNumberingError,
+} from "./writer-numbering.js";
 
 // --------------------------------------------------------------------------- //
 // Deps
@@ -187,6 +210,8 @@ export function createApp(deps: AppDeps): Hono {
   const planLock = new AsyncLock();
   /** Annotations writes: their own lock too (roadmap §2 — 不与 libraryLock/planLock 互堵). */
   const annotationLock = new AsyncLock();
+  /** Writer manuscript writes: own lock (Stage 10; mirrors planLock). */
+  const writerLock = new AsyncLock();
   /** The §8 delete↔job lifecycle lock (see doc-mutations.ts). */
   const docMutations = deps.docMutations ?? new DocMutationRegistry();
   const broadcast = deps.broadcast ?? (() => {});
@@ -198,6 +223,10 @@ export function createApp(deps: AppDeps): Hono {
   };
   const planChanged = (cause: "put" | "external"): void => {
     broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
+  };
+  /** Stage 10: `id` names the manuscript; template-dir changes omit it. */
+  const writerChanged = (cause: "put" | "create" | "delete" | "numbering", id: string): void => {
+    broadcast({ type: "writer.changed", cause, id, at: new Date().toISOString() });
   };
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
@@ -484,6 +513,310 @@ export function createApp(deps: AppDeps): Hono {
     }
     planChanged("put");
     return c.json(outcome.saved);
+  });
+
+  // ===========================================================================
+  // Writer (Stage 10 M2a) — manuscripts + templates + figure assets
+  // ===========================================================================
+
+  // Manuscripts live at `<dataDir>/manuscripts/m_<8hex>/manuscript.json`
+  // (+ assets/), templates at `<dataDir>/templates/<id>.json` (core
+  // writer/store.ts). Writes are serialized on writerLock (mirrors planLock;
+  // it never blocks the other locks). The PUT optimistic lock mirrors the
+  // plans PUT: body.rev must equal the stored rev; a mismatch answers 409
+  // with the current rev AND the current document so the client can rebase.
+
+  const MANUSCRIPT_ID = /^m_[0-9a-f]{8}$/;
+  const writerDataDir = paths.dataDir;
+  const badManuscriptId = (id: string) => !MANUSCRIPT_ID.test(id);
+
+  // ---- GET /api/writer/templates ------------------------------------------ //
+
+  // Built-ins + user files (same-id user file wins); broken user files come
+  // back as warnings, never block (core loadTemplates).
+  app.get("/api/writer/templates", (c) => c.json(loadTemplates(writerDataDir)));
+
+  // ---- GET /api/writer/manuscripts ---------------------------------------- //
+
+  // Summaries for the list page, updated_at desc; corrupt dirs are skipped
+  // with warnings (one bad dir must not hide the list).
+  app.get("/api/writer/manuscripts", (c) => c.json(listManuscripts(writerDataDir)));
+
+  // ---- POST /api/writer/manuscripts ---------------------------------------- //
+
+  // Create requires a known template (built-in or user file). 201 carries the
+  // full fresh manuscript; `writer.changed` cause:"create".
+  app.post("/api/writer/manuscripts", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const body: unknown = await c.req.json().catch(() => null);
+    const rec =
+      body !== null && typeof body === "object" && !Array.isArray(body)
+        ? (body as Record<string, unknown>)
+        : null;
+    const template = rec?.template;
+    const title = rec?.title;
+    if (typeof template !== "string" || !template) {
+      const e = detail("template required", 400);
+      return c.json(e.body, e.status);
+    }
+    if (title !== undefined && typeof title !== "string") {
+      const e = detail("title must be a string", 400);
+      return c.json(e.body, e.status);
+    }
+    const doc = await writerLock.run(() => {
+      const { templates } = loadTemplates(writerDataDir);
+      if (!templates.some((tp) => tp.id === template)) return null;
+      return createManuscript(writerDataDir, { template, title });
+    });
+    if (doc === null) {
+      const e = detail(`unknown template ${pyRepr(template)}`, 400);
+      return c.json(e.body, e.status);
+    }
+    writerChanged("create", doc.id);
+    return c.json(doc, 201);
+  });
+
+  // ---- GET /api/writer/manuscripts/:id -------------------------------------- //
+
+  app.get("/api/writer/manuscripts/:id", (c) => {
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    const doc = loadManuscript(writerDataDir, id);
+    if (doc === null) {
+      const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    return c.json(doc);
+  });
+
+  // ---- PUT /api/writer/manuscripts/:id --------------------------------------- //
+
+  // Whole-document replace with the persisted rev optimistic lock (the plans
+  // PUT's exact shape); the save bumps rev + updated_at.
+  app.put("/api/writer/manuscripts/:id", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = ManuscriptSchema.safeParse(body);
+    if (!parsed.success) {
+      const e = detail("request body is not a valid manuscript", 400);
+      return c.json(e.body, e.status);
+    }
+    if (parsed.data.id !== id) {
+      const e = detail("body id does not match the URL", 400);
+      return c.json(e.body, e.status);
+    }
+    const outcome = await writerLock.run(
+      (): { missing: true } | { conflict: WriterManuscript } | { saved: WriterManuscript } => {
+        const current = loadManuscript(writerDataDir, id);
+        if (current === null) return { missing: true };
+        if (parsed.data.rev !== current.rev) return { conflict: current };
+        return { saved: saveManuscript(writerDataDir, parsed.data, { bumpRev: true }) };
+      }
+    );
+    if ("missing" in outcome) {
+      const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if ("conflict" in outcome) {
+      return c.json(
+        { detail: "rev mismatch", rev: outcome.conflict.rev, current: outcome.conflict },
+        409
+      );
+    }
+    writerChanged("put", id);
+    // D14: a saved draft schedules the debounced numbering re-compile
+    // (fire-and-forget; failures persist the file without broadcasting).
+    scheduleNumberingCompile(writerDataDir, id, { broadcast });
+    return c.json(outcome.saved);
+  });
+
+  // ---- GET/POST /api/writer/manuscripts/:id/numbering -------------------------- //
+
+  // Stage 10 M3 (D14): compile-truth numbering for outline/crossref panels.
+  // The GET is a pure read of the derived cache (never compiled on demand).
+  app.get("/api/writer/manuscripts/:id/numbering", async (c) => {
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    try {
+      return c.json(await getWriterNumbering(writerDataDir, id));
+    } catch (err) {
+      if (err instanceof WriterNumberingError) {
+        const e = detail(err.message, 404);
+        return c.json(e.body, e.status);
+      }
+      throw err;
+    }
+  });
+
+  // Manual refresh: bypass the debounce, run one compile now (single-flight).
+  app.post("/api/writer/manuscripts/:id/numbering/refresh", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    try {
+      return c.json(await runWriterNumberingNow(writerDataDir, id, { broadcast }));
+    } catch (err) {
+      if (err instanceof WriterNumberingError) {
+        const e = detail(err.message, 404);
+        return c.json(e.body, e.status);
+      }
+      throw err;
+    }
+  });
+
+  // ---- DELETE /api/writer/manuscripts/:id ------------------------------------ //
+
+  // Physical delete of the whole m_<id>/ directory (assets included).
+  app.delete("/api/writer/manuscripts/:id", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    const removed = await writerLock.run(() => deleteManuscript(writerDataDir, id));
+    if (!removed) {
+      const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    writerChanged("delete", id);
+    cancelNumberingCompile(id);
+    return c.json({ ok: true });
+  });
+
+  // ---- POST /api/writer/manuscripts/:id/assets?filename= --------------------- //
+
+  // Raw-body figure upload (the zip upload route's arrayBuffer pattern);
+  // 20 MB cap; the extension allowlist + collision renaming live in the
+  // store (writeManuscriptAsset). 201 carries the stored name.
+  app.post("/api/writer/manuscripts/:id/assets", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    const filename = c.req.query("filename");
+    if (!filename) {
+      const e = detail("filename query param required", 400);
+      return c.json(e.body, e.status);
+    }
+    const data = new Uint8Array(await c.req.arrayBuffer());
+    if (data.length === 0) {
+      const e = detail("request body is empty", 400);
+      return c.json(e.body, e.status);
+    }
+    if (data.length > 20 * 1024 * 1024) {
+      const e = detail("asset too large (max 20 MB)", 400);
+      return c.json(e.body, e.status);
+    }
+    const outcome = await writerLock.run(
+      (): { missing: true } | { name: string } | { bad: string } => {
+        if (loadManuscript(writerDataDir, id) === null) return { missing: true };
+        try {
+          return { name: writeManuscriptAsset(writerDataDir, id, filename, data) };
+        } catch (err) {
+          return { bad: (err as Error).message };
+        }
+      }
+    );
+    if ("missing" in outcome) {
+      const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if ("bad" in outcome) {
+      const e = detail(outcome.bad, 400);
+      return c.json(e.body, e.status);
+    }
+    return c.json({ name: outcome.name }, 201);
+  });
+
+  // ---- GET /api/writer/manuscripts/:id/assets/:name -------------------------- //
+
+  app.get("/api/writer/manuscripts/:id/assets/:name", (c) => {
+    const id = c.req.param("id");
+    const name = c.req.param("name");
+    c.header("Cache-Control", "no-cache");
+    if (badManuscriptId(id) || badId(name)) {
+      const e = detail("bad asset path", 400);
+      return c.json(e.body, e.status);
+    }
+    let bytes: Buffer | null;
+    try {
+      bytes = readManuscriptAsset(writerDataDir, id, name);
+    } catch (err) {
+      const e = detail((err as Error).message, 400); // rejected traversal name
+      return c.json(e.body, e.status);
+    }
+    if (bytes === null) {
+      const e = detail("asset not found", 404);
+      return c.json(e.body, e.status);
+    }
+    return c.body(new Uint8Array(bytes), 200, { "Content-Type": mimeFor(name) });
+  });
+
+  // ---- GET /api/writer/manuscripts/:id/export --------------------------------- //
+
+  // Stage 10 M3: server-assembled zip = manuscript.tex (single file) +
+  // references.bib (cited-only, verbatim from library.bib) + referenced
+  // figure assets under assets/. `X-Writer-Bib-Missing` carries the cited
+  // keys that had no library.bib entry (percent-encoded JSON array).
+  app.get("/api/writer/manuscripts/:id/export", async (c) => {
+    const id = c.req.param("id");
+    if (badManuscriptId(id)) {
+      const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    let bundle: WriterExportBundle;
+    try {
+      bundle = buildWriterExport(writerDataDir, id);
+    } catch (err) {
+      if (err instanceof WriterExportError) {
+        const e = detail(err.message, err.kind === "not-found" ? 404 : 400);
+        return c.json(e.body, e.status);
+      }
+      throw err;
+    }
+    const zip = zipEntries([
+      { name: "manuscript.tex", data: bundle.tex },
+      ...(bundle.bib !== null ? [{ name: "references.bib", data: bundle.bib }] : []),
+      ...(await Promise.all(
+        bundle.assets.map(async (a) => ({
+          name: `assets/${a.name}`,
+          data: await readFile(a.abs),
+        }))
+      )),
+    ]);
+    const slug =
+      bundle.title
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 60) || "manuscript";
+    return c.body(new Uint8Array(zip), 200, {
+      "Content-Type": "application/zip",
+      "Content-Disposition": `attachment; filename="${slug}.zip"`,
+      "X-Writer-Bib-Missing": encodeURIComponent(JSON.stringify(bundle.bibMissing)),
+    });
   });
 
   // ---- POST /api/library/refs ---------------------------------------------- //

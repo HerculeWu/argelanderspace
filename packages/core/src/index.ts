@@ -26,6 +26,11 @@
 // projection + asset hashing), and the idempotent ensureCurrentAnnotations
 // archive-on-mismatch guard.
 //
+// writer/: the Writer store (Stage 10) — manuscripts/m_<id>/manuscript.json
+// (+ assets/) load/save/list/delete (atomic write, optimistic-lock rev,
+// looseObject round-trip for agent-authored keys), id generation, and the
+// templates merger (built-ins + user files, user overrides same-id).
+//
 // The pandoc LaTeX pipeline was deleted in Stage 5 MS3b (the tex pipeline
 // replaced it); PDF (MinerU OCR) and publisher-HTML pipelines are archived
 // on the `ocr-features` branch.
@@ -61,3 +66,5 @@ export * from "./pipelines/tex/ports.js";
 export * from "./pipelines/tex/source/macros.js";
 export * from "./pipelines/tex/source/tree.js";
 export * from "./plans/store.js";
+export * from "./writer/export.js";
+export * from "./writer/store.js";

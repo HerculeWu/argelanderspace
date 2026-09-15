@@ -7,7 +7,8 @@
  * clients never learn about the change. `createServer` runs this watcher and
  * rebroadcasts: library-side changes as `library.changed` "external",
  * plans-side as `plan.changed` "external", annotations-side as one
- * `annotation.changed` "external" per changed doc.
+ * `annotation.changed` "external" per changed doc, and writer-side (Stage 10)
+ * as `writer.changed` per changed manuscript / a templates-dir flag.
  *
  * Implementation: a polling fingerprint, not `fs.watch`. A non-recursive
  * `fs.watch` on `output/` misses `<docId>.json` landing inside a doc
@@ -47,6 +48,12 @@ export interface WatcherOptions {
   /** Called once per poll in which any doc's annotations `current.json`
    *  changed (created/rewritten/deleted), with those doc ids (sorted). */
   onAnnotationsChange: (docIds: string[]) => void;
+  /** Called once per poll in which writer manuscripts or the templates dir
+   *  changed (Stage 10). `ids` = changed/created/deleted manuscript ids
+   *  (sorted); `templates: true` marks a templates-dir change. Assets are
+   *  deliberately NOT fingerprinted (epoch-review D4). Optional: pre-Stage-10
+   *  callers don't observe the domain. */
+  onWriterChange?: (changes: { ids: string[]; templates: boolean }) => void;
 }
 
 export interface Watcher {
@@ -58,6 +65,7 @@ export function startWatcher(opts: WatcherOptions): Watcher {
   let lastLibrary = libraryFingerprint(opts.dataDir);
   let lastPlans = plansFingerprint(opts.statusDir);
   let lastAnnotations = annotationsFingerprint(opts.dataDir);
+  let lastWriter = writerFingerprint(opts.dataDir);
   const timer = setInterval(() => {
     const nextLibrary = libraryFingerprint(opts.dataDir);
     if (nextLibrary !== lastLibrary) {
@@ -74,6 +82,12 @@ export function startWatcher(opts: WatcherOptions): Watcher {
     if (changedDocs.length > 0) {
       lastAnnotations = nextAnnotations;
       opts.onAnnotationsChange(changedDocs);
+    }
+    const nextWriter = writerFingerprint(opts.dataDir);
+    const writerChanges = changedWriter(lastWriter, nextWriter);
+    if (writerChanges.ids.length > 0 || writerChanges.templates) {
+      lastWriter = nextWriter;
+      opts.onWriterChange?.(writerChanges);
     }
   }, opts.intervalMs ?? 1500);
   timer.unref(); // never keep the process alive just for watching
@@ -144,6 +158,66 @@ function changedAnnotationDocs(prev: Map<string, string>, next: Map<string, stri
     if (!next.has(docId)) changed.add(docId);
   }
   return [...changed].sort();
+}
+
+/**
+ * The writer fingerprints (Stage 10): per manuscript `manuscript.json` stamps
+ * under `manuscripts/m_.../`, plus the `templates/*.json` name-stamp set. Like
+ * annotations this is a per-entry map so the callback can name the changed
+ * manuscript. `assets/` is deliberately NOT observed (epoch-review D4: no
+ * asset watching).
+ */
+function writerFingerprint(dataDir: string): {
+  manuscripts: Map<string, string>;
+  templates: string;
+} {
+  const manuscripts = new Map<string, string>();
+  const root = join(dataDir, "manuscripts");
+  let names: string[] = [];
+  try {
+    if (statSync(root).isDirectory()) names = readdirSync(root).sort();
+  } catch {
+    names = []; // not a directory / missing: empty listing (library pattern above)
+  }
+  for (const name of names) {
+    if (!/^m_[0-9a-f]{8}$/.test(name)) continue;
+    try {
+      if (!statSync(join(root, name)).isDirectory()) continue;
+    } catch {
+      continue; // vanished mid-poll
+    }
+    manuscripts.set(name, stamp(join(root, name, "manuscript.json")));
+  }
+  const templatesDir = join(dataDir, "templates");
+  let templates = "-";
+  try {
+    if (statSync(templatesDir).isDirectory()) {
+      templates = readdirSync(templatesDir)
+        .filter((n) => n.endsWith(".json"))
+        .sort()
+        .map((n) => `${n}=${stamp(join(templatesDir, n))}`)
+        .join("\n");
+    }
+  } catch {
+    templates = "-"; // missing/vanished: still part of the fingerprint
+  }
+  return { manuscripts, templates };
+}
+
+/** Manuscript ids whose stamp changed (changed/created/deleted), plus the
+ *  templates-dir change flag. Sorted for a deterministic callback payload. */
+function changedWriter(
+  prev: { manuscripts: Map<string, string>; templates: string },
+  next: { manuscripts: Map<string, string>; templates: string }
+): { ids: string[]; templates: boolean } {
+  const ids = new Set<string>();
+  for (const [id, s] of next.manuscripts) {
+    if (prev.manuscripts.get(id) !== s) ids.add(id);
+  }
+  for (const id of prev.manuscripts.keys()) {
+    if (!next.manuscripts.has(id)) ids.add(id);
+  }
+  return { ids: [...ids].sort(), templates: prev.templates !== next.templates };
 }
 
 /** `mtimeNs:size` (bigint stats: `mtimeNs` only exists there); `-` if absent. */

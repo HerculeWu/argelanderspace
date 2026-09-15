@@ -1,4 +1,4 @@
-import type { Job, WsServerMessage } from "@argelanderspace/contracts";
+import type { Job, WsServerMessage, WsWriterChanged } from "@argelanderspace/contracts";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
@@ -14,11 +14,13 @@ type JobListener = (job: Job, event: string) => void;
 type LibraryListener = () => void;
 type PlanListener = () => void;
 type AnnotationListener = (docId: string) => void;
+type WriterListener = (msg: WsWriterChanged) => void;
 
 const jobListeners = new Set<JobListener>();
 const libraryListeners = new Set<LibraryListener>();
 const planListeners = new Set<PlanListener>();
 const annotationListeners = new Set<AnnotationListener>();
+const writerListeners = new Set<WriterListener>();
 
 const RETRY_MAX_MS = 15000;
 
@@ -47,6 +49,11 @@ function dispatch(msg: WsServerMessage): void {
     // treat this as a job event — the Stage-4 MS1 blocker precedent); MS3
     // wires the reader's annotation store to it.
     for (const cb of annotationListeners) cb(msg.doc_id);
+  } else if (msg.type === "writer.changed") {
+    // Stage 10 M1: explicit branch — a writer change must never fall through
+    // to the job branch (`msg.job` would be undefined). The writer view wires
+    // its reload to onWriterChanged in M2.
+    for (const cb of writerListeners) cb(msg);
   } else {
     for (const cb of jobListeners) cb(msg.job, msg.type);
   }
@@ -125,5 +132,14 @@ export function onAnnotationChanged(cb: AnnotationListener): () => void {
   ensureStarted();
   return () => {
     annotationListeners.delete(cb);
+  };
+}
+
+/** Subscribe to writer mutations (`writer.changed`, Stage 10; wired in M2). */
+export function onWriterChanged(cb: WriterListener): () => void {
+  writerListeners.add(cb);
+  ensureStarted();
+  return () => {
+    writerListeners.delete(cb);
   };
 }
