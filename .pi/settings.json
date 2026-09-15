@@ -1,5 +1,5 @@
 {
-    "defaultProvider": "openai-codex",
-    "defaultModel": "gpt-6-astra",
-    "defaultThinkingLevel": "medium"
+    "defaultProvider": "kimi-coding",
+    "defaultModel": "k3",
+    "defaultThinkingLevel": "max"
 }
