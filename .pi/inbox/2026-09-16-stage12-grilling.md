@@ -2,8 +2,8 @@
 
 - Session：stage12-grilling（交互会话）
 - 创建：2026-09-16T11:05:00+02:00（约，grilling 开始）
-- 更新：2026-09-16T13:05:00+02:00
-- 工作状态：进行中（实施+迁移+工程验收完成，等待用户 smoke）
+- 更新：2026-09-16T13:40:00+02:00
+- 工作状态：完成（用户 smoke 渲染通过；追加的导出 deps 修复已实施并验证）
 - 归并状态：未归并
 - 范围与授权：解决 Stage 11 遗留 I030/I031；已获授权：实施代码修改（用户“实施”指令）+四门+commit+push（含 ee2095c/5569f98）；ADS 联网拉取；library build --offline 重建；迁移时精确替换两个 demo 稿件 cite key。push 前核实 gh 凭据。
 
@@ -77,11 +77,14 @@
 
 ## 待确认事项
 
-- 无未决设计问题；Q18 已确认。等待用户 smoke 后关闭并 commit+push。
+- 无未决设计问题；Q18 已确认。Stage 12 已交付并推送。
 
 ## 交接状态
 
-- Stage 12 代码与迁移完成，工作区未提交；等待用户 smoke。
+- **smoke 结果**：用户确认“现在渲染没问题”。追加需求（导出 zip 缺模板 deps）已当阶段实施：zip 根目录附带 cls/sty/bst（与编译同等校验），AA demo 真实导出 zip 自编译 EXIT=0（含 aa.cls/aa.bst + 宏注入 + references.bib）。用户已自行修正 AA demo 的全角逗号（rev 186，符合 D4）。
+- **提交与推送**：`28472c2` feat: explicit Writer rendering and ADS-backed bibliography（28 文件，839+/140-），连同 ee2095c、5569f98 已 push 至 origin/main（gh keyring 凭据有效）。
+- 最终四门：1066 passed + 1 skip，typecheck/lint clean。
+- I030/I031 待用户侧最终确认后可在下轮归并时转入已关闭清单；本 session 原文已随 28472c2 入 Git。
 - 下一步（用户确认后）：实施 I031 + I030（转义兜底 + ADS 接入）→ 四门/回归/真实 Chrome → 存量迁移（D6）→ 用户 smoke → commit + push。
 - Stage 13 预告（用户 2026-09-16 提出，**未立项未授权**）：library 手动导入接通——用户可给 bibcode 从 ADS 选，也可手动给 bib 条目全文；遵循 D5 的来源无关架构。
 - 隔离实验目录 /tmp/writer-iso-tCMpqo、/tmp/writer-iso2-* 为临时证据，可能已清理；关键结论已自包含于本文件。
