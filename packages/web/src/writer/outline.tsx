@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import type { WriterCell, WriterNumberingResponse } from "@argelanderspace/contracts";
-import { applyNumbering, deriveCrossrefs, type CrossrefTarget } from "./model";
+import { writerCrossrefs, type CrossrefTarget } from "./model";
 
 const GROUPS = [
   { kind: "section", labelKey: "writer.outline.sections" },
@@ -25,14 +25,14 @@ export function OutlinePanel({
   onInsertLabel,
 }: {
   cells: WriterCell[];
-  /** Compile-truth numbering (M3b); null/never = regex preview numbers. */
+  /** Compile-truth numbering; missing facts display unresolved placeholders. */
   numbering?: WriterNumberingResponse | null;
   onJump: (cellId: string) => void;
-  onInsertLabel: (targetCell: string, label: string, envIndex?: number) => void;
+  onInsertLabel: (targetCell: string, label: string, envIndex?: number, sectionIndex?: number) => void;
 }) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const targets = applyNumbering(deriveCrossrefs(cells), numbering?.facts ?? null);
+  const targets = writerCrossrefs(cells, numbering);
   const needle = q.trim().toLowerCase();
   const visible = (x: CrossrefTarget) =>
     !needle || `${x.title} ${x.label}`.toLowerCase().includes(needle);
@@ -64,7 +64,7 @@ export function OutlinePanel({
             {rows.map((x) => (
               <div
                 className="w-outline-row"
-                key={`${x.kind}-${x.cell}-${x.number}`}
+                key={`${x.cell}-${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}
                 style={visible(x) ? undefined : { display: "none" }}
               >
                 <button className="w-jump" onClick={() => onJump(x.cell)}>
@@ -74,8 +74,9 @@ export function OutlinePanel({
                   className="w-insert-mini"
                   data-insert-label={x.label}
                   data-target-cell={x.cell}
-                  title={t("writer.outline.insertLabel")}
-                  onClick={() => onInsertLabel(x.cell, x.label, x.envIndex)}
+                  title={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.outline.insertLabel")}
+                  disabled={x.insertable === false}
+                  onClick={() => onInsertLabel(x.cell, x.label, x.envIndex, x.sectionIndex)}
                 >
                   <Icon name="plus" cls="ico-sm" /> {x.label}
                 </button>

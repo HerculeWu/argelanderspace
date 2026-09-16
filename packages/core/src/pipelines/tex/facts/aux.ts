@@ -34,6 +34,9 @@ export interface TexAuxFacts {
   lof: TexTocEntry[];
   /** Same for tables (.lot). */
   lot: TexTocEntry[];
+  /** TOC records are available even without an explicit table of contents. */
+  toc: TexTocEntry[];
+  lol: TexTocEntry[];
 }
 
 export function parseAux(content: string): TexAuxFacts {
@@ -83,15 +86,26 @@ export function parseAux(content: string): TexAuxFacts {
 
   const lof: TexTocEntry[] = [];
   const lot: TexTocEntry[] = [];
+  const toc: TexTocEntry[] = [];
+  const lol: TexTocEntry[] = [];
   for (const at of texCommandPositions(content, "@writefile")) {
     const groups = readTexGroups(content, at, 2);
     const which = groups?.[0];
     const payload = groups?.[1];
     if (!which || !payload) continue;
-    const target = which.content === "lof" ? lof : which.content === "lot" ? lot : null;
+    const target =
+      which.content === "lof"
+        ? lof
+        : which.content === "lot"
+          ? lot
+          : which.content === "toc"
+            ? toc
+            : which.content === "lol"
+              ? lol
+              : null;
     if (target === null) continue;
     for (const entry of parseToc(payload.content)) target.push(entry);
   }
 
-  return { labels, citations, bibcites, lof, lot };
+  return { labels, citations, bibcites, lof, lot, toc, lol };
 }

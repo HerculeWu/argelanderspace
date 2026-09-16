@@ -149,10 +149,15 @@
 - 最终四门各自 exit 0:contracts 94 / core 293 / infra 63 / web 335 / server 212 / cli 51(计 1048),lint 274 文件零警告;40 个变更/新增文件。
 - 测试陷阱记录:web vitest 走 workspace **dist** 解析,改 contracts/core 后须先 build 再跑下游测试(一次 500 假惊吓)。
 
+### D16 — 提交与推送(2026-09-15)
+- 来源:用户"先commit+push"。
+- 结果:**`e5c2164`**(51 文件,+9442/−8:Stage 10 全部源码/测试 + docs 两份 + .pi 三份),已推送 `origin main`(`01441a4..e5c2164`,正常 push 非强推,一次性 `git -c credential.helper='!gh auth git-credential'`,未落配置)。工作区干净。
+- 提交前树与 F7 最终验收树仅差 .gitignore/docs/.pi 文档,复用该四门证据,未重跑。
+
 ## 交接状态
 
 - **Stage 10 已关闭(smoke 未通过,D15)**;[方案](../memory-reference/2026-09-15-stage10-writer-plan.md)已标已关闭;[Stage 11 范围草案](../memory-reference/2026-09-15-stage11-render-pipeline-scope.md)已写入,下一阶段立项由用户拍板。
 - 工程交付保留:M1–M4 全部实施并四门绿(1048 测试),真实浏览器端到端验证通过(F7);smoke 否决的是渲染与插入语义的产品形态(F8),进 Stage 11。
-- 工作区:40+ 变更/新增文件**未 commit/push**(待用户授权);`.pi/` 内 inbox/方案/草案同步未提交。
+- 工作区:**已提交推送 `e5c2164`**(D16),干净。
 - 记忆提醒:inbox 现有 5 份未归并 session 文件(epoch-review、mem-31b251a、stage9-i18n、subagent-routing、stage10-writer),接近 8 份阈值且阶段已交界——建议近期安排一次归并整理授权。
 - 未操作真实 literatures/ 数据;aa.cls 在本机 /tmp/aa.cls(临时,all-rights-reserved 不随包),用户需要 A&A 编号编译时自行放入 `literatures/templates/aa.deps/aa.cls`。

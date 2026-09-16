@@ -7,17 +7,17 @@
  * Synchronous, like the core plans/writer stores.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   buildBib,
   buildTexDocument,
-  extractCitedKeys,
+  extractManuscriptCitedKeys,
   type WriterManuscript,
   type WriterTemplate,
 } from "@argelanderspace/contracts";
 import { libraryPaths } from "../library/store.js";
-import { loadManuscript, loadTemplates, manuscriptDir } from "./store.js";
+import { loadManuscript, loadTemplates, manuscriptDir, templatesDir } from "./store.js";
 
 export interface WriterExportBundle {
   /** Manuscript title (download filename). */
@@ -61,13 +61,13 @@ function collectReferencedAssets(
   const out: WriterExportBundle["assets"] = [];
   for (const name of names) {
     // the store write path already sanitizes names; re-check before reading
-    if (name !== name.split("/").pop() || name.includes("..")) {
+    if (name !== name.split("/").pop() || name.includes("..") || name.includes("\\")) {
       warnings.push(`skipped suspicious asset name: ${name}`);
       continue;
     }
     const abs = join(dir, name);
     try {
-      if (statSync(abs).isFile()) out.push({ name, abs });
+      if (lstatSync(abs).isFile()) out.push({ name, abs });
       else warnings.push(`figure asset referenced but missing on disk: ${name}`);
     } catch {
       warnings.push(`figure asset referenced but missing on disk: ${name}`);
@@ -94,7 +94,7 @@ export function buildWriterExport(dataDir: string, id: string): WriterExportBund
   }
 
   const tex = buildTexDocument(manuscript, template);
-  const keys = extractCitedKeys(manuscript.cells);
+  const keys = extractManuscriptCitedKeys(manuscript, template);
   let bib: string | null = null;
   let bibMissing: string[] = [];
   if (keys.length > 0) {
@@ -111,6 +111,15 @@ export function buildWriterExport(dataDir: string, id: string): WriterExportBund
     bibMissing = built.missing;
   }
 
+  for (const dep of template.deps) {
+    const path = join(templatesDir(dataDir), `${template.id}.deps`, dep);
+    try {
+      if (!lstatSync(path).isFile())
+        warnings.push(`template dependency is not a regular file: ${dep}`);
+    } catch {
+      warnings.push(`template dependency missing: ${path}`);
+    }
+  }
   const assets = collectReferencedAssets(dataDir, manuscript, warnings);
   return { title: manuscript.title, tex, bib, bibMissing, assets, warnings };
 }

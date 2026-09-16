@@ -36,6 +36,7 @@ import type {
 } from "@argelanderspace/core";
 import { TEX_COMPILE_DEFAULT_TIMEOUT_MS } from "@argelanderspace/core";
 import { findOnPath } from "../lib/proc.js";
+import { createCachedTexWorkspace } from "./cache.js";
 import { prepareTexInstrumentation, texStyPath } from "./instrument.js";
 import { runTexProcess } from "./proc.js";
 import {
@@ -220,7 +221,11 @@ async function attemptCompile(opts: {
   styPath: string | null;
   /** Degraded successes keep the engine .log in outDir for debugging. */
   keepLog?: boolean;
+  cacheDir?: string;
+  renderProfile?: "writer";
+  signal?: AbortSignal;
 }): Promise<AttemptResult> {
+  opts.signal?.throwIfAborted();
   const fail = (
     status: Exclude<AttemptStatus, "ok">,
     message: string,
@@ -229,7 +234,12 @@ async function attemptCompile(opts: {
 
   let ws: TexWorkspace;
   try {
-    ws = await createTexWorkspace(opts.srcDir);
+    ws = opts.cacheDir
+      ? await createCachedTexWorkspace(
+          opts.srcDir,
+          path.join(opts.cacheDir, `${opts.engine}-${opts.instrumented ? "instrumented" : "clean"}`)
+        )
+      : await createTexWorkspace(opts.srcDir);
   } catch (err) {
     if (err instanceof TexWorkspaceError) {
       return fail("unsupported-build", `refusing to compile: ${err.message}`);
@@ -242,7 +252,11 @@ async function attemptCompile(opts: {
     let target = mainInWs;
     if (opts.instrumented) {
       try {
-        target = await prepareTexInstrumentation(mainInWs, opts.styPath ?? undefined);
+        target = await prepareTexInstrumentation(
+          mainInWs,
+          opts.styPath ?? undefined,
+          opts.renderProfile
+        );
       } catch (err) {
         return fail(
           "compile-error",
@@ -252,6 +266,7 @@ async function attemptCompile(opts: {
     }
     const runDir = path.dirname(target);
     const args = [
+      ...(opts.renderProfile === "writer" ? ["-norc"] : []),
       opts.engine === "xelatex" ? "-pdfxe" : "-pdf",
       "-interaction=nonstopmode",
       "-recorder",
@@ -261,7 +276,9 @@ async function attemptCompile(opts: {
     const result = await runTexProcess("latexmk", args, {
       cwd: runDir,
       timeoutMs: opts.timeoutMs,
+      ...(opts.signal ? { signal: opts.signal } : {}),
     });
+    opts.signal?.throwIfAborted();
 
     const logPath = path.join(runDir, `${opts.jobname}.log`);
     const log = await fs.readFile(logPath, "utf8").catch(() => "");
@@ -348,9 +365,22 @@ async function attemptCompile(opts: {
           "unavailable, numbering degrades to .aux + source counting"
       );
     }
-    // The .log travels only for degraded successes; a fully instrumented
-    // clean success deletes it (roadmap Q5).
-    if (degraded && log !== "") {
+    if (opts.renderProfile === "writer") {
+      const src = artifactPath("argelander-citation.tex");
+      if (
+        await fs
+          .stat(src)
+          .then((s) => s.isFile())
+          .catch(() => false)
+      ) {
+        const dest = path.join(opts.outDir, `${opts.jobname}.argelander-citation.tex`);
+        await fs.copyFile(src, dest);
+        artifacts.citationStyle = dest;
+      }
+    }
+    // Reader's clean-success behavior is unchanged. Writer also inspects
+    // undefined references and dependency warnings, so keeps its derived log.
+    if ((degraded || opts.renderProfile === "writer") && log !== "") {
       const dest = path.join(opts.outDir, `${opts.jobname}.log`);
       await fs.writeFile(dest, log, "utf8");
       artifacts.log = dest;
@@ -427,6 +457,9 @@ export async function compileTex(input: TexCompileOptions): Promise<TexCompileOu
     jobname,
     outDir: input.outDir,
     timeoutMs,
+    ...(input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {}),
+    ...(input.renderProfile !== undefined ? { renderProfile: input.renderProfile } : {}),
+    ...(input.signal ? { signal: input.signal } : {}),
   };
   const warnings: string[] = [];
   let lastError: AttemptResult | null = null;

@@ -553,12 +553,21 @@
       "title": "文档内目标",
       "search": "搜索 label…",
       "noLabel": "无 label",
-      "insert": "插入引用"
+      "insert": "插入引用",
+      "needsLabel": "请先在源码中添加 label：当前无法确定安全的插入位置"
     },
     "numbering": {
-      "refresh": "刷新编号",
-      "refreshFailed": "编号编译失败，显示上次成功的编号",
+      "refresh": "刷新预览",
+      "refreshFailed": "预览刷新失败，稿件已保留",
       "stale": "编号未更新"
+    },
+    "preview": {
+      "pending": "等待编译：暂显示源码，引用和编号尚未解析。",
+      "stale": "上次编译预览，等待更新。",
+      "unresolved": "目标已变化或尚未完成编译",
+      "failed": "预览未能更新，仍可继续编辑和保存。",
+      "warnings": "预览警告／暂不支持的内容",
+      "exportWarnings": "源码已下载并附带警告，请查看压缩包内的 EXPORT-WARNINGS.txt。"
     },
     "comments": {
       "title": "评论",

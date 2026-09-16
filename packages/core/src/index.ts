@@ -67,4 +67,5 @@ export * from "./pipelines/tex/source/macros.js";
 export * from "./pipelines/tex/source/tree.js";
 export * from "./plans/store.js";
 export * from "./writer/export.js";
+export * from "./writer/preview.js";
 export * from "./writer/store.js";

@@ -23,8 +23,9 @@ export interface TexProcResult {
 export function runTexProcess(
   cmd: string,
   args: readonly string[],
-  opts: { cwd?: string; timeoutMs: number; env?: Record<string, string> }
+  opts: { cwd?: string; timeoutMs: number; env?: Record<string, string>; signal?: AbortSignal }
 ): Promise<TexProcResult> {
+  opts.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
@@ -36,15 +37,20 @@ export function runTexProcess(
     });
 
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const kill = () => {
       try {
         if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
         else child.kill("SIGKILL");
       } catch {
         child.kill("SIGKILL");
       }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill();
     }, opts.timeoutMs);
+    opts.signal?.addEventListener("abort", kill, { once: true });
+    if (opts.signal?.aborted) kill();
 
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
@@ -52,10 +58,12 @@ export function runTexProcess(
     child.stderr.on("data", (d: Buffer) => stderr.push(d));
     child.on("error", (err) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", kill);
       reject(err);
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      opts.signal?.removeEventListener("abort", kill);
       resolve({
         code,
         signal,

@@ -37,8 +37,9 @@ import type * as Ast from "@unified-latex/unified-latex-types";
 import { citeShort } from "../../../documents/render.js";
 import type { TexFacts } from "../facts/index.js";
 import type { TexSourceTree } from "../source/tree.js";
-import { envName, lastArgText, printRawNodes } from "../source/tree.js";
+import { envName, lastArgText, printRawNodes, texParser } from "../source/tree.js";
 import { citeModeOf, citePieces, formatCitation } from "./cite-format.js";
+import { type CitationFormatter, compiledCitationFormatter } from "./compiled-cite.js";
 import { displayNumber, FallbackCounter, MathnumAssigner, stripOuterBraces } from "./numbering.js";
 import { deluxetableHtml, parseDeluxetable, tabularHtml } from "./tables.js";
 import { dollarSafe, katexify, textify } from "./text.js";
@@ -70,10 +71,17 @@ interface CiteOcc {
   refIds: string[];
 }
 
-interface BlockSpan {
+export interface TexBlockSpan {
   id: string;
   file: string | undefined;
   startLine: number;
+  endLine: number;
+}
+
+export interface TexMathRow {
+  latex: string;
+  number?: string;
+  tagStar?: boolean;
 }
 
 interface FigureJob {
@@ -91,6 +99,8 @@ export interface FuseInput {
   eventsAvailable: boolean;
   /** Macro names the expansion layer left raw (cite-hiding backstop candidates). */
   unexpandableMacros?: ReadonlySet<string>;
+  /** Explicitly opt into Writer's print-faithful citation/number projection. */
+  renderProfile?: "writer";
 }
 
 export interface FuseResult {
@@ -101,6 +111,10 @@ export interface FuseResult {
   figureJobs: readonly FigureJob[];
   /** blockId → figure block (for materialization results). */
   figureBlocks: ReadonlyMap<string, IrFigureBlock>;
+  /** Side tables, not additions to the persisted/frozen reader IR. */
+  sourceSpans: readonly TexBlockSpan[];
+  equationRows: Readonly<Record<string, TexMathRow[]>>;
+  labelTargets: ReadonlyMap<string, LabelTarget>;
 }
 
 // --------------------------------------------------------------------------- //
@@ -324,19 +338,23 @@ export class Fuser {
   private readonly holders: Holder[] = [];
   private readonly citeOccs: CiteOcc[] = [];
   private readonly citesByBlock: Record<string, string[]> = {};
-  private readonly blockSpans: BlockSpan[] = [];
+  private readonly blockSpans: TexBlockSpan[] = [];
+  private readonly equationRows: Record<string, TexMathRow[]> = {};
+  private readonly citationFormatter: CitationFormatter | undefined;
   private readonly figureJobs: FigureJob[] = [];
   private readonly figureBlocks = new Map<string, IrFigureBlock>();
   private readonly unknownCmds = new Map<string, number>();
   private readonly mathnum: MathnumAssigner | null;
   private readonly sectionEvents: Extract<TexFacts["events"][number], { type: "section" }>[];
   private sectionCursor = 0;
+  private readonly writerSectionCursor = new Map<string, number>();
   private readonly eqCounter = new FallbackCounter();
   private readonly figCounter = new FallbackCounter();
   private readonly tabCounter = new FallbackCounter();
   private readonly algCounter = new FallbackCounter();
   private lofCursor = 0;
   private lotCursor = 0;
+  private lolCursor = 0;
   private readonly secCounters = new Map<number, FallbackCounter>();
   private appendix = false;
 
@@ -351,6 +369,19 @@ export class Fuser {
 
   constructor(private readonly input: FuseInput) {
     const events = input.facts.events;
+    if (input.renderProfile === "writer") {
+      for (const name of ["setcitestyle", "bibpunct", "citestyle"]) {
+        if (findMacroDeep(input.tree.body, name))
+          throw new Error(
+            `Writer cannot project mid-document ${name}; put citation style declarations in the preamble`
+          );
+      }
+      this.citationFormatter = compiledCitationFormatter(
+        input.facts,
+        input.facts.citationStyle ?? "",
+        (tex) => this.plainText(texParser().parse(tex).content)
+      );
+    }
     // natbib \defcitealias{key}{alias} — collected for citetalias/citepalias text
     for (const n of [...input.tree.preamble, ...input.tree.body]) {
       if (n.type === "macro" && n.content === "defcitealias") {
@@ -399,6 +430,9 @@ export class Fuser {
       warnings: this.warnings,
       figureJobs: this.figureJobs,
       figureBlocks: this.figureBlocks,
+      sourceSpans: this.blockSpans,
+      equationRows: this.equationRows,
+      labelTargets: this.labelMap,
     };
   }
 
@@ -496,9 +530,15 @@ export class Fuser {
         }
         case "macro": {
           const name = node.content;
-          if (name === "section" || name === "subsection" || name === "subsubsection") {
+          if (
+            name === "section" ||
+            name === "subsection" ||
+            name === "subsubsection" ||
+            (name === "chapter" && this.input.renderProfile === "writer")
+          ) {
             flush();
-            const level = name === "section" ? 1 : name === "subsection" ? 2 : 3;
+            const level =
+              name === "chapter" ? 0 : name === "section" ? 1 : name === "subsection" ? 2 : 3;
             // a \label sibling immediately after belongs to this section
             let label: string | undefined;
             let j = i + 1;
@@ -532,7 +572,11 @@ export class Fuser {
             // up to 5 groups total.
             const groups: Ast.Node[][] = [];
             const attached = node.args?.[node.args.length - 1];
-            if (attached !== undefined && attached.content.length > 0) {
+            if (
+              attached !== undefined &&
+              (attached.content.length > 0 ||
+                (this.input.renderProfile === "writer" && attached.openMark === "{"))
+            ) {
               groups.push([...attached.content] as Ast.Node[]);
             }
             let j = i + 1;
@@ -654,7 +698,22 @@ export class Fuser {
     this.span(sec.id, [node]);
   }
 
-  private sectionNumber(name: string, level: number, label: string | undefined): string {
+  private sectionNumber(
+    name: string,
+    level: number,
+    label: string | undefined
+  ): string | undefined {
+    if (this.input.renderProfile === "writer") {
+      // Compiled TOC is available in aux even without \\tableofcontents.
+      const row = this.facts.toc.filter((e) => e.level === name)[
+        this.writerSectionCursor.get(name) ?? 0
+      ];
+      this.writerSectionCursor.set(name, (this.writerSectionCursor.get(name) ?? 0) + 1);
+      if (row) return row.number || undefined;
+      if (label !== undefined) return this.auxNumber(label);
+      this.warnings.push(`compiled number unavailable for ${name}; no source counting in Writer`);
+      return undefined;
+    }
     // 1. section events (print truth), in source order
     const ev = this.sectionEvents[this.sectionCursor];
     if (ev !== undefined && ev.name === name) {
@@ -729,6 +788,16 @@ export class Fuser {
         id,
         file: this.tree.fileOf(first),
         startLine: first.position.start.line,
+        endLine:
+          [...nodes]
+            .reverse()
+            .find(
+              (n) =>
+                n.type !== "whitespace" &&
+                n.type !== "parbreak" &&
+                n.type !== "comment" &&
+                n.position
+            )?.position?.end.line ?? first.position.end.line,
       });
     }
   }
@@ -741,7 +810,7 @@ export class Fuser {
     const rows = splitMathRows(content);
     const rowNumbers: (string | undefined)[] = [];
 
-    if (!starred && envBase !== undefined) {
+    if ((!starred || this.input.renderProfile === "writer") && envBase !== undefined) {
       const perRow = PERROW_ENVS.has(envBase);
       const logicalRows = perRow ? rows.map((r) => r.nodes) : [rows.flatMap((r) => r.nodes)];
       const labelRows = perRow ? rows.map((r) => r.labels) : [rows.flatMap((r) => r.labels)];
@@ -750,7 +819,7 @@ export class Fuser {
         const tag = findMacro(rnodes, "tag");
         const labels = labelRows[idx] ?? [];
         let num: string | undefined;
-        if (nonumber) {
+        if (nonumber || (starred && tag === undefined)) {
           num = undefined;
         } else if (tag !== undefined) {
           const star = printRawNodes(tag.args?.[0]?.content ?? []).includes("*");
@@ -809,15 +878,41 @@ export class Fuser {
       const firstLabel = envLabels[0];
       if (firstLabel !== undefined) block.label = firstLabel;
     }
+    if (this.input.renderProfile === "writer") {
+      const perRow = envBase !== undefined && PERROW_ENVS.has(envBase);
+      const displayRows = perRow ? rows : [{ nodes: content, labels: envLabels }];
+      this.equationRows[eid] = displayRows.map((row, i) => {
+        const tag = findMacro(row.nodes, "tag");
+        let latex = katexify(
+          printRawNodes(
+            row.nodes.filter((n) => !(n.type === "macro" && MATH_STRIP_MACROS.has(n.content)))
+          )
+        ).trim();
+        if (MULTILINE_ENVS.has(env ?? "") && latex.includes("&"))
+          latex = `\\begin{aligned}${latex}\\end{aligned}`;
+        const number = rowNumbers[i];
+        return {
+          latex,
+          ...(number !== undefined ? { number } : {}),
+          ...(tag && printRawNodes(tag.args?.[0]?.content ?? []).includes("*")
+            ? { tagStar: true }
+            : {}),
+        };
+      });
+    }
     this.span(eid, [node]);
     return block;
   }
 
   /** Degraded equation numbering: aux for labeled, counting otherwise. */
-  private fallbackEqNumber(labels: readonly string[]): string {
+  private fallbackEqNumber(labels: readonly string[]): string | undefined {
     for (const key of labels) {
       const auxN = this.auxNumber(key);
       if (auxN !== undefined) return this.eqCounter.resync(auxN);
+    }
+    if (this.input.renderProfile === "writer") {
+      this.warnings.push("compiled equation number unavailable; no source counting in Writer");
+      return undefined;
     }
     return this.eqCounter.next();
   }
@@ -853,6 +948,10 @@ export class Fuser {
     if (labelKey !== undefined) {
       const auxN = this.auxNumber(labelKey);
       if (auxN !== undefined) return counter.resync(auxN);
+    }
+    if (this.input.renderProfile === "writer") {
+      this.warnings.push(`compiled ${kind} number unavailable; no source counting in Writer`);
+      return undefined;
     }
     return counter.next();
   }
@@ -1041,6 +1140,41 @@ export class Fuser {
       if (opt !== undefined) {
         const m = /language=([a-zA-Z0-9#+]+)/.exec(printRawNodes(opt.content));
         if (m?.[1] !== undefined) block.lang = m[1];
+        if (this.input.renderProfile === "writer") {
+          const chunks: Ast.Node[][] = [[]];
+          for (const n of opt.content) {
+            if (n.type === "string" && n.content === ",") chunks.push([]);
+            else chunks[chunks.length - 1]?.push(n);
+          }
+          const options = new Map<string, Ast.Node[]>();
+          for (const chunk of chunks) {
+            const eq = chunk.findIndex((n) => n.type === "string" && n.content === "=");
+            if (eq < 0) continue;
+            const value = chunk.slice(eq + 1).filter((n) => n.type !== "whitespace");
+            options.set(
+              printRawNodes(chunk.slice(0, eq)).trim(),
+              value.length === 1 && value[0]?.type === "group" ? value[0].content : value
+            );
+          }
+          const label = printRawNodes(options.get("label") ?? []).trim();
+          const caption = options.get("caption");
+          const entry = caption?.length ? this.facts.lol?.[this.lolCursor++] : undefined;
+          const number = (label ? this.auxNumber(label) : undefined) ?? entry?.number;
+          if (number) block.number = number;
+          if (label) {
+            block.label = label;
+            this.labelMap.set(label, { id: cid, kind: "code", ...(number ? { number } : {}) });
+          }
+          if (caption?.length)
+            this.holders.push({
+              blockId: cid,
+              nodes: caption,
+              attach: () => {},
+              setSegments: (segments) => {
+                block.captionSegments = segments;
+              },
+            });
+        }
       }
     }
     this.span(cid, [node]);
@@ -1055,7 +1189,12 @@ export class Fuser {
     let number: string | undefined;
     if (caption !== undefined) {
       const auxN = labelKey !== undefined ? this.auxNumber(labelKey) : undefined;
-      number = auxN !== undefined ? this.algCounter.resync(auxN) : this.algCounter.next();
+      number =
+        auxN !== undefined
+          ? this.algCounter.resync(auxN)
+          : this.input.renderProfile === "writer"
+            ? undefined
+            : this.algCounter.next();
     }
     const block: IrAlgorithmBlock = { id: aid, type: "algorithm" };
     if (number !== undefined) block.number = number;
@@ -1094,6 +1233,7 @@ export class Fuser {
   private makeAbstractGroups(groups: Ast.Node[][]): IrSection | undefined {
     const labels = ["Context", "Aims", "Methods", "Results", "Conclusions"];
     const paras = groups.map((g, i) => {
+      if (this.input.renderProfile === "writer" && printRawNodes(g).trim() === "") return [];
       const prefix =
         groups.length === 5
           ? ([{ type: "string", content: `${labels[i] ?? ""}. ` }] as Ast.Node[])
@@ -1303,6 +1443,7 @@ export class Fuser {
       }
       return out;
     });
+    if (this.citationFormatter) visible = this.compiledCitation(node);
     segs.push({ type: "cite", refs, raw: visible });
     this.citeOccs.push({
       file: this.tree.fileOf(node),
@@ -1317,9 +1458,36 @@ export class Fuser {
     }
   }
 
+  private compiledCitation(node: Ast.Macro): string {
+    const args = node.args ?? [];
+    const keys = printRawNodes(args[args.length - 1]?.content ?? [])
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    const notes = args
+      .slice(0, -1)
+      .filter((a) => a.openMark === "[")
+      .map((a) => this.plainText(a.content));
+    const star = args.some((a) => a.openMark !== "[" && printRawNodes(a.content) === "*");
+    return (
+      this.citationFormatter?.({
+        command: node.content,
+        keys,
+        star,
+        notes,
+        aliases: this.citeAliases,
+      }) ?? "?"
+    );
+  }
+
   private xrefSegment(node: Ast.Macro, segs: IrSegment[]): void {
     const key = lastArgText(node) ?? "";
-    const tgt = this.labelMap.get(key);
+    let tgt = this.labelMap.get(key);
+    if (this.input.renderProfile === "writer" && tgt) {
+      const compiled =
+        node.content === "pageref" ? this.facts.labels[key]?.page : this.auxNumber(key);
+      if (compiled !== undefined) tgt = { ...tgt, number: compiled };
+    }
     const isEq = node.content === "eqref";
     let raw: string;
     if (tgt?.number !== undefined) {
@@ -1400,7 +1568,13 @@ export class Fuser {
                 "",
                 ""
               );
-              parts.push(vis !== "" ? vis : pieces.map(([au]) => au).join("; ") || "[ref]");
+              parts.push(
+                this.citationFormatter
+                  ? this.compiledCitation(n)
+                  : vis !== ""
+                    ? vis
+                    : pieces.map(([au]) => au).join("; ") || "[ref]"
+              );
               if (blockId !== undefined) {
                 const refIds = keys
                   .map((k) => this.input.keyToRefId.get(k))
@@ -1418,7 +1592,11 @@ export class Fuser {
             } else if (XREF_COMMANDS.has(name)) {
               const key = lastArgText(n) ?? "";
               const tgt = this.labelMap.get(key);
-              parts.push(tgt?.number ?? key);
+              parts.push(
+                this.input.renderProfile === "writer" && name === "eqref"
+                  ? `(${tgt?.number ?? "?"})`
+                  : (tgt?.number ?? key)
+              );
             } else if (name === "label") {
               // nothing
             } else if (FORMAT_COMMANDS.has(name) || name === "objectname" || name === "object") {
@@ -1471,7 +1649,11 @@ export class Fuser {
     const line = this.tree.linesOf(file)?.[pos.start.line - 1];
     if (line === undefined) return false;
     const ch = line[pos.start.column - 1]; // 0-based index of the start char
-    return ch === " " || ch === "\t";
+    return (
+      ch === " " ||
+      ch === "\t" ||
+      (this.input.renderProfile === "writer" && pos.start.column === line.length + 1)
+    );
   }
 
   // ------------------------------------------------------------------ //
@@ -1547,7 +1729,7 @@ export class Fuser {
   }
 
   private nearestBlock(file: string | undefined, line: number): string | undefined {
-    let best: BlockSpan | undefined;
+    let best: TexBlockSpan | undefined;
     for (const span of this.blockSpans) {
       if (span.file !== file) continue;
       if (span.startLine <= line && (best === undefined || span.startLine >= best.startLine)) {

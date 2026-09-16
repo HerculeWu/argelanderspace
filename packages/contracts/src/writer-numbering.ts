@@ -1,6 +1,6 @@
 /**
- * Writer numbering fusion (Stage 10 M3, D14): turn the single-pass instrumented
- * compile's event stream (`<jobname>.argelander.jsonl`) plus the `.aux`
+ * Writer compile-cache contracts, including the shared-IR cell projection.
+ * Legacy Stage 10 helpers below fuse an event stream (`<jobname>.argelander.jsonl`) plus the `.aux`
  * `\newlabel` table into per-manuscript numbering truth.
  *
  * Pure functions — the compile orchestration lives server-side; this module
@@ -8,13 +8,13 @@
  * {@link buildTexDocumentMapped} (events carry `file: main.tex` + 1-based
  * `line`), never re-parsing the LaTeX source.
  *
- * Verified against a real pdflatex+argelander.sty run (2026-09-15, F5 in the
- * session inbox): single pass already carries true numbers; multi-pass only
- * stabilizes \ref display, which the writer never shows.
+ * Production Writer now uses the shared core facts/source/IR fuser after
+ * converged latexmk compilation; these legacy helpers are NOT its renderer.
  */
 
 import { z } from "zod";
 import type { TexCellRange } from "./writer.js";
+import { WriterPreviewSchema } from "./writer-preview.js";
 
 // ---- facts shape (shared by the REST response and the persisted file) ------ //
 
@@ -37,6 +37,11 @@ export const WriterNumberingEquationSchema = z.looseObject({
 export const WriterNumberingFactsSchema = z.looseObject({
   sections: z.array(WriterNumberingSectionSchema),
   equations: z.array(WriterNumberingEquationSchema),
+  floats: z
+    .array(
+      z.object({ cell: z.string(), kind: z.enum(["figure", "table", "code"]), number: z.string() })
+    )
+    .optional(),
   /** Every labeled thing → printed number (aux \newlabel truth). */
   labels: z.record(z.string(), z.string()),
 });
@@ -50,6 +55,9 @@ export const WriterNumberingFileSchema = z.looseObject({
   texHash: z.string(),
   /** Null when the compile failed before any facts existed. */
   facts: WriterNumberingFactsSchema.nullable(),
+  /** Full input hash includes bibliography, assets, template deps and compiler profile. */
+  inputHash: z.string().optional(),
+  preview: WriterPreviewSchema.optional(),
   /** Set when THIS attempt failed (facts then hold the last good ones). */
   lastError: z.string().nullable(),
 });
@@ -61,6 +69,8 @@ export const WriterNumberingResponseSchema = z.looseObject({
   at: z.iso.datetime().optional(),
   facts: WriterNumberingFactsSchema.nullable(),
   lastError: z.string().nullable(),
+  preview: WriterPreviewSchema.nullable().optional(),
+  compiling: z.boolean().optional(),
 });
 
 // ---- parsing / fusion ------------------------------------------------------- //

@@ -670,49 +670,25 @@ table.w-preview th { background: var(--paper-panel); font-weight: 650; }
   .w-topbar .w-hide-narrow { display: none; }
 }
 
-/* ---------- latex source highlight overlay ---------- */
-.w-src-wrap { position: relative; }
-/* The pre (highlight) and the textarea (input) share EXACT metrics so the
-   transparent text aligns with its highlighted copy. Selectors are scoped
-   under .w-field to outrank the base `.w-field textarea` skin rule. */
-.w-field .w-src-highlight,
-.w-field .w-src-textarea {
-  width: 100%;
-  min-height: 160px;
-  margin: 0;
-  padding: 7px 8px;
-  border: 1px solid var(--paper-line);
-  border-radius: 6px;
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  line-height: 1.45;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  tab-size: 2;
-}
-.w-field .w-src-highlight {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  color: var(--paper-ink);
-  border-color: transparent;
-}
-.w-field .w-src-textarea {
-  position: relative;
-  resize: vertical;
-  background: transparent;
-  color: transparent;
-  caret-color: var(--paper-ink);
-}
-.w-field .w-src-textarea.composing { color: var(--paper-ink); }
-.w-field .w-src-textarea::selection { background: var(--accent-soft); color: transparent; }
-.w-field .w-src-textarea.composing::selection { color: inherit; }
-.w-tok-cmd { color: var(--accent); font-weight: 600; }
-.w-tok-env { color: var(--accent); background: var(--accent-soft); border-radius: 3px; }
-.w-tok-com { color: var(--paper-muted); font-style: italic; }
-.w-tok-math { color: var(--ok); }
-.w-tok-brace { color: var(--warn); }
+/* ---------- mature source editor + shared IR projection ---------- */
+.w-source-editor { border: 1px solid var(--paper-line); border-radius: 6px; color: var(--paper-ink); overflow: hidden; }
+.w-source-editor .cm-editor { background: var(--paper); }
+.w-source-editor .cm-cursor { border-left-color: var(--paper-ink); }
+.w-source-editor .cm-selectionBackground { background: var(--accent-soft) !important; }
+.w-source-preview { font: var(--fs-sm)/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--paper-muted); }
+.w-equation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 4px 0; }
+.w-equation-row > span:first-child { overflow-x: auto; }
+.w-equation-number { white-space: nowrap; }
+.w-ir-figure { margin: 12px 0; }
+.w-ir-figure img, .w-pending-image { display: block; max-width: 100%; height: auto; margin: auto; }
+.w-inline-link { border: 0; background: transparent; padding: 0; font: inherit; cursor: pointer; }
+.w-unresolved { opacity: 0.6; }
+.w-preview-stale > .w-note, .w-preview-pending > .w-note { color: var(--warn); font: 11px/1.4 var(--font-sans); margin-bottom: 8px; }
+.w-preview-diagnostics { padding: 8px 16px; color: var(--warn); font: var(--fs-sm)/1.5 var(--font-sans); }
+.w-preview-diagnostics summary { cursor: pointer; }
+.w-preview-diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; }
+.w-table-preview table { width: 100%; border-collapse: collapse; }
+.w-table-preview td, .w-table-preview th { padding: 5px 8px; border-bottom: 1px solid var(--paper-line); }
 
 /* ---------- math preview + empty editor ---------- */
 .w-math { margin: 10px 0; overflow-x: auto; }

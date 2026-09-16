@@ -1,8 +1,8 @@
-# Writer 数据契约（Stage 10):manuscript 与 template 文件格式
+# Writer 数据契约：manuscript、template 与编译预览
 
-面向 agent 的稳定文件契约。Writer 的协作接口 = **直接读写这些 JSON 文件**(webui 经 watcher 自动感知外部变更并广播 `writer.changed`)；本阶段没有 Writer CLI/REST 管理面。
+面向 agent 的文件契约。Writer 的协作接口 = **直接读写这些 JSON 文件**（webui 经 watcher 感知外部变更）；Web 使用已有 Writer REST 路由，尚无独立 Writer CLI。
 
-Zod schema 权威定义：`packages/contracts/src/writer.ts`。**全部 schema 为 looseObject——写入方新增的未知键会被保留**(不会在 round-trip 中被抹掉)。
+Zod schema 权威定义：`packages/contracts/src/writer.ts`。**manuscript、template 与 cell 用户数据 schema 为 looseObject——写入方新增的未知键会被保留**(不会在 round-trip 中被抹掉)。
 
 ## 目录布局
 
@@ -13,10 +13,13 @@ Zod schema 权威定义：`packages/contracts/src/writer.ts`。**全部 schema �
 │       ├── manuscript.json       # 全部内容与元数据(pretty 2 空格,UTF-8)
 │       ├── assets/               # figure 图片原样文件(cell 里只存文件名)
 │       └── build/
-│           └── numbering.json    # 编号编译缓存(派生数据,可删,勿手写)
+│           ├── numbering.json    # 编号 + cell IR 投影（派生缓存，勿手写）
+│           ├── latexmk/          # 独立编译工作区、aux/bbl/fdb 等增量状态
+│           ├── artifacts/        # 共享 facts/fuser 消费的编译产物
+│           └── assets/           # 共享图管线物化的预览资产
 └── templates/
     ├── <template-id>.json        # 用户/agent 增加的模板;同 id 覆盖包内置
-    └── <template-id>.deps/       # 模板的 LaTeX 依赖目录(cls/sty 文件)
+    └── <template-id>.deps/       # 模板的 LaTeX 依赖目录（cls/sty/bst 等）
 ```
 
 内置模板:`aa` / `report` / `letter`（随包发布，见 `packages/contracts/src/writer-templates.ts`)。
@@ -53,9 +56,10 @@ Zod schema 权威定义：`packages/contracts/src/writer.ts`。**全部 schema �
 
 ### 写文件注意
 
-- 整文件覆写（tmp+rename 由 server 保证；手写请自行保证原子性）。
+- 整文件覆写（tmp+rename 由 server 保证；手写请自行保证原子性）。cell id 在稿件内必须唯一；重复 id 会阻止预览映射，不会自动重写稿件。
 - **同进程 server 运行时,外部直接写文件是支持的协作方式**:watcher 按 `manuscript.json` 指纹广播 `writer.changed{cause:"external", id}`;**不要**只写 `assets/`(资产不被指纹监控,且 cell 引用不变就没有可见效果)。
-- `build/numbering.json` 是编译缓存:`version/at/texHash/facts/lastError`,删除安全,手写无意义(下一次编号编译覆盖)。
+- `build/` 全部是派生数据，**停止服务后**可以清理以重建；不删除 `manuscript.json` 或原始 `assets/`。不支持跨进程同时编译同一稿件。
+- `build/numbering.json` 保留 `version/at/texHash/facts/lastError`，新增 `inputHash/preview`。`inputHash` 包含源码、cell 身份、bibliography、模板及其依赖、资产内容，不只检查 TeX 字符串。`preview` 是共享 IR 的 cell 投影，包含源码对应关系、引用及警告；不是用户数据或 agent 文献输出。
 
 ## template JSON(`templates/<id>.json`)
 
@@ -68,7 +72,8 @@ Zod schema 权威定义：`packages/contracts/src/writer.ts`。**全部 schema �
   "preamble": "\\documentclass{aa}\n…",   // 模板管理的 preamble(UI 只读)
   "types": ["latex", "abstract-aa", "figure", "table", "code", "ack", "appendix"],
   "infoFields": [{ "key": "keywords", "label": "Keywords", "input": "text" }],  // input: text|textarea
-  "deps": ["aa.cls"],             // LaTeX 依赖文件名列表,放 <id>.deps/ 目录
+  "deps": ["aa.cls", "aa.bst"],   // 依赖文件名（不能是路径），放 <id>.deps/ 目录
+  "bibliographyStyle": "aa",       // 显式 BibTeX style；report/letter 内置为 plainnat
   "frontMatter": "\\title{ {{title}} }\n\\author{ {{authors}} }\n\\maketitle"
 }
 ```
@@ -77,9 +82,24 @@ Zod schema 权威定义：`packages/contracts/src/writer.ts`。**全部 schema �
 - `types` 决定新增 cell 菜单的可选项;不含某类型的既有 cell 被无损保留(显示提示)。
 - **cell→LaTeX 序列化规则全局固定在代码里**(`packages/contracts/src/writer.ts` 的 `serializeCell`),模板不可覆写。
 - 同 id 的用户文件覆盖包内置模板;坏文件(JSON 损坏/schema 失败/文件内 id 与文件名不符)启动时警告并跳过,不阻塞。
-- 编号编译(pdflatex 单遍,求真编号)会把 `<id>.deps/` 加入 TEXINPUTS;`deps` 里声明而缺失的文件会让编号编译以"缺依赖"失败(不影响编辑与导出)。`aa.cls` 因许可证(all rights reserved)不随包分发,需要时自行放入 `templates/aa.deps/`。
+- 编译输入会安全复制 `<id>.deps/` 与稿件资产，不跟随 symlink。声明的依赖缺失时明确失败，不偷偷更换 class 或引用样式。`aa.cls/aa.bst` 的分发许可未完成核查，**不随 npm 包提供**；使用 A&A 时需自行准备到 `templates/aa.deps/`。
+- `bibliographyStyle` 用于补充 `\\bibliographystyle{…}`；源码中的显式声明优先，注释和代码示例不算声明。旧自定义模板若未配置 style，仍需自行声明，不能假定系统会用 plainnat 替代。
+- A&A 的五段 abstract 必须在 `\\maketitle` 前供 class 消费；组装器会在该位置输出 abstract cells 并保留其源码映射。稿件 JSON 的 cell 顺序不被重写。
+- 导出仍是源码 zip。缺依赖／未验证编译／缺文献等问题通过响应头和包内 `EXPORT-WARNINGS.txt` 提示；下载成功不等于该稿已验证可编译。
 
 ## 外部变更的可见性
 
 - `manuscripts/<id>/manuscript.json` 与 `templates/*.json` 的 mtime+size 被轮询指纹;变化 → `writer.changed` WS 广播(cause: external / template),web 端幂等重取。
-- 编号编译由 server 在保存后 debounce 触发(或手动 POST refresh),成功后广播 `writer.changed{cause:"numbering", id}`;outline/crossref 编号随之更新。
+- 停止输入并保存后自动编译；Render／刷新会先等待保存，再请求即时刷新。手动与自动入口共用按 dataDir＋稿件 id 隔离的 single-flight，运行中只保留一个最新状态的补跑，不排队所有中间版本。
+- 成功和失败都会广播 `writer.changed{cause:"numbering", id}`，正文和侧栏同时更新。外部改写模板依赖、资产或 bibliography 后，刷新会重算内容指纹；这些文件并非都受 watcher 监控，必要时手动刷新。
+- 删除稿件会取消并等待该稿件的编译结束，再删除目录，避免后台构建复活已删除目录。
+
+## 编辑与预览边界
+
+- LaTeX 源码与用户导言区采用 CodeMirror 6＋官方 stex；没有自研补全引擎。References 插入裸 key，Crossrefs 插入裸 label，不猜测／包裹引用命令。
+- Writer 复用现有 **latexmk → 编译事实＋源码 AST → IR → 展示**；不另建 TeX4ht 链路，也不展示 PDF。
+- 正文显示引用格式及章节／逐行公式／图表的编译真值，保留 cell 流式布局，不还原 PDF 分页。数学与段展示复用 reader 能力；reader 默认输出和 CLI 冻结契约不变。
+- 旧预览只可保留在源码仍对应的 cell 上，并标陈旧；被替换目标的引用显示未解析，不能按旧环境序号或同名 label 错绑新公式。尚无对应 IR 的 cell 显示待编译提示和源码，而不是另一套启发式正文渲染。
+- 当前验证范围包括内置模板、natbib 作者—年／数字、前后注、多 key、星号及编译态标点。不承诺任意宏／BibLaTeX 兼容；`longnamesfirst`、上标引用和正文中动态切换 citation style 暂明确报不支持。把 style 配置放在导言区。
+- 一个 IR 块跨多个 cell 的情形会提示无法归属，暂不拼接猜测；完整环境应放在同一个 cell。未知命令等融合警告会显示，不能把部分预览冒充完整还原。
+- 稿件未进入文献库，不触发摄入身份、library rebuild 或标注生命周期。

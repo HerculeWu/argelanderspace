@@ -35,7 +35,7 @@
  */
 
 import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, relative, resolve, sep } from "node:path";
 import type {
@@ -70,6 +70,7 @@ import {
   loadPlans,
   loadTemplates,
   type MetadataSources,
+  manuscriptDir,
   patchWork,
   readDocumentAsset,
   readManuscriptAsset,
@@ -674,7 +675,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(await runWriterNumberingNow(writerDataDir, id, { broadcast }));
     } catch (err) {
       if (err instanceof WriterNumberingError) {
-        const e = detail(err.message, 404);
+        const e = detail(err.message, err.kind === "canceled" ? 409 : 404);
         return c.json(e.body, e.status);
       }
       throw err;
@@ -692,13 +693,15 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad manuscript id", 400);
       return c.json(e.body, e.status);
     }
-    const removed = await writerLock.run(() => deleteManuscript(writerDataDir, id));
+    const removed = await writerLock.run(async () => {
+      await cancelNumberingCompile(id, writerDataDir);
+      return deleteManuscript(writerDataDir, id);
+    });
     if (!removed) {
       const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
       return c.json(e.body, e.status);
     }
     writerChanged("delete", id);
-    cancelNumberingCompile(id);
     return c.json({ ok: true });
   });
 
@@ -774,6 +777,27 @@ export function createApp(deps: AppDeps): Hono {
     return c.body(new Uint8Array(bytes), 200, { "Content-Type": mimeFor(name) });
   });
 
+  // Materialized figures from the shared IR pipeline, separate from upload sources.
+  app.get("/api/writer/manuscripts/:id/preview-assets/:name", async (c) => {
+    const id = c.req.param("id"),
+      name = c.req.param("name");
+    if (badManuscriptId(id) || badId(name) || name.includes("\\") || name.includes("\0"))
+      return c.json({ detail: "bad asset path" }, 400);
+    if (!loadManuscript(writerDataDir, id)) return c.json({ detail: "manuscript not found" }, 404);
+    const path = join(manuscriptDir(writerDataDir, id), "build", "assets", name);
+    try {
+      const stat = await lstat(path);
+      if (!stat.isFile() || stat.isSymbolicLink() || (await realpath(path)) !== resolve(path))
+        return c.json({ detail: "unsafe asset path" }, 400);
+      c.header("Cache-Control", "no-cache");
+      return c.body(new Uint8Array(await readFile(path)), 200, { "Content-Type": mimeFor(name) });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT")
+        return c.json({ detail: "asset not found" }, 404);
+      throw err;
+    }
+  });
+
   // ---- GET /api/writer/manuscripts/:id/export --------------------------------- //
 
   // Stage 10 M3: server-assembled zip = manuscript.tex (single file) +
@@ -796,8 +820,17 @@ export function createApp(deps: AppDeps): Hono {
       }
       throw err;
     }
+    const preview = await getWriterNumbering(writerDataDir, id);
+    if (preview.status !== "ok")
+      bundle.warnings.push(
+        preview.lastError ??
+          "Source archive only: compilation has not been validated for this version."
+      );
     const zip = zipEntries([
       { name: "manuscript.tex", data: bundle.tex },
+      ...(bundle.warnings.length
+        ? [{ name: "EXPORT-WARNINGS.txt", data: `${bundle.warnings.join("\n")}\n` }]
+        : []),
       ...(bundle.bib !== null ? [{ name: "references.bib", data: bundle.bib }] : []),
       ...(await Promise.all(
         bundle.assets.map(async (a) => ({
@@ -816,6 +849,7 @@ export function createApp(deps: AppDeps): Hono {
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="${slug}.zip"`,
       "X-Writer-Bib-Missing": encodeURIComponent(JSON.stringify(bundle.bibMissing)),
+      "X-Writer-Warnings": encodeURIComponent(JSON.stringify(bundle.warnings)),
     });
   });
 

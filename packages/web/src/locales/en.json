@@ -553,12 +553,21 @@
       "title": "Document targets",
       "search": "Search labels…",
       "noLabel": "no label",
-      "insert": "Insert reference"
+      "insert": "Insert reference",
+      "needsLabel": "Add a label in the source first; the insertion position is ambiguous"
     },
     "numbering": {
-      "refresh": "Refresh numbering",
-      "refreshFailed": "Numbering compile failed — showing last good numbers",
+      "refresh": "Refresh preview",
+      "refreshFailed": "Preview refresh failed; your draft is preserved",
       "stale": "Numbers may be stale"
+    },
+    "preview": {
+      "pending": "Awaiting compilation — source shown, references and numbers are not resolved yet.",
+      "stale": "Previous compiled preview — awaiting update.",
+      "unresolved": "Target changed or has not been compiled yet",
+      "failed": "Preview could not be updated. Editing and saving are still available.",
+      "warnings": "Preview warnings / unsupported content",
+      "exportWarnings": "Source downloaded with warnings. See EXPORT-WARNINGS.txt in the archive."
     },
     "comments": {
       "title": "Comments",

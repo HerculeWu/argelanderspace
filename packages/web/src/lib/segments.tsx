@@ -95,6 +95,20 @@ function renderSegments(
   segments: IrSegment[],
   store: ReturnType<typeof useStore>
 ): React.ReactNode[] {
+  return renderIrSegments(segments, {
+    cite: (seg, i) => citeChip(seg, i, store),
+    xref: (seg, i) => xrefChip(seg, i, store),
+  });
+}
+
+/** Shared pure presentation; the reader and Writer supply their own navigation context. */
+export function renderIrSegments(
+  segments: IrSegment[],
+  actions: {
+    cite: (seg: IrCiteSegment, key: number) => React.ReactNode;
+    xref: (seg: IrXrefSegment, key: number) => React.ReactNode;
+  },
+): React.ReactNode[] {
   return segments.map((seg, i) => {
     switch (seg.type) {
       case "text":
@@ -102,9 +116,9 @@ function renderSegments(
       case "math":
         return <Math key={i} latex={seg.latex} />;
       case "cite":
-        return citeChip(seg, i, store);
+        return actions.cite(seg, i);
       case "xref":
-        return xrefChip(seg, i, store);
+        return actions.xref(seg, i);
     }
   });
 }

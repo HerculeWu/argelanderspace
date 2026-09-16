@@ -16,7 +16,7 @@ import { basename } from "node:path";
 import type { TexDocIr, TexIrSource } from "@argelanderspace/contracts";
 import type { TexFactFiles, TexFacts } from "./facts/index.js";
 import { parseTexFacts } from "./facts/index.js";
-import { buildTexDocIr } from "./ir.js";
+import { type BuildTexDocIrResult, buildTexDocIr } from "./ir.js";
 import type { TexCompilePort, TexFigurePort } from "./ports.js";
 import { loadTexSourceTree } from "./source/tree.js";
 
@@ -106,11 +106,10 @@ export interface FuseTexDocInput {
   /** Figure port + asset dir for materialization; absent = no images. */
   figures?: TexFigurePort;
   assetsDir?: string;
+  renderProfile?: "writer";
 }
 
-export interface FuseTexDocResult {
-  ir: TexDocIr;
-  warnings: string[];
+export interface FuseTexDocResult extends BuildTexDocIrResult {
   facts: TexFacts;
 }
 
@@ -121,18 +120,19 @@ export async function fuseTexDoc(input: FuseTexDocInput): Promise<FuseTexDocResu
     mainTex: input.mainTex,
     flsInputs: facts.inputs,
   });
-  const { ir, warnings } = await buildTexDocIr({
+  const result = await buildTexDocIr({
     tree,
     facts,
     docId: input.docId,
     source: texIrSource(input),
+    ...(input.renderProfile ? { renderProfile: input.renderProfile } : {}),
     ...(input.engine !== undefined ? { engine: input.engine } : {}),
     eventsAvailable: input.factFiles.events !== undefined,
     figures: input.figures,
     assetsDir: input.assetsDir,
     srcDir: input.srcDir,
   });
-  return { ir, warnings, facts };
+  return { ...result, facts };
 }
 
 function texIrSource(input: {

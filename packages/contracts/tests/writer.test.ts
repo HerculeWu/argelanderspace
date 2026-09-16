@@ -280,7 +280,12 @@ describe("serializeCell (global fixed mapping)", () => {
     ).toBe("\\begin{lstlisting}[caption={C},label={lst:a},numbers=left]\nx=1\n\\end{lstlisting}");
     expect(
       serializeCell(cell("code", { caption: "", label: "", code: "", lineNumbers: false }))
-    ).toContain("\\begin{lstlisting}[caption={},label={}]");
+    ).toContain("\\begin{lstlisting}[caption={}]");
+    // Empty labels are not emitted: otherwise multiple unlabelled floats
+    // create a spurious duplicate-label warning and ambiguous aux target.
+    for (const type of ["figure", "table"] as const) {
+      expect(serializeCell(cell(type, { label: "" }))).not.toContain("\\label{}");
+    }
   });
 
   it("ack / appendix / recipient", () => {

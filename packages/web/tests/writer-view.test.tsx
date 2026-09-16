@@ -11,7 +11,9 @@
 
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { WriterManuscript, WriterNumberingResponse, WriterTemplate } from "@argelanderspace/contracts";
+import { serializeCell, writerDraftKey, writerTemplateKey, type WriterManuscript, type WriterNumberingResponse, type WriterTemplate, type WriterPreview } from "@argelanderspace/contracts";
+import type { ComponentProps } from "react";
+import type { LatexSourceField } from "../src/writer/latexSource";
 import type { LibraryData } from "../src/library/types";
 import { WriterView } from "../src/writer/WriterView";
 
@@ -139,7 +141,17 @@ const h = vi.hoisted(() => {
     /** current numbering facts the api mock serves (tests may set it) */
     numbering: null as WriterNumberingResponse | null,
     setNumbering(n: WriterNumberingResponse | null) {
-      h.numbering = n;
+      if (!n) { h.numbering = null; return; }
+      const preview = n.preview ?? previewFor(h.store.get("m_0a1b2c3d")!);
+      if (!n.preview) for (const [i, section] of (n.facts?.sections ?? []).entries()) {
+        const cell = section.cell ? preview.cells[section.cell] : undefined;
+        if (cell) {
+          const id = `sec-${i}`;
+          cell.items.push({ kind: "heading", id, heading: section.title, number: section.number, level: 1 });
+          if (section.label) preview.targetLabels[id] = section.label;
+        }
+      }
+      h.numbering = { ...n, preview };
     },
     gateNextPut() {
       let release!: () => void;
@@ -196,6 +208,20 @@ const h = vi.hoisted(() => {
     },
   };
 });
+
+// State-machine tests use a native input seam. The actual CodeMirror component
+// has its own tests and real-browser smoke; these are not layout/IME evidence.
+vi.mock("../src/writer/latexSource", () => ({ LatexSourceField: (p: ComponentProps<typeof LatexSourceField>) => (
+  <textarea id={p.id} data-field="source" aria-label={p.label} value={p.value}
+    onChange={(e) => p.onChange(e.target.value)} onFocus={(e) => p.onCaret?.(e.currentTarget)}
+    onKeyDown={(e) => { if (e.key === "Enter" && e.shiftKey && !e.nativeEvent.isComposing) p.onCommit?.(); }} />
+) }));
+
+function previewFor(doc: WriterManuscript): WriterPreview {
+  return { draftKey: writerDraftKey(doc), templateKey: writerTemplateKey(h.templates.find((t) => t.id === doc.template)!),
+    cells: Object.fromEntries(doc.cells.map((c) => [c.id, { source: serializeCell(c), items: [] }])),
+    targetCells: {}, labelCells: { "sec:intro": "c_0ab50002" }, targetLabels: {}, references: [], warnings: [] };
+}
 
 vi.mock("../src/api/writer", () => h.api);
 vi.mock("../src/api/ws", () => ({
@@ -294,14 +320,14 @@ describe("editor", () => {
     const view = render(<WriterView />);
     const { container } = await openSample(view);
     const cellEl = container.querySelector('[data-cell="c_0ab50002"]')!;
-    // rendered preview before editing
-    expect(cellEl.querySelector("h2")?.textContent).toBe("Introduction");
+    // No locally guessed heading/citation rendering while compilation is pending.
+    expect(cellEl.querySelector(".w-source-preview")?.textContent).toContain("\\section{Introduction}");
     fireEvent.click(cellEl.querySelector('[data-action="edit"]')!);
     const textarea = cellEl.querySelector('textarea[data-field="source"]')!;
     fireEvent.change(textarea, { target: { value: "\\section{Methods X}\n\nBody text." } });
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
     await waitFor(() => {
-      expect(cellEl.querySelector("h2")?.textContent).toBe("Methods X");
+      expect(cellEl.querySelector(".w-source-preview")?.textContent).toContain("\\section{Methods X}");
     });
     // persisted through the api (debounced autosave → PUT)
     await waitStore("m_0a1b2c3d", (m) => {
@@ -338,7 +364,7 @@ describe("editor", () => {
     expect(container.querySelector(".w-badge")?.textContent).toBe("3");
   });
 
-  it("references tab lists library works and inserts \\cite{key} into the editing cell", async () => {
+  it("references tab inserts a bare key into the editing cell", async () => {
     const view = render(<WriterView />);
     const { container } = await openSample(view);
     // references tab is the default; wait for the (mocked) library
@@ -352,7 +378,7 @@ describe("editor", () => {
     fireEvent.click(container.querySelector('[data-ref-key="Belokurov2006"]')!);
     await waitFor(() => {
       const textarea = cellEl.querySelector<HTMLTextAreaElement>('textarea[data-field="source"]')!;
-      expect(textarea.value.endsWith("\\cite{Belokurov2006}")).toBe(true);
+      expect(textarea.value.endsWith(".Belokurov2006")).toBe(true);
     });
   });
 
@@ -406,7 +432,8 @@ describe("editor", () => {
       // \label appended to the target cell's source, and the label text
       // itself inserted at the editing caret (just before the appended label)
       expect(textarea.value).toContain("\\label{sec:method}");
-      expect(textarea.value).toContain("explicitly.sec:method\n\\label{sec:method}");
+      expect(textarea.value).toContain("\\section{Method}\\label{sec:method}");
+      expect(textarea.value.endsWith("explicitly.sec:method")).toBe(true);
     });
   });
 
@@ -454,7 +481,7 @@ describe("editor", () => {
     await waitStore(created.id, (m) => m.cells.length === 1);
   });
 
-  it("renders \\begin{equation} and inline math through KaTeX", async () => {
+  it("renders compiled IR math after saving before the explicit refresh", async () => {
     const view = render(<WriterView />);
     const { container } = await openSample(view);
     const cellEl = container.querySelector('[data-cell="c_0ab50003"]')!;
@@ -463,6 +490,14 @@ describe("editor", () => {
     fireEvent.change(textarea, {
       target: { value: "We fit \\(v_c\\) in \\begin{equation} v_c^2 = GM/r \\end{equation} exactly." },
     });
+    const compiledDoc = structuredClone(h.store.get("m_0a1b2c3d")!);
+    compiledDoc.cells[2]!.data.source = "We fit \\(v_c\\) in \\begin{equation} v_c^2 = GM/r \\end{equation} exactly.";
+    const preview = previewFor(compiledDoc);
+    preview.cells.c_0ab50003!.items = [
+      { kind: "block", block: { id: "p-1", type: "paragraph", segments: [{ type: "text", text: "We fit " }, { type: "math", latex: "v_c" }] } },
+      { kind: "block", block: { id: "eq-1", type: "equation", latex: "v_c^2 = GM/r", number: "1.2" }, rows: [{ latex: "v_c^2 = GM/r", number: "1.2" }] },
+    ];
+    h.setNumbering({ status: "ok", facts: { sections: [], equations: [], labels: {} }, lastError: null, preview });
     fireEvent.keyDown(textarea, { key: "Enter", shiftKey: true });
     await waitFor(() => {
       expect(cellEl.querySelector(".w-math .katex-display")).not.toBeNull();

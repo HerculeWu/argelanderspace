@@ -1,71 +1,71 @@
-/**
- * Writer numbering channel (Stage 10 M3, D14): compile-truth numbers for the
- * Writer's outline/crossref panels.
- *
- * A single-pass `pdflatex` run over the assembled document
- * (buildTexDocumentMapped) in an isolated workspace — instrumented with the
- * shipped argelander.sty wrapper — yields section/mathnum/label events with
- * TRUE printed numbers (verified 2026-09-15, session inbox F5: numbering is
- * single-pass truth; multi-pass only stabilizes \ref display, which the
- * writer never shows; the PDF is discarded, never served).
- *
- * Outcomes persist to `manuscripts/<id>/build/numbering.json`
- * (WriterNumberingFile): success stores facts; failure keeps the previous
- * facts and records `lastError` (the UI then shows a stale marker, never a
- * disruptive error — an edit-in-progress document routinely does not
- * compile). The file is a DERIVED cache: corrupt content degrades to the
- * "never compiled" response, it is never treated as user data.
- *
- * Template dependencies (D14): `template.deps` names files that must exist
- * in `templates/<templateId>.deps/`; they are searched via TEXINPUTS (cwd
- * first — TeX always searches the working directory, so assets/ next to
- * main.tex needs no path entry).
+/** Writer compile/preview cache. The route name is retained for existing clients;
+ * execution now shares latexmk -> facts + source -> IR with the reader.
+ * Only derived manuscript build files are written, never ingest/library/annotations.
  */
-
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { type Dirent, promises as fs } from "node:fs";
 import os from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
+  buildBib,
   buildTexDocumentMapped,
-  fuseNumberingEvents,
+  extractManuscriptCitedKeys,
   type WriterManuscript,
-  type WriterNumberingFacts,
   type WriterNumberingFile,
   WriterNumberingFileSchema,
   type WriterNumberingResponse,
   type WriterTemplate,
   type WsWriterChanged,
+  writerDraftKey,
 } from "@argelanderspace/contracts";
-import { loadManuscript, loadTemplates, manuscriptDir, templatesDir } from "@argelanderspace/core";
 import {
-  createTexWorkspace,
-  extractRelevantLogLines,
-  prepareTexInstrumentation,
-  runTexProcess,
-  TEX_WRAPPER_NAME,
-  type TexWorkspace,
-} from "@argelanderspace/infra";
+  buildWriterPreview,
+  libraryPaths,
+  loadManuscript,
+  loadTemplates,
+  manuscriptDir,
+  manuscriptJsonPath,
+  templatesDir,
+} from "@argelanderspace/core";
+import { compileTex, TEX_WORKSPACE_LIMITS, texFigurePort } from "@argelanderspace/infra";
 
 const COMPILE_TIMEOUT_MS = 30_000;
-const DEBOUNCE_MS = 2_500;
+const DEBOUNCE_MS = 500; // follows the editor's save debounce; measured, not a latency guarantee
+const PREVIEW_PROFILE = "writer-ir-v1";
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+const buildDir = (dataDir: string, id: string) => join(manuscriptDir(dataDir, id), "build");
+const numberingPath = (dataDir: string, id: string) =>
+  join(buildDir(dataDir, id), "numbering.json");
 
-function sha256(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
+export class WriterNumberingError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "not-found" | "canceled"
+  ) {
+    super(message);
+    this.name = "WriterNumberingError";
+  }
 }
 
-function numberingPath(dataDir: string, id: string): string {
-  return join(manuscriptDir(dataDir, id), "build", "numbering.json");
-}
-
-/** Read the persisted numbering file; missing/corrupt → null (derived cache). */
 async function readNumberingFile(dataDir: string, id: string): Promise<WriterNumberingFile | null> {
   try {
-    const raw = await fs.readFile(numberingPath(dataDir, id), "utf8");
-    return WriterNumberingFileSchema.parse(JSON.parse(raw));
+    return WriterNumberingFileSchema.parse(
+      JSON.parse(await fs.readFile(numberingPath(dataDir, id), "utf8"))
+    );
   } catch {
     return null;
-  }
+  } // derived cache only; manuscript parsing NEVER uses this fallback
+}
+
+async function ensureBuildDir(dataDir: string, id: string): Promise<string> {
+  // DELETE drains the shared flight before removing the manuscript. Also refuse
+  // late writes if an external actor removed it while a compile was running.
+  await fs.access(manuscriptJsonPath(dataDir, id));
+  const dir = buildDir(dataDir, id);
+  await fs.mkdir(dir, { recursive: true });
+  if ((await fs.realpath(dir)) !== resolve(dir))
+    throw new Error("Writer build directory must not be a symlink");
+  return dir;
 }
 
 async function writeNumberingFile(
@@ -73,14 +73,13 @@ async function writeNumberingFile(
   id: string,
   file: WriterNumberingFile
 ): Promise<void> {
+  await ensureBuildDir(dataDir, id);
   const p = numberingPath(dataDir, id);
-  await fs.mkdir(join(manuscriptDir(dataDir, id), "build"), { recursive: true });
   const tmp = `${p}.tmp`;
   await fs.writeFile(tmp, `${JSON.stringify(file, null, 2)}\n`, "utf8");
   await fs.rename(tmp, p);
 }
 
-/** Persist a failure: keep the previous facts/hash, set a compact lastError. */
 async function persistFailure(
   dataDir: string,
   id: string,
@@ -88,240 +87,254 @@ async function persistFailure(
 ): Promise<WriterNumberingFile> {
   const prev = await readNumberingFile(dataDir, id);
   const file: WriterNumberingFile = {
+    ...prev,
     version: 1,
-    at: prev?.at ?? new Date().toISOString(),
+    at: new Date().toISOString(),
     texHash: prev?.texHash ?? "",
     facts: prev?.facts ?? null,
-    lastError: message.slice(0, 500),
+    lastError: message.slice(0, 6000),
   };
   await writeNumberingFile(dataDir, id, file);
   return file;
 }
 
-class WriterNumberingError extends Error {
-  constructor(
-    message: string,
-    readonly kind: "not-found"
-  ) {
-    super(message);
-    this.name = "WriterNumberingError";
-  }
+interface Snapshot {
+  manuscript: WriterManuscript;
+  template: WriterTemplate;
+  tex: string;
+  cellRanges: ReturnType<typeof buildTexDocumentMapped>["cellRanges"];
+  files: Map<string, Buffer>;
+  inputHash: string;
+  warnings: string[];
 }
 
-function resolveTemplate(
-  manuscript: { template: string },
-  templates: WriterTemplate[]
-): WriterTemplate | undefined {
-  return templates.find((t) => t.id === manuscript.template);
-}
-
-/**
- * Compile-truth numbering for one manuscript. Always persists the outcome to
- * build/numbering.json (success facts or failure with retained prior facts).
- * Throws WriterNumberingError("not-found") for an unknown manuscript id.
+/** Read a complete immutable input snapshot. Hash CONTENT, not just main.tex:
+ * bibliography, template dependencies and assets can change independently of rev.
  */
+async function snapshot(dataDir: string, id: string): Promise<Snapshot> {
+  const manuscript = loadManuscript(dataDir, id);
+  if (!manuscript) throw new WriterNumberingError(`manuscript not found: ${id}`, "not-found");
+  if (new Set(manuscript.cells.map((c) => c.id)).size !== manuscript.cells.length) {
+    throw new Error(
+      "duplicate cell ids: preview requires an unambiguous cell/source mapping; manuscript preserved"
+    );
+  }
+  const loaded = loadTemplates(dataDir);
+  const template = loaded.templates.find((t) => t.id === manuscript.template);
+  if (!template) throw new Error(`template "${manuscript.template}" unavailable`);
+  const { tex, cellRanges } = buildTexDocumentMapped(manuscript, template);
+  const files = new Map<string, Buffer>();
+  const warnings = [...loaded.warnings];
+  let bytes = 0;
+  const collect = async (dir: string, prefix: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      const rootStat = await fs.lstat(dir);
+      if (rootStat.isSymbolicLink())
+        throw new Error(`symlink dependency/asset directory is not supported: ${dir}`);
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw err;
+    }
+    for (const entry of entries) {
+      const name = `${prefix}${entry.name}`;
+      const path = join(dir, entry.name);
+      if (entry.isSymbolicLink())
+        throw new Error(`symlink dependency/asset is not supported: ${name}`);
+      if (entry.isDirectory()) {
+        await collect(path, `${name}/`);
+        continue;
+      }
+      if (!entry.isFile()) throw new Error(`non-regular dependency/asset: ${name}`);
+      if (
+        name === "main.tex" ||
+        name === "references.bib" ||
+        name.startsWith("__argelander") ||
+        name.startsWith(".argelander")
+      )
+        throw new Error(`reserved Writer build input: ${name}`);
+      bytes += (await fs.stat(path)).size;
+      if (bytes > TEX_WORKSPACE_LIMITS.maxBytes || files.size >= TEX_WORKSPACE_LIMITS.maxFiles)
+        throw new Error("Writer compile input exceeds workspace limits");
+      files.set(name, await fs.readFile(path));
+    }
+  };
+  await collect(join(manuscriptDir(dataDir, id), "assets"), "assets/");
+  const deps = join(templatesDir(dataDir), `${template.id}.deps`);
+  const missing: string[] = [];
+  for (const dep of template.deps) {
+    const stat = await fs.lstat(join(deps, dep)).catch(() => null);
+    if (!stat?.isFile() || stat.isSymbolicLink()) missing.push(dep);
+  }
+  if (missing.length)
+    throw new Error(
+      `template "${template.id}" is missing dependencies in ${deps}: ${missing.join(", ")}`
+    );
+  await collect(deps, "");
+  const keys = extractManuscriptCitedKeys(manuscript, template);
+  let libraryBib = "";
+  if (keys.length) {
+    try {
+      libraryBib = await fs.readFile(libraryPaths(dataDir).libraryBib, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+  }
+  const bib = buildBib(keys, libraryBib);
+  if (bib.missing.length) warnings.push(`bibliography keys missing: ${bib.missing.join(", ")}`);
+  files.set("main.tex", Buffer.from(tex));
+  if (keys.length) files.set("references.bib", Buffer.from(bib.bib));
+  const digest = createHash("sha256")
+    .update(PREVIEW_PROFILE)
+    .update(JSON.stringify(template))
+    .update(writerDraftKey(manuscript));
+  for (const [name, value] of [...files].sort(([a], [b]) => a.localeCompare(b)))
+    digest.update(`${name}\0${value.length}\0`).update(value);
+  return {
+    manuscript,
+    template,
+    tex,
+    cellRanges,
+    files,
+    warnings,
+    inputHash: digest.digest("hex"),
+  };
+}
+
 export async function computeWriterNumbering(
   dataDir: string,
-  id: string
+  id: string,
+  signal?: AbortSignal
 ): Promise<WriterNumberingFile> {
-  const manuscript = loadManuscript(dataDir, id);
-  if (!manuscript) {
-    throw new WriterNumberingError(`manuscript not found: ${id}`, "not-found");
-  }
-  const { templates } = loadTemplates(dataDir);
-  const template = resolveTemplate(manuscript, templates);
-  if (!template) {
-    return persistFailure(dataDir, id, `template "${manuscript.template}" unavailable`);
-  }
-
-  // D14 dependency pre-check: declared deps must live in the template's
-  // deps dir; anything missing fails fast WITHOUT attempting a compile.
-  const depsDir = join(templatesDir(dataDir), `${template.id}.deps`);
-  const missingDeps: string[] = [];
-  for (const dep of template.deps) {
-    try {
-      await fs.access(join(depsDir, dep));
-    } catch {
-      missingDeps.push(dep);
-    }
-  }
-  if (missingDeps.length > 0) {
-    return persistFailure(
-      dataDir,
-      id,
-      `template "${template.id}" is missing dependencies in ${depsDir}: ${missingDeps.join(", ")}`
-    );
-  }
-
-  const { tex, cellRanges } = buildTexDocumentMapped(manuscript, template);
-  const texHash = sha256(tex);
-
-  let workspace: TexWorkspace | null = null;
+  let stage: string | undefined;
   try {
-    // Assemble an isolated source dir: main.tex + the manuscript's assets/.
-    workspace = await createTexWorkspaceFromParts(manuscriptDir(dataDir, id), tex);
-    const mainAbs = join(workspace.dir, "main.tex");
-    await prepareTexInstrumentation(mainAbs);
-
-    // One pass; numbering/labels are single-pass truth (F5). The events land
-    // at <jobname>.argelander.jsonl; the PDF is never collected.
-    const result = await runTexProcess(
-      "pdflatex",
-      ["-interaction=nonstopmode", "-recorder", "-jobname=main", TEX_WRAPPER_NAME],
-      {
-        cwd: workspace.dir,
-        timeoutMs: COMPILE_TIMEOUT_MS,
-        // Trailing ':' keeps the default search path after the deps dir.
-        ...(template.deps.length > 0 ? { env: { TEXINPUTS: `${depsDir}:` } } : {}),
-      }
-    );
-
-    const log = await fs.readFile(join(workspace.dir, "main.log"), "utf8").catch(() => "");
-    const eventsText = await fs
-      .readFile(join(workspace.dir, "main.argelander.jsonl"), "utf8")
-      .catch(() => "");
-    const failMessage = (): string => {
-      const lines = extractRelevantLogLines(log || `${result.stdout}\n${result.stderr}`);
-      return (
-        (result.timedOut
-          ? `numbering compile timed out after ${COMPILE_TIMEOUT_MS}ms`
-          : `numbering compile failed (exit ${result.code ?? result.signal ?? "?"})`) +
-        (lines.length > 0 ? `\n${lines.join("\n")}` : "")
-      );
-    };
-
-    let facts: WriterNumberingFacts | null = null;
-    if (!result.timedOut && result.code === 0 && eventsText.trim() !== "") {
-      const auxText = await fs.readFile(join(workspace.dir, "main.aux"), "utf8").catch(() => "");
-      facts = fuseNumberingEvents(eventsText, auxText, cellRanges);
-      if (facts.sections.length === 0 && facts.equations.length === 0 && eventsText.trim() === "") {
-        facts = null;
-      }
+    signal?.throwIfAborted();
+    const input = await snapshot(dataDir, id);
+    signal?.throwIfAborted();
+    // Always let latexmk inspect its recorded dependencies (including system
+    // styles) on a requested refresh, then run the current fuser. Unchanged
+    // files keep their mtimes, so this does not force a TeX/BibTeX rerun.
+    const root = await ensureBuildDir(dataDir, id);
+    stage = await fs.mkdtemp(join(os.tmpdir(), "argelander-writer-source-"));
+    for (const [name, value] of input.files) {
+      const path = join(stage, name);
+      await fs.mkdir(dirname(path), { recursive: true });
+      await fs.writeFile(path, value);
     }
-
-    if (facts === null) {
+    const mainTex = join(stage, "main.tex");
+    const compiled = await compileTex({
+      srcDir: stage,
+      mainTex,
+      outDir: join(root, "artifacts"),
+      cacheDir: join(root, "latexmk"),
+      renderProfile: "writer",
+      timeoutMs: COMPILE_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
+    });
+    if (!compiled.ok)
       return persistFailure(
         dataDir,
         id,
-        result.code === 0 && !result.timedOut
-          ? "numbering compile produced no events (instrumentation degraded)"
-          : failMessage()
+        compiled.message + (compiled.excerpt ? `\n${compiled.excerpt}` : "")
       );
+    const result = await buildWriterPreview({
+      srcDir: stage,
+      mainTex,
+      docId: id,
+      origin: `writer:${id}`,
+      engine: compiled.engine,
+      factFiles: compiled.artifacts,
+      figures: texFigurePort,
+      assetsDir: join(root, "assets"),
+      manuscript: input.manuscript,
+      template: input.template,
+      cellRanges: input.cellRanges,
+    });
+    result.preview.warnings.unshift(...input.warnings, ...compiled.warnings);
+    if (compiled.artifacts.log) {
+      const log = await fs.readFile(compiled.artifacts.log, "utf8");
+      for (const line of log.split("\n")) {
+        if (/undefined|multiply defined|Rerun to get/.test(line))
+          result.preview.warnings.push(line.trim());
+      }
     }
     const file: WriterNumberingFile = {
       version: 1,
       at: new Date().toISOString(),
-      texHash,
-      facts,
+      texHash: sha256(input.tex),
+      inputHash: input.inputHash,
+      facts: result.facts,
+      preview: result.preview,
       lastError: null,
     };
+    signal?.throwIfAborted();
     await writeNumberingFile(dataDir, id, file);
     return file;
+  } catch (err) {
+    if (signal?.aborted) throw new WriterNumberingError(`preview canceled for ${id}`, "canceled");
+    if (err instanceof WriterNumberingError) throw err;
+    return persistFailure(dataDir, id, err instanceof Error ? err.message : String(err));
   } finally {
-    await workspace?.cleanup();
+    if (stage) await fs.rm(stage, { recursive: true, force: true });
   }
 }
 
-/**
- * Isolated workspace carrying main.tex + the manuscript's assets/ tree.
- * Stage through an empty source dir (createTexWorkspace guards) and write
- * main.tex + copy assets (plain copies, no symlinks) into it.
- */
-async function createTexWorkspaceFromParts(
-  manuscriptDirAbs: string,
-  tex: string
-): Promise<TexWorkspace> {
-  const staging = await fs.mkdtemp(join(os.tmpdir(), "argelander-writer-stage-"));
-  try {
-    const workspace = await createTexWorkspace(staging);
-    await fs.writeFile(join(workspace.dir, "main.tex"), tex, "utf8");
-    const assetsDir = join(manuscriptDirAbs, "assets");
-    const assetsExist = await fs
-      .stat(assetsDir)
-      .then((s) => s.isDirectory())
-      .catch(() => false);
-    if (assetsExist) {
-      // plain copies only (never symlinks — the workspace guard philosophy)
-      const srcReal = await fs.realpath(assetsDir);
-      const dstAssets = join(workspace.dir, "assets");
-      await fs.mkdir(dstAssets, { recursive: true });
-      for (const name of await fs.readdir(srcReal)) {
-        const src = join(srcReal, name);
-        const stat = await fs.lstat(src);
-        if (!stat.isFile()) continue;
-        await fs.copyFile(src, join(dstAssets, name));
-      }
-    }
-    return workspace;
-  } finally {
-    await fs.rm(staging, { recursive: true, force: true });
-  }
-}
-
-/**
- * Current numbering state for the GET route. Missing/corrupt file → `never`;
- * the live tex hash is recomputed (template gone → `stale` with an error).
- */
-export function getWriterNumbering(dataDir: string, id: string): Promise<WriterNumberingResponse> {
-  return getWriterNumberingAsync(dataDir, id);
-}
-
-/** Sync hash helper shared by getWriterNumberingAsync and the scheduler. */
-function assembleCurrentHash(
-  _dataDir: string,
-  manuscript: WriterManuscript,
-  templates: WriterTemplate[]
-): { hash: string | null; template: WriterTemplate | undefined } {
-  const template = resolveTemplate(manuscript, templates);
-  if (!template) return { hash: null, template: undefined };
-  const { tex } = buildTexDocumentMapped(manuscript, template);
-  return { hash: sha256(tex), template };
-}
-
-async function getWriterNumberingAsync(
+export async function getWriterNumbering(
   dataDir: string,
   id: string
 ): Promise<WriterNumberingResponse> {
-  const manuscript = loadManuscript(dataDir, id);
-  if (!manuscript) {
+  if (!loadManuscript(dataDir, id))
     throw new WriterNumberingError(`manuscript not found: ${id}`, "not-found");
-  }
-  const { templates } = loadTemplates(dataDir);
-  const { hash, template } = assembleCurrentHash(dataDir, manuscript, templates);
   const file = await readNumberingFile(dataDir, id);
-
-  if (!template) {
+  const compiling = Boolean(scheduled.get(scheduleKey(dataDir, id))?.running);
+  let input: Snapshot;
+  try {
+    input = await snapshot(dataDir, id);
+  } catch (err) {
     return {
       status: "stale",
-      at: file?.at,
+      ...(file ? { at: file.at } : {}),
       facts: file?.facts ?? null,
-      lastError: `template "${manuscript.template}" unavailable`,
+      preview: file?.preview ?? null,
+      compiling,
+      lastError: err instanceof Error ? err.message : String(err),
     };
   }
-  if (!file) return { status: "never", facts: null, lastError: null };
-
-  const status = file.lastError === null && file.texHash === hash ? "ok" : "stale";
-  return { status, at: file.at, facts: file.facts, lastError: file.lastError };
+  if (!file) return { status: "never", facts: null, lastError: null, preview: null, compiling };
+  return {
+    status:
+      file.lastError === null && file.inputHash === input.inputHash && file.preview
+        ? "ok"
+        : "stale",
+    at: file.at,
+    facts: file.facts,
+    preview: file.preview ?? null,
+    lastError: file.lastError,
+    compiling,
+  };
 }
 
-// ---- scheduler: per-manuscript debounce + single-flight + one follow-up --- //
-
+// One shared flight for ALL entry points; scoped to data root as well as id.
 type BroadcastFn = (msg: WsWriterChanged) => void;
-type ComputeFn = (dataDir: string, id: string) => Promise<WriterNumberingFile>;
-
+type ComputeFn = (
+  dataDir: string,
+  id: string,
+  signal?: AbortSignal
+) => Promise<WriterNumberingFile>;
 interface Scheduled {
   timer: ReturnType<typeof setTimeout> | null;
-  running: boolean;
-  /** exactly one pending follow-up while a compile is in flight */
-  followUp: boolean;
+  running: Promise<void> | null;
+  again: boolean;
+  canceled: boolean;
+  controller: AbortController;
   broadcast: BroadcastFn;
+  dataDir: string;
+  id: string;
 }
-
 const scheduled = new Map<string, Scheduled>();
-/** Test seam: swap the compute implementation (default: the real compile). */
+const scheduleKey = (dataDir: string, id: string) => `${resolve(dataDir)}\0${id}`;
 let computeImpl: ComputeFn = computeWriterNumbering;
-
-/** TEST-ONLY: replace the compute implementation; returns a restore fn. */
 export function __setNumberingComputeForTests(impl: ComputeFn): () => void {
   const prev = computeImpl;
   computeImpl = impl;
@@ -329,88 +342,101 @@ export function __setNumberingComputeForTests(impl: ComputeFn): () => void {
     computeImpl = prev;
   };
 }
-
-async function runScheduled(dataDir: string, id: string): Promise<void> {
-  const entry = scheduled.get(id);
-  if (!entry) return;
-  if (entry.running) {
-    entry.followUp = true;
-    return;
+function entryFor(dataDir: string, id: string, broadcast: BroadcastFn): Scheduled {
+  const key = scheduleKey(dataDir, id);
+  let entry = scheduled.get(key);
+  if (!entry) {
+    entry = {
+      timer: null,
+      running: null,
+      again: false,
+      canceled: false,
+      controller: new AbortController(),
+      broadcast,
+      dataDir,
+      id,
+    };
+    scheduled.set(key, entry);
   }
-  entry.running = true;
-  try {
-    do {
-      entry.followUp = false;
-      const file = await computeImpl(dataDir, id);
-      if (file.lastError === null && file.facts !== null) {
-        entry.broadcast({ type: "writer.changed", cause: "numbering", id, at: file.at });
-      }
-      // failures persisted the file; no broadcast (UI stays on prior facts).
-    } while (entry.followUp);
-  } finally {
-    entry.running = false;
-    if (!entry.timer && !entry.followUp) scheduled.delete(id);
-  }
+  entry.broadcast = broadcast;
+  return entry;
 }
-
-/** Debounced auto-compile after saves (2.5 s per manuscript, single-flight). */
+function runScheduled(entry: Scheduled): Promise<void> {
+  if (entry.running) {
+    entry.again = true;
+    return entry.running;
+  }
+  // Queue the body in a microtask so running is installed BEFORE compute can
+  // schedule a follow-up. Manual/manual and manual/automatic share this promise.
+  entry.running = Promise.resolve()
+    .then(async () => {
+      do {
+        entry.again = false;
+        if (entry.canceled) break;
+        const file = await computeImpl(entry.dataDir, entry.id, entry.controller.signal);
+        // Failures also notify the UI; leaving an old green preview is misleading.
+        if (!entry.canceled)
+          entry.broadcast({
+            type: "writer.changed",
+            cause: "numbering",
+            id: entry.id,
+            at: file.at,
+          });
+      } while (entry.again && !entry.canceled);
+    })
+    .finally(() => {
+      entry.running = null;
+      const key = scheduleKey(entry.dataDir, entry.id);
+      if (!entry.timer && scheduled.get(key) === entry) scheduled.delete(key);
+    });
+  return entry.running;
+}
 export function scheduleNumberingCompile(
   dataDir: string,
   id: string,
   opts: { broadcast: BroadcastFn }
 ): void {
-  let entry = scheduled.get(id);
-  if (!entry) {
-    entry = { timer: null, running: false, followUp: false, broadcast: opts.broadcast };
-    scheduled.set(id, entry);
-  }
-  entry.broadcast = opts.broadcast;
+  const entry = entryFor(dataDir, id, opts.broadcast);
   if (entry.running) {
-    // a compile is in flight: run exactly one follow-up, no debounce wait
-    entry.followUp = true;
+    entry.again = true;
     return;
   }
   if (entry.timer) clearTimeout(entry.timer);
   entry.timer = setTimeout(() => {
     entry.timer = null;
-    void runScheduled(dataDir, id).catch((err) => {
-      console.error(`[writer-numbering] compile for ${id} failed:`, err);
-      if (!entry.running && !entry.timer) scheduled.delete(id);
+    void runScheduled(entry).catch((err) => {
+      if (!(err instanceof WriterNumberingError)) console.error("[writer-preview]", err);
     });
   }, DEBOUNCE_MS);
+  entry.timer.unref?.();
 }
-
-/** Manual refresh: skip the debounce, same single-flight; returns the state. */
 export async function runWriterNumberingNow(
   dataDir: string,
   id: string,
   opts: { broadcast: BroadcastFn }
 ): Promise<WriterNumberingResponse> {
-  const entry = scheduled.get(id);
-  if (entry?.timer) {
+  const entry = entryFor(dataDir, id, opts.broadcast);
+  if (entry.timer) {
     clearTimeout(entry.timer);
     entry.timer = null;
   }
-  if (entry?.running) {
-    // coalesce: mark a follow-up and wait for the in-flight loop to finish
-    entry.followUp = true;
-    while (entry.running) await new Promise((r) => setTimeout(r, 50));
-  } else {
-    await computeImpl(dataDir, id).then((file) => {
-      if (file.lastError === null && file.facts !== null) {
-        opts.broadcast({ type: "writer.changed", cause: "numbering", id, at: file.at });
-      }
-    });
+  await runScheduled(entry);
+  return getWriterNumbering(dataDir, id);
+}
+/** Drain before DELETE: an in-flight compile must never resurrect a deleted dir. */
+export async function cancelNumberingCompile(id: string, dataDir?: string): Promise<void> {
+  const entries = [...scheduled.values()].filter(
+    (e) => e.id === id && (dataDir === undefined || resolve(e.dataDir) === resolve(dataDir))
+  );
+  for (const entry of entries) {
+    entry.canceled = true;
+    entry.controller.abort();
+    entry.again = false;
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
+    await entry.running?.catch(() => {});
+    scheduled.delete(scheduleKey(entry.dataDir, entry.id));
   }
-  return getWriterNumberingAsync(dataDir, id);
 }
-
-/** DELETE path: drop any pending debounce; never waits for an in-flight run. */
-export function cancelNumberingCompile(id: string): void {
-  const entry = scheduled.get(id);
-  if (!entry) return;
-  if (entry.timer) clearTimeout(entry.timer);
-  scheduled.delete(id);
-}
-
-export { WriterNumberingError };

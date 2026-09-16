@@ -41,6 +41,12 @@ export interface TexCompileInput {
   timeoutMs?: number;
   /** First engine to try; the other is retried on compile failure. Default pdflatex. */
   engine?: TexEngine;
+  /** Opt-in caller-owned derived cache, disjoint from srcDir (Writer only). */
+  cacheDir?: string;
+  /** Additional compiler metadata; the default reader profile remains unchanged. */
+  renderProfile?: "writer";
+  /** Cancel the whole process group (e.g. deleting an open Writer manuscript). */
+  signal?: AbortSignal;
 }
 
 /**
@@ -58,6 +64,8 @@ export interface TexArtifacts {
   fls?: string;
   /** The `<jobname>.argelander.jsonl` instrumentation event stream. */
   events?: string;
+  /** Writer-only effective natbib settings, emitted by the same TeX run. */
+  citationStyle?: string;
   /**
    * The engine .log. Deleted on success (Q5); kept only when a degraded
    * success warrants later debugging. On failure the log's `!`-line excerpt

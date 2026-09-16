@@ -15,6 +15,27 @@
 import { existsSync, promises as fs } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { writeTexFileIfChanged } from "./cache.js";
+
+/** Writer opts in; no changes to the reader event stream or printed output. */
+const WRITER_STYLE_PROBE = String.raw`
+\makeatletter
+\newwrite\argelanderstyleout
+\AddToHook{begindocument/end}{%
+  \immediate\openout\argelanderstyleout=\jobname.argelander-citation.tex
+  \@ifpackageloaded{natbib}{%
+    \immediate\write\argelanderstyleout{\string\argelandercitestyle
+      {\ifNAT@numbers numbers\else authoryear\fi}
+      {\NAT@open}{\NAT@close}{\NAT@sep}{\NAT@aysep}{\NAT@yrsep}{\NAT@cmt}
+      {\number\NAT@sort}{\number\NAT@cmprs}
+      {\ifNAT@longnames 1\else 0\fi}{\ifNAT@super 1\else 0\fi}}%
+  }{%
+    \immediate\write\argelanderstyleout{\string\argelandercitestyle{numeric}{[}{]}{,}{}{,}{, }{0}{0}{0}{0}}%
+  }%
+  \immediate\closeout\argelanderstyleout
+}
+\makeatother
+`;
 
 export const TEX_WRAPPER_NAME = "__argelander_wrap.tex";
 export const TEX_STY_NAME = "argelander.sty";
@@ -32,7 +53,8 @@ export function texStyPath(): string | null {
  */
 export async function prepareTexInstrumentation(
   mainAbsInWorkspace: string,
-  styPath?: string
+  styPath?: string,
+  renderProfile?: "writer"
 ): Promise<string> {
   const sty = styPath ?? texStyPath();
   if (sty === null) {
@@ -42,14 +64,14 @@ export async function prepareTexInstrumentation(
     );
   }
   const dir = path.dirname(mainAbsInWorkspace);
-  await fs.copyFile(sty, path.join(dir, TEX_STY_NAME));
+  await writeTexFileIfChanged(path.join(dir, TEX_STY_NAME), await fs.readFile(sty));
   const wrapper = path.join(dir, TEX_WRAPPER_NAME);
-  await fs.writeFile(
+  await writeTexFileIfChanged(
     wrapper,
     `% Auto-generated instrumentation wrapper (Stage 5 MS1). Do not edit.\n` +
       `\\RequirePackage{argelander}\n` +
-      `\\input{${path.basename(mainAbsInWorkspace)}}\n`,
-    "utf8"
+      (renderProfile === "writer" ? WRITER_STYLE_PROBE : "") +
+      `\\input{${path.basename(mainAbsInWorkspace)}}\n`
   );
   return wrapper;
 }

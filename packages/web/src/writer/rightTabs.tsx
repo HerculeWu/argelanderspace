@@ -1,6 +1,6 @@
 /**
  * Stage 10 Writer — right tool panel: References (live library, inserts
- * \cite{key}), Crossrefs (derived document targets, inserts the label) and
+ * bare keys), Crossrefs (shared-IR targets, inserts the label) and
  * Comments (per-cell plain-text notes embedded in the manuscript).
  */
 
@@ -10,7 +10,7 @@ import { Icon } from "../lib/icons";
 import type { WriterComment, WriterManuscript, WriterNumberingResponse } from "@argelanderspace/contracts";
 import { fetchLibrary } from "../api/library";
 import type { LibraryRef } from "../library/types";
-import { applyNumbering, deriveCrossrefs, type CrossrefTarget } from "./model";
+import { writerCrossrefs, type CrossrefTarget } from "./model";
 import { TYPE_LABEL_KEY } from "./cells";
 
 export type RightTab = "references" | "crossrefs" | "comments";
@@ -92,13 +92,13 @@ function CrossrefsPanel({
   onInsertLabel,
 }: {
   doc: WriterManuscript;
-  /** Compile-truth numbering (M3b); null/never = regex preview numbers. */
+  /** Compile-truth numbering; missing facts display unresolved placeholders. */
   numbering?: WriterNumberingResponse | null;
-  onInsertLabel: (targetCell: string, label: string, envIndex?: number) => void;
+  onInsertLabel: (targetCell: string, label: string, envIndex?: number, sectionIndex?: number) => void;
 }) {
   const { t } = useTranslation();
   const [q, setQ] = useState("");
-  const targets = applyNumbering(deriveCrossrefs(doc.cells), numbering?.facts ?? null);
+  const targets = writerCrossrefs(doc.cells, numbering);
   const needle = q.trim().toLowerCase();
   const list = targets.filter(
     (x) => !needle || `${x.title} ${x.label}`.toLowerCase().includes(needle),
@@ -129,7 +129,7 @@ function CrossrefsPanel({
         />
       </div>
       {list.map((x) => (
-        <div className="w-ref-card" key={`${x.kind}-${x.cell}-${x.number}`}>
+        <div className="w-ref-card" key={`${x.cell}-${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}>
           <div className="w-ref-title">
             {kindLabel(x.kind)} {x.number} · {x.title}
           </div>
@@ -139,8 +139,9 @@ function CrossrefsPanel({
               className="w-insert-key"
               data-xref-insert={x.label}
               data-target-cell={x.cell}
-              title={t("writer.xref.insert")}
-              onClick={() => onInsertLabel(x.cell, x.label, x.envIndex)}
+              title={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}
+              disabled={x.insertable === false}
+              onClick={() => onInsertLabel(x.cell, x.label, x.envIndex, x.sectionIndex)}
             >
               <Icon name="plus" cls="ico-sm" />
             </button>
@@ -226,7 +227,7 @@ export function RightTabs({
   onTab: (t: RightTab) => void;
   activeId: string | null;
   onInsertCite: (key: string) => void;
-  onInsertLabel: (targetCell: string, label: string, envIndex?: number) => void;
+  onInsertLabel: (targetCell: string, label: string, envIndex?: number, sectionIndex?: number) => void;
   onAddComment: (cellId: string, body: string) => void;
 }) {
   const { t } = useTranslation();

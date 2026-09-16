@@ -39,6 +39,7 @@ export interface TexFactFiles {
   lot?: string;
   fls?: string;
   events?: string;
+  citationStyle?: string;
 }
 
 export interface TexFacts {
@@ -50,10 +51,14 @@ export interface TexFacts {
   lof: TexTocEntry[];
   /** .lot entries: tables in printed order with their true numbers. */
   lot: TexTocEntry[];
+  /** Compiled listing captions/numbers, when present. */
+  lol?: TexTocEntry[];
   /** Normalized, deduped INPUT path list from the -recorder .fls. */
   inputs: string[];
   references: TexReferenceFact[];
   events: TexEvent[];
+  /** Optional Writer-only effective citation settings from the same compile. */
+  citationStyle?: string;
   /** Per-file degradations, prefixed with the artifact basename. */
   warnings: string[];
 }
@@ -97,6 +102,8 @@ export function parseTexFacts(files: TexFactFiles): TexFacts {
       facts.labels = parsed.labels;
       facts.citations = parsed.citations;
       facts.bibcites = parsed.bibcites;
+      facts.toc = parsed.toc;
+      if (parsed.lol.length) facts.lol = parsed.lol;
       // float print-truth: real .lof/.lot files when present, else the
       // \@writefile records embedded in the .aux
       facts.lof = parsed.lof;
@@ -164,5 +171,7 @@ export function parseTexFacts(files: TexFactFiles): TexFacts {
     }
   }
 
+  const style = read(files.citationStyle);
+  if (style) facts.citationStyle = style.content;
   return facts;
 }

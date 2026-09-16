@@ -40,6 +40,7 @@ const XREF_SIG = "m";
 
 const MACRO_SIGNATURES: Record<string, string> = {
   // structure
+  chapter: "s o m",
   section: "s o m",
   subsection: "s o m",
   subsubsection: "s o m",
@@ -55,7 +56,7 @@ const MACRO_SIGNATURES: Record<string, string> = {
   cref: "s o m",
   Cref: "s o m",
   // citations
-  cite: "o o m",
+  cite: CITE_SIG,
   citep: CITE_SIG,
   citet: CITE_SIG,
   citealp: CITE_SIG,

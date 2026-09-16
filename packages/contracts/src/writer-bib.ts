@@ -87,7 +87,9 @@ export function buildBib(
   for (const e of scanBibEntries(libraryBibText)) if (!byKey.has(e.key)) byKey.set(e.key, e.text);
   const parts: string[] = [];
   const missing: string[] = [];
-  for (const key of new Set(keys)) {
+  for (const key of new Set(
+    keys.includes("*") ? [...byKey.keys(), ...keys.filter((k) => k !== "*")] : keys
+  )) {
     const entry = byKey.get(key);
     if (entry) parts.push(entry);
     else {

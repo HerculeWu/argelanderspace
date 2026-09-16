@@ -224,7 +224,12 @@ export const WriterTemplateSchema = z.looseObject({
    * package built-ins); the numbering compile adds that dir to TEXINPUTS and
    * reports a clear failure when a declared dep is missing.
    */
-  deps: z.array(z.string().min(1)).default([]),
+  deps: z.array(z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/)).default([]),
+  /** Explicit BibTeX style; never silently substitute another template's style. */
+  bibliographyStyle: z
+    .string()
+    .regex(/^[A-Za-z0-9][A-Za-z0-9_./-]*$/)
+    .optional(),
   /**
    * LaTeX front matter with `{{title}}` / `{{authors}}` / `{{affiliations}}` /
    * `{{info.<key>}}` placeholders; substituted at export time.
@@ -287,7 +292,7 @@ export function serializeCell(cell: WriterCell): string {
         "  \\centering",
         asset,
         `  \\caption{${d.caption ?? ""}}`,
-        `  \\label{${d.label ?? ""}}`,
+        ...(d.label ? [`  \\label{${d.label}}`] : []),
         "\\end{figure}",
       ].join("\n");
     }
@@ -300,7 +305,7 @@ export function serializeCell(cell: WriterCell): string {
         "\\begin{table}",
         "  \\centering",
         `  \\caption{${d.caption ?? ""}}`,
-        `  \\label{${d.label ?? ""}}`,
+        ...(d.label ? [`  \\label{${d.label}}`] : []),
         `  \\begin{tabular}{${spec}}`,
         "    \\hline",
       ];
@@ -310,7 +315,7 @@ export function serializeCell(cell: WriterCell): string {
       return lines.join("\n");
     }
     case "code": {
-      const opts = [`caption={${d.caption ?? ""}}`, `label={${d.label ?? ""}}`];
+      const opts = [`caption={${d.caption ?? ""}}`, ...(d.label ? [`label={${d.label}}`] : [])];
       if (d.lineNumbers) opts.push("numbers=left");
       return `\\begin{lstlisting}[${opts.join(",")}]\n${d.code ?? ""}\n\\end{lstlisting}`;
     }
@@ -325,23 +330,133 @@ export function serializeCell(cell: WriterCell): string {
 
 // ---- export assembly (pure; M1 client-side single .tex, M3 server zip) ----- //
 
-const CITE_RE = /\\cite[a-zA-Z]*\{([^}]*)\}/g;
+const CITE_NAMES = new Set([
+  "cite",
+  "citep",
+  "citet",
+  "citealp",
+  "citealt",
+  "citeauthor",
+  "citeyear",
+  "citeyearpar",
+  "citepalias",
+  "citetalias",
+  "citenum",
+  "citeonline",
+  "citefullauthor",
+  "nocite",
+]);
 
-/** All `\cite…{…}` keys across every string field of every cell, in order. */
-export function extractCitedKeys(cells: WriterCell[]): string[] {
+/** Bibliography key inventory only, NOT a renderer. Balanced notes, comments and
+ * literal code must not turn valid citations into missing bibliography entries. */
+function texInventory(sources: readonly string[]): { keys: string[]; commands: Set<string> } {
   const seen = new Set<string>();
-  for (const cell of cells) {
-    for (const value of Object.values(cell.data)) {
-      if (typeof value !== "string") continue;
-      for (const m of value.matchAll(CITE_RE)) {
-        for (const key of (m[1] ?? "").split(",")) {
-          const k = key.trim();
-          if (k && !seen.has(k)) seen.add(k);
+  const commands = new Set<string>();
+  const scan = (text: string) => {
+    let i = 0;
+    const skip = () => {
+      while (i < text.length) {
+        if (/\s/.test(text[i] ?? "")) i++;
+        else if (text[i] === "%") {
+          const end = text.indexOf("\n", i);
+          i = end < 0 ? text.length : end + 1;
+        } else break;
+      }
+    };
+    const group = (open: "[" | "{"): string | null => {
+      skip();
+      if (text[i] !== open) return null;
+      const close = open === "[" ? "]" : "}";
+      let depth = 1,
+        braces = 0,
+        value = "";
+      i++;
+      while (i < text.length) {
+        const c = text[i++] ?? "";
+        if (c === "\\") {
+          value += c + (text[i++] ?? "");
+          continue;
         }
+        if (c === "%") {
+          const end = text.indexOf("\n", i);
+          i = end < 0 ? text.length : end + 1;
+          continue;
+        }
+        if (open === "[") {
+          if (c === "{") braces++;
+          if (c === "}") braces--;
+        }
+        if (braces === 0 && c === open) depth++;
+        if (braces === 0 && c === close && --depth === 0) return value;
+        value += c;
+      }
+      return null;
+    };
+    while (i < text.length) {
+      skip();
+      if (text[i++] !== "\\") continue;
+      const word = /^[A-Za-z]+/.exec(text.slice(i))?.[0];
+      if (!word) {
+        i++;
+        continue;
+      } // escaped backslash/percent is not a command/comment
+      i += word.length;
+      if (text[i] === "*") i++;
+      if (word === "verb" || word === "lstinline") {
+        skip();
+        if (text[i] === "[") group("[");
+        const delimiter = text[i++];
+        const end = delimiter ? text.indexOf(delimiter, i) : -1;
+        i = end < 0 ? text.length : end + 1;
+        continue;
+      }
+      if (word === "begin") {
+        const env = group("{");
+        if (
+          env &&
+          ["verbatim", "verbatim*", "lstlisting", "minted", "comment", "comment*"].includes(env)
+        ) {
+          const opts = group("[");
+          if (opts && env === "lstlisting") scan(opts);
+          const end = text.indexOf(`\\end{${env}}`, i);
+          i = end < 0 ? text.length : end + env.length + 6;
+        }
+        continue;
+      }
+      commands.add(word);
+      if (!CITE_NAMES.has(word.toLowerCase())) continue;
+      group("[");
+      group("[");
+      const keys = group("{");
+      for (const key of keys?.split(",") ?? []) {
+        const k = key.trim();
+        if (k && !k.includes("#")) seen.add(k);
       }
     }
-  }
-  return [...seen];
+  };
+  for (const source of sources) scan(source);
+  return { keys: [...seen], commands };
+}
+
+export function extractCitedKeys(
+  cells: WriterCell[],
+  extraSources: readonly string[] = []
+): string[] {
+  return texInventory([
+    ...extraSources,
+    ...cells.map((cell) => (cell.type === "code" ? cell.data.caption : serializeCell(cell))),
+  ]).keys;
+}
+
+export function extractManuscriptCitedKeys(
+  manuscript: WriterManuscript,
+  template: WriterTemplate
+): string[] {
+  return extractCitedKeys(manuscript.cells, [
+    template.preamble,
+    manuscript.userPreamble,
+    renderFrontMatter(template, manuscript),
+  ]);
 }
 
 /**
@@ -405,22 +520,42 @@ export function buildTexDocumentMapped(
   if (manuscript.userPreamble.trim()) parts.push(manuscript.userPreamble.trimEnd(), "");
   parts.push("\\begin{document}", "");
   const front = renderFrontMatter(template, manuscript).trimEnd();
-  if (front) parts.push(front, "");
+  // A&A consumes its five-part abstract at maketitle. Emit the SAME abstract
+  // cells (with their source map) before that command, not after an empty title.
+  const titleAt = front.search(/\\maketitle\b/);
+  const abstracts = titleAt >= 0 ? manuscript.cells.filter((c) => c.type === "abstract-aa") : [];
+  const prefix = abstracts.length ? front.slice(0, titleAt).trimEnd() : front;
+  if (prefix) parts.push(prefix, "");
 
   const countNl = (s: string): number => s.split("\n").length - 1;
   const cellRanges: TexCellRange[] = [];
   let lineCursor = 1 + parts.reduce((acc, p) => acc + countNl(p) + 1, 0);
-  for (const cell of manuscript.cells) {
+  const appendCell = (cell: WriterCell) => {
     const ser = serializeCell(cell);
     parts.push(ser, "");
     const startLine = lineCursor;
     cellRanges.push({ cell: cell.id, startLine, endLine: startLine + countNl(ser) });
-    lineCursor += countNl(ser) + 2; // the cell's own newlines + its trailing "" part
+    lineCursor += countNl(ser) + 2;
+  };
+  for (const cell of abstracts) appendCell(cell);
+  if (abstracts.length) {
+    const title = front.slice(titleAt);
+    parts.push(title, "");
+    lineCursor += countNl(title) + 2;
   }
+  for (const cell of manuscript.cells)
+    if (!abstracts.length || cell.type !== "abstract-aa") appendCell(cell);
   // zero cells: keep the original assembly's empty CELLS part, so the tex
   // stays byte-identical in that edge case too.
   if (manuscript.cells.length === 0) parts.push("");
-  if (extractCitedKeys(manuscript.cells).length > 0) parts.push("\\bibliography{references}", "");
+  if (extractManuscriptCitedKeys(manuscript, template).length > 0) {
+    // An explicit source declaration wins; otherwise use the template's declared
+    // style. Missing styles remain a visible compile error, never a silent fallback.
+    if (template.bibliographyStyle && !texInventory(parts).commands.has("bibliographystyle")) {
+      parts.push(`\\bibliographystyle{${template.bibliographyStyle}}`);
+    }
+    parts.push("\\bibliography{references}", "");
+  }
   parts.push("\\end{document}", "");
   return { tex: parts.join("\n"), cellRanges };
 }

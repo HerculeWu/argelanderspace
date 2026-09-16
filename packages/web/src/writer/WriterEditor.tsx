@@ -22,6 +22,8 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import {
   defaultCellData,
+  writerNumberingForDraft,
+  writerDraftKey,
   type CellType,
   type WriterManuscript,
   type WriterNumberingResponse,
@@ -49,6 +51,7 @@ import { CellWrap, TYPE_LABEL_KEY, type CellCtx } from "./cells";
 import { OutlinePanel } from "./outline";
 import { RightTabs, type RightTab } from "./rightTabs";
 import { InfoModal, PreambleModal } from "./modals";
+import type { WriterTextTarget } from "./latexSource";
 
 type Menu =
   | { kind: "add"; index: number; x: number; y: number }
@@ -89,8 +92,11 @@ export function WriterEditor({
   const [numbering, setNumbering] = useState<WriterNumberingResponse | null>(null);
   const [numberingBusy, setNumberingBusy] = useState(false);
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const dirtyRef = useRef(false);
+  const writeFailed = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
-  const caretRef = useRef<{ cellId: string; field: string; el: HTMLInputElement | HTMLTextAreaElement } | null>(null);
+  const caretRef = useRef<{ cellId: string; field: string; el: WriterTextTarget } | null>(null);
   const pendingCaretRef = useRef<{ cellId: string; field: string; pos: number } | null>(null);
 
   // ---- write machinery (plans precedent) --------------------------------------
@@ -107,8 +113,13 @@ export function WriterEditor({
 
   const template =
     doc && templates
-      ? (templates.find((tp) => tp.id === doc.template) ?? templates[0])
+      ? templates.find((tp) => tp.id === doc.template)
       : undefined;
+
+  const acceptNumbering = (next: WriterNumberingResponse | null) => {
+    if (!next || docRef.current?.id !== id) return;
+    setNumbering((prev) => prev?.at && next.at && prev.at > next.at ? prev : next);
+  };
 
   // ---- toast --------------------------------------------------------------------
   const showToast = (msg: string) => {
@@ -136,7 +147,9 @@ export function WriterEditor({
         setTemplates(tps.templates);
         setTemplateWarnings(tps.warnings);
       }
-      if (num) setNumbering(num);
+      if (num) acceptNumbering(num);
+      // Existing drafts from the old numbering-only cache need an initial IR.
+      if (d && (!num?.preview || num.status !== "ok")) void requestPreview();
     })();
     return () => {
       alive = false;
@@ -153,18 +166,29 @@ export function WriterEditor({
       if (docRef.current === null || docRef.current === undefined) applyDoc(null);
       return;
     }
+    // Do not let a slow external GET overwrite edits made while it was in flight.
+    if (writeBusy()) { pendingExternal.current = true; return; }
+    const previous = docRef.current;
+    if (previous && d.rev < previous.rev) return;
+    const changed = previous && writerDraftKey(previous) !== writerDraftKey(d);
     applyDoc(d);
+    writeFailed.current = false;
     setSaveState("saved");
+    const latest = await fetchNumbering(id);
+    acceptNumbering(latest);
+    if (changed && latest?.status !== "ok") void requestPreview();
   };
 
   // ---- autosave: debounce → serial PUT chain --------------------------------------
-  const writeBusy = () => localWrites.current > 0 || saveTimer.current !== undefined;
+  const writeBusy = () => localWrites.current > 0 || saveTimer.current !== undefined || dirtyRef.current;
 
-  const flushSave = () => {
+  const flushSave = (): Promise<void> => {
+    window.clearTimeout(saveTimer.current);
     saveTimer.current = undefined;
     writeChain.current = writeChain.current.then(async () => {
       const snapshot = docRef.current;
-      if (!snapshot) return;
+      if (!snapshot || !dirtyRef.current) return;
+      dirtyRef.current = false;
       localWrites.current++;
       setSaveState("saving");
       try {
@@ -173,16 +197,26 @@ export function WriterEditor({
           // adopt the bumped rev; keep newer optimistic edits, if any
           const cur = docRef.current;
           if (cur) applyDoc(cur === snapshot ? res.doc : { ...cur, rev: res.doc.rev });
-          setSaveState("saved");
+          writeFailed.current = false;
+          setSaveState(dirtyRef.current ? "saving" : "saved");
         } else if (res.conflict) {
           // 409: the server's current doc comes with the response — adopt it
           applyDoc(res.conflict);
+          dirtyRef.current = false;
+          writeFailed.current = true;
           setSaveState("saved");
           showToast(t("writer.toast.conflict"));
         } else {
+          dirtyRef.current = true;
+          writeFailed.current = true;
           setSaveState("error");
           showToast(t("writer.toast.saveFailed"));
         }
+      } catch {
+        dirtyRef.current = true;
+        writeFailed.current = true;
+        setSaveState("error");
+        showToast(t("writer.toast.saveFailed"));
       } finally {
         localWrites.current--;
         if (!writeBusy() && pendingExternal.current) {
@@ -192,9 +226,23 @@ export function WriterEditor({
         }
       }
     });
+    return writeChain.current;
   };
 
+  async function requestPreview() {
+    if (!dirtyRef.current) writeFailed.current = false;
+    setNumberingBusy(true);
+    try {
+      await flushSave();
+      if (dirtyRef.current && !writeFailed.current) await flushSave();
+      if (dirtyRef.current || writeFailed.current) return;
+      acceptNumbering(await refreshNumbering(id));
+    } catch { showToast(t("writer.numbering.refreshFailed")); }
+    finally { setNumberingBusy(false); }
+  }
+
   const scheduleSave = () => {
+    dirtyRef.current = true;
     setSaveState("saving");
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(flushSave, 800);
@@ -213,6 +261,9 @@ export function WriterEditor({
       onWriterChanged((msg) => {
         if (msg.cause === "template" || msg.id === undefined) {
           void loadTemplatesNow();
+          if (msg.cause === "template") void requestPreview();
+          if (writeBusy()) pendingExternal.current = true;
+          else void refetchDoc();
           return;
         }
         if (msg.id !== id) return; // another manuscript — the list refreshes itself
@@ -223,9 +274,7 @@ export function WriterEditor({
         // put/external for the open doc: defer while a local write is in flight
         if (msg.cause === "numbering") {
           // numbering facts arrived: just refresh the panel state
-          void fetchNumbering(id).then((n) => {
-            if (n) setNumbering(n);
-          });
+          void fetchNumbering(id).then(acceptNumbering);
           return;
         }
         if (writeBusy()) {
@@ -243,9 +292,10 @@ export function WriterEditor({
     const p = pendingCaretRef.current;
     if (!p) return;
     pendingCaretRef.current = null;
-    const el = document.querySelector<HTMLTextAreaElement>(
-      `[data-cell="${p.cellId}"] [data-field="${p.field}"]`,
-    );
+    const tracked = caretRef.current;
+    const el = tracked?.cellId === p.cellId && tracked.field === p.field && tracked.el.isConnected
+      ? tracked.el
+      : rootRef.current?.querySelector<HTMLTextAreaElement>(`[data-cell="${p.cellId}"] [data-field="${p.field}"]`);
     if (el) {
       el.focus();
       el.setSelectionRange(p.pos, p.pos);
@@ -255,7 +305,7 @@ export function WriterEditor({
   // scroll the cell being edited into view
   useEffect(() => {
     if (!editingId) return;
-    const el = document.getElementById(`wcell-${editingId}`);
+    const el = rootRef.current?.querySelector<HTMLElement>(`[data-cell="${editingId}"]`);
     if (el && typeof el.scrollIntoView === "function")
       el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [editingId]);
@@ -321,7 +371,7 @@ export function WriterEditor({
   };
   const commitCell = (cellId: string) => {
     if (editingId === cellId) setEditingId(null);
-    showToast(t("writer.toast.cellRendered"));
+    void requestPreview();
   };
   const deleteCell = (cellId: string) => {
     mutate((d) => {
@@ -359,7 +409,7 @@ export function WriterEditor({
       const start = el.selectionStart ?? el.value.length;
       return { cellId: editingId, field: c.field, start, end: el.selectionEnd ?? start };
     }
-    const el = document.querySelector<HTMLTextAreaElement>(`[data-cell="${editingId}"] textarea`);
+    const el = rootRef.current?.querySelector<HTMLTextAreaElement>(`[data-cell="${editingId}"] textarea`);
     if (!el) return null;
     return { cellId: editingId, field: el.dataset.field ?? "source", start: el.value.length, end: el.value.length };
   };
@@ -369,7 +419,7 @@ export function WriterEditor({
    * missing \label on another cell first (single mutation, so the two edits
    * cannot clobber each other).
    */
-  const insertText = (text: string, ensureTarget?: string, ensureEnvIndex?: number) => {
+  const insertText = (text: string, ensureTarget?: string, ensureEnvIndex?: number, ensureSectionIndex?: number) => {
     if (!editingId) {
       showToast(t("writer.toast.noEditingCell"));
       return;
@@ -379,12 +429,23 @@ export function WriterEditor({
       showToast(t("writer.toast.noCaret"));
       return;
     }
-    pendingCaretRef.current = { cellId: caret.cellId, field: caret.field, pos: caret.start + text.length };
     mutate((d) => {
       if (ensureTarget) {
         const i = d.cells.findIndex((c) => c.id === ensureTarget);
-        if (i >= 0) d.cells[i] = withEnsuredLabel(d.cells[i]!, text, ensureEnvIndex);
+        if (i >= 0) {
+          const before = String(d.cells[i]!.data[caret.field] ?? "");
+          d.cells[i] = withEnsuredLabel(d.cells[i]!, text, ensureEnvIndex, ensureSectionIndex);
+          const after = String(d.cells[i]!.data[caret.field] ?? "");
+          if (ensureTarget === caret.cellId && before !== after) {
+            let at = 0;
+            while (at < before.length && before[at] === after[at]) at++;
+            const delta = after.length - before.length;
+            if (caret.start >= at) caret.start += delta;
+            if (caret.end >= at) caret.end += delta;
+          }
+        }
       }
+      pendingCaretRef.current = { cellId: caret.cellId, field: caret.field, pos: caret.start + text.length };
       const cell = d.cells.find((c) => c.id === caret.cellId);
       if (!cell) return;
       const data = cell.data as Record<string, unknown>;
@@ -394,9 +455,9 @@ export function WriterEditor({
     showToast(t("writer.toast.inserted", { text }));
   };
 
-  const onInsertCite = (key: string) => insertText(`\\cite{${key}}`);
-  const onInsertLabel = (targetCell: string, label: string, envIndex?: number) =>
-    insertText(label || randomLabel(), targetCell, envIndex);
+  const onInsertCite = (key: string) => insertText(key);
+  const onInsertLabel = (targetCell: string, label: string, envIndex?: number, sectionIndex?: number) =>
+    insertText(label || randomLabel(), targetCell, envIndex, sectionIndex);
 
   // ---- comments / outline / header --------------------------------------------
   const onComment = (cellId: string) => {
@@ -418,7 +479,7 @@ export function WriterEditor({
   };
   const onJump = (cellId: string) => {
     setActiveId(cellId);
-    const el = document.getElementById(`wcell-${cellId}`);
+    const el = rootRef.current?.querySelector<HTMLElement>(`[data-cell="${cellId}"]`);
     if (el && typeof el.scrollIntoView === "function")
       el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
@@ -440,6 +501,9 @@ export function WriterEditor({
     // M3: server-assembled zip (manuscript.tex + references.bib + assets);
     // missing bib keys come back in the X-Writer-Bib-Missing header.
     try {
+      if (!dirtyRef.current) writeFailed.current = false;
+      await flushSave();
+      if (dirtyRef.current || writeFailed.current) return;
       const res = await fetch(exportUrl(id));
       if (!res.ok) throw new Error(`export failed: ${res.status}`);
       const missingHeader = res.headers.get("X-Writer-Bib-Missing");
@@ -452,7 +516,9 @@ export function WriterEditor({
       a.download = `${fileSlug(doc.title)}.zip`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      if (missing.length > 0) showToast(t("writer.toast.bibMissing", { count: missing.length }));
+      const warnings = JSON.parse(decodeURIComponent(res.headers.get("X-Writer-Warnings") ?? "%5B%5D")) as string[];
+      if (warnings.length) showToast(t("writer.preview.exportWarnings"));
+      else if (missing.length > 0) showToast(t("writer.toast.bibMissing", { count: missing.length }));
       else showToast(t("writer.toast.exported", { file: a.download }));
     } catch {
       showToast(t("writer.toast.exportFailed"));
@@ -473,7 +539,11 @@ export function WriterEditor({
   };
 
   // ---- cell context -------------------------------------------------------------
+  const currentNumbering = writerNumberingForDraft(numbering, doc, template);
   const ctx: CellCtx = {
+    numbering: currentNumbering,
+    onJump,
+    onCite: () => { setRightTab("references"); setRightCollapsed(false); },
     docId: id,
     activeId,
     editingId,
@@ -506,9 +576,12 @@ export function WriterEditor({
 
   // ---- render -------------------------------------------------------------------
   return (
-    <div className="writer-root">
+    <div className="writer-root" ref={rootRef}>
       <div className="w-topbar">
-        <button className="btn icon ghost" title={t("writer.topbar.back")} onClick={onBack}>
+        <button className="btn icon ghost" title={t("writer.topbar.back")} onClick={() => {
+          if (!dirtyRef.current) writeFailed.current = false;
+          void flushSave().then(() => { if (!dirtyRef.current && !writeFailed.current) onBack(); });
+        }}>
           <Icon name="chevron-left" cls="ico-sm" />
         </button>
         <div className="w-title">
@@ -543,13 +616,7 @@ export function WriterEditor({
           className="btn icon"
           title={t("writer.numbering.refresh")}
           disabled={numberingBusy}
-          onClick={() => {
-            setNumberingBusy(true);
-            void refreshNumbering(id)
-              .then((n) => setNumbering(n))
-              .catch(() => showToast(t("writer.numbering.refreshFailed")))
-              .finally(() => setNumberingBusy(false));
-          }}
+          onClick={() => void requestPreview()}
         >
           <Icon name="refresh-cw" cls={numberingBusy ? "ico-sm spin" : "ico-sm"} />
         </button>
@@ -567,6 +634,12 @@ export function WriterEditor({
         </div>
       )}
 
+      {(currentNumbering?.lastError || currentNumbering?.preview?.warnings.length) ? (
+        <details className="w-preview-diagnostics">
+          <summary>{currentNumbering.lastError ? t("writer.preview.failed") : t("writer.preview.warnings")}</summary>
+          <pre>{[currentNumbering.lastError, ...(currentNumbering.preview?.warnings ?? [])].filter(Boolean).join("\n")}</pre>
+        </details>
+      ) : null}
       <div className="w-main">
         <aside className={"w-side left" + (leftCollapsed ? " collapsed" : "")}>
           <button
@@ -580,7 +653,7 @@ export function WriterEditor({
           {!leftCollapsed && (
             <OutlinePanel
               cells={doc.cells}
-              numbering={numbering}
+              numbering={currentNumbering}
               onJump={onJump}
               onInsertLabel={onInsertLabel}
             />
@@ -664,7 +737,7 @@ export function WriterEditor({
           {!rightCollapsed && (
             <RightTabs
               doc={doc}
-              numbering={numbering}
+              numbering={currentNumbering}
               tab={rightTab}
               onTab={setRightTab}
               activeId={activeId}

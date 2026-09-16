@@ -15,16 +15,16 @@ export const BUILTIN_WRITER_TEMPLATES: WriterTemplate[] = [
     label: "A&A",
     chip: "A&A manuscript",
     preamble:
-      "\\documentclass{aa}\n\\usepackage{graphicx}\n\\usepackage{txfonts}\n% managed by template",
+      "\\documentclass{aa}\n\\usepackage{graphicx}\n\\usepackage{txfonts}\n\\usepackage{amsmath}\n\\usepackage{listings}\n% managed by template",
     types: ["latex", "abstract-aa", "figure", "table", "code", "ack", "appendix"],
     infoFields: [
       { key: "runningTitle", label: "Running title", input: "text" },
       { key: "keywords", label: "Keywords", input: "text" },
     ],
-    // D14: needs the (all-rights-reserved, not redistributed) aa.cls in the
-    // template deps dir — `templates/aa.deps/aa.cls`; the numbering compile
-    // reports a clear missing-dependency status when it is absent.
-    deps: ["aa.cls"],
+    // User-provided class/style: not redistributed without a license audit.
+    // Missing files are reported explicitly; do not substitute plainnat for A&A.
+    deps: ["aa.cls", "aa.bst"],
+    bibliographyStyle: "aa",
     frontMatter:
       "\\title{ {{title}} }\n\\author{ {{authors}} }\n\\institute{ {{affiliations}} }\n\\keywords{ {{info.keywords}} }\n\\maketitle",
   }),
@@ -34,7 +34,8 @@ export const BUILTIN_WRITER_TEMPLATES: WriterTemplate[] = [
     label: "Generic Report",
     chip: "Generic report",
     preamble:
-      "\\documentclass[11pt]{report}\n\\usepackage{graphicx}\n\\usepackage{booktabs}\n\\usepackage{amsmath}\n\\usepackage{natbib}\n% managed by template",
+      "\\documentclass[11pt]{report}\n\\usepackage{graphicx}\n\\usepackage{booktabs}\n\\usepackage{amsmath}\n\\usepackage{natbib}\n\\usepackage{listings}\n% managed by template",
+    bibliographyStyle: "plainnat",
     types: ["latex", "figure", "table", "code"],
     infoFields: [{ key: "date", label: "Date", input: "text" }],
     frontMatter:
@@ -45,7 +46,9 @@ export const BUILTIN_WRITER_TEMPLATES: WriterTemplate[] = [
     version: 1,
     label: "Letter",
     chip: "Letter",
-    preamble: "\\documentclass{letter}\n% managed by template",
+    preamble:
+      "\\documentclass{letter}\n\\usepackage{graphicx}\n\\usepackage{amsmath}\n\\newenvironment{thebibliography}[1]{}{}\n\\providecommand{\\newblock}{}\n\\usepackage{natbib}\n\\renewcommand{\\bibsection}{\\par\\bigskip\\noindent\\textbf{References}\\par}\n\\usepackage{listings}\n\\usepackage{float}\n\\newfloat{figure}{htbp}{lof}\n\\floatname{figure}{Figure}\n\\newfloat{table}{htbp}{lot}\n\\floatname{table}{Table}\n% managed by template",
+    bibliographyStyle: "plainnat",
     types: ["recipient", "latex", "figure", "table", "code"],
     infoFields: [{ key: "senderBlock", label: "Sender block", input: "textarea" }],
     frontMatter: "\\signature{ {{info.senderBlock}} }",

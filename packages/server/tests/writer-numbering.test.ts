@@ -69,7 +69,13 @@ describe("numbering routes", () => {
     const doc = await createMs("report");
     const res = await get(`/api/writer/manuscripts/${doc.id}/numbering`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: "never", facts: null, lastError: null });
+    expect(await res.json()).toEqual({
+      status: "never",
+      facts: null,
+      lastError: null,
+      preview: null,
+      compiling: false,
+    });
   });
 
   test("deps-missing fast path: aa template without templates/aa.deps/aa.cls → stale, no compile", async () => {
@@ -125,7 +131,7 @@ describe("numbering scheduler", () => {
       scheduleNumberingCompile(dataDir, doc.id, { broadcast: (m) => broadcasts.push(m) });
       scheduleNumberingCompile(dataDir, doc.id, { broadcast: (m) => broadcasts.push(m) });
       await vi.waitFor(() => expect(compute).toHaveBeenCalledTimes(1), { timeout: 5000 });
-      expect(broadcasts).toEqual([]); // injected failure: no broadcast
+      expect(broadcasts).toHaveLength(1); // failures must refresh the visible error/stale state
     } finally {
       restore();
     }
@@ -165,7 +171,7 @@ describe("numbering scheduler", () => {
 
 describe("real compile (gated on pdflatex)", () => {
   test.skipIf(!PD)(
-    "single-pass compile yields true numbers; editing flips status to stale",
+    "shared latexmk/IR compile yields true chapter and equation numbers; editing is stale",
     async () => {
       const doc = await createMs("report", "Numbering Probe");
       doc.cells = [
@@ -199,6 +205,7 @@ describe("real compile (gated on pdflatex)", () => {
       expect(body.status).toBe("ok");
       expect(body.lastError).toBeNull();
       expect(body.facts?.sections).toEqual([
+        { number: "1", title: "First", cell: "c_00000001", label: "ch:one" },
         { number: "1.1", title: "Intro", cell: "c_00000001", label: "sec:intro" },
       ]);
       expect(body.facts?.equations).toEqual([
@@ -216,7 +223,7 @@ describe("real compile (gated on pdflatex)", () => {
       const file = JSON.parse(
         readFileSync(join(dataDir, "manuscripts", doc.id, "build", "numbering.json"), "utf8")
       );
-      expect(file.facts.sections[0].number).toBe("1.1");
+      expect(file.facts.sections[1].number).toBe("1.1");
       expect(file.lastError).toBeNull();
 
       // edit the manuscript → hash moves → stale

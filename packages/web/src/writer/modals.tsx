@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { LatexSourceField } from "./latexSource";
 import type { WriterAuthor, WriterManuscript, WriterTemplate } from "@argelanderspace/contracts";
 
 /** Generic modal shell (overlay click + Escape close), plan/atoms pattern. */
@@ -236,7 +237,7 @@ export function PreambleModal({
       </div>
       <div className="w-field">
         <label htmlFor="w-preamble-user">{t("writer.preamble.userLabel")}</label>
-        <textarea id="w-preamble-user" className="w-taller" value={value} onChange={(e) => setValue(e.target.value)} />
+        <LatexSourceField id="w-preamble-user" label={t("writer.preamble.userLabel")} value={value} onChange={setValue} />
       </div>
       <div className="w-modal-note">{t("writer.preamble.note")}</div>
     </WModal>

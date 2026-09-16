@@ -1,15 +1,13 @@
 /**
- * Stage 10 Writer — cell rendering and editing (prototype renderFor /
- * editorFor), React-safe: the heuristic LaTeX preview is segmented in
- * model.ts and rendered as elements (no innerHTML).
+ * Writer cell editing and layout. Body content comes from the shared IR
+ * projection; the source editor is CodeMirror. No local LaTeX renderer.
  */
 
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Math } from "../lib/math";
-import type { CellPlacement, CellType, WriterCell } from "@argelanderspace/contracts";
-import { LatexSourceField } from "./latexSource";
-import { floatNumber, inlineSegs, latexBlocks, parseSimpleCsv, type InlineSeg } from "./model";
+import type { CellPlacement, CellType, WriterCell, WriterNumberingResponse } from "@argelanderspace/contracts";
+import { LatexSourceField, type WriterTextTarget } from "./latexSource";
+import { WriterCellPreview } from "./preview";
 import { assetUrl } from "../api/writer";
 
 /** t() keys for each cell type label (prototype typeDefs). */
@@ -45,217 +43,21 @@ export interface CellCtx {
   onComment: (cellId: string) => void;
   onOpenTypeMenu: (cellId: string, e: React.MouseEvent) => void;
   onField: (cellId: string, field: string, value: unknown) => void;
-  onCaret: (cellId: string, field: string, el: HTMLInputElement | HTMLTextAreaElement) => void;
+  onCaret: (cellId: string, field: string, el: WriterTextTarget) => void;
   onImageFile: (cellId: string, file: File) => void;
+  numbering?: WriterNumberingResponse | null;
+  onJump?: (cellId: string) => void;
+  onCite?: () => void;
 }
 
 // ---------------------------------------------------------------- render ----
 
-function Inline({ segs }: { segs: InlineSeg[] }) {
-  return (
-    <>
-      {segs.map((s, i) =>
-        s.kind === "cite" ? (
-          <span key={i} className="w-cite">
-            [{s.text}]
-          </span>
-        ) : s.kind === "xref" ? (
-          <span key={i} className="w-xref">
-            [{s.text}]
-          </span>
-        ) : s.kind === "math" ? (
-          <Math key={i} latex={s.tex} />
-        ) : (
-          <span key={i}>{s.text}</span>
-        ),
-      )}
-    </>
-  );
-}
-
-function placementStyle(placement: CellPlacement | undefined, width: number): React.CSSProperties {
-  const align =
-    placement === "left"
-      ? { marginLeft: 0, marginRight: "auto" }
-      : placement === "right"
-        ? { marginLeft: "auto", marginRight: 0 }
-        : { marginLeft: "auto", marginRight: "auto" };
-  return { width: `${width}%`, ...align };
-}
-
-export function CellRender({
-  cell,
-  cells,
-  ctx,
-}: {
-  cell: WriterCell;
-  cells: WriterCell[];
-  ctx: CellCtx;
-}) {
-  const { t } = useTranslation();
-  const d = cell.data as Record<string, unknown>;
-
-  if (cell.type === "latex") {
-    const blocks = latexBlocks((d.source as string) ?? "");
-    return (
-      <div className="w-render">
-        {blocks.map((b, i) =>
-          b.kind === "math" ? (
-            <div key={i} className="w-math">
-              <Math latex={b.tex} display />
-            </div>
-          ) : b.kind === "section" ? (
-            <h2 key={i}>
-              <Inline segs={b.segments} />
-            </h2>
-          ) : b.kind === "subsection" ? (
-            <h3 key={i}>
-              <Inline segs={b.segments} />
-            </h3>
-          ) : (
-            <p key={i}>
-              <Inline segs={b.segments} />
-            </p>
-          ),
-        )}
-      </div>
-    );
-  }
-
-  if (cell.type === "abstract-aa") {
-    return (
-      <div className="w-render">
-        <div className="w-abstract">
-          {ABSTRACT_PARTS.map(({ dataKey, labelKey }) =>
-            d[dataKey] ? (
-              <div className="w-abs-part" key={dataKey}>
-                <span className="w-abs-label">{t(labelKey)}.</span>
-                <Inline segs={inlineSegs(String(d[dataKey]))} />
-              </div>
-            ) : null,
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (cell.type === "figure") {
-    const n = floatNumber(cells, cell.id);
-    return (
-      <div className="w-render">
-        <div
-          className="w-figure-box"
-          style={placementStyle(d.placement as CellPlacement, (d.width as number) || 80)}
-        >
-          {d.image ? (
-            <img src={assetUrl(ctx.docId, String(d.image))} alt={String(d.caption ?? "")} />
-          ) : (
-            t("writer.figure.noImage")
-          )}
-        </div>
-        <div className="w-caption" style={placementStyle(d.placement as CellPlacement, (d.width as number) || 80)}>
-          <strong>
-            {t("writer.figure.figure")} {n}.
-          </strong>{" "}
-          <Inline segs={inlineSegs(String(d.caption ?? ""))} />{" "}
-          <span className="w-key">{String(d.label ?? "") || t("writer.xref.noLabel")}</span>
-        </div>
-      </div>
-    );
-  }
-
-  if (cell.type === "table") {
-    const n = floatNumber(cells, cell.id);
-    const head = parseSimpleCsv(String(d.head ?? ""))[0] ?? [];
-    const rows = parseSimpleCsv(String(d.csv ?? ""));
-    return (
-      <div className="w-render">
-        <div style={placementStyle(d.placement as CellPlacement, (d.width as number) || 92)}>
-          <div className="w-table-preview">
-            <table className="w-preview">
-              <thead>
-                <tr>
-                  {head.map((h, i) => (
-                    <th key={i}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i}>
-                    {r.map((v, j) => (
-                      <td key={j}>{v}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="w-caption">
-            <strong>
-              {t("writer.figure.table")} {n}.
-            </strong>{" "}
-            <Inline segs={inlineSegs(String(d.caption ?? ""))} />{" "}
-            <span className="w-key">{String(d.label ?? "") || t("writer.xref.noLabel")}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (cell.type === "code") {
-    const n = floatNumber(cells, cell.id);
-    return (
-      <div className="w-render">
-        <div className="w-caption w-caption-top">
-          <strong>
-            {t("writer.figure.listing")} {n}.
-          </strong>{" "}
-          {String(d.caption ?? "")} <span className="w-key">{String(d.label ?? "")}</span>
-        </div>
-        <pre className="w-code-render">{String(d.code ?? "")}</pre>
-      </div>
-    );
-  }
-
-  if (cell.type === "ack") {
-    return (
-      <div className="w-render">
-        <h3>{t("writer.ackTitle")}</h3>
-        <p>
-          <Inline segs={inlineSegs(String(d.source ?? ""))} />
-        </p>
-      </div>
-    );
-  }
-
-  if (cell.type === "appendix") {
-    return (
-      <div className="w-render">
-        <div className="w-appendix-marker">{t("writer.appendixMarker")}</div>
-      </div>
-    );
-  }
-
-  // recipient
-  return (
-    <div className="w-render">
-      <div className="w-recipient">
-        <strong>{String(d.name ?? "") || t("writer.types.recipient")}</strong>
-        <br />
-        {String(d.organization ?? "")}
-        <br />
-        {String(d.address ?? "")
-          .split("\n")
-          .map((line, i) => (
-            <span key={i}>
-              {line}
-              <br />
-            </span>
-          ))}
-      </div>
-    </div>
-  );
+export function CellRender({ cell, cells, ctx }: { cell: WriterCell; cells: WriterCell[]; ctx: CellCtx }) {
+  const d = cell.data;
+  const style: React.CSSProperties | undefined = cell.type === "figure" || cell.type === "table"
+    ? { width: `${d.width}%`, marginLeft: d.placement === "left" ? 0 : "auto", marginRight: d.placement === "right" ? 0 : "auto" }
+    : undefined;
+  return <div style={style}><WriterCellPreview cell={cell} cells={cells} docId={ctx.docId} numbering={ctx.numbering} onJump={ctx.onJump} onCite={ctx.onCite} /></div>;
 }
 
 // ----------------------------------------------------------------- edit ----
@@ -334,8 +136,12 @@ export function CellEditor({ cell, ctx }: FieldProps) {
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-source`}>{t("writer.field.latexSource")}</label>
           <LatexSourceField
-            textareaProps={{ id: `wf-${cell.id}-source`, ...f.textProps("source") }}
+            id={`wf-${cell.id}-source`}
+            label={t("writer.field.latexSource")}
             value={String(d.source ?? "")}
+            onChange={(value) => ctx.onField(cell.id, "source", value)}
+            onCaret={(target) => ctx.onCaret(cell.id, "source", target)}
+            onCommit={() => ctx.onCommit(cell.id)}
           />
         </div>
         <EditorFooter cell={cell} ctx={ctx} />

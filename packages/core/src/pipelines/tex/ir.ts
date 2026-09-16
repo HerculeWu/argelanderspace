@@ -868,11 +868,15 @@ export interface BuildTexDocIrInput {
   /** Assets dir for materialized figures; absent = figures degrade. */
   assetsDir?: string;
   srcDir: string;
+  renderProfile?: "writer";
 }
 
 export interface BuildTexDocIrResult {
   ir: TexDocIr;
   warnings: string[];
+  sourceSpans: ReturnType<Fuser["run"]>["sourceSpans"];
+  equationRows: ReturnType<Fuser["run"]>["equationRows"];
+  labelTargets: ReturnType<Fuser["run"]>["labelTargets"];
 }
 
 export async function buildTexDocIr(input: BuildTexDocIrInput): Promise<BuildTexDocIrResult> {
@@ -900,6 +904,7 @@ export async function buildTexDocIr(input: BuildTexDocIrInput): Promise<BuildTex
     keyToRefId,
     eventsAvailable: input.eventsAvailable,
     unexpandableMacros: input.tree.unexpandableMacros,
+    ...(input.renderProfile ? { renderProfile: input.renderProfile } : {}),
   });
   const fused = fuser.run();
   const warnings = [...input.tree.warnings, ...input.facts.warnings, ...fused.warnings];
@@ -965,5 +970,11 @@ export async function buildTexDocIr(input: BuildTexDocIrInput): Promise<BuildTex
   if (!parsed.success) {
     throw new Error(`built IR failed TexDocIrSchema validation: ${parsed.error.message}`);
   }
-  return { ir: parsed.data, warnings };
+  return {
+    ir: parsed.data,
+    warnings,
+    sourceSpans: fused.sourceSpans,
+    equationRows: fused.equationRows,
+    labelTargets: fused.labelTargets,
+  };
 }
