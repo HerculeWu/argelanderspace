@@ -1,23 +1,23 @@
 # 当前问题与推后事项
 
-整理：2026-09-13。编号 `I001…` 稳定，跨类别移动不换号，不回收旧号。这里是状态清单，不是默认下一阶段；来源记录的“现库”指当时观测，不代表永远零受害者。详细作者/编译边界见 [tex-pipeline](../memory-reference/tex-pipeline.md)，标注机制见 [annotations](../memory-reference/annotations.md)。
+整理：2026-09-16。编号 `I001…` 稳定，跨类别移动不换号，不回收旧号。这里是状态清单，不是默认下一阶段；来源记录的“现库”指当时观测，不代表永远零受害者。详细作者/编译边界见 [tex-pipeline](../memory-reference/tex-pipeline.md)，标注机制见 [annotations](../memory-reference/annotations.md)。
 
 ## 开放问题：仍有缺陷或风险
 
 | 编号 | 问题、影响与当前证据 | 已知方向/处理 |
 |---|---|---|
-| I001 | **reader 在 library.changed 后不重取 IR**，重摄入后打开的页面仍旧正文，旧标注视图也可能滞后；Stage 8 MS3 确认既有缺口，snapshot 重建目前只形式正确 | 手动刷新；未来设计 IR 与标注 epoch 同步，不把 watcher 通知等同于已更新 |
 | I002 | **DELETE 中途 rm 失败会部分删除**，可留下 ghost library 条目；Stage 8 MS2 审查 | library build 重建可愈；尚无完整删除事务，不因物理删除接口存在就认为全程原子 |
 | I003 | **脚注正文整体 DROP**，包含其中的 ref 内容不可读（Stage 7 取证：现库 3 处脚注内 ref）；cite 可经事件 backstop 保链接，不等于正文保留 | 独立内容缺失问题；修复触及正文/agent 输出须先明确范围 |
 | I004 | **5 篇 src-only 编译失败**，没有可读 IR；Stage 5/7 best-effort 已做，不能再概括成全是缺 cls | 逐篇原因在下表；换源/类 shim 是否实施需用户决定，不重复同样 best-effort |
 | I005 | **作者块残余启发式边界**：单机构内换行、前置 inst、orphan affiliation、标点去重、无标记逗号作者等；Stage 7 MS2 已修真实六项受害，其余有结构歧义/当时无受害 | 具体触发面与已修路径在 tex 专题；新受害者再针对取证，不泛化重写姓名 parser |
 | I006 | **主 doc 位置指针残余三边界**（Stage 7 MS3）：library.json 丢失从零 rebuild 按字母序播种会丢主位；stale IR 删后 rebuild 前版本列表可含多个 404；bridging 塌缩方向决定主位存亡 | 已有库 rebuild 保序不是独立主位持久化；修复方案未定 |
 | I007 | **SICI 老 DOI URL 截断**：`10.1002/(SICI)…<…>3.0.CO;2-L` 的 <> 被 URL 正则截断，可能建错 stub（Stage 7 MS4） | 边缘输入未修 |
-| I008 | **GET ensure 在锁外可双归档**（Stage 8 MS2），重复文件而非覆盖丢数据 | archive 名冲突 -N 兜底，存照；不要误报为已数据丢失 |
 | I009 | **归档 banner 在外部删除 current 场景措辞欠准**（Stage 8 MS3） | cosmetic，尚未修 |
 | I010 | **plans.json 未知键被 zod strip**，load/save round-trip 会抹掉外部新增字段（Stage 4 MS1） | Stage 4.1 前评估 loose schema 或明确协议；不能假设 pretty JSON 就前向无损 |
 | I011 | **Markdown+数学渲染仍为启发式**：已保护 code/货币/转义/URL，但非完整 Markdown parser（Stage 4 审查） | 新腐蚀按保护区/stash 模式加回归，不恢复无差别 dollar 抽取 |
 | I012 | **解析/执行潜伏边界**：tag* 插桩盲区有源码兜底；含控制序列的 mathnum 会丢弃；minted 预扫描可误伤 verbatim 示例；图名 a/b 与 a__b 编码不单射；revtex 清洗对 URL % 的理论隐患 | Stage 5/6 证据与防御见 tex 专题；不表示每项都造成现库损失 |
+| I030 | **Writer Report citation 未通过用户 smoke**（2026-09-16 Writer 改进 D17）；尚无具体受害稿件/命令/截图，根因未定位 | 留下一阶段；先复现再定位。65 组合成对拍通过不推翻用户反馈，不先归咎模板/文库/用户源码 |
+| I031 | **Writer 停止输入自动编译导致上下跳动、大稿卡顿并影响输入**（同 D17 用户反馈）；未做新 profile，不将重绘/DOM 重挂载/CPU 等候选当根因 | 已决定 Shift+Enter/Render 统一显式触发，保留自动保存；**尚未实现**，不以加长 debounce 冒充修复。连续输入/暂停不触发编译、视口/光标稳定、显式操作用最新保存稿件及失败/陈旧保护为后续验收重点 |
 
 ### I004：失败原因必须逐篇保留
 
@@ -45,6 +45,8 @@
 | I018 | plan note 不 sanitize（用户自输入、单用户本地），API body 限制较宽；计划写入排队与 external reload 可多闪一次 409，结果收敛 | 信任/部署模型变化；相关细节在 plans 专题 |
 | I019 | 文档标注只约束单 logical container；原位内容变则整批归档，不逐条挽救；archive 正常不可见 | 用户明确批准 migration 或新 target 能力；完整契约见 decisions |
 | I020 | no-op DELETE 仍广播；watcher 会对被删 doc 的 current 消失发 external，web 404 容忍 | 出现可观察实害再改；目前不是数据丢失 |
+| I032 | **reader epoch 恢复边界**：无资产 watcher/历史图、同步 hash 成本、单 server 而非跨进程事务；图失配的一次自动恢复额度用尽后，重复/自发通知也可能要求手动重试。2026-09-14 用户批准 v2 时明确接受 | 新的性能/自动恢复需求获批后重议；完整约束见 annotations 专题，不当作 I001 尚未修复 |
+| I033 | **Writer 渲染兼容边界**：不承诺任意模板/BibLaTeX/宏；longnamesfirst、上标 citation、正文中途切样式报不支持，跨 cell 块不能安全映射则警告；没有真实大稿性能保证 | 新真实需求明确立项；现有 Report citation 反馈仍是 I030 开放问题，不以兼容边界一概豁免 |
 
 计划 task 超过 plan deadline 的**软警告**、列表/看板拖拽不对称等是现行产品决策，权威在 [契约](contracts-and-decisions.md)及 plans 专题，不再保留划线“已修问题”。
 
@@ -65,10 +67,15 @@
 
 | 编号 | 尚待核对的历史观察 | 处理 |
 |---|---|---|
-| I029 | Stage 4 取证记过 web 客户端 `patchRef` 类型缺 note、server 实际支持；后续记忆未明确关闭 | 只保历史观察，不宣称2026-09-13已重验证；相关写路径任务中核对实现后再决定是否修复 |
+| I008 | Stage 8 曾称锁外 GET ensure 可双归档；2026-09-13 epoch-review F1 的取证发现 archive/ensure 同步，未找到单 server event-loop 可交错路径。后来 GET/PUT 已入共同锁临界段，但这不是旧缺陷成立或“已修复”的证明 | 更正为**历史风险证据不足，待有实证再判**；不继续列作已证实开放 bug，也不宣称永无重复归档。新空 current 写失败后重试等独立路径仍可重复归档，保留 -N 不覆盖规则 |
+| I029 | Stage 4 取证记过 web 客户端 `patchRef` 类型缺 note、server 实际支持；后续记忆未明确关闭 | 只保历史观察，不宣称本次已重验证；相关写路径任务中核对实现后再决定是否修复 |
 
-本次没有新增待用户确认的决策。以上开放问题的具体修复方案未批准，不代表必须现在答题。未来证据/权限/覆盖歧义写入 inbox，再在授权整理时归并，不伪造优先级。
+本次整理特殊决策已确认，见当前 inbox。I031 的触发方式已拍板但实施未获本次授权；其余开放问题的修复方案未批准，不代表必须现在答题。未来证据/权限/覆盖歧义写入 inbox，再在授权整理时归并，不伪造优先级。
 
 ## 已关闭问题的去向
+
+| 编号 | 关闭证据与范围 |
+|---|---|
+| I001 | 2026-09-14 reader epoch 工程完成及用户 smoke 确认；`3e50860`。正常合成 zip 摄入→自然通知→同 main 自动接纳新 IR/标注/图有真实 Chrome 证据，无需 F5。保守预算/资产监控/跨进程等限制另见 I032，不把批准范围外问题混回原 bug |
 
 UA 改名、cite_key 重排、TOC 预览记号、直通图尺寸、re-upload 推广、DOI 建条目、ADS offline、阅读器四项、Stage 8 验收均已关闭；摘要见 [history](history.md)，不留整页划线清单。Stage 8 曾被概括为“8 项”，实际混合 11 条，已按性质分配到本页、工程和专题，不再按旧数量引用。

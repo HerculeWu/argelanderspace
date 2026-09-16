@@ -1,6 +1,6 @@
 # 契约与决策
 
-整理：2026-09-13。这里保留用户意图与不可擅改的规则，不是下一阶段任务表。关键来源按“日期 + 原文件 + 决策号/节”定位；旧原文在 [history 的 Git 基线](history.md)可恢复。
+整理：2026-09-16。这里保留用户意图与不可擅改的规则，不是下一阶段任务表。关键来源按“日期 + 原文件 + 决策号/节”定位；旧原文在 [history 的 Git 基线](history.md)可恢复。
 
 ## 1. 产品定位与范围
 
@@ -77,6 +77,19 @@
 - CLI 与 server 跨进程同时 mutate 同 doc 不支持，不做 filesystem lock；CLI 文档删除命令未提供。
 - 绕过入口手动 rm output 后 orphan annotations 不自动清理，**无访问保证**，不能写成已有 migration 输入渠道。
 
+### Reader 与 annotations 共同 epoch（2026-09-13/14）
+
+来源：epoch-review D1–D9、已批准 v2 及最终验收，原文见 [history](history.md)。I001 已修，以下长期取舍不随工程关闭失效：
+
+- 正文/标注/资产由同次一致性读取共同接纳，不能凭相同 docId、Promise.all、mtime 或随机图片 URL 猜 epoch。同 fingerprint 不代表完整 IR 不变，仍接纳新 IR；rev 仅同 epoch 写锁，不是正文版本。
+- 更新/失败保留旧文字布局与当前页面会话草稿；图片占位、高亮隐藏，标注写入/创建/定位及旧导航暂停。失败有明确状态和手动重试，不无限自动重试；确定 doc 不存在则 missing。
+- 创建草稿文字需新选目标后由用户**显式**使用，不自动绑定/保存；跨 fingerprint 编辑草稿保留但禁存。不保证 F5/关闭浏览器/切 doc 后恢复，不新增持久草稿或迁移。
+- 图必须校验实际返回 bytes 与已接纳 manifest 的 hash；不保历史图片、不新增资产 watcher，单独手改资产无通知不承诺即时发现。不借 server 强化校验改变 CLI legacy 行为或冻结错误形态。
+- 图片首次失配只给一次追加自动 coherent GET，所有通知/尾随请求共用额度；额度用尽后即使曾短暂 ready，也不能凭后续通知重新开额度。只手动重试或切 doc 重置。可能因重复/自发 invalidate 而要求手动重试，是用户明确接受的保守取舍。
+- server 已知 queued/running 内容 mutation 或删除 busy 时不读半成品、不 ensure/归档/广播 invalidate；只做 library rebuild 的全局 refresh 不等于正文 busy。server 同步临界段不等于跨进程文件事务。
+
+完整接纳/草稿/图片规则见 [annotations](../memory-reference/annotations.md)，原指纹三态及错误分支全部不变。
+
 ## 5. 计划页面的用户取舍
 
 来源：Stage 4 Q1–Q17 / smoke 修订，Stage 7 Q6。详情权威在 [plans](../memory-reference/plans.md)。
@@ -88,11 +101,37 @@
 - 用户明确不做或推后：延期历史（用户自行 note）、tag、blockedBy、“等待延期结果”中间态（自建任务即可）、plan.start、跨计划移动、时间线拖期、anchor 链接。不要“完善任务系统”时顺手复活。
 - Agent 操作计划 Stage 4.1 尚未立项；稳定 id/pretty JSON/watcher/纯 CRUD 是预留，不是已冻结的未来 CLI/API 设计。未知键 round-trip 与并发需到时评估。
 
-## 6. 记忆权威与执行授权
+## 6. Web 文案与 Writer 的用户取舍
+
+来源：2026-09-14 Stage 9 D1–D7；2026-09-15 Stage 10 D1–D14；2026-09-15/16 Writer 改进 D1–D17（本次确认编号 Stage 11），原文入口见 [history](history.md)。
+
+### Web 文案
+
+- zh/en 集中 JSON，默认中文、Tweaks 即时切换并持久化、不探测浏览器。新 UI 双语同写；枚举标签在渲染期取值。
+- Stage 9 中文**原样搬迁**与既有 12 份测试不改是当轮迁移验收，不把所有 UI 文案永久冻结。后续打磨须有相应任务授权；CLI 冻结另论。
+- server detail/job.error 及用户数据未纳入翻译；不把英文模式仍有中文库名当成搬迁失败。不因本阶段选型恢复 server 中文化/错误码化或更多语言任务。
+
+### Writer 边界与共享架构
+
+- 独立 manuscript 数据，不入 library/work/doc，不挂 reader annotations。八型 cell、模板切换、per-cell 纯文本 comments 与源码 zip 导出；不做 template 内容管理 UI、稿件分类/关联/深链/独立 CLI。
+- template 声明式 JSON、同 id 用户覆盖，cell 序列化全局固定；manuscript/template/cell 保未知键。用户数据损坏不静默 reset，编译 build 仅派生缓存；删除需停止并 drain 编译，避免复活稿件。
+- **成熟编辑器 + 复用现有编译→facts/AST→IR→展示**是用户一直以来的意图，不是后备妥协。CM6/stex 不等于现成完整 LaTeX 补全，不为功能清单自研；不新增 TeX4ht 默认运行依赖。共享改造不得改变 reader 默认输出、CLI 冻结或引入摄入/标注副作用。
+- latexmk 可按需多遍和处理 bibliography，替代 Stage 10 单遍限制；仍不交付 PDF 预览。引用语义/编号求真，但 cell 流式布局不还原 PDF 分页/字体；缺依赖/不支持明确暴露，不暗换模板或样式。
+- References/Crossrefs 只插裸 key/label，覆盖 Stage 10 完整 cite 命令插入，不猜上下文。导出单 tex + **独立 bib** + 图的 zip；可带 EXPORT-WARNINGS，成功下载不保证已编译通过。
+- 旧预览只能在精确源码/目标对应时保留并标陈旧；新/变结构处未解析，不能凭同 label/旧环境序号套旧编号。失败不清稿件、不阻塞写作和保存。
+- 许可未核清的模板文件不随 npm 分发；aa.cls/aa.bst 可经授权本机补齐。依赖按各自许可证保留 notices，不全改标 MIT，不把外部进程调用和内联分发混为一谈。
+
+### 最新显式渲染决定（已确认，未实施）
+
+2026-09-16 Writer 改进 D17：**编译/渲染改为用户 Shift+Enter 或点击 Render 后统一显式触发，不再由停止输入/自动保存启动；自动保存继续保留。** 理由是保护连续输入，避免上下跳动、大文档卡顿及频繁重绘。覆盖 D7 和旧共识§5.1，仅改触发方式，不取消共享 IR、latexmk 缓存/多遍与陈旧/失败保护；不能用加长 debounce 替代。当前代码尚自动编译，差距记 I031；Report citation 未通过记 I030。阶段已关闭不授予自动修复权限。
+
+完整当前机制与范围见 [writer](../memory-reference/writer.md)。
+
+## 7. 记忆权威与执行授权
 
 2026-09-13 用户三轮 Q1–Q19 及最终实施授权确立新的记忆制度，替代“每次直接往正式 memory 新增文件”的旧规则。
 
 - 日常 session → inbox，单独授权 → 正式归并；有权的新决定覆盖旧决定，事实按证据更新；详细协议以 [inbox/README](../inbox/README.md) 为准。
 - 保存用户关键理由与否决项，活动资料不是全部历史；所有记忆限 `.pi/`。
-- **已关闭 Stage 4–8 的自行 commit、审查流程授权不是今后永久权限。** 工程四门继续有效；新的执行/审查/提交/push 范围按当次用户授权及适用工具治理规则执行。
-- 本次仅授权记忆重构，不授权新产品阶段、代码修复、用户数据迁移、commit 或 push。
+- **已关闭各阶段的实施、自行 commit、审查流程授权不是今后永久权限。** 工程四门继续有效；新的执行/审查/提交/push 范围按当次用户授权及适用工具治理规则执行。
+- 2026-09-16 本次特别授权先核验并提交上一阶段既有代码与记忆原文，再归并 inbox；不修代码、不迁移用户数据、不推进下一阶段、不 push，整理结果不自动提交。当前提交/执行事实只见[本次 inbox](../inbox/2026-09-16-mem-merge-stage11.md)，不把一次性授权继承为未来权限。

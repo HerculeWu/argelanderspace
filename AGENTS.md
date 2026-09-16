@@ -4,7 +4,7 @@
 
 用户母语为中文，默认用中文交流。
 
-**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具；webui 目标是可独立操作的应用。Stage 8 已于 2026-09-12 关闭，**下一阶段由用户决定**，Stage 4.1 仍推后。当前能力与架构见正式记忆，对外说明见 `README.md`。
+**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具；webui 目标是可独立操作的应用。Stage 11 已于 2026-09-16 带两项已知问题关闭（不等于全部 smoke 通过），**下一阶段由用户决定**，Stage 4.1 仍推后。当前能力与架构见正式记忆，对外说明见 `README.md`。
 
 ## 强制：session 启动协议
 

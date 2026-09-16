@@ -1,10 +1,12 @@
 # 项目记忆入口
 
-正式记忆整理于 2026-09-13；产品事实截至 Stage 8 关闭（2026-09-12）。日常新增决定可能在 inbox 中，**本目录不是不可变快照**。
+正式记忆整理于 2026-09-16；产品事实截至 Stage 11 关闭（2026-09-16）。日常新增决定可能在 inbox 中，**本目录不是不可变快照**。
 
 ## 当前状态
 
-ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–8 已关闭，当前无获批的下一阶段；**下一阶段由用户拍板**。Stage 4.1 仍推后，问题清单不是默认任务队列。
+ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–11 已关闭；Stage 10/11 是带问题关闭，不等于全部 smoke 通过。当前无获批的下一阶段，**下一阶段由用户拍板**。Stage 4.1 仍推后，问题清单不是默认任务队列。
+
+Writer 已交付 cell 编辑/导出、CodeMirror 与共享编译→IR 预览；Report citation 未通过用户验收（I030）。Shift+Enter/Render 显式触发已决定但**尚未实现**，当前仍自动编译（I031）。reader 同 epoch 自动更新已完成（I001 关闭）。详情各归其权威文件，不以代码现状废除新决定。
 
 ## 启动阅读顺序（不得只读索引）
 
@@ -23,9 +25,11 @@ ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的
 | 工作面 | 先读专题 |
 |---|---|
 | LaTeX 编译、插桩、宏展开、编号、引用、作者、图转换 | [tex-pipeline](../memory-reference/tex-pipeline.md) |
-| 标注 target/canonical text、指纹投影、DOM 映射、REST/CLI、删除并发 | [annotations](../memory-reference/annotations.md) |
+| 标注 target/canonical text、指纹投影、reader 共同 epoch/草稿/资产、REST/CLI、删除并发 | [annotations](../memory-reference/annotations.md) |
 | 计划页面交互、plans 存储、未来 agent 计划接口 | [plans](../memory-reference/plans.md) |
-| 本轮记忆整理的去向、冲突、来源和验收证据 | [整理审计](../memory-reference/2026-09-13-memory-restructure-audit.md) |
+| Writer 稿件/模板/导出、成熟编辑器、共享 IR 与陈旧保护 | [writer](../memory-reference/writer.md) |
+| 本轮 inbox 归并的去向、替代链、原文提交和验收证据 | [本轮审计](../memory-reference/2026-09-16-inbox-merge-audit.md) |
+| 2026-09-13 初次记忆重构的历史恢复与保真证据 | [初次审计](../memory-reference/2026-09-13-memory-restructure-audit.md) |
 
 专题是现行细节，不是重读旧 roadmap 的入口。关键硬约束在必读文件中有摘要。已关闭方案/逐轮审查的完整原文留 Git，恢复方法见 history。
 

@@ -1,6 +1,6 @@
 # LaTeX 管线：现行机制与验证边界
 
-状态：现行专题，整理于 2026-09-13。来源：Stage 5 Q1–Q13/MS1/MS2/MS3、smoke R1，Stage 6/7 作者与引用修复。源码位置仅作导航，不承诺旧行号；原文恢复见 [history](../memory/history.md)。改动前同时读 [契约](../memory/contracts-and-decisions.md)的印刷编号与 agent 冻结规则。
+状态：现行专题，整理于 2026-09-16。来源：Stage 5 Q1–Q13/MS1/MS2/MS3、smoke R1，Stage 6/7 作者与引用修复，Stage 11 Writer 共享主干。下列摄入/reader 默认行为不因 Writer opt-in 扩展而自动改变。源码位置仅作导航，不承诺旧行号；原文恢复见 [history](../memory/history.md)。改动前同时读 [契约](../memory/contracts-and-decisions.md)的印刷编号与 agent 冻结规则。
 
 ## 执行层
 
@@ -85,6 +85,20 @@ I005 残余触发面（Stage 7 MS2 审查，记录不修）：
 4. author 内容为前导换行+Inst X 可造伪作者，与已修 and 换行形态不可区分。
 5. printedToIndex 同号冲突后者静默赢；前置 thanks 邮箱走 corresponding 匹配，若碰巧命中别人可能错挂。
 6. meta.authors 平铺 blob 可与 authorDetails 不同（当时 2501.17225/2603.03522），不代表 UI 结构抽取失效。
+
+## Writer opt-in 复用与隔离（Stage 11）
+
+用户要求复用已有主干而非复制管线，长期意图/数据保护见 [writer](writer.md)。`compileTex` / latexmk、facts/source、`fuseTexDoc` / Fuser/IR 被 Writer 调用；只增加输入组装、编译态元数据、源码跨度/数学逐行侧表、cell 投影与展示上下文。Writer 不调用摄入身份归并、library rebuild 或 doc/annotation 生命周期。
+
+- `source/tree` 的引用签名本已有 star/两可选注/keys；reader 默认作者年 formatter 不是完整模板排印。Writer 显式 profile 消费编译态 natbib 标点/模式/star/前后注，不能把 profile 默认启用在旧 reader 或重冻 CLI golden。
+- 数字引用次序须取编译 bibliography，不能按正文出现顺序自排；`setcitestyle{numbers}` 不意味着 square+comma。真号/引用输出用原生 PDF 文本作限定样本 oracle，不以 `.bbl` 作者字段直接等同所有命令最终显示。
+- opt-in 缓存使用稳定工作目录、保未变输入 mtime，完整输入 hash 包含cell身份/bib/deps/assets；刷新仍让 latexmk 检查系统依赖并重新融合。缓存不改变普通摄入隔离 workspace 默认语义，不把 build 派生文件当稿件正文。
+- 旧 Writer 单遍事件→编号的行窗口绑定已被共享IR路线取代，不继续维护独立正则正文renderer。编译行号延迟/浮动等陷阱仍须记住，映射失败警告而非猜归属。
+- A&A 旧 class 覆盖 enddocument，结束hook未必运行；Writer 元数据改于 begin-document 时取。摘要必须在 maketitle 前组装而不改存储cell顺序；Letter补 bibliography/图表/listing环境。不要把只看IR有文字当PDF实际已消费摘要的证据。
+- 引擎/进程退出删除要取消进程组并 drain，防构建复活稿件。Writer 预览错误/不支持显式返回并保旧对应结果，不与摄入的编译失败硬错误/进度warning渠道混为一谈。
+- 已纠正对 KaTeX 的误判：库支持 tag/tag*、顶层 align 多行tag；原将align改aligned并clean掉tag是旧实现限制，非换库的必然理由。
+
+持久源码：core `writer/preview.ts`、`pipelines/tex/fuse/compiled-cite.ts`；infra `tex/cache.ts`；server `writer-numbering.ts`。边界/受测样本见 writer 专题，不宣称任意宏/跨cell结构完整。
 
 ## 持久证据入口
 
