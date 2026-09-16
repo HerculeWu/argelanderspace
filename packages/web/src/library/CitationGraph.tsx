@@ -267,6 +267,25 @@ export function CitationGraph({
     });
   }
 
+  // Position heal (Stage 13): a payload refresh can introduce node ids unseen
+  // at first mount (manual work creation, a rebuild's new works). Initialize
+  // each newcomer in place — reading P.current![id] for an unknown id used to
+  // crash the render (TypeError reading 'x') and unmount the whole view.
+  for (const n of nodes) {
+    if (!P.current[n.id]) {
+      const nb = [...(adj[n.id] ?? [])].find((x) => P.current![x] !== undefined);
+      const base = nb ? P.current![nb] : { x: 0, y: 0 };
+      P.current[n.id] = {
+        x: base.x + (Math.random() - 0.5) * 36,
+        y: base.y + (Math.random() - 0.5) * 36,
+        vx: 0,
+        vy: 0,
+        fx: null,
+        fy: null,
+      };
+    }
+  }
+
   const visNodes = useMemo(
     () => nodes.filter((n) => isSaved(n) || activeSug.has(n.id)),
     [graph, activeSug, addedSet]

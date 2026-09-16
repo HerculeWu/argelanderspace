@@ -286,3 +286,70 @@ export function workToRef(w: Work): LibraryRef {
   }
   return ref;
 }
+
+// --------------------------------------------------------------------------- //
+// Incremental update (Stage 13)
+// --------------------------------------------------------------------------- //
+
+/**
+ * Merge one manually added work into an existing graph (Stage 13): its saved
+ * node plus every locally computable edge (inbound from saved works whose
+ * `referenced_works` contain it, outbound to nodes already present). When
+ * `oa` is non-null, newly referenced OpenAlex ids are fetched in ONE batch
+ * and added as suggested neighbours.
+ *
+ * This is a best-effort immediate view, not a rebuild: the global MAX_SUGGEST
+ * top-N ranking/cap and offline (parsed-bibliography) edges are only computed
+ * by {@link buildGraph}, so the next `library build`/refresh converges the
+ * graph to authoritative. Callers treat failure as non-fatal (the work is
+ * already saved; the graph catches up on the next refresh).
+ */
+export async function mergeWorkIntoGraph(
+  graph: GraphData,
+  store: LibraryStore,
+  w: Work,
+  oa: OpenAlexSource | null
+): Promise<GraphData> {
+  const nodes: GraphNode[] = graph.nodes.filter((n) => n.id !== w.id);
+  nodes.push(savedNode(w));
+
+  const oaid2node = new Map<string, string>();
+  for (const x of store.works) if (x.openalex_id) oaid2node.set(x.openalex_id, x.id);
+  for (const n of nodes) if (n.id.startsWith("oa:")) oaid2node.set(n.id.slice(3), n.id);
+
+  const links: [string, string][] = graph.links.map(([a, b]) => [a, b]);
+  const seen = new Set(links.map(edgeKey));
+  const add = (e: [string, string]): void => {
+    if (e[0] !== e[1] && !seen.has(edgeKey(e))) {
+      seen.add(edgeKey(e));
+      links.push(e);
+    }
+  };
+
+  // inbound: saved works that cite the new one
+  if (w.openalex_id) {
+    for (const x of store.works) {
+      if (x.id !== w.id && x.referenced_works.includes(w.openalex_id)) add([x.id, w.id]);
+    }
+  }
+  // outbound: works the new one cites
+  const missing = new Set<string>();
+  for (const r of w.referenced_works) {
+    const tgt = oaid2node.get(r);
+    if (tgt) add([w.id, tgt]);
+    else missing.add(r);
+  }
+  // one batched fetch for not-yet-mapped references → suggested neighbours
+  if (oa !== null && missing.size > 0) {
+    const meta = await oa.fetchMany([...missing].sort());
+    for (const m of meta.values()) {
+      if (pyOr(m.year) === undefined || !m.openalex_id) continue;
+      const nid = `oa:${m.openalex_id}`;
+      if (!nodes.some((n) => n.id === nid)) nodes.push(suggestedNode(m));
+      add([w.id, nid]);
+    }
+  }
+
+  links.sort(compareEdges);
+  return { nodes, links };
+}

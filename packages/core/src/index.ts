@@ -47,6 +47,7 @@ export { DocumentAssetError, readDocumentAsset } from "./annotations/assets.js";
 export * from "./annotations/store.js";
 export * from "./documents/references.js";
 export * from "./documents/render.js";
+export * from "./library/add-manual.js";
 export * from "./library/build.js";
 export * from "./library/graph.js";
 export * from "./library/seed.js";

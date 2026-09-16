@@ -101,6 +101,32 @@ export const GraphDataSchema = z.object({
   links: z.array(GraphLinkSchema),
 });
 
+/**
+ * Request of `POST /api/library/works` (Stage 13 manual work creation).
+ * - `identifier`: a DOI / doi.org URL / arXiv id / arXiv URL (server detects).
+ * - `bibcode`: one ADS bibcode — fail-fast when ADS is unreachable / has no
+ *   such record (the user's semantic is "pick from ADS").
+ * - `bib`: raw BibTeX text, one or many entries; per-entry results.
+ */
+export const ManualWorkRequestSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("identifier"), value: z.string().trim().min(1).max(500) }),
+  z.object({ mode: z.literal("bibcode"), bibcode: z.string().trim().min(1).max(64) }),
+  z.object({ mode: z.literal("bib"), bib: z.string().min(1).max(1_000_000) }),
+]);
+
+/** One entry's outcome. `key` echoes the attempted/assigned cite key. */
+export const ManualWorkResultSchema = z.object({
+  status: z.enum(["created", "exists", "error"]),
+  ref: LibraryRefSchema.optional(),
+  key: z.string().optional(),
+  error: z.string().optional(),
+});
+
+/** Response of `POST /api/library/works` (always 200 for well-formed bodies). */
+export const ManualWorkResponseSchema = z.object({
+  results: z.array(ManualWorkResultSchema),
+});
+
 /** Response of `GET /api/library`. */
 export const LibraryPayloadSchema = z.object({
   project: LibraryProjectSchema,
@@ -118,4 +144,7 @@ export type LibraryRef = z.infer<typeof LibraryRefSchema>;
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
 export type GraphLink = z.infer<typeof GraphLinkSchema>;
 export type GraphData = z.infer<typeof GraphDataSchema>;
+export type ManualWorkRequest = z.infer<typeof ManualWorkRequestSchema>;
+export type ManualWorkResult = z.infer<typeof ManualWorkResultSchema>;
+export type ManualWorkResponse = z.infer<typeof ManualWorkResponseSchema>;
 export type LibraryPayload = z.infer<typeof LibraryPayloadSchema>;

@@ -58,6 +58,20 @@ export function arxivId(s: string): string | null {
 }
 
 /**
+ * The arXiv id from an EXPLICIT form only — the `arXiv:` prefix or an
+ * arxiv.org URL (Stage 13 smoke decision: a bare id like `2609.17036` is
+ * rejected as ambiguous in the manual-import UI; CLI ingest still accepts it).
+ */
+export function explicitArxivId(s: string): string | null {
+  const t = s.trim();
+  const prefix = ARXIV_PREFIX_RE.exec(t);
+  if (prefix?.[1]) return prefix[1];
+  const url = ARXIV_URL_RE.exec(t);
+  if (url?.[1]) return url[1].replace(/\.pdf$/i, "");
+  return null;
+}
+
+/**
  * Stable doc id. arXiv ids are namespaced `arxiv-<id>` so a LaTeX ingest never
  * collides with the same paper's PDF or HTML doc.
  */

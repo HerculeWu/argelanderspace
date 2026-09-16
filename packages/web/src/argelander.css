@@ -304,6 +304,19 @@ input, textarea { font-family: inherit; color: inherit; }
 .import-t { font-size: var(--fs-sm); font-weight: 500; }
 .import-d { font-size: 10.5px; color: var(--text-faint); }
 
+/* Stage 13 import dialog: per-entry results */
+.import-results { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.import-result { display: flex; gap: 9px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--panel); }
+.import-result.created svg { color: oklch(0.74 0.13 158); }
+.import-result.exists svg { color: oklch(0.80 0.13 78); }
+.import-result.error svg { color: oklch(0.70 0.16 25); }
+.import-result svg { flex: none; margin-top: 2px; }
+.import-result-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.import-result-title { font-size: var(--fs-sm); line-height: 1.4; word-break: break-word; }
+.import-result-status { margin-left: 8px; font-size: 10px; color: var(--text-faint); }
+.import-result-key { font-size: 10.5px; color: var(--text-faint); }
+.import-result-err { font-size: var(--fs-sm); color: oklch(0.70 0.16 25); line-height: 1.45; word-break: break-word; }
+
 .lib-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .lib-toolbar { height: 52px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--border-soft); }
 .lib-search { flex: 1; max-width: 360px; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: var(--radius-sm); background: var(--surface); border: 1px solid var(--border); }

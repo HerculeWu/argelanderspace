@@ -179,13 +179,13 @@
     },
     "import": {
       "button": "Import literature",
-      "doi": {
+      "identifier": {
         "title": "From DOI / arXiv ID",
-        "desc": "Paste an identifier to fetch metadata automatically"
+        "desc": "Paste an identifier to create an entry with resolved metadata"
       },
-      "browser": {
-        "title": "Capture from browser",
-        "desc": "Save the current page in one click with the built-in browser"
+      "bibcode": {
+        "title": "From ADS bibcode",
+        "desc": "Fetch the exact ADS record by bibcode"
       },
       "bibtex": {
         "title": "Import BibTeX / RIS",
@@ -305,6 +305,28 @@
       "add": "Add to library",
       "addingHint": "Fetching metadata and writing to the library…",
       "connTab": "Citation links · {{count}}"
+    },
+    "importDialog": {
+      "identifierTitle": "New entry from identifier",
+      "identifierSub": "Accepts a DOI / doi.org link; arXiv requires the prefix (e.g. arXiv:2603.05265) or an arxiv.org URL — attach a LaTeX source zip later to read in full",
+      "identifierLabel": "DOI or arXiv:-prefixed ID",
+      "identifierPlaceholder": "10.1051/0004-6361/… or arXiv:2603.05265",
+      "bibcodeTitle": "New entry from ADS bibcode",
+      "bibcodeSub": "Fetches publisher-quality metadata from ADS; requires network and a valid ADS token",
+      "bibcodeLabel": "ADS bibcode",
+      "bibcodePlaceholder": "2021A&A...646A.104H",
+      "bibTitle": "Import BibTeX",
+      "bibSub": "Paste BibTeX text (multiple entries allowed); each entry's own key becomes its cite key — conflicts are reported per entry",
+      "bibLabel": "BibTeX text",
+      "bibPlaceholder": "@article{key, …}",
+      "submit": "Create entry",
+      "submitMany": "Import entries",
+      "busy": "Creating…",
+      "close": "Close",
+      "created": "Created",
+      "exists": "Already in library",
+      "failed": "Failed",
+      "unreachable": "Cannot reach the server — make sure serve is running"
     }
   },
   "plan": {

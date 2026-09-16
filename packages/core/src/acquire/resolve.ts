@@ -42,12 +42,17 @@ export interface ResolutionProvenance {
 function fill(
   w: Work,
   vals: {
+    title?: string;
     year?: number | null;
     venue?: string | null;
     authors?: string[];
     abstract?: string | null;
   }
 ): void {
+  // title: ingested/bib works always carry one, so this only ever fills the
+  // blank title of a manually created stub (Stage 13) — first source in the
+  // resolution priority order that supplies one wins.
+  if (!w.title && vals.title) w.title = vals.title;
   if (w.year === null && vals.year) w.year = vals.year;
   if (!w.venue && vals.venue) w.venue = vals.venue;
   if (w.authors.length === 0 && vals.authors && vals.authors.length > 0) {
@@ -99,7 +104,13 @@ export async function resolveWork(
     providers.push("ads");
     w.bibcode = (pyOr(w.bibcode, a.bibcode) as string | undefined) ?? null;
     acceptDoi(w, a.doi);
-    fill(w, { year: a.year, venue: a.venue, authors: a.authors, abstract: a.abstract });
+    fill(w, {
+      title: a.title,
+      year: a.year,
+      venue: a.venue,
+      authors: a.authors,
+      abstract: a.abstract,
+    });
     if (a.citation_count !== null && a.citation_count !== undefined) {
       count = a.citation_count;
       countSrc = "ads";
@@ -124,7 +135,13 @@ export async function resolveWork(
   if (c) {
     providers.push("crossref");
     acceptDoi(w, c.doi);
-    fill(w, { year: c.year, venue: c.venue, authors: c.authors, abstract: c.abstract });
+    fill(w, {
+      title: c.title,
+      year: c.year,
+      venue: c.venue,
+      authors: c.authors,
+      abstract: c.abstract,
+    });
     if (c.type === "conf" && w.type === "article") w.type = "conf";
     if (count === null && c.cited_by_count !== null && c.cited_by_count !== undefined) {
       count = c.cited_by_count;
@@ -154,7 +171,13 @@ export async function resolveWork(
       w.arxiv_id = (pyOr(w.arxiv_id, r.arxiv_id) as string | undefined) ?? null;
     }
     acceptDoi(w, r.doi);
-    fill(w, { year: r.year, venue: r.venue, authors: r.authors, abstract: r.abstract });
+    fill(w, {
+      title: r.title,
+      year: r.year,
+      venue: r.venue,
+      authors: r.authors,
+      abstract: r.abstract,
+    });
     if (r.type && w.type === "article") w.type = r.type;
     if (r.referenced_works && r.referenced_works.length > 0) {
       w.referenced_works = r.referenced_works;

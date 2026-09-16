@@ -6,6 +6,7 @@ import { fetchLibrary, addRef as apiAddRef } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { CitationGraph } from "./CitationGraph";
 import { RefDetail, GraphNodeDetail } from "./RefDetail";
+import { ImportDialog, type ImportMode } from "./ImportDialog";
 import type { GraphNode, LibraryData, LibraryRef } from "./types";
 
 // color labels users assign by right-clicking a reference (replaces the star)
@@ -66,9 +67,9 @@ function nodeToRef(n: GraphNode): LibraryRef {
 }
 
 const IMPORTS = [
-  { ic: "hash", titleKey: "library.import.doi.title", descKey: "library.import.doi.desc" },
-  { ic: "globe", titleKey: "library.import.browser.title", descKey: "library.import.browser.desc" },
-  { ic: "file-code-2", titleKey: "library.import.bibtex.title", descKey: "library.import.bibtex.desc" },
+  { mode: "identifier", ic: "hash", titleKey: "library.import.identifier.title", descKey: "library.import.identifier.desc" },
+  { mode: "bibcode", ic: "telescope", titleKey: "library.import.bibcode.title", descKey: "library.import.bibcode.desc" },
+  { mode: "bib", ic: "file-code-2", titleKey: "library.import.bibtex.title", descKey: "library.import.bibtex.desc" },
 ] as const;
 
 export function LibraryView() {
@@ -198,6 +199,14 @@ function LibraryBody({
   useEffect(() => () => clearTimeout(sugTimer.current), []);
 
   const [importOpen, setImportOpen] = useState(false);
+  // Stage 13: which import-menu dialog is open (null = closed). A resolved
+  // (created/existing) ref is selected by its work id — the saved graph node
+  // carries the same id, and the WS library.changed reload lands right after.
+  const [importMode, setImportMode] = useState<ImportMode | null>(null);
+  const onImportResolved = (r: LibraryRef) => {
+    setSelNode(r.id);
+    onReload();
+  };
 
   const allRefs = useMemo(
     () => refs.concat([...added].map((id) => addedRefs.current[id] ?? nodeToRef(byId[id]))),
@@ -236,7 +245,14 @@ function LibraryBody({
             {importOpen && (
               <div className="import-menu view-in">
                 {IMPORTS.map((im) => (
-                  <button key={im.titleKey} className="import-opt">
+                  <button
+                    key={im.titleKey}
+                    className="import-opt"
+                    onClick={() => {
+                      setImportMode(im.mode);
+                      setImportOpen(false);
+                    }}
+                  >
                     <span className="import-ic">
                       <Icon name={im.ic} cls="ico-sm" />
                     </span>
@@ -293,6 +309,14 @@ function LibraryBody({
             {!list.length && <div className="side-reflist-empty mono">{t("library.side.empty")}</div>}
           </div>
         </div>
+      )}
+
+      {importMode && (
+        <ImportDialog
+          mode={importMode}
+          onClose={() => setImportMode(null)}
+          onResolved={onImportResolved}
+        />
       )}
 
       {labelMenu && (

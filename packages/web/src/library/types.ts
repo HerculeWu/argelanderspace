@@ -72,3 +72,21 @@ export interface LibraryData {
 export interface AddRefResponse {
   ref: LibraryRef;
 }
+
+// ---- Stage 13: manual work creation (POST /api/library/works) ---- //
+
+export type ManualWorkRequest =
+  | { mode: "identifier"; value: string }
+  | { mode: "bibcode"; bibcode: string }
+  | { mode: "bib"; bib: string };
+
+export interface ManualWorkResult {
+  status: "created" | "exists" | "error";
+  ref?: LibraryRef;
+  key?: string;
+  error?: string;
+}
+
+export interface ManualWorkResponse {
+  results: ManualWorkResult[];
+}

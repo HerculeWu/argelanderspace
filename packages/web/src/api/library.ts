@@ -1,5 +1,11 @@
 import type { Job } from "@argelanderspace/contracts";
-import type { AddRefResponse, LibraryData, LibraryRef } from "../library/types";
+import type {
+  AddRefResponse,
+  LibraryData,
+  LibraryRef,
+  ManualWorkRequest,
+  ManualWorkResponse,
+} from "../library/types";
 import { LIBRARY_FIXTURE } from "../library/fixture";
 
 // The ArgelanderSpace Library talks to /api/library/*. Each call tries live
@@ -54,6 +60,19 @@ export async function uploadLatexZip(workId: string, file: File | Blob): Promise
   } catch {
     return null;
   }
+}
+
+/**
+ * Manual work creation (Stage 13 import menu): one identifier / bibcode, or
+ * a raw BibTeX batch. Per-entry outcomes ride in the 200 body; null = the
+ * backend is unreachable or rejected the request wholesale.
+ */
+export async function createWorks(req: ManualWorkRequest): Promise<ManualWorkResponse | null> {
+  return tryJson<ManualWorkResponse>("/api/library/works", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
 }
 
 /** Persist a per-reference state change (color label, read flag, note, tags, main doc). */

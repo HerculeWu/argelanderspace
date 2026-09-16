@@ -47,13 +47,19 @@ import type {
 } from "@argelanderspace/contracts";
 import {
   AnnotationsFileSchema,
+  ManualWorkRequestSchema,
+  type ManualWorkResult,
   ManuscriptSchema,
   PlansFileSchema,
 } from "@argelanderspace/contracts";
 import {
   AnnotationsError,
+  addManualBibcode,
+  addManualBibText,
+  addManualIdentifier,
   addNodeToLibrary,
   annotationsDocDir,
+  arxivFromDoi,
   attachLatexZip,
   buildWriterExport,
   createManuscript,
@@ -69,8 +75,10 @@ import {
   loadManuscript,
   loadPlans,
   loadTemplates,
+  type ManualIdentifier,
   type MetadataSources,
   manuscriptDir,
+  normDoi,
   patchWork,
   readDocumentAsset,
   readManuscriptAsset,
@@ -84,7 +92,13 @@ import {
   WriterExportError,
   writeManuscriptAsset,
 } from "@argelanderspace/core";
-import { extractZip, ZipError, zipEntries } from "@argelanderspace/infra";
+import {
+  explicitArxivId,
+  extractZip,
+  looksLikeArxiv,
+  ZipError,
+  zipEntries,
+} from "@argelanderspace/infra";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -877,6 +891,71 @@ export function createApp(deps: AppDeps): Hono {
     }
     libraryChanged("add");
     return c.json({ ref });
+  });
+
+  // ---- POST /api/library/works (Stage 13 manual creation) ----------------- //
+
+  // Identifier auto-detection for the `identifier` mode (Stage 13, smoke
+  // revision): arXiv input must be EXPLICIT — the `arXiv:` prefix or an
+  // arxiv.org URL (infra's explicitArxivId); a bare id like `2609.17036` is
+  // rejected with guidance so the input is unambiguous. A DOI / doi.org URL
+  // goes to the DOI path; an arXiv DataCite DOI routes to the arXiv work
+  // (never a journal-DOI stub, mirroring the CLI's routeDoi semantics).
+  const detectIdentifier = (value: string): ManualIdentifier | { error: string } | null => {
+    const explicit = explicitArxivId(value);
+    if (explicit !== null) return { kind: "arxiv", arxiv: explicit };
+    if (looksLikeArxiv(value)) {
+      return {
+        error: `bare arXiv id '${value.trim()}' is ambiguous — use the prefixed form arXiv:${value.trim()} (or an arxiv.org URL)`,
+      };
+    }
+    const d = normDoi(value);
+    if (d) {
+      const ax = arxivFromDoi(d);
+      if (ax !== null) return { kind: "arxiv", arxiv: ax };
+      if (/^10\.\d{4,9}\/\S+$/.test(d)) return { kind: "doi", doi: d };
+    }
+    return null;
+  };
+
+  // Manual work creation (import menu). Per-entry outcomes ride in the 200
+  // body (`results[].status`: created | exists | error); HTTP errors are
+  // reserved for a malformed request / server failure. The whole batch runs
+  // under libraryLock (single-user; the network seconds are the same trade
+  // lockedRebuild makes). No full rebuild: in-place upsert + incremental
+  // graph, then one libraryChanged broadcast.
+  app.post("/api/library/works", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = ManualWorkRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      const e = detail("invalid request body (expected {mode: identifier|bibcode|bib, …})", 400);
+      return c.json(e.body, e.status);
+    }
+    const req = parsed.data;
+    const sources = deps.makeSources(false);
+    const results = await libraryLock.run(async (): Promise<ManualWorkResult[]> => {
+      if (req.mode === "identifier") {
+        const id = detectIdentifier(req.value);
+        if (id === null) {
+          return [
+            {
+              status: "error",
+              error: `unrecognized identifier (expected a DOI, or an arXiv id as arXiv:<id>): ${req.value.slice(0, 120)}`,
+            },
+          ];
+        }
+        if ("error" in id) return [{ status: "error", error: id.error }];
+        return [await addManualIdentifier(paths, sources, id)];
+      }
+      if (req.mode === "bibcode") {
+        return [await addManualBibcode(paths, sources, req.bibcode)];
+      }
+      return addManualBibText(paths, req.bib);
+    });
+    if (results.some((r) => r.status === "created")) libraryChanged("add");
+    return c.json({ results });
   });
 
   // ---- PATCH /api/library/refs --------------------------------------------- //
