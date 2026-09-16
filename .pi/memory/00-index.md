@@ -1,12 +1,12 @@
 # 项目记忆入口
 
-正式记忆整理于 2026-09-16；产品事实截至 Stage 11 关闭（2026-09-16）。日常新增决定可能在 inbox 中，**本目录不是不可变快照**。
+正式记忆整理于 2026-09-16；产品事实截至 Stage 12 关闭（2026-09-16）。日常新增决定可能在 inbox 中，**本目录不是不可变快照**。
 
 ## 当前状态
 
-ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–11 已关闭；Stage 10/11 是带问题关闭，不等于全部 smoke 通过。当前无获批的下一阶段，**下一阶段由用户拍板**。Stage 4.1 仍推后，问题清单不是默认任务队列。
+ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–13 已关闭；Stage 10/11 是带问题关闭，不等于全部 smoke 通过，其遗留 I030/I031 已由 Stage 12 修复并经用户 smoke 确认；Stage 13（webui 手动建条目）已交付且 smoke 通过。下一阶段：**Stage 14——完整跑通推荐文献查找功能**（用户 2026-09-16 拍板，下个 session 立项实施，范围届时 grilling）。Stage 4.1 仍推后，问题清单不是默认任务队列。
 
-Writer 已交付 cell 编辑/导出、CodeMirror 与共享编译→IR 预览；Report citation 未通过用户验收（I030）。Shift+Enter/Render 显式触发已决定但**尚未实现**，当前仍自动编译（I031）。reader 同 epoch 自动更新已完成（I001 关闭）。详情各归其权威文件，不以代码现状废除新决定。
+Writer 已交付 cell 编辑/导出、CodeMirror 与共享编译→IR 预览；Stage 12 落地 Shift+Enter/Render 显式触发渲染（自动保存保留）、bib 转义与 ADS BibTeX 字段富化（cite_key=bibcode 分配规则、一次性存量迁移）、期刊宏注入与导出 zip 附带模板依赖。reader 同 epoch 自动更新已完成（I001 关闭）。详情各归其权威文件，不以代码现状废除新决定。
 
 ## 启动阅读顺序（不得只读索引）
 

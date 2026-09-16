@@ -7,7 +7,7 @@
 - **科研工作台，不只是文献工具；webui 是独立应用，不是 agent 看板。** 用户 2026-09-02 定位升级（旧 product-and-architecture / Stage 3.1 推后事项 / Stage 4 定位前提）。理由：无 agent 也应能操作，用户有亲自读论文的权利。当前 note/label 写路径缺口是未完成能力，不能将现状反推为永久只读定位。
 - 当前单用户、项目级文件存储；dataDir 只按 cwd/显式配置解析，不向上查找（Stage 3）。全局库复用、SQLite 等没有实施授权。
 - **CLI + skills，无 MCP** 是现行接入决定（Stage 2），不将当时对某 agent 上游能力的评论视为永久事实。文献任务用 sanctioned CLI，不从内部文件猜论文内容。
-- 下一阶段由用户决定；阶段关闭不会自动启动候选项。Stage 4.1 仍推后。详见问题清单。
+- 下一阶段由用户决定；阶段关闭不会自动启动候选项。**Stage 13（webui 手动建立文献条目）已于 2026-09-16 交付并 smoke 通过**（决策与验收见 [历史](history.md) 与该 session inbox）。**下一阶段 Stage 14：完整跑通推荐文献查找功能**（用户 2026-09-16 拍板，下个 session 立项，范围届时 grilling）。Stage 4.1 仍推后。详见问题清单。
 
 ## 2. 摄入、身份与寻址
 
@@ -17,6 +17,15 @@
 - **编译失败硬失败，无无编译解析降级**（Stage 5 Q4）；插桩失败可干净编译回退，图片失败可无图，这两种不能与编译失败混淆。
 - **显示号全面印刷忠实**（2026-09-04 Stage 5 Q2，替代 Stage 3.1 自产 display 号）：未编号公式不显示自产 N。结构 id scheme 保持，但不承诺重摄入前后同一位置仍同号；增删块可级联位移，未知锚点静默兜底。
 - 不引入 pagedView/page 字段/XDV 页面系统（Stage 5 Q6，YAGNI；prototype 只是验证参考）。TikZ 等有真实需求再立项，非隐含兼容义务。
+
+### 手动建条目（Stage 13，2026-09-16）
+
+- webui 导入菜单三模式：标识符（DOI / 显式 arXiv）、ADS bibcode、BibTeX 全文。就地建立（upsert+planFor+assignCiteKey+save+广播），**不触发全库 rebuild**；复用现有解析链管线（用户明确要求）。
+- **arXiv 输入必须显式**：`arXiv:<id>` 前缀或 arxiv.org URL；裸 id 报错引导（用户 smoke 修订：明确这是 arxiv id）。CLI 裸 id 摄入路径不变（那是正文摄入）。
+- bibcode 模式 fail-fast（ADS 不可用/未命中→报错，不建 stub）；标识符模式容错（全miss也建裸 stub，下次 build 再富化）；bib 模式纯本地、逐条部分成功。
+- **手动 bib 尊重用户 cite key**；与其他 work 冲突显式逐条报错，不静默改写；身份重合→exists 只补空字段。注意现有 `library build --bib` 导入仍系统分配 key，两路径语义不同属有意。
+- 图谱增量更新是即时尽力可视化（节点+本地边+一次批量补邻居）；全局 top-N 截断/排序仅全量 build 权威，下次 refresh 收敛；图谱更新失败不阻塞创建。
+- 无对应 CLI/agent 新命令（冻结面无需求不扩张）；CLI 既有 `ingest <doi>`、`library build --bib` 行为不变。
 
 ## 3. Agent 输出冻结与回归策略必须分开
 
@@ -121,9 +130,19 @@
 - 旧预览只能在精确源码/目标对应时保留并标陈旧；新/变结构处未解析，不能凭同 label/旧环境序号套旧编号。失败不清稿件、不阻塞写作和保存。
 - 许可未核清的模板文件不随 npm 分发；aa.cls/aa.bst 可经授权本机补齐。依赖按各自许可证保留 notices，不全改标 MIT，不把外部进程调用和内联分发混为一谈。
 
-### 最新显式渲染决定（已确认，未实施）
+### 显式渲染触发（Stage 11 决定，Stage 12 已实施）
 
-2026-09-16 Writer 改进 D17：**编译/渲染改为用户 Shift+Enter 或点击 Render 后统一显式触发，不再由停止输入/自动保存启动；自动保存继续保留。** 理由是保护连续输入，避免上下跳动、大文档卡顿及频繁重绘。覆盖 D7 和旧共识§5.1，仅改触发方式，不取消共享 IR、latexmk 缓存/多遍与陈旧/失败保护；不能用加长 debounce 替代。当前代码尚自动编译，差距记 I031；Report citation 未通过记 I030。阶段已关闭不授予自动修复权限。
+2026-09-16 Writer 改进 D17：**编译/渲染改为用户 Shift+Enter 或点击 Render 后统一显式触发，不再由停止输入/自动保存启动；自动保存继续保留。** 理由是保护连续输入，避免上下跳动、大文档卡顿及频繁重绘。覆盖 D7 和旧共识§5.1，仅改触发方式，不取消共享 IR、latexmk 缓存/多遍与陈旧/失败保护；不能用加长 debounce 替代。Stage 12 已实施：保存后/打开稿件/外部变更/模板切换四个自动编译入口全部取消，无 ok 缓存时预览区显示占位提示；I030/I031 均关闭，用户 smoke 通过。
+
+### Stage 12：bib 转义与 ADS BibTeX 接入（2026-09-16，stage12 session D3–D6）
+
+- **bib 条目是统一的一等存储，来源无特殊通道**：ADS 拉取 / 用户手动给 bib 全文 / 生成兜底，ADS 只是填充者之一。设计保持来源无关，通向 Stage 13 的手动建条目。
+- **不存 BibTeX 原文 blob**：ADS export 拉取后解析字段、补齐 work 结构化字段（volume/number/pages/eid/month/journal_macro 等）；`workToBibtex` 输出全部非空字段；library.bib 仍是唯一派生出口。bibtex 解析只补新字段，不覆盖既有字段（title/authors/year/doi/eprint 以现有 normalize 链为准）。
+- **生成层 LaTeX 转义字符集 `& % # _`；`$` 除外**（保标题数学）。这是 I030 根因修复（裸 `&` 经 bibtex 入 bbl 致编译崩）。期刊字段：有 `journal_macro` 输出 `journal = {\aap}` 宏，无则转义纯文本；venue/journal 显示层维持纯文本。
+- **cite_key 分配时有 bibcode → cite_key = bibcode**；无 → 现有 citeKey()；**分配后永不改**（含后来才富化出 bibcode 的条目）。Stage 12 一次性授权把存量 38 条改为 bibcode 并同步替换两个 demo 稿件 key——**覆盖 Stage 7“cite_key 只增不改”契约的分配侧**，分配后不改的精神延续；理由：bibcode 是 ADS 永久标识符，稳定性更强，note/label/star/read 挂 work id 不受影响。
+- **富化接入**：enrichAndPlan 中有 bibcode 且无已存字段 → 批量 ADS export（一次 POST 多 bibcode）；`--offline` 跳过；失败不阻塞、下次 build 自然重试；已存不自动刷新。非 ADS 条目保持生成+转义兜底，不接 Crossref bibtex。
+- **期刊宏**：`\aap` 等在 aa.cls/aa.bst/TeX Live 均无定义，Writer 编译组装 preamble 与导出 zip 的 manuscript.tex 注入同一组 `\providecommand` 期刊宏（覆盖 ADS 常见天文期刊，标注映射来源）；reader 管线不动。
+- **cite 语法错误（分号分隔、全角逗号等）由用户自己管**，不加 server/web 诊断提示（I034）。
 
 完整当前机制与范围见 [writer](../memory-reference/writer.md)。
 
@@ -134,4 +153,4 @@
 - 日常 session → inbox，单独授权 → 正式归并；有权的新决定覆盖旧决定，事实按证据更新；详细协议以 [inbox/README](../inbox/README.md) 为准。
 - 保存用户关键理由与否决项，活动资料不是全部历史；所有记忆限 `.pi/`。
 - **已关闭各阶段的实施、自行 commit、审查流程授权不是今后永久权限。** 工程四门继续有效；新的执行/审查/提交/push 范围按当次用户授权及适用工具治理规则执行。
-- 2026-09-16 本次特别授权先核验并提交上一阶段既有代码与记忆原文，再归并 inbox；不修代码、不迁移用户数据、不推进下一阶段、不 push，整理结果不自动提交。当前提交/执行事实只见[本次 inbox](../inbox/2026-09-16-mem-merge-stage11.md)，不把一次性授权继承为未来权限。
+- 2026-09-16 本次特别授权先核验并提交上一阶段既有代码与记忆原文，再归并 inbox；不修代码、不迁移用户数据、不推进下一阶段、不 push，整理结果不自动提交。提交/执行事实：ee2095c（上一阶段 52 文件）、5569f98（整理结果，用户另授权）先后提交并随 Stage 12 推送，见[历史](history.md)；不把一次性授权继承为未来权限。

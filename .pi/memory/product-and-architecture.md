@@ -9,8 +9,8 @@
 当前能力：
 
 - arXiv LaTeX / 本地源码摄入 → 项目级文献库与引文图谱 → React 三栏阅读器 → CLI + skills 协作。
-- 计划页已落地，默认 landing；webui 可独立 CRUD 计划、任务与文档标注，不依赖 agent。
-- Write 页已交付：独立稿件列表、八型 cell、模板选择、Info/Preamble、per-cell comments、上传图片与 LaTeX 源码 zip 导出；CodeMirror 编辑、共享 latexmk→facts+AST→IR 的 cell 预览，不展示 PDF。带问题关闭的范围见 I030/I031，不能声称 Writer 全面验收通过。
+- 计划页已落地，默认 landing；webui 可独立 CRUD 计划、任务与文档标注，不依赖 agent。**Stage 13 起 webui 可手动建文献条目**：侧栏导入菜单三模式——标识符（DOI / `arXiv:` 前缀 / arxiv.org URL，裸 arXiv id 报错引导）、ADS bibcode（fail-fast）、BibTeX 全文批量（纯本地、逐条部分成功、尊重用户 cite key、冲突逐条报错）；就地建立不触发全库 rebuild，重复身份 exists 只补空字段。
+- Write 页已交付：独立稿件列表、八型 cell、模板选择、Info/Preamble、per-cell comments、上传图片与 LaTeX 源码 zip 导出（附模板 cls/sty/bst 依赖）；CodeMirror 编辑、共享 latexmk→facts+AST→IR 的 cell 预览，不展示 PDF。Stage 12 起渲染由 Shift+Enter/Render 显式触发（自动保存保留），bib 转义与 ADS 富化修复 Report citation；Stage 10/11 为带问题关闭，遗留 I030/I031 已由 Stage 12 关闭。
 - webui zh-CN/en 即时切换，偏好随 Tweaks 存 localStorage，默认中文、不探测浏览器语言；UI 文案集中双 JSON。server detail/job.error 与用户数据（例如库名）不在翻译范围，CLI 输出不变。
 - 文献 note tab 目前只读，持久化 note/label 写入口仍主要是 CLI；右键色点 overlay 仅会话级。webui 独立应用是目标，不等于所有写路径已补齐。
 - PDF/OCR/出版商 HTML 摄入不在 main，封存于 `ocr-features` 一次性快照分支；不要把那里能力写成现行功能。
@@ -23,7 +23,7 @@
 - work id：`doi:` / `arxiv:` 等；canonicalId 优先级 doi > arxiv > openalex > title-slug。用于 search/note/label 等文献管理。
 - doc id：`arxiv-…` / 本地 `latex-…` / 上传 `upload-…`，用于 read/show/ref/list/annot 与阅读器。`search` 行的 `doc_ids` 做映射。
 - `ingest` 只写 output；**随后必须 `library build`** 才成为可 search/note/label 的 work。docless work 还可由 bib 导入、graph-node、DOI 手动建条目产生。
-- rebuild 的 `cite_key` **只增不改**：预灌已有键，只给缺失的新 work 分配并避让冲突；不能无条件重排（Stage 7 Q5）。DOI stub 可 title bridging 归并、就地 planFor 和分配键，不隐式触发全库 rebuild。
+- rebuild 的 `cite_key` **只增不改**：预灌已有键，只给缺失的新 work 分配并避让冲突；不能无条件重排（Stage 7 Q5）。**Stage 12 修订分配侧**：分配时有 bibcode → cite_key = bibcode，无 → 现有 citeKey()；分配后永不改（含后来才富化出 bibcode 的条目）。存量 38 条经一次性授权迁移为 bibcode 并同步替换两个 demo 稿件 key。**Stage 13 手动 bib 建条目例外**：尊重用户 bib 自带 key，与既有键冲突逐条显式报错（`library build --bib` 导入路径仍系统分配）。DOI stub 可 title bridging 归并、就地 planFor 和分配键，不隐式触发全库 rebuild。
 
 ### 上传、多 doc 与主位
 
@@ -36,6 +36,8 @@
 默认项目级 `./literatures`，**仅 cwd 相对，无向上查找**。配置优先级：
 
 `--data-dir` > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`。
+
+**ADS BibTeX 富化（Stage 12）**：enrichAndPlan 中有 bibcode 且无已存字段 → 批量 ADS export 拉取、解析补齐 work 结构化字段（volume/number/pages/eid/month/journal_macro 等），不存 BibTeX 原文 blob、不覆盖既有字段；`--offline` 跳过，失败不阻塞、下次 build 重试，已存不自动刷新。`library.bib` 仍是唯一派生出口：`workToBibtex` 输出全部非空字段并转义 `& % # _`（`$` 除外）；有 journal_macro 输出 `{\aap}` 宏，宏由 Writer 编译/导出侧注入定义。
 
 ```text
 <有效 dataDir>/
@@ -79,6 +81,7 @@
 - 右栏 `引用 | 标注`，默认引用；文本选区/结构边钮/整篇按钮可创建标注，正文 DOM 不嵌套高亮 span，使用 CSS Custom Highlight。完整数据契约见决策文件，交互细节见 [annotations](../memory-reference/annotations.md)。
 - 手卷深链接 `/doc/<doc_id>#<anchor>`：sec-N/fig-N/eq-N/tab-N/ref-N 等是管线结构 id，非印刷编号；`#ann-<annotation_id>` 定位标注。
 - Hono REST + `/ws`；server 轮询 library、plans、per-doc current annotations、manuscript JSON 与模板 JSON 指纹，广播各域 changed（含 `writer.changed`）。server 自写可再收到 external，前端重取幂等；没有资产目录 watcher。
+- **图谱可增量更新（Stage 13）**：手动建条目时 `mergeWorkIntoGraph` 就地补新节点与本地可算边，单条模式另发一次 OpenAlex 批量补 suggested 邻居；这是即时尽力可视化，全局 top-N 截断/排序仅全量 `library build`/refresh 权威。批量 bib 只补裸节点，富化留下次 build。
 - **reader I001 已在批准范围内关闭**：ReaderSession 经 annotations GET `?coherent=1` 共同接纳 IR/current/同读资产 manifest，正常摄入通知后无需 F5。更新/失败保旧文字布局和会话草稿，隐藏高亮/图片并暂停标注与旧定位；图实际 bytes 按 manifest hash 校验后 Blob 展示。失败手动重试、图片自动恢复最多一次，细则见 annotations 专题；不能推广为任意外部资产改动、无限自动恢复或跨进程一致性。
 - Job 串行、落盘；boot 时未完 job 标 interrupted，不重跑；hello 回放状态，失败在详情刷新后仍可见；job.done 先于 library.changed。
 
@@ -88,7 +91,7 @@ Writer 不属于文献摄入：稿件不建 work/doc、不入 library、不承�
 
 内置 aa/report/letter 为 contracts 单源，用户模板 JSON 同 id 覆盖，坏文件警告跳过。cell 序列化规则固定在代码；zip 包含单 manuscript.tex、独立被引 references.bib 与原始图，缺依赖等附警告，不伪装可编译。aa.cls/aa.bst 不随 npm 包分发。
 
-Writer 显式 profile 复用编译、facts/source/fuse/IR 与展示能力，隔离 reader 默认输出和摄入/归档副作用；build 为派生缓存。当前仍保存后自动编译，用户已决定改为 Shift+Enter/Render 显式触发、自动保存不变，**代码尚未落实**（I031）。只保留与精确源码/目标对应的旧预览；失败不清稿件，不错套旧编号。完整机制与兼容边界见 [writer](../memory-reference/writer.md)。
+Writer 显式 profile 复用编译、facts/source/fuse/IR 与展示能力，隔离 reader 默认输出和摄入/归档副作用；build 为派生缓存。**Stage 12 起渲染为 Shift+Enter/Render 显式触发**（保存后/打开/外部变更/切模板均不自动编译），自动保存不变；无 ok 缓存时预览区占位提示。编译与导出 zip 注入 `\providecommand` 期刊宏组（`\aap` 等 ADS 常见天文期刊）。只保留与精确源码/目标对应的旧预览；失败不清稿件，不错套旧编号。完整机制与兼容边界见 [writer](../memory-reference/writer.md)。
 
 ## Agent 接入
 

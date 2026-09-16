@@ -22,6 +22,8 @@
 - Stage 8 证据：offset round-trip 2080 组、web/CLI 标注排序 500 轮对拍、真实 Chrome 选区/重叠/归档/删除探针；这是历史验证范围，不是对所有浏览器/构造的全称保证。临时截图与 raw-CDP 脚本不保证仍存在。
 - reader epoch 真浏览器验证必须真实替换 IR/正文/图，不能只变 fingerprint mock；正常合成 zip 上传→latexmk→job.done→自然 library.changed 才证明真实通知链。CDP composition 不等于 OS 输入法，fetch 取消也不穷举 decode/onLoad 全时序。最终 17 个受测用例通过的范围与局限在历史原文，不抹掉中途失败。
 - Stage 11 有 65 组合成 citation 与 PDF/pdftotext 对拍及发布包真实 Chrome/CDP 证据，**不推翻用户 Report citation 未通过**。四门绿、合成 smoke、用户 smoke、阶段关闭是不同结论。
+- Stage 12 四门 1066 passed + 1 可选 skip；真实 Chrome/CDP 探针验证显式渲染（打开/输入/暂停 0 编译、Shift+Enter 恰好 1 次、Render 按钮有效），导出 zip 产物 latexmk 自编译 EXIT=0；用户 smoke 通过，I030/I031 关闭。CDP 教训：`Runtime.evaluate` 的 returnByValue 不能序列化 DOM 节点（waitFor 表达式需 `Boolean()` 包裹）；点击类 evaluate 返回值序列化偶发 -32000，用效果断言代替调用成功。IME 全角逗号是真实用户输入风险，按 Stage 12 决定属用户语法责任（I034）。
+- **latexmk 稳定缓存在编译失败后曾死锁**：“Nothing to do”+“previous invocation error”，坏 bbl 阻断 bibtex 重跑；Stage 12 起 compileTex 失败路径清理 aux/bbl/blg/fdb_latexmk/log（输入不动），下次编译自愈。
 - web Vitest 经 workspace **dist** 解析；改 contracts/core 后先 build 再跑下游测试，否则可能误报旧实现故障。CodeMirror 的 happy-dom selectionchange 同步重入用测试 shim，不当真实浏览器证据。Shift-Enter 高优先级及 compositionStarted 防 IME 误提交是当前集成教训。
 - biome web legacy override 关闭了部分格式/导入/a11y；不要对旧前端文件盲目 `--write` 全量重排。新代码保持 clean；parse 级错误不能靠 override 关闭，真实 HTML 夹具当年需 files.includes 排除。
 
@@ -36,6 +38,8 @@
 - 注入文件权限失败时 root 可绕过 chmod；file-where-dir 才可稳定模拟失败。
 - 暂停 JS 导航不等于禁浏览器原生 hash 滚动：reader sync/error 保旧正文时撤原生 id、保 data-block-id/DOM 节点，避免 pending hash 提前滚动；不通过改 URL 协议或 scroll 锁掩盖。延迟 ref focus/timer 必须检查当前 generation，discard 草稿同时清局部编辑态。
 - best-effort 滚动验收要看真实 wheel 接管、视口相对位置与无回拉；DOM 直接赋 scrollTop 或苛求布局变化后精确旧 px 不是相同行为。
+- **CitationGraph 位置表只在首挂载初始化的潜伏崩溃**（Stage 13 探针抓获）：payload 刷新带来新节点 id → 渲染期 `P.current[id].x` undefined → React 整树卸载。修复为渲染期 heal（新节点就地初始化，邻点播种），回归测试须可证伪（去 heal 必败）。教训：ref 型一次性初始化面对 WS 驱动的数据更新不安全；真实浏览器探针先于用户 smoke 抓获。
+- `resolveWork` 的 fill() 原本不填 title：摄入/bib 路径 work 恒有标题故无受害；手动建裸标识符 stub 时标题空、UI 拿 id 当标题（Stage 13 探针抓获）。fill 现含 title，仅填空白，对存量无行为变化。
 
 ## Web i18n 维护
 
@@ -89,6 +93,6 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
 
 - **2026-09-01 MinerU**：401 `user authenticate failed` A0202；这是当时鉴权失败，不是永久状态。OCR 在封存分支，启用前自查 key/服务。旧免费配额约 1000 页/天也不是当前承诺。
 - **2026-08-26 出版商反爬实测**：A&A DataDome、OUP Cloudflare、IOP Radware、APS Cloudflare，403/人机；ADS 扫描偶发 504。当前 main 唯一全自动远程正文源为 arXiv LaTeX，不把旧 HTML READY 当真实可达。
-- ADS token `~/.ads/dev_key`；OPENALEX_API_KEY、旧 MINERU_API_KEY 曾在 `~/.zshrc`；main config 的活跃 keys 为 data_dir/port/openalex_api_key/ads_dev_key。不要声称已裁剪的 mineru config 键仍被 main 接受；不读取/记录实际秘密值。
+- ADS token `~/.ads/dev_key`；**ADS export 实测可用（2026-09-16）**：`POST /v1/export/bibtex` 一次多 bibcode 返回出版方质量 BibTeX（volume/pages/eid/month/doi/eprint 齐全，journal 为 `\aap` 宏，key 为 bibcode）；Stage 12 迁移 41 works 中 38 条有 bibcode 全部命中。OPENALEX_API_KEY、旧 MINERU_API_KEY 曾在 `~/.zshrc`；main config 的活跃 keys 为 data_dir/port/openalex_api_key/ads_dev_key。不要声称已裁剪的 mineru config 键仍被 main 接受；不读取/记录实际秘密值。
 - **git push 凭据历史教训**：HTTPS credential.helper=cache 无热凭据会报 cannot read Username；当时 gh 已登录，可用一次性 `git -c credential.helper='!gh auth git-credential' push origin main`，不落配置。该命令只是环境解法，**不是 push 授权**，当前登录需实际核实。
 - 日常文献技能验收曾用 `pi -nc` 排除开发仓库 context 污染；这是历史手动方法，不是开发 session 跳过本记忆协议的许可。

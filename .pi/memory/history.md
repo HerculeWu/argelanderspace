@@ -19,8 +19,10 @@
 | Stage 9 / 2026-09-14 | web 文案集中与 zh/en 即时切换；中文原样搬迁，305叶子双语，12份旧中文断言测试不改，浏览器7/7；用户 smoke 通过，提交推送。server错误/用户数据/CLI不纳入翻译 | 42d52e3 |
 | Stage 10 / 2026-09-15 | cell Writer/模板/独立稿件、comments、上传与源码zip导出；先UI Gate再后端；用户要求从“不编译”改为不展示PDF、单遍求编号。工程1048 tests与合成浏览器绿；最终用户smoke发现引用/xref/正文公式号/overlay光标问题，**未通过仍决定关闭**，不是全面验收通过 | e5c2164（已推送） |
 | Stage 11 / 2026-09-16 | CM6成熟编辑、共享latexmk→facts/AST→IR→cell预览、多遍/缓存与真引用语义，裸key/label；不采用TeX4ht默认路线。工程1054 tests+1可选skip、临时A&A补测、65组PDF对拍/发布包Chrome；用户Report citation未通过、自动编译干扰输入，其余smoke确认通过，**带I030/I031关闭** | ee2095c（本次授权补交，未push） |
+| Stage 12 / 2026-09-16 | 修 I030/I031：取消全部自动编译入口，Shift+Enter/Render 显式触发（自动保存保留）；`workToBibtex` 转义 `& % # _` 修复 A&A 裸 `&` 编译崩；ADS BibTeX 批量拉取解析补齐 work 结构化字段、cite_key=bibcode 分配规则与一次性38条存量迁移、期刊宏 `\providecommand` 注入编译与导出、导出 zip 附模板 deps；顺修 latexmk 缓存编译失败后死锁（失败路径清理 aux/bbl 等）。四门1066 passed+1 skip、真实 Chrome/CDP 探针、导出 zip 自编译 EXIT=0；**用户 smoke 通过** | 28472c2（已推送）；session 记录 00434d5 / bf3bf83 |
+| Stage 13 / 2026-09-16 | webui 手动建条目：导入菜单三真项（标识符 DOI/显式 arXiv、ADS bibcode、BibTeX 批量），POST /api/library/works 就地建立不 rebuild；手动 bib 尊重用户 key、冲突逐条报错；增量图谱（mergeWorkIntoGraph，尽力即时、refresh 收敛权威）；smoke 修订 D17：arXiv 必须带前缀/URL。探针抓获并修两个潜伏 bug：CitationGraph 新节点渲染崩溃（heal）、resolveWork 不填空标题。四门 1092+1、真实 Chrome 15/15 含真实 ADS；**用户 smoke 通过** | 3f814e4（含两份旧 inbox 原文删除）；记忆归并另见同批 docs 提交 |
 
-Stage 11 的编号由 2026-09-16 本次用户 Q1 明确统一（[本次 inbox D1](../inbox/2026-09-16-mem-merge-stage11.md)）；原会话 D17 已明确阶段关闭但未写正式编号。旧 Stage 11 scope 是草案输入，不是下一轮仍需自动实施的计划。下一阶段未立项，Stage 4.1 仍推后。
+Stage 11 的编号由 2026-09-16 用户 Q1 明确统一（原 session D1，持久定位见提交 `5569f98` 的 `.pi/inbox/2026-09-16-mem-merge-stage11.md`）；原会话 D17 已明确阶段关闭但未写正式编号。旧 Stage 11 scope 是草案输入，不是下一轮仍需自动实施的计划。Stage 4.1 仍推后。**下一阶段：Stage 14——完整跑通推荐文献查找功能**（用户 2026-09-16 拍板，下个 session 立项实施，范围届时 grilling）。Stage 13（webui 手动建条目）已关闭，决策记录见同批 docs 提交的 `.pi/inbox/2026-09-16-01a0abdd-stage13-kickoff.md`。
 
 Writer 的关键替代链：Stage 10 不编译 → 单遍编号/不展示 PDF → Stage 11 latexmk 按需多遍/共享 IR；overlay → CM6；正文正则+key芯片 → IR语义预览；完整 cite 命令插入 → 裸key。2026-09-16 D17 再将停止输入自动编译改为**显式 Shift+Enter/Render 的产品决定**，代码尚未落实。阶段关闭不能吞掉这条未实施决定，也不自动授权下一轮修复。
 
@@ -36,9 +38,9 @@ Stage 5–7 的迁移备份已在用户验收后删除，旧“待 smoke/未 com
 
 ## 2026-09-16 Inbox 归并与原文入口
 
-授权：只归并记忆、不推进阶段；特殊决定统一 Stage 11 编号，并先核验提交上一阶段已有源码与尚未保全原文，不 push。提交 `ee2095c33eb7d6255b1d119619a8de631a574c1e` 含52份已有源码/文档/记忆改动，提交前四门各exit0（1054 passed、1 optional A&A skip），52文件验证前后hash一致；这不是修复I030/I031。本次没有新产品代码或浏览器重测。归并验收时整理文档尚未提交；用户随后另授权提交（当前 inbox D2），实际结果以 Git 为准。
+授权：只归并记忆、不推进阶段；特殊决定统一 Stage 11 编号，并先核验提交上一阶段已有源码与尚未保全原文，不 push。提交 `ee2095c33eb7d6255b1d119619a8de631a574c1e` 含52份已有源码/文档/记忆改动，提交前四门各exit0（1054 passed、1 optional A&A skip），52文件验证前后hash一致；这不是修复I030/I031。本次没有新产品代码或浏览器重测。归并验收时整理文档尚未提交；用户随后另授权提交（原 inbox D2），实际结果：`5569f98` 提交、随 Stage 12 一起推送至 origin/main。
 
-六份旧 session 与五份阶段方案/共识当前原文均可从 **`ee2095c33eb7d6255b1d119619a8de631a574c1e`** 的 `.pi/` 原路径恢复；字节hash与逐条去向在[本轮审计](../memory-reference/2026-09-16-inbox-merge-audit.md)。
+六份旧 session 与五份阶段方案/共识当前原文均可从 **`ee2095c33eb7d6255b1d119619a8de631a574c1e`** 的 `.pi/` 原路径恢复；字节hash与逐条去向在[本轮审计](../memory-reference/2026-09-16-inbox-merge-audit.md)。Stage 11 归并 session（mem-merge-stage11）与 Stage 12 session（stage12-grilling，含 Stage 13 预告）原文在 **`bf3bf83`** 的 `.pi/inbox/` 原路径，Stage 12 关闭归并后活动副本删除（删除随 3f814e4 提交）。Stage 13 session（stage13-kickoff，含 Stage 14 方向）活动文件仍在 inbox，原文随同批 docs 提交保全。
 
 | 原 session（目录 `.pi/inbox/`） | 原始证据/关键定位 | 当前去向 |
 |---|---|---|
