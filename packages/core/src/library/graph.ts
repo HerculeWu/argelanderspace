@@ -69,6 +69,21 @@ export function citeKey(w: Work, used: Set<string>): string {
   return key;
 }
 
+/**
+ * Stage 12 cite-key assignment: a work WITH an ADS bibcode takes the bibcode
+ * itself as its key — the bibcode is the permanent ADS identifier, so the key
+ * needs no family/year disambiguation and is stable by design. Works without a
+ * bibcode keep the family+year scheme. An assigned key NEVER changes (Stage 7
+ * contract), including works that only gain a bibcode on a later rebuild.
+ */
+export function assignCiteKey(w: Work, used: Set<string>): string {
+  if (w.bibcode && !used.has(w.bibcode)) {
+    used.add(w.bibcode);
+    return w.bibcode;
+  }
+  return citeKey(w, used);
+}
+
 // --------------------------------------------------------------------------- //
 // Offline edges (saved ↔ saved from the ingested bibliographies)
 // --------------------------------------------------------------------------- //

@@ -5,9 +5,10 @@
  * (referenced-but-missing and suspicious names are warnings, not crashes).
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { BUILTIN_WRITER_TEMPLATES } from "@argelanderspace/contracts";
 import { afterAll, describe, expect, it } from "vitest";
 import { buildWriterExport } from "../src/writer/export.js";
 import { createManuscript, saveManuscript } from "../src/writer/store.js";
@@ -84,5 +85,40 @@ describe("buildWriterExport", () => {
     const bundle = buildWriterExport(dataDir, m.id);
     expect(bundle.bib).toBeNull();
     expect(bundle.tex).not.toContain("\\bibliography");
+  });
+
+  it("Stage 12: template deps ship in the bundle; symlinks refused", () => {
+    // a user override template carrying a .deps/ directory (dep names are
+    // already traversal-proof by WriterTemplateSchema's regex)
+    mkdirSync(join(dataDir, "templates", "report.deps"), { recursive: true });
+    writeFileSync(join(dataDir, "templates", "report.deps", "journal.cls"), "CLS_BYTES");
+    writeFileSync(join(dataDir, "templates", "report.deps", "macro.sty"), "STY_BYTES");
+    const outside = join(dataDir, "outside.sty");
+    writeFileSync(outside, "OUTSIDE");
+    try {
+      symlinkSync(outside, join(dataDir, "templates", "report.deps", "linked.sty"));
+    } catch {
+      /* platform without symlink perms: the file-only assertion still holds */
+    }
+    const m = createManuscript(dataDir, { template: "report", title: "Deps Probe" });
+    saveManuscript(dataDir, m, { bumpRev: false });
+    // report's built-in deps list is empty; simulate a user-declared dep list
+    // by dropping a user override template JSON with the same id
+    writeFileSync(
+      join(dataDir, "templates", "report.json"),
+      JSON.stringify({
+        ...BUILTIN_WRITER_TEMPLATES.find((t) => t.id === "report"),
+        deps: ["journal.cls", "macro.sty", "linked.sty", "missing.cls"],
+      })
+    );
+    const bundle = buildWriterExport(dataDir, m.id);
+    const names = bundle.deps.map((d) => d.name);
+    expect(names).toEqual(["journal.cls", "macro.sty"]);
+    expect(readFileSync(bundle.deps[0]?.abs ?? "", "utf8")).toBe("CLS_BYTES");
+    expect(bundle.warnings.some((w) => w.includes("missing.cls"))).toBe(true);
+    expect(bundle.warnings.some((w) => w.includes("linked.sty"))).toBe(true);
+    // cleanup so other tests see the pristine builtin template again
+    rmSync(join(dataDir, "templates", "report.json"));
+    rmSync(join(dataDir, "templates", "report.deps"), { recursive: true, force: true });
   });
 });

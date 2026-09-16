@@ -117,6 +117,8 @@ const h = vi.hoisted(() => {
     sample,
     store,
     wsCbs,
+    /** I031: explicit-render instrumentation (refresh POST count) */
+    refreshCalls: 0,
     reset() {
       store.clear();
       store.set("m_0a1b2c3d", sample());
@@ -124,6 +126,7 @@ const h = vi.hoisted(() => {
       putGate = null;
       idSeq = 0;
       h.numbering = null;
+      h.refreshCalls = 0;
     },
     /** simulate an external (agent) write: mutate + bump rev */
     externalWrite(id: string, fn: (m: WriterManuscript) => void) {
@@ -203,8 +206,10 @@ const h = vi.hoisted(() => {
       uploadAsset: async (_id: string, file: File) => file.name,
       assetUrl: (id: string, name: string) => `/api/writer/manuscripts/${id}/assets/${name}`,
       fetchNumbering: async (_id: string) => h.numbering,
-      refreshNumbering: async (_id: string) =>
-        h.numbering ?? { status: "never" as const, facts: null, lastError: null },
+      refreshNumbering: async (_id: string) => {
+        h.refreshCalls++;
+        return h.numbering ?? { status: "never" as const, facts: null, lastError: null };
+      },
     },
   };
 });
@@ -479,6 +484,31 @@ describe("editor", () => {
     });
     const created = [...h.store.values()].find((m) => m.title === "Untitled manuscript")!;
     await waitStore(created.id, (m) => m.cells.length === 1);
+  });
+
+  it("I031: opening never auto-compiles; Render button and global Shift+Enter render explicitly", async () => {
+    const view = render(<WriterView />);
+    const { container } = await openSample(view);
+    // no cached compile for this fixture: the placeholder invites an explicit render
+    await waitFor(() => view.getAllByText(/尚未渲染/));
+    expect(h.refreshCalls).toBe(0);
+    fireEvent.click(container.querySelector("[data-render-button]")!);
+    await waitFor(() => expect(h.refreshCalls).toBe(1));
+    // Shift+Enter outside an editing cell renders the manuscript
+    fireEvent.keyDown(container.querySelector(".writer-root")!, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(h.refreshCalls).toBe(2));
+  });
+
+  it("I031: external writer.changed marks stale without compiling", async () => {
+    const view = render(<WriterView />);
+    await openSample(view);
+    expect(h.refreshCalls).toBe(0);
+    h.externalWrite("m_0a1b2c3d", (m) => {
+      m.title = "Externally Retitled";
+    });
+    h.fireWs({ type: "writer.changed", cause: "external", id: "m_0a1b2c3d" });
+    await waitFor(() => view.getAllByText("Externally Retitled"));
+    expect(h.refreshCalls).toBe(0);
   });
 
   it("renders compiled IR math after saving before the explicit refresh", async () => {

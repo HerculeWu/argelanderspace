@@ -16,11 +16,11 @@
  */
 
 import { pyOr } from "../documents/pyregex.js";
-import { citeKey } from "../library/graph.js";
+import { assignCiteKey } from "../library/graph.js";
 import type { MetadataSources } from "../library/sources.js";
 import { canonicalId, emptyWork, type LibraryStore, type Work } from "../library/store.js";
 import type { BibRecord } from "./bibtex.js";
-import { isConf } from "./bibtex.js";
+import { isConf, parseAdsBibtexFields } from "./bibtex.js";
 import { type AcquisitionPlan, classify, planSources, planToDict } from "./planner.js";
 import { resolveWork } from "./resolve.js";
 
@@ -84,7 +84,7 @@ export async function enrichAndPlan(
     // DOI (e.g. an arXiv-only ApJS work gains its 10.3847 DOI → "ApJS").
     const [pub, label] = classify(w.doi, w.journal || w.venue);
     if (pub && label && !w.journal) w.journal = label;
-    if (!w.cite_key) w.cite_key = citeKey(w, usedKeys);
+    if (!w.cite_key) w.cite_key = assignCiteKey(w, usedKeys);
     const acq = planToDict(planFor(w));
     if (w.doc_ids.length > 0) {
       // already has a reader rendering
@@ -92,5 +92,37 @@ export async function enrichAndPlan(
     }
     w.acquisition = acq;
   }
+  await enrichBibFields(store, sources.ads);
   return store;
+}
+
+/**
+ * Back-fill bibliography fields (volume/number/pages/eid/month/journal_macro)
+ * from the ADS BibTeX export — one batched request per build for every work
+ * that has a bibcode but no back-fill yet. Only ABSENT fields are set: the
+ * resolution chain stays authoritative for existing metadata. A failed or
+ * partial export leaves `bib_fields` unset, so those works are retried on the
+ * next build; `library build --offline` never reaches the network (the ADS
+ * client returns null when disabled).
+ */
+export async function enrichBibFields(
+  store: LibraryStore,
+  ads: MetadataSources["ads"]
+): Promise<void> {
+  const pending = store.works.filter((w) => w.bibcode && !w.bib_fields);
+  if (!pending.length) return;
+  const text = await ads.exportBibtex(pending.map((w) => w.bibcode as string));
+  if (!text) return;
+  const fields = parseAdsBibtexFields(text);
+  for (const w of pending) {
+    const f = fields.get(w.bibcode as string);
+    if (!f) continue;
+    w.volume = w.volume ?? f.volume;
+    w.number = w.number ?? f.number;
+    w.pages = w.pages ?? f.pages;
+    w.eid = w.eid ?? f.eid;
+    w.month = w.month ?? f.month;
+    w.journal_macro = w.journal_macro ?? f.journalMacro;
+    w.bib_fields = "ads";
+  }
 }

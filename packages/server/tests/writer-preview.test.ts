@@ -25,7 +25,6 @@ import {
   __setNumberingComputeForTests,
   cancelNumberingCompile,
   runWriterNumberingNow,
-  scheduleNumberingCompile,
 } from "../src/writer-numbering.js";
 import { collectBroadcasts, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
@@ -417,7 +416,7 @@ test.skipIf(!HAVE_TEX || !HAVE_TEXT || !process.env.WRITER_AA_DEPS)(
   60000
 );
 
-test("manual/manual/automatic requests share one flight and one latest follow-up", async () => {
+test("concurrent manual renders share one flight and one latest follow-up", async () => {
   const doc = await create();
   let calls = 0,
     active = 0,
@@ -445,7 +444,7 @@ test("manual/manual/automatic requests share one flight and one latest follow-up
     const a = runWriterNumberingNow(dataDir, doc.id, opts);
     await Promise.resolve();
     const b = runWriterNumberingNow(dataDir, doc.id, opts);
-    scheduleNumberingCompile(dataDir, doc.id, opts);
+    void runWriterNumberingNow(dataDir, doc.id, opts);
     release();
     await Promise.all([a, b]);
     expect(max).toBe(1);

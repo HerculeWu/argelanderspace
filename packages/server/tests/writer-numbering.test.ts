@@ -1,8 +1,9 @@
 /**
  * Writer numbering channel (Stage 10 M3, D14): the deps-missing fast path,
- * the 400/404 route errors, the debounce scheduler (injected compute), and a
- * REAL single-pass pdflatex compile over an assembled manuscript (gated on
- * the engine being available, mirroring the infra HAVE_LATEXMK idiom).
+ * the 400/404 route errors, and a REAL single-pass pdflatex compile over an
+ * assembled manuscript (gated on the engine being available, mirroring the
+ * infra HAVE_LATEXMK idiom). Stage 12 (I031): saving never compiles —
+ * rendering is explicit only (POST numbering/refresh).
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -15,10 +16,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { statusDirFor } from "../src/deps.js";
 import { JobRunner } from "../src/jobs.js";
-import {
-  __setNumberingComputeForTests,
-  scheduleNumberingCompile,
-} from "../src/writer-numbering.js";
+import { __setNumberingComputeForTests } from "../src/writer-numbering.js";
 import { collectBroadcasts, makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const PD = haveTexEngine("pdflatex");
@@ -113,56 +111,31 @@ describe("numbering routes", () => {
     const res = await get(`/api/writer/manuscripts/${doc.id}/numbering`);
     expect(((await res.json()) as { status: string }).status).toBe("never");
   });
-});
 
-describe("numbering scheduler", () => {
-  test("two schedules inside the debounce window coalesce into one compile", async () => {
+  test("I031: saving a manuscript never triggers a compile (explicit render only)", async () => {
     const doc = await createMs("report");
     const compute = vi.fn(async () => ({
       version: 1 as const,
       at: new Date().toISOString(),
       texHash: "x",
       facts: null,
-      lastError: "injected failure",
+      lastError: null,
     }));
     const restore = __setNumberingComputeForTests(compute);
     try {
-      const broadcasts: unknown[] = [];
-      scheduleNumberingCompile(dataDir, doc.id, { broadcast: (m) => broadcasts.push(m) });
-      scheduleNumberingCompile(dataDir, doc.id, { broadcast: (m) => broadcasts.push(m) });
-      await vi.waitFor(() => expect(compute).toHaveBeenCalledTimes(1), { timeout: 5000 });
-      expect(broadcasts).toHaveLength(1); // failures must refresh the visible error/stale state
-    } finally {
-      restore();
-    }
-  });
-
-  test("a schedule during an in-flight compile runs exactly one follow-up", async () => {
-    const doc = await createMs("report");
-    let calls = 0;
-    const compute = vi.fn(async () => {
-      calls += 1;
-      if (calls === 1) {
-        // a second schedule lands while the first compile is in flight
-        scheduleNumberingCompile(dataDir, doc.id, { broadcast: () => {} });
-        // simulate the debounce already elapsed: directly await the slow path
-        await new Promise((r) => setTimeout(r, 30));
-      }
-      return {
-        version: 1 as const,
-        at: new Date().toISOString(),
-        texHash: "x",
-        facts: { sections: [], equations: [], labels: {} },
-        lastError: null,
+      const res = await app.request(`/api/writer/manuscripts/${doc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(doc),
+      });
+      expect(res.status).toBe(200);
+      // Well beyond the removed 500 ms debounce window: no compile may start.
+      await new Promise((r) => setTimeout(r, 700));
+      expect(compute).not.toHaveBeenCalled();
+      const n = (await (await get(`/api/writer/manuscripts/${doc.id}/numbering`)).json()) as {
+        status: string;
       };
-    });
-    const restore = __setNumberingComputeForTests(compute);
-    try {
-      scheduleNumberingCompile(dataDir, doc.id, { broadcast: () => {} });
-      await vi.waitFor(() => expect(calls).toBe(1), { timeout: 5000 });
-      await vi.waitFor(() => expect(calls).toBe(2), { timeout: 5000 });
-      await new Promise((r) => setTimeout(r, 100));
-      expect(calls).toBe(2); // no third compile
+      expect(n.status).toBe("never");
     } finally {
       restore();
     }

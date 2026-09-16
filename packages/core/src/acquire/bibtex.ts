@@ -207,6 +207,57 @@ export function parseBibtexText(text: string): BibRecord[] {
   return records;
 }
 
+/**
+ * Bibliography fields harvested from the ADS BibTeX export (Stage 12).
+ * Everything here is optional; callers back-fill only absent work fields.
+ */
+export interface AdsBibFields {
+  volume: string | null;
+  /** issue number */
+  number: string | null;
+  pages: string | null;
+  /** electronic article id */
+  eid: string | null;
+  /** normalized "01".."12" (the parser resolves the feb-style macros) */
+  month: string | null;
+  /** journal shorthand without the backslash when ADS uses one (`{\aap}`) */
+  journalMacro: string | null;
+}
+
+/**
+ * Parse the ADS `/v1/export/bibtex` payload into per-bibcode field maps.
+ * Only the bibliography-backfill fields are read; author/title/year/doi/eprint
+ * stay with the resolution chain. Entries that fail to parse are skipped
+ * silently (the caller retries them on the next build).
+ */
+export function parseAdsBibtexFields(text: string): Map<string, AdsBibFields> {
+  const out = new Map<string, AdsBibFields>();
+  let db: ReturnType<typeof parse>;
+  try {
+    db = parse(text, { raw: true, sentenceCase: false, verbatimFields: ["author"] });
+  } catch {
+    return out;
+  }
+  for (const e of db.entries) {
+    const f = e.fields as Record<string, unknown>;
+    const str = (v: unknown): string | null =>
+      typeof v === "string" && v.trim() ? v.trim() : null;
+    const journal = str(f.journal);
+    const macro = journal ? /^(?:\{)?\\([A-Za-z]+)(?:\})?$/.exec(journal) : null;
+    const key = String(e.key ?? "");
+    if (!key) continue;
+    out.set(key, {
+      volume: str(f.volume),
+      number: str(f.number),
+      pages: str(f.pages),
+      eid: str(f.eid),
+      month: str(f.month),
+      journalMacro: macro?.[1] ?? null,
+    });
+  }
+  return out;
+}
+
 /** Parse a `.bib` file into normalized {@link BibRecord} objects. */
 export function parseBibtex(path: string): BibRecord[] {
   return parseBibtexText(readFileSync(path, "utf8"));

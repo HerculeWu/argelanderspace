@@ -8,7 +8,7 @@
  */
 
 import { lstatSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   buildBib,
   buildTexDocument,
@@ -30,6 +30,10 @@ export interface WriterExportBundle {
   bibMissing: string[];
   /** Figure assets to ship (name inside `assets/`, absolute source path). */
   assets: { name: string; abs: string }[];
+  /** Template dependencies shipped verbatim at the zip root (Stage 12): the
+   *  user installed them under templates/<id>.deps/ — the zip must be
+   *  self-contained for a local latexmk run. */
+  deps: { name: string; abs: string }[];
   /** Non-fatal issues worth surfacing to the user. */
   warnings: string[];
 }
@@ -111,15 +115,30 @@ export function buildWriterExport(dataDir: string, id: string): WriterExportBund
     bibMissing = built.missing;
   }
 
+  const deps: { name: string; abs: string }[] = [];
   for (const dep of template.deps) {
+    // deps are plain file names; refuse traversal and symlinks (same rule as
+    // the compile input assembly in server/writer-numbering)
+    if (dep !== basename(dep)) {
+      warnings.push(`template dependency is not a plain file name, skipped: ${dep}`);
+      continue;
+    }
     const path = join(templatesDir(dataDir), `${template.id}.deps`, dep);
     try {
-      if (!lstatSync(path).isFile())
+      const st = lstatSync(path);
+      if (st.isSymbolicLink()) {
+        warnings.push(`template dependency is a symlink, skipped: ${dep}`);
+        continue;
+      }
+      if (!st.isFile()) {
         warnings.push(`template dependency is not a regular file: ${dep}`);
+        continue;
+      }
+      deps.push({ name: dep, abs: path });
     } catch {
       warnings.push(`template dependency missing: ${path}`);
     }
   }
   const assets = collectReferencedAssets(dataDir, manuscript, warnings);
-  return { title: manuscript.title, tex, bib, bibMissing, assets, warnings };
+  return { title: manuscript.title, tex, bib, bibMissing, assets, deps, warnings };
 }

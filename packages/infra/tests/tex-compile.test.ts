@@ -8,7 +8,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -198,6 +198,33 @@ describe("compileTex: real compilations", () => {
       expect(events.filter((e) => e.type === "citation")).toHaveLength(2);
       expect(events.filter((e) => e.type === "label")).toHaveLength(6);
       expect(events.every((e) => e.file === "main.tex")).toBe(true);
+    }
+  );
+
+  test.skipIf(!LATEX)(
+    "a failed compile clears latexmk run state so a stable cache cannot deadlock",
+    { timeout: 180_000 },
+    async () => {
+      // Stage 12 field evidence: a stale empty .bbl (from a citation-key typo)
+      // kept failing pdflatex while latexmk reported "Nothing to do" +
+      // "gave an error in previous invocation" — bibtex never reran.
+      const srcDir = await mkdtemp(join(tmpdir(), "tex-fail-src-"));
+      const mainTex = join(srcDir, "main.tex");
+      await writeFile(
+        mainTex,
+        "\\documentclass{article}\n\\begin{document}\n\\nosuchcommandX\n\\end{document}\n"
+      );
+      const outDir = await mkdtemp(join(tmpdir(), "tex-fail-out-"));
+      const cacheDir = await mkdtemp(join(tmpdir(), "tex-fail-cache-"));
+      const r = await compileTex({ srcDir, mainTex, outDir, cacheDir });
+      expect(r.ok).toBe(false);
+      // every attempted engine profile had its run state dropped; inputs survive
+      for (const profile of await readdir(cacheDir)) {
+        for (const ext of ["aux", "bbl", "blg", "fdb_latexmk", "log"]) {
+          expect(existsSync(join(cacheDir, profile, `main.${ext}`))).toBe(false);
+        }
+        expect(existsSync(join(cacheDir, profile, "main.tex"))).toBe(true);
+      }
     }
   );
 

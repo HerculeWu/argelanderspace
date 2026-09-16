@@ -30,7 +30,7 @@ import { parseBibtex } from "../acquire/bibtex.js";
 import { classify, planToDict } from "../acquire/planner.js";
 import { addBibRecords, enrichAndPlan, planFor } from "../acquire/run.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
-import { buildGraph, citeKey, workToRef } from "./graph.js";
+import { assignCiteKey, buildGraph, workToRef } from "./graph.js";
 import { seedFromOutput } from "./seed.js";
 import type { CrossrefResolution, CrossrefSource, MetadataSources } from "./sources.js";
 import {
@@ -172,7 +172,7 @@ export function addNodeToLibrary(paths: LibraryPaths, nodeId: string): LibraryRe
   };
   w = store.upsert(w);
   if (!w.cite_key) {
-    w.cite_key = citeKey(
+    w.cite_key = assignCiteKey(
       w,
       new Set(store.works.map((x) => x.cite_key).filter((x): x is string => x !== null))
     );
@@ -235,7 +235,7 @@ export async function addDoiWork(
   };
   w = store.upsert(w);
   if (!w.cite_key) {
-    w.cite_key = citeKey(
+    w.cite_key = assignCiteKey(
       w,
       new Set(store.works.map((x) => x.cite_key).filter((x): x is string => x !== null))
     );

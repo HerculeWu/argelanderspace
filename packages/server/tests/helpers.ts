@@ -86,7 +86,7 @@ export function makeDataDir(): string {
 /** Offline sources: every lookup misses; ADS reports no token. */
 export function stubSources(): MetadataSources {
   return {
-    ads: { status: "no-token", resolve: async () => null },
+    ads: { status: "no-token", resolve: async () => null, exportBibtex: async () => null },
     crossref: { resolve: async () => null },
     oa: { resolve: async () => null, fetchMany: async () => new Map() },
   };

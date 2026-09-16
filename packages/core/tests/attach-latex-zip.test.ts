@@ -40,7 +40,7 @@ import {
 /** Every lookup misses; no network, no enrichment side effects. */
 function stubSources(): MetadataSources {
   return {
-    ads: { status: "no-token", resolve: async () => null },
+    ads: { status: "no-token", resolve: async () => null, exportBibtex: async () => null },
     crossref: { resolve: async () => null },
     oa: { resolve: async () => null, fetchMany: async () => new Map() },
   };

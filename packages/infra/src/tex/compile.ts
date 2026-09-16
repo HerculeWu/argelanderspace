@@ -210,6 +210,20 @@ interface AttemptResult {
 
 const ARTIFACT_EXTS = ["aux", "bbl", "toc", "lof", "lot", "fls"] as const;
 
+/**
+ * After a failed run, latexmk's recorded state can deadlock later compiles of
+ * a STABLE cache dir: it reports "Nothing to do" while remembering "gave an
+ * error in previous invocation", and a stale empty .bbl (e.g. from a citation
+ * key typo) keeps failing pdflatex before bibtex ever reruns (Stage 12 field
+ * evidence). Drop the run-state files so the next compile starts fresh.
+ * Inputs (main.tex, .bib, assets) are never touched.
+ */
+async function clearLatexmkRunState(dir: string, jobname: string): Promise<void> {
+  for (const ext of ["aux", "bbl", "blg", "fdb_latexmk", "log"]) {
+    await fs.rm(path.join(dir, `${jobname}.${ext}`), { force: true });
+  }
+}
+
 async function attemptCompile(opts: {
   srcDir: string;
   mainRel: string;
@@ -285,6 +299,7 @@ async function attemptCompile(opts: {
     const mainBase = path.basename(opts.mainRel);
 
     if (result.timedOut) {
+      await clearLatexmkRunState(runDir, opts.jobname);
       return fail(
         "compile-timeout",
         `TeX compilation timed out after ${opts.timeoutMs}ms (engine: ${opts.engine}, main: ${mainBase})`
@@ -292,6 +307,7 @@ async function attemptCompile(opts: {
     }
 
     if (result.code !== 0) {
+      await clearLatexmkRunState(runDir, opts.jobname);
       if (log && logHintsUnsupported(log)) {
         return fail(
           "unsupported-build",

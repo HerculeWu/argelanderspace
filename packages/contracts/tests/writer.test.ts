@@ -15,6 +15,7 @@ import {
   CommentSchema,
   defaultCellData,
   extractCitedKeys,
+  journalMacrosTex,
   ManuscriptSchema,
   renderFrontMatter,
   serializeCell,
@@ -370,6 +371,8 @@ describe("buildTexDocument", () => {
         "\\documentclass{aa}",
         "\\usepackage{graphicx}",
         "",
+        journalMacrosTex(),
+        "",
         "\\newcommand{\\kms}{\\mathrm{km\\,s^{-1}}}",
         "",
         "\\begin{document}",
@@ -389,6 +392,25 @@ describe("buildTexDocument", () => {
         "\\end{document}",
         "",
       ].join("\n")
+    );
+  });
+
+  it("injects ADS journal macros only when something is cited", () => {
+    const cited = ManuscriptSchema.parse({
+      ...VALID_MANUSCRIPT,
+      cells: [{ id: "c_000000c1", type: "latex", data: { source: "See \\citep{x2020}." } }],
+    });
+    const plain = ManuscriptSchema.parse({
+      ...VALID_MANUSCRIPT,
+      cells: [{ id: "c_000000c1", type: "latex", data: { source: "No citations here." } }],
+    });
+    expect(buildTexDocument(cited, template)).toContain(
+      "\\providecommand{\\aap}{Astronomy \\& Astrophysics}"
+    );
+    expect(buildTexDocument(plain, template)).not.toContain("providecommand");
+    // the macro block precedes any user preamble so users can still override
+    expect(buildTexDocument(cited, template).indexOf("\\providecommand{\\aap}")).toBeLessThan(
+      buildTexDocument(cited, template).indexOf("\\begin{document}")
     );
   });
 

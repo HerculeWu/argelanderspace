@@ -502,6 +502,57 @@ export interface TexCellRange {
   endLine: number;
 }
 
+// --------------------------------------------------------------------------- //
+// ADS journal shorthands (Stage 12)
+// --------------------------------------------------------------------------- //
+
+/**
+ * aas_macros-style journal shorthand → expansion, injected as
+ * `\providecommand` whenever the manuscript cites anything: ADS BibTeX writes
+ * `journal = {\aap}`, but neither TeX Live nor aa.cls/aa.bst defines these
+ * (I004 evidence). `\providecommand` never overrides a template/user
+ * definition. Values carry escaped `&`. Extend the list as new shorthands
+ * appear in ADS exports (mapping follows the long-standing aas_macros.sty
+ * table circulated with ADS/AAS tooling).
+ */
+export const WRITER_JOURNAL_MACROS: ReadonlyArray<readonly [string, string]> = [
+  ["aap", "Astronomy \\& Astrophysics"],
+  ["aaps", "Astronomy \\& Astrophysics Supplement Series"],
+  ["aapr", "Astronomy and Astrophysics Reviews"],
+  ["actaa", "Acta Astronomica"],
+  ["aj", "Astronomical Journal"],
+  ["apj", "Astrophysical Journal"],
+  ["apjl", "Astrophysical Journal Letters"],
+  ["apjs", "Astrophysical Journal Supplement Series"],
+  ["apss", "Astrophysics and Space Science"],
+  ["araa", "Annual Review of Astronomy and Astrophysics"],
+  ["icarus", "Icarus"],
+  ["jcap", "Journal of Cosmology and Astroparticle Physics"],
+  ["mnras", "Monthly Notices of the Royal Astronomical Society"],
+  ["nat", "Nature"],
+  ["newa", "New Astronomy"],
+  ["pasa", "Publications of the Astronomical Society of Australia"],
+  ["pasj", "Publications of the Astronomical Society of Japan"],
+  ["pasp", "Publications of the Astronomical Society of the Pacific"],
+  ["physrep", "Physics Reports"],
+  ["pra", "Physical Review A"],
+  ["prb", "Physical Review B"],
+  ["prc", "Physical Review C"],
+  ["prd", "Physical Review D"],
+  ["pre", "Physical Review E"],
+  ["prl", "Physical Review Letters"],
+  ["rmp", "Reviews of Modern Physics"],
+  ["solphys", "Solar Physics"],
+  ["ssr", "Space Science Reviews"],
+];
+
+/** The injected preamble fragment (one \providecommand per line). */
+export function journalMacrosTex(): string {
+  return WRITER_JOURNAL_MACROS.map(
+    ([name, expansion]) => `\\providecommand{\\${name}}{${expansion}}`
+  ).join("\n");
+}
+
 /**
  * buildTexDocument plus the cell→line map (D14): the numbering compile's
  * events carry `file: main.tex + line`, and these ranges attribute them back
@@ -516,7 +567,12 @@ export function buildTexDocumentMapped(
   // cells are pushed individually (c0, "", c1, ""… == cells.join("\n\n")),
   // so the tex is byte-identical by construction. A part's start line is
   // 1 + Σ over earlier parts of (newlines in part + 1 join separator).
+  const cited = extractManuscriptCitedKeys(manuscript, template).length > 0;
   const parts: string[] = [template.preamble.trimEnd(), ""];
+  // ADS journal shorthands (journal = {\aap}) need definitions; injected only
+  // when something is cited, before any user preamble (\providecommand never
+  // overrides an existing definition).
+  if (cited) parts.push(journalMacrosTex(), "");
   if (manuscript.userPreamble.trim()) parts.push(manuscript.userPreamble.trimEnd(), "");
   parts.push("\\begin{document}", "");
   const front = renderFrontMatter(template, manuscript).trimEnd();
@@ -548,7 +604,7 @@ export function buildTexDocumentMapped(
   // zero cells: keep the original assembly's empty CELLS part, so the tex
   // stays byte-identical in that edge case too.
   if (manuscript.cells.length === 0) parts.push("");
-  if (extractManuscriptCitedKeys(manuscript, template).length > 0) {
+  if (cited) {
     // An explicit source declaration wins; otherwise use the template's declared
     // style. Missing styles remain a visible compile error, never a silent fallback.
     if (template.bibliographyStyle && !texInventory(parts).commands.has("bibliographystyle")) {

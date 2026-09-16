@@ -23,7 +23,6 @@ import { Icon } from "../lib/icons";
 import {
   defaultCellData,
   writerNumberingForDraft,
-  writerDraftKey,
   type CellType,
   type WriterManuscript,
   type WriterNumberingResponse,
@@ -148,8 +147,8 @@ export function WriterEditor({
         setTemplateWarnings(tps.warnings);
       }
       if (num) acceptNumbering(num);
-      // Existing drafts from the old numbering-only cache need an initial IR.
-      if (d && (!num?.preview || num.status !== "ok")) void requestPreview();
+      // I031 (Stage 12): no automatic compile on open — rendering is explicit
+      // only (Shift+Enter / Render). Stale/absent caches show the placeholder.
     })();
     return () => {
       alive = false;
@@ -170,13 +169,12 @@ export function WriterEditor({
     if (writeBusy()) { pendingExternal.current = true; return; }
     const previous = docRef.current;
     if (previous && d.rev < previous.rev) return;
-    const changed = previous && writerDraftKey(previous) !== writerDraftKey(d);
     applyDoc(d);
     writeFailed.current = false;
     setSaveState("saved");
     const latest = await fetchNumbering(id);
     acceptNumbering(latest);
-    if (changed && latest?.status !== "ok") void requestPreview();
+    // I031: external changes mark the preview stale; they never compile.
   };
 
   // ---- autosave: debounce → serial PUT chain --------------------------------------
@@ -261,7 +259,7 @@ export function WriterEditor({
       onWriterChanged((msg) => {
         if (msg.cause === "template" || msg.id === undefined) {
           void loadTemplatesNow();
-          if (msg.cause === "template") void requestPreview();
+          // I031: a changed template marks previews stale via draft keys; no auto-compile.
           if (writeBusy()) pendingExternal.current = true;
           else void refetchDoc();
           return;
@@ -576,7 +574,19 @@ export function WriterEditor({
 
   // ---- render -------------------------------------------------------------------
   return (
-    <div className="writer-root" ref={rootRef}>
+    <div
+      className="writer-root"
+      ref={rootRef}
+      onKeyDown={(e) => {
+        // I031: Shift+Enter outside an editing cell renders the manuscript.
+        // Inside form fields / CodeMirror the editors own the key (commit +
+        // render), and comment inputs keep Shift+Enter as a plain newline.
+        if (e.key !== "Enter" || !e.shiftKey || e.nativeEvent.isComposing || editingId) return;
+        if ((e.target as HTMLElement).closest("input, textarea, select, .cm-editor")) return;
+        e.preventDefault();
+        void requestPreview();
+      }}
+    >
       <div className="w-topbar">
         <button className="btn icon ghost" title={t("writer.topbar.back")} onClick={() => {
           if (!dirtyRef.current) writeFailed.current = false;
@@ -613,12 +623,12 @@ export function WriterEditor({
           {t("writer.topbar.preamble")}
         </button>
         <button
-          className="btn icon"
-          title={t("writer.numbering.refresh")}
+          className="btn primary"
+          data-render-button
           disabled={numberingBusy}
           onClick={() => void requestPreview()}
         >
-          <Icon name="refresh-cw" cls={numberingBusy ? "ico-sm spin" : "ico-sm"} />
+          <Icon name="refresh-cw" cls={numberingBusy ? "ico-sm spin" : "ico-sm"} /> {t("writer.topbar.render")}
         </button>
         <button className="btn primary" onClick={doExport}>
           <Icon name="file-down" cls="ico-sm" /> {t("writer.topbar.export")}

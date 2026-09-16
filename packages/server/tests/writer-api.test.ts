@@ -342,6 +342,25 @@ describe("export zip (M3)", () => {
     }
   });
 
+  test("Stage 12: zip ships template deps (cls/sty/bst) at the root", async () => {
+    // user-installed A&A deps
+    mkdirSync(join(dataDir, "templates", "aa.deps"), { recursive: true });
+    writeFileSync(join(dataDir, "templates", "aa.deps", "aa.cls"), "AA_CLS_BYTES");
+    writeFileSync(join(dataDir, "templates", "aa.deps", "aa.bst"), "AA_BST_BYTES");
+    const doc = await createMs("aa", "Deps Zip Probe");
+    const res = await get(`/api/writer/manuscripts/${doc.id}/export`);
+    expect(res.status).toBe(200);
+    const dir = mkdtempSync(join(tmpdir(), "writer-export-deps-"));
+    try {
+      extractZip(new Uint8Array(await res.arrayBuffer()), dir);
+      expect(readFileSync(join(dir, "aa.cls"), "utf8")).toBe("AA_CLS_BYTES");
+      expect(readFileSync(join(dir, "aa.bst"), "utf8")).toBe("AA_BST_BYTES");
+      expect(readFileSync(join(dir, "manuscript.tex"), "utf8")).toContain("\\documentclass{aa}");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("unknown manuscript → 404; bad id → 400", async () => {
     expect((await get("/api/writer/manuscripts/m_00000000/export")).status).toBe(404);
     expect((await get("/api/writer/manuscripts/nope/export")).status).toBe(400);

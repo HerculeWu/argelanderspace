@@ -94,6 +94,13 @@ export interface AdsSource {
     arxiv?: string | null;
     title?: string | null;
   }): Promise<AdsResolution | null>;
+  /**
+   * ADS BibTeX export (Stage 12): one batched POST → the raw multi-entry
+   * export text (parsing happens in core, which owns the BibTeX parser
+   * dependency). null when disabled/offline/failed — callers keep the
+   * generated fallback and retry on the next build.
+   */
+  exportBibtex(bibcodes: readonly string[]): Promise<string | null>;
 }
 
 /** Crossref client (keyless; DOI lookup then guarded title search). */

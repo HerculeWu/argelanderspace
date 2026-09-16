@@ -23,6 +23,7 @@ import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/h
 import { SourceCache, sha1Hex } from "./cache.js";
 
 const BASE = "https://api.adsabs.harvard.edu/v1/search/query";
+const EXPORT_BASE = "https://ui.adsabs.harvard.edu/v1/export/bibtex";
 const FL = "bibcode,title,author,year,citation_count,pub,doi,abstract,reference";
 const TIMEOUT = 30;
 
@@ -162,6 +163,40 @@ export class AdsClient implements AdsSource {
       }
     }
     return null;
+  }
+
+  /**
+   * ADS BibTeX export (Stage 12): one batched POST for all bibcodes; returns
+   * the raw multi-entry export text (parsing happens in core, which owns the
+   * BibTeX parser dependency). null when disabled/offline/failed — callers
+   * keep the generated fallback and retry on the next build.
+   */
+  async exportBibtex(bibcodes: readonly string[]): Promise<string | null> {
+    if (!bibcodes.length) return null;
+    if (!this.token || this.status !== "ok" || !this.enabled) return null;
+    try {
+      await sleep(this.delay);
+      const { text } = await fetchText(this.fetchImpl, EXPORT_BASE, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ bibcode: [...bibcodes] }),
+        timeout: TIMEOUT,
+      });
+      const out = (JSON.parse(text) as { export?: string }).export;
+      return typeof out === "string" && out.trim() ? out : null;
+    } catch (e) {
+      if (e instanceof HttpError && (e.status === 401 || e.status === 403)) {
+        this.status = "unauthorized";
+        this.log?.(`ADS token rejected (${e.status}) — ADS enrichment disabled`);
+        return null;
+      }
+      this.status = "error";
+      this.log?.(`ADS bibtex export failed: ${String(e)}`);
+      return null;
+    }
   }
 }
 

@@ -23,7 +23,7 @@ import { describe, expect, test } from "vitest";
 import { parseBibtexText } from "../src/acquire/bibtex.js";
 import { classify, planSources, planToDict } from "../src/acquire/planner.js";
 import { resolveWork } from "../src/acquire/resolve.js";
-import { enrichAndPlan } from "../src/acquire/run.js";
+import { enrichAndPlan, enrichBibFields } from "../src/acquire/run.js";
 import { addDoiWork, removeDocFromWorks } from "../src/library/build.js";
 import { workToRef } from "../src/library/graph.js";
 import type {
@@ -32,7 +32,14 @@ import type {
   OpenAlexResolution,
 } from "../src/library/sources.js";
 import { normalizeCrossref } from "../src/library/sources.js";
-import { emptyWork, LibraryStore, libraryPaths, type Work } from "../src/library/store.js";
+import {
+  emptyWork,
+  escapeBibtexText,
+  LibraryStore,
+  libraryPaths,
+  type Work,
+  workToBibtex,
+} from "../src/library/store.js";
 
 const FIXTURES = fileURLToPath(new URL("fixtures", import.meta.url));
 
@@ -232,6 +239,7 @@ describe("library domain (tests/run_tests.py port)", () => {
       status,
       resolve: async () => payload,
       fetchMany: async () => new Map<string, OpenAlexResolution>(),
+      exportBibtex: async () => null,
     };
   }
 
@@ -352,6 +360,37 @@ describe("library store round-trip", () => {
 });
 
 // --------------------------------------------------------------------------- //
+// I030: bibliography text fields are LaTeX-escaped at generation time
+// --------------------------------------------------------------------------- //
+
+describe("escapeBibtexText / workToBibtex escaping", () => {
+  test("journal/title/author escape &, %, #, _ but keep $ math and \\, commands", () => {
+    expect(escapeBibtexText("A&A")).toBe("A\\&A");
+    expect(escapeBibtexText("100% _safe #1")).toBe("100\\% \\_safe \\#1");
+    expect(escapeBibtexText("H$_2$O and 800\\,pc")).toBe("H$_2$O and 800\\,pc");
+    expect(escapeBibtexText("a_b and $x_i$")).toBe("a\\_b and $x_i$");
+  });
+
+  test("workToBibtex escapes text fields; doi/eprint stay URL-typed verbatim", () => {
+    const w: Work = {
+      ...emptyWork("doi:10.1051/0004-6361/202039341"),
+      title: "Weights at 100% \u0026 beyond",
+      authors: ["Hunt", "Reffert"],
+      year: 2021,
+      venue: "A&A",
+      doi: "10.1051/0004-6361/202039341",
+      arxiv_id: "2012.04267",
+      cite_key: "hunt2021",
+    };
+    const bib = workToBibtex(w);
+    expect(bib).toContain("journal = {A\\&A}");
+    expect(bib).toContain("title   = {Weights at 100\\% \\& beyond}");
+    expect(bib).toContain("doi     = {10.1051/0004-6361/202039341}");
+    expect(bib).not.toContain("{A&A}");
+  });
+});
+
+// --------------------------------------------------------------------------- //
 // API projection: note passthrough (Stage 3 / MS3 — no longer a boolean)
 // --------------------------------------------------------------------------- //
 
@@ -388,7 +427,7 @@ describe("workToRef doc_ids projection", () => {
 
 describe("enrichAndPlan cite_key (assign-only)", () => {
   const nullSources = {
-    ads: { status: "no-token" as const, resolve: async () => null },
+    ads: { status: "no-token" as const, resolve: async () => null, exportBibtex: async () => null },
     crossref: { status: "ok" as const, resolve: async () => null },
     oa: {
       status: "ok" as const,
@@ -424,6 +463,136 @@ describe("enrichAndPlan cite_key (assign-only)", () => {
     expect(a.cite_key).toBe("kroupa2001");
     expect(b.cite_key).toBe("kroupa2001a");
     expect(c.cite_key).toBe("kroupa2001b");
+  });
+
+  test("Stage 12: a work with a bibcode takes the bibcode as its cite key", async () => {
+    const w = kroupa("work:ads");
+    w.bibcode = "2001MNRAS.322..231K";
+    const store = new LibraryStore([w, kroupa("work:plain")]);
+    const [a, b] = store.works;
+    await enrichAndPlan(store, nullSources);
+    expect(a?.cite_key).toBe("2001MNRAS.322..231K");
+    expect(b?.cite_key).toBe("kroupa2001");
+    // ... and once assigned, gaining a bibcode later does NOT rewrite the key
+    if (b) b.bibcode = "2001MNRAS.322..231K";
+    await enrichAndPlan(store, nullSources);
+    expect(b?.cite_key).toBe("kroupa2001");
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// enrichBibFields (Stage 12): batched ADS BibTeX back-fill of volume/pages/…
+// --------------------------------------------------------------------------- //
+
+describe("enrichBibFields (ADS BibTeX back-fill)", () => {
+  const ADS_TEXT = `@ARTICLE{2021A&A...646A.104H,
+       author = {{Hunt}, Emily L. and {Reffert}, Sabine},
+      journal = {\\aap},
+        month = feb,
+       volume = {646},
+          eid = {A104},
+        pages = {A104},
+}`;
+
+  function hunt(): Work {
+    const w = emptyWork("doi:10.1051/0004-6361/202039341");
+    w.title = "Improving the open cluster census - I.";
+    w.authors = ["Hunt", "Reffert"];
+    w.year = 2021;
+    w.venue = "A&A";
+    w.bibcode = "2021A&A...646A.104H";
+    return w;
+  }
+
+  test("back-fills only absent fields, marks bib_fields, batches one POST", async () => {
+    const w = hunt();
+    w.volume = "999"; // an existing field is never overwritten by the export
+    const calls: string[][] = [];
+    const ads = {
+      status: "ok" as const,
+      resolve: async () => null,
+      exportBibtex: async (codes: readonly string[]) => {
+        calls.push([...codes]);
+        return ADS_TEXT;
+      },
+    };
+    const store = new LibraryStore([w]);
+    await enrichBibFields(store, ads);
+    expect(calls).toEqual([["2021A&A...646A.104H"]]);
+    expect(w.volume).toBe("999");
+    expect(w.number).toBeNull();
+    expect(w.pages).toBe("A104");
+    expect(w.eid).toBe("A104");
+    expect(w.month).toBe("02"); // parser normalizes the feb macro
+    expect(w.journal_macro).toBe("aap");
+    expect(w.bib_fields).toBe("ads");
+    // already back-filled works are never re-fetched
+    await enrichBibFields(store, ads);
+    expect(calls).toHaveLength(1);
+  });
+
+  test("export failure / missing entry leaves the work pending for next build", async () => {
+    const w = hunt();
+    const failing = {
+      status: "error" as const,
+      resolve: async () => null,
+      exportBibtex: async () => null,
+    };
+    await enrichBibFields(new LibraryStore([w]), failing);
+    expect(w.bib_fields).toBeNull();
+    expect(w.volume).toBeNull();
+    // an export that lacks the bibcode also keeps the work pending
+    const partial = { ...failing, exportBibtex: async () => "@ARTICLE{other,}" };
+    await enrichBibFields(new LibraryStore([w]), partial);
+    expect(w.bib_fields).toBeNull();
+    // works without a bibcode are never requested
+    const plain = kroupaNoBibcode();
+    let asked = false;
+    await enrichBibFields(new LibraryStore([plain]), {
+      ...failing,
+      exportBibtex: async () => {
+        asked = true;
+        return null;
+      },
+    });
+    expect(asked).toBe(false);
+  });
+
+  function kroupaNoBibcode(): Work {
+    const w = emptyWork("work:plain");
+    w.title = "No bibcode here";
+    return w;
+  }
+});
+
+// --------------------------------------------------------------------------- //
+// workToBibtex: back-filled fields, journal macro, bare month macro (Stage 12)
+// --------------------------------------------------------------------------- //
+
+describe("workToBibtex back-filled fields", () => {
+  test("emits volume/number/eid/pages/month; journal_macro wins over venue", () => {
+    const w: Work = {
+      ...emptyWork("doi:x"),
+      title: "T",
+      authors: ["Hunt", "Reffert"],
+      year: 2021,
+      venue: "A&A",
+      volume: "646",
+      eid: "A104",
+      pages: "A104",
+      month: "02",
+      journal_macro: "aap",
+      doi: "10.1051/x",
+      cite_key: "2021A&A...646A.104H",
+    };
+    const bib = workToBibtex(w);
+    expect(bib).toContain("journal = {\\aap}");
+    expect(bib).toContain("volume  = {646}");
+    expect(bib).toContain("eid     = {A104}");
+    expect(bib).toContain("month   = feb"); // bare BibTeX month macro
+    // no macro → escaped plain-text venue
+    const plain = workToBibtex({ ...w, journal_macro: null });
+    expect(plain).toContain("journal = {A\\&A}");
   });
 });
 

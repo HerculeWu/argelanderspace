@@ -179,6 +179,19 @@ export interface Work {
   added_at: string | null;
   /** short label, e.g. "A&A" (publisher-classified) */
   journal: string | null;
+  // ---- bibliography fields back-filled from the ADS BibTeX export (Stage 12) ----
+  volume: string | null;
+  /** issue number */
+  number: string | null;
+  pages: string | null;
+  /** electronic article id (paginated journals may still use `pages`) */
+  eid: string | null;
+  /** normalized "01".."12" (the bib parser resolves the feb-style macros) */
+  month: string | null;
+  /** ADS journal shorthand without the backslash, e.g. "aap" → `journal = {\aap}` */
+  journal_macro: string | null;
+  /** provider that back-filled the bibliography fields ("ads"); null = not yet */
+  bib_fields: string | null;
   /** acquisition: where to read the full text (planner output, see acquire/) */
   acquisition: Record<string, unknown> | null;
   /** resolution: which source answered for citation metadata (ads|crossref|openalex) */
@@ -211,6 +224,13 @@ export function emptyWork(id: string): Work {
     origin: "ingested",
     added_at: null,
     journal: null,
+    volume: null,
+    number: null,
+    pages: null,
+    eid: null,
+    month: null,
+    journal_macro: null,
+    bib_fields: null,
     acquisition: null,
     resolution: null,
   };
@@ -248,6 +268,13 @@ export function workFromJson(rec: Record<string, unknown>): Work {
   w.origin = typeof rec.origin === "string" ? rec.origin : "ingested";
   w.added_at = str(rec.added_at);
   w.journal = str(rec.journal);
+  w.volume = str(rec.volume);
+  w.number = str(rec.number);
+  w.pages = str(rec.pages);
+  w.eid = str(rec.eid);
+  w.month = str(rec.month);
+  w.journal_macro = str(rec.journal_macro);
+  w.bib_fields = str(rec.bib_fields);
   w.acquisition =
     rec.acquisition && typeof rec.acquisition === "object" && !Array.isArray(rec.acquisition)
       ? (rec.acquisition as Record<string, unknown>)
@@ -291,6 +318,13 @@ export function workToDict(w: Work): Record<string, unknown> {
   put("origin", w.origin);
   put("added_at", w.added_at);
   put("journal", w.journal);
+  put("volume", w.volume);
+  put("number", w.number);
+  put("pages", w.pages);
+  put("eid", w.eid);
+  put("month", w.month);
+  put("journal_macro", w.journal_macro);
+  put("bib_fields", w.bib_fields);
   put("acquisition", w.acquisition);
   put("resolution", w.resolution);
   return out;
@@ -458,20 +492,65 @@ function bibAuthors(authors: readonly string[]): string {
   return authors.length > 0 ? authors.join(" and ") : "";
 }
 
+/**
+ * Escape LaTeX-special characters in bibliography *text* fields (I030):
+ * enrichment/cleaned-parsing values are plain text, so `journal = {A&A}` used
+ * to crash every compile with `! Misplaced alignment tab character &` once
+ * BibTeX copied it into the .bbl verbatim. Escaping is NOT idempotent by
+ * design — surviving backslash commands in titles (e.g. `800\,pc`) are left
+ * untouched; `$` is preserved for inline math in titles; doi/eprint are
+ * URL-typed fields (the .bbl wraps them in \doi/\url-style commands) and are
+ * never escaped.
+ */
+export function escapeBibtexText(value: string): string {
+  // `$...$` inline-math spans stay untouched: `^`/`_`/`&` inside math are legal
+  // TeX (subscripts etc.); only plain-text segments are escaped.
+  return value
+    .split(/(\$[^$]*\$)/g)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/[&%#_]/g, (c) => `\\${c}`)))
+    .join("");
+}
+
+const MONTH_MACROS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+] as const;
+
 export function workToBibtex(w: Work): string {
   const key = (pyOr(w.cite_key) as string | undefined) ?? slug(w.id);
   const kind = w.type === "conf" ? "inproceedings" : "article";
+  // ADS journal shorthand wins (Stage 12): `{\aap}` with the compile-time
+  // \providecommand group; plain-text venues fall back to escaped text.
+  const journal = w.journal_macro ? `\\${w.journal_macro}` : escapeBibtexText(w.venue ?? "");
   const fields: [string, string][] = [
-    ["title", w.title],
-    ["author", bibAuthors(w.authors)],
-    ["journal", w.venue ?? ""],
+    ["title", escapeBibtexText(w.title)],
+    ["author", escapeBibtexText(bibAuthors(w.authors))],
+    ["journal", journal],
     ["year", w.year ? String(w.year) : ""],
+    ["volume", w.volume ?? ""],
+    ["number", w.number ?? ""],
+    ["eid", w.eid ?? ""],
+    ["pages", w.pages ?? ""],
     ["doi", w.doi ?? ""],
     ["eprint", w.arxiv_id ?? ""],
   ];
-  const body = fields
-    .filter(([, v]) => v)
-    .map(([k, v]) => `  ${k.padEnd(8)}= {${v}}`)
-    .join(",\n");
-  return `@${kind}{${key},\n${body}\n}`;
+  const body = fields.filter(([, v]) => v).map(([k, v]) => `  ${k.padEnd(8)}= {${v}}`);
+  // BibTeX month convention is the bare macro (`month = feb`), not a braced
+  // string: the .bst formats it per style. The stored value is normalized
+  // "01".."12" by the parser; anything unrecognized stays braced verbatim.
+  const monthMacro =
+    w.month && /^\d{2}$/.test(w.month) ? MONTH_MACROS[Number.parseInt(w.month, 10) - 1] : null;
+  if (monthMacro) body.push(`  ${"month".padEnd(8)}= ${monthMacro}`);
+  else if (w.month) body.push(`  ${"month".padEnd(8)}= {${escapeBibtexText(w.month)}}`);
+  return `@${kind}{${key},\n${body.join(",\n")}\n}`;
 }

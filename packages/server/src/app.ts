@@ -96,7 +96,6 @@ import {
   cancelNumberingCompile,
   getWriterNumbering,
   runWriterNumberingNow,
-  scheduleNumberingCompile,
   WriterNumberingError,
 } from "./writer-numbering.js";
 
@@ -635,9 +634,8 @@ export function createApp(deps: AppDeps): Hono {
       );
     }
     writerChanged("put", id);
-    // D14: a saved draft schedules the debounced numbering re-compile
-    // (fire-and-forget; failures persist the file without broadcasting).
-    scheduleNumberingCompile(writerDataDir, id, { broadcast });
+    // I031 (Stage 12): saving never compiles. Rendering is explicit only
+    // (Shift+Enter / Render → POST numbering/refresh).
     return c.json(outcome.saved);
   });
 
@@ -802,8 +800,10 @@ export function createApp(deps: AppDeps): Hono {
 
   // Stage 10 M3: server-assembled zip = manuscript.tex (single file) +
   // references.bib (cited-only, verbatim from library.bib) + referenced
-  // figure assets under assets/. `X-Writer-Bib-Missing` carries the cited
-  // keys that had no library.bib entry (percent-encoded JSON array).
+  // figure assets under assets/. Stage 12: template dependencies (cls/sty/bst)
+  // ship at the zip root so a local latexmk run is self-contained.
+  // `X-Writer-Bib-Missing` carries the cited keys that had no library.bib
+  // entry (percent-encoded JSON array).
   app.get("/api/writer/manuscripts/:id/export", async (c) => {
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
@@ -832,6 +832,9 @@ export function createApp(deps: AppDeps): Hono {
         ? [{ name: "EXPORT-WARNINGS.txt", data: `${bundle.warnings.join("\n")}\n` }]
         : []),
       ...(bundle.bib !== null ? [{ name: "references.bib", data: bundle.bib }] : []),
+      ...(await Promise.all(
+        bundle.deps.map(async (d) => ({ name: d.name, data: await readFile(d.abs) }))
+      )),
       ...(await Promise.all(
         bundle.assets.map(async (a) => ({
           name: `assets/${a.name}`,

@@ -72,6 +72,40 @@ describe("AdsClient (library/sources/ads.py)", () => {
     expect(calls.length).toBe(1);
   });
 
+  test("exportBibtex: one batched POST to the export endpoint, raw text out", async () => {
+    const { fetchImpl, calls } = stubFetch((c) => {
+      expect(c.url).toBe("https://ui.adsabs.harvard.edu/v1/export/bibtex");
+      expect(c.headers.Authorization).toBe("Bearer TEST-TOKEN");
+      return jsonResponse({ export: "@ARTICLE{2021A\u0026A...646A.104H,\n  volume = {646},\n}\n" });
+    });
+    const ads = new AdsClient({ cacheDir: tmpCache(), token: "TEST-TOKEN", delay: 0, fetchImpl });
+    const out = await ads.exportBibtex(["2021A\u0026A...646A.104H", "2026arXiv260303522H"]);
+    expect(out).toContain("@ARTICLE{2021A\u0026A...646A.104H");
+    expect(calls.length).toBe(1);
+    expect(calls[0]?.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.bodyText))).toEqual({
+      bibcode: ["2021A\u0026A...646A.104H", "2026arXiv260303522H"],
+    });
+  });
+
+  test("exportBibtex: disabled / empty / 401 degrade to null without throwing", async () => {
+    const disabled = new AdsClient({
+      cacheDir: tmpCache(),
+      token: "TEST-TOKEN",
+      delay: 0,
+      enabled: false,
+      fetchImpl: stubFetch(() => {
+        throw new Error("must not hit the network");
+      }).fetchImpl,
+    });
+    expect(await disabled.exportBibtex(["x"])).toBeNull();
+    expect(await disabled.exportBibtex([])).toBeNull();
+    const { fetchImpl } = stubFetch(() => jsonResponse({ error: "denied" }, { status: 403 }));
+    const ads = new AdsClient({ cacheDir: tmpCache(), token: "BAD", delay: 0, fetchImpl });
+    expect(await ads.exportBibtex(["x"])).toBeNull();
+    expect(ads.status).toBe("unauthorized");
+  });
+
   test("401/403 → status unauthorized, resolve degrades to null", async () => {
     const { fetchImpl } = stubFetch(() => jsonResponse({ error: "denied" }, { status: 403 }));
     const ads = new AdsClient({ cacheDir: tmpCache(), token: "BAD", delay: 0, fetchImpl });

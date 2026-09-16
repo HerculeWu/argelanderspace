@@ -464,6 +464,7 @@
       "info": "Info",
       "preamble": "Preamble",
       "export": "Export",
+      "render": "Render",
       "template": "Template"
     },
     "editor": {
@@ -557,12 +558,11 @@
       "needsLabel": "Add a label in the source first; the insertion position is ambiguous"
     },
     "numbering": {
-      "refresh": "Refresh preview",
       "refreshFailed": "Preview refresh failed; your draft is preserved",
       "stale": "Numbers may be stale"
     },
     "preview": {
-      "pending": "Awaiting compilation — source shown, references and numbers are not resolved yet.",
+      "pending": "Not rendered yet — showing source; references and numbers are not resolved. Press Shift+Enter or the Render button above.",
       "stale": "Previous compiled preview — awaiting update.",
       "unresolved": "Target changed or has not been compiled yet",
       "failed": "Preview could not be updated. Editing and saving are still available.",

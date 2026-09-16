@@ -30,7 +30,6 @@ import {
 import { compileTex, TEX_WORKSPACE_LIMITS, texFigurePort } from "@argelanderspace/infra";
 
 const COMPILE_TIMEOUT_MS = 30_000;
-const DEBOUNCE_MS = 500; // follows the editor's save debounce; measured, not a latency guarantee
 const PREVIEW_PROFILE = "writer-ir-v1";
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 const buildDir = (dataDir: string, id: string) => join(manuscriptDir(dataDir, id), "build");
@@ -390,25 +389,6 @@ function runScheduled(entry: Scheduled): Promise<void> {
       if (!entry.timer && scheduled.get(key) === entry) scheduled.delete(key);
     });
   return entry.running;
-}
-export function scheduleNumberingCompile(
-  dataDir: string,
-  id: string,
-  opts: { broadcast: BroadcastFn }
-): void {
-  const entry = entryFor(dataDir, id, opts.broadcast);
-  if (entry.running) {
-    entry.again = true;
-    return;
-  }
-  if (entry.timer) clearTimeout(entry.timer);
-  entry.timer = setTimeout(() => {
-    entry.timer = null;
-    void runScheduled(entry).catch((err) => {
-      if (!(err instanceof WriterNumberingError)) console.error("[writer-preview]", err);
-    });
-  }, DEBOUNCE_MS);
-  entry.timer.unref?.();
 }
 export async function runWriterNumberingNow(
   dataDir: string,
