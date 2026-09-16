@@ -86,5 +86,5 @@
 - 最终四门：1066 passed + 1 skip，typecheck/lint clean。
 - I030/I031 待用户侧最终确认后可在下轮归并时转入已关闭清单；本 session 原文已随 28472c2 入 Git。
 - 下一步（用户确认后）：实施 I031 + I030（转义兜底 + ADS 接入）→ 四门/回归/真实 Chrome → 存量迁移（D6）→ 用户 smoke → commit + push。
-- Stage 13 预告（用户 2026-09-16 提出，**未立项未授权**）：library 手动导入接通——用户可给 bibcode 从 ADS 选，也可手动给 bib 条目全文；遵循 D5 的来源无关架构。
+- Stage 13 预告（用户 2026-09-16 两次提出，**未立项未授权，用户明确将单开 session 进行，本 session 不得启动**）：补齐 **UI 界面手动建立条目**功能——用户可给 bibcode 从 ADS 选，也可手动给 bib 条目全文；遵循 D5 的 bib 条目来源无关架构原则。CLI 侧现有基础：DOI 建 docless work（addDoiWork）、`library build --bib` 导入；webui 无建条目入口，server 无相应写路由。
 - 隔离实验目录 /tmp/writer-iso-tCMpqo、/tmp/writer-iso2-* 为临时证据，可能已清理；关键结论已自包含于本文件。
