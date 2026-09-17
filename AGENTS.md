@@ -4,7 +4,7 @@
 
 用户母语为中文，默认用中文交流。
 
-**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具；webui 目标是可独立操作的应用。Stage 13 已于 2026-09-16 关闭（webui 手动建条目，smoke 通过），**下一阶段 Stage 14：完整跑通推荐文献查找功能**（用户已定，下个 session 立项实施），Stage 4.1 仍推后。当前能力与架构见正式记忆，对外说明见 `README.md`。
+**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具；webui 目标是可独立操作的应用。Stage 14 已于 2026-09-17 关闭（ADS 文献发现：文献详情「探索相关文献」→ ADS similar+useful 临时探索图，库图退役旧全局推荐转 saved-only + graph.json 版本化自愈，smoke 通过），**下一阶段 Stage 15：添加文献时若有 arXiv 即自动导入 arXiv 正文内容**（用户已定，下个 session 立项实施，范围届时 grilling），Stage 4.1 仍推后。当前能力与架构见正式记忆，对外说明见 `README.md`。
 
 ## 强制：session 启动协议
 

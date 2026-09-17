@@ -7,7 +7,7 @@
 - **科研工作台，不只是文献工具；webui 是独立应用，不是 agent 看板。** 用户 2026-09-02 定位升级（旧 product-and-architecture / Stage 3.1 推后事项 / Stage 4 定位前提）。理由：无 agent 也应能操作，用户有亲自读论文的权利。当前 note/label 写路径缺口是未完成能力，不能将现状反推为永久只读定位。
 - 当前单用户、项目级文件存储；dataDir 只按 cwd/显式配置解析，不向上查找（Stage 3）。全局库复用、SQLite 等没有实施授权。
 - **CLI + skills，无 MCP** 是现行接入决定（Stage 2），不将当时对某 agent 上游能力的评论视为永久事实。文献任务用 sanctioned CLI，不从内部文件猜论文内容。
-- 下一阶段由用户决定；阶段关闭不会自动启动候选项。**Stage 13（webui 手动建立文献条目）已于 2026-09-16 交付并 smoke 通过**（决策与验收见 [历史](history.md) 与该 session inbox）。**下一阶段 Stage 14：完整跑通推荐文献查找功能**（用户 2026-09-16 拍板，下个 session 立项，范围届时 grilling）。Stage 4.1 仍推后。详见问题清单。
+- 下一阶段由用户决定；阶段关闭不会自动启动候选项。**Stage 13（webui 手动建立文献条目）已于 2026-09-16 交付并 smoke 通过**；**Stage 14（ADS 文献发现 Discovery）已于 2026-09-17 交付并 smoke 通过**（决策/验收见 [历史](history.md) 与[阶段方案](../memory-reference/stage14-discovery-plan.md)）。**下一阶段 Stage 15：添加文献时若有 arXiv 即自动导入 arXiv 正文内容**（用户 2026-09-17 拍板，下个 session 立项，范围届时 grilling）。Stage 4.1 仍推后。详见问题清单。
 
 ## 2. 摄入、身份与寻址
 
@@ -18,13 +18,28 @@
 - **显示号全面印刷忠实**（2026-09-04 Stage 5 Q2，替代 Stage 3.1 自产 display 号）：未编号公式不显示自产 N。结构 id scheme 保持，但不承诺重摄入前后同一位置仍同号；增删块可级联位移，未知锚点静默兜底。
 - 不引入 pagedView/page 字段/XDV 页面系统（Stage 5 Q6，YAGNI；prototype 只是验证参考）。TikZ 等有真实需求再立项，非隐含兼容义务。
 
+### 文献发现（Stage 14，2026-09-17 grilling D1–D15 + 用户最终补充四点）
+
+完整方案与测试清单权威在[阶段方案](../memory-reference/stage14-discovery-plan.md)；以下为长期契约级边界：
+
+- **Discovery 是只读派生态**：发现请求不拿 libraryLock、不写 library.json/graph.json、不进 JobRunner、不发 mutation WS、无服务端 session。探索历史/选择/视口/筛选均为前端状态，刷新可丢。
+- **边只有引用一个含义**（A→B = A 引用 B）；similar/useful 是节点角色不是边类型；无深度控制、无自动多跳，继续探索只能显式“Explore from here”。
+- **V1 仅 ADS**：related=similar() top 18、useful=useful(实际 related 集) top 6（常量，不暴露调参）；useful 失败降级 `useful_unavailable` warning 不毁 related；ADS 不可用显式报错，不回退旧推荐、不提供 fixture/demo 探索数据。
+- **入库唯一通道**是 Stage 13 `POST /api/library/works`（bibcode 模式）；发现候选不用响应里已有元数据优化保存（一个业务 mutation 一个权威实现）。候选详情不前端拼造 BibTeX（权威 BibTeX 只经入库后 ADS export）。
+- **Library Graph saved-only + 派生缓存版本化**：graph.json 带版本常量；缺失/无版本/损坏/版本不符 → libraryLock 内 double-check + 锁内重读最新 store + 纯本地重建（零网络）+ 原子写；自愈失败 500 显式失败（不返回旧图、不当空图、不吞 fs 错误）；library.json 损坏是 source-of-truth 失败。此缓存维护与 Discovery 的“无副作用”不冲突。
+- **旧全局推荐架构已退役**（候选池/被引排序/MAX_SUGGEST/深度滑块/graph-node 入库端点），历史 `origin:"graph-node"` work 不迁移，是普通已存 work。死代码删除遵循调用点核实（D12）。
+- **CLI 冻结面不动**：`LibraryRef` 加可选 `bibcode` 属 web/API 内部增量（list/search 不经 LibraryRef）；不给 search 增字段、不动 golden；未来 agent 发起探索需单独设计 sanctioned 接口。
+- webui 工具栏 exportBibtex 假占位按钮已删除（Stage 13 遗留待确认 Q1 就此了结）；Web BibTeX 导出端点仍无授权，另立小项再议。
+- 探索入口仅在文献详情（有 bibcode 可用，无则禁用+双语说明；demo/无后端禁用+说明）；V1 无 Reader 入口、无 activity bar 项。`#explore/<bibcode>` hash 深链接；仅成功 seed 跳转进导航历史。
+- 摘要显示统一走白名单清洗 + 文本节点 KaTeX（见架构文件），不回归纯文本直渲。
+
 ### 手动建条目（Stage 13，2026-09-16）
 
 - webui 导入菜单三模式：标识符（DOI / 显式 arXiv）、ADS bibcode、BibTeX 全文。就地建立（upsert+planFor+assignCiteKey+save+广播），**不触发全库 rebuild**；复用现有解析链管线（用户明确要求）。
 - **arXiv 输入必须显式**：`arXiv:<id>` 前缀或 arxiv.org URL；裸 id 报错引导（用户 smoke 修订：明确这是 arxiv id）。CLI 裸 id 摄入路径不变（那是正文摄入）。
 - bibcode 模式 fail-fast（ADS 不可用/未命中→报错，不建 stub）；标识符模式容错（全miss也建裸 stub，下次 build 再富化）；bib 模式纯本地、逐条部分成功。
 - **手动 bib 尊重用户 cite key**；与其他 work 冲突显式逐条报错，不静默改写；身份重合→exists 只补空字段。注意现有 `library build --bib` 导入仍系统分配 key，两路径语义不同属有意。
-- 图谱增量更新是即时尽力可视化（节点+本地边+一次批量补邻居）；全局 top-N 截断/排序仅全量 build 权威，下次 refresh 收敛；图谱更新失败不阻塞创建。
+- 图谱增量更新是即时尽力可视化（节点+本地边）；图谱更新失败不阻塞创建。**Stage 14 修订**：不再批量补 OpenAlex suggested 邻居（随旧推荐架构退役），全局收敛仅全量 build 权威。
 - 无对应 CLI/agent 新命令（冻结面无需求不扩张）；CLI 既有 `ingest <doi>`、`library build --bib` 行为不变。
 
 ## 3. Agent 输出冻结与回归策略必须分开

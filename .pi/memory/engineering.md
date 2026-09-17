@@ -94,5 +94,8 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
 - **2026-09-01 MinerU**：401 `user authenticate failed` A0202；这是当时鉴权失败，不是永久状态。OCR 在封存分支，启用前自查 key/服务。旧免费配额约 1000 页/天也不是当前承诺。
 - **2026-08-26 出版商反爬实测**：A&A DataDome、OUP Cloudflare、IOP Radware、APS Cloudflare，403/人机；ADS 扫描偶发 504。当前 main 唯一全自动远程正文源为 arXiv LaTeX，不把旧 HTML READY 当真实可达。
 - ADS token `~/.ads/dev_key`；**ADS export 实测可用（2026-09-16）**：`POST /v1/export/bibtex` 一次多 bibcode 返回出版方质量 BibTeX（volume/pages/eid/month/doi/eprint 齐全，journal 为 `\aap` 宏，key 为 bibcode）；Stage 12 迁移 41 works 中 38 条有 bibcode 全部命中。OPENALEX_API_KEY、旧 MINERU_API_KEY 曾在 `~/.zshrc`；main config 的活跃 keys 为 data_dir/port/openalex_api_key/ads_dev_key。不要声称已裁剪的 mineru config 键仍被 main 接受；不读取/记录实际秘密值。
+- **真实浏览器探针教训（Stage 14）**：createServer 用 `port: 0` 随机端口时 guardCsrf 白名单不含实际绑定端口，同源 POST 403——探针须先用 net 探空闲端口再起 server；合成 PointerEvent 无活跃 pointerId，`setPointerCapture` 会抛（GraphCanvas 已加 try/catch 防御）；shell 默认落地是计划页，探针须先点文献 nav；`Runtime.evaluate` 取值为 `result.result.value` 双层嵌套。
+- **摘要显示**：文献/探索摘要不是 Markdown——provider HTML 白名单清洗 + 文本节点 KaTeX（`web/src/lib/abstract.tsx`），texmath 边界与 mdWithMath 同规则；不要再把 ADS 摘要当纯文本直渲。
+- **ADS discovery 实测可用（2026-09-17）**：`similar(bibcode:…)`/`useful(bibcode:a OR bibcode:b …)` 二阶算子经 `/v1/search/query` 正常返回（rows、sort=score desc），实测 18 related + 6 useful + 129 条真实引用边，串行 3 请求首请求秒级、24h TTL 缓存命中毫秒级。
 - **git push 凭据历史教训**：HTTPS credential.helper=cache 无热凭据会报 cannot read Username；当时 gh 已登录，可用一次性 `git -c credential.helper='!gh auth git-credential' push origin main`，不落配置。该命令只是环境解法，**不是 push 授权**，当前登录需实际核实。
 - 日常文献技能验收曾用 `pi -nc` 排除开发仓库 context 污染；这是历史手动方法，不是开发 session 跳过本记忆协议的许可。

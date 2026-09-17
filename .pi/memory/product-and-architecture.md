@@ -9,6 +9,7 @@
 当前能力：
 
 - arXiv LaTeX / 本地源码摄入 → 项目级文献库与引文图谱 → React 三栏阅读器 → CLI + skills 协作。
+- **Stage 14 ADS 文献发现（Discovery）**：文献详情「探索相关文献」（需 work 有 bibcode，demo/无后端禁用）→ 文献页内探索模式：ADS `similar()` top 18 相关 + `useful()` top 6（基于实际 related 集）候选，图为可见节点间真实引用；`#explore/<bibcode>` hash 深链接、前端 session 栈前进/后退（仅成功 seed 跳转进历史、失败保留旧图）；候选详情（摘要/书目/本图引用，无 BibTeX tab）；入库只走 Stage 13 `POST /api/library/works` bibcode 路径，就地更新不打断探索；加载为诚实不确定态 + 真取消。库图退役旧全局推荐：**saved-only**（节点全是已存 work，边 = 已存 referenced_works + 离线 bib）+ graph.json `version`（当前 2）锁内惰性自愈。
 - 计划页已落地，默认 landing；webui 可独立 CRUD 计划、任务与文档标注，不依赖 agent。**Stage 13 起 webui 可手动建文献条目**：侧栏导入菜单三模式——标识符（DOI / `arXiv:` 前缀 / arxiv.org URL，裸 arXiv id 报错引导）、ADS bibcode（fail-fast）、BibTeX 全文批量（纯本地、逐条部分成功、尊重用户 cite key、冲突逐条报错）；就地建立不触发全库 rebuild，重复身份 exists 只补空字段。
 - Write 页已交付：独立稿件列表、八型 cell、模板选择、Info/Preamble、per-cell comments、上传图片与 LaTeX 源码 zip 导出（附模板 cls/sty/bst 依赖）；CodeMirror 编辑、共享 latexmk→facts+AST→IR 的 cell 预览，不展示 PDF。Stage 12 起渲染由 Shift+Enter/Render 显式触发（自动保存保留），bib 转义与 ADS 富化修复 Report citation；Stage 10/11 为带问题关闭，遗留 I030/I031 已由 Stage 12 关闭。
 - webui zh-CN/en 即时切换，偏好随 Tweaks 存 localStorage，默认中文、不探测浏览器语言；UI 文案集中双 JSON。server detail/job.error 与用户数据（例如库名）不在翻译范围，CLI 输出不变。
@@ -47,7 +48,7 @@
 │   ├── build/             # aux/bbl/toc/fls/argelander.jsonl 等编译事实
 │   └── assets/            # 直通图或 PDF/EPS 转 SVG
 ├── output/.latexcache/    # arXiv 源包缓存
-├── library/               # library.json、bib、富化缓存等
+├── library/               # library.json、bib、富化缓存、cache/{ads,crossref,openalex,ads-discovery}、graph.json(v2)
 ├── jobs/                  # 持久 job 与 spool
 ├── input/
 ├── annotations/<doc_id>/
@@ -61,6 +62,8 @@
 `statusDir = resolve(dataDir, "..", "status")`，不是无条件使用 repo/status。plans/annotations/manuscripts 用 pretty 2 空格、rev 乐观锁、tmp+rename。Writer manuscript/template/cell 为 loose schema 保未知键，不能反推 plans 已解决 I010。配置默认 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；env 优先，未知键忽略，已知键类型错报键名但不回显值。
 
 **`library build --offline` 已约束 ADS、Crossref、OpenAlex 网络调用**，缓存仍可读（Stage 7 `f320c6b` 修复；旧“ADS 恒活”作废）。不要由此推断所有 CLI 命令都全局断网；ingest 缓存命中、DOI stub 富化是各自路径。
+
+**ADS 发现缓存（Stage 14）**：`cache/ads-discovery/` 独立于元数据 ads 缓存，存 provider 检索响应（{fetchedAt, data}），TTL 24h，键含查询/字段/rows/sort；网络/鉴权/限流错误不缓存，abort 不写缓存。Discovery 响应本身不缓存（含即时 libraryId）。
 
 ## LaTeX 双通道管线
 
@@ -81,7 +84,10 @@
 - 右栏 `引用 | 标注`，默认引用；文本选区/结构边钮/整篇按钮可创建标注，正文 DOM 不嵌套高亮 span，使用 CSS Custom Highlight。完整数据契约见决策文件，交互细节见 [annotations](../memory-reference/annotations.md)。
 - 手卷深链接 `/doc/<doc_id>#<anchor>`：sec-N/fig-N/eq-N/tab-N/ref-N 等是管线结构 id，非印刷编号；`#ann-<annotation_id>` 定位标注。
 - Hono REST + `/ws`；server 轮询 library、plans、per-doc current annotations、manuscript JSON 与模板 JSON 指纹，广播各域 changed（含 `writer.changed`）。server 自写可再收到 external，前端重取幂等；没有资产目录 watcher。
-- **图谱可增量更新（Stage 13）**：手动建条目时 `mergeWorkIntoGraph` 就地补新节点与本地可算边，单条模式另发一次 OpenAlex 批量补 suggested 邻居；这是即时尽力可视化，全局 top-N 截断/排序仅全量 `library build`/refresh 权威。批量 bib 只补裸节点，富化留下次 build。
+- **图谱可增量更新（Stage 13/14）**：手动建条目时 `mergeWorkIntoGraph` 就地补新节点与本地可算 saved↔saved 边；Stage 14 起不再发 OpenAlex 补 suggested 邻居。即时尽力可视化，全局收敛仅全量 `library build`/refresh 权威。批量 bib 只补裸节点，富化留下次 build。
+- **图谱为 saved-only（Stage 14）**：节点全是已存 work；graph.json 带 `version`（当前 2），serve 时缺失/无版本/损坏/版本不符 → `libraryLock` 内 double-check + 重读最新 store 纯本地重建 + 原子写盘；自愈失败显式 500，不广播 library.changed；library.json 损坏仍显式失败。
+- 探索模式深链接 `#explore/<bibcode>`；F5 重查当前 seed，历史栈内存态刷新即丢。
+- 摘要渲染（Stage 14 修复）：库页与探索页摘要统一 `abstractHtml`——provider HTML 白名单清洗（SUB/SUP/I/B/EM/STRONG/BR/P，剥属性，活性内容剔除）+ 文本节点内 KaTeX（texmath 边界规则）；注入沿用单用户 dangerouslySetInnerHTML 惯例。
 - **reader I001 已在批准范围内关闭**：ReaderSession 经 annotations GET `?coherent=1` 共同接纳 IR/current/同读资产 manifest，正常摄入通知后无需 F5。更新/失败保旧文字布局和会话草稿，隐藏高亮/图片并暂停标注与旧定位；图实际 bytes 按 manifest hash 校验后 Blob 展示。失败手动重试、图片自动恢复最多一次，细则见 annotations 专题；不能推广为任意外部资产改动、无限自动恢复或跨进程一致性。
 - Job 串行、落盘；boot 时未完 job 标 interrupted，不重跑；hello 回放状态，失败在详情刷新后仍可见；job.done 先于 library.changed。
 
@@ -114,7 +120,7 @@ pnpm workspace，ESM-only，TypeScript strict + noUncheckedIndexedAccess，Biome
 | infra | tex workspace/compile/instrument/figures/ingest；latex/arxiv-source 抓取解包；ADS/Crossref/OpenAlex、config、zip、pyjson 缓存兼容；Writer opt-in 编译缓存 |
 | server | Hono REST/SPA/images/WS、job runner、watcher、各领域锁及 DocMutationRegistry、Writer 编译 single-flight/drain |
 | cli | 命令注册、agent 冻结输出与磁盘读写 |
-| web | React 阅读器/文献/计划/标注/Writer；共享 IR 展示、ReaderSession、i18n |
+| web | React 阅读器/文献/计划/标注/Writer/探索；共享 IR 展示、ReaderSession、i18n、graph/ 共享图渲染器（LibraryGraph/DiscoveryGraphView 两 adapter） |
 | app | npm 单包，tsup dist/bin.js + dist/web + dist/argelander.sty + 依赖 notices；createRequire banner 仍必需 |
 
 `/api/paper/:id/ir` 直接读存 IR，旧 raw `/api/paper/:id` GET 已删（不要与新 DELETE 混淆）；旧无 version 文档需重摄入，不再投影。单用户文件存储，不使用 SQLite；截至 Stage 8 没有 CI。结构定位优先用 CodeGraph，再在不足时读源码。

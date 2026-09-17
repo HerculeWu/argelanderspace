@@ -4,9 +4,9 @@
 
 ## 当前状态
 
-ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–13 已关闭；Stage 10/11 是带问题关闭，不等于全部 smoke 通过，其遗留 I030/I031 已由 Stage 12 修复并经用户 smoke 确认；Stage 13（webui 手动建条目）已交付且 smoke 通过。下一阶段：**Stage 14——完整跑通推荐文献查找功能**（用户 2026-09-16 拍板，下个 session 立项实施，范围届时 grilling）。Stage 4.1 仍推后，问题清单不是默认任务队列。
+ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–14 已关闭；**Stage 14（ADS 文献发现 Discovery）已交付且 smoke 通过**（含摘要 HTML/数学渲染修复）。下一阶段：**Stage 15——添加文献时若有 arXiv 即自动导入 arXiv 正文内容**（用户 2026-09-17 拍板，下个 session 立项，范围届时 grilling）。Stage 4.1 仍推后，问题清单不是默认任务队列。
 
-Writer 已交付 cell 编辑/导出、CodeMirror 与共享编译→IR 预览；Stage 12 落地 Shift+Enter/Render 显式触发渲染（自动保存保留）、bib 转义与 ADS BibTeX 字段富化（cite_key=bibcode 分配规则、一次性存量迁移）、期刊宏注入与导出 zip 附带模板依赖。reader 同 epoch 自动更新已完成（I001 关闭）。详情各归其权威文件，不以代码现状废除新决定。
+Writer 已交付 cell 编辑/导出、CodeMirror 与共享编译→IR 预览；Stage 12 落地 Shift+Enter/Render 显式触发渲染（自动保存保留）、bib 转义与 ADS BibTeX 字段富化（cite_key=bibcode 分配规则、一次性存量迁移）、期刊宏注入与导出 zip 附带模板依赖。reader 同 epoch 自动更新已完成（I001 关闭）。Stage 14 新增：文献详情页「探索相关文献」→ ADS similar(18)+useful(6) 临时探索图（真实引用边、菱形 Useful、入库不打断探索）；库图退役旧全局推荐（saved-only + graph.json 版本化自愈）。详情各归其权威文件，不以代码现状废除新决定。
 
 ## 启动阅读顺序（不得只读索引）
 
