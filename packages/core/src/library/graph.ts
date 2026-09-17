@@ -2,28 +2,32 @@
  * Build the citation graph + API projections from enriched library works
  * (bibgraph/library/graph.py).
  *
- * Nodes = papers (saved works + suggested neighbours), edges = citation links.
- * Edges come from two sources, unioned:
- * - **OpenAlex** `referenced_works` — the broad network (saved→neighbour,
- *   neighbour→neighbour, and saved→saved when OpenAlex matched the bibliography);
- * - **offline** — each ingested paper's own parsed bibliography matched against
- *   the saved set (guarantees the saved↔saved edges regardless of OpenAlex).
+ * **Stage 14: the Library graph is saved-only** (the global suggested-node
+ * recommendation architecture is retired — ADS Discovery replaces it). Nodes
+ * are exactly the saved works; edges are real citation links between them,
+ * unioned from two local sources:
+ * - **OpenAlex** `referenced_works` already stored on the works (no network);
+ * - **offline** — each ingested paper's own parsed bibliography matched
+ *   against the saved set.
  *
- * Suggested neighbours are the most-cited works referenced by the library, capped
- * so the payload stays small; the frontend's depth/count sliders filter further.
+ * After enrichment the build is therefore pure/local: no candidate pool, no
+ * metadata fetch for suggestions, no cited_by_count ranking, no cap.
  *
  * Port notes (bug-for-bug):
  * - Python's `_saved_node` emits explicit `null`s (the graph JSON is dumped
- *   un-compacted); `_suggested_node` omits `ref`/`arxiv_id`/`doc_id` — kept.
- * - Python's `sorted(links)` orders (a, b) tuples lexicographically; the TS port
- *   compares element-wise to the same effect.
- * - Python's `log.info` lines are dropped (logging is not ported).
+ *   un-compacted) — kept.
+ * - Python's `sorted(links)` orders (a, b) tuples lexicographically; the TS
+ *   port compares element-wise to the same effect.
  */
 
-import type { GraphData, GraphNode, LibraryRef } from "@argelanderspace/contracts";
+import {
+  CURRENT_GRAPH_VERSION,
+  type GraphData,
+  type GraphNode,
+  type LibraryRef,
+} from "@argelanderspace/contracts";
 import { pyOr } from "../documents/pyregex.js";
 import { docReferenceIds } from "./seed.js";
-import type { OpenAlexResolution, OpenAlexSource } from "./sources.js";
 import {
   displayAuthors,
   identityKeys,
@@ -34,8 +38,6 @@ import {
   slug,
   type Work,
 } from "./store.js";
-
-const MAX_SUGGEST = 120;
 
 // --------------------------------------------------------------------------- //
 // Enrichment helpers
@@ -157,50 +159,12 @@ function savedNode(w: Work): GraphNode {
   };
 }
 
-function suggestedNode(m: OpenAlexResolution): GraphNode {
-  const oaid = m.openalex_id as string;
-  return {
-    id: `oa:${oaid}`,
-    y: m.year as number,
-    c: m.cited_by_count || 0,
-    a: displayAuthors(m.authors) || (m.title ? m.title.slice(0, 24) : oaid),
-    v: m.venue || "",
-    t: m.title || oaid,
-    doi: m.doi,
-  };
-}
-
-export async function buildGraph(
-  store: LibraryStore,
-  oa: OpenAlexSource,
-  outputDir: string
-): Promise<GraphData> {
+export function buildGraph(store: LibraryStore, outputDir: string): GraphData {
   const oaid2node = new Map<string, string>();
   const nodes: GraphNode[] = [];
   for (const w of store.works) {
     nodes.push(savedNode(w));
     if (w.openalex_id) oaid2node.set(w.openalex_id, w.id);
-  }
-
-  const savedOa = new Set(
-    store.works.map((w) => w.openalex_id).filter((x): x is string => x !== null)
-  );
-  const pool = new Set<string>();
-  for (const w of store.works) {
-    for (const r of w.referenced_works) pool.add(r);
-  }
-  for (const s of savedOa) pool.delete(s);
-
-  const meta =
-    pool.size > 0 ? await oa.fetchMany([...pool].sort()) : new Map<string, OpenAlexResolution>();
-  const cands = [...meta.values()]
-    .filter((m) => pyOr(m.year) !== undefined)
-    .sort((a, b) => (b.cited_by_count || 0) - (a.cited_by_count || 0))
-    .slice(0, MAX_SUGGEST);
-  for (const c of cands) {
-    const nid = `oa:${c.openalex_id}`;
-    oaid2node.set(c.openalex_id as string, nid);
-    nodes.push(suggestedNode(c));
   }
 
   const linkSeen = new Set<string>();
@@ -211,30 +175,19 @@ export async function buildGraph(
       links.push(e);
     }
   };
-  const addRefs = (refs: readonly string[] | null | undefined, srcNode: string): void => {
-    for (const r of refs ?? []) {
-      const tgt = oaid2node.get(r);
-      if (tgt && tgt !== srcNode) addLink([srcNode, tgt]);
-    }
-  };
 
-  for (const w of store.works) addRefs(w.referenced_works, w.id);
-  for (const c of cands) addRefs(c.referenced_works, `oa:${c.openalex_id}`);
+  // saved → saved, from the OpenAlex references already stored on the works
+  for (const w of store.works) {
+    for (const r of w.referenced_works) {
+      const tgt = oaid2node.get(r);
+      if (tgt && tgt !== w.id) addLink([w.id, tgt]);
+    }
+  }
+  // saved → saved, from the ingested bibliographies (guaranteed regardless of OpenAlex)
   for (const e of offlineEdges(store, outputDir)) addLink(e);
 
-  // keep only nodes that are saved or actually connected
-  const connected = new Set<string>();
-  for (const [a, b] of links) {
-    connected.add(a);
-    connected.add(b);
-  }
-  const savedIds = new Set(store.works.map((w) => w.id));
-  const kept = nodes.filter((n) => savedIds.has(n.id) || connected.has(n.id));
-  const keptIds = new Set(kept.map((n) => n.id));
-  const keptLinks = links.filter(([a, b]) => keptIds.has(a) && keptIds.has(b));
-
-  keptLinks.sort(compareEdges);
-  return { nodes: kept, links: keptLinks.map(([a, b]) => [a, b]) };
+  links.sort(compareEdges);
+  return { version: CURRENT_GRAPH_VERSION, nodes, links: links.map(([a, b]) => [a, b]) };
 }
 
 // --------------------------------------------------------------------------- //
@@ -263,6 +216,8 @@ export function workToRef(w: Work): LibraryRef {
     note: w.note,
     doi: w.doi,
     arxiv_id: w.arxiv_id,
+    // Stage 14: presence enables the web "explore related papers" action
+    bibcode: w.bibcode,
     doc_id: w.doc_ids.length > 0 ? w.doc_ids[0] : null,
     // all versions (Stage 7 MS3): doc_ids[0] IS the main doc (same as doc_id)
     doc_ids: w.doc_ids.length > 0 ? w.doc_ids : null,
@@ -292,30 +247,24 @@ export function workToRef(w: Work): LibraryRef {
 // --------------------------------------------------------------------------- //
 
 /**
- * Merge one manually added work into an existing graph (Stage 13): its saved
- * node plus every locally computable edge (inbound from saved works whose
- * `referenced_works` contain it, outbound to nodes already present). When
- * `oa` is non-null, newly referenced OpenAlex ids are fetched in ONE batch
- * and added as suggested neighbours.
+ * Merge one manually added work into an existing graph (Stage 13; Stage 14:
+ * saved-only): its saved node plus every locally computable saved↔saved edge
+ * (inbound from saved works whose `referenced_works` contain it, outbound to
+ * saved works it cites). No OpenAlex candidate fetch for suggested
+ * neighbours — those no longer exist.
  *
- * This is a best-effort immediate view, not a rebuild: the global MAX_SUGGEST
- * top-N ranking/cap and offline (parsed-bibliography) edges are only computed
- * by {@link buildGraph}, so the next `library build`/refresh converges the
- * graph to authoritative. Callers treat failure as non-fatal (the work is
- * already saved; the graph catches up on the next refresh).
+ * This is a best-effort immediate view, not a rebuild: offline
+ * (parsed-bibliography) edges are only computed by {@link buildGraph}, so the
+ * next `library build`/refresh converges the graph to authoritative. Callers
+ * treat failure as non-fatal (the work is already saved; the graph catches up
+ * on the next refresh).
  */
-export async function mergeWorkIntoGraph(
-  graph: GraphData,
-  store: LibraryStore,
-  w: Work,
-  oa: OpenAlexSource | null
-): Promise<GraphData> {
+export function mergeWorkIntoGraph(graph: GraphData, store: LibraryStore, w: Work): GraphData {
   const nodes: GraphNode[] = graph.nodes.filter((n) => n.id !== w.id);
   nodes.push(savedNode(w));
 
   const oaid2node = new Map<string, string>();
   for (const x of store.works) if (x.openalex_id) oaid2node.set(x.openalex_id, x.id);
-  for (const n of nodes) if (n.id.startsWith("oa:")) oaid2node.set(n.id.slice(3), n.id);
 
   const links: [string, string][] = graph.links.map(([a, b]) => [a, b]);
   const seen = new Set(links.map(edgeKey));
@@ -332,24 +281,12 @@ export async function mergeWorkIntoGraph(
       if (x.id !== w.id && x.referenced_works.includes(w.openalex_id)) add([x.id, w.id]);
     }
   }
-  // outbound: works the new one cites
-  const missing = new Set<string>();
+  // outbound: saved works the new one cites
   for (const r of w.referenced_works) {
     const tgt = oaid2node.get(r);
     if (tgt) add([w.id, tgt]);
-    else missing.add(r);
-  }
-  // one batched fetch for not-yet-mapped references → suggested neighbours
-  if (oa !== null && missing.size > 0) {
-    const meta = await oa.fetchMany([...missing].sort());
-    for (const m of meta.values()) {
-      if (pyOr(m.year) === undefined || !m.openalex_id) continue;
-      const nid = `oa:${m.openalex_id}`;
-      if (!nodes.some((n) => n.id === nid)) nodes.push(suggestedNode(m));
-      add([w.id, nid]);
-    }
   }
 
   links.sort(compareEdges);
-  return { nodes, links };
+  return { version: CURRENT_GRAPH_VERSION, nodes, links };
 }

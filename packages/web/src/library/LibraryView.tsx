@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { useWorkspace } from "../argelander/workspace";
-import { fetchLibrary, addRef as apiAddRef } from "../api/library";
+import { fetchLibrary } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
-import { CitationGraph } from "./CitationGraph";
-import { RefDetail, GraphNodeDetail } from "./RefDetail";
+import { LibraryGraph } from "./LibraryGraph";
+import { RefDetail } from "./RefDetail";
 import { ImportDialog, type ImportMode } from "./ImportDialog";
-import type { GraphNode, LibraryData, LibraryRef } from "./types";
+import { ExploreMode } from "./ExploreMode";
+import { useExploreStack } from "./explore-state";
+import { exploreBus } from "../lib/explore-route";
+import type { LibraryData, LibraryRef } from "./types";
 
 // color labels users assign by right-clicking a reference (replaces the star)
 const LABEL_COLORS = [
@@ -44,26 +47,6 @@ export function effectiveLabel(
   overlay: Record<string, string | null>
 ): string | undefined {
   return r.id in overlay ? (overlay[r.id] ?? undefined) : (r.label ?? (r.star ? "amber" : undefined));
-}
-
-function nodeToRef(n: GraphNode): LibraryRef {
-  return {
-    id: n.id,
-    title: n.t,
-    authors: n.a,
-    year: n.y,
-    venue: n.v,
-    type: /ICLR|ICML|NeurIPS|CVPR|AISTATS/.test(n.v) ? "conf" : "article",
-    cite: n.id,
-    tags: [],
-    pdf: false,
-    read: false,
-    star: false,
-    citedBy: n.c,
-    doi: n.doi,
-    arxiv_id: n.arxiv_id,
-    doc_id: n.doc_id,
-  };
 }
 
 const IMPORTS = [
@@ -141,8 +124,22 @@ function LibraryBody({
   const [q, setQ] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
 
-  // color labels: session-local overlay (refId → color key; null = cleared) on
-  // top of the persisted `label` field; unset refs keep the star→amber seeding
+  // ---- Stage 14: ADS Discovery (explore) mode ---------------------------- //
+  const explore = useExploreStack();
+  // the hash navigation bus (`#explore/<bibcode>`): this instance handles a
+  // hash request when it is exploring or when it is the first registered pane
+  useEffect(
+    () =>
+      exploreBus.register({
+        isExploring: () => explore.isExploringRef.current,
+        explore: explore.exploreFromHash,
+        exit: explore.exitExplore,
+      }),
+    [explore.isExploringRef, explore.exploreFromHash, explore.exitExplore]
+  );
+
+  // color labels: session-local overlay (right-click menu) on top of the
+  // persisted `label` field; unset refs keep the star→amber seeding
   const [labels, setLabels] = useState<Record<string, string | null>>({});
   const effLabel = (r: LibraryRef): string | undefined => effectiveLabel(r, labels);
   const [labelMenu, setLabelMenu] = useState<{ x: number; y: number; refId: string } | null>(null);
@@ -161,43 +158,6 @@ function LibraryBody({
     };
   }, [labelMenu]);
 
-  // add-to-library state (single source of truth: `added`)
-  const [added, setAdded] = useState<Set<string>>(new Set());
-  const [adding, setAdding] = useState<string | null>(null);
-  const addedRefs = useRef<Record<string, LibraryRef>>({});
-  const addToLibrary = async (nodeId: string) => {
-    if (adding) return;
-    setAdding(nodeId);
-    const resp = await apiAddRef(nodeId); // null when backend absent → optimistic placeholder
-    addedRefs.current[nodeId] = resp?.ref ?? nodeToRef(byId[nodeId]);
-    setAdded((s) => new Set(s).add(nodeId));
-    setAdding(null);
-  };
-
-  // recommendations
-  const [showSug, setShowSug] = useState(false);
-  const [sugCount, setSugCount] = useState(10);
-  const [sugDepth, setSugDepth] = useState(1);
-  const [sugLoading, setSugLoading] = useState(false);
-  const sugTimer = useRef<number | undefined>(undefined);
-  const toggleSug = () => {
-    if (showSug) {
-      setShowSug(false);
-      setSelNode((prev) => {
-        const n = prev && byId[prev];
-        return n && !n.ref ? null : prev;
-      });
-      return;
-    }
-    if (sugLoading) return;
-    setSugLoading(true);
-    sugTimer.current = window.setTimeout(() => {
-      setSugLoading(false);
-      setShowSug(true);
-    }, 1100);
-  };
-  useEffect(() => () => clearTimeout(sugTimer.current), []);
-
   const [importOpen, setImportOpen] = useState(false);
   // Stage 13: which import-menu dialog is open (null = closed). A resolved
   // (created/existing) ref is selected by its work id — the saved graph node
@@ -208,22 +168,32 @@ function LibraryBody({
     onReload();
   };
 
-  const allRefs = useMemo(
-    () => refs.concat([...added].map((id) => addedRefs.current[id] ?? nodeToRef(byId[id]))),
-    [refs, added, byId]
-  );
-  const list = allRefs.filter(
+  const list = refs.filter(
     (r) => !q || (r.title + r.authors + r.cite).toLowerCase().includes(q.toLowerCase())
   );
   const curNode = selNode ? byId[selNode] : null;
-  const curRef: LibraryRef | null = curNode
-    ? curNode.ref
-      ? refs.find((r) => r.id === curNode.ref) ?? null
-      : added.has(curNode.id)
-      ? addedRefs.current[curNode.id] ?? nodeToRef(curNode)
-      : null
+  const curRef: LibraryRef | null = curNode?.ref
+    ? (refs.find((r) => r.id === curNode.ref) ?? null)
     : null;
-  const menuRef = labelMenu ? (allRefs.find((r) => r.id === labelMenu.refId) ?? null) : null;
+  const menuRef = labelMenu ? (refs.find((r) => r.id === labelMenu.refId) ?? null) : null;
+
+  /** "View in library" from a discovery candidate: exit explore + select it. */
+  const viewInLibrary = (workId: string) => {
+    explore.exitExplore();
+    setSelNode(refToNode[workId] ?? workId);
+    onReload(); // the new member's node arrives with the fresh payload
+  };
+
+  if (explore.active) {
+    return (
+      <ExploreMode
+        key={explore.current?.key ?? "explore-pending"}
+        explore={explore}
+        onExit={explore.exitExplore}
+        onViewInLibrary={viewInLibrary}
+      />
+    );
+  }
 
   return (
     <div className="view-row">
@@ -361,36 +331,23 @@ function LibraryBody({
               {t("library.toolbar.demoBadge")}
             </span>
           )}
-          <button
-            className={"sug-toggle" + (showSug ? " on" : "")}
-            onClick={toggleSug}
-          >
-            <Icon name={sugLoading ? "loader" : "sparkles"} cls={"ico-sm" + (sugLoading ? " spin" : "")} />
-            {sugLoading ? t("library.toolbar.sugLoading") : showSug ? t("library.toolbar.sugOn") : t("library.toolbar.sugOff")}
-          </button>
-          <button className="btn">
-            <Icon name="download" cls="ico-sm" />
-            {t("library.toolbar.exportBibtex")}
-          </button>
+          {explore.sessions.length > 0 && (
+            <button
+              className="btn ghost"
+              data-testid="resume-explore"
+              title={t("explore.resume")}
+              onClick={explore.resumeExplore}
+            >
+              <Icon name="compass" cls="ico-sm" />
+              {t("explore.resume")}
+            </button>
+          )}
         </div>
 
-        <CitationGraph
-          graph={graph}
-          selId={selNode}
-          onSel={setSelNode}
-          query={q}
-          showSug={showSug}
-          loading={sugLoading}
-          sugCount={sugCount}
-          onSugCount={setSugCount}
-          sugDepth={sugDepth}
-          onSugDepth={setSugDepth}
-          added={added}
-          addingId={adding}
-        />
+        <LibraryGraph graph={graph} selId={selNode} onSel={setSelNode} query={q} />
       </div>
 
-      {curRef ? (
+      {curRef && (
         <RefDetail
           r={curRef}
           node={curNode}
@@ -398,18 +355,9 @@ function LibraryBody({
           onOpenDoc={onOpenDoc}
           onReload={onReload}
           onDocDeleted={onDocDeleted}
+          explore={{ bibcode: curRef.bibcode ?? null, live, onExplore: (b) => void explore.startExplore(b) }}
         />
-      ) : curNode ? (
-        <GraphNodeDetail
-          node={curNode}
-          links={graph.links}
-          byId={byId}
-          onSel={setSelNode}
-          onClose={() => setSelNode(null)}
-          onAdd={() => addToLibrary(curNode.id)}
-          adding={adding === curNode.id}
-        />
-      ) : null}
+      )}
     </div>
   );
 }

@@ -24,7 +24,9 @@ export const KNOWN_WORK_ID = "arxiv:2603.03522";
  *   output/demo/{demo.json, mineru/images/pic.jpg, assets/logo.png,
  *                assets/nested/deep.png}
  *   library/library.json       (core fixture; contains KNOWN_WORK_ID)
- *   library/cache/graph.json   (one suggested node `oa:W999`)
+ *   library/cache/graph.json   (UNVERSIONED stale cache with one suggested
+ *                               node `oa:W999` — pins the Stage 14 self-heal:
+ *                               GET /api/library rebuilds it saved-only)
  *
  * The `mineru/images/pic.jpg` file pins the MS1 removal: the MinerU image
  * branch of /images is gone with the PDF pipeline, so it must 404 now.
@@ -88,7 +90,7 @@ export function stubSources(): MetadataSources {
   return {
     ads: { status: "no-token", resolve: async () => null, exportBibtex: async () => null },
     crossref: { resolve: async () => null },
-    oa: { resolve: async () => null, fetchMany: async () => new Map() },
+    oa: { resolve: async () => null },
   };
 }
 

@@ -5,8 +5,9 @@ floats (figures / tables / equations / code / algorithms), a structured
 bibliography, and natively segmented citations and cross-references — and manage
 them in a **citation-graph library** with a local **reader workspace** (web UI
 with document reader, per-document **annotations** (text/structure/whole-doc
-targets with Markdown+math bodies), force-directed citation graph, and live
-ingest progress over WebSocket).
+targets with Markdown+math bodies), force-directed citation graph, **ADS-powered
+literature discovery** (one seed paper → ADS similar + useful candidates on a
+real-citation graph), and live ingest progress over WebSocket).
 
 One ingestion pipeline emits the IR:
 

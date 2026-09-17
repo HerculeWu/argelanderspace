@@ -9,7 +9,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DocIrSchema } from "@argelanderspace/contracts";
+import { CURRENT_GRAPH_VERSION, DocIrSchema } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
 import type { Hono } from "hono";
 import { beforeEach, describe, expect, test } from "vitest";
@@ -196,36 +196,13 @@ describe("GET /api/library", () => {
     expect(Array.isArray(payload.refs)).toBe(true);
     expect((payload.refs as unknown[]).length).toBeGreaterThan(0);
     expect(payload.tags).toEqual(expect.any(Array));
-    expect(payload.graph).toMatchObject({ links: [] });
-    expect((payload.graph as { nodes: unknown[] }).nodes).toHaveLength(1);
-  });
-});
-
-describe("POST /api/library/refs", () => {
-  test("400 without nodeId (missing body included)", async () => {
-    for (const res of [await post("/api/library/refs"), await post("/api/library/refs", {})]) {
-      expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ detail: "nodeId required" });
-    }
-  });
-
-  test("404 for an unknown graph node", async () => {
-    const res = await post("/api/library/refs", { nodeId: "oa:nope" });
-    expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ detail: "graph node 'oa:nope' not found" });
-  });
-
-  test("persists a suggested node and returns its ref", async () => {
-    const res = await post("/api/library/refs", { nodeId: "oa:W999", source: "graph-node" });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ref: { id: string; doi: string } };
-    expect(body.ref.id).toBe("doi:10.1234/test");
-    expect(body.ref.doi).toBe("10.1234/test");
-    // persisted: the next payload contains the new ref
-    const lib = (await (await get("/api/library")).json()) as { refs: { id: string }[] };
-    expect(lib.refs.some((r) => r.id === "doi:10.1234/test")).toBe(true);
-    // live-reload event
-    expect(messages.some((m) => m.type === "library.changed" && m.cause === "add")).toBe(true);
+    // Stage 14: the seeded UNVERSIONED graph cache self-heals to the current
+    // saved-only format (version constant + every node a saved work)
+    const graph = payload.graph as { version: number; nodes: Array<{ id: string; ref?: string }> };
+    expect(graph.version).toBe(CURRENT_GRAPH_VERSION);
+    expect(graph.nodes).toHaveLength((payload.refs as unknown[]).length);
+    expect(graph.nodes.every((n) => n.ref !== undefined)).toBe(true);
+    expect(graph.nodes.some((n) => n.id.startsWith("oa:"))).toBe(false);
   });
 });
 
@@ -328,7 +305,6 @@ describe("POST /api/library/refresh", () => {
 
 describe("CSRF guard (Origin check on mutations)", () => {
   const cases: [string, (h?: Record<string, string>) => Promise<Response>][] = [
-    ["POST /api/library/refs", (h) => post("/api/library/refs", { nodeId: "oa:W999" }, h)],
     ["PATCH /api/library/refs", (h) => patch("/api/library/refs", { id: KNOWN_WORK_ID }, h)],
     ["POST /api/library/refresh", (h) => post("/api/library/refresh?offline=true", undefined, h)],
     ["PUT /api/plans", (h) => put("/api/plans", { version: 1, rev: 0, plans: [] }, h)],

@@ -267,18 +267,4 @@ describe("OpenAlexClient (library/sources/openalex.py)", () => {
     // same filename as the keyless client (see previous test)
     expect(readdirSync(cacheDir)).toEqual(["bc548d3cd214a67f5c94dbc49d381b8782f67635.json"]);
   });
-
-  test("fetchMany batches ≤50 ids per request and preserves API order", async () => {
-    const work = load("openalex-work.json");
-    const { fetchImpl, calls } = stubFetch((c) => {
-      expect(c.url).toContain("openalex_id%3AW3017279354%7CW2122131598");
-      expect(c.url).toContain("per-page=50");
-      return jsonResponse({ results: [work] });
-    });
-    const oa = new OpenAlexClient({ cacheDir: tmpCache(), delay: 0, mailto: MAILTO, fetchImpl });
-    const out = await oa.fetchMany(["W3017279354", "W2122131598", "W3017279354"]);
-    expect(calls.length).toBe(1); // dedup + single batch
-    expect([...out.keys()]).toEqual(["W3017279354"]);
-    expect(out.get("W3017279354")?.cited_by_count).toBe(522);
-  });
 });

@@ -42,7 +42,7 @@ function stubSources(): MetadataSources {
   return {
     ads: { status: "no-token", resolve: async () => null, exportBibtex: async () => null },
     crossref: { resolve: async () => null },
-    oa: { resolve: async () => null, fetchMany: async () => new Map() },
+    oa: { resolve: async () => null },
   };
 }
 

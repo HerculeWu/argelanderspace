@@ -8,13 +8,14 @@
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CURRENT_GRAPH_VERSION, type GraphData } from "@argelanderspace/contracts";
 import { describe, expect, test } from "vitest";
 import {
   addManualBibcode,
   addManualBibText,
   addManualIdentifier,
 } from "../src/library/add-manual.js";
-import { loadGraph } from "../src/library/build.js";
+import { loadCurrentGraph } from "../src/library/build.js";
 import { mergeWorkIntoGraph } from "../src/library/graph.js";
 import type { MetadataSources, OpenAlexResolution } from "../src/library/sources.js";
 import {
@@ -33,7 +34,7 @@ function tmpPaths() {
 const nullSources: MetadataSources = {
   ads: { status: "no-token", resolve: async () => null, exportBibtex: async () => null },
   crossref: { resolve: async () => null },
-  oa: { resolve: async () => null, fetchMany: async () => new Map() },
+  oa: { resolve: async () => null },
 };
 
 function oaMeta(id: string): OpenAlexResolution {
@@ -82,7 +83,6 @@ describe("addManualIdentifier", () => {
           doi: "10.1051/0004-6361/202039341",
           referenced_works: ["W1"],
         }),
-        fetchMany: async (ids: string[]) => new Map(ids.map((id) => [id, oaMeta(id)])),
       },
     };
     const r = await addManualIdentifier(paths, sources, {
@@ -102,11 +102,10 @@ describe("addManualIdentifier", () => {
     expect(w?.origin).toBe("manual");
     expect(w?.acquisition).not.toBeNull();
 
-    // incremental graph: saved node + the one fetched suggested neighbour
-    const g = loadGraph(paths);
-    expect(g.nodes.some((n) => n.id === w?.id)).toBe(true);
-    expect(g.nodes.some((n) => n.id === "oa:W1")).toBe(true);
-    expect(g.links).toContainEqual([w?.id, "oa:W1"]);
+    // incremental graph (Stage 14 saved-only): the saved node, no suggested neighbour
+    const g = loadCurrentGraph(paths);
+    expect(g?.nodes.some((n) => n.id === w?.id)).toBe(true);
+    expect(g?.nodes.some((n) => n.id.startsWith("oa:"))).toBe(false);
 
     // second add is an exists no-op
     const r2 = await addManualIdentifier(paths, nullSources, {
@@ -147,7 +146,6 @@ describe("addManualIdentifier", () => {
         resolve: async () => {
           throw new Error("boom");
         },
-        fetchMany: async () => new Map(),
       },
     };
     const r = await addManualIdentifier(paths, throwing, { kind: "doi", doi: "10.1/x" });
@@ -178,7 +176,7 @@ describe("addManualBibcode", () => {
     return {
       ads: { status: "ok", resolve: async () => null, exportBibtex: async () => text },
       crossref: { resolve: async () => null },
-      oa: { resolve: async () => null, fetchMany: async () => new Map() },
+      oa: { resolve: async () => null },
     };
   }
 
@@ -271,9 +269,9 @@ describe("addManualBibText", () => {
     expect(b?.venue).toBe("Astronomy & Astrophysics"); // macro expansion, not the bare "aap"
 
     // batch mode: saved nodes exist immediately, without any neighbour fetch
-    const g = loadGraph(paths);
-    for (const w of store.works) expect(g.nodes.some((n) => n.id === w.id)).toBe(true);
-    expect(g.nodes.some((n) => n.id.startsWith("oa:"))).toBe(false);
+    const g = loadCurrentGraph(paths);
+    for (const w of store.works) expect(g?.nodes.some((n) => n.id === w.id)).toBe(true);
+    expect(g?.nodes.some((n) => n.id.startsWith("oa:"))).toBe(false);
 
     // a compiled bib entry escapes the A&A ampersand (I030 regression guard)
     expect(workToBibtex(b as Work)).toContain("{\\aap}");
@@ -324,7 +322,7 @@ describe("addManualBibText", () => {
 // --------------------------------------------------------------------------- //
 
 describe("mergeWorkIntoGraph", () => {
-  test("node + inbound/outbound edges + one batched suggested fetch", async () => {
+  test("node + inbound/outbound saved↔saved edges; no suggested fetch (Stage 14)", () => {
     const store = new LibraryStore([]);
     const x = emptyWork("arxiv:x");
     x.title = "Existing work";
@@ -332,42 +330,53 @@ describe("mergeWorkIntoGraph", () => {
     x.referenced_works = ["WNEW"]; // X cites the new work
     store.upsert(x);
 
+    const old = emptyWork("arxiv:old");
+    old.title = "Old saved work";
+    old.openalex_id = "WOLD";
+    store.upsert(old);
+
     const w = emptyWork("arxiv:new");
     w.title = "New work";
     w.openalex_id = "WNEW";
-    w.referenced_works = ["WOLD", "WMISS"];
+    w.referenced_works = ["WOLD", "WMISS"]; // cites the saved old one + an unmapped id
     store.upsert(w);
 
-    const graph = {
+    const graph: GraphData = {
+      version: CURRENT_GRAPH_VERSION,
       nodes: [
         { id: "arxiv:x", ref: "arxiv:x", y: 2020, c: 1, a: "X", v: "", t: "Existing work" },
-        { id: "oa:WOLD", y: 1999, c: 5, a: "Old", v: "ApJ", t: "Old paper" },
+        {
+          id: "arxiv:old",
+          ref: "arxiv:old",
+          y: 1999,
+          c: 5,
+          a: "Old",
+          v: "ApJ",
+          t: "Old saved work",
+        },
       ],
       links: [] as [string, string][],
     };
-    const fetched: string[][] = [];
-    const oa = {
-      resolve: nullSources.oa.resolve,
-      fetchMany: async (ids: string[]) => {
-        fetched.push([...ids]);
-        return new Map(ids.map((id) => [id, oaMeta(id)]));
-      },
-    };
-    const out = await mergeWorkIntoGraph(graph, store, w, oa);
+    const out = mergeWorkIntoGraph(graph, store, w);
+    expect(out.version).toBe(CURRENT_GRAPH_VERSION);
     expect(out.nodes.some((n) => n.id === "arxiv:new")).toBe(true);
+    expect(out.nodes.every((n) => n.ref !== undefined)).toBe(true); // saved-only
     expect(out.links).toContainEqual(["arxiv:x", "arxiv:new"]); // inbound
-    expect(out.links).toContainEqual(["arxiv:new", "oa:WOLD"]); // outbound, already mapped
-    expect(out.links).toContainEqual(["arxiv:new", "oa:WMISS"]); // outbound, fetched
-    expect(fetched).toEqual([["WMISS"]]); // one batch, only the unmapped id
+    expect(out.links).toContainEqual(["arxiv:new", "arxiv:old"]); // outbound to a saved work
+    expect(out.links.some(([, b]) => b === "oa:WMISS")).toBe(false); // unmapped ids are dropped
   });
 
-  test("oa=null adds the bare node only (batch bib mode)", async () => {
+  test("a work citing nothing visible adds the bare node only (batch bib mode)", () => {
     const store = new LibraryStore([]);
     const w = emptyWork("arxiv:solo");
     w.title = "Solo";
     w.referenced_works = ["W1"];
     store.upsert(w);
-    const out = await mergeWorkIntoGraph({ nodes: [], links: [] }, store, w, null);
+    const out = mergeWorkIntoGraph(
+      { version: CURRENT_GRAPH_VERSION, nodes: [], links: [] },
+      store,
+      w
+    );
     expect(out.nodes.map((n) => n.id)).toEqual(["arxiv:solo"]);
     expect(out.links).toEqual([]);
   });

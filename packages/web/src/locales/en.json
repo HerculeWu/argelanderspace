@@ -207,26 +207,11 @@
     "toolbar": {
       "searchPlaceholder": "Search literature · highlight in the graph…",
       "demoBadge": "Demo data",
-      "demoTitle": "Backend not connected; showing demo data",
-      "sugLoading": "Searching…",
-      "sugOn": "Suggestions · On",
-      "sugOff": "Find suggested literature",
-      "exportBibtex": "Export BibTeX"
+      "demoTitle": "Backend not connected; showing demo data"
     },
     "graph": {
-      "depth": "Suggestion depth",
-      "depthHops": "{{n}} hops",
-      "count": "Suggestion count",
-      "legendCitations": "Citations",
-      "legendSize": "Bigger / thicker border = more citations",
-      "legendSaved": "In library",
-      "legendSug": "Suggested",
-      "loading": "Searching related literature…",
-      "loadingDesc": "Analyzing the citation network · matching similar research",
-      "zoomIn": "Zoom in",
-      "zoomOut": "Zoom out",
-      "fitView": "Fit view",
-      "relayout": "Re-layout"
+      "heading": "Your citation library",
+      "note": "Citation relationships between saved papers (A → B means A cites B)"
     },
     "detail": {
       "typeConf": "Conference",
@@ -297,14 +282,6 @@
         "warningUnknown": "This document and its annotations (count unknown) will be permanently deleted, and the document will be removed from all associated literature entries.",
         "busy": "The document is being ingested; try deleting it later"
       }
-    },
-    "suggestion": {
-      "badge": "Suggested · Not in library",
-      "openExternal": "Open in new window",
-      "adding": "Fetching metadata…",
-      "add": "Add to library",
-      "addingHint": "Fetching metadata and writing to the library…",
-      "connTab": "Citation links · {{count}}"
     },
     "importDialog": {
       "identifierTitle": "New entry from identifier",
@@ -641,5 +618,105 @@
     "edit": "Edit",
     "retry": "Retry",
     "save": "Save"
+  },
+  "graph": {
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out",
+    "fitView": "Fit view",
+    "relayout": "Re-layout",
+    "jumpSeed": "Back to origin",
+    "showLabels": "Show labels (avoid overlaps)",
+    "legendYear": "Year",
+    "legendSize": "Size: citations",
+    "legendSaved": "Saved",
+    "legendCandidate": "Not saved",
+    "citesInView": "cites · in this view",
+    "isolated": "{{count}} papers without links in this view",
+    "citedCount": "{{count}} citations"
+  },
+  "explore": {
+    "entry": "Explore related papers",
+    "noBibcode": "This paper has no ADS bibcode, so ADS exploration is unavailable",
+    "demoOff": "Literature discovery needs the ArgelanderSpace backend and ADS",
+    "resume": "Resume exploration",
+    "backLibrary": "Back to library",
+    "toolbarTitle": "Explore",
+    "prev": "Previous exploration",
+    "next": "Next exploration",
+    "origin": "EXPLORATION ORIGIN",
+    "filter": {
+      "all": "All",
+      "related": "Related",
+      "useful": "Useful"
+    },
+    "filterHint": {
+      "all": "Related research + useful foundations",
+      "related": "ADS similar() · original result order",
+      "useful": "ADS useful() · works the related set keeps citing"
+    },
+    "noMatches": "No matching papers",
+    "usefulUnavailable": "Methods and foundations are temporarily unavailable (the ADS useful() query failed); related results are complete.",
+    "retry": "Retry",
+    "noAutoAdd": "Exploring never adds papers automatically.",
+    "savedCount": "saved",
+    "searchPlaceholder": "Search this exploration…",
+    "clearSearch": "Clear search",
+    "shown": "{{count}} papers",
+    "graphView": "Citation graph view",
+    "listView": "List view",
+    "error": {
+      "title": "Exploration could not finish",
+      "badBibcode": "The bibcode is invalid",
+      "notFound": "This bibcode was not found in ADS",
+      "rateLimited": "ADS rate limit reached — please retry later",
+      "unavailable": "ADS is currently unavailable or not configured",
+      "failed": "The ADS query could not be completed",
+      "unchanged": "Your library is unchanged; retrying is safe."
+    },
+    "empty": {
+      "title": "No related papers found",
+      "hint": "You can retry this exploration, or start from another paper."
+    },
+    "loading": {
+      "title": "Querying ADS…",
+      "desc": "Finding related papers and commonly cited works"
+    },
+    "table": {
+      "paper": "Paper",
+      "source": "Source"
+    },
+    "role": {
+      "origin": "Origin",
+      "related": "Related",
+      "useful": "Useful"
+    },
+    "savedChip": "In library",
+    "openInAds": "Open in ADS",
+    "sourceLine": {
+      "head": "Discovery source · ADS",
+      "similar": "similar() · #{{rank}}",
+      "useful": "useful() · #{{rank}}"
+    },
+    "authorsMore": "All authors",
+    "authorsLess": "Show less",
+    "detail": {
+      "citationsTab": "Citations",
+      "noAbstract": "No abstract is available for this record. You can still review the metadata, open ADS, or save the paper.",
+      "referencesLabel": "References",
+      "citedByLabel": "Cited by",
+      "noneRefs": "No direct citations are recorded in this view.",
+      "graphOnly": "Only papers in this exploration are shown, not the complete citation list."
+    },
+    "addError": "Could not add to the library — please retry.",
+    "savedInLibrary": "In your library",
+    "add": "Add to library",
+    "adding": "Adding…",
+    "exploreHere": "Explore from this paper",
+    "originNow": "Current origin paper",
+    "saveOnly": "Saves metadata only — no full-text download.",
+    "graph": {
+      "heading": "Citation map",
+      "note": "A → B means A cites B. Position is not a similarity score."
+    }
   }
 }

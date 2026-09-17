@@ -19,12 +19,13 @@
  *   the file is a cache, only ever read back with `JSON.parse`).
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import type {
-  GraphData,
-  LibraryPayload,
-  LibraryRef,
-  RefreshResponse,
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  type GraphData,
+  GraphDataSchema,
+  type LibraryPayload,
+  type LibraryRef,
+  type RefreshResponse,
 } from "@argelanderspace/contracts";
 import { parseBibtex } from "../acquire/bibtex.js";
 import { classify, planToDict } from "../acquire/planner.js";
@@ -64,7 +65,7 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
     nBib = records.length;
   }
   await enrichAndPlan(store, opts.sources);
-  const graph = await buildGraph(store, opts.sources.oa, paths.outputDir);
+  const graph = buildGraph(store, paths.outputDir);
   store.save(paths);
   mkdirSync(paths.cacheDir, { recursive: true });
   writeFileSync(paths.graphJson, JSON.stringify(graph), "utf8");
@@ -124,61 +125,52 @@ function resolutionSummary(store: LibraryStore): RefreshResponse["resolution"] {
   };
 }
 
-export function loadGraph(paths: LibraryPaths): GraphData {
-  if (existsSync(paths.graphJson)) {
-    try {
-      return JSON.parse(readFileSync(paths.graphJson, "utf8")) as GraphData;
-    } catch {
-      // fall through (Python: except ValueError)
-    }
+/**
+ * Read the graph cache — non-null ONLY when the file exists, parses, is
+ * schema-valid, AND carries the current format version (Stage 14 D7).
+ * Missing / corrupt / invalid / wrong-version all read as stale (null) and
+ * route to the locked self-heal.
+ */
+export function loadCurrentGraph(paths: LibraryPaths): GraphData | null {
+  if (!existsSync(paths.graphJson)) return null;
+  try {
+    const parsed = GraphDataSchema.safeParse(JSON.parse(readFileSync(paths.graphJson, "utf8")));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null; // unparseable JSON → stale
   }
-  return { nodes: [], links: [] };
+}
+
+/**
+ * The D7 self-heal body — callers MUST hold `libraryLock` and double-check
+ * staleness inside the lock: reload the LATEST LibraryStore, rebuild the
+ * saved-only graph purely locally (no network), and atomically rewrite
+ * graph.json. A stale cache is derived state, but a rebuild/write failure is
+ * fatal and propagates (D13: the route answers 500 — never the old suggested
+ * graph, never an empty-graph fallback, never a swallowed fs error). A
+ * corrupt library.json throws out of `LibraryStore.load` — source-of-truth
+ * failure, never a cache miss.
+ */
+export function healGraph(paths: LibraryPaths): GraphData {
+  const store = LibraryStore.load(paths);
+  const graph = buildGraph(store, paths.outputDir);
+  mkdirSync(paths.cacheDir, { recursive: true });
+  const tmp = `${paths.graphJson}.tmp-${process.pid}`;
+  writeFileSync(tmp, JSON.stringify(graph), "utf8");
+  renameSync(tmp, paths.graphJson);
+  return graph;
 }
 
 /** The /api/library response: project + saved refs + tags + citation graph. */
-export function libraryPayload(paths: LibraryPaths): LibraryPayload {
+export function libraryPayload(paths: LibraryPaths, graph: GraphData): LibraryPayload {
   const store = LibraryStore.load(paths);
   const tags = [...new Set(store.works.flatMap((w) => w.tags))].sort();
   return {
     project: store.project as LibraryPayload["project"],
     refs: store.works.map(workToRef),
     tags,
-    graph: loadGraph(paths),
+    graph,
   };
-}
-
-/** Persist a suggested graph node as a saved work; return its ref (or null). */
-export function addNodeToLibrary(paths: LibraryPaths, nodeId: string): LibraryRef | null {
-  const node = loadGraph(paths).nodes.find((n) => n.id === nodeId);
-  if (node === undefined) return null;
-  const store = LibraryStore.load(paths);
-  const oaid = nodeId.startsWith("oa:") ? nodeId.slice(3) : null;
-  const venue = (pyOr(node.v) as string | undefined) ?? "";
-  let w: Work = {
-    ...emptyWork(
-      canonicalId({ doi: node.doi, openalex: oaid, title: node.t, year: node.y ?? null })
-    ),
-    title: node.t ?? "",
-    authors: node.a ? [node.a] : [],
-    year: node.y ?? null,
-    venue: (pyOr(venue) as string | undefined) ?? null,
-    type: ["ICLR", "ICML", "NeurIPS", "CVPR", "Proc"].some((k) => venue.includes(k))
-      ? "conf"
-      : "article",
-    doi: node.doi ?? null,
-    openalex_id: oaid,
-    cited_by_count: node.c ?? null,
-    origin: "graph-node",
-  };
-  w = store.upsert(w);
-  if (!w.cite_key) {
-    w.cite_key = assignCiteKey(
-      w,
-      new Set(store.works.map((x) => x.cite_key).filter((x): x is string => x !== null))
-    );
-  }
-  store.save(paths);
-  return workToRef(w);
 }
 
 /** Result of {@link addDoiWork}. */
@@ -196,7 +188,7 @@ export interface AddDoiWorkResult {
  * on a DOI / DOI-carrying publisher URL). Crossref is consulted immediately;
  * when it has no record (or is unreachable) a bare stub is saved instead —
  * the entry is never blocked on the network. No rebuild is triggered (the
- * {@link addNodeToLibrary} precedent): the acquisition plan is stamped
+ * Stage 13 in-place creation precedent): the acquisition plan is stamped
  * locally and the next `library build` runs the full ADS▸Crossref▸OpenAlex
  * chain over the entry.
  */

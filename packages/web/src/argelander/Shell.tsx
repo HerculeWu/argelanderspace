@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
+import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { useTweaks } from "./theme";
 import { applyDocDeletion, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
@@ -74,10 +75,23 @@ export function Shell() {
       if (route) {
         // unknown ids are opened anyway: DocPane shows its normal load error
         openDocRef.current(route.docId, route.anchor);
-      } else {
-        const want = new URL(window.location.href).searchParams.get("doc");
-        setCurrentDocState(want && list.includes(want) ? want : list[0] ?? null);
+        return;
       }
+      // Stage 14: a boot `#explore/<bibcode>` hash opens the library pane and
+      // hands the seed to the explore bus (the LibraryView consumes it once
+      // mounted — exploreBus keeps it pending until then)
+      const exploreSeed = parseExploreHash(window.location.hash);
+      if (exploreSeed) {
+        setPanes((ps) =>
+          ps.some((p) => p.view === "library")
+            ? ps
+            : ps.map((p) => (p.id === activeId ? { ...p, view: "library" } : p))
+        );
+        exploreBus.request(exploreSeed);
+        return;
+      }
+      const want = new URL(window.location.href).searchParams.get("doc");
+      setCurrentDocState(want && list.includes(want) ? want : list[0] ?? null);
     })();
     return () => {
       alive = false;
@@ -144,7 +158,15 @@ export function Shell() {
   useEffect(() => {
     const onNav = () => {
       const route = parseDocRoute(window.location.pathname, window.location.hash);
-      if (route) openDocRef.current(route.docId, route.anchor);
+      if (route) {
+        openDocRef.current(route.docId, route.anchor);
+        return;
+      }
+      // Stage 14: `#explore/<bibcode>` drives the discovery mode; losing the
+      // explore hash exits explore mode (the session stays resumable)
+      const seed = parseExploreHash(window.location.hash);
+      if (seed) exploreBus.request(seed);
+      else exploreBus.exit();
     };
     window.addEventListener("popstate", onNav);
     window.addEventListener("hashchange", onNav);

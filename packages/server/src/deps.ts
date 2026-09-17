@@ -12,9 +12,15 @@
  */
 
 import { join, resolve } from "node:path";
-import type { IngestPipelines, LibraryPaths, MetadataSources } from "@argelanderspace/core";
+import type {
+  AdsDiscoverySource,
+  IngestPipelines,
+  LibraryPaths,
+  MetadataSources,
+} from "@argelanderspace/core";
 import {
   AdsClient,
+  AdsDiscoveryClient,
   CrossrefClient,
   ingestTexSource,
   ingestTexZip,
@@ -37,6 +43,15 @@ export function realSources(paths: LibraryPaths, offline: boolean): MetadataSour
     crossref: new CrossrefClient({ cacheDir: join(paths.cacheDir, "crossref"), enabled: !offline }),
     oa: new OpenAlexClient({ cacheDir: join(paths.cacheDir, "openalex"), enabled: !offline }),
   };
+}
+
+/**
+ * The Stage 14 discovery source: a dedicated ADS client with its own TTL
+ * cache namespace (`<dataDir>/library/cache/ads-discovery`), never the
+ * metadata `<cacheDir>/ads` cache.
+ */
+export function realDiscoverySource(paths: LibraryPaths): AdsDiscoverySource {
+  return new AdsDiscoveryClient({ cacheDir: join(paths.cacheDir, "ads-discovery") });
 }
 
 /** The ingest pipeline writing under `<dataDir>/output` (Stage 5 tex pipeline). */

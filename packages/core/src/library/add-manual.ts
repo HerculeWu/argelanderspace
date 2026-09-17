@@ -1,7 +1,7 @@
 /**
  * Manual work creation (Stage 13): the webui "导入文献" menu's server-side
- * core. Three modes, all in-place (no library rebuild — the addDoiWork /
- * addNodeToLibrary precedent), all composing the EXISTING pipeline pieces
+ * core. Three modes, all in-place (no library rebuild — the addDoiWork
+ * precedent), all composing the EXISTING pipeline pieces
  * (resolveWork / parseBibtexText / parseAdsBibtexFields / planFor /
  * assignCiteKey / upsert), per the user's reuse mandate:
  *
@@ -42,7 +42,7 @@ import { classify, planToDict } from "../acquire/planner.js";
 import { resolveWork } from "../acquire/resolve.js";
 import { planFor } from "../acquire/run.js";
 import { pyOr } from "../documents/pyregex.js";
-import { loadGraph } from "./build.js";
+import { healGraph, loadCurrentGraph } from "./build.js";
 import { assignCiteKey, mergeWorkIntoGraph, workToRef } from "./graph.js";
 import type { MetadataSources } from "./sources.js";
 import {
@@ -127,8 +127,7 @@ function recanonicalize(w: Work): void {
 async function commitWork(
   paths: LibraryPaths,
   store: LibraryStore,
-  w: Work,
-  sources: MetadataSources
+  w: Work
 ): Promise<ManualAddOutcome> {
   recanonicalize(w);
   const matched = store.match(...identityKeys(w));
@@ -136,7 +135,7 @@ async function commitWork(
   if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, usedKeys(store));
   saved.acquisition = planToDict(planFor(saved));
   store.save(paths);
-  await mergeGraphQuiet(paths, store, saved, sources);
+  await mergeGraphQuiet(paths, store, saved);
   return {
     status: matched !== undefined ? "exists" : "created",
     ref: workToRef(saved),
@@ -144,15 +143,15 @@ async function commitWork(
   };
 }
 
-/** Incremental graph update must never fail a creation (Stage 13 boundary). */
-async function mergeGraphQuiet(
-  paths: LibraryPaths,
-  store: LibraryStore,
-  w: Work,
-  sources: MetadataSources
-): Promise<void> {
+/**
+ * Incremental graph update must never fail a creation (Stage 13 boundary).
+ * Stage 14: merges into the current saved-only graph — a stale/missing cache
+ * is healed first (derived-cache rebuild from the latest store, still under
+ * the caller's libraryLock); any failure just defers to the next refresh.
+ */
+async function mergeGraphQuiet(paths: LibraryPaths, store: LibraryStore, w: Work): Promise<void> {
   try {
-    const graph = await mergeWorkIntoGraph(loadGraph(paths), store, w, sources.oa);
+    const graph = mergeWorkIntoGraph(loadCurrentGraph(paths) ?? healGraph(paths), store, w);
     mkdirSync(dirname(paths.graphJson), { recursive: true });
     writeFileSync(paths.graphJson, JSON.stringify(graph), "utf8");
   } catch {
@@ -188,7 +187,7 @@ export async function addManualIdentifier(
   w.origin = "manual";
   w.added_at = new Date().toISOString();
   await tryResolve(w, sources);
-  return commitWork(paths, store, w, sources);
+  return commitWork(paths, store, w);
 }
 
 // --------------------------------------------------------------------------- //
@@ -232,7 +231,7 @@ export async function addManualBibcode(
   w.bibcode = bc;
   w.bib_fields = "ads"; // the export already supplied the bibliography fields
   await tryResolve(w, sources);
-  return commitWork(paths, store, w, sources);
+  return commitWork(paths, store, w);
 }
 
 // --------------------------------------------------------------------------- //
@@ -329,9 +328,9 @@ export async function addManualBibText(
   // Bare saved nodes only — batch mode defers resolution/neighbours to the
   // next build, but the new entries must be selectable in the graph view now.
   try {
-    let graph = loadGraph(paths);
+    let graph = loadCurrentGraph(paths) ?? healGraph(paths);
     for (const w of created) {
-      graph = await mergeWorkIntoGraph(graph, store, w, null);
+      graph = mergeWorkIntoGraph(graph, store, w);
     }
     if (created.length > 0) {
       mkdirSync(dirname(paths.graphJson), { recursive: true });

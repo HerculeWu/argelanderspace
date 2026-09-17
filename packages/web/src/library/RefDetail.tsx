@@ -7,7 +7,8 @@ import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
 import { Modal } from "../plan/atoms";
-import { cgKfmt } from "./CitationGraph";
+import { cgKfmt } from "../graph/graphPhysics";
+import { AbstractHtml } from "../lib/abstract";
 import type { GraphNode, LibraryRef } from "./types";
 
 function Tag({ children }: { children: string }) {
@@ -119,6 +120,7 @@ export function RefDetail({
   onOpenDoc,
   onReload,
   onDocDeleted,
+  explore,
 }: {
   r: LibraryRef;
   node: GraphNode | null;
@@ -129,6 +131,11 @@ export function RefDetail({
    *  doc_ids after the deletion (its [0] is the new main). The LibraryView
    *  wires this to the workspace's three-state transition. */
   onDocDeleted?: (docId: string, remaining: string[]) => void;
+  /**
+   * Stage 14 (D1/D9): the "explore related papers" entry — enabled only with
+   * a usable ADS bibcode AND a live backend (no demo/fixture exploration).
+   */
+  explore?: { bibcode: string | null; live: boolean; onExplore: (bibcode: string) => void };
 }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState("meta");
@@ -286,6 +293,7 @@ export function RefDetail({
 
   return (
     <div className="ref-detail view-in">
+      <div className="ref-detail-scroll">
       <div className="ref-detail-head">
         <div className="ref-type-badge">{r.type === "conf" ? t("library.detail.typeConf") : t("library.detail.typeArticle")}</div>
         <div className="ref-detail-actions">
@@ -388,7 +396,7 @@ export function RefDetail({
         {tab === "info" && (
           <div className="ref-abstract">
             {r.abstract ? (
-              <p>{r.abstract}</p>
+              <AbstractHtml text={r.abstract} />
             ) : (
               <div className="placeholder-text ph-abstract">
                 <span className="mono">{t("library.detail.abstractPlaceholder")}</span>
@@ -545,6 +553,32 @@ export function RefDetail({
           </div>
         )}
       </div>
+      </div>
+      {explore && (
+        <div className="detail-footer">
+          <button
+            className="btn primary large"
+            data-testid="explore-paper"
+            disabled={!explore.bibcode || !explore.live}
+            title={
+              !explore.live
+                ? t("explore.demoOff")
+                : !explore.bibcode
+                  ? t("explore.noBibcode")
+                  : t("explore.entry")
+            }
+            onClick={() => explore.bibcode && explore.onExplore(explore.bibcode)}
+          >
+            <Icon name="compass" cls="ico-sm" />
+            {t("explore.entry")}
+          </button>
+          {(!explore.live || !explore.bibcode) && (
+            <div className="detail-footer-note">
+              {!explore.live ? t("explore.demoOff") : t("explore.noBibcode")}
+            </div>
+          )}
+        </div>
+      )}
       {delDoc && (
         <DeleteDocDialog
           docId={delDoc}
@@ -620,83 +654,5 @@ function DeleteDocDialog({
         </div>
       )}
     </Modal>
-  );
-}
-
-export function GraphNodeDetail({
-  node,
-  links,
-  byId,
-  onClose,
-  onSel,
-  onAdd,
-  adding,
-}: {
-  node: GraphNode;
-  links: [string, string][];
-  byId: Record<string, GraphNode>;
-  onClose: () => void;
-  onSel: (id: string) => void;
-  onAdd: () => void;
-  adding: boolean;
-}) {
-  const { t } = useTranslation();
-  const conn = links
-    .filter(([a, b]) => a === node.id || b === node.id)
-    .map(([a, b]) => byId[a === node.id ? b : a])
-    .filter(Boolean);
-  return (
-    <div className="ref-detail view-in">
-      <div className="ref-detail-head">
-        <div className="ref-type-badge sug">{t("library.suggestion.badge")}</div>
-        <div className="ref-detail-actions">
-          <button className="btn icon ghost" title={t("library.suggestion.openExternal")}>
-            <Icon name="external-link" cls="ico-sm" />
-          </button>
-          <button className="btn icon ghost" onClick={onClose}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
-        </div>
-      </div>
-      <div className="ref-detail-title serif">{node.t}</div>
-      <div className="ref-detail-auth">{node.a}</div>
-      <div className="ref-detail-meta">
-        <span>{node.v}</span>
-        <span className="dotsep">·</span>
-        <span className="mono">{node.y}</span>
-        <span className="dotsep">·</span>
-        <span className="mono">{t("library.detail.citedBy", { count: cgKfmt(node.c) })}</span>
-      </div>
-      <button className="btn primary add-to-lib" disabled={adding} onClick={onAdd}>
-        {adding ? (
-          <>
-            <Icon name="loader" cls="ico-sm spin" />
-            {t("library.suggestion.adding")}
-          </>
-        ) : (
-          <>
-            <Icon name="plus" cls="ico-sm" />
-            {t("library.suggestion.add")}
-          </>
-        )}
-      </button>
-      {adding && <div className="add-hint mono">{t("library.suggestion.addingHint")}</div>}
-      <div className="ref-detail-tabs">
-        <div className="rdt on">{t("library.suggestion.connTab", { count: conn.length })}</div>
-      </div>
-      <div className="cg-conn-list">
-        {conn.map((c) => (
-          <button key={c.id} className="cg-conn" onClick={() => onSel(c.id)}>
-            <span className={"cg-conn-dot" + (c.ref ? " saved" : "")} />
-            <span className="cg-conn-body">
-              <span className="cg-conn-t">{c.t}</span>
-              <span className="cg-conn-m mono">
-                {c.a.split(" ")[0].replace(/,$/, "")} · {c.y}
-              </span>
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }

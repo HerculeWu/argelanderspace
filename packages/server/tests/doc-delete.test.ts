@@ -236,13 +236,17 @@ describe("DELETE /api/paper/:doc_id", () => {
   test("busy 409 while ANY refresh job is in flight (its target set is the whole library)", async () => {
     const g = makeGate();
     const sources = stubSources();
-    sources.oa = {
-      resolve: async () => null,
-      fetchMany: async () => {
+    // Stage 14: fetchMany is gone with the suggested-node architecture; the
+    // rebuild always runs resolveWork for the under-enriched fixture works,
+    // so gate on the ADS resolve to hold the refresh mid-flight.
+    sources.ads = {
+      status: "ok",
+      resolve: async () => {
         g.markStarted();
         await g.gate;
-        return new Map();
+        return null;
       },
+      exportBibtex: async () => null,
     };
     const app2 = createApp({
       paths,

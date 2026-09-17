@@ -161,7 +161,7 @@ describe("OpenAlexClient api key", () => {
       delay: 0,
       fetchImpl,
     });
-    await oa.fetchMany(["W1"]);
+    await oa.resolve({ doi: "10.1/x" });
     expect(calls[0]?.url).toContain("api_key=CFG-1");
   });
 
@@ -170,9 +170,11 @@ describe("OpenAlexClient api key", () => {
     setEnv("OPENALEX_API_KEY", "ENV-1");
     const { fetchImpl, calls } = stubFetch(() => jsonResponse({ results: [] }));
     const cacheDir = mkdtempSync(join(tmpdir(), "aspace-oa-"));
-    await new OpenAlexClient({ cacheDir, delay: 0, fetchImpl }).fetchMany(["W1"]);
+    await new OpenAlexClient({ cacheDir, delay: 0, fetchImpl }).resolve({ doi: "10.1/one" });
     expect(calls[0]?.url).toContain("api_key=ENV-1");
-    await new OpenAlexClient({ cacheDir, delay: 0, apiKey: null, fetchImpl }).fetchMany(["W2"]);
+    await new OpenAlexClient({ cacheDir, delay: 0, apiKey: null, fetchImpl }).resolve({
+      doi: "10.1/two",
+    });
     expect(calls[1]?.url).not.toContain("api_key=");
   });
 });

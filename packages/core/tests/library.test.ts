@@ -238,7 +238,6 @@ describe("library domain (tests/run_tests.py port)", () => {
     return {
       status,
       resolve: async () => payload,
-      fetchMany: async () => new Map<string, OpenAlexResolution>(),
       exportBibtex: async () => null,
     };
   }
@@ -432,7 +431,6 @@ describe("enrichAndPlan cite_key (assign-only)", () => {
     oa: {
       status: "ok" as const,
       resolve: async () => null,
-      fetchMany: async () => new Map(),
     },
   };
 

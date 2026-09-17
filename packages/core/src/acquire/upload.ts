@@ -126,8 +126,8 @@ export async function attachLatexZip(
     /**
      * Composition seam (defaults to the real {@link rebuild}): the server
      * injects a lock-wrapped rebuild so the relink load→save stays mutually
-     * exclusive with `patchWork`/`addNodeToLibrary` (Python's `_WRITE_LOCK`),
-     * without holding that lock across the ingest itself.
+     * exclusive with `patchWork` (Python's `_WRITE_LOCK`), without holding
+     * that lock across the ingest itself.
      */
     rebuild?: (paths: LibraryPaths, opts: RebuildOptions) => Promise<RefreshResponse>;
     /**

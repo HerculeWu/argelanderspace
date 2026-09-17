@@ -53,11 +53,11 @@ import {
   PlansFileSchema,
 } from "@argelanderspace/contracts";
 import {
+  type AdsDiscoverySource,
   AnnotationsError,
   addManualBibcode,
   addManualBibText,
   addManualIdentifier,
-  addNodeToLibrary,
   annotationsDocDir,
   arxivFromDoi,
   attachLatexZip,
@@ -65,13 +65,16 @@ import {
   createManuscript,
   DocumentAssetError,
   deleteManuscript,
+  discoverLiterature,
   ensureCurrentAnnotationsWithDocument,
   findWork,
+  healGraph,
   type IngestPipelines,
   type LibraryPaths,
   LibraryStore,
   libraryPayload,
   listManuscripts,
+  loadCurrentGraph,
   loadManuscript,
   loadPlans,
   loadTemplates,
@@ -93,6 +96,7 @@ import {
   writeManuscriptAsset,
 } from "@argelanderspace/core";
 import {
+  AdsDiscoveryError,
   explicitArxivId,
   extractZip,
   looksLikeArxiv,
@@ -123,6 +127,12 @@ export interface AppDeps {
   statusDir: string;
   /** Sources factory: `offline` toggles remote enrichment (Crossref/OpenAlex). */
   makeSources: (offline: boolean) => MetadataSources;
+  /**
+   * Stage 14 discovery source factory (the ADS discovery client). Optional:
+   * when absent the discovery route answers 503 — production wires it in
+   * server.ts; tests inject stubs.
+   */
+  makeDiscoverySource?: () => AdsDiscoverySource;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
   runner: JobRunner;
@@ -149,6 +159,36 @@ function detail(msg: string, status: ContentfulStatusCode) {
 /** Python `_paper_path` / `get_image` traversal guards. */
 function badId(id: string): boolean {
   return id.includes("/") || id.includes("\\") || id.startsWith(".");
+}
+
+/**
+ * Stage 14 discovery seed validation: bibcodes are identifiers, not ADS
+ * query strings — capped length, no whitespace/quotes/control characters
+ * (never present in real bibcodes; the infra layer additionally quotes and
+ * escapes before embedding anything in a Solr query).
+ */
+function badDiscoveryBibcode(v: string): boolean {
+  return (
+    v.length === 0 ||
+    v.length > 64 ||
+    ![...v].every((ch) => {
+      const code = ch.charCodeAt(0);
+      return code > 0x20 && code !== 0x7f && ch !== '"' && ch !== "\\";
+    })
+  );
+}
+
+/** ADS discovery failure → HTTP status (stage plan §8.1). */
+function discoveryErrorStatus(kind: AdsDiscoveryError["kind"]): 429 | 502 | 503 {
+  switch (kind) {
+    case "no-token":
+    case "unauthorized":
+      return 503; // explicit ADS unavailable; no fallback
+    case "rate-limited":
+      return 429; // Retry-After forwarded by the caller when present
+    default:
+      return 502; // upstream | invalid-response
+  }
 }
 
 /**
@@ -491,7 +531,73 @@ export function createApp(deps: AppDeps): Hono {
 
   // ---- GET /api/library ------------------------------------------------------ //
 
-  app.get("/api/library", (c) => c.json(libraryPayload(paths)));
+  // ---- GET /api/library ------------------------------------------------------ //
+
+  /**
+   * The Library payload. The graph cache is version-gated (Stage 14 D7):
+   * missing / corrupt / invalid / wrong-version files are stale and self-heal
+   * lazily — under `libraryLock`, with a double-check inside the lock, a
+   * fresh-store saved-only rebuild, and an atomic rewrite. Healing is
+   * derived-cache maintenance, NOT a user-data mutation: no library.changed
+   * broadcast. A heal failure is a hard 500 (D13: never the old suggested
+   * graph, never an empty-graph fallback); a corrupt library.json fails out
+   * of LibraryStore.load the same way.
+   */
+  app.get("/api/library", async (c) => {
+    let graph = loadCurrentGraph(paths);
+    if (graph === null) {
+      try {
+        graph = await libraryLock.run(async () => loadCurrentGraph(paths) ?? healGraph(paths));
+      } catch (err) {
+        const e = detail(`library graph rebuild failed: ${(err as Error).message}`, 500);
+        return c.json(e.body, e.status);
+      }
+    }
+    return c.json(libraryPayload(paths, graph));
+  });
+
+  // ---- GET /api/library/discovery (Stage 14) ------------------------------- //
+
+  /**
+   * ADS literature discovery. A safe/idempotent read: no libraryLock, no
+   * JobRunner, no library.json/graph.json writes, no mutation WS — the
+   * LibraryStore load is a membership snapshot only. `no-store` because the
+   * response carries current Library membership (libraryId).
+   */
+  app.get("/api/library/discovery", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const bibcode = (c.req.query("bibcode") ?? "").trim();
+    if (badDiscoveryBibcode(bibcode)) {
+      const e = detail("missing or invalid bibcode query parameter", 400);
+      return c.json(e.body, e.status);
+    }
+    const source = deps.makeDiscoverySource?.();
+    if (!source) {
+      const e = detail("ADS discovery is not configured on this server", 503);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const store = LibraryStore.load(paths);
+      const graph = await discoverLiterature(
+        bibcode,
+        { ads: source, store },
+        { signal: c.req.raw.signal }
+      );
+      if (!graph) {
+        const e = detail(`ADS has no record for bibcode: ${bibcode}`, 404);
+        return c.json(e.body, e.status);
+      }
+      return c.json(graph);
+    } catch (err) {
+      if (err instanceof AdsDiscoveryError) {
+        const status = discoveryErrorStatus(err.kind);
+        if (status === 429 && err.retryAfter) c.header("Retry-After", err.retryAfter);
+        const e = detail(err.message, status);
+        return c.json(e.body, e.status);
+      }
+      throw err; // unexpected (incl. client abort) — Hono's 500 path
+    }
+  });
 
   // ---- GET /api/plans -------------------------------------------------------- //
 
@@ -868,29 +974,6 @@ export function createApp(deps: AppDeps): Hono {
       "X-Writer-Bib-Missing": encodeURIComponent(JSON.stringify(bundle.bibMissing)),
       "X-Writer-Warnings": encodeURIComponent(JSON.stringify(bundle.warnings)),
     });
-  });
-
-  // ---- POST /api/library/refs ---------------------------------------------- //
-
-  app.post("/api/library/refs", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
-    const body: unknown = await c.req.json().catch(() => null);
-    const nodeId =
-      body !== null && typeof body === "object" && !Array.isArray(body)
-        ? (body as Record<string, unknown>).nodeId
-        : undefined;
-    if (typeof nodeId !== "string" || !nodeId) {
-      const e = detail("nodeId required", 400);
-      return c.json(e.body, e.status);
-    }
-    const ref = await libraryLock.run(() => addNodeToLibrary(paths, nodeId));
-    if (ref === null) {
-      const e = detail(`graph node ${pyRepr(nodeId)} not found`, 404);
-      return c.json(e.body, e.status);
-    }
-    libraryChanged("add");
-    return c.json({ ref });
   });
 
   // ---- POST /api/library/works (Stage 13 manual creation) ----------------- //

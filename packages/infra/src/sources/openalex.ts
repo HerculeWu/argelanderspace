@@ -250,32 +250,6 @@ export class OpenAlexClient implements OpenAlexSource {
     }
     return best;
   }
-
-  /** `OpenAlex.fetch_many`: short ids → normalized records (batched, ≤50). */
-  async fetchMany(ids: string[]): Promise<Map<string, OpenAlexResolution>> {
-    const out = new Map<string, OpenAlexResolution>();
-    const uniq: string[] = [];
-    const seen = new Set<string>();
-    for (const i of ids) {
-      if (i && !seen.has(i)) {
-        seen.add(i);
-        uniq.push(i);
-      }
-    }
-    for (let i = 0; i < uniq.length; i += 50) {
-      const chunk = uniq.slice(i, i + 50);
-      const data = await this.get("/works", {
-        filter: `openalex_id:${chunk.join("|")}`,
-        "per-page": 50,
-      });
-      const results = (data?.results as Json[] | undefined) ?? [];
-      for (const w of results) {
-        const n = normalizeOpenAlex(w);
-        if (n.openalex_id) out.set(n.openalex_id, n);
-      }
-    }
-    return out;
-  }
 }
 
 /** `_token_overlap`: token Jaccard over whitespace-split sets. */

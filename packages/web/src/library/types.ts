@@ -2,11 +2,12 @@
 // /api/library/* contract; until the backend lands the same shapes are served
 // from the ported fixture (see fixture.ts).
 
-// A node in the citation graph. Saved works carry `ref` (their library id);
-// suggested works don't. `c` = citation count (node radius), `y` = year (hue).
+// A node in the citation graph — a saved work (Stage 14: the Library graph is
+// saved-only; ref-less "suggested" nodes are retired). `c` = citation count
+// (node radius), `y` = year (hue).
 export interface GraphNode {
-  id: string; // canonical work id (cite key for suggested papers)
-  ref?: string; // library ref id, when this node is a saved work
+  id: string; // canonical work id
+  ref?: string; // library ref id (always set for saved-only graphs)
   y: number; // year
   c: number; // approx. citation count
   a: string; // short author string, e.g. "Dieleman et al."
@@ -20,6 +21,7 @@ export interface GraphNode {
 export type GraphLink = [string, string];
 
 export interface GraphData {
+  version?: number; // CURRENT_GRAPH_VERSION on fresh payloads (Stage 14)
   nodes: GraphNode[];
   links: GraphLink[];
 }
@@ -44,6 +46,7 @@ export interface LibraryRef {
   doc_id?: string; // reader doc id, when this work is ingested (→ open in the doc view); the main doc
   doc_ids?: string[]; // all reader docs (versions); doc_ids[0] = main (Stage 7 MS3)
   citedBy?: number;
+  bibcode?: string; // ADS bibcode; enables "explore related papers" (Stage 14)
   label?: string; // color-label key (red|amber|green|blue|violet)
   // acquisition: where the full text is / would come from (planner output)
   journal?: string; // short label, e.g. "A&A"
@@ -66,11 +69,6 @@ export interface LibraryData {
   refs: LibraryRef[];
   tags: string[];
   graph: GraphData;
-}
-
-// Response of POST /api/library/refs (add-to-library).
-export interface AddRefResponse {
-  ref: LibraryRef;
 }
 
 // ---- Stage 13: manual work creation (POST /api/library/works) ---- //

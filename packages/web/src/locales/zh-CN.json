@@ -207,26 +207,11 @@
     "toolbar": {
       "searchPlaceholder": "检索文献 · 在图谱中高亮…",
       "demoBadge": "演示数据",
-      "demoTitle": "后端未连接，正在展示演示数据",
-      "sugLoading": "检索中…",
-      "sugOn": "推荐 · 已开启",
-      "sugOff": "查找推荐文献",
-      "exportBibtex": "导出 BibTeX"
+      "demoTitle": "后端未连接，正在展示演示数据"
     },
     "graph": {
-      "depth": "推荐深度",
-      "depthHops": "{{n}} 跳",
-      "count": "推荐数量",
-      "legendCitations": "引用",
-      "legendSize": "越大 / 边框越粗 = 引用越高",
-      "legendSaved": "已收录",
-      "legendSug": "推荐",
-      "loading": "正在检索相关文献…",
-      "loadingDesc": "分析引文网络 · 匹配相似研究",
-      "zoomIn": "放大",
-      "zoomOut": "缩小",
-      "fitView": "适配视图",
-      "relayout": "重新布局"
+      "heading": "文献库引用图",
+      "note": "已收藏论文之间的引用关系（A → B 表示 A 引用 B）"
     },
     "detail": {
       "typeConf": "会议",
@@ -297,14 +282,6 @@
         "warningUnknown": "该文档及其标注（数量未知）将永久删除，此文档将从所有关联文献条目中移除。",
         "busy": "文档正在摄入，请稍后删除"
       }
-    },
-    "suggestion": {
-      "badge": "推荐 · 未收录",
-      "openExternal": "在新窗口打开",
-      "adding": "正在抓取题录…",
-      "add": "添加到文库",
-      "addingHint": "正在获取元数据并写入文库…",
-      "connTab": "引用关联 · {{count}}"
     },
     "importDialog": {
       "identifierTitle": "从标识符新建条目",
@@ -641,5 +618,105 @@
     "edit": "编辑",
     "retry": "重试",
     "save": "保存"
+  },
+  "graph": {
+    "zoomIn": "放大",
+    "zoomOut": "缩小",
+    "fitView": "适配视图",
+    "relayout": "重新布局",
+    "jumpSeed": "回到起点",
+    "showLabels": "显示标签（自动避让）",
+    "legendYear": "年份",
+    "legendSize": "大小：引用量",
+    "legendSaved": "已收藏",
+    "legendCandidate": "未收藏",
+    "citesInView": "引用 · 本图内",
+    "isolated": "{{count}} 篇暂无此视图内引用",
+    "citedCount": "被引 {{count}}"
+  },
+  "explore": {
+    "entry": "探索相关文献",
+    "noBibcode": "该文献暂无 ADS bibcode，无法使用 ADS 探索",
+    "demoOff": "文献探索需要连接 ArgelanderSpace 后端和 ADS",
+    "resume": "继续上次探索",
+    "backLibrary": "返回文献库",
+    "toolbarTitle": "探索",
+    "prev": "上一次探索",
+    "next": "下一次探索",
+    "origin": "探索起点",
+    "filter": {
+      "all": "全部",
+      "related": "相关研究",
+      "useful": "方法与基础"
+    },
+    "filterHint": {
+      "all": "相关研究 + 方法与基础文献",
+      "related": "ADS similar() · 按返回顺序展示",
+      "useful": "ADS useful() · 相关集合反复引用的方法与基础文献"
+    },
+    "noMatches": "没有匹配的文献",
+    "usefulUnavailable": "方法与基础文献暂时不可用（ADS useful() 查询失败）；相关研究结果完整。",
+    "retry": "重试",
+    "noAutoAdd": "探索结果不会自动进入文献库。",
+    "savedCount": "篇已收藏",
+    "searchPlaceholder": "在探索结果中查找…",
+    "clearSearch": "清除搜索",
+    "shown": "{{count}} 篇论文",
+    "graphView": "引用图视图",
+    "listView": "列表视图",
+    "error": {
+      "title": "本次探索未完成",
+      "badBibcode": "bibcode 无效",
+      "notFound": "ADS 中未找到该 bibcode",
+      "rateLimited": "ADS 请求频率受限，请稍后重试",
+      "unavailable": "ADS 当前不可用或未配置",
+      "failed": "无法完成 ADS 查询",
+      "unchanged": "文献库未发生变化，可以安全重试。"
+    },
+    "empty": {
+      "title": "没有找到相关文献",
+      "hint": "可以重试本次探索，或换一篇起点文献。"
+    },
+    "loading": {
+      "title": "正在查询 ADS…",
+      "desc": "正在查找相关文献和常用参考文献"
+    },
+    "table": {
+      "paper": "论文",
+      "source": "来源"
+    },
+    "role": {
+      "origin": "起点",
+      "related": "相关",
+      "useful": "方法与基础"
+    },
+    "savedChip": "已在文献库",
+    "openInAds": "在 ADS 中打开",
+    "sourceLine": {
+      "head": "发现来源 · ADS",
+      "similar": "similar() · 第 {{rank}} 位",
+      "useful": "useful() · 第 {{rank}} 位"
+    },
+    "authorsMore": "全部作者",
+    "authorsLess": "收起",
+    "detail": {
+      "citationsTab": "本图引用",
+      "noAbstract": "这条记录暂时没有摘要。仍可查看书目信息、在 ADS 中打开，或加入文献库。",
+      "referencesLabel": "引用了",
+      "citedByLabel": "被引用",
+      "noneRefs": "此视图内没有已知的直接引用。",
+      "graphOnly": "仅显示本次图谱里的论文，不代表完整引用列表。"
+    },
+    "addError": "加入文献库失败，请重试。",
+    "savedInLibrary": "已在文献库",
+    "add": "加入文献库",
+    "adding": "正在加入…",
+    "exploreHere": "以此文献继续探索",
+    "originNow": "当前探索起点",
+    "saveOnly": "仅保存书目信息，不下载全文。",
+    "graph": {
+      "heading": "本图引用",
+      "note": "A → B 表示 A 引用 B；位置不表示相似度。"
+    }
   }
 }

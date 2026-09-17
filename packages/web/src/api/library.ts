@@ -1,6 +1,5 @@
 import type { Job } from "@argelanderspace/contracts";
 import type {
-  AddRefResponse,
   LibraryData,
   LibraryRef,
   ManualWorkRequest,
@@ -31,15 +30,6 @@ export interface LibraryLoad {
 export async function fetchLibrary(): Promise<LibraryLoad> {
   const live = await tryJson<LibraryData>("/api/library");
   return live ? { data: live, live: true } : { data: LIBRARY_FIXTURE, live: false };
-}
-
-/** Add a suggested graph node to the library (resolves full metadata server-side). */
-export async function addRef(nodeId: string): Promise<AddRefResponse | null> {
-  return tryJson<AddRefResponse>("/api/library/refs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source: "graph-node", nodeId }),
-  });
 }
 
 /** Attach a user-supplied LaTeX source zip to a work (server-side ingest).

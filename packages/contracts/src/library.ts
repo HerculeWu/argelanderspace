@@ -2,16 +2,16 @@
  * Zod schemas for the Library payload (`GET /api/library`).
  *
  * Mirrors `bibgraph/library/build.py::library_payload()` +
- * `bibgraph/library/graph.py::work_to_ref()` / `_saved_node()` /
- * `_suggested_node()`, and the frontend's `web/src/library/types.ts`.
+ * `bibgraph/library/graph.py::work_to_ref()` / `_saved_node()`, and the
+ * frontend's `web/src/library/types.ts`. (The suggested-node architecture was
+ * retired in Stage 14.)
  *
  * Serialization notes (bug-for-bug):
  * - `LibraryRef`: the 11 base keys are always present (never stripped);
  *   optional keys are *absent* when unset (None/"" are filtered out).
- * - `GraphNode`: the graph JSON is dumped *without* compaction, so saved
- *   nodes carry explicit `null` for unset `doi` / `arxiv_id` / `doc_id`
- *   (observed in data/library/cache/graph.json) → `.nullish()`. Suggested
- *   nodes omit `ref` / `arxiv_id` / `doc_id` entirely.
+ * - `GraphNode`: the graph JSON is dumped *without* compaction, so nodes
+ *   carry explicit `null` for unset `doi` / `arxiv_id` / `doc_id` —
+ *   `.nullish()`.
  */
 
 import { z } from "zod";
@@ -44,6 +44,12 @@ export const LibraryRefSchema = z.object({
   note: z.string().optional(),
   doi: z.string().optional(),
   arxiv_id: z.string().optional(),
+  /**
+   * ADS bibcode (Stage 14): presence enables the "explore related papers"
+   * action in the web UI. Web/API-internal increment — the frozen CLI
+   * surface (`search`/`list`) never consumes this payload.
+   */
+  bibcode: z.string().optional(),
   /** Reader doc id, when this work is ingested. The main doc (= doc_ids[0]). */
   doc_id: z.string().optional(),
   /**
@@ -72,13 +78,15 @@ export const LibraryRefSchema = z.object({
 });
 
 /**
- * A node in the citation graph. Saved works carry `ref` (their library id);
- * suggested works don't. `c` = citation count (node radius), `y` = year (hue).
+ * A node in the citation graph — a saved work (Stage 14: the Library graph
+ * is saved-only; the old ref-less "suggested" nodes are gone with the global
+ * recommendation architecture). `c` = citation count (node radius), `y` =
+ * year (hue).
  */
 export const GraphNodeSchema = z.object({
-  /** Canonical work id (cite key prefix for suggested papers, e.g. "oa:W…"). */
+  /** Canonical work id. */
   id: z.string(),
-  /** Library ref id, when this node is a saved work. */
+  /** Library ref id (always set: every graph node is a saved work). */
   ref: z.string().optional(),
   y: z.number().int(),
   c: z.number().int(),
@@ -96,7 +104,17 @@ export const GraphNodeSchema = z.object({
 /** Directed edge `[from, to]` between node ids. */
 export const GraphLinkSchema = z.tuple([z.string(), z.string()]);
 
+/**
+ * The current graph-cache format version (Stage 14, D7/D13): the saved-only
+ * graph without suggested nodes. Files missing `version`, carrying a
+ * different one, corrupt, or schema-invalid are all stale — the server
+ * rebuilds them lazily under `libraryLock`. The single constant is the only
+ * place the version lives; its concrete integer is not product semantics.
+ */
+export const CURRENT_GRAPH_VERSION = 2;
+
 export const GraphDataSchema = z.object({
+  version: z.literal(CURRENT_GRAPH_VERSION),
   nodes: z.array(GraphNodeSchema),
   links: z.array(GraphLinkSchema),
 });

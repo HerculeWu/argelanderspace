@@ -10,7 +10,7 @@
  *     the retired raw `GET /api/paper/{doc_id}` Document passthrough was
  *     removed in MS3a, and its alias left this file in MS3b)
  *   GET  /api/library                    → LibraryResponse (= LibraryPayload)
- *   POST /api/library/refs               → AddRefRequest / AddRefResponse
+ *   GET  /api/library/discovery?bibcode= → DiscoveryGraph (Stage 14; see discovery.ts)
  *   PATCH /api/library/refs              → PatchRefRequest / PatchRefResponse
  *   POST /api/library/refresh?offline=   → RefreshQuery / RefreshResponse
  *   POST /api/library/upload?id|doi|arxiv → UploadQuery / UploadResponse
@@ -32,16 +32,9 @@ export const PapersListResponseSchema = z.object({
 
 export const LibraryResponseSchema = LibraryPayloadSchema;
 
-// ---- POST /api/library/refs ------------------------------------------------ //
-
-/** The frontend also sends `source: "graph-node"`; the server ignores extras. */
-export const AddRefRequestSchema = z.looseObject({
-  nodeId: z.string(),
-});
-
-export const AddRefResponseSchema = z.object({
-  ref: LibraryRefSchema,
-});
+// (Stage 14: the graph-node `POST /api/library/refs` add path is retired with
+// the old recommendation architecture — Discovery candidates enter the
+// Library exclusively through `POST /api/library/works`, mode "bibcode".)
 
 // ---- PATCH /api/library/refs ----------------------------------------------- //
 
@@ -143,8 +136,6 @@ export const ApiErrorSchema = z.object({
 
 export type PapersListResponse = z.infer<typeof PapersListResponseSchema>;
 export type LibraryResponse = z.infer<typeof LibraryResponseSchema>;
-export type AddRefRequest = z.infer<typeof AddRefRequestSchema>;
-export type AddRefResponse = z.infer<typeof AddRefResponseSchema>;
 export type PatchRefRequest = z.infer<typeof PatchRefRequestSchema>;
 export type PatchRefResponse = z.infer<typeof PatchRefResponseSchema>;
 export type RefreshQuery = z.infer<typeof RefreshQuerySchema>;

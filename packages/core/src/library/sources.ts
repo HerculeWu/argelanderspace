@@ -129,13 +129,6 @@ export interface OpenAlexSource {
     title?: string | null;
     year?: number | null;
   }): Promise<OpenAlexResolution | null>;
-  /**
-   * `OpenAlex.fetch_many(ids)`: openalex short ids → normalized records
-   * (batched, ≤50 per request). The Map preserves the API's result order —
-   * `buildGraph` sorts candidates by citation count with a stable sort, so
-   * ties keep this order exactly as they kept the Python dict's.
-   */
-  fetchMany(ids: string[]): Promise<Map<string, OpenAlexResolution>>;
 }
 
 /** The three sources the resolution chain consults, in priority order. */
