@@ -7,7 +7,7 @@
 - **科研工作台，不只是文献工具；webui 是独立应用，不是 agent 看板。** 用户 2026-09-02 定位升级（旧 product-and-architecture / Stage 3.1 推后事项 / Stage 4 定位前提）。理由：无 agent 也应能操作，用户有亲自读论文的权利。当前 note/label 写路径缺口是未完成能力，不能将现状反推为永久只读定位。
 - 当前单用户、项目级文件存储；dataDir 只按 cwd/显式配置解析，不向上查找（Stage 3）。全局库复用、SQLite 等没有实施授权。
 - **CLI + skills，无 MCP** 是现行接入决定（Stage 2），不将当时对某 agent 上游能力的评论视为永久事实。文献任务用 sanctioned CLI，不从内部文件猜论文内容。
-- 下一阶段由用户决定；阶段关闭不会自动启动候选项。**Stage 13（webui 手动建立文献条目）已于 2026-09-16 交付并 smoke 通过**；**Stage 14（ADS 文献发现 Discovery）已于 2026-09-17 交付并 smoke 通过**（决策/验收见 [历史](history.md) 与[阶段方案](../memory-reference/stage14-discovery-plan.md)）。**下一阶段 Stage 15：添加文献时若有 arXiv 即自动导入 arXiv 正文内容**（用户 2026-09-17 拍板，下个 session 立项，范围届时 grilling）。Stage 4.1 仍推后。详见问题清单。
+- 下一阶段由用户决定；阶段关闭不会自动启动候选项。**Stage 13（webui 手动建立文献条目）已于 2026-09-16 交付并 smoke 通过**；**Stage 14（ADS 文献发现 Discovery）已于 2026-09-17 交付并 smoke 通过**（决策/验收见 [历史](history.md) 与[阶段方案](../memory-reference/stage14-discovery-plan.md)）；**Stage 15（添加文献时自动导入 arXiv 正文）已于 2026-09-18 交付并 smoke 通过**（决策与验收见 §2 决策组与[阶段方案](../memory-reference/stage15-arxiv-auto-ingest.md)）。**下一阶段未指定**；Stage 4.1 仍推后。详见问题清单。
 
 ## 2. 摄入、身份与寻址
 
@@ -41,6 +41,20 @@
 - **手动 bib 尊重用户 cite key**；与其他 work 冲突显式逐条报错，不静默改写；身份重合→exists 只补空字段。注意现有 `library build --bib` 导入仍系统分配 key，两路径语义不同属有意。
 - 图谱增量更新是即时尽力可视化（节点+本地边）；图谱更新失败不阻塞创建。**Stage 14 修订**：不再批量补 OpenAlex suggested 邻居（随旧推荐架构退役），全局收敛仅全量 build 权威。
 - 无对应 CLI/agent 新命令（冻结面无需求不扩张）；CLI 既有 `ingest <doi>`、`library build --bib` 行为不变。
+
+### arXiv 自动导入（Stage 15，2026-09-17 grilling D1–D17，2026-09-18 smoke 通过关闭）
+
+完整方案与测试清单权威在[阶段方案](../memory-reference/stage15-arxiv-auto-ingest.md)；以下为长期契约级边界：
+
+- **触发**：webui 添加路径（identifier `arXiv:` 前缀/arxiv.org URL、DOI 仅当解析链已给出 arXiv id、bibcode——含 Discovery 入库继承）在创建/exists 结束时按场景表自动排队；**批量 bib 永不自动**。手动入口三处：docless 附件 tab 可点击行、arXiv doc 行「重新获取」、导入菜单重添加。
+- **场景表（「新的替换旧的」）**：A 无 doc → 挂载为主 doc；B 有同 arXiv id 的 arXiv doc → 恒新鲜下载最新源（不读 `.latexcache` 旧缓存、成功覆写）重编译、**同 doc id 原位覆盖**（doc_ids 顺序/主位不动；标注指纹三态契约照常）；C 只有用户上传等其它 doc → **不触发**，绝不动用户内容（想换源先删 doc）。job 提交时与执行时双重判定；同 work 不堆叠 job（返回既有）。
+- **执行模型**：创建照常同步返回；JobRunner 串行持久 job（kind `"ingest"`——contracts 预留枚举启用）；无取消；boot interrupted 不重跑；job.done 先于 `library.changed{cause:"ingest"}`。
+- **挂载照 upload 链路**（用户原话「现在手动上传的链路怎么处理的就还怎么处理」）：stampSource 焊身份（`acquired_via="arxiv_eprint"`，与用户上传 `user_latex_zip` 区分）→ 直挂 → 锁内 rebuild → reassert（仅 attach）→ 终检。
+- **报错日志（用户要求 v1 做好、后续迭代重要参考）**：`<dataDir>/logs/arxiv-fetch.jsonl` append-only 纯文本直读（打包发布形态下不得集成到难以直读之处）；只记 arXiv 来源 failed/interrupted（boot interrupted 经 JobRunner onInterrupted 钩子写入），不记成功、不记 upload。**区分理由（用户）：arXiv 来源正常走 LaTeX 编译器「肯定没问题」，出问题优先处理；用户上传可能文档本身问题，优先级低。**
+- **失败分类**：infra `ArxivPdfOnlyError` 类型化（**文案逐字节不变** → CLI 零变化）；job 可选 `errorCode="arxiv_pdf_only"` → UI 双语引导上传 zip；其余失败 job.error 原文 + 重试。
+- **acquisition 展示整改**：信息面板标题下移除全部获取类标签（可获取/不可用/未知），保留「来源」「待上传」；附件 tab 可点击行**保持原 pill 样式不改按钮**；journal html/pdf、ads scan 等来源广告一律清理（只支持 LaTeX 源，本版只有 arXiv）；数据层 planFor 不动。
+- **隐藏开关** `auto_ingest_arxiv`（config.toml，默认 true，UI 无选项）：只关自动触发，手动入口保留；场景=流量限制/无法访问 arXiv/不想看报错。
+- **API/契约增量**：`POST /api/library/attach-arxiv?id=<workId>`（202 `{job}`；400 无 arXiv id / 404 / 409 场景 C 与 busy）；`JobSchema.errorCode` 可选；`library.changed` cause 加 `"ingest"`。**CLI 冻结面完全不动**（`ingest <doi>`/`library build` 行为不变；CLI 自动拉取为推后项 I035）。
 
 ## 3. Agent 输出冻结与回归策略必须分开
 

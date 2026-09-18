@@ -1,6 +1,6 @@
 # 当前问题与推后事项
 
-整理：2026-09-16（Stage 12 关闭归并）。编号 `I001…` 稳定，跨类别移动不换号，不回收旧号。这里是状态清单，不是默认下一阶段；来源记录的“现库”指当时观测，不代表永远零受害者。详细作者/编译边界见 [tex-pipeline](../memory-reference/tex-pipeline.md)，标注机制见 [annotations](../memory-reference/annotations.md)。
+整理：2026-09-16（Stage 12 关闭归并）；2026-09-18 Stage 15 关闭归并（新增 I035）。编号 `I001…` 稳定，跨类别移动不换号，不回收旧号。这里是状态清单，不是默认下一阶段；来源记录的“现库”指当时观测，不代表永远零受害者。详细作者/编译边界见 [tex-pipeline](../memory-reference/tex-pipeline.md)，标注机制见 [annotations](../memory-reference/annotations.md)。
 
 ## 开放问题：仍有缺陷或风险
 
@@ -60,6 +60,7 @@
 | I026 | **参考文献条目元数据富化**（bib 结构化/ADS 等）、pagedView、全局库复用 | 参考文献富化在 Stage 6 Q8 被用户确认非原诉求；其余为未来方向，不能因历史提过就启动 |
 | I027 | **宏隐藏 ref 的 backstop** | Stage 7 当前库无受害者，原 PDF hyperlink-only issue 关闭；若立项可参考 cite backstop，不擅往 segments 塞合成 xref 改冻结输出 |
 | I028 | **计划扩展**：anchor 链接、时间线拖期、跨计划移动等 | 原否决/推后理由见 plans；不能一概写成待实现需求 |
+| I035 | **CLI 侧自动 arXiv 拉取**：webui 添加路径的自动导入已由 Stage 15 落地（server job），CLI `ingest <doi>` 与 `library build` 行为不变、不自动拉正文 | 2026-09-17 Stage 15 D8 用户明确：本期不动 CLI 并要求记入 memory；未来若要 CLI 自动拉取另立小项，重新评估冻结面与 --offline 语义 |
 
 ## 待确认事项
 

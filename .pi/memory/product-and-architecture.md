@@ -10,7 +10,7 @@
 
 - arXiv LaTeX / 本地源码摄入 → 项目级文献库与引文图谱 → React 三栏阅读器 → CLI + skills 协作。
 - **Stage 14 ADS 文献发现（Discovery）**：文献详情「探索相关文献」（需 work 有 bibcode，demo/无后端禁用）→ 文献页内探索模式：ADS `similar()` top 18 相关 + `useful()` top 6（基于实际 related 集）候选，图为可见节点间真实引用；`#explore/<bibcode>` hash 深链接、前端 session 栈前进/后退（仅成功 seed 跳转进历史、失败保留旧图）；候选详情（摘要/书目/本图引用，无 BibTeX tab）；入库只走 Stage 13 `POST /api/library/works` bibcode 路径，就地更新不打断探索；加载为诚实不确定态 + 真取消。库图退役旧全局推荐：**saved-only**（节点全是已存 work，边 = 已存 referenced_works + 离线 bib）+ graph.json `version`（当前 2）锁内惰性自愈。
-- 计划页已落地，默认 landing；webui 可独立 CRUD 计划、任务与文档标注，不依赖 agent。**Stage 13 起 webui 可手动建文献条目**：侧栏导入菜单三模式——标识符（DOI / `arXiv:` 前缀 / arxiv.org URL，裸 arXiv id 报错引导）、ADS bibcode（fail-fast）、BibTeX 全文批量（纯本地、逐条部分成功、尊重用户 cite key、冲突逐条报错）；就地建立不触发全库 rebuild，重复身份 exists 只补空字段。
+- 计划页已落地，默认 landing；webui 可独立 CRUD 计划、任务与文档标注，不依赖 agent。**Stage 13 起 webui 可手动建文献条目**：侧栏导入菜单三模式——标识符（DOI / `arXiv:` 前缀 / arxiv.org URL，裸 arXiv id 报错引导）、ADS bibcode（fail-fast）、BibTeX 全文批量（纯本地、逐条部分成功、尊重用户 cite key、冲突逐条报错）；就地建立不触发全库 rebuild，重复身份 exists 只补空字段。**Stage 15 起**：有 arXiv id 的条目在创建/exists 后自动排队获取 arXiv 最新源并编译挂载（场景表 A 新挂主 doc / B 同 id 原位刷新 / C 只有用户上传则不碰；批量 bib 永不自动）；手动入口 `POST /api/library/attach-arxiv` 与附件 tab 可点击行/「重新获取」；获取类广告标签已清理（只保留来源/待上传事实）。
 - Write 页已交付：独立稿件列表、八型 cell、模板选择、Info/Preamble、per-cell comments、上传图片与 LaTeX 源码 zip 导出（附模板 cls/sty/bst 依赖）；CodeMirror 编辑、共享 latexmk→facts+AST→IR 的 cell 预览，不展示 PDF。Stage 12 起渲染由 Shift+Enter/Render 显式触发（自动保存保留），bib 转义与 ADS 富化修复 Report citation；Stage 10/11 为带问题关闭，遗留 I030/I031 已由 Stage 12 关闭。
 - webui zh-CN/en 即时切换，偏好随 Tweaks 存 localStorage，默认中文、不探测浏览器语言；UI 文案集中双 JSON。server detail/job.error 与用户数据（例如库名）不在翻译范围，CLI 输出不变。
 - 文献 note tab 目前只读，持久化 note/label 写入口仍主要是 CLI；右键色点 overlay 仅会话级。webui 独立应用是目标，不等于所有写路径已补齐。
@@ -50,6 +50,7 @@
 ├── output/.latexcache/    # arXiv 源包缓存
 ├── library/               # library.json、bib、富化缓存、cache/{ads,crossref,openalex,ads-discovery}、graph.json(v2)
 ├── jobs/                  # 持久 job 与 spool
+├── logs/                  # Stage 15：arxiv-fetch.jsonl 报错日志（append-only，只记 arXiv 来源失败/中断）
 ├── input/
 ├── annotations/<doc_id>/
 │   ├── current.json       # 独立用户数据，不是摄入 IR
@@ -89,7 +90,7 @@
 - 探索模式深链接 `#explore/<bibcode>`；F5 重查当前 seed，历史栈内存态刷新即丢。
 - 摘要渲染（Stage 14 修复）：库页与探索页摘要统一 `abstractHtml`——provider HTML 白名单清洗（SUB/SUP/I/B/EM/STRONG/BR/P，剥属性，活性内容剔除）+ 文本节点内 KaTeX（texmath 边界规则）；注入沿用单用户 dangerouslySetInnerHTML 惯例。
 - **reader I001 已在批准范围内关闭**：ReaderSession 经 annotations GET `?coherent=1` 共同接纳 IR/current/同读资产 manifest，正常摄入通知后无需 F5。更新/失败保旧文字布局和会话草稿，隐藏高亮/图片并暂停标注与旧定位；图实际 bytes 按 manifest hash 校验后 Blob 展示。失败手动重试、图片自动恢复最多一次，细则见 annotations 专题；不能推广为任意外部资产改动、无限自动恢复或跨进程一致性。
-- Job 串行、落盘；boot 时未完 job 标 interrupted，不重跑；hello 回放状态，失败在详情刷新后仍可见；job.done 先于 library.changed。
+- Job 串行、落盘；boot 时未完 job 标 interrupted，不重跑；hello 回放状态，失败在详情刷新后仍可见；job.done 先于 library.changed。**Stage 15 起启用预留的 `"ingest"` job kind**（arXiv 自动获取，payload `{workId, arxivId}`），`library.changed` cause 枚举加 `"ingest"`，`JobSchema` 增可选 `errorCode`（`"arxiv_pdf_only"` 驱动 UI 双语引导）。
 
 ## Writer 与独立稿件
 

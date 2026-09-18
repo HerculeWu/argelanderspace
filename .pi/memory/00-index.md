@@ -1,10 +1,10 @@
 # 项目记忆入口
 
-正式记忆整理于 2026-09-16；产品事实截至 Stage 12 关闭（2026-09-16）。日常新增决定可能在 inbox 中，**本目录不是不可变快照**。
+正式记忆整理于 2026-09-16；产品事实截至 Stage 15 关闭（2026-09-18）。日常新增决定可能在 inbox 中，**本目录不是不可变快照**。
 
 ## 当前状态
 
-ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–14 已关闭；**Stage 14（ADS 文献发现 Discovery）已交付且 smoke 通过**（含摘要 HTML/数学渲染修复）。下一阶段：**Stage 15——添加文献时若有 arXiv 即自动导入 arXiv 正文内容**（用户 2026-09-17 拍板，下个 session 立项，范围届时 grilling）。Stage 4.1 仍推后，问题清单不是默认任务队列。
+ArgelanderSpace 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具。Stage 1–15 已关闭；**Stage 15（添加文献时自动导入 arXiv 正文）已交付且 smoke 通过**（创建/exists 自动排队 arXiv 获取 job、场景表 A/B/C、照 upload 链路焊死挂载、原位刷新「新换旧」、附件 tab 可点击行+进度/重试、获取类广告标签清理、`logs/arxiv-fetch.jsonl` 报错日志、隐藏开关 `auto_ingest_arxiv`）。**下一阶段未指定**（等用户拍板）；Stage 4.1 仍推后，问题清单不是默认任务队列。
 
 Writer 已交付 cell 编辑/导出、CodeMirror 与共享编译→IR 预览；Stage 12 落地 Shift+Enter/Render 显式触发渲染（自动保存保留）、bib 转义与 ADS BibTeX 字段富化（cite_key=bibcode 分配规则、一次性存量迁移）、期刊宏注入与导出 zip 附带模板依赖。reader 同 epoch 自动更新已完成（I001 关闭）。Stage 14 新增：文献详情页「探索相关文献」→ ADS similar(18)+useful(6) 临时探索图（真实引用边、菱形 Useful、入库不打断探索）；库图退役旧全局推荐（saved-only + graph.json 版本化自愈）。详情各归其权威文件，不以代码现状废除新决定。
 
