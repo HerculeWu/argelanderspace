@@ -31,6 +31,9 @@ literatures/library/
 # Job runner runtime state (spooled uploads, job history)
 literatures/jobs/
 
+# arXiv auto-ingest failure log (user data / iteration reference; Stage 15)
+literatures/logs/
+
 # Document annotations (user data; Stage 8)
 literatures/annotations/
 
