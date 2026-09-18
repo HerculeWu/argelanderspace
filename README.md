@@ -7,7 +7,9 @@ them in a **citation-graph library** with a local **reader workspace** (web UI
 with document reader, per-document **annotations** (text/structure/whole-doc
 targets with Markdown+math bodies), force-directed citation graph, **ADS-powered
 literature discovery** (one seed paper → ADS similar + useful candidates on a
-real-citation graph), and live ingest progress over WebSocket).
+real-citation graph), **manual entry creation** (identifier / ADS bibcode /
+BibTeX batch) with **automatic arXiv full-text import** when the entry has an
+arXiv id, and live ingest progress over WebSocket).
 
 One ingestion pipeline emits the IR:
 

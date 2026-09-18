@@ -9,6 +9,10 @@
  *   openalex_api_key  string   fallback for $OPENALEX_API_KEY
  *   ads_dev_key       string   fallback for $ADS_DEV_KEY (itself a fallback
  *                              for ~/.ads/dev_key)
+ *   auto_ingest_arxiv boolean  default true — Stage 15: automatically fetch
+ *                              & compile the arXiv source when an added work
+ *                              has an arXiv id (hidden setting; the web UI
+ *                              exposes no toggle; manual triggers stay on)
  *
  * Precedence everywhere: CLI flag > env var > config file > default. Unknown
  * keys are ignored (forward compatibility); a known key with the wrong type
@@ -29,6 +33,7 @@ export interface AppConfig {
   port?: number;
   openalex_api_key?: string;
   ads_dev_key?: string;
+  auto_ingest_arxiv?: boolean;
 }
 
 export class ConfigError extends Error {
@@ -73,6 +78,13 @@ export function parseConfigToml(text: string, path: string = "<config>"): AppCon
       throw new ConfigError(`${path}: "port" must be an integer between 0 and 65535`);
     }
     out.port = port;
+  }
+  const autoIngestArxiv = doc.auto_ingest_arxiv;
+  if (autoIngestArxiv !== undefined) {
+    if (typeof autoIngestArxiv !== "boolean") {
+      throw new ConfigError(`${path}: "auto_ingest_arxiv" must be a boolean`);
+    }
+    out.auto_ingest_arxiv = autoIngestArxiv;
   }
   return out;
 }

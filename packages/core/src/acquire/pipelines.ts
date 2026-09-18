@@ -27,4 +27,14 @@ export interface IngestPipelines {
     zipPath: string,
     opts: { outRoot: string; docId: string; onProgress?: (message: string) => void }
   ): Promise<TexDocIr>;
+  /**
+   * Stage 15: fetch the LATEST arXiv e-print for `arxivId` — never the stale
+   * on-disk cache (overwritten on success) — wipe any previous
+   * `<outRoot>/<docId>/src` tree, and ingest with the doc id pinned. The
+   * attach/refresh primitive behind `attachArxivDoc` (`acquire/attach-arxiv.ts`).
+   */
+  ingestArxivEprint(
+    arxivId: string,
+    opts: { outRoot: string; docId: string; onProgress?: (message: string) => void }
+  ): Promise<TexDocIr>;
 }

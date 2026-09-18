@@ -35,6 +35,7 @@
 // replaced it); PDF (MinerU OCR) and publisher-HTML pipelines are archived
 // on the `ocr-features` branch.
 
+export * from "./acquire/attach-arxiv.js";
 export * from "./acquire/bibtex.js";
 export * from "./acquire/execute.js";
 export { latexToUnicode } from "./acquire/latexenc.js";

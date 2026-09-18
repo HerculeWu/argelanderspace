@@ -32,6 +32,10 @@ beforeEach(() => {
     broadcast: collector.broadcast,
     webDist: null,
     port: TEST_PORT,
+    // Stage 15: this file pins CREATION semantics; the automatic arXiv fetch
+    // (which would queue ingest jobs on created/exists) is covered in
+    // attach-arxiv.test.ts — keep it off here.
+    autoIngestArxiv: () => false,
   });
 });
 

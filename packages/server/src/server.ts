@@ -22,6 +22,7 @@ import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
+import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
 import { startWatcher } from "./watch.js";
@@ -57,7 +58,27 @@ export interface RunningServer {
 export function createServer(opts: ServerOptions): RunningServer {
   const paths = libraryPaths(opts.dataDir);
   const statusDir = statusDirFor(opts.dataDir);
-  const runner = new JobRunner({ dir: join(opts.dataDir, "jobs") });
+  const runner = new JobRunner({
+    dir: join(opts.dataDir, "jobs"),
+    // Stage 15 (D12): a boot-interrupted arXiv fetch is a failure worth
+    // iterating on too — it lands in the same plain-text JSONL log.
+    onInterrupted: (job) => {
+      if (job.kind !== "ingest") return;
+      const p = (job.payload ?? {}) as { workId?: unknown; arxivId?: unknown };
+      try {
+        appendArxivFetchLog(opts.dataDir, {
+          time: job.finishedAt ?? new Date().toISOString(),
+          jobId: job.id,
+          workId: typeof p.workId === "string" ? p.workId : null,
+          arxivId: typeof p.arxivId === "string" ? p.arxivId : null,
+          stage: "interrupted",
+          error: "job interrupted by server restart (never re-run)",
+        });
+      } catch (logErr) {
+        console.error("arxiv-fetch log append failed:", logErr);
+      }
+    },
+  });
   const port = opts.port ?? 8000;
 
   // hub is referenced by the broadcast closure before construction below;

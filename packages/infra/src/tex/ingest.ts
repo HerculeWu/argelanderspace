@@ -71,6 +71,7 @@ export async function ingestTexSource(
       // same UA the pandoc-era config used (polite-pool etiquette)
       userAgent: "bibgraph/0.1 (https://arxiv.org; mailto:wuwenjiegogo@gmail.com)",
       useCache: !(opts.noCache ?? false),
+      ...(opts.fetchImpl !== undefined ? { fetchImpl: opts.fetchImpl } : {}),
     }),
     ...(opts.docId !== undefined ? { docId: opts.docId } : {}),
   });
@@ -104,6 +105,22 @@ export async function ingestTexSource(
 export interface TexIngestZipOptions extends Omit<TexIngestOptions, "docId"> {
   /** Pinned doc id (idempotent upload: the same work always maps to it). */
   docId: string;
+}
+
+/**
+ * Stage 15: fetch the LATEST arXiv e-print for `arxivId` and ingest it with
+ * the doc id pinned — the attach/refresh primitive behind the server's
+ * arXiv auto-ingest job (core `attachArxivDoc`). A refresh must really pick
+ * up the latest version, so this never reads the on-disk e-print cache (a
+ * successful download overwrites it) and wipes any previous
+ * `<outRoot>/<docId>/src` tree before unpacking.
+ */
+export async function ingestArxivEprint(
+  arxivId: string,
+  opts: TexIngestZipOptions
+): Promise<TexIngestResult> {
+  rmSync(join(opts.outRoot, opts.docId, "src"), { recursive: true, force: true });
+  return ingestTexSource(arxivId, { ...opts, noCache: true });
 }
 
 /**

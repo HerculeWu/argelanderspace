@@ -245,11 +245,7 @@
         "ingested": "已入库",
         "ingestedFrom": "已入库 · {{label}}",
         "needsUpload": "需上传源码包",
-        "blocked": "被反爬墙",
-        "blockedFrom": "反爬墙 · {{label}}",
-        "ready": "可获取",
-        "readyFrom": "可获取 · {{label}}",
-        "unknown": "未知来源"
+        "readyArxiv": "可获取 · arXiv 全文"
       },
       "files": {
         "openMain": "在文档中打开（主文档）",
@@ -259,7 +255,17 @@
         "setMain": "设为主",
         "setMainTitle": "设为主文档",
         "setMainFailed": "设为主文档失败，请重试",
-        "sourceLabel": "全文来源"
+        "sourceLabel": "全文来源",
+        "refetchArxiv": "重新获取",
+        "refetchArxivTitle": "重新获取 arXiv 最新版（覆盖该文档）"
+      },
+      "arxiv": {
+        "queued": "排队等待获取 arXiv 正文…",
+        "ingesting": "正在获取 arXiv 正文…",
+        "failed": "获取 arXiv 正文失败：{{error}}",
+        "failedGeneric": "获取 arXiv 正文失败，请重试",
+        "retry": "重试",
+        "pdfOnlyHint": "该论文的 arXiv 提交无 LaTeX 源码（仅 PDF），请改用上方上传 zip"
       },
       "upload": {
         "queued": "排队等待摄入…",

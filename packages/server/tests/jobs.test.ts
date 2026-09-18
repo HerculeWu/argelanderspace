@@ -132,4 +132,27 @@ describe("JobRunner persistence", () => {
     await sleep(20); // give a hypothetical rogue execution a chance
     expect(runner.get("refresh-queued")?.status).toBe("interrupted");
   });
+
+  test("onInterrupted fires once per boot-interrupted job (Stage 15 log hook)", () => {
+    const dir = makeDir();
+    const mk = (id: string, kind: Job["kind"], status: Job["status"]): Job => ({
+      id,
+      kind,
+      status,
+      createdAt: "2026-09-17T00:00:00.000Z",
+      startedAt: null,
+      finishedAt: null,
+      progress: [],
+      result: null,
+      error: null,
+    });
+    writeFileSync(join(dir, "ingest-a.json"), JSON.stringify(mk("ingest-a", "ingest", "running")));
+    writeFileSync(join(dir, "upload-b.json"), JSON.stringify(mk("upload-b", "upload", "queued")));
+    writeFileSync(join(dir, "refresh-c.json"), JSON.stringify(mk("refresh-c", "refresh", "done")));
+    const interrupted: Job[] = [];
+    const runner = new JobRunner({ dir, onInterrupted: (j) => interrupted.push(j) });
+    expect(interrupted.map((j) => j.id).sort()).toEqual(["ingest-a", "upload-b"]);
+    expect(interrupted.every((j) => j.status === "interrupted")).toBe(true);
+    expect(runner.get("refresh-c")?.status).toBe("done"); // finished jobs don't fire
+  });
 });

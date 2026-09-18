@@ -1,8 +1,8 @@
-import { type ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
-import { patchRef, uploadLatexZip } from "../api/library";
+import { attachArxiv, patchRef, uploadLatexZip } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
@@ -21,53 +21,48 @@ const RESOLVED_LABEL: Record<string, string> = {
   openalex: "OpenAlex",
 };
 
-// Where the full text is / would come from, with a tone color.
-function sourceBadge(r: LibraryRef): { text: string; color: string } {
+// Tone colors for the source pill.
+const PILL_GREEN = "oklch(0.74 0.13 158)", PILL_AMBER = "oklch(0.80 0.13 78)", PILL_BLUE = "oklch(0.70 0.12 235)";
+
+function pillStyle(color: string): CSSProperties {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "1px 7px",
+    borderRadius: 999,
+    fontSize: 11,
+    lineHeight: "16px",
+    color,
+    border: `1px solid color-mix(in oklch, ${color} 45%, transparent)`,
+    background: `color-mix(in oklch, ${color} 12%, transparent)`,
+  };
+}
+
+// Where the full text CAME FROM (a fact), with a tone color. Stage 15 (D17):
+// the acquisition-advertising states (ready / blocked / unknown — e.g. a
+// publisher-HTML "available" label) are gone from the UI; the pill only
+// reports `ingested from` or `needs upload`, and the arXiv-available state is
+// a clickable action in the files tab instead. Returns null for the removed
+// states.
+function sourceBadge(r: LibraryRef): { text: string; color: string } | null {
   const lbl = r.sourceLabel || "";
-  const GREEN = "oklch(0.74 0.13 158)", AMBER = "oklch(0.80 0.13 78)", BLUE = "oklch(0.70 0.12 235)";
   if (r.doc_id || r.pdf)
     return {
       text: lbl
         ? i18n.t("library.detail.source.ingestedFrom", { label: lbl })
         : i18n.t("library.detail.source.ingested"),
-      color: GREEN,
+      color: PILL_GREEN,
     };
-  if (r.needs_upload) return { text: i18n.t("library.detail.source.needsUpload"), color: AMBER };
-  if (r.sourceStatus === "blocked")
-    return {
-      text: lbl
-        ? i18n.t("library.detail.source.blockedFrom", { label: lbl })
-        : i18n.t("library.detail.source.blocked"),
-      color: AMBER,
-    };
-  if (r.sourceStatus === "ready" || r.sourceReady)
-    return {
-      text: lbl
-        ? i18n.t("library.detail.source.readyFrom", { label: lbl })
-        : i18n.t("library.detail.source.ready"),
-      color: BLUE,
-    };
-  return { text: lbl || i18n.t("library.detail.source.unknown"), color: "var(--text-dim, #8a8a8a)" };
+  if (r.needs_upload) return { text: i18n.t("library.detail.source.needsUpload"), color: PILL_AMBER };
+  return null;
 }
 
 function SourcePill({ r }: { r: LibraryRef }) {
   const b = sourceBadge(r);
+  if (b === null) return null;
   return (
-    <span
-      className="src-pill mono"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        padding: "1px 7px",
-        borderRadius: 999,
-        fontSize: 11,
-        lineHeight: "16px",
-        color: b.color,
-        border: `1px solid color-mix(in oklch, ${b.color} 45%, transparent)`,
-        background: `color-mix(in oklch, ${b.color} 12%, transparent)`,
-      }}
-    >
+    <span className="src-pill mono" style={pillStyle(b.color)}>
       {b.text}
     </span>
   );
@@ -105,8 +100,8 @@ const TAB_LABEL_KEYS = {
   files: "library.detail.tabs.files",
 } as const;
 
-/** The upload job's target work id rides in `payload.workId` (server app.ts). */
-function uploadJobWorkId(job: Job): string | null {
+/** The job's target work id rides in `payload.workId` (server app.ts). */
+function jobWorkId(job: Job): string | null {
   const p = job.payload;
   if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
   const w = (p as Record<string, unknown>).workId;
@@ -149,6 +144,14 @@ export function RefDetail({
   const uploadJobRef = useRef<Job | null>(null);
   const seenJobs = useRef(new Map<string, Job>());
   const [uploadErr, setUploadErr] = useState<string | null>(null);
+  // Stage 15: this work's arXiv fetch job (kind "ingest", payload.workId) —
+  // the same adoption/race rules as the upload job. `arxivErrCode` carries
+  // the server's machine-readable failure class ("arxiv_pdf_only" → the
+  // bilingual PDF-only guidance).
+  const [arxivJob, setArxivJobState] = useState<Job | null>(null);
+  const arxivJobRef = useRef<Job | null>(null);
+  const [arxivErr, setArxivErr] = useState<string | null>(null);
+  const [arxivErrCode, setArxivErrCode] = useState<string | null>(null);
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
   // Stage 8 §8 document delete: the doc id pending confirmation, plus the
@@ -166,21 +169,33 @@ export function RefDetail({
   const mainDoc = r.doc_id ?? versions[0];
   const extraVersions = versions.filter((d) => d !== mainDoc);
   const hasUploadDoc = versions.some((d) => d.startsWith("upload-"));
+  // Stage 15 (D7/D17): the docless source row carries the CLICKABLE arXiv
+  // action when the work has an arXiv id, else the factual pill (needs
+  // upload) — or nothing at all when neither applies (acquisition ads gone).
+  const doclessBadge = mainDoc === undefined ? sourceBadge(r) : null;
 
   const setUploadJob = useCallback((job: Job | null) => {
     uploadJobRef.current = job;
     setUploadJobState(job);
   }, []);
 
+  const setArxivJob = useCallback((job: Job | null) => {
+    arxivJobRef.current = job;
+    setArxivJobState(job);
+  }, []);
+
   // switching references drops the other ref's upload state
   useEffect(() => {
     setUploadJob(null);
     setUploadErr(null);
+    setArxivJob(null);
+    setArxivErr(null);
+    setArxivErrCode(null);
     setMainErr(null);
     setDelDoc(null);
     setDelErr(null);
     setDelBusy(false);
-  }, [r.id, setUploadJob]);
+  }, [r.id, setUploadJob, setArxivJob]);
 
   const onSetMainDoc = async (docId: string) => {
     setMainErr(null);
@@ -217,6 +232,11 @@ export function RefDetail({
       ? i18n.t("library.detail.upload.failed", { error: job.error })
       : i18n.t("library.detail.upload.failedGeneric");
 
+  const arxivFailMsg = (job: Job | null): string =>
+    job?.error
+      ? i18n.t("library.detail.arxiv.failed", { error: job.error })
+      : i18n.t("library.detail.arxiv.failedGeneric");
+
   const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file
@@ -238,35 +258,55 @@ export function RefDetail({
     }
   };
 
-  // Track this work's upload job.* events. `hello` replays (reconnect /
-  // refresh) adopt a queued/running job even without a local uploadJob, so
-  // tracking resumes; a replayed failed/interrupted job surfaces its recorded
-  // error (the failure probe: the error must still be visible after F5).
+  // Track this work's job.* events. ONE subscription routes by kind: the
+  // upload job (kind "upload") and the Stage 15 arXiv fetch (kind "ingest")
+  // share the hello-adoption and race rules. `hello` replays (reconnect /
+  // refresh) adopt a queued/running job even without local state, so
+  // tracking resumes; a replayed failed/interrupted job surfaces its
+  // recorded error once (the failure probe: visible after F5).
   const adoptedFailure = useRef(false);
+  const adoptedArxivFailure = useRef(false);
   useEffect(() => {
     adoptedFailure.current = false;
+    adoptedArxivFailure.current = false;
   }, [r.id]);
   useEffect(
     () =>
       onJobEvent((job) => {
-        if (job.kind !== "upload" || uploadJobWorkId(job) !== r.id) return;
+        if (jobWorkId(job) !== r.id) return;
         seenJobs.current.set(job.id, job);
-        const cur = uploadJobRef.current;
-        if (cur && job.id === cur.id) setUploadJob(job);
-        else if (!cur && (job.status === "queued" || job.status === "running")) {
-          setUploadJob(job);
-        } else if (
-          !cur &&
-          (job.status === "failed" || job.status === "interrupted") &&
-          !adoptedFailure.current
-        ) {
-          // untracked terminal failure (typically a hello replay of the
-          // persisted job table, newest first): show the newest one, once
-          adoptedFailure.current = true;
-          setUploadErr(failMsg(job));
+        if (job.kind === "upload") {
+          const cur = uploadJobRef.current;
+          if (cur && job.id === cur.id) setUploadJob(job);
+          else if (!cur && (job.status === "queued" || job.status === "running")) {
+            setUploadJob(job);
+          } else if (
+            !cur &&
+            (job.status === "failed" || job.status === "interrupted") &&
+            !adoptedFailure.current
+          ) {
+            // untracked terminal failure (typically a hello replay of the
+            // persisted job table, newest first): show the newest one, once
+            adoptedFailure.current = true;
+            setUploadErr(failMsg(job));
+          }
+        } else if (job.kind === "ingest") {
+          const cur = arxivJobRef.current;
+          if (cur && job.id === cur.id) setArxivJob(job);
+          else if (!cur && (job.status === "queued" || job.status === "running")) {
+            setArxivJob(job);
+          } else if (
+            !cur &&
+            (job.status === "failed" || job.status === "interrupted") &&
+            !adoptedArxivFailure.current
+          ) {
+            adoptedArxivFailure.current = true;
+            setArxivErr(arxivFailMsg(job));
+            setArxivErrCode(job.errorCode ?? null);
+          }
         }
       }),
-    [r.id, setUploadJob]
+    [r.id, setUploadJob, setArxivJob]
   );
 
   // react to the terminal states (kept out of the subscriber, which must stay pure)
@@ -280,6 +320,44 @@ export function RefDetail({
       setUploadErr(failMsg(uploadJob));
     }
   }, [uploadJob, onReload, setUploadJob]);
+
+  // ---- Stage 15: arXiv fetch job (kind "ingest") --------------------------- //
+
+  // The clickable acquisition line / the per-doc refetch entry: queue the
+  // fetch (202 → queued or in-flight job); a non-202 (409 scenario C,
+  // offline demo, …) surfaces as the generic failure line.
+  const onFetchArxiv = async () => {
+    setArxivErr(null);
+    setArxivErrCode(null);
+    const job = await attachArxiv(r.id);
+    if (!job) {
+      setArxivErr(arxivFailMsg(null));
+      return;
+    }
+    const seen = seenJobs.current.get(job.id);
+    if (!seen || seen.status === "queued" || seen.status === "running") {
+      setArxivJob(seen ?? job); // prefer the newer event snapshot
+    } else if (seen.status === "done") {
+      onReload?.();
+    } else {
+      // terminal frame beat the fetch response: surface it, don't resurrect
+      setArxivErr(arxivFailMsg(seen));
+      setArxivErrCode(seen.errorCode ?? null);
+    }
+  };
+
+  // react to the terminal states (kept out of the subscriber, which must stay pure)
+  useEffect(() => {
+    if (!arxivJob) return;
+    if (arxivJob.status === "done") {
+      setArxivJob(null);
+      onReload?.();
+    } else if (arxivJob.status === "failed" || arxivJob.status === "interrupted") {
+      setArxivJob(null);
+      setArxivErr(arxivFailMsg(arxivJob));
+      setArxivErrCode(arxivJob.errorCode ?? null);
+    }
+  }, [arxivJob, onReload, setArxivJob]);
 
   const copyBib = async () => {
     try {
@@ -447,6 +525,17 @@ export function RefDetail({
                   </span>
                   <Icon name="arrow-up-right" cls="ico-sm" />
                 </button>
+                {mainDoc.startsWith("arxiv-") && (
+                  <button
+                    className="btn"
+                    data-testid="arxiv-refetch-main"
+                    disabled={arxivJob !== null}
+                    title={t("library.detail.files.refetchArxivTitle")}
+                    onClick={() => void onFetchArxiv()}
+                  >
+                    {t("library.detail.files.refetchArxiv")}
+                  </button>
+                )}
                 <button
                   className="btn icon"
                   title={t("library.detail.files.deleteDoc")}
@@ -479,6 +568,17 @@ export function RefDetail({
                 >
                   {t("library.detail.files.setMain")}
                 </button>
+                {d.startsWith("arxiv-") && (
+                  <button
+                    className="btn"
+                    data-testid={`arxiv-refetch-${d}`}
+                    disabled={arxivJob !== null}
+                    title={t("library.detail.files.refetchArxivTitle")}
+                    onClick={() => void onFetchArxiv()}
+                  >
+                    {t("library.detail.files.refetchArxiv")}
+                  </button>
+                )}
                 <button
                   className="btn icon"
                   title={t("library.detail.files.deleteDoc")}
@@ -496,6 +596,61 @@ export function RefDetail({
                 {mainErr}
               </div>
             )}
+            {!mainDoc && (r.arxiv_id || doclessBadge) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>{t("library.detail.files.sourceLabel")}</span>
+                {r.arxiv_id ? (
+                  // Stage 15 (D11): the acquirable arXiv source is a CLICKABLE
+                  // pill — the existing pill style, not a button — queueing
+                  // the fetch job; progress unfolds right below.
+                  <span
+                    className="src-pill mono"
+                    data-testid="arxiv-fetch"
+                    onClick={arxivJob === null ? () => void onFetchArxiv() : undefined}
+                    style={{
+                      ...pillStyle(PILL_BLUE),
+                      cursor: arxivJob === null ? "pointer" : "default",
+                      opacity: arxivJob === null ? 1 : 0.6,
+                    }}
+                  >
+                    {t("library.detail.source.readyArxiv")}
+                  </span>
+                ) : (
+                  <SourcePill r={r} />
+                )}
+              </div>
+            )}
+            {(arxivJob !== null || arxivErr !== null) && (
+              <div
+                className="mono"
+                style={{ fontSize: 11, lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 4 }}
+              >
+                {arxivJob && (
+                  <span style={{ opacity: 0.75, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <Icon name="loader" cls="ico-sm spin" />
+                    {arxivJob.status === "queued"
+                      ? t("library.detail.arxiv.queued")
+                      : (arxivJob.progress[arxivJob.progress.length - 1]?.message ??
+                        t("library.detail.arxiv.ingesting"))}
+                  </span>
+                )}
+                {arxivErr && (
+                  <>
+                    <span style={{ color: "oklch(0.70 0.16 25)" }}>{arxivErr}</span>
+                    {arxivErrCode === "arxiv_pdf_only" && (
+                      <span style={{ opacity: 0.75 }}>{t("library.detail.arxiv.pdfOnlyHint")}</span>
+                    )}
+                    <span
+                      data-testid="arxiv-retry"
+                      onClick={() => void onFetchArxiv()}
+                      style={{ cursor: "pointer", textDecoration: "underline", opacity: 0.8, width: "fit-content" }}
+                    >
+                      {t("library.detail.arxiv.retry")}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
             <div
               style={{
                 display: "flex",
@@ -504,12 +659,6 @@ export function RefDetail({
                 ...(mainDoc ? { marginTop: 8 } : {}),
               }}
             >
-              {!mainDoc && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>{t("library.detail.files.sourceLabel")}</span>
-                  <SourcePill r={r} />
-                </div>
-              )}
               <button
                 className="btn"
                 disabled={uploadJob !== null}

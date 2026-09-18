@@ -104,6 +104,15 @@ describe("parseConfigToml", () => {
     }
   });
 
+  test("auto_ingest_arxiv (Stage 15 hidden toggle): boolean, default unset (=on)", () => {
+    expect(parseConfigToml("", "/p").auto_ingest_arxiv).toBeUndefined();
+    expect(parseConfigToml("auto_ingest_arxiv = false", "/p").auto_ingest_arxiv).toBe(false);
+    expect(parseConfigToml("auto_ingest_arxiv = true", "/p").auto_ingest_arxiv).toBe(true);
+    expect(() => parseConfigToml('auto_ingest_arxiv = "no"', "/p")).toThrow(
+      /"auto_ingest_arxiv" must be a boolean/
+    );
+  });
+
   test("malformed TOML reports the path and the parse location", () => {
     try {
       parseConfigToml('port = "abc"\n= bad', "/p/config.toml");

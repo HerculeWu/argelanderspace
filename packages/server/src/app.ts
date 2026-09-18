@@ -59,7 +59,10 @@ import {
   addManualBibText,
   addManualIdentifier,
   annotationsDocDir,
+  arxivAttachScenario,
+  arxivDocId,
   arxivFromDoi,
+  attachArxivDoc,
   attachLatexZip,
   buildWriterExport,
   createManuscript,
@@ -81,6 +84,7 @@ import {
   type ManualIdentifier,
   type MetadataSources,
   manuscriptDir,
+  normArxiv,
   normDoi,
   patchWork,
   readDocumentAsset,
@@ -97,8 +101,10 @@ import {
 } from "@argelanderspace/core";
 import {
   AdsDiscoveryError,
+  ArxivPdfOnlyError,
   explicitArxivId,
   extractZip,
+  getConfig,
   looksLikeArxiv,
   ZipError,
   zipEntries,
@@ -106,6 +112,7 @@ import {
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { AsyncLock } from "./lock.js";
@@ -135,6 +142,12 @@ export interface AppDeps {
   makeDiscoverySource?: () => AdsDiscoverySource;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
+  /**
+   * Stage 15 hidden toggle (D15): gate for the AUTOMATIC arXiv fetch on work
+   * creation — the default reads `auto_ingest_arxiv` from config.toml fresh
+   * at every submit (`false` disables auto only; manual triggers stay on).
+   */
+  autoIngestArxiv?: () => boolean;
   runner: JobRunner;
   /** WS sink; when absent, events are simply dropped (tests without a hub). */
   broadcast?: (msg: WsServerMessage) => void;
@@ -272,7 +285,7 @@ export function createApp(deps: AppDeps): Hono {
   // Job transitions flow to the same bus as library.changed (createServer's
   // hub is just another broadcast consumer).
   runner.onEvent = (type, job) => broadcast({ type, job });
-  const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload"): void => {
+  const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload" | "ingest"): void => {
     broadcast({ type: "library.changed", cause, at: new Date().toISOString() });
   };
   const planChanged = (cause: "put" | "external"): void => {
@@ -1001,6 +1014,113 @@ export function createApp(deps: AppDeps): Hono {
     return null;
   };
 
+  // ---- Stage 15: arXiv auto-ingest (shared queueing) ----------------------- //
+
+  /** Hidden config gate (D9/D15): re-read config.toml at every submit. */
+  const autoIngestArxiv = deps.autoIngestArxiv ?? (() => getConfig().auto_ingest_arxiv !== false);
+
+  /**
+   * Queue the serial arXiv-fetch job for *workId* — the single authoritative
+   * implementation behind BOTH the automatic trigger on POST
+   * /api/library/works and the manual POST /api/library/attach-arxiv (D10).
+   * The D16 scenario table is evaluated here at submit time and again inside
+   * the job at execution time. Returns the queued job, an existing
+   * queued/running fetch for the same work ("new replaces old": the
+   * in-flight job already fetches exactly what a re-trigger would — never
+   * stack duplicates), or null when no trigger applies (no arXiv id /
+   * scenario C / the doc is being deleted).
+   */
+  const submitArxivFetch = (workId: string): Job | null => {
+    const w = LibraryStore.load(paths).get(workId);
+    if (!w) return null;
+    const arxivId = normArxiv(w.arxiv_id);
+    if (!arxivId) return null;
+    const docId = arxivDocId(arxivId);
+    if (arxivAttachScenario(w, docId) === "skip") return null;
+    const dupe = runner
+      .list()
+      .find(
+        (j) =>
+          j.kind === "ingest" &&
+          (j.status === "queued" || j.status === "running") &&
+          (j.payload as { workId?: unknown } | undefined)?.workId === workId
+      );
+    if (dupe) return dupe;
+    if (docMutations.isDeleting(docId)) return null; // busy; the endpoint pre-409s
+    // The §8 writer pin spans submit → terminal state (upload precedent).
+    docMutations.pinWriter(docId);
+    // Failure-stage tracking for the arxiv-fetch.jsonl iteration log (D12).
+    let stage: ArxivFetchStage = "download";
+    let job: Job;
+    try {
+      job = runner.submit(
+        "ingest",
+        async (j, report) => {
+          const track = (m: string): void => {
+            if (m === "Rebuilding library") stage = "attach";
+            else if (
+              m.startsWith("Compiling") ||
+              m.startsWith("Fusing") ||
+              m.startsWith("Materializing")
+            ) {
+              stage = "compile";
+            }
+            report(m);
+          };
+          try {
+            return await attachArxivDoc(workId, {
+              paths,
+              pipelines: deps.pipelines,
+              sources: deps.makeSources(false),
+              rebuild: lockedRebuild,
+              // N1 (upload precedent): the main-doc re-assert must be mutually
+              // exclusive with PATCH — the weld runs outside the lock.
+              reassertMainDoc: (p, wid, d) =>
+                libraryLock.run(() => patchWork(p, wid, { doc_id: d })),
+              onProgress: track,
+            });
+          } catch (e) {
+            if (e instanceof ArxivPdfOnlyError) {
+              stage = "extract";
+              // Machine-readable class for the web UI's bilingual guidance.
+              j.errorCode = "arxiv_pdf_only";
+            }
+            throw e;
+          }
+        },
+        { workId, arxivId }
+      );
+    } catch (err) {
+      // No job exists → no terminal hook will ever fire; release directly.
+      docMutations.unpinWriter(docId);
+      throw err;
+    }
+    // `library.changed` must follow `job.done` on the wire (upload
+    // precedent); the pin releases with the terminal state, whichever it is.
+    void runner.waitFor(job.id).then((j) => {
+      docMutations.unpinWriter(docId);
+      if (j.status === "done") {
+        libraryChanged("ingest");
+      } else if (j.status === "failed") {
+        // D12: plain-text JSONL iteration log (readable in the packaged v1);
+        // a logging failure must never mask the job's own outcome.
+        try {
+          appendArxivFetchLog(paths.dataDir, {
+            time: j.finishedAt ?? new Date().toISOString(),
+            jobId: j.id,
+            workId,
+            arxivId,
+            stage,
+            error: j.error ?? "unknown failure",
+          });
+        } catch (logErr) {
+          console.error("arxiv-fetch log append failed:", logErr);
+        }
+      }
+    });
+    return job;
+  };
+
   // Manual work creation (import menu). Per-entry outcomes ride in the 200
   // body (`results[].status`: created | exists | error); HTTP errors are
   // reserved for a malformed request / server failure. The whole batch runs
@@ -1037,6 +1157,23 @@ export function createApp(deps: AppDeps): Hono {
       }
       return addManualBibText(paths, req.bib);
     });
+    // Stage 15 (D1/D6): auto-queue the arXiv fetch for each created/exists
+    // work that has an arXiv id — identifier/bibcode modes only, a bib batch
+    // never auto-queues. The scenario table (attach / refresh / skip) is
+    // evaluated inside submitArxivFetch. A submit failure must not fail the
+    // already-completed creation. job.created precedes library.changed (the
+    // mirror of the upload path's job.done-before-library.changed).
+    if (req.mode !== "bib" && autoIngestArxiv()) {
+      for (const r of results) {
+        if ((r.status === "created" || r.status === "exists") && r.ref !== undefined) {
+          try {
+            submitArxivFetch(r.ref.id);
+          } catch (e) {
+            console.error(`auto arXiv ingest submit failed for ${r.ref.id}:`, e);
+          }
+        }
+      }
+    }
     if (results.some((r) => r.status === "created")) libraryChanged("add");
     return c.json({ results });
   });
@@ -1234,6 +1371,56 @@ export function createApp(deps: AppDeps): Hono {
     // Synchronous spool write: guaranteed to land before the serial chain
     // (a microtask) can start the handler.
     writeFileSync(runner.spoolPath(job.id), data);
+    return c.json({ job }, 202);
+  });
+
+  // ---- POST /api/library/attach-arxiv?id=<workId> (Stage 15) ----------------- //
+
+  // Fetch the work's own arXiv e-print (the LATEST version, always fresh) and
+  // attach it — or refresh the existing arXiv doc in place (D16 scenario
+  // table). The manual entry point shares the auto trigger's queueing/attach
+  // implementation (submitArxivFetch above); it is NOT gated by the hidden
+  // auto_ingest_arxiv config (D15: an explicit user action).
+  app.post("/api/library/attach-arxiv", (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = c.req.query("id");
+    if (!id) {
+      const e = detail("id query param required", 400);
+      return c.json(e.body, e.status);
+    }
+    const w = LibraryStore.load(paths).get(id);
+    if (w === undefined) {
+      const e = detail(`work ${pyRepr(id)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    const arxivId = normArxiv(w.arxiv_id);
+    if (!arxivId) {
+      const e = detail(`work ${pyRepr(id)} has no arXiv id`, 400);
+      return c.json(e.body, e.status);
+    }
+    // Scenario C (D16): the work has only other (user-uploaded) content —
+    // never clobber it; the user deletes that doc first if they want the
+    // arXiv version instead.
+    if (arxivAttachScenario(w, arxivDocId(arxivId)) === "skip") {
+      const e = detail(
+        `work ${pyRepr(id)} already has a non-arXiv doc; delete it first if you want the arXiv version`,
+        409
+      );
+      return c.json(e.body, e.status);
+    }
+    if (docMutations.isDeleting(arxivDocId(arxivId))) {
+      const e = detail("document busy", 409);
+      return c.json(e.body, e.status);
+    }
+    const job = submitArxivFetch(w.id);
+    // Every ordinary rejection is pre-checked above; null here means a
+    // TOCTOU skip (state changed between the check and the submit).
+    if (job === null) {
+      const e = detail("could not queue the arXiv fetch (work state changed)", 409);
+      return c.json(e.body, e.status);
+    }
+    // A duplicate trigger answers 202 with the in-flight job (no stacking).
     return c.json({ job }, 202);
   });
 

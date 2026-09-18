@@ -55,6 +55,12 @@ export const JobSchema = z.object({
   result: z.unknown().nullable(),
   /** `str(exc)` once `failed`; null otherwise. */
   error: z.string().nullable(),
+  /**
+   * Optional machine-readable failure class (Stage 15), e.g.
+   * `"arxiv_pdf_only"` when the arXiv submission has no LaTeX source; lets
+   * the web UI show targeted guidance without matching `error` prose.
+   */
+  errorCode: z.string().optional(),
   /** Submission context (e.g. the upload query params); for forensics only. */
   payload: z.unknown().optional(),
 });
@@ -75,13 +81,13 @@ export const WsJobEventSchema = z.object({
 
 /**
  * Fired after any mutation that rewrote the library (refresh / patch /
- * add-ref / upload-done) or when the library poller spotted an external
- * write (agent CLI, Stage 3); `cause` names the trigger. M5's frontend
- * reloads `/api/library` on this.
+ * add-ref / upload-done / arXiv auto-ingest (Stage 15)) or when the library
+ * poller spotted an external write (agent CLI, Stage 3); `cause` names the
+ * trigger. M5's frontend reloads `/api/library` on this.
  */
 export const WsLibraryChangedSchema = z.object({
   type: z.literal("library.changed"),
-  cause: z.enum(["refresh", "patch", "add", "upload", "external"]),
+  cause: z.enum(["refresh", "patch", "add", "upload", "ingest", "external"]),
   /** ISO-8601 timestamp. */
   at: z.string(),
 });
@@ -106,6 +112,14 @@ export const UploadAcceptedResponseSchema = z.object({
   job: JobSchema,
 });
 
+/**
+ * `POST /api/library/attach-arxiv` (Stage 15) answers `202` immediately with
+ * the queued arXiv-fetch job (same shape as the upload acceptance).
+ */
+export const AttachArxivAcceptedResponseSchema = z.object({
+  job: JobSchema,
+});
+
 // --------------------------------------------------------------------------- //
 // Inferred types
 // --------------------------------------------------------------------------- //
@@ -119,3 +133,4 @@ export type WsJobEvent = z.infer<typeof WsJobEventSchema>;
 export type WsLibraryChanged = z.infer<typeof WsLibraryChangedSchema>;
 export type WsServerMessage = z.infer<typeof WsServerMessageSchema>;
 export type UploadAcceptedResponse = z.infer<typeof UploadAcceptedResponseSchema>;
+export type AttachArxivAcceptedResponse = z.infer<typeof AttachArxivAcceptedResponseSchema>;

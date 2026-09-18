@@ -36,6 +36,12 @@ export interface JobRunnerOptions {
   dir: string;
   /** Transition sink (the WS hub wires in here). */
   onEvent?: (type: JobEventType, job: Job) => void;
+  /**
+   * Boot-recovery sink (Stage 15): fired once per job rewritten to
+   * `interrupted` during {@link JobRunner.recover} — the server logs
+   * interrupted arXiv-fetch jobs to `logs/arxiv-fetch.jsonl` here.
+   */
+  onInterrupted?: (job: Job) => void;
   /** Clock seam for tests. */
   now?: () => Date;
 }
@@ -49,6 +55,7 @@ export class JobRunner {
    */
   onEvent?: (type: JobEventType, job: Job) => void;
   private readonly now: () => Date;
+  private readonly onInterrupted?: (job: Job) => void;
   private readonly jobs = new Map<string, Job>();
   /** The serial FIFO: each job chains onto the previous one's completion. */
   private chain: Promise<void> = Promise.resolve();
@@ -59,6 +66,7 @@ export class JobRunner {
     this.dir = opts.dir;
     this.onEvent = opts.onEvent;
     this.now = opts.now ?? (() => new Date());
+    this.onInterrupted = opts.onInterrupted;
     mkdirSync(this.dir, { recursive: true });
     this.recover();
   }
@@ -77,6 +85,7 @@ export class JobRunner {
         job.status = "interrupted";
         job.finishedAt = this.now().toISOString();
         this.persist(job);
+        this.onInterrupted?.(job);
       }
       this.jobs.set(job.id, job);
     }

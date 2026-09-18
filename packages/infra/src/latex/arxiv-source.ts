@@ -40,6 +40,20 @@ const ARXIV_PREFIX_RE = new RegExp(`^arxiv:\\s*(${NEW_ID}|${OLD_ID})$`, "i");
 
 export const ARXIV_EPRINT = "https://arxiv.org/e-print/{id}";
 
+/**
+ * The arXiv submission has no usable LaTeX source (PDF-only). The message
+ * text is byte-identical to the pre-Stage-15 plain `Error` (the CLI's
+ * behaviour is unchanged); the dedicated type exists so the server can
+ * classify the failure (`job.errorCode === "arxiv_pdf_only"`) and the web UI
+ * can show targeted guidance without matching prose.
+ */
+export class ArxivPdfOnlyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ArxivPdfOnlyError";
+  }
+}
+
 /** True for a bare arXiv id, an `arXiv:` prefix, or an arxiv.org URL. */
 export function looksLikeArxiv(s: string): boolean {
   const t = s.trim();
@@ -181,14 +195,14 @@ export function extractArxivSource(archive: string | Uint8Array, dest: string): 
         `${name} decompresses beyond the size cap (${MAX_EXTRACT_BYTES}); refusing (bomb?).`
       );
     }
-    throw new Error(
+    throw new ArxivPdfOnlyError(
       `${name} is neither a tar nor a readable gzip stream (${String(e)}); ` +
         "the submission may be PDF-only (no LaTeX source)."
     );
   }
   const text = new TextDecoder("latin1").decode(data);
   if (!text.includes("\\documentclass") && !text.includes("\\begin{document}")) {
-    throw new Error(`${name} unpacked to a non-LaTeX file (PDF-only source?).`);
+    throw new ArxivPdfOnlyError(`${name} unpacked to a non-LaTeX file (PDF-only source?).`);
   }
   writeFileSync(join(dest, "main.tex"), data);
 }

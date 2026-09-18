@@ -22,6 +22,7 @@ import {
   AdsClient,
   AdsDiscoveryClient,
   CrossrefClient,
+  ingestArxivEprint,
   ingestTexSource,
   ingestTexZip,
   OpenAlexClient,
@@ -61,5 +62,7 @@ export function realPipelines(paths: LibraryPaths): IngestPipelines {
       (await ingestTexSource(arxivId, { outRoot: paths.outputDir })).ir,
     // attachLatexZip passes outRoot/docId through; the composition binds nothing extra.
     ingestLatexZip: async (zipPath, opts) => (await ingestTexZip(zipPath, opts)).ir,
+    // Stage 15: attachArxivDoc passes outRoot/docId; always fresh (never the stale cache).
+    ingestArxivEprint: async (arxivId, opts) => (await ingestArxivEprint(arxivId, opts)).ir,
   };
 }

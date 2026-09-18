@@ -53,6 +53,26 @@ export async function uploadLatexZip(workId: string, file: File | Blob): Promise
 }
 
 /**
+ * Stage 15: queue the arXiv e-print fetch (or in-place refresh) for a work —
+ * job kind `"ingest"`, the work id rides as a query param. The server answers
+ * 202 with the queued (or already in-flight) job; watch /ws (`onJobEvent`)
+ * for progress and the done/failed outcome, then reload the library.
+ * Returns the job, or null when the POST failed (e.g. 409 scenario C).
+ */
+export async function attachArxiv(workId: string): Promise<Job | null> {
+  try {
+    const r = await fetch(`/api/library/attach-arxiv?id=${encodeURIComponent(workId)}`, {
+      method: "POST",
+    });
+    if (r.status !== 202) return null;
+    const j = (await r.json()) as { job?: Job };
+    return j.job ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Manual work creation (Stage 13 import menu): one identifier / bibcode, or
  * a raw BibTeX batch. Per-entry outcomes ride in the 200 body; null = the
  * backend is unreachable or rejected the request wholesale.

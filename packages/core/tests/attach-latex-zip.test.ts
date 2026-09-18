@@ -59,6 +59,9 @@ function stubPipelines(opts: StubOpts = {}): IngestPipelines {
     ingestLatex: async () => {
       throw new Error("not used by attachLatexZip");
     },
+    ingestArxivEprint: async () => {
+      throw new Error("not used by attachLatexZip");
+    },
     ingestLatexZip: async (_zipPath, { outRoot, docId, onProgress }) => {
       const dir = join(outRoot, docId);
       mkdirSync(join(dir, "src"), { recursive: true });

@@ -120,6 +120,27 @@ export function stubPipelines(): IngestPipelines {
       writeFileSync(join(dir, `${opts.docId}.json`), JSON.stringify(ir));
       return ir;
     },
+    /**
+     * Stage 15: minimal `ingestArxivEprint` — same tiny stored-IR doc, with
+     * `source.arxiv_id` set like the real pipeline (what `attachArxivDoc`'s
+     * stamp + the seed merge expect). Tests override to probe failures.
+     */
+    ingestArxivEprint: async (arxivId: string, opts: { outRoot: string; docId: string }) => {
+      const dir = join(opts.outRoot, opts.docId);
+      mkdirSync(dir, { recursive: true });
+      const ir: TexDocIr = {
+        version: 1,
+        docId: opts.docId,
+        sections: [],
+        refsManifest: [],
+        bib: [],
+        citationsByBlock: {},
+        source: { type: "latex", origin: dir, main_tex: "main.tex", arxiv_id: arxivId },
+        meta: { title: `Stub arXiv of ${opts.docId}` },
+      };
+      writeFileSync(join(dir, `${opts.docId}.json`), JSON.stringify(ir));
+      return ir;
+    },
   };
 }
 

@@ -245,11 +245,7 @@
         "ingested": "Ingested",
         "ingestedFrom": "Ingested · {{label}}",
         "needsUpload": "Needs source upload",
-        "blocked": "Blocked by anti-scraping wall",
-        "blockedFrom": "Anti-scraping wall · {{label}}",
-        "ready": "Available",
-        "readyFrom": "Available · {{label}}",
-        "unknown": "Unknown source"
+        "readyArxiv": "Available · arXiv full text"
       },
       "files": {
         "openMain": "Open in Document (main document)",
@@ -259,7 +255,17 @@
         "setMain": "Set as main",
         "setMainTitle": "Set as main document",
         "setMainFailed": "Failed to set as main document; try again",
-        "sourceLabel": "Full-text source"
+        "sourceLabel": "Full-text source",
+        "refetchArxiv": "Refetch",
+        "refetchArxivTitle": "Refetch the latest arXiv version (overwrites this document)"
+      },
+      "arxiv": {
+        "queued": "Queued to fetch the arXiv full text…",
+        "ingesting": "Fetching the arXiv full text…",
+        "failed": "arXiv full-text fetch failed: {{error}}",
+        "failedGeneric": "Failed to fetch the arXiv full text; please retry",
+        "retry": "Retry",
+        "pdfOnlyHint": "This arXiv submission has no LaTeX source (PDF only) — upload a zip above instead"
       },
       "upload": {
         "queued": "Queued for ingestion…",
@@ -285,7 +291,7 @@
     },
     "importDialog": {
       "identifierTitle": "New entry from identifier",
-      "identifierSub": "Accepts a DOI / doi.org link; arXiv requires the prefix (e.g. arXiv:2603.05265) or an arxiv.org URL — attach a LaTeX source zip later to read in full",
+      "identifierSub": "Accepts a DOI / doi.org link; arXiv requires the prefix (e.g. arXiv:2603.05265) or an arxiv.org URL — entries with an arXiv id fetch their full text automatically, and a LaTeX source zip upload remains the fallback",
       "identifierLabel": "DOI or arXiv:-prefixed ID",
       "identifierPlaceholder": "10.1051/0004-6361/… or arXiv:2603.05265",
       "bibcodeTitle": "New entry from ADS bibcode",
