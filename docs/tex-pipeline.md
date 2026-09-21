@@ -1,6 +1,6 @@
 # LaTeX 管线：现行机制与验证边界
 
-状态：现行专题，整理于 2026-09-16。来源：Stage 5 Q1–Q13/MS1/MS2/MS3、smoke R1，Stage 6/7 作者与引用修复，Stage 11 Writer 共享主干。下列摄入/reader 默认行为不因 Writer opt-in 扩展而自动改变。源码位置仅作导航，不承诺旧行号；原文恢复见 [history](../memory/history.md)。改动前同时读 [契约](../memory/contracts-and-decisions.md)的印刷编号与 agent 冻结规则。
+状态：现行专题，2026-09-21 从 `46093915:.pi/memory-reference/tex-pipeline.md` 迁移。来源：Stage 5 Q1–Q13/MS1/MS2/MS3、smoke R1，Stage 6/7 作者与引用修复，Stage 11 Writer 共享主干。摄入/reader 默认行为不因 Writer opt-in 扩展而自动改变。源码位置仅作导航，不承诺旧行号；原文恢复见 [history](history.md)。改动前同时读 [契约](contracts.md)的印刷编号与 agent 冻结规则。
 
 ## 执行层
 
@@ -85,6 +85,10 @@ I005 残余触发面（Stage 7 MS2 审查，记录不修）：
 4. author 内容为前导换行+Inst X 可造伪作者，与已修 and 换行形态不可区分。
 5. printedToIndex 同号冲突后者静默赢；前置 thanks 邮箱走 corresponding 匹配，若碰巧命中别人可能错挂。
 6. meta.authors 平铺 blob 可与 authorDetails 不同（当时 2501.17225/2603.03522），不代表 UI 结构抽取失效。
+
+## I016：重复 label 的已接受边界
+
+1610.08981 同 label `Eq:dSph2` 定义两次，first-wins 指向 eq-5，附录 eq-7 不会被该标签指到。这不是 xref 发现丢失；只有源文修正或明确批准新重复 label 策略时重新讨论。来源：迁移基线旧 known-issues 的 I016。
 
 ## Writer opt-in 复用与隔离（Stage 11）
 

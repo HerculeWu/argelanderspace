@@ -1,6 +1,6 @@
 # Writer：现行能力、用户取舍与渲染边界
 
-状态：现行专题，整理于 2026-09-16（Stage 12 关闭归并）；Stage 10/11 为带问题关闭，遗留 I030/I031 已由 Stage 12 修复并经用户 smoke 通过。Stage 11 编号由用户确认（原 session D1，持久定位为提交 `5569f98` 的 `.pi/inbox/2026-09-16-mem-merge-stage11.md`）；Stage 12 决策与证据原文在提交 `bf3bf83` 的 `.pi/inbox/2026-09-16-stage12-grilling.md`。产品硬约束摘要在[契约](../memory/contracts-and-decisions.md)。
+状态：现行专题，2026-09-21 从 `46093915:.pi/memory-reference/writer.md` 迁移；Stage 10/11 为带问题关闭，遗留 I030/I031 已由 Stage 12 修复并经用户 smoke 通过。Stage 11 编号由用户确认（原 session D1，持久定位为提交 `5569f98` 的 `.pi/inbox/2026-09-16-mem-merge-stage11.md`）；Stage 12 决策与证据原文在提交 `bf3bf83` 的 `.pi/inbox/2026-09-16-stage12-grilling.md`。产品硬约束摘要在[契约](contracts.md)。
 
 ## 来源与状态分层
 
@@ -8,7 +8,7 @@
 
 - `.pi/inbox/2026-09-15-stage10-writer-grilling.md` D1–D14/D16、F3–F7：Writer 初版、UI 先行、编译求真及首次交付。
 - `.pi/inbox/2026-09-15-writer-deps-research-grilling.md` D1–D17、F9/F10：成熟编辑器、共享 IR 主干、工程验收、本机依赖及带问题关闭。
-- 旧 Stage 10 方案、Stage 11 scope、writer-rendering-consensus 同在该提交。scope 是历史草案，不是未做完的任务表；TeX4ht 候选已被明确否决为默认路线。Stage 10 缺失 D15/F8 的替代证据见[整理审计](2026-09-16-inbox-merge-audit.md)，不补造原文。
+- 旧 Stage 10 方案、Stage 11 scope、writer-rendering-consensus 同在该提交。scope 是历史草案，不是未做完的任务表；TeX4ht 候选已被明确否决为默认路线。Stage 10 缺失 D15/F8 的替代证据见[历史来源缺口](history.md#来源缺口)，不补造原文。
 - Stage 12（显式触发、bib 转义/ADS 接入、存量迁移）原始决定与实测证据从 `bf3bf83` 恢复（见文头）。
 
 **渲染触发已改为显式**：Stage 12 起保存后/打开稿件/外部变更/模板切换均不自动编译；Shift+Enter（编辑态=提交当前 cell 并整稿渲染；非编辑态=直接渲染，IME 守门沿用）或顶栏 Render 按钮触发，编译中 spinner。自动保存保留不变；无 ok 缓存/陈旧时预览区显示占位提示，陈旧/失败保护沿用既有机制。
@@ -26,7 +26,7 @@
 
 ## 用户数据与协作接口
 
-字段定义以 contracts schemas 为准，agent 操作说明见 [writer-data-model](../../docs/writer-data-model.md)（产品数据契约文档，不是另一个记忆副本）。
+字段定义以 contracts schemas 为准，agent 操作说明见 [writer-data-model](writer-data-model.md)（文件协议权威；本节为工作流与保护边界摘要，不维护另一套字段定义）。
 
 ```text
 <dataDir>/manuscripts/m_<8hex>/
@@ -61,7 +61,7 @@
 - server 导出 zip = 单个 `manuscript.tex` + **独立** `references.bib`（只收被引 key、原条目原样摘块、不重新格式化）+ 被引 figure 原资产 + **模板 cls/sty/bst 依赖放 zip 根目录**（与编译同等校验，Stage 12 追加）。缺 key 留 missing 注释/警告；新能力兼容可选参数/星号引用，不回退旧简单正则。
 - 缺依赖、缺引用、未验证编译等通过响应头及 `EXPORT-WARNINGS.txt` 提示。下载成功不等于可编译；仍可编辑、保存、导出源码，不偷偷换模板或样式。
 - `.cls/.sty/.bst` 放 `<id>.deps/` 并安全复制到编译输入，拒 symlink。**aa.cls/aa.bst 不随 npm 分发**：许可未核清；不能从单文件 all-rights-reserved 头推出一切分发永久不合法，也不能自行改标 MIT。
-- 本机 A&A 安装事实与 hash 只记于[工程环境](../memory/engineering.md)，不复制环境状态；未来分发重新核查许可。
+- 本机 A&A 安装来源、版本与 hash 保留在私有 `.scratch/memory-migration/local-environment.md`，公开文档不宣称每台机器已安装；未来分发重新核查许可。
 
 ## 编译与 IR：共享主干，隔离外层副作用
 
@@ -74,17 +74,19 @@
 - 引用内容/格式、章节、逐行公式、图表号遵循模板编译事实；citep/citet/ref/eqref 不压成同一种 key 芯片。不在 web 自行排号。保留 KaTeX/cell 流式布局，不追求 PDF 分页、栏宽、字体/像素复刻。
 - IR 源跨度投影到 cell；侧栏优先当前 IR，未编译源码扫描只作插入目标提示，不是印刷编号真值。旧正文正则 renderer 已移除；无 IR 时待编译提示/源码，不以启发式冒充已编译预览。
 - 稳定 latexmk 工作目录保留中间物，输入未变保 mtime。input fingerprint 包括模板、cell 身份/源码、bib、deps、资产；仅 main.tex hash 不足。刷新仍交 latexmk 检查其记录的系统样式依赖，并以当前 fuser 投影，不直接缓存短路。
-- 手动/自动入口目前共享按 dataDir+稿件隔离的 single-flight，合并一个最新 follow-up，不积压全部中间版本。Stage 12 起自动入口已取消（见文头显式触发）；不将加长 debounce 当成完成修复。
+- 显式渲染请求按 dataDir+稿件隔离 single-flight，运行中合并一个最新 follow-up，不积压全部中间版本。Stage 12 起自动入口已取消（见文头显式触发）；不将加长 debounce 当成完成修复。
 - **latexmk 缓存自愈**：稳定工作目录曾在编译失败后死锁（坏 bbl 阻断 bibtex 重跑）；失败路径现清理 aux/bbl/blg/fdb_latexmk/log（输入不动），下次显式编译自动恢复。
-- **bib 与期刊宏（Stage 12）**：`workToBibtex` 生成层转义 `& % # _`（`$` 除外）；work 结构化字段可由 ADS export 批量富化（不存原文 blob、不覆盖既有字段、offline 跳过、失败不阻塞）；有 `journal_macro` 输出 `{\aap}`。`\aap` 等在 aa.cls/aa.bst/TeX Live 均无定义，编译组装 preamble 与导出 zip 的 manuscript.tex 注入同一组 `\providecommand` 期刊宏（覆盖 ADS 常见天文期刊，标注映射来源）；reader 管线不动。分配键规则见[架构](../memory/product-and-architecture.md)：分配时有 bibcode → cite_key = bibcode，分配后永不改。
+- **bib 与期刊宏（Stage 12）**：书目字段、转义和 cite key 规则以 [library](library.md) 为权威。Writer 编译组装 preamble 与导出 manuscript.tex 注入同一组 `\providecommand` 期刊宏（覆盖 ADS 常见天文期刊，标注映射来源）；reader 管线不动。
 - 输入/保存不等待编译；只能在精确源码、模板、目标仍对应时保留旧投影并标陈旧。**同名 label/旧 envIndex 不足以绑定新目标**；新增或结构变化处未解析。失败提供可查看错误，不清稿件、不假装成功。
 
 ## 兼容性与验收解释
+
+**I033（已接受）**：以下兼容范围不是任意模板/BibLaTeX/宏的保证，也没有真实大稿性能保证；新真实需求需明确立项。Stage 12 修的是 bib 转义根因，不能以接受边界豁免未来新的受害案例。
 
 - 首轮目标：现有模板、常规 natbib 作者年/数字、多 key、前后注/可选参数、星号、编译态标点。已测 `sort&compress` 等不等于任意 natbib 宏完整兼容。
 - 明确不承诺 BibLaTeX/任意外部模板/自定义宏全覆盖；longnamesfirst、superscript、正文中途切 citation style 明确报不支持。跨 cell 的单个 IR 块无法安全归属时警告、不猜测；完整环境应放同一 cell。KaTeX 仍受其语法边界约束。
 - Stage 10 工程四门/合成浏览器通过，但用户 smoke 指出引用插入/样式、xref、正文公式无号、overlay 光标四类问题后决定关闭；不能把 UI Gate 通过当整个产品通过。
 - Stage 11 四门、65 组合成引用与 PDF 文本对拍、A&A 临时类测试、发布包离线安装与真实 Chrome/CDP 通过均有原始记录；仅证明受测范围。用户 Report citation 仍未通过、自动编译影响输入（当时记 I030/I031），其余 smoke 用户确认通过。不以工程绿覆盖用户反馈。
-- Stage 12 修复 I030（根因：`workToBibtex` 不转义，库内 24/41 条 `journal = {A&A}` 裸 `&` 必炸）与 I031：四门 1066 passed+1 skip；真实 Chrome/CDP 探针验证打开/输入/暂停 0 编译、Shift+Enter 恰好 1 次、Render 第 2 次；迁移后真实稿件编译与导出 zip 自编译 EXIT=0；**用户 smoke“渲染没问题”**。latexmk 缓存自愈与全角逗号边界（I034）见文头与[工程](../memory/engineering.md)。
+- Stage 12 修复 I030（根因：`workToBibtex` 不转义，`journal = {A&A}` 裸 `&` 导致编译失败）与 I031：四门 1066 passed+1 skip；真实 Chrome/CDP 探针验证打开/输入/暂停 0 编译、Shift+Enter 恰好 1 次、Render 第 2 次；迁移后真实稿件编译与导出 zip 自编译 EXIT=0；**用户 smoke“渲染没问题”**。latexmk 缓存自愈与全角逗号边界（I034）见文头与[工程](engineering.md)。
 - 未用真实大稿做性能基准；Texifier 只是性能参照，不是延迟承诺或新增 PDF 目标。OS IME/任意浏览器/宏包不作全称保证。
-- 持久回归入口：contracts writer-rendering、infra tex-cache、server writer-preview/writer-numbering、web writer-preview/writer-codemirror/writer-view；源码提交和验收摘要见[历史](../memory/history.md)。
+- 持久回归入口：contracts writer-rendering、infra tex-cache、server writer-preview/writer-numbering、web writer-preview/writer-codemirror/writer-view；源码提交和验收摘要见[历史](history.md)。

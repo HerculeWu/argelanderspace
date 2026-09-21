@@ -1,6 +1,6 @@
 # 计划页面：现行模型与用户取舍
 
-状态：现行专题。Stage 4 于 2026-09-02 关闭，Stage 7 于 2026-09-10 补 due 软警告；整理于 2026-09-13。来源：Stage 4 Q1–Q17、三轮 smoke，Stage 7 Q6。原始记录见 [history](../memory/history.md)。
+状态：现行专题。Stage 4 于 2026-09-02 关闭，Stage 7 于 2026-09-10 补 due 软警告；2026-09-21 从 `46093915:.pi/memory-reference/plans.md` 迁移。来源：Stage 4 Q1–Q17、三轮 smoke，Stage 7 Q6。原始记录见 [history](history.md)。这里的 Plan/Task 是产品用户数据，不是 `.scratch/` 中的开发票据。
 
 ## 模型与存储
 
@@ -22,6 +22,8 @@ GET/PUT `/api/plans` 全量 payload；PUT body 带 rev，冲突409，前端重�
 - 当前 server 单进程 lock 不等于跨进程文件写锁。Stage 4.1 仅留数据条件，旧“未来 CLI 必直写磁盘”只是方案设想，不冻结未来并发/接口设计。
 - PUT body 无专门大小限制，未带 Content-Type 也可解析，单用户先例接受；load EISDIR 日志措辞不够准确。要改变信任/部署模型时再评估。
 - pendingExternal 在本地写入中 defer 后排空；排队写交织可能多闪一次409，但收敛；失败有显式 loadFailed，不用 fixture 冒充空数据。
+
+**I018（已接受）**：本地单用户 note 不 sanitize、API body 限制宽、排队写与 external reload 可多闪一次 409 但结果收敛。只有信任/部署模型变化或相关新需求获批时重议，不把这些取舍当作已批准的修复队列。
 
 ## 页面与交互
 
@@ -67,4 +69,4 @@ marked + mdWithMath 先保护code/URL等，再抽数学为熵占位符，marked�
 
 ## 证据入口
 
-contracts plans、core plans-store、server plans/watch、web plan组件与mdWithMath测试；`docs/manual-test-stage4.md` 用户验收手册；Stage 7手册补due软警告。旧smoke曾落下全角括号文件名，是用户shell重定向笔误历史，不是需agent现在清理的数据授权。拖拽真实Chrome取证结论见 [engineering](../memory/engineering.md)。
+contracts plans、core plans-store、server plans/watch、web plan组件与mdWithMath测试；`docs/manual-test-stage4.md` 用户验收手册；Stage 7手册补due软警告。旧smoke曾落下全角括号文件名，是用户shell重定向笔误历史，不是需agent现在清理的数据授权。拖拽真实Chrome取证结论见 [engineering](engineering.md)。

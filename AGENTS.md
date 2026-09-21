@@ -2,32 +2,46 @@
 
 ## 语言与项目
 
-用户母语为中文，默认用中文交流。
+默认用中文交流。**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface；webui 是可独立操作的应用，不只是文献工具或 agent 看板。
 
-**ArgelanderSpace** 是单用户科研工作台，也是用户与 AI agent 协作的 interface，不只是文献工具；webui 目标是可独立操作的应用。Stage 14 已于 2026-09-17 关闭（ADS 文献发现：文献详情「探索相关文献」→ ADS similar+useful 临时探索图，库图退役旧全局推荐转 saved-only + graph.json 版本化自愈，smoke 通过），**Stage 15 已于 2026-09-18 关闭**（添加文献时若有 arXiv 即自动下载最新源-编译-挂载到条目，含原位刷新、附件 tab 可点击行与进度/重试、获取类广告标签清理、`logs/arxiv-fetch.jsonl` 报错日志、隐藏开关 `auto_ingest_arxiv`，smoke 通过）。**下一阶段未指定**（等用户拍板），Stage 4.1 仍推后。当前能力与架构见正式记忆，对外说明见 `README.md`。
+领域语言见 [CONTEXT.md](CONTEXT.md)，产品与结构见 [architecture](docs/architecture.md)，阶段结果和原文恢复见 [history](docs/history.md)。已关闭阶段不是默认待办，下一阶段由用户决定。
 
-## 强制：session 启动协议
+## 工作前读取
 
-开始工作、回应任务之前：
+1. 开发、设计或修改前完整读取 [CONTEXT.md](CONTEXT.md) 与 [硬契约](docs/contracts.md)。不得用 ADR 摘要替代完整数据保护规则。
+2. 实施、调试、验收时读取 [工程指南](docs/engineering.md)。
+3. 按 [domain 文档入口](docs/agents/domain.md) 读取涉及的 ADR 和专题；做某张票据时读取完整票据、相关规格、评论和阻塞项。
 
-1. 完整阅读 `.pi/memory/` 的全部文件，先 [00-index.md](.pi/memory/00-index.md)，再按其中顺序读取；不能只读索引。
-2. 阅读 [.pi/inbox/README.md](.pi/inbox/README.md) 及全部未归并 session 文件，按事件时间补充最新状态；即使超过体量提醒阈值也不得跳读。
-3. 按任务读取 `.pi/memory-reference/` 对应专题。硬约束以正式记忆及有效的新决策为准，专题不能藏匿必读安全规则。
+不再全量读取旧 memory/inbox 或全部历史。必读文件丢失时先报告并恢复，不推断约束消失；涉及本地 tracker 而 `.scratch/` 不在时，按 tracker 规则请求恢复，不当作没有待办。
 
-**同事项、同范围内，有权的新决策覆盖旧决策**，包括尚未归并的 inbox 和用户本次明确决定；按决策发生时间，不按文件 mtime。事实按证据与环境更新，不机械按新旧排序。建议不等于决定，代码偏差不自动覆盖用户约束；有歧义时标记并询问，不能扩大授权或解除数据保护。详细规则以 inbox 协议为权威。
+## Agent skills
 
-## 记忆写入与整理
+### Issue tracker
 
-- 所有记忆相关文件只放 `.pi/`；正式记忆 `memory/`、专题/获授权方案 `memory-reference/`、日常增量 `inbox/`。
-- 日常默认只写自己的 `YYYY-MM-DD-<session短标识>-<主题>.md`，关键节点及时更新，结束收尾；区分决策、事实、问题、待确认与交接状态。无值得交接内容不强制建文件。
-- 正式记忆/专题的更新、归并需要明确授权；新规则即使只在 inbox 仍有效。删除或裁剪原文前须确认已入可定位的 Git 历史；未提交原文不得因已写摘要而删除。
-- 启动/收尾发现 inbox 达8份或正文40 KB，及阶段交界时提醒整理；不自动归并、不自动截断。不引入后台任务/hook。
-- 保留结论、关键理由、范围与重新讨论条件；单一权威位置，其他引用。不得将 token/密码/完整敏感日志写入任何记忆文件。
-- **整理授权不等于 commit/push 授权；旧阶段的自动提交等执行授权不永久继承。**
+使用**本地 Markdown**：`.scratch/<feature>/spec.md` 和 `issues/<NN>-<slug>.md`，不使用 GitHub Issues。规则见 [issue-tracker](docs/agents/issue-tracker.md)。
 
-## 工程入口与约束
+### Triage labels
 
-pnpm workspace：contracts / core / infra / server / cli / web / app（发布单包 `argelanderspace`）。Node v24+；本机必须使用 `corepack pnpm`，裸 pnpm 不在 PATH。
+采用 Matt 默认五态＋本仓库 `deferred` 扩展，均为本地字段，不创建远端标签。`deferred` 不进入可执行队列，只能由用户明确重开；完整语义见 [triage-labels](docs/agents/triage-labels.md)。
+
+### Domain docs
+
+Single-context：根目录 `CONTEXT.md`＋`docs/adr/`。词汇、ADR、技术文档的职责和按任务读取规则见 [domain](docs/agents/domain.md)。
+
+## 知识维护、隐私与授权
+
+- 当前获授权任务内，确认的术语、重要决定、工程事实及时更新各自权威位置；只读/方案讨论任务未获写入授权时不写。没有长期变化不强制建记录。
+- CONTEXT 只写领域词汇；ADR 只记重要真实取舍；技术机制进专题；规格草案、执行进度、未决问题和讨论进相应本地票据，不再建立中央 session inbox。
+- 同事项同范围内，有权的新决策按发生时间覆盖旧决策。建议、假设、较新的代码不是自动覆盖；局部修订写清旧定位、新结论、范围与原因。事实按证据/环境更新，来源不明先询问，不能扩大权限或取消数据保护。
+- 每项现行知识只有一个完整权威位置，其他地方用链接。保留理由、否决项、来源与重新讨论条件；旧决定迁成 ADR 不伪造新的批准日期。
+- 可公开的 glossary、ADR、架构、契约、工程指南进入仓库；本机私有记录、任务与讨论放被忽略的 `.scratch/`，不得 force-add 或复制进公开 issue/文档绕过隐私选择。任何文档或票据都不记录 token、密码或完整敏感日志。
+- `.scratch/` 不加密，也不随公开 Git 备份/克隆。私人备份另由用户决定，不擅自建远端、hook 或后台任务。
+- 大规模重组、删除与范围变化需明确授权。裁剪旧原文前核验可定位持久 Git 记录；私有票据不能为满足保全而加入公开 Git，须经用户确认私有保全后才清理。摘要不是原文备份。迁移不自动清除既有 Git 历史。
+- 文档维护、阶段关闭或技能流程均不自动授权用户数据迁移、commit/push。历史阶段执行授权不继承；`/implement` 等技能中的提交步骤仍受当次授权约束。
+
+## 工程入口与硬约束
+
+pnpm workspace：contracts / core / infra / server / cli / web / app（发布包 `argelanderspace`）。本机 Node v24+，使用 **`corepack pnpm`**，裸 pnpm 不在 PATH。
 
 常规代码验收四门：
 
@@ -38,11 +52,9 @@ corepack pnpm -r typecheck
 corepack pnpm lint
 ```
 
-无 per-package lint。纯记忆整理做文档与保真检查，不默认运行全构建测试。
+无 per-package lint。纯文档与注释引用迁移做保真、链接和改动范围检查，不默认运行产品四门。
 
-- 摄入硬前提：TeX Live（latexmk/pdflatex/xelatex/bibtex/biber）；图转换可选 poppler-utils（pdftocairo）+ ghostscript（EPS）。pandoc/mupdf/dvisvgm 旧路线已退役。
-- 普通 golden 可按获批行为变更更新；**agent 既有输出冻结、annot 自诞生冻结**是独立契约，不因退出重构期自动解除。
-- 标注是 per-doc 用户数据：三态指纹规则不得合并简写或将系统错误当 mismatch；归档权威仅 server 访问路径，CLI annot 真只读；DELETE 全局物理删除；跨进程同 doc 并发写不支持。
-- 文献问答走 CLI/skills，不用内部 JSON/源码替代文献接口；开发任务可读代码，结构导航优先 CodeGraph。
-
-开始相关修改前读 [契约与决策](.pi/memory/contracts-and-decisions.md)、[工程教训](.pi/memory/engineering.md)及索引中的专题。当前问题、环境和历史只在其权威记忆文件维护，不在本文件重复堆积。
+- 摄入依赖 TeX Live（latexmk/pdflatex/xelatex/bibtex/biber）；图转换可选 pdftocairo＋ghostscript。旧 pandoc/mupdf/dvisvgm 路线已退役。
+- 普通 golden 可按获批行为变更更新；**agent 既有输出冻结、annot 自诞生冻结**独立成立，不因退出重构期而解除。
+- 标注是 per-doc 用户数据：三态指纹规则与异常分支不得合并简写，系统错误不能当 mismatch；归档仅由 server annotations 访问路径负责；CLI annot 真只读；DELETE 全局物理删除；跨进程同 Doc 并发写不支持。修改前必须读 [完整契约](docs/contracts.md)。
+- 文献问答走 CLI/skills，不以内部 JSON/源码替代文献接口；开发任务可以读源码，结构、调用与影响导航优先 CodeGraph。

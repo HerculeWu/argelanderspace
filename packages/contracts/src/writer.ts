@@ -1,8 +1,8 @@
 /**
  * Zod schemas and serialization pure functions for the Writer (Stage 10) —
- * the cell-based LaTeX manuscript editor. Consensus: session inbox
- * `.pi/inbox/2026-09-15-stage10-writer-grilling.md` D1–D10; plan
- * `.pi/memory-reference/2026-09-15-stage10-writer-plan.md`.
+ * the cell-based LaTeX manuscript editor. Current file contract:
+ * `docs/writer-data-model.md`; workflow and historical decision sources:
+ * `docs/writer.md` and `docs/history.md`.
  *
  * Data model (locked 2026-09-15):
  * - a manuscript is a flat cell list (8 cell types) plus document info

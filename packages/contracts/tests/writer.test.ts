@@ -1,6 +1,6 @@
 /**
- * Coverage of the Stage-10 Writer contracts (`.pi/memory-reference/
- * 2026-09-15-stage10-writer-plan.md` §3/§6): cell/manuscript/template schema
+ * Coverage of the Writer file contract (`docs/writer-data-model.md`;
+ * historical decision sources in `docs/history.md`): cell/manuscript/template schema
  * rules, looseObject unknown-key preservation (agent file contract, the I010
  * strip regret must not repeat), the `writer.changed` WS message, and the
  * global cell→LaTeX serialization mapping plus document assembly.

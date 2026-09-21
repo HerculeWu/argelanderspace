@@ -1,11 +1,11 @@
-# 工程、环境与验证教训
+# 工程指南与验证教训
 
-整理：2026-09-16。环境结论取自已有验证，不代表每次启动已重探测；涉及当前外部服务可用性时保留观测日期。
+2026-09-21 从 `46093915:.pi/memory/engineering.md` 迁移。这里保留不易从配置看出的惯例、陷阱和证据范围；历史验证不代表本次重测。原始本机依赖、凭据位置与外部服务观测保留在私有 `.scratch/memory-migration/local-environment.md`，不作为新机器环境保证。
 
 ## 运行与验收
 
 - 本机 Node v24+ / npm 11+；项目 pnpm 11.24.0，经 **`corepack pnpm`** 调用，裸 pnpm 不在 PATH。Node 的 pnpm 下限历史记录为 ≥22.13，本项目环境仍以 v24+ 为工作基线。
-- 常规代码验收四门：`corepack pnpm -r build`、`corepack pnpm -r test`、`corepack pnpm -r typecheck`、根 `corepack pnpm lint`。无 per-package lint，不用 `-r lint`。纯记忆整理做文档检查，不默认重跑全四门。
+- 常规代码验收四门以 [AGENTS.md](../AGENTS.md) 的工程入口为准。无 per-package lint，不用 `-r lint`。纯文档迁移做保真/引用/范围检查，不默认重跑产品四门。
 - TeX Live 全家在 `/usr/bin`：latexmk/pdflatex/xelatex/bibtex/biber，是摄入前提；真编译测试 `HAVE_LATEXMK` 类 gating，缺工具会 skip，不能把 skip 当实测通过。
 - 图转换可选依赖 poppler-utils（pdftocairo）与 ghostscript（gs，EPS）；不再需要 pandoc/mupdf/dvisvgm。不要把整个 astro conda bin 前置 PATH，它的 node v20 会抢系统 node；旧 pandoc shim 无需重建。
 - repo CLI 可跑 `node packages/app/dist/bin.js`。app 包名是 `argelanderspace`，不是 `@argelanderspace/app`，pnpm filter 勿写错。
@@ -81,25 +81,22 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
 - `literatures/` 不是整体 gitignore；Stage 8 专门补 annotations/ 规则。不要因历史文字声称“全忽略”而盲目 git add；status/、备份规则也需实际检查。
 - 不把 `/tmp` 原型、临时备份、截图当持久回滚源。texToHTML 原型曾可能只有 /tmp 孤本，找不到应问用户是否有备份，而不是声称现存。
 
-## Writer 本机依赖与调研勘误
+## Writer 依赖与调研勘误
 
-- **2026-09-16 本机 A&A**：用户窄授权安装至 `literatures/templates/aa.deps/`，仅 aa.cls/aa.bst，不改系统 TeX 或稿件。公开 `bardsoftware/template-AA` 镜像：aa.cls v9.0（2016-01-01），63,901 B，SHA256 `ea145a512937441ff6e8522b4c6d36b4b7d1220d5eec8c10235dfc3ac83ec743`；aa.bst 32,103 B，`7be30a1f0cda29f0c150101e52968723bd0e0ad2785213e3e15d08f25203eec9`。安装前后 hash 一致、排他创建、gitignore 生效；从已安装目录复制到临时合成库的 A&A 定向测试 1 passed/8 筛选 skip。不宣称最新官方版本或真实稿件已通过；本次整理未重读/改这些文件。
-- 官方 ftp HTTPS 证书不匹配/HTTP 503 的观测没有通过绕过 TLS 解决；镜像许可未核清，不随 npm 分发。此前 `/tmp/aa.cls` v9.1 是另一探针，不混同最终本机 v9.0。补齐这两份不等于 I004 五篇摄入失败已修。
+- 本机安装的模板依赖不等于随包可分发或其他环境已具备。许可未核清的 aa.cls/aa.bst 不随 npm 分发；不绕过 TLS 解决下载证书问题；补模板文件也不等于旧摄入失败已修。具体本机版本/hash 与历史访问结果留私人环境记录。
 - 原网络 child 因 unavailable tools（fetch_content/get_search_content/source_check）失败，顶层 complete 不代表全调查成功；用户明确授权父代理直接核官网后才补齐证据。不能照抄 partial 报告或悄悄换 runner。
 - 已纠正的关键调研误判：Texifier 外部引擎支持 auto-typeset，并非仅内嵌 live 引擎能自动；CM/stex 高亮不含语义补全；存在 LaTeX Workshop MIT snippet 数据但非 CM 即插即用；KaTeX 支持 tag/tag*，Writer 旧无号不能归咎库不支持。GPL/AGPL 的内联/进程/聚合分发不同，不能笼统说任何复用都改整个项目许可。
 - 有限 make4ht 合成探针曾证明 natbib HTML 可行；mathjax 选项却缺真号/有 CDN 依赖，源码行注释不证明 cell 映射。探针不是选型理由；该默认路线已由用户共享 IR 决定替代。官方证据 URL/探针过程留原 writer-deps inbox 的 Git 历史，不继续当研究待办。
 
-## 外部服务与凭据（带观测日期）
+## 服务集成与真实浏览器探针
 
-- **2026-09-01 MinerU**：401 `user authenticate failed` A0202；这是当时鉴权失败，不是永久状态。OCR 在封存分支，启用前自查 key/服务。旧免费配额约 1000 页/天也不是当前承诺。
-- **2026-08-26 出版商反爬实测**：A&A DataDome、OUP Cloudflare、IOP Radware、APS Cloudflare，403/人机；ADS 扫描偶发 504。当前 main 唯一全自动远程正文源为 arXiv LaTeX，不把旧 HTML READY 当真实可达。
-- ADS token `~/.ads/dev_key`；**ADS export 实测可用（2026-09-16）**：`POST /v1/export/bibtex` 一次多 bibcode 返回出版方质量 BibTeX（volume/pages/eid/month/doi/eprint 齐全，journal 为 `\aap` 宏，key 为 bibcode）；Stage 12 迁移 41 works 中 38 条有 bibcode 全部命中。OPENALEX_API_KEY、旧 MINERU_API_KEY 曾在 `~/.zshrc`；main config 的活跃 keys 为 data_dir/port/openalex_api_key/ads_dev_key。不要声称已裁剪的 mineru config 键仍被 main 接受；不读取/记录实际秘密值。
+- 外部服务可用性必须有观测日期和环境；旧鉴权失败、免费配额或 provider READY 状态不构成当前可用性承诺。OCR 仍在封存分支，不将其凭据或旧配置字段恢复成 main 能力。
+- ADS export 与 discovery 已有受测样本证据，见 [history](history.md)；这不替代当前操作前的必要核实。配置键以实际 schema 为准（包括 Stage 15 的 auto_ingest_arxiv），类型错点名键而不回显值。
 - **真实浏览器探针教训（Stage 14）**：createServer 用 `port: 0` 随机端口时 guardCsrf 白名单不含实际绑定端口，同源 POST 403——探针须先用 net 探空闲端口再起 server；合成 PointerEvent 无活跃 pointerId，`setPointerCapture` 会抛（GraphCanvas 已加 try/catch 防御）；shell 默认落地是计划页，探针须先点文献 nav；`Runtime.evaluate` 取值为 `result.result.value` 双层嵌套。
 - **探针教训（Stage 15）**：点按文本需子串+最紧匹配（导入菜单项是嵌套 span，精确 textContent 永不命中）；job 断言按 `payload` 过滤，不能按 jobs 目录 readdir 顺序（不按时间）；server 探针要在 import server 前把 `XDG_CONFIG_HOME` 指到隔离目录（`getConfig()` 现读真实 config）。**交互调试先验后端再疑前端**：真实库 API 直调先验证 work 创建与 job 提交，再排 UI 选择器。
 - **infra `ingestTexSource` 的 `fetchImpl` 曾声明不透传**（Stage 15 修复）：ArxivFetcher 构造丢了该选项，stub 测试会静默走真实网络；端口参数要核实确实传到实现。Stage 15 确认 `ArxivFetcher` `useCache:false` 语义即「不读缓存、下载成功覆写」（Stage 15 恒新鲜下载复用此路径，零改动下载器）。
 - **web 测试 mock 单 listener 限制**：`vi.mock` 的 ws 模块只捕捉一个 `onJobEvent` 回调时，组件内第二个订阅会顶掉第一个（Stage 15 曾因此打断 upload 进度测试）；RefDetail 的 job 订阅合并为单个按 kind 路由。组件多次订阅是真实 ws 支持的，但测试 mock 要幺支持集合、要幺组件合并订阅。
 - **Stage 15 验收规模**：四门全绿（build/typecheck/lint；test **1216 passed + 1 可选 skip**——Stage 14 基线 1173+1）；真实 Chrome + 真实网络探针 **26/26**（真实 arXiv 下载编译、真实 ADS、失败重试与 JSONL 日志断言，/tmp 脚本临时证据，关键结论见 session inbox F4）。
 - **摘要显示**：文献/探索摘要不是 Markdown——provider HTML 白名单清洗 + 文本节点 KaTeX（`web/src/lib/abstract.tsx`），texmath 边界与 mdWithMath 同规则；不要再把 ADS 摘要当纯文本直渲。
-- **ADS discovery 实测可用（2026-09-17）**：`similar(bibcode:…)`/`useful(bibcode:a OR bibcode:b …)` 二阶算子经 `/v1/search/query` 正常返回（rows、sort=score desc），实测 18 related + 6 useful + 129 条真实引用边，串行 3 请求首请求秒级、24h TTL 缓存命中毫秒级。
-- **git push 凭据历史教训**：HTTPS credential.helper=cache 无热凭据会报 cannot read Username；当时 gh 已登录，可用一次性 `git -c credential.helper='!gh auth git-credential' push origin main`，不落配置。该命令只是环境解法，**不是 push 授权**，当前登录需实际核实。
-- 日常文献技能验收曾用 `pi -nc` 排除开发仓库 context 污染；这是历史手动方法，不是开发 session 跳过本记忆协议的许可。
+- Git 凭据环境解法不是 push 授权；历史登录状态需重新核实，不把具体凭据或完整敏感日志写进公开文档。
+- 日常文献技能验收曾用 `pi -nc` 排除开发仓库 context 污染；这是历史手动方法，不是开发 session 跳过现行硬契约的许可。

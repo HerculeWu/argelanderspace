@@ -1,6 +1,6 @@
 # 文档标注：现行数据与交互细节
 
-状态：现行专题；Stage 8 于 2026-09-12 关闭，reader epoch 于 2026-09-14 完成并获用户 smoke 确认，整理于 2026-09-16。来源：Stage 8 定稿/MS landed、epoch-review D1–D9/F6 与已执行 v2，持久原文见 history。**三态及错误分支、归档权限、全局删除语义权威在 [契约](../memory/contracts-and-decisions.md)**，本文件细化 schema/实现，不维护另一版安全规则。
+状态：现行专题；Stage 8 于 2026-09-12 关闭，reader epoch 于 2026-09-14 完成并获用户 smoke 确认。2026-09-21 从 `46093915:.pi/memory-reference/annotations.md` 迁移，未改产品语义。来源与持久原文见 [history](history.md)。**三态及错误分支、归档权限、全局删除语义与 CLI 冻结全文权威在 [契约](contracts.md)**，本文件细化 schema/实现，不维护另一版安全规则。
 
 ## Target 与 canonical text
 
@@ -80,6 +80,8 @@ archive：`archive/YYYYMMDDTHHmmssSSSZ-<旧fp前8>.json`，UTC 定长3位毫秒�
 
 ### 受校验资产与严格恢复额度
 
+本节与 server 同步读取边界共同记录 **I032（已接受）**：无资产 watcher/历史图、有同步 hash 成本、不提供跨进程事务；恢复额度用尽后允许要求手动重试。新的性能/自动恢复需求须获批准后重议，不将这些边界当成 I001 尚未修复。
+
 - 两种 `/images` 路径的 `?sha256=<64hex>` opt-in：containment/realpath/regular-file 等校验后读 Buffer，比较预期 hash，**发送被比较的同一个 Buffer**；不二次 read、无随机 query 替代证明。成功/失败 no-store、不返回 304；无参数 legacy 使用者不因此改行为。
 - 非法输入 400、asset changed 409、missing 404、读取失败 500、document busy 409；非成功不返回可展示图片 payload。不能因图片失败启动归档。
 - FigureImage 的所有 surface（正文图、table fallback、右栏预览等）按需获取校验 bytes，Blob URL 绑定 doc/session generation/path/hash；只有 ready 当前代可展示。sync/error 当帧占位，不等 effect；abort、revoke、迟到 fetch/decode/onLoad 代际门，不退回原 pathname。暗色分类缓存不能按不断增长的 Blob URL 无界积累。
@@ -106,29 +108,11 @@ archive：`archive/YYYYMMDDTHHmmssSSSZ-<旧fp前8>.json`，UTC 定长3位毫秒�
 
 Stage 8 MS2 已修 submit/spool 失败 pin 泄漏：submit catch 释放，waitFor 钩子在 spool 写前注册，refresh pin 入 try。新改任务生命周期需审异常路径，不能只看正常 job finally。
 
-部分 rm 失败可能留 ghost 条目（I002）；no-op DELETE 仍广播。前端确认“该文档及其 N 条标注将永久删除，此文档将从所有关联文献条目中移除”。删除后 workspace applyDocDeletion 显式三态并更新 papers，而非依赖仅启动 fetch 一次的 Shell 自动刷新。
+部分 rm 失败可能留 ghost 条目（I002，见本地 tracker）；**I020（已接受）**：no-op DELETE 仍广播，watcher 对 current 消失可发 external，web 容忍 404；有可观察实害再改，目前不当作数据丢失。前端确认“该文档及其 N 条标注将永久删除，此文档将从所有关联文献条目中移除”。删除后 workspace applyDocDeletion 显式三态并更新 papers，而非依赖仅启动 fetch 一次的 Shell 自动刷新。
 
-## CLI annot 冻结契约
+## CLI annot
 
-`annot <doc_id>` 直读磁盘、自算 fingerprint，不走 HTTP、不触发 ensure 写归档。match 输出 current JSONL；mismatch 隐藏旧标注，stdout 零行、exit 0、stderr 固定：
-
-```text
-note: document content changed since its annotations were written; they are archived and not shown
-```
-
-该文案含 archived 是已冻结措辞，不代表 CLI 真的归档；server 下次访问才归档。零 annotations stdout 空且无 hint。unknown doc 复用 error+候选列表；其余 error: <msg>、exit1。corrupt IR 不带路径是已记录既有 helper 形态。
-
-每行键序冻结：
-
-`id, doc_id, target, context, body, created_at, updated_at, link`。
-
-排序：文档阅读序，document 在前，与 web sortAnnotations 同序（500轮对拍）。先物化全部输出行再打印，坏 target 不得先吐半份输出。
-
-- target 直接用存储 contract，不新造 agent target。
-- context 按类别提供：document 只有 title；section/float 走 section_id+section_path；text/paragraph/list 另带完整 canonical container_text。不能为所有类型伪造相同字段集。
-- equation/figure/table/code/algorithm 完整正文由 show 读取，section/full doc 由 read；annot 只告诉 agent 用户在何处留了什么意见。
-- link `/doc/<doc_id>#ann-<annotation_id>`，端口链沿用 env > config >8000。
-- archive 不暴露。未来迁移若需访问必须另立 sanctioned CLI surface；skills 不准直接读内部 current/archive JSON 代替接口。
+完整输出、顺序、排序、错误与零写盘契约已集中于 [contracts 的 CLI annot 冻结契约](contracts.md#cli-annot-冻结契约)。修改 agent 输出时必须阅读全文，不以本专题的 server 路径代替 CLI 语义。
 
 ## Web 交互与 selection primitive
 
@@ -149,4 +133,4 @@ contracts annotations、core annotations store/fingerprint/资产、server annot
 
 reader epoch 持久测试涵盖实际 IR A→B、legacy CLI symlink/错误、三态失败矩阵、预算/乱序/草稿和多图 surface；真实 Chrome 正常合成 zip 上传链与17个受测用例证据见历史 inbox F6。CDP composition 不等于 OS IME，全 decode/onLoad 时序未穷举；用户另明确 smoke 通过。不把工具探针错误改写成产品缺陷或声称全程零失败。
 
-用户 smoke 手册仍在 `docs/manual-test-stage8.md`（用户验收文档，不是新记忆目录）。历史截图 `/tmp/stage8-smoke`、`/tmp/ms4-probe` 不保证仍可访问。Stage 8 已关闭，旧“待 smoke”不再有效。
+用户 smoke 手册仍在 [manual-test-stage8](manual-test-stage8.md)（历史用户验收文档，不是另一套现行契约）。历史截图 `/tmp/stage8-smoke`、`/tmp/ms4-probe` 不保证仍可访问。Stage 8 已关闭，旧“待 smoke”不再有效。

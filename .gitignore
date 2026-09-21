@@ -20,6 +20,10 @@ packages/app/LICENSE
 .codegraph/
 .serena/
 
+# Private local specs, tickets, discussions and machine-specific notes.
+# This directory is deliberately not part of the public repository backup.
+.scratch/
+
 # Generated ingestion outputs (regenerable; large binaries / fetch cache).
 # The PDF sample under literatures/output/2603.03522 was committed earlier and
 # stays tracked; this only ignores newly-generated artifacts (HTML docs, .htmlcache).

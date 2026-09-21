@@ -85,12 +85,12 @@ Zod schema 权威定义：`packages/contracts/src/writer.ts`。**manuscript、te
 - 编译输入会安全复制 `<id>.deps/` 与稿件资产，不跟随 symlink。声明的依赖缺失时明确失败，不偷偷更换 class 或引用样式。`aa.cls/aa.bst` 的分发许可未完成核查，**不随 npm 包提供**；使用 A&A 时需自行准备到 `templates/aa.deps/`。
 - `bibliographyStyle` 用于补充 `\\bibliographystyle{…}`；源码中的显式声明优先，注释和代码示例不算声明。旧自定义模板若未配置 style，仍需自行声明，不能假定系统会用 plainnat 替代。
 - A&A 的五段 abstract 必须在 `\\maketitle` 前供 class 消费；组装器会在该位置输出 abstract cells 并保留其源码映射。稿件 JSON 的 cell 顺序不被重写。
-- 导出仍是源码 zip。缺依赖／未验证编译／缺文献等问题通过响应头和包内 `EXPORT-WARNINGS.txt` 提示；下载成功不等于该稿已验证可编译。
+- 导出仍是源码 zip：单 manuscript.tex、独立 references.bib、被引原始图，以及经与编译相同校验的模板 cls/sty/bst 依赖（放 zip 根目录）。编译和导出注入相同期刊宏定义。缺依赖／未验证编译／缺文献等问题通过响应头和包内 `EXPORT-WARNINGS.txt` 提示；下载成功不等于该稿已验证可编译。
 
 ## 外部变更的可见性
 
 - `manuscripts/<id>/manuscript.json` 与 `templates/*.json` 的 mtime+size 被轮询指纹;变化 → `writer.changed` WS 广播(cause: external / template),web 端幂等重取。
-- 停止输入并保存后自动编译；Render／刷新会先等待保存，再请求即时刷新。手动与自动入口共用按 dataDir＋稿件 id 隔离的 single-flight，运行中只保留一个最新状态的补跑，不排队所有中间版本。
+- 自动保存保留，但停止输入、保存、打开稿件、外部变更和模板切换均不自动编译。只有 Shift+Enter 或 Render 显式触发渲染；先等待保存成功，再请求刷新。显式请求按 dataDir＋稿件 id 隔离 single-flight，运行中只保留一个最新状态的补跑，不排队所有中间版本。此为 Stage 12 已交付规则，详见 [Writer 工作流](writer.md)。
 - 成功和失败都会广播 `writer.changed{cause:"numbering", id}`，正文和侧栏同时更新。外部改写模板依赖、资产或 bibliography 后，刷新会重算内容指纹；这些文件并非都受 watcher 监控，必要时手动刷新。
 - 删除稿件会取消并等待该稿件的编译结束，再删除目录，避免后台构建复活已删除目录。
 
