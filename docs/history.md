@@ -2,7 +2,7 @@
 
 本页保存关键转折和证据入口，不是当前待办或执行授权。当前任务、开放/推后问题以 [本地 tracker](agents/issue-tracker.md) 为准；现行产品规则由各专题和 [contracts](contracts.md) 维护。
 
-**最近产品阶段：Stage 15 已于 2026-09-18 经用户 smoke 关闭；下一产品阶段未指定，Stage 4.1 仍推后。**2026-09-21 的领域文档迁移不是新的产品阶段。
+**最近产品阶段：UI foundation 已于 2026-09-21 经用户 smoke 关闭（未另分配 Stage 编号）；下一产品阶段未指定，Stage 4.1 仍推后。**同日的领域文档迁移不是产品阶段。
 
 ## 阶段结果
 
@@ -25,6 +25,7 @@
 | Stage 13 / 2026-09-16 | 手动三模式建条目、不 rebuild、bib 用户 key、增量图；smoke 要求显式 arXiv 前缀/URL。探针修 CitationGraph 新节点崩溃与 resolveWork 不填空 title。1092+1、Chrome 15/15 含真 ADS、用户 smoke 通过 | `3f814e4`；最终决定原文在迁移基线的 stage13-kickoff inbox |
 | Stage 14 / 2026-09-17 | ADS similar18/useful6 临时探索、真实引用边、成功 seed 才入历史、真取消、唯一 bibcode 入库；saved-only 图＋graph v2 锁内自愈、退役旧推荐/假导出，摘要 HTML 白名单＋KaTeX。1173+1、Chrome43/43、真实 ADS17/17（18 related/6 useful/129边）、用户 smoke 通过 | `5f554ee` feat / `5a9b1cc` docs；最终方案在迁移基线 |
 | Stage 15 / 2026-09-18 | 添加时按 A/B/C 自动 arXiv 获取与同 id 原位刷新、照 upload 焊身份、持久 ingest job、失败 JSONL、附件可点击行/进度/重试、获取广告清理、隐藏开关；CLI 不动（I035）。1216+1、真实 Chrome＋网络26/26，用户 smoke 通过 | 迁移基线 `46093915` 包含最终代码、方案、inbox；其提交本身为 logs ignore 补充，不冒称 feat 提交 |
+| UI foundation / 2026-09-21 | 共享 UI primitives 与设计入口、阅读优先的文献详情、具体 Doc 来源/主位/任务分离、统一获取及精确目标的更新/删除风险确认；Plan Dialog 兼容，API/数据生命周期及冻结 CLI 不变。最终四门 1272 passed + 1 optional skip、隔离真实 Chrome/处理链、Standards/Spec 双轴审查与用户 smoke 通过 | 实现 `75b3af1`；设计权威见 [Web design](../packages/web/DESIGN.md)，私有验收过程留本地 tracker |
 
 表中测试数、发布或用户 smoke 均为原阶段证据，不是文档迁移的新实测。临时 `/tmp` 探针/截图不保证仍在；工具测试绿、合成 smoke、用户 smoke、阶段关闭是不同结论。
 
