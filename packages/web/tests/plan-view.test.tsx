@@ -225,7 +225,7 @@ describe("PlanView: plans empty → create → inline add", () => {
     fireEvent.click(cta);
 
     // PlanModal: name + due are both required (submit stays disabled otherwise)
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const submit = byText(modal, "button", "创建计划") as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     const [nameInput, dueInput] = [...modal.querySelectorAll<HTMLInputElement>("input")];
@@ -253,7 +253,7 @@ describe("PlanView: plans empty → create → inline add", () => {
     await waitFor(() => byText(container, ".plan-tb-title", "采样计划"));
     fireEvent.click(byText(container, "button", "新建任务"));
 
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const dueInput = modal.querySelector<HTMLInputElement>("#task-f-due")!;
     expect(dueInput.value).toBe("2026-12-31"); // prefilled from the plan's due
     expect(dueInput.required).toBe(true);
@@ -308,7 +308,7 @@ describe("PlanView: status cycle + drawer edit + pin", () => {
     const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
     fireEvent.click(drawer.querySelector('button[title="编辑任务"]')!);
 
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const titleInput = modal.querySelector<HTMLInputElement>("input")!;
     expect(titleInput.value).toBe("旧标题"); // 编辑 = 预填打开
     fireEvent.change(titleInput, { target: { value: "新标题" } });
@@ -487,7 +487,7 @@ describe("PlanView: IME composition Enter (B2)", () => {
 
     // the modal title input keeps the IME guard (QuickAdd is gone; the modal
     // is the only creation path now)
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const input = modal.querySelector<HTMLInputElement>("#task-f-title")!;
     fireEvent.change(input, { target: { value: "组词中" } });
     fireEvent.keyDown(input, { key: "Enter", isComposing: true }); // IME 上屏
@@ -552,7 +552,7 @@ describe("PlanView: modals (review ⑨)", () => {
     await waitFor(() => byText(container, ".plan-tb-title", "旧计划名"));
     fireEvent.click(container.querySelector('button[title="编辑计划"]')!);
 
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const nameInput = modal.querySelector<HTMLInputElement>("#plan-f-name")!;
     const dueInput = modal.querySelector<HTMLInputElement>("#plan-f-due")!;
     const descInput = modal.querySelector<HTMLInputElement>("#plan-f-desc")!;
@@ -578,7 +578,7 @@ describe("PlanView: modals (review ⑨)", () => {
     const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
     fireEvent.click(drawer.querySelector('button[title="编辑任务"]')!);
 
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const dueInput = modal.querySelector<HTMLInputElement>("#task-f-due")!;
     expect(dueInput.value).toBe("2026-10-01"); // 编辑预填任务现有 due
     const submit = byText(modal, "button", "保存") as HTMLButtonElement;
@@ -601,7 +601,8 @@ describe("PlanView: modals (review ⑨)", () => {
     await waitFor(() => rowOf(container, "未完一"));
     fireEvent.click(container.querySelector('button[title="删除计划"]')!);
 
-    const modal = await waitFor(() => container.querySelector(".plan-modal") as HTMLElement);
+    const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
+    expect(document.activeElement).toBe(byText(modal, "button", "取消"));
     expect(modal.querySelector(".plan-modal-warning")?.textContent).toContain("2 项未完成的任务");
     fireEvent.click(byText(modal, "button", "确认删除"));
 

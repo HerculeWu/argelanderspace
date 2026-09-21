@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Modal, DrawerStatusRow } from "./atoms";
+import { Button, Dialog } from "../ui";
+import { DrawerStatusRow } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
 
 // The plan page's modals (Stage 4): PlanModal and TaskModal are each shared
@@ -54,19 +55,19 @@ export function PlanModal({
     onSubmit({ name: name.trim(), due, desc: desc.trim() || undefined, icon });
   };
   return (
-    <Modal
+    <Dialog
       title={edit ? t("plan.action.editPlan") : t("plan.planModal.create")}
-      sub={edit ? t("plan.planModal.subEdit") : undefined}
+      description={edit ? t("plan.planModal.subEdit") : undefined}
+      closeLabel={t("common.close")}
+      width={440}
       onClose={onCancel}
       footer={
         <>
-          <button className="btn" onClick={onCancel}>
-            {t("common.cancel")}
-          </button>
-          <button className="btn primary" disabled={!valid} onClick={submit}>
+          <Button onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>
             <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
             {edit ? t("common.save") : t("plan.planModal.submit")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -130,7 +131,7 @@ export function PlanModal({
           ))}
         </div>
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -175,19 +176,19 @@ export function TaskModal({
     onSubmit({ title: title.trim(), status, due });
   };
   return (
-    <Modal
+    <Dialog
       title={edit ? t("plan.action.editTask") : t("plan.action.newTask")}
-      sub={edit ? t("plan.taskModal.subEdit", { name: planName }) : t("plan.taskModal.subCreate", { name: planName })}
+      description={edit ? t("plan.taskModal.subEdit", { name: planName }) : t("plan.taskModal.subCreate", { name: planName })}
+      closeLabel={t("common.close")}
+      width={440}
       onClose={onCancel}
       footer={
         <>
-          <button className="btn" onClick={onCancel}>
-            {t("common.cancel")}
-          </button>
-          <button className="btn primary" disabled={!valid} onClick={submit}>
+          <Button onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button variant="primary" disabled={!valid} onClick={submit}>
             <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
             {edit ? t("common.save") : t("plan.taskModal.submit")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -228,7 +229,7 @@ export function TaskModal({
           <div className="plan-field-hint">{t("plan.taskModal.hintOverdue", { due: planDue })}</div>
         )}
       </div>
-    </Modal>
+    </Dialog>
   );
 }
 
@@ -243,20 +244,22 @@ export function DeletePlanModal({
   onConfirm: () => void;
 }) {
   const { t } = useTranslation();
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const open = plan.tasks.filter((t) => t.status !== "done").length;
   return (
-    <Modal
+    <Dialog
       title={t("plan.action.deletePlan")}
+      closeLabel={t("common.close")}
+      width={440}
+      initialFocusRef={cancelRef}
       onClose={onCancel}
       footer={
         <>
-          <button className="btn" onClick={onCancel}>
-            {t("common.cancel")}
-          </button>
-          <button className="btn primary plan-danger" onClick={onConfirm}>
+          <Button ref={cancelRef} onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button variant="danger" onClick={onConfirm}>
             <Icon name="trash-2" cls="ico-sm" />
             {t("plan.deletePlan.confirm")}
-          </button>
+          </Button>
         </>
       }
     >
@@ -265,6 +268,6 @@ export function DeletePlanModal({
         {open > 0 ? t("plan.deletePlan.warningOpen", { count: open }) : t("plan.deletePlan.warningNone")}
         {t("plan.deletePlan.warningIrreversible")}
       </div>
-    </Modal>
+    </Dialog>
   );
 }

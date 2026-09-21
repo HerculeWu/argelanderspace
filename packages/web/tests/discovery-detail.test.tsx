@@ -109,10 +109,17 @@ describe("DiscoveryDetail", () => {
     expect(props.onViewInLibrary).toHaveBeenCalledWith("doi:10.1/x");
   });
 
-  it("citations tab lists in-graph references/cited-by only", () => {
+  it("citations tab preserves the legacy active-tab presentation and lists in-graph citations", () => {
     const seed = GRAPH.nodes[0]!;
     const { container } = render(<DiscoveryDetail {...detailProps(seed)} />);
-    fireEvent.click(container.querySelector('[data-testid="discovery-citations-tab"]')!);
+    const tabs = container.querySelectorAll<HTMLButtonElement>(".ref-detail-tabs .rdt");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]?.classList.contains("on")).toBe(true);
+
+    const citations = container.querySelector<HTMLButtonElement>('[data-testid="discovery-citations-tab"]')!;
+    fireEvent.click(citations);
+    expect(citations.classList.contains("on")).toBe(true);
+    expect(tabs[0]?.classList.contains("on")).toBe(false);
     expect(container.textContent).toContain("A Related Work"); // outgoing SEED→REL1
     const conns = container.querySelectorAll(".cg-conn");
     expect(conns).toHaveLength(1);

@@ -224,23 +224,39 @@
       "citedBy": "被引 {{count}}",
       "resolvedBy": "引用数据 · {{source}}",
       "tabs": {
-        "meta": "详情",
+        "label": "文献内容",
+        "meta": "信息",
         "info": "摘要",
         "bib": "BibTeX",
         "notes": "笔记",
-        "files": "附件"
+        "files": "全文"
+      },
+      "fullText": {
+        "available": "已有全文",
+        "missing": "暂无全文",
+        "read": "阅读全文",
+        "acquire": "获取全文"
+      },
+      "copy": {
+        "cite": "复制引用键",
+        "bib": "复制 BibTeX",
+        "citeCopied": "引用键已复制",
+        "bibCopied": "BibTeX 已复制",
+        "failed": "复制失败；浏览器未授予剪贴板权限"
       },
       "meta": {
         "type": "类型",
         "year": "年份",
         "venue": "来源",
         "citedBy": "被引量",
+        "citationSource": "引用数据",
         "citeKey": "引用键",
         "filesOpen": "可在文档中打开",
         "filesNone": "暂无"
       },
       "abstractPlaceholder": "摘要 / abstract",
-      "notesEmpty": "暂无笔记",
+      "notesEmpty": "还没有笔记",
+      "notesEditingUnavailable": "此处暂不支持编辑笔记。",
       "source": {
         "ingested": "已入库",
         "ingestedFrom": "已入库 · {{label}}",
@@ -248,16 +264,39 @@
         "readyArxiv": "可获取 · arXiv 全文"
       },
       "files": {
+        "documents": "正文文档",
+        "empty": "这篇文献还没有正文文档",
+        "emptyHelp": "获取或上传完成后，具体正文会显示在这里。",
         "openMain": "在文档中打开（主文档）",
         "openOld": "在文档中打开（旧版本）",
+        "openDoc": "打开此文档",
+        "actions": "文档操作",
         "mainBadge": "主文档",
+        "additionalBadge": "其他正文",
+        "sourceArxiv": "arXiv",
+        "sourceUpload": "用户上传",
+        "sourceLoading": "正在读取来源",
+        "sourceUnknown": "来源未知",
         "deleteDoc": "删除此文档（含其标注）",
         "setMain": "设为主",
         "setMainTitle": "设为主文档",
         "setMainFailed": "设为主文档失败，请重试",
         "sourceLabel": "全文来源",
-        "refetchArxiv": "重新获取",
-        "refetchArxivTitle": "重新获取 arXiv 最新版（覆盖该文档）"
+        "refetchArxiv": "更新此文档",
+        "refetchArxivTitle": "重新获取 arXiv 最新版（覆盖该文档）",
+        "replaceUpload": "更新上传的正文"
+      },
+      "jobs": {
+        "queued": "正在排队",
+        "queueHelp": "等待开始处理。",
+        "fetching": "正在获取全文",
+        "updating": "正在更新全文",
+        "uploading": "正在处理上传的正文",
+        "fetchFailed": "全文获取失败",
+        "updateFailed": "全文更新失败",
+        "uploadFailed": "上传处理失败",
+        "existingDocumentLink": "已有正文关联仍保留；打开后以阅读器状态为准。",
+        "pdfOnly": "此来源只有 PDF"
       },
       "arxiv": {
         "queued": "排队等待获取 arXiv 正文…",
@@ -266,6 +305,40 @@
         "failedGeneric": "获取 arXiv 正文失败，请重试",
         "retry": "重试",
         "pdfOnlyHint": "该论文的 arXiv 提交无 LaTeX 源码（仅 PDF），请改用上方上传 zip"
+      },
+      "acquisition": {
+        "openGet": "获取全文…",
+        "openManage": "添加 / 更新全文…",
+        "getTitle": "获取全文",
+        "methodLabel": "获取方式",
+        "methodArxiv": "从 arXiv 获取",
+        "methodUpload": "上传 LaTeX 源码包",
+        "uploadRequirement": "包含论文 LaTeX 源码的 .zip 文件；不支持 PDF",
+        "noArxiv": "此条目没有 arXiv 标识符",
+        "arxivBlocked": "现有正文不匹配 arXiv 获取条件",
+        "fileLabel": "上传 LaTeX 源码包",
+        "fileHelp": "仅接受包含论文 LaTeX 源码的 .zip 文件，不接受 PDF。",
+        "fileRequired": "请选择 .zip 源码包后再提交",
+        "fileInvalidZip": "请选择扩展名为 .zip 的 LaTeX 源码包；不支持 PDF 或单独的 .tex 文件。",
+        "fileEmpty": "所选 .zip 文件为空，请重新选择有效的 LaTeX 源码包。",
+        "startArxiv": "开始获取",
+        "startUpload": "上传并处理",
+        "confirmUpdate": "确认更新",
+        "submitting": "正在提交…",
+        "submitFailed": "未能提交正文任务，请重试",
+        "targetLabel": "将更新的正文",
+        "targetLoading": "正在确认这次操作的正文目标…",
+        "targetUnavailableTitle": "无法确认更新目标",
+        "targetUnavailable": "为避免覆盖错误的正文，本次不能继续。请关闭后重试。",
+        "riskLoading": "正在检查这份正文的标注…",
+        "riskTitle": "正文变化可能使标注归档",
+        "riskKnown": "这份正文有 {{count}} 条标注。内容发生变化时，旧标注将整批归档，不再出现在正常阅读界面；不会自动迁移到新正文。",
+        "riskUnknown": "无法确认这份正文的标注数量。内容发生变化时，已有标注将整批归档，不再出现在正常阅读界面；不会自动迁移。",
+        "riskZero": "当前未发现标注；更新会替换这份正文。",
+        "riskBusyTitle": "正文正在处理中",
+        "riskBusy": "现在不能安全检查标注数量或提交更新。任务完成后请重新打开此操作。",
+        "riskMissingTitle": "更新目标已变化",
+        "riskMissing": "这份正文已不存在。请关闭后刷新文献详情，再重新选择。"
       },
       "upload": {
         "queued": "排队等待摄入…",
@@ -281,12 +354,19 @@
         "failedGeneric": "上传失败，请重试"
       },
       "deleteDoc": {
-        "title": "删除文档",
+        "title": "删除这份文档？",
+        "risk": "此操作无法撤销",
+        "objectLabel": "文档",
+        "scopeTitle": "全局删除",
+        "scope": "文档正文、当前标注及历史归档都会被删除，并从所有关联的文献条目中移除。不是仅从当前条目解除关联。",
+        "countLoading": "正在获取标注数量…",
+        "count": "包含 {{count}} 条当前标注。",
+        "countUnknown": "无法获取标注数量；不能确认这份文档没有标注。",
         "deleting": "正在删除…",
         "confirm": "永久删除",
-        "warningCount": "该文档及其 {{count}} 条标注将永久删除，此文档将从所有关联文献条目中移除。",
-        "warningUnknown": "该文档及其标注（数量未知）将永久删除，此文档将从所有关联文献条目中移除。",
-        "busy": "文档正在摄入，请稍后删除"
+        "busyTitle": "文档正在处理，暂时不能删除",
+        "busyHelp": "本次删除未执行。稍后可重试，或取消。",
+        "errorTitle": "未能删除文档"
       }
     },
     "importDialog": {

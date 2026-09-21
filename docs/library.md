@@ -73,7 +73,7 @@ B 的标注按既有完整三态契约处理：同指纹保留、成功算出不
 
 ### 手动入口、API 与挂载
 
-手动入口：docless 附件 tab 的可点击获取行、arXiv Doc 行“重新获取”、导入菜单重添加（exists 按同一场景表）。自动路径与手动路径共用同一提交实现。
+手动入口：文献详情“全文”tab 的统一获取/添加更新 Dialog、精确匹配目标 Doc 的更新操作、导入菜单重添加（exists 按同一场景表）。详情的风险提示与交互见 [Web design](../packages/web/DESIGN.md#full-text-acquisition-and-safe-update)；导入等其他入口的自动策略不因此改变。自动路径与手动路径仍共用同一提交实现。
 
 `POST /api/library/attach-arxiv?id=<workId>`：202 `{job}`；400 无 arXiv id / 畸形输入，404 Work 不存在，409 场景 C 或 busy。新端点不是第二套建条目实现。
 
@@ -90,7 +90,7 @@ B 的标注按既有完整三态契约处理：同指纹保留、成功算出不
 - `ArxivPdfOnlyError` 类型化，**既有错误文案逐字节不变**，CLI 零变化；PDF-only 的 UI 双语引导上传 zip，其余显示 job.error 原文与重试。
 - `<dataDir>/logs/arxiv-fetch.jsonl` append-only plain text，只记 arXiv 来源 failed/interrupted，不记成功，不记 upload。字段包括 time/jobId/workId/arxivId/stage/error；阶段 download/extract/compile/attach，boot interrupted 经 onInterrupted 钩子记录。
 - 保持发布包中日志可直接读取。用户将其定为 v1 迭代重要参考：arXiv 来源错误优先处理，上传源本身可能有问题，二者不能混成同一报错队列。不新增 Work 持久“获取失败”状态。
-- 信息面板标题下移除全部获取广告态（ready/blocked/unknown），保留“来源”与“待上传”。附件 tab 只保留 arXiv 获取能力：可点击行保持原 pill 样式，不改按钮；显示进度、持久失败、重试，hello 可收养 job。
+- UI foundation（2026-09-21）替代 Stage 15 的详情呈现决定：标题下以阅读任务及正文有无为主；全文 tab 分开显示具体 Doc 的可信来源、主位和任务状态，获取方式及风险说明进入操作 Dialog。不再保留旧可点击 arXiv pill 的样式约束。设计权威见 [Web design](../packages/web/DESIGN.md)；进度、持久失败、重试和 hello 收养能力及后端语义不变。
 - journal html/pdf、ADS scan 等来源广告清理；数据层 planFor 仍计算，不以 UI 清理名义改 planner。无 arXiv 的 docless 项保持待上传。
 - demo/无后端时依既有 upload 约定禁用/隐藏真实操作，不伪造成功。新 UI 双语。
 

@@ -224,23 +224,39 @@
       "citedBy": "Cited by {{count}}",
       "resolvedBy": "Citation data · {{source}}",
       "tabs": {
-        "meta": "Details",
+        "label": "Reference content",
+        "meta": "Info",
         "info": "Abstract",
         "bib": "BibTeX",
         "notes": "Notes",
-        "files": "Files"
+        "files": "Full text"
+      },
+      "fullText": {
+        "available": "Full text available",
+        "missing": "No full text",
+        "read": "Read full text",
+        "acquire": "Get full text"
+      },
+      "copy": {
+        "cite": "Copy citation key",
+        "bib": "Copy BibTeX",
+        "citeCopied": "Citation key copied",
+        "bibCopied": "BibTeX copied",
+        "failed": "Copy failed; the browser did not grant clipboard access"
       },
       "meta": {
         "type": "Type",
         "year": "Year",
         "venue": "Venue",
         "citedBy": "Cited by",
+        "citationSource": "Citation data",
         "citeKey": "Citation key",
         "filesOpen": "Can open in Document",
         "filesNone": "None"
       },
       "abstractPlaceholder": "Abstract",
       "notesEmpty": "No notes yet",
+      "notesEditingUnavailable": "Note editing is not available here yet.",
       "source": {
         "ingested": "Ingested",
         "ingestedFrom": "Ingested · {{label}}",
@@ -248,16 +264,39 @@
         "readyArxiv": "Available · arXiv full text"
       },
       "files": {
+        "documents": "Documents",
+        "empty": "No document is attached to this reference",
+        "emptyHelp": "The concrete document will appear here after acquisition or upload completes.",
         "openMain": "Open in Document (main document)",
         "openOld": "Open in Document (old version)",
+        "openDoc": "Open document",
+        "actions": "Document actions",
         "mainBadge": "Main document",
+        "additionalBadge": "Additional document",
+        "sourceArxiv": "arXiv",
+        "sourceUpload": "User upload",
+        "sourceLoading": "Reading source",
+        "sourceUnknown": "Source unknown",
         "deleteDoc": "Delete this document (including its annotations)",
         "setMain": "Set as main",
         "setMainTitle": "Set as main document",
         "setMainFailed": "Failed to set as main document; try again",
         "sourceLabel": "Full-text source",
-        "refetchArxiv": "Refetch",
-        "refetchArxivTitle": "Refetch the latest arXiv version (overwrites this document)"
+        "refetchArxiv": "Update document",
+        "refetchArxivTitle": "Refetch the latest arXiv version (overwrites this document)",
+        "replaceUpload": "Update uploaded document"
+      },
+      "jobs": {
+        "queued": "Queued",
+        "queueHelp": "Waiting for processing to start.",
+        "fetching": "Getting full text",
+        "updating": "Updating full text",
+        "uploading": "Processing uploaded source",
+        "fetchFailed": "Could not get full text",
+        "updateFailed": "Could not update full text",
+        "uploadFailed": "Could not process the upload",
+        "existingDocumentLink": "The existing document link remains; its Reader state is authoritative after opening.",
+        "pdfOnly": "Only a PDF is available"
       },
       "arxiv": {
         "queued": "Queued to fetch the arXiv full text…",
@@ -266,6 +305,40 @@
         "failedGeneric": "Failed to fetch the arXiv full text; please retry",
         "retry": "Retry",
         "pdfOnlyHint": "This arXiv submission has no LaTeX source (PDF only) — upload a zip above instead"
+      },
+      "acquisition": {
+        "openGet": "Get full text…",
+        "openManage": "Add / update full text…",
+        "getTitle": "Get full text",
+        "methodLabel": "Source method",
+        "methodArxiv": "Get from arXiv",
+        "methodUpload": "Upload LaTeX source",
+        "uploadRequirement": "A .zip archive containing the paper’s LaTeX source; PDF is not supported",
+        "noArxiv": "This reference has no arXiv identifier",
+        "arxivBlocked": "The existing document is not eligible for arXiv replacement",
+        "fileLabel": "LaTeX source archive",
+        "fileHelp": "Choose a .zip archive containing the paper’s LaTeX source; PDF is not accepted.",
+        "fileRequired": "Choose a .zip source archive before submitting",
+        "fileInvalidZip": "Choose a LaTeX source archive whose filename ends in .zip; PDF and individual .tex files are not supported.",
+        "fileEmpty": "The selected .zip file is empty. Choose a valid LaTeX source archive.",
+        "startArxiv": "Start acquisition",
+        "startUpload": "Upload and process",
+        "confirmUpdate": "Confirm update",
+        "submitting": "Submitting…",
+        "submitFailed": "Could not submit the full-text job; try again",
+        "targetLabel": "Document to update",
+        "targetLoading": "Confirming the document targeted by this operation…",
+        "targetUnavailableTitle": "The update target could not be confirmed",
+        "targetUnavailable": "This operation cannot continue without risking the wrong document. Close it and try again.",
+        "riskLoading": "Checking this document’s annotations…",
+        "riskTitle": "Changed content may archive annotations",
+        "riskKnown": "This document has {{count}} annotations. If its content changes, the old annotations are archived as a batch and no longer appear in the normal reader. They are not automatically migrated to the new document.",
+        "riskUnknown": "The annotation count could not be confirmed. If the content changes, existing annotations are archived as a batch and no longer appear in the normal reader. They are not automatically migrated.",
+        "riskZero": "No annotations were found. Updating will replace this document.",
+        "riskBusyTitle": "The document is busy",
+        "riskBusy": "Annotations cannot be checked safely and an update cannot be submitted now. Reopen this action after the current task finishes.",
+        "riskMissingTitle": "The update target changed",
+        "riskMissing": "This document no longer exists. Close this dialog, refresh the reference, and choose again."
       },
       "upload": {
         "queued": "Queued for ingestion…",
@@ -281,12 +354,19 @@
         "failedGeneric": "Upload failed; try again"
       },
       "deleteDoc": {
-        "title": "Delete document",
+        "title": "Delete this document?",
+        "risk": "This cannot be undone",
+        "objectLabel": "Document",
+        "scopeTitle": "Global deletion",
+        "scope": "The document body, current annotations, and all annotation archives will be deleted, and the document will be removed from every linked literature entry—not just this one.",
+        "countLoading": "Checking the annotation count…",
+        "count": "Includes {{count}} current annotations.",
+        "countUnknown": "The annotation count is unavailable; this does not mean the document has no annotations.",
         "deleting": "Deleting…",
         "confirm": "Delete permanently",
-        "warningCount": "This document and its {{count}} annotations will be permanently deleted, and the document will be removed from all associated literature entries.",
-        "warningUnknown": "This document and its annotations (count unknown) will be permanently deleted, and the document will be removed from all associated literature entries.",
-        "busy": "The document is being ingested; try deleting it later"
+        "busyTitle": "The document is busy and cannot be deleted yet",
+        "busyHelp": "Nothing was deleted. Try again later, or cancel.",
+        "errorTitle": "Could not delete document"
       }
     },
     "importDialog": {

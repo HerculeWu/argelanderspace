@@ -43,6 +43,8 @@ Single-context：根目录 `CONTEXT.md`＋`docs/adr/`。词汇、ADR、技术文
 
 pnpm workspace：contracts / core / infra / server / cli / web / app（发布包 `argelanderspace`）。本机 Node v24+，使用 **`corepack pnpm`**，裸 pnpm 不在 PATH。
 
+前端设计或实现先读 [Web design](packages/web/DESIGN.md)：从 `packages/web/src/ui/` 公共入口复用，沿现有 i18n/theme/density，并用真实浏览器检查布局与交互。
+
 常规代码验收四门：
 
 ```bash

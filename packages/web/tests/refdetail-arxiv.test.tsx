@@ -28,6 +28,7 @@ const h = vi.hoisted(() => ({
   attachArxiv: vi.fn<(workId: string) => Promise<Job | null>>(),
   uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<Job | null>>(),
   patchRef: vi.fn<(id: string, patch: Record<string, unknown>) => Promise<boolean>>(),
+  fetchAnnotations: vi.fn(),
 }));
 
 vi.mock("../src/api/ws", () => ({
@@ -41,8 +42,14 @@ vi.mock("../src/api/ws", () => ({
 
 vi.mock("../src/api/library", () => ({
   attachArxiv: h.attachArxiv,
+  fetchDocProvenance: vi.fn().mockResolvedValue("unknown"),
   uploadLatexZip: h.uploadLatexZip,
   patchRef: h.patchRef,
+}));
+
+vi.mock("../src/api/annotations", () => ({
+  deletePaperDoc: vi.fn(),
+  fetchAnnotations: h.fetchAnnotations,
 }));
 
 const BASE: LibraryRef = {
@@ -123,11 +130,25 @@ function renderDetail(r: LibraryRef) {
 }
 
 function openFilesTab(): void {
-  fireEvent.click(screen.getByRole("button", { name: "附件" }));
+  fireEvent.click(screen.getByRole("tab", { name: "全文" }));
+}
+
+function startArxivAcquisition(): void {
+  fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
+  fireEvent.click(screen.getByRole("button", { name: "开始获取" }));
 }
 
 beforeEach(() => {
   h.attachArxiv.mockReset().mockReturnValue(new Promise(() => {})); // pending by default
+  h.fetchAnnotations.mockReset().mockResolvedValue({
+    ok: true,
+    file: {
+      version: 1,
+      rev: 0,
+      content_fingerprint: "a".repeat(64),
+      annotations: [],
+    },
+  });
 });
 
 afterEach(() => {
@@ -135,17 +156,16 @@ afterEach(() => {
 });
 
 describe("docless work with an arXiv id", () => {
-  it("shows the clickable arXiv pill; clicking queues the fetch and shows progress below", async () => {
+  it("uses the unified acquisition dialog and shows arXiv progress below", async () => {
     renderDetail(REF_ARXIV);
     openFilesTab();
-    const pill = screen.getByTestId("arxiv-fetch");
-    expect(pill.textContent).toBe("可获取 · arXiv 全文");
+    expect(screen.queryByText("可获取 · arXiv 全文")).toBeNull();
     const job = makeJob();
     h.attachArxiv.mockResolvedValueOnce(job);
-    fireEvent.click(pill);
+    startArxivAcquisition();
     expect(h.attachArxiv).toHaveBeenCalledWith(REF_ARXIV.id);
-    await waitFor(() => screen.getByText("排队等待获取 arXiv 正文…"));
-    // progress ticks land under the line
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
+    // progress ticks land in the task message before the document area
     act(() => {
       h.listener?.(
         makeJob({ status: "running", progress: [{ at: "t", message: "Compiling LaTeX (latexmk)" }] }),
@@ -168,8 +188,8 @@ describe("docless work with an arXiv id", () => {
     openFilesTab();
     const job = makeJob();
     h.attachArxiv.mockResolvedValueOnce(job);
-    fireEvent.click(screen.getByTestId("arxiv-fetch"));
-    await waitFor(() => screen.getByText("排队等待获取 arXiv 正文…"));
+    startArxivAcquisition();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
     act(() => {
       h.listener?.(
         makeJob({
@@ -182,18 +202,19 @@ describe("docless work with an arXiv id", () => {
     });
     screen.getByText(/获取 arXiv 正文失败：/);
     screen.getByText(/无 LaTeX 源码（仅 PDF）/);
-    // retry re-triggers the fetch
-    h.attachArxiv.mockResolvedValueOnce(makeJob({ id: "ingest-j2" }));
+    // PDF-only retry enters the upload path instead of pretending arXiv can succeed.
     fireEvent.click(screen.getByTestId("arxiv-retry"));
-    expect(h.attachArxiv).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("dialog", { name: "获取全文" })).toBeTruthy();
+    expect(screen.getByLabelText("上传 LaTeX 源码包")).toBeTruthy();
+    expect(h.attachArxiv).toHaveBeenCalledTimes(1);
   });
 
   it("a plain failure shows no PDF-only hint", async () => {
     renderDetail(REF_ARXIV);
     openFilesTab();
     h.attachArxiv.mockResolvedValueOnce(makeJob());
-    fireEvent.click(screen.getByTestId("arxiv-fetch"));
-    await waitFor(() => screen.getByText("排队等待获取 arXiv 正文…"));
+    startArxivAcquisition();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
     act(() => {
       h.listener?.(makeJob({ status: "failed", error: "connection reset" }), "job.failed");
     });
@@ -213,22 +234,87 @@ describe("docless work with an arXiv id", () => {
     screen.getByText("Compiling LaTeX (latexmk)");
   });
 
+  it("a hello replay restores an interrupted fetch with retry guidance", () => {
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    act(() => {
+      h.listener?.(makeJob({ status: "interrupted", error: "server restarted" }), "hello");
+    });
+
+    screen.getByText(/获取 arXiv 正文失败：server restarted/);
+    expect(screen.getByTestId("arxiv-retry")).toBeTruthy();
+  });
+
+  it("does not attach a late arXiv POST response to a later A → B → A Work session", async () => {
+    let resolveFetch: (job: Job | null) => void = () => {};
+    h.attachArxiv.mockImplementationOnce(
+      () =>
+        new Promise<Job | null>((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    const view = renderDetail(REF_ARXIV);
+    openFilesTab();
+    startArxivAcquisition();
+
+    view.rerender(
+      <RefDetail
+        r={{ ...REF_ARXIV, id: "arxiv:2609.99999", title: "Next Work" }}
+        node={null}
+        onClose={() => {}}
+        onOpenDoc={() => {}}
+        onReload={view.onReload}
+      />
+    );
+    view.rerender(
+      <RefDetail
+        r={{ ...REF_ARXIV }}
+        node={null}
+        onClose={() => {}}
+        onOpenDoc={() => {}}
+        onReload={view.onReload}
+      />
+    );
+    await act(async () => resolveFetch(makeJob()));
+
+    expect(screen.queryByText("正在排队")).toBeNull();
+    startArxivAcquisition();
+    expect(h.attachArxiv).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not resurrect a terminal arXiv job when late WS queued/running frames arrive", () => {
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    act(() => {
+      h.listener?.(makeJob({ status: "failed", error: "terminal arXiv failure" }), "job.failed");
+    });
+    screen.getByText(/获取 arXiv 正文失败：terminal arXiv failure/);
+
+    act(() => {
+      h.listener?.(makeJob({ status: "queued", error: null }), "job.created");
+      h.listener?.(makeJob({ status: "running", error: null }), "job.progress");
+    });
+
+    expect(screen.getByText(/获取 arXiv 正文失败：terminal arXiv failure/)).toBeTruthy();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("a non-202 trigger surfaces the generic failure line", async () => {
     h.attachArxiv.mockResolvedValueOnce(null);
     renderDetail(REF_ARXIV);
     openFilesTab();
-    fireEvent.click(screen.getByTestId("arxiv-fetch"));
+    startArxivAcquisition();
     await waitFor(() => screen.getByText("获取 arXiv 正文失败，请重试"));
   });
 });
 
 describe("D17 cleanup of acquisition ads", () => {
-  it("docless without arXiv: needsUpload pill stays, no clickable line", () => {
+  it("docless without arXiv: uses the same acquisition entry and disables arXiv", () => {
     renderDetail(REF_NEEDS_UPLOAD);
     openFilesTab();
-    // the factual pill renders in BOTH the info panel and the files tab (D17)
-    expect(screen.getAllByText("需上传源码包").length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByTestId("arxiv-fetch")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
+    expect((screen.getByLabelText(/从 arXiv 获取/) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByLabelText("上传 LaTeX 源码包")).toBeTruthy();
   });
 
   it("the '可获取 · A&A html' style acquisition ads are gone everywhere", () => {
@@ -242,15 +328,19 @@ describe("D17 cleanup of acquisition ads", () => {
 });
 
 describe("works with docs", () => {
-  it("an arXiv main doc offers the refetch entry; a click queues the refresh", () => {
+  it("an arXiv main doc offers the safe update entry; confirmation queues the refresh", async () => {
+    h.attachArxiv.mockResolvedValueOnce(makeJob());
     renderDetail(REF_WITH_ARXIV_DOC);
     // the acquisition line is hidden once a main doc exists
     openFilesTab();
     expect(screen.queryByTestId("arxiv-fetch")).toBeNull();
     const btn = screen.getByTestId("arxiv-refetch-main");
-    expect(btn.textContent).toBe("重新获取");
+    expect(btn.textContent).toBe("更新此文档");
     fireEvent.click(btn);
-    expect(h.attachArxiv).toHaveBeenCalledWith(REF_WITH_ARXIV_DOC.id);
+    expect(h.attachArxiv).not.toHaveBeenCalled();
+    expect(await screen.findByText("当前未发现标注；更新会替换这份正文。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认更新" }));
+    await waitFor(() => expect(h.attachArxiv).toHaveBeenCalledWith(REF_WITH_ARXIV_DOC.id));
   });
 
   it("a user-upload doc offers no refetch entry", () => {

@@ -1,14 +1,21 @@
-import { type ChangeEvent, type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
-import { attachArxiv, patchRef, uploadLatexZip } from "../api/library";
+import {
+  attachArxiv,
+  type DocProvenance,
+  fetchDocProvenance,
+  patchRef,
+  uploadLatexZip,
+} from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
-import { Modal } from "../plan/atoms";
+import { Badge, Button, Dialog, IconButton, InlineMessage, Tabs } from "../ui";
 import { cgKfmt } from "../graph/graphPhysics";
 import { AbstractHtml } from "../lib/abstract";
+import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
 import type { GraphNode, LibraryRef } from "./types";
 
 function Tag({ children }: { children: string }) {
@@ -20,53 +27,6 @@ const RESOLVED_LABEL: Record<string, string> = {
   crossref: "Crossref",
   openalex: "OpenAlex",
 };
-
-// Tone colors for the source pill.
-const PILL_GREEN = "oklch(0.74 0.13 158)", PILL_AMBER = "oklch(0.80 0.13 78)", PILL_BLUE = "oklch(0.70 0.12 235)";
-
-function pillStyle(color: string): CSSProperties {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 4,
-    padding: "1px 7px",
-    borderRadius: 999,
-    fontSize: 11,
-    lineHeight: "16px",
-    color,
-    border: `1px solid color-mix(in oklch, ${color} 45%, transparent)`,
-    background: `color-mix(in oklch, ${color} 12%, transparent)`,
-  };
-}
-
-// Where the full text CAME FROM (a fact), with a tone color. Stage 15 (D17):
-// the acquisition-advertising states (ready / blocked / unknown — e.g. a
-// publisher-HTML "available" label) are gone from the UI; the pill only
-// reports `ingested from` or `needs upload`, and the arXiv-available state is
-// a clickable action in the files tab instead. Returns null for the removed
-// states.
-function sourceBadge(r: LibraryRef): { text: string; color: string } | null {
-  const lbl = r.sourceLabel || "";
-  if (r.doc_id || r.pdf)
-    return {
-      text: lbl
-        ? i18n.t("library.detail.source.ingestedFrom", { label: lbl })
-        : i18n.t("library.detail.source.ingested"),
-      color: PILL_GREEN,
-    };
-  if (r.needs_upload) return { text: i18n.t("library.detail.source.needsUpload"), color: PILL_AMBER };
-  return null;
-}
-
-function SourcePill({ r }: { r: LibraryRef }) {
-  const b = sourceBadge(r);
-  if (b === null) return null;
-  return (
-    <span className="src-pill mono" style={pillStyle(b.color)}>
-      {b.text}
-    </span>
-  );
-}
 
 function bibtexOf(r: LibraryRef): string {
   return (
@@ -90,6 +50,37 @@ function bibtexOf(r: LibraryRef): string {
 }
 
 const TABS = ["meta", "info", "bib", "notes", "files"] as const;
+type DetailTab = (typeof TABS)[number];
+type AcquisitionMethod = "arxiv" | "upload";
+
+type AcquisitionRisk =
+  | { state: "new" }
+  | { state: "resolving" }
+  | { state: "loading" }
+  | { state: "known"; count: number }
+  | { state: "unknown" }
+  | { state: "busy"; source: "annotations" | "job" }
+  | { state: "missing" }
+  | { state: "unavailable" };
+
+interface AcquisitionFlow {
+  id: number;
+  riskVersion: number;
+  method: AcquisitionMethod;
+  targetDocId: string | null;
+  risk: AcquisitionRisk;
+  file: File | null;
+  fileError: string | null;
+  busy: boolean;
+  error: string | null;
+}
+
+function acquisitionFileProblem(file: File | null): "required" | "zip" | "empty" | null {
+  if (!file) return "required";
+  if (!file.name.toLowerCase().endsWith(".zip")) return "zip";
+  if (file.size === 0) return "empty";
+  return null;
+}
 
 // Tab labels resolve at render time; keys must stay in sync with TABS.
 const TAB_LABEL_KEYS = {
@@ -106,6 +97,18 @@ function jobWorkId(job: Job): string | null {
   if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
   const w = (p as Record<string, unknown>).workId;
   return typeof w === "string" && w !== "" ? w : null;
+}
+
+const JOB_STATUS_PHASE: Record<Job["status"], number> = {
+  queued: 0,
+  running: 1,
+  done: 2,
+  failed: 2,
+  interrupted: 2,
+};
+
+function isJobSnapshotRegression(previous: Job | undefined, next: Job): boolean {
+  return previous !== undefined && JOB_STATUS_PHASE[next.status] < JOB_STATUS_PHASE[previous.status];
 }
 
 export function RefDetail({
@@ -133,8 +136,25 @@ export function RefDetail({
   explore?: { bibcode: string | null; live: boolean; onExplore: (bibcode: string) => void };
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState("meta");
-  const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<DetailTab>("meta");
+  const [copyStatus, setCopyStatus] = useState<{
+    target: "cite" | "bib";
+    state: "copied" | "failed";
+  } | null>(null);
+  const copyStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyRequestId = useRef(0);
+  const activeWorkId = useRef(r.id);
+  activeWorkId.current = r.id;
+  const workSession = useRef({ workId: r.id, generation: 0 });
+  if (workSession.current.workId !== r.id) {
+    workSession.current = {
+      workId: r.id,
+      generation: workSession.current.generation + 1,
+    };
+  }
+  const isCurrentWorkSession = (session: { workId: string; generation: number }): boolean =>
+    session.workId === workSession.current.workId &&
+    session.generation === workSession.current.generation;
   // async upload (202 + job): progress arrives over /ws; `uploadJob` is the
   // queued/running job, null once a terminal state was handled. The ref mirror
   // lets the WS subscriber see the latest value; `seenJobs` remembers every
@@ -154,25 +174,231 @@ export function RefDetail({
   const [arxivErrCode, setArxivErrCode] = useState<string | null>(null);
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
+  const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
+  const acquisitionFlowSequence = useRef(0);
+  const submittingAcquisitionFlows = useRef(new Set<number>());
+  const riskPayload = useRef(r);
+  const [expectedUploadTarget, setExpectedUploadTarget] = useState<string | null>(null);
+  const [docProvenance, setDocProvenance] = useState<
+    Record<string, DocProvenance | "loading">
+  >({});
+  const provenanceGeneration = useRef(0);
   // Stage 8 §8 document delete: the doc id pending confirmation, plus the
   // in-flight DELETE state. A busy 409 keeps the dialog open with its message
   // (the ingest task ends on its own; the user retries).
   const [delDoc, setDelDoc] = useState<string | null>(null);
   const [delBusy, setDelBusy] = useState(false);
-  const [delErr, setDelErr] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
+  const delBusyRef = useRef(false);
+  const delRequestId = useRef(0);
+  const [delErr, setDelErr] = useState<{ kind: "busy" | "error"; detail: string } | null>(null);
   const cited = node?.c ?? r.citedBy;
 
   // All reader docs of this work (Stage 7 MS3: parallel versions). The main
   // doc is the payload's doc_id (= doc_ids[0]); older versions stay listed.
   const versions = r.doc_ids ?? (r.doc_id ? [r.doc_id] : []);
   const mainDoc = r.doc_id ?? versions[0];
-  const extraVersions = versions.filter((d) => d !== mainDoc);
-  const hasUploadDoc = versions.some((d) => d.startsWith("upload-"));
-  // Stage 15 (D7/D17): the docless source row carries the CLICKABLE arXiv
-  // action when the work has an arXiv id, else the factual pill (needs
-  // upload) — or nothing at all when neither applies (acquisition ads gone).
-  const doclessBadge = mainDoc === undefined ? sourceBadge(r) : null;
+  const arxivTarget = arxivAcquisitionDocId(r.arxiv_id);
+  const arxivAllowed =
+    arxivTarget !== null && (versions.length === 0 || versions.includes(arxivTarget));
+  const versionsKey = versions.join("\u0000");
+
+  useEffect(() => {
+    let current = true;
+    setExpectedUploadTarget(null);
+    void uploadAcquisitionDocId(r.id)
+      .then((docId) => {
+        if (current) setExpectedUploadTarget(docId);
+      })
+      .catch(() => {
+        if (current) setExpectedUploadTarget(null);
+      });
+    return () => {
+      current = false;
+    };
+  }, [r.id]);
+
+  // If the current Work payload changes while a risk dialog is open, never
+  // retain a count for a disappeared target or keep treating a newly-existing
+  // target as a first addition.
+  useEffect(() => {
+    setAcquisition((current) => {
+      if (!current) return current;
+      if (current.targetDocId && !versions.includes(current.targetDocId)) {
+        return {
+          ...current,
+          riskVersion: current.riskVersion + 1,
+          risk: { state: "missing" },
+        };
+      }
+      if (current.method === "arxiv") {
+        const nextTarget = arxivTarget && versions.includes(arxivTarget) ? arxivTarget : null;
+        if (nextTarget !== current.targetDocId) {
+          return {
+            ...current,
+            riskVersion: current.riskVersion + 1,
+            targetDocId: nextTarget,
+            risk: versions.length === 0 ? { state: "new" } : { state: "unavailable" },
+          };
+        }
+      } else if (current.targetDocId === null && versions.length > 0) {
+        return {
+          ...current,
+          riskVersion: current.riskVersion + 1,
+          risk: { state: "unavailable" },
+        };
+      }
+      return current;
+    });
+  }, [arxivTarget, versionsKey]);
+
+  // Any fresh payload for the same Work may reflect an in-place replacement
+  // even when doc_ids is unchanged. A replacement risk snapshot is therefore
+  // invalidated and fetched again instead of retaining prior consent.
+  useEffect(() => {
+    if (riskPayload.current === r) return;
+    riskPayload.current = r;
+    setAcquisition((current) =>
+      current?.targetDocId && versions.includes(current.targetDocId)
+        ? {
+            ...current,
+            riskVersion: current.riskVersion + 1,
+            risk: { state: "loading" },
+          }
+        : current
+    );
+  }, [r, versionsKey]);
+
+  useEffect(() => {
+    const flow = acquisition;
+    if (!flow || flow.method !== "upload" || flow.risk.state !== "resolving") return;
+    let current = true;
+    const workId = r.id;
+    void uploadAcquisitionDocId(workId)
+      .then((expectedDocId) => {
+        if (!current) return;
+        setAcquisition((latest) => {
+          if (
+            !latest ||
+            latest.id !== flow.id ||
+            latest.method !== "upload" ||
+            latest.risk.state !== "resolving" ||
+            workSession.current.workId !== workId
+          ) {
+            return latest;
+          }
+          const targetDocId = versions.includes(expectedDocId) ? expectedDocId : null;
+          return {
+            ...latest,
+            riskVersion: latest.riskVersion + 1,
+            targetDocId,
+            risk: targetDocId ? { state: "loading" } : { state: "new" },
+          };
+        });
+      })
+      .catch(() => {
+        if (!current) return;
+        setAcquisition((latest) =>
+          latest?.id === flow.id &&
+          latest.method === "upload" &&
+          latest.risk.state === "resolving"
+            ? {
+                ...latest,
+                riskVersion: latest.riskVersion + 1,
+                risk: { state: "unavailable" },
+              }
+            : latest
+        );
+      });
+    return () => {
+      current = false;
+    };
+  }, [acquisition?.method, acquisition?.risk.state, r.id, versionsKey]);
+
+  useEffect(() => {
+    const flow = acquisition;
+    if (!flow || flow.targetDocId === null || flow.risk.state !== "loading") return;
+    let current = true;
+    void fetchAnnotations(flow.targetDocId).then((result) => {
+      if (!current) return;
+      setAcquisition((latest) => {
+        if (
+          !latest ||
+          latest.id !== flow.id ||
+          latest.method !== flow.method ||
+          latest.targetDocId !== flow.targetDocId ||
+          latest.risk.state !== "loading"
+        ) {
+          return latest;
+        }
+        if (result.ok) {
+          return {
+            ...latest,
+            risk: { state: "known", count: result.file.annotations.length },
+          };
+        }
+        if (result.status === 409)
+          return { ...latest, risk: { state: "busy", source: "annotations" } };
+        if (result.missing) return { ...latest, risk: { state: "missing" } };
+        return { ...latest, risk: { state: "unknown" } };
+      });
+    });
+    return () => {
+      current = false;
+    };
+  }, [
+    acquisition?.id,
+    acquisition?.method,
+    acquisition?.targetDocId,
+    acquisition?.risk.state,
+    acquisition?.riskVersion,
+  ]);
+
+  // A known queued/running job targeting this Work conservatively blocks a
+  // replacement. Once that job settles, take a fresh annotation snapshot.
+  useEffect(() => {
+    setAcquisition((current) => {
+      if (!current?.targetDocId) return current;
+      const job = current.method === "upload" ? uploadJob : arxivJob;
+      const active = job?.status === "queued" || job?.status === "running";
+      if (active && !(current.risk.state === "busy" && current.risk.source === "job")) {
+        return {
+          ...current,
+          riskVersion: current.riskVersion + 1,
+          risk: { state: "busy", source: "job" },
+        };
+      }
+      if (!active && current.risk.state === "busy" && current.risk.source === "job") {
+        return {
+          ...current,
+          riskVersion: current.riskVersion + 1,
+          risk: { state: "loading" },
+        };
+      }
+      return current;
+    });
+  }, [acquisition?.id, uploadJob, arxivJob]);
+
+  // Provenance is presentation-only metadata from each Doc's explicit
+  // acquired_via field. Bind every response to the Work + list generation so
+  // a late IR request cannot label a different Work/Doc after navigation or
+  // an in-place refresh. Reader content/annotations continue through their
+  // existing coherent session and are never accepted here.
+  useEffect(() => {
+    const generation = ++provenanceGeneration.current;
+    const controller = new AbortController();
+    setDocProvenance(Object.fromEntries(versions.map((docId) => [docId, "loading"])));
+    for (const docId of versions) {
+      void fetchDocProvenance(docId, controller.signal).then((provenance) => {
+        if (controller.signal.aborted || generation !== provenanceGeneration.current) return;
+        setDocProvenance((current) =>
+          docId in current ? { ...current, [docId]: provenance } : current
+        );
+      });
+    }
+    return () => {
+      controller.abort();
+    };
+  }, [r, versionsKey]);
 
   const setUploadJob = useCallback((job: Job | null) => {
     uploadJobRef.current = job;
@@ -192,38 +418,56 @@ export function RefDetail({
     setArxivErr(null);
     setArxivErrCode(null);
     setMainErr(null);
+    setSettingMain(false);
+    acquisitionFlowSequence.current += 1;
+    setAcquisition(null);
+    copyRequestId.current += 1;
+    if (copyStatusTimer.current !== null) {
+      clearTimeout(copyStatusTimer.current);
+      copyStatusTimer.current = null;
+    }
+    setCopyStatus(null);
     setDelDoc(null);
     setDelErr(null);
+    delBusyRef.current = false;
+    delRequestId.current += 1;
     setDelBusy(false);
   }, [r.id, setUploadJob, setArxivJob]);
 
   const onSetMainDoc = async (docId: string) => {
+    const session = workSession.current;
     setMainErr(null);
     setSettingMain(true);
-    const ok = await patchRef(r.id, { doc_id: docId });
+    const ok = await patchRef(session.workId, { doc_id: docId });
+    if (!isCurrentWorkSession(session)) return;
     setSettingMain(false);
     if (ok) onReload?.();
     else setMainErr(i18n.t("library.detail.files.setMainFailed"));
   };
 
   const onConfirmDelete = async (docId: string) => {
+    if (delBusyRef.current) return;
+    delBusyRef.current = true;
+    const requestId = ++delRequestId.current;
     setDelBusy(true);
     setDelErr(null);
     const res = await deletePaperDoc(docId);
+    if (requestId !== delRequestId.current) return;
+    delBusyRef.current = false;
     setDelBusy(false);
     if (res.ok) {
       setDelDoc(null);
       onDocDeleted?.(docId, versions.filter((d) => d !== docId));
       onReload?.();
     } else if (res.busy) {
-      setDelErr(i18n.t("library.detail.deleteDoc.busy"));
+      setDelErr({ kind: "busy", detail: i18n.t("library.detail.deleteDoc.busyHelp") });
     } else if (res.missing) {
       // already deleted elsewhere: the desired end state — close the dialog
       // and reload the library instead of showing an error
       setDelDoc(null);
       onReload?.();
     } else {
-      setDelErr(res.detail);
+      setDelErr({ kind: "error", detail: res.detail });
     }
   };
 
@@ -237,15 +481,14 @@ export function RefDetail({
       ? i18n.t("library.detail.arxiv.failed", { error: job.error })
       : i18n.t("library.detail.arxiv.failedGeneric");
 
-  const onPickFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // allow re-picking the same file
-    if (!file) return;
+  const queueUpload = async (file: File): Promise<boolean> => {
+    const session = workSession.current;
     setUploadErr(null);
-    const job = await uploadLatexZip(r.id, file);
+    const job = await uploadLatexZip(session.workId, file);
+    if (!isCurrentWorkSession(session)) return false;
     if (!job) {
       setUploadErr(failMsg(null));
-      return;
+      return false;
     }
     const seen = seenJobs.current.get(job.id);
     if (!seen || seen.status === "queued" || seen.status === "running") {
@@ -256,6 +499,7 @@ export function RefDetail({
       // terminal frame beat the fetch response: surface it, don't resurrect
       setUploadErr(failMsg(seen));
     }
+    return true;
   };
 
   // Track this work's job.* events. ONE subscription routes by kind: the
@@ -274,6 +518,8 @@ export function RefDetail({
     () =>
       onJobEvent((job) => {
         if (jobWorkId(job) !== r.id) return;
+        const previous = seenJobs.current.get(job.id);
+        if (isJobSnapshotRegression(previous, job)) return;
         seenJobs.current.set(job.id, job);
         if (job.kind === "upload") {
           const cur = uploadJobRef.current;
@@ -326,13 +572,15 @@ export function RefDetail({
   // The clickable acquisition line / the per-doc refetch entry: queue the
   // fetch (202 → queued or in-flight job); a non-202 (409 scenario C,
   // offline demo, …) surfaces as the generic failure line.
-  const onFetchArxiv = async () => {
+  const onFetchArxiv = async (): Promise<boolean> => {
+    const session = workSession.current;
     setArxivErr(null);
     setArxivErrCode(null);
-    const job = await attachArxiv(r.id);
+    const job = await attachArxiv(session.workId);
+    if (!isCurrentWorkSession(session)) return false;
     if (!job) {
       setArxivErr(arxivFailMsg(null));
-      return;
+      return false;
     }
     const seen = seenJobs.current.get(job.id);
     if (!seen || seen.status === "queued" || seen.status === "running") {
@@ -343,6 +591,106 @@ export function RefDetail({
       // terminal frame beat the fetch response: surface it, don't resurrect
       setArxivErr(arxivFailMsg(seen));
       setArxivErrCode(seen.errorCode ?? null);
+    }
+    return true;
+  };
+
+  const openAcquisition = (method?: AcquisitionMethod) => {
+    const selected =
+      method === "arxiv" && !arxivAllowed
+        ? "upload"
+        : (method ?? (arxivAllowed ? "arxiv" : "upload"));
+    const targetDocId =
+      selected === "arxiv" && arxivTarget && versions.includes(arxivTarget)
+        ? arxivTarget
+        : null;
+    const id = ++acquisitionFlowSequence.current;
+    setAcquisition({
+      id,
+      riskVersion: 0,
+      method: selected,
+      targetDocId,
+      risk:
+        selected === "upload" && versions.length > 0
+          ? { state: "resolving" }
+          : targetDocId
+            ? { state: "loading" }
+            : { state: "new" },
+      file: null,
+      fileError: null,
+      busy: false,
+      error: null,
+    });
+  };
+
+  const submitAcquisition = async () => {
+    const flow = acquisition;
+    if (
+      !flow ||
+      submittingAcquisitionFlows.current.has(flow.id) ||
+      flow.busy ||
+      flow.risk.state === "resolving" ||
+      flow.risk.state === "loading" ||
+      flow.risk.state === "busy" ||
+      flow.risk.state === "missing" ||
+      flow.risk.state === "unavailable"
+    ) {
+      return;
+    }
+    if (flow.method === "upload") {
+      const problem = acquisitionFileProblem(flow.file);
+      if (problem) {
+        setAcquisition((current) =>
+          current?.id === flow.id
+            ? {
+                ...current,
+                file: null,
+                fileError: i18n.t(
+                  problem === "required"
+                    ? "library.detail.acquisition.fileRequired"
+                    : problem === "zip"
+                      ? "library.detail.acquisition.fileInvalidZip"
+                      : "library.detail.acquisition.fileEmpty"
+                ),
+              }
+            : current
+        );
+        return;
+      }
+    }
+    const session = workSession.current;
+    submittingAcquisitionFlows.current.add(flow.id);
+    setAcquisition((current) =>
+      current?.id === flow.id
+        ? { ...current, busy: true, fileError: null, error: null }
+        : current
+    );
+    const accepted =
+      flow.method === "arxiv"
+        ? await onFetchArxiv()
+        : await queueUpload(flow.file as File);
+    submittingAcquisitionFlows.current.delete(flow.id);
+    if (
+      acquisitionFlowSequence.current !== flow.id ||
+      !isCurrentWorkSession(session)
+    ) {
+      return;
+    }
+    if (accepted) {
+      acquisitionFlowSequence.current += 1;
+      setAcquisition(null);
+    } else {
+      setAcquisition((current) =>
+        current?.id === flow.id
+          ? {
+              ...current,
+              riskVersion: current.riskVersion + 1,
+              risk: current.targetDocId ? { state: "loading" } : current.risk,
+              busy: false,
+              error: i18n.t("library.detail.acquisition.submitFailed"),
+            }
+          : current
+      );
     }
   };
 
@@ -359,69 +707,123 @@ export function RefDetail({
     }
   }, [arxivJob, onReload, setArxivJob]);
 
-  const copyBib = async () => {
-    try {
-      await navigator.clipboard.writeText(bibtexOf(r));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
-    } catch {
-      /* clipboard may be blocked */
+  useEffect(
+    () => () => {
+      workSession.current = {
+        workId: workSession.current.workId,
+        generation: workSession.current.generation + 1,
+      };
+      copyRequestId.current += 1;
+      if (copyStatusTimer.current !== null) {
+        clearTimeout(copyStatusTimer.current);
+        copyStatusTimer.current = null;
+      }
+    },
+    []
+  );
+
+  const copyText = async (target: "cite" | "bib", text: string) => {
+    const requestId = ++copyRequestId.current;
+    const workId = r.id;
+    if (copyStatusTimer.current !== null) {
+      clearTimeout(copyStatusTimer.current);
+      copyStatusTimer.current = null;
     }
+    setCopyStatus(null);
+    let state: "copied" | "failed";
+    try {
+      await navigator.clipboard.writeText(text);
+      state = "copied";
+    } catch {
+      state = "failed";
+    }
+    if (requestId !== copyRequestId.current || workId !== activeWorkId.current) return;
+    setCopyStatus({ target, state });
+    copyStatusTimer.current = setTimeout(() => {
+      if (requestId === copyRequestId.current && workId === activeWorkId.current) {
+        setCopyStatus(null);
+        copyStatusTimer.current = null;
+      }
+    }, 2400);
   };
 
+  const copyStatusText = copyStatus
+    ? t(
+        copyStatus.state === "failed"
+          ? "library.detail.copy.failed"
+          : copyStatus.target === "cite"
+            ? "library.detail.copy.citeCopied"
+            : "library.detail.copy.bibCopied"
+      )
+    : null;
+
   return (
-    <div className="ref-detail view-in">
+    <aside className="ref-detail reference-detail view-in" aria-label={r.title}>
       <div className="ref-detail-scroll">
-      <div className="ref-detail-head">
-        <div className="ref-type-badge">{r.type === "conf" ? t("library.detail.typeConf") : t("library.detail.typeArticle")}</div>
-        <div className="ref-detail-actions">
-          <button className="btn icon ghost" title={t("library.detail.openInDoc")} onClick={() => onOpenDoc(r.doc_id)}>
-            <Icon name="file-text" cls="ico-sm" />
-          </button>
-          <button className="btn icon ghost" title={r.star ? t("library.detail.starred") : t("library.detail.star")}>
-            <Icon name="star" cls="ico-sm" />
-          </button>
-          <button className="btn icon ghost" onClick={onClose}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
+        <div className="ref-detail-head">
+          <div className="ref-type-badge">
+            {r.type === "conf" ? t("library.detail.typeConf") : t("library.detail.typeArticle")}
+          </div>
+          <div className="ref-detail-actions">
+            <IconButton
+              variant="ghost"
+              label={t("library.detail.copy.cite")}
+              icon={<Icon name="copy" cls="ico-sm" />}
+              onClick={() => void copyText("cite", r.cite)}
+            />
+            <IconButton
+              variant="ghost"
+              label={t("common.close")}
+              icon={<Icon name="x" cls="ico-sm" />}
+              onClick={onClose}
+            />
+          </div>
         </div>
-      </div>
-      <div className="ref-detail-title serif">{r.title}</div>
-      <div className="ref-detail-auth">{r.authors}</div>
-      <div className="ref-detail-meta">
-        <span>{r.venue}</span>
-        <span className="dotsep">·</span>
-        <span className="mono">{r.year}</span>
-        {cited != null && (
-          <>
-            <span className="dotsep">·</span>
-            <span className="mono">{t("library.detail.citedBy", { count: cgKfmt(cited) })}</span>
-          </>
-        )}
-      </div>
-      <div className="ref-detail-meta" style={{ marginTop: 6, gap: 8, flexWrap: "wrap" }}>
-        <SourcePill r={r} />
-        {r.resolvedBy && RESOLVED_LABEL[r.resolvedBy] && (
-          <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>
-            {t("library.detail.resolvedBy", { source: RESOLVED_LABEL[r.resolvedBy] })}
+        <h1 className="ref-detail-title serif">{r.title}</h1>
+        <p className="ref-detail-auth">{r.authors}</p>
+        <div className="ref-detail-meta">
+          <span>{r.venue}</span>
+          <span className="dotsep">·</span>
+          <span className="mono">{r.year}</span>
+          {cited != null && (
+            <>
+              <span className="dotsep">·</span>
+              <span className="mono">{t("library.detail.citedBy", { count: cgKfmt(cited) })}</span>
+            </>
+          )}
+        </div>
+        <div className="ref-reading-action">
+          <span className="ref-availability">
+            <Icon name={mainDoc ? "check" : "file-text"} cls="ico-sm" />
+            {t(mainDoc ? "library.detail.fullText.available" : "library.detail.fullText.missing")}
           </span>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (mainDoc) onOpenDoc(mainDoc);
+              else setTab("files");
+            }}
+          >
+            <Icon name={mainDoc ? "book-open" : "file-up"} cls="ico-sm" />
+            {t(mainDoc ? "library.detail.fullText.read" : "library.detail.fullText.acquire")}
+          </Button>
+        </div>
+        {copyStatusText && (
+          <p
+            className={"ref-copy-status" + (copyStatus?.state === "failed" ? " error" : "")}
+            role={copyStatus?.state === "failed" ? "alert" : "status"}
+          >
+            {copyStatusText}
+          </p>
         )}
-      </div>
-      <input
-        ref={fileInput}
-        type="file"
-        accept=".zip"
-        style={{ display: "none" }}
-        onChange={onPickFile}
-      />
-      <div className="ref-detail-tabs">
-        {TABS.map((k) => (
-          <button key={k} className={"rdt" + (tab === k ? " on" : "")} onClick={() => setTab(k)}>
-            {t(TAB_LABEL_KEYS[k])}
-          </button>
-        ))}
-      </div>
-      <div className="ref-detail-body">
+        <Tabs
+          ariaLabel={t("library.detail.tabs.label")}
+          items={TABS.map((value) => ({ value, label: t(TAB_LABEL_KEYS[value]) }))}
+          value={tab}
+          onValueChange={setTab}
+          className="ref-detail-tabs"
+          panelClassName="ref-detail-body"
+        >
         {tab === "meta" && (
           <div className="ref-meta-list">
             <div className="rml-row">
@@ -440,6 +842,12 @@ export function RefDetail({
               <div className="rml-row">
                 <span className="rml-k">{t("library.detail.meta.citedBy")}</span>
                 <span className="rml-v mono">{cited}</span>
+              </div>
+            )}
+            {r.resolvedBy && RESOLVED_LABEL[r.resolvedBy] && (
+              <div className="rml-row">
+                <span className="rml-k">{t("library.detail.meta.citationSource")}</span>
+                <span className="rml-v">{RESOLVED_LABEL[r.resolvedBy]}</span>
               </div>
             )}
             {r.doi && (
@@ -491,217 +899,222 @@ export function RefDetail({
         )}
         {tab === "bib" && (
           <div className="bib-block">
-            <button className="bib-copy" onClick={copyBib}>
-              <Icon name={copied ? "check" : "copy"} cls="ico-sm" />
-              {copied ? t("common.copied") : t("common.copy")}
-            </button>
+            <div className="bib-toolbar">
+              <Button variant="ghost" onClick={() => void copyText("bib", bibtexOf(r))}>
+                <Icon name="copy" cls="ico-sm" />
+                {t("library.detail.copy.bib")}
+              </Button>
+            </div>
             <pre className="mono">{bibtexOf(r)}</pre>
           </div>
         )}
-        {tab === "notes" &&
-          (r.note ? (
-            <div className="ref-abstract ref-note">
-              <p>{r.note}</p>
-            </div>
-          ) : (
-            <div className="placeholder-text ph-note">
-              <span className="mono">{t("library.detail.notesEmpty")}</span>
-            </div>
-          ))}
-        {tab === "files" && (
-          <div className="ref-files">
-            {mainDoc && (
-              <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
-                <button
-                  className="ref-file"
-                  style={{ flex: 1 }}
-                  title={t("library.detail.files.openMain")}
-                  onClick={() => onOpenDoc(mainDoc)}
-                >
-                  <Icon name="file-text" cls="ico-sm" />
-                  <span className="mono">{r.cite}</span>
-                  <span className="ref-file-ok">
-                    {extraVersions.length > 0 ? t("library.detail.files.mainBadge") : t("library.detail.source.ingested")}
-                  </span>
-                  <Icon name="arrow-up-right" cls="ico-sm" />
-                </button>
-                {mainDoc.startsWith("arxiv-") && (
-                  <button
-                    className="btn"
-                    data-testid="arxiv-refetch-main"
-                    disabled={arxivJob !== null}
-                    title={t("library.detail.files.refetchArxivTitle")}
-                    onClick={() => void onFetchArxiv()}
-                  >
-                    {t("library.detail.files.refetchArxiv")}
-                  </button>
-                )}
-                <button
-                  className="btn icon"
-                  title={t("library.detail.files.deleteDoc")}
-                  onClick={() => {
-                    setDelErr(null);
-                    setDelDoc(mainDoc);
-                  }}
-                >
-                  <Icon name="trash-2" cls="ico-sm" />
-                </button>
+        {tab === "notes" && (
+          <div className="ref-notes">
+            {r.note ? (
+              <div className="ref-abstract ref-note">
+                <p>{r.note}</p>
+              </div>
+            ) : (
+              <div className="ref-note-empty">
+                <Icon name="notebook-pen" cls="ico-sm" />
+                <strong>{t("library.detail.notesEmpty")}</strong>
               </div>
             )}
-            {extraVersions.map((d) => (
-              <div key={d} style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
-                <button
-                  className="ref-file"
-                  style={{ flex: 1 }}
-                  title={t("library.detail.files.openOld")}
-                  onClick={() => onOpenDoc(d)}
-                >
-                  <Icon name="file-text" cls="ico-sm" />
-                  <span className="mono">{d}</span>
-                  <Icon name="arrow-up-right" cls="ico-sm" />
-                </button>
-                <button
-                  className="btn"
-                  disabled={settingMain}
-                  title={t("library.detail.files.setMainTitle")}
-                  onClick={() => onSetMainDoc(d)}
-                >
-                  {t("library.detail.files.setMain")}
-                </button>
-                {d.startsWith("arxiv-") && (
-                  <button
-                    className="btn"
-                    data-testid={`arxiv-refetch-${d}`}
-                    disabled={arxivJob !== null}
-                    title={t("library.detail.files.refetchArxivTitle")}
-                    onClick={() => void onFetchArxiv()}
-                  >
-                    {t("library.detail.files.refetchArxiv")}
-                  </button>
-                )}
-                <button
-                  className="btn icon"
-                  title={t("library.detail.files.deleteDoc")}
-                  onClick={() => {
-                    setDelErr(null);
-                    setDelDoc(d);
-                  }}
-                >
-                  <Icon name="trash-2" cls="ico-sm" />
-                </button>
-              </div>
-            ))}
-            {mainErr && (
-              <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
-                {mainErr}
-              </div>
-            )}
-            {!mainDoc && (r.arxiv_id || doclessBadge) && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span className="mono" style={{ fontSize: 11, opacity: 0.65 }}>{t("library.detail.files.sourceLabel")}</span>
-                {r.arxiv_id ? (
-                  // Stage 15 (D11): the acquirable arXiv source is a CLICKABLE
-                  // pill — the existing pill style, not a button — queueing
-                  // the fetch job; progress unfolds right below.
-                  <span
-                    className="src-pill mono"
-                    data-testid="arxiv-fetch"
-                    onClick={arxivJob === null ? () => void onFetchArxiv() : undefined}
-                    style={{
-                      ...pillStyle(PILL_BLUE),
-                      cursor: arxivJob === null ? "pointer" : "default",
-                      opacity: arxivJob === null ? 1 : 0.6,
-                    }}
-                  >
-                    {t("library.detail.source.readyArxiv")}
-                  </span>
-                ) : (
-                  <SourcePill r={r} />
-                )}
-              </div>
-            )}
-            {(arxivJob !== null || arxivErr !== null) && (
-              <div
-                className="mono"
-                style={{ fontSize: 11, lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 4 }}
-              >
-                {arxivJob && (
-                  <span style={{ opacity: 0.75, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                    <Icon name="loader" cls="ico-sm spin" />
-                    {arxivJob.status === "queued"
-                      ? t("library.detail.arxiv.queued")
-                      : (arxivJob.progress[arxivJob.progress.length - 1]?.message ??
-                        t("library.detail.arxiv.ingesting"))}
-                  </span>
-                )}
-                {arxivErr && (
-                  <>
-                    <span style={{ color: "oklch(0.70 0.16 25)" }}>{arxivErr}</span>
-                    {arxivErrCode === "arxiv_pdf_only" && (
-                      <span style={{ opacity: 0.75 }}>{t("library.detail.arxiv.pdfOnlyHint")}</span>
-                    )}
-                    <span
-                      data-testid="arxiv-retry"
-                      onClick={() => void onFetchArxiv()}
-                      style={{ cursor: "pointer", textDecoration: "underline", opacity: 0.8, width: "fit-content" }}
-                    >
-                      {t("library.detail.arxiv.retry")}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                ...(mainDoc ? { marginTop: 8 } : {}),
-              }}
-            >
-              <button
-                className="btn"
-                disabled={uploadJob !== null}
-                onClick={() => fileInput.current?.click()}
-                style={{ justifyContent: "center" }}
-              >
-                {uploadJob ? (
-                  <>
-                    <Icon name="loader" cls="ico-sm spin" />
-                    {uploadJob.status === "queued"
-                      ? t("library.detail.upload.queued")
-                      : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
-                        t("library.detail.upload.ingesting"))}
-                  </>
-                ) : (
-                  <>
-                    <Icon name="file-up" cls="ico-sm" />
-                    {hasUploadDoc
-                      ? t("library.detail.upload.reupload")
-                      : mainDoc
-                        ? t("library.detail.upload.newVersion")
-                        : t("library.detail.upload.initial")}
-                  </>
-                )}
-              </button>
-              <div className="mono" style={{ fontSize: 11, opacity: 0.6, lineHeight: 1.5 }}>
-                {hasUploadDoc
-                  ? t("library.detail.upload.hintReupload")
-                  : mainDoc
-                    ? t("library.detail.upload.hintNewVersion")
-                    : r.needs_upload
-                      ? t("library.detail.upload.hintNeedsUpload")
-                      : t("library.detail.upload.hintDefault")}
-              </div>
-              {uploadErr && (
-                <div className="mono" style={{ fontSize: 11, color: "oklch(0.70 0.16 25)" }}>
-                  {uploadErr}
-                </div>
-              )}
-            </div>
+            <p className="ref-note-help">{t("library.detail.notesEditingUnavailable")}</p>
           </div>
         )}
-      </div>
+        {tab === "files" && (
+          <div className="ref-files">
+            <div className="ref-files-head">
+              <h2>{t("library.detail.files.documents")}</h2>
+              <Button
+                variant="ghost"
+                disabled={uploadJob !== null || arxivJob !== null}
+                onClick={() => openAcquisition()}
+              >
+                <Icon name="file-up" cls="ico-sm" />
+                {t(
+                  versions.length === 0
+                    ? "library.detail.acquisition.openGet"
+                    : "library.detail.acquisition.openManage"
+                )}
+              </Button>
+            </div>
+            {(uploadJob || arxivJob || uploadErr || arxivErr || mainErr) && (
+              <div className="ref-task-messages">
+                {uploadJob && (
+                  <InlineMessage
+                    title={t(
+                      uploadJob.status === "queued"
+                        ? "library.detail.jobs.queued"
+                        : "library.detail.jobs.uploading"
+                    )}
+                  >
+                    {uploadJob.status === "queued"
+                      ? t("library.detail.jobs.queueHelp")
+                      : (uploadJob.progress[uploadJob.progress.length - 1]?.message ??
+                        t("library.detail.upload.ingesting"))}
+                  </InlineMessage>
+                )}
+                {arxivJob && (
+                  <InlineMessage
+                    title={t(
+                      arxivJob.status === "queued"
+                        ? "library.detail.jobs.queued"
+                        : mainDoc
+                          ? "library.detail.jobs.updating"
+                          : "library.detail.jobs.fetching"
+                    )}
+                  >
+                    {arxivJob.status === "queued"
+                      ? t("library.detail.jobs.queueHelp")
+                      : (arxivJob.progress[arxivJob.progress.length - 1]?.message ??
+                        t("library.detail.arxiv.ingesting"))}
+                  </InlineMessage>
+                )}
+                {uploadErr && (
+                  <InlineMessage tone="danger" title={t("library.detail.jobs.uploadFailed")}>
+                    <p>{uploadErr}</p>
+                    {mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
+                  </InlineMessage>
+                )}
+                {arxivErr && (
+                  <InlineMessage
+                    tone={arxivErrCode === "arxiv_pdf_only" ? "warning" : "danger"}
+                    title={t(
+                      arxivErrCode === "arxiv_pdf_only"
+                        ? "library.detail.jobs.pdfOnly"
+                        : mainDoc
+                          ? "library.detail.jobs.updateFailed"
+                          : "library.detail.jobs.fetchFailed"
+                    )}
+                  >
+                    <p>{arxivErr}</p>
+                    {arxivErrCode === "arxiv_pdf_only" && (
+                      <p>{t("library.detail.arxiv.pdfOnlyHint")}</p>
+                    )}
+                    {mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
+                    <Button
+                      variant="ghost"
+                      data-testid="arxiv-retry"
+                      onClick={() => openAcquisition(arxivErrCode === "arxiv_pdf_only" ? "upload" : "arxiv")}
+                    >
+                      <Icon name={arxivErrCode === "arxiv_pdf_only" ? "file-up" : "refresh-cw"} cls="ico-sm" />
+                      {t(
+                        arxivErrCode === "arxiv_pdf_only"
+                          ? "library.detail.acquisition.methodUpload"
+                          : "library.detail.arxiv.retry"
+                      )}
+                    </Button>
+                  </InlineMessage>
+                )}
+                {mainErr && <InlineMessage tone="danger">{mainErr}</InlineMessage>}
+              </div>
+            )}
+            {versions.length === 0 && (
+              <div className="ref-documents-empty">
+                <strong>{t("library.detail.files.empty")}</strong>
+                <span>{t("library.detail.files.emptyHelp")}</span>
+              </div>
+            )}
+            {versions.length > 0 && (
+              <section className="ref-documents" aria-label={t("library.detail.files.documents")}>
+                <h2>{t("library.detail.files.documents")}</h2>
+                <div className="ref-document-list">
+                  {versions.map((docId) => {
+                    const provenance = docProvenance[docId] ?? "loading";
+                    const isMain = docId === mainDoc;
+                    const sourceLabel = t(
+                      provenance === "arxiv"
+                        ? "library.detail.files.sourceArxiv"
+                        : provenance === "upload"
+                          ? "library.detail.files.sourceUpload"
+                          : provenance === "loading"
+                            ? "library.detail.files.sourceLoading"
+                            : "library.detail.files.sourceUnknown"
+                    );
+                    return (
+                      <article className="ref-document" key={docId}>
+                        <div className="ref-document-heading">
+                          <Icon
+                            name={provenance === "upload" ? "file-up" : "file-text"}
+                            cls="ico-sm"
+                          />
+                          <strong>{sourceLabel}</strong>
+                          <Badge tone={isMain ? "accent" : "neutral"}>
+                            {t(
+                              isMain
+                                ? "library.detail.files.mainBadge"
+                                : "library.detail.files.additionalBadge"
+                            )}
+                          </Badge>
+                        </div>
+                        <code className="ref-document-id">{docId}</code>
+                        <details className="ref-document-actions">
+                          <summary>
+                            <Icon name="ellipsis" cls="ico-sm" />
+                            {t("library.detail.files.actions")}
+                          </summary>
+                          <div className="ref-document-action-list">
+                            <Button variant="ghost" onClick={() => onOpenDoc(docId)}>
+                              <Icon name="book-open" cls="ico-sm" />
+                              {t("library.detail.files.openDoc")}
+                            </Button>
+                            {!isMain && (
+                              <Button
+                                variant="ghost"
+                                disabled={settingMain}
+                                onClick={() => void onSetMainDoc(docId)}
+                              >
+                                <Icon name="check" cls="ico-sm" />
+                                {t("library.detail.files.setMainTitle")}
+                              </Button>
+                            )}
+                            {docId === arxivTarget && (
+                              <Button
+                                variant="ghost"
+                                data-testid={
+                                  isMain ? "arxiv-refetch-main" : `arxiv-refetch-${docId}`
+                                }
+                                disabled={arxivJob !== null}
+                                onClick={() => openAcquisition("arxiv")}
+                              >
+                                <Icon name="refresh-cw" cls="ico-sm" />
+                                {t("library.detail.files.refetchArxiv")}
+                              </Button>
+                            )}
+                            {docId === expectedUploadTarget && (
+                              <Button
+                                variant="ghost"
+                                disabled={uploadJob !== null}
+                                onClick={() => openAcquisition("upload")}
+                              >
+                                <Icon name="file-up" cls="ico-sm" />
+                                {t("library.detail.files.replaceUpload")}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              className="danger-text"
+                              onClick={() => {
+                                setDelErr(null);
+                                setDelDoc(docId);
+                              }}
+                            >
+                              <Icon name="trash-2" cls="ico-sm" />
+                              {t("library.detail.files.deleteDoc")}
+                            </Button>
+                          </div>
+                        </details>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+        </Tabs>
       </div>
       {explore && (
         <div className="detail-footer">
@@ -728,6 +1141,64 @@ export function RefDetail({
           )}
         </div>
       )}
+      {acquisition && (
+        <AcquisitionDialog
+          flow={acquisition}
+          arxivId={r.arxiv_id}
+          arxivAllowed={arxivAllowed}
+          onMethodChange={(method) => {
+            if (acquisition.busy) return;
+            const id = ++acquisitionFlowSequence.current;
+            setAcquisition((current) => {
+              if (!current || current.busy) return current;
+              const targetDocId =
+                method === "arxiv" && arxivTarget && versions.includes(arxivTarget)
+                  ? arxivTarget
+                  : null;
+              return {
+                ...current,
+                id,
+                riskVersion: 0,
+                method,
+                targetDocId,
+                risk:
+                  method === "upload" && versions.length > 0
+                    ? { state: "resolving" }
+                    : targetDocId
+                      ? { state: "loading" }
+                      : { state: "new" },
+                file: null,
+                fileError: null,
+                error: null,
+              };
+            });
+          }}
+          onFileChange={(file) =>
+            setAcquisition((current) => {
+              if (!current || current.busy) return current;
+              const problem = acquisitionFileProblem(file);
+              return {
+                ...current,
+                file: problem ? null : file,
+                fileError:
+                  problem === null || problem === "required"
+                    ? null
+                    : t(
+                        problem === "zip"
+                          ? "library.detail.acquisition.fileInvalidZip"
+                          : "library.detail.acquisition.fileEmpty"
+                      ),
+                error: null,
+              };
+            })
+          }
+          onCancel={() => {
+            acquisitionFlowSequence.current += 1;
+            setAcquisition(null);
+          }}
+          onSubmit={() => void submitAcquisition()}
+        />
+      )}
       {delDoc && (
         <DeleteDocDialog
           docId={delDoc}
@@ -737,7 +1208,184 @@ export function RefDetail({
           onConfirm={onConfirmDelete}
         />
       )}
-    </div>
+    </aside>
+  );
+}
+
+function AcquisitionDialog({
+  flow,
+  arxivId,
+  arxivAllowed,
+  onMethodChange,
+  onFileChange,
+  onCancel,
+  onSubmit,
+}: {
+  flow: AcquisitionFlow;
+  arxivId: string | undefined;
+  arxivAllowed: boolean;
+  onMethodChange: (method: AcquisitionMethod) => void;
+  onFileChange: (file: File | null) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}) {
+  const { t } = useTranslation();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  return (
+    <Dialog
+      title={t("library.detail.acquisition.getTitle")}
+      closeLabel={t("common.close")}
+      busy={flow.busy}
+      initialFocusRef={cancelRef}
+      onClose={onCancel}
+      footer={
+        <>
+          <Button ref={cancelRef} disabled={flow.busy} onClick={onCancel}>
+            {t("common.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            busy={flow.busy}
+            busyLabel={t("library.detail.acquisition.submitting")}
+            disabled={
+              (flow.method === "arxiv" && !arxivAllowed) ||
+              flow.risk.state === "resolving" ||
+              flow.risk.state === "loading" ||
+              flow.risk.state === "busy" ||
+              flow.risk.state === "missing" ||
+              flow.risk.state === "unavailable"
+            }
+            onClick={onSubmit}
+          >
+            <Icon name={flow.method === "upload" ? "file-up" : "download"} cls="ico-sm" />
+            {t(
+              flow.targetDocId
+                ? "library.detail.acquisition.confirmUpdate"
+                : flow.method === "upload"
+                  ? "library.detail.acquisition.startUpload"
+                  : "library.detail.acquisition.startArxiv"
+            )}
+          </Button>
+        </>
+      }
+    >
+      <fieldset className="ref-acquisition-methods">
+        <legend>{t("library.detail.acquisition.methodLabel")}</legend>
+        <label>
+          <input
+            type="radio"
+            name="acquisition-method"
+            value="arxiv"
+            checked={flow.method === "arxiv"}
+            disabled={!arxivAllowed || flow.busy}
+            onChange={() => onMethodChange("arxiv")}
+          />
+          <span>
+            <strong>{t("library.detail.acquisition.methodArxiv")}</strong>
+            <small>
+              {arxivId
+                ? arxivAllowed
+                  ? `arXiv:${arxivId}`
+                  : t("library.detail.acquisition.arxivBlocked")
+                : t("library.detail.acquisition.noArxiv")}
+            </small>
+          </span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name="acquisition-method"
+            value="upload"
+            checked={flow.method === "upload"}
+            disabled={flow.busy}
+            onChange={() => onMethodChange("upload")}
+          />
+          <span>
+            <strong>{t("library.detail.acquisition.methodUpload")}</strong>
+            <small>{t("library.detail.acquisition.uploadRequirement")}</small>
+          </span>
+        </label>
+      </fieldset>
+      {flow.targetDocId && (
+        <div className="ref-acquisition-target">
+          <strong>{t("library.detail.acquisition.targetLabel")}</strong>
+          <code>{flow.targetDocId}</code>
+        </div>
+      )}
+      {flow.risk.state === "resolving" && (
+        <InlineMessage>{t("library.detail.acquisition.targetLoading")}</InlineMessage>
+      )}
+      {flow.risk.state === "loading" && (
+        <InlineMessage>{t("library.detail.acquisition.riskLoading")}</InlineMessage>
+      )}
+      {flow.risk.state === "known" && flow.risk.count > 0 && (
+        <InlineMessage
+          tone="warning"
+          title={t("library.detail.acquisition.riskTitle")}
+        >
+          {t("library.detail.acquisition.riskKnown", { count: flow.risk.count })}
+        </InlineMessage>
+      )}
+      {flow.risk.state === "known" && flow.risk.count === 0 && (
+        <InlineMessage tone="warning">
+          {t("library.detail.acquisition.riskZero")}
+        </InlineMessage>
+      )}
+      {flow.risk.state === "unknown" && (
+        <InlineMessage
+          tone="warning"
+          title={t("library.detail.acquisition.riskTitle")}
+        >
+          {t("library.detail.acquisition.riskUnknown")}
+        </InlineMessage>
+      )}
+      {flow.risk.state === "busy" && (
+        <InlineMessage tone="warning" title={t("library.detail.acquisition.riskBusyTitle")}>
+          {t("library.detail.acquisition.riskBusy")}
+        </InlineMessage>
+      )}
+      {flow.risk.state === "missing" && (
+        <InlineMessage tone="danger" title={t("library.detail.acquisition.riskMissingTitle")}>
+          {t("library.detail.acquisition.riskMissing")}
+        </InlineMessage>
+      )}
+      {flow.risk.state === "unavailable" && (
+        <InlineMessage tone="danger" title={t("library.detail.acquisition.targetUnavailableTitle")}>
+          {t("library.detail.acquisition.targetUnavailable")}
+        </InlineMessage>
+      )}
+      {flow.method === "upload" && (
+        <div className="ref-acquisition-file">
+          <label htmlFor="acquisition-file">
+            {t("library.detail.acquisition.fileLabel")}
+          </label>
+          <input
+            id="acquisition-file"
+            type="file"
+            accept=".zip"
+            disabled={flow.busy}
+            aria-describedby={
+              flow.fileError
+                ? "acquisition-file-help acquisition-file-error"
+                : "acquisition-file-help"
+            }
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              event.target.value = "";
+              onFileChange(file);
+            }}
+          />
+          {flow.file && <code>{flow.file.name}</code>}
+          <p id="acquisition-file-help">{t("library.detail.acquisition.fileHelp")}</p>
+          {flow.fileError && (
+            <p id="acquisition-file-error" className="ref-acquisition-error" role="alert">
+              {flow.fileError}
+            </p>
+          )}
+        </div>
+      )}
+      {flow.error && <InlineMessage tone="danger">{flow.error}</InlineMessage>}
+    </Dialog>
   );
 }
 
@@ -758,50 +1406,81 @@ function DeleteDocDialog({
 }: {
   docId: string;
   busy: boolean;
-  error: string | null;
+  error: { kind: "busy" | "error"; detail: string } | null;
   onCancel: () => void;
   onConfirm: (docId: string) => void;
 }) {
   const { t } = useTranslation();
-  const [count, setCount] = useState<number | null>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const [count, setCount] = useState<
+    { state: "loading" } | { state: "known"; value: number } | { state: "unknown" }
+  >({ state: "loading" });
   useEffect(() => {
-    let alive = true;
-    setCount(null);
-    void fetchAnnotations(docId).then((r) => {
-      if (alive) setCount(r.ok ? r.file.annotations.length : null);
+    let current = true;
+    setCount({ state: "loading" });
+    void fetchAnnotations(docId).then((result) => {
+      if (!current) return;
+      setCount(result.ok ? { state: "known", value: result.file.annotations.length } : { state: "unknown" });
     });
     return () => {
-      alive = false;
+      current = false;
     };
   }, [docId]);
 
   return (
-    <Modal
+    <Dialog
       title={t("library.detail.deleteDoc.title")}
-      sub={docId}
-      width={420}
+      description={t("library.detail.deleteDoc.risk")}
+      closeLabel={t("common.close")}
+      busy={busy}
+      initialFocusRef={cancelRef}
       onClose={onCancel}
       footer={
         <>
-          <button className="btn" onClick={onCancel}>
+          <Button ref={cancelRef} disabled={busy} onClick={onCancel}>
             {t("common.cancel")}
-          </button>
-          <button className="btn plan-danger" disabled={busy} onClick={() => onConfirm(docId)}>
-            {busy ? t("library.detail.deleteDoc.deleting") : t("library.detail.deleteDoc.confirm")}
-          </button>
+          </Button>
+          <Button
+            variant="danger"
+            busy={busy}
+            disabled={count.state === "loading"}
+            busyLabel={t("library.detail.deleteDoc.deleting")}
+            onClick={() => onConfirm(docId)}
+          >
+            <Icon name="trash-2" cls="ico-sm" />
+            {t("library.detail.deleteDoc.confirm")}
+          </Button>
         </>
       }
     >
-      <div className="plan-modal-warning">
-        {count === null
-          ? t("library.detail.deleteDoc.warningUnknown")
-          : t("library.detail.deleteDoc.warningCount", { count })}
-      </div>
-      {error && (
-        <div className="mono" style={{ fontSize: 12, color: "oklch(0.70 0.16 25)" }}>
-          {error}
+      <div className="ui-delete-doc">
+        <div className="ui-delete-doc-identity">
+          <strong>{t("library.detail.deleteDoc.objectLabel")}</strong>
+          <code>{docId}</code>
         </div>
-      )}
-    </Modal>
+        <InlineMessage tone="warning" title={t("library.detail.deleteDoc.scopeTitle")}>
+          {t("library.detail.deleteDoc.scope")}
+        </InlineMessage>
+        <p className="ui-delete-doc-count" role="status">
+          {count.state === "loading"
+            ? t("library.detail.deleteDoc.countLoading")
+            : count.state === "known"
+              ? t("library.detail.deleteDoc.count", { count: count.value })
+              : t("library.detail.deleteDoc.countUnknown")}
+        </p>
+        {error && (
+          <InlineMessage
+            tone={error.kind === "busy" ? "warning" : "danger"}
+            title={t(
+              error.kind === "busy"
+                ? "library.detail.deleteDoc.busyTitle"
+                : "library.detail.deleteDoc.errorTitle"
+            )}
+          >
+            {error.detail}
+          </InlineMessage>
+        )}
+      </div>
+    </Dialog>
   );
 }

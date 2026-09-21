@@ -4,7 +4,7 @@
  * stays enabled (plan delays are a legitimate scenario).
  */
 
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskModal } from "../src/plan/modals";
 
@@ -13,27 +13,24 @@ describe("TaskModal overdue hint", () => {
 
   function setup(planDue = "2026-10-01") {
     const onSubmit = vi.fn();
-    const r = render(
-      <TaskModal planName="P" planDue={planDue} onCancel={() => {}} onSubmit={onSubmit} />
-    );
-    const due = r.container.querySelector<HTMLInputElement>("#task-f-due");
-    const title = r.container.querySelector<HTMLInputElement>("#task-f-title");
-    if (due === null || title === null) throw new Error("fields not rendered");
-    return { r, onSubmit, due, title };
+    render(<TaskModal planName="P" planDue={planDue} onCancel={() => {}} onSubmit={onSubmit} />);
+    const due = screen.getByLabelText("截止日期") as HTMLInputElement;
+    const title = screen.getByLabelText("任务标题") as HTMLInputElement;
+    return { onSubmit, due, title };
   }
 
   it("shows the hint when the task due passes the plan due, and still submits", () => {
-    const { r, onSubmit, due, title } = setup();
+    const { onSubmit, due, title } = setup();
     // the create form prefills due from planDue — no hint initially
-    expect(r.container.querySelector(".plan-field-hint")).toBeNull();
+    expect(document.querySelector(".plan-field-hint")).toBeNull();
 
     fireEvent.change(due, { target: { value: "2026-11-15" } });
-    const hint = r.container.querySelector(".plan-field-hint");
+    const hint = document.querySelector(".plan-field-hint");
     expect(hint?.textContent).toContain("任务截止晚于计划截止");
     expect(hint?.textContent).toContain("2026-10-01");
 
     fireEvent.change(title, { target: { value: "推迟一步" } });
-    fireEvent.click(r.getByText("添加任务"));
+    fireEvent.click(screen.getByText("添加任务"));
     expect(onSubmit).toHaveBeenCalledWith({
       title: "推迟一步",
       status: "todo",
@@ -42,10 +39,19 @@ describe("TaskModal overdue hint", () => {
   });
 
   it("shows no hint when the due is on or before the plan due", () => {
-    const { r, due } = setup();
+    const { due } = setup();
     fireEvent.change(due, { target: { value: "2026-10-01" } });
-    expect(r.container.querySelector(".plan-field-hint")).toBeNull();
+    expect(document.querySelector(".plan-field-hint")).toBeNull();
     fireEvent.change(due, { target: { value: "2026-09-15" } });
-    expect(r.container.querySelector(".plan-field-hint")).toBeNull();
+    expect(document.querySelector(".plan-field-hint")).toBeNull();
+  });
+
+  it("keeps the Plan form focus and Escape/cancel behavior through the shared Dialog", () => {
+    const onCancel = vi.fn();
+    render(<TaskModal planName="P" planDue="2026-10-01" onCancel={onCancel} onSubmit={() => {}} />);
+    const dialog = screen.getByRole("dialog", { name: "新建任务" });
+    expect(document.activeElement).toBe(screen.getByLabelText("任务标题"));
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

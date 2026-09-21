@@ -1,7 +1,7 @@
 /**
  * Stage 10 Writer — modals: document Info (title/authors/affiliations +
  * template-driven extra fields), Preamble (template read-only + user), and
- * the delete-manuscript double confirm. The shell mirrors plan/atoms.Modal.
+ * the delete-manuscript double confirm. This independent shell is not yet migrated to shared UI Dialog.
  */
 
 import { useEffect, useState } from "react";

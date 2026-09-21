@@ -27,6 +27,34 @@ export interface LibraryLoad {
   live: boolean; // false → showing fixture/demo data
 }
 
+export type DocProvenance = "arxiv" | "upload" | "unknown";
+
+/**
+ * Read only the stored IR's explicit acquisition provenance for document-list
+ * presentation. This metadata request does not accept Reader content or touch
+ * annotations; absent, unsupported, malformed, and failed responses all remain
+ * honestly unknown.
+ */
+export async function fetchDocProvenance(
+  docId: string,
+  signal?: AbortSignal
+): Promise<DocProvenance> {
+  try {
+    const response = await fetch(`/api/paper/${encodeURIComponent(docId)}/ir`, { signal });
+    if (!response.ok) return "unknown";
+    const body = (await response.json()) as unknown;
+    if (body === null || typeof body !== "object" || Array.isArray(body)) return "unknown";
+    const source = (body as Record<string, unknown>).source;
+    if (source === null || typeof source !== "object" || Array.isArray(source)) return "unknown";
+    const acquiredVia = (source as Record<string, unknown>).acquired_via;
+    if (acquiredVia === "arxiv_eprint") return "arxiv";
+    if (acquiredVia === "user_latex_zip") return "upload";
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 export async function fetchLibrary(): Promise<LibraryLoad> {
   const live = await tryJson<LibraryData>("/api/library");
   return live ? { data: live, live: true } : { data: LIBRARY_FIXTURE, live: false };

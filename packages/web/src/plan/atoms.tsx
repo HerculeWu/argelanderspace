@@ -1,9 +1,8 @@
-import { useEffect } from "react";
 import { Icon } from "../lib/icons";
 import { STATUS_ICON, statusLabel, type TaskStatus } from "./model";
 
-// Small shared atoms of the plan page (Stage 4): the status dot/button, the
-// progress ring, the modal shell, and the drawer's four-status pick row.
+// Small shared atoms of the plan page (Stage 4): the status dot/button,
+// progress ring, and the drawer's four-status pick row.
 
 export function StatusDot({ status }: { status: TaskStatus }) {
   return <span className={`plan-dot plan-s-${status}`} />;
@@ -77,48 +76,6 @@ export function DrawerStatusRow({
           {statusLabel(s)}
         </button>
       ))}
-    </div>
-  );
-}
-
-/** Generic modal shell (overlay click + Escape close). */
-export function Modal({
-  title,
-  sub,
-  onClose,
-  children,
-  footer,
-  width = 440,
-}: {
-  title: string;
-  sub?: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-  width?: number;
-}) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
-  return (
-    <div className="plan-modal-overlay" onClick={onClose}>
-      <div className="plan-modal" style={{ width }} onClick={(e) => e.stopPropagation()}>
-        <div className="plan-modal-head">
-          <div className="plan-modal-titles">
-            <div className="plan-modal-title">{title}</div>
-            {sub && <div className="plan-modal-sub">{sub}</div>}
-          </div>
-          <button className="btn icon ghost" onClick={onClose}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
-        </div>
-        <div className="plan-modal-body">{children}</div>
-        {footer && <div className="plan-modal-foot">{footer}</div>}
-      </div>
     </div>
   );
 }
