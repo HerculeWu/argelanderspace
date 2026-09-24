@@ -9,6 +9,7 @@
 // Stage 5 MS3b (the tex pipeline replaced them); the MinerU client,
 // publisher-HTML fetcher, and PDF downloader are archived on `ocr-features`.
 
+export * from "./arxiv-pdf.js";
 export * from "./config.js";
 export * from "./latex/arxiv-source.js";
 export * from "./lib/http.js";

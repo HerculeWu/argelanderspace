@@ -54,6 +54,8 @@ function dispatch(msg: WsServerMessage): void {
     // to the job branch (`msg.job` would be undefined). The writer view wires
     // its reload to onWriterChanged in M2.
     for (const cb of writerListeners) cb(msg);
+  } else if (msg.type === "pdf-reading-position.changed") {
+    // Position notifications never navigate another tab; its reader remains user-controlled.
   } else {
     for (const cb of jobListeners) cb(msg.job, msg.type);
   }

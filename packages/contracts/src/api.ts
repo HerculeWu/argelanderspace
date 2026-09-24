@@ -6,6 +6,8 @@
  * so these schemas are the shared contract between server and web.
  *
  *   GET  /api/papers                     → PapersListResponse
+ *   GET  /api/paper/{doc_id}/description → DocDescription (format/source hint;
+ *     not proof of content consistency)
  *   GET  /api/paper/{doc_id}/ir          → TexDocIr (= the stored render IR;
  *     the retired raw `GET /api/paper/{doc_id}` Document passthrough was
  *     removed in MS3a, and its alias left this file in MS3b)

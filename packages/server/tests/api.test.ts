@@ -151,6 +151,53 @@ describe("GET /api/paper/:doc_id/ir edge semantics (former raw-route tests)", ()
   });
 });
 
+describe("GET /api/paper/:doc_id/description", () => {
+  test("keeps a valid LaTeX Doc readable before library build associates it with a Work", async () => {
+    const source = join(dataDir, "output", "arxiv-2501.17225", "arxiv-2501.17225.json");
+    const ir = JSON.parse(readFileSync(source, "utf8")) as { docId: string };
+    writeFileSync(
+      join(dataDir, "output", "demo", "demo.json"),
+      JSON.stringify({ ...ir, docId: "demo" })
+    );
+    expect((await get("/api/paper/demo/ir")).status).toBe(200);
+    const description = await get("/api/paper/demo/description");
+    expect(description.status).toBe(200);
+    expect(await description.json()).toMatchObject({ doc_id: "demo", format: "latex" });
+  });
+
+  test("returns explicit LaTeX format and only stored acquisition provenance", async () => {
+    const path = join(dataDir, "output", "arxiv-2501.17225", "arxiv-2501.17225.json");
+    const stored = JSON.parse(readFileSync(path, "utf8")) as { source: Record<string, unknown> };
+    stored.source.acquired_via = "arxiv_eprint";
+    writeFileSync(path, JSON.stringify(stored));
+    const res = await get("/api/paper/arxiv-2501.17225/description");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      doc_id: "arxiv-2501.17225",
+      format: "latex",
+      acquired_via: "arxiv_eprint",
+    });
+  });
+
+  test("unknown provenance remains absent rather than inferred from an arXiv id", async () => {
+    const res = await get("/api/paper/arxiv-2501.17225/description");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ doc_id: "arxiv-2501.17225", format: "latex" });
+  });
+
+  test("unknown documents and legacy JSON are not described as LaTeX", async () => {
+    expect((await get("/api/paper/nope/description")).status).toBe(404);
+    expect((await get("/api/paper/demo/description")).status).toBe(404);
+  });
+
+  test("schema-invalid current IR fails instead of getting a format guess", async () => {
+    const path = join(dataDir, "output", "arxiv-2501.17225", "arxiv-2501.17225.json");
+    writeFileSync(path, JSON.stringify({ version: 1, docId: "arxiv-2501.17225" }));
+    const res = await get("/api/paper/arxiv-2501.17225/description");
+    expect(res.status).toBe(500);
+  });
+});
+
 describe("GET /api/paper/:doc_id/ir", () => {
   test("returns the stored render IR byte-identically (it IS the file)", async () => {
     const res = await get("/api/paper/arxiv-2501.17225/ir");

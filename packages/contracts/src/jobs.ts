@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { WsAnnotationChangedSchema } from "./annotations.js";
+import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
 import { WsWriterChangedSchema } from "./writer.js";
 
@@ -99,6 +100,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsPlanChangedSchema,
   WsAnnotationChangedSchema,
   WsWriterChangedSchema,
+  WsPdfReadingPositionChangedSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

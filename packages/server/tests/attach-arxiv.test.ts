@@ -26,6 +26,7 @@ import {
   LibraryStore,
   libraryPaths,
   type MetadataSources,
+  publishPdfDoc,
 } from "@argelanderspace/core";
 import { ArxivPdfOnlyError } from "@argelanderspace/infra";
 import type { Hono } from "hono";
@@ -67,6 +68,8 @@ beforeEach(() => {
     statusDir: statusDirFor(dataDir),
     makeSources: () => sources,
     pipelines,
+    fetchArxivPdf: async () =>
+      readFileSync(new URL("./fixtures/pdf/scanned-no-text.pdf", import.meta.url)),
     runner,
     broadcast: collector.broadcast,
     autoIngestArxiv: () => autoFlag,
@@ -84,6 +87,14 @@ const postWorks = (body: unknown) =>
   });
 
 const ingestJobs = (): Job[] => runner.list().filter((j) => j.kind === "ingest");
+const autoPdfJobs = (): Job[] =>
+  runner
+    .list()
+    .filter(
+      (j) =>
+        j.kind === "upload" &&
+        (j.payload as { format?: unknown } | undefined)?.format === "arxiv-pdf"
+    );
 
 function loadWork(id: string) {
   return LibraryStore.load(paths).get(id);
@@ -111,6 +122,84 @@ describe("POST /api/library/attach-arxiv", () => {
       "already has a non-arXiv doc"
     );
     expect(ingestJobs()).toEqual([]);
+  });
+
+  test("ambiguous PDF ownership blocks LaTeX append without changing Work links or PDF files", async () => {
+    const bytes = readFileSync(new URL("./fixtures/pdf/scanned-no-text.pdf", import.meta.url));
+    const pdf = publishPdfDoc(paths, {
+      workId: DOCLESS_WORK,
+      filename: "owned.pdf",
+      bytes,
+      pages: [{ width: 612, height: 792, rotation: 0 }],
+    });
+    const store = LibraryStore.load(paths);
+    const secondOwner = store.get(USER_DOC_WORK);
+    if (!secondOwner) throw new Error("fixture Work missing");
+    secondOwner.doc_ids.push(pdf.doc_id);
+    store.save(paths);
+    const linksBefore = LibraryStore.load(paths).works.map((work) => [work.id, [...work.doc_ids]]);
+    const dir = join(paths.outputDir, pdf.doc_id);
+    const filesBefore = [
+      "original.pdf",
+      `${pdf.doc_id}.json`,
+      "annotations.json",
+      "reading-position.json",
+    ].map((file) => readFileSync(join(dir, file)));
+
+    const response = await attach(`?id=${encodeURIComponent(DOCLESS_WORK)}`);
+    expect(response.status).toBe(500);
+    expect(loadWork(DOCLESS_WORK)?.doc_ids).toEqual(
+      linksBefore.find(([id]) => id === DOCLESS_WORK)?.[1]
+    );
+    expect(loadWork(USER_DOC_WORK)?.doc_ids).toEqual(
+      linksBefore.find(([id]) => id === USER_DOC_WORK)?.[1]
+    );
+    ["original.pdf", `${pdf.doc_id}.json`, "annotations.json", "reading-position.json"].forEach(
+      (file, index) => {
+        expect(readFileSync(join(dir, file))).toEqual(filesBefore[index]);
+      }
+    );
+    expect(ingestJobs()).toHaveLength(0);
+  });
+
+  test("a Work mixing PDF and LaTeX zip still keeps legacy Scenario C blocked", async () => {
+    const bytes = readFileSync(new URL("./fixtures/pdf/scanned-no-text.pdf", import.meta.url));
+    const workBefore = loadWork(USER_DOC_WORK);
+    if (!workBefore) throw new Error("fixture Work missing");
+    publishPdfDoc(paths, {
+      workId: USER_DOC_WORK,
+      filename: "additional.pdf",
+      bytes,
+      pages: [{ width: 612, height: 792, rotation: 0 }],
+    });
+    const response = await attach(`?id=${encodeURIComponent(USER_DOC_WORK)}`);
+    expect(response.status).toBe(409);
+    expect(((await response.json()) as { detail: string }).detail).toContain("non-arXiv doc");
+    expect(ingestJobs()).toHaveLength(0);
+  });
+
+  test("PDF-only Work explicitly fetching LaTeX appends a distinct Doc without changing the PDF main or sidecars", async () => {
+    const bytes = readFileSync(new URL("./fixtures/pdf/scanned-no-text.pdf", import.meta.url));
+    const pdf = publishPdfDoc(paths, {
+      workId: DOCLESS_WORK,
+      filename: "existing.pdf",
+      bytes,
+      pages: [{ width: 612, height: 792, rotation: 0 }],
+    });
+    const pdfDir = join(paths.outputDir, pdf.doc_id);
+    const originalBefore = readFileSync(join(pdfDir, "original.pdf"));
+    const annotationsBefore = readFileSync(join(pdfDir, "annotations.json"));
+    const positionBefore = readFileSync(join(pdfDir, "reading-position.json"));
+    const response = await attach(`?id=${encodeURIComponent(DOCLESS_WORK)}`);
+    expect(response.status).toBe(202);
+    const { job } = (await response.json()) as { job: Job };
+    const done = await runner.waitFor(job.id);
+    expect(done.status, done.error ?? "").toBe("done");
+    expect((done.result as { status: string }).status).toBe("appended");
+    expect(loadWork(DOCLESS_WORK)?.doc_ids).toEqual([pdf.doc_id, "arxiv-1108.0941"]);
+    expect(readFileSync(join(pdfDir, "original.pdf"))).toEqual(originalBefore);
+    expect(readFileSync(join(pdfDir, "annotations.json"))).toEqual(annotationsBefore);
+    expect(readFileSync(join(pdfDir, "reading-position.json"))).toEqual(positionBefore);
   });
 
   test("202 attach: docless work gains the arXiv doc as main; broadcasts ordered", async () => {
@@ -254,85 +343,75 @@ describe("POST /api/library/attach-arxiv", () => {
   });
 });
 
-describe("works route: the automatic trigger (D1/D6/D15)", () => {
-  test("identifier arXiv create auto-queues the fetch; the doc lands", async () => {
+describe("works route: automatic arXiv PDF acquisition", () => {
+  test("identifier create queues a PDF and retains add notification ordering", async () => {
     const res = await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
-    expect(res.status).toBe(200);
     const body = (await res.json()) as { results: Array<{ status: string }> };
     expect(body.results[0]?.status).toBe("created");
-    const job = ingestJobs()[0];
-    expect(job).toBeDefined();
-    expect(job?.payload).toEqual({ workId: "arxiv:2609.17036", arxivId: "2609.17036" });
+    const job = autoPdfJobs()[0];
+    expect(job?.payload).toMatchObject({
+      workId: "arxiv:2609.17036",
+      arxivId: "2609.17036",
+      format: "arxiv-pdf",
+      automatic: true,
+    });
     expect((await runner.waitFor(job?.id ?? "")).status).toBe("done");
-    expect(loadWork("arxiv:2609.17036")?.doc_ids).toEqual(["arxiv-2609.17036"]);
-    // job.created precedes the library.changed("add") of the creation itself
+    const docs = loadWork("arxiv:2609.17036")?.doc_ids ?? [];
+    expect(docs).toHaveLength(1);
+    expect(docs[0]).toMatch(/^pdf-/);
     const s = stream();
     expect(s.indexOf("job.created")).toBeLessThan(s.indexOf("library.changed:add"));
   });
 
-  test("identifier DOI create without a resolved arXiv id queues nothing", async () => {
-    const res = await postWorks({ mode: "identifier", value: "10.1234/brand-new" });
-    expect(res.status).toBe(200);
-    expect(ingestJobs()).toEqual([]);
-  });
-
-  test("a bib batch never auto-queues, even with an eprint field (D1)", async () => {
-    const res = await postWorks({
+  test("DOI without resolved arXiv ID and bulk BibTeX never auto-fetch", async () => {
+    await postWorks({ mode: "identifier", value: "10.1234/brand-new" });
+    await postWorks({
       mode: "bib",
-      bib: "@article{mykey2026,\n  author = {Doe, Jane},\n  title = {A Batch Paper},\n  year = {2026},\n  eprint = {2609.17037},\n  archivePrefix = {arXiv}\n}",
+      bib: "@article{mykey2026,\n author={Doe, Jane},\n title={Batch},\n year={2026},\n eprint={2609.17037},\n archivePrefix={arXiv}\n}",
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { results: Array<{ status: string }> };
-    expect(body.results[0]?.status).toBe("created");
-    expect(loadWork("arxiv:2609.17037")?.arxiv_id).toBe("2609.17037");
-    expect(ingestJobs()).toEqual([]);
+    expect(autoPdfJobs()).toEqual([]);
   });
 
-  test("auto_ingest_arxiv=false disables the auto trigger (manual stays on)", async () => {
+  test("disabled automatic setting leaves manual Stage 15 LaTeX acquisition available", async () => {
     autoFlag = false;
-    const res = await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
-    expect(res.status).toBe(200);
-    expect(ingestJobs()).toEqual([]);
-    // …but the manual endpoint still works (D15)
+    await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
+    expect(autoPdfJobs()).toEqual([]);
     const manual = await attach("?id=arxiv:2609.17036");
-    expect(manual.status).toBe(202);
-    const { job } = (await manual.json()) as { job: Job };
+    const job = ((await manual.json()) as { job: Job }).job;
     expect((await runner.waitFor(job.id)).status).toBe("done");
     expect(loadWork("arxiv:2609.17036")?.doc_ids).toEqual(["arxiv-2609.17036"]);
   });
 
-  test("exists re-add of a docless work also triggers (D6)", async () => {
-    autoFlag = false; // create it docless first
+  test("exists re-add queues only while no PDF is registered", async () => {
+    autoFlag = false;
     await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
-    expect(ingestJobs()).toEqual([]);
     autoFlag = true;
-    const res = await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
-    const body = (await res.json()) as { results: Array<{ status: string }> };
-    expect(body.results[0]?.status).toBe("exists");
-    const job = ingestJobs()[0];
+    await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
+    const job = autoPdfJobs()[0];
     expect(job).toBeDefined();
     expect((await runner.waitFor(job?.id ?? "")).status).toBe("done");
-    expect(loadWork("arxiv:2609.17036")?.doc_ids).toEqual(["arxiv-2609.17036"]);
+    await postWorks({ mode: "identifier", value: "arXiv:2609.17036" });
+    expect(autoPdfJobs()).toHaveLength(1);
   });
 
-  test("bibcode mode (the Discovery add path) auto-queues when the export has an eprint", async () => {
+  test("bibcode mode (Discovery add) auto-fetches when resolution supplies arXiv ID", async () => {
     sources = {
       ads: {
         status: "ok",
         resolve: async () => null,
         exportBibtex: async () =>
-          "@article{2020ApJ...876L..6S,\n  author = {Smith, Jane},\n  title = {A Stub ADS Paper},\n  year = {2020},\n  eprint = {2601.00099},\n  archivePrefix = {arXiv}\n}",
+          "@article{2020ApJ...876L..6S,\n author={Smith, Jane},\n title={Stub ADS Paper},\n year={2020},\n eprint={2601.00099},\n archivePrefix={arXiv}\n}",
       },
       crossref: { resolve: async () => null },
       oa: { resolve: async () => null },
     };
-    const res = await postWorks({ mode: "bibcode", bibcode: "2020ApJ...876L..6S" });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { results: Array<{ status: string }> };
-    expect(body.results[0]?.status).toBe("created");
-    const job = ingestJobs()[0];
-    expect(job?.payload).toEqual({ workId: "arxiv:2601.00099", arxivId: "2601.00099" });
+    await postWorks({ mode: "bibcode", bibcode: "2020ApJ...876L..6S" });
+    const job = autoPdfJobs()[0];
+    expect(job?.payload).toMatchObject({
+      workId: "arxiv:2601.00099",
+      arxivId: "2601.00099",
+      format: "arxiv-pdf",
+    });
     expect((await runner.waitFor(job?.id ?? "")).status).toBe("done");
-    expect(loadWork("arxiv:2601.00099")?.doc_ids).toEqual(["arxiv-2601.00099"]);
   });
 });

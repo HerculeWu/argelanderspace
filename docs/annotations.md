@@ -110,6 +110,26 @@ Stage 8 MS2 已修 submit/spool 失败 pin 泄漏：submit catch 释放，waitFo
 
 部分 rm 失败可能留 ghost 条目（I002，见本地 tracker）；**I020（已接受）**：no-op DELETE 仍广播，watcher 对 current 消失可发 external，web 容忍 404；有可观察实害再改，目前不当作数据丢失。前端确认“该文档及其 N 条标注将永久删除，此文档将从所有关联文献条目中移除”。删除后 workspace applyDocDeletion 显式三态并更新 papers，而非依赖仅启动 fetch 一次的 Shell 自动刷新。
 
+## PDF 工作台标注（新增，与 LaTeX 分离）
+
+PDF 标注写入 `<output>/<doc_id>/annotations.json` 独立 sidecar，不进入原始 PDF、LaTeX `annotations/<doc>/current.json` 或其 archive。contract `PdfAnnotationsFileSchema` 固定版本、Doc、SHA-256 与单调 rev；标注类型封闭为 rectangle、page_comment、document_comment、highlight、underline、strikeout。票 05 启用 rectangle/page_comment/document_comment；票 06 已启用真实 PDF 文字层选择的 highlight/underline/strikeout。文字 target 保存不可变 `quote` 与按零基页分组的 normalized visible-page `rectangles`；多页片段属于同一 `id`、body 和 sidecar array entry。SDK page-space 字形矩形先按各页真实尺寸归一化，再由 metadata rotation 转成可见页坐标；绘制时逆变换到 SDK Rotate 包装层的局部 CSS 坐标。CropBox、异构页尺寸、旋转页各自使用本页几何；viewport、缩放像素或临时文字索引不持久化。扫描页无真实文字矩形时不能创建文字 target，区域/页/篇工具仍可用。PDF 工作台右栏的「选择文字」与「框选区域」是互斥工具模式：选择文字后按住鼠标左键拖动、松开固定真实引擎选区，工具栏点击不改变已确认范围；再按下纸面清除旧选区并可直接拖出新选区。SDK 绘制的页面图像不允许触发浏览器原生图片拖动；取消工具或按 Escape 回阅读模式。已有 Shift+方向键跨页扩选仍可用；纯鼠标跨页拖拽未作为已通过能力宣称。
+
+工作台矩形用 `page_index` 与相对可见页的归一化 `x/y/width/height`，必须有限、正面积、完全位于 `[0,1]` 页界；style 只属于 rectangle。page comment 锚定零基页索引，document comment 不造第零页。body trim 非空但保存原字节；创建时的默认内容按当前创建语言写入，后续编辑不翻译。工具种类、Doc、创建时间与页 target 不随更新改变；PDF Server 对 SHA-256 与 expected rev 双检，content-changed/rev-mismatch/busy 分别是 409，坏 sidecar/元数据/文件为 500，未知 Doc/owner 为 404。有效变更通过同目录原子替换，rev 只增不减；PDF 写入路径不调用 LaTeX ensure/archive，未成功保存不发 `annotation.changed`。
+
+sidecar 是用户数据：读取和写入均验证 schema/binding/真实原件；JSON/未来版本损坏不会被重置。写入时保留当前未知 additive 字段，不经 schema strip round-trip；PDF 内容 hash mismatch 不归档、不重绑、不生成空文件。阅读位置使用独立版本化、SHA 绑定的 `reading-position.json` 与自己的 optimistic rev/原子 rename 写入，不复用标注 revision；滚动保存合并节流，深链接优先，外部标签页通知不驱动当前 Reader 跳动。损坏、未来 schema、缺失及写/rename 错误保留 sidecar 原字节，并以独立位置状态显示，不将已验证 PDF 正文误判为失败。Retry 对响应返回时的当前 pending 位置再做比较，不能拿 GET 前 capture 覆盖 Retry 等待期间的新滚动；newer foreign rev 中只有与用户最新 pending 位置完全一致才可作为已提交确认，否则保留 pending 并报冲突。若先前位置加载本身失败而没有本地 pending，读到合法现存 sidecar 后可恢复其位置，但在深链接/user-input 接管时不得回拉。PDF 内嵌标注仍由原 PDF/SDK 只读显示，不进入工作台 sidecar。
+
+### PDF Reader 导航
+
+PDF 的原生 bookmark 树映射进共享 `TocPanel` 的 `OutlineList`；没有可解析 bookmarks 时显示无目录状态，不以 OCR 或伪造章节补齐。搜索使用 PDF 引擎的真实文字层及 Search plugin；无匹配时说明可能没有文字层，不伪称识别扫描文字。选区复制走浏览器 Clipboard API，只有权限下实际成功才显示已复制，失败明确显示。
+
+Reader 沿既有 `/doc/:doc_id#anchor` 路由格式增加 1-based 页 anchor `#page-N`，annotation anchor 仍为 `#ann-<id>`。PDF anchors 要求该 Doc、SHA与sidecar snapshot接纳后消费；annotation anchors 按sidecar逻辑记录首个有效页片段定位，篇评论只打开对应右栏记录。未知/删除/越界 anchor 不跳到其他 Doc/位置，不读 archive，不写数据。点击 PDF internal destination交给SDK导航；外链只接受绝对 HTTP(S)且无用户名/密码，通过 `window.open(...,"_blank","noopener,noreferrer")`；PDF launch/file/JavaScript/其他 action 不创建点击入口。工作台按 SDK link 的页局部几何与各页 rotation绘制链接命中区，缩放后仍随同页坐标；原件不改写。旧 LaTeX `sec`/float/reference/`ann` deep-link消费路径不变。
+
+Web 对每个已打开 PDF Doc 使用单一 `PdfAnnotationSession` 协调页/篇/矩形/文字操作：expected rev 串行 PUT、工作台本地撤销重做（已提交操作用新 PUT）、正文显式保存、几何/样式手势及文字选择完成后保存。跨页标记整体创建、删除、撤销和重做，target 与 quote 创建后不可变；新的不同文字必须重新选择并创建新标注。本标签页广播的 `annotation.changed` 允许触发校验 GET，但不能在自身在途 PUT 尚未回包时把其新 rev 误作外部冲突；外部冲突须显式重试合并或放弃，不盲目重发；若另一标签页修改了同一字段或待删除标注，本地操作不能覆写它，保留草稿提示复制/放弃。读取失败仍是系统错误，不伪装 rev 冲突。失败队列和后续输入在当前会话保留，关闭通知只隐藏横幅、不清失败或解除离开保护。切换 Doc/会话代际后不接纳旧 GET/PUT 的成功或失败；草稿不跨刷新持久化。PDF 页矩形的 pointer 捕获结束由 Reader 统一提交，鼠标在虚拟化页上被引擎取消时以最后有效预览完成一次，触摸取消则丢弃手势；位置仍存页局部归一化矩形，而非屏幕像素。
+
+Web 每次挂载使用一个按 Doc/固定 SHA-256 绑定的临时 annotation session；它协调创建、删除、矩形几何/样式与显式正文保存，PUT 顺序由上一次成功返回的 rev 推进。几何/样式操作仅在指针手势或控件操作完成后入队，正文 textarea 保持草稿直到点击保存。迟到 PUT/GET 在 session unmount/generation 改变后不能更新新 Reader；同值 `annotation.changed` 是当前 revision 回声时忽略，foreign rev 则清除本地 undo/redo 并保留待提交草稿。Rev 冲突需用户显式 retry（重新读同 SHA sidecar 后按变更字段重放）或 discard，不自动盲写；目标 Doc/hash 不匹配时锁定视图与操作，只有重新验证相同原件 hash 才能恢复。已提交操作的 undo/redo 通过新 PUT 表达，rev 永不回退。离开有未提交内容/失败/请求时用应用内确认和 `beforeunload` 提醒；草稿只在当前页面，不写硬盘/浏览器存储，不承诺刷新恢复。
+
+PDF 删除确认使用 `GET /api/paper/:doc_id/pdf/annotations/count` 直接读取并校验 PDF 的独立工作台 sidecar；损坏、busy 或 hash 不匹配是未知计数，不借用 LaTeX annotations endpoint，也不将失败冒充零标注。
+
 ## CLI annot
 
 完整输出、顺序、排序、错误与零写盘契约已集中于 [contracts 的 CLI annot 冻结契约](contracts.md#cli-annot-冻结契约)。修改 agent 输出时必须阅读全文，不以本专题的 server 路径代替 CLI 语义。

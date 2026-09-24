@@ -135,6 +135,7 @@ function openFilesTab(): void {
 
 function startArxivAcquisition(): void {
   fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
+  fireEvent.click(screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ }));
   fireEvent.click(screen.getByRole("button", { name: "开始获取" }));
 }
 
@@ -313,7 +314,7 @@ describe("D17 cleanup of acquisition ads", () => {
     renderDetail(REF_NEEDS_UPLOAD);
     openFilesTab();
     fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
-    expect((screen.getByLabelText(/从 arXiv 获取/) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ }) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByLabelText("上传 LaTeX 源码包")).toBeTruthy();
   });
 

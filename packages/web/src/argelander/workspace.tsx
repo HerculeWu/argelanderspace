@@ -39,6 +39,20 @@ export function applyDocDeletion(
   return { papers, currentDoc: remaining[0] ?? null };
 }
 
+const leaveGuards = new Set<() => boolean>();
+
+/** Register a transient user-data leave guard for workspace navigation. */
+export function registerWorkspaceLeaveGuard(guard: () => boolean): () => void {
+  leaveGuards.add(guard);
+  return () => leaveGuards.delete(guard);
+}
+
+/** Ask active transient work sessions before changing a Doc or leaving its pane. */
+export function confirmWorkspaceLeave(): boolean {
+  for (const guard of leaveGuards) if (!guard()) return false;
+  return true;
+}
+
 const Ctx = createContext<Workspace | null>(null);
 
 export const WorkspaceProvider = Ctx.Provider;

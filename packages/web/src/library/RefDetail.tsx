@@ -3,13 +3,16 @@ import { useTranslation } from "react-i18next";
 import type { Job } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import {
+  acquireArxivPdf,
   attachArxiv,
   type DocProvenance,
   fetchDocProvenance,
   patchRef,
   uploadLatexZip,
+  uploadPdf,
 } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
+import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
 import { Badge, Button, Dialog, IconButton, InlineMessage, Tabs } from "../ui";
@@ -51,7 +54,7 @@ function bibtexOf(r: LibraryRef): string {
 
 const TABS = ["meta", "info", "bib", "notes", "files"] as const;
 type DetailTab = (typeof TABS)[number];
-type AcquisitionMethod = "arxiv" | "upload";
+type AcquisitionMethod = "pdf" | "arxiv" | "upload";
 
 type AcquisitionRisk =
   | { state: "new" }
@@ -118,6 +121,7 @@ export function RefDetail({
   onOpenDoc,
   onReload,
   onDocDeleted,
+  onBeforeDocDelete,
   explore,
 }: {
   r: LibraryRef;
@@ -129,6 +133,7 @@ export function RefDetail({
    *  doc_ids after the deletion (its [0] is the new main). The LibraryView
    *  wires this to the workspace's three-state transition. */
   onDocDeleted?: (docId: string, remaining: string[]) => void;
+  onBeforeDocDelete?: (docId: string) => boolean;
   /**
    * Stage 14 (D1/D9): the "explore related papers" entry — enabled only with
    * a usable ADS bibcode AND a live backend (no demo/fixture exploration).
@@ -164,6 +169,17 @@ export function RefDetail({
   const uploadJobRef = useRef<Job | null>(null);
   const seenJobs = useRef(new Map<string, Job>());
   const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [pdfUploadJob, setPdfUploadJobState] = useState<Job | null>(null);
+  const pdfUploadJobRef = useRef<Job | null>(null);
+  const pdfUploadSubmissions = useRef(new Set<string>());
+  const setPdfUploadJob = (job: Job | null) => { pdfUploadJobRef.current = job; setPdfUploadJobState(job); };
+  const [pdfUploadError, setPdfUploadError] = useState<string | null>(null);
+  const [pdfUploadBusy, setPdfUploadBusy] = useState(false);
+  const [pdfResourceWarning, setPdfResourceWarning] = useState(false);
+  const [pendingPdfFile, setPendingPdfFile] = useState<File | null>(null);
+  const [pdfErrorDismissed, setPdfErrorDismissed] = useState(false);
+  const pdfFileRef = useRef<HTMLInputElement>(null);
+  const adoptedPdfFailure = useRef(false);
   // Stage 15: this work's arXiv fetch job (kind "ingest", payload.workId) —
   // the same adoption/race rules as the upload job. `arxivErrCode` carries
   // the server's machine-readable failure class ("arxiv_pdf_only" → the
@@ -172,6 +188,12 @@ export function RefDetail({
   const arxivJobRef = useRef<Job | null>(null);
   const [arxivErr, setArxivErr] = useState<string | null>(null);
   const [arxivErrCode, setArxivErrCode] = useState<string | null>(null);
+  const [arxivPdfJob, setArxivPdfJob] = useState<Job | null>(null);
+  const [arxivPdfError, setArxivPdfError] = useState<string | null>(null);
+  const [arxivPdfErrorDismissed, setArxivPdfErrorDismissed] = useState(false);
+  const [arxivPdfFailureJobId, setArxivPdfFailureJobId] = useState<string | null>(null);
+  const dismissedArxivPdfFailures = useRef(new Set<string>());
+  const arxivPdfJobRef = useRef<Job | null>(null);
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
   const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
@@ -198,8 +220,13 @@ export function RefDetail({
   const versions = r.doc_ids ?? (r.doc_id ? [r.doc_id] : []);
   const mainDoc = r.doc_id ?? versions[0];
   const arxivTarget = arxivAcquisitionDocId(r.arxiv_id);
-  const arxivAllowed =
-    arxivTarget !== null && (versions.length === 0 || versions.includes(arxivTarget));
+  const arxivAllowed = arxivTarget !== null;
+  const arxivLatexUpdatesExisting = Boolean(mainDoc) && (!arxivTarget || versions.includes(arxivTarget));
+  const arxivLatexAllowed =
+    arxivTarget !== null &&
+    (versions.length === 0 ||
+      versions.includes(arxivTarget) ||
+      versions.every((docId) => docProvenance[docId] === "pdf" || docProvenance[docId] === "arxiv-pdf"));
   const versionsKey = versions.join("\u0000");
 
   useEffect(() => {
@@ -446,7 +473,7 @@ export function RefDetail({
   };
 
   const onConfirmDelete = async (docId: string) => {
-    if (delBusyRef.current) return;
+    if (delBusyRef.current || (onBeforeDocDelete && !onBeforeDocDelete(docId))) return;
     delBusyRef.current = true;
     const requestId = ++delRequestId.current;
     setDelBusy(true);
@@ -481,6 +508,59 @@ export function RefDetail({
       ? i18n.t("library.detail.arxiv.failed", { error: job.error })
       : i18n.t("library.detail.arxiv.failedGeneric");
 
+  const choosePdfFile = (file: File | null): void => {
+    if (!file) return;
+    if (file.size === 0) { setPdfUploadError(i18n.t("library.detail.pdfUpload.empty")); return; }
+    if (!file.name.toLowerCase().endsWith(".pdf")) { setPdfUploadError(i18n.t("library.detail.pdfUpload.extension")); return; }
+    if (file.size > 50 * 1024 * 1024) { setPdfUploadError(i18n.t("library.detail.pdfUpload.tooLarge")); return; }
+    if (file.size >= 25 * 1024 * 1024) {
+      setPendingPdfFile(file);
+      setPdfResourceWarning(true);
+      return;
+    }
+    void queuePdfUpload(file);
+  };
+
+  const queuePdfUpload = async (file: File): Promise<void> => {
+    const session = workSession.current;
+    if (pdfUploadSubmissions.current.has(session.workId)) return;
+    pdfUploadSubmissions.current.add(session.workId);
+    setPdfUploadBusy(true);
+    setPdfUploadError(null);
+    setPdfErrorDismissed(false);
+    try {
+      const accepted = await uploadPdf(session.workId, file);
+      if (!isCurrentWorkSession(session)) {
+        if (!accepted.ok) pdfUploadSubmissions.current.delete(session.workId);
+        return;
+      }
+      setPdfUploadBusy(false);
+      if (!accepted.ok) {
+        pdfUploadSubmissions.current.delete(session.workId);
+        setPdfUploadError(accepted.status === 409 ? i18n.t("library.detail.pdfUpload.busy") : accepted.detail);
+        setPdfErrorDismissed(false);
+        return;
+      }
+      setPdfResourceWarning(accepted.resourceWarning);
+      const seen = seenJobs.current.get(accepted.job.id);
+      if (seen?.status === "failed" || seen?.status === "interrupted") {
+        pdfUploadSubmissions.current.delete(session.workId);
+        setPdfUploadError(seen.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"));
+      } else if (seen?.status === "done") {
+        pdfUploadSubmissions.current.delete(session.workId);
+        onReload?.();
+      } else {
+        setPdfUploadJob(seen ?? accepted.job);
+      }
+    } catch (error) {
+      pdfUploadSubmissions.current.delete(session.workId);
+      if (isCurrentWorkSession(session)) {
+        setPdfUploadBusy(false);
+        setPdfUploadError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  };
+
   const queueUpload = async (file: File): Promise<boolean> => {
     const session = workSession.current;
     setUploadErr(null);
@@ -513,15 +593,52 @@ export function RefDetail({
   useEffect(() => {
     adoptedFailure.current = false;
     adoptedArxivFailure.current = false;
+    adoptedPdfFailure.current = false;
+    setPdfUploadJob(null);
+    setPdfUploadError(null);
+    setPendingPdfFile(null);
+    setPdfResourceWarning(false);
+    setPdfUploadBusy(pdfUploadSubmissions.current.has(r.id));
+    arxivPdfJobRef.current = null;
+    setArxivPdfJob(null);
+    setArxivPdfError(null);
+    setArxivPdfErrorDismissed(false);
+    setArxivPdfFailureJobId(null);
   }, [r.id]);
   useEffect(
     () =>
       onJobEvent((job) => {
-        if (jobWorkId(job) !== r.id) return;
+        const targetWorkId = jobWorkId(job);
+        const isPdfUpload = job.kind === "upload" && (job.payload as { format?: unknown } | undefined)?.format === "pdf";
+        if (isPdfUpload && targetWorkId && (job.status === "done" || job.status === "failed" || job.status === "interrupted")) {
+          pdfUploadSubmissions.current.delete(targetWorkId);
+        }
+        if (targetWorkId !== r.id) return;
         const previous = seenJobs.current.get(job.id);
         if (isJobSnapshotRegression(previous, job)) return;
         seenJobs.current.set(job.id, job);
-        if (job.kind === "upload") {
+        const payloadFormat = (job.payload as { format?: unknown } | undefined)?.format;
+        if (job.kind === "upload" && payloadFormat === "arxiv-pdf") {
+          const currentPdfJob = arxivPdfJobRef.current;
+          if (currentPdfJob && currentPdfJob.id === job.id) setArxivPdfJob(job);
+          else if (!currentPdfJob && (job.status === "queued" || job.status === "running")) {
+            arxivPdfJobRef.current = job;
+            setArxivPdfJob(job);
+          } else if (!currentPdfJob && (job.status === "failed" || job.status === "interrupted")) {
+            setArxivPdfError(job.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"));
+            setArxivPdfFailureJobId(job.id);
+            setArxivPdfErrorDismissed(dismissedArxivPdfFailures.current.has(job.id));
+          }
+        } else if (job.kind === "upload" && payloadFormat === "pdf") {
+          const currentPdfJob = pdfUploadJobRef.current;
+          if (currentPdfJob && job.id === currentPdfJob.id) setPdfUploadJob(job);
+          else if (!currentPdfJob && (job.status === "queued" || job.status === "running")) setPdfUploadJob(job);
+          else if (!currentPdfJob && (job.status === "failed" || job.status === "interrupted") && !adoptedPdfFailure.current) {
+            adoptedPdfFailure.current = true;
+            setPdfUploadError(job.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"));
+            setPdfErrorDismissed(false);
+          }
+        } else if (job.kind === "upload") {
           const cur = uploadJobRef.current;
           if (cur && job.id === cur.id) setUploadJob(job);
           else if (!cur && (job.status === "queued" || job.status === "running")) {
@@ -555,7 +672,39 @@ export function RefDetail({
     [r.id, setUploadJob, setArxivJob]
   );
 
+  useEffect(() => {
+    if (!arxivPdfJob) return;
+    if (arxivPdfJob.status === "done") {
+      arxivPdfJobRef.current = null;
+      setArxivPdfJob(null);
+      setArxivPdfError(null);
+      setArxivPdfErrorDismissed(false);
+      setArxivPdfFailureJobId(null);
+      onReload?.();
+    } else if (arxivPdfJob.status === "failed" || arxivPdfJob.status === "interrupted") {
+      arxivPdfJobRef.current = null;
+      setArxivPdfJob(null);
+      setArxivPdfError(arxivPdfJob.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"));
+      setArxivPdfFailureJobId(arxivPdfJob.id);
+      setArxivPdfErrorDismissed(dismissedArxivPdfFailures.current.has(arxivPdfJob.id));
+    }
+  }, [arxivPdfJob, onReload]);
+
   // react to the terminal states (kept out of the subscriber, which must stay pure)
+  useEffect(() => {
+    if (!pdfUploadJob) return;
+    if (pdfUploadJob.status === "done") {
+      setPdfUploadJob(null);
+      setPdfUploadError(null);
+      setPendingPdfFile(null);
+      onReload?.();
+    } else if (pdfUploadJob.status === "failed" || pdfUploadJob.status === "interrupted") {
+      setPdfUploadError(pdfUploadJob.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"));
+      setPdfErrorDismissed(false);
+      setPdfUploadJob(null);
+    }
+  }, [pdfUploadJob, onReload, setPdfUploadJob]);
+
   useEffect(() => {
     if (!uploadJob) return;
     if (uploadJob.status === "done") {
@@ -572,6 +721,31 @@ export function RefDetail({
   // The clickable acquisition line / the per-doc refetch entry: queue the
   // fetch (202 → queued or in-flight job); a non-202 (409 scenario C,
   // offline demo, …) surfaces as the generic failure line.
+  const onFetchArxivPdf = async (): Promise<boolean> => {
+    const session = workSession.current;
+    setArxivPdfError(null);
+    setArxivPdfErrorDismissed(false);
+    setArxivPdfFailureJobId(null);
+    const job = await acquireArxivPdf(session.workId);
+    if (!isCurrentWorkSession(session)) return false;
+    if (!job) {
+      setArxivPdfError(i18n.t("library.detail.arxivPdf.submitFailed"));
+      return false;
+    }
+    const seen = seenJobs.current.get(job.id);
+    if (!seen || seen.status === "queued" || seen.status === "running") {
+      arxivPdfJobRef.current = seen ?? job;
+      setArxivPdfJob(seen ?? job);
+    } else if (seen.status === "done") {
+      onReload?.();
+    } else {
+      setArxivPdfError(seen.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"));
+      setArxivPdfFailureJobId(seen.id);
+      setArxivPdfErrorDismissed(dismissedArxivPdfFailures.current.has(seen.id));
+    }
+    return true;
+  };
+
   const onFetchArxiv = async (): Promise<boolean> => {
     const session = workSession.current;
     setArxivErr(null);
@@ -597,9 +771,9 @@ export function RefDetail({
 
   const openAcquisition = (method?: AcquisitionMethod) => {
     const selected =
-      method === "arxiv" && !arxivAllowed
-        ? "upload"
-        : (method ?? (arxivAllowed ? "arxiv" : "upload"));
+      method === "arxiv" && !arxivLatexAllowed
+        ? (arxivAllowed ? "pdf" : "upload")
+        : (method ?? (arxivAllowed ? "pdf" : "upload"));
     const targetDocId =
       selected === "arxiv" && arxivTarget && versions.includes(arxivTarget)
         ? arxivTarget
@@ -666,9 +840,11 @@ export function RefDetail({
         : current
     );
     const accepted =
-      flow.method === "arxiv"
-        ? await onFetchArxiv()
-        : await queueUpload(flow.file as File);
+      flow.method === "pdf"
+        ? await onFetchArxivPdf()
+        : flow.method === "arxiv"
+          ? await onFetchArxiv()
+          : await queueUpload(flow.file as File);
     submittingAcquisitionFlows.current.delete(flow.id);
     if (
       acquisitionFlowSequence.current !== flow.id ||
@@ -927,9 +1103,25 @@ export function RefDetail({
           <div className="ref-files">
             <div className="ref-files-head">
               <h2>{t("library.detail.files.documents")}</h2>
+              <input
+                ref={pdfFileRef}
+                className="visually-hidden"
+                type="file"
+                accept="application/pdf,.pdf"
+                aria-label={t("library.detail.pdfUpload.choose")}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0] ?? null;
+                  event.currentTarget.value = "";
+                  choosePdfFile(file);
+                }}
+              />
+              <Button variant="ghost" disabled={pdfUploadBusy || pdfUploadJob !== null} onClick={() => pdfFileRef.current?.click()}>
+                <Icon name="file-up" cls="ico-sm" />
+                {t("library.detail.pdfUpload.choose")}
+              </Button>
               <Button
                 variant="ghost"
-                disabled={uploadJob !== null || arxivJob !== null}
+                disabled={uploadJob !== null || arxivJob !== null || arxivPdfJob !== null}
                 onClick={() => openAcquisition()}
               >
                 <Icon name="file-up" cls="ico-sm" />
@@ -940,8 +1132,44 @@ export function RefDetail({
                 )}
               </Button>
             </div>
-            {(uploadJob || arxivJob || uploadErr || arxivErr || mainErr) && (
+            {(uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || pdfUploadJob || pdfUploadError || (pendingPdfFile && pdfResourceWarning)) && (
               <div className="ref-task-messages">
+                {arxivPdfJob && (
+                  <InlineMessage title={t(arxivPdfJob.status === "queued" ? "library.detail.jobs.queued" : "library.detail.arxivPdf.fetching")}>
+                    {arxivPdfJob.status === "queued" ? t("library.detail.jobs.queueHelp") : arxivPdfJob.progress[arxivPdfJob.progress.length - 1]?.message ?? t("library.detail.arxivPdf.fetching")}
+                  </InlineMessage>
+                )}
+                {arxivPdfError && (
+                  <InlineMessage tone="danger" title={t("library.detail.arxivPdf.failedTitle")}>
+                    {!arxivPdfErrorDismissed && <IconButton variant="ghost" label={t("library.detail.arxivPdf.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => { if (arxivPdfFailureJobId) dismissedArxivPdfFailures.current.add(arxivPdfFailureJobId); setArxivPdfErrorDismissed(true); }} />}
+                    <p>{arxivPdfErrorDismissed ? t("library.detail.arxivPdf.failedSummary") : arxivPdfError}</p>
+                    <Button variant="ghost" onClick={() => openAcquisition("pdf")}>{t("library.detail.arxivPdf.retry")}</Button>
+                  </InlineMessage>
+                )}
+                {pdfUploadJob && (
+                  <InlineMessage title={t(pdfUploadJob.status === "queued" ? "library.detail.jobs.queued" : "library.detail.pdfUpload.uploading")}>
+                    {pdfUploadJob.status === "queued" ? t("library.detail.jobs.queueHelp") : pdfUploadJob.progress[pdfUploadJob.progress.length - 1]?.message ?? t("library.detail.pdfUpload.uploading")}
+                  </InlineMessage>
+                )}
+                {pendingPdfFile && pdfResourceWarning && (
+                  <InlineMessage tone="warning" title={t("library.detail.pdfUpload.resourceWarning")}>
+                    <p>{t("library.detail.pdfUpload.resourceWarningDetail", { filename: pendingPdfFile.name, size: (pendingPdfFile.size / (1024 * 1024)).toFixed(1) })}</p>
+                    <Button variant="ghost" disabled={pdfUploadBusy} onClick={() => { const file = pendingPdfFile; setPendingPdfFile(null); setPdfResourceWarning(false); void queuePdfUpload(file); }}>{t("library.detail.pdfUpload.continue")}</Button>
+                    <Button variant="ghost" onClick={() => { setPendingPdfFile(null); setPdfResourceWarning(false); }}>{t("common.cancel")}</Button>
+                  </InlineMessage>
+                )}
+                {pdfUploadError && (pdfErrorDismissed ? (
+                  <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
+                    <p>{t("library.detail.pdfUpload.failedSummary")}</p>
+                    <Button variant="ghost" onClick={() => pdfFileRef.current?.click()}>{t("library.detail.pdfUpload.retry")}</Button>
+                  </InlineMessage>
+                ) : (
+                  <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
+                    <IconButton variant="ghost" label={t("library.detail.pdfUpload.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => setPdfErrorDismissed(true)} />
+                    <p>{pdfUploadError}</p>
+                    <Button variant="ghost" onClick={() => pdfFileRef.current?.click()}>{t("library.detail.pdfUpload.retry")}</Button>
+                  </InlineMessage>
+                ))}
                 {uploadJob && (
                   <InlineMessage
                     title={t(
@@ -961,7 +1189,7 @@ export function RefDetail({
                     title={t(
                       arxivJob.status === "queued"
                         ? "library.detail.jobs.queued"
-                        : mainDoc
+                        : arxivLatexUpdatesExisting
                           ? "library.detail.jobs.updating"
                           : "library.detail.jobs.fetching"
                     )}
@@ -984,7 +1212,7 @@ export function RefDetail({
                     title={t(
                       arxivErrCode === "arxiv_pdf_only"
                         ? "library.detail.jobs.pdfOnly"
-                        : mainDoc
+                        : arxivLatexUpdatesExisting
                           ? "library.detail.jobs.updateFailed"
                           : "library.detail.jobs.fetchFailed"
                     )}
@@ -1025,11 +1253,15 @@ export function RefDetail({
                     const provenance = docProvenance[docId] ?? "loading";
                     const isMain = docId === mainDoc;
                     const sourceLabel = t(
-                      provenance === "arxiv"
-                        ? "library.detail.files.sourceArxiv"
-                        : provenance === "upload"
+                      provenance === "arxiv-pdf"
+                        ? "library.detail.files.sourceArxivPdf"
+                        : provenance === "arxiv"
+                          ? "library.detail.files.sourceArxiv"
+                          : provenance === "upload"
                           ? "library.detail.files.sourceUpload"
-                          : provenance === "loading"
+                          : provenance === "pdf"
+                            ? "library.detail.files.sourcePdf"
+                            : provenance === "loading"
                             ? "library.detail.files.sourceLoading"
                             : "library.detail.files.sourceUnknown"
                     );
@@ -1037,7 +1269,7 @@ export function RefDetail({
                       <article className="ref-document" key={docId}>
                         <div className="ref-document-heading">
                           <Icon
-                            name={provenance === "upload" ? "file-up" : "file-text"}
+                            name={provenance === "upload" || provenance === "pdf" || provenance === "arxiv-pdf" ? "file-up" : "file-text"}
                             cls="ico-sm"
                           />
                           <strong>{sourceLabel}</strong>
@@ -1146,6 +1378,7 @@ export function RefDetail({
           flow={acquisition}
           arxivId={r.arxiv_id}
           arxivAllowed={arxivAllowed}
+          arxivLatexAllowed={arxivLatexAllowed}
           onMethodChange={(method) => {
             if (acquisition.busy) return;
             const id = ++acquisitionFlowSequence.current;
@@ -1202,6 +1435,7 @@ export function RefDetail({
       {delDoc && (
         <DeleteDocDialog
           docId={delDoc}
+          pdf={docProvenance[delDoc] === "pdf"}
           busy={delBusy}
           error={delErr}
           onCancel={() => setDelDoc(null)}
@@ -1216,6 +1450,7 @@ function AcquisitionDialog({
   flow,
   arxivId,
   arxivAllowed,
+  arxivLatexAllowed,
   onMethodChange,
   onFileChange,
   onCancel,
@@ -1224,6 +1459,7 @@ function AcquisitionDialog({
   flow: AcquisitionFlow;
   arxivId: string | undefined;
   arxivAllowed: boolean;
+  arxivLatexAllowed: boolean;
   onMethodChange: (method: AcquisitionMethod) => void;
   onFileChange: (file: File | null) => void;
   onCancel: () => void;
@@ -1248,7 +1484,8 @@ function AcquisitionDialog({
             busy={flow.busy}
             busyLabel={t("library.detail.acquisition.submitting")}
             disabled={
-              (flow.method === "arxiv" && !arxivAllowed) ||
+              (flow.method === "pdf" && !arxivAllowed) ||
+              (flow.method === "arxiv" && !arxivLatexAllowed) ||
               flow.risk.state === "resolving" ||
               flow.risk.state === "loading" ||
               flow.risk.state === "busy" ||
@@ -1263,7 +1500,9 @@ function AcquisitionDialog({
                 ? "library.detail.acquisition.confirmUpdate"
                 : flow.method === "upload"
                   ? "library.detail.acquisition.startUpload"
-                  : "library.detail.acquisition.startArxiv"
+                  : flow.method === "pdf"
+                    ? "library.detail.acquisition.startPdf"
+                    : "library.detail.acquisition.startArxiv"
             )}
           </Button>
         </>
@@ -1275,21 +1514,19 @@ function AcquisitionDialog({
           <input
             type="radio"
             name="acquisition-method"
-            value="arxiv"
-            checked={flow.method === "arxiv"}
+            value="pdf"
+            checked={flow.method === "pdf"}
             disabled={!arxivAllowed || flow.busy}
-            onChange={() => onMethodChange("arxiv")}
+            onChange={() => onMethodChange("pdf")}
           />
           <span>
-            <strong>{t("library.detail.acquisition.methodArxiv")}</strong>
-            <small>
-              {arxivId
-                ? arxivAllowed
-                  ? `arXiv:${arxivId}`
-                  : t("library.detail.acquisition.arxivBlocked")
-                : t("library.detail.acquisition.noArxiv")}
-            </small>
+            <strong>{t("library.detail.acquisition.methodPdf")}</strong>
+            <small>{arxivId ? `arXiv:${arxivId}` : t("library.detail.acquisition.noArxiv")}</small>
           </span>
+        </label>
+        <label>
+          <input type="radio" name="acquisition-method" value="arxiv" checked={flow.method === "arxiv"} disabled={!arxivLatexAllowed || flow.busy} onChange={() => onMethodChange("arxiv")} />
+          <span><strong>{t("library.detail.acquisition.methodArxivLatex")}</strong><small>{arxivId ? arxivLatexAllowed ? `arXiv:${arxivId}` : t("library.detail.acquisition.arxivBlocked") : t("library.detail.acquisition.noArxiv")}</small></span>
         </label>
         <label>
           <input
@@ -1399,12 +1636,14 @@ function AcquisitionDialog({
  */
 function DeleteDocDialog({
   docId,
+  pdf,
   busy,
   error,
   onCancel,
   onConfirm,
 }: {
   docId: string;
+  pdf: boolean;
   busy: boolean;
   error: { kind: "busy" | "error"; detail: string } | null;
   onCancel: () => void;
@@ -1418,14 +1657,17 @@ function DeleteDocDialog({
   useEffect(() => {
     let current = true;
     setCount({ state: "loading" });
-    void fetchAnnotations(docId).then((result) => {
+    const loadCount = pdf
+      ? fetchPdfAnnotationCount(docId).then((result) => result.ok ? { ok: true as const, count: result.count } : { ok: false as const })
+      : fetchAnnotations(docId).then((result) => result.ok ? { ok: true as const, count: result.file.annotations.length } : { ok: false as const });
+    void loadCount.then((result) => {
       if (!current) return;
-      setCount(result.ok ? { state: "known", value: result.file.annotations.length } : { state: "unknown" });
+      setCount(result.ok ? { state: "known", value: result.count } : { state: "unknown" });
     });
     return () => {
       current = false;
     };
-  }, [docId]);
+  }, [docId, pdf]);
 
   return (
     <Dialog
@@ -1459,7 +1701,7 @@ function DeleteDocDialog({
           <code>{docId}</code>
         </div>
         <InlineMessage tone="warning" title={t("library.detail.deleteDoc.scopeTitle")}>
-          {t("library.detail.deleteDoc.scope")}
+          {t(pdf ? "library.detail.deleteDoc.pdfScope" : "library.detail.deleteDoc.scope")}
         </InlineMessage>
         <p className="ui-delete-doc-count" role="status">
           {count.state === "loading"

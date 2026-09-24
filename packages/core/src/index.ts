@@ -55,6 +55,7 @@ export * from "./library/graph.js";
 export * from "./library/seed.js";
 export * from "./library/sources.js";
 export * from "./library/store.js";
+export * from "./pdf-storage.js";
 export * from "./pipelines/tex/facts/index.js";
 export * from "./pipelines/tex/fuse/cite-format.js";
 export * from "./pipelines/tex/fuse/figures.js";

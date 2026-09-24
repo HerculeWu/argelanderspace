@@ -10,6 +10,9 @@ import { RightPanel } from "../components/RightPanel";
 import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
+import { fetchDocDescription } from "../api/doc";
+import type { DocDescription } from "@argelanderspace/contracts";
+import { PdfReader } from "./PdfReader";
 
 // The document reader, hosted as ArgelanderSpace's Doc pane. Which paper is shown
 // is driven by the shared workspace (so the Library's "open in Doc" works);
@@ -19,7 +22,39 @@ export function DocPane() {
   const { t } = useTranslation();
   const id = ws.currentDoc;
   if (!id) return <div className="reader-root"><div className="loading">{t("doc.empty")}</div></div>;
-  return <ReaderSession key={id} docId={id}><SessionWorkspace /></ReaderSession>;
+  return <DocReadingEntry key={id} docId={id} />;
+}
+
+type DescriptionState =
+  | { phase: "loading" }
+  | { phase: "error" }
+  | { phase: "ready"; description: DocDescription };
+
+function DocReadingEntry({ docId }: { docId: string }) {
+  const { t } = useTranslation();
+  const [attempt, setAttempt] = useState(0);
+  const [state, setState] = useState<DescriptionState>({ phase: "loading" });
+  useEffect(() => {
+    const abort = new AbortController();
+    setState({ phase: "loading" });
+    void fetchDocDescription(docId, abort.signal).then((result) => {
+      if (abort.signal.aborted) return;
+      setState(result.ok ? { phase: "ready", description: result.description } : { phase: "error" });
+    });
+    return () => abort.abort();
+  }, [docId, attempt]);
+
+  if (state.phase === "loading") return <div className="reader-root"><div className="loading">{t("doc.loadingPaper")}</div></div>;
+  if (state.phase === "error") return <div className="reader-root"><div role="alert">
+    {t("doc.sync.error")}
+    <button onClick={() => setAttempt((current) => current + 1)}>{t("doc.sync.manualRetry")}</button>
+  </div></div>;
+  switch (state.description.format) {
+    case "latex":
+      return <ReaderSession docId={docId}><SessionWorkspace /></ReaderSession>;
+    case "pdf":
+      return <div className="reader-root"><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
+  }
 }
 
 function SessionWorkspace() {

@@ -74,9 +74,16 @@ function makeController() {
   return c;
 }
 async function answer(index: number, value: unknown, status = 200) {
+  for (let turn = 0; pending[index] === undefined && turn < 20; turn++) {
+    await act(async () => Promise.resolve());
+  }
+  expect(pending[index], `expected HTTP request ${index} to start`).toBeDefined();
   await act(async () => {
     pending[index]!.resolve(json(value, status));
   });
+}
+async function answerRequest(request: Pending, value: unknown, status = 200) {
+  await act(async () => request.resolve(json(value, status)));
 }
 async function startReady(value = representation()) {
   const c = makeController();
@@ -113,10 +120,12 @@ beforeEach(() => {
   IO.images = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(
-      (url: string, init?: RequestInit) =>
-        new Promise<Response>((resolve) => pending.push({ url: String(url), init, resolve }))
-    )
+    vi.fn((url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/description")) {
+        return Promise.resolve(json({ doc_id: "synthetic", format: "latex" }));
+      }
+      return new Promise<Response>((resolve) => pending.push({ url: String(url), init, resolve }));
+    })
   );
   vi.stubGlobal("IntersectionObserver", IO);
   Element.prototype.scrollIntoView = vi.fn();
@@ -394,9 +403,18 @@ describe("strict shared asset recovery episode", () => {
 describe("DocPane coherent integration and protected drafts", () => {
   it("StrictMode replay rejects the aborted first GET and preserves working navigation with one deep-link consumption", async () => {
     const { container } = renderDoc("p-1", true);
-    expect(pending).toHaveLength(2);
-    await answer(1, representation());
-    await answer(0, representation("late"));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/paper/synthetic/description",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    ));
+    await waitFor(() => expect(pending.some((request) =>
+      request.url.endsWith("/annotations?coherent=1") && request.init?.signal?.aborted
+    )).toBe(true));
+    const obsolete = pending.find((request) => request.init?.signal?.aborted)!;
+    const current = pending.find((request) => request.url.endsWith("/annotations?coherent=1") && !request.init?.signal?.aborted)!;
+    expect(current).toBeTruthy();
+    await answerRequest(current, representation());
+    await answerRequest(obsolete, representation("late"));
     expect(container.querySelector("main.reader")?.textContent).toContain("Real body A");
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledTimes(1);
   });

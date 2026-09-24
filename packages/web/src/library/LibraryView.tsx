@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { useWorkspace } from "../argelander/workspace";
+import { confirmWorkspaceLeave, useWorkspace } from "../argelander/workspace";
 import { fetchLibrary } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
@@ -90,6 +90,7 @@ export function LibraryView() {
       onOpenDoc={ws.openDoc}
       onReload={reload}
       onDocDeleted={ws.docDeleted}
+      onBeforeDocDelete={(docId) => docId !== ws.currentDoc || confirmWorkspaceLeave()}
     />
   );
 }
@@ -100,6 +101,7 @@ function LibraryBody({
   onOpenDoc,
   onReload,
   onDocDeleted,
+  onBeforeDocDelete,
 }: {
   payload: LibraryData;
   live: boolean;
@@ -108,6 +110,7 @@ function LibraryBody({
   /** Stage 8 §8: forwarded to RefDetail — the workspace three-state transition
    *  after a document is physically deleted. */
   onDocDeleted: (docId: string, remaining: string[]) => void;
+  onBeforeDocDelete: (docId: string) => boolean;
 }) {
   const { refs, graph } = payload;
   const { t } = useTranslation();
@@ -355,6 +358,7 @@ function LibraryBody({
           onOpenDoc={onOpenDoc}
           onReload={onReload}
           onDocDeleted={onDocDeleted}
+          onBeforeDocDelete={onBeforeDocDelete}
           explore={{ bibcode: curRef.bibcode ?? null, live, onExplore: (b) => void explore.startExplore(b) }}
         />
       )}

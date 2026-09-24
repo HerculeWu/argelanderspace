@@ -5,7 +5,7 @@ import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { useTweaks } from "./theme";
-import { applyDocDeletion, WorkspaceProvider, type Workspace } from "./workspace";
+import { applyDocDeletion, confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
@@ -48,6 +48,8 @@ export function Shell() {
 
   const [papers, setPapers] = useState<string[]>([]);
   const [currentDoc, setCurrentDocState] = useState<string | null>(null);
+  const currentDocRef = useRef(currentDoc);
+  currentDocRef.current = currentDoc;
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
   const clearPendingAnchor = useCallback(() => setPendingAnchor(null), []);
 
@@ -91,7 +93,9 @@ export function Shell() {
         return;
       }
       const want = new URL(window.location.href).searchParams.get("doc");
-      setCurrentDocState(want && list.includes(want) ? want : list[0] ?? null);
+      const initialDoc = want && list.includes(want) ? want : list[0] ?? null;
+      currentDocRef.current = initialDoc;
+      setCurrentDocState(initialDoc);
     })();
     return () => {
       alive = false;
@@ -99,10 +103,16 @@ export function Shell() {
   }, []);
 
   const setActiveView = useCallback(
-    (view: string) => setPanes((ps) => ps.map((p) => (p.id === activeId ? { ...p, view } : p))),
-    [activeId]
+    (view: string) => {
+      const currentPane = panes.find((pane) => pane.id === activeId);
+      if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return;
+      setPanes((ps) => ps.map((p) => (p.id === activeId ? { ...p, view } : p)));
+    },
+    [activeId, panes]
   );
   const setPaneView = (id: number, view: string) => {
+    const currentPane = panes.find((pane) => pane.id === id);
+    if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return;
     setPanes((ps) => ps.map((p) => (p.id === id ? { ...p, view } : p)));
     setActiveId(id);
   };
@@ -123,22 +133,34 @@ export function Shell() {
     []
   );
 
-  const closePane = (id: number) =>
+  const closePane = (id: number) => {
+    const currentPane = panes.find((pane) => pane.id === id);
+    if (currentPane?.view === "doc" && !confirmWorkspaceLeave()) return;
     setPanes((ps) => {
       if (ps.length <= 1) return ps;
       const filtered = ps.filter((p) => p.id !== id).map((p) => ({ ...p, size: 1 }));
       if (id === activeId) setActiveId(filtered[0].id);
       return filtered;
     });
+  };
 
   const setCurrentDoc = useCallback((id: string) => {
+    if (id === currentDocRef.current) return;
+    if (!confirmWorkspaceLeave()) return;
+    currentDocRef.current = id;
     setCurrentDocState(id);
     replaceDocUrl(id); // UI-driven switch: any stale #anchor no longer applies
   }, []);
 
   const openDoc = useCallback(
     (docId?: string, anchor?: string | null) => {
-      setCurrentDocState((cur) => docId ?? cur ?? papers[0] ?? null);
+      const nextDoc = docId ?? currentDocRef.current ?? papers[0] ?? null;
+      if (nextDoc !== currentDocRef.current && !confirmWorkspaceLeave()) {
+        if (currentDocRef.current) replaceDocUrl(currentDocRef.current);
+        return;
+      }
+      currentDocRef.current = nextDoc;
+      setCurrentDocState(nextDoc);
       if (docId) {
         replaceDocUrl(docId, anchor);
         setPendingAnchor(anchor ?? null);
@@ -182,8 +204,6 @@ export function Shell() {
   // the OTHER library surfaces, not this local transition).
   const papersRef = useRef(papers);
   papersRef.current = papers;
-  const currentDocRef = useRef(currentDoc);
-  currentDocRef.current = currentDoc;
   const docDeleted = useCallback((docId: string, remaining: string[]) => {
     const next = applyDocDeletion(
       { papers: papersRef.current, currentDoc: currentDocRef.current },
@@ -192,6 +212,7 @@ export function Shell() {
     );
     setPapers(next.papers);
     if (next.currentDoc !== currentDocRef.current) {
+      currentDocRef.current = next.currentDoc;
       setCurrentDocState(next.currentDoc);
       if (next.currentDoc) replaceDocUrl(next.currentDoc);
       else window.history.replaceState(null, "", "/"); // nothing left to show

@@ -107,8 +107,9 @@ describe("RefDetail reading-first interaction", () => {
     expect(screen.getByRole("tab", { name: "全文" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText(/可获取 · arXiv 全文/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
-    expect(screen.getByLabelText(/从 arXiv 获取/)).toBeTruthy();
-    expect(screen.getByLabelText(/上传 LaTeX 源码包/)).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /从 arXiv 获取 PDF/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /上传 LaTeX 源码包/ })).toBeTruthy();
   });
 
   it("reports successful cite-key and BibTeX copies through real clipboard calls", async () => {

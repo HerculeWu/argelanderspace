@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { IrSection, RefManifestRow } from "@argelanderspace/contracts";
 import { useStore, useActiveSectionId } from "../store";
 import { MathText } from "../lib/segments";
@@ -10,6 +10,21 @@ const KIND_TITLE: Record<string, string> = {
   code: "Listing",
   algorithm: "Listing",
 };
+
+export interface OutlineEntry {
+  id: string;
+  title: string;
+  level: number;
+  number?: string;
+  disabled?: boolean;
+}
+
+/** Shared outline list presentation for LaTeX sections and native PDF bookmarks. */
+export function OutlineList({ items, onSelect, activeId, renderTitle }: { items: OutlineEntry[]; onSelect: (id: string) => void; activeId?: string | null; renderTitle?: (item: OutlineEntry) => ReactNode }) {
+  return <nav>{items.map((item) => <button key={item.id} className={"toc-section toc-lvl-" + Math.min(6, Math.max(1, item.level)) + (item.id === activeId ? " active" : "")} onClick={() => onSelect(item.id)} disabled={item.disabled} title={item.title}>
+    {item.number && <span className="num">{item.number}</span>}{renderTitle ? renderTitle(item) : item.title}
+  </button>)}</nav>;
+}
 
 /** In-order flattening of the IR section tree (the TOC is a flat list). */
 function flattenSections(secs: IrSection[]): IrSection[] {
@@ -43,23 +58,7 @@ export function TocPanel() {
   return (
     <div className="toc">
       <div className="panel-title">Contents</div>
-      <nav>
-        {sections
-          .filter((s) => s.id !== titleId)
-          .map((s) => (
-            <button
-              key={s.id}
-              className={
-                "toc-section toc-lvl-" + s.level + (s.id === active ? " active" : "")
-              }
-              onClick={() => store.jumpTo(s.id)}
-              title={s.heading ?? ""}
-            >
-              {s.number && <span className="num">{s.number}</span>}
-              <MathText as="span" text={s.heading ?? ""} />
-            </button>
-          ))}
-      </nav>
+      <OutlineList items={sections.filter((s) => s.id !== titleId).map((s) => ({ id: s.id, title: s.heading ?? "", level: s.level, ...(s.number ? { number: s.number } : {}) }))} onSelect={store.jumpTo} activeId={active} renderTitle={(item) => <MathText as="span" text={item.title} />} />
 
       <FloatGroup title={`Figures (${figures.length})`} items={figures} />
       <FloatGroup title={`Tables (${tables.length})`} items={tables} />

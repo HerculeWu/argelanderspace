@@ -1,14 +1,14 @@
 # 文库、身份与正文获取
 
-状态：现行，包含 Stage 13 手动建条目与 Stage 15 arXiv 自动获取的最终规则。来源：`46093915` 的旧 product-and-architecture、contracts-and-decisions，以及 Stage 13/15 inbox；原文索引见 [history](history.md)。领域定义见 [CONTEXT](../CONTEXT.md)，冻结和用户数据保护见 [contracts](contracts.md)。
+状态：现行，包含 Stage 13 手动建条目、Stage 15 LaTeX arXiv 获取及后续 Web arXiv PDF 获取语义。来源：`46093915` 的旧 product-and-architecture、contracts-and-decisions，以及 Stage 13/15 inbox；原文索引见 [history](history.md)。领域定义见 [CONTEXT](../CONTEXT.md)，冻结和用户数据保护见 [contracts](contracts.md)。
 
 ## Work 与 Doc 的身份
 
 - work id：`doi:` / `arxiv:` 等；canonicalId 优先级 doi > arxiv > openalex > title-slug。用于 search/note/label 等文献管理。
-- doc id：`arxiv-…` / 本地 `latex-…` / 上传 `upload-…`；用于 read/show/ref/list/annot 与阅读器。`search` 行的 `doc_ids` 映射正文。
-- 同一 Doc 经身份归并可能被多个 Work 引用；主 Doc 为 **`doc_ids[0]`**。主位是位置指针，不是发表稿、补充材料或版本管理的自动分类。
+- doc id：`arxiv-…` / 本地 `latex-…` / LaTeX zip 上传 `upload-…`；用于 read/show/ref/list/annot 与阅读器。`search` 行的 `doc_ids` 映射正文。
+- LaTeX Doc 经身份归并可被多个 Work 引用；**本地 PDF Doc 恰好属于一个 Work**，归属权威仅为 Library `doc_ids`。主 Doc 为 **`doc_ids[0]`**；主位是用户选择，不是发表稿或最新版本判定。
 - `ingest` 只写 output；**随后必须 `library build`** 才成为可 search/note/label 的 Work。docless Work 也可来自 bib 导入、历史 graph-node 或 DOI 建条目。
-- CLI 支持 arXiv id/URL、本地 `.tex`、目录和 tarball。Web 上传仅收 LaTeX zip，必须先有 Work，attach-only。
+- CLI 支持 arXiv id/URL、本地 `.tex`、目录和 tarball。Web 的 Work 内正文入口包括 LaTeX zip attach、本地 PDF 上传和 arXiv PDF 获取；均要求 Work 已存在。本地 PDF 不进入 CLI/agent 接口。
 - CLI 可解析 DOI 建 docless Work：DOI、`doi:` 或 URL 路径明确携带 DOI；Crossref 立即富化，失败留裸条目，重复 DOI 不写盘、不 rebuild。不可解析 DOI 的出版商 URL 或裸字符串仍报错，不能声称任意 URL 都能建条目。`10.48550/arXiv.*` 回 arXiv LaTeX 管线。
 
 ## 上传、多 Doc 与主位
@@ -17,7 +17,16 @@
 
 上传身份焊死：有 doi/arxiv 则 stamp source，没有则以 work.title 覆盖 doc meta.title，随后直挂 `doc_ids` 并校验；不能按失配标题挂到另一 Work。主位在 lockedRebuild 后锁内 re-assert，防并发 PATCH 覆盖；已有 library 的 seed dst-first 保序。
 
-已有库 rebuild 保序不等于主位独立持久化：library 丢失后从零 rebuild 等残余问题仍由本地 I006 跟踪。本次文档迁移没有修复它。
+已有库 rebuild 保序不等于主位独立持久化：library 丢失后从零 rebuild 等残余问题仍由本地 I006 跟踪。本次 PDF 能力没有修复该存量边界。
+
+### 本地 PDF（Web）
+
+- `POST /api/library/upload-pdf?id=<work-id>` 接收原始 PDF bytes，可信服务端 PDFium (EmbedPDF 2.15.1) 检查可读性、加密状态、页数与页几何。上限 50 MiB、100 页，25 MiB 起显示资源警告；可信解析串行，进程空闲内存不足 512 MiB 时拒绝继续。不可用 OCR 或密码解锁，不以 MIME/文件名/magic 代替解析。
+- 每次成功创建 `pdf-<UUID>` 独立 Doc，保存 `original.pdf`、明确 `format=pdf` 的元数据、绑定 hash 的空标注 sidecar 和 null 阅读位置 sidecar，全部完成后才挂 Library 关系。PDF 原文件永不原位替换。
+- 完全相同字节仅在目标 Work 内返回既有 Doc，不重建或重置用户 sidecar；另一个 Work 接收相同 bytes 时建立独立物理副本、Doc 与用户状态。文件名/论文身份不会改挂目标 Work。首 Doc 成为主，向有正文 Work 新增 PDF 不抢主位，现有“设为主/全局删除”仍由条目内管理。
+- build 只保留合法 Library 关联，不按 PDF 标题 seed Work，也不跨 Work 合并相同 bytes。孤立/损坏 PDF 不自动回挂或删除；唯一 owner 检查失败时 Reader 读取拒绝。
+- `GET /description` 是格式/来源展示提示，不作内容一致性证明。Reader 通过 PDF snapshot 与原件端点校验元数据、annotation sidecar 和本次实际 bytes 的 SHA-256；原件 hash 不同为 409，损坏/丢失的原件、metadata 或 annotation JSON 为 500，均不得重置、归档或重绑。reading-position 独立校验；缺失/损坏/未来版本/hash不符时 snapshot 仍提供已验证正文及标注，并附 `reading_position.status=error`，显式告知未恢复、原进度 JSON 保持原样，不当成初始 null。PDF 初始工作台标注是可创建/编辑的空集合，原 PDF 自带内嵌标注只读；初始阅读位置为 null。Work 内工作台标注和位置保存沿 05–07 的 per-Doc sidecar 合同。
+- EmbedPDF 2.15.1 worker/WASM 本地随 Web bundle 提供；原 PDF 内嵌标注锁定只读，Reader 只将哈希校验后的 buffer 交给 SDK，不调用带标注导出。许可文本随 app 分发，受测许可证范围见 `packages/app/dist/THIRD-PARTY-EMBEDPDF-NOTICES.txt`（构建生成）。
 
 ## Cite key 与统一书目字段
 
@@ -53,52 +62,25 @@ CLI 裸 arXiv id 正文摄入路径不变。裸 id 只在 Web identifier 建条�
 - 图谱增量仅作即时尽力可视化：新节点和本地 saved↔saved 边；失败不使创建失败，全局收敛仍由全量 build/refresh 权威。Stage 14 已取消为 suggested 邻居发 OpenAlex 批量请求；批量 bib 只补裸节点。
 - Web DOI 比 CLI 多 ADS/OpenAlex 富化属于 Web 新能力；CLI `addDoiWork`、`ingest <doi>` 和 `library build --bib` 既有行为不因此扩展。
 
-## 添加时自动获取 arXiv 正文（Stage 15）
+## arXiv PDF 获取与既有 LaTeX 来源（Web）
 
-创建/exists 同步返回 Work；随后由 server 排队持久获取 job。自动触发范围：identifier 的显式 arXiv（含 DataCite DOI 折入）、bibcode（含 Discovery 入库）、DOI **仅当既有解析链已给出 arXiv id**。不新增 DOI 反查 arXiv；**批量 bib 永不自动**。
+### 默认 PDF 获取
 
-### 场景表：新的替换旧的，但不动用户上传
+新增 Work 自动任务仍只从既有 identifier、bibcode/Discovery 入库、以及既有解析链已解析出 arXiv ID 的 DOI 路径触发；没有 arXiv ID 不触发，批量 BibTeX 永不自动，不新增 DOI 反查。创建/exists 的 Work 响应仍同步返回；后续以持久 Job 获取 PDF。
 
-提交时和执行时均重查：
+- 自动提交和执行时均按 Work 的真实关联/显式 PDF metadata 检查是否已有任意 PDF；已有 PDF（即使其当前文件不可读）会阻止自动获取。只有 LaTeX Doc 不阻止。打开详情、重启和遍历旧库不触发补抓。
+- `auto_ingest_arxiv` 默认 true 且提交时现读；false 只关闭自动 PDF 获取，手动仍可用。
+- 手动 `POST /api/library/acquire-arxiv-pdf?id=<workId>` 需要现存 Work 和解析后的 arXiv ID；已有 PDF 不阻止用户主动再次获取。
+- 来源使用 `https://arxiv.org/pdf/<canonical-id>` 获取本次返回的原始 PDF bytes，不做 `export.arxiv.org` 版本查询。metadata 记录 `acquired_via="arxiv_pdf"`、规范 `arxiv_id`、Server 取得时间、原始 byte length、SHA-256、页数和 PDFium 页几何；**不声称已核实官方 `vN`、提交日期或“官方最新版”**。
+- 每次新的显式获取在成功后创建新的 `pdf-<UUID>` Doc，即使 bytes 与已有 PDF 完全相同也不去重。相同 Work/格式仍在 queued/running 的同一获取任务会被复用；Job 终态后的再次显式提交是新任务。上传 PDF 原有 same-Work identical-byte 去重完全不变。
+- PDF 发布走既有 50 MiB / 100 pages / 512 MiB headroom 串行 PDFium 探测、不可变 stage bundle、DocMutationRegistry pin 和 libraryLock；新 Doc 只追加到用户指定 Work。旧 Doc 的 PDF、标注 sidecar、阅读位置 sidecar 与 `doc_ids` 主位原样保留。若 Work 无 Doc，新 PDF 自然为主；已有主位不改变。
+- arXiv PDF 任务复用串行持久 JobRunner，payload format 为 `arxiv-pdf`；`job.done` 先于成功时的 `library.changed{cause:"upload"}`。boot-interrupted 不自动重跑，重复在途提交复用 Job；失败可以通过新的显式提交重试。此 PDF 错误不进入 Stage 15 LaTeX 的 `arxiv-fetch.jsonl` 或 PDF-only LaTeX 引导。
 
-| 场景 | 状态 | 行为 |
-|---|---|---|
-| A | Work 无 Doc，且有 arXiv id | 新获取，挂载为主 Doc |
-| B | 有同一 arXiv id 的 arXiv Doc | 恒新鲜下载最新源、重编译、同 Doc id 原位覆盖；doc_ids 顺序和主位不动 |
-| C | 有 Doc 但无匹配 arXiv Doc，典型为用户上传 zip | 不自动触发，手动端点 409；绝不覆盖用户内容，想换源先删 Doc |
+### 既有 LaTeX arXiv 获取保持独立
 
-B 的标注按既有完整三态契约处理：同指纹保留、成功算出不同指纹后 server 访问时整批归档、无法计算则不碰用户标注。不能由“重新获取”推导出任意标注迁移权限。
+`POST /api/library/attach-arxiv?id=<workId>` 仍是 Stage 15 LaTeX 源码获取/刷新入口：既有 arXiv LaTeX Doc 沿旧 Doc ID/原位刷新、编译、错误分类与归档契约处理；CLI LaTeX ingest、PDF-only 冻结 CLI 文案和 Writer 不变。PDF-only Work 可显式获取一个独立 LaTeX Doc 并追加在现有 PDFs 后，不抢 PDF 主位；同 Work 若已有其他 LaTeX Doc/LaTeX zip 且不是要刷新的 arXiv Doc，则旧 Scenario C 仍拒绝新增 arXiv LaTeX，不放宽 ZIP 重传或 risk 规则。它不是 PDF 获取端点。arXiv LaTeX 来源和用户 zip 仍是详情里的显式 LaTeX 路径。`auto_ingest_arxiv` 现控制默认自动 PDF 获取，不启动旧 LaTeX 自动刷新。
 
-同 Work 已有 queued/running 获取 job 不堆叠，返回既有 job。执行时已变为 C 则 skipped，不覆盖。JobRunner 串行 FIFO、持久状态，V1 无取消，boot interrupted 不重跑。
-
-### 手动入口、API 与挂载
-
-手动入口：文献详情“全文”tab 的统一获取/添加更新 Dialog、精确匹配目标 Doc 的更新操作、导入菜单重添加（exists 按同一场景表）。详情的风险提示与交互见 [Web design](../packages/web/DESIGN.md#full-text-acquisition-and-safe-update)；导入等其他入口的自动策略不因此改变。自动路径与手动路径仍共用同一提交实现。
-
-`POST /api/library/attach-arxiv?id=<workId>`：202 `{job}`；400 无 arXiv id / 畸形输入，404 Work 不存在，409 场景 C 或 busy。新端点不是第二套建条目实现。
-
-- 启用预留 job kind `"ingest"`，payload `{workId, arxivId}` 使用创建后最终 ref.id；arXiv 身份可能在 resolve 后 recanonicalize 为 doi 身份。
-- `JobSchema.errorCode` 可选，PDF-only 使用 `"arxiv_pdf_only"`；`library.changed` cause 新增 `"ingest"`。这是最终落地语义，不沿用旧方案“复用 upload cause”的设想。
-- job.done 先于 `library.changed{cause:"ingest"}`。submit→终态持 DocMutationRegistry pin，与 upload/DELETE 沿用双向 busy 保护。
-- 挂载照 upload：新鲜下载/解包/编译 → stampSource 焊身份（`acquired_via="arxiv_eprint"`，与 `user_latex_zip` 分开）→ 直挂 → 锁内 rebuild → **仅 attach 时 reassert 主位** → 终检。刷新不改主位。
-- 下载/编译在锁外，library 的 load→save/直挂/rebuild/reassert 在 libraryLock；不把单 server 锁说成跨进程事务。
-- arXiv 获取使用无版本 `arxiv-<sanitize(normArxiv)>` Doc id；CLI 显式 vN 摄入的带版本目录是另一条路径，不能将其默认为同一目录。
-- 恒新鲜下载不读取 `.latexcache` 旧包，下载成功覆写缓存；解包刷新 src，Throttler 礼貌延迟不变。
-
-### 失败、日志和展示
-
-- `ArxivPdfOnlyError` 类型化，**既有错误文案逐字节不变**，CLI 零变化；PDF-only 的 UI 双语引导上传 zip，其余显示 job.error 原文与重试。
-- `<dataDir>/logs/arxiv-fetch.jsonl` append-only plain text，只记 arXiv 来源 failed/interrupted，不记成功，不记 upload。字段包括 time/jobId/workId/arxivId/stage/error；阶段 download/extract/compile/attach，boot interrupted 经 onInterrupted 钩子记录。
-- 保持发布包中日志可直接读取。用户将其定为 v1 迭代重要参考：arXiv 来源错误优先处理，上传源本身可能有问题，二者不能混成同一报错队列。不新增 Work 持久“获取失败”状态。
-- UI foundation（2026-09-21）替代 Stage 15 的详情呈现决定：标题下以阅读任务及正文有无为主；全文 tab 分开显示具体 Doc 的可信来源、主位和任务状态，获取方式及风险说明进入操作 Dialog。不再保留旧可点击 arXiv pill 的样式约束。设计权威见 [Web design](../packages/web/DESIGN.md)；进度、持久失败、重试和 hello 收养能力及后端语义不变。
-- journal html/pdf、ADS scan 等来源广告清理；数据层 planFor 仍计算，不以 UI 清理名义改 planner。无 arXiv 的 docless 项保持待上传。
-- demo/无后端时依既有 upload 约定禁用/隐藏真实操作，不伪造成功。新 UI 双语。
-
-### 隐藏开关与非目标
-
-`auto_ingest_arxiv` 默认 true，提交前现读 config.toml，UI 不提供开关。false 只关创建/exists 自动排队，手动入口保留。理由：流量限制、不可访问 arXiv 或不想看到报错的边缘需求真实存在。
-
-本阶段没有 CLI 自动拉取（I035 仍推后）、批量 bib 自动获取、PDF/OCR/HTML 摄入、job 取消、全局 job 列表、upload 报错写入该日志、跨进程同 Doc 并发写承诺。未来能力不是默认实施队列。
+批量 bib、详情打开、重启、旧库回填、PDF 原位替换、自动官方版本追踪、CLI/agent PDF ingest、OCR/出版商 HTML、任务取消、全局任务页和跨进程同 Doc 并发均不在本范围。
 
 ## 离线与派生数据
 

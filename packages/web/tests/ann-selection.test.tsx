@@ -61,6 +61,7 @@ function installFetch() {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
+      if (url === `/api/paper/${DOC}/description`) return okJson({ doc_id: DOC, format: "latex" });
       if (url === `/api/paper/${DOC}/ir`) return okJson(fixtureIr);
       if (url === `/api/paper/${DOC}/annotations?coherent=1` && method === "GET") {
         getCount++;

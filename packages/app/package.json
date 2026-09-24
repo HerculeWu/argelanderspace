@@ -29,7 +29,10 @@
     "build": "tsup && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@embedpdf/engines": "2.15.1",
+    "@embedpdf/pdfium": "2.15.1"
+  },
   "devDependencies": {
     "@argelanderspace/cli": "workspace:*",
     "@argelanderspace/server": "workspace:*",

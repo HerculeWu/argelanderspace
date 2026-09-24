@@ -27,28 +27,25 @@ export interface LibraryLoad {
   live: boolean; // false → showing fixture/demo data
 }
 
-export type DocProvenance = "arxiv" | "upload" | "unknown";
+export type DocProvenance = "arxiv" | "upload" | "pdf" | "arxiv-pdf" | "unknown";
 
 /**
- * Read only the stored IR's explicit acquisition provenance for document-list
- * presentation. This metadata request does not accept Reader content or touch
- * annotations; absent, unsupported, malformed, and failed responses all remain
- * honestly unknown.
+ * Read the explicit Doc descriptor for document-list presentation. Planner
+ * labels and Doc ids are not provenance; unsupported or failed metadata stays unknown.
  */
 export async function fetchDocProvenance(
   docId: string,
   signal?: AbortSignal
 ): Promise<DocProvenance> {
   try {
-    const response = await fetch(`/api/paper/${encodeURIComponent(docId)}/ir`, { signal });
+    const response = await fetch(`/api/paper/${encodeURIComponent(docId)}/description`, { signal });
     if (!response.ok) return "unknown";
-    const body = (await response.json()) as unknown;
-    if (body === null || typeof body !== "object" || Array.isArray(body)) return "unknown";
-    const source = (body as Record<string, unknown>).source;
-    if (source === null || typeof source !== "object" || Array.isArray(source)) return "unknown";
-    const acquiredVia = (source as Record<string, unknown>).acquired_via;
-    if (acquiredVia === "arxiv_eprint") return "arxiv";
-    if (acquiredVia === "user_latex_zip") return "upload";
+    const body = (await response.json()) as { format?: unknown; acquired_via?: unknown };
+    if (body.format === "pdf" && body.acquired_via === "arxiv_pdf") return "arxiv-pdf";
+    if (body.format === "pdf" && body.acquired_via === "user_pdf_upload") return "pdf";
+    if (body.format !== "latex") return "unknown";
+    if (body.acquired_via === "arxiv_eprint") return "arxiv";
+    if (body.acquired_via === "user_latex_zip") return "upload";
     return "unknown";
   } catch {
     return "unknown";
@@ -65,6 +62,30 @@ export async function fetchLibrary(): Promise<LibraryLoad> {
  *  Async: the server answers 202 with the queued job immediately;
  *  watch /ws (`onJobEvent` in ./ws) for progress and the done/failed outcome,
  *  then reload the library. Returns the job, or null when the POST failed. */
+export type UploadPdfResult =
+  | { ok: true; job: Job; resourceWarning: boolean }
+  | { ok: false; status: number; detail: string };
+
+export async function uploadPdf(workId: string, file: File): Promise<UploadPdfResult> {
+  try {
+    const r = await fetch(`/api/library/upload-pdf?id=${encodeURIComponent(workId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name) },
+      body: file,
+    });
+    if (r.status !== 202) {
+      const body = (await r.json().catch(() => null)) as { detail?: string } | null;
+      return { ok: false, status: r.status, detail: body?.detail ?? `PDF upload ${r.status}` };
+    }
+    const body = (await r.json()) as { job?: Job; resourceWarning?: boolean };
+    return body.job
+      ? { ok: true, job: body.job, resourceWarning: Boolean(body.resourceWarning) }
+      : { ok: false, status: 500, detail: "PDF upload response did not contain a job" };
+  } catch (error) {
+    return { ok: false, status: 0, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function uploadLatexZip(workId: string, file: File | Blob): Promise<Job | null> {
   try {
     const r = await fetch(`/api/library/upload?id=${encodeURIComponent(workId)}`, {
@@ -87,6 +108,17 @@ export async function uploadLatexZip(workId: string, file: File | Blob): Promise
  * for progress and the done/failed outcome, then reload the library.
  * Returns the job, or null when the POST failed (e.g. 409 scenario C).
  */
+export async function acquireArxivPdf(workId: string): Promise<Job | null> {
+  try {
+    const r = await fetch(`/api/library/acquire-arxiv-pdf?id=${encodeURIComponent(workId)}`, { method: "POST" });
+    if (r.status !== 202) return null;
+    const body = (await r.json()) as { job?: Job };
+    return body.job ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function attachArxiv(workId: string): Promise<Job | null> {
   try {
     const r = await fetch(`/api/library/attach-arxiv?id=${encodeURIComponent(workId)}`, {

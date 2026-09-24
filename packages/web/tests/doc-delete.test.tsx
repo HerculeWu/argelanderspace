@@ -43,6 +43,10 @@ let deleteStatus: number; // 200 | 409 | 404 | 500
 let annotationsOk: boolean;
 let deleteGate: Promise<void> | null;
 let annotationResponses: Map<string, Promise<Response>>;
+let pdfProvenance = false;
+let pdfAnnotationCount = 0;
+let pdfCountCalls: string[] = [];
+let legacyAnnotationCalls: string[] = [];
 
 function annFile(n: number) {
   return {
@@ -65,9 +69,19 @@ function installFetch() {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
+      const pdfCountMatch = /^\/api\/paper\/([^/]+)\/pdf\/annotations\/count$/.exec(url);
+      if (pdfCountMatch && method === "GET") {
+        pdfCountCalls.push(decodeURIComponent(pdfCountMatch[1]));
+        return { ok: true, status: 200, json: async () => ({ count: pdfAnnotationCount, content_sha256: "a".repeat(64) }) } as Response;
+      }
+      const descriptionMatch = /^\/api\/paper\/([^/]+)\/description$/.exec(url);
+      if (descriptionMatch && method === "GET" && pdfProvenance) {
+        return { ok: true, status: 200, json: async () => ({ format: "pdf", acquired_via: "user_pdf_upload" }) } as Response;
+      }
       const annMatch = /^\/api\/paper\/([^/]+)\/annotations$/.exec(url);
       if (annMatch && method === "GET") {
         const docId = decodeURIComponent(annMatch[1]);
+        legacyAnnotationCalls.push(docId);
         const controlled = annotationResponses.get(docId);
         if (controlled) return await controlled;
         if (!annotationsOk) {
@@ -131,6 +145,10 @@ beforeEach(() => {
   annotationsOk = true;
   deleteGate = null;
   annotationResponses = new Map();
+  pdfProvenance = false;
+  pdfAnnotationCount = 0;
+  pdfCountCalls = [];
+  legacyAnnotationCalls = [];
   installFetch();
 });
 
@@ -144,6 +162,19 @@ describe("RefDetail document delete", () => {
     renderDetail();
     openFilesTab();
     expect(screen.getAllByRole("button", { name: "删除此文档（含其标注）" })).toHaveLength(2);
+  });
+
+  it("PDF deletion count uses only the validated workbench-sidecar endpoint", async () => {
+    pdfProvenance = true;
+    pdfAnnotationCount = 3;
+    renderDetail();
+    openFilesTab();
+    await waitFor(() => expect(screen.getAllByText("用户上传 PDF")).toHaveLength(2));
+    await openDeleteDialog(0);
+    await waitFor(() => expect(pdfCountCalls.length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getByText(/包含 3 条当前标注/)).toBeTruthy());
+    expect(pdfCountCalls).toContain("upload-main-1");
+    expect(legacyAnnotationCalls).not.toContain("upload-main-1");
   });
 
   it("the dialog states the fetched annotation count; confirm deletes and wires the transitions", async () => {
@@ -188,7 +219,7 @@ describe("RefDetail document delete", () => {
     openFilesTab();
     await openDeleteDialog(0);
     await waitFor(() => expect(screen.getByText(/无法获取标注数量/)).toBeTruthy());
-    expect(screen.getByText(/当前标注及历史归档都会被删除/)).toBeTruthy();
+    expect(screen.getByText(/正文\/原件/)).toBeTruthy();
     expect(screen.getByText(/从所有关联的文献条目中移除/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
     await waitFor(() => expect(deleteCalls).toEqual(["upload-main-1"]));

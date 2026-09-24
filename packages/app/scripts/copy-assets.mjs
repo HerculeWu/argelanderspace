@@ -91,12 +91,73 @@ for (const name of [
   "@codemirror/view",
 ])
   editorNotice(name, webRequire);
+const sdkNotices = new Map();
+const allowedSdkLicenses = new Set([
+  "MIT",
+  "OFL-1.1",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+]);
+function sdkNotice(name, req) {
+  let root;
+  try {
+    root = dirname(req.resolve(`${name}/package.json`));
+  } catch {
+    root = dirname(req.resolve(name));
+    while (!existsSync(join(root, "package.json"))) {
+      const parent = dirname(root);
+      if (parent === root) throw new Error(`Cannot locate package metadata for ${name}`);
+      root = parent;
+    }
+  }
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const key = `${pkg.name}@${pkg.version}`;
+  if (sdkNotices.has(key)) return;
+  if (!allowedSdkLicenses.has(pkg.license))
+    throw new Error(`Review EmbedPDF license before distribution: ${key} (${pkg.license})`);
+  const files = readdirSync(root).filter((f) => /^(?:licen[sc]e|notice)(?:[._-].*)?$/i.test(f));
+  const texts = files.map((f) => `===== ${f} =====\n${readFileSync(join(root, f), "utf8")}`);
+  if (!texts.some((text) => /license/i.test(text)))
+    throw new Error(`Missing license text for ${key}`);
+  sdkNotices.set(key, texts.join("\n"));
+  const childRequire = createRequire(join(root, "package.json"));
+  for (const dep of Object.keys(pkg.dependencies ?? {})) sdkNotice(dep, childRequire);
+}
+const webSdkRequire = createRequire(join(repoRoot, "packages/web/package.json"));
+for (const name of [
+  "@embedpdf/core",
+  "@embedpdf/engines",
+  "@embedpdf/models",
+  "@embedpdf/pdfium",
+  "@embedpdf/plugin-annotation",
+  "@embedpdf/plugin-document-manager",
+  "@embedpdf/plugin-interaction-manager",
+  "@embedpdf/plugin-render",
+  "@embedpdf/plugin-rotate",
+  "@embedpdf/plugin-scroll",
+  "@embedpdf/plugin-selection",
+  "@embedpdf/plugin-viewport",
+  "@embedpdf/plugin-zoom",
+])
+  sdkNotice(name, webSdkRequire);
 const noticeText =
   "Third-party Writer editor licenses (upstream text; not relicensed by this project).\n\n" +
   [...notices]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, license]) => `===== ${name} =====\n${license}`)
     .join("\n\n");
+const embedPdfNoticeText =
+  "EmbedPDF 2.15.1 and production dependency licenses (upstream text; not relicensed by this project).\n\n" +
+  [...sdkNotices]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, license]) => `===== ${name} =====\n${license}`)
+    .join("\n\n");
 writeFileSync(join(appRoot, "dist", "THIRD-PARTY-EDITOR-NOTICES.txt"), noticeText);
 writeFileSync(join(target, "THIRD-PARTY-EDITOR-NOTICES.txt"), noticeText);
-console.log(`copied web/sty/root assets and ${notices.size} editor dependency license notices`);
+writeFileSync(join(appRoot, "dist", "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
+writeFileSync(join(target, "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
+console.log(
+  `copied web/sty/root assets, ${notices.size} editor notices and ${sdkNotices.size} EmbedPDF notices`
+);

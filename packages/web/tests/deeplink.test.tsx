@@ -118,6 +118,9 @@ describe("DocPane deep-link anchors", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
+        if (url === `/api/paper/${goldenIr.docId}/description`) {
+          return { ok: true, json: async () => ({ doc_id: goldenIr.docId, format: "latex" }) } as Response;
+        }
         if (url.startsWith("/api/paper/") && url.endsWith("/annotations?coherent=1")) {
           return { ok: true, json: async () => ({ version: 1, ir: goldenIr, file: { version: 1, rev: 0, content_fingerprint: "fp", annotations: [] }, assets: fixtureAssets(goldenIr) }) } as Response;
         }

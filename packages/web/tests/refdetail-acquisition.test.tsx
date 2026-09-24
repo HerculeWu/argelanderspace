@@ -63,6 +63,13 @@ function job(kind: "upload" | "ingest" = "ingest"): Job {
   };
 }
 
+function chooseArxivLatex(): void {
+  fireEvent.click(screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ }));
+}
+function chooseLatexUpload(): void {
+  fireEvent.click(screen.getByRole("radio", { name: /上传 LaTeX 源码包/ }));
+}
+
 function renderDetail(r: LibraryRef = REF) {
   const onReload = vi.fn();
   const view = render(
@@ -95,6 +102,7 @@ describe("RefDetail full-text acquisition", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "获取全文" }));
     fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
+    chooseArxivLatex();
 
     const dialog = screen.getByRole("dialog", { name: "获取全文" });
     expect(dialog.textContent).toContain("从 arXiv 获取");
@@ -177,6 +185,7 @@ describe("RefDetail full-text acquisition", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(h.fetchAnnotations).toHaveBeenCalledWith("arxiv-2609.17036");
     expect(screen.getByText("正在检查这份正文的标注…")).toBeTruthy();
     expect((screen.getByRole("button", { name: "确认更新" }) as HTMLButtonElement).disabled).toBe(true);
@@ -225,6 +234,7 @@ describe("RefDetail full-text acquisition", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseLatexUpload();
 
     await waitFor(() => expect(h.fetchAnnotations).toHaveBeenCalledWith(exactTarget));
     expect((await screen.findAllByText(exactTarget)).length).toBeGreaterThanOrEqual(2);
@@ -253,6 +263,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
 
     expect(await screen.findByText(/无法确认这份正文的标注数量/)).toBeTruthy();
     expect(screen.getByText(/不会自动迁移/)).toBeTruthy();
@@ -269,6 +280,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
 
     expect(await screen.findByText("正文正在处理中")).toBeTruthy();
     expect((screen.getByRole("button", { name: "确认更新" }) as HTMLButtonElement).disabled).toBe(true);
@@ -296,6 +308,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(await screen.findByText(/这份正文有 1 条标注/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认更新" }));
     await waitFor(() => expect(h.attachArxiv).toHaveBeenCalledTimes(1));
@@ -305,6 +318,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     expect(await screen.findByText(/network failed/)).toBeTruthy();
     fireEvent.click(screen.getByTestId("arxiv-retry"));
+    chooseArxivLatex();
 
     expect(await screen.findByText(/这份正文有 1 条标注/)).toBeTruthy();
     expect(h.fetchAnnotations).toHaveBeenCalledTimes(2);
@@ -328,6 +342,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(screen.getByText("正在检查这份正文的标注…")).toBeTruthy();
 
     view.rerender(
@@ -378,6 +393,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(await screen.findByText(/这份正文有 1 条标注/)).toBeTruthy();
     const confirm = screen.getByRole("button", { name: "确认更新" });
     fireEvent.click(confirm);
@@ -420,6 +436,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(await screen.findByText("当前未发现标注；更新会替换这份正文。")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "确认更新" }));
     expect(h.attachArxiv).toHaveBeenCalledTimes(1);
@@ -442,6 +459,7 @@ describe("RefDetail full-text acquisition", () => {
       />
     );
     fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
+    chooseArxivLatex();
     fireEvent.click(screen.getByRole("button", { name: "开始获取" }));
     expect(h.attachArxiv).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("heading", { name: "Next Work" })).toBeTruthy();
@@ -470,6 +488,7 @@ describe("RefDetail full-text acquisition", () => {
     const view = renderDetail(initial);
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(h.fetchAnnotations).toHaveBeenCalledTimes(1);
 
     view.rerender(
@@ -528,6 +547,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(await screen.findByText("当前未发现标注；更新会替换这份正文。")).toBeTruthy();
 
     act(() => {
@@ -555,6 +575,7 @@ describe("RefDetail full-text acquisition", () => {
     });
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
+    chooseArxivLatex();
     expect(await screen.findByText(/这份正文有 1 条标注/)).toBeTruthy();
 
     view.rerender(
@@ -581,7 +602,7 @@ describe("RefDetail full-text acquisition", () => {
     fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 / 更新全文…" }));
 
-    const arxiv = screen.getByRole("radio", { name: /从 arXiv 获取/ }) as HTMLInputElement;
+    const arxiv = screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ }) as HTMLInputElement;
     expect(arxiv.disabled).toBe(true);
     expect(screen.getByText("现有正文不匹配 arXiv 获取条件")).toBeTruthy();
     expect(h.attachArxiv).not.toHaveBeenCalled();

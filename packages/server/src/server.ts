@@ -17,7 +17,11 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
-import { type AppConfig, getConfig } from "@argelanderspace/infra";
+import {
+  type AppConfig,
+  fetchArxivPdf as fetchCurrentArxivPdf,
+  getConfig,
+} from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
@@ -37,7 +41,7 @@ export interface ServerOptions {
   /** Built SPA directory; `null` disables static hosting. */
   webDist?: string | null;
   /** Composition seam: stub the infra wiring (offline tests). */
-  deps?: Partial<Pick<AppDeps, "makeSources" | "makeDiscoverySource">>;
+  deps?: Partial<Pick<AppDeps, "makeSources" | "makeDiscoverySource" | "fetchArxivPdf">>;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
   /** External-write poll interval (default 1500); tests inject ~50. */
@@ -90,6 +94,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline)),
     makeDiscoverySource: opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths)),
     pipelines: realPipelines(paths),
+    fetchArxivPdf: opts.deps?.fetchArxivPdf ?? ((arxivId) => fetchCurrentArxivPdf(arxivId)),
     runner,
     broadcast: (msg) => hub.broadcast(msg),
     webDist: opts.webDist,

@@ -1,0 +1,79 @@
+.pdf-reader { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; height: 100%; color: var(--text); background: var(--bg); }
+.pdf-toolbar { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--surface); }
+.pdf-toolbar button { min-height: 32px; padding: 4px 9px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); cursor: pointer; }
+.pdf-toolbar button:hover:not(:disabled) { background: var(--hover); }
+.pdf-toolbar button:disabled { opacity: .55; cursor: not-allowed; }
+.pdf-toolbar button:focus-visible, .pdf-toolbar input:focus-visible, .pdf-reader-state button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-doc-context { display: grid; min-width: 100px; max-width: min(35vw, 320px); gap: 2px; overflow: hidden; }
+.pdf-doc-context strong, .pdf-doc-context code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pdf-doc-context strong { color: var(--text); font-size: var(--fs); }
+.pdf-doc-context code { color: var(--text-dim); font-size: var(--fs-xs); }
+.pdf-page-controls, .pdf-zoom-controls { display: flex; align-items: center; gap: 6px; }
+.pdf-page-controls input { width: 58px; min-height: 30px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); }
+.pdf-page-controls span { color: var(--text-dim); font-size: var(--fs-sm); white-space: nowrap; }
+.pdf-search-controls { display: flex; flex: 1 1 240px; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 220px; }
+.pdf-search-controls input { width: min(190px, 25vw); min-height: 30px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); }
+.pdf-search-controls span { color: var(--text-dim); font-size: var(--fs-xs); }
+.pdf-search-result { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); }
+.pdf-search-result:focus-visible, .pdf-search-controls input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.pdf-position-warning { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border-soft); color: var(--text-dim); background: var(--surface); font-size: var(--fs-sm); }
+.pdf-reader-layout { display: grid; flex: 1; min-height: 0; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto; }
+.pdf-side { position: relative; display: flex; flex: 0 0 auto; flex-direction: column; width: clamp(180px, 19vw, 260px); min-width: 36px; overflow: auto; color: var(--text); background: var(--surface); }
+.pdf-side-left { border-right: 1px solid var(--border-soft); }
+.pdf-side-right { width: clamp(200px, 23vw, 320px); border-left: 1px solid var(--border-soft); }
+.pdf-side.collapsed { width: 36px; }
+.pdf-panel-toggle { flex: 0 0 auto; width: 100%; min-height: 36px; border: 0; border-bottom: 1px solid var(--border-soft); color: var(--text-dim); background: var(--surface); cursor: pointer; }
+.pdf-panel-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pdf-side-content { padding: 12px; }
+.pdf-side-content h2 { margin: 0 0 8px; color: var(--text); font-size: var(--fs); font-weight: 600; }
+.pdf-side-content p { margin: 0; color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.5; }
+.pdf-viewer-area { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.pdf-viewport { position: absolute; inset: 0; overflow: auto; background: var(--bg-deep); }
+/* Add trailing scroll range so the final page's saved viewport-local position can be restored. */
+.pdf-viewport::after { content: ""; display: block; height: 50vh; pointer-events: none; }
+.pdf-scroller { width: 100%; height: 100%; overflow: auto; }
+.pdf-page-content { position: relative; width: 100%; height: 100%; background: white; box-shadow: 0 2px 9px rgb(0 0 0 / 18%); }
+.pdf-page-content canvas { display: block; }
+/* The SDK paints pages into <img>. Native image dragging steals the text-selection pointer gesture. */
+.pdf-page-content img { -webkit-user-drag: none; user-select: none; }
+.pdf-area-layer { position: absolute; inset: 0; pointer-events: none; }
+.pdf-area-layer.drawing, html[data-pdf-area-mode="true"] .pdf-area-layer { z-index: 8; pointer-events: auto; cursor: crosshair; touch-action: none; }
+.pdf-area-hint { display: none; }
+html[data-pdf-area-mode="true"] .pdf-area-hint { display: inline-block; }
+.pdf-area-annotation, .pdf-area-preview { position: absolute; border: 2px solid #a87800; background: rgb(244 197 66 / 35%); pointer-events: auto; }
+.pdf-area-annotation { cursor: move; touch-action: none; outline: none; }
+.pdf-area-annotation:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-area-resize { position: absolute; right: -5px; bottom: -5px; width: 12px; height: 12px; min-height: 12px; padding: 0; border: 1px solid var(--surface); border-radius: 2px; background: var(--accent); cursor: nwse-resize; touch-action: none; }
+.pdf-area-annotation .pdf-area-resize:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-workbench-history { display: flex; gap: 6px; }
+.pdf-workbench-item label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); }
+.pdf-workbench-item label input[type="number"] { width: 72px; }
+.pdf-area-preview { border-style: dashed; pointer-events: none; }
+.pdf-area-hint { position: sticky; top: 8px; left: 8px; display: inline-block; padding: 4px 8px; border-radius: 5px; color: #111; background: #ffdc70; font-size: var(--fs-xs); pointer-events: none; }
+.pdf-workbench-panel { display: grid; gap: 10px; }
+.pdf-workbench-actions, .pdf-workbench-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.pdf-workbench-mode-group { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
+.pdf-workbench-panel button { min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); cursor: pointer; }
+.pdf-workbench-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-workbench-mode[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--hover); }
+.pdf-workbench-item { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border-soft); border-radius: 7px; }
+.pdf-workbench-target { justify-self: start; color: var(--accent) !important; }
+.pdf-workbench-item textarea { width: 100%; min-height: 74px; resize: vertical; border: 1px solid var(--border); border-radius: 5px; padding: 7px; color: var(--text); background: var(--bg); }
+.pdf-workbench-body { overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.pdf-workbench-body p { margin: 0 0 6px; }
+.pdf-reader-state { display: grid; align-content: center; justify-items: center; gap: 12px; min-height: 180px; padding: 24px; color: var(--text-dim); text-align: center; }
+.pdf-reader-state p { max-width: 620px; margin: 0; }
+.pdf-reader-state button { min-height: 32px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); cursor: pointer; }
+.pdf-text-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: min(520px, calc(100vw - 24px)); padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 18px rgb(0 0 0 / 24%); }
+.pdf-text-tools blockquote { flex-basis: 100%; margin: 0; max-height: 3em; overflow: auto; white-space: pre-wrap; }
+.pdf-link-hit-layer { position: absolute; inset: 0; z-index: 2147483000; pointer-events: none; }
+.pdf-link-hit-layer .pdf-native-link { z-index: 2147483000; pointer-events: auto !important; }
+.pdf-native-link { position: absolute; border: 0; padding: 0; background: transparent; cursor: pointer; pointer-events: auto; }
+.pdf-native-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-text-annotations { position: absolute; inset: 0; z-index: 7; pointer-events: none; }
+.pdf-text-mark { position: absolute; border: 0; padding: 0; min-width: 2px; pointer-events: auto; background: transparent; }
+.pdf-text-mark.highlight { background: rgb(255 210 40 / 42%); }
+.pdf-text-mark.underline { border-bottom: 2px solid #1674d1; }
+.pdf-text-mark.strikeout::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid #ce3d32; }
+.pdf-text-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

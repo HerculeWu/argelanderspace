@@ -56,6 +56,16 @@ function iterDocs(outputDir: string): [string, Record<string, unknown>][] {
 /** Create/merge a work per ingested paper. Idempotent (re-runnable). */
 export function seedFromOutput(store: LibraryStore, outputDir: string): LibraryStore {
   for (const [docId, doc] of iterDocs(outputDir)) {
+    // PDF identity/ownership is sourced only from Library associations, never
+    // title-based seeding. The bundle markers keep corrupt/partial metadata from
+    // being reinterpreted as a first-time LaTeX Doc.
+    if (
+      doc.format === "pdf" ||
+      existsSync(join(outputDir, docId, "original.pdf")) ||
+      existsSync(join(outputDir, docId, "annotations.json")) ||
+      existsSync(join(outputDir, docId, "reading-position.json"))
+    )
+      continue;
     const src = asRecord(doc.source);
     const meta = asRecord(doc.meta);
     const title = ((pyOr(meta.title) as string | undefined) ?? "").trim();
@@ -88,7 +98,11 @@ export function seedFromOutput(store: LibraryStore, outputDir: string): LibraryS
  */
 function pruneMissingDocs(store: LibraryStore, outputDir: string): void {
   for (const w of store.works) {
-    const kept = w.doc_ids.filter((d) => existsSync(join(outputDir, d, `${d}.json`)));
+    const kept = w.doc_ids.filter(
+      (d) =>
+        existsSync(join(outputDir, d, `${d}.json`)) ||
+        existsSync(join(outputDir, d, "original.pdf"))
+    );
     if (kept.length !== w.doc_ids.length || kept.some((d, i) => d !== w.doc_ids[i])) {
       w.doc_ids = kept;
     }

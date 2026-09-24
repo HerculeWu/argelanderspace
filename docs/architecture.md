@@ -6,14 +6,14 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 
 ## 能力入口
 
-- **文献库与正文**：arXiv LaTeX / 本地源码摄入，手动 DOI、显式 arXiv、ADS bibcode 或 BibTeX 建条目，zip 挂载，多 Doc 与主位；web 添加时自动 arXiv 获取。身份、存储规则及获取场景见 [library](library.md)。
+- **文献库与正文**：arXiv LaTeX / 本地源码摄入，条目内 LaTeX zip 挂载；现支持 Work 内不可变本地 PDF 上传、阅读、原件下载、设主与删除。Web 添加时的 arXiv 获取仍只处理 LaTeX 源码。身份、存储规则及获取场景见 [library](library.md)。
 - **文献发现**：从详情页进入 ADS related/useful 临时探索；库图只含已存 Work。边义、失败语义、缓存与用户状态分离见 [discovery](discovery.md)。
-- **阅读器**：React 三栏，正文、引用和标注共享 IR；同 Doc 正文更新经共同 epoch 接纳，无需正常流程中手动 F5。交互、资产、草稿和恢复边界见 [annotations](annotations.md)。
+- **阅读器**：LaTeX Reader 用共享 IR/标注及共同 epoch；本地 PDF 使用固定 EmbedPDF 2.15.1、同次 hash 校验的原始 bytes 和独立用户 sidecar，PDF 内嵌标注只读。PDF 基础分页/缩放/下载已接入，PDF 工作台标注编辑、搜索/目录和进度保存不属于此边界。LaTeX 规则见 [annotations](annotations.md)，PDF 数据保护见 [contracts](contracts.md)。
 - **计划页**：默认 landing，plans→tasks 的列表/看板/时间线/今日聚焦，webui 可独立 CRUD。详细模型和否决项见 [plans](plans.md)。
 - **Writer**：独立稿件、八型 cell、CodeMirror、显式 Render/Shift+Enter、共享编译→IR 预览及源码 zip；不展示 PDF。工作流见 [writer](writer.md)，文件协议沿用 [writer-data-model](writer-data-model.md)。
 - **web i18n**：zh-CN/en，默认中文、不探测浏览器，Tweaks 即时切换，偏好存 localStorage。server detail/job.error 和用户数据不纳入翻译；CLI 不变。
 - **尚未完整的写路径**：文献 note tab 当前只读；持久 note/label 主要通过 CLI，右键色点 overlay 仅会话级。这是能力缺口，不推翻独立应用定位。
-- **不在 main**：PDF/OCR/出版商 HTML 摄入封存于 `ocr-features` 快照分支，不能宣传为现行能力。
+- **不在 main**：OCR/出版商 HTML 摄入封存于 `ocr-features` 快照分支。现行 PDF 是不可变原文件阅读，不是 OCR/LaTeX 转换能力。
 
 ## 数据与配置
 
@@ -25,11 +25,16 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 
 ```text
 <有效 dataDir>/
-├── output/<doc_id>/
-│   ├── <doc_id>.json       # TexDocIr，version:1，渲染 IR 即存储
+├── output/<latex_doc_id>/
+│   ├── <latex_doc_id>.json # TexDocIr，version:1，渲染 IR 即存储
 │   ├── src/               # 源树
 │   ├── build/             # aux/bbl/toc/fls/argelander.jsonl 等编译事实
 │   └── assets/            # 直通图或 PDF/EPS 转 SVG
+├── output/<pdf_doc_id>/
+│   ├── <pdf_doc_id>.json  # 明确 format=pdf 的可信元数据，非 TexDocIr
+│   ├── original.pdf       # 不可变原始 bytes
+│   ├── annotations.json  # PDF 工作台用户数据（初始空集合）
+│   └── reading-position.json # 初始 null 状态；位置保存另票实施
 ├── output/.latexcache/    # arXiv 源包缓存
 ├── library/              # library.json、bib、富化与 discovery 缓存、graph.json
 ├── jobs/                 # 持久 job 与 spool
@@ -43,9 +48,9 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 <有效 dataDir 的父目录>/status/plans.json
 ```
 
-`statusDir = resolve(dataDir, "..", "status")`，不是无条件使用 repo/status。plans/annotations/manuscripts 使用 pretty 2 空格、rev 乐观锁和 tmp+rename；不能由此推断所有 schema 都保留未知键，plans 的 I010 仍需相关任务核对。
+`statusDir = resolve(dataDir, "..", "status")`，不是无条件使用 repo/status。plans/annotations/manuscripts 使用 pretty 2 空格、rev 乐观锁和 tmp+rename；PDF 元数据及初始 sidecar 同次绑定文件 SHA-256。PDF Doc owner 仅从 Library 的 Work–Doc 关联得出，build 不通过标题 seed PDF，也不按全局字节去重。不能由上述写法推断所有 schema 都保留未知键，plans 的 I010 仍需相关任务核对。
 
-TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/citationsByBlock 和原生 text/math/cite/xref segments。旧 Document 桥与双轨 occurrences 已删除。`/api/paper/:id/ir` 直接读 IR；旧 raw GET `/api/paper/:id` 已删除，不能与同路径的新 DELETE 混淆；旧无 version 文档需要重摄入，不再投影。
+TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/citationsByBlock 和原生 text/math/cite/xref segments。旧 Document 桥与双轨 occurrences 已删除。`/api/paper/:id/ir` 只服务 LaTeX IR；`/description` 的格式是显式描述，不能替代正文一致性证明。PDF `GET /pdf/snapshot` 验证 owner、实际原件 hash 和 annotation sidecar；`GET /pdf` 返回受同一固定 hash 校验的原始 Buffer，Web 再校验收到的 bytes 并将那份 buffer 交给 EmbedPDF。PDF hash 已知不同返回 409，不归档/重绑或重写用户数据；损坏 metadata/annotations 返回 500并保留原 bytes。reading-position 独立校验；其损坏/缺失以snapshot中的明确 progress error表示，正文仍可读但不假称位置已恢复，且不写空替代文件。EmbedPDF worker 的 WASM URL 由 Vite 本地资产解析成**绝对同源 URL**后再交给 blob worker（相对 URL 按 blob 基址解析会卡在 loading）；font fallback 关闭。产品错误层以 10 秒 timeout 收束 worker/WASM 异步无响应（它不能抢占同步 CPU/WASM 阻塞，不声称此类情况的硬时限）；部署若加 CSP，至少需允许 `worker-src blob:` 与 `script-src 'wasm-unsafe-eval'`。旧 raw GET `/api/paper/:id` 已删除，不能与同路径的新 DELETE 混淆；旧无 version 文档需要重摄入，不再投影。
 
 ## LaTeX 数据流
 

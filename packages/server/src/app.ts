@@ -34,12 +34,22 @@
  *   their targets, DELETE busy-checks (409, never waits).
  */
 
-import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, relative, resolve, sep } from "node:path";
 import type {
   AnnotationsFile,
+  DocDescription,
   Job,
   RefreshResponse,
   WriterManuscript,
@@ -47,10 +57,16 @@ import type {
 } from "@argelanderspace/contracts";
 import {
   AnnotationsFileSchema,
+  DocDescriptionSchema,
   ManualWorkRequestSchema,
   type ManualWorkResult,
   ManuscriptSchema,
+  PDF_MAX_BYTES,
+  PDF_RESOURCE_WARNING_BYTES,
+  PdfAnnotationsFileSchema,
+  PdfReadingPositionSchema,
   PlansFileSchema,
+  TexDocIrSchema,
 } from "@argelanderspace/contracts";
 import {
   type AdsDiscoverySource,
@@ -70,6 +86,7 @@ import {
   deleteManuscript,
   discoverLiterature,
   ensureCurrentAnnotationsWithDocument,
+  findMatchingPdfDoc,
   findWork,
   healGraph,
   type IngestPipelines,
@@ -86,13 +103,24 @@ import {
   manuscriptDir,
   normArxiv,
   normDoi,
+  PdfAnnotationConflictError,
+  PdfAnnotationValidationError,
+  PdfContentChangedError,
+  PdfReadingPositionConflictError,
   patchWork,
+  publishPdfDoc,
   readDocumentAsset,
   readManuscriptAsset,
+  readPdfAnnotationsFile,
+  readPdfMetadataIfPresent,
+  readPdfReadingPosition,
+  readVerifiedPdf,
   rebuild,
   removeDocFromWorks,
   saveAnnotationsFile,
   saveManuscript,
+  savePdfAnnotationsFile,
+  savePdfReadingPosition,
   savePlans,
   uploadDocId,
   type WriterExportBundle,
@@ -117,6 +145,7 @@ import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
+import { probePdf } from "./pdfium-probe.js";
 import {
   cancelNumberingCompile,
   getWriterNumbering,
@@ -142,6 +171,8 @@ export interface AppDeps {
   makeDiscoverySource?: () => AdsDiscoverySource;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
+  /** External current arXiv PDF bytes; isolated tests replace only this network boundary. */
+  fetchArxivPdf?: (arxivId: string) => Promise<Buffer>;
   /**
    * Stage 15 hidden toggle (D15): gate for the AUTOMATIC arXiv fetch on work
    * creation — the default reads `auto_ingest_arxiv` from config.toml fresh
@@ -277,14 +308,26 @@ export function createApp(deps: AppDeps): Hono {
   const planLock = new AsyncLock();
   /** Annotations writes: their own lock too (roadmap §2 — 不与 libraryLock/planLock 互堵). */
   const annotationLock = new AsyncLock();
+  /** Reading position is independently versioned user data. */
+  const readingPositionLock = new AsyncLock();
   /** Writer manuscript writes: own lock (Stage 10; mirrors planLock). */
   const writerLock = new AsyncLock();
   /** The §8 delete↔job lifecycle lock (see doc-mutations.ts). */
   const docMutations = deps.docMutations ?? new DocMutationRegistry();
+  const pdfPinsByJob = new Map<string, string[]>();
   const broadcast = deps.broadcast ?? (() => {});
   // Job transitions flow to the same bus as library.changed (createServer's
   // hub is just another broadcast consumer).
-  runner.onEvent = (type, job) => broadcast({ type, job });
+  runner.onEvent = (type, job) => {
+    if (type === "job.done" || type === "job.failed") {
+      const pinnedDocs = pdfPinsByJob.get(job.id);
+      if (pinnedDocs) {
+        for (const pinnedDoc of pinnedDocs) docMutations.unpinWriter(pinnedDoc);
+        pdfPinsByJob.delete(job.id);
+      }
+    }
+    broadcast({ type, job });
+  };
   const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload" | "ingest"): void => {
     broadcast({ type: "library.changed", cause, at: new Date().toISOString() });
   };
@@ -298,6 +341,8 @@ export function createApp(deps: AppDeps): Hono {
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
   };
+  const pdfOwners = (docId: string) =>
+    LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
   /** AnnotationsError → the route's response (roadmap §3: not_found → 404,
    *  every other store failure → 500, never a silent reset). */
   const annotationsError = (err: AnnotationsError) =>
@@ -355,6 +400,8 @@ export function createApp(deps: AppDeps): Hono {
       try {
         const dir = join(outputDir, name);
         if (statSync(dir).isDirectory() && existsSync(join(dir, `${name}.json`))) {
+          const metadata = readPdfMetadataIfPresent(paths, name);
+          if (metadata && pdfOwners(name).length !== 1) continue;
           ids.push(name);
         }
       } catch {
@@ -362,6 +409,350 @@ export function createApp(deps: AppDeps): Hono {
       }
     }
     return c.json({ papers: ids });
+  });
+
+  // ---- GET /api/paper/{doc_id}/description ----------------------------------- //
+
+  // A separate, non-authoritative type hint for reader dispatch. The stored
+  // TexDocIr must validate; source is copied only from explicit metadata.
+  app.get("/api/paper/:doc_id/description", (c) => {
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    const owners = pdfOwners(docId);
+    const p = join(outputDir, docId, `${docId}.json`);
+    if (!existsSync(p) || !statSync(p).isFile()) {
+      const e =
+        owners.length === 0
+          ? detail(`paper ${pyRepr(docId)} not found`, 404)
+          : detail(`registered document ${pyRepr(docId)} is missing its description`, 500);
+      return c.json(e.body, e.status);
+    }
+    let pdfMetadata: ReturnType<typeof readPdfMetadataIfPresent>;
+    try {
+      pdfMetadata = readPdfMetadataIfPresent(paths, docId);
+    } catch {
+      const e =
+        owners.length === 0
+          ? detail(`paper ${pyRepr(docId)} not found`, 404)
+          : detail(`PDF document ${pyRepr(docId)} has invalid metadata`, 500);
+      return c.json(e.body, e.status);
+    }
+    if (pdfMetadata) {
+      if (owners.length === 0) {
+        const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+        return c.json(e.body, e.status);
+      }
+      if (owners.length !== 1) {
+        const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+        return c.json(e.body, e.status);
+      }
+      const owner = owners[0];
+      if (!owner) {
+        const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+        return c.json(e.body, e.status);
+      }
+      const description: DocDescription = DocDescriptionSchema.parse({
+        doc_id: docId,
+        format: "pdf",
+        acquired_via: pdfMetadata.acquired_via,
+        ...(pdfMetadata.arxiv_id ? { arxiv_id: pdfMetadata.arxiv_id } : {}),
+        acquired_at: pdfMetadata.acquired_at,
+        owner_work_id: owner.id,
+        work_title: owner.title,
+        display_name: pdfMetadata.display_name,
+        byte_length: pdfMetadata.byte_length,
+        sha256: pdfMetadata.sha256,
+        page_count: pdfMetadata.page_count,
+        pages: pdfMetadata.pages,
+      });
+      return c.json(description, 200, { "Cache-Control": "no-store" });
+    }
+    const st = statSync(p, { bigint: true });
+    const stored = paperCache.load(docId, p, { mtimeNs: st.mtimeNs, size: st.size }) as Record<
+      string,
+      unknown
+    >;
+    if (typeof stored.version !== "number") {
+      const e = detail(`paper ${pyRepr(docId)} is a pre-migration document, re-ingest it`, 404);
+      return c.json(e.body, e.status);
+    }
+    const result = TexDocIrSchema.safeParse(stored);
+    if (!result.success || result.data.docId !== docId) {
+      const e = detail(`paper ${pyRepr(docId)} has an invalid document description`, 500);
+      return c.json(e.body, e.status);
+    }
+    const source = result.data.source;
+    const acquired = source?.acquired_via;
+    const description: DocDescription = DocDescriptionSchema.parse({
+      doc_id: docId,
+      format: "latex",
+      ...(acquired === "arxiv_eprint" || acquired === "user_latex_zip"
+        ? { acquired_via: acquired }
+        : {}),
+    });
+    return c.json(description);
+  });
+
+  app.get("/api/paper/:doc_id/pdf/snapshot", (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) {
+      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if (owners.length !== 1) {
+      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const metadata = readPdfMetadataIfPresent(paths, docId);
+      if (!metadata) throw new Error("PDF metadata missing");
+      readVerifiedPdf(paths, docId);
+      const annotations = readPdfAnnotationsFile(paths, docId);
+      const reading_position = (() => {
+        try {
+          return { status: "ready" as const, file: readPdfReadingPosition(paths, docId) };
+        } catch {
+          return {
+            status: "error" as const,
+            detail: "PDF reading position could not be restored; the stored sidecar is preserved",
+          };
+        }
+      })();
+      return c.json({ metadata, annotations, reading_position }, 200, {
+        "Cache-Control": "no-store",
+      });
+    } catch (error) {
+      const changed = error instanceof PdfContentChangedError;
+      const e = detail(
+        changed ? "document changed" : `PDF document ${pyRepr(docId)} or its user data is invalid`,
+        changed ? 409 : 500
+      );
+      return c.json(e.body, e.status);
+    }
+  });
+
+  app.get("/api/paper/:doc_id/pdf/reading-position", (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) return c.json({ detail: "bad doc id" }, 400);
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
+    if (owners.length !== 1)
+      return c.json({ detail: "PDF document has inconsistent Work ownership" }, 500);
+    try {
+      readVerifiedPdf(paths, docId);
+      return c.json({ status: "ready", file: readPdfReadingPosition(paths, docId) }, 200, {
+        "Cache-Control": "no-store",
+      });
+    } catch (error) {
+      return c.json(
+        {
+          detail:
+            error instanceof PdfContentChangedError
+              ? "document changed"
+              : "reading position unavailable",
+        },
+        error instanceof PdfContentChangedError ? 409 : 500
+      );
+    }
+  });
+
+  app.put("/api/paper/:doc_id/pdf/reading-position", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) return c.json({ detail: "bad doc id" }, 400);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ detail: "invalid reading position JSON" }, 400);
+    }
+    const parsed = PdfReadingPositionSchema.safeParse(body);
+    if (!parsed.success || parsed.data.doc_id !== docId)
+      return c.json({ detail: "invalid reading position data" }, 400);
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
+    if (owners.length !== 1)
+      return c.json({ detail: "PDF document has inconsistent Work ownership" }, 500);
+    try {
+      const saved = await readingPositionLock.run(() => {
+        if (docMutations.isDocumentContentBusy(docId)) throw new PdfAnnotationConflictError("busy");
+        return savePdfReadingPosition(paths, docId, parsed.data, parsed.data.rev);
+      });
+      if (saved.rev !== parsed.data.rev)
+        broadcast({
+          type: "pdf-reading-position.changed",
+          doc_id: docId,
+          rev: saved.rev,
+          at: new Date().toISOString(),
+        });
+      return c.json(saved, 200, { "Cache-Control": "no-store" });
+    } catch (error) {
+      if (error instanceof PdfReadingPositionConflictError)
+        return c.json({ detail: "reading position rev mismatch", rev: error.currentRev }, 409);
+      if (error instanceof PdfAnnotationConflictError)
+        return c.json({ detail: error.message }, 409);
+      if (error instanceof PdfAnnotationValidationError)
+        return c.json({ detail: error.message }, 400);
+      if (error instanceof PdfContentChangedError)
+        return c.json({ detail: "document changed" }, 409);
+      return c.json({ detail: "reading position could not be saved" }, 500);
+    }
+  });
+
+  app.get("/api/paper/:doc_id/pdf/annotations/count", (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) {
+      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if (owners.length !== 1) {
+      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+      return c.json(e.body, e.status);
+    }
+    try {
+      readVerifiedPdf(paths, docId);
+      const annotations = readPdfAnnotationsFile(paths, docId);
+      return c.json({
+        count: annotations.annotations.length,
+        content_sha256: annotations.content_sha256,
+      });
+    } catch (error) {
+      const changed = error instanceof PdfContentChangedError;
+      const e = detail(
+        changed ? "document changed" : "PDF annotations could not be counted",
+        changed ? 409 : 500
+      );
+      return c.json(e.body, e.status);
+    }
+  });
+
+  app.put("/api/paper/:doc_id/pdf/annotations", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      const e = detail("invalid PDF annotation JSON", 400);
+      return c.json(e.body, e.status);
+    }
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) {
+      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if (owners.length !== 1) {
+      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+      return c.json(e.body, e.status);
+    }
+    const candidate = PdfAnnotationsFileSchema.safeParse(body);
+    if (!candidate.success) {
+      const e = detail("invalid PDF annotation data", 400);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const saved = await annotationLock.run(() =>
+        savePdfAnnotationsFile(
+          paths,
+          docId,
+          candidate.data.content_sha256,
+          candidate.data.rev,
+          candidate.data,
+          (id) => docMutations.isDocumentContentBusy(id)
+        )
+      );
+      if (saved.rev !== candidate.data.rev) annotationChanged(docId, "put");
+      return c.json(saved);
+    } catch (error) {
+      if (error instanceof PdfAnnotationValidationError) {
+        const e = detail(error.message, 400);
+        return c.json(e.body, e.status);
+      }
+      if (error instanceof PdfAnnotationConflictError) {
+        const status = error.conflict === "busy" ? 409 : 409;
+        const payload =
+          error.conflict === "rev"
+            ? { detail: error.message, rev: readPdfAnnotationsFile(paths, docId).rev }
+            : { detail: error.message };
+        return c.json(payload, status);
+      }
+      const e = detail("PDF annotations could not be saved", 500);
+      return c.json(e.body, e.status);
+    }
+  });
+
+  app.get("/api/paper/:doc_id/pdf", (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    if (!docId.trim() || badId(docId)) {
+      const e = detail("bad doc id", 400);
+      return c.json(e.body, e.status);
+    }
+    if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) {
+      const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if (owners.length !== 1) {
+      const e = detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const metadata = readPdfMetadataIfPresent(paths, docId);
+      if (!metadata) {
+        const e = detail(`PDF document ${pyRepr(docId)} has invalid metadata`, 500);
+        return c.json(e.body, e.status);
+      }
+      const bytes = readVerifiedPdf(paths, docId);
+      const name = [...metadata.original_filename]
+        .map((character) => {
+          const code = character.charCodeAt(0);
+          return code < 0x20 || code === 0x7f || code === 0x22 || code === 0x3b || code === 0x5c
+            ? "_"
+            : character;
+        })
+        .join("");
+      return new Response(bytes, {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Length": String(bytes.length),
+          "Content-Disposition": `attachment; filename="${name}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } catch (error) {
+      const changed = error instanceof PdfContentChangedError;
+      const e = detail(
+        changed ? "document changed" : `PDF document ${pyRepr(docId)} cannot be verified`,
+        changed ? 409 : 500
+      );
+      return c.json(e.body, e.status);
+    }
   });
 
   // ---- GET /api/paper/{doc_id}/ir -------------------------------------------- //
@@ -382,6 +773,10 @@ export function createApp(deps: AppDeps): Hono {
     const p = join(outputDir, docId, `${docId}.json`);
     if (!existsSync(p) || !statSync(p).isFile()) {
       const e = detail(`paper ${pyRepr(docId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    if (readPdfMetadataIfPresent(paths, docId)) {
+      const e = detail(`PDF document ${pyRepr(docId)} has no LaTeX IR`, 404);
       return c.json(e.body, e.status);
     }
     const st = statSync(p, { bigint: true });
@@ -413,6 +808,9 @@ export function createApp(deps: AppDeps): Hono {
       return await annotationLock.run(() => {
         if (docMutations.isDocumentContentBusy(docId)) {
           return c.json({ detail: "document busy" }, 409);
+        }
+        if (readPdfMetadataIfPresent(paths, docId)) {
+          return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
         }
         const result = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
         if (result.invalidated) annotationChanged(docId, "invalidate");
@@ -457,6 +855,7 @@ export function createApp(deps: AppDeps): Hono {
     }
     type PutOutcome =
       | { busy: true }
+      | { pdfUnsupported: true }
       | { documentChanged: AnnotationsFile }
       | { conflictRev: number }
       | { saved: AnnotationsFile };
@@ -464,6 +863,7 @@ export function createApp(deps: AppDeps): Hono {
     try {
       outcome = await annotationLock.run(() => {
         if (docMutations.isDocumentContentBusy(docId)) return { busy: true as const };
+        if (readPdfMetadataIfPresent(paths, docId)) return { pdfUnsupported: true as const };
         const ensured = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
         if (ensured.invalidated) annotationChanged(docId, "invalidate");
         const current = ensured.file;
@@ -482,6 +882,8 @@ export function createApp(deps: AppDeps): Hono {
       throw err;
     }
     if ("busy" in outcome) return c.json({ detail: "document busy" }, 409);
+    if ("pdfUnsupported" in outcome)
+      return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
     if ("documentChanged" in outcome) {
       return c.json({ detail: "document changed", file: outcome.documentChanged }, 409);
     }
@@ -1014,21 +1416,36 @@ export function createApp(deps: AppDeps): Hono {
     return null;
   };
 
-  // ---- Stage 15: arXiv auto-ingest (shared queueing) ----------------------- //
+  // ---- Stage 15: legacy manual arXiv LaTeX fetch --------------------------- //
 
-  /** Hidden config gate (D9/D15): re-read config.toml at every submit. */
+  /** Hidden config gate: re-read config.toml before automatic PDF submission. */
   const autoIngestArxiv = deps.autoIngestArxiv ?? (() => getConfig().auto_ingest_arxiv !== false);
+  const fetchArxivPdf = deps.fetchArxivPdf;
+  const isPdfDoc = (docId: string): boolean => {
+    let metadata: ReturnType<typeof readPdfMetadataIfPresent>;
+    try {
+      metadata = readPdfMetadataIfPresent(paths, docId);
+    } catch {
+      return false;
+    }
+    if (!metadata) return false;
+    if (pdfOwners(docId).length !== 1) throw new Error("PDF Doc has inconsistent Work ownership");
+    return true;
+  };
 
-  /**
-   * Queue the serial arXiv-fetch job for *workId* — the single authoritative
-   * implementation behind BOTH the automatic trigger on POST
-   * /api/library/works and the manual POST /api/library/attach-arxiv (D10).
-   * The D16 scenario table is evaluated here at submit time and again inside
-   * the job at execution time. Returns the queued job, an existing
-   * queued/running fetch for the same work ("new replaces old": the
-   * in-flight job already fetches exactly what a re-trigger would — never
-   * stack duplicates), or null when no trigger applies (no arXiv id /
-   * scenario C / the doc is being deleted).
+  const appendArxivDocToPdfWork = (workId: string, docId: string): Promise<boolean> =>
+    libraryLock.run(() => {
+      const store = LibraryStore.load(paths);
+      const work = store.get(workId);
+      if (!work || arxivAttachScenario(work, docId, isPdfDoc) !== "append") return false;
+      work.doc_ids = [...work.doc_ids, docId];
+      store.save(paths);
+      return true;
+    });
+
+  /** Queue the legacy Stage 15 LaTeX source job for the explicit
+   * /api/library/attach-arxiv endpoint. Automatic acquisition uses the separate
+   * immutable PDF path below; this legacy D16 scenario never mutates PDF Docs.
    */
   const submitArxivFetch = (workId: string): Job | null => {
     const w = LibraryStore.load(paths).get(workId);
@@ -1036,7 +1453,7 @@ export function createApp(deps: AppDeps): Hono {
     const arxivId = normArxiv(w.arxiv_id);
     if (!arxivId) return null;
     const docId = arxivDocId(arxivId);
-    if (arxivAttachScenario(w, docId) === "skip") return null;
+    if (arxivAttachScenario(w, docId, isPdfDoc) === "skip") return null;
     const dupe = runner
       .list()
       .find(
@@ -1078,6 +1495,8 @@ export function createApp(deps: AppDeps): Hono {
               reassertMainDoc: (p, wid, d) =>
                 libraryLock.run(() => patchWork(p, wid, { doc_id: d })),
               onProgress: track,
+              isPdfDoc,
+              appendArxivDocToPdfWork: (_p, wid, did) => appendArxivDocToPdfWork(wid, did),
             });
           } catch (e) {
             if (e instanceof ArxivPdfOnlyError) {
@@ -1121,6 +1540,101 @@ export function createApp(deps: AppDeps): Hono {
     return job;
   };
 
+  const registeredPdfDocIds = (workId: string): string[] => {
+    const work = LibraryStore.load(paths).get(workId);
+    if (!work) return [];
+    return work.doc_ids.filter((docId) => {
+      try {
+        return readPdfMetadataIfPresent(paths, docId) !== null;
+      } catch {
+        // Do not auto-fetch around an unreadable registered Doc: its actual
+        // format cannot safely be inferred from its id, title or old summary.
+        return true;
+      }
+    });
+  };
+
+  /** Queue an independent immutable PDF acquisition from the current arXiv URL. */
+  const submitArxivPdf = (workId: string, automatic: boolean): Job | null => {
+    const work = LibraryStore.load(paths).get(workId);
+    const arxivId = work ? normArxiv(work.arxiv_id) : null;
+    if (!work || !arxivId) return null;
+    if (automatic && registeredPdfDocIds(workId).length > 0) return null;
+    const dupe = runner.list().find((job) => {
+      const payload = job.payload as
+        | { workId?: unknown; format?: unknown; automatic?: unknown }
+        | undefined;
+      return (
+        job.kind === "upload" &&
+        payload?.format === "arxiv-pdf" &&
+        payload.workId === workId &&
+        payload.automatic === automatic &&
+        (job.status === "queued" || job.status === "running")
+      );
+    });
+    if (dupe) return dupe;
+    const docId = `pdf-${randomUUID()}`;
+    if (docMutations.isDeleting(docId)) return null;
+    docMutations.pinWriter(docId);
+    let job: Job;
+    try {
+      job = runner.submit(
+        "upload",
+        async (_job, report) => {
+          const latestWork = LibraryStore.load(paths).get(workId);
+          if (!latestWork || normArxiv(latestWork.arxiv_id) !== arxivId)
+            throw new Error("Work arXiv identity changed before PDF acquisition");
+          if (automatic) {
+            const existing = registeredPdfDocIds(workId);
+            if (existing.length > 0) return { status: "skipped", docId: existing[0] };
+          }
+          if (!fetchArxivPdf) throw new Error("arXiv PDF source is unavailable");
+          report("Fetching current arXiv PDF");
+          const bytes = await fetchArxivPdf(arxivId);
+          if (bytes.length === 0 || bytes.length > PDF_MAX_BYTES)
+            throw new Error(`PDF size is outside the supported limit (${PDF_MAX_BYTES} bytes)`);
+          report("Validating PDF");
+          const probe = await probePdf(bytes);
+          report("Publishing PDF Doc");
+          return await libraryLock.run(() => {
+            const current = LibraryStore.load(paths).get(workId);
+            if (!current || normArxiv(current.arxiv_id) !== arxivId)
+              throw new Error("Work arXiv identity changed before PDF publication");
+            if (automatic) {
+              const existing = registeredPdfDocIds(workId);
+              if (existing.length > 0) return { status: "skipped", docId: existing[0] };
+            }
+            const metadata = publishPdfDoc(paths, {
+              docId,
+              workId,
+              filename: `arxiv-${arxivId.replace(/[^A-Za-z0-9._-]+/g, "-")}.pdf`,
+              bytes,
+              pages: probe.pages,
+              acquiredVia: "arxiv_pdf",
+              arxivId,
+              deduplicate: false,
+            });
+            return { status: "created", doc: metadata };
+          });
+        },
+        { workId, docId, format: "arxiv-pdf", arxivId, automatic }
+      );
+    } catch (error) {
+      docMutations.unpinWriter(docId);
+      throw error;
+    }
+    void runner.waitFor(job.id).then((finished) => {
+      docMutations.unpinWriter(docId);
+      if (
+        finished.status === "done" &&
+        (finished.result as { status?: unknown } | null)?.status === "created"
+      ) {
+        libraryChanged("upload");
+      }
+    });
+    return job;
+  };
+
   // Manual work creation (import menu). Per-entry outcomes ride in the 200
   // body (`results[].status`: created | exists | error); HTTP errors are
   // reserved for a malformed request / server failure. The whole batch runs
@@ -1157,17 +1671,13 @@ export function createApp(deps: AppDeps): Hono {
       }
       return addManualBibText(paths, req.bib);
     });
-    // Stage 15 (D1/D6): auto-queue the arXiv fetch for each created/exists
-    // work that has an arXiv id — identifier/bibcode modes only, a bib batch
-    // never auto-queues. The scenario table (attach / refresh / skip) is
-    // evaluated inside submitArxivFetch. A submit failure must not fail the
-    // already-completed creation. job.created precedes library.changed (the
-    // mirror of the upload path's job.done-before-library.changed).
+    // Automatic PDF is limited to the existing identifier/bibcode modes;
+    // bulk BibTeX never auto-queues. Submission failure cannot undo the Work.
     if (req.mode !== "bib" && autoIngestArxiv()) {
       for (const r of results) {
         if ((r.status === "created" || r.status === "exists") && r.ref !== undefined) {
           try {
-            submitArxivFetch(r.ref.id);
+            submitArxivPdf(r.ref.id, true);
           } catch (e) {
             console.error(`auto arXiv ingest submit failed for ${r.ref.id}:`, e);
           }
@@ -1238,6 +1748,191 @@ export function createApp(deps: AppDeps): Hono {
     } finally {
       docMutations.unpinRefresh();
     }
+  });
+
+  // ---- POST /api/library/upload-pdf?id=<existing-work-id> -------------------- //
+
+  // Raw PDF upload is a distinct path: the selected Work identity is never
+  // inferred from filename or document metadata, and PDF bytes are immutable.
+  app.post("/api/library/upload-pdf", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const workId = c.req.query("id");
+    if (!workId) {
+      const e = detail("id query param required", 400);
+      return c.json(e.body, e.status);
+    }
+    try {
+      if (!LibraryStore.load(paths).get(workId)) {
+        const e = detail(`work ${pyRepr(workId)} not found`, 404);
+        return c.json(e.body, e.status);
+      }
+    } catch {
+      const e = detail("library could not be read", 500);
+      return c.json(e.body, e.status);
+    }
+    const declaredLength = Number(c.req.header("content-length") ?? 0);
+    if (Number.isFinite(declaredLength) && declaredLength > PDF_MAX_BYTES) {
+      const e = detail(`PDF exceeds the ${PDF_MAX_BYTES} byte limit`, 413);
+      return c.json(e.body, e.status);
+    }
+    const stream = c.req.raw.body;
+    if (!stream) {
+      const e = detail("PDF upload body is empty", 400);
+      return c.json(e.body, e.status);
+    }
+    const reader = stream.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > PDF_MAX_BYTES) {
+          await reader.cancel();
+          const e = detail(`PDF exceeds the ${PDF_MAX_BYTES} byte limit`, 413);
+          return c.json(e.body, e.status);
+        }
+        chunks.push(value);
+      }
+    } catch {
+      const e = detail("PDF upload could not be read", 400);
+      return c.json(e.body, e.status);
+    }
+    const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+    if (bytes.length === 0) {
+      const e = detail("PDF upload body is empty", 400);
+      return c.json(e.body, e.status);
+    }
+    let filename = c.req.header("x-filename") ?? "document.pdf";
+    try {
+      filename = decodeURIComponent(filename);
+    } catch {
+      const e = detail("invalid PDF filename", 400);
+      return c.json(e.body, e.status);
+    }
+    filename = filename.split(/[\\/]/).pop() ?? "document.pdf";
+    filename = [...filename]
+      .map((character) => {
+        const code = character.charCodeAt(0);
+        return code < 0x20 || code === 0x7f ? "_" : character;
+      })
+      .join("");
+    if (!filename || filename.length > 255) {
+      const e = detail("invalid PDF filename", 400);
+      return c.json(e.body, e.status);
+    }
+
+    let existing: ReturnType<typeof findMatchingPdfDoc>;
+    try {
+      existing = findMatchingPdfDoc(
+        paths,
+        workId,
+        bytes,
+        (id) => docMutations.isBusy(id) || docMutations.isDeleting(id)
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "PDF identity check failed";
+      const e = detail(message, message === "document busy" ? 409 : 500);
+      return c.json(e.body, e.status);
+    }
+    const docId = existing?.doc_id ?? `pdf-${randomUUID()}`;
+    if (docMutations.isBusy(docId) || docMutations.isDeleting(docId)) {
+      const e = detail("document busy", 409);
+      return c.json(e.body, e.status);
+    }
+    docMutations.pinWriter(docId);
+    let job: Job;
+    try {
+      job = runner.submit(
+        "upload",
+        async (j, report) => {
+          const spool = runner.spoolPath(j.id);
+          try {
+            report("Validating PDF");
+            const uploadBytes = readFileSync(spool);
+            if (uploadBytes.length !== total)
+              throw new Error("PDF upload length changed before processing");
+            const pinDuplicate = (duplicateId: string) => {
+              if (duplicateId === docId) return;
+              if (docMutations.isBusy(duplicateId) || docMutations.isDeleting(duplicateId))
+                throw new Error("document busy");
+              docMutations.pinWriter(duplicateId);
+              const pins = pdfPinsByJob.get(j.id);
+              if (!pins) {
+                docMutations.unpinWriter(duplicateId);
+                throw new Error("PDF upload lifecycle pin is missing");
+              }
+              pins.push(duplicateId);
+            };
+            const currentMatch = findMatchingPdfDoc(
+              paths,
+              workId,
+              uploadBytes,
+              (id) => id !== docId && (docMutations.isBusy(id) || docMutations.isDeleting(id))
+            );
+            if (currentMatch) {
+              pinDuplicate(currentMatch.doc_id);
+              return { status: "exists", doc: currentMatch };
+            }
+            const probe = await probePdf(uploadBytes);
+            report("Publishing PDF Doc");
+            const metadata = await libraryLock.run(() => {
+              if (docMutations.isDeleting(docId)) throw new Error("document busy");
+              const matching = findMatchingPdfDoc(
+                paths,
+                workId,
+                uploadBytes,
+                (id) => id !== docId && (docMutations.isBusy(id) || docMutations.isDeleting(id))
+              );
+              if (matching) {
+                pinDuplicate(matching.doc_id);
+                return matching;
+              }
+              return publishPdfDoc(paths, {
+                docId,
+                workId,
+                filename,
+                bytes: uploadBytes,
+                pages: probe.pages,
+              });
+            });
+            return { status: metadata.doc_id === docId ? "created" : "exists", doc: metadata };
+          } finally {
+            rmSync(spool, { force: true });
+          }
+        },
+        { workId, docId, format: "pdf" }
+      );
+      pdfPinsByJob.set(job.id, [docId]);
+    } catch (error) {
+      docMutations.unpinWriter(docId);
+      const e = detail(
+        error instanceof Error ? error.message : "PDF upload could not be queued",
+        500
+      );
+      return c.json(e.body, e.status);
+    }
+    void runner.waitFor(job.id).then((finished) => {
+      if (
+        finished.status === "done" &&
+        (finished.result as { status?: unknown } | null)?.status === "created"
+      ) {
+        libraryChanged("upload");
+      }
+    });
+    try {
+      writeFileSync(runner.spoolPath(job.id), bytes);
+    } catch (error) {
+      // The durable job will fail on its missing spool and release the pin.
+      const e = detail(
+        error instanceof Error ? error.message : "PDF upload could not be stored",
+        500
+      );
+      return c.json(e.body, e.status);
+    }
+    return c.json({ job, resourceWarning: bytes.length >= PDF_RESOURCE_WARNING_BYTES }, 202);
   });
 
   // ---- POST /api/library/upload?id=|doi=|arxiv= ------------------------------ //
@@ -1374,7 +2069,33 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ job }, 202);
   });
 
-  // ---- POST /api/library/attach-arxiv?id=<workId> (Stage 15) ----------------- //
+  // ---- POST /api/library/acquire-arxiv-pdf?id=<workId> ----------------------- //
+
+  app.post("/api/library/acquire-arxiv-pdf", (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const workId = c.req.query("id");
+    if (!workId) return c.json(detail("id query param required", 400).body, 400);
+    const work = LibraryStore.load(paths).get(workId);
+    if (!work) return c.json(detail(`work ${pyRepr(workId)} not found`, 404).body, 404);
+    if (!normArxiv(work.arxiv_id))
+      return c.json(detail(`work ${pyRepr(workId)} has no arXiv id`, 400).body, 400);
+    try {
+      const job = submitArxivPdf(workId, false);
+      if (!job) return c.json(detail("could not queue arXiv PDF acquisition", 409).body, 409);
+      return c.json({ job }, 202);
+    } catch (error) {
+      return c.json(
+        detail(
+          error instanceof Error ? error.message : "arXiv PDF acquisition could not be queued",
+          500
+        ).body,
+        500
+      );
+    }
+  });
+
+  // ---- POST /api/library/attach-arxiv?id=<workId> (Stage 15 LaTeX) ---------- //
 
   // Fetch the work's own arXiv e-print (the LATEST version, always fresh) and
   // attach it — or refresh the existing arXiv doc in place (D16 scenario
@@ -1399,10 +2120,10 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail(`work ${pyRepr(id)} has no arXiv id`, 400);
       return c.json(e.body, e.status);
     }
-    // Scenario C (D16): the work has only other (user-uploaded) content —
-    // never clobber it; the user deletes that doc first if they want the
-    // arXiv version instead.
-    if (arxivAttachScenario(w, arxivDocId(arxivId)) === "skip") {
+    // Keep Scenario C for existing non-PDF content (especially a LaTeX zip).
+    // A PDF-only Work is the narrow approved exception: its new LaTeX Doc is
+    // appended and cannot replace the user's current PDF main Doc.
+    if (arxivAttachScenario(w, arxivDocId(arxivId), isPdfDoc) === "skip") {
       const e = detail(
         `work ${pyRepr(id)} already has a non-arXiv doc; delete it first if you want the arXiv version`,
         409

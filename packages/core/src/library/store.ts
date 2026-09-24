@@ -26,7 +26,7 @@
  *   keeps `false`, `0` and `{}` (Python's `v not in (None, [], "")`).
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pyOr, pyTruthy, stripChars } from "../documents/pyregex.js";
 
@@ -430,17 +430,28 @@ export class LibraryStore {
     return new LibraryStore(works, project);
   }
 
-  save(paths: LibraryPaths): void {
+  /** Persist only the library source of truth when a change cannot affect BibTeX. */
+  saveJson(paths: LibraryPaths): void {
     mkdirSync(paths.libraryDir, { recursive: true });
-    mkdirSync(paths.cacheDir, { recursive: true });
     const payload = {
       version: 1,
       project: this.project,
       works: this.works.map(workToDict),
     };
     const tmp = paths.libraryJson.replace(/\.json$/, ".json.tmp");
-    writeFileSync(tmp, JSON.stringify(payload, null, 2), "utf8");
-    renameSync(tmp, paths.libraryJson);
+    try {
+      writeFileSync(tmp, JSON.stringify(payload, null, 2), "utf8");
+      renameSync(tmp, paths.libraryJson);
+    } catch (error) {
+      rmSync(tmp, { force: true });
+      throw error;
+    }
+  }
+
+  save(paths: LibraryPaths): void {
+    mkdirSync(paths.libraryDir, { recursive: true });
+    mkdirSync(paths.cacheDir, { recursive: true });
+    this.saveJson(paths);
     const btmp = paths.libraryBib.replace(/\.bib$/, ".bib.tmp");
     writeFileSync(btmp, this.toBibtex(), "utf8");
     renameSync(btmp, paths.libraryBib);

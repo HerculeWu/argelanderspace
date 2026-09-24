@@ -178,6 +178,25 @@ describe("arxivAttachScenario (D16 table)", () => {
   test("only other (user) docs → skip", () => {
     expect(arxivAttachScenario({ ...ARXIV_WORK, doc_ids: ["upload-x"] }, docId)).toBe("skip");
   });
+
+  test("all-PDF Docs allow an append; mixed LaTeX/user Docs keep legacy skip", () => {
+    const isPdfDoc = (id: string) => id.startsWith("pdf-");
+    expect(
+      arxivAttachScenario({ ...ARXIV_WORK, doc_ids: ["pdf-a", "pdf-b"] }, docId, isPdfDoc)
+    ).toBe("append");
+    expect(
+      arxivAttachScenario({ ...ARXIV_WORK, doc_ids: ["pdf-a", "upload-zip"] }, docId, isPdfDoc)
+    ).toBe("skip");
+  });
+
+  test("PDF-only Work appends LaTeX without treating an unrelated LaTeX Doc as eligible", () => {
+    const pdfOnly = { ...ARXIV_WORK, doc_ids: ["pdf-a", "pdf-b"] };
+    const isPdfDoc = (id: string) => id.startsWith("pdf-");
+    expect(arxivAttachScenario(pdfOnly, docId, isPdfDoc)).toBe("append");
+    expect(
+      arxivAttachScenario({ ...pdfOnly, doc_ids: ["pdf-a", "upload-zip"] }, docId, isPdfDoc)
+    ).toBe("skip");
+  });
 });
 
 describe("attachArxivDoc", () => {
