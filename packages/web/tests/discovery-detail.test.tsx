@@ -79,6 +79,7 @@ describe("DiscoveryDetail", () => {
     expect(container.textContent).toContain("The Seed Paper");
     expect(container.textContent).toContain("Seed abstract text.");
     expect(container.textContent).toContain("SEED");
+    expect(container.querySelector('[data-ui="discovery-detail"]')?.getAttribute("data-ui-key")).toBe("SEED");
     expect(container.textContent).toContain("10.1051/x");
     expect(container.textContent).toContain("2306.12345");
     // the fabricated-BibTeX surface must not exist for candidates
@@ -94,6 +95,8 @@ describe("DiscoveryDetail", () => {
     const { container } = render(<DiscoveryDetail {...props} />);
     expect(container.textContent).toContain("similar()"); // source line
     expect(container.textContent).toContain("useful()");
+    expect(container.querySelector('[data-ui="discovery-detail"]')?.getAttribute("data-ui-key")).toBe("REL1");
+    expect(container.querySelector('[data-ui="save-discovery-paper"]')).toBeTruthy();
     fireEvent.click(container.querySelector('[data-testid="add-to-library"]')!);
     expect(props.onAdd).toHaveBeenCalledWith("REL1");
     fireEvent.click(container.querySelector('[data-testid="explore-from-here"]')!);

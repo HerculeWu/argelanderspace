@@ -21,7 +21,7 @@ export function DocPane() {
   const ws = useWorkspace();
   const { t } = useTranslation();
   const id = ws.currentDoc;
-  if (!id) return <div className="reader-root"><div className="loading">{t("doc.empty")}</div></div>;
+  if (!id) return <div className="reader-root" data-ui="doc-empty"><div className="loading">{t("doc.empty")}</div></div>;
   return <DocReadingEntry key={id} docId={id} />;
 }
 
@@ -44,16 +44,16 @@ function DocReadingEntry({ docId }: { docId: string }) {
     return () => abort.abort();
   }, [docId, attempt]);
 
-  if (state.phase === "loading") return <div className="reader-root"><div className="loading">{t("doc.loadingPaper")}</div></div>;
-  if (state.phase === "error") return <div className="reader-root"><div role="alert">
+  if (state.phase === "loading") return <div className="reader-root" data-ui="doc-loading" data-ui-key={docId}><div className="loading">{t("doc.loadingPaper")}</div></div>;
+  if (state.phase === "error") return <div className="reader-root" data-ui="doc-error" data-ui-key={docId}><div role="alert">
     {t("doc.sync.error")}
-    <button onClick={() => setAttempt((current) => current + 1)}>{t("doc.sync.manualRetry")}</button>
+    <button data-ui="retry-doc" onClick={() => setAttempt((current) => current + 1)}>{t("doc.sync.manualRetry")}</button>
   </div></div>;
   switch (state.description.format) {
     case "latex":
       return <ReaderSession docId={docId}><SessionWorkspace /></ReaderSession>;
     case "pdf":
-      return <div className="reader-root"><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
+      return <div className="reader-root" data-ui="pdf-doc" data-ui-key={docId}><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
   }
 }
 
@@ -62,10 +62,10 @@ function SessionWorkspace() {
   const { state, controller } = useReaderSession();
   const { t } = useTranslation();
   const ir = state.accepted?.ir;
-  return <div className="reader-session">
-    {state.phase !== "ready" && <div className="reader-sync-status" role="status">
+  return <div className="reader-session" data-ui="latex-session" data-ui-key={controller.docId}>
+    {state.phase !== "ready" && <div className="reader-sync-status" role="status" data-ui="latex-sync-status">
       {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
-      <button onClick={controller.retry}>{t("doc.sync.manualRetry")}</button>
+      <button data-ui="retry-latex-sync" onClick={controller.retry}>{t("doc.sync.manualRetry")}</button>
     </div>}
     <RetainedDrafts />
     {ir && state.phase !== "missing" ? <StoreProvider ir={ir} anchorPending={!!ws.pendingAnchor}>
@@ -109,14 +109,15 @@ function DocWorkspace({
   const nFigs = ir.refsManifest.filter((r) => r.kind === "figure").length;
 
   return (
-    <div className="reader-root">
-      <header className="topbar">
+    <div className="reader-root" data-ui="latex-reader" data-ui-key={currentId}>
+      <header className="topbar" data-ui="latex-toolbar">
         <h1 title={ir.title}>
           {ir.title ? <MathText as="span" text={ir.title} /> : ir.docId}
         </h1>
         {papers.length > 1 && (
           <select
             className="paper-switch"
+            data-ui="switch-doc"
             value={currentId}
             onChange={(e) => onSelect(e.target.value)}
             title={t("doc.switchPaper")}
@@ -135,10 +136,11 @@ function DocWorkspace({
       </header>
 
       <span className="reader-position-note">{t("doc.positionNote")}</span>
-      <div className="reader-main">
-        <aside className={"panel left" + (collapsedLeft ? " collapsed" : "")}>
+      <div className="reader-main" data-ui="latex-reader-layout">
+        <aside data-ui="latex-outline-panel" className={"panel left" + (collapsedLeft ? " collapsed" : "")}>
           <button
             className="panel-toggle"
+            data-ui="toggle-latex-outline"
             title={collapsedLeft ? t("doc.expandContents") : t("doc.collapseContents")}
             onClick={() => setCollapsedLeft((v) => !v)}
           >
@@ -150,15 +152,16 @@ function DocWorkspace({
           </div>
         </aside>
 
-        <div className="reader-col">
+        <div className="reader-col" data-ui="latex-document-area">
           <Reader />
           <UndoFab />
           <AnnotationToast />
         </div>
 
-        <aside className={"panel right" + (collapsedRight ? " collapsed" : "")}>
+        <aside data-ui="latex-right-panel" className={"panel right" + (collapsedRight ? " collapsed" : "")}>
           <button
             className="panel-toggle"
+            data-ui="toggle-latex-right-panel"
             title={collapsedRight ? t("doc.expandRefs") : t("doc.collapseRefs")}
             onClick={() => setCollapsedRight((v) => !v)}
           >
@@ -203,9 +206,9 @@ function AnnotationToast() {
   const { t } = useTranslation();
   if (!ann.notice) return null;
   return (
-    <div className="ann-toast view-in" role="status">
+    <div className="ann-toast view-in" role="status" data-ui="latex-annotation-notice">
       <span>{ann.notice}</span>
-      <button className="ann-toast-x" title={t("common.close")} onClick={ann.dismissNotice}>
+      <button data-ui="dismiss-annotation-notice" className="ann-toast-x" title={t("common.close")} onClick={ann.dismissNotice}>
         ×
       </button>
     </div>
@@ -218,7 +221,7 @@ function UndoFab() {
   const canUndo = useCanUndo();
   if (!canUndo) return null;
   return (
-    <button className="undo-fab" onClick={store.undo} title={t("doc.undoTitle")}>
+    <button data-ui="undo-latex-navigation" className="undo-fab" onClick={store.undo} title={t("doc.undoTitle")}>
       {t("doc.undoBack")}
     </button>
   );

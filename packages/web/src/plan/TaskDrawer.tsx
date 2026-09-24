@@ -42,15 +42,15 @@ export function TaskDrawer({
   const { t } = useTranslation();
   const byDocId = new Map(refs.filter((r) => r.doc_id).map((r) => [r.doc_id as string, r]));
   return (
-    <div className="plan-drawer view-in">
+    <div className="plan-drawer view-in" data-ui="task-drawer" data-ui-key={task.id}>
       <div className="plan-drawer-head">
         <span className="tag">{plan.name}</span>
         <div className="plan-drawer-head-actions">
-          <button className="btn icon ghost" title={t("plan.action.editTask")} onClick={() => cb.onEdit(plan.id, task)}>
+          <button className="btn icon ghost" data-ui="edit-task" title={t("plan.action.editTask")} onClick={() => cb.onEdit(plan.id, task)}>
             <Icon name="pencil" cls="ico-sm" />
           </button>
           <PinBtn focused={task.focused} onToggle={() => cb.onTogglePin(plan.id, task.id)} />
-          <button className="btn icon ghost" title={t("common.close")} onClick={cb.onClose}>
+          <button className="btn icon ghost" data-ui="close-task-drawer" title={t("common.close")} onClick={cb.onClose}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
@@ -67,12 +67,12 @@ export function TaskDrawer({
             if (!ref) {
               // the library no longer has this doc: grayed, kept, removable
               return (
-                <div key={l.doc_id} className="plan-drawer-art missing" title={l.doc_id}>
+                <div key={l.doc_id} className="plan-drawer-art missing" data-ui="missing-task-doc" data-ui-key={l.doc_id} title={l.doc_id}>
                   <Icon name="file-x" cls="ico-sm" />
                   <span className="mono">{t("plan.drawer.docMissing")}</span>
                   <span className="plan-drawer-art-kind">{l.doc_id}</span>
                   <button
-                    className="plan-drawer-art-x"
+                    className="plan-drawer-art-x" data-ui="unlink-task-doc"
                     title={t("plan.drawer.removeLink")}
                     onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}
                   >
@@ -82,9 +82,9 @@ export function TaskDrawer({
               );
             }
             return (
-              <div key={l.doc_id} className="plan-drawer-art-wrap">
+              <div key={l.doc_id} className="plan-drawer-art-wrap" data-ui="task-doc" data-ui-key={l.doc_id}>
                 <button
-                  className="plan-drawer-art"
+                  className="plan-drawer-art" data-ui="open-task-doc"
                   title={t("plan.drawer.openDoc", { title: ref.title })}
                   onClick={() => cb.onOpenDoc(l.doc_id)}
                 >
@@ -93,7 +93,7 @@ export function TaskDrawer({
                   <Icon name="arrow-up-right" cls="ico-sm" />
                 </button>
                 <button
-                  className="plan-drawer-art-x"
+                  className="plan-drawer-art-x" data-ui="unlink-task-doc"
                   title={t("plan.drawer.removeLink")}
                   onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}
                 >
@@ -115,7 +115,7 @@ export function TaskDrawer({
       <NoteEditor key={task.id} value={task.note} onSave={(v) => cb.onSetNote(plan.id, task.id, v)} />
 
       <div className="plan-drawer-spacer" />
-      <button className="plan-drawer-delete" onClick={() => cb.onDelete(plan.id, task.id)}>
+      <button data-ui="delete-task" className="plan-drawer-delete" onClick={() => cb.onDelete(plan.id, task.id)}>
         <Icon name="trash-2" cls="ico-sm" />
         {t("plan.drawer.deleteTask")}
       </button>
@@ -140,7 +140,7 @@ function LinkPicker({
   }, [open]);
   if (!open) {
     return (
-      <button className="plan-drawer-art add" onClick={() => setOpen(true)}>
+      <button data-ui="add-task-doc" className="plan-drawer-art add" onClick={() => setOpen(true)}>
         <Icon name="plus" cls="ico-sm" />
         {t("plan.drawer.addLink")}
       </button>
@@ -157,11 +157,12 @@ function LinkPicker({
     )
     .slice(0, 8);
   return (
-    <div className="plan-linkpick">
+    <div className="plan-linkpick" data-ui="task-doc-picker">
       <div className="plan-linkpick-input">
         <Icon name="search" cls="ico-sm" />
         <input
           ref={ref}
+          data-ui="search-task-docs"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
@@ -169,7 +170,7 @@ function LinkPicker({
           }}
           placeholder={t("plan.drawer.searchPlaceholder")}
         />
-        <button className="btn icon ghost" title={t("common.close")} onClick={() => setOpen(false)}>
+        <button className="btn icon ghost" data-ui="close-task-doc-picker" title={t("common.close")} onClick={() => setOpen(false)}>
           <Icon name="x" cls="ico-sm" />
         </button>
       </div>
@@ -177,6 +178,7 @@ function LinkPicker({
         {filtered.map((r) => (
           <button
             key={r.id}
+            data-ui="task-doc-choice" data-ui-key={r.doc_id}
             className="plan-linkpick-item"
             onClick={() => {
               onPick(r.doc_id as string);
@@ -215,10 +217,10 @@ function NoteEditor({
 
   if (editing) {
     return (
-      <div className="plan-note-edit">
+      <div className="plan-note-edit" data-ui="task-note-editor">
         <textarea
           ref={ta}
-          className="plan-note-textarea mono"
+          className="plan-note-textarea mono" data-ui="task-note-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -241,7 +243,7 @@ function NoteEditor({
           </span>
           <div style={{ flex: 1 }} />
           <button
-            className="plan-note-btn"
+            className="plan-note-btn" data-ui="cancel-task-note"
             onClick={() => {
               setDraft(value ?? "");
               setEditing(false);
@@ -250,7 +252,7 @@ function NoteEditor({
             {t("common.cancel")}
           </button>
           <button
-            className="plan-note-btn primary"
+            className="plan-note-btn primary" data-ui="save-task-note"
             onClick={() => {
               onSave(draft.trim() || undefined);
               setEditing(false);
@@ -265,12 +267,12 @@ function NoteEditor({
   }
   const html = mdWithMath(value ?? "");
   return (
-    <div className="plan-note-view">
+    <div className="plan-note-view" data-ui="task-note-view">
       {html ? (
         <>
           <div className="plan-md-body" dangerouslySetInnerHTML={{ __html: html }} />
           <button
-            className="plan-note-edit-btn"
+            className="plan-note-edit-btn" data-ui="edit-task-note"
             onClick={() => {
               setDraft(value ?? "");
               setEditing(true);
@@ -282,7 +284,7 @@ function NoteEditor({
         </>
       ) : (
         <button
-          className="plan-note-empty"
+          className="plan-note-empty" data-ui="add-task-note"
           onClick={() => {
             setDraft("");
             setEditing(true);

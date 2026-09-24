@@ -153,7 +153,7 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
         setNoDrop(false);
       }}
     >
-      <div className={`plan-list-mode${noDrop ? " plan-nodrop-active" : ""}`} ref={listRef}>
+      <div className={`plan-list-mode${noDrop ? " plan-nodrop-active" : ""}`} data-ui="plan-task-list" ref={listRef}>
         {GROUPS.map((g) => {
           const items = plan.tasks.filter((t) => t.status === g.key);
           if (items.length === 0) return null;
@@ -161,12 +161,12 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
           return (
             <div
               key={g.key}
-              className={`plan-list-group${dragStatus !== null && g.key !== dragStatus ? " plan-no-target" : ""}`}
+              className={`plan-list-group${dragStatus !== null && g.key !== dragStatus ? " plan-no-target" : ""}`} data-ui="task-status-group" data-ui-key={g.key}
               data-group={g.key}
             >
               <div className="plan-list-group-head">
                 {isDone ? (
-                  <button className="plan-list-fold" onClick={() => setDoneOpen((o) => !o)}>
+                  <button className="plan-list-fold" data-ui="toggle-completed-tasks" onClick={() => setDoneOpen((o) => !o)}>
                     <Icon name={doneOpen ? "chevron-down" : "chevron-right"} cls="ico-sm" />
                   </button>
                 ) : (
@@ -212,7 +212,7 @@ function SortableRow({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`plan-task-row${task.status === "done" ? " is-done" : ""}${isDragging ? " dragging" : ""}`}
+      className={`plan-task-row${task.status === "done" ? " is-done" : ""}${isDragging ? " dragging" : ""}`} data-ui="task-item" data-ui-key={task.id}
       onClick={() => cb.onOpen(task.id)}
       {...attributes}
       {...listeners}

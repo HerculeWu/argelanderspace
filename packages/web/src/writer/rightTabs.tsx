@@ -47,12 +47,13 @@ function ReferencesPanel({ onInsertCite }: { onInsertCite: (key: string) => void
 
   return (
     <div className="w-panel-body">
-      <div className="w-panel-title">{t("writer.refs.title")}</div>
+      <div className="w-panel-title" data-ui="writer-references">{t("writer.refs.title")}</div>
       <div className="w-search">
         <Icon name="search" cls="ico-sm" />
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          data-ui="search-writer-references"
           placeholder={t("writer.refs.search")}
         />
       </div>
@@ -62,7 +63,7 @@ function ReferencesPanel({ onInsertCite }: { onInsertCite: (key: string) => void
         <div className="w-note">{t("writer.refs.empty")}</div>
       )}
       {list.map((r) => (
-        <div className="w-ref-card" key={r.id}>
+        <div className="w-ref-card" data-ui="writer-reference" data-ui-key={r.id} key={r.id}>
           <div className="w-ref-title">{r.title}</div>
           <div className="w-ref-meta">
             {r.authors} · {r.year}
@@ -71,7 +72,7 @@ function ReferencesPanel({ onInsertCite }: { onInsertCite: (key: string) => void
             <span className="w-key">{r.cite}</span>
             <button
               className="w-insert-key"
-              data-ref-key={r.cite}
+              data-ref-key={r.cite} data-ui="insert-cite-key"
               title={t("writer.refs.insert")}
               onClick={() => onInsertCite(r.cite)}
             >
@@ -125,11 +126,12 @@ function CrossrefsPanel({
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
+          data-ui="search-writer-crossrefs"
           placeholder={t("writer.xref.search")}
         />
       </div>
       {list.map((x) => (
-        <div className="w-ref-card" key={`${x.cell}-${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}>
+        <div className="w-ref-card" data-ui="writer-crossref" data-ui-key={`${x.cell}:${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`} key={`${x.cell}-${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}>
           <div className="w-ref-title">
             {kindLabel(x.kind)} {x.number} · {x.title}
           </div>
@@ -137,7 +139,7 @@ function CrossrefsPanel({
             <span className="w-key">{x.label || t("writer.xref.noLabel")}</span>
             <button
               className="w-insert-key"
-              data-xref-insert={x.label}
+              data-xref-insert={x.label} data-ui="insert-crossref"
               data-target-cell={x.cell}
               title={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}
               disabled={x.insertable === false}
@@ -179,14 +181,14 @@ function CommentsPanel({
   };
 
   return (
-    <div className="w-panel-body w-comments">
+    <div className="w-panel-body w-comments" data-ui="writer-comments">
       <div className="w-panel-title">
         {t("writer.comments.title")}
         {activeType ? t("writer.comments.forCell", { type: t(TYPE_LABEL_KEY[activeType]) }) : ""}
       </div>
       {shown.length === 0 && <div className="w-note">{t("writer.comments.empty")}</div>}
       {shown.map((c: WriterComment) => (
-        <div className="w-comment-card" key={c.id}>
+        <div className="w-comment-card" data-ui="cell-comment" data-ui-key={c.id} key={c.id}>
           <div className="w-comment-head">
             <span className="w-who">{c.who}</span>
             <span>· cell {c.cell}</span>
@@ -194,13 +196,14 @@ function CommentsPanel({
           <div className="w-comment-body">{c.body}</div>
         </div>
       ))}
-      <div className="w-comment-compose">
+      <div className="w-comment-compose" data-ui="cell-comment-editor">
         <textarea
+          data-ui="cell-comment-input"
           value={body}
           onChange={(e) => setBody(e.target.value)}
           placeholder={t("writer.comments.placeholder")}
         />
-        <button className="btn primary" disabled={!body.trim() || !target} onClick={add}>
+        <button className="btn primary" data-ui="add-cell-comment" disabled={!body.trim() || !target} onClick={add}>
           {t("writer.comments.add")}
         </button>
       </div>
@@ -233,21 +236,21 @@ export function RightTabs({
   const { t } = useTranslation();
   return (
     <>
-      <div className="w-right-tabs">
+      <div className="w-right-tabs" data-ui="writer-panel-tabs">
         <button
-          className={"w-right-tab" + (tab === "references" ? " on" : "")}
+          data-ui="writer-tab" data-ui-key="references" className={"w-right-tab" + (tab === "references" ? " on" : "")}
           onClick={() => onTab("references")}
         >
           {t("writer.tabs.references")}
         </button>
         <button
-          className={"w-right-tab" + (tab === "crossrefs" ? " on" : "")}
+          data-ui="writer-tab" data-ui-key="crossrefs" className={"w-right-tab" + (tab === "crossrefs" ? " on" : "")}
           onClick={() => onTab("crossrefs")}
         >
           {t("writer.tabs.crossrefs")}
         </button>
         <button
-          className={"w-right-tab" + (tab === "comments" ? " on" : "")}
+          data-ui="writer-tab" data-ui-key="comments" className={"w-right-tab" + (tab === "comments" ? " on" : "")}
           onClick={() => onTab("comments")}
         >
           {t("writer.tabs.comments")}{" "}

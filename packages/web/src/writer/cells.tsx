@@ -92,13 +92,13 @@ function useField(cell: WriterCell, ctx: CellCtx) {
 function EditorFooter({ cell, ctx }: FieldProps) {
   const { t } = useTranslation();
   return (
-    <div className="w-editor-actions">
+    <div className="w-editor-actions" data-ui="cell-editor-actions">
       <span className="w-hint">{t("writer.cell.shiftEnterHint")}</span>
       <div className="w-editor-buttons">
-        <button className="btn" onClick={() => ctx.onDelete(cell.id)}>
+        <button className="btn" data-ui="delete-cell-in-editor" onClick={() => ctx.onDelete(cell.id)}>
           {t("common.delete")}
         </button>
-        <button className="btn primary" data-commit={cell.id} onClick={() => ctx.onCommit(cell.id)}>
+        <button className="btn primary" data-commit={cell.id} data-ui="commit-cell" onClick={() => ctx.onCommit(cell.id)}>
           {t("writer.cell.render")}
         </button>
       </div>
@@ -110,11 +110,12 @@ function PlacementButtons({ cell, ctx }: FieldProps) {
   const d = cell.data as Record<string, unknown>;
   const cur = (d.placement as CellPlacement) || "center";
   return (
-    <div className="w-segmented">
+    <div className="w-segmented" data-ui="cell-format-options">
       {(["left", "center", "right"] as const).map((p) => (
         <button
           key={p}
           type="button"
+          data-ui="cell-placement" data-ui-key={p}
           className={cur === p ? "on" : undefined}
           onClick={() => ctx.onField(cell.id, "placement", p)}
         >
@@ -155,7 +156,7 @@ export function CellEditor({ cell, ctx }: FieldProps) {
         {ABSTRACT_PARTS.map(({ dataKey, labelKey }) => (
           <div className="w-field" key={dataKey}>
             <label htmlFor={`wf-${cell.id}-${dataKey}`}>{t(labelKey)}</label>
-            <textarea id={`wf-${cell.id}-${dataKey}`} className="w-serif" {...f.textProps(dataKey)} />
+            <textarea id={`wf-${cell.id}-${dataKey}`} data-ui="cell-field" data-ui-key={dataKey} className="w-serif" {...f.textProps(dataKey)} />
           </div>
         ))}
         <EditorFooter cell={cell} ctx={ctx} />
@@ -176,6 +177,7 @@ export function CellEditor({ cell, ctx }: FieldProps) {
             )}
             <input
               id={`wf-${cell.id}-imageFile`}
+              data-ui="cell-field" data-ui-key="imageFile"
               className="w-file-input"
               type="file"
               accept="image/*"
@@ -199,6 +201,7 @@ export function CellEditor({ cell, ctx }: FieldProps) {
             </label>
             <input
               id={`wf-${cell.id}-width`}
+              data-ui="cell-field" data-ui-key="width"
               type="range"
               min={35}
               max={100}
@@ -209,11 +212,11 @@ export function CellEditor({ cell, ctx }: FieldProps) {
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-caption`}>{t("writer.field.caption")}</label>
-          <textarea id={`wf-${cell.id}-caption`} className="w-serif" {...f.textProps("caption")} />
+          <textarea id={`wf-${cell.id}-caption`} data-ui="cell-field" data-ui-key="caption" className="w-serif" {...f.textProps("caption")} />
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-label`}>{t("writer.field.label")}</label>
-          <input id={`wf-${cell.id}-label`} type="text" {...f.textProps("label")} />
+          <input id={`wf-${cell.id}-label`} data-ui="cell-field" data-ui-key="label" type="text" {...f.textProps("label")} />
         </div>
         <EditorFooter cell={cell} ctx={ctx} />
       </div>
@@ -234,6 +237,7 @@ export function CellEditor({ cell, ctx }: FieldProps) {
             </label>
             <input
               id={`wf-${cell.id}-width`}
+              data-ui="cell-field" data-ui-key="width"
               type="range"
               min={40}
               max={100}
@@ -244,19 +248,19 @@ export function CellEditor({ cell, ctx }: FieldProps) {
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-head`}>{t("writer.field.headerCsv")}</label>
-          <textarea id={`wf-${cell.id}-head`} className="w-short" {...f.textProps("head")} />
+          <textarea id={`wf-${cell.id}-head`} data-ui="cell-field" data-ui-key="head" className="w-short" {...f.textProps("head")} />
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-csv`}>{t("writer.field.dataCsv")}</label>
-          <textarea id={`wf-${cell.id}-csv`} {...f.textProps("csv")} />
+          <textarea id={`wf-${cell.id}-csv`} data-ui="cell-field" data-ui-key="csv" {...f.textProps("csv")} />
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-caption`}>{t("writer.field.caption")}</label>
-          <textarea id={`wf-${cell.id}-caption`} className="w-serif w-short" {...f.textProps("caption")} />
+          <textarea id={`wf-${cell.id}-caption`} data-ui="cell-field" data-ui-key="caption" className="w-serif w-short" {...f.textProps("caption")} />
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-label`}>{t("writer.field.label")}</label>
-          <input id={`wf-${cell.id}-label`} type="text" {...f.textProps("label")} />
+          <input id={`wf-${cell.id}-label`} data-ui="cell-field" data-ui-key="label" type="text" {...f.textProps("label")} />
         </div>
         <EditorFooter cell={cell} ctx={ctx} />
       </div>
@@ -269,23 +273,24 @@ export function CellEditor({ cell, ctx }: FieldProps) {
         <div className="w-form-grid">
           <div className="w-field">
             <label htmlFor={`wf-${cell.id}-language`}>{t("writer.field.language")}</label>
-            <input id={`wf-${cell.id}-language`} type="text" {...f.textProps("language")} />
+            <input id={`wf-${cell.id}-language`} data-ui="cell-field" data-ui-key="language" type="text" {...f.textProps("language")} />
           </div>
           <div className="w-field">
             <label htmlFor={`wf-${cell.id}-label`}>{t("writer.field.label")}</label>
-            <input id={`wf-${cell.id}-label`} type="text" {...f.textProps("label")} />
+            <input id={`wf-${cell.id}-label`} data-ui="cell-field" data-ui-key="label" type="text" {...f.textProps("label")} />
           </div>
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-caption`}>{t("writer.field.caption")}</label>
-          <input id={`wf-${cell.id}-caption`} type="text" {...f.textProps("caption")} />
+          <input id={`wf-${cell.id}-caption`} data-ui="cell-field" data-ui-key="caption" type="text" {...f.textProps("caption")} />
         </div>
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-code`}>{t("writer.field.code")}</label>
-          <textarea id={`wf-${cell.id}-code`} className="w-tall" {...f.textProps("code")} />
+          <textarea id={`wf-${cell.id}-code`} data-ui="cell-field" data-ui-key="code" className="w-tall" {...f.textProps("code")} />
         </div>
         <label className="w-check">
           <input
+            data-ui="cell-line-numbers"
             type="checkbox"
             checked={Boolean(d.lineNumbers)}
             onChange={(e) => ctx.onField(cell.id, "lineNumbers", e.target.checked)}
@@ -302,7 +307,7 @@ export function CellEditor({ cell, ctx }: FieldProps) {
       <div className="w-editor">
         <div className="w-field">
           <label htmlFor={`wf-${cell.id}-ackSource`}>{t("writer.field.ackSource")}</label>
-          <textarea id={`wf-${cell.id}-ackSource`} className="w-serif" {...f.textProps("source")} />
+          <textarea id={`wf-${cell.id}-ackSource`} data-ui="cell-field" data-ui-key="source" className="w-serif" {...f.textProps("source")} />
         </div>
         <EditorFooter cell={cell} ctx={ctx} />
       </div>
@@ -323,15 +328,15 @@ export function CellEditor({ cell, ctx }: FieldProps) {
     <div className="w-editor">
       <div className="w-field">
         <label htmlFor={`wf-${cell.id}-name`}>{t("writer.field.recipientName")}</label>
-        <input id={`wf-${cell.id}-name`} type="text" {...f.textProps("name")} />
+        <input id={`wf-${cell.id}-name`} data-ui="cell-field" data-ui-key="name" type="text" {...f.textProps("name")} />
       </div>
       <div className="w-field">
         <label htmlFor={`wf-${cell.id}-organization`}>{t("writer.field.organization")}</label>
-        <input id={`wf-${cell.id}-organization`} type="text" {...f.textProps("organization")} />
+        <input id={`wf-${cell.id}-organization`} data-ui="cell-field" data-ui-key="organization" type="text" {...f.textProps("organization")} />
       </div>
       <div className="w-field">
         <label htmlFor={`wf-${cell.id}-address`}>{t("writer.field.address")}</label>
-        <textarea id={`wf-${cell.id}-address`} {...f.textProps("address")} />
+        <textarea id={`wf-${cell.id}-address`} data-ui="cell-field" data-ui-key="address" {...f.textProps("address")} />
       </div>
       <EditorFooter cell={cell} ctx={ctx} />
     </div>
@@ -363,14 +368,15 @@ export function CellWrap({
       className={cls}
       id={`wcell-${cell.id}`}
       data-cell={cell.id}
+      data-ui="cell" data-ui-key={cell.id}
       onMouseDown={(e) => {
         const el = e.target as HTMLElement;
         if (!el.closest("button,input,textarea,select,label")) ctx.onActivate(cell.id);
       }}
     >
-      <div className="w-cell-tools">
+      <div className="w-cell-tools" data-ui="cell-actions">
         <button
-          className="w-cell-type"
+          className="w-cell-type" data-ui="choose-cell-type"
           title={t("writer.cell.typeMenu")}
           onClick={(e) => ctx.onOpenTypeMenu(cell.id, e)}
         >
@@ -380,7 +386,7 @@ export function CellWrap({
         <div className="w-cell-right-tools">
           <button
             className="w-cell-tool"
-            data-action="edit"
+            data-action="edit" data-ui="edit-cell"
             title={t("writer.cell.edit")}
             onClick={() => ctx.onEdit(cell.id)}
           >
@@ -388,7 +394,7 @@ export function CellWrap({
           </button>
           <button
             className="w-cell-tool"
-            data-action="comment"
+            data-action="comment" data-ui="comment-on-cell"
             title={t("writer.cell.comment")}
             onClick={() => ctx.onComment(cell.id)}
           >

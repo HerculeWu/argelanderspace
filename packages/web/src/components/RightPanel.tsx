@@ -26,15 +26,17 @@ export function RightPanel() {
   const [tab, setTab] = useState<"refs" | "annotations">("refs");
   const annCount = useAnnotations().annotations.length;
   return (
-    <div className="right">
-      <div className="right-tabs">
+    <div className="right" data-ui="latex-reference-annotation-panel">
+      <div className="right-tabs" data-ui="latex-panel-tabs">
         <button
+          data-ui="show-references"
           className={"right-tab" + (tab === "refs" ? " on" : "")}
           onClick={() => setTab("refs")}
         >
           {t("components.rightPanel.refsTab")}
         </button>
         <button
+          data-ui="show-annotations"
           className={"right-tab" + (tab === "annotations" ? " on" : "")}
           onClick={() => setTab("annotations")}
         >

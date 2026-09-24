@@ -13,7 +13,7 @@ export function Reader() {
   const { ir } = store;
 
   return (
-    <main className="reader" ref={store.registerReader}>
+    <main className="reader" data-ui="latex-document" ref={store.registerReader}>
       <div className="reader-inner">
         <AuthorBlock />
         {ir.sections.map((sec, i) => (
@@ -35,12 +35,12 @@ function SectionView({ sec, first }: { sec: IrSection; first: boolean }) {
   return (
     <section>
       {first ? (
-        <h1 className="doc-title block" id={canAnnotate ? sec.id : undefined} data-block-id={sec.id}>
+        <h1 className="doc-title block" id={canAnnotate ? sec.id : undefined} data-block-id={sec.id} data-ui="latex-section" data-ui-key={sec.id}>
           <MathText as="span" text={sec.heading ?? ""} />
           <AnnBlockEdge id={sec.id} />
         </h1>
       ) : (
-        <Heading className="sec block" id={canAnnotate ? sec.id : undefined} data-block-id={sec.id}>
+        <Heading className="sec block" id={canAnnotate ? sec.id : undefined} data-block-id={sec.id} data-ui="latex-section" data-ui-key={sec.id}>
           {sec.number && <span className="sec-num">{sec.number}</span>}
           <MathText as="span" text={sec.heading ?? ""} />
           <AnnBlockEdge id={sec.id} />

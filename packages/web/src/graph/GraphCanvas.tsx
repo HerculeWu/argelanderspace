@@ -444,7 +444,7 @@ export function GraphCanvas({
   }
 
   return (
-    <div className="cg-wrap" ref={wrapRef} data-testid="graph-canvas" data-scene={layoutKey}>
+    <div className="cg-wrap" ref={wrapRef} data-testid="graph-canvas" data-scene={layoutKey} data-ui="graph-canvas">
       <svg
         className="cg-svg"
         ref={svgRef}
@@ -528,6 +528,7 @@ export function GraphCanvas({
               <g
                 key={n.id}
                 data-node-id={n.id}
+                data-ui="graph-node" data-ui-key={n.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className={"cg-node" + (sel ? " sel" : "") + (lit ? "" : " dim")}
                 tabIndex={0}
@@ -598,14 +599,15 @@ export function GraphCanvas({
         </g>
       </svg>
 
-      <div className="graph-note">
+      <div className="graph-note" data-ui="graph-description">
         <h3>{heading}</h3>
         <p>{note}</p>
       </div>
 
-      <div className="graph-top-actions">
+      <div className="graph-top-actions" data-ui="graph-actions">
         <button
           className={"btn icon ghost hide-small" + (labelsOn ? " on" : "")}
+          data-ui="toggle-graph-labels"
           title={t("graph.showLabels")}
           aria-label={t("graph.showLabels")}
           aria-pressed={labelsOn}
@@ -618,6 +620,7 @@ export function GraphCanvas({
         {seedId && (
           <button
             className="btn icon"
+            data-ui="focus-graph-seed"
             title={t("graph.jumpSeed")}
             aria-label={t("graph.jumpSeed")}
             onClick={focusSeed}
@@ -627,7 +630,7 @@ export function GraphCanvas({
         )}
       </div>
 
-      <div className="cg-legend">
+      <div className="cg-legend" data-ui="graph-legend">
         <div className="cg-leg-row">
           <span className="cg-leg-cap mono">{t("graph.legendYear")}</span>
           <span className="cg-leg-ends mono">{years.length ? minY : ""}</span>
@@ -659,16 +662,16 @@ export function GraphCanvas({
       </div>
 
       {isolatedNote && isolated > 0 && (
-        <div className="disconnected-note">
+        <div className="disconnected-note" data-ui="graph-isolated-notice">
           <Icon name="info" cls="ico-sm" />
           {t("graph.isolated", { count: isolated })}
         </div>
       )}
 
-      <div className="cg-zoom">
+      <div className="cg-zoom" data-ui="graph-zoom-controls">
         <button
           className="cg-zbtn"
-          data-testid="zoom-in"
+          data-testid="zoom-in" data-ui="zoom-in"
           aria-label={t("graph.zoomIn")}
           title={t("graph.zoomIn")}
           onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)}
@@ -678,6 +681,7 @@ export function GraphCanvas({
         <span className="zoom-value mono">{Math.round(v.k * 100)}%</span>
         <button
           className="cg-zbtn"
+          data-ui="zoom-out"
           aria-label={t("graph.zoomOut")}
           title={t("graph.zoomOut")}
           onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)}
@@ -686,7 +690,7 @@ export function GraphCanvas({
         </button>
         <button
           className="cg-zbtn"
-          data-testid="fit-view"
+          data-testid="fit-view" data-ui="fit-graph"
           aria-label={t("graph.fitView")}
           title={t("graph.fitView")}
           onClick={fitView}
@@ -695,6 +699,7 @@ export function GraphCanvas({
         </button>
         <button
           className="cg-zbtn"
+          data-ui="relayout-graph"
           aria-label={t("graph.relayout")}
           title={t("graph.relayout")}
           onClick={relayout}
@@ -704,7 +709,7 @@ export function GraphCanvas({
       </div>
 
       {hoverNode && tooltip && !drag.current && (
-        <div className="tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+        <div className="tooltip" data-ui="graph-node-tooltip" data-ui-key={hoverNode.id} style={{ left: tooltip.x, top: tooltip.y }}>
           <strong>{hoverNode.title}</strong>
           <div className="meta">
             {hoverNode.label} · {hoverNode.venue ?? "—"} ·{" "}

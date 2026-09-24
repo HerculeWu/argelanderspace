@@ -331,11 +331,11 @@ export function WriterEditor({
     return (
       <div className="writer-root">
         <div className="w-topbar">
-          <button className="btn" onClick={onBack}>
+          <button className="btn" data-ui="return-to-manuscripts" onClick={onBack}>
             <Icon name="chevron-left" cls="ico-sm" /> {t("writer.topbar.back")}
           </button>
         </div>
-        <div className="w-note w-padded">{t("writer.editor.loading")}</div>
+        <div className="w-note w-padded" data-ui="writer-loading">{t("writer.editor.loading")}</div>
       </div>
     );
   }
@@ -344,11 +344,11 @@ export function WriterEditor({
     return (
       <div className="writer-root">
         <div className="w-topbar">
-          <button className="btn" onClick={onBack}>
+          <button className="btn" data-ui="return-to-manuscripts" onClick={onBack}>
             <Icon name="chevron-left" cls="ico-sm" /> {t("writer.topbar.back")}
           </button>
         </div>
-        <div className="w-note w-padded">{t("writer.editor.notFound")}</div>
+        <div className="w-note w-padded" data-ui="writer-not-found">{t("writer.editor.notFound")}</div>
       </div>
     );
   }
@@ -576,6 +576,7 @@ export function WriterEditor({
   return (
     <div
       className="writer-root"
+      data-ui="manuscript-editor" data-ui-key={doc.id}
       ref={rootRef}
       onKeyDown={(e) => {
         // I031: Shift+Enter outside an editing cell renders the manuscript.
@@ -588,7 +589,7 @@ export function WriterEditor({
       }}
     >
       <div className="w-topbar">
-        <button className="btn icon ghost" title={t("writer.topbar.back")} onClick={() => {
+        <button className="btn icon ghost" data-ui="return-to-manuscripts" title={t("writer.topbar.back")} onClick={() => {
           if (!dirtyRef.current) writeFailed.current = false;
           void flushSave().then(() => { if (!dirtyRef.current && !writeFailed.current) onBack(); });
         }}>
@@ -596,7 +597,7 @@ export function WriterEditor({
         </button>
         <div className="w-title">
           <strong>{doc.title}</strong>
-          <span className="w-save-status">
+          <span className="w-save-status" data-ui="manuscript-save-status">
             {saveState === "saved"
               ? t("writer.topbar.saved")
               : saveState === "saving"
@@ -605,7 +606,7 @@ export function WriterEditor({
           </span>
         </div>
         <select
-          className="w-template-select"
+          className="w-template-select" data-ui="manuscript-template"
           title={t("writer.topbar.template")}
           value={doc.template}
           onChange={(e) => onTemplateChange(e.target.value)}
@@ -616,44 +617,46 @@ export function WriterEditor({
             </option>
           ))}
         </select>
-        <button className="btn w-hide-narrow" onClick={() => setModal("info")}>
+        <button className="btn w-hide-narrow" data-ui="edit-manuscript-info" onClick={() => setModal("info")}>
           {t("writer.topbar.info")}
         </button>
-        <button className="btn w-hide-narrow" onClick={() => setModal("preamble")}>
+        <button className="btn w-hide-narrow" data-ui="edit-manuscript-preamble" onClick={() => setModal("preamble")}>
           {t("writer.topbar.preamble")}
         </button>
         <button
           className="btn primary"
           data-render-button
+          data-ui="render-manuscript"
           disabled={numberingBusy}
           onClick={() => void requestPreview()}
         >
           <Icon name="refresh-cw" cls={numberingBusy ? "ico-sm spin" : "ico-sm"} /> {t("writer.topbar.render")}
         </button>
-        <button className="btn primary" onClick={doExport}>
+        <button className="btn primary" data-ui="export-manuscript" onClick={doExport}>
           <Icon name="file-down" cls="ico-sm" /> {t("writer.topbar.export")}
         </button>
       </div>
 
       {templateWarnings.length > 0 && !warningsDismissed && (
-        <div className="w-note w-padded w-warnings">
+        <div className="w-note w-padded w-warnings" data-ui="writer-template-warning">
           <span>{t("writer.editor.templateWarnings", { warnings: templateWarnings.join("; ") })}</span>
-          <button className="btn icon ghost" onClick={() => setWarningsDismissed(true)}>
+          <button className="btn icon ghost" data-ui="dismiss-template-warning" onClick={() => setWarningsDismissed(true)}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
       )}
 
       {(currentNumbering?.lastError || currentNumbering?.preview?.warnings.length) ? (
-        <details className="w-preview-diagnostics">
+        <details className="w-preview-diagnostics" data-ui="writer-render-diagnostics">
           <summary>{currentNumbering.lastError ? t("writer.preview.failed") : t("writer.preview.warnings")}</summary>
           <pre>{[currentNumbering.lastError, ...(currentNumbering.preview?.warnings ?? [])].filter(Boolean).join("\n")}</pre>
         </details>
       ) : null}
-      <div className="w-main">
-        <aside className={"w-side left" + (leftCollapsed ? " collapsed" : "")}>
+      <div className="w-main" data-ui="writer-layout">
+        <aside data-ui="writer-outline-panel" className={"w-side left" + (leftCollapsed ? " collapsed" : "")}>
           <button
             className="w-panel-toggle"
+            data-ui="toggle-writer-outline"
             onClick={() => setLeftCollapsed((v) => !v)}
             title={t("writer.outline.title")}
           >
@@ -670,9 +673,9 @@ export function WriterEditor({
           )}
         </aside>
 
-        <div className="w-reader-col">
+        <div className="w-reader-col" data-ui="writer-content-area">
           <div className="w-reader-scroll">
-            <main className="w-paper">
+            <main className="w-paper" data-ui="manuscript-paper">
               <div className="w-paper-header">
                 <div className="w-template-chip">{template.chip}</div>
                 <div className="w-paper-title">{doc.title}</div>
@@ -694,14 +697,14 @@ export function WriterEditor({
                   ))}
                 </div>
               </div>
-              <div className="w-cells">
+              <div className="w-cells" data-ui="manuscript-cells">
                 {doc.cells.length === 0 && (
                   <div className="w-cells-empty">
                     <p>{t("writer.editor.emptyCells")}</p>
                     <div className="w-add-row">
                       <button
                         className="w-add-cell"
-                        data-add-index={0}
+                        data-add-index={0} data-ui="add-first-cell"
                         title={t("writer.cell.addCell")}
                         onClick={(e) => openAddMenu(0, e)}
                       >
@@ -711,7 +714,7 @@ export function WriterEditor({
                   </div>
                 )}
                 {doc.cells.map((cell, idx) => (
-                  <div key={cell.id} className="w-cell-block">
+                  <div key={cell.id} className="w-cell-block" data-ui="manuscript-cell" data-ui-key={cell.id}>
                     <CellWrap
                       cell={cell}
                       cells={doc.cells}
@@ -721,7 +724,7 @@ export function WriterEditor({
                     <div className="w-add-row">
                       <button
                         className="w-add-cell"
-                        data-add-index={idx + 1}
+                        data-add-index={idx + 1} data-ui="add-cell-after"
                         title={t("writer.cell.addCell")}
                         onClick={(e) => openAddMenu(idx + 1, e)}
                       >
@@ -735,9 +738,10 @@ export function WriterEditor({
           </div>
         </div>
 
-        <aside className={"w-side right" + (rightCollapsed ? " collapsed" : "")}>
+        <aside data-ui="writer-reference-panel" className={"w-side right" + (rightCollapsed ? " collapsed" : "")}>
           <button
             className="w-panel-toggle"
+            data-ui="toggle-writer-reference-panel"
             onClick={() => setRightCollapsed((v) => !v)}
             title={t("writer.tabs.references")}
           >
@@ -760,12 +764,12 @@ export function WriterEditor({
       </div>
 
       {menu?.kind === "add" && (
-        <div className="w-menu" style={{ left: menu.x, top: menu.y }}>
+        <div className="w-menu" data-ui="add-cell-menu" style={{ left: menu.x, top: menu.y }}>
           {template.types.map((tp) => (
             <button
               key={tp}
               className="w-menu-item"
-              data-new-type={tp}
+              data-new-type={tp} data-ui="add-cell-type" data-ui-key={tp}
               onClick={() => {
                 createCell(menu.index, tp);
                 setMenu(null);
@@ -777,12 +781,12 @@ export function WriterEditor({
         </div>
       )}
       {menu?.kind === "type" && (
-        <div className="w-menu" style={{ left: menu.x, top: menu.y }}>
+        <div className="w-menu" data-ui="cell-type-menu" data-ui-key={menu.cellId} style={{ left: menu.x, top: menu.y }}>
           {typeMenuTypes.map((tp) => (
             <button
               key={tp}
               className="w-menu-item"
-              data-type={tp}
+              data-type={tp} data-ui="change-cell-type" data-ui-key={tp}
               onClick={() => {
                 convertCell(menu.cellId, tp);
                 setMenu(null);
@@ -793,7 +797,7 @@ export function WriterEditor({
           ))}
           <div className="w-menu-sep" />
           <button
-            className="w-menu-item w-menu-danger"
+            className="w-menu-item w-menu-danger" data-ui="delete-cell"
             onClick={() => {
               deleteCell(menu.cellId);
               setMenu(null);
@@ -834,7 +838,7 @@ export function WriterEditor({
         />
       )}
 
-      {toast && <div className="w-toast">{toast}</div>}
+      {toast && <div className="w-toast" data-ui="writer-notice">{toast}</div>}
     </div>
   );
 }

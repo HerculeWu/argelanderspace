@@ -38,7 +38,7 @@ export function OutlinePanel({
     !needle || `${x.title} ${x.label}`.toLowerCase().includes(needle);
 
   return (
-    <div className="w-panel-body">
+    <div className="w-panel-body" data-ui="writer-outline">
       <div className="w-panel-title">
         {t("writer.outline.title")}
         {numbering?.status === "stale" && (
@@ -47,9 +47,9 @@ export function OutlinePanel({
           </span>
         )}
       </div>
-      <div className="w-search">
+      <div className="w-search" data-ui="search-writer-outline">
         <Icon name="search" cls="ico-sm" />
-        <input
+        <input data-ui="writer-outline-query"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t("writer.outline.filter")}
@@ -63,15 +63,15 @@ export function OutlinePanel({
             <div className="w-outline-group-head">{t(labelKey)}</div>
             {rows.map((x) => (
               <div
-                className="w-outline-row"
+                className="w-outline-row" data-ui="outline-cell" data-ui-key={`${x.cell}:${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}
                 key={`${x.cell}-${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}
                 style={visible(x) ? undefined : { display: "none" }}
               >
-                <button className="w-jump" onClick={() => onJump(x.cell)}>
+                <button className="w-jump" data-ui="jump-to-cell" onClick={() => onJump(x.cell)}>
                   <span className="w-num">{x.number}</span> {x.title}
                 </button>
                 <button
-                  className="w-insert-mini"
+                  className="w-insert-mini" data-ui="insert-cell-label"
                   data-insert-label={x.label}
                   data-target-cell={x.cell}
                   title={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.outline.insertLabel")}

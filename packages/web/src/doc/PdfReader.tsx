@@ -55,13 +55,13 @@ export function PdfReader({ docId, description }: { docId: string; description: 
     return () => abort.abort();
   }, [docId, description.sha256, attempt]);
 
-  if (state.phase === "loading") return <div className="pdf-reader-state" role="status">{t("pdfReader.loading")}</div>;
+  if (state.phase === "loading") return <div className="pdf-reader-state" data-ui="pdf-loading" role="status">{t("pdfReader.loading")}</div>;
   if (state.phase === "error") {
     const message = state.message === "document changed" ? t("pdfReader.changed") : state.message === "engine timeout" ? t("pdfReader.engineTimeout") : state.message === "engine failed" ? t("pdfReader.engineFailed") : t("pdfReader.failed");
-    return <div className="pdf-reader-state" role={errorDismissed ? "status" : "alert"}>
-      {!errorDismissed && <IconButton variant="ghost" label={t("pdfReader.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => setErrorDismissed(true)} />}
+    return <div className="pdf-reader-state" data-ui="pdf-error" role={errorDismissed ? "status" : "alert"}>
+      {!errorDismissed && <IconButton variant="ghost" label={t("pdfReader.dismiss")} data-ui="dismiss-pdf-error" icon={<Icon name="x" cls="ico-sm" />} onClick={() => setErrorDismissed(true)} />}
       <p>{errorDismissed ? t("pdfReader.failedSummary") : message}</p>
-      <button type="button" onClick={() => { setErrorDismissed(false); setAttempt((value) => value + 1); }}>{t("pdfReader.retry")}</button>
+      <button type="button" data-ui="retry-pdf" onClick={() => { setErrorDismissed(false); setAttempt((value) => value + 1); }}>{t("pdfReader.retry")}</button>
     </div>;
   }
   return <PdfEngineReader key={docId} docId={docId} filename={description.display_name} workTitle={description.work_title} bytes={state.bytes} annotations={state.snapshot.annotations} pages={state.snapshot.metadata.pages} readingPosition={state.snapshot.reading_position} pendingAnchor={workspace.pendingAnchor} clearPendingAnchor={workspace.clearPendingAnchor} onTimeout={timeout} onFailure={failLoad} />;
@@ -99,7 +99,7 @@ function PdfEngineReader({ docId, filename, workTitle, bytes, annotations, pages
 
   if (error) return <div className="pdf-reader-state" role="alert">{t("pdfReader.engineFailed")}: {String(error)}</div>;
   if (isLoading || !engine) return <div className="pdf-reader-state" role="status">{t("pdfReader.engineLoading")}</div>;
-  return <div className="pdf-reader">
+  return <div className="pdf-reader" data-ui="pdf-engine" data-ui-key={docId}>
     <EmbedPDF engine={engine} plugins={plugins}>
       {({ pluginsReady, activeDocumentId }) => pluginsReady ? <DocumentContent documentId={activeDocumentId ?? docId}>
         {({ documentState, isLoaded, isLoading: documentLoading, isError }) => (
@@ -385,22 +385,22 @@ function LoadedPdfDocument({
   return <>
     <PdfToolbar docId={docId} filename={filename} workTitle={workTitle} bytes={bytes} totalPages={totalPages} pages={pages} onUserNavigation={markUserNavigation} onCurrentPage={(page) => setCurrentPageIndex(page - 1)} />
     {(positionUi.failed || positionUi.saving || positionUi.saved) && <ReadingPositionWarning busy={positionUi.saving} retry={() => { void positionWriter.retry(); }} failed={positionUi.failed} saved={positionUi.saved} failure={positionUi.failure} />}
-    <div className="pdf-reader-layout" data-reading-position-state={positionUi.failed ? positionUi.failure ?? "failed" : positionUi.saving ? "saving" : positionUi.saved ? "saved" : "idle"}>
-      <aside className={`pdf-side pdf-side-left${leftCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.outlineTitle")}>
-        <button type="button" className="pdf-panel-toggle" aria-expanded={!leftCollapsed} aria-label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)}>{leftCollapsed ? "»" : "«"}</button>
+    <div className="pdf-reader-layout" data-ui="pdf-reader" data-ui-key={docId} data-reading-position-state={positionUi.failed ? positionUi.failure ?? "failed" : positionUi.saving ? "saving" : positionUi.saved ? "saved" : "idle"}>
+      <aside className={`pdf-side pdf-side-left${leftCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.outlineTitle")} data-ui="pdf-outline-panel">
+        <button type="button" className="pdf-panel-toggle" data-ui="toggle-pdf-outline" aria-expanded={!leftCollapsed} aria-label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)}>{leftCollapsed ? "»" : "«"}</button>
         {!leftCollapsed && <div className="pdf-side-content"><h2>{t("pdfReader.outlineTitle")}</h2>{outlineEntries.length ? <OutlineList items={outlineEntries} onSelect={(id) => {
           markUserNavigation();
           const target = outlineTargets.get(id);
           if (target) navigatePdfLink(target);
         }} /> : <p>{t("pdfReader.outlineEmpty")}</p>}</div>}
       </aside>
-      <div className="pdf-viewer-area">
+      <div className="pdf-viewer-area" data-ui="pdf-document-area">
         <GlobalPointerProvider documentId={docId}>
           <Viewport className="pdf-viewport" documentId={docId}>
             <Scroller documentId={docId} className="pdf-scroller" renderPage={(page) => (
               <PagePointerProvider documentId={docId} pageIndex={page.pageIndex} key={page.pageIndex}>
                 <Rotate documentId={docId} pageIndex={page.pageIndex}>
-                  <div className="pdf-page-content" onDragStart={(event) => { if (event.target instanceof HTMLImageElement) event.preventDefault(); }}>
+                  <div className="pdf-page-content" data-ui="pdf-page-content" data-ui-key={page.pageIndex} onDragStart={(event) => { if (event.target instanceof HTMLImageElement) event.preventDefault(); }}>
                     <RenderLayer documentId={docId} pageIndex={page.pageIndex} />
                     <AnnotationLayer documentId={docId} pageIndex={page.pageIndex} />
                     <PdfLinkHitLayer pageIndex={page.pageIndex} pageCount={pages.length} geometry={documentManager?.getDocument(docId)?.pages[page.pageIndex]} links={pdfLinks} onNavigate={navigatePdfLink} />
@@ -428,8 +428,8 @@ function LoadedPdfDocument({
         </GlobalPointerProvider>
         <PdfTextTools docId={docId} session={session} pages={pages} blocked={sessionState.blocked} enabled={selectionMode === "text"} />
       </div>
-      <aside className={`pdf-side pdf-side-right${rightCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.annotationsTitle")}>
-        <button type="button" className="pdf-panel-toggle" aria-expanded={!rightCollapsed} aria-label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)}>{rightCollapsed ? "«" : "»"}</button>
+      <aside className={`pdf-side pdf-side-right${rightCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.annotationsTitle")} data-ui="pdf-annotations-panel">
+        <button type="button" className="pdf-panel-toggle" data-ui="toggle-pdf-annotations" aria-expanded={!rightCollapsed} aria-label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)}>{rightCollapsed ? "«" : "»"}</button>
         {!rightCollapsed && <div className="pdf-side-content"><h2>{t("pdfReader.annotationsTitle")}</h2><p className="pdf-text-selection-hint">{t("pdfReader.selectTextHint")} {t("pdfReader.keyboardTextSelectionHint")}</p><PdfAnnotationsPanel
           session={session}
           currentPage={currentPageIndex}
@@ -538,13 +538,13 @@ function PdfAreaLayer({ pageIndex, blocked, annotations, onCreate, onUpdate }: {
     const rect = { ...item.rectangle, x: Math.max(0, Math.min(1 - item.rectangle.width, item.rectangle.x + (event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0))), y: Math.max(0, Math.min(1 - item.rectangle.height, item.rectangle.y + (event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0))) };
     onUpdate(item.id, rect);
   };
-  return <div data-pdf-page-index={pageIndex} className={`pdf-area-layer${drawingEnabled() ? " drawing" : ""}`} role="group" aria-label={t("pdfReader.areaLayer")}
+  return <div data-pdf-page-index={pageIndex} className={`pdf-area-layer${drawingEnabled() ? " drawing" : ""}`} data-ui="pdf-area-layer" role="group" aria-label={t("pdfReader.areaLayer")}
     onPointerDown={beginDraw} onPointerMove={updatePreview} onPointerUp={finishGesture} onLostPointerCapture={finishOnLostCapture} onPointerCancel={(event) => {
       if (event.pointerType === "mouse" && event.buttons === 0) finishOnLostCapture();
       else clearGesture();
     }}>
-    {items.map((item) => item.kind === "rectangle" ? <div key={item.id} role="group" aria-label={t("pdfReader.rectangleTarget", { page: pageIndex + 1 })} tabIndex={blocked ? -1 : 0} className="pdf-area-annotation" onPointerDown={(event) => beginTransform(event, item, "move")} onKeyDown={(event) => keyMove(event, item)} style={{ left: `${(gesture?.id === item.id && preview ? preview.x : item.rectangle.x) * 100}%`, top: `${(gesture?.id === item.id && preview ? preview.y : item.rectangle.y) * 100}%`, width: `${(gesture?.id === item.id && preview ? preview.width : item.rectangle.width) * 100}%`, height: `${(gesture?.id === item.id && preview ? preview.height : item.rectangle.height) * 100}%`, borderColor: item.style.color, backgroundColor: item.style.color, opacity: item.style.opacity }}>
-      <button type="button" tabIndex={blocked ? -1 : 0} aria-label={t("pdfReader.resizeRectangle", { page: pageIndex + 1 })} disabled={blocked} className="pdf-area-resize" onPointerDown={(event) => beginTransform(event, item, "resize")} onClick={(event) => event.stopPropagation()} />
+    {items.map((item) => item.kind === "rectangle" ? <div key={item.id} role="group" aria-label={t("pdfReader.rectangleTarget", { page: pageIndex + 1 })} tabIndex={blocked ? -1 : 0} className="pdf-area-annotation" data-ui="pdf-rectangle" data-ui-key={item.id} onPointerDown={(event) => beginTransform(event, item, "move")} onKeyDown={(event) => keyMove(event, item)} style={{ left: `${(gesture?.id === item.id && preview ? preview.x : item.rectangle.x) * 100}%`, top: `${(gesture?.id === item.id && preview ? preview.y : item.rectangle.y) * 100}%`, width: `${(gesture?.id === item.id && preview ? preview.width : item.rectangle.width) * 100}%`, height: `${(gesture?.id === item.id && preview ? preview.height : item.rectangle.height) * 100}%`, borderColor: item.style.color, backgroundColor: item.style.color, opacity: item.style.opacity }}>
+      <button type="button" tabIndex={blocked ? -1 : 0} aria-label={t("pdfReader.resizeRectangle", { page: pageIndex + 1 })} disabled={blocked} className="pdf-area-resize" data-ui="resize-pdf-rectangle" onPointerDown={(event) => beginTransform(event, item, "resize")} onClick={(event) => event.stopPropagation()} />
     </div> : null)}
     {preview && gesture?.mode === "draw" && <div className="pdf-area-preview" style={{ left: `${preview.x * 100}%`, top: `${preview.y * 100}%`, width: `${preview.width * 100}%`, height: `${preview.height * 100}%` }} />}
     <span className="pdf-area-hint">{t("pdfReader.drawRectangleHint")}</span>
@@ -676,20 +676,20 @@ function PdfTextTools({ docId, session, pages, blocked, enabled }: { docId: stri
     if (created) { selection?.forDocument(docId).clear(); setCurrent(null); setGeometryError(false); }
   };
   if (!enabled || !current) return null;
-  return <div ref={toolbarRef} style={{ position: "fixed", left: toolbarPosition?.left ?? 8, top: toolbarPosition?.top ?? 8, zIndex: 20 }} className="pdf-text-tools" role="toolbar" aria-label={t("pdfReader.textToolsTitle")} aria-live="polite" onKeyDown={extendSelectionWithKeyboard}>
+  return <div ref={toolbarRef} style={{ position: "fixed", left: toolbarPosition?.left ?? 8, top: toolbarPosition?.top ?? 8, zIndex: 20 }} className="pdf-text-tools" data-ui="pdf-selection-tools" role="toolbar" aria-label={t("pdfReader.textToolsTitle")} aria-live="polite" onKeyDown={extendSelectionWithKeyboard}>
     <blockquote>{current.text}</blockquote>
     {geometryError && <p role="alert">{t("pdfReader.textTargetGeometryError")}</p>}
-    <button type="button" onClick={() => void copySelection()}>{t("pdfReader.copySelection")}</button>
+    <button type="button" data-ui="copy-pdf-selection" onClick={() => void copySelection()}>{t("pdfReader.copySelection")}</button>
     {copyStatus && <span role="status">{copyStatus}</span>}
-    <button type="button" disabled={blocked} onClick={() => create("highlight")}>{t("pdfReader.highlight")}</button>
-    <button type="button" disabled={blocked} onClick={() => create("underline")}>{t("pdfReader.underline")}</button>
-    <button type="button" disabled={blocked} onClick={() => create("strikeout")}>{t("pdfReader.strikeout")}</button>
+    <button type="button" disabled={blocked} data-ui="highlight-pdf-selection" onClick={() => create("highlight")}>{t("pdfReader.highlight")}</button>
+    <button type="button" disabled={blocked} data-ui="underline-pdf-selection" onClick={() => create("underline")}>{t("pdfReader.underline")}</button>
+    <button type="button" disabled={blocked} data-ui="strikeout-pdf-selection" onClick={() => create("strikeout")}>{t("pdfReader.strikeout")}</button>
   </div>;
 }
 
 function PdfTextAnnotationsLayer({ pageIndex, rotation, annotations, onActivate }: { pageIndex: number; rotation: number; annotations: PdfAnnotation[]; onActivate: (id: string) => void }) {
   const { t } = useTranslation();
-  return <div className="pdf-text-annotations" data-pdf-page-index={pageIndex} role="group" aria-label={t("pdfReader.textAnnotations")}>
+  return <div className="pdf-text-annotations" data-ui="pdf-text-marks" data-pdf-page-index={pageIndex} role="group" aria-label={t("pdfReader.textAnnotations")}>
     {annotations.flatMap((annotation) => {
       if (!(annotation.kind === "highlight" || annotation.kind === "underline" || annotation.kind === "strikeout")) return [];
       const fragment = annotation.target.fragments.find((item) => item.page_index === pageIndex);
@@ -697,7 +697,7 @@ function PdfTextAnnotationsLayer({ pageIndex, rotation, annotations, onActivate 
       return fragment.rectangles.map((rect, index) => {
         const sdkRect = pdfPageRectFromVisible(rect, rotation);
         return <button
-        key={`${annotation.id}-${index}`} type="button" data-pdf-annotation-id={annotation.id} data-pdf-rectangle-index={index} className={`pdf-text-mark ${annotation.kind}`}
+        key={`${annotation.id}-${index}`} type="button" data-pdf-annotation-id={annotation.id} data-pdf-rectangle-index={index} data-ui="pdf-text-mark" data-ui-key={`${annotation.id}:${index}`} className={`pdf-text-mark ${annotation.kind}`}
         aria-label={t("pdfReader.textMarkLabel", { kind: t(`pdfReader.${annotation.kind}`), quote: annotation.target.quote })}
         title={annotation.target.quote}
         style={{ left: `${sdkRect.x * 100}%`, top: `${sdkRect.y * 100}%`, width: `${sdkRect.width * 100}%`, height: `${sdkRect.height * 100}%` }}
@@ -748,10 +748,10 @@ function ReadingPositionWarning({ busy, retry, failed, saved, failure }: { busy:
         : failure === "read" ? "pdfReader.positionReadFailed"
           : "pdfReader.positionSaveFailed";
   return (
-    <div className="pdf-position-warning" role={failed && !dismissed ? "alert" : "status"}>
-      {failed && !dismissed && <IconButton variant="ghost" label={t("pdfReader.dismissPositionError")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => setDismissed(true)} />}
+    <div className="pdf-position-warning" data-ui="pdf-reading-position-notice" role={failed && !dismissed ? "alert" : "status"}>
+      {failed && !dismissed && <IconButton variant="ghost" label={t("pdfReader.dismissPositionError")} data-ui="dismiss-pdf-position-error" icon={<Icon name="x" cls="ico-sm" />} onClick={() => setDismissed(true)} />}
       <span>{failed ? t(dismissed ? summaryMessage : failureMessage) : busy ? t("pdfReader.positionSaving") : saved ? t("pdfReader.positionSaved") : ""}</span>
-      {failed && <button type="button" disabled={busy} onClick={retry}>{t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")}</button>}
+      {failed && <button type="button" disabled={busy} data-ui="retry-pdf-reading-position" onClick={retry}>{t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")}</button>}
     </div>
   );
 }
@@ -797,11 +797,11 @@ function PdfSearchControls({ docId, pages, onUserNavigation }: { docId: string; 
     };
     requestAnimationFrame(place);
   };
-  return <div className="pdf-search-controls">
-    <label><span className="sr-only">{t("pdfReader.search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") run(); }} placeholder={t("pdfReader.search")} /></label>
-    <button type="button" disabled={!search || !query.trim() || loading} onClick={run}>{t("pdfReader.search")}</button>
+  return <div className="pdf-search-controls" data-ui="pdf-search">
+    <label><span className="sr-only">{t("pdfReader.search")}</span><input data-ui="pdf-search-query" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") run(); }} placeholder={t("pdfReader.search")} /></label>
+    <button type="button" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" onClick={run}>{t("pdfReader.search")}</button>
     <span role="status">{loading ? t("pdfReader.searching") : searched && results.length === 0 ? t("pdfReader.searchNoResults") : searched ? t("pdfReader.searchCount", { count: results.length }) : ""}</span>
-    {results.slice(0, 20).map((result, index) => <button type="button" className="pdf-search-result" key={`${result.pageIndex}-${result.charIndex}-${index}`} onClick={() => navigate(result, index)}>{t("pdfReader.searchResult", { index: index + 1, page: result.pageIndex + 1 })} · {result.context?.before ?? ""}{result.context?.match ?? ""}{result.context?.after ?? ""}</button>)}
+    {results.slice(0, 20).map((result, index) => <button type="button" className="pdf-search-result" data-ui="pdf-search-result" data-ui-key={`${result.pageIndex}:${result.charIndex}:${index}`} key={`${result.pageIndex}-${result.charIndex}-${index}`} onClick={() => navigate(result, index)}>{t("pdfReader.searchResult", { index: index + 1, page: result.pageIndex + 1 })} · {result.context?.before ?? ""}{result.context?.match ?? ""}{result.context?.after ?? ""}</button>)}
   </div>;
 }
 
@@ -838,24 +838,24 @@ function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUs
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   };
-  return <header className="pdf-toolbar" role="toolbar" aria-label={t("pdfReader.toolbar")}>
+  return <header className="pdf-toolbar" data-ui="pdf-toolbar" role="toolbar" aria-label={t("pdfReader.toolbar")}>
     <div className="pdf-doc-context"><strong>{workTitle}</strong><code>{filename} · {docId}</code></div>
-    <div className="pdf-page-controls">
-      <button type="button" disabled={!scroll || actualPage <= 1} aria-label={t("pdfReader.previousPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToPreviousPage(); }}>{"‹"}</button>
-      <input aria-label={t("pdfReader.pageNumber")} type="number" min={1} max={totalPages} value={page} onChange={(event) => setPage(Number(event.target.value))} onBlur={() => setPage(actualPage)} onKeyDown={(event) => { if (event.key === "Enter") moveToPage(); }} />
+    <div className="pdf-page-controls" data-ui="pdf-page-controls">
+      <button type="button" disabled={!scroll || actualPage <= 1} data-ui="previous-pdf-page" aria-label={t("pdfReader.previousPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToPreviousPage(); }}>{"‹"}</button>
+      <input data-ui="pdf-page-number" aria-label={t("pdfReader.pageNumber")} type="number" min={1} max={totalPages} value={page} onChange={(event) => setPage(Number(event.target.value))} onBlur={() => setPage(actualPage)} onKeyDown={(event) => { if (event.key === "Enter") moveToPage(); }} />
       <span>{t("pdfReader.pageOf", { page: actualPage, total: totalPages })}</span>
-      <button type="button" disabled={!scroll || actualPage >= totalPages} aria-label={t("pdfReader.nextPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToNextPage(); }}>{"›"}</button>
-      <button type="button" onClick={moveToPage}>{t("pdfReader.goToPage")}</button>
-      <button type="button" onClick={() => void copyPageLink()}>{t("pdfReader.copyPageLink")}</button>
+      <button type="button" disabled={!scroll || actualPage >= totalPages} data-ui="next-pdf-page" aria-label={t("pdfReader.nextPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToNextPage(); }}>{"›"}</button>
+      <button type="button" data-ui="go-to-pdf-page" onClick={moveToPage}>{t("pdfReader.goToPage")}</button>
+      <button type="button" data-ui="copy-pdf-page-link" onClick={() => void copyPageLink()}>{t("pdfReader.copyPageLink")}</button>
       {copyStatus && <span role="status">{copyStatus}</span>}
     </div>
     <PdfSearchControls docId={docId} pages={pages} onUserNavigation={onUserNavigation} />
-    <div className="pdf-zoom-controls">
-      <button type="button" disabled={!zoom} aria-label={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()}>−</button>
-      <button type="button" disabled={!zoom} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)}>{t("pdfReader.fitWidth")}</button>
-      <button type="button" disabled={!zoom} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)}>{t("pdfReader.fitPage")}</button>
-      <button type="button" disabled={!zoom} aria-label={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()}>+</button>
+    <div className="pdf-zoom-controls" data-ui="pdf-zoom-controls">
+      <button type="button" disabled={!zoom} data-ui="zoom-out-pdf" aria-label={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()}>−</button>
+      <button type="button" data-ui="fit-pdf-width" disabled={!zoom} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)}>{t("pdfReader.fitWidth")}</button>
+      <button type="button" data-ui="fit-pdf-page" disabled={!zoom} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)}>{t("pdfReader.fitPage")}</button>
+      <button type="button" disabled={!zoom} data-ui="zoom-in-pdf" aria-label={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()}>+</button>
     </div>
-    <button type="button" onClick={download}>{t("pdfReader.downloadOriginal")}</button>
+    <button type="button" data-ui="download-original-pdf" onClick={download}>{t("pdfReader.downloadOriginal")}</button>
   </header>;
 }

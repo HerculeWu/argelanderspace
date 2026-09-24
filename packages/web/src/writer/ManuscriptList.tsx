@@ -51,11 +51,11 @@ function NewManuscriptModal({
     onCreate({ template, title: title.trim() || undefined });
   };
   return (
-    <div className="w-modal-overlay" onClick={onClose}>
-      <div className="w-modal" style={{ width: 440 }} onClick={(e) => e.stopPropagation()}>
+    <div className="w-modal-overlay" data-ui="new-manuscript-overlay" onClick={onClose}>
+      <div className="w-modal" data-ui="new-manuscript-dialog" style={{ width: 440 }} onClick={(e) => e.stopPropagation()}>
         <div className="w-modal-head">
           <strong>{t("writer.newModal.title")}</strong>
-          <button className="btn icon ghost" onClick={onClose}>
+          <button className="btn icon ghost" data-ui="close-new-manuscript" onClick={onClose}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
@@ -63,7 +63,7 @@ function NewManuscriptModal({
           <div className="w-field">
             <label htmlFor="w-new-title">{t("writer.newModal.nameLabel")}</label>
             <input
-              id="w-new-title"
+              id="w-new-title" data-ui="new-manuscript-title"
               value={title}
               placeholder={t("writer.newModal.namePlaceholder")}
               onChange={(e) => setTitle(e.target.value)}
@@ -75,7 +75,7 @@ function NewManuscriptModal({
           </div>
           <div className="w-field">
             <label htmlFor="w-new-template">{t("writer.newModal.templateLabel")}</label>
-            <select id="w-new-template" value={template} onChange={(e) => setTemplate(e.target.value)}>
+            <select id="w-new-template" data-ui="new-manuscript-template" value={template} onChange={(e) => setTemplate(e.target.value)}>
               <option value="" disabled>
                 {t("writer.newModal.templatePlaceholder")}
               </option>
@@ -88,10 +88,10 @@ function NewManuscriptModal({
           </div>
         </div>
         <div className="w-modal-foot">
-          <button className="btn" onClick={onClose}>
+          <button className="btn" data-ui="cancel-new-manuscript" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button className="btn primary" disabled={!valid} onClick={submit}>
+          <button className="btn primary" data-ui="confirm-create-manuscript" disabled={!valid} onClick={submit}>
             <Icon name="plus" cls="ico-sm" /> {t("writer.newModal.create")}
           </button>
         </div>
@@ -160,17 +160,17 @@ export function ManuscriptList({
   };
 
   return (
-    <div className="writer-root">
+    <div className="writer-root" data-ui="manuscript-list">
       <div className="w-topbar">
         <div className="w-title">
           <strong>{t("writer.list.title")}</strong>
           {rows !== null && <span className="w-save-status">{rows.length}</span>}
         </div>
-        <button className="btn primary" disabled={templates === null} onClick={() => setNewOpen(true)}>
+        <button className="btn primary" data-ui="create-manuscript" disabled={templates === null} onClick={() => setNewOpen(true)}>
           <Icon name="plus" cls="ico-sm" /> {t("writer.list.new")}
         </button>
       </div>
-      <div className="w-list-scroll">
+      <div className="w-list-scroll" data-ui="manuscript-list-content">
         {notice && <div className="w-note w-padded">{notice}</div>}
         {actionError && <div className="w-note w-padded">{actionError}</div>}
         {rows === null && !loadFailed && (
@@ -183,7 +183,7 @@ export function ManuscriptList({
             </div>
             <div>{t("writer.list.loadFailedTitle")}</div>
             <div className="w-list-empty-hint">{t("writer.list.loadFailedHint")}</div>
-            <button className="btn primary" onClick={() => void reload()}>
+            <button className="btn primary" data-ui="retry-manuscript-list" onClick={() => void reload()}>
               {t("common.retry")}
             </button>
           </div>
@@ -195,7 +195,7 @@ export function ManuscriptList({
             </div>
             <div>{t("writer.list.empty")}</div>
             <div className="w-list-empty-hint">{t("writer.list.emptyHint")}</div>
-            <button className="btn primary" onClick={() => setNewOpen(true)}>
+            <button className="btn primary" data-ui="create-first-manuscript" onClick={() => setNewOpen(true)}>
               <Icon name="plus" cls="ico-sm" /> {t("writer.list.new")}
             </button>
           </div>
@@ -212,13 +212,14 @@ export function ManuscriptList({
             </thead>
             <tbody>
               {rows.map((m) => (
-                <tr key={m.id} data-ms={m.id} onClick={() => onOpen(m.id)}>
+                <tr key={m.id} data-ms={m.id} data-ui="manuscript-item" data-ui-key={m.id} onClick={() => onOpen(m.id)}>
                   <td className="w-list-title">{m.title}</td>
                   <td>{templateLabel(m.template)}</td>
                   <td>{fmtUpdated(m.updated_at, i18n.language)}</td>
                   <td>
                     <button
                       className="btn icon ghost"
+                      data-ui="delete-manuscript"
                       title={t("common.delete")}
                       onClick={(e) => {
                         e.stopPropagation();

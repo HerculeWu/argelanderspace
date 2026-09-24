@@ -13,7 +13,7 @@ export function Tooltip({
   return (
     <span className="ui-tooltip-anchor">
       {cloneElement(children, { "aria-describedby": describedBy })}
-      <span id={id} className="ui-tooltip" role="tooltip">
+      <span id={id} className="ui-tooltip" data-ui="control-tooltip" role="tooltip">
         {content}
       </span>
     </span>

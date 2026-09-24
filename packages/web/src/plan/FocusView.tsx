@@ -21,7 +21,7 @@ export function FocusView({
   const groups = focusGroups(plans, today);
   const total = groups.reduce((a, g) => a + g.items.length, 0);
   return (
-    <div className="plan-special view-in">
+    <div className="plan-special view-in" data-ui="today-focus">
       <div className="plan-sv-head">
         <div className="plan-sv-title">
           <span className="plan-sv-ic">
@@ -39,14 +39,14 @@ export function FocusView({
         ) : (
           <div className="plan-focus-wrap">
             {groups.map((g) => (
-              <div key={g.key} className="plan-focus-group">
+              <div key={g.key} className="plan-focus-group" data-ui="focus-group" data-ui-key={g.key}>
                 <div className="plan-focus-when">
                   <span className="plan-focus-when-dot" />
                   {g.label}
                 </div>
                 <div className="plan-focus-list">
                   {g.items.map(({ task, plan }) => (
-                    <div key={task.id} className="plan-focus-card" onClick={() => onOpenTask(task.id)}>
+                    <div key={task.id} className="plan-focus-card" data-ui="focus-task" data-ui-key={task.id} onClick={() => onOpenTask(task.id)}>
                       <StatusBtn status={task.status} />
                       <div className="plan-focus-card-body">
                         <div className="plan-focus-card-title">{task.title}</div>

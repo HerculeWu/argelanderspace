@@ -33,7 +33,7 @@ export function TimelineMode({
   }
   const todayPct = timelineFrac(today, scale) * 100;
   return (
-    <div className="plan-special view-in">
+    <div className="plan-special view-in" data-ui="plan-timeline">
       <div className="plan-sv-head">
         <div className="plan-sv-title">
           <span className="plan-sv-ic">
@@ -70,14 +70,14 @@ export function TimelineMode({
             const prog = planProgress(p);
             const overdue = p.due < today && p.tasks.some((t) => t.status !== "done");
             return (
-              <div key={p.id} className="plan-tl-row">
-                <button className="plan-tl-label" title={t("plan.timeline.openPlan")} onClick={() => onSelectPlan(p.id)}>
+              <div key={p.id} className="plan-tl-row" data-ui="timeline-plan" data-ui-key={p.id}>
+                <button data-ui="select-timeline-plan" className="plan-tl-label" title={t("plan.timeline.openPlan")} onClick={() => onSelectPlan(p.id)}>
                   <Icon name={p.icon} cls="ico-sm" />
                   <span>{p.name}</span>
                 </button>
                 <div className="plan-tl-track">
                   <div
-                    className={`plan-tl-bar${overdue ? " overdue" : ""}`}
+                    className={`plan-tl-bar${overdue ? " overdue" : ""}`} data-ui="timeline-plan-span"
                     style={{ left: `${l}%`, width: `${w}%` }}
                   >
                     <div className="plan-tl-bar-fill" style={{ width: `${prog}%` }} />
@@ -90,7 +90,7 @@ export function TimelineMode({
                     .map((t) => (
                       <button
                         key={t.id}
-                        className={`plan-tl-ms plan-s-${t.status}`}
+                        className={`plan-tl-ms plan-s-${t.status}`} data-ui="timeline-task" data-ui-key={t.id}
                         style={{ left: `${timelineFrac(t.due as string, scale) * 100}%` }}
                         title={`${t.title} · ${fmtDate(t.due as string)}`}
                         onClick={() => onOpenTask(t.id)}

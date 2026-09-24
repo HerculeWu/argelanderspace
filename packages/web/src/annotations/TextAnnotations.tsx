@@ -307,14 +307,14 @@ export function TextAnnotations() {
       <span ref={anchorRef} hidden />
       {pending && ann.canAnnotate && (
         <div
-          className="ann-selbar view-in"
+          className="ann-selbar view-in" data-ui="latex-selection-tools"
           style={{ top: pending.y, left: pending.x }}
           role="toolbar"
           aria-label={t("annotation.summary.text")}
         >
           <button
             type="button"
-            className="ann-editor-btn primary"
+            className="ann-editor-btn primary" data-ui="annotate-selected-text"
             // keep the selection alive until the click lands the create flow
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
@@ -330,7 +330,7 @@ export function TextAnnotations() {
       )}
       {chooser && (
         <div
-          className="ann-chooser view-in"
+          className="ann-chooser view-in" data-ui="latex-annotation-chooser"
           style={{
             top: clampFloatY(
               chooser.y,
@@ -350,7 +350,7 @@ export function TextAnnotations() {
               <button
                 key={id}
                 type="button"
-                className="ann-chooser-entry"
+                className="ann-chooser-entry" data-ui="latex-annotation-choice" data-ui-key={a.id}
                 role="option"
                 aria-selected={false}
                 onClick={() => {

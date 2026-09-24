@@ -17,7 +17,7 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
   const preview = numbering?.preview;
   const projected = currentWriterCellPreview(preview, cell);
   if (cell.type === "appendix") return <div className="w-appendix-marker">{t("writer.appendixMarker")}</div>;
-  if (!projected) return <div className="w-render w-preview-pending">
+  if (!projected) return <div className="w-render w-preview-pending" data-ui="cell-preview-pending">
     <div className="w-note" role="status">{t("writer.preview.pending")}</div>
     {cell.type === "figure" && cell.data.image && <img className="w-pending-image" src={assetUrl(docId, cell.data.image)} alt={cell.data.caption} />}
     <pre className="w-source-preview">{serializeCell(cell)}</pre>
@@ -32,12 +32,12 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
       const target = cells.find((c) => c.id === owner);
       const valid = target && currentWriterCellPreview(preview, target);
       const text = valid ? seg.raw ?? seg.target.number ?? "?" : seg.raw?.startsWith("(") ? "(?)" : "?";
-      return valid && owner ? <button key={key} type="button" className="w-xref w-inline-link" onClick={() => onJump?.(owner)}><MathText text={text} /></button>
+      return valid && owner ? <button key={key} type="button" className="w-xref w-inline-link" data-ui="preview-crossref" data-ui-key={key} onClick={() => onJump?.(owner)}><MathText text={text} /></button>
         : <span key={key} className="w-xref w-unresolved" title={t("writer.preview.unresolved")}><MathText text={text} /></span>;
     },
   });
   const stale = numbering?.status !== "ok";
-  return <div className={`w-render${stale ? " w-preview-stale" : ""}`} data-preview-state={stale ? "stale" : "ok"}>
+  return <div className={`w-render${stale ? " w-preview-stale" : ""}`} data-preview-state={stale ? "stale" : "ok"} data-ui="cell-preview">
     {stale && <div className="w-note" role="status">{t("writer.preview.stale")}</div>}
     {projected.items.map((item) => {
       if (item.kind === "heading") {
@@ -58,11 +58,11 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
       </div>;
       const kind = b.type === "figure" ? "writer.figure.figure" : b.type === "table" ? "writer.figure.table" : "writer.figure.listing";
       const caption = <div className="w-caption">{b.number !== undefined && <strong>{t(kind)} {b.number}. </strong>}{run(b.captionSegments ?? [])}</div>;
-      if (b.type === "figure") return <figure key={b.id} className="w-ir-figure">
+      if (b.type === "figure") return <figure key={b.id} className="w-ir-figure" data-ui="preview-figure">
         {b.imgPath ? <img src={`/api/writer/manuscripts/${encodeURIComponent(docId)}/preview-assets/${encodeURIComponent(b.imgPath)}`} alt={b.label ?? ""} /> : <div className="w-note">{t("writer.figure.noImage")}</div>}
         {caption}
       </figure>;
-      if (b.type === "table") return <div key={b.id} className="w-table-preview">
+      if (b.type === "table") return <div key={b.id} className="w-table-preview" data-ui="preview-table">
         {caption}
         {b.tableBody && <div dangerouslySetInnerHTML={{ __html: htmlWithMath(b.tableBody) }} />}
       </div>;

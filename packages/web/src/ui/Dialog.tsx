@@ -22,6 +22,8 @@ const FOCUSABLE = [
 
 export interface DialogProps {
   title: string;
+  /** Stable dialog purpose, independent of the translated title. */
+  uiId?: string;
   description?: ReactNode;
   closeLabel: string;
   onClose: () => void;
@@ -45,6 +47,7 @@ function canReceiveInitialFocus(element: HTMLElement | null | undefined) {
 /** Accessible modal shell: naming, focus containment/return, Escape/backdrop close, and busy close protection. */
 export function Dialog({
   title,
+  uiId,
   description,
   closeLabel,
   onClose,
@@ -137,6 +140,7 @@ export function Dialog({
     <div
       className="ui-dialog-overlay plan-modal-overlay"
       data-testid="dialog-backdrop"
+      data-ui="dialog-overlay"
       onClick={(event) => {
         if (event.target === event.currentTarget) requestClose();
       }}
@@ -144,6 +148,7 @@ export function Dialog({
       <div
         ref={dialogRef}
         className="ui-dialog plan-modal"
+        data-ui={uiId ?? "dialog"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -165,14 +170,15 @@ export function Dialog({
           </div>
           <IconButton
             label={closeLabel}
+            data-ui="close-dialog"
             icon={<Icon name="x" cls="ico-sm" />}
             variant="ghost"
             disabled={busy}
             onClick={requestClose}
           />
         </div>
-        <div className="ui-dialog-body plan-modal-body">{children}</div>
-        {footer && <div className="ui-dialog-foot plan-modal-foot">{footer}</div>}
+        <div className="ui-dialog-body plan-modal-body" data-ui="dialog-content">{children}</div>
+        {footer && <div className="ui-dialog-foot plan-modal-foot" data-ui="dialog-actions">{footer}</div>}
       </div>
     </div>,
     document.body

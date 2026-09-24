@@ -39,12 +39,12 @@ export function AnnBlockEdge({ id }: { id: string }) {
   }, [list.length, activeHere]);
 
   return (
-    <span ref={ref} className="ann-edge" contentEditable={false}>
+    <span ref={ref} className="ann-edge" data-ui="latex-annotation-gutter" data-ui-key={id} contentEditable={false}>
       <button
         type="button"
         disabled={!ann.canAnnotate}
         hidden={!ann.canAnnotate}
-        className="ann-edge-btn"
+        className="ann-edge-btn" data-ui="annotate-latex-block"
         title={t("annotation.action.add")}
         aria-label={t("annotation.action.add")}
         onClick={(e) => {
@@ -61,7 +61,7 @@ export function AnnBlockEdge({ id }: { id: string }) {
             <button
               key={a.id}
               type="button"
-              className={"ann-marker" + (a.id === ann.activeId ? " active" : "")}
+              className={"ann-marker" + (a.id === ann.activeId ? " active" : "")} data-ui="latex-annotation-marker" data-ui-key={a.id}
               title={t("annotation.action.view")}
               aria-label={t("annotation.action.view")}
               onClick={(e) => {
@@ -76,6 +76,7 @@ export function AnnBlockEdge({ id }: { id: string }) {
               className={
                 "ann-count" + (textList.some((a) => a.id === ann.activeId) ? " active" : "")
               }
+              data-ui="latex-text-annotation-count"
               title={t("annotation.edge.textCount", { count: textList.length })}
               aria-label={t("annotation.edge.textCount", { count: textList.length })}
               onClick={(e) => {

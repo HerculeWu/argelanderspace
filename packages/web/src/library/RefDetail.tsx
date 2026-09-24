@@ -934,22 +934,24 @@ export function RefDetail({
     : null;
 
   return (
-    <aside className="ref-detail reference-detail view-in" aria-label={r.title}>
+    <aside className="ref-detail reference-detail view-in" data-ui="work-detail" data-ui-key={r.id} aria-label={r.title}>
       <div className="ref-detail-scroll">
         <div className="ref-detail-head">
           <div className="ref-type-badge">
             {r.type === "conf" ? t("library.detail.typeConf") : t("library.detail.typeArticle")}
           </div>
-          <div className="ref-detail-actions">
+          <div className="ref-detail-actions" data-ui="work-detail-actions">
             <IconButton
               variant="ghost"
               label={t("library.detail.copy.cite")}
+              data-ui="copy-cite-key"
               icon={<Icon name="copy" cls="ico-sm" />}
               onClick={() => void copyText("cite", r.cite)}
             />
             <IconButton
               variant="ghost"
               label={t("common.close")}
+              data-ui="close-work-detail"
               icon={<Icon name="x" cls="ico-sm" />}
               onClick={onClose}
             />
@@ -968,12 +970,13 @@ export function RefDetail({
             </>
           )}
         </div>
-        <div className="ref-reading-action">
+        <div className="ref-reading-action" data-ui="work-fulltext-action">
           <span className="ref-availability">
             <Icon name={mainDoc ? "check" : "file-text"} cls="ico-sm" />
             {t(mainDoc ? "library.detail.fullText.available" : "library.detail.fullText.missing")}
           </span>
           <Button
+            data-ui="open-main-doc-or-acquisition"
             variant="primary"
             onClick={() => {
               if (mainDoc) onOpenDoc(mainDoc);
@@ -986,6 +989,7 @@ export function RefDetail({
         </div>
         {copyStatusText && (
           <p
+            data-ui="copy-feedback"
             className={"ref-copy-status" + (copyStatus?.state === "failed" ? " error" : "")}
             role={copyStatus?.state === "failed" ? "alert" : "status"}
           >
@@ -1001,7 +1005,7 @@ export function RefDetail({
           panelClassName="ref-detail-body"
         >
         {tab === "meta" && (
-          <div className="ref-meta-list">
+          <div className="ref-meta-list" data-ui="work-metadata">
             <div className="rml-row">
               <span className="rml-k">{t("library.detail.meta.type")}</span>
               <span className="rml-v">{r.type === "conf" ? t("library.detail.typeConfFull") : t("library.detail.typeArticleFull")}</span>
@@ -1056,7 +1060,7 @@ export function RefDetail({
           </div>
         )}
         {tab === "info" && (
-          <div className="ref-abstract">
+          <div className="ref-abstract" data-ui="work-abstract">
             {r.abstract ? (
               <AbstractHtml text={r.abstract} />
             ) : (
@@ -1074,9 +1078,9 @@ export function RefDetail({
           </div>
         )}
         {tab === "bib" && (
-          <div className="bib-block">
+          <div className="bib-block" data-ui="work-bibtex">
             <div className="bib-toolbar">
-              <Button variant="ghost" onClick={() => void copyText("bib", bibtexOf(r))}>
+              <Button data-ui="copy-work-bibtex" variant="ghost" onClick={() => void copyText("bib", bibtexOf(r))}>
                 <Icon name="copy" cls="ico-sm" />
                 {t("library.detail.copy.bib")}
               </Button>
@@ -1085,7 +1089,7 @@ export function RefDetail({
           </div>
         )}
         {tab === "notes" && (
-          <div className="ref-notes">
+          <div className="ref-notes" data-ui="work-notes">
             {r.note ? (
               <div className="ref-abstract ref-note">
                 <p>{r.note}</p>
@@ -1100,11 +1104,12 @@ export function RefDetail({
           </div>
         )}
         {tab === "files" && (
-          <div className="ref-files">
+          <div className="ref-files" data-ui="work-fulltext">
             <div className="ref-files-head">
               <h2>{t("library.detail.files.documents")}</h2>
               <input
                 ref={pdfFileRef}
+                data-ui="pdf-upload-file"
                 className="visually-hidden"
                 type="file"
                 accept="application/pdf,.pdf"
@@ -1115,13 +1120,14 @@ export function RefDetail({
                   choosePdfFile(file);
                 }}
               />
-              <Button variant="ghost" disabled={pdfUploadBusy || pdfUploadJob !== null} onClick={() => pdfFileRef.current?.click()}>
+              <Button data-ui="upload-pdf" variant="ghost" disabled={pdfUploadBusy || pdfUploadJob !== null} onClick={() => pdfFileRef.current?.click()}>
                 <Icon name="file-up" cls="ico-sm" />
                 {t("library.detail.pdfUpload.choose")}
               </Button>
               <Button
                 variant="ghost"
                 disabled={uploadJob !== null || arxivJob !== null || arxivPdfJob !== null}
+                data-ui="open-fulltext-acquisition"
                 onClick={() => openAcquisition()}
               >
                 <Icon name="file-up" cls="ico-sm" />
@@ -1133,17 +1139,17 @@ export function RefDetail({
               </Button>
             </div>
             {(uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || pdfUploadJob || pdfUploadError || (pendingPdfFile && pdfResourceWarning)) && (
-              <div className="ref-task-messages">
+              <div className="ref-task-messages" data-ui="acquisition-status">
                 {arxivPdfJob && (
                   <InlineMessage title={t(arxivPdfJob.status === "queued" ? "library.detail.jobs.queued" : "library.detail.arxivPdf.fetching")}>
                     {arxivPdfJob.status === "queued" ? t("library.detail.jobs.queueHelp") : arxivPdfJob.progress[arxivPdfJob.progress.length - 1]?.message ?? t("library.detail.arxivPdf.fetching")}
                   </InlineMessage>
                 )}
                 {arxivPdfError && (
-                  <InlineMessage tone="danger" title={t("library.detail.arxivPdf.failedTitle")}>
-                    {!arxivPdfErrorDismissed && <IconButton variant="ghost" label={t("library.detail.arxivPdf.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => { if (arxivPdfFailureJobId) dismissedArxivPdfFailures.current.add(arxivPdfFailureJobId); setArxivPdfErrorDismissed(true); }} />}
+                  <InlineMessage uiId="arxiv-pdf-error" tone="danger" title={t("library.detail.arxivPdf.failedTitle")}>
+                    {!arxivPdfErrorDismissed && <IconButton data-ui="dismiss-arxiv-pdf-error" variant="ghost" label={t("library.detail.arxivPdf.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => { if (arxivPdfFailureJobId) dismissedArxivPdfFailures.current.add(arxivPdfFailureJobId); setArxivPdfErrorDismissed(true); }} />}
                     <p>{arxivPdfErrorDismissed ? t("library.detail.arxivPdf.failedSummary") : arxivPdfError}</p>
-                    <Button variant="ghost" onClick={() => openAcquisition("pdf")}>{t("library.detail.arxivPdf.retry")}</Button>
+                    <Button data-ui="retry-arxiv-pdf" variant="ghost" onClick={() => openAcquisition("pdf")}>{t("library.detail.arxivPdf.retry")}</Button>
                   </InlineMessage>
                 )}
                 {pdfUploadJob && (
@@ -1152,22 +1158,22 @@ export function RefDetail({
                   </InlineMessage>
                 )}
                 {pendingPdfFile && pdfResourceWarning && (
-                  <InlineMessage tone="warning" title={t("library.detail.pdfUpload.resourceWarning")}>
+                  <InlineMessage uiId="pdf-resource-warning" tone="warning" title={t("library.detail.pdfUpload.resourceWarning")}>
                     <p>{t("library.detail.pdfUpload.resourceWarningDetail", { filename: pendingPdfFile.name, size: (pendingPdfFile.size / (1024 * 1024)).toFixed(1) })}</p>
-                    <Button variant="ghost" disabled={pdfUploadBusy} onClick={() => { const file = pendingPdfFile; setPendingPdfFile(null); setPdfResourceWarning(false); void queuePdfUpload(file); }}>{t("library.detail.pdfUpload.continue")}</Button>
-                    <Button variant="ghost" onClick={() => { setPendingPdfFile(null); setPdfResourceWarning(false); }}>{t("common.cancel")}</Button>
+                    <Button data-ui="continue-pdf-upload" variant="ghost" disabled={pdfUploadBusy} onClick={() => { const file = pendingPdfFile; setPendingPdfFile(null); setPdfResourceWarning(false); void queuePdfUpload(file); }}>{t("library.detail.pdfUpload.continue")}</Button>
+                    <Button data-ui="cancel-pdf-upload" variant="ghost" onClick={() => { setPendingPdfFile(null); setPdfResourceWarning(false); }}>{t("common.cancel")}</Button>
                   </InlineMessage>
                 )}
                 {pdfUploadError && (pdfErrorDismissed ? (
                   <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
                     <p>{t("library.detail.pdfUpload.failedSummary")}</p>
-                    <Button variant="ghost" onClick={() => pdfFileRef.current?.click()}>{t("library.detail.pdfUpload.retry")}</Button>
+                    <Button data-ui="retry-pdf-upload" variant="ghost" onClick={() => pdfFileRef.current?.click()}>{t("library.detail.pdfUpload.retry")}</Button>
                   </InlineMessage>
                 ) : (
                   <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
-                    <IconButton variant="ghost" label={t("library.detail.pdfUpload.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => setPdfErrorDismissed(true)} />
+                    <IconButton data-ui="dismiss-pdf-upload-error" variant="ghost" label={t("library.detail.pdfUpload.dismiss")} icon={<Icon name="x" cls="ico-sm" />} onClick={() => setPdfErrorDismissed(true)} />
                     <p>{pdfUploadError}</p>
-                    <Button variant="ghost" onClick={() => pdfFileRef.current?.click()}>{t("library.detail.pdfUpload.retry")}</Button>
+                    <Button data-ui="retry-pdf-upload" variant="ghost" onClick={() => pdfFileRef.current?.click()}>{t("library.detail.pdfUpload.retry")}</Button>
                   </InlineMessage>
                 ))}
                 {uploadJob && (
@@ -1201,7 +1207,7 @@ export function RefDetail({
                   </InlineMessage>
                 )}
                 {uploadErr && (
-                  <InlineMessage tone="danger" title={t("library.detail.jobs.uploadFailed")}>
+                  <InlineMessage uiId="latex-upload-error" tone="danger" title={t("library.detail.jobs.uploadFailed")}>
                     <p>{uploadErr}</p>
                     {mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
                   </InlineMessage>
@@ -1224,7 +1230,7 @@ export function RefDetail({
                     {mainDoc && <p>{t("library.detail.jobs.existingDocumentLink")}</p>}
                     <Button
                       variant="ghost"
-                      data-testid="arxiv-retry"
+                      data-testid="arxiv-retry" data-ui="retry-arxiv-source"
                       onClick={() => openAcquisition(arxivErrCode === "arxiv_pdf_only" ? "upload" : "arxiv")}
                     >
                       <Icon name={arxivErrCode === "arxiv_pdf_only" ? "file-up" : "refresh-cw"} cls="ico-sm" />
@@ -1236,17 +1242,17 @@ export function RefDetail({
                     </Button>
                   </InlineMessage>
                 )}
-                {mainErr && <InlineMessage tone="danger">{mainErr}</InlineMessage>}
+                {mainErr && <InlineMessage uiId="set-main-doc-error" tone="danger">{mainErr}</InlineMessage>}
               </div>
             )}
             {versions.length === 0 && (
-              <div className="ref-documents-empty">
+              <div className="ref-documents-empty" data-ui="work-documents-empty">
                 <strong>{t("library.detail.files.empty")}</strong>
                 <span>{t("library.detail.files.emptyHelp")}</span>
               </div>
             )}
             {versions.length > 0 && (
-              <section className="ref-documents" aria-label={t("library.detail.files.documents")}>
+              <section className="ref-documents" data-ui="work-documents" aria-label={t("library.detail.files.documents")}>
                 <h2>{t("library.detail.files.documents")}</h2>
                 <div className="ref-document-list">
                   {versions.map((docId) => {
@@ -1266,7 +1272,7 @@ export function RefDetail({
                             : "library.detail.files.sourceUnknown"
                     );
                     return (
-                      <article className="ref-document" key={docId}>
+                      <article className="ref-document" key={docId} data-ui="doc-item" data-ui-key={docId}>
                         <div className="ref-document-heading">
                           <Icon
                             name={provenance === "upload" || provenance === "pdf" || provenance === "arxiv-pdf" ? "file-up" : "file-text"}
@@ -1282,18 +1288,19 @@ export function RefDetail({
                           </Badge>
                         </div>
                         <code className="ref-document-id">{docId}</code>
-                        <details className="ref-document-actions">
-                          <summary>
+                        <details className="ref-document-actions" data-ui="doc-actions">
+                          <summary data-ui="toggle-doc-actions">
                             <Icon name="ellipsis" cls="ico-sm" />
                             {t("library.detail.files.actions")}
                           </summary>
-                          <div className="ref-document-action-list">
-                            <Button variant="ghost" onClick={() => onOpenDoc(docId)}>
+                          <div className="ref-document-action-list" data-ui="doc-action-list">
+                            <Button data-ui="open-doc" variant="ghost" onClick={() => onOpenDoc(docId)}>
                               <Icon name="book-open" cls="ico-sm" />
                               {t("library.detail.files.openDoc")}
                             </Button>
                             {!isMain && (
                               <Button
+                                data-ui="set-main-doc"
                                 variant="ghost"
                                 disabled={settingMain}
                                 onClick={() => void onSetMainDoc(docId)}
@@ -1305,6 +1312,7 @@ export function RefDetail({
                             {docId === arxivTarget && (
                               <Button
                                 variant="ghost"
+                                data-ui="refresh-arxiv-source"
                                 data-testid={
                                   isMain ? "arxiv-refetch-main" : `arxiv-refetch-${docId}`
                                 }
@@ -1318,6 +1326,7 @@ export function RefDetail({
                             {docId === expectedUploadTarget && (
                               <Button
                                 variant="ghost"
+                                data-ui="replace-upload-source"
                                 disabled={uploadJob !== null}
                                 onClick={() => openAcquisition("upload")}
                               >
@@ -1328,6 +1337,7 @@ export function RefDetail({
                             <Button
                               variant="ghost"
                               className="danger-text"
+                              data-ui="delete-doc"
                               onClick={() => {
                                 setDelErr(null);
                                 setDelDoc(docId);
@@ -1349,10 +1359,10 @@ export function RefDetail({
         </Tabs>
       </div>
       {explore && (
-        <div className="detail-footer">
+        <div className="detail-footer" data-ui="work-detail-footer">
           <button
             className="btn primary large"
-            data-testid="explore-paper"
+            data-testid="explore-paper" data-ui="explore-from-work"
             disabled={!explore.bibcode || !explore.live}
             title={
               !explore.live
@@ -1469,6 +1479,7 @@ function AcquisitionDialog({
   const cancelRef = useRef<HTMLButtonElement>(null);
   return (
     <Dialog
+      uiId="fulltext-acquisition-dialog"
       title={t("library.detail.acquisition.getTitle")}
       closeLabel={t("common.close")}
       busy={flow.busy}
@@ -1476,13 +1487,14 @@ function AcquisitionDialog({
       onClose={onCancel}
       footer={
         <>
-          <Button ref={cancelRef} disabled={flow.busy} onClick={onCancel}>
+          <Button ref={cancelRef} data-ui="cancel-fulltext-acquisition" disabled={flow.busy} onClick={onCancel}>
             {t("common.cancel")}
           </Button>
           <Button
             variant="primary"
             busy={flow.busy}
             busyLabel={t("library.detail.acquisition.submitting")}
+            data-ui="submit-fulltext-acquisition"
             disabled={
               (flow.method === "pdf" && !arxivAllowed) ||
               (flow.method === "arxiv" && !arxivLatexAllowed) ||
@@ -1508,13 +1520,13 @@ function AcquisitionDialog({
         </>
       }
     >
-      <fieldset className="ref-acquisition-methods">
+      <fieldset className="ref-acquisition-methods" data-ui="fulltext-acquisition-methods">
         <legend>{t("library.detail.acquisition.methodLabel")}</legend>
         <label>
           <input
             type="radio"
             name="acquisition-method"
-            value="pdf"
+            value="pdf" data-ui="acquire-arxiv-pdf"
             checked={flow.method === "pdf"}
             disabled={!arxivAllowed || flow.busy}
             onChange={() => onMethodChange("pdf")}
@@ -1525,14 +1537,14 @@ function AcquisitionDialog({
           </span>
         </label>
         <label>
-          <input type="radio" name="acquisition-method" value="arxiv" checked={flow.method === "arxiv"} disabled={!arxivLatexAllowed || flow.busy} onChange={() => onMethodChange("arxiv")} />
+          <input type="radio" name="acquisition-method" value="arxiv" data-ui="acquire-arxiv-latex" checked={flow.method === "arxiv"} disabled={!arxivLatexAllowed || flow.busy} onChange={() => onMethodChange("arxiv")} />
           <span><strong>{t("library.detail.acquisition.methodArxivLatex")}</strong><small>{arxivId ? arxivLatexAllowed ? `arXiv:${arxivId}` : t("library.detail.acquisition.arxivBlocked") : t("library.detail.acquisition.noArxiv")}</small></span>
         </label>
         <label>
           <input
             type="radio"
             name="acquisition-method"
-            value="upload"
+            value="upload" data-ui="upload-latex-source"
             checked={flow.method === "upload"}
             disabled={flow.busy}
             onChange={() => onMethodChange("upload")}
@@ -1598,6 +1610,7 @@ function AcquisitionDialog({
           </label>
           <input
             id="acquisition-file"
+            data-ui="latex-source-file"
             type="file"
             accept=".zip"
             disabled={flow.busy}
@@ -1671,6 +1684,7 @@ function DeleteDocDialog({
 
   return (
     <Dialog
+      uiId="delete-doc-dialog"
       title={t("library.detail.deleteDoc.title")}
       description={t("library.detail.deleteDoc.risk")}
       closeLabel={t("common.close")}
@@ -1679,7 +1693,7 @@ function DeleteDocDialog({
       onClose={onCancel}
       footer={
         <>
-          <Button ref={cancelRef} disabled={busy} onClick={onCancel}>
+          <Button ref={cancelRef} data-ui="cancel-delete-doc" disabled={busy} onClick={onCancel}>
             {t("common.cancel")}
           </Button>
           <Button
@@ -1687,6 +1701,7 @@ function DeleteDocDialog({
             busy={busy}
             disabled={count.state === "loading"}
             busyLabel={t("library.detail.deleteDoc.deleting")}
+            data-ui="confirm-delete-doc"
             onClick={() => onConfirm(docId)}
           >
             <Icon name="trash-2" cls="ico-sm" />
@@ -1695,7 +1710,7 @@ function DeleteDocDialog({
         </>
       }
     >
-      <div className="ui-delete-doc">
+      <div className="ui-delete-doc" data-ui="delete-doc-risk">
         <div className="ui-delete-doc-identity">
           <strong>{t("library.detail.deleteDoc.objectLabel")}</strong>
           <code>{docId}</code>

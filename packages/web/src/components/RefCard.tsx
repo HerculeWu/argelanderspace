@@ -55,6 +55,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
     <div
       className={"refcard" + (focused ? " focused" : "")}
       ref={ref}
+      data-ui="latex-reference-card" data-ui-key={card.ref?.id ?? card.block?.id}
       id={canAnnotate && card.kind === "citation" ? card.ref!.id : undefined}
     >
       <div className="refcard-head">
@@ -65,6 +66,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
             {canExpand && (
               <button
                 className={"icon-btn" + (expanded ? " on" : "")}
+                data-ui="expand-reference-card"
                 onClick={onToggleExpand}
                 title={expanded ? "Collapse" : "Expand inline"}
               >
@@ -74,6 +76,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
             {canGoto && gotoId && (
               <button
                 className="icon-btn"
+                data-ui="jump-to-reference-target"
                 onClick={() => store.jumpTo(gotoId)}
                 title="Go to in document"
               >

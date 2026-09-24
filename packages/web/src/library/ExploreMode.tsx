@@ -101,11 +101,11 @@ export function ExploreMode({
   };
 
   return (
-    <div className="explore-root">
-      <div className="explore-header">
+    <div className="explore-root" data-ui="discovery-view">
+      <div className="explore-header" data-ui="discovery-header">
         <button
           className="btn icon ghost"
-          data-testid="back-to-library"
+          data-testid="back-to-library" data-ui="return-to-library"
           title={t("explore.backLibrary")}
           aria-label={t("explore.backLibrary")}
           onClick={onExit}
@@ -128,7 +128,7 @@ export function ExploreMode({
           </span>
           <button
             className="btn icon ghost"
-            data-testid="explore-history-back"
+            data-testid="explore-history-back" data-ui="discovery-back"
             aria-label={t("explore.prev")}
             title={t("explore.prev")}
             disabled={explore.index <= 0 || !!explore.loading}
@@ -138,7 +138,7 @@ export function ExploreMode({
           </button>
           <button
             className="btn icon ghost"
-            data-testid="explore-history-forward"
+            data-testid="explore-history-forward" data-ui="discovery-forward"
             aria-label={t("explore.next")}
             title={t("explore.next")}
             disabled={explore.index >= explore.sessions.length - 1 || !!explore.loading}
@@ -152,12 +152,12 @@ export function ExploreMode({
       <div className="view-row">
         <div className="lib-side">
           {seedPaper && (
-            <div className="seed-card">
+            <div className="seed-card" data-ui="discovery-seed" data-ui-key={seedPaper.bibcode}>
               <div className="seed-kicker">
                 <Icon name="target" cls="ico-sm" />
                 {t("explore.origin")}
               </div>
-              <button className="seed-title" onClick={() => setSelection(seedPaper.bibcode)}>
+              <button data-ui="select-seed" className="seed-title" onClick={() => setSelection(seedPaper.bibcode)}>
                 {seedPaper.title}
               </button>
               <div className="seed-meta mono">
@@ -168,7 +168,7 @@ export function ExploreMode({
           )}
           {graph && (
             <>
-              <div className="source-tabs" role="tablist" aria-label={t("explore.toolbarTitle")}>
+              <div className="source-tabs" data-ui="discovery-filters" role="tablist" aria-label={t("explore.toolbarTitle")}>
                 {(
                   [
                     ["all", t("explore.filter.all"), graph.nodes.length - 1],
@@ -179,7 +179,7 @@ export function ExploreMode({
                   <button
                     key={key}
                     className={"source-tab" + (filter === key ? " on" : "")}
-                    data-testid={`explore-filter-${key}`}
+                    data-testid={`explore-filter-${key}`} data-ui="discovery-filter" data-ui-key={key}
                     aria-pressed={filter === key}
                     onClick={() => setFilter(key)}
                   >
@@ -191,7 +191,7 @@ export function ExploreMode({
               <p className="source-copy">{t(`explore.filterHint.${filter}`)}</p>
             </>
           )}
-          <div className="side-reflist" ref={listRef}>
+          <div className="side-reflist" data-ui="discovery-results" ref={listRef}>
             {graph &&
               visible
                 .filter((n) => !n.roles.includes("seed"))
@@ -199,7 +199,7 @@ export function ExploreMode({
                   <button
                     key={n.bibcode}
                     className={"side-ref" + (n.bibcode === selection ? " sel" : "")}
-                    data-testid={`explore-row-${n.bibcode}`}
+                    data-testid={`explore-row-${n.bibcode}`} data-ui="discovery-paper" data-ui-key={n.bibcode}
                     onClick={() => setSelection(n.bibcode)}
                   >
                     <span className="side-ref-mark">
@@ -229,10 +229,10 @@ export function ExploreMode({
             )}
           </div>
           {usefulUnavailable && (
-            <div className="disconnected-note" style={{ position: "static", margin: "6px 10px" }} data-testid="useful-unavailable">
+            <div className="disconnected-note" style={{ position: "static", margin: "6px 10px" }} data-testid="useful-unavailable" data-ui="useful-unavailable">
               <Icon name="info" cls="ico-sm" />
               {t("explore.usefulUnavailable")}
-              <button className="btn ghost" onClick={() => void explore.startExplore(session!.seed)}>
+              <button className="btn ghost" data-ui="retry-useful" onClick={() => void explore.startExplore(session!.seed)}>
                 {t("explore.retry")}
               </button>
             </div>
@@ -246,11 +246,12 @@ export function ExploreMode({
           </div>
         </div>
 
-        <div className="lib-main">
+        <div className="lib-main" data-ui="discovery-main">
           <div className="lib-toolbar">
             <div className="lib-search">
               <Icon name="search" cls="ico-sm" />
               <input
+                data-ui="search-discovery"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("explore.searchPlaceholder")}
@@ -259,7 +260,7 @@ export function ExploreMode({
               {query && (
                 <button
                   className="btn icon ghost"
-                  onClick={() => setQuery("")}
+                  data-ui="clear-discovery-search" onClick={() => setQuery("")}
                   title={t("explore.clearSearch")}
                   aria-label={t("explore.clearSearch")}
                 >
@@ -275,7 +276,7 @@ export function ExploreMode({
                 title={t("explore.graphView")}
                 aria-label={t("explore.graphView")}
                 aria-pressed={display === "graph"}
-                data-testid="explore-graph-view"
+                data-testid="explore-graph-view" data-ui="show-discovery-graph"
                 onClick={() => setDisplay("graph")}
               >
                 <Icon name="waypoints" cls="ico-sm" />
@@ -285,7 +286,7 @@ export function ExploreMode({
                 title={t("explore.listView")}
                 aria-label={t("explore.listView")}
                 aria-pressed={display === "list"}
-                data-testid="explore-list-view"
+                data-testid="explore-list-view" data-ui="show-discovery-list"
                 onClick={() => setDisplay("list")}
               >
                 <Icon name="list" cls="ico-sm" />
@@ -294,20 +295,20 @@ export function ExploreMode({
           </div>
 
           {explore.error && (
-            <div className="explore-banner" role="alert" data-testid="explore-error">
+            <div className="explore-banner" role="alert" data-testid="explore-error" data-ui="discovery-error">
               <Icon name="info" cls="ico-sm" />
               <span>
                 {t("explore.error.title")}
                 {" — "}
                 {errText(explore.error)}
               </span>
-              <button className="btn" onClick={() => void explore.startExplore(explore.error!.seed)}>
+              <button className="btn" data-ui="retry-discovery" onClick={() => void explore.startExplore(explore.error!.seed)}>
                 {t("explore.retry")}
               </button>
               <button
                 className="btn icon ghost"
                 aria-label={t("common.close")}
-                data-testid="explore-error-dismiss"
+                data-testid="explore-error-dismiss" data-ui="dismiss-discovery-error"
                 onClick={explore.dismissError}
               >
                 <Icon name="x" cls="ico-sm" />
@@ -316,11 +317,11 @@ export function ExploreMode({
           )}
 
           {graph && graph.nodes.length <= 1 && !explore.loading && !explore.error && (
-            <div className="empty-state" data-testid="explore-empty">
+            <div className="empty-state" data-testid="explore-empty" data-ui="discovery-empty">
               <Icon name="search" cls="ico-lg" />
               <h3>{t("explore.empty.title")}</h3>
               <p>{t("explore.empty.hint")}</p>
-              <button className="btn" onClick={() => void explore.startExplore(session!.seed)}>
+              <button className="btn" data-ui="retry-discovery" onClick={() => void explore.startExplore(session!.seed)}>
                 {t("explore.retry")}
               </button>
             </div>
@@ -338,7 +339,7 @@ export function ExploreMode({
             />
           )}
           {graph && graph.nodes.length > 1 && display === "list" && (
-            <div className="result-table-wrap">
+            <div className="result-table-wrap" data-ui="discovery-table">
               <table className="result-table">
                 <thead>
                   <tr>
@@ -350,9 +351,9 @@ export function ExploreMode({
                 </thead>
                 <tbody>
                   {visible.map((n) => (
-                    <tr key={n.bibcode} className={selection === n.bibcode ? "sel" : ""}>
+                    <tr key={n.bibcode} data-ui="discovery-table-paper" data-ui-key={n.bibcode} className={selection === n.bibcode ? "sel" : ""}>
                       <td>
-                        <button className="table-paper" onClick={() => setSelection(n.bibcode)}>
+                        <button className="table-paper" data-ui="select-discovery-paper" onClick={() => setSelection(n.bibcode)}>
                           {n.title}
                         </button>
                         <div className="table-auth mono">
@@ -377,6 +378,7 @@ export function ExploreMode({
                         ) : (
                           <button
                             className="btn"
+                            data-ui="save-discovery-paper"
                             aria-label={t("explore.add") + " " + n.title}
                             title={t("explore.add")}
                             disabled={explore.adding !== null}
@@ -401,7 +403,7 @@ export function ExploreMode({
               <p className="record-note">{t("explore.error.unchanged")}</p>
               <button
                 className="btn"
-                data-testid="explore-retry"
+                data-testid="explore-retry" data-ui="retry-discovery"
                 onClick={() => void explore.startExplore(explore.error!.seed)}
               >
                 {t("explore.retry")}
@@ -410,11 +412,11 @@ export function ExploreMode({
           )}
 
           {explore.loading && (
-            <div className="cg-loading" role="status" aria-live="polite" data-testid="explore-loading">
+            <div className="cg-loading" role="status" aria-live="polite" data-testid="explore-loading" data-ui="discovery-loading">
               <div className="cg-spinner" />
               <div className="cg-loading-t">{t("explore.loading.title")}</div>
               <div className="cg-loading-d">{t("explore.loading.desc")}</div>
-              <button className="btn ghost" data-testid="explore-cancel" onClick={explore.cancelExplore}>
+              <button className="btn ghost" data-testid="explore-cancel" data-ui="cancel-discovery" onClick={explore.cancelExplore}>
                 {t("common.cancel")}
               </button>
             </div>

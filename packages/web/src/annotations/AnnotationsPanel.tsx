@@ -32,7 +32,7 @@ export function AnnotationsPanel() {
     return (
       <div className="right-empty">
         {t("annotation.panel.error")}
-        <button className="ann-editor-btn" onClick={() => void ann.reload()}>
+        <button className="ann-editor-btn" data-ui="reload-latex-annotations" onClick={() => void ann.reload()}>
           {t("common.retry")}
         </button>
       </div>
@@ -44,9 +44,9 @@ export function AnnotationsPanel() {
   const sorted = sortAnnotations(ann.annotations, store.blockOrder);
 
   return (
-    <div className="ann-panel">
+    <div className="ann-panel" data-ui="latex-annotations-list">
       <button
-        className="ann-add-doc"
+        className="ann-add-doc" data-ui="add-document-annotation"
         onClick={() => { controller.beginCreate(); setDocCreating(true); }}
         disabled={docCreating || !ann.canAnnotate}
       >
@@ -54,7 +54,7 @@ export function AnnotationsPanel() {
         {t("annotation.action.addDoc")}
       </button>
       {docCreating && (
-        <div className="ann-panel-editor">
+        <div className="ann-panel-editor" data-ui="latex-annotation-create-editor">
           <CreateAnnotationEditor target={{ type: "document" }} onSaved={() => setDocCreating(false)} onCancel={() => setDocCreating(false)} />
         </div>
       )}
@@ -86,8 +86,8 @@ function AnnotationEntry({ a }: { a: Annotation }) {
   };
 
   return (
-    <div className={"ann-entry" + (active ? " active" : "")} data-ann-id={a.id}>
-      <button className="ann-entry-main" disabled={!ann.canAnnotate} onClick={openTarget} title={sum.path ?? sum.label}>
+    <div className={"ann-entry" + (active ? " active" : "")} data-ann-id={a.id} data-ui="latex-annotation" data-ui-key={a.id}>
+      <button className="ann-entry-main" data-ui="navigate-latex-annotation" disabled={!ann.canAnnotate} onClick={openTarget} title={sum.path ?? sum.label}>
         <span className="ann-entry-head">
           <span className="ann-entry-kind">{sum.label}</span>
           {sum.path && <span className="ann-entry-path">{sum.path}</span>}
@@ -97,6 +97,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
       </button>
       <span className="ann-entry-actions">
         <button
+          data-ui="edit-latex-annotation"
           title={t("annotation.action.edit")}
           aria-label={t("annotation.action.edit")}
           disabled={!ann.canAnnotate}
@@ -105,6 +106,7 @@ function AnnotationEntry({ a }: { a: Annotation }) {
           <Icon name="pencil" cls="ico-sm" />
         </button>
         <button
+          data-ui="delete-latex-annotation"
           title={t("annotation.action.delete")}
           aria-label={t("annotation.action.delete")}
           disabled={ann.busy}

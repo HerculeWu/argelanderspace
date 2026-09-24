@@ -48,10 +48,10 @@ export function AnnotationEditor({
   };
 
   return (
-    <div className="ann-editor">
+    <div className="ann-editor" data-ui="latex-annotation-editor">
       <textarea
         ref={ta}
-        className="ann-editor-textarea mono"
+        className="ann-editor-textarea mono" data-ui="latex-annotation-body-input"
         value={draft}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -74,11 +74,11 @@ export function AnnotationEditor({
           {t("annotation.editor.hint")}
         </span>
         <div style={{ flex: 1 }} />
-        <button className="ann-editor-btn" onClick={onCancel}>
+        <button className="ann-editor-btn" data-ui="cancel-annotation-edit" onClick={onCancel}>
           {t("common.cancel")}
         </button>
         <button
-          className="ann-editor-btn primary"
+          className="ann-editor-btn primary" data-ui="save-latex-annotation"
           disabled={!canSave}
           onClick={save}
         >
@@ -100,7 +100,7 @@ export function CreateAnnotationEditor({ target, onSaved, onCancel }: {
   const ann = useAnnotations();
   const { t } = useTranslation();
   return <>
-    {!state.createDraft.use && state.createDraft.body && <button className="ann-editor-btn" onClick={controller.useCreateDraft}>{t("annotation.editor.useRetained")}</button>}
+    {!state.createDraft.use && state.createDraft.body && <button className="ann-editor-btn" data-ui="use-retained-annotation-draft" onClick={controller.useCreateDraft}>{t("annotation.editor.useRetained")}</button>}
     <AnnotationEditor body={state.createDraft.use ? state.createDraft.body : ""} onChange={controller.setCreateBody}
       busy={ann.busy} saveDisabled={!canAnnotate} onCancel={onCancel}
       onSave={async (body) => {

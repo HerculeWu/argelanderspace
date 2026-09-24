@@ -24,7 +24,7 @@ function requestFor(mode: ImportMode, input: string): ManualWorkRequest | null {
   return { mode: "bib", bib: input.trim() };
 }
 
-function ResultRow({ r }: { r: ManualWorkResult }) {
+function ResultRow({ r, index }: { r: ManualWorkResult; index: number }) {
   const { t } = useTranslation();
   const icon =
     r.status === "created" ? "check-circle-2" : r.status === "exists" ? "info" : "x-circle";
@@ -35,7 +35,7 @@ function ResultRow({ r }: { r: ManualWorkResult }) {
         ? t("library.importDialog.exists")
         : t("library.importDialog.failed");
   return (
-    <div className={`import-result ${r.status}`}>
+    <div className={`import-result ${r.status}`} data-ui="import-result" data-ui-key={index}>
       <Icon name={icon} cls="ico-sm" />
       <span className="import-result-body">
         <span className="import-result-title">
@@ -110,9 +110,10 @@ export function ImportDialog({
   };
 
   return (
-    <div className="plan-modal-overlay" onClick={close}>
+    <div className="plan-modal-overlay" data-ui="import-overlay" onClick={close}>
       <div
         className="plan-modal"
+        data-ui="import-dialog" data-ui-key={mode}
         style={{ width: batch ? 560 : 460 }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -121,7 +122,7 @@ export function ImportDialog({
             <div className="plan-modal-title">{t(`library.importDialog.${mode}Title`)}</div>
             <div className="plan-modal-sub">{t(`library.importDialog.${mode}Sub`)}</div>
           </div>
-          <button className="btn icon ghost" onClick={close}>
+          <button data-ui="close-import" className="btn icon ghost" onClick={close}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
@@ -130,6 +131,7 @@ export function ImportDialog({
             <span className="plan-field-label">{t(`library.importDialog.${mode}Label`)}</span>
             {batch ? (
               <textarea
+                data-ui="import-input"
                 className="plan-note-textarea mono"
                 rows={9}
                 value={input}
@@ -138,6 +140,7 @@ export function ImportDialog({
               />
             ) : (
               <input
+                data-ui="import-input"
                 className="plan-field-input"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -146,21 +149,22 @@ export function ImportDialog({
               />
             )}
           </div>
-          {fatal && <div className="plan-modal-warning">{fatal}</div>}
+          {fatal && <div className="plan-modal-warning" data-ui="import-error">{fatal}</div>}
           {results && (
-            <div className="import-results">
+            <div className="import-results" data-ui="import-results">
               {results.map((r, i) => (
-                <ResultRow key={r.key ?? i} r={r} />
+                <ResultRow key={r.key ?? i} r={r} index={i} />
               ))}
             </div>
           )}
         </div>
         <div className="plan-modal-foot">
-          <button className="btn" onClick={close}>
+          <button className="btn" data-ui="cancel-import" onClick={close}>
             {t("library.importDialog.close")}
           </button>
           <button
             className="btn primary"
+            data-ui="submit-import"
             disabled={busy || !input.trim()}
             onClick={() => void submit()}
           >

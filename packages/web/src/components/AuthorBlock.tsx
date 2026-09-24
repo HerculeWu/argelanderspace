@@ -18,7 +18,7 @@ export function AuthorBlock() {
     <div className={"author-block" + (open ? " open" : "")}>
       <button
         type="button"
-        className="author-toggle"
+        className="author-toggle" data-ui="toggle-authors"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         title={open ? "Collapse author list" : "Show all authors, affiliations and emails"}

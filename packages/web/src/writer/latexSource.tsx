@@ -71,7 +71,7 @@ export function LatexSourceField({
   ], [id, label]);
   return (
     <CodeMirror
-      className="w-source-editor"
+      className="w-source-editor" data-ui="cell-latex-editor"
       value={value}
       selection={initialSelection.current}
       extensions={extensions}

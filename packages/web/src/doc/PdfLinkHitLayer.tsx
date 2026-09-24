@@ -27,14 +27,14 @@ function normalizePdfLinkRect(rect: PdfLinkAnnoObject["rect"], page: PdfPageGeom
 export function PdfLinkHitLayer({ pageIndex, pageCount, geometry, links, onNavigate }: { pageIndex: number; pageCount: number; geometry: PdfPageGeometry | undefined; links: PdfLinkAnnoObject[]; onNavigate: (target: PdfLinkTarget) => void }) {
   const { t } = useTranslation();
   if (!geometry) return null;
-  return <div className="pdf-link-hit-layer" data-pdf-page-index={pageIndex} role="group" aria-label={t("pdfReader.pdfLinks")}>
+  return <div className="pdf-link-hit-layer" data-ui="pdf-links" data-ui-key={pageIndex} data-pdf-page-index={pageIndex} role="group" aria-label={t("pdfReader.pdfLinks")}>
     {links.filter((link) => link.pageIndex === pageIndex && isPdfLinkTargetAllowed(link.target, pageCount)).map((link) => {
       const target = link.target;
       if (!target) return null;
       const rect = normalizePdfLinkRect(link.rect, geometry);
       if (!rect) return null;
       // Link rects are in the SDK's original page space; the ancestor Rotate transforms this layer too.
-      return <button key={link.id} type="button" data-pdf-native-link={link.id} aria-label={t("pdfReader.openPdfLink")} className="pdf-native-link" style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }} onClick={() => onNavigate(target)} />;
+      return <button key={link.id} type="button" data-pdf-native-link={link.id} data-ui="pdf-link" data-ui-key={link.id} aria-label={t("pdfReader.openPdfLink")} className="pdf-native-link" style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }} onClick={() => onNavigate(target)} />;
     })}
   </div>;
 }

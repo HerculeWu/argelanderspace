@@ -28,7 +28,7 @@ export function PinBtn({ focused, onToggle }: { focused: boolean; onToggle: () =
   const { t } = useTranslation();
   return (
     <button
-      className={`plan-pin${focused ? " on" : ""}`}
+      className={`plan-pin${focused ? " on" : ""}`} data-ui="toggle-task-focus"
       title={focused ? t("plan.bits.unpin") : t("plan.bits.pin")}
       onClick={(e) => {
         e.stopPropagation();

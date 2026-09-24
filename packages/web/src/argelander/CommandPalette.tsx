@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 
 interface Cmd {
+  id: string;
   ic: string;
   t: string;
   run: () => void;
@@ -34,21 +35,22 @@ export function CommandPalette({
   if (!open) return null;
 
   const cmds: Cmd[] = [
-    { ic: "library", t: t("shell.palette.goLibrary"), run: () => onNav("library"), grp: t("shell.palette.groupNav") },
-    { ic: "file-text", t: t("shell.palette.goDoc"), run: () => onNav("doc"), grp: t("shell.palette.groupNav") },
-    { ic: "telescope", t: t("shell.palette.goPlan"), run: () => onNav("plan"), grp: t("shell.palette.groupNav") },
-    { ic: "pen-line", t: t("shell.palette.goWrite"), run: () => onNav("write"), grp: t("shell.palette.groupNav") },
-    { ic: "columns-2", t: t("shell.split"), run: () => onSplit(), grp: t("shell.palette.groupActions") },
+    { id: "library", ic: "library", t: t("shell.palette.goLibrary"), run: () => onNav("library"), grp: t("shell.palette.groupNav") },
+    { id: "doc", ic: "file-text", t: t("shell.palette.goDoc"), run: () => onNav("doc"), grp: t("shell.palette.groupNav") },
+    { id: "plan", ic: "telescope", t: t("shell.palette.goPlan"), run: () => onNav("plan"), grp: t("shell.palette.groupNav") },
+    { id: "write", ic: "pen-line", t: t("shell.palette.goWrite"), run: () => onNav("write"), grp: t("shell.palette.groupNav") },
+    { id: "split", ic: "columns-2", t: t("shell.split"), run: () => onSplit(), grp: t("shell.palette.groupActions") },
   ];
   const f = cmds.filter((c) => !q || c.t.toLowerCase().includes(q.toLowerCase()));
   const groups = [...new Set(f.map((c) => c.grp))];
 
   return (
-    <div className="cmdk-overlay" onClick={onClose}>
-      <div className="cmdk" onClick={(e) => e.stopPropagation()}>
+    <div className="cmdk-overlay" data-ui="command-palette-overlay" onClick={onClose}>
+      <div className="cmdk" data-ui="command-palette" onClick={(e) => e.stopPropagation()}>
         <div className="cmdk-input">
           <Icon name="search" cls="ico" />
           <input
+            data-ui="command-search"
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -56,15 +58,17 @@ export function CommandPalette({
           />
           <span className="kbd">{t("shell.palette.esc")}</span>
         </div>
-        <div className="cmdk-list">
+        <div className="cmdk-list" data-ui="command-results">
           {groups.map((g) => (
             <div key={g}>
               <div className="cmdk-grp">{g}</div>
               {f
                 .filter((c) => c.grp === g)
-                .map((c, i) => (
+                .map((c) => (
                   <button
-                    key={i}
+                    data-ui="command-option"
+                    data-ui-key={c.id}
+                    key={c.id}
                     className="cmdk-item"
                     onClick={() => {
                       c.run();
@@ -78,7 +82,7 @@ export function CommandPalette({
                 ))}
             </div>
           ))}
-          {!f.length && <div className="cmdk-empty">{t("shell.palette.empty")}</div>}
+          {!f.length && <div className="cmdk-empty" data-ui="command-empty">{t("shell.palette.empty")}</div>}
         </div>
       </div>
     </div>

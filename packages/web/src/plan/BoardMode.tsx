@@ -52,7 +52,7 @@ export function BoardMode({ plan, today, cb }: { plan: Plan; today: string; cb: 
 
   return (
     <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-      <div className="plan-board-mode">
+      <div className="plan-board-mode" data-ui="plan-board">
         {COLS.map((c) => (
           <BoardColumn key={c.key} col={c} plan={plan} today={today} cb={cb} />
         ))}
@@ -76,7 +76,7 @@ function BoardColumn({
   const items = plan.tasks.filter((t) => t.status === col.key);
   const { setNodeRef, isOver } = useDroppable({ id: `col-${col.key}`, data: { col: col.key } });
   return (
-    <div className={`plan-board-col${isOver ? " over" : ""}`}>
+    <div className={`plan-board-col${isOver ? " over" : ""}`} data-ui="board-status-column" data-ui-key={col.key}>
       <div className="plan-board-col-head">
         <StatusDot status={col.key} />
         <span>{t(col.labelKey)}</span>
@@ -112,7 +112,7 @@ function SortableCard({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`plan-board-card${task.status === "done" ? " is-done" : ""}${isDragging ? " dragging" : ""}`}
+      className={`plan-board-card${task.status === "done" ? " is-done" : ""}${isDragging ? " dragging" : ""}`} data-ui="task-item" data-ui-key={task.id}
       onClick={() => cb.onOpen(task.id)}
       {...attributes}
       {...listeners}

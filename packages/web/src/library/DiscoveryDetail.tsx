@@ -65,7 +65,7 @@ export function DiscoveryDetail({
     .join(" · ");
 
   return (
-    <aside className="ref-detail view-in" data-testid="discovery-detail" aria-label={paper.title}>
+    <aside className="ref-detail view-in" data-testid="discovery-detail" data-ui="discovery-detail" data-ui-key={paper.bibcode} aria-label={paper.title}>
       <div className="ref-detail-scroll">
         <div className="ref-detail-head">
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
@@ -80,10 +80,11 @@ export function DiscoveryDetail({
               </span>
             )}
           </div>
-          <div className="ref-detail-actions">
+          <div className="ref-detail-actions" data-ui="discovery-detail-actions">
             <a
               className="btn icon ghost"
               href={adsAbsUrl(paper.bibcode)}
+              data-ui="open-discovery-paper-in-ads"
               target="_blank"
               rel="noreferrer"
               title={t("explore.openInAds")}
@@ -96,7 +97,7 @@ export function DiscoveryDetail({
               onClick={onClose}
               title={t("common.close")}
               aria-label={t("common.close")}
-              data-testid="close-discovery-detail"
+              data-testid="close-discovery-detail" data-ui="close-discovery-detail"
             >
               <Icon name="x" cls="ico-sm" />
             </button>
@@ -108,7 +109,7 @@ export function DiscoveryDetail({
           {(allAuthors ? paper.authors : paper.authors.slice(0, 3)).join("; ")}
           {!allAuthors && paper.authors.length > 3 ? " et al." : ""}
           {paper.authors.length > 3 && (
-            <button className="author-toggle" onClick={() => setAllAuthors((v) => !v)}>
+            <button data-ui="toggle-discovery-authors" className="author-toggle" onClick={() => setAllAuthors((v) => !v)}>
               {t(allAuthors ? "explore.authorsLess" : "explore.authorsMore")}
             </button>
           )}
@@ -127,21 +128,23 @@ export function DiscoveryDetail({
           )}
         </div>
         {!seed && sourceLine && (
-          <div className="discovery-source mono">
+          <div className="discovery-source mono" data-ui="discovery-paper-roles">
             {t("explore.sourceLine.head")}
             {" · "}
             {sourceLine}
           </div>
         )}
 
-        <div className="ref-detail-tabs" role="tablist">
+        <div className="ref-detail-tabs" data-ui="discovery-detail-tabs" role="tablist">
           <button
+            data-ui="show-discovery-abstract"
             className={"rdt" + (tab === "abstract" ? " on" : "")}
             onClick={() => setTab("abstract")}
           >
             {t("library.detail.tabs.info")}
           </button>
           <button
+            data-ui="show-discovery-citations"
             className={"rdt" + (tab === "citations" ? " on" : "")}
             onClick={() => setTab("citations")}
             data-testid="discovery-citations-tab"
@@ -233,16 +236,16 @@ export function DiscoveryDetail({
         )}
       </div>
 
-      <div className="detail-footer">
+      <div className="detail-footer" data-ui="discovery-detail-actions">
         {addFailed && (
-          <div className="inline-error mono" role="alert">
+          <div className="inline-error mono" role="alert" data-ui="discovery-add-error">
             {t("explore.addError")}
           </div>
         )}
         {saved ? (
           <button
             className="btn success large"
-            data-testid="view-in-library"
+            data-testid="view-in-library" data-ui="view-saved-work"
             onClick={() => onViewInLibrary(paper.libraryId!)}
           >
             <Icon name="check" cls="ico-sm" />
@@ -252,7 +255,7 @@ export function DiscoveryDetail({
         ) : (
           <button
             className="btn primary large"
-            data-testid="add-to-library"
+            data-testid="add-to-library" data-ui="save-discovery-paper"
             disabled={adding}
             onClick={() => onAdd(paper.bibcode)}
           >
@@ -269,7 +272,7 @@ export function DiscoveryDetail({
         ) : (
           <button
             className="btn large"
-            data-testid="explore-from-here"
+            data-testid="explore-from-here" data-ui="explore-from-paper"
             onClick={() => onExploreHere(paper.bibcode)}
           >
             <Icon name="compass" cls="ico-sm" />
@@ -284,7 +287,7 @@ export function DiscoveryDetail({
 
 function ConnRow({ p, onSelect }: { p: DiscoveryPaper; onSelect: (bibcode: string) => void }) {
   return (
-    <button className="cg-conn" onClick={() => onSelect(p.bibcode)}>
+    <button className="cg-conn" data-ui="citation-paper" data-ui-key={p.bibcode} onClick={() => onSelect(p.bibcode)}>
       <span className={"cg-conn-dot" + (p.libraryId !== null ? " saved" : "")} />
       <span className="cg-conn-body">
         <span className="cg-conn-t">{p.title}</span>

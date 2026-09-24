@@ -18,6 +18,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     .join(" ");
   return (
     <button
+      data-ui="button"
       {...props}
       ref={ref}
       type={type}

@@ -243,6 +243,7 @@ describe("PlanView: plans empty → create → inline add", () => {
     expect(plan.due).toBe("2026-12-31");
     expect(plan.icon).toBe("target");
     expect(plan.id).toMatch(/^p_[0-9a-f]{8}$/);
+    expect(container.querySelector('[data-ui="plan-item"]')?.getAttribute("data-ui-key")).toBe(plan.id);
     // and the freshly-created plan is the selected one (toolbar shows it)
     await waitFor(() => byText(container, ".plan-tb-title", "误差分析"));
   });
@@ -277,6 +278,7 @@ describe("PlanView: plans empty → create → inline add", () => {
     const task = lastPut().plans[0]!.tasks[0]!;
     expect(task.title).toBe("复核公式推导");
     expect(task.due).toBe("2026-10-01");
+    await waitFor(() => expect(container.querySelector('[data-ui="task-item"]')?.getAttribute("data-ui-key")).toBe(task.id));
     expect(task.status).toBe("todo");
     expect(task.id).toMatch(/^t_[0-9a-f]{8}$/);
   });

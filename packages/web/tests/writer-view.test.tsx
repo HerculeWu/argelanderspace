@@ -288,9 +288,10 @@ async function waitStore(id: string, pred: (m: WriterManuscript) => boolean, tim
 
 describe("manuscript list", () => {
   it("renders the fixture manuscript with template and updated column", async () => {
-    const { getByText } = render(<WriterView />);
+    const { getByText, container } = render(<WriterView />);
     await waitFor(() => getByText("Stellar Streams in the Galactic Halo"));
     getByText("A&A");
+    expect(container.querySelector('[data-ui="manuscript-item"]')?.getAttribute("data-ui-key")).toBe("m_0a1b2c3d");
   });
 
   it("new-manuscript modal requires a template before Create enables", async () => {

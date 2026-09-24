@@ -13,12 +13,14 @@ import type { WriterAuthor, WriterManuscript, WriterTemplate } from "@argelander
 /** Generic modal shell (overlay click + Escape close), plan/atoms pattern. */
 export function WModal({
   title,
+  uiId,
   onClose,
   children,
   footer,
   width = 680,
 }: {
   title: string;
+  uiId: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -32,11 +34,11 @@ export function WModal({
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
   return (
-    <div className="w-modal-overlay" onClick={onClose}>
-      <div className="w-modal" style={{ width }} onClick={(e) => e.stopPropagation()}>
+    <div className="w-modal-overlay" data-ui="writer-dialog-overlay" onClick={onClose}>
+      <div className="w-modal" data-ui={uiId} style={{ width }} onClick={(e) => e.stopPropagation()}>
         <div className="w-modal-head">
           <strong>{title}</strong>
-          <button className="btn icon ghost" onClick={onClose}>
+          <button className="btn icon ghost" data-ui="close-writer-dialog" onClick={onClose}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
@@ -83,14 +85,15 @@ export function InfoModal({
 
   return (
     <WModal
+      uiId="manuscript-info-dialog"
       title={t("writer.info.title")}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>
+          <button className="btn" data-ui="cancel-manuscript-info" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button className="btn primary" onClick={save}>
+          <button className="btn primary" data-ui="save-manuscript-info" onClick={save}>
             {t("common.save")}
           </button>
         </>
@@ -99,14 +102,14 @@ export function InfoModal({
       <div className="w-modal-note">{t("writer.info.note")}</div>
       <div className="w-field">
         <label htmlFor="w-info-title">{t("writer.info.titleLabel")}</label>
-        <input id="w-info-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input id="w-info-title" data-ui="manuscript-title-input" value={title} onChange={(e) => setTitle(e.target.value)} />
       </div>
 
       <div className="w-panel-title w-modal-sec">{t("writer.info.authors")}</div>
       {authors.map((a, i) => (
-        <div className="w-author-row" key={i}>
+        <div className="w-author-row" data-ui="manuscript-author" data-ui-key={i} key={i}>
           <input
-            data-author-name={i}
+            data-author-name={i} data-ui="author-name-input"
             value={a.name}
             placeholder={t("writer.info.namePh")}
             onChange={(e) =>
@@ -114,7 +117,7 @@ export function InfoModal({
             }
           />
           <input
-            data-author-aff={i}
+            data-author-aff={i} data-ui="author-affiliation-input"
             value={a.aff}
             placeholder={t("writer.info.affPh")}
             onChange={(e) =>
@@ -122,7 +125,7 @@ export function InfoModal({
             }
           />
           <input
-            data-author-email={i}
+            data-author-email={i} data-ui="author-email-input"
             value={a.email ?? ""}
             placeholder={t("writer.info.emailPh")}
             onChange={(e) =>
@@ -130,7 +133,7 @@ export function InfoModal({
             }
           />
           <button
-            className="w-small-x"
+            className="w-small-x" data-ui="remove-author"
             title={t("common.delete")}
             onClick={() => setAuthors((as) => as.filter((_, j) => j !== i))}
           >
@@ -140,6 +143,7 @@ export function InfoModal({
       ))}
       <button
         className="btn"
+        data-ui="add-author"
         onClick={() =>
           setAuthors((as) => [...as, { name: "", aff: String(affils.length || 1), email: "" }])
         }
@@ -149,15 +153,15 @@ export function InfoModal({
 
       <div className="w-panel-title w-modal-sec">{t("writer.info.affils")}</div>
       {affils.map((a, i) => (
-        <div className="w-affil-row" key={i}>
+        <div className="w-affil-row" data-ui="manuscript-affiliation" data-ui-key={i} key={i}>
           <span>{i + 1}</span>
           <input
-            data-affil={i}
+            data-affil={i} data-ui="affiliation-input"
             value={a}
             onChange={(e) => setAffils((xs) => xs.map((x, j) => (j === i ? e.target.value : x)))}
           />
           <button
-            className="w-small-x"
+            className="w-small-x" data-ui="remove-affiliation"
             title={t("common.delete")}
             onClick={() => setAffils((xs) => xs.filter((_, j) => j !== i))}
           >
@@ -165,7 +169,7 @@ export function InfoModal({
           </button>
         </div>
       ))}
-      <button className="btn" onClick={() => setAffils((xs) => [...xs, ""])}>
+      <button className="btn" data-ui="add-affiliation" onClick={() => setAffils((xs) => [...xs, ""])}>
         <Icon name="plus" cls="ico-sm" /> {t("writer.info.addAffil")}
       </button>
 
@@ -176,6 +180,7 @@ export function InfoModal({
               <label htmlFor={`w-info-fld-${fld.key}`}>{fld.label}</label>
               {fld.input === "textarea" ? (
                 <textarea
+                  data-ui="manuscript-info-field" data-ui-key={fld.key}
                   id={`w-info-fld-${fld.key}`}
                   data-info-key={fld.key}
                   value={infoValues[fld.key] ?? ""}
@@ -185,6 +190,7 @@ export function InfoModal({
                 />
               ) : (
                 <input
+                  data-ui="manuscript-info-field" data-ui-key={fld.key}
                   id={`w-info-fld-${fld.key}`}
                   data-info-key={fld.key}
                   value={infoValues[fld.key] ?? ""}
@@ -218,14 +224,15 @@ export function PreambleModal({
   const [value, setValue] = useState(userPreamble);
   return (
     <WModal
+      uiId="manuscript-preamble-dialog"
       title={t("writer.preamble.title")}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>
+          <button className="btn" data-ui="cancel-manuscript-preamble" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button className="btn primary" onClick={() => onSave(value)}>
+          <button className="btn primary" data-ui="save-manuscript-preamble" onClick={() => onSave(value)}>
             {t("common.save")}
           </button>
         </>
@@ -233,7 +240,7 @@ export function PreambleModal({
     >
       <div className="w-field">
         <label htmlFor="w-preamble-template">{t("writer.preamble.templateLabel")}</label>
-        <textarea id="w-preamble-template" className="w-tall w-readonly" value={template.preamble} readOnly disabled />
+        <textarea id="w-preamble-template" data-ui="template-preamble-readonly" className="w-tall w-readonly" value={template.preamble} readOnly disabled />
       </div>
       <div className="w-field">
         <label htmlFor="w-preamble-user">{t("writer.preamble.userLabel")}</label>
@@ -258,15 +265,16 @@ export function ConfirmDeleteModal({
   const { t } = useTranslation();
   return (
     <WModal
+      uiId="delete-manuscript-dialog"
       title={t("writer.list.deleteTitle")}
       width={440}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>
+          <button className="btn" data-ui="cancel-delete-manuscript" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          <button className="btn w-danger" onClick={onConfirm}>
+          <button className="btn w-danger" data-ui="confirm-delete-manuscript" onClick={onConfirm}>
             <Icon name="trash-2" cls="ico-sm" /> {t("common.delete")}
           </button>
         </>

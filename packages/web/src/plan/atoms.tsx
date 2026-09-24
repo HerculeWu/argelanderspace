@@ -43,7 +43,7 @@ export function ProgressRing({
 export function StatusBtn({ status, onCycle }: { status: TaskStatus; onCycle?: () => void }) {
   return (
     <button
-      className={`plan-st-btn plan-s-${status}`}
+      className={`plan-st-btn plan-s-${status}`} data-ui="cycle-task-status"
       onClick={(e) => {
         e.stopPropagation();
         onCycle?.();
@@ -69,7 +69,7 @@ export function DrawerStatusRow({
       {order.map((s) => (
         <button
           key={s}
-          className={`plan-drawer-st plan-s-${s}${status === s ? " on" : ""}`}
+          className={`plan-drawer-st plan-s-${s}${status === s ? " on" : ""}`} data-ui="set-task-status" data-ui-key={s}
           onClick={() => onSet(s)}
         >
           <Icon name={STATUS_ICON[s]} cls="ico-sm" />

@@ -15,6 +15,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
   return (
     <Tooltip content={label}>
       <button
+        data-ui="icon-button"
         {...props}
         ref={ref}
         type={type}

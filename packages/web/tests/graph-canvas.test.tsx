@@ -97,6 +97,16 @@ describe("GraphCanvas", () => {
     expect(container.textContent).toContain("Useful");
   });
 
+  it("keeps graph node identifiers bound to identity across a refreshed result", () => {
+    vi.stubGlobal("ResizeObserver", RO);
+    const { container, rerender } = renderCanvas();
+    expect([...container.querySelectorAll('[data-ui="graph-node"]')].map((node) => node.getAttribute("data-ui-key"))).toEqual(["A", "B", "C"]);
+    expect(container.querySelector('[data-ui="graph-canvas"]')).toBeTruthy();
+    rerender(<GraphCanvas nodes={[NODES[0], { ...NODES[1], title: "New title" }, NODES[2], { ...NODES[1], id: "D" }]} edges={[]} seedId="A" selectedId={null} onSelect={() => {}} stash={{}} layoutKey="new-scene" heading="New heading" note="" />);
+    expect([...container.querySelectorAll('[data-ui="graph-node"]')].map((node) => node.getAttribute("data-ui-key"))).toEqual(["A", "B", "C", "D"]);
+    expect(container.querySelector('[data-ui-key="B"]')?.getAttribute("aria-label")).toBe("New title");
+  });
+
   it("labels respect the collision rule but the seed/selected are always labeled", () => {
     vi.stubGlobal("ResizeObserver", RO);
     const { container } = renderCanvas({ selectedId: "B" });

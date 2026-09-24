@@ -43,14 +43,15 @@ export function Tabs<Value extends string>({
   };
 
   return (
-    <div className={["ui-tabs-root", className].filter(Boolean).join(" ")}>
-      <div className="ui-tabs" role="tablist" aria-label={ariaLabel}>
+    <div className={["ui-tabs-root", className].filter(Boolean).join(" ")} data-ui="tabs">
+      <div className="ui-tabs" data-ui="tab-list" role="tablist" aria-label={ariaLabel}>
         {items.map((item, index) => {
           const selectedTab = item.value === value;
           const tabId = `${baseId}-tab-${index}`;
           return (
             <button
               key={item.value}
+              data-ui="tab" data-ui-key={item.value}
               ref={(element) => {
                 if (element) tabs.current.set(item.value, element);
                 else tabs.current.delete(item.value);
@@ -78,6 +79,7 @@ export function Tabs<Value extends string>({
       <div
         id={`${baseId}-panel`}
         className={["ui-tab-panel", panelClassName].filter(Boolean).join(" ")}
+        data-ui="tab-panel" data-ui-key={value}
         role="tabpanel"
         aria-labelledby={`${baseId}-tab-${selectedIndex}`}
       >

@@ -160,7 +160,7 @@ export function FigureImage({ imgPath, alt, controls = false, width, height }: {
         style={{ width: boxWidth ?? "100%", aspectRatio: boxWidth && boxHeight ? `${boxWidth} / ${boxHeight}` : undefined, minHeight: boxHeight ? undefined : 120 }}>
         {ready ? t("components.figure.pending") : t("components.figure.unavailable")}
       </span>}
-    {controls && dark && current && <button type="button" className="fig-invert-btn"
+    {controls && dark && current && <button type="button" className="fig-invert-btn" data-ui="invert-latex-figure"
       title={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")}
       aria-label={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")} aria-pressed={inverted}
       onClick={() => setOverride(inverted ? "off" : "invert")}>

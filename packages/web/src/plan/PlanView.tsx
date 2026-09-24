@@ -366,7 +366,7 @@ export function PlanView() {
           </div>
           <div className="plan-empty-title">{t("plan.loadFailed.title")}</div>
           <div className="plan-empty-sub">{t("plan.loadFailed.desc")}</div>
-          <button className="btn primary" onClick={() => void reload()}>
+          <button className="btn primary" data-ui="retry-plans" onClick={() => void reload()}>
             <Icon name="refresh-cw" cls="ico-sm" />
             {t("common.retry")}
           </button>
@@ -387,7 +387,7 @@ export function PlanView() {
   ];
 
   return (
-    <div className="view-row">
+    <div className="view-row" data-ui="plan-view">
       <PlansSidebar
         plans={plans}
         project={library?.project ?? null}
@@ -401,9 +401,9 @@ export function PlanView() {
         onAddPlan={() => setModal({ kind: "plan" })}
       />
 
-      <div className="plan-main">
+      <div className="plan-main" data-ui="plan-main">
         {!special && plan && (
-          <div className="plan-toolbar">
+          <div className="plan-toolbar" data-ui="plan-toolbar" data-ui-key={plan.id}>
             <div className="plan-tb-left">
               <ProgressRing value={planProgress(plan)} size={34} stroke={3.5} />
               <div className="plan-tb-titles">
@@ -427,6 +427,7 @@ export function PlanView() {
                 {modes.map((m) => (
                   <button
                     key={m.k}
+                    data-ui="plan-display-mode" data-ui-key={m.k}
                     className={`plan-seg-btn${mode === m.k ? " on" : ""}`}
                     onClick={() => setMode(m.k)}
                     title={m.label}
@@ -438,6 +439,7 @@ export function PlanView() {
               </div>
               <button
                 className="btn icon ghost"
+                data-ui="edit-plan"
                 title={t("plan.action.editPlan")}
                 onClick={() => setModal({ kind: "plan", plan })}
               >
@@ -445,6 +447,7 @@ export function PlanView() {
               </button>
               <button
                 className="btn icon ghost"
+                data-ui="delete-plan"
                 title={t("plan.action.deletePlan")}
                 onClick={() => setModal({ kind: "deletePlan", plan })}
               >
@@ -452,6 +455,7 @@ export function PlanView() {
               </button>
               <button
                 className="btn primary"
+                data-ui="create-task"
                 onClick={() => setModal({ kind: "task", planId: plan.id, defaultStatus: "todo" })}
               >
                 <Icon name="plus" cls="ico-sm" />
@@ -461,13 +465,13 @@ export function PlanView() {
           </div>
         )}
 
-        <div className="plan-body">
+        <div className="plan-body" data-ui="plan-content">
           {special === "focus" ? (
             <FocusView plans={plans} today={today} onOpenTask={setOpenTaskId} />
           ) : special === "timeline" ? (
             <TimelineMode plans={plans} today={today} onOpenTask={setOpenTaskId} onSelectPlan={selectPlan} />
           ) : plan ? (
-            <div className="plan-canvas" key={`${mode}-${plan.id}`}>
+            <div className="plan-canvas" data-ui="plan-canvas" data-ui-key={plan.id} key={`${mode}-${plan.id}`}>
               <div className="plan-canvas-scroll view-in">
                 {mode === "list" ? (
                   <ListMode
@@ -503,7 +507,7 @@ export function PlanView() {
               </div>
               <div className="plan-empty-title">{t("plan.empty.title")}</div>
               <div className="plan-empty-sub">{t("plan.empty.desc")}</div>
-              <button className="btn primary" onClick={() => setModal({ kind: "plan" })}>
+              <button className="btn primary" data-ui="create-first-plan" onClick={() => setModal({ kind: "plan" })}>
                 <Icon name="plus" cls="ico-sm" />
                 {t("plan.empty.cta")}
               </button>
@@ -563,19 +567,19 @@ export function PlanView() {
       )}
 
       {undo && (
-        <div className="plan-undo view-in">
+        <div className="plan-undo view-in" data-ui="task-delete-undo">
           <Icon name="trash-2" cls="ico-sm" />
           <span>{t("plan.undo.deleted", { title: undo.task.title })}</span>
-          <button className="plan-undo-btn" onClick={undoDelete}>
+          <button data-ui="undo-task-delete" className="plan-undo-btn" onClick={undoDelete}>
             <Icon name="undo-2" cls="ico-sm" />
             {t("plan.undo.action")}
           </button>
-          <button className="plan-undo-x" onClick={() => setUndo(null)}>
+          <button className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={() => setUndo(null)}>
             <Icon name="x" cls="ico-sm" />
           </button>
         </div>
       )}
-      {notice && <div className="plan-notice view-in">{notice}</div>}
+      {notice && <div className="plan-notice view-in" data-ui="plan-notice">{notice}</div>}
     </div>
   );
 }
@@ -608,7 +612,7 @@ function PlansSidebar({
     { k: "timeline" as const, ic: "gantt-chart", label: t("plan.timeline.title") },
   ];
   return (
-    <div className="plan-side">
+    <div className="plan-side" data-ui="plans-sidebar">
       <div className="plan-proj-head">
         <div className="plan-proj-badge">
           <Icon name="telescope" cls="ico-lg" />
@@ -627,7 +631,7 @@ function PlansSidebar({
 
       <div className="plan-side-section">
         <div className="plan-side-label">{t("plan.side.plans")}</div>
-        <button className="plan-side-add" title={t("plan.action.newPlan")} onClick={onAddPlan}>
+        <button data-ui="create-plan" className="plan-side-add" title={t("plan.action.newPlan")} onClick={onAddPlan}>
           <Icon name="plus" cls="ico-sm" />
         </button>
       </div>
@@ -644,6 +648,7 @@ function PlansSidebar({
           return (
             <button
               key={p.id}
+              data-ui="plan-item" data-ui-key={p.id}
               className={`plan-item${!special && p.id === selId ? " sel" : ""}`}
               onClick={() => onSelect(p.id)}
             >
@@ -669,6 +674,7 @@ function PlansSidebar({
         {specials.map((s) => (
           <button
             key={s.k}
+            data-ui="plan-special-view" data-ui-key={s.k}
             className={`plan-item${special === s.k ? " sel" : ""}`}
             onClick={() => onSpecial(s.k)}
           >

@@ -199,16 +199,17 @@ function LibraryBody({
   }
 
   return (
-    <div className="view-row">
+    <div className="view-row" data-ui="library-view">
       {sideCollapsed ? (
-        <button className="lib-rail" title={t("library.side.expand")} onClick={() => setSideCollapsed(false)}>
+        <button data-ui="expand-library-sidebar" className="lib-rail" title={t("library.side.expand")} onClick={() => setSideCollapsed(false)}>
           <Icon name="panel-left-open" cls="ico-sm" />
         </button>
       ) : (
-        <div className="lib-side">
-          <div className="lib-import">
+        <div className="lib-side" data-ui="library-sidebar">
+          <div className="lib-import" data-ui="library-import">
             <button
               className="btn primary"
+              data-ui="open-import-menu"
               style={{ width: "100%", justifyContent: "center" }}
               onClick={() => setImportOpen((v) => !v)}
             >
@@ -216,10 +217,11 @@ function LibraryBody({
               {t("library.import.button")}
             </button>
             {importOpen && (
-              <div className="import-menu view-in">
+              <div className="import-menu view-in" data-ui="import-menu">
                 {IMPORTS.map((im) => (
                   <button
                     key={im.titleKey}
+                    data-ui="import-option" data-ui-key={im.mode}
                     className="import-opt"
                     onClick={() => {
                       setImportMode(im.mode);
@@ -241,17 +243,18 @@ function LibraryBody({
           <div className="lib-side-head">
             <span className="lib-side-title">{t("library.side.title")}</span>
             <span className="lib-side-count mono">{list.length}</span>
-            <button className="lib-side-collapse" title={t("library.side.collapse")} onClick={() => setSideCollapsed(true)}>
+            <button data-ui="collapse-library-sidebar" className="lib-side-collapse" title={t("library.side.collapse")} onClick={() => setSideCollapsed(true)}>
               <Icon name="panel-left-close" cls="ico-sm" />
             </button>
           </div>
-          <div className="side-reflist">
+          <div className="side-reflist" data-ui="work-list">
             {list.map((r) => {
               const nid = refToNode[r.id] || r.id;
               const lab = effLabel(r);
               return (
                 <button
                   key={r.id}
+                  data-ui="work-item" data-ui-key={r.id}
                   className={"side-ref" + (nid === selNode ? " sel" : "") + (r.read ? " read" : " unread")}
                   onClick={() => setSelNode(nid)}
                   onContextMenu={(e) => {
@@ -279,7 +282,7 @@ function LibraryBody({
                 </button>
               );
             })}
-            {!list.length && <div className="side-reflist-empty mono">{t("library.side.empty")}</div>}
+            {!list.length && <div className="side-reflist-empty mono" data-ui="work-list-empty">{t("library.side.empty")}</div>}
           </div>
         </div>
       )}
@@ -295,6 +298,7 @@ function LibraryBody({
       {labelMenu && (
         <div
           className="label-menu"
+          data-ui="work-label-menu" data-ui-key={labelMenu.refId}
           style={{ left: labelMenu.x, top: labelMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -303,6 +307,7 @@ function LibraryBody({
             {LABEL_COLORS.map((l) => (
               <button
                 key={l.k}
+                data-ui="set-work-label" data-ui-key={l.k}
                 className={"label-swatch" + (menuRef && effLabel(menuRef) === l.k ? " on" : "")}
                 title={t(LABEL_NAME_KEYS[l.k as keyof typeof LABEL_NAME_KEYS])}
                 style={{ background: l.c }}
@@ -310,18 +315,19 @@ function LibraryBody({
               />
             ))}
           </div>
-          <button className="label-clear" onClick={() => setLabel(labelMenu.refId, null)}>
+          <button data-ui="clear-work-label" className="label-clear" onClick={() => setLabel(labelMenu.refId, null)}>
             <Icon name="x" cls="ico-sm" />
             {t("library.labelMenu.clear")}
           </button>
         </div>
       )}
 
-      <div className="lib-main">
-        <div className="lib-toolbar">
+      <div className="lib-main" data-ui="library-graph-area">
+        <div className="lib-toolbar" data-ui="library-toolbar">
           <div className="lib-search">
             <Icon name="search" cls="ico-sm" />
             <input
+              data-ui="search-library"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={t("library.toolbar.searchPlaceholder")}
@@ -329,7 +335,7 @@ function LibraryBody({
           </div>
           <div style={{ flex: 1 }} />
           {!live && (
-            <span className="lib-banner" title={t("library.toolbar.demoTitle")}>
+            <span data-ui="library-demo-notice" className="lib-banner" title={t("library.toolbar.demoTitle")}>
               <Icon name="flask-conical" cls="ico-sm" />
               {t("library.toolbar.demoBadge")}
             </span>
@@ -338,6 +344,7 @@ function LibraryBody({
             <button
               className="btn ghost"
               data-testid="resume-explore"
+              data-ui="resume-exploration"
               title={t("explore.resume")}
               onClick={explore.resumeExplore}
             >

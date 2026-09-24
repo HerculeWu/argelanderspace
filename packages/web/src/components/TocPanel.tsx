@@ -21,7 +21,7 @@ export interface OutlineEntry {
 
 /** Shared outline list presentation for LaTeX sections and native PDF bookmarks. */
 export function OutlineList({ items, onSelect, activeId, renderTitle }: { items: OutlineEntry[]; onSelect: (id: string) => void; activeId?: string | null; renderTitle?: (item: OutlineEntry) => ReactNode }) {
-  return <nav>{items.map((item) => <button key={item.id} className={"toc-section toc-lvl-" + Math.min(6, Math.max(1, item.level)) + (item.id === activeId ? " active" : "")} onClick={() => onSelect(item.id)} disabled={item.disabled} title={item.title}>
+  return <nav data-ui="outline-list">{items.map((item) => <button key={item.id} data-ui="outline-item" data-ui-key={item.id} className={"toc-section toc-lvl-" + Math.min(6, Math.max(1, item.level)) + (item.id === activeId ? " active" : "")} onClick={() => onSelect(item.id)} disabled={item.disabled} title={item.title}>
     {item.number && <span className="num">{item.number}</span>}{renderTitle ? renderTitle(item) : item.title}
   </button>)}</nav>;
 }
@@ -56,7 +56,7 @@ export function TocPanel() {
   const codeFloats = floatRows.filter((r) => r.kind === "code" || r.kind === "algorithm");
 
   return (
-    <div className="toc">
+    <div className="toc" data-ui="latex-outline">
       <div className="panel-title">Contents</div>
       <OutlineList items={sections.filter((s) => s.id !== titleId).map((s) => ({ id: s.id, title: s.heading ?? "", level: s.level, ...(s.number ? { number: s.number } : {}) }))} onSelect={store.jumpTo} activeId={active} renderTitle={(item) => <MathText as="span" text={item.title} />} />
 
@@ -87,7 +87,7 @@ function FloatGroup({
   const [open, setOpen] = useState(true);
   if (items.length === 0) return null;
   return (
-    <div className="toc-group">
+    <div className="toc-group" data-ui="outline-group">
       <div className="toc-group-title" onClick={() => setOpen((v) => !v)}>
         <span>{open ? "▾" : "▸"}</span>
         {title}
@@ -104,6 +104,7 @@ function FloatGroup({
           return (
             <button
               key={it.id}
+              data-ui="outline-float" data-ui-key={it.id}
               className="toc-float"
               onClick={() => store.jumpTo(it.id)}
               title={stripMath(it.content) || label}

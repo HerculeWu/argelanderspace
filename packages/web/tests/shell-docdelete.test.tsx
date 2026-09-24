@@ -8,10 +8,11 @@
  * so no other pane's data loads).
  */
 
-import { cleanup, render, waitFor, act } from "@testing-library/react";
+import { cleanup, render, waitFor, act, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import type { Workspace } from "../src/argelander/workspace";
+import i18n from "../src/i18n";
 
 const h = vi.hoisted(() => ({ ws: null as Workspace | null }));
 
@@ -56,9 +57,24 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   window.history.replaceState(null, "", "/");
+  localStorage.removeItem("argelander.tweaks");
+  void i18n.changeLanguage("zh-CN");
 });
 
 describe("Shell docDeleted wiring (Stage 8 §8)", () => {
+  it("exposes stable pane/navigation identifiers through locale, theme and density changes", async () => {
+    await boot(["d1"], "/doc/d1");
+    const pane = document.querySelector('[data-ui="workspace-pane"]');
+    expect(pane?.getAttribute("data-ui-key")).toBe("1");
+    const nav = document.querySelector('[data-ui="navigate-view"][data-ui-key="library"]') as HTMLButtonElement;
+    expect(nav).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-ui="open-tweaks"]') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-ui="language-option"][data-ui-key="en"]') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-ui="theme-option"][data-ui-key="light"]') as HTMLElement);
+    fireEvent.click(document.querySelector('[data-ui="density-option"][data-ui-key="compact"]') as HTMLElement);
+    expect(document.querySelector('[data-ui="navigate-view"][data-ui-key="library"]')).toBe(nav);
+    expect(document.querySelector('[data-ui="workspace-pane"]')?.getAttribute("data-ui-key")).toBe("1");
+  });
   it("deleting a non-current doc drops it from papers; currentDoc + URL untouched", async () => {
     await boot(["d1", "d2"], "/doc/d1");
     const before = window.location.pathname + window.location.hash;

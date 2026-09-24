@@ -125,7 +125,7 @@ export function AnnotationPopover() {
   return (
     <div
       ref={rootRef}
-      className="ann-popover view-in"
+      className="ann-popover view-in" data-ui="latex-annotation-popover"
       // rendered (hidden) before the first measurement so rootRef is available
       style={pos ?? { top: -2000, left: -2000, visibility: "hidden" }}
       role="dialog"
@@ -135,7 +135,7 @@ export function AnnotationPopover() {
         <span className="ann-popover-target" title={headLabel}>
           {headLabel}
         </span>
-        <button className="btn icon ghost" title={t("common.close")} onClick={ann.closePopover}>
+        <button className="btn icon ghost" data-ui="close-latex-annotation" title={t("common.close")} onClick={ann.closePopover}>
           <Icon name="x" cls="ico-sm" />
         </button>
       </div>
@@ -147,17 +147,17 @@ export function AnnotationPopover() {
       {popover.mode === "view" && viewed && !editSession && (
         <>
           <div
-            className="ann-popover-body plan-md-body"
+            className="ann-popover-body plan-md-body" data-ui="latex-annotation-body"
             // single-user tool: the body is the user's own markdown (mdWithMath ruling)
             dangerouslySetInnerHTML={{ __html: mdWithMath(viewed.body) }}
           />
           <div className="ann-popover-foot">
-            <button className="ann-editor-btn" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }}>
+            <button className="ann-editor-btn" data-ui="edit-latex-annotation" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }}>
               <Icon name="pencil" cls="ico-sm" />
               {t("common.edit")}
             </button>
             <button
-              className="ann-editor-btn danger"
+              className="ann-editor-btn danger" data-ui="delete-latex-annotation"
               disabled={ann.busy}
               onClick={() => void ann.removeAnnotation(viewed.id)}
             >

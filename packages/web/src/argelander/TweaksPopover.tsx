@@ -37,12 +37,13 @@ export function TweaksPopover({
   }, [onClose]);
 
   return (
-    <div className="tweaks-pop" ref={ref}>
+    <div className="tweaks-pop" data-ui="tweaks-popover" ref={ref}>
       <div className="tweak-sec">{t("shell.tweaks.theme.label")}</div>
       <div className="tweak-seg">
         {THEMES.map((th) => (
           <button
             key={th}
+            data-ui="theme-option" data-ui-key={th}
             className={"tweak-seg-btn" + (tweaks.theme === th ? " on" : "")}
             onClick={() => set("theme", th)}
           >
@@ -56,6 +57,7 @@ export function TweaksPopover({
         {Object.keys(ACCENTS).map((k) => (
           <button
             key={k}
+            data-ui="accent-option" data-ui-key={k}
             className={"tweak-swatch" + (tweaks.accent === k ? " on" : "")}
             title={t(ACCENT_LABEL_KEYS[k as keyof typeof ACCENT_LABEL_KEYS])}
             style={{ background: accentHex(k, tweaks.theme) }}
@@ -69,6 +71,7 @@ export function TweaksPopover({
         {DENSITIES.map((d) => (
           <button
             key={d}
+            data-ui="density-option" data-ui-key={d}
             className={"tweak-seg-btn" + (tweaks.density === d ? " on" : "")}
             onClick={() => set("density", d)}
           >
@@ -78,7 +81,7 @@ export function TweaksPopover({
       </div>
 
       <div className="tweak-sec">{t("shell.tweaks.layout.label")}</div>
-      <button className="tweak-toggle" onClick={() => set("labels", !tweaks.labels)}>
+      <button data-ui="toggle-navigation-labels" className="tweak-toggle" onClick={() => set("labels", !tweaks.labels)}>
         <span>{t("shell.tweaks.layout.activityLabels")}</span>
         <span className={"tweak-switch" + (tweaks.labels ? " on" : "")}>
           <span />
@@ -90,6 +93,7 @@ export function TweaksPopover({
         {LANGUAGES.map((lang) => (
           <button
             key={lang}
+            data-ui="language-option" data-ui-key={lang}
             className={"tweak-seg-btn" + (tweaks.language === lang ? " on" : "")}
             onClick={() => set("language", lang)}
           >

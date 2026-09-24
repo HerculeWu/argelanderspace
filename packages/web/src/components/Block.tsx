@@ -56,6 +56,7 @@ function ParagraphView({ b }: { b: IrParagraphBlock }) {
       segments={b.segments}
       id={canAnnotate ? b.id : undefined}
       data-block-id={b.id}
+      data-ui="latex-block" data-ui-key={b.id}
     >
       <AnnBlockEdge id={b.id} />
     </Segments>
@@ -65,7 +66,7 @@ function ParagraphView({ b }: { b: IrParagraphBlock }) {
 function EquationView({ b }: { b: IrEquationBlock }) {
   const { canAnnotate } = useReaderSession();
   return (
-    <div className="block eqn" id={canAnnotate ? b.id : undefined} data-block-id={b.id}>
+    <div className="block eqn" id={canAnnotate ? b.id : undefined} data-block-id={b.id} data-ui="latex-block" data-ui-key={b.id}>
       <div className="eqn-body">
         <Math display latex={b.latex} />
       </div>
@@ -79,7 +80,7 @@ function FigureView({ b }: { b: IrFigureBlock }) {
   const { canAnnotate } = useReaderSession();
 
   return (
-    <figure className="block fig" id={canAnnotate ? b.id : undefined} data-block-id={b.id}>
+    <figure className="block fig" id={canAnnotate ? b.id : undefined} data-block-id={b.id} data-ui="latex-block" data-ui-key={b.id}>
       {b.imgPath && (
         <FigureImage
           imgPath={b.imgPath}
@@ -103,7 +104,7 @@ function FigureView({ b }: { b: IrFigureBlock }) {
 function TableView({ b }: { b: IrTableBlock }) {
   const { canAnnotate } = useReaderSession();
   return (
-    <div className="block tableblock" id={canAnnotate ? b.id : undefined} data-block-id={b.id}>
+    <div className="block tableblock" id={canAnnotate ? b.id : undefined} data-block-id={b.id} data-ui="latex-block" data-ui-key={b.id}>
       {hasContent(b.captionSegments) && (
         <div className="tab-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}
@@ -132,7 +133,7 @@ function ListView({ b }: { b: IrListBlock }) {
   // a valid list child), so the block wrapper is a plain div; the visual
   // result is identical (the list keeps its own margins).
   return (
-    <div className="block listblock" id={canAnnotate ? b.id : undefined} data-block-id={b.id}>
+    <div className="block listblock" id={canAnnotate ? b.id : undefined} data-block-id={b.id} data-ui="latex-block" data-ui-key={b.id}>
       <Tag className="doc-list">
         {b.items.map((it, i) => (
           <li key={i}>
@@ -149,7 +150,7 @@ function CodeView({ b }: { b: IrCodeBlock | IrAlgorithmBlock }) {
   const { canAnnotate } = useReaderSession();
   const code = b.body ?? "";
   return (
-    <div className="block codeblock" id={canAnnotate ? b.id : undefined} data-block-id={b.id}>
+    <div className="block codeblock" id={canAnnotate ? b.id : undefined} data-block-id={b.id} data-ui="latex-block" data-ui-key={b.id}>
       {hasContent(b.captionSegments) && (
         <div className="tab-cap">
           {b.label && <span className="cap-label">{b.label}. </span>}

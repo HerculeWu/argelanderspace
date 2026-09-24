@@ -30,12 +30,14 @@ describe("Tabs public interaction", () => {
     render(<TabsHarness />);
 
     expect(screen.getByRole("tablist", { name: "Reference content" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Info" }).getAttribute("data-ui-key")).toBe("info");
     expect(screen.getByRole("tab", { name: "Info" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tabpanel", { name: "Info" }).textContent).toBe("Panel: info");
 
     fireEvent.click(screen.getByRole("tab", { name: "Abstract" }));
     expect(screen.getByRole("tab", { name: "Abstract" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tabpanel", { name: "Abstract" }).textContent).toBe("Panel: abstract");
+    expect(screen.getByRole("tabpanel", { name: "Abstract" }).getAttribute("data-ui-key")).toBe("abstract");
   });
 
   it("activates and focuses tabs with Arrow, Home, and End keys", () => {

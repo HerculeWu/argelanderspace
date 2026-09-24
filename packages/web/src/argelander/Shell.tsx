@@ -286,19 +286,23 @@ export function Shell() {
     }
   };
 
+  // F12 locators: data-ui names a semantic role (never translated copy),
+  // data-ui-key distinguishes repeated instances using an existing public id.
+  // Scope selectors by workspace-pane key when multiple panes show the same view.
   return (
     <WorkspaceProvider value={workspace}>
-      <div className="app">
-        <div className="titlebar">
+      <div className="app" data-ui="app-shell">
+        <div className="titlebar" data-ui="app-titlebar">
           <div className="tb-left">
             <span className="wordmark">
               <span className="wordmark-mark">✦</span>ArgelanderSpace
             </span>
           </div>
           <div className="tb-center">{t("shell.tagline")}</div>
-          <div className="tb-right">
+          <div className="tb-right" data-ui="titlebar-actions">
             <button
               className="btn icon ghost"
+              data-ui="split-pane"
               title={t("shell.titlebar.split")}
               onClick={() => splitFrom(activeId)}
               style={panes.length >= MAX_PANES ? { opacity: 0.35, pointerEvents: "none" } : undefined}
@@ -307,6 +311,7 @@ export function Shell() {
             </button>
             <button
               className="btn icon ghost"
+              data-ui="toggle-theme"
               title={t("shell.titlebar.toggleTheme")}
               onClick={() => setTweak("theme", tweaks.theme === "dark" ? "light" : "dark")}
             >
@@ -314,6 +319,7 @@ export function Shell() {
             </button>
             <button
               className="btn icon ghost"
+              data-ui="open-tweaks"
               title={t("shell.titlebar.tweaks")}
               onClick={() => setTweaksOpen((o) => !o)}
             >
@@ -336,11 +342,13 @@ export function Shell() {
           </div>
         </div>
 
-        <div className="app-body">
-          <div className="activity">
+        <div className="app-body" data-ui="app-workspace">
+          <div className="activity" data-ui="primary-navigation">
             {NAV.map((n) => (
               <button
                 key={n.k}
+                data-ui="navigate-view"
+                data-ui-key={n.k}
                 className={"act-btn" + (activePane.view === n.k ? " on" : "")}
                 onClick={() => setActiveView(n.k)}
                 title={t(n.labelKey)}
@@ -351,6 +359,7 @@ export function Shell() {
             ))}
             <div style={{ flex: 1 }} />
             <button
+              data-ui="navigate-extensions"
               className={"act-btn" + (activePane.view === "ext" ? " on" : "")}
               onClick={() => setActiveView("ext")}
               title={t("shell.nav.extMarket")}
@@ -361,7 +370,7 @@ export function Shell() {
           </div>
 
           <div className="main">
-            <div className="panes" ref={panesRef}>
+            <div className="panes" data-ui="workspace-panes" ref={panesRef}>
               {panes.map((p, i) => (
                 <PaneFragment
                   key={p.id}
@@ -422,6 +431,8 @@ function PaneFragment({
     <>
       <div
         className={"pane" + (multi && active ? " active" : "")}
+        data-ui="workspace-pane"
+        data-ui-key={pane.id}
         style={{ flexGrow: pane.size, flexBasis: 0 }}
         onMouseDown={onActivate}
       >
@@ -435,10 +446,10 @@ function PaneFragment({
             onClose={onClose}
           />
         )}
-        <div className="pane-body">{render()}</div>
+        <div className="pane-body" data-ui="pane-content">{render()}</div>
       </div>
       {index < total - 1 && (
-        <div className="pane-divider" onMouseDown={onDividerDown}>
+        <div className="pane-divider" data-ui="resize-pane" onMouseDown={onDividerDown}>
           <span />
         </div>
       )}
@@ -471,18 +482,20 @@ function PaneHeader({
     return () => window.removeEventListener("click", h);
   }, [open]);
   return (
-    <div className="pane-head">
+    <div className="pane-head" data-ui="pane-header">
       <div className="pane-tool-wrap" onClick={(e) => e.stopPropagation()}>
-        <button className="pane-tool" onClick={() => setOpen((o) => !o)}>
+        <button data-ui="choose-pane-view" className="pane-tool" onClick={() => setOpen((o) => !o)}>
           <Icon name={nav.ic} cls="ico-sm" />
           <span>{t(nav.labelKey)}</span>
           <Icon name="chevron-down" cls="ico-sm" />
         </button>
         {open && (
-          <div className="pane-tool-menu view-in">
+          <div className="pane-tool-menu view-in" data-ui="pane-view-menu">
             {NAV.map((n) => (
               <button
                 key={n.k}
+                data-ui="pane-view-option"
+                data-ui-key={n.k}
                 className={"pane-tool-opt" + (n.k === pane.view ? " on" : "")}
                 onClick={() => {
                   onSwitch(n.k);
@@ -498,12 +511,12 @@ function PaneHeader({
       </div>
       <div style={{ flex: 1 }} />
       {canSplit && (
-        <button className="pane-h-btn" title={t("shell.split")} onClick={onSplit}>
+        <button data-ui="split-pane" className="pane-h-btn" title={t("shell.split")} onClick={onSplit}>
           <Icon name="panel-right" cls="ico-sm" />
         </button>
       )}
       {canClose && (
-        <button className="pane-h-btn" title={t("shell.closePane")} onClick={onClose}>
+        <button data-ui="close-pane" className="pane-h-btn" title={t("shell.closePane")} onClick={onClose}>
           <Icon name="x" cls="ico-sm" />
         </button>
       )}
@@ -514,7 +527,7 @@ function PaneHeader({
 function StubPane({ nav }: { nav: NavItem }) {
   const { t } = useTranslation();
   return (
-    <div className="stub-pane">
+    <div className="stub-pane" data-ui="unavailable-view">
       <div className="stub-ic">
         <Icon name={nav.ic} cls="ico-lg" />
       </div>

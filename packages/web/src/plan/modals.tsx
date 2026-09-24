@@ -56,6 +56,7 @@ export function PlanModal({
   };
   return (
     <Dialog
+      uiId="plan-editor-dialog"
       title={edit ? t("plan.action.editPlan") : t("plan.planModal.create")}
       description={edit ? t("plan.planModal.subEdit") : undefined}
       closeLabel={t("common.close")}
@@ -63,8 +64,8 @@ export function PlanModal({
       onClose={onCancel}
       footer={
         <>
-          <Button onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button variant="primary" disabled={!valid} onClick={submit}>
+          <Button data-ui="cancel-plan-form" onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button data-ui="submit-plan-form" variant="primary" disabled={!valid} onClick={submit}>
             <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
             {edit ? t("common.save") : t("plan.planModal.submit")}
           </Button>
@@ -77,7 +78,7 @@ export function PlanModal({
         </label>
         <input
           ref={ref}
-          id="plan-f-name"
+          id="plan-f-name" data-ui="plan-name-input"
           className="plan-field-input"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -93,7 +94,7 @@ export function PlanModal({
           {t("plan.form.due")}
         </label>
         <input
-          id="plan-f-due"
+          id="plan-f-due" data-ui="plan-due-input"
           className="plan-field-input"
           type="date"
           value={due}
@@ -105,7 +106,7 @@ export function PlanModal({
           {t("plan.planModal.desc")} <span className="plan-field-opt">{t("plan.planModal.optional")}</span>
         </label>
         <input
-          id="plan-f-desc"
+          id="plan-f-desc" data-ui="plan-description-input"
           className="plan-field-input"
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
@@ -118,11 +119,11 @@ export function PlanModal({
       </div>
       <div className="plan-field">
         <div className="plan-field-label">{t("plan.planModal.icon")}</div>
-        <div className="plan-icon-grid">
+        <div className="plan-icon-grid" data-ui="plan-icon-options">
           {PLAN_ICONS.map((ic) => (
             <button
               key={ic}
-              className={`plan-icon-opt${icon === ic ? " on" : ""}`}
+              className={`plan-icon-opt${icon === ic ? " on" : ""}`} data-ui="plan-icon-option" data-ui-key={ic}
               onClick={() => setIcon(ic)}
               title={ic}
             >
@@ -177,6 +178,7 @@ export function TaskModal({
   };
   return (
     <Dialog
+      uiId="task-editor-dialog"
       title={edit ? t("plan.action.editTask") : t("plan.action.newTask")}
       description={edit ? t("plan.taskModal.subEdit", { name: planName }) : t("plan.taskModal.subCreate", { name: planName })}
       closeLabel={t("common.close")}
@@ -184,8 +186,8 @@ export function TaskModal({
       onClose={onCancel}
       footer={
         <>
-          <Button onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button variant="primary" disabled={!valid} onClick={submit}>
+          <Button data-ui="cancel-task-form" onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button data-ui="submit-task-form" variant="primary" disabled={!valid} onClick={submit}>
             <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
             {edit ? t("common.save") : t("plan.taskModal.submit")}
           </Button>
@@ -198,7 +200,7 @@ export function TaskModal({
         </label>
         <input
           ref={ref}
-          id="task-f-title"
+          id="task-f-title" data-ui="task-title-input"
           className="plan-field-input"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -218,7 +220,7 @@ export function TaskModal({
           {t("plan.form.due")}
         </label>
         <input
-          id="task-f-due"
+          id="task-f-due" data-ui="task-due-input"
           className="plan-field-input"
           type="date"
           required
@@ -248,6 +250,7 @@ export function DeletePlanModal({
   const open = plan.tasks.filter((t) => t.status !== "done").length;
   return (
     <Dialog
+      uiId="delete-plan-dialog"
       title={t("plan.action.deletePlan")}
       closeLabel={t("common.close")}
       width={440}
@@ -255,15 +258,15 @@ export function DeletePlanModal({
       onClose={onCancel}
       footer={
         <>
-          <Button ref={cancelRef} onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button variant="danger" onClick={onConfirm}>
+          <Button ref={cancelRef} data-ui="cancel-delete-plan" onClick={onCancel}>{t("common.cancel")}</Button>
+          <Button data-ui="confirm-delete-plan" variant="danger" onClick={onConfirm}>
             <Icon name="trash-2" cls="ico-sm" />
             {t("plan.deletePlan.confirm")}
           </Button>
         </>
       }
     >
-      <div className="plan-modal-warning">
+      <div className="plan-modal-warning" data-ui="delete-plan-warning">
         {t("plan.deletePlan.warning", { name: plan.name })}
         {open > 0 ? t("plan.deletePlan.warningOpen", { count: open }) : t("plan.deletePlan.warningNone")}
         {t("plan.deletePlan.warningIrreversible")}
