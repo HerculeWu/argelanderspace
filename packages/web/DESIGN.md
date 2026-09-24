@@ -9,6 +9,15 @@ ArgelanderSpace Web is a dense, independently operable research workbench. Prese
 - Common spacing is 4/8/12/16/24 px. Controls use 30/32/36 px across compact/regular/comfy density, 16 px icons, 5 px control radii, 7 px groups, and 11 px dialogs. These are reasoned defaults, not a ban on other values.
 - Use one filled primary action per local task area by default. Danger communicates irreversible risk; it is not a second primary hierarchy.
 - A visible `:focus-visible` outline, an accessible name, and non-color state copy are baseline behavior.
+- For the UI-does-not-teach and icon-first rules, follow the authoritative [frontend interaction guidance](../../docs/engineering.md#前端交互规范); essential risk, failure, and recovery copy still belongs in the interface.
+
+## UI consensus and prototype gate
+
+For changes involving UI, the prototype is part of the design consensus, not an optional illustration after the spec is approved. Before production implementation, present a runnable prototype for user review; textual agreement alone does not complete the UI design gate.
+
+The local feature spec must include the prototype's location, the interactions and states under review, its simulation/verification limits, and the user's review outcome. Keep pending review explicit. Once approved, the prototype and recorded decisions become design evidence for implementation; subsequent material deviations require renewed agreement. Prototype approval, implementation authorization, and final real-application acceptance are separate gates.
+
+Keep prototype artifacts and discussion in the local tracker. Use isolated or in-memory state, protect real user data, and distinguish prototype controls from product UI. A prototype is not production code or proof of backend/SDK correctness; publishing, committing, or deleting its artifacts still requires the relevant authorization.
 
 ## Shared UI interface
 
