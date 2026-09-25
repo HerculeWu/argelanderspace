@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DiscoveryGraph, DiscoveryPaper } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
+import { ActionButton, Tooltip } from "../ui";
 import { AbstractHtml } from "../lib/abstract";
 import { cgKfmt } from "../graph/graphPhysics";
 
@@ -81,26 +82,19 @@ export function DiscoveryDetail({
             )}
           </div>
           <div className="ref-detail-actions" data-ui="discovery-detail-actions">
-            <a
-              className="btn icon ghost"
-              href={adsAbsUrl(paper.bibcode)}
-              data-ui="open-discovery-paper-in-ads"
-              target="_blank"
-              rel="noreferrer"
-              title={t("explore.openInAds")}
-              aria-label={t("explore.openInAds")}
-            >
-              <Icon name="external-link" cls="ico-sm" />
-            </a>
-            <button
-              className="btn icon ghost"
-              onClick={onClose}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-              data-testid="close-discovery-detail" data-ui="close-discovery-detail"
-            >
-              <Icon name="x" cls="ico-sm" />
-            </button>
+            <Tooltip content={t("explore.openInAds")}>
+              <a
+                className="btn icon ghost"
+                href={adsAbsUrl(paper.bibcode)}
+                data-ui="open-discovery-paper-in-ads"
+                target="_blank"
+                rel="noreferrer"
+                aria-label={t("explore.openInAds")}
+              >
+                <Icon name="external-link" cls="ico-sm" />
+              </a>
+            </Tooltip>
+            <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} data-testid="close-discovery-detail" data-ui="close-discovery-detail" />
           </div>
         </div>
 
@@ -109,9 +103,7 @@ export function DiscoveryDetail({
           {(allAuthors ? paper.authors : paper.authors.slice(0, 3)).join("; ")}
           {!allAuthors && paper.authors.length > 3 ? " et al." : ""}
           {paper.authors.length > 3 && (
-            <button data-ui="toggle-discovery-authors" className="author-toggle" onClick={() => setAllAuthors((v) => !v)}>
-              {t(allAuthors ? "explore.authorsLess" : "explore.authorsMore")}
-            </button>
+            <ActionButton unstyled mode="text" label={t(allAuthors ? "explore.authorsLess" : "explore.authorsMore")} tooltip={t(allAuthors ? "explore.authorsLess" : "explore.authorsMore")} data-ui="toggle-discovery-authors" className="author-toggle" onClick={() => setAllAuthors((v) => !v)}>{t(allAuthors ? "explore.authorsLess" : "explore.authorsMore")}</ActionButton>
           )}
         </div>
         <div className="ref-detail-meta">
@@ -136,21 +128,8 @@ export function DiscoveryDetail({
         )}
 
         <div className="ref-detail-tabs" data-ui="discovery-detail-tabs" role="tablist">
-          <button
-            data-ui="show-discovery-abstract"
-            className={"rdt" + (tab === "abstract" ? " on" : "")}
-            onClick={() => setTab("abstract")}
-          >
-            {t("library.detail.tabs.info")}
-          </button>
-          <button
-            data-ui="show-discovery-citations"
-            className={"rdt" + (tab === "citations" ? " on" : "")}
-            onClick={() => setTab("citations")}
-            data-testid="discovery-citations-tab"
-          >
-            {t("explore.detail.citationsTab")}
-          </button>
+          <ActionButton unstyled mode="text" label={t("library.detail.tabs.info")} tooltip={t("library.detail.tabs.info")} data-ui="show-discovery-abstract" className={"rdt" + (tab === "abstract" ? " on" : "")} onClick={() => setTab("abstract")}>{t("library.detail.tabs.info")}</ActionButton>
+          <ActionButton unstyled mode="text" label={t("explore.detail.citationsTab")} tooltip={t("explore.detail.citationsTab")} data-ui="show-discovery-citations" className={"rdt" + (tab === "citations" ? " on" : "")} onClick={() => setTab("citations")} data-testid="discovery-citations-tab">{t("explore.detail.citationsTab")}</ActionButton>
         </div>
 
         {tab === "abstract" && (
@@ -243,41 +222,14 @@ export function DiscoveryDetail({
           </div>
         )}
         {saved ? (
-          <button
-            className="btn success large"
-            data-testid="view-in-library" data-ui="view-saved-work"
-            onClick={() => onViewInLibrary(paper.libraryId!)}
-          >
-            <Icon name="check" cls="ico-sm" />
-            {t("explore.savedInLibrary")}
-            <Icon name="chevron-right" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="text" label={t("explore.savedInLibrary")} tooltip={t("explore.savedInLibrary")} className="btn success large" data-testid="view-in-library" data-ui="view-saved-work" onClick={() => onViewInLibrary(paper.libraryId!)}>{t("explore.savedInLibrary")}</ActionButton>
         ) : (
-          <button
-            className="btn primary large"
-            data-testid="add-to-library" data-ui="save-discovery-paper"
-            disabled={adding}
-            onClick={() => onAdd(paper.bibcode)}
-          >
-            {adding ? (
-              <Icon name="loader-circle" cls="ico-sm spin" />
-            ) : (
-              <Icon name="plus" cls="ico-sm" />
-            )}
-            {t(adding ? "explore.adding" : "explore.add")}
-          </button>
+          <ActionButton unstyled mode="text" label={t(adding ? "explore.adding" : "explore.add")} tooltip={t(adding ? "explore.adding" : "explore.add")} className="btn primary large" data-testid="add-to-library" data-ui="save-discovery-paper" disabled={adding} busy={adding} onClick={() => onAdd(paper.bibcode)}>{t(adding ? "explore.adding" : "explore.add")}</ActionButton>
         )}
         {seed ? (
           <div className="detail-footer-note">{t("explore.originNow")}</div>
         ) : (
-          <button
-            className="btn large"
-            data-testid="explore-from-here" data-ui="explore-from-paper"
-            onClick={() => onExploreHere(paper.bibcode)}
-          >
-            <Icon name="compass" cls="ico-sm" />
-            {t("explore.exploreHere")}
-          </button>
+          <ActionButton unstyled mode="text" label={t("explore.exploreHere")} tooltip={t("explore.exploreHere")} className="btn large" data-testid="explore-from-here" data-ui="explore-from-paper" onClick={() => onExploreHere(paper.bibcode)}>{t("explore.exploreHere")}</ActionButton>
         )}
         <div className="detail-footer-note">{t("explore.saveOnly")}</div>
       </div>

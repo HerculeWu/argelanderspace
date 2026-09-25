@@ -3,6 +3,7 @@ import { useAnnotations } from "./AnnotationStore";
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 
 /**
  * The annotation body editor (Stage 8 MS3), mirroring the TaskDrawer NoteBody
@@ -74,17 +75,21 @@ export function AnnotationEditor({
           {t("annotation.editor.hint")}
         </span>
         <div style={{ flex: 1 }} />
-        <button className="ann-editor-btn" data-ui="cancel-annotation-edit" onClick={onCancel}>
+        <ActionButton unstyled mode="text" label={t("common.cancel")} tooltip={t("common.cancel")} className="ann-editor-btn" data-ui="cancel-annotation-edit" onClick={onCancel}>
           {t("common.cancel")}
-        </button>
-        <button
-          className="ann-editor-btn primary" data-ui="save-latex-annotation"
+        </ActionButton>
+        <ActionButton
+          unstyled
+          mode="text"
+          label={t("common.save")}
+          tooltip={t("common.save")}
+          className="ann-editor-btn primary"
+          data-ui="save-latex-annotation"
           disabled={!canSave}
           onClick={save}
         >
-          <Icon name="check" cls="ico-sm" />
           {t("common.save")}
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
 .pdf-toolbar button:hover:not(:disabled) { background: var(--hover); }
 .pdf-toolbar button:disabled { opacity: .55; cursor: not-allowed; }
 .pdf-toolbar button:focus-visible, .pdf-toolbar input:focus-visible, .pdf-reader-state button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-toolbar button.pdf-icon-action { display: inline-grid; place-items: center; flex: none; width: var(--control-h); height: var(--control-h); min-width: var(--control-h); min-height: var(--control-h); padding: 0; }
 .pdf-doc-context { display: grid; min-width: 100px; max-width: min(35vw, 320px); gap: 2px; overflow: hidden; }
 .pdf-doc-context strong, .pdf-doc-context code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pdf-doc-context strong { color: var(--text); font-size: var(--fs); }
@@ -23,12 +24,25 @@
 .pdf-side-left { border-right: 1px solid var(--border-soft); }
 .pdf-side-right { width: clamp(200px, 23vw, 320px); border-left: 1px solid var(--border-soft); }
 .pdf-side.collapsed { width: 36px; }
+.pdf-side > .ui-tooltip-anchor { display: flex; flex: 0 0 auto; width: 100%; }
 .pdf-panel-toggle { flex: 0 0 auto; width: 100%; min-height: 36px; border: 0; border-bottom: 1px solid var(--border-soft); color: var(--text-dim); background: var(--surface); cursor: pointer; }
 .pdf-panel-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .pdf-side-content { padding: 12px; }
+.pdf-side-content:has([data-ui="pdf-highlight-color-picker-palette"]) { padding-bottom: 150px; }
 .pdf-side-content h2 { margin: 0 0 8px; color: var(--text); font-size: var(--fs); font-weight: 600; }
 .pdf-side-content p { margin: 0; color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.5; }
 .pdf-viewer-area { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+.pdf-annotation-toolbar-anchor { position: absolute; z-index: 30; top: 10px; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 7px; pointer-events: none; }
+.pdf-annotation-toolbar-anchor > * { pointer-events: auto; }
+.pdf-annotation-toolbar-anchor > .ui-tooltip-anchor > button { min-width: 36px; min-height: 36px; padding: 5px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--surface); box-shadow: 0 3px 12px rgb(0 0 0 / 18%); }
+.pdf-annotation-toolbar-anchor > .ui-tooltip-anchor > button[aria-expanded="true"] { border-color: var(--accent); background: var(--hover); }
+.pdf-annotation-toolbar-frame { display: flex; align-items: center; justify-content: center; gap: 3px; max-width: calc(100vw - 48px); padding: 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 5px 18px rgb(0 0 0 / 24%); }
+.pdf-annotation-toolbar-frame button { min-width: 32px; min-height: 32px; padding: 4px; border: 1px solid transparent; border-radius: 6px; color: var(--text); background: transparent; }
+.pdf-annotation-toolbar-frame button:hover:not(:disabled), .pdf-annotation-toolbar-frame button[aria-pressed="true"] { border-color: var(--accent); background: var(--hover); }
+.pdf-annotation-toolbar-frame button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-workbench-new-comment { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: 7px; background: var(--hover); }
+.pdf-workbench-new-comment h3 { margin: 0; font-size: var(--fs-sm); }
+.pdf-workbench-new-comment textarea { width: 100%; min-height: 90px; resize: vertical; border: 1px solid var(--border); border-radius: 5px; padding: 7px; color: var(--text); background: var(--bg); }
 .pdf-viewport { position: absolute; inset: 0; overflow: auto; background: var(--bg-deep); }
 /* Add trailing scroll range so the final page's saved viewport-local position can be restored. */
 .pdf-viewport::after { content: ""; display: block; height: 50vh; pointer-events: none; }
@@ -39,8 +53,6 @@
 .pdf-page-content img { -webkit-user-drag: none; user-select: none; }
 .pdf-area-layer { position: absolute; inset: 0; pointer-events: none; }
 .pdf-area-layer.drawing, html[data-pdf-area-mode="true"] .pdf-area-layer { z-index: 8; pointer-events: auto; cursor: crosshair; touch-action: none; }
-.pdf-area-hint { display: none; }
-html[data-pdf-area-mode="true"] .pdf-area-hint { display: inline-block; }
 .pdf-area-annotation, .pdf-area-preview { position: absolute; border: 2px solid #a87800; background: rgb(244 197 66 / 35%); pointer-events: auto; }
 .pdf-area-annotation { cursor: move; touch-action: none; outline: none; }
 .pdf-area-annotation:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -50,12 +62,23 @@ html[data-pdf-area-mode="true"] .pdf-area-hint { display: inline-block; }
 .pdf-workbench-item label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-xs); }
 .pdf-workbench-item label input[type="number"] { width: 72px; }
 .pdf-area-preview { border-style: dashed; pointer-events: none; }
-.pdf-area-hint { position: sticky; top: 8px; left: 8px; display: inline-block; padding: 4px 8px; border-radius: 5px; color: #111; background: #ffdc70; font-size: var(--fs-xs); pointer-events: none; }
 .pdf-workbench-panel { display: grid; gap: 10px; }
+.pdf-workbench-item-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.pdf-workbench-item-head .pdf-workbench-target { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.pdf-workbench-item-head .pdf-workbench-target svg { flex: none; width: 18px; height: 18px; }
+.pdf-highlight-color-picker { position: relative; display: inline-flex; flex: none; align-self: center; }
+/* Both enclosing toolbars set button min-height/padding. The dots must override those rules on both axes. */
+.pdf-annotation-toolbar-frame button.pdf-highlight-color-current, .pdf-workbench-panel button.pdf-highlight-color-current { box-sizing: border-box; display: block; flex: none; width: 18px; height: 18px; min-width: 18px; min-height: 18px; padding: 0; border: 2px solid #111; border-radius: 50%; background: var(--pdf-highlight-color); cursor: pointer; }
+.pdf-annotation-toolbar-frame button.pdf-highlight-color-current { width: 22px; height: 22px; min-width: 22px; min-height: 22px; }
+.pdf-annotation-toolbar-frame button.pdf-highlight-color-swatch, .pdf-workbench-panel button.pdf-highlight-color-swatch { box-sizing: border-box; display: block; width: 24px; height: 24px; min-width: 24px; min-height: 24px; padding: 0; border: 1.5px solid #111; border-radius: 50%; background: var(--pdf-highlight-color); cursor: pointer; }
+.pdf-annotation-toolbar-frame button.pdf-highlight-color-current:hover:not(:disabled), .pdf-annotation-toolbar-frame button.pdf-highlight-color-swatch:hover:not(:disabled) { background: var(--pdf-highlight-color); border-color: #111; }
+.pdf-highlight-color-current:focus-visible, .pdf-highlight-color-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-highlight-color-palette { position: absolute; z-index: 40; top: calc(100% + 7px); right: 0; display: grid; grid-template-columns: repeat(3, 24px); gap: 7px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 4px 14px rgb(0 0 0 / 22%); }
 .pdf-workbench-actions, .pdf-workbench-item-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .pdf-workbench-mode-group { display: inline-flex; flex-wrap: nowrap; gap: 6px; }
 .pdf-workbench-panel button { min-height: 30px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); cursor: pointer; }
 .pdf-workbench-panel button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pdf-workbench-panel button.pdf-icon-action { display: inline-grid; place-items: center; flex: none; width: 30px; height: 30px; min-width: 30px; min-height: 30px; padding: 0; }
 .pdf-workbench-mode[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--hover); }
 .pdf-workbench-item { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border-soft); border-radius: 7px; }
 .pdf-workbench-target { justify-self: start; color: var(--accent) !important; }
@@ -73,7 +96,8 @@ html[data-pdf-area-mode="true"] .pdf-area-hint { display: inline-block; }
 .pdf-native-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pdf-text-annotations { position: absolute; inset: 0; z-index: 7; pointer-events: none; }
 .pdf-text-mark { position: absolute; border: 0; padding: 0; min-width: 2px; pointer-events: auto; background: transparent; }
-.pdf-text-mark.highlight { background: rgb(255 210 40 / 42%); }
+html[data-pdf-text-mode="true"] .pdf-text-mark { pointer-events: none; }
+.pdf-text-mark.highlight { background: color-mix(in srgb, var(--pdf-highlight-color, #ffd228) 42%, transparent); }
 .pdf-text-mark.underline { border-bottom: 2px solid #1674d1; }
 .pdf-text-mark.strikeout::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid #ce3d32; }
 .pdf-text-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }

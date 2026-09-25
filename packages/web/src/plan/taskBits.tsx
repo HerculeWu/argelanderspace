@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { dueState, fmtDate, type Task } from "./model";
 
 // Bits shared by the list rows and the board cards (Stage 4): the due badge
@@ -27,16 +28,20 @@ export function DueBadge({ due, today }: { due: string; today: string }) {
 export function PinBtn({ focused, onToggle }: { focused: boolean; onToggle: () => void }) {
   const { t } = useTranslation();
   return (
-    <button
-      className={`plan-pin${focused ? " on" : ""}`} data-ui="toggle-task-focus"
-      title={focused ? t("plan.bits.unpin") : t("plan.bits.pin")}
+    <ActionButton
+      unstyled
+      mode="icon"
+      iconName="pin"
+      label={focused ? t("plan.bits.unpin") : t("plan.bits.pin")}
+      tooltip={focused ? t("plan.bits.unpin") : t("plan.bits.pin")}
+      className={`plan-pin${focused ? " on" : ""}`}
+      data-ui="toggle-task-focus"
+      aria-pressed={focused}
       onClick={(e) => {
         e.stopPropagation();
         onToggle();
       }}
-    >
-      <Icon name="pin" cls="ico-sm" />
-    </button>
+    />
   );
 }
 

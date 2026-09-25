@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useReaderSession, type AssetBinding } from "../doc/ReaderSession";
 import { imageUrl } from "../api";
 import { useThemeName } from "../lib/theme-watch";
+import { ActionButton } from "../ui";
 
 // Document figures are a mix of line/text plots (white paper, a few coloured
 // strokes) and photographs / scientific colour maps (galaxy images, viridis
@@ -160,31 +161,10 @@ export function FigureImage({ imgPath, alt, controls = false, width, height }: {
         style={{ width: boxWidth ?? "100%", aspectRatio: boxWidth && boxHeight ? `${boxWidth} / ${boxHeight}` : undefined, minHeight: boxHeight ? undefined : 120 }}>
         {ready ? t("components.figure.pending") : t("components.figure.unavailable")}
       </span>}
-    {controls && dark && current && <button type="button" className="fig-invert-btn" data-ui="invert-latex-figure"
-      title={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")}
-      aria-label={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")} aria-pressed={inverted}
-      onClick={() => setOverride(inverted ? "off" : "invert")}>
-      {inverted ? <SunIcon /> : <ContrastIcon />}
-    </button>}
+    {controls && dark && current && <ActionButton unstyled mode="icon" iconName={inverted ? "sun" : "contrast"}
+      className="fig-invert-btn" data-ui="invert-latex-figure"
+      label={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")}
+      tooltip={inverted ? t("components.figure.showOriginal") : t("components.figure.invert")} aria-pressed={inverted}
+      onClick={() => setOverride(inverted ? "off" : "invert")} />}
   </span>;
-}
-
-function ContrastIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-    </svg>
-  );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
@@ -300,31 +301,37 @@ export function Shell() {
           </div>
           <div className="tb-center">{t("shell.tagline")}</div>
           <div className="tb-right" data-ui="titlebar-actions">
-            <button
+            <ActionButton
+              mode="icon"
+              iconName="columns-2"
+              unstyled
               className="btn icon ghost"
               data-ui="split-pane"
-              title={t("shell.titlebar.split")}
+              label={t("shell.titlebar.split")}
+              tooltip={t("shell.titlebar.split")}
+              disabled={panes.length >= MAX_PANES}
               onClick={() => splitFrom(activeId)}
-              style={panes.length >= MAX_PANES ? { opacity: 0.35, pointerEvents: "none" } : undefined}
-            >
-              <Icon name="columns-2" cls="ico-sm" />
-            </button>
-            <button
+            />
+            <ActionButton
+              mode="icon"
+              iconName={tweaks.theme === "dark" ? "sun" : "moon"}
+              unstyled
               className="btn icon ghost"
               data-ui="toggle-theme"
-              title={t("shell.titlebar.toggleTheme")}
+              label={t("shell.titlebar.toggleTheme")}
               onClick={() => setTweak("theme", tweaks.theme === "dark" ? "light" : "dark")}
-            >
-              <Icon name={tweaks.theme === "dark" ? "sun" : "moon"} cls="ico-sm" />
-            </button>
-            <button
+            />
+            <ActionButton
+              mode="icon"
+              iconName="sliders-horizontal"
+              unstyled
               className="btn icon ghost"
               data-ui="open-tweaks"
-              title={t("shell.titlebar.tweaks")}
+              label={t("shell.titlebar.tweaks")}
+              tooltip={t("shell.titlebar.tweaks")}
+              aria-expanded={tweaksOpen}
               onClick={() => setTweaksOpen((o) => !o)}
-            >
-              <Icon name="sliders-horizontal" cls="ico-sm" />
-            </button>
+            />
             {tweaksOpen && (
               <TweaksPopover tweaks={tweaks} set={setTweak} onClose={() => setTweaksOpen(false)} />
             )}
@@ -344,29 +351,13 @@ export function Shell() {
 
         <div className="app-body" data-ui="app-workspace">
           <div className="activity" data-ui="primary-navigation">
-            {NAV.map((n) => (
-              <button
-                key={n.k}
-                data-ui="navigate-view"
-                data-ui-key={n.k}
-                className={"act-btn" + (activePane.view === n.k ? " on" : "")}
-                onClick={() => setActiveView(n.k)}
-                title={t(n.labelKey)}
-              >
-                <Icon name={n.ic} cls="ico-lg" />
-                {tweaks.labels && <span className="act-label">{t(n.labelKey)}</span>}
-              </button>
-            ))}
+            {NAV.map((n) => {
+              const label = t(n.labelKey);
+              const className = "nav-icon-action" + (activePane.view === n.k ? " on" : "");
+              return <ActionButton key={n.k} unstyled mode="icon" iconName={n.k === "plan" ? "telescope" : n.k === "library" ? "library" : n.k === "doc" ? "file-text" : "pen-line"} label={label} tooltip={label} data-ui="navigate-view" data-ui-key={n.k} className={className} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />;
+            })}
             <div style={{ flex: 1 }} />
-            <button
-              data-ui="navigate-extensions"
-              className={"act-btn" + (activePane.view === "ext" ? " on" : "")}
-              onClick={() => setActiveView("ext")}
-              title={t("shell.nav.extMarket")}
-            >
-              <Icon name="blocks" cls="ico-lg" />
-              {tweaks.labels && <span className="act-label">{t("shell.nav.ext")}</span>}
-            </button>
+            <ActionButton unstyled mode="icon" iconName="blocks" label={t("shell.nav.extMarket")} tooltip={t("shell.nav.extMarket")} data-ui="navigate-extensions" className={"nav-icon-action" + (activePane.view === "ext" ? " on" : "")} aria-current={activePane.view === "ext" ? "page" : undefined} onClick={() => setActiveView("ext")} />
           </div>
 
           <div className="main">
@@ -484,41 +475,39 @@ function PaneHeader({
   return (
     <div className="pane-head" data-ui="pane-header">
       <div className="pane-tool-wrap" onClick={(e) => e.stopPropagation()}>
-        <button data-ui="choose-pane-view" className="pane-tool" onClick={() => setOpen((o) => !o)}>
-          <Icon name={nav.ic} cls="ico-sm" />
+        <ActionButton unstyled mode="text" data-ui="choose-pane-view" className="pane-tool" label={t("shell.pane.switchView")} tooltip={t("shell.pane.switchView")} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <span>{t(nav.labelKey)}</span>
-          <Icon name="chevron-down" cls="ico-sm" />
-        </button>
+        </ActionButton>
         {open && (
           <div className="pane-tool-menu view-in" data-ui="pane-view-menu">
             {NAV.map((n) => (
-              <button
+              <ActionButton
                 key={n.k}
+                unstyled
+                mode="text"
+                label={t(n.labelKey)}
+                tooltip={t(n.labelKey)}
                 data-ui="pane-view-option"
                 data-ui-key={n.k}
+                aria-current={n.k === pane.view ? "page" : undefined}
                 className={"pane-tool-opt" + (n.k === pane.view ? " on" : "")}
                 onClick={() => {
                   onSwitch(n.k);
                   setOpen(false);
                 }}
               >
-                <Icon name={n.ic} cls="ico-sm" />
                 <span>{t(n.labelKey)}</span>
-              </button>
+              </ActionButton>
             ))}
           </div>
         )}
       </div>
       <div style={{ flex: 1 }} />
       {canSplit && (
-        <button data-ui="split-pane" className="pane-h-btn" title={t("shell.split")} onClick={onSplit}>
-          <Icon name="panel-right" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="columns-2" data-ui="split-pane" className="pane-h-btn" label={t("shell.split")} tooltip={t("shell.split")} onClick={onSplit} />
       )}
       {canClose && (
-        <button data-ui="close-pane" className="pane-h-btn" title={t("shell.closePane")} onClick={onClose}>
-          <Icon name="x" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="x" data-ui="close-pane" className="pane-h-btn" label={t("shell.closePane")} tooltip={t("shell.closePane")} onClick={onClose} />
       )}
     </div>
   );

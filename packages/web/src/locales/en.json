@@ -11,6 +11,7 @@
     "tagline": "Literature",
     "split": "Split right",
     "closePane": "Close pane",
+    "pane": { "switchView": "Change pane view" },
     "titlebar": {
       "split": "Split right (⌘\\)",
       "toggleTheme": "Toggle theme",
@@ -73,7 +74,21 @@
       "refsTab": "References",
       "annotationsTab": "Annotations",
       "inView": "In view · {{count}}",
+      "referencesTooltip": "Show references in the current view",
+      "annotationsTooltip": "Show document annotations",
       "empty": "Nothing referenced in the current view. Scroll the article — figures, equations, tables and citations mentioned nearby appear here."
+    },
+    "referenceCard": {
+      "expand": "Expand content",
+      "collapse": "Collapse content",
+      "jump": "Jump to location in document"
+    },
+    "outline": {
+      "contents": "Contents",
+      "figures": "Figures",
+      "tables": "Tables",
+      "equations": "Equations",
+      "code": "Code"
     }
   },
   "doc": {
@@ -91,6 +106,13 @@
     "railRefs": "References",
     "undoTitle": "Return to position before the jump",
     "undoBack": "↩ Back",
+    "actions": {
+      "expandOutline": "Expand outline",
+      "collapseOutline": "Collapse outline",
+      "expandReferences": "Expand references and annotations",
+      "collapseReferences": "Collapse references and annotations",
+      "undoNavigation": "Undo document navigation"
+    },
     "sync": {
       "missing": "Document not found.",
       "errorRetained": "Update failed; showing the old body text. Images and annotations are unavailable.",
@@ -130,6 +152,8 @@
     "action": {
       "add": "Add annotation",
       "addDoc": "Add document annotation",
+      "addDocTooltip": "Add an annotation to the whole document",
+      "addTooltip": "Annotate selected text",
       "addText": "Add text annotation",
       "addStructure": "Add annotation · {{kind}}",
       "view": "View annotation",
@@ -290,12 +314,15 @@
       },
       "pdfUpload": {
         "choose": "Upload PDF",
+        "method": "Upload a local PDF",
+        "methodHelp": "Choose a local PDF as a new Doc for this Work. Existing Docs are not replaced.",
+        "start": "Upload PDF as a new Doc",
         "uploading": "Processing PDF",
         "resourceWarning": "Large PDF uses substantial resources",
         "resourceWarningDetail": "{{filename}} ({{size}} MiB) exceeds the 25 MiB warning threshold. You can continue; the hard single-file limit is 50 MiB.",
         "continue": "Continue upload",
         "failedTitle": "PDF upload failed",
-        "failedSummary": "The upload did not complete; existing Docs were not changed. Select the PDF again to retry.",
+        "failedSummary": "The upload did not complete; existing Docs were not changed. Reopen the acquisition dialog and choose a PDF to retry.",
         "failedGeneric": "The PDF upload request failed. Please retry.",
         "busy": "This PDF is being processed or deleted. Retry shortly.",
         "empty": "Choose a non-empty PDF file.",
@@ -449,6 +476,12 @@
       "done": "Done",
       "doneGroup": "Done"
     },
+    "statusCycle": {
+      "todo": "Mark as in progress",
+      "doing": "Mark as done",
+      "blocked": "Mark as to do",
+      "done": "Mark as to do"
+    },
     "modes": {
       "list": "List",
       "board": "Board"
@@ -458,7 +491,8 @@
       "editPlan": "Edit plan",
       "deletePlan": "Delete plan",
       "newTask": "New task",
-      "editTask": "Edit task"
+      "editTask": "Edit task",
+      "dismissUndo": "Dismiss undo notice"
     },
     "toolbar": {
       "due": "Due {{date}}"
@@ -493,7 +527,8 @@
     },
     "list": {
       "empty": "No tasks yet — click \"New task\" in the top right to create the first one.",
-      "crossGroupNudge": "To move a task across groups, use the status dot or the drawer to change its status."
+      "crossGroupNudge": "To move a task across groups, use the status dot or the drawer to change its status.",
+      "toggleCompleted": "Expand or collapse completed tasks"
     },
     "form": {
       "due": "Due date"
@@ -507,6 +542,16 @@
       "optional": "Optional",
       "descPlaceholder": "One sentence on this plan's goal…",
       "icon": "Icon",
+      "icons": {
+        "target": "Target icon",
+        "telescope": "Telescope icon",
+        "book-marked": "Bookmark icon",
+        "database": "Database icon",
+        "brain-circuit": "Brain circuit icon",
+        "sigma": "Sigma icon",
+        "flask-conical": "Flask icon",
+        "microscope": "Microscope icon"
+      },
       "submit": "Create plan"
     },
     "taskModal": {
@@ -529,6 +574,7 @@
       "links": "Linked documents",
       "docMissing": "Document not found",
       "removeLink": "Remove link",
+      "removeLinkFor": "Remove link · {{title}}",
       "openDoc": "Open · {{title}}",
       "addLink": "Add linked document",
       "searchPlaceholder": "Search literature titles, authors…",
@@ -581,6 +627,7 @@
       "preamble": "Preamble",
       "export": "Export",
       "render": "Render",
+      "rendering": "Rendering…",
       "template": "Template"
     },
     "editor": {
@@ -629,6 +676,9 @@
       "image": "Image",
       "chooseImage": "Click to choose an image · drag/drop in the final product",
       "placement": "Placement",
+      "placementLeft": "Left",
+      "placementCenter": "Center",
+      "placementRight": "Right",
       "width": "Width",
       "caption": "Caption",
       "label": "Label",
@@ -651,7 +701,8 @@
       "figures": "Figures",
       "tables": "Tables",
       "code": "Code",
-      "insertLabel": "Insert label"
+      "insertLabel": "Insert label",
+      "jumpTo": "Jump to {{title}}"
     },
     "tabs": {
       "references": "References",
@@ -871,15 +922,25 @@
     "searchCount": "Found {{count}} result(s)",
     "searchResult": "Result {{index}} · page {{page}}",
     "annotationsTitle": "Annotations and comments",
+    "annotationTools": "PDF annotation tools",
+    "openAnnotationTools": "Open annotation tools",
+    "closeAnnotationTools": "Close annotation tools",
+    "newComment": "New comment draft",
+    "editComment": "Edit comment",
     "addPageComment": "Comment on page {{page}}",
+    "commentThisPage": "Comment on this page",
     "addDocumentComment": "Comment on document",
     "addRectangle": "Mark an area",
     "selectText": "Select text",
     "textToolsTitle": "Selected text tools",
-    "selectTextHint": "Press Select text, drag with the left mouse button, then release to confirm. Press on the page again to clear the old selection. Scanned pages have no text target.",
+    "textSelectionTools": "Selected text actions",
+    "selectTextHint": "Choose highlight, underline, or strikeout, then drag over real PDF text and release to create. Scanned pages and invalid selections create no annotation.",
+    "textSelectionRejected": "No valid PDF text selection was detected; nothing was created. Select real text and try again.",
     "textTargetGeometryError": "This selection has incomplete or invalid page geometry and was not saved. Reselect the text.",
     "keyboardTextSelectionHint": "After selecting text, focus a text-tool button and use Shift+Arrow keys to extend the selection.",
     "highlight": "Highlight",
+    "highlightColor": "Highlight color",
+    "highlightColors": { "yellow": "Yellow", "orange": "Orange", "red": "Red", "magenta": "Magenta", "purple": "Purple", "blue": "Blue", "cyan": "Cyan", "green": "Green", "gray": "Gray" },
     "underline": "Underline",
     "strikeout": "Strikeout",
     "textAnnotations": "Workbench text annotations",

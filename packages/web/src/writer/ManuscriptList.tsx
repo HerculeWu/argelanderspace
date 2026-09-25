@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import type { ManuscriptSummary, WriterTemplate } from "@argelanderspace/contracts";
 import {
   createManuscript,
@@ -55,9 +56,7 @@ function NewManuscriptModal({
       <div className="w-modal" data-ui="new-manuscript-dialog" style={{ width: 440 }} onClick={(e) => e.stopPropagation()}>
         <div className="w-modal-head">
           <strong>{t("writer.newModal.title")}</strong>
-          <button className="btn icon ghost" data-ui="close-new-manuscript" onClick={onClose}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-new-manuscript" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} />
         </div>
         <div className="w-modal-body">
           <div className="w-field">
@@ -88,12 +87,12 @@ function NewManuscriptModal({
           </div>
         </div>
         <div className="w-modal-foot">
-          <button className="btn" data-ui="cancel-new-manuscript" onClick={onClose}>
+          <ActionButton unstyled mode="text" className="btn" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-new-manuscript" onClick={onClose}>
             {t("common.cancel")}
-          </button>
-          <button className="btn primary" data-ui="confirm-create-manuscript" disabled={!valid} onClick={submit}>
-            <Icon name="plus" cls="ico-sm" /> {t("writer.newModal.create")}
-          </button>
+          </ActionButton>
+          <ActionButton unstyled mode="text" className="btn primary" label={t("writer.newModal.create")} tooltip={t("writer.newModal.create")} data-ui="confirm-create-manuscript" disabled={!valid} onClick={submit}>
+            {t("writer.newModal.create")}
+          </ActionButton>
         </div>
       </div>
     </div>
@@ -166,9 +165,9 @@ export function ManuscriptList({
           <strong>{t("writer.list.title")}</strong>
           {rows !== null && <span className="w-save-status">{rows.length}</span>}
         </div>
-        <button className="btn primary" data-ui="create-manuscript" disabled={templates === null} onClick={() => setNewOpen(true)}>
-          <Icon name="plus" cls="ico-sm" /> {t("writer.list.new")}
-        </button>
+        <ActionButton unstyled mode="text" className="btn primary" label={t("writer.list.new")} tooltip={t("writer.list.new")} data-ui="create-manuscript" disabled={templates === null} onClick={() => setNewOpen(true)}>
+          {t("writer.list.new")}
+        </ActionButton>
       </div>
       <div className="w-list-scroll" data-ui="manuscript-list-content">
         {notice && <div className="w-note w-padded">{notice}</div>}
@@ -183,9 +182,9 @@ export function ManuscriptList({
             </div>
             <div>{t("writer.list.loadFailedTitle")}</div>
             <div className="w-list-empty-hint">{t("writer.list.loadFailedHint")}</div>
-            <button className="btn primary" data-ui="retry-manuscript-list" onClick={() => void reload()}>
+            <ActionButton unstyled mode="text" className="btn primary" label={t("common.retry")} tooltip={t("common.retry")} data-ui="retry-manuscript-list" onClick={() => void reload()}>
               {t("common.retry")}
-            </button>
+            </ActionButton>
           </div>
         )}
         {rows !== null && rows.length === 0 && (
@@ -195,9 +194,9 @@ export function ManuscriptList({
             </div>
             <div>{t("writer.list.empty")}</div>
             <div className="w-list-empty-hint">{t("writer.list.emptyHint")}</div>
-            <button className="btn primary" data-ui="create-first-manuscript" onClick={() => setNewOpen(true)}>
-              <Icon name="plus" cls="ico-sm" /> {t("writer.list.new")}
-            </button>
+            <ActionButton unstyled mode="text" className="btn primary" label={t("writer.list.new")} tooltip={t("writer.list.new")} data-ui="create-first-manuscript" onClick={() => setNewOpen(true)}>
+              {t("writer.list.new")}
+            </ActionButton>
           </div>
         )}
         {rows !== null && rows.length > 0 && (
@@ -217,17 +216,15 @@ export function ManuscriptList({
                   <td>{templateLabel(m.template)}</td>
                   <td>{fmtUpdated(m.updated_at, i18n.language)}</td>
                   <td>
-                    <button
-                      className="btn icon ghost"
+                    <ActionButton
+                      unstyled mode="icon" iconName="trash-2" className="btn icon ghost"
                       data-ui="delete-manuscript"
-                      title={t("common.delete")}
+                      label={t("common.delete")} tooltip={t("common.delete")}
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleting(m);
                       }}
-                    >
-                      <Icon name="trash-2" cls="ico-sm" />
-                    </button>
+                    />
                   </td>
                 </tr>
               ))}

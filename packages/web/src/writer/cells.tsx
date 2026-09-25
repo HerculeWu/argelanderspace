@@ -4,7 +4,7 @@
  */
 
 import { useTranslation } from "react-i18next";
-import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import type { CellPlacement, CellType, WriterCell, WriterNumberingResponse } from "@argelanderspace/contracts";
 import { LatexSourceField, type WriterTextTarget } from "./latexSource";
 import { WriterCellPreview } from "./preview";
@@ -95,33 +95,39 @@ function EditorFooter({ cell, ctx }: FieldProps) {
     <div className="w-editor-actions" data-ui="cell-editor-actions">
       <span className="w-hint">{t("writer.cell.shiftEnterHint")}</span>
       <div className="w-editor-buttons">
-        <button className="btn" data-ui="delete-cell-in-editor" onClick={() => ctx.onDelete(cell.id)}>
+        <ActionButton unstyled mode="text" className="btn" label={t("common.delete")} tooltip={t("common.delete")} data-ui="delete-cell-in-editor" onClick={() => ctx.onDelete(cell.id)}>
           {t("common.delete")}
-        </button>
-        <button className="btn primary" data-commit={cell.id} data-ui="commit-cell" onClick={() => ctx.onCommit(cell.id)}>
+        </ActionButton>
+        <ActionButton unstyled mode="text" className="btn primary" label={t("writer.cell.render")} tooltip={t("writer.cell.render")} data-commit={cell.id} data-ui="commit-cell" onClick={() => ctx.onCommit(cell.id)}>
           {t("writer.cell.render")}
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
 }
 
 function PlacementButtons({ cell, ctx }: FieldProps) {
+  const { t } = useTranslation();
   const d = cell.data as Record<string, unknown>;
   const cur = (d.placement as CellPlacement) || "center";
   return (
     <div className="w-segmented" data-ui="cell-format-options">
-      {(["left", "center", "right"] as const).map((p) => (
-        <button
+      {(["left", "center", "right"] as const).map((p) => {
+        const label = t(({ left: "writer.field.placementLeft", center: "writer.field.placementCenter", right: "writer.field.placementRight" } as const)[p]);
+        return <ActionButton
+          unstyled
+          mode="text"
           key={p}
+          label={label}
+          tooltip={label}
           type="button"
           data-ui="cell-placement" data-ui-key={p}
           className={cur === p ? "on" : undefined}
           onClick={() => ctx.onField(cell.id, "placement", p)}
         >
-          {p}
-        </button>
-      ))}
+          {label}
+        </ActionButton>;
+      })}
     </div>
   );
 }
@@ -375,31 +381,26 @@ export function CellWrap({
       }}
     >
       <div className="w-cell-tools" data-ui="cell-actions">
-        <button
-          className="w-cell-type" data-ui="choose-cell-type"
-          title={t("writer.cell.typeMenu")}
+        <ActionButton
+          unstyled mode="text" className="w-cell-type" data-ui="choose-cell-type"
+          label={t("writer.cell.typeMenu")} tooltip={t("writer.cell.typeMenu")}
           onClick={(e) => ctx.onOpenTypeMenu(cell.id, e)}
         >
           {t(TYPE_LABEL_KEY[cell.type])}
-          <Icon name="chevron-down" cls="ico-sm" />
-        </button>
+        </ActionButton>
         <div className="w-cell-right-tools">
-          <button
-            className="w-cell-tool"
+          <ActionButton
+            unstyled mode="icon" iconName="pencil" className="w-cell-tool"
             data-action="edit" data-ui="edit-cell"
-            title={t("writer.cell.edit")}
+            label={t("writer.cell.edit")} tooltip={t("writer.cell.edit")}
             onClick={() => ctx.onEdit(cell.id)}
-          >
-            <Icon name="pencil" cls="ico-sm" />
-          </button>
-          <button
-            className="w-cell-tool"
+          />
+          <ActionButton
+            unstyled mode="icon" iconName="message-square-plus" className="w-cell-tool"
             data-action="comment" data-ui="comment-on-cell"
-            title={t("writer.cell.comment")}
+            label={t("writer.cell.comment")} tooltip={t("writer.cell.comment")}
             onClick={() => ctx.onComment(cell.id)}
-          >
-            <Icon name="message-square" cls="ico-sm" />
-          </button>
+          />
         </div>
       </div>
       {!supported && <div className="w-unsupported">{t("writer.cell.unsupported")}</div>}

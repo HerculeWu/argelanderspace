@@ -11,6 +11,7 @@
     "tagline": "文献工作台 · Literature",
     "split": "向右分屏",
     "closePane": "关闭窗格",
+    "pane": { "switchView": "切换窗格视图" },
     "titlebar": {
       "split": "向右分屏 (⌘\\)",
       "toggleTheme": "切换主题",
@@ -73,7 +74,21 @@
       "refsTab": "引用",
       "annotationsTab": "标注",
       "inView": "In view · {{count}}",
+      "referencesTooltip": "查看当前视野中的引用",
+      "annotationsTooltip": "查看文档标注",
       "empty": "Nothing referenced in the current view. Scroll the article — figures, equations, tables and citations mentioned nearby appear here."
+    },
+    "referenceCard": {
+      "expand": "展开内容",
+      "collapse": "收起内容",
+      "jump": "跳转到正文位置"
+    },
+    "outline": {
+      "contents": "目录",
+      "figures": "图",
+      "tables": "表",
+      "equations": "公式",
+      "code": "代码"
     }
   },
   "doc": {
@@ -91,6 +106,13 @@
     "railRefs": "References",
     "undoTitle": "Return to position before the jump",
     "undoBack": "↩ Back",
+    "actions": {
+      "expandOutline": "展开目录",
+      "collapseOutline": "收起目录",
+      "expandReferences": "展开引用与标注",
+      "collapseReferences": "收起引用与标注",
+      "undoNavigation": "撤销文档跳转"
+    },
     "sync": {
       "missing": "文档不存在。",
       "errorRetained": "更新失败，当前为旧正文；图片及标注不可用。",
@@ -130,6 +152,8 @@
     "action": {
       "add": "添加标注",
       "addDoc": "添加文档标注",
+      "addDocTooltip": "为整篇文档添加标注",
+      "addTooltip": "为所选文本添加标注",
       "addText": "添加文本标注",
       "addStructure": "添加标注 · {{kind}}",
       "view": "查看标注",
@@ -290,12 +314,15 @@
       },
       "pdfUpload": {
         "choose": "上传 PDF",
+        "method": "上传本地 PDF",
+        "methodHelp": "选择本地 PDF，作为这篇文献的新正文文档；不会覆盖已有正文。",
+        "start": "上传 PDF 并添加正文",
         "uploading": "正在处理 PDF",
         "resourceWarning": "PDF 较大，资源消耗较高",
         "resourceWarningDetail": "{{filename}}（{{size}} MiB）超过 25 MiB 提示阈值；仍可继续，单文件上限为 50 MiB。",
         "continue": "继续上传",
         "failedTitle": "PDF 上传失败",
-        "failedSummary": "上传未完成；已有正文未更改。可重新选择 PDF 重试。",
+        "failedSummary": "上传未完成；已有正文未更改。可重新打开正文获取对话框，选择 PDF 重试。",
         "failedGeneric": "PDF 上传请求失败，请重试。",
         "busy": "该 PDF 正在处理或删除，请稍后重试。",
         "empty": "请选择非空 PDF 文件。",
@@ -449,6 +476,12 @@
       "done": "完成",
       "doneGroup": "已完成"
     },
+    "statusCycle": {
+      "todo": "改为进行中",
+      "doing": "改为完成",
+      "blocked": "改为待办",
+      "done": "改为待办"
+    },
     "modes": {
       "list": "列表",
       "board": "看板"
@@ -458,7 +491,8 @@
       "editPlan": "编辑计划",
       "deletePlan": "删除计划",
       "newTask": "新建任务",
-      "editTask": "编辑任务"
+      "editTask": "编辑任务",
+      "dismissUndo": "关闭撤销提示"
     },
     "toolbar": {
       "due": "截止 {{date}}"
@@ -493,7 +527,8 @@
     },
     "list": {
       "empty": "暂无任务 — 点击右上角「新建任务」创建第一项。",
-      "crossGroupNudge": "跨组移动请用状态圆钮或抽屉改状态。"
+      "crossGroupNudge": "跨组移动请用状态圆钮或抽屉改状态。",
+      "toggleCompleted": "展开或收起已完成任务"
     },
     "form": {
       "due": "截止日期"
@@ -507,6 +542,16 @@
       "optional": "可选",
       "descPlaceholder": "一句话说明这个计划的目标…",
       "icon": "图标",
+      "icons": {
+        "target": "目标图标",
+        "telescope": "望远镜图标",
+        "book-marked": "书签图标",
+        "database": "数据库图标",
+        "brain-circuit": "脑回路图标",
+        "sigma": "Sigma 图标",
+        "flask-conical": "烧瓶图标",
+        "microscope": "显微镜图标"
+      },
       "submit": "创建计划"
     },
     "taskModal": {
@@ -529,6 +574,7 @@
       "links": "关联文档",
       "docMissing": "文档不存在",
       "removeLink": "移除链接",
+      "removeLinkFor": "移除链接 · {{title}}",
       "openDoc": "打开 · {{title}}",
       "addLink": "添加关联文档",
       "searchPlaceholder": "搜索文献标题、作者…",
@@ -581,6 +627,7 @@
       "preamble": "导言区",
       "export": "导出",
       "render": "渲染",
+      "rendering": "渲染中…",
       "template": "模板"
     },
     "editor": {
@@ -590,7 +637,7 @@
       "emptyCells": "还没有内容块。点击 ＋ 添加第一个。"
     },
     "cell": {
-      "edit": "编辑 cell",
+      "edit": "编辑单元格",
       "comment": "添加评论",
       "typeMenu": "更改类型",
       "deleteCell": "删除 cell",
@@ -629,6 +676,9 @@
       "image": "图片",
       "chooseImage": "点击选择图片 · 正式版支持拖拽",
       "placement": "对齐",
+      "placementLeft": "左对齐",
+      "placementCenter": "居中",
+      "placementRight": "右对齐",
       "width": "宽度",
       "caption": "Caption",
       "label": "Label",
@@ -651,7 +701,8 @@
       "figures": "图",
       "tables": "表",
       "code": "代码",
-      "insertLabel": "插入 label"
+      "insertLabel": "插入 label",
+      "jumpTo": "跳转到{{title}}"
     },
     "tabs": {
       "references": "References",
@@ -871,15 +922,25 @@
     "searchCount": "找到 {{count}} 个结果",
     "searchResult": "结果 {{index}} · 第 {{page}} 页",
     "annotationsTitle": "标注与评论",
+    "annotationTools": "PDF 标注工具",
+    "openAnnotationTools": "打开标注工具",
+    "closeAnnotationTools": "关闭标注工具",
+    "newComment": "新评论草稿",
+    "editComment": "编辑评论",
     "addPageComment": "评论第 {{page}} 页",
+    "commentThisPage": "评论本页",
     "addDocumentComment": "评论整篇文档",
     "addRectangle": "框选区域",
     "selectText": "选择文字",
     "textToolsTitle": "所选文字工具",
-    "selectTextHint": "按「选择文字」，在 PDF 上按住左键拖动，松开后确认范围。再次在纸面按下左键会清空旧选区。扫描页没有文字标注目标。",
+    "textSelectionTools": "所选文字操作",
+    "selectTextHint": "选择高亮、下划线或删除线后，在 PDF 真文字层按住左键拖动并松开即可创建；扫描页或无效选区不会创建标注。",
+    "textSelectionRejected": "未检测到有效的 PDF 文字选区；没有创建标注，请重新选择真实文字。",
     "textTargetGeometryError": "此选区的页几何不完整或无效，未保存；请重新选择文字。",
     "keyboardTextSelectionHint": "选中文字后聚焦文字工具按钮，再用 Shift+方向键扩展选区。",
     "highlight": "高亮",
+    "highlightColor": "高亮颜色",
+    "highlightColors": { "yellow": "黄色", "orange": "橙色", "red": "红色", "magenta": "洋红", "purple": "紫色", "blue": "蓝色", "cyan": "青色", "green": "绿色", "gray": "灰色" },
     "underline": "下划线",
     "strikeout": "删除线",
     "textAnnotations": "工作台文字标注",

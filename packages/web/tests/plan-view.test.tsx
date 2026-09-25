@@ -289,7 +289,10 @@ describe("PlanView: status cycle + drawer edit + pin", () => {
     serverDoc = mkDoc([mkTask({ title: "循环任务" })]);
     const { container } = renderPlan();
     const row = await waitFor(() => rowOf(container, "循环任务"));
-    fireEvent.click(row.querySelector(".plan-st-btn")!);
+    const cycle = row.querySelector<HTMLButtonElement>(".plan-st-btn")!;
+    expect(cycle.getAttribute("aria-label")).toBe("改为进行中");
+    expect(cycle.textContent).toBe(""); // icon-only; task title remains separate dynamic content
+    fireEvent.click(cycle);
 
     // the task lands in 进行中; the PUT recorded the new status
     await waitFor(() => {
@@ -308,7 +311,10 @@ describe("PlanView: status cycle + drawer edit + pin", () => {
     fireEvent.click((await waitFor(() => rowOf(container, "旧标题"))).querySelector(".plan-task-title")!);
 
     const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
-    fireEvent.click(drawer.querySelector('button[title="编辑任务"]')!);
+    const edit = drawer.querySelector<HTMLButtonElement>('[data-ui="edit-task"]')!;
+    expect(edit.getAttribute("aria-label")).toBe("编辑任务");
+    expect(edit.textContent).toBe("");
+    fireEvent.click(edit);
 
     const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const titleInput = modal.querySelector<HTMLInputElement>("input")!;
@@ -399,6 +405,11 @@ describe("PlanView: linked documents", () => {
     // clicking the link opens the doc pane
     fireEvent.click(byText(drawer, ".plan-drawer-art-t", "Dark Matter Halos"));
     expect(WORKSPACE.openDoc).toHaveBeenCalledWith("doc-dm");
+    const unlink = drawer.querySelector<HTMLButtonElement>('[data-ui="unlink-task-doc"]')!;
+    expect(unlink.getAttribute("aria-label")).toBe("移除链接 · Dark Matter Halos");
+    expect(unlink.textContent).toContain("Dark Matter Halos");
+    fireEvent.click(unlink);
+    await waitFor(() => expect(lastPut().plans[0]!.tasks[0]!.links).toEqual([]));
   });
 
   it("a doc the library no longer has renders grayed as 文档不存在 and is NOT auto-removed", async () => {
@@ -418,7 +429,25 @@ describe("PlanView: delete + 6s undo", () => {
     const { container } = renderPlan();
     fireEvent.click((await waitFor(() => rowOf(container, "乙"))).querySelector(".plan-task-title")!);
     const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
-    fireEvent.click(byText(drawer, "button", "删除任务"));
+    const statusButtons = [...drawer.querySelectorAll<HTMLButtonElement>('[data-ui="set-task-status"]')];
+    expect(statusButtons).toHaveLength(4);
+    for (const button of statusButtons) {
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")).toBeTruthy();
+      expect(button.getAttribute("aria-label")).toBeTruthy();
+    }
+    fireEvent.click(drawer.querySelector('[data-ui="add-task-note"]')!);
+    for (const id of ["cancel-task-note", "save-task-note"]) {
+      const button = drawer.querySelector<HTMLButtonElement>(`[data-ui="${id}"]`)!;
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")).toBeTruthy();
+    }
+    fireEvent.click(drawer.querySelector('[data-ui="cancel-task-note"]')!);
+    const deleteTask = drawer.querySelector<HTMLButtonElement>('[data-ui="delete-task"]')!;
+    expect(deleteTask.textContent).toBe("");
+    expect(deleteTask.querySelector("svg")).toBeTruthy();
+    expect(deleteTask.getAttribute("aria-label")).toBe("删除任务");
+    fireEvent.click(deleteTask);
 
     await waitFor(() => expect(container.querySelectorAll(".plan-task-row")).toHaveLength(2));
     const toast = await waitFor(() => container.querySelector(".plan-undo") as HTMLElement);
@@ -436,7 +465,7 @@ describe("PlanView: board + timeline smoke", () => {
     serverDoc = mkDoc([mkTask({ title: "看板任务" })]);
     const { container } = renderPlan();
     await waitFor(() => rowOf(container, "看板任务"));
-    fireEvent.click(byText(container, ".plan-seg-btn", "看板"));
+    fireEvent.click(container.querySelector('[data-ui="plan-display-mode"][data-ui-key="board"]')!);
     await waitFor(() => expect(container.querySelectorAll(".plan-board-col")).toHaveLength(4));
     const heads = [...container.querySelectorAll(".plan-board-col-head")].map((e) => e.textContent);
     expect(heads.join()).toEqual(expect.stringContaining("待办"));
@@ -552,7 +581,7 @@ describe("PlanView: modals (review ⑨)", () => {
     });
     const { container } = renderPlan();
     await waitFor(() => byText(container, ".plan-tb-title", "旧计划名"));
-    fireEvent.click(container.querySelector('button[title="编辑计划"]')!);
+    fireEvent.click(container.querySelector('[data-ui="edit-plan"]')!);
 
     const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const nameInput = modal.querySelector<HTMLInputElement>("#plan-f-name")!;
@@ -561,7 +590,7 @@ describe("PlanView: modals (review ⑨)", () => {
     expect(nameInput.value).toBe("旧计划名");
     expect(dueInput.value).toBe("2026-11-30");
     expect(descInput.value).toBe("旧描述");
-    expect(modal.querySelector(".plan-icon-opt.on")?.getAttribute("title")).toBe("sigma");
+    expect(modal.querySelector(".plan-icon-opt.on")?.getAttribute("data-ui-key")).toBe("sigma");
 
     fireEvent.change(nameInput, { target: { value: "新计划名" } });
     fireEvent.click(byText(modal, "button", "保存"));
@@ -578,7 +607,7 @@ describe("PlanView: modals (review ⑨)", () => {
     const { container } = renderPlan();
     fireEvent.click((await waitFor(() => rowOf(container, "有截止"))).querySelector(".plan-task-title")!);
     const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
-    fireEvent.click(drawer.querySelector('button[title="编辑任务"]')!);
+    fireEvent.click(drawer.querySelector('[data-ui="edit-task"]')!);
 
     const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const dueInput = modal.querySelector<HTMLInputElement>("#task-f-due")!;
@@ -601,7 +630,7 @@ describe("PlanView: modals (review ⑨)", () => {
     ]);
     const { container } = renderPlan();
     await waitFor(() => rowOf(container, "未完一"));
-    fireEvent.click(container.querySelector('button[title="删除计划"]')!);
+    fireEvent.click(container.querySelector('[data-ui="delete-plan"]')!);
 
     const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     expect(document.activeElement).toBe(byText(modal, "button", "取消"));

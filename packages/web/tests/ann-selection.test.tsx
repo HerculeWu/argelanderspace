@@ -172,8 +172,10 @@ describe("selection → toolbar → create flow", () => {
       return el as HTMLElement;
     });
     const btn = [...bar.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-      b.textContent?.includes("添加标注")
+      b.dataset.ui === "annotate-selected-text"
     )!;
+    expect(btn.getAttribute("aria-label")).toBe("添加标注");
+    expect(btn.textContent?.trim()).toBe("");
     fireEvent.click(btn);
 
     const pop = await waitFor(() => {
@@ -212,7 +214,7 @@ describe("selection → toolbar → create flow", () => {
     const bar = await waitFor(() => container.querySelector(".ann-selbar") as HTMLElement);
     fireEvent.click(
       [...bar.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("添加标注")
+        b.dataset.ui === "annotate-selected-text"
       )!
     );
     const pop = await waitFor(() => container.querySelector(".ann-popover") as HTMLElement);
@@ -248,7 +250,7 @@ describe("selection → toolbar → create flow", () => {
     const bar = await waitFor(() => container.querySelector(".ann-selbar") as HTMLElement);
     fireEvent.click(
       [...bar.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("添加标注")
+        b.dataset.ui === "annotate-selected-text"
       )!
     );
     const pop = await waitFor(() => container.querySelector(".ann-popover") as HTMLElement);
@@ -270,7 +272,7 @@ describe("selection → toolbar → create flow", () => {
     const bar = await waitFor(() => container.querySelector(".ann-selbar") as HTMLElement);
     fireEvent.click(
       [...bar.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("添加标注")
+        b.dataset.ui === "annotate-selected-text"
       )!
     );
     const pop = await waitFor(() => container.querySelector(".ann-popover") as HTMLElement);
@@ -297,7 +299,7 @@ describe("selection → toolbar → create flow", () => {
     const bar = await waitFor(() => container.querySelector(".ann-selbar") as HTMLElement);
     fireEvent.click(
       [...bar.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("添加标注")
+        b.dataset.ui === "annotate-selected-text"
       )!
     );
     const pop = await waitFor(() => container.querySelector(".ann-popover") as HTMLElement);
@@ -393,7 +395,7 @@ describe("B1: 409 document-changed with an open TEXT create popover", () => {
     const bar = await waitFor(() => container.querySelector(".ann-selbar") as HTMLElement);
     fireEvent.click(
       [...bar.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("添加标注")
+        b.dataset.ui === "annotate-selected-text"
       )!
     );
     const pop = await waitFor(() => container.querySelector(".ann-popover") as HTMLElement);

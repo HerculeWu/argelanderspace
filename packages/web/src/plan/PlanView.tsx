@@ -23,6 +23,7 @@ import {
   type TaskStatus,
 } from "./model";
 import { DeletePlanModal, PlanModal, TaskModal, type PlanFormValues, type TaskFormValues } from "./modals";
+import { ActionButton } from "../ui";
 import { ProgressRing } from "./atoms";
 import { TaskDrawer } from "./TaskDrawer";
 import { TimelineMode } from "./TimelineMode";
@@ -366,10 +367,9 @@ export function PlanView() {
           </div>
           <div className="plan-empty-title">{t("plan.loadFailed.title")}</div>
           <div className="plan-empty-sub">{t("plan.loadFailed.desc")}</div>
-          <button className="btn primary" data-ui="retry-plans" onClick={() => void reload()}>
-            <Icon name="refresh-cw" cls="ico-sm" />
+          <ActionButton unstyled mode="text" label={t("common.retry")} tooltip={t("common.retry")} className="btn primary" data-ui="retry-plans" onClick={() => void reload()}>
             {t("common.retry")}
-          </button>
+          </ActionButton>
         </div>
       );
     }
@@ -425,42 +425,26 @@ export function PlanView() {
             <div className="plan-tb-right">
               <div className="plan-seg">
                 {modes.map((m) => (
-                  <button
+                  <ActionButton
                     key={m.k}
-                    data-ui="plan-display-mode" data-ui-key={m.k}
+                    unstyled
+                    mode="icon"
+                    iconName={m.ic}
+                    label={m.label}
+                    tooltip={m.label}
+                    data-ui="plan-display-mode"
+                    data-ui-key={m.k}
+                    aria-pressed={mode === m.k}
                     className={`plan-seg-btn${mode === m.k ? " on" : ""}`}
                     onClick={() => setMode(m.k)}
-                    title={m.label}
-                  >
-                    <Icon name={m.ic} cls="ico-sm" />
-                    <span className="plan-seg-lbl">{m.label}</span>
-                  </button>
+                  />
                 ))}
               </div>
-              <button
-                className="btn icon ghost"
-                data-ui="edit-plan"
-                title={t("plan.action.editPlan")}
-                onClick={() => setModal({ kind: "plan", plan })}
-              >
-                <Icon name="pencil" cls="ico-sm" />
-              </button>
-              <button
-                className="btn icon ghost"
-                data-ui="delete-plan"
-                title={t("plan.action.deletePlan")}
-                onClick={() => setModal({ kind: "deletePlan", plan })}
-              >
-                <Icon name="trash-2" cls="ico-sm" />
-              </button>
-              <button
-                className="btn primary"
-                data-ui="create-task"
-                onClick={() => setModal({ kind: "task", planId: plan.id, defaultStatus: "todo" })}
-              >
-                <Icon name="plus" cls="ico-sm" />
-                <span className="plan-newlabel">{t("plan.action.newTask")}</span>
-              </button>
+              <ActionButton unstyled mode="icon" iconName="pencil" label={t("plan.action.editPlan")} tooltip={t("plan.action.editPlan")} className="btn icon ghost" data-ui="edit-plan" onClick={() => setModal({ kind: "plan", plan })} />
+              <ActionButton unstyled mode="icon" iconName="trash-2" label={t("plan.action.deletePlan")} tooltip={t("plan.action.deletePlan")} className="btn icon ghost" data-ui="delete-plan" onClick={() => setModal({ kind: "deletePlan", plan })} />
+              <ActionButton unstyled mode="text" label={t("plan.action.newTask")} tooltip={t("plan.action.newTask")} className="btn primary" data-ui="create-task" onClick={() => setModal({ kind: "task", planId: plan.id, defaultStatus: "todo" })}>
+                {t("plan.action.newTask")}
+              </ActionButton>
             </div>
           </div>
         )}
@@ -507,10 +491,9 @@ export function PlanView() {
               </div>
               <div className="plan-empty-title">{t("plan.empty.title")}</div>
               <div className="plan-empty-sub">{t("plan.empty.desc")}</div>
-              <button className="btn primary" data-ui="create-first-plan" onClick={() => setModal({ kind: "plan" })}>
-                <Icon name="plus" cls="ico-sm" />
+              <ActionButton unstyled mode="text" label={t("plan.empty.cta")} tooltip={t("plan.empty.cta")} className="btn primary" data-ui="create-first-plan" onClick={() => setModal({ kind: "plan" })}>
                 {t("plan.empty.cta")}
-              </button>
+              </ActionButton>
             </div>
           )}
           {taskLoc && (
@@ -570,13 +553,10 @@ export function PlanView() {
         <div className="plan-undo view-in" data-ui="task-delete-undo">
           <Icon name="trash-2" cls="ico-sm" />
           <span>{t("plan.undo.deleted", { title: undo.task.title })}</span>
-          <button data-ui="undo-task-delete" className="plan-undo-btn" onClick={undoDelete}>
-            <Icon name="undo-2" cls="ico-sm" />
+          <ActionButton unstyled mode="text" label={t("plan.undo.action")} tooltip={t("plan.undo.action")} className="plan-undo-btn" data-ui="undo-task-delete" onClick={undoDelete}>
             {t("plan.undo.action")}
-          </button>
-          <button className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={() => setUndo(null)}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          </ActionButton>
+          <ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={() => setUndo(null)} />
         </div>
       )}
       {notice && <div className="plan-notice view-in" data-ui="plan-notice">{notice}</div>}
@@ -631,9 +611,7 @@ function PlansSidebar({
 
       <div className="plan-side-section">
         <div className="plan-side-label">{t("plan.side.plans")}</div>
-        <button data-ui="create-plan" className="plan-side-add" title={t("plan.action.newPlan")} onClick={onAddPlan}>
-          <Icon name="plus" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="plus" label={t("plan.action.newPlan")} tooltip={t("plan.action.newPlan")} className="plan-side-add" data-ui="create-plan" onClick={onAddPlan} />
       </div>
 
       <div className="plan-list">

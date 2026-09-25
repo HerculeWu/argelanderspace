@@ -2,12 +2,12 @@ import { useReaderSession } from "../doc/ReaderSession";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AnnotationTextTarget } from "@argelanderspace/contracts";
-import { Icon } from "../lib/icons";
 import { useStore } from "../store";
 import i18n from "../i18n";
 import { useAnnotations } from "./AnnotationStore";
 import { createHighlightPainter, type HighlightPainter, type PaintEntry } from "./highlights";
 import { targetSummary } from "./model";
+import { ActionButton } from "../ui";
 import {
   buildContainerMap,
   caretFromPoint,
@@ -312,9 +312,14 @@ export function TextAnnotations() {
           role="toolbar"
           aria-label={t("annotation.summary.text")}
         >
-          <button
-            type="button"
-            className="ann-editor-btn primary" data-ui="annotate-selected-text"
+          <ActionButton
+            unstyled
+            mode="icon"
+            iconName="highlighter"
+            label={t("annotation.action.add")}
+            tooltip={t("annotation.action.addTooltip")}
+            className="ann-editor-btn primary"
+            data-ui="annotate-selected-text"
             // keep the selection alive until the click lands the create flow
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
@@ -322,10 +327,7 @@ export function TextAnnotations() {
               setPending(null);
               window.getSelection()?.removeAllRanges();
             }}
-          >
-            <Icon name="highlighter" cls="ico-sm" />
-            {t("annotation.action.add")}
-          </button>
+          />
         </div>
       )}
       {chooser && (

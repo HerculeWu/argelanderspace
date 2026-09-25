@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { TexDocIr } from "@argelanderspace/contracts";
 import { useStore } from "../store";
+import { ActionButton } from "../ui";
+import { useTranslation } from "react-i18next";
 
 // The paper's own author block (Stage 6, arXiv-HTML style): authors with
 // superscript affiliation links and emails, recovered from the LaTeX source
@@ -8,6 +10,7 @@ import { useStore } from "../store";
 // by default so the reading column keeps its first screen for the abstract.
 export function AuthorBlock() {
   const store = useStore();
+  const { t } = useTranslation();
   const meta = (store.ir as TexDocIr).meta;
   const authors = meta?.authorDetails;
   const affiliations = meta?.affiliations ?? [];
@@ -16,16 +19,19 @@ export function AuthorBlock() {
   const first = authors[0]!;
   return (
     <div className={"author-block" + (open ? " open" : "")}>
-      <button
-        type="button"
-        className="author-toggle" data-ui="toggle-authors"
+      <ActionButton
+        unstyled
+        mode="text"
+        className="author-toggle"
+        data-ui="toggle-authors"
         aria-expanded={open}
+        label={t(open ? "explore.authorsLess" : "explore.authorsMore")}
+        tooltip={t(open ? "explore.authorsLess" : "explore.authorsMore")}
         onClick={() => setOpen((v) => !v)}
-        title={open ? "Collapse author list" : "Show all authors, affiliations and emails"}
       >
         <span className="author-caret">{open ? "▾" : "▸"}</span>
         {authors.length === 1 ? first.name : `${first.name} et al. (${authors.length} authors)`}
-      </button>
+      </ActionButton>
       {open && (
         <div className="author-full">
           <ul className="author-list">

@@ -6,14 +6,16 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   busy?: boolean;
   busyLabel?: ReactNode;
+  /** Keep a caller's established control styling instead of layering the generic button surface. */
+  unstyled?: boolean;
 }
 
 /** Shared action control. `busy` owns duplicate-submit prevention and its accessible state. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "default", busy = false, busyLabel, disabled, className = "", children, type = "button", ...props },
+  { variant = "default", busy = false, busyLabel, disabled, unstyled = false, className = "", children, type = "button", ...props },
   ref
 ) {
-  const classes = ["btn", "ui-button", variant === "default" ? "" : variant, className]
+  const classes = [unstyled ? "" : "btn ui-button", unstyled || variant === "default" ? "" : variant, className]
     .filter(Boolean)
     .join(" ");
   return (

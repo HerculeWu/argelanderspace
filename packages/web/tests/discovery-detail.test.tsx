@@ -96,7 +96,12 @@ describe("DiscoveryDetail", () => {
     expect(container.textContent).toContain("similar()"); // source line
     expect(container.textContent).toContain("useful()");
     expect(container.querySelector('[data-ui="discovery-detail"]')?.getAttribute("data-ui-key")).toBe("REL1");
-    expect(container.querySelector('[data-ui="save-discovery-paper"]')).toBeTruthy();
+    const addButton = container.querySelector<HTMLButtonElement>('[data-ui="save-discovery-paper"]')!;
+    expect(addButton).toBeTruthy();
+    expect(addButton.textContent).toMatch(/加入文献库|Add to library/);
+    expect(addButton.querySelector("svg")).toBeNull(); // dynamic paper action stays text-only
+    expect(addButton.getAttribute("aria-label")).toMatch(/加入文献库|Add to library/);
+    expect(addButton.parentElement?.querySelector('[role="tooltip"]')?.textContent).toMatch(/加入文献库|Add to library/);
     fireEvent.click(container.querySelector('[data-testid="add-to-library"]')!);
     expect(props.onAdd).toHaveBeenCalledWith("REL1");
     fireEvent.click(container.querySelector('[data-testid="explore-from-here"]')!);

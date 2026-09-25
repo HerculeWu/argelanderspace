@@ -148,6 +148,42 @@ describe("PDF Doc persistence contracts", () => {
     });
     expect(parsed.annotations).toEqual([annotation]);
     expect(
+      PdfAnnotationsFileSchema.parse({
+        version: 1,
+        doc_id: "pdf-123",
+        content_sha256: "a".repeat(64),
+        rev: 2,
+        annotations: [{ ...base, kind: "highlight", color: "#387bd1", target: annotation.target }],
+      }).annotations[0]
+    ).toMatchObject({ kind: "highlight", color: "#387bd1" });
+    expect(
+      PdfAnnotationsFileSchema.parse({
+        version: 1,
+        doc_id: "pdf-123",
+        content_sha256: "a".repeat(64),
+        rev: 2,
+        annotations: [{ ...base, kind: "highlight", target: annotation.target }],
+      }).annotations[0]
+    ).not.toHaveProperty("color");
+    expect(
+      PdfAnnotationsFileSchema.safeParse({
+        version: 1,
+        doc_id: "pdf-123",
+        content_sha256: "a".repeat(64),
+        rev: 2,
+        annotations: [{ ...base, kind: "underline", color: "#387bd1", target: annotation.target }],
+      }).success
+    ).toBe(false);
+    expect(
+      PdfAnnotationsFileSchema.safeParse({
+        version: 1,
+        doc_id: "pdf-123",
+        content_sha256: "a".repeat(64),
+        rev: 2,
+        annotations: [{ ...base, kind: "highlight", color: "red", target: annotation.target }],
+      }).success
+    ).toBe(false);
+    expect(
       PdfAnnotationsFileSchema.safeParse({
         version: 1,
         doc_id: "pdf-123",

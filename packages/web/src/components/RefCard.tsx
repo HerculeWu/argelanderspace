@@ -13,6 +13,8 @@ import { Segments } from "../lib/segments";
 import { Math, htmlWithMath, flattenLatex } from "../lib/math";
 import { FigureImage } from "./FigureImage";
 import { limitTable, parseTable, type ParsedTable } from "../lib/tableparse";
+import { useTranslation } from "react-i18next";
+import { ActionButton } from "../ui";
 
 export type CardKind = "figure" | "table" | "equation" | "code" | "citation";
 
@@ -43,6 +45,7 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
   ref
 ) {
   const store = useStore();
+  const { t } = useTranslation();
   const { canAnnotate } = useReaderSession();
   const canGoto = card.kind !== "citation";
   const canExpand = card.kind !== "citation";
@@ -64,24 +67,28 @@ export const RefCard = forwardRef<HTMLDivElement, Props>(function RefCard(
         {(canGoto || canExpand) && (
           <div className="refcard-actions">
             {canExpand && (
-              <button
+              <ActionButton
+                mode="icon"
+                unstyled
+                iconName={expanded ? "minus" : "plus"}
+                label={t(expanded ? "components.referenceCard.collapse" : "components.referenceCard.expand")}
+                tooltip={t(expanded ? "components.referenceCard.collapse" : "components.referenceCard.expand")}
                 className={"icon-btn" + (expanded ? " on" : "")}
                 data-ui="expand-reference-card"
                 onClick={onToggleExpand}
-                title={expanded ? "Collapse" : "Expand inline"}
-              >
-                {expanded ? "−" : "+"}
-              </button>
+              />
             )}
             {canGoto && gotoId && (
-              <button
+              <ActionButton
+                mode="icon"
+                unstyled
+                iconName="corner-up-right"
+                label={t("components.referenceCard.jump")}
+                tooltip={t("components.referenceCard.jump")}
                 className="icon-btn"
                 data-ui="jump-to-reference-target"
                 onClick={() => store.jumpTo(gotoId)}
-                title="Go to in document"
-              >
-                ⤴
-              </button>
+              />
             )}
           </div>
         )}

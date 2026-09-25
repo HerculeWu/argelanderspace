@@ -49,6 +49,9 @@ describe("AuthorBlock", () => {
     const { container } = renderBlock(META);
     const toggle = container.querySelector(".author-toggle")!;
     expect(toggle.textContent).toContain("Dhanraj Risbud et al. (3 authors)");
+    expect(container.querySelector('[role="tooltip"]')?.textContent).toBe(toggle.getAttribute("aria-label"));
+    expect(toggle.hasAttribute("title")).toBe(false);
+    expect(toggle.getAttribute("data-ui")).toBe("toggle-authors");
     expect(container.querySelector(".author-full")).toBeNull();
   });
 

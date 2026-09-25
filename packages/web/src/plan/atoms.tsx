@@ -1,4 +1,5 @@
-import { Icon } from "../lib/icons";
+import { useTranslation } from "react-i18next";
+import { ActionButton } from "../ui";
 import { STATUS_ICON, statusLabel, type TaskStatus } from "./model";
 
 // Small shared atoms of the plan page (Stage 4): the status dot/button,
@@ -41,17 +42,23 @@ export function ProgressRing({
 
 /** The single-click status cycler on task rows/cards. */
 export function StatusBtn({ status, onCycle }: { status: TaskStatus; onCycle?: () => void }) {
+  const { t } = useTranslation();
+  const label = onCycle ? t(`plan.statusCycle.${status}`) : statusLabel(status);
   return (
-    <button
-      className={`plan-st-btn plan-s-${status}`} data-ui="cycle-task-status"
+    <ActionButton
+      unstyled
+      mode="icon"
+      iconName={STATUS_ICON[status]}
+      label={label}
+      tooltip={label}
+      className={`plan-st-btn plan-s-${status}`}
+      disabled={!onCycle}
+      data-ui="cycle-task-status"
       onClick={(e) => {
         e.stopPropagation();
         onCycle?.();
       }}
-      title={statusLabel(status)}
-    >
-      <Icon name={STATUS_ICON[status]} cls="ico-sm" />
-    </button>
+    />
   );
 }
 
@@ -67,14 +74,19 @@ export function DrawerStatusRow({
   return (
     <div className="plan-drawer-status-row">
       {order.map((s) => (
-        <button
+        <ActionButton
           key={s}
-          className={`plan-drawer-st plan-s-${s}${status === s ? " on" : ""}`} data-ui="set-task-status" data-ui-key={s}
+          unstyled
+          mode="icon"
+          iconName={STATUS_ICON[s]}
+          label={statusLabel(s)}
+          tooltip={statusLabel(s)}
+          className={`plan-drawer-st plan-s-${s}${status === s ? " on" : ""}`}
+          data-ui="set-task-status"
+          data-ui-key={s}
+          aria-pressed={status === s}
           onClick={() => onSet(s)}
-        >
-          <Icon name={STATUS_ICON[s]} cls="ico-sm" />
-          {statusLabel(s)}
-        </button>
+        />
       ))}
     </div>
   );

@@ -295,9 +295,9 @@ describe("manuscript list", () => {
   });
 
   it("new-manuscript modal requires a template before Create enables", async () => {
-    const { getByText, getAllByText, getByRole, container } = render(<WriterView />);
-    await waitFor(() => getByText("新建稿件"));
-    fireEvent.click(getByText("新建稿件"));
+    const { getAllByText, getByRole, container } = render(<WriterView />);
+    await waitFor(() => container.querySelector('[data-ui="create-manuscript"]'));
+    fireEvent.click(container.querySelector('[data-ui="create-manuscript"]')!);
     const create = getByRole("button", { name: /创建/ });
     expect(create.hasAttribute("disabled")).toBe(true);
     const select = container.querySelector(".w-modal select")!;
@@ -313,7 +313,7 @@ describe("manuscript list", () => {
     const { getByText, queryByText, container } = render(<WriterView />);
     await waitFor(() => container.querySelector('[data-ms="m_0a1b2c3d"]'));
     const row = container.querySelector('[data-ms="m_0a1b2c3d"]')!;
-    fireEvent.click(row.querySelector('button[title="删除"]')!);
+    fireEvent.click(row.querySelector('[data-ui="delete-manuscript"]')!);
     getByText("删除稿件"); // confirm dialog
     fireEvent.click(getByText("删除", { selector: ".w-modal-foot button" }));
     await waitFor(() => expect(queryByText("Stellar Streams in the Galactic Halo")).toBeNull());
@@ -322,6 +322,31 @@ describe("manuscript list", () => {
 });
 
 describe("editor", () => {
+  it("uses shared icon-only actions with localized accessible names while retaining text for ambiguous actions", async () => {
+    const view = render(<WriterView />);
+    const { container } = await openSample(view);
+    const edit = container.querySelector<HTMLButtonElement>('[data-ui="edit-cell"]')!;
+    expect(edit.getAttribute("aria-label")).toBe("编辑单元格");
+    expect(edit.textContent).toBe("");
+    expect(edit.querySelector("svg")).not.toBeNull();
+    const tooltipId = edit.getAttribute("aria-describedby");
+    expect(tooltipId && container.querySelector(`[id="${tooltipId}"][role="tooltip"]`)?.textContent).toBe("编辑单元格");
+    const renderButton = container.querySelector<HTMLButtonElement>('[data-ui="render-manuscript"]')!;
+    expect(renderButton.getAttribute("aria-label")).toBe("渲染");
+    expect(renderButton.textContent).toBe("");
+    expect(renderButton.querySelector("svg")).toBeTruthy();
+    const exportButton = container.querySelector<HTMLButtonElement>('[data-ui="export-manuscript"]')!;
+    expect(exportButton.getAttribute("aria-label")).toBe("导出");
+    expect(exportButton.textContent).toBe("");
+    expect(exportButton.querySelector("svg")).toBeTruthy();
+    const figure = container.querySelector<HTMLElement>('[data-cell="c_0ab50004"]')!;
+    fireEvent.click(figure.querySelector('[data-ui="edit-cell"]')!);
+    const placement = figure.querySelector<HTMLButtonElement>('[data-ui="cell-placement"][data-ui-key="left"]')!;
+    expect(placement.getAttribute("aria-label")).toBe("左对齐");
+    expect(placement.textContent).toBe("左对齐");
+    expect(placement.querySelector("svg")).toBeNull();
+  });
+
   it("opens the sample and round-trips a latex cell edit via Shift+Enter", async () => {
     const view = render(<WriterView />);
     const { container } = await openSample(view);
@@ -467,8 +492,8 @@ describe("editor", () => {
 
   it("new manuscript: empty state offers the first-cell add button", async () => {
     const view = render(<WriterView />);
-    await waitFor(() => view.getByText("新建稿件"));
-    fireEvent.click(view.getByText("新建稿件"));
+    await waitFor(() => view.container.querySelector('[data-ui="create-manuscript"]'));
+    fireEvent.click(view.container.querySelector('[data-ui="create-manuscript"]')!);
     const select = view.container.querySelector(".w-modal select")!;
     fireEvent.change(select, { target: { value: "report" } });
     fireEvent.click(view.getByRole("button", { name: /创建/ }));

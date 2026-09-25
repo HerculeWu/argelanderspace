@@ -291,8 +291,24 @@ describe("right-panel tabs", () => {
 
     fireEvent.click(tabButton(container, "标注"));
     await waitFor(() => expect(annEntryIds(container)).toEqual(["a_00000002", "a_00000001"]));
-    expect(tabButton(container, "标注").className).toContain("on");
-    expect(tabButton(container, "引用").className).not.toContain("on");
+    expect(tabButton(container, "标注").classList.contains("on")).toBe(true);
+    expect(tabButton(container, "引用").classList.contains("on")).toBe(false);
+  });
+
+  it("uses icon-only actions for saved annotation edit/delete while preserving localized names", async () => {
+    serverFile.annotations = [mkAnn("a_00000001", structTarget("p-1", "paragraph"), "原文建议")];
+    const { container } = renderDocPane();
+    await ready(container);
+    fireEvent.click(tabButton(container, "标注"));
+    await waitFor(() => expect(annEntryIds(container)).toEqual(["a_00000001"]));
+
+    for (const [ui, label] of [["edit-latex-annotation", "编辑标注"], ["delete-latex-annotation", "删除标注"]]) {
+      const button = container.querySelector<HTMLButtonElement>(`[data-ui="${ui}"]`);
+      expect(button).toBeTruthy();
+      expect(button?.getAttribute("aria-label")).toBe(label);
+      expect(button?.textContent?.trim()).toBe("");
+      expect(button?.querySelector("svg")).toBeTruthy();
+    }
   });
 
   it("lists annotations document-level first, then in document order", async () => {
@@ -493,7 +509,7 @@ describe("edit + delete", () => {
     // enter edit mode
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.dataset.ui === "edit-latex-annotation"
       )!
     );
     const ta = pop.querySelector("textarea")!;
@@ -522,7 +538,7 @@ describe("edit + delete", () => {
     const pop = await waitPopover(container);
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.dataset.ui === "edit-latex-annotation"
       )!
     );
     const ta = pop.querySelector("textarea")!;
@@ -557,7 +573,7 @@ describe("edit + delete", () => {
     const pop = await waitPopover(container);
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.dataset.ui === "edit-latex-annotation"
       )!
     );
     const ta = pop.querySelector("textarea")!;
@@ -609,7 +625,7 @@ describe("document-level annotations via the panel-top editor", () => {
     fireEvent.click(
       await waitFor(() => {
         const b = [...container.querySelectorAll<HTMLButtonElement>("button")].find((x) =>
-          x.textContent?.includes("添加文档标注")
+          x.dataset.ui === "add-document-annotation"
         );
         expect(b).toBeTruthy();
         return b!;
@@ -824,7 +840,7 @@ describe("review probes (MS3 fix round)", () => {
     const pop = await waitPopover(container);
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.dataset.ui === "edit-latex-annotation"
       )!
     );
     const ta = pop.querySelector("textarea")!;
@@ -850,7 +866,7 @@ describe("review probes (MS3 fix round)", () => {
     // the popover now views the created annotation — edit it in place
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.dataset.ui === "edit-latex-annotation"
       )!
     );
     await waitFor(() => expect(pop.querySelector("textarea")?.value).toBe("链上的创建"));
@@ -864,7 +880,7 @@ describe("review probes (MS3 fix round)", () => {
     // delete from the same popover
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("删除")
+        b.dataset.ui === "delete-latex-annotation"
       )!
     );
     await waitFor(() => expect(putBodies).toHaveLength(3));
@@ -908,7 +924,7 @@ describe("review probes (MS3 fix round)", () => {
     const pop = await waitPopover(container);
     fireEvent.click(
       [...pop.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.dataset.ui === "edit-latex-annotation"
       )!
     );
     const ta = pop.querySelector("textarea")!;

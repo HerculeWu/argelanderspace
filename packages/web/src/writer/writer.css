@@ -25,6 +25,7 @@
 }
 
 /* ---------- topbar ---------- */
+.w-topbar [data-ui="render-manuscript"][aria-busy="true"] svg { animation: cgspin .8s linear infinite; }
 .w-topbar {
   height: 50px;
   flex: none;
@@ -90,6 +91,10 @@
   color: var(--paper-muted);
   z-index: 3;
 }
+.w-side > .ui-tooltip-anchor { position: absolute; top: 8px; z-index: 3; }
+.w-side.left > .ui-tooltip-anchor { right: 6px; }
+.w-side.right > .ui-tooltip-anchor { left: 6px; }
+.w-side > .ui-tooltip-anchor .w-panel-toggle { position: static; }
 .w-side.left .w-panel-toggle { right: 6px; }
 .w-side.right .w-panel-toggle { left: 6px; }
 .w-panel-toggle:hover { color: var(--accent); border-color: var(--accent); }
@@ -144,7 +149,8 @@
 .w-outline-group-head { color: var(--paper-muted); font-size: var(--fs-xs); font-weight: 650; margin-bottom: 5px; }
 .w-outline-row { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 5px; border-radius: 5px; }
 .w-outline-row:hover { background: var(--paper-hover); }
-.w-outline-row .w-jump {
+.w-outline-row > .ui-tooltip-anchor:first-child { display: flex; flex: 1; min-width: 0; }
+.w-outline-row .w-jump { width: 100%;
   flex: 1;
   min-width: 0;
   background: transparent;
@@ -477,6 +483,7 @@ table.w-preview th { background: var(--paper-panel); font-weight: 650; }
   font-family: var(--font-sans);
   animation: popIn 0.13s ease;
 }
+.w-menu > .ui-tooltip-anchor { display: flex; width: 100%; }
 .w-menu-item {
   width: 100%;
   display: flex;

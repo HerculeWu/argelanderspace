@@ -2,12 +2,12 @@ import { useReaderSession } from "../doc/ReaderSession";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Annotation, AnnotationTarget } from "@argelanderspace/contracts";
-import { Icon } from "../lib/icons";
 import { mdWithMath } from "../lib/mdWithMath";
 import i18n from "../i18n";
 import { useAnnotations } from "./AnnotationStore";
 import { CreateAnnotationEditor, EditAnnotationEditor } from "./AnnotationEditor";
 import { kindLabel, targetBlockId } from "./model";
+import { ActionButton } from "../ui";
 
 // The annotation popover (Stage 8 MS3): creation and editing both go through
 // it. Rendered as a child of the reader's <main> so block lookups stay scoped
@@ -135,9 +135,7 @@ export function AnnotationPopover() {
         <span className="ann-popover-target" title={headLabel}>
           {headLabel}
         </span>
-        <button className="btn icon ghost" data-ui="close-latex-annotation" title={t("common.close")} onClick={ann.closePopover}>
-          <Icon name="x" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="btn icon ghost" data-ui="close-latex-annotation" onClick={ann.closePopover} />
       </div>
 
       {popover.mode === "create" && (
@@ -152,18 +150,8 @@ export function AnnotationPopover() {
             dangerouslySetInnerHTML={{ __html: mdWithMath(viewed.body) }}
           />
           <div className="ann-popover-foot">
-            <button className="ann-editor-btn" data-ui="edit-latex-annotation" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }}>
-              <Icon name="pencil" cls="ico-sm" />
-              {t("common.edit")}
-            </button>
-            <button
-              className="ann-editor-btn danger" data-ui="delete-latex-annotation"
-              disabled={ann.busy}
-              onClick={() => void ann.removeAnnotation(viewed.id)}
-            >
-              <Icon name="trash-2" cls="ico-sm" />
-              {t("common.delete")}
-            </button>
+            <ActionButton unstyled mode="icon" iconName="pencil" className="ann-editor-btn" label={t("annotation.action.edit")} tooltip={t("annotation.action.edit")} data-ui="edit-latex-annotation" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }} />
+            <ActionButton unstyled mode="icon" iconName="trash-2" className="ann-editor-btn danger" label={t("annotation.action.delete")} tooltip={t("annotation.action.delete")} data-ui="delete-latex-annotation" disabled={ann.busy} onClick={() => void ann.removeAnnotation(viewed.id)} />
           </div>
         </>
       )}

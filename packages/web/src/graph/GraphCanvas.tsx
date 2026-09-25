@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import {
   cgComputeLayout,
   cgHue,
@@ -605,28 +606,9 @@ export function GraphCanvas({
       </div>
 
       <div className="graph-top-actions" data-ui="graph-actions">
-        <button
-          className={"btn icon ghost hide-small" + (labelsOn ? " on" : "")}
-          data-ui="toggle-graph-labels"
-          title={t("graph.showLabels")}
-          aria-label={t("graph.showLabels")}
-          aria-pressed={labelsOn}
-          onClick={() => setLabelsOn((v) => !v)}
-        >
-          <span className="mono" style={{ fontSize: 12, color: labelsOn ? "var(--accent)" : "var(--text-faint)" }}>
-            Aa
-          </span>
-        </button>
+        <ActionButton unstyled mode="icon" iconName="text" className={"btn icon ghost hide-small" + (labelsOn ? " on" : "")} data-ui="toggle-graph-labels" label={t("graph.showLabels")} tooltip={t("graph.showLabels")} aria-pressed={labelsOn} onClick={() => setLabelsOn((v) => !v)} />
         {seedId && (
-          <button
-            className="btn icon"
-            data-ui="focus-graph-seed"
-            title={t("graph.jumpSeed")}
-            aria-label={t("graph.jumpSeed")}
-            onClick={focusSeed}
-          >
-            <Icon name="target" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="target" className="btn icon" label={t("graph.jumpSeed")} tooltip={t("graph.jumpSeed")} data-ui="focus-graph-seed" onClick={focusSeed} />
         )}
       </div>
 
@@ -669,43 +651,11 @@ export function GraphCanvas({
       )}
 
       <div className="cg-zoom" data-ui="graph-zoom-controls">
-        <button
-          className="cg-zbtn"
-          data-testid="zoom-in" data-ui="zoom-in"
-          aria-label={t("graph.zoomIn")}
-          title={t("graph.zoomIn")}
-          onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)}
-        >
-          <Icon name="plus" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="plus" className="cg-zbtn" label={t("graph.zoomIn")} tooltip={t("graph.zoomIn")} data-testid="zoom-in" data-ui="zoom-in" onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} />
         <span className="zoom-value mono">{Math.round(v.k * 100)}%</span>
-        <button
-          className="cg-zbtn"
-          data-ui="zoom-out"
-          aria-label={t("graph.zoomOut")}
-          title={t("graph.zoomOut")}
-          onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)}
-        >
-          <Icon name="minus" cls="ico-sm" />
-        </button>
-        <button
-          className="cg-zbtn"
-          data-testid="fit-view" data-ui="fit-graph"
-          aria-label={t("graph.fitView")}
-          title={t("graph.fitView")}
-          onClick={fitView}
-        >
-          <Icon name="expand" cls="ico-sm" />
-        </button>
-        <button
-          className="cg-zbtn"
-          data-ui="relayout-graph"
-          aria-label={t("graph.relayout")}
-          title={t("graph.relayout")}
-          onClick={relayout}
-        >
-          <Icon name="rotate-ccw" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="minus" className="cg-zbtn" label={t("graph.zoomOut")} tooltip={t("graph.zoomOut")} data-ui="zoom-out" onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} />
+        <ActionButton unstyled mode="icon" iconName="expand" className="cg-zbtn" label={t("graph.fitView")} tooltip={t("graph.fitView")} data-testid="fit-view" data-ui="fit-graph" onClick={fitView} />
+        <ActionButton unstyled mode="icon" iconName="rotate-ccw" className="cg-zbtn" label={t("graph.relayout")} tooltip={t("graph.relayout")} data-ui="relayout-graph" onClick={relayout} />
       </div>
 
       {hoverNode && tooltip && !drag.current && (

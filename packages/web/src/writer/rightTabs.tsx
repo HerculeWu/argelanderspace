@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import type { WriterComment, WriterManuscript, WriterNumberingResponse } from "@argelanderspace/contracts";
 import { fetchLibrary } from "../api/library";
 import type { LibraryRef } from "../library/types";
@@ -70,14 +71,10 @@ function ReferencesPanel({ onInsertCite }: { onInsertCite: (key: string) => void
           </div>
           <div className="w-ref-foot">
             <span className="w-key">{r.cite}</span>
-            <button
-              className="w-insert-key"
+            <ActionButton unstyled mode="icon" iconName="plus" className="w-insert-key"
               data-ref-key={r.cite} data-ui="insert-cite-key"
-              title={t("writer.refs.insert")}
-              onClick={() => onInsertCite(r.cite)}
-            >
-              <Icon name="plus" cls="ico-sm" />
-            </button>
+              label={t("writer.refs.insert")} tooltip={t("writer.refs.insert")}
+              onClick={() => onInsertCite(r.cite)} />
           </div>
         </div>
       ))}
@@ -137,16 +134,12 @@ function CrossrefsPanel({
           </div>
           <div className="w-ref-foot">
             <span className="w-key">{x.label || t("writer.xref.noLabel")}</span>
-            <button
-              className="w-insert-key"
-              data-xref-insert={x.label} data-ui="insert-crossref"
-              data-target-cell={x.cell}
-              title={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}
+            <ActionButton unstyled mode="icon" iconName="plus" className="w-insert-key"
+              data-xref-insert={x.label} data-ui="insert-crossref" data-target-cell={x.cell}
+              label={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}
+              tooltip={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.xref.insert")}
               disabled={x.insertable === false}
-              onClick={() => onInsertLabel(x.cell, x.label, x.envIndex, x.sectionIndex)}
-            >
-              <Icon name="plus" cls="ico-sm" />
-            </button>
+              onClick={() => onInsertLabel(x.cell, x.label, x.envIndex, x.sectionIndex)} />
           </div>
         </div>
       ))}
@@ -203,9 +196,9 @@ function CommentsPanel({
           onChange={(e) => setBody(e.target.value)}
           placeholder={t("writer.comments.placeholder")}
         />
-        <button className="btn primary" data-ui="add-cell-comment" disabled={!body.trim() || !target} onClick={add}>
+        <ActionButton unstyled mode="text" className="btn primary" label={t("writer.comments.add")} tooltip={t("writer.comments.add")} data-ui="add-cell-comment" disabled={!body.trim() || !target} onClick={add}>
           {t("writer.comments.add")}
-        </button>
+        </ActionButton>
       </div>
     </div>
   );
@@ -237,25 +230,17 @@ export function RightTabs({
   return (
     <>
       <div className="w-right-tabs" data-ui="writer-panel-tabs">
-        <button
+        <ActionButton unstyled mode="text" label={t("writer.tabs.references")} tooltip={t("writer.tabs.references")}
           data-ui="writer-tab" data-ui-key="references" className={"w-right-tab" + (tab === "references" ? " on" : "")}
-          onClick={() => onTab("references")}
-        >
-          {t("writer.tabs.references")}
-        </button>
-        <button
+          onClick={() => onTab("references")}>{t("writer.tabs.references")}</ActionButton>
+        <ActionButton unstyled mode="text" label={t("writer.tabs.crossrefs")} tooltip={t("writer.tabs.crossrefs")}
           data-ui="writer-tab" data-ui-key="crossrefs" className={"w-right-tab" + (tab === "crossrefs" ? " on" : "")}
-          onClick={() => onTab("crossrefs")}
-        >
-          {t("writer.tabs.crossrefs")}
-        </button>
-        <button
+          onClick={() => onTab("crossrefs")}>{t("writer.tabs.crossrefs")}</ActionButton>
+        <ActionButton unstyled mode="text" label={t("writer.tabs.comments")} tooltip={t("writer.tabs.comments")}
           data-ui="writer-tab" data-ui-key="comments" className={"w-right-tab" + (tab === "comments" ? " on" : "")}
-          onClick={() => onTab("comments")}
-        >
-          {t("writer.tabs.comments")}{" "}
-          <span className="w-badge">{doc.comments.length}</span>
-        </button>
+          onClick={() => onTab("comments")}>
+          {t("writer.tabs.comments")} <span className="w-badge">{doc.comments.length}</span>
+        </ActionButton>
       </div>
       {tab === "references" && <ReferencesPanel onInsertCite={onInsertCite} />}
       {tab === "crossrefs" && (

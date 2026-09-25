@@ -2,6 +2,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { IrSection, RefManifestRow } from "@argelanderspace/contracts";
 import { useStore, useActiveSectionId } from "../store";
 import { MathText } from "../lib/segments";
+import { useTranslation } from "react-i18next";
+import { ActionButton } from "../ui";
 
 const KIND_TITLE: Record<string, string> = {
   figure: "Figure",
@@ -41,6 +43,7 @@ function flattenSections(secs: IrSection[]): IrSection[] {
 
 export function TocPanel() {
   const store = useStore();
+  const { t } = useTranslation();
   const { ir } = store;
   const active = useActiveSectionId();
   const titleId = ir.sections[0]?.id;
@@ -57,41 +60,49 @@ export function TocPanel() {
 
   return (
     <div className="toc" data-ui="latex-outline">
-      <div className="panel-title">Contents</div>
+      <div className="panel-title">{t("components.outline.contents")}</div>
       <OutlineList items={sections.filter((s) => s.id !== titleId).map((s) => ({ id: s.id, title: s.heading ?? "", level: s.level, ...(s.number ? { number: s.number } : {}) }))} onSelect={store.jumpTo} activeId={active} renderTitle={(item) => <MathText as="span" text={item.title} />} />
 
-      <FloatGroup title={`Figures (${figures.length})`} items={figures} />
-      <FloatGroup title={`Tables (${tables.length})`} items={tables} />
-      <FloatGroup
-        title={`Equations (${equations.length})`}
-        items={equations}
-        fallbackLabel="Equation"
-      />
+      <FloatGroup id="figure" title={t("components.outline.figures")} items={figures} />
+      <FloatGroup id="table" title={t("components.outline.tables")} items={tables} />
+      <FloatGroup id="equation" title={t("components.outline.equations")} items={equations} fallbackLabel="Equation" />
       {codeFloats.length > 0 && (
-        <FloatGroup title={`Code (${codeFloats.length})`} items={codeFloats} fallbackLabel="Listing" />
+        <FloatGroup id="code" title={t("components.outline.code")} items={codeFloats} fallbackLabel="Listing" />
       )}
     </div>
   );
 }
 
 function FloatGroup({
+  id,
   title,
   items,
   fallbackLabel,
 }: {
+  id: string;
   title: string;
   items: RefManifestRow[];
   fallbackLabel?: string;
 }) {
   const store = useStore();
+  const { t } = useTranslation();
   const [open, setOpen] = useState(true);
   if (items.length === 0) return null;
   return (
-    <div className="toc-group" data-ui="outline-group">
-      <div className="toc-group-title" onClick={() => setOpen((v) => !v)}>
-        <span>{open ? "▾" : "▸"}</span>
-        {title}
-      </div>
+    <div className="toc-group" data-ui="outline-group" data-ui-key={id}>
+      <ActionButton
+        unstyled
+        mode="text"
+        label={`${title} (${items.length})`}
+        tooltip={open ? t("doc.actions.collapseOutline") : t("doc.actions.expandOutline")}
+        className="toc-group-title"
+        data-ui="toggle-outline-group"
+        data-ui-key={id}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        {title} ({items.length})
+      </ActionButton>
       {open &&
         items.map((it, i) => {
           const label =

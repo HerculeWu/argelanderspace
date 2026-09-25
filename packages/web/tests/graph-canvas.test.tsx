@@ -4,7 +4,7 @@
  * LibraryGraph adapter mapping.
  */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";import { GraphCanvas, type CanvasNode } from "../src/graph/GraphCanvas";
 import { LibraryGraph } from "../src/library/LibraryGraph";
 import type { GraphData } from "../src/library/types";
@@ -95,6 +95,23 @@ describe("GraphCanvas", () => {
     expect(container.querySelector('[data-testid="fit-view"]')).toBeTruthy();
     // Useful legend chip
     expect(container.textContent).toContain("Useful");
+  });
+
+  it("uses localized, accessible icon actions for graph controls", () => {
+    vi.stubGlobal("ResizeObserver", RO);
+    const { container } = renderCanvas();
+    const zoomIn = container.querySelector<HTMLButtonElement>('[data-ui="zoom-in"]')!;
+    expect(zoomIn.getAttribute("aria-label")).toBeTruthy();
+    expect(zoomIn.querySelector("svg")).toBeTruthy();
+    expect(zoomIn.textContent).toBe("");
+    expect([...container.querySelectorAll('[data-ui="control-tooltip"]')].some((tip) => tip.textContent === zoomIn.getAttribute("aria-label"))).toBe(true);
+    const fit = container.querySelector<HTMLButtonElement>('[data-ui="fit-graph"]')!;
+    expect(fit.getAttribute("aria-label")).toBeTruthy();
+    expect(fit.querySelector("svg")).toBeTruthy();
+    const labels = container.querySelector<HTMLButtonElement>('[data-ui="toggle-graph-labels"]')!;
+    expect(labels.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(labels);
+    expect(labels.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("keeps graph node identifiers bound to identity across a refreshed result", () => {

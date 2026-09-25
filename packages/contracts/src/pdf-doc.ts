@@ -95,6 +95,19 @@ const PdfTextTargetSchema = z
       });
     }
   });
+export const PdfHighlightColorSchema = z.enum([
+  "#ffd228",
+  "#ef8e27",
+  "#df5252",
+  "#d457a9",
+  "#805bbb",
+  "#387bd1",
+  "#22a6b9",
+  "#40a25b",
+  "#7e8796",
+]);
+export type PdfHighlightColor = z.infer<typeof PdfHighlightColorSchema>;
+
 const PdfAnnotationBaseSchema = z
   .object({
     id: z.string().min(1).max(128),
@@ -130,6 +143,7 @@ export const PdfAnnotationSchema = z
     PdfAnnotationBaseSchema.extend({
       kind: z.literal("highlight"),
       target: PdfTextTargetSchema,
+      color: PdfHighlightColorSchema.optional(),
     }),
     PdfAnnotationBaseSchema.extend({
       kind: z.literal("underline"),
@@ -141,6 +155,12 @@ export const PdfAnnotationSchema = z
     }),
   ])
   .superRefine((annotation, ctx) => {
+    if (annotation.kind !== "highlight" && "color" in annotation)
+      ctx.addIssue({
+        code: "custom",
+        path: ["color"],
+        message: "color applies only to highlights",
+      });
     if (annotation.kind !== "rectangle" && "style" in annotation)
       ctx.addIssue({
         code: "custom",

@@ -13,6 +13,7 @@ import { useWorkspace } from "../argelander/workspace";
 import { fetchDocDescription } from "../api/doc";
 import type { DocDescription } from "@argelanderspace/contracts";
 import { PdfReader } from "./PdfReader";
+import { ActionButton } from "../ui";
 
 // The document reader, hosted as ArgelanderSpace's Doc pane. Which paper is shown
 // is driven by the shared workspace (so the Library's "open in Doc" works);
@@ -47,7 +48,7 @@ function DocReadingEntry({ docId }: { docId: string }) {
   if (state.phase === "loading") return <div className="reader-root" data-ui="doc-loading" data-ui-key={docId}><div className="loading">{t("doc.loadingPaper")}</div></div>;
   if (state.phase === "error") return <div className="reader-root" data-ui="doc-error" data-ui-key={docId}><div role="alert">
     {t("doc.sync.error")}
-    <button data-ui="retry-doc" onClick={() => setAttempt((current) => current + 1)}>{t("doc.sync.manualRetry")}</button>
+    <ActionButton mode="text" label={t("doc.sync.manualRetry")} tooltip={t("doc.sync.manualRetry")} data-ui="retry-doc" onClick={() => setAttempt((current) => current + 1)}>{t("doc.sync.manualRetry")}</ActionButton>
   </div></div>;
   switch (state.description.format) {
     case "latex":
@@ -65,7 +66,7 @@ function SessionWorkspace() {
   return <div className="reader-session" data-ui="latex-session" data-ui-key={controller.docId}>
     {state.phase !== "ready" && <div className="reader-sync-status" role="status" data-ui="latex-sync-status">
       {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
-      <button data-ui="retry-latex-sync" onClick={controller.retry}>{t("doc.sync.manualRetry")}</button>
+      <ActionButton mode="text" label={t("doc.sync.manualRetry")} tooltip={t("doc.sync.manualRetry")} data-ui="retry-latex-sync" onClick={controller.retry}>{t("doc.sync.manualRetry")}</ActionButton>
     </div>}
     <RetainedDrafts />
     {ir && state.phase !== "missing" ? <StoreProvider ir={ir} anchorPending={!!ws.pendingAnchor}>
@@ -138,14 +139,16 @@ function DocWorkspace({
       <span className="reader-position-note">{t("doc.positionNote")}</span>
       <div className="reader-main" data-ui="latex-reader-layout">
         <aside data-ui="latex-outline-panel" className={"panel left" + (collapsedLeft ? " collapsed" : "")}>
-          <button
+          <ActionButton
+            mode="icon"
+            iconName={collapsedLeft ? "chevron-right" : "chevron-left"}
+            label={t(collapsedLeft ? "doc.actions.expandOutline" : "doc.actions.collapseOutline")}
+            tooltip={t(collapsedLeft ? "doc.actions.expandOutline" : "doc.actions.collapseOutline")}
             className="panel-toggle"
+            unstyled
             data-ui="toggle-latex-outline"
-            title={collapsedLeft ? t("doc.expandContents") : t("doc.collapseContents")}
             onClick={() => setCollapsedLeft((v) => !v)}
-          >
-            {collapsedLeft ? "»" : "«"}
-          </button>
+          />
           <span className="rail-label">{t("doc.railContents")}</span>
           <div className="panel-body">
             <TocPanel />
@@ -159,14 +162,16 @@ function DocWorkspace({
         </div>
 
         <aside data-ui="latex-right-panel" className={"panel right" + (collapsedRight ? " collapsed" : "")}>
-          <button
+          <ActionButton
+            mode="icon"
+            iconName={collapsedRight ? "chevron-left" : "chevron-right"}
+            label={t(collapsedRight ? "doc.actions.expandReferences" : "doc.actions.collapseReferences")}
+            tooltip={t(collapsedRight ? "doc.actions.expandReferences" : "doc.actions.collapseReferences")}
             className="panel-toggle"
+            unstyled
             data-ui="toggle-latex-right-panel"
-            title={collapsedRight ? t("doc.expandRefs") : t("doc.collapseRefs")}
             onClick={() => setCollapsedRight((v) => !v)}
-          >
-            {collapsedRight ? "«" : "»"}
-          </button>
+          />
           <span className="rail-label">{t("doc.railRefs")}</span>
           <div className="panel-body">
             <RightPanel />
@@ -208,9 +213,7 @@ function AnnotationToast() {
   return (
     <div className="ann-toast view-in" role="status" data-ui="latex-annotation-notice">
       <span>{ann.notice}</span>
-      <button data-ui="dismiss-annotation-notice" className="ann-toast-x" title={t("common.close")} onClick={ann.dismissNotice}>
-        ×
-      </button>
+      <ActionButton unstyled mode="icon" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="ann-toast-x" data-ui="dismiss-annotation-notice" onClick={ann.dismissNotice} />
     </div>
   );
 }
@@ -221,8 +224,6 @@ function UndoFab() {
   const canUndo = useCanUndo();
   if (!canUndo) return null;
   return (
-    <button data-ui="undo-latex-navigation" className="undo-fab" onClick={store.undo} title={t("doc.undoTitle")}>
-      {t("doc.undoBack")}
-    </button>
+    <ActionButton unstyled mode="icon" iconName="undo-2" label={t("doc.actions.undoNavigation")} tooltip={t("doc.actions.undoNavigation")} data-ui="undo-latex-navigation" className="undo-fab" onClick={store.undo} />
   );
 }

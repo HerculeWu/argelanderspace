@@ -8,8 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { Icon } from "../lib/icons";
-import { IconButton } from "./IconButton";
+import { ActionButton } from "./ActionButton";
 
 const FOCUSABLE = [
   "button:not([disabled])",
@@ -168,10 +167,12 @@ export function Dialog({
               </div>
             )}
           </div>
-          <IconButton
+          <ActionButton
+            mode="icon"
+            iconName="x"
             label={closeLabel}
+            tooltip={closeLabel}
             data-ui="close-dialog"
-            icon={<Icon name="x" cls="ico-sm" />}
             variant="ghost"
             disabled={busy}
             onClick={requestClose}

@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DiscoveryGraph, DiscoveryPaper } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { DiscoveryDetail } from "./DiscoveryDetail";
 import { DiscoveryGraphView } from "./DiscoveryGraphView";
 import {
@@ -103,15 +104,7 @@ export function ExploreMode({
   return (
     <div className="explore-root" data-ui="discovery-view">
       <div className="explore-header" data-ui="discovery-header">
-        <button
-          className="btn icon ghost"
-          data-testid="back-to-library" data-ui="return-to-library"
-          title={t("explore.backLibrary")}
-          aria-label={t("explore.backLibrary")}
-          onClick={onExit}
-        >
-          <Icon name="arrow-left" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" label={t("explore.backLibrary")} tooltip={t("explore.backLibrary")} data-testid="back-to-library" data-ui="return-to-library" onClick={onExit} />
         <div className="explore-context">
           <div className="explore-eyebrow">
             <span>{t("shell.nav.library")}</span>
@@ -126,26 +119,8 @@ export function ExploreMode({
           <span className="history-count mono">
             {explore.index + 1} / {explore.sessions.length}
           </span>
-          <button
-            className="btn icon ghost"
-            data-testid="explore-history-back" data-ui="discovery-back"
-            aria-label={t("explore.prev")}
-            title={t("explore.prev")}
-            disabled={explore.index <= 0 || !!explore.loading}
-            onClick={() => explore.step(-1)}
-          >
-            <Icon name="chevron-left" cls="ico-sm" />
-          </button>
-          <button
-            className="btn icon ghost"
-            data-testid="explore-history-forward" data-ui="discovery-forward"
-            aria-label={t("explore.next")}
-            title={t("explore.next")}
-            disabled={explore.index >= explore.sessions.length - 1 || !!explore.loading}
-            onClick={() => explore.step(1)}
-          >
-            <Icon name="chevron-right" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="chevron-left" className="btn icon ghost" label={t("explore.prev")} tooltip={t("explore.prev")} data-testid="explore-history-back" data-ui="discovery-back" disabled={explore.index <= 0 || !!explore.loading} onClick={() => explore.step(-1)} />
+          <ActionButton unstyled mode="icon" iconName="chevron-right" className="btn icon ghost" label={t("explore.next")} tooltip={t("explore.next")} data-testid="explore-history-forward" data-ui="discovery-forward" disabled={explore.index >= explore.sessions.length - 1 || !!explore.loading} onClick={() => explore.step(1)} />
         </div>
       </div>
 
@@ -176,8 +151,12 @@ export function ExploreMode({
                     ["useful", t("explore.filter.useful"), usefulCount],
                   ] as const
                 ).map(([key, label, count]) => (
-                  <button
+                  <ActionButton
+                    unstyled
+                    mode="text"
                     key={key}
+                    label={label}
+                    tooltip={label}
                     className={"source-tab" + (filter === key ? " on" : "")}
                     data-testid={`explore-filter-${key}`} data-ui="discovery-filter" data-ui-key={key}
                     aria-pressed={filter === key}
@@ -185,7 +164,7 @@ export function ExploreMode({
                   >
                     <span>{label}</span>
                     <b className="mono">{count}</b>
-                  </button>
+                  </ActionButton>
                 ))}
               </div>
               <p className="source-copy">{t(`explore.filterHint.${filter}`)}</p>
@@ -232,9 +211,7 @@ export function ExploreMode({
             <div className="disconnected-note" style={{ position: "static", margin: "6px 10px" }} data-testid="useful-unavailable" data-ui="useful-unavailable">
               <Icon name="info" cls="ico-sm" />
               {t("explore.usefulUnavailable")}
-              <button className="btn ghost" data-ui="retry-useful" onClick={() => void explore.startExplore(session!.seed)}>
-                {t("explore.retry")}
-              </button>
+              <ActionButton unstyled mode="text" className="btn ghost" label={t("explore.retry")} tooltip={t("explore.retry")} data-ui="retry-useful" onClick={() => void explore.startExplore(session!.seed)}>{t("explore.retry")}</ActionButton>
             </div>
           )}
           <div className="side-footer">
@@ -258,39 +235,14 @@ export function ExploreMode({
                 aria-label={t("explore.searchPlaceholder")}
               />
               {query && (
-                <button
-                  className="btn icon ghost"
-                  data-ui="clear-discovery-search" onClick={() => setQuery("")}
-                  title={t("explore.clearSearch")}
-                  aria-label={t("explore.clearSearch")}
-                >
-                  <Icon name="x" cls="ico-sm" />
-                </button>
+                <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("explore.clearSearch")} tooltip={t("explore.clearSearch")} data-ui="clear-discovery-search" onClick={() => setQuery("")} />
               )}
             </div>
             <div style={{ flex: 1 }} />
             <span className="scope-chip mono">{t("explore.shown", { count: visible.length })}</span>
             <div className="mode-switch">
-              <button
-                className={display === "graph" ? "on" : ""}
-                title={t("explore.graphView")}
-                aria-label={t("explore.graphView")}
-                aria-pressed={display === "graph"}
-                data-testid="explore-graph-view" data-ui="show-discovery-graph"
-                onClick={() => setDisplay("graph")}
-              >
-                <Icon name="waypoints" cls="ico-sm" />
-              </button>
-              <button
-                className={display === "list" ? "on" : ""}
-                title={t("explore.listView")}
-                aria-label={t("explore.listView")}
-                aria-pressed={display === "list"}
-                data-testid="explore-list-view" data-ui="show-discovery-list"
-                onClick={() => setDisplay("list")}
-              >
-                <Icon name="list" cls="ico-sm" />
-              </button>
+              <ActionButton unstyled mode="icon" iconName="waypoints" label={t("explore.graphView")} tooltip={t("explore.graphView")} aria-pressed={display === "graph"} className={display === "graph" ? "on" : ""} data-testid="explore-graph-view" data-ui="show-discovery-graph" onClick={() => setDisplay("graph")} />
+              <ActionButton unstyled mode="icon" iconName="list" label={t("explore.listView")} tooltip={t("explore.listView")} aria-pressed={display === "list"} className={display === "list" ? "on" : ""} data-testid="explore-list-view" data-ui="show-discovery-list" onClick={() => setDisplay("list")} />
             </div>
           </div>
 
@@ -302,17 +254,8 @@ export function ExploreMode({
                 {" — "}
                 {errText(explore.error)}
               </span>
-              <button className="btn" data-ui="retry-discovery" onClick={() => void explore.startExplore(explore.error!.seed)}>
-                {t("explore.retry")}
-              </button>
-              <button
-                className="btn icon ghost"
-                aria-label={t("common.close")}
-                data-testid="explore-error-dismiss" data-ui="dismiss-discovery-error"
-                onClick={explore.dismissError}
-              >
-                <Icon name="x" cls="ico-sm" />
-              </button>
+              <ActionButton unstyled mode="text" className="btn" label={t("explore.retry")} tooltip={t("explore.retry")} data-ui="retry-discovery" onClick={() => void explore.startExplore(explore.error!.seed)}>{t("explore.retry")}</ActionButton>
+              <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("common.close")} tooltip={t("common.close")} data-testid="explore-error-dismiss" data-ui="dismiss-discovery-error" onClick={explore.dismissError} />
             </div>
           )}
 
@@ -321,9 +264,7 @@ export function ExploreMode({
               <Icon name="search" cls="ico-lg" />
               <h3>{t("explore.empty.title")}</h3>
               <p>{t("explore.empty.hint")}</p>
-              <button className="btn" data-ui="retry-discovery" onClick={() => void explore.startExplore(session!.seed)}>
-                {t("explore.retry")}
-              </button>
+              <ActionButton unstyled mode="text" className="btn" label={t("explore.retry")} tooltip={t("explore.retry")} data-ui="retry-discovery" onClick={() => void explore.startExplore(session!.seed)}>{t("explore.retry")}</ActionButton>
             </div>
           )}
 
@@ -376,16 +317,7 @@ export function ExploreMode({
                             <Icon name="check" cls="ico-sm" />
                           </span>
                         ) : (
-                          <button
-                            className="btn"
-                            data-ui="save-discovery-paper"
-                            aria-label={t("explore.add") + " " + n.title}
-                            title={t("explore.add")}
-                            disabled={explore.adding !== null}
-                            onClick={() => void explore.addToLibrary(n.bibcode)}
-                          >
-                            <Icon name="plus" cls="ico-sm" />
-                          </button>
+                          <ActionButton unstyled mode="text" className="btn" label={t("explore.add")} tooltip={t("explore.add")} data-ui="save-discovery-paper" data-ui-key={n.bibcode} disabled={explore.adding !== null} onClick={() => void explore.addToLibrary(n.bibcode)}>{t("explore.add")}</ActionButton>
                         )}
                       </td>
                     </tr>
@@ -401,13 +333,7 @@ export function ExploreMode({
               <h3>{t("explore.error.title")}</h3>
               <p>{errText(explore.error)}</p>
               <p className="record-note">{t("explore.error.unchanged")}</p>
-              <button
-                className="btn"
-                data-testid="explore-retry" data-ui="retry-discovery"
-                onClick={() => void explore.startExplore(explore.error!.seed)}
-              >
-                {t("explore.retry")}
-              </button>
+              <ActionButton unstyled mode="text" className="btn" label={t("explore.retry")} tooltip={t("explore.retry")} data-testid="explore-retry" data-ui="retry-discovery" onClick={() => void explore.startExplore(explore.error!.seed)}>{t("explore.retry")}</ActionButton>
             </div>
           )}
 
@@ -416,9 +342,7 @@ export function ExploreMode({
               <div className="cg-spinner" />
               <div className="cg-loading-t">{t("explore.loading.title")}</div>
               <div className="cg-loading-d">{t("explore.loading.desc")}</div>
-              <button className="btn ghost" data-testid="explore-cancel" data-ui="cancel-discovery" onClick={explore.cancelExplore}>
-                {t("common.cancel")}
-              </button>
+              <ActionButton unstyled mode="text" className="btn ghost" label={t("common.cancel")} tooltip={t("common.cancel")} data-testid="explore-cancel" data-ui="cancel-discovery" onClick={explore.cancelExplore}>{t("common.cancel")}</ActionButton>
             </div>
           )}
         </div>

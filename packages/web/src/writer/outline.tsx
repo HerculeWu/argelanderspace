@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import type { WriterCell, WriterNumberingResponse } from "@argelanderspace/contracts";
 import { writerCrossrefs, type CrossrefTarget } from "./model";
 
@@ -67,19 +68,24 @@ export function OutlinePanel({
                 key={`${x.cell}-${x.targetId ?? `${x.kind}-${x.sectionIndex ?? x.envIndex ?? 0}`}`}
                 style={visible(x) ? undefined : { display: "none" }}
               >
-                <button className="w-jump" data-ui="jump-to-cell" onClick={() => onJump(x.cell)}>
+                <ActionButton unstyled mode="text" className="w-jump" data-ui="jump-to-cell"
+                  label={t("writer.outline.jumpTo", { title: x.title })} tooltip={t("writer.outline.jumpTo", { title: x.title })}
+                  onClick={() => onJump(x.cell)}>
                   <span className="w-num">{x.number}</span> {x.title}
-                </button>
-                <button
-                  className="w-insert-mini" data-ui="insert-cell-label"
+                </ActionButton>
+                <ActionButton
+                  unstyled
+                  mode="text" className="w-insert-mini"
+                  label={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.outline.insertLabel")}
+                  tooltip={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.outline.insertLabel")}
+                  data-ui="insert-cell-label"
                   data-insert-label={x.label}
                   data-target-cell={x.cell}
-                  title={t(x.insertable === false ? "writer.xref.needsLabel" : "writer.outline.insertLabel")}
                   disabled={x.insertable === false}
                   onClick={() => onInsertLabel(x.cell, x.label, x.envIndex, x.sectionIndex)}
                 >
-                  <Icon name="plus" cls="ico-sm" /> {x.label}
-                </button>
+                  {x.label}
+                </ActionButton>
               </div>
             ))}
           </div>

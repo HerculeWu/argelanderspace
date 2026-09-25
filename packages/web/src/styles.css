@@ -121,6 +121,10 @@
   justify-content: center;
   padding: 0;
 }
+.panel > .ui-tooltip-anchor { position: absolute; top: 8px; z-index: 3; }
+.panel.left > .ui-tooltip-anchor { right: 6px; }
+.panel.right > .ui-tooltip-anchor { left: 6px; }
+.panel > .ui-tooltip-anchor .panel-toggle { position: static; }
 .panel-toggle:hover { color: var(--accent); border-color: var(--accent); }
 .panel.left .panel-toggle { right: 6px; }
 .panel.right .panel-toggle { left: 6px; }
@@ -233,6 +237,8 @@ figure.fig img { max-width: 100%; height: auto; border: 1px solid var(--line); b
   -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
   transition: opacity 0.14s ease, color 0.12s, border-color 0.12s;
 }
+.fig-img > .ui-tooltip-anchor { position: absolute; top: 7px; right: 7px; }
+.fig-img > .ui-tooltip-anchor .fig-invert-btn { position: static; }
 .fig-img:hover .fig-invert-btn, .fig-invert-btn:focus-visible { opacity: 1; }
 .fig-invert-btn:hover { color: var(--accent); border-color: var(--accent); }
 .fig-invert-btn svg { width: 15px; height: 15px; }
@@ -279,6 +285,7 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 
 .toc-group-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--muted); margin: 18px 0 6px; cursor: pointer; display: flex; align-items: center; gap: 6px; user-select: none; }
+.toc-group-title.ui-button { width: 100%; height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: none; color: var(--muted); justify-content: flex-start; text-align: left; }
 .toc-float { display: block; width: 100%; text-align: left; border: none; background: none; cursor: pointer;
   font-family: var(--font-ui); font-size: 12.5px; color: var(--ink); padding: 3px 6px; border-radius: 5px; line-height: 1.3;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -354,6 +361,8 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   z-index: 20;
 }
+.reader-col > .ui-tooltip-anchor { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); }
+.reader-col > .ui-tooltip-anchor .undo-fab { position: static; transform: none; }
 .undo-fab:hover { opacity: 0.88; }
 
 /* ---------- misc ---------- */
@@ -382,6 +391,8 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
   opacity: 0; pointer-events: auto;
   transition: opacity 0.14s ease, color 0.12s, border-color 0.12s;
 }
+.ann-edge > .ui-tooltip-anchor { position: absolute; right: -30px; top: 0; pointer-events: auto; }
+.ann-edge > .ui-tooltip-anchor .ann-edge-btn { position: static; }
 .block:hover .ann-edge-btn, .ann-edge-btn:focus-visible { opacity: 1; }
 .ann-edge-btn:hover { color: var(--accent); border-color: var(--accent); }
 .ann-edge-btn svg { width: 14px; height: 14px; }
@@ -449,6 +460,7 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 
 /* Right-panel tabs: 引用 | 标注 */
 .right-tabs { display: flex; gap: 4px; margin: 0 0 10px; border-bottom: 1px solid var(--line); }
+.right-tabs > .ui-tooltip-anchor { flex: 1; min-width: 0; }
 .right-tab {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   padding: 6px 8px 7px; background: none; border: none;
@@ -466,6 +478,7 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 }
 
 /* The 标注 tab list */
+.ann-panel > .ui-tooltip-anchor { display: block; width: 100%; }
 .ann-add-doc {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;
   padding: 7px 10px; margin-bottom: 10px;

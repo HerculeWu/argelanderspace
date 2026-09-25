@@ -128,6 +128,10 @@ Web 对每个已打开 PDF Doc 使用单一 `PdfAnnotationSession` 协调页/篇
 
 Web 每次挂载使用一个按 Doc/固定 SHA-256 绑定的临时 annotation session；它协调创建、删除、矩形几何/样式与显式正文保存，PUT 顺序由上一次成功返回的 rev 推进。几何/样式操作仅在指针手势或控件操作完成后入队，正文 textarea 保持草稿直到点击保存。迟到 PUT/GET 在 session unmount/generation 改变后不能更新新 Reader；同值 `annotation.changed` 是当前 revision 回声时忽略，foreign rev 则清除本地 undo/redo 并保留待提交草稿。Rev 冲突需用户显式 retry（重新读同 SHA sidecar 后按变更字段重放）或 discard，不自动盲写；目标 Doc/hash 不匹配时锁定视图与操作，只有重新验证相同原件 hash 才能恢复。已提交操作的 undo/redo 通过新 PUT 表达，rev 永不回退。离开有未提交内容/失败/请求时用应用内确认和 `beforeunload` 提醒；草稿只在当前页面，不写硬盘/浏览器存储，不承诺刷新恢复。
 
+### PDF 高亮颜色（有限修订）
+
+票 06（2026-09-24）原决定是高亮、下划线、删除线均固定样式。票 14 经 2026-09-24 用户明确批准，**仅 PDF 高亮**在此有限范围内修订：可选持久 `color` 取固定九色预设之一；`color` 不适用于下划线、删除线、区域或评论。无 `color` 的旧高亮保持黄色，不迁移、不在读取时补字段或回写；新工具色仅当前高亮模式的临时选择，退出模式复位黄色；仅主动选了非默认色时在创建时附到一条逻辑标注，默认黄色不写 `color`。右栏已有高亮选色是单次 session mutation，跨页记录整体改色；同有效颜色为 no-op，正常 rev/冲突/失败与 undo/redo 规则照旧。该视觉提示不赋予正文、类型或分类语义，不改变固定 PDF 原件。票 06 的原评论保留历史，不应据此把有限修订扩大到其它文字标记。
+
 PDF 删除确认使用 `GET /api/paper/:doc_id/pdf/annotations/count` 直接读取并校验 PDF 的独立工作台 sidecar；损坏、busy 或 hash 不匹配是未知计数，不借用 LaTeX annotations endpoint，也不将失败冒充零标注。
 
 ## CLI annot

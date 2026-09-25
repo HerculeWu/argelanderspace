@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { confirmWorkspaceLeave, useWorkspace } from "../argelander/workspace";
 import { fetchLibrary } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
@@ -201,26 +202,31 @@ function LibraryBody({
   return (
     <div className="view-row" data-ui="library-view">
       {sideCollapsed ? (
-        <button data-ui="expand-library-sidebar" className="lib-rail" title={t("library.side.expand")} onClick={() => setSideCollapsed(false)}>
-          <Icon name="panel-left-open" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="panel-left-open" label={t("library.side.expand")} tooltip={t("library.side.expand")} data-ui="expand-library-sidebar" className="lib-rail" onClick={() => setSideCollapsed(false)} />
       ) : (
         <div className="lib-side" data-ui="library-sidebar">
           <div className="lib-import" data-ui="library-import">
-            <button
+            <ActionButton
+              mode="text"
+              unstyled
+              label={t("library.import.button")}
+              tooltip={t("library.import.button")}
               className="btn primary"
               data-ui="open-import-menu"
               style={{ width: "100%", justifyContent: "center" }}
               onClick={() => setImportOpen((v) => !v)}
             >
-              <Icon name="plus" cls="ico-sm" />
               {t("library.import.button")}
-            </button>
+            </ActionButton>
             {importOpen && (
               <div className="import-menu view-in" data-ui="import-menu">
                 {IMPORTS.map((im) => (
-                  <button
+                  <ActionButton
+                    unstyled
+                    mode="text"
                     key={im.titleKey}
+                    label={t(im.titleKey)}
+                    tooltip={t(im.titleKey)}
                     data-ui="import-option" data-ui-key={im.mode}
                     className="import-opt"
                     onClick={() => {
@@ -235,7 +241,7 @@ function LibraryBody({
                       <span className="import-t">{t(im.titleKey)}</span>
                       <span className="import-d">{t(im.descKey)}</span>
                     </span>
-                  </button>
+                  </ActionButton>
                 ))}
               </div>
             )}
@@ -243,9 +249,7 @@ function LibraryBody({
           <div className="lib-side-head">
             <span className="lib-side-title">{t("library.side.title")}</span>
             <span className="lib-side-count mono">{list.length}</span>
-            <button data-ui="collapse-library-sidebar" className="lib-side-collapse" title={t("library.side.collapse")} onClick={() => setSideCollapsed(true)}>
-              <Icon name="panel-left-close" cls="ico-sm" />
-            </button>
+            <ActionButton unstyled mode="icon" iconName="panel-left-close" label={t("library.side.collapse")} tooltip={t("library.side.collapse")} data-ui="collapse-library-sidebar" className="lib-side-collapse" onClick={() => setSideCollapsed(true)} />
           </div>
           <div className="side-reflist" data-ui="work-list">
             {list.map((r) => {
@@ -305,20 +309,24 @@ function LibraryBody({
           <div className="label-menu-head mono">{t("library.labelMenu.head")}</div>
           <div className="label-menu-row">
             {LABEL_COLORS.map((l) => (
-              <button
+              <ActionButton
                 key={l.k}
+                unstyled
+                mode="icon"
+                iconName="circle"
+                variant="ghost"
                 data-ui="set-work-label" data-ui-key={l.k}
                 className={"label-swatch" + (menuRef && effLabel(menuRef) === l.k ? " on" : "")}
-                title={t(LABEL_NAME_KEYS[l.k as keyof typeof LABEL_NAME_KEYS])}
+                label={t(LABEL_NAME_KEYS[l.k as keyof typeof LABEL_NAME_KEYS])}
+                tooltip={t(LABEL_NAME_KEYS[l.k as keyof typeof LABEL_NAME_KEYS])}
                 style={{ background: l.c }}
                 onClick={() => setLabel(labelMenu.refId, l.k)}
               />
             ))}
           </div>
-          <button data-ui="clear-work-label" className="label-clear" onClick={() => setLabel(labelMenu.refId, null)}>
-            <Icon name="x" cls="ico-sm" />
+          <ActionButton unstyled mode="text" label={t("library.labelMenu.clear")} tooltip={t("library.labelMenu.clear")} data-ui="clear-work-label" className="label-clear" onClick={() => setLabel(labelMenu.refId, null)}>
             {t("library.labelMenu.clear")}
-          </button>
+          </ActionButton>
         </div>
       )}
 
@@ -341,16 +349,18 @@ function LibraryBody({
             </span>
           )}
           {explore.sessions.length > 0 && (
-            <button
+            <ActionButton
+              mode="text"
+              unstyled
+              label={t("explore.resume")}
+              tooltip={t("explore.resume")}
               className="btn ghost"
               data-testid="resume-explore"
               data-ui="resume-exploration"
-              title={t("explore.resume")}
               onClick={explore.resumeExplore}
             >
-              <Icon name="compass" cls="ico-sm" />
               {t("explore.resume")}
-            </button>
+            </ActionButton>
           )}
         </div>
 

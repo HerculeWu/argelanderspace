@@ -6,7 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { LatexSourceField } from "./latexSource";
 import type { WriterAuthor, WriterManuscript, WriterTemplate } from "@argelanderspace/contracts";
 
@@ -26,6 +26,7 @@ export function WModal({
   footer?: React.ReactNode;
   width?: number;
 }) {
+  const { t } = useTranslation();
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -38,9 +39,7 @@ export function WModal({
       <div className="w-modal" data-ui={uiId} style={{ width }} onClick={(e) => e.stopPropagation()}>
         <div className="w-modal-head">
           <strong>{title}</strong>
-          <button className="btn icon ghost" data-ui="close-writer-dialog" onClick={onClose}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-writer-dialog" label={t("common.close")} tooltip={t("common.close")} onClick={onClose} />
         </div>
         <div className="w-modal-body">{children}</div>
         {footer && <div className="w-modal-foot">{footer}</div>}
@@ -90,12 +89,8 @@ export function InfoModal({
       onClose={onClose}
       footer={
         <>
-          <button className="btn" data-ui="cancel-manuscript-info" onClick={onClose}>
-            {t("common.cancel")}
-          </button>
-          <button className="btn primary" data-ui="save-manuscript-info" onClick={save}>
-            {t("common.save")}
-          </button>
+          <ActionButton unstyled mode="text" className="btn" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-manuscript-info" onClick={onClose}>{t("common.cancel")}</ActionButton>
+          <ActionButton unstyled mode="text" className="btn primary" label={t("common.save")} tooltip={t("common.save")} data-ui="save-manuscript-info" onClick={save}>{t("common.save")}</ActionButton>
         </>
       }
     >
@@ -132,24 +127,15 @@ export function InfoModal({
               setAuthors((as) => as.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))
             }
           />
-          <button
-            className="w-small-x" data-ui="remove-author"
-            title={t("common.delete")}
-            onClick={() => setAuthors((as) => as.filter((_, j) => j !== i))}
-          >
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" className="w-small-x" data-ui="remove-author"
+            label={t("common.delete")} tooltip={t("common.delete")}
+            onClick={() => setAuthors((as) => as.filter((_, j) => j !== i))} />
         </div>
       ))}
-      <button
-        className="btn"
-        data-ui="add-author"
-        onClick={() =>
-          setAuthors((as) => [...as, { name: "", aff: String(affils.length || 1), email: "" }])
-        }
-      >
-        <Icon name="plus" cls="ico-sm" /> {t("writer.info.addAuthor")}
-      </button>
+      <ActionButton unstyled mode="text" className="btn" label={t("writer.info.addAuthor")} tooltip={t("writer.info.addAuthor")} data-ui="add-author"
+        onClick={() => setAuthors((as) => [...as, { name: "", aff: String(affils.length || 1), email: "" }])}>
+        {t("writer.info.addAuthor")}
+      </ActionButton>
 
       <div className="w-panel-title w-modal-sec">{t("writer.info.affils")}</div>
       {affils.map((a, i) => (
@@ -160,18 +146,14 @@ export function InfoModal({
             value={a}
             onChange={(e) => setAffils((xs) => xs.map((x, j) => (j === i ? e.target.value : x)))}
           />
-          <button
-            className="w-small-x" data-ui="remove-affiliation"
-            title={t("common.delete")}
-            onClick={() => setAffils((xs) => xs.filter((_, j) => j !== i))}
-          >
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" className="w-small-x" data-ui="remove-affiliation"
+            label={t("common.delete")} tooltip={t("common.delete")}
+            onClick={() => setAffils((xs) => xs.filter((_, j) => j !== i))} />
         </div>
       ))}
-      <button className="btn" data-ui="add-affiliation" onClick={() => setAffils((xs) => [...xs, ""])}>
-        <Icon name="plus" cls="ico-sm" /> {t("writer.info.addAffil")}
-      </button>
+      <ActionButton unstyled mode="text" className="btn" label={t("writer.info.addAffil")} tooltip={t("writer.info.addAffil")} data-ui="add-affiliation" onClick={() => setAffils((xs) => [...xs, ""])}>
+        {t("writer.info.addAffil")}
+      </ActionButton>
 
       {template.infoFields.length > 0 && (
         <div className="w-form-grid w-modal-sec">
@@ -229,12 +211,8 @@ export function PreambleModal({
       onClose={onClose}
       footer={
         <>
-          <button className="btn" data-ui="cancel-manuscript-preamble" onClick={onClose}>
-            {t("common.cancel")}
-          </button>
-          <button className="btn primary" data-ui="save-manuscript-preamble" onClick={() => onSave(value)}>
-            {t("common.save")}
-          </button>
+          <ActionButton unstyled mode="text" className="btn" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-manuscript-preamble" onClick={onClose}>{t("common.cancel")}</ActionButton>
+          <ActionButton unstyled mode="text" className="btn primary" label={t("common.save")} tooltip={t("common.save")} data-ui="save-manuscript-preamble" onClick={() => onSave(value)}>{t("common.save")}</ActionButton>
         </>
       }
     >
@@ -271,12 +249,8 @@ export function ConfirmDeleteModal({
       onClose={onClose}
       footer={
         <>
-          <button className="btn" data-ui="cancel-delete-manuscript" onClick={onClose}>
-            {t("common.cancel")}
-          </button>
-          <button className="btn w-danger" data-ui="confirm-delete-manuscript" onClick={onConfirm}>
-            <Icon name="trash-2" cls="ico-sm" /> {t("common.delete")}
-          </button>
+          <ActionButton unstyled mode="text" className="btn" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-delete-manuscript" onClick={onClose}>{t("common.cancel")}</ActionButton>
+          <ActionButton unstyled mode="text" className="btn w-danger" label={t("common.delete")} tooltip={t("common.delete")} data-ui="confirm-delete-manuscript" onClick={onConfirm}>{t("common.delete")}</ActionButton>
         </>
       }
     >

@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import type { LibraryRef, ManualWorkRequest, ManualWorkResult } from "./types";
 
 export type ImportMode = "identifier" | "bibcode" | "bib";
@@ -122,9 +123,7 @@ export function ImportDialog({
             <div className="plan-modal-title">{t(`library.importDialog.${mode}Title`)}</div>
             <div className="plan-modal-sub">{t(`library.importDialog.${mode}Sub`)}</div>
           </div>
-          <button data-ui="close-import" className="btn icon ghost" onClick={close}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="close-import" label={t("common.close")} tooltip={t("common.close")} onClick={close} />
         </div>
         <div className="plan-modal-body">
           <div className="plan-field">
@@ -159,22 +158,22 @@ export function ImportDialog({
           )}
         </div>
         <div className="plan-modal-foot">
-          <button className="btn" data-ui="cancel-import" onClick={close}>
+          <ActionButton unstyled mode="text" className="btn" data-ui="cancel-import" label={t("library.importDialog.close")} tooltip={t("library.importDialog.close")} onClick={close}>
             {t("library.importDialog.close")}
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
+            unstyled
+            mode="text"
             className="btn primary"
             data-ui="submit-import"
-            disabled={busy || !input.trim()}
+            label={t(busy ? "library.importDialog.busy" : batch ? "library.importDialog.submitMany" : "library.importDialog.submit")}
+            tooltip={t(busy ? "library.importDialog.busy" : batch ? "library.importDialog.submitMany" : "library.importDialog.submit")}
+            busy={busy}
+            disabled={!input.trim()}
             onClick={() => void submit()}
           >
-            <Icon name={busy ? "loader" : "plus"} cls={"ico-sm" + (busy ? " spin" : "")} />
-            {busy
-              ? t("library.importDialog.busy")
-              : batch
-                ? t("library.importDialog.submitMany")
-                : t("library.importDialog.submit")}
-          </button>
+            {t(busy ? "library.importDialog.busy" : batch ? "library.importDialog.submitMany" : "library.importDialog.submit")}
+          </ActionButton>
         </div>
       </div>
     </div>

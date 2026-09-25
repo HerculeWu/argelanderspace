@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { LibraryRef } from "../library/types";
 import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { mdWithMath } from "../lib/mdWithMath";
 import { DrawerStatusRow } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
@@ -46,13 +47,9 @@ export function TaskDrawer({
       <div className="plan-drawer-head">
         <span className="tag">{plan.name}</span>
         <div className="plan-drawer-head-actions">
-          <button className="btn icon ghost" data-ui="edit-task" title={t("plan.action.editTask")} onClick={() => cb.onEdit(plan.id, task)}>
-            <Icon name="pencil" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="pencil" label={t("plan.action.editTask")} tooltip={t("plan.action.editTask")} className="btn icon ghost" data-ui="edit-task" onClick={() => cb.onEdit(plan.id, task)} />
           <PinBtn focused={task.focused} onToggle={() => cb.onTogglePin(plan.id, task.id)} />
-          <button className="btn icon ghost" data-ui="close-task-drawer" title={t("common.close")} onClick={cb.onClose}>
-            <Icon name="x" cls="ico-sm" />
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="btn icon ghost" data-ui="close-task-drawer" onClick={cb.onClose} />
         </div>
       </div>
       <div className="plan-drawer-title">{task.title}</div>
@@ -66,18 +63,15 @@ export function TaskDrawer({
             const ref = byDocId.get(l.doc_id);
             if (!ref) {
               // the library no longer has this doc: grayed, kept, removable
+              const removeLabel = t("plan.drawer.removeLinkFor", { title: l.doc_id });
               return (
                 <div key={l.doc_id} className="plan-drawer-art missing" data-ui="missing-task-doc" data-ui-key={l.doc_id} title={l.doc_id}>
                   <Icon name="file-x" cls="ico-sm" />
                   <span className="mono">{t("plan.drawer.docMissing")}</span>
                   <span className="plan-drawer-art-kind">{l.doc_id}</span>
-                  <button
-                    className="plan-drawer-art-x" data-ui="unlink-task-doc"
-                    title={t("plan.drawer.removeLink")}
-                    onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}
-                  >
-                    <Icon name="x" cls="ico-sm" />
-                  </button>
+                  <ActionButton unstyled mode="text" label={removeLabel} tooltip={removeLabel} className="plan-drawer-link-remove" data-ui="unlink-task-doc" onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}>
+                    {removeLabel}
+                  </ActionButton>
                 </div>
               );
             }
@@ -92,13 +86,9 @@ export function TaskDrawer({
                   <span className="plan-drawer-art-t">{ref.title}</span>
                   <Icon name="arrow-up-right" cls="ico-sm" />
                 </button>
-                <button
-                  className="plan-drawer-art-x" data-ui="unlink-task-doc"
-                  title={t("plan.drawer.removeLink")}
-                  onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}
-                >
-                  <Icon name="x" cls="ico-sm" />
-                </button>
+                <ActionButton unstyled mode="text" label={t("plan.drawer.removeLinkFor", { title: ref.title })} tooltip={t("plan.drawer.removeLinkFor", { title: ref.title })} className="plan-drawer-link-remove" data-ui="unlink-task-doc" onClick={() => cb.onRemoveLink(plan.id, task.id, l.doc_id)}>
+                  {t("plan.drawer.removeLinkFor", { title: ref.title })}
+                </ActionButton>
               </div>
             );
           })}
@@ -115,10 +105,7 @@ export function TaskDrawer({
       <NoteEditor key={task.id} value={task.note} onSave={(v) => cb.onSetNote(plan.id, task.id, v)} />
 
       <div className="plan-drawer-spacer" />
-      <button data-ui="delete-task" className="plan-drawer-delete" onClick={() => cb.onDelete(plan.id, task.id)}>
-        <Icon name="trash-2" cls="ico-sm" />
-        {t("plan.drawer.deleteTask")}
-      </button>
+      <ActionButton unstyled mode="icon" iconName="trash-2" label={t("plan.drawer.deleteTask")} tooltip={t("plan.drawer.deleteTask")} data-ui="delete-task" className="plan-drawer-delete" onClick={() => cb.onDelete(plan.id, task.id)} />
     </div>
   );
 }
@@ -140,10 +127,9 @@ function LinkPicker({
   }, [open]);
   if (!open) {
     return (
-      <button data-ui="add-task-doc" className="plan-drawer-art add" onClick={() => setOpen(true)}>
-        <Icon name="plus" cls="ico-sm" />
+      <ActionButton unstyled mode="text" label={t("plan.drawer.addLink")} tooltip={t("plan.drawer.addLink")} data-ui="add-task-doc" className="plan-drawer-art add" onClick={() => setOpen(true)}>
         {t("plan.drawer.addLink")}
-      </button>
+      </ActionButton>
     );
   }
   const needle = q.trim().toLowerCase();
@@ -170,9 +156,7 @@ function LinkPicker({
           }}
           placeholder={t("plan.drawer.searchPlaceholder")}
         />
-        <button className="btn icon ghost" data-ui="close-task-doc-picker" title={t("common.close")} onClick={() => setOpen(false)}>
-          <Icon name="x" cls="ico-sm" />
-        </button>
+        <ActionButton unstyled mode="icon" iconName="x" label={t("common.close")} tooltip={t("common.close")} className="btn icon ghost" data-ui="close-task-doc-picker" onClick={() => setOpen(false)} />
       </div>
       <div className="plan-linkpick-list">
         {filtered.map((r) => (
@@ -242,25 +226,14 @@ function NoteEditor({
             {t("plan.drawer.noteHint")}
           </span>
           <div style={{ flex: 1 }} />
-          <button
-            className="plan-note-btn" data-ui="cancel-task-note"
-            onClick={() => {
-              setDraft(value ?? "");
-              setEditing(false);
-            }}
-          >
-            {t("common.cancel")}
-          </button>
-          <button
-            className="plan-note-btn primary" data-ui="save-task-note"
-            onClick={() => {
-              onSave(draft.trim() || undefined);
-              setEditing(false);
-            }}
-          >
-            <Icon name="check" cls="ico-sm" />
-            {t("common.save")}
-          </button>
+          <ActionButton unstyled mode="icon" iconName="x" label={t("common.cancel")} tooltip={t("common.cancel")} className="plan-note-btn icon" data-ui="cancel-task-note" onClick={() => {
+            setDraft(value ?? "");
+            setEditing(false);
+          }} />
+          <ActionButton unstyled mode="icon" iconName="check" label={t("common.save")} tooltip={t("common.save")} className="plan-note-btn icon primary" data-ui="save-task-note" onClick={() => {
+            onSave(draft.trim() || undefined);
+            setEditing(false);
+          }} />
         </div>
       </div>
     );
@@ -271,28 +244,18 @@ function NoteEditor({
       {html ? (
         <>
           <div className="plan-md-body" dangerouslySetInnerHTML={{ __html: html }} />
-          <button
-            className="plan-note-edit-btn" data-ui="edit-task-note"
-            onClick={() => {
-              setDraft(value ?? "");
-              setEditing(true);
-            }}
-          >
-            <Icon name="pencil" cls="ico-sm" />
-            {t("common.edit")}
-          </button>
+          <ActionButton unstyled mode="icon" iconName="pencil" label={t("common.edit")} tooltip={t("common.edit")} className="plan-note-edit-btn" data-ui="edit-task-note" onClick={() => {
+            setDraft(value ?? "");
+            setEditing(true);
+          }} />
         </>
       ) : (
-        <button
-          className="plan-note-empty" data-ui="add-task-note"
-          onClick={() => {
-            setDraft("");
-            setEditing(true);
-          }}
-        >
-          <Icon name="plus" cls="ico-sm" />
+        <ActionButton unstyled mode="text" label={t("plan.drawer.noteEmpty")} tooltip={t("plan.drawer.noteEmpty")} className="plan-note-empty" data-ui="add-task-note" onClick={() => {
+          setDraft("");
+          setEditing(true);
+        }}>
           {t("plan.drawer.noteEmpty")}
-        </button>
+        </ActionButton>
       )}
     </div>
   );

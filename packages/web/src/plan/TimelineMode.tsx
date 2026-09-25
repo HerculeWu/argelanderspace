@@ -93,6 +93,7 @@ export function TimelineMode({
                         className={`plan-tl-ms plan-s-${t.status}`} data-ui="timeline-task" data-ui-key={t.id}
                         style={{ left: `${timelineFrac(t.due as string, scale) * 100}%` }}
                         title={`${t.title} · ${fmtDate(t.due as string)}`}
+                        aria-label={`${t.title} · ${fmtDate(t.due as string)}`}
                         onClick={() => onOpenTask(t.id)}
                       />
                     ))}

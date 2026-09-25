@@ -30,7 +30,7 @@ describe("TaskModal overdue hint", () => {
     expect(hint?.textContent).toContain("2026-10-01");
 
     fireEvent.change(title, { target: { value: "推迟一步" } });
-    fireEvent.click(screen.getByText("添加任务"));
+    fireEvent.click(screen.getByRole("button", { name: "添加任务" }));
     expect(onSubmit).toHaveBeenCalledWith({
       title: "推迟一步",
       status: "todo",

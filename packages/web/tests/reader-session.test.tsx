@@ -478,7 +478,7 @@ describe("DocPane coherent integration and protected drafts", () => {
     fireEvent.click(container.querySelector(".ann-marker")!);
     fireEvent.click(
       [...container.querySelectorAll(".ann-popover button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.getAttribute("data-ui") === "edit-latex-annotation"
       )!
     );
     fireEvent.change(container.querySelector(".ann-popover textarea")!, {
@@ -628,7 +628,7 @@ describe("DocPane coherent integration and protected drafts", () => {
     fireEvent.click(container.querySelector(".ann-marker")!);
     const popover = container.querySelector(".ann-popover")!;
     const editButton = () =>
-      [...popover.querySelectorAll("button")].find((b) => b.textContent?.includes("编辑"))!;
+      [...popover.querySelectorAll("button")].find((b) => b.getAttribute("data-ui") === "edit-latex-annotation")!;
     fireEvent.click(editButton());
     fireEvent.change(popover.querySelector("textarea")!, {
       target: { value: "discard this draft" },
@@ -787,7 +787,7 @@ describe("DocPane coherent integration and protected drafts", () => {
     fireEvent.click(container.querySelector(".ann-marker")!);
     fireEvent.click(
       [...container.querySelectorAll(".ann-popover button")].find((b) =>
-        b.textContent?.includes("编辑")
+        b.getAttribute("data-ui") === "edit-latex-annotation"
       )!
     );
     const ta = container.querySelector(".ann-popover textarea")!;

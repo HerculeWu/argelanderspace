@@ -206,7 +206,7 @@ describe("docless work with an arXiv id", () => {
     // PDF-only retry enters the upload path instead of pretending arXiv can succeed.
     fireEvent.click(screen.getByTestId("arxiv-retry"));
     expect(screen.getByRole("dialog", { name: "获取全文" })).toBeTruthy();
-    expect(screen.getByLabelText("上传 LaTeX 源码包")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /上传 LaTeX 源码包/ })).toBeTruthy();
     expect(h.attachArxiv).toHaveBeenCalledTimes(1);
   });
 
@@ -315,7 +315,7 @@ describe("D17 cleanup of acquisition ads", () => {
     openFilesTab();
     fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
     expect((screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ }) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByLabelText("上传 LaTeX 源码包")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /上传 LaTeX 源码包/ })).toBeTruthy();
   });
 
   it("the '可获取 · A&A html' style acquisition ads are gone everywhere", () => {
@@ -336,7 +336,7 @@ describe("works with docs", () => {
     openFilesTab();
     expect(screen.queryByTestId("arxiv-fetch")).toBeNull();
     const btn = screen.getByTestId("arxiv-refetch-main");
-    expect(btn.textContent).toBe("更新此文档");
+    expect(btn.textContent).toBe("重新获取 arXiv 最新版（覆盖该文档）");
     fireEvent.click(btn);
     expect(h.attachArxiv).not.toHaveBeenCalled();
     expect(await screen.findByText("当前未发现标注；更新会替换这份正文。")).toBeTruthy();

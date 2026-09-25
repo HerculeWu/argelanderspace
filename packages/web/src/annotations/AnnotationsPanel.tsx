@@ -2,11 +2,11 @@ import { useReaderSession } from "../doc/ReaderSession";
 import { useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Annotation } from "@argelanderspace/contracts";
-import { Icon } from "../lib/icons";
 import { useStore } from "../store";
 import { useAnnotations } from "./AnnotationStore";
 import { CreateAnnotationEditor, EditAnnotationEditor } from "./AnnotationEditor";
 import { sortAnnotations, targetBlockId, targetSummary } from "./model";
+import { ActionButton } from "../ui";
 
 /**
  * The Annotations tab of the reader's right panel (Stage 8 MS3): document-level
@@ -32,9 +32,9 @@ export function AnnotationsPanel() {
     return (
       <div className="right-empty">
         {t("annotation.panel.error")}
-        <button className="ann-editor-btn" data-ui="reload-latex-annotations" onClick={() => void ann.reload()}>
+        <ActionButton unstyled mode="text" label={t("common.retry")} tooltip={t("common.retry")} className="ann-editor-btn" data-ui="reload-latex-annotations" onClick={() => void ann.reload()}>
           {t("common.retry")}
-        </button>
+        </ActionButton>
       </div>
     );
   }
@@ -45,14 +45,18 @@ export function AnnotationsPanel() {
 
   return (
     <div className="ann-panel" data-ui="latex-annotations-list">
-      <button
-        className="ann-add-doc" data-ui="add-document-annotation"
+      <ActionButton
+        unstyled
+        mode="text"
+        label={t("annotation.action.addDoc")}
+        tooltip={t("annotation.action.addDocTooltip")}
+        className="ann-add-doc"
+        data-ui="add-document-annotation"
         onClick={() => { controller.beginCreate(); setDocCreating(true); }}
         disabled={docCreating || !ann.canAnnotate}
       >
-        <Icon name="plus" cls="ico-sm" />
         {t("annotation.action.addDoc")}
-      </button>
+      </ActionButton>
       {docCreating && (
         <div className="ann-panel-editor" data-ui="latex-annotation-create-editor">
           <CreateAnnotationEditor target={{ type: "document" }} onSaved={() => setDocCreating(false)} onCancel={() => setDocCreating(false)} />
@@ -96,24 +100,24 @@ function AnnotationEntry({ a }: { a: Annotation }) {
         <span className="ann-entry-preview">{a.body}</span>
       </button>
       <span className="ann-entry-actions">
-        <button
+        <ActionButton
+          mode="icon"
+          iconName="pencil"
+          label={t("annotation.action.edit")}
+          tooltip={t("annotation.action.edit")}
           data-ui="edit-latex-annotation"
-          title={t("annotation.action.edit")}
-          aria-label={t("annotation.action.edit")}
           disabled={!ann.canAnnotate}
           onClick={() => { controller.beginEdit(a); setEditing(true); }}
-        >
-          <Icon name="pencil" cls="ico-sm" />
-        </button>
-        <button
+        />
+        <ActionButton
+          mode="icon"
+          iconName="trash-2"
+          label={t("annotation.action.delete")}
+          tooltip={t("annotation.action.delete")}
           data-ui="delete-latex-annotation"
-          title={t("annotation.action.delete")}
-          aria-label={t("annotation.action.delete")}
           disabled={ann.busy}
           onClick={() => void ann.removeAnnotation(a.id)}
-        >
-          <Icon name="trash-2" cls="ico-sm" />
-        </button>
+        />
       </span>
       {editing && (
         <EditAnnotationEditor annotation={a} onSaved={() => setEditing(false)} onCancel={() => setEditing(false)} />

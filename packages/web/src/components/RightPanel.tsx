@@ -7,6 +7,7 @@ import { useAnnotations } from "../annotations/AnnotationStore";
 import { AnnotationsPanel } from "../annotations/AnnotationsPanel";
 import { xrefTargetIds } from "../lib/segments";
 import { RefCard, type Card, type CardKind } from "./RefCard";
+import { ActionButton } from "../ui";
 
 function floatKind(t: string): CardKind | null {
   if (t === "figure") return "figure";
@@ -28,21 +29,29 @@ export function RightPanel() {
   return (
     <div className="right" data-ui="latex-reference-annotation-panel">
       <div className="right-tabs" data-ui="latex-panel-tabs">
-        <button
+        <ActionButton
+          unstyled
+          mode="text"
+          label={t("components.rightPanel.refsTab")}
+          tooltip={t("components.rightPanel.referencesTooltip")}
           data-ui="show-references"
           className={"right-tab" + (tab === "refs" ? " on" : "")}
           onClick={() => setTab("refs")}
         >
           {t("components.rightPanel.refsTab")}
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
+          unstyled
+          mode="text"
+          label={t("components.rightPanel.annotationsTab")}
+          tooltip={t("components.rightPanel.annotationsTooltip")}
           data-ui="show-annotations"
           className={"right-tab" + (tab === "annotations" ? " on" : "")}
           onClick={() => setTab("annotations")}
         >
           {t("components.rightPanel.annotationsTab")}
           {annCount > 0 && <span className="ann-badge">{annCount}</span>}
-        </button>
+        </ActionButton>
       </div>
       {tab === "refs" ? <RefsView key={state.generation} /> : <AnnotationsPanel />}
     </div>

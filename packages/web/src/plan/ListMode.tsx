@@ -13,7 +13,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "../lib/icons";
+import { ActionButton } from "../ui";
 import { StatusBtn, StatusDot } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
 import { DueBadge, PinBtn, TaskFlags } from "./taskBits";
@@ -166,9 +166,7 @@ export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: L
             >
               <div className="plan-list-group-head">
                 {isDone ? (
-                  <button className="plan-list-fold" data-ui="toggle-completed-tasks" onClick={() => setDoneOpen((o) => !o)}>
-                    <Icon name={doneOpen ? "chevron-down" : "chevron-right"} cls="ico-sm" />
-                  </button>
+                  <ActionButton unstyled mode="icon" iconName={doneOpen ? "chevron-down" : "chevron-right"} label={t("plan.list.toggleCompleted")} tooltip={t("plan.list.toggleCompleted")} className="plan-list-fold" data-ui="toggle-completed-tasks" aria-expanded={doneOpen} onClick={() => setDoneOpen((o) => !o)} />
                 ) : (
                   <StatusDot status={g.key} />
                 )}

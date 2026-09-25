@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Button, Dialog } from "../ui";
+import { ActionButton, Dialog, Tooltip } from "../ui";
 import { DrawerStatusRow } from "./atoms";
 import type { Plan, Task, TaskStatus } from "./model";
 
@@ -20,7 +20,18 @@ export const PLAN_ICONS = [
   "sigma",
   "flask-conical",
   "microscope",
-];
+] as const;
+
+const PLAN_ICON_LABEL_KEYS = {
+  target: "plan.planModal.icons.target",
+  telescope: "plan.planModal.icons.telescope",
+  "book-marked": "plan.planModal.icons.book-marked",
+  database: "plan.planModal.icons.database",
+  "brain-circuit": "plan.planModal.icons.brain-circuit",
+  sigma: "plan.planModal.icons.sigma",
+  "flask-conical": "plan.planModal.icons.flask-conical",
+  microscope: "plan.planModal.icons.microscope",
+} as const;
 
 export interface PlanFormValues {
   name: string;
@@ -64,11 +75,10 @@ export function PlanModal({
       onClose={onCancel}
       footer={
         <>
-          <Button data-ui="cancel-plan-form" onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button data-ui="submit-plan-form" variant="primary" disabled={!valid} onClick={submit}>
-            <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
+          <ActionButton mode="text" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-plan-form" onClick={onCancel}>{t("common.cancel")}</ActionButton>
+          <ActionButton mode="text" label={edit ? t("common.save") : t("plan.planModal.submit")} tooltip={edit ? t("common.save") : t("plan.planModal.submit")} data-ui="submit-plan-form" variant="primary" disabled={!valid} onClick={submit}>
             {edit ? t("common.save") : t("plan.planModal.submit")}
-          </Button>
+          </ActionButton>
         </>
       }
     >
@@ -120,16 +130,22 @@ export function PlanModal({
       <div className="plan-field">
         <div className="plan-field-label">{t("plan.planModal.icon")}</div>
         <div className="plan-icon-grid" data-ui="plan-icon-options">
-          {PLAN_ICONS.map((ic) => (
-            <button
-              key={ic}
-              className={`plan-icon-opt${icon === ic ? " on" : ""}`} data-ui="plan-icon-option" data-ui-key={ic}
-              onClick={() => setIcon(ic)}
-              title={ic}
-            >
-              <Icon name={ic} cls="ico" />
-            </button>
-          ))}
+          {PLAN_ICONS.map((ic) => {
+            const label = t(PLAN_ICON_LABEL_KEYS[ic]);
+            return (
+              <Tooltip key={ic} content={label}>
+                <button
+                  className={`plan-icon-opt${icon === ic ? " on" : ""}`}
+                  data-ui="plan-icon-option"
+                  data-ui-key={ic}
+                  aria-label={label}
+                  onClick={() => setIcon(ic)}
+                >
+                  <Icon name={ic} cls="ico" />
+                </button>
+              </Tooltip>
+            );
+          })}
         </div>
       </div>
     </Dialog>
@@ -186,11 +202,10 @@ export function TaskModal({
       onClose={onCancel}
       footer={
         <>
-          <Button data-ui="cancel-task-form" onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button data-ui="submit-task-form" variant="primary" disabled={!valid} onClick={submit}>
-            <Icon name={edit ? "check" : "plus"} cls="ico-sm" />
+          <ActionButton mode="text" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-task-form" onClick={onCancel}>{t("common.cancel")}</ActionButton>
+          <ActionButton mode="text" label={edit ? t("common.save") : t("plan.taskModal.submit")} tooltip={edit ? t("common.save") : t("plan.taskModal.submit")} data-ui="submit-task-form" variant="primary" disabled={!valid} onClick={submit}>
             {edit ? t("common.save") : t("plan.taskModal.submit")}
-          </Button>
+          </ActionButton>
         </>
       }
     >
@@ -258,11 +273,10 @@ export function DeletePlanModal({
       onClose={onCancel}
       footer={
         <>
-          <Button ref={cancelRef} data-ui="cancel-delete-plan" onClick={onCancel}>{t("common.cancel")}</Button>
-          <Button data-ui="confirm-delete-plan" variant="danger" onClick={onConfirm}>
-            <Icon name="trash-2" cls="ico-sm" />
+          <ActionButton ref={cancelRef} mode="text" label={t("common.cancel")} tooltip={t("common.cancel")} data-ui="cancel-delete-plan" onClick={onCancel}>{t("common.cancel")}</ActionButton>
+          <ActionButton mode="text" label={t("plan.deletePlan.confirm")} tooltip={t("plan.deletePlan.confirm")} data-ui="confirm-delete-plan" variant="danger" onClick={onConfirm}>
             {t("plan.deletePlan.confirm")}
-          </Button>
+          </ActionButton>
         </>
       }
     >

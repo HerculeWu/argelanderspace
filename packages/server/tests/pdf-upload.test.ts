@@ -1065,6 +1065,7 @@ describe("local PDF upload lifecycle", () => {
       body: "Default note",
       created_at: at,
       updated_at: at,
+      ...(kind === "highlight" ? { future_annotation_field: { retained: true } } : {}),
     }));
     const savedResponse = await app.request(`/api/paper/${doc.doc_id}/pdf/annotations`, {
       method: "PUT",
@@ -1076,18 +1077,47 @@ describe("local PDF upload lifecycle", () => {
     expect(saved.rev).toBe(1);
     expect(saved.annotations).toHaveLength(3);
     expect(saved.annotations.map((item) => item.target)).toEqual([target, target, target]);
+    expect(saved.annotations[0]).toMatchObject({ future_annotation_field: { retained: true } });
     const sidecar = join(dataDir, "output", doc.doc_id, "annotations.json");
+    const recoloredResponse = await app.request(`/api/paper/${doc.doc_id}/pdf/annotations`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...saved,
+        annotations: saved.annotations.map((item, index) =>
+          index === 0 ? { ...item, color: "#387bd1" } : item
+        ),
+      }),
+    });
+    expect(recoloredResponse.status).toBe(200);
+    const recolored = (await recoloredResponse.json()) as {
+      rev: number;
+      annotations: Array<Record<string, unknown>>;
+    };
+    expect(recolored.rev).toBe(2);
+    expect(recolored.annotations[0]).toMatchObject({
+      color: "#387bd1",
+      future_annotation_field: { retained: true },
+    });
+    expect(recolored.annotations[0]?.updated_at).not.toBe(at);
     const committed = readFileSync(sidecar);
+    const noOp = await app.request(`/api/paper/${doc.doc_id}/pdf/annotations`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(recolored),
+    });
+    expect(await noOp.json()).toMatchObject({ rev: 2 });
+    expect(readFileSync(sidecar)).toEqual(committed);
     expect(readFileSync(join(dataDir, "output", doc.doc_id, "original.pdf"))).toEqual(originalPdf);
     const invalid = await app.request(`/api/paper/${doc.doc_id}/pdf/annotations`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...saved,
-        rev: 1,
+        ...recolored,
+        rev: 2,
         annotations: [
           {
-            ...saved.annotations[0],
+            ...recolored.annotations[0],
             target: { ...target, fragments: [{ ...target.fragments[0], page_index: 1 }] },
           },
         ],
@@ -1099,11 +1129,11 @@ describe("local PDF upload lifecycle", () => {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ...saved,
-        rev: 1,
+        ...recolored,
+        rev: 2,
         annotations: [
           {
-            ...saved.annotations[0],
+            ...recolored.annotations[0],
             target: { ...target, quote: "same geometry, different words" },
           },
         ],
@@ -1111,7 +1141,7 @@ describe("local PDF upload lifecycle", () => {
     });
     expect(rebound.status).toBe(500);
     expect(readFileSync(sidecar)).toEqual(committed);
-    expect(messages.filter((message) => message.type === "annotation.changed")).toHaveLength(1);
+    expect(messages.filter((message) => message.type === "annotation.changed")).toHaveLength(2);
   });
 
   test("stores a multi-page text selection as one sidecar item over heterogeneous rotated pages", async () => {

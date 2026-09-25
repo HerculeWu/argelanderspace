@@ -62,7 +62,7 @@ function applyDiff(base: PdfAnnotation[], change: Change): PdfAnnotation[] {
       if (next.kind === "rectangle" && (value.kind !== "rectangle" || value.page_index !== next.page_index)) rebaseConflict("rectangle target changed; reload or discard the draft");
       if (next.kind === "page_comment" && (value.kind !== "page_comment" || value.page_index !== next.page_index)) rebaseConflict("page comment target changed; reload or discard the draft");
       const merged = { ...value } as Record<string, unknown>;
-      for (const key of ["body", "rectangle", "style", "segments"]) {
+      for (const key of ["body", "rectangle", "style", "segments", "color"]) {
         const previousField = (prior as unknown as Record<string, unknown>)[key];
         const nextField = (next as unknown as Record<string, unknown>)[key];
         if (!equal(previousField, nextField)) {

@@ -326,10 +326,22 @@ export function savePdfAnnotationsFile(
       previous.body,
       "rectangle" in previous ? previous.rectangle : null,
       "style" in previous ? previous.style : null,
+      previous.kind === "highlight" ? ((previous as { color?: string }).color ?? null) : null,
     ]);
-    for (const key of ["body", "page_index", "rectangle", "style"])
+    for (const key of ["body", "page_index", "rectangle", "style", "color"])
       if (key in annotation) merged[key] = annotation[key];
-    const after = JSON.stringify([merged.body, merged.rectangle ?? null, merged.style ?? null]);
+    if (
+      annotation.kind === "highlight" &&
+      previous.kind === "highlight" &&
+      !("color" in annotation)
+    )
+      delete merged.color;
+    const after = JSON.stringify([
+      merged.body,
+      merged.rectangle ?? null,
+      merged.style ?? null,
+      annotation.kind === "highlight" ? (merged.color ?? null) : null,
+    ]);
     merged.updated_at = before === after ? previous.updated_at : new Date().toISOString();
     return merged as PdfAnnotationsFile["annotations"][number];
   });

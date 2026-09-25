@@ -64,16 +64,42 @@ afterEach(() => {
 describe("Shell docDeleted wiring (Stage 8 §8)", () => {
   it("exposes stable pane/navigation identifiers through locale, theme and density changes", async () => {
     await boot(["d1"], "/doc/d1");
+    const themeButton = document.querySelector('[data-ui="toggle-theme"]') as HTMLButtonElement;
+    expect(themeButton.querySelector("svg")).toBeTruthy();
+    expect(themeButton.textContent).toBe("");
+    const originalTheme = document.documentElement.getAttribute("data-theme");
+    fireEvent.click(themeButton);
+    expect(document.documentElement.getAttribute("data-theme")).not.toBe(originalTheme);
     const pane = document.querySelector('[data-ui="workspace-pane"]');
     expect(pane?.getAttribute("data-ui-key")).toBe("1");
     const nav = document.querySelector('[data-ui="navigate-view"][data-ui-key="library"]') as HTMLButtonElement;
     expect(nav).toBeTruthy();
+    expect(nav.textContent).toBe("");
+    expect(nav.querySelector("svg")).toBeTruthy();
+    expect(nav.getAttribute("aria-label")).toBe("文献");
+    const split = document.querySelector('[data-ui="split-pane"]') as HTMLButtonElement;
+    expect(split.getAttribute("aria-label")).toContain("分屏");
+    expect(document.querySelector('[data-ui="control-tooltip"]')?.textContent).toContain("分屏");
     fireEvent.click(document.querySelector('[data-ui="open-tweaks"]') as HTMLElement);
     fireEvent.click(document.querySelector('[data-ui="language-option"][data-ui-key="en"]') as HTMLElement);
+    expect(themeButton.getAttribute("aria-label")).toBe("Toggle theme");
+    expect(themeButton.parentElement?.querySelector('[data-ui="control-tooltip"]')?.textContent).toContain("Toggle theme");
     fireEvent.click(document.querySelector('[data-ui="theme-option"][data-ui-key="light"]') as HTMLElement);
     fireEvent.click(document.querySelector('[data-ui="density-option"][data-ui-key="compact"]') as HTMLElement);
+    const accent = document.querySelector('[data-ui="accent-option"][data-ui-key="teal"]') as HTMLButtonElement;
+    expect(accent.getAttribute("aria-label")).toBe("Teal");
+    expect(accent.querySelector("svg")).toBeTruthy();
+    expect(accent.classList.contains("ui-button")).toBe(false);
+    expect((document.querySelector('[data-ui="density-option"]') as HTMLButtonElement).classList.contains("ui-button")).toBe(false);
     expect(document.querySelector('[data-ui="navigate-view"][data-ui-key="library"]')).toBe(nav);
     expect(document.querySelector('[data-ui="workspace-pane"]')?.getAttribute("data-ui-key")).toBe("1");
+    expect(document.querySelector('[data-ui="toggle-navigation-labels"]')).toBeNull();
+    const iconNav = document.querySelector('[data-ui="navigate-view"][data-ui-key="library"]') as HTMLButtonElement;
+    expect(iconNav.textContent).toBe("");
+    expect(iconNav.querySelector("svg")).toBeTruthy();
+    expect(iconNav.getAttribute("aria-label")).toBe(i18n.t("shell.nav.library"));
+    expect(iconNav.parentElement?.querySelector('[data-ui="control-tooltip"]')?.textContent).toBe(i18n.t("shell.nav.library"));
+    expect(iconNav.classList.contains("ui-button")).toBe(false);
   });
   it("deleting a non-current doc drops it from papers; currentDoc + URL untouched", async () => {
     await boot(["d1", "d2"], "/doc/d1");

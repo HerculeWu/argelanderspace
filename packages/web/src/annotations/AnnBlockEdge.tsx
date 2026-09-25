@@ -1,9 +1,9 @@
 import { useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "../lib/icons";
 import { useStore } from "../store";
 import { useAnnotations } from "./AnnotationStore";
 import { buildStructureTarget } from "./model";
+import { ActionButton } from "../ui";
 
 /**
  * Per-block annotation affordance (Stage 8 MS3), rendered inside every
@@ -40,21 +40,22 @@ export function AnnBlockEdge({ id }: { id: string }) {
 
   return (
     <span ref={ref} className="ann-edge" data-ui="latex-annotation-gutter" data-ui-key={id} contentEditable={false}>
-      <button
-        type="button"
+      <ActionButton
+        unstyled
+        mode="icon"
+        iconName="message-square-plus"
+        label={t("annotation.action.add")}
+        tooltip={t("annotation.action.add")}
         disabled={!ann.canAnnotate}
         hidden={!ann.canAnnotate}
-        className="ann-edge-btn" data-ui="annotate-latex-block"
-        title={t("annotation.action.add")}
-        aria-label={t("annotation.action.add")}
+        className="ann-edge-btn"
+        data-ui="annotate-latex-block"
         onClick={(e) => {
           e.stopPropagation();
           const node = store.blockById.get(id);
           if (node) ann.openCreate(buildStructureTarget(node));
         }}
-      >
-        <Icon name="message-square-plus" cls="ico-sm" />
-      </button>
+      />
       {list.length > 0 && (
         <span className="ann-markers">
           {structList.map((a) => (

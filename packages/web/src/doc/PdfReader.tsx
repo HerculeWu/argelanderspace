@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { createPluginRegistration } from "@embedpdf/core";
 import { EmbedPDF } from "@embedpdf/core/react";
@@ -12,24 +13,23 @@ import { Rotate, RotatePluginPackage } from "@embedpdf/plugin-rotate/react";
 import { ScrollStrategy, Scroller, ScrollPluginPackage, useScrollCapability } from "@embedpdf/plugin-scroll/react";
 import { SearchLayer, SearchPluginPackage, useSearchCapability } from "@embedpdf/plugin-search/react";
 import { SelectionLayer, SelectionPluginPackage, useSelectionCapability } from "@embedpdf/plugin-selection/react";
-import type { FormattedSelection } from "@embedpdf/plugin-selection";
 import { PdfAnnotationSubtype, type PdfLinkAnnoObject, type PdfLinkTarget, type SearchResult } from "@embedpdf/models";
 import { Viewport, ViewportPluginPackage, useViewportCapability } from "@embedpdf/plugin-viewport/react";
 import { ZoomMode, ZoomPluginPackage, useZoomCapability } from "@embedpdf/plugin-zoom/react";
-import type { DocDescription, PdfAnnotation, PdfAnnotationsFile, PdfReaderPositionRead, PdfReadingLocation, PdfReadingPosition, PdfReaderSnapshot } from "@argelanderspace/contracts";
-import { PdfAnnotationsPanel } from "./PdfAnnotationsPanel";
+import type { DocDescription, PdfAnnotation, PdfAnnotationsFile, PdfHighlightColor, PdfReaderPositionRead, PdfReadingLocation, PdfReadingPosition, PdfReaderSnapshot } from "@argelanderspace/contracts";
+import { PdfAnnotationToolButtons, PdfAnnotationsPanel, type PdfAnnotationTool } from "./PdfAnnotationsPanel";
 import { OutlineList, type OutlineEntry } from "../components/TocPanel";
 import { copyPlainText } from "./copy-text";
 import { docRouteUrl } from "../lib/deeplink";
 import { dispatchPdfLinkTarget, flattenPdfBookmarks, isPdfLinkTargetAllowed } from "./pdf-navigation";
 import { PdfLinkHitLayer } from "./PdfLinkHitLayer";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
+import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
 import { buildPdfTextTarget, pdfPageRectFromVisible, pdfPageRectToVisible, pdfSelectionQuote } from "./pdf-text-target";
 import { registerWorkspaceLeaveGuard, useWorkspace } from "../argelander/workspace";
 import { fetchPdfDoc } from "../api/pdf";
 import { PdfReadingPositionWriter, type PositionWriterFailure, type PositionWriterState } from "./PdfReadingPositionWriter";
-import { Icon } from "../lib/icons";
-import { IconButton } from "../ui";
+import { ActionButton } from "../ui";
 import pdfiumWasmUrl from "@embedpdf/pdfium/pdfium.wasm?url";
 import "./pdf-reader.css";
 
@@ -59,9 +59,9 @@ export function PdfReader({ docId, description }: { docId: string; description: 
   if (state.phase === "error") {
     const message = state.message === "document changed" ? t("pdfReader.changed") : state.message === "engine timeout" ? t("pdfReader.engineTimeout") : state.message === "engine failed" ? t("pdfReader.engineFailed") : t("pdfReader.failed");
     return <div className="pdf-reader-state" data-ui="pdf-error" role={errorDismissed ? "status" : "alert"}>
-      {!errorDismissed && <IconButton variant="ghost" label={t("pdfReader.dismiss")} data-ui="dismiss-pdf-error" icon={<Icon name="x" cls="ico-sm" />} onClick={() => setErrorDismissed(true)} />}
+      {!errorDismissed && <ActionButton mode="icon" iconName="x" variant="ghost" label={t("pdfReader.dismiss")} tooltip={t("pdfReader.dismiss")} data-ui="dismiss-pdf-error" onClick={() => setErrorDismissed(true)} />}
       <p>{errorDismissed ? t("pdfReader.failedSummary") : message}</p>
-      <button type="button" data-ui="retry-pdf" onClick={() => { setErrorDismissed(false); setAttempt((value) => value + 1); }}>{t("pdfReader.retry")}</button>
+      <ActionButton unstyled mode="text" data-ui="retry-pdf" label={t("pdfReader.retry")} tooltip={t("pdfReader.retry")} onClick={() => { setErrorDismissed(false); setAttempt((value) => value + 1); }}>{t("pdfReader.retry")}</ActionButton>
     </div>;
   }
   return <PdfEngineReader key={docId} docId={docId} filename={description.display_name} workTitle={description.work_title} bytes={state.bytes} annotations={state.snapshot.annotations} pages={state.snapshot.metadata.pages} readingPosition={state.snapshot.reading_position} pendingAnchor={workspace.pendingAnchor} clearPendingAnchor={workspace.clearPendingAnchor} onTimeout={timeout} onFailure={failLoad} />;
@@ -135,7 +135,19 @@ function LoadedPdfDocument({
   const { t } = useTranslation();
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [selectionMode, setSelectionMode] = useState<"read" | "text" | "area">("read");
+  const [selectionMode, setSelectionMode] = useState<PdfAnnotationTool>("read");
+  const selectionModeRef = useRef(selectionMode);
+  selectionModeRef.current = selectionMode;
+  const [nextHighlightColor, setNextHighlightColor] = useState<PdfHighlightColor>("#ffd228");
+  const changeSelectionMode = (next: PdfAnnotationTool) => {
+    if (selectionModeRef.current === "highlight" && next !== "highlight") setNextHighlightColor("#ffd228");
+    selectionModeRef.current = next;
+    setSelectionMode(next);
+  };
+  const [toolFrameOpen, setToolFrameOpen] = useState(false);
+  const penButtonRef = useRef<HTMLButtonElement>(null);
+  const [commentRequest, setCommentRequest] = useState<{ kind: "page_comment" | "document_comment"; pageIndex?: number; key: number } | null>(null);
+  const commentRequestKey = useRef(0);
   const session = useMemo(() => new PdfAnnotationSession(docId, annotations.content_sha256, annotations), [docId, annotations.content_sha256]);
   const sessionState = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
@@ -200,17 +212,19 @@ function LoadedPdfDocument({
     const remove = registerWorkspaceLeaveGuard(() => !session.hasUnsaved() || window.confirm(t("pdfReader.unsavedLeave")));
     return remove;
   }, [session, t]);
-  useEffect(() => { if (sessionState.blocked) setSelectionMode("read"); }, [sessionState.blocked]);
+  useEffect(() => { if (sessionState.blocked) changeSelectionMode("read"); }, [sessionState.blocked]);
   useLayoutEffect(() => {
+    const textMode = selectionMode === "highlight" || selectionMode === "underline" || selectionMode === "strikeout";
     document.documentElement.dataset.pdfAreaMode = String(selectionMode === "area" && !sessionState.blocked);
+    document.documentElement.dataset.pdfTextMode = String(textMode && !sessionState.blocked);
     if (isLoaded && selectionControl) {
-      selectionControl.enableForMode("pointerMode", { enableSelection: selectionMode === "text" && !sessionState.blocked, showSelectionRects: true, enableMarquee: false }, docId);
-      if (selectionMode !== "text" || sessionState.blocked) selectionControl.clear(docId);
+      selectionControl.enableForMode("pointerMode", { enableSelection: textMode && !sessionState.blocked, showSelectionRects: true, enableMarquee: false }, docId);
+      if (!textMode || sessionState.blocked) selectionControl.clear(docId);
     }
-    return () => { delete document.documentElement.dataset.pdfAreaMode; };
+    return () => { delete document.documentElement.dataset.pdfAreaMode; delete document.documentElement.dataset.pdfTextMode; };
   }, [docId, isLoaded, selectionControl, selectionMode, sessionState.blocked]);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectionMode("read"); };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { changeSelectionMode("read"); setToolFrameOpen(false); penButtonRef.current?.focus(); } };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
@@ -387,7 +401,7 @@ function LoadedPdfDocument({
     {(positionUi.failed || positionUi.saving || positionUi.saved) && <ReadingPositionWarning busy={positionUi.saving} retry={() => { void positionWriter.retry(); }} failed={positionUi.failed} saved={positionUi.saved} failure={positionUi.failure} />}
     <div className="pdf-reader-layout" data-ui="pdf-reader" data-ui-key={docId} data-reading-position-state={positionUi.failed ? positionUi.failure ?? "failed" : positionUi.saving ? "saving" : positionUi.saved ? "saved" : "idle"}>
       <aside className={`pdf-side pdf-side-left${leftCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.outlineTitle")} data-ui="pdf-outline-panel">
-        <button type="button" className="pdf-panel-toggle" data-ui="toggle-pdf-outline" aria-expanded={!leftCollapsed} aria-label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)}>{leftCollapsed ? "»" : "«"}</button>
+        <ActionButton unstyled mode="icon" iconName={leftCollapsed ? "panel-left-open" : "panel-left-close"} className="pdf-panel-toggle" data-ui="toggle-pdf-outline" aria-expanded={!leftCollapsed} label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} tooltip={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)} />
         {!leftCollapsed && <div className="pdf-side-content"><h2>{t("pdfReader.outlineTitle")}</h2>{outlineEntries.length ? <OutlineList items={outlineEntries} onSelect={(id) => {
           markUserNavigation();
           const target = outlineTargets.get(id);
@@ -395,6 +409,24 @@ function LoadedPdfDocument({
         }} /> : <p>{t("pdfReader.outlineEmpty")}</p>}</div>}
       </aside>
       <div className="pdf-viewer-area" data-ui="pdf-document-area">
+        <div className="pdf-annotation-toolbar-anchor" data-ui="pdf-annotation-toolbar">
+          <ActionButton ref={penButtonRef} unstyled mode="icon" iconName="pencil" data-ui="toggle-pdf-annotation-tools" aria-expanded={toolFrameOpen} label={t(toolFrameOpen ? "pdfReader.closeAnnotationTools" : "pdfReader.openAnnotationTools")} tooltip={t(toolFrameOpen ? "pdfReader.closeAnnotationTools" : "pdfReader.openAnnotationTools")} onClick={() => {
+            if (toolFrameOpen) changeSelectionMode("read");
+            setToolFrameOpen((open) => !open);
+          }} />
+          {toolFrameOpen && <div className="pdf-annotation-toolbar-frame" role="toolbar" aria-label={t("pdfReader.annotationTools")} data-ui="pdf-annotation-toolbar-frame">
+            <PdfAnnotationToolButtons mode={selectionMode} blocked={sessionState.blocked || !session.isWritable()} onMode={changeSelectionMode} />
+            {selectionMode === "highlight" && <PdfHighlightColorPicker value={nextHighlightColor} onChange={setNextHighlightColor} disabled={sessionState.blocked || !session.isWritable()} ui="pdf-new-highlight-color" />}
+            <ActionButton unstyled mode="icon" iconName="message-square-plus" data-ui="add-pdf-page-comment" disabled={sessionState.blocked || !session.isWritable()} label={t("pdfReader.commentThisPage")} tooltip={t("pdfReader.commentThisPage")} onClick={() => {
+              changeSelectionMode("read"); setRightCollapsed(false);
+              setCommentRequest({ kind: "page_comment", pageIndex: currentPageIndex, key: ++commentRequestKey.current });
+            }} />
+            <ActionButton unstyled mode="icon" iconName="book-open" data-ui="add-pdf-document-comment" disabled={sessionState.blocked || !session.isWritable()} label={t("pdfReader.addDocumentComment")} tooltip={t("pdfReader.addDocumentComment")} onClick={() => {
+              changeSelectionMode("read"); setRightCollapsed(false);
+              setCommentRequest({ kind: "document_comment", key: ++commentRequestKey.current });
+            }} />
+          </div>}
+        </div>
         <GlobalPointerProvider documentId={docId}>
           <Viewport className="pdf-viewport" documentId={docId}>
             <Scroller documentId={docId} className="pdf-scroller" renderPage={(page) => (
@@ -411,10 +443,7 @@ function LoadedPdfDocument({
                       pageIndex={page.pageIndex}
                       annotations={sessionState.blocked ? [] : session.projectedAnnotations() as PdfAnnotation[]}
                       blocked={sessionState.blocked}
-                      onCreate={(annotation) => {
-                        setSelectionMode("read");
-                        session.create(annotation);
-                      }}
+                      onCreate={(annotation) => { session.create(annotation); }}
                       onUpdate={(id, rectangle) => {
                         const after = session.projectedAnnotations().map((item) => item.id === id && item.kind === "rectangle" ? { ...item, rectangle } : item) as PdfAnnotation[];
                         session.mutate(after);
@@ -426,19 +455,17 @@ function LoadedPdfDocument({
             )} />
           </Viewport>
         </GlobalPointerProvider>
-        <PdfTextTools docId={docId} session={session} pages={pages} blocked={sessionState.blocked} enabled={selectionMode === "text"} />
+        <PdfTextTools docId={docId} session={session} pages={pages} blocked={sessionState.blocked} kind={selectionMode === "highlight" || selectionMode === "underline" || selectionMode === "strikeout" ? selectionMode : null} highlightColor={nextHighlightColor} />
       </div>
       <aside className={`pdf-side pdf-side-right${rightCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.annotationsTitle")} data-ui="pdf-annotations-panel">
-        <button type="button" className="pdf-panel-toggle" data-ui="toggle-pdf-annotations" aria-expanded={!rightCollapsed} aria-label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)}>{rightCollapsed ? "«" : "»"}</button>
-        {!rightCollapsed && <div className="pdf-side-content"><h2>{t("pdfReader.annotationsTitle")}</h2><p className="pdf-text-selection-hint">{t("pdfReader.selectTextHint")} {t("pdfReader.keyboardTextSelectionHint")}</p><PdfAnnotationsPanel
+        <ActionButton unstyled mode="icon" iconName={rightCollapsed ? "chevron-left" : "chevron-right"} className="pdf-panel-toggle" data-ui="toggle-pdf-annotations" aria-expanded={!rightCollapsed} label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} tooltip={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)} />
+        <div className="pdf-side-content" hidden={rightCollapsed}><h2>{t("pdfReader.annotationsTitle")}</h2><PdfAnnotationsPanel
           session={session}
           currentPage={currentPageIndex}
           blocked={sessionState.blocked}
           onNavigatePage={(pageIndex) => scroll?.forDocument(docId).scrollToPage({ pageNumber: pageIndex + 1 })}
-          selectionMode={selectionMode}
-          onAddRectangle={() => setSelectionMode((previous) => previous === "area" ? "read" : "area")}
-          onSelectText={() => setSelectionMode((previous) => previous === "text" ? "read" : "text")}
-        /></div>}
+          commentRequest={commentRequest}
+        /></div>
       </aside>
     </div>
   </>;
@@ -547,23 +574,26 @@ function PdfAreaLayer({ pageIndex, blocked, annotations, onCreate, onUpdate }: {
       <button type="button" tabIndex={blocked ? -1 : 0} aria-label={t("pdfReader.resizeRectangle", { page: pageIndex + 1 })} disabled={blocked} className="pdf-area-resize" data-ui="resize-pdf-rectangle" onPointerDown={(event) => beginTransform(event, item, "resize")} onClick={(event) => event.stopPropagation()} />
     </div> : null)}
     {preview && gesture?.mode === "draw" && <div className="pdf-area-preview" style={{ left: `${preview.x * 100}%`, top: `${preview.y * 100}%`, width: `${preview.width * 100}%`, height: `${preview.height * 100}%` }} />}
-    <span className="pdf-area-hint">{t("pdfReader.drawRectangleHint")}</span>
   </div>;
 }
 
-function PdfTextTools({ docId, session, pages, blocked, enabled }: { docId: string; session: PdfAnnotationSession; pages: Array<{ width: number; height: number; rotation: number }>; blocked: boolean; enabled: boolean }) {
+function PdfTextTools({ docId, session, pages, blocked, kind, highlightColor }: { docId: string; session: PdfAnnotationSession; pages: Array<{ width: number; height: number; rotation: number }>; blocked: boolean; kind: "highlight" | "underline" | "strikeout" | null; highlightColor: PdfHighlightColor }) {
   const { t } = useTranslation();
   const { provides: selection } = useSelectionCapability();
-  const [current, setCurrent] = useState<{ text: string; pages: FormattedSelection[] } | null>(null);
-  const [geometryError, setGeometryError] = useState(false);
+  const [status, setStatus] = useState("");
+  const [selectedText, setSelectedText] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
-  const [toolbarPosition, setToolbarPosition] = useState<{ left: number; top: number } | null>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
   const pointerSelecting = useRef(false);
+  const keyboardExtended = useRef(false);
   const selectionGeneration = useRef(0);
-  const extendSelectionWithKeyboard = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!current || blocked || !event.shiftKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight") || !selection) return;
-    const scope = selection.forDocument(docId);
+  const selectionAttempt = useRef(0);
+  const currentKind = useRef(kind);
+  currentKind.current = kind;
+  const currentHighlightColor = useRef(highlightColor);
+  currentHighlightColor.current = highlightColor;
+
+  const extendSelectionWithKeyboard = (event: KeyboardEvent, scope: ReturnType<NonNullable<typeof selection>["forDocument"]>) => {
+    if (!event.shiftKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight") || !selection) return;
     const range = scope.getState().selection;
     if (!range) return;
     const end = { ...range.end };
@@ -579,112 +609,106 @@ function PdfTextTools({ docId, session, pages, blocked, enabled }: { docId: stri
       end.index = scope.getState().geometry[end.page]?.runs.reduce((last, run) => Math.max(last, run.charStart + run.glyphs.length - 1), 0) ?? 0;
     } else return;
     event.preventDefault();
+    keyboardExtended.current = true;
     scope.setSelection({ start: range.start, end }).wait(() => undefined, () => undefined);
   };
+
   useEffect(() => {
-    if (!selection || !enabled) { setCurrent(null); return; }
+    if (!selection || !kind) { setStatus(""); setSelectedText(""); setCopyStatus(""); return; }
     const scope = selection.forDocument(docId);
     const updateSelection = (range: unknown) => {
       const generation = ++selectionGeneration.current;
-      if (!range || pointerSelecting.current || blocked || !session.isWritable()) { setCurrent(null); setGeometryError(false); return; }
+      if (!range || pointerSelecting.current || blocked || !session.isWritable()) return;
       const formatted = scope.getFormattedSelection();
-      if (!formatted.length) { setCurrent(null); return; }
+      if (!formatted.length) return;
       void scope.getSelectedText().toPromise().then((text) => {
-        if (generation === selectionGeneration.current && session.isWritable()) { setCurrent({ text: pdfSelectionQuote(text), pages: formatted }); setGeometryError(false); }
-      }).catch(() => { if (generation === selectionGeneration.current) setCurrent(null); });
+        if (generation === selectionGeneration.current && session.isWritable() && pdfSelectionQuote(text).trim()) {
+          setSelectedText(pdfSelectionQuote(text));
+          setStatus("");
+        }
+      }).catch(() => undefined);
+    };
+    const commitSelection = async () => {
+      const attempt = ++selectionAttempt.current;
+      const range = scope.getState().selection;
+      const formatted = scope.getFormattedSelection();
+      if (!range || !formatted.length || blocked || !session.isWritable()) {
+        setStatus(t("pdfReader.textSelectionRejected"));
+        return;
+      }
+      try {
+        const text = pdfSelectionQuote(await scope.getSelectedText().toPromise());
+        if (attempt !== selectionAttempt.current || !session.isWritable() || currentKind.current === null) return;
+        if (!text.trim()) { setStatus(t("pdfReader.textSelectionRejected")); return; }
+        const target = buildPdfTextTarget([text], formatted, pages);
+        if (!target) { setStatus(t("pdfReader.textTargetGeometryError")); return; }
+        const at = new Date().toISOString();
+        const created = session.create({ id: `pann_${crypto.randomUUID()}`, kind: currentKind.current, ...(currentKind.current === "highlight" && currentHighlightColor.current !== "#ffd228" ? { color: currentHighlightColor.current } : {}), target, body: t("pdfReader.defaultBody"), created_at: at, updated_at: at });
+        if (!created) { setStatus(t("pdfReader.textSelectionRejected")); return; }
+      } catch {
+        if (attempt === selectionAttempt.current) setStatus(t("pdfReader.textSelectionRejected"));
+      }
     };
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button === 0 && event.target instanceof Element && event.target.closest(".pdf-page-content")) pointerSelecting.current = true;
+      if (event.button !== 0 || !(event.target instanceof Element) || !event.target.closest(".pdf-page-content")) return;
+      pointerSelecting.current = true;
+      selectionAttempt.current++;
+      setStatus("");
+      setSelectedText("");
+      setCopyStatus("");
+      scope.clear();
     };
-    const onPointerFinish = () => {
+    const onPointerUp = () => {
       if (!pointerSelecting.current) return;
       pointerSelecting.current = false;
-      requestAnimationFrame(() => updateSelection(scope.getState().selection));
+      requestAnimationFrame(() => { void commitSelection(); });
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      const focus = document.activeElement;
+      if (!(focus instanceof Element) || !focus.closest('[data-ui="pdf-annotation-toolbar-frame"]')) return;
+      extendSelectionWithKeyboard(event, scope);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!keyboardExtended.current || event.key !== "Shift") return;
+      keyboardExtended.current = false;
+      requestAnimationFrame(() => requestAnimationFrame(() => { void commitSelection(); }));
     };
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("pointerup", onPointerFinish, true);
-    window.addEventListener("pointercancel", onPointerFinish, true);
+    window.addEventListener("pointerup", onPointerUp, true);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
     const unsubscribe = scope.onSelectionChange(updateSelection);
-    const unsubscribeEnd = scope.onEndSelection(() => updateSelection(scope.getState().selection));
-    updateSelection(scope.getState().selection);
+    const unsubscribeEnd = scope.onEndSelection(updateSelection);
     return () => {
       selectionGeneration.current++;
+      selectionAttempt.current++;
       pointerSelecting.current = false;
+      keyboardExtended.current = false;
       window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("pointerup", onPointerFinish, true);
-      window.removeEventListener("pointercancel", onPointerFinish, true);
+      window.removeEventListener("pointerup", onPointerUp, true);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
       unsubscribe();
       unsubscribeEnd();
     };
-  }, [selection, docId, blocked, enabled, session]);
-  const positionToolbar = useCallback(() => {
-    const fragment = current?.pages[current.pages.length - 1];
-    const geometry = fragment && pages[fragment.pageIndex];
-    const pageElement = fragment && document.querySelector<HTMLElement>(`.pdf-area-layer[data-pdf-page-index="${fragment.pageIndex}"]`);
-    const bounds = pageElement?.getBoundingClientRect();
-    if (!fragment || !geometry || !bounds || bounds.width <= 0 || bounds.height <= 0) return;
-    const sdkRect = {
-      x: fragment.rect.origin.x / geometry.width,
-      y: fragment.rect.origin.y / geometry.height,
-      width: fragment.rect.size.width / geometry.width,
-      height: fragment.rect.size.height / geometry.height,
-    };
-    const rect = pdfPageRectToVisible(sdkRect, geometry.rotation);
-    const anchorLeft = bounds.left + rect.x * bounds.width;
-    const anchorRight = anchorLeft + rect.width * bounds.width;
-    const anchorTop = bounds.top + rect.y * bounds.height;
-    const anchorBottom = anchorTop + rect.height * bounds.height;
-    const toolbar = toolbarRef.current?.getBoundingClientRect();
-    const width = toolbar?.width ?? 300;
-    const height = toolbar?.height ?? 68;
-    const left = Math.max(8, Math.min(window.innerWidth - width - 8, (anchorLeft + anchorRight - width) / 2));
-    const above = anchorTop - height - 10;
-    const top = above >= 8 ? above : Math.min(window.innerHeight - height - 8, anchorBottom + 10);
-    setToolbarPosition((previous) => previous && Math.abs(previous.left - left) < 1 && Math.abs(previous.top - top) < 1 ? previous : { left, top });
-  }, [current, pages]);
-  useLayoutEffect(() => {
-    if (!current) { setToolbarPosition(null); return; }
-    const frame = requestAnimationFrame(positionToolbar);
-    window.addEventListener("scroll", positionToolbar, true);
-    window.addEventListener("resize", positionToolbar);
-    const observer = new ResizeObserver(positionToolbar);
-    if (toolbarRef.current) observer.observe(toolbarRef.current);
-    for (const fragment of current.pages) {
-      const page = document.querySelector<HTMLElement>(`.pdf-area-layer[data-pdf-page-index="${fragment.pageIndex}"]`);
-      if (page) observer.observe(page);
-    }
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("scroll", positionToolbar, true);
-      window.removeEventListener("resize", positionToolbar);
-      observer.disconnect();
-    };
-  }, [current, positionToolbar]);
+  }, [selection, docId, blocked, kind, pages, session, t]);
+
   const copySelection = async () => {
     setCopyStatus(t("pdfReader.copying"));
     try {
-      const copied = await copyPlainText(current?.text ?? "");
+      const copied = await copyPlainText(selectedText);
       setCopyStatus(t(copied ? "pdfReader.textCopied" : "pdfReader.copyFailed"));
     } catch { setCopyStatus(t("pdfReader.copyFailed")); }
   };
-  const create = (kind: "highlight" | "underline" | "strikeout") => {
-    if (!current || blocked || !session.isWritable()) return;
-    const target = buildPdfTextTarget([current.text], current.pages, pages);
-    if (!target) { setGeometryError(true); return; }
-    const at = new Date().toISOString();
-    const created = session.create({ id: `pann_${crypto.randomUUID()}`, kind, target, body: t("pdfReader.defaultBody"), created_at: at, updated_at: at });
-    if (created) { selection?.forDocument(docId).clear(); setCurrent(null); setGeometryError(false); }
-  };
-  if (!enabled || !current) return null;
-  return <div ref={toolbarRef} style={{ position: "fixed", left: toolbarPosition?.left ?? 8, top: toolbarPosition?.top ?? 8, zIndex: 20 }} className="pdf-text-tools" data-ui="pdf-selection-tools" role="toolbar" aria-label={t("pdfReader.textToolsTitle")} aria-live="polite" onKeyDown={extendSelectionWithKeyboard}>
-    <blockquote>{current.text}</blockquote>
-    {geometryError && <p role="alert">{t("pdfReader.textTargetGeometryError")}</p>}
-    <button type="button" data-ui="copy-pdf-selection" onClick={() => void copySelection()}>{t("pdfReader.copySelection")}</button>
-    {copyStatus && <span role="status">{copyStatus}</span>}
-    <button type="button" disabled={blocked} data-ui="highlight-pdf-selection" onClick={() => create("highlight")}>{t("pdfReader.highlight")}</button>
-    <button type="button" disabled={blocked} data-ui="underline-pdf-selection" onClick={() => create("underline")}>{t("pdfReader.underline")}</button>
-    <button type="button" disabled={blocked} data-ui="strikeout-pdf-selection" onClick={() => create("strikeout")}>{t("pdfReader.strikeout")}</button>
-  </div>;
+  if (!kind || (!status && !selectedText && !copyStatus)) return null;
+  return <>
+    {selectedText && <div className="pdf-text-tools" data-ui="pdf-selection-tools" role="toolbar" aria-label={t("pdfReader.textSelectionTools")}>
+      <blockquote>{selectedText}</blockquote>
+      <ActionButton unstyled mode="icon" iconName="copy" data-ui="copy-pdf-selection" label={t("pdfReader.copySelection")} tooltip={t("pdfReader.copySelection")} onClick={() => void copySelection()} />
+      {copyStatus && <span role="status">{copyStatus}</span>}
+    </div>}
+    {status && <div className="pdf-text-tools" data-ui="pdf-text-selection-status" role="status" aria-live="polite">{status}</div>}
+  </>;
 }
 
 function PdfTextAnnotationsLayer({ pageIndex, rotation, annotations, onActivate }: { pageIndex: number; rotation: number; annotations: PdfAnnotation[]; onActivate: (id: string) => void }) {
@@ -700,7 +724,7 @@ function PdfTextAnnotationsLayer({ pageIndex, rotation, annotations, onActivate 
         key={`${annotation.id}-${index}`} type="button" data-pdf-annotation-id={annotation.id} data-pdf-rectangle-index={index} data-ui="pdf-text-mark" data-ui-key={`${annotation.id}:${index}`} className={`pdf-text-mark ${annotation.kind}`}
         aria-label={t("pdfReader.textMarkLabel", { kind: t(`pdfReader.${annotation.kind}`), quote: annotation.target.quote })}
         title={annotation.target.quote}
-        style={{ left: `${sdkRect.x * 100}%`, top: `${sdkRect.y * 100}%`, width: `${sdkRect.width * 100}%`, height: `${sdkRect.height * 100}%` }}
+        style={{ left: `${sdkRect.x * 100}%`, top: `${sdkRect.y * 100}%`, width: `${sdkRect.width * 100}%`, height: `${sdkRect.height * 100}%`, "--pdf-highlight-color": annotation.kind === "highlight" ? annotation.color ?? "#ffd228" : undefined } as CSSProperties}
         onClick={() => onActivate(annotation.id)}
       />;
       });
@@ -749,9 +773,9 @@ function ReadingPositionWarning({ busy, retry, failed, saved, failure }: { busy:
           : "pdfReader.positionSaveFailed";
   return (
     <div className="pdf-position-warning" data-ui="pdf-reading-position-notice" role={failed && !dismissed ? "alert" : "status"}>
-      {failed && !dismissed && <IconButton variant="ghost" label={t("pdfReader.dismissPositionError")} data-ui="dismiss-pdf-position-error" icon={<Icon name="x" cls="ico-sm" />} onClick={() => setDismissed(true)} />}
+      {failed && !dismissed && <ActionButton mode="icon" iconName="x" variant="ghost" label={t("pdfReader.dismissPositionError")} tooltip={t("pdfReader.dismissPositionError")} data-ui="dismiss-pdf-position-error" onClick={() => setDismissed(true)} />}
       <span>{failed ? t(dismissed ? summaryMessage : failureMessage) : busy ? t("pdfReader.positionSaving") : saved ? t("pdfReader.positionSaved") : ""}</span>
-      {failed && <button type="button" disabled={busy} data-ui="retry-pdf-reading-position" onClick={retry}>{t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")}</button>}
+      {failed && <ActionButton unstyled mode="text" disabled={busy} data-ui="retry-pdf-reading-position" label={t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")} tooltip={t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")} onClick={retry}>{t(failure === "revision-conflict" ? "pdfReader.positionCheckAgain" : "pdfReader.retry")}</ActionButton>}
     </div>
   );
 }
@@ -799,7 +823,7 @@ function PdfSearchControls({ docId, pages, onUserNavigation }: { docId: string; 
   };
   return <div className="pdf-search-controls" data-ui="pdf-search">
     <label><span className="sr-only">{t("pdfReader.search")}</span><input data-ui="pdf-search-query" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") run(); }} placeholder={t("pdfReader.search")} /></label>
-    <button type="button" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" onClick={run}>{t("pdfReader.search")}</button>
+    <ActionButton unstyled mode="icon" iconName="search" className="pdf-icon-action" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" label={t("pdfReader.search")} tooltip={t("pdfReader.search")} onClick={run} />
     <span role="status">{loading ? t("pdfReader.searching") : searched && results.length === 0 ? t("pdfReader.searchNoResults") : searched ? t("pdfReader.searchCount", { count: results.length }) : ""}</span>
     {results.slice(0, 20).map((result, index) => <button type="button" className="pdf-search-result" data-ui="pdf-search-result" data-ui-key={`${result.pageIndex}:${result.charIndex}:${index}`} key={`${result.pageIndex}-${result.charIndex}-${index}`} onClick={() => navigate(result, index)}>{t("pdfReader.searchResult", { index: index + 1, page: result.pageIndex + 1 })} · {result.context?.before ?? ""}{result.context?.match ?? ""}{result.context?.after ?? ""}</button>)}
   </div>;
@@ -841,21 +865,21 @@ function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUs
   return <header className="pdf-toolbar" data-ui="pdf-toolbar" role="toolbar" aria-label={t("pdfReader.toolbar")}>
     <div className="pdf-doc-context"><strong>{workTitle}</strong><code>{filename} · {docId}</code></div>
     <div className="pdf-page-controls" data-ui="pdf-page-controls">
-      <button type="button" disabled={!scroll || actualPage <= 1} data-ui="previous-pdf-page" aria-label={t("pdfReader.previousPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToPreviousPage(); }}>{"‹"}</button>
+      <ActionButton unstyled mode="icon" iconName="chevron-left" className="pdf-icon-action" disabled={!scroll || actualPage <= 1} data-ui="previous-pdf-page" label={t("pdfReader.previousPage")} tooltip={t("pdfReader.previousPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToPreviousPage(); }} />
       <input data-ui="pdf-page-number" aria-label={t("pdfReader.pageNumber")} type="number" min={1} max={totalPages} value={page} onChange={(event) => setPage(Number(event.target.value))} onBlur={() => setPage(actualPage)} onKeyDown={(event) => { if (event.key === "Enter") moveToPage(); }} />
       <span>{t("pdfReader.pageOf", { page: actualPage, total: totalPages })}</span>
-      <button type="button" disabled={!scroll || actualPage >= totalPages} data-ui="next-pdf-page" aria-label={t("pdfReader.nextPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToNextPage(); }}>{"›"}</button>
-      <button type="button" data-ui="go-to-pdf-page" onClick={moveToPage}>{t("pdfReader.goToPage")}</button>
-      <button type="button" data-ui="copy-pdf-page-link" onClick={() => void copyPageLink()}>{t("pdfReader.copyPageLink")}</button>
+      <ActionButton unstyled mode="icon" iconName="chevron-right" className="pdf-icon-action" disabled={!scroll || actualPage >= totalPages} data-ui="next-pdf-page" label={t("pdfReader.nextPage")} tooltip={t("pdfReader.nextPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToNextPage(); }} />
+      <ActionButton unstyled mode="icon" iconName="corner-up-right" className="pdf-icon-action" data-ui="go-to-pdf-page" label={t("pdfReader.goToPage")} tooltip={t("pdfReader.goToPage")} onClick={moveToPage} />
+      <ActionButton unstyled mode="icon" iconName="copy" className="pdf-icon-action" data-ui="copy-pdf-page-link" label={t("pdfReader.copyPageLink")} tooltip={t("pdfReader.copyPageLink")} onClick={() => void copyPageLink()} />
       {copyStatus && <span role="status">{copyStatus}</span>}
     </div>
     <PdfSearchControls docId={docId} pages={pages} onUserNavigation={onUserNavigation} />
     <div className="pdf-zoom-controls" data-ui="pdf-zoom-controls">
-      <button type="button" disabled={!zoom} data-ui="zoom-out-pdf" aria-label={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()}>−</button>
-      <button type="button" data-ui="fit-pdf-width" disabled={!zoom} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)}>{t("pdfReader.fitWidth")}</button>
-      <button type="button" data-ui="fit-pdf-page" disabled={!zoom} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)}>{t("pdfReader.fitPage")}</button>
-      <button type="button" disabled={!zoom} data-ui="zoom-in-pdf" aria-label={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()}>+</button>
+      <ActionButton unstyled mode="icon" iconName="minus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-out-pdf" label={t("pdfReader.zoomOut")} tooltip={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()} />
+      <ActionButton unstyled mode="icon" iconName="fit-width" className="pdf-icon-action" data-ui="fit-pdf-width" disabled={!zoom} label={t("pdfReader.fitWidth")} tooltip={t("pdfReader.fitWidth")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)} />
+      <ActionButton unstyled mode="icon" iconName="fit-page" className="pdf-icon-action" data-ui="fit-pdf-page" disabled={!zoom} label={t("pdfReader.fitPage")} tooltip={t("pdfReader.fitPage")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)} />
+      <ActionButton unstyled mode="icon" iconName="plus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-in-pdf" label={t("pdfReader.zoomIn")} tooltip={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()} />
     </div>
-    <button type="button" data-ui="download-original-pdf" onClick={download}>{t("pdfReader.downloadOriginal")}</button>
+    <ActionButton unstyled mode="icon" iconName="download" className="pdf-icon-action" data-ui="download-original-pdf" label={t("pdfReader.downloadOriginal")} tooltip={t("pdfReader.downloadOriginal")} onClick={download} />
   </header>;
 }
