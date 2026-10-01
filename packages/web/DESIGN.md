@@ -11,6 +11,12 @@ ArgelanderSpace Web is a dense, independently operable research workbench. Prese
 - A visible `:focus-visible` outline, an accessible name, and non-color state copy are baseline behavior.
 - For the UI-does-not-teach and icon-first rules, follow the authoritative [frontend interaction guidance](../../docs/engineering.md#前端交互规范); essential risk, failure, and recovery copy still belongs in the interface.
 
+## Preserve unaffected appearance and behavior
+
+For a targeted UI refinement, unreported aspects are a preservation baseline, not an invitation to redesign. Tie each visible change to the reported problem and identify its affected controls; a rule that applies across the application does not authorize indiscriminately restyling every control. Preserve unrelated layout, typography, colors, spacing, control geometry, density behavior, and established interactions. If a fix requires changing these, present that impact for renewed approval rather than hiding it inside a shared-style migration.
+
+Icon stroke compensation for different button/icon sizes must preserve the existing whole-page browser zoom behavior. Do not add zoom/DPR-dependent correction or suppress normal page magnification. Compare both the intended improvement and representative unaffected controls against the pre-change application in a real browser; restoring a regression is part of the fix, not optional polish.
+
 ## UI consensus and prototype gate
 
 For changes involving UI, the prototype is part of the design consensus, not an optional illustration after the spec is approved. Before production implementation, present a runnable prototype for user review; textual agreement alone does not complete the UI design gate.
@@ -38,6 +44,13 @@ A destructive operation must name the object and state its scope and irreversibi
 - `IconButton` remains available for gradual migration of existing callers; it always receives a text `label`, combines the accessible name with the shared custom `Tooltip`, and does not rely on native `title` alone.
 - `InlineMessage` combines icon, text, and semantic tone. Use warning for a risk or recoverable busy state, danger for a failed operation, and preserve useful server detail beneath a localized heading.
 - `Badge` supplies compact, non-interactive status labels. Its `neutral` and `accent` tones are supplemental: the visible text must carry the state without relying on color.
+
+### Icon sources and maintenance
+
+- `svglib/` at the repository root is the local candidate SVG library and is ignored by Git. It is a design-time source, not an application asset directory: do not link, import, fetch, or serve it from product code, and do not make normal builds depend on its presence.
+- Copy only the selected, license-verified and safely normalized icons into the existing resource location, `src/ui/icons.json`. Preserve its `data-ui` keys and state variants; keep source/license attribution alongside the vendored resources where required. A download-site comment alone does not establish an icon's license.
+- Consolidate required icon credits in `THIRD_PARTY_LICENSES.md`: include the author, source, applicable license reference, and modification notice. Retain this notice with the relevant Web/application build artifacts through the existing asset-copy flow; a repository-only file is not the delivery contract. Do not invent an unspecified license version, remove existing third-party notices, or add a visible credit banner/dialog merely for this file-based attribution arrangement.
+- This document is the authoritative place for reusable button classes, icon sizing/stroke policy, and their permitted exceptions. Changes apply across all application-owned UI surfaces; document content, scientific figures, and PDF page graphics are not UI icons. New visual presets still require the prototype review gate above before production migration.
 
 ## Reading-first reference detail
 
@@ -76,3 +89,42 @@ HTTP success, busy 409, already-missing 404, and other errors retain their estab
 Extract a primitive from a real consumer and give it interaction responsibility, not only a CSS wrapper. Reuse the public interface first; add a prop or primitive when the consumer demonstrates a distinct behavior. Writer and ImportDialog remain separate until a ticket explicitly migrates them.
 
 Validate behavior at public props/keyboard/focus or feature HTTP/WS/callback seams. Happy DOM cannot prove layout: use the real application in a browser for representative theme, language, density, and desktop viewport combinations, recording actual pane/dialog dimensions and any unverified cases.
+
+### Explicit visual roles (approved prototype B)
+
+`Button`, `ActionButton` and `IconButton` accept `appearance="quiet" | "secondary" | "primary"`
+with `tone="neutral" | "danger"`. Explicit appearance excludes legacy `variant` in the type
+interface. Omitted appearance preserves legacy classes; `unstyled` still keeps local geometry.
+`iconSize="small" | "regular" | "navigation"` may be used alone with a legacy surface.
+Import these controls/types through `src/ui/index.ts`.
+
+- `ui-action` owns only visual transitions, not hit-box, padding, typography or layout.
+- `ui-action--quiet` hides ordinary resting background/border/shadow, excluding persistent
+  `aria-pressed`/`aria-expanded` state; hover/pressed reuse existing tokens.
+- `ui-action--secondary` is the existing flat ordinary surface; `ui-action--primary` keeps
+  the existing primary palette. `ui-action--danger` supplies semantic danger, not new behavior.
+- `ui-icon` and `ui-icon-size--small/regular/navigation` pair **18/24/33 CSSpx** artwork with
+  **7/3, 1.75, 14/11** resource-unit strokes on the 24-unit canvas (target T=1.75 CSSpx).
+  Ordinary SVG scaling preserves browser page zoom; no non-scaling-stroke or zoom/DPR correction.
+  Resources must have no child stroke-width override; fill-only artwork does not acquire a stroke.
+  Callers must not override a selected preset's size or stroke.
+
+Roles are opt-in capabilities, not permission to migrate unlisted controls. Quiet production
+adoption is limited to Graph zoom± and PDF toolbar previous/next/go/copy/search/zoom±/fit-width/
+fit-page/download. The first consumer is Graph zoom± (small18, quiet); other feature migrations
+require their approved entries. Glyph fallback remains localized visible text with usable width.
+The PDF floating tool-toggle is glyph-only small18 with its original surface; the mixed annotation
+kind+page label, circular color dots/downward palette, Plan telescope24, Extensions24 and navigation
+33 target/selected indicators remain finite preservation exceptions. Scientific/document/PDF/graph
+content is never targeted by these classes. Preserve local geometry, density, callbacks, focus and
+tooltip lifecycle; no global resets or caller-specific optical patches.
+
+Adopted Dazzle UI resources are traced in `src/ui/icons.provenance.json` (source filename,
+original/normalized hashes, modifications and `data-ui`/variant), with the collection-level
+CC Attribution notice in [`THIRD_PARTY_LICENSES.md`](../../THIRD_PARTY_LICENSES.md).
+The license version is unspecified; the supplied collection permission is user-confirmed,
+not an independent license audit. Use the developer-only `scripts/svg-import.ts` audit →
+normalize → explicit-selection promote flow; never overwrite source assets or bypass the
+runtime parser. Provenance is an attribution record, not a second action/style registry.
+Normal Web and app asset-copy flows carry the adopted notice and compact provenance;
+they must not consume the private source pack or normalized staging directory.

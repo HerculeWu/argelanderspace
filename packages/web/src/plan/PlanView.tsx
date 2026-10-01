@@ -440,8 +440,8 @@ export function PlanView() {
                   />
                 ))}
               </div>
-              <ActionButton unstyled mode="icon" iconName="pencil" label={t("plan.action.editPlan")} tooltip={t("plan.action.editPlan")} className="btn icon ghost" data-ui="edit-plan" onClick={() => setModal({ kind: "plan", plan })} />
-              <ActionButton unstyled mode="icon" iconName="trash-2" label={t("plan.action.deletePlan")} tooltip={t("plan.action.deletePlan")} className="btn icon ghost" data-ui="delete-plan" onClick={() => setModal({ kind: "deletePlan", plan })} />
+              <ActionButton unstyled mode="icon" iconSize="small" iconName="pencil" label={t("plan.action.editPlan")} tooltip={t("plan.action.editPlan")} className="btn icon ghost" data-ui="edit-plan" onClick={() => setModal({ kind: "plan", plan })} />
+              <ActionButton unstyled mode="icon" iconSize="small" iconName="trash-2" label={t("plan.action.deletePlan")} tooltip={t("plan.action.deletePlan")} className="btn icon ghost" data-ui="delete-plan" onClick={() => setModal({ kind: "deletePlan", plan })} />
               <ActionButton unstyled mode="text" label={t("plan.action.newTask")} tooltip={t("plan.action.newTask")} className="btn primary" data-ui="create-task" onClick={() => setModal({ kind: "task", planId: plan.id, defaultStatus: "todo" })}>
                 {t("plan.action.newTask")}
               </ActionButton>
@@ -611,7 +611,7 @@ function PlansSidebar({
 
       <div className="plan-side-section">
         <div className="plan-side-label">{t("plan.side.plans")}</div>
-        <ActionButton unstyled mode="icon" iconName="plus" label={t("plan.action.newPlan")} tooltip={t("plan.action.newPlan")} className="plan-side-add" data-ui="create-plan" onClick={onAddPlan} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="plus" label={t("plan.action.newPlan")} tooltip={t("plan.action.newPlan")} className="plan-side-add" data-ui="create-plan" onClick={onAddPlan} />
       </div>
 
       <div className="plan-list">

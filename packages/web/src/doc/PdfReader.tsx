@@ -410,7 +410,7 @@ function LoadedPdfDocument({
       </aside>
       <div className="pdf-viewer-area" data-ui="pdf-document-area">
         <div className="pdf-annotation-toolbar-anchor" data-ui="pdf-annotation-toolbar">
-          <ActionButton ref={penButtonRef} unstyled mode="icon" iconName="pencil" data-ui="toggle-pdf-annotation-tools" aria-expanded={toolFrameOpen} label={t(toolFrameOpen ? "pdfReader.closeAnnotationTools" : "pdfReader.openAnnotationTools")} tooltip={t(toolFrameOpen ? "pdfReader.closeAnnotationTools" : "pdfReader.openAnnotationTools")} onClick={() => {
+          <ActionButton ref={penButtonRef} unstyled mode="icon" iconSize="small" iconName="pencil" data-ui="toggle-pdf-annotation-tools" aria-expanded={toolFrameOpen} label={t(toolFrameOpen ? "pdfReader.closeAnnotationTools" : "pdfReader.openAnnotationTools")} tooltip={t(toolFrameOpen ? "pdfReader.closeAnnotationTools" : "pdfReader.openAnnotationTools")} onClick={() => {
             if (toolFrameOpen) changeSelectionMode("read");
             setToolFrameOpen((open) => !open);
           }} />
@@ -823,7 +823,7 @@ function PdfSearchControls({ docId, pages, onUserNavigation }: { docId: string; 
   };
   return <div className="pdf-search-controls" data-ui="pdf-search">
     <label><span className="sr-only">{t("pdfReader.search")}</span><input data-ui="pdf-search-query" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") run(); }} placeholder={t("pdfReader.search")} /></label>
-    <ActionButton unstyled mode="icon" iconName="search" className="pdf-icon-action" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" label={t("pdfReader.search")} tooltip={t("pdfReader.search")} onClick={run} />
+    <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="search" className="pdf-icon-action" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" label={t("pdfReader.search")} tooltip={t("pdfReader.search")} onClick={run} />
     <span role="status">{loading ? t("pdfReader.searching") : searched && results.length === 0 ? t("pdfReader.searchNoResults") : searched ? t("pdfReader.searchCount", { count: results.length }) : ""}</span>
     {results.slice(0, 20).map((result, index) => <button type="button" className="pdf-search-result" data-ui="pdf-search-result" data-ui-key={`${result.pageIndex}:${result.charIndex}:${index}`} key={`${result.pageIndex}-${result.charIndex}-${index}`} onClick={() => navigate(result, index)}>{t("pdfReader.searchResult", { index: index + 1, page: result.pageIndex + 1 })} · {result.context?.before ?? ""}{result.context?.match ?? ""}{result.context?.after ?? ""}</button>)}
   </div>;
@@ -865,21 +865,21 @@ function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUs
   return <header className="pdf-toolbar" data-ui="pdf-toolbar" role="toolbar" aria-label={t("pdfReader.toolbar")}>
     <div className="pdf-doc-context"><strong>{workTitle}</strong><code>{filename} · {docId}</code></div>
     <div className="pdf-page-controls" data-ui="pdf-page-controls">
-      <ActionButton unstyled mode="icon" iconName="chevron-left" className="pdf-icon-action" disabled={!scroll || actualPage <= 1} data-ui="previous-pdf-page" label={t("pdfReader.previousPage")} tooltip={t("pdfReader.previousPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToPreviousPage(); }} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="chevron-left" className="pdf-icon-action" disabled={!scroll || actualPage <= 1} data-ui="previous-pdf-page" label={t("pdfReader.previousPage")} tooltip={t("pdfReader.previousPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToPreviousPage(); }} />
       <input data-ui="pdf-page-number" aria-label={t("pdfReader.pageNumber")} type="number" min={1} max={totalPages} value={page} onChange={(event) => setPage(Number(event.target.value))} onBlur={() => setPage(actualPage)} onKeyDown={(event) => { if (event.key === "Enter") moveToPage(); }} />
       <span>{t("pdfReader.pageOf", { page: actualPage, total: totalPages })}</span>
-      <ActionButton unstyled mode="icon" iconName="chevron-right" className="pdf-icon-action" disabled={!scroll || actualPage >= totalPages} data-ui="next-pdf-page" label={t("pdfReader.nextPage")} tooltip={t("pdfReader.nextPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToNextPage(); }} />
-      <ActionButton unstyled mode="icon" iconName="corner-up-right" className="pdf-icon-action" data-ui="go-to-pdf-page" label={t("pdfReader.goToPage")} tooltip={t("pdfReader.goToPage")} onClick={moveToPage} />
-      <ActionButton unstyled mode="icon" iconName="copy" className="pdf-icon-action" data-ui="copy-pdf-page-link" label={t("pdfReader.copyPageLink")} tooltip={t("pdfReader.copyPageLink")} onClick={() => void copyPageLink()} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="chevron-right" className="pdf-icon-action" disabled={!scroll || actualPage >= totalPages} data-ui="next-pdf-page" label={t("pdfReader.nextPage")} tooltip={t("pdfReader.nextPage")} onClick={() => { onUserNavigation(); scroll?.forDocument(docId).scrollToNextPage(); }} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="corner-up-right" className="pdf-icon-action" data-ui="go-to-pdf-page" label={t("pdfReader.goToPage")} tooltip={t("pdfReader.goToPage")} onClick={moveToPage} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="copy" className="pdf-icon-action" data-ui="copy-pdf-page-link" label={t("pdfReader.copyPageLink")} tooltip={t("pdfReader.copyPageLink")} onClick={() => void copyPageLink()} />
       {copyStatus && <span role="status">{copyStatus}</span>}
     </div>
     <PdfSearchControls docId={docId} pages={pages} onUserNavigation={onUserNavigation} />
     <div className="pdf-zoom-controls" data-ui="pdf-zoom-controls">
-      <ActionButton unstyled mode="icon" iconName="minus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-out-pdf" label={t("pdfReader.zoomOut")} tooltip={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()} />
-      <ActionButton unstyled mode="icon" iconName="fit-width" className="pdf-icon-action" data-ui="fit-pdf-width" disabled={!zoom} label={t("pdfReader.fitWidth")} tooltip={t("pdfReader.fitWidth")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)} />
-      <ActionButton unstyled mode="icon" iconName="fit-page" className="pdf-icon-action" data-ui="fit-pdf-page" disabled={!zoom} label={t("pdfReader.fitPage")} tooltip={t("pdfReader.fitPage")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)} />
-      <ActionButton unstyled mode="icon" iconName="plus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-in-pdf" label={t("pdfReader.zoomIn")} tooltip={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="minus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-out-pdf" label={t("pdfReader.zoomOut")} tooltip={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="fit-width" className="pdf-icon-action" data-ui="fit-pdf-width" disabled={!zoom} label={t("pdfReader.fitWidth")} tooltip={t("pdfReader.fitWidth")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="fit-page" className="pdf-icon-action" data-ui="fit-pdf-page" disabled={!zoom} label={t("pdfReader.fitPage")} tooltip={t("pdfReader.fitPage")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)} />
+      <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="plus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-in-pdf" label={t("pdfReader.zoomIn")} tooltip={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()} />
     </div>
-    <ActionButton unstyled mode="icon" iconName="download" className="pdf-icon-action" data-ui="download-original-pdf" label={t("pdfReader.downloadOriginal")} tooltip={t("pdfReader.downloadOriginal")} onClick={download} />
+    <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="download" className="pdf-icon-action" data-ui="download-original-pdf" label={t("pdfReader.downloadOriginal")} tooltip={t("pdfReader.downloadOriginal")} onClick={download} />
   </header>;
 }

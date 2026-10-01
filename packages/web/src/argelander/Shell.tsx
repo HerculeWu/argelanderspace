@@ -307,6 +307,7 @@ export function Shell() {
               unstyled
               className="btn icon ghost"
               data-ui="split-pane"
+              iconSize="small"
               label={t("shell.titlebar.split")}
               tooltip={t("shell.titlebar.split")}
               disabled={panes.length >= MAX_PANES}
@@ -318,6 +319,7 @@ export function Shell() {
               unstyled
               className="btn icon ghost"
               data-ui="toggle-theme"
+              iconSize="small"
               label={t("shell.titlebar.toggleTheme")}
               onClick={() => setTweak("theme", tweaks.theme === "dark" ? "light" : "dark")}
             />
@@ -327,6 +329,7 @@ export function Shell() {
               unstyled
               className="btn icon ghost"
               data-ui="open-tweaks"
+              iconSize="small"
               label={t("shell.titlebar.tweaks")}
               tooltip={t("shell.titlebar.tweaks")}
               aria-expanded={tweaksOpen}
@@ -354,7 +357,7 @@ export function Shell() {
             {NAV.map((n) => {
               const label = t(n.labelKey);
               const className = "nav-icon-action" + (activePane.view === n.k ? " on" : "");
-              return <ActionButton key={n.k} unstyled mode="icon" iconName={n.k === "plan" ? "telescope" : n.k === "library" ? "library" : n.k === "doc" ? "file-text" : "pen-line"} label={label} tooltip={label} data-ui="navigate-view" data-ui-key={n.k} className={className} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />;
+              return <ActionButton key={n.k} unstyled iconSize={n.k === "plan" ? undefined : "navigation"} mode="icon" iconName={n.k === "plan" ? "telescope" : n.k === "library" ? "library" : n.k === "doc" ? "file-text" : "pen-line"} label={label} tooltip={label} data-ui="navigate-view" data-ui-key={n.k} className={className} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />;
             })}
             <div style={{ flex: 1 }} />
             <ActionButton unstyled mode="icon" iconName="blocks" label={t("shell.nav.extMarket")} tooltip={t("shell.nav.extMarket")} data-ui="navigate-extensions" className={"nav-icon-action" + (activePane.view === "ext" ? " on" : "")} aria-current={activePane.view === "ext" ? "page" : undefined} onClick={() => setActiveView("ext")} />
@@ -504,7 +507,7 @@ function PaneHeader({
       </div>
       <div style={{ flex: 1 }} />
       {canSplit && (
-        <ActionButton unstyled mode="icon" iconName="columns-2" data-ui="split-pane" className="pane-h-btn" label={t("shell.split")} tooltip={t("shell.split")} onClick={onSplit} />
+        <ActionButton unstyled mode="icon" iconName="columns-2" iconSize="small" data-ui="split-pane" className="pane-h-btn" label={t("shell.split")} tooltip={t("shell.split")} onClick={onSplit} />
       )}
       {canClose && (
         <ActionButton unstyled mode="icon" iconName="x" data-ui="close-pane" className="pane-h-btn" label={t("shell.closePane")} tooltip={t("shell.closePane")} onClick={onClose} />

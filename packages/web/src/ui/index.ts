@@ -7,3 +7,4 @@ export { getConfiguredIcon } from "./icon-resource";
 export { InlineMessage } from "./InlineMessage";
 export { Tabs, type TabItem, type TabsProps } from "./Tabs";
 export { Tooltip } from "./Tooltip";
+export type { ActionStyle, IconSize } from "./action-style";

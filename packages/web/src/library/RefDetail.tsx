@@ -940,6 +940,7 @@ export function RefDetail({
               label={t("library.detail.copy.cite")}
               tooltip={t("library.detail.copy.cite")}
               data-ui="copy-cite-key"
+              iconSize="small"
               onClick={() => void copyText("cite", r.cite)}
             />
             <ActionButton
@@ -949,6 +950,7 @@ export function RefDetail({
               label={t("common.close")}
               tooltip={t("common.close")}
               data-ui="close-work-detail"
+              iconSize="small"
               onClick={onClose}
             />
           </div>

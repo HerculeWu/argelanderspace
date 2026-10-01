@@ -651,9 +651,9 @@ export function GraphCanvas({
       )}
 
       <div className="cg-zoom" data-ui="graph-zoom-controls">
-        <ActionButton unstyled mode="icon" iconName="plus" className="cg-zbtn" label={t("graph.zoomIn")} tooltip={t("graph.zoomIn")} data-testid="zoom-in" data-ui="zoom-in" onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} />
+        <ActionButton unstyled mode="icon" iconName="plus" appearance="quiet" iconSize="small" className="cg-zbtn" label={t("graph.zoomIn")} tooltip={t("graph.zoomIn")} data-testid="zoom-in" data-ui="zoom-in" onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} />
         <span className="zoom-value mono">{Math.round(v.k * 100)}%</span>
-        <ActionButton unstyled mode="icon" iconName="minus" className="cg-zbtn" label={t("graph.zoomOut")} tooltip={t("graph.zoomOut")} data-ui="zoom-out" onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} />
+        <ActionButton unstyled mode="icon" iconName="minus" appearance="quiet" iconSize="small" className="cg-zbtn" label={t("graph.zoomOut")} tooltip={t("graph.zoomOut")} data-ui="zoom-out" onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} />
         <ActionButton unstyled mode="icon" iconName="expand" className="cg-zbtn" label={t("graph.fitView")} tooltip={t("graph.fitView")} data-testid="fit-view" data-ui="fit-graph" onClick={fitView} />
         <ActionButton unstyled mode="icon" iconName="rotate-ccw" className="cg-zbtn" label={t("graph.relayout")} tooltip={t("graph.relayout")} data-ui="relayout-graph" onClick={relayout} />
       </div>

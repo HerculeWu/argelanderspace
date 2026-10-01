@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ActionButton } from "../src/ui/ActionButton";
+import { ActionButton, type ActionButtonProps, type ButtonProps, type IconButtonProps } from "../src/ui";
 import { getConfiguredIcon, parseIconSvg } from "../src/ui/icon-resource";
 import icons from "../src/ui/icons.json";
 import i18n from "../src/i18n";
@@ -12,6 +12,62 @@ afterEach(() => {
 });
 
 describe("ActionButton", () => {
+  it("renders the approved PDF pen artwork with its localized tool-toggle state and native activation", () => {
+    const activate = vi.fn();
+    const { rerender } = render(<ActionButton unstyled mode="icon" iconName="pencil" iconSize="small" data-ui="toggle-pdf-annotation-tools" aria-expanded={false} label="打开标注工具" onClick={activate} />);
+    const button = screen.getByRole("button", { name: "打开标注工具" });
+    // Approved Dazzle pen-line geometry, not a derived class snapshot.
+    expect(button.querySelector("path")?.getAttribute("d")).toBe("M15.4998 5.50067L18.3282 8.3291M13 21H21M3 21.0004L3.04745 20.6683C3.21536 19.4929 3.29932 18.9052 3.49029 18.3565C3.65975 17.8697 3.89124 17.4067 4.17906 16.979C4.50341 16.497 4.92319 16.0772 5.76274 15.2377L17.4107 3.58969C18.1918 2.80865 19.4581 2.80864 20.2392 3.58969C21.0202 4.37074 21.0202 5.63707 20.2392 6.41812L8.37744 18.2798C7.61579 19.0415 7.23497 19.4223 6.8012 19.7252C6.41618 19.994 6.00093 20.2167 5.56398 20.3887C5.07171 20.5824 4.54375 20.6889 3.48793 20.902L3 21.0004Z");
+    expect(button.textContent).toBe("");
+    fireEvent.click(button);
+    expect(activate).toHaveBeenCalledOnce();
+    rerender(<ActionButton unstyled mode="icon" iconName="pencil" iconSize="small" data-ui="toggle-pdf-annotation-tools" aria-expanded label="Close annotation tools" disabled onClick={activate} />);
+    const expanded = screen.getByRole("button", { name: "Close annotation tools" });
+    expect(expanded.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(expanded);
+    expect(activate).toHaveBeenCalledOnce();
+  });
+  it("opts into finite glyph roles while preserving native activation, names and busy protection", () => {
+    const activated = vi.fn();
+    const { rerender } = render(<ActionButton unstyled mode="icon" appearance="quiet" iconSize="small" label="放大" iconName="plus" data-ui="zoom-in" onClick={activated} />);
+    const button = screen.getByRole("button", { name: "放大" });
+    expect(button.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    expect(button.classList.contains("ui-action--quiet")).toBe(true);
+    expect(button.textContent).toBe("");
+    fireEvent.click(button);
+    expect(activated).toHaveBeenCalledOnce();
+    rerender(<ActionButton unstyled mode="icon" appearance="quiet" iconSize="small" label="Zoom in" iconName="plus" data-ui="zoom-in" busy onClick={activated} />);
+    const busy = screen.getByRole("button", { name: "Zoom in" });
+    expect(busy.getAttribute("aria-busy")).toBe("true");
+    fireEvent.click(busy);
+    expect(activated).toHaveBeenCalledOnce();
+  });
+
+  it("keeps text and fallback actions readable with opt-in roles, refs and busy semantics", () => {
+    const activated = vi.fn();
+    const ref = { current: null as HTMLButtonElement | null };
+    const { rerender } = render(<ActionButton ref={ref} mode="icon" label="删除" iconName="missing" appearance="secondary" tone="danger" iconSize="navigation" busy onClick={activated} />);
+    const fallback = screen.getByRole("button", { name: "删除" });
+    expect(ref.current).toBe(fallback);
+    expect(fallback.textContent).toBe("删除");
+    expect(fallback.querySelector("svg")).toBeNull();
+    expect(fallback.style.minWidth).toBe("max-content");
+    expect(fallback.classList.contains("ui-action--danger")).toBe(true);
+    fireEvent.click(fallback);
+    expect(activated).not.toHaveBeenCalled();
+    rerender(<ActionButton mode="text" label="Save" appearance="primary" iconSize="regular" onClick={activated}>Save</ActionButton>);
+    const text = screen.getByRole("button", { name: "Save" });
+    expect(text.textContent).toBe("Save");
+    expect(text.querySelector("svg")).toBeNull();
+    fireEvent.click(text);
+    expect(activated).toHaveBeenCalledOnce();
+    rerender(<ActionButton mode="icon" label="Zoom" iconName="plus" data-ui="zoom-in" variant="ghost" iconSize="regular" />);
+    const glyphOnly = screen.getByRole("button", { name: "Zoom" });
+    expect(glyphOnly.classList.contains("ghost")).toBe(true);
+    expect(glyphOnly.classList.contains("ui-action")).toBe(false);
+    expect(glyphOnly.querySelector("svg")?.classList.contains("ui-icon-size--regular")).toBe(true);
+  });
+
   it("keeps icon mode icon-only with a localized accessible name and tooltip", async () => {
     const { container, rerender } = render(<ActionButton mode="icon" label="Open settings" iconName="sliders-horizontal" data-ui="open-tweaks" />);
     const button = screen.getByRole("button", { name: "Open settings" });
@@ -116,3 +172,13 @@ describe("parseIconSvg", () => {
     for (const svg of unsafe) expect(parseIconSvg(svg)).toBeNull();
   });
 });
+
+// Public compile-time contract: glyph-only opt-in remains compatible with legacy surfaces.
+const glyphOnly: ActionButtonProps = { mode: "icon", label: "Zoom", iconName: "plus", variant: "ghost", iconSize: "small" };
+// @ts-expect-error explicit appearance excludes legacy variant
+const conflictingAction: ActionButtonProps = { mode: "text", label: "Save", children: "Save", appearance: "primary", variant: "primary" };
+// @ts-expect-error same exclusion on the public native button
+const conflictingButton: ButtonProps = { appearance: "quiet", variant: "ghost" };
+// @ts-expect-error same exclusion on the compatible icon button
+const conflictingIcon: IconButtonProps = { label: "Zoom", icon: null, appearance: "quiet", variant: "ghost" };
+void [glyphOnly, conflictingAction, conflictingButton, conflictingIcon];

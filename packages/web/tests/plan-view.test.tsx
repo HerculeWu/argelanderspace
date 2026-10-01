@@ -221,7 +221,18 @@ describe("PlanView: plans empty → create → inline add", () => {
   it("shows the guided empty state and creates the first plan via PlanModal", async () => {
     serverDoc = { version: 1, rev: 0, plans: [] }; // truly empty → guided empty state
     const { container } = renderPlan();
+    const create = await waitFor(() => {
+      const button = container.querySelector<HTMLButtonElement>('[data-ui="create-plan"]');
+      expect(button).not.toBeNull();
+      return button!;
+    });
+    expect(create.getAttribute("aria-label")).toBe("新建计划");
+    expect(create.textContent).toBe("");
+    expect(create.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    expect(create.querySelector("path")?.getAttribute("d")).toBe("M6 12H18M12 6V18");
+    // The satisfied text CTA remains a separate action with no glyph preset.
     const cta = await waitFor(() => byText(container, ".plan-empty button", "新建第一个研究计划"));
+    expect(cta.querySelector("svg")).toBeNull();
     fireEvent.click(cta);
 
     // PlanModal: name + due are both required (submit stays disabled otherwise)
@@ -581,7 +592,12 @@ describe("PlanView: modals (review ⑨)", () => {
     });
     const { container } = renderPlan();
     await waitFor(() => byText(container, ".plan-tb-title", "旧计划名"));
-    fireEvent.click(container.querySelector('[data-ui="edit-plan"]')!);
+    const editPlan = container.querySelector<HTMLButtonElement>('[data-ui="edit-plan"]')!;
+    expect(editPlan.getAttribute("aria-label")).toBe("编辑计划");
+    expect(editPlan.textContent).toBe("");
+    expect(editPlan.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    expect(editPlan.querySelector("path")?.getAttribute("d")).toContain("M15.4998 5.50067L18.3282 8.3291M13 21H21");
+    fireEvent.click(editPlan);
 
     const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     const nameInput = modal.querySelector<HTMLInputElement>("#plan-f-name")!;
@@ -630,7 +646,12 @@ describe("PlanView: modals (review ⑨)", () => {
     ]);
     const { container } = renderPlan();
     await waitFor(() => rowOf(container, "未完一"));
-    fireEvent.click(container.querySelector('[data-ui="delete-plan"]')!);
+    const deletePlan = container.querySelector<HTMLButtonElement>('[data-ui="delete-plan"]')!;
+    expect(deletePlan.getAttribute("aria-label")).toBe("删除计划");
+    expect(deletePlan.textContent).toBe("");
+    expect(deletePlan.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    expect(deletePlan.querySelector("path")?.getAttribute("d")).toContain("M4 6H20M16 6L15.7294 5.18807");
+    fireEvent.click(deletePlan);
 
     const modal = await waitFor(() => document.querySelector(".plan-modal") as HTMLElement);
     expect(document.activeElement).toBe(byText(modal, "button", "取消"));

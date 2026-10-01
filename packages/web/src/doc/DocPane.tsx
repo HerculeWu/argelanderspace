@@ -142,6 +142,7 @@ function DocWorkspace({
           <ActionButton
             mode="icon"
             iconName={collapsedLeft ? "chevron-right" : "chevron-left"}
+            iconSize="small"
             label={t(collapsedLeft ? "doc.actions.expandOutline" : "doc.actions.collapseOutline")}
             tooltip={t(collapsedLeft ? "doc.actions.expandOutline" : "doc.actions.collapseOutline")}
             className="panel-toggle"
@@ -165,6 +166,7 @@ function DocWorkspace({
           <ActionButton
             mode="icon"
             iconName={collapsedRight ? "chevron-left" : "chevron-right"}
+            iconSize="small"
             label={t(collapsedRight ? "doc.actions.expandReferences" : "doc.actions.collapseReferences")}
             tooltip={t(collapsedRight ? "doc.actions.expandReferences" : "doc.actions.collapseReferences")}
             className="panel-toggle"

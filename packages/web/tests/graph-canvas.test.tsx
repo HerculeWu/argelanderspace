@@ -114,6 +114,22 @@ describe("GraphCanvas", () => {
     expect(labels.getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("adopts only approved zoom glyphs and surfaces and still zooms the scene", () => {
+    vi.stubGlobal("ResizeObserver", RO);
+    const { container } = renderCanvas();
+    const zoomIn = container.querySelector<HTMLButtonElement>('[data-ui="zoom-in"]')!;
+    const zoomOut = container.querySelector<HTMLButtonElement>('[data-ui="zoom-out"]')!;
+    expect(zoomIn.classList.contains("ui-action--quiet")).toBe(true);
+    expect(zoomOut.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    const scene = container.querySelector(".cg-svg > g[transform]")!;
+    const before = scene.getAttribute("transform");
+    fireEvent.click(zoomIn);
+    expect(scene.getAttribute("transform")).not.toBe(before);
+    fireEvent.click(zoomOut);
+    expect(scene.getAttribute("transform")).toBe(before);
+    expect(container.querySelector('[data-ui="fit-graph"]')?.classList.contains("ui-action")).toBe(false);
+  });
+
   it("keeps graph node identifiers bound to identity across a refreshed result", () => {
     vi.stubGlobal("ResizeObserver", RO);
     const { container, rerender } = renderCanvas();

@@ -613,9 +613,9 @@ export function WriterEditor({
         </select>
         <ActionButton unstyled mode="text" className="btn w-hide-narrow" label={t("writer.topbar.info")} tooltip={t("writer.topbar.info")} data-ui="edit-manuscript-info" onClick={() => setModal("info")}>{t("writer.topbar.info")}</ActionButton>
         <ActionButton unstyled mode="text" className="btn w-hide-narrow" label={t("writer.topbar.preamble")} tooltip={t("writer.topbar.preamble")} data-ui="edit-manuscript-preamble" onClick={() => setModal("preamble")}>{t("writer.topbar.preamble")}</ActionButton>
-        <ActionButton unstyled mode="icon" iconName="refresh-cw" className="btn icon primary" label={t(numberingBusy ? "writer.topbar.rendering" : "writer.topbar.render")} tooltip={t(numberingBusy ? "writer.topbar.rendering" : "writer.topbar.render")} busy={numberingBusy}
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="refresh-cw" className="btn icon primary" label={t(numberingBusy ? "writer.topbar.rendering" : "writer.topbar.render")} tooltip={t(numberingBusy ? "writer.topbar.rendering" : "writer.topbar.render")} busy={numberingBusy}
           data-render-button data-ui="render-manuscript" onClick={() => void requestPreview()} />
-        <ActionButton unstyled mode="icon" iconName="download" className="btn icon primary" label={t("writer.topbar.export")} tooltip={t("writer.topbar.export")} data-ui="export-manuscript" onClick={doExport} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="download" className="btn icon primary" label={t("writer.topbar.export")} tooltip={t("writer.topbar.export")} data-ui="export-manuscript" onClick={doExport} />
       </div>
 
       {templateWarnings.length > 0 && !warningsDismissed && (

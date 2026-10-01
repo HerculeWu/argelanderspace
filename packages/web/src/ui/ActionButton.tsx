@@ -1,15 +1,15 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { Button, type ButtonVariant } from "./Button";
+import { Button } from "./Button";
 import { IconButton } from "./IconButton";
 import { getConfiguredIcon } from "./icon-resource";
+import type { ActionStyle } from "./action-style";
 import { Tooltip } from "./Tooltip";
 
-type SharedProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & {
+type SharedProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & ActionStyle & {
   label: string;
   /** Stable UI identifier and icon-catalog key (required to resolve icon-mode resources). */
   "data-ui"?: string;
   tooltip?: string;
-  variant?: ButtonVariant;
   busy?: boolean;
   busyLabel?: ReactNode;
   /** Use an established local appearance while retaining names, tooltip, and action semantics. */
@@ -38,7 +38,6 @@ export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(fun
     <IconButton
       {...buttonProps}
       ref={ref}
-      variant={props.variant}
       unstyled={props.unstyled}
       label={label}
       tooltip={tooltip}

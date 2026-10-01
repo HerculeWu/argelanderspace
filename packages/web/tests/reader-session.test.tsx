@@ -401,6 +401,34 @@ describe("strict shared asset recovery episode", () => {
 });
 
 describe("DocPane coherent integration and protected drafts", () => {
+  it("uses the approved small glyphs for both panel directions without replacing the document or drafts", async () => {
+    const { container } = renderDoc();
+    await answer(0, representation());
+    const main = container.querySelector("main.reader")!;
+    fireEvent.click(main.querySelector("[data-block-id='p-1'] .ann-edge-btn")!);
+    const draft = main.querySelector<HTMLTextAreaElement>("textarea")!;
+    fireEvent.change(draft, { target: { value: "panel toggle draft" } });
+    for (const [id, panel, collapse, expand] of [
+      ["toggle-latex-outline", "latex-outline-panel", "收起目录", "展开目录"],
+      ["toggle-latex-right-panel", "latex-right-panel", "收起引用与标注", "展开引用与标注"],
+    ]) {
+      const button = container.querySelector<HTMLButtonElement>(`[data-ui='${id}']`)!;
+      expect(button.getAttribute("aria-label")).toBe(collapse);
+      expect(button.textContent).toBe("");
+      expect(button.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+      expect(button.classList.contains("ui-action--quiet")).toBe(false);
+      fireEvent.click(button);
+      expect(container.querySelector(`[data-ui='${panel}']`)?.classList.contains("collapsed")).toBe(true);
+      expect(button.getAttribute("aria-label")).toBe(expand);
+      expect(button.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+      fireEvent.click(button);
+      expect(container.querySelector(`[data-ui='${panel}']`)?.classList.contains("collapsed")).toBe(false);
+      expect(button.getAttribute("aria-label")).toBe(collapse);
+    }
+    expect(container.querySelector("main.reader")).toBe(main);
+    expect(main.textContent).toContain("Real body A");
+    expect(draft.value).toBe("panel toggle draft");
+  });
   it("StrictMode replay rejects the aborted first GET and preserves working navigation with one deep-link consumption", async () => {
     const { container } = renderDoc("p-1", true);
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(

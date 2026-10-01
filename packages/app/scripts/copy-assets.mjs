@@ -35,6 +35,11 @@ const target = join(appRoot, "dist", "web");
 rmSync(target, { recursive: true, force: true });
 cpSync(webDist, target, { recursive: true });
 
+// Adopted icon attribution is carried both alongside the SPA and at application root.
+for (const name of ["THIRD_PARTY_LICENSES.md", "icons.provenance.json"]) {
+  copyFileSync(join(webDist, name), join(appRoot, "dist", name));
+}
+
 const stySrc = join(repoRoot, "packages", "infra", "src", "tex", "argelander.sty");
 if (!existsSync(stySrc)) {
   throw new Error("packages/infra/src/tex/argelander.sty is missing");

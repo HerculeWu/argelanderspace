@@ -1,19 +1,21 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Tooltip } from "./Tooltip";
 
-export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {
+import { actionClasses, sizedIcon, type ActionStyle } from "./action-style";
+
+export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & ActionStyle & {
   label: string;
   tooltip?: string;
   icon: ReactNode;
-  variant?: "default" | "primary" | "danger" | "ghost";
   unstyled?: boolean;
 }
 
 /** Icon-only action with one accessible name and the shared keyboard/pointer tooltip. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { label, tooltip = label, icon, variant = "default", unstyled = false, className = "", type = "button", ...props },
+  { label, tooltip = label, icon, appearance, tone, iconSize, variant = "default", unstyled = false, className = "", type = "button", ...props },
   ref
 ) {
+  const surfaceVariant = appearance ? (tone === "danger" ? "danger" : appearance === "primary" ? "primary" : "default") : variant;
   return (
     <Tooltip content={tooltip}>
       <button
@@ -21,12 +23,12 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         {...props}
         ref={ref}
         type={type}
-        className={[unstyled ? "" : "btn ui-button icon", unstyled || variant === "default" ? "" : variant, className]
+        className={[unstyled ? "" : "btn ui-button icon", unstyled || surfaceVariant === "default" ? "" : surfaceVariant, actionClasses(appearance, tone), className]
           .filter(Boolean)
           .join(" ")}
         aria-label={label}
       >
-        {icon}
+        {sizedIcon(icon, iconSize)}
       </button>
     </Tooltip>
   );

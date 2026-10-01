@@ -334,11 +334,16 @@ describe("editor", () => {
     const renderButton = container.querySelector<HTMLButtonElement>('[data-ui="render-manuscript"]')!;
     expect(renderButton.getAttribute("aria-label")).toBe("渲染");
     expect(renderButton.textContent).toBe("");
-    expect(renderButton.querySelector("svg")).toBeTruthy();
+    expect(renderButton.querySelector("svg.ui-icon-size--small")).toBeTruthy();
+    // Approved B artwork; public action output, not a private renderer helper.
+    expect(renderButton.querySelector("svg")?.getAttribute("stroke-width")).toBeNull();
+    expect(renderButton.querySelector("svg [stroke-width]")).toBeNull();
     const exportButton = container.querySelector<HTMLButtonElement>('[data-ui="export-manuscript"]')!;
     expect(exportButton.getAttribute("aria-label")).toBe("导出");
     expect(exportButton.textContent).toBe("");
-    expect(exportButton.querySelector("svg")).toBeTruthy();
+    expect(exportButton.querySelector("svg.ui-icon-size--small")).toBeTruthy();
+    expect(exportButton.querySelector("svg")?.getAttribute("stroke-width")).toBeNull();
+    expect(exportButton.querySelector("svg [stroke-width]")).toBeNull();
     const figure = container.querySelector<HTMLElement>('[data-cell="c_0ab50004"]')!;
     fireEvent.click(figure.querySelector('[data-ui="edit-cell"]')!);
     const placement = figure.querySelector<HTMLButtonElement>('[data-ui="cell-placement"][data-ui-key="left"]')!;

@@ -209,6 +209,8 @@ input, textarea { font-family: inherit; color: inherit; }
   transition: background .12s, color .12s;
 }
 .activity .nav-icon-action svg { width: 24px; height: 24px; stroke-width: 1.8; }
+.activity [data-ui="navigate-view"] { height: 50px; padding: 0; }
+.activity [data-ui="navigate-view"] svg { width: 33px; height: 33px; }
 .nav-icon-action:hover { background: var(--hover); color: var(--text-dim); }
 .nav-icon-action.on { color: var(--accent); background: var(--accent-soft); }
 .nav-icon-action.on::before { content:""; position:absolute; left:-6px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:0 3px 3px 0; background: var(--accent); }
@@ -692,6 +694,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .plan-drawer-duerow { display: flex; align-items: center; min-height: 4px; }
 .plan-drawer-status-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .plan-drawer-st { display: inline-grid; place-items: center; width: var(--control-h); height: var(--control-h); padding: 0; border-radius: var(--radius-sm); font-size: var(--fs-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text-faint); }
+.plan-drawer-st svg { width: clamp(20px, calc(var(--control-h) - 11px), 23px); height: clamp(20px, calc(var(--control-h) - 11px), 23px); }
 .plan-drawer-st:hover { border-color: var(--accent-line); }
 .plan-drawer-st.on { color: var(--text); border-color: currentColor; background: var(--active); }
 .plan-drawer-st.on.plan-s-todo { color: var(--text); }
@@ -942,3 +945,20 @@ input, textarea { font-family: inherit; color: inherit; }
 .result-table .year-cell { width: 54px; }
 .result-table .src-cell { width: 88px; }
 .result-table .btn { width: 24px; height: 24px; padding: 0; justify-content: center; }
+
+/* Explicit action opt-in: visual roles never own control geometry or typography. */
+.ui-action { transition: background .12s, color .12s, border-color .12s; }
+.ui-action.ui-action--quiet:not([aria-expanded="true"]):not([aria-pressed="true"]) { background: transparent; border-color: transparent; box-shadow: none; }
+.ui-action.ui-action--secondary { background: var(--surface); border-color: var(--border); box-shadow: none; }
+.ui-action.ui-action--primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; box-shadow: none; }
+.ui-action.ui-action--danger { color: var(--danger); }
+.ui-action.ui-action--secondary.ui-action--danger { background: transparent; border-color: var(--danger); }
+.ui-action.ui-action--primary.ui-action--danger { background: var(--danger); color: white; }
+.ui-action.ui-action--quiet:hover:not(:disabled), .ui-action.ui-action--secondary:hover:not(:disabled) { background: var(--hover); filter: none; }
+.ui-action.ui-action--quiet:active:not(:disabled), .ui-action.ui-action--secondary:active:not(:disabled), .ui-action.ui-action--primary:active:not(:disabled) { background: var(--active); }
+.ui-action--quiet:disabled:hover:not([aria-expanded="true"]):not([aria-pressed="true"]) { background: transparent; }
+/* Trusted opt-in specificity beats legacy navigation strokes without reaching content SVGs. */
+svg.ui-icon.ui-icon { width: var(--ui-icon-side) !important; height: var(--ui-icon-side) !important; stroke-width: var(--ui-icon-stroke); flex-shrink: 0; }
+.ui-icon-size--small { --ui-icon-side: 18px; --ui-icon-stroke: 2.333333333333333; }
+.ui-icon-size--regular { --ui-icon-side: 24px; --ui-icon-stroke: 1.75; }
+.ui-icon-size--navigation { --ui-icon-side: 33px; --ui-icon-stroke: 1.272727272727273; }

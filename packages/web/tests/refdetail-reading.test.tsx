@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RefDetail } from "../src/library/RefDetail";
 import type { LibraryRef } from "../src/library/types";
+import i18n from "../src/i18n";
 
 vi.mock("../src/api/ws", () => ({
   onJobEvent: () => () => {},
@@ -54,6 +55,7 @@ describe("RefDetail reading-first interaction", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    void i18n.changeLanguage("zh-CN");
   });
 
   it("leads with the complete Work identity, defaults to Info, and opens the actual main Doc", () => {
@@ -117,7 +119,12 @@ describe("RefDetail reading-first interaction", () => {
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     renderDetail();
 
-    fireEvent.click(screen.getByRole("button", { name: "复制引用键" }));
+    const copy = screen.getByRole("button", { name: "复制引用键" });
+    expect(copy.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    expect(copy.textContent).toBe("");
+    expect(copy.classList.contains("ghost")).toBe(true);
+    expect(copy.classList.contains("ui-action")).toBe(false);
+    fireEvent.click(copy);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("Lin2026Disc"));
     expect(screen.getByRole("status").textContent).toBe("引用键已复制");
 
@@ -126,6 +133,22 @@ describe("RefDetail reading-first interaction", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
     expect(writeText.mock.calls[1]?.[0]).toContain("@article{Lin2026Disc");
     expect(screen.getByRole("status").textContent).toBe("BibTeX 已复制");
+  });
+
+  it("keeps the migrated copy and close names localized after changing language", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { onClose } = renderDetail();
+    await act(async () => { await i18n.changeLanguage("en"); });
+    const copy = screen.getByRole("button", { name: "Copy citation key" });
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(copy.textContent).toBe("");
+    expect(close.textContent).toBe("");
+    fireEvent.click(copy);
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Citation key copied"));
+    expect(writeText).toHaveBeenCalledWith("Lin2026Disc");
+    fireEvent.click(close);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("shows an honest error when clipboard permission rejects the copy", async () => {
@@ -196,7 +219,12 @@ describe("RefDetail reading-first interaction", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    const close = screen.getByRole("button", { name: "关闭" });
+    expect(close.querySelector("svg")?.classList.contains("ui-icon-size--small")).toBe(true);
+    expect(close.textContent).toBe("");
+    expect(close.classList.contains("ghost")).toBe(true);
+    expect(close.classList.contains("ui-action")).toBe(false);
+    fireEvent.click(close);
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "探索相关文献" }));
     expect(onExplore).toHaveBeenCalledWith("2026MNRAS.demo");
