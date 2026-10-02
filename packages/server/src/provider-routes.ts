@@ -1,4 +1,8 @@
-import { ProviderCredentialSchema, ProviderModelConfigSchema } from "@argelanderspace/contracts";
+import {
+  ProviderCredentialSchema,
+  ProviderLoginAnswerSchema,
+  ProviderModelConfigSchema,
+} from "@argelanderspace/contracts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { ProviderSettings, ProviderSettingsError } from "./providers.js";
@@ -26,9 +30,11 @@ export function mountProviderRoutes(
       { code, detail: `provider settings: ${code}`, retryable: true },
       code === "not_found"
         ? 404
-        : code === "capabilities" || code === "invalid_config" || code === "unsupported"
-          ? 400
-          : 503
+        : code === "busy" || code === "stale"
+          ? 409
+          : ["capabilities", "invalid_config", "unsupported", "invalid_input"].includes(code)
+            ? 400
+            : 503
     );
   });
   app.use(
@@ -63,5 +69,31 @@ export function mountProviderRoutes(
       return c.json({ code: "invalid_config", detail: "invalid model configuration" }, 400);
     return c.json(await get().test(c.req.param("id"), body.data, c.req.raw.signal));
   });
+  // Login: secrets (pasted authorization code) only travel body -> SDK, never into any DTO.
+  app.post(`${prefix}/:id/login`, async (c) =>
+    c.json({ login: await get().startLogin(c.req.param("id")) }, 201)
+  );
+  app.get(`${prefix}/:id/login/:loginId`, async (c) =>
+    c.json({ login: await get().getLogin(c.req.param("id"), c.req.param("loginId")) })
+  );
+  app.delete(`${prefix}/:id/login/:loginId`, async (c) =>
+    c.json({ login: await get().cancelLogin(c.req.param("id"), c.req.param("loginId")) })
+  );
+  app.post(`${prefix}/:id/login/:loginId/response`, async (c) => {
+    const body = ProviderLoginAnswerSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success)
+      return c.json({ code: "invalid_input", detail: "invalid login response" }, 400);
+    return c.json({
+      login: await get().answerLogin(
+        c.req.param("id"),
+        c.req.param("loginId"),
+        body.data.challengeId,
+        body.data.value
+      ),
+    });
+  });
+  app.post(`${prefix}/:id/logout`, async (c) =>
+    c.json({ saved: true, provider: await get().logout(c.req.param("id")) })
+  );
   host.route("/api/copilot/providers", app);
 }

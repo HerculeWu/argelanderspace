@@ -543,10 +543,12 @@ export class CopilotHost {
               error instanceof CopilotError
                 ? error
                 : new CopilotError(
-                    error instanceof ProviderSettingsError &&
-                      ["capabilities", "not_found"].includes(error.code)
-                      ? "capabilities"
-                      : "storage"
+                    error instanceof ProviderSettingsError && error.code === "refresh_failed"
+                      ? "credentials"
+                      : error instanceof ProviderSettingsError &&
+                          ["capabilities", "not_found"].includes(error.code)
+                        ? "capabilities"
+                        : "storage"
                   );
             reject(admissionFailure);
             throw admissionFailure;
@@ -586,10 +588,12 @@ export class CopilotHost {
             const code =
               error instanceof CopilotError
                 ? error.code
-                : error instanceof ProviderSettingsError &&
-                    ["capabilities", "not_found"].includes(error.code)
-                  ? "capabilities"
-                  : "storage";
+                : error instanceof ProviderSettingsError && error.code === "refresh_failed"
+                  ? "credentials"
+                  : error instanceof ProviderSettingsError &&
+                      ["capabilities", "not_found"].includes(error.code)
+                    ? "capabilities"
+                    : "storage";
             reject(new CopilotError(code));
             try {
               const saved = readCopilotHistory(
@@ -635,7 +639,11 @@ export class CopilotHost {
         if (error instanceof CopilotError) throw error;
         if (error instanceof ProviderSettingsError)
           throw new CopilotError(
-            ["capabilities", "not_found"].includes(error.code) ? "capabilities" : "unavailable"
+            error.code === "refresh_failed"
+              ? "credentials"
+              : ["capabilities", "not_found"].includes(error.code)
+                ? "capabilities"
+                : "unavailable"
           );
         throw new CopilotError("storage");
       });

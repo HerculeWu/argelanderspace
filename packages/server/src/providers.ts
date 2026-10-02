@@ -26,10 +26,20 @@ import type { Api, Model, Provider } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { AsyncLock } from "./lock.js";
 import { ProviderCredentialStore } from "./provider-credentials.js";
+import { type LoginHost, ProviderLoginError, ProviderLogins } from "./provider-login.js";
 
 export class ProviderSettingsError extends Error {
   constructor(
-    readonly code: "storage" | "invalid_config" | "capabilities" | "not_found" | "unsupported"
+    readonly code:
+      | "storage"
+      | "invalid_config"
+      | "capabilities"
+      | "not_found"
+      | "unsupported"
+      | "busy"
+      | "stale"
+      | "invalid_input"
+      | "refresh_failed"
   ) {
     super(code);
   }
@@ -39,6 +49,8 @@ export interface ProviderSettingsOptions {
   /** Composition seam: tests supply their own temp XDG-derived directory. */
   configDir?: string;
   testTimeoutMs?: number;
+  /** Maximum time one login instance may wait for the user before it is reported expired. */
+  loginTtlMs?: number;
 }
 
 function privatePath(path: string, directory: boolean): void {
@@ -105,12 +117,128 @@ export class ProviderSettings {
   private readonly catalogErrors = new Set<string>();
   private readonly customModels = new Set<string>();
   private readonly testTimeoutMs: number;
+  private readonly logins: ProviderLogins;
+  /** Stored OAuth logins whose last token refresh failed (in-memory, cleared by any success). */
+  private readonly refreshFailed = new Set<string>();
+  private readonly tests = new Map<string, Set<AbortController>>();
 
   constructor(options: ProviderSettingsOptions = {}) {
     this.configDir =
       options.configDir ??
       join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "argelanderspace", "copilot");
     this.testTimeoutMs = options.testTimeoutMs ?? 30_000;
+    const host: LoginHost = {
+      prepare: async (id) => {
+        return (await this.oauthProvider(id)).runtime;
+      },
+      persisted: (id, synchronizationFailed) =>
+        this.lock.run(async () => {
+          this.guard();
+          const saved = parseFile(this.path("auth.json")) as Record<string, { type?: string }>;
+          if (saved[id]?.type !== "oauth") throw new ProviderSettingsError("storage");
+          if (synchronizationFailed) this.catalogErrors.add(id);
+          else this.catalogErrors.delete(id);
+          this.refreshFailed.delete(id);
+          this.invalidateTests(id);
+        }),
+    };
+    this.logins = new ProviderLogins(host, options.loginTtlMs ?? 15 * 60_000);
+  }
+
+  /** A credential change makes every in-flight connection check for that provider stale. */
+  private invalidateTests(id: string): void {
+    for (const controller of this.tests.get(id) ?? []) controller.abort();
+  }
+
+  close(): void {
+    this.logins.close();
+  }
+
+  private async oauthProvider(id: string) {
+    const found = await this.provider(id);
+    // Codex is the only supported login path; other providers use the API-key route.
+    if (id !== "openai-codex" || !found.provider.auth.oauth)
+      throw new ProviderSettingsError("unsupported");
+    return found;
+  }
+
+  private loginCall<T>(call: () => Promise<T> | T): Promise<T> {
+    return Promise.resolve()
+      .then(call)
+      .catch((error: unknown) => {
+        if (error instanceof ProviderLoginError) throw new ProviderSettingsError(error.code);
+        throw error;
+      });
+  }
+
+  startLogin(id: string) {
+    return this.loginCall(() => this.logins.start(id));
+  }
+  getLogin(id: string, loginId: string) {
+    return this.loginCall(async () => {
+      await this.oauthProvider(id);
+      return this.logins.get(id, loginId);
+    });
+  }
+  answerLogin(id: string, loginId: string, challengeId: string, value: string) {
+    return this.loginCall(async () => {
+      await this.oauthProvider(id);
+      return this.logins.answer(id, loginId, challengeId, value);
+    });
+  }
+  cancelLogin(id: string, loginId: string) {
+    return this.loginCall(async () => {
+      await this.oauthProvider(id);
+      return this.logins.cancel(id, loginId);
+    });
+  }
+
+  /** SDK logout: removes only the stored login; an environment credential, if any, remains. */
+  async logout(id: string): Promise<CopilotProvider> {
+    await this.oauthProvider(id);
+    // Release a flow that is waiting on the user (it queues ahead of logout in the SDK), but only
+    // forget the login once the credential is really gone.
+    this.logins.cancelActive(id);
+    return this.lock.run(async () => {
+      const { runtime } = await this.oauthProvider(id);
+      this.invalidateTests(id);
+      this.refreshFailed.delete(id);
+      this.catalogErrors.delete(id);
+      const { CredentialSynchronizationError } = await import("@earendil-works/pi-coding-agent");
+      try {
+        await runtime.logout(id);
+      } catch (error) {
+        // The credential is already deleted; only the model catalog could not refresh.
+        if (error instanceof CredentialSynchronizationError) this.catalogErrors.add(id);
+        else throw new ProviderSettingsError("storage");
+      }
+      this.guard();
+      // Disk is the persistence proof, as for API-key removal.
+      const saved = existsSync(this.path("auth.json"))
+        ? (parseFile(this.path("auth.json")) as Record<string, unknown>)
+        : {};
+      if (saved[id] !== undefined) throw new ProviderSettingsError("storage");
+      this.logins.clear(id);
+      return this.dto(id);
+    });
+  }
+
+  /** Auth resolution that tells a failed OAuth token refresh apart from "never signed in". */
+  private async authFor(runtime: ModelRuntime, model: Model<Api>, signal?: AbortSignal) {
+    try {
+      const auth = await runtime.getAuth(model, signal ? { signal } : {});
+      if (auth) this.refreshFailed.delete(model.provider);
+      return auth;
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Pi tags a failed token exchange "oauth"; anything else (e.g. store failure) is storage.
+      if ((error as { code?: unknown } | null)?.code === "oauth") {
+        this.refreshFailed.add(model.provider);
+        throw new ProviderSettingsError("refresh_failed");
+      }
+      if (error instanceof ProviderSettingsError) throw error;
+      throw new ProviderSettingsError("storage");
+    }
   }
 
   private path(file: string): string {
@@ -270,7 +398,7 @@ export class ProviderSettings {
       if (!model || !(await this.modelDto(model)).tools)
         throw new ProviderSettingsError("capabilities");
       const thinking = await this.resolveThinking(choice.provider, choice.model, choice.thinking);
-      const auth = authenticate ? await runtime.getAuth(model) : undefined;
+      const auth = authenticate ? await this.authFor(runtime, model) : undefined;
       return {
         runtime,
         provider,
@@ -300,7 +428,9 @@ export class ProviderSettings {
         configured,
         stored,
         source: stored ? "stored" : configured ? "environment" : "none",
+        ...(stored && this.refreshFailed.has(id) ? { refreshFailed: true } : {}),
       },
+      ...(this.logins.snapshot(id) ? { login: this.logins.snapshot(id) } : {}),
       models: await Promise.all(runtime.getModels(id).map((model) => this.modelDto(model))),
       catalogStatus: this.catalogErrors.has(id) ? "error" : "ready",
     };
@@ -485,7 +615,11 @@ export class ProviderSettings {
   ): Promise<ProviderTestResult> {
     // Capture the immutable model and resolved auth before releasing the short settings lock.
     const timeout = AbortSignal.timeout(this.testTimeoutMs);
-    const signal = AbortSignal.any([requestSignal, timeout]);
+    const invalidated = new AbortController();
+    const running = this.tests.get(id) ?? new Set<AbortController>();
+    running.add(invalidated);
+    this.tests.set(id, running);
+    const signal = AbortSignal.any([requestSignal, timeout, invalidated.signal]);
     const code = (value: ProviderTestCode): ProviderTestResult => ({
       code: value,
       retryable: !["success", "cancelled"].includes(value),
@@ -496,7 +630,7 @@ export class ProviderSettings {
           signal.throwIfAborted();
           const { runtime, provider } = await this.provider(id);
           const { model } = await this.draft(id, config);
-          const auth = await runtime.getAuth(model, { signal });
+          const auth = await this.authFor(runtime, model, signal);
           return { provider, model, auth };
         }),
         signal
@@ -528,8 +662,16 @@ export class ProviderSettings {
     } catch (error) {
       if (signal.aborted) return code(timeout.aborted ? "timeout" : "cancelled");
       if (error instanceof ProviderSettingsError)
-        return code(error.code === "capabilities" ? "capabilities" : "unavailable");
+        return code(
+          error.code === "capabilities"
+            ? "capabilities"
+            : error.code === "refresh_failed"
+              ? "refresh_failed"
+              : "unavailable"
+        );
       return code(classifyProviderFailure(error));
+    } finally {
+      running.delete(invalidated);
     }
   }
 }

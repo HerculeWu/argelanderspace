@@ -178,6 +178,7 @@ export function createServer(opts: ServerOptions): RunningServer {
       new Promise((resolveClose, rejectClose) => {
         watcher.stop();
         hub.close();
+        providerSettings.close();
         void copilot
           .close()
           .then(

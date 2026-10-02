@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ProviderModelConfigSchema, type CopilotModel, type CopilotProvider, type ProviderModelConfig, type ProviderTestCode, type ThinkingLevel } from "@argelanderspace/contracts";
-import { fetchProviders, removeProviderKey, saveProviderConfig, saveProviderKey, testProviderConnection, ProviderApiError } from "../api/providers";
+import { fetchProviders, logoutProvider, removeProviderKey, saveProviderConfig, saveProviderKey, testProviderConnection, ProviderApiError } from "../api/providers";
 import { Badge, Button, Dialog } from "../ui";
+import { OAuthLogin } from "./ProviderLogin";
 import "./providers.css";
 
 export function ProviderSettingsDialog({ onClose }: { onClose: () => void }) {
@@ -49,7 +50,7 @@ function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: 
   const [config, setConfig] = useState<ProviderModelConfig>(() => modelConfig(initial.models[0]));
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  const [saveState, setSaveState] = useState<"idle" | "saved" | "error" | "storage" | "capabilities" | "catalog_error">("idle");
+  const [saveState, setSaveState] = useState<"idle" | "saved" | "signed_out" | "error" | "storage" | "capabilities" | "catalog_error">("idle");
   const [check, setCheck] = useState<ProviderTestCode | "idle" | "checking">("idle");
   const testRef = useRef<AbortController | null>(null);
   const generation = useRef(0);
@@ -67,14 +68,14 @@ function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: 
     const model = provider.models.find((item) => item.id === id);
     update(model ? modelConfig(model) : { modelId: id, defaultThinking: null });
   };
-  const mutate = async (action: "key" | "remove" | "config") => {
+  const mutate = async (action: "key" | "remove" | "config" | "logout") => {
     if (busyRef.current || !onBusy(true)) return;
     busyRef.current = true; setBusy(true); invalidate(); setSaveState("idle");
     try {
-      const result = action === "key" ? await saveProviderKey(provider.id, key) : action === "remove" ? await removeProviderKey(provider.id) : await saveProviderConfig(provider.id, config);
+      const result = action === "key" ? await saveProviderKey(provider.id, key) : action === "remove" ? await removeProviderKey(provider.id) : action === "logout" ? await logoutProvider(provider.id) : await saveProviderConfig(provider.id, config);
       setProvider(result.provider);
       if (action !== "config") setKey("");
-      setSaveState(result.provider.catalogStatus === "error" ? "catalog_error" : "saved");
+      setSaveState(result.provider.catalogStatus === "error" ? "catalog_error" : action === "logout" ? "signed_out" : "saved");
     } catch (error) {
       setSaveState(error instanceof ProviderApiError && (error.code === "storage" || error.code === "capabilities") ? error.code : "error");
     } finally { busyRef.current = false; setBusy(false); onBusy(false); }
@@ -95,7 +96,9 @@ function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: 
       {provider.method === "api_key" ? <>
         <label className="provider-field">{t("providers.apiKey")}<input type="password" autoComplete="off" spellCheck={false} value={key} data-ui="provider-api-key" aria-label={`${provider.name} ${t("providers.apiKey")}`} onChange={(event) => { invalidate(); setSaveState("idle"); setKey(event.target.value); }} /></label>
         <div className="provider-actions"><Button disabled={!key.trim()} onClick={() => void mutate("key")} data-ui="provider-save-key">{provider.credential.stored ? t("providers.replaceKey") : t("providers.saveKey")}</Button><Button disabled={!provider.credential.stored} onClick={() => void mutate("remove")} data-ui="provider-remove-key">{t("providers.remove")}</Button><small>{t("providers.privateFile")}</small></div>
-      </> : <p className="provider-hint" data-ui="provider-oauth-unavailable">{t("providers.oauthPending")}</p>}
+      </> : <OAuthLogin provider={provider} onLogout={() => void mutate("logout")}
+        onChange={() => { invalidate(); setSaveState("idle"); }}
+        onProvider={(next) => { setProvider(next); setSaveState(next.catalogStatus === "error" ? "catalog_error" : "idle"); }} />}
       <details className="provider-advanced" data-ui={`provider-advanced-${provider.id}`}>
         <summary>{t("providers.advanced")}</summary>
         <label className="provider-field">{t("providers.model")}<select value={selected ? selected.id : ""} data-ui="provider-model" onChange={(event) => selectModel(event.target.value)}>{!selected && <option value="">{t("providers.customModel")}</option>}{provider.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
@@ -118,7 +121,7 @@ function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: 
         <div className="provider-actions"><Button disabled={!valid} data-ui={`provider-save-config-${provider.id}`} onClick={() => void mutate("config")}>{t("providers.saveConfig")}</Button><Button disabled={!valid || check === "checking"} busy={check === "checking"} data-ui={`provider-test-${provider.id}`} onClick={() => void test()}>{t("providers.test")}</Button>{check === "checking" && <Button data-ui="provider-cancel-test" onClick={cancel}>{t("providers.cancel")}</Button>}</div>
         <div role="status" className={`provider-test-state ${check === "success" ? "provider-success" : check !== "idle" && check !== "checking" ? "provider-error" : ""}`} data-ui={`provider-test-result-${provider.id}`}>{t(`providers.tests.${check}`)}</div>
       </details>
-      {saveState !== "idle" && <p role={saveState === "saved" ? "status" : "alert"} data-ui="provider-save-result" className={saveState === "saved" ? "provider-success" : "provider-error"}>{t(`providers.saves.${saveState}`)}</p>}
+      {saveState !== "idle" && <p role={saveState === "saved" || saveState === "signed_out" ? "status" : "alert"} data-ui="provider-save-result" className={saveState === "saved" || saveState === "signed_out" ? "provider-success" : "provider-error"}>{t(`providers.saves.${saveState}`)}</p>}
     </fieldset>
   </details>;
 }

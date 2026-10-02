@@ -127,11 +127,61 @@ export interface CopilotModel {
   defaultThinking: ThinkingLevel | null;
   defaultThinkingValid: boolean;
 }
+export type ProviderLoginStatus =
+  | "running"
+  | "awaiting_user"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "expired";
+/** Fixed categories only: SDK/provider error text can contain tokens and is never serialized. */
+export type ProviderLoginFailure = "invalid_response" | "network" | "unavailable";
+export interface ProviderLoginChallenge {
+  /** Binds one answer to this exact prompt of this exact login instance. */
+  id: string;
+  kind: "select" | "manual_code";
+  /** Option ids only: SDK prompt/label text is never forwarded (the UI localizes its own copy). */
+  options: { id: string }[];
+}
+export type ProviderLoginNotice =
+  | { type: "auth_url"; url: string }
+  | {
+      type: "device_code";
+      userCode: string;
+      verificationUri: string;
+      intervalSeconds: number | null;
+      expiresInSeconds: number | null;
+    };
+export interface ProviderLogin {
+  id: string;
+  providerId: string;
+  status: ProviderLoginStatus;
+  challenge: ProviderLoginChallenge | null;
+  notices: ProviderLoginNotice[];
+  failure: ProviderLoginFailure | null;
+  startedAt: number;
+  expiresAt: number;
+}
+export interface ProviderLoginResponse {
+  login: ProviderLogin;
+}
+export const ProviderLoginAnswerSchema = z
+  .object({ challengeId: z.string().uuid(), value: z.string().min(1).max(8192) })
+  .strict();
+
 export interface CopilotProvider {
   id: string;
   name: string;
   method: "api_key" | "oauth";
-  credential: { configured: boolean; stored: boolean; source: "stored" | "environment" | "none" };
+  credential: {
+    configured: boolean;
+    stored: boolean;
+    source: "stored" | "environment" | "none";
+    /** A stored login whose last token refresh failed; distinct from "never signed in". */
+    refreshFailed?: boolean;
+  };
+  /** Latest login instance of an OAuth provider; survives page reload, not a server restart. */
+  login?: ProviderLogin;
   models: CopilotModel[];
   catalogStatus: "ready" | "error";
 }
@@ -148,6 +198,7 @@ export type ProviderTestCode =
   | "timeout"
   | "cancelled"
   | "capabilities"
+  | "refresh_failed"
   | "unavailable";
 export interface ProviderTestResult {
   code: ProviderTestCode;

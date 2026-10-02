@@ -20,3 +20,10 @@
 .provider-error { color: var(--danger); }
 .provider-success { color: var(--accent); }
 @media (max-width: 520px) { .provider-columns { grid-template-columns: 1fr; gap: 0; } }
+.provider-login { margin: 4px 0 8px; }
+.provider-login-panel { margin: 12px 0; padding: 12px; border: 1px solid var(--border-soft); border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+.provider-login-panel p { margin: 0; }
+.provider-login-panel a { color: var(--accent); }
+.provider-login-form { display: flex; flex-direction: column; gap: 4px; }
+.provider-login-form small { font-size: 10px; color: var(--text-faint); }
+.provider-user-code { font: 600 16px var(--font-mono); letter-spacing: 0.08em; user-select: all; }

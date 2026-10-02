@@ -849,3 +849,92 @@ test("changed configured default is captured and recorded after native history e
   expect(bytes).toContain('"thinkingLevel":"low"');
   expect((await host.snapshot(snapshot.conversation.id)).conversation.model?.thinking).toBeNull();
 });
+
+test("signing out of openai-codex keeps old conversations and later requests report credentials", async () => {
+  const authPath = join(settings.configDir, "auth.json");
+  const saved = JSON.parse(readFileSync(authPath, "utf8"));
+  saved["openai-codex"] = {
+    type: "oauth",
+    access: "SYNTHETIC_ACCESS",
+    refresh: "SYNTHETIC_REFRESH",
+    expires: Date.now() + 3_600_000,
+  };
+  writeFileSync(authPath, JSON.stringify(saved), { mode: 0o600 });
+  const runtime = await settings.getRuntime();
+  const codexModel = runtime.getModels("openai-codex").find((item) => item.reasoning);
+  if (!codexModel) throw new Error("expected a reasoning codex model");
+  let codexRequests = 0;
+  runtime.registerProvider("openai-codex", {
+    api: "openai-codex-responses",
+    streamSimple(model) {
+      codexRequests++;
+      const stream = createAssistantMessageEventStream();
+      const message: AssistantMessage = {
+        role: "assistant",
+        content: [{ type: "text", text: "Codex reply." }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        timestamp: Date.now(),
+        stopReason: "stop",
+        usage: {
+          input: 1,
+          output: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 2,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      };
+      stream.push({ type: "done", reason: "stop", message });
+      return stream;
+    },
+  });
+  const created = await request("/conversations", "POST", {
+    model: { provider: "openai-codex", model: codexModel.id, thinking: null },
+  });
+  expect(created.status).toBe(201);
+  const snapshot = (await created.json()) as ConversationSnapshot;
+  expect((await send(snapshot.conversation.id)).status).toBe(202);
+  const done = await settled(snapshot.conversation.id);
+  expect(done.conversation.run?.status).toBe("completed");
+  expect(codexRequests).toBe(1);
+  const bytes = readFileSync(historyPath(snapshot));
+  const record = JSON.stringify(done.conversation.model);
+
+  await settings.logout("openai-codex");
+  expect(readFileSync(historyPath(snapshot))).toEqual(bytes);
+  const after = await host.snapshot(snapshot.conversation.id);
+  expect(after.messages).toEqual(done.messages);
+  expect(JSON.stringify(after.conversation.model)).toBe(record);
+
+  const rejected = await send(snapshot.conversation.id);
+  expect(rejected.status).toBe(503);
+  expect(await rejected.json()).toMatchObject({ code: "credentials" });
+  expect(codexRequests).toBe(1);
+  expect(readFileSync(historyPath(snapshot))).toEqual(bytes);
+});
+
+test("a failed openai-codex token refresh is reported as credentials without changing stored bytes", async () => {
+  const authPath = join(settings.configDir, "auth.json");
+  const saved = JSON.parse(readFileSync(authPath, "utf8"));
+  saved["openai-codex"] = {
+    type: "oauth",
+    access: "SYNTHETIC_ACCESS",
+    refresh: "SYNTHETIC_REFRESH",
+    expires: Date.now() - 1000,
+  };
+  writeFileSync(authPath, JSON.stringify(saved), { mode: 0o600 });
+  const before = readFileSync(authPath);
+  const runtime = await settings.getRuntime();
+  const codexModel = runtime.getModels("openai-codex")[0];
+  if (!codexModel) throw new Error("expected a codex model");
+  const created = await request("/conversations", "POST", {
+    model: { provider: "openai-codex", model: codexModel.id, thinking: null },
+  });
+  const snapshot = (await created.json()) as ConversationSnapshot;
+  const rejected = await send(snapshot.conversation.id);
+  expect(rejected.status).toBe(503);
+  expect(await rejected.json()).toMatchObject({ code: "credentials" });
+  expect(readFileSync(authPath)).toEqual(before);
+});
