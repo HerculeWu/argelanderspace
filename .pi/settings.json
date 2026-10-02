@@ -1,5 +1,99 @@
 {
     "defaultProvider": "openai-codex",
-    "defaultModel": "gpt-6-astra",
-    "defaultThinkingLevel": "xhigh"
+    "defaultModel": "gpt-6.1-sol",
+    "defaultThinkingLevel": "medium",
+    "subagents": {
+        "agentOverrides": {
+            "scout": {
+                "extensions": ["/home/wwu/.pi/agent/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts"],
+                "tools": "inherit",
+                "excludeTools": ["edit"],
+                "skills": [
+                    "codegraph-navigation",
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "worker": {
+                "extensions": ["/home/wwu/.pi/agent/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts"],
+                "tools": "inherit",
+                "skills": [
+                    "codegraph-navigation",
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "reviewer": {
+                "extensions": ["/home/wwu/.pi/agent/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts"],
+                "tools": "inherit",
+                "excludeTools": ["bash", "edit", "write"],
+                "skills": [
+                    "codegraph-navigation",
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "oracle": {
+                "extensions": ["/home/wwu/.pi/agent/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts"],
+                "tools": "inherit",
+                "excludeTools": ["edit", "write"],
+                "skills": [
+                    "codegraph-navigation",
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "delegate": {
+                "extensions": ["/home/wwu/.pi/agent/npm/node_modules/@vndv/pi-codegraph/extensions/codegraph.ts"],
+                "tools": "inherit",
+                "skills": [
+                    "codegraph-navigation",
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "researcher": {
+                "skills": [
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "evidence-auditor": {
+                "skills": [
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            },
+            "astro-manuscript-reviewer": {
+                "skills": [
+                    "ask-matt", "code-review", "codebase-design", "diagnosing-bugs", "domain-modeling",
+                    "grill-with-docs", "implement", "improve-codebase-architecture", "prototype", "research",
+                    "resolving-merge-conflicts", "setup-matt-pocock-skills", "tdd", "to-spec", "to-tickets",
+                    "triage", "wayfinder", "wizard", "grill-me", "grilling", "handoff", "teach",
+                    "to-questionnaire", "wait-what", "writing-for-agents"
+                ]
+            }
+        }
+    }
 }
