@@ -2,6 +2,7 @@ import {
   ConversationModelSchema,
   CopilotIdSchema,
   CopilotMessageRequestSchema,
+  CopilotViewActionResultSchema,
   PageContextSchema,
 } from "@argelanderspace/contracts";
 import { Hono } from "hono";
@@ -84,6 +85,14 @@ export function mountCopilotRoutes(
     )
       return c.json({ code: "invalid_input" }, 400);
     copilot.publish(view.data);
+    return c.json({ saved: true });
+  });
+  app.post("/views/:id/action-results", async (c) => {
+    const result = CopilotViewActionResultSchema.safeParse(await c.req.json().catch(() => null));
+    if (!result.success || !CopilotIdSchema.safeParse(c.req.param("id")).success)
+      return c.json({ code: "invalid_input" }, 400);
+    if (!copilot.resolveViewAction(c.req.param("id"), result.data))
+      return c.json({ code: "not_found", detail: "copilot: not_found", retryable: false }, 404);
     return c.json({ saved: true });
   });
   app.post("/conversations/:id/messages", async (c) => {

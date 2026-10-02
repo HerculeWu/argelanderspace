@@ -1,4 +1,4 @@
-import type { PageContext, PlanPage } from "@argelanderspace/contracts";
+import type { PageContext, PlanPage, PlanViewAction } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -12,7 +12,7 @@ import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
 import { LibraryView } from "../library/LibraryView";
-import { PlanView } from "../plan/PlanView";
+import { PlanView, type PlanViewController } from "../plan/PlanView";
 import { WriterView } from "../writer/WriterView";
 import { Copilot } from "../copilot/Copilot";
 
@@ -53,6 +53,10 @@ export function Shell() {
   const revision = useRef(0);
   const [planPages, setPlanPages] = useState<Record<number, PlanPage | null>>({});
   const reportPlan = useCallback((paneId: number, page: PlanPage | null) => { setPlanPages((previous) => ({ ...previous, [paneId]: page })); }, []);
+  const planControllers = useRef(new Map<number, PlanViewController>());
+  const registerPlanController = useCallback((paneId: number, controller: PlanViewController | null) => {
+    if (controller) planControllers.current.set(paneId, controller); else planControllers.current.delete(paneId);
+  }, []);
 
   const [papers, setPapers] = useState<string[]>([]);
   const [currentDoc, setCurrentDocState] = useState<string | null>(null);
@@ -124,6 +128,31 @@ export function Shell() {
     setPanes((ps) => ps.map((p) => (p.id === id ? { ...p, view } : p)));
     setActiveId(id);
   };
+
+  // Copilot-requested navigation: runs on the visible Plan page, or opens one first. Background edits
+  // never come through here.
+  const viewActionState = useRef({ panes, activeId, setPaneView });
+  viewActionState.current = { panes, activeId, setPaneView };
+  const runPlanViewAction = useCallback(async (action: PlanViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" }> => {
+    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    const state = viewActionState.current;
+    const active = state.panes.find((pane) => pane.id === state.activeId) ?? state.panes[0];
+    let pane = active.view === "plan" ? active : state.panes.find((candidate) => candidate.view === "plan");
+    if (!pane) {
+      state.setPaneView(active.id, "plan");
+      for (let attempt = 0; attempt < 40 && !planControllers.current.has(active.id); attempt++) await wait(50);
+      if (!planControllers.current.has(active.id))
+        return { ok: false, detail: viewActionState.current.panes.find((candidate) => candidate.id === active.id)?.view === "doc" ? "leave_blocked" : "unavailable" };
+      pane = active;
+    } else if (pane.id !== state.activeId) setActiveId(pane.id);
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const controller = planControllers.current.get(pane.id);
+      const result = controller ? await controller.apply(action) : { ok: false, detail: "unavailable" as const };
+      if (result.detail !== "unavailable") return result;
+      await wait(50);
+    }
+    return { ok: false, detail: "unavailable" };
+  }, []);
 
   const splitFrom = useCallback(
     (id: number) => {
@@ -289,7 +318,7 @@ export function Shell() {
   const renderView = (p: Pane) => {
     switch (p.view) {
       case "plan":
-        return <PlanView paneId={p.id} onContext={reportPlan} />;
+        return <PlanView paneId={p.id} onContext={reportPlan} onController={registerPlanController} />;
       case "library":
         return <LibraryView />;
       case "doc":
@@ -398,7 +427,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runPlanViewAction} />
         </div>
 
         <CommandPalette

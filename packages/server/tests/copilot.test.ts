@@ -201,7 +201,7 @@ async function settled(id: string) {
 const historyPath = (snapshot: ConversationSnapshot) =>
   join(dataDir, "copilot/sessions", `${snapshot.conversation.sessionId}.jsonl`);
 
-test("actual Pi HTTP loop supplies the final offscreen task, no tools/discovery, and reopens one native history", async () => {
+test("actual Pi HTTP loop supplies the final offscreen task, only the plan tool, no discovery, and reopens one native history", async () => {
   const snapshot = await create();
   mkdirSync(join(dataDir, "copilot/runtime/.pi/extensions"), { recursive: true });
   writeFileSync(join(dataDir, "copilot/runtime/AGENTS.md"), "HOSTILE_SENTINEL");
@@ -217,7 +217,7 @@ test("actual Pi HTTP loop supplies the final offscreen task, no tools/discovery,
   expect(JSON.stringify(requests[0]?.context)).not.toContain("HOSTILE_SENTINEL");
   const firstRequest = requests[0];
   if (!firstRequest) throw new Error("missing provider request");
-  expect(getCurrentTools(firstRequest.context.messages)).toEqual([]);
+  expect(getCurrentTools(firstRequest.context.messages).map((tool) => tool.name)).toEqual(["plan"]);
   const bytes = readFileSync(historyPath(snapshot));
   expect(bytes.toString()).toContain("argelander.context.v1");
   const reference = bytes

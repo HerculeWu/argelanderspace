@@ -15,7 +15,11 @@
 
 import { z } from "zod";
 import { WsAnnotationChangedSchema } from "./annotations.js";
-import { WsCopilotEventSchema, WsCopilotSubscribedSchema } from "./copilot.js";
+import {
+  WsCopilotEventSchema,
+  WsCopilotSubscribedSchema,
+  WsCopilotViewActionSchema,
+} from "./copilot.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
 import { WsWriterChangedSchema } from "./writer.js";
@@ -97,6 +101,7 @@ export const WsLibraryChangedSchema = z.object({
 export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsCopilotEventSchema,
   WsCopilotSubscribedSchema,
+  WsCopilotViewActionSchema,
   WsHelloSchema,
   WsJobEventSchema,
   WsLibraryChangedSchema,

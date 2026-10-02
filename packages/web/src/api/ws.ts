@@ -1,4 +1,4 @@
-import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent } from "@argelanderspace/contracts";
+import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent, WsCopilotViewAction } from "@argelanderspace/contracts";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
@@ -22,7 +22,7 @@ const planListeners = new Set<PlanListener>();
 const annotationListeners = new Set<AnnotationListener>();
 const writerListeners = new Set<WriterListener>();
 
-interface CopilotSubscription { conversationId: string; viewId: string; event: (event: WsCopilotEvent) => void; ready: () => void; connection: (connected: boolean) => void; }
+interface CopilotSubscription { conversationId: string; viewId: string; event: (event: WsCopilotEvent) => void; viewAction?: (action: WsCopilotViewAction) => void; ready: () => void; connection: (connected: boolean) => void; }
 const copilotSubscriptions = new Set<CopilotSubscription>();
 function sendSubscription(subscription: CopilotSubscription, type = "copilot.subscribe") {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, conversationId: subscription.conversationId, viewId: subscription.viewId }));
@@ -43,6 +43,9 @@ function wsUrl(): string {
 function dispatch(msg: WsServerMessage): void {
   if (msg.type === "copilot.event") {
     for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId) subscription.event(msg);
+  } else if (msg.type === "copilot.view-action") {
+    // Targeted at one view: exactly one local subscription may execute it.
+    for (const subscription of copilotSubscriptions) if (subscription.viewId === msg.viewId && subscription.viewAction) { subscription.viewAction(msg); break; }
   } else if (msg.type === "copilot.subscribed") {
     for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId && subscription.viewId === msg.viewId) subscription.ready();
   } else if (msg.type === "hello") {

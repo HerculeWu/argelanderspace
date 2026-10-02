@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Conversation, ConversationModel, ConversationSnapshot, CopilotProvider, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
-import { CopilotApiError, createConversation, fetchConversation, listConversations, publishPageContext, selectConversationModel, sendCopilotMessage } from "../api/copilot";
+import type { Conversation, ConversationModel, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewActionResult, PageContext, PlanViewAction, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
+import { CopilotApiError, createConversation, fetchConversation, listConversations, postViewActionResult, publishPageContext, selectConversationModel, sendCopilotMessage } from "../api/copilot";
 import { fetchProviders } from "../api/providers";
 import { subscribeCopilot } from "../api/ws";
 import { ActionButton, Badge, Button, Dialog, getConfiguredIcon } from "../ui";
@@ -10,7 +10,22 @@ import { Icon } from "../lib/icons";
 import { copilotMarkdown } from "./markdown";
 import "./copilot.css";
 
-export function Copilot({ open, context, onClose }: { open: boolean; context: PageContext; onClose: () => void }) {
+const OPERATION_ACTION_KEYS = {
+  read: "copilot.operations.actions.read", create_plan: "copilot.operations.actions.create_plan", update_plan: "copilot.operations.actions.update_plan",
+  create_task: "copilot.operations.actions.create_task", update_task: "copilot.operations.actions.update_task", add_task_link: "copilot.operations.actions.add_task_link",
+  remove_task_link: "copilot.operations.actions.remove_task_link", move_task: "copilot.operations.actions.move_task", show: "copilot.operations.actions.show",
+  open_task: "copilot.operations.actions.open_task", close_task: "copilot.operations.actions.close_task",
+} as const;
+const OPERATION_STATUS_KEYS = {
+  ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
+  rejected: "copilot.operations.status.rejected", invalid: "copilot.operations.status.invalid", not_displayed: "copilot.operations.status.not_displayed",
+  unsupported: "copilot.operations.status.unsupported", unknown: "copilot.operations.status.unknown", error: "copilot.operations.status.error",
+} as const;
+const isApplied = (operation: CopilotOperation) => operation.status === "ok" || operation.status === "noop";
+
+export type CopilotViewActionHandler = (action: PlanViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+
+export function Copilot({ open, context, onClose, onViewAction }: { open: boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [id, setId] = useState<string | null>(null);
@@ -33,6 +48,8 @@ export function Copilot({ open, context, onClose }: { open: boolean; context: Pa
   const loaded = useRef(false);
   const refreshCurrent = useRef<(() => Promise<void>) | null>(null);
   const publications = useRef<Promise<void>>(Promise.resolve());
+  const viewActionRef = useRef(onViewAction); viewActionRef.current = onViewAction;
+  const handledActions = useRef(new Set<string>());
   useEffect(() => {
     if (!id) return;
     publications.current = publications.current.catch(() => {}).then(async () => { await publishPageContext(context); }).catch((reason) => setError(reason instanceof CopilotApiError ? reason.code : "unavailable"));
@@ -83,6 +100,15 @@ export function Copilot({ open, context, onClose }: { open: boolean; context: Pa
     };
     refreshCurrent.current = refresh;
     const unsubscribe = subscribeCopilot({ conversationId: id, viewId: context.viewId, event: apply,
+      viewAction: (message) => {
+        // A reconnect can redeliver; an action runs once and its outcome is reported by what the page really did.
+        if (handledActions.current.has(message.actionId)) return;
+        handledActions.current.add(message.actionId);
+        void (async () => {
+          const outcome = viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
+          try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}) }); } catch { /* the service times the action out as not displayed */ }
+        })();
+      },
       ready: () => { transportConnected = true; void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
     return () => { alive = false; generation++; refreshCurrent.current = null; unsubscribe(); };
   }, [id, context.viewId]);
@@ -147,10 +173,10 @@ export function Copilot({ open, context, onClose }: { open: boolean; context: Pa
       if (following.current) setNewContent(false);
     }}>
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
-      {snapshot?.messages.map((message) => <article key={message.id} className={`copilot-message copilot-message-${message.role}`} data-ui="copilot-message" data-ui-key={message.id}>
-        {message.role === "user" ? <div className="copilot-user">{message.text}</div> : <><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}
+      {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
+        {message.role === "user" ? <div className="copilot-user">{message.text}</div> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
         {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.objects.map((object) => <p key={object.id}>{object.name ?? viewName(message.context?.view ?? "")} · v{object.rev}</p>)}</details>}
-      </article>)}
+      </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {running && <p role="status" data-ui="copilot-running">{t("copilot.running")}</p>}
       {snapshot?.conversation.run?.status === "failed" && <p role="alert" data-ui="copilot-run-error">{errorCopy(snapshot.conversation.run.error)}</p>}
@@ -175,11 +201,27 @@ export function Copilot({ open, context, onClose }: { open: boolean; context: Pa
       </div>
       <div className="copilot-composer-foot"><select aria-label={t("copilot.thinking")} data-ui="copilot-thinking" value={choice?.thinking ?? "default"} disabled={busy || !model || (levels.length <= 1 && thinkingValid)} onChange={(event) => { if (choice) void choose({ ...choice, thinking: event.target.value === "default" ? null : event.target.value as ThinkingLevel }); }}>
         <option value="default">{t("copilot.defaultChoice")}{model?.defaultThinking ? ` · ${model.defaultThinking}` : ""}</option>{choice?.thinking && !levels.includes(choice.thinking) && <option value={choice.thinking} disabled>{choice.thinking}</option>}{levels.length > 1 && levels.map((level) => <option key={level} value={level}>{level}</option>)}
-      </select><span>{t("copilot.readOnly")}</span></div>
+      </select><span>{t("copilot.scope")}</span></div>
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
     {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; }}>{conversation.title || t("copilot.new")}</Button>)}</div></Dialog>}
     {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · v{context.plan.rev} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {task.due}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
+}
+
+function OperationRecord({ operations }: { operations: CopilotOperation[] }) {
+  const { t } = useTranslation();
+  const failed = operations.filter((operation) => !isApplied(operation)).length;
+  const actionName = (operation: CopilotOperation) => operation.action in OPERATION_ACTION_KEYS ? t(OPERATION_ACTION_KEYS[operation.action as keyof typeof OPERATION_ACTION_KEYS]) : operation.action;
+  const summary = operations.length === 1 ? actionName(operations[0] as CopilotOperation) : t("copilot.operations.count", { count: operations.length });
+  return <details className="copilot-operation" data-ui="copilot-operation">
+    <summary><span className={failed ? "copilot-operation-mark warn" : "copilot-operation-mark ok"} aria-hidden="true"><Icon name={failed ? "triangle-alert" : "check"} /></span><span className="copilot-operation-summary">{summary}{failed > 0 && ` · ${t("copilot.operations.notApplied", { count: failed })}`}</span><span className="copilot-operation-chevron" aria-hidden="true"><Icon name="chevron-down" /></span></summary>
+    <ul>{operations.map((operation) => <li key={operation.id} data-ui="copilot-operation-item" data-ui-key={operation.id} data-status={operation.status}>
+      <span>{actionName(operation)}</span>{operation.label && <span className="copilot-operation-label">{operation.label}</span>}
+      <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(OPERATION_STATUS_KEYS[operation.status])}</Badge>
+      {operation.warnings?.includes("task_due_after_plan_due") && <span className="copilot-operation-warn">{t("copilot.operations.dueAfterPlan")}</span>}
+      {operation.rev !== undefined && isApplied(operation) && <code>v{operation.rev}</code>}
+    </li>)}</ul>
+  </details>;
 }

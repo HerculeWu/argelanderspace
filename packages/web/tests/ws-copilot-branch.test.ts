@@ -26,3 +26,18 @@ test("Copilot acknowledgement/events use explicit dispatcher branches and preser
   socket.onmessage?.({ data: JSON.stringify({ type: "hello", jobs: [{ id: "job" }] }) });expect(job).toHaveBeenCalledOnce();expect(event).toHaveBeenCalledOnce();
   unsubscribe();removeJob();expect(JSON.parse(socket.sent[socket.sent.length-1]!)).toMatchObject({ type: "copilot.unsubscribe" });
 });
+test("a view action reaches only the subscription of its own view and is never treated as a job event", async () => {
+  vi.stubGlobal("WebSocket", Socket);vi.resetModules();
+  const { subscribeCopilot, onJobEvent } = await import("../src/api/ws");
+  const mine = vi.fn(), other = vi.fn(), job = vi.fn();
+  const noop = () => {};
+  const a = subscribeCopilot({ conversationId: "c", viewId: "view-a", event: noop, viewAction: mine, ready: noop, connection: noop });
+  const b = subscribeCopilot({ conversationId: "c", viewId: "view-b", event: noop, viewAction: other, ready: noop, connection: noop });
+  const removeJob = onJobEvent(job);
+  await Promise.resolve();
+  Socket.last.onmessage?.({ data: JSON.stringify({ type: "copilot.view-action", viewId: "view-a", actionId: "x", action: { action: "close_task" } }) });
+  expect(mine).toHaveBeenCalledOnce();
+  expect(other).not.toHaveBeenCalled();
+  expect(job).not.toHaveBeenCalled();
+  a();b();removeJob();
+});

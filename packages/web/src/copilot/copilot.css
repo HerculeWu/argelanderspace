@@ -8,3 +8,16 @@
 .app-body:has(.copilot:not([hidden])) .pane:has([data-ui="plan-view"]) { min-width: 780px; }
 .copilot-empty > .ico { display: block; margin: 0 auto 18px; }
 .app-body:has(.copilot:not([hidden])) [data-ui="create-task"] { width: auto; padding: 0 12px; flex-shrink: 0; white-space: nowrap; }
+
+.copilot-operation{font-size:10px;color:var(--text-dim);margin-bottom:12px}
+.copilot-operation summary{display:flex;align-items:center;gap:5px;cursor:pointer;list-style:none;line-height:1.8}
+.copilot-operation summary::-webkit-details-marker{display:none}
+.copilot-operation-mark,.copilot-operation-chevron{display:flex;flex:none}
+.copilot-operation-mark svg,.copilot-operation-chevron svg{width:12px;height:12px}
+.copilot-operation-mark.ok{color:var(--ok)}.copilot-operation-mark.warn{color:var(--warn)}
+.copilot-operation-chevron{margin-left:auto}
+.copilot-operation ul{list-style:none;margin:6px 0 0;padding:0}
+.copilot-operation li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--border-soft);font-size:11px;overflow-wrap:anywhere}
+.copilot-operation-label{color:var(--text);min-width:0}
+.copilot-operation-warn{color:var(--warn)}
+.copilot-message-continued{margin-top:-14px}

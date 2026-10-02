@@ -120,6 +120,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     heartbeatMs: opts.heartbeatMs,
     snapshot: () => runner.list(),
   });
+  copilot.useViewDelivery((viewId, message) => hub.sendToView(viewId, message));
 
   // Agent/CLI writes mutate the library and plans.json behind the server's
   // back (Stage 3 / Stage 4): poll for them and rebroadcast as

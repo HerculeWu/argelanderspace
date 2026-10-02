@@ -1,3 +1,4 @@
+import { PLAN_ICONS } from "@argelanderspace/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -10,17 +11,8 @@ import type { Plan, Task, TaskStatus } from "./model";
 // delete-plan double confirm. note/links/focused deliberately live OUTSIDE
 // the modals (drawer / inline), per the design.
 
-/** The 8 lucide names the icon picker offers (`target` is the schema default). */
-export const PLAN_ICONS = [
-  "target",
-  "telescope",
-  "book-marked",
-  "database",
-  "brain-circuit",
-  "sigma",
-  "flask-conical",
-  "microscope",
-] as const;
+// The picker's 8 names are the contracts list the Copilot tool is validated against.
+export { PLAN_ICONS };
 
 const PLAN_ICON_LABEL_KEYS = {
   target: "plan.planModal.icons.target",

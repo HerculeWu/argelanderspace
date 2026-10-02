@@ -1,14 +1,8 @@
 import { Marked } from "marked";
 import { renderMathToString } from "../lib/math";
+import { safeLink } from "../lib/safe-link";
 
 const escape = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]!));
-function safeLink(href: string): boolean {
-  if (Array.from(href).some((character) => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) return false;
-  try {
-    const url = new URL(href, "http://workbench.invalid");
-    return ["http:", "https:", "mailto:"].includes(url.protocol) && !url.username && !url.password;
-  } catch { return false; }
-}
 const markdown = new Marked({ gfm: true, breaks: true,
   renderer: {
     html({ text }) { return escape(text); },

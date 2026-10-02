@@ -8,6 +8,7 @@ export * from "./doc-ir.js";
 export * from "./jobs.js";
 export * from "./library.js";
 export * from "./pdf-doc.js";
+export * from "./plan-ops.js";
 export * from "./plans.js";
 export * from "./providers.js";
 export * from "./reader-coherence.js";

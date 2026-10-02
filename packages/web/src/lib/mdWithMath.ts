@@ -1,5 +1,6 @@
-import { marked } from "marked";
+import { Marked, marked } from "marked";
 import { renderMathToString } from "./math";
+import { safeLink } from "./safe-link";
 
 // Markdown with $…$/$$…$$ math, for task notes (Stage 4). The pipeline's
 // order matters at every step:
@@ -35,8 +36,10 @@ import { renderMathToString } from "./math";
 //    `*` / `_` / `\` inside the math); KaTeX output, then the raw URL slots,
 //    then the code sentinel, are restored in that order.
 //
-// Not sanitized on purpose — single-user local tool, the note is the user's
-// own input (same ruling as the prototype).
+// Default mode is not sanitized on purpose — single-user local tool, the note is the user's
+// own input (same ruling as the prototype). Content an agent can now write (Plan notes) is
+// shown with `{ safe: true }`: raw HTML and images are shown as text and only links that resolve
+// to http(s)/mailto (absolute or relative) stay clickable; KaTeX, code and the stored bytes are unchanged.
 
 const FENCE_RE = /(```|~~~)[\s\S]*?(?:\1|$)/g;
 const INLINE_CODE_RE = /(`+)([\s\S]*?)\1(?!`)/g;
@@ -59,7 +62,7 @@ const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escapeAttr = (s: string) => escapeHtml(s).replace(/"/g, "&quot;");
 
-export function mdWithMath(src: string): string {
+export function mdWithMath(src: string, opts: { safe?: boolean } = {}): string {
   if (!src || !src.trim()) return "";
   const run = Math.random().toString(36).slice(2, 10);
 
@@ -98,7 +101,33 @@ export function mdWithMath(src: string): string {
   });
 
   // 4. marked
-  let html = marked.parse(s, { async: false, gfm: true, breaks: true });
+  const hrefOf = (href: string): string => {
+    const slot = href.match(new RegExp(`^@@PLAN-LINK-${run}-(\\d+)@@$`));
+    const stashed = slot ? linkSlots[Number(slot[1])] : undefined;
+    return stashed?.kind === "raw" ? stashed.raw : href;
+  };
+  const safeMarked = new Marked({
+    gfm: true,
+    breaks: true,
+    renderer: {
+      html({ text }) {
+        return escapeHtml(text);
+      },
+      image({ text }) {
+        return escapeHtml(text);
+      },
+      link({ href, tokens }) {
+        const text = this.parser.parseInline(tokens);
+        const target = hrefOf(href);
+        return safeLink(target)
+          ? `<a href="${escapeAttr(target)}" target="_blank" rel="noopener noreferrer">${text}</a>`
+          : text;
+      },
+    },
+  });
+  let html = opts.safe
+    ? (safeMarked.parse(s, { async: false }) as string)
+    : marked.parse(s, { async: false, gfm: true, breaks: true });
 
   // 5. restore: KaTeX → URL slots → code sentinel
   html = html.replace(
@@ -110,9 +139,9 @@ export function mdWithMath(src: string): string {
     (_m, i: string) => {
       const slot = linkSlots[Number(i)];
       if (!slot) return "";
-      return slot.kind === "raw"
-        ? escapeAttr(slot.raw)
-        : `<a href="${escapeAttr(slot.href)}">${escapeHtml(slot.text)}</a>`;
+      if (slot.kind === "raw") return escapeAttr(slot.raw);
+      if (opts.safe && !safeLink(slot.href)) return escapeHtml(slot.text);
+      return `<a href="${escapeAttr(slot.href)}"${opts.safe ? ' target="_blank" rel="noopener noreferrer"' : ""}>${escapeHtml(slot.text)}</a>`;
     }
   );
   return html.split(SENTINEL).join("$");

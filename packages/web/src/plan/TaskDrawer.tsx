@@ -238,7 +238,8 @@ function NoteEditor({
       </div>
     );
   }
-  const html = mdWithMath(value ?? "");
+  // Agents can write notes: display raw HTML/images/unsafe links inertly (stored bytes unchanged).
+  const html = mdWithMath(value ?? "", { safe: true });
   return (
     <div className="plan-note-view" data-ui="task-note-view">
       {html ? (

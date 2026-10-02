@@ -96,6 +96,29 @@ export function loadPlans(statusDir: string): PlansFile {
   return result.data;
 }
 
+/**
+ * Load for a NARROW edit: `raw` is the stored document (after the in-memory
+ * `Task.due` migration) with every unknown key intact, `file` is its validated
+ * view. Edit `raw`, never `file`: the zod parse strips unknown keys, so saving a
+ * parsed object would silently delete another tool's data (I010).
+ */
+export function loadPlansRaw(statusDir: string): { raw: Record<string, unknown>; file: PlansFile } {
+  const path = plansPath(statusDir);
+  if (!existsSync(path)) return { raw: { ...emptyPlansFile() }, file: emptyPlansFile() };
+  let data: unknown;
+  try {
+    data = JSON.parse(readFileSync(path, "utf8"));
+  } catch (err) {
+    throw new Error(`plans store: ${path} is not valid JSON: ${(err as Error).message}`);
+  }
+  const migrated = migrateTaskDue(data);
+  const result = PlansFileSchema.safeParse(migrated);
+  if (!result.success) {
+    throw new Error(`plans store: ${path} failed schema validation: ${formatIssues(result.error)}`);
+  }
+  return { raw: migrated as Record<string, unknown>, file: result.data };
+}
+
 export interface SavePlansOptions {
   /** Persist `file.rev + 1` instead of `file.rev` (the PUT optimistic-lock path). */
   bumpRev?: boolean;
@@ -119,6 +142,27 @@ export function savePlans(statusDir: string, file: PlansFile, opts: SavePlansOpt
   const tmp = file_.replace(/\.json$/, ".json.tmp");
   writeFileSync(tmp, JSON.stringify(result.data, null, 2), "utf8");
   renameSync(tmp, file_);
+}
+
+/**
+ * Write an edited raw document (see {@link loadPlansRaw}) atomically, bumping
+ * `rev`. It must still validate against `PlansFileSchema`, but the validated
+ * copy is only a gate: the raw bytes (unknown keys included) are what is saved.
+ */
+export function savePlansRaw(statusDir: string, raw: Record<string, unknown>): PlansFile {
+  const out = { ...raw, rev: (raw.rev as number) + 1 };
+  const result = PlansFileSchema.safeParse(out);
+  if (!result.success) {
+    throw new Error(
+      `plans store: refusing to write an invalid PlansFile: ${formatIssues(result.error)}`
+    );
+  }
+  mkdirSync(statusDir, { recursive: true });
+  const file_ = plansPath(statusDir);
+  const tmp = file_.replace(/\.json$/, ".json.tmp");
+  writeFileSync(tmp, JSON.stringify(out, null, 2), "utf8");
+  renameSync(tmp, file_);
+  return result.data;
 }
 
 // --------------------------------------------------------------------------- //

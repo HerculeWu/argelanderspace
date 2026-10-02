@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type CopilotOperation, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
 
@@ -101,6 +102,8 @@ export interface CopilotMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** Operations this assistant message requested, with their committed outcomes. */
+  operations?: CopilotOperation[];
   context?: {
     contextId: string;
     view: string;
@@ -127,6 +130,17 @@ export const WsCopilotEventSchema = z
   })
   .strict();
 export type WsCopilotEvent = z.infer<typeof WsCopilotEventSchema>;
+/** Targeted at exactly one browser view (never broadcast to other tabs). */
+export const WsCopilotViewActionSchema = z
+  .object({
+    type: z.literal("copilot.view-action"),
+    viewId: CopilotIdSchema,
+    actionId: z.string().uuid(),
+    action: PlanViewActionSchema,
+  })
+  .strict();
+export type WsCopilotViewAction = z.infer<typeof WsCopilotViewActionSchema>;
+
 export const CopilotSubscriptionSchema = z
   .object({
     type: z.enum(["copilot.subscribe", "copilot.unsubscribe"]),

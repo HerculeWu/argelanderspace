@@ -1,4 +1,4 @@
-import type { PlanPage } from "@argelanderspace/contracts";
+import type { CopilotViewActionResult, PlanPage, PlanViewAction } from "@argelanderspace/contracts";
 import { capturePlanPage } from "../copilot/plan-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -52,13 +52,18 @@ import { TimelineMode } from "./TimelineMode";
 
 type Special = "focus" | "timeline" | null;
 
+/** What the Shell can ask the visible Plan page to do for a Copilot view action. */
+export interface PlanViewController {
+  apply: (action: PlanViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+}
+
 type ModalState =
   | { kind: "plan"; plan?: Plan }
   | { kind: "task"; planId: string; task?: Task; defaultStatus?: TaskStatus }
   | { kind: "deletePlan"; plan: Plan }
   | null;
 
-export function PlanView({ paneId, onContext }: { paneId?: number; onContext?: (paneId: number, page: PlanPage | null) => void } = {}) {
+export function PlanView({ paneId, onContext, onController }: { paneId?: number; onContext?: (paneId: number, page: PlanPage | null) => void; onController?: (paneId: number, controller: PlanViewController | null) => void } = {}) {
   const ws = useWorkspace();
   const { t } = useTranslation();
   const [doc, setDoc] = useState<PlansFile | null>(null);
@@ -343,6 +348,51 @@ export function PlanView({ paneId, onContext }: { paneId?: number; onContext?: (
     setOpenTaskId(null);
   };
 
+  // Explicit navigation requested by Copilot: the same state the sidebar, mode toggle and task rows
+  // set. An id the page does not know yet (just created in the background) gets one reload first.
+  const applyViewAction = useRef<PlanViewController["apply"]>(async () => ({ ok: false, detail: "unavailable" }));
+  applyViewAction.current = async (action) => {
+    if (!docRef.current) return { ok: false, detail: "unavailable" };
+    const find = () => {
+      const all = docRef.current?.plans ?? [];
+      return action.action === "open_task"
+        ? all.find((p) => p.tasks.some((tk) => tk.id === action.taskId))
+        : action.action === "show" && action.planId
+          ? all.find((p) => p.id === action.planId)
+          : undefined;
+    };
+    const needsObject = (action.action === "open_task") || (action.action === "show" && Boolean(action.planId));
+    let target = find();
+    if (needsObject && !target) {
+      await reload();
+      target = find();
+      if (!target) return { ok: false, detail: "not_found" };
+    }
+    if (action.action === "close_task") setOpenTaskId(null);
+    else if (action.action === "open_task") {
+      setSelId(target?.id ?? null);
+      setSpecial(null);
+      setOpenTaskId(action.taskId);
+    } else if (action.view === "focus" || action.view === "timeline") {
+      if (target) setSelId(target.id);
+      setSpecial(action.view);
+      setOpenTaskId(null);
+    } else {
+      if (target) {
+        setSelId(target.id);
+        setOpenTaskId(null);
+      }
+      setSpecial(null);
+      setMode(action.view);
+    }
+    return { ok: true };
+  };
+  useEffect(() => {
+    if (paneId === undefined || !onController) return;
+    onController(paneId, { apply: (action) => applyViewAction.current(action) });
+    return () => onController(paneId, null);
+  }, [paneId, onController]);
+
   const drawerCb = {
     onSetStatus: (planId: string, taskId: string, status: TaskStatus) =>
       patchTask(planId, taskId, { status }),
@@ -544,7 +594,15 @@ export function PlanView({ paneId, onContext }: { paneId?: number; onContext?: (
               defaultStatus={modal.defaultStatus}
               onCancel={() => setModal(null)}
               onSubmit={(values) => {
-                if (modal.task) patchTask(modal.planId, modal.task.id, values);
+                if (modal.task) {
+                  // Only the fields the user changed: the modal's snapshot may predate an agent edit.
+                  const before = modal.task;
+                  const patch: Partial<Omit<Task, "id">> = {};
+                  if (values.title !== before.title) patch.title = values.title;
+                  if (values.status !== before.status) patch.status = values.status;
+                  if (values.due !== before.due) patch.due = values.due;
+                  if (Object.keys(patch).length) patchTask(modal.planId, modal.task.id, patch);
+                }
                 else addTask(modal.planId, values);
                 setModal(null);
               }}

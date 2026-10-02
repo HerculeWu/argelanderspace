@@ -1,4 +1,4 @@
-import type { Conversation, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
+import type { CopilotViewActionResult, Conversation, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
 export class CopilotApiError extends Error { constructor(readonly code: string) { super(code); } }
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(`/api/copilot${path}`, { method, cache: "no-store", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -12,3 +12,4 @@ export const fetchConversation = (id: string) => request<ConversationSnapshot>(`
 export const selectConversationModel = (id: string, model: ConversationModel) => request<ConversationSnapshot>(`/conversations/${id}/model`, "PUT", model);
 export const publishPageContext = (context: PageContext) => request<{ saved: true }>(`/views/${context.viewId}`, "PUT", context);
 export const sendCopilotMessage = (id: string, input: CopilotMessageRequest) => request<{ messageId: string; runId: string }>(`/conversations/${id}/messages`, "POST", input);
+export const postViewActionResult = (viewId: string, result: CopilotViewActionResult) => request<{ saved: true }>(`/views/${viewId}/action-results`, "POST", result);

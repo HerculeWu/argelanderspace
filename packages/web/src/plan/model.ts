@@ -211,79 +211,9 @@ export function timelineFrac(iso: string, scale: TimelineScale): number {
 // Task-array reorder operations (drag results, persisted as the array order)
 // --------------------------------------------------------------------------- //
 
-function spliceMove<T>(arr: T[], from: number, to: number): T[] {
-  const out = [...arr];
-  const [x] = out.splice(from, 1);
-  out.splice(to, 0, x as T);
-  return out;
-}
-
-/**
- * List mode: move *activeId* to *overId*'s position among the tasks sharing
- * *status* (their order inside the full array IS the group order). The group
- * is reordered in place — tasks of other statuses keep their exact array
- * positions. Same array back when either id is unknown or they coincide.
- */
-export function reorderWithinStatus(
-  tasks: Task[],
-  status: TaskStatus,
-  activeId: string,
-  overId: string
-): Task[] {
-  if (activeId === overId) return tasks;
-  const groupIdx = tasks.flatMap((t, i) => (t.status === status ? [i] : []));
-  const fromPos = groupIdx.findIndex((i) => tasks[i]?.id === activeId);
-  const toPos = groupIdx.findIndex((i) => tasks[i]?.id === overId);
-  if (fromPos < 0 || toPos < 0) return tasks;
-  const group = groupIdx.map((i) => tasks[i] as Task);
-  const [moved] = group.splice(fromPos, 1);
-  group.splice(toPos, 0, moved as Task);
-  const out = [...tasks];
-  groupIdx.forEach((idx, k) => {
-    out[idx] = group[k] as Task;
-  });
-  return out;
-}
-
-/** Array index right after the last *status* task (array end when none). */
-function endOfStatus(tasks: Task[], status: TaskStatus): number {
-  for (let i = tasks.length - 1; i >= 0; i--) {
-    if (tasks[i]?.status === status) return i + 1;
-  }
-  return tasks.length;
-}
-
-/**
- * Board mode: drop *activeId* into column *status*. Same column → take the
- * over card's place (arrayMove semantics; the column body is a no-op).
- * Cross column = status change + position in one gesture: before the over
- * card, or after the column's last card when dropped on the column body.
- */
-export function moveToColumn(
-  tasks: Task[],
-  activeId: string,
-  status: TaskStatus,
-  overId: string | null
-): Task[] {
-  const from = tasks.findIndex((t) => t.id === activeId);
-  if (from < 0) return tasks;
-  const cur = tasks[from] as Task;
-  if (cur.status === status) {
-    if (!overId || overId === activeId) return tasks;
-    const to = tasks.findIndex((t) => t.id === overId);
-    return to < 0 ? tasks : spliceMove(tasks, from, to);
-  }
-  const moved = { ...cur, status };
-  const rest = tasks.filter((t) => t.id !== activeId);
-  let at = endOfStatus(rest, status);
-  if (overId && overId !== activeId) {
-    const i = rest.findIndex((t) => t.id === overId);
-    if (i >= 0) at = i;
-  }
-  const out = [...rest];
-  out.splice(at, 0, moved);
-  return out;
-}
+// The reorder rules live in contracts so the UI drag handlers and the Copilot `plan` tool apply
+// exactly the same list/board semantics.
+export { moveToColumn, reorderWithinStatus } from "@argelanderspace/contracts";
 
 /** Shared selection for rendering and complete Copilot page capture. */
 export function resolvePlanSelection(plans: Plan[], selectedId: string | null, openTaskId: string | null) {

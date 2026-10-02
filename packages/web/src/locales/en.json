@@ -1132,7 +1132,7 @@
     "model": "Choose model",
     "thinking": "Thinking level",
     "running": "Replying…",
-    "readOnly": "Conversation only for now",
+    "scope": "Plan actions available",
     "interrupted": "The service interrupted the previous run. Records are preserved; resume is not available yet.",
     "disconnected": "Disconnected. Restoring conversation…",
     "newContent": "View new content",
@@ -1152,6 +1152,36 @@
     },
     "defaultChoice": "Use default",
     "saved": "Saved",
-    "saving": "Saving…"
+    "saving": "Saving…",
+    "operations": {
+      "count": "{{count}} Plan actions",
+      "notApplied": "{{count}} not applied",
+      "dueAfterPlan": "Due is after the plan deadline",
+      "actions": {
+        "read": "Read plans",
+        "create_plan": "Create plan",
+        "update_plan": "Edit plan",
+        "create_task": "Create task",
+        "update_task": "Edit task",
+        "add_task_link": "Link document",
+        "remove_task_link": "Unlink document",
+        "move_task": "Reorder task",
+        "show": "Show view",
+        "open_task": "Open task",
+        "close_task": "Close task"
+      },
+      "status": {
+        "ok": "Applied",
+        "noop": "No change",
+        "conflict": "Plans changed first",
+        "not_found": "Not found",
+        "rejected": "Not allowed",
+        "invalid": "Invalid",
+        "not_displayed": "Not shown",
+        "unsupported": "Unsupported",
+        "unknown": "Outcome unknown",
+        "error": "Failed"
+      }
+    }
   }
 }

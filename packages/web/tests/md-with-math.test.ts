@@ -162,3 +162,47 @@ describe("mdWithMath: literal-$ zones are never math (MS3 review B1)", () => {
     expect(html).toContain('class="katex"');
   });
 });
+
+describe("mdWithMath safe mode (agent-writable Plan notes)", () => {
+  const safe = (src: string) => mdWithMath(src, { safe: true });
+
+  it("raw HTML, handlers and images are inert text, never live elements", () => {
+    const html = safe('<script>alert(1)</script>\n\nhello <img src=x onerror="alert(2)"> and ![pic](https://evil.example/p.png)\n\n<div onclick="x()">block</div>');
+    const dom = document.createElement("div");
+    dom.innerHTML = html;
+    expect(dom.querySelectorAll("script, img, div, [onerror], [onclick]")).toHaveLength(0);
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("pic");
+  });
+
+  it("dangerous link destinations lose the anchor, with or without a $ in the destination", () => {
+    for (const src of ["[x](javascript:alert(1))", "[x](javascript:alert($1))", "[x](data:text/html;base64,AAAA)", "[x](vbscript:y)", "[x](java\tscript:alert(1))"]) {
+      const html = safe(src);
+      expect(html, src).not.toContain("<a");
+      expect(html, src).toContain("x");
+    }
+  });
+
+  it("http(s) and mailto links stay clickable and open safely, including a $ in the URL", () => {
+    expect(safe("[a](https://example.org/p)")).toContain('<a href="https://example.org/p" target="_blank" rel="noopener noreferrer">a</a>');
+    expect(safe("[m](mailto:a@example.org)")).toContain('href="mailto:a@example.org"');
+    expect(safe("[d](https://example.org/a$b)")).toContain('href="https://example.org/a$b"');
+    expect(safe("see <https://example.org/x$y> now")).toContain('href="https://example.org/x$y"');
+    expect(safe("<ftp://example.org/x$y>")).not.toContain("<a");
+  });
+
+  it("math, code and Markdown survive exactly like the default path", () => {
+    const src = "**bold** $a_i \\cdot b_j$ and `$code$`\n\n```\n$ fence <b>x</b> $\n```\n\n$$E=mc^2$$";
+    const html = safe(src);
+    expect(html).toContain("<strong>bold</strong>");
+    expect(html).toContain('class="katex"');
+    expect(html).toContain("katex-display");
+    expect(html).toContain("<code>$code$</code>");
+    expect(html).toContain("$ fence &lt;b&gt;x&lt;/b&gt; $");
+    expect(html).not.toContain("@@");
+  });
+
+  it("the default (non-safe) path keeps its documented behavior", () => {
+    expect(mdWithMath("[x](https://example.org)")).toContain('<a href="https://example.org">x</a>');
+  });
+});

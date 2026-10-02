@@ -16,11 +16,13 @@ import {
   deleteTask,
   emptyPlansFile,
   loadPlans,
+  loadPlansRaw,
   moveTask,
   newPlanId,
   newTaskId,
   plansPath,
   savePlans,
+  savePlansRaw,
   updatePlan,
   updateTask,
 } from "../src/plans/store.js";
@@ -382,5 +384,38 @@ describe("helper purity", () => {
       op(input);
       expect(input).toEqual(snapshot);
     }
+  });
+});
+
+describe("raw narrow-edit pair", () => {
+  it("keeps unknown keys the zod load strips, and bumps rev once", () => {
+    const dir = tmpStatusDir();
+    const doc = structuredClone(BASE) as Record<string, unknown>;
+    (doc.plans as Record<string, unknown>[])[0] = {
+      ...((doc.plans as Record<string, unknown>[])[0] as object),
+      x_external: { keep: [1, 2] },
+    };
+    doc.x_top = "top";
+    writeFileSync(plansPath(dir), JSON.stringify(doc), "utf8");
+    expect(JSON.stringify(loadPlans(dir))).not.toContain("x_external");
+    const { raw, file } = loadPlansRaw(dir);
+    expect(file.rev).toBe(BASE.rev);
+    const saved = savePlansRaw(dir, raw);
+    expect(saved.rev).toBe(BASE.rev + 1);
+    const disk = JSON.parse(readFileSync(plansPath(dir), "utf8"));
+    expect(disk.x_top).toBe("top");
+    expect(disk.plans[0].x_external).toEqual({ keep: [1, 2] });
+    expect(disk.rev).toBe(BASE.rev + 1);
+  });
+
+  it("refuses an invalid edit and leaves the file bytes alone", () => {
+    const dir = tmpStatusDir();
+    savePlans(dir, BASE);
+    const before = readFileSync(plansPath(dir), "utf8");
+    const { raw } = loadPlansRaw(dir);
+    (raw.plans as Record<string, unknown>[])[0] = { id: "bad" };
+    expect(() => savePlansRaw(dir, raw)).toThrow(/invalid/);
+    expect(readFileSync(plansPath(dir), "utf8")).toBe(before);
+    expect(existsSync(`${plansPath(dir)}.tmp`)).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ import type { Server } from "node:http";
 import {
   CopilotSubscriptionSchema,
   type Job,
+  type WsCopilotViewAction,
   type WsServerMessage,
 } from "@argelanderspace/contracts";
 import { WebSocket, WebSocketServer } from "ws";
@@ -66,6 +67,7 @@ export class WsHub {
     });
     this.wss.on("connection", (ws: WebSocket) => {
       subscriptions.set(ws, new Set());
+      viewIds.set(ws, new Map());
       alive.set(ws, true);
       ws.on("pong", () => alive.set(ws, true));
       if (opts.snapshot) {
@@ -89,6 +91,7 @@ export class WsHub {
         const message = parsed.data;
         if (message.type === "copilot.subscribe") {
           subscriptions.get(ws)?.add(message.conversationId);
+          viewIds.get(ws)?.set(message.conversationId, message.viewId);
           ws.send(
             JSON.stringify({
               type: "copilot.subscribed",
@@ -96,7 +99,10 @@ export class WsHub {
               viewId: message.viewId,
             })
           );
-        } else subscriptions.get(ws)?.delete(message.conversationId);
+        } else {
+          subscriptions.get(ws)?.delete(message.conversationId);
+          viewIds.get(ws)?.delete(message.conversationId);
+        }
       });
     });
     const heartbeatMs = opts.heartbeatMs ?? 30_000;
@@ -124,6 +130,22 @@ export class WsHub {
     }
   }
 
+  /**
+   * Deliver a targeted view action to the sockets that registered exactly this view id.
+   * Returns whether any socket received it; never broadcasts to other views.
+   */
+  sendToView(viewId: string, msg: WsCopilotViewAction): boolean {
+    const data = JSON.stringify(msg);
+    let delivered = false;
+    for (const ws of this.wss.clients) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      if (![...(viewIds.get(ws)?.values() ?? [])].includes(viewId)) continue;
+      ws.send(data);
+      delivered = true;
+    }
+    return delivered;
+  }
+
   get clientCount(): number {
     return this.wss.clients.size;
   }
@@ -138,3 +160,5 @@ export class WsHub {
 /** Per-socket liveness for the heartbeat (avoids an expansion cast). */
 const alive = new WeakMap<WebSocket, boolean>();
 const subscriptions = new WeakMap<WebSocket, Set<string>>();
+/** conversationId → the view id this socket registered for it. */
+const viewIds = new WeakMap<WebSocket, Map<string, string>>();

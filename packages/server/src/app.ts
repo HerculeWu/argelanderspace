@@ -146,7 +146,7 @@ import type { JobRunner } from "./jobs.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
 import { probePdf } from "./pdfium-probe.js";
-import { readPlans, replacePlans } from "./plans-actions.js";
+import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
 import {
@@ -394,11 +394,17 @@ export function createApp(deps: AppDeps): Hono {
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
   mountProviderRoutes(app, providerSettings, guardCsrf);
-  mountCopilotRoutes(
-    app,
-    deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast),
-    guardCsrf
-  );
+  const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
+  mountCopilotRoutes(app, copilot, guardCsrf);
+  // The Copilot `plan` tool shares the Plan lock, store and plan.changed notification with PUT.
+  copilot.useWorkbench({
+    plans: {
+      statusDir: deps.statusDir,
+      planLock,
+      onChanged: () => planChanged("put"),
+      docExists: (docId) => isLinkableDoc(LibraryStore.load(paths).works, docId),
+    },
+  });
 
   // ---- GET /api/papers ----------------------------------------------------- //
 

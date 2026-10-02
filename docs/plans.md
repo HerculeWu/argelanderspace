@@ -18,12 +18,12 @@
 GET/PUT `/api/plans` 全量 payload；PUT body 带 rev，冲突409，前端重取并提示。独立 planLock（不与 libraryLock 互堵）、CSRF guard。server 立即 plan.changed；watcher mtime+size 再发 external，前端重取幂等。
 
 - WsServerMessage union 加成员时 web dispatcher 显式分支，不能 else 都当 job。
-- plans.json 未知键默认 zod strip，round-trip 不前向无损（I010）；未来 agent 写入前必须评估。
+- plans.json 未知键默认 zod strip，round-trip 不前向无损（I010）；未来 agent 写入前必须评估。（2026-10-02 起部分被取代，见[Copilot 接入](#copilot-接入2026-10-02票据-09局部修订)） 整库 PUT 的 strip 不变。
 - 当前 server 单进程 lock 不等于跨进程文件写锁。Stage 4.1 仅留数据条件，旧“未来 CLI 必直写磁盘”只是方案设想，不冻结未来并发/接口设计。
 - PUT body 无专门大小限制，未带 Content-Type 也可解析，单用户先例接受；load EISDIR 日志措辞不够准确。要改变信任/部署模型时再评估。
 - pendingExternal 在本地写入中 defer 后排空；排队写交织可能多闪一次409，但收敛；失败有显式 loadFailed，不用 fixture 冒充空数据。
 
-**I018（已接受）**：本地单用户 note 不 sanitize、API body 限制宽、排队写与 external reload 可多闪一次 409 但结果收敛。只有信任/部署模型变化或相关新需求获批时重议，不把这些取舍当作已批准的修复队列。
+**I018（已接受；note 展示部分已被 Copilot 接入一节局部修订，存储与其余取舍不变）**：本地单用户 note 不 sanitize、API body 限制宽、排队写与 external reload 可多闪一次 409 但结果收敛。只有信任/部署模型变化或相关新需求获批时重议，不把这些取舍当作已批准的修复队列。
 
 ## 页面与交互
 
@@ -55,9 +55,19 @@ GET/PUT `/api/plans` 全量 payload；PUT body 带 rev，冲突409，前端重�
 
 marked + mdWithMath 先保护code/URL等，再抽数学为熵占位符，marked后回填KaTeX。不能先让marked吃math里的星号/下划线/反斜杠；不能无差别抽所有美元符号。
 
-已回归：code span/多反引号/fence（含~~~）、货币、转义美元、链接目的地。URL stash若提前破坏marked词法会出%01 href，曾二次审查修复。更怪setext构造未全枚举，是启发式，遇新腐蚀加保护区与回归。note不sanitize是本地单用户自输入的明确裁决，不适合据此宣称可安全接不可信多用户输入。
+已回归：code span/多反引号/fence（含~~~）、货币、转义美元、链接目的地。URL stash若提前破坏marked词法会出%01 href，曾二次审查修复。更怪setext构造未全枚举，是启发式，遇新腐蚀加保护区与回归。note不sanitize是本地单用户自输入的明确裁决，不适合据此宣称可安全接不可信多用户输入。（note 展示已于 2026-10-02 加 safe 模式，见[Copilot 接入](#copilot-接入2026-10-02票据-09局部修订)。）
+
+## Copilot 接入（2026-10-02，票据 09；局部修订）
+
+旧位置：上文「note 不 sanitize」「Stage 4.1 agent 操作计划仍推后」只描述当时的本地单用户手写。新结论与范围：内嵌 Copilot 的 `plan` 工具已覆盖本页既有控件的新建/编辑、状态/期限/note/文档链接/聚焦/列表与看板调序及视图切换；删除与 6 秒撤销留给后续票。原因：agent 现在能写 note，ADR 0005 要求 UI 能做的 agent 也能做。
+
+- 共用 `plans-actions.ts` 与同一 `planLock`、`PlansFile.rev`、`plan.changed`：工具以 `expectedRev` 在锁内比较，stale 返回 conflict 与当前 rev，agent 重读后再改；窄修改只改点名字段，**保留未知键**（基于磁盘原始对象，不用 zod 解析结果覆盖）。Doc 链接只接受库中各 Work 的主 Doc（`doc_ids[0]`，即 UI 链接选择器的候选）；参数长度与 UI/PlanSchema 一致，不另设上限。列表只同状态调序、看板可跨状态、不跨计划，规则与 UI 共用 contracts 中的 `reorderWithinStatus`/`moveToColumn`；due 晚于计划期限只给 `task_due_after_plan_due` 软警告。
+- UI 整库 PUT 仍按旧 schema strip 未知键（I010 不变）；因此外部未知键只被 agent 窄修改路径保留，不被整库 PUT 保证。
+- Plan note 的**展示**对不可信内容加 `mdWithMath(..., { safe: true })`：原始 HTML 与图片按文本显示，解析为 http/https/mailto 的链接可点（含相对与 `//host` 形式），`javascript:`/`data:` 等转为文本，KaTeX 与代码不变；存储字节不改。其它使用 mdWithMath 的位置（标注）仍为原裁决。
 
 ## 明确不要与推后
+
+本节为 Stage 4 原清单；其中 agent 操作计划一项已由[Copilot 接入](#copilot-接入2026-10-02票据-09局部修订)一节局部修订，其余不变。
 
 用户原理由要保留，不能统称“尚未实现”：
 
@@ -65,7 +75,7 @@ marked + mdWithMath 先保护code/URL等，再抽数学为熵占位符，marked�
 - blockedBy、“等待延期结果”中间态：用户自建申请延期task即可，不额外建状态机。
 - tag、plan.start、聚焦冗余数组：不提前扩模型，最后一项是原型坏味道。
 - 任务跨计划移动、时间线拖条改期、anchor级链接：当前不做；未来明确需求才讨论。
-- Stage 4.1 agent 操作计划：仍推后，稳定id/prettyJSON/watcher/plan.changed/CRUD纯函数只是预留；不是已完成命令面或永久细粒度API禁令。
+- Stage 4.1 agent 操作计划：仍推后（旧 CLI 方案；内嵌 Copilot 的 `plan` 工具另见[Copilot 接入](#copilot-接入2026-10-02票据-09局部修订)），稳定id/prettyJSON/watcher/plan.changed/CRUD纯函数只是预留；不是已完成命令面或永久细粒度API禁令。
 
 ## 证据入口
 

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Copilot } from "../src/copilot/Copilot";
 import i18n from "../src/i18n";
 
-const callbacks = vi.hoisted(() => ({ subscription: null as null | { event: (event: WsCopilotEvent) => void; ready: () => void; connection: (value: boolean) => void } }));
+const callbacks = vi.hoisted(() => ({ subscription: null as null | { event: (event: WsCopilotEvent) => void; viewAction?: (message: { type: "copilot.view-action"; viewId: string; actionId: string; action: unknown }) => void; ready: () => void; connection: (value: boolean) => void } }));
 vi.mock("../src/api/ws", () => ({ subscribeCopilot: (subscription: NonNullable<typeof callbacks.subscription>) => { callbacks.subscription = subscription; queueMicrotask(subscription.ready); return () => { callbacks.subscription = null; }; } }));
 const context: PageContext = { version: 1, viewId: "00000000-0000-4000-8000-000000000001", paneId: 1, revision: 1, view: "doc", status: "unavailable", otherPanes: [], plan: null };
 const snapshot: ConversationSnapshot = { version: 1, conversation: { version: 1, id: "00000000-0000-4000-8000-000000000002", sessionId: "00000000-0000-4000-8000-000000000003", title: "Test conversation", createdAt: "2026-10-02", updatedAt: "2026-10-02", model: { provider: "openai", model: "test", thinking: null }, run: null }, messages: [], stream: "", eventCursor: { instanceId: "00000000-0000-4000-8000-000000000004", seq: 1 } };
@@ -96,4 +96,49 @@ test("bound page revisions publish while running and with the sidebar collapsed"
   component.rerender(<Copilot open={false} context={{ ...context, revision: 3, view: "write" }} onClose={vi.fn()} />);
   await waitFor(() => expect(fetchMock.mock.calls.filter(([url,options]) => url.includes("/views/") && JSON.parse(options!.body as string).revision === 3)).toHaveLength(1));
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/messages"))).toHaveLength(0);
+});
+
+test("assistant operation records show each action with its real outcome and never present a failure as applied", async () => {
+  const withOps: ConversationSnapshot = { ...snapshot, messages: [
+    { id: "m1", role: "assistant", text: "", operations: [
+      { id: "c1", tool: "plan", action: "update_task", status: "ok", rev: 8, label: "Task <b>1</b>", object: { kind: "task", id: "t_00000001", planId: "p_0000000a" }, warnings: ["task_due_after_plan_due"] },
+      { id: "c2", tool: "plan", action: "update_task", status: "conflict", rev: 9 },
+      { id: "c3", tool: "plan", action: "show", status: "not_displayed" },
+      { id: "c4", tool: "plan", action: "move_task", status: "unknown" },
+    ] },
+    { id: "m2", role: "assistant", text: "Done", operations: [{ id: "c5", tool: "plan", action: "read", status: "ok", rev: 8 }] },
+  ] };
+  fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withOps));
+  await open();
+  const records = await waitFor(() => { const found = document.querySelectorAll('[data-ui="copilot-operation"]'); expect(found).toHaveLength(2); return found; });
+  expect(records[0]!.querySelector("summary")?.textContent).toContain("4 Plan actions");
+  expect(records[0]!.querySelector("summary")?.textContent).toContain("3 not applied");
+  expect(records[1]!.querySelector("summary")?.textContent).toBe("Read plans");
+  const items = [...records[0]!.querySelectorAll<HTMLElement>('[data-ui="copilot-operation-item"]')];
+  expect(items.map((item) => item.getAttribute("data-status"))).toEqual(["ok", "conflict", "not_displayed", "unknown"]);
+  expect(items[0]!.textContent).toContain("Applied");
+  expect(items[0]!.textContent).toContain("Due is after the plan deadline");
+  expect(items[0]!.querySelector("b")).toBeNull(); // user data stays text
+  expect(items[1]!.textContent).toContain("Plans changed first");
+  expect(items[2]!.textContent).toContain("Not shown");
+  expect(items[3]!.textContent).toContain("Outcome unknown");
+  expect(items.slice(1).some((item) => item.textContent?.includes("Applied"))).toBe(false);
+  // a message that only requested actions has no empty reply bubble
+  expect(document.querySelectorAll('[data-ui="copilot-message"]')[0]!.querySelector(".copilot-markdown")).toBeNull();
+});
+
+test("a view action runs once, reports what the page really did, and a failed report cannot mark it displayed", async () => {
+  const handler = vi.fn(async (action: unknown) => (action as { action: string }).action === "open_task" ? ({ ok: false, detail: "not_found" as const }) : ({ ok: true as const }));
+  render(<Copilot open context={context} onClose={vi.fn()} onViewAction={handler} />);
+  await screen.findByText("Copilot");
+  await waitFor(() => expect(callbacks.subscription?.viewAction).toBeTypeOf("function"));
+  const message = (actionId: string, action: unknown) => ({ type: "copilot.view-action" as const, viewId: context.viewId, actionId, action });
+  const id1 = "00000000-0000-4000-8000-0000000000a1", id2 = "00000000-0000-4000-8000-0000000000a2";
+  act(() => { callbacks.subscription!.viewAction!(message(id1, { action: "show", view: "board" })); callbacks.subscription!.viewAction!(message(id1, { action: "show", view: "board" })); });
+  act(() => callbacks.subscription!.viewAction!(message(id2, { action: "open_task", taskId: "t_ffffffff" })));
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/action-results"))).toHaveLength(2));
+  expect(handler).toHaveBeenCalledTimes(2);
+  const reports = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/action-results")).map(([url, options]) => ({ url: String(url), body: JSON.parse((options as RequestInit).body as string) }));
+  expect(reports[0]).toEqual({ url: `/api/copilot/views/${context.viewId}/action-results`, body: { actionId: id1, ok: true } });
+  expect(reports[1]!.body).toEqual({ actionId: id2, ok: false, detail: "not_found" });
 });

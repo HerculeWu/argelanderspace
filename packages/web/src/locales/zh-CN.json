@@ -1132,7 +1132,7 @@
     "model": "选择模型",
     "thinking": "思考级别",
     "running": "正在回复…",
-    "readOnly": "当前仅支持对话",
+    "scope": "可操作计划",
     "interrupted": "服务中断了上一轮。记录已保留；继续功能尚未提供。",
     "disconnected": "连接中断，正在恢复会话…",
     "newContent": "查看新内容",
@@ -1152,6 +1152,36 @@
     },
     "defaultChoice": "沿用默认",
     "saved": "已保存",
-    "saving": "正在保存…"
+    "saving": "正在保存…",
+    "operations": {
+      "count": "{{count}} 项计划操作",
+      "notApplied": "{{count}} 项未应用",
+      "dueAfterPlan": "期限晚于计划截止日",
+      "actions": {
+        "read": "读取计划",
+        "create_plan": "新建计划",
+        "update_plan": "编辑计划",
+        "create_task": "新建任务",
+        "update_task": "编辑任务",
+        "add_task_link": "关联文档",
+        "remove_task_link": "取消关联文档",
+        "move_task": "调整任务顺序",
+        "show": "切换视图",
+        "open_task": "打开任务",
+        "close_task": "关闭任务"
+      },
+      "status": {
+        "ok": "已应用",
+        "noop": "无变化",
+        "conflict": "计划已被先改动",
+        "not_found": "未找到",
+        "rejected": "不允许",
+        "invalid": "无效",
+        "not_displayed": "未显示",
+        "unsupported": "不支持",
+        "unknown": "结果未知",
+        "error": "失败"
+      }
+    }
   }
 }
