@@ -107,7 +107,7 @@ export function atomicCopilotFile(path: string, value: string): void {
 }
 
 export function saveCopilotHistory(path: string, manager: SessionManager): void {
-  // ponytail: O(n) native SDK history snapshot; use a public atomic SDK backend if large chats need incremental saves.
+  // O(n) full snapshot of native SDK history; switch to an atomic SDK backend if large chats need incremental saves.
   const entries = [manager.getHeader(), ...manager.getEntries()];
   atomicCopilotFile(path, `${entries.map((value) => JSON.stringify(value)).join("\n")}\n`);
 }

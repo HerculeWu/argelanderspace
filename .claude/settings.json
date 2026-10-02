@@ -1,0 +1,11 @@
+{
+  "autoMemoryEnabled": false,
+  "permissions": {
+    "allow": [
+      "Bash(corepack pnpm -r build)",
+      "Bash(corepack pnpm -r test)",
+      "Bash(corepack pnpm -r typecheck)",
+      "Bash(corepack pnpm lint)"
+    ]
+  }
+}

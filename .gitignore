@@ -20,6 +20,9 @@ packages/app/LICENSE
 .codegraph/
 .serena/
 
+# Local copy of third-party agent skills (Matt Pocock skills; Claude uses the plugin)
+/.pi/skills/
+
 # Private local specs, tickets, discussions and machine-specific notes.
 # This directory is deliberately not part of the public repository backup.
 .scratch/
