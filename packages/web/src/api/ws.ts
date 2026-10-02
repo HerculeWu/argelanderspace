@@ -1,4 +1,4 @@
-import type { Job, WsServerMessage, WsWriterChanged } from "@argelanderspace/contracts";
+import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent } from "@argelanderspace/contracts";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
@@ -22,6 +22,12 @@ const planListeners = new Set<PlanListener>();
 const annotationListeners = new Set<AnnotationListener>();
 const writerListeners = new Set<WriterListener>();
 
+interface CopilotSubscription { conversationId: string; viewId: string; event: (event: WsCopilotEvent) => void; ready: () => void; connection: (connected: boolean) => void; }
+const copilotSubscriptions = new Set<CopilotSubscription>();
+function sendSubscription(subscription: CopilotSubscription, type = "copilot.subscribe") {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, conversationId: subscription.conversationId, viewId: subscription.viewId }));
+}
+
 const RETRY_MAX_MS = 15000;
 
 let started = false;
@@ -35,7 +41,11 @@ function wsUrl(): string {
 }
 
 function dispatch(msg: WsServerMessage): void {
-  if (msg.type === "hello") {
+  if (msg.type === "copilot.event") {
+    for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId) subscription.event(msg);
+  } else if (msg.type === "copilot.subscribed") {
+    for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId && subscription.viewId === msg.viewId) subscription.ready();
+  } else if (msg.type === "hello") {
     // late-joiner catch-up: surface the snapshot like ordinary job events
     for (const job of msg.jobs) {
       for (const cb of jobListeners) cb(job, "hello");
@@ -77,6 +87,7 @@ function connect(): void {
   }
   socket.onopen = () => {
     retryMs = 1000;
+    for (const subscription of copilotSubscriptions) sendSubscription(subscription);
   };
   socket.onmessage = (ev: MessageEvent) => {
     try {
@@ -87,6 +98,7 @@ function connect(): void {
   };
   socket.onclose = () => {
     socket = null;
+    for (const subscription of copilotSubscriptions) subscription.connection(false);
     scheduleReconnect();
   };
   socket.onerror = () => {
@@ -144,4 +156,11 @@ export function onWriterChanged(cb: WriterListener): () => void {
   return () => {
     writerListeners.delete(cb);
   };
+}
+
+/** Install event buffering before subscribe. The server acknowledgement precedes authoritative GET. */
+export function subscribeCopilot(subscription: CopilotSubscription): () => void {
+  copilotSubscriptions.add(subscription);
+  ensureStarted(); sendSubscription(subscription);
+  return () => { copilotSubscriptions.delete(subscription); sendSubscription(subscription, "copilot.unsubscribe"); };
 }

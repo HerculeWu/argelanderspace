@@ -96,7 +96,6 @@ import {
   listManuscripts,
   loadCurrentGraph,
   loadManuscript,
-  loadPlans,
   loadTemplates,
   type ManualIdentifier,
   type MetadataSources,
@@ -121,7 +120,6 @@ import {
   saveManuscript,
   savePdfAnnotationsFile,
   savePdfReadingPosition,
-  savePlans,
   uploadDocId,
   type WriterExportBundle,
   WriterExportError,
@@ -141,11 +139,16 @@ import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
+import { CopilotHost } from "./copilot.js";
+import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
 import { probePdf } from "./pdfium-probe.js";
+import { readPlans, replacePlans } from "./plans-actions.js";
+import { mountProviderRoutes } from "./provider-routes.js";
+import { ProviderSettings } from "./providers.js";
 import {
   cancelNumberingCompile,
   getWriterNumbering,
@@ -189,6 +192,9 @@ export interface AppDeps {
   webDist?: string | null;
   /** The server's own port — same-origin SPA POSTs carry it in `Origin`. */
   port?: number;
+  /** Isolated settings storage/runtime in tests; production is initialized on first provider request. */
+  providerSettings?: ProviderSettings;
+  copilot?: CopilotHost;
 }
 
 // --------------------------------------------------------------------------- //
@@ -385,6 +391,14 @@ export function createApp(deps: AppDeps): Hono {
     origin !== undefined && !allowedOrigins.has(origin)
       ? { body: { detail: "cross-site request rejected" }, status: 403 }
       : null;
+
+  const providerSettings = deps.providerSettings ?? new ProviderSettings();
+  mountProviderRoutes(app, providerSettings, guardCsrf);
+  mountCopilotRoutes(
+    app,
+    deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast),
+    guardCsrf
+  );
 
   // ---- GET /api/papers ----------------------------------------------------- //
 
@@ -1019,7 +1033,7 @@ export function createApp(deps: AppDeps): Hono {
   // The plan page's whole document (Stage 4): a missing plans.json reads as
   // the empty document (core loadPlans); a corrupt one surfaces as a 500 —
   // never a silent reset.
-  app.get("/api/plans", (c) => c.json(loadPlans(deps.statusDir)));
+  app.get("/api/plans", (c) => c.json(readPlans(deps.statusDir)));
 
   // ---- PUT /api/plans -------------------------------------------------------- //
 
@@ -1037,16 +1051,12 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("request body is not a valid plans document", 400);
       return c.json(e.body, e.status);
     }
-    const outcome = await planLock.run(() => {
-      const current = loadPlans(deps.statusDir);
-      if (parsed.data.rev !== current.rev) return { conflictRev: current.rev } as const;
-      savePlans(deps.statusDir, parsed.data, { bumpRev: true });
-      return { saved: { ...parsed.data, rev: parsed.data.rev + 1 } } as const;
-    });
+    const outcome = await replacePlans(deps.statusDir, planLock, parsed.data, () =>
+      planChanged("put")
+    );
     if ("conflictRev" in outcome) {
       return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
     }
-    planChanged("put");
     return c.json(outcome.saved);
   });
 

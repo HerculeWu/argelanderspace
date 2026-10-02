@@ -11,7 +11,7 @@
 
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PlansFile, Task } from "@argelanderspace/contracts";
+import type { PlanPage, PlansFile, Task } from "@argelanderspace/contracts";
 import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 import { addDaysISO, todayISO } from "../src/plan/model";
 import { PlanView } from "../src/plan/PlanView";
@@ -680,4 +680,20 @@ describe("TimelineMode: reverse span (created_at > due) renders clamped (review 
     expect(bar).toBeTruthy();
     expect(bar.style.width).toBe("0.8%"); // clamped minimum, never negative
   });
+});
+
+it("Copilot Plan context keeps complete tasks, collapsed state and reading position", async () => {
+  serverDoc = mkDoc([mkTask({ title: "First" }), mkTask({ title: "Last", status: "done" })]);
+  let page: PlanPage | null = null;
+  const currentPage = (): PlanPage | null => page;
+  const capture = (_paneId: number, result: PlanPage | null) => { page = result; };
+  const { container } = render(<WorkspaceProvider value={WORKSPACE}><PlanView paneId={1} onContext={capture} /></WorkspaceProvider>);
+  await waitFor(() => expect(currentPage()?.plans[0]?.tasks).toHaveLength(2));
+  expect(currentPage()?.ui?.completedExpanded).toBe(false);
+  fireEvent.click(container.querySelector('[data-ui="toggle-completed-tasks"]')!);
+  await waitFor(() => expect(currentPage()?.ui?.completedExpanded).toBe(true));
+  const scroller = container.querySelector('[data-ui="plan-scroll"]') as HTMLElement;
+  scroller.scrollTop = 130;fireEvent.scroll(scroller);
+  await waitFor(() => expect(currentPage()?.ui?.readingPosition).toEqual({ region: "plan-scroll", top: 130, left: 0 }));
+  expect(currentPage()?.saveState).toBe("saved");
 });

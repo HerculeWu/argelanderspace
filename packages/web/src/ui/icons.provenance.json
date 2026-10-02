@@ -9,6 +9,14 @@
       "licenseReference": "https://www.svgrepo.com/page/licensing/",
       "evidence": "user-confirmed",
       "notice": "THIRD_PARTY_LICENSES.md"
+    },
+    "lucide": {
+      "author": "Lucide contributors",
+      "family": "Lucide",
+      "source": "https://github.com/lucide-icons/lucide/tree/0.460.0",
+      "license": "ISC",
+      "licenseReference": "https://github.com/lucide-icons/lucide/blob/0.460.0/LICENSE",
+      "notice": "THIRD_PARTY_LICENSES.md"
     }
   },
   "icons": {
@@ -484,6 +492,107 @@
         "root stroke-linecap round",
         "root stroke-linejoin round"
       ]
+    },
+    "copilot-toggle": {
+      "set": "lucide",
+      "file": "PanelRightOpen",
+      "originalHash": "d789078ba150bec09f1f20c33945b6838885ce52507d1bc5285a9add5105b52a",
+      "normalizedHash": "d789078ba150bec09f1f20c33945b6838885ce52507d1bc5285a9add5105b52a",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-new-conversation": {
+      "set": "lucide",
+      "file": "SquarePen",
+      "originalHash": "d52f81d7fa80e09dddd1ded84be7c628327c600e3aefe6a6e81460484792fc3f",
+      "normalizedHash": "d52f81d7fa80e09dddd1ded84be7c628327c600e3aefe6a6e81460484792fc3f",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-settings": {
+      "set": "lucide",
+      "file": "Settings2",
+      "originalHash": "cf2735a6bc5cb3b9df001cc6cb328da4df29f558b97f6f188b0bc4a69badf355",
+      "normalizedHash": "cf2735a6bc5cb3b9df001cc6cb328da4df29f558b97f6f188b0bc4a69badf355",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-close": {
+      "set": "lucide",
+      "file": "PanelRightClose",
+      "originalHash": "fe1d1bc2c6bc6a09f4302dd1c6d95e49de93068fa327dce1f800a31df749fe88",
+      "normalizedHash": "fe1d1bc2c6bc6a09f4302dd1c6d95e49de93068fa327dce1f800a31df749fe88",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-conversations": {
+      "set": "lucide",
+      "file": "ChevronDown",
+      "originalHash": "1a270506b8e89eda78c4780d1132a33416c4603c14fce709588d4e918662405e",
+      "normalizedHash": "1a270506b8e89eda78c4780d1132a33416c4603c14fce709588d4e918662405e",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-send": {
+      "set": "lucide",
+      "file": "ArrowUp",
+      "originalHash": "0b944322b3e865cdfc6221caef270c5b4eb6abc1c00ef7f4e5ea41e1e9c519a8",
+      "normalizedHash": "0b944322b3e865cdfc6221caef270c5b4eb6abc1c00ef7f4e5ea41e1e9c519a8",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-copy": {
+      "set": "lucide",
+      "file": "Copy",
+      "originalHash": "b4dcc93b8b2adfb1107eb38aec749549bbe15a90150ae1877f466057adae9a5e",
+      "normalizedHash": "b4dcc93b8b2adfb1107eb38aec749549bbe15a90150ae1877f466057adae9a5e",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "copilot-context": {
+      "file-text": {
+        "set": "lucide",
+        "file": "file-text",
+        "originalHash": "3af5add902ede9356cbef02738c564d733ac1855c46d1f893c0b033f6ffd95c5",
+        "normalizedHash": "3af5add902ede9356cbef02738c564d733ac1855c46d1f893c0b033f6ffd95c5",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "list-checks": {
+        "set": "lucide",
+        "file": "list-checks",
+        "originalHash": "3f6f598e8bd17938a9dcfb521e5e2eef0944f70ac2faa95ac7efd8c43308c166",
+        "normalizedHash": "3f6f598e8bd17938a9dcfb521e5e2eef0944f70ac2faa95ac7efd8c43308c166",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "layers": {
+        "set": "lucide",
+        "file": "layers",
+        "originalHash": "846b4e679fa6c95b8f2f3446d37270e5cfb7e1b58fdb07ea573bbe5e7e3e90f2",
+        "normalizedHash": "846b4e679fa6c95b8f2f3446d37270e5cfb7e1b58fdb07ea573bbe5e7e3e90f2",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "chevron-down": {
+        "set": "lucide",
+        "file": "chevron-down",
+        "originalHash": "1a270506b8e89eda78c4780d1132a33416c4603c14fce709588d4e918662405e",
+        "normalizedHash": "1a270506b8e89eda78c4780d1132a33416c4603c14fce709588d4e918662405e",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      }
     }
   }
 }

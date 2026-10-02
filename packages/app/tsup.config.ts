@@ -15,7 +15,7 @@ export default defineConfig({
   entry: ["src/bin.ts"],
   format: ["esm"],
   platform: "node",
-  target: "node20",
+  target: "node24",
   bundle: true,
   shims: true,
   banner: {

@@ -284,3 +284,10 @@ export function moveToColumn(
   out.splice(at, 0, moved);
   return out;
 }
+
+/** Shared selection for rendering and complete Copilot page capture. */
+export function resolvePlanSelection(plans: Plan[], selectedId: string | null, openTaskId: string | null) {
+  const plan = plans.find((item) => item.id === selectedId) ?? plans[0] ?? null;
+  const taskLoc = openTaskId ? plans.flatMap((item) => item.tasks.filter((task) => task.id === openTaskId).map((task) => ({ plan: item, task })))[0] ?? null : null;
+  return { plan, taskLoc };
+}

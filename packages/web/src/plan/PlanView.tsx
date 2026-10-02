@@ -1,3 +1,5 @@
+import type { PlanPage } from "@argelanderspace/contracts";
+import { capturePlanPage } from "../copilot/plan-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../argelander/workspace";
@@ -16,6 +18,7 @@ import {
   nextStatus,
   planProgress,
   reorderWithinStatus,
+  resolvePlanSelection,
   todayISO,
   type Plan,
   type PlansFile,
@@ -55,13 +58,24 @@ type ModalState =
   | { kind: "deletePlan"; plan: Plan }
   | null;
 
-export function PlanView() {
+export function PlanView({ paneId, onContext }: { paneId?: number; onContext?: (paneId: number, page: PlanPage | null) => void } = {}) {
   const ws = useWorkspace();
   const { t } = useTranslation();
   const [doc, setDoc] = useState<PlansFile | null>(null);
   const docRef = useRef<PlansFile | null>(null);
   const writeChain = useRef<Promise<void>>(Promise.resolve());
   const localWrites = useRef(0);
+  const pendingSaves = useRef(0);
+  const [saveState, setSaveState] = useState<PlanPage["saveState"]>("saved");
+  const viewElement = useRef<HTMLDivElement>(null);
+  const [completedExpanded, setCompletedExpanded] = useState(false);
+  const [readingPosition, setReadingPosition] = useState<NonNullable<PlanPage["ui"]>["readingPosition"]>(null);
+  const [selectedText, setSelectedText] = useState<string | null>(null);
+  useEffect(() => {
+    const captureSelection = () => { const selection = window.getSelection(); setSelectedText(selection?.anchorNode && viewElement.current?.contains(selection.anchorNode) ? selection.toString() || null : null); };
+    document.addEventListener("selectionchange", captureSelection);
+    return () => document.removeEventListener("selectionchange", captureSelection);
+  }, []);
   const pendingExternal = useRef(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [library, setLibrary] = useState<LibraryData | null>(null);
@@ -138,6 +152,8 @@ export function PlanView() {
       if (!cur) return;
       const next = fn(cur);
       if (next === cur) return; // noop edit (e.g. a cancelled drag): no doc churn, no PUT
+      pendingSaves.current++;
+      setSaveState("pending");
       applyDoc(next); // optimistic
       writeChain.current = writeChain.current.then(async () => {
         const snapshot = docRef.current;
@@ -149,11 +165,14 @@ export function PlanView() {
             // adopt the bumped rev; keep newer optimistic edits, if any
             applyDoc(docRef.current === snapshot ? res.doc : { ...(docRef.current as PlansFile), rev: res.doc.rev });
           } else {
+            setSaveState("error");
             await reload();
             flash(res.conflict ? t("plan.notice.conflict") : t("plan.notice.saveFailed"));
           }
         } finally {
           localWrites.current--;
+          pendingSaves.current--;
+          setSaveState((previous) => previous === "error" ? "error" : pendingSaves.current ? "pending" : "saved");
           if (localWrites.current === 0 && pendingExternal.current) {
             // an external change arrived while we were writing — resync now
             pendingExternal.current = false;
@@ -313,17 +332,10 @@ export function PlanView() {
 
   const today = todayISO();
   const plans = doc?.plans ?? [];
-  const plan = plans.find((p) => p.id === selId) ?? plans[0] ?? null;
-  // resolve the open task across ALL plans (focus cards open cross-plan tasks)
-  const taskLoc = openTaskId
-    ? (() => {
-        for (const p of plans) {
-          const t = p.tasks.find((t) => t.id === openTaskId);
-          if (t) return { task: t, plan: p };
-        }
-        return null;
-      })()
-    : null;
+  const { plan, taskLoc } = resolvePlanSelection(plans, selId, openTaskId);
+  useEffect(() => {
+    if (paneId !== undefined) onContext?.(paneId, doc && !loadFailed ? { ...capturePlanPage(doc, selId, openTaskId, special ?? mode, today, saveState), ui: { completedExpanded, readingPosition, selectedText } } : null);
+  }, [paneId, onContext, doc, loadFailed, selId, openTaskId, special, mode, today, saveState, completedExpanded, readingPosition, selectedText]);
 
   const selectPlan = (id: string) => {
     setSelId(id);
@@ -387,7 +399,7 @@ export function PlanView() {
   ];
 
   return (
-    <div className="view-row" data-ui="plan-view">
+    <div className="view-row" data-ui="plan-view" ref={viewElement} onScrollCapture={(event) => { const element = event.target as HTMLElement; setReadingPosition({ region: element.dataset.ui ?? "plan", top: Math.max(0, element.scrollTop), left: Math.max(0, element.scrollLeft) }); }}>
       <PlansSidebar
         plans={plans}
         project={library?.project ?? null}
@@ -456,9 +468,10 @@ export function PlanView() {
             <TimelineMode plans={plans} today={today} onOpenTask={setOpenTaskId} onSelectPlan={selectPlan} />
           ) : plan ? (
             <div className="plan-canvas" data-ui="plan-canvas" data-ui-key={plan.id} key={`${mode}-${plan.id}`}>
-              <div className="plan-canvas-scroll view-in">
+              <div className="plan-canvas-scroll view-in" data-ui="plan-scroll">
                 {mode === "list" ? (
                   <ListMode
+                    onCompletedExpanded={setCompletedExpanded}
                     plan={plan}
                     today={today}
                     cb={{

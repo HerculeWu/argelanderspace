@@ -6,6 +6,7 @@
 
 - 开发、设计或修改前先读 `CONTEXT.md` 和 [硬契约](../contracts.md)；实施、调试、验收另读 [工程指南](../engineering.md)。
 - 阅读本任务涉及的 ADR。当前入口：[Work 与 Doc 分离](../adr/0001-work-doc-identity.md)、[编译事实与共享 IR](../adr/0002-compiled-ir.md)、[标注内容绑定与整批归档](../adr/0003-annotation-epochs.md)、[临时探索与持久文库](../adr/0004-discovery-library-separation.md)。新 ADR 创建后同步此入口。
+- Copilot 与新增文本输入的设计决定：[UI 能力对等与结构化上下文](../adr/0005-copilot-ui-parity.md)、[可读文本接入共享 IR](../adr/0006-text-input-to-shared-ir.md)。这些决定不代表新能力已经实现。
 - 输出、票据、测试命名使用 glossary 中的规范术语；定义冲突立即指出，不漂移到被排除的同义词。
 - `CONTEXT.md` 只写领域定义，不收实现细节、规格、工作进度或工程笔记；成熟的领域词条一经确认就在获授权任务内更新。
 - ADR 只记录同时满足“难以逆转、没有背景会令人困惑、确有取舍”的决定。保留原决策日期、来源、理由；迁移日期不是重新批准日期。重大修订通过明确的替代关系记录。

@@ -93,6 +93,25 @@ describe("Dialog public interaction", () => {
     document.body.removeAttribute("tabindex");
   });
 
+  it("allows native Tab from disclosure summaries while keeping modal boundaries", () => {
+    render(<Dialog title="Settings" closeLabel="Close" onClose={vi.fn()} footer={<Button>Done</Button>}>
+      <details open><summary>Provider</summary><input aria-label="Key" /><details><summary>Advanced</summary><input aria-label="Model" /></details></details>
+    </Dialog>);
+    const summary = screen.getByText("Provider");
+    summary.focus();
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    summary.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(summary);
+    const reverse = new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true });
+    summary.dispatchEvent(reverse);
+    expect(reverse.defaultPrevented).toBe(false);
+    const footer = screen.getByRole("button", { name: "Done" });
+    footer.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+  });
+
   it("moves focus to the dialog during an in-flight transition and restores the safe action after failure", () => {
     const view = render(<DialogHarness />);
     fireEvent.click(screen.getByRole("button", { name: "Open dialog" }));

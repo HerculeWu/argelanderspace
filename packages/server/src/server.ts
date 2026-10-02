@@ -27,8 +27,10 @@ import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
 import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
+import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
+import { ProviderSettings } from "./providers.js";
 import { startWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
 
@@ -46,6 +48,8 @@ export interface ServerOptions {
   heartbeatMs?: number;
   /** External-write poll interval (default 1500); tests inject ~50. */
   watchIntervalMs?: number;
+  /** Explicit isolated credential/config store; ordinary servers initialize lazily. */
+  providerSettings?: ProviderSettings;
 }
 
 export interface RunningServer {
@@ -88,6 +92,8 @@ export function createServer(opts: ServerOptions): RunningServer {
   // hub is referenced by the broadcast closure before construction below;
   // it is only ever *called* after `new WsHub(...)` runs (request time).
   let hub: WsHub;
+  const providerSettings = opts.providerSettings ?? new ProviderSettings();
+  const copilot = new CopilotHost(opts.dataDir, providerSettings, (event) => hub.broadcast(event));
   const app = createApp({
     paths,
     statusDir,
@@ -99,6 +105,8 @@ export function createServer(opts: ServerOptions): RunningServer {
     broadcast: (msg) => hub.broadcast(msg),
     webDist: opts.webDist,
     port,
+    providerSettings,
+    copilot,
   });
 
   const server = serve({
@@ -170,7 +178,12 @@ export function createServer(opts: ServerOptions): RunningServer {
       new Promise((resolveClose, rejectClose) => {
         watcher.stop();
         hub.close();
-        server.close((err) => (err ? rejectClose(err) : resolveClose()));
+        void copilot
+          .close()
+          .then(
+            () => server.close((err) => (err ? rejectClose(err) : resolveClose())),
+            rejectClose
+          );
       }),
   };
 }

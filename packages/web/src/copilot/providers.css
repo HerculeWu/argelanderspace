@@ -1,0 +1,22 @@
+.provider-settings { font-size: 13px; }
+.provider-card { margin: 0 0 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border-soft); }
+.provider-card:last-child { border-bottom: 0; margin-bottom: 0; }
+.provider-heading { display: flex; align-items: center; gap: 12px; cursor: pointer; flex-wrap: wrap; padding: 6px 0; }
+.provider-heading strong { font-size: 14px; }
+.provider-heading > span { font-size: 11px; color: var(--text-faint); }
+.provider-heading .ui-badge { margin-left: auto; }
+.provider-settings fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.provider-field { display: flex; flex-direction: column; gap: 7px; margin: 12px 0; font-size: 11px; color: var(--text-dim); }
+.provider-field input, .provider-field select { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 12px var(--font-mono); }
+.provider-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.provider-actions small { font-size: 10px; color: var(--text-faint); }
+.provider-advanced { margin-top: 20px; font-size: 12px; }
+.provider-advanced > summary { cursor: pointer; color: var(--text-dim); }
+.provider-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.provider-columns > * { min-width: 0; }
+.provider-capabilities { display: flex; gap: 16px; flex-wrap: wrap; }
+.provider-capabilities label { display: flex; align-items: center; gap: 7px; }
+.provider-hint, .provider-test-state { margin: 12px 0; font-size: 11px; color: var(--text-faint); line-height: 1.6; }
+.provider-error { color: var(--danger); }
+.provider-success { color: var(--accent); }
+@media (max-width: 520px) { .provider-columns { grid-template-columns: 1fr; gap: 0; } }

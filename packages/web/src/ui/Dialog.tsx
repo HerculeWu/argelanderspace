@@ -11,6 +11,7 @@ import {
 import { ActionButton } from "./ActionButton";
 
 const FOCUSABLE = [
+  "summary",
   "button:not([disabled])",
   "[href]",
   "input:not([disabled])",

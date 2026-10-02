@@ -73,9 +73,10 @@ const GROUPS = [
   { key: "done", labelKey: "plan.status.doneGroup" },
 ] as const;
 
-export function ListMode({ plan, today, cb }: { plan: Plan; today: string; cb: ListCallbacks }) {
+export function ListMode({ plan, today, cb, onCompletedExpanded }: { plan: Plan; today: string; cb: ListCallbacks; onCompletedExpanded?: (expanded: boolean) => void }) {
   const { t } = useTranslation();
   const [doneOpen, setDoneOpen] = useState(false);
+  useEffect(() => { onCompletedExpanded?.(doneOpen); }, [doneOpen, onCompletedExpanded]);
   const [dragStatus, setDragStatus] = useState<TaskStatus | null>(null);
   const [noDrop, setNoDrop] = useState(false);
   const [nudge, setNudge] = useState(false);

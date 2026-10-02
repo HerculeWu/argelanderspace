@@ -12,7 +12,11 @@
  */
 
 import type { Server } from "node:http";
-import type { Job, WsServerMessage } from "@argelanderspace/contracts";
+import {
+  CopilotSubscriptionSchema,
+  type Job,
+  type WsServerMessage,
+} from "@argelanderspace/contracts";
 import { WebSocket, WebSocketServer } from "ws";
 
 export interface WsHubOptions {
@@ -41,16 +45,59 @@ export class WsHub {
         socket.destroy();
         return;
       }
+      if (req.headers.origin !== undefined) {
+        const address = server.address();
+        const port = address && typeof address === "object" ? address.port : 8000;
+        const origins = new Set([
+          "http://localhost:5173",
+          "http://127.0.0.1:5173",
+          `http://localhost:${port}`,
+          `http://127.0.0.1:${port}`,
+        ]);
+        if (!origins.has(req.headers.origin)) {
+          socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+      }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         this.wss.emit("connection", ws, req);
       });
     });
     this.wss.on("connection", (ws: WebSocket) => {
+      subscriptions.set(ws, new Set());
       alive.set(ws, true);
       ws.on("pong", () => alive.set(ws, true));
       if (opts.snapshot) {
         ws.send(JSON.stringify({ type: "hello", jobs: opts.snapshot() }));
       }
+      ws.on("message", (bytes) => {
+        if (
+          (Array.isArray(bytes)
+            ? bytes.reduce((sum, part) => sum + part.length, 0)
+            : bytes.byteLength) > 2048
+        )
+          return;
+        let raw: unknown;
+        try {
+          raw = JSON.parse(bytes.toString());
+        } catch {
+          return;
+        }
+        const parsed = CopilotSubscriptionSchema.safeParse(raw);
+        if (!parsed.success) return;
+        const message = parsed.data;
+        if (message.type === "copilot.subscribe") {
+          subscriptions.get(ws)?.add(message.conversationId);
+          ws.send(
+            JSON.stringify({
+              type: "copilot.subscribed",
+              conversationId: message.conversationId,
+              viewId: message.viewId,
+            })
+          );
+        } else subscriptions.get(ws)?.delete(message.conversationId);
+      });
     });
     const heartbeatMs = opts.heartbeatMs ?? 30_000;
     if (heartbeatMs > 0) {
@@ -72,6 +119,7 @@ export class WsHub {
   broadcast(msg: WsServerMessage): void {
     const data = JSON.stringify(msg);
     for (const ws of this.wss.clients) {
+      if (msg.type === "copilot.event" && !subscriptions.get(ws)?.has(msg.conversationId)) continue;
       if (ws.readyState === WebSocket.OPEN) ws.send(data);
     }
   }
@@ -89,3 +137,4 @@ export class WsHub {
 
 /** Per-socket liveness for the heartbeat (avoids an expansion cast). */
 const alive = new WeakMap<WebSocket, boolean>();
+const subscriptions = new WeakMap<WebSocket, Set<string>>();

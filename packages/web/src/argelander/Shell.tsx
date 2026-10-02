@@ -1,3 +1,4 @@
+import type { PageContext, PlanPage } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -13,6 +14,7 @@ import { DocPane } from "../doc/DocPane";
 import { LibraryView } from "../library/LibraryView";
 import { PlanView } from "../plan/PlanView";
 import { WriterView } from "../writer/WriterView";
+import { Copilot } from "../copilot/Copilot";
 
 interface NavItem {
   k: string;
@@ -46,6 +48,11 @@ export function Shell() {
   const [tweaks, setTweak] = useTweaks();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const viewId = useRef(crypto.randomUUID());
+  const revision = useRef(0);
+  const [planPages, setPlanPages] = useState<Record<number, PlanPage | null>>({});
+  const reportPlan = useCallback((paneId: number, page: PlanPage | null) => { setPlanPages((previous) => ({ ...previous, [paneId]: page })); }, []);
 
   const [papers, setPapers] = useState<string[]>([]);
   const [currentDoc, setCurrentDocState] = useState<string | null>(null);
@@ -272,10 +279,17 @@ export function Shell() {
     [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, tweaks]
   );
 
+  const pageContext = useMemo<PageContext>(() => ({
+    version: 1, viewId: viewId.current, revision: ++revision.current, paneId: activePane.id, view: activePane.view,
+    otherPanes: panes.filter((pane) => pane.id !== activePane.id).map((pane) => ({ paneId: pane.id, view: pane.view })),
+    status: activePane.view === "plan" ? planPages[activePane.id] ? "complete" : "error" : "unavailable",
+    plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
+  }), [activePane.id, activePane.view, panes, planPages]);
+
   const renderView = (p: Pane) => {
     switch (p.view) {
       case "plan":
-        return <PlanView />;
+        return <PlanView paneId={p.id} onContext={reportPlan} />;
       case "library":
         return <LibraryView />;
       case "doc":
@@ -335,6 +349,7 @@ export function Shell() {
               aria-expanded={tweaksOpen}
               onClick={() => setTweaksOpen((o) => !o)}
             />
+            <ActionButton mode="icon" iconName="panel-right-open" unstyled className="btn icon ghost" iconSize="small" data-ui="copilot-toggle" label={t("copilot.title")} tooltip={t("copilot.title")} aria-expanded={copilotOpen} onClick={() => setCopilotOpen((open) => !open)} />
             {tweaksOpen && (
               <TweaksPopover tweaks={tweaks} set={setTweak} onClose={() => setTweaksOpen(false)} />
             )}
@@ -383,6 +398,7 @@ export function Shell() {
               ))}
             </div>
           </div>
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} />
         </div>
 
         <CommandPalette
