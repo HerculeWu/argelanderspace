@@ -1133,7 +1133,7 @@
     "thinking": "思考级别",
     "running": "正在回复…",
     "scope": "可操作计划",
-    "interrupted": "服务中断了上一轮。记录已保留；继续功能尚未提供。",
+    "interrupted": "服务在本次运行中重启。已保存的记录保留，没有自动重复任何操作。",
     "disconnected": "连接中断，正在恢复会话…",
     "newContent": "查看新内容",
     "copy": "复制回复",
@@ -1182,6 +1182,36 @@
         "unknown": "结果未知",
         "error": "失败"
       }
-    }
+    },
+    "thinkingLevels": {
+      "off": "关闭",
+      "minimal": "极简",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "xhigh": "超高",
+      "max": "最高"
+    },
+    "status": {
+      "running": "处理中",
+      "stopping": "正在停止",
+      "completed": "已完成",
+      "failed": "失败",
+      "stopped": "已停止",
+      "interrupted": "已中断"
+    },
+    "objectVersion": "{{name}} · 版本 {{rev}}",
+    "version": "版本 {{rev}}",
+    "resume": "继续",
+    "resumed": "中断后继续",
+    "queued": "已排队，等待当前任务读取",
+    "steer": "发送补充指令",
+    "steerHint": "为正在进行的任务补充指令…",
+    "stop": "停止",
+    "stopping": "正在停止…已提交的修改会先完成",
+    "stoppedNote": "已停止。已提交的修改已安全完成，并显示在上方操作记录中。",
+    "workContinues": "你正在查看其他内容，任务继续处理 {{name}}。",
+    "workContinuesOriginal": "你正在查看其他内容，任务继续处理原来的页面。",
+    "unreadable": "有一个已保存的会话无法读取，其文件保持原样。"
   }
 }

@@ -547,6 +547,15 @@
         "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
       ]
     },
+    "copilot-stop": {
+      "set": "lucide",
+      "file": "Square",
+      "originalHash": "e9cbca810acd5db1b326b505de112595e24c026989a917fc54cd305ad9ce5805",
+      "normalizedHash": "e9cbca810acd5db1b326b505de112595e24c026989a917fc54cd305ad9ce5805",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
     "copilot-copy": {
       "set": "lucide",
       "file": "Copy",

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type CopilotOperation, PlanViewActionSchema } from "./plan-ops.js";
+import { type CopilotOperation, CopilotOperationSchema, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
 
@@ -72,6 +72,9 @@ export const CopilotMessageRequestSchema = z
   })
   .strict();
 export type CopilotMessageRequest = z.infer<typeof CopilotMessageRequestSchema>;
+/** Resume carries no text: the host writes the request from what the record proves. */
+export const CopilotResumeRequestSchema = CopilotMessageRequestSchema.omit({ text: true });
+export type CopilotResumeRequest = z.infer<typeof CopilotResumeRequestSchema>;
 
 export const EventCursorSchema = z
   .object({ instanceId: CopilotIdSchema, seq: z.number().int().nonnegative() })
@@ -80,7 +83,9 @@ export type EventCursor = z.infer<typeof EventCursorSchema>;
 export const CopilotRunSchema = z
   .object({
     id: CopilotIdSchema,
-    status: z.enum(["running", "completed", "failed", "interrupted"]),
+    // `stopping` is Stop accepted but the SDK not settled; `stopped` is the user's own Stop;
+    // `interrupted` is a service exit/restart. Neither is an error.
+    status: z.enum(["running", "stopping", "completed", "failed", "stopped", "interrupted"]),
     error: z.string().nullable(),
   })
   .strict();
@@ -102,6 +107,10 @@ export interface CopilotMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** A host-written resume request after Stop/failure/restart; shown as a marker, not as user text. */
+  kind?: "resume";
+  /** Steering accepted while the run is working, not yet read by the model. */
+  pending?: boolean;
   /** Operations this assistant message requested, with their committed outcomes. */
   operations?: CopilotOperation[];
   context?: {
@@ -111,6 +120,12 @@ export interface CopilotMessage {
     revision: number;
     objects: { id: string; rev: number; name?: string }[];
   };
+}
+/** A record that cannot be read is reported by itself; it never hides the readable conversations. */
+export interface CopilotConversationList {
+  version: 1;
+  conversations: Conversation[];
+  unreadable: { id: string; code: string }[];
 }
 export interface ConversationSnapshot {
   version: 1;
@@ -159,11 +174,13 @@ export const WsCopilotSubscribedSchema = z
 export const CopilotPromptSchema = z
   .object({
     version: z.literal(1),
+    kind: z.literal("resume").optional(),
     messageId: CopilotIdSchema,
     text: z.string().min(1),
     context: PageContextSchema,
   })
   .strict();
+export type CopilotPrompt = z.infer<typeof CopilotPromptSchema>;
 export const CopilotContextReferenceSchema = z
   .object({
     clientMessageId: CopilotIdSchema,
@@ -183,6 +200,52 @@ export const CopilotContextReferenceSchema = z
   })
   .strict();
 
+export type CopilotContextReference = z.infer<typeof CopilotContextReferenceSchema>;
 export const CopilotObservationSchema = z
   .object({ version: z.literal(1), taskContextId: CopilotIdSchema, page: PageContextSchema })
   .strict();
+
+/**
+ * Durable record of a business write: `begin` is persisted before the write runs, `done` after it has a
+ * result. A `begin` without `done` means the outcome is unknown (never proof the write did not happen).
+ */
+export const OPERATION_JOURNAL_TYPE = "argelander.operation.v1";
+export const OperationJournalSchema = z
+  .object({
+    version: z.literal(1),
+    phase: z.enum(["begin", "done"]),
+    operationId: z.string().min(1).max(200),
+    toolCallId: z.string().min(1),
+    runId: CopilotIdSchema,
+    action: z.string(),
+    hash: z.string(),
+    object: z
+      .object({ planId: z.string().optional(), taskId: z.string().optional() })
+      .strict()
+      .optional(),
+    baseRev: z.number().int().nonnegative().optional(),
+    result: z
+      .object({ payload: z.record(z.string(), z.unknown()), operation: CopilotOperationSchema })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export type OperationJournal = z.infer<typeof OperationJournalSchema>;
+
+/**
+ * A steering message the service accepted (HTTP 202) while a run was working. It is saved before the
+ * acceptance is returned, so a crash or a later failure cannot lose the user's words. It stays "queued"
+ * until a user message with the same messageId exists in the history; a later run hands it to the model.
+ */
+export const STEER_QUEUE_TYPE = "argelander.steer.v1";
+export const QueuedSteerSchema = z
+  .object({
+    version: z.literal(1),
+    clientMessageId: CopilotIdSchema,
+    messageId: CopilotIdSchema,
+    runId: CopilotIdSchema,
+    envelope: z.string().min(1),
+    reference: CopilotContextReferenceSchema,
+  })
+  .strict();
+export type QueuedSteer = z.infer<typeof QueuedSteerSchema>;

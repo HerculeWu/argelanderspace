@@ -21,3 +21,19 @@
 .copilot-operation-label{color:var(--text);min-width:0}
 .copilot-operation-warn{color:var(--warn)}
 .copilot-message-continued{margin-top:-14px}
+
+/* Run lifecycle (ticket 10): running card, resume notice, steering marker, status in the conversation list. */
+.copilot-run-card{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 0;font-size:12px}
+.copilot-run-card small{display:block;flex-basis:100%;margin-left:14px;color:var(--text-faint);font-size:10px}
+.copilot-pulse{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:copilot-pulse 1.5s infinite;flex:none}
+@keyframes copilot-pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.copilot-pulse{animation:none}}
+.copilot-notice{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 12px;margin:8px 0;border:1px solid var(--border-soft);border-radius:6px;font-size:11px;color:var(--text-dim);line-height:1.6}
+.copilot-notice.error{color:var(--danger)}
+.copilot-notice .btn{margin-left:auto}
+.copilot-queued{font-size:10px;color:var(--text-faint);margin-top:4px;text-align:right}
+.copilot-user-resume{font-style:italic;color:var(--text-dim)}
+.copilot-composer-actions{gap:6px}
+.copilot-conversation-list .btn{display:flex;align-items:center;gap:8px}
+.copilot-conversation-list .btn .copilot-conversation-title{flex:1;min-width:0}
+.copilot-conversation-unreadable{margin:0;font-size:11px;color:var(--danger)}

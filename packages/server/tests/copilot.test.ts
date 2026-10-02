@@ -249,8 +249,10 @@ test("cache-empty restart concurrent retry preserves clientMessageId and starts 
   expect(second.status).toBe(202);
   expect(await first.json()).toEqual(await second.json());
   expect(requests).toHaveLength(1);
+  // While the run works, another message is steering (ticket 10), not a refused second run.
   const other = await send(snapshot.conversation.id, context);
-  expect(other.status).toBe(409);
+  expect(other.status).toBe(202);
+  delay = false;
   release?.();
   await settled(snapshot.conversation.id);
 });

@@ -6,6 +6,10 @@ import {
   CopilotHistoryHeaderSchema,
   CopilotObservationSchema,
   CopilotPromptSchema,
+  OPERATION_JOURNAL_TYPE,
+  OperationJournalSchema,
+  QueuedSteerSchema,
+  STEER_QUEUE_TYPE,
 } from "@argelanderspace/contracts";
 import type { FileEntry, SessionManager } from "@earendil-works/pi-coding-agent";
 
@@ -38,7 +42,45 @@ export function readCopilotHistory(path: string, sessionId: string): FileEntry[]
   const prompts = new Set<string>();
   const contextViews = new Map<string, string>();
   const clientIds = new Set<string>();
+  const begun = new Map<string, ReturnType<typeof OperationJournalSchema.parse>>();
+  const finished = new Set<string>();
+  const queued = new Map<string, ReturnType<typeof QueuedSteerSchema.parse>>();
+  const queuedClients = new Set<string>();
   for (const raw of lines.slice(1)) {
+    if (raw.type === "custom" && raw.customType === OPERATION_JOURNAL_TYPE) {
+      const entry = OperationJournalSchema.parse(raw.data);
+      if (entry.phase === "begin") {
+        if (begun.has(entry.operationId)) throw new Error("duplicate operation begin");
+        begun.set(entry.operationId, entry);
+      } else {
+        const start = begun.get(entry.operationId);
+        if (
+          !start ||
+          !entry.result ||
+          finished.has(entry.operationId) ||
+          start.hash !== entry.hash ||
+          start.toolCallId !== entry.toolCallId ||
+          start.runId !== entry.runId ||
+          start.action !== entry.action
+        )
+          throw new Error("broken operation journal");
+        finished.add(entry.operationId);
+      }
+    }
+    if (raw.type === "custom" && raw.customType === STEER_QUEUE_TYPE) {
+      const entry = QueuedSteerSchema.parse(raw.data);
+      const prompt = CopilotPromptSchema.parse(JSON.parse(entry.envelope));
+      if (
+        queued.has(entry.messageId) ||
+        queuedClients.has(entry.clientMessageId) ||
+        prompt.messageId !== entry.messageId ||
+        entry.reference.messageId !== entry.messageId ||
+        entry.reference.clientMessageId !== entry.clientMessageId
+      )
+        throw new Error("broken queued steering");
+      queued.set(entry.messageId, entry);
+      queuedClients.add(entry.clientMessageId);
+    }
     if (raw.type === "custom" && raw.customType === "argelander.context.v1") {
       const data = CopilotContextReferenceSchema.parse(raw.data);
       if (references.has(data.messageId) || clientIds.has(data.clientMessageId))

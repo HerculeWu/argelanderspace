@@ -1133,7 +1133,7 @@
     "thinking": "Thinking level",
     "running": "Replying…",
     "scope": "Plan actions available",
-    "interrupted": "The service interrupted the previous run. Records are preserved; resume is not available yet.",
+    "interrupted": "The service restarted during this run. Saved records are kept and nothing was repeated automatically.",
     "disconnected": "Disconnected. Restoring conversation…",
     "newContent": "View new content",
     "copy": "Copy reply",
@@ -1182,6 +1182,36 @@
         "unknown": "Outcome unknown",
         "error": "Failed"
       }
-    }
+    },
+    "thinkingLevels": {
+      "off": "Off",
+      "minimal": "Minimal",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "xhigh": "Extra high",
+      "max": "Max"
+    },
+    "status": {
+      "running": "Working",
+      "stopping": "Stopping",
+      "completed": "Done",
+      "failed": "Failed",
+      "stopped": "Stopped",
+      "interrupted": "Interrupted"
+    },
+    "objectVersion": "{{name}} · v{{rev}}",
+    "version": "v{{rev}}",
+    "resume": "Resume",
+    "resumed": "Resumed after an interruption",
+    "queued": "Queued for the running task",
+    "steer": "Send instruction",
+    "steerHint": "Add an instruction for the running task…",
+    "stop": "Stop",
+    "stopping": "Stopping… submitted changes finish first",
+    "stoppedNote": "Stopped. Changes already submitted were finished and are shown in the operations above.",
+    "workContinues": "You are viewing something else. Work continues on {{name}}.",
+    "workContinuesOriginal": "You are viewing something else. Work continues on the original page.",
+    "unreadable": "A saved conversation could not be read. Its file was left unchanged."
   }
 }

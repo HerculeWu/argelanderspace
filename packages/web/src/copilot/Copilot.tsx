@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Conversation, ConversationModel, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewActionResult, PageContext, PlanViewAction, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
-import { CopilotApiError, createConversation, fetchConversation, listConversations, postViewActionResult, publishPageContext, selectConversationModel, sendCopilotMessage } from "../api/copilot";
+import { CopilotApiError, createConversation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation } from "../api/copilot";
+import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
 import { subscribeCopilot } from "../api/ws";
 import { ActionButton, Badge, Button, Dialog, getConfiguredIcon } from "../ui";
@@ -21,6 +22,12 @@ const OPERATION_STATUS_KEYS = {
   rejected: "copilot.operations.status.rejected", invalid: "copilot.operations.status.invalid", not_displayed: "copilot.operations.status.not_displayed",
   unsupported: "copilot.operations.status.unsupported", unknown: "copilot.operations.status.unknown", error: "copilot.operations.status.error",
 } as const;
+const THINKING_KEYS = { off: "copilot.thinkingLevels.off", minimal: "copilot.thinkingLevels.minimal", low: "copilot.thinkingLevels.low", medium: "copilot.thinkingLevels.medium", high: "copilot.thinkingLevels.high", xhigh: "copilot.thinkingLevels.xhigh", max: "copilot.thinkingLevels.max" } as const;
+const RUN_STATUS_KEYS = { running: "copilot.status.running", stopping: "copilot.status.stopping", completed: "copilot.status.completed", failed: "copilot.status.failed", stopped: "copilot.status.stopped", interrupted: "copilot.status.interrupted" } as const;
+const STORED_CONVERSATION = "argelander.copilot.conversation";
+// A per-viewer convenience only: the saved conversations are authoritative, this just remembers which one this browser was showing.
+const readStoredConversation = () => { try { return window.localStorage.getItem(STORED_CONVERSATION); } catch { return null; } };
+const writeStoredConversation = (id: string) => { try { window.localStorage.setItem(STORED_CONVERSATION, id); } catch { /* private window or blocked storage */ } };
 const isApplied = (operation: CopilotOperation) => operation.status === "ok" || operation.status === "noop";
 
 export type CopilotViewActionHandler = (action: PlanViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
@@ -47,13 +54,29 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
   const retry = useRef<{ id: string; text: string; clientMessageId: string } | null>(null);
   const loaded = useRef(false);
   const refreshCurrent = useRef<(() => Promise<void>) | null>(null);
-  const publications = useRef<Promise<void>>(Promise.resolve());
+  const [unreadable, setUnreadable] = useState<{ id: string; code: string }[]>([]);
+  const resumeAttempt = useRef<string | null>(null);
+  // One serial chain carries every page publication and every send. What is published is whatever is newest when
+  // its turn comes, so scroll bursts collapse and a message always names the revision the service already holds.
+  const latestContext = useRef(context); latestContext.current = context;
+  const publishChain = useRef<Promise<unknown>>(Promise.resolve());
+  const publishQueued = useRef(false);
+  const published = useRef<{ viewId: string; revision: number } | null>(null);
+  const enqueue = <T,>(task: () => Promise<T>): Promise<T> => { const run = publishChain.current.then(task, task); publishChain.current = run.catch(() => undefined); return run; };
+  const publishLatest = async () => {
+    const next = latestContext.current, done = published.current;
+    if (done?.viewId === next.viewId && done.revision === next.revision) return next;
+    await publishPageContext(next); published.current = { viewId: next.viewId, revision: next.revision }; return next;
+  };
   const viewActionRef = useRef(onViewAction); viewActionRef.current = onViewAction;
   const handledActions = useRef(new Set<string>());
   useEffect(() => {
-    if (!id) return;
-    publications.current = publications.current.catch(() => {}).then(async () => { await publishPageContext(context); }).catch((reason) => setError(reason instanceof CopilotApiError ? reason.code : "unavailable"));
+    if (!id || publishQueued.current) return;
+    publishQueued.current = true;
+    void enqueue(async () => { publishQueued.current = false; await publishLatest(); }).catch((reason) => setError(reason instanceof CopilotApiError ? reason.code : "unavailable"));
   }, [id, context]);
+  // A restarted service knows no views: forget what was published and send the current page again.
+  const republish = () => { published.current = null; void enqueue(publishLatest).catch(() => undefined); };
   const refreshCatalog = async () => {
     try {
       const result = await fetchProviders(); setProviders(result.providers);
@@ -63,15 +86,21 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
     } catch { setError("unavailable"); }
   };
   const refreshList = async () => {
-    try { const result = await listConversations(); setConversations(result.conversations); return result.conversations; }
+    try { const result = await listConversations(); setConversations(result.conversations); setUnreadable(result.unreadable ?? []); return result.conversations; }
     catch { setError("storage"); return []; }
   };
   useEffect(() => {
     if (!open || loaded.current) return;
     loaded.current = true;
     void refreshCatalog();
-    void refreshList().then((items) => { if (items[0]) setId((previous) => previous ?? items[0].id); });
+    void refreshList().then((items) => {
+      // F5 returns to the conversation this browser was showing; otherwise the most recently updated one.
+      const remembered = readStoredConversation();
+      const chosen = items.find((item) => item.id === remembered) ?? items[0];
+      if (chosen) setId((previous) => previous ?? chosen.id);
+    });
   }, [open]);
+  useEffect(() => { if (id) writeStoredConversation(id); }, [id]);
   useEffect(() => {
     if (!id) return;
     let alive = true, syncing = true, generation = 0, transportConnected = true;
@@ -109,7 +138,7 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
           try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}) }); } catch { /* the service times the action out as not displayed */ }
         })();
       },
-      ready: () => { transportConnected = true; void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
+      ready: () => { transportConnected = true; republish(); void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
     return () => { alive = false; generation++; refreshCurrent.current = null; unsubscribe(); };
   }, [id, context.viewId]);
   useEffect(() => {
@@ -123,7 +152,16 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
   const model = provider?.models.find((item) => item.id === choice?.model);
   const thinkingValid = !!model && (choice?.thinking === null ? model.defaultThinkingValid : !!choice && model.thinkingLevels.includes(choice.thinking));
   const levels = model?.capabilitiesKnown ? model.thinkingLevels : [];
-  const running = snapshot?.conversation.run?.status === "running";
+  const runStatus = snapshot?.conversation.run?.status;
+  const running = runStatus === "running";
+  const stopping = runStatus === "stopping";
+  const resumable = runStatus === "stopped" || runStatus === "interrupted" || runStatus === "failed";
+  const thinkingLabel = (level: ThinkingLevel) => t(THINKING_KEYS[level]);
+  const lastTask = [...(snapshot?.messages ?? [])].reverse().find((message) => message.role === "user" && message.kind !== "resume" && !message.pending);
+  // The task's objects are what was captured when it started. Name them only when that is unambiguous (one object).
+  const workObjects = lastTask?.context?.objects ?? [];
+  const workObject = workObjects.length === 1 ? workObjects[0] : undefined;
+  const elsewhere = running && workObjects.length > 0 && context.view === "plan" && !!context.plan?.selectedPlanId && !workObjects.some((object) => object.id === context.plan?.selectedPlanId);
   const begin = () => { if (busyRef.current) return false; busyRef.current = true; setBusy(true); setError(null); return true; };
   const end = () => { busyRef.current = false; setBusy(false); };
   const newConversation = async () => {
@@ -142,7 +180,7 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
     finally { end(); }
   };
   const send = async () => {
-    if (!text.trim() || running || (!!id && !connected) || !thinkingValid || !begin()) return;
+    if (!text.trim() || stopping || (!!id && !connected) || !thinkingValid || !begin()) return;
     try {
       let conversationId = id;
       if (!conversationId) {
@@ -150,11 +188,25 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
       }
       const attempt = retry.current?.id === conversationId && retry.current.text === text ? retry.current : { id: conversationId, text, clientMessageId: crypto.randomUUID() };
       retry.current = attempt;
-      await publishPageContext(context);
-      await sendCopilotMessage(conversationId, { clientMessageId: attempt.clientMessageId, text, viewId: context.viewId, contextRevision: context.revision });
+      const target = conversationId;
+      await enqueue(async () => { const sent = await publishLatest(); await sendCopilotMessage(target, { clientMessageId: attempt.clientMessageId, text, viewId: sent.viewId, contextRevision: sent.revision }); });
       setText(""); retry.current = null; following.current = true; textarea.current?.focus();
       await refreshList();
-    } catch (reason) { setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
+    } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
+    finally { end(); }
+  };
+  const stop = async () => {
+    if (!id || stopping) return;
+    try { const result = await stopConversation(id); setSnapshot((current) => current ? { ...current, conversation: result.conversation } : current); }
+    catch (reason) { setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
+  };
+  const resume = async () => {
+    if (!id || !begin()) return;
+    try {
+      const clientMessageId = resumeAttempt.current ?? crypto.randomUUID(); resumeAttempt.current = clientMessageId;
+      await enqueue(async () => { const sent = await publishLatest(); await resumeConversation(id, { clientMessageId, viewId: sent.viewId, contextRevision: sent.revision }); });
+      resumeAttempt.current = null; following.current = true; await refreshList();
+    } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
   };
   const errorCopy = (code: string | null) => t(code === "storage" ? "copilot.errors.storage" : code === "capabilities" ? "copilot.errors.capabilities" : code === "capacity" ? "copilot.errors.capacity" : code === "credentials" ? "copilot.errors.credentials" : code === "busy" ? "copilot.errors.busy" : code === "stale" ? "copilot.errors.stale" : code === "clipboard" ? "copilot.errors.clipboard" : code === "rate_limit" ? "copilot.errors.rateLimit" : code === "transient" ? "copilot.errors.transient" : code === "quota" ? "copilot.errors.quota" : "copilot.errors.unavailable");
@@ -174,13 +226,15 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
     }}>
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
-        {message.role === "user" ? <div className="copilot-user">{message.text}</div> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
-        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.objects.map((object) => <p key={object.id}>{object.name ?? viewName(message.context?.view ?? "")} · v{object.rev}</p>)}</details>}
+        {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
+        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.objects.map((object) => <p key={object.id}>{t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
-      {running && <p role="status" data-ui="copilot-running">{t("copilot.running")}</p>}
-      {snapshot?.conversation.run?.status === "failed" && <p role="alert" data-ui="copilot-run-error">{errorCopy(snapshot.conversation.run.error)}</p>}
-      {snapshot?.conversation.run?.status === "interrupted" && <p role="status" data-ui="copilot-interrupted">{t("copilot.interrupted")}</p>}
+      {(running || stopping) && <div className="copilot-run-card" role="status" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" />{t(stopping ? "copilot.stopping" : "copilot.running")}{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}
+      {resumable && <div className={runStatus === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-run-result" role={runStatus === "failed" ? "alert" : "status"} data-status={runStatus}>
+        <span data-ui={runStatus === "failed" ? "copilot-run-error" : runStatus === "interrupted" ? "copilot-interrupted" : "copilot-stopped"}>{runStatus === "failed" ? errorCopy(snapshot?.conversation.run?.error ?? null) : t(runStatus === "interrupted" ? "copilot.interrupted" : "copilot.stoppedNote")}</span>
+        <Button data-ui="copilot-resume" disabled={busy || (!!id && !connected)} onClick={() => void resume()}>{t(runStatus === "failed" ? "common.retry" : "copilot.resume")}</Button>
+      </div>}
     </div>
     {newContent && <Button className="copilot-new-content" data-ui="copilot-new-content" onClick={() => { following.current = true; if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setNewContent(false); }}>{t("copilot.newContent")}</Button>}
     <div className="copilot-composer" data-ui="copilot-composer">
@@ -188,7 +242,7 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
       {id && !connected && <p role="status" data-ui="copilot-disconnected">{t("copilot.disconnected")}</p>}
       {error && <p role="alert" data-ui="copilot-error">{errorCopy(error)} <Button onClick={() => { void refreshCatalog(); void refreshList(); void refreshCurrent.current?.(); }}>{t("common.retry")}</Button></p>}
       <div className="copilot-composer-box">
-        <textarea ref={textarea} data-ui="copilot-input" aria-label={t("copilot.input")} placeholder={t("copilot.input")} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
+        <textarea ref={textarea} data-ui="copilot-input" aria-label={t("copilot.input")} placeholder={t(running ? "copilot.steerHint" : "copilot.input")} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void send(); }
         }} />
         <div className="copilot-composer-actions">
@@ -196,17 +250,18 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
             const [providerId, modelId] = event.target.value.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null });
           }}><option value="" disabled>{t("copilot.model")}</option>{providers.map((item) => <optgroup key={item.id} label={item.name}>{item.models.filter((model) => model.tools).map((model) => <option key={model.id} value={`${item.id}\n${model.id}`}>{model.name}</option>)}</optgroup>)}</select>
           <span className="copilot-spacer" />
-          <ActionButton unstyled mode="icon" iconName="arrow-up" label={t("copilot.send")} data-ui="copilot-send" className="copilot-send" disabled={busy || running || !text.trim() || !thinkingValid || (!!id && !connected)} onClick={() => void send()} />
+          {!(running || stopping) && <ActionButton unstyled mode="icon" iconName="arrow-up" label={t("copilot.send")} data-ui="copilot-send" className="copilot-send" disabled={busy || stopping || !text.trim() || !thinkingValid || (!!id && !connected)} onClick={() => void send()} />}
+          {(running || stopping) && <ActionButton unstyled mode="icon" iconName="square" label={t(stopping ? "copilot.status.stopping" : "copilot.stop")} data-ui="copilot-stop" className="copilot-send copilot-stop" disabled={stopping || !connected} onClick={() => void stop()} />}
         </div>
       </div>
       <div className="copilot-composer-foot"><select aria-label={t("copilot.thinking")} data-ui="copilot-thinking" value={choice?.thinking ?? "default"} disabled={busy || !model || (levels.length <= 1 && thinkingValid)} onChange={(event) => { if (choice) void choose({ ...choice, thinking: event.target.value === "default" ? null : event.target.value as ThinkingLevel }); }}>
-        <option value="default">{t("copilot.defaultChoice")}{model?.defaultThinking ? ` · ${model.defaultThinking}` : ""}</option>{choice?.thinking && !levels.includes(choice.thinking) && <option value={choice.thinking} disabled>{choice.thinking}</option>}{levels.length > 1 && levels.map((level) => <option key={level} value={level}>{level}</option>)}
+        <option value="default">{t("copilot.defaultChoice")}{model?.defaultThinking ? ` · ${thinkingLabel(model.defaultThinking)}` : ""}</option>{choice?.thinking && !levels.includes(choice.thinking) && <option value={choice.thinking} disabled>{thinkingLabel(choice.thinking)}</option>}{levels.length > 1 && levels.map((level) => <option key={level} value={level}>{thinkingLabel(level)}</option>)}
       </select><span>{t("copilot.scope")}</span></div>
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
-    {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; }}>{conversation.title || t("copilot.new")}</Button>)}</div></Dialog>}
-    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · v{context.plan.rev} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {task.due}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
+    {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
+    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
 }
 

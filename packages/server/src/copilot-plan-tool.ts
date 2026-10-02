@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type CopilotOperation,
   type CopilotViewActionResult,
@@ -14,8 +15,32 @@ import { applyPlanOperation, type PlanOpDeps, readPlans } from "./plans-actions.
 
 export const PLAN_TOOL_NAME = "plan";
 
+/** What the host remembers about a business write so a repeat or a restart never guesses. */
+export type KnownOperation =
+  | { state: "done"; hash: string; payload: Record<string, unknown>; operation: CopilotOperation }
+  | { state: "begun"; hash: string };
+export interface OperationJournalPort {
+  lookup(operationId: string): KnownOperation | null;
+  /** Persist "about to write". Throws when the conversation cannot be saved: then nothing is written. */
+  begin(entry: {
+    operationId: string;
+    toolCallId: string;
+    action: string;
+    hash: string;
+    object?: { planId?: string; taskId?: string };
+    baseRev?: number;
+  }): void;
+  done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
+}
+
 export interface PlanToolContext {
   plans: PlanOpDeps;
+  /** Present in the real host; business writes are journaled so a repeated operationId is answered, not rerun. */
+  journal?: OperationJournalPort;
+  /** Counts an operation as in flight until it settles, so a terminal run state waits for it. */
+  track?: <T>(work: Promise<T>) => Promise<T>;
+  /** The run this call belongs to; scopes default operation ids. */
+  runId?: string;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (action: PlanViewAction) => Promise<"displayed" | "not_displayed" | "not_found">;
   /** False once the host stopped admitting operations (shutdown). */
@@ -34,6 +59,14 @@ const opt = <T extends ReturnType<typeof Type.String>>(schema: T) => Type.Option
 const parameters = Type.Object(
   {
     action: lit(PLAN_OPERATION_ACTIONS),
+    operationId: Type.Optional(
+      Type.String({
+        minLength: 1,
+        maxLength: 64,
+        description:
+          "Optional idempotency key for a write. Repeating the same key with the same parameters returns the first result instead of writing again.",
+      })
+    ),
     expectedRev: Type.Optional(
       Type.Integer({
         minimum: 0,
@@ -75,6 +108,8 @@ const description = [
   "list move_task only reorders inside one status group; board move_task may change status. Tasks cannot move between plans.",
   "show/open_task/close_task change what the user sees; plain edits never navigate.",
   "There is no delete action. Only report results whose status is ok or noop as done.",
+  "After a conflict, read again and use a new operationId (or none) for the new write; an operationId is bound to its first request.",
+  "A write whose status is unknown may or may not have been applied: read the plans to find out, never repeat it blindly.",
 ].join(" ");
 
 function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
@@ -100,7 +135,8 @@ export function createPlanTool(context: PlanToolContext) {
           status: "closed",
         });
       try {
-        const read = PlanReadOperationSchema.safeParse(params);
+        const { operationId: requestedId, ...rest } = params as Record<string, unknown>;
+        const read = PlanReadOperationSchema.safeParse(rest);
         if (read.success) {
           const file = readPlans(context.plans.statusDir);
           const plans = read.data.planId
@@ -118,7 +154,7 @@ export function createPlanTool(context: PlanToolContext) {
             plans,
           });
         }
-        const view = PlanViewActionSchema.safeParse(params);
+        const view = PlanViewActionSchema.safeParse(rest);
         if (view.success) {
           const shownPlan = view.data.action === "show" ? view.data.planId : undefined;
           if (
@@ -136,7 +172,7 @@ export function createPlanTool(context: PlanToolContext) {
             status: mapped,
           });
         }
-        const write = PlanWriteOperationSchema.safeParse(params);
+        const write = PlanWriteOperationSchema.safeParse(rest);
         if (!write.success)
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
@@ -146,22 +182,75 @@ export function createPlanTool(context: PlanToolContext) {
               .slice(0, 5)
               .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
-        const outcome = await applyPlanOperation(context.plans, write.data);
-        if (!outcome.ok)
+        const journal = context.journal;
+        const operationId =
+          typeof requestedId === "string" && requestedId
+            ? requestedId
+            : `${context.runId ?? "run"}:${toolCallId}`;
+        const hash = digest(rest);
+        const known = journal?.lookup(operationId);
+        if (known && known.hash !== hash)
+          return done(record(toolCallId, action, { status: "rejected" }), {
+            ok: false,
+            status: "rejected",
+            detail: "operationId was already used for a different request",
+          });
+        if (known?.state === "done")
           return done(
-            record(toolCallId, action, { status: outcome.status, rev: outcome.currentRev }),
-            outcome
+            { ...known.operation, id: toolCallId },
+            { ...known.payload, duplicate: true }
           );
-        return done(
-          record(toolCallId, action, {
-            status: outcome.status,
-            rev: outcome.rev,
-            object: outcome.object,
-            label: outcome.label,
-            ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
-          }),
-          outcome
-        );
+        if (known)
+          return done(record(toolCallId, action, { status: "unknown" }), {
+            ok: false,
+            status: "unknown",
+            detail:
+              "this operation started earlier and its outcome was not recorded; read the plans to find out, do not repeat it blindly",
+          });
+        const target = write.data as { planId?: string; taskId?: string; expectedRev?: number };
+        try {
+          journal?.begin({
+            operationId,
+            toolCallId,
+            action,
+            hash,
+            object: { planId: target.planId, taskId: target.taskId },
+            baseRev: target.expectedRev,
+          });
+        } catch {
+          // The conversation cannot be saved, so no write may be committed that the record cannot explain.
+          return done(record(toolCallId, action, { status: "error" }), {
+            ok: false,
+            status: "error",
+            detail: "the conversation could not be saved; nothing was written",
+          });
+        }
+        const work = applyPlanOperation(context.plans, write.data);
+        const settled = await (context.track ? context.track(work) : work);
+        const outcome =
+          !settled.ok && settled.status === "conflict"
+            ? {
+                ...settled,
+                detail: `${settled.detail}; read again, then write with a new operationId`,
+              }
+            : settled;
+        const result = outcome.ok
+          ? done(
+              record(toolCallId, action, {
+                status: outcome.status,
+                rev: outcome.rev,
+                object: outcome.object,
+                label: outcome.label,
+                ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+              }),
+              outcome
+            )
+          : done(
+              record(toolCallId, action, { status: outcome.status, rev: outcome.currentRev }),
+              outcome
+            );
+        journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
+        return result;
       } catch {
         // An unexpected failure: the store either rejected the write or something after it failed.
         // Never claim "nothing changed"; the model must read again to find out.
@@ -174,6 +263,22 @@ export function createPlanTool(context: PlanToolContext) {
       }
     },
   });
+}
+
+function digest(value: Record<string, unknown>): string {
+  const sorted = (input: unknown): unknown =>
+    Array.isArray(input)
+      ? input.map(sorted)
+      : input && typeof input === "object"
+        ? Object.fromEntries(
+            Object.entries(input as Record<string, unknown>)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, v]) => [key, sorted(v)])
+          )
+        : input;
+  return createHash("sha256")
+    .update(JSON.stringify(sorted(value)))
+    .digest("hex");
 }
 
 export type { CopilotViewActionResult };

@@ -697,3 +697,19 @@ it("Copilot Plan context keeps complete tasks, collapsed state and reading posit
   await waitFor(() => expect(currentPage()?.ui?.readingPosition).toEqual({ region: "plan-scroll", top: 130, left: 0 }));
   expect(currentPage()?.saveState).toBe("saved");
 });
+
+it("a burst of scroll events collapses into one context update carrying the latest position", async () => {
+  serverDoc = mkDoc([mkTask({ title: "First" }), mkTask({ title: "Last", status: "done" })]);
+  let reports = 0;
+  let page: PlanPage | null = null;
+  const capture = (_paneId: number, result: PlanPage | null) => { reports++; page = result; };
+  const { container } = render(<WorkspaceProvider value={WORKSPACE}><PlanView paneId={1} onContext={capture} /></WorkspaceProvider>);
+  await waitFor(() => expect((page as PlanPage | null)?.plans[0]?.tasks).toHaveLength(2));
+  const scroller = container.querySelector('[data-ui="plan-scroll"]') as HTMLElement;
+  const before = reports;
+  for (let top = 10; top <= 200; top += 10) { scroller.scrollTop = top; fireEvent.scroll(scroller); }
+  // Nothing is published per wheel tick.
+  expect(reports).toBe(before);
+  await waitFor(() => expect((page as PlanPage | null)?.ui?.readingPosition).toEqual({ region: "plan-scroll", top: 200, left: 0 }));
+  expect(reports - before).toBeLessThanOrEqual(2);
+});

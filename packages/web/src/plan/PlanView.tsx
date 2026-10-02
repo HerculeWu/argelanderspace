@@ -76,6 +76,16 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const [completedExpanded, setCompletedExpanded] = useState(false);
   const [readingPosition, setReadingPosition] = useState<NonNullable<PlanPage["ui"]>["readingPosition"]>(null);
   const [selectedText, setSelectedText] = useState<string | null>(null);
+  // The reading position is only a hint for the assistant: scroll bursts collapse to one update per interval,
+  // otherwise every wheel event would publish a whole new page context.
+  const scrollLatest = useRef<NonNullable<PlanPage["ui"]>["readingPosition"]>(null);
+  const scrollTimer = useRef<number | null>(null);
+  const recordScroll = (position: NonNullable<NonNullable<PlanPage["ui"]>["readingPosition"]>) => {
+    scrollLatest.current = position;
+    if (scrollTimer.current !== null) return;
+    scrollTimer.current = window.setTimeout(() => { scrollTimer.current = null; setReadingPosition(scrollLatest.current); }, 250);
+  };
+  useEffect(() => () => { if (scrollTimer.current !== null) window.clearTimeout(scrollTimer.current); }, []);
   useEffect(() => {
     const captureSelection = () => { const selection = window.getSelection(); setSelectedText(selection?.anchorNode && viewElement.current?.contains(selection.anchorNode) ? selection.toString() || null : null); };
     document.addEventListener("selectionchange", captureSelection);
@@ -449,7 +459,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   ];
 
   return (
-    <div className="view-row" data-ui="plan-view" ref={viewElement} onScrollCapture={(event) => { const element = event.target as HTMLElement; setReadingPosition({ region: element.dataset.ui ?? "plan", top: Math.max(0, element.scrollTop), left: Math.max(0, element.scrollLeft) }); }}>
+    <div className="view-row" data-ui="plan-view" ref={viewElement} onScrollCapture={(event) => { const element = event.target as HTMLElement; recordScroll({ region: element.dataset.ui ?? "plan", top: Math.max(0, element.scrollTop), left: Math.max(0, element.scrollLeft) }); }}>
       <PlansSidebar
         plans={plans}
         project={library?.project ?? null}

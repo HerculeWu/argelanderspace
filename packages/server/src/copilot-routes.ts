@@ -2,6 +2,7 @@ import {
   ConversationModelSchema,
   CopilotIdSchema,
   CopilotMessageRequestSchema,
+  CopilotResumeRequestSchema,
   CopilotViewActionResultSchema,
   PageContextSchema,
 } from "@argelanderspace/contracts";
@@ -54,9 +55,7 @@ export function mountCopilotRoutes(
       status
     );
   });
-  app.get("/conversations", async (c) =>
-    c.json({ version: 1, conversations: await copilot.list() })
-  );
+  app.get("/conversations", async (c) => c.json(await copilot.list()));
   app.post("/conversations", async (c) => {
     const raw = await c.req.json().catch(() => null);
     if (
@@ -99,6 +98,12 @@ export function mountCopilotRoutes(
     const input = CopilotMessageRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!input.success) return c.json({ code: "invalid_input" }, 400);
     return c.json(await copilot.send(c.req.param("id"), input.data), 202);
+  });
+  app.post("/conversations/:id/stop", async (c) => c.json(await copilot.stop(c.req.param("id"))));
+  app.post("/conversations/:id/resume", async (c) => {
+    const input = CopilotResumeRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!input.success) return c.json({ code: "invalid_input" }, 400);
+    return c.json(await copilot.resume(c.req.param("id"), input.data), 202);
   });
   host.route("/api/copilot", app);
 }
