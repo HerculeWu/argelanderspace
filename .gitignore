@@ -51,6 +51,9 @@ literatures/annotations/
 literatures/manuscripts/
 literatures/templates/
 
+# Copilot conversations and native session history (user data; Copilot 07)
+literatures/copilot/
+
 # Plan page store (user data; Stage 4)
 status/
 

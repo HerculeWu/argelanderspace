@@ -83,7 +83,7 @@ export function Copilot({ open, context, onClose }: { open: boolean; context: Pa
     };
     refreshCurrent.current = refresh;
     const unsubscribe = subscribeCopilot({ conversationId: id, viewId: context.viewId, event: apply,
-      ready: () => { void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
+      ready: () => { transportConnected = true; void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
     return () => { alive = false; generation++; refreshCurrent.current = null; unsubscribe(); };
   }, [id, context.viewId]);
   useEffect(() => {

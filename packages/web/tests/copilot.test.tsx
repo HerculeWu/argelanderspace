@@ -66,6 +66,16 @@ test("Retry restores the subscribed authority snapshot, buffered events, connect
   expect((document.querySelector('[data-ui="copilot-send"]') as HTMLButtonElement).disabled).toBe(false);
 });
 
+test("WS reconnect re-subscription clears the disconnected state and re-enables send", async () => {
+  await open();
+  act(() => callbacks.subscription!.connection(false));
+  await waitFor(() => expect(document.querySelector('[data-ui="copilot-disconnected"]')).not.toBeNull());
+  act(() => callbacks.subscription!.ready());
+  await waitFor(() => expect(document.querySelector('[data-ui="copilot-disconnected"]')).toBeNull());
+  fireEvent.change(document.querySelector('[data-ui="copilot-input"]')!, { target: { value: "After reconnect" } });
+  expect((document.querySelector('[data-ui="copilot-send"]') as HTMLButtonElement).disabled).toBe(false);
+});
+
 test("Plan detail translates view, saving and task enums at rendering time", async () => {
   const planContext: PageContext = { ...context, view: "plan", status: "complete", plan: { rev: 1, mode: "board", selectedPlanId: "p_00000001", groups: [], detail: null, saveState: "pending", plans: [{ id: "p_00000001", name: "Task scope", icon: "target", due: "2026-12-01", created_at: "2026-10-02T00:00:00Z", tasks: [{ id: "t_00000001", title: "Task title", status: "todo", focused: false, due: "2026-12-01", links: [], created_at: "2026-10-02T00:00:00Z" }] }] } };
   render(<Copilot open context={planContext} onClose={vi.fn()} />);
