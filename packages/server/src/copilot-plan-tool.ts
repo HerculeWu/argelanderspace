@@ -37,7 +37,7 @@ export interface OperationJournalPort {
     toolCallId: string;
     action: string;
     hash: string;
-    object?: { planId?: string; taskId?: string };
+    object?: { planId?: string; taskId?: string; workId?: string };
     baseRev?: number;
   }): void;
   done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
@@ -499,7 +499,7 @@ async function requestDelete(
   });
 }
 
-function digest(value: Record<string, unknown>): string {
+export function digest(value: Record<string, unknown>): string {
   const sorted = (input: unknown): unknown =>
     Array.isArray(input)
       ? input.map(sorted)

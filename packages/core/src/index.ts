@@ -52,6 +52,7 @@ export * from "./library/add-manual.js";
 export * from "./library/build.js";
 export * from "./library/discovery.js";
 export * from "./library/graph.js";
+export * from "./library/patch.js";
 export * from "./library/seed.js";
 export * from "./library/sources.js";
 export * from "./library/store.js";

@@ -82,6 +82,15 @@ CLI 裸 arXiv id 正文摄入路径不变。裸 id 只在 Web identifier 建条�
 
 批量 bib、详情打开、重启、旧库回填、PDF 原位替换、自动官方版本追踪、CLI/agent PDF ingest、OCR/出版商 HTML、任务取消、全局任务页和跨进程同 Doc 并发均不在本范围。
 
+## Copilot `library` 工具（Copilot 票 13）
+
+- 与 Library 页同一入口：读取走页面自己的 `GET /api/library` 载荷与搜索谓词（`libraryRefMatches`），不读 `library.json` 或标注 archive；页面上下文是**当前筛选的全集**（不是已挂载行），其余库只给数量；`source: "demo"`（内置示例）永不标为完整，也不是已保存文库。
+- 唯一的持久写是“设为主 Doc”（Files tab 按钮 = `PATCH /api/library/refs {doc_id}`），UI 与工具共用 `commitWorkPatch` → core `patchWorkNarrow`：在 `libraryLock` 内重读**原始** `library.json`，只改点名字段并保留其它 Work、未知键与 `project`；工具带 `expectedMainDocId`（所读主位），变了返回 `conflict` 且零写入，无关字段/追加 Doc 的并发变化保留。临时文件＋rename，失败保原 bytes。
+- **局部修订（父代理 2026-10-03 接受）——`PATCH /api/library/refs`**：旧行为＝经类型化 `LibraryStore` 读改写，保存时丢弃类型模型不认识的键并规范化所有 Work；新行为＝窄 raw patch，只改点名字段（清空即删键），保留其它 Work、未知键与 `project`；响应、404 语义与 `library.changed{cause:"patch"}` 不变；原因＝Copilot 与 UI 必须共用不丢数据的写接缝（规格 §6.3）。旧 `patchWork` 仍用于上传/获取流程，行为不变。
+- 写盘顺序：json 与 bib 先各写临时文件，再依次 rename（json 先）。暂存失败两者 bytes 都保持原样；两次 rename 之间失败极少见，可能 json 已更新而 bib 落后一次变更（下一次保存会重新生成），工具对保存失败返回 `error` 并要求重读，不声称“未改变”。写入在 `libraryLock` 后排队（与 rebuild 等串行），不会被拒为 busy；UI 的“设为主”只有浏览器本地的 `settingMain` 防重入。
+- 图视图离散按钮（标签开关、放大/缩小/适应/重排）可由 Copilot 经绑定 view 按下；拖节点、平移、滚轮缩放是用户手势，不对等。页面没有刷新/排序控件，按 ADR 0005 不新增。
+- note/tags/read/star 在 Library 页没有写入口，所以没有对应工具；右键色点是仅本标签页的显示叠加层，Copilot 的 `set_temp_label` 同样不落盘并在结果中如此声明。导入、上传/获取、Doc 删除、Discovery 分属后续票。
+
 ## 离线与派生数据
 
 `library build --offline` 已 gate ADS、Crossref、OpenAlex，缓存仍可读；不推断所有 CLI 命令全局断网。DOI stub 富化、摄入缓存命中和 arXiv 恒新鲜 job 各自按路径判断。

@@ -7,6 +7,7 @@ export * from "./doc.js";
 export * from "./doc-ir.js";
 export * from "./jobs.js";
 export * from "./library.js";
+export * from "./library-ops.js";
 export * from "./pdf-doc.js";
 export * from "./plan-ops.js";
 export * from "./plans.js";

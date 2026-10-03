@@ -1133,7 +1133,7 @@
     "model": "Choose model",
     "thinking": "Thinking level",
     "running": "Replying…",
-    "scope": "Plan actions available",
+    "scope": "Plan and library actions available",
     "interrupted": "The service restarted during this run. Saved records are kept and nothing was repeated automatically.",
     "disconnected": "Disconnected. Restoring conversation…",
     "newContent": "View new content",
@@ -1154,8 +1154,18 @@
     "defaultChoice": "Use default",
     "saved": "Saved",
     "saving": "Saving…",
+    "library": {
+      "live": "Saved library",
+      "demo": "Built-in example data, not your library (the service could not be reached)",
+      "error": "The library could not be read: {{reason}}. The example data shown is not your library.",
+      "counts": "{{matched}} of {{total}} works sent",
+      "query": "filter “{{query}}”",
+      "open": "Open work: {{title}}"
+    },
     "operations": {
       "count": "{{count}} Plan actions",
+      "countMixed": "{{count}} actions",
+      "countLibrary": "{{count}} library actions",
       "notApplied": "{{count}} not applied",
       "dueAfterPlan": "Due is after the plan deadline",
       "actions": {
@@ -1186,12 +1196,22 @@
         "close_copilot": "Hide Copilot panel",
         "open_doc": "Open document",
         "delete_plan": "Delete plan",
-        "delete_task": "Delete task"
+        "delete_task": "Delete task",
+        "read_library": "Read library",
+        "set_main_doc": "Set main document",
+        "filter_library": "Search library",
+        "select_work": "Select work",
+        "set_detail_tab": "Switch detail tab",
+        "set_sidebar": "Fold or open list",
+        "set_temp_label": "Set temporary color dot",
+        "set_graph_labels": "Show or hide graph labels",
+        "graph_control": "Zoom or arrange graph"
       },
       "status": {
         "ok": "Applied",
         "noop": "No change",
         "conflict": "Plans changed first",
+        "conflictLibrary": "The main document changed first",
         "not_found": "Not found",
         "rejected": "Not allowed",
         "invalid": "Invalid",

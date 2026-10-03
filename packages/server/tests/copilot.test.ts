@@ -220,6 +220,7 @@ test("actual Pi HTTP loop supplies the final offscreen task, only the plan tool,
   expect(getCurrentTools(firstRequest.context.messages).map((tool) => tool.name)).toEqual([
     "plan",
     "workspace",
+    "library",
   ]);
   const bytes = readFileSync(historyPath(snapshot));
   expect(bytes.toString()).toContain("argelander.context.v1");
@@ -403,15 +404,21 @@ test("request output reservation permits a model whose maximum output equals its
   const model = runtime.getModels("openai").find((candidate) => candidate.id === "gpt-4.1");
   expect(model).toBeDefined();
   if (!model) return;
+  const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
   model.contextWindow = 24_000;
   model.maxTokens = 24_000;
-  const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
-  const context = page();
-  if (!context.plan) throw new Error("fixture");
-  context.plan.plans = [];
-  expect((await send(snapshot.conversation.id, context)).status).toBe(202);
-  await settled(snapshot.conversation.id);
-  expect(requests[0]?.options?.maxTokens).toBeLessThan(model.contextWindow);
+  try {
+    const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
+    const context = page();
+    if (!context.plan) throw new Error("fixture");
+    context.plan.plans = [];
+    expect((await send(snapshot.conversation.id, context)).status).toBe(202);
+    await settled(snapshot.conversation.id);
+    expect(requests[0]?.options?.maxTokens).toBeLessThan(model.contextWindow);
+  } finally {
+    // The runtime's model objects are shared with the next tests: leave them as found.
+    Object.assign(model, original);
+  }
 });
 
 test("request identity is captured under settings lock and stays fixed in flight", async () => {

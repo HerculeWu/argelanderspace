@@ -1,12 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CopilotViewActionResult, type LibraryDetailTab, type LibraryPage, type LibraryViewAction, libraryRefMatches } from "@argelanderspace/contracts";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { confirmWorkspaceLeave, useWorkspace } from "../argelander/workspace";
-import { fetchLibrary } from "../api/library";
+import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
+import type { GraphCanvasController } from "../graph/GraphCanvas";
 import { RefDetail } from "./RefDetail";
+import { captureLibraryPage } from "../copilot/library-context";
 import { ImportDialog, type ImportMode } from "./ImportDialog";
 import { ExploreMode } from "./ExploreMode";
 import { useExploreStack } from "./explore-state";
@@ -56,16 +59,32 @@ const IMPORTS = [
   { mode: "bib", ic: "file-code-2", titleKey: "library.import.bibtex.title", descKey: "library.import.bibtex.desc" },
 ] as const;
 
-export function LibraryView() {
+/** What the Shell can ask the visible Library page to do for a Copilot view action. */
+export interface LibraryViewController {
+  apply: (action: LibraryViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+}
+
+export function LibraryView({
+  paneId,
+  onContext,
+  onController,
+}: {
+  paneId?: number;
+  onContext?: (paneId: number, page: LibraryPage | null) => void;
+  onController?: (paneId: number, controller: LibraryViewController | null) => void;
+} = {}) {
   const ws = useWorkspace();
   const { t } = useTranslation();
   const [payload, setPayload] = useState<LibraryData | null>(null);
   const [live, setLive] = useState(false);
+  const [failure, setFailure] = useState<LibraryLoad["failure"]>(undefined);
 
   const reload = useCallback(async () => {
-    const { data, live } = await fetchLibrary();
+    const { data, live, failure } = await fetchLibrary();
     setPayload(data);
     setLive(live);
+    setFailure(failure);
+    return { data, live };
   }, []);
 
   useEffect(() => {
@@ -75,6 +94,11 @@ export function LibraryView() {
   // live-refresh on server-side library mutations (refresh / patch / add /
   // upload-done) pushed over /ws
   useEffect(() => onLibraryChanged(() => void reload()), [reload]);
+
+  useEffect(() => {
+    // Still loading: there is no page to describe yet.
+    if (!payload && paneId !== undefined) onContext?.(paneId, null);
+  }, [payload, paneId, onContext]);
 
   if (!payload) {
     return (
@@ -88,8 +112,13 @@ export function LibraryView() {
     <LibraryBody
       payload={payload}
       live={live}
+      failure={failure}
       onOpenDoc={ws.openDoc}
-      onReload={reload}
+      onReload={() => void reload()}
+      onRefetch={reload}
+      paneId={paneId}
+      onContext={onContext}
+      onController={onController}
       onDocDeleted={ws.docDeleted}
       onBeforeDocDelete={(docId) => docId !== ws.currentDoc || confirmWorkspaceLeave()}
     />
@@ -99,15 +128,26 @@ export function LibraryView() {
 function LibraryBody({
   payload,
   live,
+  failure,
   onOpenDoc,
   onReload,
+  onRefetch,
+  paneId,
+  onContext,
+  onController,
   onDocDeleted,
   onBeforeDocDelete,
 }: {
   payload: LibraryData;
   live: boolean;
+  failure?: LibraryLoad["failure"];
   onOpenDoc: (docId?: string) => void;
   onReload: () => void;
+  /** Read the library again and hand back what was read (an id the page does not know yet gets one reload). */
+  onRefetch: () => Promise<{ data: LibraryData; live: boolean }>;
+  paneId?: number;
+  onContext?: (paneId: number, page: LibraryPage | null) => void;
+  onController?: (paneId: number, controller: LibraryViewController | null) => void;
   /** Stage 8 §8: forwarded to RefDetail — the workspace three-state transition
    *  after a document is physically deleted. */
   onDocDeleted: (docId: string, remaining: string[]) => void;
@@ -172,14 +212,83 @@ function LibraryBody({
     onReload();
   };
 
-  const list = refs.filter(
-    (r) => !q || (r.title + r.authors + r.cite).toLowerCase().includes(q.toLowerCase())
-  );
+  const list = refs.filter((r) => libraryRefMatches(r, q));
   const curNode = selNode ? byId[selNode] : null;
   const curRef: LibraryRef | null = curNode?.ref
     ? (refs.find((r) => r.id === curNode.ref) ?? null)
     : null;
+  const curRefRef = useRef(curRef);
+  curRefRef.current = curRef;
   const menuRef = labelMenu ? (refs.find((r) => r.id === labelMenu.refId) ?? null) : null;
+
+  // ---- Copilot: the page it sees and the bound-view actions it can ask for ------------------------------ //
+  const [detailTab, setDetailTab] = useState<LibraryDetailTab>("meta");
+  const [graphLabelsOn, setGraphLabelsOn] = useState(false);
+  const graphControls = useRef<GraphCanvasController | null>(null);
+  const registerGraph = useCallback((controller: GraphCanvasController | null) => { graphControls.current = controller; }, []);
+  useEffect(() => {
+    if (paneId === undefined || !onContext) return;
+    onContext(
+      paneId,
+      explore.active
+        ? null
+        : captureLibraryPage({ data: payload, live, failure, query: q, selectedNodeId: selNode, tab: detailTab, labels, sidebarCollapsed: sideCollapsed, graphLabelsOn })
+    );
+  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideCollapsed, graphLabelsOn, explore.active]);
+  const latest = useRef({ refs, graph, exploring: explore.active, onRefetch });
+  latest.current = { refs, graph, exploring: explore.active, onRefetch };
+  const applyViewAction = useRef<LibraryViewController["apply"]>(async () => ({ ok: false, detail: "unavailable" }));
+  applyViewAction.current = async (action) => {
+    const state = latest.current;
+    // Exploration (Discovery) replaces this page; its own parity is a later ticket.
+    if (state.exploring) return { ok: false, detail: "unavailable" };
+    if (action.action === "filter_library") {
+      setQ(action.query);
+      return { ok: true };
+    }
+    if (action.action === "set_graph_labels") {
+      if (!graphControls.current) return { ok: false, detail: "unavailable" };
+      setGraphLabelsOn(action.on);
+      return { ok: true };
+    }
+    if (action.action === "graph_control") {
+      const graphButtons = graphControls.current;
+      if (!graphButtons) return { ok: false, detail: "unavailable" };
+      ({ zoom_in: graphButtons.zoomIn, zoom_out: graphButtons.zoomOut, fit: graphButtons.fit, relayout: graphButtons.relayout })[action.control]();
+      return { ok: true };
+    }
+    if (action.action === "set_sidebar") {
+      setSideCollapsed(action.collapsed);
+      return { ok: true };
+    }
+    // The remaining actions name a work. An id the page does not know yet (just imported) gets one reload.
+    const target = action.refId;
+    let current = { refs: state.refs, graph: state.graph };
+    if (target && !current.refs.some((r) => r.id === target)) {
+      const fresh = await state.onRefetch();
+      current = { refs: fresh.data.refs, graph: fresh.data.graph };
+      if (!current.refs.some((r) => r.id === target)) return { ok: false, detail: "not_found" };
+    }
+    const nodeOf = (id: string) => current.graph.nodes.find((n) => n.ref === id)?.id ?? id;
+    if (action.action === "select_work") {
+      setSelNode(action.refId === null ? null : nodeOf(action.refId));
+      return { ok: true };
+    }
+    if (action.action === "set_detail_tab") {
+      if (target) setSelNode(nodeOf(target));
+      else if (!curRefRef.current) return { ok: false, detail: "disabled" };
+      setDetailTab(action.tab);
+      return { ok: true };
+    }
+    // set_temp_label: the right-click menu's own state change; a display overlay in this tab only.
+    setLabels((m) => ({ ...m, [action.refId]: action.label }));
+    return { ok: true };
+  };
+  useEffect(() => {
+    if (paneId === undefined || !onController) return;
+    onController(paneId, { apply: (action) => applyViewAction.current(action) });
+    return () => onController(paneId, null);
+  }, [paneId, onController]);
 
   /** "View in library" from a discovery candidate: exit explore + select it. */
   const viewInLibrary = (workId: string) => {
@@ -364,7 +473,7 @@ function LibraryBody({
           )}
         </div>
 
-        <LibraryGraph graph={graph} selId={selNode} onSel={setSelNode} query={q} />
+        <LibraryGraph graph={graph} selId={selNode} onSel={setSelNode} query={q} labelsOn={graphLabelsOn} onLabelsOnChange={setGraphLabelsOn} onController={registerGraph} />
       </div>
 
       {curRef && (
@@ -372,6 +481,8 @@ function LibraryBody({
           r={curRef}
           node={curNode}
           onClose={() => setSelNode(null)}
+          tab={detailTab}
+          onTabChange={setDetailTab}
           onOpenDoc={onOpenDoc}
           onReload={onReload}
           onDocDeleted={onDocDeleted}

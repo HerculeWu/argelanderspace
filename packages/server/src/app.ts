@@ -143,6 +143,7 @@ import { CopilotHost } from "./copilot.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
+import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
 import { probePdf } from "./pdfium-probe.js";
@@ -397,7 +398,19 @@ export function createApp(deps: AppDeps): Hono {
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
   mountCopilotRoutes(app, copilot, guardCsrf);
   // The Copilot `plan` tool shares the Plan lock, store and plan.changed notification with PUT.
+  const currentGraph = () =>
+    loadCurrentGraph(paths) ??
+    libraryLock.run(async () => loadCurrentGraph(paths) ?? healGraph(paths));
+  // The Copilot `library` tool shares the library lock, the narrow work patch and library.changed with
+  // PATCH /api/library/refs, and reads the same payload as GET /api/library.
+  const libraryOps: LibraryOpDeps = {
+    paths,
+    libraryLock,
+    onChanged: () => libraryChanged("patch"),
+    readPayload: async () => libraryPayload(paths, await currentGraph()),
+  };
   copilot.useWorkbench({
+    library: libraryOps,
     plans: {
       statusDir: deps.statusDir,
       planLock,
@@ -979,14 +992,12 @@ export function createApp(deps: AppDeps): Hono {
    * of LibraryStore.load the same way.
    */
   app.get("/api/library", async (c) => {
-    let graph = loadCurrentGraph(paths);
-    if (graph === null) {
-      try {
-        graph = await libraryLock.run(async () => loadCurrentGraph(paths) ?? healGraph(paths));
-      } catch (err) {
-        const e = detail(`library graph rebuild failed: ${(err as Error).message}`, 500);
-        return c.json(e.body, e.status);
-      }
+    let graph: Awaited<ReturnType<typeof currentGraph>>;
+    try {
+      graph = await currentGraph();
+    } catch (err) {
+      const e = detail(`library graph rebuild failed: ${(err as Error).message}`, 500);
+      return c.json(e.body, e.status);
     }
     return c.json(libraryPayload(paths, graph));
   });
@@ -1724,12 +1735,12 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     const patch = Object.fromEntries(Object.entries(rec).filter(([k]) => k !== "id"));
-    const ok = await libraryLock.run(() => patchWork(paths, workId, patch));
+    // Same narrow, field-preserving seam as the Copilot tool; this route sends no expectation.
+    const ok = (await commitWorkPatch(libraryOps, workId, patch)).status === "ok";
     if (!ok) {
       const e = detail(`work ${pyRepr(workId)} not found`, 404);
       return c.json(e.body, e.status);
     }
-    libraryChanged("patch");
     return c.json({ ok: true });
   });
 

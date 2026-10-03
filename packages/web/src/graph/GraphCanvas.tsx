@@ -48,7 +48,19 @@ export interface GraphCanvasStash {
   view?: { tx: number; ty: number; k: number } | null;
 }
 
+/** The discrete graph buttons, callable from outside (Copilot) through the same callbacks as the clicks. */
+export interface GraphCanvasController {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fit: () => void;
+  relayout: () => void;
+}
+
 export interface GraphCanvasProps {
+  /** Optional controlled "show labels" toggle. */
+  labelsOn?: boolean;
+  onLabelsOnChange?: (on: boolean) => void;
+  onController?: (controller: GraphCanvasController | null) => void;
   nodes: CanvasNode[];
   edges: [string, string][];
   /** The pinned origin node (Discovery); null for the Library graph. */
@@ -89,6 +101,9 @@ export function GraphCanvas({
   note,
   usefulLegend = false,
   isolatedNote = false,
+  labelsOn: controlledLabels,
+  onLabelsOnChange,
+  onController,
 }: GraphCanvasProps) {
   const { t } = useTranslation();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -96,7 +111,13 @@ export function GraphCanvas({
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
-  const [labelsOn, setLabelsOn] = useState(false);
+  const [ownLabelsOn, setOwnLabelsOn] = useState(false);
+  const labelsOn = controlledLabels ?? ownLabelsOn;
+  const setLabelsOn = (next: boolean | ((previous: boolean) => boolean)) => {
+    const value = typeof next === "function" ? next(labelsOn) : next;
+    setOwnLabelsOn(value);
+    onLabelsOnChange?.(value);
+  };
   const [, bump] = useReducer((x: number) => x + 1, 0);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -238,6 +259,25 @@ export function GraphCanvas({
     reheat(0.3);
     fitView();
   };
+
+  // The buttons below call these same functions; the controller lets another caller press them.
+  const buttons = useRef<GraphCanvasController>({ zoomIn: () => {}, zoomOut: () => {}, fit: () => {}, relayout: () => {} });
+  buttons.current = {
+    zoomIn: () => zoomAt(1.25, size.w / 2, size.h / 2),
+    zoomOut: () => zoomAt(0.8, size.w / 2, size.h / 2),
+    fit: fitView,
+    relayout,
+  };
+  useEffect(() => {
+    if (!onController) return;
+    onController({
+      zoomIn: () => buttons.current.zoomIn(),
+      zoomOut: () => buttons.current.zoomOut(),
+      fit: () => buttons.current.fit(),
+      relayout: () => buttons.current.relayout(),
+    });
+    return () => onController(null);
+  }, [onController]);
 
   const focusSeed = () => {
     if (!seedId || !P.current[seedId]) return;

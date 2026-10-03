@@ -25,6 +25,11 @@ async function tryJson<T>(url: string, init?: RequestInit): Promise<T | null> {
 export interface LibraryLoad {
   data: LibraryData;
   live: boolean; // false → showing fixture/demo data
+  /**
+   * Why the example is shown: `unreachable` (no answer from the service) or `error` (it answered but the
+   * library could not be read). Absent when `live`.
+   */
+  failure?: { kind: "unreachable" | "error"; reason: string };
 }
 
 export type DocProvenance = "arxiv" | "upload" | "pdf" | "arxiv-pdf" | "unknown";
@@ -53,8 +58,23 @@ export async function fetchDocProvenance(
 }
 
 export async function fetchLibrary(): Promise<LibraryLoad> {
-  const live = await tryJson<LibraryData>("/api/library");
-  return live ? { data: live, live: true } : { data: LIBRARY_FIXTURE, live: false };
+  const example = (kind: "unreachable" | "error", reason: string): LibraryLoad => ({
+    data: LIBRARY_FIXTURE,
+    live: false,
+    failure: { kind, reason },
+  });
+  let response: Response;
+  try {
+    response = await fetch("/api/library");
+  } catch {
+    return example("unreachable", "the service did not answer");
+  }
+  if (!response.ok) return example("error", `HTTP ${response.status}`);
+  try {
+    return { data: (await response.json()) as LibraryData, live: true };
+  } catch {
+    return example("error", "the response was not valid JSON");
+  }
 }
 
 /** Attach a user-supplied LaTeX source zip to a work (server-side ingest).

@@ -7,7 +7,7 @@
 
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { GraphCanvas, type CanvasNode, type GraphCanvasStash } from "../graph/GraphCanvas";
+import { GraphCanvas, type CanvasNode, type GraphCanvasController, type GraphCanvasStash } from "../graph/GraphCanvas";
 import type { GraphData } from "./types";
 
 /** Survives view-switch remounts (recomputed cheaply when the set changes). */
@@ -22,7 +22,13 @@ export function LibraryGraph({
   selId,
   onSel,
   query,
+  labelsOn,
+  onLabelsOnChange,
+  onController,
 }: {
+  labelsOn?: boolean;
+  onLabelsOnChange?: (on: boolean) => void;
+  onController?: (controller: GraphCanvasController | null) => void;
   graph: GraphData;
   selId: string | null;
   onSel: (id: string | null) => void;
@@ -57,6 +63,9 @@ export function LibraryGraph({
       selectedId={selId}
       onSelect={onSel}
       query={query}
+      labelsOn={labelsOn}
+      onLabelsOnChange={onLabelsOnChange}
+      onController={onController}
       stash={libraryStash}
       layoutKey={layoutKey}
       heading={t("library.graph.heading")}

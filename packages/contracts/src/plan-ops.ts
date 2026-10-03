@@ -197,7 +197,11 @@ export const CopilotOperationSchema = z
     ]),
     rev: Rev.optional(),
     object: z
-      .object({ kind: z.enum(["plan", "task"]), id: z.string(), planId: z.string().optional() })
+      .object({
+        kind: z.enum(["plan", "task", "work"]),
+        id: z.string(),
+        planId: z.string().optional(),
+      })
       .strict()
       .optional(),
     /** Verbatim user data (plan name / task title) for display. */

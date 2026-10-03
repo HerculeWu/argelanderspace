@@ -1133,7 +1133,7 @@
     "model": "选择模型",
     "thinking": "思考级别",
     "running": "正在回复…",
-    "scope": "可操作计划",
+    "scope": "可操作计划与文库",
     "interrupted": "服务在本次运行中重启。已保存的记录保留，没有自动重复任何操作。",
     "disconnected": "连接中断，正在恢复会话…",
     "newContent": "查看新内容",
@@ -1154,8 +1154,18 @@
     "defaultChoice": "沿用默认",
     "saved": "已保存",
     "saving": "正在保存…",
+    "library": {
+      "live": "已保存的文库",
+      "demo": "内置示例数据，不是你的文库（无法连接服务）",
+      "error": "无法读取文库：{{reason}}。当前显示的示例数据不是你的文库。",
+      "counts": "已发送 {{matched}} / {{total}} 项文献",
+      "query": "筛选“{{query}}”",
+      "open": "已打开文献：{{title}}"
+    },
     "operations": {
       "count": "{{count}} 项计划操作",
+      "countMixed": "{{count}} 项操作",
+      "countLibrary": "{{count}} 项文库操作",
       "notApplied": "{{count}} 项未应用",
       "dueAfterPlan": "期限晚于计划截止日",
       "actions": {
@@ -1186,12 +1196,22 @@
         "close_copilot": "收起 Copilot 面板",
         "open_doc": "打开文档",
         "delete_plan": "删除计划",
-        "delete_task": "删除任务"
+        "delete_task": "删除任务",
+        "read_library": "读取文库",
+        "set_main_doc": "设为主文档",
+        "filter_library": "搜索文库",
+        "select_work": "选择文献",
+        "set_detail_tab": "切换详情标签",
+        "set_sidebar": "折叠或展开列表",
+        "set_temp_label": "设置临时色点",
+        "set_graph_labels": "显示或隐藏图标签",
+        "graph_control": "缩放或重排图"
       },
       "status": {
         "ok": "已应用",
         "noop": "无变化",
         "conflict": "计划已被先改动",
+        "conflictLibrary": "主文档已先被改动",
         "not_found": "未找到",
         "rejected": "不允许",
         "invalid": "无效",

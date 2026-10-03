@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  type LibraryContextSummary,
+  LibraryContextSummarySchema,
+  LibraryPageSchema,
+  LibraryViewActionSchema,
+} from "./library-ops.js";
 import { type CopilotOperation, CopilotOperationSchema, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
@@ -53,12 +59,18 @@ export const PageContextSchema = z
       .max(2),
     status: z.enum(["complete", "unavailable", "error"]),
     plan: PlanPageSchema.nullable(),
+    /** The Library page (copilot ticket 13); optional so older views and headless callers stay valid. */
+    library: LibraryPageSchema.nullable().optional(),
     /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
     workspace: WorkspaceSnapshotSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
-    if ((value.status === "complete") !== (value.view === "plan" && value.plan !== null))
+    // Only data the page really loaded counts as complete: the Library's built-in example data does not.
+    const covered =
+      (value.view === "plan" && value.plan !== null) ||
+      (value.view === "library" && value.library?.source === "live");
+    if ((value.status === "complete") !== covered)
       ctx.addIssue({ code: "custom", message: "invalid page coverage" });
   });
 export type PageContext = z.infer<typeof PageContextSchema>;
@@ -131,6 +143,7 @@ export interface CopilotMessage {
     status: PageContext["status"];
     revision: number;
     objects: { id: string; rev: number; name?: string }[];
+    library?: LibraryContextSummary;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -226,7 +239,7 @@ export const WsCopilotViewActionSchema = z
     type: z.literal("copilot.view-action"),
     viewId: CopilotIdSchema,
     actionId: z.string().uuid(),
-    action: z.union([PlanViewActionSchema, WorkspaceViewActionSchema]),
+    action: z.union([PlanViewActionSchema, WorkspaceViewActionSchema, LibraryViewActionSchema]),
   })
   .strict();
 export type WsCopilotViewAction = z.infer<typeof WsCopilotViewActionSchema>;
@@ -267,6 +280,8 @@ export const CopilotContextReferenceSchema = z
         view: z.string().min(1),
         status: z.enum(["complete", "unavailable", "error"]),
         revision: z.number().int().nonnegative(),
+        /** What the Library page carried (copilot ticket 13); absent for other pages. */
+        library: LibraryContextSummarySchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),
@@ -295,7 +310,11 @@ export const OperationJournalSchema = z
     action: z.string(),
     hash: z.string(),
     object: z
-      .object({ planId: z.string().optional(), taskId: z.string().optional() })
+      .object({
+        planId: z.string().optional(),
+        taskId: z.string().optional(),
+        workId: z.string().optional(),
+      })
       .strict()
       .optional(),
     baseRev: z.number().int().nonnegative().optional(),

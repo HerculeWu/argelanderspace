@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Job } from "@argelanderspace/contracts";
+import { type Job, LIBRARY_DETAIL_TABS, libraryRefBibtex } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
 import {
   acquireArxivPdf,
@@ -31,29 +31,10 @@ const RESOLVED_LABEL: Record<string, string> = {
   openalex: "OpenAlex",
 };
 
-function bibtexOf(r: LibraryRef): string {
-  return (
-    "@" +
-    (r.type === "conf" ? "inproceedings" : "article") +
-    "{" +
-    r.cite +
-    ",\n" +
-    "  title   = {" +
-    r.title +
-    "},\n" +
-    "  author  = {" +
-    r.authors.replace(/ & /g, " and ").replace(/ et al\./, " and others") +
-    "},\n" +
-    "  journal = {" +
-    r.venue +
-    "},\n  year    = {" +
-    r.year +
-    "}\n}"
-  );
-}
+const bibtexOf = libraryRefBibtex;
 
-const TABS = ["meta", "info", "bib", "notes", "files"] as const;
-type DetailTab = (typeof TABS)[number];
+const TABS = LIBRARY_DETAIL_TABS;
+export type DetailTab = (typeof TABS)[number];
 type AcquisitionMethod = "pdf" | "arxiv" | "upload" | "pdf-upload";
 
 type AcquisitionRisk =
@@ -134,6 +115,8 @@ export function RefDetail({
   onDocDeleted,
   onBeforeDocDelete,
   explore,
+  tab: controlledTab,
+  onTabChange,
 }: {
   r: LibraryRef;
   node: GraphNode | null;
@@ -150,9 +133,14 @@ export function RefDetail({
    * a usable ADS bibcode AND a live backend (no demo/fixture exploration).
    */
   explore?: { bibcode: string | null; live: boolean; onExplore: (bibcode: string) => void };
+  tab?: DetailTab;
+  onTabChange?: (tab: DetailTab) => void;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<DetailTab>("meta");
+  // The tab may be driven from outside (the Library page publishes it and Copilot can switch it).
+  const [ownTab, setOwnTab] = useState<DetailTab>("meta");
+  const tab = controlledTab ?? ownTab;
+  const setTab = onTabChange ?? setOwnTab;
   const [copyStatus, setCopyStatus] = useState<{
     target: "cite" | "bib";
     state: "copied" | "failed";

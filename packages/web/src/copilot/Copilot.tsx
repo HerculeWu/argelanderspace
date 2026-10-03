@@ -11,7 +11,7 @@ import { Icon } from "../lib/icons";
 import { copilotMarkdown } from "./markdown";
 import "./copilot.css";
 
-const OPERATION_ACTION_KEYS = {
+export const OPERATION_ACTION_KEYS = {
   read: "copilot.operations.actions.read", create_plan: "copilot.operations.actions.create_plan", update_plan: "copilot.operations.actions.update_plan",
   create_task: "copilot.operations.actions.create_task", update_task: "copilot.operations.actions.update_task", add_task_link: "copilot.operations.actions.add_task_link",
   remove_task_link: "copilot.operations.actions.remove_task_link", move_task: "copilot.operations.actions.move_task", show: "copilot.operations.actions.show",
@@ -21,6 +21,9 @@ const OPERATION_ACTION_KEYS = {
   switch_view: "copilot.operations.actions.switch_view", split_pane: "copilot.operations.actions.split_pane", close_pane: "copilot.operations.actions.close_pane", select_pane: "copilot.operations.actions.select_pane",
   resize_pane: "copilot.operations.actions.resize_pane", set_appearance: "copilot.operations.actions.set_appearance", open_copilot_settings: "copilot.operations.actions.open_copilot_settings",
   delete_plan: "copilot.operations.actions.delete_plan", delete_task: "copilot.operations.actions.delete_task",
+  set_main_doc: "copilot.operations.actions.set_main_doc", filter_library: "copilot.operations.actions.filter_library", select_work: "copilot.operations.actions.select_work",
+  set_detail_tab: "copilot.operations.actions.set_detail_tab", set_sidebar: "copilot.operations.actions.set_sidebar", set_temp_label: "copilot.operations.actions.set_temp_label",
+  set_graph_labels: "copilot.operations.actions.set_graph_labels", graph_control: "copilot.operations.actions.graph_control",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -34,6 +37,16 @@ const STORED_CONVERSATION = "argelander.copilot.conversation";
 // A per-viewer convenience only: the saved conversations are authoritative, this just remembers which one this browser was showing.
 const readStoredConversation = () => { try { return window.localStorage.getItem(STORED_CONVERSATION); } catch { return null; } };
 const writeStoredConversation = (id: string) => { try { window.localStorage.setItem(STORED_CONVERSATION, id); } catch { /* private window or blocked storage */ } };
+/** What the Library page carried: where the data came from, how much, which filter and which open work. */
+function LibrarySummary({ summary, title }: { summary: { source: "live" | "demo" | "error"; error?: string; query: string; total: number; matched: number; selectedRefId: string | null }; title?: string }) {
+  const { t } = useTranslation();
+  return <div className="copilot-library-summary" data-ui="copilot-library-summary">
+    <p>{summary.source === "live" ? t("copilot.library.live") : summary.source === "demo" ? t("copilot.library.demo") : t("copilot.library.error", { reason: summary.error ?? "" })}</p>
+    <p>{t("copilot.library.counts", { matched: summary.matched, total: summary.total })}{summary.query && ` · ${t("copilot.library.query", { query: summary.query })}`}</p>
+    {summary.selectedRefId && <p>{t("copilot.library.open", { title: title ?? summary.selectedRefId })}</p>}
+  </div>;
+}
+
 const isApplied = (operation: CopilotOperation) => operation.status === "ok" || operation.status === "noop";
 
 export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
@@ -264,7 +277,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
         {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
-        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.objects.map((object) => <p key={object.id}>{t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
+        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
@@ -302,7 +315,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
     {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "waiting-for-user" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
-    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
+    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.library && <LibrarySummary summary={{ source: context.library.source, error: context.library.error, query: context.library.query, total: context.library.total, matched: context.library.matched, selectedRefId: context.library.selectedRefId }} title={context.library.detail?.ref.title} />}{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
 }
 
@@ -333,13 +346,13 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
 function OperationRecord({ operations }: { operations: CopilotOperation[] }) {
   const { t } = useTranslation();
   const failed = operations.filter((operation) => !isApplied(operation)).length;
-  const actionName = (operation: CopilotOperation) => operation.action in OPERATION_ACTION_KEYS ? t(OPERATION_ACTION_KEYS[operation.action as keyof typeof OPERATION_ACTION_KEYS]) : operation.action;
-  const summary = operations.length === 1 ? actionName(operations[0] as CopilotOperation) : t("copilot.operations.count", { count: operations.length });
+  const actionName = (operation: CopilotOperation) => operation.tool === "library" && operation.action === "read" ? t("copilot.operations.actions.read_library") : operation.action in OPERATION_ACTION_KEYS ? t(OPERATION_ACTION_KEYS[operation.action as keyof typeof OPERATION_ACTION_KEYS]) : operation.action;
+  const summary = operations.length === 1 ? actionName(operations[0] as CopilotOperation) : t(operations.every((operation) => operation.tool === "plan") ? "copilot.operations.count" : operations.every((operation) => operation.tool === "library") ? "copilot.operations.countLibrary" : "copilot.operations.countMixed", { count: operations.length });
   return <details className="copilot-operation" data-ui="copilot-operation">
     <summary><span className={failed ? "copilot-operation-mark warn" : "copilot-operation-mark ok"} aria-hidden="true"><Icon name={failed ? "triangle-alert" : "check"} /></span><span className="copilot-operation-summary">{summary}{failed > 0 && ` · ${t("copilot.operations.notApplied", { count: failed })}`}</span><span className="copilot-operation-chevron" aria-hidden="true"><Icon name="chevron-down" /></span></summary>
     <ul>{operations.map((operation) => <li key={operation.id} data-ui="copilot-operation-item" data-ui-key={operation.id} data-status={operation.status}>
       <span>{actionName(operation)}</span>{operation.label && <span className="copilot-operation-label">{operation.label}</span>}
-      <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(OPERATION_STATUS_KEYS[operation.status])}</Badge>
+      <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(operation.tool === "library" && operation.status === "conflict" ? "copilot.operations.status.conflictLibrary" : OPERATION_STATUS_KEYS[operation.status])}</Badge>
       {operation.warnings?.includes("task_due_after_plan_due") && <span className="copilot-operation-warn">{t("copilot.operations.dueAfterPlan")}</span>}
       {operation.rev !== undefined && isApplied(operation) && <code>v{operation.rev}</code>}
     </li>)}</ul>
