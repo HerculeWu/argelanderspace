@@ -11,7 +11,7 @@ import { newPlanId, newTaskId } from "../lib/planIds";
 import type { LibraryData } from "../library/types";
 import { BoardMode } from "./BoardMode";
 import { FocusView } from "./FocusView";
-import { ListMode } from "./ListMode";
+import { ListMode, type ListModeController } from "./ListMode";
 import {
   fmtDate,
   moveToColumn,
@@ -56,6 +56,8 @@ type Special = "focus" | "timeline" | null;
 /** What the Shell can ask the visible Plan page to do for a Copilot view action. */
 export interface PlanViewController {
   apply: (action: PlanViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+  /** Whether this page can do the action right now, decided without changing anything. */
+  available: (action: PlanViewAction) => boolean;
 }
 
 type ModalState =
@@ -357,8 +359,18 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   // Explicit navigation requested by Copilot: the same state the sidebar, mode toggle and task rows
   // set. An id the page does not know yet (just created in the background) gets one reload first.
   const applyViewAction = useRef<PlanViewController["apply"]>(async () => ({ ok: false, detail: "unavailable" }));
+  const listController = useRef<ListModeController | null>(null);
+  const registerList = useCallback((controller: ListModeController | null) => { listController.current = controller; }, []);
   applyViewAction.current = async (action) => {
     if (!docRef.current) return { ok: false, detail: "unavailable" };
+    // The completed group's fold lives in the list view; asking for it elsewhere is honestly "unavailable".
+    if (action.action === "set_completed") {
+      const list = listController.current;
+      if (!list) return { ok: false, detail: "unavailable" };
+      return list.setCompletedExpanded(action.expanded) ? { ok: true } : { ok: false, detail: "not_found" };
+    }
+    // Opening a linked Doc leaves this page, so the Shell (which owns the panes) does it.
+    if (action.action === "open_task_doc") return { ok: false, detail: "unavailable" };
     const find = () => {
       const all = docRef.current?.plans ?? [];
       return action.action === "open_task"
@@ -395,7 +407,10 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   };
   useEffect(() => {
     if (paneId === undefined || !onController) return;
-    onController(paneId, { apply: (action) => applyViewAction.current(action) });
+    onController(paneId, {
+      apply: (action) => applyViewAction.current(action),
+      available: (action) => (action.action === "set_completed" ? listController.current !== null && docRef.current !== null : true),
+    });
     return () => onController(paneId, null);
   }, [paneId, onController]);
 
@@ -528,6 +543,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
                 {mode === "list" ? (
                   <ListMode
                     onCompletedExpanded={setCompletedExpanded}
+                    onController={registerList}
                     plan={plan}
                     today={today}
                     cb={{

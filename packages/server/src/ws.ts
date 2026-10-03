@@ -27,6 +27,8 @@ export interface WsHubOptions {
   heartbeatMs?: number;
   /** The `hello` snapshot payload (the runner's job table). */
   snapshot?: () => Job[];
+  /** A socket registered a Copilot view id: lets the host deliver view actions that waited for it. */
+  onViewSubscribed?: (viewId: string) => void;
 }
 
 export class WsHub {
@@ -99,6 +101,7 @@ export class WsHub {
               viewId: message.viewId,
             })
           );
+          opts.onViewSubscribed?.(message.viewId);
         } else {
           subscriptions.get(ws)?.delete(message.conversationId);
           viewIds.get(ws)?.delete(message.conversationId);

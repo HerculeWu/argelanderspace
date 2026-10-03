@@ -156,6 +156,8 @@ function newHost() {
   // The tool shares this lock, which lets a test hold a submitted write "in flight".
   created.useWorkbench({
     plans: { statusDir, planLock, onChanged: () => {}, docExists: () => true },
+    // delivery returns false here: "no browser connected", so the reconnect wait stays short
+    viewReconnectWaitMs: 50,
   });
   host = created;
   app = created2;
@@ -387,8 +389,15 @@ test("a steering message moves the run's navigation to the view that sent it", a
 });
 
 test("steering larger than the model's window is refused up front and the run is untouched", async () => {
+  // A synthetic window defined here, so the assertion does not drift as tool schemas grow.
+  const catalogModel = (await settings.getRuntime())
+    .getModels("openai")
+    .find((m) => m.id === "gpt-4.1");
+  if (!catalogModel) throw new Error("fixture model");
+  catalogModel.contextWindow = 24_000;
+  catalogModel.maxTokens = 1024;
   const small = await request("/conversations", "POST", {
-    model: { provider: "openai", model: "gpt-4", thinking: null },
+    model: { provider: "openai", model: "gpt-4.1", thinking: null },
   });
   const { id } = ((await small.json()) as ConversationSnapshot).conversation;
   const first = gate();

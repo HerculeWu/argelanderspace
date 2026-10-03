@@ -62,3 +62,30 @@ test("sendToView targets one registered view, never other tabs, and stops after 
     server.close();
   }
 });
+
+test("the hub tells the host which view id a socket registered, including after a reconnect", async () => {
+  const seen: string[] = [];
+  const server = createServer();
+  const hub = new WsHub(server, {
+    heartbeatMs: 0,
+    onViewSubscribed: (viewId) => seen.push(viewId),
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+  try {
+    const view = randomUUID();
+    const conversation = randomUUID();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const tab = await open(port);
+      tab.ws.send(
+        JSON.stringify({ type: "copilot.subscribe", conversationId: conversation, viewId: view })
+      );
+      await expect.poll(() => seen.length).toBe(attempt + 1);
+      tab.ws.close();
+    }
+    expect(seen).toEqual([view, view]);
+  } finally {
+    hub.close();
+    server.close();
+  }
+});

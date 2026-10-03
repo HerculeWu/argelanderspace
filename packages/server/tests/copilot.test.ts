@@ -217,7 +217,10 @@ test("actual Pi HTTP loop supplies the final offscreen task, only the plan tool,
   expect(JSON.stringify(requests[0]?.context)).not.toContain("HOSTILE_SENTINEL");
   const firstRequest = requests[0];
   if (!firstRequest) throw new Error("missing provider request");
-  expect(getCurrentTools(firstRequest.context.messages).map((tool) => tool.name)).toEqual(["plan"]);
+  expect(getCurrentTools(firstRequest.context.messages).map((tool) => tool.name)).toEqual([
+    "plan",
+    "workspace",
+  ]);
   const bytes = readFileSync(historyPath(snapshot));
   expect(bytes.toString()).toContain("argelander.context.v1");
   const reference = bytes
@@ -394,13 +397,14 @@ test("messages keep original Plan references when another view is published", as
   expect(JSON.stringify(requests[0]?.context)).toContain("Plan A");
 });
 
-test("request output reservation permits a real catalog model whose maximum output equals its window", async () => {
+test("request output reservation permits a model whose maximum output equals its window", async () => {
+  // A synthetic window defined here, so the assertion does not drift as tool schemas grow.
   const runtime = await settings.getRuntime();
-  const model = runtime
-    .getModels("openai")
-    .find((model) => model.maxTokens >= model.contextWindow && model.contextWindow > 4096);
+  const model = runtime.getModels("openai").find((candidate) => candidate.id === "gpt-4.1");
   expect(model).toBeDefined();
   if (!model) return;
+  model.contextWindow = 24_000;
+  model.maxTokens = 24_000;
   const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
   const context = page();
   if (!context.plan) throw new Error("fixture");

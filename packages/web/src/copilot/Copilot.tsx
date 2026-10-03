@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewActionResult, PageContext, PlanViewAction, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
+import type { Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
@@ -16,6 +16,10 @@ const OPERATION_ACTION_KEYS = {
   create_task: "copilot.operations.actions.create_task", update_task: "copilot.operations.actions.update_task", add_task_link: "copilot.operations.actions.add_task_link",
   remove_task_link: "copilot.operations.actions.remove_task_link", move_task: "copilot.operations.actions.move_task", show: "copilot.operations.actions.show",
   open_task: "copilot.operations.actions.open_task", close_task: "copilot.operations.actions.close_task",
+  provider_status: "copilot.operations.actions.provider_status", select_model: "copilot.operations.actions.select_model", open_copilot: "copilot.operations.actions.open_copilot", close_copilot: "copilot.operations.actions.close_copilot", open_doc: "copilot.operations.actions.open_doc",
+  set_completed: "copilot.operations.actions.set_completed", open_task_doc: "copilot.operations.actions.open_task_doc", capabilities: "copilot.operations.actions.capabilities",
+  switch_view: "copilot.operations.actions.switch_view", split_pane: "copilot.operations.actions.split_pane", close_pane: "copilot.operations.actions.close_pane", select_pane: "copilot.operations.actions.select_pane",
+  resize_pane: "copilot.operations.actions.resize_pane", set_appearance: "copilot.operations.actions.set_appearance", open_copilot_settings: "copilot.operations.actions.open_copilot_settings",
   delete_plan: "copilot.operations.actions.delete_plan", delete_task: "copilot.operations.actions.delete_task",
 } as const;
 const OPERATION_STATUS_KEYS = {
@@ -32,9 +36,9 @@ const readStoredConversation = () => { try { return window.localStorage.getItem(
 const writeStoredConversation = (id: string) => { try { window.localStorage.setItem(STORED_CONVERSATION, id); } catch { /* private window or blocked storage */ } };
 const isApplied = (operation: CopilotOperation) => operation.status === "ok" || operation.status === "noop";
 
-export type CopilotViewActionHandler = (action: PlanViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
 
-export function Copilot({ open, context, onClose, onViewAction, onAttention }: { open: boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
+export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention }: { open: boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [id, setId] = useState<string | null>(null);
@@ -71,12 +75,13 @@ export function Copilot({ open, context, onClose, onViewAction, onAttention }: {
     await publishPageContext(next); published.current = { viewId: next.viewId, revision: next.revision }; return next;
   };
   const viewActionRef = useRef(onViewAction); viewActionRef.current = onViewAction;
+  const openPanelRef = useRef(onOpenPanel); openPanelRef.current = onOpenPanel;
   const handledActions = useRef(new Set<string>());
   useEffect(() => {
-    if (!id || publishQueued.current) return;
+    if (!id || !viewReady || publishQueued.current) return;
     publishQueued.current = true;
     void enqueue(async () => { publishQueued.current = false; await publishLatest(); }).catch((reason) => setError(reason instanceof CopilotApiError ? reason.code : "unavailable"));
-  }, [id, context]);
+  }, [id, context, viewReady]);
   // A restarted service knows no views: forget what was published and send the current page again.
   const republish = () => { published.current = null; void enqueue(publishLatest).catch(() => undefined); };
   const refreshCatalog = async () => {
@@ -105,7 +110,7 @@ export function Copilot({ open, context, onClose, onViewAction, onAttention }: {
   }, [open]);
   useEffect(() => { if (id) writeStoredConversation(id); }, [id]);
   useEffect(() => {
-    if (!id) return;
+    if (!id || !viewReady) return;
     let alive = true, syncing = true, generation = 0, transportConnected = true;
     let buffer: WsCopilotEvent[] = [];
     let cursor: ConversationSnapshot["eventCursor"] | null = null;
@@ -137,13 +142,15 @@ export function Copilot({ open, context, onClose, onViewAction, onAttention }: {
         if (handledActions.current.has(message.actionId)) return;
         handledActions.current.add(message.actionId);
         void (async () => {
-          const outcome = viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
+          // The provider settings dialog is this panel's own: opening it only shows the dialog, the user types any secret there.
+          if (message.action.action === "open_copilot_settings") { openPanelRef.current?.(); setSettings(true); }
+          const outcome: Pick<CopilotViewActionResult, "ok" | "detail"> = message.action.action === "open_copilot_settings" ? { ok: true } : viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
           try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}) }); } catch { /* the service times the action out as not displayed */ }
         })();
       },
       ready: () => { transportConnected = true; republish(); void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
     return () => { alive = false; generation++; refreshCurrent.current = null; unsubscribe(); };
-  }, [id, context.viewId]);
+  }, [id, context.viewId, viewReady]);
   useEffect(() => {
     if (!snapshot || !open) return;
     if (following.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;

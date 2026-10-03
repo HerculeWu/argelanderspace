@@ -2,6 +2,7 @@ import { z } from "zod";
 import { type CopilotOperation, CopilotOperationSchema, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
+import { WorkspaceSnapshotSchema, WorkspaceViewActionSchema } from "./workspace-ops.js";
 
 export const CopilotIdSchema = z.string().uuid();
 export const ConversationModelSchema = z
@@ -52,6 +53,8 @@ export const PageContextSchema = z
       .max(2),
     status: z.enum(["complete", "unavailable", "error"]),
     plan: PlanPageSchema.nullable(),
+    /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
+    workspace: WorkspaceSnapshotSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -223,7 +226,7 @@ export const WsCopilotViewActionSchema = z
     type: z.literal("copilot.view-action"),
     viewId: CopilotIdSchema,
     actionId: z.string().uuid(),
-    action: PlanViewActionSchema,
+    action: z.union([PlanViewActionSchema, WorkspaceViewActionSchema]),
   })
   .strict();
 export type WsCopilotViewAction = z.infer<typeof WsCopilotViewActionSchema>;
@@ -321,3 +324,6 @@ export const QueuedSteerSchema = z
   })
   .strict();
 export type QueuedSteer = z.infer<typeof QueuedSteerSchema>;
+
+/** Everything a bound browser view can be asked to do: Plan page navigation or Shell layout/appearance. */
+export type CopilotViewAction = WsCopilotViewAction["action"];

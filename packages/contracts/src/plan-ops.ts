@@ -136,6 +136,10 @@ export const PlanViewActionSchema = z.discriminatedUnion("action", [
     .strict(),
   z.object({ action: z.literal("open_task"), taskId: Id }).strict(),
   z.object({ action: z.literal("close_task") }).strict(),
+  /** The list view's "completed" group fold (`toggle-completed-tasks`), set explicitly rather than toggled. */
+  z.object({ action: z.literal("set_completed"), expanded: z.boolean() }).strict(),
+  /** The task drawer's linked-document button (`open-task-doc`): opens that Doc in the Reader. */
+  z.object({ action: z.literal("open_task_doc"), taskId: Id, docId: Id }).strict(),
 ]);
 
 export const PlanOperationSchema = z.union([
@@ -163,6 +167,8 @@ export const PLAN_OPERATION_ACTIONS = [
   "show",
   "open_task",
   "close_task",
+  "set_completed",
+  "open_task_doc",
 ] as const;
 
 export const CopilotOperationSchema = z
@@ -207,7 +213,15 @@ export const CopilotViewActionResultSchema = z
   .object({
     actionId: z.string().uuid(),
     ok: z.boolean(),
-    detail: z.enum(["not_found", "unavailable", "leave_blocked"]).optional(),
+    detail: z
+      .enum([
+        "not_found",
+        "unavailable",
+        "leave_blocked",
+        /** The control exists but is disabled right now (for example the pane limit). */
+        "disabled",
+      ])
+      .optional(),
   })
   .strict();
 export type CopilotViewActionResult = z.infer<typeof CopilotViewActionResultSchema>;

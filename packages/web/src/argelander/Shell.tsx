@@ -1,4 +1,4 @@
-import type { PageContext, PlanPage, PlanViewAction } from "@argelanderspace/contracts";
+import { APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, type PlanPage, type PlanViewAction, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -6,7 +6,10 @@ import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
-import { useTweaks } from "./theme";
+import { DEFAULT_LANGUAGE } from "../i18n";
+import { planResize, resizeDivider, shareOf } from "./layout";
+import { ACCENTS, useTweaks } from "./theme";
+import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
 import { applyDocDeletion, confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
@@ -41,7 +44,6 @@ interface Pane {
   size: number;
 }
 
-const MAX_PANES = 3;
 
 export function Shell() {
   const { t } = useTranslation();
@@ -50,8 +52,17 @@ export function Shell() {
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [copilotWaiting, setCopilotWaiting] = useState(false);
-  const viewId = useRef(crypto.randomUUID());
-  const revision = useRef(0);
+  // This tab's Copilot view: stable across a reload, and its revision keeps counting upwards (view-identity.ts).
+  const [identity] = useState(loadViewIdentity);
+  const [viewId, setViewId] = useState(identity.viewId);
+  const revision = useRef(identity.revision);
+  // The id is this tab's only once the lock answer is known: until then nothing subscribes or publishes under it.
+  const [viewClaimed, setViewClaimed] = useState(false);
+  useEffect(() => {
+    // A duplicated tab inherits its sibling's id; two tabs must never answer to one view.
+    setViewClaimed(false);
+    return claimViewId(viewId, { onHeld: () => setViewClaimed(true), onTaken: () => { revision.current = 0; setViewId(crypto.randomUUID()); } });
+  }, [viewId]);
   const [planPages, setPlanPages] = useState<Record<number, PlanPage | null>>({});
   const reportPlan = useCallback((paneId: number, page: PlanPage | null) => { setPlanPages((previous) => ({ ...previous, [paneId]: page })); }, []);
   const planControllers = useRef(new Map<number, PlanViewController>());
@@ -115,30 +126,41 @@ export function Shell() {
     };
   }, []);
 
+  // These return whether the change was made: the leave-draft protection can refuse it, and a Copilot
+  // request must then say so instead of claiming the page changed.
   const setActiveView = useCallback(
-    (view: string) => {
+    (view: string): boolean => {
       const currentPane = panes.find((pane) => pane.id === activeId);
-      if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return;
+      if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return false;
       setPanes((ps) => ps.map((p) => (p.id === activeId ? { ...p, view } : p)));
+      return true;
     },
     [activeId, panes]
   );
-  const setPaneView = (id: number, view: string) => {
+  const setPaneView = (id: number, view: string): boolean => {
     const currentPane = panes.find((pane) => pane.id === id);
-    if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return;
+    if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return false;
     setPanes((ps) => ps.map((p) => (p.id === id ? { ...p, view } : p)));
     setActiveId(id);
+    return true;
   };
 
   // Copilot-requested navigation: runs on the visible Plan page, or opens one first. Background edits
   // never come through here.
   const viewActionState = useRef({ panes, activeId, setPaneView });
   viewActionState.current = { panes, activeId, setPaneView };
-  const runPlanViewAction = useCallback(async (action: PlanViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" }> => {
+  const runPlanViewAction = useCallback(async (action: PlanViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" }> => {
     const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
     const state = viewActionState.current;
     const active = state.panes.find((pane) => pane.id === state.activeId) ?? state.panes[0];
+    // An action that only a mounted list can do must not first take the user to the Plan page and then fail.
+    if (action.action === "set_completed") {
+      const candidates = [active, ...state.panes].filter((pane) => pane.view === "plan");
+      if (!candidates.some((pane) => planControllers.current.get(pane.id)?.available(action))) return { ok: false, detail: "unavailable" };
+    }
     let pane = active.view === "plan" ? active : state.panes.find((candidate) => candidate.view === "plan");
+    if (action.action === "set_completed")
+      pane = [active, ...state.panes].find((candidate) => candidate.view === "plan" && planControllers.current.get(candidate.id)?.available(action)) ?? pane;
     if (!pane) {
       state.setPaneView(active.id, "plan");
       for (let attempt = 0; attempt < 40 && !planControllers.current.has(active.id); attempt++) await wait(50);
@@ -171,15 +193,16 @@ export function Shell() {
     []
   );
 
-  const closePane = (id: number) => {
+  const closePane = (id: number): boolean => {
     const currentPane = panes.find((pane) => pane.id === id);
-    if (currentPane?.view === "doc" && !confirmWorkspaceLeave()) return;
+    if (currentPane?.view === "doc" && !confirmWorkspaceLeave()) return false;
     setPanes((ps) => {
       if (ps.length <= 1) return ps;
       const filtered = ps.filter((p) => p.id !== id).map((p) => ({ ...p, size: 1 }));
       if (id === activeId) setActiveId(filtered[0].id);
       return filtered;
     });
+    return true;
   };
 
   const setCurrentDoc = useCallback((id: string) => {
@@ -191,11 +214,11 @@ export function Shell() {
   }, []);
 
   const openDoc = useCallback(
-    (docId?: string, anchor?: string | null) => {
+    (docId?: string, anchor?: string | null): boolean => {
       const nextDoc = docId ?? currentDocRef.current ?? papers[0] ?? null;
       if (nextDoc !== currentDocRef.current && !confirmWorkspaceLeave()) {
         if (currentDocRef.current) replaceDocUrl(currentDocRef.current);
-        return;
+        return false;
       }
       currentDocRef.current = nextDoc;
       setCurrentDocState(nextDoc);
@@ -208,6 +231,7 @@ export function Shell() {
         if (ps.some((p) => p.view === "doc")) return ps;
         return ps.map((p) => (p.id === activeId ? { ...p, view: "doc" } : p));
       });
+      return true;
     },
     [activeId, papers]
   );
@@ -257,6 +281,100 @@ export function Shell() {
     }
   }, []);
 
+  // ---- Copilot view actions (ticket 12) -------------------------------------------------------- //
+  // Everything below drives the same callbacks the controls use: the pane limit, the leave-draft
+  // protection and the divider rule are the UI's own. Reads go through `shell.current` because an action
+  // outlives the render that started it. Nothing here calls focus(): another tab or window is never raised.
+  const shell = useRef({ panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen });
+  shell.current = { panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen };
+  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" };
+  const settle = async (check: () => boolean): Promise<boolean> => {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (check()) return true;
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+    }
+    return false;
+  };
+  const runWorkspaceAction = useCallback(async (action: WorkspaceViewAction): Promise<Report> => {
+    const s = () => shell.current;
+    const missing = (id: number) => !s().panes.some((pane) => pane.id === id);
+    switch (action.action) {
+      case "switch_view": {
+        const id = action.paneId ?? s().activeId;
+        if (missing(id)) return { ok: false, detail: "not_found" };
+        const applied = action.paneId === undefined ? s().setActiveView(action.view) : s().setPaneView(id, action.view);
+        if (!applied) return { ok: false, detail: "leave_blocked" };
+        return (await settle(() => s().panes.find((pane) => pane.id === id)?.view === action.view && (action.paneId === undefined || s().activeId === id))) ? { ok: true } : { ok: false, detail: "unavailable" };
+      }
+      case "split_pane": {
+        const id = action.paneId ?? s().activeId;
+        if (missing(id)) return { ok: false, detail: "not_found" };
+        const before = s().panes.length;
+        if (before >= MAX_PANES) return { ok: false, detail: "disabled" };
+        s().splitFrom(id);
+        return (await settle(() => s().panes.length === before + 1)) ? { ok: true } : { ok: false, detail: "unavailable" };
+      }
+      case "close_pane": {
+        if (missing(action.paneId)) return { ok: false, detail: "not_found" };
+        if (s().panes.length <= 1) return { ok: false, detail: "disabled" };
+        if (!s().closePane(action.paneId)) return { ok: false, detail: "leave_blocked" };
+        return (await settle(() => missing(action.paneId))) ? { ok: true } : { ok: false, detail: "unavailable" };
+      }
+      case "select_pane": {
+        if (missing(action.paneId)) return { ok: false, detail: "not_found" };
+        setActiveId(action.paneId);
+        return (await settle(() => s().activeId === action.paneId)) ? { ok: true } : { ok: false, detail: "unavailable" };
+      }
+      case "resize_pane": {
+        const index = s().panes.findIndex((pane) => pane.id === action.paneId);
+        if (index < 0) return { ok: false, detail: "not_found" };
+        const sizes = planResize(s().panes.map((pane) => pane.size), index, action.share);
+        if (!sizes) return { ok: false, detail: "disabled" };
+        setPanes((ps) => (ps.length === sizes.length ? ps.map((pane, i) => ({ ...pane, size: sizes[i] ?? pane.size })) : ps));
+        return { ok: true };
+      }
+      case "set_appearance": {
+        const { theme, accent, density, language } = action;
+        if (theme) s().setTweak("theme", theme);
+        if (accent) s().setTweak("accent", accent);
+        if (density) s().setTweak("density", density);
+        if (language) s().setTweak("language", language);
+        const done = () => (!theme || s().tweaks.theme === theme) && (!accent || s().tweaks.accent === accent) && (!density || s().tweaks.density === density) && (!language || s().tweaks.language === language);
+        return (await settle(done)) ? { ok: true } : { ok: false, detail: "unavailable" };
+      }
+      case "open_copilot":
+      case "close_copilot": {
+        // The toolbar's own toggle: only the panel is shown or collapsed, the conversation keeps running.
+        const want = action.action === "open_copilot";
+        setCopilotOpen(want);
+        return (await settle(() => s().copilotOpen === want)) ? { ok: true } : { ok: false, detail: "unavailable" };
+      }
+      case "open_doc":
+        return openLibraryDoc(action.docId);
+      default:
+        // open_copilot_settings belongs to the Copilot panel itself, which handles it before the Shell is asked.
+        return { ok: false, detail: "unavailable" };
+    }
+  }, []);
+  // Opening a Doc (the library's open button, the task drawer's linked-document button): the same openDoc callback.
+  const openLibraryDoc = useCallback(async (docId: string): Promise<Report> => {
+    if (!shell.current.papers.includes(docId)) {
+      let fresh: string[];
+      try { fresh = await fetchPapers(); } catch { return { ok: false, detail: "unavailable" }; }
+      if (!fresh.includes(docId)) return { ok: false, detail: "not_found" };
+      shell.current.setPapers(fresh);
+    }
+    if (shell.current.openDoc(docId) === false) return { ok: false, detail: "leave_blocked" };
+    return (await settle(() => currentDocRef.current === docId && shell.current.panes.some((pane) => pane.view === "doc"))) ? { ok: true } : { ok: false, detail: "unavailable" };
+  }, []);
+  const openTaskDoc = openLibraryDoc;
+  const runViewAction = useCallback(async (action: CopilotViewAction): Promise<Report> => {
+    const workspaceAction = WorkspaceViewActionSchema.safeParse(action);
+    if (workspaceAction.success) return runWorkspaceAction(workspaceAction.data);
+    if (action.action === "open_task_doc") return openTaskDoc(action.docId);
+    return runPlanViewAction(action as PlanViewAction);
+  }, [runPlanViewAction, runWorkspaceAction, openTaskDoc]);
+
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {
     e.preventDefault();
@@ -264,16 +382,10 @@ export function Shell() {
     const startX = e.clientX;
     const start = panes.map((p) => p.size);
     const total = start.reduce((a, b) => a + b, 0);
-    const min = total * 0.16;
     const move = (ev: MouseEvent) => {
       const d = ((ev.clientX - startX) / rect.width) * total;
-      setPanes((ps) =>
-        ps.map((p, idx) => {
-          if (idx === i) return { ...p, size: Math.max(min, start[i] + d) };
-          if (idx === i + 1) return { ...p, size: Math.max(min, start[i + 1] - d) };
-          return p;
-        })
-      );
+      const sizes = resizeDivider(start, i, d);
+      setPanes((ps) => ps.map((p, idx) => ({ ...p, size: sizes[idx] ?? p.size })));
     };
     const up = () => {
       document.removeEventListener("mousemove", move);
@@ -310,11 +422,24 @@ export function Shell() {
   );
 
   const pageContext = useMemo<PageContext>(() => ({
-    version: 1, viewId: viewId.current, revision: ++revision.current, paneId: activePane.id, view: activePane.view,
+    version: 1, viewId, revision: ++revision.current, paneId: activePane.id, view: activePane.view,
     otherPanes: panes.filter((pane) => pane.id !== activePane.id).map((pane) => ({ paneId: pane.id, view: pane.view })),
     status: activePane.view === "plan" ? planPages[activePane.id] ? "complete" : "error" : "unavailable",
     plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
-  }), [activePane.id, activePane.view, panes, planPages]);
+    workspace: {
+      maxPanes: MAX_PANES, activePaneId: activePane.id,
+      panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
+      // Stored tweaks can be damaged; the published snapshot only ever carries values the service accepts.
+      appearance: {
+        theme: (APPEARANCE_THEMES as readonly string[]).includes(tweaks.theme) ? tweaks.theme : "dark",
+        accent: tweaks.accent in ACCENTS ? tweaks.accent : "azure",
+        density: (APPEARANCE_DENSITIES as readonly string[]).includes(tweaks.density) ? tweaks.density : "regular",
+        language: (APPEARANCE_LANGUAGES as readonly string[]).includes(tweaks.language ?? "") ? tweaks.language ?? DEFAULT_LANGUAGE : DEFAULT_LANGUAGE,
+      },
+      copilotOpen,
+    },
+  }), [viewId, activePane.id, activePane.view, panes, planPages, tweaks, copilotOpen]);
+  useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
     switch (p.view) {
@@ -431,7 +556,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runPlanViewAction} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette

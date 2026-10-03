@@ -73,10 +73,23 @@ const GROUPS = [
   { key: "done", labelKey: "plan.status.doneGroup" },
 ] as const;
 
-export function ListMode({ plan, today, cb, onCompletedExpanded }: { plan: Plan; today: string; cb: ListCallbacks; onCompletedExpanded?: (expanded: boolean) => void }) {
+/** What the Plan page can ask this list to do for Copilot: the same fold the group's own button toggles. */
+export interface ListModeController {
+  /** False when there is no completed group to fold (the button does not exist). */
+  setCompletedExpanded: (expanded: boolean) => boolean;
+}
+
+export function ListMode({ plan, today, cb, onCompletedExpanded, onController }: { plan: Plan; today: string; cb: ListCallbacks; onCompletedExpanded?: (expanded: boolean) => void; onController?: (controller: ListModeController | null) => void }) {
   const { t } = useTranslation();
   const [doneOpen, setDoneOpen] = useState(false);
   useEffect(() => { onCompletedExpanded?.(doneOpen); }, [doneOpen, onCompletedExpanded]);
+  const hasCompleted = plan.tasks.some((task) => task.status === "done");
+  const hasCompletedRef = useRef(hasCompleted); hasCompletedRef.current = hasCompleted;
+  useEffect(() => {
+    if (!onController) return;
+    onController({ setCompletedExpanded: (expanded) => { if (!hasCompletedRef.current) return false; setDoneOpen(expanded); return true; } });
+    return () => onController(null);
+  }, [onController]);
   const [dragStatus, setDragStatus] = useState<TaskStatus | null>(null);
   const [noDrop, setNoDrop] = useState(false);
   const [nudge, setNudge] = useState(false);

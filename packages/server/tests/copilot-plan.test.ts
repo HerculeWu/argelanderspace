@@ -238,7 +238,10 @@ test("the plan tool is the only active tool and an agent edit goes to the named 
   ];
   const { snapshot } = await run(context);
   expect(snapshot.conversation.run?.status).toBe("completed");
-  expect(getCurrentTools(seen[0]?.messages ?? []).map((tool) => tool.name)).toEqual(["plan"]);
+  expect(getCurrentTools(seen[0]?.messages ?? []).map((tool) => tool.name)).toEqual([
+    "plan",
+    "workspace",
+  ]);
   // The model was told about the page change but its edits kept the original target.
   expect(JSON.stringify(seen[2]?.messages)).toMatch(
     /taskContextId.*"selectedPlanId\\":\\"p_0000000b/
@@ -372,7 +375,10 @@ test("unknown actions, extra fields, cross-plan moves and delete write nothing a
   expect(statuses).toHaveLength(4);
   expect(statuses[3]).toBe("move_task:rejected");
   expect(statuses.slice(0, 3).every((s) => /:(error|unsupported)$/.test(s))).toBe(true);
-  expect(getCurrentTools(seen[0]?.messages ?? []).map((tool) => tool.name)).toEqual(["plan"]);
+  expect(getCurrentTools(seen[0]?.messages ?? []).map((tool) => tool.name)).toEqual([
+    "plan",
+    "workspace",
+  ]);
 });
 
 test("view actions go only to the run's bound view and report what the browser really did", async () => {

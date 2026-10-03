@@ -119,6 +119,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   hub = new WsHub(server as import("node:http").Server, {
     heartbeatMs: opts.heartbeatMs,
     snapshot: () => runner.list(),
+    onViewSubscribed: (viewId) => copilot.viewConnected(viewId),
   });
   copilot.useViewDelivery((viewId, message) => hub.sendToView(viewId, message));
 

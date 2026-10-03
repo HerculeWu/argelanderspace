@@ -13,6 +13,7 @@ export * from "./plans.js";
 export * from "./providers.js";
 export * from "./reader-coherence.js";
 export * from "./tex-ir.js";
+export * from "./workspace-ops.js";
 export * from "./writer.js";
 export * from "./writer-bib.js";
 export * from "./writer-numbering.js";

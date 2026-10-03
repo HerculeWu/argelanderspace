@@ -13,6 +13,7 @@ import {
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 import {
   applyPlanDelete,
   applyPlanOperation,
@@ -80,7 +81,7 @@ export interface PlanToolContext {
   /** A confirmed task delete is undoable for a short window; the host keeps what undo needs. */
   taskDeleted?: (info: { toolCallId: string; planId: string; removed: RemovedTask }) => string;
   /** Resolves only after the bound browser view reports the outcome. */
-  viewAction: (action: PlanViewAction) => Promise<"displayed" | "not_displayed" | "not_found">;
+  viewAction: (action: PlanViewAction) => Promise<ViewActionOutcome>;
   /** False once the host stopped admitting operations (shutdown). */
   admitting: () => boolean;
 }
@@ -130,12 +131,22 @@ const parameters = Type.Object(
     focused: Type.Optional(
       Type.Boolean({ description: "Pin or unpin the task in the focus view." })
     ),
-    docId: opt(Type.String({ description: "Library Doc id for add_task_link/remove_task_link." })),
+    docId: opt(
+      Type.String({
+        description: "Library Doc id for add_task_link/remove_task_link/open_task_doc.",
+      })
+    ),
     layout: Type.Optional(lit(["list", "board"])),
     overTaskId: Type.Optional(
       Type.Union([Type.String(), Type.Null()], { description: "move_task: drop before this task." })
     ),
     view: Type.Optional(lit(["list", "board", "focus", "timeline"])),
+    expanded: Type.Optional(
+      Type.Boolean({
+        description:
+          "set_completed: show (true) or fold (false) the completed group of the list view.",
+      })
+    ),
   },
   { additionalProperties: false }
 );
@@ -144,7 +155,7 @@ const description = [
   "Read and edit the user's research Plans and Tasks, the same operations the Plan page offers.",
   "read returns the current plans and rev. Writes need expectedRev; on conflict read again and form a new edit, never resend the stale one.",
   "list move_task only reorders inside one status group; board move_task may change status. Tasks cannot move between plans.",
-  "show/open_task/close_task change what the user sees; plain edits never navigate.",
+  "show/open_task/close_task/set_completed/open_task_doc change what the user sees; plain edits never navigate. set_completed folds or unfolds the completed group and only works while the list view is shown; open_task_doc opens a Doc linked to a task in the Reader.",
   "delete_task deletes the task at once, exactly like the Plan page; the user keeps a 6-second undo, and a restored task is noted in the conversation. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
   "Only report results whose status is ok or noop as done.",
   "After a conflict, read again and use a new operationId (or none) for the new write; an operationId is bound to its first request.",
@@ -204,12 +215,24 @@ export function createPlanTool(context: PlanToolContext) {
               ok: false,
               status: "not_found",
             });
-          const shown = await context.viewAction(view.data);
-          const mapped = shown === "displayed" ? "ok" : shown;
-          return done(record(toolCallId, action, { status: mapped }), {
-            ok: mapped === "ok",
-            status: mapped,
-          });
+          // Only a Doc the task really links can be opened from it; the browser still checks the library.
+          if (
+            view.data.action === "open_task_doc" &&
+            !readPlans(context.plans.statusDir).plans.some((p) =>
+              p.tasks.some(
+                (task) =>
+                  task.id === (view.data as { taskId: string }).taskId &&
+                  task.links.some((link) => link.doc_id === (view.data as { docId: string }).docId)
+              )
+            )
+          )
+            return done(record(toolCallId, action, { status: "not_found" }), {
+              ok: false,
+              status: "not_found",
+              detail: "that task does not link this Doc",
+            });
+          const shown = viewOutcomeResult(await context.viewAction(view.data));
+          return done(record(toolCallId, action, { status: shown.status }), shown.payload);
         }
         const deletion = PlanDeleteOperationSchema.safeParse(rest);
         const write = deletion.success ? null : PlanWriteOperationSchema.safeParse(rest);

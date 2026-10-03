@@ -142,3 +142,21 @@ test("a view action runs once, reports what the page really did, and a failed re
   expect(reports[0]).toEqual({ url: `/api/copilot/views/${context.viewId}/action-results`, body: { actionId: id1, ok: true } });
   expect(reports[1]!.body).toEqual({ actionId: id2, ok: false, detail: "not_found" });
 });
+
+test("an explicit request to open the Copilot settings shows the panel and the provider dialog, reports it, and sends no secret anywhere", async () => {
+  const handler = vi.fn(async () => ({ ok: true as const }));
+  const openPanel = vi.fn();
+  render(<Copilot open={false} context={context} onClose={vi.fn()} onViewAction={handler} onOpenPanel={openPanel} />);
+  await waitFor(() => expect(callbacks.subscription?.viewAction).toBeTypeOf("function"));
+  expect(document.querySelector('[data-ui="provider-settings"]')).toBeNull();
+  const actionId = "00000000-0000-4000-8000-0000000000b1";
+  act(() => callbacks.subscription!.viewAction!({ type: "copilot.view-action", viewId: context.viewId, actionId, action: { action: "open_copilot_settings" } }));
+  await waitFor(() => expect(document.querySelector('[data-ui="provider-settings"]')).not.toBeNull());
+  expect(openPanel).toHaveBeenCalledTimes(1);
+  expect(handler).not.toHaveBeenCalled(); // the panel's own dialog: the Shell is not asked
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/action-results"))).toBe(true));
+  const report = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/action-results"))!;
+  expect(JSON.parse((report[1] as RequestInit).body as string)).toEqual({ actionId, ok: true });
+  // Opening the dialog sends nothing but that report: no key, no login, no provider mutation.
+  expect(fetchMock.mock.calls.filter(([url, options]) => String(url).includes("/providers") && ((options as RequestInit | undefined)?.method ?? "GET") !== "GET")).toEqual([]);
+});
