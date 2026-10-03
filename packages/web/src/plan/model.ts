@@ -213,7 +213,7 @@ export function timelineFrac(iso: string, scale: TimelineScale): number {
 
 // The reorder rules live in contracts so the UI drag handlers and the Copilot `plan` tool apply
 // exactly the same list/board semantics.
-export { moveToColumn, reorderWithinStatus } from "@argelanderspace/contracts";
+export { moveToColumn, reinsertTask, reorderWithinStatus } from "@argelanderspace/contracts";
 
 /** Shared selection for rendering and complete Copilot page capture. */
 export function resolvePlanSelection(plans: Plan[], selectedId: string | null, openTaskId: string | null) {

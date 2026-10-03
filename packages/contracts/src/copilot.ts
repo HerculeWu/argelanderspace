@@ -85,7 +85,16 @@ export const CopilotRunSchema = z
     id: CopilotIdSchema,
     // `stopping` is Stop accepted but the SDK not settled; `stopped` is the user's own Stop;
     // `interrupted` is a service exit/restart. Neither is an error.
-    status: z.enum(["running", "stopping", "completed", "failed", "stopped", "interrupted"]),
+    // `waiting-for-user` is a run held at a human confirmation; Stop and steering still work there.
+    status: z.enum([
+      "running",
+      "waiting-for-user",
+      "stopping",
+      "completed",
+      "failed",
+      "stopped",
+      "interrupted",
+    ]),
     error: z.string().nullable(),
   })
   .strict();
@@ -127,10 +136,73 @@ export interface CopilotConversationList {
   conversations: Conversation[];
   unreadable: { id: string; code: string }[];
 }
+/**
+ * A delete the model asked for and the user has not yet confirmed. Bound to this object and this
+ * PlansFile.rev: any change to either makes it expire. The id is never shown to the model.
+ */
+export const CopilotConfirmationSchema = z
+  .object({
+    id: CopilotIdSchema,
+    runId: CopilotIdSchema,
+    toolCallId: z.string().min(1),
+    // Only a whole Plan waits for the user; a Task delete is immediate with the six-second undo.
+    action: z.literal("delete_plan"),
+    object: z
+      .object({ kind: z.literal("plan"), id: z.string().min(1), planId: z.string().min(1) })
+      .strict(),
+    /** Verbatim plan name or task title. */
+    label: z.string(),
+    /** The plan's name (the task's parent for a task delete). */
+    planName: z.string(),
+    /** What the delete takes with it. For a task: 1 task, 1 unfinished unless done. */
+    impact: z
+      .object({ tasks: z.number().int().nonnegative(), openTasks: z.number().int().nonnegative() })
+      .strict(),
+    baseRev: z.number().int().nonnegative(),
+    /** Hash of the plan's stored content when it was shown; any later change expires the card. */
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotConfirmation = z.infer<typeof CopilotConfirmationSchema>;
+
+/** The real UI's decision. It repeats what the card showed so a click can only bind to that version. */
+export const CopilotConfirmationDecisionSchema = z
+  .object({
+    decision: z.enum(["approve", "decline"]),
+    viewId: CopilotIdSchema,
+    action: z.literal("delete_plan"),
+    objectId: z.string().min(1),
+    baseRev: z.number().int().nonnegative(),
+  })
+  .strict();
+export type CopilotConfirmationDecision = z.infer<typeof CopilotConfirmationDecisionSchema>;
+
+/** Undo of a confirmed task delete, from a real view. */
+export const CopilotUndoRequestSchema = z.object({ viewId: CopilotIdSchema }).strict();
+
+/** Durable record of a confirmation: requested before the card exists, resolved before anything runs. */
+export const OPERATION_CONFIRMATION_TYPE = "argelander.confirmation.v1";
+export const OperationConfirmationSchema = z
+  .object({
+    version: z.literal(1),
+    phase: z.enum(["requested", "resolved"]),
+    confirmationId: CopilotIdSchema,
+    runId: CopilotIdSchema,
+    toolCallId: z.string().min(1),
+    action: z.literal("delete_plan"),
+    planId: z.string().min(1),
+    baseRev: z.number().int().nonnegative(),
+    outcome: z.enum(["approved", "declined", "expired"]).optional(),
+  })
+  .strict();
+export type OperationConfirmation = z.infer<typeof OperationConfirmationSchema>;
+
 export interface ConversationSnapshot {
   version: 1;
   conversation: Conversation;
   messages: CopilotMessage[];
+  /** Confirmations the user can act on now (this service instance only; a restart revives none). */
+  confirmations: CopilotConfirmation[];
   stream: string;
   eventCursor: EventCursor;
 }

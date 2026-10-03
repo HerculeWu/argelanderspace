@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Conversation, ConversationModel, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewActionResult, PageContext, PlanViewAction, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
-import { CopilotApiError, createConversation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation } from "../api/copilot";
+import type { Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewActionResult, PageContext, PlanViewAction, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
+import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
 import { subscribeCopilot } from "../api/ws";
@@ -16,14 +16,16 @@ const OPERATION_ACTION_KEYS = {
   create_task: "copilot.operations.actions.create_task", update_task: "copilot.operations.actions.update_task", add_task_link: "copilot.operations.actions.add_task_link",
   remove_task_link: "copilot.operations.actions.remove_task_link", move_task: "copilot.operations.actions.move_task", show: "copilot.operations.actions.show",
   open_task: "copilot.operations.actions.open_task", close_task: "copilot.operations.actions.close_task",
+  delete_plan: "copilot.operations.actions.delete_plan", delete_task: "copilot.operations.actions.delete_task",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
   rejected: "copilot.operations.status.rejected", invalid: "copilot.operations.status.invalid", not_displayed: "copilot.operations.status.not_displayed",
   unsupported: "copilot.operations.status.unsupported", unknown: "copilot.operations.status.unknown", error: "copilot.operations.status.error",
+  confirmation_required: "copilot.operations.status.confirmation_required", declined: "copilot.operations.status.declined", expired: "copilot.operations.status.expired",
 } as const;
 const THINKING_KEYS = { off: "copilot.thinkingLevels.off", minimal: "copilot.thinkingLevels.minimal", low: "copilot.thinkingLevels.low", medium: "copilot.thinkingLevels.medium", high: "copilot.thinkingLevels.high", xhigh: "copilot.thinkingLevels.xhigh", max: "copilot.thinkingLevels.max" } as const;
-const RUN_STATUS_KEYS = { running: "copilot.status.running", stopping: "copilot.status.stopping", completed: "copilot.status.completed", failed: "copilot.status.failed", stopped: "copilot.status.stopped", interrupted: "copilot.status.interrupted" } as const;
+const RUN_STATUS_KEYS = { "waiting-for-user": "copilot.status.waiting-for-user", running: "copilot.status.running", stopping: "copilot.status.stopping", completed: "copilot.status.completed", failed: "copilot.status.failed", stopped: "copilot.status.stopped", interrupted: "copilot.status.interrupted" } as const;
 const STORED_CONVERSATION = "argelander.copilot.conversation";
 // A per-viewer convenience only: the saved conversations are authoritative, this just remembers which one this browser was showing.
 const readStoredConversation = () => { try { return window.localStorage.getItem(STORED_CONVERSATION); } catch { return null; } };
@@ -32,7 +34,7 @@ const isApplied = (operation: CopilotOperation) => operation.status === "ok" || 
 
 export type CopilotViewActionHandler = (action: PlanViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
 
-export function Copilot({ open, context, onClose, onViewAction }: { open: boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler }) {
+export function Copilot({ open, context, onClose, onViewAction, onAttention }: { open: boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [id, setId] = useState<string | null>(null);
@@ -90,7 +92,8 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
     catch { setError("storage"); return []; }
   };
   useEffect(() => {
-    if (!open || loaded.current) return;
+    // A closed panel still loads the conversation this browser remembers, so a waiting confirmation can be signalled.
+    if (loaded.current || (!open && !readStoredConversation())) return;
     loaded.current = true;
     void refreshCatalog();
     void refreshList().then((items) => {
@@ -153,7 +156,9 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
   const thinkingValid = !!model && (choice?.thinking === null ? model.defaultThinkingValid : !!choice && model.thinkingLevels.includes(choice.thinking));
   const levels = model?.capabilitiesKnown ? model.thinkingLevels : [];
   const runStatus = snapshot?.conversation.run?.status;
-  const running = runStatus === "running";
+  const waiting = runStatus === "waiting-for-user";
+  // A run held at a confirmation is still the user's live run: Stop and steering work the same.
+  const running = runStatus === "running" || waiting;
   const stopping = runStatus === "stopping";
   const resumable = runStatus === "stopped" || runStatus === "interrupted" || runStatus === "failed";
   const thinkingLabel = (level: ThinkingLevel) => t(THINKING_KEYS[level]);
@@ -162,6 +167,31 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
   const workObjects = lastTask?.context?.objects ?? [];
   const workObject = workObjects.length === 1 ? workObjects[0] : undefined;
   const elsewhere = running && workObjects.length > 0 && context.view === "plan" && !!context.plan?.selectedPlanId && !workObjects.some((object) => object.id === context.plan?.selectedPlanId);
+  // The six-second undo for a confirmed task delete: shown only while the service still holds it.
+  const [undone, setUndone] = useState<Set<string>>(() => new Set());
+  const [, setClock] = useState(0);
+  const undoable = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now());
+  const undoUntil = undoable?.undo ? Date.parse(undoable.undo.until) : 0;
+  useEffect(() => {
+    if (!undoUntil) return;
+    const timer = window.setTimeout(() => setClock((value) => value + 1), Math.max(0, undoUntil - Date.now()) + 50);
+    return () => window.clearTimeout(timer);
+  }, [undoUntil]);
+  // What the user's undo did stays visible (restored, or why not) until dismissed; the service also tells the model.
+  const [undoResult, setUndoResult] = useState<{ kind: "restored" | "failed"; label: string } | null>(null);
+  // A refused confirmation click is explained here, not only on the card: the card disappears when the list is reread.
+  const [decisionProblem, setDecisionProblem] = useState<"expired" | "failed" | null>(null);
+  const waitingForConfirmation = !!snapshot?.confirmations?.length;
+  const attentionRef = useRef(onAttention); attentionRef.current = onAttention;
+  useEffect(() => { attentionRef.current?.(waitingForConfirmation); return () => attentionRef.current?.(false); }, [waitingForConfirmation]);
+  useEffect(() => { setUndoResult(null); setDecisionProblem(null); }, [id]);
+  const undo = async () => {
+    if (!id || !undoable) return;
+    const target = undoable.id, label = undoable.label ?? "";
+    try { await undoOperation(id, target, context.viewId); setUndoResult({ kind: "restored", label }); }
+    catch (reason) { setUndoResult({ kind: "failed", label }); if (!(reason instanceof CopilotApiError && (reason.code === "stale" || reason.code === "not_found"))) setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
+    finally { setUndone((previous) => new Set(previous).add(target)); }
+  };
   const begin = () => { if (busyRef.current) return false; busyRef.current = true; setBusy(true); setError(null); return true; };
   const end = () => { busyRef.current = false; setBusy(false); };
   const newConversation = async () => {
@@ -230,7 +260,11 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
         {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.objects.map((object) => <p key={object.id}>{t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
-      {(running || stopping) && <div className="copilot-run-card" role="status" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" />{t(stopping ? "copilot.stopping" : "copilot.running")}{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}
+      {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
+      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{t(decisionProblem === "expired" ? "copilot.confirmation.expired" : "copilot.confirmation.failed")}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
+      {((running && !waiting) || stopping) && <div className="copilot-run-card" role="status" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" />{t(stopping ? "copilot.stopping" : "copilot.running")}{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}
+      {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}
+      {undoResult && <div className={undoResult.kind === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-undo-result" data-status={undoResult.kind} role={undoResult.kind === "failed" ? "alert" : "status"}><span>{t(undoResult.kind === "restored" ? "copilot.undo.restored" : "copilot.undo.failed", { title: undoResult.label })}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-result-dismiss" className="btn icon ghost" onClick={() => setUndoResult(null)} /></div>}
       {resumable && <div className={runStatus === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-run-result" role={runStatus === "failed" ? "alert" : "status"} data-status={runStatus}>
         <span data-ui={runStatus === "failed" ? "copilot-run-error" : runStatus === "interrupted" ? "copilot-interrupted" : "copilot-stopped"}>{runStatus === "failed" ? errorCopy(snapshot?.conversation.run?.error ?? null) : t(runStatus === "interrupted" ? "copilot.interrupted" : "copilot.stoppedNote")}</span>
         <Button data-ui="copilot-resume" disabled={busy || (!!id && !connected)} onClick={() => void resume()}>{t(runStatus === "failed" ? "common.retry" : "copilot.resume")}</Button>
@@ -260,9 +294,33 @@ export function Copilot({ open, context, onClose, onViewAction }: { open: boolea
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
-    {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
+    {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "waiting-for-user" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
     {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
+}
+
+/** The waiting card of prototype A: the plan, what it takes with it, and the user's own decision. */
+function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: "expired" | "failed" | null) => void }) {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const guard = useRef(false);
+  const decide = async (decision: "approve" | "decline") => {
+    if (guard.current) return;
+    guard.current = true; setBusy(true); onProblem(null);
+    try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev }); }
+    catch (reason) { onProblem(reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : "failed"); }
+    finally { guard.current = false; setBusy(false); onSettled(); }
+  };
+  return <section className="copilot-confirmation" data-ui="copilot-confirmation" data-action={confirmation.action} aria-label={t("copilot.confirmation.needed")}>
+    <div className="copilot-confirmation-warn" role="status"><Icon name="triangle-alert" />{t("copilot.confirmation.needed")}</div>
+    <h3>{t("copilot.confirmation.deletePlan", { name: confirmation.label })}</h3>
+    <p>{t("copilot.confirmation.planScope", { count: confirmation.impact.tasks, open: confirmation.impact.openTasks })}</p>
+    <div className="copilot-confirmation-meta">{t("copilot.confirmation.meta", { id: confirmation.object.id, rev: confirmation.baseRev })}</div>
+    <div className="copilot-confirmation-actions">
+      <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
+      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{t("plan.deletePlan.confirm")}</Button>
+    </div>
+  </section>;
 }
 
 function OperationRecord({ operations }: { operations: CopilotOperation[] }) {

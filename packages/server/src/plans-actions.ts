@@ -1,11 +1,15 @@
+import { createHash } from "node:crypto";
 import {
   type CopilotOperation,
   moveToColumn,
   type Plan,
+  type PlanDeleteOperation,
+  PlanDeleteOperationSchema,
   type PlansFile,
   PlansFileSchema,
   type PlanWriteOperation,
   PlanWriteOperationSchema,
+  reinsertTask,
   reorderWithinStatus,
   type Task,
 } from "@argelanderspace/contracts";
@@ -245,6 +249,196 @@ export async function applyPlanOperation(
     }
   }
   return visible as PlanOpOutcome;
+}
+
+// ---- Delete and undo (executed only behind a real confirmation) ------------------- //
+
+/** What an executed task delete took out, so the six-second undo can put it back. */
+export interface RemovedTask {
+  index: number;
+  raw: Raw;
+}
+export type DeleteOutcome = PlanOpOutcome & { removed?: RemovedTask };
+export type DeleteRequest = {
+  action: PlanDeleteOperation["action"];
+  planId: string;
+  taskId?: string;
+};
+
+/**
+ * Impact of a delete as the confirmation card states it, read from the CURRENT document. Null when the
+ * object does not exist. `rev` is the version the confirmation will be bound to.
+ */
+export function describeDeleteTarget(
+  statusDir: string,
+  request: DeleteRequest
+): {
+  rev: number;
+  kind: "plan" | "task";
+  label: string;
+  planName: string;
+  impact: { tasks: number; openTasks: number };
+  /** Hash of the target's stored content (unknown keys included), so an edit that leaves the rev alone is noticed. */
+  objectDigest: string;
+} | null {
+  const { raw, file } = loadPlansRaw(statusDir);
+  const plan = file.plans.find((p) => p.id === request.planId);
+  if (!plan) return null;
+  const rawPlans = raw.plans as Raw[];
+  const rawPlan = rawPlans[file.plans.indexOf(plan)] as Raw;
+  if (request.action === "delete_plan")
+    return {
+      objectDigest: contentDigest(rawPlan),
+      rev: file.rev,
+      kind: "plan",
+      label: plan.name,
+      planName: plan.name,
+      impact: {
+        tasks: plan.tasks.length,
+        openTasks: plan.tasks.filter((t) => t.status !== "done").length,
+      },
+    };
+  const task = plan.tasks.find((t) => t.id === request.taskId);
+  if (!task) return null;
+  return {
+    objectDigest: contentDigest((rawPlan.tasks as Raw[])[plan.tasks.indexOf(task)]),
+    rev: file.rev,
+    kind: "task",
+    label: task.title,
+    planName: plan.name,
+    impact: { tasks: 1, openTasks: task.status === "done" ? 0 : 1 },
+  };
+}
+
+/** Canonical-JSON hash of a stored object. */
+export function contentDigest(value: unknown): string {
+  const sorted = (input: unknown): unknown =>
+    Array.isArray(input)
+      ? input.map(sorted)
+      : input && typeof input === "object"
+        ? Object.fromEntries(
+            Object.entries(input as Record<string, unknown>)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, v]) => [key, sorted(v)])
+          )
+        : input;
+  return createHash("sha256")
+    .update(JSON.stringify(sorted(value)))
+    .digest("hex");
+}
+
+/**
+ * The delete itself. The caller has a human's confirmation bound to `baseRev`; the check that the
+ * document still is that version, and the removal, are one critical section on the Plan lock. Like the
+ * UI's own delete it removes the object and nothing else; unknown keys elsewhere are kept.
+ */
+export async function applyPlanDelete(
+  deps: PlanOpDeps,
+  input: DeleteRequest & { baseRev: number; objectDigest?: string }
+): Promise<DeleteOutcome> {
+  const op = PlanDeleteOperationSchema.parse({
+    action: input.action,
+    expectedRev: input.baseRev,
+    planId: input.planId,
+    ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+  });
+  const outcome = await deps.planLock.run((): DeleteOutcome & { wrote?: boolean } => {
+    const { raw, file } = loadPlansRaw(deps.statusDir);
+    if (op.expectedRev !== file.rev) return fail("conflict", file.rev, "plans changed; read again");
+    const planIndex = file.plans.findIndex((p) => p.id === op.planId);
+    if (planIndex < 0) return fail("not_found", file.rev, "plan");
+    // A confirmed delete is also bound to the content the user was shown, not only to the rev.
+    if (input.objectDigest !== undefined) {
+      const current = describeDeleteTarget(deps.statusDir, input);
+      if (!current || current.objectDigest !== input.objectDigest)
+        return fail("conflict", file.rev, "the object changed");
+    }
+    const next = structuredClone(raw);
+    const rawPlans = next.plans as Raw[];
+    let result: { object: NonNullable<CopilotOperation["object"]>; label: string };
+    let removed: RemovedTask | undefined;
+    if (op.action === "delete_plan") {
+      result = {
+        object: { kind: "plan", id: op.planId },
+        label: (file.plans[planIndex] as Plan).name,
+      };
+      rawPlans.splice(planIndex, 1);
+    } else {
+      const plan = file.plans[planIndex] as Plan;
+      const taskIndex = plan.tasks.findIndex((t) => t.id === op.taskId);
+      if (taskIndex < 0) return fail("not_found", file.rev, "task");
+      const rawTasks = (rawPlans[planIndex] as Raw).tasks as Raw[];
+      removed = { index: taskIndex, raw: structuredClone(rawTasks[taskIndex] as Raw) };
+      rawTasks.splice(taskIndex, 1);
+      result = {
+        object: { kind: "task", id: op.taskId, planId: op.planId },
+        label: (plan.tasks[taskIndex] as Task).title,
+      };
+    }
+    if (!PlansFileSchema.safeParse({ ...next, rev: file.rev + 1 }).success)
+      return fail("invalid", file.rev, "result is not a valid plan document");
+    return {
+      ok: true,
+      status: "ok",
+      rev: savePlansRaw(deps.statusDir, next).rev,
+      ...result,
+      ...(removed ? { removed } : {}),
+      wrote: true,
+    };
+  });
+  const { wrote, ...visible } = outcome;
+  if (visible.ok && wrote) notifyChanged(deps, visible);
+  return visible;
+}
+
+/**
+ * Undo of a task delete: reinsert the removed raw object at its index, unless the task is already back.
+ * Anything the user changed since stays as it is. The service enforces the six-second window.
+ */
+export async function restoreDeletedTask(
+  deps: PlanOpDeps,
+  input: { planId: string; index: number; raw: Raw }
+): Promise<PlanOpOutcome> {
+  const outcome = await deps.planLock.run((): PlanOpOutcome & { wrote?: boolean } => {
+    const { raw, file } = loadPlansRaw(deps.statusDir);
+    const planIndex = file.plans.findIndex((p) => p.id === input.planId);
+    if (planIndex < 0) return fail("not_found", file.rev, "plan");
+    const next = structuredClone(raw);
+    const rawPlan = (next.plans as Raw[])[planIndex] as Raw;
+    const tasks = Array.isArray(rawPlan.tasks) ? (rawPlan.tasks as Raw[]) : [];
+    const restored = reinsertTask(
+      tasks as { id: string }[],
+      input.index,
+      input.raw as { id: string }
+    );
+    const object = { kind: "task" as const, id: String(input.raw.id), planId: input.planId };
+    const label = String(input.raw.title);
+    if (restored === tasks) return { ok: true, status: "noop", rev: file.rev, object, label };
+    rawPlan.tasks = restored;
+    if (!PlansFileSchema.safeParse({ ...next, rev: file.rev + 1 }).success)
+      return fail("invalid", file.rev, "result is not a valid plan document");
+    return {
+      ok: true,
+      status: "ok",
+      rev: savePlansRaw(deps.statusDir, next).rev,
+      object,
+      label,
+      wrote: true,
+    };
+  });
+  const { wrote, ...visible } = outcome as PlanOpOutcome & { wrote?: boolean };
+  if (visible.ok && wrote) notifyChanged(deps, visible);
+  return visible as PlanOpOutcome;
+}
+
+function notifyChanged(deps: PlanOpDeps, visible: PlanOpOutcome): void {
+  if (!visible.ok) return;
+  try {
+    deps.onChanged();
+  } catch {
+    // The write is committed; only the live notification failed. Say so instead of hiding the write.
+    visible.warnings = [...(visible.warnings ?? []), "change_notification_failed"];
+  }
 }
 
 /**

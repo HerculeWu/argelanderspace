@@ -1,8 +1,10 @@
 import {
   ConversationModelSchema,
+  CopilotConfirmationDecisionSchema,
   CopilotIdSchema,
   CopilotMessageRequestSchema,
   CopilotResumeRequestSchema,
+  CopilotUndoRequestSchema,
   CopilotViewActionResultSchema,
   PageContextSchema,
 } from "@argelanderspace/contracts";
@@ -104,6 +106,20 @@ export function mountCopilotRoutes(
     const input = CopilotResumeRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!input.success) return c.json({ code: "invalid_input" }, 400);
     return c.json(await copilot.resume(c.req.param("id"), input.data), 202);
+  });
+  // Only the real UI answers; the body repeats the object and version the card showed (a stale click is refused).
+  app.post("/confirmations/:id", async (c) => {
+    const input = CopilotConfirmationDecisionSchema.safeParse(await c.req.json().catch(() => null));
+    if (!input.success || !CopilotIdSchema.safeParse(c.req.param("id")).success)
+      return c.json({ code: "invalid_input" }, 400);
+    return c.json(await copilot.decide(c.req.param("id"), input.data));
+  });
+  app.post("/conversations/:id/operations/:toolCallId/undo", async (c) => {
+    const input = CopilotUndoRequestSchema.safeParse(await c.req.json().catch(() => null));
+    if (!input.success) return c.json({ code: "invalid_input" }, 400);
+    return c.json(
+      await copilot.undo(c.req.param("id"), c.req.param("toolCallId"), input.data.viewId)
+    );
   });
   host.route("/api/copilot", app);
 }

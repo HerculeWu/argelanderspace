@@ -4,6 +4,8 @@ import {
   type CopilotViewActionResult,
   PLAN_ICONS,
   PLAN_OPERATION_ACTIONS,
+  type PlanDeleteOperation,
+  PlanDeleteOperationSchema,
   PlanReadOperationSchema,
   type PlanViewAction,
   PlanViewActionSchema,
@@ -11,7 +13,14 @@ import {
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { applyPlanOperation, type PlanOpDeps, readPlans } from "./plans-actions.js";
+import {
+  applyPlanDelete,
+  applyPlanOperation,
+  describeDeleteTarget,
+  type PlanOpDeps,
+  type RemovedTask,
+  readPlans,
+} from "./plans-actions.js";
 
 export const PLAN_TOOL_NAME = "plan";
 
@@ -33,6 +42,31 @@ export interface OperationJournalPort {
   done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
 }
 
+/** How a requested delete was settled by the human (or by the host when the request stopped being valid). */
+export type ConfirmationOutcome =
+  | { outcome: "approved" }
+  | { outcome: "declined" }
+  | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" };
+/**
+ * The only way a delete can proceed. `request` makes the application show a card to the real user and
+ * resolves with the user's decision. The tool never sees an id or a way to answer: it cannot approve.
+ * It throws when the request cannot be saved, and then nothing was shown or written.
+ */
+export interface ConfirmationPort {
+  request(entry: {
+    toolCallId: string;
+    /** Only a whole Plan waits for the user; a Task delete is immediate like on the Plan page. */
+    action: "delete_plan";
+    planId: string;
+    label: string;
+    planName: string;
+    impact: { tasks: number; openTasks: number };
+    baseRev: number;
+    /** Content digest of the target at request time; a change that leaves the rev alone still expires the card. */
+    objectDigest: string;
+  }): Promise<ConfirmationOutcome>;
+}
+
 export interface PlanToolContext {
   plans: PlanOpDeps;
   /** Present in the real host; business writes are journaled so a repeated operationId is answered, not rerun. */
@@ -41,6 +75,10 @@ export interface PlanToolContext {
   track?: <T>(work: Promise<T>) => Promise<T>;
   /** The run this call belongs to; scopes default operation ids. */
   runId?: string;
+  /** Present in the real host: deletes wait here for the user. Without it a delete request is refused. */
+  confirm?: ConfirmationPort;
+  /** A confirmed task delete is undoable for a short window; the host keeps what undo needs. */
+  taskDeleted?: (info: { toolCallId: string; planId: string; removed: RemovedTask }) => string;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (action: PlanViewAction) => Promise<"displayed" | "not_displayed" | "not_found">;
   /** False once the host stopped admitting operations (shutdown). */
@@ -107,7 +145,8 @@ const description = [
   "read returns the current plans and rev. Writes need expectedRev; on conflict read again and form a new edit, never resend the stale one.",
   "list move_task only reorders inside one status group; board move_task may change status. Tasks cannot move between plans.",
   "show/open_task/close_task change what the user sees; plain edits never navigate.",
-  "There is no delete action. Only report results whose status is ok or noop as done.",
+  "delete_task deletes the task at once, exactly like the Plan page; the user keeps a 6-second undo, and a restored task is noted in the conversation. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
+  "Only report results whose status is ok or noop as done.",
   "After a conflict, read again and use a new operationId (or none) for the new write; an operationId is bound to its first request.",
   "A write whose status is unknown may or may not have been applied: read the plans to find out, never repeat it blindly.",
 ].join(" ");
@@ -172,8 +211,9 @@ export function createPlanTool(context: PlanToolContext) {
             status: mapped,
           });
         }
-        const write = PlanWriteOperationSchema.safeParse(rest);
-        if (!write.success)
+        const deletion = PlanDeleteOperationSchema.safeParse(rest);
+        const write = deletion.success ? null : PlanWriteOperationSchema.safeParse(rest);
+        if (write && !write.success)
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
             status: "unsupported",
@@ -207,6 +247,13 @@ export function createPlanTool(context: PlanToolContext) {
             detail:
               "this operation started earlier and its outcome was not recorded; read the plans to find out, do not repeat it blindly",
           });
+        if (deletion.success)
+          return await requestDelete(context, toolCallId, deletion.data, {
+            operationId,
+            hash,
+            done,
+          });
+        if (!write?.success) throw new Error("unreachable");
         const target = write.data as { planId?: string; taskId?: string; expectedRev?: number };
         try {
           journal?.begin({
@@ -262,6 +309,170 @@ export function createPlanTool(context: PlanToolContext) {
         });
       }
     },
+  });
+}
+
+type PlanDeleteRequest = PlanDeleteOperation;
+type Done = (
+  operation: CopilotOperation,
+  payload: object
+) => { content: { type: "text"; text: string }[]; details: CopilotOperation };
+
+/**
+ * A delete the model asked for. Before anything is written: the target must exist at the version the
+ * model read, then the user is asked and the call waits WITHOUT holding any business lock. Only an
+ * approval that is still valid when it arrives (checked again inside the lock) lets the shared delete
+ * handler run; every other outcome wrote nothing.
+ */
+async function requestDelete(
+  context: PlanToolContext,
+  toolCallId: string,
+  request: PlanDeleteRequest,
+  ids: { operationId: string; hash: string; done: Done }
+) {
+  const { operationId, hash, done } = ids;
+  const { action } = request;
+  const target = {
+    planId: request.planId,
+    taskId: "taskId" in request ? request.taskId : undefined,
+  };
+  /** The journaled, tracked, lock-checked delete. Used directly for a task and after approval for a plan. */
+  const execute = (bound: {
+    baseRev: number;
+    objectDigest?: string;
+    label?: string;
+    confirmed: boolean;
+  }) => {
+    const work = (async () => {
+      try {
+        context.journal?.begin({
+          operationId,
+          toolCallId,
+          action,
+          hash,
+          object: target,
+          baseRev: bound.baseRev,
+        });
+      } catch {
+        return done(record(toolCallId, action, { status: "error" }), {
+          ok: false,
+          status: "error",
+          detail: "the conversation could not be saved; nothing was deleted",
+        });
+      }
+      const outcome = await applyPlanDelete(context.plans, {
+        action,
+        ...target,
+        baseRev: bound.baseRev,
+        ...(bound.objectDigest ? { objectDigest: bound.objectDigest } : {}),
+      });
+      const { removed, ...payload } = outcome as typeof outcome & { removed?: RemovedTask };
+      const undo =
+        outcome.ok && removed && context.taskDeleted
+          ? { until: context.taskDeleted({ toolCallId, planId: request.planId, removed }) }
+          : undefined;
+      // A confirmed delete whose target changed under the user's click is an expired confirmation;
+      // a direct task delete behaves like every other write (conflict: read again).
+      const expired = bound.confirmed && !outcome.ok && outcome.status === "conflict";
+      const result = outcome.ok
+        ? done(
+            record(toolCallId, action, {
+              status: outcome.status,
+              rev: outcome.rev,
+              object: outcome.object,
+              label: outcome.label,
+              ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+              ...(undo ? { undo } : {}),
+            }),
+            payload
+          )
+        : done(
+            record(toolCallId, action, {
+              status: expired ? "expired" : outcome.status,
+              rev: outcome.currentRev,
+              ...(bound.label ? { label: bound.label } : {}),
+            }),
+            expired
+              ? {
+                  ok: false,
+                  status: "expired",
+                  detail:
+                    "plans changed before the delete ran; nothing was deleted. Read again and ask only if it is still wanted",
+                }
+              : outcome.status === "conflict"
+                ? {
+                    ...payload,
+                    detail: `${(payload as { detail?: string }).detail}; read again, then delete with a new operationId`,
+                  }
+                : payload
+          );
+      context.journal?.done(operationId, payload as Record<string, unknown>, result.details);
+      return result;
+    })();
+    return context.track ? context.track(work) : work;
+  };
+  // Deleting one Task is exactly the Plan page's own action: immediate, with the six-second undo.
+  if (action === "delete_task") return execute({ baseRev: request.expectedRev, confirmed: false });
+  if (!context.confirm)
+    return done(record(toolCallId, action, { status: "unsupported" }), {
+      ok: false,
+      status: "unsupported",
+      detail: "deleting a plan needs the user's confirmation and none is available here",
+    });
+  const described = describeDeleteTarget(context.plans.statusDir, { action, ...target });
+  if (!described)
+    return done(record(toolCallId, action, { status: "not_found" }), {
+      ok: false,
+      status: "not_found",
+      rev: readPlans(context.plans.statusDir).rev,
+    });
+  if (described.rev !== request.expectedRev)
+    return done(record(toolCallId, action, { status: "conflict", rev: described.rev }), {
+      ok: false,
+      status: "conflict",
+      currentRev: described.rev,
+      detail: "plans changed; read again, then request the delete with a new operationId",
+    });
+  const object = { kind: "plan", id: request.planId } as NonNullable<CopilotOperation["object"]>;
+  let decision: ConfirmationOutcome;
+  try {
+    decision = await context.confirm.request({
+      toolCallId,
+      action: "delete_plan",
+      planId: request.planId,
+      label: described.label,
+      planName: described.planName,
+      impact: described.impact,
+      baseRev: described.rev,
+      objectDigest: described.objectDigest,
+    });
+  } catch {
+    return done(record(toolCallId, action, { status: "error" }), {
+      ok: false,
+      status: "error",
+      detail: "the confirmation could not be saved; nothing was deleted",
+    });
+  }
+  if (decision.outcome === "declined")
+    return done(
+      record(toolCallId, action, { status: "declined", object, label: described.label }),
+      { ok: false, status: "declined", detail: "the user declined; nothing was deleted" }
+    );
+  if (decision.outcome === "expired")
+    return done(record(toolCallId, action, { status: "expired", object, label: described.label }), {
+      ok: false,
+      status: "expired",
+      detail:
+        decision.reason === "stale"
+          ? "plans changed before the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
+          : "the request ended before the user confirmed; nothing was deleted",
+    });
+  // Approved by the user. From here the delete is a submitted write: Stop does not interrupt it.
+  return execute({
+    baseRev: described.rev,
+    objectDigest: described.objectDigest,
+    label: described.label,
+    confirmed: true,
   });
 }
 

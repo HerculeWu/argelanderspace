@@ -138,8 +138,10 @@ export function createServer(opts: ServerOptions): RunningServer {
     intervalMs: opts.watchIntervalMs,
     onLibraryChange: () =>
       hub.broadcast({ type: "library.changed", cause: "external", at: new Date().toISOString() }),
-    onPlansChange: () =>
-      hub.broadcast({ type: "plan.changed", cause: "external", at: new Date().toISOString() }),
+    onPlansChange: () => {
+      hub.broadcast({ type: "plan.changed", cause: "external", at: new Date().toISOString() });
+      copilot.revalidateConfirmations();
+    },
     onAnnotationsChange: (docIds) => {
       const at = new Date().toISOString();
       for (const docId of docIds) {

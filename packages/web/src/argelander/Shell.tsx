@@ -49,6 +49,7 @@ export function Shell() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotWaiting, setCopilotWaiting] = useState(false);
   const viewId = useRef(crypto.randomUUID());
   const revision = useRef(0);
   const [planPages, setPlanPages] = useState<Record<number, PlanPage | null>>({});
@@ -378,7 +379,10 @@ export function Shell() {
               aria-expanded={tweaksOpen}
               onClick={() => setTweaksOpen((o) => !o)}
             />
-            <ActionButton mode="icon" iconName="panel-right-open" unstyled className="btn icon ghost" iconSize="small" data-ui="copilot-toggle" label={t("copilot.title")} tooltip={t("copilot.title")} aria-expanded={copilotOpen} onClick={() => setCopilotOpen((open) => !open)} />
+            <span className="copilot-toggle-wrap">
+              <ActionButton mode="icon" iconName="panel-right-open" unstyled className="btn icon ghost" iconSize="small" data-ui="copilot-toggle" label={copilotWaiting && !copilotOpen ? t("copilot.waitingToggle") : t("copilot.title")} tooltip={copilotWaiting && !copilotOpen ? t("copilot.waitingToggle") : t("copilot.title")} aria-expanded={copilotOpen} onClick={() => setCopilotOpen((open) => !open)} />
+              {copilotWaiting && !copilotOpen && <span className="copilot-toggle-dot" data-ui="copilot-attention" aria-hidden="true" />}
+            </span>
             {tweaksOpen && (
               <TweaksPopover tweaks={tweaks} set={setTweak} onClose={() => setTweaksOpen(false)} />
             )}
@@ -427,7 +431,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runPlanViewAction} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runPlanViewAction} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette

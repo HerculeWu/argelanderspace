@@ -1,4 +1,4 @@
-import type { CopilotConversationList, CopilotResumeRequest, CopilotViewActionResult, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
+import type { CopilotConfirmationDecision, CopilotConversationList, CopilotResumeRequest, CopilotViewActionResult, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
 export class CopilotApiError extends Error { constructor(readonly code: string) { super(code); } }
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(`/api/copilot${path}`, { method, cache: "no-store", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -15,3 +15,5 @@ export const sendCopilotMessage = (id: string, input: CopilotMessageRequest) => 
 export const postViewActionResult = (viewId: string, result: CopilotViewActionResult) => request<{ saved: true }>(`/views/${viewId}/action-results`, "POST", result);
 export const stopConversation = (id: string) => request<ConversationSnapshot>(`/conversations/${id}/stop`, "POST");
 export const resumeConversation = (id: string, input: CopilotResumeRequest) => request<{ messageId: string; runId: string }>(`/conversations/${id}/resume`, "POST", input);
+export const decideConfirmation = (id: string, decision: CopilotConfirmationDecision) => request<{ status: "approved" | "declined" }>(`/confirmations/${id}`, "POST", decision);
+export const undoOperation = (conversationId: string, toolCallId: string, viewId: string) => request<{ status: "ok" | "noop"; rev: number }>(`/conversations/${conversationId}/operations/${encodeURIComponent(toolCallId)}/undo`, "POST", { viewId });

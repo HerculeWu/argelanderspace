@@ -1115,6 +1115,7 @@
     }
   },
   "copilot": {
+    "waitingToggle": "Copilot · waiting for your confirmation",
     "title": "Copilot",
     "conversations": "Conversations",
     "new": "New conversation",
@@ -1168,7 +1169,9 @@
         "move_task": "Reorder task",
         "show": "Show view",
         "open_task": "Open task",
-        "close_task": "Close task"
+        "close_task": "Close task",
+        "delete_plan": "Delete plan",
+        "delete_task": "Delete task"
       },
       "status": {
         "ok": "Applied",
@@ -1180,8 +1183,23 @@
         "not_displayed": "Not shown",
         "unsupported": "Unsupported",
         "unknown": "Outcome unknown",
-        "error": "Failed"
+        "error": "Failed",
+        "confirmation_required": "Waiting for you",
+        "declined": "Declined",
+        "expired": "Expired"
       }
+    },
+    "undo": {
+      "restored": "Restored “{{title}}”",
+      "failed": "“{{title}}” could not be restored: the undo window had closed or the task can no longer be put back."
+    },
+    "confirmation": {
+      "needed": "Your confirmation is needed",
+      "deletePlan": "Delete the plan “{{name}}”",
+      "planScope": "The plan and its {{count}} tasks ({{open}} unfinished) will be permanently deleted. This cannot be undone.",
+      "meta": "{{id}} · plans v{{rev}}",
+      "expired": "The plans changed before your decision. Nothing was deleted.",
+      "failed": "Your decision could not be saved. Nothing was deleted; try again."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1193,6 +1211,7 @@
       "max": "Max"
     },
     "status": {
+      "waiting-for-user": "Waiting for you",
       "running": "Working",
       "stopping": "Stopping",
       "completed": "Done",

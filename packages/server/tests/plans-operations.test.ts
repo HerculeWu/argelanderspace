@@ -17,7 +17,14 @@ import { beforeEach, describe, expect, test } from "vitest";
 import { createApp } from "../src/app.js";
 import { JobRunner } from "../src/jobs.js";
 import { AsyncLock } from "../src/lock.js";
-import { applyPlanOperation, type PlanOpDeps, type PlanOpOutcome } from "../src/plans-actions.js";
+import {
+  applyPlanDelete,
+  applyPlanOperation,
+  describeDeleteTarget,
+  type PlanOpDeps,
+  type PlanOpOutcome,
+  restoreDeletedTask,
+} from "../src/plans-actions.js";
 import { makeDataDir, stubPipelines, stubSources } from "./helpers.js";
 
 const task = (id: string, status: string, extra: object = {}) => ({
@@ -66,9 +73,9 @@ let deps: PlanOpDeps;
 const disk = () => readFileSync(plansPath(statusDir), "utf8");
 const parsed = () => JSON.parse(disk());
 const run = (op: PlanWriteOperation) => applyPlanOperation(deps, op);
-const ok = (outcome: PlanOpOutcome) => {
+const ok = <T extends PlanOpOutcome>(outcome: T) => {
   if (!outcome.ok) throw new Error(`expected success, got ${outcome.status}`);
-  return outcome;
+  return outcome as Extract<T, { ok: true }>;
 };
 
 beforeEach(() => {
@@ -637,5 +644,204 @@ describe("the UI whole-document PUT and the operation produce the same stored pl
     expect(agent.json.rev).toBe(ui.json.rev);
     expect(ui.events).toContain("plan.changed");
     expect(agent.notified).toBe(1);
+  });
+});
+
+describe("the shared delete handler (executed only after a real confirmation)", () => {
+  test("delete_task removes exactly that task, keeps everything else and unknown keys, and returns the undo handle", async () => {
+    const before = parsed();
+    const outcome = ok(
+      await applyPlanDelete(deps, {
+        action: "delete_task",
+        planId: "p_aaaaaaaa",
+        taskId: "t_00000002",
+        baseRev: 4,
+      })
+    );
+    expect(outcome).toMatchObject({ status: "ok", rev: 5, label: "Task 00000002" });
+    expect(outcome.removed).toMatchObject({ index: 1, raw: { id: "t_00000002", status: "doing" } });
+    const after = parsed();
+    expect(after.rev).toBe(5);
+    expect(after.x_top).toEqual({ keep: "top" });
+    expect(after.plans[0].x_plan).toEqual([1, 2]);
+    expect(after.plans[0].tasks.map((t: { id: string }) => t.id)).toEqual([
+      "t_00000001",
+      "t_00000003",
+      "t_00000004",
+    ]);
+    expect(after.plans[0].tasks[0]).toEqual(before.plans[0].tasks[0]);
+    expect(after.plans[1]).toEqual(before.plans[1]);
+    expect(changed).toBe(1);
+  });
+
+  test("delete_plan removes the plan with its tasks and keeps the other plan byte-for-byte", async () => {
+    const before = parsed();
+    ok(await applyPlanDelete(deps, { action: "delete_plan", planId: "p_aaaaaaaa", baseRev: 4 }));
+    const after = parsed();
+    expect(after.plans).toEqual([before.plans[1]]);
+    expect(after.rev).toBe(5);
+    expect(after.x_top).toEqual({ keep: "top" });
+  });
+
+  test("a changed rev, a missing object or an unknown action writes nothing", async () => {
+    const bytes = disk();
+    expect(
+      await applyPlanDelete(deps, { action: "delete_plan", planId: "p_aaaaaaaa", baseRev: 3 })
+    ).toMatchObject({ ok: false, status: "conflict", currentRev: 4 });
+    expect(
+      await applyPlanDelete(deps, { action: "delete_plan", planId: "p_cccccccc", baseRev: 4 })
+    ).toMatchObject({ ok: false, status: "not_found" });
+    expect(
+      await applyPlanDelete(deps, {
+        action: "delete_task",
+        planId: "p_aaaaaaaa",
+        taskId: "t_99999999",
+        baseRev: 4,
+      })
+    ).toMatchObject({ ok: false, status: "not_found" });
+    await expect(
+      applyPlanDelete(deps, { action: "update_task", planId: "p_aaaaaaaa", baseRev: 4 } as never)
+    ).rejects.toThrow();
+    expect(disk()).toBe(bytes);
+    expect(changed).toBe(0);
+  });
+
+  test("the confirmation is not an applyPlanOperation action: the write path cannot delete", async () => {
+    await expect(
+      applyPlanOperation(deps, {
+        action: "delete_plan",
+        expectedRev: 4,
+        planId: "p_aaaaaaaa",
+      } as never)
+    ).rejects.toThrow();
+  });
+
+  test("describeDeleteTarget reports the impact the confirmation card states", () => {
+    const described = describeDeleteTarget(statusDir, {
+      action: "delete_plan",
+      planId: "p_aaaaaaaa",
+    });
+    expect(described?.objectDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect({ ...described, objectDigest: undefined }).toEqual({
+      objectDigest: undefined,
+      rev: 4,
+      kind: "plan",
+      label: "Alpha",
+      planName: "Alpha",
+      impact: { tasks: 4, openTasks: 3 },
+    });
+    expect(
+      describeDeleteTarget(statusDir, {
+        action: "delete_task",
+        planId: "p_aaaaaaaa",
+        taskId: "t_00000004",
+      })
+    ).toEqual({
+      objectDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+      rev: 4,
+      kind: "task",
+      label: "Task 00000004",
+      planName: "Alpha",
+      impact: { tasks: 1, openTasks: 0 },
+    });
+    expect(describeDeleteTarget(statusDir, { action: "delete_plan", planId: "p_none" })).toBeNull();
+  });
+
+  test("a delete bound to a content digest is refused when the stored object changed without a rev bump", async () => {
+    const digest = describeDeleteTarget(statusDir, {
+      action: "delete_plan",
+      planId: "p_aaaaaaaa",
+    })?.objectDigest;
+    const edited = parsed();
+    edited.plans[0].x_plan = "hand edit"; // unknown key, rev untouched
+    writeFileSync(plansPath(statusDir), JSON.stringify(edited, null, 2));
+    const bytes = disk();
+    expect(
+      await applyPlanDelete(deps, {
+        action: "delete_plan",
+        planId: "p_aaaaaaaa",
+        baseRev: 4,
+        objectDigest: digest,
+      })
+    ).toMatchObject({ ok: false, status: "conflict" });
+    expect(disk()).toBe(bytes);
+    expect(changed).toBe(0);
+  });
+
+  test("undo puts the task back at its index with its unknown keys, once, and leaves later edits alone", async () => {
+    const before = parsed();
+    const removed = ok(
+      await applyPlanDelete(deps, {
+        action: "delete_task",
+        planId: "p_aaaaaaaa",
+        taskId: "t_00000001",
+        baseRev: 4,
+      })
+    ).removed;
+    if (!removed) throw new Error("no undo handle");
+    // The user changes something else in between; undo must not roll that back.
+    ok(
+      await run({
+        action: "update_task",
+        expectedRev: 5,
+        planId: "p_aaaaaaaa",
+        taskId: "t_00000003",
+        status: "blocked",
+      })
+    );
+    const restored = ok(await restoreDeletedTask(deps, { planId: "p_aaaaaaaa", ...removed }));
+    expect(restored.status).toBe("ok");
+    const after = parsed();
+    expect(after.plans[0].tasks[0]).toEqual(before.plans[0].tasks[0]);
+    expect(after.plans[0].tasks[2].status).toBe("blocked");
+    expect(after.rev).toBe(7);
+    // A second undo finds the task back: no change, no rev bump.
+    expect(ok(await restoreDeletedTask(deps, { planId: "p_aaaaaaaa", ...removed })).status).toBe(
+      "noop"
+    );
+    expect(parsed().rev).toBe(7);
+    // The plan is gone: nothing to restore into.
+    ok(await applyPlanDelete(deps, { action: "delete_plan", planId: "p_aaaaaaaa", baseRev: 7 }));
+    expect(await restoreDeletedTask(deps, { planId: "p_aaaaaaaa", ...removed })).toMatchObject({
+      ok: false,
+      status: "not_found",
+    });
+  });
+
+  test("the UI whole-document PUT delete and the shared handler store the same plan document", async () => {
+    const dataDir = makeDataDir();
+    const uiDir = mkdtempSync(join(tmpdir(), "plan-del-ui-"));
+    writeFileSync(plansPath(uiDir), JSON.stringify(SEED, null, 2));
+    const app = createApp({
+      paths: libraryPaths(dataDir),
+      statusDir: uiDir,
+      makeSources: () => stubSources(),
+      pipelines: stubPipelines(),
+      runner: new JobRunner({ dir: join(dataDir, "jobs") }),
+    });
+    const current = (await (await app.request("/api/plans")).json()) as PlansFile;
+    const edited = {
+      ...current,
+      plans: current.plans.map((p) =>
+        p.id === "p_aaaaaaaa" ? { ...p, tasks: p.tasks.filter((t) => t.id !== "t_00000002") } : p
+      ),
+    };
+    const put = await app.request("/api/plans", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(edited),
+    });
+    expect(put.status).toBe(200);
+    ok(
+      await applyPlanDelete(deps, {
+        action: "delete_task",
+        planId: "p_aaaaaaaa",
+        taskId: "t_00000002",
+        baseRev: 4,
+      })
+    );
+    const strip = (doc: unknown) =>
+      JSON.parse(JSON.stringify(doc, (key, value) => (key.startsWith("x_") ? undefined : value)));
+    expect(strip(JSON.parse(readFileSync(plansPath(uiDir), "utf8")))).toEqual(strip(parsed()));
   });
 });

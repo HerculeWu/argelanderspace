@@ -1057,9 +1057,11 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("request body is not a valid plans document", 400);
       return c.json(e.body, e.status);
     }
-    const outcome = await replacePlans(deps.statusDir, planLock, parsed.data, () =>
-      planChanged("put")
-    );
+    const outcome = await replacePlans(deps.statusDir, planLock, parsed.data, () => {
+      planChanged("put");
+      // A delete the model asked for is bound to the plans version the user saw; this save may end it.
+      copilot.revalidateConfirmations();
+    });
     if ("conflictRev" in outcome) {
       return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
     }

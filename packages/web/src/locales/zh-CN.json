@@ -1115,6 +1115,7 @@
     }
   },
   "copilot": {
+    "waitingToggle": "Copilot · 等待你的确认",
     "title": "Copilot",
     "conversations": "会话",
     "new": "新建会话",
@@ -1168,7 +1169,9 @@
         "move_task": "调整任务顺序",
         "show": "切换视图",
         "open_task": "打开任务",
-        "close_task": "关闭任务"
+        "close_task": "关闭任务",
+        "delete_plan": "删除计划",
+        "delete_task": "删除任务"
       },
       "status": {
         "ok": "已应用",
@@ -1180,8 +1183,23 @@
         "not_displayed": "未显示",
         "unsupported": "不支持",
         "unknown": "结果未知",
-        "error": "失败"
+        "error": "失败",
+        "confirmation_required": "等待你确认",
+        "declined": "已拒绝",
+        "expired": "已失效"
       }
+    },
+    "undo": {
+      "restored": "已恢复「{{title}}」",
+      "failed": "无法恢复「{{title}}」：撤销窗口已过，或该任务已无法放回。"
+    },
+    "confirmation": {
+      "needed": "需要你的确认",
+      "deletePlan": "删除计划「{{name}}」",
+      "planScope": "该计划及其 {{count}} 项任务（{{open}} 项未完成）将被永久删除。此操作不可撤销。",
+      "meta": "{{id}} · 计划 v{{rev}}",
+      "expired": "你做决定前计划已变化，未删除任何内容。",
+      "failed": "未能保存你的决定，未删除任何内容；请重试。"
     },
     "thinkingLevels": {
       "off": "关闭",
@@ -1193,6 +1211,7 @@
       "max": "最高"
     },
     "status": {
+      "waiting-for-user": "等待你确认",
       "running": "处理中",
       "stopping": "正在停止",
       "completed": "已完成",

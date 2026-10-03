@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   moveToColumn,
   PLAN_ICONS,
+  PlanDeleteOperationSchema,
   PlanOperationSchema,
   PlanWriteOperationSchema,
+  reinsertTask,
   reorderWithinStatus,
   type Task,
 } from "../src/index.js";
@@ -37,7 +39,9 @@ describe("closed Plan operation union", () => {
     ])
       expect(PlanOperationSchema.safeParse(ok).success, JSON.stringify(ok)).toBe(true);
     for (const bad of [
-      { action: "delete_plan", expectedRev: 1, planId: "p_00000001" },
+      { action: "delete_plan", planId: "p_00000001" }, // no expectedRev
+      { action: "delete_task", expectedRev: 1, planId: "p_00000001" }, // no task
+      { action: "delete_plan", expectedRev: 1, planId: "p_00000001", confirmed: true },
       {
         action: "update_task",
         expectedRev: 1,
@@ -66,6 +70,43 @@ describe("closed Plan operation union", () => {
       expect(PlanOperationSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     expect(PLAN_ICONS).toHaveLength(8);
     expect(PlanWriteOperationSchema.safeParse({ action: "read" }).success).toBe(false);
+  });
+});
+
+describe("delete requests", () => {
+  it("are a request union of their own, never part of the write union, and carry no approval field", () => {
+    for (const ok of [
+      { action: "delete_plan", expectedRev: 1, planId: "p_00000001" },
+      { action: "delete_task", expectedRev: 1, planId: "p_00000001", taskId: "t_00000001" },
+    ]) {
+      expect(PlanDeleteOperationSchema.safeParse(ok).success).toBe(true);
+      expect(PlanOperationSchema.safeParse(ok).success).toBe(true);
+      expect(PlanWriteOperationSchema.safeParse(ok).success).toBe(false);
+    }
+    expect(
+      PlanDeleteOperationSchema.safeParse({
+        action: "delete_plan",
+        expectedRev: 1,
+        planId: "p_00000001",
+        approved: true,
+      }).success
+    ).toBe(false);
+  });
+  it("reinsertTask restores the original index (clamped) and is a no-op when the task is back", () => {
+    const base = [task("1", "todo"), task("3", "todo")];
+    const gone = task("2", "todo");
+    expect(reinsertTask(base, 1, gone).map((t) => t.id)).toEqual([
+      "t_00000001",
+      "t_00000002",
+      "t_00000003",
+    ]);
+    expect(reinsertTask(base, 99, gone).map((t) => t.id)).toEqual([
+      "t_00000001",
+      "t_00000003",
+      "t_00000002",
+    ]);
+    const back = reinsertTask(base, 0, base[1] as Task);
+    expect(back).toBe(base);
   });
 });
 

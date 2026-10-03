@@ -17,6 +17,7 @@ import {
   moveToColumn,
   nextStatus,
   planProgress,
+  reinsertTask,
   reorderWithinStatus,
   resolvePlanSelection,
   todayISO,
@@ -287,12 +288,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const undoDelete = useCallback(() => {
     if (!undo) return;
     window.clearTimeout(undoTimer.current);
-    patchTasks(undo.planId, (tasks) => {
-      if (tasks.some((t) => t.id === undo.task.id)) return tasks;
-      const out = [...tasks];
-      out.splice(Math.min(undo.index, out.length), 0, undo.task); // reinsert at the original index
-      return out;
-    });
+    patchTasks(undo.planId, (tasks) => reinsertTask(tasks, undo.index, undo.task)); // original index; same array when already back
     setUndo(null);
   }, [undo, patchTasks]);
 

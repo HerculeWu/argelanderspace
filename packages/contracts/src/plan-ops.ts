@@ -2,9 +2,10 @@
  * Closed Plan/Task operation union shared by the Copilot `plan` tool and the
  * pure task-order helpers the Plan UI also uses (copilot ticket 09).
  *
- * Only what the Plan UI can already do is listed here. There is no delete action
- * (ticket 11 owns deletion and its confirmation) and no cross-Plan move.
- * `expectedRev` is the existing PlansFile.rev, not a new library-wide revision.
+ * Only what the Plan UI can already do is listed here. Deleting is a separate request union
+ * (`PlanDeleteOperationSchema`): the tool can only ASK for a delete, the real UI confirms it
+ * (ticket 11). There is no cross-Plan move. `expectedRev` is the existing PlansFile.rev, not a
+ * new library-wide revision.
  */
 import { z } from "zod";
 import { type Task, type TaskStatus, TaskStatusSchema } from "./plans.js";
@@ -110,6 +111,16 @@ export const PlanWriteOperationSchema = z.discriminatedUnion("action", [
     .strict(),
 ]);
 
+/**
+ * A delete is requested, never executed, by the model: the application shows the confirmation to the
+ * user, and only the user's click (bound to this object and this rev) lets the shared handler run it.
+ * Deliberately NOT part of PlanWriteOperationSchema, so no write path can skip the confirmation.
+ */
+export const PlanDeleteOperationSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("delete_plan"), expectedRev: Rev, planId: Id }).strict(),
+  z.object({ action: z.literal("delete_task"), expectedRev: Rev, planId: Id, taskId: Id }).strict(),
+]);
+
 export const PlanReadOperationSchema = z
   .object({ action: z.literal("read"), planId: Id.optional() })
   .strict();
@@ -129,11 +140,13 @@ export const PlanViewActionSchema = z.discriminatedUnion("action", [
 
 export const PlanOperationSchema = z.union([
   PlanWriteOperationSchema,
+  PlanDeleteOperationSchema,
   PlanReadOperationSchema,
   PlanViewActionSchema,
 ]);
 
 export type PlanWriteOperation = z.infer<typeof PlanWriteOperationSchema>;
+export type PlanDeleteOperation = z.infer<typeof PlanDeleteOperationSchema>;
 export type PlanViewAction = z.infer<typeof PlanViewActionSchema>;
 export type PlanOperation = z.infer<typeof PlanOperationSchema>;
 export const PLAN_OPERATION_ACTIONS = [
@@ -145,6 +158,8 @@ export const PLAN_OPERATION_ACTIONS = [
   "add_task_link",
   "remove_task_link",
   "move_task",
+  "delete_plan",
+  "delete_task",
   "show",
   "open_task",
   "close_task",
@@ -167,6 +182,12 @@ export const CopilotOperationSchema = z
       "unsupported",
       "unknown",
       "error",
+      /** A delete waits for the user's confirmation; nothing was written yet. */
+      "confirmation_required",
+      /** The user declined. Nothing was written. */
+      "declined",
+      /** The confirmation is no longer valid (changed, stopped or restarted). Nothing was written. */
+      "expired",
     ]),
     rev: Rev.optional(),
     object: z
@@ -176,6 +197,8 @@ export const CopilotOperationSchema = z
     /** Verbatim user data (plan name / task title) for display. */
     label: z.string().optional(),
     warnings: z.array(z.string()).optional(),
+    /** A deleted task can be restored until this instant (the Plan page's six-second undo window). */
+    undo: z.object({ until: z.string() }).strict().optional(),
   })
   .strict();
 export type CopilotOperation = z.infer<typeof CopilotOperationSchema>;
@@ -188,6 +211,20 @@ export const CopilotViewActionResultSchema = z
   })
   .strict();
 export type CopilotViewActionResult = z.infer<typeof CopilotViewActionResultSchema>;
+
+/** The Plan page's undo window after deleting a task. */
+export const TASK_UNDO_WINDOW_MS = 6000;
+
+/**
+ * Undo of a task delete: put the task back at its original index (clamped), unless it is already there.
+ * Same array back when nothing changes. Shared by the Plan page and the service.
+ */
+export function reinsertTask<T extends { id: string }>(tasks: T[], index: number, task: T): T[] {
+  if (tasks.some((t) => t.id === task.id)) return tasks;
+  const out = [...tasks];
+  out.splice(Math.min(index, out.length), 0, task);
+  return out;
+}
 
 // --------------------------------------------------------------------------- //
 // Task-array reorder helpers (drag results; shared by the UI and the tool)
