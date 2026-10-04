@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   LIBRARY_OPERATION_ACTIONS,
+  LibraryImportWorksSchema,
   LibraryReadOperationSchema,
   LibrarySetMainDocSchema,
   LibraryViewActionSchema,
+  libraryImportRequest,
   libraryRefBibtex,
+  libraryRefIdentityMatches,
   libraryRefMatches,
   PageContextSchema,
   summarizeLibraryRef,
@@ -122,5 +125,64 @@ describe("Library page coverage", () => {
     expect(PageContextSchema.safeParse({ ...base, status: "error", library: null }).success).toBe(
       true
     );
+  });
+});
+
+describe("import_works operation", () => {
+  it("accepts exactly the three import-dialog inputs, as text, and maps to the dialog's request", () => {
+    const ok = (op: object) => LibraryImportWorksSchema.safeParse(op).success;
+    expect(ok({ action: "import_works", mode: "identifier", text: "arXiv:2603.03522" })).toBe(true);
+    expect(ok({ action: "import_works", mode: "bibcode", text: "2020A&A...641A...6P" })).toBe(true);
+    expect(ok({ action: "import_works", mode: "bib", text: "@article{k, title={T}}" })).toBe(true);
+    const op = LibraryImportWorksSchema.parse({
+      action: "import_works",
+      mode: "identifier",
+      text: " 10.1/x ",
+    });
+    expect(libraryImportRequest(op)).toEqual({ mode: "identifier", value: "10.1/x" });
+  });
+
+  it("rejects local paths, urls-to-fetch fields, unknown modes, empty and oversized input", () => {
+    const bad = (op: object) => LibraryImportWorksSchema.safeParse(op).success;
+    expect(bad({ action: "import_works", mode: "file", text: "x" })).toBe(false);
+    expect(bad({ action: "import_works", mode: "bib", path: "/etc/passwd" })).toBe(false);
+    expect(bad({ action: "import_works", mode: "bib", text: "x", path: "/tmp/a.bib" })).toBe(false);
+    expect(bad({ action: "import_works", mode: "identifier", text: "   " })).toBe(false);
+    expect(bad({ action: "import_works", mode: "identifier", text: "x".repeat(501) })).toBe(false);
+    expect(bad({ action: "import_works", mode: "bibcode", text: "x".repeat(65) })).toBe(false);
+    expect(bad({ action: "import_works", mode: "bib", text: "x".repeat(1_000_001) })).toBe(false);
+    expect(LIBRARY_OPERATION_ACTIONS).toContain("import_works");
+  });
+});
+
+describe("identity query for read", () => {
+  const stub = { id: "arxiv:2603.99999", arxiv_id: "2603.99999" };
+  const full = {
+    id: "doi:10.1093/mnras/staa9999",
+    doi: "10.1093/mnras/staa9999",
+    bibcode: "2020MNRAS.499.1234X",
+  };
+  it("finds a titleless stub by the identifier it was imported with, in every spelling the import accepts", () => {
+    for (const q of [
+      "arXiv:2603.99999",
+      "https://arxiv.org/abs/2603.99999",
+      "arxiv:2603.99999v2",
+      "2603.99999",
+      "arxiv:2603.99999",
+    ])
+      expect(libraryRefIdentityMatches(stub, q), q).toBe(true);
+    for (const q of [
+      "10.1093/mnras/staa9999",
+      "https://doi.org/10.1093/MNRAS/staa9999",
+      "doi:10.1093/mnras/staa9999",
+      "2020mnras.499.1234x",
+    ])
+      expect(libraryRefIdentityMatches(full, q), q).toBe(true);
+  });
+  it("is exact: other identifiers, fragments and the empty query do not match", () => {
+    expect(libraryRefIdentityMatches(stub, "2603.9999")).toBe(false);
+    expect(libraryRefIdentityMatches(stub, "arXiv:2603.99998")).toBe(false);
+    expect(libraryRefIdentityMatches(full, "10.1093")).toBe(false);
+    expect(libraryRefIdentityMatches(full, "")).toBe(false);
   });
 });

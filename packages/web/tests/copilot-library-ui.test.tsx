@@ -51,3 +51,26 @@ test("Library context: the dialog says what was sent and from where, objects sho
   expect(dialog.textContent).toContain("filter “galaxy”");
   expect(dialog.textContent).toContain("Open work: Open paper");
 });
+
+test("an import record names the action in both languages, shows the first work and says when entries failed", async () => {
+  const withImport: ConversationSnapshot = { ...snapshot, messages: [
+    { id: "a1", role: "assistant", text: "", operations: [
+      { id: "i1", tool: "library", action: "import_works", status: "ok", object: { kind: "work", id: "doi:10.1/new" }, label: "A fresh paper", warnings: ["import_partial"] },
+      { id: "i2", tool: "library", action: "import_works", status: "error" } ] },
+  ] };
+  fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withImport));
+  const view = render(<Copilot open context={context} onClose={vi.fn()} />);
+  await waitFor(() => expect(document.querySelector('[data-ui="copilot-operation"]')).not.toBeNull());
+  const items = () => [...document.querySelectorAll('[data-ui="copilot-operation-item"]')];
+  const text = () => items().map((el) => el.textContent ?? "");
+  expect(text()[0]).toContain("Import works");
+  expect(text()[0]).toContain("A fresh paper");
+  expect(text()[0]).toContain("Some entries were not imported");
+  expect(text()[1]).toContain("Import works");
+  expect(items()[1]?.getAttribute("data-status")).toBe("error");
+  expect(text()[1]).not.toContain("Some entries were not imported");
+  await i18n.changeLanguage("zh-CN");
+  view.rerender(<Copilot open context={context} onClose={vi.fn()} />);
+  await waitFor(() => expect(text()[0]).toContain("导入文献"));
+  expect(text()[0]).toContain("部分条目未导入");
+});

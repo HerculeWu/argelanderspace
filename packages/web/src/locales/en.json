@@ -1168,6 +1168,7 @@
       "countLibrary": "{{count}} library actions",
       "notApplied": "{{count}} not applied",
       "dueAfterPlan": "Due is after the plan deadline",
+      "importPartial": "Some entries were not imported",
       "actions": {
         "read": "Read plans",
         "create_plan": "Create plan",
@@ -1205,7 +1206,8 @@
         "set_sidebar": "Fold or open list",
         "set_temp_label": "Set temporary color dot",
         "set_graph_labels": "Show or hide graph labels",
-        "graph_control": "Zoom or arrange graph"
+        "graph_control": "Zoom or arrange graph",
+        "import_works": "Import works"
       },
       "status": {
         "ok": "Applied",

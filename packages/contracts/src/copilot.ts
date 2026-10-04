@@ -314,6 +314,8 @@ export const OperationJournalSchema = z
         planId: z.string().optional(),
         taskId: z.string().optional(),
         workId: z.string().optional(),
+        /** A readable one-line description of the request (for example an import's mode and text). */
+        summary: z.string().max(240).optional(),
       })
       .strict()
       .optional(),

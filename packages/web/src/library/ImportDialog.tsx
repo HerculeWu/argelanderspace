@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { libraryImportRequest } from "@argelanderspace/contracts";
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -20,9 +21,8 @@ export type ImportMode = "identifier" | "bibcode" | "bib";
 function requestFor(mode: ImportMode, input: string): ManualWorkRequest | null {
   const v = input.trim();
   if (!v) return null;
-  if (mode === "identifier") return { mode: "identifier", value: v };
-  if (mode === "bibcode") return { mode: "bibcode", bibcode: v };
-  return { mode: "bib", bib: input.trim() };
+  // the same request the Copilot import_works action builds from the same text
+  return libraryImportRequest({ mode, text: input });
 }
 
 function ResultRow({ r, index }: { r: ManualWorkResult; index: number }) {

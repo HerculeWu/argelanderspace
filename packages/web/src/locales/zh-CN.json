@@ -1168,6 +1168,7 @@
       "countLibrary": "{{count}} 项文库操作",
       "notApplied": "{{count}} 项未应用",
       "dueAfterPlan": "期限晚于计划截止日",
+      "importPartial": "部分条目未导入",
       "actions": {
         "read": "读取计划",
         "create_plan": "新建计划",
@@ -1205,7 +1206,8 @@
         "set_sidebar": "折叠或展开列表",
         "set_temp_label": "设置临时色点",
         "set_graph_labels": "显示或隐藏图标签",
-        "graph_control": "缩放或重排图"
+        "graph_control": "缩放或重排图",
+        "import_works": "导入文献"
       },
       "status": {
         "ok": "已应用",

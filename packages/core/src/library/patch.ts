@@ -14,7 +14,14 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { type LibraryPaths, LibraryStore, workFromJson } from "./store.js";
+import {
+  DEFAULT_PROJECT,
+  type LibraryPaths,
+  LibraryStore,
+  type Work,
+  workFromJson,
+  workToDict,
+} from "./store.js";
 
 export interface WorkPatchExpectation {
   /** The main Doc (`doc_ids[0]`) the caller read; `null` means "had no Doc". */
@@ -91,7 +98,67 @@ export function patchWorkNarrow(
   return { status: "ok" };
 }
 
-/** json and bib are staged first; only then are they renamed in place, json first (the source of truth). A failure while staging leaves both files untouched; a failure between the two renames can leave library.json updated and library.bib one change behind (the next save regenerates it). */
+export interface NarrowWorkChanges {
+  /**
+   * Works that did not exist in the file: always appended, never merged into a stored object (the caller has
+   * already guaranteed their id is not taken; an id collision is refused before it gets here).
+   */
+  created?: readonly Work[];
+  /**
+   * Stored Works the typed store changed (an identity match): the typed fields are written over the stored
+   * object with that same id; every key the typed model does not know stays.
+   */
+  updated?: readonly Work[];
+  /** Works the typed store folded into another (a bridging import); removed from the file. */
+  removeIds?: readonly string[];
+}
+
+/**
+ * Write typed Work changes into the file the way a patch does: re-read the raw `library.json`, append the
+ * created Works, update only the matched ones (the typed fields override, every key the typed model does not
+ * know stays on that Work),
+ * remove the folded ones, and keep the top level, `project` and all other Works byte-for-byte as values.
+ * Nothing is written when no stored value changes. Returns the ids of Works that were added or whose stored
+ * object changed. The caller holds the library write lock. `library.bib` is regenerated from the resulting file
+ * through the same typed projection `LibraryStore.save` uses, so it is the same text for the same Works.
+ */
+export function saveWorksNarrow(paths: LibraryPaths, changes: NarrowWorkChanges): Set<string> {
+  const data: Raw = existsSync(paths.libraryJson)
+    ? (JSON.parse(readFileSync(paths.libraryJson, "utf8")) as Raw)
+    : { version: 1, project: { ...DEFAULT_PROJECT }, works: [] };
+  const works: unknown[] = Array.isArray(data.works) ? (data.works as unknown[]) : [];
+  const idOf = (w: unknown): unknown =>
+    w !== null && typeof w === "object" ? (w as Raw).id : undefined;
+  const changedIds = new Set<string>();
+  const remove = new Set(changes.removeIds ?? []);
+  let next = works;
+  if (remove.size > 0) {
+    next = works.filter((w) => !remove.has(String(idOf(w))));
+    if (next.length !== works.length) for (const id of remove) changedIds.add(id);
+  }
+  for (const work of changes.updated ?? []) {
+    const dict = workToDict(work);
+    const at = next.findIndex((w) => String(idOf(w)) === work.id);
+    // A matched Work is one the caller just read from this file under the same lock.
+    if (at < 0) throw new Error(`stored work ${work.id} is no longer in the library file`);
+    const before = next[at] as Raw;
+    const after = { ...before, ...dict };
+    if (JSON.stringify(after) !== JSON.stringify(before)) {
+      next[at] = after;
+      changedIds.add(work.id);
+    }
+  }
+  for (const work of changes.created ?? []) {
+    next.push(workToDict(work));
+    changedIds.add(work.id);
+  }
+  if (changedIds.size === 0) return changedIds;
+  data.works = next;
+  commit(paths, data, next);
+  return changedIds;
+}
+
+/** json and bib are staged first; only then are they renamed in place, json first (the source of truth). A failure while staging leaves both files untouched; a failure between the two renames can leave library.json updated and library.bib one change behind (the next actual write regenerates it). */
 function commit(paths: LibraryPaths, data: Raw, works: unknown[]): void {
   mkdirSync(paths.libraryDir, { recursive: true });
   const jsonTmp = paths.libraryJson.replace(/\.json$/, ".json.tmp");

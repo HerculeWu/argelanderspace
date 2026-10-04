@@ -8,10 +8,17 @@
  *    control that writes them (notes are read-only there);
  *  - filter_library / select_work / set_detail_tab / set_sidebar: the search box, list/graph selection, the
  *    detail tabs and the sidebar fold (bound-view state, no object has to be opened to read or edit);
+ *  - import_works: the import menu's three dialogs (identifier, ADS bibcode, BibTeX text), i.e.
+ *    `POST /api/library/works`; the tool takes only the text the dialog would receive;
  *  - set_temp_label: the right-click colour dot, which is a session-local display overlay that is never saved.
  */
 import { z } from "zod";
-import { type LibraryRef, LibraryRefSchema } from "./library.js";
+import {
+  type LibraryRef,
+  LibraryRefSchema,
+  type ManualWorkRequest,
+  ManualWorkRequestSchema,
+} from "./library.js";
 
 export const LIBRARY_DETAIL_TABS = ["meta", "info", "bib", "notes", "files"] as const;
 export const LIBRARY_LABEL_KEYS = ["red", "amber", "green", "blue", "violet"] as const;
@@ -23,6 +30,31 @@ export function libraryRefMatches(
   query: string
 ): boolean {
   return !query || (ref.title + ref.authors + ref.cite).toLowerCase().includes(query.toLowerCase());
+}
+
+/**
+ * `read` only: a query that is an identity (DOI, doi.org URL, `arXiv:` id or arxiv.org URL, ADS bibcode, or the
+ * work id) matches the work holding it, so a bare stub with no title can be found by the identifier it was
+ * imported with. The sidebar search box does not do this (the page has no such control).
+ */
+export function libraryRefIdentityMatches(
+  ref: { id: string; doi?: string; arxiv_id?: string; bibcode?: string },
+  query: string
+): boolean {
+  let q = query.trim().toLowerCase();
+  if (!q) return false;
+  q = q
+    .replace(/^https?:\/\/(dx\.)?doi\.org\//, "doi:")
+    .replace(/^https?:\/\/(www\.)?arxiv\.org\/(abs|pdf)\//, "arxiv:")
+    .replace(/\.pdf$/, "")
+    .replace(/(arxiv:\d{4}\.\d{4,5})v\d+$/, "$1");
+  const bare = q.replace(/^(doi|arxiv):/, "");
+  const held = [ref.id, ref.doi, ref.arxiv_id, ref.bibcode]
+    .filter((value): value is string => !!value)
+    .map((value) => value.toLowerCase());
+  return held.some(
+    (value) => value === q || value === bare || value.replace(/^(doi|arxiv):/, "") === bare
+  );
 }
 
 /** The BibTeX tab's text (derived from the displayed fields, exactly as the tab shows it). */
@@ -201,6 +233,36 @@ export const LibrarySetMainDocSchema = z
   })
   .strict();
 
+/**
+ * The import menu's three dialogs (`POST /api/library/works`): one identifier, one ADS bibcode or pasted
+ * BibTeX. Only the text the dialog would receive is accepted; there is no path, URL to fetch or file field.
+ * Its limits are the dialog request's own (`ManualWorkRequestSchema`).
+ */
+export const LibraryImportWorksSchema = z
+  .object({
+    action: z.literal("import_works"),
+    mode: z.enum(["identifier", "bibcode", "bib"]),
+    text: z.string().min(1).max(1_000_000),
+  })
+  .strict()
+  .superRefine((op, ctx) => {
+    const request = ManualWorkRequestSchema.safeParse(libraryImportRequest(op));
+    if (!request.success)
+      for (const issue of request.error.issues)
+        ctx.addIssue({ code: "custom", path: ["text"], message: issue.message });
+  });
+export type LibraryImportWorks = z.infer<typeof LibraryImportWorksSchema>;
+
+/** The request the import dialog itself sends for this input (identifier/bibcode trimmed as the dialog does). */
+export function libraryImportRequest(
+  op: Pick<LibraryImportWorks, "mode" | "text">
+): ManualWorkRequest {
+  const text = op.text.trim();
+  if (op.mode === "identifier") return { mode: "identifier", value: text };
+  if (op.mode === "bibcode") return { mode: "bibcode", bibcode: text };
+  return { mode: "bib", bib: text };
+}
+
 /** View operations are executed by the bound browser view, never by the store. */
 export const LibraryViewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("filter_library"), query: z.string().max(500) }).strict(),
@@ -234,6 +296,7 @@ export type LibraryReadOperation = z.infer<typeof LibraryReadOperationSchema>;
 export const LIBRARY_OPERATION_ACTIONS = [
   "read",
   "set_main_doc",
+  "import_works",
   "filter_library",
   "select_work",
   "set_detail_tab",

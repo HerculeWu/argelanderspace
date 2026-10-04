@@ -44,11 +44,11 @@ import { planFor } from "../acquire/run.js";
 import { pyOr } from "../documents/pyregex.js";
 import { healGraph, loadCurrentGraph } from "./build.js";
 import { assignCiteKey, mergeWorkIntoGraph, workToRef } from "./graph.js";
+import { saveWorksNarrow } from "./patch.js";
 import type { MetadataSources } from "./sources.js";
 import {
   canonicalId,
   emptyWork,
-  identityKeys,
   type LibraryPaths,
   LibraryStore,
   normArxiv,
@@ -67,6 +67,22 @@ export interface ManualAddOutcome {
   /** The attempted/assigned cite key. */
   key?: string;
   error?: string;
+  /**
+   * The stored Work was added or its stored object actually changed (an `exists` entry whose blank fields were
+   * filled or whose acquisition plan was recomputed is `changed`; one that left the file as it was is not).
+   */
+  changed?: boolean;
+  /** Only with `bridge: "reject"`: the entry was not imported because it would fold these stored Works into one. */
+  bridged?: string[];
+}
+
+/**
+ * - `merge` (the page's behaviour): a record bridging two stored Works folds one into the other.
+ * - `reject` (the Copilot tool): an import that would fold or delete a stored Work is refused as a whole, with
+ *   nothing written.
+ */
+export interface ManualAddOptions {
+  bridge?: "merge" | "reject";
 }
 
 function errorOutcome(error: string, key?: string): ManualAddOutcome {
@@ -119,27 +135,66 @@ function recanonicalize(w: Work): void {
 }
 
 /**
+ * A new Work's canonical id is derived (title slug + year when it has no DOI/arXiv/OpenAlex id) and is NOT
+ * unique across different papers: series titles that share their first 48 characters and a year map to one id
+ * although their identity keys differ. The library has no id-uniquifying rule, and ids are what Doc links, the
+ * graph and every PATCH address a Work by, so a made-up suffix would be a new identity scheme. A new Work whose
+ * id is already held by a different Work is therefore refused with a reason (nothing written); the user adds a
+ * DOI/arXiv id or changes the title/year.
+ */
+function idCollision(store: LibraryStore, w: Work): ManualAddOutcome | null {
+  const holder = store.get(w.id);
+  if (holder === undefined) return null;
+  return errorOutcome(
+    `not imported: its work id '${w.id}' (derived from the title and year) is already used by a different paper (${holder.title || holder.id}); give the entry a DOI or arXiv id, or change its title or year`,
+    w.cite_key ?? undefined
+  );
+}
+
+/**
  * The shared single-work tail: re-identity → duplicate check → upsert →
- * assign-only cite key → acquisition plan → save → incremental graph.
+ * assign-only cite key → acquisition plan → narrow save (only this Work's
+ * stored object is written; the rest of the file is kept) → incremental graph.
  * Returns `exists` when the store already held a matching work (upsert still
  * merged blank fields into it).
  */
 async function commitWork(
   paths: LibraryPaths,
   store: LibraryStore,
-  w: Work
+  w: Work,
+  options: ManualAddOptions = {}
 ): Promise<ManualAddOutcome> {
   recanonicalize(w);
-  const matched = store.match(...identityKeys(w));
+  const matches = store.matchesAll(w);
+  if (matches.length > 1 && options.bridge === "reject") {
+    const ids = matches.map((m) => m.id);
+    return {
+      ...errorOutcome(
+        `not imported: this record would merge ${ids.length} existing works into one (${ids.join(", ")}); merge or fix them in the Library page`,
+        w.cite_key ?? undefined
+      ),
+      bridged: ids,
+    };
+  }
+  const matched = matches[0];
+  if (matched === undefined) {
+    const collision = idCollision(store, w);
+    if (collision) return collision;
+  }
+  const removeIds = matches.slice(1).map((m) => m.id);
   const saved = store.upsert(w);
   if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, usedKeys(store));
   saved.acquisition = planToDict(planFor(saved));
-  store.save(paths);
+  const changedIds = saveWorksNarrow(
+    paths,
+    matched === undefined ? { created: [saved], removeIds } : { updated: [saved], removeIds }
+  );
   await mergeGraphQuiet(paths, store, saved);
   return {
     status: matched !== undefined ? "exists" : "created",
     ref: workToRef(saved),
     key: saved.cite_key ?? undefined,
+    changed: changedIds.size > 0,
   };
 }
 
@@ -173,13 +228,19 @@ export type ManualIdentifier = { kind: "doi"; doi: string } | { kind: "arxiv"; a
 export async function addManualIdentifier(
   paths: LibraryPaths,
   sources: MetadataSources,
-  id: ManualIdentifier
+  id: ManualIdentifier,
+  options: ManualAddOptions = {}
 ): Promise<ManualAddOutcome> {
   const store = LibraryStore.load(paths);
   const key = id.kind === "doi" ? `doi:${normDoi(id.doi)}` : `arxiv:${normArxiv(id.arxiv)}`;
   const existing = store.match(key);
   if (existing !== undefined) {
-    return { status: "exists", ref: workToRef(existing), key: existing.cite_key ?? undefined };
+    return {
+      status: "exists",
+      ref: workToRef(existing),
+      key: existing.cite_key ?? undefined,
+      changed: false,
+    };
   }
   const w = emptyWork(canonicalId(id.kind === "doi" ? { doi: id.doi } : { arxiv: id.arxiv }));
   if (id.kind === "doi") w.doi = normDoi(id.doi);
@@ -187,7 +248,7 @@ export async function addManualIdentifier(
   w.origin = "manual";
   w.added_at = new Date().toISOString();
   await tryResolve(w, sources);
-  return commitWork(paths, store, w);
+  return commitWork(paths, store, w, options);
 }
 
 // --------------------------------------------------------------------------- //
@@ -201,13 +262,19 @@ export async function addManualIdentifier(
 export async function addManualBibcode(
   paths: LibraryPaths,
   sources: MetadataSources,
-  bibcode: string
+  bibcode: string,
+  options: ManualAddOptions = {}
 ): Promise<ManualAddOutcome> {
   const bc = bibcode.trim();
   const store = LibraryStore.load(paths);
   const dup = store.works.find((w) => w.bibcode === bc);
   if (dup !== undefined) {
-    return { status: "exists", ref: workToRef(dup), key: dup.cite_key ?? undefined };
+    return {
+      status: "exists",
+      ref: workToRef(dup),
+      key: dup.cite_key ?? undefined,
+      changed: false,
+    };
   }
   const text = await sources.ads.exportBibtex([bc]);
   if (!text) {
@@ -231,7 +298,7 @@ export async function addManualBibcode(
   w.bibcode = bc;
   w.bib_fields = "ads"; // the export already supplied the bibliography fields
   await tryResolve(w, sources);
-  return commitWork(paths, store, w);
+  return commitWork(paths, store, w, options);
 }
 
 // --------------------------------------------------------------------------- //
@@ -282,7 +349,8 @@ function workFromBib(rec: BibRecord, extras: AdsBibFields | null, origin: string
  */
 export async function addManualBibText(
   paths: LibraryPaths,
-  bib: string
+  bib: string,
+  options: ManualAddOptions = {}
 ): Promise<ManualAddOutcome[]> {
   let recs: BibRecord[];
   let extras: Map<string, AdsBibFields>;
@@ -299,10 +367,15 @@ export async function addManualBibText(
   const used = usedKeys(store);
   const outcomes: ManualAddOutcome[] = [];
   const created: Work[] = [];
+  const touched: Work[] = [];
+  const touchedAt = new Map<Work, number[]>();
+  const removeIds: string[] = [];
+  let refusedBridge = false;
   for (const rec of recs) {
     const key = rec.key.trim();
     const w = workFromBib(rec, extras.get(rec.key) ?? extras.get(key) ?? null, "bib");
-    const matched = store.match(...identityKeys(w));
+    const matches = store.matchesAll(w);
+    const matched = matches[0];
     const holder = store.works.find((x) => x.cite_key === key);
     if (holder !== undefined && holder !== matched) {
       outcomes.push(
@@ -310,20 +383,64 @@ export async function addManualBibText(
       );
       continue;
     }
+    if (matches.length > 1 && options.bridge === "reject") {
+      // Refuse the whole batch, but keep reporting every entry's own problems; nothing is written below.
+      const ids = matches.map((m) => m.id);
+      const fromBatch = matches.some((m) => created.includes(m));
+      outcomes.push({
+        ...errorOutcome(
+          `not imported: '${key}' would merge ${ids.length} ${fromBatch ? "works (one created earlier in this import)" : "existing works"} into one (${ids.join(", ")}); merge or fix them in the Library page`,
+          key
+        ),
+        bridged: ids,
+      });
+      refusedBridge = true;
+      continue;
+    }
+    if (matched === undefined) {
+      const collision = idCollision(store, w);
+      if (collision) {
+        outcomes.push({ ...collision, key });
+        continue;
+      }
+    }
     w.cite_key = key; // the user's own key (Stage 13 D5)
+    for (const extra of matches.slice(1)) removeIds.push(extra.id);
     const saved = store.upsert(w);
     if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, used);
     else used.add(saved.cite_key);
     saved.acquisition = planToDict(planFor(saved));
     if (matched === undefined) created.push(saved);
-    outcomes.push({
+    if (!touched.includes(saved)) touched.push(saved);
+    const outcome: ManualAddOutcome = {
       status: matched !== undefined ? "exists" : "created",
       ref: workToRef(saved),
       key: saved.cite_key ?? key,
-    });
+    };
+    touchedAt.set(saved, [...(touchedAt.get(saved) ?? []), outcomes.length]);
+    outcomes.push(outcome);
   }
-  if (outcomes.some((o) => o.status !== "error")) {
-    store.save(paths);
+  if (refusedBridge) {
+    return outcomes.map((o) =>
+      o.status === "error"
+        ? o
+        : errorOutcome(
+            "not imported: another entry of this batch would merge works, so the whole batch was refused",
+            o.key
+          )
+    );
+  }
+  if (touched.length > 0 || removeIds.length > 0) {
+    // a Work an earlier entry created and a later bridging entry folded away is gone from the store
+    const alive = touched.filter((t) => store.works.includes(t));
+    const changedIds = saveWorksNarrow(paths, {
+      created: alive.filter((t) => created.includes(t)),
+      updated: alive.filter((t) => !created.includes(t)),
+      removeIds,
+    });
+    for (const [saved, indexes] of touchedAt)
+      for (const index of indexes)
+        (outcomes[index] as ManualAddOutcome).changed = changedIds.has(saved.id);
   }
   // Bare saved nodes only — batch mode defers resolution/neighbours to the
   // next build, but the new entries must be selectable in the graph view now.

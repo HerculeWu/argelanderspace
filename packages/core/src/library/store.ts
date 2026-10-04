@@ -387,6 +387,16 @@ export class LibraryStore {
     return undefined;
   }
 
+  /** Every stored work sharing an identity key with *w*, in the order `upsert` meets them (survivor first). */
+  matchesAll(w: Work): Work[] {
+    const out: Work[] = [];
+    for (const k of identityKeys(w)) {
+      const m = this.byKey.get(k);
+      if (m !== undefined && !out.includes(m)) out.push(m);
+    }
+    return out;
+  }
+
   /**
    * Add *w*, or merge it into the existing work(s) sharing any identity key.
    *

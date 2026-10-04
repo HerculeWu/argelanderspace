@@ -58,8 +58,8 @@ import type {
 import {
   AnnotationsFileSchema,
   DocDescriptionSchema,
+  type ManualWorkRequest,
   ManualWorkRequestSchema,
-  type ManualWorkResult,
   ManuscriptSchema,
   PDF_MAX_BYTES,
   PDF_RESOURCE_WARNING_BYTES,
@@ -71,13 +71,9 @@ import {
 import {
   type AdsDiscoverySource,
   AnnotationsError,
-  addManualBibcode,
-  addManualBibText,
-  addManualIdentifier,
   annotationsDocDir,
   arxivAttachScenario,
   arxivDocId,
-  arxivFromDoi,
   attachArxivDoc,
   attachLatexZip,
   buildWriterExport,
@@ -97,11 +93,9 @@ import {
   loadCurrentGraph,
   loadManuscript,
   loadTemplates,
-  type ManualIdentifier,
   type MetadataSources,
   manuscriptDir,
   normArxiv,
-  normDoi,
   PdfAnnotationConflictError,
   PdfAnnotationValidationError,
   PdfContentChangedError,
@@ -128,10 +122,8 @@ import {
 import {
   AdsDiscoveryError,
   ArxivPdfOnlyError,
-  explicitArxivId,
   extractZip,
   getConfig,
-  looksLikeArxiv,
   ZipError,
   zipEntries,
 } from "@argelanderspace/infra";
@@ -143,7 +135,12 @@ import { CopilotHost } from "./copilot.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
-import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
+import {
+  commitWorkPatch,
+  type LibraryOpDeps,
+  type ManualImportResult,
+  runManualImport,
+} from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
 import { probePdf } from "./pdfium-probe.js";
@@ -407,6 +404,7 @@ export function createApp(deps: AppDeps): Hono {
     paths,
     libraryLock,
     onChanged: () => libraryChanged("patch"),
+    importWorks: (req, options) => importManualWorks(req, options),
     readPayload: async () => libraryPayload(paths, await currentGraph()),
   };
   copilot.useWorkbench({
@@ -1422,29 +1420,6 @@ export function createApp(deps: AppDeps): Hono {
 
   // ---- POST /api/library/works (Stage 13 manual creation) ----------------- //
 
-  // Identifier auto-detection for the `identifier` mode (Stage 13, smoke
-  // revision): arXiv input must be EXPLICIT — the `arXiv:` prefix or an
-  // arxiv.org URL (infra's explicitArxivId); a bare id like `2609.17036` is
-  // rejected with guidance so the input is unambiguous. A DOI / doi.org URL
-  // goes to the DOI path; an arXiv DataCite DOI routes to the arXiv work
-  // (never a journal-DOI stub, mirroring the CLI's routeDoi semantics).
-  const detectIdentifier = (value: string): ManualIdentifier | { error: string } | null => {
-    const explicit = explicitArxivId(value);
-    if (explicit !== null) return { kind: "arxiv", arxiv: explicit };
-    if (looksLikeArxiv(value)) {
-      return {
-        error: `bare arXiv id '${value.trim()}' is ambiguous — use the prefixed form arXiv:${value.trim()} (or an arxiv.org URL)`,
-      };
-    }
-    const d = normDoi(value);
-    if (d) {
-      const ax = arxivFromDoi(d);
-      if (ax !== null) return { kind: "arxiv", arxiv: ax };
-      if (/^10\.\d{4,9}\/\S+$/.test(d)) return { kind: "doi", doi: d };
-    }
-    return null;
-  };
-
   // ---- Stage 15: legacy manual arXiv LaTeX fetch --------------------------- //
 
   /** Hidden config gate: re-read config.toml before automatic PDF submission. */
@@ -1664,6 +1639,34 @@ export function createApp(deps: AppDeps): Hono {
     return job;
   };
 
+  // The one import seam of the Library: the route below and the Copilot `library` tool both come here.
+  // Automatic PDF is limited to the existing identifier/bibcode modes; bulk BibTeX never auto-queues.
+  // Submission failure cannot undo the Work.
+  const importManualWorks = async (
+    req: ManualWorkRequest,
+    options: { bridge?: "merge" | "reject" } = {}
+  ): Promise<ManualImportResult> => {
+    const outcome = await runManualImport(
+      { paths, libraryLock, makeSources: () => deps.makeSources(false) },
+      req,
+      options
+    );
+    if (req.mode !== "bib" && autoIngestArxiv()) {
+      for (const r of outcome.results) {
+        if ((r.status === "created" || r.status === "exists") && r.ref !== undefined) {
+          try {
+            submitArxivPdf(r.ref.id, true);
+          } catch (e) {
+            console.error(`auto arXiv ingest submit failed for ${r.ref.id}:`, e);
+          }
+        }
+      }
+    }
+    // A created Work or an updated existing one changes the file the page lists: one notification, like the page's reload.
+    if (outcome.changed) libraryChanged("add");
+    return outcome;
+  };
+
   // Manual work creation (import menu). Per-entry outcomes ride in the 200
   // body (`results[].status`: created | exists | error); HTTP errors are
   // reserved for a malformed request / server failure. The whole batch runs
@@ -1679,41 +1682,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid request body (expected {mode: identifier|bibcode|bib, …})", 400);
       return c.json(e.body, e.status);
     }
-    const req = parsed.data;
-    const sources = deps.makeSources(false);
-    const results = await libraryLock.run(async (): Promise<ManualWorkResult[]> => {
-      if (req.mode === "identifier") {
-        const id = detectIdentifier(req.value);
-        if (id === null) {
-          return [
-            {
-              status: "error",
-              error: `unrecognized identifier (expected a DOI, or an arXiv id as arXiv:<id>): ${req.value.slice(0, 120)}`,
-            },
-          ];
-        }
-        if ("error" in id) return [{ status: "error", error: id.error }];
-        return [await addManualIdentifier(paths, sources, id)];
-      }
-      if (req.mode === "bibcode") {
-        return [await addManualBibcode(paths, sources, req.bibcode)];
-      }
-      return addManualBibText(paths, req.bib);
-    });
-    // Automatic PDF is limited to the existing identifier/bibcode modes;
-    // bulk BibTeX never auto-queues. Submission failure cannot undo the Work.
-    if (req.mode !== "bib" && autoIngestArxiv()) {
-      for (const r of results) {
-        if ((r.status === "created" || r.status === "exists") && r.ref !== undefined) {
-          try {
-            submitArxivPdf(r.ref.id, true);
-          } catch (e) {
-            console.error(`auto arXiv ingest submit failed for ${r.ref.id}:`, e);
-          }
-        }
-      }
-    }
-    if (results.some((r) => r.status === "created")) libraryChanged("add");
+    const { results } = await importManualWorks(parsed.data);
     return c.json({ results });
   });
 

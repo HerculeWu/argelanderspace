@@ -37,7 +37,7 @@ export interface OperationJournalPort {
     toolCallId: string;
     action: string;
     hash: string;
-    object?: { planId?: string; taskId?: string; workId?: string };
+    object?: { planId?: string; taskId?: string; workId?: string; summary?: string };
     baseRev?: number;
   }): void;
   done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
