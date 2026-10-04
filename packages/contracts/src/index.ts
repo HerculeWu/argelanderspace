@@ -3,6 +3,7 @@ export * from "./api.js";
 export * from "./copilot.js";
 export * from "./copilot-history.js";
 export * from "./discovery.js";
+export * from "./discovery-ops.js";
 export * from "./doc.js";
 export * from "./doc-ir.js";
 export * from "./jobs.js";

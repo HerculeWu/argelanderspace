@@ -54,6 +54,8 @@ export interface GraphCanvasController {
   zoomOut: () => void;
   fit: () => void;
   relayout: () => void;
+  /** The Discovery graph's "jump to origin" target button (a no-op without a pinned seed). */
+  focusSeed: () => void;
 }
 
 export interface GraphCanvasProps {
@@ -261,12 +263,13 @@ export function GraphCanvas({
   };
 
   // The buttons below call these same functions; the controller lets another caller press them.
-  const buttons = useRef<GraphCanvasController>({ zoomIn: () => {}, zoomOut: () => {}, fit: () => {}, relayout: () => {} });
+  const buttons = useRef<GraphCanvasController>({ zoomIn: () => {}, zoomOut: () => {}, fit: () => {}, relayout: () => {}, focusSeed: () => {} });
   buttons.current = {
     zoomIn: () => zoomAt(1.25, size.w / 2, size.h / 2),
     zoomOut: () => zoomAt(0.8, size.w / 2, size.h / 2),
     fit: fitView,
     relayout,
+    focusSeed: () => focusSeed(),
   };
   useEffect(() => {
     if (!onController) return;
@@ -275,6 +278,7 @@ export function GraphCanvas({
       zoomOut: () => buttons.current.zoomOut(),
       fit: () => buttons.current.fit(),
       relayout: () => buttons.current.relayout(),
+      focusSeed: () => buttons.current.focusSeed(),
     });
     return () => onController(null);
   }, [onController]);

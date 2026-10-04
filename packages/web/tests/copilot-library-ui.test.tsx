@@ -108,3 +108,19 @@ test("an acquisition record shows the real job id and Doc, a pending job is in p
   expect(third.querySelector(".copilot-operation-mark")?.className).toContain("warn");
   expect(third.textContent).toContain("Read acquisition jobs");
 });
+
+test("an exploration's summary names its state, origin, counts and the filter in the interface language, and an error over a graph says so", async () => {
+  const withMessage: ConversationSnapshot = { ...snapshot, messages: [
+    { id: "u1", role: "user", text: "Look", context: { contextId: "c", view: "library", status: "complete", revision: 1, discovery: { state: "error", seed: "2018ApJ...800..100S", filter: "related", shown: 3, total: 7, selectedBibcode: null }, objects: [] } },
+  ] };
+  fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withMessage));
+  for (const [language, state, filter] of [["zh-CN", "文献探索（失败）", "相关研究"], ["en", "Literature exploration (failed)", "Related"]] as const) {
+    await i18n.changeLanguage(language);
+    const view = render(<Copilot open context={{ ...context, view: "library", status: "complete" } as PageContext} onClose={vi.fn()} />);
+    const summary = await waitFor(() => { const found = document.querySelector('[data-ui="copilot-discovery-summary"]'); expect(found).not.toBeNull(); return found!; });
+    expect(summary.textContent).toContain(state);
+    expect(summary.textContent).toContain(filter);
+    expect(summary.textContent).not.toContain("related");
+    view.unmount();
+  }
+});

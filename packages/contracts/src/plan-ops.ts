@@ -237,8 +237,14 @@ export const CopilotViewActionResultSchema = z
         "leave_blocked",
         /** The control exists but is disabled right now (for example the pane limit). */
         "disabled",
+        /** An exploration request the view ran failed (see `http`); nothing else was started or saved. */
+        "failed",
+        /** The user cancelled the exploration request the action started. */
+        "cancelled",
       ])
       .optional(),
+    /** With `failed`: the HTTP status the exploration answered (0 = network failure). */
+    http: z.number().int().min(0).max(999).optional(),
   })
   .strict();
 export type CopilotViewActionResult = z.infer<typeof CopilotViewActionResultSchema>;

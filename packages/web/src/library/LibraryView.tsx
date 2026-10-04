@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type CopilotViewActionResult, type LibraryDetailTab, type LibraryPage, type LibraryViewAction, libraryRefMatches } from "@argelanderspace/contracts";
+import { type CopilotViewActionResult, type DiscoveryPage, type DiscoverySavedViewAction, type DiscoveryViewAction, isDiscoveryViewAction, type LibraryDetailTab, type LibraryPage, type LibraryViewAction, libraryRefMatches } from "@argelanderspace/contracts";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -11,8 +11,8 @@ import type { GraphCanvasController } from "../graph/GraphCanvas";
 import { RefDetail } from "./RefDetail";
 import { captureLibraryPage } from "../copilot/library-context";
 import { ImportDialog, type ImportMode } from "./ImportDialog";
-import { ExploreMode } from "./ExploreMode";
-import { useExploreStack } from "./explore-state";
+import { type ExploreControl, ExploreMode } from "./ExploreMode";
+import { exploreReport, useExploreStack } from "./explore-state";
 import { exploreBus } from "../lib/explore-route";
 import type { LibraryData, LibraryRef } from "./types";
 
@@ -61,16 +61,19 @@ const IMPORTS = [
 
 /** What the Shell can ask the visible Library page to do for a Copilot view action. */
 export interface LibraryViewController {
-  apply: (action: LibraryViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+  /** `DiscoverySavedViewAction` is the service's own state sync after it saved a candidate (never a tool action). */
+  apply: (action: LibraryViewAction | DiscoverySavedViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">>;
 }
-
 export function LibraryView({
   paneId,
   onContext,
+  onDiscovery,
   onController,
 }: {
   paneId?: number;
   onContext?: (paneId: number, page: LibraryPage | null) => void;
+  /** The exploration page while this tab explores (null otherwise); replaces the Library page for the Copilot then. */
+  onDiscovery?: (paneId: number, page: DiscoveryPage | null) => void;
   onController?: (paneId: number, controller: LibraryViewController | null) => void;
 } = {}) {
   const ws = useWorkspace();
@@ -118,6 +121,7 @@ export function LibraryView({
       onRefetch={reload}
       paneId={paneId}
       onContext={onContext}
+      onDiscovery={onDiscovery}
       onController={onController}
       onDocDeleted={ws.docDeleted}
       onBeforeDocDelete={(docId) => docId !== ws.currentDoc || confirmWorkspaceLeave()}
@@ -134,6 +138,7 @@ function LibraryBody({
   onRefetch,
   paneId,
   onContext,
+  onDiscovery,
   onController,
   onDocDeleted,
   onBeforeDocDelete,
@@ -147,6 +152,7 @@ function LibraryBody({
   onRefetch: () => Promise<{ data: LibraryData; live: boolean }>;
   paneId?: number;
   onContext?: (paneId: number, page: LibraryPage | null) => void;
+  onDiscovery?: (paneId: number, page: DiscoveryPage | null) => void;
   onController?: (paneId: number, controller: LibraryViewController | null) => void;
   /** Stage 8 §8: forwarded to RefDetail — the workspace three-state transition
    *  after a document is physically deleted. */
@@ -226,21 +232,105 @@ function LibraryBody({
   const [graphLabelsOn, setGraphLabelsOn] = useState(false);
   const graphControls = useRef<GraphCanvasController | null>(null);
   const registerGraph = useCallback((controller: GraphCanvasController | null) => { graphControls.current = controller; }, []);
+  // the exploration page (reported by ExploreMode) and the controls it owns
+  const [explorePage, setExplorePage] = useState<DiscoveryPage | null>(null);
+  const onExplorePage = useCallback((page: DiscoveryPage | null) => setExplorePage(page), []);
+  const exploreControl = useRef<ExploreControl | null>(null);
+  const registerExploreControl = useCallback((control: ExploreControl | null) => { exploreControl.current = control; }, []);
   useEffect(() => {
     if (paneId === undefined || !onContext) return;
     onContext(
       paneId,
       explore.active
         ? null
-        : captureLibraryPage({ data: payload, live, failure, query: q, selectedNodeId: selNode, tab: detailTab, labels, sidebarCollapsed: sideCollapsed, graphLabelsOn })
+        : captureLibraryPage({ data: payload, live, failure, query: q, selectedNodeId: selNode, tab: detailTab, labels, sidebarCollapsed: sideCollapsed, graphLabelsOn, exploration: explore.sessions.length > 0 ? { sessions: explore.sessions.length, seed: explore.current?.seed ?? null } : undefined })
     );
-  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideCollapsed, graphLabelsOn, explore.active]);
-  const latest = useRef({ refs, graph, exploring: explore.active, onRefetch });
-  latest.current = { refs, graph, exploring: explore.active, onRefetch };
+  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideCollapsed, graphLabelsOn, explore.active, explore.sessions, explore.current]);
+  useEffect(() => {
+    if (paneId === undefined) return;
+    onDiscovery?.(paneId, explore.active ? explorePage : null);
+  }, [paneId, onDiscovery, explore.active, explorePage]);
+  // A pane that leaves the Library page (or goes away) holds no exploration any more: never let the last one linger.
+  useEffect(
+    () => () => {
+      if (paneId !== undefined) onDiscovery?.(paneId, null);
+    },
+    [paneId, onDiscovery]
+  );
+  const latest = useRef({ refs, graph, live, exploring: explore.active, explore, onRefetch });
+  latest.current = { refs, graph, live, exploring: explore.active, explore, onRefetch };
   const applyViewAction = useRef<LibraryViewController["apply"]>(async () => ({ ok: false, detail: "unavailable" }));
+  // The explore UI's controls. Each answers what the control itself would do: an absent control is `unavailable`
+  // (the page that has it is not shown), a present but unusable one `disabled`; a request the click would send is
+  // sent once and reported as it ended (never retried, never followed by another hop).
+  const runDiscoveryAction = async (action: DiscoveryViewAction): Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">> => {
+    const state = latest.current;
+    const stack = state.explore;
+    switch (action.action) {
+      case "explore_work": {
+        // the work detail's button lives on the Library page, which exploration replaces
+        if (stack.active) return { ok: false, detail: "unavailable" };
+        let current = { refs: state.refs, graph: state.graph, live: state.live };
+        if (!current.refs.some((r) => r.id === action.refId)) {
+          const fresh = await state.onRefetch();
+          current = { refs: fresh.data.refs, graph: fresh.data.graph, live: fresh.live };
+          if (!current.refs.some((r) => r.id === action.refId)) return { ok: false, detail: "not_found" };
+        }
+        const ref = current.refs.find((r) => r.id === action.refId);
+        // enabled only with a live library and an ADS bibcode (RefDetail's own condition), as of the latest read
+        if (!ref?.bibcode || !current.live) return { ok: false, detail: "disabled" };
+        setSelNode(current.graph.nodes.find((n) => n.ref === ref.id)?.id ?? ref.id);
+        return exploreReport(await stack.startExplore(ref.bibcode));
+      }
+      case "retry_exploration": {
+        if (!stack.active) return { ok: false, detail: "unavailable" };
+        if (stack.loading) return { ok: false, detail: "disabled" };
+        // The error banner's Retry re-sends the seed that failed; the useful-unavailable note's and the empty state's
+        // Retry re-send the seed shown. Both exist at once after a failed request on a graph with a useful warning.
+        const session = stack.current;
+        const hasCurrent = !!session && (session.graph.warnings.some((w) => w.code === "useful_unavailable") || session.graph.nodes.length <= 1);
+        const target = action.target ?? (stack.error ? "failed" : "current");
+        const seed = target === "failed" ? (stack.error?.seed ?? null) : hasCurrent ? session.seed : null;
+        if (!seed) return { ok: false, detail: "disabled" };
+        return exploreReport(await stack.startExplore(seed));
+      }
+      case "cancel_exploration":
+        if (!stack.loading) return { ok: false, detail: "disabled" };
+        stack.cancelExplore();
+        return { ok: true };
+      case "step_exploration": {
+        if (!stack.active) return { ok: false, detail: "unavailable" };
+        const delta = action.direction === "back" ? -1 : 1;
+        const target = stack.index + delta;
+        if (stack.loading || target < 0 || target >= stack.sessions.length) return { ok: false, detail: "disabled" };
+        stack.step(delta);
+        return { ok: true };
+      }
+      case "exit_exploration":
+        if (!stack.active) return { ok: false, detail: "unavailable" };
+        stack.exitExplore();
+        return { ok: true };
+      case "resume_exploration":
+        // the toolbar's button shows only on the Library page, and only with a history
+        if (stack.active) return { ok: false, detail: "unavailable" };
+        if (stack.sessions.length === 0) return { ok: false, detail: "disabled" };
+        stack.resumeExplore();
+        return { ok: true };
+      default: {
+        if (!stack.active || !exploreControl.current) return { ok: false, detail: "unavailable" };
+        return exploreControl.current.apply(action);
+      }
+    }
+  };
   applyViewAction.current = async (action) => {
     const state = latest.current;
-    // Exploration (Discovery) replaces this page; its own parity is a later ticket.
+    // The service saved a candidate: mark it in place, as the page's own Add does.
+    if (action.action === "discovery_saved") {
+      state.explore.markSaved(action.bibcode, action.workId);
+      return { ok: true };
+    }
+    if (isDiscoveryViewAction(action)) return runDiscoveryAction(action);
+    // Exploration replaces this page: its own controls are the discovery actions above.
     if (state.exploring) return { ok: false, detail: "unavailable" };
     if (action.action === "filter_library") {
       setQ(action.query);
@@ -304,6 +394,8 @@ function LibraryBody({
         explore={explore}
         onExit={explore.exitExplore}
         onViewInLibrary={viewInLibrary}
+        onPage={onExplorePage}
+        onControl={registerExploreControl}
       />
     );
   }

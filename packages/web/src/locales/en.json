@@ -1162,6 +1162,15 @@
       "query": "filter “{{query}}”",
       "open": "Open work: {{title}}"
     },
+    "discovery": {
+      "ready": "Literature exploration",
+      "loading": "Literature exploration (loading)",
+      "error": "Literature exploration (failed)",
+      "seed": "Origin: {{bibcode}}",
+      "counts": "{{shown}} of {{total}} papers sent",
+      "filter": "filter “{{filter}}”",
+      "open": "Open candidate: {{bibcode}}"
+    },
     "operations": {
       "count": "{{count}} Plan actions",
       "countMixed": "{{count}} actions",
@@ -1214,7 +1223,25 @@
         "upload_pdf": "Upload PDF",
         "upload_latex_zip": "Upload LaTeX source",
         "replace_upload_source": "Replace uploaded source",
-        "delete_doc": "Delete document"
+        "delete_doc": "Delete document",
+        "read_discovery": "Read exploration",
+        "save_candidate": "Save candidate to library",
+        "explore_work": "Explore related papers",
+        "explore_candidate": "Explore from candidate",
+        "retry_exploration": "Retry exploration",
+        "cancel_exploration": "Cancel exploration",
+        "step_exploration": "Step through exploration history",
+        "exit_exploration": "Back to library",
+        "resume_exploration": "Resume exploration",
+        "filter_discovery": "Filter exploration",
+        "search_discovery": "Search exploration",
+        "set_discovery_display": "Switch graph or list",
+        "select_candidate": "Select candidate",
+        "set_discovery_tab": "Switch candidate tab",
+        "dismiss_discovery_error": "Dismiss exploration error",
+        "view_candidate_in_library": "Show saved work in library",
+        "set_discovery_graph_labels": "Show or hide exploration graph labels",
+        "discovery_graph_control": "Zoom or arrange exploration graph"
       },
       "status": {
         "ok": "Applied",

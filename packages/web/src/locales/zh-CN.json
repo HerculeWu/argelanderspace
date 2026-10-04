@@ -1162,6 +1162,15 @@
       "query": "筛选“{{query}}”",
       "open": "已打开文献：{{title}}"
     },
+    "discovery": {
+      "ready": "文献探索",
+      "loading": "文献探索（加载中）",
+      "error": "文献探索（失败）",
+      "seed": "起点：{{bibcode}}",
+      "counts": "已发送 {{shown}} / {{total}} 篇文献",
+      "filter": "筛选“{{filter}}”",
+      "open": "已打开候选：{{bibcode}}"
+    },
     "operations": {
       "count": "{{count}} 项计划操作",
       "countMixed": "{{count}} 项操作",
@@ -1214,7 +1223,25 @@
         "upload_pdf": "上传 PDF",
         "upload_latex_zip": "上传 LaTeX 源码",
         "replace_upload_source": "替换已上传源码",
-        "delete_doc": "删除文档"
+        "delete_doc": "删除文档",
+        "read_discovery": "读取探索",
+        "save_candidate": "保存候选到文库",
+        "explore_work": "探索相关文献",
+        "explore_candidate": "从候选继续探索",
+        "retry_exploration": "重试探索",
+        "cancel_exploration": "取消探索",
+        "step_exploration": "前进或后退探索历史",
+        "exit_exploration": "返回文库",
+        "resume_exploration": "继续上次探索",
+        "filter_discovery": "筛选探索结果",
+        "search_discovery": "搜索探索结果",
+        "set_discovery_display": "切换图或列表",
+        "select_candidate": "选择候选",
+        "set_discovery_tab": "切换候选标签",
+        "dismiss_discovery_error": "关闭探索错误提示",
+        "view_candidate_in_library": "在文库中查看已保存文献",
+        "set_discovery_graph_labels": "显示或隐藏探索图标签",
+        "discovery_graph_control": "缩放或重排探索图"
       },
       "status": {
         "ok": "已应用",

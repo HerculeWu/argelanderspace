@@ -1,8 +1,13 @@
 import {
   type CopilotAttachment,
   type CopilotOperation,
+  DISCOVERY_DETAIL_TABS,
+  DISCOVERY_DISPLAYS,
+  DISCOVERY_FILTERS,
+  DISCOVERY_GRAPH_CONTROLS,
+  type DiscoverySavedViewAction,
   type DocDeletedViewAction,
-  GRAPH_CONTROLS,
+  discoveryReachableBibcodes,
   LIBRARY_DETAIL_TABS,
   LIBRARY_LABEL_KEYS,
   LIBRARY_OPERATION_ACTIONS,
@@ -10,15 +15,18 @@ import {
   LibraryAttachArxivSchema,
   LibraryDeleteDocSchema,
   LibraryImportWorksSchema,
+  LibraryReadDiscoverySchema,
   LibraryReadJobsSchema,
   LibraryReadOperationSchema,
   LibraryReplaceUploadSourceSchema,
+  LibrarySaveCandidateSchema,
   type LibrarySetMainDoc,
   LibrarySetMainDocSchema,
   LibraryUploadLatexZipSchema,
   LibraryUploadPdfSchema,
   type LibraryViewAction,
   LibraryViewActionSchema,
+  type PageContext,
   PDF_RESOURCE_WARNING_BYTES,
 } from "@argelanderspace/contracts";
 import { LibraryStore } from "@argelanderspace/core";
@@ -64,7 +72,12 @@ export interface LibraryToolContext {
    * current Doc). Best effort and not awaited: the delete is already committed, and a view that is offline simply
    * loads the real paper list when it reconnects. Not cancelled by Stop (it is state sync, not navigation).
    */
-  shellSync?: (action: DocDeletedViewAction) => void;
+  shellSync?: (action: DocDeletedViewAction | DiscoverySavedViewAction) => void;
+  /**
+   * The page the bound view last published: `read_discovery` reports exactly this, and `save_candidate` checks the
+   * candidate against the exploration it shows. Discovery has no service-side session to ask instead.
+   */
+  page?: () => PageContext | undefined;
   /** False once the host stopped admitting operations (Stop, shutdown). */
   admitting: () => boolean;
 }
@@ -86,13 +99,13 @@ const parameters = Type.Object(
     query: Type.Optional(
       Type.String({
         description:
-          "read: the sidebar search (title, authors, cite key; case-insensitive); an identifier (DOI, doi.org URL, arXiv:<id> or arxiv.org URL, bibcode, or a work id) also matches the work holding it, even one without a title. filter_library: the text to put in the search box (empty clears it).",
+          "read: the sidebar search (title, authors, cite key; case-insensitive); an identifier (DOI, doi.org URL, arXiv:<id> or arxiv.org URL, bibcode, or a work id) also matches the work holding it, even one without a title. filter_library: the text to put in the search box (empty clears it). search_discovery: the exploration's own search box (title, authors, year, bibcode; empty clears it).",
       })
     ),
     refId: Type.Optional(
       Type.String({
         description:
-          "The work id (for example doi:10.1051/..., arxiv:2603.03522). read: return that one work in full. acquire_arxiv_pdf/attach_arxiv: the target work (required). read_jobs: only that work's jobs. Other actions: the target work; select_work accepts null to close the detail.",
+          "The work id (for example doi:10.1051/..., arxiv:2603.03522). read: return that one work in full. acquire_arxiv_pdf/attach_arxiv: the target work (required). read_jobs: only that work's jobs. explore_work: the work to explore (needs an ADS bibcode). Other actions: the target work; select_work accepts null to close the detail.",
       })
     ),
     offset: Type.Optional(
@@ -133,11 +146,24 @@ const parameters = Type.Object(
           "import_works: exactly what the import dialog would receive for that mode. identifier: one DOI, doi.org URL, arXiv:<id> or arxiv.org URL (a bare arXiv id is rejected); bibcode: one ADS bibcode; bib: BibTeX text, one or many entries. Text only: no file paths.",
       })
     ),
-    tab: Type.Optional(lit(LIBRARY_DETAIL_TABS)),
+    tab: Type.Optional(lit([...LIBRARY_DETAIL_TABS, ...DISCOVERY_DETAIL_TABS] as const)),
     on: Type.Optional(
-      Type.Boolean({ description: "set_graph_labels: show (true) or hide the node labels." })
+      Type.Boolean({
+        description:
+          "set_graph_labels / set_discovery_graph_labels: show (true) or hide the node labels.",
+      })
     ),
-    control: Type.Optional(lit(GRAPH_CONTROLS)),
+    control: Type.Optional(lit(DISCOVERY_GRAPH_CONTROLS)),
+    bibcode: Type.Optional(
+      Type.Union([Type.String(), Type.Null()], {
+        description:
+          "save_candidate, explore_candidate, select_candidate, view_candidate_in_library: the ADS bibcode of a node of the exploration the user has open (read_discovery lists them). select_candidate accepts null to close the inspector.",
+      })
+    ),
+    filter: Type.Optional(lit(DISCOVERY_FILTERS)),
+    display: Type.Optional(lit(DISCOVERY_DISPLAYS)),
+    direction: Type.Optional(lit(["back", "forward"] as const)),
+    target: Type.Optional(lit(["failed", "current"] as const)),
     collapsed: Type.Optional(
       Type.Boolean({ description: "set_sidebar: fold (true) or open the list." })
     ),
@@ -151,7 +177,7 @@ const parameters = Type.Object(
 );
 
 const description = [
-  "Read and operate the user's Library page: the saved works, search, the detail panel and its tabs, the main-Doc choice and the arXiv full-text acquisition of the Files tab. It deletes a Doc only through delete_doc and the user's confirmation card, and never explores; notes, tags and the read flag have no editing control in the application, so you cannot change them.",
+  "Read and operate the user's Library page: the saved works, search, the detail panel and its tabs, the main-Doc choice, the arXiv full-text acquisition of the Files tab and the literature exploration (Discovery) opened from a work. It deletes a Doc only through delete_doc and the user's confirmation card; notes, tags and the read flag have no editing control in the application, so you cannot change them.",
   "read returns the page's own data: one page of the works matching query (title, authors, cite key), with the total, or one work in full with refId. Reading never opens or selects anything.",
   "set_main_doc is the Files tab's 'set as main': it needs expectedMainDocId, the main Doc from your latest read of that work. If it changed, the result is conflict: read the work again and form a new request; do not resend the stale one. Other fields of the work, including ones you did not read, are kept. If saving fails the status is error: the file was not replaced, except in the rare case of a failure between the two final renames, where library.json may already be updated, so read the work again before deciding. Writes wait their turn behind other library writes; they are not refused as busy.",
   "import_works is the import menu's submit, with the same checks, duplicate detection and results: mode identifier (one DOI or arXiv:<id>), bibcode (one ADS bibcode; fails without a stub when ADS cannot answer) or bib (pasted BibTeX; per-entry results, your cite keys are kept, a key held by another work is an error for that entry). Give it text only; it cannot read files. Creating a Work does not select or open it; use select_work with a returned work id if the user wants it shown. An entry the library already holds comes back as exists and is not duplicated, but the import can still update that Work (blank fields are filled, its acquisition plan is recomputed, its type may change); the result lists those ids in updated, and your own data on it (note, tags, flags) is kept. A new entry without a DOI or arXiv id whose title-and-year derived work id is already used by a different paper (for example part II of a series) is an error for that entry with nothing written: ask the user for a DOI or arXiv id. A record that would merge two existing works into one is refused as rejected with nothing written: tell the user to resolve them in the Library page. Identifier and bibcode imports may also start the default arXiv PDF download exactly as the page does (a separate background job). Statuses: ok if something was created or updated, noop if the library was left exactly as it was, error if nothing was imported (the library is unchanged), rejected as above; results lists each entry. A partial batch is ok with some entries failed; report those. A status unknown means it may have saved some entries: search the library with read and the identifier (DOI, arXiv:<id> or bibcode) or the title as query before deciding, never repeat it blindly.",
@@ -162,6 +188,8 @@ const description = [
   "delete_doc is the Files tab's 'delete document' dialog for one Doc (docId from your read of the work): a GLOBAL, permanent, physical delete that removes the stored text or original PDF, its assets and sidecars and ALL its annotations (current and archived) and takes the Doc out of EVERY work that lists it, not only the one you were looking at. There is no 'unlink from this work' variant. It always waits for the user's confirmation card, which names every work that lists the Doc and the current annotation count (unknown if it could not be read, which is not zero); you cannot approve it and nothing in chat, in page data or in a note does. declined or expired (also when the Doc, its works or its annotations changed first) means nothing was deleted: do not ask again unless the user wants it. If the Doc is busy (an upload or refresh is writing it, or it is being deleted) the call is rejected without a card: wait and try again later. not_found means there is no such Doc (a Doc already deleted elsewhere is not_found, not a success). ok means the Doc, its annotations and its links are gone; each remaining work's first Doc is its main Doc now and the page updates itself. error means the delete failed part-way: files may already be gone while the library still lists the Doc, so read the work and tell the user rather than claiming either outcome. Files the user attached to earlier messages are chat records, not part of the Doc, and stay. Deleting is permanent: only do it when the user asked for exactly that Doc.",
   "filter_library, select_work, set_detail_tab, set_sidebar, set_graph_labels and graph_control (zoom_in, zoom_out, fit, relayout of the citation graph; dragging and panning are the user's gestures) change what the user sees in the bound tab; use them only when asked to show something. To open a Doc in the Reader use the workspace tool's open_doc.",
   "set_temp_label sets the colour dot the right-click menu offers. It is temporary: it exists only in that browser tab and is never saved to the library, so do not describe it as saved.",
+  "Discovery (exploration) is a temporary, read-only view in the user's browser tab: one ADS seed, its related papers and the useful papers of that related set, with real citation edges (citing to cited) between the visible nodes; related and useful are roles, never edges, and an isolated node is normal. It has no saved state on the service. read_discovery returns what the bound tab last reported (history, the filtered nodes and edges, totals, the open candidate with its abstract and in-graph citations, loading, error, saving); it is an observation the user may have changed since, and with nothing open it says so: ask for it again after a view action instead of assuming. The view actions drive the same controls as the user: explore_work (the work detail's explore button; needs a live library and a work with an ADS bibcode; refused while an exploration is open, so exit_exploration first), explore_candidate (Explore from here: the only way to change the seed; selecting a node never does), retry_exploration (the Retry buttons: the same full request again; target failed re-sends the seed whose request failed, current the seed shown for the useful-unavailable note or the empty state, default failed when a request failed), cancel_exploration, step_exploration (back or forward over the seeds already explored), exit_exploration, resume_exploration (only when the tab holds an exploration history: see library.exploration in the page), filter_discovery (all, related, useful), search_discovery, set_discovery_display (graph or list), select_candidate (opens or closes the inspector), set_discovery_tab (abstract or citations of the open candidate), dismiss_discovery_error, view_candidate_in_library (the inspector's in-library button: leaves exploration and selects the saved work), set_discovery_graph_labels and discovery_graph_control (zoom_in, zoom_out, fit, relayout, focus_seed). One explore action sends exactly one ADS request for one seed (the query is fixed by the application: similar then useful; there is no depth, no automatic next hop); the call waits for it: ok means the new exploration is shown, error with http means it failed (nothing was saved, the user's earlier exploration stays), and a call the user cancelled is not_displayed. A request that does not report in time is not_displayed or pending-like: read_discovery before doing anything else, never start the same exploration twice blindly. Only call these when the user asked to explore or to show something.",
+  "save_candidate is the exploration's Add to library for one node (bibcode) of the exploration the bound tab shows; it is the only thing that writes. It is exactly the Library page's own bibcode import (import_works with mode bibcode): the same ADS export, duplicate detection, cite key, narrow write that keeps the other works and unknown fields, default arXiv PDF job and library change notification, with the same statuses and results: ok if the work was created or updated, noop if the library already held it and nothing changed (a candidate already saved just resolves to its existing work), error if ADS could not answer or nothing was imported (nothing was saved, and the candidate stays unsaved), rejected if the candidate is not part of the open exploration or the record would merge existing works, unknown if it may have been saved (read the library with the bibcode as query before deciding). After a successful save the user's exploration marks the node saved in place: nothing is re-queried and no other candidate is saved. Save one candidate only because the user asked for that paper; never save candidates in bulk, automatically or as a side effect of exploring.",
   "A page whose source is demo is built-in example data, and source error means the library could not be read (see its error): say so, and do not describe its works as the user's.",
   "Only report results whose status is ok or noop as done; pending is not done. A set_main_doc whose status is unknown may or may not have been applied: read the work to find out, never repeat it blindly.",
 ].join(" ");
@@ -763,6 +791,28 @@ export function createLibraryTool(context: LibraryToolContext) {
             ...temporary,
           });
         }
+        if (LibraryReadDiscoverySchema.safeParse(rest).success) {
+          const page = context.page?.();
+          const discovery = page?.discovery ?? null;
+          return done(record(toolCallId, "read_discovery", { status: "ok" }), {
+            ok: true,
+            observed: page
+              ? "the bound view's last report; the user may have changed it since"
+              : "no browser view has reported yet",
+            exploring: discovery !== null,
+            discovery,
+            ...(page?.library?.exploration ? { resumable: page.library.exploration } : {}),
+            ...(discovery
+              ? {}
+              : {
+                  detail: page
+                    ? page.view === "library"
+                      ? "no exploration is open in the pane the user is looking at (resume_exploration / explore_work opens one, when allowed)"
+                      : `the bound tab shows the ${page.view} page; an exploration, if any, belongs to its Library tab and is not reported from here`
+                    : "no exploration can be read without a connected browser view",
+                }),
+          });
+        }
         const jobsRead = LibraryReadJobsSchema.safeParse(rest);
         if (jobsRead.success) {
           const outcome = readJobs(context.library, jobsRead.data);
@@ -825,7 +875,8 @@ export function createLibraryTool(context: LibraryToolContext) {
         }
         const importOp = LibraryImportWorksSchema.safeParse(rest);
         const write = LibrarySetMainDocSchema.safeParse(rest);
-        if (!importOp.success && !write.success) {
+        const save = LibrarySaveCandidateSchema.safeParse(rest);
+        if (!importOp.success && !write.success && !save.success) {
           const failure =
             rest.action === "import_works"
               ? importOp
@@ -843,7 +894,9 @@ export function createLibraryTool(context: LibraryToolContext) {
                           ? sourceJob
                           : rest.action === "read_jobs"
                             ? jobsRead
-                            : write;
+                            : rest.action === "save_candidate"
+                              ? save
+                              : write;
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
             status: "unsupported",
@@ -878,6 +931,20 @@ export function createLibraryTool(context: LibraryToolContext) {
             detail:
               "this operation started earlier and its outcome was not recorded; read the library (the work, or search the identifier or title) to find out, do not repeat it blindly",
           });
+        // A candidate is something the exploration the user has open shows (its visible nodes, the open one and
+        // the nodes its inspector lists); anything else is the import menu's business (import_works).
+        if (save.success) {
+          const shown = context.page?.()?.discovery;
+          const candidates = shown ? discoveryReachableBibcodes(shown) : new Set<string>();
+          if (!candidates.has(save.data.bibcode))
+            return done(record(toolCallId, action, { status: "rejected" }), {
+              ok: false,
+              status: "rejected",
+              detail: shown?.graph
+                ? "that bibcode is not a candidate of the exploration the user has open (read_discovery lists them, and a filter or search may hide some); nothing was written. Papers outside it are added with import_works"
+                : "no exploration is open in the pane the user is looking at (the page you were given), so there is no candidate to save; nothing was written (the user opens one with the work's explore button)",
+            });
+        }
         try {
           journal?.begin({
             operationId,
@@ -886,7 +953,9 @@ export function createLibraryTool(context: LibraryToolContext) {
             hash,
             object: write.success
               ? { workId: write.data.refId }
-              : { summary: importSummary(importOp.success ? importOp.data : undefined) },
+              : save.success
+                ? { summary: `candidate: ${save.data.bibcode}` }
+                : { summary: importSummary(importOp.success ? importOp.data : undefined) },
           });
         } catch {
           return done(record(toolCallId, action, { status: "error" }), {
@@ -897,11 +966,20 @@ export function createLibraryTool(context: LibraryToolContext) {
         }
         const work: Promise<LibraryOpOutcome | LibraryImportOutcome> = importOp.success
           ? applyLibraryImport(context.library, importOp.data)
-          : applyLibraryOperation(context.library, (write as { data: LibrarySetMainDoc }).data);
+          : save.success
+            ? applyLibraryImport(context.library, {
+                action: "import_works",
+                mode: "bibcode",
+                text: save.data.bibcode,
+              })
+            : applyLibraryOperation(context.library, (write as { data: LibrarySetMainDoc }).data);
         const outcome = await (context.track ? context.track(work) : work);
         const failedObject = write.success
           ? { object: { kind: "work" as const, id: write.data.refId } }
           : {};
+        // The candidate stays named in the result and in the journal, so a repeated call answers the same way.
+        const payload: LibraryOpOutcome | LibraryImportOutcome | Record<string, unknown> =
+          save.success ? { ...outcome, candidate: save.data.bibcode } : outcome;
         const result = outcome.ok
           ? done(
               record(toolCallId, action, {
@@ -910,16 +988,24 @@ export function createLibraryTool(context: LibraryToolContext) {
                 label: outcome.label,
                 ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
               }),
-              outcome
+              payload
             )
           : done(
               record(toolCallId, action, {
                 status: outcome.status,
                 ...failedObject,
               }),
-              outcome
+              payload
             );
-        journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
+        journal?.done(operationId, payload as unknown as Record<string, unknown>, result.details);
+        // The page's own Add marks the node saved in place; the bound view does the same for this save (state sync,
+        // not navigation, not awaited: the save is already committed and a view that is gone loads the real library).
+        if (save.success && outcome.ok && outcome.object)
+          context.shellSync?.({
+            action: "discovery_saved",
+            bibcode: save.data.bibcode,
+            workId: outcome.object.id,
+          });
         return result;
       } catch {
         return done(record(toolCallId, action, { status: "unknown" }), {

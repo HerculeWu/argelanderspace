@@ -25,7 +25,9 @@ export const WORKSPACE_TOOL_NAME = "workspace";
 
 /** What came back from the bound browser view, with the reason when it was not displayed. */
 export interface ViewActionOutcome {
-  status: "displayed" | "not_displayed" | "not_found";
+  status: "displayed" | "not_displayed" | "not_found" | "failed";
+  /** With `failed`: the HTTP status the exploration request got (0 = network failure). */
+  http?: number;
   /** Why it was not displayed: `offline` (no browser came back in time), `no_report`, or the view's own reason. */
   detail?: "offline" | "no_report" | "stopped" | NonNullable<CopilotViewActionResult["detail"]>;
 }
@@ -38,6 +40,16 @@ export function viewOutcomeResult(outcome: ViewActionOutcome): {
   if (outcome.status === "displayed") return { status: "ok", payload: { ok: true, status: "ok" } };
   if (outcome.status === "not_found")
     return { status: "not_found", payload: { ok: false, status: "not_found" } };
+  if (outcome.status === "failed")
+    return {
+      status: "error",
+      payload: {
+        ok: false,
+        status: "error",
+        ...(outcome.http !== undefined ? { http: outcome.http } : {}),
+        detail: `the exploration request failed (${outcome.http ? `HTTP ${outcome.http}` : "network failure"}); the user's page shows the error, nothing was saved and nothing else was started. read_discovery shows the page; retry_exploration is the user's Retry button`,
+      },
+    };
   if (outcome.detail === "disabled")
     return {
       status: "rejected",
@@ -55,6 +67,8 @@ export function viewOutcomeResult(outcome: ViewActionOutcome): {
       "the user kept unsaved work open, so the view did not change; ask the user to save or discard first",
     unavailable: "the page that can do this is not available right now",
     stopped: "the run was stopped before the browser was asked, so nothing was shown",
+    cancelled:
+      "the user cancelled the exploration request before it finished; no new exploration was opened and nothing was saved",
   };
   return {
     status: "not_displayed",

@@ -9,7 +9,7 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { DiscoveryGraph } from "@argelanderspace/contracts";
-import { GraphCanvas, type CanvasNode, type GraphCanvasStash } from "../graph/GraphCanvas";
+import { GraphCanvas, type CanvasNode, type GraphCanvasController, type GraphCanvasStash } from "../graph/GraphCanvas";
 
 function shortLabel(p: { authors: string[]; year: number | null }): string {
   const first = p.authors[0] ?? "?";
@@ -27,6 +27,9 @@ export function DiscoveryGraphView({
   onSelect,
   query,
   addingId,
+  labelsOn,
+  onLabelsOnChange,
+  onController,
 }: {
   graph: DiscoveryGraph;
   stash: GraphCanvasStash;
@@ -35,6 +38,9 @@ export function DiscoveryGraphView({
   onSelect: (id: string | null) => void;
   query: string;
   addingId: string | null;
+  labelsOn?: boolean;
+  onLabelsOnChange?: (on: boolean) => void;
+  onController?: (controller: GraphCanvasController | null) => void;
 }) {
   const { t } = useTranslation();
   const nodes: CanvasNode[] = useMemo(
@@ -72,6 +78,9 @@ export function DiscoveryGraphView({
       stash={stash}
       layoutKey={layoutKey}
       addingId={addingId}
+      labelsOn={labelsOn}
+      onLabelsOnChange={onLabelsOnChange}
+      onController={onController}
       heading={t("explore.graph.heading")}
       note={t("explore.graph.note")}
       usefulLegend

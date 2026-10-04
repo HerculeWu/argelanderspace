@@ -27,6 +27,8 @@ export function DiscoveryDetail({
   onViewInLibrary,
   adding,
   addFailed,
+  tab: controlledTab,
+  onTabChange,
 }: {
   paper: DiscoveryPaper;
   graph: DiscoveryGraph;
@@ -37,9 +39,17 @@ export function DiscoveryDetail({
   onViewInLibrary: (workId: string) => void;
   adding: boolean;
   addFailed: boolean;
+  /** Controlled tab (the Copilot can set it); uncontrolled when absent. */
+  tab?: "abstract" | "citations";
+  onTabChange?: (tab: "abstract" | "citations") => void;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"abstract" | "citations">("abstract");
+  const [ownTab, setOwnTab] = useState<"abstract" | "citations">("abstract");
+  const tab = controlledTab ?? ownTab;
+  const setTab = (next: "abstract" | "citations") => {
+    setOwnTab(next);
+    onTabChange?.(next);
+  };
   const [allAuthors, setAllAuthors] = useState(false);
 
   const seed = paper.roles.includes("seed");

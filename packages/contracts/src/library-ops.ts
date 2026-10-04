@@ -24,6 +24,7 @@
  *    this Work" variant, because the page has none.
  */
 import { z } from "zod";
+import { DISCOVERY_VIEW_ACTIONS, DiscoveryViewActionSchemas } from "./discovery-ops.js";
 import {
   type LibraryRef,
   LibraryRefSchema,
@@ -190,6 +191,14 @@ export const LibraryPageSchema = z
     sidebarCollapsed: z.boolean(),
     /** The citation graph's display state (the page draws the whole library; only the controls are state). */
     graph: z.object({ labelsOn: z.boolean() }).strict(),
+    /**
+     * Explorations this tab can resume (the toolbar's "resume exploration" shows only when there are some):
+     * how many seed transitions it holds and the one it would return to. Absent from older views.
+     */
+    exploration: z
+      .object({ sessions: z.number().int().nonnegative(), seed: z.string().nullable() })
+      .strict()
+      .optional(),
   })
   .strict();
 export type LibraryPage = z.infer<typeof LibraryPageSchema>;
@@ -325,6 +334,7 @@ export type LibraryReadJobs = z.infer<typeof LibraryReadJobsSchema>;
 
 /** View operations are executed by the bound browser view, never by the store. */
 export const LibraryViewActionSchema = z.discriminatedUnion("action", [
+  ...DiscoveryViewActionSchemas,
   z.object({ action: z.literal("filter_library"), query: z.string().max(500) }).strict(),
   /** The list row or graph node; null closes the detail panel. */
   z.object({ action: z.literal("select_work"), refId: Id.nullable() }).strict(),
@@ -386,4 +396,7 @@ export const LIBRARY_OPERATION_ACTIONS = [
   "set_graph_labels",
   "graph_control",
   "set_temp_label",
+  "read_discovery",
+  "save_candidate",
+  ...DISCOVERY_VIEW_ACTIONS,
 ] as const;

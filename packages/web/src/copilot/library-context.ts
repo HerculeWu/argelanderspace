@@ -23,6 +23,8 @@ export function captureLibraryPage(input: {
   tab: LibraryDetailTab;
   labels: Record<string, string | null>;
   sidebarCollapsed: boolean;
+  /** Explorations this tab can resume (the toolbar button shows only with some). */
+  exploration?: { sessions: number; seed: string | null };
 }): LibraryPage {
   const { data, query } = input;
   const matched = data.refs.filter((ref) => libraryRefMatches(ref, query));
@@ -45,5 +47,6 @@ export function captureLibraryPage(input: {
     temporaryLabels,
     sidebarCollapsed: input.sidebarCollapsed,
     graph: { labelsOn: input.graphLabelsOn ?? false },
+    ...(input.exploration ? { exploration: input.exploration } : {}),
   };
 }

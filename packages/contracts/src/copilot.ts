@@ -1,5 +1,11 @@
 import { z } from "zod";
 import {
+  type DiscoveryContextSummary,
+  DiscoveryContextSummarySchema,
+  DiscoveryPageSchema,
+  DiscoverySavedViewActionSchema,
+} from "./discovery-ops.js";
+import {
   DocDeletedViewActionSchema,
   type LibraryContextSummary,
   LibraryContextSummarySchema,
@@ -62,6 +68,8 @@ export const PageContextSchema = z
     plan: PlanPageSchema.nullable(),
     /** The Library page (copilot ticket 13); optional so older views and headless callers stay valid. */
     library: LibraryPageSchema.nullable().optional(),
+    /** The Library tab's exploration (Discovery) while it is open (copilot ticket 17); replaces `library` then. */
+    discovery: DiscoveryPageSchema.nullable().optional(),
     /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
     workspace: WorkspaceSnapshotSchema.optional(),
   })
@@ -70,7 +78,8 @@ export const PageContextSchema = z
     // Only data the page really loaded counts as complete: the Library's built-in example data does not.
     const covered =
       (value.view === "plan" && value.plan !== null) ||
-      (value.view === "library" && value.library?.source === "live");
+      (value.view === "library" && value.library?.source === "live") ||
+      (value.view === "library" && !!value.discovery?.graph);
     if ((value.status === "complete") !== covered)
       ctx.addIssue({ code: "custom", message: "invalid page coverage" });
   });
@@ -166,6 +175,7 @@ export interface CopilotMessage {
     revision: number;
     objects: { id: string; rev: number; name?: string }[];
     library?: LibraryContextSummary;
+    discovery?: DiscoveryContextSummary;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -396,6 +406,7 @@ export const WsCopilotViewActionSchema = z
       WorkspaceViewActionSchema,
       LibraryViewActionSchema,
       DocDeletedViewActionSchema,
+      DiscoverySavedViewActionSchema,
     ]),
   })
   .strict();
@@ -441,6 +452,8 @@ export const CopilotContextReferenceSchema = z
         revision: z.number().int().nonnegative(),
         /** What the Library page carried (copilot ticket 13); absent for other pages. */
         library: LibraryContextSummarySchema.optional(),
+        /** What the Library tab's exploration carried (copilot ticket 17); absent otherwise. */
+        discovery: DiscoveryContextSummarySchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),

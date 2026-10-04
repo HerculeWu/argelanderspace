@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
+import { summarizeDiscoveryPage } from "@argelanderspace/contracts";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, uploadAttachment, removeAttachment, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
@@ -25,6 +26,11 @@ export const OPERATION_ACTION_KEYS = {
   set_detail_tab: "copilot.operations.actions.set_detail_tab", set_sidebar: "copilot.operations.actions.set_sidebar", set_temp_label: "copilot.operations.actions.set_temp_label",
   set_graph_labels: "copilot.operations.actions.set_graph_labels", graph_control: "copilot.operations.actions.graph_control", import_works: "copilot.operations.actions.import_works",
   acquire_arxiv_pdf: "copilot.operations.actions.acquire_arxiv_pdf", attach_arxiv: "copilot.operations.actions.attach_arxiv", read_jobs: "copilot.operations.actions.read_jobs", delete_doc: "copilot.operations.actions.delete_doc", upload_pdf: "copilot.operations.actions.upload_pdf", upload_latex_zip: "copilot.operations.actions.upload_latex_zip", replace_upload_source: "copilot.operations.actions.replace_upload_source",
+  read_discovery: "copilot.operations.actions.read_discovery", save_candidate: "copilot.operations.actions.save_candidate", explore_work: "copilot.operations.actions.explore_work", explore_candidate: "copilot.operations.actions.explore_candidate",
+  retry_exploration: "copilot.operations.actions.retry_exploration", cancel_exploration: "copilot.operations.actions.cancel_exploration", step_exploration: "copilot.operations.actions.step_exploration", exit_exploration: "copilot.operations.actions.exit_exploration",
+  resume_exploration: "copilot.operations.actions.resume_exploration", filter_discovery: "copilot.operations.actions.filter_discovery", search_discovery: "copilot.operations.actions.search_discovery", set_discovery_display: "copilot.operations.actions.set_discovery_display",
+  select_candidate: "copilot.operations.actions.select_candidate", set_discovery_tab: "copilot.operations.actions.set_discovery_tab", dismiss_discovery_error: "copilot.operations.actions.dismiss_discovery_error", view_candidate_in_library: "copilot.operations.actions.view_candidate_in_library",
+  set_discovery_graph_labels: "copilot.operations.actions.set_discovery_graph_labels", discovery_graph_control: "copilot.operations.actions.discovery_graph_control",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -48,9 +54,19 @@ function LibrarySummary({ summary, title }: { summary: { source: "live" | "demo"
   </div>;
 }
 
+/** What the exploration carried (copilot ticket 17): its state, origin, how many papers and which filter/candidate. */
+function DiscoverySummary({ summary }: { summary: { state: "ready" | "loading" | "error"; seed: string | null; filter: "all" | "related" | "useful"; shown: number; total: number; selectedBibcode: string | null } }) {
+  const { t } = useTranslation();
+  return <div className="copilot-library-summary" data-ui="copilot-discovery-summary">
+    <p>{t(`copilot.discovery.${summary.state}`)}{summary.seed && ` · ${t("copilot.discovery.seed", { bibcode: summary.seed })}`}</p>
+    <p>{t("copilot.discovery.counts", { shown: summary.shown, total: summary.total })}{summary.filter !== "all" && ` · ${t("copilot.discovery.filter", { filter: t(`explore.filter.${summary.filter}`) })}`}</p>
+    {summary.selectedBibcode && <p>{t("copilot.discovery.open", { bibcode: summary.selectedBibcode })}</p>}
+  </div>;
+}
+
 const isApplied = (operation: CopilotOperation) => operation.status === "ok" || operation.status === "noop";
 
-export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
+export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">>;
 
 interface Draft { key: string; name: string; file: File; status: "uploading" | "ready" | "failed"; id?: string; /** The conversation it belongs to (null until the first upload creates one). */ conversationId: string | null; /** Why it failed: too big or not acceptable means retrying cannot help. */ reason?: "retry" | "final" }
 export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention, onBeforeDocDelete }: { open: boolean; /** The page's own guard before a Doc delete takes the open Doc away (unsaved draft protection); false keeps the card. */ onBeforeDocDelete?: (docId: string) => boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
@@ -92,6 +108,14 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
     const next = latestContext.current, done = published.current;
     if (done?.viewId === next.viewId && done.revision === next.revision) return next;
     await publishPageContext(next); published.current = { viewId: next.viewId, revision: next.revision }; return next;
+  };
+  const settlePublished = async () => {
+    for (let round = 0; round < 6; round++) {
+      const before = latestContext.current.revision;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (latestContext.current.revision === before) break;
+    }
+    await enqueue(publishLatest).catch(() => undefined);
   };
   const viewActionRef = useRef(onViewAction); viewActionRef.current = onViewAction;
   const openPanelRef = useRef(onOpenPanel); openPanelRef.current = onOpenPanel;
@@ -163,8 +187,10 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
         void (async () => {
           // The provider settings dialog is this panel's own: opening it only shows the dialog, the user types any secret there.
           if (message.action.action === "open_copilot_settings") { openPanelRef.current?.(); setSettings(true); }
-          const outcome: Pick<CopilotViewActionResult, "ok" | "detail"> = message.action.action === "open_copilot_settings" ? { ok: true } : viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
-          try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}) }); } catch { /* the service times the action out as not displayed */ }
+          const outcome: Pick<CopilotViewActionResult, "ok" | "detail" | "http"> = message.action.action === "open_copilot_settings" ? { ok: true } : viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
+          // What the action changed reaches the page context through a few renders: report only once the service holds the page that shows it, so a call that follows (read_discovery, save_candidate) never sees the old page.
+          await settlePublished();
+          try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}), ...(outcome.http !== undefined ? { http: outcome.http } : {}) }); } catch { /* the service times the action out as not displayed */ }
         })();
       },
       ready: () => { transportConnected = true; republish(); void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
@@ -323,7 +349,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
         {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item) => <span key={item.id} className="copilot-attachment" data-ui="copilot-message-attachment" data-ui-key={item.id} title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
-        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
+        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} beforeDocDelete={onBeforeDocDelete} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
@@ -364,7 +390,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
     {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "waiting-for-user" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
-    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.library && <LibrarySummary summary={{ source: context.library.source, error: context.library.error, query: context.library.query, total: context.library.total, matched: context.library.matched, selectedRefId: context.library.selectedRefId }} title={context.library.detail?.ref.title} />}{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
+    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail"><p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>{context.library && <LibrarySummary summary={{ source: context.library.source, error: context.library.error, query: context.library.query, total: context.library.total, matched: context.library.matched, selectedRefId: context.library.selectedRefId }} title={context.library.detail?.ref.title} />}{context.discovery && <DiscoverySummary summary={summarizeDiscoveryPage(context.discovery)} />}{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
 }
 

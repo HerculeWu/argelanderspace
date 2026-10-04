@@ -1,4 +1,4 @@
-import { APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PlanPage, type PlanViewAction, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PlanPage, type PlanViewAction, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -67,6 +67,11 @@ export function Shell() {
   const reportPlan = useCallback((paneId: number, page: PlanPage | null) => { setPlanPages((previous) => ({ ...previous, [paneId]: page })); }, []);
   const [libraryPages, setLibraryPages] = useState<Record<number, LibraryPage | null>>({});
   const reportLibrary = useCallback((paneId: number, page: LibraryPage | null) => { setLibraryPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  // The exploration of a Library pane (Discovery): while a pane explores, this page replaces its Library page for the Copilot.
+  const [discoveryPages, setDiscoveryPages] = useState<Record<number, DiscoveryPage | null>>({});
+  const reportDiscovery = useCallback((paneId: number, page: DiscoveryPage | null) => { setDiscoveryPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  const discoveryPagesRef = useRef(discoveryPages);
+  discoveryPagesRef.current = discoveryPages;
   const libraryControllers = useRef(new Map<number, LibraryViewController>());
   const registerLibraryController = useCallback((paneId: number, controller: LibraryViewController | null) => {
     if (controller) libraryControllers.current.set(paneId, controller); else libraryControllers.current.delete(paneId);
@@ -155,7 +160,7 @@ export function Shell() {
   // never come through here.
   const viewActionState = useRef({ panes, activeId, setPaneView });
   viewActionState.current = { panes, activeId, setPaneView };
-  const runPlanViewAction = useCallback(async (action: PlanViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" }> => {
+  const runPlanViewAction = useCallback(async (action: PlanViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number }> => {
     const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
     const state = viewActionState.current;
     const active = state.panes.find((pane) => pane.id === state.activeId) ?? state.panes[0];
@@ -185,11 +190,17 @@ export function Shell() {
 
   // Copilot-requested Library navigation: runs on the visible Library page, or opens one first. Background
   // reads and edits never come through here.
-  const runLibraryViewAction = useCallback(async (action: LibraryViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" }> => {
+  const runLibraryViewAction = useCallback(async (action: LibraryViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number }> => {
     const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
     const state = viewActionState.current;
     const active = state.panes.find((pane) => pane.id === state.activeId) ?? state.panes[0];
-    let pane = active.view === "library" ? active : state.panes.find((candidate) => candidate.view === "library");
+    // An exploration control acts on the pane the Copilot was shown: the ACTIVE pane, when it is a Library pane that
+    // explores (its page is the published context and the one `save_candidate` checks). It never opens a Library page,
+    // switches pane or reaches into another pane. Every other Library action, and the two entry actions (the work's
+    // explore button, resume), open or use a Library page as before.
+    const isDiscoveryControl = discoveryActionNeedsExploration(action);
+    if (isDiscoveryControl && !(active.view === "library" && discoveryPagesRef.current[active.id])) return { ok: false, detail: "unavailable" };
+    let pane = isDiscoveryControl || active.view === "library" ? active : state.panes.find((candidate) => candidate.view === "library");
     if (!pane) {
       if (state.setPaneView(active.id, "library") === false) return { ok: false, detail: "leave_blocked" };
       pane = active;
@@ -313,7 +324,7 @@ export function Shell() {
   // outlives the render that started it. Nothing here calls focus(): another tab or window is never raised.
   const shell = useRef({ panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen });
   shell.current = { panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen };
-  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" };
+  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number };
   const settle = async (check: () => boolean): Promise<boolean> => {
     for (let attempt = 0; attempt < 40; attempt++) {
       if (check()) return true;
@@ -403,6 +414,13 @@ export function Shell() {
       docDeletedRef.current(action.docId, action.remaining);
       return { ok: true };
     }
+    // The service saved a candidate: every Library pane that holds that node marks it saved in place (a pane that is
+    // not exploring ignores it). It never opens or switches anything.
+    const saved = DiscoverySavedViewActionSchema.safeParse(action);
+    if (saved.success) {
+      for (const controller of libraryControllers.current.values()) void controller.apply(saved.data);
+      return { ok: true };
+    }
     const workspaceAction = WorkspaceViewActionSchema.safeParse(action);
     if (workspaceAction.success) return runWorkspaceAction(workspaceAction.data);
     if (action.action === "open_task_doc") return openTaskDoc(action.docId);
@@ -462,10 +480,12 @@ export function Shell() {
     otherPanes: panes.filter((pane) => pane.id !== activePane.id).map((pane) => ({ paneId: pane.id, view: pane.view })),
     // Example data (or a Library still loading / replaced by Discovery) is never reported as complete.
     status: activePane.view === "plan" ? planPages[activePane.id] ? "complete" : "error"
+      : activePane.view === "library" && discoveryPages[activePane.id] ? (discoveryPages[activePane.id]?.graph ? "complete" : discoveryPages[activePane.id]?.error ? "error" : "unavailable")
       : activePane.view === "library" ? (libraryPages[activePane.id]?.source === "live" ? "complete" : libraryPages[activePane.id]?.source === "error" ? "error" : "unavailable")
       : "unavailable",
     plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
-    library: activePane.view === "library" ? libraryPages[activePane.id] ?? null : null,
+    library: activePane.view === "library" && !discoveryPages[activePane.id] ? libraryPages[activePane.id] ?? null : null,
+    discovery: activePane.view === "library" ? discoveryPages[activePane.id] ?? null : null,
     workspace: {
       maxPanes: MAX_PANES, activePaneId: activePane.id,
       panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
@@ -478,7 +498,7 @@ export function Shell() {
       },
       copilotOpen,
     },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, tweaks, copilotOpen]);
+  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
@@ -486,7 +506,7 @@ export function Shell() {
       case "plan":
         return <PlanView paneId={p.id} onContext={reportPlan} onController={registerPlanController} />;
       case "library":
-        return <LibraryView paneId={p.id} onContext={reportLibrary} onController={registerLibraryController} />;
+        return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
       case "doc":
         return <DocPane />;
       case "write":

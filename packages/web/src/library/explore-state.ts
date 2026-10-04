@@ -43,6 +43,25 @@ export interface ExploreError {
   status: number;
 }
 
+/** How one exploration request ended; a Copilot action reports exactly this (the click itself ignores it). */
+export type ExploreOutcome =
+  | { ok: true }
+  | { ok: false; reason: "busy" }
+  | { ok: false; reason: "cancelled" }
+  | { ok: false; reason: "failed"; status: number };
+
+/** How an exploration request's end reads as a Copilot action's report (a busy page is a disabled control, never a retry). */
+export const exploreReport = (
+  outcome: ExploreOutcome
+): { ok: boolean; detail?: "disabled" | "cancelled" | "failed"; http?: number } =>
+  outcome.ok
+    ? { ok: true }
+    : outcome.reason === "busy"
+      ? { ok: false, detail: "disabled" }
+      : outcome.reason === "cancelled"
+        ? { ok: false, detail: "cancelled" }
+        : { ok: false, detail: "failed", http: outcome.status };
+
 export function useExploreStack() {
   const [active, setActive] = useState(false);
   const [stack, setStack] = useState<{ sessions: ExploreSession[]; index: number }>({
@@ -71,8 +90,8 @@ export function useExploreStack() {
    * user-initiated transition (writes history) from a hash-driven navigation
    * (the URL already names the seed — writing again would duplicate entries).
    */
-  const startExplore = useCallback(async (seed: string, opts: { pushUrl?: boolean } = {}) => {
-    if (loadingRef.current) return;
+  const startExplore = useCallback(async (seed: string, opts: { pushUrl?: boolean } = {}): Promise<ExploreOutcome> => {
+    if (loadingRef.current) return { ok: false, reason: "busy" };
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -81,11 +100,11 @@ export function useExploreStack() {
     setActive(true);
     try {
       const out = await fetchDiscovery(seed, controller.signal);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return { ok: false, reason: "cancelled" };
       if (!out.ok) {
         // stay on the current session (if any); the banner reports the failure
         setError({ seed, status: out.status });
-        return;
+        return { ok: false, reason: "failed", status: out.status };
       }
       const session: ExploreSession = {
         key: `explore-${++counter.current}`,
@@ -104,10 +123,12 @@ export function useExploreStack() {
         return { sessions, index: sessions.length - 1 };
       });
       if (opts.pushUrl !== false) pushExploreUrl(seed); // D14: success only
+      return { ok: true };
     } catch (err) {
-      if (controller.signal.aborted) return; // cancel: no error, no history
-      if ((err as { name?: string })?.name === "AbortError") return;
+      if (controller.signal.aborted) return { ok: false, reason: "cancelled" }; // cancel: no error, no history
+      if ((err as { name?: string })?.name === "AbortError") return { ok: false, reason: "cancelled" };
       setError({ seed, status: 0 });
+      return { ok: false, reason: "failed", status: 0 };
     } finally {
       if (!controller.signal.aborted) setLoading(null);
     }
@@ -170,6 +191,23 @@ export function useExploreStack() {
   );
 
   /**
+   * A candidate became a Library member (the page's own Add, or the Copilot's save): update its libraryId in place
+   * in every session. Nothing about the graph, viewport, selection or seed is recomputed.
+   */
+  const markSaved = useCallback((bibcode: string, workId: string) => {
+    setStack((s) => ({
+      sessions: s.sessions.map((sess) => ({
+        ...sess,
+        graph: {
+          ...sess.graph,
+          nodes: sess.graph.nodes.map((n) => (n.bibcode === bibcode ? { ...n, libraryId: workId } : n)),
+        },
+      })),
+      index: s.index,
+    }));
+  }, []);
+
+  /**
    * Add a candidate via the Stage 13 bibcode path — the ONLY mutation route
    * (stage plan §11). On created/exists the node's libraryId updates in
    * place; nothing about the graph/viewport/seed is recomputed.
@@ -183,18 +221,7 @@ export function useExploreStack() {
       const r = resp?.results[0];
       if (r && (r.status === "created" || r.status === "exists") && r.ref) {
         const workId = r.ref.id;
-        setStack((s) => ({
-          sessions: s.sessions.map((sess) => ({
-            ...sess,
-            graph: {
-              ...sess.graph,
-              nodes: sess.graph.nodes.map((n) =>
-                n.bibcode === bibcode ? { ...n, libraryId: workId } : n
-              ),
-            },
-          })),
-          index: s.index,
-        }));
+        markSaved(bibcode, workId);
         return workId;
       }
       setAddError(bibcode);
@@ -202,7 +229,7 @@ export function useExploreStack() {
     } finally {
       setAdding(null);
     }
-  }, [adding]);
+  }, [adding, markSaved]);
 
   /** Dismiss the error banner (the current session stays). */
   const dismissError = useCallback(() => setError(null), []);
@@ -223,6 +250,7 @@ export function useExploreStack() {
     resumeExplore,
     exploreFromHash,
     addToLibrary,
+    markSaved,
     dismissError,
     isExploringRef: activeRef,
   };

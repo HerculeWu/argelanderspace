@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ConversationSnapshot, CopilotProvider, PageContext, WsCopilotEvent } from "@argelanderspace/contracts";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -159,4 +160,29 @@ test("an explicit request to open the Copilot settings shows the panel and the p
   expect(JSON.parse((report[1] as RequestInit).body as string)).toEqual({ actionId, ok: true });
   // Opening the dialog sends nothing but that report: no key, no login, no provider mutation.
   expect(fetchMock.mock.calls.filter(([url, options]) => String(url).includes("/providers") && ((options as RequestInit | undefined)?.method ?? "GET") !== "GET")).toEqual([]);
+});
+
+test("a view action is reported only after the service holds the page that shows its effect", async () => {
+  const order: string[] = [];
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/providers")) return json({ version: 1, providers: [provider] });
+    if (url.endsWith("/conversations")) return json({ version: 1, conversations: [snapshot.conversation] });
+    if (url.endsWith("/action-results")) { order.push("result"); return json({ saved: true }); }
+    if (url.includes("/views/") && options?.method === "PUT") { order.push(`page:${JSON.parse(options.body as string).revision}`); return json({ saved: true }); }
+    return json(snapshot);
+  });
+  function Host() {
+    const [current, setCurrent] = useState(context);
+    // the page changes a few renders after the action returns, like Shell -> LibraryView -> ExploreMode effects
+    const onViewAction = async () => { setTimeout(() => setCurrent((previous) => ({ ...previous, revision: previous.revision + 1 })), 5); return { ok: true }; };
+    return <Copilot open context={current} onClose={vi.fn()} onViewAction={onViewAction} />;
+  }
+  render(<Host />);
+  await screen.findByText("Copilot");
+  await waitFor(() => expect(callbacks.subscription?.viewAction).toBeTypeOf("function"));
+  await waitFor(() => expect(order).toContain("page:1"));
+  act(() => callbacks.subscription!.viewAction!({ type: "copilot.view-action", viewId: context.viewId, actionId: "00000000-0000-4000-8000-0000000000aa", action: { action: "show", view: "board" } }));
+  await waitFor(() => expect(order).toContain("result"));
+  expect(order.indexOf("page:2")).toBeGreaterThan(-1);
+  expect(order.indexOf("page:2")).toBeLessThan(order.indexOf("result"));
 });

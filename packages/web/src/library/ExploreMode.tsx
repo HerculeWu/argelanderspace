@@ -7,42 +7,53 @@
  * (stage plan §15); the graph layout+viewport ride the session stash.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DiscoveryGraph, DiscoveryPaper } from "@argelanderspace/contracts";
+import {
+  type CopilotViewActionResult,
+  type DiscoveryGraph,
+  type DiscoveryPage,
+  type DiscoveryPaper,
+  type DiscoveryViewAction,
+  discoveryReachableBibcodes,
+  discoveryVisibleNodes,
+} from "@argelanderspace/contracts";
+import { captureDiscoveryPage } from "../copilot/discovery-context";
+import type { GraphCanvasController } from "../graph/GraphCanvas";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { DiscoveryDetail } from "./DiscoveryDetail";
 import { DiscoveryGraphView } from "./DiscoveryGraphView";
 import {
+  exploreReport,
   type ExploreError,
   type ExploreFilter,
   type ExploreStack,
 } from "./explore-state";
 
-function paperMatches(p: DiscoveryPaper, q: string): boolean {
-  if (!q) return true;
-  const hay = (p.title + " " + p.authors.join(" ") + " " + (p.year ?? "") + " " + p.bibcode).toLowerCase();
-  return hay.includes(q.toLowerCase());
-}
+// The filter and the search predicate are the contracts' (the Copilot sees exactly the nodes this page shows).
+const visibleNodes = (graph: DiscoveryGraph, q: string, filter: ExploreFilter): DiscoveryPaper[] =>
+  discoveryVisibleNodes(graph.nodes, q, filter);
 
-function visibleNodes(graph: DiscoveryGraph, q: string, filter: ExploreFilter): DiscoveryPaper[] {
-  return graph.nodes.filter(
-    (n) =>
-      n.roles.includes("seed") ||
-      (paperMatches(n, q) && (filter === "all" || n.roles.includes(filter)))
-  );
+/** What the Copilot can ask this page to do with the controls it owns (the rest is the stack's, see LibraryView). */
+export interface ExploreControl {
+  apply: (action: DiscoveryViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail">>;
 }
 
 export function ExploreMode({
   explore,
   onExit,
   onViewInLibrary,
+  onPage,
+  onControl,
 }: {
   explore: ExploreStack;
   onExit: () => void;
   /** "View in library": exit explore mode and select the work there. */
   onViewInLibrary: (workId: string) => void;
+  /** The page as the Copilot should see it (null when this page goes away). */
+  onPage?: (page: DiscoveryPage | null) => void;
+  onControl?: (control: ExploreControl | null) => void;
 }) {
   const { t } = useTranslation();
   const session = explore.current;
@@ -52,6 +63,21 @@ export function ExploreMode({
   const [query, setQuery] = useState(session?.query ?? "");
   const [filter, setFilter] = useState<ExploreFilter>(session?.filter ?? "all");
   const [display, setDisplay] = useState<"graph" | "list">(session?.display ?? "graph");
+  // the inspector's tab and the graph's label toggle are held here (not inside their components) so the Copilot can set them
+  const [detailTab, setDetailTab] = useState<"abstract" | "citations">("abstract");
+  const [labelsOn, setLabelsOn] = useState(false);
+  const graphControls = useRef<GraphCanvasController | null>(null);
+  const registerGraph = useRef((controller: GraphCanvasController | null) => { graphControls.current = controller; }).current;
+  /** Opening another candidate always starts on its abstract (the inspector used to remount per candidate). */
+  const select = (bibcode: string | null) => {
+    if (bibcode !== selection) setDetailTab("abstract"); // choosing the open candidate again keeps its tab
+    setSelection(bibcode);
+  };
+  /** The graph is only drawn in the graph display: leaving it resets the label toggle, as unmounting the canvas always did. */
+  const changeDisplay = (next: "graph" | "list") => {
+    if (next !== display) setLabelsOn(false);
+    setDisplay(next);
+  };
   const listRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -85,6 +111,96 @@ export function ExploreMode({
   const usefulUnavailable = graph?.warnings.some((w) => w.code === "useful_unavailable") ?? false;
   const relatedCount = graph?.nodes.filter((n) => n.roles.includes("related")).length ?? 0;
   const usefulCount = graph?.nodes.filter((n) => n.roles.includes("useful")).length ?? 0;
+
+  // ---- Copilot: the page it sees and the controls it can press ---------------------------------------- //
+  const page = useMemo(
+    () =>
+      captureDiscoveryPage({
+        graph,
+        seeds: explore.sessions.map((entry) => entry.seed),
+        index: explore.index,
+        loading: explore.loading,
+        error: explore.error,
+        adding: explore.adding,
+        addFailed: explore.addError,
+        selection,
+        query,
+        filter,
+        display,
+        detailTab,
+        labelsOn,
+      }),
+    [graph, explore.sessions, explore.index, explore.loading, explore.error, explore.adding, explore.addError, selection, query, filter, display, detailTab, labelsOn]
+  );
+  useEffect(() => {
+    onPage?.(page);
+  }, [page, onPage]);
+  useEffect(() => () => onPage?.(null), [onPage]);
+  const latest = useRef({ graph, selection, explore, onViewInLibrary, page });
+  latest.current = { graph, selection, explore, onViewInLibrary, page };
+  const applyControl = useRef<ExploreControl["apply"]>(async () => ({ ok: false, detail: "unavailable" }));
+  applyControl.current = async (action) => {
+    const now = latest.current;
+    switch (action.action) {
+      case "filter_discovery":
+        // the filter tabs exist once a graph is shown
+        if (!now.graph) return { ok: false, detail: "disabled" };
+        setFilter(action.filter);
+        return { ok: true };
+      case "search_discovery":
+        setQuery(action.query);
+        return { ok: true };
+      case "set_discovery_display":
+        changeDisplay(action.display);
+        return { ok: true };
+      case "select_candidate":
+        // only what the page lets the user reach: the visible nodes, the open candidate and its citations
+        if (action.bibcode !== null && !discoveryReachableBibcodes(now.page).has(action.bibcode)) return { ok: false, detail: "not_found" };
+        select(action.bibcode);
+        return { ok: true };
+      case "explore_candidate": {
+        // the inspector's "Explore from here": the candidate must be one the user can reach, and never the origin
+        if (!discoveryReachableBibcodes(now.page).has(action.bibcode)) return { ok: false, detail: "not_found" };
+        if (now.graph?.nodes.find((n) => n.bibcode === action.bibcode)?.roles.includes("seed")) return { ok: false, detail: "disabled" };
+        return exploreReport(await now.explore.startExplore(action.bibcode));
+      }
+      case "set_discovery_tab": {
+        // the tabs belong to the open inspector
+        const open = now.graph?.nodes.some((n) => n.bibcode === now.selection);
+        if (!open) return { ok: false, detail: "disabled" };
+        setDetailTab(action.tab);
+        return { ok: true };
+      }
+      case "dismiss_discovery_error":
+        if (!now.explore.error) return { ok: false, detail: "disabled" };
+        now.explore.dismissError();
+        return { ok: true };
+      case "view_candidate_in_library": {
+        const node = now.graph?.nodes.find((n) => n.bibcode === action.bibcode);
+        if (!node || !discoveryReachableBibcodes(now.page).has(action.bibcode)) return { ok: false, detail: "not_found" };
+        // the inspector shows this button only for a saved candidate
+        if (node.libraryId === null) return { ok: false, detail: "disabled" };
+        now.onViewInLibrary(node.libraryId);
+        return { ok: true };
+      }
+      case "set_discovery_graph_labels":
+        if (!graphControls.current) return { ok: false, detail: "unavailable" };
+        setLabelsOn(action.on);
+        return { ok: true };
+      case "discovery_graph_control": {
+        const buttons = graphControls.current;
+        if (!buttons) return { ok: false, detail: "unavailable" };
+        ({ zoom_in: buttons.zoomIn, zoom_out: buttons.zoomOut, fit: buttons.fit, relayout: buttons.relayout, focus_seed: buttons.focusSeed })[action.control]();
+        return { ok: true };
+      }
+      default:
+        return { ok: false, detail: "unavailable" };
+    }
+  };
+  useEffect(() => {
+    onControl?.({ apply: (action) => applyControl.current(action) });
+    return () => onControl?.(null);
+  }, [onControl]);
 
   const errText = (e: ExploreError): string => {
     switch (e.status) {
@@ -132,7 +248,7 @@ export function ExploreMode({
                 <Icon name="target" cls="ico-sm" />
                 {t("explore.origin")}
               </div>
-              <button data-ui="select-seed" className="seed-title" onClick={() => setSelection(seedPaper.bibcode)}>
+              <button data-ui="select-seed" className="seed-title" onClick={() => select(seedPaper.bibcode)}>
                 {seedPaper.title}
               </button>
               <div className="seed-meta mono">
@@ -179,7 +295,7 @@ export function ExploreMode({
                     key={n.bibcode}
                     className={"side-ref" + (n.bibcode === selection ? " sel" : "")}
                     data-testid={`explore-row-${n.bibcode}`} data-ui="discovery-paper" data-ui-key={n.bibcode}
-                    onClick={() => setSelection(n.bibcode)}
+                    onClick={() => select(n.bibcode)}
                   >
                     <span className="side-ref-mark">
                       <span
@@ -241,8 +357,8 @@ export function ExploreMode({
             <div style={{ flex: 1 }} />
             <span className="scope-chip mono">{t("explore.shown", { count: visible.length })}</span>
             <div className="mode-switch">
-              <ActionButton unstyled mode="icon" iconName="waypoints" label={t("explore.graphView")} tooltip={t("explore.graphView")} aria-pressed={display === "graph"} className={display === "graph" ? "on" : ""} data-testid="explore-graph-view" data-ui="show-discovery-graph" onClick={() => setDisplay("graph")} />
-              <ActionButton unstyled mode="icon" iconName="list" label={t("explore.listView")} tooltip={t("explore.listView")} aria-pressed={display === "list"} className={display === "list" ? "on" : ""} data-testid="explore-list-view" data-ui="show-discovery-list" onClick={() => setDisplay("list")} />
+              <ActionButton unstyled mode="icon" iconName="waypoints" label={t("explore.graphView")} tooltip={t("explore.graphView")} aria-pressed={display === "graph"} className={display === "graph" ? "on" : ""} data-testid="explore-graph-view" data-ui="show-discovery-graph" onClick={() => changeDisplay("graph")} />
+              <ActionButton unstyled mode="icon" iconName="list" label={t("explore.listView")} tooltip={t("explore.listView")} aria-pressed={display === "list"} className={display === "list" ? "on" : ""} data-testid="explore-list-view" data-ui="show-discovery-list" onClick={() => changeDisplay("list")} />
             </div>
           </div>
 
@@ -274,9 +390,12 @@ export function ExploreMode({
               stash={session!.stash}
               layoutKey={session!.key}
               selectedId={selection}
-              onSelect={(id) => setSelection(id)}
+              onSelect={(id) => select(id)}
               query=""
               addingId={explore.adding}
+              labelsOn={labelsOn}
+              onLabelsOnChange={setLabelsOn}
+              onController={registerGraph}
             />
           )}
           {graph && graph.nodes.length > 1 && display === "list" && (
@@ -294,7 +413,7 @@ export function ExploreMode({
                   {visible.map((n) => (
                     <tr key={n.bibcode} data-ui="discovery-table-paper" data-ui-key={n.bibcode} className={selection === n.bibcode ? "sel" : ""}>
                       <td>
-                        <button className="table-paper" data-ui="select-discovery-paper" onClick={() => setSelection(n.bibcode)}>
+                        <button className="table-paper" data-ui="select-discovery-paper" onClick={() => select(n.bibcode)}>
                           {n.title}
                         </button>
                         <div className="table-auth mono">
@@ -352,8 +471,10 @@ export function ExploreMode({
             key={`${session.key}:${selected.bibcode}`}
             paper={selected}
             graph={session.graph}
-            onSelect={setSelection}
-            onClose={() => setSelection(null)}
+            onSelect={select}
+            onClose={() => select(null)}
+            tab={detailTab}
+            onTabChange={setDetailTab}
             onAdd={(b) => void explore.addToLibrary(b)}
             onExploreHere={(b) => void explore.startExplore(b)}
             onViewInLibrary={onViewInLibrary}
