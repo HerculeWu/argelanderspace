@@ -1213,7 +1213,8 @@
         "read_jobs": "Read acquisition jobs",
         "upload_pdf": "Upload PDF",
         "upload_latex_zip": "Upload LaTeX source",
-        "replace_upload_source": "Replace uploaded source"
+        "replace_upload_source": "Replace uploaded source",
+        "delete_doc": "Delete document"
       },
       "status": {
         "ok": "Applied",
@@ -1253,7 +1254,11 @@
       "replaceUpload": "Replace the uploaded source of “{{name}}” with “{{file}}”",
       "acceptPdf": "Upload “{{file}}” to “{{name}}”",
       "expiredUpload": "The attachment or the library changed before your decision. Nothing was uploaded.",
-      "failedUpload": "Your decision could not be saved. Nothing was uploaded; try again."
+      "failedUpload": "Your decision could not be saved. Nothing was uploaded; try again.",
+      "deleteDoc": "Permanently delete the document “{{id}}”",
+      "deleteDocWork": "“{{title}}” · {{state}} · other documents kept: {{count}}",
+      "expiredDeleteDoc": "The document, its works or its annotations changed before your decision. Nothing was deleted.",
+      "failedDeleteDoc": "The outcome is not known: your decision may or may not have reached the service. Check the library before trying again."
     },
     "thinkingLevels": {
       "off": "Off",

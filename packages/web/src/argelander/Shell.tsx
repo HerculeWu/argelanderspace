@@ -394,7 +394,15 @@ export function Shell() {
     return (await settle(() => currentDocRef.current === docId && shell.current.panes.some((pane) => pane.view === "doc"))) ? { ok: true } : { ok: false, detail: "unavailable" };
   }, []);
   const openTaskDoc = openLibraryDoc;
+  const docDeletedRef = useRef(docDeleted);
+  docDeletedRef.current = docDeleted;
   const runViewAction = useCallback(async (action: CopilotViewAction): Promise<Report> => {
+    // The service tells the bound view that a Doc was deleted through the Copilot: the same three-state Shell
+    // update the Library page makes after its own delete (not model-callable; it is no tool action).
+    if (action.action === "doc_deleted") {
+      docDeletedRef.current(action.docId, action.remaining);
+      return { ok: true };
+    }
     const workspaceAction = WorkspaceViewActionSchema.safeParse(action);
     if (workspaceAction.success) return runWorkspaceAction(workspaceAction.data);
     if (action.action === "open_task_doc") return openTaskDoc(action.docId);
@@ -588,7 +596,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onBeforeDocDelete={(docId) => docId !== currentDocRef.current || confirmWorkspaceLeave()} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette

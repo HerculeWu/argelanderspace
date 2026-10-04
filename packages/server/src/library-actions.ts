@@ -30,6 +30,7 @@ import {
   type MetadataSources,
   normDoi,
   patchWorkNarrow,
+  type RemovedDocWork,
   type WorkPatchExpectation,
   type WorkPatchResult,
 } from "@argelanderspace/core";
@@ -43,6 +44,8 @@ import type { AsyncLock } from "./lock.js";
 export interface LibraryOpDeps {
   /** The acquisition dialog's seam (arXiv PDF / LaTeX source jobs); absent in hosts without a Library. */
   acquisition?: AcquisitionPort;
+  /** The Doc delete dialog's seam (`DELETE /api/paper/:doc_id`); absent in hosts without a Library. */
+  deletion?: DocDeletionPort;
   paths: LibraryPaths;
   libraryLock: AsyncLock;
   /** Broadcasts `library.changed{cause:"patch"}`, like the PATCH route. */
@@ -381,6 +384,135 @@ export async function applyLibraryImport(
       : {}),
     ...(failed > 0 ? { warnings: ["import_partial"] } : {}),
   };
+}
+
+// --------------------------------------------------------------------------- //
+// Doc deletion (the Files tab's "delete document" dialog, `DELETE /api/paper/:doc_id`)
+// --------------------------------------------------------------------------- //
+
+/** A Work that holds the Doc, as the delete dialog's scope names them. */
+export interface DocDeleteWork {
+  id: string;
+  title: string;
+  /** The Doc is this Work's main Doc (`doc_ids[0]`). */
+  main: boolean;
+  /** How many Docs the Work keeps after the delete. */
+  remaining: number;
+}
+
+/** What the confirmation card shows, read WITHOUT writing anything (no ensure/archive, no archive contents). */
+export type DocDeleteDescription =
+  | { kind: "not_found" | "bad_id" | "busy" | "orphan" }
+  | { kind: "error"; detail: string }
+  | {
+      kind: "ready";
+      docId: string;
+      /** pdf: the original, metadata and workbench sidecars go; latex: the stored text, assets and annotations. */
+      format: "pdf" | "latex";
+      works: DocDeleteWork[];
+      /** The current annotation count the dialog shows; unknown is never zero. */
+      impact: DocReplaceImpact;
+      /** The annotations revision the count was read at (0 when unknown). */
+      rev: number;
+      /** Everything the card is bound to: Works and their Doc lists, format, count, revision, content binding. */
+      digest: string;
+      /** Which Works hold the Doc and their Doc lists; the delete compares it again inside the library lock. */
+      holders: string;
+    };
+
+/** How the shared global delete ended; the HTTP route and the tool map this to their own shapes. */
+export type DocDeleteOutcome =
+  | { kind: "deleted"; works: RemovedDocWork[] }
+  | { kind: "bad_id" | "not_found" | "busy" | "changed" }
+  | { kind: "failed"; message: string };
+
+export interface DocDeletionPort {
+  describe(docId: string): Promise<DocDeleteDescription>;
+  /** The route's own handler: busy check and delete slot, physical delete, narrow library step, notification. */
+  delete(docId: string, expect?: { holders: string }): Promise<DocDeleteOutcome>;
+}
+
+export type DocDeleteResult =
+  | {
+      ok: true;
+      status: "ok";
+      docId: string;
+      object: NonNullable<CopilotOperation["object"]>;
+      label: string;
+      /** Every Work that held the Doc, with the Docs it keeps (`remaining[0]` is its main Doc now). */
+      works: { id: string; title: string; remaining: string[] }[];
+      detail: string;
+    }
+  | {
+      ok: false;
+      status: "not_found" | "rejected" | "error" | "expired";
+      detail: string;
+    };
+
+/**
+ * The delete dialog's confirm, once the real user approved: the same global delete as the route. A Doc that is gone
+ * by now is `not_found` (the page closes its dialog silently; the tool does not claim a delete it did not do).
+ */
+export async function applyDocDelete(
+  deps: LibraryOpDeps,
+  docId: string,
+  expect?: { holders: string }
+): Promise<DocDeleteResult> {
+  const port = deps.deletion;
+  if (!port)
+    return {
+      ok: false,
+      status: "error",
+      detail: "deleting documents is not available in this host",
+    };
+  const outcome = await port.delete(docId, expect);
+  switch (outcome.kind) {
+    case "bad_id":
+      return {
+        ok: false,
+        status: "rejected",
+        detail: "that is not a valid Doc id; nothing was deleted",
+      };
+    case "not_found":
+      return {
+        ok: false,
+        status: "not_found",
+        detail: "no such Doc (it may already have been deleted); nothing was deleted by this call",
+      };
+    case "changed":
+      return {
+        ok: false,
+        status: "expired",
+        detail:
+          "the works that list the Doc (or their Doc lists, for example the main Doc) changed after the user confirmed; nothing was deleted. Read again and ask only if it is still wanted",
+      };
+    case "busy":
+      return {
+        ok: false,
+        status: "rejected",
+        detail:
+          "the document is busy (an upload or refresh is writing it, or it is already being deleted); nothing was deleted. Try again when the task finishes",
+      };
+    case "failed":
+      return {
+        ok: false,
+        status: "error",
+        detail: `the delete failed part-way (${outcome.message}). Files of the document may already be gone while the library still lists it; read the work and the library before deciding, and tell the user`,
+      };
+    case "deleted":
+      return {
+        ok: true,
+        status: "ok",
+        docId,
+        object: { kind: "doc", id: docId },
+        label: docId,
+        works: outcome.works.map(({ id, title, remaining }) => ({ id, title, remaining })),
+        detail:
+          outcome.works.length === 0
+            ? "the document was deleted; no Work listed it"
+            : "the document and its annotations (current and archived) were permanently deleted and it was removed from every Work that listed it; each Work's remaining first Doc is its main Doc",
+      };
+  }
 }
 
 // --------------------------------------------------------------------------- //

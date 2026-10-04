@@ -19,6 +19,9 @@
  *  - upload_pdf / upload_latex_zip / replace_upload_source: the Files tab uploads, with a file the user handed to
  *    THIS conversation as an attachment (an id, never a path or URL). Replacing the uploaded source waits for the
  *    real user, like the arXiv refresh. A path, URL or file field does not exist in any action.
+ *  - delete_doc: the Files tab "delete document" dialog (`DELETE /api/paper/:doc_id`), the global physical delete.
+ *    It only ever waits for the real user's confirmation card (the dialog's own confirm); there is no "unlink from
+ *    this Work" variant, because the page has none.
  */
 import { z } from "zod";
 import {
@@ -305,6 +308,14 @@ export const LibraryReplaceUploadSourceSchema = z
     attachmentId: AttachmentId,
   })
   .strict();
+/**
+ * The Files tab's "delete document" dialog: the GLOBAL physical delete of one Doc (its stored text or original,
+ * assets, sidecars and all annotations including the archive), removed from every Work that lists it.
+ */
+export const LibraryDeleteDocSchema = z
+  .object({ action: z.literal("delete_doc"), docId: Id })
+  .strict();
+export type LibraryDeleteDoc = z.infer<typeof LibraryDeleteDocSchema>;
 export type LibraryUploadPdf = z.infer<typeof LibraryUploadPdfSchema>;
 export type LibraryUploadLatexZip = z.infer<typeof LibraryUploadLatexZipSchema>;
 export type LibraryReplaceUploadSource = z.infer<typeof LibraryReplaceUploadSourceSchema>;
@@ -339,6 +350,21 @@ export const LibraryViewActionSchema = z.discriminatedUnion("action", [
     .strict(),
 ]);
 export type LibraryViewAction = z.infer<typeof LibraryViewActionSchema>;
+
+/**
+ * Sent by the service (never callable by the model) to the bound view after a Doc was deleted through the tool, so
+ * the Shell makes the same three-state update the page makes after its own delete: a deleted non-current Doc
+ * changes nothing; a deleted current Doc moves to `remaining[0]` (the Work's new main Doc) or, with nothing left,
+ * to no Doc; the paper list drops the id at once. It is not part of LIBRARY_OPERATION_ACTIONS or any tool schema.
+ */
+export const DocDeletedViewActionSchema = z
+  .object({
+    action: z.literal("doc_deleted"),
+    docId: Id,
+    remaining: z.array(z.string()).max(1000),
+  })
+  .strict();
+export type DocDeletedViewAction = z.infer<typeof DocDeletedViewActionSchema>;
 export type LibrarySetMainDoc = z.infer<typeof LibrarySetMainDocSchema>;
 export type LibraryReadOperation = z.infer<typeof LibraryReadOperationSchema>;
 
@@ -351,6 +377,7 @@ export const LIBRARY_OPERATION_ACTIONS = [
   "upload_pdf",
   "upload_latex_zip",
   "replace_upload_source",
+  "delete_doc",
   "read_jobs",
   "filter_library",
   "select_work",

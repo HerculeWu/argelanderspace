@@ -146,10 +146,14 @@ describe("appearance goes through the Tweaks setter", () => {
     await boot();
     expect(await run({ action: "set_appearance", theme: "light", density: "compact", accent: "teal", language: "zh-CN" })).toEqual({ ok: true });
     const root = document.documentElement;
-    expect(root.getAttribute("data-theme")).toBe("light");
-    expect(root.getAttribute("data-density")).toBe("compact");
-    expect(root.lang).toBe("zh-CN");
-    expect(JSON.parse(window.localStorage.getItem("argelander.tweaks")!)).toMatchObject({ theme: "light", density: "compact", accent: "teal", language: "zh-CN" });
+    // The setter returns once the state is set; the attributes and the stored copy follow in the next effect flush,
+    // which a loaded machine can delay: wait for them instead of reading them in the same tick.
+    await waitFor(() => {
+      expect(root.getAttribute("data-theme")).toBe("light");
+      expect(root.getAttribute("data-density")).toBe("compact");
+      expect(root.lang).toBe("zh-CN");
+      expect(JSON.parse(window.localStorage.getItem("argelander.tweaks")!)).toMatchObject({ theme: "light", density: "compact", accent: "teal", language: "zh-CN" });
+    });
     await waitFor(() => expect(ctx().workspace?.appearance).toEqual({ theme: "light", accent: "teal", density: "compact", language: "zh-CN" }));
     await i18n.changeLanguage("en");
   });

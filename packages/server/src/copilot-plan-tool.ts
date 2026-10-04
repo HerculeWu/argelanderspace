@@ -84,6 +84,18 @@ export type ConfirmationRequest =
     }
   | {
       toolCallId: string;
+      /** The Files tab's "delete document" dialog: the global physical delete of one Doc. */
+      action: "delete_doc";
+      docId: string;
+      format: "pdf" | "latex";
+      works: { id: string; title: string; main: boolean; remaining: number }[];
+      impact: DocReplaceImpact;
+      /** The annotations revision the count was read at (0 when it could not be read). */
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
       /** A PDF of 25 MiB or more: the resource warning the Files tab makes the user accept. */
       action: "accept_pdf_resource_warning";
       workId: string;

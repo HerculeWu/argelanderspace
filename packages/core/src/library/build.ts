@@ -300,6 +300,9 @@ export function patchWork(
  * no rebuild, no enrichment; saves (library.json + library.bib regen) only
  * when something actually changed, per patchWork's no-op discipline. Returns
  * whether anything changed.
+ *
+ * @deprecated Re-projects the whole library through the typed store and drops unknown keys. The server's
+ * Doc delete (and the Copilot `delete_doc`) use `removeDocFromWorksNarrow` since copilot ticket 16.
  */
 export function removeDocFromWorks(paths: LibraryPaths, docId: string): boolean {
   const store = LibraryStore.load(paths);

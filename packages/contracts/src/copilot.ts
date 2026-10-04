@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  DocDeletedViewActionSchema,
   type LibraryContextSummary,
   LibraryContextSummarySchema,
   LibraryPageSchema,
@@ -256,11 +257,43 @@ export const CopilotResourceConfirmationSchema = z
     objectDigest: z.string().min(1),
   })
   .strict();
+/**
+ * The Files tab's "delete document" dialog the model asked for: the global physical delete of one Doc. Bound to the
+ * Doc, every Work that lists it (and their Doc lists), the annotation count and revision it shows, and the Doc's
+ * content binding; any change to them expires it. The count is read before the card exists, so there is no
+ * loading state: `unknown` is shown as unknown, never as zero.
+ */
+export const CopilotDocDeleteConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("delete_doc"),
+    object: z.object({ kind: z.literal("doc"), id: z.string().min(1) }).strict(),
+    /** pdf: the original PDF, metadata and sidecars are deleted; latex: the stored text, assets and annotations. */
+    format: z.enum(["pdf", "latex"]),
+    /** Every Work that lists the Doc: it is removed from all of them, not only the one the user is looking at. */
+    works: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            title: z.string(),
+            main: z.boolean(),
+            remaining: z.number().int().nonnegative(),
+          })
+          .strict()
+      )
+      .max(500),
+    impact: DocReplaceImpactSchema,
+    objectDigest: z.string().min(1),
+  })
+  .strict();
 export const CopilotConfirmationSchema = z.union([
   CopilotPlanConfirmationSchema,
   CopilotDocConfirmationSchema,
   CopilotResourceConfirmationSchema,
+  CopilotDocDeleteConfirmationSchema,
 ]);
+export type CopilotDocDeleteConfirmation = z.infer<typeof CopilotDocDeleteConfirmationSchema>;
 export type CopilotResourceConfirmation = z.infer<typeof CopilotResourceConfirmationSchema>;
 export type CopilotPlanConfirmation = z.infer<typeof CopilotPlanConfirmationSchema>;
 export type CopilotDocConfirmation = z.infer<typeof CopilotDocConfirmationSchema>;
@@ -276,6 +309,7 @@ export const CopilotConfirmationDecisionSchema = z
       "refresh_arxiv_source",
       "replace_upload_source",
       "accept_pdf_resource_warning",
+      "delete_doc",
     ]),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
@@ -298,6 +332,13 @@ const OperationConfirmationBase = {
   outcome: z.enum(["approved", "declined", "expired"]).optional(),
 };
 export const OperationConfirmationSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("delete_doc"),
+      docId: z.string().min(1),
+    })
+    .strict(),
   z
     .object({
       ...OperationConfirmationBase,
@@ -350,7 +391,12 @@ export const WsCopilotViewActionSchema = z
     type: z.literal("copilot.view-action"),
     viewId: CopilotIdSchema,
     actionId: z.string().uuid(),
-    action: z.union([PlanViewActionSchema, WorkspaceViewActionSchema, LibraryViewActionSchema]),
+    action: z.union([
+      PlanViewActionSchema,
+      WorkspaceViewActionSchema,
+      LibraryViewActionSchema,
+      DocDeletedViewActionSchema,
+    ]),
   })
   .strict();
 export type WsCopilotViewAction = z.infer<typeof WsCopilotViewActionSchema>;

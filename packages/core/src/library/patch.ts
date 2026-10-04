@@ -139,6 +139,58 @@ export function appendDocIdNarrow(
   return "ok";
 }
 
+export interface RemovedDocWork {
+  id: string;
+  title: string;
+  /** The Work's Doc ids after the removal (`remaining[0]` is its main Doc). */
+  remaining: string[];
+}
+
+/**
+ * Take one Doc out of EVERY Work's `doc_ids` and change nothing else (copilot ticket 16). The file is re-read raw,
+ * so other Works, unknown keys (top level and per Work) and `project` stay as stored, and the other entries of an
+ * edited `doc_ids` keep their stored values; the Doc id is compared as a string. Only library.json is rewritten
+ * (tmp + rename): a Doc association is not part of the BibTeX projection, so library.bib is left alone. The
+ * remaining first entry of each Work naturally becomes its main Doc. Nothing is written when no Work holds the
+ * Doc or the file does not exist. An unreadable file throws and stays as it was. The caller holds the library
+ * write lock. Replaces the typed `removeDocFromWorks`, which re-projected the whole library and dropped unknown keys.
+ */
+export function removeDocFromWorksNarrow(
+  paths: LibraryPaths,
+  docId: string
+): { changed: boolean; works: RemovedDocWork[] } {
+  if (!existsSync(paths.libraryJson)) return { changed: false, works: [] };
+  const data = JSON.parse(readFileSync(paths.libraryJson, "utf8")) as Raw;
+  const works = Array.isArray(data.works) ? (data.works as unknown[]) : [];
+  const affected: RemovedDocWork[] = [];
+  for (const candidate of works) {
+    if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) continue;
+    const work = candidate as Raw;
+    if (!Array.isArray(work.doc_ids) || !work.doc_ids.some((entry) => String(entry) === docId))
+      continue;
+    work.doc_ids = work.doc_ids.filter((entry) => String(entry) !== docId);
+    affected.push({
+      id: String(work.id),
+      title: typeof work.title === "string" ? work.title : "",
+      remaining: (work.doc_ids as unknown[]).map(String),
+    });
+  }
+  if (affected.length === 0) return { changed: false, works: [] };
+  const tmp = paths.libraryJson.replace(/\.json$/, ".json.tmp");
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+    renameSync(tmp, paths.libraryJson);
+  } catch (error) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* keep the original error */
+    }
+    throw error;
+  }
+  return { changed: true, works: affected };
+}
+
 export interface NarrowWorkChanges {
   /**
    * Works that did not exist in the file: always appended, never merged into a stored object (the caller has

@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   CopilotConfirmationDecisionSchema,
+  CopilotConfirmationSchema,
   CopilotMessageRequestSchema,
   CopilotOperationSchema,
   CopilotResourceConfirmationSchema,
   CopilotResumeRequestSchema,
+  DocDeletedViewActionSchema,
   LIBRARY_OPERATION_ACTIONS,
   LibraryAcquireArxivPdfSchema,
   LibraryAttachArxivSchema,
+  LibraryDeleteDocSchema,
   LibraryImportWorksSchema,
   LibraryReadJobsSchema,
   LibraryReadOperationSchema,
@@ -23,6 +26,7 @@ import {
   OperationConfirmationSchema,
   PageContextSchema,
   summarizeLibraryRef,
+  WsCopilotViewActionSchema,
 } from "../src/index.js";
 
 const ref = {
@@ -482,5 +486,94 @@ describe("large PDF acceptance (copilot ticket 15)", () => {
         workId: "w",
       }).success
     ).toBe(false);
+  });
+});
+
+describe("Doc deletion (copilot ticket 16)", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const card = {
+    id,
+    runId: "00000000-0000-4000-8000-000000000002",
+    toolCallId: "c",
+    baseRev: 3,
+    action: "delete_doc",
+    object: { kind: "doc", id: "arxiv-2603.1" },
+    format: "latex",
+    works: [{ id: "w1", title: "T", main: true, remaining: 1 }],
+    impact: { annotations: "known", count: 2 },
+    objectDigest: "d",
+  };
+  it("delete_doc takes a Doc id and nothing else (no path, no work, no unlink variant)", () => {
+    expect(LibraryDeleteDocSchema.safeParse({ action: "delete_doc", docId: "d" }).success).toBe(
+      true
+    );
+    for (const bad of [
+      { action: "delete_doc" },
+      { action: "delete_doc", docId: "" },
+      { action: "delete_doc", docId: "d", refId: "w" },
+      { action: "delete_doc", docId: "d", path: "/etc" },
+      { action: "unlink_doc", docId: "d", refId: "w" },
+    ])
+      expect(LibraryDeleteDocSchema.safeParse(bad).success).toBe(false);
+    expect(LIBRARY_OPERATION_ACTIONS).toContain("delete_doc");
+    expect(LIBRARY_OPERATION_ACTIONS).not.toContain("unlink_doc");
+  });
+  it("its card names every work, shows an unknown count as unknown, and is bound in the decision and the record", () => {
+    expect(CopilotConfirmationSchema.safeParse(card).success).toBe(true);
+    expect(
+      CopilotConfirmationSchema.safeParse({ ...card, impact: { annotations: "unknown" } }).success
+    ).toBe(true);
+    expect(
+      CopilotConfirmationSchema.safeParse({ ...card, impact: { annotations: "unknown", count: 0 } })
+        .success
+    ).toBe(false);
+    expect(CopilotConfirmationSchema.safeParse({ ...card, approved: true }).success).toBe(false);
+    expect(
+      CopilotConfirmationDecisionSchema.safeParse({
+        decision: "approve",
+        viewId: id,
+        action: "delete_doc",
+        objectId: "arxiv-2603.1",
+        baseRev: 3,
+      }).success
+    ).toBe(true);
+    const record = {
+      version: 1,
+      phase: "requested",
+      confirmationId: id,
+      runId: card.runId,
+      toolCallId: "c",
+      baseRev: 3,
+      action: "delete_doc",
+      docId: "arxiv-2603.1",
+    };
+    expect(OperationConfirmationSchema.safeParse(record).success).toBe(true);
+    expect(OperationConfirmationSchema.safeParse({ ...record, docId: undefined }).success).toBe(
+      false
+    );
+  });
+  it("the shell update is a service-to-view action that no tool schema accepts", () => {
+    const action = { action: "doc_deleted", docId: "d", remaining: ["x"] };
+    expect(DocDeletedViewActionSchema.safeParse(action).success).toBe(true);
+    expect(DocDeletedViewActionSchema.safeParse({ ...action, extra: 1 }).success).toBe(false);
+    expect(LibraryViewActionSchema.safeParse(action).success).toBe(false);
+    expect(LIBRARY_OPERATION_ACTIONS).not.toContain("doc_deleted");
+    expect(
+      WsCopilotViewActionSchema.safeParse({
+        type: "copilot.view-action",
+        viewId: id,
+        actionId: "00000000-0000-4000-8000-000000000003",
+        action,
+      }).success
+    ).toBe(true);
+    expect(
+      CopilotOperationSchema.safeParse({
+        id: "c",
+        tool: "library",
+        action: "delete_doc",
+        status: "ok",
+        object: { kind: "doc", id: "d" },
+      }).success
+    ).toBe(true);
   });
 });

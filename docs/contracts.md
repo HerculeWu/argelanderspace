@@ -70,6 +70,7 @@
 - server 已知同 doc queued/running mutation → DELETE busy 409；反向删除中 upload 不得写入。DocMutationRegistry 生命周期互斥，不仅是 libraryLock。
 - workspace 显式三态：删非 current 不变；删 current 且该 work 有剩则切新主；无剩则 currentDoc=null，并主动更新 paper list，不能等 watcher 碰巧修好。
 - CLI 与 server 跨进程同时 mutate 同 doc 不支持，不做 filesystem lock；CLI 文档删除命令未提供。
+- Copilot `library.delete_doc` 复用同一全局删除处理，永远要真人确认卡（与对话框同范围文案，列出所有持有该 Doc 的 Work 与标注计数；模型不能自批）；库步骤为窄写入、只写 library.json，见 [library](library.md) 的“Doc 删除（Copilot 票 16）”。
 - 绕过入口手动 rm output 后 orphan annotations 不自动清理，**无访问保证**，不能写成已有 migration 输入渠道。
 
 ### 本地 PDF Doc（Web 上传与只读基础阅读）

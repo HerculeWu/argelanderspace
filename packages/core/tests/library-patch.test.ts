@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
-import { appendDocIdNarrow, patchWorkNarrow, restoreUnknownKeys } from "../src/library/patch.js";
+import {
+  appendDocIdNarrow,
+  patchWorkNarrow,
+  removeDocFromWorksNarrow,
+  restoreUnknownKeys,
+} from "../src/library/patch.js";
 import { libraryPaths } from "../src/library/store.js";
 
 function seed() {
@@ -236,4 +241,66 @@ test("a known key with an empty or odd value is the model's business, not an unk
   expect("note" in restored).toBe(false);
   expect("tags" in restored).toBe(false);
   expect("year" in restored).toBe(false);
+});
+
+// ---- removeDocFromWorksNarrow (copilot ticket 16: DELETE /api/paper/:doc_id and the Copilot delete_doc) ------------
+
+test("removing a Doc takes it out of every Work's doc_ids and keeps unknown keys, other Works and library.bib as stored", () => {
+  const { paths, file } = seed();
+  const raw = disk(paths);
+  raw.works.push({ id: "doi:10.1/c", title: "Gamma", doc_ids: ["d2", "c1"], x_third: { a: [1] } });
+  raw.works.push({ id: "doi:10.1/e", title: "Epsilon", doc_ids: ["d2"] });
+  writeFileSync(paths.libraryJson, JSON.stringify(raw, null, 2), "utf8");
+  writeFileSync(paths.libraryBib, "% bib sentinel\n", "utf8");
+  const result = removeDocFromWorksNarrow(paths, "d2");
+  expect(result).toEqual({
+    changed: true,
+    works: [
+      { id: "doi:10.1/a", title: "Alpha", remaining: ["d1", "d3"] },
+      { id: "doi:10.1/c", title: "Gamma", remaining: ["c1"] },
+      { id: "doi:10.1/e", title: "Epsilon", remaining: [] },
+    ],
+  });
+  const after = disk(paths);
+  expect(after.works[0]).toEqual({ ...file.works[0], doc_ids: ["d1", "d3"] });
+  expect(after.works[1]).toEqual(file.works[1]);
+  expect(after.works[2]).toEqual({ ...raw.works[2], doc_ids: ["c1"] });
+  expect(after.works[3]).toEqual({ ...raw.works[3], doc_ids: [] });
+  expect(after.x_top).toEqual(file.x_top);
+  expect(after.project).toEqual(file.project);
+  // doc_ids are not part of the BibTeX projection: the file is not rewritten.
+  expect(readFileSync(paths.libraryBib, "utf8")).toBe("% bib sentinel\n");
+  expect(existsSync(paths.libraryJson.replace(/\.json$/, ".json.tmp"))).toBe(false);
+});
+
+test("the Doc id is compared as a string, and entries that are not the Doc stay exactly as stored", () => {
+  const { paths } = seed();
+  const raw = disk(paths);
+  raw.works[0].doc_ids = [123, "keep", 456];
+  writeFileSync(paths.libraryJson, JSON.stringify(raw, null, 2), "utf8");
+  const result = removeDocFromWorksNarrow(paths, "123");
+  expect(result.works).toEqual([{ id: "doi:10.1/a", title: "Alpha", remaining: ["keep", "456"] }]);
+  expect(disk(paths).works[0].doc_ids).toEqual(["keep", 456]);
+});
+
+test("a Doc no Work holds, or a missing library file, writes nothing", () => {
+  const { paths } = seed();
+  const before = readFileSync(paths.libraryJson, "utf8");
+  expect(removeDocFromWorksNarrow(paths, "nobody")).toEqual({ changed: false, works: [] });
+  expect(readFileSync(paths.libraryJson, "utf8")).toBe(before);
+  const empty = libraryPaths(mkdtempSync(join(tmpdir(), "library-patch-empty-")));
+  expect(removeDocFromWorksNarrow(empty, "d1")).toEqual({ changed: false, works: [] });
+  expect(existsSync(empty.libraryJson)).toBe(false);
+});
+
+test("an unreadable library file throws and stays as it was; a failed write keeps the original bytes", () => {
+  const { paths } = seed();
+  const good = readFileSync(paths.libraryJson, "utf8");
+  // The temp path is occupied by a directory, so staging the new file fails.
+  mkdirSync(paths.libraryJson.replace(/\.json$/, ".json.tmp"));
+  expect(() => removeDocFromWorksNarrow(paths, "d1")).toThrow();
+  expect(readFileSync(paths.libraryJson, "utf8")).toBe(good);
+  writeFileSync(paths.libraryJson, "{ not json", "utf8");
+  expect(() => removeDocFromWorksNarrow(paths, "d1")).toThrow();
+  expect(readFileSync(paths.libraryJson, "utf8")).toBe("{ not json");
 });

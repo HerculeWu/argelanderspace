@@ -1213,7 +1213,8 @@
         "read_jobs": "读取获取任务",
         "upload_pdf": "上传 PDF",
         "upload_latex_zip": "上传 LaTeX 源码",
-        "replace_upload_source": "替换已上传源码"
+        "replace_upload_source": "替换已上传源码",
+        "delete_doc": "删除文档"
       },
       "status": {
         "ok": "已应用",
@@ -1253,7 +1254,11 @@
       "replaceUpload": "用「{{file}}」替换「{{name}}」已上传的源码",
       "acceptPdf": "将「{{file}}」上传到「{{name}}」",
       "expiredUpload": "你做决定前附件或文献库已变化，未上传任何内容。",
-      "failedUpload": "未能保存你的决定，未上传任何内容；请重试。"
+      "failedUpload": "未能保存你的决定，未上传任何内容；请重试。",
+      "deleteDoc": "永久删除文档「{{id}}」",
+      "deleteDocWork": "「{{title}}」· {{state}} · 保留的其他文档：{{count}}",
+      "expiredDeleteDoc": "你做决定前文档、关联条目或其标注已变化，未删除任何内容。",
+      "failedDeleteDoc": "结果未知：你的决定可能已到达服务，也可能没有。请先检查文献库再重试。"
     },
     "thinkingLevels": {
       "off": "关闭",

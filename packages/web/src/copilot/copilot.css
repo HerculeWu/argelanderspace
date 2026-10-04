@@ -44,6 +44,9 @@
 .copilot-confirmation p{font-size:12px;color:var(--text-dim);line-height:1.8;margin:0}
 .copilot-confirmation-warn{display:flex;gap:7px;font-size:11px;align-items:center;color:var(--warn)}
 .copilot-confirmation-warn svg{width:12px;height:12px;flex:none}
+.copilot-confirmation-works{margin:8px 0;padding-left:18px;font-size:12px;color:var(--text-dim);line-height:1.8}
+.copilot-confirmation-works li{overflow-wrap:anywhere}
+.copilot-confirmation p+p,.copilot-confirmation ul+p{margin-top:8px}
 .copilot-confirmation-meta{font-size:10px;color:var(--text-faint);margin:12px 0;overflow-wrap:anywhere}
 .copilot-confirmation-problem{color:var(--danger);margin-bottom:12px}
 .copilot-confirmation-actions{display:flex;gap:8px;justify-content:flex-end}

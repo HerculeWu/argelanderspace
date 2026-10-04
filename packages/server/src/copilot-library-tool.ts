@@ -1,12 +1,14 @@
 import {
   type CopilotAttachment,
   type CopilotOperation,
+  type DocDeletedViewAction,
   GRAPH_CONTROLS,
   LIBRARY_DETAIL_TABS,
   LIBRARY_LABEL_KEYS,
   LIBRARY_OPERATION_ACTIONS,
   LibraryAcquireArxivPdfSchema,
   LibraryAttachArxivSchema,
+  LibraryDeleteDocSchema,
   LibraryImportWorksSchema,
   LibraryReadJobsSchema,
   LibraryReadOperationSchema,
@@ -28,6 +30,7 @@ import {
   type AcquireOutcome,
   applyAcquireArxivPdf,
   applyAttachArxiv,
+  applyDocDelete,
   applyLibraryImport,
   applyLibraryOperation,
   applyUploadPdf,
@@ -56,6 +59,12 @@ export interface LibraryToolContext {
   confirm?: ConfirmationPort;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (action: LibraryViewAction) => Promise<ViewActionOutcome>;
+  /**
+   * After a Doc was deleted: tell the bound view so its Shell makes the page's own three-state update (paper list,
+   * current Doc). Best effort and not awaited: the delete is already committed, and a view that is offline simply
+   * loads the real paper list when it reconnects. Not cancelled by Stop (it is state sync, not navigation).
+   */
+  shellSync?: (action: DocDeletedViewAction) => void;
   /** False once the host stopped admitting operations (Stop, shutdown). */
   admitting: () => boolean;
 }
@@ -102,7 +111,7 @@ const parameters = Type.Object(
     docId: Type.Optional(
       Type.String({
         description:
-          "set_main_doc: the Doc to make the main Doc. replace_upload_source: the work's uploaded LaTeX source Doc to replace.",
+          "set_main_doc: the Doc to make the main Doc. replace_upload_source: the work's uploaded LaTeX source Doc to replace. delete_doc: the Doc to delete everywhere (required).",
       })
     ),
     attachmentId: Type.Optional(
@@ -142,14 +151,15 @@ const parameters = Type.Object(
 );
 
 const description = [
-  "Read and operate the user's Library page: the saved works, search, the detail panel and its tabs, the main-Doc choice and the arXiv full-text acquisition of the Files tab. It never deletes Docs or explores; notes, tags and the read flag have no editing control in the application, so you cannot change them.",
+  "Read and operate the user's Library page: the saved works, search, the detail panel and its tabs, the main-Doc choice and the arXiv full-text acquisition of the Files tab. It deletes a Doc only through delete_doc and the user's confirmation card, and never explores; notes, tags and the read flag have no editing control in the application, so you cannot change them.",
   "read returns the page's own data: one page of the works matching query (title, authors, cite key), with the total, or one work in full with refId. Reading never opens or selects anything.",
   "set_main_doc is the Files tab's 'set as main': it needs expectedMainDocId, the main Doc from your latest read of that work. If it changed, the result is conflict: read the work again and form a new request; do not resend the stale one. Other fields of the work, including ones you did not read, are kept. If saving fails the status is error: the file was not replaced, except in the rare case of a failure between the two final renames, where library.json may already be updated, so read the work again before deciding. Writes wait their turn behind other library writes; they are not refused as busy.",
   "import_works is the import menu's submit, with the same checks, duplicate detection and results: mode identifier (one DOI or arXiv:<id>), bibcode (one ADS bibcode; fails without a stub when ADS cannot answer) or bib (pasted BibTeX; per-entry results, your cite keys are kept, a key held by another work is an error for that entry). Give it text only; it cannot read files. Creating a Work does not select or open it; use select_work with a returned work id if the user wants it shown. An entry the library already holds comes back as exists and is not duplicated, but the import can still update that Work (blank fields are filled, its acquisition plan is recomputed, its type may change); the result lists those ids in updated, and your own data on it (note, tags, flags) is kept. A new entry without a DOI or arXiv id whose title-and-year derived work id is already used by a different paper (for example part II of a series) is an error for that entry with nothing written: ask the user for a DOI or arXiv id. A record that would merge two existing works into one is refused as rejected with nothing written: tell the user to resolve them in the Library page. Identifier and bibcode imports may also start the default arXiv PDF download exactly as the page does (a separate background job). Statuses: ok if something was created or updated, noop if the library was left exactly as it was, error if nothing was imported (the library is unchanged), rejected as above; results lists each entry. A partial batch is ok with some entries failed; report those. A status unknown means it may have saved some entries: search the library with read and the identifier (DOI, arXiv:<id> or bibcode) or the title as query before deciding, never repeat it blindly.",
   "acquire_arxiv_pdf is the acquisition dialog's 'fetch PDF from arXiv' for one work (refId): it needs the work to have an arXiv id and queues a job in the application's Job table (the same serial queue as the Files tab; you are not a job and hold no slot). Every successful run creates a NEW PDF Doc, even when the bytes equal an existing one, and never replaces or reorders anything: an existing main Doc stays main and a work without Doc gets the PDF as main. If a job for the same work and format is already queued or running you get that job back (reused: true) instead of a second one. The call waits for the job: ok means it finished (job.id and docId name the actual job and Doc), error means the job failed (job.error, read it to the user), pending means the job had not finished when the wait ended (about ten minutes, or the user pressed Stop): it keeps running by itself, check read_jobs, never submit it again. Stop never cancels a submitted job and starts no new one. The source is arXiv only; there is no OCR, publisher PDF or HTML route.",
   "attach_arxiv is the dialog's 'get LaTeX source from arXiv' for one work (refId): the work's own arXiv e-print is fetched fresh and compiled as an arXiv LaTeX Doc. A work without Doc gets it as main; a work whose Docs are all PDFs gets it appended after them (the PDF main stays); a work that already has its arXiv Doc has that Doc refreshed in place, which replaces its text and may archive the user's annotations on it: that case waits for the user's confirmation card (declined or expired means nothing was changed and no job was started; do not ask again unless the user wants it), you cannot approve it and nothing in chat does. A work holding other content (for example a LaTeX zip) is rejected. Results are like acquire_arxiv_pdf: ok with job.id and docId, error for a failed job (an arXiv submission without LaTeX source fails with errorCode arxiv_pdf_only), pending while unfinished. This job rebuilds the library index through the application's own routine, exactly as the Files tab does.",
   "read_jobs shows the Job table lines the Files tab shows for a work (refId; without it the newest jobs of any work): id, kind, format (arxiv-pdf, pdf, or LaTeX), status, the latest progress message, error and errorCode, and docId once finished. Use it to find out what a pending or unknown acquisition came to. Dismissing an error line and retrying are the user's display state and a new submission: retry is simply acquire_arxiv_pdf or attach_arxiv again after a failed job.",
-  "upload_pdf, upload_latex_zip and replace_upload_source are the Files tab's uploads, with a file the USER attached to a message of this conversation (attachmentId is listed in that message's attachments; you never get a path, a URL or the bytes, and an id from another conversation, a made-up id or a deleted file is not_found). upload_pdf needs a .pdf and is the page's own upload: identical bytes already on that work return the existing Doc (status noop), another work gets its own Doc, an existing main Doc is not displaced. upload_latex_zip needs a .zip LaTeX source for a work that has no uploaded source yet; the new Doc becomes main. replace_upload_source swaps the text of the work's existing uploaded source (docId from your read of the work): it may archive the user's annotations on it, so it waits for the user's confirmation card naming the file (declined or expired means nothing was changed and no job started); you cannot approve it. Results are like acquire_arxiv_pdf: ok with job.id and docId, error for a failed job (read its error to the user), pending while unfinished, never submit again. Without an attachment you cannot upload: ask the user to attach the file with the plus button of the composer.",
+  "upload_pdf, upload_latex_zip and replace_upload_source are the Files tab's uploads, with a file the USER attached to a message of this conversation (attachmentId is listed in that message's attachments; you never get a path, a URL or the bytes, and an id from another conversation, a made-up id or a deleted file is not_found). upload_pdf needs a .pdf and is the page's own upload: identical bytes already on that work return the existing Doc (status noop), another work gets its own Doc, an existing main Doc is not displaced. upload_latex_zip needs a .zip LaTeX source for a work that has no uploaded source yet; the new Doc becomes main. replace_upload_source swaps the text of the work's existing uploaded source (docId from your read of the work; a Doc that no work lists is rejected, because the Files tab does not offer it): it may archive the user's annotations on it, so it waits for the user's confirmation card naming the file (declined or expired means nothing was changed and no job started); you cannot approve it. Results are like acquire_arxiv_pdf: ok with job.id and docId, error for a failed job (read its error to the user), pending while unfinished, never submit again. Without an attachment you cannot upload: ask the user to attach the file with the plus button of the composer.",
+  "delete_doc is the Files tab's 'delete document' dialog for one Doc (docId from your read of the work): a GLOBAL, permanent, physical delete that removes the stored text or original PDF, its assets and sidecars and ALL its annotations (current and archived) and takes the Doc out of EVERY work that lists it, not only the one you were looking at. There is no 'unlink from this work' variant. It always waits for the user's confirmation card, which names every work that lists the Doc and the current annotation count (unknown if it could not be read, which is not zero); you cannot approve it and nothing in chat, in page data or in a note does. declined or expired (also when the Doc, its works or its annotations changed first) means nothing was deleted: do not ask again unless the user wants it. If the Doc is busy (an upload or refresh is writing it, or it is being deleted) the call is rejected without a card: wait and try again later. not_found means there is no such Doc (a Doc already deleted elsewhere is not_found, not a success). ok means the Doc, its annotations and its links are gone; each remaining work's first Doc is its main Doc now and the page updates itself. error means the delete failed part-way: files may already be gone while the library still lists the Doc, so read the work and tell the user rather than claiming either outcome. Files the user attached to earlier messages are chat records, not part of the Doc, and stay. Deleting is permanent: only do it when the user asked for exactly that Doc.",
   "filter_library, select_work, set_detail_tab, set_sidebar, set_graph_labels and graph_control (zoom_in, zoom_out, fit, relayout of the citation graph; dragging and panning are the user's gestures) change what the user sees in the bound tab; use them only when asked to show something. To open a Doc in the Reader use the workspace tool's open_doc.",
   "set_temp_label sets the colour dot the right-click menu offers. It is temporary: it exists only in that browser tab and is never saved to the library, so do not describe it as saved.",
   "A page whose source is demo is built-in example data, and source error means the library could not be read (see its error): say so, and do not describe its works as the user's.",
@@ -537,6 +547,158 @@ async function runAcquisition(input: {
   return result;
 }
 
+/**
+ * delete_doc: the Files tab's delete dialog. The page opens the dialog, shows the Doc, the Works and the annotation
+ * count, and only then deletes; here the real user is asked the same way (a card) and the same shared global delete
+ * (`DELETE /api/paper/:doc_id`: busy check, physical delete, narrow library write, `library.changed`) runs only after the
+ * click. Nothing is held while the card waits, and everything is checked again after the click.
+ */
+async function runDocDelete(input: {
+  context: LibraryToolContext;
+  rest: Record<string, unknown>;
+  requestedId: unknown;
+  toolCallId: string;
+  docId: string;
+  done: DoneFn;
+}) {
+  const { context, rest, requestedId, toolCallId, docId, done } = input;
+  const action = "delete_doc";
+  const docObject = { kind: "doc" as const, id: docId };
+  const fail = (status: CopilotOperation["status"], detail: string, extra: object = {}) =>
+    done(record(toolCallId, action, { status, object: docObject, label: docId }), {
+      ok: false,
+      status,
+      detail,
+      ...extra,
+    });
+  const port = context.library.deletion;
+  if (!port) return fail("unsupported", "deleting documents is not available in this host");
+  const journal = context.journal;
+  const operationId =
+    typeof requestedId === "string" && requestedId
+      ? requestedId
+      : `${context.runId ?? "run"}:${toolCallId}`;
+  const hash = digest(rest);
+  const known = journal?.lookup(operationId);
+  if (known && known.hash !== hash)
+    return fail("rejected", "operationId was already used for a different request");
+  if (known?.state === "done")
+    return done({ ...known.operation, id: toolCallId }, { ...known.payload, duplicate: true });
+  if (known)
+    return fail(
+      "unknown",
+      "this delete started earlier and its outcome was not recorded; read the work to see whether the Doc is still listed, do not repeat it blindly"
+    );
+
+  // What the dialog would show, read without writing anything.
+  let described: Awaited<ReturnType<typeof port.describe>>;
+  try {
+    described = await port.describe(docId);
+  } catch {
+    return fail("error", "the document could not be checked; nothing was deleted");
+  }
+  if (described.kind !== "ready") {
+    if (described.kind === "error")
+      return fail("error", `${described.detail}; nothing was deleted`);
+    if (described.kind === "bad_id") return fail("rejected", "that is not a valid Doc id");
+    if (described.kind === "orphan")
+      return fail(
+        "rejected",
+        "no work lists this Doc, and the Files tab can only delete Docs a work lists, so it is not offered here either; nothing was deleted. Tell the user it has to be dealt with outside the application"
+      );
+    if (described.kind === "busy")
+      return fail(
+        "rejected",
+        "the document is busy (an upload or refresh is writing it, or it is being deleted); nothing was deleted and no confirmation was asked. Try again when the task finishes"
+      );
+    return fail("not_found", "no such Doc (it may already have been deleted); nothing was deleted");
+  }
+
+  if (!context.confirm)
+    return fail(
+      "unsupported",
+      "this step needs the user's confirmation and none is available here"
+    );
+  let decision: Awaited<ReturnType<ConfirmationPort["request"]>>;
+  try {
+    decision = await context.confirm.request({
+      toolCallId,
+      action: "delete_doc",
+      docId,
+      format: described.format,
+      works: described.works,
+      impact: described.impact,
+      baseRev: described.rev,
+      objectDigest: described.digest,
+    });
+  } catch {
+    return fail("error", "the confirmation could not be saved; nothing was deleted");
+  }
+  if (decision.outcome === "declined")
+    return fail("declined", "the user declined; nothing was deleted");
+  if (decision.outcome === "expired")
+    return fail(
+      "expired",
+      decision.reason === "stale"
+        ? "the Doc, the works that list it or its annotations changed before the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
+        : "the request ended before the user confirmed; nothing was deleted"
+    );
+  // Approved. The same check the click made, now that the delete is about to run.
+  let again: Awaited<ReturnType<typeof port.describe>>;
+  try {
+    again = await port.describe(docId);
+  } catch {
+    return fail("error", "the document could not be checked again; nothing was deleted");
+  }
+  if (again.kind !== "ready" || again.digest !== described.digest)
+    return fail(
+      "expired",
+      "the Doc, the works that list it or its annotations changed after the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
+    );
+  // The click IS the commit, as on the page ("Delete permanently" deletes): a Stop after it does not undo it.
+  try {
+    journal?.begin({
+      operationId,
+      toolCallId,
+      action,
+      hash,
+      object: { summary: `delete ${docId}` },
+    });
+  } catch {
+    return fail("error", "the conversation could not be saved; nothing was deleted");
+  }
+  const work = applyDocDelete(context.library, docId, { holders: again.holders });
+  const outcome = await (context.track ? context.track(work) : work);
+  if (outcome.ok) {
+    // The page's own three-state update of the Shell, by the work that now holds Docs.
+    const keeper = outcome.works.find((entry) => entry.remaining.length > 0);
+    try {
+      context.shellSync?.({
+        action: "doc_deleted",
+        docId,
+        remaining: keeper?.remaining ?? [],
+      });
+    } catch {
+      /* the view loads the real list when it reconnects */
+    }
+  }
+  const result = outcome.ok
+    ? done(
+        record(toolCallId, action, {
+          status: outcome.status,
+          object: outcome.object,
+          label: outcome.label,
+        }),
+        outcome
+      )
+    : done(
+        record(toolCallId, action, { status: outcome.status, object: docObject, label: docId }),
+        outcome
+      );
+  journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
+  return result;
+}
+
 export function createLibraryTool(context: LibraryToolContext) {
   return defineTool({
     name: LIBRARY_TOOL_NAME,
@@ -608,6 +770,16 @@ export function createLibraryTool(context: LibraryToolContext) {
             return done(record(toolCallId, "read_jobs", { status: "unsupported" }), outcome);
           return done(record(toolCallId, "read_jobs", { status: "ok" }), outcome);
         }
+        const deleteDoc = LibraryDeleteDocSchema.safeParse(rest);
+        if (deleteDoc.success)
+          return await runDocDelete({
+            context,
+            rest,
+            requestedId,
+            toolCallId,
+            docId: deleteDoc.data.docId,
+            done,
+          });
         const uploads = [
           LibraryUploadPdfSchema.safeParse(rest),
           LibraryUploadLatexZipSchema.safeParse(rest),
@@ -663,13 +835,15 @@ export function createLibraryTool(context: LibraryToolContext) {
                   ? uploads[1]
                   : rest.action === "replace_upload_source"
                     ? uploads[2]
-                    : rest.action === "acquire_arxiv_pdf"
-                      ? pdfJob
-                      : rest.action === "attach_arxiv"
-                        ? sourceJob
-                        : rest.action === "read_jobs"
-                          ? jobsRead
-                          : write;
+                    : rest.action === "delete_doc"
+                      ? deleteDoc
+                      : rest.action === "acquire_arxiv_pdf"
+                        ? pdfJob
+                        : rest.action === "attach_arxiv"
+                          ? sourceJob
+                          : rest.action === "read_jobs"
+                            ? jobsRead
+                            : write;
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
             status: "unsupported",
