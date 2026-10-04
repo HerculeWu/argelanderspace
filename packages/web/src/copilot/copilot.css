@@ -14,7 +14,7 @@
 .copilot-operation summary::-webkit-details-marker{display:none}
 .copilot-operation-mark,.copilot-operation-chevron{display:flex;flex:none}
 .copilot-operation-mark svg,.copilot-operation-chevron svg{width:12px;height:12px}
-.copilot-operation-mark.ok{color:var(--ok)}.copilot-operation-mark.warn{color:var(--warn)}
+.copilot-operation-mark.ok{color:var(--ok)}.copilot-operation-mark.warn{color:var(--warn)}.copilot-operation-mark.pending{color:var(--muted,currentColor)}
 .copilot-operation-chevron{margin-left:auto}
 .copilot-operation ul{list-style:none;margin:6px 0 0;padding:0}
 .copilot-operation li{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 0;border-top:1px solid var(--border-soft);font-size:11px;overflow-wrap:anywhere}
@@ -52,3 +52,16 @@
 /* A collapsed panel with a confirmation waiting: a dot on the toggle (prototype A has none; pending user sign-off). */
 .copilot-toggle-wrap{position:relative;display:inline-flex}
 .copilot-toggle-dot{position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--warn);pointer-events:none}
+
+/* Attachments (ticket 15): prototype A's plus button and removable chips. */
+.copilot-attachments{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:7px}
+.copilot-attachments.sent{justify-content:flex-end;margin:4px 0 0}
+.copilot-attachment{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:10px;border:1px solid var(--border);padding:4px 6px;border-radius:5px;color:var(--text-dim)}
+.copilot-attachment .ico{width:11px;height:11px;flex:none}
+.copilot-attachment-name{min-width:0;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copilot-attachment small{color:var(--text-faint);font-size:10px}
+.copilot-attachment[data-status=failed]{border-color:var(--danger);color:var(--danger)}
+.copilot-attachment-retry{font-size:10px;text-decoration:underline;color:inherit}
+.copilot-attachment-remove{display:inline-flex;align-items:center;padding:0;color:inherit}
+.copilot-attach{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:6px;color:var(--text-dim)}
+.copilot-attach:hover:not(:disabled){background:var(--hover)}

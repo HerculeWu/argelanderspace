@@ -8,6 +8,7 @@
  * new library-wide revision.
  */
 import { z } from "zod";
+import { JobStatusSchema } from "./job-status.js";
 import { type Task, type TaskStatus, TaskStatusSchema } from "./plans.js";
 
 /** The 8 lucide names the Plan modal offers (`target` is the default). */
@@ -194,6 +195,8 @@ export const CopilotOperationSchema = z
       "declined",
       /** The confirmation is no longer valid (changed, stopped or restarted). Nothing was written. */
       "expired",
+      /** A background job was submitted and had not finished when the call ended; its outcome is `job.id` in the Job table. */
+      "pending",
     ]),
     rev: Rev.optional(),
     object: z
@@ -209,6 +212,16 @@ export const CopilotOperationSchema = z
     warnings: z.array(z.string()).optional(),
     /** A deleted task can be restored until this instant (the Plan page's six-second undo window). */
     undo: z.object({ until: z.string() }).strict().optional(),
+    /** The existing Job-table job this operation submitted (upload / arXiv acquisition), with its state when the call ended. */
+    job: z
+      .object({
+        id: z.string(),
+        status: JobStatusSchema,
+      })
+      .strict()
+      .optional(),
+    /** The Doc the finished job actually created or refreshed. */
+    docId: z.string().optional(),
   })
   .strict();
 export type CopilotOperation = z.infer<typeof CopilotOperationSchema>;

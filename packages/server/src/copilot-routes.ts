@@ -1,4 +1,5 @@
 import {
+  COPILOT_ATTACHMENT_MAX_BYTES,
   ConversationModelSchema,
   CopilotConfirmationDecisionSchema,
   CopilotIdSchema,
@@ -27,13 +28,21 @@ export function mountCopilotRoutes(
     }
     await next();
   });
-  app.use(
-    "*",
-    bodyLimit({
-      maxSize: 8 * 1024 * 1024,
-      onError: (c) =>
-        c.json({ code: "capacity", detail: "page context too large", retryable: false }, 413),
-    })
+  const jsonLimit = bodyLimit({
+    maxSize: 8 * 1024 * 1024,
+    onError: (c) =>
+      c.json({ code: "capacity", detail: "page context too large", retryable: false }, 413),
+  });
+  const fileLimit = bodyLimit({
+    maxSize: COPILOT_ATTACHMENT_MAX_BYTES,
+    onError: (c) =>
+      c.json({ code: "capacity", detail: "attachment too large", retryable: false }, 413),
+  });
+  // Attachments are raw file bytes with their own (PDF upload) bound; everything else is small JSON.
+  app.use("*", (c, next) =>
+    c.req.method === "POST" && /\/conversations\/[^/]+\/attachments$/.test(c.req.path)
+      ? fileLimit(c, next)
+      : jsonLimit(c, next)
   );
   app.onError((error, c) => {
     const code =
@@ -49,7 +58,7 @@ export function mountCopilotRoutes(
         ? 404
         : ["busy", "stale"].includes(code)
           ? 409
-          : ["capabilities", "capacity"].includes(code)
+          : ["capabilities", "capacity", "invalid_input"].includes(code)
             ? 400
             : 503;
     return c.json(
@@ -100,6 +109,29 @@ export function mountCopilotRoutes(
     const input = CopilotMessageRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!input.success) return c.json({ code: "invalid_input" }, 400);
     return c.json(await copilot.send(c.req.param("id"), input.data), 202);
+  });
+  // A file the user chose: raw bytes, the display name in X-Filename. The id is what a message (and then a tool) names.
+  app.post("/conversations/:id/attachments", async (c) => {
+    let filename: string;
+    try {
+      filename = decodeURIComponent(c.req.header("x-filename") ?? "");
+    } catch {
+      return c.json({ code: "invalid_input" }, 400);
+    }
+    const bytes = Buffer.from(await c.req.arrayBuffer());
+    return c.json(
+      await copilot.addAttachment(
+        c.req.param("id"),
+        filename,
+        c.req.header("content-type") ?? "application/octet-stream",
+        bytes
+      ),
+      201
+    );
+  });
+  app.delete("/conversations/:id/attachments/:attachmentId", async (c) => {
+    await copilot.removeAttachment(c.req.param("id"), c.req.param("attachmentId"));
+    return c.json({ removed: true });
   });
   app.post("/conversations/:id/stop", async (c) => c.json(await copilot.stop(c.req.param("id"))));
   app.post("/conversations/:id/resume", async (c) => {

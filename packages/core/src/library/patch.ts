@@ -16,6 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import {
   DEFAULT_PROJECT,
+  emptyWork,
   type LibraryPaths,
   LibraryStore,
   type Work,
@@ -50,7 +51,7 @@ export function patchWorkNarrow(
       candidate !== null &&
       typeof candidate === "object" &&
       !Array.isArray(candidate) &&
-      (candidate as Raw).id === workId
+      String((candidate as Raw).id) === workId
   );
   if (work === undefined) return { status: "not_found" };
   const docIds = Array.isArray(work.doc_ids) ? work.doc_ids.map(String) : [];
@@ -96,6 +97,46 @@ export function patchWorkNarrow(
   if (!changed) return { status: "noop", reason: notLinked ? "not_linked" : "unchanged" };
   commit(paths, data, works);
   return { status: "ok" };
+}
+
+/**
+ * Append one Doc to a Work's `doc_ids` and change nothing else (copilot ticket 15). The file is re-read raw,
+ * so every other Work, every unknown key and `project` stay as stored; only library.json is rewritten
+ * (a Doc association is not part of the BibTeX projection). The caller holds the library write lock.
+ * A Doc that is already linked is left alone.
+ */
+export function appendDocIdNarrow(
+  paths: LibraryPaths,
+  workId: string,
+  docId: string
+): "ok" | "present" | "not_found" {
+  if (!existsSync(paths.libraryJson)) return "not_found";
+  const data = JSON.parse(readFileSync(paths.libraryJson, "utf8")) as Raw;
+  const works = Array.isArray(data.works) ? (data.works as unknown[]) : [];
+  const work = works.find(
+    (candidate): candidate is Raw =>
+      candidate !== null &&
+      typeof candidate === "object" &&
+      !Array.isArray(candidate) &&
+      String((candidate as Raw).id) === workId
+  );
+  if (work === undefined) return "not_found";
+  const docIds = Array.isArray(work.doc_ids) ? work.doc_ids.map(String) : [];
+  if (docIds.includes(docId)) return "present";
+  work.doc_ids = [...docIds, docId];
+  const tmp = paths.libraryJson.replace(/\.json$/, ".json.tmp");
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+    renameSync(tmp, paths.libraryJson);
+  } catch (error) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* keep the original error */
+    }
+    throw error;
+  }
+  return "ok";
 }
 
 export interface NarrowWorkChanges {
@@ -183,4 +224,63 @@ function commit(paths: LibraryPaths, data: Raw, works: unknown[]): void {
     }
     throw error;
   }
+}
+
+/** Every field the typed Work model has. A known key with an empty or odd value is the model's business, not an unknown key. */
+const KNOWN_WORK_KEYS: ReadonlySet<string> = new Set(Object.keys(emptyWork("")));
+
+/**
+ * After a typed whole-library rewrite (`rebuild`), put back what the typed model does not know: top-level keys other
+ * than version/project/works, and per-Work keys the typed round trip of the BEFORE object strips. Works are matched by
+ * id; one whose id changed or that was merged away cannot be matched and its unknown keys are not restored.
+ * Only library.json is rewritten (tmp + rename); library.bib is a typed projection and is untouched. Returns the
+ * number of Works that got keys back. A failure throws and leaves the typed file in place. The caller holds the lock.
+ */
+export function restoreUnknownKeys(paths: LibraryPaths, before: unknown): number {
+  if (before === null || typeof before !== "object" || Array.isArray(before)) return 0;
+  const old = before as Raw;
+  if (!existsSync(paths.libraryJson)) return 0;
+  const data = JSON.parse(readFileSync(paths.libraryJson, "utf8")) as Raw;
+  let changed = 0;
+  let touched = false;
+  for (const [key, value] of Object.entries(old))
+    if (!["version", "project", "works"].includes(key) && !(key in data)) {
+      data[key] = value;
+      touched = true;
+    }
+  const now = Array.isArray(data.works) ? (data.works as unknown[]) : [];
+  const byId = new Map<string, Raw>();
+  for (const w of now)
+    if (w !== null && typeof w === "object" && !Array.isArray(w))
+      byId.set(String((w as Raw).id), w as Raw);
+  for (const w of Array.isArray(old.works) ? (old.works as unknown[]) : []) {
+    if (w === null || typeof w !== "object" || Array.isArray(w)) continue;
+    const prior = w as Raw;
+    const target = byId.get(String(prior.id));
+    if (!target) continue;
+    let restored = false;
+    for (const [key, value] of Object.entries(prior))
+      if (!KNOWN_WORK_KEYS.has(key) && !(key in target)) {
+        target[key] = value;
+        restored = true;
+      }
+    if (restored) {
+      changed += 1;
+      touched = true;
+    }
+  }
+  if (!touched) return 0;
+  const tmp = paths.libraryJson.replace(/\.json$/, ".json.tmp");
+  try {
+    writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+    renameSync(tmp, paths.libraryJson);
+  } catch (error) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* keep the original error */
+    }
+    throw error;
+  }
+  return changed;
 }

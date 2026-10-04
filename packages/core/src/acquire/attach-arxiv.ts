@@ -113,6 +113,11 @@ export async function attachArxivDoc(
       workId: string,
       docId: string
     ) => Promise<boolean>;
+    /**
+     * Link the new Doc for the `attach`/`append` scenarios. The server injects a lock-wrapped narrow write that
+     * re-checks the scenario; false = the Work changed meanwhile (skipped). Without it the legacy typed save runs.
+     */
+    linkDoc?: (paths: LibraryPaths, workId: string, docId: string) => Promise<boolean>;
     /** Explicit PDF metadata predicate for the narrow PDF-only coexistence case. */
     isPdfDoc?: (docId: string) => boolean;
   }
@@ -147,7 +152,10 @@ export async function attachArxivDoc(
   }
   stampSource(docJson, w, ARXIV_ATTACH_VIA);
 
-  if (scenario === "attach") {
+  if (deps.linkDoc && (scenario === "attach" || scenario === "append")) {
+    if (!(await deps.linkDoc(deps.paths, w.id, docId)))
+      return { status: "skipped", docId, ref: null };
+  } else if (scenario === "attach") {
     // With no existing Docs, this source becomes main.
     w.doc_ids = [docId, ...w.doc_ids.filter((d) => d !== docId)];
     store.save(deps.paths);

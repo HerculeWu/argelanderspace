@@ -43,7 +43,9 @@ export interface ServerOptions {
   /** Built SPA directory; `null` disables static hosting. */
   webDist?: string | null;
   /** Composition seam: stub the infra wiring (offline tests). */
-  deps?: Partial<Pick<AppDeps, "makeSources" | "makeDiscoverySource" | "fetchArxivPdf">>;
+  deps?: Partial<
+    Pick<AppDeps, "makeSources" | "makeDiscoverySource" | "fetchArxivPdf" | "pipelines">
+  >;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
   /** External-write poll interval (default 1500); tests inject ~50. */
@@ -99,7 +101,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     statusDir,
     makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline)),
     makeDiscoverySource: opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths)),
-    pipelines: realPipelines(paths),
+    pipelines: opts.deps?.pipelines ?? realPipelines(paths),
     fetchArxivPdf: opts.deps?.fetchArxivPdf ?? ((arxivId) => fetchCurrentArxivPdf(arxivId)),
     runner,
     broadcast: (msg) => hub.broadcast(msg),

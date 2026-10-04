@@ -74,6 +74,20 @@ export const PageContextSchema = z
       ctx.addIssue({ code: "custom", message: "invalid page coverage" });
   });
 export type PageContext = z.infer<typeof PageContextSchema>;
+/** Largest attachment: the PDF upload limit (50 MiB), which also bounds the LaTeX zip the Files tab takes. */
+export const COPILOT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
+/** What the application keeps about a file the user handed to a conversation. Never the bytes. */
+export const CopilotAttachmentSchema = z
+  .object({
+    id: CopilotIdSchema,
+    filename: z.string().min(1).max(255),
+    size: z.number().int().positive().max(COPILOT_ATTACHMENT_MAX_BYTES),
+    contentType: z.string().max(200),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    createdAt: z.string(),
+  })
+  .strict();
+export type CopilotAttachment = z.infer<typeof CopilotAttachmentSchema>;
 export const CopilotMessageRequestSchema = z
   .object({
     clientMessageId: CopilotIdSchema,
@@ -84,11 +98,16 @@ export const CopilotMessageRequestSchema = z
       .refine((text) => !!text.trim()),
     viewId: CopilotIdSchema,
     contextRevision: z.number().int().nonnegative(),
+    /** Attachments uploaded to this conversation and not yet sent; they travel with this message only. */
+    attachmentIds: z.array(CopilotIdSchema).max(5).optional(),
   })
   .strict();
 export type CopilotMessageRequest = z.infer<typeof CopilotMessageRequestSchema>;
 /** Resume carries no text: the host writes the request from what the record proves. */
-export const CopilotResumeRequestSchema = CopilotMessageRequestSchema.omit({ text: true });
+export const CopilotResumeRequestSchema = CopilotMessageRequestSchema.omit({
+  text: true,
+  attachmentIds: true,
+});
 export type CopilotResumeRequest = z.infer<typeof CopilotResumeRequestSchema>;
 
 export const EventCursorSchema = z
@@ -135,6 +154,8 @@ export interface CopilotMessage {
   kind?: "resume";
   /** Steering accepted while the run is working, not yet read by the model. */
   pending?: boolean;
+  /** Files the user handed over with this message. */
+  attachments?: CopilotAttachment[];
   /** Operations this assistant message requested, with their committed outcomes. */
   operations?: CopilotOperation[];
   context?: {
@@ -152,15 +173,19 @@ export interface CopilotConversationList {
   conversations: Conversation[];
   unreadable: { id: string; code: string }[];
 }
+const ConfirmationBase = {
+  id: CopilotIdSchema,
+  runId: CopilotIdSchema,
+  toolCallId: z.string().min(1),
+  baseRev: z.number().int().nonnegative(),
+};
 /**
  * A delete the model asked for and the user has not yet confirmed. Bound to this object and this
  * PlansFile.rev: any change to either makes it expire. The id is never shown to the model.
  */
-export const CopilotConfirmationSchema = z
+export const CopilotPlanConfirmationSchema = z
   .object({
-    id: CopilotIdSchema,
-    runId: CopilotIdSchema,
-    toolCallId: z.string().min(1),
+    ...ConfirmationBase,
     // Only a whole Plan waits for the user; a Task delete is immediate with the six-second undo.
     action: z.literal("delete_plan"),
     object: z
@@ -174,11 +199,71 @@ export const CopilotConfirmationSchema = z
     impact: z
       .object({ tasks: z.number().int().nonnegative(), openTasks: z.number().int().nonnegative() })
       .strict(),
-    baseRev: z.number().int().nonnegative(),
     /** Hash of the plan's stored content when it was shown; any later change expires the card. */
     objectDigest: z.string().min(1),
   })
   .strict();
+/** What replacing a Doc's text puts at risk, as the acquisition dialog shows it (`known` count or `unknown`). */
+export const DocReplaceImpactSchema = z.discriminatedUnion("annotations", [
+  z.object({ annotations: z.literal("known"), count: z.number().int().nonnegative() }).strict(),
+  z.object({ annotations: z.literal("unknown") }).strict(),
+]);
+export type DocReplaceImpact = z.infer<typeof DocReplaceImpactSchema>;
+/**
+ * A replacement of an existing arXiv LaTeX Doc (the Files tab's "refresh arXiv source") the model asked for.
+ * Bound to the Work, the target Doc, the annotation count the dialog would show and the annotations rev:
+ * a change to any of them expires it.
+ */
+export const CopilotDocConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.enum(["refresh_arxiv_source", "replace_upload_source"]),
+    object: z
+      .object({ kind: z.literal("doc"), id: z.string().min(1), workId: z.string().min(1) })
+      .strict(),
+    /** The Work's title. */
+    label: z.string(),
+    impact: DocReplaceImpactSchema,
+    /** replace_upload_source: the file that would replace the Doc (bound by its sha256). */
+    attachment: CopilotAttachmentSchema.pick({
+      id: true,
+      filename: true,
+      size: true,
+      sha256: true,
+    }).optional(),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+/**
+ * The PDF upload's resource warning (the Files tab's "continue" checkbox for files of 25 MiB and more) the model
+ * triggered with a file the user attached: only the real user can accept it. Bound to the file's sha256.
+ */
+export const CopilotResourceConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("accept_pdf_resource_warning"),
+    object: z
+      .object({ kind: z.literal("attachment"), id: z.string().min(1), workId: z.string().min(1) })
+      .strict(),
+    /** The Work's title. */
+    label: z.string(),
+    attachment: CopilotAttachmentSchema.pick({
+      id: true,
+      filename: true,
+      size: true,
+      sha256: true,
+    }),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export const CopilotConfirmationSchema = z.union([
+  CopilotPlanConfirmationSchema,
+  CopilotDocConfirmationSchema,
+  CopilotResourceConfirmationSchema,
+]);
+export type CopilotResourceConfirmation = z.infer<typeof CopilotResourceConfirmationSchema>;
+export type CopilotPlanConfirmation = z.infer<typeof CopilotPlanConfirmationSchema>;
+export type CopilotDocConfirmation = z.infer<typeof CopilotDocConfirmationSchema>;
 export type CopilotConfirmation = z.infer<typeof CopilotConfirmationSchema>;
 
 /** The real UI's decision. It repeats what the card showed so a click can only bind to that version. */
@@ -186,7 +271,12 @@ export const CopilotConfirmationDecisionSchema = z
   .object({
     decision: z.enum(["approve", "decline"]),
     viewId: CopilotIdSchema,
-    action: z.literal("delete_plan"),
+    action: z.enum([
+      "delete_plan",
+      "refresh_arxiv_source",
+      "replace_upload_source",
+      "accept_pdf_resource_warning",
+    ]),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
   })
@@ -198,19 +288,40 @@ export const CopilotUndoRequestSchema = z.object({ viewId: CopilotIdSchema }).st
 
 /** Durable record of a confirmation: requested before the card exists, resolved before anything runs. */
 export const OPERATION_CONFIRMATION_TYPE = "argelander.confirmation.v1";
-export const OperationConfirmationSchema = z
-  .object({
-    version: z.literal(1),
-    phase: z.enum(["requested", "resolved"]),
-    confirmationId: CopilotIdSchema,
-    runId: CopilotIdSchema,
-    toolCallId: z.string().min(1),
-    action: z.literal("delete_plan"),
-    planId: z.string().min(1),
-    baseRev: z.number().int().nonnegative(),
-    outcome: z.enum(["approved", "declined", "expired"]).optional(),
-  })
-  .strict();
+const OperationConfirmationBase = {
+  version: z.literal(1),
+  phase: z.enum(["requested", "resolved"]),
+  confirmationId: CopilotIdSchema,
+  runId: CopilotIdSchema,
+  toolCallId: z.string().min(1),
+  baseRev: z.number().int().nonnegative(),
+  outcome: z.enum(["approved", "declined", "expired"]).optional(),
+};
+export const OperationConfirmationSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("delete_plan"),
+      planId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.enum(["refresh_arxiv_source", "replace_upload_source"]),
+      workId: z.string().min(1),
+      docId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("accept_pdf_resource_warning"),
+      workId: z.string().min(1),
+      attachmentId: z.string().min(1),
+    })
+    .strict(),
+]);
 export type OperationConfirmation = z.infer<typeof OperationConfirmationSchema>;
 
 export interface ConversationSnapshot {
@@ -266,6 +377,8 @@ export const CopilotPromptSchema = z
     messageId: CopilotIdSchema,
     text: z.string().min(1),
     context: PageContextSchema,
+    /** Metadata of the files handed over with this message (ids the tools may name); never their bytes. */
+    attachments: z.array(CopilotAttachmentSchema).max(5).optional(),
   })
   .strict();
 export type CopilotPrompt = z.infer<typeof CopilotPromptSchema>;
@@ -303,7 +416,7 @@ export const OPERATION_JOURNAL_TYPE = "argelander.operation.v1";
 export const OperationJournalSchema = z
   .object({
     version: z.literal(1),
-    phase: z.enum(["begin", "done"]),
+    phase: z.enum(["begin", "submitted", "done"]),
     operationId: z.string().min(1).max(200),
     toolCallId: z.string().min(1),
     runId: CopilotIdSchema,
@@ -314,6 +427,8 @@ export const OperationJournalSchema = z
         planId: z.string().optional(),
         taskId: z.string().optional(),
         workId: z.string().optional(),
+        /** The Job-table job this operation submitted (recorded right after the submit). */
+        jobId: z.string().optional(),
         /** A readable one-line description of the request (for example an import's mode and text). */
         summary: z.string().max(240).optional(),
       })

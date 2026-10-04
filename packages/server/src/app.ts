@@ -72,6 +72,7 @@ import {
   type AdsDiscoverySource,
   AnnotationsError,
   annotationsDocDir,
+  appendDocIdNarrow,
   arxivAttachScenario,
   arxivDocId,
   attachArxivDoc,
@@ -100,8 +101,9 @@ import {
   PdfAnnotationValidationError,
   PdfContentChangedError,
   PdfReadingPositionConflictError,
-  patchWork,
+  patchWorkNarrow,
   publishPdfDoc,
+  readAnnotationRisk,
   readDocumentAsset,
   readManuscriptAsset,
   readPdfAnnotationsFile,
@@ -110,6 +112,7 @@ import {
   readVerifiedPdf,
   rebuild,
   removeDocFromWorks,
+  restoreUnknownKeys,
   saveAnnotationsFile,
   saveManuscript,
   savePdfAnnotationsFile,
@@ -136,10 +139,15 @@ import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import {
+  type AnnotationRisk,
+  type ArxivSourcePlan,
+  type ArxivStart,
   commitWorkPatch,
   type LibraryOpDeps,
   type ManualImportResult,
   runManualImport,
+  type UploadStart,
+  type UploadTarget,
 } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
@@ -193,6 +201,8 @@ export interface AppDeps {
   /** Isolated settings storage/runtime in tests; production is initialized on first provider request. */
   providerSettings?: ProviderSettings;
   copilot?: CopilotHost;
+  /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending` (default ten minutes). */
+  acquisitionWaitMs?: number;
 }
 
 // --------------------------------------------------------------------------- //
@@ -331,9 +341,13 @@ export function createApp(deps: AppDeps): Hono {
       }
     }
     broadcast({ type, job });
+    // A Copilot operation that was left pending on this job shows its end.
+    if (type === "job.done" || type === "job.failed") copilot.jobSettled(job.id);
   };
   const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload" | "ingest"): void => {
     broadcast({ type: "library.changed", cause, at: new Date().toISOString() });
+    // A pending Doc-replacement confirmation may no longer match what it showed (click time stays the authority).
+    void copilot.revalidateDocConfirmations().catch(() => {});
   };
   const planChanged = (cause: "put" | "external"): void => {
     broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
@@ -344,6 +358,7 @@ export function createApp(deps: AppDeps): Hono {
   };
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
+    void copilot.revalidateDocConfirmations().catch(() => {});
   };
   const pdfOwners = (docId: string) =>
     LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
@@ -355,7 +370,39 @@ export function createApp(deps: AppDeps): Hono {
   const lockedRebuild = (
     p: LibraryPaths,
     opts: { sources: MetadataSources }
-  ): Promise<RefreshResponse> => libraryLock.run(() => rebuild(p, opts));
+  ): Promise<RefreshResponse> =>
+    libraryLock.run(async () => {
+      // rebuild re-saves library.json with the typed model, which strips keys it does not know. Inside the same
+      // lock, snapshot the raw file first and put those keys back afterwards (copilot ticket 15). library.bib is a
+      // typed projection and is not touched; a Work whose id changed or that was merged cannot be matched.
+      let before: unknown = null;
+      try {
+        before = existsSync(p.libraryJson) ? JSON.parse(readFileSync(p.libraryJson, "utf8")) : null;
+      } catch {
+        before = null; // an unreadable file is rebuild's own business
+      }
+      let result: RefreshResponse;
+      try {
+        result = await rebuild(p, opts);
+      } catch (rebuildError) {
+        // rebuild may fail AFTER it saved (a later step, for example the graph cache). If the file changed, the
+        // keys it stripped still go back; the rebuild's own error is what gets reported.
+        try {
+          restoreUnknownKeys(p, before);
+        } catch {
+          /* the rebuild error below is the one that explains the failure */
+        }
+        throw rebuildError;
+      }
+      try {
+        restoreUnknownKeys(p, before);
+      } catch (error) {
+        throw new Error(
+          `the library was rebuilt but keys the application does not know could not be put back: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+      return result;
+    });
 
   // app.py's `_ALLOWED_ORIGINS` + the server's own port (see header note).
   const allowedOrigins = new Set([
@@ -406,6 +453,18 @@ export function createApp(deps: AppDeps): Hono {
     onChanged: () => libraryChanged("patch"),
     importWorks: (req, options) => importManualWorks(req, options),
     readPayload: async () => libraryPayload(paths, await currentGraph()),
+    acquisition: {
+      startPdfUpload: (workId, bytes, filename) => startPdfUploadFor(workId, bytes, filename),
+      startZipUpload: (workId, bytes, options) => startZipUploadFor(workId, bytes, options),
+      checkZip: (bytes) => isReadableZip(bytes),
+      describeUpload: (workId) => describeUploadTarget(workId),
+      startPdf: (workId) => startArxivPdfAcquisition(workId),
+      describeSource: (workId) => describeArxivSource(workId),
+      startSource: (workId) => startArxivSource(workId),
+      annotationRisk: (docId) => annotationRisk(docId),
+      jobs: runner,
+      ...(deps.acquisitionWaitMs !== undefined ? { waitMs: deps.acquisitionWaitMs } : {}),
+    },
   };
   copilot.useWorkbench({
     library: libraryOps,
@@ -1439,11 +1498,25 @@ export function createApp(deps: AppDeps): Hono {
 
   const appendArxivDocToPdfWork = (workId: string, docId: string): Promise<boolean> =>
     libraryLock.run(() => {
-      const store = LibraryStore.load(paths);
-      const work = store.get(workId);
+      const work = LibraryStore.load(paths).get(workId);
       if (!work || arxivAttachScenario(work, docId, isPdfDoc) !== "append") return false;
-      work.doc_ids = [...work.doc_ids, docId];
-      store.save(paths);
+      return appendDocIdNarrow(paths, workId, docId) !== "not_found";
+    });
+
+  /**
+   * The link step of an arXiv LaTeX attach, inside the library lock: re-read, re-check the scenario, and add only
+   * this Doc (and, for a docless Work, make it main) with narrow writes. The minutes-long ingest ran outside the
+   * lock; nothing written meanwhile (imports, main-Doc changes, unknown keys) is overwritten.
+   */
+  const linkArxivDoc = (workId: string, docId: string): Promise<boolean> =>
+    libraryLock.run(() => {
+      const work = LibraryStore.load(paths).get(workId);
+      if (!work) return false;
+      const scenario = arxivAttachScenario(work, docId, isPdfDoc);
+      if (scenario === "skip") return false;
+      if (scenario === "refresh") return true;
+      if (appendDocIdNarrow(paths, workId, docId) === "not_found") return false;
+      if (scenario === "attach") patchWorkNarrow(paths, workId, { doc_id: docId });
       return true;
     });
 
@@ -1497,7 +1570,8 @@ export function createApp(deps: AppDeps): Hono {
               // N1 (upload precedent): the main-doc re-assert must be mutually
               // exclusive with PATCH — the weld runs outside the lock.
               reassertMainDoc: (p, wid, d) =>
-                libraryLock.run(() => patchWork(p, wid, { doc_id: d })),
+                libraryLock.run(() => patchWorkNarrow(p, wid, { doc_id: d }).status === "ok"),
+              linkDoc: (_p, wid, did) => linkArxivDoc(wid, did),
               onProgress: track,
               isPdfDoc,
               appendArxivDocToPdfWork: (_p, wid, did) => appendArxivDocToPdfWork(wid, did),
@@ -1637,6 +1711,362 @@ export function createApp(deps: AppDeps): Hono {
       }
     });
     return job;
+  };
+
+  // ---- shared starts: the acquisition dialog's submits (HTTP routes) and the Copilot `library` tool ---- //
+
+  const reusedJob = (job: Job, before: Set<string>) => before.has(job.id);
+
+  /** `POST /api/library/acquire-arxiv-pdf` minus the HTTP shape. Throws when the job could not be queued. */
+  const startArxivPdfAcquisition = (workId: string): ArxivStart => {
+    const work = LibraryStore.load(paths).get(workId);
+    if (!work) return { kind: "not_found" };
+    if (!normArxiv(work.arxiv_id)) return { kind: "no_arxiv" };
+    const before = new Set(runner.list().map((job) => job.id));
+    const job = submitArxivPdf(workId, false);
+    if (!job) return { kind: "not_queued" };
+    return { kind: "queued", job, reused: reusedJob(job, before) };
+  };
+
+  /** What `attach-arxiv` would do for this Work, decided with the endpoint's own checks. */
+  const describeArxivSource = (workId: string): ArxivSourcePlan => {
+    const w = LibraryStore.load(paths).get(workId);
+    if (w === undefined) return { kind: "not_found" };
+    const arxivId = normArxiv(w.arxiv_id);
+    if (!arxivId) return { kind: "no_arxiv" };
+    const docId = arxivDocId(arxivId);
+    // Keep Scenario C for existing non-PDF content (especially a LaTeX zip). A PDF-only Work is the narrow
+    // approved exception: its new LaTeX Doc is appended and cannot replace the user's current PDF main Doc.
+    const scenario = arxivAttachScenario(w, docId, isPdfDoc);
+    if (scenario === "skip") return { kind: "skip" };
+    if (docMutations.isDeleting(docId)) return { kind: "busy" };
+    return { kind: scenario, docId, title: w.title, docIds: [...w.doc_ids] };
+  };
+
+  /** `POST /api/library/attach-arxiv` minus the HTTP shape. Not gated by the hidden auto_ingest_arxiv config. */
+  const startArxivSource = (workId: string): ArxivStart => {
+    const plan = describeArxivSource(workId);
+    if (
+      plan.kind === "not_found" ||
+      plan.kind === "no_arxiv" ||
+      plan.kind === "skip" ||
+      plan.kind === "busy"
+    )
+      return { kind: plan.kind };
+    const before = new Set(runner.list().map((job) => job.id));
+    const job = submitArxivFetch(workId);
+    if (job === null) return { kind: "not_queued" };
+    return { kind: "queued", job, reused: reusedJob(job, before) };
+  };
+
+  /**
+   * What the acquisition dialog's annotation-risk step shows for a replacement target, computed WITHOUT writing
+   * (no ensure/archive): a stale current file counts as 0 annotations and the next normal access archives it.
+   */
+  const annotationRisk = (docId: string): Promise<AnnotationRisk> =>
+    annotationLock.run((): AnnotationRisk => {
+      if (badId(docId) || !docId.trim()) return { state: "unknown" };
+      if (docMutations.isDocumentContentBusy(docId)) return { state: "busy" };
+      try {
+        if (readPdfMetadataIfPresent(paths, docId)) return { state: "unknown" };
+      } catch {
+        return { state: "unknown" };
+      }
+      // Read only, like the CLI `annot`: archiving belongs to the GET/PUT annotations access path alone.
+      return readAnnotationRisk(paths.dataDir, docId);
+    });
+
+  /**
+   * The PDF upload's submit once the bytes are in hand (validated work, size and file name): same-Work identical
+   * bytes reuse the Doc, DocMutationRegistry pins/busy rules, one serial durable job. The page route and the Copilot
+   * tool (with a user-attached file) both come here.
+   */
+  const startPdfUpload = (workId: string, bytes: Buffer, filename: string): UploadStart => {
+    let existing: ReturnType<typeof findMatchingPdfDoc>;
+    try {
+      existing = findMatchingPdfDoc(
+        paths,
+        workId,
+        bytes,
+        (id) => docMutations.isBusy(id) || docMutations.isDeleting(id)
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "PDF identity check failed";
+      return { kind: "error", status: message === "document busy" ? 409 : 500, detail: message };
+    }
+    const docId = existing?.doc_id ?? `pdf-${randomUUID()}`;
+    if (docMutations.isBusy(docId) || docMutations.isDeleting(docId)) {
+      return { kind: "error", status: 409, detail: "document busy" };
+    }
+    docMutations.pinWriter(docId);
+    let job: Job;
+    try {
+      job = runner.submit(
+        "upload",
+        async (j, report) => {
+          const spool = runner.spoolPath(j.id);
+          try {
+            report("Validating PDF");
+            const uploadBytes = readFileSync(spool);
+            if (uploadBytes.length !== bytes.length)
+              throw new Error("PDF upload length changed before processing");
+            const pinDuplicate = (duplicateId: string) => {
+              if (duplicateId === docId) return;
+              if (docMutations.isBusy(duplicateId) || docMutations.isDeleting(duplicateId))
+                throw new Error("document busy");
+              docMutations.pinWriter(duplicateId);
+              const pins = pdfPinsByJob.get(j.id);
+              if (!pins) {
+                docMutations.unpinWriter(duplicateId);
+                throw new Error("PDF upload lifecycle pin is missing");
+              }
+              pins.push(duplicateId);
+            };
+            const currentMatch = findMatchingPdfDoc(
+              paths,
+              workId,
+              uploadBytes,
+              (id) => id !== docId && (docMutations.isBusy(id) || docMutations.isDeleting(id))
+            );
+            if (currentMatch) {
+              pinDuplicate(currentMatch.doc_id);
+              return { status: "exists", doc: currentMatch };
+            }
+            const probe = await probePdf(uploadBytes);
+            report("Publishing PDF Doc");
+            const metadata = await libraryLock.run(() => {
+              if (docMutations.isDeleting(docId)) throw new Error("document busy");
+              const matching = findMatchingPdfDoc(
+                paths,
+                workId,
+                uploadBytes,
+                (id) => id !== docId && (docMutations.isBusy(id) || docMutations.isDeleting(id))
+              );
+              if (matching) {
+                pinDuplicate(matching.doc_id);
+                return matching;
+              }
+              return publishPdfDoc(paths, {
+                docId,
+                workId,
+                filename,
+                bytes: uploadBytes,
+                pages: probe.pages,
+              });
+            });
+            return { status: metadata.doc_id === docId ? "created" : "exists", doc: metadata };
+          } finally {
+            rmSync(spool, { force: true });
+          }
+        },
+        { workId, docId, format: "pdf" }
+      );
+      pdfPinsByJob.set(job.id, [docId]);
+    } catch (error) {
+      docMutations.unpinWriter(docId);
+      return {
+        kind: "error",
+        status: 500,
+        detail: error instanceof Error ? error.message : "PDF upload could not be queued",
+      };
+    }
+    void runner.waitFor(job.id).then((finished) => {
+      if (
+        finished.status === "done" &&
+        (finished.result as { status?: unknown } | null)?.status === "created"
+      ) {
+        libraryChanged("upload");
+      }
+    });
+    try {
+      writeFileSync(runner.spoolPath(job.id), bytes);
+    } catch (error) {
+      // The durable job will fail on its missing spool and release the pin.
+      return {
+        kind: "error",
+        status: 500,
+        detail: error instanceof Error ? error.message : "PDF upload could not be stored",
+      };
+    }
+    return { kind: "queued", job, resourceWarning: bytes.length >= PDF_RESOURCE_WARNING_BYTES };
+  };
+
+  /** Whether these bytes are a readable zip archive (the upload route's two-step gate). */
+  const isReadableZip = (data: Uint8Array): boolean => {
+    // Cheap gate first: every zip starts with a PK local-header/empty-archive magic.
+    if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) return false;
+    // …then prove it: a PK header alone says nothing about the rest. A valid zip with no LaTeX inside passes
+    // here and fails later in the job (`findMainTex`), where the error reaches the detail panel.
+    const probe = mkdtempSync(join(tmpdir(), "argelanderspace-upload-probe-"));
+    try {
+      extractZip(data, probe);
+      return true;
+    } catch (err) {
+      if (!(err instanceof ZipError)) throw err; // fs trouble: not a 400
+      return false;
+    } finally {
+      rmSync(probe, { recursive: true, force: true });
+    }
+  };
+  type ZipQuery = { workId: string | null; doi: string | null; arxiv: string | null };
+  const runAttachFor = (query: ZipQuery, zipPath: string, onProgress?: (message: string) => void) =>
+    attachLatexZip(zipPath, query, {
+      paths,
+      pipelines: deps.pipelines,
+      sources: deps.makeSources(false),
+      rebuild: lockedRebuild,
+      // The link runs inside the library lock with narrow writes (the ingest itself does not): nothing written
+      // meanwhile (imports, edits, unknown keys) is overwritten.
+      linkDoc: (_p, workId, docId, identity) => linkUploadDoc(workId, docId, identity),
+      // N1: the main-doc re-assert must be mutually exclusive with PATCH.
+      reassertMainDoc: (p, workId, docId) =>
+        libraryLock.run(() => patchWorkNarrow(p, workId, { doc_id: docId }).status === "ok"),
+      onProgress,
+    });
+  /** The zip upload's link step, inside the library lock: the same Work (identity unchanged), this Doc appended and main. */
+  const linkUploadDoc = (
+    workId: string,
+    docId: string,
+    identity: { doi: string | null; arxiv_id: string | null }
+  ): Promise<boolean> =>
+    libraryLock.run(() => {
+      const work = LibraryStore.load(paths).get(workId);
+      // The Work is the same one unless an identifier it HAD was changed; filling a blank (enrichment) is not a new identity.
+      if (
+        !work ||
+        (identity.doi !== null && work.doi !== identity.doi) ||
+        (identity.arxiv_id !== null && work.arxiv_id !== identity.arxiv_id)
+      )
+        return false;
+      if (appendDocIdNarrow(paths, workId, docId) === "not_found") return false;
+      patchWorkNarrow(paths, workId, { doc_id: docId }); // an upload reclaims the main slot
+      return true;
+    });
+  /**
+   * The zip upload's async submit: pin the Doc against DELETE, queue the durable job, spool the bytes. The page route
+   * and the Copilot tool (with a user-attached file) both come here.
+   */
+  const startZipJob = (
+    query: ZipQuery,
+    data: Uint8Array,
+    options: { expectNoUpload?: boolean } = {}
+  ): { kind: "queued"; job: Job } | { kind: "error"; status: number; detail: string } => {
+    const targetWork = findWork(LibraryStore.load(paths), query);
+    const uploadDoc = targetWork === undefined ? undefined : uploadDocId(targetWork.id);
+    if (uploadDoc !== undefined && docMutations.isDeleting(uploadDoc))
+      return { kind: "error", status: 409, detail: "document busy" };
+    if (uploadDoc !== undefined) docMutations.pinWriter(uploadDoc);
+    let job: Job;
+    try {
+      job = runner.submit(
+        "upload",
+        async (j, report) => {
+          const zip = runner.spoolPath(j.id);
+          try {
+            if (options.expectNoUpload) {
+              // A submit that was told "this work has no uploaded source" must not replace one that appeared
+              // (a page upload that finished, an edit) while it waited: re-check under the lock, before the ingest.
+              const present = await libraryLock.run(() => {
+                const work = findWork(LibraryStore.load(paths), query);
+                if (!work) return false;
+                const docId = uploadDocId(work.id);
+                return work.doc_ids.includes(docId) || existsSync(join(paths.outputDir, docId));
+              });
+              if (present)
+                return {
+                  status: "skipped",
+                  reason: "the work gained an uploaded source meanwhile; nothing was written",
+                };
+            }
+            const ref = await runAttachFor(query, zip, report);
+            return { ref, docId: uploadDocId(ref.id) };
+          } finally {
+            rmSync(zip, { force: true });
+          }
+        },
+        query
+      );
+    } catch (err) {
+      // No job exists → no terminal hook will ever fire; release directly.
+      if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
+      throw err;
+    }
+    // `library.changed` must follow `job.done` on the wire; the pin releases with the terminal state. The hook
+    // is registered BEFORE the spool write: if that write throws, the queued job still fails on its missing spool
+    // file and the hook releases the pin.
+    void runner.waitFor(job.id).then((j) => {
+      if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
+      if (j.status === "done" && (j.result as { status?: unknown } | null)?.status !== "skipped")
+        libraryChanged("upload");
+    });
+    writeFileSync(runner.spoolPath(job.id), data);
+    return { kind: "queued", job };
+  };
+
+  /** The page's PDF upload for a Work, with a file name taken as the route takes it (a path or control characters are stripped). */
+  const startPdfUploadFor = (workId: string, bytes: Buffer, rawName: string): UploadStart => {
+    if (!LibraryStore.load(paths).get(workId))
+      return { kind: "error", status: 404, detail: `work ${pyRepr(workId)} not found` };
+    if (bytes.length === 0)
+      return { kind: "error", status: 400, detail: "PDF upload body is empty" };
+    if (bytes.length > PDF_MAX_BYTES)
+      return { kind: "error", status: 413, detail: `PDF exceeds the ${PDF_MAX_BYTES} byte limit` };
+    let filename = rawName.split(/[\\/]/).pop() ?? "document.pdf";
+    filename = [...filename]
+      .map((character) => {
+        const code = character.charCodeAt(0);
+        return code < 0x20 || code === 0x7f ? "_" : character;
+      })
+      .join("");
+    if (!filename || filename.length > 255)
+      return { kind: "error", status: 400, detail: "invalid PDF filename" };
+    return startPdfUpload(workId, bytes, filename);
+  };
+  const startZipUploadFor = (
+    workId: string,
+    bytes: Uint8Array,
+    options: { expectNoUpload?: boolean } = {}
+  ): UploadStart => {
+    const work = LibraryStore.load(paths).get(workId);
+    if (!work) return { kind: "error", status: 404, detail: `work ${pyRepr(workId)} not found` };
+    if (!isReadableZip(bytes))
+      return { kind: "error", status: 400, detail: "the attachment is not a readable zip archive" };
+    // As the Files tab disables its upload while one is queued or running: the agent neither stacks a second upload
+    // on the user's nor writes the Doc a task is writing.
+    const docId = uploadDocId(work.id);
+    const inFlight = runner.list().some((job) => {
+      const payload = job.payload as
+        | { workId?: unknown; doi?: unknown; arxiv?: unknown; format?: unknown }
+        | undefined;
+      return (
+        job.kind === "upload" &&
+        (job.status === "queued" || job.status === "running") &&
+        payload?.format === undefined &&
+        (payload?.workId === work.id ||
+          (!!work.doi && payload?.doi === work.doi) ||
+          (!!work.arxiv_id && payload?.arxiv === work.arxiv_id))
+      );
+    });
+    if (inFlight || docMutations.isBusy(docId))
+      return {
+        kind: "error",
+        status: 409,
+        detail:
+          "an upload of this work's LaTeX source is already queued or running (or the document is busy)",
+      };
+    return startZipJob({ workId, doi: null, arxiv: null }, bytes, options);
+  };
+  const describeUploadTarget = (workId: string): UploadTarget => {
+    const work = LibraryStore.load(paths).get(workId);
+    if (!work) return { kind: "not_found" };
+    const docId = uploadDocId(work.id);
+    return {
+      kind: "work",
+      docId,
+      title: work.title,
+      docIds: [...work.doc_ids],
+      hasUpload: work.doc_ids.includes(docId),
+    };
   };
 
   // The one import seam of the Library: the route below and the Copilot `library` tool both come here.
@@ -1822,115 +2252,12 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
 
-    let existing: ReturnType<typeof findMatchingPdfDoc>;
-    try {
-      existing = findMatchingPdfDoc(
-        paths,
-        workId,
-        bytes,
-        (id) => docMutations.isBusy(id) || docMutations.isDeleting(id)
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "PDF identity check failed";
-      const e = detail(message, message === "document busy" ? 409 : 500);
+    const started = startPdfUpload(workId, bytes, filename);
+    if (started.kind === "error") {
+      const e = detail(started.detail, started.status as ContentfulStatusCode);
       return c.json(e.body, e.status);
     }
-    const docId = existing?.doc_id ?? `pdf-${randomUUID()}`;
-    if (docMutations.isBusy(docId) || docMutations.isDeleting(docId)) {
-      const e = detail("document busy", 409);
-      return c.json(e.body, e.status);
-    }
-    docMutations.pinWriter(docId);
-    let job: Job;
-    try {
-      job = runner.submit(
-        "upload",
-        async (j, report) => {
-          const spool = runner.spoolPath(j.id);
-          try {
-            report("Validating PDF");
-            const uploadBytes = readFileSync(spool);
-            if (uploadBytes.length !== total)
-              throw new Error("PDF upload length changed before processing");
-            const pinDuplicate = (duplicateId: string) => {
-              if (duplicateId === docId) return;
-              if (docMutations.isBusy(duplicateId) || docMutations.isDeleting(duplicateId))
-                throw new Error("document busy");
-              docMutations.pinWriter(duplicateId);
-              const pins = pdfPinsByJob.get(j.id);
-              if (!pins) {
-                docMutations.unpinWriter(duplicateId);
-                throw new Error("PDF upload lifecycle pin is missing");
-              }
-              pins.push(duplicateId);
-            };
-            const currentMatch = findMatchingPdfDoc(
-              paths,
-              workId,
-              uploadBytes,
-              (id) => id !== docId && (docMutations.isBusy(id) || docMutations.isDeleting(id))
-            );
-            if (currentMatch) {
-              pinDuplicate(currentMatch.doc_id);
-              return { status: "exists", doc: currentMatch };
-            }
-            const probe = await probePdf(uploadBytes);
-            report("Publishing PDF Doc");
-            const metadata = await libraryLock.run(() => {
-              if (docMutations.isDeleting(docId)) throw new Error("document busy");
-              const matching = findMatchingPdfDoc(
-                paths,
-                workId,
-                uploadBytes,
-                (id) => id !== docId && (docMutations.isBusy(id) || docMutations.isDeleting(id))
-              );
-              if (matching) {
-                pinDuplicate(matching.doc_id);
-                return matching;
-              }
-              return publishPdfDoc(paths, {
-                docId,
-                workId,
-                filename,
-                bytes: uploadBytes,
-                pages: probe.pages,
-              });
-            });
-            return { status: metadata.doc_id === docId ? "created" : "exists", doc: metadata };
-          } finally {
-            rmSync(spool, { force: true });
-          }
-        },
-        { workId, docId, format: "pdf" }
-      );
-      pdfPinsByJob.set(job.id, [docId]);
-    } catch (error) {
-      docMutations.unpinWriter(docId);
-      const e = detail(
-        error instanceof Error ? error.message : "PDF upload could not be queued",
-        500
-      );
-      return c.json(e.body, e.status);
-    }
-    void runner.waitFor(job.id).then((finished) => {
-      if (
-        finished.status === "done" &&
-        (finished.result as { status?: unknown } | null)?.status === "created"
-      ) {
-        libraryChanged("upload");
-      }
-    });
-    try {
-      writeFileSync(runner.spoolPath(job.id), bytes);
-    } catch (error) {
-      // The durable job will fail on its missing spool and release the pin.
-      const e = detail(
-        error instanceof Error ? error.message : "PDF upload could not be stored",
-        500
-      );
-      return c.json(e.body, e.status);
-    }
-    return c.json({ job, resourceWarning: bytes.length >= PDF_RESOURCE_WARNING_BYTES }, 202);
+    return c.json({ job: started.job, resourceWarning: Boolean(started.resourceWarning) }, 202);
   });
 
   // ---- POST /api/library/upload?id=|doi=|arxiv= ------------------------------ //
@@ -1949,38 +2276,11 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     const data = new Uint8Array(await c.req.arrayBuffer());
-    // Cheap gate first: every zip starts with a PK local-header/empty-archive
-    // magic (the old `%PDF` check's counterpart).
-    if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4b) {
+    if (!isReadableZip(data)) {
       const e = detail("request body is not a zip", 400);
       return c.json(e.body, e.status);
-    }
-    // …then prove it: a PK header alone says nothing about the rest. A valid
-    // zip with no LaTeX inside passes here and fails later in the job
-    // (`findMainTex`), where the error reaches the detail panel.
-    const probe = mkdtempSync(join(tmpdir(), "argelanderspace-upload-probe-"));
-    try {
-      extractZip(data, probe);
-    } catch (err) {
-      if (!(err instanceof ZipError)) throw err; // fs trouble: not a 400
-      const e = detail("request body is not a zip", 400);
-      return c.json(e.body, e.status);
-    } finally {
-      rmSync(probe, { recursive: true, force: true });
     }
     const query = { workId: id ?? null, doi: doi ?? null, arxiv: arxiv ?? null };
-    const runAttach = (zipPath: string, onProgress?: (message: string) => void) =>
-      attachLatexZip(zipPath, query, {
-        paths,
-        pipelines: deps.pipelines,
-        sources: deps.makeSources(false),
-        rebuild: lockedRebuild,
-        // N1: the main-doc re-assert must be mutually exclusive with PATCH —
-        // attach's own weld runs outside the lock and can be clobbered.
-        reassertMainDoc: (p, workId, docId) =>
-          libraryLock.run(() => patchWork(p, workId, { doc_id: docId })),
-        onProgress,
-      });
 
     const syncRaw = c.req.query("sync");
     const sync = parseBoolQuery(syncRaw);
@@ -1988,20 +2288,15 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid boolean value for query param 'sync'", 422);
       return c.json(e.body, e.status);
     }
-    // Stage 8 §8 lifecycle lock (doc-mutations.ts): pin the upload's doc for
-    // the request's/job's whole lifetime so DELETE refuses to interleave, and
-    // refuse to start while a DELETE of that doc is in flight (the reverse
-    // direction). The doc id is computable NOW — uploadDocId is a pure
-    // function of the resolved work id. An unresolvable work pins nothing:
-    // the attach fails later exactly as before.
-    const targetWork = findWork(LibraryStore.load(paths), query);
-    const uploadDoc = targetWork === undefined ? undefined : uploadDocId(targetWork.id);
-    if (uploadDoc !== undefined && docMutations.isDeleting(uploadDoc)) {
-      const e = detail("document busy", 409);
-      return c.json(e.body, e.status);
-    }
     if (sync) {
-      // Legacy behavior (app.py verbatim): the response waits for the ingest.
+      // Legacy behavior (app.py verbatim): the response waits for the ingest. The DELETE lifecycle pin is held
+      // around the attach call, and a delete in flight refuses to start.
+      const targetWork = findWork(LibraryStore.load(paths), query);
+      const uploadDoc = targetWork === undefined ? undefined : uploadDocId(targetWork.id);
+      if (uploadDoc !== undefined && docMutations.isDeleting(uploadDoc)) {
+        const e = detail("document busy", 409);
+        return c.json(e.body, e.status);
+      }
       const tmp = join(
         tmpdir(),
         `argelanderspace-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`
@@ -2009,7 +2304,7 @@ export function createApp(deps: AppDeps): Hono {
       if (uploadDoc !== undefined) docMutations.pinWriter(uploadDoc);
       try {
         writeFileSync(tmp, data);
-        const ref = await runAttach(tmp);
+        const ref = await runAttachFor(query, tmp);
         return c.json({ ref });
       } catch (e) {
         // Python: ValueError/FileNotFoundError → 404, anything else → 500.
@@ -2025,46 +2320,12 @@ export function createApp(deps: AppDeps): Hono {
     }
 
     // Async (new default): spool the bytes, queue the ingest job, answer 202.
-    // The runner's `report` rides attachLatexZip's onProgress straight through,
-    // so every stage transition lands in job.progress (WS job.progress).
-    // The §8 writer pin is held from submit until the job's terminal state, so
-    // a queued job already busy-blocks DELETE (it may write the doc).
-    if (uploadDoc !== undefined) docMutations.pinWriter(uploadDoc);
-    let job: Job;
-    try {
-      job = runner.submit(
-        "upload",
-        async (j, report) => {
-          const zip = runner.spoolPath(j.id);
-          try {
-            const ref = await runAttach(zip, report);
-            return { ref };
-          } finally {
-            rmSync(zip, { force: true });
-          }
-        },
-        query
-      );
-    } catch (err) {
-      // No job exists → no terminal hook will ever fire; release directly.
-      if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
-      throw err;
+    const started = startZipJob(query, data);
+    if (started.kind === "error") {
+      const e = detail(started.detail, started.status as ContentfulStatusCode);
+      return c.json(e.body, e.status);
     }
-    // `library.changed` must follow `job.done` on the wire (runner emits
-    // done before resolving waiters); the writer pin releases with the
-    // terminal state, whichever it is. The hook is registered BEFORE the
-    // spool write on purpose: if that write throws, the request 500s but the
-    // queued job still runs, fails on its missing spool file, and this hook
-    // releases the pin — the failed job is the honest record of the 500, so
-    // no explicit cancel/unpin here (which would also double-release).
-    void runner.waitFor(job.id).then((j) => {
-      if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
-      if (j.status === "done") libraryChanged("upload");
-    });
-    // Synchronous spool write: guaranteed to land before the serial chain
-    // (a microtask) can start the handler.
-    writeFileSync(runner.spoolPath(job.id), data);
-    return c.json({ job }, 202);
+    return c.json({ job: started.job }, 202);
   });
 
   // ---- POST /api/library/acquire-arxiv-pdf?id=<workId> ----------------------- //
@@ -2074,14 +2335,17 @@ export function createApp(deps: AppDeps): Hono {
     if (rejected) return c.json(rejected.body, rejected.status);
     const workId = c.req.query("id");
     if (!workId) return c.json(detail("id query param required", 400).body, 400);
+    // As before: a library that cannot be loaded is the framework's own 500, outside the try below.
     const work = LibraryStore.load(paths).get(workId);
     if (!work) return c.json(detail(`work ${pyRepr(workId)} not found`, 404).body, 404);
     if (!normArxiv(work.arxiv_id))
       return c.json(detail(`work ${pyRepr(workId)} has no arXiv id`, 400).body, 400);
     try {
-      const job = submitArxivPdf(workId, false);
-      if (!job) return c.json(detail("could not queue arXiv PDF acquisition", 409).body, 409);
-      return c.json({ job }, 202);
+      // The same start the Copilot `library` tool calls (acquire_arxiv_pdf).
+      const started = startArxivPdfAcquisition(workId);
+      if (started.kind !== "queued")
+        return c.json(detail("could not queue arXiv PDF acquisition", 409).body, 409);
+      return c.json({ job: started.job }, 202);
     } catch (error) {
       return c.json(
         detail(
@@ -2108,39 +2372,34 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("id query param required", 400);
       return c.json(e.body, e.status);
     }
-    const w = LibraryStore.load(paths).get(id);
-    if (w === undefined) {
+    // The same start the Copilot `library` tool calls (attach_arxiv); every ordinary rejection is
+    // decided there, null from the submit itself means a TOCTOU skip.
+    const started = startArxivSource(id);
+    if (started.kind === "not_found") {
       const e = detail(`work ${pyRepr(id)} not found`, 404);
       return c.json(e.body, e.status);
     }
-    const arxivId = normArxiv(w.arxiv_id);
-    if (!arxivId) {
+    if (started.kind === "no_arxiv") {
       const e = detail(`work ${pyRepr(id)} has no arXiv id`, 400);
       return c.json(e.body, e.status);
     }
-    // Keep Scenario C for existing non-PDF content (especially a LaTeX zip).
-    // A PDF-only Work is the narrow approved exception: its new LaTeX Doc is
-    // appended and cannot replace the user's current PDF main Doc.
-    if (arxivAttachScenario(w, arxivDocId(arxivId), isPdfDoc) === "skip") {
+    if (started.kind === "skip") {
       const e = detail(
         `work ${pyRepr(id)} already has a non-arXiv doc; delete it first if you want the arXiv version`,
         409
       );
       return c.json(e.body, e.status);
     }
-    if (docMutations.isDeleting(arxivDocId(arxivId))) {
+    if (started.kind === "busy") {
       const e = detail("document busy", 409);
       return c.json(e.body, e.status);
     }
-    const job = submitArxivFetch(w.id);
-    // Every ordinary rejection is pre-checked above; null here means a
-    // TOCTOU skip (state changed between the check and the submit).
-    if (job === null) {
+    if (started.kind !== "queued") {
       const e = detail("could not queue the arXiv fetch (work state changed)", 409);
       return c.json(e.body, e.status);
     }
     // A duplicate trigger answers 202 with the in-flight job (no stacking).
-    return c.json({ job }, 202);
+    return c.json({ job: started.job }, 202);
   });
 
   // Opt-in image reads share the manifest's concrete precheck and return ONLY

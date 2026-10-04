@@ -19,6 +19,7 @@ import {
   PdfDocMetadataSchema,
   PdfReadingPositionSchema,
 } from "@argelanderspace/contracts";
+import { appendDocIdNarrow } from "./library/patch.js";
 import type { LibraryPaths } from "./library/store.js";
 import { LibraryStore } from "./library/store.js";
 
@@ -207,14 +208,13 @@ export function publishPdfDoc(paths: LibraryPaths, input: PublishPdfDocInput): P
   }
 
   // The metadata and all required sidecars are complete before Library makes the Doc visible.
-  const latestStore = LibraryStore.load(paths);
-  const latestWork = latestStore.get(input.workId);
-  if (!latestWork) throw new Error("Work not found");
-  latestWork.doc_ids = [...latestWork.doc_ids, docId];
   // A Doc association is deliberately absent from the BibTeX projection, so
   // publishing a PDF must not rewrite this derived sidecar or fail after the
-  // source-of-truth association has already committed.
-  latestStore.saveJson(paths);
+  // source-of-truth association has already committed. The link is a narrow
+  // append (copilot ticket 15): no other Work, unknown key or `project` value
+  // is touched, unlike a typed whole-library save.
+  if (appendDocIdNarrow(paths, input.workId, docId) === "not_found")
+    throw new Error("Work not found");
   return metadata;
 }
 

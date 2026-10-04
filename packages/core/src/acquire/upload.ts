@@ -140,6 +140,17 @@ export async function attachLatexZip(
      * patchWork; the default is the plain patchWork (single-writer callers).
      */
     reassertMainDoc?: (paths: LibraryPaths, workId: string, docId: string) => Promise<boolean>;
+    /**
+     * Link the uploaded Doc and make it main. The server injects a lock-wrapped narrow write that finds the Work by
+     * id again (false if the Work or its identity changed during the ingest). Without it the legacy
+     * load → typed save runs outside any lock.
+     */
+    linkDoc?: (
+      paths: LibraryPaths,
+      workId: string,
+      docId: string,
+      identity: { doi: string | null; arxiv_id: string | null }
+    ) => Promise<boolean>;
     /** Coarse progress sink: unpack → ingest → rebuild (the job's `report`). */
     onProgress?: (message: string) => void;
   }
@@ -173,8 +184,15 @@ export async function attachLatexZip(
   // always reclaims the main slot. The order survives the rebuild because the
   // seed merge keeps the stored order and only appends new docs (mergeInto:
   // dst first), so no extra "sticky main" marker is needed.
-  w.doc_ids = [docId, ...w.doc_ids.filter((d) => d !== docId)];
-  store.save(deps.paths);
+  if (deps.linkDoc) {
+    if (!(await deps.linkDoc(deps.paths, w.id, docId, { doi: w.doi, arxiv_id: w.arxiv_id })))
+      throw new Error(
+        `work ${pyRepr(w.id)} changed while the upload was ingested; it was not linked, and its document text may already have been replaced: read the work`
+      );
+  } else {
+    w.doc_ids = [docId, ...w.doc_ids.filter((d) => d !== docId)];
+    store.save(deps.paths);
+  }
 
   deps.onProgress?.("Rebuilding library");
   await (deps.rebuild ?? rebuild)(deps.paths, { sources: deps.sources }); // relink + refresh graph

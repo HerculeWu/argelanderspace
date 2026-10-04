@@ -1207,7 +1207,13 @@
         "set_temp_label": "设置临时色点",
         "set_graph_labels": "显示或隐藏图标签",
         "graph_control": "缩放或重排图",
-        "import_works": "导入文献"
+        "import_works": "导入文献",
+        "acquire_arxiv_pdf": "从 arXiv 获取 PDF",
+        "attach_arxiv": "从 arXiv 获取 LaTeX 源码",
+        "read_jobs": "读取获取任务",
+        "upload_pdf": "上传 PDF",
+        "upload_latex_zip": "上传 LaTeX 源码",
+        "replace_upload_source": "替换已上传源码"
       },
       "status": {
         "ok": "已应用",
@@ -1223,8 +1229,11 @@
         "error": "失败",
         "confirmation_required": "等待你确认",
         "declined": "已拒绝",
-        "expired": "已失效"
-      }
+        "expired": "已失效",
+        "pending": "进行中"
+      },
+      "job": "任务",
+      "doc": "文档"
     },
     "undo": {
       "restored": "已恢复「{{title}}」",
@@ -1236,7 +1245,15 @@
       "planScope": "该计划及其 {{count}} 项任务（{{open}} 项未完成）将被永久删除。此操作不可撤销。",
       "meta": "{{id}} · 计划 v{{rev}}",
       "expired": "你做决定前计划已变化，未删除任何内容。",
-      "failed": "未能保存你的决定，未删除任何内容；请重试。"
+      "failed": "未能保存你的决定，未删除任何内容；请重试。",
+      "refreshArxiv": "替换「{{name}}」的 arXiv 源码",
+      "metaDoc": "{{id}} · 标注 v{{rev}}",
+      "expiredDoc": "你做决定前文档或其标注已变化，未替换任何内容。",
+      "failedDoc": "未能保存你的决定，未替换任何内容；请重试。",
+      "replaceUpload": "用「{{file}}」替换「{{name}}」已上传的源码",
+      "acceptPdf": "将「{{file}}」上传到「{{name}}」",
+      "expiredUpload": "你做决定前附件或文献库已变化，未上传任何内容。",
+      "failedUpload": "未能保存你的决定，未上传任何内容；请重试。"
     },
     "thinkingLevels": {
       "off": "关闭",
@@ -1268,6 +1285,13 @@
     "stoppedNote": "已停止。已提交的修改已安全完成，并显示在上方操作记录中。",
     "workContinues": "你正在查看其他内容，任务继续处理 {{name}}。",
     "workContinuesOriginal": "你正在查看其他内容，任务继续处理原来的页面。",
-    "unreadable": "有一个已保存的会话无法读取，其文件保持原样。"
+    "unreadable": "有一个已保存的会话无法读取，其文件保持原样。",
+    "attach": "添加附件",
+    "attachUploading": "上传中…",
+    "attachRetry": "重试",
+    "attachRemove": "移除 {{name}}",
+    "attachFailed": "上传失败",
+    "attachTooLarge": "未被接受（超过 50 MiB 上限或为空文件）",
+    "attachRetryNamed": "重试上传 {{name}}"
   }
 }

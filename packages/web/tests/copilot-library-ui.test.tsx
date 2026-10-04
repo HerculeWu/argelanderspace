@@ -74,3 +74,37 @@ test("an import record names the action in both languages, shows the first work 
   await waitFor(() => expect(text()[0]).toContain("导入文献"));
   expect(text()[0]).toContain("部分条目未导入");
 });
+
+test("an acquisition record shows the real job id and Doc, a pending job is in progress rather than failed, and a failed job is", async () => {
+  const withJobs: ConversationSnapshot = { ...snapshot, messages: [
+    { id: "a1", role: "assistant", text: "", operations: [
+      { id: "j1", tool: "library", action: "acquire_arxiv_pdf", status: "ok", object: { kind: "work", id: "arxiv:2603.1" }, label: "Paper A", job: { id: "upload-aaa", status: "done" }, docId: "pdf-1111" } ] },
+    { id: "a2", role: "assistant", text: "", operations: [
+      { id: "j2", tool: "library", action: "attach_arxiv", status: "pending", object: { kind: "work", id: "arxiv:2603.2" }, job: { id: "ingest-bbb", status: "running" } } ] },
+    { id: "a3", role: "assistant", text: "", operations: [
+      { id: "j3", tool: "library", action: "attach_arxiv", status: "error", object: { kind: "work", id: "arxiv:2603.3" }, job: { id: "ingest-ccc", status: "failed" } },
+      { id: "j4", tool: "library", action: "read_jobs", status: "ok" } ] },
+  ] };
+  fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withJobs));
+  render(<Copilot open context={context} onClose={vi.fn()} />);
+  await waitFor(() => expect(document.querySelectorAll('[data-ui="copilot-operation"]')).toHaveLength(3));
+  const records = [...document.querySelectorAll('[data-ui="copilot-operation"]')];
+  const first = records[0] as HTMLElement;
+  expect(first.querySelector('[data-ui="copilot-operation-job"]')?.textContent).toBe("upload-aaa");
+  expect(first.querySelector('[data-ui="copilot-operation-doc"]')?.textContent).toBe("pdf-1111");
+  expect(first.textContent).toContain("Fetch PDF from arXiv");
+  // A job that is still running is neither applied nor failed.
+  const second = records[1] as HTMLElement;
+  expect(second.textContent).toContain("In progress");
+  // Not a checkmark (that would read as done): a neutral clock, and the summary says so in words.
+  expect(second.querySelector(".copilot-operation-mark")?.className).toContain("pending");
+  expect(second.querySelector(".copilot-operation-mark")?.className).not.toContain("ok");
+  expect(second.querySelector(".copilot-operation-mark svg")?.getAttribute("class") ?? "").toContain("ico");
+  expect(second.querySelector("summary")?.textContent).toContain("In progress");
+  expect(second.textContent).not.toContain("not applied");
+  expect(second.querySelector('[data-ui="copilot-operation-doc"]')).toBeNull();
+  // A failed job counts as not applied.
+  const third = records[2] as HTMLElement;
+  expect(third.querySelector(".copilot-operation-mark")?.className).toContain("warn");
+  expect(third.textContent).toContain("Read acquisition jobs");
+});

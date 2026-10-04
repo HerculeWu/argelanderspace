@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  CopilotConfirmationDecisionSchema,
+  CopilotMessageRequestSchema,
+  CopilotOperationSchema,
+  CopilotResourceConfirmationSchema,
+  CopilotResumeRequestSchema,
   LIBRARY_OPERATION_ACTIONS,
+  LibraryAcquireArxivPdfSchema,
+  LibraryAttachArxivSchema,
   LibraryImportWorksSchema,
+  LibraryReadJobsSchema,
   LibraryReadOperationSchema,
+  LibraryReplaceUploadSourceSchema,
   LibrarySetMainDocSchema,
+  LibraryUploadLatexZipSchema,
+  LibraryUploadPdfSchema,
   LibraryViewActionSchema,
   libraryImportRequest,
   libraryRefBibtex,
   libraryRefIdentityMatches,
   libraryRefMatches,
+  OperationConfirmationSchema,
   PageContextSchema,
   summarizeLibraryRef,
 } from "../src/index.js";
@@ -184,5 +196,291 @@ describe("identity query for read", () => {
     expect(libraryRefIdentityMatches(stub, "arXiv:2603.99998")).toBe(false);
     expect(libraryRefIdentityMatches(full, "10.1093")).toBe(false);
     expect(libraryRefIdentityMatches(full, "")).toBe(false);
+  });
+
+  it("the acquisition actions take a work id and nothing else: no path, URL, file or bytes field exists", () => {
+    expect(
+      LibraryAcquireArxivPdfSchema.safeParse({ action: "acquire_arxiv_pdf", refId: "arxiv:2603.1" })
+        .success
+    ).toBe(true);
+    expect(
+      LibraryAttachArxivSchema.safeParse({ action: "attach_arxiv", refId: "arxiv:2603.1" }).success
+    ).toBe(true);
+    expect(LibraryReadJobsSchema.safeParse({ action: "read_jobs" }).success).toBe(true);
+    expect(
+      LibraryReadJobsSchema.safeParse({ action: "read_jobs", refId: "w", limit: 50 }).success
+    ).toBe(true);
+    for (const extra of [
+      { path: "/etc/passwd" },
+      { url: "https://x.example/a.pdf" },
+      { file: "a.pdf" },
+      { bytes: "AAAA" },
+      { source: "zip" },
+    ]) {
+      expect(
+        LibraryAcquireArxivPdfSchema.safeParse({
+          action: "acquire_arxiv_pdf",
+          refId: "w",
+          ...extra,
+        }).success
+      ).toBe(false);
+      expect(
+        LibraryAttachArxivSchema.safeParse({ action: "attach_arxiv", refId: "w", ...extra }).success
+      ).toBe(false);
+      expect(LibraryReadJobsSchema.safeParse({ action: "read_jobs", ...extra }).success).toBe(
+        false
+      );
+    }
+    expect(LibraryAcquireArxivPdfSchema.safeParse({ action: "acquire_arxiv_pdf" }).success).toBe(
+      false
+    );
+    expect(LibraryReadJobsSchema.safeParse({ action: "read_jobs", limit: 51 }).success).toBe(false);
+    for (const action of ["acquire_arxiv_pdf", "attach_arxiv", "read_jobs"])
+      expect(LIBRARY_OPERATION_ACTIONS).toContain(action);
+  });
+
+  it("an operation record can carry the real job and Doc and a pending status; a confirmation decision can name the refresh", () => {
+    expect(
+      CopilotOperationSchema.safeParse({
+        id: "c1",
+        tool: "library",
+        action: "attach_arxiv",
+        status: "pending",
+        job: { id: "ingest-1", status: "running" },
+      }).success
+    ).toBe(true);
+    expect(
+      CopilotOperationSchema.safeParse({
+        id: "c1",
+        tool: "library",
+        action: "acquire_arxiv_pdf",
+        status: "ok",
+        job: { id: "upload-1", status: "done" },
+        docId: "pdf-1",
+      }).success
+    ).toBe(true);
+    expect(
+      CopilotOperationSchema.safeParse({
+        id: "c1",
+        tool: "library",
+        action: "attach_arxiv",
+        status: "ok",
+        job: { id: "x", status: "finished" },
+      }).success
+    ).toBe(false);
+    const decision = {
+      decision: "approve",
+      viewId: "00000000-0000-4000-8000-000000000001",
+      objectId: "arxiv-2603.1",
+      baseRev: 3,
+    };
+    expect(
+      CopilotConfirmationDecisionSchema.safeParse({ ...decision, action: "refresh_arxiv_source" })
+        .success
+    ).toBe(true);
+    expect(
+      CopilotConfirmationDecisionSchema.safeParse({ ...decision, action: "attach_arxiv" }).success
+    ).toBe(false);
+  });
+
+  it("a durable confirmation record is discriminated by action: delete_plan needs a plan, a refresh needs a Work and a Doc", () => {
+    const base = {
+      version: 1,
+      phase: "requested",
+      confirmationId: "00000000-0000-4000-8000-000000000001",
+      runId: "00000000-0000-4000-8000-000000000002",
+      toolCallId: "call_1",
+      baseRev: 0,
+    };
+    expect(
+      OperationConfirmationSchema.safeParse({
+        ...base,
+        action: "delete_plan",
+        planId: "p_0000000a",
+      }).success
+    ).toBe(true);
+    expect(OperationConfirmationSchema.safeParse({ ...base, action: "delete_plan" }).success).toBe(
+      false
+    );
+    expect(
+      OperationConfirmationSchema.safeParse({
+        ...base,
+        action: "delete_plan",
+        planId: "p",
+        docId: "d",
+      }).success
+    ).toBe(false);
+    expect(
+      OperationConfirmationSchema.safeParse({
+        ...base,
+        action: "refresh_arxiv_source",
+        workId: "w",
+        docId: "d",
+      }).success
+    ).toBe(true);
+    expect(
+      OperationConfirmationSchema.safeParse({
+        ...base,
+        action: "refresh_arxiv_source",
+        workId: "w",
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("attachment actions (copilot ticket 15)", () => {
+  const att = "00000000-0000-4000-8000-000000000009";
+  it("name a work and an attachment id; a path, URL, file or bytes field does not exist", () => {
+    expect(
+      LibraryUploadPdfSchema.safeParse({ action: "upload_pdf", refId: "w", attachmentId: att })
+        .success
+    ).toBe(true);
+    expect(
+      LibraryUploadLatexZipSchema.safeParse({
+        action: "upload_latex_zip",
+        refId: "w",
+        attachmentId: att,
+      }).success
+    ).toBe(true);
+    expect(
+      LibraryReplaceUploadSourceSchema.safeParse({
+        action: "replace_upload_source",
+        refId: "w",
+        docId: "upload-x",
+        attachmentId: att,
+      }).success
+    ).toBe(true);
+    for (const extra of [
+      { path: "/etc/hosts" },
+      { url: "https://x.example/a.pdf" },
+      { file: "a.pdf" },
+      { bytes: "AAAA" },
+    ]) {
+      expect(
+        LibraryUploadPdfSchema.safeParse({
+          action: "upload_pdf",
+          refId: "w",
+          attachmentId: att,
+          ...extra,
+        }).success
+      ).toBe(false);
+      expect(
+        LibraryReplaceUploadSourceSchema.safeParse({
+          action: "replace_upload_source",
+          refId: "w",
+          docId: "d",
+          attachmentId: att,
+          ...extra,
+        }).success
+      ).toBe(false);
+    }
+    // The id is an application attachment id, not any string (a path is not one).
+    expect(
+      LibraryUploadPdfSchema.safeParse({
+        action: "upload_pdf",
+        refId: "w",
+        attachmentId: "/tmp/a.pdf",
+      }).success
+    ).toBe(false);
+    expect(
+      LibraryUploadLatexZipSchema.safeParse({ action: "upload_latex_zip", refId: "w" }).success
+    ).toBe(false);
+    expect(
+      LibraryReplaceUploadSourceSchema.safeParse({
+        action: "replace_upload_source",
+        refId: "w",
+        attachmentId: att,
+      }).success
+    ).toBe(false);
+    for (const action of ["upload_pdf", "upload_latex_zip", "replace_upload_source"])
+      expect(LIBRARY_OPERATION_ACTIONS).toContain(action);
+  });
+  it("a message request carries at most five attachment ids, and a resume carries none", () => {
+    const base = { clientMessageId: att, text: "x", viewId: att, contextRevision: 1 };
+    expect(CopilotMessageRequestSchema.safeParse({ ...base, attachmentIds: [att] }).success).toBe(
+      true
+    );
+    expect(
+      CopilotMessageRequestSchema.safeParse({ ...base, attachmentIds: Array(6).fill(att) }).success
+    ).toBe(false);
+    expect(
+      CopilotMessageRequestSchema.safeParse({ ...base, attachmentIds: ["not-an-id"] }).success
+    ).toBe(false);
+    expect(
+      CopilotResumeRequestSchema.safeParse({
+        clientMessageId: att,
+        viewId: att,
+        contextRevision: 1,
+        attachmentIds: [att],
+      }).success
+    ).toBe(false);
+  });
+});
+
+describe("large PDF acceptance (copilot ticket 15)", () => {
+  it("is its own confirmation action, bound to a work and an attachment, in the card, the decision and the durable record", () => {
+    const base = {
+      id: "00000000-0000-4000-8000-000000000001",
+      runId: "00000000-0000-4000-8000-000000000002",
+      toolCallId: "c",
+      baseRev: 0,
+    };
+    const attachment = {
+      id: "00000000-0000-4000-8000-000000000003",
+      filename: "b.pdf",
+      size: 30_000_000,
+      sha256: "a".repeat(64),
+    };
+    expect(
+      CopilotResourceConfirmationSchema.safeParse({
+        ...base,
+        action: "accept_pdf_resource_warning",
+        object: { kind: "attachment", id: attachment.id, workId: "w" },
+        label: "T",
+        attachment,
+        objectDigest: "d",
+      }).success
+    ).toBe(true);
+    expect(
+      CopilotResourceConfirmationSchema.safeParse({
+        ...base,
+        action: "accept_pdf_resource_warning",
+        object: { kind: "attachment", id: attachment.id, workId: "w" },
+        label: "T",
+        objectDigest: "d",
+      }).success
+    ).toBe(false);
+    expect(
+      CopilotConfirmationDecisionSchema.safeParse({
+        decision: "approve",
+        viewId: base.id,
+        action: "accept_pdf_resource_warning",
+        objectId: attachment.id,
+        baseRev: 0,
+      }).success
+    ).toBe(true);
+    const record = {
+      version: 1,
+      phase: "requested",
+      confirmationId: base.id,
+      runId: base.runId,
+      toolCallId: "c",
+      baseRev: 0,
+    };
+    expect(
+      OperationConfirmationSchema.safeParse({
+        ...record,
+        action: "accept_pdf_resource_warning",
+        workId: "w",
+        attachmentId: attachment.id,
+      }).success
+    ).toBe(true);
+    expect(
+      OperationConfirmationSchema.safeParse({
+        ...record,
+        action: "accept_pdf_resource_warning",
+        workId: "w",
+      }).success
+    ).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type CopilotOperation,
   type CopilotViewActionResult,
+  type DocReplaceImpact,
   PLAN_ICONS,
   PLAN_OPERATION_ACTIONS,
   type PlanDeleteOperation,
@@ -28,7 +29,7 @@ export const PLAN_TOOL_NAME = "plan";
 /** What the host remembers about a business write so a repeat or a restart never guesses. */
 export type KnownOperation =
   | { state: "done"; hash: string; payload: Record<string, unknown>; operation: CopilotOperation }
-  | { state: "begun"; hash: string };
+  | { state: "begun"; hash: string; jobId?: string };
 export interface OperationJournalPort {
   lookup(operationId: string): KnownOperation | null;
   /** Persist "about to write". Throws when the conversation cannot be saved: then nothing is written. */
@@ -41,6 +42,8 @@ export interface OperationJournalPort {
     baseRev?: number;
   }): void;
   done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
+  /** Record the Job-table job a begun operation submitted, so a restart can name it. Best effort. */
+  submitted?(operationId: string, jobId: string): void;
 }
 
 /** How a requested delete was settled by the human (or by the host when the request stopped being valid). */
@@ -48,24 +51,54 @@ export type ConfirmationOutcome =
   | { outcome: "approved" }
   | { outcome: "declined" }
   | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" };
+/** What the card shows for a Plan delete (`delete_plan`) or a Doc replacement (`refresh_arxiv_source`). */
+export type ConfirmationRequest =
+  | {
+      toolCallId: string;
+      /** Only a whole Plan waits for the user; a Task delete is immediate like on the Plan page. */
+      action: "delete_plan";
+      planId: string;
+      label: string;
+      planName: string;
+      impact: { tasks: number; openTasks: number };
+      baseRev: number;
+      /** Content digest of the target at request time; a change that leaves the rev alone still expires the card. */
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /**
+       * Replacing the text of an existing LaTeX Doc: the arXiv refresh, or the uploaded zip swapped for the file the
+       * user attached. The Files tab dialog's annotation-risk step.
+       */
+      action: "refresh_arxiv_source" | "replace_upload_source";
+      /** replace_upload_source: the file that would replace the Doc. */
+      attachment?: { id: string; filename: string; size: number; sha256: string };
+      workId: string;
+      docId: string;
+      label: string;
+      impact: DocReplaceImpact;
+      /** The annotations rev the count was read at (0 when it could not be read). */
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /** A PDF of 25 MiB or more: the resource warning the Files tab makes the user accept. */
+      action: "accept_pdf_resource_warning";
+      workId: string;
+      label: string;
+      attachment: { id: string; filename: string; size: number; sha256: string };
+      baseRev: number;
+      objectDigest: string;
+    };
 /**
  * The only way a delete can proceed. `request` makes the application show a card to the real user and
  * resolves with the user's decision. The tool never sees an id or a way to answer: it cannot approve.
  * It throws when the request cannot be saved, and then nothing was shown or written.
  */
 export interface ConfirmationPort {
-  request(entry: {
-    toolCallId: string;
-    /** Only a whole Plan waits for the user; a Task delete is immediate like on the Plan page. */
-    action: "delete_plan";
-    planId: string;
-    label: string;
-    planName: string;
-    impact: { tasks: number; openTasks: number };
-    baseRev: number;
-    /** Content digest of the target at request time; a change that leaves the rev alone still expires the card. */
-    objectDigest: string;
-  }): Promise<ConfirmationOutcome>;
+  request(entry: ConfirmationRequest): Promise<ConfirmationOutcome>;
 }
 
 export interface PlanToolContext {

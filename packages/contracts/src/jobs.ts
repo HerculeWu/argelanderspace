@@ -20,6 +20,7 @@ import {
   WsCopilotSubscribedSchema,
   WsCopilotViewActionSchema,
 } from "./copilot.js";
+import { JobStatusSchema } from "./job-status.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
 import { WsWriterChangedSchema } from "./writer.js";
@@ -34,7 +35,7 @@ export const JobKindSchema = z.enum(["upload", "refresh", "ingest"]);
  * runner rewrites it to this terminal state on boot (it is never re-run —
  * upload spool files are cleaned up with it).
  */
-export const JobStatusSchema = z.enum(["queued", "running", "done", "failed", "interrupted"]);
+export { JobStatusSchema };
 
 /** One progress entry; jobs with no intermediate milestones only have few. */
 export const JobProgressSchema = z.object({

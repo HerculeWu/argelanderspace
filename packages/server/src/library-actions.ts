@@ -1,7 +1,11 @@
+import { createHash } from "node:crypto";
 import {
   type CopilotOperation,
+  type DocReplaceImpact,
+  type Job,
   type LibraryImportWorks,
   type LibraryPayload,
+  type LibraryReadJobs,
   type LibraryReadOperation,
   type LibraryRefSummary,
   type LibrarySetMainDoc,
@@ -37,6 +41,8 @@ import type { AsyncLock } from "./lock.js";
  * the `library.changed` notification, plus the page's own payload reader (`GET /api/library`).
  */
 export interface LibraryOpDeps {
+  /** The acquisition dialog's seam (arXiv PDF / LaTeX source jobs); absent in hosts without a Library. */
+  acquisition?: AcquisitionPort;
   paths: LibraryPaths;
   libraryLock: AsyncLock;
   /** Broadcasts `library.changed{cause:"patch"}`, like the PATCH route. */
@@ -375,4 +381,477 @@ export async function applyLibraryImport(
       : {}),
     ...(failed > 0 ? { warnings: ["import_partial"] } : {}),
   };
+}
+
+// --------------------------------------------------------------------------- //
+// Acquisition (the Files tab's acquisition dialog) and the JobRunner status lines
+// --------------------------------------------------------------------------- //
+
+/** How a start request ended; the HTTP routes and the tool map this to their own shapes. */
+export type ArxivStart =
+  | { kind: "queued"; job: Job; reused: boolean }
+  | { kind: "not_found" | "no_arxiv" | "skip" | "busy" | "not_queued" };
+
+/** What "get LaTeX source from arXiv" would do for a Work, decided with the endpoint's own checks. */
+export interface ArxivSourceTarget {
+  /** attach: docless Work; append: PDF-only Work gets a new LaTeX Doc; refresh: the arXiv Doc is replaced in place. */
+  kind: "attach" | "append" | "refresh";
+  docId: string;
+  title: string;
+  docIds: string[];
+}
+export type ArxivSourcePlan =
+  | { kind: "not_found" | "no_arxiv" | "skip" | "busy" }
+  | ArxivSourceTarget;
+
+/** The dialog's annotation-risk step for a replacement target. */
+export type AnnotationRisk =
+  | { state: "known"; count: number; rev: number; stale: boolean; fingerprint: string | null }
+  | { state: "unknown" | "busy" | "missing" };
+
+/** The existing JobRunner, seen by the tool through its public reads only (it never occupies a slot). */
+export interface JobTable {
+  list(): Job[];
+  get(id: string): Job | undefined;
+  waitFor(id: string): Promise<Job>;
+}
+
+/** How an upload submit with a user-attached file ended (the page routes' own validations decide). */
+export type UploadStart =
+  | { kind: "queued"; job: Job; resourceWarning?: boolean }
+  | { kind: "error"; status: number; detail: string };
+
+/** The Work's uploaded LaTeX source, as the Files tab's "replace zip" sees it. */
+export type UploadTarget =
+  | { kind: "not_found" }
+  | { kind: "work"; docId: string; title: string; docIds: string[]; hasUpload: boolean };
+
+export interface AcquisitionPort {
+  /** The page's PDF upload submit, with bytes the user attached (`startPdfUpload`). */
+  startPdfUpload(workId: string, bytes: Buffer, filename: string): UploadStart;
+  /** The page's async LaTeX zip upload submit, with bytes the user attached. Returns an error for a non-zip. */
+  startZipUpload(
+    workId: string,
+    bytes: Uint8Array,
+    options?: { expectNoUpload?: boolean }
+  ): UploadStart;
+  /** Whether these bytes are a readable zip archive (the page's own gate). */
+  checkZip(bytes: Uint8Array): boolean;
+  describeUpload(workId: string): UploadTarget;
+  startPdf(workId: string): ArxivStart;
+  describeSource(workId: string): ArxivSourcePlan;
+  startSource(workId: string): ArxivStart;
+  annotationRisk(docId: string): Promise<AnnotationRisk>;
+  jobs: JobTable;
+  /** Longest the tool waits for its job before answering `pending` (default ten minutes). */
+  waitMs?: number;
+}
+
+/** One job as the acquisition status lines show it. */
+export interface JobView {
+  id: string;
+  kind: Job["kind"];
+  /** arxiv-pdf | pdf | undefined (LaTeX attach or refresh). */
+  format?: string;
+  status: Job["status"];
+  workId: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+  /** The newest progress message, as the status line shows it. */
+  progress: string | null;
+  error: string | null;
+  errorCode?: string;
+  /** The Doc the finished job created or refreshed. */
+  docId?: string;
+}
+
+const payloadOf = (job: Job): { workId?: string; format?: string } =>
+  job.payload !== null && typeof job.payload === "object" && !Array.isArray(job.payload)
+    ? (job.payload as { workId?: string; format?: string })
+    : {};
+
+/** The Doc a finished job produced, from its result (arXiv PDF: `doc`, LaTeX attach: `docId`, zip: `ref`). */
+function jobDocId(job: Job): string | undefined {
+  const result = job.result as Record<string, unknown> | null;
+  if (!result || typeof result !== "object") return undefined;
+  const doc = result.doc as { doc_id?: unknown } | undefined;
+  if (doc && typeof doc.doc_id === "string") return doc.doc_id;
+  if (typeof result.docId === "string") return result.docId;
+  return undefined;
+}
+
+export function jobView(job: Job): JobView {
+  const payload = payloadOf(job);
+  const docId = job.status === "done" ? jobDocId(job) : undefined;
+  return {
+    id: job.id,
+    kind: job.kind,
+    ...(typeof payload.format === "string" ? { format: payload.format } : {}),
+    status: job.status,
+    workId: typeof payload.workId === "string" ? payload.workId : null,
+    createdAt: job.createdAt,
+    finishedAt: job.finishedAt,
+    progress: job.progress.at(-1)?.message ?? null,
+    error: job.error,
+    ...(job.errorCode ? { errorCode: job.errorCode } : {}),
+    ...(docId ? { docId } : {}),
+  };
+}
+
+export type ReadJobsOutcome =
+  | { ok: true; jobs: JobView[]; total: number }
+  | { ok: false; status: "unsupported"; detail: string };
+
+/** The acquisition status lines: the JobRunner's own table (newest first), optionally one work's jobs. */
+export function readJobs(deps: LibraryOpDeps, op: LibraryReadJobs): ReadJobsOutcome {
+  if (!deps.acquisition)
+    return { ok: false, status: "unsupported", detail: "jobs are not available in this host" };
+  const all = deps.acquisition.jobs
+    .list()
+    .filter((job) => (op.refId === undefined ? true : payloadOf(job).workId === op.refId))
+    // Refresh jobs belong to no work; the status lines of a Work only show its own acquisitions.
+    .filter((job) => op.refId !== undefined || job.kind !== "refresh");
+  return { ok: true, total: all.length, jobs: all.slice(0, op.limit ?? 10).map(jobView) };
+}
+
+export type AcquireOutcome =
+  | {
+      ok: true;
+      status: "ok" | "noop" | "pending";
+      job: JobView;
+      docId?: string;
+      /** A job for this Work and format was already queued or running: its result, not a second job. */
+      reused?: boolean;
+      object: NonNullable<CopilotOperation["object"]>;
+      label?: string;
+      detail?: string;
+    }
+  | {
+      ok: false;
+      status: "not_found" | "rejected" | "error" | "unknown" | "unsupported";
+      detail: string;
+      job?: JobView;
+    };
+
+const DEFAULT_WAIT_MS = 600_000;
+const STOP_POLL_MS = 200;
+
+/**
+ * Wait for a job the caller submitted: for its terminal state, until the host stops admitting work (Stop,
+ * shutdown) or until the bound. The wait is a promise on the runner's waiters, never a job of its own, so the
+ * serial queue is not held; releasing it does not cancel the job, which finishes by itself.
+ */
+async function awaitJob(
+  port: AcquisitionPort,
+  job: Job,
+  admitting: () => boolean
+): Promise<{ job: Job; finished: boolean }> {
+  const limit = port.waitMs ?? DEFAULT_WAIT_MS;
+  let poll: NodeJS.Timeout | undefined;
+  let bound: NodeJS.Timeout | undefined;
+  const released = new Promise<"released">((resolve) => {
+    poll = setInterval(() => {
+      if (!admitting()) resolve("released");
+    }, STOP_POLL_MS);
+    bound = setTimeout(() => resolve("released"), limit);
+  });
+  try {
+    const outcome = await Promise.race([port.jobs.waitFor(job.id), released]);
+    if (outcome === "released") return { job: port.jobs.get(job.id) ?? job, finished: false };
+    return { job: outcome, finished: true };
+  } finally {
+    clearInterval(poll);
+    clearTimeout(bound);
+  }
+}
+
+/** What a submitted job came to, in the words the dialog's status line would use. */
+async function settleAcquisition(
+  port: AcquisitionPort,
+  started: Job,
+  reused: boolean,
+  work: { id: string; title?: string },
+  admitting: () => boolean
+): Promise<AcquireOutcome> {
+  const object = { kind: "work" as const, id: work.id };
+  const { job, finished } = await awaitJob(port, started, admitting);
+  const view = jobView(job);
+  if (!finished || job.status === "queued" || job.status === "running")
+    return {
+      ok: true,
+      status: "pending",
+      job: view,
+      reused,
+      object,
+      ...(work.title ? { label: work.title } : {}),
+      detail:
+        "the job was submitted and had not finished when this call ended; it continues by itself. Its outcome is in read_jobs with this job id; do not submit it again",
+    };
+  if (job.status !== "done")
+    return {
+      ok: false,
+      status: "error",
+      job: view,
+      detail: `the job ${job.status}${job.error ? `: ${job.error}` : ""}. A failed job can leave part of its work: an arXiv LaTeX attach may already have linked the Doc when the later index rebuild failed, and a PDF whose link failed leaves an unlinked bundle in the output folder. Read the work (and read_jobs) to see what is there before deciding`,
+    };
+  const result = job.result as { status?: unknown } | null;
+  if (result && result.status === "skipped")
+    return {
+      ok: false,
+      status: "rejected",
+      job: view,
+      detail: "the Work changed while the job waited, so nothing was added",
+    };
+  return {
+    ok: true,
+    // Identical bytes already on this Work: the existing Doc is returned, nothing was created.
+    status: result && result.status === "exists" ? "noop" : "ok",
+    job: view,
+    ...(view.docId ? { docId: view.docId } : {}),
+    reused,
+    object,
+    ...(work.title ? { label: work.title } : {}),
+  };
+}
+
+const startFailure = (
+  kind: Exclude<ArxivStart["kind"], "queued">,
+  what: "pdf" | "source"
+): AcquireOutcome => {
+  switch (kind) {
+    case "not_found":
+      return { ok: false, status: "not_found", detail: "no such work" };
+    case "no_arxiv":
+      return { ok: false, status: "rejected", detail: "this work has no arXiv id" };
+    case "skip":
+      return {
+        ok: false,
+        status: "rejected",
+        detail:
+          "this work already has a non-arXiv document (for example a LaTeX zip); the user has to delete it first if the arXiv version is wanted",
+      };
+    case "busy":
+      return {
+        ok: false,
+        status: "rejected",
+        detail: "the target document is being deleted; try again after it finishes",
+      };
+    default:
+      return {
+        ok: false,
+        status: "rejected",
+        detail:
+          what === "pdf"
+            ? "the arXiv PDF acquisition could not be queued"
+            : "the arXiv fetch could not be queued (the work changed)",
+      };
+  }
+};
+
+export interface AcquireContext {
+  /** False once the host stopped admitting work: no job is started, and a running wait is released. */
+  admitting: () => boolean;
+  /** Called once with the job id as soon as the job exists (recorded in the journal). */
+  onSubmitted?: (jobId: string) => void;
+}
+
+/** The dialog's "fetch PDF from arXiv" submit: the shared start, then the job's own outcome. */
+export async function applyAcquireArxivPdf(
+  deps: LibraryOpDeps,
+  refId: string,
+  context: AcquireContext
+): Promise<AcquireOutcome> {
+  const port = deps.acquisition;
+  if (!port)
+    return {
+      ok: false,
+      status: "unsupported",
+      detail: "acquisition is not available in this host",
+    };
+  let started: ArxivStart;
+  try {
+    started = port.startPdf(refId);
+  } catch {
+    return {
+      ok: false,
+      status: "unknown",
+      detail:
+        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
+    };
+  }
+  if (started.kind !== "queued") return startFailure(started.kind, "pdf");
+  context.onSubmitted?.(started.job.id);
+  const title = LibraryStore.load(deps.paths).get(refId)?.title;
+  return settleAcquisition(
+    port,
+    started.job,
+    started.reused,
+    { id: refId, title },
+    context.admitting
+  );
+}
+
+export type RefreshPreparation =
+  | {
+      ok: true;
+      docId: string;
+      title: string;
+      impact: DocReplaceImpact;
+      rev: number;
+      digest: string;
+    }
+  | { ok: false; status: "rejected" | "not_found"; detail: string };
+
+/** The replacement target, its annotation risk and the digest a confirmation is bound to. */
+export async function prepareArxivRefresh(
+  deps: LibraryOpDeps,
+  refId: string,
+  plan: Pick<ArxivSourceTarget, "docId" | "title" | "docIds">,
+  /** More the confirmation is bound to (for example the sha256 of the file that would replace the Doc). */
+  binding: Record<string, unknown> = {}
+): Promise<RefreshPreparation> {
+  const port = deps.acquisition as AcquisitionPort;
+  const risk = await port.annotationRisk(plan.docId);
+  if (risk.state === "busy")
+    return {
+      ok: false,
+      status: "rejected",
+      detail:
+        "the document is busy (a task is writing or deleting it), so its annotations cannot be checked safely and the refresh cannot be submitted now; try again when the task finishes",
+    };
+  if (risk.state === "missing")
+    return {
+      ok: false,
+      status: "rejected",
+      detail: "the document to refresh no longer exists; read the work again",
+    };
+  const impact: DocReplaceImpact =
+    risk.state === "known"
+      ? { annotations: "known", count: risk.count }
+      : { annotations: "unknown" };
+  const rev = risk.state === "known" ? risk.rev : 0;
+  // The Doc's own content fingerprint is part of the binding: a page refresh that replaced it ends the card.
+  const bound = risk.state === "known" ? { stale: risk.stale, fingerprint: risk.fingerprint } : {};
+  const digest = createHash("sha256")
+    .update(
+      JSON.stringify({
+        refId,
+        docId: plan.docId,
+        impact,
+        rev,
+        docIds: plan.docIds,
+        ...bound,
+        ...binding,
+      })
+    )
+    .digest("hex");
+  return { ok: true, docId: plan.docId, title: plan.title, impact, rev, digest };
+}
+
+/** The dialog's "get LaTeX source from arXiv" submit once any needed confirmation is given. */
+export async function applyAttachArxiv(
+  deps: LibraryOpDeps,
+  refId: string,
+  context: AcquireContext
+): Promise<AcquireOutcome> {
+  const port = deps.acquisition;
+  if (!port)
+    return {
+      ok: false,
+      status: "unsupported",
+      detail: "acquisition is not available in this host",
+    };
+  let started: ArxivStart;
+  try {
+    started = port.startSource(refId);
+  } catch {
+    return {
+      ok: false,
+      status: "unknown",
+      detail:
+        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
+    };
+  }
+  if (started.kind !== "queued") return startFailure(started.kind, "source");
+  context.onSubmitted?.(started.job.id);
+  const title = LibraryStore.load(deps.paths).get(refId)?.title;
+  return settleAcquisition(
+    port,
+    started.job,
+    started.reused,
+    { id: refId, title },
+    context.admitting
+  );
+}
+
+const uploadFailure = (start: Extract<UploadStart, { kind: "error" }>): AcquireOutcome => ({
+  ok: false,
+  status: start.status === 404 ? "not_found" : start.status >= 500 ? "error" : "rejected",
+  detail:
+    start.status === 409
+      ? `${start.detail}: a task is writing or deleting this document; try again when it finishes`
+      : start.detail,
+});
+
+/** The Files tab's PDF upload, with a file the user handed to this conversation. */
+export async function applyUploadPdf(
+  deps: LibraryOpDeps,
+  refId: string,
+  file: { bytes: Buffer; filename: string },
+  context: AcquireContext
+): Promise<AcquireOutcome> {
+  const port = deps.acquisition;
+  if (!port)
+    return {
+      ok: false,
+      status: "unsupported",
+      detail: "acquisition is not available in this host",
+    };
+  let started: UploadStart;
+  try {
+    started = port.startPdfUpload(refId, file.bytes, file.filename);
+  } catch {
+    return {
+      ok: false,
+      status: "unknown",
+      detail:
+        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
+    };
+  }
+  if (started.kind === "error") return uploadFailure(started);
+  context.onSubmitted?.(started.job.id);
+  const title = LibraryStore.load(deps.paths).get(refId)?.title;
+  return settleAcquisition(port, started.job, false, { id: refId, title }, context.admitting);
+}
+
+/** The LaTeX zip upload (new source or replacement; the confirmation for a replacement happened before this). */
+export async function applyUploadZip(
+  deps: LibraryOpDeps,
+  refId: string,
+  file: { bytes: Buffer },
+  context: AcquireContext,
+  options: { expectNoUpload?: boolean } = {}
+): Promise<AcquireOutcome> {
+  const port = deps.acquisition;
+  if (!port)
+    return {
+      ok: false,
+      status: "unsupported",
+      detail: "acquisition is not available in this host",
+    };
+  let started: UploadStart;
+  try {
+    started = port.startZipUpload(refId, file.bytes, options);
+  } catch {
+    return {
+      ok: false,
+      status: "unknown",
+      detail:
+        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
+    };
+  }
+  if (started.kind === "error") return uploadFailure(started);
+  context.onSubmitted?.(started.job.id);
+  const title = LibraryStore.load(deps.paths).get(refId)?.title;
+  return settleAcquisition(port, started.job, false, { id: refId, title }, context.admitting);
 }

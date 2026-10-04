@@ -52,6 +52,19 @@ export function readCopilotHistory(path: string, sessionId: string): FileEntry[]
       if (entry.phase === "begin") {
         if (begun.has(entry.operationId)) throw new Error("duplicate operation begin");
         begun.set(entry.operationId, entry);
+      } else if (entry.phase === "submitted") {
+        // The job id of a begun operation, recorded right after the submit.
+        const start = begun.get(entry.operationId);
+        if (
+          !start ||
+          !entry.object?.jobId ||
+          finished.has(entry.operationId) ||
+          start.hash !== entry.hash ||
+          start.toolCallId !== entry.toolCallId ||
+          start.runId !== entry.runId ||
+          start.action !== entry.action
+        )
+          throw new Error("broken operation journal");
       } else {
         const start = begun.get(entry.operationId);
         if (

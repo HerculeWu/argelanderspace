@@ -1207,7 +1207,13 @@
         "set_temp_label": "Set temporary color dot",
         "set_graph_labels": "Show or hide graph labels",
         "graph_control": "Zoom or arrange graph",
-        "import_works": "Import works"
+        "import_works": "Import works",
+        "acquire_arxiv_pdf": "Fetch PDF from arXiv",
+        "attach_arxiv": "Get LaTeX source from arXiv",
+        "read_jobs": "Read acquisition jobs",
+        "upload_pdf": "Upload PDF",
+        "upload_latex_zip": "Upload LaTeX source",
+        "replace_upload_source": "Replace uploaded source"
       },
       "status": {
         "ok": "Applied",
@@ -1223,8 +1229,11 @@
         "error": "Failed",
         "confirmation_required": "Waiting for you",
         "declined": "Declined",
-        "expired": "Expired"
-      }
+        "expired": "Expired",
+        "pending": "In progress"
+      },
+      "job": "Job",
+      "doc": "Document"
     },
     "undo": {
       "restored": "Restored “{{title}}”",
@@ -1236,7 +1245,15 @@
       "planScope": "The plan and its {{count}} tasks ({{open}} unfinished) will be permanently deleted. This cannot be undone.",
       "meta": "{{id}} · plans v{{rev}}",
       "expired": "The plans changed before your decision. Nothing was deleted.",
-      "failed": "Your decision could not be saved. Nothing was deleted; try again."
+      "failed": "Your decision could not be saved. Nothing was deleted; try again.",
+      "refreshArxiv": "Replace the arXiv source of “{{name}}”",
+      "metaDoc": "{{id}} · annotations v{{rev}}",
+      "expiredDoc": "The document or its annotations changed before your decision. Nothing was replaced.",
+      "failedDoc": "Your decision could not be saved. Nothing was replaced; try again.",
+      "replaceUpload": "Replace the uploaded source of “{{name}}” with “{{file}}”",
+      "acceptPdf": "Upload “{{file}}” to “{{name}}”",
+      "expiredUpload": "The attachment or the library changed before your decision. Nothing was uploaded.",
+      "failedUpload": "Your decision could not be saved. Nothing was uploaded; try again."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1268,6 +1285,13 @@
     "stoppedNote": "Stopped. Changes already submitted were finished and are shown in the operations above.",
     "workContinues": "You are viewing something else. Work continues on {{name}}.",
     "workContinuesOriginal": "You are viewing something else. Work continues on the original page.",
-    "unreadable": "A saved conversation could not be read. Its file was left unchanged."
+    "unreadable": "A saved conversation could not be read. Its file was left unchanged.",
+    "attach": "Attach a file",
+    "attachUploading": "Uploading…",
+    "attachRetry": "Retry",
+    "attachRemove": "Remove {{name}}",
+    "attachFailed": "Upload failed",
+    "attachTooLarge": "Not accepted (over the 50 MiB limit or empty)",
+    "attachRetryNamed": "Retry uploading {{name}}"
   }
 }

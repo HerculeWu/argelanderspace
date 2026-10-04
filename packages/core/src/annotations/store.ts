@@ -555,3 +555,46 @@ function ensureForFingerprint(
   saveAnnotationsFile(dataDir, docId, next);
   return { file: next, invalidated: true };
 }
+
+/**
+ * What replacing a Doc's text puts at risk, read WITHOUT any write (copilot ticket 15): the same reads as the CLI
+ * `annot` command, never `ensureCurrentAnnotations`. Archiving stays with the server's GET/PUT annotations access
+ * path. A fingerprint mismatch means the stored annotations are already stale (the next access archives them): they
+ * count as 0 and `stale` says so. Anything that cannot be computed is `unknown`, never a mismatch.
+ */
+export type AnnotationRiskRead =
+  | {
+      state: "known";
+      count: number;
+      rev: number;
+      stale: boolean;
+      /** Content fingerprint of the Doc as it is now (null when there was nothing to compare). */
+      fingerprint: string | null;
+    }
+  | { state: "unknown" | "missing" };
+
+export function readAnnotationRisk(dataDir: string, docId: string): AnnotationRiskRead {
+  let ir: TexDocIr;
+  try {
+    ir = loadStoredDocIr(dataDir, docId);
+  } catch (err) {
+    return {
+      state: err instanceof AnnotationsError && err.code === "not_found" ? "missing" : "unknown",
+    };
+  }
+  try {
+    const current = loadAnnotationsFile(dataDir, docId);
+    const fingerprint = docContentFingerprint(ir, { docDir: docDirPath(dataDir, docId) });
+    if (current === null) return { state: "known", count: 0, rev: 0, stale: false, fingerprint };
+    const stale = current.content_fingerprint !== fingerprint;
+    return {
+      state: "known",
+      count: stale ? 0 : current.annotations.length,
+      rev: current.rev,
+      stale,
+      fingerprint,
+    };
+  } catch {
+    return { state: "unknown" };
+  }
+}

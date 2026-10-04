@@ -1,4 +1,4 @@
-import type { CopilotConfirmationDecision, CopilotConversationList, CopilotResumeRequest, CopilotViewActionResult, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
+import type { CopilotAttachment, CopilotConfirmationDecision, CopilotConversationList, CopilotResumeRequest, CopilotViewActionResult, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
 export class CopilotApiError extends Error { constructor(readonly code: string) { super(code); } }
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
   const response = await fetch(`/api/copilot${path}`, { method, cache: "no-store", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -17,3 +17,11 @@ export const stopConversation = (id: string) => request<ConversationSnapshot>(`/
 export const resumeConversation = (id: string, input: CopilotResumeRequest) => request<{ messageId: string; runId: string }>(`/conversations/${id}/resume`, "POST", input);
 export const decideConfirmation = (id: string, decision: CopilotConfirmationDecision) => request<{ status: "approved" | "declined" }>(`/confirmations/${id}`, "POST", decision);
 export const undoOperation = (conversationId: string, toolCallId: string, viewId: string) => request<{ status: "ok" | "noop"; rev: number }>(`/conversations/${conversationId}/operations/${encodeURIComponent(toolCallId)}/undo`, "POST", { viewId });
+/** Hand a file to a conversation: raw bytes, the display name in X-Filename. Returns the attachment (id + metadata). */
+export async function uploadAttachment(conversationId: string, file: File): Promise<CopilotAttachment> {
+  const response = await fetch(`/api/copilot/conversations/${conversationId}/attachments`, { method: "POST", cache: "no-store", headers: { "Content-Type": file.type || "application/octet-stream", "X-Filename": encodeURIComponent(file.name) }, body: file });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new CopilotApiError(typeof data.code === "string" ? data.code : "unavailable");
+  return data as CopilotAttachment;
+}
+export const removeAttachment = (conversationId: string, attachmentId: string) => request<{ removed: true }>(`/conversations/${conversationId}/attachments/${attachmentId}`, "DELETE");

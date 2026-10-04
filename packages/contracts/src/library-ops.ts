@@ -10,7 +10,15 @@
  *    detail tabs and the sidebar fold (bound-view state, no object has to be opened to read or edit);
  *  - import_works: the import menu's three dialogs (identifier, ADS bibcode, BibTeX text), i.e.
  *    `POST /api/library/works`; the tool takes only the text the dialog would receive;
- *  - set_temp_label: the right-click colour dot, which is a session-local display overlay that is never saved.
+ *  - set_temp_label: the right-click colour dot, which is a session-local display overlay that is never saved;
+ *  - acquire_arxiv_pdf / attach_arxiv: the Files tab acquisition dialog's "fetch PDF from arXiv" and "get LaTeX
+ *    source from arXiv" submits (`POST /api/library/acquire-arxiv-pdf`, `POST /api/library/attach-arxiv`); both
+ *    start a job in the existing JobRunner and take only a work id. Refreshing an existing arXiv LaTeX Doc
+ *    replaces its text, so it waits for the real user's confirmation, as the dialog's annotation-risk step does;
+ *  - read_jobs: the acquisition status lines (queued/running/failed jobs of a work) from the JobRunner table.
+ *  - upload_pdf / upload_latex_zip / replace_upload_source: the Files tab uploads, with a file the user handed to
+ *    THIS conversation as an attachment (an id, never a path or URL). Replacing the uploaded source waits for the
+ *    real user, like the arXiv refresh. A path, URL or file field does not exist in any action.
  */
 import { z } from "zod";
 import {
@@ -263,6 +271,47 @@ export function libraryImportRequest(
   return { mode: "bib", bib: text };
 }
 
+/** The acquisition dialog's "fetch PDF from arXiv" submit: `POST /api/library/acquire-arxiv-pdf?id=<workId>`. */
+export const LibraryAcquireArxivPdfSchema = z
+  .object({ action: z.literal("acquire_arxiv_pdf"), refId: Id })
+  .strict();
+/** The dialog's "get LaTeX source from arXiv" submit (new Doc, or refresh of the arXiv Doc): `POST /api/library/attach-arxiv`. */
+export const LibraryAttachArxivSchema = z
+  .object({ action: z.literal("attach_arxiv"), refId: Id })
+  .strict();
+/** The acquisition status lines: jobs of one work (or the latest jobs of any work) from the JobRunner table. */
+export const LibraryReadJobsSchema = z
+  .object({
+    action: z.literal("read_jobs"),
+    refId: Id.optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+  })
+  .strict();
+const AttachmentId = z.string().uuid();
+/** The Files tab's PDF upload with a file the user handed to this conversation: `POST /api/library/upload-pdf`. */
+export const LibraryUploadPdfSchema = z
+  .object({ action: z.literal("upload_pdf"), refId: Id, attachmentId: AttachmentId })
+  .strict();
+/** The LaTeX source upload for a work that has no uploaded source yet: `POST /api/library/upload`. */
+export const LibraryUploadLatexZipSchema = z
+  .object({ action: z.literal("upload_latex_zip"), refId: Id, attachmentId: AttachmentId })
+  .strict();
+/** Replace the work's uploaded LaTeX source (Files tab "replace zip"); waits for the user's confirmation. */
+export const LibraryReplaceUploadSourceSchema = z
+  .object({
+    action: z.literal("replace_upload_source"),
+    refId: Id,
+    docId: Id,
+    attachmentId: AttachmentId,
+  })
+  .strict();
+export type LibraryUploadPdf = z.infer<typeof LibraryUploadPdfSchema>;
+export type LibraryUploadLatexZip = z.infer<typeof LibraryUploadLatexZipSchema>;
+export type LibraryReplaceUploadSource = z.infer<typeof LibraryReplaceUploadSourceSchema>;
+export type LibraryAcquireArxivPdf = z.infer<typeof LibraryAcquireArxivPdfSchema>;
+export type LibraryAttachArxiv = z.infer<typeof LibraryAttachArxivSchema>;
+export type LibraryReadJobs = z.infer<typeof LibraryReadJobsSchema>;
+
 /** View operations are executed by the bound browser view, never by the store. */
 export const LibraryViewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("filter_library"), query: z.string().max(500) }).strict(),
@@ -297,6 +346,12 @@ export const LIBRARY_OPERATION_ACTIONS = [
   "read",
   "set_main_doc",
   "import_works",
+  "acquire_arxiv_pdf",
+  "attach_arxiv",
+  "upload_pdf",
+  "upload_latex_zip",
+  "replace_upload_source",
+  "read_jobs",
   "filter_library",
   "select_work",
   "set_detail_tab",

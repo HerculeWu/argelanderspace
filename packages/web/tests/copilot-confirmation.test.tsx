@@ -3,7 +3,7 @@
  * component against a scripted HTTP API. Layout is not proven here (happy-dom): the real browser is.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ConversationSnapshot, CopilotConfirmation, CopilotProvider, PageContext, WsCopilotEvent } from "@argelanderspace/contracts";
+import type { ConversationSnapshot, CopilotConfirmation, CopilotDocConfirmation, CopilotPlanConfirmation, CopilotProvider, PageContext, WsCopilotEvent } from "@argelanderspace/contracts";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Copilot } from "../src/copilot/Copilot";
 import i18n from "../src/i18n";
@@ -15,7 +15,7 @@ const RUN = "00000000-0000-4000-8000-0000000000aa";
 const CARD = "00000000-0000-4000-8000-0000000000cc";
 const context: PageContext = { version: 1, viewId: "00000000-0000-4000-8000-000000000001", paneId: 1, revision: 1, view: "doc", status: "unavailable", otherPanes: [], plan: null };
 const conversation = (status: "waiting-for-user" | "completed") => ({ version: 1 as const, id: ID, sessionId: "00000000-0000-4000-8000-000000000003", title: "Test conversation", createdAt: "2026-10-02", updatedAt: "2026-10-02", model: { provider: "openai", model: "test", thinking: null }, run: { id: RUN, status, error: null } });
-const card = (over: Partial<CopilotConfirmation> = {}): CopilotConfirmation => ({ id: CARD, runId: RUN, toolCallId: "call_1", action: "delete_plan", object: { kind: "plan", id: "p_0000000a", planId: "p_0000000a" }, label: "Alpha <b>plan</b>", planName: "Alpha <b>plan</b>", impact: { tasks: 3, openTasks: 2 }, baseRev: 7, objectDigest: "d".repeat(64), ...over });
+const card = (over: Partial<CopilotPlanConfirmation> = {}): CopilotConfirmation => ({ id: CARD, runId: RUN, toolCallId: "call_1", action: "delete_plan", object: { kind: "plan", id: "p_0000000a", planId: "p_0000000a" }, label: "Alpha <b>plan</b>", planName: "Alpha <b>plan</b>", impact: { tasks: 3, openTasks: 2 }, baseRev: 7, objectDigest: "d".repeat(64), ...over });
 const snap = (status: "waiting-for-user" | "completed", extra: Partial<ConversationSnapshot> = {}): ConversationSnapshot => ({ version: 1, conversation: conversation(status), messages: [], confirmations: [], stream: "", eventCursor: { instanceId: "00000000-0000-4000-8000-000000000004", seq: 1 }, ...extra });
 const provider: CopilotProvider = { id: "openai", name: "OpenAI", method: "api_key", credential: { configured: true, stored: true, source: "stored" }, catalogStatus: "ready", models: [{ id: "test", name: "Test", baseUrl: "https://example.invalid", contextWindow: 10000, maxTokens: 1000, tools: true, image: false, thinkingLevels: ["off", "low", "high"], capabilitiesKnown: true, defaultThinking: "high", defaultThinkingValid: true }] };
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -213,4 +213,83 @@ test("a waiting confirmation is signalled to the shell (collapsed panel), and a 
   fireEvent.click(ui("copilot-conversations")!);
   await waitFor(() => expect(ui("copilot-conversation")).not.toBeNull());
   expect(ui("copilot-conversation")?.querySelector(".badge, [class*=badge]")?.className).toMatch(/accent/);
+});
+
+const docCard = (over: Partial<CopilotDocConfirmation> = {}): CopilotConfirmation => ({ id: CARD, runId: RUN, toolCallId: "call_1", action: "refresh_arxiv_source", object: { kind: "doc", id: "arxiv-2603.03522", workId: "arxiv:2603.03522" }, label: "Synthetic <i>paper</i>", impact: { annotations: "known", count: 4 }, baseRev: 3, objectDigest: "e".repeat(64), ...over });
+
+test("a waiting arXiv source refresh shows the dialog's annotation risk, the Doc and the annotations version", async () => {
+  current = snap("waiting-for-user", { confirmations: [docCard()] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
+  const shown = ui("copilot-confirmation") as HTMLElement;
+  expect(shown.getAttribute("data-action")).toBe("refresh_arxiv_source");
+  expect(shown.querySelector("h3")?.textContent).toBe("Replace the arXiv source of “Synthetic <i>paper</i>”");
+  expect(shown.querySelector("i")).toBeNull();
+  expect(shown.textContent).toContain("This document has 4 annotations. If its content changes, the old annotations are archived as a batch");
+  expect(shown.textContent).toContain("arxiv-2603.03522 · annotations v3");
+  expect(ui("copilot-confirmation-confirm")?.textContent).toBe("Confirm update");
+});
+
+test("an unknown annotation count and a zero count are worded as the dialog words them", async () => {
+  current = snap("waiting-for-user", { confirmations: [docCard({ impact: { annotations: "unknown" } })] });
+  const view = await open();
+  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
+  expect(ui("copilot-confirmation")?.textContent).toContain("The annotation count could not be confirmed.");
+  // No invented annotations version when the count could not be read.
+  expect(ui("copilot-confirmation")?.textContent).not.toContain("annotations v");
+  expect(ui("copilot-confirmation")?.querySelector(".copilot-confirmation-meta")?.textContent).toBe("arxiv-2603.03522");
+  view.unmount();
+  current = snap("waiting-for-user", { confirmations: [docCard({ impact: { annotations: "known", count: 0 } })] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation")?.textContent).toContain("No annotations were found. Updating will replace this document."));
+});
+
+test("Confirm on a refresh posts the refresh action, the Doc id and the annotations version; a stale answer says nothing was replaced", async () => {
+  decisionStatus = 409;
+  current = snap("waiting-for-user", { confirmations: [docCard()] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
+  expect(JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body))).toEqual({ decision: "approve", viewId: context.viewId, action: "refresh_arxiv_source", objectId: "arxiv-2603.03522", baseRev: 3 });
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("Nothing was replaced."));
+  expect(ui("copilot-confirmation-problem")?.textContent).not.toContain("deleted");
+});
+
+test("a waiting replacement of an uploaded source names the file and posts its own action", async () => {
+  current = snap("waiting-for-user", { confirmations: [docCard({ action: "replace_upload_source", object: { kind: "doc", id: "upload-synthetic-abc123", workId: "arxiv:2603.03522" }, attachment: { id: "00000000-0000-4000-8000-000000000101", filename: "new <b>source</b>.zip", size: 10, sha256: "c".repeat(64) } })] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
+  const shown = ui("copilot-confirmation") as HTMLElement;
+  expect(shown.getAttribute("data-action")).toBe("replace_upload_source");
+  expect(shown.querySelector("h3")?.textContent).toBe("Replace the uploaded source of “Synthetic <i>paper</i>” with “new <b>source</b>.zip”");
+  expect(shown.querySelector("b")).toBeNull();
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
+  expect(JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body))).toMatchObject({ action: "replace_upload_source", objectId: "upload-synthetic-abc123" });
+});
+
+test("W1: a refused replacement of an uploaded source says nothing was replaced, not the arXiv wording", async () => {
+  decisionStatus = 409;
+  current = snap("waiting-for-user", { confirmations: [docCard({ action: "replace_upload_source", attachment: { id: "00000000-0000-4000-8000-000000000101", filename: "s.zip", size: 10, sha256: "c".repeat(64) } })] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("Nothing was replaced."));
+});
+
+test("W5: a large-PDF acceptance card shows the resource warning with the file, posts its own action, and a refusal says nothing was uploaded", async () => {
+  decisionStatus = 409;
+  current = snap("waiting-for-user", { confirmations: [{ id: CARD, runId: RUN, toolCallId: "call_1", action: "accept_pdf_resource_warning", object: { kind: "attachment", id: "00000000-0000-4000-8000-000000000101", workId: "arxiv:2603.03522" }, label: "Synthetic <i>paper</i>", attachment: { id: "00000000-0000-4000-8000-000000000101", filename: "big <b>one</b>.pdf", size: 30 * 1024 * 1024, sha256: "d".repeat(64) }, baseRev: 0, objectDigest: "e".repeat(64) }] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
+  const shown = ui("copilot-confirmation") as HTMLElement;
+  expect(shown.querySelector("h3")?.textContent).toBe("Upload “big <b>one</b>.pdf” to “Synthetic <i>paper</i>”");
+  expect(shown.querySelector("b")).toBeNull();
+  expect(shown.textContent).toContain("30.0 MiB");
+  expect(ui("copilot-confirmation-confirm")?.textContent).toBe("Continue upload");
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
+  expect(JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body))).toMatchObject({ action: "accept_pdf_resource_warning", objectId: "00000000-0000-4000-8000-000000000101", baseRev: 0 });
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("Nothing was uploaded."));
 });
