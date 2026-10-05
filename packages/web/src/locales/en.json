@@ -165,6 +165,7 @@
       "failed": {
         "diagnostics": "The text has errors; nothing was generated",
         "stale": "The text changed while generating; nothing was published",
+        "changed": "Not published: things changed after you confirmed and no annotations are at risk any more. Generate again.",
         "busy": "The document is busy; try again",
         "error": "Generation failed"
       },
@@ -172,7 +173,7 @@
         "title": "Replace the reading text?",
         "body": "Generating this text changes the content that annotations of this document are attached to ({{count}} in total). If you continue, they are archived: kept in an archive but no longer shown, and the new reading text starts with none. Annotations are not moved to the new text and cannot be restored in the app.",
         "basis": "Based on text revision {{source}}; replaces the reading version from revision {{published}}; annotations revision {{annotationsRev}}.",
-        "changed": "Things changed after you were asked (the annotations or the text were edited). Check the number below and confirm again.",
+        "changed": "The annotations of this document, or its published reading version or images, changed after you were asked. Check the number below and confirm again.",
         "confirm": "Replace and archive annotations ({{count}})",
         "cancelled": "Cancelled: the reading version and the annotations are unchanged",
         "after": "The reading version is published. Annotations to be archived when the Reader next reads them: {{count}}."

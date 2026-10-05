@@ -189,6 +189,7 @@ describe("fingerprint triage on regeneration", () => {
     await put(docId, 1, `${SOURCE}\n\n`); // only blank lines change
     const res = await generate(docId, 2);
     expect(res.status).toBe(200);
+    expect(((await res.json()) as TextGenerationResult).replacedAnnotations).toBe(0);
     expect(readFileSync(currentFile(docId)).equals(current)).toBe(true);
     expect(archive(docId)).toEqual([]);
     expect(invalidations()).toHaveLength(0);
@@ -231,6 +232,7 @@ describe("fingerprint triage on regeneration", () => {
     expect(res.status).toBe(200);
     const result = (await res.json()) as TextGenerationResult;
     expect(result.publishedSourceRev).toBe(2);
+    expect(result.replacedAnnotations).toBe(2);
     expect(result.fingerprint).toBe(impact.newFingerprint);
     // independent recomputation of the published fingerprint
     const ir = readPublishedTextIr(paths, docId);
@@ -266,7 +268,23 @@ describe("fingerprint triage on regeneration", () => {
     expect(invalidations()).toHaveLength(0);
   });
 
-  test("a stale annotation batch (already replaced by an earlier unarchived publish) is not an impact; an empty or absent batch needs none", async () => {
+  test("a non-empty batch bound to an OLDER fingerprint (the earlier replacement is not archived yet) counts as 0: publishes without asking, reports 0", async () => {
+    const { docId } = await annotatedDoc(2);
+    await put(docId, 1, CHANGED);
+    const impact = await impactOf(await generate(docId, 2));
+    expect((await generate(docId, 2, impact)).status).toBe(200);
+    // nothing has archived yet: current.json still holds the 2 annotations of the first text
+    const staleBatch = readFileSync(currentFile(docId));
+    expect((JSON.parse(staleBatch.toString()) as AnnotationsFile).annotations).toHaveLength(2);
+    await put(docId, 2, `${CHANGED}\nthird text\n`);
+    const res = await generate(docId, 3);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as TextGenerationResult).replacedAnnotations).toBe(0);
+    expect(readFileSync(currentFile(docId)).equals(staleBatch)).toBe(true);
+    expect(archive(docId)).toEqual([]);
+  });
+
+  test("an empty or absent batch needs no confirmation", async () => {
     const docId = await createDoc();
     await put(docId, 0, SOURCE);
     await generate(docId, 1);
@@ -276,7 +294,9 @@ describe("fingerprint triage on regeneration", () => {
     // an empty current exists now
     await call("GET", annotationsUrl(docId));
     await put(docId, 2, SOURCE);
-    expect((await generate(docId, 3)).status).toBe(200);
+    const res = await generate(docId, 3);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as TextGenerationResult).replacedAnnotations).toBe(0);
   });
 });
 
@@ -326,12 +346,49 @@ describe("the confirmation is bound and rechecked at execution", () => {
     expectUntouched(docId, before);
   });
 
-  test("all annotations removed after the question: nothing is at risk any more, the replacement publishes", async () => {
+  test("all annotations removed after the question: the confirmation is still refused (confirmation_changed, no impact to show), nothing published", async () => {
     const { docId, impact } = await pending();
     const current = (await (await call("GET", annotationsUrl(docId))).json()) as AnnotationsFile;
     await call("PUT", annotationsUrl(docId), { ...current, annotations: [] });
-    expect((await generate(docId, 2, impact)).status).toBe(200);
-    expect(archive(docId)).toEqual([]);
+    const before = snapshot(docId);
+    const res = await generate(docId, 2, impact);
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; impact?: unknown };
+    expect(body.code).toBe("confirmation_changed");
+    expect(body.impact).toBeUndefined();
+    expectUntouched(docId, before);
+    // a plain request now publishes, nothing being at risk
+    expect((await generate(docId, 2)).status).toBe(200);
+  });
+
+  test("a confirmation sent when nothing needed one (same content, or a first generation) is refused too", async () => {
+    const { docId, impact } = await pending();
+    const before = snapshot(docId);
+    // the user's text goes back to what is published: the fingerprints now match
+    expect((await put(docId, 2, SOURCE)).status).toBe(200);
+    const res = await generate(docId, 3, { ...impact, sourceRev: 3 });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("confirmation_changed");
+    expectUntouched(docId, before);
+    const first = await createDoc();
+    await put(first, 0, SOURCE);
+    expect((await generate(first, 1, { ...impact, docId: first, sourceRev: 1 })).status).toBe(409);
+    expect(existsSync(irFile(first))).toBe(false);
+  });
+
+  test("a confirmation made for another Doc is refused even when everything else is identical", async () => {
+    const a = await pending();
+    const b = await annotatedDoc(2);
+    await put(b.docId, 1, CHANGED);
+    const impactB = await impactOf(await generate(b.docId, 2));
+    expect({ ...impactB, docId: a.docId }).toEqual(a.impact); // identical but for the Doc: the repro
+    const beforeB = snapshot(b.docId);
+    const res = await generate(b.docId, 2, a.impact);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "confirmation_changed", impact: impactB });
+    expectUntouched(b.docId, beforeB);
+    expect((await call("GET", annotationsUrl(b.docId))).status).toBe(200);
+    expect(archive(b.docId)).toEqual([]);
   });
 
   test("a source saved after the question makes the confirmation stale: not published", async () => {
@@ -350,6 +407,7 @@ describe("the confirmation is bound and rechecked at execution", () => {
     const variants: TextReplacementImpact[] = [
       { ...impact, annotations: impact.annotations + 1 },
       { ...impact, annotationsRev: impact.annotationsRev + 1 },
+      { ...impact, docId: "text-00000000-0000-4000-8000-000000000000" },
       { ...impact, oldFingerprint: "0".repeat(64) },
       { ...impact, newFingerprint: "1".repeat(64) },
       { ...impact, publishedSourceRev: impact.publishedSourceRev + 1 },
@@ -417,6 +475,7 @@ describe("failures keep the old reading text and the annotations byte for byte",
     expectUntouched(docId, before);
     // a confirmation cannot be used to get past an unreadable store
     const forged: TextReplacementImpact = {
+      docId,
       sourceRev: 2,
       publishedSourceRev: 1,
       annotations: 1,

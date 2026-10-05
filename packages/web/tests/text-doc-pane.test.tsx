@@ -82,7 +82,7 @@ function installBackend() {
       if (backend.generate) return backend.generate(JSON.parse(String(init?.body)));
       backend.generated = true;
       backend.publishedRev = backend.rev;
-      return json({ publishedSourceRev: backend.rev, fingerprint: "a".repeat(64), diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
+      return json({ publishedSourceRev: backend.rev, fingerprint: "a".repeat(64), replacedAnnotations: 0, diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
     }
     if (url === `/api/paper/${DOC}/description`) return json(description());
     if (url === `/api/paper/${PDF}/description`) return backend.pdfOk ? json({ doc_id: PDF, format: "latex" }) : json({ detail: "not found" }, 404);
@@ -237,6 +237,7 @@ describe("text Doc pane: autosave and explicit generation", () => {
 
   describe("replacing reading text that has annotations (ticket 28)", () => {
     const impact = (over: Record<string, unknown> = {}) => ({
+      docId: DOC,
       sourceRev: 1,
       publishedSourceRev: 0,
       annotations: 3,
@@ -290,7 +291,7 @@ describe("text Doc pane: autosave and explicit generation", () => {
         if (!body.confirm) return asks({ sourceRev: body.sourceRev });
         backend.generated = true;
         backend.publishedRev = body.sourceRev;
-        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
+        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), replacedAnnotations: 3, diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
       };
       const view = await ready();
       await asked(view);
@@ -311,13 +312,13 @@ describe("text Doc pane: autosave and explicit generation", () => {
         if (n === 2) return asks({ annotations: 2, annotationsRev: 8 }, "confirmation_changed");
         backend.generated = true;
         backend.publishedRev = body.sourceRev;
-        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
+        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), replacedAnnotations: 3, diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
       };
       const view = await ready();
       await asked(view);
       fireEvent.click(button("confirm-text-regeneration")!);
       await waitFor(() => expect(dialog()?.textContent).toContain("2 条标注"));
-      expect(dialog()?.textContent).toContain("情况有变化");
+      expect(dialog()?.textContent).toContain("发生了变化");
       expect(backend.generated).toBe(false);
       expect(button("confirm-text-regeneration")?.textContent).toContain("替换并归档 2 条标注");
       fireEvent.click(button("confirm-text-regeneration")!);
@@ -347,6 +348,30 @@ describe("text Doc pane: autosave and explicit generation", () => {
       await waitFor(() => expect(ui(view.container, "text-source-generation-error")).toBeTruthy());
       expect(dialog()).toBeNull();
       expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("cannot be read");
+    });
+
+    it("the success note reports what the server says was replaced, not the echoed confirmation", async () => {
+      backend.generate = (body) => {
+        if (!body.confirm) return asks();
+        backend.generated = true;
+        backend.publishedRev = body.sourceRev;
+        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), replacedAnnotations: 0, diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
+      };
+      const view = await ready();
+      await asked(view);
+      fireEvent.click(button("confirm-text-regeneration")!);
+      await waitFor(() => expect(ui(view.container, "text-source-generated")).toBeTruthy());
+      expect(ui(view.container, "text-source-replacement-note")).toBeNull();
+    });
+
+    it("a confirmation refused with nothing at risk any more closes the question and says to generate again", async () => {
+      backend.generate = (body) => (body.confirm ? json({ detail: "changed", code: "confirmation_changed" }, 409) : asks());
+      const view = await ready();
+      await asked(view);
+      fireEvent.click(button("confirm-text-regeneration")!);
+      await waitFor(() => expect(dialog()).toBeNull());
+      expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("重新生成");
+      expect(ui(view.container, "text-source-generated")).toBeNull();
     });
 
     it("typing while the question is open is not part of what is confirmed", async () => {

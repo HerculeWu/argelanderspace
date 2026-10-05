@@ -161,6 +161,7 @@ export function TextDocPane({
 const FAILED_KEY = {
   diagnostics: "doc.text.failed.diagnostics",
   stale: "doc.text.failed.stale",
+  changed: "doc.text.failed.changed",
   busy: "doc.text.failed.busy",
   error: "doc.text.failed.error",
 } as const;
@@ -260,7 +261,7 @@ type Generation =
   | { kind: "generated"; rev: number; archived: number }
   /** The user declined the replacement: nothing was written. */
   | { kind: "cancelled" }
-  | { kind: "failed"; reason: "diagnostics" | "stale" | "busy" | "error"; detail: string };
+  | { kind: "failed"; reason: "diagnostics" | "stale" | "changed" | "busy" | "error"; detail: string };
 
 function TextSourceEditor({
   docId,
@@ -451,7 +452,7 @@ function TextSourceEditor({
     if (result.ok) {
       setAsking(null);
       setDiagnostics(result.result.diagnostics);
-      setGeneration({ kind: "generated", rev: result.result.publishedSourceRev, archived: confirm?.annotations ?? 0 });
+      setGeneration({ kind: "generated", rev: result.result.publishedSourceRev, archived: result.result.replacedAnnotations });
       onPublished();
       return;
     }
@@ -645,7 +646,7 @@ function TextSourceEditor({
         </InlineMessage>
       )}
       {generation.kind === "failed" && (
-        <InlineMessage tone={generation.reason === "stale" || generation.reason === "busy" ? "warning" : "danger"} uiId="text-source-generation-error" title={t(FAILED_KEY[generation.reason])}>
+        <InlineMessage tone={generation.reason === "stale" || generation.reason === "changed" || generation.reason === "busy" ? "warning" : "danger"} uiId="text-source-generation-error" title={t(FAILED_KEY[generation.reason])}>
           {generation.reason === "diagnostics" ? t("doc.text.failedKept") : generation.reason === "error" ? generation.detail : ""}
         </InlineMessage>
       )}

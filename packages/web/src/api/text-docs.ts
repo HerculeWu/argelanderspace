@@ -117,6 +117,8 @@ export type TextGenerate =
    * is asked to confirm; `changed` says an earlier confirmation was refused because the situation moved.
    */
   | { ok: false; kind: "confirmation"; impact: TextReplacementImpact; changed: boolean; detail: string }
+  /** A confirmation was refused because the situation moved and nothing is at risk any more: ask the user to generate again. */
+  | { ok: false; kind: "changed"; detail: string }
   | { ok: false; kind: "stale" | "busy" | "error"; detail: string };
 
 /**
@@ -141,6 +143,7 @@ export async function generateTextDoc(
     if (response.status === 409) {
       const code = body.code;
       if (code === "confirmation_required" || code === "confirmation_changed") {
+        if (code === "confirmation_changed" && body.impact === undefined) return { ok: false, kind: "changed", detail };
         const impact = TextReplacementImpactSchema.safeParse(body.impact);
         return impact.success
           ? { ok: false, kind: "confirmation", impact: impact.data, changed: code === "confirmation_changed", detail }

@@ -83,6 +83,7 @@ export interface TextDocDeps {
 /** A confirmation counts only when every bound value is exactly what the publish critical section sees now. */
 function sameImpact(a: TextReplacementImpact, b: TextReplacementImpact): boolean {
   return (
+    a.docId === b.docId &&
     a.sourceRev === b.sourceRev &&
     a.publishedSourceRev === b.publishedSourceRev &&
     a.annotations === b.annotations &&
@@ -539,6 +540,7 @@ export class TextDocService {
             }
           );
         }
+        let impact: TextReplacementImpact | null = null;
         if (published) {
           let currentFingerprint: string;
           try {
@@ -564,7 +566,8 @@ export class TextDocService {
               // Replacing this reading text puts `risk.count` annotations into the archive (the annotations access
               // path does that afterwards, never this generator). That needs the real user's confirmation of exactly
               // these values; anything else answers with the values as they are now and writes nothing.
-              const impact: TextReplacementImpact = {
+              impact = {
+                docId,
                 sourceRev: source.rev,
                 publishedSourceRev: published.source.source_rev,
                 annotations: risk.count,
@@ -572,21 +575,23 @@ export class TextDocService {
                 oldFingerprint: currentFingerprint,
                 newFingerprint: candidateFingerprint,
               };
-              if (!confirm)
-                return failed(
-                  409,
-                  "this generation replaces reading text that has annotations; they would be archived. Confirm to publish it",
-                  { code: "confirmation_required", impact }
-                );
-              if (!sameImpact(confirm, impact))
-                return failed(
-                  409,
-                  "the situation changed since the confirmation was asked; nothing was published",
-                  { code: "confirmation_changed", impact }
-                );
             }
           }
         }
+        if (impact && !confirm)
+          return failed(
+            409,
+            "this generation replaces reading text that has annotations; they would be archived. Confirm to publish it",
+            { code: "confirmation_required", impact }
+          );
+        // A confirmation is only good for exactly what the user was shown: if ANY bound value moved, or nothing is at
+        // risk any more, it is refused (the fresh impact is attached when there still is one).
+        if (confirm && (!impact || !sameImpact(confirm, impact)))
+          return failed(
+            409,
+            "the situation changed since the confirmation was asked; nothing was published",
+            { code: "confirmation_changed", ...(impact ? { impact } : {}) }
+          );
         try {
           publishTextIr(this.paths, docId, candidate);
         } catch (error) {
@@ -601,6 +606,7 @@ export class TextDocService {
         return ok({
           publishedSourceRev: source.rev,
           fingerprint: candidateFingerprint,
+          replacedAnnotations: impact ? impact.annotations : 0,
           diagnostics: result.diagnostics as TextDiagnostic[],
           stats: result.stats,
         });

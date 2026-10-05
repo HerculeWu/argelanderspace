@@ -277,6 +277,8 @@ export type TextValidationResult = z.infer<typeof TextValidationResultSchema>;
  * is refused and the user is asked again with the fresh values.
  */
 export const TextReplacementImpactSchema = z.strictObject({
+  /** The Doc the question was about: a confirmation made for another Doc is never valid here. */
+  docId: z.string().min(1),
   /** The source revision the candidate was made from (the request's own `sourceRev`). */
   sourceRev: z.number().int().nonnegative(),
   /** The source revision of the reading text that would be replaced. */
@@ -304,6 +306,8 @@ export const TextGenerationResultSchema = z.strictObject({
   publishedSourceRev: z.number().int().nonnegative(),
   /** The annotation content fingerprint of the published reading text. */
   fingerprint: Sha256Schema,
+  /** How many annotations this publish leaves for the next annotations access to archive (0: kept, or none). */
+  replacedAnnotations: z.number().int().nonnegative(),
   diagnostics: z.array(TextDiagnosticSchema),
   stats: TextStatsSchema,
 });
