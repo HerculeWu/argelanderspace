@@ -93,6 +93,11 @@ function locate(starts: number[], offset: number): { line: number; column: numbe
 const MAX_DIAGNOSTICS = 200;
 /** Formulas KaTeX-checked per document (bounds the time); the rest are reported as not checked. */
 const MAX_MATH_CHECKS = 3000;
+/** One formula over this many characters is not checked (KaTeX time grows faster than its size). */
+const MAX_MATH_CHARS = 10_000;
+/** Characters of formulas checked per document, and the wall-clock budget of the whole checking pass. */
+const MAX_MATH_TOTAL_CHARS = 400_000;
+const MAX_MATH_MS = 1500;
 
 /** Diagnostic code and English message per unsupported construct; the page shows its own localized text per code. */
 const UNSUPPORTED: Record<string, { code: string; message: string }> = {
@@ -151,6 +156,10 @@ const ID_PREFIX: Record<Target, string> = {
 };
 /** Structure ids the codec itself owns. */
 const RESERVED_IDS = new Set(["sec-preface"]);
+/** The Reader anchors annotations as `ann-<id>` in the same DOM id space, so an explicit structure id cannot start so. */
+const ANNOTATION_ID_PREFIX = "ann-";
+/** Names every plain object already has (`constructor`, `__proto__`, `toString`...): never a block id. */
+const PROTO_NAMES = new Set(Object.getOwnPropertyNames(Object.prototype));
 
 interface Located {
   base: number;
@@ -166,6 +175,8 @@ interface Ctx {
   errors: number;
   hiddenErrors: number;
   mathChecks: number;
+  mathChars: number;
+  mathStartedAt: number;
   mathUnchecked: number;
 }
 
@@ -310,7 +321,7 @@ function toSegments(w: Walk, pieces: Piece[], owner: IrBlock | null): IrSegment[
       continue;
     }
     const item = p.item;
-    if (item.bad) continue;
+    if (item.bad || item.kind === "display") continue;
     if (item.kind === "math") {
       w.inlineMath += 1;
       segments.push({ type: "math", latex: item.latex as string });
@@ -351,6 +362,14 @@ function headingText(w: Walk, at: number, pieces: Piece[]): string {
       out += p.s;
     } else if (p.item.kind === "math") {
       out += `$${p.item.latex}$`;
+    } else if (p.item.kind === "display") {
+      if (!p.item.bad)
+        report(
+          w,
+          p.item.start,
+          "math_display_in_heading",
+          "a display equation cannot be inside a heading; use $...$ or put it in its own block"
+        );
     } else {
       report(
         w,
@@ -364,11 +383,34 @@ function headingText(w: Walk, at: number, pieces: Piece[]): string {
 }
 
 function checkMath(w: Walk, latex: string, display: boolean, at: number): void {
-  if (w.mathChecks >= MAX_MATH_CHECKS) {
-    w.mathUnchecked += 1;
+  // KaTeX is synchronous and superlinear in a formula's size, and this runs on the server's event loop: bound the work
+  // per formula, in total characters, in count and in time. What is not checked is said so, at its place.
+  const skip = (reason: string, message: string): void => {
+    if (reason === "size" || w.mathUnchecked === 0)
+      report(w, at, "math_not_checked", message, { severity: "warning", subject: reason });
+    if (reason !== "size") w.mathUnchecked += 1;
+  };
+  if (latex.length > MAX_MATH_CHARS) {
+    skip(
+      "size",
+      `this formula is ${latex.length} characters; formulas over ${MAX_MATH_CHARS} are not checked for typesetting errors`
+    );
+    return;
+  }
+  if (w.mathStartedAt === 0) w.mathStartedAt = performance.now();
+  if (
+    w.mathChecks >= MAX_MATH_CHECKS ||
+    w.mathChars + latex.length > MAX_MATH_TOTAL_CHARS ||
+    performance.now() - w.mathStartedAt > MAX_MATH_MS
+  ) {
+    skip(
+      "budget",
+      "the budget for checking formulas is used up; this and the remaining formulas are not checked"
+    );
     return;
   }
   w.mathChecks += 1;
+  w.mathChars += latex.length;
   const error = katexError(latex, display);
   if (error !== null)
     report(w, at, "math_katex", `the formula cannot be typeset: ${error}`, {
@@ -386,6 +428,8 @@ interface FenceInfo {
   closed: boolean;
   /** The text between the fences, offsets relative to `base`. */
   inner: string;
+  /** The code body: the lines between the fences without the fence's indentation. */
+  body: string;
   /** Offset in the source of the first character after the opening fence line. */
   base: number;
 }
@@ -402,12 +446,19 @@ function fenceOf(raw: string, at: number): FenceInfo | null {
     closed =
       m !== null && (m[1] as string)[0] === fence[0] && (m[1] as string).length >= fence.length;
   }
-  const inner = lines.slice(1, closed ? -1 : undefined).join("\n");
+  const innerLines = lines.slice(1, closed ? -1 : undefined);
+  const inner = innerLines.join("\n");
+  // the body as written: up to the fence's own indentation is removed from each line (CommonMark); nothing else changes,
+  // a lone CR included (`raw` is the source slice, not the lexer's normalized copy)
+  const indent = (/^ */.exec(raw) as RegExpExecArray)[0].length;
+  const strip = new RegExp(`^ {0,${indent}}`);
+  const body = innerLines.map((l) => l.replace(strip, "")).join("\n");
   const firstNl = raw.indexOf("\n");
   return {
     info: (open[2] as string).trim(),
     closed,
     inner,
+    body,
     base: at + (firstNl === -1 ? raw.length : firstNl + 1),
   };
 }
@@ -505,8 +556,9 @@ interface Entry {
 const EMPTY_STATS: TextStats = { sections: 0, paragraphs: 0, lists: 0 };
 
 export function parseTextSource(markdown: string, options: TextParseOptions): TextParseResult {
-  // marked normalizes line endings itself; do the same first so reported lines match the lexer's view.
-  const text = markdown.replace(/\r\n|\r/g, "\n");
+  // CRLF is one line break (and one character shorter for the lexer); a lone CR stays in the text byte for byte (it is an
+  // ordinary character of its line for the editor and for code bodies; the lexer reads it as a break of the same length).
+  const text = markdown.replace(/\r\n/g, "\n");
   const w: Walk = {
     text,
     lineStarts: lineStartsOf(markdown),
@@ -515,6 +567,8 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     errors: 0,
     hiddenErrors: 0,
     mathChecks: 0,
+    mathChars: 0,
+    mathStartedAt: 0,
     mathUnchecked: 0,
     items: [],
     nextItem: 0,
@@ -538,9 +592,15 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   const scan = scanSyntax(text, { blockDisplay: true });
   w.items = scan.items;
   for (const p of scan.problems)
-    report(w, p.offset, p.code, p.message, p.subject ? { subject: p.subject } : {});
-  for (const item of scan.items)
-    if (item.kind === "math" && !item.bad) checkMath(w, item.latex as string, false, item.start);
+    report(w, p.offset, p.code, p.message, {
+      ...(p.subject ? { subject: p.subject } : {}),
+      ...(p.severity ? { severity: p.severity } : {}),
+    });
+  for (const item of scan.items) {
+    if (item.bad) continue;
+    if (item.kind === "math") checkMath(w, item.latex as string, false, item.start);
+    else if (item.kind === "display") checkMath(w, item.latex as string, true, item.start);
+  }
   for (const d of scan.displays) checkMath(w, d.latex, true, d.start);
 
   const tokens = Lexer.lex(scan.lexText);
@@ -560,6 +620,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   let sawContent = false;
   let references: Reference[] | undefined;
   let referencesAt = -1;
+  let referenceAts: number[] = [];
   let pending: PendingMeta | null = null;
   let displayIndex = 0;
   let offset = 0;
@@ -625,7 +686,10 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     const where = located === null ? 0 : whereIn(located, ["caption"]);
     const sub = scanSyntax(caption, { blockDisplay: false });
     for (const p of sub.problems)
-      report(w, where, p.code, p.message, p.subject ? { subject: p.subject } : {});
+      report(w, where, p.code, p.message, {
+        ...(p.subject ? { subject: p.subject } : {}),
+        ...(p.severity ? { severity: p.severity } : {}),
+      });
     const pieces: Piece[] = [];
     let at = 0;
     for (const item of sub.items) {
@@ -736,21 +800,96 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         inlinePieces(w, at, inner, pieces);
         if (mergedPieces(pieces).length === 0) break;
         sawContent = true;
-        const metaState = pending;
-        const fields = takeMeta("paragraph");
-        paragraphCount += 1;
-        const block: IrBlock = { id: "", type: "paragraph", segments: [] };
-        block.segments = toSegments(w, pieces, block);
-        currentBlocks().push(block);
-        register("paragraph", block, fields, idAt(metaState));
+        // a display equation in the middle of the text ends the paragraph before it and starts a new one after it,
+        // in source order (the first block that comes out takes a pending argelander-block)
+        let run: Piece[] = [];
+        const emitRun = (): void => {
+          if (mergedPieces(run).length === 0) {
+            run = [];
+            return;
+          }
+          const metaState = pending;
+          const fields = takeMeta("paragraph");
+          paragraphCount += 1;
+          const block: IrBlock = { id: "", type: "paragraph", segments: [] };
+          block.segments = toSegments(w, run, block);
+          currentBlocks().push(block);
+          register("paragraph", block, fields, idAt(metaState));
+          run = [];
+        };
+        for (const p of pieces) {
+          if (p.t === "item" && p.item.kind === "display") {
+            emitRun();
+            if (!p.item.bad)
+              emitEquation({
+                lineStart: p.item.start,
+                lineEnd: p.item.end,
+                start: p.item.start,
+                latex: p.item.latex as string,
+              });
+          } else run.push(p);
+        }
+        emitRun();
         break;
       }
       case "list": {
         const list = token as Tokens.List;
         sawContent = true;
-        const items: { segments: IrSegment[] }[] = [];
-        const block: IrBlock = { id: "", type: "list", ordered: list.ordered, items };
+        let items: { segments: IrSegment[] }[] = [];
+        let block: IrBlock = { id: "", type: "list", ordered: list.ordered, items };
+        const closeList = (): void => {
+          if (items.length === 0) return;
+          const metaState = pending;
+          const fields = takeMeta("list");
+          listCount += 1;
+          currentBlocks().push(block);
+          register("list", block, fields, idAt(metaState));
+        };
+        const startList = (): void => {
+          items = [];
+          block = { id: "", type: "list", ordered: list.ordered, items };
+        };
+        let itemAt = at;
         for (const item of list.items) {
+          const itemStart = itemAt;
+          itemAt += item.raw.length;
+          // a display equation written between two items: an unordered list is split around it (source order kept);
+          // an ordered list cannot be (the second part would restart at 1), so that is a located error
+          while (
+            displayIndex < scan.displays.length &&
+            (scan.displays[displayIndex] as DisplayMath).lineStart <= itemStart &&
+            itemStart > at
+          ) {
+            const d = scan.displays[displayIndex] as DisplayMath;
+            displayIndex += 1;
+            if (list.ordered) {
+              report(
+                w,
+                d.start,
+                "math_display_in_list",
+                "a display equation between ordered list items would restart the numbering; put it after the list"
+              );
+            } else {
+              closeList();
+              emitEquation(d);
+              startList();
+            }
+          }
+          // a display equation inside an item with text after it cannot keep its place
+          const contentEnd = itemStart + item.raw.trimEnd().length;
+          while (
+            displayIndex < scan.displays.length &&
+            (scan.displays[displayIndex] as DisplayMath).lineStart < itemAt &&
+            (scan.displays[displayIndex] as DisplayMath).lineEnd < contentEnd
+          ) {
+            report(
+              w,
+              (scan.displays[displayIndex] as DisplayMath).start,
+              "math_display_in_list",
+              "a display equation inside a list item, followed by more of that item, cannot keep its place; put it between items or after the list"
+            );
+            displayIndex += 1;
+          }
           if (item.task) report(w, at, "task_unsupported", "task list markers are not supported");
           const real = item.tokens.filter((x) => x.type !== "space");
           if (real.some((x) => x.type === "list")) {
@@ -774,13 +913,20 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           const only = real[0] as Tokens.Text | Tokens.Paragraph;
           const pieces: Piece[] = [];
           inlinePieces(w, at, only.tokens ?? [only], pieces);
-          items.push({ segments: toSegments(w, pieces, block) });
+          const shown = pieces.filter((p) => {
+            if (p.t !== "item" || p.item.kind !== "display") return true;
+            if (!p.item.bad)
+              report(
+                w,
+                p.item.start,
+                "math_display_in_list",
+                "a display equation inside a list item has no place in the IR; put it between items or after the list"
+              );
+            return false;
+          });
+          items.push({ segments: toSegments(w, shown, block) });
         }
-        const metaState = pending;
-        const fields = takeMeta("list");
-        listCount += 1;
-        currentBlocks().push(block);
-        register("list", block, fields, idAt(metaState));
+        closeList();
         break;
       }
       case "code": {
@@ -795,7 +941,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           );
           break;
         }
-        const fence = fenceOf(code.raw, at);
+        const fence = fenceOf(text.slice(at, at + code.raw.length), at);
         if (fence === null) {
           pending = null;
           reportSyntax(w, at, "code");
@@ -842,6 +988,14 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
               );
             }
           }
+          if (result.data.title?.includes("$"))
+            report(
+              w,
+              whereIn(parsed.located, ["title"]),
+              "title_dollar",
+              "a literal $ in the title can be shown as part of a formula",
+              { severity: "warning", field: "title" }
+            );
           docMeta = result.data;
           break;
         }
@@ -885,7 +1039,11 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
             break;
           }
           referencesAt = at;
-          if (tokens.slice(t + 1).some((x) => x.type !== "space")) {
+          // a display equation after the block is blanked out of the lexer text (it looks like blank lines), so check it too
+          if (
+            tokens.slice(t + 1).some((x) => x.type !== "space") ||
+            scan.displays.some((d) => d.lineStart >= at + token.raw.length)
+          ) {
             report(
               w,
               at,
@@ -926,6 +1084,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
             else seen.set(ref.id, i);
           });
           references = result.data;
+          referenceAts = result.data.map((_, i) => whereIn(parsed.located, [i, "id"]));
           break;
         }
         if (marker.startsWith("argelander-")) {
@@ -962,8 +1121,8 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           );
         const block: IrBlock =
           target === "algorithm"
-            ? { id: "", type: "algorithm", body: code.text }
-            : { id: "", type: "code", body: code.text, ...(lang ? { lang } : {}) };
+            ? { id: "", type: "algorithm", body: fence.body }
+            : { id: "", type: "code", body: fence.body, ...(lang ? { lang } : {}) };
         if (target === "algorithm" && lang)
           report(
             w,
@@ -1005,7 +1164,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   for (const e of entries) {
     if (e.explicit === undefined) continue;
     const { id, at } = e.explicit;
-    if (RESERVED_IDS.has(id)) {
+    if (RESERVED_IDS.has(id) || id.startsWith(ANNOTATION_ID_PREFIX) || PROTO_NAMES.has(id)) {
       report(w, at, "id_reserved", `the id "${id}" is reserved`, { field: "id", subject: id });
     } else if (taken.has(id)) {
       const first = locate(w.lineStarts, taken.get(id) as number);
@@ -1072,7 +1231,18 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   }
   const refTable = new Map<string, Reference>();
   for (const r of references ?? []) if (!refTable.has(r.id)) refTable.set(r.id, r);
-  const citationsByBlock: Record<string, string[]> = {};
+  // reference ids and structure ids are different namespaces, but both become DOM ids in the Reader
+  (references ?? []).forEach((r, i) => {
+    if (byId.has(r.id))
+      report(
+        w,
+        referenceAts[i],
+        "reference_id_collision",
+        `the reference id "${r.id}" is also the id of a block; the two share one id space in the Reader`,
+        { field: `[${i}].id`, subject: r.id }
+      );
+  });
+  const cited = new Map<string, { list: string[]; seen: Set<string> }>();
   for (const use of w.cites) {
     if (use.item.bad) continue;
     for (const ref of use.seg.refs) {
@@ -1095,19 +1265,29 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
       ref.short = citeShort(found);
       if (found.title !== undefined && found.title !== "") ref.title = found.title;
       if (use.owner !== null) {
-        const list = citationsByBlock[use.owner.id] ?? [];
-        citationsByBlock[use.owner.id] = list;
-        if (!list.includes(ref.id)) list.push(ref.id);
+        let entry = cited.get(use.owner.id);
+        if (entry === undefined) {
+          entry = { list: [], seen: new Set() };
+          cited.set(use.owner.id, entry);
+        }
+        if (!entry.seen.has(ref.id)) {
+          entry.seen.add(ref.id);
+          entry.list.push(ref.id);
+        }
       }
     }
   }
 
+  // own properties by definition (Object.fromEntries defines them), whatever the ids are
+  const citationsByBlock: Record<string, string[]> = Object.fromEntries(
+    [...cited].map(([id, e]) => [id, e.list])
+  );
   if (w.mathUnchecked > 0)
     report(
       w,
       undefined,
       "math_not_checked",
-      `${w.mathUnchecked} formulas were not checked for typesetting errors (only the first ${MAX_MATH_CHECKS} are)`,
+      `${w.mathUnchecked} more formulas were not checked for typesetting errors (a budget bounds the work)`,
       { severity: "warning", subject: String(w.mathUnchecked) }
     );
   if (w.errors === 0 && (w.misaligned || w.nextItem !== w.items.length))

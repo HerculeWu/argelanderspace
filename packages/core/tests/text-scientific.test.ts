@@ -359,11 +359,8 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
   });
 
   describe("math diagnostics", () => {
-    it("a display equation in the middle of text is refused where it is, not turned into inline math", () => {
-      expect(codes("# T\n\nWe have $$x$$ here.\n")).toEqual([
-        ["math_display_inline", "error", 3, 9],
-      ]);
-      expect(codes("# T\n\n    $$x$$\n")).toContainEqual(["math_display_indented", "error", 3, 5]);
+    it("a display equation in the middle of text becomes its own block (see text-display-math.test.ts)", () => {
+      expect(codes("# T\n\nWe have $$x$$ here.\n")).toEqual([]);
     });
     it("an unclosed $$ and an empty $$ are located errors", () => {
       expect(codes("# T\n\nText\n\n$$\nx = 1\n")).toEqual([["math_unclosed", "error", 5, 1]]);
@@ -382,9 +379,12 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
         latex: "\\notacommand{x}",
       });
     });
-    it("a formula that tries active content is kept as source; KaTeX (trust off) renders it without a link", () => {
+    it("a formula that tries active content is kept as source and reported: the Reader paints it red and drops the content", () => {
       const r = parse("# T\n\nX $\\href{javascript:alert(1)}{x}$ y.\n");
       expect(r.ir).not.toBeNull();
+      expect(r.diagnostics).toMatchObject([
+        { code: "math_katex", severity: "warning", line: 3, column: 3 },
+      ]);
       const para = blocksOf("# T\n\nX $\\href{javascript:alert(1)}{x}$ y.\n")[0];
       expect(para?.type === "paragraph" && para.segments[1]).toEqual({
         type: "math",
@@ -404,11 +404,6 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
     it("a list item may hold math, cite and ref", () => {
       const md = "- $x$ and [ref: x1]\n";
       expect(parse(md).ir).not.toBeNull();
-    });
-    it("a display equation inside a list item is refused rather than moved out of it; one after the list is fine", () => {
-      expect(codes("- item\n  $$x$$\n")).toEqual([["math_display_indented", "error", 2, 3]]);
-      expect(codes("- item\n\n$$x$$\n")).toEqual([]);
-      expect(codes("- item\n$$x$$\n")).toEqual([]);
     });
   });
 
@@ -795,9 +790,18 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
       const r = parse(md);
       expect(performance.now() - started).toBeLessThan(5000);
       expect(r.ir).not.toBeNull();
-      expect(r.diagnostics.map((d) => [d.code, d.severity, d.subject])).toEqual([
-        ["math_not_checked", "warning", "37000"],
+      // the first formula past the budget is located; the rest are counted in one summary
+      expect(r.diagnostics.map((d) => [d.code, d.severity])).toEqual([
+        ["math_not_checked", "warning"],
+        ["math_not_checked", "warning"],
       ]);
+      const located = r.diagnostics.find((d) => d.line !== undefined);
+      expect(located?.subject).toBe("budget");
+      // 3000 checks at most (fewer when the time budget ends the pass sooner)
+      expect(
+        Number(r.diagnostics.find((d) => d.line === undefined)?.subject)
+      ).toBeGreaterThanOrEqual(37000);
+      expect(located?.line).toBeGreaterThan(2);
       expect(r.stats.inlineMath).toBe(40000);
     });
     it("thousands of warnings are capped, summarized as a warning, and do not block the document", () => {

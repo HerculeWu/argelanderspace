@@ -17,16 +17,24 @@ export function cleanLatex(src: string): string {
   return s.trim();
 }
 
+/** The Reader's `errorColor` (web/src/lib/math.tsx): KaTeX paints what it cannot typeset in it. */
+const READER_ERROR_COLOR = "#b00020";
+
 /** `null` when KaTeX typesets the formula, else its (single-line, bounded) parse error. */
 export function katexError(latex: string, displayMode: boolean): string | null {
   try {
-    katex.renderToString(cleanLatex(latex), {
+    const html = katex.renderToString(cleanLatex(latex), {
       displayMode,
       throwOnError: true,
       strict: "ignore",
       output: "html",
+      errorColor: READER_ERROR_COLOR,
       macros: { "\\ensuremath": "#1" },
     });
+    // A command that needs `trust` (\href, \url, \includegraphics, \html*) does not throw: KaTeX paints its source in
+    // the error color and drops the content. The Reader shows exactly that, so say it here.
+    if (html.includes(READER_ERROR_COLOR))
+      return "a command that needs trust (such as \\href, \\url, \\includegraphics or \\html*) is not allowed and is shown as red source";
     return null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

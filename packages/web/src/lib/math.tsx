@@ -1,4 +1,5 @@
 import katex from "katex";
+import i18n from "../i18n";
 
 /** Strip $/$$ delimiters, \tag{}, \label{}, and surrounding whitespace. */
 export function cleanLatex(src: string): string {
@@ -23,7 +24,20 @@ export function flattenLatex(src: string): string {
   return x.trim();
 }
 
+/**
+ * KaTeX is synchronous and superlinear in a formula's size (a 400 KB formula takes over a minute), so a formula this
+ * long is shown as its source with a notice instead of being typeset: a published text Doc must not be able to freeze
+ * the tab. The `.math-error` class keeps the annotation text map treating it as the same atom.
+ */
+export const MATH_RENDER_MAX_CHARS = 40_000;
+const OVERSIZE_SHOWN_CHARS = 4_000;
+
 export function renderMathToString(latex: string, displayMode = false): string {
+  if (latex.length > MATH_RENDER_MAX_CHARS) {
+    const note = i18n.t("doc.mathTooLarge", { count: latex.length });
+    const shown = latex.length > OVERSIZE_SHOWN_CHARS ? `${latex.slice(0, OVERSIZE_SHOWN_CHARS)}…` : latex;
+    return `<span class="math-error math-oversize" title="${escapeHtml(note)}"><span class="math-oversize-note">${escapeHtml(note)}</span> <code>${escapeHtml(shown)}</code></span>`;
+  }
   try {
     return katex.renderToString(latex, {
       displayMode,

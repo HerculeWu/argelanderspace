@@ -4,15 +4,21 @@
  * The lexer would reduce `$a *b* c$` to `a b c` and `[cite: a | *x*]` to `x`, so math, `[cite: ...]` and `[ref: ...]`
  * are found first, in the order of the Reader's own Markdown-with-math display path (`web/src/lib/mdWithMath.ts`):
  *
- * 1. literal zones are blanked: fenced code, code spans (never across a blank line), bare URLs;
+ * 1. literal zones are blanked: fenced code (CommonMark: a fence opens at a line start and closes on a line of the same
+ *    character with at least the same length), code spans (never across a blank line; a backslash-escaped backtick is
+ *    literal), bare URLs;
  * 2. math: `$$...$$` and `$...$` with texmath's boundary rules (an opening `$` needs a non-space after it and no
  *    backslash before it; a closing `$` needs a non-space before it and no digit or `$` after it, so currency such as
- *    `$100 to $200` stays text);
- * 3. in what is left, `[cite: id;id | display]` and `[ref: id | display]`.
+ *    `$100 to $200` stays text). The DELIMITERS are found outside code and URLs; the formula is read from the source,
+ *    so a code span or URL inside a formula stays part of it (and is reported);
+ * 3. in what is left, `[cite: id;id | display]` and `[ref: id | display]`. A token starts outside code, math and URLs
+ *    and ends at the first unescaped `]` outside code and math (a `]` inside a bare URL ends it, so an unclosed-looking
+ *    URL cannot swallow the next token).
  *
  * Each inline find becomes an {@link Item} and is replaced in the text handed to the lexer by a placeholder run of the
  * SAME length (so every offset the lexer reports is still an offset of the source). A display equation that fills its
- * lines is a block: its lines are blanked (newlines kept), and it is returned separately, in position order.
+ * lines is a block: its lines are blanked (newlines kept), and it is returned separately, in position order. A display
+ * equation in the middle of text is an item of kind `display` that the caller turns into its own block.
  *
  * Placeholder runs are `OPEN FILL* CLOSE` over three reserved private-use characters; a source that already contains
  * one is rejected by the caller before this runs.
@@ -26,13 +32,13 @@ export const PH_CLOSE = "";
 export const PLACEHOLDER_RUN = /*/g;
 
 export interface Item {
-  kind: "math" | "cite" | "ref";
+  kind: "math" | "display" | "cite" | "ref";
   /** Offset of the first character of the find in the source. */
   start: number;
   end: number;
   /** Where a diagnostic about this find is reported (the find itself; a caption field for caption text). */
   where: number;
-  /** math: the formula between the delimiters. */
+  /** math / display: the formula between the delimiters, read from the source text. */
   latex?: string;
   /** cite: the ids in written order. ref: the single target id. */
   ids?: string[];
@@ -52,6 +58,7 @@ export interface DisplayMath {
 }
 
 export interface Problem {
+  severity?: "warning";
   code: string;
   offset: number;
   message: string;
@@ -66,21 +73,18 @@ export interface Scan {
   lexText: string;
 }
 
-const FENCE_RE = /(```|~~~)[\s\S]*?(?:\1|$)/g;
-// a code span cannot cross a blank line (CommonMark: it lives inside one paragraph/block)
-const CODE_SPAN_RE = /(`+)((?:(?!\n[ \t]*\n)[\s\S])*?)\1(?!`)/g;
+// a code span cannot cross a blank line (CommonMark: it lives inside one paragraph/block); a backslash-escaped backtick
+// is literal text (the escape pair is consumed first, left to right, like the lexer does)
+const CODE_SPAN_RE = /\\[\s\S]|(`+)((?:(?!\n[ \t]*\n)[\s\S])*?)\1(?!`)/g;
 const URL_RE = /(?:https?|ftp):\/\/[^\s<>]*/g;
 const MATH_RE = /(?<!\\)\$\$([\s\S]+?)\$\$|(?<!\\)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)\$(?![\d$])/g;
 const UNCLOSED_DISPLAY_RE = /(?<!\\)\$\$/g;
 const TOKEN_RE = /(?<!\\)\[(cite|ref):/g;
 const BLANK_LINE_AT = /^\n[ \t]*\n/;
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})([^\n]*)$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 
 const blank = (m: string): string => m.replace(/[^\n]/g, " ");
-
-/** Same length, same newlines, every literal-zone character blanked. */
-export function maskLiteralZones(text: string): string {
-  return text.replace(FENCE_RE, blank).replace(CODE_SPAN_RE, blank).replace(URL_RE, blank);
-}
 
 /** One pass, so many ranges do not copy the whole text once each. Ranges are in position order. */
 function blankRanges(text: string, ranges: { start: number; end: number }[]): string {
@@ -92,6 +96,54 @@ function blankRanges(text: string, ranges: { start: number; end: number }[]): st
   }
   parts.push(text.slice(at));
   return parts.join("");
+}
+
+/**
+ * Fenced code, CommonMark style: an opening fence is 3+ backticks or tildes at the start of a line (at most 3 spaces
+ * of indentation; a backtick fence's info string has no backtick) and it closes at the first line of the same character
+ * with at least the same length and nothing else. A fence that never closes runs to the end of the text. A ``` in the
+ * middle of a line is an inline code span, not a fence.
+ */
+function maskFences(text: string): string {
+  const ranges: { start: number; end: number }[] = [];
+  let open: { char: string; length: number; from: number } | null = null;
+  let pos = 0;
+  while (pos <= text.length) {
+    const nl = text.indexOf("\n", pos);
+    const end = nl === -1 ? text.length : nl;
+    const line = text.slice(pos, end);
+    if (open === null) {
+      const m = FENCE_OPEN.exec(line);
+      if (m !== null) {
+        const run = m[1] as string;
+        if (!(run[0] === "`" && (m[2] as string).includes("`")))
+          open = { char: run[0] as string, length: run.length, from: pos };
+      }
+    } else {
+      const m = FENCE_CLOSE.exec(line);
+      if (m !== null) {
+        const run = m[1] as string;
+        if (run[0] === open.char && run.length >= open.length) {
+          ranges.push({ start: open.from, end });
+          open = null;
+        }
+      }
+    }
+    if (nl === -1) break;
+    pos = nl + 1;
+  }
+  if (open !== null) ranges.push({ start: open.from, end: text.length });
+  return blankRanges(text, ranges);
+}
+
+/** Fences and code spans blanked (same length, same newlines). */
+function maskCode(text: string): string {
+  return maskFences(text).replace(CODE_SPAN_RE, (m, ticks) => (ticks === undefined ? m : blank(m)));
+}
+
+/** Same length, same newlines, every literal-zone character blanked: code, then bare URLs. */
+export function maskLiteralZones(text: string): string {
+  return maskCode(text).replace(URL_RE, blank);
 }
 
 /** First unescaped `|` at or after `from` in `masked`, before `to`; -1 when there is none. */
@@ -116,11 +168,25 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
   const items: Item[] = [];
   const displays: DisplayMath[] = [];
   const problems: Problem[] = [];
-  const problem = (code: string, offset: number, message: string, subject?: string): void => {
-    problems.push({ code, offset, message, ...(subject !== undefined ? { subject } : {}) });
+  const problem = (
+    code: string,
+    offset: number,
+    message: string,
+    subject?: string,
+    severity?: "warning"
+  ): void => {
+    problems.push({
+      code,
+      offset,
+      message,
+      ...(subject !== undefined ? { subject } : {}),
+      ...(severity !== undefined ? { severity } : {}),
+    });
   };
 
-  let masked = maskLiteralZones(text);
+  // Two masks: `masked` (code and URLs blanked) finds math and token starts; `codeMasked` (code only) closes a token.
+  const codeMasked0 = maskCode(text);
+  let masked = codeMasked0.replace(URL_RE, blank);
 
   // ---- math ---------------------------------------------------------------------------------------------------
   const mathRanges: { start: number; end: number }[] = [];
@@ -128,8 +194,16 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
     const start = m.index ?? 0;
     const end = start + m[0].length;
     mathRanges.push({ start, end });
+    if (masked.slice(start, end) !== text.slice(start, end))
+      problem(
+        "math_contains_code",
+        start,
+        "a code span or URL inside a formula is kept as part of the formula",
+        undefined,
+        "warning"
+      );
     if (m[1] !== undefined) {
-      const latex = m[1].trim();
+      const latex = text.slice(start + 2, end - 2).trim();
       if (latex === "") {
         problem("math_empty", start, "an empty formula");
         continue;
@@ -137,29 +211,33 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
       const lineStart = text.lastIndexOf("\n", start - 1) + 1;
       const nl = text.indexOf("\n", end);
       const lineEnd = nl === -1 ? text.length : nl;
-      const before = text.slice(lineStart, start);
-      const after = text.slice(end, lineEnd);
-      const alone = /^[ \t]*$/.test(before) && /^[ \t]*$/.test(after);
-      if (options.blockDisplay && alone && before === "") {
-        displays.push({ lineStart, lineEnd, start, latex });
-      } else if (options.blockDisplay && alone) {
-        problem(
-          "math_display_indented",
-          start,
-          "a display equation must start at the beginning of its line (no indentation, so it cannot be mistaken for part of a list item)"
-        );
-      } else {
+      const alone =
+        /^[ \t]*$/.test(text.slice(lineStart, start)) && /^[ \t]*$/.test(text.slice(end, lineEnd));
+      if (!options.blockDisplay) {
         problem(
           "math_display_inline",
           start,
-          "a $$...$$ display equation must be alone on its lines; use $...$ for a formula inside a sentence"
+          "a $$...$$ display equation is not allowed here; use $...$"
         );
+      } else if (alone) {
+        displays.push({ lineStart, lineEnd, start, latex });
+      } else {
+        // in the middle of text: a display formula that ends the paragraph before it and starts a new one after it
+        items.push({ kind: "display", start, end, where: start, latex, bad: false });
       }
     } else {
-      items.push({ kind: "math", start, end, where: start, latex: m[2] as string, bad: false });
+      items.push({
+        kind: "math",
+        start,
+        end,
+        where: start,
+        latex: text.slice(start + 1, end - 1),
+        bad: false,
+      });
     }
   }
   masked = blankRanges(masked, mathRanges);
+  const codeMasked = blankRanges(codeMasked0, mathRanges);
   for (const m of masked.matchAll(UNCLOSED_DISPLAY_RE))
     problem("math_unclosed", m.index ?? 0, "a $$ display equation is opened here and never closed");
 
@@ -179,8 +257,8 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
       re.lastIndex = bodyStart;
       continue;
     }
-    while (j < masked.length) {
-      const c = masked[j];
+    while (j < codeMasked.length) {
+      const c = codeMasked[j];
       if (c === "\\") {
         j += 2;
         continue;
@@ -189,7 +267,7 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
         closed = true;
         break;
       }
-      if (c === "\n" && BLANK_LINE_AT.test(masked.slice(j, j + 400))) break;
+      if (c === "\n" && BLANK_LINE_AT.test(codeMasked.slice(j, j + 400))) break;
       j += 1;
     }
     if (!closed) {
@@ -199,7 +277,7 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
       continue;
     }
     re.lastIndex = j + 1;
-    const pipe = unescapedPipe(masked, bodyStart, j);
+    const pipe = unescapedPipe(codeMasked, bodyStart, j);
     const idsPart = text.slice(bodyStart, pipe === -1 ? j : pipe);
     const displayRaw = pipe === -1 ? undefined : text.slice(pipe + 1, j);
     const item: Item = { kind, start, end: j + 1, where: start, bad: false };
@@ -251,17 +329,30 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
     }
     return undefined;
   };
-  const keptItems = items.filter((it) => inToken(it.start) === undefined);
-  for (const d of displays.slice()) {
-    const t = inToken(d.start);
-    if (t !== undefined) {
+  const keptItems: Item[] = [];
+  for (const it of items) {
+    const t = inToken(it.start);
+    if (t === undefined) keptItems.push(it);
+    else if (it.kind === "display") {
       t.bad = true;
       problem(
         `${t.kind}_syntax`,
         t.start,
         "a display equation cannot be inside a [cite: ...] or [ref: ...]"
       );
-      displays.splice(displays.indexOf(d), 1);
+    }
+  }
+  const keptDisplays: DisplayMath[] = [];
+  for (const d of displays) {
+    const t = inToken(d.start);
+    if (t === undefined) keptDisplays.push(d);
+    else {
+      t.bad = true;
+      problem(
+        `${t.kind}_syntax`,
+        t.start,
+        "a display equation cannot be inside a [cite: ...] or [ref: ...]"
+      );
     }
   }
   const all = [...keptItems, ...tokenItems].sort((a, b) => a.start - b.start);
@@ -274,22 +365,22 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
       end: it.end,
       text: PH_OPEN + PH_FILL.repeat(it.end - it.start - 2) + PH_CLOSE,
     });
-  for (const d of displays)
+  for (const d of keptDisplays)
     cuts.push({
       start: d.lineStart,
       end: d.lineEnd,
       text: blank(text.slice(d.lineStart, d.lineEnd)),
     });
   cuts.sort((a, b) => a.start - b.start);
-  let lexText = "";
+  const parts: string[] = [];
   let at = 0;
   for (const c of cuts) {
-    lexText += text.slice(at, c.start) + c.text;
+    parts.push(text.slice(at, c.start), c.text);
     at = c.end;
   }
-  lexText += text.slice(at);
+  parts.push(text.slice(at));
 
-  displays.sort((a, b) => a.start - b.start);
+  keptDisplays.sort((a, b) => a.start - b.start);
   problems.sort((a, b) => a.offset - b.offset);
-  return { items: all, displays, problems, lexText };
+  return { items: all, displays: keptDisplays, problems, lexText: parts.join("") };
 }

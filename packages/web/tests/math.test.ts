@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderMathToString } from "../src/lib/math";
+import { MATH_RENDER_MAX_CHARS, renderMathToString } from "../src/lib/math";
 
 describe("renderMathToString", () => {
   it("renders \\ensuremath via the identity macro (macro-expanded unit shorthands)", () => {
@@ -35,5 +35,20 @@ describe("renderMathToString", () => {
       expect(html, latex).not.toMatch(/javascript:/);
       expect(html, latex).not.toMatch(/\sevil\b|id="evil"|data-a/);
     }
+  });
+
+  it("a huge published formula is shown as source with a notice and never sent to KaTeX (the tab must not freeze)", () => {
+    const huge = `${"x+".repeat(200_000)}x`; // 400 KB: KaTeX needs over a minute for this
+    const started = performance.now();
+    const html = renderMathToString(huge, true);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(html).toContain("math-oversize");
+    expect(html.startsWith('<span class="math-error')).toBe(true); // the annotation map still sees one math atom
+    expect(html).not.toContain("katex");
+    expect(html.length).toBeLessThan(10_000);
+    // the source is escaped, never markup
+    expect(renderMathToString(`<img src=x onerror=1>${"y".repeat(MATH_RENDER_MAX_CHARS)}`)).not.toContain("<img");
+    // just under the limit still typesets
+    expect(renderMathToString("x".repeat(100))).toContain("katex");
   });
 });
