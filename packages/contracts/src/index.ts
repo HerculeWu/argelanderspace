@@ -17,6 +17,7 @@ export * from "./providers.js";
 export * from "./reader-coherence.js";
 export * from "./reader-ops.js";
 export * from "./tex-ir.js";
+export * from "./text-doc.js";
 export * from "./workspace-ops.js";
 export * from "./writer.js";
 export * from "./writer-bib.js";

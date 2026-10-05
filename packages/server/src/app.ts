@@ -163,6 +163,7 @@ import { probePdf } from "./pdfium-probe.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
+import { mountTextDocRoutes, type TextDocDeps, TextDocService } from "./text-docs.js";
 import {
   cancelNumberingCompile,
   getWriterNumbering,
@@ -209,6 +210,8 @@ export interface AppDeps {
   /** Isolated settings storage/runtime in tests; production is initialized on first provider request. */
   providerSettings?: ProviderSettings;
   copilot?: CopilotHost;
+  /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
+  textDocHooks?: Pick<TextDocDeps, "beforePublish">;
   /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending` (default ten minutes). */
   acquisitionWaitMs?: number;
 }
@@ -511,6 +514,17 @@ export function createApp(deps: AppDeps): Hono {
   mountProviderRoutes(app, providerSettings, guardCsrf);
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
   mountCopilotRoutes(app, copilot, guardCsrf);
+  // Text Docs (ticket 25): create under a Work, source save, validate and explicit generate.
+  const textDocs = new TextDocService({
+    paths,
+    libraryLock,
+    annotationLock,
+    docMutations,
+    broadcast,
+    libraryChanged: () => libraryChanged("add"),
+    ...(deps.textDocHooks ?? {}),
+  });
+  mountTextDocRoutes(app, textDocs, guardCsrf);
   // The Copilot `plan` tool shares the Plan lock, store and plan.changed notification with PUT.
   const currentGraph = () =>
     loadCurrentGraph(paths) ??
@@ -674,6 +688,12 @@ export function createApp(deps: AppDeps): Hono {
         }
         try {
           const { ir, file, assets, stale } = readDocumentForReading(paths.dataDir, docId);
+          // The Reader tool's whole-reading representation is the LaTeX one; text Docs get theirs with the text tools.
+          if (ir.source.type === "text")
+            return {
+              kind: "error",
+              detail: "text documents cannot be read through the Reader tool yet",
+            };
           return { kind: "ok", reading: buildReaderReading({ ir, file, assets, stale }) };
         } catch (err) {
           if (!(err instanceof AnnotationsError)) throw err;
@@ -707,7 +727,10 @@ export function createApp(deps: AppDeps): Hono {
     for (const name of names) {
       try {
         const dir = join(outputDir, name);
-        if (statSync(dir).isDirectory() && existsSync(join(dir, `${name}.json`))) {
+        // a text draft (source, no reading text yet) is a Doc too
+        if (statSync(dir).isDirectory() && textDocs.has(name)) {
+          ids.push(name);
+        } else if (statSync(dir).isDirectory() && existsSync(join(dir, `${name}.json`))) {
           const metadata = readPdfMetadataIfPresent(paths, name);
           if (metadata && pdfOwners(name).length !== 1) continue;
           ids.push(name);
@@ -730,6 +753,17 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     const owners = pdfOwners(docId);
+    if (textDocs.has(docId)) {
+      try {
+        return c.json(textDocs.describe(docId), 200, { "Cache-Control": "no-store" });
+      } catch (error) {
+        const e = detail(
+          `text document ${pyRepr(docId)} is damaged: ${(error as Error).message}`,
+          500
+        );
+        return c.json(e.body, e.status);
+      }
+    }
     const p = join(outputDir, docId, `${docId}.json`);
     if (!existsSync(p) || !statSync(p).isFile()) {
       const e =
@@ -2052,7 +2086,7 @@ export function createApp(deps: AppDeps): Hono {
     // The Files tab only offers Docs a Work lists; an orphan directory is not reachable from the page.
     if (held.length === 0) return { kind: "orphan" };
     return annotationLock.run((): DocDeleteDescription => {
-      let format: "pdf" | "latex" = "latex";
+      let format: "pdf" | "latex" | "text" = textDocs.has(docId) ? "text" : "latex";
       let impact: DocReplaceImpact = { annotations: "unknown" };
       let rev = 0;
       let bound: Record<string, unknown> = {};
@@ -2075,6 +2109,10 @@ export function createApp(deps: AppDeps): Hono {
         } catch {
           impact = { annotations: "unknown" };
         }
+      } else if (format === "text" && !existsSync(join(docDir, `${docId}.json`))) {
+        // a draft that was never generated has no reading text, so no annotation can exist for it yet
+        impact = { annotations: "known", count: 0 };
+        bound = { draft: true };
       } else if (!pdf && !pdfUnreadable) {
         const risk = readAnnotationRisk(paths.dataDir, docId);
         if (risk.state === "known") {

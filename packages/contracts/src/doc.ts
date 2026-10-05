@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /** Explicit metadata for choosing a Doc reading path; never proves content consistency. */
-export const DocFormatSchema = z.enum(["latex", "pdf"]);
+export const DocFormatSchema = z.enum(["latex", "pdf", "text"]);
 export type DocFormat = z.infer<typeof DocFormatSchema>;
 
 export const DocDescriptionSchema = z.discriminatedUnion("format", [
@@ -10,6 +10,20 @@ export const DocDescriptionSchema = z.discriminatedUnion("format", [
     format: z.literal("latex"),
     /** Trusted only when copied from the stored Doc's explicit source metadata. */
     acquired_via: z.enum(["arxiv_eprint", "user_latex_zip"]).optional(),
+  }),
+  z.strictObject({
+    doc_id: z.string().min(1),
+    format: z.literal("text"),
+    /** Whether a reading version has been generated yet (a source with none is a legitimate draft). */
+    generated: z.boolean(),
+    source_rev: z.number().int().nonnegative(),
+    published_source_rev: z.number().int().nonnegative().nullable(),
+    /** Title of the generated reading version; absent for a draft. */
+    title: z.string().optional(),
+    /** File relation to the PDF this text was transcribed from; no page or region. */
+    source_pdf: z
+      .strictObject({ doc_id: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+      .optional(),
   }),
   z.strictObject({
     doc_id: z.string().min(1),

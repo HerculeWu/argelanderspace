@@ -134,12 +134,14 @@ export function useReaderPublisher(
       }
       if (state && p.docId) {
         // Rebuilt only for a new admitted epoch (the accepted read is replaced on every sync).
-        if (state.phase === "ready" && state.accepted) {
+        // The Copilot's whole-reading representation is the LaTeX one; a text Doc's session is never published here.
+        if (state.phase === "ready" && state.accepted && state.accepted.ir.source.type === "latex") {
+          const ir = state.accepted.ir;
           if (p.reading?.accepted !== state.accepted)
             p.reading = {
               accepted: state.accepted,
               value: buildReaderReading({
-                ir: state.accepted.ir,
+                ir,
                 file: state.accepted.file,
                 assets: state.accepted.assets,
               }),

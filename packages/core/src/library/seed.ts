@@ -59,8 +59,10 @@ export function seedFromOutput(store: LibraryStore, outputDir: string): LibraryS
     // PDF identity/ownership is sourced only from Library associations, never
     // title-based seeding. The bundle markers keep corrupt/partial metadata from
     // being reinterpreted as a first-time LaTeX Doc.
+    // A text Doc's Work relation is the user's explicit choice (the source it was created under), never its title.
     if (
       doc.format === "pdf" ||
+      existsSync(join(outputDir, docId, "text-source.json")) ||
       existsSync(join(outputDir, docId, "original.pdf")) ||
       existsSync(join(outputDir, docId, "annotations.json")) ||
       existsSync(join(outputDir, docId, "reading-position.json"))
@@ -101,7 +103,9 @@ function pruneMissingDocs(store: LibraryStore, outputDir: string): void {
     const kept = w.doc_ids.filter(
       (d) =>
         existsSync(join(outputDir, d, `${d}.json`)) ||
-        existsSync(join(outputDir, d, "original.pdf"))
+        existsSync(join(outputDir, d, "original.pdf")) ||
+        // a text draft has a source and no reading IR yet; that is a legitimate Doc, not a hollow one
+        existsSync(join(outputDir, d, "text-source.json"))
     );
     if (kept.length !== w.doc_ids.length || kept.some((d, i) => d !== w.doc_ids[i])) {
       w.doc_ids = kept;

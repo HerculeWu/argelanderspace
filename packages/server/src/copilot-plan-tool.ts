@@ -87,7 +87,7 @@ export type ConfirmationRequest =
       /** The Files tab's "delete document" dialog: the global physical delete of one Doc. */
       action: "delete_doc";
       docId: string;
-      format: "pdf" | "latex";
+      format: "pdf" | "latex" | "text";
       works: { id: string; title: string; main: boolean; remaining: number }[];
       impact: DocReplaceImpact;
       /** The annotations revision the count was read at (0 when it could not be read). */

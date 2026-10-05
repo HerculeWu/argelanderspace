@@ -32,7 +32,7 @@ export interface LibraryLoad {
   failure?: { kind: "unreachable" | "error"; reason: string };
 }
 
-export type DocProvenance = "arxiv" | "upload" | "pdf" | "arxiv-pdf" | "unknown";
+export type DocProvenance = "arxiv" | "upload" | "pdf" | "arxiv-pdf" | "text" | "unknown";
 
 /**
  * Read the explicit Doc descriptor for document-list presentation. Planner
@@ -48,6 +48,7 @@ export async function fetchDocProvenance(
     const body = (await response.json()) as { format?: unknown; acquired_via?: unknown };
     if (body.format === "pdf" && body.acquired_via === "arxiv_pdf") return "arxiv-pdf";
     if (body.format === "pdf" && body.acquired_via === "user_pdf_upload") return "pdf";
+    if (body.format === "text") return "text";
     if (body.format !== "latex") return "unknown";
     if (body.acquired_via === "arxiv_eprint") return "arxiv";
     if (body.acquired_via === "user_latex_zip") return "upload";

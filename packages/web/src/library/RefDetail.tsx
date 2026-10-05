@@ -13,6 +13,7 @@ import {
 } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
+import { createTextDoc } from "../api/text-docs";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
 import { ActionButton, Badge, Dialog, InlineMessage, Tabs } from "../ui";
@@ -192,6 +193,9 @@ export function RefDetail({
   const arxivPdfJobRef = useRef<Job | null>(null);
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
+  // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor.
+  const [textBusy, setTextBusy] = useState(false);
+  const [textError, setTextError] = useState<string | null>(null);
   const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
   const acquisitionFlowSequence = useRef(0);
   const submittingAcquisitionFlows = useRef(new Set<number>());
@@ -1093,6 +1097,29 @@ export function RefDetail({
             <div className="ref-files-head">
               <h2>{t("library.detail.files.documents")}</h2>
               <ActionButton
+                mode="text"
+                data-ui="create-text-doc"
+                variant="ghost"
+                busy={textBusy}
+                busyLabel={t("library.detail.files.creatingText")}
+                label={t("library.detail.files.createText")}
+                tooltip={t("library.detail.files.createTextTip")}
+                onClick={() => {
+                  const workId = r.id;
+                  const session = { ...workSession.current };
+                  setTextBusy(true);
+                  setTextError(null);
+                  void createTextDoc(workId, `create-${crypto.randomUUID()}`).then((result) => {
+                    if (!isCurrentWorkSession(session)) return;
+                    setTextBusy(false);
+                    if (result.ok) onOpenDoc(result.docId);
+                    else setTextError(result.detail);
+                  });
+                }}
+              >
+                {t("library.detail.files.createText")}
+              </ActionButton>
+              <ActionButton
                 mode="icon"
                 iconName="file-up"
                 data-ui="gether-doc"
@@ -1103,7 +1130,7 @@ export function RefDetail({
                 onClick={() => openAcquisition()}
               />
             </div>
-            {(uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || pdfUploadJob || pdfUploadError) && (
+            {(uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textError || pdfUploadJob || pdfUploadError) && (
               <div className="ref-task-messages" data-ui="acquisition-status">
                 {arxivPdfJob && (
                   <InlineMessage title={t(arxivPdfJob.status === "queued" ? "library.detail.jobs.queued" : "library.detail.arxivPdf.fetching")}>
@@ -1199,6 +1226,7 @@ export function RefDetail({
                   </InlineMessage>
                 )}
                 {mainErr && <InlineMessage uiId="set-main-doc-error" tone="danger">{mainErr}</InlineMessage>}
+                {textError && <InlineMessage uiId="create-text-doc-error" tone="danger" title={t("library.detail.files.createTextFailed")}>{textError}</InlineMessage>}
               </div>
             )}
             {versions.length === 0 && (
@@ -1215,7 +1243,9 @@ export function RefDetail({
                     const provenance = docProvenance[docId] ?? "loading";
                     const isMain = docId === mainDoc;
                     const sourceLabel = t(
-                      provenance === "arxiv-pdf"
+                      provenance === "text"
+                        ? "library.detail.files.sourceText"
+                        : provenance === "arxiv-pdf"
                         ? "library.detail.files.sourceArxivPdf"
                         : provenance === "arxiv"
                           ? "library.detail.files.sourceArxiv"
@@ -1396,6 +1426,7 @@ export function RefDetail({
         <DeleteDocDialog
           docId={delDoc}
           pdf={docProvenance[delDoc] === "pdf"}
+          text={docProvenance[delDoc] === "text"}
           busy={delBusy}
           error={delErr}
           onCancel={() => setDelDoc(null)}
@@ -1630,6 +1661,7 @@ function AcquisitionDialog({
 function DeleteDocDialog({
   docId,
   pdf,
+  text = false,
   busy,
   error,
   onCancel,
@@ -1637,6 +1669,7 @@ function DeleteDocDialog({
 }: {
   docId: string;
   pdf: boolean;
+  text?: boolean;
   busy: boolean;
   error: { kind: "busy" | "error"; detail: string } | null;
   onCancel: () => void;
@@ -1699,7 +1732,7 @@ function DeleteDocDialog({
           <code>{docId}</code>
         </div>
         <InlineMessage tone="warning" title={t("library.detail.deleteDoc.scopeTitle")}>
-          {t(pdf ? "library.detail.deleteDoc.pdfScope" : "library.detail.deleteDoc.scope")}
+          {t(pdf ? "library.detail.deleteDoc.pdfScope" : text ? "library.detail.deleteDoc.textScope" : "library.detail.deleteDoc.scope")}
         </InlineMessage>
         <p className="ui-delete-doc-count" role="status">
           {count.state === "loading"

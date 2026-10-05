@@ -4,10 +4,10 @@ import {
   type AnnotationTarget,
   type AssetDigest,
   buildStructureTarget,
+  type DocIr,
   irIndex,
   type ReaderWriteOperation,
   resolveTextTarget,
-  type TexDocIr,
   withAssetHash,
 } from "@argelanderspace/contracts";
 import { newAnnotationId } from "@argelanderspace/core";
@@ -41,7 +41,7 @@ export type AnnotationWrite =
   | { kind: "error"; detail: string };
 
 export interface EnsuredEpoch {
-  ir: TexDocIr;
+  ir: DocIr;
   assets: readonly AssetDigest[];
   file: AnnotationsFile;
 }
