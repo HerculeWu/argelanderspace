@@ -384,9 +384,15 @@ test("the text tool: a replacement of annotated text waits for the real user's c
   ).toBe(200);
   const irBefore = readFileSync(join(root, "data", "output", docId, `${docId}.json`));
   script = [
-    () => ({
+    () => ({ tool: "text", call: { action: "read_source", docId } }),
+    (context) => ({
       tool: "text",
-      call: { action: "save_source", docId, expectedRev: 1, markdown: "# New\n\nAll rewritten.\n" },
+      call: {
+        action: "save_source",
+        docId,
+        expectedRev: lastResult(context).rev,
+        markdown: "# New\n\nAll rewritten.\n",
+      },
     }),
     () => ({ tool: "text", call: { action: "generate", docId, sourceRev: 2 } }),
     () => ({ text: "finished" }),
@@ -436,7 +442,7 @@ test("the text tool: a replacement of annotated text waits for the real user's c
   expect(readFileSync(join(root, "data", "output", docId, `${docId}.json`)).equals(irBefore)).toBe(
     false
   );
-  expect(JSON.stringify(lastResult(seenAt(2)))).toContain("replacedAnnotations");
+  expect(JSON.stringify(lastResult(seenAt(3)))).toContain("replacedAnnotations");
 });
 
 test("a pending card expires when the source is saved meanwhile; the click is refused and nothing is published", async () => {
@@ -459,9 +465,15 @@ test("a pending card expires when the source is saved meanwhile; the click is re
   ).toBe(200);
   const irBefore = readFileSync(join(root, "data", "output", docId, `${docId}.json`));
   script = [
-    () => ({
+    () => ({ tool: "text", call: { action: "read_source", docId } }),
+    (context) => ({
       tool: "text",
-      call: { action: "save_source", docId, expectedRev: 1, markdown: "# New\n\nRewritten.\n" },
+      call: {
+        action: "save_source",
+        docId,
+        expectedRev: lastResult(context).rev,
+        markdown: "# New\n\nRewritten.\n",
+      },
     }),
     () => ({ tool: "text", call: { action: "generate", docId, sourceRev: 2 } }),
     () => ({ text: "finished" }),
@@ -501,5 +513,76 @@ test("a pending card expires when the source is saved meanwhile; the click is re
   );
   expect(opsOf(await host.snapshot(id)).find((o) => o.action === "generate")?.status).toBe(
     "expired"
+  );
+});
+
+test("N2: an unreadable annotations file at the click is an error with its reason: the card is not expired as stale, the model hears error, nothing changes", async () => {
+  const docId = await generatedTextDoc();
+  expect(
+    (
+      await textReq(`/api/paper/${docId}/annotations`, "PUT", {
+        ...((await (await textReq(`/api/paper/${docId}/annotations`)).json()) as object),
+        annotations: [
+          {
+            id: "a_0123abc0",
+            target: { type: "document" },
+            body: "keep",
+            created_at: "2026-09-10T10:00:00.000Z",
+            updated_at: "2026-09-10T10:00:00.000Z",
+          },
+        ],
+      })
+    ).status
+  ).toBe(200);
+  const irBefore = readFileSync(join(root, "data", "output", docId, `${docId}.json`));
+  script = [
+    () => ({ tool: "text", call: { action: "read_source", docId } }),
+    (context) => ({
+      tool: "text",
+      call: {
+        action: "save_source",
+        docId,
+        expectedRev: lastResult(context).rev,
+        markdown: "# New\n\nRewritten.\n",
+      },
+    }),
+    () => ({ tool: "text", call: { action: "generate", docId, sourceRev: 2 } }),
+    () => ({ text: "finished" }),
+  ];
+  const context = textPage(docId);
+  const id = await runScript(context);
+  let card: CopilotConfirmation | undefined;
+  await vi.waitFor(
+    async () => {
+      card = (await host.snapshot(id)).confirmations[0];
+      expect(card).toBeDefined();
+    },
+    { timeout: 8000 }
+  );
+  const c = card as CopilotConfirmation;
+  const current = join(root, "data", "annotations", docId, "current.json");
+  writeFileSync(current, "{ damaged");
+  // a background recheck meets the error and leaves the card alone: only a changed value ends a card
+  await host.revalidateDocConfirmations();
+  expect((await host.snapshot(id)).confirmations).toHaveLength(1);
+  const click = await request(`/confirmations/${c.id}`, "POST", {
+    decision: "approve",
+    viewId: context.viewId,
+    action: c.action,
+    objectId: c.object.id,
+    baseRev: c.baseRev,
+  });
+  expect(click.status).toBe(500);
+  expect(((await click.json()) as { code: string }).code).toBe("unreadable");
+  await settledRun(id);
+  const generate = opsOf(await host.snapshot(id)).find((o) => o.action === "generate");
+  expect(generate?.status).toBe("error");
+  const payload = lastResult(seenAt(3));
+  expect(payload).toMatchObject({ ok: false, status: "error" });
+  expect(payload.detail).toContain("annotations_unreadable");
+  expect(payload.detail).toContain("not a change");
+  expect(readFileSync(current, "utf8")).toBe("{ damaged");
+  expect(readFileSync(join(root, "data", "output", docId, `${docId}.json`)).equals(irBefore)).toBe(
+    true
   );
 });

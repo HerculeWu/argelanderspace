@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  type ContextCoverage,
   type CopilotOperation,
   type PageContext,
   TEXT_OPERATION_ACTIONS,
@@ -16,7 +17,7 @@ import {
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { largestFit, RESULT_OVERHEAD_BYTES } from "./copilot-batching.js";
-import { type ConfirmationPort, digest } from "./copilot-plan-tool.js";
+import { type ConfirmationPort, digest, type OperationJournalPort } from "./copilot-plan-tool.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 import type { TextDocService } from "./text-docs.js";
 
@@ -25,14 +26,7 @@ export const TEXT_TOOL_NAME = "text";
 /** The service seam: the very handlers of the text source panel's HTTP routes (same locks, checks and notifications). */
 export type TextOpDeps = Pick<
   TextDocService,
-  | "create"
-  | "read"
-  | "save"
-  | "addAsset"
-  | "addPdfImage"
-  | "validate"
-  | "generate"
-  | "probeReplacement"
+  "create" | "read" | "save" | "addAsset" | "addPdfImage" | "validate" | "generate" | "describe"
 >;
 
 export interface TextToolContext {
@@ -45,6 +39,8 @@ export interface TextToolContext {
   viewAction: (action: WorkspaceViewAction) => Promise<ViewActionOutcome>;
   /** A replacement of annotated reading text waits here for the real user. Without it such a generate is refused. */
   confirm?: ConfirmationPort;
+  /** Present in the real host: a confirmed generate is journaled so a repeat is answered and a restart reports the truth. */
+  journal?: OperationJournalPort;
   admitting: () => boolean;
   /** Bytes this conversation can still take in one tool result. */
   budget?: () => number;
@@ -144,7 +140,7 @@ const record = (
   status: "error",
   ...partial,
 });
-const sha8 = (text: string) => createHash("sha256").update(text).digest("hex");
+const sha256Hex = (text: string) => createHash("sha256").update(text).digest("hex");
 /** A stable identity for one tool call of one run: the same call always names the same Doc / generation. */
 const callId = (prefix: string, runId: string | undefined, toolCallId: string) =>
   `${prefix}-${createHash("sha256")
@@ -191,7 +187,6 @@ function failure(
           ok: false,
           status: "conflict",
           ...(code ? { reason: code } : { reason: "rev_mismatch" }),
-          ...(body.rev !== undefined ? { current: { rev: body.rev } } : {}),
           detail:
             code === "document_changed"
               ? "the PDF is not the original your reading was of; nothing was changed. Read the PDF again (reader read) and use its sha256"
@@ -199,8 +194,17 @@ function failure(
         },
       };
     }
-    case 422:
     case 413:
+      return {
+        status: "rejected",
+        payload: {
+          ok: false,
+          status: "rejected",
+          ...(code ? { code } : {}),
+          detail: `${detail}; nothing was changed`,
+        },
+      };
+    case 422:
     case 415:
     case 400:
       return {
@@ -236,6 +240,22 @@ function failure(
 }
 
 export function createTextTool(context: TextToolContext) {
+  // The source revisions THIS run has actually seen of each Doc (a write may only name one of them): a complete read of
+  // the source (every part at one version), its own create/save/asset result, or the page's saved editor. A conflict
+  // never hands out the current revision, so a blind resend with a guessed or copied number cannot overwrite the
+  // user's newer text.
+  const seenRevs = new Map<string, Set<number>>();
+  const see = (docId: string, rev: number) => {
+    const set = seenRevs.get(docId) ?? new Set<number>();
+    set.add(rev);
+    seenRevs.set(docId, set);
+  };
+  const reached = new Map<string, number>();
+  const hasSeen = (docId: string, rev: number): boolean => {
+    if (seenRevs.get(docId)?.has(rev)) return true;
+    const page = context.page?.()?.textSource;
+    return page?.docId === docId && !page.unsaved && page.rev === rev;
+  };
   const unsavedDraft = (docId: string) => {
     const page = context.page?.()?.textSource;
     return page?.docId === docId && page.unsaved ? true : undefined;
@@ -283,6 +303,14 @@ export function createTextTool(context: TextToolContext) {
             mapped.payload
           );
         };
+        const unseen = (docId: string, rev: number) =>
+          hasSeen(docId, rev)
+            ? null
+            : done(record(toolCallId, op.action, { status: "rejected", object: objectOf(docId) }), {
+                ok: false,
+                status: "rejected",
+                detail: `expectedRev ${rev} is not a source revision you have read in this run: read_source the whole source first and use its rev (or a rev a result of yours gave); nothing was changed`,
+              });
         const assetDone = (
           result: Awaited<ReturnType<TextOpDeps["addAsset"]>>,
           name: "add_asset" | "add_pdf_image",
@@ -290,6 +318,7 @@ export function createTextTool(context: TextToolContext) {
         ) => {
           if (!result.ok) return refuse(result, docId);
           const added: TextAssetAdded = result.value;
+          see(docId, added.source.rev);
           return done(
             record(toolCallId, name, {
               status: added.reused ? "noop" : "ok",
@@ -317,28 +346,79 @@ export function createTextTool(context: TextToolContext) {
           const object = objectOf(docId);
           const operationId = requestedId ?? callId("agent-generate", context.runId, toolCallId);
           const request = { sourceRev, operationId };
+          const hash = digest({ docId, sourceRev });
+          const journal = context.journal;
+          const known = journal?.lookup(operationId);
+          if (known && known.hash !== hash)
+            return done(record(toolCallId, "generate", { status: "rejected", object }), {
+              ok: false,
+              status: "rejected",
+              detail: "operationId was already used for a different request; nothing was published",
+            });
+          if (known?.state === "done")
+            return done(
+              { ...known.operation, id: toolCallId },
+              { ...known.payload, duplicate: true }
+            );
+          if (known)
+            return done(record(toolCallId, "generate", { status: "unknown", object }), {
+              ok: false,
+              status: "unknown",
+              detail:
+                "this generation was confirmed and started, and its outcome was not recorded (the service restarted): read_source and the reading to see whether it was published, do not repeat it blindly",
+            });
+          let begun = false;
+          /** What this call ends with: after a journaled begin, the result is recorded for a repeat and for a restart. */
+          const end = (result: ToolResult): ToolResult => {
+            if (begun)
+              journal?.done(
+                operationId,
+                JSON.parse((result.content[0] as { text: string }).text) as Record<string, unknown>,
+                result.details
+              );
+            return result;
+          };
           const finish = (result: { ok: true; value: TextGenerationResult }, confirmed: boolean) =>
-            done(
-              record(toolCallId, "generate", {
-                status: "ok",
-                object,
-                rev: result.value.publishedSourceRev,
-                label: docId,
-              }),
-              {
-                ok: true,
-                status: "ok",
-                publishedSourceRev: result.value.publishedSourceRev,
-                replacedAnnotations: result.value.replacedAnnotations,
-                stats: result.value.stats,
-                diagnostics: result.value.diagnostics.slice(0, 30),
-                observed: confirmed
-                  ? `the reading text was replaced after the user confirmed; ${result.value.replacedAnnotations} annotation(s) of the older text are archived by the next annotations access (tell the user)`
-                  : "the reading text was published; the user's Reader reads it again at once",
-              }
+            end(
+              done(
+                record(toolCallId, "generate", {
+                  status: "ok",
+                  object,
+                  rev: result.value.publishedSourceRev,
+                  label: docId,
+                }),
+                {
+                  ok: true,
+                  status: "ok",
+                  publishedSourceRev: result.value.publishedSourceRev,
+                  replacedAnnotations: result.value.replacedAnnotations,
+                  stats: result.value.stats,
+                  diagnostics: result.value.diagnostics.slice(0, 30),
+                  observed: confirmed
+                    ? `the reading text was replaced after the user confirmed; ${result.value.replacedAnnotations} annotation(s) of the older text are archived by the next annotations access (tell the user)`
+                    : "the reading text was published; the user's Reader reads it again at once",
+                }
+              )
             );
           const first = await track(context.text.generate(docId, request));
-          if (first.ok) return finish(first, false);
+          if (first.ok) {
+            if (first.duplicate)
+              return done(
+                record(toolCallId, "generate", {
+                  status: "noop",
+                  object,
+                  rev: first.value.publishedSourceRev,
+                  label: docId,
+                }),
+                {
+                  ok: true,
+                  status: "noop",
+                  publishedSourceRev: first.value.publishedSourceRev,
+                  detail: `already published at source rev ${first.value.publishedSourceRev} by this operationId; nothing new was published`,
+                }
+              );
+            return finish(first, false);
+          }
           const body = first.body as { code?: string; impact?: TextReplacementImpact };
           if (first.status !== 409 || body.code !== "confirmation_required" || !body.impact)
             return refuse(first, docId);
@@ -352,13 +432,20 @@ export function createTextTool(context: TextToolContext) {
               detail:
                 "this step needs the user's confirmation and none is available here; nothing was published",
             });
+          let title = docId;
+          try {
+            const described = context.text.describe(docId);
+            if ("title" in described && described.title) title = described.title;
+          } catch {
+            // the id names it
+          }
           let decision: Awaited<ReturnType<ConfirmationPort["request"]>>;
           try {
             decision = await context.confirm.request({
               toolCallId,
               action: "replace_text_reading",
               docId,
-              label: docId,
+              label: title,
               impact,
               baseRev: impact.annotationsRev,
               objectDigest: digest({ ...impact }),
@@ -377,7 +464,13 @@ export function createTextTool(context: TextToolContext) {
               detail:
                 "the user declined; nothing was published. Do not ask again unless the user wants it",
             });
-          if (decision.outcome === "expired")
+          if (decision.outcome === "expired") {
+            if (decision.reason === "error")
+              return done(record(toolCallId, "generate", { status: "error", object }), {
+                ok: false,
+                status: "error",
+                detail: `the check made when the user confirmed found a system error (${decision.detail ?? "the Doc's data could not be read"}); nothing was published and nothing was changed. This is not a change by the user: tell them, and do not retry blindly`,
+              });
             return done(record(toolCallId, "generate", { status: "expired", object }), {
               ok: false,
               status: "expired",
@@ -386,8 +479,26 @@ export function createTextTool(context: TextToolContext) {
                   ? "the source, the reading text or the annotations changed before the user confirmed; nothing was published. Read again and generate again only if it is still wanted"
                   : "the request ended before the user confirmed; nothing was published",
             });
-          // Approved by the user's click on the card for exactly these values: the server compares them once more
+          }
+          // Approved by the user's click on the card for exactly these values. The write is journaled first, so a
+          // restart between this click and the result reports the truth; the server compares the values once more
           // inside its publish critical section (a change since then is refused there).
+          try {
+            journal?.begin({
+              operationId,
+              toolCallId,
+              action: "generate",
+              hash,
+              object: { summary: `generate ${docId} at source rev ${impact.sourceRev}` },
+            });
+            begun = !!journal;
+          } catch {
+            return done(record(toolCallId, "generate", { status: "error", object }), {
+              ok: false,
+              status: "error",
+              detail: "the conversation could not be saved; nothing was published",
+            });
+          }
           const second = await track(
             context.text.generate(docId, {
               ...request,
@@ -401,13 +512,16 @@ export function createTextTool(context: TextToolContext) {
             second.status === 409 &&
             (again.code === "confirmation_changed" || again.code === "stale")
           )
-            return done(record(toolCallId, "generate", { status: "expired", object }), {
-              ok: false,
-              status: "expired",
-              detail:
-                "the source, the reading text or the annotations changed after the user confirmed; nothing was published. Read again and generate again only if it is still wanted",
-            });
-          return refuse(second, docId);
+            return end(
+              done(record(toolCallId, "generate", { status: "expired", object }), {
+                ok: false,
+                status: "expired",
+                detail:
+                  "the source, the reading text or the annotations changed after the user confirmed; nothing was published. Read again and generate again only if it is still wanted",
+              })
+            );
+          const failed = refuse(second, docId);
+          return end(failed);
         };
 
         switch (op.action) {
@@ -421,6 +535,7 @@ export function createTextTool(context: TextToolContext) {
             );
             if (!result.ok) return refuse(result);
             const { source } = result.value;
+            see(source.doc_id, source.rev);
             return done(
               record(toolCallId, "create", {
                 status: "ok",
@@ -447,7 +562,7 @@ export function createTextTool(context: TextToolContext) {
             const result = context.text.read(op.docId);
             if (!result.ok) return refuse(result, op.docId);
             const source: TextSourceDto = result.value;
-            const version = `${source.rev}:${sha8(source.markdown).slice(0, 12)}`;
+            const version = `${source.rev}:${sha256Hex(source.markdown).slice(0, 12)}`;
             const from = op.from ?? 0;
             const total = source.markdown.length;
             if (from > total || (from === total && from > 0))
@@ -478,6 +593,24 @@ export function createTextTool(context: TextToolContext) {
                     : "a continuation (from > 0) needs version: the version of the part you are continuing",
                 }
               );
+            const coverageAt = (
+              to: number,
+              status: ContextCoverage["status"],
+              note: string,
+              gap?: ContextCoverage["gap"]
+            ): ContextCoverage => ({
+              kind: "text",
+              docId: op.docId,
+              version,
+              unit: "characters",
+              total,
+              from,
+              to,
+              head: from === 0,
+              status,
+              ...(gap ? { gap } : {}),
+              note,
+            });
             const payloadAt = (to: number) => {
               const end = to >= total;
               return {
@@ -498,18 +631,15 @@ export function createTextTool(context: TextToolContext) {
                     }
                   : {}),
                 markdown: source.markdown.slice(from, to),
-                batch: {
-                  unit: "characters",
-                  from,
+                batch: coverageAt(
                   to,
-                  total,
-                  status: end ? "complete" : "partial",
-                  note: end
+                  end ? "complete" : "partial",
+                  end
                     ? from === 0
                       ? "the whole source is in this result"
                       : "the rest of the source: nothing remains"
-                    : `PART OF THE SOURCE ONLY: characters [${from}, ${to}) of ${total} are in this result and [${to}, ${total}) are NOT read; call read_source with from: ${to} and version: "${version}" for the next part; until the result says complete you have not read it all and must not say so`,
-                },
+                    : `PART OF THE SOURCE ONLY: characters [${from}, ${to}) of ${total} are in this result and [${to}, ${total}) are NOT read; call read_source with from: ${to} and version: "${version}" for the next part; until the result says complete you have not read it all and must not say so`
+                ),
               };
             };
             const fitTo = (room: number) => {
@@ -545,30 +675,45 @@ export function createTextTool(context: TextToolContext) {
                   if (again >= 0) found = again;
                 }
               }
-              if (found < 0)
+              if (found < 0) {
+                const detail = `capacity: even the smallest part of the source (from ${from}) does not fit the ${Math.max(0, room)} bytes left in this model's window; nothing was returned and characters [${from}, ${total}) are NOT read`;
+                const gapBytes =
+                  Buffer.byteLength(
+                    JSON.stringify(JSON.stringify(payloadAt(Math.min(total, from + 1))))
+                  ) + RESULT_OVERHEAD_BYTES;
                 return done(
                   record(toolCallId, "read_source", {
                     status: "rejected",
                     object: objectOf(op.docId),
+                    batch: coverageAt(from, "omitted", detail, {
+                      id: `characters from ${from}`,
+                      bytes: gapBytes,
+                    }),
                   }),
-                  {
-                    ok: false,
-                    status: "rejected",
-                    detail: `capacity: even the smallest part of the source (from ${from}) does not fit the ${Math.max(0, room)} bytes left in this model's window; nothing was returned and characters [${from}, ${total}) are NOT read`,
-                  }
+                  { ok: false, status: "rejected", detail }
                 );
+              }
               to = found;
             }
+            const given = payloadAt(to);
+            // a revision counts as read only when every part of one version reached the end
+            const chain = `${op.docId}#${version}`;
+            if (from === 0) reached.set(chain, to);
+            else if (reached.get(chain) === from) reached.set(chain, to);
+            if (reached.get(chain) === total && to === total) see(op.docId, source.rev);
             return done(
               record(toolCallId, "read_source", {
                 status: "ok",
                 object: objectOf(op.docId),
                 rev: source.rev,
+                batch: given.batch,
               }),
-              payloadAt(to)
+              given
             );
           }
           case "save_source": {
+            const blind = unseen(op.docId, op.expectedRev);
+            if (blind) return blind;
             let markdown = op.markdown;
             if (op.append) {
               // Read at the revision the caller planned from: the PUT's own expectedRev check then refuses anything newer.
@@ -589,6 +734,7 @@ export function createTextTool(context: TextToolContext) {
               context.text.save(op.docId, { expectedRev: op.expectedRev, markdown })
             );
             if (!result.ok) return refuse(result, op.docId);
+            see(op.docId, result.value.rev);
             return done(
               record(toolCallId, "save_source", {
                 status: "ok",
@@ -613,6 +759,8 @@ export function createTextTool(context: TextToolContext) {
             );
           }
           case "add_asset": {
+            const blind = unseen(op.docId, op.expectedRev);
+            if (blind) return blind;
             const held = context.attachment?.(op.attachmentId);
             if (!held)
               return done(
@@ -637,6 +785,8 @@ export function createTextTool(context: TextToolContext) {
             return assetDone(result, "add_asset", op.docId);
           }
           case "add_pdf_image": {
+            const blind = unseen(op.docId, op.expectedRev);
+            if (blind) return blind;
             const result = await track(
               context.text.addPdfImage(op.docId, {
                 expectedRev: op.expectedRev,

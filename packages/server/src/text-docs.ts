@@ -94,6 +94,11 @@ export interface TextDocDeps {
   beforePublish?: (docId: string) => Promise<void> | void;
 }
 
+export type ReplacementProbe =
+  | { kind: "impact"; impact: TextReplacementImpact | null }
+  | { kind: "changed" }
+  | { kind: "error"; code: string; detail: string };
+
 export type PdfRegionOutcome =
   | { kind: "ok"; png: Buffer; width: number; height: number }
   | { kind: "not_found" | "busy" | "changed" | "inconsistent" | "error" }
@@ -122,7 +127,7 @@ const fail = (
   body: { detail, ...extra },
 });
 
-type Ok<T> = { ok: true; value: T; status?: ContentfulStatusCode };
+type Ok<T> = { ok: true; value: T; status?: ContentfulStatusCode; duplicate?: boolean };
 type Result<T> = Ok<T> | ({ ok: false } & TextFailure);
 const ok = <T>(value: T, status?: ContentfulStatusCode): Ok<T> => ({
   ok: true,
@@ -457,13 +462,31 @@ export class TextDocService {
     } catch (error) {
       return { ok: false, ...errorFailure(error) };
     }
-    const rendered = await render({
+    // A picture over the asset limit is rendered again smaller (a busy 9 MP page can encode to more than 20 MiB) before it
+    // is refused; every attempt is the same verified, queued read.
+    let longEdge = request.longEdge ?? TEXT_PDF_IMAGE_LONG_EDGE.default;
+    let rendered = await render({
       pdfDocId,
       expectedHash: request.sha256,
       pageIndex: request.pageIndex,
       ...(request.region ? { region: request.region } : {}),
-      longEdge: request.longEdge ?? TEXT_PDF_IMAGE_LONG_EDGE.default,
+      longEdge,
     });
+    for (
+      let attempt = 0;
+      attempt < 4 && rendered.kind === "ok" && rendered.png.length > TEXT_ASSET_MAX_BYTES;
+      attempt++
+    ) {
+      longEdge = Math.floor(longEdge * 0.7);
+      if (longEdge < TEXT_PDF_IMAGE_LONG_EDGE.min) break;
+      rendered = await render({
+        pdfDocId,
+        expectedHash: request.sha256,
+        pageIndex: request.pageIndex,
+        ...(request.region ? { region: request.region } : {}),
+        longEdge,
+      });
+    }
     switch (rendered.kind) {
       case "ok":
         break;
@@ -480,10 +503,14 @@ export class TextDocService {
       default:
         return failed(500, "the PDF page could not be rendered", { code: "render_failed" });
     }
-    const name = `p${request.pageIndex + 1}${request.region ? "-region" : ""}.png`;
+    if (rendered.png.length > TEXT_ASSET_MAX_BYTES)
+      return failed(413, "the picture is larger than 20 MiB even at a small size", {
+        code: "too_large",
+      });
+    // a neutral stem: the page and the region are only parameters of this call, never part of what is stored
     return this.addAsset(docId, {
       expectedRev: request.expectedRev,
-      filename: name,
+      filename: "pdf-image.png",
       bytes: rendered.png,
     });
   }
@@ -518,40 +545,46 @@ export class TextDocService {
 
   /**
    * What replacing the reading text would put at risk RIGHT NOW for this source revision, without writing anything
-   * (the click-time check of a confirmation card, copilot ticket 29). `impact: null` means nothing is at risk (first
-   * generation, the same content, no current annotations); a refusal (the source moved, a system error, busy) is
-   * `{ ok: false }` and a card bound to older values is then no longer valid. Uses the very code of `generate`, up to
-   * the point where it would publish.
+   * (the click-time check of a confirmation card, copilot ticket 29). It runs the very code of `generate` up to the
+   * point where it would publish, and takes neither the writer pin nor the one-generation mark: it is read-only, so
+   * it can never make a user's own Generate or Delete meet "busy", and overlapping probes cannot disturb each other.
+   * `impact: null`: nothing is at risk. `changed`: the source moved, the Doc is gone or being deleted, or the text now
+   * has errors (a bound value really is different). `error`: a system error (annotations, the reading text, a
+   * fingerprint or an asset cannot be read or computed): reported as what it is, never as a change.
    */
-  async probeReplacement(
-    docId: string,
-    sourceRev: number
-  ): Promise<{ ok: true; impact: TextReplacementImpact | null } | { ok: false }> {
-    if (!isTextDocId(docId)) return { ok: false };
-    const { docMutations } = this.deps;
-    if (docMutations.isDeleting(docId) || this.generating.has(docId)) return { ok: false };
-    this.generating.add(docId);
-    docMutations.pinWriter(docId);
+  async probeReplacement(docId: string, sourceRev: number): Promise<ReplacementProbe> {
+    if (!isTextDocId(docId)) return { kind: "changed" };
     let seen: { impact: TextReplacementImpact | null } | undefined;
+    let outcome: Result<TextGenerationResult>;
     try {
-      await this.generateUnlocked(docId, sourceRev, "probe", undefined, (impact) => {
+      outcome = await this.generateUnlocked(docId, sourceRev, "probe", undefined, (impact) => {
         seen = { impact };
       });
-    } catch {
-      return { ok: false };
-    } finally {
-      docMutations.unpinWriter(docId);
-      this.generating.delete(docId);
+    } catch (error) {
+      return { kind: "error", code: "read_failed", detail: (error as Error).message };
     }
-    return seen ? { ok: true, impact: seen.impact } : { ok: false };
+    if (seen) return { kind: "impact", impact: seen.impact };
+    if (!outcome.ok) {
+      const code = (outcome.body as { code?: string }).code;
+      if (outcome.status >= 500)
+        return {
+          kind: "error",
+          code: code ?? "error",
+          detail: String(
+            (outcome.body as { detail?: string }).detail ?? "the Doc could not be read"
+          ),
+        };
+    }
+    return { kind: "changed" };
   }
 
   async generate(docId: string, body: unknown): Promise<Result<TextGenerationResult>> {
     const parsed = GenerateTextDocRequestSchema.safeParse(body);
     if (!parsed.success) return failed(400, "request body is not a valid generation request");
     if (!isTextDocId(docId)) return failed(404, `paper '${docId}' not found`);
-    const memo = this.finished.get(`${docId}:${parsed.data.operationId}`);
-    if (memo) return ok(memo);
+    // a repeat of the same operation at the same source revision is answered with what it did; a new revision is new work
+    const memo = this.finished.get(`${docId}:${parsed.data.operationId}:${parsed.data.sourceRev}`);
+    if (memo) return { ...ok(memo), duplicate: true };
     const { docMutations } = this.deps;
     // one generation per Doc, and never beside a delete: the pin also stops a delete from starting
     if (docMutations.isDeleting(docId) || this.generating.has(docId))
@@ -742,7 +775,7 @@ export class TextDocService {
       })
     );
     if (!outcome.ok) return outcome;
-    this.finished.set(`${docId}:${operationId}`, outcome.value);
+    this.finished.set(`${docId}:${operationId}:${source.rev}`, outcome.value);
     if (this.finished.size > 200) {
       const oldest = this.finished.keys().next().value;
       if (oldest !== undefined) this.finished.delete(oldest);

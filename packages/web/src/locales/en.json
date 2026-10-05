@@ -1505,8 +1505,7 @@
         "validate": "Validate text",
         "generate": "Generate reading text",
         "open_source_pdf": "Open source PDF",
-        "set_text_view": "Switch text tab",
-        "read_text": "Read text source"
+        "set_text_view": "Switch text tab"
       },
       "status": {
         "ok": "Applied",
@@ -1560,7 +1559,8 @@
       "expiredManuscript": "The manuscript changed before your decision. Nothing was deleted.",
       "failedManuscript": "The outcome is not known: your decision may or may not have reached the service. Check the manuscript list before trying again.",
       "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?",
-      "replaceText": "Replace the reading text of “{{name}}”"
+      "replaceText": "Replace the reading text of “{{name}}”",
+      "unreadableDoc": "The check made when you confirmed could not read this document's data (annotations, text or images). Nothing was replaced and nothing was changed."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1654,7 +1654,8 @@
       "heldGone": "Not repeated: it was sent earlier, but that part has since been taken out of the conversation.",
       "gap": "{{unit}} {{id}} needs {{bytes}} bytes, more than the window leaves: nothing was returned",
       "batchWithdrawn": "{{unit}} {{from}}–{{to}} of {{total}} withdrawn: the provider rejected the request as too large; not read",
-      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains"
+      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains",
+      "characters": "characters"
     }
   }
 }

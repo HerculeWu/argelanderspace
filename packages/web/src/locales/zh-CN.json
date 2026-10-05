@@ -1505,8 +1505,7 @@
         "validate": "校验文本",
         "generate": "生成阅读正文",
         "open_source_pdf": "打开来源 PDF",
-        "set_text_view": "切换文本标签",
-        "read_text": "读取文本源"
+        "set_text_view": "切换文本标签"
       },
       "status": {
         "ok": "已应用",
@@ -1560,7 +1559,8 @@
       "expiredManuscript": "稿件在你决定前已被改动，未删除任何内容。",
       "failedManuscript": "结果未知：你的决定可能已到达服务，也可能没有。请先检查稿件列表再重试。",
       "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。仍要删除吗？",
-      "replaceText": "替换“{{name}}”的阅读正文"
+      "replaceText": "替换“{{name}}”的阅读正文",
+      "unreadableDoc": "确认时的检查无法读取此文档的数据（标注、文本或图片）。没有替换任何内容，也没有改动任何内容。"
     },
     "thinkingLevels": {
       "off": "关闭",
@@ -1654,7 +1654,8 @@
       "heldGone": "未重复发送：之前发送过，但那一部分此后已移出会话。",
       "gap": "{{unit}} {{id}} 需要 {{bytes}} 字节，超出窗口剩余空间：未返回任何内容",
       "batchWithdrawn": "第 {{from}}–{{to}} {{unit}}，共 {{total}}，已撤回：服务商认为请求过大而拒绝，未读到",
-      "batchDone": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；已无剩余"
+      "batchDone": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；已无剩余",
+      "characters": "字符"
     }
   }
 }

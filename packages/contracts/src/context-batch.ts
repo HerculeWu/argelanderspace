@@ -13,8 +13,8 @@ const Count = z.number().int().nonnegative();
 export const CONTEXT_COVERAGE_STATUSES = ["complete", "partial", "omitted", "held"] as const;
 
 /**
- * One delivery of a Reader reading (units are its entries, in reading order) or of a PDF's material (units are its
- * pages, zero-based): `[from, to)` of `total`. `head` says whether the part that is not a unit list came along (the
+ * One delivery of a Reader reading (units are its entries, in reading order), of a PDF's material (units are its
+ * pages, zero-based) or of a text Doc's Markdown source (units are its UTF-16 characters; version `<rev>:<hash>`): `[from, to)` of `total`. `head` says whether the part that is not a unit list came along (the
  * Reader's bibliography, annotations and metadata; the PDF's outline and annotations). `version` binds the delivery
  * to the content it was read from: `<fingerprint>#<annotationsRev>` or `<sha256>#<annotationsRev>`.
  *
@@ -25,10 +25,10 @@ export const CONTEXT_COVERAGE_STATUSES = ["complete", "partial", "omitted", "hel
  */
 export const ContextCoverageSchema = z
   .object({
-    kind: z.enum(["reader", "pdf"]),
+    kind: z.enum(["reader", "pdf", "text"]),
     docId: z.string().min(1).max(500),
     version: z.string().min(1).max(300),
-    unit: z.enum(["entries", "pages"]),
+    unit: z.enum(["entries", "pages", "characters"]),
     total: Count,
     from: Count,
     to: Count,
@@ -86,7 +86,8 @@ export type DeliveryLedgerEntry = z.infer<typeof DeliveryLedgerEntrySchema>;
 
 export const readingVersion = (identity: string, annotationsRev: number): string =>
   `${identity}#${annotationsRev}`;
-export const ledgerKey = (kind: "reader" | "pdf", docId: string, version: string): string =>
+export type CoverageKind = "reader" | "pdf" | "text";
+export const ledgerKey = (kind: CoverageKind, docId: string, version: string): string =>
   `${kind}\n${docId}\n${version}`;
 
 interface Held {
@@ -118,7 +119,7 @@ export class ReadingLedger {
     this.held.set(key, entry);
   }
   /** True when this version's head and every unit were delivered. */
-  complete(kind: "reader" | "pdf", docId: string, version: string): boolean {
+  complete(kind: CoverageKind, docId: string, version: string): boolean {
     const entry = this.held.get(ledgerKey(kind, docId, version));
     if (!entry?.head) return false;
     if (entry.total === 0) return true;
@@ -126,22 +127,22 @@ export class ReadingLedger {
     return entry.ranges.length === 1 && !!only && only[0] === 0 && only[1] >= entry.total;
   }
   /** Every version whose head and every unit are present, as `[kind, docId, version]`. */
-  completeVersions(): ["reader" | "pdf", string, string][] {
-    const out: ["reader" | "pdf", string, string][] = [];
+  completeVersions(): [CoverageKind, string, string][] {
+    const out: [CoverageKind, string, string][] = [];
     for (const [key, entry] of this.held) {
       const [kind, docId, version] = key.split("\n");
       if (!kind || docId === undefined || version === undefined) continue;
-      if (this.complete(kind as "reader" | "pdf", docId, version))
-        out.push([kind as "reader" | "pdf", docId, version]);
+      if (this.complete(kind as CoverageKind, docId, version))
+        out.push([kind as CoverageKind, docId, version]);
       void entry;
     }
     return out;
   }
-  heldIn(kind: "reader" | "pdf", docId: string, version: string): string | undefined {
+  heldIn(kind: CoverageKind, docId: string, version: string): string | undefined {
     return this.held.get(ledgerKey(kind, docId, version))?.heldIn;
   }
   /** The ranges given so far, for a version (empty when none). */
-  ranges(kind: "reader" | "pdf", docId: string, version: string): [number, number][] {
+  ranges(kind: CoverageKind, docId: string, version: string): [number, number][] {
     return this.held.get(ledgerKey(kind, docId, version))?.ranges.map(([a, b]) => [a, b]) ?? [];
   }
 }

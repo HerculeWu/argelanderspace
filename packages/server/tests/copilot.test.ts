@@ -408,8 +408,8 @@ test("request output reservation permits a model whose maximum output equals its
   expect(model).toBeDefined();
   if (!model) return;
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 41_000;
-  model.maxTokens = 41_000;
+  model.contextWindow = 43_500;
+  model.maxTokens = 43_500;
   try {
     const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
     const context = page();

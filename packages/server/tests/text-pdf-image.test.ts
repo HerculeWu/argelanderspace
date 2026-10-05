@@ -91,7 +91,7 @@ describe("add image from the source PDF", () => {
     expect(whole.status).toBe(201);
     const a = (await whole.json()) as TextAssetAdded;
     expect(a.asset.media_type).toBe("image/png");
-    expect(a.asset.name).toMatch(/^p1-[0-9a-f]{8}\.png$/);
+    expect(a.asset.name).toMatch(/^pdf-image-[0-9a-f]{8}\.png$/);
     expect(a.source.rev).toBe(1);
     const wholePng = png(assetBytes(docId, a.asset.name));
     expect(Math.max(wholePng.w, wholePng.h)).toBeLessThanOrEqual(801);
@@ -105,7 +105,7 @@ describe("add image from the source PDF", () => {
     });
     expect(region.status).toBe(201);
     const r = (await region.json()) as TextAssetAdded;
-    expect(r.asset.name).toMatch(/^p1-region-[0-9a-f]{8}\.png$/);
+    expect(r.asset.name).toMatch(/^pdf-image-[0-9a-f]{8}\.png$/);
     // the region's longer edge is the asked size, and its shape is the region's (0.5 x 360 : 0.25 x 480 = 180 : 120)
     const dims = png(assetBytes(docId, r.asset.name));
     expect(Math.max(dims.w, dims.h)).toBeGreaterThanOrEqual(790);

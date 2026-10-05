@@ -57,7 +57,9 @@ export interface OperationJournalPort {
 export type ConfirmationOutcome =
   | { outcome: "approved" }
   | { outcome: "declined" }
-  | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" };
+  | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
+  /** A system error at click time (data unreadable): not a change, and never reported as one. */
+  | { outcome: "expired"; reason: "error"; detail: string };
 /** What the card shows for a Plan delete (`delete_plan`) or a Doc replacement (`refresh_arxiv_source`). */
 export type ConfirmationRequest =
   | {

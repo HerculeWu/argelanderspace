@@ -42,7 +42,7 @@ export const TextSourcePageSchema = z
     unsaved: z.boolean(),
     characters: Count,
     /** The whole editor text; null only when it is longer than TEXT_SOURCE_INLINE_MAX (`omitted` says so). */
-    markdown: z.string().nullable(),
+    markdown: z.string().max(TEXT_SOURCE_INLINE_MAX).nullable(),
     omitted: z.string().optional(),
     assets: z.array(TextSourceAssetSchema).max(500),
     generated: z.boolean(),
@@ -51,7 +51,15 @@ export const TextSourcePageSchema = z
     generation: z.enum(["idle", "running", "validated", "generated", "failed", "cancelled"]),
     sourcePdf: TextSourcePdfSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((page, ctx) => {
+    // an inline text is the whole editor text: its length is what `characters` says
+    if (page.markdown !== null && page.markdown.length !== page.characters)
+      ctx.addIssue({
+        code: "custom",
+        message: "characters must be the length of the inline markdown",
+      });
+  });
 export type TextSourcePage = z.infer<typeof TextSourcePageSchema>;
 
 /** What a message records of the text source it carried. */
