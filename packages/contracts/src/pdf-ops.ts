@@ -157,6 +157,28 @@ export const PdfMaterialEnvelopeSchema = z.discriminatedUnion("status", [
       detail: z.string(),
     })
     .strict(),
+  /**
+   * Copilot ticket 24: the material was not sent in this message. `held`: this very version (same original and
+   * annotations revision) was already delivered whole earlier in the conversation. `omitted`: it did not fit the
+   * room left in the model's window, or the provider rejected it. Either way the totals say what exists and
+   * `reader read` fetches it from the live Doc.
+   */
+  z
+    .object({
+      status: z.enum(["held", "omitted"]),
+      detail: z.string(),
+      /** The selected model's own capability (what the full material states as `images.modelAcceptsImages`). */
+      modelAcceptsImages: z.boolean(),
+      coverage: z
+        .object({
+          pages: Count,
+          pagesWithText: Count,
+          pagesWithoutText: Count,
+          characters: Count,
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 export type PdfMaterialEnvelope = z.infer<typeof PdfMaterialEnvelopeSchema>;
 
@@ -296,6 +318,19 @@ export const PdfPageSchema = z
     search: PdfSearchStateSchema.nullable(),
     selection: PdfSelectionSchema.nullable(),
     panels: z.object({ outlineCollapsed: z.boolean(), annotationsCollapsed: z.boolean() }).strict(),
+    /**
+     * Annotation text the user has typed in the panel and not saved (the session's own retained drafts). Presence and the
+     * blocked state only, never the text: a write the agent makes never replaces a draft, and a draft is never saved
+     * for the user. `create` is a new comment being written; `edit` lists existing annotations being edited (a draft
+     * whose annotation is gone is listed too, it is still the user's text).
+     */
+    drafts: z
+      .object({
+        create: z.boolean(),
+        edit: z.array(z.object({ annotationId: Id, blocked: z.boolean() }).strict()).max(1000),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((page, ctx) => {
@@ -320,13 +355,23 @@ export const PdfContextSummarySchema = z
     /** What the service attached of the original's material (identity and sizes; the content is in the history). */
     material: z
       .object({
-        status: z.enum(["ok", "busy", "changed", "not_found", "error"]),
+        status: z.enum(["ok", "busy", "changed", "not_found", "error", "held", "omitted"]),
         /** The selected model's own capability when this was attached: what a model without it could not read. */
         modelAcceptsImages: z.boolean(),
         pages: Count,
         pagesWithText: Count,
         pagesWithoutText: Count,
         characters: Count,
+        /** The whole document's counts (the fields above are what this message actually carries). */
+        totals: z
+          .object({
+            pages: Count,
+            pagesWithText: Count,
+            pagesWithoutText: Count,
+            characters: Count,
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
@@ -339,7 +384,25 @@ export function summarizePdfPage(
   material?: PdfMaterialEnvelope,
   modelAcceptsImages = true
 ): PdfContextSummary {
-  const coverage = material?.status === "ok" ? material.reading.coverage : undefined;
+  // What the message actually carries (the pages of its material), beside the whole document's totals.
+  const delivered =
+    material?.status === "ok"
+      ? {
+          pages: material.reading.pages.length,
+          pagesWithText: material.reading.pages.filter((item) => item.hasTextLayer).length,
+          pagesWithoutText: material.reading.pages.filter((item) => !item.hasTextLayer).length,
+          characters: material.reading.pages.reduce(
+            (sum, item) => sum + (item.text?.length ?? 0),
+            0
+          ),
+        }
+      : undefined;
+  const totals =
+    material?.status === "ok"
+      ? material.reading.coverage
+      : material?.status === "held" || material?.status === "omitted"
+        ? material.coverage
+        : undefined;
   return {
     docId: page.docId,
     phase: page.phase,
@@ -354,11 +417,14 @@ export function summarizePdfPage(
             modelAcceptsImages:
               material.status === "ok"
                 ? material.reading.images.modelAcceptsImages
-                : modelAcceptsImages,
-            pages: coverage?.pages ?? 0,
-            pagesWithText: coverage?.pagesWithText ?? 0,
-            pagesWithoutText: coverage?.pagesWithoutText ?? 0,
-            characters: coverage?.characters ?? 0,
+                : material.status === "held" || material.status === "omitted"
+                  ? material.modelAcceptsImages
+                  : modelAcceptsImages,
+            pages: delivered?.pages ?? 0,
+            pagesWithText: delivered?.pagesWithText ?? 0,
+            pagesWithoutText: delivered?.pagesWithoutText ?? 0,
+            characters: delivered?.characters ?? 0,
+            ...(totals ? { totals } : {}),
           },
         }
       : {}),

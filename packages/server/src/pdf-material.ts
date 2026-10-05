@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import { freemem } from "node:os";
 import { crc32, deflateSync } from "node:zlib";
 import {
+  buildPdfTextTarget,
   PDF_IMAGE_LONG_EDGE,
   PDF_IMAGE_MAX_PIXELS,
   PDF_MAX_BYTES,
@@ -25,8 +26,13 @@ import {
   PDF_MIN_IN_FLIGHT_HEADROOM_BYTES,
   PDF_OUTLINE_MAX_ENTRIES,
   PDF_OUTLINE_TITLE_MAX,
+  type PdfAnnotation,
+  type PdfGeometryPage,
   type PdfOutlineItem,
   type PdfPageMaterial,
+  type PdfTextPartInput,
+  pdfGeometryLastChar,
+  pdfRectsWithinSlice,
 } from "@argelanderspace/contracts";
 import {
   counted,
@@ -83,6 +89,7 @@ interface Engine {
   openDocumentBuffer(file: { id: string; content: ArrayBuffer }): Task<Doc>;
   isEncrypted(document: Doc): Task<boolean>;
   getPageTextRuns(document: Doc, page: Page): Task<{ runs: unknown[] }>;
+  getPageGeometry(document: Doc, page: Page): Task<PdfGeometryPage>;
   extractText(document: Doc, pageIndexes: number[]): Task<string>;
   getBookmarks(document: Doc): Task<{ bookmarks: Bookmark[] }>;
   renderPage(
@@ -427,6 +434,36 @@ export async function readPdfTextMaterial(
   });
 }
 
+/**
+ * `readPdfTextMaterial` of the WHOLE document, remembered per original (copilot ticket 24): the Copilot reads the
+ * whole text with every message, and an immutable original does not need PDFium again for it. The key is the content
+ * hash the caller expects and `bytes` must hash to it (checked here as `withEngine` does), so a different file can
+ * never be served another file's text. Readers never mutate the result. At most two originals are kept.
+ */
+export async function readPdfTextMaterialCached(
+  bytes: Buffer,
+  expectedHash: string
+): Promise<PdfTextMaterial> {
+  if (Buffer.isBuffer(bytes) && /^[a-f0-9]{64}$/.test(expectedHash)) {
+    const cached = textCache.get(expectedHash);
+    if (cached && sha256(bytes) === expectedHash) {
+      textCache.delete(expectedHash);
+      textCache.set(expectedHash, cached);
+      return cached;
+    }
+  }
+  const material = await readPdfTextMaterial(bytes, expectedHash);
+  textCache.set(expectedHash, material);
+  while (textCache.size > TEXT_CACHE_ENTRIES) {
+    const oldest = textCache.keys().next().value;
+    if (oldest === undefined) break;
+    textCache.delete(oldest);
+  }
+  return material;
+}
+const TEXT_CACHE_ENTRIES = 2;
+const textCache = new Map<string, PdfTextMaterial>();
+
 export interface PdfPageImage {
   contentSha256: string;
   pageIndex: number;
@@ -490,5 +527,98 @@ export async function renderPdfPageImage(
       hasTextLayer: runs.length > 0,
       scale,
     };
+  });
+}
+
+export type PdfTextTargetResult =
+  | { ok: true; target: Extract<PdfAnnotation, { kind: "highlight" }>["target"] }
+  | { ok: false; detail: string };
+
+/**
+ * The text target of a text annotation (copilot ticket 21), from REAL text of the verified original: each part's quote
+ * is located in its page's extractable text (exactly once, or at the occurrence the caller names), the characters'
+ * rectangles come from the engine's own page geometry through the same computation the Reader's selection uses
+ * (`pdfRectsWithinSlice`, then `buildPdfTextTarget` with the Doc's stored page geometry), and the stored quote joins
+ * the parts with a line break like a cross-page selection. Runs in the shared PDFium queue on the same verified
+ * snapshot as the text material. A page without a text layer cannot have a text target; text and geometry that do not
+ * line up are refused rather than guessed.
+ */
+export async function resolvePdfTextTarget(
+  bytes: Buffer,
+  expectedHash: string,
+  parts: readonly PdfTextPartInput[],
+  pageGeometry: ReadonlyArray<{ width: number; height: number; rotation: number }>
+): Promise<PdfTextTargetResult> {
+  return withEngine(bytes, expectedHash, async (engine, document): Promise<PdfTextTargetResult> => {
+    const selection: { pageIndex: number; segmentRects: ReturnType<typeof pdfRectsWithinSlice> }[] =
+      [];
+    for (const part of parts) {
+      if (part.pageIndex >= document.pageCount)
+        return {
+          ok: false,
+          detail: `pageIndex ${part.pageIndex} is outside 0..${document.pageCount - 1} (pages are zero-based)`,
+        };
+      const page = document.pages[part.pageIndex];
+      if (!page) throw new Error("PDF page is missing");
+      const { runs } = await engine.getPageTextRuns(document, page).toPromise();
+      if (runs.length === 0)
+        return {
+          ok: false,
+          detail: `page ${part.pageIndex} has no text layer (hasTextLayer false): text cannot be selected on it. Use a rectangle or a page or document comment`,
+        };
+      const text = await engine.extractText(document, [part.pageIndex]).toPromise();
+      const geometry = await engine.getPageGeometry(document, page).toPromise();
+      if (pdfGeometryLastChar(geometry) + 1 !== text.length)
+        return {
+          ok: false,
+          detail: `the text layer of page ${part.pageIndex} cannot be mapped to character positions, so no text annotation can be made on it; use a rectangle or a comment`,
+        };
+      const starts: number[] = [];
+      for (let at = text.indexOf(part.quote); at !== -1; at = text.indexOf(part.quote, at + 1))
+        starts.push(at);
+      if (starts.length === 0)
+        return {
+          ok: false,
+          detail: `the quote does not occur in the text of page ${part.pageIndex}; copy it exactly from that page's text in the reading (line breaks included)`,
+        };
+      if (part.occurrence === undefined && starts.length > 1)
+        return {
+          ok: false,
+          detail: `the quote occurs ${starts.length} times in the text of page ${part.pageIndex}; give occurrence (0 to ${starts.length - 1}) or a longer quote that occurs once`,
+        };
+      const start = starts[part.occurrence ?? 0];
+      if (start === undefined)
+        return {
+          ok: false,
+          detail: `occurrence ${part.occurrence} does not exist: the quote occurs ${starts.length} time(s) in the text of page ${part.pageIndex}`,
+        };
+      const segmentRects = pdfRectsWithinSlice(geometry, start, start + part.quote.length - 1);
+      if (segmentRects.length === 0)
+        return {
+          ok: false,
+          detail: `the quote on page ${part.pageIndex} has no visible characters (only line breaks or spaces generated by the text layer)`,
+        };
+      selection.push({ pageIndex: part.pageIndex, segmentRects });
+    }
+    const quote = parts.map((part) => part.quote);
+    if (quote.join("\n").trim() === "")
+      return { ok: false, detail: "the quote is blank; nothing visible to anchor to" };
+    // Node's PDFium reports the geometry of a page in the page as it is VIEWED (its /Rotate already applied, `size` is the
+    // viewed size and the glyph boxes of a 90 degree page are tall and thin), which is exactly the visible-page frame
+    // the sidecar stores. The conversion `buildPdfTextTarget` applies for a page's rotation is for geometry in the
+    // unrotated frame, so here every page is normalised as it is viewed (rotation 0); applying it again would turn the
+    // rectangles of a rotated page a second time.
+    const target = buildPdfTextTarget(
+      quote,
+      selection,
+      pageGeometry.map((page) => ({ width: page.width, height: page.height, rotation: 0 }))
+    );
+    if (!target)
+      return {
+        ok: false,
+        detail:
+          "the page geometry of the quoted text is not valid, so no text annotation can be made there; use a rectangle or a comment",
+      };
+    return { ok: true, target };
   });
 }

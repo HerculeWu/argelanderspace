@@ -1276,7 +1276,8 @@
       "unavailable": "Model request or connection failed. Your input and conversation are preserved; retry.",
       "rateLimit": "The provider rate limit was reached. Retry shortly.",
       "transient": "The provider is temporarily unavailable. Retry shortly.",
-      "quota": "The provider account limit was reached. Check the provider account."
+      "quota": "The provider account limit was reached. Check the provider account.",
+      "providerCapacity": "The provider rejected the request as too large. Your message and progress are kept; retry reads the document in smaller parts."
     },
     "defaultChoice": "Use default",
     "saved": "Saved",
@@ -1378,6 +1379,11 @@
         "create_annotation": "Add annotation",
         "update_annotation": "Edit annotation",
         "delete_annotation": "Delete annotation",
+        "create_pdf_annotation": "Add PDF annotation",
+        "update_pdf_annotation": "Edit PDF annotation",
+        "delete_pdf_annotation": "Delete PDF annotation",
+        "undo_pdf_annotation": "Undo PDF annotation change",
+        "redo_pdf_annotation": "Redo PDF annotation change",
         "read_page_image": "Read PDF page image",
         "goto_page": "Go to PDF page",
         "next_page": "Next PDF page",
@@ -1413,7 +1419,8 @@
         "pending": "In progress"
       },
       "job": "Job",
-      "doc": "Document"
+      "doc": "Document",
+      "batch": "Part of a document"
     },
     "undo": {
       "restored": "Restored “{{title}}”",
@@ -1489,6 +1496,7 @@
       "error": "Reader: {{id}} (failed to load, no reading sent)",
       "missing": "Reader: {{id}} (document not found, no reading sent)",
       "counts": "{{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations sent",
+      "totals": "The document has {{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations (not all sent with this message)",
       "selection": "Selection included",
       "position": "Reading section: {{section}}"
     },
@@ -1522,6 +1530,21 @@
       "draft": "Unsaved edits are marked as a draft, separate from the saved manuscript",
       "unsupported": "{{count}} cells use a type this template does not list"
     },
-    "partial": "Partial"
+    "partial": "Partial",
+    "coverage": {
+      "entries": "entries",
+      "pages": "pages",
+      "complete": "Whole document sent ({{total}} {{unit}}).",
+      "partial": "Part sent: {{unit}} {{from}}–{{to}} of {{total}}; {{remaining}} not read yet.",
+      "omitted": "Not sent with this message: the {{total}} {{unit}} were left out (too large for the window, or already in the conversation); the assistant reads them from the document on demand.",
+      "held": "Not repeated: this version was already sent in full earlier in this conversation.",
+      "batch": "{{unit}} {{from}}–{{to}} of {{total}} read; {{remaining}} not read yet",
+      "evicted": "Later taken out of the conversation to make room.",
+      "withdrawn": "This part was withdrawn after the provider rejected the request as too large: it is not read.",
+      "heldGone": "Not repeated: it was sent earlier, but that part has since been taken out of the conversation.",
+      "gap": "{{unit}} {{id}} needs {{bytes}} bytes, more than the window leaves: nothing was returned",
+      "batchWithdrawn": "{{unit}} {{from}}–{{to}} of {{total}} withdrawn: the provider rejected the request as too large; not read",
+      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains"
+    }
   }
 }

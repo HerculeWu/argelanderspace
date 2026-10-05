@@ -8,6 +8,7 @@
  * new library-wide revision.
  */
 import { z } from "zod";
+import { ContextCoverageSchema } from "./context-batch.js";
 import { JobStatusSchema } from "./job-status.js";
 import { type Task, type TaskStatus, TaskStatusSchema } from "./plans.js";
 
@@ -229,6 +230,8 @@ export const CopilotOperationSchema = z
       .optional(),
     /** The Doc the finished job actually created or refreshed. */
     docId: z.string().optional(),
+    /** A `reader read` that delivered a part of a reading (copilot ticket 24): its range, total and what is not yet read. */
+    batch: ContextCoverageSchema.optional(),
   })
   .strict();
 export type CopilotOperation = z.infer<typeof CopilotOperationSchema>;

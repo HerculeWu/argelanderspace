@@ -631,7 +631,7 @@ test("a PDF image larger than the room left in the window is refused whole with 
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 30_000;
+  model.contextWindow = 34_000;
   model.maxTokens = 1024;
   try {
     script = [
@@ -889,7 +889,10 @@ test("L2: steering states image capability from the run's frozen model", async (
       )
       .map((text) => JSON.parse(text))
       .find((envelope) => envelope.text === "and the scan?");
-    expect(steered?.pdf?.reading?.images?.modelAcceptsImages).toBe(true);
+    // The same original was already delivered whole with the first message (ticket 24): it is not repeated, but the
+    // envelope still states the run's own (frozen) model capability.
+    expect(steered?.pdf).toMatchObject({ status: "held", modelAcceptsImages: true });
+    expect(steered?.coverage).toMatchObject({ status: "held", kind: "pdf" });
   } finally {
     model.input = original as typeof model.input;
   }
@@ -920,7 +923,9 @@ test("M2: default-size page images fit a 200k window one after another; each is 
         loaded: Map<string, { manager: { getHeader(): unknown; getEntries(): unknown[] } }>;
       }
     ).loaded.get(snapshot.conversation.id);
-    const counted = (host as unknown as { historySize(l: unknown): number }).historySize(loaded);
+    const counted = (
+      host as unknown as { historyStats(l: unknown): { size: number } }
+    ).historyStats(loaded).size;
     const asText = Buffer.byteLength(
       JSON.stringify([loaded?.manager.getHeader(), ...(loaded?.manager.getEntries() ?? [])])
     );
@@ -1068,10 +1073,30 @@ test("B1: the history's image total is enforced: images already there make a fur
   expect(refused.detail).toMatch(/together/);
   // the two images the history already held (the real page and the stand-in); no new one was appended
   expect(imageBlocks(seenAt(1)).length).toBe(2);
-  // and a history whose images are over the total can never be extended at all
+  // and a history whose images are over the total is never stuck (ticket 24): the next message sheds the page images
+  // (stand-ins with advice to read them again), is accepted, and the images no longer count
   append(40_000);
   expect(stats().imageBytes).toBeGreaterThan(PDF_IMAGE_HISTORY_MAX_BYTES);
+  script = [() => ({ text: "recovered" })];
+  seen = [];
   const res = await send("more");
-  expect(res.status).toBe(400);
-  expect(await res.json()).toMatchObject({ code: "capacity" });
+  expect(res.status).toBe(202);
+  await vi.waitFor(async () => {
+    expect((await host.snapshot(id)).conversation.run?.status).not.toBe("running");
+  });
+  expect(stats().imageBytes).toBe(0);
+  expect(imageBlocks(seenAt(0))).toHaveLength(0);
+  expect(JSON.stringify(seenAt(0).messages)).toMatch(/read_page_image/);
+  // the durable history still holds the images themselves
+  const stored = readFileSync(
+    join(
+      root,
+      "data",
+      "copilot",
+      "sessions",
+      readdirSync(join(root, "data", "copilot", "sessions"))[0] ?? ""
+    ),
+    "utf8"
+  );
+  expect(stored).toContain('"type":"image"');
 });

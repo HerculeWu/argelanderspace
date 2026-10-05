@@ -1276,7 +1276,8 @@
       "unavailable": "模型请求或连接失败。输入与会话已保留，可重试。",
       "rateLimit": "模型服务达到速率限制，请稍后重试。",
       "transient": "模型服务暂时不可用，请稍后重试。",
-      "quota": "模型服务账户额度已用尽，请检查模型服务账户。"
+      "quota": "模型服务账户额度已用尽，请检查模型服务账户。",
+      "providerCapacity": "服务商认为请求过大而拒绝。消息和进度已保留；重试会把文档分成更小的部分读取。"
     },
     "defaultChoice": "沿用默认",
     "saved": "已保存",
@@ -1378,6 +1379,11 @@
         "create_annotation": "添加标注",
         "update_annotation": "修改标注",
         "delete_annotation": "删除标注",
+        "create_pdf_annotation": "添加 PDF 标注",
+        "update_pdf_annotation": "编辑 PDF 标注",
+        "delete_pdf_annotation": "删除 PDF 标注",
+        "undo_pdf_annotation": "撤销 PDF 标注更改",
+        "redo_pdf_annotation": "重做 PDF 标注更改",
         "read_page_image": "读取 PDF 页图",
         "goto_page": "跳到 PDF 页",
         "next_page": "PDF 下一页",
@@ -1413,7 +1419,8 @@
         "pending": "进行中"
       },
       "job": "任务",
-      "doc": "文档"
+      "doc": "文档",
+      "batch": "文档的一部分"
     },
     "undo": {
       "restored": "已恢复「{{title}}」",
@@ -1489,6 +1496,7 @@
       "error": "阅读器：{{id}}（加载失败，未发送正文）",
       "missing": "阅读器：{{id}}（找不到文档，未发送正文）",
       "counts": "已发送 {{sections}} 节、{{blocks}} 块、{{references}} 条参考文献、{{annotations}} 条标注",
+      "totals": "文档共有 {{sections}} 节、{{blocks}} 块、{{references}} 条参考文献、{{annotations}} 条标注（本条消息未全部发送）",
       "selection": "已包含选区",
       "position": "阅读位置：{{section}}"
     },
@@ -1522,6 +1530,21 @@
       "draft": "尚未保存的修改作为草稿单独标注，与已保存稿件区分",
       "unsupported": "{{count}} 个单元的类型不在该模板的列表中"
     },
-    "partial": "部分"
+    "partial": "部分",
+    "coverage": {
+      "entries": "个条目",
+      "pages": "页",
+      "complete": "已发送整篇文档（共 {{total}} {{unit}}）。",
+      "partial": "已发送一部分：第 {{from}}–{{to}} {{unit}}，共 {{total}}；还有 {{remaining}} 未读。",
+      "omitted": "本条消息未发送：{{total}} {{unit}}被省略（超出窗口，或已在会话中）；助手需要时从文档按需读取。",
+      "held": "未重复发送：该版本已在本会话较早的消息中完整发送。",
+      "batch": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；还有 {{remaining}} 未读",
+      "evicted": "之后已移出会话以腾出空间。",
+      "withdrawn": "这一部分已撤回：服务商认为请求过大而拒绝，未读到。",
+      "heldGone": "未重复发送：之前发送过，但那一部分此后已移出会话。",
+      "gap": "{{unit}} {{id}} 需要 {{bytes}} 字节，超出窗口剩余空间：未返回任何内容",
+      "batchWithdrawn": "第 {{from}}–{{to}} {{unit}}，共 {{total}}，已撤回：服务商认为请求过大而拒绝，未读到",
+      "batchDone": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；已无剩余"
+    }
   }
 }
