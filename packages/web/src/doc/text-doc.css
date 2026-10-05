@@ -34,3 +34,13 @@
 .text-source-diagnostic-where { flex: none; font-family: var(--font-mono); font-size: var(--fs-xs); text-decoration: underline; text-underline-offset: 2px; }
 .text-source-diagnostic-where:disabled { text-decoration: none; cursor: default; }
 .text-source-load-error { padding: var(--pad); display: flex; flex-direction: column; gap: var(--gap); align-items: flex-start; }
+
+/* Image assets dialog (copilot ticket 27; approved prototype A: name, type/size, upload) */
+.text-assets { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.text-assets-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: min(50vh, 360px); overflow: auto; }
+.text-asset-row { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 0; }
+.text-asset-row strong { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 500; overflow-wrap: anywhere; }
+.text-asset-row small { font-size: var(--fs-xs); color: var(--text-faint); overflow-wrap: anywhere; }
+.text-asset-path { font-family: var(--font-mono); }
+.text-assets-empty { margin: 0; color: var(--text-faint); font-size: var(--fs-sm); }
+.text-assets-actions { display: flex; gap: var(--gap); align-items: center; }

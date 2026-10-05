@@ -22,6 +22,8 @@ import {
   type DocDescription,
   GenerateTextDocRequestSchema,
   PutTextSourceRequestSchema,
+  TEXT_ASSET_MAX_BYTES,
+  type TextAssetAdded,
   type TextDiagnostic,
   type TextDocIr,
   type TextDocSource,
@@ -32,6 +34,7 @@ import {
   type WsServerMessage,
 } from "@argelanderspace/contracts";
 import {
+  addTextAsset,
   annotationsDocDir,
   createTextDoc,
   docContentFingerprint,
@@ -45,9 +48,11 @@ import {
   readAnnotationRisk,
   readPdfMetadataIfPresent,
   readPublishedTextIr,
+  readTextAsset,
   readTextSource,
   readVerifiedPdf,
   saveTextSource,
+  TextAssetError,
   TextDocError,
 } from "@argelanderspace/core";
 import type { Hono } from "hono";
@@ -93,7 +98,22 @@ const failed = (
   extra: Record<string, unknown> = {}
 ) => ({ ok: false, ...fail(status, detail, extra) }) as const;
 
+/** The HTTP answer for each refusal of an image upload; the code is stable for the page and the agent. */
+const ASSET_STATUS: Record<TextAssetError["code"], ContentfulStatusCode> = {
+  bad_name: 400,
+  empty: 400,
+  too_large: 413,
+  unsupported_type: 415,
+  corrupt_image: 422,
+  too_many_pixels: 422,
+  too_many_assets: 409,
+  unsafe: 500,
+  write_failed: 500,
+};
+
 function errorFailure(error: unknown): TextFailure {
+  if (error instanceof TextAssetError)
+    return fail(ASSET_STATUS[error.code], error.message, { code: error.code });
   if (error instanceof TextDocError) {
     switch (error.code) {
       case "bad_id":
@@ -305,6 +325,53 @@ export class TextDocService {
     }
   }
 
+  // ---- image assets (ticket 27) --------------------------------------------------- //
+
+  /**
+   * Add one image to the source: bytes are judged by content, written under a NEW controlled name (never over an
+   * existing file) and entered in the asset list in the same critical section as the revision bump. Like a save it
+   * refuses while the Doc is being deleted; it never touches the reading text or annotations.
+   */
+  async addAsset(
+    docId: string,
+    input: { expectedRev: number; filename?: string; bytes: Buffer }
+  ): Promise<Result<TextAssetAdded>> {
+    if (!isTextDocId(docId)) return failed(404, `paper '${docId}' not found`);
+    if (input.bytes.length > TEXT_ASSET_MAX_BYTES)
+      return failed(413, "the image is too large", { code: "too_large" });
+    try {
+      const outcome = await this.textLock.run(() => {
+        if (this.deps.docMutations.isDeleting(docId)) return failed(409, "document busy");
+        const added = addTextAsset(this.paths, docId, {
+          expectedRev: input.expectedRev,
+          bytes: input.bytes,
+          ...(input.filename !== undefined ? { filename: input.filename } : {}),
+        });
+        if (added.kind === "conflict")
+          return failed(409, "rev mismatch", {
+            rev: added.source.rev,
+            source: this.dto(added.source),
+          });
+        return ok(added);
+      });
+      if (!outcome.ok) return outcome;
+      const added = outcome.value;
+      if (added.kind === "added")
+        this.deps.broadcast({
+          type: "text-source.changed",
+          doc_id: docId,
+          rev: added.source.rev,
+          at: new Date().toISOString(),
+        });
+      return ok(
+        { source: this.dto(added.source), asset: added.asset, reused: added.kind === "reused" },
+        added.kind === "added" ? 201 : 200
+      );
+    } catch (error) {
+      return { ok: false, ...errorFailure(error) };
+    }
+  }
+
   // ---- validate (no side effects) ---------------------------------------------- //
 
   validate(docId: string, body: unknown): Result<TextValidationResult> {
@@ -315,7 +382,11 @@ export class TextDocService {
       const source = readTextSource(this.paths, docId);
       if (source.rev !== parsed.data.sourceRev)
         return failed(409, "source revision changed", { rev: source.rev });
-      const parsedText = parseTextSource(source.markdown, { docId, sourceRev: source.rev });
+      const parsedText = parseTextSource(source.markdown, {
+        docId,
+        sourceRev: source.rev,
+        assets: source.assets,
+      });
       return ok({
         sourceRev: source.rev,
         valid: parsedText.ir !== null,
@@ -365,6 +436,7 @@ export class TextDocService {
     const result = parseTextSource(source.markdown, {
       docId,
       sourceRev: source.rev,
+      assets: source.assets,
       ...(fallbackTitle ? { fallbackTitle } : {}),
     });
     if (!result.ir) {
@@ -376,7 +448,39 @@ export class TextDocService {
     }
     const candidate: TextDocIr = result.ir;
     const docDir = join(this.paths.outputDir, docId);
-    const candidateFingerprint = docContentFingerprint(candidate, { docDir });
+    // The generation is bound to the assets' real bytes: every image the text uses must still be the registered one.
+    // A missing, changed or unsafe file is a system error that stops the generation (nothing is published).
+    try {
+      const used = new Set<string>();
+      const walk = (sections: TextDocIr["sections"]): void => {
+        for (const sec of sections) {
+          for (const b of sec.blocks) if (b.type === "figure" && b.imgPath) used.add(b.imgPath);
+          walk(sec.children);
+        }
+      };
+      walk(candidate.sections);
+      for (const name of used) {
+        const asset = source.assets.find((a) => a.name === name);
+        if (!asset) throw new Error(`asset ${name} is not registered`);
+        readTextAsset(this.paths, docId, asset);
+      }
+    } catch (error) {
+      return failed(
+        500,
+        `an image of the text cannot be read or no longer matches its registered content; nothing was generated (${(error as Error).message})`,
+        { code: "asset_unreadable" }
+      );
+    }
+    let candidateFingerprint: string;
+    try {
+      candidateFingerprint = docContentFingerprint(candidate, { docDir });
+    } catch (error) {
+      return failed(
+        500,
+        `the content fingerprint cannot be computed; nothing was generated (${(error as Error).message})`,
+        { code: "fingerprint_failed" }
+      );
+    }
     await this.deps.beforePublish?.(docId);
 
     const outcome = await this.textLock.run(() =>
@@ -511,6 +615,29 @@ export function mountTextDocRoutes(
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, await service.save(id, body));
   });
+  app.post("/api/paper/:doc_id/source/assets", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = idOf(c);
+    if (!id) return c.json({ detail: "bad doc id" }, 400);
+    const expectedRev = Number(c.req.query("expectedRev"));
+    if (!Number.isInteger(expectedRev) || expectedRev < 0)
+      return c.json({ detail: "expectedRev must be a non-negative integer" }, 400);
+    const declared = Number(c.req.header("content-length") ?? "0");
+    if (declared > TEXT_ASSET_MAX_BYTES)
+      return c.json({ detail: "the image is too large", code: "too_large" }, 413);
+    const bytes = await readBounded(c.req.raw, TEXT_ASSET_MAX_BYTES);
+    if (bytes === null) return c.json({ detail: "the image is too large", code: "too_large" }, 413);
+    const filename = c.req.query("filename");
+    return answer(
+      c,
+      await service.addAsset(id, {
+        expectedRev,
+        bytes,
+        ...(filename !== undefined ? { filename } : {}),
+      })
+    );
+  });
   app.post("/api/paper/:doc_id/source/validate", async (c) => {
     const rejected = guardCsrf(c.req.header("origin"));
     if (rejected) return c.json(rejected.body, rejected.status);
@@ -527,4 +654,24 @@ export function mountTextDocRoutes(
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, await service.generate(id, body));
   });
+}
+
+/** The request body, read in chunks and abandoned as soon as it passes `max` bytes (nothing larger is buffered). */
+async function readBounded(request: Request, max: number): Promise<Buffer | null> {
+  const body = request.body;
+  if (!body) return Buffer.alloc(0);
+  const reader = body.getReader();
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, total);
 }

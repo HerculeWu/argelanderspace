@@ -25,11 +25,25 @@ export const TEXT_DOC_ID_PATTERN =
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const IsoSchema = z.string().datetime({ offset: true });
 
-/** A registered image asset of the source (reserved: the asset operations come with the figure ticket). */
+/** Limits of the image assets of a text Doc (ticket 27): the Writer's 20 MiB per asset, bounded pixels, bounded count. */
+export const TEXT_ASSET_MAX_BYTES = 20 * 1024 * 1024;
+export const TEXT_ASSET_MAX_PIXELS = 64_000_000;
+export const TEXT_ASSET_MAX_SIDE = 30_000;
+export const TEXT_ASSET_MAX_COUNT = 500;
+export const TextAssetMediaTypeSchema = z.enum(["image/png", "image/jpeg", "image/webp"]);
+export type TextAssetMediaType = z.infer<typeof TextAssetMediaTypeSchema>;
+/** Controlled asset file names: `<stem>-<sha8>.<png|jpg|webp>`; no separators, no leading dot. */
+export const TEXT_ASSET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(?:png|jpg|webp)$/;
+
+/** A registered image asset of the source. Files are never overwritten: a changed image is a NEW name. */
 export const TextSourceAssetSchema = z.strictObject({
   name: z.string().min(1),
   sha256: Sha256Schema,
   byte_length: z.number().int().nonnegative(),
+  /** Checked by magic bytes when the asset was added; absent in sources written before ticket 27 (none had assets). */
+  media_type: TextAssetMediaTypeSchema.optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
 });
 export type TextSourceAsset = z.infer<typeof TextSourceAssetSchema>;
 
@@ -125,14 +139,16 @@ export type TextDocumentMeta = z.infer<typeof TextDocumentMetaSchema>;
 /** ``argelander-block``: binds to the one block that follows it; which fields apply depends on that block. */
 export const TextBlockMetaSchema = z.strictObject({
   id: TextIdSchema.optional(),
-  kind: z.enum(["section", "paragraph", "list", "equation", "code", "algorithm"]).optional(),
+  kind: z
+    .enum(["section", "paragraph", "list", "equation", "code", "algorithm", "figure", "table"])
+    .optional(),
   /** The printed number; never derived from the id or the heading level. */
   number: z.string().min(1).max(64).optional(),
   /** The printed caption label such as "Algorithm 1". */
   label: z.string().min(1).max(256).optional(),
   /** Caption text: plain text with `$..$` math, `[cite: ..]` and `[ref: ..]`. */
   caption: z.string().min(1).optional(),
-  /** Reserved for figures and tables (ticket 27); the IR carries it only there. */
+  /** Figures and tables only (ticket 27); the IR carries it only there. */
   footnote: z.string().min(1).optional(),
 });
 export type TextBlockMeta = z.infer<typeof TextBlockMetaSchema>;
@@ -143,6 +159,22 @@ export const TextReferenceSchema = ReferenceSchema.strict().extend({
   raw: z.string().min(1),
 });
 export const TextReferencesSchema = z.array(TextReferenceSchema);
+
+/** ``argelander-table``: a table with merged cells. Cells carry text (inline `$..$` math allowed), header, spans. */
+export const TextTableCellSchema = z.strictObject({
+  text: z.string(),
+  header: z.boolean().optional(),
+  rowspan: z.number().int().min(1).optional(),
+  colspan: z.number().int().min(1).optional(),
+});
+export const TextTableSchema = z.strictObject({
+  rows: z.array(z.array(TextTableCellSchema).min(1)).min(1),
+});
+export type TextTable = z.infer<typeof TextTableSchema>;
+/** Bounds of one table (rows, columns of the grid, total cells). */
+export const TEXT_TABLE_MAX_ROWS = 2000;
+export const TEXT_TABLE_MAX_COLS = 200;
+export const TEXT_TABLE_MAX_CELLS = 40_000;
 
 // --------------------------------------------------------------------------- //
 // Diagnostics and the source/generation DTOs
@@ -175,6 +207,9 @@ export const TextStatsSchema = z.strictObject({
   citations: z.number().int().nonnegative().optional(),
   crossRefs: z.number().int().nonnegative().optional(),
   references: z.number().int().nonnegative().optional(),
+  /** Figures and tables (ticket 27). */
+  figures: z.number().int().nonnegative().optional(),
+  tables: z.number().int().nonnegative().optional(),
   /** cite/ref targets that were not found; they stay visible as unresolved and carry a warning. */
   unresolved: z.number().int().nonnegative().optional(),
 });
@@ -195,6 +230,15 @@ export const TextSourceDtoSchema = z.strictObject({
   published_source_rev: z.number().int().nonnegative().nullable(),
 });
 export type TextSourceDto = z.infer<typeof TextSourceDtoSchema>;
+
+/** `POST /api/paper/:id/source/assets`: the new source (rev + asset list) and the controlled name that was assigned. */
+export const TextAssetAddedSchema = z.strictObject({
+  source: TextSourceDtoSchema,
+  asset: TextSourceAssetSchema,
+  /** The same bytes were already registered: that asset is returned and nothing changed. */
+  reused: z.boolean(),
+});
+export type TextAssetAdded = z.infer<typeof TextAssetAddedSchema>;
 
 export const CreateTextDocRequestSchema = z.strictObject({
   workId: z.string().min(1),

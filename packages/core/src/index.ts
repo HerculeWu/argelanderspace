@@ -72,6 +72,7 @@ export * from "./pipelines/tex/ports.js";
 export * from "./pipelines/tex/source/macros.js";
 export * from "./pipelines/tex/source/tree.js";
 export * from "./plans/store.js";
+export * from "./text-assets.js";
 export * from "./text-docs.js";
 export * from "./writer/export.js";
 export * from "./writer/preview.js";

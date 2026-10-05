@@ -2,7 +2,12 @@ import type { IrBlock, IrSection } from "@argelanderspace/contracts";
 import { describe, expect, it } from "vitest";
 import { parseTextSource } from "../src/documents/text-codec.js";
 
-const opts = { docId: "text-1", sourceRev: 1 };
+const FIG = {
+  name: "fz-0123abcd.png",
+  sha256: "a".repeat(64),
+  byte_length: 10,
+};
+const opts = { docId: "text-1", sourceRev: 1, assets: [FIG] };
 const F = "```";
 const parse = (md: string) => parseTextSource(md, opts);
 const codes = (md: string) =>
@@ -205,7 +210,7 @@ function generate(rand: () => number): { src: string; words: string[] } {
   const ws = (): string => pick(["", " ", "  ", "\t"]);
   const closers = ["", " ", "\t", "  ", "~", "`", "x", " \t"];
   const unit = (): string => {
-    switch (Math.floor(rand() * 20)) {
+    switch (Math.floor(rand() * 27)) {
       case 0:
         return `para ${w()} text`;
       case 1:
@@ -254,6 +259,20 @@ function generate(rand: () => number): { src: string; words: string[] } {
         return `x\r${F}\n$$ ${w()} $$\n${F}\ny ${w()}`;
       case 18:
         return `line one ${w()}\rline two $q ${w()}$\rline three`;
+      case 20:
+        return `${pick(["", " ", "   "])}![alt ${w()}](assets/fz-0123abcd.png)${pick(["", " ", "  "])}`;
+      case 21:
+        return `| h ${w()} | h $x ${w()}$ |\n| ${pick(["---", ":-:", "--:"])} | --- |\n| c ${w()} | ${pick(["$a|b ", "$q "])}${w()}$ |${rand() < 0.5 ? `\n| r ${w()} | s |` : ""}`;
+      case 22:
+        return `${F}argelander-table\n${JSON.stringify({ rows: [[{ text: `t ${w()} $m ${w()}$`, header: true, colspan: 2 }], [{ text: `u ${w()}` }, { text: `v ${w()}`, rowspan: 1 }]] })}\n${F}`;
+      case 23:
+        return `${F}argelander-block\n${JSON.stringify({ caption: `cap ${w()} $z ${w()}$`, footnote: `note ${w()}` })}\n${F}\n![x](assets/fz-0123abcd.png)`;
+      case 24:
+        return `${F}\n| code ${w()} |\n| --- |\n![in code ${w()}](assets/fz-0123abcd.png)\n${F}`;
+      case 25:
+        return `text \`![in span ${w()}](assets/fz-0123abcd.png)\` and ![alt ${w()}](assets/fz-0123abcd.png) inline`;
+      case 26:
+        return `a | b ${w()}\n--|--\nc | d ${w()}`;
       default:
         return `plain ${w()}${ws()}`;
     }

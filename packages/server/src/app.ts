@@ -321,6 +321,12 @@ function pyRepr(s: string): string {
   return `'${s}'`;
 }
 
+/** Document images are data, never a page: no sniffing, and a script inside an SVG that is opened directly cannot run. */
+const IMAGE_HARDENING = {
+  "X-Content-Type-Options": "nosniff",
+  "Content-Security-Policy": "default-src 'none'; sandbox",
+} as const;
+
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -3244,7 +3250,10 @@ export function createApp(deps: AppDeps): Hono {
       if (asset.sha256 !== expected.toLowerCase()) {
         return c.json({ detail: "asset changed" }, 409);
       }
-      return c.body(new Uint8Array(asset.bytes), 200, { "Content-Type": mimeFor(imgPath) });
+      return c.body(new Uint8Array(asset.bytes), 200, {
+        "Content-Type": mimeFor(imgPath),
+        ...IMAGE_HARDENING,
+      });
     } catch (err) {
       if (err instanceof DocumentAssetError) {
         const status = err.code === "invalid" ? 400 : err.code === "missing" ? 404 : 500;
@@ -3276,6 +3285,7 @@ export function createApp(deps: AppDeps): Hono {
     if (existsSync(img) && statSync(img).isFile()) {
       return c.body(new Uint8Array(await readFile(img)), 200, {
         "Content-Type": mimeFor(filename),
+        ...IMAGE_HARDENING,
       });
     }
     const e = detail("image not found", 404);
@@ -3303,6 +3313,7 @@ export function createApp(deps: AppDeps): Hono {
     if (existsSync(img) && statSync(img).isFile()) {
       return c.body(new Uint8Array(await readFile(img)), 200, {
         "Content-Type": mimeFor(rel),
+        ...IMAGE_HARDENING,
       });
     }
     const e = detail("image not found", 404);

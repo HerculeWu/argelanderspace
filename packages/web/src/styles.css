@@ -220,6 +220,7 @@ figure.fig { text-align: center; }
    white regardless. Light mode keeps the original white "card" backing. */
 figure.fig img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; background: transparent; transition: filter 0.2s ease; }
 [data-theme="light"] .reader-root figure.fig img { background: #fff; }
+.block-footnote { font-family: var(--font-ui); font-size: 12px; line-height: 1.5; color: var(--cap); margin: 4px 0 0; text-align: left; }
 .fig-cap, .tab-cap { font-family: var(--font-ui); font-size: 13.5px; line-height: 1.5; color: var(--cap); margin-top: 8px; text-align: left; }
 .cap-label { font-weight: 700; }
 

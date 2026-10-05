@@ -4,12 +4,15 @@ import {
   isTexDocIr,
   isTextDocIr,
   StoredDocIrSchema,
+  TEXT_ASSET_NAME_PATTERN,
   TextBlockMetaSchema,
   TextDiagnosticSchema,
   TextDocSourceSchema,
   TextDocumentMetaSchema,
   TextReferencesSchema,
+  TextSourceAssetSchema,
   TextStatsSchema,
+  TextTableSchema,
   WsServerMessageSchema,
 } from "../src/index.js";
 
@@ -118,7 +121,7 @@ describe("format v1 marker JSON (ticket 26)", () => {
       { id: "has space" },
       { id: "" },
       { id: "x".repeat(129) },
-      { kind: "figure" },
+      { kind: "chart" },
       { number: 5 },
       { colour: "red" },
     ])
@@ -159,5 +162,54 @@ describe("format v1 marker JSON (ticket 26)", () => {
       TextStatsSchema.parse({ sections: 1, paragraphs: 1, lists: 0, equations: 2, unresolved: 1 })
         .equations
     ).toBe(2);
+  });
+});
+
+describe("figures, assets and tables (ticket 27)", () => {
+  it("block metadata accepts figure/table kinds and a footnote", () => {
+    expect(TextBlockMetaSchema.safeParse({ kind: "figure", footnote: "n" }).success).toBe(true);
+    expect(TextBlockMetaSchema.safeParse({ kind: "table", caption: "c" }).success).toBe(true);
+  });
+
+  it("asset manifests stay strict and the controlled name pattern refuses paths and odd extensions", () => {
+    const a = { name: "fig-0123abcd.png", sha256: "a".repeat(64), byte_length: 4 };
+    expect(TextSourceAssetSchema.safeParse(a).success).toBe(true);
+    expect(
+      TextSourceAssetSchema.safeParse({ ...a, media_type: "image/png", width: 3, height: 2 })
+        .success
+    ).toBe(true);
+    expect(TextSourceAssetSchema.safeParse({ ...a, media_type: "image/svg+xml" }).success).toBe(
+      false
+    );
+    expect(TextSourceAssetSchema.safeParse({ ...a, path: "/etc" }).success).toBe(false);
+    for (const ok of ["a-0123abcd.png", "x.y-1.jpg", "n.webp"])
+      expect(TEXT_ASSET_NAME_PATTERN.test(ok), ok).toBe(true);
+    for (const bad of [
+      "../a.png",
+      "a/b.png",
+      ".a.png",
+      "a.svg",
+      "a.png.exe",
+      "a\\b.png",
+      "-a.png",
+      "",
+    ])
+      expect(TEXT_ASSET_NAME_PATTERN.test(bad), bad).toBe(false);
+  });
+
+  it("table cells need positive integer spans, known fields only, and at least one row and cell", () => {
+    const ok = { rows: [[{ text: "a", header: true, rowspan: 2, colspan: 3 }]] };
+    expect(TextTableSchema.safeParse(ok).success).toBe(true);
+    for (const bad of [
+      { rows: [] },
+      { rows: [[]] },
+      { rows: [[{ text: "a", rowspan: 0 }]] },
+      { rows: [[{ text: "a", colspan: 1.5 }]] },
+      { rows: [[{ text: "a", colspan: -2 }]] },
+      { rows: [[{ text: "a", html: "<b>" }]] },
+      { rows: [[{ text: 1 }]] },
+      { rows: [[{ text: "a" }]], extra: 1 },
+    ])
+      expect(TextTableSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
   });
 });

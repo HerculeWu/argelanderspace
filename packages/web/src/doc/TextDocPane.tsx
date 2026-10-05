@@ -1,11 +1,12 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DocDescription, TextDiagnostic, TextSourceDto } from "@argelanderspace/contracts";
+import type { DocDescription, TextDiagnostic, TextSourceAsset, TextSourceDto } from "@argelanderspace/contracts";
 import { fetchDocDescription } from "../api/doc";
 import {
   fetchTextSource,
   generateTextDoc,
   saveTextSource,
+  uploadTextAsset,
   validateTextSource,
 } from "../api/text-docs";
 import { onTextDocPublished, onTextSourceChanged } from "../api/ws";
@@ -33,6 +34,13 @@ export function TextPublishSync({ docId }: { docId: string }) {
 type View = "reader" | "source";
 type SaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
 const AUTOSAVE_MS = 800;
+
+const ASSET_TYPE = { "image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WebP" } as const;
+const ASSET_REJECT_CODES = ["unsupported_type", "corrupt_image", "too_many_pixels", "too_large", "empty", "bad_name", "too_many_assets"] as const;
+const formatSize = (bytes: number): string =>
+  bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
+
+type AssetMessage = { tone: "info" | "warning" | "danger"; text: string };
 
 /** A fresh id per Generate click. The server only uses it to answer a repeated request of the same click with the stored result. */
 const newOperationId = () => `gen-${crypto.randomUUID()}`;
@@ -161,8 +169,25 @@ const FAILED_KEY = {
 /** The page's own wording per diagnostic code; an unknown code (a newer server) falls back to the server's message. */
 const DIAGNOSTIC_KEYS = {
   link_unsupported: "doc.text.diag.link_unsupported",
-  image_unsupported: "doc.text.diag.image_unsupported",
-  table_unsupported: "doc.text.diag.table_unsupported",
+  image_remote: "doc.text.diag.image_remote",
+  image_path_unsafe: "doc.text.diag.image_path_unsafe",
+  image_path_invalid: "doc.text.diag.image_path_invalid",
+  image_asset_missing: "doc.text.diag.image_asset_missing",
+  image_inline: "doc.text.diag.image_inline",
+  image_alt_token: "doc.text.diag.image_alt_token",
+  image_title_ignored: "doc.text.diag.image_title_ignored",
+  table_json: "doc.text.diag.table_json",
+  table_invalid: "doc.text.diag.table_invalid",
+  table_unknown_field: "doc.text.diag.table_unknown_field",
+  table_span_bounds: "doc.text.diag.table_span_bounds",
+  table_span_overlap: "doc.text.diag.table_span_overlap",
+  table_row_incomplete: "doc.text.diag.table_row_incomplete",
+  table_extra_cells: "doc.text.diag.table_extra_cells",
+  table_align_ignored: "doc.text.diag.table_align_ignored",
+  table_too_large: "doc.text.diag.table_too_large",
+  table_dollar: "doc.text.diag.table_dollar",
+  table_token_unsupported: "doc.text.diag.table_token_unsupported",
+  math_display_in_table: "doc.text.diag.math_display_in_table",
   quote_unsupported: "doc.text.diag.quote_unsupported",
   rule_unsupported: "doc.text.diag.rule_unsupported",
   html_unsupported: "doc.text.diag.html_unsupported",
@@ -261,6 +286,12 @@ function TextSourceEditor({
   const [generation, setGeneration] = useState<Generation>({ kind: "idle" });
   const [importing, setImporting] = useState<string | null>(null);
   const [importError, setImportError] = useState(false);
+  const [assets, setAssets] = useState<TextSourceAsset[]>([]);
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [assetBusy, setAssetBusy] = useState(false);
+  const [assetMessage, setAssetMessage] = useState<AssetMessage | null>(null);
+  const assetFileRef = useRef<HTMLInputElement>(null);
+  const assetUploadRef = useRef<HTMLButtonElement>(null);
 
   // What is on the server (rev + text) and what is in the editor are kept in refs so the autosave chain always
   // sees the newest typing; `text`/`save` state only drive rendering.
@@ -298,6 +329,7 @@ function TextSourceEditor({
         return;
       }
       server.current = { rev: result.source.rev, markdown: result.source.markdown };
+      setAssets(result.source.assets);
       setInitialText(result.source.markdown);
       setChars(result.source.markdown.length);
       setStatus("saved");
@@ -321,6 +353,7 @@ function TextSourceEditor({
         if (!alive.current) return;
         if (result.ok) {
           server.current = { rev: result.source.rev, markdown: result.source.markdown };
+          setAssets(result.source.assets);
           onState({ rev: result.source.rev, dirty: getDraft() !== sent });
           continue;
         }
@@ -359,6 +392,7 @@ function TextSourceEditor({
         void fetchTextSource(docId).then((result) => {
           if (!alive.current || !result.ok || status.current !== "saved" || result.source.rev <= server.current.rev) return;
           server.current = { rev: result.source.rev, markdown: result.source.markdown };
+          setAssets(result.source.assets);
           api.current?.set(result.source.markdown, { silent: true });
           setChars(result.source.markdown.length);
           onState({ rev: result.source.rev, dirty: false });
@@ -425,6 +459,7 @@ function TextSourceEditor({
   const useLatest = () => {
     if (!latest) return;
     server.current = { rev: latest.rev, markdown: latest.markdown };
+    setAssets(latest.assets);
     api.current?.set(latest.markdown, { silent: true });
     setChars(latest.markdown.length);
     setLatest(null);
@@ -434,9 +469,56 @@ function TextSourceEditor({
     if (!latest) return;
     // an explicit choice: the next save is made on top of the latest revision
     server.current = { rev: latest.rev, markdown: latest.markdown };
+    setAssets(latest.assets);
     setLatest(null);
     setStatus("dirty");
     void flush();
+  };
+
+  /**
+   * Add one image. It runs in the same serialized chain as the autosave, so a save can never be sent with a revision the
+   * upload has just replaced; the text typed meanwhile is saved right after, on top of the new revision.
+   */
+  const addAsset = async (file: File | undefined) => {
+    if (assetFileRef.current) assetFileRef.current.value = "";
+    if (!file) return;
+    setAssetMessage(null);
+    setAssetBusy(true);
+    const run = async () => {
+      if (!alive.current) return;
+      if (status.current === "conflict" || status.current === "error") {
+        setAssetMessage({ tone: "warning", text: t("doc.text.assetsSaveFirst") });
+        return;
+      }
+      const result = await uploadTextAsset(docId, server.current.rev, file);
+      if (!alive.current) return;
+      if (result.ok) {
+        // the Markdown did not change: only the revision and the asset list moved
+        server.current = { rev: result.source.rev, markdown: server.current.markdown };
+        setAssets(result.source.assets);
+        onState({ rev: result.source.rev, dirty: getDraft() !== server.current.markdown });
+        setAssetMessage({ tone: "info", text: t(result.reused ? "doc.text.assetsReused" : "doc.text.assetsAdded", { name: result.asset.name }) });
+        return;
+      }
+      if (result.kind === "conflict") {
+        if (result.source) {
+          setLatest(result.source);
+          setStatus("conflict");
+        }
+        setAssetMessage({ tone: "warning", text: t("doc.text.assetsConflict") });
+        return;
+      }
+      if (result.kind === "busy") setAssetMessage({ tone: "warning", text: t("doc.text.assetsBusy") });
+      else if (result.kind === "rejected")
+        setAssetMessage({
+          tone: "danger",
+          text: (ASSET_REJECT_CODES as readonly string[]).includes(result.code) ? t(`doc.text.assetReject.${result.code}` as never) : `${t("doc.text.assetReject.other")} ${result.detail}`,
+        });
+      else setAssetMessage({ tone: "danger", text: result.detail });
+    };
+    chain.current = chain.current.then(run, run);
+    await chain.current;
+    if (alive.current) setAssetBusy(false);
   };
 
   const jumpTo = (diagnostic: TextDiagnostic) => {
@@ -492,6 +574,7 @@ function TextSourceEditor({
         <span className="text-doc-spacer" />
         <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden data-ui="text-source-import-input" onChange={(event) => void pick(event.target.files?.[0])} />
         <ActionButton mode="icon" iconName="file-up" iconSize="small" data-ui="text-source-import" label={t("doc.text.import")} tooltip={t("doc.text.import")} disabled={running} onClick={() => fileRef.current?.click()} />
+        <ActionButton mode="icon" iconName="images" iconSize="small" data-ui="text-source-assets" label={t("doc.text.assets")} tooltip={t("doc.text.assets")} onClick={() => setAssetsOpen(true)} />
         <ActionButton mode="text" data-ui="text-source-validate" label={t("doc.text.validate")} tooltip={t("doc.text.validate")} disabled={running || save === "conflict"} onClick={() => void validate()}>{t("doc.text.validate")}</ActionButton>
         <ActionButton mode="text" appearance="primary" data-ui="text-source-generate" label={t("doc.text.generate")} tooltip={t("doc.text.generate")} busy={running} busyLabel={t("doc.text.generating")} disabled={save === "conflict"} onClick={() => void generate()}>{t("doc.text.generate")}</ActionButton>
       </div>
@@ -554,8 +637,52 @@ function TextSourceEditor({
       <div className="text-source-footer" data-ui="text-source-footer">
         <span>argelander-text v1</span>
         <span>{t("doc.text.characters", { count: chars })}</span>
+        <span data-ui="text-source-asset-count">{t("doc.text.assetCount", { count: assets.length })}</span>
         {generated && publishedRev !== null && <span>{t("doc.text.publishedRev", { rev: publishedRev })}</span>}
       </div>
+
+      {assetsOpen && (
+        <Dialog
+          uiId="text-source-assets-dialog"
+          title={t("doc.text.assetsTitle")}
+          closeLabel={t("common.close")}
+          initialFocusRef={assetUploadRef}
+          busy={assetBusy}
+          onClose={() => { setAssetsOpen(false); setAssetMessage(null); }}
+          footer={
+            <ActionButton mode="text" data-ui="close-text-source-assets" label={t("doc.text.assetsClose")} tooltip={t("doc.text.assetsClose")} disabled={assetBusy} onClick={() => { setAssetsOpen(false); setAssetMessage(null); }}>{t("doc.text.assetsClose")}</ActionButton>
+          }
+        >
+          <div className="text-assets" data-ui="text-source-assets-panel">
+            <input ref={assetFileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden data-ui="text-source-asset-input" onChange={(event) => void addAsset(event.target.files?.[0])} />
+            {assets.length === 0 ? (
+              <p className="text-assets-empty" data-ui="text-source-assets-empty">{t("doc.text.assetsEmpty")}</p>
+            ) : (
+              <ul className="text-assets-list" data-ui="text-source-assets-list">
+                {assets.map((asset) => (
+                  <li key={asset.name} className="text-asset-row" data-ui="text-source-asset" data-ui-key={asset.name}>
+                    <strong>{asset.name}</strong>
+                    <small>
+                      {asset.media_type && asset.width && asset.height
+                        ? t("doc.text.assetMeta", { type: ASSET_TYPE[asset.media_type], width: asset.width, height: asset.height, size: formatSize(asset.byte_length) })
+                        : formatSize(asset.byte_length)}
+                    </small>
+                    <small className="text-asset-path">{t("doc.text.assetsPath", { name: asset.name })}</small>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {assetMessage && (
+              <InlineMessage tone={assetMessage.tone} uiId="text-source-asset-message" title={assetMessage.tone === "danger" ? t("doc.text.assetsFailedTitle") : assetMessage.text}>
+                {assetMessage.tone === "danger" ? assetMessage.text : ""}
+              </InlineMessage>
+            )}
+            <div className="text-assets-actions">
+              <ActionButton mode="text" ref={assetUploadRef} data-ui="text-source-asset-upload" label={t("doc.text.assetsUpload")} tooltip={t("doc.text.assetsUpload")} busy={assetBusy} busyLabel={t("doc.text.assetsUploading")} onClick={() => assetFileRef.current?.click()}>{t("doc.text.assetsUpload")}</ActionButton>
+            </div>
+          </div>
+        </Dialog>
+      )}
 
       {importing !== null && (
         <Dialog

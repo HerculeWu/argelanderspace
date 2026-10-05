@@ -14,6 +14,7 @@ import { AnnBlockEdge } from "../annotations/AnnBlockEdge";
 import { Segments } from "../lib/segments";
 import { Math, htmlWithMath } from "../lib/math";
 import { FigureImage } from "./FigureImage";
+import { safeTableHtml } from "../lib/safe-table-html";
 
 // Native fragment IDs are exposed only while navigation is enabled. Internal
 // lookup, selection mapping and viewport observation always use data-block-id.
@@ -96,9 +97,16 @@ function FigureView({ b }: { b: IrFigureBlock }) {
           <Segments segments={b.captionSegments} />
         </figcaption>
       )}
+      {b.footnote && <Footnote text={b.footnote} />}
       <AnnBlockEdge id={b.id} />
     </figure>
   );
+}
+
+/** A figure/table footnote: plain text (escaped), with its `$..$` math typeset. */
+function Footnote({ text }: { text: string }) {
+  const escaped = text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+  return <p className="block-footnote" data-ui="latex-block-footnote" dangerouslySetInnerHTML={{ __html: htmlWithMath(escaped) }} />;
 }
 
 function TableView({ b }: { b: IrTableBlock }) {
@@ -114,13 +122,14 @@ function TableView({ b }: { b: IrTableBlock }) {
       {b.tableBody ? (
         <div
           className="tbl-scroll"
-          dangerouslySetInnerHTML={{ __html: htmlWithMath(b.tableBody) }}
+          dangerouslySetInnerHTML={{ __html: htmlWithMath(safeTableHtml(b.tableBody)) }}
         />
       ) : (
         b.imgPath && (
           <FigureImage imgPath={b.imgPath} alt="table" />
         )
       )}
+      {b.footnote && <Footnote text={b.footnote} />}
       <AnnBlockEdge id={b.id} />
     </div>
   );

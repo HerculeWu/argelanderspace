@@ -756,11 +756,9 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
   });
 
   describe("the old limits stay: no silent loss", () => {
-    it("figures, tables, images and footnotes are located refusals, not dropped content", () => {
-      expect(codes("![fig](assets/a.png)\n").map((c) => c[0])).toEqual(["image_unsupported"]);
-      expect(codes("| a | b |\n|---|---|\n| 1 | 2 |\n").map((c) => c[0])).toEqual([
-        "table_unsupported",
-      ]);
+    it("a missing asset, an inline image and an indented code block are located refusals, not dropped content", () => {
+      expect(codes("![fig](assets/a.png)\n").map((c) => c[0])).toEqual(["image_asset_missing"]);
+      expect(codes("a ![fig](assets/a.png) b\n").map((c) => c[0])).toEqual(["image_inline"]);
       expect(codes(`${fence}\nx\n${fence}\n\n    indented\n`).map((c) => c[0])).toEqual([
         "code_indented",
       ]);
