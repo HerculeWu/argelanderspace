@@ -1151,7 +1151,8 @@
       "unavailable": "Model request or connection failed. Your input and conversation are preserved; retry.",
       "rateLimit": "The provider rate limit was reached. Retry shortly.",
       "transient": "The provider is temporarily unavailable. Retry shortly.",
-      "quota": "The provider account limit was reached. Check the provider account."
+      "quota": "The provider account limit was reached. Check the provider account.",
+      "providerCapacity": "The provider rejected the request as too large. Your message and progress are kept; retry reads the document in smaller parts."
     },
     "defaultChoice": "Use default",
     "saved": "Saved",
@@ -1288,7 +1289,8 @@
         "pending": "In progress"
       },
       "job": "Job",
-      "doc": "Document"
+      "doc": "Document",
+      "batch": "Part of a document"
     },
     "undo": {
       "restored": "Restored “{{title}}”",
@@ -1397,6 +1399,17 @@
       "draft": "Unsaved edits are marked as a draft, separate from the saved manuscript",
       "unsupported": "{{count}} cells use a type this template does not list"
     },
-    "partial": "Partial"
+    "partial": "Partial",
+    "coverage": {
+      "entries": "blocks",
+      "pages": "pages",
+      "complete": "Whole document sent ({{total}} {{unit}}).",
+      "partial": "Part sent: {{unit}} {{from}}–{{to}} of {{total}}; {{remaining}} not read yet.",
+      "omitted": "Not sent with this message: the {{total}} {{unit}} were left out (too large for the window, or already in the conversation); the assistant reads them from the document on demand.",
+      "held": "Not repeated: this version was already sent in full earlier in this conversation.",
+      "batch": "{{unit}} {{from}}–{{to}} of {{total}} read; {{remaining}} not read yet",
+      "evicted": "Later taken out of the conversation to make room.",
+      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains"
+    }
   }
 }

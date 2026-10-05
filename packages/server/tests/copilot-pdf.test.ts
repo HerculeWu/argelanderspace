@@ -631,7 +631,8 @@ test("a PDF image larger than the room left in the window is refused whole with 
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 30_000;
+  // (the window holds the instruction and tool schemas the first message is budgeted for, ticket 24)
+  model.contextWindow = 52_000;
   model.maxTokens = 1024;
   try {
     script = [
@@ -889,7 +890,10 @@ test("L2: steering states image capability from the run's frozen model", async (
       )
       .map((text) => JSON.parse(text))
       .find((envelope) => envelope.text === "and the scan?");
-    expect(steered?.pdf?.reading?.images?.modelAcceptsImages).toBe(true);
+    // The same original was already delivered whole with the first message (ticket 24): it is not repeated, but the
+    // envelope still states the run's own (frozen) model capability.
+    expect(steered?.pdf).toMatchObject({ status: "held", modelAcceptsImages: true });
+    expect(steered?.coverage).toMatchObject({ status: "held", kind: "pdf" });
   } finally {
     model.input = original as typeof model.input;
   }

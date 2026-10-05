@@ -407,8 +407,9 @@ test("request output reservation permits a model whose maximum output equals its
   expect(model).toBeDefined();
   if (!model) return;
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 32_000;
-  model.maxTokens = 32_000;
+  // (the window holds the instruction and tool schemas the first message is budgeted for, ticket 24)
+  model.contextWindow = 64_000;
+  model.maxTokens = 64_000;
   try {
     const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
     const context = page();

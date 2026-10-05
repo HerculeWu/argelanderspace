@@ -1,6 +1,7 @@
 export * from "./annotation-targets.js";
 export * from "./annotations.js";
 export * from "./api.js";
+export * from "./context-batch.js";
 export * from "./copilot.js";
 export * from "./copilot-history.js";
 export * from "./discovery.js";

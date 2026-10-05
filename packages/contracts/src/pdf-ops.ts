@@ -157,6 +157,28 @@ export const PdfMaterialEnvelopeSchema = z.discriminatedUnion("status", [
       detail: z.string(),
     })
     .strict(),
+  /**
+   * Copilot ticket 24: the material was not sent in this message. `held`: this very version (same original and
+   * annotations revision) was already delivered whole earlier in the conversation. `omitted`: it did not fit the
+   * room left in the model's window, or the provider rejected it. Either way the totals say what exists and
+   * `reader read` fetches it from the live Doc.
+   */
+  z
+    .object({
+      status: z.enum(["held", "omitted"]),
+      detail: z.string(),
+      /** The selected model's own capability (what the full material states as `images.modelAcceptsImages`). */
+      modelAcceptsImages: z.boolean(),
+      coverage: z
+        .object({
+          pages: Count,
+          pagesWithText: Count,
+          pagesWithoutText: Count,
+          characters: Count,
+        })
+        .strict(),
+    })
+    .strict(),
 ]);
 export type PdfMaterialEnvelope = z.infer<typeof PdfMaterialEnvelopeSchema>;
 
@@ -320,7 +342,7 @@ export const PdfContextSummarySchema = z
     /** What the service attached of the original's material (identity and sizes; the content is in the history). */
     material: z
       .object({
-        status: z.enum(["ok", "busy", "changed", "not_found", "error"]),
+        status: z.enum(["ok", "busy", "changed", "not_found", "error", "held", "omitted"]),
         /** The selected model's own capability when this was attached: what a model without it could not read. */
         modelAcceptsImages: z.boolean(),
         pages: Count,
@@ -339,7 +361,12 @@ export function summarizePdfPage(
   material?: PdfMaterialEnvelope,
   modelAcceptsImages = true
 ): PdfContextSummary {
-  const coverage = material?.status === "ok" ? material.reading.coverage : undefined;
+  const coverage =
+    material?.status === "ok"
+      ? material.reading.coverage
+      : material?.status === "held" || material?.status === "omitted"
+        ? material.coverage
+        : undefined;
   return {
     docId: page.docId,
     phase: page.phase,

@@ -170,6 +170,7 @@ import {
   PdfMaterialResourceError,
   PdfQueueFullError,
   readPdfTextMaterial,
+  readPdfTextMaterialCached,
   renderPdfPageImage,
 } from "./pdf-material.js";
 import { probePdf } from "./pdfium-probe.js";
@@ -757,7 +758,7 @@ export function createApp(deps: AppDeps): Hono {
             detail: "the PDF or its user data could not be verified; nothing was changed",
           };
         try {
-          const material = await readPdfTextMaterial(source.bytes, source.metadata.sha256);
+          const material = await readPdfTextMaterialCached(source.bytes, source.metadata.sha256);
           const pdf: PdfSourceMaterial = {
             docId,
             title: source.title,
