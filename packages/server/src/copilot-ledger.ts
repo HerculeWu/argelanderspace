@@ -161,7 +161,7 @@ function deliveryOf(entry: RawEntry, index: number): Delivery | null {
         const reading = (
           JSON.parse(textOfContent(message.content)) as { reading?: { format?: string } }
         ).reading;
-        if (reading?.format === "latex")
+        if (reading?.format === "latex" || reading?.format === "text")
           old = envelopeCoverage({ context: { reader: { reading } } });
         else if (reading?.format === "pdf")
           old = envelopeCoverage({ pdf: { status: "ok", reading } });
@@ -272,6 +272,8 @@ function standInContent(entry: RawEntry, delivery: Delivery, action: LedgerActio
   const coverage = delivery.coverage;
   if (coverage) {
     const range = `${coverage.unit} [${coverage.from}, ${coverage.to}) of ${coverage.total}`;
+    // the way back is the tool that delivered it: a text source part is read again with text read_source
+    const reread = `${coverage.kind === "text" ? "text read_source" : "reader read"} {docId, from: ${coverage.from}, version: "${coverage.version}"}`;
     return [
       {
         type: "text",
@@ -280,12 +282,12 @@ function standInContent(entry: RawEntry, delivery: Delivery, action: LedgerActio
             ? {
                 ok: true,
                 status: "evicted",
-                detail: `${range} were read, then taken out of the conversation to make room; NOT in your context now. Read them again with reader read {docId, from: ${coverage.from}, version: "${coverage.version}"}`,
+                detail: `${range} were read, then taken out of the conversation to make room; NOT in your context now. Read them again with ${reread}`,
               }
             : {
                 ok: false,
                 status: "rejected",
-                detail: `capacity: ${WITHDRAW_NOTE}. This part (${range}) is NOT read; read it again in a smaller part with reader read {docId, from: ${coverage.from}, version: "${coverage.version}"}`,
+                detail: `capacity: ${WITHDRAW_NOTE}. This part (${range}) is NOT read; read it again in a smaller part with ${reread}`,
               }
         ),
       },

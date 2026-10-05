@@ -165,27 +165,47 @@ export type TextAssetUpload =
   /** The server refused this file; `code` is the stable reason (unsupported_type, corrupt_image, too_large...). */
   | { ok: false; kind: "rejected"; code: string; detail: string };
 
+async function assetResult(response: Response): Promise<TextAssetUpload> {
+  if (response.ok) {
+    const parsed = TextAssetAddedSchema.safeParse(await response.json());
+    return parsed.success
+      ? { ok: true, source: parsed.data.source, asset: parsed.data.asset, reused: parsed.data.reused, restored: parsed.data.restored }
+      : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
+  }
+  const { detail, body } = await detailOf(response);
+  if (response.status === 409 && detail === "rev mismatch") {
+    const parsed = TextSourceDtoSchema.safeParse(body.source);
+    return { ok: false, kind: "conflict", source: parsed.success ? parsed.data : null };
+  }
+  if (response.status === 409 && typeof body.code !== "string") return { ok: false, kind: "busy", detail };
+  if (typeof body.code === "string") return { ok: false, kind: "rejected", code: body.code, detail };
+  return { ok: false, kind: "error", detail };
+}
+
 /** Add one image to the source (ticket 27): raw bytes, judged by content on the server. */
 export async function uploadTextAsset(docId: string, expectedRev: number, file: File): Promise<TextAssetUpload> {
   try {
-    const response = await fetch(
-      `${base(docId)}/source/assets?expectedRev=${expectedRev}&filename=${encodeURIComponent(file.name)}`,
-      { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }
+    return await assetResult(
+      await fetch(
+        `${base(docId)}/source/assets?expectedRev=${expectedRev}&filename=${encodeURIComponent(file.name)}`,
+        { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }
+      )
     );
-    if (response.ok) {
-      const parsed = TextAssetAddedSchema.safeParse(await response.json());
-      return parsed.success
-        ? { ok: true, source: parsed.data.source, asset: parsed.data.asset, reused: parsed.data.reused, restored: parsed.data.restored }
-        : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
-    }
-    const { detail, body } = await detailOf(response);
-    if (response.status === 409 && detail === "rev mismatch") {
-      const parsed = TextSourceDtoSchema.safeParse(body.source);
-      return { ok: false, kind: "conflict", source: parsed.success ? parsed.data : null };
-    }
-    if (response.status === 409 && typeof body.code !== "string") return { ok: false, kind: "busy", detail };
-    if (typeof body.code === "string") return { ok: false, kind: "rejected", code: body.code, detail };
-    return { ok: false, kind: "error", detail };
+  } catch {
+    return { ok: false, kind: "error", detail: i18n.t("doc.text.net.unreachable") };
+  }
+}
+
+/**
+ * Add one picture of a PDF page (or a region of it, fractions of the visible page) of the same Work as an independent
+ * image asset (copilot ticket 29): the same server handler the Copilot's text tool calls. Pages are zero-based here.
+ */
+export async function addPdfImage(
+  docId: string,
+  request: { expectedRev: number; sha256: string; pageIndex: number; pdfDocId?: string; region?: { x: number; y: number; width: number; height: number }; longEdge?: number }
+): Promise<TextAssetUpload> {
+  try {
+    return await assetResult(await fetch(`${base(docId)}/source/assets/from-pdf`, json(request)));
   } catch {
     return { ok: false, kind: "error", detail: i18n.t("doc.text.net.unreachable") };
   }

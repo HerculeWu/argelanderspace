@@ -40,6 +40,8 @@ export const OPERATION_ACTION_KEYS = {
   render_manuscript: "copilot.operations.actions.render_manuscript", export_manuscript: "copilot.operations.actions.export_manuscript", select_cell: "copilot.operations.actions.select_cell", edit_cell: "copilot.operations.actions.edit_cell", commit_cell: "copilot.operations.actions.commit_cell", set_writer_panel: "copilot.operations.actions.set_writer_panel", set_writer_tab: "copilot.operations.actions.set_writer_tab", dismiss_template_warning: "copilot.operations.actions.dismiss_template_warning", retry_manuscript_list: "copilot.operations.actions.retry_manuscript_list",
   create_pdf_annotation: "copilot.operations.actions.create_pdf_annotation", update_pdf_annotation: "copilot.operations.actions.update_pdf_annotation", delete_pdf_annotation: "copilot.operations.actions.delete_pdf_annotation",
   undo_pdf_annotation: "copilot.operations.actions.undo_pdf_annotation", redo_pdf_annotation: "copilot.operations.actions.redo_pdf_annotation",
+  create: "copilot.operations.actions.create", read_source: "copilot.operations.actions.read_source", save_source: "copilot.operations.actions.save_source", add_asset: "copilot.operations.actions.add_asset",
+  add_pdf_image: "copilot.operations.actions.add_pdf_image", validate: "copilot.operations.actions.validate", generate: "copilot.operations.actions.generate", open_source_pdf: "copilot.operations.actions.open_source_pdf", set_text_view: "copilot.operations.actions.set_text_view",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -108,7 +110,7 @@ export function messageContextStatus(context: { status: "complete" | "unavailabl
 /** What of the Reader reading / PDF material one message delivered (ticket 24): the range, the total and what is not read yet. Ranges are shown one-based, as the Reader numbers them. */
 function CoverageSummary({ coverage }: { coverage: ContextCoverage }) {
   const { t } = useTranslation();
-  const unit = t(coverage.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries");
+  const unit = t(coverage.unit === "pages" ? "copilot.coverage.pages" : coverage.unit === "characters" ? "copilot.coverage.characters" : "copilot.coverage.entries");
   const key = coverage.withdrawn ? "withdrawn" : coverage.status === "held" && coverage.evicted ? "heldGone" : coverage.status;
   return <p data-ui="copilot-coverage" data-status={coverage.status}>{t(`copilot.coverage.${key}`, { unit, from: coverage.from + 1, to: coverage.to, total: coverage.total, remaining: coverage.total - coverage.to })}{coverage.evicted && coverage.status !== "held" && ` ${t("copilot.coverage.evicted")}`}</p>;
 }
@@ -323,7 +325,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   // What the user's undo did stays visible (restored, or why not) until dismissed; the service also tells the model.
   const [undoResult, setUndoResult] = useState<{ kind: "restored" | "failed"; label: string } | null>(null);
   // A refused confirmation click is explained here, not only on the card: the card disappears when the list is reread.
-  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null>(null);
+  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null>(null);
   const waitingForConfirmation = !!snapshot?.confirmations?.length;
   const attentionRef = useRef(onAttention); attentionRef.current = onAttention;
   useEffect(() => { attentionRef.current?.(waitingForConfirmation); return () => attentionRef.current?.(false); }, [waitingForConfirmation]);
@@ -444,7 +446,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} beforeDocDelete={onBeforeDocDelete} beforeManuscriptDelete={onBeforeManuscriptDelete} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
-      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "doc" ? "Doc" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : "Upload"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
+      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t("copilot.confirmation.unreadableDoc") : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "doc" ? "Doc" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : "Upload"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
       {((running && !waiting) || stopping) && <div className="copilot-run-card" role="status" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" />{t(stopping ? "copilot.stopping" : "copilot.running")}{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}
       {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}
       {undoResult && <div className={undoResult.kind === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-undo-result" data-status={undoResult.kind} role={undoResult.kind === "failed" ? "alert" : "status"}><span>{t(undoResult.kind === "restored" ? "copilot.undo.restored" : "copilot.undo.failed", { title: undoResult.label })}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-result-dismiss" className="btn icon ghost" onClick={() => setUndoResult(null)} /></div>}
@@ -487,7 +489,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
 }
 
 /** The waiting card of prototype A: the plan, what it takes with it, and the user's own decision. */
-function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem, beforeDocDelete, beforeManuscriptDelete }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: { kind: "expired" | "failed"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null) => void; beforeDocDelete?: (docId: string) => boolean; beforeManuscriptDelete?: (manuscriptId: string) => boolean }) {
+function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem, beforeDocDelete, beforeManuscriptDelete }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: { kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null) => void; beforeDocDelete?: (docId: string) => boolean; beforeManuscriptDelete?: (manuscriptId: string) => boolean }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
@@ -499,12 +501,16 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     if (decision === "approve" && confirmation.action === "delete_manuscript" && beforeManuscriptDelete && !beforeManuscriptDelete(confirmation.object.id)) return;
     guard.current = true; setBusy(true); onProblem(null);
     try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev }); }
-    catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : "failed", scope: confirmation.action === "delete_plan" ? "plan" : confirmation.action === "delete_manuscript" ? "manuscript" : confirmation.action === "accept_pdf_resource_warning" ? "upload" : confirmation.action === "delete_doc" ? "deleteDoc" : "doc" }); }
+    catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: confirmation.action === "delete_plan" ? "plan" : confirmation.action === "delete_manuscript" ? "manuscript" : confirmation.action === "accept_pdf_resource_warning" ? "upload" : confirmation.action === "delete_doc" ? "deleteDoc" : "doc" }); }
     finally { guard.current = false; setBusy(false); onSettled(); }
   };
   return <section className="copilot-confirmation" data-ui="copilot-confirmation" data-action={confirmation.action} aria-label={t("copilot.confirmation.needed")}>
     <div className="copilot-confirmation-warn" role="status"><Icon name="triangle-alert" />{t("copilot.confirmation.needed")}</div>
-    {confirmation.action === "delete_plan" ? <>
+    {confirmation.action === "replace_text_reading" ? <>
+      <h3>{t("copilot.confirmation.replaceText", { name: confirmation.label })}</h3>
+      <p data-ui="copilot-confirmation-risk">{t("doc.text.replace.body", { count: confirmation.impact.annotations })}</p>
+      <div className="copilot-confirmation-meta" data-ui="copilot-confirmation-basis">{t("doc.text.replace.basis", { source: confirmation.impact.sourceRev, published: confirmation.impact.publishedSourceRev, annotationsRev: confirmation.impact.annotationsRev })}</div>
+    </> : confirmation.action === "delete_plan" ? <>
       <h3>{t("copilot.confirmation.deletePlan", { name: confirmation.label })}</h3>
       <p>{t("copilot.confirmation.planScope", { count: confirmation.impact.tasks, open: confirmation.impact.openTasks })}</p>
       <div className="copilot-confirmation-meta">{t("copilot.confirmation.meta", { id: confirmation.object.id, rev: confirmation.baseRev })}</div>
@@ -530,7 +536,7 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     </>}
     <div className="copilot-confirmation-actions">
       <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
-      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : confirmation.action === "accept_pdf_resource_warning" ? "library.detail.pdfUpload.continue" : "library.detail.acquisition.confirmUpdate")}</Button>
+      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{confirmation.action === "replace_text_reading" ? t("doc.text.replace.confirm", { count: confirmation.impact.annotations }) : t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : confirmation.action === "accept_pdf_resource_warning" ? "library.detail.pdfUpload.continue" : "library.detail.acquisition.confirmUpdate")}</Button>
     </div>
   </section>;
 }
@@ -548,7 +554,7 @@ function OperationRecord({ operations }: { operations: CopilotOperation[] }) {
       <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(operation.tool === "library" && operation.status === "conflict" ? "copilot.operations.status.conflictLibrary" : operation.tool === "reader" && operation.status === "conflict" ? "copilot.operations.status.conflictReader" : operation.tool === "writer" && operation.status === "conflict" ? "copilot.operations.status.conflictWriter" : OPERATION_STATUS_KEYS[operation.status])}</Badge>
       {operation.warnings?.includes("import_partial") && <span className="copilot-operation-warn">{t("copilot.operations.importPartial")}</span>}
       {operation.warnings?.includes("task_due_after_plan_due") && <span className="copilot-operation-warn">{t("copilot.operations.dueAfterPlan")}</span>}
-      {operation.batch && <code data-ui="copilot-operation-batch" data-status={operation.batch.status} title={t("copilot.operations.batch")}>{(() => { const batch = operation.batch; const unit = t(batch.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries"); if (batch.gap) return t("copilot.coverage.gap", { unit, id: batch.gap.id, bytes: batch.gap.bytes }); const key = batch.withdrawn ? "batchWithdrawn" : batch.status === "complete" ? "batchDone" : "batch"; return t(`copilot.coverage.${key}`, { unit, from: batch.from + 1, to: batch.to, total: batch.total, remaining: batch.total - batch.to }) + (batch.evicted ? ` ${t("copilot.coverage.evicted")}` : ""); })()}</code>}
+      {operation.batch && <code data-ui="copilot-operation-batch" data-status={operation.batch.status} title={t("copilot.operations.batch")}>{(() => { const batch = operation.batch; const unit = t(batch.unit === "pages" ? "copilot.coverage.pages" : batch.unit === "characters" ? "copilot.coverage.characters" : "copilot.coverage.entries"); if (batch.gap) return t("copilot.coverage.gap", { unit, id: batch.gap.id, bytes: batch.gap.bytes }); const key = batch.withdrawn ? "batchWithdrawn" : batch.status === "complete" ? "batchDone" : "batch"; return t(`copilot.coverage.${key}`, { unit, from: batch.from + 1, to: batch.to, total: batch.total, remaining: batch.total - batch.to }) + (batch.evicted ? ` ${t("copilot.coverage.evicted")}` : ""); })()}</code>}
       {operation.rev !== undefined && isApplied(operation) && <code>v{operation.rev}</code>}
       {operation.job && <code data-ui="copilot-operation-job" title={t("copilot.operations.job")}>{operation.job.id}</code>}
       {operation.docId && <code data-ui="copilot-operation-doc" title={t("copilot.operations.doc")}>{operation.docId}</code>}

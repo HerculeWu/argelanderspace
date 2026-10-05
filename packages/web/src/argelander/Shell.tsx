@@ -1,4 +1,4 @@
-import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PdfPage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema, type WriterPage, type WriterViewAction, WriterViewActionSchema } from "@argelanderspace/contracts";
+import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PdfPage, type TextSourcePage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema, type WriterPage, type WriterViewAction, WriterViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -79,6 +79,9 @@ export function Shell() {
   const [readerPages, setReaderPages] = useState<Record<number, ReaderPage | null>>({});
   const reportReader = useCallback((paneId: number, page: ReaderPage | null) => { setReaderPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
   // The PDF Reader of each Doc pane (copilot ticket 20): identity, position and control state; the pages' content is the service's.
+  // A text Doc's source panel (copilot ticket 29): the editor's current text, assets, diagnostics and revisions.
+  const [textPages, setTextPages] = useState<Record<number, TextSourcePage | null>>({});
+  const reportText = useCallback((paneId: number, page: TextSourcePage | null) => { setTextPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
   const [pdfPages, setPdfPages] = useState<Record<number, PdfPage | null>>({});
   const reportPdf = useCallback((paneId: number, page: PdfPage | null) => { setPdfPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
   // The Writer of each Write pane (copilot ticket 22): its page (list or open manuscript with saved content and unsaved draft) and its controller.
@@ -560,6 +563,7 @@ export function Shell() {
       : activePane.view === "library" ? (libraryPages[activePane.id]?.source === "live" ? "complete" : libraryPages[activePane.id]?.source === "error" ? "error" : "unavailable")
       // A Reader is complete only with the reading of an admitted epoch; updating is unavailable, a failed read is an error.
       : activePane.view === "doc" && pdfPages[activePane.id] ? (pdfPages[activePane.id]?.phase === "ready" ? "complete" : ["error", "changed"].includes(pdfPages[activePane.id]?.phase ?? "") ? "error" : "unavailable")
+      : activePane.view === "doc" && textPages[activePane.id] ? (textPages[activePane.id]?.phase === "ready" ? "complete" : textPages[activePane.id]?.phase === "error" ? "error" : "unavailable")
       : activePane.view === "doc" ? (readerPages[activePane.id]?.reading ? "complete" : ["error", "missing"].includes(readerPages[activePane.id]?.sync.phase ?? "") ? "error" : "unavailable")
       : activePane.view === "write" ? writerPageStatus(writerPages[activePane.id])
       : "unavailable",
@@ -569,6 +573,7 @@ export function Shell() {
     // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
     reader: activePane.view === "doc" ? readerPages[activePane.id] ?? null : null,
     pdf: activePane.view === "doc" ? pdfPages[activePane.id] ?? null : null,
+    textSource: activePane.view === "doc" ? textPages[activePane.id] ?? null : null,
     // The Writer of the ACTIVE pane: the list or the open manuscript (saved content, and the draft apart from it).
     writer: activePane.view === "write" ? writerPages[activePane.id] ?? null : null,
     workspace: {
@@ -583,7 +588,7 @@ export function Shell() {
       },
       copilotOpen,
     },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, writerPages, tweaks, copilotOpen]);
+  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, textPages, writerPages, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
@@ -593,7 +598,7 @@ export function Shell() {
       case "library":
         return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
       case "doc":
-        return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onController={registerReaderController} />;
+        return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onTextContext={reportText} onController={registerReaderController} />;
       case "write":
         return <WriterView paneId={p.id} onContext={reportWriter} onController={registerWriterController} />;
       default:

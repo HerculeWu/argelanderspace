@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ReaderSession, useReaderSession } from "./ReaderSession";
 import { RetainedDrafts } from "./RetainedDrafts";
@@ -12,7 +12,7 @@ import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/d
 import { useWorkspace } from "../argelander/workspace";
 import { fetchDocDescription } from "../api/doc";
 import { onTextDocPublished } from "../api/ws";
-import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab } from "@argelanderspace/contracts";
+import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab, TextSourcePage } from "@argelanderspace/contracts";
 import { PdfReader } from "./PdfReader";
 import { autoFold, MIN_READING_COLUMN, useAutoFoldedPanels } from "./auto-fold";
 import { TextDocPane, TextPublishSync } from "./TextDocPane";
@@ -23,12 +23,14 @@ import { useActiveSectionId, useVisibleIds } from "../store";
 // The document reader, hosted as ArgelanderSpace's Doc pane. Which paper is shown
 // is driven by the shared workspace (so the Library's "open in Doc" works);
 // the in-pane switcher changes it too.
-export function DocPane({ paneId = 0, onContext, onPdfContext, onController }: {
+export function DocPane({ paneId = 0, onContext, onPdfContext, onTextContext, onController }: {
   /** The pane this Reader lives in; what it reports and the controller it registers are for that pane (Copilot ticket 18). */
   paneId?: number;
   onContext?: (paneId: number, page: ReaderPage | null) => void;
   /** The PDF Reader's page for the Copilot (ticket 20). */
   onPdfContext?: (paneId: number, page: PdfPage | null) => void;
+  /** A text Doc's source panel for the Copilot (ticket 29). */
+  onTextContext?: (paneId: number, page: TextSourcePage | null) => void;
   onController?: (paneId: number, controller: ReaderViewController | null) => void;
 } = {}) {
   const ws = useWorkspace();
@@ -40,12 +42,15 @@ export function DocPane({ paneId = 0, onContext, onPdfContext, onController }: {
   const bridge = useReaderPublisher(paneId, onContext, onController, () => current.current, pdfHandle);
   const pdfPublish = useRef(onPdfContext);
   pdfPublish.current = onPdfContext;
+  const textPublish = useRef(onTextContext);
+  textPublish.current = onTextContext;
+  const publishText = useCallback((page: TextSourcePage | null) => textPublish.current?.(paneId, page), [paneId]);
   const pdfBridge = useMemo<PdfBridge>(() => ({
     publish: (page) => pdfPublish.current?.(paneId, page),
     setHandle: (handle) => { pdfHandle.current = handle; },
   }), [paneId]);
   if (!id) return <div className="reader-root" data-ui="doc-empty"><div className="loading">{t("doc.empty")}</div></div>;
-  return <ReaderBridgeContext.Provider value={bridge}><PdfBridgeContext.Provider value={pdfBridge}><DocReadingEntry key={id} docId={id} /></PdfBridgeContext.Provider></ReaderBridgeContext.Provider>;
+  return <ReaderBridgeContext.Provider value={bridge}><PdfBridgeContext.Provider value={pdfBridge}><DocReadingEntry key={id} docId={id} publishText={publishText} /></PdfBridgeContext.Provider></ReaderBridgeContext.Provider>;
 }
 
 type DescriptionState =
@@ -53,7 +58,7 @@ type DescriptionState =
   | { phase: "error" }
   | { phase: "ready"; description: DocDescription };
 
-function DocReadingEntry({ docId }: { docId: string }) {
+function DocReadingEntry({ docId, publishText }: { docId: string; publishText: (page: TextSourcePage | null) => void }) {
   const { t } = useTranslation();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<DescriptionState>({ phase: "loading" });
@@ -68,7 +73,7 @@ function DocReadingEntry({ docId }: { docId: string }) {
   }, [bridge, docId, state.phase]);
   // A Doc without a LaTeX session (loading, load error, PDF) has no Reader page to report.
   useEffect(() => {
-    if (state.phase === "ready" && state.description.format === "latex") return;
+    if (state.phase === "ready" && (state.description.format === "latex" || state.description.format === "text")) return;
     bridge.setSession(docId, null);
   }, [bridge, docId, state]);
   useEffect(() => {
@@ -90,8 +95,8 @@ function DocReadingEntry({ docId }: { docId: string }) {
     case "latex":
       return <ReaderSession docId={docId}><SessionWorkspace /></ReaderSession>;
     case "text":
-      // The shared Reader on the last generated reading text; a text Doc's session is not offered to the Copilot yet.
-      return <TextDocPane key={docId} docId={docId} description={state.description} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace publish={false} afterPublish /></ReaderSession>} />;
+      // The shared Reader on the last generated reading text; its admitted epoch and the source panel are offered to the Copilot.
+      return <TextDocPane key={docId} docId={docId} description={state.description} onPage={publishText} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace format="text" afterPublish /></ReaderSession>} />;
     case "pdf":
       return <div className="reader-root" data-ui="pdf-doc" data-ui-key={docId}><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
   }
@@ -101,7 +106,7 @@ function DocReadingEntry({ docId }: { docId: string }) {
  * `afterPublish` (a text Doc): a sync failure after the server announced a new reading version is reported as exactly
  * that: published, but this view could not load it (the old text stays, nothing is rolled back).
  */
-function SessionWorkspace({ publish = true, afterPublish = false }: { publish?: boolean; afterPublish?: boolean } = {}) {
+function SessionWorkspace({ publish = true, afterPublish = false, format = "latex" }: { publish?: boolean; afterPublish?: boolean; format?: "latex" | "text" } = {}) {
   const ws = useWorkspace();
   const { state, controller } = useReaderSession();
   const { t } = useTranslation();
@@ -111,7 +116,7 @@ function SessionWorkspace({ publish = true, afterPublish = false }: { publish?: 
   useEffect(() => (afterPublish ? onTextDocPublished((message) => { if (message.doc_id === controller.docId) setPublishedSinceReady(true); }) : undefined), [afterPublish, controller]);
   useEffect(() => { if (state.phase === "ready") setPublishedSinceReady(false); }, [state.phase]);
   // The admitted epoch (never the mounted DOM) is what the Copilot reads; every state change is published.
-  useEffect(() => { if (publish) bridge.setSession(controller.docId, state); }, [bridge, controller, state, publish]);
+  useEffect(() => { if (publish) bridge.setSession(controller.docId, state, format); }, [bridge, controller, state, publish, format]);
   useEffect(() => () => { if (publish) bridge.setSession(controller.docId, null); }, [bridge, controller, publish]);
   // The banner's Retry (and the annotations panel's) is the same controller.retry the Copilot may press.
   useEffect(() => {

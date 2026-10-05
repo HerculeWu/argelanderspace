@@ -293,3 +293,19 @@ test("W5: a large-PDF acceptance card shows the resource warning with the file, 
   expect(JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body))).toMatchObject({ action: "accept_pdf_resource_warning", objectId: "00000000-0000-4000-8000-000000000101", baseRev: 0 });
   await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("Nothing was uploaded."));
 });
+
+test("a text reading replacement (ticket 29) shows the annotation impact and the values it is bound to; the click posts the card's own version", async () => {
+  const impact = { docId: "text-11111111-1111-4111-8111-111111111111", sourceRev: 5, publishedSourceRev: 4, annotations: 3, annotationsRev: 9, oldFingerprint: "a".repeat(64), newFingerprint: "b".repeat(64) };
+  current = snap("waiting-for-user", { confirmations: [{ id: CARD, runId: RUN, toolCallId: "call_1", action: "replace_text_reading", object: { kind: "doc", id: impact.docId }, label: impact.docId, impact, baseRev: 9, objectDigest: "d".repeat(64) }] });
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
+  const shown = ui("copilot-confirmation") as HTMLElement;
+  expect(shown.getAttribute("data-action")).toBe("replace_text_reading");
+  expect(shown.querySelector("h3")?.textContent).toContain(impact.docId);
+  expect(ui("copilot-confirmation-risk")?.textContent).toContain("3");
+  expect(ui("copilot-confirmation-basis")?.textContent).toContain("9");
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
+  const [, options] = calls("/confirmations/")[0] as [string, RequestInit];
+  expect(JSON.parse(String(options.body))).toEqual({ decision: "approve", viewId: context.viewId, action: "replace_text_reading", objectId: impact.docId, baseRev: 9 });
+});

@@ -183,52 +183,70 @@ const ReaderCoverageSchema = z
   })
   .strict();
 
+const readingCommon = {
+  docId: Id,
+  title: z.string().optional(),
+  /**
+   * What binds the parts together: the content fingerprint of the admitted epoch, the annotations revision of
+   * that same epoch, and (background reads only) whether the saved annotations belong to older content and are
+   * therefore not shown.
+   */
+  epoch: z
+    .object({
+      fingerprint: z.string().min(1),
+      annotationsRev: Count,
+      annotations: z.enum(["current", "stale"]),
+    })
+    .strict(),
+  entries: z.array(ReaderEntrySchema),
+  references: z.array(ReaderReferenceSchema),
+  /** Block id → reference ids it cites, including citations without an inline chip. */
+  citationsByBlock: z.record(z.string(), z.array(z.string())),
+  annotations: z.array(AnnotationSchema),
+  coverage: ReaderCoverageSchema,
+};
+const readingAuthors = {
+  authors: z.array(z.string()).optional(),
+  /** The author block the Reader shows: per author the 1-based affiliation numbers and email. */
+  authorDetails: z
+    .array(
+      z
+        .object({
+          name: z.string(),
+          affiliations: z.array(z.number().int()).optional(),
+          email: z.string().optional(),
+        })
+        .strict()
+    )
+    .optional(),
+  affiliations: z.array(z.string()).optional(),
+  email: z.string().optional(),
+};
+
 export const ReaderReadingSchema = z.discriminatedUnion("format", [
   z
     .object({
       format: z.literal("latex"),
-      docId: Id,
-      title: z.string().optional(),
-      /**
-       * What binds the parts together: the content fingerprint of the admitted epoch, the annotations revision of
-       * that same epoch, and (background reads only) whether the saved annotations belong to older content and are
-       * therefore not shown.
-       */
-      epoch: z
-        .object({
-          fingerprint: z.string().min(1),
-          annotationsRev: Count,
-          annotations: z.enum(["current", "stale"]),
-        })
-        .strict(),
+      ...readingCommon,
       latex: z
         .object({
-          authors: z.array(z.string()).optional(),
-          /** The author block the Reader shows: per author the 1-based affiliation numbers and email. */
-          authorDetails: z
-            .array(
-              z
-                .object({
-                  name: z.string(),
-                  affiliations: z.array(z.number().int()).optional(),
-                  email: z.string().optional(),
-                })
-                .strict()
-            )
-            .optional(),
-          affiliations: z.array(z.string()).optional(),
-          email: z.string().optional(),
+          ...readingAuthors,
           nPages: Count.optional(),
           arxivId: z.string().optional(),
           doi: z.string().optional(),
         })
         .strict(),
-      entries: z.array(ReaderEntrySchema),
-      references: z.array(ReaderReferenceSchema),
-      /** Block id → reference ids it cites, including citations without an inline chip. */
-      citationsByBlock: z.record(z.string(), z.array(z.string())),
-      annotations: z.array(AnnotationSchema),
-      coverage: ReaderCoverageSchema,
+    })
+    .strict(),
+  /**
+   * A text Doc's reading (copilot ticket 29): the same entries, bibliography and annotations of the shared Reader, with
+   * its own metadata: no LaTeX engine fields, and the source revision it was generated from (the published revision).
+   */
+  z
+    .object({
+      format: z.literal("text"),
+      ...readingCommon,
+      text: z.object({ ...readingAuthors, publishedSourceRev: Count }).strict(),
     })
     .strict(),
 ]);
@@ -284,9 +302,6 @@ export function buildReaderReading(input: {
 }): ReaderReading {
   const { file } = input;
   const ir = input.ir;
-  // The whole-reading representation is the LaTeX one; a text Doc gets its own with the text tools.
-  if (!isTexDocIr(ir))
-    throw new Error("buildReaderReading: a text document has no Reader reading yet");
   const digest = new Map(input.assets.map((asset) => [asset.imgPath, asset.sha256]));
   const asset = (path: string | undefined, width?: number, height?: number) =>
     path === undefined
@@ -435,31 +450,13 @@ export function buildReaderReading(input: {
   const annotations = input.stale ? [] : file.annotations;
   for (const annotation of annotations) count(annotation.body);
 
-  return {
-    format: "latex",
+  const common = {
     docId: ir.docId,
     ...(ir.title !== undefined ? { title: ir.title } : {}),
     epoch: {
       fingerprint: file.content_fingerprint,
       annotationsRev: file.rev,
-      annotations: input.stale ? "stale" : "current",
-    },
-    latex: {
-      ...(ir.meta.authors !== undefined ? { authors: ir.meta.authors } : {}),
-      ...(ir.meta.authorDetails !== undefined
-        ? {
-            authorDetails: ir.meta.authorDetails.map((author) => ({
-              name: author.name,
-              ...(author.affiliations !== undefined ? { affiliations: author.affiliations } : {}),
-              ...(author.email !== undefined ? { email: author.email } : {}),
-            })),
-          }
-        : {}),
-      ...(ir.meta.affiliations !== undefined ? { affiliations: ir.meta.affiliations } : {}),
-      ...(ir.meta.email !== undefined ? { email: ir.meta.email } : {}),
-      ...(ir.nPages !== undefined ? { nPages: ir.nPages } : {}),
-      ...(ir.source.arxiv_id !== undefined ? { arxivId: ir.source.arxiv_id } : {}),
-      ...(ir.source.doi !== undefined ? { doi: ir.source.doi } : {}),
+      annotations: (input.stale ? "stale" : "current") as "stale" | "current",
     },
     entries,
     references,
@@ -472,6 +469,36 @@ export function buildReaderReading(input: {
       annotations: annotations.length,
       assets: assetPaths.size,
       characters,
+    },
+  };
+  const authors = {
+    ...(ir.meta.authors !== undefined ? { authors: ir.meta.authors } : {}),
+    ...(ir.meta.authorDetails !== undefined
+      ? {
+          authorDetails: ir.meta.authorDetails.map((author) => ({
+            name: author.name,
+            ...(author.affiliations !== undefined ? { affiliations: author.affiliations } : {}),
+            ...(author.email !== undefined ? { email: author.email } : {}),
+          })),
+        }
+      : {}),
+    ...(ir.meta.affiliations !== undefined ? { affiliations: ir.meta.affiliations } : {}),
+    ...(ir.meta.email !== undefined ? { email: ir.meta.email } : {}),
+  };
+  if (!isTexDocIr(ir))
+    return {
+      format: "text",
+      ...common,
+      text: { ...authors, publishedSourceRev: ir.source.source_rev },
+    };
+  return {
+    format: "latex",
+    ...common,
+    latex: {
+      ...authors,
+      ...(ir.nPages !== undefined ? { nPages: ir.nPages } : {}),
+      ...(ir.source.arxiv_id !== undefined ? { arxivId: ir.source.arxiv_id } : {}),
+      ...(ir.source.doi !== undefined ? { doi: ir.source.doi } : {}),
     },
   };
 }
@@ -496,7 +523,7 @@ export type ReaderSelection = z.infer<typeof ReaderSelectionSchema>;
 const ReaderPageBase = z
   .object({
     docId: Id,
-    format: z.literal("latex"),
+    format: z.enum(["latex", "text"]),
     /** `ready`: the reading below is what the page shows. Otherwise the page keeps old text but offers no reading. */
     sync: z
       .object({
@@ -568,6 +595,8 @@ function checkReaderPage(
 ) {
   if (page.reading !== null && page.sync.phase !== "ready")
     ctx.addIssue({ code: "custom", message: "a reading exists only for an admitted epoch" });
+  if (page.reading !== null && page.reading.format !== page.format)
+    ctx.addIssue({ code: "custom", message: "the reading is of another format than the page" });
   if (!observation && page.readingOmitted !== undefined)
     ctx.addIssue({ code: "custom", message: "a view cannot publish an omitted reading" });
   if (observation && page.readingRef !== undefined)
@@ -595,7 +624,7 @@ export type ReaderPage = z.infer<typeof ReaderPageSchema>;
 export const ReaderContextSummarySchema = z
   .object({
     docId: Id,
-    format: z.literal("latex"),
+    format: z.enum(["latex", "text"]),
     phase: z.enum(["ready", "syncing", "error", "missing"]),
     fingerprint: z.string().nullable(),
     sections: Count,
@@ -680,6 +709,10 @@ export const ReaderViewActionSchema = z.discriminatedUnion("action", [
     .strict(),
   /** The Retry buttons of the sync/error banner, the load-error page and the annotations panel. */
   z.object({ action: z.literal("retry_sync"), docId: Id }).strict(),
+  /** A text Doc's own tabs (copilot ticket 29): the reading (Reader) or the Markdown source. File-level, never a position. */
+  z
+    .object({ action: z.literal("set_text_view"), docId: Id, view: z.enum(["reader", "source"]) })
+    .strict(),
   /** The PDF Reader's own controls (copilot ticket 20): pages are zero-based here. */
   ...PdfViewActionSchema.options,
 ]);
@@ -691,6 +724,7 @@ export const READER_VIEW_ACTIONS = [
   "set_panel",
   "set_right_tab",
   "retry_sync",
+  "set_text_view",
   ...PDF_VIEW_ACTIONS,
 ] as const;
 
@@ -799,6 +833,7 @@ export function copilotContextObjects(context: {
   library?: { selectedRefId: string | null } | null;
   reader?: { docId: string } | null;
   pdf?: { docId: string } | null;
+  textSource?: { docId: string } | null;
   writer?: {
     editor: {
       manuscriptId: string;
@@ -810,6 +845,7 @@ export function copilotContextObjects(context: {
   if (context.library?.selectedRefId) return [{ id: context.library.selectedRefId, rev: 0 }];
   if (context.reader) return [{ id: context.reader.docId, rev: 0 }];
   if (context.pdf) return [{ id: context.pdf.docId, rev: 0 }];
+  if (context.textSource) return [{ id: context.textSource.docId, rev: 0 }];
   // The manuscript an open Writer shows, at the revision it was captured at (the list names no one object).
   const editor = context.writer?.editor;
   if (editor)
@@ -831,10 +867,25 @@ export function copilotContextObjects(context: {
 export function readingKey(docId: string, fingerprint: string): string {
   return `${docId}:${fingerprint}`;
 }
-export function observationPage<T extends { reader?: ReaderPage | null }>(
-  page: T,
-  held: ReadonlySet<string> = new Set()
-): T {
+export function observationPage<
+  T extends {
+    reader?: ReaderPage | null;
+    textSource?: { markdown: string | null; omitted?: string } | null;
+  },
+>(source: T, held: ReadonlySet<string> = new Set()): T {
+  // A text source's whole text rides the task's own context only; a later observation names it, never repeats it.
+  const page: T =
+    source.textSource && source.textSource.markdown !== null
+      ? {
+          ...source,
+          textSource: {
+            ...source.textSource,
+            markdown: null,
+            omitted:
+              "the source text is in the task's context; call text read_source for the current one",
+          },
+        }
+      : source;
   if (!page.reader?.reading) return page;
   const { reading, readingOmitted: _omitted, readingRef: _ref, ...rest } = page.reader;
   const known = held.has(readingKey(reading.docId, reading.epoch.fingerprint));

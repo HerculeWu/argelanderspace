@@ -171,6 +171,43 @@ export function fitEnvelope(
   prompt: CopilotPrompt,
   room: number,
   ledger: ReadingLedger,
+  hardRoom: number = room,
+  forceOmit?: string,
+  ceiling?: number
+): FittedEnvelope | null {
+  const whole = fitReading(prompt, room, ledger, hardRoom, forceOmit, ceiling);
+  const text = (prompt.context as { textSource?: { markdown: string | null } | null }).textSource;
+  if (!text || text.markdown === null) return whole;
+  // A text Doc's page carries the editor's source beside the reading. It never decides the fate of the message: when
+  // the reading (or the page alone) does not fit with it, the source goes first, with a note that names where to read it.
+  const delivered = whole?.coverage?.status;
+  if (whole && (delivered === "complete" || delivered === "held") && !whole.reason) return whole;
+  if (whole && !prompt.context.reader?.reading && !whole.coverage) return whole;
+  const thin: CopilotPrompt = {
+    ...prompt,
+    context: {
+      ...prompt.context,
+      textSource: {
+        ...text,
+        markdown: null,
+        omitted: `the source (${(text as { characters?: number }).characters ?? "?"} characters) is NOT in this message: it did not fit the room left in the model's window; read it with text read_source (from 0, then the next from while it says partial) and never answer as if you had read it`,
+      },
+    } as unknown as CopilotPrompt["context"],
+  };
+  const lean = fitReading(thin, room, ledger, hardRoom, forceOmit, ceiling);
+  if (!lean) return whole;
+  if (!whole) return lean;
+  // both fit in some form: the one that delivers more of the reading
+  return (lean.coverage?.to ?? 0) > (whole.coverage?.to ?? 0) ||
+    lean.coverage?.status === "complete"
+    ? lean
+    : whole;
+}
+
+function fitReading(
+  prompt: CopilotPrompt,
+  room: number,
+  ledger: ReadingLedger,
   /** The most the history can hold at all: the held and the left-out forms, which are small, may use it up to here. */
   hardRoom: number = room,
   forceOmit?: string,

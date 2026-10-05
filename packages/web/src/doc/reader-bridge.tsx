@@ -62,7 +62,9 @@ export interface ReaderPanels {
 
 export interface ReaderBridge {
   /** The session's state, published whenever it changes. `null` when no LaTeX session is mounted. */
-  setSession: (docId: string, state: ReaderSessionState | null) => void;
+  setSession: (docId: string, state: ReaderSessionState | null, format?: "latex" | "text") => void;
+  /** A text Doc's own tabs (copilot ticket 29): Reader or Markdown source. */
+  setTextView: (setView: ((view: "reader" | "source") => void) | null) => void;
   setLive: (live: ReaderLive | null) => void;
   /** The Doc's description could not be loaded: there is no session, and the page says so (an error, with its reason). */
   setFailure: (docId: string | null) => void;
@@ -73,6 +75,7 @@ export interface ReaderBridge {
 }
 const NONE: ReaderBridge = {
   setSession() {},
+  setTextView() {},
   setLive() {},
   setFailure() {},
   setPanels() {},
@@ -119,6 +122,8 @@ export function useReaderPublisher(
 ) {
   const parts = useRef({
     docId: null as string | null,
+    format: "latex" as "latex" | "text",
+    textView: null as ((view: "reader" | "source") => void) | null,
     failure: null as string | null,
     state: null as ReaderSessionState | null,
     live: null as ReaderLive | null,
@@ -151,8 +156,8 @@ export function useReaderPublisher(
       }
       if (state && p.docId) {
         // Rebuilt only for a new admitted epoch (the accepted read is replaced on every sync).
-        // The Copilot's whole-reading representation is the LaTeX one; a text Doc's session is never published here.
-        if (state.phase === "ready" && state.accepted && state.accepted.ir.source.type === "latex") {
+        // The whole-reading representation of the admitted epoch: LaTeX or text (copilot ticket 29), by what was admitted.
+        if (state.phase === "ready" && state.accepted) {
           const ir = state.accepted.ir;
           if (p.reading?.accepted !== state.accepted)
             p.reading = {
@@ -168,7 +173,7 @@ export function useReaderPublisher(
         const drafts = draftsOf(state);
         page = {
           docId: p.docId,
-          format: "latex",
+          format: p.format,
           sync: {
             phase: state.phase === "initial" ? "syncing" : state.phase,
             ...(state.phase !== "ready" && state.reason ? { reason: state.reason } : {}),
@@ -203,10 +208,14 @@ export function useReaderPublisher(
       publish();
     };
     return {
-      setSession: (id, state) => {
+      setSession: (id, state, format = "latex") => {
         p.docId = state ? id : null;
+        p.format = format;
         p.state = state;
         now();
+      },
+      setTextView: (setView) => {
+        p.textView = setView;
       },
       setLive: (live) => {
         const before = p.live;
@@ -250,10 +259,17 @@ export function useReaderPublisher(
           p.retry();
           return { ok: true };
         }
+        if (action.action === "set_text_view") {
+          if (!p.textView) return { ok: false, detail: "unavailable" };
+          p.textView(action.view);
+          return { ok: true };
+        }
         const handle = p.handle;
         if (!handle) return { ok: false, detail: "unavailable" };
         switch (action.action) {
           case "navigate": {
+            // a text Doc's Reader may be behind its source tab: showing the place means showing the reading
+            p.textView?.("reader");
             const result = handle.navigate(action.anchor);
             return result === "ok" ? { ok: true } : { ok: false, detail: result };
           }

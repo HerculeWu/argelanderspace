@@ -33,6 +33,7 @@ import {
   type PdfTextPartInput,
   pdfGeometryLastChar,
   pdfRectsWithinSlice,
+  TEXT_PDF_IMAGE_MAX_PIXELS,
 } from "@argelanderspace/contracts";
 import {
   counted,
@@ -226,14 +227,41 @@ export function imageScale(width: number, height: number, longEdge: number): num
   return Math.min(byEdge, byPixels);
 }
 
+/** What the image converter of one request records (and the region it cuts out of the rendered page, if any). */
+interface Captured {
+  image?: { width: number; height: number };
+  crop?: { x: number; y: number; width: number; height: number };
+}
+
+/** The pixels of a region (fractions of the rendered, visible page from its top-left); never empty, never outside. */
+export function cropRgba(
+  image: RgbaImage,
+  region: { x: number; y: number; width: number; height: number }
+): RgbaImage {
+  const x0 = Math.min(image.width - 1, Math.max(0, Math.floor(region.x * image.width + 1e-9)));
+  const y0 = Math.min(image.height - 1, Math.max(0, Math.floor(region.y * image.height + 1e-9)));
+  const x1 = Math.min(
+    image.width,
+    Math.max(x0 + 1, Math.ceil((region.x + region.width) * image.width - 1e-9))
+  );
+  const y1 = Math.min(
+    image.height,
+    Math.max(y0 + 1, Math.ceil((region.y + region.height) * image.height - 1e-9))
+  );
+  const width = x1 - x0;
+  const height = y1 - y0;
+  const data = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row++) {
+    const from = ((y0 + row) * image.width + x0) * 4;
+    data.set(image.data.subarray(from, from + width * 4), row * width * 4);
+  }
+  return { width, height, data };
+}
+
 async function withEngine<T>(
   bytes: Buffer,
   expectedHash: string,
-  work: (
-    engine: Engine,
-    document: Doc,
-    captured: { image?: { width: number; height: number } }
-  ) => Promise<T>
+  work: (engine: Engine, document: Doc, captured: Captured) => Promise<T>
 ): Promise<T> {
   if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > PDF_MAX_BYTES)
     throw new PdfMaterialInputError("PDF is empty or larger than 50 MiB");
@@ -247,12 +275,13 @@ async function withEngine<T>(
         const snapshot = Buffer.from(bytes);
         if (sha256(snapshot) !== expectedHash) throw new PdfMaterialContentError();
         const deadline = Date.now() + 60_000;
-        const captured: { image?: { width: number; height: number } } = {};
+        const captured: Captured = {};
         const engine = await createPdfiumEngine<Engine>((getData, type) => {
           if (type !== "image/png") throw new Error("PNG only");
           const raw = getData();
-          captured.image = { width: raw.width, height: raw.height };
-          return Promise.resolve(encodePng(raw));
+          const out = captured.crop ? cropRgba(raw, captured.crop) : raw;
+          captured.image = { width: out.width, height: out.height };
+          return Promise.resolve(encodePng(out));
         }, deadline);
         let document: Doc | undefined;
         try {
@@ -526,6 +555,78 @@ export async function renderPdfPageImage(
       height: captured.image.height,
       hasTextLayer: runs.length > 0,
       scale,
+    };
+  });
+}
+
+export interface PdfRegionImage {
+  contentSha256: string;
+  pageIndex: number;
+  pageCount: number;
+  png: Buffer;
+  width: number;
+  height: number;
+  scale: number;
+  /** The region as asked (fractions of the visible page); null: the whole page. */
+  region: { x: number; y: number; width: number; height: number } | null;
+}
+
+/**
+ * One page, or one region of it, as a PNG for a text Doc's image asset (copilot ticket 29), from the same verified
+ * snapshot and through the same single PDFium queue as every other page read. The scale gives the REGION's longer edge
+ * `longEdge` pixels as far as the pixel budget of the whole rendered page allows (a tiny region of a big page is
+ * rendered at the best scale the budget gives, never refused); the region is then cut out of the render. The page and
+ * the region are only parameters of this one call: nothing about them is stored.
+ */
+export async function renderPdfRegionImage(
+  bytes: Buffer,
+  expectedHash: string,
+  pageIndex: number,
+  region: { x: number; y: number; width: number; height: number } | undefined,
+  longEdge: number
+): Promise<PdfRegionImage> {
+  if (!Number.isInteger(pageIndex) || pageIndex < 0)
+    throw new PdfMaterialInputError("pageIndex must be a zero-based non-negative integer");
+  if (!Number.isInteger(longEdge) || longEdge < 1)
+    throw new PdfMaterialInputError("longEdge must be a positive integer");
+  return withEngine(bytes, expectedHash, async (engine, document, captured) => {
+    if (pageIndex >= document.pageCount)
+      throw new PdfMaterialInputError(
+        `pageIndex is outside 0..${document.pageCount - 1} (pages are zero-based)`
+      );
+    const page = document.pages[pageIndex];
+    if (
+      !page ||
+      !Number.isFinite(page.size.width) ||
+      !Number.isFinite(page.size.height) ||
+      page.size.width <= 0 ||
+      page.size.height <= 0
+    )
+      throw new Error("PDF page geometry is invalid");
+    const rect = region ?? { x: 0, y: 0, width: 1, height: 1 };
+    const regionEdge = Math.max(rect.width * page.size.width, rect.height * page.size.height);
+    const byEdge = longEdge / regionEdge;
+    const byPixels = Math.sqrt(TEXT_PDF_IMAGE_MAX_PIXELS / (page.size.width * page.size.height));
+    const scale = Math.min(byEdge, byPixels);
+    captured.crop = region ? rect : undefined;
+    const png = await engine
+      .renderPage(document, page, {
+        scaleFactor: scale,
+        dpr: 1,
+        imageType: "image/png",
+        withAnnotations: false,
+      })
+      .toPromise();
+    if (!captured.image) throw new Error("PDF page image was not produced");
+    return {
+      contentSha256: expectedHash,
+      pageIndex,
+      pageCount: document.pageCount,
+      png,
+      width: captured.image.width,
+      height: captured.image.height,
+      scale,
+      region: region ?? null,
     };
   });
 }

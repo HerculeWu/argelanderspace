@@ -298,9 +298,29 @@
         "empty": "The file is empty.",
         "bad_name": "The file name is not allowed.",
         "too_many_assets": "This document already has the largest number of images.",
-        "other": "The server could not store the image."
+        "other": "The server could not store the image.",
+        "document_changed": "The source PDF is not the original this text was made from.",
+        "bad_source_pdf": "The source must be a PDF of the same literature entry.",
+        "invalid_request": "The page or region is not valid.",
+        "resource": "PDF processing is busy or short of memory; try again later.",
+        "render_failed": "The page could not be rendered.",
+        "unavailable": "PDF pages are not available."
       },
-      "assetsRestored": "{{name}} was already in the list, but its file was missing or damaged. It has been written again."
+      "assetsRestored": "{{name}} was already in the list, but its file was missing or damaged. It has been written again.",
+      "fromPdf": "Add from source PDF",
+      "pdfPicker": {
+        "title": "Source PDF",
+        "add": "Add as image",
+        "page": "Page",
+        "of": "of {{count}}",
+        "wholePage": "Whole page",
+        "regionChosen": "Selected region",
+        "clear": "Whole page",
+        "previewAlt": "Page {{page}} of the source PDF",
+        "changed": "The source PDF is not the original this text was made from.",
+        "error": "The page could not be shown.",
+        "help": "Drag on the page to choose a region. The picture becomes an independent image; the PDF is not changed."
+      }
     },
     "drafts": {
       "summary": "Retained drafts (copyable; re-select a location and reuse the draft text)",
@@ -1476,7 +1496,16 @@
         "set_writer_panel": "Fold or open Writer panel",
         "set_writer_tab": "Switch Writer tab",
         "dismiss_template_warning": "Close template warning",
-        "retry_manuscript_list": "Retry manuscript list"
+        "retry_manuscript_list": "Retry manuscript list",
+        "create": "Create text document",
+        "read_source": "Read text source",
+        "save_source": "Save text source",
+        "add_asset": "Add image",
+        "add_pdf_image": "Add image from PDF",
+        "validate": "Validate text",
+        "generate": "Generate reading text",
+        "open_source_pdf": "Open source PDF",
+        "set_text_view": "Switch text tab"
       },
       "status": {
         "ok": "Applied",
@@ -1529,7 +1558,9 @@
       "metaManuscript": "{{id}} · manuscript v{{rev}}",
       "expiredManuscript": "The manuscript changed before your decision. Nothing was deleted.",
       "failedManuscript": "The outcome is not known: your decision may or may not have reached the service. Check the manuscript list before trying again.",
-      "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?"
+      "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?",
+      "replaceText": "Replace the reading text of “{{name}}”",
+      "unreadableDoc": "The check made when you confirmed could not read this document's data (annotations, text or images). Nothing was replaced and nothing was changed."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1623,7 +1654,8 @@
       "heldGone": "Not repeated: it was sent earlier, but that part has since been taken out of the conversation.",
       "gap": "{{unit}} {{id}} needs {{bytes}} bytes, more than the window leaves: nothing was returned",
       "batchWithdrawn": "{{unit}} {{from}}–{{to}} of {{total}} withdrawn: the provider rejected the request as too large; not read",
-      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains"
+      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains",
+      "characters": "characters"
     }
   }
 }

@@ -45,3 +45,13 @@
 .text-assets-empty { margin: 0; color: var(--text-faint); font-size: var(--fs-sm); }
 .text-assets-actions { display: flex; gap: var(--gap); align-items: center; }
 .text-regeneration-basis { margin: 0; color: var(--text-faint); font-size: var(--fs-xs); }
+
+/* Add image from the source PDF (copilot ticket 29; approved prototype A's source PDF dialog: page, region, add) */
+.text-pdf-picker { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
+.text-pdf-picker-bar { display: flex; align-items: center; gap: var(--gap); flex-wrap: wrap; font-size: var(--fs-sm); }
+.text-pdf-picker-bar input[type="number"] { width: 72px; }
+.text-pdf-picker-frame { position: relative; align-self: center; max-width: 100%; max-height: min(52vh, 520px); overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); cursor: crosshair; touch-action: none; user-select: none; }
+.text-pdf-picker-frame img { display: block; max-width: 100%; max-height: min(52vh, 520px); width: auto; height: auto; }
+.text-pdf-picker-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--surface-2); color: var(--text-faint); font-size: var(--fs-sm); }
+.text-pdf-picker-region { position: absolute; border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); pointer-events: none; }
+.text-pdf-picker-help { color: var(--text-faint); font-size: var(--fs-xs); }

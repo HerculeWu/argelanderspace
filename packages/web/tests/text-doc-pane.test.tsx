@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DocDescription, TextSourceDto } from "@argelanderspace/contracts";
+import type { DocDescription, TextSourceDto, TextSourcePage } from "@argelanderspace/contracts";
+import { ReaderBridgeContext, type ReaderBridge } from "../src/doc/reader-bridge";
 import { EditorView } from "@codemirror/view";
 import { TextDocPane } from "../src/doc/TextDocPane";
 import { confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
@@ -38,6 +39,9 @@ interface Backend {
   /** the next POST .../source/assets answer (default: accept as a PNG named after the file) */
   assetAnswer?: (url: string) => Response;
   assetPosts: { url: string; type: string | null; size: number }[];
+  /** the bodies of POST .../source/assets/from-pdf (ticket 29) and the next answer (default: add a PNG) */
+  pdfPosts: Record<string, unknown>[];
+  pdfAnswer?: () => Response;
 }
 let backend: Backend;
 const dto = (): TextSourceDto => ({
@@ -76,6 +80,16 @@ function installBackend() {
       backend.rev += 1;
       return json({ source: dto(), asset, reused: false, restored: false }, 201);
     }
+    if (url.startsWith(`/api/paper/${PDF}/pdf/pages?`)) return json({ page_count: 3 });
+    if (url.startsWith(`/api/paper/${PDF}/pdf/pages/`)) return new Response(new Uint8Array([1]), { status: 200, headers: { "Content-Type": "image/png" } });
+    if (url === `/api/paper/${DOC}/source/assets/from-pdf` && method === "POST") {
+      backend.pdfPosts.push(JSON.parse(String(init?.body)));
+      if (backend.pdfAnswer) return backend.pdfAnswer();
+      const asset = { name: "p2-region-0123abcd.png", sha256: "d".repeat(64), byte_length: 900, media_type: "image/png" as const, width: 300, height: 200 };
+      backend.assets = [...backend.assets, asset];
+      backend.rev += 1;
+      return json({ source: dto(), asset, reused: false, restored: false }, 201);
+    }
     if (url === `/api/paper/${DOC}/source/validate` && backend.validate) return backend.validate();
     if (url === `/api/paper/${DOC}/source/validate`) return json({ sourceRev: backend.rev, valid: true, diagnostics: [], stats: { sections: 2, paragraphs: 3, lists: 1 } });
     if (url === `/api/paper/${DOC}/source/generate`) {
@@ -98,6 +112,12 @@ const description = (over: Partial<TextDescription> = {}): TextDescription => ({
   ...over,
 });
 const opened: string[] = [];
+const pages: (TextSourcePage | null)[] = [];
+const viewHandles: (((view: "reader" | "source") => void) | null)[] = [];
+const stubBridge: ReaderBridge = {
+  setSession() {}, setLive() {}, setFailure() {}, setPanels() {}, setHandle() {}, setRetry() {},
+  setTextView: (setView) => { viewHandles.push(setView); },
+};
 function Harness({ withPdf = false }: { withPdf?: boolean }) {
   const workspace: Workspace = {
     papers: [DOC], currentDoc: DOC, setCurrentDoc: () => {}, openDoc: (id) => { if (id) opened.push(id); },
@@ -105,7 +125,9 @@ function Harness({ withPdf = false }: { withPdf?: boolean }) {
     tweaks: { theme: "dark", accent: "azure", density: "regular", labels: true },
   };
   return <WorkspaceProvider value={workspace}>
-    <TextDocPane docId={DOC} description={description(withPdf ? { source_pdf: { doc_id: PDF, sha256: "b".repeat(64) } } : {})} reader={<div data-testid="reader-stub">reader</div>} />
+    <ReaderBridgeContext.Provider value={stubBridge}>
+      <TextDocPane docId={DOC} onPage={(page) => { pages.push(page); }} description={description(withPdf ? { source_pdf: { doc_id: PDF, sha256: "b".repeat(64) } } : {})} reader={<div data-testid="reader-stub">reader</div>} />
+    </ReaderBridgeContext.Provider>
   </WorkspaceProvider>;
 }
 const cm = (c: HTMLElement) => {
@@ -136,8 +158,10 @@ const posts = (kind: "generate" | "validate") => backend.log.filter((l) => l.sta
 const stopSelection = (e: Event) => e.stopImmediatePropagation();
 beforeEach(() => {
   document.addEventListener("selectionchange", stopSelection, true);
-  backend = { rev: 0, markdown: "", log: [], puts: [], generated: false, publishedRev: null, pdfOk: true, assets: [], assetPosts: [] };
+  backend = { rev: 0, markdown: "", log: [], puts: [], generated: false, publishedRev: null, pdfOk: true, assets: [], assetPosts: [], pdfPosts: [] };
   opened.length = 0;
+  pages.length = 0;
+  viewHandles.length = 0;
   installBackend();
 });
 afterEach(() => {
@@ -592,5 +616,131 @@ describe("text Doc pane: image assets (ticket 27)", () => {
     const rows = view.container.querySelectorAll('[data-ui="text-source-diagnostic"]');
     expect(rows[0]?.textContent).toContain("图片列表中没有名为“nowhere-1.png”的图片");
     expect(rows[1]?.textContent).toContain("与表格中的另一单元格重叠");
+  });
+});
+
+
+describe("text Doc pane for the Copilot (ticket 29)", () => {
+  const last = () => pages[pages.length - 1] ?? null;
+
+  it("publishes the source panel's page: the editor's CURRENT text, marked unsaved while it differs from the saved source", async () => {
+    backend.markdown = "# Saved\n";
+    backend.rev = 3;
+    const view = await ready(true);
+    await waitFor(() => expect(last()?.phase).toBe("ready"));
+    expect(last()).toMatchObject({ docId: DOC, view: "source", rev: 3, save: "saved", unsaved: false, markdown: "# Saved\n", generated: false, publishedSourceRev: null, sourcePdf: { doc_id: PDF } });
+    typeText(view.container, "# Typed but not saved\n");
+    await waitFor(() => expect(last()).toMatchObject({ unsaved: true, markdown: "# Typed but not saved\n", rev: 3, save: "dirty" }));
+    // saved by the autosave: the same text is now the saved one
+    await waitFor(() => expect(last()).toMatchObject({ unsaved: false, rev: 4, save: "saved" }), { timeout: 4000 });
+    view.unmount();
+    expect(last()).toBeNull();
+  });
+
+  it("a longer text is not carried inline and says so; the page never pretends it is complete", async () => {
+    backend.markdown = "x".repeat(100_001);
+    await ready();
+    await waitFor(() => expect(last()?.phase).toBe("ready"));
+    expect(last()).toMatchObject({ markdown: null, characters: 100_001 });
+    expect(last()?.omitted).toContain("read_source");
+  });
+
+  it("the Copilot's set_text_view presses the same tabs the user does", async () => {
+    backend.generated = true;
+    backend.publishedRev = 0;
+    const view = await ready();
+    const setView = viewHandles.filter(Boolean).pop()!;
+    act(() => setView("reader"));
+    expect(ui(view.container, "text-reader-panel")?.hidden).toBe(false);
+    expect(ui(view.container, "text-source-panel")?.hidden).toBe(true);
+    act(() => setView("source"));
+    expect(ui(view.container, "text-source-panel")?.hidden).toBe(false);
+    await waitFor(() => expect(last()?.view).toBe("source"));
+  });
+
+  describe("add image from the source PDF", () => {
+    const open = async () => {
+      const view = await ready(true);
+      fireEvent.click(ui(view.container, "text-source-assets")!);
+      await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset-from-pdf"]')).toBeTruthy());
+      fireEvent.click(document.querySelector('[data-ui="text-source-asset-from-pdf"]')!);
+      await waitFor(() => expect(document.querySelector('[data-ui="text-pdf-picker-count"]')?.textContent).toContain("3"));
+      return view;
+    };
+    const frame = () => document.querySelector<HTMLElement>('[data-ui="text-pdf-picker-preview"]')!;
+    const loaded = () => fireEvent.load(frame().querySelector("img")!);
+    const drag = (from: [number, number], to: [number, number]) => {
+      frame().getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 100, right: 200, bottom: 100, x: 0, y: 0, toJSON() {} }) as DOMRect;
+      fireEvent.pointerDown(frame(), { clientX: from[0], clientY: from[1], pointerId: 1 });
+      fireEvent.pointerMove(frame(), { clientX: to[0], clientY: to[1], pointerId: 1 });
+      fireEvent.pointerUp(frame(), { clientX: to[0], clientY: to[1], pointerId: 1 });
+    };
+    const add = () => fireEvent.click(document.querySelector('[data-ui="add-text-pdf-image"]')!);
+
+    it("is offered only with a source PDF that still exists, and not for a text without one", async () => {
+      const bare = await ready(false);
+      fireEvent.click(ui(bare.container, "text-source-assets")!);
+      expect(document.querySelector('[data-ui="text-source-asset-from-pdf"]')).toBeNull();
+      bare.unmount();
+      backend.pdfOk = false;
+      const gone = await ready(true);
+      fireEvent.click(ui(gone.container, "text-source-assets")!);
+      await waitFor(() => expect(document.querySelector<HTMLButtonElement>('[data-ui="text-source-asset-from-pdf"]')?.disabled).toBe(true));
+    });
+
+    it("adds a whole page by default: one-based on screen, zero-based on the wire, with the saved revision and the PDF's hash", async () => {
+      await open();
+      const input = document.querySelector<HTMLInputElement>('[data-ui="text-pdf-picker-page"]')!;
+      fireEvent.change(input, { target: { value: "2" } });
+      loaded();
+      expect(document.querySelector('[data-ui="text-pdf-picker-scope"]')?.textContent).toBe("整页");
+      add();
+      await waitFor(() => expect(backend.pdfPosts).toHaveLength(1));
+      expect(backend.pdfPosts[0]).toEqual({ expectedRev: 0, sha256: "b".repeat(64), pageIndex: 1 });
+      // back in the assets list with the new independent asset
+      await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset"]')?.textContent).toContain("p2-region-0123abcd.png"));
+      expect(document.querySelector('[data-ui="text-pdf-picker"]')).toBeNull();
+    });
+
+    it("a dragged region is sent in fractions of the visible page; a tiny drag is no region; clearing returns to the whole page", async () => {
+      await open();
+      loaded();
+      drag([20, 10], [120, 60]);
+      expect(document.querySelector('[data-ui="text-pdf-picker-scope"]')?.textContent).toBe("已选区域");
+      const region = document.querySelector<HTMLElement>('[data-ui="text-pdf-picker-region"]')!;
+      expect(region.style.left).toBe("10%");
+      expect(region.style.width).toBe("50%");
+      add();
+      await waitFor(() => expect(backend.pdfPosts).toHaveLength(1));
+      expect(backend.pdfPosts[0]).toMatchObject({ pageIndex: 0, region: { x: 0.1, y: 0.1, width: 0.5, height: 0.5 } });
+    });
+
+    it("a tiny drag selects nothing and the add is the whole page", async () => {
+      await open();
+      loaded();
+      drag([20, 10], [20.2, 10.1]);
+      expect(document.querySelector('[data-ui="text-pdf-picker-region"]')).toBeNull();
+      add();
+      await waitFor(() => expect(backend.pdfPosts).toHaveLength(1));
+      expect(backend.pdfPosts[0]).not.toHaveProperty("region");
+    });
+
+    it("a refusal keeps the picker open with its reason and adds nothing", async () => {
+      backend.pdfAnswer = () => json({ detail: "document changed", code: "document_changed" }, 409);
+      await open();
+      loaded();
+      add();
+      await waitFor(() => expect(document.querySelector('[data-ui="text-pdf-picker-message"]')?.textContent).toContain("来源 PDF 不是生成此文本时的原件"));
+      expect(document.querySelector('[data-ui="text-pdf-picker"]')).toBeTruthy();
+      expect(backend.assets).toHaveLength(0);
+    });
+
+    it("the Add button waits until the preview has loaded", async () => {
+      const view = await open();
+      expect(document.querySelector<HTMLButtonElement>('[data-ui="add-text-pdf-image"]')?.disabled).toBe(true);
+      loaded();
+      expect(document.querySelector<HTMLButtonElement>('[data-ui="add-text-pdf-image"]')?.disabled).toBe(false);
+      void view;
+    });
   });
 });

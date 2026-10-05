@@ -60,7 +60,9 @@ export function mountCopilotRoutes(
           ? 409
           : ["capabilities", "capacity", "invalid_input"].includes(code)
             ? 400
-            : 503;
+            : code === "unreadable"
+              ? 500
+              : 503;
     return c.json(
       { code, detail: `copilot: ${code}`, retryable: !["not_found", "capacity"].includes(code) },
       status
