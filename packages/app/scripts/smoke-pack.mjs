@@ -49,7 +49,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import { homedir, tmpdir } from "node:os";
+import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkPackContents } from "./pack-contents.mjs";
@@ -64,6 +64,17 @@ if (argv.includes("--private-net") && !process.env.ARGELANDER_SMOKE_NETNS) {
     { stdio: "inherit", env: { ...process.env, ARGELANDER_SMOKE_NETNS: "1" } }
   );
   process.exit(r.status ?? 1);
+}
+if (argv.includes("--private-net")) {
+  // proven, not assumed: inside the namespace only loopback interfaces may exist
+  const external = Object.entries(networkInterfaces()).filter(([, list]) =>
+    (list ?? []).some((a) => !a.internal)
+  );
+  if (external.length > 0)
+    throw new Error(
+      `--private-net: not in a private network namespace (${external.map(([n]) => n).join(", ")})`
+    );
+  console.log("network: private namespace (unshare -rn), loopback only");
 }
 const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 const keep = argv.includes("--keep");
@@ -429,6 +440,8 @@ if (mutateLoader) {
   const text = readFileSync(installedBundle, "utf8");
   const needle = "      }),\n      resourceLoader\n    });\n    state.session = session;";
   if (!text.includes(needle)) throw new Error("mutation point not found in the installed bundle");
+  // unlink first: the installed file may be a hard link into the real pnpm store, which must never be rewritten
+  rmSync(installedBundle);
   writeFileSync(
     installedBundle,
     text.replace(needle, "      })\n    });\n    state.session = session;")
