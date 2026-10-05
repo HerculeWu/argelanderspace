@@ -21,10 +21,13 @@ function floatKind(t: string): CardKind | null {
 // the default) | Annotations (the doc's annotations, with a count badge).
 // Creating an annotation never auto-switches the tab — feedback is the block
 // marker, the popover's saved state, and the badge count.
-export function RightPanel() {
+export function RightPanel({ tab: controlledTab, onTab }: { tab?: "refs" | "annotations"; onTab?: (tab: "refs" | "annotations") => void } = {}) {
   const { state } = useReaderSession();
   const { t } = useTranslation();
-  const [tab, setTab] = useState<"refs" | "annotations">("refs");
+  // The tab may be owned by the Reader page (so the Copilot can set it); alone, it keeps its own.
+  const [ownTab, setOwnTab] = useState<"refs" | "annotations">("refs");
+  const tab = controlledTab ?? ownTab;
+  const setTab = (next: "refs" | "annotations") => { setOwnTab(next); onTab?.(next); };
   const annCount = useAnnotations().annotations.length;
   return (
     <div className="right" data-ui="latex-reference-annotation-panel">

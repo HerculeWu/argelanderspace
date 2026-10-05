@@ -11,19 +11,29 @@ import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchDocDescription } from "../api/doc";
-import type { DocDescription } from "@argelanderspace/contracts";
+import type { DocDescription, ReaderPage, ReaderPanel, ReaderRightTab } from "@argelanderspace/contracts";
 import { PdfReader } from "./PdfReader";
 import { ActionButton } from "../ui";
+import { ReaderBridgeContext, type ReaderViewController, useReaderBridge, useReaderPublisher } from "./reader-bridge";
+import { useActiveSectionId, useVisibleIds } from "../store";
 
 // The document reader, hosted as ArgelanderSpace's Doc pane. Which paper is shown
 // is driven by the shared workspace (so the Library's "open in Doc" works);
 // the in-pane switcher changes it too.
-export function DocPane() {
+export function DocPane({ paneId = 0, onContext, onController }: {
+  /** The pane this Reader lives in; what it reports and the controller it registers are for that pane (Copilot ticket 18). */
+  paneId?: number;
+  onContext?: (paneId: number, page: ReaderPage | null) => void;
+  onController?: (paneId: number, controller: ReaderViewController | null) => void;
+} = {}) {
   const ws = useWorkspace();
   const { t } = useTranslation();
   const id = ws.currentDoc;
+  const current = useRef(id);
+  current.current = id;
+  const bridge = useReaderPublisher(paneId, onContext, onController, () => current.current);
   if (!id) return <div className="reader-root" data-ui="doc-empty"><div className="loading">{t("doc.empty")}</div></div>;
-  return <DocReadingEntry key={id} docId={id} />;
+  return <ReaderBridgeContext.Provider value={bridge}><DocReadingEntry key={id} docId={id} /></ReaderBridgeContext.Provider>;
 }
 
 type DescriptionState =
@@ -35,6 +45,20 @@ function DocReadingEntry({ docId }: { docId: string }) {
   const { t } = useTranslation();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<DescriptionState>({ phase: "loading" });
+  const bridge = useReaderBridge();
+  // The load-error page's Retry is offered to the Copilot for as long as that page is shown.
+  useEffect(() => {
+    if (state.phase !== "error") return;
+    bridge.setRetry(() => setAttempt((current) => current + 1));
+    // the page says the Doc failed to load (an error with its reason), like the sync banner does
+    bridge.setFailure(docId);
+    return () => { bridge.setRetry(null); bridge.setFailure(null); };
+  }, [bridge, docId, state.phase]);
+  // A Doc without a LaTeX session (loading, load error, PDF) has no Reader page to report.
+  useEffect(() => {
+    if (state.phase === "ready" && state.description.format === "latex") return;
+    bridge.setSession(docId, null);
+  }, [bridge, docId, state]);
   useEffect(() => {
     const abort = new AbortController();
     setState({ phase: "loading" });
@@ -62,7 +86,17 @@ function SessionWorkspace() {
   const ws = useWorkspace();
   const { state, controller } = useReaderSession();
   const { t } = useTranslation();
+  const bridge = useReaderBridge();
   const ir = state.accepted?.ir;
+  // The admitted epoch (never the mounted DOM) is what the Copilot reads; every state change is published.
+  useEffect(() => { bridge.setSession(controller.docId, state); }, [bridge, controller, state]);
+  useEffect(() => () => bridge.setSession(controller.docId, null), [bridge, controller]);
+  // The banner's Retry (and the annotations panel's) is the same controller.retry the Copilot may press.
+  useEffect(() => {
+    if (state.phase === "ready") return;
+    bridge.setRetry(controller.retry);
+    return () => bridge.setRetry(null);
+  }, [bridge, controller, state.phase]);
   return <div className="reader-session" data-ui="latex-session" data-ui-key={controller.docId}>
     {state.phase !== "ready" && <div className="reader-sync-status" role="status" data-ui="latex-sync-status">
       {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
@@ -89,8 +123,30 @@ function DocWorkspace({
   const store = useStore();
   const ws = useWorkspace();
   const { t } = useTranslation();
-  const [collapsedLeft, setCollapsedLeft] = useState(false);
-  const [collapsedRight, setCollapsedRight] = useState(false);
+  // The two panels fold on their own when the pane is too narrow to keep a reading column (see autoFold); what the
+  // user (or the Copilot) sets by hand wins until the pane's width class changes. The folds shown are the effective ones.
+  const mainRef = useRef<HTMLDivElement>(null);
+  const width = useElementWidth(mainRef);
+  const auto = autoFold(width);
+  const [manual, setManual] = useState<{ left: boolean | null; right: boolean | null; auto: { left: boolean; right: boolean } }>({ left: null, right: null, auto });
+  const sameAuto = manual.auto.left === auto.left && manual.auto.right === auto.right;
+  useEffect(() => {
+    // a new width class gives the layout back to the automatic choice
+    if (!sameAuto) setManual({ left: null, right: null, auto });
+  }, [sameAuto, auto.left, auto.right]);
+  const collapsedLeft = manual.left ?? auto.left;
+  const collapsedRight = manual.right ?? auto.right;
+  const setCollapsedLeft = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, left: typeof value === "function" ? value(m.left ?? m.auto.left) : value }));
+  const setCollapsedRight = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, right: typeof value === "function" ? value(m.right ?? m.auto.right) : value }));
+  // Owned here (not by the right panel) so the Copilot's tab control is the user's own tab control.
+  const [rightTab, setRightTab] = useState<"refs" | "annotations">("refs");
+  const bridge = useReaderBridge();
+  useEffect(() => {
+    bridge.setPanels({ outlineCollapsed: collapsedLeft, rightCollapsed: collapsedRight, rightTab: rightTab === "refs" ? "references" : "annotations" });
+  }, [bridge, collapsedLeft, collapsedRight, rightTab]);
+  useEffect(() => () => bridge.setPanels(null), [bridge]);
+  const setPanel = (panel: ReaderPanel, collapsed: boolean) => (panel === "outline" ? setCollapsedLeft : setCollapsedRight)(collapsed);
+  const setTab = (tab: ReaderRightTab) => setRightTab(tab === "references" ? "refs" : "annotations");
 
   // Deep link: land on the URL's #anchor once the doc has rendered (the blocks
   // are in the DOM by the time this effect runs). Unknown anchors just leave
@@ -137,7 +193,7 @@ function DocWorkspace({
       </header>
 
       <span className="reader-position-note">{t("doc.positionNote")}</span>
-      <div className="reader-main" data-ui="latex-reader-layout">
+      <div className="reader-main" data-ui="latex-reader-layout" ref={mainRef}>
         <aside data-ui="latex-outline-panel" className={"panel left" + (collapsedLeft ? " collapsed" : "")}>
           <ActionButton
             mode="icon"
@@ -176,13 +232,92 @@ function DocWorkspace({
           />
           <span className="rail-label">{t("doc.railRefs")}</span>
           <div className="panel-body">
-            <RightPanel />
+            <RightPanel tab={rightTab} onTab={setRightTab} />
           </div>
         </aside>
       </div>
       <AnnotationDeepLink />
+      <ReaderLive />
+      <ReaderControls setPanel={setPanel} setTab={setTab} />
     </div>
   );
+}
+
+/** The reading column never gets less than this; the side panels fold before it does. */
+export const MIN_READING_COLUMN = 240;
+const PANEL_FULL = { left: 290, right: 380, rail: 34 };
+/**
+ * Which panels fold for a Reader pane of this width: none while the column keeps its minimum with both open; else
+ * the outline; else both. The same folded state the toggles show, so the user can unfold either at will.
+ */
+export function autoFold(width: number | null): { left: boolean; right: boolean } {
+  if (!width) return { left: false, right: false };
+  if (width - PANEL_FULL.left - PANEL_FULL.right >= MIN_READING_COLUMN) return { left: false, right: false };
+  if (width - PANEL_FULL.rail - PANEL_FULL.right >= MIN_READING_COLUMN) return { left: true, right: false };
+  return { left: true, right: true };
+}
+function useElementWidth(ref: React.RefObject<HTMLElement>): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => setWidth(Math.round(el.getBoundingClientRect().width) || null);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+/** Reports where the user is reading (a hint) and whether the back button shows; renders nothing. */
+function ReaderLive() {
+  const bridge = useReaderBridge();
+  const visible = useVisibleIds();
+  const activeSection = useActiveSectionId();
+  const canGoBack = useCanUndo();
+  const ann = useAnnotations();
+  // the popover the user has open, if it shows one annotation
+  const openAnnotationId = ann.popover?.mode === "view" ? ann.popover.id : null;
+  useEffect(() => {
+    bridge.setLive({ position: { activeSectionId: activeSection, visibleBlockIds: visible.slice(0, 1000) }, canGoBack, openAnnotationId });
+  }, [bridge, visible, activeSection, canGoBack, openAnnotationId]);
+  useEffect(() => () => bridge.setLive(null), [bridge]);
+  return null;
+}
+
+/**
+ * The Reader's own controllers as the Copilot may drive them: the same anchor code the URL hash uses (jumpTo,
+ * focusReference, the annotation deep link), the back button's undo and the panel folds. It answers
+ * `unavailable` while the session is syncing or showing an error, exactly when the UI's own jumps do nothing.
+ */
+function ReaderControls({ setPanel, setTab }: { setPanel: (panel: ReaderPanel, collapsed: boolean) => void; setTab: (tab: ReaderRightTab) => void }) {
+  const bridge = useReaderBridge();
+  const store = useStore();
+  const ann = useAnnotations();
+  const { controller } = useReaderSession();
+  const latest = useRef({ store, ann, controller, setPanel, setTab });
+  latest.current = { store, ann, controller, setPanel, setTab };
+  useEffect(() => {
+    bridge.setHandle({
+      navigate: (anchor) => {
+        const { store: s, ann: a, controller: c } = latest.current;
+        if (!c.canAnnotate()) return "unavailable";
+        return (isAnnotationAnchor(anchor) ? applyAnnotationAnchor(s, a, anchor) : applyAnchor(s, anchor)) ? "ok" : "not_found";
+      },
+      jumpBack: () => {
+        const { store: s, controller: c } = latest.current;
+        if (!c.canAnnotate()) return "unavailable";
+        if (!s.getCanUndo()) return "disabled";
+        s.undo();
+        return "ok";
+      },
+      setPanel: (panel, collapsed) => latest.current.setPanel(panel, collapsed),
+      setRightTab: (tab) => latest.current.setTab(tab),
+    });
+    return () => bridge.setHandle(null);
+  }, [bridge]);
+  return null;
 }
 
 /** Stage 8: resolve an `#ann-<id>` deep link once BOTH the IR and the

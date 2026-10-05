@@ -1,4 +1,4 @@
-import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PlanPage, type PlanViewAction, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -14,6 +14,7 @@ import { applyDocDeletion, confirmWorkspaceLeave, WorkspaceProvider, type Worksp
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
+import type { ReaderViewController } from "../doc/reader-bridge";
 import { LibraryView, type LibraryViewController } from "../library/LibraryView";
 import { PlanView, type PlanViewController } from "../plan/PlanView";
 import { WriterView } from "../writer/WriterView";
@@ -72,6 +73,13 @@ export function Shell() {
   const reportDiscovery = useCallback((paneId: number, page: DiscoveryPage | null) => { setDiscoveryPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
   const discoveryPagesRef = useRef(discoveryPages);
   discoveryPagesRef.current = discoveryPages;
+  // The Reader of each Doc pane: the page it reports (built from its admitted epoch) and its own controllers.
+  const [readerPages, setReaderPages] = useState<Record<number, ReaderPage | null>>({});
+  const reportReader = useCallback((paneId: number, page: ReaderPage | null) => { setReaderPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  const readerControllers = useRef(new Map<number, ReaderViewController>());
+  const registerReaderController = useCallback((paneId: number, controller: ReaderViewController | null) => {
+    if (controller) readerControllers.current.set(paneId, controller); else readerControllers.current.delete(paneId);
+  }, []);
   const libraryControllers = useRef(new Map<number, LibraryViewController>());
   const registerLibraryController = useCallback((paneId: number, controller: LibraryViewController | null) => {
     if (controller) libraryControllers.current.set(paneId, controller); else libraryControllers.current.delete(paneId);
@@ -405,6 +413,35 @@ export function Shell() {
     return (await settle(() => currentDocRef.current === docId && shell.current.panes.some((pane) => pane.view === "doc"))) ? { ok: true } : { ok: false, detail: "unavailable" };
   }, []);
   const openTaskDoc = openLibraryDoc;
+  // Copilot-requested Reader navigation. The Doc is named; if it is not the one open it is opened first by the
+  // Shell's own openDoc (leave-draft protection included). The action then runs on the ACTIVE pane when that is a
+  // Doc pane (the pane whose page the Copilot was shown), else on the first Doc pane, through that Reader's own
+  // controllers; a Reader that is still loading or syncing answers `unavailable` and is given the UI's own two
+  // seconds (longer after opening a Doc, which has to load first). Background reads never come through here.
+  const runReaderViewAction = useCallback(async (action: ReaderViewAction): Promise<Report> => {
+    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    const opened = currentDocRef.current === action.docId && shell.current.panes.some((pane) => pane.view === "doc");
+    if (!opened) {
+      // Retry has nothing to retry on a Doc that is not open: opening it is the user's open button, not a retry.
+      if (action.action === "retry_sync") return { ok: false, detail: "unavailable" };
+      const result = await openLibraryDoc(action.docId);
+      if (!result.ok) return result;
+    }
+    let attempts = opened ? 40 : 100;
+    for (; attempts > 0; attempts--) {
+      const { panes, activeId } = shell.current;
+      const active = panes.find((pane) => pane.id === activeId) ?? panes[0];
+      const pane = active?.view === "doc" ? active : panes.find((candidate) => candidate.view === "doc");
+      const controller = pane ? readerControllers.current.get(pane.id) : undefined;
+      if (pane && controller) {
+        if (pane.id !== shell.current.activeId) setActiveId(pane.id);
+        const result = await controller.apply(action);
+        if (result.detail !== "unavailable") return result;
+      }
+      await wait(50);
+    }
+    return { ok: false, detail: "unavailable" };
+  }, [openLibraryDoc]);
   const docDeletedRef = useRef(docDeleted);
   docDeletedRef.current = docDeleted;
   const runViewAction = useCallback(async (action: CopilotViewAction): Promise<Report> => {
@@ -424,10 +461,12 @@ export function Shell() {
     const workspaceAction = WorkspaceViewActionSchema.safeParse(action);
     if (workspaceAction.success) return runWorkspaceAction(workspaceAction.data);
     if (action.action === "open_task_doc") return openTaskDoc(action.docId);
+    const readerAction = ReaderViewActionSchema.safeParse(action);
+    if (readerAction.success) return runReaderViewAction(readerAction.data);
     const libraryAction = LibraryViewActionSchema.safeParse(action);
     if (libraryAction.success) return runLibraryViewAction(libraryAction.data);
     return runPlanViewAction(action as PlanViewAction);
-  }, [runPlanViewAction, runWorkspaceAction, openTaskDoc, runLibraryViewAction]);
+  }, [runPlanViewAction, runWorkspaceAction, openTaskDoc, runLibraryViewAction, runReaderViewAction]);
 
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {
@@ -482,10 +521,14 @@ export function Shell() {
     status: activePane.view === "plan" ? planPages[activePane.id] ? "complete" : "error"
       : activePane.view === "library" && discoveryPages[activePane.id] ? (discoveryPages[activePane.id]?.graph ? "complete" : discoveryPages[activePane.id]?.error ? "error" : "unavailable")
       : activePane.view === "library" ? (libraryPages[activePane.id]?.source === "live" ? "complete" : libraryPages[activePane.id]?.source === "error" ? "error" : "unavailable")
+      // A Reader is complete only with the reading of an admitted epoch; updating is unavailable, a failed read is an error.
+      : activePane.view === "doc" ? (readerPages[activePane.id]?.reading ? "complete" : ["error", "missing"].includes(readerPages[activePane.id]?.sync.phase ?? "") ? "error" : "unavailable")
       : "unavailable",
     plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
     library: activePane.view === "library" && !discoveryPages[activePane.id] ? libraryPages[activePane.id] ?? null : null,
     discovery: activePane.view === "library" ? discoveryPages[activePane.id] ?? null : null,
+    // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
+    reader: activePane.view === "doc" ? readerPages[activePane.id] ?? null : null,
     workspace: {
       maxPanes: MAX_PANES, activePaneId: activePane.id,
       panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
@@ -498,7 +541,7 @@ export function Shell() {
       },
       copilotOpen,
     },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, tweaks, copilotOpen]);
+  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
@@ -508,7 +551,7 @@ export function Shell() {
       case "library":
         return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
       case "doc":
-        return <DocPane />;
+        return <DocPane paneId={p.id} onContext={reportReader} onController={registerReaderController} />;
       case "write":
         return <WriterView />;
       default:

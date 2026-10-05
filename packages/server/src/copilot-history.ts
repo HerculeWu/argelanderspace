@@ -6,6 +6,7 @@ import {
   CopilotHistoryHeaderSchema,
   CopilotObservationSchema,
   CopilotPromptSchema,
+  copilotContextObjects,
   OPERATION_JOURNAL_TYPE,
   OperationJournalSchema,
   QueuedSteerSchema,
@@ -130,11 +131,8 @@ export function readCopilotHistory(path: string, sessionId: string): FileEntry[]
       )
         throw new Error("broken host reference");
       contextViews.set(reference.context.contextId, prompt.context.viewId);
-      const page = prompt.context.plan;
-      const objects = page ? page.plans.map((plan) => ({ id: plan.id, rev: page.rev })) : [];
-      const detail = page?.detail;
-      if (page && detail && !objects.some((object) => object.id === detail.planId))
-        objects.push({ id: detail.planId, rev: page.rev });
+      // The same function the host used when it recorded the message (library and Reader objects included).
+      const objects = copilotContextObjects(prompt.context);
       if (JSON.stringify(objects) !== JSON.stringify(reference.context.objects))
         throw new Error("broken host objects");
     }

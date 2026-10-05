@@ -299,6 +299,7 @@ test("the library tool is registered beside plan and workspace and nothing else"
     "plan",
     "workspace",
     "library",
+    "reader",
   ]);
 });
 
@@ -519,6 +520,20 @@ test("the last entry of a long filtered list reaches the model; the rest of the 
   expect(sent).toContain('\\"total\\":4000');
   expect(sent).not.toContain("doi:10.1000/long600");
   expect(snapshot.messages[0]?.context).toMatchObject({ view: "library", status: "complete" });
+});
+
+test("a conversation sent from a Library page with an open work loads back after a restart (its object is the work)", async () => {
+  script = [() => ({ text: "seen" })];
+  const { id } = await run(page(libraryPage({ selectedRefId: W1 })));
+  await host.close();
+  const again = new CopilotHost(join(root, "data"), settings, () => {});
+  try {
+    const snapshot = await again.snapshot(id);
+    expect(snapshot.messages[0]?.context?.objects).toMatchObject([{ id: W1, rev: 0 }]);
+  } finally {
+    await again.close();
+  }
+  host = new CopilotHost(join(root, "data"), settings, () => {});
 });
 
 test("demo data is reported as unavailable context and the selected work is the message's object", async () => {

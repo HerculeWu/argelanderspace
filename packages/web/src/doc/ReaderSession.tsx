@@ -9,6 +9,7 @@ import {
 import type {
   Annotation,
   AnnotationsFile,
+  AnnotationTextTarget,
   CoherentAnnotationsRead,
 } from "@argelanderspace/contracts";
 import { fetchCoherentAnnotations, putAnnotations } from "../api/annotations";
@@ -31,6 +32,11 @@ export interface ReaderSessionState {
   reason?: "busy" | "read" | "asset" | "document-changed";
   createDraft: { body: string; revision: number; use: boolean };
   editDrafts: Record<string, EditDraft>;
+  /**
+   * The user's settled text selection (what the floating "annotate" bar would create), bound to the content
+   * fingerprint it was made in. Cleared whenever the epoch is frozen: it can never be applied to newer text.
+   */
+  selection: { fingerprint: string; target: AnnotationTextTarget } | null;
 }
 export interface AssetBinding {
   docId: string;
@@ -49,6 +55,7 @@ export class ReaderSessionController {
     writePending: false,
     createDraft: { body: "", revision: 0, use: false },
     editDrafts: {},
+    selection: null,
   };
   private listeners = new Set<() => void>();
   private alive = false;
@@ -104,6 +111,7 @@ export class ReaderSessionController {
       reason,
       generation: this.state.generation + 1,
       createDraft: { ...this.state.createDraft, use: false },
+      selection: null,
     };
     for (const fn of this.invalidationListeners) fn();
     for (const fn of this.listeners) fn();
@@ -251,6 +259,15 @@ export class ReaderSessionController {
     this.patch({ writePending: false, writeFailure: r.ok ? undefined : r.kind });
     if (this.dirty && !this.terminal) void this.read();
     return r.ok;
+  };
+  setSelection = (target: AnnotationTextTarget | null) => {
+    const accepted = this.state.accepted;
+    const next =
+      target && accepted && this.canAnnotate()
+        ? { fingerprint: accepted.file.content_fingerprint, target }
+        : null;
+    if (JSON.stringify(next) === JSON.stringify(this.state.selection)) return;
+    this.patch({ selection: next });
   };
   beginCreate = () => this.patch({ createDraft: { ...this.state.createDraft, use: false } });
   useCreateDraft = () => this.patch({ createDraft: { ...this.state.createDraft, use: true } });

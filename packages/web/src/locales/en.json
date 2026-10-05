@@ -1133,7 +1133,7 @@
     "model": "Choose model",
     "thinking": "Thinking level",
     "running": "Replying…",
-    "scope": "Plan and library actions available",
+    "scope": "Plan, library and reader actions available",
     "interrupted": "The service restarted during this run. Saved records are kept and nothing was repeated automatically.",
     "disconnected": "Disconnected. Restoring conversation…",
     "newContent": "View new content",
@@ -1241,7 +1241,13 @@
         "dismiss_discovery_error": "Dismiss exploration error",
         "view_candidate_in_library": "Show saved work in library",
         "set_discovery_graph_labels": "Show or hide exploration graph labels",
-        "discovery_graph_control": "Zoom or arrange exploration graph"
+        "discovery_graph_control": "Zoom or arrange exploration graph",
+        "read_reader": "Read document",
+        "navigate": "Go to place in document",
+        "jump_back": "Go back in document",
+        "set_panel": "Fold or unfold side panel",
+        "set_right_tab": "Switch references / annotations tab",
+        "retry_sync": "Retry document sync"
       },
       "status": {
         "ok": "Applied",
@@ -1324,6 +1330,15 @@
     "attachRemove": "Remove {{name}}",
     "attachFailed": "Upload failed",
     "attachTooLarge": "Not accepted (over the 50 MiB limit or empty)",
-    "attachRetryNamed": "Retry uploading {{name}}"
+    "attachRetryNamed": "Retry uploading {{name}}",
+    "reader": {
+      "ready": "Reader: {{id}}",
+      "syncing": "Reader: {{id}} (updating, no reading sent)",
+      "error": "Reader: {{id}} (failed to load, no reading sent)",
+      "missing": "Reader: {{id}} (document not found, no reading sent)",
+      "counts": "{{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations sent",
+      "selection": "Selection included",
+      "position": "Reading section: {{section}}"
+    }
   }
 }

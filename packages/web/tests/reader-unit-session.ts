@@ -15,5 +15,6 @@ const controller = {
   getSnapshot: () => state,
   canAnnotate: () => true,
   onInvalidate: () => () => {},
+  setSelection: () => {},
 };
 export const useReaderSession = () => ({ state, controller, canAnnotate: true });

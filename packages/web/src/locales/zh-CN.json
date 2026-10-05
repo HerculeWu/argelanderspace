@@ -1133,7 +1133,7 @@
     "model": "选择模型",
     "thinking": "思考级别",
     "running": "正在回复…",
-    "scope": "可操作计划与文库",
+    "scope": "可操作计划、文库与阅读器",
     "interrupted": "服务在本次运行中重启。已保存的记录保留，没有自动重复任何操作。",
     "disconnected": "连接中断，正在恢复会话…",
     "newContent": "查看新内容",
@@ -1241,7 +1241,13 @@
         "dismiss_discovery_error": "关闭探索错误提示",
         "view_candidate_in_library": "在文库中查看已保存文献",
         "set_discovery_graph_labels": "显示或隐藏探索图标签",
-        "discovery_graph_control": "缩放或重排探索图"
+        "discovery_graph_control": "缩放或重排探索图",
+        "read_reader": "读取文档",
+        "navigate": "跳转到文档位置",
+        "jump_back": "文档后退",
+        "set_panel": "折叠或展开侧栏",
+        "set_right_tab": "切换引用/标注标签",
+        "retry_sync": "重试文档同步"
       },
       "status": {
         "ok": "已应用",
@@ -1324,6 +1330,15 @@
     "attachRemove": "移除 {{name}}",
     "attachFailed": "上传失败",
     "attachTooLarge": "未被接受（超过 50 MiB 上限或为空文件）",
-    "attachRetryNamed": "重试上传 {{name}}"
+    "attachRetryNamed": "重试上传 {{name}}",
+    "reader": {
+      "ready": "阅读器：{{id}}",
+      "syncing": "阅读器：{{id}}（更新中，未发送正文）",
+      "error": "阅读器：{{id}}（加载失败，未发送正文）",
+      "missing": "阅读器：{{id}}（找不到文档，未发送正文）",
+      "counts": "已发送 {{sections}} 节、{{blocks}} 块、{{references}} 条参考文献、{{annotations}} 条标注",
+      "selection": "已包含选区",
+      "position": "阅读位置：{{section}}"
+    }
   }
 }

@@ -134,6 +134,16 @@ Web 每次挂载使用一个按 Doc/固定 SHA-256 绑定的临时 annotation se
 
 PDF 删除确认使用 `GET /api/paper/:doc_id/pdf/annotations/count` 直接读取并校验 PDF 的独立工作台 sidecar；损坏、busy 或 hash 不匹配是未知计数，不借用 LaTeX annotations endpoint，也不将失败冒充零标注。
 
+## Copilot 读取 LaTeX Reader（票 18）
+
+Copilot 的 Reader 页面上下文与 `reader` 工具读同一份 coherent epoch，不改任何数据保护规则：
+
+- 表示由 contracts 的 `buildReaderReading` 构造（纯函数，新编码；旧有损 Markdown renderer 与 golden 不变）：全部节/段/列表/公式/图/**完整表体**/代码与算法体、完整参考文献、cite/xref 身份、当前标注原文及其 fingerprint 与 rev、资产 sha256。文本为 canonical annotation text，选区的 UTF-16 offsets 直接索引其中，math/cite/xref 以 `marks` 标出原子段。`format` 为判别字段，未来 text Doc 以新变体接入，不借用 LaTeX 元数据。
+- 浏览器端页面从已接纳的 ReaderSession（IR、file、资产 manifest）构造，不抓挂载 DOM；仅 `ready` 才带正文，syncing/error/missing 不带（保留旧文字只是显示）。选区绑定接纳时的 fingerprint，epoch 冻结即丢弃，页面 schema 拒绝与正文 fingerprint 不符的选区。阅读位置只是提示，经 250 ms 合并后发布。
+- 后台 `reader.read` 经 core `readDocumentForReading`：与 coherent GET 同样的同步读取与同样的错误码，但**只读**——不 ensure、不归档、不建新 current、永不读取 archive；指纹不同的旧标注不并入（`epoch.annotations: "stale"`，下次正常访问才归档），无法计算（IR/资产/current 损坏）为明确错误而非 mismatch；queued/running 内容变更时拒绝。
+- 容量：整页超出模型窗口时发送被 `capacity` 拒绝，`read` 以其大小整体拒绝，都不截断；按结构分批是票 24。后续页面观察不重复正文，只带 epoch 指纹，需要时 `reader.read`。
+- 导航动作（`navigate`/`jump_back`/`set_panel`/`set_right_tab`/`retry_sync`）只投递绑定视图，沿用 jumpTo/锚点/撤销/折叠/重试控制器，Reader 同步或出错时回报 `unavailable`，不改变深链接协议。
+
 ## CLI annot
 
 完整输出、顺序、排序、错误与零写盘契约已集中于 [contracts 的 CLI annot 冻结契约](contracts.md#cli-annot-冻结契约)。修改 agent 输出时必须阅读全文，不以本专题的 server 路径代替 CLI 语义。

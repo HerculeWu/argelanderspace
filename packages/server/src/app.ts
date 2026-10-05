@@ -58,6 +58,7 @@ import type {
 } from "@argelanderspace/contracts";
 import {
   AnnotationsFileSchema,
+  buildReaderReading,
   DocDescriptionSchema,
   type ManualWorkRequest,
   ManualWorkRequestSchema,
@@ -107,6 +108,7 @@ import {
   type RemovedDocWork,
   readAnnotationRisk,
   readDocumentAsset,
+  readDocumentForReading,
   readManuscriptAsset,
   readPdfAnnotationsFile,
   readPdfMetadataIfPresent,
@@ -137,6 +139,7 @@ import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
+import type { ReaderOpDeps, ReaderReadOutcome } from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
@@ -474,8 +477,40 @@ export function createApp(deps: AppDeps): Hono {
       delete: (docId, expect) => deleteDocGlobally(docId, expect),
     },
   };
+  // The Copilot `reader` tool's background read: the same reads as the coherent GET below but READ-ONLY (no ensure,
+  // no archive, never the archive's content), refused while a content mutation is queued or running.
+  const readerOps: ReaderOpDeps = {
+    read: (docId) =>
+      annotationLock.run((): ReaderReadOutcome => {
+        if (badId(docId) || !docId.trim()) return { kind: "not_found" };
+        if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
+        try {
+          if (readPdfMetadataIfPresent(paths, docId)) return { kind: "pdf" };
+        } catch {
+          return { kind: "error", detail: "the Doc's metadata could not be read" };
+        }
+        try {
+          const { ir, file, assets, stale } = readDocumentForReading(paths.dataDir, docId);
+          return { kind: "ok", reading: buildReaderReading({ ir, file, assets, stale }) };
+        } catch (err) {
+          if (!(err instanceof AnnotationsError)) throw err;
+          // The message names no path: the user's data stays untouched, whatever the reason.
+          if (err.code === "not_found") return { kind: "not_found" };
+          return {
+            kind: "error",
+            detail:
+              err.code === "corrupt_ir"
+                ? "the stored document is damaged or outdated and cannot be read; nothing was changed"
+                : err.code === "corrupt_store"
+                  ? "the saved annotations file is damaged; nothing was changed and nothing was read"
+                  : "an image the document declares is missing or unreadable, so the document cannot be verified; nothing was changed",
+          };
+        }
+      }),
+  };
   copilot.useWorkbench({
     library: libraryOps,
+    reader: readerOps,
     plans: {
       statusDir: deps.statusDir,
       planLock,

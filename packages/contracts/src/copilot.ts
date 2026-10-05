@@ -15,6 +15,13 @@ import {
 import { type CopilotOperation, CopilotOperationSchema, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
+import {
+  type ReaderContextSummary,
+  ReaderContextSummarySchema,
+  ReaderObservationPageSchema,
+  ReaderPageSchema,
+  ReaderViewActionSchema,
+} from "./reader-ops.js";
 import { WorkspaceSnapshotSchema, WorkspaceViewActionSchema } from "./workspace-ops.js";
 
 export const CopilotIdSchema = z.string().uuid();
@@ -54,35 +61,44 @@ export const PlanPageSchema = z
   .strict();
 export type PlanPage = z.infer<typeof PlanPageSchema>;
 
-export const PageContextSchema = z
-  .object({
-    version: z.literal(1),
-    viewId: CopilotIdSchema,
-    revision: z.number().int().nonnegative(),
-    paneId: z.number().int().positive(),
-    view: z.string().min(1).max(100),
-    otherPanes: z
-      .array(z.object({ paneId: z.number().int().positive(), view: z.string() }).strict())
-      .max(2),
-    status: z.enum(["complete", "unavailable", "error"]),
-    plan: PlanPageSchema.nullable(),
-    /** The Library page (copilot ticket 13); optional so older views and headless callers stay valid. */
-    library: LibraryPageSchema.nullable().optional(),
-    /** The Library tab's exploration (Discovery) while it is open (copilot ticket 17); replaces `library` then. */
-    discovery: DiscoveryPageSchema.nullable().optional(),
-    /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
-    workspace: WorkspaceSnapshotSchema.optional(),
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    // Only data the page really loaded counts as complete: the Library's built-in example data does not.
-    const covered =
-      (value.view === "plan" && value.plan !== null) ||
-      (value.view === "library" && value.library?.source === "live") ||
-      (value.view === "library" && !!value.discovery?.graph);
-    if ((value.status === "complete") !== covered)
-      ctx.addIssue({ code: "custom", message: "invalid page coverage" });
-  });
+const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationPageSchema) =>
+  z
+    .object({
+      version: z.literal(1),
+      viewId: CopilotIdSchema,
+      revision: z.number().int().nonnegative(),
+      paneId: z.number().int().positive(),
+      view: z.string().min(1).max(100),
+      otherPanes: z
+        .array(z.object({ paneId: z.number().int().positive(), view: z.string() }).strict())
+        .max(2),
+      status: z.enum(["complete", "unavailable", "error"]),
+      plan: PlanPageSchema.nullable(),
+      /** The Library page (copilot ticket 13); optional so older views and headless callers stay valid. */
+      library: LibraryPageSchema.nullable().optional(),
+      /** The Library tab's exploration (Discovery) while it is open (copilot ticket 17); replaces `library` then. */
+      discovery: DiscoveryPageSchema.nullable().optional(),
+      /** The LaTeX Reader of the active pane (copilot ticket 18); optional so older views and headless callers stay valid. */
+      reader: reader.nullable().optional(),
+      /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
+      workspace: WorkspaceSnapshotSchema.optional(),
+    })
+    .strict()
+    .superRefine((value, ctx) => {
+      // Only data the page really loaded counts as complete: the Library's built-in example data does not.
+      const covered =
+        (value.view === "plan" && value.plan !== null) ||
+        (value.view === "library" && value.library?.source === "live") ||
+        (value.view === "library" && !!value.discovery?.graph) ||
+        (value.view === "doc" &&
+          !!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted));
+      if ((value.status === "complete") !== covered)
+        ctx.addIssue({ code: "custom", message: "invalid page coverage" });
+    });
+/** What a view publishes (a Reader page may not carry `readingOmitted`). */
+export const PageContextSchema = pageContext(ReaderPageSchema);
+/** A page as the service records it in a later observation. */
+export const ObservationPageContextSchema = pageContext(ReaderObservationPageSchema);
 export type PageContext = z.infer<typeof PageContextSchema>;
 /** Largest attachment: the PDF upload limit (50 MiB), which also bounds the LaTeX zip the Files tab takes. */
 export const COPILOT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
@@ -176,6 +192,7 @@ export interface CopilotMessage {
     objects: { id: string; rev: number; name?: string }[];
     library?: LibraryContextSummary;
     discovery?: DiscoveryContextSummary;
+    reader?: ReaderContextSummary;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -407,6 +424,7 @@ export const WsCopilotViewActionSchema = z
       LibraryViewActionSchema,
       DocDeletedViewActionSchema,
       DiscoverySavedViewActionSchema,
+      ReaderViewActionSchema,
     ]),
   })
   .strict();
@@ -454,6 +472,8 @@ export const CopilotContextReferenceSchema = z
         library: LibraryContextSummarySchema.optional(),
         /** What the Library tab's exploration carried (copilot ticket 17); absent otherwise. */
         discovery: DiscoveryContextSummarySchema.optional(),
+        /** What the Reader carried (copilot ticket 18); absent for other pages. */
+        reader: ReaderContextSummarySchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),
@@ -464,7 +484,11 @@ export const CopilotContextReferenceSchema = z
 
 export type CopilotContextReference = z.infer<typeof CopilotContextReferenceSchema>;
 export const CopilotObservationSchema = z
-  .object({ version: z.literal(1), taskContextId: CopilotIdSchema, page: PageContextSchema })
+  .object({
+    version: z.literal(1),
+    taskContextId: CopilotIdSchema,
+    page: ObservationPageContextSchema,
+  })
   .strict();
 
 /**

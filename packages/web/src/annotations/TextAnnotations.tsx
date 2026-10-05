@@ -106,7 +106,10 @@ export function TextAnnotations() {
       const range = sel.getRangeAt(0);
       const a = resolveContainerAt(range.startContainer, root, storeRef.current.blockById);
       const b = resolveContainerAt(range.endContainer, root, storeRef.current.blockById);
+      // A settled selection that makes no target (outside the reading area, across containers, in a position that
+      // cannot be annotated) replaces what the Copilot was told: the old target is no longer what is selected.
       if (!a || !b) {
+        controller.setSelection(null);
         if (a || b) {
           // one endpoint in a legal container, the other outside it
           annRef.current.notify(i18n.t("annotation.selection.crossParagraph"));
@@ -117,6 +120,7 @@ export function TextAnnotations() {
         return; // fully outside blocks: silent
       }
       if (a.blockId !== b.blockId || !sameContainer(a.container, b.container) || a.el !== b.el) {
+        controller.setSelection(null);
         annRef.current.notify(i18n.t("annotation.selection.crossParagraph"));
         return;
       }
@@ -128,6 +132,7 @@ export function TextAnnotations() {
           ? (range.startContainer as Element)
           : range.startContainer.parentElement;
       if (startHost?.closest(".cap-label")) {
+        controller.setSelection(null);
         annRef.current.notify(i18n.t("annotation.selection.unsupported"));
         return;
       }
@@ -135,23 +140,31 @@ export function TextAnnotations() {
       try {
         map = buildContainerMap(a.el, a.segments);
       } catch {
+        controller.setSelection(null);
         return; // renderer misalignment: bail (impossible under the fingerprint)
       }
       const off = offsetsForRange(map, range);
-      if (!off || off.start >= off.end) return;
+      if (!off || off.start >= off.end) {
+        controller.setSelection(null);
+        return;
+      }
       const quote = map.canonical.slice(off.start, off.end);
       const rect = range.getBoundingClientRect();
       // the bar is centered on the selection with translateX(-50%), so clamp
       // the center x by the bar's half-width; y clamped with the same margin
+      const target: AnnotationTextTarget = {
+        type: "text",
+        block: a.blockId,
+        container: a.container,
+        start: off.start,
+        end: off.end,
+        quote,
+      };
+      // The Copilot is told this selection, bound to the epoch it was made in. It outlives the toolbar: moving the
+      // focus to the Copilot's input collapses the page selection, and that is exactly when it is needed.
+      controller.setSelection(target);
       setPending({
-        target: {
-          type: "text",
-          block: a.blockId,
-          container: a.container,
-          start: off.start,
-          end: off.end,
-          quote,
-        },
+        target,
         x: clampFloatX(rect.left + rect.width / 2 - SELBAR_W / 2, SELBAR_W) + SELBAR_W / 2,
         y: clampFloatY(rect.bottom + 8, SELBAR_H),
       });
@@ -179,6 +192,9 @@ export function TextAnnotations() {
       mouseDownRef.current = true;
       const t = e.target as Element | null;
       if (t && typeof t.closest === "function" && t.closest(".ann-selbar, .ann-chooser")) return;
+      // A press in the reading area is the user giving the selection up; a press anywhere else (the Copilot's
+      // input, the outline) keeps it.
+      if (t && root.contains(t)) controller.setSelection(null);
       setPending(null);
       annRef.current.closeChooser();
     };

@@ -505,13 +505,15 @@ export function ensureCurrentAnnotations(
   return ensureForFingerprint(dataDir, docId, fingerprint, opts);
 }
 
-/** Server annotations access only: validate identity and hash each declared
- * path once, deriving the manifest from the exact projection reads. */
-export function ensureCurrentAnnotationsWithDocument(
+/**
+ * The one place the document's content fingerprint and asset digests are computed for the server's annotation
+ * reads: validates identity and hashes each declared path once, deriving the manifest from the exact projection
+ * reads. Shared by the access path (which may archive) and the read-only read, so they cannot drift.
+ */
+function fingerprintWithAssets(
   dataDir: string,
-  docId: string,
-  opts: EnsureCurrentAnnotationsOptions = {}
-): EnsureCurrentAnnotationsResult & { ir: TexDocIr; assets: AssetDigest[] } {
+  docId: string
+): { ir: TexDocIr; fingerprint: string; assets: AssetDigest[] } {
   const ir = loadStoredDocIr(dataDir, docId);
   if (ir.docId !== docId) {
     throw new AnnotationsError("corrupt_ir", `annotations: doc id mismatch for "${docId}"`);
@@ -533,6 +535,16 @@ export function ensureCurrentAnnotationsWithDocument(
   });
   const fingerprint = createHash("sha256").update(JSON.stringify(projection)).digest("hex");
   const assets = Array.from(digests, ([imgPath, sha256]) => ({ imgPath, sha256 }));
+  return { ir, fingerprint, assets };
+}
+
+/** Server annotations access only (the path that may archive). */
+export function ensureCurrentAnnotationsWithDocument(
+  dataDir: string,
+  docId: string,
+  opts: EnsureCurrentAnnotationsOptions = {}
+): EnsureCurrentAnnotationsResult & { ir: TexDocIr; assets: AssetDigest[] } {
+  const { ir, fingerprint, assets } = fingerprintWithAssets(dataDir, docId);
   return { ir, assets, ...ensureForFingerprint(dataDir, docId, fingerprint, opts) };
 }
 
@@ -597,4 +609,31 @@ export function readAnnotationRisk(dataDir: string, docId: string): AnnotationRi
   } catch {
     return { state: "unknown" };
   }
+}
+
+/**
+ * One document read for a reader that must not change anything (the Copilot `reader` tool's background read):
+ * the stored IR, the digests of the assets it references and the annotations of that same content, taken in one
+ * synchronous pass with the same reads as the server's coherent GET, but WITHOUT `ensureCurrentAnnotations`: no
+ * archive, no new current, no broadcast. Archiving stays with the server GET/PUT annotations access path.
+ *
+ * - IR missing / corrupt, an asset the IR declares unreadable, or a damaged current.json: a typed
+ *   `AnnotationsError` (never a mismatch, never a reset);
+ * - current.json missing: an empty file bound to the fresh fingerprint;
+ * - fingerprint match: the saved annotations;
+ * - fingerprint mismatch: the saved annotations belong to older content, so they are NOT part of this document:
+ *   an empty file for the fresh fingerprint and `stale: true` (the next normal access archives them). The archive
+ *   itself is never read.
+ */
+export function readDocumentForReading(
+  dataDir: string,
+  docId: string
+): { ir: TexDocIr; assets: AssetDigest[]; file: AnnotationsFile; stale: boolean } {
+  const { ir, fingerprint, assets } = fingerprintWithAssets(dataDir, docId);
+  const current = loadAnnotationsFile(dataDir, docId);
+  if (current === null)
+    return { ir, assets, file: emptyAnnotationsFile(fingerprint), stale: false };
+  if (current.content_fingerprint === fingerprint)
+    return { ir, assets, file: current, stale: false };
+  return { ir, assets, file: emptyAnnotationsFile(fingerprint), stale: true };
 }

@@ -221,6 +221,7 @@ test("actual Pi HTTP loop supplies the final offscreen task, only the plan tool,
     "plan",
     "workspace",
     "library",
+    "reader",
   ]);
   const bytes = readFileSync(historyPath(snapshot));
   expect(bytes.toString()).toContain("argelander.context.v1");

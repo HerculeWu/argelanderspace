@@ -184,8 +184,8 @@ describe("entering an exploration", () => {
   it("shows seed, related and useful nodes with only real citation edges, and is a valid complete context", async () => {
     await explore();
     expect(PageContextSchema.safeParse(h.context).success).toBe(true);
-    expect(h.context!.status).toBe("complete");
-    expect(h.context!.library ?? null).toBeNull(); // the exploration replaces the Library page
+    await waitFor(() => expect(h.context!.status).toBe("complete"));
+    await waitFor(() => expect(h.context!.library ?? null).toBeNull()); // the exploration replaces the Library page
     const graph = disc().graph!;
     expect(graph.nodes.map((n) => [n.bibcode, n.roles, n.relatedRank, n.usefulRank])).toEqual([
       ["SEED1", ["seed"], undefined, undefined],
@@ -227,9 +227,9 @@ describe("filters, search, display and the open candidate", () => {
     expect(await run({ action: "filter_discovery", filter: "related" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.filter).toBe("related"));
     // the seed always stays; the useful-only node and every edge touching it leave
-    expect(disc().graph!.nodes.map((n) => n.bibcode)).toEqual(["SEED1", "SEED1.R1", "SEED1.R2"]);
-    expect(disc().graph!.edges).toEqual([{ from: "SEED1", to: "SEED1.R1", kind: "citation" }]);
-    expect(disc().graph!.totals.nodes).toBe(4); // totals describe the whole session
+    await waitFor(() => expect(disc().graph!.nodes.map((n) => n.bibcode)).toEqual(["SEED1", "SEED1.R1", "SEED1.R2"]));
+    await waitFor(() => expect(disc().graph!.edges).toEqual([{ from: "SEED1", to: "SEED1.R1", kind: "citation" }]));
+    await waitFor(() => expect(disc().graph!.totals.nodes).toBe(4)); // totals describe the whole session
     expect(qa('[data-ui="discovery-paper"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["SEED1.R1", "SEED1.R2"]);
     expect(await run({ action: "search_discovery", query: "beta" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.nodes.map((n) => n.bibcode)).toEqual(["SEED1", "SEED1.R2"]));
@@ -245,13 +245,13 @@ describe("filters, search, display and the open candidate", () => {
     expect(await run({ action: "select_candidate", bibcode: "nope" })).toEqual({ ok: false, detail: "not_found" });
     expect(await run({ action: "select_candidate", bibcode: "SEED1.U1" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().selectedBibcode).toBe("SEED1.U1"));
-    expect(disc().detail).toMatchObject({ tab: "abstract", references: [], citedBy: ["SEED1.R1", "SEED1.R2"] });
-    expect(disc().detail!.paper.abstract).toBe("Abstract of SEED1.U1");
+    await waitFor(() => expect(disc().detail).toMatchObject({ tab: "abstract", references: [], citedBy: ["SEED1.R1", "SEED1.R2"] }));
+    await waitFor(() => expect(disc().detail!.paper.abstract).toBe("Abstract of SEED1.U1"));
     expect(q('[data-ui="discovery-detail"]')?.getAttribute("data-ui-key")).toBe("SEED1.U1");
     expect(await run({ action: "set_discovery_tab", tab: "citations" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().detail!.tab).toBe("citations"));
     expect(qa('[data-ui="citation-paper"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["SEED1.R1", "SEED1.R2"]);
-    expect(disc().graph!.seed).toBe("SEED1");
+    await waitFor(() => expect(disc().graph!.seed).toBe("SEED1"));
     expect(discoveryGets).toEqual(["SEED1"]);
     // another candidate opens on its abstract again (the inspector used to remount per candidate)
     expect(await run({ action: "select_candidate", bibcode: "SEED1.R1" })).toEqual({ ok: true });
@@ -297,7 +297,7 @@ describe("history, continuing and leaving", () => {
     expect(await run({ action: "explore_candidate", bibcode: "SEED1.R1" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.seed).toBe("SEED1.R1"));
     expect(discoveryGets).toEqual(["SEED1", "SEED1.R1"]); // no further hop of its own
-    expect(disc().history).toEqual({ index: 1, seeds: ["SEED1", "SEED1.R1"] });
+    await waitFor(() => expect(disc().history).toEqual({ index: 1, seeds: ["SEED1", "SEED1.R1"] }));
     expect(await run({ action: "step_exploration", direction: "forward" })).toEqual({ ok: false, detail: "disabled" });
     expect(await run({ action: "step_exploration", direction: "back" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.seed).toBe("SEED1"));
@@ -311,8 +311,8 @@ describe("history, continuing and leaving", () => {
     expect(await run({ action: "filter_library", query: "x" })).toEqual({ ok: false, detail: "unavailable" }); // the library page is not shown
     expect(await run({ action: "exit_exploration" })).toEqual({ ok: true });
     await waitFor(() => expect(h.context?.library?.exploration).toEqual({ sessions: 1, seed: "SEED1" }));
-    expect(h.context!.discovery ?? null).toBeNull();
-    expect(h.context!.status).toBe("complete");
+    await waitFor(() => expect(h.context!.discovery ?? null).toBeNull());
+    await waitFor(() => expect(h.context!.status).toBe("complete"));
     expect(await run({ action: "exit_exploration" })).toEqual({ ok: false, detail: "unavailable" });
     expect(await run({ action: "resume_exploration" })).toEqual({ ok: true });
     await waitFor(() => expect(h.context?.discovery?.graph?.seed).toBe("SEED1"));
@@ -341,15 +341,15 @@ describe("failure and cancellation", () => {
     answer = async () => failing(503);
     expect(await run({ action: "explore_candidate", bibcode: "SEED1.R1" })).toEqual({ ok: false, detail: "failed", http: 503 });
     await waitFor(() => expect(disc().error).toEqual({ seed: "SEED1.R1", status: 503 }));
-    expect(disc().graph!.seed).toBe("SEED1");
-    expect(disc().history).toEqual({ index: 0, seeds: ["SEED1"] });
+    await waitFor(() => expect(disc().graph!.seed).toBe("SEED1"));
+    await waitFor(() => expect(disc().history).toEqual({ index: 0, seeds: ["SEED1"] }));
     expect(discoveryGets).toEqual(["SEED1", "SEED1.R1"]); // exactly one failed request; no automatic retry
     expect(writes).toEqual([]);
     // the Retry button's request is the same full request; it is sent once
     answer = async (seed) => ok(graphFor(seed));
     expect(await run({ action: "retry_exploration" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.seed).toBe("SEED1.R1"));
-    expect(disc().error).toBeNull();
+    await waitFor(() => expect(disc().error).toBeNull());
     expect(discoveryGets).toEqual(["SEED1", "SEED1.R1", "SEED1.R1"]);
     expect(await run({ action: "retry_exploration" })).toEqual({ ok: false, detail: "disabled" }); // nothing failed, nothing to retry
   });
@@ -369,10 +369,10 @@ describe("failure and cancellation", () => {
     await boot();
     expect(await run({ action: "explore_work", refId: "doi:10.1000/p1" })).toEqual({ ok: false, detail: "failed", http: 404 });
     await waitFor(() => expect(h.context?.discovery?.error).toEqual({ seed: "SEED1", status: 404 }));
-    expect(h.context!.status).toBe("error");
+    await waitFor(() => expect(h.context!.status).toBe("error"));
     expect(PageContextSchema.safeParse(h.context).success).toBe(true);
-    expect(disc().graph).toBeNull();
-    expect(disc().history).toEqual({ index: -1, seeds: [] });
+    await waitFor(() => expect(disc().graph).toBeNull());
+    await waitFor(() => expect(disc().history).toEqual({ index: -1, seeds: [] }));
   });
 
   it("cancel_exploration aborts the request for real; the action that started it reports cancelled and nothing is entered", async () => {
@@ -387,13 +387,13 @@ describe("failure and cancellation", () => {
       });
     const pending = run({ action: "explore_candidate", bibcode: "SEED1.R1" });
     await waitFor(() => expect(h.context?.discovery?.loading).toEqual({ seed: "SEED1.R1" }));
-    expect(h.context!.discovery!.graph!.seed).toBe("SEED1"); // the earlier graph stays under the loading overlay
+    await waitFor(() => expect(h.context!.discovery!.graph!.seed).toBe("SEED1")); // the earlier graph stays under the loading overlay
     expect(await run({ action: "cancel_exploration" })).toEqual({ ok: true });
     expect(await pending).toEqual({ ok: false, detail: "cancelled" });
     expect(aborted).toBe(true);
     await waitFor(() => expect(disc().loading).toBeNull());
-    expect(disc().error).toBeNull();
-    expect(disc().history.seeds).toEqual(["SEED1"]);
+    await waitFor(() => expect(disc().error).toBeNull());
+    await waitFor(() => expect(disc().history.seeds).toEqual(["SEED1"]));
     expect(await run({ action: "cancel_exploration" })).toEqual({ ok: false, detail: "disabled" });
   });
 });
@@ -405,15 +405,15 @@ describe("saving a candidate", () => {
     await waitFor(() => expect(disc().selectedBibcode).toBe("SEED1.R2"));
     expect(await run({ action: "discovery_saved", bibcode: "SEED1.R2", workId: "doi:10.1000/p2" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.totals.saved).toBe(1));
-    expect(disc().graph!.nodes.find((n) => n.bibcode === "SEED1.R2")!.libraryId).toBe("doi:10.1000/p2");
-    expect(disc().detail!.paper.libraryId).toBe("doi:10.1000/p2");
-    expect(disc().graph!.seed).toBe("SEED1");
-    expect(disc().selectedBibcode).toBe("SEED1.R2");
+    await waitFor(() => expect(disc().graph!.nodes.find((n) => n.bibcode === "SEED1.R2")!.libraryId).toBe("doi:10.1000/p2"));
+    await waitFor(() => expect(disc().detail!.paper.libraryId).toBe("doi:10.1000/p2"));
+    await waitFor(() => expect(disc().graph!.seed).toBe("SEED1"));
+    await waitFor(() => expect(disc().selectedBibcode).toBe("SEED1.R2"));
     expect(discoveryGets).toEqual(["SEED1"]);
     expect(writes).toEqual([]); // the sync action writes nothing itself
     // an unknown candidate is ignored
     expect(await run({ action: "discovery_saved", bibcode: "other", workId: "w" })).toEqual({ ok: true });
-    expect(disc().graph!.totals.saved).toBe(1);
+    await waitFor(() => expect(disc().graph!.totals.saved).toBe(1));
   });
 
   it("the page's own Add posts the bibcode import and marks the same node saved the same way", async () => {
@@ -423,7 +423,7 @@ describe("saving a candidate", () => {
     fireEvent.click(q('[data-ui="save-discovery-paper"]')!);
     await waitFor(() => expect(disc().graph!.totals.saved).toBe(1));
     expect(writes).toEqual([{ url: "/api/library/works", method: "POST", body: { mode: "bibcode", bibcode: "SEED1.R1" } }]);
-    expect(disc().graph!.nodes.find((n) => n.bibcode === "SEED1.R1")!.libraryId).toBe("bibcode:SEED1.R1");
+    await waitFor(() => expect(disc().graph!.nodes.find((n) => n.bibcode === "SEED1.R1")!.libraryId).toBe("bibcode:SEED1.R1"));
     expect(discoveryGets).toEqual(["SEED1"]);
   });
 });
@@ -435,7 +435,7 @@ describe("repair round: controls, state and reports", () => {
     await waitFor(() => expect(disc().graphView.labelsOn).toBe(true));
     await run({ action: "set_discovery_display", display: "list" });
     await waitFor(() => expect(disc().display).toBe("list"));
-    expect(disc().graphView.labelsOn).toBe(false);
+    await waitFor(() => expect(disc().graphView.labelsOn).toBe(false));
     await run({ action: "set_discovery_display", display: "graph" });
     await waitFor(() => expect(q('[data-ui="graph-stub"]')).not.toBeNull());
     expect(q('[data-ui="graph-stub"]')?.getAttribute("data-labels")).toBe("false");
@@ -444,7 +444,7 @@ describe("repair round: controls, state and reports", () => {
     await waitFor(() => expect(disc().graphView.labelsOn).toBe(true));
     fireEvent.click(q('[data-ui="show-discovery-list"]')!);
     await waitFor(() => expect(disc().display).toBe("list"));
-    expect(disc().graphView.labelsOn).toBe(false);
+    await waitFor(() => expect(disc().graphView.labelsOn).toBe(false));
   });
 
   it("choosing the open candidate again keeps its tab; choosing another one starts on the abstract", async () => {
@@ -454,7 +454,7 @@ describe("repair round: controls, state and reports", () => {
     await waitFor(() => expect(disc().detail?.tab).toBe("citations"));
     await run({ action: "select_candidate", bibcode: "SEED1.R1" });
     fireEvent.click(q('[data-ui="discovery-paper"][data-ui-key="SEED1.R1"]')!);
-    expect(disc().detail?.tab).toBe("citations");
+    await waitFor(() => expect(disc().detail?.tab).toBe("citations"));
     await run({ action: "select_candidate", bibcode: "SEED1.R2" });
     await waitFor(() => expect(disc().detail?.tab).toBe("abstract"));
   });
@@ -527,7 +527,7 @@ describe("repair round: controls, state and reports", () => {
 
   it("the nodes carry no abstract (only the open candidate does) and a very long history stays a valid report", async () => {
     await explore();
-    expect(disc().graph!.nodes.every((n) => !("abstract" in n))).toBe(true);
+    await waitFor(() => expect(disc().graph!.nodes.every((n) => !("abstract" in n))).toBe(true));
     await run({ action: "select_candidate", bibcode: "SEED1.R1" });
     await waitFor(() => expect(disc().detail?.paper.abstract).toBe("Abstract of SEED1.R1"));
     const { captureDiscoveryPage } = await import("../src/copilot/discovery-context");
@@ -556,19 +556,19 @@ describe("two Library panes", () => {
 
   it("controls and the published page are the active pane's; the other pane is untouched and is not focused", async () => {
     await twoExplorations();
-    expect(h.context!.paneId).toBe(2);
+    await waitFor(() => expect(h.context!.paneId).toBe(2));
     expect(await run({ action: "filter_discovery", filter: "useful" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.filter).toBe("useful"));
-    expect(disc().graph!.seed).toBe("SEED3");
-    expect(h.context!.paneId).toBe(2); // focus did not move
+    await waitFor(() => expect(disc().graph!.seed).toBe("SEED3"));
+    await waitFor(() => expect(h.context!.paneId).toBe(2)); // focus did not move
     // pane 1's own filter is still "all"
     expect(await run({ action: "select_pane", paneId: 1 })).toEqual({ ok: true });
     await waitFor(() => expect(h.context?.paneId).toBe(1));
     await waitFor(() => expect(h.context?.discovery?.graph?.seed).toBe("SEED1"));
-    expect(disc().graph!.filter).toBe("all");
+    await waitFor(() => expect(disc().graph!.filter).toBe("all"));
     expect(await run({ action: "filter_discovery", filter: "related" })).toEqual({ ok: true });
     await waitFor(() => expect(disc().graph!.filter).toBe("related"));
-    expect(h.context!.paneId).toBe(1);
+    await waitFor(() => expect(h.context!.paneId).toBe(1));
   }, 20000);
 
   it("an active Library pane that is not exploring gets no control, while another pane explores: nothing moves", async () => {
@@ -576,10 +576,10 @@ describe("two Library panes", () => {
     await run({ action: "split_pane" });
     await waitFor(() => expect(h.context?.paneId).toBe(2));
     await waitFor(() => expect(h.context?.library?.refs.length).toBe(3));
-    expect(h.context!.discovery ?? null).toBeNull();
+    await waitFor(() => expect(h.context!.discovery ?? null).toBeNull());
     expect(await run({ action: "filter_discovery", filter: "related" })).toEqual({ ok: false, detail: "unavailable" });
     expect(await run({ action: "explore_candidate", bibcode: "SEED1.R1" })).toEqual({ ok: false, detail: "unavailable" });
-    expect(h.context!.paneId).toBe(2); // not switched to the exploring pane
+    await waitFor(() => expect(h.context!.paneId).toBe(2)); // not switched to the exploring pane
     expect(discoveryGets).toEqual(["SEED1"]);
   }, 20000);
 });

@@ -125,13 +125,13 @@ describe("the page the assistant receives", () => {
   it("is the whole filtered list, not the rows that happen to be mounted, and is a valid complete context", async () => {
     await boot();
     expect(PageContextSchema.safeParse(h.context).success).toBe(true);
-    expect(h.context).toMatchObject({ view: "library", status: "complete" });
-    expect(lib()).toMatchObject({ source: "live", total: COUNT, matched: COUNT, query: "" });
-    expect(lib().refs[lib().refs.length - 1]?.id).toBe(`doi:10.1000/p${COUNT}`);
-    expect(lib().links).toEqual([
+    await waitFor(() => expect(h.context).toMatchObject({ view: "library", status: "complete" }));
+    await waitFor(() => expect(lib()).toMatchObject({ source: "live", total: COUNT, matched: COUNT, query: "" }));
+    await waitFor(() => expect(lib().refs[lib().refs.length - 1]?.id).toBe(`doi:10.1000/p${COUNT}`));
+    await waitFor(() => expect(lib().links).toEqual([
       ["doi:10.1000/p1", "doi:10.1000/p2"],
       ["doi:10.1000/p2", `doi:10.1000/p${COUNT}`],
-    ]);
+    ]));
     expect(qa('[data-ui="work-item"]')).toHaveLength(COUNT);
   });
 
@@ -140,7 +140,7 @@ describe("the page the assistant receives", () => {
     fireEvent.change(q('[data-ui="search-library"]')!, { target: { value: "paper 31" } });
     await waitFor(() => expect(lib().matched).toBe(11)); // 31, 310-319
     expect(qa('[data-ui="work-item"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(lib().refs.map((r) => r.id));
-    expect(lib().total).toBe(COUNT);
+    await waitFor(() => expect(lib().total).toBe(COUNT));
     expect(JSON.stringify(h.context)).not.toContain("doi:10.1000/p5\"");
   });
 
@@ -148,8 +148,8 @@ describe("the page the assistant receives", () => {
     await boot();
     fireEvent.click(qa('[data-ui="work-item"]')[0]!);
     await waitFor(() => expect(lib().selectedRefId).toBe("doi:10.1000/p1"));
-    expect(lib().detail?.ref.note).toBe("A note nobody can edit here");
-    expect(lib().detail?.tab).toBe("meta");
+    await waitFor(() => expect(lib().detail?.ref.note).toBe("A note nobody can edit here"));
+    await waitFor(() => expect(lib().detail?.tab).toBe("meta"));
     fireEvent.click(q('[role="tab"][id$="bib"]') ?? qa('[role="tab"]').find((tab) => /bibtex/i.test(tab.textContent ?? ""))!);
     await waitFor(() => expect(lib().detail?.tab).toBe("bib"));
     expect(q('[data-ui="work-bibtex"] pre')?.textContent).toBe(lib().detail?.bibtex);
@@ -161,9 +161,9 @@ describe("the page the assistant receives", () => {
     await waitFor(() => expect(h.viewAction).not.toBeNull());
     await run({ action: "switch_view", view: "library" });
     await waitFor(() => expect(h.context?.library).toBeTruthy());
-    expect(h.context).toMatchObject({ status: "unavailable" });
-    expect(lib().source).toBe("demo");
-    expect(lib().error).toBeUndefined();
+    await waitFor(() => expect(h.context).toMatchObject({ status: "unavailable" }));
+    await waitFor(() => expect(lib().source).toBe("demo"));
+    await waitFor(() => expect(lib().error).toBeUndefined());
     expect(q('[data-ui="library-demo-notice"]')).not.toBeNull();
     expect(PageContextSchema.safeParse(h.context).success).toBe(true);
   });
@@ -174,8 +174,8 @@ describe("the page the assistant receives", () => {
     await waitFor(() => expect(h.viewAction).not.toBeNull());
     await run({ action: "switch_view", view: "library" });
     await waitFor(() => expect(h.context?.library).toBeTruthy());
-    expect(h.context).toMatchObject({ status: "error" });
-    expect(lib()).toMatchObject({ source: "error", error: "HTTP 500" });
+    await waitFor(() => expect(h.context).toMatchObject({ status: "error" }));
+    await waitFor(() => expect(lib()).toMatchObject({ source: "error", error: "HTTP 500" }));
     expect(PageContextSchema.safeParse(h.context).success).toBe(true);
   });
 
@@ -184,8 +184,8 @@ describe("the page the assistant receives", () => {
     expect(await run({ action: "set_sidebar", collapsed: true })).toEqual({ ok: true });
     await waitFor(() => expect(q('[data-ui="library-sidebar"]')).toBeNull());
     expect(qa('[data-ui="work-item"]')).toHaveLength(0);
-    expect(lib().refs).toHaveLength(COUNT);
-    expect(lib().refs[COUNT - 1]?.id).toBe(`doi:10.1000/p${COUNT}`);
+    await waitFor(() => expect(lib().refs).toHaveLength(COUNT));
+    await waitFor(() => expect(lib().refs[COUNT - 1]?.id).toBe(`doi:10.1000/p${COUNT}`));
   });
 
   it("graph buttons are pressed through the graph's own callbacks; labels are state the context reports", async () => {
@@ -193,7 +193,7 @@ describe("the page the assistant receives", () => {
     for (const control of ["zoom_in", "zoom_out", "fit", "relayout"] as const)
       expect(await run({ action: "graph_control", control })).toEqual({ ok: true });
     expect(g.calls).toEqual(["zoom_in", "zoom_out", "fit", "relayout"]);
-    expect(lib().graph.labelsOn).toBe(false);
+    await waitFor(() => expect(lib().graph.labelsOn).toBe(false));
     expect(await run({ action: "set_graph_labels", on: true })).toEqual({ ok: true });
     await waitFor(() => expect(lib().graph.labelsOn).toBe(true));
     expect(q('[data-ui="graph-stub"]')?.getAttribute("data-labels")).toBe("true");
@@ -208,16 +208,16 @@ describe("bound-view actions drive the controls' own state", () => {
     await waitFor(() => expect((q('[data-ui="search-library"]') as HTMLInputElement).value).toBe("paper 7"));
     expect(await run({ action: "select_work", refId: "doi:10.1000/p1" })).toEqual({ ok: true });
     await waitFor(() => expect(q('[data-ui="work-detail"]')?.getAttribute("data-ui-key")).toBe("doi:10.1000/p1"));
-    expect(lib().selectedRefId).toBe("doi:10.1000/p1"); // selected although the filter hides it
+    await waitFor(() => expect(lib().selectedRefId).toBe("doi:10.1000/p1")); // selected although the filter hides it
     expect(await run({ action: "set_detail_tab", tab: "files" })).toEqual({ ok: true });
     await waitFor(() => expect(q('[data-ui="work-fulltext"]')).not.toBeNull());
-    expect(lib().detail?.tab).toBe("files");
+    await waitFor(() => expect(lib().detail?.tab).toBe("files"));
     expect(await run({ action: "set_sidebar", collapsed: true })).toEqual({ ok: true });
     await waitFor(() => expect(q('[data-ui="library-sidebar"]')).toBeNull());
-    expect(lib().sidebarCollapsed).toBe(true);
+    await waitFor(() => expect(lib().sidebarCollapsed).toBe(true));
     expect(await run({ action: "select_work", refId: null })).toEqual({ ok: true });
     await waitFor(() => expect(q('[data-ui="work-detail"]')).toBeNull());
-    expect(lib().selectedRefId).toBeNull();
+    await waitFor(() => expect(lib().selectedRefId).toBeNull());
     expect(writes).toEqual([]);
   });
 
@@ -240,7 +240,7 @@ describe("bound-view actions drive the controls' own state", () => {
     expect(await run({ action: "set_temp_label", refId: "doi:10.1000/p2", label: "red" })).toEqual({ ok: true });
     await waitFor(() => expect(lib().temporaryLabels).toEqual({ "doi:10.1000/p2": "red" }));
     expect(q('[data-ui="work-item"][data-ui-key="doi:10.1000/p2"] .label-dot')).not.toBeNull();
-    expect(lib().refs.find((r) => r.id === "doi:10.1000/p2")?.label).toBeUndefined(); // not a stored label
+    await waitFor(() => expect(lib().refs.find((r) => r.id === "doi:10.1000/p2")?.label).toBeUndefined()); // not a stored label
     expect(await run({ action: "set_temp_label", refId: "doi:10.1000/p2", label: null })).toEqual({ ok: true });
     await waitFor(() => expect(lib().temporaryLabels).toEqual({ "doi:10.1000/p2": null }));
     expect(await run({ action: "set_temp_label", refId: "doi:10.1000/ghost", label: "blue" })).toEqual({ ok: false, detail: "not_found" });
