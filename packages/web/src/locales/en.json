@@ -94,6 +94,8 @@
     }
   },
   "doc": {
+    "mathMacroNotTypeset": "Formulas that define macros are not typeset; showing its source:",
+    "mathBudgetUsed": "Too many large formulas in this document; this one is not typeset. Showing its source:",
     "mathTooLarge": "Formula too large to typeset ({{count}} characters); showing its source:",
     "empty": "No document to display. Process a paper, or open one from Literature.",
     "loadingPaper": "Loading paper…",
@@ -215,7 +217,6 @@
         "code_indented": "Indented code is not supported. Use a fenced block.",
         "code_info_ignored": "Only the language is kept; the rest of the info string (\"{{subject}}\") is ignored.",
         "algorithm_lang_ignored": "An algorithm keeps no language; \"{{subject}}\" is ignored.",
-        "math_display_inline": "A $$...$$ display equation must be alone on its lines. Use $...$ inside a sentence.",
         "math_unclosed": "A $$ display equation is opened here and never closed.",
         "math_empty": "This formula is empty.",
         "math_katex": "This formula cannot be typeset: {{subject}}",
@@ -229,13 +230,17 @@
         "heading_token_unsupported": "[cite: ...] and [ref: ...] cannot be used in a heading.",
         "heading_dollar": "A literal $ in a heading may be shown as part of a formula.",
         "reserved_character": "The private-use character {{subject}} is reserved by the text format.",
-        "internal_error": "An element could not be matched to its place. This is a parser fault.",
         "math_contains_code": "A code span or URL inside this formula is kept as part of the formula.",
         "math_display_in_heading": "A display equation cannot be inside a heading. Use $...$ or put it in its own block.",
         "math_display_in_list": "A display equation cannot stay in place here. Put it between unordered list items or after the list.",
         "title_dollar": "A literal $ in the title may be shown as part of a formula.",
         "reference_id_collision": "The reference id \"{{subject}}\" is also the id of a block; they share one id space in the Reader.",
         "math_not_checked": "Not checked for typesetting errors (the formula is too large, or the checking budget is used up).",
+        "math_macro_unsupported": "{{subject}} defines or builds a macro, which formulas of a text document cannot do. Write the expanded formula.",
+        "math_untrusted_command": "{{subject}} needs trust, which is off: the Reader shows this formula as red source and drops its content.",
+        "scan_mismatch": "A formula or reference token here could not be placed: the scanner and the Markdown reader disagree about the structure around it (for example a code fence). Rewrite that part.",
+        "math_url_swallowed": "A bare URL swallows a $ here, so the formula before it is not closed. Put a space after the URL or leave the URL out of the formula.",
+        "math_display_inline": "A $$...$$ display equation is not allowed here (for example in a caption). Use $...$.",
         "too_many_diagnostics": "{{count}} more diagnostics are not shown."
       },
       "net": {

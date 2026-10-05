@@ -1,8 +1,11 @@
 /**
  * Formula validation for the text codec: the same KaTeX, with the same options as the Reader's shared math display
- * (`web/src/lib/math.tsx`), but throwing, so a formula the Reader would paint as an error is reported at the line that
- * wrote it. `trust` stays off (KaTeX's default): `\href`, `\url`, `\includegraphics` and friends are not allowed.
+ * (`web/src/lib/math.tsx`, both from contracts `math.ts`), but throwing, so a formula the Reader would paint as an
+ * error is reported at the line that wrote it. `trust` stays off: KaTeX asks the `trust` function before it honours
+ * `\href`, `\url`, `\includegraphics` or `\html*`; ours records the command and answers no, which is exactly the
+ * situation in which the Reader paints the source red and drops the content.
  */
+import { findMacroCommand, mathBaseOptions } from "@argelanderspace/contracts";
 import katex from "katex";
 
 /** The same cleaning the Reader applies before rendering: delimiters, `\tag{}` and `\label{}` are not typeset. */
@@ -17,28 +20,33 @@ export function cleanLatex(src: string): string {
   return s.trim();
 }
 
-/** The Reader's `errorColor` (web/src/lib/math.tsx): KaTeX paints what it cannot typeset in it. */
-const READER_ERROR_COLOR = "#b00020";
+export type MathVerdict =
+  | { kind: "ok" }
+  /** Macro definitions are not typeset (see contracts `math.ts`): an error, the Reader would not paint them either. */
+  | { kind: "macro"; command: string }
+  /** Needs trust (an active command): the Reader paints it as red source. */
+  | { kind: "trust"; command: string }
+  | { kind: "error"; message: string };
 
-/** `null` when KaTeX typesets the formula, else its (single-line, bounded) parse error. */
-export function katexError(latex: string, displayMode: boolean): string | null {
+/** What KaTeX makes of a formula (bounded in expansions; see the caller for the size and time budgets). */
+export function checkFormula(latex: string, displayMode: boolean): MathVerdict {
+  const cleaned = cleanLatex(latex);
+  const macro = findMacroCommand(cleaned);
+  if (macro !== null) return { kind: "macro", command: macro };
+  let untrusted: string | null = null;
   try {
-    const html = katex.renderToString(cleanLatex(latex), {
-      displayMode,
+    katex.renderToString(cleaned, {
+      ...mathBaseOptions(displayMode),
       throwOnError: true,
-      strict: "ignore",
-      output: "html",
-      errorColor: READER_ERROR_COLOR,
-      macros: { "\\ensuremath": "#1" },
+      trust: (context: { command: string }) => {
+        untrusted ??= context.command;
+        return false;
+      },
     });
-    // A command that needs `trust` (\href, \url, \includegraphics, \html*) does not throw: KaTeX paints its source in
-    // the error color and drops the content. The Reader shows exactly that, so say it here.
-    if (html.includes(READER_ERROR_COLOR))
-      return "a command that needs trust (such as \\href, \\url, \\includegraphics or \\html*) is not allowed and is shown as red source";
-    return null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const line = message.replace(/\s+/g, " ").trim();
-    return line.length > 200 ? `${line.slice(0, 197)}...` : line;
+    return { kind: "error", message: line.length > 200 ? `${line.slice(0, 197)}...` : line };
   }
+  return untrusted === null ? { kind: "ok" } : { kind: "trust", command: untrusted };
 }

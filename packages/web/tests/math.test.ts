@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MATH_RENDER_MAX_CHARS, renderMathToString } from "../src/lib/math";
+import { MATH_RENDER_MAX_CHARS, renderMathToString, resetMathBudget } from "../src/lib/math";
 
 describe("renderMathToString", () => {
   it("renders \\ensuremath via the identity macro (macro-expanded unit shorthands)", () => {
@@ -51,4 +51,45 @@ describe("renderMathToString", () => {
     // just under the limit still typesets
     expect(renderMathToString("x".repeat(100))).toContain("katex");
   });
+
+  it("a macro bomb is shown as source immediately (a defined macro used forty times took 24 s)", () => {
+    resetMathBudget();
+    const bomb = `\\def\\a{${"x".repeat(4000)}}${"\\a".repeat(40)}`;
+    const started = performance.now();
+    const html = renderMathToString(bomb, true);
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(html).toContain("math-oversize");
+    expect(html).not.toContain("katex");
+    // obfuscated definitions are caught too
+    for (const cmd of ["\\global\\def", "\\expandafter\\def", "\\csname def\\endcsname", "\\newcommand", "\\let"])
+      expect(renderMathToString(`${cmd}\\a{${"x".repeat(400)}}\\a`), cmd).toContain("math-oversize");
+    // a short definition and a double backslash are ordinary formulas
+    expect(renderMathToString("\\def\\a{x}\\a")).toContain("katex");
+    expect(renderMathToString(`a\\\\def${"b".repeat(400)}`)).toContain("katex");
+  });
+
+  it("hundreds of near-limit formulas cannot freeze the tab: past the document's budget they show source", () => {
+    resetMathBudget();
+    const started = performance.now();
+    let typeset = 0;
+    let source = 0;
+    for (let i = 0; i < 300; i++) {
+      const html = renderMathToString(`${"x+".repeat(19_999)}${i}`, true); // 39,999 characters, each different
+      if (html.includes("math-oversize")) source++;
+      else typeset++;
+    }
+    expect(performance.now() - started).toBeLessThan(15_000);
+    expect(typeset).toBeLessThanOrEqual(4);
+    expect(typeset).toBeGreaterThanOrEqual(1);
+    expect(source).toBe(300 - typeset);
+    // asking again for one already decided costs nothing and gives the same answer
+    const again = performance.now();
+    renderMathToString(`${"x+".repeat(19_999)}0`, true);
+    expect(performance.now() - again).toBeLessThan(50);
+    // a new document starts with a fresh budget
+    resetMathBudget();
+    expect(renderMathToString(`${"x+".repeat(19_999)}1`, true)).toContain("katex");
+    // small formulas are never affected
+    expect(renderMathToString("x^2")).toContain("katex");
+  }, 60_000);
 });

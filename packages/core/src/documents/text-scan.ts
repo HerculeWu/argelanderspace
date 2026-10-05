@@ -82,7 +82,6 @@ const UNCLOSED_DISPLAY_RE = /(?<!\\)\$\$/g;
 const TOKEN_RE = /(?<!\\)\[(cite|ref):/g;
 const BLANK_LINE_AT = /^\n[ \t]*\n/;
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})([^\n]*)$/;
-const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})[ \t]*$/;
 
 const blank = (m: string): string => m.replace(/[^\n]/g, " ");
 
@@ -99,14 +98,15 @@ function blankRanges(text: string, ranges: { start: number; end: number }[]): st
 }
 
 /**
- * Fenced code, CommonMark style: an opening fence is 3+ backticks or tildes at the start of a line (at most 3 spaces
- * of indentation; a backtick fence's info string has no backtick) and it closes at the first line of the same character
- * with at least the same length and nothing else. A fence that never closes runs to the end of the text. A ``` in the
- * middle of a line is an inline code span, not a fence.
+ * Fenced code, exactly as the lexer (`marked`) sees it: an opening fence is 3+ backticks or tildes at the start of a
+ * line (at most 3 spaces of indentation; a backtick fence's info string has no backtick). It closes at the first line
+ * that starts (at most 3 spaces in) with the SAME opening run, may continue with more fence characters of either kind,
+ * and ends with spaces only (a tab does not close it, like marked). A fence that never closes runs to the end of the
+ * text. A ``` in the middle of a line is an inline code span, not a fence. `text` has no lone CR (see scanSyntax).
  */
 function maskFences(text: string): string {
   const ranges: { start: number; end: number }[] = [];
-  let open: { char: string; length: number; from: number } | null = null;
+  let open: { close: RegExp; from: number } | null = null;
   let pos = 0;
   while (pos <= text.length) {
     const nl = text.indexOf("\n", pos);
@@ -117,17 +117,11 @@ function maskFences(text: string): string {
       if (m !== null) {
         const run = m[1] as string;
         if (!(run[0] === "`" && (m[2] as string).includes("`")))
-          open = { char: run[0] as string, length: run.length, from: pos };
+          open = { close: new RegExp(`^ {0,3}${run}[~\`]* *$`), from: pos };
       }
-    } else {
-      const m = FENCE_CLOSE.exec(line);
-      if (m !== null) {
-        const run = m[1] as string;
-        if (run[0] === open.char && run.length >= open.length) {
-          ranges.push({ start: open.from, end });
-          open = null;
-        }
-      }
+    } else if (open.close.test(line)) {
+      ranges.push({ start: open.from, end });
+      open = null;
     }
     if (nl === -1) break;
     pos = nl + 1;
@@ -164,7 +158,10 @@ export function unescapeTokenText(raw: string): string {
     .trim();
 }
 
-export function scanSyntax(text: string, options: { blockDisplay: boolean }): Scan {
+export function scanSyntax(source: string, options: { blockDisplay: boolean }): Scan {
+  // The scan sees the lexer's line structure: `marked` reads a lone CR as a line break, so the scan does too (same
+  // length, so every offset is still an offset of the source). Formulas are read from `source`, byte for byte.
+  const text = source.replace(/\r/g, "\n");
   const items: Item[] = [];
   const displays: DisplayMath[] = [];
   const problems: Problem[] = [];
@@ -203,7 +200,7 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
         "warning"
       );
     if (m[1] !== undefined) {
-      const latex = text.slice(start + 2, end - 2).trim();
+      const latex = source.slice(start + 2, end - 2).trim();
       if (latex === "") {
         problem("math_empty", start, "an empty formula");
         continue;
@@ -231,13 +228,28 @@ export function scanSyntax(text: string, options: { blockDisplay: boolean }): Sc
         start,
         end,
         where: start,
-        latex: text.slice(start + 1, end - 1),
+        latex: source.slice(start + 1, end - 1),
         bad: false,
       });
     }
   }
   masked = blankRanges(masked, mathRanges);
   const codeMasked = blankRanges(codeMasked0, mathRanges);
+  // A bare URL is a literal zone: it can swallow the closing `$` of a formula (`$\\href{http://x}{y}$`), which then
+  // stays text. Say so where an unmatched `$` precedes such a URL on its line.
+  for (const m of codeMasked0.matchAll(URL_RE)) {
+    const at = m.index ?? 0;
+    if (!m[0].endsWith("$")) continue; // the closing $ of a formula is the URL's last character
+    const lineStart = text.lastIndexOf("\n", at - 1) + 1;
+    if (/(?<!\\)\$/.test(masked.slice(lineStart, at)))
+      problem(
+        "math_url_swallowed",
+        at,
+        "a bare URL swallows a $ here, so the formula before it is not closed; put a space after the URL or leave the URL out of the formula",
+        undefined,
+        "warning"
+      );
+  }
   for (const m of masked.matchAll(UNCLOSED_DISPLAY_RE))
     problem("math_unclosed", m.index ?? 0, "a $$ display equation is opened here and never closed");
 

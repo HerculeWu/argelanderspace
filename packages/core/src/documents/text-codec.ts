@@ -15,6 +15,7 @@
 
 import { createHash } from "node:crypto";
 import {
+  findMacroCommand,
   type IrBlock,
   type IrSection,
   type IrSegment,
@@ -39,7 +40,7 @@ import {
 } from "../pipelines/tex/ir.js";
 import { citeShort } from "./render.js";
 import { formatJsonPath, parseLocatedJson } from "./text-json.js";
-import { katexError } from "./text-math.js";
+import { checkFormula } from "./text-math.js";
 import { type DisplayMath, type Item, PLACEHOLDER_RUN, scanSyntax } from "./text-scan.js";
 
 export interface TextParseOptions {
@@ -235,7 +236,9 @@ interface RefUse {
 interface Walk extends Ctx {
   items: Item[];
   nextItem: number;
-  misaligned: boolean;
+  /** Offset of the first token where a placeholder run found no matching find (a scanner/lexer disagreement). */
+  misalignedAt: number | undefined;
+  currentAt: number;
   cites: CiteUse[];
   refs: RefUse[];
   inlineMath: number;
@@ -251,7 +254,7 @@ function splitRuns(w: Walk, s: string, out: Piece[]): void {
     const item = w.items[w.nextItem];
     w.nextItem += 1;
     if (item === undefined || item.end - item.start !== m[0].length) {
-      w.misaligned = true;
+      w.misalignedAt ??= w.currentAt;
       continue;
     }
     out.push({ t: "item", item });
@@ -383,6 +386,18 @@ function headingText(w: Walk, at: number, pieces: Piece[]): string {
 }
 
 function checkMath(w: Walk, latex: string, display: boolean, at: number): void {
+  // Macro definitions are not typeset by the Reader either (see contracts math.ts): refused here, before any budget
+  const macro = findMacroCommand(latex);
+  if (macro !== null) {
+    report(
+      w,
+      at,
+      "math_macro_unsupported",
+      `${macro} defines or builds a macro, which formulas of a text document cannot do; write the expanded formula`,
+      { subject: macro }
+    );
+    return;
+  }
   // KaTeX is synchronous and superlinear in a formula's size, and this runs on the server's event loop: bound the work
   // per formula, in total characters, in count and in time. What is not checked is said so, at its place.
   const skip = (reason: string, message: string): void => {
@@ -411,12 +426,20 @@ function checkMath(w: Walk, latex: string, display: boolean, at: number): void {
   }
   w.mathChecks += 1;
   w.mathChars += latex.length;
-  const error = katexError(latex, display);
-  if (error !== null)
-    report(w, at, "math_katex", `the formula cannot be typeset: ${error}`, {
+  const verdict = checkFormula(latex, display);
+  if (verdict.kind === "error")
+    report(w, at, "math_katex", `the formula cannot be typeset: ${verdict.message}`, {
       severity: "warning",
-      subject: error,
+      subject: verdict.message,
     });
+  else if (verdict.kind === "trust")
+    report(
+      w,
+      at,
+      "math_untrusted_command",
+      `${verdict.command} needs trust, which is off: the Reader shows this formula as red source and drops its content`,
+      { severity: "warning", subject: verdict.command }
+    );
 }
 
 // --------------------------------------------------------------------------- //
@@ -434,32 +457,50 @@ interface FenceInfo {
   base: number;
 }
 
+/**
+ * The fence of a code token, read the way the lexer reads it: a line ends at `\n` or a lone CR, the block closes on a
+ * line that starts (at most 3 spaces in) with the opening run, may continue with fence characters, and ends with spaces
+ * only. `raw` is the SOURCE slice, so the body keeps every byte (a lone CR included) of the lines between the fences.
+ */
 function fenceOf(raw: string, at: number): FenceInfo | null {
-  const open = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\n]*)/.exec(raw);
+  const open = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\n\r]*)/.exec(raw);
   if (open === null) return null;
-  const fence = open[1] as string;
-  const lines = raw.replace(/\n+$/, "").split("\n");
-  let closed = false;
-  if (lines.length >= 2) {
-    const last = lines[lines.length - 1] as string;
-    const m = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(last);
-    closed =
-      m !== null && (m[1] as string)[0] === fence[0] && (m[1] as string).length >= fence.length;
+  const run = open[1] as string;
+  const spans: { start: number; end: number }[] = [];
+  let from = 0;
+  for (const m of raw.matchAll(/\n|\r/g)) {
+    spans.push({ start: from, end: m.index ?? 0 });
+    from = (m.index ?? 0) + 1;
   }
-  const innerLines = lines.slice(1, closed ? -1 : undefined);
-  const inner = innerLines.join("\n");
-  // the body as written: up to the fence's own indentation is removed from each line (CommonMark); nothing else changes,
-  // a lone CR included (`raw` is the source slice, not the lexer's normalized copy)
+  spans.push({ start: from, end: raw.length });
+  while (
+    spans.length > 1 &&
+    (spans[spans.length - 1] as { start: number; end: number }).start === raw.length
+  )
+    spans.pop();
+  let closed = false;
+  if (spans.length >= 2) {
+    const last = spans[spans.length - 1] as { start: number; end: number };
+    closed = new RegExp(`^ {0,3}${run}[~\`]* *$`).test(raw.slice(last.start, last.end));
+  }
+  const inner = spans.slice(1, closed ? -1 : undefined);
   const indent = (/^ */.exec(raw) as RegExpExecArray)[0].length;
   const strip = new RegExp(`^ {0,${indent}}`);
-  const body = innerLines.map((l) => l.replace(strip, "")).join("\n");
-  const firstNl = raw.indexOf("\n");
+  let body = "";
+  let innerText = "";
+  inner.forEach((span, i) => {
+    const line = raw.slice(span.start, span.end);
+    const sep = i < inner.length - 1 ? raw.charAt(span.end) : "";
+    body += line.replace(strip, "") + sep;
+    innerText += line + sep;
+  });
+  const first = spans[0] as { start: number; end: number };
   return {
     info: (open[2] as string).trim(),
     closed,
-    inner,
+    inner: innerText,
     body,
-    base: at + (firstNl === -1 ? raw.length : firstNl + 1),
+    base: at + (first.end >= raw.length ? raw.length : first.end + 1),
   };
 }
 
@@ -553,6 +594,8 @@ interface Entry {
   number?: string;
 }
 
+const SCAN_MISMATCH =
+  "a formula or reference token here could not be placed: the scanner and the Markdown reader disagree about the structure around it (for example a code fence); rewrite that part";
 const EMPTY_STATS: TextStats = { sections: 0, paragraphs: 0, lists: 0 };
 
 export function parseTextSource(markdown: string, options: TextParseOptions): TextParseResult {
@@ -572,7 +615,8 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     mathUnchecked: 0,
     items: [],
     nextItem: 0,
-    misaligned: false,
+    misalignedAt: undefined,
+    currentAt: 0,
     cites: [],
     refs: [],
     inlineMath: 0,
@@ -750,6 +794,8 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     const token = tokens[t] as Token;
     const at = offset;
     offset += token.raw.length;
+    const errorsBefore = w.errors;
+    w.currentAt = at;
     flushDisplays(at);
     switch (token.type) {
       case "space":
@@ -1064,6 +1110,14 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           }
           const seen = new Map<string, number>();
           result.data.forEach((ref, i) => {
+            if (ref.id.startsWith(ANNOTATION_ID_PREFIX) || PROTO_NAMES.has(ref.id))
+              report(
+                w,
+                whereIn(parsed.located, [i, "id"]),
+                "id_reserved",
+                `the reference id "${ref.id}" is reserved`,
+                { field: `[${i}].id`, subject: ref.id }
+              );
             // only web addresses: a reference url never becomes a script or file link
             if (ref.url !== undefined && !/^https?:\/\//i.test(ref.url))
               report(
@@ -1149,6 +1203,38 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         reportSyntax(w, at, token.type);
         break;
     }
+    // Every find the scan extracted must be consumed exactly once. One that lies inside a token that did not consume it
+    // (a code block, say) was extracted by the scan and also left in the block's own text: reported, never dropped
+    // silently or shown twice. A token that already reported an error explains the skip.
+    const end = at + token.raw.length;
+    for (
+      let item = w.items[w.nextItem];
+      item !== undefined && item.start < end;
+      item = w.items[w.nextItem]
+    ) {
+      if (w.errors === errorsBefore) report(w, item.start, "scan_mismatch", SCAN_MISMATCH);
+      w.nextItem += 1;
+    }
+    if (
+      token.type !== "space" &&
+      token.type !== "list" &&
+      token.type !== "heading" &&
+      token.type !== "paragraph" &&
+      token.type !== "text"
+    ) {
+      for (
+        let d = scan.displays[displayIndex];
+        d !== undefined && d.lineStart < end;
+        d = scan.displays[displayIndex]
+      ) {
+        if (w.errors === errorsBefore) report(w, d.start, "scan_mismatch", SCAN_MISMATCH);
+        displayIndex += 1;
+      }
+    }
+  }
+  for (let item = w.items[w.nextItem]; item !== undefined; item = w.items[w.nextItem]) {
+    if (w.errors === 0) report(w, item.start, "scan_mismatch", SCAN_MISMATCH);
+    w.nextItem += 1;
   }
   flushDisplays(Number.POSITIVE_INFINITY);
   if (pending !== null)
@@ -1282,21 +1368,17 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   const citationsByBlock: Record<string, string[]> = Object.fromEntries(
     [...cited].map(([id, e]) => [id, e.list])
   );
-  if (w.mathUnchecked > 0)
+  // the first formula past the budget was reported where it is; the summary counts the others
+  if (w.mathUnchecked > 1)
     report(
       w,
       undefined,
       "math_not_checked",
-      `${w.mathUnchecked} more formulas were not checked for typesetting errors (a budget bounds the work)`,
-      { severity: "warning", subject: String(w.mathUnchecked) }
+      `${w.mathUnchecked - 1} more formulas were not checked for typesetting errors (a budget bounds the work)`,
+      { severity: "warning", subject: String(w.mathUnchecked - 1) }
     );
-  if (w.errors === 0 && (w.misaligned || w.nextItem !== w.items.length))
-    report(
-      w,
-      undefined,
-      "internal_error",
-      "an inline element could not be matched to its place; this is a parser fault"
-    );
+  if (w.errors === 0 && w.misalignedAt !== undefined)
+    report(w, w.misalignedAt, "scan_mismatch", SCAN_MISMATCH);
 
   const stats: TextStats = { sections: sectionCount, paragraphs: paragraphCount, lists: listCount };
   if (equationCount > 0) stats.equations = equationCount;

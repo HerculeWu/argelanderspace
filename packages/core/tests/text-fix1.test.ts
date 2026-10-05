@@ -207,18 +207,19 @@ describe("B5/B6: id-keyed work is linear and safe", () => {
       ).toEqual(["id_reserved"]);
     }
   });
-  it("reference ids that are Object.prototype names work (maps, not objects)", () => {
-    const refs = marker("argelander-references", [
-      { id: "constructor", raw: "C" },
-      { id: "__proto__", raw: "P" },
-    ]);
-    const md = `See [cite: constructor;__proto__].\n\n${refs}`;
-    const r = parse(md);
-    expect(r.diagnostics).toEqual([]);
-    expect(r.ir?.citationsByBlock).toEqual({ "p-1": ["constructor", "__proto__"] });
-    expect(JSON.parse(JSON.stringify(r.ir?.citationsByBlock))).toEqual({
-      "p-1": ["constructor", "__proto__"],
-    });
+  it("reference ids are reserved like block ids: Object.prototype names and the ann- prefix", () => {
+    for (const id of ["constructor", "__proto__", "toString", "ann-1"]) {
+      const refs = marker("argelander-references", [{ id, raw: "R" }]);
+      const r = parse(`See [cite: ${id}].\n\n${refs}`);
+      expect(r.ir, id).toBeNull();
+      expect(
+        r.diagnostics.find((d) => d.code === "id_reserved"),
+        id
+      ).toMatchObject({
+        subject: id,
+        field: "[0].id",
+      });
+    }
   });
 });
 
@@ -245,8 +246,10 @@ describe("M3: formulas the Reader cannot paint are reported", () => {
       "\\includegraphics{a.png}",
       "\\htmlClass{c}{y}",
     ]) {
-      expect(codes(`a $${latex}$ b\n`), latex).toEqual([["math_katex", "warning", 1, 3]]);
-      expect(codes(`$$${latex}$$\n`), latex).toEqual([["math_katex", "warning", 1, 1]]);
+      expect(codes(`a $${latex}$ b\n`), latex).toEqual([
+        ["math_untrusted_command", "warning", 1, 3],
+      ]);
+      expect(codes(`$$${latex}$$\n`), latex).toEqual([["math_untrusted_command", "warning", 1, 1]]);
     }
     expect(codes("a $x^2$ b\n")).toEqual([]);
   });

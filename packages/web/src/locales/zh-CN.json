@@ -94,6 +94,8 @@
     }
   },
   "doc": {
+    "mathMacroNotTypeset": "定义宏的公式不排版，显示其源码：",
+    "mathBudgetUsed": "本文档的大公式过多，此公式未排版，显示其源码：",
     "mathTooLarge": "公式过大，未排版（{{count}} 个字符），显示其源码：",
     "empty": "没有可显示的文档。处理一篇论文，或从 文献 中打开。",
     "loadingPaper": "Loading paper…",
@@ -215,7 +217,6 @@
         "code_indented": "不支持缩进代码。请使用围栏代码块。",
         "code_info_ignored": "只保留语言；信息串其余部分（“{{subject}}”）被忽略。",
         "algorithm_lang_ignored": "算法不保留语言；“{{subject}}”被忽略。",
-        "math_display_inline": "$$...$$ 行间公式必须独占其所在的行。句子内请用 $...$。",
         "math_unclosed": "这里打开了 $$ 行间公式，但没有闭合。",
         "math_empty": "这个公式是空的。",
         "math_katex": "这个公式无法排版：{{subject}}",
@@ -229,13 +230,17 @@
         "heading_token_unsupported": "标题中不能使用 [cite: ...] 和 [ref: ...]。",
         "heading_dollar": "标题中的字面 $ 可能被显示为公式的一部分。",
         "reserved_character": "私用字符 {{subject}} 被文本格式保留。",
-        "internal_error": "有元素无法对应到其位置。这是解析器故障。",
         "math_contains_code": "此公式内的行内代码或网址按公式内容保留。",
         "math_display_in_heading": "标题中不能放行间公式。请用 $...$ 或另起一块。",
         "math_display_in_list": "行间公式无法留在此处。请放在无序列表项之间或列表之后。",
         "title_dollar": "标题中的字面 $ 可能被显示为公式的一部分。",
         "reference_id_collision": "参考文献 id“{{subject}}”同时是某个块的 id；它们在阅读器中共用同一个 id 空间。",
         "math_not_checked": "未检查排版错误（公式过大，或检查预算已用完）。",
+        "math_macro_unsupported": "{{subject}} 会定义或构造宏，文本文档的公式不支持。请写出展开后的公式。",
+        "math_untrusted_command": "{{subject}} 需要信任，而信任是关闭的：阅读器会把此公式显示为红色源码并丢掉其内容。",
+        "scan_mismatch": "此处的公式或引用标记无法定位：扫描器与 Markdown 解析器对其周围结构（例如代码围栏）的理解不一致。请改写这一部分。",
+        "math_url_swallowed": "此处的裸网址吞掉了一个 $，其前面的公式因此没有闭合。请在网址后加空格，或把网址移出公式。",
+        "math_display_inline": "此处不允许 $$...$$ 行间公式（例如在图注里）。请用 $...$。",
         "too_many_diagnostics": "另有 {{count}} 条诊断未列出。"
       },
       "net": {

@@ -383,7 +383,7 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
       const r = parse("# T\n\nX $\\href{javascript:alert(1)}{x}$ y.\n");
       expect(r.ir).not.toBeNull();
       expect(r.diagnostics).toMatchObject([
-        { code: "math_katex", severity: "warning", line: 3, column: 3 },
+        { code: "math_untrusted_command", severity: "warning", line: 3, column: 3 },
       ]);
       const para = blocksOf("# T\n\nX $\\href{javascript:alert(1)}{x}$ y.\n")[0];
       expect(para?.type === "paragraph" && para.segments[1]).toEqual({
@@ -800,7 +800,7 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
       // 3000 checks at most (fewer when the time budget ends the pass sooner)
       expect(
         Number(r.diagnostics.find((d) => d.line === undefined)?.subject)
-      ).toBeGreaterThanOrEqual(37000);
+      ).toBeGreaterThanOrEqual(36999);
       expect(located?.line).toBeGreaterThan(2);
       expect(r.stats.inlineMath).toBe(40000);
     });

@@ -1,4 +1,5 @@
 import katex from "katex";
+import { MATH_RENDER_MAX_CHARS, findMacroCommand, mathBaseOptions } from "@argelanderspace/contracts";
 import i18n from "../i18n";
 
 /** Strip $/$$ delimiters, \tag{}, \label{}, and surrounding whitespace. */
@@ -25,34 +26,68 @@ export function flattenLatex(src: string): string {
 }
 
 /**
- * KaTeX is synchronous and superlinear in a formula's size (a 400 KB formula takes over a minute), so a formula this
- * long is shown as its source with a notice instead of being typeset: a published text Doc must not be able to freeze
- * the tab. The `.math-error` class keeps the annotation text map treating it as the same atom.
+ * KaTeX is synchronous and cannot be interrupted, and its cost is superlinear in the output: a 400 KB formula takes over
+ * a minute, a few-thousand-character macro used forty times tens of seconds. A published text Doc must not be able to
+ * freeze the tab, so the Reader bounds the work in four ways and shows the SOURCE with a notice instead of typesetting:
+ * - a formula over {@link MATH_RENDER_MAX_CHARS} characters;
+ * - a macro-defining command in a formula over {@link MACRO_GUARD_CHARS} characters (text Docs refuse them anyway);
+ * - once the formulas over {@link LARGE_FORMULA_CHARS} characters typeset so far in this document have used
+ *   {@link LARGE_TOTAL_CHARS} characters (the count restarts for each document, see `resetMathBudget`);
+ * - the same KaTeX options as validation (`maxExpand` among them), from contracts.
+ * The notice keeps the `.math-error` root class so the annotation text map treats it as the same atom.
  */
-export const MATH_RENDER_MAX_CHARS = 40_000;
+export { MATH_RENDER_MAX_CHARS };
 const OVERSIZE_SHOWN_CHARS = 4_000;
+const MACRO_GUARD_CHARS = 300;
+const LARGE_FORMULA_CHARS = 2_000;
+const LARGE_TOTAL_CHARS = 60_000;
+
+let largeSpent = 0;
+/** Large formulas already decided for this document (typeset or shown as source): a re-render costs nothing. */
+const largeSeen = new Map<string, string>();
+
+/** A new document starts with a fresh typesetting budget. */
+export function resetMathBudget(): void {
+  largeSpent = 0;
+  largeSeen.clear();
+}
+
+function sourceInstead(latex: string, note: string): string {
+  const shown = latex.length > OVERSIZE_SHOWN_CHARS ? `${latex.slice(0, OVERSIZE_SHOWN_CHARS)}…` : latex;
+  return `<span class="math-error math-oversize" title="${escapeHtml(note)}"><span class="math-oversize-note">${escapeHtml(note)}</span> <code>${escapeHtml(shown)}</code></span>`;
+}
 
 export function renderMathToString(latex: string, displayMode = false): string {
-  if (latex.length > MATH_RENDER_MAX_CHARS) {
-    const note = i18n.t("doc.mathTooLarge", { count: latex.length });
-    const shown = latex.length > OVERSIZE_SHOWN_CHARS ? `${latex.slice(0, OVERSIZE_SHOWN_CHARS)}…` : latex;
-    return `<span class="math-error math-oversize" title="${escapeHtml(note)}"><span class="math-oversize-note">${escapeHtml(note)}</span> <code>${escapeHtml(shown)}</code></span>`;
+  if (latex.length > MATH_RENDER_MAX_CHARS)
+    return sourceInstead(latex, i18n.t("doc.mathTooLarge", { count: latex.length }));
+  const large = latex.length > LARGE_FORMULA_CHARS;
+  const key = large ? `${displayMode ? 1 : 0}:${latex}` : "";
+  if (large) {
+    const seen = largeSeen.get(key);
+    if (seen !== undefined) return seen;
   }
+  if (latex.length > MACRO_GUARD_CHARS && findMacroCommand(latex) !== null)
+    return sourceInstead(latex, i18n.t("doc.mathMacroNotTypeset"));
+  if (large && largeSpent + latex.length > LARGE_TOTAL_CHARS) {
+    const html = sourceInstead(latex, i18n.t("doc.mathBudgetUsed"));
+    largeSeen.set(key, html);
+    return html;
+  }
+  let html: string;
   try {
-    return katex.renderToString(latex, {
-      displayMode,
+    html = katex.renderToString(latex, {
+      ...mathBaseOptions(displayMode),
       throwOnError: false,
-      strict: "ignore",
-      output: "html",
       errorColor: "#b00020",
-      // \ensuremath{…} survives macro expansion (unit/quantity shorthands like
-      // \gobs); KaTeX has no such function — as a macro it is the identity in
-      // the math contexts we always render in.
-      macros: { "\\ensuremath": "#1" },
     });
   } catch {
-    return `<span class="math-error">${escapeHtml(latex)}</span>`;
+    html = `<span class="math-error">${escapeHtml(latex)}</span>`;
   }
+  if (large) {
+    largeSpent += latex.length;
+    largeSeen.set(key, html);
+  }
+  return html;
 }
 
 export function Math({
