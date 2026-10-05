@@ -30,6 +30,7 @@ import {
 } from "./annotations.js";
 import type { IrBlock, IrSection, IrSegment } from "./doc-ir.js";
 import { ReferenceSchema } from "./doc-ir.js";
+import { PDF_ANNOTATION_ACTIONS } from "./pdf-annotation-ops.js";
 import {
   PDF_VIEW_ACTIONS,
   PdfReadPageImageOperationSchema,
@@ -766,6 +767,7 @@ export const READER_OPERATION_ACTIONS = [
   "read_page_image",
   ...READER_VIEW_ACTIONS,
   ...READER_WRITE_ACTIONS,
+  ...PDF_ANNOTATION_ACTIONS,
 ] as const;
 
 // ---- Shared context helpers -------------------------------------------------------------------------- //

@@ -197,7 +197,7 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
           <label>{t("pdfReader.rectangleLineWidth")} <input data-ui="pdf-rectangle-line-width" aria-label={t("pdfReader.rectangleLineWidth")} disabled={blocked} type="number" min="1" max="32" value={style.line_width} onChange={(event) => setStyle({ ...style, line_width: Number(event.target.value) })} onBlur={commitStyle} onKeyUp={(event) => { if (event.key === "Enter") commitStyle(); }} /></label>
         </>;
       })()}
-        {editing[annotation.id] ? <textarea data-ui="pdf-annotation-body-input" aria-label={t("pdfReader.annotationBody")} disabled={blocked} value={draft} onChange={(event) => session.setDraft(annotation.id, event.target.value)} /> : <div className="pdf-workbench-body" data-ui="pdf-annotation-body" dangerouslySetInnerHTML={{ __html: mdWithMath(annotation.body) }} />}
+        {editing[annotation.id] ? <textarea data-ui="pdf-annotation-body-input" aria-label={t("pdfReader.annotationBody")} disabled={blocked} value={draft} onChange={(event) => session.setDraft(annotation.id, event.target.value)} /> : <div className="pdf-workbench-body" data-ui="pdf-annotation-body" dangerouslySetInnerHTML={{ __html: mdWithMath(annotation.body, { safe: true }) }} />}
         <div className="pdf-workbench-item-actions" data-ui="pdf-annotation-item-actions">
           {editing[annotation.id] ? <>
             <Button disabled={blocked || !hasDraft || !draft.trim()} data-ui="save-pdf-annotation-body" onClick={() => { session.saveBody(annotation.id); }}>{t("pdfReader.saveBody")}</Button>

@@ -156,8 +156,21 @@ Copilot 的 `reader` 工具有 `create_annotation` / `update_annotation` / `dele
 - **重复 id**（手工编辑所致）与页面一致：删除移除全部同 id，更新改全部同 id，首条 body 相同则 noop。
 - **归档与错误分支**：访问路径在写入时发现正文已被替换会按三态归档旧批次（与打开 Doc 相同），结果带 `archivedOlder`（条数）与提示，agent 应告诉用户；`archive` 码＝旧批次无法归档、current 原样保留、零写入；`new_current` 码＝旧批次**已归档**但新空 current 未建成（契约的特殊中间态，下次访问重建，不广播 invalidate、不写入本次请求），结果 `error`＋`archivedOlder:true`；损坏的 PDF 元数据＝元数据错误；每个码有各自准确文案，不再套用「图片缺失」。
 - **操作记录**：写入记录带 `label`（Doc 标题＋结构 id 或引文）与结果 `rev`，沿用既有记录字段与徽标，无新 UI。
-- **展示**：标注 body 现可由 agent 写入，气泡里的 Markdown 用 `mdWithMath(..., {safe:true})`：活性 HTML 与图片显示为文本，仅 http(s)/mailto 链接可点，数学/代码/存储字节不变。（PDF 工作台面板的 body 展示仍是旧路径，归 PDF 票。）
-- **局限**：只有 LaTeX Doc（PDF Doc→`unsupported`）；跨进程同 Doc 并发写仍不支持；UI 现无标注撤销，工具也无；`reader.read` 对旧指纹文件不并入标注（`stale`），写入时才由访问路径归档。
+- **展示**：标注 body 现可由 agent 写入，气泡里的 Markdown 用 `mdWithMath(..., {safe:true})`：活性 HTML 与图片显示为文本，仅 http(s)/mailto 链接可点，数学/代码/存储字节不变。（PDF 工作台面板的 body 展示同样改用该安全路径，见下节。）
+- **局限**：这三个 LaTeX 动作只用于 LaTeX Doc（对 PDF Doc 返回 `unsupported` 并指向下节的 PDF 动作）；跨进程同 Doc 并发写仍不支持；UI 现无标注撤销，工具也无；`reader.read` 对旧指纹文件不并入标注（`stale`），写入时才由访问路径归档。
+
+## Copilot 写入 PDF 标注（票 21）
+
+`reader` 工具的 `create_pdf_annotation` / `update_pdf_annotation` / `delete_pdf_annotation` / `undo_pdf_annotation` / `redo_pdf_annotation` 是 PDF Reader 面板与工具栏的同一批操作（区域/高亮/下划线/删除线工具、页评论与整篇评论按钮、正文编辑、矩形样式与高亮颜色、垃圾桶、撤销与重做）。不新增标注类别、作者、线程或自动 re-anchor；PDF 字节永不改动，也不走 LaTeX 的 ensure/归档。
+
+- **同一把锁与同一套检查**：写入在 app.ts 的 `annotationLock` 内由 core `commitPdfAnnotationChange` 提交，检查与页面 `PUT /pdf/annotations` 相同：content-busy→`rejected`、原件只读一次并核对不可变 SHA-256、sidecar 对 Doc/hash 的绑定与页范围、期望 rev；`sha256` 或 `rev` 不符→`conflict`（`document_changed`/`rev_mismatch`）且零写入；读不到/损坏的 sidecar 是 `error`，原 bytes 原样保留，不重置、不重绑；成功后才广播 `annotation.changed`（cause `put`）。tool 不读写文件，也不读 archive。
+- **窄修改，保留未知键**：以磁盘上 sidecar 原样为底，只替换 `annotations` 与 `rev`（顶层与每条标注、target、矩形、样式里的未知键都保留），合并结果过 contracts schema 后同目录临时文件＋rename 原子替换；未成功落盘不发通知。页面 PUT 的整份替换行为不变。
+- **每次写入绑定读到的状态**：`sha256`（`reading.sha256`）与 `rev`（`reading.annotationsRev` 或上一次写入结果的 `epoch.annotationsRev`）必带；`update`/`delete` 另带 `expectedUpdatedAt`（该条在最近一次读取或写入结果里的 `updated_at`，body、矩形、样式或颜色变化时才变）。即使 rev 已是当前值，只要该条已被用户改过就 `conflict(annotation_changed)` 并带回当前内容，零写入；冲突后必须重读再形成新请求，不能只换数字重发。用户未保存的面板草稿不被覆盖或代存：页面既有的「标注在别处改变」提示出现，草稿保留。
+- **目标**：rectangle `{pageIndex, rectangle}`（可见页分数，≥0.006、在页内，样式默认同区域工具）；page_comment `{pageIndex}`；document_comment；highlight/underline/strikeout 的 `parts` 每页一条 `{pageIndex, quote, occurrence?}`，quote 必须逐字取自该页真实文字层（`reading.pages[].text`，含换行），页内须唯一或由 `occurrence` 指明，矩形由服务端用 PDFium 在同一已验证原件上按与 Reader 选区**同一算法**（`pdfRectsWithinSlice` 与 `buildPdfTextTarget`，在 contracts，由 web 测试逐字符区间与 EmbedPDF 的 `rectsWithinSlice` 对拍）计算，调用方不能给矩形；跨页是一条逻辑标注，quote 以换行连接、矩形按页分组；无文字层页、quote 不存在/歧义、文字与几何无法对应→`invalid`，不造文字 target。Node 的 PDFium 以「观看后」的页面系（已应用 /Rotate）报告几何，所以此处按旋转 0 归一化，不再按页旋转转第二次（`tests/pdf-text-target-rotation.test.ts` 用 0/90/180/270 四页验证）。
+- **与 UI 同规则**：kind、页、文字 target、created_at 创建后不可变；高亮默认黄色（`#ffd228`）不写 `color`，选其它预设才写；矩形样式更新只改给出的字段；`updated_at` 仅在 body/矩形/样式/颜色变化时变，相同内容为 `noop`；删除单条立即生效、无确认（垃圾桶同样无确认）。
+- **撤销/重做**：服务内存中按 Doc 保存 agent **自己**经此工具所做更改的历史，规则同面板会话：只有历史留下的 rev 仍是当前 rev 且存储内容与历史一致时才可撤销/重做（用户或其他标签页在其后写过、或文件被手改，历史即结束，工具返回 `noop` 与原因，不覆盖）；新更改清空重做；撤销/重做本身是一次带新 rev 的写入，被还原的原有标注保持原 id/时间，被改回内容的标注 `updated_at` 更新；每 Doc 最多 50 步，服务重启即失。agent 的写入对页面来说是外部 rev，会结束该标签页面板自身的撤销历史（与另一标签页写入同）。
+- **展示**：PDF 工作台面板的标注 body 现用 `mdWithMath(..., {safe:true})`（活性 HTML 与图片显示为文本、仅 http(s)/mailto 链接可点；之前直接渲染，粘贴的 `<img onerror>` 会执行）。
+- **局限**：内嵌 PDF 标注仍只读且不进集合；跨进程同 Doc 并发写仍不支持；已知既有问题——Reader 自己在**旋转 90°/270° 的非方形页**上用鼠标选文字创建的标注矩形位置不对（页面按可见尺寸归一化，而浏览器引擎几何在未旋转页面系），Copilot 的文字标注不受影响；该 UI 缺陷未在本票修复，另记。
 
 ## CLI annot
 

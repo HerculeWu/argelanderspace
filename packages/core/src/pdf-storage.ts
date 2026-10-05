@@ -359,6 +359,60 @@ export function savePdfAnnotationsFile(
   return saved;
 }
 
+export type PdfAnnotationChange<T> =
+  | { kind: "saved"; file: PdfAnnotationsFile }
+  | { kind: "skipped"; file: PdfAnnotationsFile; value: T }
+  | { kind: "busy" }
+  | { kind: "document_changed" }
+  | { kind: "rev_mismatch"; rev: number };
+
+/**
+ * One narrow, expected-state change of the workbench annotations (copilot ticket 21): the same checks as
+ * `savePdfAnnotationsFile` (busy, the original read once and verified against its immutable SHA-256, the sidecar's
+ * binding to it and to the Doc, the page bounds of what is stored) and the same expected-revision rule, but the
+ * caller supplies the change instead of a whole replacement file. `build` gets the file exactly as stored (every
+ * key the application does not know is still in it) and returns the next annotation list or `{skip}` when there is
+ * nothing to write. The next file is the stored one with only `annotations` and `rev` replaced, validated against
+ * the contract, then replaced atomically (same-directory temp file and rename); anything that fails before the
+ * rename leaves the stored bytes untouched. The caller runs this inside the annotations lock.
+ */
+export function commitPdfAnnotationChange<T>(
+  paths: LibraryPaths,
+  docId: string,
+  expect: { sha256: string; rev: number },
+  build: (
+    current: PdfAnnotationsFile,
+    metadata: PdfDocMetadata
+  ) => { next: PdfAnnotationsFile["annotations"] } | { skip: T },
+  isBusy: (docId: string) => boolean = () => false
+): PdfAnnotationChange<T> {
+  if (isBusy(docId)) return { kind: "busy" };
+  const metadata = readPdfMetadataIfPresent(paths, docId);
+  if (!metadata) throw new Error("PDF metadata missing");
+  try {
+    readVerifiedPdf(paths, docId);
+  } catch (error) {
+    if (error instanceof PdfContentChangedError) return { kind: "document_changed" };
+    throw error;
+  }
+  if (expect.sha256 !== metadata.sha256) return { kind: "document_changed" };
+  const current = readPdfAnnotationsFile(paths, docId);
+  if (current.rev !== expect.rev) return { kind: "rev_mismatch", rev: current.rev };
+  const built = build(current, metadata);
+  if ("skip" in built) return { kind: "skipped", file: current, value: built.skip };
+  const saved = PdfAnnotationsFileSchema.parse({
+    ...current,
+    rev: current.rev + 1,
+    annotations: built.next,
+  });
+  validatePdfAnnotationsPageBounds(saved.annotations, metadata.page_count);
+  atomicWrite(
+    join(safeDocDir(paths, docId), "annotations.json"),
+    `${JSON.stringify(saved, null, 2)}\n`
+  );
+  return { kind: "saved", file: saved };
+}
+
 export function readPdfReadingPosition(paths: LibraryPaths, docId: string) {
   const dir = safeDocDir(paths, docId);
   const metadata = readPdfMetadataIfPresent(paths, docId);

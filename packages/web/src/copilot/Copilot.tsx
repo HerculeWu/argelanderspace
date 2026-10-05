@@ -35,6 +35,8 @@ export const OPERATION_ACTION_KEYS = {
   read_page_image: "copilot.operations.actions.read_page_image", goto_page: "copilot.operations.actions.goto_page", next_page: "copilot.operations.actions.next_page", previous_page: "copilot.operations.actions.previous_page",
   open_outline_item: "copilot.operations.actions.open_outline_item", search: "copilot.operations.actions.search", open_search_result: "copilot.operations.actions.open_search_result", open_annotation: "copilot.operations.actions.open_annotation", zoom: "copilot.operations.actions.zoom",
   create_annotation: "copilot.operations.actions.create_annotation", update_annotation: "copilot.operations.actions.update_annotation", delete_annotation: "copilot.operations.actions.delete_annotation",
+  create_pdf_annotation: "copilot.operations.actions.create_pdf_annotation", update_pdf_annotation: "copilot.operations.actions.update_pdf_annotation", delete_pdf_annotation: "copilot.operations.actions.delete_pdf_annotation",
+  undo_pdf_annotation: "copilot.operations.actions.undo_pdf_annotation", redo_pdf_annotation: "copilot.operations.actions.redo_pdf_annotation",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
