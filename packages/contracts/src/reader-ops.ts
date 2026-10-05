@@ -735,7 +735,7 @@ export const ReaderViewActionSchema = z.discriminatedUnion("action", [
   z
     .object({ action: z.literal("set_right_tab"), docId: Id, tab: z.enum(READER_RIGHT_TABS) })
     .strict(),
-  /** The Retry buttons of the sync/error banner, the load-error page and the annotations panel. */
+  /** The Retry buttons of the sync/error banner, the load-error page (a text Doc's source panel too), and the annotations panel. */
   z.object({ action: z.literal("retry_sync"), docId: Id }).strict(),
   /** A text Doc's own tabs (copilot ticket 29): the reading (Reader) or the Markdown source. File-level, never a position. */
   z

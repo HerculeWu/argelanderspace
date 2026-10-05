@@ -362,6 +362,12 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const listController = useRef<ListModeController | null>(null);
   const registerList = useCallback((controller: ListModeController | null) => { listController.current = controller; }, []);
   applyViewAction.current = async (action) => {
+    // The load-failure page's Retry (`retry-plans`); a loaded page has no such button, so there is nothing to press.
+    if (action.action === "retry_plans") {
+      if (docRef.current) return { ok: false, detail: "disabled" };
+      await reload();
+      return docRef.current ? { ok: true } : { ok: false, detail: "failed" };
+    }
     if (!docRef.current) return { ok: false, detail: "unavailable" };
     // The completed group's fold lives in the list view; asking for it elsewhere is honestly "unavailable".
     if (action.action === "set_completed") {

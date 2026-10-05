@@ -1404,6 +1404,7 @@
         "close_task": "Close task",
         "set_completed": "Show or hide completed tasks",
         "open_task_doc": "Open task document",
+        "retry_plans": "Retry loading plans",
         "capabilities": "Read workspace",
         "switch_view": "Switch view",
         "split_pane": "Split pane",

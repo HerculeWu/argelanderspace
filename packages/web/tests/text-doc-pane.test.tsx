@@ -42,6 +42,8 @@ interface Backend {
   /** the bodies of POST .../source/assets/from-pdf (ticket 29) and the next answer (default: add a PNG) */
   pdfPosts: Record<string, unknown>[];
   pdfAnswer?: () => Response;
+  /** the status of GET .../source while a load failure is being simulated (default 200) */
+  sourceStatus?: number;
 }
 let backend: Backend;
 const dto = (): TextSourceDto => ({
@@ -60,7 +62,7 @@ function installBackend() {
     const url = String(input);
     const method = init?.method ?? "GET";
     backend.log.push(`${method} ${url}`);
-    if (url === `/api/paper/${DOC}/source` && method === "GET") return json(dto());
+    if (url === `/api/paper/${DOC}/source` && method === "GET") return backend.sourceStatus && backend.sourceStatus !== 200 ? json({ detail: "boom" }, backend.sourceStatus) : json(dto());
     if (url === `/api/paper/${DOC}/source` && method === "PUT") {
       const body = JSON.parse(String(init?.body)) as { expectedRev: number; markdown: string };
       backend.puts.push(body);
@@ -114,8 +116,9 @@ const description = (over: Partial<TextDescription> = {}): TextDescription => ({
 const opened: string[] = [];
 const pages: (TextSourcePage | null)[] = [];
 const viewHandles: (((view: "reader" | "source") => void) | null)[] = [];
+const retryHandles: (((() => void) | null))[] = [];
 const stubBridge: ReaderBridge = {
-  setSession() {}, setLive() {}, setFailure() {}, setPanels() {}, setHandle() {}, setRetry() {},
+  setSession() {}, setLive() {}, setFailure() {}, setPanels() {}, setHandle() {}, setRetry: (retry) => { retryHandles.push(retry); },
   setTextView: (setView) => { viewHandles.push(setView); },
 };
 function Harness({ withPdf = false }: { withPdf?: boolean }) {
@@ -162,6 +165,7 @@ beforeEach(() => {
   opened.length = 0;
   pages.length = 0;
   viewHandles.length = 0;
+  retryHandles.length = 0;
   installBackend();
 });
 afterEach(() => {
@@ -415,6 +419,23 @@ describe("text Doc pane: autosave and explicit generation", () => {
     expect(ui(view.container, "text-source-valid")?.textContent).toContain("2 节 · 3 段 · 1 个列表");
     expect(posts("generate")).toHaveLength(0);
     expect(posts("validate")).toHaveLength(1);
+  });
+});
+
+describe("text Doc pane: load failure Retry offered to the Copilot (ticket 32 gap G2)", () => {
+  it("a failed source load offers the page's own Retry through the bridge (reader retry_sync) and withdraws it once loaded", async () => {
+    backend.sourceStatus = 500;
+    const view = render(<Harness />);
+    await waitFor(() => expect(ui(view.container, "text-source-load-error")).toBeTruthy());
+    const offered = retryHandles[retryHandles.length - 1];
+    expect(typeof offered).toBe("function");
+    const getsBefore = backend.log.filter((l) => l === `GET /api/paper/${DOC}/source`).length;
+    backend.sourceStatus = 200;
+    act(() => offered?.());
+    await waitFor(() => expect(input(view.container)).not.toBeNull());
+    expect(backend.log.filter((l) => l === `GET /api/paper/${DOC}/source`).length).toBe(getsBefore + 1);
+    // the loaded editor has nothing to retry: the offer is withdrawn
+    expect(retryHandles[retryHandles.length - 1]).toBeNull();
   });
 });
 

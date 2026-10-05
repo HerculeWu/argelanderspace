@@ -307,6 +307,13 @@ function TextSourceEditor({
   const { t } = useTranslation();
   const [load, setLoad] = useState<{ phase: "loading" } | { phase: "error"; detail: string } | { phase: "ready" }>({ phase: "loading" });
   const [attempt, setAttempt] = useState(0);
+  // The load-error page's Retry is the model's `reader retry_sync` for as long as that page is shown (ticket 32).
+  const bridge = useReaderBridge();
+  useEffect(() => {
+    if (load.phase !== "error") return;
+    bridge.setRetry(() => setAttempt((n) => n + 1));
+    return () => bridge.setRetry(null);
+  }, [bridge, load.phase]);
   const [initialText, setInitialText] = useState("");
   const [chars, setChars] = useState(0);
   const [save, setSave] = useState<SaveState>("saved");

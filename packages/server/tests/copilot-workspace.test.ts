@@ -665,6 +665,26 @@ test("task documents and the completed-group fold are agent actions on the Plan 
   ]);
 });
 
+test("the Plan page's load-failure Retry (retry_plans, ticket 32) is delivered to the bound view and reported as the page answered", async () => {
+  const port = await startHub();
+  const id = await create();
+  const a = withWorkspace(page(A));
+  const tab = await openTab(port, a.viewId, id);
+  await request(`/views/${a.viewId}`, "PUT", a);
+  script = [
+    () => ({ call: { action: "retry_plans" } }),
+    () => ({ call: { action: "retry_plans", planId: "p_0000000a" } }), // the control has no argument
+    () => ({ text: "ok" }),
+  ];
+  expect((await send(id, a)).status).toBe(202);
+  await settled(id);
+  expect(tab.actions.map((e) => e.action)).toEqual([{ action: "retry_plans" }]);
+  expect(operations(await host.snapshot(id)).map((o) => `${o.action}:${o.status}`)).toEqual([
+    "retry_plans:ok",
+    "retry_plans:unsupported",
+  ]);
+});
+
 test("provider status is read-only and redacted: usable providers and model capabilities, never a key, endpoint or sign-in code", async () => {
   const port = await startHub();
   const id = await create();

@@ -1197,3 +1197,71 @@ test("a window barely above the instruction (40100 tokens): a read that finds no
     expect(result.detail).toMatch(/none of it is read|NOT read/);
   });
 });
+
+const GROWTH_REPORT = process.env.COPILOT_GROWTH_REPORT; // read at import: beforeEach replaces process.env
+// ---- ticket 32: the history-growth carry-over of tickets 24 and 29 ---------------------------------------- //
+test("ticket 32 measurement: after eviction every read step leaves a small constant residue in the request and in the stored history, never a growing one", async () => {
+  writeDoc(docIr(4500));
+  const samples: { request: number; residue: number; stored: number; evicted: boolean }[] = [];
+  const storedBytes = () => {
+    try {
+      const dir = join(root, "data", "copilot", "sessions");
+      return readdirSync(dir)
+        .map((name) => readFileSync(join(dir, name), "utf8").length)
+        .reduce((a, b) => a + b, 0);
+    } catch {
+      return 0;
+    }
+  };
+  const measure: Step = (context) => {
+    const request = JSON.stringify(context.messages).length;
+    // what the request holds besides the part the last read just delivered = the residue the steps leave behind
+    const lastResult = context.messages.filter((m) => m.role === "toolResult").at(-1) as
+      | { content?: unknown }
+      | undefined;
+    samples.push({
+      request,
+      residue: request - textOf(lastResult?.content).length,
+      stored: storedBytes(),
+      evicted: JSON.stringify(context.messages).includes("taken out of the conversation"),
+    });
+    return keepReading(context);
+  };
+  let finalRun: unknown;
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = Array.from({ length: 60 }, () => measure);
+    const { snapshot } = await run(page());
+    finalRun = snapshot.conversation.run;
+    if (GROWTH_REPORT)
+      console.log(
+        "OPS",
+        ops(snapshot).length,
+        JSON.stringify(
+          ops(snapshot)
+            .slice(-3)
+            .map((o) => ({ s: o.status, b: o.batch }))
+        ),
+        JSON.stringify(toolResults(seen.at(-1) as TranscriptContext).at(-1)).slice(0, 400)
+      );
+  });
+  const after = samples.filter((sample) => sample.evicted);
+  expect(after.length).toBeGreaterThanOrEqual(8); // enough read steps after the first eviction to see a slope
+  // The first step after the eviction is the shedding step itself (the request shrinks): the slope starts after it.
+  const residueSteps = after
+    .slice(2)
+    .map((sample, i) => sample.residue - (after[i + 1]?.residue ?? 0));
+  const storedSteps = after.slice(1).map((sample, i) => sample.stored - (after[i]?.stored ?? 0));
+  if (GROWTH_REPORT)
+    console.log(JSON.stringify({ steps: after.length, residueSteps, storedSteps }));
+  // MEASURED (61.7k-token window, 4500-entry Reader document, 13 steps after the first eviction): the request keeps
+  // 1315..1445 bytes of residue per read step (the assistant call, its record and the stand-in), and the stored
+  // history grows by the delivered part plus about 2.3 KB (the ticket 24 and 29 "about 2 KB per step").
+  // Bounded per step and flat: no step costs more because the history is longer.
+  expect(Math.max(...residueSteps)).toBeLessThan(2048);
+  expect(Math.max(...residueSteps) - Math.min(...residueSteps)).toBeLessThan(512);
+  // The part shrinks as the residue accumulates, so the smallest step shows the durable overhead alone.
+  expect(Math.min(...storedSteps)).toBeLessThan(4096);
+  // What it adds up to: linear in the number of steps, so the room (not the history) ends a read of a document that is
+  // too long for the window with the honest gap of ticket 24, never a failed run.
+  expect(finalRun).toMatchObject({ status: "completed", error: null });
+}, 120_000);
