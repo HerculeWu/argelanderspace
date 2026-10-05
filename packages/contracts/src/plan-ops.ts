@@ -201,7 +201,14 @@ export const CopilotOperationSchema = z
     rev: Rev.optional(),
     object: z
       .object({
-        kind: z.enum(["plan", "task", "work", "doc"]),
+        kind: z.enum([
+          "plan",
+          "task",
+          "work",
+          "doc",
+          /** A Writer manuscript (copilot ticket 22): its own identity, never a Doc. */
+          "manuscript",
+        ]),
         id: z.string(),
         planId: z.string().optional(),
       })

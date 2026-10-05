@@ -23,6 +23,13 @@ import {
   ReaderViewActionSchema,
 } from "./reader-ops.js";
 import { WorkspaceSnapshotSchema, WorkspaceViewActionSchema } from "./workspace-ops.js";
+import {
+  type WriterContextSummary,
+  WriterContextSummarySchema,
+  WriterDeleteImpactSchema,
+  WriterPageSchema,
+  WriterViewActionSchema,
+} from "./writer-ops.js";
 
 export const CopilotIdSchema = z.string().uuid();
 export const ConversationModelSchema = z
@@ -80,6 +87,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
       discovery: DiscoveryPageSchema.nullable().optional(),
       /** The LaTeX Reader of the active pane (copilot ticket 18); optional so older views and headless callers stay valid. */
       reader: reader.nullable().optional(),
+      /** The Writer of the active pane (copilot ticket 22): the manuscript list or one open manuscript. */
+      writer: WriterPageSchema.nullable().optional(),
       /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
       workspace: WorkspaceSnapshotSchema.optional(),
     })
@@ -91,7 +100,13 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
         (value.view === "library" && value.library?.source === "live") ||
         (value.view === "library" && !!value.discovery?.graph) ||
         (value.view === "doc" &&
-          !!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted));
+          !!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted)) ||
+        // A Writer page is complete once its list or its open manuscript really loaded.
+        (value.view === "write" &&
+          !!value.writer &&
+          (value.writer.list?.phase === "ready" ||
+            (value.writer.editor?.phase === "ready" &&
+              !!(value.writer.editor.saved || value.writer.editor.savedOmitted))));
       if ((value.status === "complete") !== covered)
         ctx.addIssue({ code: "custom", message: "invalid page coverage" });
     });
@@ -193,6 +208,7 @@ export interface CopilotMessage {
     library?: LibraryContextSummary;
     discovery?: DiscoveryContextSummary;
     reader?: ReaderContextSummary;
+    writer?: WriterContextSummary;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -314,11 +330,31 @@ export const CopilotDocDeleteConfirmationSchema = z
     objectDigest: z.string().min(1),
   })
   .strict();
+/**
+ * The manuscript list's delete dialog the model asked for: the physical delete of the whole manuscript directory.
+ * Bound to the manuscript's revision and content digest; any change to either expires it.
+ */
+export const CopilotManuscriptDeleteConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("delete_manuscript"),
+    object: z.object({ kind: z.literal("manuscript"), id: z.string().min(1) }).strict(),
+    /** Verbatim manuscript title. */
+    label: z.string(),
+    /** What is deleted with it: cells, comments and the uploaded figure files. */
+    impact: WriterDeleteImpactSchema,
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotManuscriptDeleteConfirmation = z.infer<
+  typeof CopilotManuscriptDeleteConfirmationSchema
+>;
 export const CopilotConfirmationSchema = z.union([
   CopilotPlanConfirmationSchema,
   CopilotDocConfirmationSchema,
   CopilotResourceConfirmationSchema,
   CopilotDocDeleteConfirmationSchema,
+  CopilotManuscriptDeleteConfirmationSchema,
 ]);
 export type CopilotDocDeleteConfirmation = z.infer<typeof CopilotDocDeleteConfirmationSchema>;
 export type CopilotResourceConfirmation = z.infer<typeof CopilotResourceConfirmationSchema>;
@@ -337,6 +373,7 @@ export const CopilotConfirmationDecisionSchema = z
       "replace_upload_source",
       "accept_pdf_resource_warning",
       "delete_doc",
+      "delete_manuscript",
     ]),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
@@ -371,6 +408,13 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
       ...OperationConfirmationBase,
       action: z.literal("delete_plan"),
       planId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("delete_manuscript"),
+      manuscriptId: z.string().min(1),
     })
     .strict(),
   z
@@ -425,6 +469,7 @@ export const WsCopilotViewActionSchema = z
       DocDeletedViewActionSchema,
       DiscoverySavedViewActionSchema,
       ReaderViewActionSchema,
+      WriterViewActionSchema,
     ]),
   })
   .strict();
@@ -474,6 +519,8 @@ export const CopilotContextReferenceSchema = z
         discovery: DiscoveryContextSummarySchema.optional(),
         /** What the Reader carried (copilot ticket 18); absent for other pages. */
         reader: ReaderContextSummarySchema.optional(),
+        /** What the Writer carried (copilot ticket 22); absent for other pages. */
+        writer: WriterContextSummarySchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),
@@ -510,6 +557,8 @@ export const OperationJournalSchema = z
         planId: z.string().optional(),
         taskId: z.string().optional(),
         workId: z.string().optional(),
+        /** The Writer manuscript the operation targets (copilot ticket 22). */
+        manuscriptId: z.string().optional(),
         /** The Job-table job this operation submitted (recorded right after the submit). */
         jobId: z.string().optional(),
         /** A readable one-line description of the request (for example an import's mode and text). */

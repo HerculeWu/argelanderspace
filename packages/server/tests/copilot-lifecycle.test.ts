@@ -394,7 +394,7 @@ test("steering larger than the model's window is refused up front and the run is
     .getModels("openai")
     .find((m) => m.id === "gpt-4.1");
   if (!catalogModel) throw new Error("fixture model");
-  catalogModel.contextWindow = 24_000;
+  catalogModel.contextWindow = 28_000;
   catalogModel.maxTokens = 1024;
   const small = await request("/conversations", "POST", {
     model: { provider: "openai", model: "gpt-4.1", thinking: null },

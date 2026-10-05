@@ -768,9 +768,20 @@ export function copilotContextObjects(context: {
   plan?: { rev: number; plans: { id: string }[]; detail: { planId: string } | null } | null;
   library?: { selectedRefId: string | null } | null;
   reader?: { docId: string } | null;
+  writer?: {
+    editor: {
+      manuscriptId: string;
+      saved: { rev: number } | null;
+      savedOmitted?: { rev: number };
+    } | null;
+  } | null;
 }): { id: string; rev: number }[] {
   if (context.library?.selectedRefId) return [{ id: context.library.selectedRefId, rev: 0 }];
   if (context.reader) return [{ id: context.reader.docId, rev: 0 }];
+  // The manuscript an open Writer shows, at the revision it was captured at (the list names no one object).
+  const editor = context.writer?.editor;
+  if (editor)
+    return [{ id: editor.manuscriptId, rev: editor.saved?.rev ?? editor.savedOmitted?.rev ?? 0 }];
   const page = context.plan;
   const objects = page ? page.plans.map((plan) => ({ id: plan.id, rev: page.rev })) : [];
   const detail = page?.detail;

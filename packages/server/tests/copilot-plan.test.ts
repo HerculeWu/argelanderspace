@@ -243,6 +243,7 @@ test("the plan tool is the only active tool and an agent edit goes to the named 
     "workspace",
     "library",
     "reader",
+    "writer",
   ]);
   // The model was told about the page change but its edits kept the original target.
   expect(JSON.stringify(seen[2]?.messages)).toMatch(
@@ -382,6 +383,7 @@ test("unknown actions, extra fields, cross-plan moves and delete write nothing a
     "workspace",
     "library",
     "reader",
+    "writer",
   ]);
 });
 

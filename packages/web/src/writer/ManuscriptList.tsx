@@ -100,12 +100,15 @@ function NewManuscriptModal({
 }
 
 export function ManuscriptList({
+  onData,
   notice,
   onOpen,
 }: {
   /** one-shot note (e.g. "deleted elsewhere") shown above the table */
   notice?: string | null;
   onOpen: (id: string) => void;
+  /** What the list shows, for the Copilot's page context: loading, ready (rows and templates) or failed. */
+  onData?: (data: { phase: "loading" | "ready" | "error"; rows: ManuscriptSummary[]; templates: WriterTemplate[] }) => void;
 }) {
   const { t, i18n } = useTranslation();
   const [rows, setRows] = useState<ManuscriptSummary[] | null>(null);
@@ -133,6 +136,11 @@ export function ManuscriptList({
   useEffect(() => {
     void reload();
   }, [reload]);
+  // Reported as it stands: a failed first load is an error, never an empty list.
+  useEffect(() => {
+    onData?.(rows !== null && templates !== null ? { phase: "ready", rows, templates } : { phase: loadFailed ? "error" : "loading", rows: [], templates: [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, templates, loadFailed]);
 
   // External writes (agent editing the JSON) or creates/deletes elsewhere:
   // refresh the list; template-dir changes also refresh the template list.

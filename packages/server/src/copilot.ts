@@ -28,6 +28,7 @@ import {
   type OperationConfirmation,
   type OperationJournal,
   observationPage,
+  observationWriterPage,
   type PageContext,
   type QueuedSteer,
   QueuedSteerSchema,
@@ -36,9 +37,11 @@ import {
   summarizeDiscoveryPage,
   summarizeLibraryPage,
   summarizeReaderPage,
+  summarizeWriterPage,
   TASK_UNDO_WINDOW_MS,
   type WsCopilotEvent,
   type WsCopilotViewAction,
+  writerKey,
 } from "@argelanderspace/contracts";
 import {
   type AssistantMessage,
@@ -64,6 +67,7 @@ import {
   type ViewActionOutcome,
   WORKSPACE_TOOL_NAME,
 } from "./copilot-workspace-tool.js";
+import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
 import { jobView, type LibraryOpDeps, prepareArxivRefresh } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import {
@@ -73,6 +77,7 @@ import {
   restoreDeletedTask,
 } from "./plans-actions.js";
 import { ProviderSettings, ProviderSettingsError } from "./providers.js";
+import { describeManuscriptDelete, type WriterOpDeps } from "./writer-actions.js";
 
 export class CopilotError extends Error {
   constructor(
@@ -153,7 +158,12 @@ interface PendingConfirmation {
 /** Actions whose view report waits for an ADS exploration request (one seed: similar, then useful). */
 function readingKeysOf(context: PageContext): string[] {
   const reading = context.reader?.reading;
-  return reading ? [readingKey(reading.docId, reading.epoch.fingerprint)] : [];
+  const manuscript = context.writer?.editor?.saved;
+  return [
+    ...(reading ? [readingKey(reading.docId, reading.epoch.fingerprint)] : []),
+    // A manuscript the message carried whole is held at that revision (a later observation leaves it out).
+    ...(manuscript ? [writerKey(manuscript.id, manuscript.rev)] : []),
+  ];
 }
 const SLOW_VIEW_ACTIONS: ReadonlySet<string> = new Set([
   "explore_work",
@@ -179,6 +189,8 @@ export interface Workbench {
   library?: LibraryOpDeps;
   /** The LaTeX Reader's read-only seam (copilot ticket 18); absent in headless hosts. */
   reader?: ReaderOpDeps;
+  /** The Writer's seam (copilot ticket 22): the routes' lock, rev check, save and notification; absent in headless hosts. */
+  writer?: WriterOpDeps;
   /** Milliseconds a view action may wait for its bound browser to report (default 10 s). */
   viewActionTimeoutMs?: number;
   /** Milliseconds a view action waits for an offline bound browser to reconnect (default 30 s). */
@@ -419,6 +431,8 @@ export class CopilotHost {
   }
   publish(view: PageContext): void {
     const previous = this.views.get(view.viewId);
+    // Only the service omits a held manuscript from an observation; a view always publishes it whole.
+    if (view.writer?.editor?.savedOmitted) throw new CopilotError("invalid_input");
     // A scroll sends the Reader page without its reading when this view's reading is unchanged: put the held one
     // back, so everything that reads the page (a message, an observation, a tool) sees the whole document.
     const ref = view.reader?.readingRef;
@@ -551,6 +565,9 @@ export class CopilotHost {
               : input.context.library?.refs.find((ref) => ref.id === object.id)?.title) ??
             (input.context.reader?.docId === object.id
               ? input.context.reader.reading?.title
+              : undefined) ??
+            (input.context.writer?.editor?.manuscriptId === object.id
+              ? input.context.writer.editor.saved?.title
               : undefined),
         })),
       },
@@ -788,6 +805,7 @@ export class CopilotHost {
         ...(context.library ? { library: summarizeLibraryPage(context.library) } : {}),
         ...(context.discovery ? { discovery: summarizeDiscoveryPage(context.discovery) } : {}),
         ...(context.reader ? { reader: summarizeReaderPage(context.reader) } : {}),
+        ...(context.writer ? { writer: summarizeWriterPage(context.writer) } : {}),
         objects: this.contextObjects(context),
       },
     };
@@ -1050,15 +1068,17 @@ export class CopilotHost {
           baseRev: entry.baseRev,
           ...(entry.action === "delete_plan"
             ? { action: entry.action, planId: entry.planId }
-            : entry.action === "delete_doc"
-              ? { action: entry.action, docId: entry.docId }
-              : entry.action === "accept_pdf_resource_warning"
-                ? {
-                    action: entry.action,
-                    workId: entry.workId,
-                    attachmentId: entry.attachment.id,
-                  }
-                : { action: entry.action, workId: entry.workId, docId: entry.docId }),
+            : entry.action === "delete_manuscript"
+              ? { action: entry.action, manuscriptId: entry.manuscriptId }
+              : entry.action === "delete_doc"
+                ? { action: entry.action, docId: entry.docId }
+                : entry.action === "accept_pdf_resource_warning"
+                  ? {
+                      action: entry.action,
+                      workId: entry.workId,
+                      attachmentId: entry.attachment.id,
+                    }
+                  : { action: entry.action, workId: entry.workId, docId: entry.docId }),
         } satisfies OperationConfirmation);
         return new Promise<ConfirmationOutcome>((resolve) => {
           this.confirmations.set(id, {
@@ -1076,47 +1096,59 @@ export class CopilotHost {
                     baseRev: entry.baseRev,
                     objectDigest: entry.objectDigest,
                   }
-                : entry.action === "delete_doc"
+                : entry.action === "delete_manuscript"
                   ? {
                       id,
                       runId: state.runId,
                       toolCallId: entry.toolCallId,
                       action: entry.action,
-                      object: { kind: "doc", id: entry.docId },
-                      format: entry.format,
-                      works: entry.works,
+                      object: { kind: "manuscript", id: entry.manuscriptId },
+                      label: entry.label,
                       impact: entry.impact,
                       baseRev: entry.baseRev,
                       objectDigest: entry.objectDigest,
                     }
-                  : entry.action === "accept_pdf_resource_warning"
+                  : entry.action === "delete_doc"
                     ? {
                         id,
                         runId: state.runId,
                         toolCallId: entry.toolCallId,
                         action: entry.action,
-                        object: {
-                          kind: "attachment",
-                          id: entry.attachment.id,
-                          workId: entry.workId,
-                        },
-                        label: entry.label,
-                        attachment: entry.attachment,
+                        object: { kind: "doc", id: entry.docId },
+                        format: entry.format,
+                        works: entry.works,
+                        impact: entry.impact,
                         baseRev: entry.baseRev,
                         objectDigest: entry.objectDigest,
                       }
-                    : {
-                        id,
-                        runId: state.runId,
-                        toolCallId: entry.toolCallId,
-                        action: entry.action,
-                        object: { kind: "doc", id: entry.docId, workId: entry.workId },
-                        label: entry.label,
-                        impact: entry.impact,
-                        ...(entry.attachment ? { attachment: entry.attachment } : {}),
-                        baseRev: entry.baseRev,
-                        objectDigest: entry.objectDigest,
-                      },
+                    : entry.action === "accept_pdf_resource_warning"
+                      ? {
+                          id,
+                          runId: state.runId,
+                          toolCallId: entry.toolCallId,
+                          action: entry.action,
+                          object: {
+                            kind: "attachment",
+                            id: entry.attachment.id,
+                            workId: entry.workId,
+                          },
+                          label: entry.label,
+                          attachment: entry.attachment,
+                          baseRev: entry.baseRev,
+                          objectDigest: entry.objectDigest,
+                        }
+                      : {
+                          id,
+                          runId: state.runId,
+                          toolCallId: entry.toolCallId,
+                          action: entry.action,
+                          object: { kind: "doc", id: entry.docId, workId: entry.workId },
+                          label: entry.label,
+                          impact: entry.impact,
+                          ...(entry.attachment ? { attachment: entry.attachment } : {}),
+                          baseRev: entry.baseRev,
+                          objectDigest: entry.objectDigest,
+                        },
             loaded,
             state,
             resolve,
@@ -1184,19 +1216,21 @@ export class CopilotHost {
       outcome,
       ...(confirmation.action === "delete_plan"
         ? { action: confirmation.action, planId: confirmation.object.planId }
-        : confirmation.action === "delete_doc"
-          ? { action: confirmation.action, docId: confirmation.object.id }
-          : confirmation.action === "accept_pdf_resource_warning"
-            ? {
-                action: confirmation.action,
-                workId: confirmation.object.workId,
-                attachmentId: confirmation.attachment.id,
-              }
-            : {
-                action: confirmation.action,
-                workId: confirmation.object.workId,
-                docId: confirmation.object.id,
-              }),
+        : confirmation.action === "delete_manuscript"
+          ? { action: confirmation.action, manuscriptId: confirmation.object.id }
+          : confirmation.action === "delete_doc"
+            ? { action: confirmation.action, docId: confirmation.object.id }
+            : confirmation.action === "accept_pdf_resource_warning"
+              ? {
+                  action: confirmation.action,
+                  workId: confirmation.object.workId,
+                  attachmentId: confirmation.attachment.id,
+                }
+              : {
+                  action: confirmation.action,
+                  workId: confirmation.object.workId,
+                  docId: confirmation.object.id,
+                }),
     } satisfies OperationConfirmation);
   }
   private expireConfirmations(
@@ -1238,7 +1272,10 @@ export class CopilotHost {
    * acquisition dialog does.
    */
   private async docConfirmationStillValid(
-    confirmation: Exclude<CopilotConfirmation, { action: "delete_plan" }>,
+    confirmation: Exclude<
+      CopilotConfirmation,
+      { action: "delete_plan" } | { action: "delete_manuscript" }
+    >,
     loaded: Loaded
   ): Promise<boolean> {
     if (confirmation.action === "delete_doc") {
@@ -1291,13 +1328,42 @@ export class CopilotHost {
       return false;
     }
   }
+  /** Manuscript deletes: the manuscript still has the revision and the stored bytes the card showed (synchronous). */
+  private manuscriptConfirmationStillValid(
+    confirmation: Extract<CopilotConfirmation, { action: "delete_manuscript" }>
+  ): boolean {
+    const writer = this.workbench?.writer;
+    if (!writer) return false;
+    try {
+      const now = describeManuscriptDelete(writer, confirmation.object.id);
+      return (
+        !!now &&
+        !("error" in now) &&
+        now.rev === confirmation.baseRev &&
+        now.digest === confirmation.objectDigest
+      );
+    } catch {
+      return false;
+    }
+  }
   private async confirmationStillValid(
     confirmation: CopilotConfirmation,
     loaded: Loaded
   ): Promise<boolean> {
     return confirmation.action === "delete_plan"
       ? this.planConfirmationStillValid(confirmation)
-      : this.docConfirmationStillValid(confirmation, loaded);
+      : confirmation.action === "delete_manuscript"
+        ? this.manuscriptConfirmationStillValid(confirmation)
+        : this.docConfirmationStillValid(confirmation, loaded);
+  }
+  /** A Writer change (save, create, delete, external edit) ends every manuscript delete bound to an older version. */
+  revalidateWriterConfirmations(): void {
+    this.expireConfirmations(
+      (pending) =>
+        pending.confirmation.action === "delete_manuscript" &&
+        !this.manuscriptConfirmationStillValid(pending.confirmation),
+      "stale"
+    );
   }
   /** A plans change (UI save, agent write, external edit) ends every confirmation bound to an older version. */
   revalidateConfirmations(): void {
@@ -1311,7 +1377,11 @@ export class CopilotHost {
   /** A library, Doc or annotation change may make a pending Doc replacement obsolete; click time is still the authority. */
   async revalidateDocConfirmations(): Promise<void> {
     for (const pending of [...this.confirmations.values()]) {
-      if (pending.confirmation.action === "delete_plan") continue;
+      if (
+        pending.confirmation.action === "delete_plan" ||
+        pending.confirmation.action === "delete_manuscript"
+      )
+        continue;
       if (await this.docConfirmationStillValid(pending.confirmation, pending.loaded)) continue;
       if (this.confirmations.get(pending.confirmation.id) === pending)
         this.expireConfirmations((item) => item === pending, "stale");
@@ -1530,6 +1600,7 @@ export class CopilotHost {
         entry.object?.planId,
         entry.object?.taskId,
         entry.object?.workId,
+        entry.object?.manuscriptId,
         jobOf(entry) ? `(job ${jobOf(entry)})` : undefined,
         entry.object?.summary,
       ]
@@ -1559,11 +1630,13 @@ export class CopilotHost {
           `- ${(
             entry.action === "delete_plan"
               ? [entry.action, entry.planId]
-              : entry.action === "delete_doc"
-                ? [entry.action, entry.docId]
-                : entry.action === "accept_pdf_resource_warning"
-                  ? [entry.action, entry.workId, entry.attachmentId]
-                  : [entry.action, entry.workId, entry.docId]
+              : entry.action === "delete_manuscript"
+                ? [entry.action, entry.manuscriptId]
+                : entry.action === "delete_doc"
+                  ? [entry.action, entry.docId]
+                  : entry.action === "accept_pdf_resource_warning"
+                    ? [entry.action, entry.workId, entry.attachmentId]
+                    : [entry.action, entry.workId, entry.docId]
           ).join(" ")}`
       );
     return [
@@ -1631,7 +1704,7 @@ export class CopilotHost {
                   ok: false,
                   status: "unknown",
                   detail:
-                    "interrupted before a result was recorded; read the plans (or, for a library call, the work and read_jobs) to find out what happened",
+                    "interrupted before a result was recorded; read the plans (or, for a library call, the work and read_jobs; for a writer call, the manuscript) to find out what happened",
                 });
         loaded.manager.appendMessage({
           role: "toolResult",
@@ -1867,6 +1940,24 @@ export class CopilotHost {
             budget: () => this.room(loaded, frozenModel),
           })
         : undefined;
+    const writerTool =
+      workbench?.writer && planTool
+        ? createWriterTool({
+            writer: workbench.writer,
+            viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
+            admitting: () => !this.closed && !state.stopRequested,
+            budget: () => this.room(loaded, frozenModel),
+            journal: this.journalPort(loaded, runId),
+            confirm: this.confirmationPort(loaded, state),
+            runId,
+            track: (work) => {
+              state.inflight.add(work);
+              const forget = () => state.inflight.delete(work);
+              work.then(forget, forget);
+              return work;
+            },
+          })
+        : undefined;
     const toolNames =
       planTool && workspaceTool
         ? [
@@ -1874,6 +1965,7 @@ export class CopilotHost {
             WORKSPACE_TOOL_NAME,
             ...(libraryTool ? [LIBRARY_TOOL_NAME] : []),
             ...(readerTool ? [READER_TOOL_NAME] : []),
+            ...(writerTool ? [WRITER_TOOL_NAME] : []),
           ]
         : [];
     const { session } = await pi.createAgentSession({
@@ -1890,6 +1982,7 @@ export class CopilotHost {
               workspaceTool,
               ...(libraryTool ? [libraryTool] : []),
               ...(readerTool ? [readerTool] : []),
+              ...(writerTool ? [writerTool] : []),
             ],
           }
         : { tools: [], customTools: [], noTools: "all" as const }),
@@ -1905,7 +1998,7 @@ export class CopilotHost {
         getPrompts: () => ({ prompts: [], diagnostics: [] }),
         getThemes: () => ({ themes: [], diagnostics: [] }),
         getAgentsFiles: () => ({ agentsFiles: [] }),
-        getSystemPrompt: () => SYSTEM_PROMPT,
+        getSystemPrompt: () => SYSTEM_PROMPT + WRITER_PROMPT,
         getSystemPromptSource: () => undefined,
         getAppendSystemPrompt: () => [],
         getAppendSystemPromptSources: () => [],
@@ -1987,7 +2080,10 @@ export class CopilotHost {
                   version: 1,
                   taskContextId: state.contextId,
                   // A Reader's whole reading is already in the task's context; repeating it per scroll would fill the window.
-                  page: observationPage(latest, state.readings),
+                  page: observationWriterPage(
+                    observationPage(latest, state.readings),
+                    state.readings
+                  ),
                 }),
               }
             : null;

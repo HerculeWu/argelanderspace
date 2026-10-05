@@ -22,6 +22,8 @@ import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
 import {
   defaultCellData,
+  diffManuscriptDraft,
+  rebaseManuscriptDraft,
   writerNumberingForDraft,
   type CellType,
   type WriterManuscript,
@@ -51,6 +53,7 @@ import { OutlinePanel } from "./outline";
 import { RightTabs, type RightTab } from "./rightTabs";
 import { InfoModal, PreambleModal } from "./modals";
 import type { WriterTextTarget } from "./latexSource";
+import { captureEditorPage, type WriterEditorPage } from "./writer-context";
 
 type Menu =
   | { kind: "add"; index: number; x: number; y: number }
@@ -67,8 +70,14 @@ export function WriterEditor({
   id,
   onBack,
   onGone,
+  onPage,
+  registerLeave,
 }: {
   id: string;
+  /** What this editor tells the Copilot (saved manuscript, unsaved draft, selection...); null when it unmounts. */
+  onPage?: (page: WriterEditorPage | null) => void;
+  /** The back button's own save-then-leave check, for a Copilot-requested close/open: true = nothing unsaved is lost. */
+  registerLeave?: (leave: (() => Promise<boolean>) | null) => void;
   onBack: () => void;
   /** the open manuscript was deleted elsewhere — return to the list */
   onGone: () => void;
@@ -105,9 +114,16 @@ export function WriterEditor({
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingExternal = useRef(false);
 
+  /** What the server last confirmed. The local doc minus this is the unsaved draft. */
+  const baseRef = useRef<WriterManuscript | null>(null);
   const applyDoc = (d: WriterManuscript | null) => {
     docRef.current = d;
     setDoc(d);
+  };
+  /** A manuscript that came from the server as is (load, refetch): it is also the saved one. */
+  const adoptServerDoc = (d: WriterManuscript | null) => {
+    baseRef.current = d;
+    applyDoc(d);
   };
 
   const template =
@@ -141,7 +157,7 @@ export function WriterEditor({
     void (async () => {
       const [d, tps, num] = await Promise.all([fetchManuscript(id), fetchTemplates(), fetchNumbering(id)]);
       if (!alive) return;
-      applyDoc(d);
+      adoptServerDoc(d);
       if (tps) {
         setTemplates(tps.templates);
         setTemplateWarnings(tps.warnings);
@@ -169,7 +185,7 @@ export function WriterEditor({
     if (writeBusy()) { pendingExternal.current = true; return; }
     const previous = docRef.current;
     if (previous && d.rev < previous.rev) return;
-    applyDoc(d);
+    adoptServerDoc(d);
     writeFailed.current = false;
     setSaveState("saved");
     const latest = await fetchNumbering(id);
@@ -194,16 +210,35 @@ export function WriterEditor({
         if (res.ok) {
           // adopt the bumped rev; keep newer optimistic edits, if any
           const cur = docRef.current;
+          baseRef.current = res.doc;
           if (cur) applyDoc(cur === snapshot ? res.doc : { ...cur, rev: res.doc.rev });
           writeFailed.current = false;
           setSaveState(dirtyRef.current ? "saving" : "saved");
         } else if (res.conflict) {
-          // 409: the server's current doc comes with the response — adopt it
-          applyDoc(res.conflict);
-          dirtyRef.current = false;
-          writeFailed.current = true;
-          setSaveState("saved");
-          showToast(t("writer.toast.conflict"));
+          // 409: the server's current doc comes with the response. The user's unsaved edits are not thrown away:
+          // they are kept on top of that document (what only the newer save changed is taken from it) and saved
+          // again against its rev. Where both changed the same thing, the user's typing wins and the toast says so.
+          const base = baseRef.current;
+          const local = docRef.current;
+          if (base && local) {
+            const { merged, contested } = rebaseManuscriptDraft(base, local, res.conflict);
+            baseRef.current = res.conflict;
+            applyDoc(merged);
+            dirtyRef.current = diffManuscriptDraft(res.conflict, merged) !== null;
+            writeFailed.current = false;
+            setSaveState(dirtyRef.current ? "saving" : "saved");
+            if (dirtyRef.current) {
+              window.clearTimeout(saveTimer.current);
+              saveTimer.current = window.setTimeout(flushSave, 0);
+            }
+            showToast(t(contested.length ? "writer.toast.conflictContested" : "writer.toast.conflictKept"));
+          } else {
+            adoptServerDoc(res.conflict);
+            dirtyRef.current = false;
+            writeFailed.current = true;
+            setSaveState("saved");
+            showToast(t("writer.toast.conflict"));
+          }
         } else {
           dirtyRef.current = true;
           writeFailed.current = true;
@@ -326,6 +361,33 @@ export function WriterEditor({
       document.removeEventListener("keydown", key);
     };
   }, [menu]);
+
+  // ---- Copilot context (ticket 22) -----------------------------------------------------
+  // Reported after a short pause so typing does not rebuild the Shell's page at every keystroke; the leave check is
+  // the back button's own (flush the autosave, then only leave when nothing unsaved is left).
+  const onPageRef = useRef(onPage);
+  onPageRef.current = onPage;
+  useEffect(() => {
+    if (!onPageRef.current) return;
+    const timer = window.setTimeout(() => {
+      const tracked = caretRef.current;
+      let caret: { cellId: string; field: string; start: number; end: number } | null = null;
+      if (tracked?.el.isConnected && tracked.cellId === editingId)
+        caret = { cellId: tracked.cellId, field: tracked.field, start: tracked.el.selectionStart ?? 0, end: tracked.el.selectionEnd ?? 0 };
+      onPageRef.current?.(captureEditorPage({ id, doc, base: baseRef.current, templates, saveState, activeId, editingId, caret, modal, numbering, rendering: numberingBusy }));
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [id, doc, templates, saveState, activeId, editingId, modal, numbering, numberingBusy]);
+  useEffect(() => () => onPageRef.current?.(null), []);
+  useEffect(() => {
+    registerLeave?.(async () => {
+      if (!dirtyRef.current) writeFailed.current = false;
+      await flushSave();
+      return !dirtyRef.current && !writeFailed.current;
+    });
+    return () => registerLeave?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerLeave]);
 
   if (doc === undefined || templates === null) {
     return (
