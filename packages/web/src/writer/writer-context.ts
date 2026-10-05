@@ -26,6 +26,7 @@ export function captureEditorPage(input: {
   editingId: string | null;
   caret: { cellId: string; field: string; start: number; end: number } | null;
   modal: "info" | "preamble" | null;
+  modalDraft?: Record<string, unknown> | null;
   numbering: WriterNumberingResponse | null;
   rendering: boolean;
 }): WriterEditorPage {
@@ -52,6 +53,7 @@ export function captureEditorPage(input: {
     editingCellId: input.editingId,
     caret: input.caret,
     modal: input.modal,
+    modalDraft: input.modalDraft ? { unsaved: true, values: input.modalDraft } : null,
     preview: {
       status: input.numbering?.status ?? "unknown",
       failed: !!input.numbering?.lastError,
@@ -85,4 +87,18 @@ export function writerPageStatus(page: WriterPage | null | undefined): "complete
   if (!editor) return "unavailable";
   if (editor.phase === "missing") return "error";
   return editor.phase === "ready" && editor.saved ? "complete" : "unavailable";
+}
+
+/** The Writer's side panels at their full width, and the narrowest reading column they may leave (ticket 18's rule). */
+const WRITER_PANEL_FULL = { left: 220, right: 310, rail: 34 };
+export const WRITER_MIN_COLUMN = 240;
+/**
+ * Which side panels fold on their own for a Writer pane of this width: none while the paper keeps its minimum with
+ * both open; else the outline; else both. Same order and threshold as the Reader's autoFold.
+ */
+export function writerAutoFold(width: number | null): { left: boolean; right: boolean } {
+  if (!width) return { left: false, right: false };
+  if (width - WRITER_PANEL_FULL.left - WRITER_PANEL_FULL.right >= WRITER_MIN_COLUMN) return { left: false, right: false };
+  if (width - WRITER_PANEL_FULL.rail - WRITER_PANEL_FULL.right >= WRITER_MIN_COLUMN) return { left: true, right: false };
+  return { left: true, right: true };
 }

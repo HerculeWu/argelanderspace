@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   type ManuscriptSummary,
@@ -162,15 +162,35 @@ export async function patchManuscript(
         current.rev
       );
     let templateForCells: WriterTemplate | undefined;
+    const { templates } = loadTemplates(deps.dataDir);
     if (op.template !== undefined) {
-      const { templates } = loadTemplates(deps.dataDir);
       templateForCells = templates.find((template) => template.id === op.template);
       if (!templateForCells)
         return fail("invalid", `unknown template '${op.template}'`, current.rev);
     }
+    if (op.infoValues !== undefined) {
+      // Only the fields the bound template (the new one, when it changes too) declares: the Info modal offers no others.
+      const bound =
+        templateForCells ?? templates.find((template) => template.id === current.template);
+      const allowed = new Set((bound?.infoFields ?? []).map((field) => field.key));
+      const unknown = Object.keys(op.infoValues).filter((key) => !allowed.has(key));
+      if (unknown.length)
+        return fail(
+          "invalid",
+          `infoValues key(s) ${unknown.map((key) => `'${key}'`).join(", ")} are not extension fields of template '${bound?.id ?? current.template}' (it declares: ${[...allowed].join(", ") || "none"})`,
+          current.rev
+        );
+    }
     const next: WriterManuscript = { ...current };
     if (op.title !== undefined) next.title = op.title;
-    if (op.authors !== undefined) next.authors = op.authors;
+    // Keys the file already has on an author survive (the Info modal's `{ ...author, ...edit }`).
+    if (op.authors !== undefined)
+      next.authors = op.authors.map((author, index) => ({
+        name: "",
+        aff: "",
+        ...(current.authors[index] ?? {}),
+        ...author,
+      }));
     if (op.affiliations !== undefined) next.affiliations = op.affiliations;
     if (op.userPreamble !== undefined) next.userPreamble = op.userPreamble;
     if (op.infoValues !== undefined) next.infoValues = { ...current.infoValues, ...op.infoValues };
@@ -192,6 +212,18 @@ export async function patchManuscript(
   });
   if (outcome.ok && outcome.status === "ok") deps.changed("put", outcome.id);
   return outcome;
+}
+
+function assetListing(dir: string): string {
+  try {
+    if (!existsSync(dir)) return "";
+    return readdirSync(dir)
+      .sort()
+      .map((name) => `${name}:${statSync(join(dir, name)).size}`)
+      .join("\n");
+  } catch {
+    return "?";
+  }
 }
 
 export interface ManuscriptDeleteTarget {
@@ -226,8 +258,10 @@ export function describeManuscriptDelete(
     id: current.id,
     title: current.title,
     rev: current.rev,
+    // The file's bytes and the figure files (names, sizes) it would take with it: a new figure ends a card too.
     digest: createHash("sha256")
       .update(readFileSync(manuscriptJsonPath(deps.dataDir, id)))
+      .update(assetListing(assets))
       .digest("hex"),
     impact: { cells: current.cells.length, comments: current.comments.length, assets: assetCount },
   };

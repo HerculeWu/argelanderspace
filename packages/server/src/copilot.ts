@@ -1406,7 +1406,10 @@ export class CopilotHost {
     const { confirmation } = pending;
     // A Doc delete can take the open Doc away from the bound view and the leave guard (unsaved drafts) is asked by the
     // clicking tab about ITS Doc: only the view this run is bound to may decide it (the rule of ticket 12).
-    if (confirmation.action === "delete_doc" && body.viewId !== pending.state.navViewId)
+    if (
+      (confirmation.action === "delete_doc" || confirmation.action === "delete_manuscript") &&
+      body.viewId !== pending.state.navViewId
+    )
       throw new CopilotError("stale");
     if (
       confirmation.action !== body.action ||
@@ -1998,7 +2001,7 @@ export class CopilotHost {
         getPrompts: () => ({ prompts: [], diagnostics: [] }),
         getThemes: () => ({ themes: [], diagnostics: [] }),
         getAgentsFiles: () => ({ agentsFiles: [] }),
-        getSystemPrompt: () => SYSTEM_PROMPT + WRITER_PROMPT,
+        getSystemPrompt: () => (writerTool ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT),
         getSystemPromptSource: () => undefined,
         getAppendSystemPrompt: () => [],
         getAppendSystemPromptSources: () => [],

@@ -369,7 +369,7 @@ test("update_manuscript changes only the named fields under the writer lock, bum
         expectedRev: 3,
         title: "Agent title",
         userPreamble: "\\newcommand{\\agent}{x}",
-        infoValues: { extra: "e" },
+        infoValues: { date: "d" },
       },
     }),
     () => ({
@@ -384,7 +384,7 @@ test("update_manuscript changes only the named fields under the writer lock, bum
   expect(after.rev).toBe(4);
   expect(after.title).toBe("Agent title");
   expect(after.userPreamble).toBe("\\newcommand{\\agent}{x}");
-  expect(after.infoValues).toEqual({ keywords: "a, b", extra: "e" });
+  expect(after.infoValues).toEqual({ keywords: "a, b", date: "d" });
   // Everything the call did not name, and every key this application does not know, is as it was.
   expect(after.authors).toEqual(before.authors);
   expect(after.cells).toEqual(before.cells);
@@ -540,7 +540,7 @@ test("a later observation leaves the held manuscript out (with a note) but keeps
   const observation =
     (seen[1]?.messages ?? [])
       .map((m) => JSON.stringify(m))
-      .find((m) => m.includes("page-observation")) ?? "";
+      .find((m) => m.includes("taskContextId")) ?? "";
   expect(observation).not.toContain(LAST_MARK);
 });
 
@@ -686,6 +686,128 @@ test("the shared delete re-checks the rev and bytes inside the writer lock: a ch
     await deleteManuscriptOp(deps, M, { rev: target.rev, digest: target.digest })
   ).toMatchObject({ ok: true });
   expect(existsSync(join(dataDir, "manuscripts", M))).toBe(false);
+});
+
+test("B2: a figure uploaded while the card waits ends it; approving deletes nothing", async () => {
+  asset();
+  const view = editorPage();
+  script = [
+    () => ({ call: { action: "delete_manuscript", manuscriptId: M, expectedRev: 3 } }),
+    (ctx) => ({ text: `outcome ${lastResult(ctx).status}` }),
+  ];
+  const id = await start(view);
+  const shown = await card(id);
+  const upload = await app.request(`/api/writer/manuscripts/${M}/assets?filename=late.png`, {
+    method: "POST",
+    body: "new figure",
+  });
+  expect(upload.status).toBe(201);
+  await vi.waitFor(async () => expect((await host.snapshot(id)).confirmations).toEqual([]));
+  expect((await answer(shown, view, "approve")).status).toBeGreaterThanOrEqual(400);
+  expect(operations(await settled(id))).toEqual(["delete_manuscript:expired"]);
+  expect(existsSync(join(dataDir, "manuscripts", M, "assets", "late.png"))).toBe(true);
+});
+
+test("Std8: a change after the click but before the delete takes the lock deletes nothing", async () => {
+  const { deleteManuscriptOp, describeManuscriptDelete } = await import("../src/writer-actions.js");
+  const { AsyncLock } = await import("../src/lock.js");
+  const deps = {
+    dataDir,
+    writerLock: new AsyncLock(),
+    changed: () => {},
+    cancelCompile: async () => {},
+  };
+  const target = describeManuscriptDelete(deps, M);
+  if (!target || "error" in target) throw new Error("fixture");
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const held = deps.writerLock.run(() => gate);
+  const deleting = deleteManuscriptOp(deps, M, { rev: target.rev, digest: target.digest });
+  asset(); // a figure arrives while the delete is queued behind the lock
+  release();
+  await held;
+  expect(await deleting).toMatchObject({ ok: false, status: "conflict" });
+  expect(existsSync(join(dataDir, "manuscripts", M, "assets", "fig.png"))).toBe(true);
+});
+
+test("Std1: an author patch keeps the keys the file already has on that author", async () => {
+  script = [
+    () => ({
+      call: {
+        action: "update_manuscript",
+        manuscriptId: M,
+        expectedRev: 3,
+        authors: [{ name: "Renamed", aff: "2" }],
+      },
+    }),
+    () => ({ text: "ok" }),
+  ];
+  await run(editorPage());
+  expect(disk().authors).toEqual([{ name: "Renamed", aff: "2", x_author: "keep-author" }]);
+});
+
+test("F7: an infoValues key the template does not declare, or an author field outside name/aff/email, is refused", async () => {
+  script = [
+    () => ({
+      call: {
+        action: "update_manuscript",
+        manuscriptId: M,
+        expectedRev: 3,
+        infoValues: { notAField: "x" },
+      },
+    }),
+    () => ({
+      call: {
+        action: "update_manuscript",
+        manuscriptId: M,
+        expectedRev: 3,
+        authors: [{ name: "N", evil: "x" }],
+      },
+    }),
+    () => ({ text: "ok" }),
+  ];
+  const before = diskBytes();
+  const { snapshot } = await run(editorPage());
+  expect(operations(snapshot)).toEqual([
+    "update_manuscript:invalid",
+    "update_manuscript:unsupported",
+  ]);
+  expect(JSON.stringify(seen[1]?.messages)).toContain("not extension fields");
+  expect(diskBytes()).toBe(before);
+});
+
+test("F9 (A04 for the Writer): the user opens manuscript B mid-run; the agent's writes stay on A and the observation says B is not held", async () => {
+  write(N, seedManuscript(N, "Beta manuscript"));
+  const view = editorPage();
+  script = [
+    async () => {
+      const next = editorPage(2, view.viewId, { id: N });
+      expect((await request(`/views/${view.viewId}`, "PUT", next)).status).toBe(200);
+      return {
+        call: {
+          action: "update_manuscript",
+          manuscriptId: M,
+          expectedRev: 3,
+          title: "Only A changes",
+        },
+      };
+    },
+    () => ({ text: "done" }),
+  ];
+  const before = diskBytes(N);
+  const { snapshot } = await run(view);
+  expect(operations(snapshot)).toEqual(["update_manuscript:ok"]);
+  expect(disk(M).title).toBe("Only A changes");
+  expect(diskBytes(N)).toBe(before);
+  const observation =
+    (seen[1]?.messages ?? [])
+      .map((m) => JSON.stringify(m))
+      .find((m) => m.includes("taskContextId")) ?? "";
+  expect(observation).toContain(N);
+  expect(observation).toContain("not in the task's context");
+  expect(snapshot.messages[0]?.context?.objects[0]?.id).toBe(M);
 });
 
 test("a stale expectedRev on a delete request shows no card and deletes nothing", async () => {

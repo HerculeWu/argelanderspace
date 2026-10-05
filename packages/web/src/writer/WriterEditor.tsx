@@ -53,7 +53,7 @@ import { OutlinePanel } from "./outline";
 import { RightTabs, type RightTab } from "./rightTabs";
 import { InfoModal, PreambleModal } from "./modals";
 import type { WriterTextTarget } from "./latexSource";
-import { captureEditorPage, type WriterEditorPage } from "./writer-context";
+import { captureEditorPage, type WriterEditorPage, writerAutoFold } from "./writer-context";
 
 type Menu =
   | { kind: "add"; index: number; x: number; y: number }
@@ -91,16 +91,34 @@ export function WriterEditor({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("references");
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // The side panels fold on their own when the pane is too narrow to keep a paper column (writerAutoFold); what the
+  // user sets by hand wins until the pane's width class changes (the Reader's rule, ticket 18).
+  const width = useElementWidth(rootRef, doc !== undefined && templates !== null);
+  const auto = writerAutoFold(width);
+  const [manual, setManual] = useState<{ left: boolean | null; right: boolean | null; auto: { left: boolean; right: boolean } }>({ left: null, right: null, auto });
+  const sameAuto = manual.auto.left === auto.left && manual.auto.right === auto.right;
+  useEffect(() => {
+    if (!sameAuto) setManual({ left: null, right: null, auto });
+  }, [sameAuto, auto.left, auto.right]); // eslint-disable-line react-hooks/exhaustive-deps
+  const leftCollapsed = manual.left ?? auto.left;
+  const rightCollapsed = manual.right ?? auto.right;
+  const setLeftCollapsed = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, left: typeof value === "function" ? value(m.left ?? m.auto.left) : value }));
+  const setRightCollapsed = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, right: typeof value === "function" ? value(m.right ?? m.auto.right) : value }));
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [modal, setModal] = useState<"info" | "preamble" | null>(null);
+  const [modal, setModalState] = useState<"info" | "preamble" | null>(null);
+  const [modalDraft, setModalDraft] = useState<Record<string, unknown> | null>(null);
+  /** The manuscript as it was when the dialog opened: a save applies only what the user changed since, onto the latest. */
+  const modalBaseRef = useRef<WriterManuscript | null>(null);
+  const setModal = (next: "info" | "preamble" | null) => {
+    modalBaseRef.current = next ? structuredClone(docRef.current) : null;
+    setModalState(next);
+  };
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [toast, setToast] = useState<string | null>(null);
   const [numbering, setNumbering] = useState<WriterNumberingResponse | null>(null);
   const [numberingBusy, setNumberingBusy] = useState(false);
 
-  const rootRef = useRef<HTMLDivElement>(null);
   const dirtyRef = useRef(false);
   const writeFailed = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -374,15 +392,17 @@ export function WriterEditor({
       let caret: { cellId: string; field: string; start: number; end: number } | null = null;
       if (tracked?.el.isConnected && tracked.cellId === editingId)
         caret = { cellId: tracked.cellId, field: tracked.field, start: tracked.el.selectionStart ?? 0, end: tracked.el.selectionEnd ?? 0 };
-      onPageRef.current?.(captureEditorPage({ id, doc, base: baseRef.current, templates, saveState, activeId, editingId, caret, modal, numbering, rendering: numberingBusy }));
+      onPageRef.current?.(captureEditorPage({ id, doc, base: baseRef.current, templates, saveState, activeId, editingId, caret, modal, modalDraft, numbering, rendering: numberingBusy }));
     }, 100);
     return () => window.clearTimeout(timer);
-  }, [id, doc, templates, saveState, activeId, editingId, modal, numbering, numberingBusy]);
+  }, [id, doc, templates, saveState, activeId, editingId, modal, modalDraft, numbering, numberingBusy]);
   useEffect(() => () => onPageRef.current?.(null), []);
   useEffect(() => {
     registerLeave?.(async () => {
       if (!dirtyRef.current) writeFailed.current = false;
       await flushSave();
+      // A 409 rebase leaves the merged edits to be saved again: one more flush, like the Render button (requestPreview).
+      if (dirtyRef.current && !writeFailed.current) await flushSave();
       return !dirtyRef.current && !writeFailed.current;
     });
     return () => registerLeave?.(null);
@@ -817,12 +837,25 @@ export function WriterEditor({
           doc={doc}
           template={template}
           onClose={() => setModal(null)}
+          onDraft={setModalDraft}
           onSave={(v) => {
+            // Only what the user changed since the dialog opened goes onto the latest manuscript: an agent write made
+            // in between (another field, another info key, another author) is not restored to its old value.
+            const opened = modalBaseRef.current;
             mutate((d) => {
-              d.title = v.title;
-              d.authors = v.authors;
-              d.affiliations = v.affiliations;
-              d.infoValues = v.infoValues;
+              if (!opened) {
+                d.title = v.title;
+                d.authors = v.authors;
+                d.affiliations = v.affiliations;
+                d.infoValues = v.infoValues;
+                return;
+              }
+              const edited = { ...opened, title: v.title, authors: v.authors, affiliations: v.affiliations, infoValues: v.infoValues };
+              const { merged } = rebaseManuscriptDraft(opened, edited, d);
+              d.title = merged.title;
+              d.authors = merged.authors;
+              d.affiliations = merged.affiliations;
+              d.infoValues = merged.infoValues;
             });
             setModal(null);
           }}
@@ -833,9 +866,12 @@ export function WriterEditor({
           template={template}
           userPreamble={doc.userPreamble}
           onClose={() => setModal(null)}
+          onDraft={setModalDraft}
           onSave={(userPreamble) => {
+            const opened = modalBaseRef.current;
             mutate((d) => {
-              d.userPreamble = userPreamble;
+              // Unchanged since the dialog opened: the latest value (an agent's) stays.
+              if (!opened || userPreamble !== opened.userPreamble) d.userPreamble = userPreamble;
             });
             setModal(null);
           }}
@@ -845,4 +881,19 @@ export function WriterEditor({
       {toast && <div className="w-toast" data-ui="writer-notice">{toast}</div>}
     </div>
   );
+}
+
+/** The element's width, once it is mounted (`ready`); null before that or without ResizeObserver. */
+function useElementWidth(ref: React.RefObject<HTMLElement | null>, ready: boolean): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!ready || !el || typeof ResizeObserver === "undefined") return;
+    const update = () => setWidth(Math.round(el.getBoundingClientRect().width) || null);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, ready]);
+  return width;
 }

@@ -137,6 +137,88 @@ describe("rebaseManuscriptDraft keeps the user's unsaved edits over a newer save
   });
 });
 
+describe("rebase granularity and accuracy (fix round 1)", () => {
+  const cell = (id: string, source: string) => ({ id, type: "latex", data: { source } });
+  it("B1: a cell the other side deleted but the user edited is kept and reported, not silently resurrected", () => {
+    const base = manuscript();
+    const local = ManuscriptSchema.parse(
+      withCells(base, [{ ...cell("c_00000001", "user edit of one") }, base.cells[1]])
+    );
+    const current = ManuscriptSchema.parse({ ...withCells(base, [base.cells[1]]), rev: 4 });
+    const { merged, contested } = rebaseManuscriptDraft(base, local, current);
+    expect(merged.cells.map((c) => c.id)).toEqual(["c_00000001", "c_00000002"]);
+    expect(contested).toEqual(["cell c_00000001"]);
+  });
+  it("B1 symmetric: a cell the user deleted but the other side edited is deleted and reported", () => {
+    const base = manuscript();
+    const local = ManuscriptSchema.parse(withCells(base, [base.cells[1]]));
+    const current = ManuscriptSchema.parse({
+      ...withCells(base, [cell("c_00000001", "agent edit"), base.cells[1]]),
+      rev: 4,
+    });
+    const { merged, contested } = rebaseManuscriptDraft(base, local, current);
+    expect(merged.cells.map((c) => c.id)).toEqual(["c_00000002"]);
+    expect(contested).toEqual(["cell c_00000001"]);
+  });
+  it("F1: infoValues merge per key; only the same key changed on both sides is contested", () => {
+    const base = ManuscriptSchema.parse({ ...manuscript(), infoValues: { a: "a0", b: "b0" } });
+    const local = ManuscriptSchema.parse({ ...base, infoValues: { a: "user a", b: "b0" } });
+    const current = ManuscriptSchema.parse({
+      ...base,
+      rev: 4,
+      infoValues: { a: "a0", b: "agent b" },
+    });
+    const disjoint = rebaseManuscriptDraft(base, local, current);
+    expect(disjoint.merged.infoValues).toEqual({ a: "user a", b: "agent b" });
+    expect(disjoint.contested).toEqual([]);
+    const clash = rebaseManuscriptDraft(base, local, {
+      ...current,
+      infoValues: { a: "agent a", b: "b0" },
+    });
+    expect(clash.merged.infoValues).toEqual({ a: "user a", b: "b0" });
+    expect(clash.contested).toEqual(["infoValues.a"]);
+  });
+  it("F1: authors merge per element when the lists line up", () => {
+    const base = ManuscriptSchema.parse({
+      ...manuscript(),
+      authors: [
+        { name: "A", aff: "1" },
+        { name: "B", aff: "1" },
+      ],
+    });
+    const local = ManuscriptSchema.parse({
+      ...base,
+      authors: [
+        { name: "A user", aff: "1" },
+        { name: "B", aff: "1" },
+      ],
+    });
+    const current = ManuscriptSchema.parse({
+      ...base,
+      rev: 4,
+      authors: [
+        { name: "A", aff: "1" },
+        { name: "B agent", aff: "1" },
+      ],
+    });
+    const { merged, contested } = rebaseManuscriptDraft(base, local, current);
+    expect(merged.authors.map((a) => a.name)).toEqual(["A user", "B agent"]);
+    expect(contested).toEqual([]);
+  });
+});
+
+describe("agent author patches", () => {
+  it("allow only name, aff and email", () => {
+    const op = { action: "update_manuscript", manuscriptId: "m_0123abcd", expectedRev: 1 };
+    expect(
+      WriterWriteOperationSchema.safeParse({ ...op, authors: [{ name: "N", x: 1 }] }).success
+    ).toBe(false);
+    expect(
+      WriterWriteOperationSchema.safeParse({ ...op, authors: [{ name: "N", aff: "1" }] }).success
+    ).toBe(true);
+  });
+});
+
 const editorPage = (over: Partial<NonNullable<WriterPage["editor"]>> = {}): WriterPage => ({
   mode: "editor",
   list: null,

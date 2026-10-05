@@ -9,7 +9,7 @@ import type { WriterManuscript, WriterPage, WriterTemplate } from "@argelandersp
 import type { ComponentProps } from "react";
 import type { LatexSourceField } from "../src/writer/latexSource";
 import { WriterView, type WriterViewController } from "../src/writer/WriterView";
-import { writerPageStatus } from "../src/writer/writer-context";
+import { writerAutoFold, writerPageStatus } from "../src/writer/writer-context";
 
 const ID = "m_0a1b2c3d";
 
@@ -31,7 +31,8 @@ const h = vi.hoisted(() => {
   const summary = (m: WriterManuscript) => ({ id: m.id, title: m.title, template: m.template, rev: m.rev, created_at: m.created_at, updated_at: m.updated_at });
   return {
     templates, store, wsCbs, sample,
-    reset() { store.clear(); store.set("m_0a1b2c3d", sample()); wsCbs.length = 0; },
+    flags: { probeFail: false },
+    reset() { store.clear(); store.set("m_0a1b2c3d", sample()); wsCbs.length = 0; this.flags.probeFail = false; },
     externalWrite(id: string, fn: (m: WriterManuscript) => void) {
       const next = structuredClone(store.get(id) as WriterManuscript);
       fn(next); next.rev += 1; store.set(id, next);
@@ -40,6 +41,7 @@ const h = vi.hoisted(() => {
       fetchTemplates: async () => ({ templates, warnings: [] }),
       fetchManuscripts: async () => ({ manuscripts: [...store.values()].map(summary), warnings: [] }),
       fetchManuscript: async (id: string) => store.get(id) ?? null,
+      probeManuscript: async (id: string) => (h.flags.probeFail ? "error" : store.has(id) ? "found" : "missing"),
       createManuscript: async () => { throw new Error("unused"); },
       putManuscript: async (doc: WriterManuscript) => {
         const cur = store.get(doc.id);
@@ -180,5 +182,54 @@ describe("the controls an agent may press", () => {
     const result = await state.controller?.apply({ action: "open_manuscript", manuscriptId: "m_0000000b" });
     expect(result).toEqual({ ok: false, detail: "leave_blocked" });
     expect(state.page?.editor?.manuscriptId).toBe(ID);
+  });
+});
+
+describe("fix round 1", () => {
+  it("F4: saving an Info dialog opened before an agent write keeps the agent's write and applies only the user's change", async () => {
+    const { view, state } = mount();
+    await waitFor(() => view.getByText("Stellar Streams"));
+    fireEvent.click(view.getByText("Stellar Streams"));
+    await waitFor(() => expect(state.page?.editor?.phase).toBe("ready"));
+    fireEvent.click(view.container.querySelector('[data-ui="edit-manuscript-info"]') as HTMLElement);
+    const title = await waitFor(() => view.container.querySelector('[data-ui="manuscript-title-input"]') as HTMLInputElement);
+    // The agent writes the affiliations while the dialog is open; the editor adopts the newer manuscript.
+    h.externalWrite(ID, (m) => { m.affiliations = ["Agent affiliation"]; });
+    h.wsCbs.forEach((cb) => cb({ type: "writer.changed", cause: "put", id: ID, at: new Date().toISOString() }));
+    fireEvent.change(title, { target: { value: "User new title" } });
+    // What was typed and not saved is part of the page, marked unsaved.
+    await waitFor(() => expect(state.page?.editor?.modalDraft).toMatchObject({ unsaved: true, values: { title: "User new title" } }));
+    fireEvent.click(view.container.querySelector('[data-ui="save-manuscript-info"]') as HTMLElement);
+    await waitFor(() => expect(h.store.get(ID)?.title).toBe("User new title"), { timeout: 3000 });
+    expect(h.store.get(ID)?.affiliations).toEqual(["Agent affiliation"]);
+    await waitFor(() => expect(state.page?.editor?.modalDraft ?? null).toBeNull());
+  });
+
+  it("Std4: close_manuscript right after a 409 rebase waits for the second save instead of reporting leave_blocked", async () => {
+    const { view, state } = mount();
+    await waitFor(() => view.getByText("Stellar Streams"));
+    fireEvent.click(view.getByText("Stellar Streams"));
+    await waitFor(() => expect(state.page?.editor?.phase).toBe("ready"));
+    h.externalWrite(ID, (m) => { m.title = "Agent title"; });
+    editCell(view.container, "c_0ab50002", "User draft before close");
+    expect(await state.controller?.apply({ action: "close_manuscript" })).toEqual({ ok: true });
+    expect(h.store.get(ID)?.title).toBe("Agent title");
+    expect(JSON.stringify(h.store.get(ID))).toContain("User draft before close");
+  });
+
+  it("Std9: a failed lookup is unavailable, not not_found", async () => {
+    const { state } = mount();
+    await waitFor(() => expect(state.controller).not.toBeNull());
+    h.flags.probeFail = true;
+    expect(await state.controller?.apply({ action: "open_manuscript", manuscriptId: ID })).toEqual({ ok: false, detail: "unavailable" });
+  });
+
+  it("U1: the side panels fold at the Reader's threshold, outline first", () => {
+    expect(writerAutoFold(1000)).toEqual({ left: false, right: false });
+    expect(writerAutoFold(770)).toEqual({ left: false, right: false });
+    expect(writerAutoFold(769)).toEqual({ left: true, right: false });
+    expect(writerAutoFold(584)).toEqual({ left: true, right: false });
+    expect(writerAutoFold(583)).toEqual({ left: true, right: true });
+    expect(writerAutoFold(null)).toEqual({ left: false, right: false });
   });
 });

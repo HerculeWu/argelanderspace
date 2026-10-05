@@ -774,7 +774,7 @@
       "templateUnsupported": "{{count}} cell(s) preserved, but the current template does not natively support them",
       "conflict": "Updated elsewhere — loaded the latest version",
       "conflictKept": "Updated elsewhere — your unsaved edits were kept on top of the latest version",
-      "conflictContested": "Updated elsewhere — your unsaved edits were kept; where both changed the same part, yours won",
+      "conflictContested": "Updated elsewhere — your unsaved edits were kept; where both changed the same item, yours won",
       "saveFailed": "Save failed. Check the server and try again",
       "uploadFailed": "Image upload failed",
       "exportFailed": "Export failed. Check the server and try again",
@@ -1305,10 +1305,11 @@
       "expiredDeleteDoc": "The document, its works or its annotations changed before your decision. Nothing was deleted.",
       "failedDeleteDoc": "The outcome is not known: your decision may or may not have reached the service. Check the library before trying again.",
       "deleteManuscript": "Permanently delete the manuscript “{{title}}”",
-      "manuscriptScope": "{{cells}} cells, {{comments}} comments and {{assets}} uploaded figure files are deleted with it.",
+      "manuscriptScope": "{{cells}} cells, {{comments}} comments and {{assets}} uploaded figure files are deleted with it. This cannot be undone.",
       "metaManuscript": "{{id}} · manuscript v{{rev}}",
       "expiredManuscript": "The manuscript changed before your decision. Nothing was deleted.",
-      "failedManuscript": "Your decision could not be saved. Nothing was deleted; try again."
+      "failedManuscript": "The outcome is not known: your decision may or may not have reached the service. Check the manuscript list before trying again.",
+      "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?"
     },
     "thinkingLevels": {
       "off": "Off",

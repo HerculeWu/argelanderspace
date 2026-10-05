@@ -671,8 +671,8 @@ table.w-preview th { background: var(--paper-panel); font-weight: 650; }
 
 /* ---------- narrow panes ---------- */
 @container (max-width: 1050px) {
-  .w-side.left { width: 220px; }
-  .w-side.right { width: 310px; }
+  .w-side.left:not(.collapsed) { width: 220px; }
+  .w-side.right:not(.collapsed) { width: 310px; }
   .w-paper { padding-left: 28px; padding-right: 28px; }
   .w-topbar .w-hide-narrow { display: none; }
 }

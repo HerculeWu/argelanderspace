@@ -10,7 +10,6 @@
  */
 import { z } from "zod";
 import {
-  AuthorSchema,
   CellIdSchema,
   CellSchema,
   CommentIdSchema,
@@ -37,6 +36,9 @@ const META_KEYS = new Set([
   "comments",
 ]);
 
+function isRecord(value: unknown): boolean {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
 function stable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(stable);
   if (value && typeof value === "object")
@@ -136,8 +138,38 @@ export function rebaseManuscriptDraft(
   const merged: Record<string, unknown> = { ...current };
   for (const key of new Set([...Object.keys(base), ...Object.keys(local)])) {
     if (META_KEYS.has(key) || sameJson(base[key], local[key])) continue;
-    if (!sameJson(base[key], current[key]) && !sameJson(local[key], current[key]))
-      contested.push(key);
+    const changedThere = !sameJson(base[key], current[key]);
+    // A record (infoValues) merges per key; a list (authors, affiliations) per element when the three lists line up.
+    // Only the same key or element changed on both sides is a clash; a disjoint newer change is kept.
+    if (isRecord(base[key]) && isRecord(local[key]) && isRecord(current[key])) {
+      const out = { ...(current[key] as Record<string, unknown>) };
+      const b = base[key] as Record<string, unknown>;
+      const l = local[key] as Record<string, unknown>;
+      const c = current[key] as Record<string, unknown>;
+      for (const item of new Set([...Object.keys(b), ...Object.keys(l)])) {
+        if (sameJson(b[item], l[item])) continue;
+        if (!sameJson(b[item], c[item]) && !sameJson(l[item], c[item]))
+          contested.push(`${key}.${item}`);
+        if (l[item] === undefined) delete out[item];
+        else out[item] = structuredClone(l[item]);
+      }
+      merged[key] = out;
+      continue;
+    }
+    const lists = [base[key], local[key], current[key]];
+    if (
+      lists.every(Array.isArray) &&
+      new Set(lists.map((list) => (list as unknown[]).length)).size === 1
+    ) {
+      const [b, l, c] = lists as unknown[][];
+      merged[key] = (b as unknown[]).map((_, i) => {
+        if (sameJson(b?.[i], l?.[i])) return structuredClone(c?.[i]);
+        if (!sameJson(b?.[i], c?.[i]) && !sameJson(l?.[i], c?.[i])) contested.push(`${key}[${i}]`);
+        return structuredClone(l?.[i]);
+      });
+      continue;
+    }
+    if (changedThere && !sameJson(local[key], current[key])) contested.push(key);
     if (local[key] === undefined) delete merged[key];
     else merged[key] = structuredClone(local[key]);
   }
@@ -161,6 +193,8 @@ export function rebaseManuscriptDraft(
       cells[at] = copy;
       return;
     }
+    // The other side deleted a cell the user edited: the user's edited cell is kept, and the clash is reported.
+    if (baseCells.has(cell.id)) contested.push(`cell ${cell.id}`);
     // A new cell goes after the cell the user put it behind, when that cell is still there.
     let after = -1;
     for (let back = index - 1; back >= 0 && after < 0; back--) {
@@ -222,6 +256,12 @@ const WriterEditorPageSchema = z
       .strict()
       .nullable(),
     modal: z.enum(["info", "preamble"]).nullable(),
+    /** The Info/Preamble dialog's form values the user has typed and not saved (a draft, never on disk). */
+    modalDraft: z
+      .object({ unsaved: z.literal(true), values: z.record(z.string(), z.unknown()) })
+      .strict()
+      .nullable()
+      .optional(),
     preview: z
       .object({
         status: z.enum(["never", "ok", "stale", "unknown"]),
@@ -333,6 +373,14 @@ export function observationWriterPage<T extends { writer?: WriterPage | null }>(
 // ---- Tool operations --------------------------------------------------------------------------------- //
 
 const Id = ManuscriptIdSchema;
+/** What an agent may say about an author; keys the file already has on an author are kept by the write. */
+export const WriterAuthorPatchSchema = z
+  .object({
+    name: z.string().max(500).optional(),
+    aff: z.string().max(200).optional(),
+    email: z.string().max(500).optional(),
+  })
+  .strict();
 const Title = z.string().trim().min(1).max(500);
 
 /** Without `manuscriptId` the list (summaries and the template catalog), with it the whole saved manuscript. */
@@ -360,7 +408,7 @@ export const WriterWriteOperationSchema = z.discriminatedUnion("action", [
       manuscriptId: Id,
       expectedRev: Rev,
       title: Title.optional(),
-      authors: z.array(AuthorSchema).max(200).optional(),
+      authors: z.array(WriterAuthorPatchSchema).max(200).optional(),
       affiliations: z.array(z.string().max(2000)).max(200).optional(),
       userPreamble: z.string().max(1_000_000).optional(),
       /** Set these extension fields; the others keep their values. */

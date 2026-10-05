@@ -60,6 +60,16 @@ export async function fetchManuscript(id: string): Promise<WriterManuscript | nu
   }
 }
 
+/** Whether the server has the manuscript: `error` is a failed request, never reported as missing. */
+export async function probeManuscript(id: string): Promise<"found" | "missing" | "error"> {
+  try {
+    const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}`);
+    return r.ok ? "found" : r.status === 404 ? "missing" : "error";
+  } catch {
+    return "error";
+  }
+}
+
 /** 400 (unknown template / bad input) and network failures both reject. */
 export async function createManuscript(input: {
   template: string;

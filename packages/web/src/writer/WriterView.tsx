@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WriterPage, WriterViewAction } from "@argelanderspace/contracts";
-import { fetchManuscript } from "../api/writer";
+import { probeManuscript } from "../api/writer";
 import { ManuscriptList } from "./ManuscriptList";
 import { WriterEditor } from "./WriterEditor";
 import { captureListPage, type WriterEditorPage } from "./writer-context";
@@ -63,7 +63,9 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
         const wanted = action.manuscriptId;
         if (openIdRef.current === wanted) return { ok: true };
         // The row exists only if the server has it; another open editor is left through its own back button first.
-        if (!(await fetchManuscript(wanted))) return { ok: false, detail: "not_found" };
+        const found = await probeManuscript(wanted);
+        if (found === "missing") return { ok: false, detail: "not_found" };
+        if (found === "error") return { ok: false, detail: "unavailable" };
         if (openIdRef.current && !(await leaveRef.current?.())) return { ok: false, detail: "leave_blocked" };
         setNotice(null);
         setEditorPage(null);

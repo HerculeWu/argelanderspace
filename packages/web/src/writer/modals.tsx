@@ -4,7 +4,7 @@
  * the delete-manuscript double confirm. This independent shell is not yet migrated to shared UI Dialog.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
 import { LatexSourceField } from "./latexSource";
@@ -62,17 +62,27 @@ export function InfoModal({
   template,
   onSave,
   onClose,
+  onDraft,
 }: {
   doc: WriterManuscript;
   template: WriterTemplate;
   onSave: (v: InfoFormValues) => void;
   onClose: () => void;
+  /** The values typed and not saved (null while they equal what the dialog opened with); for the Copilot's page. */
+  onDraft?: (values: Record<string, unknown> | null) => void;
 }) {
   const { t } = useTranslation();
   const [title, setTitle] = useState(doc.title);
   const [authors, setAuthors] = useState<WriterAuthor[]>(doc.authors.map((a) => ({ ...a })));
   const [affils, setAffils] = useState<string[]>([...doc.affiliations]);
   const [infoValues, setInfoValues] = useState<Record<string, string>>({ ...doc.infoValues });
+
+  const opened = useRef(JSON.stringify({ title: doc.title, authors: doc.authors, affiliations: doc.affiliations, infoValues: doc.infoValues }));
+  useEffect(() => {
+    const values = { title, authors, affiliations: affils, infoValues };
+    onDraft?.(JSON.stringify(values) === opened.current ? null : values);
+  }, [title, authors, affils, infoValues]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onDraft?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = () =>
     onSave({
@@ -196,14 +206,19 @@ export function PreambleModal({
   userPreamble,
   onSave,
   onClose,
+  onDraft,
 }: {
   template: WriterTemplate;
   userPreamble: string;
   onSave: (userPreamble: string) => void;
   onClose: () => void;
+  onDraft?: (values: Record<string, unknown> | null) => void;
 }) {
   const { t } = useTranslation();
   const [value, setValue] = useState(userPreamble);
+  const opened = useRef(userPreamble);
+  useEffect(() => { onDraft?.(value === opened.current ? null : { userPreamble: value }); }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onDraft?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <WModal
       uiId="manuscript-preamble-dialog"

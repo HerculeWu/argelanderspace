@@ -159,6 +159,8 @@ export function createServer(opts: ServerOptions): RunningServer {
       for (const id of ids) {
         hub.broadcast({ type: "writer.changed", cause: "external", id, at });
       }
+      // A hand edit may make a pending Copilot manuscript delete obsolete (click time stays the authority).
+      copilot.revalidateWriterConfirmations();
       if (templates) {
         hub.broadcast({ type: "writer.changed", cause: "template", at });
       }

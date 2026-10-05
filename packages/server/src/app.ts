@@ -1619,6 +1619,8 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail(outcome.bad, 400);
       return c.json(e.body, e.status);
     }
+    // A pending Copilot delete card names the figure files it would delete: a new one ends it.
+    copilot.revalidateWriterConfirmations();
     return c.json({ name: outcome.name }, 201);
   });
 

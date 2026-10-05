@@ -81,6 +81,13 @@ export function Shell() {
   // The Writer of each Write pane (copilot ticket 22): its page (list or open manuscript with saved content and unsaved draft) and its controller.
   const [writerPages, setWriterPages] = useState<Record<number, WriterPage | null>>({});
   const reportWriter = useCallback((paneId: number, page: WriterPage | null) => { setWriterPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  const writerPagesRef = useRef(writerPages);
+  writerPagesRef.current = writerPages;
+  // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
+  const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
+    const unsaved = Object.values(writerPagesRef.current).some((page) => page?.editor?.manuscriptId === manuscriptId && (!!page.editor.draft || page.editor.saveState !== "saved" || !!page.editor.modalDraft));
+    return !unsaved || window.confirm(t("copilot.confirmation.manuscriptDraftGuard"));
+  }, [t]);
   const writerControllers = useRef(new Map<number, WriterViewController>());
   const registerWriterController = useCallback((paneId: number, controller: WriterViewController | null) => {
     if (controller) writerControllers.current.set(paneId, controller); else writerControllers.current.delete(paneId);
@@ -690,7 +697,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onBeforeDocDelete={(docId) => docId !== currentDocRef.current || confirmWorkspaceLeave()} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onBeforeDocDelete={(docId) => docId !== currentDocRef.current || confirmWorkspaceLeave()} onBeforeManuscriptDelete={beforeManuscriptDelete} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette
