@@ -207,6 +207,53 @@ describe("rebase granularity and accuracy (fix round 1)", () => {
   });
 });
 
+describe("list merge only when alignment is provable (fix round 2)", () => {
+  const authorsOf = (names: string[]) => names.map((name) => ({ name, aff: "1" }));
+  const withAuthors = (rev: number, names: string[]) =>
+    ManuscriptSchema.parse({ ...manuscript(), rev, authors: authorsOf(names) });
+  it("probe: user edits B while the agent removes B and appends D: no author is dropped, the clash is reported", () => {
+    const base = withAuthors(3, ["A", "B", "C"]);
+    const local = withAuthors(3, ["A", "B user", "C"]);
+    const current = withAuthors(4, ["A", "C", "D"]);
+    const { merged, contested } = rebaseManuscriptDraft(base, local, current);
+    expect(merged.authors.map((a) => a.name)).toEqual(["A", "B user", "C"]);
+    expect(contested).toEqual(["authors"]);
+  });
+  it("changes on disjoint indexes still merge per element, even when the other side removed and appended", () => {
+    const base = withAuthors(3, ["A", "B", "C"]);
+    const local = withAuthors(3, ["A user", "B", "C"]);
+    const current = withAuthors(4, ["A", "C", "D"]);
+    const { merged, contested } = rebaseManuscriptDraft(base, local, current);
+    expect(merged.authors.map((a) => a.name)).toEqual(["A user", "C", "D"]);
+    expect(contested).toEqual([]);
+  });
+  it("a user reorder against an edit of an element another index holds is not grafted by position", () => {
+    const base = withAuthors(3, ["A", "B", "C"]);
+    const local = withAuthors(3, ["B", "A", "C"]);
+    const current = withAuthors(4, ["A agent", "B", "C"]);
+    const { merged, contested } = rebaseManuscriptDraft(base, local, current);
+    expect(merged.authors.map((a) => a.name)).toEqual(["B", "A", "C"]);
+    expect(contested).toEqual(["authors"]);
+  });
+  it("a reorder alone keeps the user's order; a differing length falls back to the whole value", () => {
+    const base = withAuthors(3, ["A", "B", "C"]);
+    expect(
+      rebaseManuscriptDraft(
+        base,
+        withAuthors(3, ["C", "B", "A"]),
+        withAuthors(4, ["A", "B", "C"])
+      ).merged.authors.map((a) => a.name)
+    ).toEqual(["C", "B", "A"]);
+    const shorter = rebaseManuscriptDraft(
+      base,
+      withAuthors(3, ["A", "B x", "C"]),
+      withAuthors(4, ["A", "B"])
+    );
+    expect(shorter.merged.authors.map((a) => a.name)).toEqual(["A", "B x", "C"]);
+    expect(shorter.contested).toEqual(["authors"]);
+  });
+});
+
 describe("agent author patches", () => {
   it("allow only name, aff and email", () => {
     const op = { action: "update_manuscript", manuscriptId: "m_0123abcd", expectedRev: 1 };

@@ -9,7 +9,7 @@ import type { WriterManuscript, WriterPage, WriterTemplate } from "@argelandersp
 import type { ComponentProps } from "react";
 import type { LatexSourceField } from "../src/writer/latexSource";
 import { WriterView, type WriterViewController } from "../src/writer/WriterView";
-import { writerAutoFold, writerPageStatus } from "../src/writer/writer-context";
+import { manuscriptDeleteGuard, writerAutoFold, writerPageStatus } from "../src/writer/writer-context";
 
 const ID = "m_0a1b2c3d";
 
@@ -222,6 +222,25 @@ describe("fix round 1", () => {
     await waitFor(() => expect(state.controller).not.toBeNull());
     h.flags.probeFail = true;
     expect(await state.controller?.apply({ action: "open_manuscript", manuscriptId: ID })).toEqual({ ok: false, detail: "unavailable" });
+  });
+
+  it("N2: the delete guard asks (window.confirm) only for an open manuscript with unsaved edits, and obeys the answer", () => {
+    const confirm = vi.spyOn(window, "confirm");
+    const page = (over: object) => ({ mode: "editor", list: null, editor: { manuscriptId: ID, phase: "ready", saved: null, saveState: "saved", draft: null, modalDraft: null, ...over } }) as unknown as WriterPage;
+    const ask = (pages: (WriterPage | null)[], id = ID) => manuscriptDeleteGuard(pages, id, () => window.confirm("discard?"));
+    expect(ask([page({})])).toBe(true);
+    expect(ask([null])).toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockReturnValue(false);
+    expect(ask([page({ saveState: "saving" })])).toBe(false);
+    expect(ask([page({ draft: { unsaved: true } })])).toBe(false);
+    expect(ask([page({ modalDraft: { unsaved: true, values: {} } })])).toBe(false);
+    confirm.mockReturnValue(true);
+    expect(ask([page({ saveState: "error" })])).toBe(true);
+    expect(confirm).toHaveBeenCalledTimes(4);
+    expect(ask([page({ saveState: "error" })], "m_0000ffff")).toBe(true); // another manuscript: no question
+    expect(confirm).toHaveBeenCalledTimes(4);
+    confirm.mockRestore();
   });
 
   it("U1: the side panels fold at the Reader's threshold, outline first", () => {

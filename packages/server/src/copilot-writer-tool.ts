@@ -89,11 +89,11 @@ const parameters = Type.Object(
             ),
             email: Type.Optional(Type.String()),
           },
-          { additionalProperties: true }
+          { additionalProperties: false }
         ),
         {
           description:
-            "update_manuscript: the whole author list (Info modal); replaces the current one.",
+            "update_manuscript: the whole author list (Info modal); replaces the current one. Keys the file has on an author beyond name/aff/email are kept only when the list keeps its length and the author at that index keeps its name (or you omit the name); a removed, added, reordered or renamed author does not inherit anything from another.",
         }
       )
     ),

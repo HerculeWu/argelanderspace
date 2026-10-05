@@ -157,10 +157,16 @@ export function rebaseManuscriptDraft(
       continue;
     }
     const lists = [base[key], local[key], current[key]];
-    if (
-      lists.every(Array.isArray) &&
-      new Set(lists.map((list) => (list as unknown[]).length)).size === 1
-    ) {
+    // Per element only when the alignment is provable: same length on all three and every index changed by at most
+    // one side. A list one side restructured (an element removed and another appended keeps the length) changes the
+    // same indexes on both sides, so it falls through to the whole-value rule below instead of grafting by position.
+    const aligned = (() => {
+      if (!lists.every(Array.isArray)) return false;
+      const [b, l, c] = lists as unknown[][];
+      if (new Set(lists.map((list) => (list as unknown[]).length)).size !== 1) return false;
+      return (b as unknown[]).every((_, i) => sameJson(b?.[i], l?.[i]) || sameJson(b?.[i], c?.[i]));
+    })();
+    if (aligned) {
       const [b, l, c] = lists as unknown[][];
       merged[key] = (b as unknown[]).map((_, i) => {
         if (sameJson(b?.[i], l?.[i])) return structuredClone(c?.[i]);

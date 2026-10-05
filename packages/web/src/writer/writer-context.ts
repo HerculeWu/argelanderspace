@@ -89,6 +89,23 @@ export function writerPageStatus(page: WriterPage | null | undefined): "complete
   return editor.phase === "ready" && editor.saved ? "complete" : "unavailable";
 }
 
+/**
+ * Approving a Copilot manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog):
+ * true = go ahead (nothing unsaved, or the user agreed through `confirm`).
+ */
+export function manuscriptDeleteGuard(
+  pages: Iterable<WriterPage | null | undefined>,
+  manuscriptId: string,
+  confirm: () => boolean
+): boolean {
+  for (const page of pages) {
+    const editor = page?.editor;
+    if (editor?.manuscriptId === manuscriptId && (!!editor.draft || editor.saveState !== "saved" || !!editor.modalDraft))
+      return confirm();
+  }
+  return true;
+}
+
 /** The Writer's side panels at their full width, and the narrowest reading column they may leave (ticket 18's rule). */
 const WRITER_PANEL_FULL = { left: 220, right: 310, rail: 34 };
 export const WRITER_MIN_COLUMN = 240;

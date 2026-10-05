@@ -183,14 +183,19 @@ export async function patchManuscript(
     }
     const next: WriterManuscript = { ...current };
     if (op.title !== undefined) next.title = op.title;
-    // Keys the file already has on an author survive (the Info modal's `{ ...author, ...edit }`).
-    if (op.authors !== undefined)
-      next.authors = op.authors.map((author, index) => ({
-        name: "",
-        aff: "",
-        ...(current.authors[index] ?? {}),
-        ...author,
-      }));
+    // Keys the file already has on an author (an email, unknown keys) survive only for an author that is provably the
+    // same person: the list keeps its length and the author at that index keeps the name (an edit in place, like the
+    // Info modal's `{ ...author, ...edit }`). A removed, added or reordered author gets only what the call says; keys
+    // are never moved onto another person.
+    if (op.authors !== undefined) {
+      const sameLength = op.authors.length === current.authors.length;
+      next.authors = op.authors.map((author, index) => {
+        const existing = current.authors[index];
+        const identified =
+          sameLength && existing && (author.name === undefined || author.name === existing.name);
+        return { name: "", aff: "", ...(identified ? existing : {}), ...author };
+      });
+    }
     if (op.affiliations !== undefined) next.affiliations = op.affiliations;
     if (op.userPreamble !== undefined) next.userPreamble = op.userPreamble;
     if (op.infoValues !== undefined) next.infoValues = { ...current.infoValues, ...op.infoValues };

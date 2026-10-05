@@ -851,7 +851,9 @@ export function WriterEditor({
                 return;
               }
               const edited = { ...opened, title: v.title, authors: v.authors, affiliations: v.affiliations, infoValues: v.infoValues };
-              const { merged } = rebaseManuscriptDraft(opened, edited, d);
+              const { merged, contested } = rebaseManuscriptDraft(opened, edited, d);
+              // Where the agent changed the same thing meanwhile, the user's save wins and says so (never silent).
+              if (contested.length) queueMicrotask(() => showToast(t("writer.toast.conflictContested")));
               d.title = merged.title;
               d.authors = merged.authors;
               d.affiliations = merged.affiliations;

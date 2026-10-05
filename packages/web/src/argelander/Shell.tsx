@@ -18,7 +18,7 @@ import type { ReaderViewController } from "../doc/reader-bridge";
 import { LibraryView, type LibraryViewController } from "../library/LibraryView";
 import { PlanView, type PlanViewController } from "../plan/PlanView";
 import type { WriterViewController } from "../writer/WriterView";
-import { writerPageStatus } from "../writer/writer-context";
+import { manuscriptDeleteGuard, writerPageStatus } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
 import { Copilot } from "../copilot/Copilot";
 
@@ -85,8 +85,7 @@ export function Shell() {
   writerPagesRef.current = writerPages;
   // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
   const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
-    const unsaved = Object.values(writerPagesRef.current).some((page) => page?.editor?.manuscriptId === manuscriptId && (!!page.editor.draft || page.editor.saveState !== "saved" || !!page.editor.modalDraft));
-    return !unsaved || window.confirm(t("copilot.confirmation.manuscriptDraftGuard"));
+    return manuscriptDeleteGuard(Object.values(writerPagesRef.current), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
   }, [t]);
   const writerControllers = useRef(new Map<number, WriterViewController>());
   const registerWriterController = useCallback((paneId: number, controller: WriterViewController | null) => {

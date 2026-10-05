@@ -739,13 +739,146 @@ test("Std1: an author patch keeps the keys the file already has on that author",
         action: "update_manuscript",
         manuscriptId: M,
         expectedRev: 3,
-        authors: [{ name: "Renamed", aff: "2" }],
+        authors: [{ name: "A. Author", aff: "2" }],
       },
     }),
     () => ({ text: "ok" }),
   ];
   await run(editorPage());
-  expect(disk().authors).toEqual([{ name: "Renamed", aff: "2", x_author: "keep-author" }]);
+  expect(disk().authors).toEqual([{ name: "A. Author", aff: "2", x_author: "keep-author" }]);
+});
+
+test("Std1 round 2: author keys follow only a provably identical author; removal and reorder never graft them onto another person", async () => {
+  const doc = seedManuscript(M, "Alpha manuscript");
+  doc.authors = [
+    { name: "A", aff: "1", email: "a@x", x_author: "keep-A" },
+    { name: "B", aff: "2", x_author: "keep-B" },
+    { name: "C", aff: "3", x_author: "keep-C" },
+  ] as never;
+  write(M, doc);
+  const authors = () => disk().authors as Record<string, unknown>[];
+  const update = (list: object[], rev: number) => ({
+    action: "update_manuscript",
+    manuscriptId: M,
+    expectedRev: rev,
+    authors: list,
+  });
+  script = [
+    // in place: same length, same names -> every key stays
+    () => ({
+      call: update(
+        [
+          { name: "A", aff: "9" },
+          { name: "B", aff: "2" },
+          { name: "C", aff: "3" },
+        ],
+        3
+      ),
+    }),
+    // removal of B: C moves to index 1 and must not inherit B's keys; nothing may be grafted onto another person
+    () => ({
+      call: update(
+        [
+          { name: "A", aff: "9" },
+          { name: "C", aff: "3" },
+        ],
+        4
+      ),
+    }),
+    () => ({ text: "ok" }),
+  ];
+  await run(editorPage());
+  expect(authors()).toEqual([
+    { name: "A", aff: "9" },
+    { name: "C", aff: "3" },
+  ]);
+  // The first step (checked from the transcript): A's email and unknown key survived the in-place edit.
+  expect(JSON.stringify(seen[1]?.messages)).toContain("ok");
+});
+
+test("Std1 round 2: an in-place edit keeps keys, a reorder or a rename does not move them", async () => {
+  const doc = seedManuscript(M, "Alpha manuscript");
+  doc.authors = [
+    { name: "A", aff: "1", email: "a@x", x_author: "keep-A" },
+    { name: "B", aff: "2", x_author: "keep-B" },
+  ] as never;
+  write(M, doc);
+  script = [
+    () => ({
+      call: {
+        action: "update_manuscript",
+        manuscriptId: M,
+        expectedRev: 3,
+        authors: [
+          { name: "A", aff: "7" },
+          { name: "B", aff: "2" },
+        ],
+      },
+    }),
+    () => ({ text: "ok" }),
+  ];
+  await run(editorPage());
+  expect(disk().authors).toEqual([
+    { name: "A", aff: "7", email: "a@x", x_author: "keep-A" },
+    { name: "B", aff: "2", x_author: "keep-B" },
+  ]);
+  seen = [];
+  script = [
+    () => ({
+      call: {
+        action: "update_manuscript",
+        manuscriptId: M,
+        expectedRev: 4,
+        authors: [
+          { name: "B", aff: "2" },
+          { name: "A", aff: "7" },
+        ],
+      },
+    }),
+    () => ({ text: "ok" }),
+  ];
+  await run(editorPage());
+  expect(disk().authors).toEqual([
+    { name: "B", aff: "2" },
+    { name: "A", aff: "7" },
+  ]);
+});
+
+test("N2: a delete_manuscript decision from a view other than the run's bound view is refused and keeps the card", async () => {
+  const view = editorPage();
+  const other = editorPage(1, randomUUID());
+  expect((await request(`/views/${other.viewId}`, "PUT", other)).status).toBe(200);
+  script = [
+    () => ({ call: { action: "delete_manuscript", manuscriptId: M, expectedRev: 3 } }),
+    () => ({ text: "x" }),
+  ];
+  const id = await start(view);
+  const shown = await card(id);
+  expect((await answer(shown, other, "approve")).status).toBeGreaterThanOrEqual(400);
+  expect(existsSync(manuscriptFile(M))).toBe(true);
+  expect((await host.snapshot(id)).confirmations).toHaveLength(1);
+  expect((await answer(shown, view, "approve")).status).toBe(200);
+});
+
+test("Std6: the Writer addendum is in the system prompt only when the writer tool is registered", async () => {
+  script = [() => ({ text: "x" })];
+  await run(editorPage());
+  expect(JSON.stringify(seen[0]?.messages)).toContain("Writer addendum");
+  seen = [];
+  // The same host without a Writer seam: no writer tool, and no text about one.
+  const { AsyncLock } = await import("../src/lock.js");
+  host.useWorkbench({
+    plans: {
+      statusDir: join(root, "status"),
+      planLock: new AsyncLock(),
+      onChanged: () => {},
+      docExists: () => false,
+    },
+  });
+  script = [() => ({ text: "y" })];
+  await run(editorPage());
+  expect(getCurrentTools(seen[0]?.messages ?? []).map((tool) => tool.name)).not.toContain("writer");
+  expect(JSON.stringify(seen[0]?.messages)).not.toContain("Writer addendum");
 });
 
 test("F7: an infoValues key the template does not declare, or an author field outside name/aff/email, is refused", async () => {
@@ -770,10 +903,7 @@ test("F7: an infoValues key the template does not declare, or an author field ou
   ];
   const before = diskBytes();
   const { snapshot } = await run(editorPage());
-  expect(operations(snapshot)).toEqual([
-    "update_manuscript:invalid",
-    "update_manuscript:unsupported",
-  ]);
+  expect(operations(snapshot)).toEqual(["update_manuscript:invalid", "update_manuscript:error"]);
   expect(JSON.stringify(seen[1]?.messages)).toContain("not extension fields");
   expect(diskBytes()).toBe(before);
 });
