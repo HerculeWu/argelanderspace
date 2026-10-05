@@ -74,6 +74,19 @@ function selectionOf(state: ReaderSessionState): ReaderSelection | null {
     : null;
 }
 
+/**
+ * Whether the user has annotation text typed and not saved: presence and which annotation, never the text. A write the
+ * Copilot makes does not touch these drafts (the page keeps them, and blocks saving one whose annotation changed).
+ */
+function draftsOf(state: ReaderSessionState): ReaderPage["drafts"] {
+  const edit = Object.values(state.editDrafts).map((d) => ({
+    annotationId: d.annotationId,
+    blocked: d.blocked,
+  }));
+  const create = state.createDraft.body !== "";
+  return create || edit.length > 0 ? { create, edit } : undefined;
+}
+
 /** Position changes during a scroll are a hint; they are collapsed, the rest of the page is published at once. */
 const POSITION_SETTLE_MS = 250;
 
@@ -133,6 +146,7 @@ export function useReaderPublisher(
             };
         }
         const reading = state.phase === "ready" && p.reading ? p.reading.value : null;
+        const drafts = draftsOf(state);
         page = {
           docId: p.docId,
           format: "latex",
@@ -146,6 +160,7 @@ export function useReaderPublisher(
           panels: p.panels ?? { outlineCollapsed: false, rightCollapsed: false, rightTab: "references" },
           openAnnotationId: reading ? (p.live?.openAnnotationId ?? null) : null,
           canGoBack: reading ? (p.live?.canGoBack ?? false) : false,
+          ...(drafts ? { drafts } : {}),
         };
       }
       const before = p.published;
@@ -155,8 +170,8 @@ export function useReaderPublisher(
         before.docId === page.docId &&
         before.reading === page.reading &&
         before.canGoBack === page.canGoBack &&
-        JSON.stringify([before.sync, before.position, before.selection, before.panels, before.openAnnotationId]) ===
-          JSON.stringify([page.sync, page.position, page.selection, page.panels, page.openAnnotationId])
+        JSON.stringify([before.sync, before.position, before.selection, before.panels, before.openAnnotationId, before.drafts]) ===
+          JSON.stringify([page.sync, page.position, page.selection, page.panels, page.openAnnotationId, page.drafts])
       )
         return;
       if (before === null && page === null) return;

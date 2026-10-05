@@ -62,6 +62,7 @@
 - archive 字节原样保全外部未知键，不经 zod round-trip 重写；归档前仍做合法性 gate。UTC 毫秒名+旧指纹前8，碰撞加 -N，绝不覆盖已有档案；archive 对正常 reader/agent 不开放。
 - 新 fingerprint epoch rev 从 0 开始，**PUT 必须双校验**：请求 fingerprint 不同 → ensure 后 409 document changed；相同而 rev 不同 → 409 rev mismatch；基础设施错误 → 500，不得假装 reload 成功。
 - 文本创建目标遇 epoch 改变不能静默转为结构标注；应关闭并要求重新选。编辑草稿在 document-changed 后保留但禁存。
+- Copilot 的标注写入（`reader` 工具）经同一 `commitAnnotations` 处理（与 PUT 同锁、同 ensure、同指纹+rev 双检查、同三态）；工具层不自行 ensure/归档/写文件，不读 archive；机制见 [annotations](annotations.md#copilot-写入-latex-标注票-19)。
 
 ### 删除生命周期
 

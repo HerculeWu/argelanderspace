@@ -146,8 +146,9 @@ export function AnnotationPopover() {
         <>
           <div
             className="ann-popover-body plan-md-body" data-ui="latex-annotation-body"
-            // single-user tool: the body is the user's own markdown (mdWithMath ruling)
-            dangerouslySetInnerHTML={{ __html: mdWithMath(viewed.body) }}
+            // The body can now be written by the Copilot too: raw HTML and images show as text, only http(s)/mailto
+            // links stay clickable; math, code and the stored bytes are unchanged (the safe mode of mdWithMath).
+            dangerouslySetInnerHTML={{ __html: mdWithMath(viewed.body, { safe: true }) }}
           />
           <div className="ann-popover-foot">
             <ActionButton unstyled mode="icon" iconName="pencil" className="ann-editor-btn" label={t("annotation.action.edit")} tooltip={t("annotation.action.edit")} data-ui="edit-latex-annotation" disabled={!ann.canAnnotate} onClick={() => { controller.beginEdit(viewed); setEditSession(viewed); }} />

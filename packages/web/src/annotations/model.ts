@@ -1,13 +1,7 @@
-import {
-  canonicalSegmentsText,
-  type Annotation,
-  type AssetDigest,
-  type AnnotationSnapshot,
-  type AnnotationStructureKind,
-  type AnnotationStructureTarget,
-  type AnnotationTarget,
-  type IrBlock,
-  type IrSection,
+import type {
+  Annotation,
+  AnnotationStructureKind,
+  AnnotationTarget,
 } from "@argelanderspace/contracts";
 import i18n from "../i18n";
 
@@ -48,126 +42,8 @@ export function newAnnotationId(): string {
   return "a_" + [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** Snapshot object with the undefined-valued keys dropped (zod optionals stay
- *  absent, keeping the stored JSON self-describing). */
-function clean(o: Record<string, unknown>): AnnotationSnapshot {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(o)) if (v !== undefined) out[k] = v;
-  return out as AnnotationSnapshot;
-}
-
-const cap = (segments: Parameters<typeof canonicalSegmentsText>[0] | undefined) =>
-  segments === undefined ? undefined : canonicalSegmentsText(segments);
-
-/**
- * The structure target for a section/block, snapshot included (per-kind fields
- * from roadmap §1; `asset_hash` is added from the accepted manifest by
- * `withAssetHash`). `blockById` registers sections too
- * (as the heading jump targets), so an `IrSection` arrives cast as a block —
- * distinguished by the `blocks` field.
- */
-export function buildStructureTarget(node: IrBlock | IrSection): AnnotationStructureTarget {
-  if ("blocks" in node) {
-    return {
-      type: "structure",
-      id: node.id,
-      kind: "section",
-      snapshot: clean({ number: node.number, heading: node.heading }),
-    };
-  }
-  const base = { number: node.type !== "paragraph" && node.type !== "list" ? node.number : undefined };
-  switch (node.type) {
-    case "paragraph":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "paragraph",
-        snapshot: clean({ text: canonicalSegmentsText(node.segments) }),
-      };
-    case "list":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "list",
-        snapshot: clean({
-          ordered: node.ordered,
-          items: node.items.map((it) => canonicalSegmentsText(it.segments)),
-        }),
-      };
-    case "equation":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "equation",
-        snapshot: clean({ ...base, label: node.label, latex: node.latex }),
-      };
-    case "figure":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "figure",
-        snapshot: clean({
-          ...base,
-          label: node.label,
-          caption: cap(node.captionSegments),
-          footnote: node.footnote,
-        }),
-      };
-    case "table":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "table",
-        snapshot: clean({
-          ...base,
-          label: node.label,
-          caption: cap(node.captionSegments),
-          footnote: node.footnote,
-          table_body: node.tableBody,
-        }),
-      };
-    case "code":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "code",
-        snapshot: clean({
-          ...base,
-          label: node.label,
-          caption: cap(node.captionSegments),
-          lang: node.lang,
-          body: node.body,
-        }),
-      };
-    case "algorithm":
-      return {
-        type: "structure",
-        id: node.id,
-        kind: "algorithm",
-        snapshot: clean({
-          ...base,
-          label: node.label,
-          caption: cap(node.captionSegments),
-          body: node.body,
-        }),
-      };
-  }
-}
-
-/** Snapshot hashes come only from the accepted coherent manifest. */
-export function withAssetHash(
-  assets: AssetDigest[],
-  blockById: Map<string, IrBlock>,
-  target: AnnotationTarget
-): AnnotationTarget {
-  if (target.type !== "structure" || (target.kind !== "figure" && target.kind !== "table")) return target;
-  const block = blockById.get(target.id);
-  const imgPath = block && (block.type === "figure" || block.type === "table") ? block.imgPath : undefined;
-  if (!imgPath) return target;
-  const hash = assets.find((a) => a.imgPath === imgPath)?.sha256;
-  if (!hash) throw new Error("Missing accepted asset digest");
-  return { ...target, snapshot: { ...target.snapshot, asset_hash: hash } };
-}
+// The structure-target builders are shared with the Copilot `reader` tool (one implementation in contracts).
+export { buildStructureTarget, withAssetHash } from "@argelanderspace/contracts";
 
 /** The block id a target is anchored to (null for whole-document targets). */
 export function targetBlockId(target: AnnotationTarget): string | null {

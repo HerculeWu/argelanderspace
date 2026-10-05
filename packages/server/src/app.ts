@@ -139,7 +139,8 @@ import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
-import type { ReaderOpDeps, ReaderReadOutcome } from "./copilot-reader-tool.js";
+import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
+import type { ReaderOpDeps, ReaderReadOutcome, ReaderWriteOutcome } from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
@@ -373,6 +374,68 @@ export function createApp(deps: AppDeps): Hono {
    *  every other store failure → 500, never a silent reset). */
   const annotationsError = (err: AnnotationsError) =>
     detail(err.message, err.code === "not_found" ? 404 : 500);
+  /**
+   * The ONE commit of a LaTeX Doc's annotations: `PUT /api/paper/:doc_id/annotations` and the Copilot `reader` tool's
+   * annotation writes both come here. One critical section on annotationLock: content-busy check, PDF refusal,
+   * the idempotent ensure (which alone may archive and then announces `invalidate`), the fingerprint check, the
+   * revision check, `build`, and the atomic save. Failures to compute the fingerprint or to read the stored file
+   * throw `AnnotationsError` (a system error, never a mismatch) and leave the user's data as it was, except the
+   * contract's intermediate state (code `new_current`: the old batch is safely archived, the new current is not
+   * there yet). `build` gets the ensured epoch and returns the file to save (`next`; `preserveUnknown` keeps keys the
+   * schema does not know, as the Copilot's narrow writes do and the page's whole-file PUT does not) or `skip` when
+   * there is nothing to write. `archived` says how many annotations of older content this very access archived.
+   */
+  type AnnotationsEpoch = ReturnType<typeof ensureCurrentAnnotationsWithDocument>;
+  type Archived = { archived?: number };
+  type AnnotationsCommit<T = never> =
+    | { kind: "busy" }
+    | { kind: "pdf" }
+    | ({ kind: "document_changed"; file: AnnotationsFile } & Archived)
+    | ({ kind: "rev_mismatch"; rev: number } & Archived)
+    | ({ kind: "saved"; file: AnnotationsFile } & Archived)
+    | ({ kind: "skipped"; file: AnnotationsFile; value: T } & Archived);
+  function commitAnnotations<T = never>(
+    docId: string,
+    expect: { fingerprint: string; rev: number },
+    build: (
+      epoch: AnnotationsEpoch
+    ) => { next: AnnotationsFile; preserveUnknown?: boolean } | { skip: T }
+  ): Promise<AnnotationsCommit<T>> {
+    let saved = false;
+    const outcome = annotationLock.run((): AnnotationsCommit<T> => {
+      if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
+      let pdf: unknown;
+      try {
+        pdf = readPdfMetadataIfPresent(paths, docId);
+      } catch (err) {
+        throw new DocMetadataError(err);
+      }
+      if (pdf) return { kind: "pdf" };
+      const ensured = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
+      if (ensured.invalidated) annotationChanged(docId, "invalidate");
+      const archived: Archived = ensured.invalidated
+        ? { archived: ensured.archivedCount ?? 0 }
+        : {};
+      const current = ensured.file;
+      if (expect.fingerprint !== current.content_fingerprint)
+        return { kind: "document_changed", file: current, ...archived };
+      if (expect.rev !== current.rev)
+        return { kind: "rev_mismatch", rev: current.rev, ...archived };
+      const built = build(ensured);
+      if ("skip" in built)
+        return { kind: "skipped", file: current, value: built.skip, ...archived };
+      saveAnnotationsFile(paths.dataDir, docId, built.next, {
+        bumpRev: true,
+        ...(built.preserveUnknown ? { preserveUnknown: true } : {}),
+      });
+      saved = true;
+      return { kind: "saved", file: { ...built.next, rev: built.next.rev + 1 }, ...archived };
+    });
+    return outcome.then((result) => {
+      if (saved) annotationChanged(docId, "put");
+      return result;
+    });
+  }
   /** rebuild through the lock. */
   const lockedRebuild = (
     p: LibraryPaths,
@@ -477,9 +540,129 @@ export function createApp(deps: AppDeps): Hono {
       delete: (docId, expect) => deleteDocGlobally(docId, expect),
     },
   };
-  // The Copilot `reader` tool's background read: the same reads as the coherent GET below but READ-ONLY (no ensure,
-  // no archive, never the archive's content), refused while a content mutation is queued or running.
+  /** What a system error of the shared access path says; it names no path. Each code has its own, accurate, message. */
+  const annotationsErrorDetail = (err: AnnotationsError): string => {
+    switch (err.code) {
+      case "corrupt_ir":
+        return "the stored document is damaged or outdated and cannot be read; nothing was changed";
+      case "corrupt_store":
+        return "the saved annotations file is damaged; nothing was changed and nothing was read";
+      case "fingerprint":
+        return "an image or other asset the document declares is missing or unreadable, so the document cannot be verified; nothing was changed";
+      case "archive":
+        return "the annotations of older text could not be moved to the archive, so the saved annotations were left exactly as they were; nothing was changed";
+      case "new_current":
+        return "the annotations of older text were archived (they are no longer current), but the new, empty annotations file could not be created, so nothing of your request was written; the next access creates it";
+      case "not_found":
+        return "no such Doc";
+    }
+  };
+  /** The Doc's metadata file could not be read (a corrupt PDF metadata file): a system error, nothing was changed. */
+  class DocMetadataError extends Error {
+    constructor(cause: unknown) {
+      super("the Doc's metadata could not be read", { cause });
+    }
+  }
   const readerOps: ReaderOpDeps = {
+    write: async (op): Promise<ReaderWriteOutcome> => {
+      if (badId(op.docId) || !op.docId.trim()) return { kind: "not_found" };
+      let plan: AnnotationWrite | undefined;
+      try {
+        const commit = await commitAnnotations<AnnotationWrite>(
+          op.docId,
+          { fingerprint: op.fingerprint, rev: op.rev },
+          (epoch) => {
+            plan = planAnnotationWrite(op, epoch);
+            return plan.kind === "write"
+              ? { next: plan.next, preserveUnknown: true }
+              : { skip: plan };
+          }
+        );
+        if (commit.kind === "busy") return { kind: "busy" };
+        if (commit.kind === "pdf") return { kind: "pdf" };
+        const archived = commit.archived !== undefined ? { archived: commit.archived } : {};
+        if (commit.kind === "document_changed")
+          return {
+            kind: "conflict",
+            reason: "document_changed",
+            epoch: {
+              fingerprint: commit.file.content_fingerprint,
+              annotationsRev: commit.file.rev,
+            },
+            ...archived,
+          };
+        if (commit.kind === "rev_mismatch")
+          return {
+            kind: "conflict",
+            reason: "rev_mismatch",
+            epoch: { fingerprint: op.fingerprint, annotationsRev: commit.rev },
+            ...archived,
+          };
+        const epoch = {
+          fingerprint: commit.file.content_fingerprint,
+          annotationsRev: commit.file.rev,
+        };
+        if (commit.kind === "skipped") {
+          const skipped = commit.value;
+          if (skipped.kind === "same")
+            return {
+              kind: "unchanged",
+              annotation: skipped.annotation,
+              label: skipped.label,
+              epoch,
+              ...archived,
+            };
+          if (skipped.kind === "annotation_changed")
+            return {
+              kind: "conflict",
+              reason: "annotation_changed",
+              epoch,
+              annotation: skipped.annotation,
+              ...archived,
+            };
+          if (skipped.kind === "no_annotation")
+            return { kind: "no_annotation", annotationId: skipped.annotationId, ...archived };
+          if (skipped.kind === "invalid")
+            return { kind: "invalid", detail: skipped.detail, ...archived };
+          return {
+            kind: "error",
+            detail: skipped.kind === "error" ? skipped.detail : "unexpected plan",
+          };
+        }
+        const done = plan?.kind === "write" ? plan : undefined;
+        return {
+          kind: "saved",
+          ...(done?.annotation ? { annotation: done.annotation } : {}),
+          ...(done?.deleted ? { deleted: done.deleted } : {}),
+          ...(done?.expanded ? { expanded: true } : {}),
+          label: done?.label ?? op.docId,
+          epoch,
+          ...archived,
+        };
+      } catch (err) {
+        // A system error is never a mismatch and nothing is reset or rewritten. The page's own PUT answers 500.
+        if (err instanceof AnnotationsError)
+          return err.code === "not_found"
+            ? { kind: "not_found" }
+            : {
+                kind: "error",
+                detail: annotationsErrorDetail(err),
+                ...(err.code === "new_current" ? { archivedOlder: true } : {}),
+              };
+        if (err instanceof DocMetadataError)
+          return {
+            kind: "error",
+            detail: "the Doc's metadata could not be read; nothing was changed",
+          };
+        return {
+          kind: "error",
+          detail:
+            "the annotations file could not be written; it is replaced atomically or not at all, so read the Doc again to see what is stored now",
+        };
+      }
+    },
+    // The background read: the same reads as the coherent GET below but READ-ONLY (no ensure, no archive, never the
+    // archive's content), refused while a content mutation is queued or running.
     read: (docId) =>
       annotationLock.run((): ReaderReadOutcome => {
         if (badId(docId) || !docId.trim()) return { kind: "not_found" };
@@ -496,15 +679,7 @@ export function createApp(deps: AppDeps): Hono {
           if (!(err instanceof AnnotationsError)) throw err;
           // The message names no path: the user's data stays untouched, whatever the reason.
           if (err.code === "not_found") return { kind: "not_found" };
-          return {
-            kind: "error",
-            detail:
-              err.code === "corrupt_ir"
-                ? "the stored document is damaged or outdated and cannot be read; nothing was changed"
-                : err.code === "corrupt_store"
-                  ? "the saved annotations file is damaged; nothing was changed and nothing was read"
-                  : "an image the document declares is missing or unreadable, so the document cannot be verified; nothing was changed",
-          };
+          return { kind: "error", detail: annotationsErrorDetail(err) };
         }
       }),
   };
@@ -986,27 +1161,13 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("request body is not a valid annotations document", 400);
       return c.json(e.body, e.status);
     }
-    type PutOutcome =
-      | { busy: true }
-      | { pdfUnsupported: true }
-      | { documentChanged: AnnotationsFile }
-      | { conflictRev: number }
-      | { saved: AnnotationsFile };
-    let outcome: PutOutcome;
+    let outcome: AnnotationsCommit;
     try {
-      outcome = await annotationLock.run(() => {
-        if (docMutations.isDocumentContentBusy(docId)) return { busy: true as const };
-        if (readPdfMetadataIfPresent(paths, docId)) return { pdfUnsupported: true as const };
-        const ensured = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
-        if (ensured.invalidated) annotationChanged(docId, "invalidate");
-        const current = ensured.file;
-        if (parsed.data.content_fingerprint !== current.content_fingerprint) {
-          return { documentChanged: current };
-        }
-        if (parsed.data.rev !== current.rev) return { conflictRev: current.rev };
-        saveAnnotationsFile(paths.dataDir, docId, parsed.data, { bumpRev: true });
-        return { saved: { ...parsed.data, rev: parsed.data.rev + 1 } };
-      });
+      outcome = await commitAnnotations(
+        docId,
+        { fingerprint: parsed.data.content_fingerprint, rev: parsed.data.rev },
+        () => ({ next: parsed.data })
+      );
     } catch (err) {
       if (err instanceof AnnotationsError) {
         const e = annotationsError(err);
@@ -1014,17 +1175,16 @@ export function createApp(deps: AppDeps): Hono {
       }
       throw err;
     }
-    if ("busy" in outcome) return c.json({ detail: "document busy" }, 409);
-    if ("pdfUnsupported" in outcome)
+    if (outcome.kind === "busy") return c.json({ detail: "document busy" }, 409);
+    if (outcome.kind === "pdf")
       return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
-    if ("documentChanged" in outcome) {
-      return c.json({ detail: "document changed", file: outcome.documentChanged }, 409);
+    if (outcome.kind === "document_changed") {
+      return c.json({ detail: "document changed", file: outcome.file }, 409);
     }
-    if ("conflictRev" in outcome) {
-      return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
+    if (outcome.kind === "rev_mismatch") {
+      return c.json({ detail: "rev mismatch", rev: outcome.rev }, 409);
     }
-    annotationChanged(docId, "put");
-    return c.json(outcome.saved);
+    return c.json(outcome.file);
   });
 
   // ---- DELETE /api/paper/{doc_id} -------------------------------------------- //

@@ -439,7 +439,16 @@ describe("Reader operations", () => {
       action: { action: "navigate", docId: "d", anchor: "sec-1" },
     };
     expect(WsCopilotViewActionSchema.safeParse(message).success).toBe(true);
-    expect([...READER_OPERATION_ACTIONS]).toEqual(["read", ...READER_VIEW_ACTIONS]);
+    expect([...READER_OPERATION_ACTIONS]).toEqual([
+      "read",
+      ...READER_VIEW_ACTIONS,
+      "create_annotation",
+      "update_annotation",
+      "delete_annotation",
+    ]);
+    // annotation writes are business writes through the server, never views the browser is asked to run
+    for (const write of ["create_annotation", "update_annotation", "delete_annotation"])
+      expect(ReaderViewActionSchema.safeParse({ action: write, docId: "d" }).success).toBe(false);
   });
 });
 

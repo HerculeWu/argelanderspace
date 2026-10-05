@@ -675,7 +675,7 @@ test("navigation reaches only the bound tab and reports the Reader's own answer,
   expect(lastResult(seenAt(2))).toMatchObject({ ok: false, status: "not_displayed" });
 });
 
-test("every Reader control action is a closed, bound-view action; selectors, paths and annotation writes are refused", async () => {
+test("every Reader control action is a closed, bound-view action; selectors and paths are refused, and an annotation write without its epoch and target writes nothing (ticket 19)", async () => {
   script = [
     () => ({ call: { action: "set_panel", docId: DOC, panel: "outline", collapsed: true } }),
     () => ({ call: { action: "set_right_tab", docId: DOC, tab: "annotations" } }),
@@ -692,8 +692,8 @@ test("every Reader control action is a closed, bound-view action; selectors, pat
     "jump_back",
     "retry_sync",
   ]);
-  // the last two never reach the browser: the tool's own schema is closed (no annotation write, no selector)
-  expect(ops(snapshot).map((o) => o.status)).toEqual(["ok", "ok", "ok", "ok", "error", "error"]);
+  // the last two never reach the browser: a write is not a view action, and the tool's own schema is closed (no selector)
+  expect(ops(snapshot).map((o) => o.status)).toEqual(["ok", "ok", "ok", "ok", "invalid", "error"]);
 });
 
 test("a later page observation does not repeat the reading; it still says which epoch it was", async () => {

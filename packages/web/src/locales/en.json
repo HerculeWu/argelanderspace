@@ -1247,12 +1247,16 @@
         "jump_back": "Go back in document",
         "set_panel": "Fold or unfold side panel",
         "set_right_tab": "Switch references / annotations tab",
-        "retry_sync": "Retry document sync"
+        "retry_sync": "Retry document sync",
+        "create_annotation": "Add annotation",
+        "update_annotation": "Edit annotation",
+        "delete_annotation": "Delete annotation"
       },
       "status": {
         "ok": "Applied",
         "noop": "No change",
         "conflict": "Plans changed first",
+        "conflictReader": "The document or its annotations changed first",
         "conflictLibrary": "The main document changed first",
         "not_found": "Not found",
         "rejected": "Not allowed",

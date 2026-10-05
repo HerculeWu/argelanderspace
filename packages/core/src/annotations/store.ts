@@ -69,7 +69,9 @@ export type AnnotationsErrorCode =
   | "corrupt_ir"
   | "corrupt_store"
   | "fingerprint"
-  | "archive";
+  | "archive"
+  /** The old batch was archived but the new empty current could not be created (contracts' special intermediate state). */
+  | "new_current";
 
 export class AnnotationsError extends Error {
   readonly code: AnnotationsErrorCode;
@@ -153,6 +155,51 @@ export function loadAnnotationsFile(dataDir: string, docId: string): Annotations
 export interface SaveAnnotationsOptions {
   /** Persist `file.rev + 1` instead of `file.rev` (the PUT optimistic-lock path). */
   bumpRev?: boolean;
+  /**
+   * Keep what the schema does not know: unknown top-level keys of the stored file and unknown keys of every stored
+   * annotation (matched by id) survive the write. The page's PUT does not use this (it saves what the page sent);
+   * the Copilot's narrow annotation writes do. The merged bytes still pass the schema gate.
+   */
+  preserveUnknown?: boolean;
+}
+
+/** The stored current.json as raw JSON, or null when it is absent or not a JSON object (the caller validated it before). */
+function readRawCurrent(dataDir: string, docId: string): Record<string, unknown> | null {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(annotationsCurrentPath(dataDir, docId), "utf8"));
+    return raw !== null && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeStoredUnknown(
+  stored: Record<string, unknown> | null,
+  next: AnnotationsFile
+): Record<string, unknown> {
+  if (stored === null) return next;
+  const byId = new Map<string, Record<string, unknown>[]>();
+  for (const a of Array.isArray(stored.annotations) ? stored.annotations : []) {
+    if (a === null || typeof a !== "object" || typeof (a as { id?: unknown }).id !== "string")
+      continue;
+    const list = byId.get((a as { id: string }).id) ?? [];
+    list.push(a as Record<string, unknown>);
+    byId.set((a as { id: string }).id, list);
+  }
+  const annotations = next.annotations.map((a) => {
+    const raw = byId.get(a.id)?.shift();
+    // target, snapshot and created_at never change after creation: the stored object is kept whole
+    return raw ? { ...raw, id: a.id, body: a.body, updated_at: a.updated_at } : a;
+  });
+  return {
+    ...stored,
+    version: next.version,
+    rev: next.rev,
+    content_fingerprint: next.content_fingerprint,
+    annotations,
+  };
 }
 
 /**
@@ -173,10 +220,20 @@ export function saveAnnotationsFile(
       `annotations store: refusing to write an invalid AnnotationsFile: ${formatIssues(result.error)}`
     );
   }
+  let body: unknown = result.data;
+  if (opts.preserveUnknown) {
+    body = mergeStoredUnknown(readRawCurrent(dataDir, docId), result.data);
+    const gate = AnnotationsFileSchema.safeParse(body);
+    if (!gate.success) {
+      throw new Error(
+        `annotations store: refusing to write an invalid AnnotationsFile: ${formatIssues(gate.error)}`
+      );
+    }
+  }
   mkdirSync(annotationsDocDir(dataDir, docId), { recursive: true });
   const file_ = annotationsCurrentPath(dataDir, docId);
   const tmp = file_.replace(/\.json$/, ".json.tmp");
-  writeFileSync(tmp, JSON.stringify(result.data, null, 2), "utf8");
+  writeFileSync(tmp, JSON.stringify(body, null, 2), "utf8");
   renameSync(tmp, file_);
 }
 
@@ -385,6 +442,8 @@ export interface EnsureCurrentAnnotationsResult {
    *  new empty epoch (the server broadcasts `invalidate` only after this new
    *  current exists — MS2's job, not this layer's). */
   invalidated: boolean;
+  /** With `invalidated`: how many annotations of the older content went into the archive. */
+  archivedCount?: number;
 }
 
 /**
@@ -564,8 +623,16 @@ function ensureForFingerprint(
   }
   archiveCurrentAnnotations(dataDir, docId, current, opts.now ?? new Date());
   const next = emptyAnnotationsFile(fingerprint);
-  saveAnnotationsFile(dataDir, docId, next);
-  return { file: next, invalidated: true };
+  try {
+    saveAnnotationsFile(dataDir, docId, next);
+  } catch (err) {
+    // The old batch is safe in the archive; the next access creates the new current (contracts' intermediate state).
+    throw new AnnotationsError(
+      "new_current",
+      `annotations store: the old current of doc "${docId}" was archived but the new current could not be created: ${(err as Error).message}`
+    );
+  }
+  return { file: next, invalidated: true, archivedCount: current.annotations.length };
 }
 
 /**

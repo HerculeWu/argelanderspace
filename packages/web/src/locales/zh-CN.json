@@ -1247,12 +1247,16 @@
         "jump_back": "文档后退",
         "set_panel": "折叠或展开侧栏",
         "set_right_tab": "切换引用/标注标签",
-        "retry_sync": "重试文档同步"
+        "retry_sync": "重试文档同步",
+        "create_annotation": "添加标注",
+        "update_annotation": "修改标注",
+        "delete_annotation": "删除标注"
       },
       "status": {
         "ok": "已应用",
         "noop": "无变化",
         "conflict": "计划已被先改动",
+        "conflictReader": "文档或标注已先被更改",
         "conflictLibrary": "主文档已先被改动",
         "not_found": "未找到",
         "rejected": "不允许",

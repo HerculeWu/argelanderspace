@@ -819,7 +819,15 @@ describe("ensureCurrentAnnotations", () => {
     saveAnnotationsFile(dir, DOC, old);
     // sabotage the tmp file of the new current: current.json.tmp as a directory
     mkdirSync(join(dir, "annotations", DOC, "current.json.tmp"), { recursive: true });
-    expect(() => ensureCurrentAnnotations(dir, DOC, { now: FIXED_NOW })).toThrowError();
+    let failure: unknown;
+    try {
+      ensureCurrentAnnotations(dir, DOC, { now: FIXED_NOW });
+    } catch (e) {
+      failure = e;
+    }
+    // the typed intermediate state: archived, but the new current could not be created
+    expect(failure).toBeInstanceOf(AnnotationsError);
+    expect((failure as AnnotationsError).code).toBe("new_current");
     // user data is safe in the archive; the old current is still on disk
     expect(readdirSync(annotationsArchiveDir(dir, DOC))).toEqual([
       "20260910T123456789Z-ffffffff.json",
@@ -831,6 +839,7 @@ describe("ensureCurrentAnnotations", () => {
       now: new Date("2026-09-10T12:34:57.000Z"),
     });
     expect(result.invalidated).toBe(true);
+    expect(result.archivedCount).toBe(0);
     expect(result.file.rev).toBe(0);
     expect(result.file.annotations).toEqual([]);
     // the re-run archived again under a fresh stamp (never an overwrite)

@@ -32,6 +32,7 @@ export const OPERATION_ACTION_KEYS = {
   select_candidate: "copilot.operations.actions.select_candidate", set_discovery_tab: "copilot.operations.actions.set_discovery_tab", dismiss_discovery_error: "copilot.operations.actions.dismiss_discovery_error", view_candidate_in_library: "copilot.operations.actions.view_candidate_in_library",
   set_discovery_graph_labels: "copilot.operations.actions.set_discovery_graph_labels", discovery_graph_control: "copilot.operations.actions.discovery_graph_control",
   navigate: "copilot.operations.actions.navigate", jump_back: "copilot.operations.actions.jump_back", set_panel: "copilot.operations.actions.set_panel", set_right_tab: "copilot.operations.actions.set_right_tab", retry_sync: "copilot.operations.actions.retry_sync",
+  create_annotation: "copilot.operations.actions.create_annotation", update_annotation: "copilot.operations.actions.update_annotation", delete_annotation: "copilot.operations.actions.delete_annotation",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -474,7 +475,7 @@ function OperationRecord({ operations }: { operations: CopilotOperation[] }) {
     <summary><span className={failed ? "copilot-operation-mark warn" : pending ? "copilot-operation-mark pending" : "copilot-operation-mark ok"} aria-hidden="true"><Icon name={failed ? "triangle-alert" : pending ? "clock" : "check"} /></span><span className="copilot-operation-summary">{summary}{failed > 0 && ` · ${t("copilot.operations.notApplied", { count: failed })}`}{pending > 0 && ` · ${t("copilot.operations.status.pending")}`}</span><span className="copilot-operation-chevron" aria-hidden="true"><Icon name="chevron-down" /></span></summary>
     <ul>{operations.map((operation) => <li key={operation.id} data-ui="copilot-operation-item" data-ui-key={operation.id} data-status={operation.status}>
       <span>{actionName(operation)}</span>{operation.label && <span className="copilot-operation-label">{operation.label}</span>}
-      <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(operation.tool === "library" && operation.status === "conflict" ? "copilot.operations.status.conflictLibrary" : OPERATION_STATUS_KEYS[operation.status])}</Badge>
+      <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(operation.tool === "library" && operation.status === "conflict" ? "copilot.operations.status.conflictLibrary" : operation.tool === "reader" && operation.status === "conflict" ? "copilot.operations.status.conflictReader" : OPERATION_STATUS_KEYS[operation.status])}</Badge>
       {operation.warnings?.includes("import_partial") && <span className="copilot-operation-warn">{t("copilot.operations.importPartial")}</span>}
       {operation.warnings?.includes("task_due_after_plan_due") && <span className="copilot-operation-warn">{t("copilot.operations.dueAfterPlan")}</span>}
       {operation.rev !== undefined && isApplied(operation) && <code>v{operation.rev}</code>}

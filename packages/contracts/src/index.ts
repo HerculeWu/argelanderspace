@@ -1,3 +1,4 @@
+export * from "./annotation-targets.js";
 export * from "./annotations.js";
 export * from "./api.js";
 export * from "./copilot.js";

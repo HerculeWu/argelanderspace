@@ -144,6 +144,21 @@ Copilot 的 Reader 页面上下文与 `reader` 工具读同一份 coherent epoch
 - 容量：整页超出模型窗口时发送被 `capacity` 拒绝，`read` 以其大小整体拒绝，都不截断；按结构分批是票 24。后续页面观察不重复正文，只带 epoch 指纹，需要时 `reader.read`。
 - 导航动作（`navigate`/`jump_back`/`set_panel`/`set_right_tab`/`retry_sync`）只投递绑定视图，沿用 jumpTo/锚点/撤销/折叠/重试控制器，Reader 同步或出错时回报 `unavailable`，不改变深链接协议。
 
+## Copilot 写入 LaTeX 标注（票 19）
+
+Copilot 的 `reader` 工具有 `create_annotation` / `update_annotation` / `delete_annotation`，是 Reader 面板、选区工具条、块边按钮、编辑器与垃圾桶的同一业务操作；不新增标注类别、线程、作者、颜色或自动 re-anchor，也不改变存储格式。
+
+- **同一 server 访问路径**：`PUT /api/paper/:doc_id/annotations` 与工具共用 app.ts 的 `commitAnnotations`（原 PUT 临界段的提取，HTTP 入口与响应不变）：同一 annotationLock 内 busy 检查（queued/running 内容变更或删除→409/`rejected`，零 ensure/归档）、PDF 拒绝、幂等 ensure（唯一可归档者，成功建立新 current 后才广播 `invalidate`）、**指纹与 rev 双检查**、原子保存、之后广播 `put`。无法计算指纹/读取 current（IR/资产/current 损坏）是 `AnnotationsError`→HTTP 500／工具 `error`，保留全部用户数据，绝不当 mismatch。工具层不自行 ensure、归档、写 sidecar，也没有读 archive 的参数。
+- **每次写入绑定 epoch**：调用必须带规划所依据 `reader` 读取的 `epoch.fingerprint` 与 `epoch.annotationsRev`。指纹不同→`conflict(document_changed)`（本次访问路径可能已按三态归档旧批次，与用户打开该 Doc 相同；写入不落到新文本，返回当前 epoch 让 agent 重读）；rev 不同→`conflict(rev_mismatch)`。冲突后 agent 必须重读再形成新请求，不能只换数字重发。未落盘的页面草稿（创建/编辑）不被覆盖：页面既有逻辑在同 epoch 外部 body 变化、跨 fingerprint 或标注消失时把编辑草稿标为 blocked（保留文字、禁存）；页面上下文 `drafts` 只报告存在与 blocked，不含正文。
+- **目标由 server 从已接纳 IR 构造**：document；structure 只给 id（kind 与完整 snapshot 由 contracts `buildStructureTarget` 生成，与 UI 同一实现，figure/table 的 `asset_hash` 仅取同一 epoch 的资产 manifest）；text 给 `{block, container, start, end, quote?}`，由 contracts `resolveTextTarget` 校验：单 container、canonical UTF-16、起止严格落在 math/cite/xref 内部时扩到整段（结果 `widened` 告知，保存的 `target`/`quote` 为准）、`quote` 若给出须等于所给范围的 canonical 切片（防数错偏移/过期选区）。equation/code/algorithm body、表体、节标题、reference 只能 structure 或不可标注，跨 container/块拒绝。创建后 target/snapshot/created_at 不变，update 只改 body，且 body 字节相同为 `noop`、不写盘不广播；删除单条无确认（UI 的垃圾桶同样无确认）；移动＝删旧建新。
+- **update/delete 绑定标注自身状态（A06）**：`update_annotation`/`delete_annotation` 必带 `expectedUpdatedAt`（该条标注在 agent 最近一次读取/写入结果里的 `updated_at`，仅 body 字节变化时才变）。即使指纹与 rev 都已是当前值，只要存储的标注 `updated_at` 不同，就 `conflict(annotation_changed)` 并带回当前标注，零写入；agent 必须读用户新写的内容后再决定，不能拿冲突结果里的新 rev 配旧期望重发。text 创建的 `quote` 必填，须等于**所给范围（扩展前）**的 canonical 切片：document_changed 后重发旧偏移时 quote 对不上即 `invalid`，不会静默锚到新文本；原子段扩展语义不变。
+- **保留未知键**：agent 写入在同一锁内以磁盘原始 JSON 为底（core `saveAnnotationsFile({preserveUnknown})`）：保留顶层与每条标注（含 target 内）的未知键，只改 body/updated_at/增删条目，合并结果仍过 schema 门。**页面 PUT 的整份替换行为不变**（仍按页面发来的内容、经 schema 重写，未知键不保留）——这是既有 I010 类行为，需用户另行决定，本票不改。
+- **重复 id**（手工编辑所致）与页面一致：删除移除全部同 id，更新改全部同 id，首条 body 相同则 noop。
+- **归档与错误分支**：访问路径在写入时发现正文已被替换会按三态归档旧批次（与打开 Doc 相同），结果带 `archivedOlder`（条数）与提示，agent 应告诉用户；`archive` 码＝旧批次无法归档、current 原样保留、零写入；`new_current` 码＝旧批次**已归档**但新空 current 未建成（契约的特殊中间态，下次访问重建，不广播 invalidate、不写入本次请求），结果 `error`＋`archivedOlder:true`；损坏的 PDF 元数据＝元数据错误；每个码有各自准确文案，不再套用「图片缺失」。
+- **操作记录**：写入记录带 `label`（Doc 标题＋结构 id 或引文）与结果 `rev`，沿用既有记录字段与徽标，无新 UI。
+- **展示**：标注 body 现可由 agent 写入，气泡里的 Markdown 用 `mdWithMath(..., {safe:true})`：活性 HTML 与图片显示为文本，仅 http(s)/mailto 链接可点，数学/代码/存储字节不变。（PDF 工作台面板的 body 展示仍是旧路径，归 PDF 票。）
+- **局限**：只有 LaTeX Doc（PDF Doc→`unsupported`）；跨进程同 Doc 并发写仍不支持；UI 现无标注撤销，工具也无；`reader.read` 对旧指纹文件不并入标注（`stale`），写入时才由访问路径归档。
+
 ## CLI annot
 
 完整输出、顺序、排序、错误与零写盘契约已集中于 [contracts 的 CLI annot 冻结契约](contracts.md#cli-annot-冻结契约)。修改 agent 输出时必须阅读全文，不以本专题的 server 路径代替 CLI 语义。

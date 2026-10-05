@@ -24,6 +24,7 @@ import { z } from "zod";
 import {
   AnnotationSchema,
   type AnnotationsFile,
+  AnnotationTextContainerSchema,
   AnnotationTextTargetSchema,
   canonicalSegmentsText,
 } from "./annotations.js";
@@ -536,6 +537,17 @@ const ReaderPageBase = z
       .strict(),
     /** The undo-navigation button is showing. */
     canGoBack: z.boolean(),
+    /**
+     * Annotation text the user has typed and not saved (the page's own retained drafts). Presence only, never the
+     * text: a write the agent makes never replaces a draft, and a draft is never saved for the user.
+     */
+    drafts: z
+      .object({
+        create: z.boolean(),
+        edit: z.array(z.object({ annotationId: z.string(), blocked: z.boolean() }).strict()),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -653,7 +665,97 @@ export const READER_VIEW_ACTIONS = [
   "set_right_tab",
   "retry_sync",
 ] as const;
-export const READER_OPERATION_ACTIONS = ["read", ...READER_VIEW_ACTIONS] as const;
+
+// ---- Annotation writes (copilot ticket 19) ---------------------------------------------------------- //
+
+/** Longest annotation body a tool call may carry (input sanity for the history; the page's editor has no limit). */
+export const READER_ANNOTATION_BODY_MAX = 100_000;
+const Fingerprint = z.string().min(1).max(200);
+/**
+ * Every write names the epoch it was planned against, exactly as the page's PUT does: the content fingerprint AND
+ * the annotations revision of the reading it read (`reading.epoch`). A write whose epoch is no longer current is
+ * refused (`conflict`); the agent reads again and forms a new request. Never replace the numbers and resend.
+ */
+const WriteEpoch = { docId: Id, fingerprint: Fingerprint, rev: Count };
+/**
+ * The state of the annotation as you last read it: its `updated_at` (it changes exactly when the body bytes change).
+ * Update and delete are refused (`conflict`, reason `annotation_changed`) when the stored annotation no longer has it,
+ * even if the epoch numbers are current again, so a body the user saved after your reading is never overwritten or
+ * deleted by a request you planned from the old text.
+ */
+const ExpectedUpdatedAt = z.iso.datetime();
+/** A body is Markdown+math with its bytes kept as given; trim-empty is refused like the editor's Save. */
+const AnnotationBody = z
+  .string()
+  .max(READER_ANNOTATION_BODY_MAX)
+  .refine((body) => body.trim() !== "", { message: "body must not be empty" });
+
+/**
+ * Where a new annotation goes, in the three forms the UI offers: the whole document (the panel's button), a
+ * structure (the block edge buttons; kind and snapshot come from the stored document, not from the caller) or a
+ * text range (the selection toolbar: one container, canonical UTF-16 offsets, math/cite/xref atomic).
+ */
+export const ReaderAnnotationTargetInputSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("document") }).strict(),
+  z.object({ type: z.literal("structure"), id: Id }).strict(),
+  z
+    .object({
+      type: z.literal("text"),
+      block: Id,
+      container: AnnotationTextContainerSchema,
+      start: Count,
+      end: Count,
+      /**
+       * Required: the exact canonical text at [start, end) AS YOU COUNTED IT (before any widening of a range that
+       * touches the inside of a math/cite/xref mark). It must equal that slice, so offsets that were counted wrong,
+       * or that are resent after the document changed, can never anchor to different text.
+       */
+      quote: z.string().min(1),
+    })
+    .strict(),
+]);
+export type ReaderAnnotationTargetInput = z.infer<typeof ReaderAnnotationTargetInputSchema>;
+
+export const ReaderWriteOperationSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      action: z.literal("create_annotation"),
+      ...WriteEpoch,
+      target: ReaderAnnotationTargetInputSchema,
+      body: AnnotationBody,
+    })
+    .strict(),
+  /** The editor's Save on an existing annotation: only the body changes; target, snapshot and created_at never do. */
+  z
+    .object({
+      action: z.literal("update_annotation"),
+      ...WriteEpoch,
+      annotationId: z.string().regex(/^a_[0-9a-f]{8}$/),
+      expectedUpdatedAt: ExpectedUpdatedAt,
+      body: AnnotationBody,
+    })
+    .strict(),
+  /** The trash button: one annotation, at once (the UI asks no confirmation for a single annotation). */
+  z
+    .object({
+      action: z.literal("delete_annotation"),
+      ...WriteEpoch,
+      annotationId: z.string().regex(/^a_[0-9a-f]{8}$/),
+      expectedUpdatedAt: ExpectedUpdatedAt,
+    })
+    .strict(),
+]);
+export type ReaderWriteOperation = z.infer<typeof ReaderWriteOperationSchema>;
+export const READER_WRITE_ACTIONS = [
+  "create_annotation",
+  "update_annotation",
+  "delete_annotation",
+] as const;
+export const READER_OPERATION_ACTIONS = [
+  "read",
+  ...READER_VIEW_ACTIONS,
+  ...READER_WRITE_ACTIONS,
+] as const;
 
 // ---- Shared context helpers -------------------------------------------------------------------------- //
 
