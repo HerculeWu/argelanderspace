@@ -36,6 +36,27 @@ describe("checkSvg", () => {
     ["a DOCTYPE", `<!DOCTYPE svg SYSTEM "x.dtd">${wrap("")}`],
     ["an ENTITY", `<!DOCTYPE svg [<!ENTITY a "b">]>${wrap("<text>&a;</text>")}`],
     ["an xml-stylesheet", `<?xml-stylesheet href="a.css"?>${wrap("")}`],
+    // the recheck review's bypasses: a `href='#` that is not an attribute must not hide the real href after it
+    [
+      "a href hidden behind one in text",
+      wrap("<desc>href='#</desc><image href=\"/abs/a.png\"/><desc>'</desc>"),
+    ],
+    [
+      "a href hidden behind one in a comment",
+      wrap("<!-- href='# --><image href=\"/abs/a.png\"/><!-- ' -->"),
+    ],
+    [
+      "a href hidden behind one in a value",
+      wrap('<g class="href=\'#"><image href="/abs/a.png"/></g><g class="\'"/>'),
+    ],
+    ["a bad href after a good one", wrap('<use href="#a"/><image href="/abs/a.png"/>')],
+    ["an absolute file image", wrap('<image href="/etc/hostname"/>')],
+    ["a device file image", wrap("<image href='/dev/zero'/>")],
+    ["an unquoted href", wrap("<image href=/abs/a.png />")],
+    ["an feImage", wrap('<filter id="f"><feImage href="/abs/a.png"/></filter>')],
+    ["a url() hidden behind one in text", wrap('<desc>url(#</desc><rect fill="url(/abs/p)"/>')],
+    ["a CSS escape", wrap("<style>rect{fill:u\\72l(/abs/p)}</style>")],
+    ["an @font-face", wrap("<style>@font-face{font-family:x;src:local(y)}</style>")],
     ["too many elements", wrap("<g/>".repeat(20_001))],
     ["not an SVG", "<html><body>hi</body></html>"],
   ])("refuses %s", (_name, svg) => {
@@ -53,6 +74,11 @@ describe("checkSvg", () => {
         )
       ).ok
     ).toBe(true);
+  });
+
+  test("an inline picture whose base64 happens to spell href or url is still accepted", () => {
+    const png = "data:image/png;base64,iVBORw0KHrEf=Gurl+hrefAAAA";
+    expect(checkSvg(wrap(`<image xlink:href='${png}' width="2" height="2"/>`)).ok).toBe(true);
   });
 
   test("the reason names the offence and never repeats the file's content", () => {

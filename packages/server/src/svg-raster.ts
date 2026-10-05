@@ -36,28 +36,39 @@ export function checkSvg(svg: string): SvgSafety {
     [/[\s"'/]on[a-z]+\s*=/i, "an event-handler attribute"],
     [/javascript\s*:/i, "a javascript: reference"],
     [/@import/i, "a CSS @import"],
+    [/@font-face/i, "a CSS @font-face"],
+    // a CSS escape could spell url( or a property name past the checks below
+    [/\\/, "a backslash (a CSS escape)"],
   ];
   for (const [pattern, what] of banned)
     if (pattern.test(svg)) return { ok: false, reason: `it contains ${what}` };
-  // every href must be a fragment of this file or an inline raster picture
-  for (const match of svg.matchAll(/(?:xlink:)?href\s*=\s*("([^"]*)"|'([^']*)')/gi)) {
-    const value = (match[2] ?? match[3] ?? "").trim();
-    if (value.startsWith("#")) continue;
-    if (/^data:image\/(png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=\s]*$/i.test(value)) continue;
+  // Every occurrence of `href` and of `url(` is judged on its own, wherever it stands (attribute, text, comment,
+  // another value): a scan that consumed a quoted value could be made to step over the real reference after it.
+  // An occurrence is allowed only as a quoted `#fragment` or an inline raster picture; anything else is refused.
+  // An inline raster picture given as an href value is set aside first: its base64 may spell `href` by chance, and
+  // what it covers is base64 text between one pair of quotes, so no markup can hide in it.
+  const scan = svg.replace(
+    /(href\s*=\s*)(["'])data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=\s]*\2/gi,
+    "$1$2#inline$2"
+  );
+  for (const at of scan.matchAll(/href/gi)) {
+    const rest = scan.slice(at.index + 4);
+    const quoted = /^\s*=\s*("([^"]*)"|'([^']*)')/.exec(rest);
+    const value = quoted ? (quoted[2] ?? quoted[3] ?? "").trim() : undefined;
+    if (value !== undefined && /^#[^#\s]*$/.test(value)) continue;
     return {
       ok: false,
       reason: "it references something outside the file (an href that is not a #fragment)",
     };
   }
-  // every url(...) must point at a fragment
-  for (const match of svg.matchAll(/url\s*\(\s*(["']?)([^)"']*)\1\s*\)/gi)) {
-    if (!(match[2] ?? "").trim().startsWith("#"))
-      return {
-        ok: false,
-        reason: "it references something outside the file (a url() that is not a #fragment)",
-      };
+  for (const at of scan.matchAll(/url\s*\(/gi)) {
+    const target = /^\s*(["']?)\s*([^)"'\s]*)\s*\1\s*\)/.exec(scan.slice(at.index + at[0].length));
+    if (target && /^#[^#]*$/.test(target[2] ?? "")) continue;
+    return {
+      ok: false,
+      reason: "it references something outside the file (a url() that is not a #fragment)",
+    };
   }
-  if (/url\s*\(\s*["']?\s*$/i.test(svg)) return { ok: false, reason: "it has an unreadable url()" };
   const elements = (svg.match(/<[A-Za-z]/g) ?? []).length;
   if (elements > SVG_MAX_ELEMENTS)
     return { ok: false, reason: `it has more than ${SVG_MAX_ELEMENTS} elements` };
