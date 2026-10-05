@@ -36,7 +36,7 @@ skills in `skills/` — see **Agent integration (skills)** below.
 
 ## Requirements
 
-- **Node.js ≥ 20**
+- **Node.js ≥ 24**
 - **TeX Live** (`latexmk` + `pdflatex`/`xelatex` + `bibtex`/`biber` on PATH) —
   required for ingest.
 - Optional: **poppler-utils** (`pdftocairo`; vector PDF figures → SVG) and
@@ -202,7 +202,7 @@ cross-references render as:
 
 ## Development
 
-pnpm workspace (use `corepack pnpm`; Node ≥ 20):
+pnpm workspace (use `corepack pnpm`; Node ≥ 24):
 
 | Package | Role |
 |---|---|

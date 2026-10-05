@@ -100,6 +100,7 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
 - CLI `.version(...)` 与 app package.json 两处手工对齐，没有版本单一来源。
 - config.toml 使用 smol-toml，每次现读无缓存；未知键忽略，类型错点名键，不回显值。
 - Stage 11 app 收集 20 个编辑器运行依赖 MIT notices；uiw 两个 npm 包缺 LICENSE，采用与官方 v4.25.11 原文逐字节一致的版本限定副本（packages/app/licenses）。升版本须重核，不能静默沿用旧版权。最终包曾离线安装验证 sty/web/notices 齐全，不含 aa.cls/aa.bst。
+- Copilot 交付（票 31）：Pi SDK、`@embedpdf/engines|pdfium`（含 PDFium WASM，经 `import.meta.resolve` 找）是 app 的**运行时 `dependencies`（不打进 bin.js）**，随 `npm install` 安装；版本化 instruction 文本内联在 bin.js（单一 resourceLoader，不读文件系统/`.pi`）。`@resvg/resvg-js` 是未安装的可选渲染器，经变量说明符动态加载，缺失时 `read_svg_image` 如实答 `unsupported`。KaTeX/marked 打进 bin.js 与 SPA，其 MIT 声明由 copy-assets 写入 `dist/THIRD-PARTY-BUNDLED-NOTICES.txt`（及 `dist/web/`）；其余被打包的 MIT/ISC 依赖（hono、zod、react 等）尚无逐包声明，是已知缺口。tarball 内容策略在 `packages/app/scripts/pack-contents.mjs`（`pnpm --filter argelanderspace test` 覆盖其规则）；`node packages/app/scripts/smoke-pack.mjs [--offline-lock pnpm-lock.yaml]` 做本地 pack＋临时目录干净安装＋隔离 HOME/XDG 的会话/恢复/PDF 渲染/工具动作冒烟，**不属于四门**。无网络时 `--offline-lock` 用仓库 lockfile 固定版本从本机 store 安装，因此不验证 registry 对依赖范围的重新解析。`npm pack` 在 packages/app 内默认会覆盖被跟踪的 `argelanderspace-0.1.0.tgz`，须用 `--pack-destination`。
 - Writer 内置模板为 contracts TS 单源，不按旧 Stage 10 方案寻找 dist/templates/*.json。稳定 latexmk 缓存须保未变文件 mtime；显式刷新仍让 latexmk 核系统依赖，不能以 main.tex hash 相同直接返回旧投影。
 
 ## 兼容实现：仍有实际作用

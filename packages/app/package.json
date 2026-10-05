@@ -27,6 +27,7 @@
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-assets.mjs",
+    "test": "node --test scripts/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
