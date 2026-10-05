@@ -182,6 +182,9 @@ describe("figures, assets and tables (ticket 27)", () => {
       false
     );
     expect(TextSourceAssetSchema.safeParse({ ...a, path: "/etc" }).success).toBe(false);
+    // the registered name itself must be a controlled name, not just any string
+    for (const name of ["../x.png", "a/b.png", "x.svg", ".hidden.png", "a b.png"])
+      expect(TextSourceAssetSchema.safeParse({ ...a, name }).success, name).toBe(false);
     for (const ok of ["a-0123abcd.png", "x.y-1.jpg", "n.webp"])
       expect(TEXT_ASSET_NAME_PATTERN.test(ok), ok).toBe(true);
     for (const bad of [

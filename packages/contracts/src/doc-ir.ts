@@ -152,6 +152,8 @@ export const IrFigureBlockSchema = z.object({
   label: z.string().optional(),
   captionSegments: z.array(IrSegmentSchema).optional(),
   footnote: z.string().optional(),
+  /** The footnote read like a caption (text documents): math, cite and xref segments. Absent for LaTeX IRs. */
+  footnoteSegments: z.array(IrSegmentSchema).optional(),
   /** As stored in the Document JSON (may carry a subdirectory). */
   imgPath: z.string().optional(),
   /** Intrinsic size of the materialized image (CSS px) — lets the reader
@@ -171,6 +173,8 @@ export const IrTableBlockSchema = z.object({
   label: z.string().optional(),
   captionSegments: z.array(IrSegmentSchema).optional(),
   footnote: z.string().optional(),
+  /** The footnote read like a caption (text documents): math, cite and xref segments. Absent for LaTeX IRs. */
+  footnoteSegments: z.array(IrSegmentSchema).optional(),
   /** HTML serialization of the table. */
   tableBody: z.string().optional(),
   /** Fallback image when the table was not recognized. */

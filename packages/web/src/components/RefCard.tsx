@@ -114,7 +114,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
   switch (card.kind) {
     case "figure": {
       const f = card.block as IrFigureBlock;
-      return f.imgPath ? <FigureImage imgPath={f.imgPath} width={f.imgWidth} height={f.imgHeight} alt={f.label || "figure"} /> : <em>(no image)</em>;
+      return f.imgPath ? <FigureImage imgPath={f.imgPath} width={f.imgWidth} height={f.imgHeight} alt={f.content?.trim() || f.label || "figure"} /> : <em>(no image)</em>;
     }
     case "equation": {
       const e = card.block as IrEquationBlock;

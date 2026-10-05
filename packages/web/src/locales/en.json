@@ -256,9 +256,10 @@
         "table_extra_cells": "This row has more cells than the header; the extra cells would be lost.",
         "table_align_ignored": "Column alignment is not kept.",
         "table_too_large": "The table is larger than the allowed size.",
-        "table_dollar": "A literal $ in a table cell can be shown as part of a formula.",
         "table_token_unsupported": "[cite: …] and [ref: …] cannot be used inside a table cell. Put them in the caption or a paragraph.",
-        "math_display_in_table": "A display equation cannot be inside a table cell. Use $…$."
+        "math_display_in_table": "A display equation cannot be inside a table cell. Use $…$.",
+        "table_more_problems": "More problems in the table grid are not shown.",
+        "table_math_dollar": "A formula in a table cell cannot contain a $. Move it out of the table."
       },
       "net": {
         "unreachable": "The service did not answer",
@@ -277,7 +278,7 @@
       "assetsBusy": "The document is busy; try again.",
       "assetsSaveFirst": "Your text is not saved yet, so the image was not added. Fix the save problem first.",
       "assetsClose": "Close",
-      "assetCount": "Images: {{count}}",
+      "assetCount": "{{count}} images",
       "assetMeta": "{{type}} · {{width}}×{{height}} px · {{size}}",
       "assetReject": {
         "unsupported_type": "Only PNG, JPEG and WebP images are accepted.",
@@ -288,7 +289,8 @@
         "bad_name": "The file name is not allowed.",
         "too_many_assets": "This document already has the largest number of images.",
         "other": "The server could not store the image."
-      }
+      },
+      "assetsRestored": "{{name}} was already in the list, but its file was missing or damaged. It has been written again."
     },
     "drafts": {
       "summary": "Retained drafts (copyable; re-select a location and reuse the draft text)",

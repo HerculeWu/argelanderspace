@@ -193,6 +193,35 @@ describe("adding an asset to a text Doc (ticket 27)", () => {
     expect(a.kind === "added" && a.asset.name.endsWith(".png")).toBe(true);
   });
 
+  it("L2: re-uploading registered bytes whose file is gone or damaged restores the file (damaged bytes are kept aside), rev unchanged", () => {
+    const { paths, docId } = project();
+    const bytes = png(4, 3);
+    const one = addTextAsset(paths, docId, { expectedRev: 0, bytes, filename: "fig.png" });
+    if (one.kind !== "added") throw new Error("not added");
+    const file = join(paths.outputDir, docId, "assets", one.asset.name);
+    // intact: plainly reused
+    const intact = addTextAsset(paths, docId, { expectedRev: 1, bytes });
+    expect(intact).toMatchObject({ kind: "reused", restored: false });
+    // missing: written again
+    rmSync(file);
+    const missing = addTextAsset(paths, docId, { expectedRev: 1, bytes });
+    expect(missing).toMatchObject({ kind: "reused", restored: true });
+    expect(readFileSync(file)).toEqual(bytes);
+    // damaged: the bad bytes are moved aside, never deleted or overwritten, and the file is written again
+    writeFileSync(file, "DAMAGED");
+    const damaged = addTextAsset(paths, docId, { expectedRev: 1, bytes });
+    expect(damaged).toMatchObject({ kind: "reused", restored: true });
+    expect(readFileSync(file)).toEqual(bytes);
+    const kept = readdirSync(join(paths.outputDir, docId, "assets")).filter((n) =>
+      n.includes(".damaged-")
+    );
+    expect(kept).toHaveLength(1);
+    expect(readFileSync(join(paths.outputDir, docId, "assets", kept[0] as string), "utf8")).toBe(
+      "DAMAGED"
+    );
+    expect(readTextSource(paths, docId).rev).toBe(1);
+  });
+
   it("the same bytes again are reused without a new file or revision; a changed image is a NEW name and the old file stays", () => {
     const { paths, docId } = project();
     const one = addTextAsset(paths, docId, {

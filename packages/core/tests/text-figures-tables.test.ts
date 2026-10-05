@@ -43,6 +43,7 @@ describe("figures (ticket 27)", () => {
       number: "2",
       label: "Figure 2",
       footnote: "Synthetic.",
+      footnoteSegments: [{ type: "text", text: "Synthetic." }],
       imgPath: A.name,
       imgWidth: 320,
       imgHeight: 200,
@@ -325,7 +326,131 @@ describe("exactly once with figures and tables", () => {
     const r = parseTextSource(md, opts);
     expect(r.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     const text = JSON.stringify(r.ir?.sections);
+    // the raw footnote string is kept beside its segments (the fingerprint binds the raw text): drop it from the count
+    const shown = JSON.stringify(r.ir?.sections, (k, v) => (k === "footnote" ? undefined : v));
+    expect(text).toContain("Q2Z");
     for (const w of ["Q1Z", "Q2Z", "Q3Z", "Q4Z", "Q5Z", "Q6Z", "Q7Z"])
-      expect(text.split(w).length - 1, w).toBe(1);
+      expect(shown.split(w).length - 1, w).toBe(1);
+  });
+});
+
+describe("fix round 1 (ticket 27)", () => {
+  const head = "| a | b |\n| - | - |\n";
+
+  describe("B1: GFM cells are counted the way marked splits them", () => {
+    it("a pipe after an EVEN run of backslashes is a real separator: the extra cell is refused, not lost", () => {
+      const found = errors(`${head}| C:\\\\| important | LOST CELL |\n`);
+      expect(found.map((d) => d.code)).toEqual(["table_extra_cells"]);
+      expect(found[0]?.line).toBe(3);
+    });
+    it("a pipe after an ODD run is escaped text: no error, the cell keeps the pipe", () => {
+      const [t] = blocks(`${head}| C:\\| important | kept |\n`);
+      expect(t?.type === "table" && t.tableBody).toBe(
+        "<table><tr><th>a</th><th>b</th></tr><tr><td>C:| important</td><td>kept</td></tr></table>"
+      );
+    });
+    it.each([0, 1, 2, 3, 4, 5])(
+      "%i backslashes before a pipe: accepted only if every word survives",
+      (n) => {
+        const r = parseTextSource(`${head}| X${"\\".repeat(n)}| WORD1 | WORD2 |\n`, opts);
+        if (r.ir !== null) {
+          const text = JSON.stringify(r.ir.sections);
+          expect(text).toContain("WORD1");
+          expect(text).toContain("WORD2");
+        } else expect(r.diagnostics.some((d) => d.code === "table_extra_cells")).toBe(true);
+      }
+    );
+    it("a trailing even-backslash pipe still counts as the closing pipe", () => {
+      expect(codes(`${head}| 1 | 2 \\\\|\n`)).toEqual([]);
+    });
+  });
+
+  describe("B2: footnotes are scanned like captions", () => {
+    const meta = (footnote: string, id = "fig-1") =>
+      `\`\`\`argelander-block\n${JSON.stringify({ id, footnote })}\n\`\`\`\n![x](assets/profile-0123abcd.png)\n`;
+    it("segments: math, currency stays text, cite and ref resolve; IR keeps the raw string too", () => {
+      const refs = `\n\`\`\`argelander-references\n[{"id":"k1","raw":"Key 2000"}]\n\`\`\`\n`;
+      const md = `${meta("Error $1\\sigma$, costs $5 to $9 [cite: k1] see [ref: fig-1].")}${refs}`;
+      const [fig] = blocks(md);
+      if (fig?.type !== "figure") throw new Error("not a figure");
+      expect(fig.footnote).toBe("Error $1\\sigma$, costs $5 to $9 [cite: k1] see [ref: fig-1].");
+      expect(fig.footnoteSegments?.map((s) => s.type)).toEqual([
+        "text",
+        "math",
+        "text",
+        "cite",
+        "text",
+        "xref",
+        "text",
+      ]);
+      expect(fig.footnoteSegments?.[2]).toEqual({ type: "text", text: ", costs $5 to $9 " });
+      const cite = fig.footnoteSegments?.[3];
+      expect(cite?.type === "cite" && cite.refs[0]?.resolved).toBe(true);
+    });
+    it("a macro, display math or an unresolved cite are located diagnostics", () => {
+      expect(codes(meta("$\\def\\a{x}\\a$"))).toContain("math_macro_unsupported");
+      expect(codes(meta("$$x$$"))).toContain("math_display_inline");
+      const r = parseTextSource(meta("see [cite: ghost]"), opts);
+      expect(r.diagnostics.find((d) => d.code === "cite_unresolved")?.line).toBe(2);
+      expect(r.ir).not.toBeNull();
+    });
+    it("a KaTeX-rejected footnote formula is a located warning at the footnote field", () => {
+      const r = parseTextSource(meta("bad $\\frobnicate{x}$"), opts);
+      const d = r.diagnostics.find((x) => x.code === "math_katex");
+      expect(d?.severity).toBe("warning");
+      expect(d?.line).toBe(2);
+    });
+    it("a table footnote is scanned too", () => {
+      const md = `\`\`\`argelander-block\n${JSON.stringify({ footnote: "n $\\a$ [ref: nowhere]" })}\n\`\`\`\n${head}| 1 | 2 |\n`;
+      const r = parseTextSource(md, opts);
+      expect(r.diagnostics.map((d) => d.code)).toContain("ref_unresolved");
+      const [t] = r.ir?.sections.flatMap((s) => s.blocks) ?? [];
+      expect(t?.type === "table" && t.footnoteSegments?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("literal dollars in cells never pair into math in the Reader", () => {
+    it("a backslash-escaped dollar in a GFM cell and a merged cell is isolated; a formula keeps its $..$", () => {
+      const [t] = blocks(`${head}| costs \\$5 and \\$6 | $x$ |\n`);
+      expect(t?.type === "table" && t.tableBody).toContain(
+        "<td>costs <span>$</span>5 and <span>$</span>6</td><td>$x$</td>"
+      );
+      const json = JSON.stringify({ rows: [[{ text: "costs \\$5 and \\$6 and $y$" }]] });
+      const [m] = blocks(`\`\`\`argelander-table\n${json}\n\`\`\`\n`);
+      expect(m?.type === "table" && m.tableBody).toContain(
+        "costs <span>$</span>5 and <span>$</span>6 and $y$"
+      );
+    });
+    it("a formula that itself contains a dollar cannot be shown in a cell: located error", () => {
+      expect(codes(`${head}| $a \`$\` b$ | 1 |\n`)).toContain("table_math_dollar");
+    });
+  });
+
+  describe("errors inside cells are located at the cell", () => {
+    it.each([
+      ["raw HTML", "<b>x</b>", "html_unsupported"],
+      ["a link", "[t](http://x.org)", "link_unsupported"],
+      ["an image", "![i](assets/profile-0123abcd.png)", "image_inline"],
+    ])("%s", (_n, cell, code) => {
+      const found = errors(`${head}| 1 | ${cell} |\n`);
+      const d = found.find((x) => x.code === code);
+      expect(d?.line).toBe(3);
+      expect(d?.column).toBe(7);
+    });
+    it("a problem in the first body cell points at that cell, not the table start", () => {
+      const d = errors(`${head}| fine | fine |\n| <i>x</i> | 2 |\n`).find(
+        (x) => x.code === "html_unsupported"
+      );
+      expect([d?.line, d?.column]).toEqual([4, 3]);
+    });
+  });
+
+  it("the grid summary has its own code", () => {
+    const rows = Array.from({ length: 30 }, () => [{ text: "a", colspan: 5 }]);
+    const json = JSON.stringify({ rows: [[{ text: "h" }], ...rows] });
+    const r = parseTextSource(`\`\`\`argelander-table\n${json}\n\`\`\`\n`, opts);
+    const found = r.diagnostics.map((d) => d.code);
+    expect(found).toContain("table_more_problems");
+    expect(found.filter((c) => c === "table_span_overlap")).toEqual([]);
   });
 });

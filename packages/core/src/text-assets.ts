@@ -14,8 +14,17 @@
  * and an image this call created is removed again if the source write fails.
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  existsSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
   TEXT_ASSET_MAX_BYTES,
@@ -210,8 +219,70 @@ function assetsDirOf(paths: LibraryPaths, docId: string, create: boolean): strin
 }
 
 export type AddTextAssetResult =
-  | { kind: "added" | "reused"; source: TextDocSource; asset: TextSourceAsset }
+  | {
+      kind: "added" | "reused";
+      source: TextDocSource;
+      asset: TextSourceAsset;
+      /** `reused` only: the registered file was missing or damaged and was written again from the uploaded bytes. */
+      restored: boolean;
+    }
   | { kind: "conflict"; source: TextDocSource };
+
+/**
+ * Put `bytes` at `file` without ever replacing anything and without ever exposing a partial file there: the bytes go to
+ * a hidden temporary file of the same directory first and are then hard-linked to the final name (`link` fails with
+ * EEXIST rather than replace). On a filesystem without hard links the final name is written directly with `wx`; any
+ * failure other than EEXIST then means this call created that file, so it is removed again. An EEXIST never deletes the
+ * file that is already there. The temporary file is always removed.
+ */
+function placeNew(dir: string, file: string, bytes: Buffer): void {
+  const tmp = join(dir, `.partial-${randomUUID()}`);
+  try {
+    writeFileSync(tmp, bytes, { flag: "wx" });
+    try {
+      linkSync(tmp, file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw error;
+      try {
+        writeFileSync(file, bytes, { flag: "wx" });
+      } catch (direct) {
+        if ((direct as NodeJS.ErrnoException).code !== "EEXIST") rmSync(file, { force: true });
+        throw direct;
+      }
+    }
+  } finally {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* a hidden temporary file is harmless */
+    }
+  }
+}
+
+/** Registered bytes uploaded again: make sure the registered file is really there and intact. */
+function restoreIfNeeded(
+  file: string,
+  asset: TextSourceAsset,
+  bytes: Buffer,
+  dir: string
+): boolean {
+  let stat: ReturnType<typeof lstatSync> | null = null;
+  try {
+    stat = lstatSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (stat !== null) {
+    if (stat.isSymbolicLink() || !stat.isFile())
+      throw new TextAssetError("unsafe", "the registered asset file is not a plain file");
+    if (createHash("sha256").update(readFileSync(file)).digest("hex") === asset.sha256)
+      return false;
+    // damaged: keep its bytes aside (never deleted, never overwritten), then write the file again
+    renameSync(file, `${file}.damaged-${Date.now()}-${randomUUID().slice(0, 8)}`);
+  }
+  placeNew(dir, file, bytes);
+  return true;
+}
 
 /**
  * Register one image: validated by its bytes, written with a new controlled name (never over an existing file), and
@@ -231,7 +302,19 @@ export function addTextAsset(
   const sniffed = sniffImage(input.bytes);
   const sha256 = createHash("sha256").update(input.bytes).digest("hex");
   const known = current.assets.find((a) => a.sha256 === sha256);
-  if (known) return { kind: "reused", source: current, asset: known };
+  if (known) {
+    const dir = assetsDirOf(paths, docId, true);
+    try {
+      const restored = restoreIfNeeded(join(dir, known.name), known, input.bytes, dir);
+      return { kind: "reused", source: current, asset: known, restored };
+    } catch (error) {
+      if (error instanceof TextAssetError) throw error;
+      throw new TextAssetError(
+        "write_failed",
+        `the registered image could not be restored: ${(error as Error).message}`
+      );
+    }
+  }
   if (current.assets.length >= TEXT_ASSET_MAX_COUNT)
     throw new TextAssetError(
       "too_many_assets",
@@ -250,8 +333,8 @@ export function addTextAsset(
   const file = join(dir, name);
   let created = false;
   try {
-    // `wx`: an existing file (registered or not) is never touched
-    writeFileSync(file, input.bytes, { flag: "wx" });
+    // an existing file (registered or not) is never touched, a failed write leaves nothing on the final name
+    placeNew(dir, file, input.bytes);
     created = true;
     const next: TextDocSource = {
       ...current,
@@ -260,7 +343,7 @@ export function addTextAsset(
       updated_at: now.toISOString(),
     };
     const saved = replaceTextSource(paths, docId, next);
-    return { kind: "added", source: saved, asset };
+    return { kind: "added", source: saved, asset, restored: false };
   } catch (error) {
     if (created) {
       try {

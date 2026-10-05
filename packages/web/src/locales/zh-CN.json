@@ -256,9 +256,10 @@
         "table_extra_cells": "该行的单元格多于表头，多出的单元格会丢失。",
         "table_align_ignored": "不保留列对齐方式。",
         "table_too_large": "表格超过允许的大小。",
-        "table_dollar": "表格单元格中的字面 $ 可能被显示为公式的一部分。",
         "table_token_unsupported": "表格单元格内不能使用 [cite: …] 和 [ref: …]。请放在图注或段落中。",
-        "math_display_in_table": "表格单元格内不能有行间公式，请使用 $…$。"
+        "math_display_in_table": "表格单元格内不能有行间公式，请使用 $…$。",
+        "table_more_problems": "表格网格中还有更多问题未列出。",
+        "table_math_dollar": "表格单元格中的公式不能含有 $。请把它移出表格。"
       },
       "net": {
         "unreachable": "服务没有响应",
@@ -277,7 +278,7 @@
       "assetsBusy": "文档正忙，请重试。",
       "assetsSaveFirst": "你的文字尚未保存，因此没有添加图片。请先解决保存问题。",
       "assetsClose": "关闭",
-      "assetCount": "图片：{{count}}",
+      "assetCount": "{{count}} 张图片",
       "assetMeta": "{{type}} · {{width}}×{{height}} 像素 · {{size}}",
       "assetReject": {
         "unsupported_type": "只接受 PNG、JPEG 和 WebP 图片。",
@@ -288,7 +289,8 @@
         "bad_name": "不允许使用该文件名。",
         "too_many_assets": "此文档的图片数量已达上限。",
         "other": "服务器未能保存该图片。"
-      }
+      },
+      "assetsRestored": "{{name}} 已在列表中，但其文件缺失或已损坏，现已重新写入。"
     },
     "drafts": {
       "summary": "保留的草稿（可复制；重新选位后使用创建文字）",

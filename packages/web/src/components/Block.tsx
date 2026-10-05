@@ -85,7 +85,7 @@ function FigureView({ b }: { b: IrFigureBlock }) {
       {b.imgPath && (
         <FigureImage
           imgPath={b.imgPath}
-          alt={b.label || "figure"}
+          alt={b.content?.trim() || b.label || "figure"}
           controls
           width={b.imgWidth}
           height={b.imgHeight}
@@ -97,16 +97,22 @@ function FigureView({ b }: { b: IrFigureBlock }) {
           <Segments segments={b.captionSegments} />
         </figcaption>
       )}
-      {b.footnote && <Footnote text={b.footnote} />}
+      {b.footnote && <Footnote text={b.footnote} segments={b.footnoteSegments} />}
       <AnnBlockEdge id={b.id} />
     </figure>
   );
 }
 
-/** A figure/table footnote: plain text (escaped), with its `$..$` math typeset. */
-function Footnote({ text }: { text: string }) {
-  const escaped = text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
-  return <p className="block-footnote" data-ui="latex-block-footnote" dangerouslySetInnerHTML={{ __html: htmlWithMath(escaped) }} />;
+/**
+ * A figure/table footnote, read like a caption: from the IR's segments (text, formulas, cite and ref chips). An IR that
+ * carries only the plain string (never produced by a text document) shows it as inert text: no markup, no math pairing.
+ */
+function Footnote({ text, segments }: { text: string; segments: IrSegment[] | undefined }) {
+  return (
+    <p className="block-footnote" data-ui="latex-block-footnote">
+      {hasContent(segments) ? <Segments segments={segments} /> : text}
+    </p>
+  );
 }
 
 function TableView({ b }: { b: IrTableBlock }) {
@@ -129,7 +135,7 @@ function TableView({ b }: { b: IrTableBlock }) {
           <FigureImage imgPath={b.imgPath} alt="table" />
         )
       )}
-      {b.footnote && <Footnote text={b.footnote} />}
+      {b.footnote && <Footnote text={b.footnote} segments={b.footnoteSegments} />}
       <AnnBlockEdge id={b.id} />
     </div>
   );

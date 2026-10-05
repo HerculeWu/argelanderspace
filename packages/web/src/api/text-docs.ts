@@ -133,7 +133,7 @@ export async function generateTextDoc(docId: string, sourceRev: number, operatio
 }
 
 export type TextAssetUpload =
-  | { ok: true; source: TextSourceDto; asset: TextSourceAsset; reused: boolean }
+  | { ok: true; source: TextSourceDto; asset: TextSourceAsset; reused: boolean; restored: boolean }
   /** Another writer saved first; nothing was added. */
   | { ok: false; kind: "conflict"; source: TextSourceDto | null }
   | { ok: false; kind: "busy" | "error"; detail: string }
@@ -150,7 +150,7 @@ export async function uploadTextAsset(docId: string, expectedRev: number, file: 
     if (response.ok) {
       const parsed = TextAssetAddedSchema.safeParse(await response.json());
       return parsed.success
-        ? { ok: true, source: parsed.data.source, asset: parsed.data.asset, reused: parsed.data.reused }
+        ? { ok: true, source: parsed.data.source, asset: parsed.data.asset, reused: parsed.data.reused, restored: parsed.data.restored }
         : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
     }
     const { detail, body } = await detailOf(response);

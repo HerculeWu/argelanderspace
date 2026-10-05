@@ -185,7 +185,8 @@ const DIAGNOSTIC_KEYS = {
   table_extra_cells: "doc.text.diag.table_extra_cells",
   table_align_ignored: "doc.text.diag.table_align_ignored",
   table_too_large: "doc.text.diag.table_too_large",
-  table_dollar: "doc.text.diag.table_dollar",
+  table_more_problems: "doc.text.diag.table_more_problems",
+  table_math_dollar: "doc.text.diag.table_math_dollar",
   table_token_unsupported: "doc.text.diag.table_token_unsupported",
   math_display_in_table: "doc.text.diag.math_display_in_table",
   quote_unsupported: "doc.text.diag.quote_unsupported",
@@ -497,7 +498,7 @@ function TextSourceEditor({
         server.current = { rev: result.source.rev, markdown: server.current.markdown };
         setAssets(result.source.assets);
         onState({ rev: result.source.rev, dirty: getDraft() !== server.current.markdown });
-        setAssetMessage({ tone: "info", text: t(result.reused ? "doc.text.assetsReused" : "doc.text.assetsAdded", { name: result.asset.name }) });
+        setAssetMessage({ tone: result.restored ? "warning" : "info", text: t(result.restored ? "doc.text.assetsRestored" : result.reused ? "doc.text.assetsReused" : "doc.text.assetsAdded", { name: result.asset.name }) });
         return;
       }
       if (result.kind === "conflict") {
@@ -644,6 +645,7 @@ function TextSourceEditor({
       {assetsOpen && (
         <Dialog
           uiId="text-source-assets-dialog"
+          width={520}
           title={t("doc.text.assetsTitle")}
           closeLabel={t("common.close")}
           initialFocusRef={assetUploadRef}

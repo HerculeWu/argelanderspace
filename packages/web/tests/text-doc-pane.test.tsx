@@ -71,10 +71,10 @@ function installBackend() {
       backend.assetPosts.push({ url, type: new Headers(init?.headers).get("content-type"), size: file.size });
       if (backend.assetAnswer) return backend.assetAnswer(url);
       const filename = decodeURIComponent(/filename=([^&]*)/.exec(url)?.[1] ?? "image.png");
-      const asset = { name: `${filename.replace(/\.png$/, "")}-0123abcd.png`, sha256: "c".repeat(64), byte_length: file.size, media_type: "image/png" as const, width: 40, height: 30 };
+      const asset = { name: `${filename.replace(/\.png$/, "").replace(/ /g, "-")}-0123abcd.png`, sha256: "c".repeat(64), byte_length: file.size, media_type: "image/png" as const, width: 40, height: 30 };
       backend.assets = [...backend.assets, asset];
       backend.rev += 1;
-      return json({ source: dto(), asset, reused: false }, 201);
+      return json({ source: dto(), asset, reused: false, restored: false }, 201);
     }
     if (url === `/api/paper/${DOC}/source/validate` && backend.validate) return backend.validate();
     if (url === `/api/paper/${DOC}/source/validate`) return json({ sourceRev: backend.rev, valid: true, diagnostics: [], stats: { sections: 2, paragraphs: 3, lists: 1 } });
@@ -362,7 +362,7 @@ describe("text Doc pane: image assets (ticket 27)", () => {
     const view = await ready();
     const button = ui(view.container, "text-source-assets")!;
     expect(button.getAttribute("aria-label")).toBe("图片资产");
-    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("图片：0");
+    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("0 张图片");
     fireEvent.click(button);
     expect(dialog()).toBeTruthy();
     expect(document.querySelector('[data-ui="text-source-assets-empty"]')).toBeTruthy();
@@ -379,11 +379,11 @@ describe("text Doc pane: image assets (ticket 27)", () => {
     await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset"]')).toBeTruthy());
     expect(backend.assetPosts).toEqual([{ url: `/api/paper/${DOC}/source/assets?expectedRev=0&filename=Shear%20profile.png`, type: "application/octet-stream", size: 4 }]);
     const row = document.querySelector<HTMLElement>('[data-ui="text-source-asset"]')!;
-    expect(row.textContent).toContain("Shear profile-0123abcd.png");
+    expect(row.textContent).toContain("Shear-profile-0123abcd.png");
     expect(row.textContent).toContain("PNG · 40×30 像素 · 1 KiB");
-    expect(row.textContent).toContain("assets/Shear profile-0123abcd.png");
+    expect(row.textContent).toContain("assets/Shear-profile-0123abcd.png");
     expect(document.querySelector('[data-ui="text-source-asset-message"]')?.textContent).toContain("已添加");
-    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("图片：1");
+    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("1 张图片");
     // the editor's text and save state are untouched by the upload
     expect(ui(view.container, "text-source-status")?.getAttribute("data-state")).toBe("saved");
   });
@@ -399,6 +399,20 @@ describe("text Doc pane: image assets (ticket 27)", () => {
     expect(ui(view.container, "text-source-conflict")).toBeNull();
   });
 
+  it("a restored file is reported as such; the dialog is the prototype's 520 px wide", async () => {
+    const view = await ready();
+    backend.assetAnswer = () => {
+      const asset = { name: "fig-0123abcd.png", sha256: "c".repeat(64), byte_length: 4, media_type: "image/png" as const, width: 4, height: 3 };
+      backend.assets = [asset];
+      return json({ source: dto(), asset, reused: true, restored: true }, 200);
+    };
+    fireEvent.click(ui(view.container, "text-source-assets")!);
+    expect(document.querySelector<HTMLElement>('[data-ui="text-source-assets-dialog"]')?.style.getPropertyValue("--dialog-width")).toBe("520px");
+    chooseFile(view, png());
+    await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset-message"]')).toBeTruthy());
+    expect(document.querySelector('[data-ui="text-source-asset-message"]')?.textContent).toContain("现已重新写入");
+  });
+
   it("a refused file shows the server's reason in the page's own words and adds nothing", async () => {
     backend.assetAnswer = () => json({ detail: "only PNG...", code: "unsupported_type" }, 415);
     const view = await ready();
@@ -410,7 +424,7 @@ describe("text Doc pane: image assets (ticket 27)", () => {
     expect(message.textContent).toContain("图片未能添加");
     expect(message.textContent).toContain("只接受 PNG、JPEG 和 WebP");
     expect(document.querySelector('[data-ui="text-source-asset"]')).toBeNull();
-    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("图片：0");
+    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("0 张图片");
   });
 
   it("a revision conflict keeps the local text, shows the conflict panel and adds nothing", async () => {

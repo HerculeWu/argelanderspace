@@ -37,7 +37,7 @@ export const TEXT_ASSET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(?:pn
 
 /** A registered image asset of the source. Files are never overwritten: a changed image is a NEW name. */
 export const TextSourceAssetSchema = z.strictObject({
-  name: z.string().min(1),
+  name: z.string().regex(TEXT_ASSET_NAME_PATTERN),
   sha256: Sha256Schema,
   byte_length: z.number().int().nonnegative(),
   /** Checked by magic bytes when the asset was added; absent in sources written before ticket 27 (none had assets). */
@@ -235,8 +235,10 @@ export type TextSourceDto = z.infer<typeof TextSourceDtoSchema>;
 export const TextAssetAddedSchema = z.strictObject({
   source: TextSourceDtoSchema,
   asset: TextSourceAssetSchema,
-  /** The same bytes were already registered: that asset is returned and nothing changed. */
+  /** The same bytes were already registered: that asset is returned and the revision did not change. */
   reused: z.boolean(),
+  /** With `reused`: the registered file was missing or damaged and has been written again from these bytes. */
+  restored: z.boolean(),
 });
 export type TextAssetAdded = z.infer<typeof TextAssetAddedSchema>;
 

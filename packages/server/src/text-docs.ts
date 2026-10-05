@@ -364,7 +364,12 @@ export class TextDocService {
           at: new Date().toISOString(),
         });
       return ok(
-        { source: this.dto(added.source), asset: added.asset, reused: added.kind === "reused" },
+        {
+          source: this.dto(added.source),
+          asset: added.asset,
+          reused: added.kind === "reused",
+          restored: added.restored,
+        },
         added.kind === "added" ? 201 : 200
       );
     } catch (error) {

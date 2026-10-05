@@ -23,6 +23,8 @@ const KEEP = new Set([
   "EM",
   "STRONG",
   "BR",
+  // a literal dollar of a cell sits in its own span so it cannot pair with another one into a formula
+  "SPAN",
 ]);
 const DROP_WITH_CONTENT = "script,style,iframe,object,embed,link,meta,form,input,button,svg,math,template,noscript";
 
@@ -39,7 +41,7 @@ export function safeTableHtml(html: string): string {
         continue;
       }
       for (const attr of [...el.attributes]) {
-        const span = (attr.name === "rowspan" || attr.name === "colspan") && /^\d{1,3}$/.test(attr.value);
+        const span = (attr.name === "rowspan" || attr.name === "colspan") && /^\d{1,4}$/.test(attr.value);
         if (!span) el.removeAttribute(attr.name);
       }
     }

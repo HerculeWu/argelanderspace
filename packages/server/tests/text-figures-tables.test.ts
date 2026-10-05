@@ -4,7 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AnnotationsFile,
@@ -53,11 +53,13 @@ const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 let dataDir: string;
 let app: Hono;
 let messages: WsServerMessage[];
+let registry: DocMutationRegistry;
 
 beforeEach(() => {
   dataDir = makeDataDir();
   const collector = collectBroadcasts();
   messages = collector.messages;
+  registry = new DocMutationRegistry();
   app = createApp({
     paths: libraryPaths(dataDir),
     statusDir: statusDirFor(dataDir),
@@ -65,7 +67,7 @@ beforeEach(() => {
     pipelines: stubPipelines(),
     runner: new JobRunner({ dir: join(dataDir, "jobs") }),
     broadcast: collector.broadcast,
-    docMutations: new DocMutationRegistry(),
+    docMutations: registry,
   });
 });
 
@@ -305,12 +307,39 @@ describe("uploading an image", () => {
     expect(readdirSync(outside)).toEqual([]);
   });
 
-  test("refuses while the Doc is being deleted and a delete removes every asset", async () => {
+  test("while a delete of the Doc is running an upload is refused and writes nothing; afterwards it works again", async () => {
+    const docId = await createDoc();
+    const before = readFileSync(sourceFile(docId));
+    expect(registry.tryBeginDelete(docId)).toBe(true);
+    const refused = await upload(docId, 0, png());
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ detail: "document busy" });
+    expect(readFileSync(sourceFile(docId)).equals(before)).toBe(true);
+    expect(existsSync(join(docDir(docId), "assets"))).toBe(false);
+    registry.endDelete(docId);
+    expect((await upload(docId, 0, png())).status).toBe(201);
+  });
+
+  test("a delete removes every asset with the Doc, and a later upload finds no Doc", async () => {
     const docId = await createDoc();
     await add(docId, 0, png());
     expect((await call("DELETE", `/api/paper/${docId}`)).status).toBe(200);
     expect(existsSync(docDir(docId))).toBe(false);
     expect((await upload(docId, 1, png(5, 5))).status).toBe(404);
+  });
+
+  test("L2: uploading registered bytes whose file vanished restores the file and says so; the revision does not change", async () => {
+    const docId = await createDoc();
+    const bytes = png(40, 30);
+    const a = await add(docId, 0, bytes);
+    const file = join(docDir(docId), "assets", a.asset.name);
+    rmSync(file);
+    const res = await upload(docId, 1, bytes);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as TextAssetAdded;
+    expect(body).toMatchObject({ reused: true, restored: true });
+    expect(body.source.rev).toBe(1);
+    expect(readFileSync(file)).toEqual(bytes);
   });
 });
 

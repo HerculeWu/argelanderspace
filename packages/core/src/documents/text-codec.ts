@@ -740,7 +740,7 @@ function checkGrid(w: Walk, rows: GridCell[][]): boolean {
     report(
       w,
       undefined,
-      "table_span_overlap",
+      "table_more_problems",
       `${bad - 20} more problems in the table grid are not shown`,
       {
         severity: "warning",
@@ -763,12 +763,36 @@ function tableHtmlOf(rows: GridCell[][]): string {
   return `${html}</table>`;
 }
 
-/** Count the cells of a GFM table row the way the lexer splits it (unescaped pipes; formulas are already masked). */
-function gfmCellCount(line: string): number {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  return s.split(/(?<!\\)\|/).length;
+/**
+ * The cells of one GFM table row exactly as `marked` splits them (its `splitCells`): a pipe is a separator unless an ODD
+ * run of backslashes precedes it, a first and a last cell that are only blank are dropped. The count must be this one, not
+ * a look-alike: a row with more cells than the header silently loses the extras inside the lexer. `starts` are the
+ * offsets (within the line) where each cell's text starts, for locating a problem at its cell.
+ */
+function gfmRowCells(line: string): { count: number; starts: number[] } {
+  const cuts: number[] = [];
+  for (let i = 0; i < line.length; i += 1) {
+    if (line[i] !== "|") continue;
+    let escaped = false;
+    for (let a = i - 1; a >= 0 && line[a] === "\\"; a -= 1) escaped = !escaped;
+    if (!escaped) cuts.push(i);
+  }
+  const segs: { start: number; end: number }[] = [];
+  let from = 0;
+  for (const cut of cuts) {
+    segs.push({ start: from, end: cut });
+    from = cut + 1;
+  }
+  segs.push({ start: from, end: line.length });
+  if (segs.length > 0 && line.slice(segs[0]?.start, segs[0]?.end).trim() === "") segs.shift();
+  const last = segs[segs.length - 1];
+  if (last !== undefined && line.slice(last.start, last.end).trim() === "") segs.pop();
+  const starts = segs.map((seg) => {
+    let at = seg.start;
+    while (at < seg.end && /\s/.test(line.charAt(at))) at += 1;
+    return at;
+  });
+  return { count: segs.length, starts };
 }
 
 // --------------------------------------------------------------------------- //
@@ -925,10 +949,11 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   const captionOf = (
     caption: string | undefined,
     located: Located | null,
-    owner: IrBlock
+    owner: IrBlock,
+    field: "caption" | "footnote" = "caption"
   ): IrSegment[] | undefined => {
     if (caption === undefined) return undefined;
-    const where = located === null ? 0 : whereIn(located, ["caption"]);
+    const where = located === null ? 0 : whereIn(located, [field]);
     const sub = scanSyntax(caption, { blockDisplay: false });
     for (const p of sub.problems)
       report(w, where, p.code, p.message, {
@@ -982,24 +1007,24 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   };
 
   /** Cell text → pieces, reading `$..$` math like a caption; anything else a cell cannot hold is a located error. */
-  const cellHtmlOf = (pieces: Piece[], at: number): string => {
+  const cellHtmlOf = (pieces: Piece[]): string => {
     let out = "";
     for (const p of mergedPieces(pieces)) {
       if (p.t === "text") {
-        if (p.s.includes("$"))
+        // The Reader typesets `$..$` inside a cell's text node; a literal dollar sits in a node of its own so that
+        // it can never pair with another one into a formula.
+        out += escapeHtml(p.s).replace(/\$/g, "<span>$</span>");
+      } else if (p.item.bad) continue;
+      else if (p.item.kind === "math") {
+        if ((p.item.latex as string).includes("$"))
           report(
             w,
-            at,
-            "table_dollar",
-            "a literal $ in a table cell can be shown as part of a formula",
-            {
-              severity: "warning",
-            }
+            p.item.where,
+            "table_math_dollar",
+            "a formula in a table cell cannot contain a $ (the cell text is read for $...$ again); move it out of the table"
           );
-        out += escapeHtml(p.s);
-      } else if (p.item.bad) continue;
-      else if (p.item.kind === "math") out += `$${escapeHtml(p.item.latex as string)}$`;
-      else if (p.item.kind === "display")
+        else out += `$${escapeHtml(p.item.latex as string)}$`;
+      } else if (p.item.kind === "display")
         report(
           w,
           p.item.where,
@@ -1034,7 +1059,9 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
       last = item.end;
     }
     if (last < text.length) pieces.push({ t: "text", s: text.slice(last) });
-    return cellHtmlOf(pieces, where);
+    // `\$` is a literal dollar: the backslash is the escape, not part of the text
+    for (const piece of pieces) if (piece.t === "text") piece.s = piece.s.replace(/\\\$/g, "$");
+    return cellHtmlOf(pieces);
   };
 
   const emitTable = (html: string, metaState: PendingMeta | null): void => {
@@ -1052,6 +1079,11 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     if (fields.caption !== undefined) {
       const segs = captionOf(fields.caption, metaState?.located ?? null, block);
       if (segs !== undefined && segs.length > 0) block.captionSegments = segs;
+    }
+    if (fields.footnote !== undefined) {
+      const segs = captionOf(fields.footnote, metaState?.located ?? null, block, "footnote");
+      if (segs !== undefined && segs.length > 0 && block.type === "table")
+        block.footnoteSegments = segs;
     }
     currentBlocks().push(block);
     register("table", block, fields, idAt(metaState), fields.number);
@@ -1113,6 +1145,11 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     if (fields.caption !== undefined) {
       const segs = captionOf(fields.caption, metaState?.located ?? null, block);
       if (segs !== undefined && segs.length > 0) block.captionSegments = segs;
+    }
+    if (fields.footnote !== undefined) {
+      const segs = captionOf(fields.footnote, metaState?.located ?? null, block, "footnote");
+      if (segs !== undefined && segs.length > 0 && block.type === "figure")
+        block.footnoteSegments = segs;
     }
     currentBlocks().push(block);
     register("figure", block, fields, idAt(metaState), fields.number);
@@ -1180,8 +1217,13 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         const rawLines = lexRaw.split(/\r|\n/);
         const columns = table.header.length;
         let lineAt = at;
+        const cellAt: (number[] | undefined)[] = [];
+        const lineStartAt: number[] = [];
         rawLines.forEach((line, i) => {
-          if (i >= 2 && line.trim() !== "" && gfmCellCount(line) > columns)
+          const cells = gfmRowCells(line);
+          cellAt[i] = cells.starts.map((o) => lineAt + o);
+          lineStartAt[i] = lineAt;
+          if (i >= 2 && line.trim() !== "" && cells.count > columns)
             report(
               w,
               lineAt,
@@ -1209,21 +1251,27 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           pending = null;
           break;
         }
-        const toCell = (c: Tokens.TableCell, header: boolean): GridCell => {
+        const toCell = (
+          c: Tokens.TableCell,
+          header: boolean,
+          line: number,
+          col: number
+        ): GridCell => {
+          const here = cellAt[line]?.[col] ?? lineStartAt[line] ?? at;
           const pieces: Piece[] = [];
-          inlinePieces(w, at, c.tokens, pieces);
+          inlinePieces(w, here, c.tokens, pieces);
           return {
-            html: cellHtmlOf(pieces, at),
+            html: cellHtmlOf(pieces),
             header,
             rowspan: 1,
             colspan: 1,
-            at,
-            spanAt: () => at,
+            at: here,
+            spanAt: () => here,
           };
         };
         const grid: GridCell[][] = [
-          table.header.map((c) => toCell(c, true)),
-          ...table.rows.map((r) => r.map((c) => toCell(c, false))),
+          table.header.map((c, col) => toCell(c, true, 0, col)),
+          ...table.rows.map((r, row) => r.map((c, col) => toCell(c, false, row + 2, col))),
         ];
         const metaState = pending;
         emitTable(tableHtmlOf(grid), metaState);
