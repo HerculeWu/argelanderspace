@@ -101,12 +101,12 @@ export function resolveFigureSrc(
 // xref preview / heading fill
 // --------------------------------------------------------------------------- //
 
-interface TargetLookup {
+export interface TargetLookup {
   blocks: Map<string, IrBlock>;
   sections: Map<string, IrSection>;
 }
 
-function buildTargetLookup(sections: IrSection[]): TargetLookup {
+export function buildTargetLookup(sections: IrSection[]): TargetLookup {
   const blocks = new Map<string, IrBlock>();
   const secs = new Map<string, IrSection>();
   const walk = (list: IrSection[]): void => {
@@ -161,7 +161,7 @@ function* iterSegments(sections: IrSection[]): Generator<IrSegment> {
   yield* walkSecs(sections);
 }
 
-function fillXrefPreviews(sections: IrSection[], lookups: TargetLookup): void {
+export function fillXrefPreviews(sections: IrSection[], lookups: TargetLookup): void {
   for (const seg of iterSegments(sections)) {
     if (seg.type !== "xref" || !seg.target.resolved) continue;
     const t = seg.target;
@@ -184,7 +184,7 @@ function sectionLabel(s: IrSection): string {
   return s.number !== undefined ? `${s.number}:${s.heading ?? ""}` : (s.heading ?? "");
 }
 
-function refsManifest(sections: IrSection[]): RefManifestRow[] {
+export function refsManifest(sections: IrSection[]): RefManifestRow[] {
   const rows: RefManifestRow[] = [];
   const flat: { block: IrBlock; section: string }[] = [];
   const walk = (list: IrSection[]): void => {
@@ -252,7 +252,7 @@ function refsManifest(sections: IrSection[]): RefManifestRow[] {
   return rows;
 }
 
-function bibManifest(references: Reference[]): BibManifestRow[] {
+export function bibManifest(references: Reference[]): BibManifestRow[] {
   return references.map((r) => {
     const row: BibManifestRow = { id: r.id, short: citeShort(r), raw: r.raw };
     if (r.title !== undefined && r.title !== "") row.title = r.title;

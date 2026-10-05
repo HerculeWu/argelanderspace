@@ -1,3 +1,4 @@
+import { resetMathBudget } from "../lib/math";
 import {
   createContext,
   useContext,
@@ -86,6 +87,7 @@ export class ReaderSessionController {
     for (const fn of this.listeners) fn();
   }
   start = () => {
+    resetMathBudget(); // a document starts with a fresh typesetting budget
     this.lifecycle++;
     this.alive = true;
     this.retry();

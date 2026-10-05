@@ -11,7 +11,7 @@
  */
 
 import { z } from "zod";
-import { DocIrSchema } from "./doc-ir.js";
+import { DocIrSchema, ReferenceSchema } from "./doc-ir.js";
 import { TEX_IR_VERSION, type TexDocIr, TexDocIrSchema, TexIrAuthorSchema } from "./tex-ir.js";
 
 /** `argelander-text` input format version this build reads and writes. */
@@ -104,6 +104,47 @@ export function isTexDocIr(ir: StoredDocIr): ir is TexDocIr {
 }
 
 // --------------------------------------------------------------------------- //
+// Format v1 structure markers (ticket 26): the JSON of the three fenced marker blocks
+// --------------------------------------------------------------------------- //
+
+/** Ids of structure blocks and references: ASCII letters, digits and `_ . : -`, 1..128 characters. */
+export const TEXT_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
+const TextIdSchema = z.string().regex(TEXT_ID_PATTERN);
+
+/** The first fenced block ``argelander-document``: identity shown with the text; never the Doc or Work identity. */
+export const TextDocumentMetaSchema = z.strictObject({
+  version: z.literal(1),
+  title: z.string().min(1).optional(),
+  authors: z.array(z.string().min(1)).optional(),
+  authorDetails: z.array(TexIrAuthorSchema.strict()).optional(),
+  affiliations: z.array(z.string().min(1)).optional(),
+  email: z.string().min(1).optional(),
+});
+export type TextDocumentMeta = z.infer<typeof TextDocumentMetaSchema>;
+
+/** ``argelander-block``: binds to the one block that follows it; which fields apply depends on that block. */
+export const TextBlockMetaSchema = z.strictObject({
+  id: TextIdSchema.optional(),
+  kind: z.enum(["section", "paragraph", "list", "equation", "code", "algorithm"]).optional(),
+  /** The printed number; never derived from the id or the heading level. */
+  number: z.string().min(1).max(64).optional(),
+  /** The printed caption label such as "Algorithm 1". */
+  label: z.string().min(1).max(256).optional(),
+  /** Caption text: plain text with `$..$` math, `[cite: ..]` and `[ref: ..]`. */
+  caption: z.string().min(1).optional(),
+  /** Reserved for figures and tables (ticket 27); the IR carries it only there. */
+  footnote: z.string().min(1).optional(),
+});
+export type TextBlockMeta = z.infer<typeof TextBlockMetaSchema>;
+
+/** ``argelander-references``: the document's complete bibliography; the existing Reference fields, id and raw required. */
+export const TextReferenceSchema = ReferenceSchema.strict().extend({
+  id: TextIdSchema,
+  raw: z.string().min(1),
+});
+export const TextReferencesSchema = z.array(TextReferenceSchema);
+
+// --------------------------------------------------------------------------- //
 // Diagnostics and the source/generation DTOs
 // --------------------------------------------------------------------------- //
 
@@ -116,6 +157,10 @@ export const TextDiagnosticSchema = z.strictObject({
   column: z.number().int().positive().optional(),
   /** `too_many_diagnostics` only: how many further diagnostics were found and are not listed. */
   count: z.number().int().positive().optional(),
+  /** Metadata and reference diagnostics: the JSON path of the offending field, e.g. `authors[1]` or `[2].id`. */
+  field: z.string().optional(),
+  /** The offending value the page quotes in its own wording: a duplicated id, an unknown key, an unresolved target. */
+  subject: z.string().optional(),
 });
 export type TextDiagnostic = z.infer<typeof TextDiagnosticSchema>;
 
@@ -123,6 +168,15 @@ export const TextStatsSchema = z.strictObject({
   sections: z.number().int().nonnegative(),
   paragraphs: z.number().int().nonnegative(),
   lists: z.number().int().nonnegative(),
+  /** Scientific content (ticket 26); absent in stats written before it existed. */
+  equations: z.number().int().nonnegative().optional(),
+  codeBlocks: z.number().int().nonnegative().optional(),
+  inlineMath: z.number().int().nonnegative().optional(),
+  citations: z.number().int().nonnegative().optional(),
+  crossRefs: z.number().int().nonnegative().optional(),
+  references: z.number().int().nonnegative().optional(),
+  /** cite/ref targets that were not found; they stay visible as unresolved and carry a warning. */
+  unresolved: z.number().int().nonnegative().optional(),
 });
 export type TextStats = z.infer<typeof TextStatsSchema>;
 

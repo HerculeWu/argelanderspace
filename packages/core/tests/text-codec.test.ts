@@ -94,13 +94,13 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
 
   it("reports unsupported syntax with its line and refuses to produce an IR (nothing is dropped)", () => {
     const md =
-      "# T\n\nfine\n\n> quoted\n\n- a\n  - nested\n\n```\ncode\n```\n\nSee [link](http://x).\n";
+      "# T\n\nfine\n\n> quoted\n\n- a\n  - nested\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nSee [link](http://x).\n";
     const result = parseTextSource(md, opts);
     expect(result.ir).toBeNull();
     const byLine = result.diagnostics.map((d) => [d.severity, d.code, d.line]);
     expect(byLine).toContainEqual(["error", "quote_unsupported", 5]);
     expect(byLine).toContainEqual(["error", "nested_list_unsupported", 7]);
-    expect(byLine).toContainEqual(["error", "code_unsupported", 10]);
+    expect(byLine).toContainEqual(["error", "table_unsupported", 10]);
     expect(byLine).toContainEqual(["error", "link_unsupported", 14]);
     expect(result.diagnostics.every((d) => d.message.length > 0 && d.column !== undefined)).toBe(
       true
@@ -129,28 +129,27 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
   it("an unclosed fence is a diagnostic, never a crash", () => {
     const result = parseTextSource("# T\n\n```\nnever closed\n", opts);
     expect(result.ir).toBeNull();
-    expect(result.diagnostics[0]).toMatchObject({ code: "code_unsupported", line: 3 });
+    expect(result.diagnostics[0]).toMatchObject({ code: "fence_unclosed", line: 3 });
   });
 
-  describe("math and cite/ref syntax is never silently reduced (B1)", () => {
-    const where = (md: string) => {
-      const r = parseTextSource(md, opts);
-      return { ir: r.ir, diag: r.diagnostics.map((d) => [d.code, d.line, d.column]) };
+  describe("math and cite/ref syntax is never silently reduced (B1; supported since ticket 26)", () => {
+    const segs = (md: string) => {
+      const para = parseTextSource(md, opts).ir?.sections[0]?.blocks[0];
+      return para?.type === "paragraph" ? para.segments : undefined;
     };
-    it("inline math with emphasis characters, escaped braces, and display math are located errors", () => {
-      expect(where("# T\n\nBefore $a *b* c$ after.\n")).toEqual({
-        ir: null,
-        diag: [["math_unsupported", 3, 8]],
-      });
-      expect(where("# T\n\nSet $\\{x\\}$ here.\n")).toEqual({
-        ir: null,
-        diag: [["math_unsupported", 3, 5]],
-      });
-      expect(where("# T\n\n$$\nx\n$$\n")).toEqual({ ir: null, diag: [["math_unsupported", 3, 1]] });
+    it("inline math with emphasis characters and escaped braces keeps its exact source", () => {
+      expect(segs("# T\n\nBefore $a *b* c$ after.\n")).toEqual([
+        { type: "text", text: "Before " },
+        { type: "math", latex: "a *b* c" },
+        { type: "text", text: " after." },
+      ]);
+      expect(segs("# T\n\nSet $\\{x\\}$ here.\n")?.[1]).toEqual({ type: "math", latex: "\\{x\\}" });
     });
-    it("[cite: ...] and [ref: ...] are located errors, not text", () => {
-      expect(where("# T\n\nSee [cite: a;b | A] now.\n").diag).toEqual([["cite_unsupported", 3, 5]]);
-      expect(where("# T\n\nSee [ref: fig-1] now.\n").diag).toEqual([["ref_unsupported", 3, 5]]);
+    it("[cite: ...] and [ref: ...] are segments, not text", () => {
+      const cite = segs("# T\n\nSee [cite: a;b | A] now.\n")?.[1];
+      expect(cite).toMatchObject({ type: "cite", raw: "A" });
+      const ref = segs("# T\n\nSee [ref: fig-1] now.\n")?.[1];
+      expect(ref).toMatchObject({ type: "xref", target: { id: "fig-1", resolved: false } });
     });
     it("literal zones stay text: currency, escaped dollars, code spans, URLs", () => {
       const md =
@@ -166,7 +165,7 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
 
   describe("bounded work and exact locations (fix round 2)", () => {
     it("40k diagnostics on a 1 MB source are located in well under 2 s and the report is capped with a count", () => {
-      const md = `# T\n\n${"Costs $x$ here and there.\n\n".repeat(40000)}`;
+      const md = `# T\n\n${"> quoted\n\n".repeat(40000)}`;
       const started = performance.now();
       const result = parseTextSource(md, opts);
       expect(performance.now() - started).toBeLessThan(2000);
@@ -175,31 +174,35 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
       const last = result.diagnostics[result.diagnostics.length - 1];
       expect(last).toMatchObject({ code: "too_many_diagnostics", count: 40000 - 200 });
       // the ones that are shown are the first ones, with exact positions
-      expect(result.diagnostics[0]).toMatchObject({ code: "math_unsupported", line: 3, column: 7 });
+      expect(result.diagnostics[0]).toMatchObject({
+        code: "quote_unsupported",
+        line: 3,
+        column: 1,
+      });
       expect(result.diagnostics[1]).toMatchObject({ line: 5 });
     });
 
     it("lines are counted like the editor: only \\n breaks a line; a lone CR is an ordinary character", () => {
-      // line 1 "# T", line 2 "", line 3 "a\rb $x$" (the CR is inside the line), so the math is at line 3, column 5
-      const r = parseTextSource("# T\n\na\rb $x$ end\n", opts);
-      const math = r.diagnostics.find((d) => d.code === "math_unsupported");
+      // line 1 "# T", line 2 "", line 3 "a\rb $$x end" (the CR is inside the line), so the display is at line 3, column 5
+      const r = parseTextSource("# T\n\na\rb $$x end\n", opts);
+      const math = r.diagnostics.find((d) => d.code === "math_unclosed");
       expect(math).toMatchObject({ line: 3, column: 5 });
       // CRLF files keep their lines and columns
-      const crlf = parseTextSource("# T\r\n\r\nab $x$ end\r\n", opts).diagnostics.find(
-        (d) => d.code === "math_unsupported"
+      const crlf = parseTextSource("# T\r\n\r\nab $$x end\r\n", opts).diagnostics.find(
+        (d) => d.code === "math_unclosed"
       );
       expect(crlf).toMatchObject({ line: 3, column: 4 });
     });
 
-    it("a stray backtick does not hide math in a later paragraph (code spans end at the block)", () => {
+    it("a stray backtick does not hide a problem in a later paragraph (code spans end at the block)", () => {
       const r = parseTextSource(
-        "# T\n\nA stray ` here.\n\nMath $a *b* c$ now and a `real` span.\n",
+        "# T\n\nA stray ` here.\n\nMath $$a b now and a `real` span.\n",
         opts
       );
       expect(r.ir).toBeNull();
-      expect(r.diagnostics.map((d) => [d.code, d.line])).toContainEqual(["math_unsupported", 5]);
+      expect(r.diagnostics.map((d) => [d.code, d.line])).toContainEqual(["math_unclosed", 5]);
       // a real multi-line span inside one paragraph still masks its content
-      const ok = parseTextSource("# T\n\nRun `a $x$\nb` now.\n", opts);
+      const ok = parseTextSource("# T\n\nRun `a $$x\nb` now.\n", opts);
       expect(ok.diagnostics).toEqual([]);
     });
   });

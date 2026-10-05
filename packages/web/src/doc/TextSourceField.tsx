@@ -86,6 +86,9 @@ export function TextSourceField({
   return (
     <CodeMirror
       className="text-source-input"
+      // no bundled light/dark base theme: `editorTheme` above follows the app's own theme variables (the bundled light
+      // theme painted a white box with near-invisible text in the dark theme)
+      theme="none"
       data-ui="text-source-input"
       height="100%"
       value={first.current}
