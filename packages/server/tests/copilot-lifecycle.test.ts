@@ -29,7 +29,7 @@ import {
   type SimpleStreamOptions,
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { CopilotHost } from "../src/copilot.js";
 import { JobRunner } from "../src/jobs.js";
@@ -394,6 +394,14 @@ test("steering larger than the model's window is refused up front and the run is
     .getModels("openai")
     .find((m) => m.id === "gpt-4.1");
   if (!catalogModel) throw new Error("fixture model");
+  // The catalogue entry is shared by every later test of this file: put it back whatever happens.
+  const originalWindow = {
+    contextWindow: catalogModel.contextWindow,
+    maxTokens: catalogModel.maxTokens,
+  };
+  onTestFinished(() => {
+    Object.assign(catalogModel, originalWindow);
+  });
   catalogModel.contextWindow = 24_000;
   catalogModel.maxTokens = 1024;
   const small = await request("/conversations", "POST", {

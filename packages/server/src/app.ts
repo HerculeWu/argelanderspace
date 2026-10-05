@@ -52,6 +52,7 @@ import type {
   DocDescription,
   DocReplaceImpact,
   Job,
+  PdfSourceMaterial,
   RefreshResponse,
   WriterManuscript,
   WsServerMessage,
@@ -63,9 +64,11 @@ import {
   type ManualWorkRequest,
   ManualWorkRequestSchema,
   ManuscriptSchema,
+  PDF_IMAGE_LONG_EDGE,
   PDF_MAX_BYTES,
   PDF_RESOURCE_WARNING_BYTES,
   PdfAnnotationsFileSchema,
+  PdfPagesResponseSchema,
   PdfReadingPositionSchema,
   PlansFileSchema,
   TexDocIrSchema,
@@ -140,7 +143,13 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
-import type { ReaderOpDeps, ReaderReadOutcome, ReaderWriteOutcome } from "./copilot-reader-tool.js";
+import type {
+  PdfImageOutcome,
+  PdfReadOutcome,
+  ReaderOpDeps,
+  ReaderReadOutcome,
+  ReaderWriteOutcome,
+} from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
@@ -159,6 +168,14 @@ import {
 } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
+import {
+  PdfMaterialContentError,
+  PdfMaterialInputError,
+  PdfMaterialResourceError,
+  PdfQueueFullError,
+  readPdfTextMaterial,
+  renderPdfPageImage,
+} from "./pdf-material.js";
 import { probePdf } from "./pdfium-probe.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
@@ -370,6 +387,60 @@ export function createApp(deps: AppDeps): Hono {
   };
   const pdfOwners = (docId: string) =>
     LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
+  /**
+   * The ONE way PDF page material is reached (the `/pdf/pages` routes and the Copilot's reader tool): content-busy
+   * check, a unique owner, and the original read once and verified against its immutable SHA-256 (and against the
+   * hash the caller expects, if it names one). The text and the image both come from the Buffer this returns.
+   */
+  type PdfSource =
+    | {
+        kind: "ok";
+        metadata: NonNullable<ReturnType<typeof readPdfMetadataIfPresent>>;
+        bytes: Buffer;
+        title: string;
+        annotations?: ReturnType<typeof readPdfAnnotationsFile>;
+      }
+    | { kind: "bad_id" | "busy" | "not_found" | "changed" | "inconsistent" | "error" };
+  const pdfSource = (
+    docId: string,
+    options: { expectedHash?: string; annotations?: boolean } = {}
+  ): PdfSource => {
+    if (!docId.trim() || badId(docId)) return { kind: "bad_id" };
+    if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
+    // The order of GET /api/paper/:doc_id/pdf: unowned 404, ownership not unique 500, then the Doc's own data; an
+    // owned Doc without PDF metadata is a data error (500), not "not found".
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) return { kind: "not_found" };
+    if (owners.length !== 1 || !owners[0]) return { kind: "inconsistent" };
+    try {
+      const metadata = readPdfMetadataIfPresent(paths, docId);
+      if (!metadata) return { kind: "error" };
+      const bytes = readVerifiedPdf(paths, docId);
+      if (options.expectedHash !== undefined && options.expectedHash !== metadata.sha256)
+        return { kind: "changed" };
+      const annotations = options.annotations ? readPdfAnnotationsFile(paths, docId) : undefined;
+      return {
+        kind: "ok",
+        metadata,
+        bytes,
+        title: owners[0].title,
+        ...(annotations ? { annotations } : {}),
+      };
+    } catch (error) {
+      return { kind: error instanceof PdfContentChangedError ? "changed" : "error" };
+    }
+  };
+  /** What a failed PDF material request is, as the routes answer it. */
+  const pdfMaterialFailure = (
+    error: unknown
+  ): { status: 400 | 409 | 500 | 503; detail: string } => {
+    if (error instanceof PdfMaterialInputError) return { status: 400, detail: error.message };
+    if (error instanceof PdfMaterialContentError)
+      return { status: 409, detail: "document changed" };
+    if (error instanceof PdfMaterialResourceError || error instanceof PdfQueueFullError)
+      return { status: 503, detail: error.message };
+    return { status: 500, detail: "PDF page material could not be produced" };
+  };
   /** AnnotationsError → the route's response (roadmap §3: not_found → 404,
    *  every other store failure → 500, never a silent reset). */
   const annotationsError = (err: AnnotationsError) =>
@@ -660,6 +731,67 @@ export function createApp(deps: AppDeps): Hono {
             "the annotations file could not be written; it is replaced atomically or not at all, so read the Doc again to see what is stored now",
         };
       }
+    },
+    pdf: {
+      // The PDF Reader's material for the model (copilot ticket 20): every page's real text, the outline and the
+      // workbench annotations, from the verified original. Read-only; nothing is written, opened or moved.
+      read: async (docId): Promise<PdfReadOutcome> => {
+        const source = pdfSource(docId, { annotations: true });
+        if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+        if (source.kind === "busy" || source.kind === "changed") return { kind: source.kind };
+        if (source.kind !== "ok" || !source.annotations)
+          return {
+            kind: "error",
+            detail: "the PDF or its user data could not be verified; nothing was changed",
+          };
+        try {
+          const material = await readPdfTextMaterial(source.bytes, source.metadata.sha256);
+          const pdf: PdfSourceMaterial = {
+            docId,
+            title: source.title,
+            sha256: material.contentSha256,
+            pageCount: material.pageCount,
+            pages: material.pages,
+            outline: material.outline,
+            outlineTruncated: material.outlineTruncated,
+            annotations: source.annotations.annotations,
+            annotationsRev: source.annotations.rev,
+          };
+          return { kind: "ok", material: pdf };
+        } catch (error) {
+          const failure = pdfMaterialFailure(error);
+          return failure.status === 409
+            ? { kind: "changed" }
+            : failure.status === 503
+              ? { kind: "resource", detail: failure.detail }
+              : { kind: "error", detail: failure.detail };
+        }
+      },
+      image: async (op): Promise<PdfImageOutcome> => {
+        const source = pdfSource(op.docId, { ...(op.sha256 ? { expectedHash: op.sha256 } : {}) });
+        if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+        if (source.kind === "busy" || source.kind === "changed") return { kind: source.kind };
+        if (source.kind !== "ok")
+          return { kind: "error", detail: "the PDF could not be verified; nothing was changed" };
+        try {
+          const image = await renderPdfPageImage(
+            source.bytes,
+            source.metadata.sha256,
+            op.pageIndex,
+            op.longEdge
+          );
+          return { kind: "ok", ...image };
+        } catch (error) {
+          const failure = pdfMaterialFailure(error);
+          return failure.status === 400
+            ? { kind: "invalid", detail: failure.detail }
+            : failure.status === 409
+              ? { kind: "changed" }
+              : failure.status === 503
+                ? { kind: "resource", detail: failure.detail }
+                : { kind: "error", detail: failure.detail };
+        }
+      },
     },
     // The background read: the same reads as the coherent GET below but READ-ONLY (no ensure, no archive, never the
     // archive's content), refused while a content mutation is queued or running.
@@ -1009,6 +1141,113 @@ export function createApp(deps: AppDeps): Hono {
       }
       const e = detail("PDF annotations could not be saved", 500);
       return c.json(e.body, e.status);
+    }
+  });
+
+  /** A non-negative decimal integer query value (zero-based page/size), or null when it is anything else. */
+  const queryInt = (value: string | undefined): number | null | undefined =>
+    value === undefined ? undefined : /^\d{1,9}$/.test(value) ? Number(value) : null;
+  /** The status a failed `pdfSource` answers on the PDF material routes. */
+  const pdfSourceFailure = (docId: string, kind: Exclude<PdfSource["kind"], "ok">) => {
+    switch (kind) {
+      case "bad_id":
+        return detail("bad doc id", 400);
+      case "busy":
+        return { body: { detail: "document busy" }, status: 409 as const };
+      case "not_found":
+        return detail(`paper ${pyRepr(docId)} not found`, 404);
+      case "changed":
+        return { body: { detail: "document changed" }, status: 409 as const };
+      case "inconsistent":
+        return detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+      default:
+        return detail(`PDF document ${pyRepr(docId)} cannot be verified`, 500);
+    }
+  };
+
+  // Original-page material (copilot ticket 20). Page indexes are ZERO-BASED. The bytes are read once and verified
+  // against the Doc's immutable SHA-256, then BOTH the text and the image come from them; a hash the caller names
+  // that is not the Doc's is a 409, never answered from any cache.
+  app.get("/api/paper/:doc_id/pdf/pages", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    const hash = c.req.query("hash");
+    const first = queryInt(c.req.query("first"));
+    const last = queryInt(c.req.query("last"));
+    if (hash !== undefined && !/^[a-f0-9]{64}$/.test(hash))
+      return c.json({ detail: "hash must be a lowercase SHA-256" }, 400);
+    if (first === null || last === null)
+      return c.json({ detail: "first and last must be zero-based page indexes" }, 400);
+    const source = pdfSource(docId, { ...(hash ? { expectedHash: hash } : {}) });
+    if (source.kind !== "ok") {
+      const e = pdfSourceFailure(docId, source.kind);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const material = await readPdfTextMaterial(source.bytes, source.metadata.sha256, {
+        ...(first !== undefined ? { first } : {}),
+        ...(last !== undefined ? { last } : {}),
+      });
+      return c.json(
+        PdfPagesResponseSchema.parse({
+          doc_id: docId,
+          content_sha256: material.contentSha256,
+          page_count: material.pageCount,
+          range: { first: material.first, last: material.last },
+          pages: material.pages,
+          outline: material.outline,
+          outlineTruncated: material.outlineTruncated,
+          image: { type: "image/png", longEdge: PDF_IMAGE_LONG_EDGE },
+        }),
+        200,
+        { "Cache-Control": "no-store" }
+      );
+    } catch (error) {
+      const failure = pdfMaterialFailure(error);
+      return c.json({ detail: failure.detail }, failure.status);
+    }
+  });
+
+  app.get("/api/paper/:doc_id/pdf/pages/:page_index/image", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    const hash = c.req.query("hash");
+    const pageIndex = queryInt(c.req.param("page_index"));
+    const edge = queryInt(c.req.query("edge"));
+    if (hash === undefined || !/^[a-f0-9]{64}$/.test(hash))
+      return c.json({ detail: "hash must be the lowercase SHA-256 of the original" }, 400);
+    if (pageIndex === null || pageIndex === undefined)
+      return c.json({ detail: "page index must be a zero-based integer" }, 400);
+    if (edge === null) return c.json({ detail: "edge must be an integer number of pixels" }, 400);
+    const source = pdfSource(docId, { expectedHash: hash });
+    if (source.kind !== "ok") {
+      const e = pdfSourceFailure(docId, source.kind);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const image = await renderPdfPageImage(
+        source.bytes,
+        source.metadata.sha256,
+        pageIndex,
+        edge ?? undefined
+      );
+      return new Response(image.png, {
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": String(image.png.length),
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "X-PDF-Content-Sha256": image.contentSha256,
+          "X-PDF-Page-Index": String(image.pageIndex),
+          "X-PDF-Page-Count": String(image.pageCount),
+          "X-PDF-Image-Width": String(image.width),
+          "X-PDF-Image-Height": String(image.height),
+          "X-PDF-Has-Text-Layer": String(image.hasTextLayer),
+        },
+      });
+    } catch (error) {
+      const failure = pdfMaterialFailure(error);
+      return c.json({ detail: failure.detail }, failure.status);
     }
   });
 

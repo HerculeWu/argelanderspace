@@ -1,4 +1,4 @@
-import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PdfPage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -76,6 +76,9 @@ export function Shell() {
   // The Reader of each Doc pane: the page it reports (built from its admitted epoch) and its own controllers.
   const [readerPages, setReaderPages] = useState<Record<number, ReaderPage | null>>({});
   const reportReader = useCallback((paneId: number, page: ReaderPage | null) => { setReaderPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  // The PDF Reader of each Doc pane (copilot ticket 20): identity, position and control state; the pages' content is the service's.
+  const [pdfPages, setPdfPages] = useState<Record<number, PdfPage | null>>({});
+  const reportPdf = useCallback((paneId: number, page: PdfPage | null) => { setPdfPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
   const readerControllers = useRef(new Map<number, ReaderViewController>());
   const registerReaderController = useCallback((paneId: number, controller: ReaderViewController | null) => {
     if (controller) readerControllers.current.set(paneId, controller); else readerControllers.current.delete(paneId);
@@ -522,6 +525,7 @@ export function Shell() {
       : activePane.view === "library" && discoveryPages[activePane.id] ? (discoveryPages[activePane.id]?.graph ? "complete" : discoveryPages[activePane.id]?.error ? "error" : "unavailable")
       : activePane.view === "library" ? (libraryPages[activePane.id]?.source === "live" ? "complete" : libraryPages[activePane.id]?.source === "error" ? "error" : "unavailable")
       // A Reader is complete only with the reading of an admitted epoch; updating is unavailable, a failed read is an error.
+      : activePane.view === "doc" && pdfPages[activePane.id] ? (pdfPages[activePane.id]?.phase === "ready" ? "complete" : ["error", "changed"].includes(pdfPages[activePane.id]?.phase ?? "") ? "error" : "unavailable")
       : activePane.view === "doc" ? (readerPages[activePane.id]?.reading ? "complete" : ["error", "missing"].includes(readerPages[activePane.id]?.sync.phase ?? "") ? "error" : "unavailable")
       : "unavailable",
     plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
@@ -529,6 +533,7 @@ export function Shell() {
     discovery: activePane.view === "library" ? discoveryPages[activePane.id] ?? null : null,
     // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
     reader: activePane.view === "doc" ? readerPages[activePane.id] ?? null : null,
+    pdf: activePane.view === "doc" ? pdfPages[activePane.id] ?? null : null,
     workspace: {
       maxPanes: MAX_PANES, activePaneId: activePane.id,
       panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
@@ -541,7 +546,7 @@ export function Shell() {
       },
       copilotOpen,
     },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, tweaks, copilotOpen]);
+  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
@@ -551,7 +556,7 @@ export function Shell() {
       case "library":
         return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
       case "doc":
-        return <DocPane paneId={p.id} onContext={reportReader} onController={registerReaderController} />;
+        return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onController={registerReaderController} />;
       case "write":
         return <WriterView />;
       default:

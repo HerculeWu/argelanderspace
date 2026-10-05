@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ReaderSession, useReaderSession } from "./ReaderSession";
 import { RetainedDrafts } from "./RetainedDrafts";
@@ -11,19 +11,22 @@ import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchDocDescription } from "../api/doc";
-import type { DocDescription, ReaderPage, ReaderPanel, ReaderRightTab } from "@argelanderspace/contracts";
+import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab } from "@argelanderspace/contracts";
 import { PdfReader } from "./PdfReader";
+import { autoFold, MIN_READING_COLUMN, useAutoFoldedPanels } from "./auto-fold";
 import { ActionButton } from "../ui";
-import { ReaderBridgeContext, type ReaderViewController, useReaderBridge, useReaderPublisher } from "./reader-bridge";
+import { PdfBridgeContext, type PdfBridge, type PdfViewHandle, ReaderBridgeContext, type ReaderViewController, useReaderBridge, useReaderPublisher } from "./reader-bridge";
 import { useActiveSectionId, useVisibleIds } from "../store";
 
 // The document reader, hosted as ArgelanderSpace's Doc pane. Which paper is shown
 // is driven by the shared workspace (so the Library's "open in Doc" works);
 // the in-pane switcher changes it too.
-export function DocPane({ paneId = 0, onContext, onController }: {
+export function DocPane({ paneId = 0, onContext, onPdfContext, onController }: {
   /** The pane this Reader lives in; what it reports and the controller it registers are for that pane (Copilot ticket 18). */
   paneId?: number;
   onContext?: (paneId: number, page: ReaderPage | null) => void;
+  /** The PDF Reader's page for the Copilot (ticket 20). */
+  onPdfContext?: (paneId: number, page: PdfPage | null) => void;
   onController?: (paneId: number, controller: ReaderViewController | null) => void;
 } = {}) {
   const ws = useWorkspace();
@@ -31,9 +34,16 @@ export function DocPane({ paneId = 0, onContext, onController }: {
   const id = ws.currentDoc;
   const current = useRef(id);
   current.current = id;
-  const bridge = useReaderPublisher(paneId, onContext, onController, () => current.current);
+  const pdfHandle = useRef<PdfViewHandle | null>(null);
+  const bridge = useReaderPublisher(paneId, onContext, onController, () => current.current, pdfHandle);
+  const pdfPublish = useRef(onPdfContext);
+  pdfPublish.current = onPdfContext;
+  const pdfBridge = useMemo<PdfBridge>(() => ({
+    publish: (page) => pdfPublish.current?.(paneId, page),
+    setHandle: (handle) => { pdfHandle.current = handle; },
+  }), [paneId]);
   if (!id) return <div className="reader-root" data-ui="doc-empty"><div className="loading">{t("doc.empty")}</div></div>;
-  return <ReaderBridgeContext.Provider value={bridge}><DocReadingEntry key={id} docId={id} /></ReaderBridgeContext.Provider>;
+  return <ReaderBridgeContext.Provider value={bridge}><PdfBridgeContext.Provider value={pdfBridge}><DocReadingEntry key={id} docId={id} /></PdfBridgeContext.Provider></ReaderBridgeContext.Provider>;
 }
 
 type DescriptionState =
@@ -126,18 +136,7 @@ function DocWorkspace({
   // The two panels fold on their own when the pane is too narrow to keep a reading column (see autoFold); what the
   // user (or the Copilot) sets by hand wins until the pane's width class changes. The folds shown are the effective ones.
   const mainRef = useRef<HTMLDivElement>(null);
-  const width = useElementWidth(mainRef);
-  const auto = autoFold(width);
-  const [manual, setManual] = useState<{ left: boolean | null; right: boolean | null; auto: { left: boolean; right: boolean } }>({ left: null, right: null, auto });
-  const sameAuto = manual.auto.left === auto.left && manual.auto.right === auto.right;
-  useEffect(() => {
-    // a new width class gives the layout back to the automatic choice
-    if (!sameAuto) setManual({ left: null, right: null, auto });
-  }, [sameAuto, auto.left, auto.right]);
-  const collapsedLeft = manual.left ?? auto.left;
-  const collapsedRight = manual.right ?? auto.right;
-  const setCollapsedLeft = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, left: typeof value === "function" ? value(m.left ?? m.auto.left) : value }));
-  const setCollapsedRight = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, right: typeof value === "function" ? value(m.right ?? m.auto.right) : value }));
+  const { collapsedLeft, collapsedRight, setCollapsedLeft, setCollapsedRight } = useAutoFoldedPanels(mainRef);
   // Owned here (not by the right panel) so the Copilot's tab control is the user's own tab control.
   const [rightTab, setRightTab] = useState<"refs" | "annotations">("refs");
   const bridge = useReaderBridge();
@@ -243,32 +242,7 @@ function DocWorkspace({
   );
 }
 
-/** The reading column never gets less than this; the side panels fold before it does. */
-export const MIN_READING_COLUMN = 240;
-const PANEL_FULL = { left: 290, right: 380, rail: 34 };
-/**
- * Which panels fold for a Reader pane of this width: none while the column keeps its minimum with both open; else
- * the outline; else both. The same folded state the toggles show, so the user can unfold either at will.
- */
-export function autoFold(width: number | null): { left: boolean; right: boolean } {
-  if (!width) return { left: false, right: false };
-  if (width - PANEL_FULL.left - PANEL_FULL.right >= MIN_READING_COLUMN) return { left: false, right: false };
-  if (width - PANEL_FULL.rail - PANEL_FULL.right >= MIN_READING_COLUMN) return { left: true, right: false };
-  return { left: true, right: true };
-}
-function useElementWidth(ref: React.RefObject<HTMLElement>): number | null {
-  const [width, setWidth] = useState<number | null>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const update = () => setWidth(Math.round(el.getBoundingClientRect().width) || null);
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [ref]);
-  return width;
-}
+export { autoFold, MIN_READING_COLUMN };
 
 /** Reports where the user is reading (a hint) and whether the back button shows; renders nothing. */
 function ReaderLive() {

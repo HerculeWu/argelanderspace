@@ -12,6 +12,12 @@ import {
   LibraryPageSchema,
   LibraryViewActionSchema,
 } from "./library-ops.js";
+import {
+  type PdfContextSummary,
+  PdfContextSummarySchema,
+  PdfMaterialEnvelopeSchema,
+  PdfPageSchema,
+} from "./pdf-ops.js";
 import { type CopilotOperation, CopilotOperationSchema, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
@@ -80,6 +86,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
       discovery: DiscoveryPageSchema.nullable().optional(),
       /** The LaTeX Reader of the active pane (copilot ticket 18); optional so older views and headless callers stay valid. */
       reader: reader.nullable().optional(),
+      /** The PDF Reader of the active pane (copilot ticket 20); identity, position and control state, not the pages. */
+      pdf: PdfPageSchema.nullable().optional(),
       /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
       workspace: WorkspaceSnapshotSchema.optional(),
     })
@@ -91,7 +99,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
         (value.view === "library" && value.library?.source === "live") ||
         (value.view === "library" && !!value.discovery?.graph) ||
         (value.view === "doc" &&
-          !!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted));
+          (!!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted) ||
+            value.pdf?.phase === "ready"));
       if ((value.status === "complete") !== covered)
         ctx.addIssue({ code: "custom", message: "invalid page coverage" });
     });
@@ -193,6 +202,7 @@ export interface CopilotMessage {
     library?: LibraryContextSummary;
     discovery?: DiscoveryContextSummary;
     reader?: ReaderContextSummary;
+    pdf?: PdfContextSummary;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -454,6 +464,8 @@ export const CopilotPromptSchema = z
     context: PageContextSchema,
     /** Metadata of the files handed over with this message (ids the tools may name); never their bytes. */
     attachments: z.array(CopilotAttachmentSchema).max(5).optional(),
+    /** The material of the PDF Doc the page shows (copilot ticket 20): derived by the service from the verified original. */
+    pdf: PdfMaterialEnvelopeSchema.optional(),
   })
   .strict();
 export type CopilotPrompt = z.infer<typeof CopilotPromptSchema>;
@@ -474,6 +486,8 @@ export const CopilotContextReferenceSchema = z
         discovery: DiscoveryContextSummarySchema.optional(),
         /** What the Reader carried (copilot ticket 18); absent for other pages. */
         reader: ReaderContextSummarySchema.optional(),
+        /** What the PDF Reader carried (copilot ticket 20); absent for other pages. */
+        pdf: PdfContextSummarySchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),

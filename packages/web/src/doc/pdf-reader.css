@@ -16,6 +16,8 @@
 .pdf-search-controls { display: flex; flex: 1 1 240px; align-items: center; flex-wrap: wrap; gap: 5px; min-width: 220px; }
 .pdf-search-controls input { width: min(190px, 25vw); min-height: 30px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--surface); }
 .pdf-search-controls span { color: var(--text-dim); font-size: var(--fs-xs); }
+/* The result list keeps a few rows and scrolls inside, so a search with many hits never pushes the document down. */
+.pdf-search-results { display: flex; flex: 1 1 100%; flex-direction: column; align-items: flex-start; gap: 5px; max-height: 8.6rem; overflow-y: auto; padding-right: 2px; }
 .pdf-search-result { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); }
 .pdf-search-result:focus-visible, .pdf-search-controls input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }

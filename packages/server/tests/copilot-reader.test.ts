@@ -616,7 +616,7 @@ test("a Doc a job is replacing or deleting is busy: nothing half-written is read
   docMutations.unpinWriter(DOC);
 });
 
-test("a PDF Doc is not a LaTeX reading", async () => {
+test("a PDF Doc is read as PDF material (ticket 20), never as a LaTeX reading; a scan has no text layer", async () => {
   const published = publishPdfDoc(paths, {
     workId: W1,
     filename: "mine.pdf",
@@ -625,7 +625,10 @@ test("a PDF Doc is not a LaTeX reading", async () => {
   });
   script = [() => read(published.doc_id), () => ({ text: "x" })];
   await run(page(null));
-  expect(lastResult(seenAt(1))).toMatchObject({ ok: false, status: "unsupported" });
+  const result = lastResult(seenAt(1));
+  expect(result).toMatchObject({ ok: true, status: "ok" });
+  expect(result.reading).toMatchObject({ format: "pdf", pageCount: 1, imageOnlyPages: [0] });
+  expect(result.reading.pages[0]).toMatchObject({ hasTextLayer: false, text: null });
 });
 
 test("a reading larger than the room left in the window is refused whole with its size, never cut", async () => {
@@ -635,7 +638,7 @@ test("a reading larger than the room left in the window is refused whole with it
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 24_000;
+  model.contextWindow = 30_000;
   model.maxTokens = 1024;
   try {
     script = [() => read(), () => ({ text: "x" })];

@@ -1,8 +1,12 @@
-import { readFile } from "node:fs/promises";
 import { freemem } from "node:os";
-import { fileURLToPath } from "node:url";
 import { PDF_MAX_PAGES, PDF_MIN_IN_FLIGHT_HEADROOM_BYTES } from "@argelanderspace/contracts";
-import { init } from "@embedpdf/pdfium";
+import {
+  counted,
+  createPdfiumEngine,
+  pdfiumResources,
+  serialized,
+  timed,
+} from "./pdfium-shared.js";
 
 export class PdfResourceError extends Error {
   constructor() {
@@ -23,15 +27,6 @@ export interface ProbedPdf {
   pages: Array<{ width: number; height: number; rotation: number }>;
 }
 
-let probeQueue: Promise<void> = Promise.resolve();
-
-function timed<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("PDF parser timed out")), timeoutMs);
-    promise.then(resolve, reject).finally(() => clearTimeout(timer));
-  });
-}
-
 interface PdfTask<T> {
   toPromise(): Promise<T>;
 }
@@ -50,14 +45,6 @@ interface ProbeEngine {
   closeDocument(document: PdfDocument): PdfTask<unknown>;
   destroy(): PdfTask<unknown>;
 }
-interface PdfiumRuntime {
-  PdfiumErrorCode: { Password: number };
-  PdfiumNative: new (wasm: unknown, options: { fontFallback: null }) => unknown;
-  PdfEngine: new (
-    native: unknown,
-    options: { imageConverter: (getImageData: () => unknown) => unknown }
-  ) => ProbeEngine;
-}
 function toPromise<T>(task: PdfTask<T>): Promise<T> {
   return task.toPromise();
 }
@@ -66,19 +53,14 @@ async function probe(bytes: Buffer): Promise<ProbedPdf> {
   if (freemem() < PDF_MIN_IN_FLIGHT_HEADROOM_BYTES) throw new PdfResourceError();
   const deadline = Date.now() + 10_000;
   const withinLimit = async <T>(promise: Promise<T>): Promise<T> => {
-    const result = await timed(promise, Math.max(1, deadline - Date.now()));
+    const result = await timed(promise, deadline);
     if (Date.now() > deadline) throw new Error("PDF parser timed out");
     return result;
   };
-  const wasmPath = fileURLToPath(import.meta.resolve("@embedpdf/pdfium/pdfium.wasm"));
-  const wasm = await readFile(wasmPath);
-  const wasmBinary = Uint8Array.from(wasm).buffer;
-  const module = await withinLimit(init({ wasmBinary }));
-  const runtime = (await import("@embedpdf/engines/pdfium")) as unknown as PdfiumRuntime;
-  const native = new runtime.PdfiumNative(module, { fontFallback: null });
-  const engine = new runtime.PdfEngine(native, {
-    imageConverter: (getImageData) => getImageData(),
-  });
+  const engine = await createPdfiumEngine<ProbeEngine>((getImageData) => getImageData(), deadline);
+  const { PdfiumErrorCode } = (await import("@embedpdf/engines/pdfium")) as unknown as {
+    PdfiumErrorCode: { Password: number };
+  };
   let document: PdfDocument | undefined;
   try {
     const buffer = Uint8Array.from(bytes).buffer;
@@ -89,7 +71,7 @@ async function probe(bytes: Buffer): Promise<ProbedPdf> {
     } catch (error) {
       if (error instanceof Error && error.message.includes("timed out")) throw error;
       const code = (error as { reason?: { code?: unknown } }).reason?.code;
-      if (code === runtime.PdfiumErrorCode.Password) {
+      if (code === PdfiumErrorCode.Password) {
         throw new PdfInputError("password-protected PDFs are not supported");
       }
       throw new PdfInputError("file is not a valid, readable PDF");
@@ -120,15 +102,14 @@ async function probe(bytes: Buffer): Promise<ProbedPdf> {
   } finally {
     if (document) await toPromise(engine.closeDocument(document)).catch(() => undefined);
     await toPromise(engine.destroy()).catch(() => undefined);
+    pdfiumResources.engines--;
   }
 }
 
-/** Serialize probes so only one trusted PDFium instance/document consumes the resource budget. */
+/**
+ * Serialize through the process-wide PDFium queue (shared with the original-page material), so a probe and a material
+ * read never hold two PDFium instances at once.
+ */
 export function probePdf(bytes: Buffer): Promise<ProbedPdf> {
-  const current = probeQueue.then(() => probe(bytes));
-  probeQueue = current.then(
-    () => undefined,
-    () => undefined
-  );
-  return current;
+  return serialized(() => counted(() => probe(bytes)));
 }

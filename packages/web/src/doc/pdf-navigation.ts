@@ -69,16 +69,26 @@ export function dispatchPdfLinkTarget(
 export function flattenPdfBookmarks(bookmarks: PdfBookmarkObject[], pageCount: number): { entries: OutlineEntry[]; targets: Map<string, PdfLinkTarget> } {
   const entries: OutlineEntry[] = [];
   const targets = new Map<string, PdfLinkTarget>();
-  const walk = (nodes: PdfBookmarkObject[], depth: number, parent: string) => {
-    nodes.forEach((bookmark, index) => {
-      const id = `pdf-outline-${parent}${index}`;
+  // Ids are the depth-first position (`pdf-outline-<n>`): short and bounded whatever the nesting; the service numbers its
+  // outline the same way, so a tool and the panel name one entry alike.
+  let position = 0;
+  const walk = (nodes: PdfBookmarkObject[], depth: number) => {
+    nodes.forEach((bookmark) => {
+      const id = `pdf-outline-${position++}`;
       const target = bookmark.target;
       const allowed = isPdfLinkTargetAllowed(target, pageCount);
       entries.push({ id, title: bookmark.title, level: Math.min(6, depth), disabled: !allowed });
       if (allowed) targets.set(id, target);
-      if (bookmark.children?.length) walk(bookmark.children, depth + 1, `${parent}${index}.`);
+      if (bookmark.children?.length) walk(bookmark.children, depth + 1);
     });
   };
-  walk(bookmarks, 1, "");
+  walk(bookmarks, 1);
   return { entries, targets };
+}
+
+/** The zero-based page an allowed in-document target goes to; null for an external link or anything else. */
+export function pdfTargetPageIndex(target: unknown): number | null {
+  if (!isRecord(target)) return null;
+  const destination = target.type === "destination" ? target.destination : isRecord(target.action) && target.action.type === PdfActionType.Goto ? target.action.destination : null;
+  return isRecord(destination) && Number.isInteger(destination.pageIndex) ? (destination.pageIndex as number) : null;
 }

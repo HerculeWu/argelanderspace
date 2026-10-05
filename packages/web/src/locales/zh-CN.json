@@ -1250,7 +1250,16 @@
         "retry_sync": "重试文档同步",
         "create_annotation": "添加标注",
         "update_annotation": "修改标注",
-        "delete_annotation": "删除标注"
+        "delete_annotation": "删除标注",
+        "read_page_image": "读取 PDF 页图",
+        "goto_page": "跳到 PDF 页",
+        "next_page": "PDF 下一页",
+        "previous_page": "PDF 上一页",
+        "open_outline_item": "打开 PDF 目录项",
+        "search": "搜索 PDF 文字",
+        "open_search_result": "打开 PDF 搜索结果",
+        "zoom": "缩放 PDF",
+        "open_annotation": "跳到 PDF 标注"
       },
       "status": {
         "ok": "已应用",
@@ -1343,6 +1352,25 @@
       "counts": "已发送 {{sections}} 节、{{blocks}} 块、{{references}} 条参考文献、{{annotations}} 条标注",
       "selection": "已包含选区",
       "position": "阅读位置：{{section}}"
-    }
+    },
+    "pdf": {
+      "ready": "PDF：{{id}}",
+      "loading": "PDF：{{id}}（尚在加载，未发送页面）",
+      "error": "PDF：{{id}}（加载失败，未发送页面）",
+      "changed": "PDF：{{id}}（原件已变化，未发送页面）",
+      "position": "阅读第 {{page}} 页，共 {{total}} 页",
+      "material": "已发送 {{pages}} 页文字",
+      "materialMissing": {
+        "busy": "页面未发送：文档正在被替换",
+        "changed": "页面未发送：原件已变化",
+        "not_found": "页面未发送：找不到文档",
+        "error": "页面未发送：无法读取该 PDF"
+      },
+      "selection": "已包含选区",
+      "materialScans": "已发送 {{pages}} 页：{{withText}} 页为文字，{{withoutText}} 页无文字层（需要时读取页图）",
+      "materialBlind": "已发送 {{pages}} 页中 {{withText}} 页的文字；{{withoutText}} 页无文字层，未能读取：当前模型不支持图像",
+      "noImage": "当前模型不支持图像，请更换模型后读取 PDF 页图。"
+    },
+    "partial": "部分"
   }
 }

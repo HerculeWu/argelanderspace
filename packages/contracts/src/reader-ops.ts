@@ -30,6 +30,11 @@ import {
 } from "./annotations.js";
 import type { IrBlock, IrSection, IrSegment } from "./doc-ir.js";
 import { ReferenceSchema } from "./doc-ir.js";
+import {
+  PDF_VIEW_ACTIONS,
+  PdfReadPageImageOperationSchema,
+  PdfViewActionSchema,
+} from "./pdf-ops.js";
 import type { AssetDigest } from "./reader-coherence.js";
 import type { TexDocIr } from "./tex-ir.js";
 
@@ -630,6 +635,8 @@ export const ReaderReadOperationSchema = z
   .object({ action: z.literal("read"), docId: Id })
   .strict();
 export type ReaderReadOperation = z.infer<typeof ReaderReadOperationSchema>;
+/** One original PDF page as an image (copilot ticket 20); see `pdf-ops`. */
+export const ReaderReadPageImageOperationSchema = PdfReadPageImageOperationSchema;
 
 /** View operations run in the bound browser's Reader, through the Reader's own controllers. */
 export const ReaderViewActionSchema = z.discriminatedUnion("action", [
@@ -655,6 +662,8 @@ export const ReaderViewActionSchema = z.discriminatedUnion("action", [
     .strict(),
   /** The Retry buttons of the sync/error banner, the load-error page and the annotations panel. */
   z.object({ action: z.literal("retry_sync"), docId: Id }).strict(),
+  /** The PDF Reader's own controls (copilot ticket 20): pages are zero-based here. */
+  ...PdfViewActionSchema.options,
 ]);
 export type ReaderViewAction = z.infer<typeof ReaderViewActionSchema>;
 
@@ -664,6 +673,7 @@ export const READER_VIEW_ACTIONS = [
   "set_panel",
   "set_right_tab",
   "retry_sync",
+  ...PDF_VIEW_ACTIONS,
 ] as const;
 
 // ---- Annotation writes (copilot ticket 19) ---------------------------------------------------------- //
@@ -753,6 +763,7 @@ export const READER_WRITE_ACTIONS = [
 ] as const;
 export const READER_OPERATION_ACTIONS = [
   "read",
+  "read_page_image",
   ...READER_VIEW_ACTIONS,
   ...READER_WRITE_ACTIONS,
 ] as const;
@@ -768,9 +779,11 @@ export function copilotContextObjects(context: {
   plan?: { rev: number; plans: { id: string }[]; detail: { planId: string } | null } | null;
   library?: { selectedRefId: string | null } | null;
   reader?: { docId: string } | null;
+  pdf?: { docId: string } | null;
 }): { id: string; rev: number }[] {
   if (context.library?.selectedRefId) return [{ id: context.library.selectedRefId, rev: 0 }];
   if (context.reader) return [{ id: context.reader.docId, rev: 0 }];
+  if (context.pdf) return [{ id: context.pdf.docId, rev: 0 }];
   const page = context.plan;
   const objects = page ? page.plans.map((plan) => ({ id: plan.id, rev: page.rev })) : [];
   const detail = page?.detail;

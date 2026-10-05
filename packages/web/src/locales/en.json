@@ -1250,7 +1250,16 @@
         "retry_sync": "Retry document sync",
         "create_annotation": "Add annotation",
         "update_annotation": "Edit annotation",
-        "delete_annotation": "Delete annotation"
+        "delete_annotation": "Delete annotation",
+        "read_page_image": "Read PDF page image",
+        "goto_page": "Go to PDF page",
+        "next_page": "Next PDF page",
+        "previous_page": "Previous PDF page",
+        "open_outline_item": "Open PDF outline entry",
+        "search": "Search PDF text",
+        "open_search_result": "Open PDF search result",
+        "zoom": "Zoom PDF",
+        "open_annotation": "Go to PDF annotation"
       },
       "status": {
         "ok": "Applied",
@@ -1343,6 +1352,25 @@
       "counts": "{{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations sent",
       "selection": "Selection included",
       "position": "Reading section: {{section}}"
-    }
+    },
+    "pdf": {
+      "ready": "PDF: {{id}}",
+      "loading": "PDF: {{id}} (still loading, no pages sent)",
+      "error": "PDF: {{id}} (failed to load, no pages sent)",
+      "changed": "PDF: {{id}} (original changed, no pages sent)",
+      "position": "Reading page {{page}} of {{total}}",
+      "material": "{{pages}} pages of text sent",
+      "materialMissing": {
+        "busy": "Pages not sent: the document was being replaced",
+        "changed": "Pages not sent: the original changed",
+        "not_found": "Pages not sent: document not found",
+        "error": "Pages not sent: the PDF could not be read"
+      },
+      "selection": "Selection included",
+      "materialScans": "{{pages}} pages sent: {{withText}} as text, {{withoutText}} without a text layer (read as page images on request)",
+      "materialBlind": "{{withText}} of {{pages}} pages sent as text; {{withoutText}} without a text layer are unread: this model cannot read images",
+      "noImage": "This model cannot read images. Select another model for PDF pages."
+    },
+    "partial": "Partial"
   }
 }
