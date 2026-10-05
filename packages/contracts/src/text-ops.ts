@@ -169,6 +169,8 @@ export const TextOperationSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z.object({ action: z.literal("open_source_pdf"), docId: Id }).strict(),
+  /** The application's versioned instruction of that name (for example the PDF transcription), from its resource loader. */
+  z.object({ action: z.literal("load_instruction"), name: z.string().min(1).max(64) }).strict(),
 ]);
 export type TextOperation = z.infer<typeof TextOperationSchema>;
 export const TEXT_OPERATION_ACTIONS = [
@@ -180,4 +182,5 @@ export const TEXT_OPERATION_ACTIONS = [
   "validate",
   "generate",
   "open_source_pdf",
+  "load_instruction",
 ] as const;

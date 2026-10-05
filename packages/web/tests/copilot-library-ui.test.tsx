@@ -124,3 +124,30 @@ test("an exploration's summary names its state, origin, counts and the filter in
     view.unmount();
   }
 });
+
+test("a transcription's validate/generate rows list the PDF pages not looked at, or say the source cannot be checked, in both languages; the SVG step has its own name", async () => {
+  const withCoverage: ConversationSnapshot = { ...snapshot, messages: [
+    { id: "a1", role: "assistant", text: "", operations: [
+      { id: "v1", tool: "text", action: "validate", status: "ok", rev: 3, warnings: ["source_unviewed:1-2, 5"] },
+      { id: "g1", tool: "text", action: "generate", status: "ok", rev: 3, label: "text-1", warnings: ["source_coverage_unverifiable"] },
+      { id: "g2", tool: "text", action: "generate", status: "ok", rev: 3, label: "text-2" },
+      { id: "s1", tool: "reader", action: "read_svg_image", status: "ok" },
+      { id: "s2", tool: "text", action: "load_instruction", status: "ok", label: "pdf-transcription v1" } ] },
+  ] };
+  fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withCoverage));
+  const view = render(<Copilot open context={context} onClose={vi.fn()} />);
+  await waitFor(() => expect(document.querySelector('[data-ui="copilot-operation"]')).not.toBeNull());
+  const rows = () => [...document.querySelectorAll('[data-ui="copilot-operation-item"]')].map((el) => el.textContent ?? "");
+  expect(rows()[0]).toContain("Not looked at as an image: PDF pages 1-2, 5");
+  expect(rows()[1]).toContain("Source PDF pages cannot be checked");
+  expect(rows()[2]).not.toContain("Not looked at");
+  expect(rows()[2]).not.toContain("cannot be checked");
+  expect(rows()[3]).toContain("Read figure as image");
+  expect(rows()[4]).toContain("Load task instruction");
+  expect(document.querySelectorAll(".copilot-operation-warn")).toHaveLength(2);
+  await i18n.changeLanguage("zh-CN");
+  view.rerender(<Copilot open context={context} onClose={vi.fn()} />);
+  await waitFor(() => expect(rows()[0]).toContain("未以图像查看：PDF 第 1-2, 5 页"));
+  expect(rows()[1]).toContain("无法核对来源 PDF 的页");
+  expect(rows()[3]).toContain("将图形渲染为图片读取");
+});
