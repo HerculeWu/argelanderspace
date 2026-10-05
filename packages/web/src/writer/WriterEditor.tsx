@@ -53,7 +53,7 @@ import { OutlinePanel } from "./outline";
 import { RightTabs, type RightTab } from "./rightTabs";
 import { InfoModal, PreambleModal } from "./modals";
 import type { WriterTextTarget } from "./latexSource";
-import { captureEditorPage, type WriterEditorPage, writerAutoFold } from "./writer-context";
+import { captureEditorPage, type WriterEditorControls, type WriterEditorPage, writerAutoFold } from "./writer-context";
 
 type Menu =
   | { kind: "add"; index: number; x: number; y: number }
@@ -72,8 +72,11 @@ export function WriterEditor({
   onGone,
   onPage,
   registerLeave,
+  registerControls,
 }: {
   id: string;
+  /** The editor's own controls a Copilot view action presses (cell clicks, panel folds, tabs, warning close, Export). */
+  registerControls?: (controls: WriterEditorControls | null) => void;
   /** What this editor tells the Copilot (saved manuscript, unsaved draft, selection...); null when it unmounts. */
   onPage?: (page: WriterEditorPage | null) => void;
   /** The back button's own save-then-leave check, for a Copilot-requested close/open: true = nothing unsaved is lost. */
@@ -392,10 +395,24 @@ export function WriterEditor({
       let caret: { cellId: string; field: string; start: number; end: number } | null = null;
       if (tracked?.el.isConnected && tracked.cellId === editingId)
         caret = { cellId: tracked.cellId, field: tracked.field, start: tracked.el.selectionStart ?? 0, end: tracked.el.selectionEnd ?? 0 };
-      onPageRef.current?.(captureEditorPage({ id, doc, base: baseRef.current, templates, saveState, activeId, editingId, caret, modal, modalDraft, numbering, rendering: numberingBusy }));
+      onPageRef.current?.(captureEditorPage({ id, doc, base: baseRef.current, templates, saveState, activeId, editingId, caret, modal, modalDraft, numbering, rendering: numberingBusy, panels: { outlineCollapsed: leftCollapsed, referencesCollapsed: rightCollapsed, rightTab, templateWarnings: warningsDismissed ? 0 : templateWarnings.length } }));
     }, 100);
     return () => window.clearTimeout(timer);
-  }, [id, doc, templates, saveState, activeId, editingId, modal, modalDraft, numbering, numberingBusy]);
+  }, [id, doc, templates, saveState, activeId, editingId, modal, modalDraft, numbering, numberingBusy, leftCollapsed, rightCollapsed, rightTab, warningsDismissed, templateWarnings]);
+  // The controls a view action presses: always the latest closures, behind one stable registration.
+  const controlsRef = useRef<WriterEditorControls | null>(null);
+  useEffect(() => {
+    if (!registerControls) return;
+    registerControls({
+      select: (cellId) => controlsRef.current?.select(cellId) ?? "not_found",
+      edit: (cellId) => controlsRef.current?.edit(cellId) ?? "not_found",
+      setPanel: (panel, collapsed) => controlsRef.current?.setPanel(panel, collapsed),
+      setTab: (tab) => controlsRef.current?.setTab(tab),
+      dismissWarning: () => controlsRef.current?.dismissWarning() ?? "disabled",
+      exportNow: () => controlsRef.current?.exportNow() ?? Promise.resolve("failed" as const),
+    });
+    return () => registerControls(null);
+  }, [registerControls]);
   useEffect(() => () => onPageRef.current?.(null), []);
   useEffect(() => {
     registerLeave?.(async () => {
@@ -573,13 +590,13 @@ export function WriterEditor({
     );
   };
 
-  const doExport = async () => {
+  const doExport = async (): Promise<"ok" | "failed" | "blocked"> => {
     // M3: server-assembled zip (manuscript.tex + references.bib + assets);
     // missing bib keys come back in the X-Writer-Bib-Missing header.
     try {
       if (!dirtyRef.current) writeFailed.current = false;
       await flushSave();
-      if (dirtyRef.current || writeFailed.current) return;
+      if (dirtyRef.current || writeFailed.current) return "blocked";
       const res = await fetch(exportUrl(id));
       if (!res.ok) throw new Error(`export failed: ${res.status}`);
       const missingHeader = res.headers.get("X-Writer-Bib-Missing");
@@ -596,9 +613,32 @@ export function WriterEditor({
       if (warnings.length) showToast(t("writer.preview.exportWarnings"));
       else if (missing.length > 0) showToast(t("writer.toast.bibMissing", { count: missing.length }));
       else showToast(t("writer.toast.exported", { file: a.download }));
+      return "ok";
     } catch {
       showToast(t("writer.toast.exportFailed"));
+      return "failed";
     }
+  };
+  // What a Copilot view action presses (the same handlers the buttons use).
+  controlsRef.current = {
+    select: (cellId) => {
+      if (!docRef.current?.cells.some((c) => c.id === cellId)) return "not_found";
+      onJump(cellId);
+      return "ok";
+    },
+    edit: (cellId) => {
+      if (!docRef.current?.cells.some((c) => c.id === cellId)) return "not_found";
+      editCell(cellId);
+      return "ok";
+    },
+    setPanel: (panel, collapsed) => (panel === "outline" ? setLeftCollapsed(collapsed) : setRightCollapsed(collapsed)),
+    setTab: (tab) => setRightTab(tab),
+    dismissWarning: () => {
+      if (!templateWarnings.length || warningsDismissed) return "disabled";
+      setWarningsDismissed(true);
+      return "ok";
+    },
+    exportNow: doExport,
   };
 
   const onImageFile = (cellId: string, file: File) => {
@@ -697,7 +737,7 @@ export function WriterEditor({
         <ActionButton unstyled mode="text" className="btn w-hide-narrow" label={t("writer.topbar.preamble")} tooltip={t("writer.topbar.preamble")} data-ui="edit-manuscript-preamble" onClick={() => setModal("preamble")}>{t("writer.topbar.preamble")}</ActionButton>
         <ActionButton unstyled mode="icon" iconSize="small" iconName="refresh-cw" className="btn icon primary" label={t(numberingBusy ? "writer.topbar.rendering" : "writer.topbar.render")} tooltip={t(numberingBusy ? "writer.topbar.rendering" : "writer.topbar.render")} busy={numberingBusy}
           data-render-button data-ui="render-manuscript" onClick={() => void requestPreview()} />
-        <ActionButton unstyled mode="icon" iconSize="small" iconName="download" className="btn icon primary" label={t("writer.topbar.export")} tooltip={t("writer.topbar.export")} data-ui="export-manuscript" onClick={doExport} />
+        <ActionButton unstyled mode="icon" iconSize="small" iconName="download" className="btn icon primary" label={t("writer.topbar.export")} tooltip={t("writer.topbar.export")} data-ui="export-manuscript" onClick={() => void doExport()} />
       </div>
 
       {templateWarnings.length > 0 && !warningsDismissed && (

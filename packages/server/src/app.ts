@@ -120,6 +120,7 @@ import {
   uploadDocId,
   type WriterExportBundle,
   WriterExportError,
+  workToRef,
   writeManuscriptAsset,
 } from "@argelanderspace/core";
 import {
@@ -375,6 +376,10 @@ export function createApp(deps: AppDeps): Hono {
     writerLock,
     changed: writerChanged,
     cancelCompile: (id) => cancelNumberingCompile(id, writerDataDir),
+    // The Render button's own compile, for the Copilot's render_manuscript (the refresh route calls the same function).
+    render: (id) => runWriterNumberingNow(writerDataDir, id, { broadcast }),
+    // The References tab's list: the saved works' cite keys, read fresh at each use.
+    citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
   };
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });

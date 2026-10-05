@@ -1,14 +1,27 @@
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  agentTexProblem,
+  CELL_FIELD_NAMES,
+  type CellType,
+  collectLabels,
+  convertCellData,
+  defaultCellData,
   type ManuscriptSummary,
+  randomLabel,
+  SafeLabelSchema,
   sameJson,
+  validateCellFields,
+  type WriterCell,
+  type WriterCellOperation,
   type WriterDeleteImpact,
   type WriterManuscript,
+  type WriterNumberingResponse,
   type WriterTemplate,
   type WriterWriteOperation,
   WriterWriteOperationSchema,
+  withEnsuredLabel,
 } from "@argelanderspace/contracts";
 import {
   createManuscript,
@@ -19,6 +32,7 @@ import {
   manuscriptDir,
   manuscriptJsonPath,
   saveManuscript,
+  writeManuscriptAsset,
 } from "@argelanderspace/core";
 import type { AsyncLock } from "./lock.js";
 
@@ -36,6 +50,10 @@ export interface WriterOpDeps {
   changed: (cause: "put" | "create" | "delete", id: string) => void;
   /** Stop a running compile of that manuscript and wait for it, so nothing recreates a deleted directory. */
   cancelCompile: (id: string) => Promise<void>;
+  /** The Render button's compile (single-flight, broadcasts `writer.changed`); absent in a headless host. */
+  render?: (id: string) => Promise<WriterNumberingResponse>;
+  /** The cite keys of the saved library, the References tab's list; absent = no key can be verified. */
+  citeKeys?: () => ReadonlySet<string>;
 }
 
 export type WriterOpStatus = "conflict" | "not_found" | "invalid" | "error";
@@ -49,6 +67,8 @@ export type WriterOpOutcome =
       /** update_manuscript with a template: cells the new template does not list (kept, flagged like the toast). */
       unsupportedCells?: number;
       manuscript?: WriterManuscript;
+      /** What a cell operation made or touched (cell id, comment id, image name, the offset after an insert...). */
+      detail?: Record<string, unknown>;
     }
   | { ok: false; status: WriterOpStatus; currentRev?: number; detail: string };
 
@@ -72,6 +92,9 @@ export type WriterReadOutcome =
       manuscript: WriterManuscript;
       template: WriterTemplate | null;
       unsupportedCellIds: string[];
+      /** Labels the cells define in their source, and the figure files the manuscript holds (read-only inventory). */
+      labels: { label: string; cell: string }[];
+      assets: string[];
     }
   | { kind: "not_found" }
   | { kind: "error"; detail: string };
@@ -94,6 +117,8 @@ export function readWriter(deps: WriterOpDeps, id?: string): WriterReadOutcome {
       unsupportedCellIds: manuscript.cells
         .filter((cell) => !template?.types.includes(cell.type))
         .map((cell) => cell.id),
+      labels: collectLabels(manuscript.cells),
+      assets: assetNames(join(manuscriptDir(deps.dataDir, id), "assets")),
     };
   } catch (error) {
     return { kind: "error", detail: (error as Error).message };
@@ -103,8 +128,14 @@ export function readWriter(deps: WriterOpDeps, id?: string): WriterReadOutcome {
 /** The New dialog's create: a known template, an optional name. */
 export async function createManuscriptOp(
   deps: WriterOpDeps,
-  input: { template: string; title?: string }
+  input: { template: string; title?: string },
+  /** Set for the Copilot: its text is screened for what the TeX engine must not be handed (spec 14.1). */
+  options: { screen?: boolean } = {}
 ): Promise<WriterOpOutcome> {
+  if (options.screen) {
+    const problem = agentTexProblem({ title: input.title });
+    if (problem) return fail("invalid", problem);
+  }
   const created = await deps.writerLock.run(() => {
     const { templates } = loadTemplates(deps.dataDir);
     if (!templates.some((template) => template.id === input.template)) return null;
@@ -146,6 +177,15 @@ export async function patchManuscript(
   input: WriterWriteOperation & { action: "update_manuscript" }
 ): Promise<WriterOpOutcome> {
   const op = WriterWriteOperationSchema.parse(input) as typeof input;
+  // All of it but the template id ends up in the compiled document: screened before anything is read or written.
+  const problem = agentTexProblem({
+    title: op.title,
+    userPreamble: op.userPreamble,
+    affiliations: op.affiliations?.join("\n"),
+    authors: op.authors?.flatMap((a) => [a.name, a.aff, a.email]).join("\n"),
+    infoValues: op.infoValues ? Object.values(op.infoValues).join("\n") : undefined,
+  });
+  if (problem) return fail("invalid", problem);
   const outcome = await deps.writerLock.run((): WriterOpOutcome => {
     let current: WriterManuscript | null;
     try {
@@ -228,6 +268,400 @@ function assetListing(dir: string): string {
       .join("\n");
   } catch {
     return "?";
+  }
+}
+
+function assetNames(dir: string): string[] {
+  try {
+    return existsSync(dir) ? readdirSync(dir).sort() : [];
+  } catch {
+    return [];
+  }
+}
+
+const ASSET_MAX_BYTES = 20 * 1024 * 1024;
+const hex8 = () => randomBytes(4).toString("hex");
+
+/** A raster/vector image by its first bytes, so a mislabelled file is never stored as a figure. */
+function looksLikeImage(name: string, bytes: Uint8Array): boolean {
+  const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
+  const startsWith = (...values: number[]) =>
+    values.every((value, index) => bytes[index] === value);
+  if (ext === ".png") return startsWith(0x89, 0x50, 0x4e, 0x47);
+  if (ext === ".jpg" || ext === ".jpeg") return startsWith(0xff, 0xd8, 0xff);
+  if (ext === ".gif") return startsWith(0x47, 0x49, 0x46, 0x38);
+  if (ext === ".webp")
+    return startsWith(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45;
+  if (ext === ".svg") return Buffer.from(bytes.slice(0, 4096)).toString("utf8").includes("<svg");
+  return false;
+}
+
+/** A stored figure name the TeX source can hold between braces and a path: letters, digits, dot, dash, underscore. */
+function safeAssetName(filename: string): string | null {
+  const base = filename.split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const stem = base
+    .slice(0, dot)
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  const ext = base.slice(dot).toLowerCase();
+  return stem ? `${stem}${ext}` : null;
+}
+
+/** The text fields of a cell an insert button may write into (what the editing form shows as text). */
+const NON_TEXT_FIELDS = new Set([
+  "placement",
+  "label",
+  "language",
+  "width",
+  "lineNumbers",
+  "image",
+]);
+function textFields(type: CellType): string[] {
+  return CELL_FIELD_NAMES[type].filter((field) => !NON_TEXT_FIELDS.has(field));
+}
+
+function freshId(prefix: string, taken: ReadonlySet<string>): string {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const id = `${prefix}_${hex8()}`;
+    if (!taken.has(id)) return id;
+  }
+  return `${prefix}_${hex8()}`;
+}
+
+/**
+ * The editor's cell operations as narrow writes on the CURRENT stored manuscript inside the writer lock: the add and
+ * type menus, the editing form, Delete, the comment box, the References/Crossrefs insert buttons and the figure's image
+ * chooser. The caller's `expectedRev` is checked in the same critical section (a stale plan changes nothing); only the
+ * named cell or comment is touched, every key of the file this application does not know is kept, and text an agent
+ * writes is screened before it can reach the compiler (spec 14.1). The page keeps its own whole-document autosave.
+ */
+export async function cellOperation(
+  deps: WriterOpDeps,
+  op: WriterCellOperation,
+  options: {
+    attachment?: (id: string) => { meta: { filename: string }; bytes: Buffer } | null;
+  } = {}
+): Promise<WriterOpOutcome> {
+  // Screening of what is written (cell fields and the cite/label text; the figure name is rebuilt below).
+  if (op.action === "insert_cell" || op.action === "update_cell") {
+    const fields = Object.fromEntries(
+      Object.entries(op.fields ?? {}).map(([key, value]) => [
+        `field ${key}`,
+        typeof value === "string" ? value : undefined,
+      ])
+    );
+    const problem = agentTexProblem(fields);
+    if (problem) return fail("invalid", problem);
+  }
+  let writtenAsset: string | null = null;
+  const outcome = await deps.writerLock.run((): WriterOpOutcome => {
+    let current: WriterManuscript | null;
+    try {
+      current = loadManuscript(deps.dataDir, op.manuscriptId);
+    } catch (error) {
+      return fail("error", (error as Error).message);
+    }
+    if (!current) return fail("not_found", "no such manuscript");
+    if (current.rev !== op.expectedRev)
+      return fail(
+        "conflict",
+        "the manuscript changed since your reading; read it again",
+        current.rev
+      );
+    const { templates } = loadTemplates(deps.dataDir);
+    const template = templates.find((item) => item.id === current.template);
+    const cells = [...current.cells];
+    const indexOf = (cellId: string) => cells.findIndex((cell) => cell.id === cellId);
+    const missingCell = (cellId: string) =>
+      fail("not_found", `no cell ${cellId} in this manuscript`, current.rev);
+    const finish = (
+      next: WriterManuscript,
+      detail: Record<string, unknown> = {}
+    ): WriterOpOutcome => {
+      if (sameJson(next, current))
+        return {
+          ok: true,
+          status: "noop",
+          id: current.id,
+          rev: current.rev,
+          label: current.title,
+          detail,
+        };
+      const saved = saveManuscript(deps.dataDir, next, { bumpRev: true });
+      return { ok: true, status: "ok", id: saved.id, rev: saved.rev, label: saved.title, detail };
+    };
+
+    if (op.action === "insert_cell") {
+      if (!template)
+        return fail("invalid", `template '${current.template}' is not available`, current.rev);
+      if (!template.types.includes(op.cellType))
+        return fail(
+          "invalid",
+          `template '${template.id}' does not list a ${op.cellType} cell (its add menu offers: ${template.types.join(", ")})`,
+          current.rev
+        );
+      const valid = validateCellFields(op.cellType, op.fields ?? {});
+      if (!valid.ok) return fail("invalid", valid.detail, current.rev);
+      const index = op.index ?? cells.length;
+      if (index > cells.length)
+        return fail(
+          "invalid",
+          `index ${index} is past the end (the manuscript has ${cells.length} cells)`,
+          current.rev
+        );
+      const id = freshId("c", new Set(cells.map((cell) => cell.id)));
+      const cell = {
+        id,
+        type: op.cellType,
+        data: { ...defaultCellData(op.cellType), ...valid.fields },
+      } as WriterCell;
+      cells.splice(index, 0, cell);
+      return finish({ ...current, cells }, { cellId: id, index });
+    }
+
+    if (op.action === "add_comment") {
+      if (indexOf(op.cellId) < 0) return missingCell(op.cellId);
+      // The Comments tab trims the note and refuses an empty one.
+      const body = op.body.trim();
+      if (!body) return fail("invalid", "the note is empty", current.rev);
+      const id = freshId("cm", new Set(current.comments.map((comment) => comment.id)));
+      return finish(
+        {
+          ...current,
+          comments: [
+            ...current.comments,
+            {
+              id,
+              cell: op.cellId,
+              // The page's own value: the manuscript has no authorship concept.
+              who: "You",
+              body,
+              created_at: new Date().toISOString(),
+            },
+          ],
+        },
+        { commentId: id }
+      );
+    }
+
+    const at = indexOf(op.cellId);
+    if (at < 0) return missingCell(op.cellId);
+    const cell = cells[at] as WriterCell;
+
+    if (op.action === "update_cell") {
+      const valid = validateCellFields(cell.type, op.fields);
+      if (!valid.ok) return fail("invalid", valid.detail, current.rev);
+      cells[at] = { ...cell, data: { ...cell.data, ...valid.fields } } as WriterCell;
+      return finish({ ...current, cells }, { cellId: cell.id });
+    }
+
+    if (op.action === "delete_cell") {
+      cells.splice(at, 1);
+      return finish({ ...current, cells }, { cellId: cell.id });
+    }
+
+    if (op.action === "convert_cell") {
+      // The type menu offers the template's types and latex.
+      const offered = [...new Set([...(template?.types ?? []), "latex" as const])];
+      if (!offered.includes(op.cellType))
+        return fail("invalid", `the type menu offers: ${offered.join(", ")}`, current.rev);
+      if (cell.type === op.cellType) return finish(current, { cellId: cell.id });
+      cells[at] = {
+        ...cell,
+        type: op.cellType,
+        data: convertCellData(cell, op.cellType),
+      } as WriterCell;
+      return finish({ ...current, cells }, { cellId: cell.id, lossy: op.cellType !== "latex" });
+    }
+
+    if (op.action === "insert_reference") {
+      const fields = textFields(cell.type);
+      if (!fields.includes(op.field))
+        return fail(
+          "invalid",
+          `a ${cell.type} cell has no text field '${op.field}' (it has: ${fields.join(", ") || "none"})`,
+          current.rev
+        );
+      let text = op.text;
+      let working = cells;
+      if (op.kind === "cite") {
+        if (!text) return fail("invalid", "kind cite needs the cite key in text", current.rev);
+        const keys = deps.citeKeys?.();
+        if (!keys?.has(text))
+          return fail(
+            "invalid",
+            `'${text}' is not a cite key of the library (the References tab lists the saved works' keys)`,
+            current.rev
+          );
+        // Between the braces of a cite command: no TeX syntax, no separator (one key per insert, like the tab).
+        if (!/^[A-Za-z0-9][A-Za-z0-9:_.\-/+]*$/.test(text))
+          return fail("invalid", `the key '${text}' cannot be inserted bare`, current.rev);
+      } else {
+        if (op.target) {
+          const targetAt = indexOf(op.target.cellId);
+          if (targetAt < 0) return missingCell(op.target.cellId);
+          text ??= randomLabel();
+          if (!SafeLabelSchema.safeParse(text).success)
+            return fail("invalid", `'${text}' is not a usable label`, current.rev);
+          working = [...cells];
+          working[targetAt] = withEnsuredLabel(
+            cells[targetAt] as WriterCell,
+            text,
+            op.target.envIndex,
+            op.target.sectionIndex
+          );
+        } else if (!text) {
+          return fail(
+            "invalid",
+            "kind label needs the label in text or a target to label",
+            current.rev
+          );
+        }
+        if (!collectLabels(working).some((item) => item.label === text))
+          return fail(
+            "invalid",
+            `'${text}' is not a label of this manuscript${op.target ? " (the target already carries another label, or has nothing to attach one to)" : "; name a target to label, or use a label from read"}`,
+            current.rev
+          );
+      }
+      const inserted = text as string;
+      // Like the page: completing a label earlier in the same field moves the caret by what it added.
+      const before = String((cell.data as Record<string, unknown>)[op.field] ?? "");
+      const edited = working[at] as WriterCell;
+      const after = String((edited.data as Record<string, unknown>)[op.field] ?? "");
+      let offset = op.offset;
+      if (offset > before.length)
+        return fail(
+          "invalid",
+          `offset ${offset} is past the end of the field (${before.length} UTF-16 units)`,
+          current.rev
+        );
+      if (before !== after) {
+        let firstDifference = 0;
+        while (
+          firstDifference < before.length &&
+          before[firstDifference] === after[firstDifference]
+        )
+          firstDifference++;
+        if (offset >= firstDifference) offset += after.length - before.length;
+      }
+      working[at] = {
+        ...edited,
+        data: {
+          ...edited.data,
+          [op.field]: after.slice(0, offset) + inserted + after.slice(offset),
+        },
+      } as WriterCell;
+      return finish(
+        { ...current, cells: working },
+        { cellId: cell.id, inserted, offsetAfter: offset + inserted.length }
+      );
+    }
+
+    // set_figure_image
+    if (cell.type !== "figure")
+      return fail(
+        "invalid",
+        `only a figure cell has an image (this one is ${cell.type})`,
+        current.rev
+      );
+    const held = options.attachment?.(op.attachmentId);
+    if (!held)
+      return fail(
+        "not_found",
+        "no such attachment: only a file the user attached to a message of this conversation can be used",
+        current.rev
+      );
+    if (held.bytes.length === 0 || held.bytes.length > ASSET_MAX_BYTES)
+      return fail("invalid", "the image must be 1 byte to 20 MB", current.rev);
+    const name = safeAssetName(held.meta.filename);
+    if (!name || !looksLikeImage(name, held.bytes))
+      return fail(
+        "invalid",
+        `'${held.meta.filename}' is not a png, jpg, gif, webp or svg image (checked by its content)`,
+        current.rev
+      );
+    try {
+      writtenAsset = writeManuscriptAsset(deps.dataDir, current.id, name, held.bytes);
+    } catch (error) {
+      return fail("invalid", (error as Error).message, current.rev);
+    }
+    cells[at] = { ...cell, data: { ...cell.data, image: writtenAsset } } as WriterCell;
+    try {
+      return finish({ ...current, cells }, { cellId: cell.id, image: writtenAsset });
+    } catch (error) {
+      // The figure was stored but the manuscript could not be saved: the new file is removed again.
+      rmSync(join(manuscriptDir(deps.dataDir, current.id), "assets", writtenAsset), {
+        force: true,
+      });
+      writtenAsset = null;
+      throw error;
+    }
+  });
+  if (outcome.ok && outcome.status === "ok") deps.changed("put", outcome.id);
+  else if (writtenAsset && !outcome.ok)
+    rmSync(join(manuscriptDir(deps.dataDir, op.manuscriptId), "assets", writtenAsset), {
+      force: true,
+    });
+  return outcome;
+}
+
+export type WriterRenderOutcome =
+  | {
+      ok: true;
+      status: "ok";
+      id: string;
+      rev: number;
+      /** The compile finished against an older state than the one stored now (an edit arrived meanwhile). */
+      stale: boolean;
+      warnings: string[];
+    }
+  | { ok: false; status: "not_found" | "error"; detail: string };
+
+/**
+ * The topbar's Render: the same single-flight numbering/preview compile the page's button starts, on the saved
+ * manuscript (a user's unsaved typing is not part of it). Nothing is written to the manuscript; a failed compile keeps
+ * the last good preview and is reported as a failure, never as done.
+ */
+export async function renderManuscript(
+  deps: WriterOpDeps,
+  id: string
+): Promise<WriterRenderOutcome> {
+  if (!deps.render)
+    return { ok: false, status: "error", detail: "rendering is not available in this host" };
+  let manuscript: WriterManuscript | null;
+  try {
+    manuscript = loadManuscript(deps.dataDir, id);
+  } catch (error) {
+    return { ok: false, status: "error", detail: (error as Error).message };
+  }
+  if (!manuscript) return { ok: false, status: "not_found", detail: "no such manuscript" };
+  try {
+    const result = await deps.render(id);
+    if (result.lastError)
+      return {
+        ok: false,
+        status: "error",
+        detail: `the compile failed (the last good preview is kept): ${result.lastError.slice(0, 2000)}`,
+      };
+    return {
+      ok: true,
+      status: "ok",
+      id,
+      rev: manuscript.rev,
+      stale: result.status !== "ok",
+      warnings: (result.preview?.warnings ?? []).slice(0, 10).map((line) => line.slice(0, 300)),
+    };
+  } catch (error) {
+    const message = (error as Error).message;
+    return {
+      ok: false,
+      status: /not found/.test(message) ? "not_found" : "error",
+      detail: `the compile did not finish: ${message.slice(0, 300)}`,
+    };
   }
 }
 

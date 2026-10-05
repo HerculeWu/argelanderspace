@@ -290,6 +290,11 @@ async function attemptCompile(opts: {
     const result = await runTexProcess("latexmk", args, {
       cwd: runDir,
       timeoutMs: opts.timeoutMs,
+      // A manuscript's text can now come from an agent (copilot ticket 23, spec 14.1). TeX Live's default lets a
+      // document \input any readable absolute path (openin_any = a); paranoid mode refuses absolute and parent paths
+      // and dotfiles, so a Writer compile can only read its own workspace and the TeX trees. The reader/ingest
+      // compiles are untouched (their sources are arXiv papers, not agent text).
+      ...(opts.renderProfile === "writer" ? { env: { openin_any: "p", openout_any: "p" } } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
     opts.signal?.throwIfAborted();

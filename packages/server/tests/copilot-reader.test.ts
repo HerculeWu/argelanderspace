@@ -636,7 +636,7 @@ test("a reading larger than the room left in the window is refused whole with it
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 28_000;
+  model.contextWindow = 34_000;
   model.maxTokens = 1024;
   try {
     script = [() => read(), () => ({ text: "x" })];
@@ -788,7 +788,7 @@ test("a reading larger than the model's window cannot be sent as a message: capa
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 28_000;
+  model.contextWindow = 34_000;
   model.maxTokens = 1024;
   try {
     const context = page(readerPage());

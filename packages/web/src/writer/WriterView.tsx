@@ -13,11 +13,11 @@ import type { WriterPage, WriterViewAction } from "@argelanderspace/contracts";
 import { probeManuscript } from "../api/writer";
 import { ManuscriptList } from "./ManuscriptList";
 import { WriterEditor } from "./WriterEditor";
-import { captureListPage, type WriterEditorPage } from "./writer-context";
+import { captureListPage, type WriterEditorControls, type WriterEditorPage } from "./writer-context";
 
 export interface WriterViewController {
   /** Resolves after the pane did (or could not do) what the action says; never before the editor shows it. */
-  apply(action: WriterViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" }>;
+  apply(action: WriterViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" }>;
 }
 
 export function WriterView({ paneId, onContext, onController }: { paneId?: number; onContext?: (paneId: number, page: WriterPage | null) => void; onController?: (paneId: number, controller: WriterViewController | null) => void } = {}) {
@@ -34,6 +34,11 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
   editorRef.current = editorPage;
   const leaveRef = useRef<(() => Promise<boolean>) | null>(null);
   const registerLeave = useCallback((leave: (() => Promise<boolean>) | null) => { leaveRef.current = leave; }, []);
+  // The open editor's own controls (the cell clicks, panel folds, tabs, warning close, Export) and the list's Retry.
+  const controlsRef = useRef<WriterEditorControls | null>(null);
+  const registerControls = useCallback((controls: WriterEditorControls | null) => { controlsRef.current = controls; }, []);
+  const retryRef = useRef<(() => Promise<"ok" | "disabled" | "failed">) | null>(null);
+  const registerRetry = useCallback((retry: (() => Promise<"ok" | "disabled" | "failed">) | null) => { retryRef.current = retry; }, []);
 
   // The page this pane reports: the list while it shows, else the open manuscript (loading until its editor reports).
   useEffect(() => {
@@ -60,6 +65,24 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
           setEditorPage(null);
           return (await settle(() => openIdRef.current === null)) ? { ok: true } : { ok: false, detail: "unavailable" };
         }
+        if (action.action === "retry_manuscript_list") {
+          if (openIdRef.current || !retryRef.current) return { ok: false, detail: "unavailable" };
+          const outcome = await retryRef.current();
+          return outcome === "ok" ? { ok: true } : { ok: false, detail: outcome };
+        }
+        if (action.action !== "open_manuscript") {
+          // The editor's own controls act on the manuscript that is open; another one (or none) is not this page.
+          const controls = controlsRef.current;
+          if ("manuscriptId" in action && openIdRef.current !== action.manuscriptId) return { ok: false, detail: "unavailable" };
+          if (!openIdRef.current || !controls) return { ok: false, detail: "unavailable" };
+          if (action.action === "select_cell") return controls.select(action.cellId) === "ok" ? { ok: true } : { ok: false, detail: "not_found" };
+          if (action.action === "edit_cell") return controls.edit(action.cellId) === "ok" ? { ok: true } : { ok: false, detail: "not_found" };
+          if (action.action === "set_writer_panel") { controls.setPanel(action.panel, action.collapsed); return { ok: true }; }
+          if (action.action === "set_writer_tab") { controls.setTab(action.tab); return { ok: true }; }
+          if (action.action === "dismiss_template_warning") return controls.dismissWarning() === "ok" ? { ok: true } : { ok: false, detail: "disabled" };
+          const exported = await controls.exportNow();
+          return exported === "ok" ? { ok: true } : { ok: false, detail: exported === "blocked" ? "leave_blocked" : "failed" };
+        }
         const wanted = action.manuscriptId;
         if (openIdRef.current === wanted) return { ok: true };
         // The row exists only if the server has it; another open editor is left through its own back button first.
@@ -71,7 +94,7 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
         setEditorPage(null);
         setSession((s) => s + 1);
         setOpenId(wanted);
-        return (await settle(() => openIdRef.current === wanted && editorRef.current?.manuscriptId === wanted && editorRef.current.phase === "ready")) ? { ok: true } : { ok: false, detail: "unavailable" };
+        return (await settle(() => openIdRef.current === wanted && editorRef.current?.manuscriptId === wanted && editorRef.current?.phase === "ready")) ? { ok: true } : { ok: false, detail: "unavailable" };
       },
     });
     return () => onController(paneId, null);
@@ -80,6 +103,7 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
   if (!openId)
     return (
       <ManuscriptList
+        registerRetry={registerRetry}
         notice={notice}
         onData={setListData}
         onOpen={(id) => {
@@ -95,6 +119,7 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
       id={openId}
       onPage={setEditorPage}
       registerLeave={registerLeave}
+      registerControls={registerControls}
       onBack={() => { setOpenId(null); setEditorPage(null); }}
       onGone={() => {
         setOpenId(null);

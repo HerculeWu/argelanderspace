@@ -6,11 +6,9 @@
  */
 
 import {
-  defaultCellData,
   currentWriterCellPreview,
+  NUMBERED_ENV_RE,
   parseSimpleCsv,
-  serializeCell,
-  type CellType,
   type WriterCell,
   type WriterNumberingFacts,
   type WriterNumberingResponse,
@@ -76,9 +74,6 @@ export interface CrossrefTarget {
 }
 
 const KIND_ORDER: CrossrefTarget["kind"][] = ["section", "equation", "figure", "table", "code"];
-
-/** Numbered display-math environments (starred variants are unnumbered in LaTeX). */
-const NUMBERED_ENV_RE = /\\begin\{(equation|align|gather|multline|eqnarray)\}([\s\S]*?)\\end\{\1\}/g;
 
 export function deriveCrossrefs(cells: WriterCell[]): CrossrefTarget[] {
   const out: CrossrefTarget[] = [];
@@ -276,63 +271,7 @@ export function applyNumbering(
 }
 
 
-// ---- cell conversion (prototype convertCell; lossy is intended) ------------ //
-
-/**
- * New `data` when a cell changes type: → latex keeps the serialized source;
- * → anything else resets to that type's defaults (converting back does NOT
- * restore the old content — prototype behavior, consensus D8).
- */
-export function convertCellData(cell: WriterCell, type: CellType): Record<string, unknown> {
-  if (type === cell.type) return { ...cell.data };
-  if (type === "latex") return { source: serializeCell(cell) };
-  return defaultCellData(type);
-}
-
-// ---- label auto-completion (prototype ensureTargetLabel) ------------------- //
-
-/**
- * Return the cell with a label guaranteed: equation targets gain a
- * `\label{…}` right after their env's `\begin{…}` line (a trailing append
- * would label the section, not the equation); label-less section cells gain
- * a trailing `\label`; figure/table/code fill `data.label`. Other types are
- * returned unchanged.
- */
-export function withEnsuredLabel(cell: WriterCell, label: string, envIndex?: number, sectionIndex?: number): WriterCell {
-  const d = cell.data as Record<string, unknown>;
-  if (cell.type === "latex") {
-    const src = (d.source as string) ?? "";
-    if (sectionIndex !== undefined) {
-      const headings = [...src.matchAll(/\\(?:chapter|section|subsection|subsubsection)\{([^}]+)\}/g)];
-      const heading = headings[sectionIndex];
-      if (!heading) return cell;
-      const at = (heading.index ?? 0) + heading[0].length;
-      if (/^\s*\\label\{/.test(src.slice(at))) return cell;
-      return { ...cell, data: { ...cell.data, source: `${src.slice(0, at)}\\label{${label}}${src.slice(at)}` } } as WriterCell;
-    } else if (envIndex !== undefined) {
-      let i = 0;
-      for (const m of src.matchAll(NUMBERED_ENV_RE)) {
-        if (i === envIndex) {
-          if (/\\label\{[^}]+\}/.test(m[2] ?? "")) return cell;
-          const at = (m.index ?? 0) + m[0].indexOf("}", 7) + 1; // end of \begin{env}
-          const next = `${src.slice(0, at)}\n  \\label{${label}}${src.slice(at)}`;
-          return { ...cell, data: { ...cell.data, source: next } } as WriterCell;
-        }
-        i++;
-      }
-      return cell;
-    }
-    if (/\\label\{[^}]+\}/.test(src)) return cell;
-    return { ...cell, data: { ...cell.data, source: `${src}\n\\label{${label}}` } } as WriterCell;
-  }
-  if (cell.type === "figure" || cell.type === "table" || cell.type === "code") {
-    if ((d.label as string) || "") return cell;
-    return { ...cell, data: { ...cell.data, label } } as WriterCell;
-  }
-  return cell;
-}
-
-/** Random fallback label (prototype `ref:` + 6 base36 chars). */
-export function randomLabel(): string {
-  return `ref:${Math.random().toString(36).slice(2, 8)}`;
-}
+// ---- cell conversion and label completion --------------------------------- //
+// Shared with the Copilot `writer` tool (copilot ticket 23): one definition in contracts, so the page's menus and the
+// service's cell operations mean the same thing.
+export { convertCellData, randomLabel, withEnsuredLabel } from "@argelanderspace/contracts";
