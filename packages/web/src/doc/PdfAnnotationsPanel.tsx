@@ -110,6 +110,11 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
   };
   const discard = () => { styleDraftsRef.current = {}; setStyleDrafts({}); session.discard(); };
   const failure = state.failure;
+  // The user's typed text stays visible and recoverable: while the panel is blocked every draft is shown here, and
+  // when it is not, a draft whose annotation is gone (deleted elsewhere, for example by the Copilot) still is. The
+  // text of a new comment being written has its own editor above and is not listed.
+  const itemIds = new Set(items.map((item) => item.id));
+  const retainedDrafts = Object.entries(state.drafts).filter(([id]) => !id.startsWith("style:") && (blocked || (!id.startsWith("draft:") && !itemIds.has(id))));
   useEffect(() => {
     setEditing((current) => {
       const next = { ...current };
@@ -132,7 +137,7 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
       </div>
     </section>}
     {blocked && <p role="status">{t("pdfReader.changedBlocked")}</p>}
-    {blocked && Object.entries(state.drafts).filter(([id]) => !id.startsWith("style:")).map(([id, body]) => <div className="pdf-workbench-item" data-ui="pdf-annotation-draft" data-ui-key={id} key={id}>
+    {retainedDrafts.map(([id, body]) => <div className="pdf-workbench-item" data-ui="pdf-annotation-draft" data-ui-key={id} key={id}>
       <p>{t("pdfReader.unsavedDraft")}</p>
       <textarea data-ui="pdf-unsaved-draft-body" aria-label={t("pdfReader.annotationBody")} value={body} readOnly />
       <Button data-ui="copy-pdf-draft" onClick={() => copyDraft(id, body)}>{t("pdfReader.copyDraft")}</Button>
@@ -197,7 +202,7 @@ export function PdfAnnotationsPanel({ session, currentPage, onNavigatePage, comm
           <label>{t("pdfReader.rectangleLineWidth")} <input data-ui="pdf-rectangle-line-width" aria-label={t("pdfReader.rectangleLineWidth")} disabled={blocked} type="number" min="1" max="32" value={style.line_width} onChange={(event) => setStyle({ ...style, line_width: Number(event.target.value) })} onBlur={commitStyle} onKeyUp={(event) => { if (event.key === "Enter") commitStyle(); }} /></label>
         </>;
       })()}
-        {editing[annotation.id] ? <textarea data-ui="pdf-annotation-body-input" aria-label={t("pdfReader.annotationBody")} disabled={blocked} value={draft} onChange={(event) => session.setDraft(annotation.id, event.target.value)} /> : <div className="pdf-workbench-body" data-ui="pdf-annotation-body" dangerouslySetInnerHTML={{ __html: mdWithMath(annotation.body) }} />}
+        {editing[annotation.id] ? <textarea data-ui="pdf-annotation-body-input" aria-label={t("pdfReader.annotationBody")} disabled={blocked} value={draft} onChange={(event) => session.setDraft(annotation.id, event.target.value)} /> : <div className="pdf-workbench-body" data-ui="pdf-annotation-body" dangerouslySetInnerHTML={{ __html: mdWithMath(annotation.body, { safe: true }) }} />}
         <div className="pdf-workbench-item-actions" data-ui="pdf-annotation-item-actions">
           {editing[annotation.id] ? <>
             <Button disabled={blocked || !hasDraft || !draft.trim()} data-ui="save-pdf-annotation-body" onClick={() => { session.saveBody(annotation.id); }}>{t("pdfReader.saveBody")}</Button>

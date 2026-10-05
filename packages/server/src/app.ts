@@ -66,6 +66,7 @@ import {
   PDF_IMAGE_LONG_EDGE,
   PDF_MAX_BYTES,
   PDF_RESOURCE_WARNING_BYTES,
+  type PdfAnnotationOperation,
   PdfAnnotationsFileSchema,
   PdfPagesResponseSchema,
   PdfReadingPositionSchema,
@@ -82,6 +83,7 @@ import {
   attachArxivDoc,
   attachLatexZip,
   buildWriterExport,
+  commitPdfAnnotationChange,
   DocumentAssetError,
   discoverLiterature,
   ensureCurrentAnnotationsWithDocument,
@@ -142,6 +144,7 @@ import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-anno
 import type {
   PdfImageOutcome,
   PdfReadOutcome,
+  PdfWriteOutcome,
   ReaderOpDeps,
   ReaderReadOutcome,
   ReaderWriteOutcome,
@@ -165,12 +168,21 @@ import {
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
 import {
+  PdfAnnotationHistory,
+  type PdfAnnotationPlan,
+  planPdfCreate,
+  planPdfDelete,
+  planPdfUpdate,
+  type ResolvedTextTarget,
+} from "./pdf-annotation-actions.js";
+import {
   PdfMaterialContentError,
   PdfMaterialInputError,
   PdfMaterialResourceError,
   PdfQueueFullError,
   readPdfTextMaterial,
   renderPdfPageImage,
+  resolvePdfTextTarget,
 } from "./pdf-material.js";
 import { probePdf } from "./pdfium-probe.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
@@ -660,6 +672,188 @@ export function createApp(deps: AppDeps): Hono {
       super("the Doc's metadata could not be read", { cause });
     }
   }
+  /**
+   * The Copilot's PDF annotation writes. The original is read once and verified (and must be the one the request names)
+   * before anything else; the text of a text annotation is resolved from that same verified snapshot outside the lock
+   * (it is a function of the immutable original); then one critical section on the annotations lock re-verifies the
+   * original and the revision and applies the plan to the sidecar as stored, so a stale request writes nothing and
+   * every key the application does not know stays. A failure before the atomic rename leaves the stored bytes alone.
+   */
+  const pdfHistory = new PdfAnnotationHistory();
+  const writePdfAnnotation = async (
+    op: PdfAnnotationOperation,
+    scope: { conversationId: string }
+  ): Promise<PdfWriteOutcome> => {
+    // A PDF action on a Doc that is not a PDF (a LaTeX Doc) is unsupported, not a verification failure.
+    if (!badId(op.docId) && op.docId.trim()) {
+      let metadataOrNull: ReturnType<typeof readPdfMetadataIfPresent> | undefined;
+      try {
+        metadataOrNull = readPdfMetadataIfPresent(paths, op.docId);
+      } catch {
+        metadataOrNull = undefined;
+      }
+      if (metadataOrNull === null && pdfOwners(op.docId).length > 0) return { kind: "unsupported" };
+    }
+    const historyKey = PdfAnnotationHistory.key(scope.conversationId, op.docId);
+    const source = pdfSource(op.docId, { expectedHash: op.sha256 });
+    if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+    if (source.kind === "busy") return { kind: "busy" };
+    if (source.kind === "changed")
+      return {
+        kind: "conflict",
+        reason: "document_changed",
+        epoch: { sha256: null, annotationsRev: null },
+      };
+    if (source.kind !== "ok")
+      return {
+        kind: "error",
+        detail: "the PDF or its user data could not be verified; nothing was changed",
+      };
+    const { metadata, title } = source;
+    let text: ResolvedTextTarget | undefined;
+    if (op.action === "create_pdf_annotation" && op.parts) {
+      try {
+        const resolved = await resolvePdfTextTarget(
+          source.bytes,
+          metadata.sha256,
+          op.parts,
+          metadata.pages
+        );
+        if (!resolved.ok) return { kind: "invalid", detail: resolved.detail };
+        text = resolved.target;
+      } catch (error) {
+        const failure = pdfMaterialFailure(error);
+        return failure.status === 409
+          ? {
+              kind: "conflict",
+              reason: "document_changed",
+              epoch: { sha256: null, annotationsRev: null },
+            }
+          : failure.status === 400
+            ? { kind: "invalid", detail: failure.detail }
+            : { kind: "error", detail: `${failure.detail}; nothing was written` };
+      }
+    }
+    let plan: PdfAnnotationPlan | undefined;
+    let moved: { direction: "undo" | "redo"; label: string } | undefined;
+    let nothing: "nothing" | "history_ended" | "changed" | undefined;
+    try {
+      // The history is recorded in the same critical section as the save, so no other write can come between a
+      // saved revision and the history that describes it.
+      const { commit, history } = await annotationLock.run(() => {
+        const commit = commitPdfAnnotationChange<undefined>(
+          paths,
+          op.docId,
+          { sha256: op.sha256, rev: op.rev },
+          (current) => {
+            if (op.action === "undo_pdf_annotation" || op.action === "redo_pdf_annotation") {
+              const direction = op.action === "undo_pdf_annotation" ? "undo" : "redo";
+              const step = pdfHistory.plan(historyKey, direction, current);
+              if (step.kind === "none") {
+                nothing = step.reason;
+                return { skip: undefined };
+              }
+              moved = { direction, label: step.label };
+              return { next: step.next };
+            }
+            try {
+              plan =
+                op.action === "create_pdf_annotation"
+                  ? planPdfCreate(op, current, metadata, title, text)
+                  : op.action === "update_pdf_annotation"
+                    ? planPdfUpdate(op, current, title)
+                    : planPdfDelete(op, current, title);
+            } catch (error) {
+              // A bug in the planner is the application's, never a damaged file.
+              throw new PdfAnnotationValidationError(
+                `the request could not be planned: ${error instanceof Error ? error.message : String(error)}`
+              );
+            }
+            return plan.kind === "write" ? { next: plan.next } : { skip: undefined };
+          },
+          (id) => docMutations.isDocumentContentBusy(id)
+        );
+        if (commit.kind !== "saved") return { commit, history: undefined };
+        if (moved)
+          pdfHistory.recordMove(
+            historyKey,
+            moved.direction,
+            commit.file.rev,
+            commit.file.annotations
+          );
+        else if (plan?.kind === "write") pdfHistory.recordChange(historyKey, plan, commit.file.rev);
+        return { commit, history: pdfHistory.depth(historyKey) };
+      });
+      if (commit.kind === "busy") return { kind: "busy" };
+      if (commit.kind === "document_changed")
+        return {
+          kind: "conflict",
+          reason: "document_changed",
+          epoch: { sha256: null, annotationsRev: null },
+        };
+      if (commit.kind === "rev_mismatch")
+        return {
+          kind: "conflict",
+          reason: "rev_mismatch",
+          epoch: { sha256: metadata.sha256, annotationsRev: commit.rev },
+        };
+      const epoch = { sha256: metadata.sha256, annotationsRev: commit.file.rev };
+      if (commit.kind === "skipped") {
+        if (nothing) return { kind: "nothing", reason: nothing, epoch };
+        const skipped = plan as PdfAnnotationPlan | undefined;
+        if (skipped?.kind === "same")
+          return { kind: "unchanged", annotation: skipped.annotation, label: skipped.label, epoch };
+        if (skipped?.kind === "annotation_changed")
+          return {
+            kind: "conflict",
+            reason: "annotation_changed",
+            epoch,
+            annotation: skipped.annotation,
+          };
+        if (skipped?.kind === "no_annotation")
+          return { kind: "no_annotation", annotationId: skipped.annotationId };
+        if (skipped?.kind === "invalid") return { kind: "invalid", detail: skipped.detail };
+        return { kind: "error", detail: "unexpected plan; nothing was written" };
+      }
+      annotationChanged(op.docId, "put");
+      if (moved && history) {
+        return {
+          kind: "saved",
+          label: moved.label,
+          epoch,
+          moved: moved.direction,
+          history,
+        };
+      }
+      const written = plan as PdfAnnotationPlan | undefined;
+      if (written?.kind !== "write" || !history)
+        return {
+          kind: "error",
+          detail: "unexpected plan; read the Doc again to see what is stored",
+        };
+      return {
+        kind: "saved",
+        ...(written.annotation ? { annotation: written.annotation } : {}),
+        ...(written.deleted ? { deleted: written.deleted } : {}),
+        label: written.label,
+        epoch,
+        history,
+      };
+    } catch (error) {
+      // Nothing is reset and the sidecar is replaced atomically or not at all. What failed decides the words: a
+      // change the application built that does not satisfy the contract is its own bug, not a damaged file.
+      if (error instanceof PdfAnnotationValidationError)
+        return {
+          kind: "error",
+          detail: `the application could not apply this change (${error.message}); nothing was written and the stored file was not touched. This is not a damaged file; tell the user`,
+        };
+      return {
+        kind: "error",
+        detail:
+          "the PDF annotations could not be read or written (the stored file, if damaged, was left as it is); read the Doc again to see what is stored now",
+      };
+    }
+  };
   const readerOps: ReaderOpDeps = {
     write: async (op): Promise<ReaderWriteOutcome> => {
       if (badId(op.docId) || !op.docId.trim()) return { kind: "not_found" };
@@ -793,6 +987,10 @@ export function createApp(deps: AppDeps): Hono {
               : { kind: "error", detail: failure.detail };
         }
       },
+      // The PDF workbench annotation writes (copilot ticket 21): the page's own commit rules (the annotations lock,
+      // the busy check, the original verified against its SHA-256, the expected revision, the atomic save and the
+      // `annotation.changed` notification), applied as a narrow change to the sidecar as stored.
+      write: (op, scope) => writePdfAnnotation(op, scope),
       image: async (op): Promise<PdfImageOutcome> => {
         const source = pdfSource(op.docId, { ...(op.sha256 ? { expectedHash: op.sha256 } : {}) });
         if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };

@@ -25,7 +25,7 @@ import { docRouteUrl } from "../lib/deeplink";
 import { dispatchPdfLinkTarget, flattenPdfBookmarks, isPdfLinkTargetAllowed, pdfTargetPageIndex } from "./pdf-navigation";
 import { usePdfBridge, type PdfViewHandle } from "./reader-bridge";
 import { type PanelSizes, useAutoFoldedPanels } from "./auto-fold";
-import { PDF_SEARCH_LIST_MAX, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
+import { PDF_SEARCH_LIST_MAX, pdfDraftsView, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
 import { PdfLinkHitLayer } from "./PdfLinkHitLayer";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
@@ -266,10 +266,11 @@ function LoadedPdfDocument({
   const outlineView = useMemo(() => outlineAll.slice(0, PDF_OUTLINE_MAX_ENTRIES), [outlineAll]);
   const outlineTruncated = outlineAll.length > PDF_OUTLINE_MAX_ENTRIES;
   const contentSha256 = annotations.content_sha256;
+  const draftsView = useMemo(() => pdfDraftsView(sessionState.drafts, session.projectedAnnotations(), sessionState.blocked), [session, sessionState.blocked, sessionState.drafts, sessionState.file, sessionState.pending]);
   useEffect(() => {
     if (!isLoaded) return;
-    pdfBridge.publish({ docId, format: "pdf", phase: "ready", sha256: contentSha256, pageCount: pages.length, currentPage: currentPageIndex, zoom: zoomView, outline: outlineView, outlineTruncated, search: searchView, selection: selectionView ? { sha256: contentSha256, ...selectionView } : null, panels: { outlineCollapsed: leftCollapsed, annotationsCollapsed: rightCollapsed } });
-  }, [contentSha256, currentPageIndex, docId, isLoaded, leftCollapsed, outlineTruncated, outlineView, pages.length, pdfBridge, rightCollapsed, searchView, selectionView, zoomView]);
+    pdfBridge.publish({ docId, format: "pdf", phase: "ready", sha256: contentSha256, pageCount: pages.length, currentPage: currentPageIndex, zoom: zoomView, outline: outlineView, outlineTruncated, search: searchView, selection: selectionView ? { sha256: contentSha256, ...selectionView } : null, panels: { outlineCollapsed: leftCollapsed, annotationsCollapsed: rightCollapsed }, drafts: draftsView });
+  }, [contentSha256, currentPageIndex, docId, isLoaded, leftCollapsed, outlineTruncated, outlineView, pages.length, pdfBridge, rightCollapsed, searchView, selectionView, zoomView, draftsView]);
   const live = useRef({ currentPageIndex, pageCount: pages.length, outlineEntries, outlineTargets, scroll, zoomCapability, searchView, annotations: [] as PdfAnnotation[], blocked: false });
   live.current = { currentPageIndex, pageCount: pages.length, outlineEntries, outlineTargets, scroll, zoomCapability, searchView, annotations: session.projectedAnnotations() as PdfAnnotation[], blocked: sessionState.blocked };
   useEffect(() => {
