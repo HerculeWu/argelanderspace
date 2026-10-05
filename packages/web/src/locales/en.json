@@ -1270,6 +1270,7 @@
         "export_manuscript": "Export manuscript",
         "select_cell": "Select cell",
         "edit_cell": "Open cell editor",
+        "commit_cell": "Finish editing and render",
         "set_writer_panel": "Fold or open Writer panel",
         "set_writer_tab": "Switch Writer tab",
         "dismiss_template_warning": "Close template warning",

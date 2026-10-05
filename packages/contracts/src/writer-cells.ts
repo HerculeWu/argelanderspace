@@ -250,6 +250,8 @@ const FORBIDDEN_PACKAGES = new Set([
   "gnuplottex",
   "sagetex",
   "bashful",
+  "biblatex",
+  "biber",
   "verbatim",
   "moreverb",
   "fancyvrb",
@@ -274,6 +276,13 @@ export function agentTexViolations(text: string): string[] {
     }
   for (const match of text.matchAll(/\\begin\s*\{(filecontents\*?)\}/g))
     found.add(`environment ${match[1]} (writes files)`);
+  // Bibliography commands may name a library key file ("references") but never a path or a URL.
+  for (const match of text.matchAll(
+    /\\(?:bibliography|bibliographystyle|addbibresource|addglobalbib|addsectionbib)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g
+  ))
+    if (/[/\\:]|^\s*\./.test(match[1] ?? "")) found.add("a bibliography path or URL");
+  if (/\\(?:addbibresource|addglobalbib|addsectionbib)\b/.test(text))
+    found.add("a bib resource command (biblatex/biber is not available in the Writer)");
   return [...found];
 }
 

@@ -100,6 +100,10 @@ describe("spec 14.1 safety review of agent-written TeX", () => {
     "\\begin{filecontents*}{x.tex}",
     "\\lstinputlisting{x}",
     "\\directlua{os.execute('x')}",
+    "\\bibliography{/etc/x}",
+    "\\addbibresource{refs.bib}",
+    "\\bibliographystyle{http://evil/x}",
+    "\\usepackage[backend=biber]{biblatex}",
   ])("rejects %s", (text) => {
     expect(agentTexViolations(text).length).toBeGreaterThan(0);
   });
@@ -107,6 +111,7 @@ describe("spec 14.1 safety review of agent-written TeX", () => {
     "\\section{Intro} Normal text with $x^2$ and \\cite{key}.",
     "\\includegraphics[width=0.5\\columnwidth]{assets/fig.png}",
     "\\newcommand{\\kms}{km/s}\\usepackage{amsmath}",
+    "\\bibliographystyle{aa}\\bibliography{references}",
     "caret in code: a ^ b and 100% sure",
   ])("accepts %s", (text) => {
     expect(agentTexViolations(text)).toEqual([]);

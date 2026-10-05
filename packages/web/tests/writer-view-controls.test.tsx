@@ -43,7 +43,7 @@ const h = vi.hoisted(() => {
       uploadAsset: async (_id: string, file: File) => file.name,
       assetUrl: (id: string, name: string) => `/a/${id}/${name}`,
       fetchNumbering: async () => null,
-      refreshNumbering: async () => ({ status: "never" as const, facts: null, lastError: null }),
+      refreshNumbering: vi.fn(async () => ({ status: "never" as const, facts: null, lastError: null })),
       exportUrl: (id: string) => `/export/${id}`,
     },
   };
@@ -57,6 +57,7 @@ vi.mock("../src/api/ws", () => ({ onWriterChanged: () => () => {} }));
 
 beforeEach(() => {
   h.reset();
+  h.api.refreshNumbering.mockClear();
   (globalThis as { fetch: unknown }).fetch = vi.fn(async (input: unknown) => {
     // The References tab reads the library through fetch too; only the export counts here.
     if (!String(input).startsWith("/export/")) return new Response(JSON.stringify({ refs: [] }), { status: 200 });
@@ -145,6 +146,34 @@ describe("editor controls", () => {
     expect(h.state.exported).toBe(1);
     h.state.exportOk = false;
     expect(await state.controller?.apply({ action: "export_manuscript", manuscriptId: ID })).toEqual({ ok: false, detail: "failed" });
+  });
+});
+
+describe("explicit Render only (no automatic compile)", () => {
+  it("opening, switching, saving typed text and exporting never call the compile; commit_cell is the button and calls it once", async () => {
+    h.store.set("m_0000000b", { ...h.sample(), id: "m_0000000b", title: "Second" });
+    const { view, state } = await open();
+    expect(h.api.refreshNumbering).not.toHaveBeenCalled(); // open
+    // typing then the autosave lands (800 ms debounce)
+    fireEvent.click(view.container.querySelector('[data-cell="c_0ab50001"] [data-action="edit"]') as HTMLElement);
+    fireEvent.change(view.container.querySelector('[data-cell="c_0ab50001"] textarea[data-field="source"]') as HTMLElement, { target: { value: "Typed text" } });
+    await waitFor(() => expect(JSON.stringify(h.store.get(ID))).toContain("Typed text"), { timeout: 3000 });
+    expect(h.api.refreshNumbering).not.toHaveBeenCalled(); // save
+    expect(await state.controller?.apply({ action: "open_manuscript", manuscriptId: "m_0000000b" })).toEqual({ ok: true });
+    expect(h.api.refreshNumbering).not.toHaveBeenCalled(); // switch
+    expect(await state.controller?.apply({ action: "export_manuscript", manuscriptId: "m_0000000b" })).toEqual({ ok: true });
+    expect(h.api.refreshNumbering).not.toHaveBeenCalled(); // export
+    expect(await state.controller?.apply({ action: "commit_cell", manuscriptId: "m_0000000b", cellId: "c_0ab50001" })).toEqual({ ok: true });
+    expect(h.api.refreshNumbering).toHaveBeenCalledTimes(1); // the explicit button
+    expect(await state.controller?.apply({ action: "commit_cell", manuscriptId: "m_0000000b", cellId: "c_0000ffff" })).toEqual({ ok: false, detail: "not_found" });
+  });
+
+  it("commit_cell leaves the editing form (the pencil's counterpart)", async () => {
+    const { state } = await open();
+    await state.controller?.apply({ action: "edit_cell", manuscriptId: ID, cellId: "c_0ab50001" });
+    await waitFor(() => expect(state.page?.editor?.editingCellId).toBe("c_0ab50001"));
+    await state.controller?.apply({ action: "commit_cell", manuscriptId: ID, cellId: "c_0ab50001" });
+    await waitFor(() => expect(state.page?.editor?.editingCellId).toBeNull());
   });
 });
 

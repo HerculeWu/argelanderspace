@@ -198,7 +198,11 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-function editorPage(revision = 1, viewId: string = randomUUID()): PageContext {
+function editorPage(
+  revision = 1,
+  viewId: string = randomUUID(),
+  draft: object | null = null
+): PageContext {
   const saved = disk();
   return {
     version: 1,
@@ -217,7 +221,7 @@ function editorPage(revision = 1, viewId: string = randomUUID()): PageContext {
         phase: "ready",
         saved,
         saveState: "saved",
-        draft: null,
+        draft: draft as never,
         template: {
           id: "report",
           label: "Report",
@@ -574,6 +578,41 @@ test("a cell operation on a malformed call, a template-unlisted type and a missi
   ]);
   expect(readFileSync(manuscriptFile(), "utf8")).toBe(bytes);
 });
+
+test.skipIf(!haveLatexmk())(
+  "render_manuscript compiles the saved manuscript only: the unsaved page draft is not in the preview, and the result names the rev compiled",
+  async () => {
+    const draft = {
+      unsaved: true,
+      fields: {},
+      cells: {
+        changed: [{ id: "c_00000001", type: "latex", data: { source: "UNSAVED-DRAFT-MARKER-77" } }],
+        removed: [],
+        order: null,
+      },
+      comments: { added: [], removed: [] },
+    };
+    let result: Record<string, unknown> = {};
+    script = [
+      call({ action: "render_manuscript", manuscriptId: M }),
+      (ctx) => {
+        result = lastResult(ctx);
+        return { text: "done" };
+      },
+    ];
+    const { snapshot } = await run(editorPage(1, randomUUID(), draft));
+    expect(operations(snapshot)).toEqual(["render_manuscript:ok"]);
+    expect(result).toMatchObject({ ok: true, rev: 3, compiledRev: 3, stale: false });
+    const numbering = readFileSync(
+      join(dataDir, "manuscripts", M, "build", "numbering.json"),
+      "utf8"
+    );
+    expect(numbering).not.toContain("UNSAVED-DRAFT-MARKER-77");
+    expect(numbering).toContain("First cell");
+    expect(disk().rev).toBe(3);
+  },
+  120_000
+);
 
 test.skipIf(!haveLatexmk())(
   "Stop during a Render: the submitted compile finishes and commits its preview, the run ends stopped only after it, and nothing new starts",

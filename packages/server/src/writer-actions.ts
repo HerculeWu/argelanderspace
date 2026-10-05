@@ -615,6 +615,8 @@ export type WriterRenderOutcome =
       status: "ok";
       id: string;
       rev: number;
+      /** The rev the preview was compiled from; null when the manuscript changed while the compile ran (unknown). */
+      compiledRev: number | null;
       /** The compile finished against an older state than the one stored now (an edit arrived meanwhile). */
       stale: boolean;
       warnings: string[];
@@ -647,12 +649,21 @@ export async function renderManuscript(
         status: "error",
         detail: `the compile failed (the last good preview is kept): ${result.lastError.slice(0, 2000)}`,
       };
+    // The compile reads the stored manuscript when it starts; an edit landing meanwhile makes the preview older than
+    // the stored rev, so the rev is read again and the compiled rev is only claimed when nothing moved.
+    let currentRev = manuscript.rev;
+    try {
+      currentRev = loadManuscript(deps.dataDir, id)?.rev ?? manuscript.rev;
+    } catch {
+      /* keep the rev read before */
+    }
     return {
       ok: true,
       status: "ok",
       id,
-      rev: manuscript.rev,
-      stale: result.status !== "ok",
+      rev: currentRev,
+      compiledRev: currentRev === manuscript.rev ? currentRev : null,
+      stale: result.status !== "ok" || currentRev !== manuscript.rev,
       warnings: (result.preview?.warnings ?? []).slice(0, 10).map((line) => line.slice(0, 300)),
     };
   } catch (error) {

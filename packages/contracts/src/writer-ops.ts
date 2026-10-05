@@ -549,6 +549,8 @@ export const WriterViewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("select_cell"), manuscriptId: Id, cellId: CellIdSchema }).strict(),
   /** The cell's pencil: the cell opens in its editing form. */
   z.object({ action: z.literal("edit_cell"), manuscriptId: Id, cellId: CellIdSchema }).strict(),
+  /** The editing form's Render-this-cell button (Shift+Enter): leaves the editing form, saves what is pending and renders, like the button. */
+  z.object({ action: z.literal("commit_cell"), manuscriptId: Id, cellId: CellIdSchema }).strict(),
   /** The outline (left) and References (right) panel's fold buttons. */
   z
     .object({
@@ -577,6 +579,7 @@ export const WRITER_VIEW_ACTIONS = [
   "export_manuscript",
   "select_cell",
   "edit_cell",
+  "commit_cell",
   "set_writer_panel",
   "set_writer_tab",
   "dismiss_template_warning",

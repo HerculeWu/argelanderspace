@@ -23,7 +23,14 @@ export interface TexProcResult {
 export function runTexProcess(
   cmd: string,
   args: readonly string[],
-  opts: { cwd?: string; timeoutMs: number; env?: Record<string, string>; signal?: AbortSignal }
+  opts: {
+    cwd?: string;
+    timeoutMs: number;
+    env?: Record<string, string>;
+    /** Use `env` as the whole environment instead of merging it over the parent (a scrubbed child). */
+    replaceEnv?: boolean;
+    signal?: AbortSignal;
+  }
 ): Promise<TexProcResult> {
   opts.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
@@ -33,7 +40,9 @@ export function runTexProcess(
       detached: true,
       // additive merge (Stage 10: writer numbering compile needs TEXINPUTS);
       // existing callers pass no env and get the parent's unchanged.
-      ...(opts.env !== undefined ? { env: { ...process.env, ...opts.env } } : {}),
+      ...(opts.env !== undefined
+        ? { env: opts.replaceEnv ? { ...opts.env } : { ...process.env, ...opts.env } }
+        : {}),
     });
 
     let timedOut = false;

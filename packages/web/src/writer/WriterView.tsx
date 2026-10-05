@@ -77,6 +77,7 @@ export function WriterView({ paneId, onContext, onController }: { paneId?: numbe
           if (!openIdRef.current || !controls) return { ok: false, detail: "unavailable" };
           if (action.action === "select_cell") return controls.select(action.cellId) === "ok" ? { ok: true } : { ok: false, detail: "not_found" };
           if (action.action === "edit_cell") return controls.edit(action.cellId) === "ok" ? { ok: true } : { ok: false, detail: "not_found" };
+          if (action.action === "commit_cell") return (await controls.commit(action.cellId)) === "ok" ? { ok: true } : { ok: false, detail: "not_found" };
           if (action.action === "set_writer_panel") { controls.setPanel(action.panel, action.collapsed); return { ok: true }; }
           if (action.action === "set_writer_tab") { controls.setTab(action.tab); return { ok: true }; }
           if (action.action === "dismiss_template_warning") return controls.dismissWarning() === "ok" ? { ok: true } : { ok: false, detail: "disabled" };

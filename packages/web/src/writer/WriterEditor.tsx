@@ -406,6 +406,7 @@ export function WriterEditor({
     registerControls({
       select: (cellId) => controlsRef.current?.select(cellId) ?? "not_found",
       edit: (cellId) => controlsRef.current?.edit(cellId) ?? "not_found",
+      commit: (cellId) => controlsRef.current?.commit(cellId) ?? Promise.resolve("not_found" as const),
       setPanel: (panel, collapsed) => controlsRef.current?.setPanel(panel, collapsed),
       setTab: (tab) => controlsRef.current?.setTab(tab),
       dismissWarning: () => controlsRef.current?.dismissWarning() ?? "disabled",
@@ -629,6 +630,12 @@ export function WriterEditor({
     edit: (cellId) => {
       if (!docRef.current?.cells.some((c) => c.id === cellId)) return "not_found";
       editCell(cellId);
+      return "ok";
+    },
+    commit: async (cellId) => {
+      if (!docRef.current?.cells.some((c) => c.id === cellId)) return "not_found";
+      if (editingId === cellId) setEditingId(null);
+      await requestPreview();
       return "ok";
     },
     setPanel: (panel, collapsed) => (panel === "outline" ? setLeftCollapsed(collapsed) : setRightCollapsed(collapsed)),

@@ -224,6 +224,36 @@ async function clearLatexmkRunState(dir: string, jobname: string): Promise<void>
   }
 }
 
+/**
+ * The whole environment of a Writer compile (copilot ticket 23, spec 14.1). Text an agent writes can reach the TeX
+ * engine, and TeX Live's restricted shell escape runs `kpsewhich -var-value=NAME` for it, which prints any variable of
+ * the environment, an API key included. So the child gets only what TeX needs, never the server's own variables:
+ * no shell escape, paranoid file access (no absolute or parent paths), PATH and TeX/locale variables, and a HOME and
+ * TMPDIR inside the compile workspace.
+ */
+export function writerTexEnv(workDir: string): Record<string, string> {
+  const env: Record<string, string> = {
+    PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    HOME: workDir,
+    TMPDIR: workDir,
+    shell_escape: "f",
+    openin_any: "p",
+    openout_any: "p",
+  };
+  for (const [key, value] of Object.entries(process.env)) {
+    if (
+      value !== undefined &&
+      /^(LANG|LC_[A-Z]+|TZ|SOURCE_DATE_EPOCH|FORCE_SOURCE_DATE|TEX[A-Z0-9_]*)$/.test(key)
+    )
+      env[key] = value;
+  }
+  // The three above are not negotiable whatever the parent sets.
+  env.shell_escape = "f";
+  env.openin_any = "p";
+  env.openout_any = "p";
+  return env;
+}
+
 async function attemptCompile(opts: {
   srcDir: string;
   mainRel: string;
@@ -280,7 +310,10 @@ async function attemptCompile(opts: {
     }
     const runDir = path.dirname(target);
     const args = [
-      ...(opts.renderProfile === "writer" ? ["-norc"] : []),
+      // Writer: no rc files, and biber never runs. biber ignores kpathsea's openin_any (it reads an absolute or even a
+      // remote \addbibresource), so latexmk's $biber is replaced by a command that always fails: a biblatex/biber
+      // manuscript is a failed compile, while bibtex (natbib) keeps working under paranoid file access.
+      ...(opts.renderProfile === "writer" ? ["-norc", "-e", "$biber = 'false';"] : []),
       opts.engine === "xelatex" ? "-pdfxe" : "-pdf",
       "-interaction=nonstopmode",
       "-recorder",
@@ -294,7 +327,7 @@ async function attemptCompile(opts: {
       // document \input any readable absolute path (openin_any = a); paranoid mode refuses absolute and parent paths
       // and dotfiles, so a Writer compile can only read its own workspace and the TeX trees. The reader/ingest
       // compiles are untouched (their sources are arXiv papers, not agent text).
-      ...(opts.renderProfile === "writer" ? { env: { openin_any: "p", openout_any: "p" } } : {}),
+      ...(opts.renderProfile === "writer" ? { env: writerTexEnv(runDir), replaceEnv: true } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
     });
     opts.signal?.throwIfAborted();

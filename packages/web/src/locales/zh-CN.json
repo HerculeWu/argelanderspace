@@ -1270,6 +1270,7 @@
         "export_manuscript": "导出稿件",
         "select_cell": "选中单元",
         "edit_cell": "打开单元编辑",
+        "commit_cell": "结束编辑并渲染",
         "set_writer_panel": "折叠或展开写作面板",
         "set_writer_tab": "切换写作标签页",
         "dismiss_template_warning": "关闭模板警告",
