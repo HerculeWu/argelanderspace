@@ -40,7 +40,13 @@ import { ProviderSettings } from "../src/providers.js";
 import { stubPipelines, stubSources } from "./helpers.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 
-type Out = { text?: string; call?: Record<string, unknown>; tool?: string; error?: string };
+type Out = {
+  text?: string;
+  call?: Record<string, unknown>;
+  tool?: string;
+  error?: string;
+  id?: string;
+};
 type Step = (context: TranscriptContext) => Out | Promise<Out>;
 let root: string;
 let host: CopilotHost;
@@ -133,7 +139,7 @@ beforeEach(async () => {
             ? [
                 {
                   type: "toolCall",
-                  id: `call_${index}`,
+                  id: out.id ?? `call_${index}`,
                   name: out.tool ?? "reader",
                   arguments: out.call as never,
                 },
@@ -504,6 +510,11 @@ test("a single entry larger than any room is reported as the actual gap, with no
     expect(result.detail).toMatch(/NOT read/);
     expect(result.batch).toMatchObject({ status: "omitted", from: first.to, to: first.to });
     expect(ops(snapshot).at(-1)).toMatchObject({ status: "rejected" });
+    // the gap travels in the operation record itself (real data: the UI shows it from here)
+    expect(ops(snapshot).at(-1)?.batch).toMatchObject({
+      status: "omitted",
+      gap: { id: "p-huge", bytes: expect.any(Number) },
+    });
     // the model was never told the rest was read
     expect(JSON.stringify(seen.at(-1)?.messages)).not.toContain("FINISHED-ALL-PARTS");
   });
@@ -803,8 +814,17 @@ test("a conversation is never wedged by what it read: a message that fits only a
     const { id } = await run(context, "Summarise it");
     const before = ledgerLines(await historyText(id)).length;
     // a message so long that only a conversation without the first delivery has room for it
+    await host.snapshot(id);
+    const dbg = (
+      host as unknown as {
+        ledgerState(l: unknown): { deliveries: { key: string; coverage: unknown }[] };
+      }
+    ).ledgerState((host as unknown as { loaded: Map<string, unknown> }).loaded.get(id));
     const sent = await send(id, context, "x".repeat(40_000));
-    expect(sent.status).toBe(202);
+    if (sent.status !== 202)
+      throw new Error(
+        `DBGD ${JSON.stringify(dbg.deliveries.map((d) => [d.key.slice(0, 20), !!d.coverage]))}`
+      );
     const records = ledgerLines(await historyText(id)).flatMap((entry) => entry.records);
     expect(ledgerLines(await historyText(id)).length).toBe(before + 1);
     expect(records[0]).toMatchObject({ action: "evict", target: { kind: "message" } });
@@ -1028,5 +1048,151 @@ test("a message carrying no reading is not refused for the room a huge one took,
     expect((await request(`/views/${plan.viewId}`, "PUT", plan)).status).toBe(200);
     expect((await send(id, plan, "and what now?")).status).toBe(202);
     expect((await host.snapshot(id)).conversation.run?.status).toBe("completed");
+  });
+});
+
+// ---- fix round 2 ---------------------------------------------------------------------------------------- //
+const sessionPath = async (id: string) =>
+  join(
+    root,
+    "data",
+    "copilot",
+    "sessions",
+    `${(await host.snapshot(id)).conversation.sessionId}.jsonl`
+  );
+
+test("a history from before coverage was recorded (reads without batch, envelopes without coverage) is never wedged after a restart", async () => {
+  writeDoc(docIr(900));
+  let id = "";
+  const context = page();
+  // written the way tickets 18-23 did (whole reads, in a window that held them) ...
+  await withWindow(400_000, async () => {
+    script = [
+      () => ({ call: { action: "read", docId: DOC } }),
+      () => ({ call: { action: "read", docId: DOC } }),
+      () => ({ text: "read twice" }),
+    ];
+    id = (await run(context, "read all")).id;
+  });
+  // ... and continued in a window that cannot hold them
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    // make it look like tickets 18-23 wrote it: no batch on the reads, no coverage in the envelopes, no ledger
+    const path = await sessionPath(id);
+    const lines = readFileSync(path, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line))
+      .filter((entry) => entry.customType !== "argelander.delivery.v1");
+    for (const entry of lines) {
+      if (entry.type !== "message") continue;
+      if (entry.message.role === "toolResult" && entry.message.details) {
+        delete entry.message.details.batch;
+        // the old whole reading: put the first part's reading back as it was (a whole reading of a small document)
+        const payload = JSON.parse(entry.message.content[0].text);
+        if (payload.entries) continue;
+        delete payload.batch;
+        entry.message.content[0].text = JSON.stringify(payload);
+      }
+      if (entry.message.role === "user") {
+        const text =
+          typeof entry.message.content === "string"
+            ? entry.message.content
+            : entry.message.content[0].text;
+        const parsed = JSON.parse(text);
+        delete parsed.coverage;
+        const next = JSON.stringify(parsed);
+        entry.message.content =
+          typeof entry.message.content === "string" ? next : [{ type: "text", text: next }];
+      }
+    }
+    // (dropping the ledger entries must keep the chain of parents intact)
+    let previous: string | null = null;
+    for (const entry of lines) {
+      if (entry.type === "session") continue;
+      entry.parentId = previous;
+      previous = entry.id;
+    }
+    writeFileSync(path, `${lines.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+    // a restart: the host reloads the stripped history
+    (host as unknown as { loaded: Map<string, unknown> }).loaded.delete(id);
+    const sent = await send(id, context, "x".repeat(30_000));
+    expect(sent.status).toBe(202);
+    const records = ledgerLines(await historyText(id)).flatMap((entry) => entry.records);
+    expect(records.length).toBeGreaterThan(0);
+    // the old envelope (now without coverage) was shed through a synthesized one
+    expect(records.some((r: { target: { kind: string } }) => r.target.kind === "message")).toBe(
+      true
+    );
+  });
+});
+
+test("an old whole `reader read` result with no batch is recognised by its tool and action and can be shed", async () => {
+  script = [
+    () => ({ call: { action: "read", docId: DOC } }),
+    () => ({ text: "done" }),
+    () => ({ text: "again" }),
+  ];
+  const context = page();
+  const { id } = await run(context, "read it");
+  const path = await sessionPath(id);
+  const lines = readFileSync(path, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  for (const entry of lines)
+    if (entry.type === "message" && entry.message.role === "toolResult") {
+      delete entry.message.details.batch;
+      const payload = JSON.parse(entry.message.content[0].text);
+      delete payload.batch;
+      entry.message.content[0].text = JSON.stringify(payload);
+    }
+  writeFileSync(path, `${lines.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
+  (host as unknown as { loaded: Map<string, unknown> }).loaded.delete(id);
+  const internals = hostInternals();
+  await host.snapshot(id);
+  expect(internals.shedAll(internals.loaded.get(id))).toBeGreaterThanOrEqual(2);
+  expect(ledgerLines(await historyText(id)).flatMap((entry) => entry.records)).toContainEqual({
+    action: "evict",
+    target: { kind: "tool", id: expect.any(String) },
+  });
+});
+
+test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is written, read back and projected", async () => {
+  const long = `call_${"x".repeat(220)}`;
+  expect(long.length).toBe(225);
+  script = [
+    () => ({ call: { action: "read", docId: DOC }, id: long }),
+    () => ({ text: "done" }),
+    () => ({ text: "again" }),
+  ];
+  const context = page();
+  const { id } = await run(context, "read it");
+  const internals = hostInternals();
+  expect(internals.shedAll(internals.loaded.get(id))).toBeGreaterThanOrEqual(1);
+  const records = ledgerLines(await historyText(id)).flatMap((entry) => entry.records);
+  const tool = records.find((r: { target: { kind: string } }) => r.target.kind === "tool");
+  expect(tool.target.id.length).toBeLessThanOrEqual(200);
+  expect(tool.target.id).not.toContain("xxxxxxxx");
+  // read back after a restart and projected into the next request
+  (host as unknown as { loaded: Map<string, unknown> }).loaded.delete(id);
+  expect((await send(id, context, "once more")).status).toBe(202);
+  // the shed copies are gone from the request: the reading is there once (the new message's own)
+  expect(
+    JSON.stringify(seen.at(-1)?.messages).split("Paragraph 2 of the synthetic paper").length - 1
+  ).toBe(1);
+  const reloaded = await host.snapshot(id);
+  expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
+});
+
+test("a window barely above the instruction (34000 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+  writeDoc(docIr(900));
+  await withWindow(34_000, async () => {
+    script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
+    const { snapshot } = await run(page(), "read it");
+    expect(snapshot.conversation.run).toMatchObject({ status: "completed", error: null });
+    const result = toolResults(seenAt(1)).at(-1);
+    expect(result).toMatchObject({ ok: false, status: "rejected" });
+    expect(result.detail).toMatch(/capacity/);
+    expect(result.detail).toMatch(/none of it is read|NOT read/);
   });
 });

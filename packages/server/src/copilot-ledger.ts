@@ -7,12 +7,13 @@
  * decisions live in their own appended entries (`DELIVERY_LEDGER_TYPE`); everything here is a pure projection over
  * the entries, applied when a request is sent and when the window is measured.
  */
+import { createHash } from "node:crypto";
 import {
   type ContextCoverage,
   ContextCoverageSchema,
   CopilotPromptSchema,
   DELIVERY_LEDGER_TYPE,
-  DeliveryLedgerEntrySchema,
+  DeliveryRecordSchema,
   ReadingLedger,
   readingVersion,
 } from "@argelanderspace/contracts";
@@ -58,6 +59,14 @@ export const textOfContent = (content: unknown): string =>
           )
           .join("")
       : "";
+
+/**
+ * The ledger key of a delivery. A tool-call id the provider chose can be any length: a long one is mapped to a stable,
+ * bounded key (a sha256 prefix), the same in the ledger and in the projection.
+ */
+export function deliveryKey(kind: "tool" | "message", id: string): string {
+  return `${kind}:${id.length <= 120 ? id : `h-${createHash("sha256").update(id).digest("hex").slice(0, 32)}`}`;
+}
 
 const cache = new WeakMap<object, Delivery | null>();
 
@@ -126,7 +135,7 @@ function deliveryOf(entry: RawEntry, index: number): Delivery | null {
         const coverage = envelopeCoverage(prompt);
         if (coverage && typeof prompt.messageId === "string")
           found = {
-            key: `message:${prompt.messageId}`,
+            key: deliveryKey("message", prompt.messageId),
             kind: "message",
             id: prompt.messageId,
             index,
@@ -139,17 +148,34 @@ function deliveryOf(entry: RawEntry, index: number): Delivery | null {
       }
     }
   } else if (message?.role === "toolResult" && typeof message.toolCallId === "string") {
-    const details = message.details as { batch?: unknown } | undefined;
+    const details = message.details as
+      | { batch?: unknown; tool?: string; action?: string }
+      | undefined;
     const batch = ContextCoverageSchema.safeParse(details?.batch);
     const content = Array.isArray(message.content) ? message.content : [];
     const image = content.some((part) => (part as { type?: string })?.type === "image");
-    if (batch.success || image)
+    // A read from before coverage was recorded (tickets 18-23): the whole reading, recognised by tool and action.
+    let old: ContextCoverage | null = null;
+    if (!batch.success && !image && details?.tool === "reader" && details.action === "read") {
+      try {
+        const reading = (
+          JSON.parse(textOfContent(message.content)) as { reading?: { format?: string } }
+        ).reading;
+        if (reading?.format === "latex")
+          old = envelopeCoverage({ context: { reader: { reading } } });
+        else if (reading?.format === "pdf")
+          old = envelopeCoverage({ pdf: { status: "ok", reading } });
+      } catch {
+        // not a reading
+      }
+    }
+    if (batch.success || image || old)
       found = {
-        key: `tool:${message.toolCallId}`,
+        key: deliveryKey("tool", message.toolCallId),
         kind: "tool",
         id: message.toolCallId,
         index,
-        coverage: batch.success ? batch.data : null,
+        coverage: batch.success ? batch.data : old,
         image,
         size: historyCost(JSON.stringify(message.content)),
       };
@@ -177,16 +203,18 @@ export function recordsOf(entries: readonly RawEntry[]): {
   let ceiling: number | undefined;
   for (const entry of entries) {
     if (entry.type !== "custom" || entry.customType !== DELIVERY_LEDGER_TYPE) continue;
-    const parsed = DeliveryLedgerEntrySchema.safeParse(entry.data);
-    if (!parsed.success) continue;
-    for (const record of parsed.data.records) {
-      const key = `${record.target.kind}:${record.target.id}`;
+    const data = entry.data as { records?: unknown; ceiling?: unknown } | null;
+    // One unreadable record never costs the others: they are read one by one.
+    for (const raw of Array.isArray(data?.records) ? data.records : []) {
+      const record = DeliveryRecordSchema.safeParse(raw);
+      if (!record.success) continue;
+      const key = `${record.data.target.kind}:${record.data.target.id}`;
       // A withdrawn delivery stays withdrawn (it was never read); an evicted one may be withdrawn later.
-      if (gone.get(key) !== "withdraw") gone.set(key, record.action);
+      if (gone.get(key) !== "withdraw") gone.set(key, record.data.action);
     }
-    if (parsed.data.ceiling !== undefined)
-      ceiling =
-        ceiling === undefined ? parsed.data.ceiling : Math.min(ceiling, parsed.data.ceiling);
+    const learned = data?.ceiling;
+    if (typeof learned === "number" && Number.isInteger(learned) && learned >= 0)
+      ceiling = ceiling === undefined ? learned : Math.min(ceiling, learned);
   }
   return { gone, ...(ceiling !== undefined ? { ceiling } : {}) };
 }
@@ -289,7 +317,7 @@ export function heldGone(
   ledger: ReadingLedger
 ): boolean {
   if (!ledger.complete(coverage.kind, coverage.docId, coverage.version)) return true;
-  return coverage.heldIn !== undefined && gone.has(`message:${coverage.heldIn}`);
+  return coverage.heldIn !== undefined && gone.has(deliveryKey("message", coverage.heldIn));
 }
 
 const standInCache = new WeakMap<object, Map<string, unknown>>();
@@ -369,14 +397,14 @@ export function projectMessages<T extends { role: string }>(
   return messages.map((message) => {
     if (message.role === "toolResult") {
       const stand = content.get(
-        `tool:${(message as unknown as { toolCallId: string }).toolCallId}`
+        deliveryKey("tool", (message as unknown as { toolCallId: string }).toolCallId)
       );
       return stand !== undefined ? ({ ...message, content: stand } as T) : message;
     }
     if (message.role === "user") {
       const text = textOfContent((message as unknown as { content: unknown }).content);
       const id = /"messageId":"([^"]+)"/.exec(text.slice(0, 400))?.[1];
-      const stand = id ? content.get(`message:${id}`) : undefined;
+      const stand = id ? content.get(deliveryKey("message", id)) : undefined;
       return stand !== undefined ? ({ ...message, content: stand } as T) : message;
     }
     return message;

@@ -66,21 +66,19 @@ export type ContextCoverage = z.infer<typeof ContextCoverageSchema>;
  * may take from now on, learned from the rejected delivery (it only ever shrinks).
  */
 export const DELIVERY_LEDGER_TYPE = "argelander.delivery.v1";
+/** One ledger record. A target id is at most 200 characters; a long tool-call id is mapped to a bounded key first. */
+export const DeliveryRecordSchema = z
+  .object({
+    action: z.enum(["evict", "withdraw"]),
+    target: z
+      .object({ kind: z.enum(["tool", "message"]), id: z.string().min(1).max(200) })
+      .strict(),
+  })
+  .strict();
 export const DeliveryLedgerEntrySchema = z
   .object({
     version: z.literal(1),
-    records: z
-      .array(
-        z
-          .object({
-            action: z.enum(["evict", "withdraw"]),
-            target: z
-              .object({ kind: z.enum(["tool", "message"]), id: z.string().min(1).max(200) })
-              .strict(),
-          })
-          .strict()
-      )
-      .max(10000),
+    records: z.array(DeliveryRecordSchema).max(10000),
     ceiling: Count.optional(),
   })
   .strict();

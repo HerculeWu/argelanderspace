@@ -90,6 +90,8 @@ function ReaderSummary({ summary, title, sent = true }: { sent?: boolean; summar
 export function messageContextStatus(context: { status: "complete" | "unavailable" | "error"; pdf?: PdfContextSummary; coverage?: ContextCoverage }): "complete" | "unavailable" | "partial" {
   // A reading delivered in parts, or left out for want of room, is never "complete" (ticket 24).
   if (context.coverage && (context.coverage.status === "partial" || context.coverage.status === "omitted")) return "partial";
+  // What the ledger took out of the conversation (or the provider rejected) was read at most once: never "Complete".
+  if (context.coverage && (context.coverage.evicted || context.coverage.withdrawn)) return "partial";
   const material = context.pdf?.material;
   if (material) {
     if (material.status === "omitted") return "partial";

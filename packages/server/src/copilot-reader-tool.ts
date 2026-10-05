@@ -815,7 +815,7 @@ export function createReaderTool(context: ReaderToolContext) {
       if (more > (room ?? 0)) batched = pdfBatch(reading, from, more, observed);
     }
     if (batched.kind === "gap")
-      return done(record(id, "read", { status: "rejected", object }), {
+      return done(record(id, "read", { status: "rejected", object, batch: batched.coverage }), {
         ok: false,
         status: "rejected",
         detail: batched.detail,
@@ -1018,13 +1018,16 @@ export function createReaderTool(context: ReaderToolContext) {
             if (more > (room ?? 0)) batched = readerBatch(outcome.reading, from, more, observed);
           }
           if (batched.kind === "gap")
-            return done(record(toolCallId, "read", { status: "rejected", object }), {
-              ok: false,
-              status: "rejected",
-              detail: batched.detail,
-              coverage: outcome.reading.coverage,
-              batch: batched.coverage,
-            });
+            return done(
+              record(toolCallId, "read", { status: "rejected", object, batch: batched.coverage }),
+              {
+                ok: false,
+                status: "rejected",
+                detail: batched.detail,
+                coverage: outcome.reading.coverage,
+                batch: batched.coverage,
+              }
+            );
           return done(
             record(toolCallId, "read", { status: "ok", object, batch: batched.coverage }),
             batched.payload

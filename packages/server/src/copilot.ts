@@ -27,6 +27,7 @@ import {
   type CopilotViewActionResult,
   copilotContextObjects,
   DELIVERY_LEDGER_TYPE,
+  DeliveryLedgerEntrySchema,
   IMAGE_BYTES_PER_TOKEN,
   imageTokens,
   OPERATION_CONFIRMATION_TYPE,
@@ -66,6 +67,7 @@ import { atomicCopilotFile, readCopilotHistory, saveCopilotHistory } from "./cop
 import {
   annotateCoverage,
   deliveriesOf,
+  deliveryKey,
   heldGone,
   type LedgerAction,
   presentLedger,
@@ -660,7 +662,7 @@ export class CopilotHost {
           const data = CopilotContextReferenceSchema.parse(reference.data);
           const covered = data.context.coverage;
           if (covered) {
-            const action = ledger.gone.get(`message:${data.messageId}`);
+            const action = ledger.gone.get(deliveryKey("message", data.messageId));
             const goneHeld =
               covered.status === "held" && heldGone(covered, ledger.gone, ledger.ledger);
             data.context.coverage = annotateCoverage(covered, goneHeld ? "evict" : action);
@@ -683,7 +685,7 @@ export class CopilotHost {
             const stored = CopilotOperationSchema.safeParse(
               outcomes.has(part.id) ? outcomes.get(part.id) : journaled?.result?.operation
             );
-            const action = ledger.gone.get(`tool:${part.id}`);
+            const action = ledger.gone.get(deliveryKey("tool", part.id));
             operations.push(
               stored.success
                 ? this.withLiveJob(
@@ -2132,7 +2134,7 @@ export class CopilotHost {
     ceiling?: number
   ): void {
     if (!records.length && ceiling === undefined) return;
-    this.durableAppend(loaded, DELIVERY_LEDGER_TYPE, {
+    const entry = DeliveryLedgerEntrySchema.parse({
       version: 1,
       records: records.map((record) => {
         const [kind, ...rest] = record.key.split(":");
@@ -2143,6 +2145,8 @@ export class CopilotHost {
       }),
       ...(ceiling !== undefined ? { ceiling } : {}),
     });
+    // Validated before anything is written: an entry the ledger could not read back must never reach the history.
+    this.durableAppend(loaded, DELIVERY_LEDGER_TYPE, entry);
     this.refreshReadings(loaded);
   }
   /** The run's held-reading keys follow the ledger: a reading that left the conversation is no longer "in the task's context". */
@@ -2505,27 +2509,54 @@ export class CopilotHost {
                 }),
               }
             : null;
-        const ledger = this.ledgerState(loaded);
-        const base = {
-          ...transcript,
-          messages: projectMessages(
+        const windowLimit = Math.max(0, frozenModel.contextWindow - maxTokens - 2048) * 2;
+        const build = async (shrinkLastRead: boolean) => {
+          const ledger = this.ledgerState(loaded);
+          let messages = projectMessages(
             transcript.messages,
             ledger.raw,
             ledger.gone,
             ledger.deliveries,
             ledger.ledger
-          ),
+          );
+          if (shrinkLastRead) {
+            // No room is left for any part of the document: the model is told so (an honest gap) instead of the run failing.
+            const last = messages.at(-1) as { role?: string; toolName?: string } | undefined;
+            if (last?.role === "toolResult" && last.toolName === READER_TOOL_NAME)
+              messages = [
+                ...messages.slice(0, -1),
+                {
+                  ...last,
+                  content: [
+                    {
+                      type: "text",
+                      text: JSON.stringify({
+                        ok: false,
+                        status: "rejected",
+                        detail:
+                          "capacity: no room is left in this model's window for any part of the document, so nothing was returned and none of it is read; tell the user, or continue in a new conversation",
+                      }),
+                    },
+                  ],
+                } as never,
+              ];
+          }
+          return {
+            ...transcript,
+            messages: observation
+              ? [...messages, ...(await session.agent.convertToLlm([observation]))]
+              : messages,
+          };
         };
-        const nextTranscript = observation
-          ? {
-              ...base,
-              messages: [...base.messages, ...(await session.agent.convertToLlm([observation]))],
-            }
-          : base;
-        if (
-          measureForWindow(nextTranscript.messages).size >
-          Math.max(0, frozenModel.contextWindow - maxTokens - 2048) * 2
-        )
+        let nextTranscript = await build(false);
+        if (measureForWindow(nextTranscript.messages).size > windowLimit) {
+          // Make room first (older deliveries leave the conversation), then, if even that is not enough, tell the model.
+          this.shedAll(loaded);
+          nextTranscript = await build(false);
+          if (measureForWindow(nextTranscript.messages).size > windowLimit)
+            nextTranscript = await build(true);
+        }
+        if (measureForWindow(nextTranscript.messages).size > windowLimit)
           throw new CopilotError("capacity");
         loaded.manager.appendModelChange(frozenModel.provider, frozenModel.id);
         loaded.manager.appendThinkingLevelChange(actualThinking);

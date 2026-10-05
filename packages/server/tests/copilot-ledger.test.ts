@@ -2,6 +2,7 @@ import { DELIVERY_LEDGER_TYPE } from "@argelanderspace/contracts";
 import { describe, expect, it } from "vitest";
 import {
   deliveriesOf,
+  deliveryKey,
   heldGone,
   presentLedger,
   type RawEntry,
@@ -153,5 +154,39 @@ describe("the delivery ledger over the history entries", () => {
     );
     expect(heldGone(held, new Map([["message:m1", "evict" as const]]), later)).toBe(true);
     expect(heldGone(held, new Map(), presentLedger([], new Map()))).toBe(true);
+  });
+  it("one record it cannot read costs the others nothing", () => {
+    const { gone, ceiling } = recordsOf([
+      ledgerEntry({
+        version: 1,
+        records: [
+          { action: "evict", target: { kind: "tool", id: "x".repeat(225) } },
+          { action: "evict", target: { kind: "message", id: "m1" } },
+          { action: "nonsense", target: { kind: "message", id: "m2" } },
+        ],
+        ceiling: 3000,
+      }),
+    ]);
+    expect([...gone.keys()]).toEqual(["message:m1"]);
+    expect(ceiling).toBe(3000);
+  });
+  it("a long tool-call id gets a stable bounded key, the same in both directions", () => {
+    const long = `c${"y".repeat(224)}`;
+    expect(deliveryKey("tool", long)).toBe(deliveryKey("tool", long));
+    expect(deliveryKey("tool", long).length).toBeLessThan(150);
+    expect(deliveryKey("tool", "short")).toBe("tool:short");
+    expect(deliveryKey("tool", long)).not.toBe(deliveryKey("tool", `${long}z`));
+  });
+  it("a write (ticket 21 PDF annotations, Reader annotations) is never a delivery, however its result looks", () => {
+    const write = tool("w1", { tool: "reader", action: "create_pdf_annotation", status: "ok" }, [
+      {
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          reading: { format: "pdf", sha256: "a".repeat(64), annotationsRev: 1, pages: [{}] },
+        }),
+      },
+    ]);
+    expect(deliveriesOf([write])).toEqual([]);
   });
 });

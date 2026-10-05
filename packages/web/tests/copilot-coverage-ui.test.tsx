@@ -27,6 +27,23 @@ const detail = async (snapshot: ConversationSnapshot) => {
   return await waitFor(() => { const found = document.querySelector('[data-ui="copilot-message-context"]'); expect(found).not.toBeNull(); return found as HTMLElement; });
 };
 
+describe("a message's context status never calls what left the conversation complete (R1)", () => {
+  it("a withdrawn or evicted whole reading is Partial for a Reader and for a PDF, whatever the page says", () => {
+    const base = { status: "complete" as const };
+    for (const kind of ["reader", "pdf"] as const) {
+      const whole = cov({ kind, unit: kind === "pdf" ? "pages" : "entries", status: "complete", to: 980 });
+      expect(messageContextStatus({ ...base, coverage: whole })).toBe("complete");
+      expect(messageContextStatus({ ...base, coverage: { ...whole, withdrawn: true } })).toBe("partial");
+      expect(messageContextStatus({ ...base, coverage: { ...whole, evicted: true } })).toBe("partial");
+    }
+  });
+  it("shows the Partial badge in the message details for a withdrawn whole delivery", async () => {
+    const found = await detail(snapshotWith(cov({ status: "complete", to: 980, withdrawn: true })));
+    expect(found.textContent).toContain("Partial");
+    expect(found.textContent).not.toContain("Complete");
+  });
+});
+
 describe("a message's context status never calls a part complete", () => {
   it("a held PDF still counts the whole document's scans: a text-only model cannot read them, so never Complete", () => {
     const material = { status: "held" as const, modelAcceptsImages: false, pages: 0, pagesWithText: 0, pagesWithoutText: 0, characters: 0, totals: { pages: 6, pagesWithText: 5, pagesWithoutText: 1, characters: 9 } };
