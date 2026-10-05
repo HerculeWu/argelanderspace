@@ -128,6 +128,7 @@ import {
   ArxivPdfOnlyError,
   extractZip,
   getConfig,
+  writerSandboxAvailable,
   ZipError,
   zipEntries,
 } from "@argelanderspace/infra";
@@ -378,6 +379,7 @@ export function createApp(deps: AppDeps): Hono {
     cancelCompile: (id) => cancelNumberingCompile(id, writerDataDir),
     // The Render button's own compile, for the Copilot's render_manuscript (the refresh route calls the same function).
     render: (id) => runWriterNumberingNow(writerDataDir, id, { broadcast }),
+    sandboxed: () => writerSandboxAvailable(),
     // The References tab's list: the saved works' cite keys, read fresh at each use.
     citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
   };

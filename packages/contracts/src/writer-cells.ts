@@ -229,6 +229,16 @@ const FORBIDDEN_WORDS = new Set([
   "CatchFileNoDef",
   "includepdf",
   "openpipe",
+  "pdfobj",
+  "pdfximage",
+  "pdfrefximage",
+  "pdfprimitive",
+  "primitive",
+  "pdfmapfile",
+  "pdfmapline",
+  "XeTeXpdffile",
+  "XeTeXpicfile",
+  "pdfextension",
 ]);
 /** Packages and environments that read files or run programs for the author. */
 const FORBIDDEN_PACKAGES = new Set([
@@ -281,6 +291,10 @@ export function agentTexViolations(text: string): string[] {
     /\\(?:bibliography|bibliographystyle|addbibresource|addglobalbib|addsectionbib)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g
   ))
     if (/[/\\:]|^\s*\./.test(match[1] ?? "")) found.add("a bibliography path or URL");
+  // A figure is a file of the manuscript's own assets/: no absolute path, parent path or URL.
+  for (const match of text.matchAll(/\\includegraphics\s*(?:\[[^\]]*\])*\s*\{([^}]*)\}/g))
+    if (/^\s*[/\\~.]|[:]|\.\./.test(match[1] ?? ""))
+      found.add("an \\includegraphics path outside assets/");
   if (/\\(?:addbibresource|addglobalbib|addsectionbib)\b/.test(text))
     found.add("a bib resource command (biblatex/biber is not available in the Writer)");
   return [...found];

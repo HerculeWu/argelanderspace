@@ -17,7 +17,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WriterManuscript, WriterNumberingResponse } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
-import { compileTex, haveLatexmk, writerTexEnv } from "@argelanderspace/infra";
+import {
+  __setWriterSandboxForTests,
+  compileTex,
+  haveLatexmk,
+  writerSandboxAvailable,
+  writerTexEnv,
+} from "@argelanderspace/infra";
 import { describe, expect, test } from "vitest";
 import { createApp } from "../src/app.js";
 import { statusDirFor } from "../src/deps.js";
@@ -26,6 +32,15 @@ import { stubPipelines, stubSources } from "./helpers.js";
 
 const HAVE = haveLatexmk();
 if (!HAVE) console.warn("latexmk not on PATH — writer render-safety real-compile test skipped");
+
+const PDFOBJ_SENTINEL = "PDFOBJ-SENTINEL-7391-OUTSIDE";
+const PNG_B64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const SANDBOX = HAVE && writerSandboxAvailable();
+if (HAVE && !SANDBOX)
+  console.warn(
+    "bubblewrap does not work here — the sandbox boundary tests are SKIPPED (not passed)"
+  );
 
 describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () => {
   let lastDir = "";
@@ -37,6 +52,8 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
       join(outside, "sentinel.bib"),
       "@book{sentinel,\n  title = {SENTINEL-BIB-TITLE-5521},\n  author = {Zed, A.},\n  year = {2020},\n  publisher = {P}\n}\n"
     );
+    writeFileSync(join(outside, "secret.txt"), `${PDFOBJ_SENTINEL}\n`);
+    writeFileSync(join(outside, "real.png"), Buffer.from(PNG_B64, "base64"));
     const secret = join(dataDir, "outside-secret.txt");
     writeFileSync(secret, "TOP-SECRET-OUTSIDE-FILE-CONTENT\n");
     const app = createApp({
@@ -128,6 +145,154 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
     }
   }, 120_000);
 
+  const PDFOBJ_PAYLOAD =
+    "\\pdfcompresslevel=0 \\pdfobjcompresslevel=0 \\immediate\\pdfobj stream file{@OUT@/secret.txt}\\pdfcatalog{/X \\the\\pdflastobj\\space 0 R}";
+
+  test.skipIf(!SANDBOX)(
+    "sandbox: pdfTeX \\pdfobj file{} of a file outside the workspace (it ignores openin_any) embeds nothing: user preamble and cell",
+    async () => {
+      for (const [source, preamble] of [
+        ["Body.", PDFOBJ_PAYLOAD],
+        [`Body. ${PDFOBJ_PAYLOAD}`, ""],
+      ] as const) {
+        const out = await compile(source, preamble);
+        expect(JSON.stringify(out)).not.toContain(PDFOBJ_SENTINEL);
+        expect(everything(lastDir)).not.toContain(PDFOBJ_SENTINEL);
+      }
+    },
+    180_000
+  );
+
+  test.skipIf(!SANDBOX)(
+    "control: without the sandbox the same payload does read the file into the PDF (why the sandbox is the boundary)",
+    async () => {
+      __setWriterSandboxForTests(false);
+      try {
+        await compile("Body.", PDFOBJ_PAYLOAD);
+        expect(everything(lastDir)).toContain(PDFOBJ_SENTINEL);
+      } finally {
+        __setWriterSandboxForTests(null);
+      }
+    },
+    120_000
+  );
+
+  test.skipIf(!SANDBOX)(
+    "sandbox: \\includegraphics of an absolute image outside the workspace embeds no image",
+    async () => {
+      const out = await compile("Body \\includegraphics{@OUT@/real.png}");
+      expect(everything(lastDir)).not.toContain("/Subtype /Image");
+      expect(out.status).not.toBe("ok");
+    },
+    120_000
+  );
+
+  test.skipIf(!SANDBOX)(
+    "B1 payload variants inside the sandbox: typeset in a cell, in the preamble, and through \\message (the warning path)",
+    async () => {
+      process.env.FAKE_WRITER_SECRET_KEY = FAKE;
+      try {
+        const kp = '|"kpsewhich -var-value=FAKE_WRITER_SECRET_KEY" ';
+        const variants: [string, string][] = [
+          [`Body \\makeatletter\\@@input${kp}\\makeatother`, ""],
+          ["Body.", `\\makeatletter\\message{undefined [\\@nameuse{@@input}${kp}]}\\makeatother`],
+          [`Body \\makeatletter\\message{undefined [\\@nameuse{@@input}${kp}]}\\makeatother`, ""],
+        ];
+        for (const [source, preamble] of variants) {
+          const out = await compile(source, preamble);
+          expect(JSON.stringify(out)).not.toContain(FAKE);
+          expect(everything(lastDir)).not.toContain(FAKE);
+        }
+      } finally {
+        delete process.env.FAKE_WRITER_SECRET_KEY;
+      }
+    },
+    240_000
+  );
+
+  const ordinary = async (
+    template: string
+  ): Promise<{ out: WriterNumberingResponse; dir: string }> => {
+    const dataDir = mkdtempSync(join(tmpdir(), "writer-ordinary-"));
+    const paths = libraryPaths(dataDir);
+    mkdirSync(paths.libraryDir, { recursive: true });
+    writeFileSync(
+      paths.libraryBib,
+      "@article{smith2020,\n  author = {Smith, Jane},\n  title = {Stellar streams},\n  journal = {MNRAS},\n  year = {2020}\n}\n"
+    );
+    const app = createApp({
+      paths,
+      statusDir: statusDirFor(dataDir),
+      makeSources: () => stubSources(),
+      pipelines: stubPipelines(),
+      runner: new JobRunner({ dir: join(dataDir, "jobs") }),
+      broadcast: () => {},
+    });
+    const doc = (await (
+      await app.request("/api/writer/manuscripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template, title: "Ordinary" }),
+      })
+    ).json()) as WriterManuscript;
+    mkdirSync(join(dataDir, "manuscripts", doc.id, "assets"), { recursive: true });
+    writeFileSync(
+      join(dataDir, "manuscripts", doc.id, "assets", "fig.png"),
+      Buffer.from(PNG_B64, "base64")
+    );
+    doc.cells = [
+      {
+        id: "c_00000001",
+        type: "latex",
+        data: {
+          source: `${template === "letter" ? "" : "\\section{Intro}\n"}As shown by \\cite{smith2020}, $x^2$.`,
+        },
+      },
+      ...(template === "letter"
+        ? []
+        : [
+            {
+              id: "c_00000002",
+              type: "figure",
+              data: {
+                caption: "A figure",
+                label: "fig:a",
+                placement: "center",
+                width: 60,
+                image: "fig.png",
+              },
+            },
+          ]),
+    ] as never;
+    expect(
+      (
+        await app.request(`/api/writer/manuscripts/${doc.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(doc),
+        })
+      ).status
+    ).toBe(200);
+    const res = await app.request(`/api/writer/manuscripts/${doc.id}/numbering/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    return { out: (await res.json()) as WriterNumberingResponse, dir: dataDir };
+  };
+
+  test.each(["report", "letter"])(
+    "an ordinary %s manuscript (figure asset, bibtex bibliography, math) still compiles in the Writer compile (sandboxed when it works here)",
+    async (template) => {
+      const { out, dir } = await ordinary(template);
+      expect(out.lastError).toBeNull();
+      expect(out.status).toBe("ok");
+      const all = everything(dir);
+      expect(all).toContain("\\bibitem"); // bibtex ran inside the boundary
+      if (template === "report") expect(all).toContain("/Subtype /Image"); // the workspace's own figure embedded
+    },
+    180_000
+  );
+
   test("B1: the compile environment is scrubbed (no server variable, no shell escape, paranoid files) and the TeX variables stay", () => {
     process.env.FAKE_WRITER_SECRET_KEY = FAKE;
     process.env.TEXMFHOME = "/some/texmf";
@@ -148,7 +313,7 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
     }
   });
 
-  test("B2: biber never runs in a Writer compile: an absolute \\addbibresource outside the workspace reaches neither the .bbl nor the PDF", async () => {
+  const biberProbe = async () => {
     const outside = mkdtempSync(join(tmpdir(), "writer-biber-out-"));
     const src = mkdtempSync(join(tmpdir(), "writer-biber-src-"));
     const outDir = mkdtempSync(join(tmpdir(), "writer-biber-art-"));
@@ -161,7 +326,7 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
       join(src, "main.tex"),
       `\\documentclass{article}\n\\usepackage[backend=biber]{biblatex}\n\\addbibresource{${join(outside, "sentinel.bib")}}\n\\begin{document}\nCited \\cite{sentinel}.\n\\printbibliography\n\\end{document}\n`
     );
-    const result = await compileTex({
+    await compileTex({
       srcDir: src,
       mainTex: join(src, "main.tex"),
       outDir,
@@ -170,7 +335,19 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
       timeoutMs: 60_000,
     });
     expect(everything(outDir) + everything(cacheDir)).not.toContain("SENTINEL-BIB-TITLE-5521");
-    expect(result.ok).toBe(false); // a refused biber is a failed compile, never a silent one
+  };
+  test(
+    "B2: with the sandbox, an absolute \\addbibresource outside the workspace reaches neither the .bbl nor the PDF",
+    biberProbe,
+    120_000
+  );
+  test("B2: without the sandbox, biber still never runs (latexmk $biber refuses): same sentinel stays out", async () => {
+    __setWriterSandboxForTests(false);
+    try {
+      await biberProbe();
+    } finally {
+      __setWriterSandboxForTests(null);
+    }
   }, 120_000);
 
   test("B2: bibtex itself cannot read an absolute .bib path under paranoid file access (and can without it)", async () => {

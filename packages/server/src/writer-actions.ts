@@ -54,9 +54,19 @@ export interface WriterOpDeps {
   render?: (id: string) => Promise<WriterNumberingResponse>;
   /** The cite keys of the saved library, the References tab's list; absent = no key can be verified. */
   citeKeys?: () => ReadonlySet<string>;
+  /**
+   * Whether Writer compiles run inside the OS sandbox (bubblewrap). It is the real boundary against TeX reading files
+   * the engine's own settings cannot stop (pdfTeX \pdfobj file{}); without it nothing an agent writes may reach the
+   * compiler and the Copilot may not trigger a render (the user's own Render is unaffected).
+   */
+  sandboxed: () => boolean;
 }
 
-export type WriterOpStatus = "conflict" | "not_found" | "invalid" | "error";
+/** Why agent-written text is refused when the Writer compile has no OS sandbox (decision (b), for user sign-off). */
+export const NO_SANDBOX_TEXT =
+  "this machine has no working OS sandbox (bubblewrap) for the Writer's TeX compile, so text written through the Copilot is not accepted into the manuscript (TeX can read local files in ways its own settings cannot stop). The user can still type it in the Writer themselves; cell deletion, type conversion, comments, cite/label insertion and figure images from attachments still work";
+
+export type WriterOpStatus = "conflict" | "not_found" | "invalid" | "error" | "rejected";
 export type WriterOpOutcome =
   | {
       ok: true;
@@ -133,6 +143,7 @@ export async function createManuscriptOp(
   options: { screen?: boolean } = {}
 ): Promise<WriterOpOutcome> {
   if (options.screen) {
+    if (input.title && !deps.sandboxed()) return fail("rejected", NO_SANDBOX_TEXT);
     const problem = agentTexProblem({ title: input.title });
     if (problem) return fail("invalid", problem);
   }
@@ -186,6 +197,13 @@ export async function patchManuscript(
     infoValues: op.infoValues ? Object.values(op.infoValues).join("\n") : undefined,
   });
   if (problem) return fail("invalid", problem);
+  const writesText =
+    op.title !== undefined ||
+    op.userPreamble !== undefined ||
+    op.affiliations !== undefined ||
+    op.authors !== undefined ||
+    op.infoValues !== undefined;
+  if (writesText && !deps.sandboxed()) return fail("rejected", NO_SANDBOX_TEXT);
   const outcome = await deps.writerLock.run((): WriterOpOutcome => {
     let current: WriterManuscript | null;
     try {
@@ -355,6 +373,8 @@ export async function cellOperation(
     );
     const problem = agentTexProblem(fields);
     if (problem) return fail("invalid", problem);
+    if (Object.values(fields).some((value) => value) && !deps.sandboxed())
+      return fail("rejected", NO_SANDBOX_TEXT);
   }
   let writtenAsset: string | null = null;
   const outcome = await deps.writerLock.run((): WriterOpOutcome => {
@@ -621,7 +641,7 @@ export type WriterRenderOutcome =
       stale: boolean;
       warnings: string[];
     }
-  | { ok: false; status: "not_found" | "error"; detail: string };
+  | { ok: false; status: "not_found" | "error" | "rejected"; detail: string };
 
 /**
  * The topbar's Render: the same single-flight numbering/preview compile the page's button starts, on the saved
@@ -634,6 +654,15 @@ export async function renderManuscript(
 ): Promise<WriterRenderOutcome> {
   if (!deps.render)
     return { ok: false, status: "error", detail: "rendering is not available in this host" };
+  // A render triggered by the Copilot compiles whatever the manuscript holds (some of it possibly agent-written): only
+  // with the OS sandbox. The user's own Render button is not affected.
+  if (!deps.sandboxed())
+    return {
+      ok: false,
+      status: "rejected",
+      detail:
+        "this machine has no working OS sandbox (bubblewrap) for the Writer's TeX compile, so the Copilot cannot start a render; the user can press Render themselves",
+    };
   let manuscript: WriterManuscript | null;
   try {
     manuscript = loadManuscript(deps.dataDir, id);
