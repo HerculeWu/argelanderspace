@@ -177,6 +177,23 @@ describe("delete confirmation parity", () => {
   });
 });
 
+describe("refresh keeps a draft that lost its source", () => {
+  test("no IR and no source file: the Work link survives the refresh, the Doc is reported and can still be deleted", async () => {
+    const res = await create();
+    const docId = ((await res.json()) as { description: DocDescription }).description.doc_id;
+    rmSync(join(dataDir, "output", docId, "text-source.json"));
+    const refreshed = await call("POST", "/api/library/refresh?offline=1");
+    expect(refreshed.status).toBe(200);
+    expect(
+      ((await refreshed.json()) as { damaged_text_docs?: string[] }).damaged_text_docs
+    ).toEqual([docId]);
+    expect(LibraryStore.load(paths).get(KNOWN_WORK_ID)?.doc_ids).toContain(docId);
+    // the page can still reach it through the Work and remove it
+    expect((await call("DELETE", `/api/paper/${docId}`)).status).toBe(200);
+    expect(LibraryStore.load(paths).get(KNOWN_WORK_ID)?.doc_ids).not.toContain(docId);
+  });
+});
+
 describe("refresh reports damaged text Docs", () => {
   test("rebuild keeps their Work link and names them", async () => {
     const docId = await (async () => {

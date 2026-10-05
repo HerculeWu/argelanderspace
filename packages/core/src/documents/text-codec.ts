@@ -46,18 +46,36 @@ export function textSourceFingerprint(markdown: string): string {
   return createHash("sha256").update(markdown, "utf8").digest("hex");
 }
 
-/** Position of an offset in the (newline-normalized) text, 1-based. */
-function locate(text: string, offset: number): { line: number; column: number } {
-  let line = 1;
-  let lineStart = 0;
-  for (let i = 0; i < offset && i < text.length; i += 1) {
-    if (text.charCodeAt(i) === 10) {
-      line += 1;
-      lineStart = i + 1;
-    }
+/**
+ * Offsets (in the newline-normalized text the lexer sees) at which a line starts, counted the way the source editor
+ * counts: only `\n` (and the `\n` of a CRLF) breaks a line. A lone `\r` is an ordinary character of its line, even
+ * though the lexer treats it as a break. Built once per parse.
+ */
+function lineStartsOf(markdown: string): number[] {
+  const starts = [0];
+  let crlf = 0; // each CRLF is one character shorter in the normalized text
+  for (const m of markdown.matchAll(/\r\n|\r|\n/g)) {
+    if (m[0] === "\r") continue;
+    if (m[0] === "\r\n") crlf += 1;
+    starts.push((m.index ?? 0) - (m[0] === "\r\n" ? crlf - 1 : crlf) + 1);
   }
-  return { line, column: offset - lineStart + 1 };
+  return starts;
 }
+
+/** Position of an offset, 1-based: a binary search over the line starts. */
+function locate(starts: number[], offset: number): { line: number; column: number } {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if ((starts[mid] as number) <= offset) low = mid;
+    else high = mid - 1;
+  }
+  return { line: low + 1, column: offset - (starts[low] as number) + 1 };
+}
+
+/** The most diagnostics a result carries in full; the rest are only counted (bounds the work for huge sources). */
+const MAX_DIAGNOSTICS = 200;
 
 /** Diagnostic code and English message per unsupported construct; the page shows its own localized text per code. */
 const UNSUPPORTED: Record<string, { code: string; message: string }> = {
@@ -101,12 +119,17 @@ function isAtxHeading(raw: string): boolean {
 
 interface Ctx {
   text: string;
+  lineStarts: number[];
   offset: number;
   diagnostics: TextDiagnostic[];
+  /** How many diagnostics were found, including those beyond {@link MAX_DIAGNOSTICS} that are not stored. */
+  total: number;
 }
 
 function report(ctx: Ctx, at: number, code: string, message: string): void {
-  const { line, column } = locate(ctx.text, at);
+  ctx.total += 1;
+  if (ctx.diagnostics.length >= MAX_DIAGNOSTICS) return;
+  const { line, column } = locate(ctx.lineStarts, at);
   ctx.diagnostics.push({ code, severity: "error", message, line, column });
 }
 
@@ -124,7 +147,8 @@ function reportSyntax(ctx: Ctx, at: number, type: string): void {
  * and no digit or `$` after it, so currency like `$100 to $200` stays text); then `[cite:` and `[ref:` tokens.
  */
 const FENCE_RE = /(```|~~~)[\s\S]*?(?:\1|$)/g;
-const CODE_SPAN_RE = /(`+)([\s\S]*?)\1(?!`)/g;
+// a code span cannot cross a blank line (CommonMark: it lives inside one paragraph/block)
+const CODE_SPAN_RE = /(`+)((?:(?!\n[ \t]*\n)[\s\S])*?)\1(?!`)/g;
 const URL_RE = /(?:https?|ftp):\/\/[^\s<>]*/g;
 const MATH_RE = /(?<!\\)\$\$([\s\S]+?)\$\$|(?<!\\)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)\$(?![\d$])/g;
 const CITE_RE = /(?<!\\)\[cite:/g;
@@ -208,7 +232,13 @@ function segmentsOf(text: string): IrSegment[] {
 export function parseTextSource(markdown: string, options: TextParseOptions): TextParseResult {
   // marked normalizes line endings itself; do the same first so reported lines match the lexer's view.
   const text = markdown.replace(/\r\n|\r/g, "\n");
-  const ctx: Ctx = { text, offset: 0, diagnostics: [] };
+  const ctx: Ctx = {
+    text,
+    lineStarts: lineStartsOf(markdown),
+    offset: 0,
+    diagnostics: [],
+    total: 0,
+  };
   scanInlineSyntax(ctx);
   const tokens = Lexer.lex(text);
 
@@ -328,12 +358,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   }
 
   const stats: TextStats = { sections: sectionCount, paragraphs: paragraphCount, lists: listCount };
-  if (
-    sectionCount === 0 &&
-    paragraphCount === 0 &&
-    listCount === 0 &&
-    ctx.diagnostics.length === 0
-  ) {
+  if (sectionCount === 0 && paragraphCount === 0 && listCount === 0 && ctx.total === 0) {
     ctx.diagnostics.push({
       code: "empty_document",
       severity: "error",
@@ -343,6 +368,13 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   ctx.diagnostics.sort(
     (a, b) => (a.line ?? 0) - (b.line ?? 0) || (a.column ?? 0) - (b.column ?? 0)
   );
+  if (ctx.total > ctx.diagnostics.length)
+    ctx.diagnostics.push({
+      code: "too_many_diagnostics",
+      severity: "error",
+      message: `${ctx.total - ctx.diagnostics.length} more diagnostics are not shown`,
+      count: ctx.total - ctx.diagnostics.length,
+    });
   if (ctx.diagnostics.some((d) => d.severity === "error")) {
     return { ir: null, diagnostics: ctx.diagnostics, stats };
   }

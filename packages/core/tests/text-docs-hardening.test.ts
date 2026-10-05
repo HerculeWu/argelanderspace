@@ -197,6 +197,30 @@ describe("a text Doc is never seeded by title (seed and rebuild)", () => {
     expect(store.works).toHaveLength(before);
   });
 
+  it("a draft that lost its source (no IR, no source file) keeps its Work link and is reported, not pruned", async () => {
+    const paths = project();
+    const made = createTextDoc(paths, { operationId: "op-draft-lost-1", workId: "work:1" });
+    rmSync(join(paths.outputDir, made.docId, "text-source.json"));
+    expect(existsSync(join(paths.outputDir, made.docId, `${made.docId}.json`))).toBe(false);
+    const summary = await rebuild(paths, { sources: stubSources });
+    expect(LibraryStore.load(paths).get("work:1")?.doc_ids).toContain(made.docId);
+    expect(summary.damaged_text_docs).toEqual([made.docId]);
+  });
+
+  it("a symlinked text-source.json inside a real Doc directory is refused", () => {
+    const paths = project();
+    const made = createTextDoc(paths, { operationId: "op-file-link-1", workId: "work:1" });
+    const file = join(paths.outputDir, made.docId, "text-source.json");
+    const elsewhere = join(paths.dataDir, "elsewhere.json");
+    writeFileSync(elsewhere, readFileSync(file));
+    rmSync(file);
+    symlinkSync(elsewhere, file);
+    expect(() => readTextSource(paths, made.docId)).toThrow(TextDocError);
+    expect(() => saveTextSource(paths, made.docId, { expectedRev: 0, markdown: "x" })).toThrow(
+      TextDocError
+    );
+  });
+
   it("a healthy library reports no damaged text Docs", async () => {
     const paths = project();
     createTextDoc(paths, { operationId: "op-seed-00002", workId: "work:1" });

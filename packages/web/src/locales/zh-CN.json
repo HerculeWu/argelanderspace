@@ -191,7 +191,8 @@
         "nested_list_unsupported": "不支持嵌套列表。请只保留一层。",
         "list_item_unsupported": "列表项必须是单个文字段落。其余内容请拆成段落。",
         "syntax_unsupported": "不支持这种语法。",
-        "empty_document": "文档还没有内容。"
+        "empty_document": "文档还没有内容。",
+        "too_many_diagnostics": "另有 {{count}} 条诊断未列出。"
       },
       "net": {
         "unreachable": "服务没有响应",

@@ -178,6 +178,7 @@ const DIAGNOSTIC_KEYS = {
   list_item_unsupported: "doc.text.diag.list_item_unsupported",
   syntax_unsupported: "doc.text.diag.syntax_unsupported",
   empty_document: "doc.text.diag.empty_document",
+  too_many_diagnostics: "doc.text.diag.too_many_diagnostics",
 } as const;
 
 type Generation =
@@ -413,7 +414,7 @@ function TextSourceEditor({
 
   const diagnosticText = (diagnostic: TextDiagnostic): string => {
     const key = (DIAGNOSTIC_KEYS as Record<string, (typeof DIAGNOSTIC_KEYS)[keyof typeof DIAGNOSTIC_KEYS] | undefined>)[diagnostic.code];
-    return key ? t(key) : diagnostic.message;
+    return key ? t(key, { count: diagnostic.count ?? 0 }) : diagnostic.message;
   };
 
   const statusText = useMemo(

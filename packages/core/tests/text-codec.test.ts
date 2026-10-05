@@ -164,6 +164,46 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
     });
   });
 
+  describe("bounded work and exact locations (fix round 2)", () => {
+    it("40k diagnostics on a 1 MB source are located in well under 2 s and the report is capped with a count", () => {
+      const md = `# T\n\n${"Costs $x$ here and there.\n\n".repeat(40000)}`;
+      const started = performance.now();
+      const result = parseTextSource(md, opts);
+      expect(performance.now() - started).toBeLessThan(2000);
+      expect(result.ir).toBeNull();
+      expect(result.diagnostics.length).toBeLessThanOrEqual(201);
+      const last = result.diagnostics[result.diagnostics.length - 1];
+      expect(last).toMatchObject({ code: "too_many_diagnostics", count: 40000 - 200 });
+      // the ones that are shown are the first ones, with exact positions
+      expect(result.diagnostics[0]).toMatchObject({ code: "math_unsupported", line: 3, column: 7 });
+      expect(result.diagnostics[1]).toMatchObject({ line: 5 });
+    });
+
+    it("lines are counted like the editor: only \\n breaks a line; a lone CR is an ordinary character", () => {
+      // line 1 "# T", line 2 "", line 3 "a\rb $x$" (the CR is inside the line), so the math is at line 3, column 5
+      const r = parseTextSource("# T\n\na\rb $x$ end\n", opts);
+      const math = r.diagnostics.find((d) => d.code === "math_unsupported");
+      expect(math).toMatchObject({ line: 3, column: 5 });
+      // CRLF files keep their lines and columns
+      const crlf = parseTextSource("# T\r\n\r\nab $x$ end\r\n", opts).diagnostics.find(
+        (d) => d.code === "math_unsupported"
+      );
+      expect(crlf).toMatchObject({ line: 3, column: 4 });
+    });
+
+    it("a stray backtick does not hide math in a later paragraph (code spans end at the block)", () => {
+      const r = parseTextSource(
+        "# T\n\nA stray ` here.\n\nMath $a *b* c$ now and a `real` span.\n",
+        opts
+      );
+      expect(r.ir).toBeNull();
+      expect(r.diagnostics.map((d) => [d.code, d.line])).toContainEqual(["math_unsupported", 5]);
+      // a real multi-line span inside one paragraph still masks its content
+      const ok = parseTextSource("# T\n\nRun `a $x$\nb` now.\n", opts);
+      expect(ok.diagnostics).toEqual([]);
+    });
+  });
+
   describe("autolinks are plain text (B2)", () => {
     it("bare URLs, e-mail addresses and <angle> autolinks keep their exact characters", () => {
       const md =

@@ -114,6 +114,8 @@ export const TextDiagnosticSchema = z.strictObject({
   /** 1-based position in the source text; absent for whole-document diagnostics. */
   line: z.number().int().positive().optional(),
   column: z.number().int().positive().optional(),
+  /** `too_many_diagnostics` only: how many further diagnostics were found and are not listed. */
+  count: z.number().int().positive().optional(),
 });
 export type TextDiagnostic = z.infer<typeof TextDiagnosticSchema>;
 

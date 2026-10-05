@@ -65,6 +65,15 @@ function isTextDocEntry(docId: string, doc: Record<string, unknown>, outputDir: 
   );
 }
 
+function isTextDocDir(outputDir: string, docId: string): boolean {
+  if (!docId.startsWith("text-")) return false;
+  try {
+    return statSync(join(outputDir, docId)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Text Doc directories whose files cannot be read as a text Doc (source missing or not JSON, reading text not JSON).
  * Rebuild keeps their Work links and reports them; it never repairs, deletes or reseeds them.
@@ -152,6 +161,9 @@ function pruneMissingDocs(store: LibraryStore, outputDir: string): void {
       (d) =>
         existsSync(join(outputDir, d, `${d}.json`)) ||
         existsSync(join(outputDir, d, "original.pdf")) ||
+        // any existing text Doc directory is kept, readable or not: rebuild reports a damaged one
+        // (`findDamagedTextDocs`) and never drops the only link the page has to reach and delete it
+        isTextDocDir(outputDir, d) ||
         // a text draft has a source and no reading IR yet; that is a legitimate Doc, not a hollow one
         existsSync(join(outputDir, d, "text-source.json"))
     );

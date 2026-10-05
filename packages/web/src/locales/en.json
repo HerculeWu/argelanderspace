@@ -191,7 +191,8 @@
         "nested_list_unsupported": "Nested lists are not supported. Keep the list to one level.",
         "list_item_unsupported": "A list item must be a single paragraph of text. Split the rest into paragraphs.",
         "syntax_unsupported": "This syntax is not supported.",
-        "empty_document": "The document has no content yet."
+        "empty_document": "The document has no content yet.",
+        "too_many_diagnostics": "{{count}} more diagnostics are not shown."
       },
       "net": {
         "unreachable": "The service did not answer",
