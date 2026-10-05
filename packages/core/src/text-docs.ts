@@ -73,6 +73,11 @@ function outputBase(paths: LibraryPaths): string {
   }
 }
 
+/** The real Doc directory of a text Doc (id checked, symlinked dataDir resolved). */
+export function textDocDir(paths: LibraryPaths, docId: string): string {
+  return docDirFor(paths, docId);
+}
+
 function docDirFor(paths: LibraryPaths, docId: string): string {
   if (!isTextDocId(docId)) throw new TextDocError("bad_id", "invalid text Doc id");
   return join(outputBase(paths), docId);
@@ -130,6 +135,20 @@ export function readTextSource(paths: LibraryPaths, docId: string): TextDocSourc
   if (!parsed.success || parsed.data.doc_id !== docId)
     throw new TextDocError("corrupt_source", `text source of "${docId}" is invalid`);
   return parsed.data;
+}
+
+/** Atomically replace the source file with an already built next state (validated by the schema). */
+export function replaceTextSource(
+  paths: LibraryPaths,
+  docId: string,
+  next: TextDocSource
+): TextDocSource {
+  const gate = TextDocSourceSchema.parse(next);
+  replaceFile(
+    join(docDirFor(paths, docId), TEXT_SOURCE_FILE),
+    `${JSON.stringify(gate, null, 2)}\n`
+  );
+  return gate;
 }
 
 export type SaveTextSourceResult =

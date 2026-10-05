@@ -21,15 +21,21 @@ import {
   type IrSegment,
   type IrXrefTargetType,
   type Reference,
+  TEXT_ASSET_NAME_PATTERN,
   TEXT_INPUT_VERSION,
   TEXT_IR_VERSION,
+  TEXT_TABLE_MAX_CELLS,
+  TEXT_TABLE_MAX_COLS,
+  TEXT_TABLE_MAX_ROWS,
   type TextBlockMeta,
   TextBlockMetaSchema,
   type TextDiagnostic,
   type TextDocIr,
   TextDocumentMetaSchema,
   TextReferencesSchema,
+  type TextSourceAsset,
   type TextStats,
+  TextTableSchema,
 } from "@argelanderspace/contracts";
 import { Lexer, type Token, type Tokens } from "marked";
 import {
@@ -48,6 +54,8 @@ export interface TextParseOptions {
   sourceRev: number;
   /** Used when the text has no title (no `argelander-document` title, no level-1 heading). */
   fallbackTitle?: string;
+  /** The registered image assets of the source (ticket 27): a figure may only name one of these. */
+  assets?: readonly TextSourceAsset[];
 }
 
 export interface TextParseResult {
@@ -57,9 +65,22 @@ export interface TextParseResult {
   stats: TextStats;
 }
 
-/** sha256 of the generating source: the Markdown's UTF-8 bytes (asset hashes join it with the figure ticket). */
-export function textSourceFingerprint(markdown: string): string {
-  return createHash("sha256").update(markdown, "utf8").digest("hex");
+/**
+ * sha256 of the generating source: the Markdown's UTF-8 bytes and, for the images the text actually references, their
+ * names and content hashes (so a changed image is a changed source). Without referenced assets this is the plain
+ * Markdown hash, as it was before figures existed.
+ */
+export function textSourceFingerprint(
+  markdown: string,
+  referenced: readonly Pick<TextSourceAsset, "name" | "sha256">[] = []
+): string {
+  const hash = createHash("sha256").update(markdown, "utf8");
+  if (referenced.length > 0) {
+    const sorted = [...referenced].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    hash.update("\0argelander-assets\0");
+    for (const a of sorted) hash.update(`${a.name}\0${a.sha256}\n`);
+  }
+  return hash.digest("hex");
 }
 
 /**
@@ -106,17 +127,17 @@ const UNSUPPORTED: Record<string, { code: string; message: string }> = {
     code: "quote_unsupported",
     message: "block quotes are not supported; rewrite it as a plain paragraph",
   },
-  table: {
-    code: "table_unsupported",
-    message: "tables are not supported yet; rewrite it as plain paragraphs",
-  },
   hr: {
     code: "rule_unsupported",
     message: "horizontal rules are not supported; remove it or start a new heading",
   },
   html: { code: "html_unsupported", message: "raw HTML is not allowed in a text document" },
   def: { code: "definition_unsupported", message: "link reference definitions are not supported" },
-  image: { code: "image_unsupported", message: "images are not supported yet" },
+  image: {
+    code: "image_inline",
+    message:
+      "an image must stand alone in its own paragraph (![alt](assets/name.png)); it cannot be inside a heading, a list item or a sentence",
+  },
   link: {
     code: "link_unsupported",
     message: "links are not supported yet; write the address as plain text",
@@ -136,9 +157,17 @@ function isAtxHeading(raw: string): boolean {
   return /^ {0,3}#{1,6}(?:\s|$)/.test(raw);
 }
 
-type Target = "section" | "paragraph" | "list" | "equation" | "code" | "algorithm";
+type Target =
+  | "section"
+  | "paragraph"
+  | "list"
+  | "equation"
+  | "code"
+  | "algorithm"
+  | "figure"
+  | "table";
 
-/** Which `argelander-block` fields apply to which block. `footnote` belongs to figures/tables (ticket 27) only. */
+/** Which `argelander-block` fields apply to which block. `footnote` belongs to figures/tables only. */
 const ALLOWED_FIELDS: Record<Target, readonly (keyof TextBlockMeta)[]> = {
   section: ["id", "kind", "number"],
   paragraph: ["id", "kind"],
@@ -146,6 +175,8 @@ const ALLOWED_FIELDS: Record<Target, readonly (keyof TextBlockMeta)[]> = {
   equation: ["id", "kind", "number", "label"],
   code: ["id", "kind", "number", "label", "caption"],
   algorithm: ["id", "kind", "number", "label", "caption"],
+  figure: ["id", "kind", "number", "label", "caption", "footnote"],
+  table: ["id", "kind", "number", "label", "caption", "footnote"],
 };
 const ID_PREFIX: Record<Target, string> = {
   section: "sec",
@@ -154,6 +185,8 @@ const ID_PREFIX: Record<Target, string> = {
   equation: "eq",
   code: "code",
   algorithm: "alg",
+  figure: "fig",
+  table: "tab",
 };
 /** Structure ids the codec itself owns. */
 const RESERVED_IDS = new Set(["sec-preface"]);
@@ -576,6 +609,193 @@ function parseMarker(
 }
 
 // --------------------------------------------------------------------------- //
+// Figures and tables (ticket 27)
+// --------------------------------------------------------------------------- //
+
+const escapeHtml = (s: string): string =>
+  s.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
+  );
+
+interface ImageCheck {
+  name?: string;
+  code?: string;
+  message?: string;
+}
+
+/** Only `assets/<controlled name>` is an image address: no URL, data URI, absolute path, traversal or odd name. */
+function checkImageHref(href: string): ImageCheck {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//"))
+    return {
+      code: "image_remote",
+      message:
+        "an image cannot be a web address or a data URI; add it as an asset and write assets/<name>",
+    };
+  const unsafe = {
+    code: "image_path_unsafe",
+    message:
+      "an image path must be assets/<name>; absolute paths, backslashes, '..' and escapes are not allowed",
+  };
+  if (href.startsWith("/") || href.includes("\\") || href.includes("%") || href.includes("\0"))
+    return unsafe;
+  if (href.split("/").some((seg) => seg === ".." || seg === ".")) return unsafe;
+  const m = /^assets\/([^/]+)$/.exec(href);
+  if (m === null || !TEXT_ASSET_NAME_PATTERN.test(m[1] as string))
+    return {
+      code: "image_path_invalid",
+      message: "an image path must be assets/<name>, the name an asset of this document was given",
+    };
+  return { name: m[1] as string };
+}
+
+interface GridCell {
+  html: string;
+  header: boolean;
+  rowspan: number;
+  colspan: number;
+  /** Source offset to report a problem of this cell at, and of its span fields. */
+  at: number;
+  spanAt: (field: "rowspan" | "colspan") => number;
+}
+
+/**
+ * The cells must tile a rectangle exactly: the first row decides the width; every cell lies inside it and below the
+ * last row, no two cells cover the same square, and no square stays empty. Located errors, at most 20 of them.
+ */
+function checkGrid(w: Walk, rows: GridCell[][]): boolean {
+  const width = (rows[0] as GridCell[]).reduce((n, c) => n + c.colspan, 0);
+  let bad = 0;
+  const fail = (at: number, code: string, message: string, field?: string): void => {
+    bad += 1;
+    if (bad <= 20) report(w, at, code, message, field !== undefined ? { field } : {});
+  };
+  if (width > TEXT_TABLE_MAX_COLS) {
+    fail(
+      (rows[0] as GridCell[])[0]?.at ?? 0,
+      "table_too_large",
+      `the table is ${width} columns wide; at most ${TEXT_TABLE_MAX_COLS} are allowed`
+    );
+    return false;
+  }
+  const taken: Uint8Array[] = rows.map(() => new Uint8Array(width));
+  rows.forEach((row, r) => {
+    const badBefore = bad;
+    let c = 0;
+    row.forEach((cell, j) => {
+      while (c < width && (taken[r] as Uint8Array)[c] === 1) c += 1;
+      if (c + cell.colspan > width) {
+        fail(
+          cell.spanAt("colspan"),
+          "table_span_bounds",
+          `colspan ${cell.colspan} runs past the ${width} columns of the table`,
+          `rows[${r}][${j}].colspan`
+        );
+        c += cell.colspan;
+        return;
+      }
+      if (r + cell.rowspan > rows.length) {
+        fail(
+          cell.spanAt("rowspan"),
+          "table_span_bounds",
+          `rowspan ${cell.rowspan} runs past the last of the ${rows.length} rows`,
+          `rows[${r}][${j}].rowspan`
+        );
+        c += cell.colspan;
+        return;
+      }
+      let clash = false;
+      for (let dr = 0; dr < cell.rowspan && !clash; dr += 1)
+        for (let dc = 0; dc < cell.colspan; dc += 1)
+          if ((taken[r + dr] as Uint8Array)[c + dc] === 1) {
+            clash = true;
+            break;
+          }
+      if (clash) {
+        fail(
+          cell.at,
+          "table_span_overlap",
+          "this cell overlaps another cell of the table",
+          `rows[${r}][${j}]`
+        );
+      } else {
+        for (let dr = 0; dr < cell.rowspan; dr += 1)
+          for (let dc = 0; dc < cell.colspan; dc += 1) (taken[r + dr] as Uint8Array)[c + dc] = 1;
+      }
+      c += cell.colspan;
+    });
+    for (let k = 0; k < width; k += 1) {
+      if (bad === badBefore && (taken[r] as Uint8Array)[k] !== 1) {
+        fail(
+          row[0]?.at ?? 0,
+          "table_row_incomplete",
+          `row ${r + 1} does not fill the ${width} columns of the table (column ${k + 1} is empty)`,
+          `rows[${r}]`
+        );
+        break;
+      }
+    }
+  });
+  if (bad > 20)
+    report(
+      w,
+      undefined,
+      "table_more_problems",
+      `${bad - 20} more problems in the table grid are not shown`,
+      {
+        severity: "warning",
+      }
+    );
+  return bad === 0;
+}
+
+/** The limited table markup of the pipeline: `<table><tr><th|td [rowspan] [colspan]>text</..></tr></table>`. */
+function tableHtmlOf(rows: GridCell[][]): string {
+  let html = "<table>";
+  for (const row of rows) {
+    html += "<tr>";
+    for (const c of row) {
+      const tag = c.header ? "th" : "td";
+      html += `<${tag}${c.rowspan > 1 ? ` rowspan="${c.rowspan}"` : ""}${c.colspan > 1 ? ` colspan="${c.colspan}"` : ""}>${c.html}</${tag}>`;
+    }
+    html += "</tr>";
+  }
+  return `${html}</table>`;
+}
+
+/**
+ * The cells of one GFM table row exactly as `marked` splits them (its `splitCells`): a pipe is a separator unless an ODD
+ * run of backslashes precedes it, a first and a last cell that are only blank are dropped. The count must be this one, not
+ * a look-alike: a row with more cells than the header silently loses the extras inside the lexer. `starts` are the
+ * offsets (within the line) where each cell's text starts, for locating a problem at its cell.
+ */
+function gfmRowCells(line: string): { count: number; starts: number[] } {
+  const cuts: number[] = [];
+  for (let i = 0; i < line.length; i += 1) {
+    if (line[i] !== "|") continue;
+    let escaped = false;
+    for (let a = i - 1; a >= 0 && line[a] === "\\"; a -= 1) escaped = !escaped;
+    if (!escaped) cuts.push(i);
+  }
+  const segs: { start: number; end: number }[] = [];
+  let from = 0;
+  for (const cut of cuts) {
+    segs.push({ start: from, end: cut });
+    from = cut + 1;
+  }
+  segs.push({ start: from, end: line.length });
+  if (segs.length > 0 && line.slice(segs[0]?.start, segs[0]?.end).trim() === "") segs.shift();
+  const last = segs[segs.length - 1];
+  if (last !== undefined && line.slice(last.start, last.end).trim() === "") segs.pop();
+  const starts = segs.map((seg) => {
+    let at = seg.start;
+    while (at < seg.end && /\s/.test(line.charAt(at))) at += 1;
+    return at;
+  });
+  return { count: segs.length, starts };
+}
+
+// --------------------------------------------------------------------------- //
 // The parser
 // --------------------------------------------------------------------------- //
 
@@ -657,6 +877,11 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   let listCount = 0;
   let equationCount = 0;
   let codeCount = 0;
+  let figureCount = 0;
+  let tableCount = 0;
+  const assetByName = new Map<string, TextSourceAsset>();
+  for (const a of options.assets ?? []) assetByName.set(a.name, a);
+  const referencedAssets = new Map<string, TextSourceAsset>();
   let preface: IrSection | null = null;
   let firstH1: string | undefined;
   let docMeta: ReturnType<typeof TextDocumentMetaSchema.parse> | undefined;
@@ -695,7 +920,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           whereIn(meta.located, [key]),
           "block_meta_field",
           key === "footnote"
-            ? "footnote belongs to figures and tables, which are not supported yet"
+            ? "footnote belongs to figures and tables only"
             : `the field "${key}" does not apply to this block`,
           { field: key, subject: key }
         );
@@ -724,10 +949,11 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   const captionOf = (
     caption: string | undefined,
     located: Located | null,
-    owner: IrBlock
+    owner: IrBlock,
+    field: "caption" | "footnote" = "caption"
   ): IrSegment[] | undefined => {
     if (caption === undefined) return undefined;
-    const where = located === null ? 0 : whereIn(located, ["caption"]);
+    const where = located === null ? 0 : whereIn(located, [field]);
     const sub = scanSyntax(caption, { blockDisplay: false });
     for (const p of sub.problems)
       report(w, where, p.code, p.message, {
@@ -778,6 +1004,155 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     };
     currentBlocks().push(block);
     register("equation", block, fields, idAt(metaState), fields.number);
+  };
+
+  /** Cell text → pieces, reading `$..$` math like a caption; anything else a cell cannot hold is a located error. */
+  const cellHtmlOf = (pieces: Piece[]): string => {
+    let out = "";
+    for (const p of mergedPieces(pieces)) {
+      if (p.t === "text") {
+        // The Reader typesets `$..$` inside a cell's text node; a literal dollar sits in a node of its own so that
+        // it can never pair with another one into a formula.
+        out += escapeHtml(p.s).replace(/\$/g, "<span>$</span>");
+      } else if (p.item.bad) continue;
+      else if (p.item.kind === "math") {
+        if ((p.item.latex as string).includes("$"))
+          report(
+            w,
+            p.item.where,
+            "table_math_dollar",
+            "a formula in a table cell cannot contain a $ (the cell text is read for $...$ again); move it out of the table"
+          );
+        else out += `$${escapeHtml(p.item.latex as string)}$`;
+      } else if (p.item.kind === "display")
+        report(
+          w,
+          p.item.where,
+          "math_display_in_table",
+          "a display equation cannot be inside a table cell; use $...$"
+        );
+      else
+        report(
+          w,
+          p.item.where,
+          "table_token_unsupported",
+          "[cite: ...] and [ref: ...] cannot be used inside a table cell; put them in the caption or a paragraph"
+        );
+    }
+    return out;
+  };
+
+  const cellFromText = (text: string, where: number): string => {
+    const sub = scanSyntax(text, { blockDisplay: false });
+    for (const prob of sub.problems)
+      report(w, where, prob.code, prob.message, {
+        ...(prob.subject ? { subject: prob.subject } : {}),
+        ...(prob.severity ? { severity: prob.severity } : {}),
+      });
+    const pieces: Piece[] = [];
+    let last = 0;
+    for (const item of sub.items) {
+      if (item.start > last) pieces.push({ t: "text", s: text.slice(last, item.start) });
+      item.where = where;
+      if (item.kind === "math" && !item.bad) checkMath(w, item.latex as string, false, where);
+      pieces.push({ t: "item", item });
+      last = item.end;
+    }
+    if (last < text.length) pieces.push({ t: "text", s: text.slice(last) });
+    // `\$` is a literal dollar: the backslash is the escape, not part of the text
+    for (const piece of pieces) if (piece.t === "text") piece.s = piece.s.replace(/\\\$/g, "$");
+    return cellHtmlOf(pieces);
+  };
+
+  const emitTable = (html: string, metaState: PendingMeta | null): void => {
+    const fields = takeMeta("table");
+    sawContent = true;
+    tableCount += 1;
+    const block: IrBlock = {
+      id: "",
+      type: "table",
+      tableBody: html,
+      ...(fields.number !== undefined ? { number: fields.number } : {}),
+      ...(fields.label !== undefined ? { label: fields.label } : {}),
+      ...(fields.footnote !== undefined ? { footnote: fields.footnote } : {}),
+    };
+    if (fields.caption !== undefined) {
+      const segs = captionOf(fields.caption, metaState?.located ?? null, block);
+      if (segs !== undefined && segs.length > 0) block.captionSegments = segs;
+    }
+    if (fields.footnote !== undefined) {
+      const segs = captionOf(fields.footnote, metaState?.located ?? null, block, "footnote");
+      if (segs !== undefined && segs.length > 0 && block.type === "table")
+        block.footnoteSegments = segs;
+    }
+    currentBlocks().push(block);
+    register("table", block, fields, idAt(metaState), fields.number);
+  };
+
+  const emitFigure = (image: Tokens.Image, at: number): void => {
+    const metaState = pending;
+    const fields = takeMeta("figure");
+    sawContent = true;
+    figureCount += 1;
+    const block: IrBlock = {
+      id: "",
+      type: "figure",
+      ...(fields.number !== undefined ? { number: fields.number } : {}),
+      ...(fields.label !== undefined ? { label: fields.label } : {}),
+      ...(fields.footnote !== undefined ? { footnote: fields.footnote } : {}),
+    };
+    const checked = checkImageHref(image.href);
+    if (checked.name === undefined) {
+      report(w, at, checked.code as string, checked.message as string, { subject: image.href });
+    } else {
+      const asset = assetByName.get(checked.name);
+      if (asset === undefined)
+        report(
+          w,
+          at,
+          "image_asset_missing",
+          `no asset named "${checked.name}" is registered for this document; add the image first`,
+          { subject: checked.name }
+        );
+      else {
+        referencedAssets.set(asset.name, asset);
+        block.imgPath = asset.name;
+        if (asset.width !== undefined) block.imgWidth = asset.width;
+        if (asset.height !== undefined) block.imgHeight = asset.height;
+      }
+    }
+    if (image.text.trim() !== "") {
+      if (PLACEHOLDER_RUN.test(image.text))
+        report(
+          w,
+          at,
+          "image_alt_token",
+          "the alt text cannot contain a formula or a [cite: ...] / [ref: ...] token"
+        );
+      else block.content = image.text.trim();
+    }
+    PLACEHOLDER_RUN.lastIndex = 0;
+    if (image.title)
+      report(
+        w,
+        at,
+        "image_title_ignored",
+        "the image title is ignored; give a caption with an argelander-block",
+        {
+          severity: "warning",
+        }
+      );
+    if (fields.caption !== undefined) {
+      const segs = captionOf(fields.caption, metaState?.located ?? null, block);
+      if (segs !== undefined && segs.length > 0) block.captionSegments = segs;
+    }
+    if (fields.footnote !== undefined) {
+      const segs = captionOf(fields.footnote, metaState?.located ?? null, block, "footnote");
+      if (segs !== undefined && segs.length > 0 && block.type === "figure")
+        block.footnoteSegments = segs;
+    }
+    currentBlocks().push(block);
+    register("figure", block, fields, idAt(metaState), fields.number);
   };
 
   const flushDisplays = (upTo: number): void => {
@@ -836,8 +1211,81 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         stack.push(section);
         break;
       }
+      case "table": {
+        const table = token as Tokens.Table;
+        const lexRaw = scan.lexText.slice(at, at + token.raw.length);
+        const rawLines = lexRaw.split(/\r|\n/);
+        const columns = table.header.length;
+        let lineAt = at;
+        const cellAt: (number[] | undefined)[] = [];
+        const lineStartAt: number[] = [];
+        rawLines.forEach((line, i) => {
+          const cells = gfmRowCells(line);
+          cellAt[i] = cells.starts.map((o) => lineAt + o);
+          lineStartAt[i] = lineAt;
+          if (i >= 2 && line.trim() !== "" && cells.count > columns)
+            report(
+              w,
+              lineAt,
+              "table_extra_cells",
+              `this row has more cells than the ${columns} columns of the header; the extra cells would be lost`
+            );
+          lineAt += line.length + 1;
+        });
+        if (table.align.some((a) => a !== null))
+          report(w, at, "table_align_ignored", "column alignment is not kept", {
+            severity: "warning",
+          });
+        const cellCount = table.header.length + table.rows.reduce((n, r) => n + r.length, 0);
+        if (
+          table.rows.length + 1 > TEXT_TABLE_MAX_ROWS ||
+          columns > TEXT_TABLE_MAX_COLS ||
+          cellCount > TEXT_TABLE_MAX_CELLS
+        ) {
+          report(
+            w,
+            at,
+            "table_too_large",
+            `a table may have at most ${TEXT_TABLE_MAX_ROWS} rows, ${TEXT_TABLE_MAX_COLS} columns and ${TEXT_TABLE_MAX_CELLS} cells`
+          );
+          pending = null;
+          break;
+        }
+        const toCell = (
+          c: Tokens.TableCell,
+          header: boolean,
+          line: number,
+          col: number
+        ): GridCell => {
+          const here = cellAt[line]?.[col] ?? lineStartAt[line] ?? at;
+          const pieces: Piece[] = [];
+          inlinePieces(w, here, c.tokens, pieces);
+          return {
+            html: cellHtmlOf(pieces),
+            header,
+            rowspan: 1,
+            colspan: 1,
+            at: here,
+            spanAt: () => here,
+          };
+        };
+        const grid: GridCell[][] = [
+          table.header.map((c, col) => toCell(c, true, 0, col)),
+          ...table.rows.map((r, row) => r.map((c, col) => toCell(c, false, row + 2, col))),
+        ];
+        const metaState = pending;
+        emitTable(tableHtmlOf(grid), metaState);
+        break;
+      }
       case "paragraph":
       case "text": {
+        if (token.type === "paragraph") {
+          const only = (token as Tokens.Paragraph).tokens;
+          if (only.length === 1 && only[0]?.type === "image") {
+            emitFigure(only[0] as Tokens.Image, at);
+            break;
+          }
+        }
         const inner =
           token.type === "paragraph"
             ? (token as Tokens.Paragraph).tokens
@@ -1141,6 +1589,50 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           referenceAts = result.data.map((_, i) => whereIn(parsed.located, [i, "id"]));
           break;
         }
+        if (marker === "argelander-table") {
+          const metaState = pending;
+          const parsed = parseMarker(w, fence, at, "table_json");
+          if (parsed === null) {
+            pending = null;
+            break;
+          }
+          const result = TextTableSchema.safeParse(parsed.value);
+          if (!result.success) {
+            reportIssues(w, result.error.issues as Issue[], parsed.located, {
+              unknown: "table_unknown_field",
+              invalid: "table_invalid",
+            });
+            pending = null;
+            break;
+          }
+          const tableRows = result.data.rows;
+          const cells = tableRows.reduce((n, r) => n + r.length, 0);
+          if (tableRows.length > TEXT_TABLE_MAX_ROWS || cells > TEXT_TABLE_MAX_CELLS) {
+            report(
+              w,
+              at,
+              "table_too_large",
+              `a table may have at most ${TEXT_TABLE_MAX_ROWS} rows, ${TEXT_TABLE_MAX_COLS} columns and ${TEXT_TABLE_MAX_CELLS} cells`
+            );
+            pending = null;
+            break;
+          }
+          const grid: GridCell[][] = tableRows.map((row, i) =>
+            row.map((cell, j) => ({
+              html: cellFromText(cell.text, whereIn(parsed.located, ["rows", i, j, "text"])),
+              header: cell.header === true,
+              rowspan: cell.rowspan ?? 1,
+              colspan: cell.colspan ?? 1,
+              at: whereIn(parsed.located, ["rows", i, j]),
+              spanAt: (field) => whereIn(parsed.located, ["rows", i, j, field]),
+            }))
+          );
+          const gridErrors = w.errors;
+          if (checkGrid(w, grid) && w.errors === gridErrors)
+            emitTable(tableHtmlOf(grid), metaState);
+          else pending = null;
+          break;
+        }
         if (marker.startsWith("argelander-")) {
           pending = null;
           report(w, at, "fence_unknown_marker", `"${marker}" is not a block of this format`, {
@@ -1383,6 +1875,8 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   const stats: TextStats = { sections: sectionCount, paragraphs: paragraphCount, lists: listCount };
   if (equationCount > 0) stats.equations = equationCount;
   if (codeCount > 0) stats.codeBlocks = codeCount;
+  if (figureCount > 0) stats.figures = figureCount;
+  if (tableCount > 0) stats.tables = tableCount;
   if (w.inlineMath > 0) stats.inlineMath = w.inlineMath;
   const citeCount = w.cites.filter((u) => !u.item.bad).length;
   const refCount = w.refs.filter((u) => !u.item.bad).length;
@@ -1391,7 +1885,17 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   if ((references?.length ?? 0) > 0) stats.references = references?.length as number;
   if (unresolved > 0) stats.unresolved = unresolved;
 
-  if (sectionCount + paragraphCount + listCount + equationCount + codeCount === 0 && w.total === 0)
+  if (
+    sectionCount +
+      paragraphCount +
+      listCount +
+      equationCount +
+      codeCount +
+      figureCount +
+      tableCount ===
+      0 &&
+    w.total === 0
+  )
     report(w, undefined, "empty_document", "the document has no content yet");
   if (w.errors > 0) return finish(w, null, stats);
 
@@ -1408,7 +1912,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
       type: "text",
       input_version: TEXT_INPUT_VERSION,
       source_rev: options.sourceRev,
-      source_fingerprint: textSourceFingerprint(markdown),
+      source_fingerprint: textSourceFingerprint(markdown, [...referencedAssets.values()]),
     },
     meta: { ...docFields, ...(title ? { title } : {}) },
     sections: root,

@@ -18,7 +18,7 @@ Full hashes and per-action modifications: icons.provenance.json.
 
 Source: https://github.com/lucide-icons/lucide/tree/0.460.0
 
-Adopted for Copilot header, composer and context controls. Geometry comes from installed lucide-react 0.460.0; React keys are omitted. Full hashes and mappings: packages/web/src/ui/icons.provenance.json.
+Adopted for Copilot header, composer and context controls and for the text source toolbar (image assets). Geometry comes from installed lucide-react 0.460.0; React keys are omitted. Full hashes and mappings: packages/web/src/ui/icons.provenance.json.
 
 ```text
 ISC License

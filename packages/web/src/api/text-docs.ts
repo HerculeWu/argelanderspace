@@ -1,6 +1,8 @@
 import {
   type DocDescription,
+  TextAssetAddedSchema,
   TextGenerationResultSchema,
+  type TextSourceAsset,
   type TextDiagnostic,
   type TextGenerationResult,
   type TextSourceDto,
@@ -124,6 +126,40 @@ export async function generateTextDoc(docId: string, sourceRev: number, operatio
       const code = body.code;
       return { ok: false, kind: code === "stale" ? "stale" : code === "replacement_blocked" ? "blocked" : "busy", detail };
     }
+    return { ok: false, kind: "error", detail };
+  } catch {
+    return { ok: false, kind: "error", detail: i18n.t("doc.text.net.unreachable") };
+  }
+}
+
+export type TextAssetUpload =
+  | { ok: true; source: TextSourceDto; asset: TextSourceAsset; reused: boolean; restored: boolean }
+  /** Another writer saved first; nothing was added. */
+  | { ok: false; kind: "conflict"; source: TextSourceDto | null }
+  | { ok: false; kind: "busy" | "error"; detail: string }
+  /** The server refused this file; `code` is the stable reason (unsupported_type, corrupt_image, too_large...). */
+  | { ok: false; kind: "rejected"; code: string; detail: string };
+
+/** Add one image to the source (ticket 27): raw bytes, judged by content on the server. */
+export async function uploadTextAsset(docId: string, expectedRev: number, file: File): Promise<TextAssetUpload> {
+  try {
+    const response = await fetch(
+      `${base(docId)}/source/assets?expectedRev=${expectedRev}&filename=${encodeURIComponent(file.name)}`,
+      { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }
+    );
+    if (response.ok) {
+      const parsed = TextAssetAddedSchema.safeParse(await response.json());
+      return parsed.success
+        ? { ok: true, source: parsed.data.source, asset: parsed.data.asset, reused: parsed.data.reused, restored: parsed.data.restored }
+        : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
+    }
+    const { detail, body } = await detailOf(response);
+    if (response.status === 409 && detail === "rev mismatch") {
+      const parsed = TextSourceDtoSchema.safeParse(body.source);
+      return { ok: false, kind: "conflict", source: parsed.success ? parsed.data : null };
+    }
+    if (response.status === 409 && typeof body.code !== "string") return { ok: false, kind: "busy", detail };
+    if (typeof body.code === "string") return { ok: false, kind: "rejected", code: body.code, detail };
     return { ok: false, kind: "error", detail };
   } catch {
     return { ok: false, kind: "error", detail: i18n.t("doc.text.net.unreachable") };

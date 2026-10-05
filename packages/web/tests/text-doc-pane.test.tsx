@@ -34,6 +34,10 @@ interface Backend {
   validate?: () => Response;
   pdfOk: boolean;
   putGate?: Promise<void>;
+  assets: TextSourceDto["assets"];
+  /** the next POST .../source/assets answer (default: accept as a PNG named after the file) */
+  assetAnswer?: (url: string) => Response;
+  assetPosts: { url: string; type: string | null; size: number }[];
 }
 let backend: Backend;
 const dto = (): TextSourceDto => ({
@@ -41,7 +45,7 @@ const dto = (): TextSourceDto => ({
   rev: backend.rev,
   input_version: 1,
   markdown: backend.markdown,
-  assets: [],
+  assets: backend.assets,
   created_at: "2026-10-05T00:00:00.000Z",
   updated_at: "2026-10-05T00:00:00.000Z",
   generated: backend.generated,
@@ -61,6 +65,16 @@ function installBackend() {
       backend.rev += 1;
       backend.markdown = body.markdown;
       return json(dto());
+    }
+    if (url.startsWith(`/api/paper/${DOC}/source/assets?`) && method === "POST") {
+      const file = init?.body as Blob;
+      backend.assetPosts.push({ url, type: new Headers(init?.headers).get("content-type"), size: file.size });
+      if (backend.assetAnswer) return backend.assetAnswer(url);
+      const filename = decodeURIComponent(/filename=([^&]*)/.exec(url)?.[1] ?? "image.png");
+      const asset = { name: `${filename.replace(/\.png$/, "").replace(/ /g, "-")}-0123abcd.png`, sha256: "c".repeat(64), byte_length: file.size, media_type: "image/png" as const, width: 40, height: 30 };
+      backend.assets = [...backend.assets, asset];
+      backend.rev += 1;
+      return json({ source: dto(), asset, reused: false, restored: false }, 201);
     }
     if (url === `/api/paper/${DOC}/source/validate` && backend.validate) return backend.validate();
     if (url === `/api/paper/${DOC}/source/validate`) return json({ sourceRev: backend.rev, valid: true, diagnostics: [], stats: { sections: 2, paragraphs: 3, lists: 1 } });
@@ -122,7 +136,7 @@ const posts = (kind: "generate" | "validate") => backend.log.filter((l) => l.sta
 const stopSelection = (e: Event) => e.stopImmediatePropagation();
 beforeEach(() => {
   document.addEventListener("selectionchange", stopSelection, true);
-  backend = { rev: 0, markdown: "", log: [], puts: [], generated: false, publishedRev: null, pdfOk: true };
+  backend = { rev: 0, markdown: "", log: [], puts: [], generated: false, publishedRev: null, pdfOk: true, assets: [], assetPosts: [] };
   opened.length = 0;
   installBackend();
 });
@@ -335,5 +349,110 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     const before = backend.log.length;
     await act(async () => { for (const cb of events.published) cb({ type: "text-doc.published", doc_id: DOC, published_source_rev: 3, at: "x" }); });
     await waitFor(() => expect(backend.log.slice(before).some((l) => l.endsWith("/description"))).toBe(true));
+  });
+});
+
+describe("text Doc pane: image assets (ticket 27)", () => {
+  const png = () => new File([new Uint8Array([1, 2, 3, 4])], "Shear profile.png", { type: "image/png" });
+  const chooseFile = (_view: { container: HTMLElement }, file: File) =>
+    fireEvent.change(document.querySelector<HTMLElement>('[data-ui="text-source-asset-input"]')!, { target: { files: [file] } });
+  const dialog = () => document.querySelector<HTMLElement>('[data-ui="text-source-assets-dialog"]');
+
+  it("the toolbar button opens the assets dialog: empty state, upload action, close; the footer counts the images", async () => {
+    const view = await ready();
+    const button = ui(view.container, "text-source-assets")!;
+    expect(button.getAttribute("aria-label")).toBe("图片资产");
+    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("0 张图片");
+    fireEvent.click(button);
+    expect(dialog()).toBeTruthy();
+    expect(document.querySelector('[data-ui="text-source-assets-empty"]')).toBeTruthy();
+    expect(document.querySelector('[data-ui="text-source-asset-upload"]')?.textContent).toContain("上传图片");
+    expect(document.querySelector<HTMLInputElement>('[data-ui="text-source-asset-input"]')?.accept).toBe("image/png,image/jpeg,image/webp");
+    fireEvent.click(document.querySelector('[data-ui="close-text-source-assets"]')!);
+    expect(dialog()).toBeNull();
+  });
+
+  it("uploads the chosen file as raw bytes with the saved revision, lists it with type/size and its path, and counts it", async () => {
+    const view = await ready();
+    fireEvent.click(ui(view.container, "text-source-assets")!);
+    chooseFile(view, png());
+    await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset"]')).toBeTruthy());
+    expect(backend.assetPosts).toEqual([{ url: `/api/paper/${DOC}/source/assets?expectedRev=0&filename=Shear%20profile.png`, type: "application/octet-stream", size: 4 }]);
+    const row = document.querySelector<HTMLElement>('[data-ui="text-source-asset"]')!;
+    expect(row.textContent).toContain("Shear-profile-0123abcd.png");
+    expect(row.textContent).toContain("PNG · 40×30 像素 · 1 KiB");
+    expect(row.textContent).toContain("assets/Shear-profile-0123abcd.png");
+    expect(document.querySelector('[data-ui="text-source-asset-message"]')?.textContent).toContain("已添加");
+    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("1 张图片");
+    // the editor's text and save state are untouched by the upload
+    expect(ui(view.container, "text-source-status")?.getAttribute("data-state")).toBe("saved");
+  });
+
+  it("text typed while uploading is saved afterwards on top of the NEW revision (no false conflict)", async () => {
+    const view = await ready();
+    fireEvent.click(ui(view.container, "text-source-assets")!);
+    typeText(view.container, "# T\n\n![x](assets/a.png)");
+    chooseFile(view, png());
+    await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset"]')).toBeTruthy());
+    await waitFor(() => expect(ui(view.container, "text-source-status")?.getAttribute("data-state")).toBe("saved"));
+    expect(backend.puts[backend.puts.length - 1]).toEqual({ expectedRev: 1, markdown: "# T\n\n![x](assets/a.png)" });
+    expect(ui(view.container, "text-source-conflict")).toBeNull();
+  });
+
+  it("a restored file is reported as such; the dialog is the prototype's 520 px wide", async () => {
+    const view = await ready();
+    backend.assetAnswer = () => {
+      const asset = { name: "fig-0123abcd.png", sha256: "c".repeat(64), byte_length: 4, media_type: "image/png" as const, width: 4, height: 3 };
+      backend.assets = [asset];
+      return json({ source: dto(), asset, reused: true, restored: true }, 200);
+    };
+    fireEvent.click(ui(view.container, "text-source-assets")!);
+    expect(document.querySelector<HTMLElement>('[data-ui="text-source-assets-dialog"]')?.style.getPropertyValue("--dialog-width")).toBe("520px");
+    chooseFile(view, png());
+    await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset-message"]')).toBeTruthy());
+    expect(document.querySelector('[data-ui="text-source-asset-message"]')?.textContent).toContain("现已重新写入");
+  });
+
+  it("a refused file shows the server's reason in the page's own words and adds nothing", async () => {
+    backend.assetAnswer = () => json({ detail: "only PNG...", code: "unsupported_type" }, 415);
+    const view = await ready();
+    fireEvent.click(ui(view.container, "text-source-assets")!);
+    chooseFile(view, new File(["<svg/>"], "evil.svg", { type: "image/svg+xml" }));
+    await waitFor(() => expect(document.querySelector('[data-ui="text-source-asset-message"]')).toBeTruthy());
+    const message = document.querySelector<HTMLElement>('[data-ui="text-source-asset-message"]')!;
+    expect(message.getAttribute("role")).toBe("alert");
+    expect(message.textContent).toContain("图片未能添加");
+    expect(message.textContent).toContain("只接受 PNG、JPEG 和 WebP");
+    expect(document.querySelector('[data-ui="text-source-asset"]')).toBeNull();
+    expect(ui(view.container, "text-source-asset-count")?.textContent).toBe("0 张图片");
+  });
+
+  it("a revision conflict keeps the local text, shows the conflict panel and adds nothing", async () => {
+    const view = await ready();
+    backend.assetAnswer = () => { backend.rev = 5; return json({ detail: "rev mismatch", rev: 5, source: dto() }, 409); };
+    fireEvent.click(ui(view.container, "text-source-assets")!);
+    chooseFile(view, png());
+    await waitFor(() => expect(ui(view.container, "text-source-conflict")).toBeTruthy());
+    expect(document.querySelector('[data-ui="text-source-asset-message"]')?.textContent).toContain("别处改动");
+    expect(document.querySelector('[data-ui="text-source-asset"]')).toBeNull();
+  });
+
+  it("figure and table diagnostics are localized with the offending name", async () => {
+    backend.validate = () =>
+      json({
+        sourceRev: backend.rev,
+        valid: false,
+        diagnostics: [
+          { code: "image_asset_missing", severity: "error", message: "m", line: 2, column: 1, subject: "nowhere-1.png" },
+          { code: "table_span_overlap", severity: "error", message: "m", line: 5, column: 3, field: "rows[1][0]" },
+        ],
+        stats: { sections: 0, paragraphs: 0, lists: 0 },
+      });
+    const view = await ready();
+    fireEvent.click(ui(view.container, "text-source-validate")!);
+    await waitFor(() => expect(ui(view.container, "text-source-diagnostics")).toBeTruthy());
+    const rows = view.container.querySelectorAll('[data-ui="text-source-diagnostic"]');
+    expect(rows[0]?.textContent).toContain("图片列表中没有名为“nowhere-1.png”的图片");
+    expect(rows[1]?.textContent).toContain("与表格中的另一单元格重叠");
   });
 });

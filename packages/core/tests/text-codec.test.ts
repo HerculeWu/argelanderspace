@@ -94,14 +94,14 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
 
   it("reports unsupported syntax with its line and refuses to produce an IR (nothing is dropped)", () => {
     const md =
-      "# T\n\nfine\n\n> quoted\n\n- a\n  - nested\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nSee [link](http://x).\n";
+      "# T\n\nfine\n\n> quoted\n\n- a\n  - nested\n\nWords ![img](assets/a.png) inline.\n\nSee [link](http://x).\n";
     const result = parseTextSource(md, opts);
     expect(result.ir).toBeNull();
     const byLine = result.diagnostics.map((d) => [d.severity, d.code, d.line]);
     expect(byLine).toContainEqual(["error", "quote_unsupported", 5]);
     expect(byLine).toContainEqual(["error", "nested_list_unsupported", 7]);
-    expect(byLine).toContainEqual(["error", "table_unsupported", 10]);
-    expect(byLine).toContainEqual(["error", "link_unsupported", 14]);
+    expect(byLine).toContainEqual(["error", "image_inline", 10]);
+    expect(byLine).toContainEqual(["error", "link_unsupported", 12]);
     expect(result.diagnostics.every((d) => d.message.length > 0 && d.column !== undefined)).toBe(
       true
     );

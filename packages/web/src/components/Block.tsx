@@ -14,6 +14,7 @@ import { AnnBlockEdge } from "../annotations/AnnBlockEdge";
 import { Segments } from "../lib/segments";
 import { Math, htmlWithMath } from "../lib/math";
 import { FigureImage } from "./FigureImage";
+import { safeTableHtml } from "../lib/safe-table-html";
 
 // Native fragment IDs are exposed only while navigation is enabled. Internal
 // lookup, selection mapping and viewport observation always use data-block-id.
@@ -84,7 +85,7 @@ function FigureView({ b }: { b: IrFigureBlock }) {
       {b.imgPath && (
         <FigureImage
           imgPath={b.imgPath}
-          alt={b.label || "figure"}
+          alt={b.content?.trim() || b.label || "figure"}
           controls
           width={b.imgWidth}
           height={b.imgHeight}
@@ -96,8 +97,21 @@ function FigureView({ b }: { b: IrFigureBlock }) {
           <Segments segments={b.captionSegments} />
         </figcaption>
       )}
+      {b.footnote && <Footnote text={b.footnote} segments={b.footnoteSegments} />}
       <AnnBlockEdge id={b.id} />
     </figure>
+  );
+}
+
+/**
+ * A figure/table footnote, read like a caption: from the IR's segments (text, formulas, cite and ref chips). An IR that
+ * carries only the plain string (never produced by a text document) shows it as inert text: no markup, no math pairing.
+ */
+function Footnote({ text, segments }: { text: string; segments: IrSegment[] | undefined }) {
+  return (
+    <p className="block-footnote" data-ui="latex-block-footnote">
+      {hasContent(segments) ? <Segments segments={segments} /> : text}
+    </p>
   );
 }
 
@@ -114,13 +128,14 @@ function TableView({ b }: { b: IrTableBlock }) {
       {b.tableBody ? (
         <div
           className="tbl-scroll"
-          dangerouslySetInnerHTML={{ __html: htmlWithMath(b.tableBody) }}
+          dangerouslySetInnerHTML={{ __html: htmlWithMath(safeTableHtml(b.tableBody)) }}
         />
       ) : (
         b.imgPath && (
           <FigureImage imgPath={b.imgPath} alt="table" />
         )
       )}
+      {b.footnote && <Footnote text={b.footnote} segments={b.footnoteSegments} />}
       <AnnBlockEdge id={b.id} />
     </div>
   );

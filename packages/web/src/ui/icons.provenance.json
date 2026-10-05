@@ -620,6 +620,15 @@
       "modifications": [
         "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
       ]
+    },
+    "text-source-assets": {
+      "set": "lucide",
+      "file": "Images",
+      "originalHash": "97103d41ff0ca516fead3403aaab8d0d0ebfc11ae2c29d51c70e6525d0060a96",
+      "normalizedHash": "97103d41ff0ca516fead3403aaab8d0d0ebfc11ae2c29d51c70e6525d0060a96",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
     }
   }
 }

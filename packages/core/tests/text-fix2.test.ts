@@ -2,7 +2,12 @@ import type { IrBlock, IrSection } from "@argelanderspace/contracts";
 import { describe, expect, it } from "vitest";
 import { parseTextSource } from "../src/documents/text-codec.js";
 
-const opts = { docId: "text-1", sourceRev: 1 };
+const FIG = {
+  name: "fz-0123abcd.png",
+  sha256: "a".repeat(64),
+  byte_length: 10,
+};
+const opts = { docId: "text-1", sourceRev: 1, assets: [FIG] };
 const F = "```";
 const parse = (md: string) => parseTextSource(md, opts);
 const codes = (md: string) =>
@@ -205,7 +210,7 @@ function generate(rand: () => number): { src: string; words: string[] } {
   const ws = (): string => pick(["", " ", "  ", "\t"]);
   const closers = ["", " ", "\t", "  ", "~", "`", "x", " \t"];
   const unit = (): string => {
-    switch (Math.floor(rand() * 20)) {
+    switch (Math.floor(rand() * 29)) {
       case 0:
         return `para ${w()} text`;
       case 1:
@@ -254,6 +259,29 @@ function generate(rand: () => number): { src: string; words: string[] } {
         return `x\r${F}\n$$ ${w()} $$\n${F}\ny ${w()}`;
       case 18:
         return `line one ${w()}\rline two $q ${w()}$\rline three`;
+      case 20:
+        return `${pick(["", " ", "   "])}![alt ${w()}](assets/fz-0123abcd.png)${pick(["", " ", "  "])}`;
+      case 21:
+        return `| h ${w()} | h $x ${w()}$ |\n| ${pick(["---", ":-:", "--:"])} | --- |\n| c ${w()} | ${pick(["$a|b ", "$q "])}${w()}$ |${rand() < 0.5 ? `\n| r ${w()} | s |` : ""}`;
+      case 22:
+        return `${F}argelander-table\n${JSON.stringify({ rows: [[{ text: `t ${w()} $m ${w()}$`, header: true, colspan: 2 }], [{ text: `u ${w()}` }, { text: `v ${w()}`, rowspan: 1 }]] })}\n${F}`;
+      case 23:
+        return `${F}argelander-block\n${JSON.stringify({ caption: `cap ${w()} $z ${w()}$`, footnote: `note ${w()}` })}\n${F}\n![x](assets/fz-0123abcd.png)`;
+      case 24:
+        return `${F}\n| code ${w()} |\n| --- |\n![in code ${w()}](assets/fz-0123abcd.png)\n${F}`;
+      case 25:
+        return `text \`![in span ${w()}](assets/fz-0123abcd.png)\` and ![alt ${w()}](assets/fz-0123abcd.png) inline`;
+      case 26:
+        return `a | b ${w()}\n--|--\nc | d ${w()}`;
+      case 27: {
+        // even and odd backslash runs before a pipe: marked splits on parity, so an extra cell may be lost unless refused
+        const run = "\\".repeat(Math.floor(rand() * 6));
+        return `| h ${w()} | h2 ${w()} |\n| --- | --- |\n| a${run}| b ${w()} | c ${w()} |`;
+      }
+      case 28: {
+        const run = "\\".repeat(Math.floor(rand() * 6));
+        return `| h ${w()} | h2 ${w()} |\n| --- | --- |\n| x ${w()} | y${run}| ${rand() < 0.5 ? "" : `z ${w()} |`}`;
+      }
       default:
         return `plain ${w()}${ws()}`;
     }
@@ -282,7 +310,8 @@ describe("property: no word of the source is lost or shown twice", () => {
         continue;
       }
       accepted += 1;
-      const text = JSON.stringify(r.ir.sections);
+      // the raw footnote string stays beside its segments; the words are counted in what the Reader shows
+      const text = JSON.stringify(r.ir.sections, (k, v) => (k === "footnote" ? undefined : v));
       for (const word of words) {
         const count = text.split(word).length - 1;
         expect(count, `seed ${seed}: ${word} appears ${count} times\n${JSON.stringify(src)}`).toBe(

@@ -12,6 +12,7 @@ import { useStore } from "../store";
 import { Segments } from "../lib/segments";
 import { Math, htmlWithMath, flattenLatex } from "../lib/math";
 import { FigureImage } from "./FigureImage";
+import { safeTableHtml } from "../lib/safe-table-html";
 import { limitTable, parseTable, type ParsedTable } from "../lib/tableparse";
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
@@ -113,7 +114,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
   switch (card.kind) {
     case "figure": {
       const f = card.block as IrFigureBlock;
-      return f.imgPath ? <FigureImage imgPath={f.imgPath} width={f.imgWidth} height={f.imgHeight} alt={f.label || "figure"} /> : <em>(no image)</em>;
+      return f.imgPath ? <FigureImage imgPath={f.imgPath} width={f.imgWidth} height={f.imgHeight} alt={f.content?.trim() || f.label || "figure"} /> : <em>(no image)</em>;
     }
     case "equation": {
       const e = card.block as IrEquationBlock;
@@ -126,7 +127,7 @@ function cardMain(card: Card, store: ReturnType<typeof useStore>) {
     case "table": {
       const t = card.block as IrTableBlock;
       if (!t.tableBody && t.imgPath) return <FigureImage imgPath={t.imgPath} alt={t.label || "table"} />;
-      const parsed = parseTable(t.tableBody ?? "");
+      const parsed = parseTable(safeTableHtml(t.tableBody ?? ""));
       const small = parsed.totalRows <= 3 && parsed.totalCols <= 4;
       const prev = small ? parsed : limitTable(parsed, 3, parsed.totalCols);
       return (
@@ -178,7 +179,7 @@ function cardExpand(card: Card) {
     case "table": {
       const t = card.block as IrTableBlock;
       if (!t.tableBody && t.imgPath) return <FigureImage imgPath={t.imgPath} alt={t.label || "table"} />;
-      const parsed = parseTable(t.tableBody ?? "");
+      const parsed = parseTable(safeTableHtml(t.tableBody ?? ""));
       const limited = limitTable(parsed, 8, 4);
       const shownCols = parsed.totalCols > 4 ? 4 : parsed.totalCols;
       const clipped = parsed.totalRows > 8 || parsed.totalCols > 4;
