@@ -11,6 +11,7 @@ import {
   type PlanViewAction,
   PlanViewActionSchema,
   PlanWriteOperationSchema,
+  type WriterDeleteImpact,
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
@@ -38,7 +39,13 @@ export interface OperationJournalPort {
     toolCallId: string;
     action: string;
     hash: string;
-    object?: { planId?: string; taskId?: string; workId?: string; summary?: string };
+    object?: {
+      planId?: string;
+      taskId?: string;
+      workId?: string;
+      manuscriptId?: string;
+      summary?: string;
+    };
     baseRev?: number;
   }): void;
   done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
@@ -91,6 +98,16 @@ export type ConfirmationRequest =
       works: { id: string; title: string; main: boolean; remaining: number }[];
       impact: DocReplaceImpact;
       /** The annotations revision the count was read at (0 when it could not be read). */
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /** The Writer list's delete dialog: the physical delete of one manuscript folder. */
+      action: "delete_manuscript";
+      manuscriptId: string;
+      label: string;
+      impact: WriterDeleteImpact;
       baseRev: number;
       objectDigest: string;
     }

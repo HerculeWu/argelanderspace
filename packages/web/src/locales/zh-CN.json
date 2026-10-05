@@ -773,6 +773,8 @@
       "templateSwitched": "已切换到 {{label}}",
       "templateUnsupported": "{{count}} 个 cell 被保留，但当前模板不原生支持",
       "conflict": "稿件已在别处更新，已载入最新版本",
+      "conflictKept": "稿件已在别处更新，你尚未保存的修改已保留并叠加在最新版本上",
+      "conflictContested": "稿件已在别处更新，你尚未保存的修改已保留；同一项两边都改动时以你的为准",
       "saveFailed": "保存失败，请检查服务状态后重试",
       "uploadFailed": "图片上传失败",
       "exportFailed": "导出失败，请检查服务状态后重试",
@@ -1259,7 +1261,13 @@
         "search": "搜索 PDF 文字",
         "open_search_result": "打开 PDF 搜索结果",
         "zoom": "缩放 PDF",
-        "open_annotation": "跳到 PDF 标注"
+        "open_annotation": "跳到 PDF 标注",
+        "read_writer": "读取稿件",
+        "create_manuscript": "新建稿件",
+        "update_manuscript": "编辑稿件",
+        "delete_manuscript": "删除稿件",
+        "open_manuscript": "打开稿件",
+        "close_manuscript": "返回稿件列表"
       },
       "status": {
         "ok": "已应用",
@@ -1304,7 +1312,13 @@
       "deleteDoc": "永久删除文档「{{id}}」",
       "deleteDocWork": "「{{title}}」· {{state}} · 保留的其他文档：{{count}}",
       "expiredDeleteDoc": "你做决定前文档、关联条目或其标注已变化，未删除任何内容。",
-      "failedDeleteDoc": "结果未知：你的决定可能已到达服务，也可能没有。请先检查文献库再重试。"
+      "failedDeleteDoc": "结果未知：你的决定可能已到达服务，也可能没有。请先检查文献库再重试。",
+      "deleteManuscript": "永久删除稿件「{{title}}」",
+      "manuscriptScope": "其中的 {{cells}} 个单元、{{comments}} 条便签和 {{assets}} 个已上传图片文件将一并删除。此操作不可撤销。",
+      "metaManuscript": "{{id}} · 稿件 v{{rev}}",
+      "expiredManuscript": "稿件在你决定前已被改动，未删除任何内容。",
+      "failedManuscript": "结果未知：你的决定可能已到达服务，也可能没有。请先检查稿件列表再重试。",
+      "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。仍要删除吗？"
     },
     "thinkingLevels": {
       "off": "关闭",
@@ -1370,6 +1384,18 @@
       "materialScans": "已发送 {{pages}} 页：{{withText}} 页为文字，{{withoutText}} 页无文字层（需要时读取页图）",
       "materialBlind": "已发送 {{pages}} 页中 {{withText}} 页的文字；{{withoutText}} 页无文字层，未能读取：当前模型不支持图像",
       "noImage": "当前模型不支持图像，请更换模型后读取 PDF 页图。"
+    },
+    "writer": {
+      "list": "写作：稿件列表",
+      "listLoading": "写作：稿件列表（加载中，未发送）",
+      "listError": "写作：稿件列表（读取失败，未发送）",
+      "listCounts": "已发送 {{count}} 篇稿件",
+      "editor": "写作：{{title}}",
+      "loading": "写作：{{id}}（加载中，未发送）",
+      "missing": "写作：{{id}}（未找到，未发送）",
+      "counts": "已保存稿件 v{{rev}}：已发送 {{cells}} 个单元、{{comments}} 条便签",
+      "draft": "尚未保存的修改作为草稿单独标注，与已保存稿件区分",
+      "unsupported": "{{count}} 个单元的类型不在该模板的列表中"
     },
     "partial": "部分"
   }

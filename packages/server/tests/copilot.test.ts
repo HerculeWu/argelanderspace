@@ -222,6 +222,7 @@ test("actual Pi HTTP loop supplies the final offscreen task, only the plan tool,
     "workspace",
     "library",
     "reader",
+    "writer",
   ]);
   const bytes = readFileSync(historyPath(snapshot));
   expect(bytes.toString()).toContain("argelander.context.v1");
@@ -406,8 +407,8 @@ test("request output reservation permits a model whose maximum output equals its
   expect(model).toBeDefined();
   if (!model) return;
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 28_000;
-  model.maxTokens = 28_000;
+  model.contextWindow = 32_000;
+  model.maxTokens = 32_000;
   try {
     const snapshot = await host.create({ provider: "openai", model: model.id, thinking: null });
     const context = page();

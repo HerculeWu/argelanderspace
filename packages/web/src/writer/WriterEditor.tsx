@@ -22,6 +22,8 @@ import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
 import {
   defaultCellData,
+  diffManuscriptDraft,
+  rebaseManuscriptDraft,
   writerNumberingForDraft,
   type CellType,
   type WriterManuscript,
@@ -51,6 +53,7 @@ import { OutlinePanel } from "./outline";
 import { RightTabs, type RightTab } from "./rightTabs";
 import { InfoModal, PreambleModal } from "./modals";
 import type { WriterTextTarget } from "./latexSource";
+import { captureEditorPage, type WriterEditorPage, writerAutoFold } from "./writer-context";
 
 type Menu =
   | { kind: "add"; index: number; x: number; y: number }
@@ -67,8 +70,14 @@ export function WriterEditor({
   id,
   onBack,
   onGone,
+  onPage,
+  registerLeave,
 }: {
   id: string;
+  /** What this editor tells the Copilot (saved manuscript, unsaved draft, selection...); null when it unmounts. */
+  onPage?: (page: WriterEditorPage | null) => void;
+  /** The back button's own save-then-leave check, for a Copilot-requested close/open: true = nothing unsaved is lost. */
+  registerLeave?: (leave: (() => Promise<boolean>) | null) => void;
   onBack: () => void;
   /** the open manuscript was deleted elsewhere — return to the list */
   onGone: () => void;
@@ -82,16 +91,34 @@ export function WriterEditor({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [rightTab, setRightTab] = useState<RightTab>("references");
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // The side panels fold on their own when the pane is too narrow to keep a paper column (writerAutoFold); what the
+  // user sets by hand wins until the pane's width class changes (the Reader's rule, ticket 18).
+  const width = useElementWidth(rootRef, doc !== undefined && templates !== null);
+  const auto = writerAutoFold(width);
+  const [manual, setManual] = useState<{ left: boolean | null; right: boolean | null; auto: { left: boolean; right: boolean } }>({ left: null, right: null, auto });
+  const sameAuto = manual.auto.left === auto.left && manual.auto.right === auto.right;
+  useEffect(() => {
+    if (!sameAuto) setManual({ left: null, right: null, auto });
+  }, [sameAuto, auto.left, auto.right]); // eslint-disable-line react-hooks/exhaustive-deps
+  const leftCollapsed = manual.left ?? auto.left;
+  const rightCollapsed = manual.right ?? auto.right;
+  const setLeftCollapsed = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, left: typeof value === "function" ? value(m.left ?? m.auto.left) : value }));
+  const setRightCollapsed = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, right: typeof value === "function" ? value(m.right ?? m.auto.right) : value }));
   const [menu, setMenu] = useState<Menu | null>(null);
-  const [modal, setModal] = useState<"info" | "preamble" | null>(null);
+  const [modal, setModalState] = useState<"info" | "preamble" | null>(null);
+  const [modalDraft, setModalDraft] = useState<Record<string, unknown> | null>(null);
+  /** The manuscript as it was when the dialog opened: a save applies only what the user changed since, onto the latest. */
+  const modalBaseRef = useRef<WriterManuscript | null>(null);
+  const setModal = (next: "info" | "preamble" | null) => {
+    modalBaseRef.current = next ? structuredClone(docRef.current) : null;
+    setModalState(next);
+  };
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [toast, setToast] = useState<string | null>(null);
   const [numbering, setNumbering] = useState<WriterNumberingResponse | null>(null);
   const [numberingBusy, setNumberingBusy] = useState(false);
 
-  const rootRef = useRef<HTMLDivElement>(null);
   const dirtyRef = useRef(false);
   const writeFailed = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -105,9 +132,16 @@ export function WriterEditor({
   const saveTimer = useRef<number | undefined>(undefined);
   const pendingExternal = useRef(false);
 
+  /** What the server last confirmed. The local doc minus this is the unsaved draft. */
+  const baseRef = useRef<WriterManuscript | null>(null);
   const applyDoc = (d: WriterManuscript | null) => {
     docRef.current = d;
     setDoc(d);
+  };
+  /** A manuscript that came from the server as is (load, refetch): it is also the saved one. */
+  const adoptServerDoc = (d: WriterManuscript | null) => {
+    baseRef.current = d;
+    applyDoc(d);
   };
 
   const template =
@@ -141,7 +175,7 @@ export function WriterEditor({
     void (async () => {
       const [d, tps, num] = await Promise.all([fetchManuscript(id), fetchTemplates(), fetchNumbering(id)]);
       if (!alive) return;
-      applyDoc(d);
+      adoptServerDoc(d);
       if (tps) {
         setTemplates(tps.templates);
         setTemplateWarnings(tps.warnings);
@@ -169,7 +203,7 @@ export function WriterEditor({
     if (writeBusy()) { pendingExternal.current = true; return; }
     const previous = docRef.current;
     if (previous && d.rev < previous.rev) return;
-    applyDoc(d);
+    adoptServerDoc(d);
     writeFailed.current = false;
     setSaveState("saved");
     const latest = await fetchNumbering(id);
@@ -194,16 +228,35 @@ export function WriterEditor({
         if (res.ok) {
           // adopt the bumped rev; keep newer optimistic edits, if any
           const cur = docRef.current;
+          baseRef.current = res.doc;
           if (cur) applyDoc(cur === snapshot ? res.doc : { ...cur, rev: res.doc.rev });
           writeFailed.current = false;
           setSaveState(dirtyRef.current ? "saving" : "saved");
         } else if (res.conflict) {
-          // 409: the server's current doc comes with the response — adopt it
-          applyDoc(res.conflict);
-          dirtyRef.current = false;
-          writeFailed.current = true;
-          setSaveState("saved");
-          showToast(t("writer.toast.conflict"));
+          // 409: the server's current doc comes with the response. The user's unsaved edits are not thrown away:
+          // they are kept on top of that document (what only the newer save changed is taken from it) and saved
+          // again against its rev. Where both changed the same thing, the user's typing wins and the toast says so.
+          const base = baseRef.current;
+          const local = docRef.current;
+          if (base && local) {
+            const { merged, contested } = rebaseManuscriptDraft(base, local, res.conflict);
+            baseRef.current = res.conflict;
+            applyDoc(merged);
+            dirtyRef.current = diffManuscriptDraft(res.conflict, merged) !== null;
+            writeFailed.current = false;
+            setSaveState(dirtyRef.current ? "saving" : "saved");
+            if (dirtyRef.current) {
+              window.clearTimeout(saveTimer.current);
+              saveTimer.current = window.setTimeout(flushSave, 0);
+            }
+            showToast(t(contested.length ? "writer.toast.conflictContested" : "writer.toast.conflictKept"));
+          } else {
+            adoptServerDoc(res.conflict);
+            dirtyRef.current = false;
+            writeFailed.current = true;
+            setSaveState("saved");
+            showToast(t("writer.toast.conflict"));
+          }
         } else {
           dirtyRef.current = true;
           writeFailed.current = true;
@@ -326,6 +379,35 @@ export function WriterEditor({
       document.removeEventListener("keydown", key);
     };
   }, [menu]);
+
+  // ---- Copilot context (ticket 22) -----------------------------------------------------
+  // Reported after a short pause so typing does not rebuild the Shell's page at every keystroke; the leave check is
+  // the back button's own (flush the autosave, then only leave when nothing unsaved is left).
+  const onPageRef = useRef(onPage);
+  onPageRef.current = onPage;
+  useEffect(() => {
+    if (!onPageRef.current) return;
+    const timer = window.setTimeout(() => {
+      const tracked = caretRef.current;
+      let caret: { cellId: string; field: string; start: number; end: number } | null = null;
+      if (tracked?.el.isConnected && tracked.cellId === editingId)
+        caret = { cellId: tracked.cellId, field: tracked.field, start: tracked.el.selectionStart ?? 0, end: tracked.el.selectionEnd ?? 0 };
+      onPageRef.current?.(captureEditorPage({ id, doc, base: baseRef.current, templates, saveState, activeId, editingId, caret, modal, modalDraft, numbering, rendering: numberingBusy }));
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [id, doc, templates, saveState, activeId, editingId, modal, modalDraft, numbering, numberingBusy]);
+  useEffect(() => () => onPageRef.current?.(null), []);
+  useEffect(() => {
+    registerLeave?.(async () => {
+      if (!dirtyRef.current) writeFailed.current = false;
+      await flushSave();
+      // A 409 rebase leaves the merged edits to be saved again: one more flush, like the Render button (requestPreview).
+      if (dirtyRef.current && !writeFailed.current) await flushSave();
+      return !dirtyRef.current && !writeFailed.current;
+    });
+    return () => registerLeave?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registerLeave]);
 
   if (doc === undefined || templates === null) {
     return (
@@ -755,12 +837,27 @@ export function WriterEditor({
           doc={doc}
           template={template}
           onClose={() => setModal(null)}
+          onDraft={setModalDraft}
           onSave={(v) => {
+            // Only what the user changed since the dialog opened goes onto the latest manuscript: an agent write made
+            // in between (another field, another info key, another author) is not restored to its old value.
+            const opened = modalBaseRef.current;
             mutate((d) => {
-              d.title = v.title;
-              d.authors = v.authors;
-              d.affiliations = v.affiliations;
-              d.infoValues = v.infoValues;
+              if (!opened) {
+                d.title = v.title;
+                d.authors = v.authors;
+                d.affiliations = v.affiliations;
+                d.infoValues = v.infoValues;
+                return;
+              }
+              const edited = { ...opened, title: v.title, authors: v.authors, affiliations: v.affiliations, infoValues: v.infoValues };
+              const { merged, contested } = rebaseManuscriptDraft(opened, edited, d);
+              // Where the agent changed the same thing meanwhile, the user's save wins and says so (never silent).
+              if (contested.length) queueMicrotask(() => showToast(t("writer.toast.conflictContested")));
+              d.title = merged.title;
+              d.authors = merged.authors;
+              d.affiliations = merged.affiliations;
+              d.infoValues = merged.infoValues;
             });
             setModal(null);
           }}
@@ -771,9 +868,12 @@ export function WriterEditor({
           template={template}
           userPreamble={doc.userPreamble}
           onClose={() => setModal(null)}
+          onDraft={setModalDraft}
           onSave={(userPreamble) => {
+            const opened = modalBaseRef.current;
             mutate((d) => {
-              d.userPreamble = userPreamble;
+              // Unchanged since the dialog opened: the latest value (an agent's) stays.
+              if (!opened || userPreamble !== opened.userPreamble) d.userPreamble = userPreamble;
             });
             setModal(null);
           }}
@@ -783,4 +883,19 @@ export function WriterEditor({
       {toast && <div className="w-toast" data-ui="writer-notice">{toast}</div>}
     </div>
   );
+}
+
+/** The element's width, once it is mounted (`ready`); null before that or without ResizeObserver. */
+function useElementWidth(ref: React.RefObject<HTMLElement | null>, ready: boolean): number | null {
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!ready || !el || typeof ResizeObserver === "undefined") return;
+    const update = () => setWidth(Math.round(el.getBoundingClientRect().width) || null);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, ready]);
+  return width;
 }

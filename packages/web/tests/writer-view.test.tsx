@@ -566,7 +566,7 @@ describe("editor", () => {
     });
   });
 
-  it("a 409 conflict adopts the server's current doc and toasts", async () => {
+  it("a 409 conflict adopts the server's current doc, keeps the unsaved edit on top of it (ticket 22) and toasts", async () => {
     const view = render(<WriterView />);
     const { container } = await openSample(view);
     // external writer bumps the doc while we hold rev 0
@@ -581,8 +581,8 @@ describe("editor", () => {
     await waitFor(() => view.getByText(/已在别处更新/), { timeout: 2500 });
     // the editor adopted the conflict doc (external title visible)
     await waitFor(() => view.getAllByText("Externally Retitled"));
-    // and the editor's rev now matches the store (further edits save cleanly)
-    await waitStore("m_0a1b2c3d", (m) => m.rev === 1);
+    // the user's typing is not thrown away: it is saved again on top of the external save (rev 2)
+    await waitStore("m_0a1b2c3d", (m) => m.rev === 2 && m.title === "Externally Retitled" && JSON.stringify(m.cells).includes("Local edit."));
   });
 
   it("writer.changed for the open doc refetches (external title appears)", async () => {

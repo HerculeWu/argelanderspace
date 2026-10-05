@@ -54,7 +54,6 @@ import type {
   Job,
   PdfSourceMaterial,
   RefreshResponse,
-  WriterManuscript,
   WsServerMessage,
 } from "@argelanderspace/contracts";
 import {
@@ -83,9 +82,7 @@ import {
   attachArxivDoc,
   attachLatexZip,
   buildWriterExport,
-  createManuscript,
   DocumentAssetError,
-  deleteManuscript,
   discoverLiterature,
   ensureCurrentAnnotationsWithDocument,
   findMatchingPdfDoc,
@@ -121,7 +118,6 @@ import {
   removeDocFromWorksNarrow,
   restoreUnknownKeys,
   saveAnnotationsFile,
-  saveManuscript,
   savePdfAnnotationsFile,
   savePdfReadingPosition,
   uploadDocId,
@@ -180,6 +176,12 @@ import { probePdf } from "./pdfium-probe.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
+import {
+  createManuscriptOp,
+  deleteManuscriptOp,
+  replaceManuscript,
+  type WriterOpDeps,
+} from "./writer-actions.js";
 import {
   cancelNumberingCompile,
   getWriterNumbering,
@@ -380,6 +382,16 @@ export function createApp(deps: AppDeps): Hono {
   /** Stage 10: `id` names the manuscript; template-dir changes omit it. */
   const writerChanged = (cause: "put" | "create" | "delete" | "numbering", id: string): void => {
     broadcast({ type: "writer.changed", cause, id, at: new Date().toISOString() });
+    // A pending Copilot manuscript delete may no longer match its card (click time stays the authority).
+    copilot.revalidateWriterConfirmations();
+  };
+  const writerDataDir = paths.dataDir;
+  // The Copilot `writer` tool and these routes share one lock, rev check, save and writer.changed notification.
+  const writerOps: WriterOpDeps = {
+    dataDir: writerDataDir,
+    writerLock,
+    changed: writerChanged,
+    cancelCompile: (id) => cancelNumberingCompile(id, writerDataDir),
   };
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
@@ -818,6 +830,7 @@ export function createApp(deps: AppDeps): Hono {
   copilot.useWorkbench({
     library: libraryOps,
     reader: readerOps,
+    writer: writerOps,
     plans: {
       statusDir: deps.statusDir,
       planLock,
@@ -1642,7 +1655,6 @@ export function createApp(deps: AppDeps): Hono {
   // with the current rev AND the current document so the client can rebase.
 
   const MANUSCRIPT_ID = /^m_[0-9a-f]{8}$/;
-  const writerDataDir = paths.dataDir;
   const badManuscriptId = (id: string) => !MANUSCRIPT_ID.test(id);
 
   // ---- GET /api/writer/templates ------------------------------------------ //
@@ -1679,17 +1691,12 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("title must be a string", 400);
       return c.json(e.body, e.status);
     }
-    const doc = await writerLock.run(() => {
-      const { templates } = loadTemplates(writerDataDir);
-      if (!templates.some((tp) => tp.id === template)) return null;
-      return createManuscript(writerDataDir, { template, title });
-    });
-    if (doc === null) {
+    const created = await createManuscriptOp(writerOps, { template, title });
+    if (!created.ok || !created.manuscript) {
       const e = detail(`unknown template ${pyRepr(template)}`, 400);
       return c.json(e.body, e.status);
     }
-    writerChanged("create", doc.id);
-    return c.json(doc, 201);
+    return c.json(created.manuscript, 201);
   });
 
   // ---- GET /api/writer/manuscripts/:id -------------------------------------- //
@@ -1730,14 +1737,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("body id does not match the URL", 400);
       return c.json(e.body, e.status);
     }
-    const outcome = await writerLock.run(
-      (): { missing: true } | { conflict: WriterManuscript } | { saved: WriterManuscript } => {
-        const current = loadManuscript(writerDataDir, id);
-        if (current === null) return { missing: true };
-        if (parsed.data.rev !== current.rev) return { conflict: current };
-        return { saved: saveManuscript(writerDataDir, parsed.data, { bumpRev: true }) };
-      }
-    );
+    const outcome = await replaceManuscript(writerOps, id, parsed.data);
     if ("missing" in outcome) {
       const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
       return c.json(e.body, e.status);
@@ -1748,7 +1748,6 @@ export function createApp(deps: AppDeps): Hono {
         409
       );
     }
-    writerChanged("put", id);
     // I031 (Stage 12): saving never compiles. Rendering is explicit only
     // (Shift+Enter / Render → POST numbering/refresh).
     return c.json(outcome.saved);
@@ -1806,15 +1805,11 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad manuscript id", 400);
       return c.json(e.body, e.status);
     }
-    const removed = await writerLock.run(async () => {
-      await cancelNumberingCompile(id, writerDataDir);
-      return deleteManuscript(writerDataDir, id);
-    });
-    if (!removed) {
+    const removed = await deleteManuscriptOp(writerOps, id);
+    if (!removed.ok) {
       const e = detail(`manuscript ${pyRepr(id)} not found`, 404);
       return c.json(e.body, e.status);
     }
-    writerChanged("delete", id);
     return c.json({ ok: true });
   });
 
@@ -1863,6 +1858,8 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail(outcome.bad, 400);
       return c.json(e.body, e.status);
     }
+    // A pending Copilot delete card names the figure files it would delete: a new one ends it.
+    copilot.revalidateWriterConfirmations();
     return c.json({ name: outcome.name }, 201);
   });
 

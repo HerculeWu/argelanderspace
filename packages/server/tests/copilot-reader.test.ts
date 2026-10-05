@@ -425,6 +425,7 @@ test("the reader tool is registered beside plan, workspace and library and nothi
     "workspace",
     "library",
     "reader",
+    "writer",
   ]);
 });
 
@@ -790,7 +791,7 @@ test("a reading larger than the model's window cannot be sent as a message: capa
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 24_000;
+  model.contextWindow = 28_000;
   model.maxTokens = 1024;
   try {
     const context = page(readerPage());

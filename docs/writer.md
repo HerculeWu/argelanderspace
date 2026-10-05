@@ -44,7 +44,7 @@
 - manuscript 独立于 work/doc/library，放 dataDir 而非 statusDir，不挂 annotations，不因预览自动入库或重建文库。
 - JSON pretty 2 空格、tmp+rename、rev 乐观锁；manuscript/template/cell 使用 loose schema 保留未知键，规避 plans 的 I010。损坏抛错不静默 reset；列表可跳过单个坏目录并给 warning。
 - 稿件、cell、comment id 分别 `m_` / `c_` / `cm_` 加 8hex。cell id 必须唯一，重复会阻止映射，不自动改用户文件。
-- web debounce autosave 串行 PUT；rev 冲突 409 提示并接纳 current。后续 Render/导出/返回先排空保存队列，失败/冲突不能当保存成功；慢 GET 不得覆盖新本地编辑。
+- web debounce autosave 串行 PUT；rev 冲突 409 提示并接纳 current，**但保留用户尚未保存的编辑**（copilot 票 22）：以编辑器最近一次从服务端确认的稿件为基线，用户改动过的值（字段/单元/便签）叠加在 current 之上并对新 rev 重新保存，同一处两边都改时以用户为准并提示；未改动处取 current（含 agent 新增的未知键）。agent 经 Copilot `writer` 工具写稿件走同一 writerLock＋rev 检查（窄写入：只改点名字段，未知键保留；rev 过期=conflict 零写入，重读后另起请求）；删除稿件需真人确认卡（绑定 rev＋文件字节摘要，期间任何改动使其失效）。已保存内容与本地未保存草稿在页面上下文中分开标注。后续 Render/导出/返回先排空保存队列，失败/冲突不能当保存成功；慢 GET 不得覆盖新本地编辑。
 - Writer REST 提供模板读取、稿件 CRUD、资产、export、numbering GET/刷新 POST；写路由有 guardCsrf 和独立 writerLock。协作接口为稳定 JSON 文件契约，**尚无独立 Writer CLI，也无 template 管理 CRUD UI/CLI/REST**。
 - watcher 指纹 manuscript.json 与模板 JSON，WS `writer.changed` 有显式 dispatcher 分支；本地写入时 external 重取 defer。资产/模板依赖/bibliography 并非都受监控，必要时手动刷新；不能只写资产就承诺 UI 立即更新。
 - 单用户、多 pane 依赖 rev+409 收敛，不做跨进程同稿件同时编译保证。外部原子文件写入是协作接口，不等于任意并发写安全。

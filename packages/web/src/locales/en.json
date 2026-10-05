@@ -773,6 +773,8 @@
       "templateSwitched": "Switched to {{label}}",
       "templateUnsupported": "{{count}} cell(s) preserved, but the current template does not natively support them",
       "conflict": "Updated elsewhere — loaded the latest version",
+      "conflictKept": "Updated elsewhere — your unsaved edits were kept on top of the latest version",
+      "conflictContested": "Updated elsewhere — your unsaved edits were kept; where both changed the same item, yours won",
       "saveFailed": "Save failed. Check the server and try again",
       "uploadFailed": "Image upload failed",
       "exportFailed": "Export failed. Check the server and try again",
@@ -1259,7 +1261,13 @@
         "search": "Search PDF text",
         "open_search_result": "Open PDF search result",
         "zoom": "Zoom PDF",
-        "open_annotation": "Go to PDF annotation"
+        "open_annotation": "Go to PDF annotation",
+        "read_writer": "Read manuscripts",
+        "create_manuscript": "Create manuscript",
+        "update_manuscript": "Edit manuscript",
+        "delete_manuscript": "Delete manuscript",
+        "open_manuscript": "Open manuscript",
+        "close_manuscript": "Back to manuscript list"
       },
       "status": {
         "ok": "Applied",
@@ -1304,7 +1312,13 @@
       "deleteDoc": "Permanently delete the document “{{id}}”",
       "deleteDocWork": "“{{title}}” · {{state}} · other documents kept: {{count}}",
       "expiredDeleteDoc": "The document, its works or its annotations changed before your decision. Nothing was deleted.",
-      "failedDeleteDoc": "The outcome is not known: your decision may or may not have reached the service. Check the library before trying again."
+      "failedDeleteDoc": "The outcome is not known: your decision may or may not have reached the service. Check the library before trying again.",
+      "deleteManuscript": "Permanently delete the manuscript “{{title}}”",
+      "manuscriptScope": "{{cells}} cells, {{comments}} comments and {{assets}} uploaded figure files are deleted with it. This cannot be undone.",
+      "metaManuscript": "{{id}} · manuscript v{{rev}}",
+      "expiredManuscript": "The manuscript changed before your decision. Nothing was deleted.",
+      "failedManuscript": "The outcome is not known: your decision may or may not have reached the service. Check the manuscript list before trying again.",
+      "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?"
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1370,6 +1384,18 @@
       "materialScans": "{{pages}} pages sent: {{withText}} as text, {{withoutText}} without a text layer (read as page images on request)",
       "materialBlind": "{{withText}} of {{pages}} pages sent as text; {{withoutText}} without a text layer are unread: this model cannot read images",
       "noImage": "This model cannot read images. Select another model for PDF pages."
+    },
+    "writer": {
+      "list": "Writer: manuscript list",
+      "listLoading": "Writer: manuscript list (loading, none sent)",
+      "listError": "Writer: manuscript list (failed to load, none sent)",
+      "listCounts": "{{count}} manuscripts sent",
+      "editor": "Writer: {{title}}",
+      "loading": "Writer: {{id}} (loading, nothing sent)",
+      "missing": "Writer: {{id}} (not found, nothing sent)",
+      "counts": "Saved manuscript v{{rev}}: {{cells}} cells, {{comments}} comments sent",
+      "draft": "Unsaved edits are marked as a draft, separate from the saved manuscript",
+      "unsupported": "{{count}} cells use a type this template does not list"
     },
     "partial": "Partial"
   }

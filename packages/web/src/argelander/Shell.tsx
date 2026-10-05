@@ -1,4 +1,4 @@
-import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PdfPage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PdfPage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema, type WriterPage, type WriterViewAction, WriterViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -17,6 +17,8 @@ import { DocPane } from "../doc/DocPane";
 import type { ReaderViewController } from "../doc/reader-bridge";
 import { LibraryView, type LibraryViewController } from "../library/LibraryView";
 import { PlanView, type PlanViewController } from "../plan/PlanView";
+import type { WriterViewController } from "../writer/WriterView";
+import { manuscriptDeleteGuard, writerPageStatus } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
 import { Copilot } from "../copilot/Copilot";
 
@@ -79,6 +81,19 @@ export function Shell() {
   // The PDF Reader of each Doc pane (copilot ticket 20): identity, position and control state; the pages' content is the service's.
   const [pdfPages, setPdfPages] = useState<Record<number, PdfPage | null>>({});
   const reportPdf = useCallback((paneId: number, page: PdfPage | null) => { setPdfPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  // The Writer of each Write pane (copilot ticket 22): its page (list or open manuscript with saved content and unsaved draft) and its controller.
+  const [writerPages, setWriterPages] = useState<Record<number, WriterPage | null>>({});
+  const reportWriter = useCallback((paneId: number, page: WriterPage | null) => { setWriterPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  const writerPagesRef = useRef(writerPages);
+  writerPagesRef.current = writerPages;
+  // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
+  const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
+    return manuscriptDeleteGuard(Object.values(writerPagesRef.current), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
+  }, [t]);
+  const writerControllers = useRef(new Map<number, WriterViewController>());
+  const registerWriterController = useCallback((paneId: number, controller: WriterViewController | null) => {
+    if (controller) writerControllers.current.set(paneId, controller); else writerControllers.current.delete(paneId);
+  }, []);
   const readerControllers = useRef(new Map<number, ReaderViewController>());
   const registerReaderController = useCallback((paneId: number, controller: ReaderViewController | null) => {
     if (controller) readerControllers.current.set(paneId, controller); else readerControllers.current.delete(paneId);
@@ -445,6 +460,23 @@ export function Shell() {
     }
     return { ok: false, detail: "unavailable" };
   }, [openLibraryDoc]);
+  // Copilot-requested Writer navigation: runs on the active Write pane (the page the Copilot was shown), else the first
+  // one, else the active pane is switched to the Writer first (the activity-bar button, with its leave protection).
+  const runWriterViewAction = useCallback(async (action: WriterViewAction): Promise<Report> => {
+    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+    const { panes: current, activeId: activeNow } = shell.current;
+    const active = current.find((pane) => pane.id === activeNow) ?? current[0];
+    let pane = active?.view === "write" ? active : current.find((candidate) => candidate.view === "write");
+    if (!pane) {
+      if (action.action === "close_manuscript") return { ok: true };
+      if (!active || shell.current.setPaneView(active.id, "write") === false) return { ok: false, detail: "leave_blocked" };
+      for (let attempt = 0; attempt < 40 && !writerControllers.current.has(active.id); attempt++) await wait(50);
+      if (!writerControllers.current.has(active.id)) return { ok: false, detail: "unavailable" };
+      pane = active;
+    } else if (pane.id !== shell.current.activeId) setActiveId(pane.id);
+    const controller = writerControllers.current.get(pane.id);
+    return controller ? controller.apply(action) : { ok: false, detail: "unavailable" };
+  }, []);
   const docDeletedRef = useRef(docDeleted);
   docDeletedRef.current = docDeleted;
   const runViewAction = useCallback(async (action: CopilotViewAction): Promise<Report> => {
@@ -466,10 +498,12 @@ export function Shell() {
     if (action.action === "open_task_doc") return openTaskDoc(action.docId);
     const readerAction = ReaderViewActionSchema.safeParse(action);
     if (readerAction.success) return runReaderViewAction(readerAction.data);
+    const writerAction = WriterViewActionSchema.safeParse(action);
+    if (writerAction.success) return runWriterViewAction(writerAction.data);
     const libraryAction = LibraryViewActionSchema.safeParse(action);
     if (libraryAction.success) return runLibraryViewAction(libraryAction.data);
     return runPlanViewAction(action as PlanViewAction);
-  }, [runPlanViewAction, runWorkspaceAction, openTaskDoc, runLibraryViewAction, runReaderViewAction]);
+  }, [runPlanViewAction, runWorkspaceAction, openTaskDoc, runLibraryViewAction, runReaderViewAction, runWriterViewAction]);
 
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {
@@ -527,6 +561,7 @@ export function Shell() {
       // A Reader is complete only with the reading of an admitted epoch; updating is unavailable, a failed read is an error.
       : activePane.view === "doc" && pdfPages[activePane.id] ? (pdfPages[activePane.id]?.phase === "ready" ? "complete" : ["error", "changed"].includes(pdfPages[activePane.id]?.phase ?? "") ? "error" : "unavailable")
       : activePane.view === "doc" ? (readerPages[activePane.id]?.reading ? "complete" : ["error", "missing"].includes(readerPages[activePane.id]?.sync.phase ?? "") ? "error" : "unavailable")
+      : activePane.view === "write" ? writerPageStatus(writerPages[activePane.id])
       : "unavailable",
     plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
     library: activePane.view === "library" && !discoveryPages[activePane.id] ? libraryPages[activePane.id] ?? null : null,
@@ -534,6 +569,8 @@ export function Shell() {
     // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
     reader: activePane.view === "doc" ? readerPages[activePane.id] ?? null : null,
     pdf: activePane.view === "doc" ? pdfPages[activePane.id] ?? null : null,
+    // The Writer of the ACTIVE pane: the list or the open manuscript (saved content, and the draft apart from it).
+    writer: activePane.view === "write" ? writerPages[activePane.id] ?? null : null,
     workspace: {
       maxPanes: MAX_PANES, activePaneId: activePane.id,
       panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
@@ -546,7 +583,7 @@ export function Shell() {
       },
       copilotOpen,
     },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, tweaks, copilotOpen]);
+  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, writerPages, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
@@ -558,7 +595,7 @@ export function Shell() {
       case "doc":
         return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onController={registerReaderController} />;
       case "write":
-        return <WriterView />;
+        return <WriterView paneId={p.id} onContext={reportWriter} onController={registerWriterController} />;
       default:
         return <StubPane nav={NAV_MAP[p.view] || NAV[0]} />;
     }
@@ -664,7 +701,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onBeforeDocDelete={(docId) => docId !== currentDocRef.current || confirmWorkspaceLeave()} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onBeforeDocDelete={(docId) => docId !== currentDocRef.current || confirmWorkspaceLeave()} onBeforeManuscriptDelete={beforeManuscriptDelete} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette
