@@ -21,6 +21,9 @@ export const SVG_MAX_ASPECT = 100;
 /** The hard ceiling on a drawn picture's longer edge, checked BEFORE the engine allocates anything. */
 export const SVG_MAX_LONG_EDGE = 4096;
 
+/** A same-file reference: `#` and a plain XML id, nothing a file resolver could take for a path. */
+const FRAGMENT = /^#[A-Za-z_][\w.-]*$/;
+
 export type SvgSafety = { ok: true } | { ok: false; reason: string };
 
 /** Refuses an SVG that is not purely a drawing. The reason names the first offence (never the file's content). */
@@ -46,24 +49,36 @@ export function checkSvg(svg: string): SvgSafety {
   // another value): a scan that consumed a quoted value could be made to step over the real reference after it.
   // An occurrence is allowed only as a quoted `#fragment` or an inline raster picture; anything else is refused.
   // An inline raster picture given as an href value is set aside first: its base64 may spell `href` by chance, and
-  // what it covers is base64 text between one pair of quotes, so no markup can hide in it.
+  // what it covers is base64 text between one pair of quotes, so no markup can hide in it. The stand-in is a NUL,
+  // which the file itself may not contain, so no value in the file can pass for a set-aside picture.
+  if (svg.includes("\u0000")) return { ok: false, reason: "it contains a NUL character" };
   const scan = svg.replace(
     /(href\s*=\s*)(["'])data:image\/(?:png|jpeg|jpg|webp);base64,[A-Za-z0-9+/=\s]*\2/gi,
-    "$1$2#inline$2"
+    "$1$2\u0000$2"
+  );
+  // resvg reads `#…` on <image>, and an id the file does not declare on <feImage>, as a FILE path: so <image> takes
+  // only an inline picture, and every other href must name, exactly, an id declared in this file.
+  const ids = new Set(
+    [...svg.matchAll(/\bid\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((m) => m[1] ?? m[2] ?? "")
   );
   for (const at of scan.matchAll(/href/gi)) {
-    const rest = scan.slice(at.index + 4);
-    const quoted = /^\s*=\s*("([^"]*)"|'([^']*)')/.exec(rest);
-    const value = quoted ? (quoted[2] ?? quoted[3] ?? "").trim() : undefined;
-    if (value !== undefined && /^#[^#\s]*$/.test(value)) continue;
+    const quoted = /^\s*=\s*("([^"]*)"|'([^']*)')/.exec(scan.slice(at.index + 4));
+    const value = quoted ? (quoted[2] ?? quoted[3] ?? "") : undefined;
+    const element = /^<\s*(?:[\w.-]+:)?([\w.-]+)/.exec(
+      scan.slice(scan.lastIndexOf("<", at.index))
+    )?.[1];
+    const inlinePicture = value === "\u0000";
+    const fragment = value !== undefined && FRAGMENT.test(value) && ids.has(value.slice(1));
+    if (element?.toLowerCase() === "image" ? inlinePicture : inlinePicture || fragment) continue;
     return {
       ok: false,
-      reason: "it references something outside the file (an href that is not a #fragment)",
+      reason:
+        "it references something outside the file (an href that is not a #fragment of this file)",
     };
   }
   for (const at of scan.matchAll(/url\s*\(/gi)) {
     const target = /^\s*(["']?)\s*([^)"'\s]*)\s*\1\s*\)/.exec(scan.slice(at.index + at[0].length));
-    if (target && /^#[^#]*$/.test(target[2] ?? "")) continue;
+    if (target && FRAGMENT.test(target[2] ?? "")) continue;
     return {
       ok: false,
       reason: "it references something outside the file (a url() that is not a #fragment)",

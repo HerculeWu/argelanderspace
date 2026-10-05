@@ -50,6 +50,19 @@ describe("checkSvg", () => {
       wrap('<g class="href=\'#"><image href="/abs/a.png"/></g><g class="\'"/>'),
     ],
     ["a bad href after a good one", wrap('<use href="#a"/><image href="/abs/a.png"/>')],
+    // resvg reads a `#…` value on <image> (and an unknown id on <feImage>) as a file path, not as a fragment
+    ["a # file name on an image", wrap('<image href="#probe.png" width="1" height="1"/>')],
+    [
+      "a # name on an image even when the file declares that id",
+      wrap('<g id="probe.png"/><image href="#probe.png"/>'),
+    ],
+    ["a # path on an image", wrap('<image href="#/../red.png"/>')],
+    ["the placeholder's own name on an image", wrap('<image href="#inline"/>')],
+    ["an unknown id on an feImage", wrap('<filter id="f"><feImage href="#probe.png"/></filter>')],
+    ["a fragment with a slash", wrap('<g id="a"/><use href="#a/../b"/>')],
+    ["a declared id that looks like a path", wrap('<g id="a/../b"/><use href="#a/../b"/>')],
+    ["a fragment with leading space", wrap('<g id="a"/><use href=" #a"/>')],
+    ["a NUL character", wrap("<g/>\u0000")],
     ["an absolute file image", wrap('<image href="/etc/hostname"/>')],
     ["a device file image", wrap("<image href='/dev/zero'/>")],
     ["an unquoted href", wrap("<image href=/abs/a.png />")],
@@ -71,6 +84,16 @@ describe("checkSvg", () => {
         wrap(
           `<defs><linearGradient id="g"><stop offset="0" stop-color="#000"/></linearGradient><g id="a"><rect width="5" height="5" fill="url(#g)"/></g></defs><use xlink:href="#a"/><use href="#a"/><image href="${png}" width="2" height="2"/><text>one two on</text>`,
           'viewBox="0 0 10 10"'
+        )
+      ).ok
+    ).toBe(true);
+  });
+
+  test("an feImage may point at an element of the same file", () => {
+    expect(
+      checkSvg(
+        wrap(
+          '<defs><g id="pic"><rect width="1" height="1"/></g></defs><filter id="f"><feImage href="#pic"/></filter>'
         )
       ).ok
     ).toBe(true);
