@@ -25,6 +25,7 @@ export * from "./text-doc.js";
 export * from "./workspace-ops.js";
 export * from "./writer.js";
 export * from "./writer-bib.js";
+export * from "./writer-cells.js";
 export * from "./writer-numbering.js";
 export * from "./writer-ops.js";
 export * from "./writer-preview.js";

@@ -2,6 +2,7 @@
 import { useTranslation } from "react-i18next";
 import { currentWriterCellPreview, serializeCell, type IrSegment, type WriterCell, type WriterNumberingResponse } from "@argelanderspace/contracts";
 import { Math as TexMath, htmlWithMath } from "../lib/math";
+import { safeTableHtml } from "../lib/safe-table-html";
 import { MathText, renderIrSegments } from "../lib/segments";
 import { assetUrl } from "../api/writer";
 
@@ -64,7 +65,8 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
       </figure>;
       if (b.type === "table") return <div key={b.id} className="w-table-preview" data-ui="preview-table">
         {caption}
-        {b.tableBody && <div dangerouslySetInnerHTML={{ __html: htmlWithMath(b.tableBody) }} />}
+        {/* The table of a cell an agent can write: reduced to table structure before it is injected (spec 14.3). */}
+        {b.tableBody && <div dangerouslySetInnerHTML={{ __html: htmlWithMath(safeTableHtml(b.tableBody)) }} />}
       </div>;
       return <div key={b.id}>{caption}<pre className="w-code-render">{b.body ?? ""}</pre></div>;
     })}

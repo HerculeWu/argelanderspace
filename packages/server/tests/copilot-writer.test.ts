@@ -671,6 +671,7 @@ test("the shared delete re-checks the rev and bytes inside the writer lock: a ch
     writerLock: new AsyncLock(),
     changed: () => {},
     cancelCompile: async () => {},
+    sandboxed: () => true,
   };
   const target = describeManuscriptDelete(deps, M);
   if (!target || "error" in target) throw new Error("fixture");
@@ -716,6 +717,7 @@ test("Std8: a change after the click but before the delete takes the lock delete
     writerLock: new AsyncLock(),
     changed: () => {},
     cancelCompile: async () => {},
+    sandboxed: () => true,
   };
   const target = describeManuscriptDelete(deps, M);
   if (!target || "error" in target) throw new Error("fixture");

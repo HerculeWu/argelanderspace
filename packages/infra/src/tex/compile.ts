@@ -39,6 +39,7 @@ import { findOnPath } from "../lib/proc.js";
 import { createCachedTexWorkspace } from "./cache.js";
 import { prepareTexInstrumentation, texStyPath } from "./instrument.js";
 import { runTexProcess } from "./proc.js";
+import { ensureWriterSandboxProbe, writerSandboxCommand } from "./sandbox.js";
 import {
   createTexWorkspace,
   guardTexWorkspaceSize,
@@ -224,6 +225,36 @@ async function clearLatexmkRunState(dir: string, jobname: string): Promise<void>
   }
 }
 
+/**
+ * The whole environment of a Writer compile (copilot ticket 23, spec 14.1). Text an agent writes can reach the TeX
+ * engine, and TeX Live's restricted shell escape runs `kpsewhich -var-value=NAME` for it, which prints any variable of
+ * the environment, an API key included. So the child gets only what TeX needs, never the server's own variables:
+ * no shell escape, paranoid file access (no absolute or parent paths), PATH and TeX/locale variables, and a HOME and
+ * TMPDIR inside the compile workspace.
+ */
+export function writerTexEnv(workDir: string): Record<string, string> {
+  const env: Record<string, string> = {
+    PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
+    HOME: workDir,
+    TMPDIR: workDir,
+    shell_escape: "f",
+    openin_any: "p",
+    openout_any: "p",
+  };
+  for (const [key, value] of Object.entries(process.env)) {
+    if (
+      value !== undefined &&
+      /^(LANG|LC_[A-Z]+|TZ|SOURCE_DATE_EPOCH|FORCE_SOURCE_DATE|TEX[A-Z0-9_]*)$/.test(key)
+    )
+      env[key] = value;
+  }
+  // The three above are not negotiable whatever the parent sets.
+  env.shell_escape = "f";
+  env.openin_any = "p";
+  env.openout_any = "p";
+  return env;
+}
+
 async function attemptCompile(opts: {
   srcDir: string;
   mainRel: string;
@@ -280,18 +311,39 @@ async function attemptCompile(opts: {
     }
     const runDir = path.dirname(target);
     const args = [
-      ...(opts.renderProfile === "writer" ? ["-norc"] : []),
+      // Writer: no rc files, and biber never runs. biber ignores kpathsea's openin_any (it reads an absolute or even a
+      // remote \addbibresource), so latexmk's $biber is replaced by a command that always fails: a biblatex/biber
+      // manuscript is a failed compile, while bibtex (natbib) keeps working under paranoid file access.
+      ...(opts.renderProfile === "writer" ? ["-norc", "-e", "$biber = 'false';"] : []),
       opts.engine === "xelatex" ? "-pdfxe" : "-pdf",
       "-interaction=nonstopmode",
       "-recorder",
       `-jobname=${opts.jobname}`,
       path.basename(target),
     ];
-    const result = await runTexProcess("latexmk", args, {
-      cwd: runDir,
-      timeoutMs: opts.timeoutMs,
-      ...(opts.signal ? { signal: opts.signal } : {}),
-    });
+    // Writer: inside bubblewrap when it works (the real boundary, see sandbox.ts); the hardening below always applies.
+    const writerEnv = opts.renderProfile === "writer" ? writerTexEnv(runDir) : null;
+    const sandboxed = writerEnv !== null && (await ensureWriterSandboxProbe());
+    const sandbox =
+      sandboxed && writerEnv ? writerSandboxCommand(runDir, writerEnv, "latexmk", args) : null;
+    const result = await runTexProcess(
+      sandbox ? sandbox.cmd : "latexmk",
+      sandbox ? sandbox.args : args,
+      {
+        cwd: sandbox ? sandbox.cwd : runDir,
+        timeoutMs: opts.timeoutMs,
+        // A manuscript's text can now come from an agent (copilot ticket 23, spec 14.1). TeX Live's default lets a
+        // document \input any readable absolute path (openin_any = a); paranoid mode refuses absolute and parent paths
+        // and dotfiles, so a Writer compile can only read its own workspace and the TeX trees. The reader/ingest
+        // compiles are untouched (their sources are arXiv papers, not agent text).
+        ...(sandbox
+          ? { env: sandbox.env, replaceEnv: true, fdInput: sandbox.fdInput }
+          : writerEnv
+            ? { env: writerEnv, replaceEnv: true }
+            : {}),
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      }
+    );
     opts.signal?.throwIfAborted();
 
     const logPath = path.join(runDir, `${opts.jobname}.log`);

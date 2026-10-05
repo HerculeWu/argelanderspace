@@ -12,6 +12,7 @@ import { z } from "zod";
 import {
   CellIdSchema,
   CellSchema,
+  CellTypeSchema,
   CommentIdSchema,
   CommentSchema,
   ManuscriptIdSchema,
@@ -262,6 +263,16 @@ const WriterEditorPageSchema = z
       .strict()
       .nullable(),
     modal: z.enum(["info", "preamble"]).nullable(),
+    /** The side panels' folds, the right tab and the template warning, as the editor shows them now (copilot ticket 23). */
+    panels: z
+      .object({
+        outlineCollapsed: z.boolean(),
+        referencesCollapsed: z.boolean(),
+        rightTab: z.enum(["references", "crossrefs", "comments"]),
+        templateWarnings: Count,
+      })
+      .strict()
+      .optional(),
     /** The Info/Preamble dialog's form values the user has typed and not saved (a draft, never on disk). */
     modalDraft: z
       .object({ unsaved: z.literal(true), values: z.record(z.string(), z.unknown()) })
@@ -435,6 +446,91 @@ export const WriterWriteOperationSchema = z.discriminatedUnion("action", [
 ]);
 export type WriterWriteOperation = z.infer<typeof WriterWriteOperationSchema>;
 
+// ---- Cell, comment, reference and figure operations (copilot ticket 23) ---------------------------------------- //
+
+const CellRef = { manuscriptId: Id, expectedRev: Rev, cellId: CellIdSchema } as const;
+
+/**
+ * The cell operations of the editor: the add menu (a cell of a type the bound template lists, at a position), the
+ * editing form (the data fields of the cell), the type menu and its Delete, the comment box, the References and
+ * Crossrefs/outline insert buttons and the figure's image chooser. Each names its manuscript and cell, carries the
+ * `rev` of the reading it was planned from and changes only what it names; unknown keys of the file are kept.
+ */
+export const WriterCellOperationSchema = z.discriminatedUnion("action", [
+  /** The add menu: a new cell of `cellType` at `index` (0 = first, the cell count = last; omitted = last). */
+  z
+    .object({
+      action: z.literal("insert_cell"),
+      manuscriptId: Id,
+      expectedRev: Rev,
+      cellType: CellTypeSchema,
+      index: z.number().int().nonnegative().optional(),
+      /** The editing form's fields for the new cell (defaults fill the rest). */
+      fields: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict(),
+  /** The editing form: set data fields of one cell (only that type's fields; the others stay). */
+  z
+    .object({
+      action: z.literal("update_cell"),
+      ...CellRef,
+      fields: z.record(z.string(), z.unknown()),
+    })
+    .strict(),
+  /** The cell's Delete (no confirmation in the page either); its comments stay in the file. */
+  z.object({ action: z.literal("delete_cell"), ...CellRef }).strict(),
+  /** The type menu: lossy by design (to latex keeps the serialized source, any other type starts from its defaults). */
+  z.object({ action: z.literal("convert_cell"), ...CellRef, cellType: CellTypeSchema }).strict(),
+  /** The Comments tab's Add: a plain-text note on the cell. */
+  z
+    .object({
+      action: z.literal("add_comment"),
+      ...CellRef,
+      body: z.string().trim().min(1).max(20_000),
+    })
+    .strict(),
+  /**
+   * The References tab (a bare cite key) and the Crossrefs/outline insert buttons (a bare label, completing the
+   * target's label first), at an offset of a text field of the cell. Nothing is wrapped in a cite or ref command.
+   */
+  z
+    .object({
+      action: z.literal("insert_reference"),
+      ...CellRef,
+      field: z.string().min(1).max(40),
+      /** UTF-16 offset into the field (0 up to its length). */
+      offset: z.number().int().nonnegative(),
+      kind: z.enum(["cite", "label"]),
+      /** A cite key of the library, or a label; a label may be omitted when `target` needs one (a fresh label is made). */
+      text: z.string().min(1).max(200).optional(),
+      /** Crossrefs: the cell (and its n-th numbered environment or heading) that must carry the label. */
+      target: z
+        .object({
+          cellId: CellIdSchema,
+          envIndex: z.number().int().nonnegative().optional(),
+          sectionIndex: z.number().int().nonnegative().optional(),
+        })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  /** The figure's image chooser, with a file the user attached to this conversation (never a path or URL). */
+  z
+    .object({
+      action: z.literal("set_figure_image"),
+      ...CellRef,
+      attachmentId: z.string().min(1).max(100),
+    })
+    .strict(),
+]);
+export type WriterCellOperation = z.infer<typeof WriterCellOperationSchema>;
+
+/** The topbar's Render: compile the saved manuscript now (single-flight, the same job the page's button starts). */
+export const WriterRenderOperationSchema = z
+  .object({ action: z.literal("render_manuscript"), manuscriptId: Id })
+  .strict();
+export type WriterRenderOperation = z.infer<typeof WriterRenderOperationSchema>;
+
 /** A delete is requested, never executed, by the model: the real UI confirms it (deliberately not a write op). */
 export const WriterDeleteOperationSchema = z
   .object({ action: z.literal("delete_manuscript"), manuscriptId: Id, expectedRev: Rev })
@@ -447,14 +543,63 @@ export const WriterViewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("open_manuscript"), manuscriptId: Id }).strict(),
   /** The editor's back button (saves first); a no-op when the list is showing. */
   z.object({ action: z.literal("close_manuscript") }).strict(),
+  /** The topbar's Export: the source zip download, after the pending save (copilot ticket 23). */
+  z.object({ action: z.literal("export_manuscript"), manuscriptId: Id }).strict(),
+  /** A click on a cell, an outline row or a cross-reference: it becomes the active cell and scrolls into view. */
+  z.object({ action: z.literal("select_cell"), manuscriptId: Id, cellId: CellIdSchema }).strict(),
+  /** The cell's pencil: the cell opens in its editing form. */
+  z.object({ action: z.literal("edit_cell"), manuscriptId: Id, cellId: CellIdSchema }).strict(),
+  /** The editing form's Render-this-cell button (Shift+Enter): leaves the editing form, saves what is pending and renders, like the button. */
+  z.object({ action: z.literal("commit_cell"), manuscriptId: Id, cellId: CellIdSchema }).strict(),
+  /** The outline (left) and References (right) panel's fold buttons. */
+  z
+    .object({
+      action: z.literal("set_writer_panel"),
+      panel: z.enum(["outline", "references"]),
+      collapsed: z.boolean(),
+    })
+    .strict(),
+  /** The right panel's tabs. */
+  z
+    .object({
+      action: z.literal("set_writer_tab"),
+      tab: z.enum(["references", "crossrefs", "comments"]),
+    })
+    .strict(),
+  /** The template warning's close button. */
+  z.object({ action: z.literal("dismiss_template_warning") }).strict(),
+  /** The list's Retry after a failed load. */
+  z.object({ action: z.literal("retry_manuscript_list") }).strict(),
 ]);
 export type WriterViewAction = z.infer<typeof WriterViewActionSchema>;
 
-export const WRITER_VIEW_ACTIONS = ["open_manuscript", "close_manuscript"] as const;
+export const WRITER_VIEW_ACTIONS = [
+  "open_manuscript",
+  "close_manuscript",
+  "export_manuscript",
+  "select_cell",
+  "edit_cell",
+  "commit_cell",
+  "set_writer_panel",
+  "set_writer_tab",
+  "dismiss_template_warning",
+  "retry_manuscript_list",
+] as const;
 export const WRITER_WRITE_ACTIONS = ["create_manuscript", "update_manuscript"] as const;
+export const WRITER_CELL_ACTIONS = [
+  "insert_cell",
+  "update_cell",
+  "delete_cell",
+  "convert_cell",
+  "add_comment",
+  "insert_reference",
+  "set_figure_image",
+] as const;
 export const WRITER_OPERATION_ACTIONS = [
   "read",
   ...WRITER_WRITE_ACTIONS,
+  ...WRITER_CELL_ACTIONS,
+  "render_manuscript",
   "delete_manuscript",
   ...WRITER_VIEW_ACTIONS,
 ] as const;

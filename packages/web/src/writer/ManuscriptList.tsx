@@ -103,7 +103,10 @@ export function ManuscriptList({
   onData,
   notice,
   onOpen,
+  registerRetry,
 }: {
+  /** The Retry button of a failed first load, as the Copilot may press it: resolves with what the list shows after it. */
+  registerRetry?: (retry: (() => Promise<"ok" | "disabled" | "failed">) | null) => void;
   /** one-shot note (e.g. "deleted elsewhere") shown above the table */
   notice?: string | null;
   onOpen: (id: string) => void;
@@ -136,6 +139,17 @@ export function ManuscriptList({
   useEffect(() => {
     void reload();
   }, [reload]);
+  const loadFailedRef = useRef(false);
+  loadFailedRef.current = loadFailed;
+  useEffect(() => {
+    registerRetry?.(async () => {
+      // The button exists only after a failed first load.
+      if (!loadFailedRef.current) return "disabled";
+      await reload();
+      return hasData.current ? "ok" : "failed";
+    });
+    return () => registerRetry?.(null);
+  }, [registerRetry, reload]);
   // Reported as it stands: a failed first load is an error, never an empty list.
   useEffect(() => {
     onData?.(rows !== null && templates !== null ? { phase: "ready", rows, templates } : { phase: loadFailed ? "error" : "loading", rows: [], templates: [] });

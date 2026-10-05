@@ -125,13 +125,16 @@ import {
   uploadDocId,
   type WriterExportBundle,
   WriterExportError,
+  workToRef,
   writeManuscriptAsset,
 } from "@argelanderspace/core";
 import {
   AdsDiscoveryError,
   ArxivPdfOnlyError,
+  ensureWriterSandboxProbe,
   extractZip,
   getConfig,
+  writerSandboxAvailable,
   ZipError,
   zipEntries,
 } from "@argelanderspace/infra";
@@ -403,11 +406,18 @@ export function createApp(deps: AppDeps): Hono {
   };
   const writerDataDir = paths.dataDir;
   // The Copilot `writer` tool and these routes share one lock, rev check, save and writer.changed notification.
+  // Find out (off the event loop) whether the OS sandbox for Writer compiles works; the gates read the cached answer.
+  void ensureWriterSandboxProbe();
   const writerOps: WriterOpDeps = {
     dataDir: writerDataDir,
     writerLock,
     changed: writerChanged,
     cancelCompile: (id) => cancelNumberingCompile(id, writerDataDir),
+    // The Render button's own compile, for the Copilot's render_manuscript (the refresh route calls the same function).
+    render: (id) => runWriterNumberingNow(writerDataDir, id, { broadcast }),
+    sandboxed: () => writerSandboxAvailable(),
+    // The References tab's list: the saved works' cite keys, read fresh at each use.
+    citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
   };
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
@@ -2014,6 +2024,16 @@ export function createApp(deps: AppDeps): Hono {
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
       const e = detail("bad manuscript id", 400);
+      return c.json(e.body, e.status);
+    }
+    // A refresh the page makes while carrying out a Copilot view action (commit_cell) is marked by the page: without
+    // the OS sandbox the Copilot never causes a compile, so the server refuses it here (the service, not the page,
+    // decides). The user's own Render sends no marker and compiles as it always did.
+    if (c.req.header("x-copilot-action") && !writerOps.sandboxed()) {
+      const e = detail(
+        "render not available for the Copilot: this machine has no OS sandbox for the Writer's TeX compile",
+        403
+      );
       return c.json(e.body, e.status);
     }
     try {

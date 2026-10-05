@@ -14,6 +14,23 @@ import {
 
 export type WriterEditorPage = NonNullable<WriterPage["editor"]>;
 
+/** The controls of an open editor that a Copilot view action presses (copilot ticket 23). */
+export interface WriterEditorControls {
+  /** A click on a cell (or an outline row / cross-reference): active and scrolled into view. */
+  select(cellId: string): "ok" | "not_found";
+  /** The cell's pencil. */
+  edit(cellId: string): "ok" | "not_found";
+  /** The editing form's Render button / Shift+Enter: leave the form, save what is pending, render. */
+  commit(cellId: string): Promise<"ok" | "not_found" | "refused">;
+  /** The outline / References panels' fold buttons. */
+  setPanel(panel: "outline" | "references", collapsed: boolean): void;
+  setTab(tab: "references" | "crossrefs" | "comments"): void;
+  /** The template warning's close button; "disabled" when no warning is showing. */
+  dismissWarning(): "ok" | "disabled";
+  /** The topbar's Export: pending save first, then the download; "blocked" when the save could not complete. */
+  exportNow(): Promise<"ok" | "failed" | "blocked">;
+}
+
 export function captureEditorPage(input: {
   id: string;
   /** undefined = loading, null = not found. */
@@ -29,6 +46,7 @@ export function captureEditorPage(input: {
   modalDraft?: Record<string, unknown> | null;
   numbering: WriterNumberingResponse | null;
   rendering: boolean;
+  panels?: { outlineCollapsed: boolean; referencesCollapsed: boolean; rightTab: "references" | "crossrefs" | "comments"; templateWarnings: number };
 }): WriterEditorPage {
   const { doc, templates } = input;
   const phase = doc === undefined || templates === null ? "loading" : doc === null ? "missing" : "ready";
@@ -53,6 +71,7 @@ export function captureEditorPage(input: {
     editingCellId: input.editingId,
     caret: input.caret,
     modal: input.modal,
+    ...(input.panels ? { panels: input.panels } : {}),
     modalDraft: input.modalDraft ? { unsaved: true, values: input.modalDraft } : null,
     preview: {
       status: input.numbering?.status ?? "unknown",

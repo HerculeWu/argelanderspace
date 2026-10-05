@@ -2366,6 +2366,7 @@ export class CopilotHost {
       workbench?.writer && planTool
         ? createWriterTool({
             writer: workbench.writer,
+            attachment: this.attachmentResolver(loaded),
             viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
             admitting: () => !this.closed && !state.stopRequested,
             budget: () => this.room(loaded, frozenModel),

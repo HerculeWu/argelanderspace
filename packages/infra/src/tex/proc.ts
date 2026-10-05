@@ -10,7 +10,8 @@
  * so callers can add e.g. TEXINPUTS without rebuilding the environment.
  */
 
-import { spawn } from "node:child_process";
+import { type ChildProcessByStdio, spawn } from "node:child_process";
+import type { Readable } from "node:stream";
 
 export interface TexProcResult {
   code: number | null;
@@ -23,19 +24,32 @@ export interface TexProcResult {
 export function runTexProcess(
   cmd: string,
   args: readonly string[],
-  opts: { cwd?: string; timeoutMs: number; env?: Record<string, string>; signal?: AbortSignal }
+  opts: {
+    cwd?: string;
+    timeoutMs: number;
+    env?: Record<string, string>;
+    /** Use `env` as the whole environment instead of merging it over the parent (a scrubbed child). */
+    replaceEnv?: boolean;
+    /** Bytes written to a fourth pipe (fd 3) of the child (bwrap `--args 3`), so they appear in no command line. */
+    fdInput?: Buffer;
+    signal?: AbortSignal;
+  }
 ): Promise<TexProcResult> {
   opts.signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: opts.fdInput ? ["ignore", "pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
       detached: true,
       // additive merge (Stage 10: writer numbering compile needs TEXINPUTS);
       // existing callers pass no env and get the parent's unchanged.
-      ...(opts.env !== undefined ? { env: { ...process.env, ...opts.env } } : {}),
-    });
+      ...(opts.env !== undefined
+        ? { env: opts.replaceEnv ? { ...opts.env } : { ...process.env, ...opts.env } }
+        : {}),
+    }) as unknown as ChildProcessByStdio<null, Readable, Readable>;
 
+    if (opts.fdInput)
+      (child.stdio[3] as unknown as import("node:stream").Writable).end(opts.fdInput);
     let timedOut = false;
     const kill = () => {
       try {
