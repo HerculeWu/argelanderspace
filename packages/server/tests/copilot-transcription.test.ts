@@ -4,6 +4,7 @@
  * real Doc files in a temp dataDir. ONLY the model is scripted (a deterministic provider that makes the tool calls a
  * transcribing model would make): this proves the tool and storage loop, never the quality of any real model.
  */
+
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   existsSync,
@@ -20,6 +21,7 @@ import {
   type ConversationSnapshot,
   type CopilotConfirmation,
   type PageContext,
+  PDF_IMAGE_LONG_EDGE,
   type PdfPage,
   type ReaderPage,
   type TexDocIr,
@@ -47,6 +49,7 @@ import { JobRunner } from "../src/jobs.js";
 import { encodePng } from "../src/pdf-material.js";
 import { probePdf } from "../src/pdfium-probe.js";
 import { ProviderSettings } from "../src/providers.js";
+import { loadResvgEngine } from "../src/svg-raster.js";
 import { stubPipelines, stubSources } from "./helpers.js";
 import { syntheticPdf } from "./pdf-fixture.js";
 
@@ -481,8 +484,16 @@ test("a whole PDF is transcribed through the ordinary tools into a new text Doc 
   const generated = lastResult(seenAt(seen.length - 1));
   expect(generated).toMatchObject({
     ok: true,
-    sourceCoverage: { pdfDocId: pdf.docId, pageCount: 3, allPagesRead: true, unreadPages: "" },
+    sourceCoverage: {
+      pdfDocId: pdf.docId,
+      pageCount: 3,
+      viewedPages: 3,
+      allPagesRead: true,
+      unreadPages: "",
+    },
   });
+  // nothing to warn about: the generate record carries no coverage warning
+  expect(opsOf(snapshot).at(-1)?.warnings).toBeUndefined();
   // the model was never switched
   expect(snapshot.conversation.model).toMatchObject({ provider: "openai", model: "gpt-4.1" });
 });
@@ -523,13 +534,13 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // ticket 29 measured 69262 bytes; this ticket adds the load_instruction action, the read_image action and one
   // sentence. The instruction (about 5 KB) is never part of it.
   expect(footprint).toBeGreaterThan(69_262);
-  expect(footprint).toBeLessThan(69_262 + 1_300);
+  expect(footprint).toBeLessThan(69_262 + 1_600);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 
-test("missing pages are not complete: generate says which pages this conversation never read", async () => {
+test("pages known only by their text are not looked at: validate and generate list them, and the side panel's record carries the warning", async () => {
   const pdf = await publish();
-  // pages 0 and 1 have a text layer and arrive with the message; page 2 is a picture with no text and is never looked at
+  // pages 0 and 1 have a text layer and arrive with the message as text; no page image is ever read
   script = [...transcriptionSteps(pdf, []), SAVE_PART_TWO, ...finishSteps()];
   const id = await start(page(pdfPage(pdf.docId, pdf.sha)));
   await settled(id);
@@ -538,24 +549,99 @@ test("missing pages are not complete: generate says which pages this conversatio
   expect(generated.sourceCoverage).toMatchObject({
     pdfDocId: pdf.docId,
     pageCount: 3,
+    viewedPages: 0,
     allPagesRead: false,
-    unreadPageIndexes: [2],
-    unreadPages: "3",
-    textOnlyPages: 2,
-    imagePages: 0,
+    unreadPageIndexes: [0, 1, 2],
+    unreadPages: "1-3",
+    textOnlyPages: "1-2",
+    missingPages: "3",
   });
   expect(generated.sourceCoverage.note).toMatch(/must not be called complete/);
-  // validate carried the same truth before the generation
-  const validate = JSON.parse(
-    (
-      seenAt(seen.length - 2)
-        .messages.filter((m) => m.role === "toolResult")
-        .at(-1) as {
-        content: { text: string }[];
-      }
-    ).content[0]?.text ?? "{}"
-  );
-  expect(validate.sourceCoverage.allPagesRead).toBe(false);
+  // the same truth on the operation records the user's side panel shows
+  const ops = opsOf(await host.snapshot(id));
+  expect(ops.filter((o) => o.action === "validate" || o.action === "generate")).toHaveLength(2);
+  for (const op of ops.filter((o) => o.action === "validate" || o.action === "generate"))
+    expect(op.warnings).toEqual(["source_unviewed:1-3"]);
+});
+
+test("looking at the images of pages 1 and 2 leaves exactly page 3 unread", async () => {
+  const pdf = await publish();
+  script = [...transcriptionSteps(pdf, [0, 1]), SAVE_PART_TWO, ...finishSteps()];
+  const id = await start(page(pdfPage(pdf.docId, pdf.sha)));
+  await settled(id);
+  const generated = lastResult(seenAt(seen.length - 1));
+  expect(generated.sourceCoverage).toMatchObject({
+    allPagesRead: false,
+    viewedPages: 2,
+    unreadPageIndexes: [2],
+    unreadPages: "3",
+  });
+  const generate = opsOf(await host.snapshot(id)).find((o) => o.action === "generate");
+  expect(generate?.warnings).toEqual(["source_unviewed:3"]);
+});
+
+test("a text Doc made without its source PDF in a transcription says its coverage cannot be verified", async () => {
+  const pdf = await publish();
+  script = [
+    () => ({ call: { action: "load_instruction", name: "pdf-transcription" } }),
+    () => ({ call: { action: "create", workId: W1, operationId: OPERATION } }),
+    (context) => ({
+      call: {
+        action: "save_source",
+        docId: docIdOf(context),
+        expectedRev: lastResult(context).rev,
+        markdown: "# T\n\nA paragraph.\n",
+      },
+    }),
+    (context) => ({
+      call: { action: "validate", docId: docIdOf(context), sourceRev: sourceRevOf(context) },
+    }),
+    (context) => ({
+      call: { action: "generate", docId: docIdOf(context), sourceRev: sourceRevOf(context) },
+    }),
+    () => ({ text: "done" }),
+  ];
+  const id = await start(page(pdfPage(pdf.docId, pdf.sha)));
+  await settled(id);
+  const generated = lastResult(seenAt(seen.length - 1));
+  expect(generated.sourceCoverage.unavailable).toMatch(/cannot be verified/);
+  const ops = opsOf(await host.snapshot(id));
+  for (const op of ops.filter((o) => o.action === "validate" || o.action === "generate"))
+    expect(op.warnings).toEqual(["source_coverage_unverifiable"]);
+});
+
+test("a repeated generate of the same operationId still carries the coverage", async () => {
+  const pdf = await publish();
+  script = [
+    ...transcriptionSteps(pdf, []),
+    SAVE_PART_TWO,
+    (context) => ({
+      call: {
+        action: "generate",
+        docId: docIdOf(context),
+        sourceRev: sourceRevOf(context),
+        operationId: "generate-twice-0001",
+      },
+    }),
+    (context) => ({
+      call: {
+        action: "generate",
+        docId: docIdOf(context),
+        sourceRev: sourceRevOf(context),
+        operationId: "generate-twice-0001",
+      },
+    }),
+    () => ({ text: "done" }),
+  ];
+  const id = await start(page(pdfPage(pdf.docId, pdf.sha)));
+  await settled(id);
+  const second = lastResult(seenAt(seen.length - 1));
+  expect(second.status).toBe("noop");
+  expect(second.sourceCoverage).toMatchObject({ allPagesRead: false });
+  expect(opsOf(await host.snapshot(id)).at(-1)).toMatchObject({
+    status: "noop",
+    warnings: ["source_unviewed:1-3"],
+  });
 });
 
 test("a stop keeps the saved source and the finished picture; the run is continued explicitly on the same Doc", async () => {
@@ -832,7 +918,7 @@ test("read_image gives a LaTeX Doc's picture to a model that can see: the verifi
     image: { width: 4, height: 3, mediaType: "image/png" },
     sha256: sha256(png),
   });
-  expect(results[1].detail).toMatch(/cannot be given to a model/);
+  expect(results[1].detail).toMatch(/read_svg_image/);
   expect(results[1].detail).toMatch(/not seen/);
   expect(results[2].status).toBe("conflict");
   // nothing was written: the file is the same
@@ -1036,4 +1122,179 @@ test("a message that looks like a skill command stays literal: nothing is expand
   expect(sent).toContain("/skill:pdf-transcription go");
   expect(sent).not.toContain("PDF transcription instruction, version");
   expect(sent).not.toContain("app:instructions");
+});
+
+// ---- SVG figures read as an image, on demand (user decision 2026-10-05) ----------------------------------- //
+/** The optional renderer is a runtime component; the tests that draw need it, the refusals do not. */
+const resvgInstalled = (await loadResvgEngine()) !== null;
+const docAssets = () => join(root, "data", "output", FIGDOC, "assets");
+const writeAsset = (name: string, content: string | Buffer) =>
+  writeFileSync(join(docAssets(), name), content);
+const svgCall = (path: string, content: string | Buffer, over: object = {}) => ({
+  tool: "reader",
+  call: { action: "read_svg_image", docId: FIGDOC, path, sha256: sha256(content), ...over },
+});
+const SMALL_SVG =
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 100'><rect width='200' height='100' fill='#c00'/><circle cx='100' cy='50' r='30' fill='#fff'/></svg>";
+const assetState = () =>
+  Object.fromEntries(
+    readdirSync(docAssets()).map((f) => [f, sha256(readFileSync(join(docAssets(), f)))])
+  );
+const ihdr = (png: Buffer) => ({ w: png.readUInt32BE(16), h: png.readUInt32BE(20) });
+
+test.skipIf(!resvgInstalled)(
+  "read_svg_image draws an SVG figure to a bounded PNG for the model only: a visible step, nothing stored or changed",
+  async () => {
+    const png = encodePng({ width: 4, height: 3, data: new Uint8Array(4 * 3 * 4).fill(200) });
+    figureDoc({ png, svg: SMALL_SVG });
+    const before = assetState();
+    script = [
+      () => svgCall("vector.svg", SMALL_SVG, { longEdge: 512 }),
+      () => svgCall("vector.svg", SMALL_SVG),
+      () => ({ text: "done" }),
+    ];
+    const id = await start(page(pdfPage("unused", "0".repeat(64))), "Look at the SVG figure");
+    await settled(id);
+    expect(opsOf(await host.snapshot(id)).map((o) => `${o.action}:${o.status}`)).toEqual([
+      "read_svg_image:ok",
+      "read_svg_image:ok",
+    ]);
+    const final = seenAt(seen.length - 1);
+    const blocks = imageBlocks(final) as { data: string; mimeType: string }[];
+    expect(blocks).toHaveLength(2);
+    const first = Buffer.from(blocks[0]?.data ?? "", "base64");
+    expect(blocks[0]?.mimeType).toBe("image/png");
+    // the longer side is the asked one (512), the shape is the SVG's (2:1); the default is the page image's
+    expect(ihdr(first)).toEqual({ w: 512, h: 256 });
+    expect(ihdr(Buffer.from(blocks[1]?.data ?? "", "base64"))).toEqual({
+      w: PDF_IMAGE_LONG_EDGE.default,
+      h: PDF_IMAGE_LONG_EDGE.default / 2,
+    });
+    const results = resultsOf(final);
+    expect(results[0]).toMatchObject({
+      ok: true,
+      image: { width: 512, height: 256, mediaType: "image/png", renderedFrom: "svg" },
+      sha256: sha256(SMALL_SVG),
+    });
+    // nothing was stored or changed: the Doc's files are exactly what they were
+    expect(assetState()).toEqual(before);
+  }
+);
+
+test.skipIf(!resvgInstalled)(
+  "a huge viewBox or extreme proportions never make a huge picture",
+  async () => {
+    const png = encodePng({ width: 4, height: 3, data: new Uint8Array(4 * 3 * 4).fill(200) });
+    const huge =
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000000000 1000000000' width='1000000000' height='1000000000'><rect width='5' height='5'/></svg>";
+    const thin =
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100000 10'><rect width='5' height='5'/></svg>";
+    figureDoc({ png, svg: SMALL_SVG });
+    writeAsset("huge.svg", huge);
+    writeAsset("thin.svg", thin);
+    script = [
+      () => svgCall("huge.svg", huge, { longEdge: 256 }),
+      () => svgCall("thin.svg", thin),
+      () => ({ text: "done" }),
+    ];
+    const id = await start(page(pdfPage("unused", "0".repeat(64))), "Look");
+    await settled(id);
+    const ops = opsOf(await host.snapshot(id)).map((o) => `${o.action}:${o.status}`);
+    expect(ops).toEqual(["read_svg_image:ok", "read_svg_image:invalid"]);
+    const [block] = imageBlocks(seenAt(seen.length - 1)) as { data: string }[];
+    const drawn = ihdr(Buffer.from(block?.data ?? "", "base64"));
+    expect(Math.max(drawn.w, drawn.h)).toBeLessThanOrEqual(257);
+    expect(lastResult(seenAt(seen.length - 1)).detail).toMatch(/proportions/);
+  }
+);
+
+test("an SVG with script, an external reference or other active content is refused whole, before any renderer", async () => {
+  const png = encodePng({ width: 4, height: 3, data: new Uint8Array(4 * 3 * 4).fill(200) });
+  figureDoc({ png, svg: SMALL_SVG });
+  const hostile: Record<string, string> = {
+    "script.svg":
+      "<svg xmlns='http://www.w3.org/2000/svg'><script>fetch('http://evil.example/x')</script><rect width='5' height='5'/></svg>",
+    "onload.svg":
+      "<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'><rect width='5' height='5'/></svg>",
+    "href.svg":
+      "<svg xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'><image xlink:href='http://evil.example/p.png' width='5' height='5'/></svg>",
+    "file.svg":
+      "<svg xmlns='http://www.w3.org/2000/svg'><image href='file:///etc/passwd' width='5' height='5'/></svg>",
+    "foreign.svg":
+      "<svg xmlns='http://www.w3.org/2000/svg'><foreignObject><div>hi</div></foreignObject></svg>",
+    "entity.svg":
+      "<?xml version='1.0'?><!DOCTYPE svg [<!ENTITY x SYSTEM 'file:///etc/passwd'>]><svg xmlns='http://www.w3.org/2000/svg'><text>&x;</text></svg>",
+    "css.svg":
+      "<svg xmlns='http://www.w3.org/2000/svg'><style>@import url(http://evil.example/a.css);</style><rect width='5' height='5'/></svg>",
+  };
+  for (const [name, content] of Object.entries(hostile)) writeAsset(name, content);
+  const before = assetState();
+  script = [
+    ...Object.entries(hostile).map(
+      ([name, content]) =>
+        () =>
+          svgCall(name, content)
+    ),
+    () => ({ text: "done" }),
+  ];
+  const id = await start(page(pdfPage("unused", "0".repeat(64))), "Look");
+  await settled(id);
+  const ops = opsOf(await host.snapshot(id));
+  expect(ops.map((o) => o.status)).toEqual(Object.keys(hostile).map(() => "rejected"));
+  const final = seenAt(seen.length - 1);
+  expect(imageBlocks(final)).toHaveLength(0);
+  for (const result of resultsOf(final)) {
+    expect(result.ok).toBe(false);
+    expect(result.detail).toMatch(/NOT rendered/);
+    expect(result.detail).toMatch(/not seen/);
+  }
+  expect(assetState()).toEqual(before);
+});
+
+test("read_svg_image: a model that cannot see, a changed file and a non-SVG are each refused with their own state", async () => {
+  const png = encodePng({ width: 4, height: 3, data: new Uint8Array(4 * 3 * 4).fill(200) });
+  figureDoc({ png, svg: SMALL_SVG });
+  script = [
+    () => svgCall("vector.svg", SMALL_SVG, { sha256: "b".repeat(64) }),
+    () => svgCall("plot.png", png),
+    () => ({ text: "done" }),
+  ];
+  const id = await start(page(pdfPage("unused", "0".repeat(64))), "Look");
+  await settled(id);
+  expect(opsOf(await host.snapshot(id)).map((o) => o.status)).toEqual(["conflict", "invalid"]);
+  const model = (await settings.getRuntime())
+    .getModels("openai")
+    .find((candidate) => candidate.id === "gpt-4.1");
+  if (!model) throw new Error("fixture model");
+  const original = [...model.input];
+  model.input = ["text"];
+  try {
+    script = [() => svgCall("vector.svg", SMALL_SVG), () => ({ text: "done" })];
+    seen = [];
+    const blind = await start(page(pdfPage("unused", "0".repeat(64))), "Look");
+    await settled(blind);
+    expect(lastResult(seenAt(1)).detail).toMatch(/choose an image-capable model/);
+    expect(imageBlocks(seenAt(1))).toHaveLength(0);
+  } finally {
+    model.input = original as typeof model.input;
+  }
+});
+
+test("read_image: a missing picture does not claim a PDF, and an oversized one is a capacity refusal, not an unsupported format", async () => {
+  const png = encodePng({ width: 4, height: 3, data: new Uint8Array(4 * 3 * 4).fill(200) });
+  figureDoc({ png, svg: SMALL_SVG });
+  const oversized = Buffer.concat([png.subarray(0, 33), Buffer.alloc(21 * 1024 * 1024)]);
+  writeAsset("big.png", oversized);
+  script = [
+    () => imageCall({ path: "missing.png", sha256: sha256(png) }),
+    () => imageCall({ path: "big.png", sha256: sha256(oversized) }),
+    () => ({ text: "done" }),
+  ];
+  const id = await start(page(pdfPage("unused", "0".repeat(64))), "Look");
+  await settled(id);
+  expect(opsOf(await host.snapshot(id)).map((o) => o.status)).toEqual(["not_found", "rejected"]);
+  const [missing, big] = resultsOf(seenAt(seen.length - 1));
+  expect(missing.detail).not.toMatch(/PDF/);
+  expect(big.detail).toMatch(/capacity/);
+  expect(big.status).toBe("rejected");
 });

@@ -93,7 +93,12 @@ import {
   createApplicationResourceLoader,
 } from "./copilot-resources.js";
 import { createTextTool, TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
-import { type SourceCoverage, sourceCoverage } from "./copilot-transcription.js";
+import {
+  type SourceCoverage,
+  type SourceCoverageUnavailable,
+  sourceCoverage,
+  transcriptionLoaded,
+} from "./copilot-transcription.js";
 import {
   createWorkspaceTool,
   type ViewActionOutcome,
@@ -2177,26 +2182,35 @@ export class CopilotHost {
     loaded: Loaded,
     workbench: Workbench,
     textDocId: string
-  ): Promise<SourceCoverage | { unavailable: string } | null> {
+  ): Promise<SourceCoverage | SourceCoverageUnavailable | null> {
     const described = workbench.text?.describe(textDocId);
     const source = described && "source_pdf" in described ? described.source_pdf : undefined;
-    if (!source) return null;
+    const entries = loaded.manager.getEntries() as unknown as RawEntry[];
+    if (!source)
+      // a text made without its source PDF in a transcription (the instruction was loaded here): nothing to check pages against
+      return transcriptionLoaded(entries)
+        ? {
+            unavailable:
+              "this text Doc was made without a source PDF, so which pages of the paper were read cannot be verified; the transcription's completeness is unverified",
+          }
+        : null;
     const read = await workbench.reader?.pdf?.read(source.doc_id);
     if (!read) return { unavailable: "the source PDF's pages cannot be read in this host" };
     if (read.kind !== "ok")
       return { unavailable: `the source PDF cannot be read right now (${read.kind})` };
-    return sourceCoverage(
-      loaded.manager.getEntries() as unknown as RawEntry[],
-      source.doc_id,
-      read.material.sha256,
-      read.material.pages
-    );
+    return sourceCoverage(entries, source.doc_id, read.material.sha256, read.material.pages);
   }
   private systemFootprintBytes?: number;
   private systemFootprint(): number {
     if (this.systemFootprintBytes !== undefined) return this.systemFootprintBytes;
     const writer = !!this.workbench?.writer;
-    let bytes = Buffer.byteLength(basePrompt(writer, !!this.workbench?.text));
+    // the base instruction exactly as a session's loader hands it over (one loader builds both)
+    const loader = this.resources(
+      { extensions: [], errors: [], runtime: {} as never },
+      writer,
+      !!this.workbench?.text
+    );
+    let bytes = Buffer.byteLength(loader.getSystemPrompt() ?? "");
     // The tool schemas are built the way a run builds them; the closures are never called.
     const stub = {} as never;
     const tools: unknown[] = [];
@@ -2875,7 +2889,7 @@ export class CopilotHost {
     };
     const pending = (async () => {
       try {
-        await session.prompt(text);
+        await session.prompt(text, { expandPromptTemplates: false });
         await session.waitForIdle();
         // Steering the loop did not reach (the run was finishing) becomes its own turn.
         for (;;) {
@@ -2883,7 +2897,7 @@ export class CopilotHost {
           const next = state.steers.values().next().value;
           if (!next || state.stopRequested || this.closed) break;
           session.agent.clearAllQueues();
-          await session.prompt(next.envelope);
+          await session.prompt(next.envelope, { expandPromptTemplates: false });
           await session.waitForIdle();
         }
         // Terminal only after the SDK settled and every submitted operation reported back.

@@ -2,13 +2,13 @@
  * The ONE application resource loader of the Copilot's Pi sessions (copilot tickets 03, 08 and 30).
  *
  * Everything the model is instructed with comes through here and nowhere else: the base system prompt (small and
- * always present) and the versioned instructions, which are skills of this loader. The skills are NOT written into the
+ * always present) and the versioned instructions, which are held in memory (not Pi skills, not files). They are NOT written into the
  * system prompt: they cost the window nothing until the model asks for one (the `text` tool's `load_instruction`),
  * and then the loader hands over exactly the version this application ships. Nothing is read from a file system, the
  * environment or the working directory, so no `.pi`, AGENTS file or skill directory of the machine can reach a
  * session (spec §8.1), and the instruction is part of the bundle rather than a loose asset.
  */
-import type { ResourceLoader, Skill } from "@earendil-works/pi-coding-agent";
+import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
 import { PDF_TRANSCRIPTION_INSTRUCTION } from "./copilot-transcription-instruction.js";
 
 export interface AppInstruction {
@@ -33,8 +33,8 @@ export type ApplicationResourceLoader = ResourceLoader & {
 
 /**
  * `extensions` is the (empty) runtime the session needs; `systemPrompt` builds the base instruction of the session
- * (which tools are present decides what it says). The skills list only describes the instructions (for a future
- * reading tool and for slash-command listings); their text is held here and never written to a file or to the prompt.
+ * (which tools are present decides what it says). The instructions are held here in memory: never written to a file,
+ * never in the prompt, never a Pi skill.
  */
 export function createApplicationResourceLoader(options: {
   extensions: ReturnType<ResourceLoader["getExtensions"]>;
@@ -42,23 +42,11 @@ export function createApplicationResourceLoader(options: {
   /** Throws what a session would when asked to extend its resources (nothing may add any). */
   refuseExtension: () => never;
 }): ApplicationResourceLoader {
-  const skills: Skill[] = APP_INSTRUCTIONS.map((instruction) => ({
-    name: instruction.name,
-    description: instruction.description,
-    // Not a file: this application's own resource. A `/skill:` expansion is never enabled for the Copilot's messages.
-    filePath: `app:instructions/${instruction.name}`,
-    baseDir: "app:instructions",
-    sourceInfo: {
-      path: `<app:${instruction.name}>`,
-      source: "app",
-      scope: "temporary",
-      origin: "top-level",
-    },
-    disableModelInvocation: false,
-  }));
   return {
     getExtensions: () => options.extensions,
-    getSkills: () => ({ skills, diagnostics: [] }),
+    // No Pi skills: a skill has a file path a `/skill:` command would read, and the instructions are not files. They are
+    // reachable only through `getInstruction` (the `load_instruction` tool).
+    getSkills: () => ({ skills: [], diagnostics: [] }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),

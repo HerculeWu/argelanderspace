@@ -1388,6 +1388,8 @@
       "notApplied": "{{count}} 项未应用",
       "dueAfterPlan": "期限晚于计划截止日",
       "importPartial": "部分条目未导入",
+      "sourceUnviewed": "未以图像查看：PDF 第 {{pages}} 页",
+      "sourceUnverifiable": "无法核对来源 PDF 的页",
       "actions": {
         "read": "读取计划",
         "create_plan": "新建计划",
@@ -1468,6 +1470,7 @@
         "redo_pdf_annotation": "重做 PDF 标注更改",
         "read_page_image": "读取 PDF 页图",
         "read_image": "读取文档图片",
+        "read_svg_image": "将图形渲染为图片读取",
         "goto_page": "跳到 PDF 页",
         "next_page": "PDF 下一页",
         "previous_page": "PDF 上一页",

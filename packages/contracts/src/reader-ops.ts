@@ -698,6 +698,20 @@ export const ReaderReadImageOperationSchema = z
   })
   .strict();
 export type ReaderReadImageOperation = z.infer<typeof ReaderReadImageOperationSchema>;
+/**
+ * An SVG figure rendered to a bounded PNG for the model, on demand (copilot ticket 30): `longEdge` is the picture's
+ * longer side in pixels, never the SVG's own size. Nothing is stored; the SVG is checked and refused when unsafe.
+ */
+export const ReaderReadSvgImageOperationSchema = z
+  .object({
+    action: z.literal("read_svg_image"),
+    docId: Id,
+    path: z.string().min(1).max(500),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    longEdge: z.number().int().min(256).max(3000).optional(),
+  })
+  .strict();
+export type ReaderReadSvgImageOperation = z.infer<typeof ReaderReadSvgImageOperationSchema>;
 
 /** View operations run in the bound browser's Reader, through the Reader's own controllers. */
 export const ReaderViewActionSchema = z.discriminatedUnion("action", [
@@ -831,6 +845,7 @@ export const READER_OPERATION_ACTIONS = [
   "read",
   "read_page_image",
   "read_image",
+  "read_svg_image",
   ...READER_VIEW_ACTIONS,
   ...READER_WRITE_ACTIONS,
   ...PDF_ANNOTATION_ACTIONS,

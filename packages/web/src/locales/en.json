@@ -1388,6 +1388,8 @@
       "notApplied": "{{count}} not applied",
       "dueAfterPlan": "Due is after the plan deadline",
       "importPartial": "Some entries were not imported",
+      "sourceUnviewed": "Not looked at as an image: PDF pages {{pages}}",
+      "sourceUnverifiable": "Source PDF pages cannot be checked",
       "actions": {
         "read": "Read plans",
         "create_plan": "Create plan",
@@ -1468,6 +1470,7 @@
         "redo_pdf_annotation": "Redo PDF annotation change",
         "read_page_image": "Read PDF page image",
         "read_image": "Read document picture",
+        "read_svg_image": "Read figure as image",
         "goto_page": "Go to PDF page",
         "next_page": "Next PDF page",
         "previous_page": "Previous PDF page",

@@ -480,6 +480,7 @@ describe("Reader operations", () => {
       "read",
       "read_page_image",
       "read_image",
+      "read_svg_image",
       ...READER_VIEW_ACTIONS,
       "create_annotation",
       "update_annotation",
