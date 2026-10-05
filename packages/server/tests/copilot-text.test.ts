@@ -277,19 +277,23 @@ describe("create, read, save, validate, generate", () => {
         })
       ).payload
     ).toMatchObject({ ok: true, rev: 5 });
-    // the page reporting a saved editor (no unsaved draft) at a rev is also a sighting; an unsaved one is not
+    // the page reporting a saved editor at a rev is NOT a sighting: the model never received that text (observations
+    // strip it, an envelope may drop it, a long source is never inline), so it may not overwrite it
     await call("PUT", `/api/paper/${docId}/source`, { expectedRev: 5, markdown: "# user again\n" }); // rev 6
-    const page = { textSource: { docId, unsaved: true, rev: 6 } };
+    const page = { textSource: { docId, unsaved: false, rev: 6 } };
     const viaPage = toolWith({ page: () => page as never });
-    expect(
-      (await viaPage({ action: "save_source", docId, expectedRev: 6, markdown: "# via page\n" }))
-        .payload.status
-    ).toBe("rejected");
-    page.textSource.unsaved = false;
-    expect(
-      (await viaPage({ action: "save_source", docId, expectedRev: 6, markdown: "# via page\n" }))
-        .payload
-    ).toMatchObject({ ok: true, rev: 7 });
+    for (const guess of [6, 7])
+      expect(
+        (
+          await viaPage({
+            action: "save_source",
+            docId,
+            expectedRev: guess,
+            markdown: "# via page\n",
+          })
+        ).payload.status
+      ).toBe("rejected");
+    expect((await sourceOf(docId)).markdown).toBe("# user again\n");
     // asset additions need the same sighting
     expect(
       (
@@ -963,5 +967,100 @@ describe("N1/N2: the click-time probe", () => {
     const probe = await service.probeReplacement(docId, 2);
     expect(probe).toMatchObject({ kind: "error", code: "annotations_unreadable" });
     expect(readFileSync(current, "utf8")).toBe("{ this is not json");
+  });
+});
+
+describe("fix round 2: what the model has really been given", () => {
+  test("B2-1: read rev 1, the user saves rev 2 and the page reports it: the agent's save with 2 (or a guessed rev+1) is refused and the user's text is intact", async () => {
+    const run = toolWith();
+    const docId = (await run({ action: "create", workId: KNOWN_WORK_ID })).payload.docId as string;
+    await run({ action: "save_source", docId, expectedRev: 0, markdown: "# one\n" });
+    const read = await run({ action: "read_source", docId });
+    expect(read.payload.rev).toBe(1);
+    await call("PUT", `/api/paper/${docId}/source`, {
+      expectedRev: 1,
+      markdown: "# USER saved this\n",
+    }); // rev 2
+    const stale = await run({
+      action: "save_source",
+      docId,
+      expectedRev: 1,
+      markdown: "# agent\n",
+    });
+    expect(stale.payload.status).toBe("conflict");
+    for (const guess of [2, 3]) {
+      const blind = await run({
+        action: "save_source",
+        docId,
+        expectedRev: guess,
+        markdown: "# agent\n",
+      });
+      expect(blind.payload).toMatchObject({ ok: false, status: "rejected" });
+    }
+    expect((await sourceOf(docId)).markdown).toBe("# USER saved this\n");
+  });
+
+  test("B2-1: a rev the run wrote is known only while nothing else was written in between", async () => {
+    const run = toolWith();
+    const docId = (await run({ action: "create", workId: KNOWN_WORK_ID })).payload.docId as string;
+    const first = await run({ action: "save_source", docId, expectedRev: 0, markdown: "# a\n" });
+    expect(first.payload.rev).toBe(1);
+    await call("PUT", `/api/paper/${docId}/source`, { expectedRev: 1, markdown: "# user\n" }); // 2
+    // the agent's save at its OWN old rev 1 conflicts; rev 2 was never delivered to it
+    expect(
+      (await run({ action: "save_source", docId, expectedRev: 1, markdown: "# b\n" })).payload
+        .status
+    ).toBe("conflict");
+    expect(
+      (await run({ action: "save_source", docId, expectedRev: 2, markdown: "# b\n" })).payload
+        .status
+    ).toBe("rejected");
+  });
+
+  test("B2-2: a duplicate create (same operationId, even from a later run) marks nothing as seen", async () => {
+    const first = toolWith();
+    const made = await first({
+      action: "create",
+      workId: KNOWN_WORK_ID,
+      operationId: "agent-op-dup-0001",
+    });
+    expect(made.payload.created).toBe(true);
+    const docId = made.payload.docId as string;
+    await first({
+      action: "save_source",
+      docId,
+      expectedRev: 0,
+      markdown: "# user typed this later\n",
+    });
+    // a later run asks again with the same id: it is told the Doc, but it has not been given its text
+    const later = toolWith();
+    const again = await later({
+      action: "create",
+      workId: KNOWN_WORK_ID,
+      operationId: "agent-op-dup-0001",
+    });
+    expect(again.payload).toMatchObject({ ok: true, created: false, docId });
+    const blind = await later({
+      action: "save_source",
+      docId,
+      expectedRev: 0,
+      markdown: "# overwritten\n",
+    });
+    expect(blind.payload).toMatchObject({ ok: false, status: "rejected" });
+    const guess = await later({
+      action: "save_source",
+      docId,
+      expectedRev: again.payload.rev,
+      markdown: "# overwritten\n",
+    });
+    expect(guess.payload.status).toBe("rejected");
+    expect((await sourceOf(docId)).markdown).toBe("# user typed this later\n");
+  });
+
+  test("N2/N1: a Doc deleted while its card waits is a change, never a system error", async () => {
+    const docId = await annotatedDoc();
+    await (await knows(docId))({ action: "save_source", docId, expectedRev: 1, markdown: CHANGED });
+    expect((await call("DELETE", `/api/paper/${docId}`)).status).toBe(200);
+    expect(await service.probeReplacement(docId, 2)).toEqual({ kind: "changed" });
   });
 });

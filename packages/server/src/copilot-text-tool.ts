@@ -251,11 +251,9 @@ export function createTextTool(context: TextToolContext) {
     seenRevs.set(docId, set);
   };
   const reached = new Map<string, number>();
-  const hasSeen = (docId: string, rev: number): boolean => {
-    if (seenRevs.get(docId)?.has(rev)) return true;
-    const page = context.page?.()?.textSource;
-    return page?.docId === docId && !page.unsaved && page.rev === rev;
-  };
+  // Only what the model was actually given counts: never the live page (observations strip the text, an envelope may
+  // drop it, a long source is never inline), and never a Doc a duplicate create merely named.
+  const hasSeen = (docId: string, rev: number): boolean => !!seenRevs.get(docId)?.has(rev);
   const unsavedDraft = (docId: string) => {
     const page = context.page?.()?.textSource;
     return page?.docId === docId && page.unsaved ? true : undefined;
@@ -309,7 +307,7 @@ export function createTextTool(context: TextToolContext) {
             : done(record(toolCallId, op.action, { status: "rejected", object: objectOf(docId) }), {
                 ok: false,
                 status: "rejected",
-                detail: `expectedRev ${rev} is not a source revision you have read in this run: read_source the whole source first and use its rev (or a rev a result of yours gave); nothing was changed`,
+                detail: `expectedRev ${rev} is not a source revision you have read in this run: read_source the whole source first and use its rev (or a rev your own write or this Doc's creation gave); nothing was changed`,
               });
         const assetDone = (
           result: Awaited<ReturnType<TextOpDeps["addAsset"]>>,
@@ -535,7 +533,9 @@ export function createTextTool(context: TextToolContext) {
             );
             if (!result.ok) return refuse(result);
             const { source } = result.value;
-            see(source.doc_id, source.rev);
+            // only a Doc this very call created is known (its empty text at rev 0); a duplicate names a Doc whose
+            // text the model has not been given
+            if (result.status === 201) see(source.doc_id, source.rev);
             return done(
               record(toolCallId, "create", {
                 status: "ok",

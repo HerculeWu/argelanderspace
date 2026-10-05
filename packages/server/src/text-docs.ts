@@ -561,12 +561,18 @@ export class TextDocService {
         seen = { impact };
       });
     } catch (error) {
+      // DELETE takes neither the text nor the annotation lock, so a Doc can vanish mid-read: that is a change
+      if (
+        (error instanceof TextDocError && error.code === "not_found") ||
+        !existsSync(join(this.paths.outputDir, docId))
+      )
+        return { kind: "changed" };
       return { kind: "error", code: "read_failed", detail: (error as Error).message };
     }
     if (seen) return { kind: "impact", impact: seen.impact };
     if (!outcome.ok) {
       const code = (outcome.body as { code?: string }).code;
-      if (outcome.status >= 500)
+      if (outcome.status >= 500 && existsSync(join(this.paths.outputDir, docId)))
         return {
           kind: "error",
           code: code ?? "error",

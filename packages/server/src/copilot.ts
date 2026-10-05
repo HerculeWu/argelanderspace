@@ -1570,6 +1570,13 @@ export class CopilotHost {
       throw new CopilotError("stale");
     if (wanted === "approved" && confirmation.action === "replace_text_reading") {
       const check = await this.textConfirmationCheck(confirmation);
+      // The check awaited: another decision, a Stop or a recheck may have settled this card meanwhile. Never append a
+      // second resolution; the approving tab is answered by what the card ended as (same answer as a repeated click).
+      if (this.confirmations.get(id) !== pending) {
+        const settled = this.settledConfirmations.get(id);
+        if (settled === wanted) return { status: wanted };
+        throw new CopilotError("stale");
+      }
       if (check.kind === "error") {
         // not a change: the real reason goes to the user (the click) and to the model (the tool result)
         try {
@@ -1840,9 +1847,11 @@ export class CopilotHost {
         };
         // A Doc replacement or upload (library tool) is not a delete; a Doc delete and a Plan delete are.
         const outcomeWord =
-          part.name === LIBRARY_TOOL_NAME && part.arguments?.action !== "delete_doc"
-            ? "replaced and no job was started"
-            : "deleted";
+          part.name === TEXT_TOOL_NAME
+            ? "published"
+            : part.name === LIBRARY_TOOL_NAME && part.arguments?.action !== "delete_doc"
+              ? "replaced and no job was started"
+              : "deleted";
         const payload =
           done?.result?.payload ??
           (declined
@@ -1861,7 +1870,9 @@ export class CopilotHost {
                   ok: false,
                   status: "unknown",
                   detail:
-                    "interrupted before a result was recorded; read the plans (or, for a library call, the work and read_jobs; for a writer call, the manuscript) to find out what happened",
+                    part.name === TEXT_TOOL_NAME
+                      ? "interrupted before a result was recorded; read_source and the reading (reader read) to find out whether it was written or published, and do not repeat it blindly"
+                      : "interrupted before a result was recorded; read the plans (or, for a library call, the work and read_jobs; for a writer call, the manuscript) to find out what happened",
                 });
         loaded.manager.appendMessage({
           role: "toolResult",

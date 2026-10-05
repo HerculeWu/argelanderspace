@@ -325,7 +325,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   // What the user's undo did stays visible (restored, or why not) until dismissed; the service also tells the model.
   const [undoResult, setUndoResult] = useState<{ kind: "restored" | "failed"; label: string } | null>(null);
   // A refused confirmation click is explained here, not only on the card: the card disappears when the list is reread.
-  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable" | "unreadable"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null>(null);
+  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null>(null);
   const waitingForConfirmation = !!snapshot?.confirmations?.length;
   const attentionRef = useRef(onAttention); attentionRef.current = onAttention;
   useEffect(() => { attentionRef.current?.(waitingForConfirmation); return () => attentionRef.current?.(false); }, [waitingForConfirmation]);

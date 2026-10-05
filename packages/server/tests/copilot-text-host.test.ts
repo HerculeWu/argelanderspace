@@ -586,3 +586,147 @@ test("N2: an unreadable annotations file at the click is an error with its reaso
     true
   );
 });
+
+test("29b: an evicted text source part is replaced by a stand-in naming text read_source; following its own instruction reads that part again", async () => {
+  const docId = await generatedTextDoc();
+  const lines = Array.from({ length: 1800 }, (_, i) => `line ${i} ${"y".repeat(60)}`).join("\n");
+  expect(
+    (await textReq(`/api/paper/${docId}/source`, "PUT", { expectedRev: 1, markdown: lines })).status
+  ).toBe(200);
+  const model = (await settings.getRuntime())
+    .getModels("openai")
+    .find((candidate) => candidate.id === "gpt-4.1");
+  if (!model) throw new Error("fixture model");
+  const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
+  model.contextWindow = 64_000;
+  model.maxTokens = 1024;
+  try {
+    type Batch = { from: number; to: number; total: number; status: string; version: string };
+    type Result = { markdown?: string; batch?: Batch };
+    const stand = (context: TranscriptContext): string | null => {
+      for (const m of context.messages) {
+        if (m.role !== "toolResult") continue;
+        const part = m.content[0];
+        try {
+          const json = JSON.parse(part && part.type === "text" ? part.text : "{}");
+          if (json.status === "evicted") return json.detail as string;
+        } catch {
+          // not a record
+        }
+      }
+      return null;
+    };
+    let standIn: string | null = null;
+    let rereadFrom = -1;
+    let reread: Result | null = null;
+    script = Array.from({ length: 60 }, () => (context: TranscriptContext) => {
+      let last: Result = {};
+      try {
+        last = lastResult(context) as Result;
+      } catch {
+        // the first request: nothing was read yet
+      }
+      if (!last.batch) return { tool: "text", call: { action: "read_source", docId } };
+      if (rereadFrom >= 0 && !reread) reread = last;
+      if (last.batch.status !== "complete" && rereadFrom < 0)
+        return {
+          tool: "text",
+          call: { action: "read_source", docId, from: last.batch.to, version: last.batch.version },
+        };
+      standIn ??= stand(context);
+      if (rereadFrom < 0 && standIn) {
+        const way =
+          /(text read_source|reader read) \{docId, from: (\d+), version: "([^"]+)"\}/.exec(standIn);
+        if (way?.[1] === "text read_source") {
+          rereadFrom = Number(way[2]);
+          return {
+            tool: "text",
+            call: { action: "read_source", docId, from: rereadFrom, version: way[3] },
+          };
+        }
+      }
+      return { text: "done" };
+    });
+    const id = await runScript(textPage(docId), "read the whole source");
+    await settledRun(id);
+    const done = opsOf(await host.snapshot(id)).filter((o) => o.action === "read_source");
+    expect(done.some((o) => o.batch?.status === "complete")).toBe(true);
+    expect(standIn).not.toBeNull();
+    expect(standIn).toContain("text read_source");
+    expect(standIn).not.toContain("reader read");
+    expect(rereadFrom).toBeGreaterThanOrEqual(0);
+    const again = reread as Result | null;
+    expect(again?.batch?.from).toBe(rereadFrom);
+    expect(
+      lines.startsWith(again?.markdown ?? "\u0000", rereadFrom) ||
+        lines.slice(rereadFrom).startsWith(again?.markdown ?? "\u0000")
+    ).toBe(true);
+  } finally {
+    Object.assign(model, original);
+  }
+}, 30000);
+
+test("after a restart an expired text-replacement card reads as a replacement: nothing was published, not deleted", async () => {
+  const docId = await generatedTextDoc();
+  expect(
+    (
+      await textReq(`/api/paper/${docId}/annotations`, "PUT", {
+        ...((await (await textReq(`/api/paper/${docId}/annotations`)).json()) as object),
+        annotations: [
+          {
+            id: "a_0123abc0",
+            target: { type: "document" },
+            body: "keep",
+            created_at: "2026-09-10T10:00:00.000Z",
+            updated_at: "2026-09-10T10:00:00.000Z",
+          },
+        ],
+      })
+    ).status
+  ).toBe(200);
+  script = [
+    () => ({ tool: "text", call: { action: "read_source", docId } }),
+    (context) => ({
+      tool: "text",
+      call: {
+        action: "save_source",
+        docId,
+        expectedRev: lastResult(context).rev,
+        markdown: "# New\n\nRewritten.\n",
+      },
+    }),
+    () => ({ tool: "text", call: { action: "generate", docId, sourceRev: 2 } }),
+    () => ({ text: "after restart" }),
+  ];
+  const context = textPage(docId);
+  const id = await runScript(context);
+  await vi.waitFor(async () => expect((await host.snapshot(id)).confirmations).toHaveLength(1), {
+    timeout: 8000,
+  });
+  const crashed = host;
+  host = new CopilotHost(join(root, "data"), settings, () => {});
+  app = createApp({
+    docMutations,
+    paths,
+    statusDir: join(root, "status"),
+    makeSources: () => stubSources(),
+    pipelines: stubPipelines(),
+    runner: new JobRunner({ dir: join(root, "jobs") }),
+    providerSettings: settings,
+    copilot: host,
+    broadcast: (message) => broadcasts.push(message),
+  });
+  expect((await host.snapshot(id)).conversation.run?.status).toBe("interrupted");
+  expect((await request(`/views/${context.viewId}`, "PUT", context)).status).toBe(200);
+  const resumed = await request(`/conversations/${id}/resume`, "POST", {
+    clientMessageId: randomUUID(),
+    viewId: context.viewId,
+    contextRevision: context.revision,
+  });
+  expect(resumed.status).toBe(202);
+  await settledRun(id);
+  const transcript = JSON.stringify(seen.at(-1)?.messages);
+  expect(transcript).toContain("nothing was published and the request is no longer valid");
+  expect(transcript).not.toContain("nothing was deleted and the request is no longer valid");
+  await crashed.close();
+});
