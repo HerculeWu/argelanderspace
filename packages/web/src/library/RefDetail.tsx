@@ -13,7 +13,7 @@ import {
 } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
-import { createTextDoc } from "../api/text-docs";
+import { createTextDoc, fetchTextDeleteImpact } from "../api/text-docs";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
 import { ActionButton, Badge, Dialog, InlineMessage, Tabs } from "../ui";
@@ -196,6 +196,10 @@ export function RefDetail({
   // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor.
   const [textBusy, setTextBusy] = useState(false);
   const [textError, setTextError] = useState<string | null>(null);
+  // One operation id per create ATTEMPT: a retry after a lost response or an error reuses it (the server then finds the
+  // same Doc instead of making another) until the creation succeeded, the Work changed, or the server says the
+  // operation can no longer be completed (409).
+  const createOperation = useRef<{ workId: string; id: string } | null>(null);
   const [acquisition, setAcquisition] = useState<AcquisitionFlow | null>(null);
   const acquisitionFlowSequence = useRef(0);
   const submittingAcquisitionFlows = useRef(new Set<number>());
@@ -1109,7 +1113,13 @@ export function RefDetail({
                   const session = { ...workSession.current };
                   setTextBusy(true);
                   setTextError(null);
-                  void createTextDoc(workId, `create-${crypto.randomUUID()}`).then((result) => {
+                  const attempt =
+                    createOperation.current?.workId === workId
+                      ? createOperation.current
+                      : { workId, id: `create-${crypto.randomUUID()}` };
+                  createOperation.current = attempt;
+                  void createTextDoc(workId, attempt.id).then((result) => {
+                    if (result.ok || result.status === 409) createOperation.current = null;
                     if (!isCurrentWorkSession(session)) return;
                     setTextBusy(false);
                     if (result.ok) onOpenDoc(result.docId);
@@ -1684,9 +1694,18 @@ function DeleteDocDialog({
   useEffect(() => {
     let current = true;
     setCount({ state: "loading" });
+    const countAnnotations = () => fetchAnnotations(docId).then((result) => result.ok ? { ok: true as const, count: result.file.annotations.length } : { ok: false as const });
+    // A text Doc that was never generated has no reading text to count annotations against: the server says whether
+    // that is a known zero or unknown (the same answer the Copilot's confirmation card gets).
     const loadCount = pdf
       ? fetchPdfAnnotationCount(docId).then((result) => result.ok ? { ok: true as const, count: result.count } : { ok: false as const })
-      : fetchAnnotations(docId).then((result) => result.ok ? { ok: true as const, count: result.file.annotations.length } : { ok: false as const });
+      : text
+        ? fetchTextDeleteImpact(docId).then((impact) => {
+            if (!impact.ok) return { ok: false as const };
+            if (impact.generated) return countAnnotations();
+            return impact.annotations.state === "known" ? { ok: true as const, count: impact.annotations.count } : { ok: false as const };
+          })
+        : countAnnotations();
     void loadCount.then((result) => {
       if (!current) return;
       setCount(result.ok ? { state: "known", value: result.count } : { state: "unknown" });
@@ -1694,7 +1713,7 @@ function DeleteDocDialog({
     return () => {
       current = false;
     };
-  }, [docId, pdf]);
+  }, [docId, pdf, text]);
 
   return (
     <Dialog

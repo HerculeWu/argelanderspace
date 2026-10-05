@@ -4,7 +4,8 @@
  * This increment understands ATX headings (they build the section tree), plain paragraphs and single-level
  * ordered/unordered lists, with emphasis and code spans reduced to their text. Everything else the format will
  * eventually carry (math, figures, tables, code blocks, cite/xref, references, block metadata) is NOT silently
- * dropped or flattened: it is reported as an `unsupported_syntax` error that names the line, so validation and
+ * dropped or flattened: it is reported as an error with a construct-specific code (`math_unsupported`,
+ * `cite_unsupported`, `table_unsupported`, ...) that names the line and column, so validation and
  * generation refuse until the text is rewritten. The parser is the one truth for the page, the HTTP routes and the
  * agent; there is no second parser in the browser.
  *
@@ -58,17 +59,40 @@ function locate(text: string, offset: number): { line: number; column: number } 
   return { line, column: offset - lineStart + 1 };
 }
 
-const UNSUPPORTED: Record<string, string> = {
-  code: "code blocks are not supported yet; rewrite it as a plain paragraph",
-  blockquote: "block quotes are not supported; rewrite it as a plain paragraph",
-  table: "tables are not supported yet; rewrite it as plain paragraphs",
-  hr: "horizontal rules are not supported; remove it or start a new heading",
-  html: "raw HTML is not allowed in a text document",
-  def: "link reference definitions are not supported",
-  image: "images are not supported yet",
-  link: "links are not supported yet; write the address as plain text",
-  del: "strikethrough is not supported; remove the markers",
+/** Diagnostic code and English message per unsupported construct; the page shows its own localized text per code. */
+const UNSUPPORTED: Record<string, { code: string; message: string }> = {
+  code: {
+    code: "code_unsupported",
+    message: "code blocks are not supported yet; rewrite it as a plain paragraph",
+  },
+  blockquote: {
+    code: "quote_unsupported",
+    message: "block quotes are not supported; rewrite it as a plain paragraph",
+  },
+  table: {
+    code: "table_unsupported",
+    message: "tables are not supported yet; rewrite it as plain paragraphs",
+  },
+  hr: {
+    code: "rule_unsupported",
+    message: "horizontal rules are not supported; remove it or start a new heading",
+  },
+  html: { code: "html_unsupported", message: "raw HTML is not allowed in a text document" },
+  def: { code: "definition_unsupported", message: "link reference definitions are not supported" },
+  image: { code: "image_unsupported", message: "images are not supported yet" },
+  link: {
+    code: "link_unsupported",
+    message: "links are not supported yet; write the address as plain text",
+  },
+  del: {
+    code: "strike_unsupported",
+    message: "strikethrough is not supported; remove the markers",
+  },
 };
+const UNKNOWN = (type: string) => ({
+  code: "syntax_unsupported",
+  message: `the syntax "${type}" is not supported`,
+});
 
 /** Setext-style headings (`Title` over `====`) are not ATX; marked reports them as headings too, so check the raw. */
 function isAtxHeading(raw: string): boolean {
@@ -86,6 +110,52 @@ function report(ctx: Ctx, at: number, code: string, message: string): void {
   ctx.diagnostics.push({ code, severity: "error", message, line, column });
 }
 
+function reportSyntax(ctx: Ctx, at: number, type: string): void {
+  const entry = UNSUPPORTED[type] ?? UNKNOWN(type);
+  report(ctx, at, entry.code, entry.message);
+}
+
+/**
+ * The inline constructs the format will give meaning to later (math, cite, ref) but this increment cannot carry.
+ * They are found BEFORE lexing, because the lexer would otherwise reduce them to text (`$a *b* c$` loses its `*`,
+ * `$\\{x\\}$` its backslashes). Protection order follows the Markdown-with-math display path (lib/mdWithMath.ts):
+ * code (fences, then code spans) and URLs are literal zones; then `$$..$$` / `$..$` with texmath's boundary rules
+ * (an opening `$` needs a non-space after it and no backslash before it; a closing `$` needs a non-space before it
+ * and no digit or `$` after it, so currency like `$100 to $200` stays text); then `[cite:` and `[ref:` tokens.
+ */
+const FENCE_RE = /(```|~~~)[\s\S]*?(?:\1|$)/g;
+const CODE_SPAN_RE = /(`+)([\s\S]*?)\1(?!`)/g;
+const URL_RE = /(?:https?|ftp):\/\/[^\s<>]*/g;
+const MATH_RE = /(?<!\\)\$\$([\s\S]+?)\$\$|(?<!\\)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)\$(?![\d$])/g;
+const CITE_RE = /(?<!\\)\[cite:/g;
+const REF_RE = /(?<!\\)\[ref:/g;
+
+/** Same length, same newlines, every literal-zone character blanked. */
+function maskLiteralZones(text: string): string {
+  const blank = (m: string) => m.replace(/[^\n]/g, " ");
+  return text.replace(FENCE_RE, blank).replace(CODE_SPAN_RE, blank).replace(URL_RE, blank);
+}
+
+function scanInlineSyntax(ctx: Ctx): void {
+  const masked = maskLiteralZones(ctx.text);
+  for (const m of masked.matchAll(MATH_RE))
+    report(
+      ctx,
+      m.index ?? 0,
+      "math_unsupported",
+      "math ($...$ and $$...$$) is not supported yet; write the formula as plain text"
+    );
+  for (const m of masked.matchAll(CITE_RE))
+    report(ctx, m.index ?? 0, "cite_unsupported", "[cite: ...] references are not supported yet");
+  for (const m of masked.matchAll(REF_RE))
+    report(
+      ctx,
+      m.index ?? 0,
+      "ref_unsupported",
+      "[ref: ...] cross-references are not supported yet"
+    );
+}
+
 /** Inline tokens → the text they show; unsupported inline syntax is reported at the enclosing block's line. */
 function inlineText(ctx: Ctx, at: number, tokens: Token[] | undefined, out: string[]): void {
   for (const token of tokens ?? []) {
@@ -98,17 +168,20 @@ function inlineText(ctx: Ctx, at: number, tokens: Token[] | undefined, out: stri
       case "br":
         out.push(" ");
         break;
+      case "link": {
+        // A bare URL / e-mail / <angle> autolink is what the user typed as plain text: keep the exact characters.
+        // An explicit [text](url) link stays unsupported.
+        const link = token as Tokens.Link;
+        if (link.raw.startsWith("[")) reportSyntax(ctx, at, "link");
+        else out.push(link.raw);
+        break;
+      }
       case "em":
       case "strong":
         inlineText(ctx, at, (token as Tokens.Em).tokens, out);
         break;
       default:
-        report(
-          ctx,
-          at,
-          "unsupported_syntax",
-          UNSUPPORTED[token.type] ?? `the syntax "${token.type}" is not supported`
-        );
+        reportSyntax(ctx, at, token.type);
         break;
     }
   }
@@ -136,6 +209,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
   // marked normalizes line endings itself; do the same first so reported lines match the lexer's view.
   const text = markdown.replace(/\r\n|\r/g, "\n");
   const ctx: Ctx = { text, offset: 0, diagnostics: [] };
+  scanInlineSyntax(ctx);
   const tokens = Lexer.lex(text);
 
   const root: IrSection[] = [];
@@ -169,7 +243,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           report(
             ctx,
             at,
-            "unsupported_syntax",
+            "setext_unsupported",
             "only '#' headings are supported; underlined headings are not"
           );
           break;
@@ -219,14 +293,14 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         const items: { segments: IrSegment[] }[] = [];
         for (const item of list.items) {
           if (item.task) {
-            report(ctx, at, "unsupported_syntax", "task list markers are not supported");
+            report(ctx, at, "task_unsupported", "task list markers are not supported");
           }
           const real = item.tokens.filter((t) => t.type !== "space");
           if (real.some((t) => t.type === "list")) {
             report(
               ctx,
               at,
-              "unsupported_syntax",
+              "nested_list_unsupported",
               "nested lists are not supported; keep the list to one level"
             );
             continue;
@@ -235,7 +309,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
             report(
               ctx,
               at,
-              "unsupported_syntax",
+              "list_item_unsupported",
               "a list item must be a single paragraph of text; split the content into separate paragraphs"
             );
             continue;
@@ -248,12 +322,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         break;
       }
       default:
-        report(
-          ctx,
-          at,
-          "unsupported_syntax",
-          UNSUPPORTED[token.type] ?? `the syntax "${token.type}" is not supported`
-        );
+        reportSyntax(ctx, at, token.type);
         break;
     }
   }
@@ -271,6 +340,9 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
       message: "the document has no content yet",
     });
   }
+  ctx.diagnostics.sort(
+    (a, b) => (a.line ?? 0) - (b.line ?? 0) || (a.column ?? 0) - (b.column ?? 0)
+  );
   if (ctx.diagnostics.some((d) => d.severity === "error")) {
     return { ir: null, diagnostics: ctx.diagnostics, stats };
   }

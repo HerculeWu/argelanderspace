@@ -41,7 +41,8 @@ export type TextDocErrorCode =
   | "unsafe"
   | "work_not_found"
   | "operation_mismatch"
-  | "operation_gone";
+  | "operation_gone"
+  | "corrupt_operations";
 
 export class TextDocError extends Error {
   readonly code: TextDocErrorCode;
@@ -63,9 +64,18 @@ export function isTextDocId(docId: string): boolean {
   return TEXT_DOC_ID_PATTERN.test(docId);
 }
 
+/** The output directory as the filesystem really has it (a symlinked dataDir or `output/` is a legitimate layout). */
+function outputBase(paths: LibraryPaths): string {
+  try {
+    return realpathSync(paths.outputDir);
+  } catch {
+    return paths.outputDir; // not created yet
+  }
+}
+
 function docDirFor(paths: LibraryPaths, docId: string): string {
   if (!isTextDocId(docId)) throw new TextDocError("bad_id", "invalid text Doc id");
-  return join(paths.outputDir, docId);
+  return join(outputBase(paths), docId);
 }
 
 /** Whether a Doc directory holds a text source: the explicit marker that tells a draft from damage. */
@@ -78,10 +88,14 @@ export function isTextDoc(paths: LibraryPaths, docId: string): boolean {
   }
 }
 
+/** A regular file inside a real (non-symlink) Doc directory; `path` must come from {@link docDirFor}. */
 function readRegular(path: string): Buffer {
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink() || realpathSync(path) !== path)
     throw new TextDocError("unsafe", `unsafe text Doc file: ${path}`);
+  const dir = lstatSync(join(path, ".."));
+  if (!dir.isDirectory() || dir.isSymbolicLink())
+    throw new TextDocError("unsafe", `unsafe text Doc directory: ${path}`);
   return readFileSync(path);
 }
 
@@ -184,10 +198,18 @@ export function publishTextIr(paths: LibraryPaths, docId: string, ir: TextDocIr)
 // Creation
 // --------------------------------------------------------------------------- //
 
+/**
+ * `<dataDir>/library/text-doc-operations.json`: the durable record that binds a caller's `operationId` to the Doc id
+ * a creation will make, so a retry (after a lost response, an error or a restart) finds the same Doc instead of
+ * making another. It lives beside library.json because it is created and read under the same library lock. Entries
+ * are small and never pruned automatically. A file that is not valid is a data error (`corrupt_operations`): it is
+ * never replaced, so no record is lost.
+ */
 interface OperationRecord {
   docId: string;
   workId: string;
   sourcePdfDocId: string | null;
+  /** The Doc was committed (directory placed) by this operation; a missing directory afterwards means deleted. */
   done: boolean;
 }
 type OperationFile = { version: 1; operations: Record<string, OperationRecord> };
@@ -196,18 +218,40 @@ function operationsPath(paths: LibraryPaths): string {
   return join(paths.libraryDir, "text-doc-operations.json");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validOperation(value: unknown): value is OperationRecord {
+  return (
+    isRecord(value) &&
+    typeof value.docId === "string" &&
+    isTextDocId(value.docId) &&
+    typeof value.workId === "string" &&
+    (value.sourcePdfDocId === null || typeof value.sourcePdfDocId === "string") &&
+    typeof value.done === "boolean"
+  );
+}
+
 function readOperations(paths: LibraryPaths): OperationFile {
   const file = operationsPath(paths);
   if (!existsSync(file)) return { version: 1, operations: {} };
-  const raw = JSON.parse(readFileSync(file, "utf8")) as unknown;
-  if (
-    raw === null ||
-    typeof raw !== "object" ||
-    (raw as { version?: unknown }).version !== 1 ||
-    typeof (raw as { operations?: unknown }).operations !== "object"
-  )
-    throw new TextDocError("corrupt_source", "text Doc operation record is invalid");
-  return raw as OperationFile;
+  const bad = (why: string) =>
+    new TextDocError(
+      "corrupt_operations",
+      `the text document operation record (library/text-doc-operations.json) is unreadable: ${why}; it was left as it is`
+    );
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    throw bad("not valid JSON");
+  }
+  if (!isRecord(raw) || raw.version !== 1 || !isRecord(raw.operations))
+    throw bad("unknown structure");
+  for (const [id, record] of Object.entries(raw.operations))
+    if (!validOperation(record)) throw bad(`record "${id}" is invalid`);
+  return raw as unknown as OperationFile;
 }
 
 function writeOperations(paths: LibraryPaths, data: OperationFile): void {
@@ -221,6 +265,14 @@ export interface CreateTextDocInput {
   sourcePdf?: TextSourcePdf;
 }
 
+export interface CreatedTextDoc {
+  created: boolean;
+  docId: string;
+  source: TextDocSource;
+  /** The Work's `doc_ids` in library.json changed in this call (a new Doc, or a link that had been lost). */
+  libraryChanged: boolean;
+}
+
 /**
  * Create an empty text source under an existing Work and append the new Doc to that Work's `doc_ids` (a narrow
  * append: an existing main Doc stays main, other Works and unknown keys are untouched). The caller holds the library
@@ -228,15 +280,16 @@ export interface CreateTextDocInput {
  *
  * The operation record binds `operationId` to the new Doc id BEFORE anything is created, so a retry (or a retry after
  * a restart that left the result unknown) finds the same Doc: an existing source is completed (link re-checked), never
- * duplicated. The files are built in a hidden staging directory and renamed into place; only a directory this call
- * itself created is rolled back, and a failure leaves no visible half Doc. A Doc created by an earlier call of the same
- * operation and since deleted is NOT recreated (`operation_gone`).
+ * duplicated. The commit order is: stage the files hidden, rename into place, record `done`, link the Work. Only a
+ * directory this call itself placed is rolled back, and a failure before the link leaves no visible half Doc. Once the
+ * link is written the call reports success whatever follows. A Doc made by an earlier call of the same operation and
+ * since deleted is never recreated (`operation_gone`), independent of whether the Work still lists it.
  */
 export function createTextDoc(
   paths: LibraryPaths,
   input: CreateTextDocInput,
   now: Date = new Date()
-): { created: boolean; docId: string; source: TextDocSource } {
+): CreatedTextDoc {
   const store = LibraryStore.load(paths);
   if (!store.get(input.workId)) throw new TextDocError("work_not_found", "Work not found");
   const ops = readOperations(paths);
@@ -245,34 +298,36 @@ export function createTextDoc(
   if (existing && (existing.workId !== input.workId || existing.sourcePdfDocId !== pdfId))
     throw new TextDocError("operation_mismatch", "operation id was used for a different request");
   const docId = existing?.docId ?? newTextDocId();
-  if (!existing) {
+  const record = (done: boolean): void => {
     ops.operations[input.operationId] = {
       docId,
       workId: input.workId,
       sourcePdfDocId: pdfId,
-      done: false,
+      done,
     };
     writeOperations(paths, ops);
-  }
+  };
+  if (!existing) record(false);
   const dir = docDirFor(paths, docId);
   if (existsSync(dir)) {
-    // an earlier call made the Doc: make sure the Work link exists and report the same result
+    // an earlier call placed the Doc: make sure the Work link exists and report the same result
     const source = readTextSource(paths, docId);
-    if (appendDocIdNarrow(paths, input.workId, docId) === "not_found")
-      throw new TextDocError("work_not_found", "Work not found");
+    const linked = appendDocIdNarrow(paths, input.workId, docId);
+    if (linked === "not_found") throw new TextDocError("work_not_found", "Work not found");
     if (!existing?.done) {
-      ops.operations[input.operationId] = {
-        docId,
-        workId: input.workId,
-        sourcePdfDocId: pdfId,
-        done: true,
-      };
-      writeOperations(paths, ops);
+      try {
+        record(true);
+      } catch {
+        /* the Doc exists and is linked; the mark is retried by the next call */
+      }
     }
-    return { created: false, docId, source };
+    return { created: false, docId, source, libraryChanged: linked === "ok" };
   }
   if (existing?.done)
-    throw new TextDocError("operation_gone", "the document of this operation was deleted");
+    throw new TextDocError(
+      "operation_gone",
+      "the document of this operation no longer exists; start the creation again"
+    );
 
   const source: TextDocSource = TextDocSourceSchema.parse({
     version: 1,
@@ -286,32 +341,31 @@ export function createTextDoc(
     ...(input.sourcePdf ? { source_pdf: input.sourcePdf } : {}),
   });
   mkdirSync(paths.outputDir, { recursive: true });
-  const stage = join(paths.outputDir, `.text-stage-${randomUUID()}`);
+  const base = outputBase(paths);
+  const target = join(base, docId);
+  const stage = join(base, `.text-stage-${randomUUID()}`);
   mkdirSync(stage);
   let placed = false;
   try {
     writeFileSync(join(stage, TEXT_SOURCE_FILE), `${JSON.stringify(source, null, 2)}\n`, {
       flag: "wx",
     });
-    renameSync(stage, dir);
+    renameSync(stage, target);
     placed = true;
+    record(true); // before the link: a Doc that is later deleted can never be recreated by a retry
     if (appendDocIdNarrow(paths, input.workId, docId) === "not_found")
       throw new TextDocError("work_not_found", "Work not found");
   } catch (error) {
     rmSync(stage, { recursive: true, force: true });
-    if (placed) rmSync(dir, { recursive: true, force: true });
+    if (placed) {
+      rmSync(target, { recursive: true, force: true });
+      try {
+        record(false); // nothing was committed: a retry may complete the same operation
+      } catch {
+        /* a retry then reports operation_gone and the caller starts over */
+      }
+    }
     throw error;
   }
-  ops.operations[input.operationId] = {
-    docId,
-    workId: input.workId,
-    sourcePdfDocId: pdfId,
-    done: true,
-  };
-  try {
-    writeOperations(paths, ops);
-  } catch {
-    // The Doc exists and is linked; a missing `done` mark only makes a retry re-verify it.
-  }
-  return { created: true, docId, source };
+  return { created: true, docId, source, libraryChanged: true };
 }

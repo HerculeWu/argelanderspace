@@ -98,10 +98,10 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
     const result = parseTextSource(md, opts);
     expect(result.ir).toBeNull();
     const byLine = result.diagnostics.map((d) => [d.severity, d.code, d.line]);
-    expect(byLine).toContainEqual(["error", "unsupported_syntax", 5]);
-    expect(byLine).toContainEqual(["error", "unsupported_syntax", 7]);
-    expect(byLine).toContainEqual(["error", "unsupported_syntax", 10]);
-    expect(byLine).toContainEqual(["error", "unsupported_syntax", 14]);
+    expect(byLine).toContainEqual(["error", "quote_unsupported", 5]);
+    expect(byLine).toContainEqual(["error", "nested_list_unsupported", 7]);
+    expect(byLine).toContainEqual(["error", "code_unsupported", 10]);
+    expect(byLine).toContainEqual(["error", "link_unsupported", 14]);
     expect(result.diagnostics.every((d) => d.message.length > 0 && d.column !== undefined)).toBe(
       true
     );
@@ -110,7 +110,7 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
   it("refuses a list item that is not a single paragraph, and raw HTML", () => {
     const loose = parseTextSource("- one\n\n  continued\n", opts);
     expect(loose.ir).toBeNull();
-    expect(loose.diagnostics[0]).toMatchObject({ code: "unsupported_syntax", line: 1 });
+    expect(loose.diagnostics[0]).toMatchObject({ code: "list_item_unsupported", line: 1 });
     const html = parseTextSource("text <b>bold</b>\n", opts);
     expect(html.ir).toBeNull();
     expect(html.diagnostics[0]?.message).toMatch(/HTML/);
@@ -129,7 +129,61 @@ describe("argelander-text v1 basic codec (ticket 25)", () => {
   it("an unclosed fence is a diagnostic, never a crash", () => {
     const result = parseTextSource("# T\n\n```\nnever closed\n", opts);
     expect(result.ir).toBeNull();
-    expect(result.diagnostics[0]).toMatchObject({ code: "unsupported_syntax", line: 3 });
+    expect(result.diagnostics[0]).toMatchObject({ code: "code_unsupported", line: 3 });
+  });
+
+  describe("math and cite/ref syntax is never silently reduced (B1)", () => {
+    const where = (md: string) => {
+      const r = parseTextSource(md, opts);
+      return { ir: r.ir, diag: r.diagnostics.map((d) => [d.code, d.line, d.column]) };
+    };
+    it("inline math with emphasis characters, escaped braces, and display math are located errors", () => {
+      expect(where("# T\n\nBefore $a *b* c$ after.\n")).toEqual({
+        ir: null,
+        diag: [["math_unsupported", 3, 8]],
+      });
+      expect(where("# T\n\nSet $\\{x\\}$ here.\n")).toEqual({
+        ir: null,
+        diag: [["math_unsupported", 3, 5]],
+      });
+      expect(where("# T\n\n$$\nx\n$$\n")).toEqual({ ir: null, diag: [["math_unsupported", 3, 1]] });
+    });
+    it("[cite: ...] and [ref: ...] are located errors, not text", () => {
+      expect(where("# T\n\nSee [cite: a;b | A] now.\n").diag).toEqual([["cite_unsupported", 3, 5]]);
+      expect(where("# T\n\nSee [ref: fig-1] now.\n").diag).toEqual([["ref_unsupported", 3, 5]]);
+    });
+    it("literal zones stay text: currency, escaped dollars, code spans, URLs", () => {
+      const md =
+        "# T\n\nIt costs $100 to $200, or \\$5 and \\$6. Run `a $x$ b` and see https://example.org/a$b$c now.\n";
+      const r = parseTextSource(md, opts);
+      expect(r.diagnostics).toEqual([]);
+      const para = r.ir?.sections[0]?.blocks[0];
+      expect(para?.type === "paragraph" && para.segments[0]).toMatchObject({ type: "text" });
+      expect(JSON.stringify(para)).toContain("https://example.org/a$b$c");
+      expect(JSON.stringify(para)).toContain("a $x$ b");
+    });
+  });
+
+  describe("autolinks are plain text (B2)", () => {
+    it("bare URLs, e-mail addresses and <angle> autolinks keep their exact characters", () => {
+      const md =
+        "# T\n\nSee https://example.org/a_b*c and www.example.com, mail me@example.org or <https://x.org/y>.\n";
+      const r = parseTextSource(md, opts);
+      expect(r.diagnostics).toEqual([]);
+      const para = r.ir?.sections[0]?.blocks[0];
+      const text =
+        para?.type === "paragraph"
+          ? para.segments.map((s) => (s.type === "text" ? s.text : "")).join("")
+          : "";
+      expect(text).toBe(
+        "See https://example.org/a_b*c and www.example.com, mail me@example.org or <https://x.org/y>."
+      );
+    });
+    it("an explicit [text](url) link stays unsupported", () => {
+      expect(
+        parseTextSource("# T\n\nA [x](https://example.org) link.\n", opts).diagnostics[0]?.code
+      ).toBe("link_unsupported");
+    });
   });
 
   it("CRLF text reports the same lines as LF text", () => {

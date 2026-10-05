@@ -1,15 +1,17 @@
 /* Text Doc: reading + Markdown source (copilot ticket 25). Shell tokens only; the nested Reader keeps its own palette. */
 .text-doc { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 0; min-width: 0; background: var(--bg); color: var(--text); }
 .text-doc [hidden] { display: none !important; }
-.text-doc-controls { flex: 0 0 auto; display: flex; align-items: center; gap: var(--gap); padding: 0 var(--pad); border-bottom: 1px solid var(--border); background: var(--panel); min-height: calc(var(--control-h) + 8px); }
-.text-doc-controls .ui-tabs { flex: 0 0 auto; border-bottom: 0; }
-.text-doc-controls .ui-tab { flex: none; padding: 8px 14px 10px; }
+.text-doc-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.text-doc-tabs > .ui-tabs-bar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--gap); padding: 0 var(--pad); border-bottom: 1px solid var(--border); background: var(--panel); min-height: calc(var(--control-h) + 8px); }
+.text-doc-tabs > .ui-tabs-bar > .ui-tabs { flex: 0 0 auto; border-bottom: 0; }
+.text-doc-tabs > .ui-tabs-bar .ui-tab { flex: none; padding: 8px 14px 10px; }
+.text-doc-trailing { margin-left: auto; display: flex; align-items: center; gap: var(--gap); }
 .text-doc-spacer { flex: 1; }
 .text-doc-unpublished { font-size: var(--fs-sm); color: var(--warn); white-space: nowrap; }
+.text-doc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .text-doc-pdf { height: var(--control-h); padding: 0 var(--pad); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-dim); font-size: var(--fs-sm); white-space: nowrap; }
 .text-doc-pdf:hover:not(:disabled) { color: var(--text); background: var(--hover); }
 .text-doc-pdf:disabled { color: var(--text-faint); cursor: not-allowed; }
-.text-doc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .text-doc-reader, .text-doc-source { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .text-doc-reader > .reader-session { flex: 1; }
 .text-doc-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-faint); padding: 35px; }
@@ -18,9 +20,8 @@
 .text-source-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--gap); }
 .text-source-status { font-size: var(--fs-sm); color: var(--text-faint); }
 .text-source-status.warn { color: var(--warn); }
-.text-source-input { flex: 1; min-height: 160px; width: 100%; resize: none; padding: var(--pad); font-family: var(--font-mono); font-size: var(--fs); line-height: 1.6; tab-size: 2; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.text-source-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.text-source-input[readonly] { opacity: .75; }
+.text-source-input { flex: 1; min-height: 160px; width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.text-source-input .cm-editor { height: 100%; }
 .text-source-footer { flex: 0 0 auto; display: flex; gap: 14px; font-size: var(--fs-xs); color: var(--text-faint); }
 .text-source-conflict { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--gap); padding: var(--pad); border: 1px solid var(--warn); border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--fs-sm); }
 .text-source-conflict pre { margin: 4px 0 0; max-height: 160px; overflow: auto; padding: 8px; font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }

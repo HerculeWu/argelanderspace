@@ -80,8 +80,20 @@ export const TextDocIrSchema = DocIrSchema.extend({
 export type TextDocIr = z.infer<typeof TextDocIrSchema>;
 
 /** What a Reader, annotation or description path may find in `<docId>.json`. */
-export const StoredDocIrSchema = z.union([TexDocIrSchema, TextDocIrSchema]);
-export type StoredDocIr = z.infer<typeof StoredDocIrSchema>;
+export type StoredDocIr = TexDocIr | TextDocIr;
+/**
+ * Chosen by `source.type` BEFORE parsing, so a schema-invalid LaTeX IR still reports its own field paths (a plain
+ * union would answer `<root>: Invalid input` and hide which field failed). An unknown or missing type is parsed as
+ * LaTeX, the original contract.
+ */
+export const StoredDocIrSchema = z.unknown().transform((value, ctx): StoredDocIr => {
+  const type = (value as { source?: { type?: unknown } } | null)?.source?.type;
+  const result = (type === "text" ? TextDocIrSchema : TexDocIrSchema).safeParse(value);
+  if (result.success) return result.data;
+  for (const issue of result.error.issues)
+    ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
+  return z.NEVER;
+});
 
 /** Narrowing guards for the stored-IR union (`source.type` is nested, so it does not narrow the IR by itself). */
 export function isTextDocIr(ir: StoredDocIr): ir is TextDocIr {

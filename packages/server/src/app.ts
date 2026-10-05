@@ -2110,9 +2110,12 @@ export function createApp(deps: AppDeps): Hono {
           impact = { annotations: "unknown" };
         }
       } else if (format === "text" && !existsSync(join(docDir, `${docId}.json`))) {
-        // a draft that was never generated has no reading text, so no annotation can exist for it yet
-        impact = { annotations: "known", count: 0 };
-        bound = { draft: true };
+        // the same answer as the page's dialog (draftAnnotationImpact): zero only when no annotations dir exists
+        const draft = textDocs.draftAnnotationImpact(docId);
+        if (!draft.generated && draft.annotations.state === "known") {
+          impact = { annotations: "known", count: draft.annotations.count };
+          bound = { draft: true };
+        }
       } else if (!pdf && !pdfUnreadable) {
         const risk = readAnnotationRisk(paths.dataDir, docId);
         if (risk.state === "known") {

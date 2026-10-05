@@ -32,18 +32,21 @@ import {
   type WsServerMessage,
 } from "@argelanderspace/contracts";
 import {
+  annotationsDocDir,
   createTextDoc,
   docContentFingerprint,
   isTextDoc,
   isTextDocId,
   type LibraryPaths,
   LibraryStore,
+  PdfContentChangedError,
   parseTextSource,
   publishTextIr,
   readAnnotationRisk,
   readPdfMetadataIfPresent,
   readPublishedTextIr,
   readTextSource,
+  readVerifiedPdf,
   saveTextSource,
   TextDocError,
 } from "@argelanderspace/core";
@@ -140,6 +143,26 @@ export class TextDocService {
     };
   }
 
+  /**
+   * What the delete confirmation may say about annotations of a text Doc that was never generated: with no reading
+   * text no annotation can be bound, so "0" is known only when `annotations/<id>` truly does not exist; if it does,
+   * the count is unknown (never inferred as zero). A generated Doc is counted the ordinary way (`generated: true`).
+   */
+  draftAnnotationImpact(docId: string):
+    | { generated: true }
+    | {
+        generated: false;
+        annotations: { state: "known"; count: number } | { state: "unknown" };
+      } {
+    if (existsSync(join(this.paths.outputDir, docId, `${docId}.json`))) return { generated: true };
+    return {
+      generated: false,
+      annotations: existsSync(annotationsDocDir(this.paths.dataDir, docId))
+        ? { state: "unknown" }
+        : { state: "known", count: 0 },
+    };
+  }
+
   describe(docId: string): DocDescription {
     const source = readTextSource(this.paths, docId);
     const ir = readPublishedTextIr(this.paths, docId);
@@ -168,19 +191,30 @@ export class TextDocService {
         const work = LibraryStore.load(this.paths).get(workId);
         if (!work) return failed(404, `work '${workId}' not found`);
         if (sourcePdfDocId !== undefined) {
-          let metadata: ReturnType<typeof readPdfMetadataIfPresent> = null;
-          try {
-            metadata = work.doc_ids.includes(sourcePdfDocId)
-              ? readPdfMetadataIfPresent(this.paths, sourcePdfDocId)
-              : null;
-          } catch {
-            return failed(500, "the source PDF could not be verified");
-          }
-          if (!metadata)
+          // The source is a file relation to a PDF Doc of this Work: its original bytes are verified against the
+          // fixed SHA-256, and a PDF Doc must belong to exactly one Work (anything else is a data error).
+          if (!work.doc_ids.includes(sourcePdfDocId))
             return failed(400, "the source must be a PDF Doc of the same Work", {
               code: "bad_source_pdf",
             });
-          sourcePdf = { doc_id: metadata.doc_id, sha256: metadata.sha256 };
+          try {
+            const owners = LibraryStore.load(this.paths).works.filter((w) =>
+              w.doc_ids.includes(sourcePdfDocId)
+            );
+            if (owners.length !== 1)
+              return failed(500, "the source PDF has inconsistent Work ownership");
+            const metadata = readPdfMetadataIfPresent(this.paths, sourcePdfDocId);
+            if (!metadata)
+              return failed(400, "the source must be a PDF Doc of the same Work", {
+                code: "bad_source_pdf",
+              });
+            readVerifiedPdf(this.paths, sourcePdfDocId);
+            sourcePdf = { doc_id: metadata.doc_id, sha256: metadata.sha256 };
+          } catch (error) {
+            return error instanceof PdfContentChangedError
+              ? failed(409, "document changed")
+              : failed(500, "the source PDF could not be verified");
+          }
         }
         const made = createTextDoc(this.paths, {
           operationId,
@@ -190,11 +224,39 @@ export class TextDocService {
         return ok(made, made.created ? 201 : 200);
       });
       if (!result.ok) return result;
-      if (result.value.created) this.deps.libraryChanged();
-      return ok(
-        { description: this.describe(result.value.docId), source: this.dto(result.value.source) },
-        result.status
-      );
+      // announced as soon as library.json changed, whatever is read back below
+      if (result.value.libraryChanged) this.deps.libraryChanged();
+      const made = result.value;
+      if (made.created) {
+        // a Doc that was just committed is answered from what was written; a read-back problem must not turn a
+        // committed creation into a reported failure
+        return ok(
+          {
+            description: {
+              doc_id: made.docId,
+              format: "text",
+              generated: false,
+              source_rev: made.source.rev,
+              published_source_rev: null,
+              ...(made.source.source_pdf ? { source_pdf: made.source.source_pdf } : {}),
+            },
+            source: {
+              doc_id: made.docId,
+              rev: made.source.rev,
+              input_version: made.source.input_version,
+              markdown: made.source.markdown,
+              assets: made.source.assets,
+              created_at: made.source.created_at,
+              updated_at: made.source.updated_at,
+              ...(made.source.source_pdf ? { source_pdf: made.source.source_pdf } : {}),
+              generated: false,
+              published_source_rev: null,
+            },
+          },
+          201
+        );
+      }
+      return ok({ description: this.describe(made.docId), source: this.dto(made.source) }, 200);
     } catch (error) {
       const f = errorFailure(error);
       return { ok: false, ...f };
@@ -429,6 +491,12 @@ export function mountTextDocRoutes(
     if (rejected) return c.json(rejected.body, rejected.status);
     const body: unknown = await c.req.json().catch(() => null);
     return answer(c, await service.create(body));
+  });
+  app.get("/api/paper/:doc_id/source/delete-impact", (c) => {
+    const id = idOf(c);
+    if (!id) return c.json({ detail: "bad doc id" }, 400);
+    if (!service.has(id)) return c.json({ detail: `paper '${id}' not found` }, 404);
+    return c.json(service.draftAnnotationImpact(id), 200, { "Cache-Control": "no-store" });
   });
   app.get("/api/paper/:doc_id/source", (c) => {
     const id = idOf(c);

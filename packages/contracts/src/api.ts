@@ -92,6 +92,8 @@ export const RefreshResponseSchema = z.object({
   resolution: z.object({
     count_source: z.record(z.string(), z.number().int()),
   }),
+  /** Text Docs whose files cannot be read; their Work links are kept and nothing is repaired (ticket 25). */
+  damaged_text_docs: z.array(z.string()).optional(),
 });
 
 // ---- POST /api/library/upload ---------------------------------------------- //

@@ -38,6 +38,21 @@ describe("stored IR union (ticket 25)", () => {
     expect(StoredDocIrSchema.safeParse({ ...latex, source: { type: "text" } }).success).toBe(false);
   });
 
+  it("a schema-invalid LaTeX IR keeps its own field path (no `<root>: Invalid input` from a union)", () => {
+    const broken = { ...latex, sections: "nope" };
+    const result = StoredDocIrSchema.safeParse(broken);
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.issues.map((i) => i.path.join("."))).toContain("sections");
+    const brokenText = StoredDocIrSchema.safeParse({
+      ...text,
+      source: { ...text.source, source_rev: -1 },
+    });
+    expect(brokenText.success).toBe(false);
+    if (!brokenText.success)
+      expect(brokenText.error.issues.map((i) => i.path.join("."))).toContain("source.source_rev");
+  });
+
   it("describes a text Doc by explicit metadata, a draft included", () => {
     const draft = {
       doc_id: "text-1",

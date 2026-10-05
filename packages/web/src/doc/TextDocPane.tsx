@@ -10,8 +10,10 @@ import {
 } from "../api/text-docs";
 import { onTextDocPublished, onTextSourceChanged } from "../api/ws";
 import { registerWorkspaceLeaveGuard, useWorkspace } from "../argelander/workspace";
-import { ActionButton, Dialog, InlineMessage } from "../ui";
+import { Icon } from "../lib/icons";
+import { ActionButton, Dialog, InlineMessage, Tabs } from "../ui";
 import { useReaderSession } from "./ReaderSession";
+import { TextSourceField, type TextSourceApi } from "./TextSourceField";
 import "./text-doc.css";
 
 type TextDescription = Extract<DocDescription, { format: "text" }>;
@@ -32,7 +34,7 @@ type View = "reader" | "source";
 type SaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
 const AUTOSAVE_MS = 800;
 
-/** One id per user-initiated generation; a retry of the same click reuses it. */
+/** A fresh id per Generate click. The server only uses it to answer a repeated request of the same click with the stored result. */
 const newOperationId = () => `gen-${crypto.randomUUID()}`;
 
 /**
@@ -77,69 +79,59 @@ export function TextDocPane({
   }, [pdfId]);
 
   const unpublished = desc.generated && (desc.published_source_rev !== editor.rev || editor.dirty);
-  const tabs: { value: View; label: string; ui: string }[] = [
-    { value: "reader", label: t("doc.text.readerTab"), ui: "text-reader-tab" },
-    { value: "source", label: t("doc.text.sourceTab"), ui: "text-source-tab" },
-  ];
-  const tabRefs = useRef(new Map<View, HTMLButtonElement>());
+  const trailing = (
+    <div className="text-doc-trailing">
+      {unpublished && (
+        <span className="text-doc-unpublished" data-ui="text-unpublished" role="status">
+          {t("doc.text.unpublished")}
+        </span>
+      )}
+      {pdfId && (
+        <ActionButton
+          mode="text"
+          unstyled
+          className="text-doc-pdf"
+          data-ui="text-open-source-pdf"
+          label={pdfState === "missing" ? t("doc.text.sourcePdfMissing") : t("doc.text.openSourcePdf")}
+          tooltip={pdfState === "missing" ? t("doc.text.sourcePdfMissing") : t("doc.text.openSourcePdf")}
+          disabled={pdfState !== "ok"}
+          onClick={() => ws.openDoc(pdfId)}
+        >
+          {pdfState === "missing" ? t("doc.text.sourcePdfMissing") : t("doc.text.openSourcePdf")}
+        </ActionButton>
+      )}
+    </div>
+  );
 
   return (
     <div className="text-doc" data-ui="text-doc" data-ui-key={docId}>
-      <div className="text-doc-controls" data-ui="text-doc-controls">
-        <div className="ui-tabs" role="tablist" aria-label={t("doc.text.tabsAria")} data-ui="text-doc-tabs">
-          {tabs.map((tab, index) => (
-            <button
-              key={tab.value}
-              ref={(element) => {
-                if (element) tabRefs.current.set(tab.value, element);
-              }}
-              type="button"
-              role="tab"
-              className="ui-tab"
-              data-ui={tab.ui}
-              aria-selected={view === tab.value}
-              tabIndex={view === tab.value ? 0 : -1}
-              onClick={() => setView(tab.value)}
-              onKeyDown={(event) => {
-                if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-                event.preventDefault();
-                const next = tabs[(index + (event.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
-                if (!next) return;
-                setView(next.value);
-                tabRefs.current.get(next.value)?.focus();
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        <span className="text-doc-spacer" />
-        {unpublished && <span className="text-doc-unpublished" data-ui="text-unpublished" role="status">{t("doc.text.unpublished")}</span>}
-        {pdfId && (
-          <ActionButton
-            mode="text"
-            unstyled
-            className="text-doc-pdf"
-            data-ui="text-open-source-pdf"
-            label={pdfState === "missing" ? t("doc.text.sourcePdfMissing") : t("doc.text.openSourcePdf")}
-            tooltip={pdfState === "missing" ? t("doc.text.sourcePdfMissing") : t("doc.text.openSourcePdf")}
-            disabled={pdfState !== "ok"}
-            onClick={() => ws.openDoc(pdfId)}
-          >
-            {pdfState === "missing" ? t("doc.text.sourcePdfMissing") : t("doc.text.openSourcePdf")}
-          </ActionButton>
-        )}
-      </div>
-      <div className="text-doc-body">
-        <div className="text-doc-reader" hidden={view !== "reader"} role="tabpanel" data-ui="text-reader-panel">
-          {desc.generated ? reader : (
+      <Tabs
+        ariaLabel={t("doc.text.tabsAria")}
+        className="text-doc-tabs"
+        panelClassName="text-doc-body"
+        items={[
+          { value: "reader", label: t("doc.text.readerTab") },
+          { value: "source", label: t("doc.text.sourceTab") },
+        ]}
+        value={view}
+        onValueChange={setView}
+        trailing={trailing}
+      >
+        {/* both panes stay mounted: the Reader keeps its place and drafts while the source is edited */}
+        <div className="text-doc-reader" hidden={view !== "reader"} data-ui="text-reader-panel">
+          {desc.generated ? (
+            reader
+          ) : (
             <div className="text-doc-empty" data-ui="text-doc-first-draft">
+              <Icon name="file-text" cls="ico-lg" />
               <h2>{t("doc.text.emptyReaderTitle")}</h2>
-              <ActionButton mode="text" data-ui="text-open-source" label={t("doc.text.sourceTab")} tooltip={t("doc.text.sourceTab")} onClick={() => setView("source")}>{t("doc.text.sourceTab")}</ActionButton>
+              <ActionButton mode="text" data-ui="text-open-source" label={t("doc.text.sourceTab")} tooltip={t("doc.text.sourceTab")} onClick={() => setView("source")}>
+                {t("doc.text.sourceTab")}
+              </ActionButton>
             </div>
           )}
         </div>
-        <div className="text-doc-source" hidden={view !== "source"} role="tabpanel" data-ui="text-source-panel">
+        <div className="text-doc-source" hidden={view !== "source"} data-ui="text-source-panel">
           <TextSourceEditor
             docId={docId}
             generated={desc.generated}
@@ -149,7 +141,7 @@ export function TextDocPane({
             onOpenReader={() => setView("reader")}
           />
         </div>
-      </div>
+      </Tabs>
     </div>
   );
 }
@@ -164,6 +156,28 @@ const FAILED_KEY = {
   blocked: "doc.text.failed.blocked",
   busy: "doc.text.failed.busy",
   error: "doc.text.failed.error",
+} as const;
+
+/** The page's own wording per diagnostic code; an unknown code (a newer server) falls back to the server's message. */
+const DIAGNOSTIC_KEYS = {
+  math_unsupported: "doc.text.diag.math_unsupported",
+  cite_unsupported: "doc.text.diag.cite_unsupported",
+  ref_unsupported: "doc.text.diag.ref_unsupported",
+  link_unsupported: "doc.text.diag.link_unsupported",
+  image_unsupported: "doc.text.diag.image_unsupported",
+  table_unsupported: "doc.text.diag.table_unsupported",
+  code_unsupported: "doc.text.diag.code_unsupported",
+  quote_unsupported: "doc.text.diag.quote_unsupported",
+  rule_unsupported: "doc.text.diag.rule_unsupported",
+  html_unsupported: "doc.text.diag.html_unsupported",
+  definition_unsupported: "doc.text.diag.definition_unsupported",
+  strike_unsupported: "doc.text.diag.strike_unsupported",
+  setext_unsupported: "doc.text.diag.setext_unsupported",
+  task_unsupported: "doc.text.diag.task_unsupported",
+  nested_list_unsupported: "doc.text.diag.nested_list_unsupported",
+  list_item_unsupported: "doc.text.diag.list_item_unsupported",
+  syntax_unsupported: "doc.text.diag.syntax_unsupported",
+  empty_document: "doc.text.diag.empty_document",
 } as const;
 
 type Generation =
@@ -191,7 +205,8 @@ function TextSourceEditor({
   const { t } = useTranslation();
   const [load, setLoad] = useState<{ phase: "loading" } | { phase: "error"; detail: string } | { phase: "ready" }>({ phase: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [text, setText] = useState("");
+  const [initialText, setInitialText] = useState("");
+  const [chars, setChars] = useState(0);
   const [save, setSave] = useState<SaveState>("saved");
   const [saveDetail, setSaveDetail] = useState("");
   const [latest, setLatest] = useState<TextSourceDto | null>(null);
@@ -203,12 +218,13 @@ function TextSourceEditor({
   // What is on the server (rev + text) and what is in the editor are kept in refs so the autosave chain always
   // sees the newest typing; `text`/`save` state only drive rendering.
   const server = useRef<{ rev: number; markdown: string }>({ rev: 0, markdown: "" });
-  const draft = useRef("");
+  const api = useRef<TextSourceApi | null>(null);
+  /** The editor's whole text; the string is built only here, on demand (see TextSourceField). */
+  const getDraft = (): string => api.current?.get() ?? server.current.markdown;
   const status = useRef<SaveState>("saved");
   const chain = useRef<Promise<void>>(Promise.resolve());
   const timer = useRef<number | undefined>(undefined);
   const alive = useRef(true);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const replaceCancelRef = useRef<HTMLButtonElement>(null);
 
@@ -235,8 +251,8 @@ function TextSourceEditor({
         return;
       }
       server.current = { rev: result.source.rev, markdown: result.source.markdown };
-      draft.current = result.source.markdown;
-      setText(result.source.markdown);
+      setInitialText(result.source.markdown);
+      setChars(result.source.markdown.length);
       setStatus("saved");
       setLoad({ phase: "ready" });
     });
@@ -251,14 +267,14 @@ function TextSourceEditor({
   const flush = useCallback((): Promise<void> => {
     window.clearTimeout(timer.current);
     const run = async () => {
-      while (alive.current && status.current !== "conflict" && draft.current !== server.current.markdown) {
-        const sent = draft.current;
+      while (alive.current && status.current !== "conflict" && getDraft() !== server.current.markdown) {
+        const sent = getDraft();
         setStatus("saving");
         const result = await saveTextSource(docId, server.current.rev, sent);
         if (!alive.current) return;
         if (result.ok) {
           server.current = { rev: result.source.rev, markdown: result.source.markdown };
-          onState({ rev: result.source.rev, dirty: draft.current !== sent });
+          onState({ rev: result.source.rev, dirty: getDraft() !== sent });
           continue;
         }
         if (result.kind === "conflict") {
@@ -271,15 +287,15 @@ function TextSourceEditor({
         setStatus("error");
         return;
       }
-      if (alive.current && (status.current === "saving" || status.current === "dirty") && draft.current === server.current.markdown) setStatus("saved");
+      if (alive.current && (status.current === "saving" || status.current === "dirty") && getDraft() === server.current.markdown) setStatus("saved");
     };
     chain.current = chain.current.then(run, run);
     return chain.current;
   }, [docId, onState, setStatus]);
 
-  const edit = (value: string) => {
-    draft.current = value;
-    setText(value);
+  /** The user typed (or imported): the editor holds the text; only its length is read here. */
+  const edit = (length: number) => {
+    setChars(length);
     setGeneration((current) => (current.kind === "running" ? current : { kind: "idle" }));
     if (status.current === "conflict") return;
     setStatus("dirty");
@@ -296,8 +312,8 @@ function TextSourceEditor({
         void fetchTextSource(docId).then((result) => {
           if (!alive.current || !result.ok || status.current !== "saved" || result.source.rev <= server.current.rev) return;
           server.current = { rev: result.source.rev, markdown: result.source.markdown };
-          draft.current = result.source.markdown;
-          setText(result.source.markdown);
+          api.current?.set(result.source.markdown, { silent: true });
+          setChars(result.source.markdown.length);
           onState({ rev: result.source.rev, dirty: false });
         });
       }),
@@ -320,7 +336,7 @@ function TextSourceEditor({
 
   const settle = async (): Promise<boolean> => {
     await flush();
-    return status.current === "saved" && draft.current === server.current.markdown;
+    return status.current === "saved" && getDraft() === server.current.markdown;
   };
 
   const validate = async () => {
@@ -362,8 +378,8 @@ function TextSourceEditor({
   const useLatest = () => {
     if (!latest) return;
     server.current = { rev: latest.rev, markdown: latest.markdown };
-    draft.current = latest.markdown;
-    setText(latest.markdown);
+    api.current?.set(latest.markdown, { silent: true });
+    setChars(latest.markdown.length);
     setLatest(null);
     setStatus("saved");
   };
@@ -376,14 +392,8 @@ function TextSourceEditor({
     void flush();
   };
 
-  const jumpTo = (line: number | undefined) => {
-    const input = inputRef.current;
-    if (!input || !line) return;
-    let offset = 0;
-    const lines = text.split(/\r\n|\r|\n/);
-    for (let i = 0; i < line - 1 && i < lines.length; i += 1) offset += (lines[i]?.length ?? 0) + 1;
-    input.focus();
-    input.setSelectionRange(offset, offset + (lines[line - 1]?.length ?? 0));
+  const jumpTo = (diagnostic: TextDiagnostic) => {
+    if (diagnostic.line) api.current?.jump(diagnostic.line, diagnostic.column ?? 1);
   };
 
   const pick = async (file: File | undefined) => {
@@ -397,8 +407,13 @@ function TextSourceEditor({
       setImportError(true);
       return;
     }
-    if (draft.current.trim() === "") edit(content);
+    if (getDraft().trim() === "") api.current?.set(content);
     else setImporting(content);
+  };
+
+  const diagnosticText = (diagnostic: TextDiagnostic): string => {
+    const key = (DIAGNOSTIC_KEYS as Record<string, (typeof DIAGNOSTIC_KEYS)[keyof typeof DIAGNOSTIC_KEYS] | undefined>)[diagnostic.code];
+    return key ? t(key) : diagnostic.message;
   };
 
   const statusText = useMemo(
@@ -429,7 +444,7 @@ function TextSourceEditor({
         <span className={`text-source-status ${save === "error" || save === "conflict" ? "warn" : ""}`} role="status" data-ui="text-source-status" data-state={save}>{statusText}</span>
         <span className="text-doc-spacer" />
         <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden data-ui="text-source-import-input" onChange={(event) => void pick(event.target.files?.[0])} />
-        <ActionButton mode="text" data-ui="text-source-import" label={t("doc.text.import")} tooltip={t("doc.text.import")} disabled={running} onClick={() => fileRef.current?.click()}>{t("doc.text.import")}</ActionButton>
+        <ActionButton mode="icon" iconName="file-up" iconSize="small" data-ui="text-source-import" label={t("doc.text.import")} tooltip={t("doc.text.import")} disabled={running} onClick={() => fileRef.current?.click()} />
         <ActionButton mode="text" data-ui="text-source-validate" label={t("doc.text.validate")} tooltip={t("doc.text.validate")} disabled={running || save === "conflict"} onClick={() => void validate()}>{t("doc.text.validate")}</ActionButton>
         <ActionButton mode="text" appearance="primary" data-ui="text-source-generate" label={t("doc.text.generate")} tooltip={t("doc.text.generate")} busy={running} busyLabel={t("doc.text.generating")} disabled={save === "conflict"} onClick={() => void generate()}>{t("doc.text.generate")}</ActionButton>
       </div>
@@ -473,28 +488,25 @@ function TextSourceEditor({
         <ul className="text-source-diagnostics" data-ui="text-source-diagnostics" aria-label={t("doc.text.diagnostics")}>
           {diagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.code}:${diagnostic.line ?? 0}:${diagnostic.column ?? 0}:${index}`} className={diagnostic.severity} data-ui="text-source-diagnostic" data-ui-key={String(index)}>
-              <button type="button" className="text-source-diagnostic-where" disabled={!diagnostic.line} onClick={() => jumpTo(diagnostic.line)}>
+              <button type="button" className="text-source-diagnostic-where" disabled={!diagnostic.line} onClick={() => jumpTo(diagnostic)}>
                 {diagnostic.line ? t("doc.text.diagnosticAt", { line: diagnostic.line, column: diagnostic.column ?? 1 }) : t("doc.text.diagnosticDocument")}
               </button>
-              <span>{diagnostic.message}</span>
+              <span>{diagnosticText(diagnostic)}</span>
             </li>
           ))}
         </ul>
       )}
 
-      <textarea
-        ref={inputRef}
-        className="text-source-input"
-        aria-label={t("doc.text.sourceAria")}
-        spellCheck={false}
-        value={text}
+      <TextSourceField
+        initial={initialText}
         readOnly={save === "conflict"}
-        onChange={(event) => edit(event.target.value)}
-        data-ui="text-source-input"
+        label={t("doc.text.sourceAria")}
+        apiRef={api}
+        onUserChange={edit}
       />
       <div className="text-source-footer" data-ui="text-source-footer">
         <span>argelander-text v1</span>
-        <span>{t("doc.text.characters", { count: text.length })}</span>
+        <span>{t("doc.text.characters", { count: chars })}</span>
         {generated && publishedRev !== null && <span>{t("doc.text.publishedRev", { rev: publishedRev })}</span>}
       </div>
 
@@ -509,7 +521,7 @@ function TextSourceEditor({
           footer={
             <>
               <ActionButton mode="text" ref={replaceCancelRef} data-ui="cancel-text-import" label={t("common.cancel")} tooltip={t("common.cancel")} onClick={() => setImporting(null)}>{t("common.cancel")}</ActionButton>
-              <ActionButton mode="text" appearance="primary" data-ui="confirm-text-import" label={t("doc.text.importReplace")} tooltip={t("doc.text.importReplace")} onClick={() => { edit(importing); setImporting(null); }}>{t("doc.text.importReplace")}</ActionButton>
+              <ActionButton mode="text" appearance="primary" data-ui="confirm-text-import" label={t("doc.text.importReplace")} tooltip={t("doc.text.importReplace")} onClick={() => { api.current?.set(importing); setImporting(null); }}>{t("doc.text.importReplace")}</ActionButton>
             </>
           }
         >

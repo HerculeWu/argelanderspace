@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocDescription, TextSourceDto } from "@argelanderspace/contracts";
+import { EditorView } from "@codemirror/view";
 import { TextDocPane } from "../src/doc/TextDocPane";
 import { confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
@@ -91,16 +92,40 @@ function Harness({ withPdf = false }: { withPdf?: boolean }) {
     <TextDocPane docId={DOC} description={description(withPdf ? { source_pdf: { doc_id: PDF, sha256: "b".repeat(64) } } : {})} reader={<div data-testid="reader-stub">reader</div>} />
   </WorkspaceProvider>;
 }
-const input = (c: HTMLElement) => c.querySelector<HTMLTextAreaElement>('[data-ui="text-source-input"]')!;
+const cm = (c: HTMLElement) => {
+  const content = c.querySelector<HTMLElement>(".cm-content");
+  return content ? (EditorView.findFromDOM(content) ?? null) : null;
+};
+/** The CodeMirror source field seen as a plain text field (value, selection, read-only). */
+const input = (c: HTMLElement) => {
+  const view = cm(c);
+  return view
+    ? {
+        get value() { return view.state.doc.toString(); },
+        get readOnly() { return view.state.readOnly; },
+        get selectionStart() { return view.state.selection.main.from; },
+        get selectionEnd() { return view.state.selection.main.to; },
+        view,
+      }
+    : null;
+};
+/** Type by replacing the document, as the editor's own transactions do. */
+const typeText = (c: HTMLElement, value: string) => {
+  const view = cm(c)!;
+  act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value }, userEvent: "input.type" }));
+};
 const ui = (c: HTMLElement, id: string) => c.querySelector<HTMLElement>(`[data-ui="${id}"]`);
 const posts = (kind: "generate" | "validate") => backend.log.filter((l) => l.startsWith("POST") && l.endsWith(`/source/${kind}`));
 
+const stopSelection = (e: Event) => e.stopImmediatePropagation();
 beforeEach(() => {
+  document.addEventListener("selectionchange", stopSelection, true);
   backend = { rev: 0, markdown: "", log: [], puts: [], generated: false, publishedRev: null, pdfOk: true };
   opened.length = 0;
   installBackend();
 });
 afterEach(() => {
+  document.removeEventListener("selectionchange", stopSelection, true);
   cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -110,7 +135,7 @@ afterEach(() => {
 
 async function ready(withPdf = false) {
   const view = render(<Harness withPdf={withPdf} />);
-  await waitFor(() => expect(input(view.container)).toBeTruthy());
+  await waitFor(() => expect(input(view.container)).not.toBeNull());
   return view;
 }
 
@@ -119,6 +144,8 @@ describe("text Doc pane: autosave and explicit generation", () => {
     const { container, getByRole } = await ready();
     expect(ui(container, "text-source-panel")?.hidden).toBe(false);
     expect(ui(container, "text-reader-panel")?.hidden).toBe(true);
+    // line numbers (CodeMirror gutter) are on
+    expect(container.querySelector(".cm-lineNumbers")).toBeTruthy();
     fireEvent.click(getByRole("tab", { name: "阅读" }));
     expect(ui(container, "text-doc-first-draft")).toBeTruthy();
     expect(container.querySelector('[data-testid="reader-stub"]')).toBeNull();
@@ -128,7 +155,7 @@ describe("text Doc pane: autosave and explicit generation", () => {
     const view = await ready();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const text = "# T\r\n\r\n```\nunclosed $x\t中文";
-    fireEvent.change(input(view.container), { target: { value: text } });
+    typeText(view.container, text);
     expect(ui(view.container, "text-source-status")?.getAttribute("data-state")).toBe("dirty");
     expect(backend.puts).toHaveLength(0);
     await act(async () => { await vi.advanceTimersByTimeAsync(900); });
@@ -141,7 +168,7 @@ describe("text Doc pane: autosave and explicit generation", () => {
 
   it("Generate saves the newest typing first, then generates the revision just saved", async () => {
     const view = await ready();
-    fireEvent.change(input(view.container), { target: { value: "# Title\n\nbody" } });
+    typeText(view.container, "# Title\n\nbody");
     fireEvent.click(ui(view.container, "text-source-generate")!);
     await waitFor(() => expect(ui(view.container, "text-source-generated")).toBeTruthy());
     const order = backend.log.filter((l) => l.startsWith("PUT") || l.endsWith("/generate"));
@@ -150,35 +177,36 @@ describe("text Doc pane: autosave and explicit generation", () => {
   });
 
   it("a text with errors keeps the source and shows the located diagnostics; clicking one selects its line", async () => {
-    backend.generate = () => json({ detail: "the text has errors", code: "diagnostics", diagnostics: [{ code: "unsupported_syntax", severity: "error", message: "block quotes are not supported", line: 3, column: 1 }], stats: { sections: 0, paragraphs: 0, lists: 0 } }, 422);
+    backend.generate = () => json({ detail: "the text has errors", code: "diagnostics", diagnostics: [{ code: "quote_unsupported", severity: "error", message: "block quotes are not supported", line: 3, column: 1 }], stats: { sections: 0, paragraphs: 0, lists: 0 } }, 422);
     const view = await ready();
     const text = "# T\n\n> quote\n\nend";
-    fireEvent.change(input(view.container), { target: { value: text } });
+    typeText(view.container, text);
     fireEvent.click(ui(view.container, "text-source-generate")!);
     await waitFor(() => expect(ui(view.container, "text-source-diagnostics")).toBeTruthy());
     expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("文本存在错误，未生成");
     const row = ui(view.container, "text-source-diagnostic")!;
     expect(row.textContent).toContain("第 3 行，第 1 列");
-    expect(row.textContent).toContain("block quotes are not supported");
+    expect(row.textContent).toContain("不支持块引用");
     fireEvent.click(row.querySelector("button")!);
-    expect(input(view.container).value.slice(input(view.container).selectionStart, input(view.container).selectionEnd)).toBe("> quote");
-    expect(input(view.container).value).toBe(text);
+    // the caret lands on the diagnostic's line and column (line 3, column 1), CodeMirror's own selection
+    expect(input(view.container)!.selectionStart).toBe(text.indexOf("> quote"));
+    expect(input(view.container)!.value).toBe(text);
     expect(backend.markdown).toBe(text);
   });
 
   it("a replacement blocked by annotations is reported as not published, text kept", async () => {
     backend.generate = () => json({ detail: "blocked", code: "replacement_blocked", annotations: 2 }, 409);
     const view = await ready();
-    fireEvent.change(input(view.container), { target: { value: "# T\n\nbody" } });
+    typeText(view.container, "# T\n\nbody");
     fireEvent.click(ui(view.container, "text-source-generate")!);
     await waitFor(() => expect(ui(view.container, "text-source-generation-error")).toBeTruthy());
     expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("未发布");
-    expect(input(view.container).value).toBe("# T\n\nbody");
+    expect(input(view.container)!.value).toBe("# T\n\nbody");
   });
 
   it("validate saves first, has its own result, and does not generate", async () => {
     const view = await ready();
-    fireEvent.change(input(view.container), { target: { value: "# T\n\nbody" } });
+    typeText(view.container, "# T\n\nbody");
     fireEvent.click(ui(view.container, "text-source-validate")!);
     await waitFor(() => expect(ui(view.container, "text-source-valid")).toBeTruthy());
     expect(ui(view.container, "text-source-valid")?.textContent).toContain("2 节 · 3 段 · 1 个列表");
@@ -192,7 +220,7 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     const view = await ready();
     backend.rev = 5; // another writer saved
     backend.markdown = "server text";
-    fireEvent.change(input(view.container), { target: { value: "my local text" } });
+    typeText(view.container, "my local text");
     fireEvent.click(ui(view.container, "text-source-generate")!);
     await waitFor(() => expect(ui(view.container, "text-source-conflict")).toBeTruthy());
     return view;
@@ -200,11 +228,11 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
 
   it("keeps the local text on a rev conflict, shows the latest server text and generates nothing", async () => {
     const view = await conflicted();
-    expect(input(view.container).value).toBe("my local text");
+    expect(input(view.container)!.value).toBe("my local text");
     expect(ui(view.container, "text-source-conflict-latest")?.textContent).toBe("server text");
     expect(backend.markdown).toBe("server text");
     expect(posts("generate")).toHaveLength(0);
-    expect(input(view.container).readOnly).toBe(true);
+    expect(input(view.container)!.readOnly).toBe(true);
     expect((ui(view.container, "text-source-generate") as HTMLButtonElement).disabled).toBe(true);
   });
 
@@ -217,12 +245,12 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     backend.rev = 8; backend.markdown = "newer server"; backend.puts.length = 0;
     const second = await ready();
     backend.rev = 9; backend.markdown = "server again";
-    fireEvent.change(input(second.container), { target: { value: "mine" } });
+    typeText(second.container, "mine");
     fireEvent.click(ui(second.container, "text-source-validate")!);
     await waitFor(() => expect(ui(second.container, "text-source-conflict")).toBeTruthy());
     const putsBefore = backend.puts.length;
     fireEvent.click(ui(second.container, "text-source-use-latest")!);
-    expect(input(second.container).value).toBe("server again");
+    expect(input(second.container)!.value).toBe("server again");
     expect(backend.puts.length).toBe(putsBefore);
   });
 
@@ -230,7 +258,7 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const view = await ready();
     expect(confirmWorkspaceLeave()).toBe(true);
-    fireEvent.change(input(view.container), { target: { value: "unsaved" } });
+    typeText(view.container, "unsaved");
     expect(confirmWorkspaceLeave()).toBe(false);
     expect(confirm).toHaveBeenCalledTimes(1);
     confirm.mockReturnValue(true);
@@ -245,11 +273,11 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
       if (init?.method === "PUT") return json({ detail: "disk full" }, 500);
       return real(input, init);
     }));
-    fireEvent.change(input(view.container), { target: { value: "precious" } });
+    typeText(view.container, "precious");
     fireEvent.click(ui(view.container, "text-source-validate")!);
     await waitFor(() => expect(ui(view.container, "text-source-save-error")).toBeTruthy());
     expect(ui(view.container, "text-source-save-error")?.textContent).toContain("disk full");
-    expect(input(view.container).value).toBe("precious");
+    expect(input(view.container)!.value).toBe("precious");
   });
 
   it("opens the source PDF through the workspace, or shows it as unavailable when it is gone (no cascade)", async () => {
@@ -263,7 +291,7 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     await waitFor(() => expect(ui(gone.container, "text-open-source-pdf")?.textContent).toContain("来源 PDF 已不可用"));
     expect((ui(gone.container, "text-open-source-pdf") as HTMLButtonElement).disabled).toBe(true);
     // the text itself stays editable
-    expect(input(gone.container).readOnly).toBe(false);
+    expect(input(gone.container)!.readOnly).toBe(false);
   });
 
   it("marks unpublished changes only once a reading version exists, and refreshes on the published event", async () => {
@@ -273,7 +301,7 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     const view = await ready();
     expect(ui(view.container, "text-unpublished")).toBeNull();
     expect(view.container.querySelector('[data-testid="reader-stub"]')).toBeTruthy();
-    fireEvent.change(input(view.container), { target: { value: "changed" } });
+    typeText(view.container, "changed");
     expect(ui(view.container, "text-unpublished")).toBeTruthy();
     // the published event makes the pane read the description again
     backend.publishedRev = 3;

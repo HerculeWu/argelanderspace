@@ -271,7 +271,7 @@ describe("validation", () => {
       diagnostics: { line?: number; code: string }[];
     };
     expect(result.valid).toBe(false);
-    expect(result.diagnostics[0]).toMatchObject({ code: "unsupported_syntax", line: 3 });
+    expect(result.diagnostics[0]).toMatchObject({ code: "quote_unsupported", line: 3 });
     expect(readFileSync(file).equals(before)).toBe(true);
     expect(existsSync(irFile(docId))).toBe(false);
     expect(existsSync(annDir(docId))).toBe(false);
