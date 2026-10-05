@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { emptyWork, type LibraryPaths, LibraryStore } from "../src/library/store.js";
 import {
   commitPdfAnnotationChange,
+  PdfAnnotationValidationError,
   publishPdfDoc,
   readPdfAnnotationsFile,
 } from "../src/pdf-storage.js";
@@ -141,6 +142,29 @@ describe("commitPdfAnnotationChange", () => {
         next: [note("d"), note("d")],
       }))
     ).toThrow();
+    expect(readFileSync(file)).toEqual(before);
+  });
+
+  it("refuses a list that changes what is immutable about a stored annotation (kind, creation time, page, text target)", () => {
+    const { paths, sha, file } = project();
+    expect(
+      commitPdfAnnotationChange(paths, "pdf-1", { sha256: sha, rev: 0 }, () => ({
+        next: [note("keep")],
+      })).kind
+    ).toBe("saved");
+    const before = readFileSync(file);
+    const bad = (change: (a: ReturnType<typeof note>) => object) => () =>
+      commitPdfAnnotationChange(paths, "pdf-1", { sha256: sha, rev: 1 }, (current) => ({
+        next: current.annotations.map((a) =>
+          change(a as ReturnType<typeof note>)
+        ) as PdfAnnotationsFile["annotations"],
+      }));
+    expect(bad((a) => ({ ...a, created_at: "2030-01-01T00:00:00.000Z" }))).toThrow(
+      PdfAnnotationValidationError
+    );
+    expect(bad((a) => ({ ...a, kind: "page_comment", page_index: 0 }))).toThrow(
+      PdfAnnotationValidationError
+    );
     expect(readFileSync(file)).toEqual(before);
   });
 });

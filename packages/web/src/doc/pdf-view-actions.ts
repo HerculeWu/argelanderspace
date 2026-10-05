@@ -109,3 +109,28 @@ export function runPdfViewAction(action: ReaderViewAction, state: PdfViewState, 
 export function selectionPageRange(range: { start: { page: number }; end: { page: number } }): { firstPage: number; lastPage: number } {
   return { firstPage: Math.min(range.start.page, range.end.page), lastPage: Math.max(range.start.page, range.end.page) };
 }
+
+/**
+ * What the page tells the Copilot about the user's unsaved panel text (copilot ticket 21): presence and the blocked
+ * state only, never the text. The session keeps a draft per annotation id (`draft:` ids are a new comment being
+ * written, `style:` ids are a rectangle's style gesture and are not text). An id the annotations no longer have is
+ * still listed: it is the user's text.
+ */
+export function pdfDraftsView(
+  drafts: Readonly<Record<string, string>>,
+  annotations: ReadonlyArray<{ id: string; body: string }>,
+  blocked: boolean
+): { create: boolean; edit: { annotationId: string; blocked: boolean }[] } {
+  const bodies = new Map(annotations.map((annotation) => [annotation.id, annotation.body]));
+  const edit: { annotationId: string; blocked: boolean }[] = [];
+  let create = false;
+  for (const [id, text] of Object.entries(drafts)) {
+    if (id.startsWith("style:")) continue;
+    if (id.startsWith("draft:")) {
+      create = true;
+      continue;
+    }
+    if (bodies.get(id) !== text) edit.push({ annotationId: id, blocked });
+  }
+  return { create, edit };
+}

@@ -268,7 +268,13 @@ function validatePdfAnnotationsPageBounds(
   }
 }
 
-/** Persist an expected-revision edit without stripping unknown additive fields. */
+/**
+ * Persist the page's expected-revision edit without stripping unknown additive fields. The page's whole-file PUT and
+ * the Copilot's narrow writes share ONE commit (`commitPdfAnnotationChange`: busy, original verified, SHA-256,
+ * revision, bounds, the immutable-target guard and the atomic write); this only turns the submitted file into the
+ * list to save (a merge that takes the mutable fields of what the page sent and keeps everything else as stored) and
+ * the commit's refusals into the errors the route answers.
+ */
 export function savePdfAnnotationsFile(
   paths: LibraryPaths,
   docId: string,
@@ -277,86 +283,87 @@ export function savePdfAnnotationsFile(
   candidate: unknown,
   isBusy: (docId: string) => boolean = () => false
 ) {
-  if (isBusy(docId)) throw new PdfAnnotationConflictError("busy");
-  const metadata = readPdfMetadataIfPresent(paths, docId);
-  if (!metadata) throw new Error("PDF metadata missing");
-  let actualBytes: Buffer;
-  try {
-    actualBytes = readVerifiedPdf(paths, docId);
-  } catch (error) {
-    if (error instanceof PdfContentChangedError) throw new PdfAnnotationConflictError("content");
-    throw error;
-  }
-  if (digest(actualBytes) !== metadata.sha256 || contentSha256 !== metadata.sha256)
-    throw new PdfAnnotationConflictError("content");
-  const current = readPdfAnnotationsFile(paths, docId);
-  if (current.rev !== expectedRev) throw new PdfAnnotationConflictError("rev");
-  const submitted = PdfAnnotationsFileSchema.parse(candidate);
-  if (
-    submitted.doc_id !== docId ||
-    submitted.content_sha256 !== metadata.sha256 ||
-    submitted.rev !== expectedRev
-  )
-    throw new Error("PDF annotation identity or binding mismatch");
-  validatePdfAnnotationsPageBounds(submitted.annotations, metadata.page_count);
-
-  const previousById = new Map(
-    current.annotations.map((annotation) => [annotation.id, annotation])
+  const result = commitPdfAnnotationChange<undefined>(
+    paths,
+    docId,
+    { sha256: contentSha256, rev: expectedRev },
+    (current, metadata) => {
+      const submitted = PdfAnnotationsFileSchema.parse(candidate);
+      if (
+        submitted.doc_id !== docId ||
+        submitted.content_sha256 !== metadata.sha256 ||
+        submitted.rev !== expectedRev
+      )
+        throw new Error("PDF annotation identity or binding mismatch");
+      validatePdfAnnotationsPageBounds(submitted.annotations, metadata.page_count);
+      const previousById = new Map(
+        current.annotations.map((annotation) => [annotation.id, annotation])
+      );
+      const mergedAnnotations = submitted.annotations.map((annotation) => {
+        const previous = previousById.get(annotation.id);
+        if (!previous) return annotation;
+        if (!sameImmutableParts(previous, annotation))
+          throw new Error("PDF annotation immutable target changed");
+        const merged = { ...previous } as Record<string, unknown>;
+        const before = JSON.stringify([
+          previous.body,
+          "rectangle" in previous ? previous.rectangle : null,
+          "style" in previous ? previous.style : null,
+          previous.kind === "highlight" ? ((previous as { color?: string }).color ?? null) : null,
+        ]);
+        for (const key of ["body", "page_index", "rectangle", "style", "color"])
+          if (key in annotation) merged[key] = annotation[key];
+        if (
+          annotation.kind === "highlight" &&
+          previous.kind === "highlight" &&
+          !("color" in annotation)
+        )
+          delete merged.color;
+        const after = JSON.stringify([
+          merged.body,
+          merged.rectangle ?? null,
+          merged.style ?? null,
+          annotation.kind === "highlight" ? (merged.color ?? null) : null,
+        ]);
+        merged.updated_at = before === after ? previous.updated_at : new Date().toISOString();
+        return merged as PdfAnnotationsFile["annotations"][number];
+      });
+      const changed = JSON.stringify(current.annotations) !== JSON.stringify(mergedAnnotations);
+      return changed ? { next: mergedAnnotations } : { skip: undefined };
+    },
+    isBusy
   );
-  const mergedAnnotations = submitted.annotations.map((annotation) => {
-    const previous = previousById.get(annotation.id);
-    if (!previous) return annotation;
+  switch (result.kind) {
+    case "busy":
+      throw new PdfAnnotationConflictError("busy");
+    case "document_changed":
+      throw new PdfAnnotationConflictError("content");
+    case "rev_mismatch":
+      throw new PdfAnnotationConflictError("rev");
+    default:
+      return result.file;
+  }
+}
+
+/** Kind, creation time, page and text target of an annotation never change once it is stored. */
+function sameImmutableParts(
+  previous: PdfAnnotationsFile["annotations"][number],
+  next: PdfAnnotationsFile["annotations"][number]
+): boolean {
+  if (previous.kind !== next.kind || previous.created_at !== next.created_at) return false;
+  if ("page_index" in previous) {
     if (
-      previous.kind !== annotation.kind ||
-      previous.created_at !== annotation.created_at ||
-      ("page_index" in previous &&
-        (typeof previous.page_index !== "number" ||
-          previous.page_index !==
-            ("page_index" in annotation && typeof annotation.page_index === "number"
-              ? annotation.page_index
-              : -1))) ||
-      ("target" in previous &&
-        JSON.stringify(previous.target) !==
-          JSON.stringify("target" in annotation ? annotation.target : null))
-    ) {
-      throw new Error("PDF annotation immutable target changed");
-    }
-    const merged = { ...previous } as Record<string, unknown>;
-    const before = JSON.stringify([
-      previous.body,
-      "rectangle" in previous ? previous.rectangle : null,
-      "style" in previous ? previous.style : null,
-      previous.kind === "highlight" ? ((previous as { color?: string }).color ?? null) : null,
-    ]);
-    for (const key of ["body", "page_index", "rectangle", "style", "color"])
-      if (key in annotation) merged[key] = annotation[key];
-    if (
-      annotation.kind === "highlight" &&
-      previous.kind === "highlight" &&
-      !("color" in annotation)
+      typeof previous.page_index !== "number" ||
+      previous.page_index !==
+        ("page_index" in next && typeof next.page_index === "number" ? next.page_index : -1)
     )
-      delete merged.color;
-    const after = JSON.stringify([
-      merged.body,
-      merged.rectangle ?? null,
-      merged.style ?? null,
-      annotation.kind === "highlight" ? (merged.color ?? null) : null,
-    ]);
-    merged.updated_at = before === after ? previous.updated_at : new Date().toISOString();
-    return merged as PdfAnnotationsFile["annotations"][number];
-  });
-  const changed = JSON.stringify(current.annotations) !== JSON.stringify(mergedAnnotations);
-  const saved = PdfAnnotationsFileSchema.parse({
-    ...current,
-    rev: current.rev + (changed ? 1 : 0),
-    annotations: mergedAnnotations,
-  });
-  if (changed)
-    atomicWrite(
-      join(safeDocDir(paths, docId), "annotations.json"),
-      `${JSON.stringify(saved, null, 2)}\n`
+      return false;
+  }
+  if ("target" in previous)
+    return (
+      JSON.stringify(previous.target) === JSON.stringify("target" in next ? next.target : null)
     );
-  return saved;
+  return true;
 }
 
 export type PdfAnnotationChange<T> =
@@ -400,11 +407,24 @@ export function commitPdfAnnotationChange<T>(
   if (current.rev !== expect.rev) return { kind: "rev_mismatch", rev: current.rev };
   const built = build(current, metadata);
   if ("skip" in built) return { kind: "skipped", file: current, value: built.skip };
-  const saved = PdfAnnotationsFileSchema.parse({
-    ...current,
-    rev: current.rev + 1,
-    annotations: built.next,
-  });
+  const previousById = new Map(
+    current.annotations.map((annotation) => [annotation.id, annotation])
+  );
+  for (const annotation of built.next) {
+    const previous = previousById.get(annotation.id);
+    if (previous && !sameImmutableParts(previous, annotation))
+      throw new PdfAnnotationValidationError("PDF annotation immutable target changed");
+  }
+  let saved: PdfAnnotationsFile;
+  try {
+    saved = PdfAnnotationsFileSchema.parse({
+      ...current,
+      rev: current.rev + 1,
+      annotations: built.next,
+    });
+  } catch {
+    throw new PdfAnnotationValidationError("the changed annotations do not satisfy the contract");
+  }
   validatePdfAnnotationsPageBounds(saved.annotations, metadata.page_count);
   atomicWrite(
     join(safeDocDir(paths, docId), "annotations.json"),

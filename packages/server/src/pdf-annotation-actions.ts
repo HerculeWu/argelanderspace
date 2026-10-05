@@ -14,7 +14,7 @@ import {
 /**
  * The agent's PDF workbench annotation writes (copilot ticket 21) as pure functions of ONE verified state: the stored
  * sidecar exactly as read (every key the application does not know is still on it) and the Doc's metadata. They run
- * inside the annotations lock (see `commitPdfAnnotations` in app.ts) after the shared commit has checked the
+ * inside the annotations lock (see `writePdfAnnotation` in app.ts) after the shared commit has checked the
  * original's SHA-256 and the revision the caller named. They only build the next annotation list; locking, the
  * checks, the atomic save and the notification stay with the shared handler.
  *
@@ -214,6 +214,8 @@ interface DocHistory {
 }
 /** The Reader's own history has no depth limit; a service-held one stays bounded. */
 export const PDF_HISTORY_DEPTH = 50;
+/** The histories held at once (one per conversation and Doc); the least recently used go first. */
+export const PDF_HISTORY_KEYS = 64;
 
 /**
  * The Copilot's undo and redo of ITS OWN changes to a Doc's workbench annotations, held in the service's memory (it is
@@ -225,31 +227,55 @@ export const PDF_HISTORY_DEPTH = 50;
 export class PdfAnnotationHistory {
   private readonly docs = new Map<string, DocHistory>();
 
+  /** The history of one conversation's changes to one Doc: what "the changes you made" means. */
+  static key(conversationId: string, docId: string): string {
+    return `${conversationId}\u0000${docId}`;
+  }
+
+  private store(key: string, history: DocHistory): void {
+    // Most recently used last; the oldest histories go first so the map stays bounded.
+    this.docs.delete(key);
+    this.docs.set(key, history);
+    while (this.docs.size > PDF_HISTORY_KEYS) {
+      const oldest = this.docs.keys().next().value;
+      if (oldest === undefined) break;
+      this.docs.delete(oldest);
+    }
+  }
+
   /** Record a change that was just saved as `rev`. */
   recordChange(
-    docId: string,
+    key: string,
     plan: Extract<PdfAnnotationPlan, { kind: "write" }>,
     rev: number
   ): void {
-    const history = this.live(docId, rev - 1) ?? { past: [], future: [], rev };
+    const history = this.live(key, rev - 1) ?? { past: [], future: [], rev };
     history.past.push({ before: plan.before, after: plan.next, label: plan.label });
     if (history.past.length > PDF_HISTORY_DEPTH) history.past.shift();
     history.future = [];
     history.rev = rev;
-    this.docs.set(docId, history);
+    this.store(key, history);
   }
 
   /** Whether undo and redo have something to do right now (as of the revision the history last left). */
-  depth(docId: string): { canUndo: boolean; canRedo: boolean } {
-    const history = this.docs.get(docId);
-    return { canUndo: (history?.past.length ?? 0) > 0, canRedo: (history?.future.length ?? 0) > 0 };
+  depth(key: string): { canUndo: boolean; canRedo: boolean } {
+    const history = this.docs.get(key);
+    return {
+      canUndo: (history?.past.length ?? 0) > 0,
+      canRedo: (history?.future.length ?? 0) > 0,
+    };
   }
 
-  private live(docId: string, currentRev: number): DocHistory | undefined {
-    const history = this.docs.get(docId);
+  /** How many histories are held (a test reads it to see the bound). */
+  get size(): number {
+    return this.docs.size;
+  }
+
+  private live(key: string, currentRev: number): DocHistory | undefined {
+    const history = this.docs.get(key);
     if (!history) return undefined;
     if (history.rev !== currentRev) {
-      this.docs.delete(docId);
+      this.docs.delete(key);
       return undefined;
     }
     return history;
@@ -257,15 +283,15 @@ export class PdfAnnotationHistory {
 
   /** What undo (or redo) would do now, or why there is nothing to do. */
   plan(
-    docId: string,
+    key: string,
     direction: "undo" | "redo",
     current: PdfAnnotationsFile,
     now: Date = new Date()
   ):
     | { kind: "write"; next: PdfAnnotation[]; label: string }
     | { kind: "none"; reason: "nothing" | "history_ended" | "changed" } {
-    const had = this.docs.has(docId);
-    const history = this.live(docId, current.rev);
+    const had = this.docs.has(key);
+    const history = this.live(key, current.rev);
     if (!history) return { kind: "none", reason: had ? "history_ended" : "nothing" };
     const stack = direction === "undo" ? history.past : history.future;
     const entry = stack[stack.length - 1];
@@ -274,7 +300,7 @@ export class PdfAnnotationHistory {
     const to = direction === "undo" ? entry.before : entry.after;
     // The file at this revision is what the history left; anything else was edited by hand, and is not overwritten.
     if (!samePdfValue(current.annotations, from)) {
-      this.docs.delete(docId);
+      this.docs.delete(key);
       return { kind: "none", reason: "changed" };
     }
     const stamp = now.toISOString();
@@ -288,9 +314,14 @@ export class PdfAnnotationHistory {
     return { kind: "write", next, label: entry.label };
   }
 
-  /** The undo or redo was saved as `rev` with these annotations (their `updated_at` may be new). */
-  recordMove(docId: string, direction: "undo" | "redo", rev: number, saved: PdfAnnotation[]): void {
-    const history = this.docs.get(docId);
+  /**
+   * The undo or redo was saved as `rev` with these annotations (their `updated_at` may be new). The saved list is now
+   * the state both the moved entry and the entry that comes next in the same direction start from, so it is written
+   * into both: otherwise the next undo (or redo) would compare the file with a list that still has the old
+   * `updated_at` and refuse a history nobody has touched.
+   */
+  recordMove(key: string, direction: "undo" | "redo", rev: number, saved: PdfAnnotation[]): void {
+    const history = this.docs.get(key);
     if (!history) return;
     if (direction === "undo") {
       const entry = history.past.pop();
@@ -298,13 +329,18 @@ export class PdfAnnotationHistory {
         entry.before = saved;
         history.future.push(entry);
       }
+      const next = history.past[history.past.length - 1];
+      if (next) next.after = saved;
     } else {
       const entry = history.future.pop();
       if (entry) {
         entry.after = saved;
         history.past.push(entry);
       }
+      const next = history.future[history.future.length - 1];
+      if (next) next.before = saved;
     }
     history.rev = rev;
+    this.store(key, history);
   }
 }

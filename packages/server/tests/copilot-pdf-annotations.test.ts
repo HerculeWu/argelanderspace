@@ -259,16 +259,23 @@ function page(pdf: PdfPage | null, revision = 1, viewId: string = randomUUID()):
     pdf,
   };
 }
+let lastConversation: string | undefined;
 async function run(
   context: PageContext,
   text = "Look at this PDF",
   tab = false,
-  answer?: (a: Record<string, unknown>) => { ok: boolean; detail?: string }
+  answer?: (a: Record<string, unknown>) => { ok: boolean; detail?: string },
+  /** Continue the conversation of the previous run (what a later message of the same chat does). */
+  reuse = false
 ) {
-  const created = (await (
-    await request("/conversations", "POST", { model: choice })
-  ).json()) as ConversationSnapshot;
-  const id = created.conversation.id;
+  const created = reuse
+    ? undefined
+    : ((await (
+        await request("/conversations", "POST", { model: choice })
+      ).json()) as ConversationSnapshot);
+  const id = created?.conversation.id ?? lastConversation;
+  if (!id) throw new Error("no conversation to continue");
+  lastConversation = id;
   const actions: Record<string, unknown>[] = [];
   if (tab) await openTab(context.viewId, id, actions, answer);
   expect((await request(`/views/${context.viewId}`, "PUT", context)).status).toBe(200);
@@ -305,7 +312,15 @@ function chain(builders: Array<(prev: Reply) => Call>) {
   script = [
     ...builders.map(
       (build, i): Step =>
-        (context) => ({ call: build(i === 0 ? undefined : lastResult(context)) })
+        (context) => {
+          const prev = i === 0 ? undefined : lastResult(context);
+          try {
+            return { call: build(prev) };
+          } catch (error) {
+            console.error("chain step", i, JSON.stringify(prev)?.slice(0, 300), error);
+            throw error;
+          }
+        }
     ),
     () => ({ text: "x" }),
   ];
@@ -805,7 +820,7 @@ test("delete is immediate like the trash button; undo and redo follow the panel'
     }),
     next2(docId, sha, { action: "redo_pdf_annotation" }),
   ]);
-  await run(page(pdfPage(docId, sha)));
+  await run(page(pdfPage(docId, sha)), undefined, false, undefined, true);
   const r = results();
   expect(r[0]).toMatchObject({
     status: "ok",
@@ -841,7 +856,7 @@ test("delete is immediate like the trash button; undo and redo follow the panel'
   ).toBe(200);
   const afterUser = sidecarBytes(docId);
   chain([() => ({ action: "undo_pdf_annotation", ...base(docId, sha, 8) })]);
-  await run(page(pdfPage(docId, sha)));
+  await run(page(pdfPage(docId, sha)), undefined, false, undefined, true);
   expect(results()[0]).toMatchObject({ status: "noop", reason: "history_ended" });
   expect(sidecarBytes(docId)).toEqual(afterUser);
 });
@@ -927,7 +942,159 @@ test("undo never overwrites a file that was edited by hand without a new revisio
   writeFileSync(join(pdfDir(docId), "annotations.json"), `${JSON.stringify(handEdit, null, 2)}\n`);
   const bytes = sidecarBytes(docId);
   chain([() => ({ action: "undo_pdf_annotation", ...base(docId, sha, 1) })]);
-  await run(page(pdfPage(docId, sha)));
+  await run(page(pdfPage(docId, sha)), undefined, false, undefined, true);
   expect(results()[0]).toMatchObject({ status: "noop", reason: "changed" });
   expect(sidecarBytes(docId)).toEqual(bytes);
+});
+
+test("undo and redo cross an undone update: create, update, undo, undo, redo, redo end at the right states", async () => {
+  const { docId, sha } = await publish();
+  chain([
+    () => ({
+      action: "create_pdf_annotation",
+      ...base(docId, sha, 0),
+      kind: "document_comment",
+      body: "v1",
+    }),
+    (p) => ({
+      action: "update_pdf_annotation",
+      ...base(docId, sha, p.epoch.annotationsRev),
+      annotationId: p.annotation.id,
+      expectedUpdatedAt: p.annotation.updated_at,
+      body: "v2",
+    }),
+    next2(docId, sha, { action: "undo_pdf_annotation" }),
+    next2(docId, sha, { action: "undo_pdf_annotation" }),
+    next2(docId, sha, { action: "redo_pdf_annotation" }),
+    next2(docId, sha, { action: "redo_pdf_annotation" }),
+    next2(docId, sha, { action: "redo_pdf_annotation" }),
+  ]);
+  const bodies: string[][] = [];
+  const watch = setInterval(
+    () => bodies.push(sidecar(docId).annotations.map((a: { body: string }) => a.body)),
+    1
+  );
+  await run(page(pdfPage(docId, sha)));
+  clearInterval(watch);
+  const r = results();
+  expect(r.slice(0, 6).map((x) => x.status)).toEqual(Array(6).fill("ok"));
+  expect(r[3]).toMatchObject({ undone: true, history: { canUndo: false, canRedo: true } });
+  expect(r[5]).toMatchObject({ redone: true, history: { canUndo: true, canRedo: false } });
+  expect(r[6]).toMatchObject({ status: "noop", reason: "nothing" });
+  expect(sidecar(docId).annotations.map((a: { body: string }) => a.body)).toEqual(["v2"]);
+  expect(sidecar(docId).rev).toBe(6);
+});
+
+test("a mixed sequence of changes can be undone to the start and redone to the end", {
+  timeout: 30000,
+}, async () => {
+  const { docId, sha } = await publish();
+  const doc = (body: string) => (p: Reply) => ({
+    action: "create_pdf_annotation",
+    ...base(docId, sha, p?.epoch.annotationsRev ?? 0),
+    kind: "document_comment",
+    body,
+  });
+  const upd = (index: number, body: string) => () => {
+    const a = sidecar(docId).annotations[index];
+    return {
+      action: "update_pdf_annotation",
+      ...base(docId, sha, sidecar(docId).rev),
+      annotationId: a.id,
+      expectedUpdatedAt: a.updated_at,
+      body,
+    };
+  };
+  const del = (index: number) => () => {
+    const a = sidecar(docId).annotations[index];
+    return {
+      action: "delete_pdf_annotation",
+      ...base(docId, sha, sidecar(docId).rev),
+      annotationId: a.id,
+      expectedUpdatedAt: a.updated_at,
+    };
+  };
+  const undo = next2(docId, sha, { action: "undo_pdf_annotation" });
+  const redo = next2(docId, sha, { action: "redo_pdf_annotation" });
+  chain([
+    doc("A"),
+    doc("B"),
+    upd(0, "A2"),
+    del(1),
+    upd(0, "A3"),
+    undo,
+    undo,
+    undo,
+    undo,
+    undo,
+    redo,
+    redo,
+    redo,
+    redo,
+    redo,
+  ]);
+  await run(page(pdfPage(docId, sha)));
+  const r = results();
+  expect(r.slice(0, 15).map((x) => x.status)).toEqual(Array(15).fill("ok"));
+  const bodies = () => sidecar(docId).annotations.map((a: { body: string }) => a.body);
+  expect(bodies()).toEqual(["A3"]);
+  // the same steps once more, stopping half way, to see the middle states
+  chain([
+    () => ({ action: "undo_pdf_annotation", ...base(docId, sha, sidecar(docId).rev) }),
+    undo,
+    undo,
+  ]);
+  await run(page(pdfPage(docId, sha)), undefined, false, undefined, true);
+  expect(bodies()).toEqual(["A", "B"]);
+});
+
+test("one conversation cannot undo another conversation's changes", async () => {
+  const { docId, sha } = await publish();
+  chain([
+    () => ({
+      action: "create_pdf_annotation",
+      ...base(docId, sha, 0),
+      kind: "document_comment",
+      body: "from A",
+    }),
+  ]);
+  await run(page(pdfPage(docId, sha)));
+  const bytes = sidecarBytes(docId);
+  // a new run is a new conversation
+  chain([() => ({ action: "undo_pdf_annotation", ...base(docId, sha, 1) })]);
+  await run(page(pdfPage(docId, sha)));
+  expect(results()[0]).toMatchObject({ status: "noop", reason: "nothing" });
+  expect(sidecarBytes(docId)).toEqual(bytes);
+});
+
+test("a PDF action on a LaTeX Doc is unsupported, not a verification error", async () => {
+  const { sha } = await publish();
+  // e1 is a Doc the library lists (a work's doc_ids) that has no PDF metadata
+  chain([
+    () => ({
+      action: "create_pdf_annotation",
+      docId: "e1",
+      sha256: sha,
+      rev: 0,
+      kind: "document_comment",
+      body: "x",
+    }),
+  ]);
+  await run(page(null));
+  expect(results()[0]).toMatchObject({ ok: false, status: "unsupported" });
+});
+
+test("the page's drafts reach the model as presence only, never the text", async () => {
+  const { docId, sha } = await publish();
+  chain([() => ({ action: "read", docId })]);
+  await run(
+    page(
+      pdfPage(docId, sha, {
+        drafts: { create: true, edit: [{ annotationId: "pann_gone", blocked: false }] },
+      })
+    )
+  );
+  const text = JSON.stringify(seen[0]);
+  expect(text).toContain("pann_gone");
+  expect(text).toContain("blocked");
 });

@@ -18,7 +18,11 @@ const Id = z.string().min(1).max(500);
 const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const AnnotationId = z.string().min(1).max(128);
 
-/** Longest annotation body one call may carry (input sanity; the panel's editor has no limit). */
+/**
+ * Longest annotation body one call may carry. The sidecar's schema (and so the panel's editor, which has no limit of
+ * its own) accepts up to 1,000,000 characters; the tool is held to 100,000 as input sanity for a model's output and
+ * for the conversation history. A body the user wrote that is longer is still read and shown whole.
+ */
 export const PDF_ANNOTATION_BODY_MAX = 100_000;
 /** The area tool ignores a drawn rectangle smaller than this (fraction of the page) on either side. */
 export const PDF_RECTANGLE_MIN = 0.006;

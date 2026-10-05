@@ -116,7 +116,7 @@ export function buildPdfTextTarget(
 // the Reader's selection layer does it (EmbedPDF plugin-selection 2.15.1, MIT, `rectsWithinSlice` and the helpers it
 // merges with). The Reader runs it on the browser's copy of the geometry and the Copilot's text targets run it on
 // the geometry the server's PDFium reads from the same verified original, so a highlight made by either has the
-// same rectangles for the same characters. `tests/pdf-text-target.test.ts` in the web package compares this
+// same rectangles for the same characters. `tests/pdf-selection-geometry.test.ts` in the web package compares this
 // function with the plugin's own.
 
 /** One glyph of the engine's page geometry (a character cell in page space; `flags` 2 is a generated character). */
