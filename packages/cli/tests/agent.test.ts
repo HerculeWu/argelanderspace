@@ -401,6 +401,48 @@ describe("list", () => {
   });
 });
 
+describe("list in a mixed library (text Docs are not promised to the CLI)", () => {
+  test("a draft and a generated text Doc beside the golden doc leave the old lines and exit status intact", () => {
+    const { dataDir, env } = makeDataDir();
+    const draft = join(dataDir, "output", "text-11111111-1111-4111-8111-111111111111");
+    mkdirSync(draft, { recursive: true });
+    writeFileSync(join(draft, "text-source.json"), "{}");
+    const done = join(dataDir, "output", "text-22222222-2222-4222-8222-222222222222");
+    mkdirSync(done, { recursive: true });
+    writeFileSync(join(done, "text-source.json"), "{}");
+    writeFileSync(
+      join(done, "text-22222222-2222-4222-8222-222222222222.json"),
+      JSON.stringify({
+        version: 1,
+        docId: "text-22222222-2222-4222-8222-222222222222",
+        source: {
+          type: "text",
+          input_version: 1,
+          source_rev: 1,
+          source_fingerprint: "a".repeat(64),
+        },
+        meta: {},
+        sections: [],
+        refsManifest: [],
+        bib: [],
+        citationsByBlock: {},
+      })
+    );
+    const r = runCli(["list", "--data-dir", dataDir], env);
+    expect(r.status).toBe(0);
+    const lines = r.stdout.trim().split("\n");
+    expect(lines[0]).toBe("library: works=34 docs=2 read=0 unread=34 labeled=0");
+    expect(lines).toContain(
+      `doc: ${DOC_ID} | latex | sec=38 | refs=76 | ` +
+        `Tidal tails of nearby open clusters — I. Mapping with Gaia DR3 | ${LINK}`
+    );
+    // the legacy reader refuses the text IR as before: no crash, an explicit line
+    expect(lines.some((l) => l.startsWith("doc: text-22222222") && l.includes("unreadable"))).toBe(
+      true
+    );
+  });
+});
+
 describe("annot", () => {
   const TITLE = "Tidal tails of nearby open clusters — I. Mapping with Gaia DR3";
   const T0 = "2026-09-10T08:00:00.000Z";

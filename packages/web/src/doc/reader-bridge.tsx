@@ -1,11 +1,12 @@
 import {
   buildReaderReading,
+  type PdfPage,
   type ReaderPage,
   type ReaderPanel,
   type ReaderRightTab,
   type ReaderSelection,
 } from "@argelanderspace/contracts";
-import { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, type MutableRefObject, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReaderSessionState } from "./ReaderSession";
 
 /**
@@ -31,6 +32,21 @@ export interface ReaderViewController {
     action: import("@argelanderspace/contracts").ReaderViewAction
   ) => Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "disabled" }>;
 }
+
+/** What the PDF Reader's own controls answer to the Copilot (copilot ticket 20); pages in the actions are zero-based. */
+export interface PdfViewHandle {
+  apply: (action: import("@argelanderspace/contracts").ReaderViewAction) => Promise<{
+    ok: boolean;
+    detail?: "not_found" | "unavailable" | "disabled";
+  }>;
+}
+/** What the PDF Reader tells its pane: its page (identity, position, controls) and the handle that drives it. */
+export interface PdfBridge {
+  publish: (page: PdfPage | null) => void;
+  setHandle: (handle: PdfViewHandle | null) => void;
+}
+export const PdfBridgeContext = createContext<PdfBridge>({ publish() {}, setHandle() {} });
+export const usePdfBridge = () => useContext(PdfBridgeContext);
 
 export interface ReaderLive {
   position: ReaderPage["position"];
@@ -98,7 +114,8 @@ export function useReaderPublisher(
   paneId: number,
   onContext: ((paneId: number, page: ReaderPage | null) => void) | undefined,
   onController: ((paneId: number, controller: ReaderViewController | null) => void) | undefined,
-  docId: () => string | null
+  docId: () => string | null,
+  pdfHandle?: MutableRefObject<PdfViewHandle | null>
 ) {
   const parts = useRef({
     docId: null as string | null,
@@ -134,12 +151,14 @@ export function useReaderPublisher(
       }
       if (state && p.docId) {
         // Rebuilt only for a new admitted epoch (the accepted read is replaced on every sync).
-        if (state.phase === "ready" && state.accepted) {
+        // The Copilot's whole-reading representation is the LaTeX one; a text Doc's session is never published here.
+        if (state.phase === "ready" && state.accepted && state.accepted.ir.source.type === "latex") {
+          const ir = state.accepted.ir;
           if (p.reading?.accepted !== state.accepted)
             p.reading = {
               accepted: state.accepted,
               value: buildReaderReading({
-                ir: state.accepted.ir,
+                ir,
                 file: state.accepted.file,
                 assets: state.accepted.assets,
               }),
@@ -224,6 +243,8 @@ export function useReaderPublisher(
       docId: () => out.current.docId(),
       apply: async (action) => {
         if (action.docId !== out.current.docId()) return { ok: false, detail: "unavailable" };
+        // A PDF Doc is shown: its own Reader answers every action (its controls are not the LaTeX Reader's).
+        if (pdfHandle?.current) return pdfHandle.current.apply(action);
         if (action.action === "retry_sync") {
           if (!p.retry) return { ok: false, detail: "disabled" };
           p.retry();
@@ -246,6 +267,9 @@ export function useReaderPublisher(
           case "set_right_tab":
             handle.setRightTab(action.tab);
             return { ok: true };
+          default:
+            // A PDF control while a LaTeX Doc is shown: there is no such control here.
+            return { ok: false, detail: "unavailable" };
         }
       },
     };

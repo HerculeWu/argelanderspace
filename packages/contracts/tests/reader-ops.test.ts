@@ -441,10 +441,16 @@ describe("Reader operations", () => {
     expect(WsCopilotViewActionSchema.safeParse(message).success).toBe(true);
     expect([...READER_OPERATION_ACTIONS]).toEqual([
       "read",
+      "read_page_image",
       ...READER_VIEW_ACTIONS,
       "create_annotation",
       "update_annotation",
       "delete_annotation",
+      "create_pdf_annotation",
+      "update_pdf_annotation",
+      "delete_pdf_annotation",
+      "undo_pdf_annotation",
+      "redo_pdf_annotation",
     ]);
     // annotation writes are business writes through the server, never views the browser is asked to run
     for (const write of ["create_annotation", "update_annotation", "delete_annotation"])

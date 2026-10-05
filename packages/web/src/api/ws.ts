@@ -1,4 +1,4 @@
-import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent, WsCopilotViewAction } from "@argelanderspace/contracts";
+import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent, WsCopilotViewAction, WsTextSourceChanged, WsTextDocPublished } from "@argelanderspace/contracts";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
@@ -21,6 +21,8 @@ const libraryListeners = new Set<LibraryListener>();
 const planListeners = new Set<PlanListener>();
 const annotationListeners = new Set<AnnotationListener>();
 const writerListeners = new Set<WriterListener>();
+const textSourceListeners = new Set<(msg: WsTextSourceChanged) => void>();
+const textPublishedListeners = new Set<(msg: WsTextDocPublished) => void>();
 
 interface CopilotSubscription { conversationId: string; viewId: string; event: (event: WsCopilotEvent) => void; viewAction?: (action: WsCopilotViewAction) => void; ready: () => void; connection: (connected: boolean) => void; }
 const copilotSubscriptions = new Set<CopilotSubscription>();
@@ -67,6 +69,10 @@ function dispatch(msg: WsServerMessage): void {
     // to the job branch (`msg.job` would be undefined). The writer view wires
     // its reload to onWriterChanged in M2.
     for (const cb of writerListeners) cb(msg);
+  } else if (msg.type === "text-source.changed") {
+    for (const cb of textSourceListeners) cb(msg);
+  } else if (msg.type === "text-doc.published") {
+    for (const cb of textPublishedListeners) cb(msg);
   } else if (msg.type === "pdf-reading-position.changed") {
     // Position notifications never navigate another tab; its reader remains user-controlled.
   } else {
@@ -121,6 +127,22 @@ export function onJobEvent(cb: JobListener): () => void {
   ensureStarted();
   return () => {
     jobListeners.delete(cb);
+  };
+}
+
+/** A text Doc's source was saved (`text-source.changed`), or its reading text published (`text-doc.published`). */
+export function onTextSourceChanged(cb: (msg: WsTextSourceChanged) => void): () => void {
+  textSourceListeners.add(cb);
+  ensureStarted();
+  return () => {
+    textSourceListeners.delete(cb);
+  };
+}
+export function onTextDocPublished(cb: (msg: WsTextDocPublished) => void): () => void {
+  textPublishedListeners.add(cb);
+  ensureStarted();
+  return () => {
+    textPublishedListeners.delete(cb);
   };
 }
 

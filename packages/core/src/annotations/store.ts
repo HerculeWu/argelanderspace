@@ -45,8 +45,8 @@ import {
   type DocIr,
   type IrBlock,
   type IrSection,
-  type TexDocIr,
-  TexDocIrSchema,
+  type StoredDocIr,
+  StoredDocIrSchema,
 } from "@argelanderspace/contracts";
 
 import { assetBytesHash, readAssetBytes, readDocumentAsset } from "./assets.js";
@@ -452,7 +452,7 @@ export interface EnsureCurrentAnnotationsResult {
  * no `version` marker → pre-migration document, `corrupt_ir`; schema-invalid
  * → `corrupt_ir`.
  */
-function loadStoredDocIr(dataDir: string, docId: string): TexDocIr {
+function loadStoredDocIr(dataDir: string, docId: string): StoredDocIr {
   const p = docJsonPath(dataDir, docId);
   if (!existsSync(p) || !statSync(p).isFile()) {
     throw new AnnotationsError("not_found", `annotations: doc "${docId}" not found (${p})`);
@@ -476,7 +476,7 @@ function loadStoredDocIr(dataDir: string, docId: string): TexDocIr {
       `annotations: doc "${docId}" is a pre-migration document — re-ingest it`
     );
   }
-  const result = TexDocIrSchema.safeParse(raw);
+  const result = StoredDocIrSchema.safeParse(raw);
   if (!result.success) {
     throw new AnnotationsError(
       "corrupt_ir",
@@ -572,7 +572,7 @@ export function ensureCurrentAnnotations(
 function fingerprintWithAssets(
   dataDir: string,
   docId: string
-): { ir: TexDocIr; fingerprint: string; assets: AssetDigest[] } {
+): { ir: StoredDocIr; fingerprint: string; assets: AssetDigest[] } {
   const ir = loadStoredDocIr(dataDir, docId);
   if (ir.docId !== docId) {
     throw new AnnotationsError("corrupt_ir", `annotations: doc id mismatch for "${docId}"`);
@@ -602,7 +602,7 @@ export function ensureCurrentAnnotationsWithDocument(
   dataDir: string,
   docId: string,
   opts: EnsureCurrentAnnotationsOptions = {}
-): EnsureCurrentAnnotationsResult & { ir: TexDocIr; assets: AssetDigest[] } {
+): EnsureCurrentAnnotationsResult & { ir: StoredDocIr; assets: AssetDigest[] } {
   const { ir, fingerprint, assets } = fingerprintWithAssets(dataDir, docId);
   return { ir, assets, ...ensureForFingerprint(dataDir, docId, fingerprint, opts) };
 }
@@ -653,7 +653,7 @@ export type AnnotationRiskRead =
   | { state: "unknown" | "missing" };
 
 export function readAnnotationRisk(dataDir: string, docId: string): AnnotationRiskRead {
-  let ir: TexDocIr;
+  let ir: StoredDocIr;
   try {
     ir = loadStoredDocIr(dataDir, docId);
   } catch (err) {
@@ -695,7 +695,7 @@ export function readAnnotationRisk(dataDir: string, docId: string): AnnotationRi
 export function readDocumentForReading(
   dataDir: string,
   docId: string
-): { ir: TexDocIr; assets: AssetDigest[]; file: AnnotationsFile; stale: boolean } {
+): { ir: StoredDocIr; assets: AssetDigest[]; file: AnnotationsFile; stale: boolean } {
   const { ir, fingerprint, assets } = fingerprintWithAssets(dataDir, docId);
   const current = loadAnnotationsFile(dataDir, docId);
   if (current === null)

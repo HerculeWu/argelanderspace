@@ -30,8 +30,14 @@ import {
 } from "./annotations.js";
 import type { IrBlock, IrSection, IrSegment } from "./doc-ir.js";
 import { ReferenceSchema } from "./doc-ir.js";
+import { PDF_ANNOTATION_ACTIONS } from "./pdf-annotation-ops.js";
+import {
+  PDF_VIEW_ACTIONS,
+  PdfReadPageImageOperationSchema,
+  PdfViewActionSchema,
+} from "./pdf-ops.js";
 import type { AssetDigest } from "./reader-coherence.js";
-import type { TexDocIr } from "./tex-ir.js";
+import { isTexDocIr, type StoredDocIr } from "./text-doc.js";
 
 const Id = z.string().min(1).max(500);
 const Count = z.number().int().nonnegative();
@@ -271,12 +277,16 @@ function readerText(segments: IrSegment[]): ReaderText {
  * older content: they are not part of this document and are left out (the next normal access archives them).
  */
 export function buildReaderReading(input: {
-  ir: TexDocIr;
+  ir: StoredDocIr;
   file: AnnotationsFile;
   assets: readonly AssetDigest[];
   stale?: boolean;
 }): ReaderReading {
-  const { ir, file } = input;
+  const { file } = input;
+  const ir = input.ir;
+  // The whole-reading representation is the LaTeX one; a text Doc gets its own with the text tools.
+  if (!isTexDocIr(ir))
+    throw new Error("buildReaderReading: a text document has no Reader reading yet");
   const digest = new Map(input.assets.map((asset) => [asset.imgPath, asset.sha256]));
   const asset = (path: string | undefined, width?: number, height?: number) =>
     path === undefined
@@ -627,9 +637,24 @@ export function summarizeReaderPage(page: ReaderPage): ReaderContextSummary {
 // ---- Tool operations --------------------------------------------------------------------------------- //
 
 export const ReaderReadOperationSchema = z
-  .object({ action: z.literal("read"), docId: Id })
+  .object({
+    action: z.literal("read"),
+    docId: Id,
+    /**
+     * Ticket 24: where to continue a reading delivered in parts, the zero-based index of the first unit (a Reader
+     * entry, a PDF page) not yet read: the `to` of the previous part. Absent starts at the beginning.
+     */
+    from: Count.optional(),
+    /**
+     * With `from`: the version (`batch.version`) of the parts already read. A continuation of another version is
+     * refused (conflict, version_changed) instead of being stitched onto it.
+     */
+    version: z.string().min(1).max(300).optional(),
+  })
   .strict();
 export type ReaderReadOperation = z.infer<typeof ReaderReadOperationSchema>;
+/** One original PDF page as an image (copilot ticket 20); see `pdf-ops`. */
+export const ReaderReadPageImageOperationSchema = PdfReadPageImageOperationSchema;
 
 /** View operations run in the bound browser's Reader, through the Reader's own controllers. */
 export const ReaderViewActionSchema = z.discriminatedUnion("action", [
@@ -655,6 +680,8 @@ export const ReaderViewActionSchema = z.discriminatedUnion("action", [
     .strict(),
   /** The Retry buttons of the sync/error banner, the load-error page and the annotations panel. */
   z.object({ action: z.literal("retry_sync"), docId: Id }).strict(),
+  /** The PDF Reader's own controls (copilot ticket 20): pages are zero-based here. */
+  ...PdfViewActionSchema.options,
 ]);
 export type ReaderViewAction = z.infer<typeof ReaderViewActionSchema>;
 
@@ -664,6 +691,7 @@ export const READER_VIEW_ACTIONS = [
   "set_panel",
   "set_right_tab",
   "retry_sync",
+  ...PDF_VIEW_ACTIONS,
 ] as const;
 
 // ---- Annotation writes (copilot ticket 19) ---------------------------------------------------------- //
@@ -753,8 +781,10 @@ export const READER_WRITE_ACTIONS = [
 ] as const;
 export const READER_OPERATION_ACTIONS = [
   "read",
+  "read_page_image",
   ...READER_VIEW_ACTIONS,
   ...READER_WRITE_ACTIONS,
+  ...PDF_ANNOTATION_ACTIONS,
 ] as const;
 
 // ---- Shared context helpers -------------------------------------------------------------------------- //
@@ -768,6 +798,7 @@ export function copilotContextObjects(context: {
   plan?: { rev: number; plans: { id: string }[]; detail: { planId: string } | null } | null;
   library?: { selectedRefId: string | null } | null;
   reader?: { docId: string } | null;
+  pdf?: { docId: string } | null;
   writer?: {
     editor: {
       manuscriptId: string;
@@ -778,6 +809,7 @@ export function copilotContextObjects(context: {
 }): { id: string; rev: number }[] {
   if (context.library?.selectedRefId) return [{ id: context.library.selectedRefId, rev: 0 }];
   if (context.reader) return [{ id: context.reader.docId, rev: 0 }];
+  if (context.pdf) return [{ id: context.pdf.docId, rev: 0 }];
   // The manuscript an open Writer shows, at the revision it was captured at (the list names no one object).
   const editor = context.writer?.editor;
   if (editor)

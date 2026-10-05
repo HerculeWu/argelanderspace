@@ -55,6 +55,8 @@
 
 不能把这段压成一句 fail-closed，不能把系统错误当正文替换。
 
+**文本 Doc 的生成同样受此三态约束**（Copilot 票 25，替换确认由票 28 接入）：生成器是发布边界而不是归档者，**永不归档、永不广播 `annotation.changed`**，归档只发生在标注 GET/PUT 访问路径。候选内容指纹与已发布内容相同则发布；不同且当前标注非空，或标注/已发布正文/指纹无法读取或计算，则整体拒绝发布（409 `replacement_blocked` 或 500），不触碰 IR、current 与 archive 的任何字节。该「拒绝」是票 28 之前的临时禁用分支，28 必须把它替换为绑定源版本/旧新指纹/标注 rev 的真实确认。机制见 [library](library.md#文本-doccopilot-票-25)。
+
 ### 归档权限与 PUT
 
 - **归档权威仅 server GET/PUT annotations 访问路径**，共享幂等 ensureCurrentAnnotations；watcher 只通知，不承担归档写操作。未来若 eager，只可在确定性 ingest/job 完成边界另行设计。
@@ -62,7 +64,7 @@
 - archive 字节原样保全外部未知键，不经 zod round-trip 重写；归档前仍做合法性 gate。UTC 毫秒名+旧指纹前8，碰撞加 -N，绝不覆盖已有档案；archive 对正常 reader/agent 不开放。
 - 新 fingerprint epoch rev 从 0 开始，**PUT 必须双校验**：请求 fingerprint 不同 → ensure 后 409 document changed；相同而 rev 不同 → 409 rev mismatch；基础设施错误 → 500，不得假装 reload 成功。
 - 文本创建目标遇 epoch 改变不能静默转为结构标注；应关闭并要求重新选。编辑草稿在 document-changed 后保留但禁存。
-- Copilot 的标注写入（`reader` 工具）经同一 `commitAnnotations` 处理（与 PUT 同锁、同 ensure、同指纹+rev 双检查、同三态）；工具层不自行 ensure/归档/写文件，不读 archive；机制见 [annotations](annotations.md#copilot-写入-latex-标注票-19)。
+- Copilot 的标注写入（`reader` 工具）经同一 `commitAnnotations` 处理（与 PUT 同锁、同 ensure、同指纹+rev 双检查、同三态）；工具层不自行 ensure/归档/写文件，不读 archive；机制见 [annotations](annotations.md#copilot-写入-latex-标注票-19)。PDF 工作台标注的 Copilot 写入同样不走 LaTeX ensure/归档：在 `annotationLock` 内经 core `commitPdfAnnotationChange`，对原件不可变 SHA-256 与 sidecar rev 双检、保留未知键、原子替换，PDF 字节永不改，见 [annotations](annotations.md#copilot-写入-pdf-标注票-21)。
 
 ### 删除生命周期
 
@@ -72,6 +74,7 @@
 - workspace 显式三态：删非 current 不变；删 current 且该 work 有剩则切新主；无剩则 currentDoc=null，并主动更新 paper list，不能等 watcher 碰巧修好。
 - CLI 与 server 跨进程同时 mutate 同 doc 不支持，不做 filesystem lock；CLI 文档删除命令未提供。
 - Copilot `library.delete_doc` 复用同一全局删除处理，永远要真人确认卡（与对话框同范围文案，列出所有持有该 Doc 的 Work 与标注计数；模型不能自批）；库步骤为窄写入、只写 library.json，见 [library](library.md) 的“Doc 删除（Copilot 票 16）”。
+- **文本 Doc 的删除**（Copilot 票 25）复用同一全局物理删除：`output/<id>/` 内的文本源（含尚未生成的文字）、图片、已生成的阅读正文，加当前/归档标注，并摘除所有 Work 关联；来源 PDF 只是文件关系，**不级联删除**。从未生成的草稿没有阅读正文，无标注可绑定，删除确认里的标注数仅当 `annotations/<id>` 确实不存在时才为已知 0，目录存在则是未知（不推断为 0）；页面对话框与 Copilot 确认卡用同一服务端判断。详见 [library](library.md#文本-doccopilot-票-25)。
 - 绕过入口手动 rm output 后 orphan annotations 不自动清理，**无访问保证**，不能写成已有 migration 输入渠道。
 
 ### 本地 PDF Doc（Web 上传与只读基础阅读）

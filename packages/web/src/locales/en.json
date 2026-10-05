@@ -124,6 +124,81 @@
       "loading": "Loading document…",
       "manualRetry": "Retry manually"
     },
+    "text": {
+      "tabsAria": "Document view",
+      "readerTab": "Read",
+      "sourceTab": "Text source",
+      "unpublished": "Unpublished changes",
+      "openSourcePdf": "Source PDF",
+      "sourcePdfMissing": "Source PDF unavailable",
+      "emptyReaderTitle": "No reading version yet",
+      "loadFailed": "The text source could not be loaded",
+      "sourceAria": "Text source",
+      "state": {
+        "saved": "Saved",
+        "dirty": "Unsaved changes",
+        "saving": "Saving…",
+        "error": "Save failed · your text is kept here",
+        "conflict": "Save conflict · your text is kept"
+      },
+      "saveFailedTitle": "The text source could not be saved",
+      "conflictTitle": "Another change was saved first. Your text is kept; nothing was overwritten.",
+      "conflictLatest": "Latest saved version",
+      "keepMine": "Keep my text and save over the latest",
+      "useLatest": "Use the latest saved version",
+      "import": "Import text",
+      "importFailed": "The file could not be read",
+      "importReplaceTitle": "Replace the current text?",
+      "importReplaceHelp": "The imported file replaces everything in the editor",
+      "importReplaceBody": "The current text in the editor will be replaced by the file. The previous saved text is not kept.",
+      "importReplace": "Replace",
+      "validate": "Validate",
+      "generate": "Generate",
+      "generating": "Generating…",
+      "validTitle": "No errors found",
+      "validStats": "{{sections}} sections · {{paragraphs}} paragraphs · {{lists}} lists",
+      "generatedTitle": "Reading version generated from revision {{rev}}",
+      "openReader": "Open the reading version",
+      "failed": {
+        "diagnostics": "The text has errors; nothing was generated",
+        "stale": "The text changed while generating; nothing was published",
+        "blocked": "Not published: this would replace reading text that has annotations",
+        "busy": "The document is busy; try again",
+        "error": "Generation failed"
+      },
+      "failedKept": "Your text and the previous reading version are kept.",
+      "diagnostics": "Diagnostics",
+      "diagnosticAt": "Line {{line}}, column {{column}}",
+      "diagnosticDocument": "Document",
+      "characters": "{{count}} characters",
+      "publishedRev": "Reading version from revision {{rev}}",
+      "unsavedLeave": "The text source has changes that are not saved. Leave anyway?",
+      "diag": {
+        "math_unsupported": "Math ($...$ or $$...$$) is not supported yet. Write the formula as plain text.",
+        "cite_unsupported": "[cite: ...] references are not supported yet.",
+        "ref_unsupported": "[ref: ...] cross-references are not supported yet.",
+        "link_unsupported": "Links are not supported yet. Write the address as plain text.",
+        "image_unsupported": "Images are not supported yet.",
+        "table_unsupported": "Tables are not supported yet. Rewrite them as paragraphs.",
+        "code_unsupported": "Code blocks are not supported yet. Rewrite it as a paragraph.",
+        "quote_unsupported": "Block quotes are not supported. Rewrite it as a paragraph.",
+        "rule_unsupported": "Horizontal rules are not supported. Remove it or start a new heading.",
+        "html_unsupported": "Raw HTML is not allowed in a text document.",
+        "definition_unsupported": "Link reference definitions are not supported.",
+        "strike_unsupported": "Strikethrough is not supported. Remove the markers.",
+        "setext_unsupported": "Only # headings are supported; underlined headings are not.",
+        "task_unsupported": "Task list markers are not supported.",
+        "nested_list_unsupported": "Nested lists are not supported. Keep the list to one level.",
+        "list_item_unsupported": "A list item must be a single paragraph of text. Split the rest into paragraphs.",
+        "syntax_unsupported": "This syntax is not supported.",
+        "empty_document": "The document has no content yet.",
+        "too_many_diagnostics": "{{count}} more diagnostics are not shown."
+      },
+      "net": {
+        "unreachable": "The service did not answer",
+        "unexpected": "The service answered in an unexpected form"
+      }
+    },
     "drafts": {
       "summary": "Retained drafts (copyable; re-select a location and reuse the draft text)",
       "createLabel": "Create draft",
@@ -312,7 +387,12 @@
         "sourceLabel": "Full-text source",
         "refetchArxiv": "Update document",
         "refetchArxivTitle": "Refetch the latest arXiv version (overwrites this document)",
-        "replaceUpload": "Update uploaded document"
+        "replaceUpload": "Update uploaded document",
+        "createText": "New text document",
+        "createTextTip": "Create an empty text document under this Work",
+        "creatingText": "Creating…",
+        "createTextFailed": "The text document could not be created",
+        "sourceText": "Text document"
       },
       "pdfUpload": {
         "choose": "Upload PDF",
@@ -419,6 +499,7 @@
         "scopeTitle": "Global deletion",
         "scope": "The stored body/original file (the original PDF when applicable), type metadata, current annotations and archives, and any reading-position data will be deleted; the Doc is removed from every linked literature entry, not only this one.",
         "pdfScope": "The original PDF, trusted metadata, workbench annotations, and reading position will be permanently deleted and removed from this Work. PDFs cannot be replaced; deletion cannot be undone.",
+        "textScope": "The text source (including text that was never generated), its images, the generated reading text, current annotations and archives will be permanently deleted; the Doc is removed from every linked Work. A source PDF is not deleted. This cannot be undone.",
         "countLoading": "Checking the annotation count…",
         "count": "Includes {{count}} current annotations.",
         "countUnknown": "The annotation count is unavailable; this does not mean the document has no annotations.",
@@ -1151,7 +1232,8 @@
       "unavailable": "Model request or connection failed. Your input and conversation are preserved; retry.",
       "rateLimit": "The provider rate limit was reached. Retry shortly.",
       "transient": "The provider is temporarily unavailable. Retry shortly.",
-      "quota": "The provider account limit was reached. Check the provider account."
+      "quota": "The provider account limit was reached. Check the provider account.",
+      "providerCapacity": "The provider rejected the request as too large. Your message and progress are kept; retry reads the document in smaller parts."
     },
     "defaultChoice": "Use default",
     "saved": "Saved",
@@ -1253,6 +1335,20 @@
         "create_annotation": "Add annotation",
         "update_annotation": "Edit annotation",
         "delete_annotation": "Delete annotation",
+        "create_pdf_annotation": "Add PDF annotation",
+        "update_pdf_annotation": "Edit PDF annotation",
+        "delete_pdf_annotation": "Delete PDF annotation",
+        "undo_pdf_annotation": "Undo PDF annotation change",
+        "redo_pdf_annotation": "Redo PDF annotation change",
+        "read_page_image": "Read PDF page image",
+        "goto_page": "Go to PDF page",
+        "next_page": "Next PDF page",
+        "previous_page": "Previous PDF page",
+        "open_outline_item": "Open PDF outline entry",
+        "search": "Search PDF text",
+        "open_search_result": "Open PDF search result",
+        "zoom": "Zoom PDF",
+        "open_annotation": "Go to PDF annotation",
         "read_writer": "Read manuscripts",
         "create_manuscript": "Create manuscript",
         "update_manuscript": "Edit manuscript",
@@ -1296,7 +1392,8 @@
         "pending": "In progress"
       },
       "job": "Job",
-      "doc": "Document"
+      "doc": "Document",
+      "batch": "Part of a document"
     },
     "undo": {
       "restored": "Restored “{{title}}”",
@@ -1372,8 +1469,27 @@
       "error": "Reader: {{id}} (failed to load, no reading sent)",
       "missing": "Reader: {{id}} (document not found, no reading sent)",
       "counts": "{{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations sent",
+      "totals": "The document has {{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations (not all sent with this message)",
       "selection": "Selection included",
       "position": "Reading section: {{section}}"
+    },
+    "pdf": {
+      "ready": "PDF: {{id}}",
+      "loading": "PDF: {{id}} (still loading, no pages sent)",
+      "error": "PDF: {{id}} (failed to load, no pages sent)",
+      "changed": "PDF: {{id}} (original changed, no pages sent)",
+      "position": "Reading page {{page}} of {{total}}",
+      "material": "{{pages}} pages of text sent",
+      "materialMissing": {
+        "busy": "Pages not sent: the document was being replaced",
+        "changed": "Pages not sent: the original changed",
+        "not_found": "Pages not sent: document not found",
+        "error": "Pages not sent: the PDF could not be read"
+      },
+      "selection": "Selection included",
+      "materialScans": "{{pages}} pages sent: {{withText}} as text, {{withoutText}} without a text layer (read as page images on request)",
+      "materialBlind": "{{withText}} of {{pages}} pages sent as text; {{withoutText}} without a text layer are unread: this model cannot read images",
+      "noImage": "This model cannot read images. Select another model for PDF pages."
     },
     "writer": {
       "list": "Writer: manuscript list",
@@ -1386,6 +1502,22 @@
       "counts": "Saved manuscript v{{rev}}: {{cells}} cells, {{comments}} comments sent",
       "draft": "Unsaved edits are marked as a draft, separate from the saved manuscript",
       "unsupported": "{{count}} cells use a type this template does not list"
+    },
+    "partial": "Partial",
+    "coverage": {
+      "entries": "entries",
+      "pages": "pages",
+      "complete": "Whole document sent ({{total}} {{unit}}).",
+      "partial": "Part sent: {{unit}} {{from}}–{{to}} of {{total}}; {{remaining}} not read yet.",
+      "omitted": "Not sent with this message: the {{total}} {{unit}} were left out (too large for the window, or already in the conversation); the assistant reads them from the document on demand.",
+      "held": "Not repeated: this version was already sent in full earlier in this conversation.",
+      "batch": "{{unit}} {{from}}–{{to}} of {{total}} read; {{remaining}} not read yet",
+      "evicted": "Later taken out of the conversation to make room.",
+      "withdrawn": "This part was withdrawn after the provider rejected the request as too large: it is not read.",
+      "heldGone": "Not repeated: it was sent earlier, but that part has since been taken out of the conversation.",
+      "gap": "{{unit}} {{id}} needs {{bytes}} bytes, more than the window leaves: nothing was returned",
+      "batchWithdrawn": "{{unit}} {{from}}–{{to}} of {{total}} withdrawn: the provider rejected the request as too large; not read",
+      "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains"
     }
   }
 }

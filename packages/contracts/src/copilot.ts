@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type ContextCoverage, ContextCoverageSchema } from "./context-batch.js";
 import {
   type DiscoveryContextSummary,
   DiscoveryContextSummarySchema,
@@ -12,6 +13,12 @@ import {
   LibraryPageSchema,
   LibraryViewActionSchema,
 } from "./library-ops.js";
+import {
+  type PdfContextSummary,
+  PdfContextSummarySchema,
+  PdfMaterialEnvelopeSchema,
+  PdfPageSchema,
+} from "./pdf-ops.js";
 import { type CopilotOperation, CopilotOperationSchema, PlanViewActionSchema } from "./plan-ops.js";
 import { PlanSchema, TaskSchema } from "./plans.js";
 import { ThinkingLevelSchema } from "./providers.js";
@@ -87,6 +94,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
       discovery: DiscoveryPageSchema.nullable().optional(),
       /** The LaTeX Reader of the active pane (copilot ticket 18); optional so older views and headless callers stay valid. */
       reader: reader.nullable().optional(),
+      /** The PDF Reader of the active pane (copilot ticket 20); identity, position and control state, not the pages. */
+      pdf: PdfPageSchema.nullable().optional(),
       /** The Writer of the active pane (copilot ticket 22): the manuscript list or one open manuscript. */
       writer: WriterPageSchema.nullable().optional(),
       /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
@@ -100,7 +109,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
         (value.view === "library" && value.library?.source === "live") ||
         (value.view === "library" && !!value.discovery?.graph) ||
         (value.view === "doc" &&
-          !!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted)) ||
+          (!!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted) ||
+            value.pdf?.phase === "ready")) ||
         // A Writer page is complete once its list or its open manuscript really loaded.
         (value.view === "write" &&
           !!value.writer &&
@@ -208,7 +218,9 @@ export interface CopilotMessage {
     library?: LibraryContextSummary;
     discovery?: DiscoveryContextSummary;
     reader?: ReaderContextSummary;
+    pdf?: PdfContextSummary;
     writer?: WriterContextSummary;
+    coverage?: ContextCoverage;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -312,7 +324,7 @@ export const CopilotDocDeleteConfirmationSchema = z
     action: z.literal("delete_doc"),
     object: z.object({ kind: z.literal("doc"), id: z.string().min(1) }).strict(),
     /** pdf: the original PDF, metadata and sidecars are deleted; latex: the stored text, assets and annotations. */
-    format: z.enum(["pdf", "latex"]),
+    format: z.enum(["pdf", "latex", "text"]),
     /** Every Work that lists the Doc: it is removed from all of them, not only the one the user is looking at. */
     works: z
       .array(
@@ -496,9 +508,17 @@ export const CopilotPromptSchema = z
     kind: z.literal("resume").optional(),
     messageId: CopilotIdSchema,
     text: z.string().min(1),
-    context: PageContextSchema,
+    /** What of the Reader reading or PDF material this message delivers (ticket 24); absent for other pages. */
+    coverage: ContextCoverageSchema.optional(),
+    /**
+     * The page as the service sends it: a Reader reading too large for the room left in the window is either a
+     * batch of its entries (`coverage` says which) or left out (`readingOmitted`), never cut silently (ticket 24).
+     */
+    context: ObservationPageContextSchema,
     /** Metadata of the files handed over with this message (ids the tools may name); never their bytes. */
     attachments: z.array(CopilotAttachmentSchema).max(5).optional(),
+    /** The material of the PDF Doc the page shows (copilot ticket 20): derived by the service from the verified original. */
+    pdf: PdfMaterialEnvelopeSchema.optional(),
   })
   .strict();
 export type CopilotPrompt = z.infer<typeof CopilotPromptSchema>;
@@ -519,8 +539,12 @@ export const CopilotContextReferenceSchema = z
         discovery: DiscoveryContextSummarySchema.optional(),
         /** What the Reader carried (copilot ticket 18); absent for other pages. */
         reader: ReaderContextSummarySchema.optional(),
+        /** What the PDF Reader carried (copilot ticket 20); absent for other pages. */
+        pdf: PdfContextSummarySchema.optional(),
         /** What the Writer carried (copilot ticket 22); absent for other pages. */
         writer: WriterContextSummarySchema.optional(),
+        /** What of the Reader reading / PDF material this message delivered (copilot ticket 24). */
+        coverage: ContextCoverageSchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),

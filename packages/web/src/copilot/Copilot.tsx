@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
-import { summarizeDiscoveryPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
+import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
+import { type PdfContextSummary, summarizeDiscoveryPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, uploadAttachment, removeAttachment, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
@@ -32,10 +32,14 @@ export const OPERATION_ACTION_KEYS = {
   select_candidate: "copilot.operations.actions.select_candidate", set_discovery_tab: "copilot.operations.actions.set_discovery_tab", dismiss_discovery_error: "copilot.operations.actions.dismiss_discovery_error", view_candidate_in_library: "copilot.operations.actions.view_candidate_in_library",
   set_discovery_graph_labels: "copilot.operations.actions.set_discovery_graph_labels", discovery_graph_control: "copilot.operations.actions.discovery_graph_control",
   navigate: "copilot.operations.actions.navigate", jump_back: "copilot.operations.actions.jump_back", set_panel: "copilot.operations.actions.set_panel", set_right_tab: "copilot.operations.actions.set_right_tab", retry_sync: "copilot.operations.actions.retry_sync",
+  read_page_image: "copilot.operations.actions.read_page_image", goto_page: "copilot.operations.actions.goto_page", next_page: "copilot.operations.actions.next_page", previous_page: "copilot.operations.actions.previous_page",
+  open_outline_item: "copilot.operations.actions.open_outline_item", search: "copilot.operations.actions.search", open_search_result: "copilot.operations.actions.open_search_result", open_annotation: "copilot.operations.actions.open_annotation", zoom: "copilot.operations.actions.zoom",
   create_annotation: "copilot.operations.actions.create_annotation", update_annotation: "copilot.operations.actions.update_annotation", delete_annotation: "copilot.operations.actions.delete_annotation",
   create_manuscript: "copilot.operations.actions.create_manuscript", update_manuscript: "copilot.operations.actions.update_manuscript", delete_manuscript: "copilot.operations.actions.delete_manuscript", open_manuscript: "copilot.operations.actions.open_manuscript", close_manuscript: "copilot.operations.actions.close_manuscript",
   insert_cell: "copilot.operations.actions.insert_cell", update_cell: "copilot.operations.actions.update_cell", delete_cell: "copilot.operations.actions.delete_cell", convert_cell: "copilot.operations.actions.convert_cell", add_comment: "copilot.operations.actions.add_comment", insert_reference: "copilot.operations.actions.insert_reference", set_figure_image: "copilot.operations.actions.set_figure_image",
   render_manuscript: "copilot.operations.actions.render_manuscript", export_manuscript: "copilot.operations.actions.export_manuscript", select_cell: "copilot.operations.actions.select_cell", edit_cell: "copilot.operations.actions.edit_cell", commit_cell: "copilot.operations.actions.commit_cell", set_writer_panel: "copilot.operations.actions.set_writer_panel", set_writer_tab: "copilot.operations.actions.set_writer_tab", dismiss_template_warning: "copilot.operations.actions.dismiss_template_warning", retry_manuscript_list: "copilot.operations.actions.retry_manuscript_list",
+  create_pdf_annotation: "copilot.operations.actions.create_pdf_annotation", update_pdf_annotation: "copilot.operations.actions.update_pdf_annotation", delete_pdf_annotation: "copilot.operations.actions.delete_pdf_annotation",
+  undo_pdf_annotation: "copilot.operations.actions.undo_pdf_annotation", redo_pdf_annotation: "copilot.operations.actions.redo_pdf_annotation",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -70,13 +74,56 @@ function DiscoverySummary({ summary }: { summary: { state: "ready" | "loading" |
 }
 
 /** What the Reader carried (copilot ticket 18): which Doc, whether a reading was sent, how much, and the user's place and selection. */
-function ReaderSummary({ summary, title }: { summary: { docId: string; phase: "ready" | "syncing" | "error" | "missing"; sections: number; blocks: number; references: number; annotations: number; selection: boolean; activeSectionId: string | null; activeSectionLabel?: string }; title?: string }) {
+function ReaderSummary({ summary, title, sent = true }: { sent?: boolean; summary: { docId: string; phase: "ready" | "syncing" | "error" | "missing"; sections: number; blocks: number; references: number; annotations: number; selection: boolean; activeSectionId: string | null; activeSectionLabel?: string }; title?: string }) {
   const { t } = useTranslation();
   return <div className="copilot-library-summary" data-ui="copilot-reader-summary">
     <p>{t(`copilot.reader.${summary.phase}`, { id: title ?? summary.docId })}</p>
-    {summary.phase === "ready" && <p>{t("copilot.reader.counts", { sections: summary.sections, blocks: summary.blocks, references: summary.references, annotations: summary.annotations })}</p>}
+    {summary.phase === "ready" && <p>{t(sent ? "copilot.reader.counts" : "copilot.reader.totals", { sections: summary.sections, blocks: summary.blocks, references: summary.references, annotations: summary.annotations })}</p>}
     {summary.phase === "ready" && summary.activeSectionId && <p>{t("copilot.reader.position", { section: summary.activeSectionLabel ?? summary.activeSectionId })}</p>}
     {summary.selection && <p>{t("copilot.reader.selection")}</p>}
+  </div>;
+}
+
+/**
+ * The status a message's context badge shows. The page's own status says the PAGE was complete; what the model was
+ * really given of a PDF is the material's: not attached (busy, changed, error, not found) is unavailable, and pages
+ * without a text layer that a text-only model cannot read make it partial, never "complete".
+ */
+export function messageContextStatus(context: { status: "complete" | "unavailable" | "error"; pdf?: PdfContextSummary; coverage?: ContextCoverage }): "complete" | "unavailable" | "partial" {
+  // A reading delivered in parts, or left out for want of room, is never "complete" (ticket 24).
+  if (context.coverage && (context.coverage.status === "partial" || context.coverage.status === "omitted")) return "partial";
+  // What the ledger took out of the conversation (or the provider rejected) was read at most once: never "Complete".
+  if (context.coverage && (context.coverage.evicted || context.coverage.withdrawn)) return "partial";
+  const material = context.pdf?.material;
+  if (material) {
+    if (material.status === "omitted") return "partial";
+    if (material.status !== "ok" && material.status !== "held") return "unavailable";
+    // Pages without a text layer that a text-only model cannot read: partial, whatever was sent in this message.
+    const unreadable = material.totals?.pagesWithoutText ?? material.pagesWithoutText;
+    if (!material.modelAcceptsImages && unreadable > 0) return "partial";
+  }
+  return context.status === "complete" ? "complete" : "unavailable";
+}
+
+/** What of the Reader reading / PDF material one message delivered (ticket 24): the range, the total and what is not read yet. Ranges are shown one-based, as the Reader numbers them. */
+function CoverageSummary({ coverage }: { coverage: ContextCoverage }) {
+  const { t } = useTranslation();
+  const unit = t(coverage.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries");
+  const key = coverage.withdrawn ? "withdrawn" : coverage.status === "held" && coverage.evicted ? "heldGone" : coverage.status;
+  return <p data-ui="copilot-coverage" data-status={coverage.status}>{t(`copilot.coverage.${key}`, { unit, from: coverage.from + 1, to: coverage.to, total: coverage.total, remaining: coverage.total - coverage.to })}{coverage.evicted && coverage.status !== "held" && ` ${t("copilot.coverage.evicted")}`}</p>;
+}
+
+/** What the PDF Reader carried (copilot ticket 20): which Doc, where the user is (one-based, as the Reader shows it), what the service attached. */
+function PdfSummary({ summary, title }: { summary: PdfContextSummary; title?: string }) {
+  const { t } = useTranslation();
+  const material = summary.material;
+  return <div className="copilot-library-summary" data-ui="copilot-pdf-summary">
+    <p>{t(`copilot.pdf.${summary.phase}`, { id: title ?? summary.docId })}</p>
+    {summary.phase === "ready" && summary.currentPage !== null && <p>{t("copilot.pdf.position", { page: summary.currentPage + 1, total: summary.pageCount })}</p>}
+    {material && (material.status === "ok"
+      ? <p>{t(material.pagesWithoutText === 0 ? "copilot.pdf.material" : material.modelAcceptsImages ? "copilot.pdf.materialScans" : "copilot.pdf.materialBlind", { pages: material.pages, withText: material.pagesWithText, withoutText: material.pagesWithoutText })}</p>
+      : material.status === "held" || material.status === "omitted" ? null : <p>{t(`copilot.pdf.materialMissing.${material.status}`)}</p>)}
+    {summary.selection && <p>{t("copilot.pdf.selection")}</p>}
   </div>;
 }
 
@@ -375,7 +422,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
     } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
   };
-  const errorCopy = (code: string | null) => t(code === "storage" ? "copilot.errors.storage" : code === "capabilities" ? "copilot.errors.capabilities" : code === "capacity" ? "copilot.errors.capacity" : code === "credentials" ? "copilot.errors.credentials" : code === "busy" ? "copilot.errors.busy" : code === "stale" ? "copilot.errors.stale" : code === "clipboard" ? "copilot.errors.clipboard" : code === "rate_limit" ? "copilot.errors.rateLimit" : code === "transient" ? "copilot.errors.transient" : code === "quota" ? "copilot.errors.quota" : "copilot.errors.unavailable");
+  const errorCopy = (code: string | null) => t(code === "storage" ? "copilot.errors.storage" : code === "capabilities" ? "copilot.errors.capabilities" : code === "capacity" ? "copilot.errors.capacity" : code === "provider_capacity" ? "copilot.errors.providerCapacity" : code === "credentials" ? "copilot.errors.credentials" : code === "busy" ? "copilot.errors.busy" : code === "stale" ? "copilot.errors.stale" : code === "clipboard" ? "copilot.errors.clipboard" : code === "rate_limit" ? "copilot.errors.rateLimit" : code === "transient" ? "copilot.errors.transient" : code === "quota" ? "copilot.errors.quota" : "copilot.errors.unavailable");
   const failCopy = async (value: string) => { try { await navigator.clipboard.writeText(value); } catch { setError("clipboard"); } };
   return <aside className="copilot" data-ui="copilot-sidebar" aria-label={t("copilot.title")} hidden={!open}>
     <header className="copilot-header" data-ui="copilot-header">
@@ -393,7 +440,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
         {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item) => <span key={item.id} className="copilot-attachment" data-ui="copilot-message-attachment" data-ui-key={item.id} title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
-        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(message.context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
+        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} sent={!message.context.coverage || message.context.coverage.status === "complete"} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} beforeDocDelete={onBeforeDocDelete} beforeManuscriptDelete={onBeforeManuscriptDelete} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
@@ -431,10 +478,11 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
         <option value="default">{t("copilot.defaultChoice")}{model?.defaultThinking ? ` · ${thinkingLabel(model.defaultThinking)}` : ""}</option>{choice?.thinking && !levels.includes(choice.thinking) && <option value={choice.thinking} disabled>{thinkingLabel(choice.thinking)}</option>}{levels.length > 1 && levels.map((level) => <option key={level} value={level}>{thinkingLabel(level)}</option>)}
       </select><span>{t("copilot.scope")}</span></div>
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
+      {context.pdf && model && !model.image && <div className="copilot-notice warning" data-ui="copilot-pdf-no-image" role="status"><span>{t("copilot.pdf.noImage")}</span></div>}
     </div>
     {settings && <ProviderSettingsDialog onClose={() => { setSettings(false); void refreshCatalog(); }} />}
     {list && <Dialog title={t("copilot.conversations")} closeLabel={t("copilot.close")} onClose={() => setList(false)} uiId="copilot-conversation-list"><div className="copilot-conversation-list"><Button onClick={() => void newConversation()} disabled={busy}>{t("copilot.new")}</Button>{conversations.map((conversation) => <Button key={conversation.id} data-ui="copilot-conversation" data-ui-key={conversation.id} data-status={conversation.run?.status} aria-pressed={conversation.id === id} onClick={() => { setId(conversation.id); setList(false); setText(""); retry.current = null; resumeAttempt.current = null; }}><span className="copilot-conversation-title">{conversation.title || t("copilot.new")}</span>{conversation.run && conversation.run.status !== "completed" && <Badge tone={conversation.run.status === "running" || conversation.run.status === "waiting-for-user" || conversation.run.status === "stopping" ? "accent" : "neutral"}>{t(RUN_STATUS_KEYS[conversation.run.status])}</Badge>}</Button>)}{unreadable.map((entry) => <p key={entry.id} className="copilot-conversation-unreadable" data-ui="copilot-conversation-unreadable" role="alert">{t("copilot.unreadable")}</p>)}</div></Dialog>}
-    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail">{!context.reader && !context.writer && <p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>}{context.writer && <WriterSummary summary={summarizeWriterPage(context.writer)} />}{context.library && <LibrarySummary summary={{ source: context.library.source, error: context.library.error, query: context.library.query, total: context.library.total, matched: context.library.matched, selectedRefId: context.library.selectedRefId }} title={context.library.detail?.ref.title} />}{context.discovery && <DiscoverySummary summary={summarizeDiscoveryPage(context.discovery)} />}{context.reader && <ReaderSummary summary={summarizeReaderPage(context.reader)} title={context.reader.reading?.title} />}{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
+    {detail && <Dialog title={t("copilot.context")} closeLabel={t("copilot.close")} onClose={() => setDetail(false)} uiId="copilot-context-detail"><div className="copilot-context-detail">{!context.reader && !context.pdf && !context.writer && <p>{t(context.status === "complete" ? "copilot.completeDetail" : "copilot.unavailableDetail")}</p>}{context.writer && <WriterSummary summary={summarizeWriterPage(context.writer)} />}{context.library && <LibrarySummary summary={{ source: context.library.source, error: context.library.error, query: context.library.query, total: context.library.total, matched: context.library.matched, selectedRefId: context.library.selectedRefId }} title={context.library.detail?.ref.title} />}{context.discovery && <DiscoverySummary summary={summarizeDiscoveryPage(context.discovery)} />}{context.reader && <ReaderSummary summary={summarizeReaderPage(context.reader)} title={context.reader.reading?.title} />}{context.pdf && <PdfSummary summary={summarizePdfPage(context.pdf)} />}{context.plan && <><p>{t(context.plan.mode === "list" ? "plan.modes.list" : context.plan.mode === "board" ? "plan.modes.board" : context.plan.mode === "focus" ? "plan.focus.title" : "plan.timeline.title")} · {t("copilot.version", { rev: context.plan.rev })} · {t(context.plan.saveState === "saved" ? "copilot.saved" : context.plan.saveState === "pending" ? "copilot.saving" : "plan.notice.saveFailed")}</p>{context.plan.plans.map((plan) => <section key={plan.id}><h3>{plan.name}</h3><p>{plan.desc}</p><ul>{plan.tasks.map((task) => <li key={task.id}>{task.title} · {t(task.status === "todo" ? "plan.status.todo" : task.status === "doing" ? "plan.status.doing" : task.status === "blocked" ? "plan.status.blocked" : "plan.status.done")} · {fmtDate(task.due)}</li>)}</ul></section>)}{context.plan.detail && <p>{t("copilot.taskDetail")} · {context.plan.detail.task.title}</p>}</>}</div></Dialog>}
   </aside>;
 }
 
@@ -467,7 +515,7 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     </> : confirmation.action === "delete_doc" ? <>
       <h3>{t("copilot.confirmation.deleteDoc", { id: confirmation.object.id })}</h3>
       <p data-ui="copilot-confirmation-risk">{t("library.detail.deleteDoc.risk")}</p>
-      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : "library.detail.deleteDoc.scope")}</p>
+      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : confirmation.format === "text" ? "library.detail.deleteDoc.textScope" : "library.detail.deleteDoc.scope")}</p>
       {confirmation.works.length > 0 && <ul className="copilot-confirmation-works" data-ui="copilot-confirmation-works">{confirmation.works.map((item) => <li key={item.id} data-ui="copilot-confirmation-work" data-ui-key={item.id}>{t("copilot.confirmation.deleteDocWork", { title: item.title || item.id, state: t(item.main ? "library.detail.files.mainBadge" : "library.detail.files.additionalBadge"), count: item.remaining })}</li>)}</ul>}
       <p role="status" data-ui="copilot-confirmation-count">{confirmation.impact.annotations === "known" ? t("library.detail.deleteDoc.count", { count: confirmation.impact.count }) : t("library.detail.deleteDoc.countUnknown")}</p>
       <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>
@@ -500,6 +548,7 @@ function OperationRecord({ operations }: { operations: CopilotOperation[] }) {
       <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(operation.tool === "library" && operation.status === "conflict" ? "copilot.operations.status.conflictLibrary" : operation.tool === "reader" && operation.status === "conflict" ? "copilot.operations.status.conflictReader" : operation.tool === "writer" && operation.status === "conflict" ? "copilot.operations.status.conflictWriter" : OPERATION_STATUS_KEYS[operation.status])}</Badge>
       {operation.warnings?.includes("import_partial") && <span className="copilot-operation-warn">{t("copilot.operations.importPartial")}</span>}
       {operation.warnings?.includes("task_due_after_plan_due") && <span className="copilot-operation-warn">{t("copilot.operations.dueAfterPlan")}</span>}
+      {operation.batch && <code data-ui="copilot-operation-batch" data-status={operation.batch.status} title={t("copilot.operations.batch")}>{(() => { const batch = operation.batch; const unit = t(batch.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries"); if (batch.gap) return t("copilot.coverage.gap", { unit, id: batch.gap.id, bytes: batch.gap.bytes }); const key = batch.withdrawn ? "batchWithdrawn" : batch.status === "complete" ? "batchDone" : "batch"; return t(`copilot.coverage.${key}`, { unit, from: batch.from + 1, to: batch.to, total: batch.total, remaining: batch.total - batch.to }) + (batch.evicted ? ` ${t("copilot.coverage.evicted")}` : ""); })()}</code>}
       {operation.rev !== undefined && isApplied(operation) && <code>v{operation.rev}</code>}
       {operation.job && <code data-ui="copilot-operation-job" title={t("copilot.operations.job")}>{operation.job.id}</code>}
       {operation.docId && <code data-ui="copilot-operation-doc" title={t("copilot.operations.doc")}>{operation.docId}</code>}

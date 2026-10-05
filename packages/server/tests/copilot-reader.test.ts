@@ -617,7 +617,7 @@ test("a Doc a job is replacing or deleting is busy: nothing half-written is read
   docMutations.unpinWriter(DOC);
 });
 
-test("a PDF Doc is not a LaTeX reading", async () => {
+test("a PDF Doc is read as PDF material (ticket 20), never as a LaTeX reading; a scan has no text layer", async () => {
   const published = publishPdfDoc(paths, {
     workId: W1,
     filename: "mine.pdf",
@@ -626,29 +626,39 @@ test("a PDF Doc is not a LaTeX reading", async () => {
   });
   script = [() => read(published.doc_id), () => ({ text: "x" })];
   await run(page(null));
-  expect(lastResult(seenAt(1))).toMatchObject({ ok: false, status: "unsupported" });
+  const result = lastResult(seenAt(1));
+  expect(result).toMatchObject({ ok: true, status: "ok" });
+  expect(result.reading).toMatchObject({ format: "pdf", pageCount: 1, imageOnlyPages: [0] });
+  expect(result.reading.pages[0]).toMatchObject({ hasTextLayer: false, text: null });
 });
 
-test("a reading larger than the room left in the window is refused whole with its size, never cut", async () => {
+test("a reading larger than the room left is read in parts by the tool, never refused whole and never cut (ticket 24)", async () => {
   writeDoc(docIr(900));
   const model = (await settings.getRuntime())
     .getModels("openai")
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 34_000;
+  model.contextWindow = 56_000;
   model.maxTokens = 1024;
   try {
     script = [() => read(), () => ({ text: "x" })];
     const { snapshot } = await run(page(null));
     const result = lastResult(seenAt(1));
-    expect(result).toMatchObject({ ok: false, status: "rejected" });
-    expect(result.detail).toMatch(/capacity/);
-    expect(result.detail).toMatch(/not cut/);
-    expect(result.coverage.blocks).toBe(903);
-    expect(result.reading).toBeUndefined();
+    expect(result).toMatchObject({ ok: true, status: "ok" });
+    expect(result.batch).toMatchObject({
+      kind: "reader",
+      unit: "entries",
+      from: 0,
+      status: "partial",
+    });
+    expect(result.batch.to).toBeLessThan(result.batch.total);
+    expect(result.batch.note).toMatch(/NOT read/);
+    expect(result.reading.entries).toHaveLength(result.batch.to);
+    // the whole reading's totals are still stated, so a part is never mistaken for the whole
+    expect(result.reading.coverage.blocks).toBe(903);
     expect(JSON.stringify(result)).not.toContain(LAST);
-    expect(ops(snapshot)[0]).toMatchObject({ status: "rejected" });
+    expect(ops(snapshot)[0]).toMatchObject({ status: "ok", batch: { status: "partial" } });
   } finally {
     Object.assign(model, original);
   }
@@ -781,14 +791,14 @@ test("a reading beyond the page-context limit is refused with capacity, never tr
   expect(await response.json()).toMatchObject({ code: "capacity" });
 });
 
-test("a reading larger than the model's window cannot be sent as a message: capacity, nothing partial is accepted", async () => {
+test("a reading larger than the model's window is sent in parts as a message, with its range; nothing partial passes as whole (ticket 24)", async () => {
   writeDoc(docIr(900));
   const model = (await settings.getRuntime())
     .getModels("openai")
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 34_000;
+  model.contextWindow = 56_000;
   model.maxTokens = 1024;
   try {
     const context = page(readerPage());
@@ -802,10 +812,20 @@ test("a reading larger than the model's window cannot be sent as a message: capa
       viewId: context.viewId,
       contextRevision: context.revision,
     });
-    expect(sent.status).toBeGreaterThanOrEqual(400);
-    expect(await sent.json()).toMatchObject({ code: "capacity" });
-    expect(seen).toHaveLength(0);
-    expect((await host.snapshot(created.conversation.id)).messages).toEqual([]);
+    expect(sent.status).toBe(202);
+    await vi.waitFor(
+      async () => {
+        expect((await host.snapshot(created.conversation.id)).conversation.run?.status).not.toBe(
+          "running"
+        );
+      },
+      { timeout: 8000 }
+    );
+    const snapshot = await host.snapshot(created.conversation.id);
+    const coverage = snapshot.messages[0]?.context?.coverage;
+    expect(coverage).toMatchObject({ kind: "reader", status: "partial", from: 0, total: 904 });
+    expect(JSON.stringify(seenAt(0).messages)).not.toContain(LAST);
+    expect(JSON.stringify(seenAt(0).messages)).toContain("PART OF THE DOCUMENT ONLY");
   } finally {
     Object.assign(model, original);
   }

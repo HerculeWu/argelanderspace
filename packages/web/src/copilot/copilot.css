@@ -30,6 +30,7 @@
 @media (prefers-reduced-motion:reduce){.copilot-pulse{animation:none}}
 .copilot-notice{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 12px;margin:8px 0;border:1px solid var(--border-soft);border-radius:6px;font-size:11px;color:var(--text-dim);line-height:1.6}
 .copilot-notice.error{color:var(--danger)}
+.copilot-notice.warning{color:var(--warn)}
 .copilot-notice .btn{margin-left:auto}
 .copilot-queued{font-size:10px;color:var(--text-faint);margin-top:4px;text-align:right}
 .copilot-user-resume{font-style:italic;color:var(--text-dim)}

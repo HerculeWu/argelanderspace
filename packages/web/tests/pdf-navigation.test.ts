@@ -16,8 +16,19 @@ describe("PDF navigation adaptation", () => {
       { title: "Nested", level: 2, disabled: false },
       { title: "No target", level: 1, disabled: true },
     ]);
-    expect(result.targets.get("pdf-outline-0.0")?.type).toBe("destination");
-    expect(result.targets.has("pdf-outline-1")).toBe(false);
+    expect(result.targets.get("pdf-outline-1")?.type).toBe("destination");
+    expect(result.targets.has("pdf-outline-2")).toBe(false);
+  });
+
+  test("outline ids are the depth-first position: short and bounded however deep the nesting goes", () => {
+    const destination = { type: "destination", destination: { pageIndex: 0, zoom: { mode: PdfZoomMode.Unknown }, view: [] } } as PdfLinkTarget;
+    let tree: PdfBookmarkObject[] = [{ title: "Level 260", target: destination }];
+    for (let level = 259; level >= 1; level--) tree = [{ title: `Level ${level}`, target: destination, children: tree }];
+    const result = flattenPdfBookmarks(tree, 1);
+    expect(result.entries).toHaveLength(260);
+    expect(result.entries[259]?.id).toBe("pdf-outline-259");
+    expect(Math.max(...result.entries.map((entry) => entry.id.length))).toBeLessThan(40);
+    expect(result.entries[259]?.level).toBe(6);
   });
 
   test("allows only credential-free HTTP(S) external link destinations", () => {

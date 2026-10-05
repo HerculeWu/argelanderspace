@@ -18,6 +18,8 @@ export interface TabsProps<Value extends string> {
   children: ReactNode;
   className?: string;
   panelClassName?: string;
+  /** Extra controls at the tab row's right edge, outside the tablist (the row then lays out as `ui-tabs-bar`). */
+  trailing?: ReactNode;
 }
 
 /** Controlled tabs with automatic arrow-key activation and a labelled panel. */
@@ -29,6 +31,7 @@ export function Tabs<Value extends string>({
   children,
   className = "",
   panelClassName = "",
+  trailing,
 }: TabsProps<Value>) {
   const baseId = `tabs-${useId().replace(/:/g, "")}`;
   const tabs = useRef(new Map<Value, HTMLButtonElement>());
@@ -42,8 +45,7 @@ export function Tabs<Value extends string>({
     tabs.current.get(next.value)?.focus();
   };
 
-  return (
-    <div className={["ui-tabs-root", className].filter(Boolean).join(" ")} data-ui="tabs">
+  const list = (
       <div className="ui-tabs" data-ui="tab-list" role="tablist" aria-label={ariaLabel}>
         {items.map((item, index) => {
           const selectedTab = item.value === value;
@@ -76,6 +78,11 @@ export function Tabs<Value extends string>({
           );
         })}
       </div>
+  );
+
+  return (
+    <div className={["ui-tabs-root", className].filter(Boolean).join(" ")} data-ui="tabs">
+      {trailing === undefined ? list : <div className="ui-tabs-bar" data-ui="tab-bar">{list}{trailing}</div>}
       <div
         id={`${baseId}-panel`}
         className={["ui-tab-panel", panelClassName].filter(Boolean).join(" ")}

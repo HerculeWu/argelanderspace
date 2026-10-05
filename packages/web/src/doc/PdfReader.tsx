@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { type MutableRefObject, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { createPluginRegistration } from "@embedpdf/core";
@@ -16,12 +16,16 @@ import { SelectionLayer, SelectionPluginPackage, useSelectionCapability } from "
 import { PdfAnnotationSubtype, type PdfLinkAnnoObject, type PdfLinkTarget, type SearchResult } from "@embedpdf/models";
 import { Viewport, ViewportPluginPackage, useViewportCapability } from "@embedpdf/plugin-viewport/react";
 import { ZoomMode, ZoomPluginPackage, useZoomCapability } from "@embedpdf/plugin-zoom/react";
-import type { DocDescription, PdfAnnotation, PdfAnnotationsFile, PdfHighlightColor, PdfReaderPositionRead, PdfReadingLocation, PdfReadingPosition, PdfReaderSnapshot } from "@argelanderspace/contracts";
+import { PDF_OUTLINE_MAX_ENTRIES, PDF_OUTLINE_TITLE_MAX } from "@argelanderspace/contracts";
+import type { DocDescription, PdfAnnotation, PdfAnnotationsFile, PdfHighlightColor, PdfOutlineEntry, PdfPage, PdfReaderPositionRead, PdfReadingLocation, PdfReadingPosition, PdfReaderSnapshot, PdfSearchState, ReaderViewAction } from "@argelanderspace/contracts";
 import { PdfAnnotationToolButtons, PdfAnnotationsPanel, type PdfAnnotationTool } from "./PdfAnnotationsPanel";
 import { OutlineList, type OutlineEntry } from "../components/TocPanel";
 import { copyPlainText } from "./copy-text";
 import { docRouteUrl } from "../lib/deeplink";
-import { dispatchPdfLinkTarget, flattenPdfBookmarks, isPdfLinkTargetAllowed } from "./pdf-navigation";
+import { dispatchPdfLinkTarget, flattenPdfBookmarks, isPdfLinkTargetAllowed, pdfTargetPageIndex } from "./pdf-navigation";
+import { usePdfBridge, type PdfViewHandle } from "./reader-bridge";
+import { type PanelSizes, useAutoFoldedPanels } from "./auto-fold";
+import { PDF_SEARCH_LIST_MAX, pdfDraftsView, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
 import { PdfLinkHitLayer } from "./PdfLinkHitLayer";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
@@ -33,7 +37,23 @@ import { ActionButton } from "../ui";
 import pdfiumWasmUrl from "@embedpdf/pdfium/pdfium.wasm?url";
 import "./pdf-reader.css";
 
-type LoadState = { phase: "loading" } | { phase: "error"; message: string } | { phase: "ready"; bytes: ArrayBuffer; snapshot: PdfReaderSnapshot };
+/** The PDF side panels' widths at this window width (the stylesheet's clamp()s), for the auto-fold rule. */
+export function pdfPanelSizes(viewportWidth: number): PanelSizes {
+  const clamp = (min: number, value: number, max: number) => Math.min(max, Math.max(min, value));
+  return { left: clamp(180, viewportWidth * 0.19, 260), right: clamp(200, viewportWidth * 0.23, 320), rail: 36 };
+}
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const update = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return width;
+}
+
+type PdfLoadFailure = "changed" | "timeout" | "engine" | "document" | "failed";
+type LoadState = { phase: "loading" } | { phase: "error"; code: PdfLoadFailure } | { phase: "ready"; bytes: ArrayBuffer; snapshot: PdfReaderSnapshot };
 
 export function PdfReader({ docId, description }: { docId: string; description: Extract<DocDescription, { format: "pdf" }> }) {
   const { t } = useTranslation();
@@ -41,15 +61,30 @@ export function PdfReader({ docId, description }: { docId: string; description: 
   const [state, setState] = useState<LoadState>({ phase: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [errorDismissed, setErrorDismissed] = useState(false);
-  const failLoad = useCallback((message: string) => setState({ phase: "error", message }), []);
-  const timeout = useCallback(() => failLoad("engine timeout"), [failLoad]);
+  const bridge = usePdfBridge();
+  const failLoad = useCallback((code: PdfLoadFailure) => setState({ phase: "error", code }), []);
+  // The Copilot's page for a Reader that is not open (loading, failed, original changed): no content, an honest phase.
+  useEffect(() => {
+    if (state.phase === "ready") return;
+    const phase = state.phase === "loading" ? "loading" : state.code === "changed" ? "changed" : "error";
+    bridge.publish({ docId, format: "pdf", phase, sha256: description.sha256, pageCount: description.page_count, currentPage: null, zoom: null, outline: [], outlineTruncated: false, search: null, selection: null, panels: { outlineCollapsed: false, annotationsCollapsed: false } });
+    bridge.setHandle({ apply: async (action) => {
+      // The load-error page's Retry; nothing else exists while the Reader is not open.
+      if (state.phase !== "error" || action.action !== "retry_sync") return { ok: false, detail: "unavailable" };
+      setErrorDismissed(false);
+      setAttempt((value) => value + 1);
+      return { ok: true };
+    } });
+  }, [bridge, description.page_count, description.sha256, docId, state]);
+  useEffect(() => () => { bridge.publish(null); bridge.setHandle(null); }, [bridge]);
+  const timeout = useCallback(() => failLoad("timeout"), [failLoad]);
   useEffect(() => {
     const abort = new AbortController();
     setState({ phase: "loading" });
     void fetchPdfDoc(docId, abort.signal).then((result) => {
       if (abort.signal.aborted) return;
-      if (!result.ok) setState({ phase: "error", message: result.detail });
-      else if (result.snapshot.metadata.sha256 !== description.sha256) setState({ phase: "error", message: "document changed" });
+      if (!result.ok) setState({ phase: "error", code: result.status === 409 && result.detail === "document changed" ? "changed" : "failed" });
+      else if (result.snapshot.metadata.sha256 !== description.sha256) setState({ phase: "error", code: "changed" });
       else setState({ phase: "ready", bytes: result.bytes, snapshot: result.snapshot });
     });
     return () => abort.abort();
@@ -57,7 +92,7 @@ export function PdfReader({ docId, description }: { docId: string; description: 
 
   if (state.phase === "loading") return <div className="pdf-reader-state" data-ui="pdf-loading" role="status">{t("pdfReader.loading")}</div>;
   if (state.phase === "error") {
-    const message = state.message === "document changed" ? t("pdfReader.changed") : state.message === "engine timeout" ? t("pdfReader.engineTimeout") : state.message === "engine failed" ? t("pdfReader.engineFailed") : t("pdfReader.failed");
+    const message = state.code === "changed" ? t("pdfReader.changed") : state.code === "timeout" ? t("pdfReader.engineTimeout") : state.code === "engine" ? t("pdfReader.engineFailed") : t("pdfReader.failed");
     return <div className="pdf-reader-state" data-ui="pdf-error" role={errorDismissed ? "status" : "alert"}>
       {!errorDismissed && <ActionButton mode="icon" iconName="x" variant="ghost" label={t("pdfReader.dismiss")} tooltip={t("pdfReader.dismiss")} data-ui="dismiss-pdf-error" onClick={() => setErrorDismissed(true)} />}
       <p>{errorDismissed ? t("pdfReader.failedSummary") : message}</p>
@@ -67,7 +102,7 @@ export function PdfReader({ docId, description }: { docId: string; description: 
   return <PdfEngineReader key={docId} docId={docId} filename={description.display_name} workTitle={description.work_title} bytes={state.bytes} annotations={state.snapshot.annotations} pages={state.snapshot.metadata.pages} readingPosition={state.snapshot.reading_position} pendingAnchor={workspace.pendingAnchor} clearPendingAnchor={workspace.clearPendingAnchor} onTimeout={timeout} onFailure={failLoad} />;
 }
 
-function PdfEngineReader({ docId, filename, workTitle, bytes, annotations, pages, readingPosition, pendingAnchor, clearPendingAnchor, onTimeout, onFailure }: { docId: string; filename: string; workTitle: string; bytes: ArrayBuffer; annotations: PdfAnnotationsFile; pages: Array<{ width: number; height: number; rotation: number }>; readingPosition: PdfReaderPositionRead; pendingAnchor: string | null; clearPendingAnchor: () => void; onTimeout: () => void; onFailure: (message: string) => void }) {
+function PdfEngineReader({ docId, filename, workTitle, bytes, annotations, pages, readingPosition, pendingAnchor, clearPendingAnchor, onTimeout, onFailure }: { docId: string; filename: string; workTitle: string; bytes: ArrayBuffer; annotations: PdfAnnotationsFile; pages: Array<{ width: number; height: number; rotation: number }>; readingPosition: PdfReaderPositionRead; pendingAnchor: string | null; clearPendingAnchor: () => void; onTimeout: () => void; onFailure: (code: PdfLoadFailure) => void }) {
   const { t } = useTranslation();
   const [ready, setReady] = useState(false);
   const wasmUrl = useMemo(() => new URL(pdfiumWasmUrl, window.location.href).href, []);
@@ -90,7 +125,7 @@ function PdfEngineReader({ docId, filename, workTitle, bytes, annotations, pages
     createPluginRegistration(AnnotationPluginPackage, { autoCommit: false, locked: { type: LockModeType.All }, autoOpenLinks: false }),
   ], [bytes, docId, filename]);
 
-  useEffect(() => { if (error) onFailure("engine failed"); }, [error, onFailure]);
+  useEffect(() => { if (error) onFailure("engine"); }, [error, onFailure]);
   useEffect(() => {
     if (ready) return;
     const timer = setTimeout(onTimeout, 10_000);
@@ -130,11 +165,14 @@ function LoadedPdfDocument({
   docId, filename, workTitle, bytes, annotations, pages, readingPosition, pendingAnchor, clearPendingAnchor, isLoaded, isLoading, isError, totalPages, onReady, onFailure,
 }: {
   docId: string; filename: string; workTitle: string; bytes: ArrayBuffer; annotations: PdfAnnotationsFile; pages: Array<{ width: number; height: number; rotation: number }>; readingPosition: PdfReaderPositionRead; pendingAnchor: string | null; clearPendingAnchor: () => void; isLoaded: boolean; isLoading: boolean;
-  isError: boolean; totalPages: number; onReady: () => void; onFailure: (message: string) => void;
+  isError: boolean; totalPages: number; onReady: () => void; onFailure: (code: PdfLoadFailure) => void;
 }) {
   const { t } = useTranslation();
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  // The two side panels fold on their own when the pane is too narrow to keep a reading column (the LaTeX Reader's rule,
+  // same threshold, same manual-override semantics); the folds shown are the effective ones.
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const viewportWidth = useViewportWidth();
+  const { collapsedLeft: leftCollapsed, collapsedRight: rightCollapsed, setCollapsedLeft: setLeftCollapsed, setCollapsedRight: setRightCollapsed } = useAutoFoldedPanels(layoutRef, pdfPanelSizes(viewportWidth), isLoaded);
   const [selectionMode, setSelectionMode] = useState<PdfAnnotationTool>("read");
   const selectionModeRef = useRef(selectionMode);
   selectionModeRef.current = selectionMode;
@@ -208,6 +246,73 @@ function LoadedPdfDocument({
     refresh();
     return scope.onStateChange(refresh);
   }, [docId, isLoaded, pages.length, sdkAnnotations]);
+  // ---- what the Copilot sees of this Reader and the controls it may press (copilot ticket 20) -------------------------- //
+  // Pages are ZERO-BASED in everything published or received here; the Reader's UI stays one-based.
+  const pdfBridge = usePdfBridge();
+  const { provides: zoomCapability } = useZoomCapability();
+  const [zoomView, setZoomView] = useState<PdfPage["zoom"]>(null);
+  useEffect(() => {
+    if (!isLoaded || !zoomCapability) { setZoomView(null); return; }
+    const scope = zoomCapability.forDocument(docId);
+    const read = () => { const state = scope.getState(); setZoomView({ mode: state.zoomLevel === ZoomMode.FitWidth ? "fit_width" : state.zoomLevel === ZoomMode.FitPage ? "fit_page" : "custom", percent: Math.max(1, Math.round(state.currentZoomLevel * 100)) }); };
+    read();
+    return scope.onStateChange(read);
+  }, [docId, isLoaded, zoomCapability]);
+  const searchControl = useRef<PdfSearchControl | null>(null);
+  const [searchView, setSearchView] = useState<PdfSearchState | null>(null);
+  const [selectionView, setSelectionView] = useState<{ text: string; firstPage: number; lastPage: number } | null>(null);
+  const outlineAll = useMemo<PdfOutlineEntry[]>(() => outlineEntries.map((entry) => ({ id: entry.id, title: entry.title.slice(0, PDF_OUTLINE_TITLE_MAX), level: entry.level, pageIndex: pdfTargetPageIndex(outlineTargets.get(entry.id)), disabled: !!entry.disabled })), [outlineEntries, outlineTargets]);
+  // The page lists at most PDF_OUTLINE_MAX_ENTRIES entries and says so when the panel has more; it never fails.
+  const outlineView = useMemo(() => outlineAll.slice(0, PDF_OUTLINE_MAX_ENTRIES), [outlineAll]);
+  const outlineTruncated = outlineAll.length > PDF_OUTLINE_MAX_ENTRIES;
+  const contentSha256 = annotations.content_sha256;
+  const draftsView = useMemo(() => pdfDraftsView(sessionState.drafts, session.projectedAnnotations(), sessionState.blocked), [session, sessionState.blocked, sessionState.drafts, sessionState.file, sessionState.pending]);
+  useEffect(() => {
+    if (!isLoaded) return;
+    pdfBridge.publish({ docId, format: "pdf", phase: "ready", sha256: contentSha256, pageCount: pages.length, currentPage: currentPageIndex, zoom: zoomView, outline: outlineView, outlineTruncated, search: searchView, selection: selectionView ? { sha256: contentSha256, ...selectionView } : null, panels: { outlineCollapsed: leftCollapsed, annotationsCollapsed: rightCollapsed }, drafts: draftsView });
+  }, [contentSha256, currentPageIndex, docId, isLoaded, leftCollapsed, outlineTruncated, outlineView, pages.length, pdfBridge, rightCollapsed, searchView, selectionView, zoomView, draftsView]);
+  const live = useRef({ currentPageIndex, pageCount: pages.length, outlineEntries, outlineTargets, scroll, zoomCapability, searchView, annotations: [] as PdfAnnotation[], blocked: false });
+  live.current = { currentPageIndex, pageCount: pages.length, outlineEntries, outlineTargets, scroll, zoomCapability, searchView, annotations: session.projectedAnnotations() as PdfAnnotation[], blocked: sessionState.blocked };
+  useEffect(() => {
+    if (!isLoaded) return;
+    // Each action is one of the toolbar's or panels' own controls, answering as that control would (see pdf-view-actions).
+    const handle: PdfViewHandle = {
+      apply: async (action: ReaderViewAction) => {
+        const state = live.current;
+        const scope = state.scroll?.forDocument(docId);
+        const zoomScope = state.zoomCapability?.forDocument(docId);
+        return runPdfViewAction(
+          action,
+          { currentPageIndex: state.currentPageIndex, pageCount: state.pageCount, outlineIds: state.outlineEntries.map((entry) => entry.id), outlineTargets: state.outlineTargets, searchLoading: state.searchView?.status === "searching", searchResultCount: state.searchView?.count ?? 0 },
+          {
+            scroll: scope ? { scrollToPage: (pageNumber) => scope.scrollToPage({ pageNumber }), scrollToNextPage: () => scope.scrollToNextPage(), scrollToPreviousPage: () => scope.scrollToPreviousPage() } : null,
+            zoom: zoomScope ? { zoomIn: () => zoomScope.zoomIn(), zoomOut: () => zoomScope.zoomOut(), fit: (mode) => zoomScope.requestZoom(mode === "fit_width" ? ZoomMode.FitWidth : ZoomMode.FitPage) } : null,
+            search: searchControl.current,
+            navigateTarget: (target) => navigatePdfLink(target as PdfLinkTarget),
+            openAnnotation: (annotationId) => {
+              // The annotations panel's "go to" and the `#ann-<id>` link: the page of the annotation, its place on it, and its panel entry.
+              if (state.blocked || !scope) return "unavailable";
+              const annotation = state.annotations.find((item) => item.id === annotationId);
+              if (!annotation) return "not_found";
+              markUserNavigation();
+              setRightCollapsed(false);
+              const location = pdfAnnotationLocation(annotation);
+              if (location) {
+                scope.scrollToPage({ pageNumber: location.page_index + 1, behavior: "instant" });
+                placeReaderAtLocation(location, () => true);
+              }
+              requestAnimationFrame(() => document.getElementById(`pdf-annotation-${CSS.escape(annotationId)}`)?.scrollIntoView({ block: "nearest" }));
+              return "ok";
+            },
+            setPanel: (panel, collapsed) => (panel === "outline" ? setLeftCollapsed : setRightCollapsed)(collapsed),
+            markUserNavigation,
+          },
+        );
+      },
+    };
+    pdfBridge.setHandle(handle);
+    return () => pdfBridge.setHandle(null);
+  }, [docId, isLoaded, markUserNavigation, navigatePdfLink, pdfBridge, session]);
   useEffect(() => {
     const remove = registerWorkspaceLeaveGuard(() => !session.hasUnsaved() || window.confirm(t("pdfReader.unsavedLeave")));
     return remove;
@@ -394,12 +499,12 @@ function LoadedPdfDocument({
       userInputGeneration.current++;
     };
   }, [docId, isLoaded, pages.length, persistPosition, positionWriter, readingPosition]);
-  useEffect(() => { if (isError) onFailure("document failed"); }, [isError, onFailure]);
+  useEffect(() => { if (isError) onFailure("document"); }, [isError, onFailure]);
   if (!isLoaded) return <div className="pdf-reader-state" role={isError ? "alert" : "status"}>{isLoading ? t("pdfReader.documentLoading") : isError ? t("pdfReader.documentFailed") : t("pdfReader.documentLoading")}</div>;
   return <>
-    <PdfToolbar docId={docId} filename={filename} workTitle={workTitle} bytes={bytes} totalPages={totalPages} pages={pages} onUserNavigation={markUserNavigation} onCurrentPage={(page) => setCurrentPageIndex(page - 1)} />
+    <PdfToolbar docId={docId} filename={filename} workTitle={workTitle} bytes={bytes} totalPages={totalPages} pages={pages} onUserNavigation={markUserNavigation} onCurrentPage={(page) => setCurrentPageIndex(page - 1)} searchControl={searchControl} onSearchState={setSearchView} />
     {(positionUi.failed || positionUi.saving || positionUi.saved) && <ReadingPositionWarning busy={positionUi.saving} retry={() => { void positionWriter.retry(); }} failed={positionUi.failed} saved={positionUi.saved} failure={positionUi.failure} />}
-    <div className="pdf-reader-layout" data-ui="pdf-reader" data-ui-key={docId} data-reading-position-state={positionUi.failed ? positionUi.failure ?? "failed" : positionUi.saving ? "saving" : positionUi.saved ? "saved" : "idle"}>
+    <div ref={layoutRef} className="pdf-reader-layout" data-ui="pdf-reader" data-ui-key={docId} data-reading-position-state={positionUi.failed ? positionUi.failure ?? "failed" : positionUi.saving ? "saving" : positionUi.saved ? "saved" : "idle"}>
       <aside className={`pdf-side pdf-side-left${leftCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.outlineTitle")} data-ui="pdf-outline-panel">
         <ActionButton unstyled mode="icon" iconName={leftCollapsed ? "panel-left-open" : "panel-left-close"} className="pdf-panel-toggle" data-ui="toggle-pdf-outline" aria-expanded={!leftCollapsed} label={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} tooltip={t(leftCollapsed ? "pdfReader.expandOutline" : "pdfReader.collapseOutline")} onClick={() => setLeftCollapsed((value) => !value)} />
         {!leftCollapsed && <div className="pdf-side-content"><h2>{t("pdfReader.outlineTitle")}</h2>{outlineEntries.length ? <OutlineList items={outlineEntries} onSelect={(id) => {
@@ -455,7 +560,7 @@ function LoadedPdfDocument({
             )} />
           </Viewport>
         </GlobalPointerProvider>
-        <PdfTextTools docId={docId} session={session} pages={pages} blocked={sessionState.blocked} kind={selectionMode === "highlight" || selectionMode === "underline" || selectionMode === "strikeout" ? selectionMode : null} highlightColor={nextHighlightColor} />
+        <PdfTextTools onSelection={setSelectionView} docId={docId} session={session} pages={pages} blocked={sessionState.blocked} kind={selectionMode === "highlight" || selectionMode === "underline" || selectionMode === "strikeout" ? selectionMode : null} highlightColor={nextHighlightColor} />
       </div>
       <aside className={`pdf-side pdf-side-right${rightCollapsed ? " collapsed" : ""}`} aria-label={t("pdfReader.annotationsTitle")} data-ui="pdf-annotations-panel">
         <ActionButton unstyled mode="icon" iconName={rightCollapsed ? "chevron-left" : "chevron-right"} className="pdf-panel-toggle" data-ui="toggle-pdf-annotations" aria-expanded={!rightCollapsed} label={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} tooltip={t(rightCollapsed ? "pdfReader.expandAnnotations" : "pdfReader.collapseAnnotations")} onClick={() => setRightCollapsed((value) => !value)} />
@@ -577,7 +682,7 @@ function PdfAreaLayer({ pageIndex, blocked, annotations, onCreate, onUpdate }: {
   </div>;
 }
 
-function PdfTextTools({ docId, session, pages, blocked, kind, highlightColor }: { docId: string; session: PdfAnnotationSession; pages: Array<{ width: number; height: number; rotation: number }>; blocked: boolean; kind: "highlight" | "underline" | "strikeout" | null; highlightColor: PdfHighlightColor }) {
+function PdfTextTools({ docId, session, pages, blocked, kind, highlightColor, onSelection }: { docId: string; session: PdfAnnotationSession; pages: Array<{ width: number; height: number; rotation: number }>; blocked: boolean; kind: "highlight" | "underline" | "strikeout" | null; highlightColor: PdfHighlightColor; onSelection: (selection: { text: string; firstPage: number; lastPage: number } | null) => void }) {
   const { t } = useTranslation();
   const { provides: selection } = useSelectionCapability();
   const [status, setStatus] = useState("");
@@ -693,6 +798,12 @@ function PdfTextTools({ docId, session, pages, blocked, kind, highlightColor }: 
     };
   }, [selection, docId, blocked, kind, pages, session, t]);
 
+  // The settled real text-layer selection (never a selection of a page without text) goes to the Copilot's page.
+  useEffect(() => {
+    if (!selectedText || !selection) { onSelection(null); return; }
+    const range = selection.forDocument(docId).getState().selection;
+    onSelection(range ? { text: selectedText, ...selectionPageRange(range) } : null);
+  }, [docId, onSelection, selectedText, selection]);
   const copySelection = async () => {
     setCopyStatus(t("pdfReader.copying"));
     try {
@@ -780,7 +891,10 @@ function ReadingPositionWarning({ busy, retry, failed, saved, failure }: { busy:
   );
 }
 
-function PdfSearchControls({ docId, pages, onUserNavigation }: { docId: string; pages: Array<{ width: number; height: number; rotation: number }>; onUserNavigation: () => void }) {
+/** The search box and its list as the Copilot drives them: the same run and the same result click. */
+interface PdfSearchControl { run: (query: string) => boolean; open: (index: number) => "ok" | "not_found" | "unavailable" }
+
+function PdfSearchControls({ docId, pages, onUserNavigation, controlRef, onState }: { docId: string; pages: Array<{ width: number; height: number; rotation: number }>; onUserNavigation: () => void; controlRef: MutableRefObject<PdfSearchControl | null>; onState: (state: PdfSearchState | null) => void }) {
   const { t } = useTranslation();
   const { provides: search } = useSearchCapability();
   const { provides: scroll } = useScrollCapability();
@@ -793,13 +907,23 @@ function PdfSearchControls({ docId, pages, onUserNavigation }: { docId: string; 
     const scope = search.forDocument(docId);
     return scope.onStateChange((state) => { setResults(state.results); setLoading(state.loading); });
   }, [docId, search]);
-  const run = () => {
-    if (!search) return;
+  const [ranQuery, setRanQuery] = useState("");
+  // Counts every search started here, from the box or the Copilot: a tool waits for a LATER generation than the one it saw.
+  const [generation, setGeneration] = useState(0);
+  const run = (text: string = query): boolean => {
+    if (!search || !text.trim()) return false;
+    setQuery(text);
     setSearched(true);
-    const task = search.forDocument(docId).searchAllPages(query);
+    setRanQuery(text);
+    setGeneration((value) => value + 1);
+    const task = search.forDocument(docId).searchAllPages(text);
     task.wait((result) => { setResults(result.results); setLoading(false); }, () => setLoading(false));
     setLoading(true);
+    return true;
   };
+  useEffect(() => {
+    onState(searched ? { query: ranQuery, generation, status: loading ? "searching" : "done", count: results.length, results: results.slice(0, PDF_SEARCH_LIST_MAX).map((result) => ({ pageIndex: result.pageIndex, before: result.context?.before ?? "", match: result.context?.match ?? "", after: result.context?.after ?? "" })) } : null);
+  }, [generation, loading, onState, ranQuery, results, searched]);
   const navigate = (result: SearchResult, index: number) => {
     onUserNavigation();
     search?.forDocument(docId).goToResult(index);
@@ -821,15 +945,16 @@ function PdfSearchControls({ docId, pages, onUserNavigation }: { docId: string; 
     };
     requestAnimationFrame(place);
   };
+  controlRef.current = { run, open: (index) => { const result = results[index]; if (!search) return "unavailable"; if (!result) return "not_found"; navigate(result, index); return "ok"; } };
   return <div className="pdf-search-controls" data-ui="pdf-search">
     <label><span className="sr-only">{t("pdfReader.search")}</span><input data-ui="pdf-search-query" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") run(); }} placeholder={t("pdfReader.search")} /></label>
-    <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="search" className="pdf-icon-action" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" label={t("pdfReader.search")} tooltip={t("pdfReader.search")} onClick={run} />
+    <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="search" className="pdf-icon-action" disabled={!search || !query.trim() || loading} data-ui="run-pdf-search" label={t("pdfReader.search")} tooltip={t("pdfReader.search")} onClick={() => run()} />
     <span role="status">{loading ? t("pdfReader.searching") : searched && results.length === 0 ? t("pdfReader.searchNoResults") : searched ? t("pdfReader.searchCount", { count: results.length }) : ""}</span>
-    {results.slice(0, 20).map((result, index) => <button type="button" className="pdf-search-result" data-ui="pdf-search-result" data-ui-key={`${result.pageIndex}:${result.charIndex}:${index}`} key={`${result.pageIndex}-${result.charIndex}-${index}`} onClick={() => navigate(result, index)}>{t("pdfReader.searchResult", { index: index + 1, page: result.pageIndex + 1 })} · {result.context?.before ?? ""}{result.context?.match ?? ""}{result.context?.after ?? ""}</button>)}
+    {results.length > 0 && <div className="pdf-search-results" data-ui="pdf-search-results">{results.slice(0, PDF_SEARCH_LIST_MAX).map((result, index) => <button type="button" className="pdf-search-result" data-ui="pdf-search-result" data-ui-key={`${result.pageIndex}:${result.charIndex}:${index}`} key={`${result.pageIndex}-${result.charIndex}-${index}`} onClick={() => navigate(result, index)}>{t("pdfReader.searchResult", { index: index + 1, page: result.pageIndex + 1 })} · {result.context?.before ?? ""}{result.context?.match ?? ""}{result.context?.after ?? ""}</button>)}</div>}
   </div>;
 }
 
-function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUserNavigation, onCurrentPage }: { docId: string; filename: string; workTitle: string; bytes: ArrayBuffer; totalPages: number; pages: Array<{ width: number; height: number; rotation: number }>; onUserNavigation: () => void; onCurrentPage: (page: number) => void }) {
+function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUserNavigation, onCurrentPage, searchControl, onSearchState }: { docId: string; filename: string; workTitle: string; bytes: ArrayBuffer; totalPages: number; pages: Array<{ width: number; height: number; rotation: number }>; onUserNavigation: () => void; onCurrentPage: (page: number) => void; searchControl: MutableRefObject<PdfSearchControl | null>; onSearchState: (state: PdfSearchState | null) => void }) {
   const { t } = useTranslation();
   const { provides: scroll } = useScrollCapability();
   const { provides: zoom } = useZoomCapability();
@@ -873,7 +998,7 @@ function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUs
       <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="copy" className="pdf-icon-action" data-ui="copy-pdf-page-link" label={t("pdfReader.copyPageLink")} tooltip={t("pdfReader.copyPageLink")} onClick={() => void copyPageLink()} />
       {copyStatus && <span role="status">{copyStatus}</span>}
     </div>
-    <PdfSearchControls docId={docId} pages={pages} onUserNavigation={onUserNavigation} />
+    <PdfSearchControls docId={docId} pages={pages} onUserNavigation={onUserNavigation} controlRef={searchControl} onState={onSearchState} />
     <div className="pdf-zoom-controls" data-ui="pdf-zoom-controls">
       <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="minus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-out-pdf" label={t("pdfReader.zoomOut")} tooltip={t("pdfReader.zoomOut")} onClick={() => zoom?.forDocument(docId).zoomOut()} />
       <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="fit-width" className="pdf-icon-action" data-ui="fit-pdf-width" disabled={!zoom} label={t("pdfReader.fitWidth")} tooltip={t("pdfReader.fitWidth")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitWidth)} />

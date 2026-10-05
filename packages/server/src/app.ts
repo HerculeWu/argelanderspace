@@ -52,6 +52,7 @@ import type {
   DocDescription,
   DocReplaceImpact,
   Job,
+  PdfSourceMaterial,
   RefreshResponse,
   WsServerMessage,
 } from "@argelanderspace/contracts";
@@ -62,9 +63,12 @@ import {
   type ManualWorkRequest,
   ManualWorkRequestSchema,
   ManuscriptSchema,
+  PDF_IMAGE_LONG_EDGE,
   PDF_MAX_BYTES,
   PDF_RESOURCE_WARNING_BYTES,
+  type PdfAnnotationOperation,
   PdfAnnotationsFileSchema,
+  PdfPagesResponseSchema,
   PdfReadingPositionSchema,
   PlansFileSchema,
   TexDocIrSchema,
@@ -79,6 +83,7 @@ import {
   attachArxivDoc,
   attachLatexZip,
   buildWriterExport,
+  commitPdfAnnotationChange,
   DocumentAssetError,
   discoverLiterature,
   ensureCurrentAnnotationsWithDocument,
@@ -138,7 +143,14 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
-import type { ReaderOpDeps, ReaderReadOutcome, ReaderWriteOutcome } from "./copilot-reader-tool.js";
+import type {
+  PdfImageOutcome,
+  PdfReadOutcome,
+  PdfWriteOutcome,
+  ReaderOpDeps,
+  ReaderReadOutcome,
+  ReaderWriteOutcome,
+} from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
@@ -157,10 +169,29 @@ import {
 } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
+import {
+  PdfAnnotationHistory,
+  type PdfAnnotationPlan,
+  planPdfCreate,
+  planPdfDelete,
+  planPdfUpdate,
+  type ResolvedTextTarget,
+} from "./pdf-annotation-actions.js";
+import {
+  PdfMaterialContentError,
+  PdfMaterialInputError,
+  PdfMaterialResourceError,
+  PdfQueueFullError,
+  readPdfTextMaterial,
+  readPdfTextMaterialCached,
+  renderPdfPageImage,
+  resolvePdfTextTarget,
+} from "./pdf-material.js";
 import { probePdf } from "./pdfium-probe.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
+import { mountTextDocRoutes, type TextDocDeps, TextDocService } from "./text-docs.js";
 import {
   createManuscriptOp,
   deleteManuscriptOp,
@@ -213,6 +244,8 @@ export interface AppDeps {
   /** Isolated settings storage/runtime in tests; production is initialized on first provider request. */
   providerSettings?: ProviderSettings;
   copilot?: CopilotHost;
+  /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
+  textDocHooks?: Pick<TextDocDeps, "beforePublish">;
   /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending` (default ten minutes). */
   acquisitionWaitMs?: number;
 }
@@ -389,6 +422,60 @@ export function createApp(deps: AppDeps): Hono {
   };
   const pdfOwners = (docId: string) =>
     LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
+  /**
+   * The ONE way PDF page material is reached (the `/pdf/pages` routes and the Copilot's reader tool): content-busy
+   * check, a unique owner, and the original read once and verified against its immutable SHA-256 (and against the
+   * hash the caller expects, if it names one). The text and the image both come from the Buffer this returns.
+   */
+  type PdfSource =
+    | {
+        kind: "ok";
+        metadata: NonNullable<ReturnType<typeof readPdfMetadataIfPresent>>;
+        bytes: Buffer;
+        title: string;
+        annotations?: ReturnType<typeof readPdfAnnotationsFile>;
+      }
+    | { kind: "bad_id" | "busy" | "not_found" | "changed" | "inconsistent" | "error" };
+  const pdfSource = (
+    docId: string,
+    options: { expectedHash?: string; annotations?: boolean } = {}
+  ): PdfSource => {
+    if (!docId.trim() || badId(docId)) return { kind: "bad_id" };
+    if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
+    // The order of GET /api/paper/:doc_id/pdf: unowned 404, ownership not unique 500, then the Doc's own data; an
+    // owned Doc without PDF metadata is a data error (500), not "not found".
+    const owners = pdfOwners(docId);
+    if (owners.length === 0) return { kind: "not_found" };
+    if (owners.length !== 1 || !owners[0]) return { kind: "inconsistent" };
+    try {
+      const metadata = readPdfMetadataIfPresent(paths, docId);
+      if (!metadata) return { kind: "error" };
+      const bytes = readVerifiedPdf(paths, docId);
+      if (options.expectedHash !== undefined && options.expectedHash !== metadata.sha256)
+        return { kind: "changed" };
+      const annotations = options.annotations ? readPdfAnnotationsFile(paths, docId) : undefined;
+      return {
+        kind: "ok",
+        metadata,
+        bytes,
+        title: owners[0].title,
+        ...(annotations ? { annotations } : {}),
+      };
+    } catch (error) {
+      return { kind: error instanceof PdfContentChangedError ? "changed" : "error" };
+    }
+  };
+  /** What a failed PDF material request is, as the routes answer it. */
+  const pdfMaterialFailure = (
+    error: unknown
+  ): { status: 400 | 409 | 500 | 503; detail: string } => {
+    if (error instanceof PdfMaterialInputError) return { status: 400, detail: error.message };
+    if (error instanceof PdfMaterialContentError)
+      return { status: 409, detail: "document changed" };
+    if (error instanceof PdfMaterialResourceError || error instanceof PdfQueueFullError)
+      return { status: 503, detail: error.message };
+    return { status: 500, detail: "PDF page material could not be produced" };
+  };
   /** AnnotationsError → the route's response (roadmap §3: not_found → 404,
    *  every other store failure → 500, never a silent reset). */
   const annotationsError = (err: AnnotationsError) =>
@@ -530,6 +617,17 @@ export function createApp(deps: AppDeps): Hono {
   mountProviderRoutes(app, providerSettings, guardCsrf);
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
   mountCopilotRoutes(app, copilot, guardCsrf);
+  // Text Docs (ticket 25): create under a Work, source save, validate and explicit generate.
+  const textDocs = new TextDocService({
+    paths,
+    libraryLock,
+    annotationLock,
+    docMutations,
+    broadcast,
+    libraryChanged: () => libraryChanged("add"),
+    ...(deps.textDocHooks ?? {}),
+  });
+  mountTextDocRoutes(app, textDocs, guardCsrf);
   // The Copilot `plan` tool shares the Plan lock, store and plan.changed notification with PUT.
   const currentGraph = () =>
     loadCurrentGraph(paths) ??
@@ -582,6 +680,188 @@ export function createApp(deps: AppDeps): Hono {
       super("the Doc's metadata could not be read", { cause });
     }
   }
+  /**
+   * The Copilot's PDF annotation writes. The original is read once and verified (and must be the one the request names)
+   * before anything else; the text of a text annotation is resolved from that same verified snapshot outside the lock
+   * (it is a function of the immutable original); then one critical section on the annotations lock re-verifies the
+   * original and the revision and applies the plan to the sidecar as stored, so a stale request writes nothing and
+   * every key the application does not know stays. A failure before the atomic rename leaves the stored bytes alone.
+   */
+  const pdfHistory = new PdfAnnotationHistory();
+  const writePdfAnnotation = async (
+    op: PdfAnnotationOperation,
+    scope: { conversationId: string }
+  ): Promise<PdfWriteOutcome> => {
+    // A PDF action on a Doc that is not a PDF (a LaTeX Doc) is unsupported, not a verification failure.
+    if (!badId(op.docId) && op.docId.trim()) {
+      let metadataOrNull: ReturnType<typeof readPdfMetadataIfPresent> | undefined;
+      try {
+        metadataOrNull = readPdfMetadataIfPresent(paths, op.docId);
+      } catch {
+        metadataOrNull = undefined;
+      }
+      if (metadataOrNull === null && pdfOwners(op.docId).length > 0) return { kind: "unsupported" };
+    }
+    const historyKey = PdfAnnotationHistory.key(scope.conversationId, op.docId);
+    const source = pdfSource(op.docId, { expectedHash: op.sha256 });
+    if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+    if (source.kind === "busy") return { kind: "busy" };
+    if (source.kind === "changed")
+      return {
+        kind: "conflict",
+        reason: "document_changed",
+        epoch: { sha256: null, annotationsRev: null },
+      };
+    if (source.kind !== "ok")
+      return {
+        kind: "error",
+        detail: "the PDF or its user data could not be verified; nothing was changed",
+      };
+    const { metadata, title } = source;
+    let text: ResolvedTextTarget | undefined;
+    if (op.action === "create_pdf_annotation" && op.parts) {
+      try {
+        const resolved = await resolvePdfTextTarget(
+          source.bytes,
+          metadata.sha256,
+          op.parts,
+          metadata.pages
+        );
+        if (!resolved.ok) return { kind: "invalid", detail: resolved.detail };
+        text = resolved.target;
+      } catch (error) {
+        const failure = pdfMaterialFailure(error);
+        return failure.status === 409
+          ? {
+              kind: "conflict",
+              reason: "document_changed",
+              epoch: { sha256: null, annotationsRev: null },
+            }
+          : failure.status === 400
+            ? { kind: "invalid", detail: failure.detail }
+            : { kind: "error", detail: `${failure.detail}; nothing was written` };
+      }
+    }
+    let plan: PdfAnnotationPlan | undefined;
+    let moved: { direction: "undo" | "redo"; label: string } | undefined;
+    let nothing: "nothing" | "history_ended" | "changed" | undefined;
+    try {
+      // The history is recorded in the same critical section as the save, so no other write can come between a
+      // saved revision and the history that describes it.
+      const { commit, history } = await annotationLock.run(() => {
+        const commit = commitPdfAnnotationChange<undefined>(
+          paths,
+          op.docId,
+          { sha256: op.sha256, rev: op.rev },
+          (current) => {
+            if (op.action === "undo_pdf_annotation" || op.action === "redo_pdf_annotation") {
+              const direction = op.action === "undo_pdf_annotation" ? "undo" : "redo";
+              const step = pdfHistory.plan(historyKey, direction, current);
+              if (step.kind === "none") {
+                nothing = step.reason;
+                return { skip: undefined };
+              }
+              moved = { direction, label: step.label };
+              return { next: step.next };
+            }
+            try {
+              plan =
+                op.action === "create_pdf_annotation"
+                  ? planPdfCreate(op, current, metadata, title, text)
+                  : op.action === "update_pdf_annotation"
+                    ? planPdfUpdate(op, current, title)
+                    : planPdfDelete(op, current, title);
+            } catch (error) {
+              // A bug in the planner is the application's, never a damaged file.
+              throw new PdfAnnotationValidationError(
+                `the request could not be planned: ${error instanceof Error ? error.message : String(error)}`
+              );
+            }
+            return plan.kind === "write" ? { next: plan.next } : { skip: undefined };
+          },
+          (id) => docMutations.isDocumentContentBusy(id)
+        );
+        if (commit.kind !== "saved") return { commit, history: undefined };
+        if (moved)
+          pdfHistory.recordMove(
+            historyKey,
+            moved.direction,
+            commit.file.rev,
+            commit.file.annotations
+          );
+        else if (plan?.kind === "write") pdfHistory.recordChange(historyKey, plan, commit.file.rev);
+        return { commit, history: pdfHistory.depth(historyKey) };
+      });
+      if (commit.kind === "busy") return { kind: "busy" };
+      if (commit.kind === "document_changed")
+        return {
+          kind: "conflict",
+          reason: "document_changed",
+          epoch: { sha256: null, annotationsRev: null },
+        };
+      if (commit.kind === "rev_mismatch")
+        return {
+          kind: "conflict",
+          reason: "rev_mismatch",
+          epoch: { sha256: metadata.sha256, annotationsRev: commit.rev },
+        };
+      const epoch = { sha256: metadata.sha256, annotationsRev: commit.file.rev };
+      if (commit.kind === "skipped") {
+        if (nothing) return { kind: "nothing", reason: nothing, epoch };
+        const skipped = plan as PdfAnnotationPlan | undefined;
+        if (skipped?.kind === "same")
+          return { kind: "unchanged", annotation: skipped.annotation, label: skipped.label, epoch };
+        if (skipped?.kind === "annotation_changed")
+          return {
+            kind: "conflict",
+            reason: "annotation_changed",
+            epoch,
+            annotation: skipped.annotation,
+          };
+        if (skipped?.kind === "no_annotation")
+          return { kind: "no_annotation", annotationId: skipped.annotationId };
+        if (skipped?.kind === "invalid") return { kind: "invalid", detail: skipped.detail };
+        return { kind: "error", detail: "unexpected plan; nothing was written" };
+      }
+      annotationChanged(op.docId, "put");
+      if (moved && history) {
+        return {
+          kind: "saved",
+          label: moved.label,
+          epoch,
+          moved: moved.direction,
+          history,
+        };
+      }
+      const written = plan as PdfAnnotationPlan | undefined;
+      if (written?.kind !== "write" || !history)
+        return {
+          kind: "error",
+          detail: "unexpected plan; read the Doc again to see what is stored",
+        };
+      return {
+        kind: "saved",
+        ...(written.annotation ? { annotation: written.annotation } : {}),
+        ...(written.deleted ? { deleted: written.deleted } : {}),
+        label: written.label,
+        epoch,
+        history,
+      };
+    } catch (error) {
+      // Nothing is reset and the sidecar is replaced atomically or not at all. What failed decides the words: a
+      // change the application built that does not satisfy the contract is its own bug, not a damaged file.
+      if (error instanceof PdfAnnotationValidationError)
+        return {
+          kind: "error",
+          detail: `the application could not apply this change (${error.message}); nothing was written and the stored file was not touched. This is not a damaged file; tell the user`,
+        };
+      return {
+        kind: "error",
+        detail:
+          "the PDF annotations could not be read or written (the stored file, if damaged, was left as it is); read the Doc again to see what is stored now",
+      };
+    }
+  };
   const readerOps: ReaderOpDeps = {
     write: async (op): Promise<ReaderWriteOutcome> => {
       if (badId(op.docId) || !op.docId.trim()) return { kind: "not_found" };
@@ -680,6 +960,71 @@ export function createApp(deps: AppDeps): Hono {
         };
       }
     },
+    pdf: {
+      // The PDF Reader's material for the model (copilot ticket 20): every page's real text, the outline and the
+      // workbench annotations, from the verified original. Read-only; nothing is written, opened or moved.
+      read: async (docId): Promise<PdfReadOutcome> => {
+        const source = pdfSource(docId, { annotations: true });
+        if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+        if (source.kind === "busy" || source.kind === "changed") return { kind: source.kind };
+        if (source.kind !== "ok" || !source.annotations)
+          return {
+            kind: "error",
+            detail: "the PDF or its user data could not be verified; nothing was changed",
+          };
+        try {
+          const material = await readPdfTextMaterialCached(source.bytes, source.metadata.sha256);
+          const pdf: PdfSourceMaterial = {
+            docId,
+            title: source.title,
+            sha256: material.contentSha256,
+            pageCount: material.pageCount,
+            pages: material.pages,
+            outline: material.outline,
+            outlineTruncated: material.outlineTruncated,
+            annotations: source.annotations.annotations,
+            annotationsRev: source.annotations.rev,
+          };
+          return { kind: "ok", material: pdf };
+        } catch (error) {
+          const failure = pdfMaterialFailure(error);
+          return failure.status === 409
+            ? { kind: "changed" }
+            : failure.status === 503
+              ? { kind: "resource", detail: failure.detail }
+              : { kind: "error", detail: failure.detail };
+        }
+      },
+      // The PDF workbench annotation writes (copilot ticket 21): the page's own commit rules (the annotations lock,
+      // the busy check, the original verified against its SHA-256, the expected revision, the atomic save and the
+      // `annotation.changed` notification), applied as a narrow change to the sidecar as stored.
+      write: (op, scope) => writePdfAnnotation(op, scope),
+      image: async (op): Promise<PdfImageOutcome> => {
+        const source = pdfSource(op.docId, { ...(op.sha256 ? { expectedHash: op.sha256 } : {}) });
+        if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+        if (source.kind === "busy" || source.kind === "changed") return { kind: source.kind };
+        if (source.kind !== "ok")
+          return { kind: "error", detail: "the PDF could not be verified; nothing was changed" };
+        try {
+          const image = await renderPdfPageImage(
+            source.bytes,
+            source.metadata.sha256,
+            op.pageIndex,
+            op.longEdge
+          );
+          return { kind: "ok", ...image };
+        } catch (error) {
+          const failure = pdfMaterialFailure(error);
+          return failure.status === 400
+            ? { kind: "invalid", detail: failure.detail }
+            : failure.status === 409
+              ? { kind: "changed" }
+              : failure.status === 503
+                ? { kind: "resource", detail: failure.detail }
+                : { kind: "error", detail: failure.detail };
+        }
+      },
+    },
     // The background read: the same reads as the coherent GET below but READ-ONLY (no ensure, no archive, never the
     // archive's content), refused while a content mutation is queued or running.
     read: (docId) =>
@@ -693,6 +1038,12 @@ export function createApp(deps: AppDeps): Hono {
         }
         try {
           const { ir, file, assets, stale } = readDocumentForReading(paths.dataDir, docId);
+          // The Reader tool's whole-reading representation is the LaTeX one; text Docs get theirs with the text tools.
+          if (ir.source.type === "text")
+            return {
+              kind: "error",
+              detail: "text documents cannot be read through the Reader tool yet",
+            };
           return { kind: "ok", reading: buildReaderReading({ ir, file, assets, stale }) };
         } catch (err) {
           if (!(err instanceof AnnotationsError)) throw err;
@@ -727,7 +1078,10 @@ export function createApp(deps: AppDeps): Hono {
     for (const name of names) {
       try {
         const dir = join(outputDir, name);
-        if (statSync(dir).isDirectory() && existsSync(join(dir, `${name}.json`))) {
+        // a text draft (source, no reading text yet) is a Doc too
+        if (statSync(dir).isDirectory() && textDocs.has(name)) {
+          ids.push(name);
+        } else if (statSync(dir).isDirectory() && existsSync(join(dir, `${name}.json`))) {
           const metadata = readPdfMetadataIfPresent(paths, name);
           if (metadata && pdfOwners(name).length !== 1) continue;
           ids.push(name);
@@ -750,6 +1104,17 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     const owners = pdfOwners(docId);
+    if (textDocs.has(docId)) {
+      try {
+        return c.json(textDocs.describe(docId), 200, { "Cache-Control": "no-store" });
+      } catch (error) {
+        const e = detail(
+          `text document ${pyRepr(docId)} is damaged: ${(error as Error).message}`,
+          500
+        );
+        return c.json(e.body, e.status);
+      }
+    }
     const p = join(outputDir, docId, `${docId}.json`);
     if (!existsSync(p) || !statSync(p).isFile()) {
       const e =
@@ -1029,6 +1394,113 @@ export function createApp(deps: AppDeps): Hono {
       }
       const e = detail("PDF annotations could not be saved", 500);
       return c.json(e.body, e.status);
+    }
+  });
+
+  /** A non-negative decimal integer query value (zero-based page/size), or null when it is anything else. */
+  const queryInt = (value: string | undefined): number | null | undefined =>
+    value === undefined ? undefined : /^\d{1,9}$/.test(value) ? Number(value) : null;
+  /** The status a failed `pdfSource` answers on the PDF material routes. */
+  const pdfSourceFailure = (docId: string, kind: Exclude<PdfSource["kind"], "ok">) => {
+    switch (kind) {
+      case "bad_id":
+        return detail("bad doc id", 400);
+      case "busy":
+        return { body: { detail: "document busy" }, status: 409 as const };
+      case "not_found":
+        return detail(`paper ${pyRepr(docId)} not found`, 404);
+      case "changed":
+        return { body: { detail: "document changed" }, status: 409 as const };
+      case "inconsistent":
+        return detail(`PDF document ${pyRepr(docId)} has inconsistent Work ownership`, 500);
+      default:
+        return detail(`PDF document ${pyRepr(docId)} cannot be verified`, 500);
+    }
+  };
+
+  // Original-page material (copilot ticket 20). Page indexes are ZERO-BASED. The bytes are read once and verified
+  // against the Doc's immutable SHA-256, then BOTH the text and the image come from them; a hash the caller names
+  // that is not the Doc's is a 409, never answered from any cache.
+  app.get("/api/paper/:doc_id/pdf/pages", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    const hash = c.req.query("hash");
+    const first = queryInt(c.req.query("first"));
+    const last = queryInt(c.req.query("last"));
+    if (hash !== undefined && !/^[a-f0-9]{64}$/.test(hash))
+      return c.json({ detail: "hash must be a lowercase SHA-256" }, 400);
+    if (first === null || last === null)
+      return c.json({ detail: "first and last must be zero-based page indexes" }, 400);
+    const source = pdfSource(docId, { ...(hash ? { expectedHash: hash } : {}) });
+    if (source.kind !== "ok") {
+      const e = pdfSourceFailure(docId, source.kind);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const material = await readPdfTextMaterial(source.bytes, source.metadata.sha256, {
+        ...(first !== undefined ? { first } : {}),
+        ...(last !== undefined ? { last } : {}),
+      });
+      return c.json(
+        PdfPagesResponseSchema.parse({
+          doc_id: docId,
+          content_sha256: material.contentSha256,
+          page_count: material.pageCount,
+          range: { first: material.first, last: material.last },
+          pages: material.pages,
+          outline: material.outline,
+          outlineTruncated: material.outlineTruncated,
+          image: { type: "image/png", longEdge: PDF_IMAGE_LONG_EDGE },
+        }),
+        200,
+        { "Cache-Control": "no-store" }
+      );
+    } catch (error) {
+      const failure = pdfMaterialFailure(error);
+      return c.json({ detail: failure.detail }, failure.status);
+    }
+  });
+
+  app.get("/api/paper/:doc_id/pdf/pages/:page_index/image", async (c) => {
+    c.header("Cache-Control", "no-store");
+    const docId = c.req.param("doc_id");
+    const hash = c.req.query("hash");
+    const pageIndex = queryInt(c.req.param("page_index"));
+    const edge = queryInt(c.req.query("edge"));
+    if (hash === undefined || !/^[a-f0-9]{64}$/.test(hash))
+      return c.json({ detail: "hash must be the lowercase SHA-256 of the original" }, 400);
+    if (pageIndex === null || pageIndex === undefined)
+      return c.json({ detail: "page index must be a zero-based integer" }, 400);
+    if (edge === null) return c.json({ detail: "edge must be an integer number of pixels" }, 400);
+    const source = pdfSource(docId, { expectedHash: hash });
+    if (source.kind !== "ok") {
+      const e = pdfSourceFailure(docId, source.kind);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const image = await renderPdfPageImage(
+        source.bytes,
+        source.metadata.sha256,
+        pageIndex,
+        edge ?? undefined
+      );
+      return new Response(image.png, {
+        headers: {
+          "Content-Type": "image/png",
+          "Content-Length": String(image.png.length),
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+          "X-PDF-Content-Sha256": image.contentSha256,
+          "X-PDF-Page-Index": String(image.pageIndex),
+          "X-PDF-Page-Count": String(image.pageCount),
+          "X-PDF-Image-Width": String(image.width),
+          "X-PDF-Image-Height": String(image.height),
+          "X-PDF-Has-Text-Layer": String(image.hasTextLayer),
+        },
+      });
+    } catch (error) {
+      const failure = pdfMaterialFailure(error);
+      return c.json({ detail: failure.detail }, failure.status);
     }
   });
 
@@ -2056,7 +2528,7 @@ export function createApp(deps: AppDeps): Hono {
     // The Files tab only offers Docs a Work lists; an orphan directory is not reachable from the page.
     if (held.length === 0) return { kind: "orphan" };
     return annotationLock.run((): DocDeleteDescription => {
-      let format: "pdf" | "latex" = "latex";
+      let format: "pdf" | "latex" | "text" = textDocs.has(docId) ? "text" : "latex";
       let impact: DocReplaceImpact = { annotations: "unknown" };
       let rev = 0;
       let bound: Record<string, unknown> = {};
@@ -2078,6 +2550,13 @@ export function createApp(deps: AppDeps): Hono {
           bound = { sha256: file.content_sha256 };
         } catch {
           impact = { annotations: "unknown" };
+        }
+      } else if (format === "text" && !existsSync(join(docDir, `${docId}.json`))) {
+        // the same answer as the page's dialog (draftAnnotationImpact): zero only when no annotations dir exists
+        const draft = textDocs.draftAnnotationImpact(docId);
+        if (!draft.generated && draft.annotations.state === "known") {
+          impact = { annotations: "known", count: draft.annotations.count };
+          bound = { draft: true };
         }
       } else if (!pdf && !pdfUnreadable) {
         const risk = readAnnotationRisk(paths.dataDir, docId);

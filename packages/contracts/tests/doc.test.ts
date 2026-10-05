@@ -34,20 +34,22 @@ describe("DocDescriptionSchema", () => {
       }).format
     ).toBe("pdf");
     expect(
-      DocDescriptionSchema.parse({
-        doc_id: "pdf-arxiv",
-        format: "pdf",
-        acquired_via: "arxiv_pdf",
-        arxiv_id: "2601.01234",
-        acquired_at: "2026-09-24T00:00:00.000Z",
-        owner_work_id: "work:1",
-        work_title: "Paper",
-        display_name: "arxiv-2601.01234.pdf",
-        byte_length: 123,
-        sha256: "a".repeat(64),
-        page_count: 1,
-        pages: [{ width: 612, height: 792, rotation: 0 }],
-      }).acquired_via
+      (
+        DocDescriptionSchema.parse({
+          doc_id: "pdf-arxiv",
+          format: "pdf",
+          acquired_via: "arxiv_pdf",
+          arxiv_id: "2601.01234",
+          acquired_at: "2026-09-24T00:00:00.000Z",
+          owner_work_id: "work:1",
+          work_title: "Paper",
+          display_name: "arxiv-2601.01234.pdf",
+          byte_length: 123,
+          sha256: "a".repeat(64),
+          page_count: 1,
+          pages: [{ width: 612, height: 792, rotation: 0 }],
+        }) as { acquired_via?: string }
+      ).acquired_via
     ).toBe("arxiv_pdf");
     expect(
       DocDescriptionSchema.safeParse({
