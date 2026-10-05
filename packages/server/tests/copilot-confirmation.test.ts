@@ -816,3 +816,70 @@ test("the user's undo (and a failed one) is written into the conversation so the
   await vi.waitFor(() => expect(seen.length).toBeGreaterThanOrEqual(3));
   expect(JSON.stringify(seen.at(-1)?.messages)).toContain("The user undid this task delete");
 });
+
+// ---- ticket 32 lane B: the card clicked while something else is happening at the same instant -------------------- //
+test("(f/c) Approve and Decline clicked at the same instant (two clicks, one card): exactly one decision stands, the other is refused, and the plan is deleted at most once", async () => {
+  const view = page(A);
+  script = [() => askDelete(), (ctx) => ({ text: `got ${lastResult(ctx).status}` })];
+  const before = disk();
+  const id = await start(view);
+  const shown = await card(id);
+  const [approve, decline] = await Promise.all([
+    answer(shown, view, "approve"),
+    answer(shown, view, "decline"),
+  ]);
+  await until(id, ["completed"]);
+  const statuses = [approve.status, decline.status];
+  const after = disk();
+  if (approve.status === 200) {
+    expect(statuses).toEqual([200, 409]);
+    expect(after.rev).toBe(8);
+    expect(after.plans).toEqual([before.plans[1]]);
+    expect((await operations(id)).map((o) => o.status)).toEqual(["ok"]);
+  } else {
+    expect(statuses).toEqual([409, 200]);
+    expect(after.rev).toBe(7);
+    expect(after.plans).toEqual(before.plans);
+    expect((await operations(id)).map((o) => o.status)).toEqual(["declined"]);
+  }
+  expect(broadcasts.filter((m) => m.type === "plan.changed").length).toBeLessThanOrEqual(1);
+  expect((await host.snapshot(id)).confirmations).toEqual([]);
+});
+
+test("(f/a) the user's save and the Approve click at the same instant: either the delete is expired and nothing is deleted, or it runs once and the user's stale save is refused 409 - never both", async () => {
+  const view = page(A);
+  script = [() => askDelete(), (ctx) => ({ text: `got ${lastResult(ctx).status}` })];
+  const id = await start(view);
+  const shown = await card(id);
+  const current = disk() as PlansFile;
+  const edited = structuredClone(current);
+  const target = edited.plans[1]?.tasks[0];
+  if (target) target.title = "User edit at the click";
+  const [click, put] = await Promise.all([
+    answer(shown, view, "approve"),
+    app.request("/api/plans", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(edited),
+    }),
+  ]);
+  await until(id, ["completed"]);
+  const after = disk();
+  const [operation] = await operations(id);
+  expect(after.rev).toBe(8);
+  if (put.status === 200) {
+    // the user's save was first: the card was bound to rev 7, so the delete never ran
+    expect(operation?.status).toBe("expired");
+    expect(after.plans.map((p: { id: string }) => p.id)).toEqual([A, B]);
+    expect(after.plans[1].tasks[0].title).toBe("User edit at the click");
+    expect(click.status).toBeGreaterThanOrEqual(200);
+  } else {
+    // the click was first: the plan is gone once, and the user's stale document did not bring it back
+    expect(put.status).toBe(409);
+    expect(click.status).toBe(200);
+    expect(operation?.status).toBe("ok");
+    expect(after.plans.map((p: { id: string }) => p.id)).toEqual([B]);
+    expect(after.plans[0].tasks[0].title).not.toBe("User edit at the click");
+  }
+  expect((await host.snapshot(id)).confirmations).toEqual([]);
+});

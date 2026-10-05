@@ -258,10 +258,26 @@ export function createPlanTool(context: PlanToolContext) {
           ok: false,
           status: "closed",
         });
+      // A plans file that cannot be read is a plain error: nothing was written, and nothing can be "unknown".
+      const unreadable = (name: string) =>
+        done(record(toolCallId, name, { status: "error" }), {
+          ok: false,
+          status: "error",
+          detail: "the plans file could not be read; nothing was changed",
+        });
+      const readable = () => {
+        try {
+          readPlans(context.plans.statusDir);
+          return true;
+        } catch {
+          return false;
+        }
+      };
       try {
         const { operationId: requestedId, ...rest } = params as Record<string, unknown>;
         const read = PlanReadOperationSchema.safeParse(rest);
         if (read.success) {
+          if (!readable()) return unreadable("read");
           const file = readPlans(context.plans.statusDir);
           const plans = read.data.planId
             ? file.plans.filter((p) => p.id === read.data.planId)
@@ -281,6 +297,8 @@ export function createPlanTool(context: PlanToolContext) {
         const view = PlanViewActionSchema.safeParse(rest);
         if (view.success) {
           const shownPlan = view.data.action === "show" ? view.data.planId : undefined;
+          if ((shownPlan || view.data.action === "open_task_doc") && !readable())
+            return unreadable(action);
           if (
             shownPlan &&
             !readPlans(context.plans.statusDir).plans.some((p) => p.id === shownPlan)
@@ -344,6 +362,8 @@ export function createPlanTool(context: PlanToolContext) {
             detail:
               "this operation started earlier and its outcome was not recorded; read the plans to find out, do not repeat it blindly",
           });
+        // Before anything is journaled: a store that cannot be read at all cannot have been written to.
+        if (!readable()) return unreadable(action);
         if (deletion.success)
           return await requestDelete(context, toolCallId, deletion.data, {
             operationId,
