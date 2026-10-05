@@ -4,7 +4,12 @@ import {
   isTexDocIr,
   isTextDocIr,
   StoredDocIrSchema,
+  TextBlockMetaSchema,
+  TextDiagnosticSchema,
   TextDocSourceSchema,
+  TextDocumentMetaSchema,
+  TextReferencesSchema,
+  TextStatsSchema,
   WsServerMessageSchema,
 } from "../src/index.js";
 
@@ -83,5 +88,76 @@ describe("stored IR union (ticket 25)", () => {
       { type: "text-doc.published", doc_id: "text-1", published_source_rev: 1, at: "t" },
     ])
       expect(WsServerMessageSchema.parse(message)).toEqual(message);
+  });
+});
+
+describe("format v1 marker JSON (ticket 26)", () => {
+  it("document metadata is strict: version 1 is required and the text cannot name its own docId", () => {
+    expect(
+      TextDocumentMetaSchema.safeParse({ version: 1, title: "T", authors: ["A"] }).success
+    ).toBe(true);
+    for (const bad of [
+      { title: "T" },
+      { version: 2 },
+      { version: 1, docId: "text-x" },
+      { version: 1, title: "" },
+    ])
+      expect(TextDocumentMetaSchema.safeParse(bad).success).toBe(false);
+  });
+  it("block metadata is strict, ids are safe tokens, kind is an enum", () => {
+    expect(
+      TextBlockMetaSchema.safeParse({
+        id: "eq-1",
+        kind: "equation",
+        number: "12",
+        label: "L",
+        caption: "c",
+      }).success
+    ).toBe(true);
+    for (const bad of [
+      { id: "has space" },
+      { id: "" },
+      { id: "x".repeat(129) },
+      { kind: "figure" },
+      { number: 5 },
+      { colour: "red" },
+    ])
+      expect(TextBlockMetaSchema.safeParse(bad).success).toBe(false);
+  });
+  it("references use the existing Reference fields only; id and raw are required", () => {
+    expect(
+      TextReferencesSchema.safeParse([
+        { id: "a", raw: "A", year: 1999, doi: "10.1/x", keys: ["k"] },
+      ]).success
+    ).toBe(true);
+    for (const bad of [
+      [{ id: "a" }],
+      [{ raw: "A" }],
+      [{ id: "a", raw: "A", extra: 1 }],
+      [{ id: "a b", raw: "A" }],
+      [{ id: "a", raw: "" }],
+    ])
+      expect(TextReferencesSchema.safeParse(bad).success).toBe(false);
+  });
+  it("diagnostics carry optional field/subject and stats optional scientific counts", () => {
+    const d = {
+      code: "block_meta_invalid",
+      severity: "error",
+      message: "m",
+      line: 1,
+      column: 2,
+      field: "id",
+      subject: "x",
+    };
+    expect(TextDiagnosticSchema.parse(d)).toEqual(d);
+    expect(TextStatsSchema.parse({ sections: 1, paragraphs: 1, lists: 0 })).toEqual({
+      sections: 1,
+      paragraphs: 1,
+      lists: 0,
+    });
+    expect(
+      TextStatsSchema.parse({ sections: 1, paragraphs: 1, lists: 0, equations: 2, unresolved: 1 })
+        .equations
+    ).toBe(2);
   });
 });

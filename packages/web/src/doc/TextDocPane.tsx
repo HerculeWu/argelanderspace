@@ -160,13 +160,9 @@ const FAILED_KEY = {
 
 /** The page's own wording per diagnostic code; an unknown code (a newer server) falls back to the server's message. */
 const DIAGNOSTIC_KEYS = {
-  math_unsupported: "doc.text.diag.math_unsupported",
-  cite_unsupported: "doc.text.diag.cite_unsupported",
-  ref_unsupported: "doc.text.diag.ref_unsupported",
   link_unsupported: "doc.text.diag.link_unsupported",
   image_unsupported: "doc.text.diag.image_unsupported",
   table_unsupported: "doc.text.diag.table_unsupported",
-  code_unsupported: "doc.text.diag.code_unsupported",
   quote_unsupported: "doc.text.diag.quote_unsupported",
   rule_unsupported: "doc.text.diag.rule_unsupported",
   html_unsupported: "doc.text.diag.html_unsupported",
@@ -178,6 +174,49 @@ const DIAGNOSTIC_KEYS = {
   list_item_unsupported: "doc.text.diag.list_item_unsupported",
   syntax_unsupported: "doc.text.diag.syntax_unsupported",
   empty_document: "doc.text.diag.empty_document",
+  document_meta_json: "doc.text.diag.document_meta_json",
+  document_meta_invalid: "doc.text.diag.document_meta_invalid",
+  document_meta_unknown_field: "doc.text.diag.document_meta_unknown_field",
+  document_meta_position: "doc.text.diag.document_meta_position",
+  document_meta_duplicate: "doc.text.diag.document_meta_duplicate",
+  block_meta_json: "doc.text.diag.block_meta_json",
+  block_meta_invalid: "doc.text.diag.block_meta_invalid",
+  block_meta_unknown_field: "doc.text.diag.block_meta_unknown_field",
+  block_meta_dangling: "doc.text.diag.block_meta_dangling",
+  block_meta_adjacent: "doc.text.diag.block_meta_adjacent",
+  block_meta_target: "doc.text.diag.block_meta_target",
+  block_meta_field: "doc.text.diag.block_meta_field",
+  block_meta_kind: "doc.text.diag.block_meta_kind",
+  references_json: "doc.text.diag.references_json",
+  references_invalid: "doc.text.diag.references_invalid",
+  references_unknown_field: "doc.text.diag.references_unknown_field",
+  references_not_last: "doc.text.diag.references_not_last",
+  references_duplicate: "doc.text.diag.references_duplicate",
+  reference_id_duplicate: "doc.text.diag.reference_id_duplicate",
+  id_duplicate: "doc.text.diag.id_duplicate",
+  id_reserved: "doc.text.diag.id_reserved",
+  fence_unclosed: "doc.text.diag.fence_unclosed",
+  fence_unknown_marker: "doc.text.diag.fence_unknown_marker",
+  code_indented: "doc.text.diag.code_indented",
+  code_info_ignored: "doc.text.diag.code_info_ignored",
+  algorithm_lang_ignored: "doc.text.diag.algorithm_lang_ignored",
+  math_display_inline: "doc.text.diag.math_display_inline",
+  math_display_indented: "doc.text.diag.math_display_indented",
+  math_unclosed: "doc.text.diag.math_unclosed",
+  math_empty: "doc.text.diag.math_empty",
+  math_katex: "doc.text.diag.math_katex",
+  math_not_checked: "doc.text.diag.math_not_checked",
+  cite_syntax: "doc.text.diag.cite_syntax",
+  cite_unclosed: "doc.text.diag.cite_unclosed",
+  cite_unresolved: "doc.text.diag.cite_unresolved",
+  ref_syntax: "doc.text.diag.ref_syntax",
+  ref_unclosed: "doc.text.diag.ref_unclosed",
+  ref_unresolved: "doc.text.diag.ref_unresolved",
+  ref_target_unsupported: "doc.text.diag.ref_target_unsupported",
+  heading_token_unsupported: "doc.text.diag.heading_token_unsupported",
+  heading_dollar: "doc.text.diag.heading_dollar",
+  reserved_character: "doc.text.diag.reserved_character",
+  internal_error: "doc.text.diag.internal_error",
   too_many_diagnostics: "doc.text.diag.too_many_diagnostics",
 } as const;
 
@@ -414,7 +453,7 @@ function TextSourceEditor({
 
   const diagnosticText = (diagnostic: TextDiagnostic): string => {
     const key = (DIAGNOSTIC_KEYS as Record<string, (typeof DIAGNOSTIC_KEYS)[keyof typeof DIAGNOSTIC_KEYS] | undefined>)[diagnostic.code];
-    return key ? t(key, { count: diagnostic.count ?? 0 }) : diagnostic.message;
+    return key ? t(key, { count: diagnostic.count ?? 0, subject: diagnostic.subject ?? "", field: diagnostic.field ?? "" }) : diagnostic.message;
   };
 
   const statusText = useMemo(

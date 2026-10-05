@@ -31,6 +31,7 @@ interface Backend {
   publishedRev: number | null;
   /** next generate answer override */
   generate?: () => Response;
+  validate?: () => Response;
   pdfOk: boolean;
   putGate?: Promise<void>;
 }
@@ -61,6 +62,7 @@ function installBackend() {
       backend.markdown = body.markdown;
       return json(dto());
     }
+    if (url === `/api/paper/${DOC}/source/validate` && backend.validate) return backend.validate();
     if (url === `/api/paper/${DOC}/source/validate`) return json({ sourceRev: backend.rev, valid: true, diagnostics: [], stats: { sections: 2, paragraphs: 3, lists: 1 } });
     if (url === `/api/paper/${DOC}/source/generate`) {
       if (backend.generate) return backend.generate();
@@ -192,6 +194,31 @@ describe("text Doc pane: autosave and explicit generation", () => {
     expect(input(view.container)!.selectionStart).toBe(text.indexOf("> quote"));
     expect(input(view.container)!.value).toBe(text);
     expect(backend.markdown).toBe(text);
+  });
+
+  it("ticket 26 diagnostics are localized with the offending value; warnings do not make the text invalid", async () => {
+    backend.validate = () =>
+      json({
+        sourceRev: backend.rev,
+        valid: true,
+        stats: { sections: 1, paragraphs: 1, lists: 0 },
+        diagnostics: [
+          { code: "cite_unresolved", severity: "warning", message: "no reference has the id", line: 3, column: 5, subject: "ghost1999" },
+          { code: "block_meta_unknown_field", severity: "warning", message: "unknown", line: 7, column: 3, subject: "colour", field: "colour" },
+          { code: "math_katex", severity: "warning", message: "x", line: 9, column: 2, subject: "Undefined control sequence" },
+          { code: "future_code_from_a_newer_server", severity: "warning", message: "the server's own words", line: 11, column: 1 },
+        ],
+      });
+    const view = await ready();
+    typeText(view.container, "# T\n\nSee [cite: ghost1999].");
+    fireEvent.click(ui(view.container, "text-source-validate")!);
+    await waitFor(() => expect(ui(view.container, "text-source-diagnostics")).toBeTruthy());
+    expect(ui(view.container, "text-source-valid")).toBeTruthy();
+    const rows = Array.from(view.container.querySelectorAll('[data-ui="text-source-diagnostic"]')).map((r) => r.textContent);
+    expect(rows[0]).toContain("没有 id 为“ghost1999”的参考文献");
+    expect(rows[1]).toContain("块设置没有名为“colour”的字段");
+    expect(rows[2]).toContain("这个公式无法排版：Undefined control sequence");
+    expect(rows[3]).toContain("the server's own words");
   });
 
   it("a replacement blocked by annotations is reported as not published, text kept", async () => {

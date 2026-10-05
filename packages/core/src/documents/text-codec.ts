@@ -1,16 +1,16 @@
 /**
- * The `argelander-text` v1 codec (copilot ticket 25): complete readable Markdown in, shared IR out.
+ * The `argelander-text` v1 codec: complete readable Markdown in, shared IR out.
  *
- * This increment understands ATX headings (they build the section tree), plain paragraphs and single-level
- * ordered/unordered lists, with emphasis and code spans reduced to their text. Everything else the format will
- * eventually carry (math, figures, tables, code blocks, cite/xref, references, block metadata) is NOT silently
- * dropped or flattened: it is reported as an error with a construct-specific code (`math_unsupported`,
- * `cite_unsupported`, `table_unsupported`, ...) that names the line and column, so validation and
- * generation refuse until the text is rewritten. The parser is the one truth for the page, the HTTP routes and the
- * agent; there is no second parser in the browser.
+ * Understood: ATX headings (the section tree, with a fixed preface section before the first heading), paragraphs and
+ * single-level lists with emphasis/code spans reduced to their text; inline `$..$` and display `$$..$$` math;
+ * fenced code and algorithms; `[cite: ..]` and `[ref: ..]`; and the three marker blocks `argelander-document`
+ * (identity), `argelander-block` (id, printed number, label, caption of the NEXT block) and `argelander-references`
+ * (the complete bibliography, last in the text). Not yet understood (figures, tables: ticket 27): reported with a
+ * located, construct-specific diagnostic, never dropped. The parser is the one truth for the page, the HTTP routes and
+ * the agent; there is no second parser in the browser.
  *
- * Lexing is `marked`'s (a declared dependency); only the mapping to the IR is ours. The functions here are pure:
- * they never read or write a file and they do not know about annotations.
+ * Lexing is `marked`'s (a declared dependency); the pre-pass that protects math and cite/ref tokens from it is
+ * `text-scan.ts`. Everything here is pure: no file access, no knowledge of annotations.
  */
 
 import { createHash } from "node:crypto";
@@ -18,19 +18,34 @@ import {
   type IrBlock,
   type IrSection,
   type IrSegment,
-  type RefManifestRow,
+  type IrXrefTargetType,
+  type Reference,
   TEXT_INPUT_VERSION,
   TEXT_IR_VERSION,
+  type TextBlockMeta,
+  TextBlockMetaSchema,
   type TextDiagnostic,
   type TextDocIr,
+  TextDocumentMetaSchema,
+  TextReferencesSchema,
   type TextStats,
 } from "@argelanderspace/contracts";
 import { Lexer, type Token, type Tokens } from "marked";
+import {
+  bibManifest,
+  buildTargetLookup,
+  fillXrefPreviews,
+  refsManifest,
+} from "../pipelines/tex/ir.js";
+import { citeShort } from "./render.js";
+import { formatJsonPath, parseLocatedJson } from "./text-json.js";
+import { katexError } from "./text-math.js";
+import { type DisplayMath, type Item, PLACEHOLDER_RUN, scanSyntax } from "./text-scan.js";
 
 export interface TextParseOptions {
   docId: string;
   sourceRev: number;
-  /** Used when the text has no level-1 heading to name the document. */
+  /** Used when the text has no title (no `argelander-document` title, no level-1 heading). */
   fallbackTitle?: string;
 }
 
@@ -76,13 +91,11 @@ function locate(starts: number[], offset: number): { line: number; column: numbe
 
 /** The most diagnostics a result carries in full; the rest are only counted (bounds the work for huge sources). */
 const MAX_DIAGNOSTICS = 200;
+/** Formulas KaTeX-checked per document (bounds the time); the rest are reported as not checked. */
+const MAX_MATH_CHECKS = 3000;
 
 /** Diagnostic code and English message per unsupported construct; the page shows its own localized text per code. */
 const UNSUPPORTED: Record<string, { code: string; message: string }> = {
-  code: {
-    code: "code_unsupported",
-    message: "code blocks are not supported yet; rewrite it as a plain paragraph",
-  },
   blockquote: {
     code: "quote_unsupported",
     message: "block quotes are not supported; rewrite it as a plain paragraph",
@@ -117,20 +130,74 @@ function isAtxHeading(raw: string): boolean {
   return /^ {0,3}#{1,6}(?:\s|$)/.test(raw);
 }
 
+type Target = "section" | "paragraph" | "list" | "equation" | "code" | "algorithm";
+
+/** Which `argelander-block` fields apply to which block. `footnote` belongs to figures/tables (ticket 27) only. */
+const ALLOWED_FIELDS: Record<Target, readonly (keyof TextBlockMeta)[]> = {
+  section: ["id", "kind", "number"],
+  paragraph: ["id", "kind"],
+  list: ["id", "kind"],
+  equation: ["id", "kind", "number", "label"],
+  code: ["id", "kind", "number", "label", "caption"],
+  algorithm: ["id", "kind", "number", "label", "caption"],
+};
+const ID_PREFIX: Record<Target, string> = {
+  section: "sec",
+  paragraph: "p",
+  list: "l",
+  equation: "eq",
+  code: "code",
+  algorithm: "alg",
+};
+/** Structure ids the codec itself owns. */
+const RESERVED_IDS = new Set(["sec-preface"]);
+
+interface Located {
+  base: number;
+  offsetOf: (path: readonly (string | number)[]) => number | undefined;
+}
+
 interface Ctx {
   text: string;
   lineStarts: number[];
-  offset: number;
   diagnostics: TextDiagnostic[];
   /** How many diagnostics were found, including those beyond {@link MAX_DIAGNOSTICS} that are not stored. */
   total: number;
+  errors: number;
+  hiddenErrors: number;
+  mathChecks: number;
+  mathUnchecked: number;
 }
 
-function report(ctx: Ctx, at: number, code: string, message: string): void {
+interface ReportOptions {
+  severity?: "error" | "warning";
+  field?: string;
+  subject?: string;
+}
+
+function report(
+  ctx: Ctx,
+  at: number | undefined,
+  code: string,
+  message: string,
+  options: ReportOptions = {}
+): void {
+  const severity = options.severity ?? "error";
   ctx.total += 1;
-  if (ctx.diagnostics.length >= MAX_DIAGNOSTICS) return;
-  const { line, column } = locate(ctx.lineStarts, at);
-  ctx.diagnostics.push({ code, severity: "error", message, line, column });
+  if (severity === "error") ctx.errors += 1;
+  if (ctx.diagnostics.length >= MAX_DIAGNOSTICS) {
+    if (severity === "error") ctx.hiddenErrors += 1;
+    return;
+  }
+  const diagnostic: TextDiagnostic = { code, severity, message };
+  if (at !== undefined) {
+    const { line, column } = locate(ctx.lineStarts, at);
+    diagnostic.line = line;
+    diagnostic.column = column;
+  }
+  if (options.field !== undefined) diagnostic.field = options.field;
+  if (options.subject !== undefined) diagnostic.subject = options.subject;
+  ctx.diagnostics.push(diagnostic);
 }
 
 function reportSyntax(ctx: Ctx, at: number, type: string): void {
@@ -138,117 +205,364 @@ function reportSyntax(ctx: Ctx, at: number, type: string): void {
   report(ctx, at, entry.code, entry.message);
 }
 
-/**
- * The inline constructs the format will give meaning to later (math, cite, ref) but this increment cannot carry.
- * They are found BEFORE lexing, because the lexer would otherwise reduce them to text (`$a *b* c$` loses its `*`,
- * `$\\{x\\}$` its backslashes). Protection order follows the Markdown-with-math display path (lib/mdWithMath.ts):
- * code (fences, then code spans) and URLs are literal zones; then `$$..$$` / `$..$` with texmath's boundary rules
- * (an opening `$` needs a non-space after it and no backslash before it; a closing `$` needs a non-space before it
- * and no digit or `$` after it, so currency like `$100 to $200` stays text); then `[cite:` and `[ref:` tokens.
- */
-const FENCE_RE = /(```|~~~)[\s\S]*?(?:\1|$)/g;
-// a code span cannot cross a blank line (CommonMark: it lives inside one paragraph/block)
-const CODE_SPAN_RE = /(`+)((?:(?!\n[ \t]*\n)[\s\S])*?)\1(?!`)/g;
-const URL_RE = /(?:https?|ftp):\/\/[^\s<>]*/g;
-const MATH_RE = /(?<!\\)\$\$([\s\S]+?)\$\$|(?<!\\)\$(?!\$)(?!\s)([^$\n]+?)(?<!\s)\$(?![\d$])/g;
-const CITE_RE = /(?<!\\)\[cite:/g;
-const REF_RE = /(?<!\\)\[ref:/g;
+// --------------------------------------------------------------------------- //
+// Inline pieces → segments
+// --------------------------------------------------------------------------- //
 
-/** Same length, same newlines, every literal-zone character blanked. */
-function maskLiteralZones(text: string): string {
-  const blank = (m: string) => m.replace(/[^\n]/g, " ");
-  return text.replace(FENCE_RE, blank).replace(CODE_SPAN_RE, blank).replace(URL_RE, blank);
+type Piece = { t: "text"; s: string } | { t: "item"; item: Item };
+
+interface CiteUse {
+  item: Item;
+  seg: Extract<IrSegment, { type: "cite" }>;
+  owner: IrBlock | null;
+}
+interface RefUse {
+  item: Item;
+  seg: Extract<IrSegment, { type: "xref" }>;
 }
 
-function scanInlineSyntax(ctx: Ctx): void {
-  const masked = maskLiteralZones(ctx.text);
-  for (const m of masked.matchAll(MATH_RE))
-    report(
-      ctx,
-      m.index ?? 0,
-      "math_unsupported",
-      "math ($...$ and $$...$$) is not supported yet; write the formula as plain text"
-    );
-  for (const m of masked.matchAll(CITE_RE))
-    report(ctx, m.index ?? 0, "cite_unsupported", "[cite: ...] references are not supported yet");
-  for (const m of masked.matchAll(REF_RE))
-    report(
-      ctx,
-      m.index ?? 0,
-      "ref_unsupported",
-      "[ref: ...] cross-references are not supported yet"
-    );
+interface Walk extends Ctx {
+  items: Item[];
+  nextItem: number;
+  misaligned: boolean;
+  cites: CiteUse[];
+  refs: RefUse[];
+  inlineMath: number;
 }
 
-/** Inline tokens → the text they show; unsupported inline syntax is reported at the enclosing block's line. */
-function inlineText(ctx: Ctx, at: number, tokens: Token[] | undefined, out: string[]): void {
+/** Replace the placeholder runs inside a lexed text with the finds they stand for. */
+function splitRuns(w: Walk, s: string, out: Piece[]): void {
+  let last = 0;
+  for (const m of s.matchAll(PLACEHOLDER_RUN)) {
+    const index = m.index ?? 0;
+    if (index > last) out.push({ t: "text", s: s.slice(last, index) });
+    last = index + m[0].length;
+    const item = w.items[w.nextItem];
+    w.nextItem += 1;
+    if (item === undefined || item.end - item.start !== m[0].length) {
+      w.misaligned = true;
+      continue;
+    }
+    out.push({ t: "item", item });
+  }
+  if (last < s.length) out.push({ t: "text", s: s.slice(last) });
+}
+
+/** Inline tokens → pieces; unsupported inline syntax is reported at the enclosing block's start. */
+function inlinePieces(w: Walk, at: number, tokens: Token[] | undefined, out: Piece[]): void {
   for (const token of tokens ?? []) {
     switch (token.type) {
-      case "text":
+      case "text": {
+        const inner = (token as Tokens.Text).tokens;
+        if (inner !== undefined && inner.length > 0) inlinePieces(w, at, inner, out);
+        else splitRuns(w, (token as Tokens.Text).text, out);
+        break;
+      }
       case "escape":
       case "codespan":
-        out.push((token as Tokens.Text).text);
+        out.push({ t: "text", s: (token as Tokens.Text).text });
         break;
       case "br":
-        out.push(" ");
+        out.push({ t: "text", s: " " });
         break;
       case "link": {
         // A bare URL / e-mail / <angle> autolink is what the user typed as plain text: keep the exact characters.
         // An explicit [text](url) link stays unsupported.
         const link = token as Tokens.Link;
-        if (link.raw.startsWith("[")) reportSyntax(ctx, at, "link");
-        else out.push(link.raw);
+        if (link.raw.startsWith("[")) reportSyntax(w, at, "link");
+        else out.push({ t: "text", s: link.raw });
         break;
       }
       case "em":
       case "strong":
-        inlineText(ctx, at, (token as Tokens.Em).tokens, out);
+        inlinePieces(w, at, (token as Tokens.Em).tokens, out);
         break;
       default:
-        reportSyntax(ctx, at, token.type);
+        reportSyntax(w, at, token.type);
         break;
     }
   }
 }
 
-function normalizeSpaces(parts: string[]): string {
-  return parts
-    .join("")
-    .replace(/\s*\n\s*/g, " ")
-    .replace(/[ \t]+/g, " ")
-    .trim();
+const squeeze = (s: string): string => s.replace(/\s*\n\s*/g, " ").replace(/[ \t]+/g, " ");
+
+/** Merge neighbouring text, collapse soft breaks to a space, trim the block's two ends. */
+function mergedPieces(pieces: Piece[]): Piece[] {
+  const merged: Piece[] = [];
+  for (const p of pieces) {
+    const prev = merged[merged.length - 1];
+    if (p.t === "text" && prev?.t === "text") prev.s += p.s;
+    else merged.push(p.t === "text" ? { t: "text", s: p.s } : p);
+  }
+  for (const p of merged) if (p.t === "text") p.s = squeeze(p.s);
+  const first = merged[0];
+  if (first?.t === "text") first.s = first.s.trimStart();
+  const last = merged[merged.length - 1];
+  if (last?.t === "text") last.s = last.s.trimEnd();
+  return merged.filter((p) => p.t !== "text" || p.s !== "");
 }
 
-function textOf(ctx: Ctx, at: number, tokens: Token[] | undefined): string {
-  const parts: string[] = [];
-  inlineText(ctx, at, tokens, parts);
-  return normalizeSpaces(parts);
+function toSegments(w: Walk, pieces: Piece[], owner: IrBlock | null): IrSegment[] {
+  const segments: IrSegment[] = [];
+  for (const p of mergedPieces(pieces)) {
+    if (p.t === "text") {
+      segments.push({ type: "text", text: p.s });
+      continue;
+    }
+    const item = p.item;
+    if (item.bad) continue;
+    if (item.kind === "math") {
+      w.inlineMath += 1;
+      segments.push({ type: "math", latex: item.latex as string });
+    } else if (item.kind === "cite") {
+      const seg: CiteUse["seg"] = {
+        type: "cite",
+        refs: (item.ids as string[]).map((id) => ({ id, resolved: false })),
+        ...(item.display !== undefined ? { raw: item.display } : {}),
+      };
+      w.cites.push({ item, seg, owner });
+      segments.push(seg);
+    } else {
+      const seg: RefUse["seg"] = {
+        type: "xref",
+        target: { id: (item.ids as string[])[0] as string, resolved: false },
+        ...(item.display !== undefined ? { raw: item.display } : {}),
+      };
+      w.refs.push({ item, seg });
+      segments.push(seg);
+    }
+  }
+  return segments;
 }
 
-function segmentsOf(text: string): IrSegment[] {
-  return text ? [{ type: "text", text }] : [];
+/** A heading is a clean string: math stays `$..$` (the Reader's heading display renders it); cite/ref cannot live there. */
+function headingText(w: Walk, at: number, pieces: Piece[]): string {
+  let out = "";
+  for (const p of mergedPieces(pieces)) {
+    if (p.t === "text") {
+      if (p.s.includes("$"))
+        report(
+          w,
+          at,
+          "heading_dollar",
+          "a literal $ in a heading can be shown as part of a formula",
+          { severity: "warning" }
+        );
+      out += p.s;
+    } else if (p.item.kind === "math") {
+      out += `$${p.item.latex}$`;
+    } else {
+      report(
+        w,
+        p.item.start,
+        "heading_token_unsupported",
+        "[cite: ...] and [ref: ...] cannot be used inside a heading; put them in a paragraph"
+      );
+    }
+  }
+  return out.trim();
 }
+
+function checkMath(w: Walk, latex: string, display: boolean, at: number): void {
+  if (w.mathChecks >= MAX_MATH_CHECKS) {
+    w.mathUnchecked += 1;
+    return;
+  }
+  w.mathChecks += 1;
+  const error = katexError(latex, display);
+  if (error !== null)
+    report(w, at, "math_katex", `the formula cannot be typeset: ${error}`, {
+      severity: "warning",
+      subject: error,
+    });
+}
+
+// --------------------------------------------------------------------------- //
+// Marker blocks
+// --------------------------------------------------------------------------- //
+
+interface FenceInfo {
+  info: string;
+  closed: boolean;
+  /** The text between the fences, offsets relative to `base`. */
+  inner: string;
+  /** Offset in the source of the first character after the opening fence line. */
+  base: number;
+}
+
+function fenceOf(raw: string, at: number): FenceInfo | null {
+  const open = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\n]*)/.exec(raw);
+  if (open === null) return null;
+  const fence = open[1] as string;
+  const lines = raw.replace(/\n+$/, "").split("\n");
+  let closed = false;
+  if (lines.length >= 2) {
+    const last = lines[lines.length - 1] as string;
+    const m = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(last);
+    closed =
+      m !== null && (m[1] as string)[0] === fence[0] && (m[1] as string).length >= fence.length;
+  }
+  const inner = lines.slice(1, closed ? -1 : undefined).join("\n");
+  const firstNl = raw.indexOf("\n");
+  return {
+    info: (open[2] as string).trim(),
+    closed,
+    inner,
+    base: at + (firstNl === -1 ? raw.length : firstNl + 1),
+  };
+}
+
+/** The offset to report for a JSON path: the field itself, else its nearest existing parent. */
+function whereIn(located: Located, path: readonly (string | number)[]): number {
+  for (let n = path.length; n >= 0; n -= 1) {
+    const offset = located.offsetOf(path.slice(0, n));
+    if (offset !== undefined) return located.base + offset;
+  }
+  return located.base;
+}
+
+interface Issue {
+  code: string;
+  path: PropertyKey[];
+  message: string;
+  keys?: string[];
+}
+
+function reportIssues(
+  w: Walk,
+  issues: readonly Issue[],
+  located: Located,
+  codes: { unknown: string; invalid: string }
+): void {
+  for (const issue of issues) {
+    const path = issue.path.filter((p): p is string | number => typeof p !== "symbol");
+    if (issue.code === "unrecognized_keys") {
+      for (const key of issue.keys ?? []) {
+        const full = [...path, key];
+        report(
+          w,
+          whereIn(located, full),
+          codes.unknown,
+          `the field "${key}" is not part of this block`,
+          {
+            field: formatJsonPath(full),
+            subject: key,
+          }
+        );
+      }
+    } else {
+      report(
+        w,
+        whereIn(located, path),
+        codes.invalid,
+        `${formatJsonPath(path) || "the value"}: ${issue.message}`,
+        {
+          field: formatJsonPath(path),
+        }
+      );
+    }
+  }
+}
+
+/** JSON of a marker block: syntax errors are reported at the character they stop on. */
+function parseMarker(
+  w: Walk,
+  fence: FenceInfo,
+  at: number,
+  syntaxCode: string
+): { value: unknown; located: Located } | null {
+  if (!fence.closed) {
+    report(w, at, "fence_unclosed", "this code fence is never closed");
+    return null;
+  }
+  const parsed = parseLocatedJson(fence.inner);
+  if (!parsed.ok) {
+    report(w, fence.base + parsed.offset, syntaxCode, `invalid JSON: ${parsed.message}`);
+    return null;
+  }
+  return { value: parsed.value, located: { base: fence.base, offsetOf: parsed.offsetOf } };
+}
+
+// --------------------------------------------------------------------------- //
+// The parser
+// --------------------------------------------------------------------------- //
+
+interface PendingMeta {
+  fields: TextBlockMeta;
+  at: number;
+  located: Located;
+}
+
+interface Entry {
+  prefix: string;
+  target: Target;
+  explicit?: { id: string; at: number };
+  node: { id: string };
+  /** Section / block data the cross-reference resolver needs. */
+  number?: string;
+}
+
+const EMPTY_STATS: TextStats = { sections: 0, paragraphs: 0, lists: 0 };
 
 export function parseTextSource(markdown: string, options: TextParseOptions): TextParseResult {
   // marked normalizes line endings itself; do the same first so reported lines match the lexer's view.
   const text = markdown.replace(/\r\n|\r/g, "\n");
-  const ctx: Ctx = {
+  const w: Walk = {
     text,
     lineStarts: lineStartsOf(markdown),
-    offset: 0,
     diagnostics: [],
     total: 0,
+    errors: 0,
+    hiddenErrors: 0,
+    mathChecks: 0,
+    mathUnchecked: 0,
+    items: [],
+    nextItem: 0,
+    misaligned: false,
+    cites: [],
+    refs: [],
+    inlineMath: 0,
   };
-  scanInlineSyntax(ctx);
-  const tokens = Lexer.lex(text);
+
+  // the three placeholder characters are ours; a source that already uses them cannot be scanned safely
+  for (const m of text.matchAll(/[-]/g))
+    report(
+      w,
+      m.index ?? 0,
+      "reserved_character",
+      "the private-use characters U+E000 to U+E002 are reserved by the text format",
+      { subject: `U+${(m[0].codePointAt(0) as number).toString(16).toUpperCase()}` }
+    );
+  if (w.errors > 0) return finish(w, null, EMPTY_STATS);
+
+  const scan = scanSyntax(text, { blockDisplay: true });
+  w.items = scan.items;
+  for (const p of scan.problems)
+    report(w, p.offset, p.code, p.message, p.subject ? { subject: p.subject } : {});
+  for (const item of scan.items)
+    if (item.kind === "math" && !item.bad) checkMath(w, item.latex as string, false, item.start);
+  for (const d of scan.displays) checkMath(w, d.latex, true, d.start);
+
+  const tokens = Lexer.lex(scan.lexText);
 
   const root: IrSection[] = [];
   const stack: IrSection[] = [];
+  const entries: Entry[] = [];
   let sectionCount = 0;
   let paragraphCount = 0;
   let listCount = 0;
+  let equationCount = 0;
+  let codeCount = 0;
   let preface: IrSection | null = null;
   let firstH1: string | undefined;
+  let docMeta: ReturnType<typeof TextDocumentMetaSchema.parse> | undefined;
+  let sawDocMeta = false;
+  let sawContent = false;
+  let references: Reference[] | undefined;
+  let referencesAt = -1;
+  let pending: PendingMeta | null = null;
+  let displayIndex = 0;
+  let offset = 0;
 
   const currentBlocks = (): IrBlock[] => {
     const top = stack[stack.length - 1];
@@ -261,32 +575,149 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     return preface.blocks;
   };
 
-  for (const token of tokens) {
-    const at = ctx.offset;
-    ctx.offset += token.raw.length;
+  /** Consume the pending `argelander-block` for a block of kind `target`; validates which fields may apply. */
+  const takeMeta = (target: Target): TextBlockMeta => {
+    const meta = pending;
+    pending = null;
+    if (meta === null) return {};
+    const fields = meta.fields;
+    const allowed = ALLOWED_FIELDS[target];
+    for (const key of Object.keys(fields) as (keyof TextBlockMeta)[]) {
+      if (key === "kind") continue;
+      if (!allowed.includes(key)) {
+        report(
+          w,
+          whereIn(meta.located, [key]),
+          "block_meta_field",
+          key === "footnote"
+            ? "footnote belongs to figures and tables, which are not supported yet"
+            : `the field "${key}" does not apply to this block`,
+          { field: key, subject: key }
+        );
+      }
+    }
+    if (fields.kind !== undefined) {
+      const fine =
+        target === "code" || target === "algorithm"
+          ? fields.kind === "code" || fields.kind === "algorithm"
+          : fields.kind === target;
+      if (!fine)
+        report(
+          w,
+          whereIn(meta.located, ["kind"]),
+          "block_meta_kind",
+          `kind "${fields.kind}" does not match the block that follows`,
+          {
+            field: "kind",
+            subject: fields.kind,
+          }
+        );
+    }
+    return fields;
+  };
+
+  const captionOf = (
+    caption: string | undefined,
+    located: Located | null,
+    owner: IrBlock
+  ): IrSegment[] | undefined => {
+    if (caption === undefined) return undefined;
+    const where = located === null ? 0 : whereIn(located, ["caption"]);
+    const sub = scanSyntax(caption, { blockDisplay: false });
+    for (const p of sub.problems)
+      report(w, where, p.code, p.message, p.subject ? { subject: p.subject } : {});
+    const pieces: Piece[] = [];
+    let at = 0;
+    for (const item of sub.items) {
+      if (item.start > at) pieces.push({ t: "text", s: caption.slice(at, item.start) });
+      item.where = where;
+      if (item.kind === "math" && !item.bad) checkMath(w, item.latex as string, false, where);
+      pieces.push({ t: "item", item });
+      at = item.end;
+    }
+    if (at < caption.length) pieces.push({ t: "text", s: caption.slice(at) });
+    return toSegments(w, pieces, owner);
+  };
+
+  const register = (
+    target: Target,
+    node: { id: string },
+    meta: TextBlockMeta,
+    at: number,
+    number?: string
+  ): void => {
+    const entry: Entry = { prefix: ID_PREFIX[target], target, node };
+    if (meta.id !== undefined) entry.explicit = { id: meta.id, at };
+    if (number !== undefined) entry.number = number;
+    entries.push(entry);
+  };
+
+  /** Last diagnostic position of the pending block's id field, kept with the registration. */
+  const idAt = (meta: PendingMeta | null): number =>
+    meta === null ? 0 : whereIn(meta.located, ["id"]);
+
+  const emitEquation = (d: DisplayMath): void => {
+    const metaState = pending;
+    const fields = takeMeta("equation");
+    sawContent = true;
+    equationCount += 1;
+    const block: IrBlock = {
+      id: "",
+      type: "equation",
+      latex: d.latex,
+      ...(fields.number !== undefined ? { number: fields.number } : {}),
+      ...(fields.label !== undefined ? { label: fields.label } : {}),
+    };
+    currentBlocks().push(block);
+    register("equation", block, fields, idAt(metaState), fields.number);
+  };
+
+  const flushDisplays = (upTo: number): void => {
+    while (
+      displayIndex < scan.displays.length &&
+      (scan.displays[displayIndex] as DisplayMath).lineStart <= upTo
+    ) {
+      emitEquation(scan.displays[displayIndex] as DisplayMath);
+      displayIndex += 1;
+    }
+  };
+
+  for (let t = 0; t < tokens.length; t += 1) {
+    const token = tokens[t] as Token;
+    const at = offset;
+    offset += token.raw.length;
+    flushDisplays(at);
     switch (token.type) {
       case "space":
         break;
       case "heading": {
         const heading = token as Tokens.Heading;
         if (!isAtxHeading(heading.raw)) {
+          pending = null;
           report(
-            ctx,
+            w,
             at,
             "setext_unsupported",
             "only '#' headings are supported; underlined headings are not"
           );
           break;
         }
-        const label = textOf(ctx, at, heading.tokens);
+        sawContent = true;
+        const pieces: Piece[] = [];
+        inlinePieces(w, at, heading.tokens, pieces);
+        const label = headingText(w, at, pieces);
+        const metaState = pending;
+        const fields = takeMeta("section");
         sectionCount += 1;
         const section: IrSection = {
-          id: `sec-${sectionCount}`,
+          id: "",
           level: heading.depth,
+          ...(fields.number !== undefined ? { number: fields.number } : {}),
           ...(label ? { heading: label } : {}),
           blocks: [],
           children: [],
         };
+        register("section", section, fields, idAt(metaState), fields.number);
         if (heading.depth === 1 && firstH1 === undefined && label) firstH1 = label;
         while (stack.length > 0 && (stack[stack.length - 1] as IrSection).level >= heading.depth)
           stack.pop();
@@ -295,40 +726,36 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
         stack.push(section);
         break;
       }
-      case "paragraph": {
-        const label = textOf(ctx, at, (token as Tokens.Paragraph).tokens);
-        if (!label) break;
-        paragraphCount += 1;
-        currentBlocks().push({
-          id: `p-${paragraphCount}`,
-          type: "paragraph",
-          segments: segmentsOf(label),
-        });
-        break;
-      }
+      case "paragraph":
       case "text": {
-        // a bare top-level text token (marked emits one for a lone line)
-        const label = textOf(ctx, at, (token as Tokens.Text).tokens ?? [token]);
-        if (!label) break;
+        const inner =
+          token.type === "paragraph"
+            ? (token as Tokens.Paragraph).tokens
+            : ((token as Tokens.Text).tokens ?? [token]);
+        const pieces: Piece[] = [];
+        inlinePieces(w, at, inner, pieces);
+        if (mergedPieces(pieces).length === 0) break;
+        sawContent = true;
+        const metaState = pending;
+        const fields = takeMeta("paragraph");
         paragraphCount += 1;
-        currentBlocks().push({
-          id: `p-${paragraphCount}`,
-          type: "paragraph",
-          segments: segmentsOf(label),
-        });
+        const block: IrBlock = { id: "", type: "paragraph", segments: [] };
+        block.segments = toSegments(w, pieces, block);
+        currentBlocks().push(block);
+        register("paragraph", block, fields, idAt(metaState));
         break;
       }
       case "list": {
         const list = token as Tokens.List;
+        sawContent = true;
         const items: { segments: IrSegment[] }[] = [];
+        const block: IrBlock = { id: "", type: "list", ordered: list.ordered, items };
         for (const item of list.items) {
-          if (item.task) {
-            report(ctx, at, "task_unsupported", "task list markers are not supported");
-          }
-          const real = item.tokens.filter((t) => t.type !== "space");
-          if (real.some((t) => t.type === "list")) {
+          if (item.task) report(w, at, "task_unsupported", "task list markers are not supported");
+          const real = item.tokens.filter((x) => x.type !== "space");
+          if (real.some((x) => x.type === "list")) {
             report(
-              ctx,
+              w,
               at,
               "nested_list_unsupported",
               "nested lists are not supported; keep the list to one level"
@@ -337,7 +764,7 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
           }
           if (real.length !== 1 || (real[0]?.type !== "text" && real[0]?.type !== "paragraph")) {
             report(
-              ctx,
+              w,
               at,
               "list_item_unsupported",
               "a list item must be a single paragraph of text; split the content into separate paragraphs"
@@ -345,58 +772,372 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
             continue;
           }
           const only = real[0] as Tokens.Text | Tokens.Paragraph;
-          items.push({ segments: segmentsOf(textOf(ctx, at, only.tokens ?? [only])) });
+          const pieces: Piece[] = [];
+          inlinePieces(w, at, only.tokens ?? [only], pieces);
+          items.push({ segments: toSegments(w, pieces, block) });
         }
+        const metaState = pending;
+        const fields = takeMeta("list");
         listCount += 1;
-        currentBlocks().push({ id: `l-${listCount}`, type: "list", ordered: list.ordered, items });
+        currentBlocks().push(block);
+        register("list", block, fields, idAt(metaState));
+        break;
+      }
+      case "code": {
+        const code = token as Tokens.Code;
+        if (code.codeBlockStyle === "indented") {
+          pending = null;
+          report(
+            w,
+            at,
+            "code_indented",
+            "an indented code block is not supported; use a fenced block (```)"
+          );
+          break;
+        }
+        const fence = fenceOf(code.raw, at);
+        if (fence === null) {
+          pending = null;
+          reportSyntax(w, at, "code");
+          break;
+        }
+        const marker = fence.info.split(/\s+/)[0] ?? "";
+        if (marker === "argelander-document") {
+          if (sawDocMeta) {
+            report(w, at, "document_meta_duplicate", "there is only one argelander-document block");
+            break;
+          }
+          if (sawContent) {
+            report(
+              w,
+              at,
+              "document_meta_position",
+              "the argelander-document block must be the first thing in the text"
+            );
+            sawDocMeta = true;
+            break;
+          }
+          sawDocMeta = true;
+          const parsed = parseMarker(w, fence, at, "document_meta_json");
+          if (parsed === null) break;
+          const result = TextDocumentMetaSchema.safeParse(parsed.value);
+          if (!result.success) {
+            reportIssues(w, result.error.issues as Issue[], parsed.located, {
+              unknown: "document_meta_unknown_field",
+              invalid: "document_meta_invalid",
+            });
+            break;
+          }
+          const details = result.data.authorDetails ?? [];
+          const count = result.data.affiliations?.length ?? 0;
+          for (const [i, author] of details.entries()) {
+            for (const [j, n] of (author.affiliations ?? []).entries()) {
+              if (n >= 1 && n <= count) continue;
+              report(
+                w,
+                whereIn(parsed.located, ["authorDetails", i, "affiliations", j]),
+                "document_meta_invalid",
+                `affiliation ${n} is not in the affiliations list (1..${count})`,
+                { field: `authorDetails[${i}].affiliations[${j}]` }
+              );
+            }
+          }
+          docMeta = result.data;
+          break;
+        }
+        if (marker === "argelander-block") {
+          sawContent = true;
+          if (pending !== null) {
+            report(
+              w,
+              at,
+              "block_meta_adjacent",
+              "two argelander-block blocks in a row; each binds to the one block after it"
+            );
+            break;
+          }
+          const parsed = parseMarker(w, fence, at, "block_meta_json");
+          if (parsed === null) break;
+          const result = TextBlockMetaSchema.safeParse(parsed.value);
+          if (!result.success) {
+            reportIssues(w, result.error.issues as Issue[], parsed.located, {
+              unknown: "block_meta_unknown_field",
+              invalid: "block_meta_invalid",
+            });
+            break;
+          }
+          pending = { fields: result.data, at, located: parsed.located };
+          break;
+        }
+        if (marker === "argelander-references") {
+          sawContent = true;
+          if (pending !== null) {
+            report(
+              w,
+              pending.at,
+              "block_meta_target",
+              "an argelander-block cannot bind to the references block"
+            );
+            pending = null;
+          }
+          if (references !== undefined || referencesAt >= 0) {
+            report(w, at, "references_duplicate", "there is only one argelander-references block");
+            break;
+          }
+          referencesAt = at;
+          if (tokens.slice(t + 1).some((x) => x.type !== "space")) {
+            report(
+              w,
+              at,
+              "references_not_last",
+              "the argelander-references block must be the last thing in the text"
+            );
+            break;
+          }
+          const parsed = parseMarker(w, fence, at, "references_json");
+          if (parsed === null) break;
+          const result = TextReferencesSchema.safeParse(parsed.value);
+          if (!result.success) {
+            reportIssues(w, result.error.issues as Issue[], parsed.located, {
+              unknown: "references_unknown_field",
+              invalid: "references_invalid",
+            });
+            break;
+          }
+          const seen = new Map<string, number>();
+          result.data.forEach((ref, i) => {
+            // only web addresses: a reference url never becomes a script or file link
+            if (ref.url !== undefined && !/^https?:\/\//i.test(ref.url))
+              report(
+                w,
+                whereIn(parsed.located, [i, "url"]),
+                "references_invalid",
+                "url: only http:// and https:// addresses are allowed",
+                { field: `[${i}].url` }
+              );
+            if (seen.has(ref.id))
+              report(
+                w,
+                whereIn(parsed.located, [i, "id"]),
+                "reference_id_duplicate",
+                `the reference id "${ref.id}" is already used by entry ${(seen.get(ref.id) as number) + 1}`,
+                { field: `[${i}].id`, subject: ref.id }
+              );
+            else seen.set(ref.id, i);
+          });
+          references = result.data;
+          break;
+        }
+        if (marker.startsWith("argelander-")) {
+          pending = null;
+          report(w, at, "fence_unknown_marker", `"${marker}" is not a block of this format`, {
+            subject: marker,
+          });
+          break;
+        }
+        // an ordinary fenced code block (or, with kind=algorithm metadata, an algorithm)
+        if (!fence.closed) {
+          pending = null;
+          report(w, at, "fence_unclosed", "this code fence is never closed");
+          break;
+        }
+        sawContent = true;
+        const metaState = pending;
+        const metaFields = pending?.fields;
+        const target: Target = metaFields?.kind === "algorithm" ? "algorithm" : "code";
+        const fields = takeMeta(target);
+        codeCount += 1;
+        const info = fence.info.split(/\s+/).filter(Boolean);
+        const lang = info[0];
+        if (info.length > 1)
+          report(
+            w,
+            at,
+            "code_info_ignored",
+            `only the language "${lang}" is kept; the rest of the info string is ignored`,
+            {
+              severity: "warning",
+              subject: info.slice(1).join(" "),
+            }
+          );
+        const block: IrBlock =
+          target === "algorithm"
+            ? { id: "", type: "algorithm", body: code.text }
+            : { id: "", type: "code", body: code.text, ...(lang ? { lang } : {}) };
+        if (target === "algorithm" && lang)
+          report(
+            w,
+            at,
+            "algorithm_lang_ignored",
+            `an algorithm keeps no language; "${lang}" is ignored`,
+            {
+              severity: "warning",
+              subject: lang,
+            }
+          );
+        if (fields.number !== undefined) block.number = fields.number;
+        if (fields.label !== undefined) block.label = fields.label;
+        if (fields.caption !== undefined) {
+          const segs = captionOf(fields.caption, metaState?.located ?? null, block);
+          if (segs !== undefined && segs.length > 0) block.captionSegments = segs;
+        }
+        currentBlocks().push(block);
+        register(target, block, fields, idAt(metaState), fields.number);
         break;
       }
       default:
-        reportSyntax(ctx, at, token.type);
+        pending = null;
+        reportSyntax(w, at, token.type);
         break;
     }
   }
+  flushDisplays(Number.POSITIVE_INFINITY);
+  if (pending !== null)
+    report(
+      w,
+      (pending as PendingMeta).at,
+      "block_meta_dangling",
+      "this argelander-block has no block after it to bind to"
+    );
+
+  // ---- ids: explicit ones are unique, implicit ones are deterministic -------------------------------------------
+  const taken = new Map<string, number>();
+  for (const e of entries) {
+    if (e.explicit === undefined) continue;
+    const { id, at } = e.explicit;
+    if (RESERVED_IDS.has(id)) {
+      report(w, at, "id_reserved", `the id "${id}" is reserved`, { field: "id", subject: id });
+    } else if (taken.has(id)) {
+      const first = locate(w.lineStarts, taken.get(id) as number);
+      report(w, at, "id_duplicate", `the id "${id}" is already used (line ${first.line})`, {
+        field: "id",
+        subject: id,
+      });
+    } else {
+      taken.set(id, at);
+      e.node.id = id;
+    }
+  }
+  const used = new Set<string>([...taken.keys(), ...RESERVED_IDS]);
+  const counters: Record<string, number> = {};
+  for (const e of entries) {
+    // every block of a kind counts, explicit id or not, so adding an id to one block does not renumber the later ones
+    counters[e.prefix] = (counters[e.prefix] ?? 0) + 1;
+    if (e.node.id !== "") continue;
+    let candidate = `${e.prefix}-${counters[e.prefix]}`;
+    for (let n = 1; used.has(candidate); n += 1)
+      candidate = `${e.prefix}-${counters[e.prefix]}-${n}`;
+    used.add(candidate);
+    e.node.id = candidate;
+  }
+
+  // ---- cross-references and citations: the table is complete, now resolve ---------------------------------------
+  const byId = new Map<string, Entry>();
+  for (const e of entries) byId.set(e.node.id, e);
+  let unresolved = 0;
+  for (const use of w.refs) {
+    if (use.item.bad) continue;
+    const id = use.seg.target.id;
+    const entry = byId.get(id);
+    if (entry === undefined) {
+      unresolved += 1;
+      report(
+        w,
+        use.item.where,
+        "ref_unresolved",
+        `no block has the id "${id}"; the text is kept as it was written`,
+        {
+          severity: "warning",
+          subject: id,
+        }
+      );
+    } else if (entry.target === "paragraph" || entry.target === "list") {
+      report(
+        w,
+        use.item.where,
+        "ref_target_unsupported",
+        `"${id}" is a ${entry.target}; only sections, equations, code and algorithms can be referenced`,
+        {
+          subject: id,
+        }
+      );
+    } else {
+      use.seg.target = {
+        id,
+        resolved: true,
+        targetType: (entry.target === "section" ? "section" : entry.target) as IrXrefTargetType,
+        ...(entry.number !== undefined ? { number: entry.number } : {}),
+      };
+    }
+  }
+  const refTable = new Map<string, Reference>();
+  for (const r of references ?? []) if (!refTable.has(r.id)) refTable.set(r.id, r);
+  const citationsByBlock: Record<string, string[]> = {};
+  for (const use of w.cites) {
+    if (use.item.bad) continue;
+    for (const ref of use.seg.refs) {
+      const found = refTable.get(ref.id);
+      if (found === undefined) {
+        unresolved += 1;
+        report(
+          w,
+          use.item.where,
+          "cite_unresolved",
+          `no reference has the id "${ref.id}"; the text is kept as it was written`,
+          {
+            severity: "warning",
+            subject: ref.id,
+          }
+        );
+        continue;
+      }
+      ref.resolved = true;
+      ref.short = citeShort(found);
+      if (found.title !== undefined && found.title !== "") ref.title = found.title;
+      if (use.owner !== null) {
+        const list = citationsByBlock[use.owner.id] ?? [];
+        citationsByBlock[use.owner.id] = list;
+        if (!list.includes(ref.id)) list.push(ref.id);
+      }
+    }
+  }
+
+  if (w.mathUnchecked > 0)
+    report(
+      w,
+      undefined,
+      "math_not_checked",
+      `${w.mathUnchecked} formulas were not checked for typesetting errors (only the first ${MAX_MATH_CHECKS} are)`,
+      { severity: "warning", subject: String(w.mathUnchecked) }
+    );
+  if (w.errors === 0 && (w.misaligned || w.nextItem !== w.items.length))
+    report(
+      w,
+      undefined,
+      "internal_error",
+      "an inline element could not be matched to its place; this is a parser fault"
+    );
 
   const stats: TextStats = { sections: sectionCount, paragraphs: paragraphCount, lists: listCount };
-  if (sectionCount === 0 && paragraphCount === 0 && listCount === 0 && ctx.total === 0) {
-    ctx.diagnostics.push({
-      code: "empty_document",
-      severity: "error",
-      message: "the document has no content yet",
-    });
-  }
-  ctx.diagnostics.sort(
-    (a, b) => (a.line ?? 0) - (b.line ?? 0) || (a.column ?? 0) - (b.column ?? 0)
-  );
-  if (ctx.total > ctx.diagnostics.length)
-    ctx.diagnostics.push({
-      code: "too_many_diagnostics",
-      severity: "error",
-      message: `${ctx.total - ctx.diagnostics.length} more diagnostics are not shown`,
-      count: ctx.total - ctx.diagnostics.length,
-    });
-  if (ctx.diagnostics.some((d) => d.severity === "error")) {
-    return { ir: null, diagnostics: ctx.diagnostics, stats };
-  }
+  if (equationCount > 0) stats.equations = equationCount;
+  if (codeCount > 0) stats.codeBlocks = codeCount;
+  if (w.inlineMath > 0) stats.inlineMath = w.inlineMath;
+  const citeCount = w.cites.filter((u) => !u.item.bad).length;
+  const refCount = w.refs.filter((u) => !u.item.bad).length;
+  if (citeCount > 0) stats.citations = citeCount;
+  if (refCount > 0) stats.crossRefs = refCount;
+  if ((references?.length ?? 0) > 0) stats.references = references?.length as number;
+  if (unresolved > 0) stats.unresolved = unresolved;
 
-  const refsManifest: RefManifestRow[] = [];
-  const walk = (sections: IrSection[], path: string[]): void => {
-    for (const s of sections) {
-      if (s.heading) {
-        refsManifest.push({
-          id: s.id,
-          kind: "section",
-          content: s.heading,
-          short: s.heading.length > 80 ? `${s.heading.slice(0, 77)}...` : s.heading,
-          section: `${s.level}:${s.heading}`,
-        });
-      }
-      walk(s.children, [...path, s.heading ?? ""]);
-    }
-  };
-  walk(root, []);
+  if (sectionCount + paragraphCount + listCount + equationCount + codeCount === 0 && w.total === 0)
+    report(w, undefined, "empty_document", "the document has no content yet");
+  if (w.errors > 0) return finish(w, null, stats);
 
-  const title = firstH1 ?? options.fallbackTitle;
+  fillXrefPreviews(root, buildTargetLookup(root));
+  const rows = refsManifest(root).filter((r) => r.kind !== "section" || r.content !== "");
+  const title = docMeta?.title ?? firstH1 ?? options.fallbackTitle;
+  const { version: _version, ...docFields } = docMeta ?? { version: 1 };
+  const refList = references ?? [];
   const ir: TextDocIr = {
     version: TEXT_IR_VERSION,
     docId: options.docId,
@@ -407,11 +1148,25 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
       source_rev: options.sourceRev,
       source_fingerprint: textSourceFingerprint(markdown),
     },
-    meta: title ? { title } : {},
+    meta: { ...docFields, ...(title ? { title } : {}) },
     sections: root,
-    refsManifest,
-    bib: [],
-    citationsByBlock: {},
+    refsManifest: rows,
+    bib: bibManifest(refList),
+    ...(refList.length > 0 ? { references: refList } : {}),
+    citationsByBlock,
   };
-  return { ir, diagnostics: ctx.diagnostics, stats };
+  return finish(w, ir, stats);
+}
+
+/** Order the diagnostics by position, append the cap summary, and withhold the IR when there is any error. */
+function finish(w: Walk, ir: TextDocIr | null, stats: TextStats): TextParseResult {
+  w.diagnostics.sort((a, b) => (a.line ?? 0) - (b.line ?? 0) || (a.column ?? 0) - (b.column ?? 0));
+  if (w.total > w.diagnostics.length)
+    w.diagnostics.push({
+      code: "too_many_diagnostics",
+      severity: w.hiddenErrors > 0 ? "error" : "warning",
+      message: `${w.total - w.diagnostics.length} more diagnostics are not shown`,
+      count: w.total - w.diagnostics.length,
+    });
+  return { ir: w.errors > 0 ? null : ir, diagnostics: w.diagnostics, stats };
 }
