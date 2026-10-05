@@ -48,6 +48,7 @@ import {
   summarizeLibraryPage,
   summarizePdfPage,
   summarizeReaderPage,
+  summarizeTextPage,
   summarizeWriterPage,
   TASK_UNDO_WINDOW_MS,
   type WsCopilotEvent,
@@ -87,6 +88,7 @@ import {
   PLAN_TOOL_NAME,
 } from "./copilot-plan-tool.js";
 import { createReaderTool, READER_TOOL_NAME, type ReaderOpDeps } from "./copilot-reader-tool.js";
+import { createTextTool, TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
 import {
   createWorkspaceTool,
   type ViewActionOutcome,
@@ -237,6 +239,10 @@ function measureForWindow(value: unknown): { size: number; imageBytes: number } 
   return { size: Buffer.byteLength(text) + images, imageBytes };
 }
 
+/** Added when the text tool exists (ticket 29): kept short, the tool description holds the actions. */
+const TEXT_PROMPT =
+  " The text tool writes a text Doc's Markdown source (page.textSource carries the editor's current text; unsaved true means it is the user's draft) and its images; the reading text only changes with generate. A text Doc's generated reading is read and annotated with reader read and create_annotation like a LaTeX Doc. Replacing annotated reading text waits for the user's confirmation card, which you cannot give.";
+
 /** Business capabilities the app wires in; the host never reaches around them. */
 export interface Workbench {
   plans: PlanOpDeps;
@@ -244,6 +250,8 @@ export interface Workbench {
   library?: LibraryOpDeps;
   /** The LaTeX Reader's read-only seam (copilot ticket 18); absent in headless hosts. */
   reader?: ReaderOpDeps;
+  /** The text Doc handlers of the source panel's routes (copilot ticket 29); absent in headless hosts. */
+  text?: TextOpDeps;
   /** The Writer's seam (copilot ticket 22): the routes' lock, rev check, save and notification; absent in headless hosts. */
   writer?: WriterOpDeps;
   /** Milliseconds a view action may wait for its bound browser to report (default 10 s). */
@@ -879,6 +887,7 @@ export class CopilotHost {
         ...(context.pdf
           ? { pdf: summarizePdfPage(context.pdf, pdf, model?.input.includes("image") ?? true) }
           : {}),
+        ...(context.textSource ? { text: summarizeTextPage(context.textSource) } : {}),
         ...(context.writer ? { writer: summarizeWriterPage(context.writer) } : {}),
         ...(coverage ? { coverage } : {}),
         objects: this.contextObjects(context),
@@ -1141,89 +1150,103 @@ export class CopilotHost {
           runId: state.runId,
           toolCallId: entry.toolCallId,
           baseRev: entry.baseRev,
-          ...(entry.action === "delete_plan"
-            ? { action: entry.action, planId: entry.planId }
-            : entry.action === "delete_manuscript"
-              ? { action: entry.action, manuscriptId: entry.manuscriptId }
-              : entry.action === "delete_doc"
-                ? { action: entry.action, docId: entry.docId }
-                : entry.action === "accept_pdf_resource_warning"
-                  ? {
-                      action: entry.action,
-                      workId: entry.workId,
-                      attachmentId: entry.attachment.id,
-                    }
-                  : { action: entry.action, workId: entry.workId, docId: entry.docId }),
+          ...(entry.action === "replace_text_reading"
+            ? { action: entry.action, docId: entry.docId }
+            : entry.action === "delete_plan"
+              ? { action: entry.action, planId: entry.planId }
+              : entry.action === "delete_manuscript"
+                ? { action: entry.action, manuscriptId: entry.manuscriptId }
+                : entry.action === "delete_doc"
+                  ? { action: entry.action, docId: entry.docId }
+                  : entry.action === "accept_pdf_resource_warning"
+                    ? {
+                        action: entry.action,
+                        workId: entry.workId,
+                        attachmentId: entry.attachment.id,
+                      }
+                    : { action: entry.action, workId: entry.workId, docId: entry.docId }),
         } satisfies OperationConfirmation);
         return new Promise<ConfirmationOutcome>((resolve) => {
           this.confirmations.set(id, {
             confirmation:
-              entry.action === "delete_plan"
+              entry.action === "replace_text_reading"
                 ? {
                     id,
                     runId: state.runId,
                     toolCallId: entry.toolCallId,
                     action: entry.action,
-                    object: { kind: "plan", id: entry.planId, planId: entry.planId },
+                    object: { kind: "doc", id: entry.docId },
                     label: entry.label,
-                    planName: entry.planName,
                     impact: entry.impact,
                     baseRev: entry.baseRev,
                     objectDigest: entry.objectDigest,
                   }
-                : entry.action === "delete_manuscript"
+                : entry.action === "delete_plan"
                   ? {
                       id,
                       runId: state.runId,
                       toolCallId: entry.toolCallId,
                       action: entry.action,
-                      object: { kind: "manuscript", id: entry.manuscriptId },
+                      object: { kind: "plan", id: entry.planId, planId: entry.planId },
                       label: entry.label,
+                      planName: entry.planName,
                       impact: entry.impact,
                       baseRev: entry.baseRev,
                       objectDigest: entry.objectDigest,
                     }
-                  : entry.action === "delete_doc"
+                  : entry.action === "delete_manuscript"
                     ? {
                         id,
                         runId: state.runId,
                         toolCallId: entry.toolCallId,
                         action: entry.action,
-                        object: { kind: "doc", id: entry.docId },
-                        format: entry.format,
-                        works: entry.works,
+                        object: { kind: "manuscript", id: entry.manuscriptId },
+                        label: entry.label,
                         impact: entry.impact,
                         baseRev: entry.baseRev,
                         objectDigest: entry.objectDigest,
                       }
-                    : entry.action === "accept_pdf_resource_warning"
+                    : entry.action === "delete_doc"
                       ? {
                           id,
                           runId: state.runId,
                           toolCallId: entry.toolCallId,
                           action: entry.action,
-                          object: {
-                            kind: "attachment",
-                            id: entry.attachment.id,
-                            workId: entry.workId,
-                          },
-                          label: entry.label,
-                          attachment: entry.attachment,
+                          object: { kind: "doc", id: entry.docId },
+                          format: entry.format,
+                          works: entry.works,
+                          impact: entry.impact,
                           baseRev: entry.baseRev,
                           objectDigest: entry.objectDigest,
                         }
-                      : {
-                          id,
-                          runId: state.runId,
-                          toolCallId: entry.toolCallId,
-                          action: entry.action,
-                          object: { kind: "doc", id: entry.docId, workId: entry.workId },
-                          label: entry.label,
-                          impact: entry.impact,
-                          ...(entry.attachment ? { attachment: entry.attachment } : {}),
-                          baseRev: entry.baseRev,
-                          objectDigest: entry.objectDigest,
-                        },
+                      : entry.action === "accept_pdf_resource_warning"
+                        ? {
+                            id,
+                            runId: state.runId,
+                            toolCallId: entry.toolCallId,
+                            action: entry.action,
+                            object: {
+                              kind: "attachment",
+                              id: entry.attachment.id,
+                              workId: entry.workId,
+                            },
+                            label: entry.label,
+                            attachment: entry.attachment,
+                            baseRev: entry.baseRev,
+                            objectDigest: entry.objectDigest,
+                          }
+                        : {
+                            id,
+                            runId: state.runId,
+                            toolCallId: entry.toolCallId,
+                            action: entry.action,
+                            object: { kind: "doc", id: entry.docId, workId: entry.workId },
+                            label: entry.label,
+                            impact: entry.impact,
+                            ...(entry.attachment ? { attachment: entry.attachment } : {}),
+                            baseRev: entry.baseRev,
+                            objectDigest: entry.objectDigest,
+                          },
             loaded,
             state,
             resolve,
@@ -1289,23 +1312,25 @@ export class CopilotHost {
       toolCallId: confirmation.toolCallId,
       baseRev: confirmation.baseRev,
       outcome,
-      ...(confirmation.action === "delete_plan"
-        ? { action: confirmation.action, planId: confirmation.object.planId }
-        : confirmation.action === "delete_manuscript"
-          ? { action: confirmation.action, manuscriptId: confirmation.object.id }
-          : confirmation.action === "delete_doc"
-            ? { action: confirmation.action, docId: confirmation.object.id }
-            : confirmation.action === "accept_pdf_resource_warning"
-              ? {
-                  action: confirmation.action,
-                  workId: confirmation.object.workId,
-                  attachmentId: confirmation.attachment.id,
-                }
-              : {
-                  action: confirmation.action,
-                  workId: confirmation.object.workId,
-                  docId: confirmation.object.id,
-                }),
+      ...(confirmation.action === "replace_text_reading"
+        ? { action: confirmation.action, docId: confirmation.object.id }
+        : confirmation.action === "delete_plan"
+          ? { action: confirmation.action, planId: confirmation.object.planId }
+          : confirmation.action === "delete_manuscript"
+            ? { action: confirmation.action, manuscriptId: confirmation.object.id }
+            : confirmation.action === "delete_doc"
+              ? { action: confirmation.action, docId: confirmation.object.id }
+              : confirmation.action === "accept_pdf_resource_warning"
+                ? {
+                    action: confirmation.action,
+                    workId: confirmation.object.workId,
+                    attachmentId: confirmation.attachment.id,
+                  }
+                : {
+                    action: confirmation.action,
+                    workId: confirmation.object.workId,
+                    docId: confirmation.object.id,
+                  }),
     } satisfies OperationConfirmation);
   }
   private expireConfirmations(
@@ -1349,7 +1374,9 @@ export class CopilotHost {
   private async docConfirmationStillValid(
     confirmation: Exclude<
       CopilotConfirmation,
-      { action: "delete_plan" } | { action: "delete_manuscript" }
+      | { action: "delete_plan" }
+      | { action: "delete_manuscript" }
+      | { action: "replace_text_reading" }
     >,
     loaded: Loaded
   ): Promise<boolean> {
@@ -1421,10 +1448,42 @@ export class CopilotHost {
       return false;
     }
   }
+  /**
+   * A text replacement: the Doc's source revision, annotated reading text, annotation count and revision and both
+   * content fingerprints are still exactly what the card showed (the generation's own code, probed without writing).
+   */
+  private async textConfirmationStillValid(
+    confirmation: Extract<CopilotConfirmation, { action: "replace_text_reading" }>
+  ): Promise<boolean> {
+    const text = this.workbench?.text;
+    if (!text) return false;
+    try {
+      const now = await text.probeReplacement(
+        confirmation.object.id,
+        confirmation.impact.sourceRev
+      );
+      if (!now.ok || !now.impact) return false;
+      const a = now.impact;
+      const b = confirmation.impact;
+      return (
+        a.docId === b.docId &&
+        a.sourceRev === b.sourceRev &&
+        a.publishedSourceRev === b.publishedSourceRev &&
+        a.annotations === b.annotations &&
+        a.annotationsRev === b.annotationsRev &&
+        a.oldFingerprint === b.oldFingerprint &&
+        a.newFingerprint === b.newFingerprint
+      );
+    } catch {
+      return false;
+    }
+  }
   private async confirmationStillValid(
     confirmation: CopilotConfirmation,
     loaded: Loaded
   ): Promise<boolean> {
+    if (confirmation.action === "replace_text_reading")
+      return this.textConfirmationStillValid(confirmation);
     return confirmation.action === "delete_plan"
       ? this.planConfirmationStillValid(confirmation)
       : confirmation.action === "delete_manuscript"
@@ -1457,6 +1516,12 @@ export class CopilotHost {
         pending.confirmation.action === "delete_manuscript"
       )
         continue;
+      if (pending.confirmation.action === "replace_text_reading") {
+        if (await this.textConfirmationStillValid(pending.confirmation)) continue;
+        if (this.confirmations.get(pending.confirmation.id) === pending)
+          this.expireConfirmations((item) => item === pending, "stale");
+        continue;
+      }
       if (await this.docConfirmationStillValid(pending.confirmation, pending.loaded)) continue;
       if (this.confirmations.get(pending.confirmation.id) === pending)
         this.expireConfirmations((item) => item === pending, "stale");
@@ -1706,15 +1771,17 @@ export class CopilotHost {
       .map(
         (entry) =>
           `- ${(
-            entry.action === "delete_plan"
-              ? [entry.action, entry.planId]
-              : entry.action === "delete_manuscript"
-                ? [entry.action, entry.manuscriptId]
-                : entry.action === "delete_doc"
-                  ? [entry.action, entry.docId]
-                  : entry.action === "accept_pdf_resource_warning"
-                    ? [entry.action, entry.workId, entry.attachmentId]
-                    : [entry.action, entry.workId, entry.docId]
+            entry.action === "replace_text_reading"
+              ? [entry.action, entry.docId]
+              : entry.action === "delete_plan"
+                ? [entry.action, entry.planId]
+                : entry.action === "delete_manuscript"
+                  ? [entry.action, entry.manuscriptId]
+                  : entry.action === "delete_doc"
+                    ? [entry.action, entry.docId]
+                    : entry.action === "accept_pdf_resource_warning"
+                      ? [entry.action, entry.workId, entry.attachmentId]
+                      : [entry.action, entry.workId, entry.docId]
           ).join(" ")}`
       );
     return [
@@ -2060,7 +2127,10 @@ export class CopilotHost {
   private systemFootprint(): number {
     if (this.systemFootprintBytes !== undefined) return this.systemFootprintBytes;
     const writer = !!this.workbench?.writer;
-    let bytes = Buffer.byteLength(writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT);
+    let bytes = Buffer.byteLength(
+      (writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT) +
+        (this.workbench?.text ? TEXT_PROMPT : "")
+    );
     // The tool schemas are built the way a run builds them; the closures are never called.
     const stub = {} as never;
     const tools: unknown[] = [];
@@ -2070,6 +2140,7 @@ export class CopilotHost {
         if (this.workbench.library) tools.push(createLibraryTool(stub));
         if (this.workbench.reader) tools.push(createReaderTool(stub));
         if (this.workbench.writer) tools.push(createWriterTool(stub));
+        if (this.workbench.text) tools.push(createTextTool(stub));
       }
     } catch {
       // a factory that needs its dependencies at creation: fall back to a generous measure
@@ -2381,6 +2452,29 @@ export class CopilotHost {
             },
           })
         : undefined;
+    const textTool =
+      workbench?.text && planTool
+        ? createTextTool({
+            text: workbench.text,
+            attachment: this.attachmentResolver(loaded),
+            page: () => this.views.get(state.navViewId),
+            viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
+            confirm: this.confirmationPort(loaded, state),
+            admitting: () => !this.closed && !state.stopRequested,
+            budget: () => this.room(loaded, frozenModel),
+            reclaim: () => {
+              this.shedAll(loaded);
+              return this.room(loaded, frozenModel);
+            },
+            runId,
+            track: (work) => {
+              state.inflight.add(work);
+              const forget = () => state.inflight.delete(work);
+              work.then(forget, forget);
+              return work;
+            },
+          })
+        : undefined;
     const toolNames =
       planTool && workspaceTool
         ? [
@@ -2389,6 +2483,7 @@ export class CopilotHost {
             ...(libraryTool ? [LIBRARY_TOOL_NAME] : []),
             ...(readerTool ? [READER_TOOL_NAME] : []),
             ...(writerTool ? [WRITER_TOOL_NAME] : []),
+            ...(textTool ? [TEXT_TOOL_NAME] : []),
           ]
         : [];
     const { session } = await pi.createAgentSession({
@@ -2406,6 +2501,7 @@ export class CopilotHost {
               ...(libraryTool ? [libraryTool] : []),
               ...(readerTool ? [readerTool] : []),
               ...(writerTool ? [writerTool] : []),
+              ...(textTool ? [textTool] : []),
             ],
           }
         : { tools: [], customTools: [], noTools: "all" as const }),
@@ -2421,7 +2517,9 @@ export class CopilotHost {
         getPrompts: () => ({ prompts: [], diagnostics: [] }),
         getThemes: () => ({ themes: [], diagnostics: [] }),
         getAgentsFiles: () => ({ agentsFiles: [] }),
-        getSystemPrompt: () => (writerTool ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT),
+        getSystemPrompt: () =>
+          (writerTool ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT) +
+          (textTool ? TEXT_PROMPT : ""),
         getSystemPromptSource: () => undefined,
         getAppendSystemPrompt: () => [],
         getAppendSystemPromptSources: () => [],

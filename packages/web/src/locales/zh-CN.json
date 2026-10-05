@@ -298,9 +298,29 @@
         "empty": "文件为空。",
         "bad_name": "不允许使用该文件名。",
         "too_many_assets": "此文档的图片数量已达上限。",
-        "other": "服务器未能保存该图片。"
+        "other": "服务器未能保存该图片。",
+        "document_changed": "来源 PDF 不是生成此文本时的原件。",
+        "bad_source_pdf": "来源必须是同一文献条目的 PDF。",
+        "invalid_request": "页码或区域无效。",
+        "resource": "PDF 处理繁忙或内存不足，请稍后重试。",
+        "render_failed": "无法渲染该页。",
+        "unavailable": "无法使用 PDF 页面。"
       },
-      "assetsRestored": "{{name}} 已在列表中，但其文件缺失或已损坏，现已重新写入。"
+      "assetsRestored": "{{name}} 已在列表中，但其文件缺失或已损坏，现已重新写入。",
+      "fromPdf": "从来源 PDF 添加图片",
+      "pdfPicker": {
+        "title": "来源 PDF",
+        "add": "添加为图片",
+        "page": "页",
+        "of": "共 {{count}} 页",
+        "wholePage": "整页",
+        "regionChosen": "已选区域",
+        "clear": "整页",
+        "previewAlt": "来源 PDF 第 {{page}} 页",
+        "changed": "来源 PDF 不是生成此文本时的原件。",
+        "error": "无法显示该页。",
+        "help": "在页面上拖动可选择区域。图片成为独立资产，PDF 不会被修改。"
+      }
     },
     "drafts": {
       "summary": "保留的草稿（可复制；重新选位后使用创建文字）",
@@ -1476,7 +1496,17 @@
         "set_writer_panel": "折叠或展开写作面板",
         "set_writer_tab": "切换写作标签页",
         "dismiss_template_warning": "关闭模板警告",
-        "retry_manuscript_list": "重试稿件列表"
+        "retry_manuscript_list": "重试稿件列表",
+        "create": "创建文本文档",
+        "read_source": "读取文本源",
+        "save_source": "保存文本源",
+        "add_asset": "添加图片",
+        "add_pdf_image": "从 PDF 添加图片",
+        "validate": "校验文本",
+        "generate": "生成阅读正文",
+        "open_source_pdf": "打开来源 PDF",
+        "set_text_view": "切换文本标签",
+        "read_text": "读取文本源"
       },
       "status": {
         "ok": "已应用",
@@ -1529,7 +1559,8 @@
       "metaManuscript": "{{id}} · 稿件 v{{rev}}",
       "expiredManuscript": "稿件在你决定前已被改动，未删除任何内容。",
       "failedManuscript": "结果未知：你的决定可能已到达服务，也可能没有。请先检查稿件列表再重试。",
-      "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。仍要删除吗？"
+      "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。仍要删除吗？",
+      "replaceText": "替换“{{name}}”的阅读正文"
     },
     "thinkingLevels": {
       "off": "关闭",

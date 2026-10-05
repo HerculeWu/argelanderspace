@@ -29,6 +29,12 @@ import {
   ReaderPageSchema,
   ReaderViewActionSchema,
 } from "./reader-ops.js";
+import { TextReplacementImpactSchema } from "./text-doc.js";
+import {
+  type TextContextSummary,
+  TextContextSummarySchema,
+  TextSourcePageSchema,
+} from "./text-ops.js";
 import { WorkspaceSnapshotSchema, WorkspaceViewActionSchema } from "./workspace-ops.js";
 import {
   type WriterContextSummary,
@@ -96,6 +102,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
       reader: reader.nullable().optional(),
       /** The PDF Reader of the active pane (copilot ticket 20); identity, position and control state, not the pages. */
       pdf: PdfPageSchema.nullable().optional(),
+      /** A text Doc's source panel (copilot ticket 29): the editor's current text, assets, diagnostics, revisions. */
+      textSource: TextSourcePageSchema.nullable().optional(),
       /** The Writer of the active pane (copilot ticket 22): the manuscript list or one open manuscript. */
       writer: WriterPageSchema.nullable().optional(),
       /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
@@ -110,7 +118,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
         (value.view === "library" && !!value.discovery?.graph) ||
         (value.view === "doc" &&
           (!!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted) ||
-            value.pdf?.phase === "ready")) ||
+            value.pdf?.phase === "ready" ||
+            value.textSource?.phase === "ready")) ||
         // A Writer page is complete once its list or its open manuscript really loaded.
         (value.view === "write" &&
           !!value.writer &&
@@ -219,6 +228,7 @@ export interface CopilotMessage {
     discovery?: DiscoveryContextSummary;
     reader?: ReaderContextSummary;
     pdf?: PdfContextSummary;
+    text?: TextContextSummary;
     writer?: WriterContextSummary;
     coverage?: ContextCoverage;
   };
@@ -361,7 +371,27 @@ export const CopilotManuscriptDeleteConfirmationSchema = z
 export type CopilotManuscriptDeleteConfirmation = z.infer<
   typeof CopilotManuscriptDeleteConfirmationSchema
 >;
+/**
+ * Replacing the reading text of a text Doc that has annotations (copilot ticket 29; the page's replacement dialog the
+ * model asked for). Bound to the Doc and to EVERY value of the server's impact (source and published revisions,
+ * annotation count and revision, old and new content fingerprints); on approval those very values are what the
+ * generation is asked to confirm, and the server compares them again inside its publish critical section. The model
+ * can neither supply nor see them as an approval.
+ */
+export const CopilotTextReplaceConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("replace_text_reading"),
+    object: z.object({ kind: z.literal("doc"), id: z.string().min(1) }).strict(),
+    /** The Doc's title (its id when it has none). */
+    label: z.string(),
+    impact: TextReplacementImpactSchema,
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotTextReplaceConfirmation = z.infer<typeof CopilotTextReplaceConfirmationSchema>;
 export const CopilotConfirmationSchema = z.union([
+  CopilotTextReplaceConfirmationSchema,
   CopilotPlanConfirmationSchema,
   CopilotDocConfirmationSchema,
   CopilotResourceConfirmationSchema,
@@ -386,6 +416,7 @@ export const CopilotConfirmationDecisionSchema = z
       "accept_pdf_resource_warning",
       "delete_doc",
       "delete_manuscript",
+      "replace_text_reading",
     ]),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
@@ -408,6 +439,13 @@ const OperationConfirmationBase = {
   outcome: z.enum(["approved", "declined", "expired"]).optional(),
 };
 export const OperationConfirmationSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("replace_text_reading"),
+      docId: z.string().min(1),
+    })
+    .strict(),
   z
     .object({
       ...OperationConfirmationBase,
@@ -541,6 +579,8 @@ export const CopilotContextReferenceSchema = z
         reader: ReaderContextSummarySchema.optional(),
         /** What the PDF Reader carried (copilot ticket 20); absent for other pages. */
         pdf: PdfContextSummarySchema.optional(),
+        /** What a text Doc's source panel carried (copilot ticket 29); absent for other pages. */
+        text: TextContextSummarySchema.optional(),
         /** What the Writer carried (copilot ticket 22); absent for other pages. */
         writer: WriterContextSummarySchema.optional(),
         /** What of the Reader reading / PDF material this message delivered (copilot ticket 24). */

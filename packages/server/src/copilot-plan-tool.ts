@@ -62,6 +62,16 @@ export type ConfirmationOutcome =
 export type ConfirmationRequest =
   | {
       toolCallId: string;
+      /** Replacing the annotated reading text of a text Doc (copilot ticket 29): the source panel's replacement dialog. */
+      action: "replace_text_reading";
+      docId: string;
+      label: string;
+      impact: import("@argelanderspace/contracts").TextReplacementImpact;
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
       /** Only a whole Plan waits for the user; a Task delete is immediate like on the Plan page. */
       action: "delete_plan";
       planId: string;

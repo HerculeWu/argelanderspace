@@ -40,6 +40,8 @@ export const OPERATION_ACTION_KEYS = {
   render_manuscript: "copilot.operations.actions.render_manuscript", export_manuscript: "copilot.operations.actions.export_manuscript", select_cell: "copilot.operations.actions.select_cell", edit_cell: "copilot.operations.actions.edit_cell", commit_cell: "copilot.operations.actions.commit_cell", set_writer_panel: "copilot.operations.actions.set_writer_panel", set_writer_tab: "copilot.operations.actions.set_writer_tab", dismiss_template_warning: "copilot.operations.actions.dismiss_template_warning", retry_manuscript_list: "copilot.operations.actions.retry_manuscript_list",
   create_pdf_annotation: "copilot.operations.actions.create_pdf_annotation", update_pdf_annotation: "copilot.operations.actions.update_pdf_annotation", delete_pdf_annotation: "copilot.operations.actions.delete_pdf_annotation",
   undo_pdf_annotation: "copilot.operations.actions.undo_pdf_annotation", redo_pdf_annotation: "copilot.operations.actions.redo_pdf_annotation",
+  create: "copilot.operations.actions.create", read_source: "copilot.operations.actions.read_source", save_source: "copilot.operations.actions.save_source", add_asset: "copilot.operations.actions.add_asset",
+  add_pdf_image: "copilot.operations.actions.add_pdf_image", validate: "copilot.operations.actions.validate", generate: "copilot.operations.actions.generate", open_source_pdf: "copilot.operations.actions.open_source_pdf", set_text_view: "copilot.operations.actions.set_text_view",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -504,7 +506,11 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
   };
   return <section className="copilot-confirmation" data-ui="copilot-confirmation" data-action={confirmation.action} aria-label={t("copilot.confirmation.needed")}>
     <div className="copilot-confirmation-warn" role="status"><Icon name="triangle-alert" />{t("copilot.confirmation.needed")}</div>
-    {confirmation.action === "delete_plan" ? <>
+    {confirmation.action === "replace_text_reading" ? <>
+      <h3>{t("copilot.confirmation.replaceText", { name: confirmation.label })}</h3>
+      <p data-ui="copilot-confirmation-risk">{t("doc.text.replace.body", { count: confirmation.impact.annotations })}</p>
+      <div className="copilot-confirmation-meta" data-ui="copilot-confirmation-basis">{t("doc.text.replace.basis", { source: confirmation.impact.sourceRev, published: confirmation.impact.publishedSourceRev, annotationsRev: confirmation.impact.annotationsRev })}</div>
+    </> : confirmation.action === "delete_plan" ? <>
       <h3>{t("copilot.confirmation.deletePlan", { name: confirmation.label })}</h3>
       <p>{t("copilot.confirmation.planScope", { count: confirmation.impact.tasks, open: confirmation.impact.openTasks })}</p>
       <div className="copilot-confirmation-meta">{t("copilot.confirmation.meta", { id: confirmation.object.id, rev: confirmation.baseRev })}</div>
@@ -530,7 +536,7 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     </>}
     <div className="copilot-confirmation-actions">
       <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
-      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : confirmation.action === "accept_pdf_resource_warning" ? "library.detail.pdfUpload.continue" : "library.detail.acquisition.confirmUpdate")}</Button>
+      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{confirmation.action === "replace_text_reading" ? t("doc.text.replace.confirm", { count: confirmation.impact.annotations }) : t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : confirmation.action === "accept_pdf_resource_warning" ? "library.detail.pdfUpload.continue" : "library.detail.acquisition.confirmUpdate")}</Button>
     </div>
   </section>;
 }

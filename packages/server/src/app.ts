@@ -186,13 +186,19 @@ import {
   readPdfTextMaterial,
   readPdfTextMaterialCached,
   renderPdfPageImage,
+  renderPdfRegionImage,
   resolvePdfTextTarget,
 } from "./pdf-material.js";
 import { probePdf } from "./pdfium-probe.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
-import { mountTextDocRoutes, type TextDocDeps, TextDocService } from "./text-docs.js";
+import {
+  mountTextDocRoutes,
+  type PdfRegionOutcome,
+  type TextDocDeps,
+  TextDocService,
+} from "./text-docs.js";
 import {
   createManuscriptOp,
   deleteManuscriptOp,
@@ -632,8 +638,40 @@ export function createApp(deps: AppDeps): Hono {
     libraryLock,
     annotationLock,
     docMutations,
-    broadcast,
+    // A source save or a publication may end a pending replacement card bound to older values.
+    broadcast: (message) => {
+      broadcast(message);
+      if (message.type === "text-source.changed" || message.type === "text-doc.published")
+        void copilot.revalidateDocConfirmations().catch(() => {});
+    },
     libraryChanged: () => libraryChanged("add"),
+    // The source panel's "add image from the source PDF" and the tool's add_pdf_image: the same verified, queued read.
+    renderPdfRegion: async (request): Promise<PdfRegionOutcome> => {
+      const source = pdfSource(request.pdfDocId, { expectedHash: request.expectedHash });
+      if (source.kind === "bad_id" || source.kind === "not_found") return { kind: "not_found" };
+      if (source.kind === "busy" || source.kind === "changed") return { kind: source.kind };
+      if (source.kind !== "ok")
+        return { kind: source.kind === "inconsistent" ? "inconsistent" : "error" };
+      try {
+        const image = await renderPdfRegionImage(
+          source.bytes,
+          source.metadata.sha256,
+          request.pageIndex,
+          request.region,
+          request.longEdge
+        );
+        return { kind: "ok", png: image.png, width: image.width, height: image.height };
+      } catch (error) {
+        const failure = pdfMaterialFailure(error);
+        return failure.status === 400
+          ? { kind: "invalid", detail: failure.detail }
+          : failure.status === 409
+            ? { kind: "changed" }
+            : failure.status === 503
+              ? { kind: "resource", detail: failure.detail }
+              : { kind: "error" };
+      }
+    },
     ...(deps.textDocHooks ?? {}),
   });
   mountTextDocRoutes(app, textDocs, guardCsrf);
@@ -1047,12 +1085,6 @@ export function createApp(deps: AppDeps): Hono {
         }
         try {
           const { ir, file, assets, stale } = readDocumentForReading(paths.dataDir, docId);
-          // The Reader tool's whole-reading representation is the LaTeX one; text Docs get theirs with the text tools.
-          if (ir.source.type === "text")
-            return {
-              kind: "error",
-              detail: "text documents cannot be read through the Reader tool yet",
-            };
           return { kind: "ok", reading: buildReaderReading({ ir, file, assets, stale }) };
         } catch (err) {
           if (!(err instanceof AnnotationsError)) throw err;
@@ -1065,6 +1097,7 @@ export function createApp(deps: AppDeps): Hono {
   copilot.useWorkbench({
     library: libraryOps,
     reader: readerOps,
+    text: textDocs,
     writer: writerOps,
     plans: {
       statusDir: deps.statusDir,

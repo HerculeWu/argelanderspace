@@ -15,6 +15,7 @@ import {
   readingKey,
   summarizeReaderPage,
   type TexDocIr,
+  type TextDocIr,
   WsCopilotViewActionSchema,
 } from "../src/index.js";
 
@@ -269,10 +270,11 @@ describe("buildReaderReading", () => {
       JSON.stringify(reading)
     );
     expect(ReaderReadingSchema.safeParse(reading).success).toBe(true);
-    // a text Doc would be a new variant; it does not pass as a LaTeX reading and LaTeX fields are not optional noise
+    // a text Doc is its own variant (ticket 29): the LaTeX fields do not pass as a text reading and the other way round
     const text = { ...reading, format: "text" };
     expect(ReaderReadingSchema.safeParse(text).success).toBe(false);
     expect(JSON.stringify(reading)).not.toContain("main_tex");
+    if (reading.format !== "latex") throw new Error("a LaTeX IR builds a LaTeX reading");
     expect(reading.latex).toEqual({
       authors: ["A. Author", "B. Author"],
       authorDetails: [
@@ -284,6 +286,41 @@ describe("buildReaderReading", () => {
       nPages: 12,
       arxivId: "2601.00001",
     });
+  });
+});
+
+describe("a text Doc's reading (ticket 29)", () => {
+  const textIr = (): TextDocIr => {
+    const base = ir();
+    return {
+      ...base,
+      source: { type: "text", input_version: 1, source_rev: 7, source_fingerprint: "a".repeat(64) },
+      meta: { title: "A Test Paper", authors: ["A. Author"] },
+    } as unknown as TextDocIr;
+  };
+  it("has the same entries, references and annotations as a LaTeX reading, its own metadata and no LaTeX engine fields", () => {
+    const latex = buildReaderReading({ ir: ir(), file: file([annotation]), assets });
+    const text = buildReaderReading({ ir: textIr(), file: file([annotation]), assets });
+    expect(ReaderReadingSchema.safeParse(text).success).toBe(true);
+    expect(text.format).toBe("text");
+    if (text.format !== "text") throw new Error("unreachable");
+    expect(text.text).toEqual({ authors: ["A. Author"], publishedSourceRev: 7 });
+    expect(JSON.stringify(text)).not.toContain("main_tex");
+    expect(JSON.stringify(text)).not.toContain("nPages");
+    expect(text.entries).toEqual(latex.entries);
+    expect(text.references).toEqual(latex.references);
+    expect(text.annotations).toEqual(latex.annotations);
+    expect(text.epoch).toEqual(latex.epoch);
+    // the page of a text Doc's Reader is the same page with its own format, and the summary says so
+    const summary = summarizeReaderPage(
+      ReaderPageSchema.parse({ ...page(), format: "text", reading: text })
+    );
+    expect(summary.format).toBe("text");
+    expect(summary.blocks).toBe(latex.coverage.blocks);
+  });
+  it("a text reading does not pass for a LaTeX page", () => {
+    const text = buildReaderReading({ ir: textIr(), file: file(), assets });
+    expect(ReaderPageSchema.safeParse({ ...page(), reading: text }).success).toBe(false);
   });
 });
 

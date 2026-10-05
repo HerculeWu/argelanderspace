@@ -22,11 +22,13 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  AddPdfImageRequestSchema,
   CreateTextDocRequestSchema,
   type DocDescription,
   GenerateTextDocRequestSchema,
   PutTextSourceRequestSchema,
   TEXT_ASSET_MAX_BYTES,
+  TEXT_PDF_IMAGE_LONG_EDGE,
   type TextAssetAdded,
   type TextDiagnostic,
   type TextDocIr,
@@ -76,9 +78,26 @@ export interface TextDocDeps {
   broadcast: (msg: WsServerMessage) => void;
   /** A Doc was added to the library file (the page reloads its Works). */
   libraryChanged: () => void;
+  /**
+   * The picture of a source PDF's page or region (copilot ticket 29): the ONE read of PDF page material (busy check,
+   * unique owner, original verified against its immutable SHA-256 and the hash the caller names, the shared PDFium
+   * queue). Absent in hosts without a PDF engine.
+   */
+  renderPdfRegion?: (request: {
+    pdfDocId: string;
+    expectedHash: string;
+    pageIndex: number;
+    region?: { x: number; y: number; width: number; height: number };
+    longEdge: number;
+  }) => Promise<PdfRegionOutcome>;
   /** Test seam: runs after the candidate is built and before the publish critical section. */
   beforePublish?: (docId: string) => Promise<void> | void;
 }
+
+export type PdfRegionOutcome =
+  | { kind: "ok"; png: Buffer; width: number; height: number }
+  | { kind: "not_found" | "busy" | "changed" | "inconsistent" | "error" }
+  | { kind: "invalid" | "resource"; detail: string };
 
 /** A confirmation counts only when every bound value is exactly what the publish critical section sees now. */
 function sameImpact(a: TextReplacementImpact, b: TextReplacementImpact): boolean {
@@ -395,6 +414,80 @@ export class TextDocService {
     }
   }
 
+  /**
+   * Add one picture rendered from a PDF Doc of the same Work (the source PDF unless another is named): a page, or a
+   * region of it in fractions of the visible page. The original is read through the shared verified, queued PDFium
+   * path and must be the one the caller looked at (`sha256`); the picture then goes through `addAsset`, the very path
+   * of an upload (magic bytes, bounded size, a NEW controlled name, expected source revision, one critical section
+   * with the revision bump). Nothing is written to the PDF and neither the page nor the region is stored.
+   */
+  async addPdfImage(docId: string, body: unknown): Promise<Result<TextAssetAdded>> {
+    const parsed = AddPdfImageRequestSchema.safeParse(body);
+    if (!parsed.success)
+      return failed(400, "request body is not a valid source PDF image request", {
+        code: "invalid_request",
+      });
+    if (!isTextDocId(docId)) return failed(404, `paper '${docId}' not found`);
+    const render = this.deps.renderPdfRegion;
+    if (!render) return failed(503, "PDF page images are not available", { code: "unavailable" });
+    const request = parsed.data;
+    let pdfDocId: string;
+    try {
+      const source = readTextSource(this.paths, docId);
+      const wanted = request.pdfDocId ?? source.source_pdf?.doc_id;
+      if (!wanted)
+        return failed(400, "this text has no source PDF; name a PDF of the same Work", {
+          code: "bad_source_pdf",
+        });
+      pdfDocId = wanted;
+      // a PDF Doc of a Work that also lists this text Doc (a file relation only; nothing about it is stored)
+      const works = LibraryStore.load(this.paths).works;
+      if (!works.some((w) => w.doc_ids.includes(docId) && w.doc_ids.includes(wanted)))
+        return failed(400, "the picture must come from a PDF Doc of the same Work", {
+          code: "bad_source_pdf",
+        });
+      const metadata = readPdfMetadataIfPresent(this.paths, wanted);
+      if (!metadata)
+        return failed(400, "the picture must come from a PDF Doc of the same Work", {
+          code: "bad_source_pdf",
+        });
+      // the relation recorded at creation pins the original: a different one is a changed document
+      if (source.source_pdf?.doc_id === wanted && source.source_pdf.sha256 !== metadata.sha256)
+        return failed(409, "document changed", { code: "document_changed" });
+    } catch (error) {
+      return { ok: false, ...errorFailure(error) };
+    }
+    const rendered = await render({
+      pdfDocId,
+      expectedHash: request.sha256,
+      pageIndex: request.pageIndex,
+      ...(request.region ? { region: request.region } : {}),
+      longEdge: request.longEdge ?? TEXT_PDF_IMAGE_LONG_EDGE.default,
+    });
+    switch (rendered.kind) {
+      case "ok":
+        break;
+      case "not_found":
+        return failed(404, "no such PDF Doc");
+      case "busy":
+        return failed(409, "document busy");
+      case "changed":
+        return failed(409, "document changed", { code: "document_changed" });
+      case "invalid":
+        return failed(400, rendered.detail, { code: "invalid_request" });
+      case "resource":
+        return failed(503, rendered.detail, { code: "resource" });
+      default:
+        return failed(500, "the PDF page could not be rendered", { code: "render_failed" });
+    }
+    const name = `p${request.pageIndex + 1}${request.region ? "-region" : ""}.png`;
+    return this.addAsset(docId, {
+      expectedRev: request.expectedRev,
+      filename: name,
+      bytes: rendered.png,
+    });
+  }
+
   // ---- validate (no side effects) ---------------------------------------------- //
 
   validate(docId: string, body: unknown): Result<TextValidationResult> {
@@ -422,6 +515,36 @@ export class TextDocService {
   }
 
   // ---- generate ---------------------------------------------------------------- //
+
+  /**
+   * What replacing the reading text would put at risk RIGHT NOW for this source revision, without writing anything
+   * (the click-time check of a confirmation card, copilot ticket 29). `impact: null` means nothing is at risk (first
+   * generation, the same content, no current annotations); a refusal (the source moved, a system error, busy) is
+   * `{ ok: false }` and a card bound to older values is then no longer valid. Uses the very code of `generate`, up to
+   * the point where it would publish.
+   */
+  async probeReplacement(
+    docId: string,
+    sourceRev: number
+  ): Promise<{ ok: true; impact: TextReplacementImpact | null } | { ok: false }> {
+    if (!isTextDocId(docId)) return { ok: false };
+    const { docMutations } = this.deps;
+    if (docMutations.isDeleting(docId) || this.generating.has(docId)) return { ok: false };
+    this.generating.add(docId);
+    docMutations.pinWriter(docId);
+    let seen: { impact: TextReplacementImpact | null } | undefined;
+    try {
+      await this.generateUnlocked(docId, sourceRev, "probe", undefined, (impact) => {
+        seen = { impact };
+      });
+    } catch {
+      return { ok: false };
+    } finally {
+      docMutations.unpinWriter(docId);
+      this.generating.delete(docId);
+    }
+    return seen ? { ok: true, impact: seen.impact } : { ok: false };
+  }
 
   async generate(docId: string, body: unknown): Promise<Result<TextGenerationResult>> {
     const parsed = GenerateTextDocRequestSchema.safeParse(body);
@@ -454,7 +577,9 @@ export class TextDocService {
     docId: string,
     sourceRev: number,
     operationId: string,
-    confirm?: TextReplacementImpact
+    confirm?: TextReplacementImpact,
+    /** Probe: report the impact found inside the critical section and stop before anything could be written. */
+    probe?: (impact: TextReplacementImpact | null) => void
   ): Promise<Result<TextGenerationResult>> {
     const source = readTextSource(this.paths, docId);
     if (source.rev !== sourceRev)
@@ -578,6 +703,10 @@ export class TextDocService {
             }
           }
         }
+        if (probe) {
+          probe(impact);
+          return failed(409, "probe", { code: "probe" });
+        }
         if (impact && !confirm)
           return failed(
             409,
@@ -690,6 +819,14 @@ export function mountTextDocRoutes(
         ...(filename !== undefined ? { filename } : {}),
       })
     );
+  });
+  app.post("/api/paper/:doc_id/source/assets/from-pdf", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const id = idOf(c);
+    if (!id) return c.json({ detail: "bad doc id" }, 400);
+    const body: unknown = await c.req.json().catch(() => null);
+    return answer(c, await service.addPdfImage(id, body));
   });
   app.post("/api/paper/:doc_id/source/validate", async (c) => {
     const rejected = guardCsrf(c.req.header("origin"));

@@ -161,7 +161,7 @@ function deliveryOf(entry: RawEntry, index: number): Delivery | null {
         const reading = (
           JSON.parse(textOfContent(message.content)) as { reading?: { format?: string } }
         ).reading;
-        if (reading?.format === "latex")
+        if (reading?.format === "latex" || reading?.format === "text")
           old = envelopeCoverage({ context: { reader: { reading } } });
         else if (reading?.format === "pdf")
           old = envelopeCoverage({ pdf: { status: "ok", reading } });

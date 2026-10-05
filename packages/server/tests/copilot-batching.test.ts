@@ -374,7 +374,8 @@ async function send(id: string, context: PageContext, text: string) {
   );
   return { status: 202, body: null };
 }
-const WINDOW_BIG_DOC = 59_000;
+// ticket 29: the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
+const WINDOW_BIG_DOC = 61_500;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -696,7 +697,7 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  await withWindow(47_000, async () => {
+  await withWindow(49_100, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1184,9 +1185,9 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (37250 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (39400 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
-  await withWindow(37_250, async () => {
+  await withWindow(39_400, async () => {
     script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
     const { snapshot } = await run(page(), "read it");
     expect(snapshot.conversation.run).toMatchObject({ status: "completed", error: null });

@@ -1,8 +1,9 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DocDescription, TextDiagnostic, TextReplacementImpact, TextSourceAsset, TextSourceDto } from "@argelanderspace/contracts";
+import { TEXT_SOURCE_INLINE_MAX, type DocDescription, type TextDiagnostic, type TextReplacementImpact, type TextSourceAsset, type TextSourceDto, type TextSourcePage } from "@argelanderspace/contracts";
 import { fetchDocDescription } from "../api/doc";
 import {
+  addPdfImage,
   fetchTextSource,
   generateTextDoc,
   saveTextSource,
@@ -14,6 +15,8 @@ import { registerWorkspaceLeaveGuard, useWorkspace } from "../argelander/workspa
 import { Icon } from "../lib/icons";
 import { ActionButton, Dialog, InlineMessage, Tabs } from "../ui";
 import { useReaderSession } from "./ReaderSession";
+import { useReaderBridge } from "./reader-bridge";
+import { PdfImagePicker } from "./PdfImagePicker";
 import { TextSourceField, type TextSourceApi } from "./TextSourceField";
 import "./text-doc.css";
 
@@ -36,7 +39,7 @@ type SaveState = "saved" | "dirty" | "saving" | "error" | "conflict";
 const AUTOSAVE_MS = 800;
 
 const ASSET_TYPE = { "image/png": "PNG", "image/jpeg": "JPEG", "image/webp": "WebP" } as const;
-const ASSET_REJECT_CODES = ["unsupported_type", "corrupt_image", "too_many_pixels", "too_large", "empty", "bad_name", "too_many_assets"] as const;
+const ASSET_REJECT_CODES = ["unsupported_type", "corrupt_image", "too_many_pixels", "too_large", "empty", "bad_name", "too_many_assets", "document_changed", "bad_source_pdf", "invalid_request", "resource", "render_failed", "unavailable"] as const;
 const formatSize = (bytes: number): string =>
   bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MiB` : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
 
@@ -54,16 +57,27 @@ export function TextDocPane({
   docId,
   description,
   reader,
+  onPage,
 }: {
   docId: string;
   description: TextDescription;
   reader: ReactNode;
+  /** The source panel's page for the Copilot (copilot ticket 29); null when the pane goes away. */
+  onPage?: (page: TextSourcePage | null) => void;
 }) {
   const { t } = useTranslation();
   const ws = useWorkspace();
   const [desc, setDesc] = useState<TextDescription>(description);
   const [view, setView] = useState<View>(description.generated ? "reader" : "source");
   const [editor, setEditor] = useState<{ rev: number; dirty: boolean }>({ rev: description.source_rev, dirty: false });
+
+  // The Copilot's `set_text_view` presses the same tabs the user does (file-level: never a position).
+  const bridge = useReaderBridge();
+  useEffect(() => {
+    bridge.setTextView(setView);
+    return () => bridge.setTextView(null);
+  }, [bridge]);
+  useEffect(() => () => onPage?.(null), [onPage]);
 
   const refreshDescription = useCallback(() => {
     void fetchDocDescription(docId).then((result) => {
@@ -147,6 +161,10 @@ export function TextDocPane({
             onState={setEditor}
             onPublished={refreshDescription}
             onOpenReader={() => setView("reader")}
+            view={view}
+            sourcePdf={desc.source_pdf ?? null}
+            sourcePdfAvailable={pdfState === "ok"}
+            {...(onPage ? { onPage } : {})}
           />
         </div>
       </Tabs>
@@ -270,6 +288,10 @@ function TextSourceEditor({
   onState,
   onPublished,
   onOpenReader,
+  view,
+  sourcePdf,
+  sourcePdfAvailable,
+  onPage,
 }: {
   docId: string;
   generated: boolean;
@@ -277,6 +299,10 @@ function TextSourceEditor({
   onState: (state: { rev: number; dirty: boolean }) => void;
   onPublished: () => void;
   onOpenReader: () => void;
+  view: View;
+  sourcePdf: { doc_id: string; sha256: string } | null;
+  sourcePdfAvailable: boolean;
+  onPage?: (page: TextSourcePage) => void;
 }) {
   const { t } = useTranslation();
   const [load, setLoad] = useState<{ phase: "loading" } | { phase: "error"; detail: string } | { phase: "ready" }>({ phase: "loading" });
@@ -298,6 +324,7 @@ function TextSourceEditor({
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [assetBusy, setAssetBusy] = useState(false);
   const [assetMessage, setAssetMessage] = useState<AssetMessage | null>(null);
+  const [pdfPickerOpen, setPdfPickerOpen] = useState(false);
   const assetFileRef = useRef<HTMLInputElement>(null);
   const assetUploadRef = useRef<HTMLButtonElement>(null);
 
@@ -516,15 +543,24 @@ function TextSourceEditor({
   const addAsset = async (file: File | undefined) => {
     if (assetFileRef.current) assetFileRef.current.value = "";
     if (!file) return;
+    await runAssetRequest((rev) => uploadTextAsset(docId, rev, file));
+  };
+  /** One picture of the source PDF (a page, or a region of it): the same serialized asset path, the same messages. */
+  const addFromPdf = async (request: { pageIndex: number; region?: { x: number; y: number; width: number; height: number } }): Promise<boolean> => {
+    if (!sourcePdf) return false;
+    return runAssetRequest((rev) => addPdfImage(docId, { expectedRev: rev, sha256: sourcePdf.sha256, pageIndex: request.pageIndex, ...(request.region ? { region: request.region } : {}) }));
+  };
+  const runAssetRequest = async (send: (rev: number) => ReturnType<typeof uploadTextAsset>): Promise<boolean> => {
     setAssetMessage(null);
     setAssetBusy(true);
+    let added = false;
     const run = async () => {
       if (!alive.current) return;
       if (status.current === "conflict" || status.current === "error") {
         setAssetMessage({ tone: "warning", text: t("doc.text.assetsSaveFirst") });
         return;
       }
-      const result = await uploadTextAsset(docId, server.current.rev, file);
+      const result = await send(server.current.rev);
       if (!alive.current) return;
       if (result.ok) {
         // the Markdown did not change: only the revision and the asset list moved
@@ -532,6 +568,7 @@ function TextSourceEditor({
         setAssets(result.source.assets);
         onState({ rev: result.source.rev, dirty: getDraft() !== server.current.markdown });
         setAssetMessage({ tone: result.restored ? "warning" : "info", text: t(result.restored ? "doc.text.assetsRestored" : result.reused ? "doc.text.assetsReused" : "doc.text.assetsAdded", { name: result.asset.name }) });
+        added = true;
         return;
       }
       if (result.kind === "conflict") {
@@ -553,6 +590,7 @@ function TextSourceEditor({
     chain.current = chain.current.then(run, run);
     await chain.current;
     if (alive.current) setAssetBusy(false);
+    return added;
   };
 
   const jumpTo = (diagnostic: TextDiagnostic) => {
@@ -590,6 +628,37 @@ function TextSourceEditor({
       })[save],
     [save, t]
   );
+
+  // The Copilot's page: the editor's CURRENT text (a newer draft is marked unsaved and is the user's, not the disk's).
+  const publishNow = () => {
+    if (!onPage) return;
+    const unsaved = load.phase === "ready" && getDraft() !== server.current.markdown;
+    const text = load.phase === "ready" ? getDraft() : "";
+    const inline = text.length <= TEXT_SOURCE_INLINE_MAX;
+    onPage({
+      docId,
+      view,
+      phase: load.phase,
+      rev: load.phase === "ready" ? server.current.rev : null,
+      save,
+      unsaved,
+      characters: text.length,
+      markdown: load.phase === "ready" && inline ? text : null,
+      ...(load.phase === "ready" && !inline ? { omitted: "the source is longer than the page carries inline; read it with text read_source in parts" } : {}),
+      assets,
+      generated,
+      publishedSourceRev: publishedRev,
+      diagnostics: diagnostics.slice(0, 200),
+      generation: generation.kind === "idle" || generation.kind === "running" || generation.kind === "validated" || generation.kind === "generated" || generation.kind === "cancelled" ? generation.kind : "failed",
+      ...(sourcePdf ? { sourcePdf: { doc_id: sourcePdf.doc_id, sha256: sourcePdf.sha256 } } : {}),
+    });
+  };
+  const publishRef = useRef(publishNow);
+  publishRef.current = publishNow;
+  useEffect(() => {
+    const timer = window.setTimeout(() => publishRef.current(), chars > 0 && save === "dirty" ? 300 : 0);
+    return () => window.clearTimeout(timer);
+  }, [load.phase, save, chars, assets, generated, publishedRev, diagnostics, generation, view, sourcePdf, docId]);
 
   if (load.phase === "loading") return <div className="loading" data-ui="text-source-loading">{t("doc.loadingPaper")}</div>;
   if (load.phase === "error")
@@ -715,10 +784,24 @@ function TextSourceEditor({
               </InlineMessage>
             )}
             <div className="text-assets-actions">
+              {sourcePdf && (
+                <ActionButton mode="text" data-ui="text-source-asset-from-pdf" label={t("doc.text.fromPdf")} tooltip={sourcePdfAvailable ? t("doc.text.fromPdf") : t("doc.text.sourcePdfMissing")} disabled={assetBusy || !sourcePdfAvailable} onClick={() => { setAssetsOpen(false); setPdfPickerOpen(true); }}>{t("doc.text.fromPdf")}</ActionButton>
+              )}
               <ActionButton mode="text" ref={assetUploadRef} data-ui="text-source-asset-upload" label={t("doc.text.assetsUpload")} tooltip={t("doc.text.assetsUpload")} busy={assetBusy} busyLabel={t("doc.text.assetsUploading")} onClick={() => assetFileRef.current?.click()}>{t("doc.text.assetsUpload")}</ActionButton>
             </div>
           </div>
         </Dialog>
+      )}
+
+      {pdfPickerOpen && sourcePdf && (
+        <PdfImagePicker
+          pdfDocId={sourcePdf.doc_id}
+          sha256={sourcePdf.sha256}
+          busy={assetBusy}
+          message={assetMessage}
+          onAdd={async (request) => { const added = await addFromPdf(request); if (added) { setPdfPickerOpen(false); setAssetsOpen(true); } }}
+          onClose={() => { setPdfPickerOpen(false); setAssetsOpen(true); setAssetMessage(null); }}
+        />
       )}
 
       {asking && (
