@@ -27,6 +27,8 @@
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-assets.mjs",
+    "prepack": "node scripts/check-pack.mjs",
+    "test": "node --test scripts/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
