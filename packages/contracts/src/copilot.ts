@@ -324,7 +324,7 @@ export const CopilotDocDeleteConfirmationSchema = z
     action: z.literal("delete_doc"),
     object: z.object({ kind: z.literal("doc"), id: z.string().min(1) }).strict(),
     /** pdf: the original PDF, metadata and sidecars are deleted; latex: the stored text, assets and annotations. */
-    format: z.enum(["pdf", "latex"]),
+    format: z.enum(["pdf", "latex", "text"]),
     /** Every Work that lists the Doc: it is removed from all of them, not only the one the user is looking at. */
     works: z
       .array(

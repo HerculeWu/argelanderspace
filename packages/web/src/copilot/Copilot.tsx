@@ -36,6 +36,8 @@ export const OPERATION_ACTION_KEYS = {
   open_outline_item: "copilot.operations.actions.open_outline_item", search: "copilot.operations.actions.search", open_search_result: "copilot.operations.actions.open_search_result", open_annotation: "copilot.operations.actions.open_annotation", zoom: "copilot.operations.actions.zoom",
   create_annotation: "copilot.operations.actions.create_annotation", update_annotation: "copilot.operations.actions.update_annotation", delete_annotation: "copilot.operations.actions.delete_annotation",
   create_manuscript: "copilot.operations.actions.create_manuscript", update_manuscript: "copilot.operations.actions.update_manuscript", delete_manuscript: "copilot.operations.actions.delete_manuscript", open_manuscript: "copilot.operations.actions.open_manuscript", close_manuscript: "copilot.operations.actions.close_manuscript",
+  create_pdf_annotation: "copilot.operations.actions.create_pdf_annotation", update_pdf_annotation: "copilot.operations.actions.update_pdf_annotation", delete_pdf_annotation: "copilot.operations.actions.delete_pdf_annotation",
+  undo_pdf_annotation: "copilot.operations.actions.undo_pdf_annotation", redo_pdf_annotation: "copilot.operations.actions.redo_pdf_annotation",
 } as const;
 const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
@@ -509,7 +511,7 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     </> : confirmation.action === "delete_doc" ? <>
       <h3>{t("copilot.confirmation.deleteDoc", { id: confirmation.object.id })}</h3>
       <p data-ui="copilot-confirmation-risk">{t("library.detail.deleteDoc.risk")}</p>
-      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : "library.detail.deleteDoc.scope")}</p>
+      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : confirmation.format === "text" ? "library.detail.deleteDoc.textScope" : "library.detail.deleteDoc.scope")}</p>
       {confirmation.works.length > 0 && <ul className="copilot-confirmation-works" data-ui="copilot-confirmation-works">{confirmation.works.map((item) => <li key={item.id} data-ui="copilot-confirmation-work" data-ui-key={item.id}>{t("copilot.confirmation.deleteDocWork", { title: item.title || item.id, state: t(item.main ? "library.detail.files.mainBadge" : "library.detail.files.additionalBadge"), count: item.remaining })}</li>)}</ul>}
       <p role="status" data-ui="copilot-confirmation-count">{confirmation.impact.annotations === "known" ? t("library.detail.deleteDoc.count", { count: confirmation.impact.count }) : t("library.detail.deleteDoc.countUnknown")}</p>
       <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>

@@ -407,7 +407,6 @@ test("request output reservation permits a model whose maximum output equals its
   expect(model).toBeDefined();
   if (!model) return;
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  // (the request carries the ~54 KB instruction and tool schemas: the smallest window this justifies)
   model.contextWindow = 36_000;
   model.maxTokens = 36_000;
   try {

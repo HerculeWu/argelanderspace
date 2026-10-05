@@ -1,7 +1,7 @@
 /** Opt-in annotations response; metadata only, never persisted in the IR/store. */
 import { z } from "zod";
 import { AnnotationsFileSchema } from "./annotations.js";
-import { TexDocIrSchema } from "./tex-ir.js";
+import { StoredDocIrSchema } from "./text-doc.js";
 
 export const AssetDigestSchema = z.object({
   imgPath: z.string(),
@@ -11,7 +11,7 @@ export type AssetDigest = z.infer<typeof AssetDigestSchema>;
 
 export const CoherentAnnotationsReadSchema = z.object({
   version: z.literal(1),
-  ir: TexDocIrSchema,
+  ir: StoredDocIrSchema,
   file: AnnotationsFileSchema,
   assets: z.array(AssetDigestSchema),
 });

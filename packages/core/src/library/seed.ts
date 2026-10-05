@@ -53,14 +53,73 @@ function iterDocs(outputDir: string): [string, Record<string, unknown>][] {
   return out;
 }
 
+/**
+ * A text Doc is never seeded by title: its Work is the one the user created it under. Recognized by any of its explicit
+ * marks (a source file, a text IR, the `text-` id), so a damaged or half-removed text Doc cannot become a new Work.
+ */
+function isTextDocEntry(docId: string, doc: Record<string, unknown>, outputDir: string): boolean {
+  return (
+    docId.startsWith("text-") ||
+    asRecord(doc.source).type === "text" ||
+    existsSync(join(outputDir, docId, "text-source.json"))
+  );
+}
+
+function isTextDocDir(outputDir: string, docId: string): boolean {
+  if (!docId.startsWith("text-")) return false;
+  try {
+    return statSync(join(outputDir, docId)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Text Doc directories whose files cannot be read as a text Doc (source missing or not JSON, reading text not JSON).
+ * Rebuild keeps their Work links and reports them; it never repairs, deletes or reseeds them.
+ */
+export function findDamagedTextDocs(outputDir: string): string[] {
+  const bad: string[] = [];
+  let names: string[];
+  try {
+    names = readdirSync(outputDir).sort();
+  } catch {
+    return bad;
+  }
+  const unreadable = (path: string): boolean => {
+    try {
+      const v: unknown = JSON.parse(readFileSync(path, "utf8"));
+      return v === null || typeof v !== "object" || Array.isArray(v);
+    } catch {
+      return true;
+    }
+  };
+  for (const name of names) {
+    if (!name.startsWith("text-")) continue;
+    const dir = join(outputDir, name);
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    const source = join(dir, "text-source.json");
+    const ir = join(dir, `${name}.json`);
+    if (!existsSync(source) || unreadable(source) || (existsSync(ir) && unreadable(ir)))
+      bad.push(name);
+  }
+  return bad;
+}
+
 /** Create/merge a work per ingested paper. Idempotent (re-runnable). */
 export function seedFromOutput(store: LibraryStore, outputDir: string): LibraryStore {
   for (const [docId, doc] of iterDocs(outputDir)) {
     // PDF identity/ownership is sourced only from Library associations, never
     // title-based seeding. The bundle markers keep corrupt/partial metadata from
     // being reinterpreted as a first-time LaTeX Doc.
+    // A text Doc's Work relation is the user's explicit choice (the source it was created under), never its title.
     if (
       doc.format === "pdf" ||
+      isTextDocEntry(docId, doc, outputDir) ||
       existsSync(join(outputDir, docId, "original.pdf")) ||
       existsSync(join(outputDir, docId, "annotations.json")) ||
       existsSync(join(outputDir, docId, "reading-position.json"))
@@ -101,7 +160,12 @@ function pruneMissingDocs(store: LibraryStore, outputDir: string): void {
     const kept = w.doc_ids.filter(
       (d) =>
         existsSync(join(outputDir, d, `${d}.json`)) ||
-        existsSync(join(outputDir, d, "original.pdf"))
+        existsSync(join(outputDir, d, "original.pdf")) ||
+        // any existing text Doc directory is kept, readable or not: rebuild reports a damaged one
+        // (`findDamagedTextDocs`) and never drops the only link the page has to reach and delete it
+        isTextDocDir(outputDir, d) ||
+        // a text draft has a source and no reading IR yet; that is a legitimate Doc, not a hollow one
+        existsSync(join(outputDir, d, "text-source.json"))
     );
     if (kept.length !== w.doc_ids.length || kept.some((d, i) => d !== w.doc_ids[i])) {
       w.doc_ids = kept;

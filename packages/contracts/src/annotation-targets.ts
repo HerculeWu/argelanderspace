@@ -20,9 +20,8 @@ import {
   canonicalSegmentsText,
   canonicalSegmentText,
 } from "./annotations.js";
-import type { IrBlock, IrSection, IrSegment } from "./doc-ir.js";
+import type { DocIr, IrBlock, IrSection, IrSegment } from "./doc-ir.js";
 import type { AssetDigest } from "./reader-coherence.js";
-import type { TexDocIr } from "./tex-ir.js";
 
 /** Snapshot object with the undefined-valued keys dropped (zod optionals stay absent). */
 function clean(o: Record<string, unknown>): AnnotationSnapshot {
@@ -146,7 +145,7 @@ export function withAssetHash(
 }
 
 /** Every block and section of an IR by id (sections are structure-annotation targets too). */
-export function irIndex(ir: TexDocIr): {
+export function irIndex(ir: DocIr): {
   blocks: Map<string, IrBlock>;
   sections: Map<string, IrSection>;
 } {
@@ -203,7 +202,7 @@ export type TextTargetResult =
  * headings are structure-only); `range`: not `0 <= start < end <= length` of the canonical text;
  * `quote_mismatch`: the offsets do not select the quote the caller meant (a wrong count, or a different epoch).
  */
-export function resolveTextTarget(ir: TexDocIr, input: TextTargetInput): TextTargetResult {
+export function resolveTextTarget(ir: DocIr, input: TextTargetInput): TextTargetResult {
   const block = irIndex(ir).blocks.get(input.block);
   if (!block)
     return { ok: false, reason: "no_block", detail: `no block ${input.block} in this document` };

@@ -408,7 +408,7 @@ export type DocDeleteDescription =
       kind: "ready";
       docId: string;
       /** pdf: the original, metadata and workbench sidecars go; latex: the stored text, assets and annotations. */
-      format: "pdf" | "latex";
+      format: "pdf" | "latex" | "text";
       works: DocDeleteWork[];
       /** The current annotation count the dialog shows; unknown is never zero. */
       impact: DocReplaceImpact;

@@ -10,6 +10,7 @@ import { createReaderTool } from "../src/copilot-reader-tool.js";
 const SHA = "a".repeat(64);
 function tool(png: Buffer, width: number, height: number, budget: number, used = 0) {
   return createReaderTool({
+    conversationId: "budget-test",
     reader: {
       read: async () => ({ kind: "not_found" }),
       write: async () => ({ kind: "not_found" }),

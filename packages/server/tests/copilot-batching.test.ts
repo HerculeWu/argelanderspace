@@ -685,7 +685,7 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  await withWindow(39_000, async () => {
+  await withWindow(43_000, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;

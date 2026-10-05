@@ -1,0 +1,36 @@
+/* Text Doc: reading + Markdown source (copilot ticket 25). Shell tokens only; the nested Reader keeps its own palette. */
+.text-doc { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 0; min-width: 0; background: var(--bg); color: var(--text); }
+.text-doc [hidden] { display: none !important; }
+.text-doc-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.text-doc-tabs > .ui-tabs-bar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--gap); padding: 0 var(--pad); border-bottom: 1px solid var(--border); background: var(--panel); min-height: calc(var(--control-h) + 8px); }
+.text-doc-tabs > .ui-tabs-bar > .ui-tabs { flex: 0 0 auto; border-bottom: 0; }
+.text-doc-tabs > .ui-tabs-bar .ui-tab { flex: none; padding: 8px 14px 10px; }
+.text-doc-trailing { margin-left: auto; display: flex; align-items: center; gap: var(--gap); }
+.text-doc-spacer { flex: 1; }
+.text-doc-unpublished { font-size: var(--fs-sm); color: var(--warn); white-space: nowrap; }
+.text-doc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.text-doc-pdf { height: var(--control-h); padding: 0 var(--pad); border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text-dim); font-size: var(--fs-sm); white-space: nowrap; }
+.text-doc-pdf:hover:not(:disabled) { color: var(--text); background: var(--hover); }
+.text-doc-pdf:disabled { color: var(--text-faint); cursor: not-allowed; }
+.text-doc-reader, .text-doc-source { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.text-doc-reader > .reader-session { flex: 1; }
+.text-doc-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-faint); padding: 35px; }
+.text-doc-empty h2 { font-size: 16px; font-weight: 500; color: var(--text-dim); }
+.text-source-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--gap); padding: var(--pad); }
+.text-source-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: var(--gap); }
+.text-source-status { font-size: var(--fs-sm); color: var(--text-faint); }
+.text-source-status.warn { color: var(--warn); }
+.text-source-input { flex: 1; min-height: 160px; width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.text-source-input .cm-editor { height: 100%; }
+.text-source-footer { flex: 0 0 auto; display: flex; gap: 14px; font-size: var(--fs-xs); color: var(--text-faint); }
+.text-source-conflict { flex: 0 0 auto; display: flex; flex-direction: column; gap: var(--gap); padding: var(--pad); border: 1px solid var(--warn); border-radius: var(--radius-sm); background: var(--surface-2); font-size: var(--fs-sm); }
+.text-source-conflict pre { margin: 4px 0 0; max-height: 160px; overflow: auto; padding: 8px; font-family: var(--font-mono); font-size: var(--fs-xs); white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.text-source-conflict-actions { display: flex; gap: var(--gap); flex-wrap: wrap; }
+.text-source-diagnostics { flex: 0 0 auto; max-height: 140px; overflow: auto; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); font-size: var(--fs-sm); }
+.text-source-diagnostics li { display: flex; gap: var(--gap); align-items: baseline; padding: 4px var(--pad); border-bottom: 1px solid var(--border-soft); }
+.text-source-diagnostics li:last-child { border-bottom: 0; }
+.text-source-diagnostics li.error .text-source-diagnostic-where { color: var(--danger); }
+.text-source-diagnostics li.warning .text-source-diagnostic-where { color: var(--warn); }
+.text-source-diagnostic-where { flex: none; font-family: var(--font-mono); font-size: var(--fs-xs); text-decoration: underline; text-underline-offset: 2px; }
+.text-source-diagnostic-where:disabled { text-decoration: none; cursor: default; }
+.text-source-load-error { padding: var(--pad); display: flex; flex-direction: column; gap: var(--gap); align-items: flex-start; }

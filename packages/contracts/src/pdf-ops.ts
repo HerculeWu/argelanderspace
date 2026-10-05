@@ -318,6 +318,19 @@ export const PdfPageSchema = z
     search: PdfSearchStateSchema.nullable(),
     selection: PdfSelectionSchema.nullable(),
     panels: z.object({ outlineCollapsed: z.boolean(), annotationsCollapsed: z.boolean() }).strict(),
+    /**
+     * Annotation text the user has typed in the panel and not saved (the session's own retained drafts). Presence and the
+     * blocked state only, never the text: a write the agent makes never replaces a draft, and a draft is never saved
+     * for the user. `create` is a new comment being written; `edit` lists existing annotations being edited (a draft
+     * whose annotation is gone is listed too, it is still the user's text).
+     */
+    drafts: z
+      .object({
+        create: z.boolean(),
+        edit: z.array(z.object({ annotationId: Id, blocked: z.boolean() }).strict()).max(1000),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((page, ctx) => {

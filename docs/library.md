@@ -124,6 +124,16 @@ CLI 裸 arXiv id 正文摄入路径不变。裸 id 只在 Web identifier 建条�
   - **`save_candidate{bibcode}`（唯一写）**＝候选的“加入文库”：复用 `applyLibraryImport`（即 `POST /api/library/works {mode:bibcode}` 的共用处理，14 的窄写入、派生 id 冲突拒绝、桥接整条拒绝、默认 arXiv PDF 规则、一次 `library.changed{add}`），结果语义同 `import_works`（`noop` 仅在文件字节未变时）。候选必须是绑定视图所报告的探索中的节点（可见节点、打开的候选及其引用列表），否则 `rejected` 零写入；成功后服务向发起视图发送仅服务端可发的 `discovery_saved{bibcode,workId}`（不在任何工具 schema 内），页面像自己的 Add 一样就地标记 libraryId，不重新查询、不动选择/视口/seed。重复保存沿身份规则＝`exists`/`noop`。局限：候选成员关系按视图最后一次上报校验（观测值）；页面“Add”在已保存节点上不显示，工具对已保存节点仍走同一身份去重（noop）。
   - 动作所属：页面把“加入文库”进行中的 busy 仅作浏览器本地防重入，服务端在 `libraryLock` 后排队。图“跳到起点”按钮已进入 GraphCanvas 控制器。外部链接（ADS）、拖/平移/滚轮、作者展开折叠为仅用户。
 
+## 文本 Doc（Copilot 票 25）
+
+手工文本 Doc 是同一 Work 下的独立 Doc（id `text-<UUID>`），规格见本地 Copilot spec §10–11，决定见 [ADR 0006](adr/0006-text-input-to-shared-ir.md)。已实现的最小闭环：
+
+- **存储**：`output/<docId>/text-source.json` 是唯一源状态（Markdown 字节往返、单调 `rev`、资产清单预留）；`<docId>.json` 仅是最后一次成功生成的 TextDocIr，草稿阶段没有它是合法状态，不是损坏。`TexDocIr` 的 schema 与序列化不变；读取侧用 `StoredDocIr` union（`source.type` 区分）。
+- **创建**：`POST /api/library/text-docs {workId, operationId}`。`operationId` 先绑定新 docId 再建目录（隐藏 staging + rename + 对 `doc_ids` 的窄追加，已有主 Doc 不变；Work 无 Doc 时新 Doc 成为主位）；重试返回同一 Doc，已被删除的操作不复活（`done` 标记在 Work 关联之前写入；失败回滚后可由同一操作完成）。绑定记录在 `<dataDir>/library/text-doc-operations.json`（与 library.json 同锁；损坏时明确报错 `corrupt_operations`、保留原文件，不覆盖）。来源 PDF 须属于该 Work 且唯一归属，并校验原件字节与固定 SHA-256。页面的创建按钮在同一次尝试的重试中复用同一 operationId，直到成功或服务端明确回 409。`dataDir`/`output` 为符号链接是合法布局（路径先 realpath 再校验），Doc 目录与源文件本身为符号链接仍被拒绝。library rebuild 不按标题为 text Doc 重新 seed Work，也不因没有 IR 剪掉草稿。
+- **保存/校验/生成**：`PUT /api/paper/:id/source`（expectedRev，未闭合语法也能存）、`POST …/source/validate`（无副作用）、`POST …/source/generate`（显式；发布前复核源 rev，陈旧候选拒绝；一次原子 rename 发布；成功才发 `text-doc.published`）。生成器不归档、不广播 `annotation.changed`，归档仍只在标注 GET/PUT 访问路径。
+- **28 之前的临时限制**：候选的标注指纹与已发布内容不同且当前标注非空（或无法读取）时拒绝发布（409 `replacement_blocked` / 500），不绕过数据保护；确认流程由后续票接入。当前格式只支持标题/段落/单层列表（强调与行内代码去样式保文字；裸 URL/邮箱/`<…>` 自动链接按原样作文字），其余语法按构造给带行列的专用诊断码（`math_unsupported`、`cite_unsupported`、`ref_unsupported`、`link_unsupported`、`table_unsupported`……），不静默丢字或改写；`$…$`/`$$…$$`、`[cite:`、`[ref:` 在词法分析前按 mdWithMath 的保护顺序（代码与 URL 先屏蔽）检出。源编辑器是 CodeMirror（`TextSourceField`，行号、原生 IME、`\n` 为唯一行分隔符以保证字节往返；全文字符串只在保存时构建）。rebuild 对无法读取的 text Doc 保留 Work 关联并在摘要的 `damaged_text_docs` 报告（只要 `output/text-<UUID>/` 目录还在就保留，包括从未生成且源文件丢失的草稿，使页面仍能经 Work 打开或删除它）。诊断行号与编辑器一致（只有 `\n` 换行，孤立 `\r` 是行内普通字符）；一次最多列出 200 条，其余以 `too_many_diagnostics`（带 `count`）汇总，行内代码只在同一块内配对（不跨空行）。
+- **来源 PDF 与删除**：来源 PDF 只是文件关系（Doc id + sha256），删除 PDF 不级联；删除文本 Doc 复用全局物理 DELETE（源、IR、当前/归档标注、全部 Work 关联）。旧 CLI 对 text IR 不承诺支持（`list` 显示 unreadable，退出码 0）。
+
 ## 离线与派生数据
 
 `library build --offline` 已 gate ADS、Crossref、OpenAlex，缓存仍可读；不推断所有 CLI 命令全局断网。DOI stub 富化、摄入缓存命中和 arXiv 恒新鲜 job 各自按路径判断。
