@@ -6,6 +6,7 @@
  */
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -20,8 +21,12 @@ import { libraryPaths } from "@argelanderspace/core";
 import {
   __setWriterSandboxForTests,
   compileTex,
+  ensureWriterSandboxProbe,
   haveLatexmk,
-  writerSandboxAvailable,
+  isSafeTexRoot,
+  runTexProcess,
+  writerSandboxBinds,
+  writerSandboxCommand,
   writerTexEnv,
 } from "@argelanderspace/infra";
 import { describe, expect, test } from "vitest";
@@ -36,7 +41,7 @@ if (!HAVE) console.warn("latexmk not on PATH — writer render-safety real-compi
 const PDFOBJ_SENTINEL = "PDFOBJ-SENTINEL-7391-OUTSIDE";
 const PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-const SANDBOX = HAVE && writerSandboxAvailable();
+const SANDBOX = HAVE && (await ensureWriterSandboxProbe());
 if (HAVE && !SANDBOX)
   console.warn(
     "bubblewrap does not work here — the sandbox boundary tests are SKIPPED (not passed)"
@@ -211,14 +216,20 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
   );
 
   const ordinary = async (
-    template: string
+    template: string,
+    extra: { bib?: string; preamble?: string } = {}
   ): Promise<{ out: WriterNumberingResponse; dir: string }> => {
     const dataDir = mkdtempSync(join(tmpdir(), "writer-ordinary-"));
+    const outside = mkdtempSync(join(tmpdir(), "writer-ordinary-out-"));
+    writeFileSync(join(outside, "secret.txt"), `${PDFOBJ_SENTINEL}\n`);
     const paths = libraryPaths(dataDir);
     mkdirSync(paths.libraryDir, { recursive: true });
     writeFileSync(
       paths.libraryBib,
-      "@article{smith2020,\n  author = {Smith, Jane},\n  title = {Stellar streams},\n  journal = {MNRAS},\n  year = {2020}\n}\n"
+      (
+        extra.bib ??
+        "@article{smith2020,\n  author = {Smith, Jane},\n  title = {Stellar streams},\n  journal = {MNRAS},\n  year = {2020}\n}\n"
+      ).replaceAll("@OUT@", outside)
     );
     const app = createApp({
       paths,
@@ -240,6 +251,7 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
       join(dataDir, "manuscripts", doc.id, "assets", "fig.png"),
       Buffer.from(PNG_B64, "base64")
     );
+    doc.userPreamble = (extra.preamble ?? "").replaceAll("@OUT@", outside);
     doc.cells = [
       {
         id: "c_00000001",
@@ -279,6 +291,151 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
     });
     return { out: (await res.json()) as WriterNumberingResponse, dir: dataDir };
   };
+
+  const BIB_PAYLOAD =
+    "@article{smith2020,\n  author = {Smith, Jane},\n  title = {Stellar streams},\n  journal = {MNRAS},\n  year = {2020},\n  volume = {1},\n  number = {\\immediate\\pdfobj stream file{@OUT@/secret.txt}2}\n}\n";
+  const UNCOMPRESSED = "\\pdfcompresslevel=0 \\pdfobjcompresslevel=0";
+
+  test.skipIf(!SANDBOX)(
+    "library BibTeX with a pdfTeX file primitive in a field (an imported entry is unescaped) reads nothing inside the sandbox; without it, it does",
+    async () => {
+      const safe = await ordinary("report", { bib: BIB_PAYLOAD, preamble: UNCOMPRESSED });
+      expect(everything(safe.dir)).not.toContain(PDFOBJ_SENTINEL);
+      expect(JSON.stringify(safe.out)).not.toContain(PDFOBJ_SENTINEL);
+      __setWriterSandboxForTests(false);
+      try {
+        const open = await ordinary("report", { bib: BIB_PAYLOAD, preamble: UNCOMPRESSED });
+        expect(everything(open.dir)).toContain(PDFOBJ_SENTINEL); // the chain is real: this is why the sandbox matters
+      } finally {
+        __setWriterSandboxForTests(null);
+      }
+    },
+    240_000
+  );
+
+  test.skipIf(!SANDBOX)(
+    "inside the sandbox /proc shows no host path: environ, cmdline, cwd and hostname are neutral",
+    async () => {
+      const dataDir = mkdtempSync(join(tmpdir(), "writer-proc-probe-"));
+      const sandbox = writerSandboxCommand(dataDir, writerTexEnv(dataDir), "sh", [
+        "-c",
+        "cat /proc/self/environ | tr '\\0' '\\n'; echo ---; cat /proc/1/cmdline | tr '\\0' ' '; echo ---; cat /proc/self/cmdline | tr '\\0' ' '; echo ---; readlink /proc/1/cwd; readlink /proc/self/cwd; hostname; ls /",
+      ]);
+      const result = await runTexProcess(sandbox.cmd, sandbox.args, {
+        cwd: sandbox.cwd,
+        timeoutMs: 30_000,
+        env: sandbox.env,
+        replaceEnv: true,
+        fdInput: sandbox.fdInput,
+      });
+      expect(result.code).toBe(0);
+      const out = result.stdout;
+      expect(out).not.toContain(dataDir);
+      expect(out).not.toContain(tmpdir());
+      expect(out).not.toContain("/home");
+      expect(out).toContain("HOME=/work");
+      expect(out).toContain("writer-sandbox");
+      expect(out).not.toMatch(/^(home|root|mnt|media)$/m); // the root listing holds no user trees
+    },
+    60_000
+  );
+
+  test("sandbox binds: only the system trees, TeX's own parts of /etc and /var, the TeX installation and the workspace", () => {
+    const sandbox = writerSandboxCommand("/data/ws", writerTexEnv("/data/ws"), "latexmk", ["x"]);
+    const options = sandbox.fdInput.toString("utf8").split("\0");
+    const sources: string[] = [];
+    options.forEach((option, index) => {
+      if (["--ro-bind", "--ro-bind-try", "--bind"].includes(option))
+        sources.push(options[index + 1] as string);
+    });
+    const allowed = new Set([
+      "/usr",
+      "/bin",
+      "/lib",
+      "/lib64",
+      "/sbin",
+      "/etc/texmf",
+      "/etc/fonts",
+      "/etc/alternatives",
+      "/etc/ld.so.cache",
+      "/etc/ld.so.conf",
+      "/etc/ld.so.conf.d",
+      "/etc/localtime",
+      "/var/lib/texmf",
+      "/var/cache/fontconfig",
+      "/data/ws",
+      ...writerSandboxBinds(),
+    ]);
+    for (const source of sources) expect(allowed.has(source), source).toBe(true);
+    for (const bind of writerSandboxBinds()) expect(isSafeTexRoot(bind), bind).toBe(true);
+    // the workspace is the only writable bind
+    expect(options.filter((option) => option === "--bind")).toHaveLength(1);
+    expect(sandbox.args.join(" ")).not.toContain("/data/ws"); // nor does the command line
+  });
+
+  test("a TeX root is never a parent of user data: roots, home trees, /tmp and similar are refused", () => {
+    for (const bad of [
+      "/",
+      "/opt",
+      "/usr/local",
+      "/home",
+      "/home/u/texlive",
+      "/root/tex",
+      "/tmp/texlive",
+      "/mnt/data",
+      "/var",
+      "/etc",
+      "/opt/../home/u",
+      "relative/tex",
+    ])
+      expect(isSafeTexRoot(bad), bad).toBe(false);
+    for (const good of [
+      "/opt/texlive",
+      "/opt/texlive/2024",
+      "/usr/local/texlive/2024/bin/x86_64-linux".replace("/usr/local", "/opt"),
+    ])
+      expect(isSafeTexRoot(good), good).toBe(true);
+  });
+
+  test("without the sandbox the server refuses a Copilot-marked refresh (403, nothing compiled) and still compiles the user's own", async () => {
+    __setWriterSandboxForTests(false);
+    try {
+      const dataDir = mkdtempSync(join(tmpdir(), "writer-gate-"));
+      const app = createApp({
+        paths: libraryPaths(dataDir),
+        statusDir: statusDirFor(dataDir),
+        makeSources: () => stubSources(),
+        pipelines: stubPipelines(),
+        runner: new JobRunner({ dir: join(dataDir, "jobs") }),
+        broadcast: () => {},
+      });
+      const doc = (await (
+        await app.request("/api/writer/manuscripts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ template: "report", title: "Gate" }),
+        })
+      ).json()) as WriterManuscript;
+      const refresh = (headers: Record<string, string> = {}) =>
+        app.request(`/api/writer/manuscripts/${doc.id}/numbering/refresh`, {
+          method: "POST",
+          headers,
+        });
+      const marked = await refresh({ "X-Copilot-Action": "1" });
+      expect(marked.status).toBe(403);
+      expect(existsSync(join(dataDir, "manuscripts", doc.id, "build"))).toBe(false); // nothing ran
+      const own = await refresh();
+      expect(own.status).toBe(200);
+      expect(existsSync(join(dataDir, "manuscripts", doc.id, "build", "numbering.json"))).toBe(
+        true
+      );
+      // and with a sandbox the marker is allowed
+      __setWriterSandboxForTests(true);
+      expect((await refresh({ "X-Copilot-Action": "1" })).status).toBe(200);
+    } finally {
+      __setWriterSandboxForTests(null);
+    }
+  }, 180_000);
 
   test.each(["report", "letter"])(
     "an ordinary %s manuscript (figure asset, bibtex bibliography, math) still compiles in the Writer compile (sandboxed when it works here)",

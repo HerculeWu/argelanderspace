@@ -21,7 +21,7 @@ export interface WriterEditorControls {
   /** The cell's pencil. */
   edit(cellId: string): "ok" | "not_found";
   /** The editing form's Render button / Shift+Enter: leave the form, save what is pending, render. */
-  commit(cellId: string): Promise<"ok" | "not_found">;
+  commit(cellId: string): Promise<"ok" | "not_found" | "refused">;
   /** The outline / References panels' fold buttons. */
   setPanel(panel: "outline" | "references", collapsed: boolean): void;
   setTab(tab: "references" | "crossrefs" | "comments"): void;

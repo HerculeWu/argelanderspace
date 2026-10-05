@@ -21,7 +21,11 @@ import type {
   WsServerMessage,
 } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
-import { haveLatexmk } from "@argelanderspace/infra";
+import {
+  __setWriterSandboxForTests,
+  ensureWriterSandboxProbe,
+  haveLatexmk,
+} from "@argelanderspace/infra";
 import {
   type Api,
   type AssistantMessage,
@@ -102,6 +106,7 @@ const operations = (snapshot: ConversationSnapshot) =>
   snapshot.messages.flatMap((m) => m.operations ?? []).map((o) => `${o.action}:${o.status}`);
 
 beforeEach(async () => {
+  await ensureWriterSandboxProbe();
   originalEnv = process.env;
   root = mkdtempSync(join(tmpdir(), "copilot-writer-cells-"));
   process.env = { PATH: originalEnv.PATH, HOME: root, XDG_CONFIG_HOME: join(root, "config") };
@@ -577,6 +582,44 @@ test("a cell operation on a malformed call, a template-unlisted type and a missi
     "update_cell:unsupported",
   ]);
   expect(readFileSync(manuscriptFile(), "utf8")).toBe(bytes);
+});
+
+test("without the OS sandbox the Copilot causes no compile: render_manuscript and commit_cell are rejected (no browser asked), edits still work", async () => {
+  __setWriterSandboxForTests(false);
+  let compiled = 0;
+  const restore = __setNumberingComputeForTests(async (dir, manuscriptId, signal) => {
+    compiled++;
+    return computeWriterNumbering(dir, manuscriptId, signal);
+  });
+  try {
+    script = [
+      call({ action: "render_manuscript", manuscriptId: M }),
+      call({ action: "commit_cell", manuscriptId: M, cellId: "c_00000001" }),
+      call({
+        action: "update_cell",
+        manuscriptId: M,
+        expectedRev: 3,
+        cellId: "c_00000001",
+        fields: { source: "Edited without a sandbox" },
+      }),
+      () => ({ text: "done" }),
+    ];
+    const { snapshot } = await run(editorPage());
+    expect(operations(snapshot)).toEqual([
+      "render_manuscript:rejected",
+      "commit_cell:rejected",
+      "update_cell:ok",
+    ]);
+    expect(compiled).toBe(0);
+    expect(existsSync(join(dataDir, "manuscripts", M, "build"))).toBe(false);
+    expect(broadcasts.some((m) => m.type === "copilot.view-action")).toBe(false);
+    expect((disk().cells[0] as unknown as { data: { source: string } }).data.source).toBe(
+      "Edited without a sandbox"
+    );
+  } finally {
+    restore();
+    __setWriterSandboxForTests(null);
+  }
 });
 
 test.skipIf(!haveLatexmk())(

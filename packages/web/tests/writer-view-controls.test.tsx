@@ -168,6 +168,18 @@ describe("explicit Render only (no automatic compile)", () => {
     expect(await state.controller?.apply({ action: "commit_cell", manuscriptId: "m_0000000b", cellId: "c_0000ffff" })).toEqual({ ok: false, detail: "not_found" });
   });
 
+  it("commit_cell marks its render as the Copilot's; a service refusal (403) is reported as disabled, and the user's own Render sends no marker", async () => {
+    const { view, state } = await open();
+    expect(await state.controller?.apply({ action: "commit_cell", manuscriptId: ID, cellId: "c_0ab50001" })).toEqual({ ok: true });
+    expect(h.api.refreshNumbering).toHaveBeenLastCalledWith(ID, { copilot: true });
+    h.api.refreshNumbering.mockRejectedValueOnce(Object.assign(new Error("refused"), { status: 403 }));
+    expect(await state.controller?.apply({ action: "commit_cell", manuscriptId: ID, cellId: "c_0ab50001" })).toEqual({ ok: false, detail: "disabled" });
+    h.api.refreshNumbering.mockClear();
+    fireEvent.click(view.container.querySelector('[data-ui="render-manuscript"]') as HTMLElement);
+    await waitFor(() => expect(h.api.refreshNumbering).toHaveBeenCalledTimes(1));
+    expect(h.api.refreshNumbering).toHaveBeenLastCalledWith(ID, {});
+  });
+
   it("commit_cell leaves the editing form (the pencil's counterpart)", async () => {
     const { state } = await open();
     await state.controller?.apply({ action: "edit_cell", manuscriptId: ID, cellId: "c_0ab50001" });

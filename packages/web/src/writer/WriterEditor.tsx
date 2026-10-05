@@ -283,16 +283,20 @@ export function WriterEditor({
     return writeChain.current;
   };
 
-  async function requestPreview() {
+  /** The Render button (and Shift+Enter). `copilot` marks a render made for a Copilot view action (the service may refuse it). */
+  async function requestPreview(opts: { copilot?: boolean } = {}): Promise<"ok" | "refused" | "failed"> {
     if (!dirtyRef.current) writeFailed.current = false;
     setNumberingBusy(true);
     try {
       await flushSave();
       if (dirtyRef.current && !writeFailed.current) await flushSave();
-      if (dirtyRef.current || writeFailed.current) return;
-      acceptNumbering(await refreshNumbering(id));
-    } catch { showToast(t("writer.numbering.refreshFailed")); }
-    finally { setNumberingBusy(false); }
+      if (dirtyRef.current || writeFailed.current) return "failed";
+      acceptNumbering(await refreshNumbering(id, opts));
+      return "ok";
+    } catch (error) {
+      showToast(t("writer.numbering.refreshFailed"));
+      return (error as { status?: number }).status === 403 ? "refused" : "failed";
+    } finally { setNumberingBusy(false); }
   }
 
   const scheduleSave = () => {
@@ -635,8 +639,9 @@ export function WriterEditor({
     commit: async (cellId) => {
       if (!docRef.current?.cells.some((c) => c.id === cellId)) return "not_found";
       if (editingId === cellId) setEditingId(null);
-      await requestPreview();
-      return "ok";
+      // The edit-mode and save half is the button's; the render half is marked as the Copilot's and may be refused.
+      const rendered = await requestPreview({ copilot: true });
+      return rendered === "refused" ? "refused" : "ok";
     },
     setPanel: (panel, collapsed) => (panel === "outline" ? setLeftCollapsed(collapsed) : setRightCollapsed(collapsed)),
     setTab: (tab) => setRightTab(tab),

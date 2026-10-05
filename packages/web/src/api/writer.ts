@@ -150,10 +150,15 @@ export async function fetchNumbering(id: string): Promise<WriterNumberingRespons
 }
 
 /** Force a numbering re-compile now (manual refresh). */
-export async function refreshNumbering(id: string): Promise<WriterNumberingResponse> {
+export async function refreshNumbering(
+  id: string,
+  opts: { copilot?: boolean } = {}
+): Promise<WriterNumberingResponse> {
   const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}/numbering/refresh`, {
     method: "POST",
+    // The page marks a render it makes for a Copilot view action; the service decides whether that is allowed.
+    ...(opts.copilot ? { headers: { "X-Copilot-Action": "1" } } : {}),
   });
-  if (!r.ok) throw new Error(`numbering refresh failed: ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(`numbering refresh failed: ${r.status}`), { status: r.status });
   return (await r.json()) as WriterNumberingResponse;
 }

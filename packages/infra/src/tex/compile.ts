@@ -39,7 +39,7 @@ import { findOnPath } from "../lib/proc.js";
 import { createCachedTexWorkspace } from "./cache.js";
 import { prepareTexInstrumentation, texStyPath } from "./instrument.js";
 import { runTexProcess } from "./proc.js";
-import { writerSandboxAvailable, writerSandboxCommand } from "./sandbox.js";
+import { ensureWriterSandboxProbe, writerSandboxCommand } from "./sandbox.js";
 import {
   createTexWorkspace,
   guardTexWorkspaceSize,
@@ -323,20 +323,27 @@ async function attemptCompile(opts: {
     ];
     // Writer: inside bubblewrap when it works (the real boundary, see sandbox.ts); the hardening below always applies.
     const writerEnv = opts.renderProfile === "writer" ? writerTexEnv(runDir) : null;
-    const launch =
-      writerEnv && writerSandboxAvailable()
-        ? writerSandboxCommand(runDir, writerEnv, "latexmk", args)
-        : { cmd: "latexmk", args };
-    const result = await runTexProcess(launch.cmd, launch.args, {
-      cwd: runDir,
-      timeoutMs: opts.timeoutMs,
-      // A manuscript's text can now come from an agent (copilot ticket 23, spec 14.1). TeX Live's default lets a
-      // document \input any readable absolute path (openin_any = a); paranoid mode refuses absolute and parent paths
-      // and dotfiles, so a Writer compile can only read its own workspace and the TeX trees. The reader/ingest
-      // compiles are untouched (their sources are arXiv papers, not agent text).
-      ...(writerEnv ? { env: writerEnv, replaceEnv: true } : {}),
-      ...(opts.signal ? { signal: opts.signal } : {}),
-    });
+    const sandboxed = writerEnv !== null && (await ensureWriterSandboxProbe());
+    const sandbox =
+      sandboxed && writerEnv ? writerSandboxCommand(runDir, writerEnv, "latexmk", args) : null;
+    const result = await runTexProcess(
+      sandbox ? sandbox.cmd : "latexmk",
+      sandbox ? sandbox.args : args,
+      {
+        cwd: sandbox ? sandbox.cwd : runDir,
+        timeoutMs: opts.timeoutMs,
+        // A manuscript's text can now come from an agent (copilot ticket 23, spec 14.1). TeX Live's default lets a
+        // document \input any readable absolute path (openin_any = a); paranoid mode refuses absolute and parent paths
+        // and dotfiles, so a Writer compile can only read its own workspace and the TeX trees. The reader/ingest
+        // compiles are untouched (their sources are arXiv papers, not agent text).
+        ...(sandbox
+          ? { env: sandbox.env, replaceEnv: true, fdInput: sandbox.fdInput }
+          : writerEnv
+            ? { env: writerEnv, replaceEnv: true }
+            : {}),
+        ...(opts.signal ? { signal: opts.signal } : {}),
+      }
+    );
     opts.signal?.throwIfAborted();
 
     const logPath = path.join(runDir, `${opts.jobname}.log`);

@@ -659,82 +659,37 @@ describe("read and render", () => {
   });
 });
 
-describe("no OS sandbox on this machine (fail-safe (b), spec 14.1)", () => {
+describe("no OS sandbox on this machine: the Copilot never causes a compile, but still edits (spec 14.1)", () => {
   beforeEach(() => {
     deps.sandboxed = () => false;
-    deps.render = async () => ({
-      status: "ok",
-      facts: null,
-      lastError: null,
-      preview: null,
-      compiling: false,
-    });
+    deps.render = async () => {
+      throw new Error("a compile was started");
+    };
   });
 
-  test("agent text that reaches the compiler is rejected, with zero writes, in every path", async () => {
-    const bytes = readFileSync(file(), "utf8");
-    const attempts = [
-      cellOperation(deps, {
+  test("text edits work (the compile is the user's own and the Copilot cannot start one)", async () => {
+    expect(
+      await cellOperation(deps, {
         action: "update_cell",
         ...base,
         cellId: "c_00000001",
-        fields: { source: "plain harmless text" },
-      }),
-      cellOperation(deps, {
-        action: "insert_cell",
-        ...base,
-        cellType: "latex",
-        fields: { source: "x" },
-      }),
-      patchManuscript(deps, { action: "update_manuscript", ...base, title: "Plain title" }),
-      patchManuscript(deps, {
-        action: "update_manuscript",
-        ...base,
-        userPreamble: "\\newcommand{\\a}{b}",
-      }),
-      createManuscriptOp(deps, { template: "report", title: "Plain" }, { screen: true }),
-    ];
-    for (const out of await Promise.all(attempts))
-      expect(out).toMatchObject({ ok: false, status: "rejected" });
-    expect(readFileSync(file(), "utf8")).toBe(bytes);
-    expect(readdirSync(join(dataDir, "manuscripts"))).toEqual([M]);
-  });
-
-  test("the Copilot cannot start a render, but edits that carry no agent text still work", async () => {
-    expect(await renderManuscript(deps, M)).toMatchObject({ ok: false, status: "rejected" });
-    expect(
-      await cellOperation(deps, {
-        action: "add_comment",
-        ...base,
-        cellId: "c_00000001",
-        body: "note",
+        fields: { source: "plain text" },
       })
     ).toMatchObject({ ok: true });
-    expect(
-      await cellOperation(deps, {
-        action: "convert_cell",
-        ...base,
-        expectedRev: 4,
-        cellId: "c_00000002",
-        cellType: "latex",
-      })
-    ).toMatchObject({ ok: true });
-    expect(
-      await cellOperation(deps, {
-        action: "delete_cell",
-        ...base,
-        expectedRev: 5,
-        cellId: "c_00000003",
-      })
-    ).toMatchObject({ ok: true });
-    // a template switch writes no text
     expect(
       await patchManuscript(deps, {
         action: "update_manuscript",
         ...base,
-        expectedRev: 6,
-        template: "letter",
+        expectedRev: 4,
+        title: "A title",
       })
     ).toMatchObject({ ok: true });
+    expect(
+      await createManuscriptOp(deps, { template: "report", title: "New" }, { screen: true })
+    ).toMatchObject({ ok: true });
+  });
+
+  test("render is rejected and starts nothing", async () => {
+    expect(await renderManuscript(deps, M)).toMatchObject({ ok: false, status: "rejected" });
   });
 });
