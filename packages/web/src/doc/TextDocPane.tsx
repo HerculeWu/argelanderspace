@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { DocDescription, TextDiagnostic, TextSourceAsset, TextSourceDto } from "@argelanderspace/contracts";
+import type { DocDescription, TextDiagnostic, TextReplacementImpact, TextSourceAsset, TextSourceDto } from "@argelanderspace/contracts";
 import { fetchDocDescription } from "../api/doc";
 import {
   fetchTextSource,
@@ -161,7 +161,6 @@ export function TextDocPane({
 const FAILED_KEY = {
   diagnostics: "doc.text.failed.diagnostics",
   stale: "doc.text.failed.stale",
-  blocked: "doc.text.failed.blocked",
   busy: "doc.text.failed.busy",
   error: "doc.text.failed.error",
 } as const;
@@ -257,8 +256,11 @@ type Generation =
   | { kind: "idle" }
   | { kind: "running" }
   | { kind: "validated"; sections: number; paragraphs: number; lists: number }
-  | { kind: "generated"; rev: number }
-  | { kind: "failed"; reason: "diagnostics" | "stale" | "blocked" | "busy" | "error"; detail: string };
+  /** `archived`: how many annotations the confirmed replacement leaves for the Reader's next read to archive. */
+  | { kind: "generated"; rev: number; archived: number }
+  /** The user declined the replacement: nothing was written. */
+  | { kind: "cancelled" }
+  | { kind: "failed"; reason: "diagnostics" | "stale" | "busy" | "error"; detail: string };
 
 function TextSourceEditor({
   docId,
@@ -285,6 +287,10 @@ function TextSourceEditor({
   const [latest, setLatest] = useState<TextSourceDto | null>(null);
   const [diagnostics, setDiagnostics] = useState<TextDiagnostic[]>([]);
   const [generation, setGeneration] = useState<Generation>({ kind: "idle" });
+  /** The replacement the server asked the user to confirm (a modal question; nothing is held while it is open). */
+  const [asking, setAsking] = useState<{ impact: TextReplacementImpact; changed: boolean } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const regenCancelRef = useRef<HTMLButtonElement>(null);
   const [importing, setImporting] = useState<string | null>(null);
   const [importError, setImportError] = useState(false);
   const [assets, setAssets] = useState<TextSourceAsset[]>([]);
@@ -438,6 +444,28 @@ function TextSourceEditor({
     );
   };
 
+  /** One generation request; `confirm` is the impact a real click on the question confirmed, sent back unchanged. */
+  const runGenerate = async (sourceRev: number, confirm?: TextReplacementImpact) => {
+    const result = await generateTextDoc(docId, sourceRev, newOperationId(), confirm);
+    if (!alive.current) return;
+    if (result.ok) {
+      setAsking(null);
+      setDiagnostics(result.result.diagnostics);
+      setGeneration({ kind: "generated", rev: result.result.publishedSourceRev, archived: confirm?.annotations ?? 0 });
+      onPublished();
+      return;
+    }
+    if (result.kind === "confirmation") {
+      // nothing was written: the user decides on the values as they are now
+      setAsking({ impact: result.impact, changed: result.changed });
+      setGeneration({ kind: "idle" });
+      return;
+    }
+    setAsking(null);
+    setDiagnostics(result.kind === "diagnostics" ? result.diagnostics : []);
+    setGeneration({ kind: "failed", reason: result.kind, detail: result.detail });
+  };
+
   const generate = async () => {
     // the newest typing is saved first; the revision sent is the one the server now holds
     setGeneration({ kind: "running" });
@@ -445,16 +473,20 @@ function TextSourceEditor({
       setGeneration({ kind: "idle" });
       return;
     }
-    const result = await generateTextDoc(docId, server.current.rev, newOperationId());
-    if (!alive.current) return;
-    if (result.ok) {
-      setDiagnostics(result.result.diagnostics);
-      setGeneration({ kind: "generated", rev: result.result.publishedSourceRev });
-      onPublished();
-      return;
-    }
-    setDiagnostics(result.kind === "diagnostics" ? result.diagnostics : []);
-    setGeneration({ kind: "failed", reason: result.kind, detail: result.detail });
+    await runGenerate(server.current.rev);
+  };
+
+  /** The click: the revision is the one the question was about, never a newer draft. */
+  const confirmReplacement = async () => {
+    if (!asking || confirming) return;
+    setConfirming(true);
+    setGeneration({ kind: "running" });
+    await runGenerate(asking.impact.sourceRev, asking.impact);
+    if (alive.current) setConfirming(false);
+  };
+  const declineReplacement = () => {
+    setAsking(null);
+    setGeneration({ kind: "cancelled" });
   };
 
   const useLatest = () => {
@@ -600,8 +632,10 @@ function TextSourceEditor({
           </div>
         </div>
       )}
+      {generation.kind === "cancelled" && <InlineMessage uiId="text-source-regeneration-cancelled" title={t("doc.text.replace.cancelled")}>{""}</InlineMessage>}
       {generation.kind === "generated" && (
         <InlineMessage uiId="text-source-generated" title={t("doc.text.generatedTitle", { rev: generation.rev })}>
+          {generation.archived > 0 && <p data-ui="text-source-replacement-note">{t("doc.text.replace.after", { count: generation.archived })}</p>}
           <ActionButton mode="text" data-ui="text-open-reader" label={t("doc.text.openReader")} tooltip={t("doc.text.openReader")} onClick={onOpenReader}>{t("doc.text.openReader")}</ActionButton>
         </InlineMessage>
       )}
@@ -611,7 +645,7 @@ function TextSourceEditor({
         </InlineMessage>
       )}
       {generation.kind === "failed" && (
-        <InlineMessage tone={generation.reason === "blocked" || generation.reason === "stale" || generation.reason === "busy" ? "warning" : "danger"} uiId="text-source-generation-error" title={t(FAILED_KEY[generation.reason])}>
+        <InlineMessage tone={generation.reason === "stale" || generation.reason === "busy" ? "warning" : "danger"} uiId="text-source-generation-error" title={t(FAILED_KEY[generation.reason])}>
           {generation.reason === "diagnostics" ? t("doc.text.failedKept") : generation.reason === "error" ? generation.detail : ""}
         </InlineMessage>
       )}
@@ -683,6 +717,27 @@ function TextSourceEditor({
               <ActionButton mode="text" ref={assetUploadRef} data-ui="text-source-asset-upload" label={t("doc.text.assetsUpload")} tooltip={t("doc.text.assetsUpload")} busy={assetBusy} busyLabel={t("doc.text.assetsUploading")} onClick={() => assetFileRef.current?.click()}>{t("doc.text.assetsUpload")}</ActionButton>
             </div>
           </div>
+        </Dialog>
+      )}
+
+      {asking && (
+        <Dialog
+          uiId="text-regeneration-dialog"
+          title={t("doc.text.replace.title")}
+          closeLabel={t("common.close")}
+          initialFocusRef={regenCancelRef}
+          busy={confirming}
+          onClose={declineReplacement}
+          footer={
+            <>
+              <ActionButton mode="text" ref={regenCancelRef} data-ui="cancel-text-regeneration" label={t("common.cancel")} tooltip={t("common.cancel")} disabled={confirming} onClick={declineReplacement}>{t("common.cancel")}</ActionButton>
+              <ActionButton mode="text" appearance="primary" data-ui="confirm-text-regeneration" label={t("doc.text.replace.confirm", { count: asking.impact.annotations })} tooltip={t("doc.text.replace.confirm", { count: asking.impact.annotations })} busy={confirming} onClick={() => void confirmReplacement()}>{t("doc.text.replace.confirm", { count: asking.impact.annotations })}</ActionButton>
+            </>
+          }
+        >
+          {asking.changed && <InlineMessage tone="warning" uiId="text-regeneration-changed" title={t("doc.text.replace.changed")}>{""}</InlineMessage>}
+          <p data-ui="text-regeneration-impact">{t("doc.text.replace.body", { count: asking.impact.annotations })}</p>
+          <p className="text-regeneration-basis" data-ui="text-regeneration-basis">{t("doc.text.replace.basis", { source: asking.impact.sourceRev, published: asking.impact.publishedSourceRev, annotationsRev: asking.impact.annotationsRev })}</p>
         </Dialog>
       )}
 

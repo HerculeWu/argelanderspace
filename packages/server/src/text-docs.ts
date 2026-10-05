@@ -10,9 +10,13 @@
  *   `textLock` + `annotationLock` in one synchronous section that re-reads the source revision: a candidate made from
  *   an older source is refused (`stale`), never published. A writer pin keeps the Doc from being deleted meanwhile.
  * - Publishing is one atomic rename of `<docId>.json`. When the candidate would change the annotation-addressable
- *   content and annotations exist (or cannot be read), NOTHING is published: the confirmation flow arrives with the
- *   regeneration ticket, until then the replacement is refused so no path bypasses the data protection. The generator
- *   never archives and never announces `annotation.changed`; only the annotations GET/PUT access path archives.
+ *   content and the current annotations are not empty, the request is answered `confirmation_required` with the
+ *   impact (annotation count, annotations revision, old/new fingerprint, source revisions) and NOTHING is written. The
+ *   real user's click sends those values back as `confirm`; they are compared inside the same critical section as the
+ *   write (`confirmation_changed` with the fresh values when anything moved). Nothing is held while the user decides:
+ *   the pin and the generating mark are released with the answer. Annotations, a published text or a fingerprint that
+ *   cannot be read or computed are system errors (500), never a mismatch and never confirmable. The generator never
+ *   archives and never announces `annotation.changed`; only the annotations GET/PUT access path archives.
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -28,6 +32,7 @@ import {
   type TextDocIr,
   type TextDocSource,
   type TextGenerationResult,
+  type TextReplacementImpact,
   type TextSourceDto,
   type TextValidationResult,
   ValidateTextSourceRequestSchema,
@@ -73,6 +78,18 @@ export interface TextDocDeps {
   libraryChanged: () => void;
   /** Test seam: runs after the candidate is built and before the publish critical section. */
   beforePublish?: (docId: string) => Promise<void> | void;
+}
+
+/** A confirmation counts only when every bound value is exactly what the publish critical section sees now. */
+function sameImpact(a: TextReplacementImpact, b: TextReplacementImpact): boolean {
+  return (
+    a.sourceRev === b.sourceRev &&
+    a.publishedSourceRev === b.publishedSourceRev &&
+    a.annotations === b.annotations &&
+    a.annotationsRev === b.annotationsRev &&
+    a.oldFingerprint === b.oldFingerprint &&
+    a.newFingerprint === b.newFingerprint
+  );
 }
 
 export type TextFailure = { status: ContentfulStatusCode; body: Record<string, unknown> };
@@ -418,7 +435,12 @@ export class TextDocService {
     this.generating.add(docId);
     docMutations.pinWriter(docId);
     try {
-      return await this.generateUnlocked(docId, parsed.data.sourceRev, parsed.data.operationId);
+      return await this.generateUnlocked(
+        docId,
+        parsed.data.sourceRev,
+        parsed.data.operationId,
+        parsed.data.confirm
+      );
     } catch (error) {
       return { ok: false, ...errorFailure(error) };
     } finally {
@@ -430,7 +452,8 @@ export class TextDocService {
   private async generateUnlocked(
     docId: string,
     sourceRev: number,
-    operationId: string
+    operationId: string,
+    confirm?: TextReplacementImpact
   ): Promise<Result<TextGenerationResult>> {
     const source = readTextSource(this.paths, docId);
     if (source.rev !== sourceRev)
@@ -537,12 +560,31 @@ export class TextDocService {
                 "the Doc's annotations cannot be read; nothing was replaced and no annotation was touched",
                 { code: "annotations_unreadable" }
               );
-            if (risk.count > 0)
-              return failed(
-                409,
-                "this generation would replace reading text that has annotations; replacing it needs a confirmation that is not available yet, so nothing was published",
-                { code: "replacement_blocked", annotations: risk.count }
-              );
+            if (risk.count > 0) {
+              // Replacing this reading text puts `risk.count` annotations into the archive (the annotations access
+              // path does that afterwards, never this generator). That needs the real user's confirmation of exactly
+              // these values; anything else answers with the values as they are now and writes nothing.
+              const impact: TextReplacementImpact = {
+                sourceRev: source.rev,
+                publishedSourceRev: published.source.source_rev,
+                annotations: risk.count,
+                annotationsRev: risk.rev,
+                oldFingerprint: currentFingerprint,
+                newFingerprint: candidateFingerprint,
+              };
+              if (!confirm)
+                return failed(
+                  409,
+                  "this generation replaces reading text that has annotations; they would be archived. Confirm to publish it",
+                  { code: "confirmation_required", impact }
+                );
+              if (!sameImpact(confirm, impact))
+                return failed(
+                  409,
+                  "the situation changed since the confirmation was asked; nothing was published",
+                  { code: "confirmation_changed", impact }
+                );
+            }
           }
         }
         try {

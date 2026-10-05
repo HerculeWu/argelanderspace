@@ -29,8 +29,8 @@ interface Backend {
   puts: { expectedRev: number; markdown: string }[];
   generated: boolean;
   publishedRev: number | null;
-  /** next generate answer override */
-  generate?: () => Response;
+  /** next generate answer override (receives the request body) */
+  generate?: (body: { sourceRev: number; operationId: string; confirm?: Record<string, unknown> }) => Response;
   validate?: () => Response;
   pdfOk: boolean;
   putGate?: Promise<void>;
@@ -79,7 +79,7 @@ function installBackend() {
     if (url === `/api/paper/${DOC}/source/validate` && backend.validate) return backend.validate();
     if (url === `/api/paper/${DOC}/source/validate`) return json({ sourceRev: backend.rev, valid: true, diagnostics: [], stats: { sections: 2, paragraphs: 3, lists: 1 } });
     if (url === `/api/paper/${DOC}/source/generate`) {
-      if (backend.generate) return backend.generate();
+      if (backend.generate) return backend.generate(JSON.parse(String(init?.body)));
       backend.generated = true;
       backend.publishedRev = backend.rev;
       return json({ publishedSourceRev: backend.rev, fingerprint: "a".repeat(64), diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
@@ -235,14 +235,127 @@ describe("text Doc pane: autosave and explicit generation", () => {
     expect(rows[3]).toContain("the server's own words");
   });
 
-  it("a replacement blocked by annotations is reported as not published, text kept", async () => {
-    backend.generate = () => json({ detail: "blocked", code: "replacement_blocked", annotations: 2 }, 409);
-    const view = await ready();
-    typeText(view.container, "# T\n\nbody");
-    fireEvent.click(ui(view.container, "text-source-generate")!);
-    await waitFor(() => expect(ui(view.container, "text-source-generation-error")).toBeTruthy());
-    expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("未发布");
-    expect(input(view.container)!.value).toBe("# T\n\nbody");
+  describe("replacing reading text that has annotations (ticket 28)", () => {
+    const impact = (over: Record<string, unknown> = {}) => ({
+      sourceRev: 1,
+      publishedSourceRev: 0,
+      annotations: 3,
+      annotationsRev: 7,
+      oldFingerprint: "a".repeat(64),
+      newFingerprint: "b".repeat(64),
+      ...over,
+    });
+    const asks = (over: Record<string, unknown> = {}, code = "confirmation_required") =>
+      json({ detail: "needs confirmation", code, impact: impact(over) }, 409);
+    const dialog = () => document.querySelector<HTMLElement>('[data-ui="text-regeneration-dialog"]');
+    const button = (id: string) => document.querySelector<HTMLButtonElement>(`[data-ui="${id}"]`);
+
+    async function asked(view: Awaited<ReturnType<typeof ready>>) {
+      typeText(view.container, "# T\n\nbody");
+      fireEvent.click(ui(view.container, "text-source-generate")!);
+      await waitFor(() => expect(dialog()).toBeTruthy());
+    }
+
+    it("shows the impact instead of publishing; nothing was sent but the first request, text kept", async () => {
+      backend.generate = () => asks();
+      const view = await ready();
+      await asked(view);
+      expect(dialog()?.textContent).toContain("3 条标注");
+      expect(dialog()?.textContent).toContain("归档");
+      expect(dialog()?.textContent).toContain("标注版本 7");
+      expect(button("confirm-text-regeneration")?.textContent).toContain("替换并归档 3 条标注");
+      expect(posts("generate")).toHaveLength(1);
+      expect(input(view.container)!.value).toBe("# T\n\nbody");
+      // the safe choice has the initial focus
+      expect(document.activeElement).toBe(button("cancel-text-regeneration"));
+    });
+
+    it("cancelling writes nothing: no second request, the reading version is not generated", async () => {
+      backend.generate = () => asks();
+      const view = await ready();
+      await asked(view);
+      fireEvent.click(button("cancel-text-regeneration")!);
+      await waitFor(() => expect(dialog()).toBeNull());
+      expect(posts("generate")).toHaveLength(1);
+      expect(backend.generated).toBe(false);
+      expect(ui(view.container, "text-source-generated")).toBeNull();
+      expect(ui(view.container, "text-source-regeneration-cancelled")?.textContent).toContain("已取消");
+      expect(input(view.container)!.value).toBe("# T\n\nbody");
+    });
+
+    it("a click on the confirmation sends exactly the stated values and the revision the question was about", async () => {
+      const bodies: { sourceRev: number; confirm?: Record<string, unknown> }[] = [];
+      backend.generate = (body) => {
+        bodies.push(body);
+        if (!body.confirm) return asks({ sourceRev: body.sourceRev });
+        backend.generated = true;
+        backend.publishedRev = body.sourceRev;
+        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
+      };
+      const view = await ready();
+      await asked(view);
+      fireEvent.click(button("confirm-text-regeneration")!);
+      await waitFor(() => expect(ui(view.container, "text-source-generated")).toBeTruthy());
+      expect(bodies).toHaveLength(2);
+      expect(bodies[0]!.confirm).toBeUndefined();
+      expect(bodies[1]).toMatchObject({ sourceRev: bodies[0]!.sourceRev, confirm: impact({ sourceRev: bodies[0]!.sourceRev }) });
+      expect(dialog()).toBeNull();
+      expect(ui(view.container, "text-source-replacement-note")?.textContent).toContain("3 条标注会在阅读器下次读取时归档");
+    });
+
+    it("a refusal because things moved shows the fresh numbers and asks again, publishing nothing", async () => {
+      let n = 0;
+      backend.generate = (body) => {
+        n += 1;
+        if (n === 1) return asks();
+        if (n === 2) return asks({ annotations: 2, annotationsRev: 8 }, "confirmation_changed");
+        backend.generated = true;
+        backend.publishedRev = body.sourceRev;
+        return json({ publishedSourceRev: body.sourceRev, fingerprint: "b".repeat(64), diagnostics: [], stats: { sections: 1, paragraphs: 1, lists: 0 } });
+      };
+      const view = await ready();
+      await asked(view);
+      fireEvent.click(button("confirm-text-regeneration")!);
+      await waitFor(() => expect(dialog()?.textContent).toContain("2 条标注"));
+      expect(dialog()?.textContent).toContain("情况有变化");
+      expect(backend.generated).toBe(false);
+      expect(button("confirm-text-regeneration")?.textContent).toContain("替换并归档 2 条标注");
+      fireEvent.click(button("confirm-text-regeneration")!);
+      await waitFor(() => expect(ui(view.container, "text-source-generated")).toBeTruthy());
+      expect(posts("generate")).toHaveLength(3);
+    });
+
+    it("a text edited after the question makes the confirmation stale: shown as not published, the dialog closes", async () => {
+      let n = 0;
+      backend.generate = () => {
+        n += 1;
+        return n === 1 ? asks() : json({ detail: "source changed", code: "stale", rev: 9 }, 409);
+      };
+      const view = await ready();
+      await asked(view);
+      fireEvent.click(button("confirm-text-regeneration")!);
+      await waitFor(() => expect(dialog()).toBeNull());
+      expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("生成期间文本已更改");
+      expect(ui(view.container, "text-source-generated")).toBeNull();
+    });
+
+    it("annotations that cannot be read are an error, never a confirmation", async () => {
+      backend.generate = () => json({ detail: "the Doc's annotations cannot be read; nothing was replaced", code: "annotations_unreadable" }, 500);
+      const view = await ready();
+      typeText(view.container, "# T\n\nbody");
+      fireEvent.click(ui(view.container, "text-source-generate")!);
+      await waitFor(() => expect(ui(view.container, "text-source-generation-error")).toBeTruthy());
+      expect(dialog()).toBeNull();
+      expect(ui(view.container, "text-source-generation-error")?.textContent).toContain("cannot be read");
+    });
+
+    it("typing while the question is open is not part of what is confirmed", async () => {
+      backend.generate = (body) => (body.confirm ? json({ detail: "source changed", code: "stale", rev: 9 }, 409) : asks());
+      const view = await ready();
+      await asked(view);
+      // the dialog is modal; the editor stays as it is until the user answers
+      expect(dialog()?.getAttribute("role")).toBe("dialog");
+    });
   });
 
   it("validate saves first, has its own result, and does not generate", async () => {

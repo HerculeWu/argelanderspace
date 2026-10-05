@@ -431,7 +431,7 @@ describe("explicit generation to the shared Reader", () => {
   });
 });
 
-describe("annotations are protected (replacement before confirmation exists)", () => {
+describe("annotations are protected (replacement needs a confirmation)", () => {
   async function annotate(docId: string, count = 1) {
     const url = `/api/paper/${docId}/annotations`;
     const current = (await (await call("GET", url)).json()) as AnnotationsFile;
@@ -477,14 +477,17 @@ describe("annotations are protected (replacement before confirmation exists)", (
     expect(JSON.parse(readFileSync(irFile(docId), "utf8")).source.source_rev).toBe(2);
   });
 
-  test("different content with annotations is refused; IR, annotations and archive are untouched", async () => {
+  test("different content with annotations asks for confirmation; IR, annotations and archive are untouched", async () => {
     const docId = await annotatedDoc();
     const ir = readFileSync(irFile(docId));
     const current = readFileSync(join(annDir(docId), "current.json"));
     await put(docId, 1, "# Weak lensing\n\nA rewritten paragraph.\n");
     const res = await generate(docId, 2);
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: "replacement_blocked", annotations: 1 });
+    expect(await res.json()).toMatchObject({
+      code: "confirmation_required",
+      impact: { annotations: 1 },
+    });
     expect(readFileSync(irFile(docId)).equals(ir)).toBe(true);
     expect(readFileSync(join(annDir(docId), "current.json")).equals(current)).toBe(true);
     expect(archive(docId)).toEqual([]);

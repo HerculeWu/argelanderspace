@@ -486,7 +486,7 @@ describe("figures and tables to the Reader", () => {
     expect(existsSync(irFile(docId))).toBe(false);
   });
 
-  test("with annotations, replacing the reading text because the image changed is refused (28 adds the confirmation); bytes stay", async () => {
+  test("with annotations, replacing the reading text because the image changed asks for confirmation first; bytes stay", async () => {
     const { docId, asset } = await generatedDoc();
     const url = `/api/paper/${docId}/annotations`;
     const current = (await (await call("GET", url)).json()) as AnnotationsFile;
@@ -513,7 +513,10 @@ describe("figures and tables to the Reader", () => {
     await put(docId, second.source.rev, markdownFor(second.asset.name));
     const res = await generate(docId, second.source.rev + 1);
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: "replacement_blocked", annotations: 1 });
+    expect(await res.json()).toMatchObject({
+      code: "confirmation_required",
+      impact: { annotations: 1 },
+    });
     expect(readFileSync(irFile(docId)).equals(ir)).toBe(true);
     expect(readFileSync(join(annDir(docId), "current.json")).equals(ann)).toBe(true);
     expect(existsSync(join(annDir(docId), "archive"))).toBe(false);
