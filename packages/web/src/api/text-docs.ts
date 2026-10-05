@@ -5,6 +5,8 @@ import {
   type TextSourceAsset,
   type TextDiagnostic,
   type TextGenerationResult,
+  type TextReplacementImpact,
+  TextReplacementImpactSchema,
   type TextSourceDto,
   TextSourceDtoSchema,
   type TextValidationResult,
@@ -110,11 +112,27 @@ export async function validateTextSource(docId: string, sourceRev: number): Prom
 export type TextGenerate =
   | { ok: true; result: TextGenerationResult }
   | { ok: false; kind: "diagnostics"; diagnostics: TextDiagnostic[]; detail: string }
-  | { ok: false; kind: "stale" | "blocked" | "busy" | "error"; detail: string };
+  /**
+   * The generation would replace reading text that has annotations: nothing was written. `impact` is what the user
+   * is asked to confirm; `changed` says an earlier confirmation was refused because the situation moved.
+   */
+  | { ok: false; kind: "confirmation"; impact: TextReplacementImpact; changed: boolean; detail: string }
+  /** A confirmation was refused because the situation moved and nothing is at risk any more: ask the user to generate again. */
+  | { ok: false; kind: "changed"; detail: string }
+  | { ok: false; kind: "stale" | "busy" | "error"; detail: string };
 
-export async function generateTextDoc(docId: string, sourceRev: number, operationId: string): Promise<TextGenerate> {
+/**
+ * Generate the reading version. `confirm` is only ever the impact the server stated and a real click confirmed; it is
+ * sent back unchanged and the server compares every value again before it writes.
+ */
+export async function generateTextDoc(
+  docId: string,
+  sourceRev: number,
+  operationId: string,
+  confirm?: TextReplacementImpact
+): Promise<TextGenerate> {
   try {
-    const response = await fetch(`${base(docId)}/source/generate`, json({ sourceRev, operationId }));
+    const response = await fetch(`${base(docId)}/source/generate`, json({ sourceRev, operationId, ...(confirm ? { confirm } : {}) }));
     if (response.ok) {
       const parsed = TextGenerationResultSchema.safeParse(await response.json());
       return parsed.success ? { ok: true, result: parsed.data } : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
@@ -124,7 +142,14 @@ export async function generateTextDoc(docId: string, sourceRev: number, operatio
       return { ok: false, kind: "diagnostics", diagnostics: body.diagnostics as TextDiagnostic[], detail };
     if (response.status === 409) {
       const code = body.code;
-      return { ok: false, kind: code === "stale" ? "stale" : code === "replacement_blocked" ? "blocked" : "busy", detail };
+      if (code === "confirmation_required" || code === "confirmation_changed") {
+        if (code === "confirmation_changed" && body.impact === undefined) return { ok: false, kind: "changed", detail };
+        const impact = TextReplacementImpactSchema.safeParse(body.impact);
+        return impact.success
+          ? { ok: false, kind: "confirmation", impact: impact.data, changed: code === "confirmation_changed", detail }
+          : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
+      }
+      return { ok: false, kind: code === "stale" ? "stale" : "busy", detail };
     }
     return { ok: false, kind: "error", detail };
   } catch {

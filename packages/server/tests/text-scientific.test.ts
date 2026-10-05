@@ -350,7 +350,7 @@ describe("the shared annotation machinery works on the new content", () => {
     expect(item).toMatchObject({ ok: true });
   });
 
-  test("regenerating different content over annotations stays refused until the confirmation ticket (nothing archived)", async () => {
+  test("regenerating different content over annotations asks for confirmation first (nothing archived or published)", async () => {
     const { docId } = await generated();
     const url = `/api/paper/${docId}/annotations`;
     const read = (await (await call("GET", `${url}?coherent=1`)).json()) as CoherentAnnotationsRead;
@@ -382,7 +382,7 @@ describe("the shared annotation machinery works on the new content", () => {
     await put(docId, 1, MARKDOWN.replace("Halo finder", "Halo detector"));
     const res = await generate(docId, 2);
     expect(res.status).toBe(409);
-    expect(((await res.json()) as { code: string }).code).toBe("replacement_blocked");
+    expect(((await res.json()) as { code: string }).code).toBe("confirmation_required");
     expect(readFileSync(irFile(docId)).equals(ir)).toBe(true);
     expect(readFileSync(join(annDir(docId), "current.json")).equals(currentBytes)).toBe(true);
     expect(existsSync(join(annDir(docId), "archive"))).toBe(false);

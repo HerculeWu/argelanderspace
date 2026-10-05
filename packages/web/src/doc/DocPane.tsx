@@ -11,6 +11,7 @@ import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchDocDescription } from "../api/doc";
+import { onTextDocPublished } from "../api/ws";
 import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab } from "@argelanderspace/contracts";
 import { PdfReader } from "./PdfReader";
 import { autoFold, MIN_READING_COLUMN, useAutoFoldedPanels } from "./auto-fold";
@@ -90,18 +91,25 @@ function DocReadingEntry({ docId }: { docId: string }) {
       return <ReaderSession docId={docId}><SessionWorkspace /></ReaderSession>;
     case "text":
       // The shared Reader on the last generated reading text; a text Doc's session is not offered to the Copilot yet.
-      return <TextDocPane key={docId} docId={docId} description={state.description} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace publish={false} /></ReaderSession>} />;
+      return <TextDocPane key={docId} docId={docId} description={state.description} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace publish={false} afterPublish /></ReaderSession>} />;
     case "pdf":
       return <div className="reader-root" data-ui="pdf-doc" data-ui-key={docId}><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
   }
 }
 
-function SessionWorkspace({ publish = true }: { publish?: boolean } = {}) {
+/**
+ * `afterPublish` (a text Doc): a sync failure after the server announced a new reading version is reported as exactly
+ * that: published, but this view could not load it (the old text stays, nothing is rolled back).
+ */
+function SessionWorkspace({ publish = true, afterPublish = false }: { publish?: boolean; afterPublish?: boolean } = {}) {
   const ws = useWorkspace();
   const { state, controller } = useReaderSession();
   const { t } = useTranslation();
   const bridge = useReaderBridge();
   const ir = state.accepted?.ir;
+  const [publishedSinceReady, setPublishedSinceReady] = useState(false);
+  useEffect(() => (afterPublish ? onTextDocPublished((message) => { if (message.doc_id === controller.docId) setPublishedSinceReady(true); }) : undefined), [afterPublish, controller]);
+  useEffect(() => { if (state.phase === "ready") setPublishedSinceReady(false); }, [state.phase]);
   // The admitted epoch (never the mounted DOM) is what the Copilot reads; every state change is published.
   useEffect(() => { if (publish) bridge.setSession(controller.docId, state); }, [bridge, controller, state, publish]);
   useEffect(() => () => { if (publish) bridge.setSession(controller.docId, null); }, [bridge, controller, publish]);
@@ -113,7 +121,7 @@ function SessionWorkspace({ publish = true }: { publish?: boolean } = {}) {
   }, [bridge, controller, state.phase, publish]);
   return <div className="reader-session" data-ui="latex-session" data-ui-key={controller.docId}>
     {state.phase !== "ready" && <div className="reader-sync-status" role="status" data-ui="latex-sync-status">
-      {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
+      {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (publishedSinceReady ? t("doc.text.syncAfterPublish") : ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
       <ActionButton mode="text" label={t("doc.sync.manualRetry")} tooltip={t("doc.sync.manualRetry")} data-ui="retry-latex-sync" onClick={controller.retry}>{t("doc.sync.manualRetry")}</ActionButton>
     </div>}
     <RetainedDrafts />

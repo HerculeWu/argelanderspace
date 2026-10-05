@@ -269,9 +269,36 @@ export const TextValidationResultSchema = z.strictObject({
 });
 export type TextValidationResult = z.infer<typeof TextValidationResultSchema>;
 
+/**
+ * What replacing the reading text of a Doc that has annotations puts at risk (copilot ticket 28). The server states it
+ * when a generation would change annotation-addressable content over a non-empty current batch; the real user's
+ * confirmation echoes exactly these values. Every field is re-derived inside the publish critical section, so a
+ * confirmation made for any other source revision, published text, new text, annotation count or annotation revision
+ * is refused and the user is asked again with the fresh values.
+ */
+export const TextReplacementImpactSchema = z.strictObject({
+  /** The Doc the question was about: a confirmation made for another Doc is never valid here. */
+  docId: z.string().min(1),
+  /** The source revision the candidate was made from (the request's own `sourceRev`). */
+  sourceRev: z.number().int().nonnegative(),
+  /** The source revision of the reading text that would be replaced. */
+  publishedSourceRev: z.number().int().nonnegative(),
+  /** How many annotations of the current batch would be archived by the next annotations access. */
+  annotations: z.number().int().positive(),
+  /** The annotations file's revision at that time. */
+  annotationsRev: z.number().int().nonnegative(),
+  /** Annotation content fingerprint of the reading text that would be replaced. */
+  oldFingerprint: Sha256Schema,
+  /** Annotation content fingerprint of the candidate. */
+  newFingerprint: Sha256Schema,
+});
+export type TextReplacementImpact = z.infer<typeof TextReplacementImpactSchema>;
+
 export const GenerateTextDocRequestSchema = z.strictObject({
   sourceRev: z.number().int().nonnegative(),
   operationId: z.string().min(8).max(128),
+  /** The user's confirmation of a replacement, only ever sent by a real click on the shown impact. */
+  confirm: TextReplacementImpactSchema.optional(),
 });
 export type GenerateTextDocRequest = z.infer<typeof GenerateTextDocRequestSchema>;
 
@@ -279,6 +306,8 @@ export const TextGenerationResultSchema = z.strictObject({
   publishedSourceRev: z.number().int().nonnegative(),
   /** The annotation content fingerprint of the published reading text. */
   fingerprint: Sha256Schema,
+  /** How many annotations this publish leaves for the next annotations access to archive (0: kept, or none). */
+  replacedAnnotations: z.number().int().nonnegative(),
   diagnostics: z.array(TextDiagnosticSchema),
   stats: TextStatsSchema,
 });

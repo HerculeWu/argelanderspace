@@ -165,10 +165,20 @@
       "failed": {
         "diagnostics": "The text has errors; nothing was generated",
         "stale": "The text changed while generating; nothing was published",
-        "blocked": "Not published: this would replace reading text that has annotations",
+        "changed": "Not published: things changed after you confirmed and no annotations are at risk any more. Generate again.",
         "busy": "The document is busy; try again",
         "error": "Generation failed"
       },
+      "replace": {
+        "title": "Replace the reading text?",
+        "body": "Generating this text changes the content that annotations of this document are attached to ({{count}} in total). If you continue, they are archived: kept in an archive but no longer shown, and the new reading text starts with none. Annotations are not moved to the new text and cannot be restored in the app.",
+        "basis": "Based on text revision {{source}}; replaces the reading version from revision {{published}}; annotations revision {{annotationsRev}}.",
+        "changed": "The annotations of this document, or its published reading version or images, changed after you were asked. Check the number below and confirm again.",
+        "confirm": "Replace and archive annotations ({{count}})",
+        "cancelled": "Cancelled: the reading version and the annotations are unchanged",
+        "after": "The reading version is published. Annotations to be archived when the Reader next reads them: {{count}}."
+      },
+      "syncAfterPublish": "The new reading version is published, but the Reader could not load it; it still shows the old text, and images and annotations are unavailable. Retry manually.",
       "failedKept": "Your text and the previous reading version are kept.",
       "diagnostics": "Diagnostics",
       "diagnosticAt": "Line {{line}}, column {{column}}",
