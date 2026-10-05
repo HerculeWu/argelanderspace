@@ -32,6 +32,7 @@ import {
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { pdfBatch, pdfVersion, readerBatch, readerVersion } from "./copilot-batching.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 
 export const READER_TOOL_NAME = "reader";
@@ -198,6 +199,11 @@ export interface ReaderToolContext {
    * A reading larger than that is refused whole, with its size, instead of being cut or poisoning the history.
    */
   budget?: () => number;
+  /**
+   * Ticket 24: take every earlier reading delivery out of the conversation and return the room there is then. Asked
+   * only when a reading did not fit whole, so a document larger than the window can be read part by part.
+   */
+  reclaim?: () => number;
   /** Decoded bytes of all images already in this conversation's history (the total cap applies to it plus a new image). */
   imageBytesUsed?: () => number;
 }
@@ -237,6 +243,19 @@ const parameters = Type.Object(
         minimum: PDF_IMAGE_LONG_EDGE.min,
         maximum: PDF_IMAGE_LONG_EDGE.max,
         description: `read_page_image: resolution, the longer edge of the image in pixels (default ${PDF_IMAGE_LONG_EDGE.default}); ask for more when text in the page is not legible.`,
+      })
+    ),
+    from: Type.Optional(
+      Type.Integer({
+        minimum: 0,
+        description:
+          "read: continue a document delivered in parts. The zero-based index of the first entry (Reader) or page (PDF) not yet read: the `to` of the previous part's batch. Omit it to start at the beginning.",
+      })
+    ),
+    version: Type.Optional(
+      Type.String({
+        description:
+          "read with from: the version of the parts already read, exactly batch.version of the previous part. A document that changed since is refused (conflict, version_changed): start again at from 0.",
       })
     ),
     query: Type.Optional(Type.String({ description: "PDF search: the text to find." })),
@@ -397,9 +416,9 @@ const parameters = Type.Object(
 );
 
 const description = [
-  "Read and navigate the LaTeX Reader. read returns the WHOLE document of a Doc from disk, in the background, without opening or moving anything: every section, paragraph, list, equation, figure, full table body, code/algorithm body, the whole bibliography, cite/xref identities and the Doc's current annotations with their full bodies, plus the content fingerprint and annotation revision they belong together under. Text is the canonical annotation text: a selection's start/end are UTF-16 offsets into it, math/cite/xref are atomic marks. Saved annotations of older content are left out and the archive is never read. A document too large for the room left in this model's window is refused with its size, never cut.",
+  "Read and navigate the LaTeX Reader. read returns the WHOLE document of a Doc from disk, in the background, without opening or moving anything: every section, paragraph, list, equation, figure, full table body, code/algorithm body, the whole bibliography, cite/xref identities and the Doc's current annotations with their full bodies, plus the content fingerprint and annotation revision they belong together under. Text is the canonical annotation text: a selection's start/end are UTF-16 offsets into it, math/cite/xref are atomic marks. Saved annotations of older content are left out and the archive is never read. A document too large for the room left in this model's window is delivered in parts, never cut: the result carries batch {from, to, total, status}; while status is partial the rest is NOT read: call read again with from = batch.to and version = batch.version until it says complete (the last part says so); a conflict with reason version_changed means the document changed: read it again from 0 (and not before taking down the key points of what you read, because earlier parts leave the conversation to make room), and do not claim the whole document was read before that. A single entry or page too large for the room is refused with its size and the actual gap.",
   "create_annotation, update_annotation and delete_annotation are the Annotations panel's, the selection toolbar's, the block buttons' and the editor's own operations, run through the page's own save: they write straight to the Doc's saved annotations and the user's open Reader shows the change at once. Plan each from a reading and send its reading.epoch.fingerprint and reading.epoch.annotationsRev: a write whose epoch is no longer current is refused (conflict) and writes nothing, so read the Doc again and form a new request; never just replace the numbers and resend. create_annotation takes target document, structure {id} (the section or block you name; the kind and the full content snapshot are taken from the stored document) or text {block, container, start, end, quote} in the reading's canonical text, where quote is required and must equal the canonical text at [start, end) as you counted it (offsets resent after the document changed can never anchor to different text): one container of one block (a paragraph's content, one list item, a figure/table/code/algorithm caption), UTF-16 offsets; a range that touches the inside of a math, cite or xref mark is widened to the whole mark (the quote is still checked against the range as you gave it; the saved target is in the result); equation, code, algorithm and table bodies and headings can only be structure targets, and a range across containers or blocks is refused. update_annotation and delete_annotation also carry expectedUpdatedAt, that annotation's updated_at exactly as your latest reading or write result showed it: if the annotation was edited after your reading (even when the epoch numbers are current again) the call is refused as conflict annotation_changed and writes nothing; read again, look at what the user wrote, then decide. update_annotation changes only the body (target and created time never change; moving an annotation means delete_annotation then create_annotation); an identical body is noop and writes nothing. delete_annotation removes one annotation at once without a confirmation, as the trash button does. Keys the file has that this application does not know are kept. If the call found the Doc's text replaced it archived the older annotations (as opening the Doc does) and says archivedOlder with their count: tell the user. An error never means your request was written; only the older batch may have been archived (archivedOlder). The body is saved byte for byte. A text the user has typed but not saved is theirs and stays in their editor; page.drafts says whether there is one. Archived annotations cannot be read or written.",
-  "PDF Docs: read returns the WHOLE PDF in the background: every page's real extractable text in page order (zero-based pageIndex; a page with no text layer has hasTextLayer false and text null, never an invented text), the outline, the workbench annotations with their updated_at and the sidecar revision (to write them, see create_pdf_annotation below) and the SHA-256 of the original. read_page_image returns ONE original page as an image (any page, whatever the Reader has rendered; longEdge sets the resolution) for a model that can take images; a page you cannot read as text must be read from its image, never guessed. If the selected model cannot take images, read_page_image is refused and says so: tell the user to choose an image-capable model. A bad sha256, a bad pageIndex or a PDF that changed is refused with its true state. goto_page, next_page, previous_page, open_outline_item, search (the search box: results come back in the reply; refused while a search is still running, as the box is disabled then), open_search_result, open_annotation (the page of one workbench annotation, like its go-to button) and zoom (in, out, fit_width, fit_page) are the PDF Reader's own controls; set_panel works on its outline and annotations panels. Copying, the page link and downloading the original are the user's own gestures (the browser lets only the user), so you cannot do them.",
+  "PDF Docs: read returns the PDF in the background (in parts, with batch, when it does not fit; from continues): every page's real extractable text in page order (zero-based pageIndex; a page with no text layer has hasTextLayer false and text null, never an invented text), the outline, the workbench annotations (read-only here) and the SHA-256 of the original. read_page_image returns ONE original page as an image (any page, whatever the Reader has rendered; longEdge sets the resolution) for a model that can take images; a page you cannot read as text must be read from its image, never guessed. If the selected model cannot take images, read_page_image is refused and says so: tell the user to choose an image-capable model. A bad sha256, a bad pageIndex or a PDF that changed is refused with its true state. goto_page, next_page, previous_page, open_outline_item, search (the search box: results come back in the reply; refused while a search is still running, as the box is disabled then), open_search_result, open_annotation (the page of one workbench annotation, like its go-to button) and zoom (in, out, fit_width, fit_page) are the PDF Reader's own controls; set_panel works on its outline and annotations panels. Copying, the page link and downloading the original are the user's own gestures (the browser lets only the user), so you cannot do them.",
   "PDF workbench annotations (the PDF Reader's own tools, panel and buttons, through the page's own save rules; the PDF itself is never changed): create_pdf_annotation (kind rectangle {pageIndex, rectangle}, page_comment {pageIndex}, document_comment, or highlight/underline/strikeout {parts}; body is required), update_pdf_annotation (the body, a rectangle's rectangle and style, a highlight's color; what an annotation is anchored to never changes: delete and create instead), delete_pdf_annotation (at once, no confirmation, like the trash button), undo_pdf_annotation and redo_pdf_annotation (the panel's buttons, for the changes you made through this tool in this conversation). Every one carries docId, sha256 (reading.sha256) and rev (reading.annotationsRev, or epoch.annotationsRev of your last write result); update and delete also carry expectedUpdatedAt, that annotation's updated_at from your latest reading or write result. A stale original, revision or annotation is refused as conflict and writes nothing: read the Doc again, look at what the user changed, and form a new request, never just replace the numbers and resend. Text annotations mark REAL text of a page's text layer: parts is one {pageIndex, quote} per page in ascending order, the quote copied exactly from that page's text in the reading (the user's selection is in page.pdf.selection; split it at the page boundary), unique on the page unless occurrence says which; the rectangles are computed from the text layer, never given by you, and a page with no text layer (hasTextLayer false) cannot be marked, use a rectangle or a comment there. Page indexes are zero-based, rectangles are fractions of the visible page from its top-left corner. Embedded annotations of the PDF file itself are read-only and not part of this. Undo and redo follow the panel's rules: only changes made through this tool can be undone, a change by the user or anyone else ends that history, a new change clears redo, and the history is kept only until the service restarts. A text the user has typed in the panel and not saved is theirs: page.pdf.drafts says whether there is one (presence only, never the text) and whether the panel is blocked. Your write never replaces or saves it; the draft stays visible in the panel, even when you deleted the annotation it was for (the user can copy or discard it), and the panel shows its usual notice that the annotations changed elsewhere. Undo and redo reach only the changes made through this tool by THIS conversation.",
   "navigate/jump_back/set_panel/set_right_tab/retry_sync act on the user's visible Reader like the outline, reference cards, chips, the undo-navigation button, the panel folds, the tabs and Retry: call them only when asked to show something, never to read. navigate and jump_back stop at a Reader that is syncing or showing an error (nothing moves, not_displayed); set_panel, set_right_tab and retry_sync are folds, tabs and Retry and work in any state.",
 ].join(" ");
@@ -719,10 +738,45 @@ export function createReaderTool(context: ReaderToolContext) {
         });
     }
   };
+  /**
+   * A continuation (`from` > 0) names the version of the parts already read; a document that changed since is a
+   * conflict, never stitched onto them (ticket 24).
+   */
+  const versionGate = (
+    id: string,
+    object: { kind: "doc"; id: string },
+    from: number,
+    expected: string | undefined,
+    current: string,
+    total: number,
+    unit: string,
+    done: (operation: CopilotOperation, payload: object) => ToolResult
+  ): ToolResult | null => {
+    if (from === 0) return null;
+    if (!expected)
+      return done(record(id, "read", { status: "invalid", object }), {
+        ok: false,
+        status: "invalid",
+        detail:
+          "a continuation (from > 0) needs version: the batch.version of the part you are continuing; nothing was returned",
+      });
+    if (expected === current) return null;
+    return done(record(id, "read", { status: "conflict", object }), {
+      ok: false,
+      status: "conflict",
+      reason: "version_changed",
+      detail: `the document changed since the parts you read (their version ${expected}, now ${current}); parts of two versions are never joined, so nothing was returned. Read it again from 0`,
+      version: current,
+      total,
+      unit,
+    });
+  };
   /** `read` of a PDF Doc: the whole material, refused whole (with its size) when it does not fit the window. */
   const readPdf = async (
     id: string,
     docId: string,
+    from: number,
+    version: string | undefined,
     done: (operation: CopilotOperation, payload: object) => ToolResult
   ): Promise<ToolResult> => {
     const object = { kind: "doc" as const, id: docId };
@@ -735,23 +789,43 @@ export function createReaderTool(context: ReaderToolContext) {
     const outcome = await context.reader.pdf.read(docId);
     if (outcome.kind !== "ok") return pdfOutcome(id, "read", docId, outcome, done);
     const reading = buildPdfReading(outcome.material, context.modelAcceptsImages?.() ?? false);
-    const payload = {
-      ok: true,
-      status: "ok",
-      observed:
-        "the PDF's pages as stored right now, from the verified original (every page, zero-based pageIndex; text only where the page has a text layer). Pages in imageOnlyPages are readable only from their image (read_page_image)",
-      reading,
-    };
-    const text = JSON.stringify(payload);
+    const observed =
+      "the PDF's pages as stored right now, from the verified original (zero-based pageIndex; text only where the page has a text layer). Pages in imageOnlyPages are readable only from their image (read_page_image)";
+    if (from > reading.pages.length || (from === reading.pages.length && from > 0))
+      return done(record(id, "read", { status: "invalid", object }), {
+        ok: false,
+        status: "invalid",
+        detail: `from ${from} is beyond the document: it has ${reading.pages.length} pages (zero-based 0..${reading.pages.length - 1}); nothing was returned`,
+      });
+    const gated = versionGate(
+      id,
+      object,
+      from,
+      version,
+      pdfVersion(reading),
+      reading.pages.length,
+      "pages",
+      done
+    );
+    if (gated) return gated;
     const room = context.budget?.();
-    if (room !== undefined && Buffer.byteLength(text) > room)
-      return done(record(id, "read", { status: "rejected", object }), {
+    let batched = pdfBatch(reading, from, room ?? Number.POSITIVE_INFINITY, observed);
+    if (context.reclaim && (batched.kind === "gap" || batched.coverage.to < reading.pages.length)) {
+      const more = context.reclaim();
+      if (more > (room ?? 0)) batched = pdfBatch(reading, from, more, observed);
+    }
+    if (batched.kind === "gap")
+      return done(record(id, "read", { status: "rejected", object, batch: batched.coverage }), {
         ok: false,
         status: "rejected",
-        detail: `capacity: the complete PDF reading is ${reading.coverage.characters} characters of text (${Buffer.byteLength(text)} bytes encoded) in ${reading.coverage.pages} pages, more than the ${Math.max(0, room)} bytes left in this model's window. It was not cut or partly returned; reading it in parts is not available yet`,
+        detail: batched.detail,
         coverage: reading.coverage,
+        batch: batched.coverage,
       });
-    return done(record(id, "read", { status: "ok", object }), payload);
+    return done(
+      record(id, "read", { status: "ok", object, batch: batched.coverage }),
+      batched.payload
+    );
   };
   /** `read_page_image`: one original page as an image; a model that cannot see is told so and gets nothing. */
   const readPageImage = async (
@@ -893,30 +967,71 @@ export function createReaderTool(context: ReaderToolContext) {
               detail:
                 "the Doc is being replaced or deleted right now; nothing was read. Try again when the job has finished",
             });
-          if (outcome.kind === "pdf") return await readPdf(toolCallId, read.data.docId, done);
+          if (outcome.kind === "pdf")
+            return await readPdf(
+              toolCallId,
+              read.data.docId,
+              read.data.from ?? 0,
+              read.data.version,
+              done
+            );
           if (outcome.kind === "error")
             return done(record(toolCallId, "read", { status: "error", object }), {
               ok: false,
               status: "error",
               detail: outcome.detail,
             });
-          const payload = {
-            ok: true,
-            status: "ok",
-            observed:
-              "the Doc as stored right now (one coherent read); the user may change annotations afterwards, so read again before relying on them",
-            reading: outcome.reading,
-          };
-          const text = JSON.stringify(payload);
-          const room = context.budget?.();
-          if (room !== undefined && Buffer.byteLength(text) > room)
-            return done(record(toolCallId, "read", { status: "rejected", object }), {
+          const from = read.data.from ?? 0;
+          const total = outcome.reading.entries.length;
+          if (from > total || (from === total && from > 0))
+            return done(record(toolCallId, "read", { status: "invalid", object }), {
               ok: false,
-              status: "rejected",
-              detail: `capacity: the complete reading is ${outcome.reading.coverage.characters} characters of text (${Buffer.byteLength(text)} bytes encoded) in ${outcome.reading.coverage.sections} sections, more than the ${Math.max(0, room)} bytes left in this model's window. It was not cut or partly returned; reading it in parts is not available yet`,
-              coverage: outcome.reading.coverage,
+              status: "invalid",
+              detail: `from ${from} is beyond the document: it has ${total} entries (zero-based 0..${total - 1}); nothing was returned`,
             });
-          return done(record(toolCallId, "read", { status: "ok", object }), payload);
+          const gated = versionGate(
+            toolCallId,
+            object,
+            from,
+            read.data.version,
+            readerVersion(outcome.reading),
+            total,
+            "entries",
+            done
+          );
+          if (gated) return gated;
+          const room = context.budget?.();
+          const observed =
+            "the Doc as stored right now (one coherent read); the user may change annotations afterwards, so read again before relying on them";
+          let batched = readerBatch(
+            outcome.reading,
+            from,
+            room ?? Number.POSITIVE_INFINITY,
+            observed
+          );
+          // A part that does not reach the end may be larger once earlier deliveries are out of the conversation.
+          if (
+            context.reclaim &&
+            (batched.kind === "gap" || batched.coverage.to < outcome.reading.entries.length)
+          ) {
+            const more = context.reclaim();
+            if (more > (room ?? 0)) batched = readerBatch(outcome.reading, from, more, observed);
+          }
+          if (batched.kind === "gap")
+            return done(
+              record(toolCallId, "read", { status: "rejected", object, batch: batched.coverage }),
+              {
+                ok: false,
+                status: "rejected",
+                detail: batched.detail,
+                coverage: outcome.reading.coverage,
+                batch: batched.coverage,
+              }
+            );
+          return done(
+            record(toolCallId, "read", { status: "ok", object, batch: batched.coverage }),
+            batched.payload
+          );
         }
         if (action === "read_page_image") {
           const image = ReaderReadPageImageOperationSchema.safeParse(params);

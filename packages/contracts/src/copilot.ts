@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type ContextCoverage, ContextCoverageSchema } from "./context-batch.js";
 import {
   type DiscoveryContextSummary,
   DiscoveryContextSummarySchema,
@@ -219,6 +220,7 @@ export interface CopilotMessage {
     reader?: ReaderContextSummary;
     pdf?: PdfContextSummary;
     writer?: WriterContextSummary;
+    coverage?: ContextCoverage;
   };
 }
 /** A record that cannot be read is reported by itself; it never hides the readable conversations. */
@@ -506,7 +508,13 @@ export const CopilotPromptSchema = z
     kind: z.literal("resume").optional(),
     messageId: CopilotIdSchema,
     text: z.string().min(1),
-    context: PageContextSchema,
+    /** What of the Reader reading or PDF material this message delivers (ticket 24); absent for other pages. */
+    coverage: ContextCoverageSchema.optional(),
+    /**
+     * The page as the service sends it: a Reader reading too large for the room left in the window is either a
+     * batch of its entries (`coverage` says which) or left out (`readingOmitted`), never cut silently (ticket 24).
+     */
+    context: ObservationPageContextSchema,
     /** Metadata of the files handed over with this message (ids the tools may name); never their bytes. */
     attachments: z.array(CopilotAttachmentSchema).max(5).optional(),
     /** The material of the PDF Doc the page shows (copilot ticket 20): derived by the service from the verified original. */
@@ -535,6 +543,8 @@ export const CopilotContextReferenceSchema = z
         pdf: PdfContextSummarySchema.optional(),
         /** What the Writer carried (copilot ticket 22); absent for other pages. */
         writer: WriterContextSummarySchema.optional(),
+        /** What of the Reader reading / PDF material this message delivered (copilot ticket 24). */
+        coverage: ContextCoverageSchema.optional(),
         objects: z.array(
           z.object({ id: z.string().min(1), rev: z.number().int().nonnegative() }).strict()
         ),
