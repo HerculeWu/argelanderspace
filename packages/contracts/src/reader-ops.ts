@@ -36,7 +36,7 @@ import {
   PdfViewActionSchema,
 } from "./pdf-ops.js";
 import type { AssetDigest } from "./reader-coherence.js";
-import type { TexDocIr } from "./tex-ir.js";
+import { isTexDocIr, type StoredDocIr } from "./text-doc.js";
 
 const Id = z.string().min(1).max(500);
 const Count = z.number().int().nonnegative();
@@ -276,12 +276,16 @@ function readerText(segments: IrSegment[]): ReaderText {
  * older content: they are not part of this document and are left out (the next normal access archives them).
  */
 export function buildReaderReading(input: {
-  ir: TexDocIr;
+  ir: StoredDocIr;
   file: AnnotationsFile;
   assets: readonly AssetDigest[];
   stale?: boolean;
 }): ReaderReading {
-  const { ir, file } = input;
+  const { file } = input;
+  const ir = input.ir;
+  // The whole-reading representation is the LaTeX one; a text Doc gets its own with the text tools.
+  if (!isTexDocIr(ir))
+    throw new Error("buildReaderReading: a text document has no Reader reading yet");
   const digest = new Map(input.assets.map((asset) => [asset.imgPath, asset.sha256]));
   const asset = (path: string | undefined, width?: number, height?: number) =>
     path === undefined

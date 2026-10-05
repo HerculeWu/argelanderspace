@@ -496,7 +496,7 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     </> : confirmation.action === "delete_doc" ? <>
       <h3>{t("copilot.confirmation.deleteDoc", { id: confirmation.object.id })}</h3>
       <p data-ui="copilot-confirmation-risk">{t("library.detail.deleteDoc.risk")}</p>
-      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : "library.detail.deleteDoc.scope")}</p>
+      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : confirmation.format === "text" ? "library.detail.deleteDoc.textScope" : "library.detail.deleteDoc.scope")}</p>
       {confirmation.works.length > 0 && <ul className="copilot-confirmation-works" data-ui="copilot-confirmation-works">{confirmation.works.map((item) => <li key={item.id} data-ui="copilot-confirmation-work" data-ui-key={item.id}>{t("copilot.confirmation.deleteDocWork", { title: item.title || item.id, state: t(item.main ? "library.detail.files.mainBadge" : "library.detail.files.additionalBadge"), count: item.remaining })}</li>)}</ul>}
       <p role="status" data-ui="copilot-confirmation-count">{confirmation.impact.annotations === "known" ? t("library.detail.deleteDoc.count", { count: confirmation.impact.count }) : t("library.detail.deleteDoc.countUnknown")}</p>
       <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>

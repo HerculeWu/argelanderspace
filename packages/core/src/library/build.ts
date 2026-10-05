@@ -32,7 +32,7 @@ import { classify, planToDict } from "../acquire/planner.js";
 import { addBibRecords, enrichAndPlan, planFor } from "../acquire/run.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
 import { assignCiteKey, buildGraph, workToRef } from "./graph.js";
-import { seedFromOutput } from "./seed.js";
+import { findDamagedTextDocs, seedFromOutput } from "./seed.js";
 import type { CrossrefResolution, CrossrefSource, MetadataSources } from "./sources.js";
 import {
   canonicalId,
@@ -58,6 +58,7 @@ export interface RebuildOptions {
 export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promise<RefreshResponse> {
   const store = LibraryStore.load(paths);
   seedFromOutput(store, paths.outputDir);
+  const damagedTextDocs = findDamagedTextDocs(paths.outputDir);
   let nBib = 0;
   if (opts.bibPath) {
     const records = parseBibtex(opts.bibPath);
@@ -78,6 +79,7 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
     ads_status: opts.sources.ads.status,
     acquisition: acquisitionSummary(store),
     resolution: resolutionSummary(store),
+    ...(damagedTextDocs.length > 0 ? { damaged_text_docs: damagedTextDocs } : {}),
   };
 }
 

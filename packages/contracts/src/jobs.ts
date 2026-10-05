@@ -23,6 +23,7 @@ import {
 import { JobStatusSchema } from "./job-status.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
+import { WsTextDocPublishedSchema, WsTextSourceChangedSchema } from "./text-doc.js";
 import { WsWriterChangedSchema } from "./writer.js";
 
 // ---- jobs ------------------------------------------------------------------ //
@@ -110,6 +111,8 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsAnnotationChangedSchema,
   WsWriterChangedSchema,
   WsPdfReadingPositionChangedSchema,
+  WsTextSourceChangedSchema,
+  WsTextDocPublishedSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

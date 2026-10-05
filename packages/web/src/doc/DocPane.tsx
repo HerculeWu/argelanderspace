@@ -14,6 +14,7 @@ import { fetchDocDescription } from "../api/doc";
 import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab } from "@argelanderspace/contracts";
 import { PdfReader } from "./PdfReader";
 import { autoFold, MIN_READING_COLUMN, useAutoFoldedPanels } from "./auto-fold";
+import { TextDocPane, TextPublishSync } from "./TextDocPane";
 import { ActionButton } from "../ui";
 import { PdfBridgeContext, type PdfBridge, type PdfViewHandle, ReaderBridgeContext, type ReaderViewController, useReaderBridge, useReaderPublisher } from "./reader-bridge";
 import { useActiveSectionId, useVisibleIds } from "../store";
@@ -87,26 +88,29 @@ function DocReadingEntry({ docId }: { docId: string }) {
   switch (state.description.format) {
     case "latex":
       return <ReaderSession docId={docId}><SessionWorkspace /></ReaderSession>;
+    case "text":
+      // The shared Reader on the last generated reading text; a text Doc's session is not offered to the Copilot yet.
+      return <TextDocPane key={docId} docId={docId} description={state.description} reader={<ReaderSession docId={docId}><TextPublishSync docId={docId} /><SessionWorkspace publish={false} /></ReaderSession>} />;
     case "pdf":
       return <div className="reader-root" data-ui="pdf-doc" data-ui-key={docId}><PdfReader key={`${docId}:${state.description.sha256}`} docId={docId} description={state.description} /></div>;
   }
 }
 
-function SessionWorkspace() {
+function SessionWorkspace({ publish = true }: { publish?: boolean } = {}) {
   const ws = useWorkspace();
   const { state, controller } = useReaderSession();
   const { t } = useTranslation();
   const bridge = useReaderBridge();
   const ir = state.accepted?.ir;
   // The admitted epoch (never the mounted DOM) is what the Copilot reads; every state change is published.
-  useEffect(() => { bridge.setSession(controller.docId, state); }, [bridge, controller, state]);
-  useEffect(() => () => bridge.setSession(controller.docId, null), [bridge, controller]);
+  useEffect(() => { if (publish) bridge.setSession(controller.docId, state); }, [bridge, controller, state, publish]);
+  useEffect(() => () => { if (publish) bridge.setSession(controller.docId, null); }, [bridge, controller, publish]);
   // The banner's Retry (and the annotations panel's) is the same controller.retry the Copilot may press.
   useEffect(() => {
-    if (state.phase === "ready") return;
+    if (!publish || state.phase === "ready") return;
     bridge.setRetry(controller.retry);
     return () => bridge.setRetry(null);
-  }, [bridge, controller, state.phase]);
+  }, [bridge, controller, state.phase, publish]);
   return <div className="reader-session" data-ui="latex-session" data-ui-key={controller.docId}>
     {state.phase !== "ready" && <div className="reader-sync-status" role="status" data-ui="latex-sync-status">
       {state.phase === "missing" ? t("doc.sync.missing") : state.phase === "error" ? (ir ? t("doc.sync.errorRetained") : t("doc.sync.error")) : state.reason === "busy" ? t("doc.sync.busy") : ir ? t("doc.sync.updatingRetained") : t("doc.sync.loading")}
