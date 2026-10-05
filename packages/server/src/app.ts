@@ -145,6 +145,7 @@ import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js"
 import { CopilotHost } from "./copilot.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
 import type {
+  AssetImageOutcome,
   PdfImageOutcome,
   PdfReadOutcome,
   PdfWriteOutcome,
@@ -1005,6 +1006,26 @@ export function createApp(deps: AppDeps): Hono {
           detail:
             "the annotations file could not be written; it is replaced atomically or not at all, so read the Doc again to see what is stored now",
         };
+      }
+    },
+    // One picture of a LaTeX or text Doc (copilot ticket 30): the very read of the images route's hash-checked mode
+    // (`readDocumentAsset`: contained path, no symlinks, one byte read), refused while a content mutation is queued
+    // or running, and the file must be the one the reading listed (its SHA-256).
+    asset: async ({ docId, path, sha256 }): Promise<AssetImageOutcome> => {
+      if (!docId.trim() || badId(docId) || docId.includes("\0")) return { kind: "not_found" };
+      if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
+      try {
+        const asset = readDocumentAsset(join(outputDir, docId), path);
+        if (asset.sha256 !== sha256.toLowerCase()) return { kind: "changed" };
+        return { kind: "ok", bytes: asset.bytes, sha256: asset.sha256 };
+      } catch (err) {
+        if (err instanceof DocumentAssetError)
+          return err.code === "missing"
+            ? { kind: "not_found" }
+            : err.code === "invalid"
+              ? { kind: "invalid", detail: "the picture path is not one of the Doc's pictures" }
+              : { kind: "error", detail: "the picture could not be read" };
+        throw err;
       }
     },
     pdf: {

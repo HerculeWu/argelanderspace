@@ -697,7 +697,7 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  await withWindow(49_100, async () => {
+  await withWindow(49_700, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1185,9 +1185,9 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (39400 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (39900 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
-  await withWindow(39_400, async () => {
+  await withWindow(39_900, async () => {
     script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
     const { snapshot } = await run(page(), "read it");
     expect(snapshot.conversation.run).toMatchObject({ status: "completed", error: null });

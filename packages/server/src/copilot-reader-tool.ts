@@ -22,6 +22,7 @@ import {
   READER_PANELS,
   READER_RIGHT_TABS,
   READER_WRITE_ACTIONS,
+  ReaderReadImageOperationSchema,
   type ReaderReading,
   ReaderReadOperationSchema,
   ReaderReadPageImageOperationSchema,
@@ -30,6 +31,7 @@ import {
   type ReaderWriteOperation,
   ReaderWriteOperationSchema,
 } from "@argelanderspace/contracts";
+import { sniffImage } from "@argelanderspace/core";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { pdfBatch, pdfVersion, readerBatch, readerVersion } from "./copilot-batching.js";
@@ -154,6 +156,14 @@ export type PdfWriteOutcome =
   | { kind: "busy" }
   | { kind: "error"; detail: string };
 
+export type AssetImageOutcome =
+  | { kind: "ok"; bytes: Buffer; sha256: string }
+  | { kind: "not_found" }
+  | { kind: "busy" }
+  | { kind: "changed" }
+  | { kind: "invalid"; detail: string }
+  | { kind: "error"; detail: string };
+
 export interface PdfOpDeps {
   /** The PDF annotation writes: the same lock, checks, save and notification as the page's own save. */
   write?: (
@@ -178,6 +188,8 @@ export interface PdfOpDeps {
 export interface ReaderOpDeps {
   /** The PDF Doc's material (copilot ticket 20); absent in hosts without a PDF engine. */
   pdf?: PdfOpDeps;
+  /** One picture of a LaTeX or text Doc, the very bytes the images route serves, hash-checked (copilot ticket 30). */
+  asset?: (op: { docId: string; path: string; sha256: string }) => Promise<AssetImageOutcome>;
   read: (docId: string) => Promise<ReaderReadOutcome>;
   write: (operation: ReaderWriteOperation) => Promise<ReaderWriteOutcome>;
 }
@@ -235,7 +247,13 @@ const parameters = Type.Object(
     sha256: Type.Optional(
       Type.String({
         description:
-          "read_page_image and every PDF annotation write: REQUIRED, reading.sha256 of the PDF reading you are working from; a different original is refused (conflict).",
+          "read_page_image and every PDF annotation write: REQUIRED, reading.sha256 of the PDF reading you are working from; a different original is refused (conflict). read_image: the picture's asset.sha256.",
+      })
+    ),
+    path: Type.Optional(
+      Type.String({
+        description:
+          "read_image: the picture's asset.path from the reading entry (a figure, or a table that is only a picture).",
       })
     ),
     longEdge: Type.Optional(
@@ -426,7 +444,7 @@ const parameters = Type.Object(
 const description = [
   "Read and navigate the Reader (LaTeX and text Docs). read returns the WHOLE document of a Doc from disk, in the background, without opening or moving anything: every section, paragraph, list, equation, figure, full table body, code/algorithm body, the whole bibliography, cite/xref identities and the Doc's current annotations with their full bodies, plus the content fingerprint and annotation revision they belong together under. Text is the canonical annotation text: a selection's start/end are UTF-16 offsets into it, math/cite/xref are atomic marks. Saved annotations of older content are left out and the archive is never read. A document too large for the room left in this model's window is delivered in parts, never cut: the result carries batch {from, to, total, status}; while status is partial the rest is NOT read: call read again with from = batch.to and version = batch.version until it says complete (the last part says so); a conflict with reason version_changed means the document changed: read it again from 0 (and not before taking down the key points of what you read, because earlier parts leave the conversation to make room), and do not claim the whole document was read before that. A single entry or page too large for the room is refused with its size and the actual gap.",
   "create_annotation, update_annotation and delete_annotation are the Annotations panel's, the selection toolbar's, the block buttons' and the editor's own operations, run through the page's own save: they write straight to the Doc's saved annotations and the user's open Reader shows the change at once. Plan each from a reading and send its reading.epoch.fingerprint and reading.epoch.annotationsRev: a write whose epoch is no longer current is refused (conflict) and writes nothing, so read the Doc again and form a new request; never just replace the numbers and resend. create_annotation takes target document, structure {id} (the section or block you name; the kind and the full content snapshot are taken from the stored document) or text {block, container, start, end, quote} in the reading's canonical text, where quote is required and must equal the canonical text at [start, end) as you counted it (offsets resent after the document changed can never anchor to different text): one container of one block (a paragraph's content, one list item, a figure/table/code/algorithm caption), UTF-16 offsets; a range that touches the inside of a math, cite or xref mark is widened to the whole mark (the quote is still checked against the range as you gave it; the saved target is in the result); equation, code, algorithm and table bodies and headings can only be structure targets, and a range across containers or blocks is refused. update_annotation and delete_annotation also carry expectedUpdatedAt, that annotation's updated_at exactly as your latest reading or write result showed it: if the annotation was edited after your reading (even when the epoch numbers are current again) the call is refused as conflict annotation_changed and writes nothing; read again, look at what the user wrote, then decide. update_annotation changes only the body (target and created time never change; moving an annotation means delete_annotation then create_annotation); an identical body is noop and writes nothing. delete_annotation removes one annotation at once without a confirmation, as the trash button does. Keys the file has that this application does not know are kept. If the call found the Doc's text replaced it archived the older annotations (as opening the Doc does) and says archivedOlder with their count: tell the user. An error never means your request was written; only the older batch may have been archived (archivedOlder). The body is saved byte for byte. A text the user has typed but not saved is theirs and stays in their editor; page.drafts says whether there is one. Archived annotations cannot be read or written.",
-  "PDF Docs: read returns the PDF in the background (in parts, with batch, when it does not fit; from continues): every page's real extractable text in page order (zero-based pageIndex; a page with no text layer has hasTextLayer false and text null, never an invented text), the outline, the workbench annotations (read-only here) and the SHA-256 of the original. read_page_image returns ONE original page as an image (any page, whatever the Reader has rendered; longEdge sets the resolution) for a model that can take images; a page you cannot read as text must be read from its image, never guessed. If the selected model cannot take images, read_page_image is refused and says so: tell the user to choose an image-capable model. A bad sha256, a bad pageIndex or a PDF that changed is refused with its true state. goto_page, next_page, previous_page, open_outline_item, search (the search box: results come back in the reply; refused while a search is still running, as the box is disabled then), open_search_result, open_annotation (the page of one workbench annotation, like its go-to button) and zoom (in, out, fit_width, fit_page) are the PDF Reader's own controls; set_panel works on its outline and annotations panels. Copying, the page link and downloading the original are the user's own gestures (the browser lets only the user), so you cannot do them.",
+  "PDF Docs: read returns the PDF in the background (in parts, with batch, when it does not fit; from continues): every page's real extractable text in page order (zero-based pageIndex; a page with no text layer has hasTextLayer false and text null, never an invented text), the outline, the workbench annotations (read-only here) and the SHA-256 of the original. read_page_image returns ONE original page as an image (any page, whatever the Reader has rendered; longEdge sets the resolution) for a model that can take images; a page you cannot read as text must be read from its image, never guessed. If the selected model cannot take images, read_page_image is refused and says so: tell the user to choose an image-capable model. A bad sha256, a bad pageIndex or a PDF that changed is refused with its true state. read_image {docId, path, sha256} (asset.path/asset.sha256 of a reading entry) returns one picture of a LaTeX or text Doc the same way (PNG/JPEG/WebP only; a refused one says why: look at nothing else and do not guess it). goto_page, next_page, previous_page, open_outline_item, search (the search box: results come back in the reply; refused while a search is still running, as the box is disabled then), open_search_result, open_annotation (the page of one workbench annotation, like its go-to button) and zoom (in, out, fit_width, fit_page) are the PDF Reader's own controls; set_panel works on its outline and annotations panels. Copying, the page link and downloading the original are the user's own gestures (the browser lets only the user), so you cannot do them.",
   "PDF workbench annotations (the PDF Reader's own tools, panel and buttons, through the page's own save rules; the PDF itself is never changed): create_pdf_annotation (kind rectangle {pageIndex, rectangle}, page_comment {pageIndex}, document_comment, or highlight/underline/strikeout {parts}; body is required), update_pdf_annotation (the body, a rectangle's rectangle and style, a highlight's color; what an annotation is anchored to never changes: delete and create instead), delete_pdf_annotation (at once, no confirmation, like the trash button), undo_pdf_annotation and redo_pdf_annotation (the panel's buttons, for the changes you made through this tool in this conversation). Every one carries docId, sha256 (reading.sha256) and rev (reading.annotationsRev, or epoch.annotationsRev of your last write result); update and delete also carry expectedUpdatedAt, that annotation's updated_at from your latest reading or write result. A stale original, revision or annotation is refused as conflict and writes nothing: read the Doc again, look at what the user changed, and form a new request, never just replace the numbers and resend. Text annotations mark REAL text of a page's text layer: parts is one {pageIndex, quote} per page in ascending order, the quote copied exactly from that page's text in the reading (the user's selection is in page.pdf.selection; split it at the page boundary), unique on the page unless occurrence says which; the rectangles are computed from the text layer, never given by you, and a page with no text layer (hasTextLayer false) cannot be marked, use a rectangle or a comment there. Page indexes are zero-based, rectangles are fractions of the visible page from its top-left corner. Embedded annotations of the PDF file itself are read-only and not part of this. Undo and redo follow the panel's rules: only changes made through this tool can be undone, a change by the user or anyone else ends that history, a new change clears redo, and the history is kept only until the service restarts. A text the user has typed in the panel and not saved is theirs: page.pdf.drafts says whether there is one (presence only, never the text) and whether the panel is blocked. Your write never replaces or saves it; the draft stays visible in the panel, even when you deleted the annotation it was for (the user can copy or discard it), and the panel shows its usual notice that the annotations changed elsewhere. Undo and redo reach only the changes made through this tool by THIS conversation.",
   "set_text_view switches a text Doc between its reading and its source tab. navigate/jump_back/set_panel/set_right_tab/retry_sync act on the user's visible Reader like the outline, reference cards, chips, the undo-navigation button, the panel folds, the tabs and Retry: call them only when asked to show something, never to read. navigate and jump_back stop at a Reader that is syncing or showing an error (nothing moves, not_displayed); set_panel, set_right_tab and retry_sync are folds, tabs and Retry and work in any state.",
 ].join(" ");
@@ -835,6 +853,129 @@ export function createReaderTool(context: ReaderToolContext) {
       batched.payload
     );
   };
+  /**
+   * The three capacity rules every image the model is given obeys (a page image and a figure image alike), so nothing a
+   * provider would reject can ever enter the history, which is sent again with every turn: one image's bytes, the
+   * images of the conversation together, and what the model is charged for its pixels against the room left.
+   */
+  const imageCapacity = (
+    id: string,
+    action: string,
+    object: { kind: "doc"; id: string },
+    byteLength: number,
+    width: number,
+    height: number,
+    smaller: string,
+    done: (operation: CopilotOperation, payload: object) => ToolResult
+  ): ToolResult | null => {
+    const used = context.imageBytesUsed?.() ?? 0;
+    if (byteLength > PDF_IMAGE_MAX_BYTES)
+      return done(record(id, action, { status: "rejected", object }), {
+        ok: false,
+        status: "rejected",
+        detail: `capacity: this image is ${byteLength} bytes, more than the ${PDF_IMAGE_MAX_BYTES} bytes one image may be; nothing was returned. ${smaller}`,
+      });
+    if (used + byteLength > PDF_IMAGE_HISTORY_MAX_BYTES)
+      return done(record(id, action, { status: "rejected", object }), {
+        ok: false,
+        status: "rejected",
+        detail: `capacity: the images of this conversation would be ${used + byteLength} bytes, more than the ${PDF_IMAGE_HISTORY_MAX_BYTES} bytes they may be together (they are sent again with every turn); nothing was returned. Read fewer images, or continue in a new conversation`,
+      });
+    const room = context.budget?.();
+    // An image costs what a model is charged for its pixels (the one rule `imageTokens`, also used for the history),
+    // never the length of its base64 text.
+    const cost = imageTokens(width, height) * IMAGE_BYTES_PER_TOKEN;
+    if (room !== undefined && cost + 1024 > room)
+      return done(record(id, action, { status: "rejected", object }), {
+        ok: false,
+        status: "rejected",
+        detail: `capacity: this image (${width}x${height} px, about ${imageTokens(width, height)} tokens) is more than the room left in this model's window (${Math.max(0, room)} bytes at ${IMAGE_BYTES_PER_TOKEN} per token); nothing was returned. ${smaller}`,
+      });
+    return null;
+  };
+  /**
+   * `read_image`: one picture of a LaTeX or text Doc's reading, the same verified bytes the Reader shows, for a model
+   * that can see. A model that cannot is told so (the same rule and words as a PDF page); a picture in a format a model
+   * cannot take (an SVG, a GIF, a PDF figure) is said so and nothing is converted behind the user's back.
+   */
+  const readImage = async (
+    id: string,
+    op: ReturnType<typeof ReaderReadImageOperationSchema.parse>,
+    done: (
+      operation: CopilotOperation,
+      payload: object,
+      image?: { data: string; mimeType: string }
+    ) => ToolResult
+  ): Promise<ToolResult> => {
+    const object = { kind: "doc" as const, id: op.docId };
+    if (context.modelAcceptsImages && !context.modelAcceptsImages())
+      return done(record(id, "read_image", { status: "unsupported", object }), {
+        ok: false,
+        status: "unsupported",
+        detail:
+          "no image was produced: this model cannot take images, so the pictures of the document cannot be looked at; do not guess what a figure shows from anything else (use its caption and the text of the reading, and say the picture was not seen). Tell the user to choose an image-capable model in the model selector.",
+      });
+    if (!context.reader.asset)
+      return done(record(id, "read_image", { status: "unsupported", object }), {
+        ok: false,
+        status: "unsupported",
+        detail: "document pictures are not available in this host",
+      });
+    const outcome = await context.reader.asset({
+      docId: op.docId,
+      path: op.path,
+      sha256: op.sha256,
+    });
+    if (outcome.kind !== "ok") {
+      if (outcome.kind === "changed")
+        return done(record(id, "read_image", { status: "conflict", object }), {
+          ok: false,
+          status: "conflict",
+          detail:
+            "the picture is not the file your reading listed (its sha256 differs); nothing was returned. Read the Doc again (reader read) and use the sha256 it lists",
+        });
+      return pdfOutcome(id, "read_image", op.docId, outcome, done);
+    }
+    let sniffed: ReturnType<typeof sniffImage>;
+    try {
+      sniffed = sniffImage(outcome.bytes);
+    } catch (error) {
+      return done(record(id, "read_image", { status: "unsupported", object }), {
+        ok: false,
+        status: "unsupported",
+        detail: `this picture cannot be given to a model (${error instanceof Error ? error.message : "unknown format"}; a model takes PNG, JPEG and WebP). Nothing was converted and nothing was returned: say that this figure was not seen, and use its caption and the text of the reading only. Do not guess what it shows`,
+      });
+    }
+    const refused = imageCapacity(
+      id,
+      "read_image",
+      object,
+      outcome.bytes.length,
+      sniffed.width,
+      sniffed.height,
+      "The picture is not made smaller for you: say that this figure was not seen",
+      done
+    );
+    if (refused) return refused;
+    return done(
+      record(id, "read_image", { status: "ok", object }),
+      {
+        ok: true,
+        status: "ok",
+        observed:
+          "the picture of the document as the Reader shows it (attached); read what it shows, say where something cannot be made out, never invent it",
+        image: {
+          path: op.path,
+          width: sniffed.width,
+          height: sniffed.height,
+          mediaType: sniffed.mediaType,
+          byteLength: outcome.bytes.length,
+        },
+        sha256: outcome.sha256,
+      },
+      { data: outcome.bytes.toString("base64"), mimeType: sniffed.mediaType }
+    );
+  };
   /** `read_page_image`: one original page as an image; a model that cannot see is told so and gets nothing. */
   const readPageImage = async (
     id: string,
@@ -866,31 +1007,17 @@ export function createReaderTool(context: ReaderToolContext) {
     });
     if (outcome.kind !== "ok") return pdfOutcome(id, "read_page_image", op.docId, outcome, done);
     const data = outcome.png.toString("base64");
-    // Byte limits first: one image over the per-image cap, or images past the history total, are refused whole so that
-    // nothing a provider would reject can ever enter the history (which is sent again with every turn).
-    const used = context.imageBytesUsed?.() ?? 0;
-    if (outcome.png.length > PDF_IMAGE_MAX_BYTES)
-      return done(record(id, "read_page_image", { status: "rejected", object }), {
-        ok: false,
-        status: "rejected",
-        detail: `capacity: this page image is ${outcome.png.length} bytes, more than the ${PDF_IMAGE_MAX_BYTES} bytes one image may be; nothing was returned. Ask again with a smaller longEdge`,
-      });
-    if (used + outcome.png.length > PDF_IMAGE_HISTORY_MAX_BYTES)
-      return done(record(id, "read_page_image", { status: "rejected", object }), {
-        ok: false,
-        status: "rejected",
-        detail: `capacity: the images of this conversation would be ${used + outcome.png.length} bytes, more than the ${PDF_IMAGE_HISTORY_MAX_BYTES} bytes they may be together (they are sent again with every turn); nothing was returned. Read fewer pages, or ask for a smaller longEdge, or continue in a new conversation`,
-      });
-    const room = context.budget?.();
-    // An image costs what a model is charged for its pixels (the one rule `imageTokens`, also used for the history),
-    // never the length of its base64 text.
-    const cost = imageTokens(outcome.width, outcome.height) * IMAGE_BYTES_PER_TOKEN;
-    if (room !== undefined && cost + 1024 > room)
-      return done(record(id, "read_page_image", { status: "rejected", object }), {
-        ok: false,
-        status: "rejected",
-        detail: `capacity: this page image (${outcome.width}x${outcome.height} px, about ${imageTokens(outcome.width, outcome.height)} tokens) is more than the room left in this model's window (${Math.max(0, room)} bytes at ${IMAGE_BYTES_PER_TOKEN} per token); nothing was returned. Ask again with a smaller longEdge`,
-      });
+    const refused = imageCapacity(
+      id,
+      "read_page_image",
+      object,
+      outcome.png.length,
+      outcome.width,
+      outcome.height,
+      "Ask again with a smaller longEdge",
+      done
+    );
+    if (refused) return refused;
     return done(
       record(id, "read_page_image", { status: "ok", object }),
       {
@@ -1040,6 +1167,20 @@ export function createReaderTool(context: ReaderToolContext) {
             record(toolCallId, "read", { status: "ok", object, batch: batched.coverage }),
             batched.payload
           );
+        }
+        if (action === "read_image") {
+          const picture = ReaderReadImageOperationSchema.safeParse(params);
+          if (!picture.success)
+            return done(record(toolCallId, action, { status: "invalid" }), {
+              ok: false,
+              status: "invalid",
+              detail:
+                "read_image needs docId, the asset path and its sha256 from the reading (reading entries list them as asset); nothing was returned",
+              issues: picture.error.issues
+                .slice(0, 5)
+                .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+            });
+          return await readImage(toolCallId, picture.data, done);
         }
         if (action === "read_page_image") {
           const image = ReaderReadPageImageOperationSchema.safeParse(params);

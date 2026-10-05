@@ -34,6 +34,7 @@ describe("the text tool's closed operation union", () => {
       validate: { action: "validate", docId: DOC, sourceRev: 1 },
       generate: { action: "generate", docId: DOC, sourceRev: 1 },
       open_source_pdf: { action: "open_source_pdf", docId: DOC },
+      load_instruction: { action: "load_instruction", name: "pdf-transcription" },
     };
     expect(Object.keys(samples).sort()).toEqual([...TEXT_OPERATION_ACTIONS].sort());
     for (const sample of Object.values(samples))

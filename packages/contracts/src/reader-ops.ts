@@ -684,6 +684,20 @@ export const ReaderReadOperationSchema = z
 export type ReaderReadOperation = z.infer<typeof ReaderReadOperationSchema>;
 /** One original PDF page as an image (copilot ticket 20); see `pdf-ops`. */
 export const ReaderReadPageImageOperationSchema = PdfReadPageImageOperationSchema;
+/**
+ * One picture of a LaTeX or text Doc's reading (a figure, or a table that is only a picture) as an image for a model
+ * that can see (copilot ticket 30). `path` and `sha256` are the asset's `path`/`sha256` from the reading (the hash is
+ * required: a changed file is refused), the same bytes the Reader shows.
+ */
+export const ReaderReadImageOperationSchema = z
+  .object({
+    action: z.literal("read_image"),
+    docId: Id,
+    path: z.string().min(1).max(500),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type ReaderReadImageOperation = z.infer<typeof ReaderReadImageOperationSchema>;
 
 /** View operations run in the bound browser's Reader, through the Reader's own controllers. */
 export const ReaderViewActionSchema = z.discriminatedUnion("action", [
@@ -816,6 +830,7 @@ export const READER_WRITE_ACTIONS = [
 export const READER_OPERATION_ACTIONS = [
   "read",
   "read_page_image",
+  "read_image",
   ...READER_VIEW_ACTIONS,
   ...READER_WRITE_ACTIONS,
   ...PDF_ANNOTATION_ACTIONS,

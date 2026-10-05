@@ -479,6 +479,7 @@ describe("Reader operations", () => {
     expect([...READER_OPERATION_ACTIONS]).toEqual([
       "read",
       "read_page_image",
+      "read_image",
       ...READER_VIEW_ACTIONS,
       "create_annotation",
       "update_annotation",

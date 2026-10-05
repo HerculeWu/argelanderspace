@@ -88,7 +88,12 @@ import {
   PLAN_TOOL_NAME,
 } from "./copilot-plan-tool.js";
 import { createReaderTool, READER_TOOL_NAME, type ReaderOpDeps } from "./copilot-reader-tool.js";
+import {
+  type ApplicationResourceLoader,
+  createApplicationResourceLoader,
+} from "./copilot-resources.js";
 import { createTextTool, TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
+import { type SourceCoverage, sourceCoverage } from "./copilot-transcription.js";
 import {
   createWorkspaceTool,
   type ViewActionOutcome,
@@ -365,7 +370,11 @@ function askedLine(entry: OperationConfirmation): string {
 
 /** Added when the text tool exists (ticket 29): kept short, the tool description holds the actions. */
 const TEXT_PROMPT =
-  " The text tool writes a text Doc's Markdown source (page.textSource carries the editor's current text; unsaved true means it is the user's draft) and its images; the reading text only changes with generate. A text Doc's generated reading is read and annotated with reader read and create_annotation like a LaTeX Doc. Replacing annotated reading text waits for the user's confirmation card, which you cannot give.";
+  " The text tool writes a text Doc's Markdown source (page.textSource carries the editor's current text; unsaved true means it is the user's draft) and its images; the reading text only changes with generate. A text Doc's generated reading is read and annotated with reader read and create_annotation like a LaTeX Doc. Replacing annotated reading text waits for the user's confirmation card, which you cannot give. To transcribe a PDF, first text load_instruction pdf-transcription.";
+
+/** The base instruction of a session: small and always present; the versioned instructions are loaded on demand. */
+const basePrompt = (writer: boolean, text: boolean): string =>
+  (writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT) + (text ? TEXT_PROMPT : "");
 
 /** Business capabilities the app wires in; the host never reaches around them. */
 export interface Workbench {
@@ -2146,14 +2155,48 @@ export class CopilotHost {
     if (raw.some((entry) => entry.type === "message" && entry.message.role === "system")) return 0;
     return this.systemFootprint();
   }
+  /** The one application resource loader (copilot-resources.ts) for a session with these tools. */
+  private resources(
+    extensions: Parameters<typeof createApplicationResourceLoader>[0]["extensions"],
+    writer: boolean,
+    text: boolean
+  ): ApplicationResourceLoader {
+    return createApplicationResourceLoader({
+      extensions,
+      systemPrompt: () => basePrompt(writer, text),
+      refuseExtension: () => {
+        throw new CopilotError("unavailable");
+      },
+    });
+  }
+  /**
+   * What this conversation has really been given of a text Doc's source PDF (copilot ticket 30), worked out from its
+   * history and the verified original's page material; null when the Doc has no source PDF.
+   */
+  private async sourceCoverageOf(
+    loaded: Loaded,
+    workbench: Workbench,
+    textDocId: string
+  ): Promise<SourceCoverage | { unavailable: string } | null> {
+    const described = workbench.text?.describe(textDocId);
+    const source = described && "source_pdf" in described ? described.source_pdf : undefined;
+    if (!source) return null;
+    const read = await workbench.reader?.pdf?.read(source.doc_id);
+    if (!read) return { unavailable: "the source PDF's pages cannot be read in this host" };
+    if (read.kind !== "ok")
+      return { unavailable: `the source PDF cannot be read right now (${read.kind})` };
+    return sourceCoverage(
+      loaded.manager.getEntries() as unknown as RawEntry[],
+      source.doc_id,
+      read.material.sha256,
+      read.material.pages
+    );
+  }
   private systemFootprintBytes?: number;
   private systemFootprint(): number {
     if (this.systemFootprintBytes !== undefined) return this.systemFootprintBytes;
     const writer = !!this.workbench?.writer;
-    let bytes = Buffer.byteLength(
-      (writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT) +
-        (this.workbench?.text ? TEXT_PROMPT : "")
-    );
+    let bytes = Buffer.byteLength(basePrompt(writer, !!this.workbench?.text));
     // The tool schemas are built the way a run builds them; the closures are never called.
     const stub = {} as never;
     const tools: unknown[] = [];
@@ -2433,6 +2476,13 @@ export class CopilotHost {
             },
           })
         : undefined;
+    // The ONE application resource loader of this session: the base instruction and the instructions that are loaded on
+    // demand come from it and nowhere else (the same object builds the session and answers `load_instruction`).
+    const resourceLoader = this.resources(
+      extensions,
+      !!(workbench?.writer && planTool),
+      !!(workbench?.text && planTool)
+    );
     const readerTool =
       workbench?.reader && planTool
         ? createReaderTool({
@@ -2479,6 +2529,9 @@ export class CopilotHost {
       workbench?.text && planTool
         ? createTextTool({
             text: workbench.text,
+            instruction: (name) => resourceLoader.getInstruction(name),
+            instructionNames: () => resourceLoader.instructionNames(),
+            sourceCoverage: (textDocId) => this.sourceCoverageOf(loaded, workbench, textDocId),
             attachment: this.attachmentResolver(loaded),
             page: () => this.views.get(state.navViewId),
             viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
@@ -2535,23 +2588,7 @@ export class CopilotHost {
         compaction: { enabled: false },
         cacheWarming: "off",
       }),
-      resourceLoader: {
-        getExtensions: () => extensions,
-        getSkills: () => ({ skills: [], diagnostics: [] }),
-        getPrompts: () => ({ prompts: [], diagnostics: [] }),
-        getThemes: () => ({ themes: [], diagnostics: [] }),
-        getAgentsFiles: () => ({ agentsFiles: [] }),
-        getSystemPrompt: () =>
-          (writerTool ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT) +
-          (textTool ? TEXT_PROMPT : ""),
-        getSystemPromptSource: () => undefined,
-        getAppendSystemPrompt: () => [],
-        getAppendSystemPromptSources: () => [],
-        extendResources: () => {
-          throw new CopilotError("unavailable");
-        },
-        reload: async () => {},
-      },
+      resourceLoader,
     });
     state.session = session;
     const expectedTools = toolNames;

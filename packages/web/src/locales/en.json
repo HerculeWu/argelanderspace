@@ -1467,6 +1467,7 @@
         "undo_pdf_annotation": "Undo PDF annotation change",
         "redo_pdf_annotation": "Redo PDF annotation change",
         "read_page_image": "Read PDF page image",
+        "read_image": "Read document picture",
         "goto_page": "Go to PDF page",
         "next_page": "Next PDF page",
         "previous_page": "Previous PDF page",
@@ -1505,6 +1506,7 @@
         "validate": "Validate text",
         "generate": "Generate reading text",
         "open_source_pdf": "Open source PDF",
+        "load_instruction": "Load task instruction",
         "set_text_view": "Switch text tab"
       },
       "status": {
