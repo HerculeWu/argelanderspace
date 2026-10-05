@@ -1366,6 +1366,7 @@
       "error": "阅读器：{{id}}（加载失败，未发送正文）",
       "missing": "阅读器：{{id}}（找不到文档，未发送正文）",
       "counts": "已发送 {{sections}} 节、{{blocks}} 块、{{references}} 条参考文献、{{annotations}} 条标注",
+      "totals": "文档共有 {{sections}} 节、{{blocks}} 块、{{references}} 条参考文献、{{annotations}} 条标注（本条消息未全部发送）",
       "selection": "已包含选区",
       "position": "阅读位置：{{section}}"
     },
@@ -1401,7 +1402,7 @@
     },
     "partial": "部分",
     "coverage": {
-      "entries": "个块",
+      "entries": "个条目",
       "pages": "页",
       "complete": "已发送整篇文档（共 {{total}} {{unit}}）。",
       "partial": "已发送一部分：第 {{from}}–{{to}} {{unit}}，共 {{total}}；还有 {{remaining}} 未读。",
@@ -1409,6 +1410,10 @@
       "held": "未重复发送：该版本已在本会话较早的消息中完整发送。",
       "batch": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；还有 {{remaining}} 未读",
       "evicted": "之后已移出会话以腾出空间。",
+      "withdrawn": "这一部分已撤回：服务商认为请求过大而拒绝，未读到。",
+      "heldGone": "未重复发送：之前发送过，但那一部分此后已移出会话。",
+      "gap": "{{unit}} {{id}} 需要 {{bytes}} 字节，超出窗口剩余空间：未返回任何内容",
+      "batchWithdrawn": "第 {{from}}–{{to}} {{unit}}，共 {{total}}，已撤回：服务商认为请求过大而拒绝，未读到",
       "batchDone": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；已无剩余"
     }
   }

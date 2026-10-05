@@ -402,8 +402,7 @@ test("steering larger than the model's window is refused up front and the run is
   onTestFinished(() => {
     Object.assign(catalogModel, originalWindow);
   });
-  // (the window holds the instruction and tool schemas the first message is budgeted for, ticket 24)
-  catalogModel.contextWindow = 60_000;
+  catalogModel.contextWindow = 30_000;
   catalogModel.maxTokens = 1024;
   const small = await request("/conversations", "POST", {
     model: { provider: "openai", model: "gpt-4.1", thinking: null },

@@ -42,6 +42,13 @@ export const ContextCoverageSchema = z
      * what was read; the ledger no longer counts it as present.
      */
     evicted: z.boolean().optional(),
+    /** The provider rejected the request that carried this part as too large: it was withdrawn and is NOT read. */
+    withdrawn: z.boolean().optional(),
+    /** A single unit that did not fit (status `omitted` of a read): its id and the bytes it needs. */
+    gap: z
+      .object({ id: z.string().max(200), bytes: Count })
+      .strict()
+      .optional(),
     note: z.string().max(2000),
   })
   .strict()
@@ -50,6 +57,34 @@ export const ContextCoverageSchema = z
       ctx.addIssue({ code: "custom", message: "invalid coverage range" });
   });
 export type ContextCoverage = z.infer<typeof ContextCoverageSchema>;
+
+/**
+ * The durable record of which deliveries were taken out of the conversation (ticket 24, spec §8.2): the history keeps
+ * every message and tool result exactly as the model was sent it; this record, appended as its own entry, says which
+ * of them a later request shows as a stand-in. `evict`: taken out to make room (what was read stays on record).
+ * `withdraw`: the provider rejected the request that carried it (NOT read). `ceiling`: the most bytes one delivery
+ * may take from now on, learned from the rejected delivery (it only ever shrinks).
+ */
+export const DELIVERY_LEDGER_TYPE = "argelander.delivery.v1";
+export const DeliveryLedgerEntrySchema = z
+  .object({
+    version: z.literal(1),
+    records: z
+      .array(
+        z
+          .object({
+            action: z.enum(["evict", "withdraw"]),
+            target: z
+              .object({ kind: z.enum(["tool", "message"]), id: z.string().min(1).max(200) })
+              .strict(),
+          })
+          .strict()
+      )
+      .max(10000),
+    ceiling: Count.optional(),
+  })
+  .strict();
+export type DeliveryLedgerEntry = z.infer<typeof DeliveryLedgerEntrySchema>;
 
 export const readingVersion = (identity: string, annotationsRev: number): string =>
   `${identity}#${annotationsRev}`;
@@ -80,7 +115,8 @@ export class ReadingLedger {
     entry.head = entry.head || coverage.head;
     if (coverage.to > coverage.from)
       entry.ranges = merge([...entry.ranges, [coverage.from, coverage.to]]);
-    if (messageId && !entry.heldIn) entry.heldIn = messageId;
+    // The message that delivered the head (heldIn names a message, never a tool call).
+    if (messageId && coverage.head && !entry.heldIn) entry.heldIn = messageId;
     this.held.set(key, entry);
   }
   /** True when this version's head and every unit were delivered. */
@@ -90,6 +126,18 @@ export class ReadingLedger {
     if (entry.total === 0) return true;
     const only = entry.ranges[0];
     return entry.ranges.length === 1 && !!only && only[0] === 0 && only[1] >= entry.total;
+  }
+  /** Every version whose head and every unit are present, as `[kind, docId, version]`. */
+  completeVersions(): ["reader" | "pdf", string, string][] {
+    const out: ["reader" | "pdf", string, string][] = [];
+    for (const [key, entry] of this.held) {
+      const [kind, docId, version] = key.split("\n");
+      if (!kind || docId === undefined || version === undefined) continue;
+      if (this.complete(kind as "reader" | "pdf", docId, version))
+        out.push([kind as "reader" | "pdf", docId, version]);
+      void entry;
+    }
+    return out;
   }
   heldIn(kind: "reader" | "pdf", docId: string, version: string): string | undefined {
     return this.held.get(ledgerKey(kind, docId, version))?.heldIn;

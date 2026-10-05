@@ -362,35 +362,6 @@ export interface PdfTextMaterial {
  * `hasTextLayer: false` and `text: null`: the pinned SDK's `extractText` reads an uninitialised buffer for a
  * zero-character page, so it is only called when the page really has runs.
  */
-/**
- * `readPdfTextMaterial` of the WHOLE document, remembered per original (copilot ticket 24): the Copilot reads the
- * whole text with every message, and an immutable original does not need PDFium again for it. The key is the content
- * hash the caller expects and `bytes` must hash to it (checked here as `withEngine` does), so a different file can
- * never be served another file's text. Readers never mutate the result. At most two originals are kept.
- */
-export async function readPdfTextMaterialCached(
-  bytes: Buffer,
-  expectedHash: string
-): Promise<PdfTextMaterial> {
-  if (Buffer.isBuffer(bytes) && /^[a-f0-9]{64}$/.test(expectedHash)) {
-    const cached = textCache.get(expectedHash);
-    if (cached && sha256(bytes) === expectedHash) {
-      textCache.delete(expectedHash);
-      textCache.set(expectedHash, cached);
-      return cached;
-    }
-  }
-  const material = await readPdfTextMaterial(bytes, expectedHash);
-  textCache.set(expectedHash, material);
-  while (textCache.size > TEXT_CACHE_ENTRIES) {
-    const oldest = textCache.keys().next().value;
-    if (oldest === undefined) break;
-    textCache.delete(oldest);
-  }
-  return material;
-}
-const TEXT_CACHE_ENTRIES = 2;
-const textCache = new Map<string, PdfTextMaterial>();
 export async function readPdfTextMaterial(
   bytes: Buffer,
   expectedHash: string,
@@ -455,6 +426,36 @@ export async function readPdfTextMaterial(
     };
   });
 }
+
+/**
+ * `readPdfTextMaterial` of the WHOLE document, remembered per original (copilot ticket 24): the Copilot reads the
+ * whole text with every message, and an immutable original does not need PDFium again for it. The key is the content
+ * hash the caller expects and `bytes` must hash to it (checked here as `withEngine` does), so a different file can
+ * never be served another file's text. Readers never mutate the result. At most two originals are kept.
+ */
+export async function readPdfTextMaterialCached(
+  bytes: Buffer,
+  expectedHash: string
+): Promise<PdfTextMaterial> {
+  if (Buffer.isBuffer(bytes) && /^[a-f0-9]{64}$/.test(expectedHash)) {
+    const cached = textCache.get(expectedHash);
+    if (cached && sha256(bytes) === expectedHash) {
+      textCache.delete(expectedHash);
+      textCache.set(expectedHash, cached);
+      return cached;
+    }
+  }
+  const material = await readPdfTextMaterial(bytes, expectedHash);
+  textCache.set(expectedHash, material);
+  while (textCache.size > TEXT_CACHE_ENTRIES) {
+    const oldest = textCache.keys().next().value;
+    if (oldest === undefined) break;
+    textCache.delete(oldest);
+  }
+  return material;
+}
+const TEXT_CACHE_ENTRIES = 2;
+const textCache = new Map<string, PdfTextMaterial>();
 
 export interface PdfPageImage {
   contentSha256: string;

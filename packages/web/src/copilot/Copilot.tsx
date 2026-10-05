@@ -70,11 +70,11 @@ function DiscoverySummary({ summary }: { summary: { state: "ready" | "loading" |
 }
 
 /** What the Reader carried (copilot ticket 18): which Doc, whether a reading was sent, how much, and the user's place and selection. */
-function ReaderSummary({ summary, title }: { summary: { docId: string; phase: "ready" | "syncing" | "error" | "missing"; sections: number; blocks: number; references: number; annotations: number; selection: boolean; activeSectionId: string | null; activeSectionLabel?: string }; title?: string }) {
+function ReaderSummary({ summary, title, sent = true }: { sent?: boolean; summary: { docId: string; phase: "ready" | "syncing" | "error" | "missing"; sections: number; blocks: number; references: number; annotations: number; selection: boolean; activeSectionId: string | null; activeSectionLabel?: string }; title?: string }) {
   const { t } = useTranslation();
   return <div className="copilot-library-summary" data-ui="copilot-reader-summary">
     <p>{t(`copilot.reader.${summary.phase}`, { id: title ?? summary.docId })}</p>
-    {summary.phase === "ready" && <p>{t("copilot.reader.counts", { sections: summary.sections, blocks: summary.blocks, references: summary.references, annotations: summary.annotations })}</p>}
+    {summary.phase === "ready" && <p>{t(sent ? "copilot.reader.counts" : "copilot.reader.totals", { sections: summary.sections, blocks: summary.blocks, references: summary.references, annotations: summary.annotations })}</p>}
     {summary.phase === "ready" && summary.activeSectionId && <p>{t("copilot.reader.position", { section: summary.activeSectionLabel ?? summary.activeSectionId })}</p>}
     {summary.selection && <p>{t("copilot.reader.selection")}</p>}
   </div>;
@@ -90,10 +90,11 @@ export function messageContextStatus(context: { status: "complete" | "unavailabl
   if (context.coverage && (context.coverage.status === "partial" || context.coverage.status === "omitted")) return "partial";
   const material = context.pdf?.material;
   if (material) {
-    if (material.status === "held") return context.status === "complete" ? "complete" : "unavailable";
     if (material.status === "omitted") return "partial";
-    if (material.status !== "ok") return "unavailable";
-    if (!material.modelAcceptsImages && material.pagesWithoutText > 0) return "partial";
+    if (material.status !== "ok" && material.status !== "held") return "unavailable";
+    // Pages without a text layer that a text-only model cannot read: partial, whatever was sent in this message.
+    const unreadable = material.totals?.pagesWithoutText ?? material.pagesWithoutText;
+    if (!material.modelAcceptsImages && unreadable > 0) return "partial";
   }
   return context.status === "complete" ? "complete" : "unavailable";
 }
@@ -102,7 +103,8 @@ export function messageContextStatus(context: { status: "complete" | "unavailabl
 function CoverageSummary({ coverage }: { coverage: ContextCoverage }) {
   const { t } = useTranslation();
   const unit = t(coverage.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries");
-  return <p data-ui="copilot-coverage" data-status={coverage.status}>{t(`copilot.coverage.${coverage.status}`, { unit, from: coverage.from + 1, to: coverage.to, total: coverage.total, remaining: coverage.total - coverage.to })}{coverage.evicted && ` ${t("copilot.coverage.evicted")}`}</p>;
+  const key = coverage.withdrawn ? "withdrawn" : coverage.status === "held" && coverage.evicted ? "heldGone" : coverage.status;
+  return <p data-ui="copilot-coverage" data-status={coverage.status}>{t(`copilot.coverage.${key}`, { unit, from: coverage.from + 1, to: coverage.to, total: coverage.total, remaining: coverage.total - coverage.to })}{coverage.evicted && coverage.status !== "held" && ` ${t("copilot.coverage.evicted")}`}</p>;
 }
 
 /** What the PDF Reader carried (copilot ticket 20): which Doc, where the user is (one-based, as the Reader shows it), what the service attached. */
@@ -432,7 +434,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
         {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item) => <span key={item.id} className="copilot-attachment" data-ui="copilot-message-attachment" data-ui-key={item.id} title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
-        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
+        {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} sent={!message.context.coverage || message.context.coverage.status === "complete"} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} beforeDocDelete={onBeforeDocDelete} beforeManuscriptDelete={onBeforeManuscriptDelete} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
@@ -540,7 +542,7 @@ function OperationRecord({ operations }: { operations: CopilotOperation[] }) {
       <Badge tone={isApplied(operation) ? "accent" : "neutral"}>{t(operation.tool === "library" && operation.status === "conflict" ? "copilot.operations.status.conflictLibrary" : operation.tool === "reader" && operation.status === "conflict" ? "copilot.operations.status.conflictReader" : OPERATION_STATUS_KEYS[operation.status])}</Badge>
       {operation.warnings?.includes("import_partial") && <span className="copilot-operation-warn">{t("copilot.operations.importPartial")}</span>}
       {operation.warnings?.includes("task_due_after_plan_due") && <span className="copilot-operation-warn">{t("copilot.operations.dueAfterPlan")}</span>}
-      {operation.batch && <code data-ui="copilot-operation-batch" data-status={operation.batch.status} title={t("copilot.operations.batch")}>{t(`copilot.coverage.${operation.batch.status === "complete" ? "batchDone" : "batch"}`, { unit: t(operation.batch.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries"), from: operation.batch.from + 1, to: operation.batch.to, total: operation.batch.total, remaining: operation.batch.total - operation.batch.to })}</code>}
+      {operation.batch && <code data-ui="copilot-operation-batch" data-status={operation.batch.status} title={t("copilot.operations.batch")}>{(() => { const batch = operation.batch; const unit = t(batch.unit === "pages" ? "copilot.coverage.pages" : "copilot.coverage.entries"); if (batch.gap) return t("copilot.coverage.gap", { unit, id: batch.gap.id, bytes: batch.gap.bytes }); const key = batch.withdrawn ? "batchWithdrawn" : batch.status === "complete" ? "batchDone" : "batch"; return t(`copilot.coverage.${key}`, { unit, from: batch.from + 1, to: batch.to, total: batch.total, remaining: batch.total - batch.to }) + (batch.evicted ? ` ${t("copilot.coverage.evicted")}` : ""); })()}</code>}
       {operation.rev !== undefined && isApplied(operation) && <code>v{operation.rev}</code>}
       {operation.job && <code data-ui="copilot-operation-job" title={t("copilot.operations.job")}>{operation.job.id}</code>}
       {operation.docId && <code data-ui="copilot-operation-doc" title={t("copilot.operations.doc")}>{operation.docId}</code>}

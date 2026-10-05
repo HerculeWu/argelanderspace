@@ -4,7 +4,7 @@
  * on the catalog model so that the synthetic documents are several times larger than the room left.
  */
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -350,7 +350,7 @@ const keepReading: Step = (context) => {
   if (!batch || batch.status === "complete" || batch.to >= batch.total)
     return { text: "FINISHED-ALL-PARTS" };
   if (batch.status === "omitted" && !state.ok) return { text: "stuck" };
-  return { call: { action: "read", docId: DOC, from: batch.to } };
+  return { call: { action: "read", docId: DOC, from: batch.to, version: batch.version } };
 };
 async function send(id: string, context: PageContext, text: string) {
   const sent = await request(`/conversations/${id}/messages`, "POST", {
@@ -509,20 +509,68 @@ test("a single entry larger than any room is reported as the actual gap, with no
   });
 });
 
-test("read refuses a from beyond the document, and an in-range from continues exactly there", async () => {
+test("a continuation names its version: beyond the document is invalid, no version is invalid, another version is a conflict, the right one continues exactly there", async () => {
+  let version = "";
   script = [
-    () => ({ call: { action: "read", docId: DOC, from: 500 } }),
+    () => ({ call: { action: "read", docId: DOC } }),
+    (context) => {
+      version = toolResults(context).at(-1)?.batch?.version;
+      return { call: { action: "read", docId: DOC, from: 500, version } };
+    },
     () => ({ call: { action: "read", docId: DOC, from: 2 } }),
+    () => ({ call: { action: "read", docId: DOC, from: 2, version: "someone-else#9" } }),
+    () => ({ call: { action: "read", docId: DOC, from: 2, version } }),
     () => ({ text: "done" }),
   ];
   const { snapshot } = await run(page());
-  const beyond = toolResults(seenAt(1)).at(-1);
-  expect(beyond).toMatchObject({ ok: false, status: "invalid" });
-  const part = toolResults(seenAt(2)).at(-1);
-  expect(part).toMatchObject({ ok: true, batch: { from: 2, status: "complete" } });
+  expect(version).toMatch(/#0$/);
+  expect(toolResults(seenAt(2)).at(-1)).toMatchObject({ ok: false, status: "invalid" });
+  expect(toolResults(seenAt(3)).at(-1)).toMatchObject({ ok: false, status: "invalid" });
+  const conflict = toolResults(seenAt(4)).at(-1);
+  expect(conflict).toMatchObject({
+    ok: false,
+    status: "conflict",
+    reason: "version_changed",
+    version,
+  });
+  expect(conflict.total).toBeGreaterThan(2);
+  const part = toolResults(seenAt(5)).at(-1);
+  expect(part).toMatchObject({ ok: true, batch: { from: 2, status: "complete", version } });
   expect(part.entries[0].id).toBeDefined();
   expect(part.reading).toBeUndefined();
-  expect(ops(snapshot).map((operation) => operation.status)).toEqual(["invalid", "ok"]);
+  expect(ops(snapshot).map((operation) => operation.status)).toEqual([
+    "ok",
+    "invalid",
+    "invalid",
+    "conflict",
+    "ok",
+  ]);
+});
+
+test("a document that changed between two parts is never stitched: the continuation is refused with the new version", async () => {
+  writeDoc(docIr(900));
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    let changed = false;
+    script = [
+      keepReading,
+      (context) => {
+        if (!changed) {
+          changed = true;
+          writeDoc(docIr(900, "CHANGED-LAST-PARAGRAPH-0002"));
+        }
+        return keepReading(context);
+      },
+      keepReading,
+      () => ({ text: "end" }),
+    ];
+    await run(page());
+    const results = seen.flatMap((context) => toolResults(context));
+    const refused = results.find((r) => r.reason === "version_changed");
+    expect(refused).toBeDefined();
+    expect(refused.version).not.toBe(envelopes(seenAt(0))[0].coverage.version);
+    // nothing of the new version was returned, so no result claims complete across versions
+    expect(results.some((r) => r.batch?.status === "complete")).toBe(false);
+  });
 });
 
 // ---- provider rejection ------------------------------------------------------------------------------- //
@@ -550,15 +598,34 @@ test("a provider that rejects a request as too large keeps the input and progres
     expect(snapshot.messages.some((m) => m.role === "user" && m.text === "read all of it")).toBe(
       true
     );
+    // the history keeps the read as it was (ok); the ledger says it was withdrawn
     const read = ops(snapshot).at(-1);
-    expect(read).toMatchObject({ status: "rejected" });
-    expect(read?.batch).toBeUndefined();
+    expect(read).toMatchObject({ status: "ok", batch: { withdrawn: true } });
+    // the durable history still holds the part itself, and what the next request shows is the stand-in
+    const stored = readFileSync(
+      join(
+        root,
+        "data",
+        "copilot",
+        "sessions",
+        readdirSync(join(root, "data", "copilot", "sessions"))[0] ?? ""
+      ),
+      "utf8"
+    );
+    expect(stored).toContain("Paragraph 150 of the synthetic paper");
     // retry (resume): the next part it reads is smaller than the one that was rejected
     // (the stub counts requests across runs)
     const before = seen.length;
     script = [
       ...Array.from({ length: before }, () => () => ({ text: "earlier" })),
-      () => ({ call: { action: "read", docId: DOC, from: envelopes(seenAt(0))[0].coverage.to } }),
+      () => ({
+        call: {
+          action: "read",
+          docId: DOC,
+          from: envelopes(seenAt(0))[0].coverage.to,
+          version: envelopes(seenAt(0))[0].coverage.version,
+        },
+      }),
       () => ({ text: "continuing" }),
     ];
     const resumed = await request(`/conversations/${id}/resume`, "POST", {
@@ -618,13 +685,13 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  await withWindow(48_000, async () => {
+  await withWindow(39_000, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
       if (!batch || batch.status === "complete" || batch.to >= batch.total)
         return { text: "FINISHED-ALL-PARTS" };
-      return { call: { action: "read", docId, from: batch.to } };
+      return { call: { action: "read", docId, from: batch.to, version: batch.version } };
     };
     script = Array.from({ length: 30 }, () => reader);
     const { snapshot } = await run(context, "read the PDF");
@@ -664,4 +731,302 @@ test("the whole text of one original is read once, not on every message", async 
   await expect(
     readPdfTextMaterialCached(syntheticPdf({ pageCount: 5 }), metadata.sha256)
   ).rejects.toThrow();
+});
+
+// ---- fix round 1: the durable ledger, no wedge, versions, totals ------------------------------------------- //
+const historyText = async (id: string) =>
+  readFileSync(
+    join(
+      root,
+      "data",
+      "copilot",
+      "sessions",
+      `${(await host.snapshot(id)).conversation.sessionId}.jsonl`
+    ),
+    "utf8"
+  );
+const ledgerLines = (text: string) =>
+  text
+    .split("\n")
+    .filter((line) => line.includes('"customType":"argelander.delivery.v1"'))
+    .map((line) => JSON.parse(line).data);
+const hostInternals = () =>
+  host as unknown as {
+    loaded: Map<string, { run?: { readings: Set<string> } }>;
+    shedAll(loaded: unknown): number;
+    view(loaded: unknown): { ceiling?: number };
+  };
+
+test("the durable history keeps every message and part as sent; evictions are a separate ledger entry the requests project (spec 8.2)", async () => {
+  writeDoc(docIr(900));
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = Array.from({ length: 20 }, () => keepReading);
+    const { id, snapshot } = await run(page());
+    const stored = await historyText(id);
+    // the first part is still on disk in full, byte for byte what the model was first sent
+    expect(stored).toContain("Paragraph 100 of the synthetic paper");
+    expect(stored).not.toContain("were read, then taken out of the conversation");
+    const ledger = ledgerLines(stored);
+    expect(ledger.length).toBeGreaterThan(0);
+    expect(
+      ledger
+        .flatMap((entry) => entry.records)
+        .every((r: { action: string }) => r.action === "evict")
+    ).toBe(true);
+    // what the last request showed in its place keeps the document's own total (never the slice's length)
+    const first = envelopes(seenAt(0))[0].coverage;
+    const standIn = envelopes(seen.at(-1) as TranscriptContext)[0];
+    expect(standIn.coverage).toMatchObject({ status: "omitted", total: first.total });
+    expect(standIn.context.reader.readingOmitted.note).toMatch(/taken out of the conversation/);
+    // the user's own view keeps the Doc title on the chip, the range and the original status of every read
+    const message = snapshot.messages.find((m) => m.role === "user");
+    expect(message?.context?.objects[0]?.name).toBe("A Synthetic Reader Paper");
+    expect(message?.context?.coverage).toMatchObject({
+      evicted: true,
+      total: first.total,
+      to: first.to,
+    });
+    expect(ops(snapshot).every((operation) => operation.status === "ok")).toBe(true);
+    expect(
+      ops(snapshot).every(
+        (operation) => operation.batch?.evicted === true || operation.batch?.status === "complete"
+      )
+    ).toBe(true);
+  });
+});
+
+test("a conversation is never wedged by what it read: a message that fits only after shedding sheds, oldest first, and is accepted", async () => {
+  writeDoc(docIr(900));
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = [() => ({ text: "first" }), () => ({ text: "second" })];
+    const context = page();
+    const { id } = await run(context, "Summarise it");
+    const before = ledgerLines(await historyText(id)).length;
+    // a message so long that only a conversation without the first delivery has room for it
+    const sent = await send(id, context, "x".repeat(40_000));
+    expect(sent.status).toBe(202);
+    const records = ledgerLines(await historyText(id)).flatMap((entry) => entry.records);
+    expect(ledgerLines(await historyText(id)).length).toBe(before + 1);
+    expect(records[0]).toMatchObject({ action: "evict", target: { kind: "message" } });
+    // the first delivery is no longer in the request, the second message is
+    expect(JSON.stringify(seenAt(1).messages)).not.toContain(
+      "Paragraph 100 of the synthetic paper"
+    );
+    expect((await host.snapshot(id)).conversation.run?.status).toBe("completed");
+  });
+});
+
+test("a message that cannot be accepted leaves no ledger record behind", async () => {
+  writeDoc(docIr(900));
+  const context = page();
+  let id = "";
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = [() => ({ text: "first" })];
+    id = (await run(context, "Summarise it")).id;
+  });
+  const before = await historyText(id);
+  // a window nothing fits: refused, and nothing was shed on the way
+  await withWindow(8_000, async () => {
+    const sent = await send(id, context, "again");
+    expect(sent.status).toBe(400);
+  });
+  expect(await historyText(id)).toBe(before);
+});
+
+test("a provider rejection with no delivery of the run's own sheds the older ones, so the retry is a different request", async () => {
+  writeDoc(docIr(900));
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = [() => ({ text: "first" })];
+    const context = page();
+    const { id } = await run(context, "Summarise it");
+    const requestsBefore = seen.length;
+    script = [
+      ...Array.from({ length: requestsBefore }, () => () => ({ text: "earlier" })),
+      () => ({ error: "400 maximum context length exceeded" }),
+      () => ({ text: "retried" }),
+    ];
+    // (this message carries no reading of its own: the page has none)
+    const plain = page(null, 2, context.viewId);
+    expect((await request(`/views/${plain.viewId}`, "PUT", plain)).status).toBe(200);
+    expect((await send(id, plain, "hello")).status).toBe(202);
+    expect((await host.snapshot(id)).conversation.run).toMatchObject({
+      status: "failed",
+      error: "provider_capacity",
+    });
+    const failedRequest = JSON.stringify(seenAt(requestsBefore).messages);
+    expect(ledgerLines(await historyText(id)).flatMap((entry) => entry.records)).toContainEqual({
+      action: "evict",
+      target: { kind: "message", id: expect.any(String) },
+    });
+    const resumed = await request(`/conversations/${id}/resume`, "POST", {
+      clientMessageId: randomUUID(),
+      viewId: plain.viewId,
+      contextRevision: plain.revision,
+    });
+    expect(resumed.status).toBe(202);
+    await vi.waitFor(async () => {
+      expect((await host.snapshot(id)).conversation.run?.status).toBe("completed");
+    });
+    expect(JSON.stringify(seenAt(requestsBefore + 1).messages)).not.toBe(failedRequest);
+    expect(JSON.stringify(seenAt(requestsBefore + 1).messages)).not.toContain(
+      "Paragraph 100 of the synthetic paper"
+    );
+  });
+});
+
+test("the ceiling a provider rejection teaches is the rejected part's size, halved, persisted and kept after a restart", async () => {
+  writeDoc(docIr(900));
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = [
+      keepReading,
+      (context) => {
+        const part = toolResults(context).at(-1)?.batch;
+        expect(part).toBeDefined();
+        return { error: "400 maximum context length exceeded" };
+      },
+    ];
+    const { id } = await run(page(), "read it all");
+    const [entry] = ledgerLines(await historyText(id)).filter((data) => data.ceiling !== undefined);
+    expect(entry.records).toContainEqual({
+      action: "withdraw",
+      target: { kind: "tool", id: expect.any(String) },
+    });
+    // the rejected part itself, as it sits in the history
+    const rejected = toolResults(seenAt(1)).at(-1);
+    const size = JSON.stringify(JSON.stringify(rejected)).length;
+    expect(entry.ceiling).toBeLessThan(size);
+    expect(entry.ceiling).toBeGreaterThanOrEqual(Math.floor(size / 3));
+    const again = new CopilotHost(join(root, "data"), settings, () => {});
+    try {
+      await again.snapshot(id);
+      const internals = again as unknown as {
+        loaded: Map<string, unknown>;
+        view(loaded: unknown): { ceiling?: number };
+      };
+      expect(internals.view(internals.loaded.get(id)).ceiling).toBe(entry.ceiling);
+    } finally {
+      await again.close();
+    }
+  });
+});
+
+test("an evicted reading is no longer 'in the task's context', and a held message never points at a delivery that left", async () => {
+  script = [() => ({ text: "one" }), () => ({ text: "two" }), () => ({ text: "three" })];
+  const context = page();
+  const { id } = await run(context, "first");
+  expect((await send(id, context, "second")).status).toBe(202);
+  expect(envelopes(seenAt(1)).at(-1).coverage.status).toBe("held");
+  const internals = hostInternals();
+  const loaded = internals.loaded.get(id);
+  expect(internals.shedAll(loaded)).toBeGreaterThan(0);
+  // the held message of the history, restated for the next request, no longer says the reading is there
+  expect((await send(id, context, "third")).status).toBe(202);
+  const sentMessages = envelopes(seenAt(2));
+  const restated = sentMessages.find((e) => e.text === "second");
+
+  expect(restated.coverage.status).toBe("omitted");
+  expect(restated.coverage.note).toMatch(/taken out of the conversation/);
+  // and the third message delivers the reading again (nothing is present to be held)
+  expect(sentMessages.at(-1).coverage.status).toBe("complete");
+  // the user's view says the same
+  const snapshot = await host.snapshot(id);
+  const held = snapshot.messages.filter((m) => m.role === "user")[1];
+  expect(held?.context?.coverage).toMatchObject({ status: "held", evicted: true });
+});
+
+test("a run's held-reading keys follow the ledger when its reading is shed", async () => {
+  let keysBefore = -1;
+  let keysAfter = -1;
+  const keys = () => {
+    const internals = hostInternals();
+    const [conversationId] = [...internals.loaded.keys()];
+    return internals.loaded.get(conversationId ?? "");
+  };
+  script = [
+    () => {
+      // the whole reading came with the message: it is "in the task's context"
+      keysBefore = keys()?.run?.readings.size ?? -1;
+      hostInternals().shedAll(keys());
+      return { call: { action: "read", docId: DOC } };
+    },
+    () => {
+      // shed: a later observation must not claim the full reading is in the task's context
+      keysAfter = keys()?.run?.readings.size ?? -1;
+      return { text: "ok" };
+    },
+  ];
+  await run(page());
+  expect(keysBefore).toBe(1);
+  expect(keysAfter).toBe(0);
+});
+
+test("a held PDF still states that the model cannot read the scanned pages", async () => {
+  const bytes = syntheticPdf({ pageCount: 6, outline: true });
+  const probed = await probePdf(bytes);
+  const metadata = publishPdfDoc(paths, {
+    workId: W1,
+    filename: "scan.pdf",
+    bytes,
+    pages: probed.pages,
+  });
+  const pdf: PdfPage = {
+    docId: metadata.doc_id,
+    format: "pdf",
+    phase: "ready",
+    sha256: metadata.sha256,
+    pageCount: 6,
+    currentPage: 0,
+    zoom: { mode: "fit_width", percent: 100 },
+    outline: [],
+    outlineTruncated: false,
+    search: null,
+    selection: null,
+    panels: { outlineCollapsed: false, annotationsCollapsed: false },
+  };
+  const context: PageContext = {
+    version: 1,
+    viewId: randomUUID(),
+    revision: 1,
+    paneId: 1,
+    view: "doc",
+    status: "complete",
+    otherPanes: [],
+    plan: null,
+    pdf,
+  };
+  const model = (await settings.getRuntime()).getModels("openai").find((m) => m.id === "gpt-4.1");
+  if (!model) throw new Error("fixture model");
+  const original = [...model.input];
+  model.input = ["text"];
+  try {
+    script = [() => ({ text: "one" }), () => ({ text: "two" })];
+    const { id } = await run(context, "first");
+    expect((await send(id, context, "second")).status).toBe(202);
+    const held = envelopes(seenAt(1)).at(-1);
+    expect(held.pdf).toMatchObject({ status: "held", modelAcceptsImages: false });
+    expect(held.pdf.detail).toMatch(/cannot take images/);
+    const snapshot = await host.snapshot(id);
+    const summary = snapshot.messages.filter((m) => m.role === "user")[1]?.context?.pdf?.material;
+    expect(summary).toMatchObject({ status: "held", modelAcceptsImages: false, pages: 0 });
+    expect(summary?.totals?.pagesWithoutText).toBeGreaterThan(0);
+  } finally {
+    model.input = original as typeof model.input;
+  }
+});
+
+test("a message carrying no reading is not refused for the room a huge one took, and a Plan page is never wedged either", async () => {
+  writeDoc(docIr(900));
+  await withWindow(WINDOW_BIG_DOC, async () => {
+    script = [() => ({ text: "first" }), () => ({ text: "second" })];
+    const context = page();
+    const { id } = await run(context, "Summarise it");
+    const plan: PageContext = {
+      ...page(null, 2, context.viewId),
+      view: "plan",
+      status: "unavailable",
+    };
+    expect((await request(`/views/${plan.viewId}`, "PUT", plan)).status).toBe(200);
+    expect((await send(id, plan, "and what now?")).status).toBe(202);
+    expect((await host.snapshot(id)).conversation.run?.status).toBe("completed");
+  });
 });

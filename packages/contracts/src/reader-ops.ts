@@ -640,6 +640,11 @@ export const ReaderReadOperationSchema = z
      * entry, a PDF page) not yet read: the `to` of the previous part. Absent starts at the beginning.
      */
     from: Count.optional(),
+    /**
+     * With `from`: the version (`batch.version`) of the parts already read. A continuation of another version is
+     * refused (conflict, version_changed) instead of being stitched onto it.
+     */
+    version: z.string().min(1).max(300).optional(),
   })
   .strict();
 export type ReaderReadOperation = z.infer<typeof ReaderReadOperationSchema>;

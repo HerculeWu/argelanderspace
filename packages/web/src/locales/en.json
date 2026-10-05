@@ -1366,6 +1366,7 @@
       "error": "Reader: {{id}} (failed to load, no reading sent)",
       "missing": "Reader: {{id}} (document not found, no reading sent)",
       "counts": "{{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations sent",
+      "totals": "The document has {{sections}} sections, {{blocks}} blocks, {{references}} references, {{annotations}} annotations (not all sent with this message)",
       "selection": "Selection included",
       "position": "Reading section: {{section}}"
     },
@@ -1401,7 +1402,7 @@
     },
     "partial": "Partial",
     "coverage": {
-      "entries": "blocks",
+      "entries": "entries",
       "pages": "pages",
       "complete": "Whole document sent ({{total}} {{unit}}).",
       "partial": "Part sent: {{unit}} {{from}}–{{to}} of {{total}}; {{remaining}} not read yet.",
@@ -1409,6 +1410,10 @@
       "held": "Not repeated: this version was already sent in full earlier in this conversation.",
       "batch": "{{unit}} {{from}}–{{to}} of {{total}} read; {{remaining}} not read yet",
       "evicted": "Later taken out of the conversation to make room.",
+      "withdrawn": "This part was withdrawn after the provider rejected the request as too large: it is not read.",
+      "heldGone": "Not repeated: it was sent earlier, but that part has since been taken out of the conversation.",
+      "gap": "{{unit}} {{id}} needs {{bytes}} bytes, more than the window leaves: nothing was returned",
+      "batchWithdrawn": "{{unit}} {{from}}–{{to}} of {{total}} withdrawn: the provider rejected the request as too large; not read",
       "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains"
     }
   }

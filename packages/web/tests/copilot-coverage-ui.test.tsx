@@ -28,13 +28,19 @@ const detail = async (snapshot: ConversationSnapshot) => {
 };
 
 describe("a message's context status never calls a part complete", () => {
+  it("a held PDF still counts the whole document's scans: a text-only model cannot read them, so never Complete", () => {
+    const material = { status: "held" as const, modelAcceptsImages: false, pages: 0, pagesWithText: 0, pagesWithoutText: 0, characters: 0, totals: { pages: 6, pagesWithText: 5, pagesWithoutText: 1, characters: 9 } };
+    const pdf = { docId: "p", phase: "ready" as const, sha256: "a".repeat(64), pageCount: 6, currentPage: 0, selection: false, material };
+    expect(messageContextStatus({ status: "complete", pdf })).toBe("partial");
+    expect(messageContextStatus({ status: "complete", pdf: { ...pdf, material: { ...material, modelAcceptsImages: true } } })).toBe("complete");
+  });
   it("partial and omitted coverage make it Partial; whole and held keep the page's own status", () => {
     const base = { status: "complete" as const };
     expect(messageContextStatus({ ...base, coverage: cov() })).toBe("partial");
     expect(messageContextStatus({ ...base, coverage: cov({ status: "omitted", to: 0 }) })).toBe("partial");
     expect(messageContextStatus({ ...base, coverage: cov({ status: "complete", to: 980 }) })).toBe("complete");
     expect(messageContextStatus({ ...base, coverage: cov({ status: "held", to: 980 }) })).toBe("complete");
-    const held = { status: "held" as const, modelAcceptsImages: true, pages: 3, pagesWithText: 3, pagesWithoutText: 0, characters: 1 };
+    const held = { status: "held" as const, modelAcceptsImages: true, pages: 0, pagesWithText: 0, pagesWithoutText: 0, characters: 0 };
     expect(messageContextStatus({ ...base, pdf: { docId: "p", phase: "ready", sha256: "a".repeat(64), pageCount: 3, currentPage: 0, selection: false, material: held } })).toBe("complete");
     expect(messageContextStatus({ ...base, pdf: { docId: "p", phase: "ready", sha256: "a".repeat(64), pageCount: 3, currentPage: 0, selection: false, material: { ...held, status: "omitted" as const } } })).toBe("partial");
   });
@@ -46,15 +52,15 @@ describe("the message context details state the range", () => {
     expect(found.textContent).toContain("Partial");
     const line = found.querySelector('[data-ui="copilot-coverage"]');
     expect(line?.getAttribute("data-status")).toBe("partial");
-    expect(line?.textContent).toBe("Part sent: blocks 1–412 of 980; 568 not read yet.");
+    expect(line?.textContent).toBe("Part sent: entries 1–412 of 980; 568 not read yet.");
   });
   it("says a part was later taken out of the conversation, in both languages", async () => {
     const found = await detail(snapshotWith(cov({ evicted: true })));
-    expect(found.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("Part sent: blocks 1–412 of 980; 568 not read yet. Later taken out of the conversation to make room.");
+    expect(found.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("Part sent: entries 1–412 of 980; 568 not read yet. Later taken out of the conversation to make room.");
     cleanup();
     await i18n.changeLanguage("zh-CN");
     const zh = await detail(snapshotWith(cov({ evicted: true })));
-    expect(zh.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("已发送一部分：第 1–412 个块，共 980；还有 568 未读。 之后已移出会话以腾出空间。");
+    expect(zh.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("已发送一部分：第 1–412 个条目，共 980；还有 568 未读。 之后已移出会话以腾出空间。");
   });
   it("pages, left out, held and whole each say what they are, in both languages", async () => {
     const found = await detail(snapshotWith(cov({ kind: "pdf", unit: "pages", total: 100, to: 0, status: "omitted", head: false })));
@@ -65,7 +71,7 @@ describe("the message context details state the range", () => {
     cleanup();
     await i18n.changeLanguage("zh-CN");
     const zh = await detail(snapshotWith(cov()));
-    expect(zh.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("已发送一部分：第 1–412 个块，共 980；还有 568 未读。");
+    expect(zh.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("已发送一部分：第 1–412 个条目，共 980；还有 568 未读。");
   });
   it("a read that delivered a part shows its range on the operation, and says nothing remains at the end", async () => {
     serve(snapshotWith(cov(), [
@@ -75,8 +81,36 @@ describe("the message context details state the range", () => {
     render(<Copilot open context={context} onClose={vi.fn()} />);
     await screen.findByText("Copilot");
     const items = await waitFor(() => { const found = document.querySelectorAll('[data-ui="copilot-operation-batch"]'); expect(found.length).toBe(2); return [...found]; });
-    expect(items[0]?.textContent).toBe("blocks 413–800 of 980 read; 180 not read yet");
-    expect(items[1]?.textContent).toBe("blocks 801–980 of 980 read; nothing remains");
+    expect(items[0]?.textContent).toBe("entries 413–800 of 980 read; 180 not read yet");
+    expect(items[1]?.textContent).toBe("entries 801–980 of 980 read; nothing remains");
     expect(items[0]?.getAttribute("title")).toBe("Part of a document");
+  });
+  it("a part says what the message carries, not the whole page: the Reader line states totals, not 'sent'", async () => {
+    const reader = { docId: "d1", format: "latex" as const, phase: "ready" as const, fingerprint: "fp", sections: 12, blocks: 900, references: 40, annotations: 3, characters: 1, selection: false, activeSectionId: null };
+    const base = snapshotWith(cov());
+    const first = base.messages[0];
+    if (first?.role === "user" && first.context) first.context.reader = reader;
+    const found = await detail(base);
+    expect(found.textContent).toContain("The document has 12 sections, 900 blocks, 40 references, 3 annotations (not all sent with this message)");
+    expect(found.textContent).not.toContain("annotations sent");
+    cleanup();
+    const whole = snapshotWith(cov({ status: "complete", to: 980 }));
+    const message = whole.messages[0];
+    if (message?.role === "user" && message.context) message.context.reader = reader;
+    expect((await detail(whole)).textContent).toContain("12 sections, 900 blocks, 40 references, 3 annotations sent");
+  });
+  it("a held message whose delivery left says so, and a withdrawn part and a gap say what they are", async () => {
+    const found = await detail(snapshotWith(cov({ status: "held", to: 980, evicted: true })));
+    expect(found.querySelector('[data-ui="copilot-coverage"]')?.textContent).toBe("Not repeated: it was sent earlier, but that part has since been taken out of the conversation.");
+    cleanup();
+    serve(snapshotWith(cov(), [
+      { id: "o1", tool: "reader", action: "read", status: "ok", batch: cov({ from: 412, to: 800, withdrawn: true }) },
+      { id: "o2", tool: "reader", action: "read", status: "rejected", batch: cov({ from: 800, to: 800, status: "omitted", gap: { id: "p-286", bytes: 2566 } }) },
+    ]));
+    render(<Copilot open context={context} onClose={vi.fn()} />);
+    await screen.findByText("Copilot");
+    const items = await waitFor(() => { const lines = document.querySelectorAll('[data-ui="copilot-operation-batch"]'); expect(lines.length).toBe(2); return [...lines]; });
+    expect(items[0]?.textContent).toBe("entries 413–800 of 980 withdrawn: the provider rejected the request as too large; not read");
+    expect(items[1]?.textContent).toBe("entries p-286 needs 2566 bytes, more than the window leaves: nothing was returned");
   });
 });

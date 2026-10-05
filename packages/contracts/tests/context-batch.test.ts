@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPdfReading,
   type ContextCoverage,
   ContextCoverageSchema,
   CopilotOperationSchema,
@@ -7,6 +8,7 @@ import {
   ReaderReadOperationSchema,
   ReadingLedger,
   readingVersion,
+  summarizePdfPage,
 } from "../src/index.js";
 
 const cov = (over: Partial<ContextCoverage> = {}): ContextCoverage => ({
@@ -100,5 +102,70 @@ describe("the reading ledger", () => {
     expect(ledger.complete("reader", "d1", readingVersion("fp", 0))).toBe(true);
     expect(ledger.complete("reader", "d1", readingVersion("fp", 1))).toBe(false);
     expect(ledger.complete("pdf", "d1", readingVersion("fp", 0))).toBe(false);
+  });
+});
+
+describe("the PDF context summary describes what the message carried", () => {
+  const SHA = "d".repeat(64);
+  const page = {
+    docId: "p",
+    format: "pdf" as const,
+    phase: "ready" as const,
+    sha256: SHA,
+    pageCount: 4,
+    currentPage: 0,
+    zoom: null,
+    outline: [],
+    outlineTruncated: false,
+    search: null,
+    selection: null,
+    panels: { outlineCollapsed: false, annotationsCollapsed: false },
+  };
+  const reading = buildPdfReading(
+    {
+      docId: "p",
+      sha256: SHA,
+      pageCount: 4,
+      pages: [0, 1, 2, 3].map((pageIndex) => ({
+        pageIndex,
+        width: 1,
+        height: 1,
+        rotation: 0 as const,
+        hasTextLayer: pageIndex !== 3,
+        text: pageIndex === 3 ? null : "abc",
+      })),
+      outline: [],
+      outlineTruncated: false,
+      annotations: [],
+      annotationsRev: 0,
+    },
+    false
+  );
+  it("a part counts its own pages and carries the whole document's totals beside them", () => {
+    const part = { ...reading, pages: reading.pages.slice(0, 2) };
+    const summary = summarizePdfPage(page as never, { status: "ok", reading: part }, false);
+    expect(summary.material).toMatchObject({
+      status: "ok",
+      pages: 2,
+      pagesWithText: 2,
+      pagesWithoutText: 0,
+      characters: 6,
+      totals: { pages: 4, pagesWithText: 3, pagesWithoutText: 1 },
+    });
+  });
+  it("a held or left-out material carries none of its pages but still the totals and the model's capability", () => {
+    const coverage = { pages: 4, pagesWithText: 3, pagesWithoutText: 1, characters: 9 };
+    const held = summarizePdfPage(page as never, {
+      status: "held",
+      detail: "d",
+      modelAcceptsImages: false,
+      coverage,
+    });
+    expect(held.material).toMatchObject({
+      status: "held",
+      pages: 0,
+      modelAcceptsImages: false,
+      totals: coverage,
+    });
   });
 });

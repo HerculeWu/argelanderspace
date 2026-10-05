@@ -349,6 +349,16 @@ export const PdfContextSummarySchema = z
         pagesWithText: Count,
         pagesWithoutText: Count,
         characters: Count,
+        /** The whole document's counts (the fields above are what this message actually carries). */
+        totals: z
+          .object({
+            pages: Count,
+            pagesWithText: Count,
+            pagesWithoutText: Count,
+            characters: Count,
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),
@@ -361,7 +371,20 @@ export function summarizePdfPage(
   material?: PdfMaterialEnvelope,
   modelAcceptsImages = true
 ): PdfContextSummary {
-  const coverage =
+  // What the message actually carries (the pages of its material), beside the whole document's totals.
+  const delivered =
+    material?.status === "ok"
+      ? {
+          pages: material.reading.pages.length,
+          pagesWithText: material.reading.pages.filter((item) => item.hasTextLayer).length,
+          pagesWithoutText: material.reading.pages.filter((item) => !item.hasTextLayer).length,
+          characters: material.reading.pages.reduce(
+            (sum, item) => sum + (item.text?.length ?? 0),
+            0
+          ),
+        }
+      : undefined;
+  const totals =
     material?.status === "ok"
       ? material.reading.coverage
       : material?.status === "held" || material?.status === "omitted"
@@ -381,11 +404,14 @@ export function summarizePdfPage(
             modelAcceptsImages:
               material.status === "ok"
                 ? material.reading.images.modelAcceptsImages
-                : modelAcceptsImages,
-            pages: coverage?.pages ?? 0,
-            pagesWithText: coverage?.pagesWithText ?? 0,
-            pagesWithoutText: coverage?.pagesWithoutText ?? 0,
-            characters: coverage?.characters ?? 0,
+                : material.status === "held" || material.status === "omitted"
+                  ? material.modelAcceptsImages
+                  : modelAcceptsImages,
+            pages: delivered?.pages ?? 0,
+            pagesWithText: delivered?.pagesWithText ?? 0,
+            pagesWithoutText: delivered?.pagesWithoutText ?? 0,
+            characters: delivered?.characters ?? 0,
+            ...(totals ? { totals } : {}),
           },
         }
       : {}),
