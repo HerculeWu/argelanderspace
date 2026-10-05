@@ -127,12 +127,23 @@ function formatIssues(error: { issues: { path: PropertyKey[]; message: string }[
  * Read `annotations/<docId>/current.json`. A missing file yields `null` —
  * NOT the empty document: an empty file still needs a content fingerprint,
  * which this layer cannot compute (see {@link ensureCurrentAnnotations}).
- * Corrupt JSON or a schema-invalid document throws (never silently reset —
+ * Corrupt JSON, a schema-invalid document or a path that cannot be read
+ * (blocked by a file, unreadable directory) throws (never silently reset —
  * the file may be the user's only copy).
  */
 export function loadAnnotationsFile(dataDir: string, docId: string): AnnotationsFile | null {
   const file = annotationsCurrentPath(dataDir, docId);
-  if (!existsSync(file)) return null;
+  // only a truly absent file is "none yet": a path blocked by a file (ENOTDIR) or an unreadable directory (EACCES)
+  // is a system error, never an empty store (existsSync would answer false for both)
+  try {
+    statSync(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw new AnnotationsError(
+      "corrupt_store",
+      `annotations store: ${file} cannot be read: ${(err as NodeJS.ErrnoException).code ?? (err as Error).message}`
+    );
+  }
   let data: unknown;
   try {
     data = JSON.parse(readFileSync(file, "utf8"));

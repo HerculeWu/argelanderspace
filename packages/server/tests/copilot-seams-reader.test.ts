@@ -504,11 +504,10 @@ test.each(["current-is-a-directory", "annotations-dir-is-a-file", "doc-directory
     const { snapshot } = await run(page(null));
     const statuses = ops(snapshot).map((o) => o.status);
     expect(statuses).toHaveLength(2);
-    // The write is always refused. (A read of an annotations directory that is a file answers 200 with no
-    // annotations: loadAnnotationsFile maps ENOTDIR to "missing" through existsSync, and the frozen CLI annot shares
-    // that path, so it is recorded as a finding for the user rather than changed here.)
+    // Neither the read nor the write succeeds: an annotations directory that is a file is a system error, never
+    // "no annotations" (ticket 32 finding F1).
     expect(statuses[1]).not.toBe("ok");
-    if (kind !== "annotations-dir-is-a-file") expect(statuses[0]).not.toBe("ok");
+    expect(statuses[0]).not.toBe("ok");
     expect(statuses.every((s) => ["ok", "error", "not_found", "conflict"].includes(s))).toBe(true);
     if (kind === "current-is-a-directory") expect(statuses).toEqual(["error", "error"]);
     if (kind === "annotations-dir-is-a-file") expect(statuses[1]).toBe("error");
