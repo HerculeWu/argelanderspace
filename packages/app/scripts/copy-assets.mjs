@@ -161,22 +161,28 @@ const embedPdfNoticeText =
     .join("\n\n");
 // KaTeX and marked are inlined into dist/bin.js (via core: server-side math validation, text-Doc rendering) and into the
 // SPA bundle (web); the KaTeX fonts ship in dist/web/assets. Their MIT notices must travel with both. Resolved from
-// core's own dependency tree, so a version bump re-reads the license; the same rule as above: fail, never omit.
+// the core and web dependency trees, so a version bump re-reads the license; the same rule as above: fail, never omit.
 const bundledNotices = new Map();
-const coreRequire = createRequire(join(repoRoot, "packages/core/package.json"));
-for (const name of ["katex", "marked"]) {
-  const root = dirname(coreRequire.resolve(`${name}/package.json`));
-  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  const key = `${pkg.name}@${pkg.version}`;
-  if (pkg.license !== "MIT")
-    throw new Error(
-      `Review bundled dependency license before distribution: ${key} (${pkg.license})`
-    );
-  const files = readdirSync(root).filter((f) => /^licen[sc]e(?:\.(?:md|txt))?$/i.test(f));
-  const license = files.map((f) => readFileSync(join(root, f), "utf8")).join("\n");
-  if (!license) throw new Error(`Missing license text for ${key}`);
-  bundledNotices.set(key, license);
-}
+// bin.js gets its copies through core, the SPA through web: each tree is read, so a version split keeps both notices.
+const bundledRequires = [
+  createRequire(join(repoRoot, "packages/core/package.json")),
+  createRequire(join(repoRoot, "packages/web/package.json")),
+];
+for (const req of bundledRequires)
+  for (const name of ["katex", "marked"]) {
+    const root = dirname(req.resolve(`${name}/package.json`));
+    const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    const key = `${pkg.name}@${pkg.version}`;
+    if (bundledNotices.has(key)) continue;
+    if (pkg.license !== "MIT")
+      throw new Error(
+        `Review bundled dependency license before distribution: ${key} (${pkg.license})`
+      );
+    const files = readdirSync(root).filter((f) => /^licen[sc]e(?:\.(?:md|txt))?$/i.test(f));
+    const license = files.map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+    if (!license) throw new Error(`Missing license text for ${key}`);
+    bundledNotices.set(key, license);
+  }
 const bundledNoticeText =
   "Third-party libraries bundled into the server (dist/bin.js) and the web app (upstream text; not relicensed by this project).\n" +
   "KaTeX also ships its fonts (dist/web/assets/KaTeX_*): the KaTeX npm package carries this single MIT license file and no separate font license text.\n\n" +

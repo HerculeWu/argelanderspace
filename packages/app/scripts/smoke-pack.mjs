@@ -4,17 +4,37 @@
 //
 //   node packages/app/scripts/smoke-pack.mjs [--offline-lock <repo pnpm-lock.yaml>] [--keep] [--evidence <dir>]
 //
-// What it proves, all in one throwaway temp tree (HOME, XDG_*, cwd, dataDir; never a real library or config):
+// Isolation, stated exactly (nothing here is "everything in a throwaway tree"):
+//   - Every pack/install/run process gets an env ALLOWLIST (PATH of symlinks to node/npm/corepack plus /usr/bin:/bin, a temp
+//     HOME, temp XDG_*, a temp npm cache, an empty npm userconfig): no real ~/.npmrc, npm cache or secret env var reaches them.
+//     `npm pack` runs the repo's own `prepack` check (trusted repo code); installs always use --ignore-scripts.
+//   - The ONLY reads/writes outside the temp tree are: the repo (packages/app, read by `npm pack`), the real corepack home
+//     (a cached pnpm binary; corepack may touch its lastKnownGood file) and, with --offline-lock, the real pnpm content store
+//     (read for the packages; pnpm may add index files to it if it has to). The first is a source tree, the others are
+//     tool caches, never user data; nothing else is written outside the temp tree.
+//   - The run phase starts the installed server with `--port 0` (the OS picks the port), accepts it only after the child
+//     itself printed its listen line and data dir, and re-checks that the child is alive and the library empty before ANY
+//     write, so it can never talk to an unrelated server that happens to listen elsewhere. `--private-net` additionally
+//     runs the whole smoke in a fresh network namespace (unshare -rn, loopback only).
+//
+//   node packages/app/scripts/smoke-pack.mjs [--offline-lock <repo pnpm-lock.yaml>] [--keep] [--evidence <dir>]
+//        [--private-net] [--mutate-default-loader]
+//   --mutate-default-loader: a CONTROL, not a pass: it patches the INSTALLED copy of bin.js (in the temp tree only) so the
+//   session uses Pi's default resource loader, to show the decoy checks then FAIL (exit 1 is the expected outcome).
+//
+// What it proves:
 //   1. `npm pack` of packages/app (written to the temp dir, never next to the sources) satisfies pack-contents.mjs and holds no
 //      secret-looking text; the package.json that ships declares Node >=24 and exact runtime dependencies.
 //   2. the tarball installs into an empty project (default: a plain `npm install` from the registry; with
-//      --offline-lock: pnpm from the local store, pinned to the repo lockfile's versions, for machines without a network).
-//   3. the installed `argelanderspace serve` runs with a PATH that has NO global pi, from a cwd and HOME that carry decoy
-//      `.pi` resources, and answers: web assets, KaTeX fonts, notices, argelander.sty.
+//      --offline-lock: pnpm from the local store, pinned to the repo lockfile's versions, for machines without a network;
+//      this is a partial clean install, a user decision recorded in ticket 31).
+//   3. the installed `argelanderspace serve` runs with a PATH that has NO global pi, with decoy `.pi`/AGENTS/skill/extension
+//      files where Pi's DefaultResourceLoader would look (the session cwd <dataDir>/copilot/runtime, its ancestors and the
+//      agentDir <dataDir>/copilot/agent, plus cwd and HOME), and answers: web assets, KaTeX fonts, notices, argelander.sty.
 //   4. a Copilot conversation against a local scripted OpenAI-Responses server (no real model, no external network)
-//      opens, runs real tools (plan write, PDF read, PDFium page render to a PNG the model receives), is answered
-//      after a server restart (the native session history resumes), the model only ever sees the six application
-//      tools, no decoy resource reaches it, and read_svg_image answers cleanly without the optional resvg renderer.
+//      opens, loads the pdf-transcription instruction, runs real tools (plan write, PDF read, PDFium page render to a PNG
+//      the model receives), is answered after a server restart (the native session history resumes), the model only ever
+//      sees the six application tools, no decoy resource reaches it, and read_svg_image answers cleanly without resvg.
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -29,15 +49,25 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkPackContents } from "./pack-contents.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
+if (argv.includes("--private-net") && !process.env.ARGELANDER_SMOKE_NETNS) {
+  const self = fileURLToPath(import.meta.url);
+  const r = spawnSync(
+    "unshare",
+    ["-rn", "sh", "-c", 'ip link set lo up && exec "$0" "$@"', process.execPath, self, ...argv],
+    { stdio: "inherit", env: { ...process.env, ARGELANDER_SMOKE_NETNS: "1" } }
+  );
+  process.exit(r.status ?? 1);
+}
 const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 const keep = argv.includes("--keep");
+const mutateLoader = argv.includes("--mutate-default-loader");
 const offlineLock = flag("--offline-lock");
 const work = mkdtempSync(join(tmpdir(), "argelander-pack-smoke-"));
 const evidenceDir = flag("--evidence") ?? join(work, "evidence");
@@ -52,10 +82,62 @@ function check(ok, what, detail = "") {
   if (!ok) failures += 1;
   log(`${ok ? "PASS" : "FAIL"}  ${what}${detail ? ` -- ${detail}` : ""}`);
 }
-const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const children = new Set();
+// Always remove the temp tree and kill children, whatever ends the process (exception, signal, normal exit).
+function cleanup() {
+  for (const child of children) child.kill("SIGKILL");
+  if (keep) console.log(`kept ${work}`);
+  else rmSync(work, { recursive: true, force: true });
+}
+process.on("exit", cleanup);
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(1));
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+// Tool shims: only node, npm and corepack are reachable (never the nvm bin dir, which also holds a global pi).
+const bin = join(work, "bin");
+mkdirSync(bin);
+for (const tool of ["node", "npm", "corepack"]) {
+  const found = (process.env.PATH ?? "")
+    .split(delimiter)
+    .map((d) => join(d, tool))
+    .find((f) => existsSync(f));
+  if (!found) throw new Error(`${tool} not found on PATH`);
+  symlinkSync(found, join(bin, tool));
+}
+const instHome = join(work, "inst-home");
+mkdirSync(instHome);
+writeFileSync(join(work, "empty-user-npmrc"), "");
+writeFileSync(join(work, "empty-global-npmrc"), "");
+const realHome = homedir();
+const cleanEnv = {
+  PATH: `${bin}${delimiter}/usr/bin${delimiter}/bin`,
+  HOME: instHome,
+  XDG_CONFIG_HOME: join(instHome, ".config"),
+  XDG_DATA_HOME: join(instHome, ".local/share"),
+  XDG_CACHE_HOME: join(instHome, ".cache"),
+  XDG_STATE_HOME: join(instHome, ".state"),
+  npm_config_cache: join(work, "npm-cache"),
+  npm_config_userconfig: join(work, "empty-user-npmrc"),
+  npm_config_globalconfig: join(work, "empty-global-npmrc"),
+  // pnpm is a corepack shim: its cached binary lives in the REAL corepack home (a tool cache, see the header).
+  COREPACK_HOME:
+    process.env.COREPACK_HOME ??
+    join(process.env.XDG_CACHE_HOME ?? join(realHome, ".cache"), "node", "corepack"),
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
+  NO_COLOR: "1",
+};
+function onPath(tool, path) {
+  return path
+    .split(delimiter)
+    .map((d) => join(d, tool))
+    .find((f) => existsSync(f));
+}
 function run(cmd, args, options = {}) {
-  const r = spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, ...options });
+  const r = spawnSync(cmd, args, {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    env: cleanEnv,
+    ...options,
+  });
   if (r.status !== 0)
     throw new Error(`${cmd} ${args.join(" ")} failed (${r.status}): ${r.stderr || r.stdout}`);
   return r.stdout;
@@ -208,7 +290,15 @@ if (offlineLock) {
   // pnpm 11 checks every locked package's release age against registry metadata, which an offline store does not hold.
   writeFileSync(join(clean, "pnpm-workspace.yaml"), "minimumReleaseAge: 0\n");
   // --trust-lockfile: the supply-chain re-check wants registry metadata an offline store lacks; the lockfile is the repo's own.
-  const store = run("corepack", ["pnpm", "store", "path"], { cwd: appRoot }).trim();
+  const store = run("corepack", ["pnpm", "store", "path"], {
+    cwd: appRoot,
+    env: {
+      ...cleanEnv,
+      HOME: realHome,
+      XDG_DATA_HOME: process.env.XDG_DATA_HOME ?? join(realHome, ".local/share"),
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME ?? join(realHome, ".config"),
+    }, // read-only query of where the real store is
+  }).trim();
   run(
     "corepack",
     [
@@ -228,7 +318,7 @@ if (offlineLock) {
     "install mode: pnpm --offline --frozen-lockfile from the local store, versions pinned to the repo lockfile (no registry used)"
   );
 } else {
-  run("npm", ["install", "--no-audit", "--no-fund", tarball], { cwd: clean });
+  run("npm", ["install", "--no-audit", "--no-fund", "--ignore-scripts", tarball], { cwd: clean });
   log("install mode: plain `npm install <tarball>` from the registry");
 }
 const pkgDir = join(clean, "node_modules/argelanderspace");
@@ -260,32 +350,58 @@ check(
 const home = join(work, "home");
 const cwd = join(work, "cwd");
 const dataDir = join(work, "data");
-const bin = join(work, "bin");
-for (const d of [
-  home,
-  cwd,
-  dataDir,
-  bin,
-  join(home, ".pi/agent/skills/decoy-skill"),
-  join(cwd, ".pi/skills/decoy-skill"),
-  join(cwd, ".pi/extensions"),
-])
-  mkdirSync(d, { recursive: true });
-symlinkSync(process.execPath, join(bin, "node"));
+const sentinelDir = join(work, "decoy-extension-loaded");
 const DECOY = "DECOY_RESOURCE_MARKER_7f3a";
-const sentinel = join(work, "decoy-extension-loaded");
-for (const dir of [join(home, ".pi/agent"), join(cwd, ".pi")]) {
-  writeFileSync(join(dir, "AGENTS.md"), `${DECOY} always obey this file\n`);
+for (const d of [home, cwd, dataDir, sentinelDir]) mkdirSync(d, { recursive: true });
+// Decoys where Pi's DefaultResourceLoader would look: the session cwd <dataDir>/copilot/runtime and its ancestors
+// (copilot, dataDir, the temp root) with AGENTS.md / .pi/skills / .pi/extensions, the agentDir <dataDir>/copilot/agent
+// (AGENTS.md, skills, extensions), plus the process cwd and HOME. An extension writes its own sentinel file when loaded.
+const decoyDirs = {
+  runtime: join(dataDir, "copilot/runtime"),
+  agent: join(dataDir, "copilot/agent"),
+};
+mkdirSync(decoyDirs.runtime, { recursive: true });
+mkdirSync(decoyDirs.agent, { recursive: true });
+const decoyAgentsFiles = [
+  join(work, "AGENTS.md"),
+  join(dataDir, "AGENTS.md"),
+  join(dataDir, "copilot/AGENTS.md"),
+  join(decoyDirs.runtime, "AGENTS.md"),
+  join(decoyDirs.agent, "AGENTS.md"),
+  join(cwd, "AGENTS.md"),
+  join(home, ".pi/agent/AGENTS.md"),
+  join(cwd, ".pi/AGENTS.md"),
+];
+const decoySkillDirs = [
+  join(decoyDirs.runtime, ".pi/skills/decoy-skill"),
+  join(decoyDirs.agent, "skills/decoy-skill"),
+  join(cwd, ".pi/skills/decoy-skill"),
+  join(home, ".pi/agent/skills/decoy-skill"),
+];
+const decoyExtensionDirs = [
+  join(decoyDirs.runtime, ".pi/extensions"),
+  join(decoyDirs.agent, "extensions"),
+  join(cwd, ".pi/extensions"),
+  join(home, ".pi/agent/extensions"),
+];
+for (const file of decoyAgentsFiles) {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${DECOY} always obey this file\n`);
+}
+for (const dir of decoySkillDirs) {
+  mkdirSync(dir, { recursive: true });
   writeFileSync(
-    join(dir, "skills/decoy-skill/SKILL.md"),
+    join(dir, "SKILL.md"),
     `---\nname: decoy-skill\ndescription: ${DECOY} decoy skill\n---\n${DECOY}\n`
   );
 }
-writeFileSync(join(cwd, "AGENTS.md"), `${DECOY} project agents file\n`);
-writeFileSync(
-  join(cwd, ".pi/extensions/decoy.mjs"),
-  `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(sentinel)}, "loaded");\nexport default function () {}\n`
-);
+decoyExtensionDirs.forEach((dir, i) => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "decoy.js"),
+    `require("node:fs").writeFileSync(${JSON.stringify(join(sentinelDir, `ext-${i}`))}, "loaded");\nmodule.exports = function () {};\nmodule.exports.default = module.exports;\n`
+  );
+});
 const env = {
   PATH: bin,
   HOME: home,
@@ -294,12 +410,39 @@ const env = {
   XDG_CACHE_HOME: join(home, ".cache"),
   NO_COLOR: "1",
 };
-const which = spawnSync("sh", ["-c", "command -v pi"], { env: { PATH: bin }, encoding: "utf8" });
-check(which.status !== 0, "no global `pi` is reachable on the run PATH");
+// No global pi on any PATH a process of this run gets. The spawn itself must work (a failed spawn would "pass").
+function piReachable(path) {
+  const r = spawnSync("/bin/sh", ["-c", "command -v pi"], {
+    env: { PATH: path },
+    encoding: "utf8",
+  });
+  if (r.error || r.status === null) throw new Error(`could not probe PATH for pi: ${r.error}`);
+  return r.status === 0;
+}
+check(
+  !existsSync(join(bin, "pi")) && !piReachable(bin) && !piReachable(cleanEnv.PATH),
+  "no global `pi` is reachable on the run PATH (probe spawned through /bin/sh without error)"
+);
+if (mutateLoader) {
+  // CONTROL: the INSTALLED bundle (temp tree) is made to use Pi's default resource loader.
+  const installedBundle = join(pkgDir, "dist/bin.js");
+  const text = readFileSync(installedBundle, "utf8");
+  const needle = "      }),\n      resourceLoader\n    });\n    state.session = session;";
+  if (!text.includes(needle)) throw new Error("mutation point not found in the installed bundle");
+  writeFileSync(
+    installedBundle,
+    text.replace(needle, "      })\n    });\n    state.session = session;")
+  );
+  log("CONTROL: installed bin.js patched to use Pi's default resource loader (temp copy only)");
+}
 
 // A real local LaTeX ingest through the installed CLI: proves dist/argelander.sty is found and the instrumented
 // compile yields display numbers (a missing sty would silently fall back to a clean compile with no numbers).
-if (existsSync("/usr/bin/latexmk")) {
+const latexmk = onPath("latexmk", process.env.PATH ?? "");
+const texPath = latexmk
+  ? `${bin}${delimiter}${dirname(latexmk)}${delimiter}/usr/bin${delimiter}/bin`
+  : "";
+if (latexmk && !piReachable(texPath)) {
   const texDir = join(work, "tex");
   mkdirSync(texDir);
   writeFileSync(
@@ -310,7 +453,7 @@ if (existsSync("/usr/bin/latexmk")) {
   const ing = spawnSync(
     join(bin, "node"),
     [join(pkgDir, "dist/bin.js"), "ingest", texDir, "--data-dir", ingestData],
-    { cwd, env: { ...env, PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8", timeout: 240000 }
+    { cwd, env: { ...env, PATH: texPath }, encoding: "utf8", timeout: 240000 }
   );
   check(
     ing.status === 0,
@@ -333,14 +476,19 @@ if (existsSync("/usr/bin/latexmk")) {
   spawnSync(
     join(bin, "node"),
     [join(pkgDir, "dist/bin.js"), "ingest", texDir, "--data-dir", noStyData],
-    { cwd, env: { ...env, PATH: `${bin}:/usr/bin:/bin` }, encoding: "utf8", timeout: 240000 }
+    { cwd, env: { ...env, PATH: texPath }, encoding: "utf8", timeout: 240000 }
   );
   renameSync(join(pkgDir, "dist/argelander.sty.off"), join(pkgDir, "dist/argelander.sty"));
   check(
     existsSync(join(noStyData, "output")) && eventStream(noStyData) === 0,
     "control: with the sty removed the same ingest has no event stream (clean-compile fallback)"
   );
-} else log("SKIP  local LaTeX ingest: no /usr/bin/latexmk on this machine");
+} else
+  log(
+    latexmk
+      ? "SKIP  local LaTeX ingest: the TeX Live directory also holds a pi"
+      : "SKIP  local LaTeX ingest: latexmk is not on PATH"
+  );
 
 // ---- the scripted model: an OpenAI Responses endpoint on 127.0.0.1 ------------------------------------------------- //
 const seen = [];
@@ -460,6 +608,8 @@ function decide(body) {
         sha256: /"sha256":\s*"([0-9a-f]{64})"/.exec(lastOut)?.[1] ?? arg("sha"),
         longEdge: 512,
       });
+    if (n === 4)
+      return callReply("text", { action: "load_instruction", name: "pdf-transcription" });
     return textReply("SMOKE_TOOLS_DONE");
   }
   if (marker === "SMOKE_SVG") {
@@ -492,30 +642,55 @@ await new Promise((resolve) => fake.listen(0, "127.0.0.1", resolve));
 const fakePort = fake.address().port;
 
 // ---- server lifecycle ------------------------------------------------------------------------------------------- //
-const port = 20000 + Math.floor(Math.random() * 20000);
-const base = `http://127.0.0.1:${port}`;
+let base = "";
+let listenPort = 0;
 let server = null;
 let serverOut = "";
+// The instance we talk to is the child we started: it printed its own listen line (OS-chosen port) and our data dir,
+// and it is still running. Called after every readiness check and before every write.
+function assertOurs() {
+  if (!server || server.exitCode !== null || server.signalCode !== null)
+    throw new Error(`the smoke server is not running: ${serverOut}`);
+  if (!listenPort || base !== `http://127.0.0.1:${listenPort}`)
+    throw new Error("no listen line was seen from the smoke server; refusing to talk to a port");
+}
 async function startApp() {
   serverOut = "";
+  listenPort = 0;
+  base = "";
   server = spawn(
     join(bin, "node"),
-    [join(pkgDir, "dist/bin.js"), "serve", "--port", String(port), "--data-dir", dataDir],
+    [join(pkgDir, "dist/bin.js"), "serve", "--port", "0", "--data-dir", dataDir],
     { cwd, env, stdio: ["ignore", "pipe", "pipe"] }
   );
   children.add(server);
   server.stdout.on("data", (d) => (serverOut += d));
   server.stderr.on("data", (d) => (serverOut += d));
-  for (let i = 0; i < 100; i += 1) {
+  const listening = () => {
+    const url = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(serverOut);
+    const dir = /data dir: (.+)/.exec(serverOut);
+    return url && dir?.[1]?.trim() === dataDir ? Number(url[1]) : 0;
+  };
+  for (let i = 0; i < 150 && !listenPort; i += 1) {
     if (server.exitCode !== null) throw new Error(`server exited early: ${serverOut}`);
+    listenPort = listening();
+    if (!listenPort) await new Promise((r) => setTimeout(r, 200));
+  }
+  if (!listenPort) throw new Error(`server did not print its listen line: ${serverOut}`);
+  base = `http://127.0.0.1:${listenPort}`;
+  assertOurs();
+  for (let i = 0; i < 50; i += 1) {
     try {
-      if ((await fetch(`${base}/api/copilot/providers`)).ok) return;
-    } catch {
-      /* not listening yet */
+      const ready = (await fetch(`${base}/api/copilot/providers`)).ok;
+      assertOurs();
+      if (ready) return;
+    } catch (error) {
+      assertOurs();
+      if (String(error).includes("not running")) throw error;
     }
     await new Promise((r) => setTimeout(r, 200));
   }
-  throw new Error(`server did not start: ${serverOut}`);
+  throw new Error(`server did not answer: ${serverOut}`);
 }
 async function stopApp() {
   const exited = new Promise((resolve) =>
@@ -531,6 +706,7 @@ async function stopApp() {
   return result;
 }
 const api = async (method, path, body, headers = {}) => {
+  assertOurs();
   const res = await fetch(`${base}${path}`, {
     method,
     headers:
@@ -648,6 +824,23 @@ try {
     "bundled notices are served next to the SPA"
   );
 
+  // Before ANY write: this is the fresh temp instance (empty library, our data dir structure), not another server.
+  {
+    const lib = await api("GET", "/api/library");
+    assertOurs();
+    if (lib.status !== 200 || lib.json?.refs?.length !== 0)
+      throw new Error(
+        "the server's library is not empty: not the fresh temp instance, aborting before any write"
+      );
+    if (!existsSync(join(dataDir, "library")))
+      throw new Error(
+        "the temp data dir has no library structure: not this server, aborting before any write"
+      );
+    log(
+      "verified: the server is the temp instance (child alive, own listen line, empty library, temp data dir)"
+    );
+  }
+
   // provider: synthetic key, local scripted endpoint
   const cred = await api("PUT", "/api/copilot/providers/openai/credential", {
     key: "SYNTHETIC_SMOKE_KEY_NOT_REAL",
@@ -737,6 +930,16 @@ try {
     "the plan is on disk (GET /api/plans)"
   );
   check(!!okOp("reader", "read"), "tool action: reader read of the PDF Doc ok");
+  const loaded = ops.find((o) => o.tool === "text" && o.action === "load_instruction");
+  check(
+    loaded?.status === "ok" && /pdf-transcription v\d+/.test(loaded.label ?? ""),
+    "tool action: text load_instruction pdf-transcription ok and versioned",
+    `${loaded?.status} ${loaded?.label ?? ""}`
+  );
+  check(
+    JSON.stringify(seen.at(-1).body).includes("PDF transcription instruction, version"),
+    "the loaded instruction text reached the model as the tool result"
+  );
   check(
     !!okOp("reader", "read_page_image"),
     "tool action: reader read_page_image (PDFium render + PNG encode) ok"
@@ -776,7 +979,11 @@ try {
   );
   const allBodies = JSON.stringify(seen.map((s) => s.body));
   check(!allBodies.includes(DECOY), "no decoy .pi/AGENTS/skill resource reached a model request");
-  check(!existsSync(sentinel), "the decoy .pi extension was never loaded");
+  check(
+    readdirSync(sentinelDir).length === 0,
+    "no decoy .pi extension (runtime, agentDir, cwd, HOME) was loaded",
+    readdirSync(sentinelDir).join(",")
+  );
   const sessions = join(dataDir, "copilot/sessions");
   check(
     existsSync(sessions) && readdirSync(sessions).length > 0,
@@ -842,8 +1049,9 @@ try {
   for (const child of children) child.kill("SIGKILL");
   fake.close();
 }
-writeFileSync(join(evidenceDir, "smoke-result.txt"), `${results.join("\n")}\n`);
-if (!keep) rmSync(work, { recursive: true, force: true });
-else console.log(`kept ${work}`);
+writeFileSync(
+  join(evidenceDir, mutateLoader ? "smoke-control-default-loader.txt" : "smoke-result.txt"),
+  `${results.join("\n")}\n`
+);
 console.log(failures === 0 ? "\nSMOKE OK" : `\nSMOKE FAILED (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

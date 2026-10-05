@@ -51,6 +51,10 @@ for (const forbidden of [
   "dist/bin.js.map",
   "src/bin.ts",
   "dist/key.pem",
+  "dist/web/sample.pdf",
+  "dist/session.jsonl",
+  "dist/.npmrc",
+  "dist/preferences.json",
 ]) {
   test(`forbidden ${forbidden} is reported`, () => {
     const problems = checkPackContents([...good, forbidden]);

@@ -2,8 +2,8 @@
 // pack-contents.test.mjs) and shared with scripts/smoke-pack.mjs, which feeds it the real `npm pack` listing.
 //
 // Everything the bundle needs at run time must be IN the tarball (the versioned instruction text and the Pi runtime
-// glue are inlined into dist/bin.js; the PDFium WASM, the Pi SDK and the image encoders come from the declared
-// `dependencies`, installed next to the package). Nothing from the repository, a user library, a provider secret or a
+// glue and the PNG encoder (node:zlib code in pdf-material.ts) are inlined into dist/bin.js; the PDFium WASM and the
+// Pi SDK come from the declared `dependencies`, installed next to the package). Nothing from the repository, a user library, a provider secret or a
 // private prototype may be in it.
 
 export const REQUIRED_FILES = [
@@ -39,6 +39,8 @@ const FORBIDDEN = [
   [/(^|\/)(?:auth|models|settings)\.json$/, "a provider credential/config file"],
   [/(^|\/)\.env(?:\.|$)|\.(?:pem|key)$|(^|\/)id_rsa/, "a secret-looking file"],
   [/\.tgz$/, "a nested tarball"],
+  [/\.(?:pdf|jsonl)$/i, "a document or conversation/session file"],
+  [/(^|\/)(?:\.npmrc|preferences\.json)$/, "a user config file"],
   [/\.map$/, "a source map (it would embed sources)"],
   [/\.test\.|(^|\/)tests?\//, "a test file"],
 ];
