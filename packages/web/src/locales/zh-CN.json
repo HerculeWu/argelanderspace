@@ -231,6 +231,7 @@
         "cite_syntax": "[cite: ...] 需要用分号分隔的文献 id（字母、数字和 _ . : -）。",
         "cite_unclosed": "这个 [cite: ... 没有以 ] 闭合。",
         "cite_unresolved": "没有 id 为“{{subject}}”的参考文献。文字按原样保留。",
+        "cite_stray_bracket": "显示文本里有未转义的 [，标记在第一个 ] 处结束，后面的 ] 成了多余文字。字面方括号请写成 \\[ 和 \\]。",
         "cite_plain": "有 {{subject}} 处像是以纯文字写出的编号引用（如 [12]）。请把每一处写成指向参考文献的 [cite: ...]。",
         "ref_syntax": "[ref: ...] 需要一个目标 id（字母、数字和 _ . : -）。",
         "ref_unclosed": "这个 [ref: ... 没有以 ] 闭合。",

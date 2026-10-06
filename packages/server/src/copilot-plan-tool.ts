@@ -234,7 +234,7 @@ const description = [
   "read returns the current plans and rev. Writes need expectedRev; on conflict read again and form a new edit, never resend the stale one.",
   "list move_task only reorders inside one status group; board move_task may change status. Tasks cannot move between plans.",
   "show/open_task/close_task/set_completed/open_task_doc change what the user sees; plain edits never navigate. set_completed folds or unfolds the completed group and only works while the list view is shown; open_task_doc opens a Doc linked to a task in the Reader. retry_plans reloads a Plan page that failed to load (else refused).",
-  "delete_task deletes the task at once, exactly like the Plan page; the user keeps an 8-second undo, and a restored task is noted in the conversation. undo_delete_task {planId, taskId} puts back a task deleted in the last 8 seconds (by you or the user): ok/noop = it is back with later edits kept; expired = window over, conflict = its plan is gone, not_found = nothing to undo; those three changed nothing, so create the task again only if the user wants it. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
+  "delete_task deletes the task at once, exactly like the Plan page; the user keeps an 8-second undo, and a restored task is noted in the conversation. undo_delete_task {planId, taskId} puts back a task YOU deleted in the last 8 seconds (not one the user deleted on the page): ok = back with later edits kept; noop = already back (the user restored it): done, never create it again; expired = window over, conflict = its plan is gone, not_found = nothing of yours to undo: those three changed nothing, so create the task again only if the user wants it. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
   "Only report results whose status is ok or noop as done.",
   "After a conflict, read again and use a new operationId (or none) for the new write; an operationId is bound to its first request.",
   "A write whose status is unknown may or may not have been applied: read the plans to find out, never repeat it blindly.",
@@ -299,35 +299,6 @@ export function createPlanTool(context: PlanToolContext) {
           });
         }
         const undoing = PlanUndoOperationSchema.safeParse(rest);
-        if (undoing.success) {
-          if (!readable()) return unreadable(action);
-          if (!context.taskUndo)
-            return done(record(toolCallId, action, { status: "unsupported" }), {
-              ok: false,
-              status: "unsupported",
-              detail: "undo is not available here",
-            });
-          const undoWork = context.taskUndo.undo(context.plans, undoing.data);
-          const outcome = await (context.track ? context.track(undoWork) : undoWork);
-          return outcome.ok
-            ? done(
-                record(toolCallId, action, {
-                  status: outcome.status,
-                  rev: outcome.rev,
-                  object: outcome.object,
-                  label: outcome.label,
-                }),
-                outcome
-              )
-            : done(
-                record(toolCallId, action, {
-                  status: outcome.status,
-                  ...(outcome.rev !== undefined ? { rev: outcome.rev } : {}),
-                  object: { kind: "task", id: undoing.data.taskId, planId: undoing.data.planId },
-                }),
-                outcome
-              );
-        }
         const view = PlanViewActionSchema.safeParse(rest);
         if (view.success) {
           const shownPlan = view.data.action === "show" ? view.data.planId : undefined;
@@ -361,7 +332,8 @@ export function createPlanTool(context: PlanToolContext) {
           return done(record(toolCallId, action, { status: shown.status }), shown.payload);
         }
         const deletion = PlanDeleteOperationSchema.safeParse(rest);
-        const write = deletion.success ? null : PlanWriteOperationSchema.safeParse(rest);
+        const write =
+          deletion.success || undoing.success ? null : PlanWriteOperationSchema.safeParse(rest);
         if (write && !write.success)
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
@@ -404,6 +376,48 @@ export function createPlanTool(context: PlanToolContext) {
             hash,
             done,
           });
+        if (undoing.success) {
+          // A write like the others (spec 8.3): journaled by operationId, so a repeat returns the first result and a
+          // crash between the save and the result reads back as `unknown`.
+          if (!context.taskUndo)
+            return done(record(toolCallId, action, { status: "unsupported" }), {
+              ok: false,
+              status: "unsupported",
+              detail: "undo is not available here",
+            });
+          const target = { planId: undoing.data.planId, taskId: undoing.data.taskId };
+          try {
+            journal?.begin({ operationId, toolCallId, action, hash, object: target });
+          } catch {
+            return done(record(toolCallId, action, { status: "error" }), {
+              ok: false,
+              status: "error",
+              detail: "the conversation could not be saved; nothing was restored",
+            });
+          }
+          const undoWork = context.taskUndo.undo(context.plans, undoing.data);
+          const outcome = await (context.track ? context.track(undoWork) : undoWork);
+          const result = outcome.ok
+            ? done(
+                record(toolCallId, action, {
+                  status: outcome.status,
+                  rev: outcome.rev,
+                  object: outcome.object,
+                  label: outcome.label,
+                }),
+                outcome
+              )
+            : done(
+                record(toolCallId, action, {
+                  status: outcome.status,
+                  ...(outcome.rev !== undefined ? { rev: outcome.rev } : {}),
+                  object: { kind: "task", id: target.taskId, planId: target.planId },
+                }),
+                outcome
+              );
+          journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
+          return result;
+        }
         if (!write?.success) throw new Error("unreachable");
         const target = write.data as { planId?: string; taskId?: string; expectedRev?: number };
         try {

@@ -8,8 +8,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Copilot } from "../src/copilot/Copilot";
 import i18n from "../src/i18n";
 
-const callbacks = vi.hoisted(() => ({ subscription: null as null | { event: (event: WsCopilotEvent) => void; ready: () => void; connection: (value: boolean) => void } }));
-vi.mock("../src/api/ws", () => ({ subscribeCopilot: (subscription: NonNullable<typeof callbacks.subscription>) => { callbacks.subscription = subscription; queueMicrotask(subscription.ready); return () => { callbacks.subscription = null; }; } }));
+const callbacks = vi.hoisted(() => ({ subscription: null as null | { event: (event: WsCopilotEvent) => void; ready: () => void; connection: (value: boolean) => void }, planChanged: new Set<() => void>() }));
+vi.mock("../src/api/ws", () => ({ onPlanChanged: (cb: () => void) => { callbacks.planChanged.add(cb); return () => callbacks.planChanged.delete(cb); }, subscribeCopilot: (subscription: NonNullable<typeof callbacks.subscription>) => { callbacks.subscription = subscription; queueMicrotask(subscription.ready); return () => { callbacks.subscription = null; }; } }));
 const ID = "00000000-0000-4000-8000-000000000002";
 const RUN = "00000000-0000-4000-8000-0000000000aa";
 const CARD = "00000000-0000-4000-8000-0000000000cc";
@@ -24,14 +24,16 @@ let decisionStatus = 200;
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 const calls = (part: string) => fetchMock.mock.calls.filter(([url]) => String(url).includes(part));
 const memory = new Map<string, string>();
+let plansUndo: object | null = null;
 beforeEach(async () => {
-  await i18n.changeLanguage("en"); callbacks.subscription = null; memory.clear(); decisionStatus = 200;
+  await i18n.changeLanguage("en"); callbacks.subscription = null; callbacks.planChanged.clear(); plansUndo = null; memory.clear(); decisionStatus = 200;
   vi.stubGlobal("localStorage", { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); }, removeItem: (key: string) => { memory.delete(key); } });
   current = snap("waiting-for-user", { confirmations: [card()] });
   fetchMock = vi.fn(async (url: string, options?: RequestInit) => {
     if (url.endsWith("/providers")) return json({ version: 1, providers: [provider] });
     if (url.endsWith("/conversations")) return options?.method === "POST" ? json(current, 201) : json({ version: 1, conversations: [current.conversation], unreadable: [] });
     if (url.includes("/confirmations/")) return decisionStatus === 200 ? json({ status: JSON.parse(String(options?.body)).decision === "approve" ? "approved" : "declined" }) : json({ code: decisionStatus === 409 ? "stale" : "storage" }, decisionStatus);
+    if (url === "/api/plans/undo") return plansUndo ? json(plansUndo) : json({ status: "ok", rev: 9 });
     if (url.includes("/undo")) return json({ status: "ok", rev: 9 });
     if (url.includes("/views/")) return json({ saved: true });
     return json(current);
@@ -145,16 +147,16 @@ test("operation records show waiting, declined and expired deletes as not applie
   expect(ui("copilot-operation")?.textContent).toContain("3 not applied");
 });
 
-test("after a confirmed task delete the existing undo wording is offered for six seconds and posts the undo once", async () => {
+test("after a confirmed task delete the existing undo wording is offered for the undo window and posts the undo once", async () => {
   const until = new Date(Date.now() + 4000).toISOString();
   current = snap("completed", { messages: [{ id: "m1", role: "assistant", text: "", operations: [{ id: "call_1", tool: "plan", action: "delete_task", status: "ok", label: "Task 1", rev: 8, undo: { until } }] }] });
   await open();
   await waitFor(() => expect(ui("copilot-undo")).not.toBeNull());
   expect(ui("copilot-undo")?.textContent).toContain("Deleted \"Task 1\"");
   fireEvent.click(ui("copilot-undo-delete")!);
-  await waitFor(() => expect(calls("/undo")).toHaveLength(1));
-  expect(String(calls("/undo")[0]![0])).toBe(`/api/copilot/conversations/${ID}/operations/call_1/undo`);
-  expect(JSON.parse(String((calls("/undo")[0] as [string, RequestInit])[1].body))).toEqual({ viewId: context.viewId });
+  await waitFor(() => expect(calls("/operations/")).toHaveLength(1));
+  expect(String(calls("/operations/")[0]![0])).toBe(`/api/copilot/conversations/${ID}/operations/call_1/undo`);
+  expect(JSON.parse(String((calls("/operations/")[0] as [string, RequestInit])[1].body))).toEqual({ viewId: context.viewId });
   await waitFor(() => expect(ui("copilot-undo")).toBeNull());
 });
 
@@ -175,7 +177,7 @@ test("the undo notice can be dismissed like the Plan page's, and a failed undo s
   await waitFor(() => expect(ui("copilot-undo")).not.toBeNull());
   fireEvent.click(ui("copilot-undo-dismiss")!);
   expect(ui("copilot-undo")).toBeNull();
-  expect(calls("/undo")).toHaveLength(0);
+  expect(calls("/operations/")).toHaveLength(0);
   cleanup();
   const base = fetchMock.getMockImplementation()!;
   fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.includes("/undo") ? json({ code: "stale" }, 409) : base(url, options));
@@ -308,4 +310,17 @@ test("a text reading replacement (ticket 29) shows the annotation impact and the
   await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
   const [, options] = calls("/confirmations/")[0] as [string, RequestInit];
   expect(JSON.parse(String(options.body))).toEqual({ decision: "approve", viewId: context.viewId, action: "replace_text_reading", objectId: impact.docId, baseRev: 9 });
+});
+
+test("a task delete the service no longer holds (restored on the Plan page, or by the Copilot's own tool) stops being offered, and a plan.changed hides it", async () => {
+  const until = new Date(Date.now() + 4000).toISOString();
+  current = snap("completed", { messages: [{ id: "m1", role: "assistant", text: "", operations: [{ id: "call_1", tool: "plan", action: "delete_task", status: "ok", label: "Task 1", rev: 8, undo: { until } }] }] });
+  plansUndo = { undoable: [{ id: "u1", planId: "p", taskId: "t", title: "Task 1", conversationId: ID, toolCallId: "call_1", until }] };
+  await open();
+  await waitFor(() => expect(ui("copilot-undo")).not.toBeNull());
+  // restored elsewhere: the service's list no longer has it; the plan.changed that restoring sends refreshes the panel
+  plansUndo = { undoable: [] };
+  await waitFor(() => expect(callbacks.planChanged.size).toBeGreaterThan(0));
+  callbacks.planChanged.forEach((cb) => cb());
+  await waitFor(() => expect(ui("copilot-undo")).toBeNull());
 });

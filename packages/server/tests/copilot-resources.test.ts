@@ -3,6 +3,7 @@
  * own seams: the loader as a Pi session sees it, and the pure derivation of what a history really delivered.
  */
 import { DELIVERY_LEDGER_TYPE } from "@argelanderspace/contracts";
+import { parseTextSource } from "@argelanderspace/core";
 import { expect, test } from "vitest";
 import { deliveryKey, type RawEntry } from "../src/copilot-ledger.js";
 import { APP_INSTRUCTIONS, createApplicationResourceLoader } from "../src/copilot-resources.js";
@@ -12,6 +13,7 @@ import {
   transcriptionLoaded,
   USABLE_LONG_EDGE,
 } from "../src/copilot-transcription.js";
+import { TRANSCRIPTION_EXAMPLES } from "../src/copilot-transcription-instruction.js";
 
 const extensions = { extensions: [], errors: [], runtime: {} as never };
 const loader = () =>
@@ -67,11 +69,13 @@ test("instruction version 2: citations and cross-references are linked while con
   for (const phrase of [
     // in-text citations become [cite: refid | shown text] to the transcribed reference list, by default
     "Link every in-text citation",
-    "[cite: ref-12 | [12]]",
+    TRANSCRIPTION_EXAMPLES.numeric,
+    TRANSCRIPTION_EXAMPLES.figure,
+    "cite_stray_bracket",
+    "every square bracket INSIDE the shown text",
     "stable",
     "the same reference always gets the same id",
     // figures, tables and equations referenced in the running text become [ref: blockid | shown text]
-    "[ref: fig-3 | Fig. 3]",
     "argelander-block",
     // plain text only where the target cannot be identified, and then it is reported
     "only where the target cannot be identified",
@@ -310,4 +314,39 @@ test("transcriptionLoaded recognises the loaded instruction in the history", () 
   };
   expect(transcriptionLoaded([loaded])).toBe(true);
   expect(transcriptionLoaded([answer()])).toBe(false);
+});
+
+test("the instruction's own examples parse with the real codec: every xref resolves with the intended display and nothing is flagged", () => {
+  const text = APP_INSTRUCTIONS[0]?.text ?? "";
+  for (const token of Object.values(TRANSCRIPTION_EXAMPLES)) expect(text).toContain(token);
+  const fence = "```";
+  const markdown = [
+    `Intro ${TRANSCRIPTION_EXAMPLES.numeric}, ${TRANSCRIPTION_EXAMPLES.group} and ${TRANSCRIPTION_EXAMPLES.authorYear}; see ${TRANSCRIPTION_EXAMPLES.figure} and ${TRANSCRIPTION_EXAMPLES.equation}.`,
+    "",
+    `${fence}argelander-block\n{"id":"fig-3","number":"3"}\n${fence}`,
+    "## A section",
+    "",
+    `${fence}argelander-block\n{"id":"eq-5","number":"5"}\n${fence}`,
+    "$$E=mc^2$$",
+    "",
+    `${fence}argelander-references\n${JSON.stringify(["ref-3", "ref-5", "ref-7", "ref-12"].map((id) => ({ id, raw: `Reference ${id}.` })))}\n${fence}`,
+    "",
+  ].join("\n");
+  const result = parseTextSource(markdown, { docId: "text-1", sourceRev: 1 });
+  expect(result.diagnostics).toEqual([]);
+  const first = result.ir?.sections[0]?.blocks[0];
+  const segments = first?.type === "paragraph" ? first.segments : [];
+  const cites = segments.flatMap((s) => (s.type === "cite" ? [s] : []));
+  expect(
+    cites.map((c) => [c.refs.map((r) => r.id), c.raw, c.refs.every((r) => r.resolved)])
+  ).toEqual([
+    [["ref-12"], "[12]", true],
+    [["ref-3", "ref-5"], "[3, 5]", true],
+    [["ref-7"], "(Bok 1934)", true],
+  ]);
+  const xrefs = segments.flatMap((s) => (s.type === "xref" ? [s] : []));
+  expect(xrefs.map((x) => [x.target.id, x.target.resolved, x.raw])).toEqual([
+    ["fig-3", true, "Fig. 3"],
+    ["eq-5", true, "Eq. (5)"],
+  ]);
 });

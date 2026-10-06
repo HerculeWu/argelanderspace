@@ -803,3 +803,16 @@ it("a burst of scroll events collapses into one context update carrying the late
   await waitFor(() => expect((page as PlanPage | null)?.ui?.readingPosition).toEqual({ region: "plan-scroll", top: 200, left: 0 }));
   expect(reports - before).toBeLessThanOrEqual(2);
 });
+
+describe("PlanView: the snackbar for a Copilot delete follows what the service can still undo", () => {
+  it("hides when the service no longer holds it (the Copilot restored it, or it expired), on the plan.changed that follows", async () => {
+    serverDoc = mkDoc([mkTask({ title: "甲" })]);
+    undoable = [{ id: "u-9", planId: "p_00000001", taskId: "t_x", title: "被删", until: new Date(Date.now() + 8000).toISOString() }];
+    const { container } = renderPlan();
+    await waitFor(() => expect(container.querySelector('[data-ui="task-delete-undo"]')).not.toBeNull());
+    undoable = []; // restored elsewhere
+    wsMock.planChangedCbs.forEach((cb) => cb());
+    await waitFor(() => expect(container.querySelector('[data-ui="task-delete-undo"]')).toBeNull());
+    expect(undoPosts).toEqual([]);
+  });
+});

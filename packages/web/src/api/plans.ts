@@ -19,21 +19,29 @@ export async function fetchPlans(): Promise<PlansFile | null> {
 /** A task delete the service can still undo (8-second window): today the ones the Copilot made. */
 export interface UndoableDelete {
   id: string;
+  /** The Copilot call that made the delete. */
+  conversationId?: string;
+  toolCallId?: string;
   planId: string;
   taskId: string;
   title: string;
   until: string;
 }
 
-export async function fetchUndoableDeletes(): Promise<UndoableDelete[]> {
+/** What the service can still undo; null when it could not be read (then nothing may be hidden or claimed). */
+export async function fetchUndoableState(): Promise<UndoableDelete[] | null> {
   try {
     const r = await fetch("/api/plans/undo");
-    if (!r.ok) return [];
+    if (!r.ok) return null;
     const body = (await r.json()) as { undoable?: UndoableDelete[] };
-    return Array.isArray(body.undoable) ? body.undoable : [];
+    return Array.isArray(body.undoable) ? body.undoable : null;
   } catch {
-    return [];
+    return null;
   }
+}
+
+export async function fetchUndoableDeletes(): Promise<UndoableDelete[]> {
+  return (await fetchUndoableState()) ?? [];
 }
 
 /** The service's one task-delete undo; `refused` says why nothing was restored. */

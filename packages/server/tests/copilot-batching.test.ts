@@ -377,7 +377,7 @@ async function send(id: string, context: PageContext, text: string) {
 // ticket 32 lane D: the reader tool text gained one sentence about the set_panel floor fold (~0.1 KB), window 40100 -> 40200.
 // tickets 29 and 30 (read_svg_image added ~0.4 KB): the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
 // ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
-// ticket 33 follow-up: undo_delete_task (action + about 0.35 KB of plan tool text, about 100 tokens): 61800 -> 62000.
+// ticket 33 follow-up: undo_delete_task (action + about 0.4 KB of plan tool text, about 200 tokens): 61800 -> 62000; fix round 1 re-measured, unchanged.
 const WINDOW_BIG_DOC = 62_000;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
@@ -700,8 +700,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  // ticket 33 follow-up: undo_delete_task moved this calibration 49700 -> 49900 (about 200 tokens).
-  await withWindow(49_900, async () => {
+  // ticket 33 follow-up: undo_delete_task moved this calibration 49700 -> 49900 (about 200 tokens); fix round 1 (longer undo_delete_task text) 49900 -> 50000.
+  await withWindow(50_000, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;

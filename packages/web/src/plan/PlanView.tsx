@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchLibrary } from "../api/library";
-import { fetchPlans, fetchUndoableDeletes, putPlans, undoServerDelete } from "../api/plans";
+import { fetchPlans, fetchUndoableState, putPlans, undoServerDelete } from "../api/plans";
 import { onLibraryChanged, onPlanChanged } from "../api/ws";
 import { Icon } from "../lib/icons";
 import { newPlanId, newTaskId } from "../lib/planIds";
@@ -128,7 +128,16 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
 
   // Offer the undo of a task the Copilot just deleted, once, while the service still holds it.
   const syncServerUndo = useCallback(async () => {
-    const entries = await fetchUndoableDeletes();
+    const state = await fetchUndoableState();
+    const entries = state ?? [];
+    // The snackbar offers only what the service can still undo: restored (here or by the Copilot) or expired hides it.
+    if (state && undoRef.current?.kind === "server") {
+      const shown = undoRef.current.id;
+      if (!state.some((entry) => entry.id === shown)) {
+        window.clearTimeout(undoTimer.current);
+        setUndo(null);
+      }
+    }
     const next = entries
       .filter((entry) => !dismissedServerUndo.current.has(entry.id) && Date.parse(entry.until) > Date.now())
       .pop();

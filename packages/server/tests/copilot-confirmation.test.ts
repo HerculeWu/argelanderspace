@@ -658,7 +658,7 @@ test("deleting one Task is immediate like the Plan page (no card), with an eight
         viewId: view.viewId,
       })
     ).status
-  ).toBe(404);
+  ).toBe(200); // already back (noop)
 });
 
 test("the undo window closes after eight seconds", async () => {
@@ -792,10 +792,18 @@ test("the user's undo (and a failed one) is written into the conversation so the
     viewId: view.viewId,
   });
   expect(undone.status).toBe(200);
-  // A second undo has nothing to restore: refused, and that too is recorded.
+  // A second undo finds the task already back: noop, and no false "failed" note is written for it.
   expect(
     (
       await request(`/conversations/${id}/operations/${deleted?.id}/undo`, "POST", {
+        viewId: view.viewId,
+      })
+    ).status
+  ).toBe(200);
+  // A handle the service never held is refused, and that is recorded.
+  expect(
+    (
+      await request(`/conversations/${id}/operations/call_unknown/undo`, "POST", {
         viewId: view.viewId,
       })
     ).status
@@ -913,7 +921,7 @@ test("the Copilot can undo its own task delete: an operation row, the task back 
         viewId: view.viewId,
       })
     ).status
-  ).toBe(404);
+  ).toBe(200);
   expect(
     ((await (await app.request("/api/plans/undo")).json()) as { undoable: unknown[] }).undoable
   ).toEqual([]);
@@ -978,7 +986,7 @@ test("a task the Copilot deleted is offered on the Plan page and its undo restor
   expect(restored.status).toBe(200);
   expect(await restored.json()).toMatchObject({ status: "ok", rev: 9 });
   expect(disk().plans[0].tasks[0]).toEqual(before.plans[0].tasks[0]);
-  expect((await post({ id: listed.undoable[0]?.id })).status).toBe(404);
+  expect((await post({ id: listed.undoable[0]?.id })).status).toBe(200); // the tombstone answers noop
   const history = readFileSync(
     join(dataDir, "copilot/sessions", `${(await host.snapshot(id)).conversation.sessionId}.jsonl`),
     "utf8"
@@ -1005,4 +1013,92 @@ test("the Plan page's undo after eight seconds answers 409 expired and writes no
   expect(late.status).toBe(409);
   expect(await late.json()).toMatchObject({ status: "expired" });
   expect(diskBytes()).toBe(bytes);
+});
+
+// ---- Two surfaces, one undo (fix round 1): the second one is told "already back", never a false failure -------- //
+
+const pageUndo = (undoId: string | undefined) =>
+  app.request("/api/plans/undo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: undoId }),
+  });
+const heldUndoId = async () =>
+  ((await (await app.request("/api/plans/undo")).json()) as { undoable: { id: string }[] })
+    .undoable[0]?.id;
+const historyOf = async (id: string) =>
+  readFileSync(
+    join(dataDir, "copilot/sessions", `${(await host.snapshot(id)).conversation.sessionId}.jsonl`),
+    "utf8"
+  );
+
+test("the page restores first, then the Copilot's own undo answers noop (already back) and writes nothing", async () => {
+  const view = page(A);
+  let pageStatus = 0;
+  script = [
+    () => dropTask(),
+    async () => {
+      pageStatus = (await pageUndo(await heldUndoId())).status; // the user clicks the snackbar meanwhile
+      return undoCall();
+    },
+    () => ({ text: "done" }),
+  ];
+  const id = await start(view);
+  await until(id, ["completed"]);
+  expect(pageStatus).toBe(200);
+  const [, undone] = await operations(id);
+  expect(undone).toMatchObject({ action: "undo_delete_task", status: "noop" });
+  expect(disk().rev).toBe(9); // one restore, one rev bump
+  expect(disk().plans[0].tasks.map((t: { id: string }) => t.id)).toEqual([
+    T1,
+    "t_00000002",
+    "t_00000003",
+  ]);
+  expect(await historyOf(id)).not.toContain('\\"undo\\":\\"failed\\"');
+});
+
+test("the Copilot restores first, then the panel click answers 200 noop with no failure note, and the page is offered nothing", async () => {
+  const view = page(A);
+  script = [() => dropTask(), () => undoCall(), () => ({ text: "restored" })];
+  const id = await start(view);
+  await until(id, ["completed"]);
+  const [deleted] = await operations(id);
+  const held = ((await (await app.request("/api/plans/undo")).json()) as { undoable: unknown[] })
+    .undoable;
+  expect(held).toEqual([]); // no longer offered anywhere
+  const bytes = diskBytes();
+  const panel = await request(`/conversations/${id}/operations/${deleted?.id}/undo`, "POST", {
+    viewId: view.viewId,
+  });
+  expect(panel.status).toBe(200);
+  expect(await panel.json()).toMatchObject({ status: "noop" });
+  expect(diskBytes()).toBe(bytes);
+  expect(await historyOf(id)).not.toContain('\\"undo\\":\\"failed\\"');
+});
+
+test("the page and the panel undo at the same instant: one restore, one noop, a single rev bump", async () => {
+  const view = page(A);
+  script = [() => dropTask(), () => ({ text: "deleted" })];
+  const id = await start(view);
+  await until(id, ["completed"]);
+  const [deleted] = await operations(id);
+  const undoId = await heldUndoId();
+  const [fromPage, fromPanel] = await Promise.all([
+    pageUndo(undoId),
+    request(`/conversations/${id}/operations/${deleted?.id}/undo`, "POST", {
+      viewId: view.viewId,
+    }),
+  ]);
+  expect([fromPage.status, fromPanel.status]).toEqual([200, 200]);
+  const statuses = [
+    ((await fromPage.json()) as { status: string }).status,
+    ((await fromPanel.json()) as { status: string }).status,
+  ].sort();
+  expect(statuses).toEqual(["noop", "ok"]);
+  expect(disk().rev).toBe(9);
+  expect(disk().plans[0].tasks.map((t: { id: string }) => t.id)).toEqual([
+    T1,
+    "t_00000002",
+    "t_00000003",
+  ]);
 });

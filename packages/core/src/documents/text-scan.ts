@@ -292,6 +292,19 @@ export function scanSyntax(source: string, options: { blockDisplay: boolean }): 
     const pipe = unescapedPipe(codeMasked, bodyStart, j);
     const idsPart = text.slice(bodyStart, pipe === -1 ? j : pipe);
     const displayRaw = pipe === -1 ? undefined : text.slice(pipe + 1, j);
+    // `[cite: a | [12]]` ends at the first `]`: the display text keeps an unclosed `[` and the last `]` is stray text.
+    // Escape the brackets (`\\[12\\]`) or leave them out.
+    if (displayRaw !== undefined && codeMasked[j + 1] === "]") {
+      const plain = displayRaw.replace(/\\[\s\S]/g, "");
+      if (plain.split("[").length > plain.split("]").length)
+        problem(
+          `${kind}_stray_bracket`,
+          start,
+          `the display text of this [${kind}: ...] has an unescaped '[' so the token ends at the first ']' and the next ']' is stray text; write \\[ and \\] for literal brackets`,
+          undefined,
+          "warning"
+        );
+    }
     const item: Item = { kind, start, end: j + 1, where: start, bad: false };
     if (displayRaw !== undefined) {
       const display = unescapeTokenText(displayRaw);

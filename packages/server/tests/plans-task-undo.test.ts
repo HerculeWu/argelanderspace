@@ -80,12 +80,41 @@ test("undo inside the window puts the task back at its index with its unknown ke
   const result = await registry.undo(deps, { id: entry.id });
   expect(result).toMatchObject({ ok: true, status: "ok", object: { id: "t_00000001" } });
   expect(parsed().plans[0].tasks[0]).toEqual(FIRST_TASK);
-  // Used up: the same handle is gone, nothing is written twice.
+  // Used up: a tombstone, not "not found": a repeat says the task is already back, nothing is written twice.
   expect(await registry.undo(deps, { id: entry.id })).toMatchObject({
-    ok: false,
-    status: "not_found",
+    ok: true,
+    status: "noop",
+    rev: 5 + 1,
   });
+  expect(await registry.undo(deps, { planId: "p_aaaaaaaa", taskId: "t_00000001" })).toMatchObject({
+    ok: true,
+    status: "noop",
+  });
+  expect(registry.active()).toEqual([]);
   expect(parsed().rev).toBe(6);
+});
+
+test("two undos at the same instant write once: the second waits and answers noop", async () => {
+  const entry = await deleteFirst();
+  const [a, b] = await Promise.all([
+    registry.undo(deps, { id: entry.id }),
+    registry.undo(deps, { planId: "p_aaaaaaaa", taskId: "t_00000001" }),
+  ]);
+  expect([a, b].map((r) => (r.ok ? r.status : r.status)).sort()).toEqual(["noop", "ok"]);
+  expect(parsed().plans[0].tasks.map((t: { id: string }) => t.id)).toEqual([
+    "t_00000001",
+    "t_00000002",
+    "t_00000003",
+  ]);
+  expect(parsed().rev).toBe(6);
+});
+
+test("a refused undo (plan gone) answers the same refusal again, not not_found", async () => {
+  const entry = await deleteFirst();
+  await applyPlanDelete(deps, { action: "delete_plan", planId: "p_aaaaaaaa", baseRev: 5 });
+  const first = await registry.undo(deps, { id: entry.id });
+  expect(first).toMatchObject({ ok: false, status: "conflict" });
+  expect(await registry.undo(deps, { id: entry.id })).toEqual(first);
 });
 
 test("undo after eight seconds is refused as expired and writes nothing", async () => {

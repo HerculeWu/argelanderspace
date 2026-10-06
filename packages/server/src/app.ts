@@ -1930,6 +1930,9 @@ export function createApp(deps: AppDeps): Hono {
         planId: entry.planId,
         taskId: entry.taskId,
         title: entry.title,
+        ...(entry.source
+          ? { conversationId: entry.source.conversationId, toolCallId: entry.source.toolCallId }
+          : {}),
         until: new Date(entry.until).toISOString(),
       })),
     })

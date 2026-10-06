@@ -1952,7 +1952,9 @@ function finish(w: Walk, ir: TextDocIr | null, stats: TextStats): TextParseResul
 }
 
 /** Plain-text numeric bracket citations ([1], [2, 3], [4-6]) in paragraphs, lists and captions; links, math and code are not text segments. */
-const PLAIN_NUMERIC_CITATION = /\[\s*\d{1,3}\s*(?:[,;–-]\s*\d{1,3}\s*)*\]/g;
+// Not preceded by a word character or a closing bracket (a[3], f(a)[5], x[1][2] are indexes), and not starting with 0
+// (the interval [0,1]). Other intervals such as [1, 2] cannot be told from a citation by their text and still count.
+const PLAIN_NUMERIC_CITATION = /(?<![\w\])])\[\s*(?!0\b)\d{1,3}\s*(?:[,;–-]\s*\d{1,3}\s*)*\]/g;
 function countPlainNumericCitations(sections: readonly IrSection[]): number {
   let count = 0;
   const scan = (segments: readonly IrSegment[] | undefined) => {

@@ -124,9 +124,10 @@ export const PlanDeleteOperationSchema = z.discriminatedUnion("action", [
 ]);
 
 /**
- * Undo of a task delete (the Plan page's undo snackbar, for the Copilot): restores a task the user or the Copilot
- * deleted inside the 8-second window. Not a plan write: it carries no `expectedRev` because it only puts the removed
- * task back into the CURRENT plan and never overwrites anything; a plan that is gone is refused as a conflict.
+ * Undo of a task delete THE COPILOT made, inside the 8-second window (the Plan page offers the user the same undo for it
+ * as a snackbar). It does not reach the user's own page deletes, which keep the page's own snackbar. Not a plan write: it
+ * carries no `expectedRev` because it only puts the removed task back into the CURRENT plan and never overwrites anything;
+ * a plan that is gone is refused as a conflict.
  */
 export const PlanUndoOperationSchema = z
   .object({ action: z.literal("undo_delete_task"), planId: Id, taskId: Id })

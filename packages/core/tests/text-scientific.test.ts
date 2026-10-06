@@ -569,6 +569,22 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
   });
 
   describe("cite and ref resolution", () => {
+    it("a cite whose display text has an unescaped [ ... ] ends at the first ] and the stray ] is reported; escapes work", () => {
+      const refsFence = marker("argelander-references", [{ id: "ref-12", raw: "A. Title." }]);
+      const bad = parse(`See [cite: ref-12 | [12]] here.\n\n${refsFence}`);
+      expect(bad.diagnostics.find((d) => d.code === "cite_stray_bracket")).toMatchObject({
+        severity: "warning",
+      });
+      const good = `See [cite: ref-12 | \\[12\\]] here.\n\n${refsFence}`;
+      const r = parse(good);
+      expect(r.diagnostics).toEqual([]);
+      const para = r.ir?.sections[0]?.blocks[0];
+      expect(para?.type === "paragraph" && para.segments[1]).toMatchObject({
+        type: "cite",
+        raw: "[12]",
+        refs: [{ id: "ref-12", resolved: true }],
+      });
+    });
     describe("plain-text citations next to a reference list (transcription default: link them)", () => {
       const refs = (n: number) =>
         marker(
@@ -586,6 +602,15 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
         expect(found).toHaveLength(1);
         expect(found[0]).toMatchObject({ severity: "warning", subject: "3" });
         expect(found[0]?.message).toContain("[cite: ...]");
+      });
+      it("does not count indexes and intervals written like a[3] or x[1]; the [2019] year form stays excluded", () => {
+        const md = `Array a[3] and b[12] and (x)[4] and [2019] and the call f(a)[5].\n\n${refs(6)}`;
+        expect(parse(md).diagnostics.map((d) => d.code)).not.toContain("cite_plain");
+        // a citation after punctuation or a space still counts
+        const real = parse(`See [3] and ([4, 5]) here.\n\n${refs(6)}`).diagnostics.find(
+          (d) => d.code === "cite_plain"
+        );
+        expect(real?.subject).toBe("2");
       });
       it("is silent without a reference list, for linked citations, math and ordinary brackets", () => {
         expect(codes("A plain [1] paragraph with no references at all.\n")).toEqual([]);

@@ -1689,7 +1689,8 @@ export class CopilotHost {
         );
         throw new CopilotError(outcome.status === "not_found" ? "not_found" : "stale");
       }
-      this.noteUndo(loaded, toolCallId, "restored");
+      // "noop": another surface (the Plan page, the Copilot's own tool) already put it back and said so: no second note.
+      if (outcome.status === "ok") this.noteUndo(loaded, toolCallId, "restored");
       return { status: outcome.status, rev: outcome.rev };
     } catch (error) {
       throw this.failure(error);
@@ -1707,8 +1708,9 @@ export class CopilotHost {
     if (entry?.source) {
       try {
         const loaded = await this.get(entry.source.conversationId);
-        if (outcome.ok) this.noteUndo(loaded, entry.source.toolCallId, "restored");
-        else
+        if (outcome.ok) {
+          if (outcome.status === "ok") this.noteUndo(loaded, entry.source.toolCallId, "restored");
+        } else
           this.noteUndo(
             loaded,
             entry.source.toolCallId,

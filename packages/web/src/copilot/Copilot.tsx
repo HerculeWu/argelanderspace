@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { type PdfContextSummary, summarizeDiscoveryPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, uploadAttachment, removeAttachment, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
-import { subscribeCopilot } from "../api/ws";
+import { onPlanChanged, subscribeCopilot } from "../api/ws";
+import { fetchUndoableState } from "../api/plans";
 import { ActionButton, Badge, Button, Dialog, getConfiguredIcon } from "../ui";
 import { ProviderSettingsDialog } from "./ProviderSettings";
 import { Icon } from "../lib/icons";
@@ -315,7 +316,20 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   // The six-second undo for a confirmed task delete: shown only while the service still holds it.
   const [undone, setUndone] = useState<Set<string>>(() => new Set());
   const [, setClock] = useState(0);
-  const undoable = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now());
+  // The toolCallIds of this conversation's deletes the service can still undo; null while unknown. A task already restored
+  // elsewhere (the Plan page, the Copilot's own tool) stops being offered here.
+  const [live, setLive] = useState<Set<string> | null>(null);
+  const undoable = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now() && (live === null || live.has(operation.id)));
+  const pendingUndoId = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now())?.id;
+  const refreshLive = useCallback(async () => {
+    const state = await fetchUndoableState();
+    setLive(state ? new Set(state.flatMap((entry) => (entry.conversationId === id && entry.toolCallId ? [entry.toolCallId] : []))) : null);
+  }, [id]);
+  useEffect(() => {
+    if (!pendingUndoId) return;
+    void refreshLive();
+    return onPlanChanged(() => void refreshLive());
+  }, [pendingUndoId, refreshLive]);
   const undoUntil = undoable?.undo ? Date.parse(undoable.undo.until) : 0;
   useEffect(() => {
     if (!undoUntil) return;
