@@ -2459,6 +2459,7 @@ export class CopilotHost {
           journal: this.journalPort(loaded, runId),
           confirm: this.confirmationPort(loaded, state),
           taskUndo: this.taskUndo,
+          conversationId: loaded.record.id,
           taskDeleted: ({ toolCallId, planId, removed }) =>
             this.registerUndo(loaded.record.id, toolCallId, planId, removed),
           runId,

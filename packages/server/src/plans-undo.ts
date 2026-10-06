@@ -47,7 +47,7 @@ export interface UndoEntry {
 
 export type UndoSelector =
   | { id: string }
-  | { planId: string; taskId: string }
+  | { planId: string; taskId: string; conversationId?: string }
   | { conversationId: string; toolCallId: string };
 
 export type UndoResult =
@@ -101,7 +101,12 @@ export class TaskUndoRegistry {
           entry.source.toolCallId === selector.toolCallId
       );
     return all.find(
-      (entry) => entry.planId === selector.planId && entry.taskId === selector.taskId
+      (entry) =>
+        entry.planId === selector.planId &&
+        entry.taskId === selector.taskId &&
+        // the tool's lookup: only the delete this conversation made itself
+        (selector.conversationId === undefined ||
+          entry.source?.conversationId === selector.conversationId)
     );
   }
 
@@ -158,6 +163,19 @@ export class TaskUndoRegistry {
 /** What a repeated undo answers: the first outcome's failure again, or "already back" (noop) at the current rev. */
 function replay(deps: PlanOpDeps, entry: UndoEntry, first: UndoResult): UndoResult {
   if (!first.ok) return first;
+  // "already back" only while the task really is in its plan; deleted again since, it is no longer restorable from here
+  const file = readPlans(deps.statusDir);
+  const present = file.plans.some(
+    (plan) => plan.id === entry.planId && plan.tasks.some((task) => task.id === entry.taskId)
+  );
+  if (!present)
+    return {
+      ok: false,
+      status: "not_found",
+      detail:
+        "the task is not in its plan any more (deleted again since it was restored), so this undo can no longer restore it",
+      rev: file.rev,
+    };
   return {
     ok: true,
     status: "noop",

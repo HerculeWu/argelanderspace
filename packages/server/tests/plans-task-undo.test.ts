@@ -109,6 +109,52 @@ test("two undos at the same instant write once: the second waits and answers noo
   expect(parsed().rev).toBe(6);
 });
 
+test("a tombstone says noop only while the task is really in its plan: deleted again by the user, the answer is not_found", async () => {
+  const entry = await deleteFirst();
+  expect(await registry.undo(deps, { id: entry.id })).toMatchObject({ ok: true, status: "ok" });
+  // the user deletes the same task again on the page (a whole-document save without it)
+  const doc = parsed();
+  doc.plans[0].tasks = doc.plans[0].tasks.filter((t: { id: string }) => t.id !== "t_00000001");
+  writeFileSync(plansPath(statusDir), JSON.stringify(doc, null, 2));
+  const again = await registry.undo(deps, { planId: "p_aaaaaaaa", taskId: "t_00000001" });
+  expect(again).toMatchObject({ ok: false, status: "not_found" });
+  expect(again.ok ? "" : again.detail).toContain("no longer");
+});
+
+test("the tool's lookup is scoped to the calling conversation; the page's lookup by id is not", async () => {
+  const outcome = await applyPlanDelete(deps, {
+    action: "delete_task",
+    planId: "p_aaaaaaaa",
+    taskId: "t_00000001",
+    baseRev: 4,
+  });
+  if (!outcome.ok || !outcome.removed) throw new Error("delete failed");
+  const entry = registry.register({
+    planId: "p_aaaaaaaa",
+    taskId: "t_00000001",
+    title: "Task 1",
+    removed: outcome.removed,
+    source: { conversationId: "conv-A", toolCallId: "call-1" },
+  });
+  const bytes = readFileSync(plansPath(statusDir), "utf8");
+  expect(
+    await registry.undo(deps, {
+      planId: "p_aaaaaaaa",
+      taskId: "t_00000001",
+      conversationId: "conv-B",
+    })
+  ).toMatchObject({ ok: false, status: "not_found" });
+  expect(readFileSync(plansPath(statusDir), "utf8")).toBe(bytes);
+  expect(
+    await registry.undo(deps, {
+      planId: "p_aaaaaaaa",
+      taskId: "t_00000001",
+      conversationId: "conv-A",
+    })
+  ).toMatchObject({ ok: true, status: "ok" });
+  expect(entry.id).toBeTruthy();
+});
+
 test("a refused undo (plan gone) answers the same refusal again, not not_found", async () => {
   const entry = await deleteFirst();
   await applyPlanDelete(deps, { action: "delete_plan", planId: "p_aaaaaaaa", baseRev: 5 });

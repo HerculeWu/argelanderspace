@@ -1189,10 +1189,10 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (40400 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (40500 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    40_400, // ticket 33 follow-up: undo_delete_task added about 200 tokens (40200 -> 40400). Ticket 32: retry_plans (about 70 bytes of tool text) moved the calibration up by 100 tokens
+    40_500, // ticket 33 follow-up: undo_delete_task added about 200 tokens (40200 -> 40400); fix round 2 (scoped-lookup sentence in the tool text) 40400 -> 40500. Ticket 32: retry_plans (about 70 bytes of tool text) moved the calibration up by 100 tokens
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

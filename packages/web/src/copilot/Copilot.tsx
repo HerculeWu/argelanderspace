@@ -313,7 +313,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   const workObjects = lastTask?.context?.objects ?? [];
   const workObject = workObjects.length === 1 ? workObjects[0] : undefined;
   const elsewhere = running && workObjects.length > 0 && context.view === "plan" && !!context.plan?.selectedPlanId && !workObjects.some((object) => object.id === context.plan?.selectedPlanId);
-  // The six-second undo for a confirmed task delete: shown only while the service still holds it.
+  // The undo (8 s window) for a confirmed task delete: shown only while the service still holds it.
   const [undone, setUndone] = useState<Set<string>>(() => new Set());
   const [, setClock] = useState(0);
   // The toolCallIds of this conversation's deletes the service can still undo; null while unknown. A task already restored

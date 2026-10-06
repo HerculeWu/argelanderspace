@@ -575,6 +575,9 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
       expect(bad.diagnostics.find((d) => d.code === "cite_stray_bracket")).toMatchObject({
         severity: "warning",
       });
+      // half-escaped: `\\[12]]` ends at the first `]` too, and the escaped `[` is text, so the stray `]` still counts
+      const half = parse(`See [cite: ref-12 | \\[12]] here.\n\n${refsFence}`);
+      expect(half.diagnostics.map((d) => d.code)).toContain("cite_stray_bracket");
       const good = `See [cite: ref-12 | \\[12\\]] here.\n\n${refsFence}`;
       const r = parse(good);
       expect(r.diagnostics).toEqual([]);

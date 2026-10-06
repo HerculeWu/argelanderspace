@@ -295,8 +295,8 @@ export function scanSyntax(source: string, options: { blockDisplay: boolean }): 
     // `[cite: a | [12]]` ends at the first `]`: the display text keeps an unclosed `[` and the last `]` is stray text.
     // Escape the brackets (`\\[12\\]`) or leave them out.
     if (displayRaw !== undefined && codeMasked[j + 1] === "]") {
-      const plain = displayRaw.replace(/\\[\s\S]/g, "");
-      if (plain.split("[").length > plain.split("]").length)
+      // an escaped bracket is text too: `\\[12]]` still ends at the first `]`
+      if (displayRaw.split("[").length > displayRaw.split("]").length)
         problem(
           `${kind}_stray_bracket`,
           start,
