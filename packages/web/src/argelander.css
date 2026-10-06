@@ -523,8 +523,8 @@ input, textarea { font-family: inherit; color: inherit; }
   .reference-detail { width: 360px; }
 }
 @container (max-width: 820px) {
-  .ref-detail { position: absolute; top: 0; right: 0; bottom: 0; z-index: 45; box-shadow: var(--shadow-pop); width: 300px; }
-  .ref-detail.reference-detail { width: min(360px, 100%); }
+  /* beside the graph, never over it (ticket 33 follow-up, D6): the work list folds to its rail (library/layout.ts) */
+  .ref-detail, .ref-detail.reference-detail { width: 300px; }
 }
 @container (max-width: 780px) {
   .lib-side { width: 198px; }

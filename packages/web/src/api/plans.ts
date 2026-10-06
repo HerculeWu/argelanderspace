@@ -16,6 +16,46 @@ export async function fetchPlans(): Promise<PlansFile | null> {
   }
 }
 
+/** A task delete the service can still undo (8-second window): today the ones the Copilot made. */
+export interface UndoableDelete {
+  id: string;
+  /** The Copilot call that made the delete. */
+  conversationId?: string;
+  toolCallId?: string;
+  planId: string;
+  taskId: string;
+  title: string;
+  until: string;
+}
+
+/** What the service can still undo; null when it could not be read (then nothing may be hidden or claimed). */
+export async function fetchUndoableState(): Promise<UndoableDelete[] | null> {
+  try {
+    const r = await fetch("/api/plans/undo");
+    if (!r.ok) return null;
+    const body = (await r.json()) as { undoable?: UndoableDelete[] };
+    return Array.isArray(body.undoable) ? body.undoable : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchUndoableDeletes(): Promise<UndoableDelete[]> {
+  return (await fetchUndoableState()) ?? [];
+}
+
+/** The service's one task-delete undo; `refused` says why nothing was restored. */
+export async function undoServerDelete(id: string): Promise<{ ok: true } | { ok: false; refused: "expired" | "conflict" | "gone" }> {
+  try {
+    const r = await fetch("/api/plans/undo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+    if (r.ok) return { ok: true };
+    const body = (await r.json().catch(() => ({}))) as { status?: string };
+    return { ok: false, refused: body.status === "expired" ? "expired" : body.status === "conflict" ? "conflict" : "gone" };
+  } catch {
+    return { ok: false, refused: "gone" };
+  }
+}
+
 export type PutPlansResult =
   | { ok: true; doc: PlansFile } // 200: the persisted doc, rev bumped
   | { ok: false; conflict: boolean }; // 409 → conflict (caller reloads); else a failure

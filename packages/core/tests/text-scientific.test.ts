@@ -569,6 +569,59 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
   });
 
   describe("cite and ref resolution", () => {
+    it("a cite whose display text has an unescaped [ ... ] ends at the first ] and the stray ] is reported; escapes work", () => {
+      const refsFence = marker("argelander-references", [{ id: "ref-12", raw: "A. Title." }]);
+      const bad = parse(`See [cite: ref-12 | [12]] here.\n\n${refsFence}`);
+      expect(bad.diagnostics.find((d) => d.code === "cite_stray_bracket")).toMatchObject({
+        severity: "warning",
+      });
+      // half-escaped: `\\[12]]` ends at the first `]` too, and the escaped `[` is text, so the stray `]` still counts
+      const half = parse(`See [cite: ref-12 | \\[12]] here.\n\n${refsFence}`);
+      expect(half.diagnostics.map((d) => d.code)).toContain("cite_stray_bracket");
+      const good = `See [cite: ref-12 | \\[12\\]] here.\n\n${refsFence}`;
+      const r = parse(good);
+      expect(r.diagnostics).toEqual([]);
+      const para = r.ir?.sections[0]?.blocks[0];
+      expect(para?.type === "paragraph" && para.segments[1]).toMatchObject({
+        type: "cite",
+        raw: "[12]",
+        refs: [{ id: "ref-12", resolved: true }],
+      });
+    });
+    describe("plain-text citations next to a reference list (transcription default: link them)", () => {
+      const refs = (n: number) =>
+        marker(
+          "argelander-references",
+          Array.from({ length: n }, (_, i) => ({
+            id: `ref-${i + 1}`,
+            raw: `Author ${i + 1}. Title.`,
+          }))
+        );
+      it("warns once with the count when numeric bracket citations stay plain text although the text has references", () => {
+        const md = `Dark matter [1] and halos [2, 3], also [4-6] and [cite: ref-1 | A 1].\n\n${refs(6)}`;
+        const r = parse(md);
+        expect(r.ir).not.toBeNull();
+        const found = r.diagnostics.filter((d) => d.code === "cite_plain");
+        expect(found).toHaveLength(1);
+        expect(found[0]).toMatchObject({ severity: "warning", subject: "3" });
+        expect(found[0]?.message).toContain("[cite: ...]");
+      });
+      it("does not count indexes and intervals written like a[3] or x[1]; the [2019] year form stays excluded", () => {
+        const md = `Array a[3] and b[12] and (x)[4] and [2019] and the call f(a)[5].\n\n${refs(6)}`;
+        expect(parse(md).diagnostics.map((d) => d.code)).not.toContain("cite_plain");
+        // a citation after punctuation or a space still counts
+        const real = parse(`See [3] and ([4, 5]) here.\n\n${refs(6)}`).diagnostics.find(
+          (d) => d.code === "cite_plain"
+        );
+        expect(real?.subject).toBe("2");
+      });
+      it("is silent without a reference list, for linked citations, math and ordinary brackets", () => {
+        expect(codes("A plain [1] paragraph with no references at all.\n")).toEqual([]);
+        const linked = `Linked [cite: ref-1 | A 1]; $a[1]$ and see [Appendix A]; items [a], [10000].\n\n${refs(2)}`;
+        expect(parse(linked).diagnostics.map((d) => d.code)).not.toContain("cite_plain");
+      });
+    });
+
     it("an unresolved cite or ref keeps its display text, is marked unresolved and warns; nothing is invented", () => {
       const md = "See [cite: ghost | Ghost 1999] and [ref: nothing | Fig. 9] and [cite: z].\n";
       const r = parse(md);

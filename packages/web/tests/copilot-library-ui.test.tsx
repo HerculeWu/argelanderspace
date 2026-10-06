@@ -132,7 +132,7 @@ test("a transcription's validate/generate rows list the PDF pages not looked at,
       { id: "g1", tool: "text", action: "generate", status: "ok", rev: 3, label: "text-1", warnings: ["source_coverage_unverifiable"] },
       { id: "g2", tool: "text", action: "generate", status: "ok", rev: 3, label: "text-2" },
       { id: "s1", tool: "reader", action: "read_svg_image", status: "ok" },
-      { id: "s2", tool: "text", action: "load_instruction", status: "ok", label: "pdf-transcription v1" } ] },
+      { id: "s2", tool: "text", action: "load_instruction", status: "ok", label: "pdf-transcription v2" } ] },
   ] };
   fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withCoverage));
   const view = render(<Copilot open context={context} onClose={vi.fn()} />);

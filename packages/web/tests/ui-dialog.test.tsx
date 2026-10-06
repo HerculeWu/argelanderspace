@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Button, Dialog } from "../src/ui";
@@ -124,5 +124,36 @@ describe("Dialog public interaction", () => {
 
     view.rerender(<DialogHarness />);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
+  });
+
+  it("focuses the safe action in the commit that shows the dialog, before any passive effect (a later frame is observable under load)", () => {
+    // The ticket 28 text Doc test was flaky because the focus moved in a passive effect: React runs those a
+    // scheduler task after the commit, and under load a test (or a keystroke) in that gap still saw body focused.
+    // Passive effects run children first, so a child's passive effect marks "the passive phase has started".
+    const order: string[] = [];
+    const focus = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(function (this: HTMLElement) {
+      order.push(`focus:${this.textContent}`);
+    });
+    function Probe() {
+      useEffect(() => {
+        order.push("passive");
+      }, []);
+      return null;
+    }
+    function Harness() {
+      const cancelRef = useRef<HTMLButtonElement>(null);
+      return (
+        <Dialog title="Replace?" closeLabel="Close" initialFocusRef={cancelRef} onClose={() => {}} footer={<Button ref={cancelRef}>Cancel</Button>}>
+          <Probe />
+        </Dialog>
+      );
+    }
+    try {
+      render(<Harness />);
+      expect(order.indexOf("focus:Cancel")).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf("focus:Cancel")).toBeLessThan(order.indexOf("passive"));
+    } finally {
+      focus.mockRestore();
+    }
   });
 });

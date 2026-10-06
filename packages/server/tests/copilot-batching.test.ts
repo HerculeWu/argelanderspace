@@ -380,8 +380,8 @@ async function send(id: string, context: PageContext, text: string) {
 // ticket 33 lane 1: removing the attachment tools (upload_pdf, upload_latex_zip, replace_upload_source, add_asset, set_figure_image) took
 // about 2.6 KB (about 1.3k tokens) out of the instruction, 61800 -> 60500, then 60400 after its fix round dropped the remaining
 // attachment sentences (about 100 tokens). Ticket 33 lane 3 (reader download_original text, "Writer" in the page-context sentence,
-// the downloads exception, its own failure text) added about 0.7 KB; merged with lane 1: 60400 -> 60_700.
-const WINDOW_BIG_DOC = 60_700;
+// the downloads exception, its own failure text) added about 0.7 KB (-> 60700), lane 4 (undo_delete_task, about 200 tokens) and its scoped-lookup sentence -> 61000 (measured).
+const WINDOW_BIG_DOC = 61_000;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -703,8 +703,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  // ticket 33: lane 1 removed attachment tool text, lane 3 added the download_original text; merged: 49700 -> 50_000.
-  await withWindow(50_000, async () => {
+  // ticket 33: lane 1 removed attachment tool text, lane 3 added download_original, lane 4 undo_delete_task; merged: 49700 -> 50_300.
+  await withWindow(50_300, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1192,10 +1192,10 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (38900 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (39500 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    39_200, // ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300
+    39_500, // ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

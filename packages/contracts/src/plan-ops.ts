@@ -123,6 +123,16 @@ export const PlanDeleteOperationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("delete_task"), expectedRev: Rev, planId: Id, taskId: Id }).strict(),
 ]);
 
+/**
+ * Undo of a task delete THE COPILOT made, inside the 8-second window (the Plan page offers the user the same undo for it
+ * as a snackbar). It does not reach the user's own page deletes, which keep the page's own snackbar. Not a plan write: it
+ * carries no `expectedRev` because it only puts the removed task back into the CURRENT plan and never overwrites anything;
+ * a plan that is gone is refused as a conflict.
+ */
+export const PlanUndoOperationSchema = z
+  .object({ action: z.literal("undo_delete_task"), planId: Id, taskId: Id })
+  .strict();
+
 export const PlanReadOperationSchema = z
   .object({ action: z.literal("read"), planId: Id.optional() })
   .strict();
@@ -149,12 +159,14 @@ export const PlanViewActionSchema = z.discriminatedUnion("action", [
 export const PlanOperationSchema = z.union([
   PlanWriteOperationSchema,
   PlanDeleteOperationSchema,
+  PlanUndoOperationSchema,
   PlanReadOperationSchema,
   PlanViewActionSchema,
 ]);
 
 export type PlanWriteOperation = z.infer<typeof PlanWriteOperationSchema>;
 export type PlanDeleteOperation = z.infer<typeof PlanDeleteOperationSchema>;
+export type PlanUndoOperation = z.infer<typeof PlanUndoOperationSchema>;
 export type PlanViewAction = z.infer<typeof PlanViewActionSchema>;
 export type PlanOperation = z.infer<typeof PlanOperationSchema>;
 export const PLAN_OPERATION_ACTIONS = [
@@ -168,6 +180,7 @@ export const PLAN_OPERATION_ACTIONS = [
   "move_task",
   "delete_plan",
   "delete_task",
+  "undo_delete_task",
   "show",
   "open_task",
   "close_task",
@@ -221,7 +234,7 @@ export const CopilotOperationSchema = z
     /** Verbatim user data (plan name / task title) for display. */
     label: z.string().optional(),
     warnings: z.array(z.string()).optional(),
-    /** A deleted task can be restored until this instant (the Plan page's six-second undo window). */
+    /** A deleted task can be restored until this instant (the Plan page's eight-second undo window). */
     undo: z.object({ until: z.string() }).strict().optional(),
     /** The existing Job-table job this operation submitted (upload / arXiv acquisition), with its state when the call ended. */
     job: z
@@ -265,7 +278,7 @@ export const CopilotViewActionResultSchema = z
 export type CopilotViewActionResult = z.infer<typeof CopilotViewActionResultSchema>;
 
 /** The Plan page's undo window after deleting a task. */
-export const TASK_UNDO_WINDOW_MS = 6000;
+export const TASK_UNDO_WINDOW_MS = 8000;
 
 /**
  * Undo of a task delete: put the task back at its original index (clamped), unless it is already there.

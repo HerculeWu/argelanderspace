@@ -231,6 +231,8 @@
         "cite_syntax": "A [cite: ...] needs reference ids (letters, digits and _ . : -) separated by semicolons.",
         "cite_unclosed": "This [cite: ... is not closed with ].",
         "cite_unresolved": "No reference has the id \"{{subject}}\". The text is kept as written.",
+        "cite_stray_bracket": "The display text has an unescaped [ so this token ends at the first ] and the next ] is stray text. Write \\[ and \\] for literal brackets.",
+        "cite_plain": "{{subject}} place(s) look like numbered citations written as plain text, such as [12]. Link each as [cite: ...] to its reference.",
         "ref_syntax": "A [ref: ...] needs one target id (letters, digits and _ . : -).",
         "ref_unclosed": "This [ref: ... is not closed with ].",
         "ref_unresolved": "No block has the id \"{{subject}}\". The text is kept as written.",
@@ -673,7 +675,10 @@
     },
     "undo": {
       "deleted": "Deleted \"{{title}}\"",
-      "action": "Undo"
+      "action": "Undo",
+      "expired": "The undo window has closed; “{{title}}” stays deleted",
+      "conflict": "“{{title}}” cannot be restored: its plan no longer exists",
+      "gone": "“{{title}}” could not be restored"
     },
     "status": {
       "todo": "To do",
@@ -1419,6 +1424,7 @@
         "open_doc": "Open document",
         "delete_plan": "Delete plan",
         "delete_task": "Delete task",
+        "undo_delete_task": "Undo task delete",
         "read_library": "Read library",
         "set_main_doc": "Set main document",
         "filter_library": "Search library",

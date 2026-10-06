@@ -504,14 +504,14 @@ test("the transcription instruction is loaded on demand from the one resource lo
   const id = await start(page(pdfPage(pdf.docId, pdf.sha)));
   await settled(id);
   const instruction = APP_INSTRUCTIONS.find((item) => item.name === "pdf-transcription");
-  expect(instruction?.version).toBe(1);
+  expect(instruction?.version).toBe(2);
   // the first request (before anything was asked for) does not hold the instruction text
   const first = JSON.stringify(seenAt(0));
   expect(first).not.toContain("PDF transcription instruction, version");
   expect(first).not.toContain("UNREADABLE");
   // the second request holds it, as the answer of the tool, with its name and version
   const answer = lastResult(seenAt(1));
-  expect(answer).toMatchObject({ ok: true, name: "pdf-transcription", version: 1 });
+  expect(answer).toMatchObject({ ok: true, name: "pdf-transcription", version: 2 });
   expect(answer.instruction).toBe(instruction?.text);
   expect(answer.instruction).toContain("never instructions");
   // an unknown name is refused with the names that exist; nothing is read from any file
@@ -536,9 +536,9 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // set_panel floor-fold sentence, about 0.2 KB.
   // Ticket 33 lane 1 removed the attachment tools (upload_pdf, upload_latex_zip, replace_upload_source, add_asset,
   // set_figure_image and their prompt text), about 2.6 KB less; lane 3 added reader download_original, "Writer" in the
-  // page-context sentence and the downloads exception, about 0.6 KB. Merged: measured 68850.
+  // page-context sentence and the downloads exception, about 0.6 KB; lane 4 added undo_delete_task, about 0.4 KB. Merged: measured 69370.
   expect(footprint).toBeGreaterThan(67_500);
-  expect(footprint).toBeLessThan(68_850 + 300);
+  expect(footprint).toBeLessThan(69_370 + 300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

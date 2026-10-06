@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { type PdfContextSummary, summarizeDiscoveryPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
-import { subscribeCopilot } from "../api/ws";
+import { onPlanChanged, subscribeCopilot } from "../api/ws";
+import { fetchUndoableState } from "../api/plans";
 import { ActionButton, Badge, Button, Dialog, getConfiguredIcon } from "../ui";
 import { ProviderSettingsDialog } from "./ProviderSettings";
 import { Icon } from "../lib/icons";
@@ -21,7 +22,7 @@ export const OPERATION_ACTION_KEYS = {
   set_completed: "copilot.operations.actions.set_completed", retry_plans: "copilot.operations.actions.retry_plans", open_task_doc: "copilot.operations.actions.open_task_doc", capabilities: "copilot.operations.actions.capabilities",
   switch_view: "copilot.operations.actions.switch_view", split_pane: "copilot.operations.actions.split_pane", close_pane: "copilot.operations.actions.close_pane", select_pane: "copilot.operations.actions.select_pane",
   resize_pane: "copilot.operations.actions.resize_pane", set_appearance: "copilot.operations.actions.set_appearance", open_copilot_settings: "copilot.operations.actions.open_copilot_settings",
-  delete_plan: "copilot.operations.actions.delete_plan", delete_task: "copilot.operations.actions.delete_task",
+  delete_plan: "copilot.operations.actions.delete_plan", delete_task: "copilot.operations.actions.delete_task", undo_delete_task: "copilot.operations.actions.undo_delete_task",
   set_main_doc: "copilot.operations.actions.set_main_doc", filter_library: "copilot.operations.actions.filter_library", select_work: "copilot.operations.actions.select_work",
   set_detail_tab: "copilot.operations.actions.set_detail_tab", set_sidebar: "copilot.operations.actions.set_sidebar", set_temp_label: "copilot.operations.actions.set_temp_label",
   set_graph_labels: "copilot.operations.actions.set_graph_labels", graph_control: "copilot.operations.actions.graph_control", import_works: "copilot.operations.actions.import_works",
@@ -311,10 +312,23 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   const workObjects = lastTask?.context?.objects ?? [];
   const workObject = workObjects.length === 1 ? workObjects[0] : undefined;
   const elsewhere = running && workObjects.length > 0 && context.view === "plan" && !!context.plan?.selectedPlanId && !workObjects.some((object) => object.id === context.plan?.selectedPlanId);
-  // The six-second undo for a confirmed task delete: shown only while the service still holds it.
+  // The undo (8 s window) for a confirmed task delete: shown only while the service still holds it.
   const [undone, setUndone] = useState<Set<string>>(() => new Set());
   const [, setClock] = useState(0);
-  const undoable = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now());
+  // The toolCallIds of this conversation's deletes the service can still undo; null while unknown. A task already restored
+  // elsewhere (the Plan page, the Copilot's own tool) stops being offered here.
+  const [live, setLive] = useState<Set<string> | null>(null);
+  const undoable = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now() && (live === null || live.has(operation.id)));
+  const pendingUndoId = (snapshot?.messages ?? []).flatMap((message) => message.operations ?? []).reverse().find((operation) => operation.undo && !undone.has(operation.id) && Date.parse(operation.undo.until) > Date.now())?.id;
+  const refreshLive = useCallback(async () => {
+    const state = await fetchUndoableState();
+    setLive(state ? new Set(state.flatMap((entry) => (entry.conversationId === id && entry.toolCallId ? [entry.toolCallId] : []))) : null);
+  }, [id]);
+  useEffect(() => {
+    if (!pendingUndoId) return;
+    void refreshLive();
+    return onPlanChanged(() => void refreshLive());
+  }, [pendingUndoId, refreshLive]);
   const undoUntil = undoable?.undo ? Date.parse(undoable.undo.until) : 0;
   useEffect(() => {
     if (!undoUntil) return;

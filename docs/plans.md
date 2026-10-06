@@ -34,7 +34,7 @@ GET/PUT `/api/plans` 全量 payload；PUT body 带 rev，冲突409，前端重�
 - PlanModal、TaskModal 新建/编辑复用；TaskModal title/status/due，due必填，新建预填plan.due，编辑不可清空。
 - **任务创建唯一入口是新建任务按钮→弹窗**。QuickAdd及看板列底添加已在 smoke 删除，不把旧手册中间态恢复成现行入口。
 - note/links/focused 不进弹窗，在抽屉或行内操作。中文IME Enter不误提交；真正守门是 valid guard，不只依赖非form下的required属性。
-- 抽屉四态直选，Markdown+数学 note 编辑/展示分离、textarea Cmd/Ctrl+Enter保存；删除任务有6秒撤销，原位置插回，toast单例可被替换。
+- 抽屉四态直选，Markdown+数学 note 编辑/展示分离、textarea Cmd/Ctrl+Enter保存；删除任务有8秒撤销（用户自己的删除是页面内存里的句柄；Copilot 删除的任务也出同一个撤销 toast，经服务端撤销登记），原位置插回，toast单例可被替换。
 - 删 plan 二次确认，含未done任务时警告数量。空数据引导创建，无默认plan、无API fixture兜底。
 
 ### 列表与看板：故意不对称
@@ -59,11 +59,11 @@ marked + mdWithMath 先保护code/URL等，再抽数学为熵占位符，marked�
 
 ## Copilot 接入（2026-10-02，票据 09；局部修订）
 
-旧位置：上文「note 不 sanitize」「Stage 4.1 agent 操作计划仍推后」只描述当时的本地单用户手写。新结论与范围：内嵌 Copilot 的 `plan` 工具已覆盖本页既有控件的新建/编辑、状态/期限/note/文档链接/聚焦/列表与看板调序及视图切换；删除与 6 秒撤销留给后续票（此句为票据 09 的原结论，已被下面 2026-10-03 的修订覆盖）。原因：agent 现在能写 note，ADR 0005 要求 UI 能做的 agent 也能做。
+旧位置：上文「note 不 sanitize」「Stage 4.1 agent 操作计划仍推后」只描述当时的本地单用户手写。新结论与范围：内嵌 Copilot 的 `plan` 工具已覆盖本页既有控件的新建/编辑、状态/期限/note/文档链接/聚焦/列表与看板调序及视图切换；删除与撤销留给后续票（此句为票据 09 的原结论，已被下面 2026-10-03 的修订覆盖）。原因：agent 现在能写 note，ADR 0005 要求 UI 能做的 agent 也能做。
 
-**2026-10-03 修订（票据 11，用户裁决）**：旧定位——票据 09 把 `plan` 工具的删除与撤销留给后续票，并按「删除需人工确认」的笼统设想起步。新结论——**删除整个 Plan 需要真人确认；删除单个 Task 与 Plan 页 UI 完全一致：立即删除并带 6 秒撤销，不弹确认。** 范围——只覆盖 `plan` 工具的 `delete_plan`/`delete_task`，不增加统一写入审批，普通保存/计划编辑仍直接执行；UI 自己的删除路径（整库 PUT、PlanView 本地撤销）未改。原因——用户裁决，依据 ADR 0005「原 UI 要求确认的动作才由 Copilot 展示同一确认流程」：Plan 页删除计划有确认对话框，删除任务只有撤销。
+**2026-10-03 修订（票据 11，用户裁决）**：旧定位——票据 09 把 `plan` 工具的删除与撤销留给后续票，并按「删除需人工确认」的笼统设想起步。新结论——**删除整个 Plan 需要真人确认；删除单个 Task 与 Plan 页 UI 完全一致：立即删除并带 8 秒撤销（原 6 秒，2026-10-06 用户签收时改为 8 秒），不弹确认。** 范围——只覆盖 `plan` 工具的 `delete_plan`/`delete_task`，不增加统一写入审批，普通保存/计划编辑仍直接执行；UI 自己的删除路径（整库 PUT、PlanView 本地撤销）未改。原因——用户裁决，依据 ADR 0005「原 UI 要求确认的动作才由 Copilot 展示同一确认流程」：Plan 页删除计划有确认对话框，删除任务只有撤销。
 - 删除计划：工具只能「请求」（`PlanDeleteOperationSchema`，不属于写联合）；服务先保存请求再在 Copilot 面板出确认卡（对象、影响、所依据的 `PlansFile.rev` 与对象内容摘要），run 为 `waiting-for-user`，等待不占业务锁。只有真实 UI 的点击（`POST /api/copilot/confirmations/:id`，须重复卡片所示对象与版本）才让共用的 `applyPlanDelete` 在 `planLock` 内重验 rev 与内容摘要后执行；聊天文字、工具和模型无法批准。取消、Stop、重启、计划被改动（含不涨 rev 的外部手改）都使请求失效且零写入，重启后旧确认不复活；已点确认的删除是已提交写入，Stop 不打断。无撤销（与 UI 一致）。
-- 删除任务：经共用 `applyPlanDelete` 直接执行（`expectedRev`、`operationId` 幂等、journal），结果带 `undo.until`；撤销（`restoreDeletedTask`）原下标、保留未知键、不回滚期间其它改动、只能一次；撤销是用户在 Copilot 面板的 6 秒反悔窗口，agent 不提供撤销工具，撤销成功/失败写入会话记录让模型知情。
+- 删除任务：经共用 `applyPlanDelete` 直接执行（`expectedRev`、`operationId` 幂等、journal），结果带 `undo.until`；撤销（`restoreDeletedTask`）原下标、保留未知键、不回滚期间其它改动、只能一次；撤销窗口 8 秒。**2026-10-06 修订（票 33 签收，用户裁决「Copilot 删除任务后要能自己撤销，且用户能在页面上撤销」）**：旧定位——撤销只是用户在 Copilot 面板的 6 秒窗口，agent 不提供撤销工具。新结论——可撤销状态在服务端内存的一个登记表（`plans-undo.ts` `TaskUndoRegistry`，不改 plans.json；重启即忘）；Copilot 删除的任务可由 agent 自己撤销（`plan undo_delete_task {planId, taskId}`，走 operationId/journal 的写路径，行显示在操作记录里）、由 Copilot 面板撤销、由 Plan 页的同一个 toast 撤销（`GET/POST /api/plans/undo`），三处是同一个操作：`expired`（超过 8 秒，零写入）、`conflict`（所属计划已不存在，零写入）、`noop`（已被恢复：已用掉的句柄是墓碑，后到者与同一时刻的第二个请求都得到 noop，不是失败）、`not_found`（重启后/未登记）。agent 只能撤销自己删除的任务；用户自己在页面删的任务只由页面 toast 撤销。页面 toast 与面板提示在句柄不再可撤销（已恢复或过期）后随 plan.changed 消失。成功撤销写入会话记录让模型知情（noop 不重复记）。
 **2026-10-03 补充（票据 12）**：`plan` 工具的视图动作另有 `set_completed`（列表视图「已完成」组的展开/收起，即 `toggle-completed-tasks`，显式设值而非翻转；只在列表视图挂载且该组存在时可用，否则 `unavailable`/`not_found`，且不会先导航到 Plan 页）和 `open_task_doc`（任务抽屉里已链接文档的 `open-task-doc` 按钮；服务先核对任务确有该链接，浏览器经 Shell `openDoc` 打开，受离开草稿保护）。二者只改显示/导航，不写 plans.json。
 
 - 共用 `plans-actions.ts` 与同一 `planLock`、`PlansFile.rev`、`plan.changed`：工具以 `expectedRev` 在锁内比较，stale 返回 conflict 与当前 rev，agent 重读后再改；窄修改只改点名字段，**保留未知键**（基于磁盘原始对象，不用 zod 解析结果覆盖）。Doc 链接只接受库中各 Work 的主 Doc（`doc_ids[0]`，即 UI 链接选择器的候选）；参数长度与 UI/PlanSchema 一致，不另设上限。列表只同状态调序、看板可跨状态、不跨计划，规则与 UI 共用 contracts 中的 `reorderWithinStatus`/`moveToColumn`；due 晚于计划期限只给 `task_due_after_plan_due` 软警告。
