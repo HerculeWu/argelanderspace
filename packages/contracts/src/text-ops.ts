@@ -148,15 +148,6 @@ export const TextOperationSchema = z.discriminatedUnion("action", [
     })
     .strict(),
   z
-    .object({
-      action: z.literal("add_asset"),
-      docId: Id,
-      expectedRev: Count,
-      attachmentId: z.string().uuid(),
-      filename: z.string().min(1).max(200).optional(),
-    })
-    .strict(),
-  z
     .object({ action: z.literal("add_pdf_image"), docId: Id, ...AddPdfImageRequestSchema.shape })
     .strict(),
   z.object({ action: z.literal("validate"), docId: Id, sourceRev: Count }).strict(),
@@ -177,7 +168,6 @@ export const TEXT_OPERATION_ACTIONS = [
   "create",
   "read_source",
   "save_source",
-  "add_asset",
   "add_pdf_image",
   "validate",
   "generate",

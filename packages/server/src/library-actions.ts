@@ -548,28 +548,7 @@ export interface JobTable {
   waitFor(id: string): Promise<Job>;
 }
 
-/** How an upload submit with a user-attached file ended (the page routes' own validations decide). */
-export type UploadStart =
-  | { kind: "queued"; job: Job; resourceWarning?: boolean }
-  | { kind: "error"; status: number; detail: string };
-
-/** The Work's uploaded LaTeX source, as the Files tab's "replace zip" sees it. */
-export type UploadTarget =
-  | { kind: "not_found" }
-  | { kind: "work"; docId: string; title: string; docIds: string[]; hasUpload: boolean };
-
 export interface AcquisitionPort {
-  /** The page's PDF upload submit, with bytes the user attached (`startPdfUpload`). */
-  startPdfUpload(workId: string, bytes: Buffer, filename: string): UploadStart;
-  /** The page's async LaTeX zip upload submit, with bytes the user attached. Returns an error for a non-zip. */
-  startZipUpload(
-    workId: string,
-    bytes: Uint8Array,
-    options?: { expectNoUpload?: boolean }
-  ): UploadStart;
-  /** Whether these bytes are a readable zip archive (the page's own gate). */
-  checkZip(bytes: Uint8Array): boolean;
-  describeUpload(workId: string): UploadTarget;
   startPdf(workId: string): ArxivStart;
   describeSource(workId: string): ArxivSourcePlan;
   startSource(workId: string): ArxivStart;
@@ -914,76 +893,4 @@ export async function applyAttachArxiv(
     { id: refId, title },
     context.admitting
   );
-}
-
-const uploadFailure = (start: Extract<UploadStart, { kind: "error" }>): AcquireOutcome => ({
-  ok: false,
-  status: start.status === 404 ? "not_found" : start.status >= 500 ? "error" : "rejected",
-  detail:
-    start.status === 409
-      ? `${start.detail}: a task is writing or deleting this document; try again when it finishes`
-      : start.detail,
-});
-
-/** The Files tab's PDF upload, with a file the user handed to this conversation. */
-export async function applyUploadPdf(
-  deps: LibraryOpDeps,
-  refId: string,
-  file: { bytes: Buffer; filename: string },
-  context: AcquireContext
-): Promise<AcquireOutcome> {
-  const port = deps.acquisition;
-  if (!port)
-    return {
-      ok: false,
-      status: "unsupported",
-      detail: "acquisition is not available in this host",
-    };
-  let started: UploadStart;
-  try {
-    started = port.startPdfUpload(refId, file.bytes, file.filename);
-  } catch {
-    return {
-      ok: false,
-      status: "unknown",
-      detail:
-        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
-    };
-  }
-  if (started.kind === "error") return uploadFailure(started);
-  context.onSubmitted?.(started.job.id);
-  const title = LibraryStore.load(deps.paths).get(refId)?.title;
-  return settleAcquisition(port, started.job, false, { id: refId, title }, context.admitting);
-}
-
-/** The LaTeX zip upload (new source or replacement; the confirmation for a replacement happened before this). */
-export async function applyUploadZip(
-  deps: LibraryOpDeps,
-  refId: string,
-  file: { bytes: Buffer },
-  context: AcquireContext,
-  options: { expectNoUpload?: boolean } = {}
-): Promise<AcquireOutcome> {
-  const port = deps.acquisition;
-  if (!port)
-    return {
-      ok: false,
-      status: "unsupported",
-      detail: "acquisition is not available in this host",
-    };
-  let started: UploadStart;
-  try {
-    started = port.startZipUpload(refId, file.bytes, options);
-  } catch {
-    return {
-      ok: false,
-      status: "unknown",
-      detail:
-        "the job could not be queued cleanly; read_jobs for this work shows whether one exists",
-    };
-  }
-  if (started.kind === "error") return uploadFailure(started);
-  context.onSubmitted?.(started.job.id);
-  const title = LibraryStore.load(deps.paths).get(refId)?.title;
-  return settleAcquisition(port, started.job, false, { id: refId, title }, context.admitting);
 }

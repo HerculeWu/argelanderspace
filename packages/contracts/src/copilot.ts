@@ -134,20 +134,6 @@ export const PageContextSchema = pageContext(ReaderPageSchema);
 /** A page as the service records it in a later observation. */
 export const ObservationPageContextSchema = pageContext(ReaderObservationPageSchema);
 export type PageContext = z.infer<typeof PageContextSchema>;
-/** Largest attachment: the PDF upload limit (50 MiB), which also bounds the LaTeX zip the Files tab takes. */
-export const COPILOT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
-/** What the application keeps about a file the user handed to a conversation. Never the bytes. */
-export const CopilotAttachmentSchema = z
-  .object({
-    id: CopilotIdSchema,
-    filename: z.string().min(1).max(255),
-    size: z.number().int().positive().max(COPILOT_ATTACHMENT_MAX_BYTES),
-    contentType: z.string().max(200),
-    sha256: z.string().regex(/^[0-9a-f]{64}$/),
-    createdAt: z.string(),
-  })
-  .strict();
-export type CopilotAttachment = z.infer<typeof CopilotAttachmentSchema>;
 export const CopilotMessageRequestSchema = z
   .object({
     clientMessageId: CopilotIdSchema,
@@ -158,15 +144,12 @@ export const CopilotMessageRequestSchema = z
       .refine((text) => !!text.trim()),
     viewId: CopilotIdSchema,
     contextRevision: z.number().int().nonnegative(),
-    /** Attachments uploaded to this conversation and not yet sent; they travel with this message only. */
-    attachmentIds: z.array(CopilotIdSchema).max(5).optional(),
   })
   .strict();
 export type CopilotMessageRequest = z.infer<typeof CopilotMessageRequestSchema>;
 /** Resume carries no text: the host writes the request from what the record proves. */
 export const CopilotResumeRequestSchema = CopilotMessageRequestSchema.omit({
   text: true,
-  attachmentIds: true,
 });
 export type CopilotResumeRequest = z.infer<typeof CopilotResumeRequestSchema>;
 
@@ -214,8 +197,8 @@ export interface CopilotMessage {
   kind?: "resume";
   /** Steering accepted while the run is working, not yet read by the model. */
   pending?: boolean;
-  /** Files the user handed over with this message. */
-  attachments?: CopilotAttachment[];
+  /** Legacy: names of files an old message carried (the removed attachment feature); shown read-only. */
+  attachments?: { filename: string }[];
   /** Operations this assistant message requested, with their committed outcomes. */
   operations?: CopilotOperation[];
   context?: {
@@ -283,42 +266,13 @@ export type DocReplaceImpact = z.infer<typeof DocReplaceImpactSchema>;
 export const CopilotDocConfirmationSchema = z
   .object({
     ...ConfirmationBase,
-    action: z.enum(["refresh_arxiv_source", "replace_upload_source"]),
+    action: z.literal("refresh_arxiv_source"),
     object: z
       .object({ kind: z.literal("doc"), id: z.string().min(1), workId: z.string().min(1) })
       .strict(),
     /** The Work's title. */
     label: z.string(),
     impact: DocReplaceImpactSchema,
-    /** replace_upload_source: the file that would replace the Doc (bound by its sha256). */
-    attachment: CopilotAttachmentSchema.pick({
-      id: true,
-      filename: true,
-      size: true,
-      sha256: true,
-    }).optional(),
-    objectDigest: z.string().min(1),
-  })
-  .strict();
-/**
- * The PDF upload's resource warning (the Files tab's "continue" checkbox for files of 25 MiB and more) the model
- * triggered with a file the user attached: only the real user can accept it. Bound to the file's sha256.
- */
-export const CopilotResourceConfirmationSchema = z
-  .object({
-    ...ConfirmationBase,
-    action: z.literal("accept_pdf_resource_warning"),
-    object: z
-      .object({ kind: z.literal("attachment"), id: z.string().min(1), workId: z.string().min(1) })
-      .strict(),
-    /** The Work's title. */
-    label: z.string(),
-    attachment: CopilotAttachmentSchema.pick({
-      id: true,
-      filename: true,
-      size: true,
-      sha256: true,
-    }),
     objectDigest: z.string().min(1),
   })
   .strict();
@@ -394,12 +348,10 @@ export const CopilotConfirmationSchema = z.union([
   CopilotTextReplaceConfirmationSchema,
   CopilotPlanConfirmationSchema,
   CopilotDocConfirmationSchema,
-  CopilotResourceConfirmationSchema,
   CopilotDocDeleteConfirmationSchema,
   CopilotManuscriptDeleteConfirmationSchema,
 ]);
 export type CopilotDocDeleteConfirmation = z.infer<typeof CopilotDocDeleteConfirmationSchema>;
-export type CopilotResourceConfirmation = z.infer<typeof CopilotResourceConfirmationSchema>;
 export type CopilotPlanConfirmation = z.infer<typeof CopilotPlanConfirmationSchema>;
 export type CopilotDocConfirmation = z.infer<typeof CopilotDocConfirmationSchema>;
 export type CopilotConfirmation = z.infer<typeof CopilotConfirmationSchema>;
@@ -412,8 +364,6 @@ export const CopilotConfirmationDecisionSchema = z
     action: z.enum([
       "delete_plan",
       "refresh_arxiv_source",
-      "replace_upload_source",
-      "accept_pdf_resource_warning",
       "delete_doc",
       "delete_manuscript",
       "replace_text_reading",
@@ -470,17 +420,9 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
   z
     .object({
       ...OperationConfirmationBase,
-      action: z.enum(["refresh_arxiv_source", "replace_upload_source"]),
+      action: z.literal("refresh_arxiv_source"),
       workId: z.string().min(1),
       docId: z.string().min(1),
-    })
-    .strict(),
-  z
-    .object({
-      ...OperationConfirmationBase,
-      action: z.literal("accept_pdf_resource_warning"),
-      workId: z.string().min(1),
-      attachmentId: z.string().min(1),
     })
     .strict(),
 ]);
@@ -540,6 +482,10 @@ export const WsCopilotSubscribedSchema = z
   })
   .strict();
 
+/** What an old user envelope recorded about a file handed over with it (metadata only; read-only, shown by name). */
+export const LegacySentAttachmentSchema = z
+  .object({ filename: z.string().max(255).optional() })
+  .passthrough();
 export const CopilotPromptSchema = z
   .object({
     version: z.literal(1),
@@ -553,10 +499,13 @@ export const CopilotPromptSchema = z
      * batch of its entries (`coverage` says which) or left out (`readingOmitted`), never cut silently (ticket 24).
      */
     context: ObservationPageContextSchema,
-    /** Metadata of the files handed over with this message (ids the tools may name); never their bytes. */
-    attachments: z.array(CopilotAttachmentSchema).max(5).optional(),
     /** The material of the PDF Doc the page shows (copilot ticket 20): derived by the service from the verified original. */
     pdf: PdfMaterialEnvelopeSchema.optional(),
+    /**
+     * Legacy (removed attachment feature, ticket 15): accepted on read so a conversation written by the old format
+     * still loads; the history keeps what was delivered as sent. Never written, never acted on.
+     */
+    attachments: z.array(LegacySentAttachmentSchema).max(5).optional(),
   })
   .strict();
 export type CopilotPrompt = z.infer<typeof CopilotPromptSchema>;

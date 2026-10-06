@@ -16,9 +16,6 @@
  *    start a job in the existing JobRunner and take only a work id. Refreshing an existing arXiv LaTeX Doc
  *    replaces its text, so it waits for the real user's confirmation, as the dialog's annotation-risk step does;
  *  - read_jobs: the acquisition status lines (queued/running/failed jobs of a work) from the JobRunner table.
- *  - upload_pdf / upload_latex_zip / replace_upload_source: the Files tab uploads, with a file the user handed to
- *    THIS conversation as an attachment (an id, never a path or URL). Replacing the uploaded source waits for the
- *    real user, like the arXiv refresh. A path, URL or file field does not exist in any action.
  *  - delete_doc: the Files tab "delete document" dialog (`DELETE /api/paper/:doc_id`), the global physical delete.
  *    It only ever waits for the real user's confirmation card (the dialog's own confirm); there is no "unlink from
  *    this Work" variant, because the page has none.
@@ -299,24 +296,6 @@ export const LibraryReadJobsSchema = z
     limit: z.number().int().min(1).max(50).optional(),
   })
   .strict();
-const AttachmentId = z.string().uuid();
-/** The Files tab's PDF upload with a file the user handed to this conversation: `POST /api/library/upload-pdf`. */
-export const LibraryUploadPdfSchema = z
-  .object({ action: z.literal("upload_pdf"), refId: Id, attachmentId: AttachmentId })
-  .strict();
-/** The LaTeX source upload for a work that has no uploaded source yet: `POST /api/library/upload`. */
-export const LibraryUploadLatexZipSchema = z
-  .object({ action: z.literal("upload_latex_zip"), refId: Id, attachmentId: AttachmentId })
-  .strict();
-/** Replace the work's uploaded LaTeX source (Files tab "replace zip"); waits for the user's confirmation. */
-export const LibraryReplaceUploadSourceSchema = z
-  .object({
-    action: z.literal("replace_upload_source"),
-    refId: Id,
-    docId: Id,
-    attachmentId: AttachmentId,
-  })
-  .strict();
 /**
  * The Files tab's "delete document" dialog: the GLOBAL physical delete of one Doc (its stored text or original,
  * assets, sidecars and all annotations including the archive), removed from every Work that lists it.
@@ -325,9 +304,6 @@ export const LibraryDeleteDocSchema = z
   .object({ action: z.literal("delete_doc"), docId: Id })
   .strict();
 export type LibraryDeleteDoc = z.infer<typeof LibraryDeleteDocSchema>;
-export type LibraryUploadPdf = z.infer<typeof LibraryUploadPdfSchema>;
-export type LibraryUploadLatexZip = z.infer<typeof LibraryUploadLatexZipSchema>;
-export type LibraryReplaceUploadSource = z.infer<typeof LibraryReplaceUploadSourceSchema>;
 export type LibraryAcquireArxivPdf = z.infer<typeof LibraryAcquireArxivPdfSchema>;
 export type LibraryAttachArxiv = z.infer<typeof LibraryAttachArxivSchema>;
 export type LibraryReadJobs = z.infer<typeof LibraryReadJobsSchema>;
@@ -384,9 +360,6 @@ export const LIBRARY_OPERATION_ACTIONS = [
   "import_works",
   "acquire_arxiv_pdf",
   "attach_arxiv",
-  "upload_pdf",
-  "upload_latex_zip",
-  "replace_upload_source",
   "delete_doc",
   "read_jobs",
   "filter_library",

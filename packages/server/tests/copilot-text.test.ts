@@ -3,7 +3,7 @@
  * source panel's routes), a real temp dataDir and real HTTP routes of `createApp` for setting the data up and for
  * reading the outcome back. Only the human confirmation port is a test double, and it records what it was asked.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
@@ -384,7 +384,7 @@ describe("create, read, save, validate, generate", () => {
 });
 
 describe("images", () => {
-  test("add_asset takes only an image the user attached; add_pdf_image renders from the verified original", async () => {
+  test("add_pdf_image renders from the verified original", async () => {
     const bytes = syntheticPdf({ pageCount: 2 });
     const probed = await probePdf(bytes);
     const pdf = publishPdfDoc(paths, {
@@ -397,13 +397,6 @@ describe("images", () => {
     const docId = (
       await run0({ action: "create", workId: KNOWN_WORK_ID, sourcePdfDocId: pdf.doc_id })
     ).payload.docId as string;
-    const none = await run0({
-      action: "add_asset",
-      docId,
-      expectedRev: 0,
-      attachmentId: randomUUID(),
-    });
-    expect(none.payload.status).toBe("not_found");
     const added = await run0({
       action: "add_pdf_image",
       docId,
@@ -451,30 +444,6 @@ describe("images", () => {
     })({ action: "open_source_pdf", docId });
     expect(open.payload.ok).toBe(true);
     expect(seen).toEqual([{ action: "open_doc", docId: pdf.doc_id }]);
-  });
-
-  test("an attached image is added through the same asset path", async () => {
-    const png = Buffer.concat([
-      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]),
-      Buffer.from("IHDR"),
-      Buffer.from([0, 0, 0, 2, 0, 0, 0, 2, 8, 2, 0, 0, 0]),
-      Buffer.alloc(4),
-      Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]),
-    ]);
-    const id = randomUUID();
-    const run = toolWith({
-      attachment: (a) =>
-        a === id
-          ? {
-              meta: { filename: "fig.png", sha256: createHash("sha256").update(png).digest("hex") },
-              bytes: png,
-            }
-          : null,
-    });
-    const docId = (await run({ action: "create", workId: KNOWN_WORK_ID })).payload.docId as string;
-    const added = await run({ action: "add_asset", docId, expectedRev: 0, attachmentId: id });
-    expect(added.payload).toMatchObject({ ok: true, rev: 1 });
-    expect(added.payload.asset.name).toMatch(/^fig-[0-9a-f]{8}\.png$/);
   });
 });
 
@@ -615,7 +584,6 @@ describe("a replacement of annotated reading text needs the real user", () => {
       "create",
       "read_source",
       "save_source",
-      "add_asset",
       "add_pdf_image",
       "validate",
       "generate",

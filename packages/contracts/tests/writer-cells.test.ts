@@ -70,7 +70,7 @@ describe("cell fields an agent may set", () => {
     );
     for (const [type, fields] of [
       ["latex", { caption: "no such field" }],
-      ["figure", { image: "a.png" }], // the image is set through the chooser (set_figure_image) only
+      ["figure", { image: "a.png" }], // the image is set through the page's own image chooser only (Copilot has no file upload)
       ["figure", { width: 10 }],
       ["figure", { placement: "up" }],
       ["figure", { label: "bad}label" }],

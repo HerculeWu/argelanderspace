@@ -556,6 +556,15 @@
         "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
       ]
     },
+    "copilot-resume": {
+      "set": "lucide",
+      "file": "Play",
+      "originalHash": "e3f30d96e250b5c09a6f27afa320ab41a6f1a7b66af45a1c07ab274e8223f588",
+      "normalizedHash": "e3f30d96e250b5c09a6f27afa320ab41a6f1a7b66af45a1c07ab274e8223f588",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
     "copilot-copy": {
       "set": "lucide",
       "file": "Copy",
@@ -602,24 +611,6 @@
           "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
         ]
       }
-    },
-    "copilot-attach": {
-      "set": "lucide",
-      "file": "Plus",
-      "originalHash": "d56fbb36fa349a9ccb53db57372ea94021c01cd78894300f89ad5a12f7ad8dc0",
-      "normalizedHash": "d56fbb36fa349a9ccb53db57372ea94021c01cd78894300f89ad5a12f7ad8dc0",
-      "modifications": [
-        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
-      ]
-    },
-    "copilot-attachment-remove": {
-      "set": "lucide",
-      "file": "X",
-      "originalHash": "78e0a86434dbe8fe94dba5862d1628fdb8888e89209d28636f7f718287fb6ac0",
-      "normalizedHash": "78e0a86434dbe8fe94dba5862d1628fdb8888e89209d28636f7f718287fb6ac0",
-      "modifications": [
-        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
-      ]
     },
     "text-source-assets": {
       "set": "lucide",

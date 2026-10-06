@@ -534,8 +534,10 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // ticket 29 measured 69262 bytes; this ticket adds the load_instruction action, the read_image action and one
   // sentence. The instruction (about 5 KB) is never part of it. Ticket 32 (measured 70894) adds retry_plans and the
   // set_panel floor-fold sentence, about 0.2 KB.
-  expect(footprint).toBeGreaterThan(69_262);
-  expect(footprint).toBeLessThan(69_262 + 1_900);
+  // Ticket 33 lane 1 removed the attachment tools (upload_pdf, upload_latex_zip, replace_upload_source, add_asset,
+  // set_figure_image and their prompt text): measured 68301, about 2.6 KB less than ticket 32.
+  expect(footprint).toBeGreaterThan(67_500);
+  expect(footprint).toBeLessThan(68_301 + 1_900);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

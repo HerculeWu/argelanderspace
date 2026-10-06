@@ -3,14 +3,7 @@
  * notification the page's routes use, driven directly with a real dataDir. The tool/Pi/HTTP end-to-end is in
  * copilot-writer-cells.test.ts.
  */
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WriterManuscript, WriterNumberingResponse } from "@argelanderspace/contracts";
@@ -455,90 +448,6 @@ describe("comments and references", () => {
     expect(out).toMatchObject({ ok: true });
     const next = (disk().cells[0] as unknown as { data: { source: string } }).data.source;
     expect(next).toBe("\\begin{equation}\n  \\label{eq:x}\nx\n\\end{equation}\nSee eq:x");
-  });
-});
-
-describe("figure images (controlled attachments only)", () => {
-  const PNG = Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    Buffer.from("rest-of-the-png"),
-  ]);
-  const attach = (name: string, bytes: Buffer) => (id: string) =>
-    id === "att-1" ? { meta: { filename: name }, bytes } : null;
-
-  test("the image is stored under assets/ through the page's store (safe name, no overwrite) and the cell points at it", async () => {
-    const out = await cellOperation(
-      deps,
-      { action: "set_figure_image", ...base, cellId: "c_00000002", attachmentId: "att-1" },
-      { attachment: attach("My Fig {1}.PNG", PNG) }
-    );
-    expect(out).toMatchObject({ ok: true, status: "ok", detail: { image: "My_Fig_1.png" } });
-    expect(readdirSync(join(dataDir, "manuscripts", M, "assets"))).toEqual(["My_Fig_1.png"]);
-    expect((disk().cells[1] as unknown as { data: { image: string } }).data.image).toBe(
-      "My_Fig_1.png"
-    );
-    // the same file again never overwrites
-    const second = await cellOperation(
-      deps,
-      {
-        action: "set_figure_image",
-        ...base,
-        expectedRev: 4,
-        cellId: "c_00000002",
-        attachmentId: "att-1",
-      },
-      { attachment: attach("My Fig {1}.PNG", PNG) }
-    );
-    expect(second).toMatchObject({ ok: true, detail: { image: "My_Fig_1-1.png" } });
-    expect(readFileSync(join(dataDir, "manuscripts", M, "assets", "My_Fig_1.png"))).toEqual(PNG);
-  });
-
-  test("not an attachment of this conversation, not an image, not a figure cell, or a stale rev: nothing is stored", async () => {
-    const assets = join(dataDir, "manuscripts", M, "assets");
-    const none = (_: string) => null;
-    expect(
-      await cellOperation(
-        deps,
-        { action: "set_figure_image", ...base, cellId: "c_00000002", attachmentId: "att-1" },
-        { attachment: none }
-      )
-    ).toMatchObject({ ok: false, status: "not_found" });
-    expect(
-      await cellOperation(
-        deps,
-        { action: "set_figure_image", ...base, cellId: "c_00000002", attachmentId: "att-1" },
-        { attachment: attach("a.png", Buffer.from("not a png")) }
-      )
-    ).toMatchObject({ ok: false, status: "invalid" });
-    expect(
-      await cellOperation(
-        deps,
-        { action: "set_figure_image", ...base, cellId: "c_00000002", attachmentId: "att-1" },
-        { attachment: attach("a.exe", PNG) }
-      )
-    ).toMatchObject({ ok: false, status: "invalid" });
-    expect(
-      await cellOperation(
-        deps,
-        { action: "set_figure_image", ...base, cellId: "c_00000001", attachmentId: "att-1" },
-        { attachment: attach("a.png", PNG) }
-      )
-    ).toMatchObject({ ok: false, status: "invalid" });
-    expect(
-      await cellOperation(
-        deps,
-        {
-          action: "set_figure_image",
-          ...base,
-          expectedRev: 1,
-          cellId: "c_00000002",
-          attachmentId: "att-1",
-        },
-        { attachment: attach("a.png", PNG) }
-      )
-    ).toMatchObject({ ok: false, status: "conflict" });
-    expect(existsSync(assets) ? readdirSync(assets) : []).toEqual([]);
-    expect(disk().rev).toBe(3);
   });
 });
 

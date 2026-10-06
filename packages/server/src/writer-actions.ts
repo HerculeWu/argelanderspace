@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   agentTexProblem,
@@ -32,7 +32,6 @@ import {
   manuscriptDir,
   manuscriptJsonPath,
   saveManuscript,
-  writeManuscriptAsset,
 } from "@argelanderspace/core";
 import type { AsyncLock } from "./lock.js";
 
@@ -285,36 +284,7 @@ function assetNames(dir: string): string[] {
   }
 }
 
-const ASSET_MAX_BYTES = 20 * 1024 * 1024;
 const hex8 = () => randomBytes(4).toString("hex");
-
-/** A raster/vector image by its first bytes, so a mislabelled file is never stored as a figure. */
-function looksLikeImage(name: string, bytes: Uint8Array): boolean {
-  const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
-  const startsWith = (...values: number[]) =>
-    values.every((value, index) => bytes[index] === value);
-  if (ext === ".png") return startsWith(0x89, 0x50, 0x4e, 0x47);
-  if (ext === ".jpg" || ext === ".jpeg") return startsWith(0xff, 0xd8, 0xff);
-  if (ext === ".gif") return startsWith(0x47, 0x49, 0x46, 0x38);
-  if (ext === ".webp")
-    return startsWith(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45;
-  if (ext === ".svg") return Buffer.from(bytes.slice(0, 4096)).toString("utf8").includes("<svg");
-  return false;
-}
-
-/** A stored figure name the TeX source can hold between braces and a path: letters, digits, dot, dash, underscore. */
-function safeAssetName(filename: string): string | null {
-  const base = filename.split(/[\\/]/).pop() ?? "";
-  const dot = base.lastIndexOf(".");
-  if (dot <= 0) return null;
-  const stem = base
-    .slice(0, dot)
-    .replace(/[^A-Za-z0-9_-]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 80);
-  const ext = base.slice(dot).toLowerCase();
-  return stem ? `${stem}${ext}` : null;
-}
 
 /** The text fields of a cell an insert button may write into (what the editing form shows as text). */
 const NON_TEXT_FIELDS = new Set([
@@ -346,10 +316,7 @@ function freshId(prefix: string, taken: ReadonlySet<string>): string {
  */
 export async function cellOperation(
   deps: WriterOpDeps,
-  op: WriterCellOperation,
-  options: {
-    attachment?: (id: string) => { meta: { filename: string }; bytes: Buffer } | null;
-  } = {}
+  op: WriterCellOperation
 ): Promise<WriterOpOutcome> {
   // Screening of what is written (cell fields and the cite/label text; the figure name is rebuilt below).
   if (op.action === "insert_cell" || op.action === "update_cell") {
@@ -362,7 +329,6 @@ export async function cellOperation(
     const problem = agentTexProblem(fields);
     if (problem) return fail("invalid", problem);
   }
-  let writtenAsset: string | null = null;
   const outcome = await deps.writerLock.run((): WriterOpOutcome => {
     let current: WriterManuscript | null;
     try {
@@ -567,51 +533,9 @@ export async function cellOperation(
       );
     }
 
-    // set_figure_image
-    if (cell.type !== "figure")
-      return fail(
-        "invalid",
-        `only a figure cell has an image (this one is ${cell.type})`,
-        current.rev
-      );
-    const held = options.attachment?.(op.attachmentId);
-    if (!held)
-      return fail(
-        "not_found",
-        "no such attachment: only a file the user attached to a message of this conversation can be used",
-        current.rev
-      );
-    if (held.bytes.length === 0 || held.bytes.length > ASSET_MAX_BYTES)
-      return fail("invalid", "the image must be 1 byte to 20 MB", current.rev);
-    const name = safeAssetName(held.meta.filename);
-    if (!name || !looksLikeImage(name, held.bytes))
-      return fail(
-        "invalid",
-        `'${held.meta.filename}' is not a png, jpg, gif, webp or svg image (checked by its content)`,
-        current.rev
-      );
-    try {
-      writtenAsset = writeManuscriptAsset(deps.dataDir, current.id, name, held.bytes);
-    } catch (error) {
-      return fail("invalid", (error as Error).message, current.rev);
-    }
-    cells[at] = { ...cell, data: { ...cell.data, image: writtenAsset } } as WriterCell;
-    try {
-      return finish({ ...current, cells }, { cellId: cell.id, image: writtenAsset });
-    } catch (error) {
-      // The figure was stored but the manuscript could not be saved: the new file is removed again.
-      rmSync(join(manuscriptDir(deps.dataDir, current.id), "assets", writtenAsset), {
-        force: true,
-      });
-      writtenAsset = null;
-      throw error;
-    }
+    return fail("invalid", "unsupported cell operation", current.rev);
   });
   if (outcome.ok && outcome.status === "ok") deps.changed("put", outcome.id);
-  else if (writtenAsset && !outcome.ok)
-    rmSync(join(manuscriptDir(deps.dataDir, op.manuscriptId), "assets", writtenAsset), {
-      force: true,
-    });
   return outcome;
 }
 

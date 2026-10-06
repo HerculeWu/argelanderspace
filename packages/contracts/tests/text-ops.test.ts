@@ -18,12 +18,6 @@ describe("the text tool's closed operation union", () => {
       create: { action: "create", workId: "w" },
       read_source: { action: "read_source", docId: DOC },
       save_source: { action: "save_source", docId: DOC, expectedRev: 0, markdown: "x" },
-      add_asset: {
-        action: "add_asset",
-        docId: DOC,
-        expectedRev: 0,
-        attachmentId: "11111111-1111-4111-8111-111111111111",
-      },
       add_pdf_image: {
         action: "add_pdf_image",
         docId: DOC,
