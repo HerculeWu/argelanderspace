@@ -29,7 +29,7 @@ vi.mock("../src/api/ws", () => ({
 vi.mock("../src/copilot/Copilot", () => ({
   Copilot: ({ onViewAction, context, onOpenPanel, open, viewReady }: { onViewAction: typeof h.viewAction; context: PageContext; onOpenPanel: () => void; open: boolean; viewReady?: boolean }) => {
     h.viewAction = onViewAction; h.context = context; h.openPanel = onOpenPanel; h.open = open; h.ready = viewReady !== false;
-    return null;
+    return <textarea data-ui="copilot-input" aria-label="copilot-input" />;
   },
 }));
 vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="doc-stub" /> }));
@@ -257,6 +257,23 @@ describe("open a Doc, and show or hide the Copilot panel", () => {
     expect(q('[data-ui="copilot-toggle"]')?.getAttribute("aria-expanded")).toBe("true");
     expect(await run({ action: "close_copilot" })).toEqual({ ok: true });
     await waitFor(() => expect(h.open).toBe(false));
+  });
+});
+
+describe("opening the panel with its toggle", () => {
+  it("moves focus to the Copilot input; closing it, or a model-driven open, does not", async () => {
+    await boot();
+    const toggle = q('[data-ui="copilot-toggle"]') as HTMLElement;
+    toggle.focus();
+    fireEvent.click(toggle);
+    await waitFor(() => expect(document.activeElement).toBe(q('[data-ui="copilot-input"]')));
+    toggle.focus();
+    fireEvent.click(toggle); // closes
+    await waitFor(() => expect(h.open).toBe(false));
+    expect(document.activeElement).toBe(toggle);
+    expect(await run({ action: "open_copilot" })).toEqual({ ok: true });
+    await waitFor(() => expect(h.open).toBe(true));
+    expect(document.activeElement).toBe(toggle);
   });
 });
 

@@ -7,8 +7,13 @@ import { type RefObject, useEffect, useState } from "react";
  * Shared by the LaTeX Reader and the PDF Reader, with the same threshold.
  */
 
-/** The reading column never gets less than this; the side panels fold before it does. */
-export const MIN_READING_COLUMN = 240;
+/**
+ * The reading column never gets less than this; the side panels fold before it does. 480 px is the LaTeX article's
+ * 40 px side padding twice plus a ~400 px measure (about 45 characters at the 18 px body size, the lower edge of a
+ * readable line), and it keeps a PDF page at least ~440 px wide. Ticket 32 raised it from 240 (user rulings "PDF 1024:
+ * same auto-fold as LaTeX"): at 1440 with Copilot open the article was 326 px, the PDF page 340 px and cropped.
+ */
+export const MIN_READING_COLUMN = 480;
 export interface PanelSizes {
   left: number;
   right: number;
@@ -56,7 +61,16 @@ export function useAutoFoldedPanels(ref: RefObject<HTMLElement>, panels: PanelSi
   }, [sameAuto, auto.left, auto.right]);
   const collapsedLeft = manual.left ?? auto.left;
   const collapsedRight = manual.right ?? auto.right;
-  const setCollapsedLeft = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, left: typeof value === "function" ? value(m.left ?? m.auto.left) : value }));
-  const setCollapsedRight = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => ({ ...m, right: typeof value === "function" ? value(m.right ?? m.auto.right) : value }));
+  // Unfolding one panel while the other is open and the column would drop below its minimum folds the other one
+  // (the article is never squeezed out; one panel always opens when asked, the column then keeps what is left).
+  const squeezed = width !== null && width - panels.left - panels.right < MIN_READING_COLUMN;
+  const setCollapsedLeft = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => {
+    const left = typeof value === "function" ? value(m.left ?? m.auto.left) : value;
+    return { ...m, left, ...(!left && squeezed && !(m.right ?? m.auto.right) ? { right: true } : {}) };
+  });
+  const setCollapsedRight = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => {
+    const right = typeof value === "function" ? value(m.right ?? m.auto.right) : value;
+    return { ...m, right, ...(!right && squeezed && !(m.left ?? m.auto.left) ? { left: true } : {}) };
+  });
   return { collapsedLeft, collapsedRight, setCollapsedLeft, setCollapsedRight };
 }

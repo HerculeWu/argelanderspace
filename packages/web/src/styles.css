@@ -72,12 +72,13 @@
   font-weight: 600;
   margin: 0;
   line-height: 1.3;
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
 }
-.topbar .doc-meta { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.topbar .doc-meta { font-size: 12px; color: var(--muted); white-space: nowrap; flex: none; }
 .topbar .paper-switch {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 200px;
   font-size: 12px;
   padding: 4px 8px;
@@ -86,6 +87,14 @@
   background: var(--surface-1);
   color: inherit;
   cursor: pointer;
+}
+
+/* a narrow pane (a split pane beside Copilot) keeps the title on one line with an ellipsis (the full title is its
+   tooltip), shrinks the doc select instead of letting it overlap, and tightens the bar's padding */
+@container (max-width: 480px) {
+  .topbar { gap: 8px; padding: 8px 10px; }
+  .topbar .paper-switch { max-width: 110px; }
+  .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 
 /* ---------- main 3-column layout ---------- */
@@ -100,6 +109,9 @@
   transition: width 0.24s ease, flex-basis 0.24s ease;
   overflow: hidden;
 }
+/* Hard floor: whatever the folds say, an open side panel never takes the article below 240 px (the pane's width minus
+   the other rail minus the floor, but a panel keeps 180 px); the auto-fold keeps the comfortable 480 px (MIN_READING_COLUMN) where it can. */
+.panel.left, .panel.right { max-width: max(calc(100% - var(--rail-w) - 240px), 180px); }
 .panel.left { width: var(--left-w); flex-basis: var(--left-w); border-right: 1px solid var(--line); }
 .panel.right { width: var(--right-w); flex-basis: var(--right-w); border-left: 1px solid var(--line); }
 .panel.collapsed { width: var(--rail-w) !important; flex-basis: var(--rail-w) !important; }
@@ -136,8 +148,9 @@
   position: absolute;
   top: 44px;
   left: 50%;
-  transform: translateX(-50%) rotate(90deg);
-  transform-origin: center;
+  transform: translateX(-50%);
+  /* vertical text flows from the label's own top edge, so a long label is never centred upward under the toggle */
+  writing-mode: vertical-rl;
   white-space: nowrap;
   font-size: 11px;
   letter-spacing: 0.12em;
