@@ -11,6 +11,7 @@
 
 export * from "./arxiv-pdf.js";
 export * from "./config.js";
+export * from "./global-dirs.js";
 export * from "./latex/arxiv-source.js";
 export * from "./lib/http.js";
 export * from "./lib/proc.js";

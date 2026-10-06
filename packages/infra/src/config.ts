@@ -9,6 +9,10 @@
  *   openalex_api_key  string   fallback for $OPENALEX_API_KEY
  *   ads_dev_key       string   fallback for $ADS_DEV_KEY (itself a fallback
  *                              for ~/.ads/dev_key)
+ *   global_dir        string   global data dir override (ADR 0007; env
+ *                              $ARGELANDERSPACE_GLOBAL_DIR wins)
+ *   global_cache_dir  string   global cache dir override (env
+ *                              $ARGELANDERSPACE_GLOBAL_CACHE_DIR wins)
  *   auto_ingest_arxiv boolean  default true — Stage 15: automatically fetch
  *                              & compile the arXiv source when an added work
  *                              has an arXiv id (hidden setting; the web UI
@@ -33,6 +37,10 @@ export interface AppConfig {
   port?: number;
   openalex_api_key?: string;
   ads_dev_key?: string;
+  /** Global data dir override (ADR 0007); below $ARGELANDERSPACE_GLOBAL_DIR. */
+  global_dir?: string;
+  /** Global cache dir override; below $ARGELANDERSPACE_GLOBAL_CACHE_DIR. */
+  global_cache_dir?: string;
   auto_ingest_arxiv?: boolean;
 }
 
@@ -52,7 +60,13 @@ export function configFilePath(
   return join(xdg ? xdg : join(home, ".config"), "argelanderspace", "config.toml");
 }
 
-const STRING_KEYS = ["data_dir", "openalex_api_key", "ads_dev_key"] as const;
+const STRING_KEYS = [
+  "data_dir",
+  "openalex_api_key",
+  "ads_dev_key",
+  "global_dir",
+  "global_cache_dir",
+] as const;
 
 /** Parse config TOML text; throws ConfigError (path + reason, never values). */
 export function parseConfigToml(text: string, path: string = "<config>"): AppConfig {
