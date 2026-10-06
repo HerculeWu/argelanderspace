@@ -156,6 +156,18 @@ describe("retry_plans presses only a Retry that exists (ticket 32 fix round 1, S
     expect(q('[data-ui="navigate-view"][data-ui-key="library"]')?.getAttribute("aria-current")).toBe("page");
   });
 
+  it("a loaded Plan page in another pane: refused as disabled, and the active pane stays where the user is", async () => {
+    await boot();
+    expect(await run({ action: "split_pane" })).toEqual({ ok: true });
+    await waitFor(() => expect(paneIds()).toEqual([1, 2]));
+    expect(await run({ action: "switch_view", view: "library", paneId: 2 })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
+    expect(ctx().workspace?.activePaneId).toBe(2);
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "disabled" });
+    await new Promise((resolve) => setTimeout(resolve, 100)); // let a (wrong) pane switch render
+    expect(ctx().workspace?.activePaneId).toBe(2);
+  });
+
   it("a Plan page whose first load is still running has no Retry button: disabled, nothing reloaded", async () => {
     const gate: { release: () => void } = { release: () => {} };
     let gets = 0;

@@ -203,7 +203,10 @@ export function Shell() {
     if (action.action === "retry_plans") {
       const plans = [active, ...state.panes].filter((candidate) => candidate.view === "plan");
       if (plans.length === 0) return { ok: false, detail: "unavailable" };
-      pane = plans.find((candidate) => planControllers.current.get(candidate.id)?.available(action)) ?? plans[0];
+      const failed = plans.find((candidate) => planControllers.current.get(candidate.id)?.available(action));
+      // refused before any pane switch: a refusal must not change what the user is looking at
+      if (!failed) return { ok: false, detail: "disabled" };
+      pane = failed;
     }
     if (action.action === "set_completed")
       pane = [active, ...state.panes].find((candidate) => candidate.view === "plan" && planControllers.current.get(candidate.id)?.available(action)) ?? pane;
