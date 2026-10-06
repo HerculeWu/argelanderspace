@@ -98,13 +98,32 @@ describe("override precedence", () => {
     ).toEqual({ dataDir: "/env/data", cacheDir: "/home/u/.cache/argelanderspace" });
   });
 
-  test("blank env values are ignored; relative overrides become absolute", async () => {
+  test("blank env values are ignored", async () => {
     const m = await load("linux", { HOME: "/home/u" });
     const r = m.resolveGlobalDirs({
-      config: { global_dir: "rel/data" },
+      config: { global_dir: "/cfg/data" },
       env: { ARGELANDERSPACE_GLOBAL_DIR: "  " },
     });
-    expect(r.dataDir).toBe(join(process.cwd(), "rel/data"));
+    expect(r.dataDir).toBe("/cfg/data");
+  });
+
+  test("relative overrides are rejected, naming the source but not the value", async () => {
+    const m = await load("linux", { HOME: "/home/u" });
+    expect(() => m.resolveGlobalDirs({ config: { global_dir: "secret/rel" } })).toThrow(
+      /"global_dir" must be an absolute path/
+    );
+    expect(() => m.resolveGlobalDirs({ config: { global_dir: "secret/rel" } })).not.toThrow(
+      /secret/
+    );
+    expect(() =>
+      m.resolveGlobalDirs({ config: {}, env: { ARGELANDERSPACE_GLOBAL_CACHE_DIR: "rel" } })
+    ).toThrow(/ARGELANDERSPACE_GLOBAL_CACHE_DIR must be an absolute path/);
+  });
+
+  test("windows absolute-ness follows win32 rules", async () => {
+    const m = await load("win32", { LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" });
+    expect(m.resolveGlobalDirs({ config: { global_dir: "D:\\data" } }).dataDir).toBe("D:\\data");
+    expect(() => m.resolveGlobalDirs({ config: { global_dir: "/data" } })).toThrow(/absolute/);
   });
 });
 

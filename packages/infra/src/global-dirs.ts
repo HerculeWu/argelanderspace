@@ -15,9 +15,9 @@
  */
 
 import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { posix, win32 } from "node:path";
 import envPaths from "env-paths";
-import { type AppConfig, getConfig } from "./config.js";
+import { type AppConfig, ConfigError, getConfig } from "./config.js";
 
 export interface GlobalDirs {
   dataDir: string;
@@ -29,11 +29,33 @@ export interface GlobalDirsOptions {
   config?: AppConfig;
 }
 
-function pick(envValue: string | undefined, configValue: string | undefined): string | undefined {
+/** Absolute-ness follows the detected platform's path rules, not the host's. */
+function isAbsolutePath(p: string): boolean {
+  if (process.platform !== "win32") return posix.isAbsolute(p);
+  // "\\data" is rooted but drive-relative; require a drive letter or UNC prefix.
+  return win32.isAbsolute(p) && /^([a-zA-Z]:|[\\/]{2})/.test(p);
+}
+
+/**
+ * Overrides must be absolute: a relative one would resolve per working
+ * directory and split "one global dir" across projects. Errors name the
+ * source only, never the value.
+ */
+function pick(
+  envName: string,
+  envValue: string | undefined,
+  configKey: string,
+  configValue: string | undefined
+): string | undefined {
   const fromEnv = envValue?.trim();
-  if (fromEnv) return resolve(fromEnv);
+  if (fromEnv) {
+    if (!isAbsolutePath(fromEnv)) throw new ConfigError(`${envName} must be an absolute path`);
+    return fromEnv;
+  }
   const fromConfig = configValue?.trim();
-  return fromConfig ? resolve(fromConfig) : undefined;
+  if (!fromConfig) return undefined;
+  if (!isAbsolutePath(fromConfig)) throw new ConfigError(`"${configKey}" must be an absolute path`);
+  return fromConfig;
 }
 
 export function resolveGlobalDirs(opts: GlobalDirsOptions = {}): GlobalDirs {
@@ -41,8 +63,20 @@ export function resolveGlobalDirs(opts: GlobalDirsOptions = {}): GlobalDirs {
   const config = opts.config ?? getConfig();
   const defaults = envPaths("argelanderspace", { suffix: "" });
   return {
-    dataDir: pick(env.ARGELANDERSPACE_GLOBAL_DIR, config.global_dir) ?? defaults.data,
-    cacheDir: pick(env.ARGELANDERSPACE_GLOBAL_CACHE_DIR, config.global_cache_dir) ?? defaults.cache,
+    dataDir:
+      pick(
+        "ARGELANDERSPACE_GLOBAL_DIR",
+        env.ARGELANDERSPACE_GLOBAL_DIR,
+        "global_dir",
+        config.global_dir
+      ) ?? defaults.data,
+    cacheDir:
+      pick(
+        "ARGELANDERSPACE_GLOBAL_CACHE_DIR",
+        env.ARGELANDERSPACE_GLOBAL_CACHE_DIR,
+        "global_cache_dir",
+        config.global_cache_dir
+      ) ?? defaults.cache,
   };
 }
 
