@@ -594,7 +594,7 @@ test("capabilities tell the model the bound view's layout, why a control is disa
     payload.actions.find((entry: { action: string }) => entry.action === "close_pane")
   ).toMatchObject({ available: true });
   expect(payload.views.available).toEqual(["plan", "library", "doc", "write"]);
-  expect(payload.views.unavailable).toEqual([{ view: "ext", reason: "stub_page" }]);
+  expect(Object.keys(payload.views)).toEqual(["available"]);
   expect(
     payload.platform.map(
       (entry: { capability: string; agent: string }) => `${entry.capability}:${entry.agent}`
@@ -613,7 +613,7 @@ test("capabilities tell the model the bound view's layout, why a control is disa
   ]);
 });
 
-test("stubs, local paths, urls, selectors and other platform operations are refused before any tab hears of them", async () => {
+test("unknown views, local paths, urls, selectors and other platform operations are refused before any tab hears of them", async () => {
   const port = await startHub();
   const id = await create();
   const a = withWorkspace(page(A));

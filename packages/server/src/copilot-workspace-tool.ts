@@ -9,7 +9,6 @@ import {
   type PageContext,
   PLATFORM_BOUNDARIES,
   WORKSPACE_OPERATION_ACTIONS,
-  WORKSPACE_STUB_VIEWS,
   WORKSPACE_THINKING_CHOICES,
   WORKSPACE_VIEWS,
   WorkspaceProviderStatusSchema,
@@ -186,7 +185,6 @@ export function createWorkspaceTool(context: WorkspaceToolContext) {
             actions: workspaceCapabilities(snapshot),
             views: {
               available: WORKSPACE_VIEWS,
-              unavailable: WORKSPACE_STUB_VIEWS.map((view) => ({ view, reason: "stub_page" })),
             },
             appearance: {
               themes: APPEARANCE_THEMES,

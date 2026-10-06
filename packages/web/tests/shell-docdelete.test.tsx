@@ -80,9 +80,8 @@ describe("Shell docDeleted wiring (Stage 8 §8)", () => {
     for (const key of ["doc", "write"]) {
       expect(document.querySelector(`[data-ui="navigate-view"][data-ui-key="${key}"] svg`)?.classList.contains("ui-icon-size--navigation")).toBe(true);
     }
-    for (const selector of ['[data-ui="navigate-view"][data-ui-key="plan"]', '[data-ui="navigate-extensions"]']) {
-      expect(document.querySelector(`${selector} svg`)?.classList.contains("ui-icon")).toBe(false);
-    }
+    expect(document.querySelector('[data-ui="navigate-view"][data-ui-key="plan"] svg')?.classList.contains("ui-icon")).toBe(false);
+    expect(document.querySelector('[data-ui="navigate-extensions"]')).toBeNull();
     expect(nav.classList.contains("ui-action")).toBe(false);
     expect(nav.getAttribute("aria-label")).toBe("文献");
     const split = document.querySelector('[data-ui="split-pane"]') as HTMLButtonElement;

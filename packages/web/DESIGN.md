@@ -114,7 +114,7 @@ adoption is limited to Graph zoom± and PDF toolbar previous/next/go/copy/search
 fit-page/download. The first consumer is Graph zoom± (small18, quiet); other feature migrations
 require their approved entries. Glyph fallback remains localized visible text with usable width.
 The PDF floating tool-toggle is glyph-only small18 with its original surface; the mixed annotation
-kind+page label, circular color dots/downward palette, Plan telescope24, Extensions24 and navigation
+kind+page label, circular color dots/downward palette, Plan telescope24 and navigation
 33 target/selected indicators remain finite preservation exceptions. Scientific/document/PDF/graph
 content is never targeted by these classes. Preserve local geometry, density, callbacks, focus and
 tooltip lifecycle; no global resets or caller-specific optical patches.

@@ -25,9 +25,8 @@ import { Copilot } from "../copilot/Copilot";
 interface NavItem {
   k: string;
   ic: string;
-  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write" | "shell.nav.ext";
-  grp: "core" | "ext";
-  stub?: boolean;
+  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write";
+  grp: "core";
 }
 
 const NAV: NavItem[] = [
@@ -36,10 +35,7 @@ const NAV: NavItem[] = [
   { k: "doc", ic: "file-text", labelKey: "shell.nav.doc", grp: "core" },
   { k: "write", ic: "pen-line", labelKey: "shell.nav.write", grp: "core" },
 ];
-const NAV_MARKET: NavItem = { k: "ext", ic: "blocks", labelKey: "shell.nav.ext", grp: "ext", stub: true };
-const NAV_MAP: Record<string, NavItem> = Object.fromEntries(
-  [...NAV, NAV_MARKET].map((n) => [n.k, n])
-);
+const NAV_MAP: Record<string, NavItem> = Object.fromEntries(NAV.map((n) => [n.k, n]));
 
 interface Pane {
   id: number;
@@ -610,8 +606,6 @@ export function Shell() {
 
   const renderView = (p: Pane) => {
     switch (p.view) {
-      case "plan":
-        return <PlanView paneId={p.id} onContext={reportPlan} onController={registerPlanController} />;
       case "library":
         return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
       case "doc":
@@ -619,7 +613,8 @@ export function Shell() {
       case "write":
         return <WriterView paneId={p.id} onContext={reportWriter} onController={registerWriterController} />;
       default:
-        return <StubPane nav={NAV_MAP[p.view] || NAV[0]} />;
+        // "plan" and any unknown view: the plan view is the default landing.
+        return <PlanView paneId={p.id} onContext={reportPlan} onController={registerPlanController} />;
     }
   };
 
@@ -699,8 +694,6 @@ export function Shell() {
               const className = "nav-icon-action" + (activePane.view === n.k ? " on" : "");
               return <ActionButton key={n.k} unstyled iconSize={n.k === "plan" ? undefined : "navigation"} mode="icon" iconName={n.k === "plan" ? "telescope" : n.k === "library" ? "library" : n.k === "doc" ? "file-text" : "pen-line"} label={label} tooltip={label} data-ui="navigate-view" data-ui-key={n.k} className={className} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />;
             })}
-            <div style={{ flex: 1 }} />
-            <ActionButton unstyled mode="icon" iconName="blocks" label={t("shell.nav.extMarket")} tooltip={t("shell.nav.extMarket")} data-ui="navigate-extensions" className={"nav-icon-action" + (activePane.view === "ext" ? " on" : "")} aria-current={activePane.view === "ext" ? "page" : undefined} onClick={() => setActiveView("ext")} />
           </div>
 
           <div className="main">
@@ -853,21 +846,6 @@ function PaneHeader({
       {canClose && (
         <ActionButton unstyled mode="icon" iconName="x" data-ui="close-pane" className="pane-h-btn" label={t("shell.closePane")} tooltip={t("shell.closePane")} onClick={onClose} />
       )}
-    </div>
-  );
-}
-
-function StubPane({ nav }: { nav: NavItem }) {
-  const { t } = useTranslation();
-  return (
-    <div className="stub-pane" data-ui="unavailable-view">
-      <div className="stub-ic">
-        <Icon name={nav.ic} cls="ico-lg" />
-      </div>
-      <div className="stub-title">{t(nav.labelKey)}</div>
-      <div className="stub-sub">
-        {t("shell.stub.desc", { view: t(nav.labelKey) })}
-      </div>
     </div>
   );
 }

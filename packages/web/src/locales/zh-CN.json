@@ -4,9 +4,7 @@
       "plan": "计划",
       "library": "文献",
       "doc": "文档",
-      "write": "写作",
-      "ext": "扩展",
-      "extMarket": "扩展市场"
+      "write": "写作"
     },
     "tagline": "文献工作台 · Literature",
     "split": "向右分屏",
@@ -18,9 +16,6 @@
       "split": "向右分屏 (⌘\\)",
       "toggleTheme": "切换主题",
       "tweaks": "外观设置"
-    },
-    "stub": {
-      "desc": "这是 ArgelanderSpace 工作台的一部分，目前聚焦于「文献」与「文档」。{{view}} 视图将在后续阶段接入。"
     },
     "palette": {
       "placeholder": "搜索命令、文件、文献…",

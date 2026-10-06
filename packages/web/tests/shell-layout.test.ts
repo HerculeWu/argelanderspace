@@ -36,6 +36,6 @@ describe("the option lists the Copilot may choose from are the Tweaks popover's 
     expect(popover).toContain(`DENSITIES:Density[]=${JSON.stringify([...contracts.APPEARANCE_DENSITIES])}`);
     expect(popover).toContain(`THEMES:ThemeName[]=${JSON.stringify([...contracts.APPEARANCE_THEMES])}`);
     expect(popover).toContain(`LANGUAGES:AppLanguage[]=${JSON.stringify([...contracts.APPEARANCE_LANGUAGES])}`);
-    expect(contracts.WORKSPACE_VIEWS).toEqual(["plan", "library", "doc", "write"]); // the activity bar's NAV (ext is a stub)
+    expect(contracts.WORKSPACE_VIEWS).toEqual(["plan", "library", "doc", "write"]); // the activity bar's NAV
   });
 });

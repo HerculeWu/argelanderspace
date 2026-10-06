@@ -51,9 +51,9 @@ describe("closed Shell action union", () => {
       expect(WorkspaceViewActionSchema.safeParse(ok).success, JSON.stringify(ok)).toBe(true);
   });
 
-  it("rejects stubs, paths, urls, selectors, secrets and out-of-range layout", () => {
+  it("rejects unknown views, paths, urls, selectors, secrets and out-of-range layout", () => {
     for (const bad of [
-      { action: "switch_view", view: "ext" }, // the extensions page is a stub, not a capability
+      { action: "switch_view", view: "ext" }, // there is no extensions view
       { action: "switch_view", view: "plan", selector: "#nav" },
       { action: "switch_view", view: "plan", url: "http://x" },
       { action: "set_appearance" },

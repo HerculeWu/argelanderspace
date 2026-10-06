@@ -4,9 +4,7 @@
       "plan": "Plan",
       "library": "Literature",
       "doc": "Document",
-      "write": "Write",
-      "ext": "Extensions",
-      "extMarket": "Extension marketplace"
+      "write": "Write"
     },
     "tagline": "Literature",
     "split": "Split right",
@@ -18,9 +16,6 @@
       "split": "Split right (⌘\\)",
       "toggleTheme": "Toggle theme",
       "tweaks": "Appearance settings"
-    },
-    "stub": {
-      "desc": "This is part of the ArgelanderSpace workbench, currently focused on Literature and Document. The {{view}} view will be connected in a later stage."
     },
     "palette": {
       "placeholder": "Search commands, files, literature…",

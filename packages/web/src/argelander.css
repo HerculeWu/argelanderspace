@@ -245,13 +245,6 @@ input, textarea { font-family: inherit; color: inherit; }
 .pane-divider span { width: 1px; height: 100%; background: var(--border-soft); transition: background .12s, width .12s; }
 .pane-divider:hover span, .pane-divider:active span { background: var(--accent-line); width: 2px; }
 
-/* stub panes (扩展 — not built yet) */
-.stub-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: var(--text-faint); background: radial-gradient(circle at 50% 38%, var(--bg) 0%, var(--bg-deep) 80%); padding: 40px; text-align: center; }
-.stub-ic { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
-.stub-ic svg { width: 26px; height: 26px; }
-.stub-title { font-size: 16px; font-weight: 600; color: var(--text-dim); }
-.stub-sub { font-size: var(--fs-sm); max-width: 320px; line-height: 1.55; }
-
 /* ---------- command palette ---------- */
 .cmdk-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; z-index: 200; backdrop-filter: blur(2px); }
 .cmdk { width: 560px; max-width: 92vw; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-pop); overflow: hidden; animation: popIn .14s ease; }
