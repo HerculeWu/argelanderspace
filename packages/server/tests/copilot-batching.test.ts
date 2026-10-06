@@ -378,7 +378,8 @@ async function send(id: string, context: PageContext, text: string) {
 // tickets 29 and 30 (read_svg_image added ~0.4 KB): the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
 // ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
 // ticket 33 lane 1: removing the attachment tools (upload_pdf, upload_latex_zip, replace_upload_source, add_asset, set_figure_image) took
-// about 2.6 KB (about 1.3k tokens) out of the instruction, so the calibrated windows moved down by that: 61800 -> 60500.
+// about 2.6 KB (about 1.3k tokens) out of the instruction, so the calibrated windows moved down by that: 61800 -> 60500, then 60400 after its fix round dropped the
+// remaining attachment sentences (about 100 tokens).
 const WINDOW_BIG_DOC = 60_400;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
@@ -701,6 +702,7 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
+  // ticket 33 lane 1: 49700 -> 49600 with the removed attachment tool text (about 100 tokens).
   await withWindow(49_600, async () => {
     const reader: Step = (c) => {
       const state = progress(c);

@@ -738,7 +738,8 @@ export class CopilotHost {
       ...(input.attachments?.length
         ? {
             attachments: input.attachments.map((item) => ({
-              filename: typeof item.filename === "string" ? item.filename : "",
+              filename:
+                typeof item.filename === "string" && item.filename ? item.filename : "attachment",
             })),
           }
         : {}),
