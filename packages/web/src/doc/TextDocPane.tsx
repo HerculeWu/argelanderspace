@@ -311,8 +311,7 @@ function TextSourceEditor({
   const bridge = useReaderBridge();
   useEffect(() => {
     if (load.phase !== "error") return;
-    bridge.setRetry(() => setAttempt((n) => n + 1));
-    return () => bridge.setRetry(null);
+    return bridge.addRetry(() => setAttempt((n) => n + 1));
   }, [bridge, load.phase]);
   const [initialText, setInitialText] = useState("");
   const [chars, setChars] = useState(0);

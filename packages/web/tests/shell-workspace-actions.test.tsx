@@ -146,6 +146,40 @@ describe("the Plan page's load-failure Retry is a view action (ticket 32 gap G1)
   });
 });
 
+describe("retry_plans presses only a Retry that exists (ticket 32 fix round 1, S1)", () => {
+  it("with no Plan pane open it opens nothing and answers unavailable", async () => {
+    await boot();
+    expect(await run({ action: "switch_view", view: "library" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "unavailable" });
+    expect(q('[data-ui="plan-toolbar"]')).toBeNull();
+    expect(q('[data-ui="navigate-view"][data-ui-key="library"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("a Plan page whose first load is still running has no Retry button: disabled, nothing reloaded", async () => {
+    const gate: { release: () => void } = { release: () => {} };
+    let gets = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input), method = init?.method ?? "GET";
+      if (url === "/api/plans" && method === "GET") {
+        gets++;
+        await new Promise<void>((resolve) => { gate.release = resolve; });
+        return ok(serverDoc);
+      }
+      if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
+      if (url === "/api/papers") return ok({ papers });
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
+    }));
+    render(<Shell />);
+    await waitFor(() => expect(h.viewAction).not.toBeNull());
+    await waitFor(() => expect(gets).toBe(1));
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "disabled" });
+    expect(gets).toBe(1);
+    gate.release();
+    await waitFor(() => expect(q('[data-ui="plan-toolbar"]')).not.toBeNull());
+  });
+});
+
 describe("the leave-draft protection holds for Copilot requests too", () => {
   it("a Doc pane with unsaved work keeps its page; the request reports leave_blocked and nothing changes", async () => {
     await boot();

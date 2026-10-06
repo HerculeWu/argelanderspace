@@ -1185,24 +1185,32 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (40100 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (40200 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
-  await withWindow(40_100, async () => {
-    script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
-    const { snapshot } = await run(page(), "read it");
-    expect(snapshot.conversation.run).toMatchObject({ status: "completed", error: null });
-    const result = toolResults(seenAt(1)).at(-1);
-    expect(result).toMatchObject({ ok: false, status: "rejected" });
-    expect(result.detail).toMatch(/capacity/);
-    expect(result.detail).toMatch(/none of it is read|NOT read/);
-  });
+  await withWindow(
+    40_200, // ticket 32: retry_plans (about 70 bytes of tool text) moved the calibration up by 100 tokens
+    async () => {
+      script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
+      const { snapshot } = await run(page(), "read it");
+      expect(snapshot.conversation.run).toMatchObject({ status: "completed", error: null });
+      const result = toolResults(seenAt(1)).at(-1);
+      expect(result).toMatchObject({ ok: false, status: "rejected" });
+      expect(result.detail).toMatch(/capacity/);
+      expect(result.detail).toMatch(/none of it is read|NOT read/);
+    }
+  );
 });
 
-const GROWTH_REPORT = process.env.COPILOT_GROWTH_REPORT; // read at import: beforeEach replaces process.env
 // ---- ticket 32: the history-growth carry-over of tickets 24 and 29 ---------------------------------------- //
 test("ticket 32 measurement: after eviction every read step leaves a small constant residue in the request and in the stored history, never a growing one", async () => {
   writeDoc(docIr(4500));
-  const samples: { request: number; residue: number; stored: number; evicted: boolean }[] = [];
+  const samples: {
+    request: number;
+    residue: number;
+    delivered: number;
+    stored: number;
+    evicted: boolean;
+  }[] = [];
   const storedBytes = () => {
     try {
       const dir = join(root, "data", "copilot", "sessions");
@@ -1222,6 +1230,7 @@ test("ticket 32 measurement: after eviction every read step leaves a small const
     samples.push({
       request,
       residue: request - textOf(lastResult?.content).length,
+      delivered: textOf(lastResult?.content).length,
       stored: storedBytes(),
       evicted: JSON.stringify(context.messages).includes("taken out of the conversation"),
     });
@@ -1232,17 +1241,6 @@ test("ticket 32 measurement: after eviction every read step leaves a small const
     script = Array.from({ length: 60 }, () => measure);
     const { snapshot } = await run(page());
     finalRun = snapshot.conversation.run;
-    if (GROWTH_REPORT)
-      console.log(
-        "OPS",
-        ops(snapshot).length,
-        JSON.stringify(
-          ops(snapshot)
-            .slice(-3)
-            .map((o) => ({ s: o.status, b: o.batch }))
-        ),
-        JSON.stringify(toolResults(seen.at(-1) as TranscriptContext).at(-1)).slice(0, 400)
-      );
   });
   const after = samples.filter((sample) => sample.evicted);
   expect(after.length).toBeGreaterThanOrEqual(8); // enough read steps after the first eviction to see a slope
@@ -1250,17 +1248,27 @@ test("ticket 32 measurement: after eviction every read step leaves a small const
   const residueSteps = after
     .slice(2)
     .map((sample, i) => sample.residue - (after[i + 1]?.residue ?? 0));
-  const storedSteps = after.slice(1).map((sample, i) => sample.stored - (after[i]?.stored ?? 0));
-  if (GROWTH_REPORT)
-    console.log(JSON.stringify({ steps: after.length, residueSteps, storedSteps }));
+  // what the durable file gained at each step besides the part just delivered = the stored overhead of the step
+  const storedOverhead = after
+    .slice(1)
+    .map((sample, i) => sample.stored - (after[i]?.stored ?? 0) - sample.delivered);
   // MEASURED (61.7k-token window, 4500-entry Reader document, 13 steps after the first eviction): the request keeps
-  // 1315..1445 bytes of residue per read step (the assistant call, its record and the stand-in), and the stored
-  // history grows by the delivered part plus about 2.3 KB (the ticket 24 and 29 "about 2 KB per step").
-  // Bounded per step and flat: no step costs more because the history is longer.
+  // 1315..1445 bytes of residue per read step (assistant call, its record and the stand-in) and the stored history
+  // gains about 2.3 KB per step besides the part itself (the "about 2 KB per step" of tickets 24 and 29).
+  // Bounded per step on both sides (a real cost exists, and it is small) and flat: no step costs more because the
+  // history is longer.
+  expect(Math.min(...residueSteps)).toBeGreaterThan(800);
   expect(Math.max(...residueSteps)).toBeLessThan(2048);
   expect(Math.max(...residueSteps) - Math.min(...residueSteps)).toBeLessThan(512);
-  // The part shrinks as the residue accumulates, so the smallest step shows the durable overhead alone.
-  expect(Math.min(...storedSteps)).toBeLessThan(4096);
+  // stored overhead per step: 5079 .. 2031 bytes, falling as the parts shrink (JSON escaping of the part is in it);
+  // the smallest step, with a 5-entry part, is the pure cost of the step
+  expect(Math.min(...storedOverhead)).toBeGreaterThan(1500);
+  expect(Math.min(...storedOverhead)).toBeLessThan(3000);
+  expect(Math.max(...storedOverhead)).toBeLessThan(6000);
+  // never rising with the length of the history
+  storedOverhead.slice(1).forEach((cost, i) => {
+    expect(cost).toBeLessThanOrEqual((storedOverhead[i] ?? 0) + 64);
+  });
   // What it adds up to: linear in the number of steps, so the room (not the history) ends a read of a document that is
   // too long for the window with the honest gap of ticket 24, never a failed run.
   expect(finalRun).toMatchObject({ status: "completed", error: null });

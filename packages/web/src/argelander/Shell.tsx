@@ -199,6 +199,12 @@ export function Shell() {
       if (!candidates.some((pane) => planControllers.current.get(pane.id)?.available(action))) return { ok: false, detail: "unavailable" };
     }
     let pane = active.view === "plan" ? active : state.panes.find((candidate) => candidate.view === "plan");
+    // Retry presses a button that exists only on a Plan page that failed to load: never open or switch to a Plan page for it.
+    if (action.action === "retry_plans") {
+      const plans = [active, ...state.panes].filter((candidate) => candidate.view === "plan");
+      if (plans.length === 0) return { ok: false, detail: "unavailable" };
+      pane = plans.find((candidate) => planControllers.current.get(candidate.id)?.available(action)) ?? plans[0];
+    }
     if (action.action === "set_completed")
       pane = [active, ...state.panes].find((candidate) => candidate.view === "plan" && planControllers.current.get(candidate.id)?.available(action)) ?? pane;
     if (!pane) {

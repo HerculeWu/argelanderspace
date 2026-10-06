@@ -385,7 +385,7 @@ export function createWriterTool(context: WriterToolContext) {
                 detail: "no such manuscript",
               });
           }
-          const shown = viewOutcomeResult(await context.viewAction(view.data));
+          const shown = viewOutcomeResult(await context.viewAction(view.data), view.data.action);
           return done(record(toolCallId, action, { status: shown.status }), shown.payload);
         }
         const rendering = WriterRenderOperationSchema.safeParse(rest);

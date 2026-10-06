@@ -118,7 +118,7 @@ const pages: (TextSourcePage | null)[] = [];
 const viewHandles: (((view: "reader" | "source") => void) | null)[] = [];
 const retryHandles: (((() => void) | null))[] = [];
 const stubBridge: ReaderBridge = {
-  setSession() {}, setLive() {}, setFailure() {}, setPanels() {}, setHandle() {}, setRetry: (retry) => { retryHandles.push(retry); },
+  setSession() {}, setLive() {}, setFailure() {}, setPanels() {}, setHandle() {}, addRetry: (retry) => { retryHandles.push(retry); return () => { retryHandles.push(null); }; },
   setTextView: (setView) => { viewHandles.push(setView); },
 };
 function Harness({ withPdf = false }: { withPdf?: boolean }) {

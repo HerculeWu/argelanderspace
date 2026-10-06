@@ -5,6 +5,7 @@ import {
   APPEARANCE_THEMES,
   type CopilotOperation,
   type CopilotViewActionResult,
+  DISCOVERY_VIEW_ACTIONS,
   type PageContext,
   PLATFORM_BOUNDARIES,
   WORKSPACE_OPERATION_ACTIONS,
@@ -33,7 +34,10 @@ export interface ViewActionOutcome {
 }
 
 /** How a view action's outcome reads as an operation record and as the model's tool result. */
-export function viewOutcomeResult(outcome: ViewActionOutcome): {
+export function viewOutcomeResult(
+  outcome: ViewActionOutcome,
+  action?: string
+): {
   status: CopilotOperation["status"];
   payload: Record<string, unknown>;
 } {
@@ -47,7 +51,10 @@ export function viewOutcomeResult(outcome: ViewActionOutcome): {
         ok: false,
         status: "error",
         ...(outcome.http !== undefined ? { http: outcome.http } : {}),
-        detail: `the exploration request failed (${outcome.http ? `HTTP ${outcome.http}` : "network failure"}); the user's page shows the error, nothing was saved and nothing else was started. read_discovery shows the page; retry_exploration is the user's Retry button`,
+        detail:
+          action !== undefined && !DISCOVERY_VIEW_ACTIONS.includes(action)
+            ? `the page tried it and the request failed (${outcome.http ? `HTTP ${outcome.http}` : "network failure"}); the user's page still shows its error, nothing else was started`
+            : `the exploration request failed (${outcome.http ? `HTTP ${outcome.http}` : "network failure"}); the user's page shows the error, nothing was saved and nothing else was started. read_discovery shows the page; retry_exploration is the user's Retry button`,
       },
     };
   if (outcome.detail === "disabled")
@@ -56,7 +63,7 @@ export function viewOutcomeResult(outcome: ViewActionOutcome): {
       payload: {
         ok: false,
         status: "rejected",
-        detail: "disabled: the control is disabled right now (read capabilities for the reason)",
+        detail: "disabled: the page has no enabled control for this right now",
       },
     };
   const reasons: Record<string, string> = {

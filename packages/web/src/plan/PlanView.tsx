@@ -96,6 +96,8 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   }, []);
   const pendingExternal = useRef(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const loadFailedRef = useRef(false);
+  loadFailedRef.current = loadFailed && !docRef.current;
   const [library, setLibrary] = useState<LibraryData | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
@@ -364,7 +366,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   applyViewAction.current = async (action) => {
     // The load-failure page's Retry (`retry-plans`); a loaded page has no such button, so there is nothing to press.
     if (action.action === "retry_plans") {
-      if (docRef.current) return { ok: false, detail: "disabled" };
+      if (!loadFailedRef.current) return { ok: false, detail: "disabled" };
       await reload();
       return docRef.current ? { ok: true } : { ok: false, detail: "failed" };
     }
@@ -415,7 +417,7 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
     if (paneId === undefined || !onController) return;
     onController(paneId, {
       apply: (action) => applyViewAction.current(action),
-      available: (action) => (action.action === "set_completed" ? listController.current !== null && docRef.current !== null : true),
+      available: (action) => (action.action === "set_completed" ? listController.current !== null && docRef.current !== null : action.action === "retry_plans" ? loadFailedRef.current : true),
     });
     return () => onController(paneId, null);
   }, [paneId, onController]);
