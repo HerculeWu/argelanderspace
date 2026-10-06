@@ -1651,6 +1651,16 @@
       "batchWithdrawn": "{{unit}} {{from}}–{{to}} of {{total}} withdrawn: the provider rejected the request as too large; not read",
       "batchDone": "{{unit}} {{from}}–{{to}} of {{total}} read; nothing remains",
       "characters": "characters"
+    },
+    "live": {
+      "working": "Working…",
+      "thinking": "Thinking…",
+      "writing": "Writing the reply…",
+      "operation": "Running: {{action}}",
+      "operationPage": "Running: {{action}} (page {{page}})",
+      "elapsed": "Elapsed {{time}}",
+      "thinkingTitle": "Reasoning",
+      "thinkingLive": "Thinking…"
     }
   }
 }

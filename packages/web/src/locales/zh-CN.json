@@ -1651,6 +1651,16 @@
       "batchWithdrawn": "第 {{from}}–{{to}} {{unit}}，共 {{total}}，已撤回：服务商认为请求过大而拒绝，未读到",
       "batchDone": "已读第 {{from}}–{{to}} {{unit}}，共 {{total}}；已无剩余",
       "characters": "字符"
+    },
+    "live": {
+      "working": "正在处理…",
+      "thinking": "正在思考…",
+      "writing": "正在撰写回复…",
+      "operation": "正在执行：{{action}}",
+      "operationPage": "正在执行：{{action}}（第 {{page}} 页）",
+      "elapsed": "已进行 {{time}}",
+      "thinkingTitle": "思考过程",
+      "thinkingLive": "思考中…"
     }
   }
 }

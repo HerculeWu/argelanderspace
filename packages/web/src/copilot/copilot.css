@@ -76,3 +76,10 @@
 .copilot-title{min-height:24px}
 .copilot-message-context summary{line-height:24px;min-height:24px}
 .copilot-operation summary{min-height:24px}
+
+/* Live run status (ticket 33 follow-up): elapsed counter and the provider's reasoning summary, muted inside the reply. */
+.copilot-elapsed{color:var(--text-faint);font-size:12px;font-variant-numeric:tabular-nums}
+.copilot-reasoning{margin-bottom:8px;font-size:12px;color:var(--text-faint)}
+.copilot-reasoning summary{cursor:pointer;line-height:24px;min-height:24px}
+.copilot-reasoning[data-live="true"] summary{color:var(--text-dim)}
+.copilot-reasoning-body{margin-top:4px;padding-left:9px;border-left:2px solid var(--border-soft);max-height:11em;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;font-style:italic}

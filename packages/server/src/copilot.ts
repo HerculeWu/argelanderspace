@@ -15,6 +15,7 @@ import {
   type CopilotContextReference,
   CopilotContextReferenceSchema,
   type CopilotConversationList,
+  type CopilotLive,
   type CopilotMessage,
   type CopilotMessageRequest,
   type CopilotOperation,
@@ -167,9 +168,27 @@ interface Loaded {
   /** clientMessageId -> ids, for every message this process accepted (survives until restart). */
   accepted: Map<string, { messageId: string; runId: string }>;
   stream: string;
+  /** What the running run does right now (only while `run` works); see {@link liveOf}. */
+  live?: LiveState;
   lock: AsyncLock;
   pending?: Promise<void>;
 }
+interface LiveState {
+  /** Calls this run has submitted and not yet saved a result for: shown as pending, never as unknown. */
+  inflight: Set<string>;
+  /** Of those, the calls that reached `tool_execution_start`: after Stop only these can still be running. */
+  started: Set<string>;
+  /** A "changed" is already scheduled for the next tick (at most one per tick, however many messages end in it). */
+  refetch: boolean;
+  phase: CopilotLive["phase"];
+  operation?: CopilotLive["operation"];
+  thinking: string;
+  startedAt: number;
+}
+/** The reasoning text the live panel keeps: the newest part of a long one (the full text is in the saved reply). */
+const LIVE_THINKING_MAX = 6000;
+/** The most reasoning text one saved reply puts in a snapshot (the history keeps all of it). */
+const SNAPSHOT_THINKING_MAX = 20_000;
 /** A view action waiting for its bound browser: to reconnect while offline, then to report. */
 interface PendingViewAction {
   viewId: string;
@@ -593,6 +612,45 @@ export class CopilotHost {
       .map((entry) => QueuedSteerSchema.parse((entry as { data: unknown }).data))
       .filter((steer) => !delivered.has(steer.messageId));
   }
+  private liveOf(loaded: Loaded): CopilotLive | null {
+    const live = loaded.live;
+    if (!live || !loaded.run) return null;
+    return {
+      phase: live.phase,
+      ...(live.operation ? { operation: live.operation } : {}),
+      thinking: live.thinking,
+      elapsedMs: Math.max(0, Date.now() - live.startedAt),
+    };
+  }
+  /** Folds one streaming event of the reply being written into the run's public status. */
+  private trackLive(
+    live: LiveState,
+    event: { message: unknown; assistantMessageEvent: { type: string; contentIndex?: number } }
+  ): void {
+    const content = (event.message as { content?: unknown }).content;
+    const parts = Array.isArray(content) ? (content as Record<string, unknown>[]) : [];
+    const thinking = parts
+      .filter(
+        (part) => part.type === "thinking" && !part.redacted && typeof part.thinking === "string"
+      )
+      .map((part) => part.thinking as string)
+      .filter(Boolean)
+      .join("\n\n");
+    live.thinking =
+      thinking.length > LIVE_THINKING_MAX ? `…${thinking.slice(-LIVE_THINKING_MAX)}` : thinking;
+    const kind = event.assistantMessageEvent.type;
+    if (kind.startsWith("thinking_")) {
+      live.phase = "thinking";
+      live.operation = undefined;
+    } else if (kind.startsWith("text_")) {
+      live.phase = "writing";
+      live.operation = undefined;
+    } else if (kind.startsWith("toolcall_")) {
+      const part = parts[event.assistantMessageEvent.contentIndex ?? -1];
+      live.phase = "operation";
+      live.operation = part ? operationOf(String(part.name ?? ""), part.arguments) : live.operation;
+    }
+  }
   private emit(loaded: Loaded, kind: WsCopilotEvent["kind"] = "changed"): void {
     this.broadcast({
       type: "copilot.event",
@@ -600,7 +658,7 @@ export class CopilotHost {
       runId: loaded.record.run?.id ?? null,
       eventCursor: { instanceId: this.instanceId, seq: ++this.seq },
       kind,
-      ...(kind === "stream" ? { text: loaded.stream } : {}),
+      ...(kind === "stream" ? { text: loaded.stream, live: this.liveOf(loaded) } : {}),
     });
   }
   publish(view: PageContext): void {
@@ -837,10 +895,28 @@ export class CopilotHost {
                           ? "expired"
                           : confirmation === "declined"
                             ? "declined"
-                            : "unknown",
+                            : loaded.run &&
+                                loaded.live?.inflight.has(part.id) &&
+                                // Once Stop is requested the SDK starts no further call: only a started one can still run.
+                                (!loaded.run.stopRequested || loaded.live.started.has(part.id))
+                              ? "pending"
+                              : "unknown",
                   }
             );
           }
+        const thinking =
+          typeof message.content === "string"
+            ? ""
+            : message.content
+                .filter((part) => part.type === "thinking" && !part.redacted)
+                .map((part) => ("thinking" in part ? part.thinking : ""))
+                .filter(Boolean)
+                .join("\n\n");
+        // The full text stays in the saved history; a snapshot carries a bounded part of a very long one.
+        const shownThinking =
+          thinking.length > SNAPSHOT_THINKING_MAX
+            ? `…${thinking.slice(-SNAPSHOT_THINKING_MAX)}`
+            : thinking;
         // The empty tail the SDK leaves after an abort or a failed request says nothing to the user:
         // the run state and the operation records already do.
         if (!text && !operations.length && ["aborted", "error"].includes(message.stopReason))
@@ -849,6 +925,7 @@ export class CopilotHost {
           id: entry.id,
           role: "assistant",
           text,
+          ...(shownThinking ? { thinking: shownThinking } : {}),
           ...(operations.length ? { operations } : {}),
         });
       }
@@ -911,6 +988,7 @@ export class CopilotHost {
         .filter((pending) => pending.loaded === loaded)
         .map((pending) => pending.confirmation),
       stream: loaded.stream,
+      live: this.liveOf(loaded),
       eventCursor: { instanceId: this.instanceId, seq: this.seq },
     };
   }
@@ -2502,6 +2580,14 @@ export class CopilotHost {
     loaded.record = record;
     loaded.run = state;
     loaded.stream = "";
+    loaded.live = {
+      inflight: new Set(),
+      started: new Set(),
+      refetch: false,
+      phase: "working",
+      thinking: "",
+      startedAt: Date.now(),
+    };
     loaded.manager.appendCustomEntry(
       contextType,
       this.reference(request, { messageId, runId, contextId }, context, pdf, frozenModel, coverage)
@@ -2729,10 +2815,56 @@ export class CopilotHost {
     };
     session.subscribe((event) => {
       if (event.type === "message_update" && event.message.role === "assistant") {
+        const before = `${loaded.stream}\u0000${JSON.stringify(loaded.live)}`;
         loaded.stream = event.message.content
           .filter((part) => part.type === "text")
           .map((part) => ("text" in part ? part.text : ""))
           .join("");
+        if (loaded.live) this.trackLive(loaded.live, event);
+        if (before !== `${loaded.stream}\u0000${JSON.stringify(loaded.live)}`)
+          this.emit(loaded, "stream");
+      }
+      if (loaded.live && event.type === "tool_execution_start") {
+        loaded.live.started.add(event.toolCallId);
+        loaded.live.phase = "operation";
+        loaded.live.operation = operationOf(event.toolName, event.args);
+        this.emit(loaded, "stream");
+      }
+      if (
+        loaded.live &&
+        event.type === "message_end" &&
+        (event.message.role === "assistant" || event.message.role === "toolResult")
+      ) {
+        if (event.message.role === "assistant") {
+          // The saved reply carries its own text and reasoning now; the live panel starts over for the next one.
+          // A step that ends in a call stays on that operation until it runs (no flash of "working" in between).
+          const calls = event.message.content.filter((part) => part.type === "toolCall");
+          const last = calls.at(-1);
+          // Only a reply that ends in a tool use will run its calls; an aborted or failed one keeps half-written ones.
+          if (event.message.stopReason === "toolUse")
+            for (const call of calls)
+              if (call.type === "toolCall") loaded.live.inflight.add(call.id);
+          loaded.live.phase = last ? "operation" : "working";
+          loaded.live.operation =
+            last && last.type === "toolCall" ? operationOf(last.name, last.arguments) : undefined;
+          loaded.live.thinking = "";
+          loaded.stream = "";
+          this.emit(loaded, "stream");
+        } else loaded.live.inflight.delete(event.message.toolCallId);
+        // The SDK saves the message right after this listener returns: tell the client to read the record once
+        // that is done, so each finished step (its reasoning and operations) shows while the run goes on. One
+        // notice covers an assistant message and the results that follow it in the same tick.
+        if (!loaded.live.refetch) {
+          loaded.live.refetch = true;
+          queueMicrotask(() => {
+            if (loaded.live) loaded.live.refetch = false;
+            if (loaded.run) this.emit(loaded);
+          });
+        }
+      }
+      if (loaded.live && event.type === "tool_execution_end") {
+        loaded.live.phase = "working";
+        loaded.live.operation = undefined;
         this.emit(loaded, "stream");
       }
       if (event.type === "message_start" && event.message.role === "user" && state.steers.size) {
@@ -2829,6 +2961,7 @@ export class CopilotHost {
       } finally {
         loaded.run = undefined;
         loaded.stream = "";
+        loaded.live = undefined;
         this.emit(loaded);
         if (!accepted) reject(new CopilotError("storage"));
       }
@@ -2860,6 +2993,21 @@ export class CopilotHost {
     await Promise.all([...this.loaded.values()].map((loaded) => loaded.pending));
     for (const loaded of this.loaded.values()) loaded.session?.dispose();
   }
+}
+
+/** The tool call as the user's operation record names it: tool, action and, for a page image read, the page. */
+function operationOf(name: string, args: unknown): NonNullable<CopilotLive["operation"]> {
+  const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  const action = typeof record.action === "string" ? record.action.slice(0, 64) : undefined;
+  const page =
+    action === "read_page_image" && Number.isInteger(record.pageIndex)
+      ? (record.pageIndex as number) + 1
+      : undefined;
+  return {
+    tool: name.slice(0, 64),
+    ...(action ? { action } : {}),
+    ...(page !== undefined && page >= 1 ? { page } : {}),
+  };
 }
 
 function filePath(directory: string, id: string): string {

@@ -193,6 +193,11 @@ export interface CopilotMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /**
+   * The reasoning text the provider exposed for this reply (a summary for OpenAI/Codex; the SDK keeps it in the assistant entry already, and a snapshot carries at most its last 20,000 characters).
+   * Display only: never sent back as user content; absent when the provider gave none.
+   */
+  thinking?: string;
   /** A host-written resume request after Stop/failure/restart; shown as a marker, not as user text. */
   kind?: "resume";
   /** Steering accepted while the run is working, not yet read by the model. */
@@ -428,10 +433,36 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
 ]);
 export type OperationConfirmation = z.infer<typeof OperationConfirmationSchema>;
 
+/**
+ * What a running run is doing right now (public run status: the operation under way, the reply being written, or
+ * thinking). `thinking` is only the reasoning text the provider exposes (a summary for OpenAI/Codex); empty when the
+ * provider gives none. The UI never promises raw internal reasoning.
+ */
+export const CopilotLiveSchema = z
+  .object({
+    phase: z.enum(["working", "thinking", "writing", "operation"]),
+    /** With `operation`: the tool call being prepared or executed; `page` is the 1-based page it reads. */
+    operation: z
+      .object({
+        tool: z.string(),
+        action: z.string().optional(),
+        page: z.number().int().min(1).optional(),
+      })
+      .strict()
+      .optional(),
+    thinking: z.string(),
+    /** Time since the run started, measured when the service sent this state. */
+    elapsedMs: z.number().int().nonnegative(),
+  })
+  .strict();
+export type CopilotLive = z.infer<typeof CopilotLiveSchema>;
+
 export interface ConversationSnapshot {
   version: 1;
   conversation: Conversation;
   messages: CopilotMessage[];
+  /** The running run's current status; null/absent when no run works. A reconnecting client gets it here. */
+  live?: CopilotLive | null;
   /** Confirmations the user can act on now (this service instance only; a restart revives none). */
   confirmations: CopilotConfirmation[];
   stream: string;
@@ -445,6 +476,7 @@ export const WsCopilotEventSchema = z
     eventCursor: EventCursorSchema,
     kind: z.enum(["stream", "changed"]),
     text: z.string().optional(),
+    live: CopilotLiveSchema.nullable().optional(),
   })
   .strict();
 export type WsCopilotEvent = z.infer<typeof WsCopilotEventSchema>;
