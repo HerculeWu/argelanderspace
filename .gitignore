@@ -63,3 +63,6 @@ status/
 .idea/
 .vscode/
 literatures.*-backup.tar.gz
+
+# local npm pack output (ticket 33: never tracked)
+packages/app/*.tgz
