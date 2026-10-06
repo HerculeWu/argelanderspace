@@ -211,7 +211,7 @@ export interface CopilotMessage {
   role: "user" | "assistant";
   text: string;
   /**
-   * The reasoning summary the provider exposed for this reply (the SDK keeps it in the assistant entry already).
+   * The reasoning text the provider exposed for this reply (a summary for OpenAI/Codex; the SDK keeps it in the assistant entry already, and a snapshot carries at most its last 20,000 characters).
    * Display only: never sent back as user content; absent when the provider gave none.
    */
   thinking?: string;
@@ -493,7 +493,7 @@ export type OperationConfirmation = z.infer<typeof OperationConfirmationSchema>;
 
 /**
  * What a running run is doing right now (public run status, never raw internal reasoning): `thinking` is only
- * the reasoning summary text the provider streams; empty when the provider gives none.
+ * the reasoning text the provider exposes (a summary for OpenAI/Codex); empty when the provider gives none.
  */
 export const CopilotLiveSchema = z
   .object({

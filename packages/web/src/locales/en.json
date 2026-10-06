@@ -1670,7 +1670,7 @@
       "operation": "Running: {{action}}",
       "operationPage": "Running: {{action}} (page {{page}})",
       "elapsed": "Elapsed {{time}}",
-      "thinkingTitle": "Reasoning summary",
+      "thinkingTitle": "Reasoning",
       "thinkingLive": "Thinking…"
     }
   }

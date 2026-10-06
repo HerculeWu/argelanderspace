@@ -19,28 +19,39 @@ export const formatElapsed = (ms: number): string => {
  */
 export function LiveRunStatus({ live, stopping, actionLabel }: { live: CopilotLive | null; stopping: boolean; actionLabel: (operation: { tool: string; action?: string }) => string }) {
   const { t } = useTranslation();
-  const received = useRef(Date.now());
+  // The elapsed anchor is derived while rendering (never one frame behind): a new server reading re-bases the counter.
+  const [anchor, setAnchor] = useState({ key: live?.elapsedMs, ms: live?.elapsedMs ?? 0, at: Date.now() });
+  if (live && anchor.key !== live.elapsedMs) setAnchor({ key: live.elapsedMs, ms: live.elapsedMs, at: Date.now() });
   const [now, setNow] = useState(() => Date.now());
-  useEffect(() => { received.current = Date.now(); setNow(received.current); }, [live?.elapsedMs]);
+  const active = live !== null;
   useEffect(() => {
-    if (!live) return;
+    if (!active) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, [live === null]);
-  if (stopping) return <span role="status" data-ui="copilot-live-status" data-phase="stopping">{t("copilot.stopping")}</span>;
-  if (!live) return <span role="status" data-ui="copilot-live-status" data-phase="working">{t("copilot.running")}</span>;
-  const text = live.phase === "operation" && live.operation
-    ? t(live.operation.page ? "copilot.live.operationPage" : "copilot.live.operation", { action: actionLabel(live.operation), page: live.operation.page })
-    : live.phase === "operation" ? t("copilot.live.working") : t(`copilot.live.${live.phase}`);
-  const elapsed = live.elapsedMs + Math.max(0, now - received.current);
+  }, [active]);
+  // A tool call whose action is not parsed yet has no name worth announcing: say only that it works.
+  const target = live
+    ? live.phase === "operation" && live.operation?.action
+      ? { phase: live.phase, text: t(live.operation.page ? "copilot.live.operationPage" : "copilot.live.operation", { action: actionLabel(live.operation), page: live.operation.page }) }
+      : { phase: live.phase === "operation" ? "working" : live.phase, text: t(live.phase === "operation" ? "copilot.live.working" : `copilot.live.${live.phase}`) }
+    : { phase: "working", text: t("copilot.running") };
+  // What is announced changes at most every 300 ms, so quick phase flips do not chatter in a screen reader.
+  const [shown, setShown] = useState(target);
+  useEffect(() => {
+    if (shown.text === target.text && shown.phase === target.phase) return;
+    const timer = setTimeout(() => setShown(target), 300);
+    return () => clearTimeout(timer);
+  }, [target.text, target.phase, shown.text, shown.phase]);
+  if (stopping) return <span data-ui="copilot-live-status" data-phase="stopping">{t("copilot.stopping")}</span>;
+  const elapsed = (live ? anchor.ms : 0) + Math.max(0, now - anchor.at);
   return <>
-    <span role="status" data-ui="copilot-live-status" data-phase={live.phase}>{text}</span>
-    {elapsed >= ELAPSED_FROM_MS && <span className="copilot-elapsed" role="timer" data-ui="copilot-elapsed">{t("copilot.live.elapsed", { time: formatElapsed(elapsed) })}</span>}
+    <span data-ui="copilot-live-status" data-phase={shown.phase}>{shown.text}</span>
+    {live && elapsed >= ELAPSED_FROM_MS && <span className="copilot-elapsed" aria-hidden="true" data-ui="copilot-elapsed">{t("copilot.live.elapsed", { time: formatElapsed(elapsed) })}</span>}
   </>;
 }
 
 /**
- * The reasoning summary a provider exposed for a reply: collapsible, muted, plain text (never rendered as markup, never
+ * The reasoning text a provider exposed for a reply (a summary for OpenAI/Codex): collapsible, muted, plain text (never rendered as markup, never
  * sent back to the model). Open while it is still arriving; the saved reply shows it collapsed.
  */
 export function ThinkingBlock({ text, live = false }: { text: string; live?: boolean }) {

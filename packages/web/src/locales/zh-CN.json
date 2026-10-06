@@ -1670,7 +1670,7 @@
       "operation": "正在执行：{{action}}",
       "operationPage": "正在执行：{{action}}（第 {{page}} 页）",
       "elapsed": "已进行 {{time}}",
-      "thinkingTitle": "思考摘要",
+      "thinkingTitle": "思考过程",
       "thinkingLive": "思考中…"
     }
   }

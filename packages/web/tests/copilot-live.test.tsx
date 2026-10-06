@@ -51,8 +51,7 @@ test("the status follows each event: thinking, an operation (with its page), wri
   deliver(streamEvent(3, { live: live({ phase: "operation", operation: { tool: "reader", action: "read_page_image", page: 4 } }) }));
   await waitFor(() => expect(status()?.textContent).toMatch(/^Running: .+ \(page 4\)$/));
   deliver(streamEvent(4, { live: live({ phase: "operation", operation: { tool: "text", action: "save_source" } }) }));
-  await waitFor(() => expect(status()?.textContent).toMatch(/^Running: .+/));
-  expect(status()?.textContent).not.toContain("page");
+  await waitFor(() => expect(status()?.textContent).toMatch(/^Running: Save text source$/));
   deliver(streamEvent(5, { text: "Hel", live: live({ phase: "writing" }) }));
   await waitFor(() => expect(status()?.textContent).toBe("Writing the reply…"));
   expect(status()?.getAttribute("data-phase")).toBe("writing");
@@ -123,4 +122,26 @@ test("streaming keeps the scroll position when the user scrolled up and follows 
   deliver(streamEvent(3, { live: live({ phase: "thinking", thinking: "a b c" }) }));
   await waitFor(() => expect(thinkingBlock()!.textContent).toContain("a b c"));
   expect(box.scrollTop).toBe(1000);
+});
+
+test("a call whose action is not parsed yet never shows a raw tool id; one persistent status region announces the text", async () => {
+  current = snap(ID1, running, { live: live({ phase: "operation", operation: { tool: "reader" } }) });
+  await open();
+  const region = document.querySelector('[data-ui="copilot-run-live"]') as HTMLElement;
+  expect(region.getAttribute("role")).toBe("status");
+  await waitFor(() => expect(status()?.textContent).toBe("Working…"));
+  expect(region.textContent).not.toContain("reader");
+  deliver(streamEvent(2, { live: live({ phase: "operation", operation: { tool: "reader", action: "read_page_image", page: 2 } }) }));
+  await waitFor(() => expect(status()?.textContent).toMatch(/page 2/));
+  // The same element stays mounted across the changes (so a screen reader hears the text change).
+  expect(document.querySelector('[data-ui="copilot-run-live"]')).toBe(region);
+  expect(region.contains(status())).toBe(true);
+});
+
+test("the newest reply's call without a result is shown as pending while the run works, finished steps keep their reasoning", async () => {
+  current = snap(ID1, running, { live: live(), messages: [{ id: "a1", role: "assistant", text: "", thinking: "Step one reasoning", operations: [{ id: "c1", tool: "plan", action: "read", status: "unknown" }] }] });
+  await open();
+  await waitFor(() => expect(document.querySelector('[data-ui="copilot-operation-item"]')?.getAttribute("data-status")).toBe("pending"));
+  expect(document.querySelector('[data-ui="copilot-reasoning"]')!.textContent).toContain("Step one reasoning");
+  expect(document.querySelector('[data-ui="copilot-reasoning"] summary')!.textContent).toBe("Reasoning");
 });

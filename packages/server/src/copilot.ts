@@ -188,6 +188,8 @@ interface LiveState {
 }
 /** The reasoning summary the live panel keeps: the newest part of a long one (the full text is in the saved reply). */
 const LIVE_THINKING_MAX = 6000;
+/** The most reasoning text one saved reply puts in a snapshot (the history keeps all of it). */
+const SNAPSHOT_THINKING_MAX = 20_000;
 /** A view action waiting for its bound browser: to reconnect while offline, then to report. */
 interface PendingViewAction {
   viewId: string;
@@ -920,6 +922,11 @@ export class CopilotHost {
                 .map((part) => ("thinking" in part ? part.thinking : ""))
                 .filter(Boolean)
                 .join("\n\n");
+        // The full text stays in the saved history; a snapshot carries a bounded part of a very long one.
+        const shownThinking =
+          thinking.length > SNAPSHOT_THINKING_MAX
+            ? `…${thinking.slice(-SNAPSHOT_THINKING_MAX)}`
+            : thinking;
         // The empty tail the SDK leaves after an abort or a failed request says nothing to the user:
         // the run state and the operation records already do.
         if (!text && !operations.length && ["aborted", "error"].includes(message.stopReason))
@@ -928,7 +935,7 @@ export class CopilotHost {
           id: entry.id,
           role: "assistant",
           text,
-          ...(thinking ? { thinking } : {}),
+          ...(shownThinking ? { thinking: shownThinking } : {}),
           ...(operations.length ? { operations } : {}),
         });
       }
@@ -2933,12 +2940,27 @@ export class CopilotHost {
         loaded.live.operation = operationOf(event.toolName, event.args);
         this.emit(loaded, "stream");
       }
-      if (loaded.live && event.type === "message_end" && event.message.role === "assistant") {
-        // The saved reply now carries its own reasoning summary; the live panel starts over for the next one.
-        loaded.live.phase = "working";
-        loaded.live.operation = undefined;
-        loaded.live.thinking = "";
-        this.emit(loaded, "stream");
+      if (
+        loaded.live &&
+        event.type === "message_end" &&
+        (event.message.role === "assistant" || event.message.role === "toolResult")
+      ) {
+        if (event.message.role === "assistant") {
+          // The saved reply carries its own reasoning now; the live panel starts over for the next one. A step
+          // that ends in a call stays on that operation until it runs (no flash of "working" in between).
+          const calls = event.message.content.filter((part) => part.type === "toolCall");
+          const last = calls.at(-1);
+          loaded.live.phase = last ? "operation" : "working";
+          loaded.live.operation =
+            last && last.type === "toolCall" ? operationOf(last.name, last.arguments) : undefined;
+          loaded.live.thinking = "";
+          this.emit(loaded, "stream");
+        }
+        // The SDK saves the message right after this listener returns: tell the client to read the record once
+        // that is done, so each finished step (its reasoning and operations) shows while the run goes on.
+        queueMicrotask(() => {
+          if (loaded.run) this.emit(loaded);
+        });
       }
       if (loaded.live && event.type === "tool_execution_end") {
         loaded.live.phase = "working";

@@ -14,6 +14,7 @@ import {
   type AssistantMessage,
   createAssistantMessageEventStream,
   type Model,
+  type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp } from "../src/app.js";
@@ -37,6 +38,7 @@ let root: string,
   app: ReturnType<typeof createApp>,
   originalEnv: NodeJS.ProcessEnv;
 let events: WsCopilotEvent[];
+let received: TranscriptContext[];
 let script: Step[];
 let gate: (() => void) | undefined;
 const choice = { provider: "openai", model: "gpt-4.1", thinking: null };
@@ -59,6 +61,7 @@ beforeEach(async () => {
     throw new Error("unexpected external fetch");
   });
   events = [];
+  received = [];
   script = [];
   gate = undefined;
   settings = new ProviderSettings();
@@ -66,7 +69,8 @@ beforeEach(async () => {
   let calls = 0;
   (await settings.getRuntime()).registerProvider("openai", {
     api: "openai-responses",
-    streamSimple(model) {
+    streamSimple(model, context) {
+      received.push(structuredClone(context));
       const step = script[calls++];
       const stream = createAssistantMessageEventStream();
       const message = (
@@ -152,7 +156,9 @@ async function start() {
 }
 const settled = async (id: string) => {
   await vi.waitFor(async () =>
-    expect((await host.snapshot(id)).conversation.run?.status).not.toBe("running")
+    expect(["running", "stopping"]).not.toContain(
+      (await host.snapshot(id)).conversation.run?.status
+    )
   );
   return host.snapshot(id);
 };
@@ -219,7 +225,7 @@ test("reasoning summary streams as it arrives, a reconnecting client gets it, an
   expect(streamed().some((event) => event.live?.phase === "writing")).toBe(true);
   const reply = done.messages.find((message) => message.role === "assistant");
   expect(reply).toMatchObject({ text: "Answer", thinking: "Weighing options" });
-  // Reasoning is display only: no user-role content of the saved history carries it.
+  // Reasoning is display only: no user message of the saved history has it.
   const again = await host.snapshot(id);
   expect(
     again.messages.filter((message) => message.role === "user").every((m) => !("thinking" in m))
@@ -285,14 +291,195 @@ test("an operation shows as the current status while its call is written and whi
   ];
   const id = await start();
   await vi.waitFor(() =>
-    expect(host.snapshot(id).then((snapshot) => snapshot.live)).resolves.toMatchObject({
-      phase: "working",
-    })
+    expect(
+      streamed().some(
+        (event) => event.live?.phase === "operation" && event.live.operation?.action === "read"
+      )
+    ).toBe(true)
   );
+  await vi.waitFor(async () => expect((await host.snapshot(id)).live?.phase).toBe("working"));
   const operations = streamed().filter((event) => event.live?.phase === "operation");
   expect(operations.length).toBeGreaterThan(0);
   expect(operations.every((event) => event.live?.operation?.tool === "plan")).toBe(true);
   expect(operations.some((event) => event.live?.operation?.action === "read")).toBe(true);
   gate?.();
   expect((await settled(id)).live).toBeNull();
+});
+
+const think = (thinking: string, extra: Partial<Part> = {}): Part =>
+  ({ type: "thinking", thinking, ...extra }) as Part;
+const plainCall = (args: Record<string, unknown>, name = "plan"): Part => ({
+  type: "toolCall",
+  id: "call_1",
+  name,
+  arguments: args as never,
+});
+
+test("a finished step's reasoning stays visible while the next step runs, and the client is told to refetch", async () => {
+  let second = false;
+  script = [
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      push({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: "Step one",
+        partial: make([think("Step one")]),
+      });
+      push({
+        type: "done",
+        reason: "toolUse",
+        message: make([think("Step one"), plainCall({ action: "read" })], "toolUse"),
+      });
+    },
+    async (_model, push, make) => {
+      second = true;
+      push({ type: "start", partial: make([]) });
+      push({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: "Step two",
+        partial: make([think("Step two")]),
+      });
+      await wait();
+      push({ type: "done", reason: "stop", message: make([{ type: "text", text: "ok" }]) });
+    },
+  ];
+  const id = await start();
+  await vi.waitFor(() => expect(streamed().at(-1)?.live?.thinking).toBe("Step two"));
+  expect(second).toBe(true);
+  // Step 1 is in the record the client reads, with its operation, while step 2 is still running.
+  const mid = await host.snapshot(id);
+  expect(mid.conversation.run?.status).toBe("running");
+  expect(mid.messages.find((m) => m.role === "assistant")).toMatchObject({
+    thinking: "Step one",
+    operations: [{ tool: "plan" }],
+  });
+  // The client refetches on "changed": one arrived after step 1's last stream event and before step 2's thinking.
+  const lastStepOne = events.map((event) => event.live?.thinking).lastIndexOf("Step one");
+  const stepTwo = events.findIndex((event) => event.live?.thinking === "Step two");
+  expect(events.slice(lastStepOne + 1, stepTwo).some((event) => event.kind === "changed")).toBe(
+    true
+  );
+  // What the model was sent never carries the reasoning as user content.
+  expect(
+    received
+      .flatMap((context) => context.messages)
+      .filter((m) => m.role === "user")
+      .every((m) => !JSON.stringify(m).includes("Step one"))
+  ).toBe(true);
+  gate?.();
+  await settled(id);
+});
+
+test("redacted reasoning is skipped, live reasoning is capped, a very long saved one is capped in the snapshot", async () => {
+  const long = "x".repeat(7000);
+  const huge = "y".repeat(25000);
+  script = [
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      push({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: "h",
+        partial: make([think("HIDDEN", { redacted: true } as never)]),
+      });
+      push({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: "x",
+        partial: make([think(long)]),
+      });
+      await wait();
+      push({
+        type: "done",
+        reason: "stop",
+        message: make([think("HIDDEN", { redacted: true } as never), think(huge)]),
+      });
+    },
+  ];
+  const id = await start();
+  await vi.waitFor(() => expect(streamed().at(-1)?.live?.thinking?.length).toBeGreaterThan(0));
+  expect(streamed().every((event) => !event.live?.thinking.includes("HIDDEN"))).toBe(true);
+  const live = (await host.snapshot(id)).live;
+  expect(live?.thinking.length).toBeLessThanOrEqual(6001);
+  expect(live?.thinking.startsWith("…")).toBe(true);
+  gate?.();
+  const done = await settled(id);
+  const saved = done.messages.find((m) => m.role === "assistant")?.thinking ?? "";
+  expect(saved).not.toContain("HIDDEN");
+  expect(saved.length).toBeLessThanOrEqual(20001);
+  expect(saved.startsWith("…")).toBe(true);
+});
+
+test("the live status is gone after Stop and after a provider error", async () => {
+  script = [
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      push({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: "t",
+        partial: make([think("Thinking")]),
+      });
+      await wait();
+    },
+  ];
+  const id = await start();
+  await vi.waitFor(() => expect(streamed().at(-1)?.live?.phase).toBe("thinking"));
+  await host.stop(id);
+  const stopped = await settled(id);
+  expect(stopped.conversation.run?.status).toBe("stopped");
+  expect(stopped.live).toBeNull();
+  expect(events.at(-1)?.kind).toBe("changed");
+  gate?.();
+
+  events = [];
+  script = [
+    script[0] as Step,
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      push({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: "t",
+        partial: make([think("Again")]),
+      });
+      push({
+        type: "error",
+        reason: "error",
+        error: { ...make([], "stop"), stopReason: "error", errorMessage: "boom" },
+      });
+    },
+  ];
+  const second = await start();
+  const failed = await settled(second);
+  expect(failed.conversation.run?.status).toBe("failed");
+  expect(failed.live).toBeNull();
+});
+
+test.each([
+  [0, 1],
+  [4, 5],
+])("a page image read at pageIndex %i is shown as page %i", async (pageIndex, page) => {
+  script = [
+    async (_model, push, make) => {
+      const call = plainCall({ action: "read_page_image", pageIndex }, "reader");
+      push({ type: "start", partial: make([]) });
+      push({ type: "toolcall_start", contentIndex: 0, partial: make([call]) });
+      await wait();
+      push({ type: "done", reason: "toolUse", message: make([call], "toolUse") });
+    },
+  ];
+  const id = await start();
+  await vi.waitFor(() =>
+    expect(
+      streamed().some(
+        (event) =>
+          event.live?.operation?.action === "read_page_image" && event.live.operation.page === page
+      )
+    ).toBe(true)
+  );
+  gate?.();
+  await settled(id);
 });
