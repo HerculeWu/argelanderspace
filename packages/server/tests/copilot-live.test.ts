@@ -40,6 +40,8 @@ let root: string,
 let events: WsCopilotEvent[];
 /** For each event, the saved assistant texts at the instant the host announced it (read synchronously). */
 let savedAtEvent: string[][];
+/** For each event, the statuses of every operation shown at that instant (read synchronously). */
+let opsAtEvent: string[][];
 let received: TranscriptContext[];
 let script: Step[];
 let gate: (() => void) | undefined;
@@ -64,6 +66,7 @@ beforeEach(async () => {
   });
   events = [];
   savedAtEvent = [];
+  opsAtEvent = [];
   received = [];
   script = [];
   gate = undefined;
@@ -111,6 +114,16 @@ beforeEach(async () => {
         loaded: Map<string, { manager: { getEntries(): { type: string; message?: unknown }[] } }>;
       }
     ).loaded.get(event.conversationId);
+    try {
+      const shown = (
+        host as unknown as {
+          messages(loaded: unknown): { operations?: { status: string }[] }[];
+        }
+      ).messages(loaded);
+      opsAtEvent.push(shown.flatMap((m) => m.operations ?? []).map((o) => o.status));
+    } catch {
+      opsAtEvent.push([]);
+    }
     savedAtEvent.push(
       (loaded?.manager.getEntries() ?? [])
         .filter((entry) => entry.type === "message")
@@ -537,4 +550,25 @@ test("after a step ends the saved reply is the only copy of its text, and the re
   expect(savedAtEvent[notified]?.some((m) => m.includes("Step one text"))).toBe(true);
   gate?.();
   await settled(id);
+});
+
+test("a call still being written when Stop aborts the reply is never shown as in progress", async () => {
+  const half = plainCall({ action: "read" });
+  script = [
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      push({ type: "toolcall_start", contentIndex: 0, partial: make([half]) });
+      await wait();
+    },
+  ];
+  const id = await start();
+  await vi.waitFor(() => expect(streamed().at(-1)?.live?.operation?.action).toBe("read"));
+  const before = events.length;
+  await host.stop(id);
+  await settled(id);
+  // The aborted reply keeps the half-written call; at every moment after Stop it shows as unknown, never pending.
+  const after = opsAtEvent.slice(before).filter((ops) => ops.length > 0);
+  expect(after.length).toBeGreaterThan(0);
+  expect(after.every((ops) => !ops.includes("pending"))).toBe(true);
+  gate?.();
 });

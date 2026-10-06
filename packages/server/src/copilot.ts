@@ -183,7 +183,9 @@ interface Loaded {
 interface LiveState {
   /** Calls this run has submitted and not yet saved a result for: shown as pending, never as unknown. */
   inflight: Set<string>;
-  /** A "changed" is already scheduled for the next tick (one refetch per turn, not one per message). */
+  /** Of those, the calls that reached `tool_execution_start`: after Stop only these can still be running. */
+  started: Set<string>;
+  /** A "changed" is already scheduled for the next tick (at most one per tick, however many messages end in it). */
   refetch: boolean;
   phase: CopilotLive["phase"];
   operation?: CopilotLive["operation"];
@@ -914,7 +916,10 @@ export class CopilotHost {
                           ? "expired"
                           : confirmation === "declined"
                             ? "declined"
-                            : loaded.run && loaded.live?.inflight.has(part.id)
+                            : loaded.run &&
+                                loaded.live?.inflight.has(part.id) &&
+                                // Once Stop is requested the SDK starts no further call: only a started one can still run.
+                                (!loaded.run.stopRequested || loaded.live.started.has(part.id))
                               ? "pending"
                               : "unknown",
                   }
@@ -2706,6 +2711,7 @@ export class CopilotHost {
     loaded.stream = "";
     loaded.live = {
       inflight: new Set(),
+      started: new Set(),
       refetch: false,
       phase: "working",
       thinking: "",
@@ -2948,6 +2954,7 @@ export class CopilotHost {
           this.emit(loaded, "stream");
       }
       if (loaded.live && event.type === "tool_execution_start") {
+        loaded.live.started.add(event.toolCallId);
         loaded.live.phase = "operation";
         loaded.live.operation = operationOf(event.toolName, event.args);
         this.emit(loaded, "stream");
@@ -2962,7 +2969,10 @@ export class CopilotHost {
           // A step that ends in a call stays on that operation until it runs (no flash of "working" in between).
           const calls = event.message.content.filter((part) => part.type === "toolCall");
           const last = calls.at(-1);
-          for (const call of calls) if (call.type === "toolCall") loaded.live.inflight.add(call.id);
+          // Only a reply that ends in a tool use will run its calls; an aborted or failed one keeps half-written ones.
+          if (event.message.stopReason === "toolUse")
+            for (const call of calls)
+              if (call.type === "toolCall") loaded.live.inflight.add(call.id);
           loaded.live.phase = last ? "operation" : "working";
           loaded.live.operation =
             last && last.type === "toolCall" ? operationOf(last.name, last.arguments) : undefined;

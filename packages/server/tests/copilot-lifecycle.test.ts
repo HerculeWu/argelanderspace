@@ -58,7 +58,13 @@ vi.mock("node:fs", async (original) => {
   };
 });
 
-type Out = { text?: string; call?: Record<string, unknown>; hang?: boolean };
+type Out = {
+  text?: string;
+  call?: Record<string, unknown>;
+  /** A second call in the same reply. */
+  extra?: Record<string, unknown>;
+  hang?: boolean;
+};
 type Step = (context: TranscriptContext, signal?: AbortSignal) => Out | Promise<Out>;
 let root: string;
 let dataDir: string;
@@ -204,6 +210,16 @@ beforeEach(async () => {
                   name: "plan",
                   arguments: out.call as never,
                 },
+                ...(out.extra
+                  ? [
+                      {
+                        type: "toolCall" as const,
+                        id: `call_${index}_b`,
+                        name: "plan",
+                        arguments: out.extra as never,
+                      },
+                    ]
+                  : []),
               ]
             : [{ type: "text", text: out.text ?? "done" }],
           api: model.api,
@@ -666,12 +682,16 @@ test("restart records an unfinished run as interrupted, never replays, and resum
   });
   expect(await sameAgain.json()).toEqual(await resumed.json());
   // While the resumed run works, the settled orphan is a recorded "unknown" outcome, never "in progress" (spec 8.3).
+  let sampledRunning = 0;
   for (let polls = 0; polls < 400; polls++) {
     const shown = await host.snapshot(id);
     expect(shown.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("unknown");
+    if (shown.conversation.run?.status === "running") sampledRunning++;
     if (shown.conversation.run?.status === "completed") break;
     await new Promise((r) => setTimeout(r, 5));
   }
+  // The poll really looked at the running resumed run (it cannot pass by only seeing the finished one).
+  expect(sampledRunning).toBeGreaterThan(0);
   await until(id, ["completed"]);
   // The resume request told the model which write is unknown, and the model's blind repeat was refused.
   const resumeText = JSON.stringify(seen[1]?.messages);
@@ -1238,4 +1258,50 @@ test("only a call in flight in the current run is pending; a recorded unknown re
   await until(id, ["completed"]);
   const settled = (await host.snapshot(id)).messages.flatMap((m) => m.operations ?? []);
   expect(settled.map((o) => o.status)).not.toContain("pending");
+});
+
+test("after Stop, a call of the same reply that will never run is not in progress; the one that started still is", async () => {
+  const { id } = (await create()).conversation;
+  const hold = gate();
+  const heldLock = planLock.run(() => hold.wait);
+  script = [
+    () => ({
+      call: {
+        action: "update_task",
+        expectedRev: 7,
+        planId: A,
+        taskId: "t_00000001",
+        status: "done",
+        operationId: "stop-two-1",
+      },
+      extra: { action: "read" },
+    }),
+  ];
+  await post(id, page(A, 1), "Edit then read");
+  await vi.waitFor(async () => {
+    const shown = await host.snapshot(id);
+    expect(shown.messages.flatMap((m) => m.operations ?? []).map((o) => o.status)).toEqual([
+      "pending",
+      "pending",
+    ]);
+  });
+  // The first write was submitted (journaled) and waits on the plan lock.
+  await vi.waitFor(() => {
+    const files = readdirSync(join(dataDir, "copilot/sessions"));
+    expect(readFileSync(join(dataDir, "copilot/sessions", files[0] as string), "utf8")).toContain(
+      '"phase":"begin"'
+    );
+  });
+  expect((await request(`/conversations/${id}/stop`, "POST")).status).toBe(200);
+  await new Promise((r) => setTimeout(r, 100));
+  const stopping = await host.snapshot(id);
+  expect(stopping.conversation.run?.status).toBe("stopping");
+  // The first call was submitted and waits on the lock; the second was never started and never will be.
+  expect(stopping.messages.flatMap((m) => m.operations ?? []).map((o) => o.status)).toEqual([
+    "pending",
+    "unknown",
+  ]);
+  hold.open();
+  await heldLock;
+  await until(id, ["stopped"]);
 });
