@@ -31,14 +31,14 @@ export interface ReaderViewController {
   docId: () => string | null;
   apply: (
     action: import("@argelanderspace/contracts").ReaderViewAction
-  ) => Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "disabled"; folded?: ReaderPanel }>;
+  ) => Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "disabled" | "failed"; folded?: ReaderPanel }>;
 }
 
 /** What the PDF Reader's own controls answer to the Copilot (copilot ticket 20); pages in the actions are zero-based. */
 export interface PdfViewHandle {
   apply: (action: import("@argelanderspace/contracts").ReaderViewAction) => Promise<{
     ok: boolean;
-    detail?: "not_found" | "unavailable" | "disabled";
+    detail?: "not_found" | "unavailable" | "disabled" | "failed";
   }>;
 }
 /** What the PDF Reader tells its pane: its page (identity, position, controls) and the handle that drives it. */

@@ -407,3 +407,16 @@ describe("xrefTargetIds", () => {
     expect(xrefTargetIds(list)).toEqual(["fig-1", "tab-1"]);
   });
 });
+
+describe("Segments: F12 locators (ticket 33, finding D1)", () => {
+  it("the cite chips (split and legacy-grouped) and the xref chip carry data-ui with the ref / target id as the key", () => {
+    const { container } = renderSegments([
+      { type: "cite", raw: "(Bok 1934; Doe 2020)", refs: [{ id: "ref-1", resolved: true, short: "Bok 1934" }, { id: "ref-2", resolved: true, short: "Doe 2020" }] },
+      { type: "cite", raw: "Bok 1934, Doe", refs: [{ id: "ref-1", resolved: true, short: "Bok 1934" }, { id: "?", resolved: false }] },
+      { type: "xref", target: { id: "fig-1", resolved: true, targetType: "figure", number: "2" } },
+    ]);
+    const cites = [...container.querySelectorAll('[data-ui="cite-chip"]')];
+    expect(cites.map((c) => c.getAttribute("data-ui-key"))).toEqual(["ref-1", "ref-2", "ref-1"]);
+    expect(container.querySelector('[data-ui="xref-chip"]')?.getAttribute("data-ui-key")).toBe("fig-1");
+  });
+});

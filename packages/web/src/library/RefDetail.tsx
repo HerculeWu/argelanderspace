@@ -1132,7 +1132,7 @@ export function RefDetail({
               <ActionButton
                 mode="icon"
                 iconName="file-up"
-                data-ui="gether-doc"
+                data-ui="gather-doc"
                 variant="ghost"
                 disabled={uploadJob !== null || arxivJob !== null || arxivPdfJob !== null || pdfUploadBusy || pdfUploadJob !== null}
                 label={t(versions.length === 0 ? "library.detail.acquisition.openGet" : "library.detail.acquisition.openManage")}
@@ -1284,10 +1284,23 @@ export function RefDetail({
                           </Badge>
                         </div>
                         <code className="ref-document-id">{docId}</code>
-                        <details className="ref-document-actions" data-ui="doc-actions">
-                          <summary data-ui="toggle-doc-actions">
+                        <details
+                          className="ref-document-actions"
+                          data-ui="doc-actions"
+                          onKeyDown={(event) => {
+                            // Esc closes the open row and hands the focus back to the toggle (ticket 33 follow-up).
+                            if (event.key !== "Escape" || !event.currentTarget.open) return;
+                            event.preventDefault();
+                            event.currentTarget.open = false;
+                            event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
+                          }}
+                        >
+                          <summary
+                            data-ui="toggle-doc-actions"
+                            aria-label={t("library.detail.files.actions")}
+                            title={t("library.detail.files.actions")}
+                          >
                             <Icon name="ellipsis" cls="ico-sm" />
-                            {t("library.detail.files.actions")}
                           </summary>
                           <div className="ref-document-action-list" data-ui="doc-action-list">
                             <ActionButton mode="icon" iconName="book-open" data-ui="open-doc" variant="ghost" label={t("library.detail.files.openDoc")} tooltip={t("library.detail.files.openDoc")} onClick={() => onOpenDoc(docId)} />
@@ -1305,7 +1318,8 @@ export function RefDetail({
                             )}
                             {docId === arxivTarget && (
                               <ActionButton
-                                mode="text"
+                                mode="icon"
+                                iconName="refresh-cw"
                                 variant="ghost"
                                 data-ui="refresh-arxiv-source"
                                 data-testid={isMain ? "arxiv-refetch-main" : `arxiv-refetch-${docId}`}
@@ -1313,25 +1327,23 @@ export function RefDetail({
                                 tooltip={t("library.detail.files.refetchArxivTitle")}
                                 disabled={arxivJob !== null}
                                 onClick={() => openAcquisition("arxiv")}
-                              >
-                                {t("library.detail.files.refetchArxivTitle")}
-                              </ActionButton>
+                              />
                             )}
                             {docId === expectedUploadTarget && (
                               <ActionButton
-                                mode="text"
+                                mode="icon"
+                                iconName="upload"
                                 variant="ghost"
                                 data-ui="replace-upload-source"
                                 label={t("library.detail.files.replaceUpload")}
                                 tooltip={t("library.detail.files.replaceUpload")}
                                 disabled={uploadJob !== null}
                                 onClick={() => openAcquisition("upload")}
-                              >
-                                {t("library.detail.files.replaceUpload")}
-                              </ActionButton>
+                              />
                             )}
                             <ActionButton
-                              mode="text"
+                              mode="icon"
+                              iconName="trash-2"
                               variant="ghost"
                               className="danger-text"
                               data-ui="delete-doc"
@@ -1341,9 +1353,7 @@ export function RefDetail({
                                 setDelErr(null);
                                 setDelDoc(docId);
                               }}
-                            >
-                              {t("library.detail.files.deleteDoc")}
-                            </ActionButton>
+                            />
                           </div>
                         </details>
                       </article>

@@ -29,6 +29,7 @@ const numbering: WriterNumberingResponse = { status: "ok", facts: { sections: []
 it("consumes citation raw verbatim and displays each compiled equation row number", () => {
   const first = render(<WriterCellPreview cell={doc.cells[0]!} cells={doc.cells} docId={doc.id} numbering={numbering} />);
   expect(first.container.querySelector(".w-cite")?.textContent).toBe("[see Smith et al., 2020, sec. 2]");
+  expect(first.container.querySelector(".w-cite")?.getAttribute("data-ui")).toBe("preview-cite");
   expect(first.container.querySelector(".w-xref")?.textContent).toBe("(2.1)");
   const second = render(<WriterCellPreview cell={doc.cells[1]!} cells={doc.cells} docId={doc.id} numbering={numbering} />);
   expect([...second.container.querySelectorAll(".w-equation-number")].map((e) => e.textContent)).toEqual(["(2.1)", "(2.2)"]);

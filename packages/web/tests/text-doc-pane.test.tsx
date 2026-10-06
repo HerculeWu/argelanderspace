@@ -231,6 +231,7 @@ describe("text Doc pane: autosave and explicit generation", () => {
     const row = ui(view.container, "text-source-diagnostic")!;
     expect(row.textContent).toContain("第 3 行，第 1 列");
     expect(row.textContent).toContain("不支持块引用");
+    expect(row.querySelector("button")!.getAttribute("data-ui")).toBe("jump-to-source-diagnostic");
     fireEvent.click(row.querySelector("button")!);
     // the caret lands on the diagnostic's line and column (line 3, column 1), CodeMirror's own selection
     expect(input(view.container)!.selectionStart).toBe(text.indexOf("> quote"));

@@ -202,7 +202,14 @@ export function workspaceCapabilities(
  */
 export const PLATFORM_BOUNDARIES = [
   { capability: "clipboard", agent: "user_only", reason: "browser_permission" },
-  { capability: "download", agent: "user_only", reason: "user_gesture" },
+  // Ticket 33 follow-up: a download is the user's, with exactly these named exceptions, each a page control the
+  // agent presses through its own tool (the same handler as the user's button). Clipboard copying stays user-only.
+  {
+    capability: "download",
+    agent: "limited",
+    reason: "user_gesture",
+    agent_actions: ["reader.download_original", "writer.export_manuscript"],
+  },
   { capability: "file_picker", agent: "user_only", reason: "user_gesture" },
   { capability: "external_link", agent: "user_only", reason: "user_gesture" },
   { capability: "local_path", agent: "never", reason: "not_an_application_object" },

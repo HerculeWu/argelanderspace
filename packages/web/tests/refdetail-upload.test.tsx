@@ -171,7 +171,7 @@ describe("RefDetail upload tracking", () => {
     // main doc marked, old version listed by doc id with a 设为主 action
     expect(screen.getByText("主文档")).toBeTruthy();
     expect(screen.getByText("arxiv-2603.03522")).toBeTruthy();
-    fireEvent.click(screen.getAllByText("文档操作")[1]!);
+    fireEvent.click(screen.getAllByLabelText("文档操作")[1]!);
     const setMain = screen.getByRole("button", { name: "设为主文档" }) as HTMLButtonElement;
     expect(setMain.disabled).toBe(false);
     fireEvent.click(setMain);
@@ -188,7 +188,7 @@ describe("RefDetail upload tracking", () => {
       needs_upload: false,
     });
     openFilesTab();
-    fireEvent.click(screen.getAllByText("文档操作")[1]!);
+    fireEvent.click(screen.getAllByLabelText("文档操作")[1]!);
     fireEvent.click(screen.getByRole("button", { name: "设为主文档" }));
     expect(await screen.findByText("设为主文档失败，请重试")).toBeTruthy();
     expect(onReload).not.toHaveBeenCalled();
@@ -210,7 +210,7 @@ describe("RefDetail upload tracking", () => {
     };
     const view = renderDetail(refWithDocs);
     openFilesTab();
-    fireEvent.click(screen.getAllByText("文档操作")[1]!);
+    fireEvent.click(screen.getAllByLabelText("文档操作")[1]!);
     fireEvent.click(screen.getByRole("button", { name: "设为主文档" }));
 
     view.rerender(
@@ -253,7 +253,7 @@ describe("RefDetail upload tracking", () => {
       needs_upload: false,
     });
     openFilesTab();
-    fireEvent.click(screen.getAllByText("文档操作")[1]!);
+    fireEvent.click(screen.getAllByLabelText("文档操作")[1]!);
     fireEvent.click(screen.getByRole("button", { name: "设为主文档" }));
     view.unmount();
     await act(async () => resolvePatch(true));

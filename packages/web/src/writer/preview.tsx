@@ -25,7 +25,7 @@ export function WriterCellPreview({ cell, cells, docId, numbering, onJump, onCit
   </div>;
   const refs = new Map(preview?.references.map((r) => [r.id, r]));
   const run = (segments: IrSegment[]) => renderIrSegments(segments, {
-    cite: (seg, key) => <span key={key} className="w-cite" title={seg.refs.map((r) => refs.get(r.id)?.raw ?? r.id).join("\n")} onClick={onCite}>
+    cite: (seg, key) => <span key={key} className="w-cite" data-ui="preview-cite" title={seg.refs.map((r) => refs.get(r.id)?.raw ?? r.id).join("\n")} onClick={onCite}>
       <MathText text={seg.raw ?? "?"} />
     </span>,
     xref: (seg, key) => {

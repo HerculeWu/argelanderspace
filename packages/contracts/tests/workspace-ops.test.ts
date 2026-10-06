@@ -144,14 +144,17 @@ describe("what each Shell control can do right now", () => {
 });
 
 describe("platform boundary", () => {
-  it("names every browser-gated capability as user-only and local paths as never", () => {
+  it("names every browser-gated capability as user-only (a download only through its two named actions) and local paths as never", () => {
     const by = Object.fromEntries(PLATFORM_BOUNDARIES.map((p) => [p.capability, p.agent]));
     expect(by).toEqual({
       clipboard: "user_only",
-      download: "user_only",
+      download: "limited",
       file_picker: "user_only",
       external_link: "user_only",
       local_path: "never",
+    });
+    expect(PLATFORM_BOUNDARIES.find((p) => p.capability === "download")).toMatchObject({
+      agent_actions: ["reader.download_original", "writer.export_manuscript"],
     });
   });
 });

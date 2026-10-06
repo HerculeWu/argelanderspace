@@ -452,7 +452,8 @@ export type PdfReadPageImageOperation = z.infer<typeof PdfReadPageImageOperation
 /**
  * View operations of the PDF Reader, each one a control the toolbar or panels already have: previous/next page,
  * the page box + go, the outline, the search box + its result list, the zoom buttons. (The panel folds are the
- * Reader's `set_panel`; copy, copy-link and download are the browser's user-gesture boundary and stay the user's.)
+ * Reader's `set_panel`; copy and copy-link are the browser's clipboard permission boundary and stay the user's. The
+ * toolbar's download button is `download_original`: the same handler, the verified original's bytes (ticket 33).)
  */
 export const PdfViewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("goto_page"), docId: Id, pageIndex: Count }).strict(),
@@ -472,6 +473,8 @@ export const PdfViewActionSchema = z.discriminatedUnion("action", [
       mode: z.enum(["in", "out", "fit_width", "fit_page"]),
     })
     .strict(),
+  /** The toolbar's "download original" button: the same handler, saving the immutable PDF the Reader is showing. */
+  z.object({ action: z.literal("download_original"), docId: Id }).strict(),
 ]);
 export type PdfViewAction = z.infer<typeof PdfViewActionSchema>;
 export const PDF_VIEW_ACTIONS = [
@@ -483,4 +486,5 @@ export const PDF_VIEW_ACTIONS = [
   "open_search_result",
   "open_annotation",
   "zoom",
+  "download_original",
 ] as const;

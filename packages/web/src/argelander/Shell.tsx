@@ -460,7 +460,8 @@ export function Shell() {
     const opened = currentDocRef.current === action.docId && shell.current.panes.some((pane) => pane.view === "doc");
     if (!opened) {
       // Retry has nothing to retry on a Doc that is not open: opening it is the user's open button, not a retry.
-      if (action.action === "retry_sync") return { ok: false, detail: "unavailable" };
+      // Download is the Reader's own toolbar button: with no open PDF Reader there is none to press (nothing is opened for it).
+      if (action.action === "retry_sync" || action.action === "download_original") return { ok: false, detail: "unavailable" };
       const result = await openLibraryDoc(action.docId);
       if (!result.ok) return result;
     }

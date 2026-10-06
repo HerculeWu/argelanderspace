@@ -758,17 +758,49 @@ test("search runs the Reader's own search and the reply carries the results the 
   expect(json.search.results[1]).toMatchObject({ pageIndex: 11, match: "PAGE 12 UNIQUE" });
 });
 
-test("copying, the page link and downloading the original are the user's browser gestures, not actions", async () => {
+test("copying and the page link are the user's browser gestures, not actions", async () => {
   const { docId, sha } = await publish();
   script = [
     () => ({ call: { action: "download", docId } }),
     () => ({ call: { action: "copy_selection", docId } }),
     () => ({ text: "x" }),
   ];
-  const { snapshot, actions } = await run(page(pdfPage(docId, sha)), "Download it", true);
+  const { snapshot, actions } = await run(page(pdfPage(docId, sha)), "Copy it", true);
   // not in the closed action list: the tool's schema refuses them, nothing is sent to any view
   expect(ops(snapshot).map((o) => o.status)).toEqual(["error", "error"]);
   expect(actions).toEqual([]);
+});
+
+test("download_original is a view action the page answers honestly: ok, unavailable (not open) and failed (ticket 33)", async () => {
+  const { docId, sha } = await publish();
+  script = [
+    () => ({ call: { action: "download_original", docId } }),
+    () => ({ call: { action: "download_original", docId } }),
+    () => ({ call: { action: "download_original", docId } }),
+    () => ({ text: "x" }),
+  ];
+  const replies = [
+    { ok: true },
+    { ok: false, detail: "unavailable" },
+    { ok: false, detail: "failed" },
+  ];
+  let n = 0;
+  const { snapshot, actions } = await run(
+    page(pdfPage(docId, sha)),
+    "Download the original",
+    true,
+    () => replies[n++] ?? { ok: false }
+  );
+  expect(actions).toEqual([
+    { action: "download_original", docId },
+    { action: "download_original", docId },
+    { action: "download_original", docId },
+  ]);
+  expect(ops(snapshot).map((o) => `${o.action}:${o.status}`)).toEqual([
+    "download_original:ok",
+    "download_original:not_displayed",
+    "download_original:error",
+  ]);
 });
 
 test("a conversation that carried a PDF page loads back after a service restart", async () => {

@@ -84,6 +84,7 @@ describe("DiscoveryDetail", () => {
     expect(container.textContent).toContain("2306.12345");
     // the fabricated-BibTeX surface must not exist for candidates
     expect(queryByText("BibTeX")).toBeNull();
+    for (const id of ["open-paper-ads-link", "open-paper-doi-link", "open-paper-arxiv-link"]) expect(container.querySelector(`a[data-ui="${id}"]`)).toBeTruthy();
     // the seed shows the origin note instead of "explore from here"
     expect(container.querySelector('[data-testid="explore-from-here"]')).toBeNull();
     expect(getByText(/当前探索起点|Current origin/)).toBeTruthy();

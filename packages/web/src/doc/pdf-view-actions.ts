@@ -10,7 +10,7 @@ import { pdfTargetPageIndex } from "./pdf-navigation";
 /** The search list shows this many results (the Reader's own list); `open_search_result` can reach those. */
 export const PDF_SEARCH_LIST_MAX = 20;
 
-export type PdfViewResult = { ok: boolean; detail?: "not_found" | "unavailable" | "disabled"; /** set_panel: the other panel the unfolding folded. */ folded?: "outline" | "right" };
+export type PdfViewResult = { ok: boolean; detail?: "not_found" | "unavailable" | "disabled" | "failed"; /** set_panel: the other panel the unfolding folded. */ folded?: "outline" | "right" };
 
 export interface PdfViewState {
   /** Zero-based page the viewer is on. */
@@ -38,6 +38,8 @@ export interface PdfViewDeps {
   setPanel: (panel: "outline" | "right", collapsed: boolean) => "outline" | "right" | null;
   /** The user's own navigation marker: the reading position is saved after it, and a restore stops. */
   markUserNavigation: () => void;
+  /** The toolbar's "download original" button: the Reader's one download handler. false when the browser refused to start it. */
+  download: () => boolean;
 }
 
 const ok: PdfViewResult = { ok: true };
@@ -97,6 +99,9 @@ export function runPdfViewAction(action: ReaderViewAction, state: PdfViewState, 
       const folded = deps.setPanel(action.panel, action.collapsed);
       return folded ? { ok: true, folded } : ok;
     }
+    case "download_original":
+      // The toolbar's download button, the same handler: it saves the immutable original the Reader is showing.
+      return deps.download() ? ok : refuse("failed");
     case "retry_sync":
       // Nothing to retry in an open Reader.
       return refuse("disabled");
@@ -134,4 +139,22 @@ export function pdfDraftsView(
     if (bodies.get(id) !== text) edit.push({ annotationId: id, blocked });
   }
   return { create, edit };
+}
+
+/**
+ * The PDF Reader's download-original handler: the toolbar button and the Copilot's `reader download_original` both run
+ * it. Saves the verified original's bytes through a Blob link; false when the browser could not start it.
+ */
+export function downloadPdfOriginal(bytes: ArrayBuffer, filename: string): boolean {
+  try {
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    return true;
+  } catch {
+    return false;
+  }
 }

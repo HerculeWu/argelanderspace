@@ -533,9 +533,10 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   const instruction = APP_INSTRUCTIONS.find((item) => item.name === "pdf-transcription");
   // ticket 29 measured 69262 bytes; this ticket adds the load_instruction action, the read_image action and one
   // sentence. The instruction (about 5 KB) is never part of it. Ticket 32 (measured 70894) adds retry_plans and the
-  // set_panel floor-fold sentence, about 0.2 KB.
+  // set_panel floor-fold sentence, about 0.2 KB. Ticket 33 follow-up (measured 71406) adds reader download_original,
+  // "Writer" in the base page-context sentence and the downloads exception, about 0.5 KB: ceiling +300.
   expect(footprint).toBeGreaterThan(69_262);
-  expect(footprint).toBeLessThan(69_262 + 1_900);
+  expect(footprint).toBeLessThan(69_262 + 2_200);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

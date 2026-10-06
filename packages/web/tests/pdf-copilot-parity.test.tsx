@@ -111,6 +111,19 @@ describe("the page the assistant receives from a PDF Reader", () => {
 });
 
 describe("the PDF Reader's own controls, driven through the bound view", () => {
+  it("download_original reaches the open PDF Reader, answers as it does, and is unavailable (nothing opened) when that Doc is not open (ticket 33)", async () => {
+    render(<Shell />);
+    await waitFor(() => expect(h.viewAction).not.toBeNull());
+    // no Doc open: nothing is opened for a download
+    expect(await run({ action: "download_original", docId: DOC })).toMatchObject({ ok: false, detail: "unavailable" });
+    expect(h.received).toEqual([]);
+    await boot();
+    expect(await run({ action: "download_original", docId: DOC })).toEqual({ ok: true });
+    expect(h.received).toEqual([{ action: "download_original", docId: DOC }]);
+    h.answers = { download_original: { ok: false, detail: "failed" } as never };
+    expect(await run({ action: "download_original", docId: DOC })).toMatchObject({ ok: false, detail: "failed" });
+  });
+
   it("each action reaches the Reader with the zero-based index and answers as the Reader's control would", async () => {
     await boot();
     h.answers = { goto_page: { ok: false, detail: "not_found" }, next_page: { ok: false, detail: "disabled" } };

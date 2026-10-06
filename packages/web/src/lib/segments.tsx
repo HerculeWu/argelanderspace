@@ -177,6 +177,8 @@ function citeChip(
             <React.Fragment key={`${r.id}:${i}`}>
               {i > 0 ? "; " : null}
               <span
+                data-ui="cite-chip"
+                data-ui-key={r.id}
                 className={"chip cite-chip" + (resolved ? "" : " chip-unresolved")}
                 title={raw ?? (resolved ? undefined : "unresolved citation")}
                 onClick={resolved ? () => store.focusReference(r.id) : undefined}
@@ -216,6 +218,8 @@ function citeChip(
   return (
     <span
       key={key}
+      data-ui="cite-chip"
+      data-ui-key={focusId}
       className={"chip cite-chip" + (clickable ? "" : " chip-unresolved")}
       title={title || "unresolved citation"}
       onClick={clickable ? () => store.focusReference(focusId) : undefined}
@@ -255,6 +259,8 @@ function xrefChip(
   return (
     <span
       key={key}
+      data-ui="xref-chip"
+      data-ui-key={targetId}
       className="chip xref-chip"
       title={`go to ${targetId}`}
       role="button"
