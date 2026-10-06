@@ -1404,6 +1404,7 @@
         "close_task": "关闭任务",
         "set_completed": "展开/收起已完成",
         "open_task_doc": "打开任务文档",
+        "retry_plans": "重试加载计划",
         "capabilities": "读取工作台",
         "switch_view": "切换视图",
         "split_pane": "分屏",

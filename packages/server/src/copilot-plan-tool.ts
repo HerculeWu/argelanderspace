@@ -229,7 +229,7 @@ const description = [
   "Read and edit the user's research Plans and Tasks, the same operations the Plan page offers.",
   "read returns the current plans and rev. Writes need expectedRev; on conflict read again and form a new edit, never resend the stale one.",
   "list move_task only reorders inside one status group; board move_task may change status. Tasks cannot move between plans.",
-  "show/open_task/close_task/set_completed/open_task_doc change what the user sees; plain edits never navigate. set_completed folds or unfolds the completed group and only works while the list view is shown; open_task_doc opens a Doc linked to a task in the Reader.",
+  "show/open_task/close_task/set_completed/open_task_doc change what the user sees; plain edits never navigate. set_completed folds or unfolds the completed group and only works while the list view is shown; open_task_doc opens a Doc linked to a task in the Reader. retry_plans reloads a Plan page that failed to load (else refused).",
   "delete_task deletes the task at once, exactly like the Plan page; the user keeps a 6-second undo, and a restored task is noted in the conversation. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
   "Only report results whose status is ok or noop as done.",
   "After a conflict, read again and use a new operationId (or none) for the new write; an operationId is bound to its first request.",
@@ -323,7 +323,7 @@ export function createPlanTool(context: PlanToolContext) {
               status: "not_found",
               detail: "that task does not link this Doc",
             });
-          const shown = viewOutcomeResult(await context.viewAction(view.data));
+          const shown = viewOutcomeResult(await context.viewAction(view.data), view.data.action);
           return done(record(toolCallId, action, { status: shown.status }), shown.payload);
         }
         const deletion = PlanDeleteOperationSchema.safeParse(rest);

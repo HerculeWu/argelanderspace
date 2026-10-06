@@ -142,6 +142,8 @@ export const PlanViewActionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("set_completed"), expanded: z.boolean() }).strict(),
   /** The task drawer's linked-document button (`open-task-doc`): opens that Doc in the Reader. */
   z.object({ action: z.literal("open_task_doc"), taskId: Id, docId: Id }).strict(),
+  /** The Retry button of the Plan page's load-failure state (`retry-plans`): reloads plans.json; nothing to press on a loaded page. */
+  z.object({ action: z.literal("retry_plans") }).strict(),
 ]);
 
 export const PlanOperationSchema = z.union([
@@ -171,6 +173,7 @@ export const PLAN_OPERATION_ACTIONS = [
   "close_task",
   "set_completed",
   "open_task_doc",
+  "retry_plans",
 ] as const;
 
 export const CopilotOperationSchema = z

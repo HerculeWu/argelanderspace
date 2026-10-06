@@ -18,7 +18,7 @@ export const OPERATION_ACTION_KEYS = {
   remove_task_link: "copilot.operations.actions.remove_task_link", move_task: "copilot.operations.actions.move_task", show: "copilot.operations.actions.show",
   open_task: "copilot.operations.actions.open_task", close_task: "copilot.operations.actions.close_task",
   provider_status: "copilot.operations.actions.provider_status", select_model: "copilot.operations.actions.select_model", open_copilot: "copilot.operations.actions.open_copilot", close_copilot: "copilot.operations.actions.close_copilot", open_doc: "copilot.operations.actions.open_doc",
-  set_completed: "copilot.operations.actions.set_completed", open_task_doc: "copilot.operations.actions.open_task_doc", capabilities: "copilot.operations.actions.capabilities",
+  set_completed: "copilot.operations.actions.set_completed", retry_plans: "copilot.operations.actions.retry_plans", open_task_doc: "copilot.operations.actions.open_task_doc", capabilities: "copilot.operations.actions.capabilities",
   switch_view: "copilot.operations.actions.switch_view", split_pane: "copilot.operations.actions.split_pane", close_pane: "copilot.operations.actions.close_pane", select_pane: "copilot.operations.actions.select_pane",
   resize_pane: "copilot.operations.actions.resize_pane", set_appearance: "copilot.operations.actions.set_appearance", open_copilot_settings: "copilot.operations.actions.open_copilot_settings",
   delete_plan: "copilot.operations.actions.delete_plan", delete_task: "copilot.operations.actions.delete_task",

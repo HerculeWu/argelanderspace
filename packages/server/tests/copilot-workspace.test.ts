@@ -27,6 +27,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createApp } from "../src/app.js";
 import { CopilotHost } from "../src/copilot.js";
+import { viewOutcomeResult } from "../src/copilot-workspace-tool.js";
 import { JobRunner } from "../src/jobs.js";
 import { ProviderSettings } from "../src/providers.js";
 import { WsHub } from "../src/ws.js";
@@ -663,6 +664,69 @@ test("task documents and the completed-group fold are agent actions on the Plan 
     "open_task_doc:ok",
     "set_completed:ok",
   ]);
+});
+
+test("the Plan page's load-failure Retry (retry_plans, ticket 32) is delivered to the bound view and reported as the page answered", async () => {
+  const port = await startHub();
+  const id = await create();
+  const a = withWorkspace(page(A));
+  const tab = await openTab(port, a.viewId, id);
+  await request(`/views/${a.viewId}`, "PUT", a);
+  script = [
+    () => ({ call: { action: "retry_plans" } }),
+    () => ({ call: { action: "retry_plans", planId: "p_0000000a" } }), // the control has no argument
+    () => ({ text: "ok" }),
+  ];
+  expect((await send(id, a)).status).toBe(202);
+  await settled(id);
+  expect(tab.actions.map((e) => e.action)).toEqual([{ action: "retry_plans" }]);
+  expect(operations(await host.snapshot(id)).map((o) => `${o.action}:${o.status}`)).toEqual([
+    "retry_plans:ok",
+    "retry_plans:unsupported",
+  ]);
+});
+
+test("a failed or disabled Plan retry is told honestly, never as an exploration or a capabilities lookup (ticket 32 S2/N1)", async () => {
+  const port = await startHub();
+  const id = await create();
+  const a = withWorkspace(page(A));
+  const answers = [
+    { ok: false, detail: "failed" },
+    { ok: false, detail: "disabled" },
+  ];
+  await openTab(port, a.viewId, id, () => answers.shift() ?? { ok: true });
+  await request(`/views/${a.viewId}`, "PUT", a);
+  const seenResults: string[] = [];
+  script = [
+    () => ({ call: { action: "retry_plans" } }),
+    (ctx) => {
+      seenResults.push(JSON.stringify(lastResult(ctx)));
+      return { call: { action: "retry_plans" } };
+    },
+    (ctx) => {
+      seenResults.push(JSON.stringify(lastResult(ctx)));
+      return { text: "done" };
+    },
+  ];
+  expect((await send(id, a)).status).toBe(202);
+  await settled(id);
+  const [failed, disabled] = seenResults;
+  expect(failed).toContain('"status":"error"');
+  expect(failed).toContain("the user's page still shows its error");
+  expect(failed).not.toMatch(/exploration|read_discovery|retry_exploration/);
+  expect(disabled).toContain("rejected");
+  expect(disabled).toContain("no enabled control");
+  expect(disabled).not.toContain("capabilities");
+});
+
+test("the failure text depends on the action: Writer's retry_manuscript_list is not told as an exploration, Discovery's keeps its own", () => {
+  const failed = { status: "failed", http: 500 } as const;
+  const writer = JSON.stringify(viewOutcomeResult(failed, "retry_manuscript_list").payload);
+  expect(writer).toContain("HTTP 500");
+  expect(writer).not.toMatch(/exploration|read_discovery/);
+  expect(JSON.stringify(viewOutcomeResult(failed, "retry_exploration").payload)).toContain(
+    "the exploration request failed"
+  );
 });
 
 test("provider status is read-only and redacted: usable providers and model capabilities, never a key, endpoint or sign-in code", async () => {

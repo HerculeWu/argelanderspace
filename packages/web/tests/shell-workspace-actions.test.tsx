@@ -121,6 +121,77 @@ describe("view switching, split, close and select go through the Shell's own cal
   });
 });
 
+describe("the Plan page's load-failure Retry is a view action (ticket 32 gap G1)", () => {
+  it("retry_plans presses Retry on the failed Plan page and reports what the page then showed", async () => {
+    let planStatus = 500;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input), method = init?.method ?? "GET";
+      if (url === "/api/plans" && method === "GET") return planStatus === 200 ? ok(serverDoc) : ({ ok: false, status: planStatus, json: async () => ({}) } as unknown as Response);
+      if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
+      if (url === "/api/papers") return ok({ papers });
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
+    }));
+    render(<Shell />);
+    await waitFor(() => expect(h.viewAction).not.toBeNull());
+    await waitFor(() => expect(q('[data-ui="retry-plans"]')).not.toBeNull());
+    // still failing: the Retry ran and the page is still the failure page
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "failed" });
+    expect(q('[data-ui="retry-plans"]')).not.toBeNull();
+    planStatus = 200;
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="plan-toolbar"]')).not.toBeNull());
+    expect(q('[data-ui="retry-plans"]')).toBeNull();
+    // a loaded page has no Retry button: nothing to press
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "disabled" });
+  });
+});
+
+describe("retry_plans presses only a Retry that exists (ticket 32 fix round 1, S1)", () => {
+  it("with no Plan pane open it opens nothing and answers unavailable", async () => {
+    await boot();
+    expect(await run({ action: "switch_view", view: "library" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "unavailable" });
+    expect(q('[data-ui="plan-toolbar"]')).toBeNull();
+    expect(q('[data-ui="navigate-view"][data-ui-key="library"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("a loaded Plan page in another pane: refused as disabled, and the active pane stays where the user is", async () => {
+    await boot();
+    expect(await run({ action: "split_pane" })).toEqual({ ok: true });
+    await waitFor(() => expect(paneIds()).toEqual([1, 2]));
+    expect(await run({ action: "switch_view", view: "library", paneId: 2 })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
+    expect(ctx().workspace?.activePaneId).toBe(2);
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "disabled" });
+    await new Promise((resolve) => setTimeout(resolve, 100)); // let a (wrong) pane switch render
+    expect(ctx().workspace?.activePaneId).toBe(2);
+  });
+
+  it("a Plan page whose first load is still running has no Retry button: disabled, nothing reloaded", async () => {
+    const gate: { release: () => void } = { release: () => {} };
+    let gets = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input), method = init?.method ?? "GET";
+      if (url === "/api/plans" && method === "GET") {
+        gets++;
+        await new Promise<void>((resolve) => { gate.release = resolve; });
+        return ok(serverDoc);
+      }
+      if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
+      if (url === "/api/papers") return ok({ papers });
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
+    }));
+    render(<Shell />);
+    await waitFor(() => expect(h.viewAction).not.toBeNull());
+    await waitFor(() => expect(gets).toBe(1));
+    expect(await run({ action: "retry_plans" })).toEqual({ ok: false, detail: "disabled" });
+    expect(gets).toBe(1);
+    gate.release();
+    await waitFor(() => expect(q('[data-ui="plan-toolbar"]')).not.toBeNull());
+  });
+});
+
 describe("the leave-draft protection holds for Copilot requests too", () => {
   it("a Doc pane with unsaved work keeps its page; the request reports leave_blocked and nothing changes", async () => {
     await boot();

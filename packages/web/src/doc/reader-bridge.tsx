@@ -70,8 +70,12 @@ export interface ReaderBridge {
   setFailure: (docId: string | null) => void;
   setPanels: (panels: ReaderPanels | null) => void;
   setHandle: (handle: ReaderWorkspaceHandle | null) => void;
-  /** The Retry the page offers right now (sync/error banner, annotations panel, load-error page), if any. */
-  setRetry: (retry: (() => void) | null) => void;
+  /**
+   * Offers a Retry the page shows right now (sync/error banner, annotations panel, load-error page, a text Doc's source
+   * panel) and returns the function that withdraws exactly that offer. Offers are independent: one pane ending its own
+   * never removes another's, and `retry_sync` presses every offer that is present.
+   */
+  addRetry: (retry: () => void) => () => void;
 }
 const NONE: ReaderBridge = {
   setSession() {},
@@ -80,7 +84,7 @@ const NONE: ReaderBridge = {
   setFailure() {},
   setPanels() {},
   setHandle() {},
-  setRetry() {},
+  addRetry: () => () => {},
 };
 export const ReaderBridgeContext = createContext<ReaderBridge>(NONE);
 export const useReaderBridge = () => useContext(ReaderBridgeContext);
@@ -129,7 +133,7 @@ export function useReaderPublisher(
     live: null as ReaderLive | null,
     panels: null as ReaderPanels | null,
     handle: null as ReaderWorkspaceHandle | null,
-    retry: null as (() => void) | null,
+    retries: new Set<() => void>(),
     reading: null as { accepted: unknown; value: ReaderPage["reading"] } | null,
     timer: 0,
     published: undefined as ReaderPage | null | undefined,
@@ -240,8 +244,13 @@ export function useReaderPublisher(
       setHandle: (handle) => {
         p.handle = handle;
       },
-      setRetry: (retry) => {
-        p.retry = retry;
+      addRetry: (retry) => {
+        // a distinct entry per offer, even when the same function is offered twice
+        const offer = () => retry();
+        p.retries.add(offer);
+        return () => {
+          p.retries.delete(offer);
+        };
       },
     };
   }, [paneId]);
@@ -255,8 +264,8 @@ export function useReaderPublisher(
         // A PDF Doc is shown: its own Reader answers every action (its controls are not the LaTeX Reader's).
         if (pdfHandle?.current) return pdfHandle.current.apply(action);
         if (action.action === "retry_sync") {
-          if (!p.retry) return { ok: false, detail: "disabled" };
-          p.retry();
+          if (p.retries.size === 0) return { ok: false, detail: "disabled" };
+          for (const retry of [...p.retries]) retry();
           return { ok: true };
         }
         if (action.action === "set_text_view") {

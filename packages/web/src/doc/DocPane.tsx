@@ -66,10 +66,10 @@ function DocReadingEntry({ docId, publishText }: { docId: string; publishText: (
   // The load-error page's Retry is offered to the Copilot for as long as that page is shown.
   useEffect(() => {
     if (state.phase !== "error") return;
-    bridge.setRetry(() => setAttempt((current) => current + 1));
+    const withdraw = bridge.addRetry(() => setAttempt((current) => current + 1));
     // the page says the Doc failed to load (an error with its reason), like the sync banner does
     bridge.setFailure(docId);
-    return () => { bridge.setRetry(null); bridge.setFailure(null); };
+    return () => { withdraw(); bridge.setFailure(null); };
   }, [bridge, docId, state.phase]);
   // A Doc without a LaTeX session (loading, load error, PDF) has no Reader page to report.
   useEffect(() => {
@@ -121,8 +121,7 @@ function SessionWorkspace({ publish = true, afterPublish = false, format = "late
   // The banner's Retry (and the annotations panel's) is the same controller.retry the Copilot may press.
   useEffect(() => {
     if (!publish || state.phase === "ready") return;
-    bridge.setRetry(controller.retry);
-    return () => bridge.setRetry(null);
+    return bridge.addRetry(controller.retry);
   }, [bridge, controller, state.phase, publish]);
   return <div className="reader-session" data-ui="latex-session" data-ui-key={controller.docId}>
     {state.phase !== "ready" && <div className="reader-sync-status" role="status" data-ui="latex-sync-status">
