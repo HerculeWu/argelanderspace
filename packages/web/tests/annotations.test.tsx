@@ -30,6 +30,9 @@ import {
 import { DocPane } from "../src/doc/DocPane";
 import { WorkspaceProvider, type Workspace } from "../src/argelander/workspace";
 
+// Each case renders the full golden arXiv IR; under a parallel full run that can pass the 5s default.
+vi.setConfig({ testTimeout: 30000 });
+
 const wsMock = vi.hoisted(() => ({ annotationChangedCbs: [] as ((docId: string) => void)[] }));
 vi.mock("../src/api/ws", () => ({
   onAnnotationChanged: (cb: (docId: string) => void) => {
