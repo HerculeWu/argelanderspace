@@ -50,6 +50,16 @@ export function viewOutcomeResult(
     };
   if (outcome.status === "not_found")
     return { status: "not_found", payload: { ok: false, status: "not_found" } };
+  if (outcome.status === "failed" && action === "download_original")
+    return {
+      status: "error",
+      payload: {
+        ok: false,
+        status: "error",
+        detail:
+          "the browser could not start the download of the original PDF (the click was refused or the file could not be made); nothing was saved. Tell the user; they can press the Reader's download button themselves",
+      },
+    };
   if (outcome.status === "failed")
     return {
       status: "error",
@@ -138,7 +148,7 @@ const parameters = Type.Object(
 
 const description = [
   "Operate the shell like the user's controls: switch a pane's view, open a Doc, split/close/select/resize panes (max 3), set theme/accent/density/language, show or hide the Copilot panel, open its settings dialog (it only opens; you never see keys).",
-  "capabilities reports layout, appearance, disabled controls and why, and what the browser platform does not allow you (clipboard, downloads, file choosers, links, local paths). provider_status reads redacted provider state; select_model sets this conversation's model and thinking from it.",
+  "capabilities reports layout, appearance, disabled controls and why, and what the browser platform does not allow you (clipboard, file choosers, links, local paths; downloads only through the named actions reader download_original and writer export_manuscript). provider_status reads redacted provider state; select_model sets this conversation's model and thinking from it.",
 ].join(" ");
 
 function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
@@ -229,7 +239,10 @@ export function createWorkspaceTool(context: WorkspaceToolContext) {
               .slice(0, 5)
               .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
-        const outcome = viewOutcomeResult(await context.viewAction(parsed.data));
+        const outcome = viewOutcomeResult(
+          await context.viewAction(parsed.data),
+          parsed.data.action
+        );
         return done(record(toolCallId, action, { status: outcome.status }), outcome.payload);
       } catch {
         return done(record(toolCallId, action, { status: "unknown" }), {

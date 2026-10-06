@@ -153,7 +153,7 @@ describe("parseIconSvg", () => {
       "edit-pdf-annotation-body", "delete-pdf-annotation", "go-to-pdf-page", "copy-pdf-page-link",
       "fit-pdf-width", "fit-pdf-page", "download-original-pdf", "render-manuscript",
       "export-manuscript", "cancel-task-note", "save-task-note", "set-task-status",
-      "delete-task", "gether-doc",
+      "delete-task", "gather-doc",
     ]) expect(icons).toHaveProperty(id);
     expect(Object.keys(icons["navigate-view"])).toEqual(["file-text", "library", "pen-line", "telescope"]);
     expect(Object.keys(icons["set-task-status"])).toEqual(["circle", "circle-alert", "circle-check", "circle-dot"]);

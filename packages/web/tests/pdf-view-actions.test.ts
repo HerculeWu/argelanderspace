@@ -6,7 +6,7 @@
 import { PdfActionType, PdfZoomMode, type PdfLinkTarget } from "@embedpdf/models";
 import type { ReaderViewAction } from "@argelanderspace/contracts";
 import { describe, expect, it, vi } from "vitest";
-import { PDF_SEARCH_LIST_MAX, type PdfViewDeps, type PdfViewState, runPdfViewAction, selectionPageRange } from "../src/doc/pdf-view-actions";
+import { PDF_SEARCH_LIST_MAX, downloadPdfOriginal, type PdfViewDeps, type PdfViewState, runPdfViewAction, selectionPageRange } from "../src/doc/pdf-view-actions";
 
 const D = "doc";
 const destination = (pageIndex: number): PdfLinkTarget => ({ type: "destination", destination: { pageIndex, zoom: { mode: PdfZoomMode.Unknown }, view: [] } });
@@ -31,6 +31,7 @@ function deps(over: Partial<PdfViewDeps> = {}) {
     openAnnotation: (id) => { calls.push(["annotation", id]); return id === "pann_1" ? "ok" : "not_found"; },
     setPanel: (...args: [string, boolean]) => { calls.push(["panel", ...args]); return null; },
     markUserNavigation: log("mark"),
+    download: () => { calls.push(["download"]); return true; },
     ...over,
   };
   return { d, calls };
@@ -110,3 +111,33 @@ describe("a selection's pages", () => {
   });
 });
 void vi;
+
+describe("download_original (ticket 33)", () => {
+  it("runs the toolbar's download handler once, without taking the navigation marker", () => {
+    expect(run({ action: "download_original", docId: D })).toEqual({ result: { ok: true }, calls: [["download"]] });
+  });
+  it("is failed, not ok, when the browser could not start the download", () => {
+    expect(run({ action: "download_original", docId: D }, state(), { download: () => false }).result).toEqual({ ok: false, detail: "failed" });
+  });
+  it("downloadPdfOriginal (the handler both the button and the action run) saves the bytes under the file name, or reports false", () => {
+    const click = vi.fn();
+    const made: Blob[] = [];
+    const url = vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => { made.push(blob as Blob); return "blob:x"; });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    const create = document.createElement.bind(document);
+    const spy = vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
+      const el = create(tag);
+      if (tag === "a") (el as HTMLAnchorElement).click = click;
+      return el;
+    });
+    expect(downloadPdfOriginal(new ArrayBuffer(4), "paper.pdf")).toBe(true);
+    expect(click).toHaveBeenCalledTimes(1);
+    expect(made[0]?.type).toBe("application/pdf");
+    expect(made[0]?.size).toBe(4);
+    const anchor = spy.mock.results.find((r) => (r.value as HTMLElement).tagName === "A")!.value as HTMLAnchorElement;
+    expect(anchor.download).toBe("paper.pdf");
+    url.mockImplementation(() => { throw new Error("no"); });
+    expect(downloadPdfOriginal(new ArrayBuffer(4), "paper.pdf")).toBe(false);
+    vi.restoreAllMocks();
+  });
+});

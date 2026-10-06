@@ -1475,6 +1475,7 @@
         "search": "搜索 PDF 文字",
         "open_search_result": "打开 PDF 搜索结果",
         "zoom": "缩放 PDF",
+        "download_original": "下载 PDF 原件",
         "open_annotation": "跳到 PDF 标注",
         "read_writer": "读取稿件",
         "create_manuscript": "新建稿件",

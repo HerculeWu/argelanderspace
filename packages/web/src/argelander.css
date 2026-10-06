@@ -445,13 +445,16 @@ input, textarea { font-family: inherit; color: inherit; }
 .ref-document-heading > .ui-badge { margin-left: auto; }
 .ref-document-id { display: block; margin-top: 7px; color: var(--text-dim); font-size: 10.5px; line-height: 1.55; overflow-wrap: anywhere; }
 .ref-document-actions { margin-top: 6px; }
-.ref-document-actions > summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: var(--control-h); margin-left: auto; padding: 4px 8px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); cursor: pointer; list-style: none; }
+.ref-document-actions > summary { display: flex; align-items: center; justify-content: center; width: var(--control-h); min-height: var(--control-h); margin-left: auto; padding: 4px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); cursor: pointer; list-style: none; }
 .ref-document-actions > summary::-webkit-details-marker { display: none; }
+.ref-document-actions > summary { position: relative; }
+.ref-document-actions > summary[data-tooltip-open="true"] > .ui-tooltip { display: block; left: auto; right: 0; transform: none; }
 .ref-document-actions > summary:hover,
 .ref-document-actions[open] > summary { color: var(--text); background: var(--hover); }
-.ref-document-action-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
-.ref-document-action-list > .ui-tooltip-anchor { display: flex; width: 100%; }
-.ref-document-action-list .ui-button { justify-content: flex-start; width: 100%; }
+.ref-document-action-list { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 2px; width: fit-content; max-width: 100%; margin: 6px 0 0 auto; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.ref-document-action-list > .ui-tooltip-anchor { display: flex; }
+/* A tooltip is anchored to its button's right edge so the long ones never leave the narrow detail panel at the page edge. */
+.ref-document-action-list .ui-tooltip { left: auto; right: 0; transform: none; }
 .ref-document-action-list .danger-text { color: var(--danger); }
 .add-to-lib { width: 100%; justify-content: center; margin-top: 16px; }
 .add-hint { margin-top: 8px; font-size: 10.5px; color: var(--text-faint); text-align: center; }

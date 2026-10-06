@@ -157,7 +157,7 @@ export function DiscoveryDetail({
               <div className="rml-row">
                 <span className="rml-k">ADS</span>
                 <span className="rml-v mono">
-                  <a href={adsAbsUrl(paper.bibcode)} target="_blank" rel="noreferrer">
+                  <a href={adsAbsUrl(paper.bibcode)} data-ui="open-paper-ads-link" target="_blank" rel="noreferrer">
                     {paper.bibcode}
                   </a>
                 </span>
@@ -166,7 +166,7 @@ export function DiscoveryDetail({
                 <div className="rml-row">
                   <span className="rml-k">DOI</span>
                   <span className="rml-v mono">
-                    <a href={`https://doi.org/${paper.doi}`} target="_blank" rel="noreferrer">
+                    <a href={`https://doi.org/${paper.doi}`} data-ui="open-paper-doi-link" target="_blank" rel="noreferrer">
                       {paper.doi}
                     </a>
                   </span>
@@ -178,6 +178,7 @@ export function DiscoveryDetail({
                   <span className="rml-v mono">
                     <a
                       href={`https://arxiv.org/abs/${paper.arxivId}`}
+                      data-ui="open-paper-arxiv-link"
                       target="_blank"
                       rel="noreferrer"
                     >

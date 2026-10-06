@@ -1475,6 +1475,7 @@
         "search": "Search PDF text",
         "open_search_result": "Open PDF search result",
         "zoom": "Zoom PDF",
+        "download_original": "Download original PDF",
         "open_annotation": "Go to PDF annotation",
         "read_writer": "Read manuscripts",
         "create_manuscript": "Create manuscript",

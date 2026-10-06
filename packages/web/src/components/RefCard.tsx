@@ -237,7 +237,7 @@ function CitationLine({ r, short }: { r: Reference; short?: string }) {
       {r.doi && (
         <>
           {" "}
-          <a href={`https://doi.org/${r.doi}`} target="_blank" rel="noreferrer">
+          <a href={`https://doi.org/${r.doi}`} data-ui="open-reference-doi" target="_blank" rel="noreferrer">
             doi
           </a>
         </>

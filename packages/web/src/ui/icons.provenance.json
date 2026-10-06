@@ -620,6 +620,33 @@
       "modifications": [
         "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
       ]
+    },
+    "refresh-arxiv-source": {
+      "set": "lucide",
+      "file": "RefreshCw",
+      "originalHash": "d6c22bf088818b942af7ff1a61e4b1a834eaf6d157fcb2aac512181f950f7005",
+      "normalizedHash": "d6c22bf088818b942af7ff1a61e4b1a834eaf6d157fcb2aac512181f950f7005",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "replace-upload-source": {
+      "set": "lucide",
+      "file": "Upload",
+      "originalHash": "6bff410f532112eb227ed6f6d959562d811a7feed3329f20ec5235be7f1bb4cc",
+      "normalizedHash": "6bff410f532112eb227ed6f6d959562d811a7feed3329f20ec5235be7f1bb4cc",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
+    },
+    "delete-doc": {
+      "set": "lucide",
+      "file": "Trash2",
+      "originalHash": "f9b19a3fbb0a8e69a6820a2bdfa4ef51fe87703ab1b4554da1fc286772920b3e",
+      "normalizedHash": "f9b19a3fbb0a8e69a6820a2bdfa4ef51fe87703ab1b4554da1fc286772920b3e",
+      "modifications": [
+        "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+      ]
     }
   }
 }

@@ -601,7 +601,7 @@ test("capabilities tell the model the bound view's layout, why a control is disa
     )
   ).toEqual([
     "clipboard:user_only",
-    "download:user_only",
+    "download:limited",
     "file_picker:user_only",
     "external_link:user_only",
     "local_path:never",

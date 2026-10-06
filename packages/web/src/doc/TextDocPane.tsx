@@ -729,7 +729,7 @@ function TextSourceEditor({
         <ul className="text-source-diagnostics" data-ui="text-source-diagnostics" aria-label={t("doc.text.diagnostics")}>
           {diagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.code}:${diagnostic.line ?? 0}:${diagnostic.column ?? 0}:${index}`} className={diagnostic.severity} data-ui="text-source-diagnostic" data-ui-key={String(index)}>
-              <button type="button" className="text-source-diagnostic-where" disabled={!diagnostic.line} onClick={() => jumpTo(diagnostic)}>
+              <button type="button" className="text-source-diagnostic-where" data-ui="jump-to-source-diagnostic" disabled={!diagnostic.line} onClick={() => jumpTo(diagnostic)}>
                 {diagnostic.line ? t("doc.text.diagnosticAt", { line: diagnostic.line, column: diagnostic.column ?? 1 }) : t("doc.text.diagnosticDocument")}
               </button>
               <span>{diagnosticText(diagnostic)}</span>

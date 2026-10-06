@@ -336,7 +336,9 @@ describe("works with docs", () => {
     openFilesTab();
     expect(screen.queryByTestId("arxiv-fetch")).toBeNull();
     const btn = screen.getByTestId("arxiv-refetch-main");
-    expect(btn.textContent).toBe("重新获取 arXiv 最新版（覆盖该文档）");
+    expect(btn.textContent).toBe("");
+    expect(btn.getAttribute("aria-label")).toBe("重新获取 arXiv 最新版（覆盖该文档）");
+    expect(btn.getAttribute("data-ui")).toBe("refresh-arxiv-source");
     fireEvent.click(btn);
     expect(h.attachArxiv).not.toHaveBeenCalled();
     expect(await screen.findByText("当前未发现标注；更新会替换这份正文。")).toBeTruthy();

@@ -25,7 +25,7 @@ import { docRouteUrl } from "../lib/deeplink";
 import { dispatchPdfLinkTarget, flattenPdfBookmarks, isPdfLinkTargetAllowed, pdfTargetPageIndex } from "./pdf-navigation";
 import { usePdfBridge, type PdfViewHandle } from "./reader-bridge";
 import { type PanelSizes, useAutoFoldedPanels } from "./auto-fold";
-import { PDF_SEARCH_LIST_MAX, pdfDraftsView, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
+import { PDF_SEARCH_LIST_MAX, downloadPdfOriginal, pdfDraftsView, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
 import { PdfLinkHitLayer } from "./PdfLinkHitLayer";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
@@ -309,13 +309,14 @@ function LoadedPdfDocument({
               return folded === null ? null : folded === "left" ? "outline" : "right";
             },
             markUserNavigation,
+            download: () => downloadPdfOriginal(bytes, filename),
           },
         );
       },
     };
     pdfBridge.setHandle(handle);
     return () => pdfBridge.setHandle(null);
-  }, [docId, isLoaded, markUserNavigation, navigatePdfLink, pdfBridge, session]);
+  }, [bytes, docId, filename, isLoaded, markUserNavigation, navigatePdfLink, pdfBridge, session]);
   useEffect(() => {
     const remove = registerWorkspaceLeaveGuard(() => !session.hasUnsaved() || window.confirm(t("pdfReader.unsavedLeave")));
     return remove;
@@ -982,14 +983,8 @@ function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUs
       setCopyStatus(t(copied ? "pdfReader.linkCopied" : "pdfReader.copyFailed"));
     } catch { setCopyStatus(t("pdfReader.copyFailed")); }
   };
-  const download = () => {
-    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-  };
+  // The toolbar button and the Copilot's `download_original` run this same handler.
+  const download = () => { downloadPdfOriginal(bytes, filename); };
   return <header className="pdf-toolbar" data-ui="pdf-toolbar" role="toolbar" aria-label={t("pdfReader.toolbar")}>
     <div className="pdf-doc-context"><strong>{workTitle}</strong><code>{filename} · {docId}</code></div>
     <div className="pdf-page-controls" data-ui="pdf-page-controls">

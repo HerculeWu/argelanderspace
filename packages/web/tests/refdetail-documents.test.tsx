@@ -79,9 +79,55 @@ describe("RefDetail document provenance and actions", () => {
     expect(tooltip?.textContent).toBe("打开此文档");
     fireEvent.click(openDoc);
     expect(onOpenDoc).toHaveBeenCalledWith("arxiv-2609.17036");
-    fireEvent.click(screen.getAllByText("文档操作")[1]!);
+    fireEvent.click(screen.getAllByLabelText("文档操作")[1]!);
     expect(screen.getByRole("button", { name: "设为主文档" })).toBeTruthy();
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  });
+
+  it("the Doc row's actions are an icon-only toggle opening a row of icon-only buttons with tooltips, keyboard-closable (ticket 33 follow-up)", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => Promise.resolve(json({
+      doc_id: "x", format: "latex", acquired_via: String(input).includes("arxiv-2609") ? "arxiv_eprint" : "user_latex_zip",
+    }))));
+    renderDetail();
+    await screen.findByText("arXiv LaTeX 源码");
+    const toggle = document.querySelectorAll<HTMLElement>('[data-ui="toggle-doc-actions"]')[1]!;
+    expect(toggle.querySelector("svg")).toBeTruthy();
+    expect(toggle.getAttribute("aria-label")).toBe("文档操作");
+    const tip = document.getElementById(toggle.getAttribute("aria-describedby") ?? "")!;
+    expect(tip.textContent).toBe("文档操作");
+    expect(toggle.textContent).toBe(tip.textContent); // no visible text besides the tooltip
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    // the shared tooltip also shows on keyboard focus (and hides on blur)
+    expect(tip.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.focus(toggle);
+    expect(tip.getAttribute("aria-hidden")).toBe("false");
+    expect(toggle.getAttribute("data-tooltip-open")).toBe("true");
+    fireEvent.blur(toggle);
+    expect(tip.getAttribute("aria-hidden")).toBe("true");
+    // activating the toggle dismisses its tooltip, so it never covers the opened action row
+    fireEvent.focus(toggle);
+    fireEvent.click(toggle);
+    expect(tip.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(toggle);
+    const details = toggle.closest("details")!;
+    expect(details.open).toBe(false);
+    fireEvent.click(toggle);
+    details.open = true;
+    const list = details.querySelector<HTMLElement>('[data-ui="doc-action-list"]')!;
+    const buttons = [...list.querySelectorAll<HTMLButtonElement>("button")];
+    expect(buttons.map((b) => b.getAttribute("data-ui"))).toEqual(["open-doc", "set-main-doc", "delete-doc"]);
+    for (const b of buttons) {
+      expect(b.textContent).toBe("");
+      expect(b.querySelector("svg")).toBeTruthy();
+      const tip = document.getElementById(b.getAttribute("aria-describedby") ?? "");
+      expect(tip?.textContent).toBe(b.getAttribute("aria-label"));
+    }
+    expect(buttons.map((b) => b.getAttribute("aria-label"))).toEqual(["打开此文档", "设为主文档", "删除此文档（含其标注）"]);
+    // Esc closes the row and returns the focus to the toggle.
+    buttons[0]!.focus();
+    fireEvent.keyDown(buttons[0]!, { key: "Escape" });
+    expect(details.open).toBe(false);
+    expect(document.activeElement).toBe(toggle);
   });
 
   it("guards same-tick PDF submissions and leaves the large-file warning cancellable", async () => {
@@ -93,7 +139,7 @@ describe("RefDetail document provenance and actions", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     renderDetail({ ...REF, doc_id: undefined, doc_ids: undefined });
-    const entry = document.querySelector<HTMLButtonElement>('[data-ui="gether-doc"]')!;
+    const entry = document.querySelector<HTMLButtonElement>('[data-ui="gather-doc"]')!;
     expect(entry.closest('.ref-files-head')?.querySelector('h2')).toBeTruthy();
     expect(document.querySelector('[data-ui="open-fulltext-acquisition"]')).toBeNull();
     fireEvent.click(entry);
