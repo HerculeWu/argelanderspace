@@ -777,7 +777,7 @@ export function createLibraryTool(context: LibraryToolContext) {
         }
         const view = LibraryViewActionSchema.safeParse(rest);
         if (view.success) {
-          const shown = viewOutcomeResult(await context.viewAction(view.data));
+          const shown = viewOutcomeResult(await context.viewAction(view.data), view.data.action);
           const temporary =
             view.data.action === "set_temp_label" && shown.status === "ok"
               ? {

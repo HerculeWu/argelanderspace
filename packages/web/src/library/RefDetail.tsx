@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Job, LIBRARY_DETAIL_TABS, libraryRefBibtex } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
@@ -105,6 +105,33 @@ const JOB_STATUS_PHASE: Record<Job["status"], number> = {
 
 function isJobSnapshotRegression(previous: Job | undefined, next: Job): boolean {
   return previous !== undefined && JOB_STATUS_PHASE[next.status] < JOB_STATUS_PHASE[previous.status];
+}
+
+/**
+ * The Doc row's three-dots disclosure toggle. It must stay the immediate `<summary>` of its `<details>`, so the shared
+ * Tooltip (which wraps its child in a span) cannot wrap it; the same tooltip markup and classes are rendered inside
+ * the summary instead and shown on pointer hover and on keyboard focus.
+ */
+function DocActionsToggle({ label }: { label: string }) {
+  const id = `tooltip-${useId().replace(/:/g, "")}`;
+  const [open, setOpen] = useState(false);
+  return (
+    <summary
+      data-ui="toggle-doc-actions"
+      aria-label={label}
+      aria-describedby={id}
+      data-tooltip-open={open || undefined}
+      onPointerEnter={() => setOpen(true)}
+      onPointerLeave={() => setOpen(false)}
+      onPointerDown={() => setOpen(false)}
+      onFocus={() => setOpen(true)}
+      onBlur={() => setOpen(false)}
+      onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+    >
+      <Icon name="ellipsis" cls="ico-sm" />
+      <span id={id} className="ui-tooltip" data-ui="control-tooltip" role="tooltip" aria-hidden={!open}>{label}</span>
+    </summary>
+  );
 }
 
 export function RefDetail({
@@ -1295,13 +1322,7 @@ export function RefDetail({
                             event.currentTarget.querySelector<HTMLElement>("summary")?.focus();
                           }}
                         >
-                          <summary
-                            data-ui="toggle-doc-actions"
-                            aria-label={t("library.detail.files.actions")}
-                            title={t("library.detail.files.actions")}
-                          >
-                            <Icon name="ellipsis" cls="ico-sm" />
-                          </summary>
+                          <DocActionsToggle label={t("library.detail.files.actions")} />
                           <div className="ref-document-action-list" data-ui="doc-action-list">
                             <ActionButton mode="icon" iconName="book-open" data-ui="open-doc" variant="ghost" label={t("library.detail.files.openDoc")} tooltip={t("library.detail.files.openDoc")} onClick={() => onOpenDoc(docId)} />
                             {!isMain && (

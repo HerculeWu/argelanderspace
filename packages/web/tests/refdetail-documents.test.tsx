@@ -91,10 +91,19 @@ describe("RefDetail document provenance and actions", () => {
     renderDetail();
     await screen.findByText("arXiv LaTeX 源码");
     const toggle = document.querySelectorAll<HTMLElement>('[data-ui="toggle-doc-actions"]')[1]!;
-    expect(toggle.textContent).toBe("");
     expect(toggle.querySelector("svg")).toBeTruthy();
     expect(toggle.getAttribute("aria-label")).toBe("文档操作");
-    expect(toggle.getAttribute("title")).toBe("文档操作");
+    const tip = document.getElementById(toggle.getAttribute("aria-describedby") ?? "")!;
+    expect(tip.textContent).toBe("文档操作");
+    expect(toggle.textContent).toBe(tip.textContent); // no visible text besides the tooltip
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    // the shared tooltip also shows on keyboard focus (and hides on blur)
+    expect(tip.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.focus(toggle);
+    expect(tip.getAttribute("aria-hidden")).toBe("false");
+    expect(toggle.getAttribute("data-tooltip-open")).toBe("true");
+    fireEvent.blur(toggle);
+    expect(tip.getAttribute("aria-hidden")).toBe("true");
     const details = toggle.closest("details")!;
     expect(details.open).toBe(false);
     fireEvent.click(toggle);

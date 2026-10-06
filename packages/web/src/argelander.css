@@ -447,6 +447,8 @@ input, textarea { font-family: inherit; color: inherit; }
 .ref-document-actions { margin-top: 6px; }
 .ref-document-actions > summary { display: flex; align-items: center; justify-content: center; width: var(--control-h); min-height: var(--control-h); margin-left: auto; padding: 4px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); cursor: pointer; list-style: none; }
 .ref-document-actions > summary::-webkit-details-marker { display: none; }
+.ref-document-actions > summary { position: relative; }
+.ref-document-actions > summary[data-tooltip-open="true"] > .ui-tooltip { display: block; left: auto; right: 0; transform: none; }
 .ref-document-actions > summary:hover,
 .ref-document-actions[open] > summary { color: var(--text); background: var(--hover); }
 .ref-document-action-list { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 2px; width: fit-content; max-width: 100%; margin: 6px 0 0 auto; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }

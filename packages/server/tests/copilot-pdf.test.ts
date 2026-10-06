@@ -801,6 +801,16 @@ test("download_original is a view action the page answers honestly: ok, unavaila
     "download_original:not_displayed",
     "download_original:error",
   ]);
+  // the model's TEXT for each outcome: a failed download is the download's own failure, never the Discovery one
+  const texts = seenAt(3)
+    .messages.filter((m) => m.role === "toolResult")
+    .map((m) =>
+      m.role === "toolResult" && m.content[0]?.type === "text" ? m.content[0].text : ""
+    );
+  expect(texts).toHaveLength(3);
+  expect(JSON.parse(texts[2] ?? "")).toMatchObject({ ok: false, status: "error" });
+  expect(texts[2]).toMatch(/could not start the download of the original PDF/);
+  expect(texts[2]).not.toMatch(/exploration|retry_exploration|network failure/i);
 });
 
 test("a conversation that carried a PDF page loads back after a service restart", async () => {

@@ -196,9 +196,11 @@ export function workspaceCapabilities(
 
 /**
  * What a browser's platform boundary lets the agent do. Every entry here is a user-gesture or
- * permission-gated browser capability: the agent cannot perform it, whatever it asks for. The agent
- * works only with material the application already admitted (library, attachments, app assets); a
- * file chooser or a local path never becomes a way to read an arbitrary file.
+ * permission-gated browser capability. `user_only` means the agent cannot perform it, whatever it
+ * asks for; `limited` (downloads) means only the named `agent_actions`, each a page control the
+ * agent presses through its own tool (the same handler as the user's button), and nothing else.
+ * The agent works only with material the application already admitted (library, attachments, app
+ * assets); a file chooser or a local path never becomes a way to read an arbitrary file.
  */
 export const PLATFORM_BOUNDARIES = [
   { capability: "clipboard", agent: "user_only", reason: "browser_permission" },

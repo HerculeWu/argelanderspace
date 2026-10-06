@@ -378,8 +378,8 @@ async function send(id: string, context: PageContext, text: string) {
 // tickets 29 and 30 (read_svg_image added ~0.4 KB): the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
 // ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
 // ticket 33 follow-up (reader download_original): the reader tool text and the base prompt grew by about 0.7 KB (the download sentence,
-// "Writer" in the page-context sentence, the downloads exception), 61800 -> 62000; the 40200 window -> 40500 and the PDF parts window 49700 -> 50100.
-const WINDOW_BIG_DOC = 62_000;
+// "Writer" in the page-context sentence, the downloads exception), 61800 -> 62000, fix round 1 (own failure text for a failed download, platform sentence) 62000 -> 62100; the 40200 window -> 40500 and the PDF parts window 49700 -> 50100.
+const WINDOW_BIG_DOC = 62_100;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {

@@ -928,7 +928,8 @@ export function createTextTool(context: TextToolContext) {
                 }
               );
             const shown = viewOutcomeResult(
-              await context.viewAction({ action: "open_doc", docId: pdf })
+              await context.viewAction({ action: "open_doc", docId: pdf }),
+              "open_doc"
             );
             return done(
               record(toolCallId, "open_source_pdf", {

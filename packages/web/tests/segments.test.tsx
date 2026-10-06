@@ -416,7 +416,9 @@ describe("Segments: F12 locators (ticket 33, finding D1)", () => {
       { type: "xref", target: { id: "fig-1", resolved: true, targetType: "figure", number: "2" } },
     ]);
     const cites = [...container.querySelectorAll('[data-ui="cite-chip"]')];
-    expect(cites.map((c) => c.getAttribute("data-ui-key"))).toEqual(["ref-1", "ref-2", "ref-1"]);
+    expect(cites.map((c) => c.getAttribute("data-ui-key"))).toEqual(["ref-1", "ref-2"]);
+    // an unresolved chip is not a control: no locator
+    expect(container.querySelectorAll(".cite-chip.chip-unresolved:not([data-ui])").length).toBe(1);
     expect(container.querySelector('[data-ui="xref-chip"]')?.getAttribute("data-ui-key")).toBe("fig-1");
   });
 });
