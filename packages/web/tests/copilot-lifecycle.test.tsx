@@ -93,13 +93,100 @@ test("an interrupted or stopped run waits for an explicit Resume; resume retries
   expect(bodies[1]).toMatchObject({ viewId: context.viewId, contextRevision: context.revision });
 });
 
-test("stopped state says what finished and offers Resume; a resume marker replaces the host-written text", async () => {
+const action = () => document.querySelector('.copilot-composer-actions [data-ui="copilot-send"], .copilot-composer-actions [data-ui="copilot-stop"], .copilot-composer-actions [data-ui="copilot-resume"]') as HTMLButtonElement;
+// The three states draw three different catalog icons: arrow-up (send), square (stop), play triangle (resume).
+const glyph = (button: Element) => button.querySelector("polygon") ? "play" : button.querySelector("rect") ? "square" : button.querySelector("path") ? "arrow" : "none";
+
+test("a stopped run shows no note and no pop-up; the composer's one button becomes Resume and goes through the same resume handler", async () => {
   current = snap(ID1, { id: running.id, status: "stopped", error: null }, { messages: [{ id: "r1", role: "user", kind: "resume", text: "HOST WRITTEN INSTRUCTION", context: { contextId: "c1", view: "doc", status: "unavailable", revision: 1, objects: [] } }] });
   await open();
-  await screen.findByText(/Stopped\. Operations that already ran/);
-  expect(screen.getByText("Resumed after an interruption")).toBeTruthy();
+  expect(await screen.findByText("Resumed after an interruption")).toBeTruthy();
   expect(screen.queryByText("HOST WRITTEN INSTRUCTION")).toBeNull();
-  expect(document.querySelector('[data-ui="copilot-resume"]')).not.toBeNull();
+  expect(screen.queryByText(/Stopped\. Operations that already ran/)).toBeNull();
+  expect(document.querySelector('[data-ui="copilot-stopped"]')).toBeNull();
+  expect(document.querySelector('[data-ui="copilot-run-result"]')).toBeNull();
+  expect(document.querySelectorAll('[data-ui="copilot-resume"]')).toHaveLength(1);
+  const button = action();
+  expect(button.dataset.ui).toBe("copilot-resume");
+  expect(button.getAttribute("aria-label")).toBe("Resume");
+  expect(glyph(button)).toBe("play");
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() => expect(calls("/resume")).toHaveLength(1));
+  expect(JSON.parse((calls("/resume")[0]![1] as RequestInit).body as string)).toMatchObject({ viewId: context.viewId, contextRevision: context.revision });
+  expect(calls("/messages")).toHaveLength(0);
+});
+
+test("typed text in a stopped state still goes out with Enter, as a message", async () => {
+  current = snap(ID1, { id: running.id, status: "stopped", error: null });
+  await open();
+  await waitFor(() => expect(action().dataset.ui).toBe("copilot-resume"));
+  fireEvent.change(input(), { target: { value: "Carry on with the second plan" } });
+  fireEvent.keyDown(input(), { key: "Enter" });
+  await waitFor(() => expect(calls("/messages")).toHaveLength(1));
+  expect(JSON.parse((calls("/messages")[0]![1] as RequestInit).body as string)).toMatchObject({ text: "Carry on with the second plan" });
+  expect(calls("/resume")).toHaveLength(0);
+});
+
+test("the one composer button is send when idle, stop while running, resume after an interruption, with a label and tooltip name per state", async () => {
+  current = snap(ID1, null);
+  const idle = await open();
+  let button = action();
+  expect(button.dataset.ui).toBe("copilot-send");
+  expect(button.getAttribute("aria-label")).toBe("Send");
+  expect(glyph(button)).toBe("arrow");
+  expect(button.disabled).toBe(true); // nothing typed
+  fireEvent.change(input(), { target: { value: "hello" } });
+  expect(action().disabled).toBe(false);
+  idle.unmount(); cleanup();
+  current = snap(ID1, running);
+  const live = await open();
+  await waitFor(() => expect(action().dataset.ui).toBe("copilot-stop"));
+  button = action();
+  expect(button.getAttribute("aria-label")).toBe("Stop");
+  expect(glyph(button)).toBe("square");
+  live.unmount(); cleanup();
+  current = snap(ID1, { id: running.id, status: "interrupted", error: "interrupted" });
+  await open();
+  await waitFor(() => expect(action().dataset.ui).toBe("copilot-resume"));
+  button = action();
+  expect(glyph(button)).toBe("play");
+  // The interrupted note stays (the service, not the user, ended the run) but carries no second Resume button.
+  expect(document.querySelector('[data-ui="copilot-interrupted"]')).not.toBeNull();
+  expect(document.querySelectorAll('[data-ui="copilot-resume"]')).toHaveLength(1);
+  await i18n.changeLanguage("zh-CN");
+  await waitFor(() => expect(action().getAttribute("aria-label")).toBe("继续"));
+});
+
+test("a failed run keeps its notice with Retry; the composer button stays Send", async () => {
+  current = snap(ID1, { id: running.id, status: "failed", error: "transient" });
+  await open();
+  await waitFor(() => expect(document.querySelector('[data-ui="copilot-run-error"]')).not.toBeNull());
+  const retry = document.querySelector('[data-ui="copilot-run-result"] [data-ui="copilot-resume"]') as HTMLButtonElement;
+  expect(retry.textContent).toBe("Retry");
+  expect(action().dataset.ui).toBe("copilot-send");
+  fireEvent.click(retry);
+  await waitFor(() => expect(calls("/resume")).toHaveLength(1));
+});
+
+test("the composer has no attach button, no file input, no scope hint and no empty footer spacer", async () => {
+  current = snap(ID1, null);
+  await open();
+  expect(document.querySelector('[data-ui="copilot-attach"]')).toBeNull();
+  expect(document.querySelector('[data-ui="copilot-attach-input"]')).toBeNull();
+  expect(document.querySelector('input[type="file"]')).toBeNull();
+  expect(screen.queryByText("Actions available in this view")).toBeNull();
+  const foot = document.querySelector(".copilot-composer-foot")!;
+  expect(foot.children).toHaveLength(1);
+  expect(foot.querySelector('[data-ui="copilot-thinking"]')).not.toBeNull();
+  expect(foot.querySelector("span")).toBeNull();
+  // The model name's arrow sits before the select (on its left).
+  const pick = document.querySelector(".copilot-model-pick")!;
+  expect(pick.firstElementChild!.tagName.toLowerCase()).toBe("svg");
+  expect(pick.lastElementChild!.getAttribute("data-ui")).toBe("copilot-model");
+  const en = (await import("../src/locales/en.json")).default as unknown as { copilot: Record<string, unknown> };
+  const zh = (await import("../src/locales/zh-CN.json")).default as unknown as { copilot: Record<string, unknown> };
+  for (const key of ["scope", "stoppedNote", "attach", "attachUploading", "attachRetry", "attachRemove", "attachFailed", "attachTooLarge", "attachRetryNamed"]) { expect(key in en.copilot).toBe(false); expect(key in zh.copilot).toBe(false); }
 });
 
 test("a burst of page revisions is published as the newest one, and a send waits behind it and names the published revision", async () => {

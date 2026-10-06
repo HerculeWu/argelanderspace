@@ -377,7 +377,9 @@ async function send(id: string, context: PageContext, text: string) {
 // ticket 32 lane D: the reader tool text gained one sentence about the set_panel floor fold (~0.1 KB), window 40100 -> 40200.
 // tickets 29 and 30 (read_svg_image added ~0.4 KB): the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
 // ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
-const WINDOW_BIG_DOC = 61_800;
+// ticket 33 lane 1: removing the attachment tools (upload_pdf, upload_latex_zip, replace_upload_source, add_asset, set_figure_image) took
+// about 2.6 KB (about 1.3k tokens) out of the instruction, so the calibrated windows moved down by that: 61800 -> 60500.
+const WINDOW_BIG_DOC = 60_500;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -1187,10 +1189,10 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (40200 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (38900 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    40_200, // ticket 32: retry_plans (about 70 bytes of tool text) moved the calibration up by 100 tokens
+    38_900, // ticket 32: retry_plans moved the calibration up by 100 tokens; ticket 33 lane 1 (attachment tools removed) moved it down by 1300
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

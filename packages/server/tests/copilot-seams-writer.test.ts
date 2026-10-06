@@ -220,34 +220,20 @@ function editorPage(
     },
   };
 }
-async function start(context: PageContext, files: { name: string; bytes: Buffer }[] = []) {
+async function start(context: PageContext) {
   const created = (await (
     await request("/conversations", "POST", { model: choice })
   ).json()) as ConversationSnapshot;
   const id = created.conversation.id;
-  const ids: string[] = [];
-  for (const file of files) {
-    const res = await app.request(`/api/copilot/conversations/${id}/attachments`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-Filename": encodeURIComponent(file.name),
-      },
-      body: file.bytes,
-    });
-    expect(res.status).toBe(201);
-    ids.push(((await res.json()) as { id: string }).id);
-  }
   expect((await request(`/views/${context.viewId}`, "PUT", context)).status).toBe(200);
   const sent = await request(`/conversations/${id}/messages`, "POST", {
     clientMessageId: randomUUID(),
     text: "Work on the manuscript",
     viewId: context.viewId,
     contextRevision: context.revision,
-    ...(ids.length ? { attachmentIds: ids } : {}),
   });
   expect(sent.status).toBe(202);
-  return { id, ids };
+  return { id };
 }
 const settled = async (id: string) => {
   await vi.waitFor(
@@ -259,9 +245,9 @@ const settled = async (id: string) => {
   );
   return host.snapshot(id);
 };
-const run = async (context: PageContext, files: { name: string; bytes: Buffer }[] = []) => {
-  const { id, ids } = await start(context, files);
-  return { id, ids, snapshot: await settled(id) };
+const run = async (context: PageContext) => {
+  const { id } = await start(context);
+  return { id, snapshot: await settled(id) };
 };
 
 // ---- (a) the user's autosave and the agent's cell edit, truly concurrent ------------------------------------ //

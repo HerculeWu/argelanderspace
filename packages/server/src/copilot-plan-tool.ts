@@ -87,12 +87,9 @@ export type ConfirmationRequest =
   | {
       toolCallId: string;
       /**
-       * Replacing the text of an existing LaTeX Doc: the arXiv refresh, or the uploaded zip swapped for the file the
-       * user attached. The Files tab dialog's annotation-risk step.
+       * Replacing the text of an existing LaTeX Doc: the arXiv refresh. The Files tab dialog's annotation-risk step.
        */
-      action: "refresh_arxiv_source" | "replace_upload_source";
-      /** replace_upload_source: the file that would replace the Doc. */
-      attachment?: { id: string; filename: string; size: number; sha256: string };
+      action: "refresh_arxiv_source";
       workId: string;
       docId: string;
       label: string;
@@ -120,16 +117,6 @@ export type ConfirmationRequest =
       manuscriptId: string;
       label: string;
       impact: WriterDeleteImpact;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** A PDF of 25 MiB or more: the resource warning the Files tab makes the user accept. */
-      action: "accept_pdf_resource_warning";
-      workId: string;
-      label: string;
-      attachment: { id: string; filename: string; size: number; sha256: string };
       baseRev: number;
       objectDigest: string;
     };

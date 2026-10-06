@@ -1,17 +1,10 @@
 /**
  * The Copilot `writer` tool's cell, comment, reference, figure and Render operations, end to end on the real seam
- * (copilot ticket 23): real Pi session, real HTTP routes, real Writer lock/store/disk, real attachment store, real
+ * (copilot ticket 23): real Pi session, real HTTP routes, real Writer lock/store/disk, real
  * latexmk for Render. Only the model provider is scripted.
  */
 import { randomUUID } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -54,7 +47,7 @@ let seen: TranscriptContext[];
 let broadcasts: WsServerMessage[];
 const choice = { provider: "openai", model: "gpt-4.1", thinking: null };
 const M = "m_0000000a";
-const PNG = Buffer.concat([
+const _PNG = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   Buffer.from("png-body"),
 ]);
@@ -243,34 +236,20 @@ function editorPage(
     },
   };
 }
-async function start(context: PageContext, files: { name: string; bytes: Buffer }[] = []) {
+async function start(context: PageContext) {
   const created = (await (
     await request("/conversations", "POST", { model: choice })
   ).json()) as ConversationSnapshot;
   const id = created.conversation.id;
-  const ids: string[] = [];
-  for (const file of files) {
-    const res = await app.request(`/api/copilot/conversations/${id}/attachments`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-Filename": encodeURIComponent(file.name),
-      },
-      body: file.bytes,
-    });
-    expect(res.status).toBe(201);
-    ids.push(((await res.json()) as { id: string }).id);
-  }
   expect((await request(`/views/${context.viewId}`, "PUT", context)).status).toBe(200);
   const sent = await request(`/conversations/${id}/messages`, "POST", {
     clientMessageId: randomUUID(),
     text: "Work on the manuscript",
     viewId: context.viewId,
     contextRevision: context.revision,
-    ...(ids.length ? { attachmentIds: ids } : {}),
   });
   expect(sent.status).toBe(202);
-  return { id, ids };
+  return { id };
 }
 const settled = async (id: string) => {
   await vi.waitFor(
@@ -282,9 +261,9 @@ const settled = async (id: string) => {
   );
   return host.snapshot(id);
 };
-const run = async (context: PageContext, files: { name: string; bytes: Buffer }[] = []) => {
-  const { id, ids } = await start(context, files);
-  return { id, ids, snapshot: await settled(id) };
+const run = async (context: PageContext) => {
+  const { id } = await start(context);
+  return { id, snapshot: await settled(id) };
 };
 const call =
   (c: Record<string, unknown>): Step =>
@@ -470,52 +449,6 @@ test("insert_reference: a cite key of the real library goes in bare; an unknown 
     labels: [{ label: "fig:one", cell: "c_00000002" }],
     assets: [],
   });
-});
-
-test("set_figure_image uses only a file the user attached to this conversation: stored under assets/ by the page's store, cell pointed at it", async () => {
-  script = [
-    (ctx) => {
-      const ids = ctx.messages.flatMap((m) => {
-        if (m.role !== "user") return [];
-        const text =
-          typeof m.content === "string"
-            ? m.content
-            : m.content.map((p) => (p.type === "text" ? p.text : "")).join("");
-        try {
-          return ((JSON.parse(text) as { attachments?: { id: string }[] }).attachments ?? []).map(
-            (a) => a.id
-          );
-        } catch {
-          return [];
-        }
-      });
-      expect(ids).toHaveLength(1);
-      return {
-        call: {
-          action: "set_figure_image",
-          manuscriptId: M,
-          expectedRev: 3,
-          cellId: "c_00000002",
-          attachmentId: ids[0],
-        },
-      };
-    },
-    call({
-      action: "set_figure_image",
-      manuscriptId: M,
-      expectedRev: 4,
-      cellId: "c_00000002",
-      attachmentId: randomUUID(),
-    }),
-    (_ctx) => ({ text: "done" }),
-  ];
-  const { snapshot } = await run(editorPage(), [{ name: "../../evil/Star Field.png", bytes: PNG }]);
-  expect(operations(snapshot)).toEqual(["set_figure_image:ok", "set_figure_image:not_found"]);
-  expect(readdirSync(join(dataDir, "manuscripts", M, "assets"))).toEqual(["Star_Field.png"]);
-  expect(readFileSync(join(dataDir, "manuscripts", M, "assets", "Star_Field.png"))).toEqual(PNG);
-  expect((disk().cells[1] as unknown as { data: { image: string } }).data.image).toBe(
-    "Star_Field.png"
-  );
 });
 
 test("spec 14.1: agent text that reads files, runs programs or hides control words is refused through the tool and writes nothing", async () => {

@@ -3,7 +3,7 @@
  * routes, real DocMutationRegistry / JobRunner / library lock / disk / annotations access path, real /ws sockets as
  * browser tabs. Only the model provider is scripted. A delete waits for the real user's card; chat never approves.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import {
   chmodSync,
   existsSync,
@@ -1085,42 +1085,6 @@ test("a repeated operationId returns the first result: no second card, no second
   expect(payloads[2]).toMatchObject({ ok: false, status: "rejected" });
   expect(changed()).toHaveLength(1);
   expect(existsSync(irPath(OWN1))).toBe(true);
-});
-
-test("files the user attached to an earlier message are chat records: deleting a Doc leaves them and the message chip alone", async () => {
-  const created = (await (
-    await request("/conversations", "POST", { model: choice })
-  ).json()) as ConversationSnapshot;
-  const id = created.conversation.id;
-  const attach = await app.request(`/api/copilot/conversations/${id}/attachments`, {
-    method: "POST",
-    headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent("kept.pdf") },
-    body: readFileSync(PDF_FIXTURE),
-  });
-  expect(attach.status).toBe(201);
-  const attachmentId = ((await attach.json()) as { id: string }).id;
-  script = [() => del(SOLO), () => ({ text: "done" })];
-  const view = page();
-  expect((await request(`/views/${view.viewId}`, "PUT", view)).status).toBe(200);
-  await request(`/conversations/${id}/messages`, "POST", {
-    clientMessageId: randomUUID(),
-    text: "Delete that doc",
-    viewId: view.viewId,
-    contextRevision: view.revision,
-    attachmentIds: [attachmentId],
-  });
-  await answerCard(await card(id), view.viewId, "approve");
-  await settled(id);
-  expect(existsSync(irPath(SOLO))).toBe(false);
-  const dir = join(paths.dataDir, "copilot", "attachments", id);
-  expect(readdirSync(dir).sort()).toEqual([`${attachmentId}.bin`, `${attachmentId}.json`]);
-  expect(
-    createHash("sha256")
-      .update(readFileSync(join(dir, `${attachmentId}.bin`)))
-      .digest("hex")
-  ).toBe(createHash("sha256").update(readFileSync(PDF_FIXTURE)).digest("hex"));
-  const messages = (await host.snapshot(id)).messages;
-  expect(messages[0]?.attachments?.[0]).toMatchObject({ id: attachmentId, filename: "kept.pdf" });
 });
 
 test("the tool is only offered with a confirmation port: without one delete_doc is unsupported and deletes nothing", async () => {

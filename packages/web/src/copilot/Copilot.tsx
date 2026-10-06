@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { type PdfContextSummary, summarizeDiscoveryPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
-import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, uploadAttachment, removeAttachment, stopConversation, undoOperation } from "../api/copilot";
+import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
 import { subscribeCopilot } from "../api/ws";
@@ -25,7 +25,7 @@ export const OPERATION_ACTION_KEYS = {
   set_main_doc: "copilot.operations.actions.set_main_doc", filter_library: "copilot.operations.actions.filter_library", select_work: "copilot.operations.actions.select_work",
   set_detail_tab: "copilot.operations.actions.set_detail_tab", set_sidebar: "copilot.operations.actions.set_sidebar", set_temp_label: "copilot.operations.actions.set_temp_label",
   set_graph_labels: "copilot.operations.actions.set_graph_labels", graph_control: "copilot.operations.actions.graph_control", import_works: "copilot.operations.actions.import_works",
-  acquire_arxiv_pdf: "copilot.operations.actions.acquire_arxiv_pdf", attach_arxiv: "copilot.operations.actions.attach_arxiv", read_jobs: "copilot.operations.actions.read_jobs", delete_doc: "copilot.operations.actions.delete_doc", upload_pdf: "copilot.operations.actions.upload_pdf", upload_latex_zip: "copilot.operations.actions.upload_latex_zip", replace_upload_source: "copilot.operations.actions.replace_upload_source",
+  acquire_arxiv_pdf: "copilot.operations.actions.acquire_arxiv_pdf", attach_arxiv: "copilot.operations.actions.attach_arxiv", read_jobs: "copilot.operations.actions.read_jobs", delete_doc: "copilot.operations.actions.delete_doc",
   read_discovery: "copilot.operations.actions.read_discovery", save_candidate: "copilot.operations.actions.save_candidate", explore_work: "copilot.operations.actions.explore_work", explore_candidate: "copilot.operations.actions.explore_candidate",
   retry_exploration: "copilot.operations.actions.retry_exploration", cancel_exploration: "copilot.operations.actions.cancel_exploration", step_exploration: "copilot.operations.actions.step_exploration", exit_exploration: "copilot.operations.actions.exit_exploration",
   resume_exploration: "copilot.operations.actions.resume_exploration", filter_discovery: "copilot.operations.actions.filter_discovery", search_discovery: "copilot.operations.actions.search_discovery", set_discovery_display: "copilot.operations.actions.set_discovery_display",
@@ -36,11 +36,11 @@ export const OPERATION_ACTION_KEYS = {
   open_outline_item: "copilot.operations.actions.open_outline_item", search: "copilot.operations.actions.search", open_search_result: "copilot.operations.actions.open_search_result", open_annotation: "copilot.operations.actions.open_annotation", zoom: "copilot.operations.actions.zoom",
   create_annotation: "copilot.operations.actions.create_annotation", update_annotation: "copilot.operations.actions.update_annotation", delete_annotation: "copilot.operations.actions.delete_annotation",
   create_manuscript: "copilot.operations.actions.create_manuscript", update_manuscript: "copilot.operations.actions.update_manuscript", delete_manuscript: "copilot.operations.actions.delete_manuscript", open_manuscript: "copilot.operations.actions.open_manuscript", close_manuscript: "copilot.operations.actions.close_manuscript",
-  insert_cell: "copilot.operations.actions.insert_cell", update_cell: "copilot.operations.actions.update_cell", delete_cell: "copilot.operations.actions.delete_cell", convert_cell: "copilot.operations.actions.convert_cell", add_comment: "copilot.operations.actions.add_comment", insert_reference: "copilot.operations.actions.insert_reference", set_figure_image: "copilot.operations.actions.set_figure_image",
+  insert_cell: "copilot.operations.actions.insert_cell", update_cell: "copilot.operations.actions.update_cell", delete_cell: "copilot.operations.actions.delete_cell", convert_cell: "copilot.operations.actions.convert_cell", add_comment: "copilot.operations.actions.add_comment", insert_reference: "copilot.operations.actions.insert_reference",
   render_manuscript: "copilot.operations.actions.render_manuscript", export_manuscript: "copilot.operations.actions.export_manuscript", select_cell: "copilot.operations.actions.select_cell", edit_cell: "copilot.operations.actions.edit_cell", commit_cell: "copilot.operations.actions.commit_cell", set_writer_panel: "copilot.operations.actions.set_writer_panel", set_writer_tab: "copilot.operations.actions.set_writer_tab", dismiss_template_warning: "copilot.operations.actions.dismiss_template_warning", retry_manuscript_list: "copilot.operations.actions.retry_manuscript_list",
   create_pdf_annotation: "copilot.operations.actions.create_pdf_annotation", update_pdf_annotation: "copilot.operations.actions.update_pdf_annotation", delete_pdf_annotation: "copilot.operations.actions.delete_pdf_annotation",
   undo_pdf_annotation: "copilot.operations.actions.undo_pdf_annotation", redo_pdf_annotation: "copilot.operations.actions.redo_pdf_annotation",
-  create: "copilot.operations.actions.create", read_source: "copilot.operations.actions.read_source", save_source: "copilot.operations.actions.save_source", add_asset: "copilot.operations.actions.add_asset",
+  create: "copilot.operations.actions.create", read_source: "copilot.operations.actions.read_source", save_source: "copilot.operations.actions.save_source",
   add_pdf_image: "copilot.operations.actions.add_pdf_image", validate: "copilot.operations.actions.validate", generate: "copilot.operations.actions.generate", open_source_pdf: "copilot.operations.actions.open_source_pdf", set_text_view: "copilot.operations.actions.set_text_view",
 } as const;
 const OPERATION_STATUS_KEYS = {
@@ -146,7 +146,6 @@ const isApplied = (operation: CopilotOperation) => operation.status === "ok" || 
 
 export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">>;
 
-interface Draft { key: string; name: string; file: File; status: "uploading" | "ready" | "failed"; id?: string; /** The conversation it belongs to (null until the first upload creates one). */ conversationId: string | null; /** Why it failed: too big or not acceptable means retrying cannot help. */ reason?: "retry" | "final" }
 export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention, onBeforeDocDelete, onBeforeManuscriptDelete }: { open: boolean; /** The page's own guard before a Doc delete takes the open Doc away (unsaved draft protection); false keeps the card. */ onBeforeDocDelete?: (docId: string) => boolean; onBeforeManuscriptDelete?: (manuscriptId: string) => boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -156,9 +155,6 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   const [draftModel, setDraftModel] = useState<ConversationModel | null>(null);
   const [text, setText] = useState("");
   // Files the user is handing over with the next message (prototype A: the plus button and the removable chips).
-  const [files, setFiles] = useState<Draft[]>([]);
-  const picker = useRef<HTMLInputElement>(null);
-  const dropped = useRef(new Set<string>());
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -305,7 +301,9 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   // A run held at a confirmation is still the user's live run: Stop and steering work the same.
   const running = runStatus === "running" || waiting;
   const stopping = runStatus === "stopping";
-  const resumable = runStatus === "stopped" || runStatus === "interrupted" || runStatus === "failed";
+  const failed = runStatus === "failed";
+  // A run the user stopped, or the service interrupted, is resumed from the composer's one action button; a failed run keeps its notice and Retry.
+  const resumable = !running && !stopping && (runStatus === "stopped" || runStatus === "interrupted");
   const thinkingLabel = (level: ThinkingLevel) => t(THINKING_KEYS[level]);
   const lastTask = [...(snapshot?.messages ?? [])].reverse().find((message) => message.role === "user" && message.kind !== "resume" && !message.pending);
   // The task's objects are what was captured when it started. Name them only when that is unambiguous (one object).
@@ -325,11 +323,11 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   // What the user's undo did stays visible (restored, or why not) until dismissed; the service also tells the model.
   const [undoResult, setUndoResult] = useState<{ kind: "restored" | "failed"; label: string } | null>(null);
   // A refused confirmation click is explained here, not only on the card: the card disappears when the list is reread.
-  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null>(null);
+  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "deleteDoc" | "manuscript" } | null>(null);
   const waitingForConfirmation = !!snapshot?.confirmations?.length;
   const attentionRef = useRef(onAttention); attentionRef.current = onAttention;
   useEffect(() => { attentionRef.current?.(waitingForConfirmation); return () => attentionRef.current?.(false); }, [waitingForConfirmation]);
-  useEffect(() => { setUndoResult(null); setDecisionProblem(null); setFiles((current) => current.filter((item) => { const keep = item.conversationId === id || item.conversationId === null; if (!keep) dropped.current.add(item.key); return keep; })); }, [id]);
+  useEffect(() => { setUndoResult(null); setDecisionProblem(null); }, [id]);
   const undo = async () => {
     if (!id || !undoable) return;
     const target = undoable.id, label = undoable.label ?? "";
@@ -354,58 +352,27 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
     } catch (reason) { setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
   };
-  const pending = files.some((item) => item.status !== "ready");
-  /** One conversation however many files arrive at once with none open yet. */
+  /** One conversation however many sends arrive at once with none open yet. */
   const creating = useRef<Promise<string> | null>(null);
   const ensureConversation = (): Promise<string> => {
     if (id) return Promise.resolve(id);
     creating.current ??= (async () => {
       const result = await createConversation(choice);
       const created = result.conversation.id;
-      setFiles((current) => current.map((entry) => entry.conversationId === null ? { ...entry, conversationId: created } : entry));
       setId(created);
       return created;
     })().finally(() => { creating.current = null; });
     return creating.current;
   };
-  const upload = async (item: Draft) => {
-    try {
-      const conversationId = await ensureConversation();
-      const saved = await uploadAttachment(conversationId, item.file);
-      if (dropped.current.has(item.key)) { void removeAttachment(conversationId, saved.id).catch(() => {}); return; }
-      setFiles((current) => current.map((entry) => entry.key === item.key ? { ...entry, status: "ready", id: saved.id, conversationId } : entry));
-    } catch (reason) {
-      const final = reason instanceof CopilotApiError && (reason.code === "capacity" || reason.code === "invalid_input");
-      setFiles((current) => current.map((entry) => entry.key === item.key ? { ...entry, status: "failed", reason: final ? "final" : "retry" } : entry));
-    }
-  };
-  const pick = (list: FileList | null) => {
-    const chosen = [...(list ?? [])].slice(0, 5 - files.length);
-    const drafts = chosen.map((file): Draft => ({ key: crypto.randomUUID(), name: file.name, file, status: "uploading", conversationId: id }));
-    setFiles((current) => [...current, ...drafts]);
-    for (const draft of drafts) void upload(draft);
-  };
-  const retryUpload = (item: Draft) => { setFiles((current) => current.map((entry) => entry.key === item.key ? { ...entry, status: "uploading", reason: undefined } : entry)); void upload(item); };
-  const dropFile = (item: Draft) => {
-    dropped.current.add(item.key);
-    const at = files.findIndex((entry) => entry.key === item.key);
-    setFiles((current) => current.filter((entry) => entry.key !== item.key));
-    if (item.id && item.conversationId) void removeAttachment(item.conversationId, item.id).catch(() => {});
-    // The removed chip's focus goes to the next chip's remove button, or back to the attach button.
-    setTimeout(() => {
-      const buttons = document.querySelectorAll<HTMLElement>('[data-ui="copilot-attachment-remove"]');
-      (buttons[Math.min(at, buttons.length - 1)] ?? document.querySelector<HTMLElement>('[data-ui="copilot-attach"]'))?.focus();
-    }, 0);
-  };
   const send = async () => {
-    if (!text.trim() || stopping || pending || (!!id && !connected) || !thinkingValid || !begin()) return;
+    if (!text.trim() || stopping || (!!id && !connected) || !thinkingValid || !begin()) return;
     try {
       const conversationId = await ensureConversation();
       const attempt = retry.current?.id === conversationId && retry.current.text === text ? retry.current : { id: conversationId, text, clientMessageId: crypto.randomUUID() };
       retry.current = attempt;
       const target = conversationId;
-      await enqueue(async () => { const sent = await publishLatest(); await sendCopilotMessage(target, { clientMessageId: attempt.clientMessageId, text, viewId: sent.viewId, contextRevision: sent.revision, ...(files.length ? { attachmentIds: files.map((item) => item.id as string) } : {}) }); });
-      setText(""); setFiles([]); retry.current = null; following.current = true; textarea.current?.focus();
+      await enqueue(async () => { const sent = await publishLatest(); await sendCopilotMessage(target, { clientMessageId: attempt.clientMessageId, text, viewId: sent.viewId, contextRevision: sent.revision }); });
+      setText(""); retry.current = null; following.current = true; textarea.current?.focus();
       await refreshList();
     } catch (reason) { if (reason instanceof CopilotApiError && reason.code === "stale") published.current = null; setError(reason instanceof CopilotApiError ? reason.code : "unavailable"); }
     finally { end(); }
@@ -441,18 +408,19 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
     }}>
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
-        {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item) => <span key={item.id} className="copilot-attachment" data-ui="copilot-message-attachment" data-ui-key={item.id} title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
+        {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
         {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} sent={!message.context.coverage || message.context.coverage.status === "complete"} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {snapshot?.stream && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} /></article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} beforeDocDelete={onBeforeDocDelete} beforeManuscriptDelete={onBeforeManuscriptDelete} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
-      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t("copilot.confirmation.unreadableDoc") : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "doc" ? "Doc" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : "Upload"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
+      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t("copilot.confirmation.unreadableDoc") : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "doc" ? "Doc" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
       {((running && !waiting) || stopping) && <div className="copilot-run-card" role="status" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" />{t(stopping ? "copilot.stopping" : "copilot.running")}{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}
       {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}
       {undoResult && <div className={undoResult.kind === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-undo-result" data-status={undoResult.kind} role={undoResult.kind === "failed" ? "alert" : "status"}><span>{t(undoResult.kind === "restored" ? "copilot.undo.restored" : "copilot.undo.failed", { title: undoResult.label })}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-result-dismiss" className="btn icon ghost" onClick={() => setUndoResult(null)} /></div>}
-      {resumable && <div className={runStatus === "failed" ? "copilot-notice error" : "copilot-notice"} data-ui="copilot-run-result" role={runStatus === "failed" ? "alert" : "status"} data-status={runStatus}>
-        <span data-ui={runStatus === "failed" ? "copilot-run-error" : runStatus === "interrupted" ? "copilot-interrupted" : "copilot-stopped"}>{runStatus === "failed" ? errorCopy(snapshot?.conversation.run?.error ?? null) : t(runStatus === "interrupted" ? "copilot.interrupted" : "copilot.stoppedNote")}</span>
-        <Button data-ui="copilot-resume" disabled={busy || (!!id && !connected)} onClick={() => void resume()}>{t(runStatus === "failed" ? "common.retry" : "copilot.resume")}</Button>
+      {runStatus === "interrupted" && <div className="copilot-notice" data-ui="copilot-run-result" role="status" data-status="interrupted"><span data-ui="copilot-interrupted">{t("copilot.interrupted")}</span></div>}
+      {failed && <div className="copilot-notice error" data-ui="copilot-run-result" role="alert" data-status="failed">
+        <span data-ui="copilot-run-error">{errorCopy(snapshot?.conversation.run?.error ?? null)}</span>
+        <Button data-ui="copilot-resume" disabled={busy || (!!id && !connected)} onClick={() => void resume()}>{t("common.retry")}</Button>
       </div>}
     </div>
     {newContent && <Button className="copilot-new-content" data-ui="copilot-new-content" onClick={() => { following.current = true; if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; setNewContent(false); }}>{t("copilot.newContent")}</Button>}
@@ -460,25 +428,22 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       <Button className="copilot-context" data-ui="copilot-context" onClick={() => setDetail(true)}><span className="copilot-context-icon" aria-hidden="true">{getConfiguredIcon(context.view === "plan" ? "list-checks" : context.view === "doc" ? "file-text" : "layers", "copilot-context")}</span><span className="copilot-context-name">{context.plan?.plans[0]?.name || context.reader?.reading?.title || context.writer?.editor?.saved?.title || viewName(context.view)}</span><Badge>{t(context.status === "complete" ? "copilot.complete" : "copilot.unavailable")}</Badge><span className="copilot-context-icon" aria-hidden="true">{getConfiguredIcon("chevron-down", "copilot-context")}</span></Button>
       {id && !connected && <p role="status" data-ui="copilot-disconnected">{t("copilot.disconnected")}</p>}
       {error && <p role="alert" data-ui="copilot-error">{errorCopy(error)} <Button onClick={() => { void refreshCatalog(); void refreshList(); void refreshCurrent.current?.(); }}>{t("common.retry")}</Button></p>}
-      {!!files.length && <div className="copilot-attachments" data-ui="copilot-attachments">{files.map((item) => <span key={item.key} className="copilot-attachment" data-ui="copilot-attachment" data-status={item.status} title={item.name} role={item.status === "ready" ? undefined : "status"}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.name}</span>{item.status === "uploading" && <small>{t("copilot.attachUploading")}</small>}{item.status === "failed" && <small>{t(item.reason === "final" ? "copilot.attachTooLarge" : "copilot.attachFailed")}</small>}{item.status === "failed" && item.reason !== "final" && <button type="button" className="copilot-attachment-retry" data-ui="copilot-attachment-retry" aria-label={t("copilot.attachRetryNamed", { name: item.name })} onClick={() => retryUpload(item)}>{t("copilot.attachRetry")}</button>}<ActionButton unstyled mode="icon" iconName="x" label={t("copilot.attachRemove", { name: item.name })} data-ui="copilot-attachment-remove" className="copilot-attachment-remove" onClick={() => dropFile(item)} /></span>)}</div>}
       <div className="copilot-composer-box">
         <textarea ref={textarea} data-ui="copilot-input" aria-label={t("copilot.input")} placeholder={t(running ? "copilot.steerHint" : "copilot.input")} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void send(); }
         }} />
         <div className="copilot-composer-actions">
-          <ActionButton unstyled mode="icon" iconName="plus" label={t("copilot.attach")} data-ui="copilot-attach" className="copilot-attach" disabled={stopping || files.length >= 5} onClick={() => picker.current?.click()} />
-          <input ref={picker} type="file" hidden data-ui="copilot-attach-input" onChange={(event) => { pick(event.target.files); event.target.value = ""; }} />
-          <select aria-label={t("copilot.model")} data-ui="copilot-model" value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy} onChange={(event) => {
-            const [providerId, modelId] = event.target.value.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null });
-          }}><option value="" disabled>{t("copilot.model")}</option>{providers.map((item) => <optgroup key={item.id} label={item.name}>{item.models.filter((model) => model.tools).map((model) => <option key={model.id} value={`${item.id}\n${model.id}`}>{model.name}</option>)}</optgroup>)}</select>
+          <span className="copilot-model-pick"><Icon name="chevron-down" cls="ico-sm" aria-hidden="true" />
+            <select aria-label={t("copilot.model")} data-ui="copilot-model" value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy} onChange={(event) => {
+              const [providerId, modelId] = event.target.value.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null });
+            }}><option value="" disabled>{t("copilot.model")}</option>{providers.map((item) => <optgroup key={item.id} label={item.name}>{item.models.filter((model) => model.tools).map((model) => <option key={model.id} value={`${item.id}\n${model.id}`}>{model.name}</option>)}</optgroup>)}</select></span>
           <span className="copilot-spacer" />
-          {!(running || stopping) && <ActionButton unstyled mode="icon" iconName="arrow-up" label={t("copilot.send")} data-ui="copilot-send" className="copilot-send" disabled={busy || stopping || pending || !text.trim() || !thinkingValid || (!!id && !connected)} onClick={() => void send()} />}
-          {(running || stopping) && <ActionButton unstyled mode="icon" iconName="square" label={t(stopping ? "copilot.status.stopping" : "copilot.stop")} data-ui="copilot-stop" className="copilot-send copilot-stop" disabled={stopping || !connected} onClick={() => void stop()} />}
+          <ComposerAction kind={stopping || running ? "stop" : resumable ? "resume" : "send"} stopping={stopping} disabled={stopping ? true : running ? !connected : resumable ? busy || (!!id && !connected) : busy || !text.trim() || !thinkingValid || (!!id && !connected)} onSend={() => void send()} onStop={() => void stop()} onResume={() => void resume()} />
         </div>
       </div>
       <div className="copilot-composer-foot"><select aria-label={t("copilot.thinking")} data-ui="copilot-thinking" value={choice?.thinking ?? "default"} disabled={busy || !model || (levels.length <= 1 && thinkingValid)} onChange={(event) => { if (choice) void choose({ ...choice, thinking: event.target.value === "default" ? null : event.target.value as ThinkingLevel }); }}>
         <option value="default">{t("copilot.defaultChoice")}{model?.defaultThinking ? ` · ${thinkingLabel(model.defaultThinking)}` : ""}</option>{choice?.thinking && !levels.includes(choice.thinking) && <option value={choice.thinking} disabled>{thinkingLabel(choice.thinking)}</option>}{levels.length > 1 && levels.map((level) => <option key={level} value={level}>{thinkingLabel(level)}</option>)}
-      </select><span>{t("copilot.scope")}</span></div>
+      </select></div>
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
       {context.pdf && model && !model.image && <div className="copilot-notice warning" data-ui="copilot-pdf-no-image" role="status"><span>{t("copilot.pdf.noImage")}</span></div>}
     </div>
@@ -489,7 +454,15 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
 }
 
 /** The waiting card of prototype A: the plan, what it takes with it, and the user's own decision. */
-function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem, beforeDocDelete, beforeManuscriptDelete }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: { kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "upload" | "deleteDoc" | "manuscript" } | null) => void; beforeDocDelete?: (docId: string) => boolean; beforeManuscriptDelete?: (manuscriptId: string) => boolean }) {
+/** The composer's single action button: send when a message can go, stop while a run works, resume after a stop or an interruption. */
+export function ComposerAction({ kind, stopping, disabled, onSend, onStop, onResume }: { kind: "send" | "stop" | "resume"; stopping: boolean; disabled: boolean; onSend: () => void; onStop: () => void; onResume: () => void }) {
+  const { t } = useTranslation();
+  const label = t(kind === "send" ? "copilot.send" : kind === "stop" ? (stopping ? "copilot.status.stopping" : "copilot.stop") : "copilot.resume");
+  // Each state is its own stable data-ui, so the icon catalog and agents address the action by what it does now.
+  return <ActionButton unstyled mode="icon" iconName={kind === "send" ? "arrow-up" : kind === "stop" ? "square" : "play"} label={label} tooltip={label} data-ui={`copilot-${kind}`} className={`copilot-send copilot-${kind}`} disabled={disabled} onClick={kind === "send" ? onSend : kind === "stop" ? onStop : onResume} />;
+}
+
+function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem, beforeDocDelete, beforeManuscriptDelete }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: { kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "deleteDoc" | "manuscript" } | null) => void; beforeDocDelete?: (docId: string) => boolean; beforeManuscriptDelete?: (manuscriptId: string) => boolean }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
@@ -501,7 +474,7 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
     if (decision === "approve" && confirmation.action === "delete_manuscript" && beforeManuscriptDelete && !beforeManuscriptDelete(confirmation.object.id)) return;
     guard.current = true; setBusy(true); onProblem(null);
     try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev }); }
-    catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: confirmation.action === "delete_plan" ? "plan" : confirmation.action === "delete_manuscript" ? "manuscript" : confirmation.action === "accept_pdf_resource_warning" ? "upload" : confirmation.action === "delete_doc" ? "deleteDoc" : "doc" }); }
+    catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: confirmation.action === "delete_plan" ? "plan" : confirmation.action === "delete_manuscript" ? "manuscript" : confirmation.action === "delete_doc" ? "deleteDoc" : "doc" }); }
     finally { guard.current = false; setBusy(false); onSettled(); }
   };
   return <section className="copilot-confirmation" data-ui="copilot-confirmation" data-action={confirmation.action} aria-label={t("copilot.confirmation.needed")}>
@@ -525,18 +498,14 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
       {confirmation.works.length > 0 && <ul className="copilot-confirmation-works" data-ui="copilot-confirmation-works">{confirmation.works.map((item) => <li key={item.id} data-ui="copilot-confirmation-work" data-ui-key={item.id}>{t("copilot.confirmation.deleteDocWork", { title: item.title || item.id, state: t(item.main ? "library.detail.files.mainBadge" : "library.detail.files.additionalBadge"), count: item.remaining })}</li>)}</ul>}
       <p role="status" data-ui="copilot-confirmation-count">{confirmation.impact.annotations === "known" ? t("library.detail.deleteDoc.count", { count: confirmation.impact.count }) : t("library.detail.deleteDoc.countUnknown")}</p>
       <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>
-    </> : confirmation.action === "accept_pdf_resource_warning" ? <>
-      <h3>{t("copilot.confirmation.acceptPdf", { name: confirmation.label, file: confirmation.attachment.filename })}</h3>
-      <p>{t("library.detail.pdfUpload.resourceWarningDetail", { filename: confirmation.attachment.filename, size: (confirmation.attachment.size / (1024 * 1024)).toFixed(1) })}</p>
-      <div className="copilot-confirmation-meta">{confirmation.object.workId}</div>
     </> : <>
-      <h3>{confirmation.action === "replace_upload_source" ? t("copilot.confirmation.replaceUpload", { name: confirmation.label, file: confirmation.attachment?.filename ?? "" }) : t("copilot.confirmation.refreshArxiv", { name: confirmation.label })}</h3>
+      <h3>{t("copilot.confirmation.refreshArxiv", { name: confirmation.label })}</h3>
       <p>{confirmation.impact.annotations === "known" ? (confirmation.impact.count > 0 ? t("library.detail.acquisition.riskKnown", { count: confirmation.impact.count }) : t("library.detail.acquisition.riskZero")) : t("library.detail.acquisition.riskUnknown")}</p>
       <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>
     </>}
     <div className="copilot-confirmation-actions">
       <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
-      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{confirmation.action === "replace_text_reading" ? t("doc.text.replace.confirm", { count: confirmation.impact.annotations }) : t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : confirmation.action === "accept_pdf_resource_warning" ? "library.detail.pdfUpload.continue" : "library.detail.acquisition.confirmUpdate")}</Button>
+      <Button appearance="primary" tone="danger" data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{confirmation.action === "replace_text_reading" ? t("doc.text.replace.confirm", { count: confirmation.impact.annotations }) : t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : "library.detail.acquisition.confirmUpdate")}</Button>
     </div>
   </section>;
 }

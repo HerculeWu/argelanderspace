@@ -514,14 +514,6 @@ export const WriterCellOperationSchema = z.discriminatedUnion("action", [
         .optional(),
     })
     .strict(),
-  /** The figure's image chooser, with a file the user attached to this conversation (never a path or URL). */
-  z
-    .object({
-      action: z.literal("set_figure_image"),
-      ...CellRef,
-      attachmentId: z.string().min(1).max(100),
-    })
-    .strict(),
 ]);
 export type WriterCellOperation = z.infer<typeof WriterCellOperationSchema>;
 
@@ -593,7 +585,6 @@ export const WRITER_CELL_ACTIONS = [
   "convert_cell",
   "add_comment",
   "insert_reference",
-  "set_figure_image",
 ] as const;
 export const WRITER_OPERATION_ACTIONS = [
   "read",

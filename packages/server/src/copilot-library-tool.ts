@@ -1,5 +1,4 @@
 import {
-  type CopilotAttachment,
   type CopilotOperation,
   DISCOVERY_DETAIL_TABS,
   DISCOVERY_DISPLAYS,
@@ -18,18 +17,13 @@ import {
   LibraryReadDiscoverySchema,
   LibraryReadJobsSchema,
   LibraryReadOperationSchema,
-  LibraryReplaceUploadSourceSchema,
   LibrarySaveCandidateSchema,
   type LibrarySetMainDoc,
   LibrarySetMainDocSchema,
-  LibraryUploadLatexZipSchema,
-  LibraryUploadPdfSchema,
   type LibraryViewAction,
   LibraryViewActionSchema,
   type PageContext,
-  PDF_RESOURCE_WARNING_BYTES,
 } from "@argelanderspace/contracts";
-import { LibraryStore } from "@argelanderspace/core";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { type ConfirmationPort, digest, type OperationJournalPort } from "./copilot-plan-tool.js";
@@ -41,8 +35,6 @@ import {
   applyDocDelete,
   applyLibraryImport,
   applyLibraryOperation,
-  applyUploadPdf,
-  applyUploadZip,
   jobView,
   type LibraryImportOutcome,
   type LibraryOpDeps,
@@ -61,8 +53,6 @@ export interface LibraryToolContext {
   /** Counts an operation as in flight until it settles, so a terminal run state waits for it. */
   track?: <T>(work: Promise<T>) => Promise<T>;
   runId?: string;
-  /** Opens a file the user attached to a message of THIS conversation; anything else is null. */
-  attachment?: (attachmentId: string) => { meta: CopilotAttachment; bytes: Buffer } | null;
   /** Present in the real host: replacing an existing arXiv Doc waits here for the user. Without it that refresh is refused. */
   confirm?: ConfirmationPort;
   /** Resolves only after the bound browser view reports the outcome. */
@@ -93,7 +83,7 @@ const parameters = Type.Object(
         minLength: 1,
         maxLength: 64,
         description:
-          "Optional idempotency key for set_main_doc, import_works and the acquisition/upload actions. Repeating the same key with the same parameters returns the first result instead of writing again.",
+          "Optional idempotency key for set_main_doc, import_works and the acquisition actions. Repeating the same key with the same parameters returns the first result instead of writing again.",
       })
     ),
     query: Type.Optional(
@@ -124,13 +114,7 @@ const parameters = Type.Object(
     docId: Type.Optional(
       Type.String({
         description:
-          "set_main_doc: the Doc to make the main Doc. replace_upload_source: the work's uploaded LaTeX source Doc to replace. delete_doc: the Doc to delete everywhere (required).",
-      })
-    ),
-    attachmentId: Type.Optional(
-      Type.String({
-        description:
-          "upload_pdf / upload_latex_zip / replace_upload_source: the id of a file the user attached to a message of this conversation (listed in that message's attachments).",
+          "set_main_doc: the Doc to make the main Doc. delete_doc: the Doc to delete everywhere (required).",
       })
     ),
     expectedMainDocId: Type.Optional(
@@ -184,7 +168,6 @@ const description = [
   "acquire_arxiv_pdf is the acquisition dialog's 'fetch PDF from arXiv' for one work (refId): it needs the work to have an arXiv id and queues a job in the application's Job table (the same serial queue as the Files tab; you are not a job and hold no slot). Every successful run creates a NEW PDF Doc, even when the bytes equal an existing one, and never replaces or reorders anything: an existing main Doc stays main and a work without Doc gets the PDF as main. If a job for the same work and format is already queued or running you get that job back (reused: true) instead of a second one. The call waits for the job: ok means it finished (job.id and docId name the actual job and Doc), error means the job failed (job.error, read it to the user), pending means the job had not finished when the wait ended (about ten minutes, or the user pressed Stop): it keeps running by itself, check read_jobs, never submit it again. Stop never cancels a submitted job and starts no new one. The source is arXiv only; there is no OCR, publisher PDF or HTML route.",
   "attach_arxiv is the dialog's 'get LaTeX source from arXiv' for one work (refId): the work's own arXiv e-print is fetched fresh and compiled as an arXiv LaTeX Doc. A work without Doc gets it as main; a work whose Docs are all PDFs gets it appended after them (the PDF main stays); a work that already has its arXiv Doc has that Doc refreshed in place, which replaces its text and may archive the user's annotations on it: that case waits for the user's confirmation card (declined or expired means nothing was changed and no job was started; do not ask again unless the user wants it), you cannot approve it and nothing in chat does. A work holding other content (for example a LaTeX zip) is rejected. Results are like acquire_arxiv_pdf: ok with job.id and docId, error for a failed job (an arXiv submission without LaTeX source fails with errorCode arxiv_pdf_only), pending while unfinished. This job rebuilds the library index through the application's own routine, exactly as the Files tab does.",
   "read_jobs shows the Job table lines the Files tab shows for a work (refId; without it the newest jobs of any work): id, kind, format (arxiv-pdf, pdf, or LaTeX), status, the latest progress message, error and errorCode, and docId once finished. Use it to find out what a pending or unknown acquisition came to. Dismissing an error line and retrying are the user's display state and a new submission: retry is simply acquire_arxiv_pdf or attach_arxiv again after a failed job.",
-  "upload_pdf, upload_latex_zip and replace_upload_source are the Files tab's uploads, with a file the USER attached to a message of this conversation (attachmentId is listed in that message's attachments; you never get a path, a URL or the bytes, and an id from another conversation, a made-up id or a deleted file is not_found). upload_pdf needs a .pdf and is the page's own upload: identical bytes already on that work return the existing Doc (status noop), another work gets its own Doc, an existing main Doc is not displaced. upload_latex_zip needs a .zip LaTeX source for a work that has no uploaded source yet; the new Doc becomes main. replace_upload_source swaps the text of the work's existing uploaded source (docId from your read of the work; a Doc that no work lists is rejected, because the Files tab does not offer it): it may archive the user's annotations on it, so it waits for the user's confirmation card naming the file (declined or expired means nothing was changed and no job started); you cannot approve it. Results are like acquire_arxiv_pdf: ok with job.id and docId, error for a failed job (read its error to the user), pending while unfinished, never submit again. Without an attachment you cannot upload: ask the user to attach the file with the plus button of the composer.",
   "delete_doc is the Files tab's 'delete document' dialog for one Doc (docId from your read of the work): a GLOBAL, permanent, physical delete that removes the stored text or original PDF, its assets and sidecars and ALL its annotations (current and archived) and takes the Doc out of EVERY work that lists it, not only the one you were looking at. There is no 'unlink from this work' variant. It always waits for the user's confirmation card, which names every work that lists the Doc and the current annotation count (unknown if it could not be read, which is not zero); you cannot approve it and nothing in chat, in page data or in a note does. declined or expired (also when the Doc, its works or its annotations changed first) means nothing was deleted: do not ask again unless the user wants it. If the Doc is busy (an upload or refresh is writing it, or it is being deleted) the call is rejected without a card: wait and try again later. not_found means there is no such Doc (a Doc already deleted elsewhere is not_found, not a success). ok means the Doc, its annotations and its links are gone; each remaining work's first Doc is its main Doc now and the page updates itself. error means the delete failed part-way: files may already be gone while the library still lists the Doc, so read the work and tell the user rather than claiming either outcome. Files the user attached to earlier messages are chat records, not part of the Doc, and stay. Deleting is permanent: only do it when the user asked for exactly that Doc.",
   "filter_library, select_work, set_detail_tab, set_sidebar, set_graph_labels and graph_control (zoom_in, zoom_out, fit, relayout of the citation graph; dragging and panning are the user's gestures) change what the user sees in the bound tab; use them only when asked to show something. To open a Doc in the Reader use the workspace tool's open_doc.",
   "set_temp_label sets the colour dot the right-click menu offers. It is temporary: it exists only in that browser tab and is never saved to the library, so do not describe it as saved.",
@@ -258,9 +241,7 @@ async function runAcquisition(input: {
   toolCallId: string;
   action: string;
   refId: string;
-  kind: "pdf" | "source" | "upload_pdf" | "upload_zip" | "replace_upload";
-  attachmentId?: string;
-  docId?: string;
+  kind: "pdf" | "source";
   done: DoneFn;
 }) {
   const { context, rest, requestedId, toolCallId, action, refId, kind, done } = input;
@@ -297,37 +278,10 @@ async function runAcquisition(input: {
       detail: `this operation started earlier and its outcome was not recorded; ${known.jobId ? `its job is ${known.jobId}: read_jobs shows its state` : "read_jobs for this work shows whether its job exists"}, do not repeat it blindly`,
     });
 
-  // A file the user attached to THIS conversation (an id, never a path); anything else is not found.
-  let file: { meta: CopilotAttachment; bytes: Buffer } | undefined;
-  if (kind === "upload_pdf" || kind === "upload_zip" || kind === "replace_upload") {
-    const held = input.attachmentId ? context.attachment?.(input.attachmentId) : null;
-    if (!held)
-      return done(record(toolCallId, action, { status: "not_found", object: workObject }), {
-        ok: false,
-        status: "not_found",
-        detail:
-          "no such attachment: only a file the user attached to a message of this conversation can be used",
-      });
-    const wanted = kind === "upload_pdf" ? ".pdf" : ".zip";
-    if (!held.meta.filename.toLowerCase().endsWith(wanted))
-      return done(record(toolCallId, action, { status: "rejected", object: workObject }), {
-        ok: false,
-        status: "rejected",
-        detail: `the Files tab takes ${kind === "upload_pdf" ? "a .pdf file" : "a .zip LaTeX source"} here; this attachment is named ${held.meta.filename}`,
-      });
-    if ((kind === "upload_zip" || kind === "replace_upload") && !port.checkZip(held.bytes))
-      return done(record(toolCallId, action, { status: "rejected", object: workObject }), {
-        ok: false,
-        status: "rejected",
-        detail: "the attachment is not a readable zip archive; nothing was changed",
-      });
-    file = held;
-  }
-
   // A replacement overwrites text that may carry annotations: the real user decides first.
   let label: string | undefined;
   type Replacement = {
-    action: "refresh_arxiv_source" | "replace_upload_source";
+    action: "refresh_arxiv_source";
     title: string;
     docId: string;
     docIds: string[];
@@ -348,38 +302,6 @@ async function runAcquisition(input: {
         current: () => {
           const again = port.describeSource(refId);
           return again.kind === "refresh" ? again : null;
-        },
-      };
-  } else if (kind === "upload_zip" || kind === "replace_upload") {
-    const target = port.describeUpload(refId);
-    if (target.kind === "not_found")
-      return done(record(toolCallId, action, { status: "not_found" }), {
-        ok: false,
-        status: "not_found",
-        detail: "no such work",
-      });
-    if (kind === "upload_zip" && target.hasUpload)
-      return done(record(toolCallId, action, { status: "rejected", object: workObject }), {
-        ok: false,
-        status: "rejected",
-        detail: `this work already has an uploaded LaTeX source (${target.docId}); use replace_upload_source with that docId to replace it`,
-      });
-    if (kind === "replace_upload" && (!target.hasUpload || target.docId !== input.docId))
-      return done(record(toolCallId, action, { status: "rejected", object: workObject }), {
-        ok: false,
-        status: "rejected",
-        detail: "that Doc is not this work's uploaded LaTeX source; there is nothing to replace",
-      });
-    if (kind === "replace_upload")
-      replacement = {
-        action: "replace_upload_source",
-        title: target.title,
-        docId: target.docId,
-        docIds: target.docIds,
-        binding: { attachment: file?.meta.sha256 },
-        current: () => {
-          const again = port.describeUpload(refId);
-          return again.kind === "work" && again.hasUpload ? again : null;
         },
       };
   }
@@ -421,7 +343,7 @@ async function runAcquisition(input: {
         status: "expired",
         detail:
           decision.reason === "stale"
-            ? "the library, the document's annotations or the attachment changed before the user confirmed; nothing was changed. Read again and ask only if it is still wanted"
+            ? "the library or the document's annotations changed before the user confirmed; nothing was changed. Read again and ask only if it is still wanted"
             : "the request ended before the user confirmed; nothing was changed and no job was started",
       });
     // Approved. The same check the click made, now that the job is about to be submitted.
@@ -430,38 +352,10 @@ async function runAcquisition(input: {
         ok: false,
         status: "expired",
         detail:
-          "the library, the document's annotations or the attachment changed after the user confirmed; nothing was changed. Read again and ask only if it is still wanted",
+          "the library or the document's annotations changed after the user confirmed; nothing was changed. Read again and ask only if it is still wanted",
       });
     return null;
   };
-  const stillHeld = () =>
-    !file || context.attachment?.(file.meta.id)?.meta.sha256 === file.meta.sha256;
-
-  // A big PDF: the Files tab makes the user tick "continue" for files of 25 MiB and more; here the user decides on a card.
-  if (kind === "upload_pdf" && file && file.meta.size >= PDF_RESOURCE_WARNING_BYTES) {
-    const title = LibraryStore.load(context.library.paths).get(refId)?.title ?? refId;
-    const resourceDigest = digest({ refId, sha256: file.meta.sha256, size: file.meta.size });
-    const early = await askUser(
-      {
-        toolCallId,
-        action: "accept_pdf_resource_warning",
-        workId: refId,
-        label: title,
-        attachment: {
-          id: file.meta.id,
-          filename: file.meta.filename,
-          size: file.meta.size,
-          sha256: file.meta.sha256,
-        },
-        baseRev: 0,
-        objectDigest: resourceDigest,
-      },
-      title,
-      async () => stillHeld()
-    );
-    if (early) return early;
-  }
-
   if (replacement) {
     const current = replacement;
     label = current.title;
@@ -480,16 +374,6 @@ async function runAcquisition(input: {
         docId: prepared.docId,
         label: prepared.title,
         impact: prepared.impact,
-        ...(file && current.action === "replace_upload_source"
-          ? {
-              attachment: {
-                id: file.meta.id,
-                filename: file.meta.filename,
-                size: file.meta.size,
-                sha256: file.meta.sha256,
-              },
-            }
-          : {}),
         baseRev: prepared.rev,
         objectDigest: prepared.digest,
       },
@@ -499,7 +383,7 @@ async function runAcquisition(input: {
         const recheck = again
           ? await prepareArxivRefresh(context.library, refId, again, current.binding)
           : null;
-        return !!recheck?.ok && recheck.digest === prepared.digest && stillHeld();
+        return !!recheck?.ok && recheck.digest === prepared.digest;
       }
     );
     if (early) return early;
@@ -517,7 +401,7 @@ async function runAcquisition(input: {
       toolCallId,
       action,
       hash,
-      object: { workId: refId, ...(file ? { summary: file.meta.filename.slice(0, 80) } : {}) },
+      object: { workId: refId },
     });
   } catch {
     return done(record(toolCallId, action, { status: "error" }), {
@@ -532,25 +416,7 @@ async function runAcquisition(input: {
   const work: Promise<AcquireOutcome> =
     kind === "pdf"
       ? applyAcquireArxivPdf(context.library, refId, ctx)
-      : kind === "source"
-        ? applyAttachArxiv(context.library, refId, ctx)
-        : kind === "upload_pdf"
-          ? applyUploadPdf(
-              context.library,
-              refId,
-              {
-                bytes: (file as NonNullable<typeof file>).bytes,
-                filename: (file as NonNullable<typeof file>).meta.filename,
-              },
-              ctx
-            )
-          : applyUploadZip(
-              context.library,
-              refId,
-              { bytes: (file as NonNullable<typeof file>).bytes },
-              ctx,
-              { expectNoUpload: kind === "upload_zip" }
-            );
+      : applyAttachArxiv(context.library, refId, ctx);
   const outcome = await (context.track ? context.track(work) : work);
   const result = outcome.ok
     ? done(
@@ -830,32 +696,6 @@ export function createLibraryTool(context: LibraryToolContext) {
             docId: deleteDoc.data.docId,
             done,
           });
-        const uploads = [
-          LibraryUploadPdfSchema.safeParse(rest),
-          LibraryUploadLatexZipSchema.safeParse(rest),
-          LibraryReplaceUploadSourceSchema.safeParse(rest),
-        ] as const;
-        const upload = uploads.find((candidate) => candidate.success);
-        if (upload?.success) {
-          const data = upload.data;
-          return await runAcquisition({
-            context,
-            rest,
-            requestedId,
-            toolCallId,
-            action,
-            refId: data.refId,
-            kind:
-              data.action === "upload_pdf"
-                ? "upload_pdf"
-                : data.action === "upload_latex_zip"
-                  ? "upload_zip"
-                  : "replace_upload",
-            attachmentId: data.attachmentId,
-            ...(data.action === "replace_upload_source" ? { docId: data.docId } : {}),
-            done,
-          });
-        }
         const pdfJob = LibraryAcquireArxivPdfSchema.safeParse(rest);
         const sourceJob = LibraryAttachArxivSchema.safeParse(rest);
         if (pdfJob.success || sourceJob.success) {
@@ -880,23 +720,17 @@ export function createLibraryTool(context: LibraryToolContext) {
           const failure =
             rest.action === "import_works"
               ? importOp
-              : rest.action === "upload_pdf"
-                ? uploads[0]
-                : rest.action === "upload_latex_zip"
-                  ? uploads[1]
-                  : rest.action === "replace_upload_source"
-                    ? uploads[2]
-                    : rest.action === "delete_doc"
-                      ? deleteDoc
-                      : rest.action === "acquire_arxiv_pdf"
-                        ? pdfJob
-                        : rest.action === "attach_arxiv"
-                          ? sourceJob
-                          : rest.action === "read_jobs"
-                            ? jobsRead
-                            : rest.action === "save_candidate"
-                              ? save
-                              : write;
+              : rest.action === "delete_doc"
+                ? deleteDoc
+                : rest.action === "acquire_arxiv_pdf"
+                  ? pdfJob
+                  : rest.action === "attach_arxiv"
+                    ? sourceJob
+                    : rest.action === "read_jobs"
+                      ? jobsRead
+                      : rest.action === "save_candidate"
+                        ? save
+                        : write;
           return done(record(toolCallId, action, { status: "unsupported" }), {
             ok: false,
             status: "unsupported",

@@ -166,8 +166,6 @@ import {
   type LibraryOpDeps,
   type ManualImportResult,
   runManualImport,
-  type UploadStart,
-  type UploadTarget,
 } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { PaperCache } from "./paper-cache.js";
@@ -689,10 +687,6 @@ export function createApp(deps: AppDeps): Hono {
     importWorks: (req, options) => importManualWorks(req, options),
     readPayload: async () => libraryPayload(paths, await currentGraph()),
     acquisition: {
-      startPdfUpload: (workId, bytes, filename) => startPdfUploadFor(workId, bytes, filename),
-      startZipUpload: (workId, bytes, options) => startZipUploadFor(workId, bytes, options),
-      checkZip: (bytes) => isReadableZip(bytes),
-      describeUpload: (workId) => describeUploadTarget(workId),
       startPdf: (workId) => startArxivPdfAcquisition(workId),
       describeSource: (workId) => describeArxivSource(workId),
       startSource: (workId) => startArxivSource(workId),
@@ -2662,9 +2656,11 @@ export function createApp(deps: AppDeps): Hono {
 
   /**
    * The PDF upload's submit once the bytes are in hand (validated work, size and file name): same-Work identical
-   * bytes reuse the Doc, DocMutationRegistry pins/busy rules, one serial durable job. The page route and the Copilot
-   * tool (with a user-attached file) both come here.
+   * bytes reuse the Doc, DocMutationRegistry pins/busy rules, one serial durable job.
    */
+  type UploadStart =
+    | { kind: "queued"; job: Job; resourceWarning?: boolean }
+    | { kind: "error"; status: number; detail: string };
   const startPdfUpload = (workId: string, bytes: Buffer, filename: string): UploadStart => {
     let existing: ReturnType<typeof findMatchingPdfDoc>;
     try {
@@ -2827,13 +2823,11 @@ export function createApp(deps: AppDeps): Hono {
       return true;
     });
   /**
-   * The zip upload's async submit: pin the Doc against DELETE, queue the durable job, spool the bytes. The page route
-   * and the Copilot tool (with a user-attached file) both come here.
+   * The zip upload's async submit: pin the Doc against DELETE, queue the durable job, spool the bytes.
    */
   const startZipJob = (
     query: ZipQuery,
-    data: Uint8Array,
-    options: { expectNoUpload?: boolean } = {}
+    data: Uint8Array
   ): { kind: "queued"; job: Job } | { kind: "error"; status: number; detail: string } => {
     const targetWork = findWork(LibraryStore.load(paths), query);
     const uploadDoc = targetWork === undefined ? undefined : uploadDocId(targetWork.id);
@@ -2847,21 +2841,6 @@ export function createApp(deps: AppDeps): Hono {
         async (j, report) => {
           const zip = runner.spoolPath(j.id);
           try {
-            if (options.expectNoUpload) {
-              // A submit that was told "this work has no uploaded source" must not replace one that appeared
-              // (a page upload that finished, an edit) while it waited: re-check under the lock, before the ingest.
-              const present = await libraryLock.run(() => {
-                const work = findWork(LibraryStore.load(paths), query);
-                if (!work) return false;
-                const docId = uploadDocId(work.id);
-                return work.doc_ids.includes(docId) || existsSync(join(paths.outputDir, docId));
-              });
-              if (present)
-                return {
-                  status: "skipped",
-                  reason: "the work gained an uploaded source meanwhile; nothing was written",
-                };
-            }
             const ref = await runAttachFor(query, zip, report);
             return { ref, docId: uploadDocId(ref.id) };
           } finally {
@@ -2885,72 +2864,6 @@ export function createApp(deps: AppDeps): Hono {
     });
     writeFileSync(runner.spoolPath(job.id), data);
     return { kind: "queued", job };
-  };
-
-  /** The page's PDF upload for a Work, with a file name taken as the route takes it (a path or control characters are stripped). */
-  const startPdfUploadFor = (workId: string, bytes: Buffer, rawName: string): UploadStart => {
-    if (!LibraryStore.load(paths).get(workId))
-      return { kind: "error", status: 404, detail: `work ${pyRepr(workId)} not found` };
-    if (bytes.length === 0)
-      return { kind: "error", status: 400, detail: "PDF upload body is empty" };
-    if (bytes.length > PDF_MAX_BYTES)
-      return { kind: "error", status: 413, detail: `PDF exceeds the ${PDF_MAX_BYTES} byte limit` };
-    let filename = rawName.split(/[\\/]/).pop() ?? "document.pdf";
-    filename = [...filename]
-      .map((character) => {
-        const code = character.charCodeAt(0);
-        return code < 0x20 || code === 0x7f ? "_" : character;
-      })
-      .join("");
-    if (!filename || filename.length > 255)
-      return { kind: "error", status: 400, detail: "invalid PDF filename" };
-    return startPdfUpload(workId, bytes, filename);
-  };
-  const startZipUploadFor = (
-    workId: string,
-    bytes: Uint8Array,
-    options: { expectNoUpload?: boolean } = {}
-  ): UploadStart => {
-    const work = LibraryStore.load(paths).get(workId);
-    if (!work) return { kind: "error", status: 404, detail: `work ${pyRepr(workId)} not found` };
-    if (!isReadableZip(bytes))
-      return { kind: "error", status: 400, detail: "the attachment is not a readable zip archive" };
-    // As the Files tab disables its upload while one is queued or running: the agent neither stacks a second upload
-    // on the user's nor writes the Doc a task is writing.
-    const docId = uploadDocId(work.id);
-    const inFlight = runner.list().some((job) => {
-      const payload = job.payload as
-        | { workId?: unknown; doi?: unknown; arxiv?: unknown; format?: unknown }
-        | undefined;
-      return (
-        job.kind === "upload" &&
-        (job.status === "queued" || job.status === "running") &&
-        payload?.format === undefined &&
-        (payload?.workId === work.id ||
-          (!!work.doi && payload?.doi === work.doi) ||
-          (!!work.arxiv_id && payload?.arxiv === work.arxiv_id))
-      );
-    });
-    if (inFlight || docMutations.isBusy(docId))
-      return {
-        kind: "error",
-        status: 409,
-        detail:
-          "an upload of this work's LaTeX source is already queued or running (or the document is busy)",
-      };
-    return startZipJob({ workId, doi: null, arxiv: null }, bytes, options);
-  };
-  const describeUploadTarget = (workId: string): UploadTarget => {
-    const work = LibraryStore.load(paths).get(workId);
-    if (!work) return { kind: "not_found" };
-    const docId = uploadDocId(work.id);
-    return {
-      kind: "work",
-      docId,
-      title: work.title,
-      docIds: [...work.doc_ids],
-      hasUpload: work.doc_ids.includes(docId),
-    };
   };
 
   // The one import seam of the Library: the route below and the Copilot `library` tool both come here.

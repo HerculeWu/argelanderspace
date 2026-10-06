@@ -197,7 +197,7 @@ export function workspaceCapabilities(
 /**
  * What a browser's platform boundary lets the agent do. Every entry here is a user-gesture or
  * permission-gated browser capability: the agent cannot perform it, whatever it asks for. The agent
- * works only with material the application already admitted (library, attachments, app assets); a
+ * works only with material the application already admitted (library, app assets); a
  * file chooser or a local path never becomes a way to read an arbitrary file.
  */
 export const PLATFORM_BOUNDARIES = [

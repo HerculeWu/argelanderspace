@@ -256,44 +256,6 @@ test("Confirm on a refresh posts the refresh action, the Doc id and the annotati
   expect(ui("copilot-confirmation-problem")?.textContent).not.toContain("deleted");
 });
 
-test("a waiting replacement of an uploaded source names the file and posts its own action", async () => {
-  current = snap("waiting-for-user", { confirmations: [docCard({ action: "replace_upload_source", object: { kind: "doc", id: "upload-synthetic-abc123", workId: "arxiv:2603.03522" }, attachment: { id: "00000000-0000-4000-8000-000000000101", filename: "new <b>source</b>.zip", size: 10, sha256: "c".repeat(64) } })] });
-  await open();
-  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
-  const shown = ui("copilot-confirmation") as HTMLElement;
-  expect(shown.getAttribute("data-action")).toBe("replace_upload_source");
-  expect(shown.querySelector("h3")?.textContent).toBe("Replace the uploaded source of “Synthetic <i>paper</i>” with “new <b>source</b>.zip”");
-  expect(shown.querySelector("b")).toBeNull();
-  fireEvent.click(ui("copilot-confirmation-confirm")!);
-  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
-  expect(JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body))).toMatchObject({ action: "replace_upload_source", objectId: "upload-synthetic-abc123" });
-});
-
-test("W1: a refused replacement of an uploaded source says nothing was replaced, not the arXiv wording", async () => {
-  decisionStatus = 409;
-  current = snap("waiting-for-user", { confirmations: [docCard({ action: "replace_upload_source", attachment: { id: "00000000-0000-4000-8000-000000000101", filename: "s.zip", size: 10, sha256: "c".repeat(64) } })] });
-  await open();
-  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
-  fireEvent.click(ui("copilot-confirmation-confirm")!);
-  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("Nothing was replaced."));
-});
-
-test("W5: a large-PDF acceptance card shows the resource warning with the file, posts its own action, and a refusal says nothing was uploaded", async () => {
-  decisionStatus = 409;
-  current = snap("waiting-for-user", { confirmations: [{ id: CARD, runId: RUN, toolCallId: "call_1", action: "accept_pdf_resource_warning", object: { kind: "attachment", id: "00000000-0000-4000-8000-000000000101", workId: "arxiv:2603.03522" }, label: "Synthetic <i>paper</i>", attachment: { id: "00000000-0000-4000-8000-000000000101", filename: "big <b>one</b>.pdf", size: 30 * 1024 * 1024, sha256: "d".repeat(64) }, baseRev: 0, objectDigest: "e".repeat(64) }] });
-  await open();
-  await waitFor(() => expect(ui("copilot-confirmation")).not.toBeNull());
-  const shown = ui("copilot-confirmation") as HTMLElement;
-  expect(shown.querySelector("h3")?.textContent).toBe("Upload “big <b>one</b>.pdf” to “Synthetic <i>paper</i>”");
-  expect(shown.querySelector("b")).toBeNull();
-  expect(shown.textContent).toContain("30.0 MiB");
-  expect(ui("copilot-confirmation-confirm")?.textContent).toBe("Continue upload");
-  fireEvent.click(ui("copilot-confirmation-confirm")!);
-  await waitFor(() => expect(calls("/confirmations/")).toHaveLength(1));
-  expect(JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body))).toMatchObject({ action: "accept_pdf_resource_warning", objectId: "00000000-0000-4000-8000-000000000101", baseRev: 0 });
-  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("Nothing was uploaded."));
-});
-
 test("a text reading replacement (ticket 29) shows the annotation impact and the values it is bound to; the click posts the card's own version", async () => {
   const impact = { docId: "text-11111111-1111-4111-8111-111111111111", sourceRev: 5, publishedSourceRev: 4, annotations: 3, annotationsRev: 9, oldFingerprint: "a".repeat(64), newFingerprint: "b".repeat(64) };
   current = snap("waiting-for-user", { confirmations: [{ id: CARD, runId: RUN, toolCallId: "call_1", action: "replace_text_reading", object: { kind: "doc", id: impact.docId }, label: impact.docId, impact, baseRev: 9, objectDigest: "d".repeat(64) }] });
