@@ -125,12 +125,17 @@ export function manuscriptDeleteGuard(
   return true;
 }
 
-/** The Writer's side panels at their full width, and the narrowest reading column they may leave (ticket 18's rule). */
+/**
+ * The Writer's side panels at their full width, and the narrowest reading column they may leave (ticket 18's rule).
+ * The Writer keeps this 240 px rule alone: its panels fold by width only, and unfolding one never folds the other
+ * (the Reader's floor rule, ticket 32, does not apply here).
+ */
 const WRITER_PANEL_FULL = { left: 220, right: 310, rail: 34 };
 export const WRITER_MIN_COLUMN = 240;
 /**
  * Which side panels fold on their own for a Writer pane of this width: none while the paper keeps its minimum with
- * both open; else the outline; else both. Same order and threshold as the Reader's autoFold.
+ * both open; else the outline; else both. The same order and the same 240 px threshold as the Reader's automatic fold;
+ * a panel the user or the Copilot unfolds by hand then stays as asked.
  */
 export function writerAutoFold(width: number | null): { left: boolean; right: boolean } {
   if (!width) return { left: false, right: false };

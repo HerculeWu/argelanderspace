@@ -172,7 +172,7 @@ function LoadedPdfDocument({
   // same threshold, same manual-override semantics); the folds shown are the effective ones.
   const layoutRef = useRef<HTMLDivElement>(null);
   const viewportWidth = useViewportWidth();
-  const { collapsedLeft: leftCollapsed, collapsedRight: rightCollapsed, setCollapsedLeft: setLeftCollapsed, setCollapsedRight: setRightCollapsed } = useAutoFoldedPanels(layoutRef, pdfPanelSizes(viewportWidth), isLoaded);
+  const { collapsedLeft: leftCollapsed, collapsedRight: rightCollapsed, setCollapsedLeft: setLeftCollapsed, setCollapsedRight: setRightCollapsed, setPanelCollapsed } = useAutoFoldedPanels(layoutRef, pdfPanelSizes(viewportWidth), isLoaded);
   const [selectionMode, setSelectionMode] = useState<PdfAnnotationTool>("read");
   const selectionModeRef = useRef(selectionMode);
   selectionModeRef.current = selectionMode;
@@ -304,7 +304,10 @@ function LoadedPdfDocument({
               requestAnimationFrame(() => document.getElementById(`pdf-annotation-${CSS.escape(annotationId)}`)?.scrollIntoView({ block: "nearest" }));
               return "ok";
             },
-            setPanel: (panel, collapsed) => (panel === "outline" ? setLeftCollapsed : setRightCollapsed)(collapsed),
+            setPanel: (panel, collapsed) => {
+              const folded = setPanelCollapsed(panel === "outline" ? "left" : "right", collapsed);
+              return folded === null ? null : folded === "left" ? "outline" : "right";
+            },
             markUserNavigation,
           },
         );

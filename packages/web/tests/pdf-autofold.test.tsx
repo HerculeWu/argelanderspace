@@ -5,17 +5,15 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MIN_READING_COLUMN, autoFold, useAutoFoldedPanels } from "../src/doc/auto-fold";
+import { MIN_READING_COLUMN, autoFold, foldedByUnfold, useAutoFoldedPanels } from "../src/doc/auto-fold";
 import { pdfPanelSizes } from "../src/doc/PdfReader";
 
 describe("autoFold for the PDF Reader", () => {
-  it("at 1024 with Copilot open (pane 612) both panels fold; at 1440 with it open (pane ~996) the outline folds", () => {
-    expect(autoFold(612, pdfPanelSizes(1024))).toEqual({ left: true, right: true });
-    expect(autoFold(996, pdfPanelSizes(1440))).toEqual({ left: true, right: false });
-    expect(autoFold(1100, pdfPanelSizes(1440))).toEqual({ left: false, right: false });
+  it("at 1024 with Copilot open (pane 612) the left panel folds; at 1440 with it open (pane ~996) nothing folds", () => {
+    expect(autoFold(612, pdfPanelSizes(1024))).toEqual({ left: true, right: false });
+    expect(autoFold(996, pdfPanelSizes(1440))).toEqual({ left: false, right: false });
     expect(autoFold(962, pdfPanelSizes(1024))).toEqual({ left: false, right: false });
     expect(autoFold(300, pdfPanelSizes(1024))).toEqual({ left: true, right: true });
-    expect(autoFold(760, pdfPanelSizes(1024))).toEqual({ left: true, right: false });
     expect(autoFold(null, pdfPanelSizes(1024))).toEqual({ left: false, right: false });
   });
   it("uses the LaTeX Reader's threshold", () => {
@@ -59,39 +57,50 @@ describe("the hook", () => {
   it("folds by width, a manual choice wins until the width class changes, then the automatic choice returns", () => {
     width = 612;
     render(<Probe />);
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, true]);
-    act(() => api.setCollapsedLeft(false));
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+    act(() => api.setCollapsedLeft(false)); // the page column (612 - 430) would fall under the floor: the floor folds the annotations panel
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
     resize(620);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
-    resize(1400);
+    resize(1000);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
     resize(300);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, true]);
     act(() => api.setCollapsedRight((previous) => !previous));
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
   });
-  it("unfolding the second panel when the page column would fall under its minimum folds the first (both orders)", () => {
-    width = 612;
-    render(<Probe />);
-    act(() => api.setCollapsedLeft(false));
-    act(() => api.setCollapsedRight(false));
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
-    act(() => api.setCollapsedLeft(false));
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
-  });
-  it("leaves both open when the pane has room for both", () => {
-    width = 1200;
-    render(<Probe />);
-    act(() => api.setCollapsedLeft(true));
-    act(() => api.setCollapsedLeft(false));
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
-  });
   it("measures nothing until it is enabled (the PDF layout exists only once the document has loaded)", () => {
     width = 612;
     const { rerender } = render(<Probe enabled={false} />);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
     rerender(<Probe enabled />);
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, true]);
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+  });
+});
+
+describe("the floor rule (ticket 32): an unfold that would push the page column under the minimum folds the other panel", () => {
+  it("foldedByUnfold only fires when the other panel is open and both together leave less than the minimum", () => {
+    const sizes = pdfPanelSizes(1024);
+    expect(foldedByUnfold(612, sizes, "left", false)).toBe("right");
+    expect(foldedByUnfold(612, sizes, "right", false)).toBe("left");
+    expect(foldedByUnfold(612, sizes, "left", true)).toBeNull();
+    expect(foldedByUnfold(sizes.left + sizes.right + MIN_READING_COLUMN, sizes, "left", false)).toBeNull();
+    expect(foldedByUnfold(null, sizes, "left", false)).toBeNull();
+  });
+  it("in the hook: unfolding the outline at 612 folds the annotations panel; room for both leaves both open", () => {
+    width = 612;
+    render(<Probe />);
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+    let folded: string | null = null;
+    act(() => { folded = api.setPanelCollapsed("left", false); });
+    expect(folded).toBe("right");
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
+    act(() => { folded = api.setPanelCollapsed("right", false); });
+    expect(folded).toBe("left");
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+    resize(1200);
+    act(() => { folded = api.setPanelCollapsed("left", false); });
+    expect(folded).toBeNull();
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
   });
 });

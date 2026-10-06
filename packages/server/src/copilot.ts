@@ -504,7 +504,8 @@ export class CopilotHost {
         status: "not_displayed",
         detail: entry.cancelled ? "stopped" : entry.delivered ? "no_report" : "offline",
       };
-    if (outcome.ok) return { status: "displayed" };
+    if (outcome.ok)
+      return { status: "displayed", ...(outcome.folded ? { folded: outcome.folded } : {}) };
     if (outcome.detail === "failed")
       return { status: "failed", ...(outcome.http !== undefined ? { http: outcome.http } : {}) };
     return outcome.detail === "not_found"

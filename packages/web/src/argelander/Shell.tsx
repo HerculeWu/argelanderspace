@@ -360,7 +360,7 @@ export function Shell() {
   // outlives the render that started it. Nothing here calls focus(): another tab or window is never raised.
   const shell = useRef({ panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen });
   shell.current = { panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen };
-  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number };
+  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number; folded?: "outline" | "right" };
   const settle = async (check: () => boolean): Promise<boolean> => {
     for (let attempt = 0; attempt < 40; attempt++) {
       if (check()) return true;

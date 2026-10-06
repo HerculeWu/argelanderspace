@@ -144,7 +144,7 @@ function WriterSummary({ summary, title }: { summary: { mode: "list" | "editor";
 
 const isApplied = (operation: CopilotOperation) => operation.status === "ok" || operation.status === "noop";
 
-export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">>;
+export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">>;
 
 interface Draft { key: string; name: string; file: File; status: "uploading" | "ready" | "failed"; id?: string; /** The conversation it belongs to (null until the first upload creates one). */ conversationId: string | null; /** Why it failed: too big or not acceptable means retrying cannot help. */ reason?: "retry" | "final" }
 export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention, onBeforeDocDelete, onBeforeManuscriptDelete }: { open: boolean; /** The page's own guard before a Doc delete takes the open Doc away (unsaved draft protection); false keeps the card. */ onBeforeDocDelete?: (docId: string) => boolean; onBeforeManuscriptDelete?: (manuscriptId: string) => boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
@@ -280,10 +280,10 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
         void (async () => {
           // The provider settings dialog is this panel's own: opening it only shows the dialog, the user types any secret there.
           if (message.action.action === "open_copilot_settings") { openPanelRef.current?.(); setSettings(true); }
-          const outcome: Pick<CopilotViewActionResult, "ok" | "detail" | "http"> = message.action.action === "open_copilot_settings" ? { ok: true } : viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
+          const outcome: Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded"> = message.action.action === "open_copilot_settings" ? { ok: true } : viewActionRef.current ? await viewActionRef.current(message.action).catch(() => ({ ok: false, detail: "unavailable" as const })) : { ok: false, detail: "unavailable" as const };
           // What the action changed reaches the page context through a few renders: report only once the service holds the page that shows it, so a call that follows (read_discovery, save_candidate) never sees the old page.
           await settlePublished();
-          try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}), ...(outcome.http !== undefined ? { http: outcome.http } : {}) }); } catch { /* the service times the action out as not displayed */ }
+          try { await postViewActionResult(message.viewId, { actionId: message.actionId, ok: outcome.ok, ...(outcome.detail ? { detail: outcome.detail } : {}), ...(outcome.http !== undefined ? { http: outcome.http } : {}), ...(outcome.folded ? { folded: outcome.folded } : {}) }); } catch { /* the service times the action out as not displayed */ }
         })();
       },
       ready: () => { transportConnected = true; republish(); void refresh(); }, connection: (value) => { if (alive) { transportConnected = value; setConnected(value); if (!value) syncing = true; } } });
@@ -432,7 +432,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       <span className="copilot-spacer" />
       <ActionButton unstyled mode="icon" iconName="square-pen" label={t("copilot.new")} data-ui="copilot-new-conversation" className="btn icon ghost" disabled={busy} onClick={() => void newConversation()} />
       <ActionButton unstyled mode="icon" iconName="settings-2" label={t("providers.title")} data-ui="copilot-settings" className="btn icon ghost" onClick={() => setSettings(true)} />
-      <ActionButton unstyled mode="icon" iconName="panel-right-close" label={t("copilot.close")} data-ui="copilot-close" className="btn icon ghost" onClick={onClose} />
+      <ActionButton unstyled mode="icon" iconName="panel-right-close" label={t("copilot.close")} data-ui="copilot-close" className="btn icon ghost" onClick={() => { onClose(); document.querySelector<HTMLElement>('[data-ui="copilot-toggle"]')?.focus(); }} />
     </header>
     <div ref={scroll} className="copilot-messages" data-ui="copilot-messages" onScroll={() => {
       const node = scroll.current; if (!node) return;

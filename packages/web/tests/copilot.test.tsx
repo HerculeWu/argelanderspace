@@ -186,3 +186,14 @@ test("a view action is reported only after the service holds the page that shows
   expect(order.indexOf("page:2")).toBeGreaterThan(-1);
   expect(order.indexOf("page:2")).toBeLessThan(order.indexOf("result"));
 });
+
+test("the panel's own close button returns focus to the toolbar toggle", async () => {
+  const onClose = vi.fn();
+  render(<><button data-ui="copilot-toggle">toggle</button><Copilot open context={context} onClose={onClose} /></>);
+  await screen.findByText("Copilot");
+  const close = document.querySelector('[data-ui="copilot-close"]') as HTMLElement;
+  close.focus();
+  fireEvent.click(close);
+  expect(onClose).toHaveBeenCalled();
+  expect(document.activeElement).toBe(document.querySelector('[data-ui="copilot-toggle"]'));
+});

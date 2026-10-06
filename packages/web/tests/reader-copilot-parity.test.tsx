@@ -21,7 +21,7 @@ import i18n from "../src/i18n";
 
 vi.setConfig({ testTimeout: 30000 });
 const h = vi.hoisted(() => ({
-  viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
+  viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string; folded?: string }>),
   context: null as null | PageContext,
   contexts: [] as PageContext[],
   library: new Set<() => void>(),
@@ -428,6 +428,34 @@ describe("navigation through the Reader's own controllers", () => {
     await waitFor(() => expect(reader().panels.rightTab).toBe("references"));
     fireEvent.click(q('[data-ui="toggle-latex-outline"]')!);
     await waitFor(() => expect(reader().panels.outlineCollapsed).toBe(false));
+  });
+});
+
+describe("the Reader floor rule through the Copilot (ticket 32)", () => {
+  it("unfolding a panel that would squeeze the article under 240 px folds the other and the result says which", async () => {
+    // a measured, narrow Reader (the width 1024 leaves beside an open Copilot)
+    const real = Element.prototype.getBoundingClientRect;
+    const realObserver = globalThis.ResizeObserver;
+    const observers = new Set<() => void>();
+    vi.stubGlobal("ResizeObserver", class { constructor(private cb: () => void) {} observe() { observers.add(this.cb); } unobserve() {} disconnect() { observers.delete(this.cb); } });
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      return this.classList.contains("reader-main") ? ({ width: 612, height: 600, top: 0, left: 0, right: 612, bottom: 600, x: 0, y: 0, toJSON() {} } as DOMRect) : real.call(this);
+    };
+    try {
+      await boot();
+      const folded = (key: string) => q(`[data-ui="latex-${key}-panel"]`)!.classList.contains("collapsed");
+      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([true, true]));
+      expect(await run({ action: "set_panel", docId: DOC, panel: "outline", collapsed: false })).toEqual({ ok: true });
+      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([false, true]));
+      expect(await run({ action: "set_panel", docId: DOC, panel: "right", collapsed: false })).toEqual({ ok: true, folded: "outline" });
+      await waitFor(() => expect([folded("outline"), folded("right")]).toEqual([true, false]));
+      await waitFor(() => expect(reader().panels.outlineCollapsed).toBe(true));
+      // folding never folds anything else
+      expect(await run({ action: "set_panel", docId: DOC, panel: "right", collapsed: true })).toEqual({ ok: true });
+    } finally {
+      Element.prototype.getBoundingClientRect = real;
+      vi.stubGlobal("ResizeObserver", realObserver);
+    }
   });
 });
 

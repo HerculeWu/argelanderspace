@@ -21,7 +21,8 @@ export interface ReaderWorkspaceHandle {
   /** A deep-link anchor: block/section/float id, reference id or `ann-<id>` (the same code the URL hash uses). */
   navigate: (anchor: string) => "ok" | "not_found" | "unavailable";
   jumpBack: () => "ok" | "disabled" | "unavailable";
-  setPanel: (panel: ReaderPanel, collapsed: boolean) => void;
+  /** Returns the other panel when unfolding this one folded it (the article keeps its minimum column). */
+  setPanel: (panel: ReaderPanel, collapsed: boolean) => ReaderPanel | null;
   setRightTab: (tab: ReaderRightTab) => void;
 }
 
@@ -30,7 +31,7 @@ export interface ReaderViewController {
   docId: () => string | null;
   apply: (
     action: import("@argelanderspace/contracts").ReaderViewAction
-  ) => Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "disabled" }>;
+  ) => Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "disabled"; folded?: ReaderPanel }>;
 }
 
 /** What the PDF Reader's own controls answer to the Copilot (copilot ticket 20); pages in the actions are zero-based. */
@@ -277,9 +278,10 @@ export function useReaderPublisher(
             const result = handle.jumpBack();
             return result === "ok" ? { ok: true } : { ok: false, detail: result };
           }
-          case "set_panel":
-            handle.setPanel(action.panel, action.collapsed);
-            return { ok: true };
+          case "set_panel": {
+            const folded = handle.setPanel(action.panel, action.collapsed);
+            return folded ? { ok: true, folded } : { ok: true };
+          }
           case "set_right_tab":
             handle.setRightTab(action.tab);
             return { ok: true };

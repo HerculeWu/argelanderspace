@@ -109,8 +109,9 @@
   transition: width 0.24s ease, flex-basis 0.24s ease;
   overflow: hidden;
 }
-/* Hard floor: whatever the folds say, an open side panel never takes the article below 240 px (the pane's width minus
-   the other rail minus the floor, but a panel keeps 180 px); the auto-fold keeps the comfortable 480 px (MIN_READING_COLUMN) where it can. */
+/* Hard floor: an open side panel never takes the article below 240 px (MIN_READING_COLUMN): its width is capped at
+   the pane's width minus the other panel's rail minus 240 px, but a panel keeps at least 180 px. With both panels open
+   the fold rule (auto-fold.ts) has already folded one when they would not fit. */
 .panel.left, .panel.right { max-width: max(calc(100% - var(--rail-w) - 240px), 180px); }
 .panel.left { width: var(--left-w); flex-basis: var(--left-w); border-right: 1px solid var(--line); }
 .panel.right { width: var(--right-w); flex-basis: var(--right-w); border-left: 1px solid var(--line); }
@@ -151,6 +152,7 @@
   transform: translateX(-50%);
   /* vertical text flows from the label's own top edge, so a long label is never centred upward under the toggle */
   writing-mode: vertical-rl;
+  text-orientation: sideways; /* CJK labels keep the rotated look of the old rotate(90deg), not upright stacking */
   white-space: nowrap;
   font-size: 11px;
   letter-spacing: 0.12em;

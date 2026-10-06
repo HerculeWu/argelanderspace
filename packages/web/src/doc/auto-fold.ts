@@ -5,15 +5,15 @@ import { type RefObject, useEffect, useState } from "react";
  * 2026-10-05, extended to the PDF Reader the same day): the left panel first, then the right one; what the user (or the
  * Copilot) sets by hand wins until the pane's width class changes; a pane that is wide enough is untouched.
  * Shared by the LaTeX Reader and the PDF Reader, with the same threshold.
+ *
+ * One exception to "manual wins", the floor (ticket 32, user decision "floor only"): unfolding a panel whose
+ * opening would push the reading column below MIN_READING_COLUMN folds the other open panel (foldedByUnfold), so the
+ * article is never squeezed out. Nothing else folds by itself, so with room for both (1440 with Copilot: article 326)
+ * both panels may be open.
  */
 
-/**
- * The reading column never gets less than this; the side panels fold before it does. 480 px is the LaTeX article's
- * 40 px side padding twice plus a ~400 px measure (about 45 characters at the 18 px body size, the lower edge of a
- * readable line), and it keeps a PDF page at least ~440 px wide. Ticket 32 raised it from 240 (user rulings "PDF 1024:
- * same auto-fold as LaTeX"): at 1440 with Copilot open the article was 326 px, the PDF page 340 px and cropped.
- */
-export const MIN_READING_COLUMN = 480;
+/** The reading column never gets less than this: the side panels fold before it does, and an unfold that would break it folds the other panel. */
+export const MIN_READING_COLUMN = 240;
 export interface PanelSizes {
   left: number;
   right: number;
@@ -49,7 +49,18 @@ export function useElementWidth(ref: RefObject<HTMLElement>, enabled = true): nu
 
 type Manual = { left: boolean | null; right: boolean | null; auto: { left: boolean; right: boolean } };
 
-/** The effective folds of one Reader pane: automatic from the pane's width, overridden by hand until the width class changes. */
+export type FoldSide = "left" | "right";
+
+/** The panel an unfold of `side` folds: the other one, when it is open and both open would leave less than the minimum column. */
+export function foldedByUnfold(width: number | null, panels: PanelSizes, side: FoldSide, otherCollapsed: boolean): FoldSide | null {
+  if (width === null || otherCollapsed) return null;
+  return width - panels.left - panels.right < MIN_READING_COLUMN ? (side === "left" ? "right" : "left") : null;
+}
+
+/**
+ * The effective folds of one Reader pane: automatic from the pane's width, overridden by hand until the width class
+ * changes (and by the floor rule above). `unfold` reports which panel the unfolding folded, for the Copilot's answer.
+ */
 export function useAutoFoldedPanels(ref: RefObject<HTMLElement>, panels: PanelSizes = LATEX_PANEL_SIZES, enabled = true) {
   const width = useElementWidth(ref, enabled);
   const auto = autoFold(width, panels);
@@ -61,16 +72,19 @@ export function useAutoFoldedPanels(ref: RefObject<HTMLElement>, panels: PanelSi
   }, [sameAuto, auto.left, auto.right]);
   const collapsedLeft = manual.left ?? auto.left;
   const collapsedRight = manual.right ?? auto.right;
-  // Unfolding one panel while the other is open and the column would drop below its minimum folds the other one
-  // (the article is never squeezed out; one panel always opens when asked, the column then keeps what is left).
-  const squeezed = width !== null && width - panels.left - panels.right < MIN_READING_COLUMN;
-  const setCollapsedLeft = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => {
-    const left = typeof value === "function" ? value(m.left ?? m.auto.left) : value;
-    return { ...m, left, ...(!left && squeezed && !(m.right ?? m.auto.right) ? { right: true } : {}) };
+  const setSide = (side: FoldSide, value: boolean | ((previous: boolean) => boolean)) => setManual((m) => {
+    const next = typeof value === "function" ? value(m[side] ?? m.auto[side]) : value;
+    const other: FoldSide = side === "left" ? "right" : "left";
+    const folds = !next ? foldedByUnfold(width, panels, side, m[other] ?? m.auto[other]) : null;
+    return { ...m, [side]: next, ...(folds ? { [folds]: true } : {}) };
   });
-  const setCollapsedRight = (value: boolean | ((previous: boolean) => boolean)) => setManual((m) => {
-    const right = typeof value === "function" ? value(m.right ?? m.auto.right) : value;
-    return { ...m, right, ...(!right && squeezed && !(m.left ?? m.auto.left) ? { left: true } : {}) };
-  });
-  return { collapsedLeft, collapsedRight, setCollapsedLeft, setCollapsedRight };
+  const setCollapsedLeft = (value: boolean | ((previous: boolean) => boolean)) => setSide("left", value);
+  const setCollapsedRight = (value: boolean | ((previous: boolean) => boolean)) => setSide("right", value);
+  /** Fold or unfold one panel; returns the other panel when unfolding folded it. */
+  const setPanelCollapsed = (side: FoldSide, collapsed: boolean): FoldSide | null => {
+    const folds = !collapsed ? foldedByUnfold(width, panels, side, side === "left" ? collapsedRight : collapsedLeft) : null;
+    setSide(side, collapsed);
+    return folds;
+  };
+  return { collapsedLeft, collapsedRight, setCollapsedLeft, setCollapsedRight, setPanelCollapsed };
 }
