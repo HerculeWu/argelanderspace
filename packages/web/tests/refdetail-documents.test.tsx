@@ -104,6 +104,11 @@ describe("RefDetail document provenance and actions", () => {
     expect(toggle.getAttribute("data-tooltip-open")).toBe("true");
     fireEvent.blur(toggle);
     expect(tip.getAttribute("aria-hidden")).toBe("true");
+    // activating the toggle dismisses its tooltip, so it never covers the opened action row
+    fireEvent.focus(toggle);
+    fireEvent.click(toggle);
+    expect(tip.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(toggle);
     const details = toggle.closest("details")!;
     expect(details.open).toBe(false);
     fireEvent.click(toggle);

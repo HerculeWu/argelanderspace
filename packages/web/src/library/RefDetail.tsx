@@ -110,7 +110,8 @@ function isJobSnapshotRegression(previous: Job | undefined, next: Job): boolean 
 /**
  * The Doc row's three-dots disclosure toggle. It must stay the immediate `<summary>` of its `<details>`, so the shared
  * Tooltip (which wraps its child in a span) cannot wrap it; the same tooltip markup and classes are rendered inside
- * the summary instead and shown on pointer hover and on keyboard focus.
+ * the summary instead and shown on pointer hover and on keyboard focus, and dismissed on activation like the shared
+ * Tooltip, so it never covers the opened action row.
  */
 function DocActionsToggle({ label }: { label: string }) {
   const id = `tooltip-${useId().replace(/:/g, "")}`;
@@ -124,6 +125,7 @@ function DocActionsToggle({ label }: { label: string }) {
       onPointerEnter={() => setOpen(true)}
       onPointerLeave={() => setOpen(false)}
       onPointerDown={() => setOpen(false)}
+      onClick={() => setOpen(false)}
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
       onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
