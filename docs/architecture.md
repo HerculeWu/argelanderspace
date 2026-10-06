@@ -23,6 +23,8 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 
 配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；env 优先，未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。
 
+**全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定，尚未实施）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 `ARGELANDERSPACE_GLOBAL_DIR` > config 键 > OS 默认；既有 config.toml 位置不变，项目数据不迁移。
+
 ```text
 <有效 dataDir>/
 ├── output/<latex_doc_id>/
