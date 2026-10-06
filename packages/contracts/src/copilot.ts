@@ -197,6 +197,8 @@ export interface CopilotMessage {
   kind?: "resume";
   /** Steering accepted while the run is working, not yet read by the model. */
   pending?: boolean;
+  /** Legacy: names of files an old message carried (the removed attachment feature); shown read-only. */
+  attachments?: { filename: string }[];
   /** Operations this assistant message requested, with their committed outcomes. */
   operations?: CopilotOperation[];
   context?: {
@@ -480,6 +482,10 @@ export const WsCopilotSubscribedSchema = z
   })
   .strict();
 
+/** What an old user envelope recorded about a file handed over with it (metadata only; read-only, shown by name). */
+export const LegacySentAttachmentSchema = z
+  .object({ filename: z.string().max(255).optional() })
+  .passthrough();
 export const CopilotPromptSchema = z
   .object({
     version: z.literal(1),
@@ -495,6 +501,11 @@ export const CopilotPromptSchema = z
     context: ObservationPageContextSchema,
     /** The material of the PDF Doc the page shows (copilot ticket 20): derived by the service from the verified original. */
     pdf: PdfMaterialEnvelopeSchema.optional(),
+    /**
+     * Legacy (removed attachment feature, ticket 15): accepted on read so a conversation written by the old format
+     * still loads; the history keeps what was delivered as sent. Never written, never acted on.
+     */
+    attachments: z.array(LegacySentAttachmentSchema).max(5).optional(),
   })
   .strict();
 export type CopilotPrompt = z.infer<typeof CopilotPromptSchema>;

@@ -379,7 +379,7 @@ async function send(id: string, context: PageContext, text: string) {
 // ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
 // ticket 33 lane 1: removing the attachment tools (upload_pdf, upload_latex_zip, replace_upload_source, add_asset, set_figure_image) took
 // about 2.6 KB (about 1.3k tokens) out of the instruction, so the calibrated windows moved down by that: 61800 -> 60500.
-const WINDOW_BIG_DOC = 60_500;
+const WINDOW_BIG_DOC = 60_400;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -701,7 +701,7 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  await withWindow(49_700, async () => {
+  await withWindow(49_600, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;

@@ -128,6 +128,31 @@ test("typed text in a stopped state still goes out with Enter, as a message", as
   expect(calls("/resume")).toHaveLength(0);
 });
 
+test("a stopped or interrupted run with text typed shows Send (arrow) and clicking it sends; with the box empty it is Resume", async () => {
+  current = snap(ID1, { id: running.id, status: "stopped", error: null });
+  await open();
+  await waitFor(() => expect(action().dataset.ui).toBe("copilot-resume"));
+  fireEvent.change(input(), { target: { value: "Do this instead" } });
+  expect(action().dataset.ui).toBe("copilot-send");
+  expect(action().getAttribute("aria-label")).toBe("Send");
+  expect(glyph(action())).toBe("arrow");
+  fireEvent.click(action());
+  await waitFor(() => expect(calls("/messages")).toHaveLength(1));
+  expect(calls("/resume")).toHaveLength(0);
+  fireEvent.change(input(), { target: { value: "" } });
+  expect(action().dataset.ui).toBe("copilot-resume");
+  expect(glyph(action())).toBe("play");
+});
+
+test("an old message that carried attachments shows their names read-only, with no upload or remove control", async () => {
+  current = snap(ID1, null, { messages: [{ id: "m1", role: "user", text: "Look at this", attachments: [{ filename: "old-paper.pdf" }], context: { contextId: "c1", view: "doc", status: "unavailable", revision: 1, objects: [] } }] });
+  await open();
+  const chip = await screen.findByText("old-paper.pdf");
+  expect(chip.closest('[data-ui="copilot-message-attachment"]')).not.toBeNull();
+  expect(document.querySelector('[data-ui="copilot-message-attachments"] button')).toBeNull();
+  expect(document.querySelector('[data-ui="copilot-attach"]')).toBeNull();
+});
+
 test("the one composer button is send when idle, stop while running, resume after an interruption, with a label and tooltip name per state", async () => {
   current = snap(ID1, null);
   const idle = await open();
@@ -162,7 +187,8 @@ test("a failed run keeps its notice with Retry; the composer button stays Send",
   current = snap(ID1, { id: running.id, status: "failed", error: "transient" });
   await open();
   await waitFor(() => expect(document.querySelector('[data-ui="copilot-run-error"]')).not.toBeNull());
-  const retry = document.querySelector('[data-ui="copilot-run-result"] [data-ui="copilot-resume"]') as HTMLButtonElement;
+  const retry = document.querySelector('[data-ui="copilot-run-result"] [data-ui="copilot-retry"]') as HTMLButtonElement;
+  expect(document.querySelector('[data-ui="copilot-resume"]')).toBeNull();
   expect(retry.textContent).toBe("Retry");
   expect(action().dataset.ui).toBe("copilot-send");
   fireEvent.click(retry);
@@ -184,6 +210,9 @@ test("the composer has no attach button, no file input, no scope hint and no emp
   const pick = document.querySelector(".copilot-model-pick")!;
   expect(pick.firstElementChild!.tagName.toLowerCase()).toBe("svg");
   expect(pick.lastElementChild!.getAttribute("data-ui")).toBe("copilot-model");
+  // A hidden mirror of the chosen name sizes the select in browsers without field-sizing; the chevron never takes clicks.
+  expect(pick.querySelector(".copilot-model-mirror")?.textContent).toBe("Test");
+  expect(pick.firstElementChild!.getAttribute("aria-hidden")).toBe("true");
   const en = (await import("../src/locales/en.json")).default as unknown as { copilot: Record<string, unknown> };
   const zh = (await import("../src/locales/zh-CN.json")).default as unknown as { copilot: Record<string, unknown> };
   for (const key of ["scope", "stoppedNote", "attach", "attachUploading", "attachRetry", "attachRemove", "attachFailed", "attachTooLarge", "attachRetryNamed"]) { expect(key in en.copilot).toBe(false); expect(key in zh.copilot).toBe(false); }

@@ -58,9 +58,19 @@
 .copilot-toggle-dot{position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:var(--warn);pointer-events:none}
 
 /* Model picker (ticket 33): the arrow sits on the left, right beside the model name; the select itself draws none. */
-.copilot-model-pick{display:inline-flex;align-items:center;gap:2px;position:relative;min-width:0;color:var(--text-dim)}
+.copilot-model-pick{position:relative;min-width:0;color:var(--text-dim)}
 .copilot-model-pick .ico-sm{width:14px;height:14px;flex:none;pointer-events:none}
-.copilot-composer .copilot-model-pick select{appearance:none;-webkit-appearance:none;field-sizing:content;min-width:0;padding:0 2px;min-height:24px;cursor:pointer}
+.copilot-model-pick{display:inline-grid;grid-template-columns:auto;max-width:245px}
+.copilot-model-pick>*{grid-area:1/1}
+.copilot-model-mirror{visibility:hidden;white-space:pre;overflow:hidden;font:12px var(--font-sans);padding:0 4px 0 18px;min-height:24px;line-height:24px;pointer-events:none}
+.copilot-composer .copilot-model-pick select{appearance:none;-webkit-appearance:none;width:0;min-width:100%;padding:0 4px 0 18px;min-height:24px;cursor:pointer;text-overflow:ellipsis}
+.copilot-model-pick .ico-sm{position:relative;align-self:center;justify-self:start;z-index:1}
+/* Legacy (removed attachment feature): a plain read-only name chip on an old message. */
+.copilot-attachments{display:flex;gap:6px;flex-wrap:wrap}
+.copilot-attachments.sent{justify-content:flex-end;margin:4px 0 0}
+.copilot-attachment{display:inline-flex;align-items:center;gap:5px;max-width:100%;font-size:12px;color:var(--text-dim)}
+.copilot-attachment .ico{width:12px;height:12px;flex:none}
+.copilot-attachment-name{min-width:0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .copilot-composer-actions{min-height:24px}
 .copilot .ui-badge{font-size:12px}
 .copilot-title{min-height:24px}

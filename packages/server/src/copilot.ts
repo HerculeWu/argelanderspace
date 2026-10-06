@@ -346,8 +346,12 @@ function askedLine(entry: OperationConfirmation): string {
       return `${entry.action} ${entry.planId}`;
     case "delete_manuscript":
       return `${entry.action} ${entry.manuscriptId}`;
-    default:
+    case "refresh_arxiv_source":
       return `${entry.action} ${entry.workId} ${entry.docId}`;
+    default:
+      // A record of a kind this version no longer has (an upload replacement or a large-PDF acceptance from the
+      // removed attachment feature): said neutrally, never as "undefined".
+      return `${(entry as { action: string }).action} (an earlier confirmation of a request this version no longer offers; nothing was changed)`;
   }
 }
 
@@ -731,6 +735,13 @@ export class CopilotHost {
       role: "user",
       text: input.text,
       ...(input.kind ? { kind: input.kind } : {}),
+      ...(input.attachments?.length
+        ? {
+            attachments: input.attachments.map((item) => ({
+              filename: typeof item.filename === "string" ? item.filename : "",
+            })),
+          }
+        : {}),
       context: {
         ...data.context,
         objects: data.context.objects.map((object) => ({

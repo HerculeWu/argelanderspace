@@ -683,6 +683,103 @@ test("restart records an unfinished run as interrupted, never replays, and resum
   await heldLock;
 });
 
+test("a conversation written by the old format (user envelopes carrying attachments, an old upload confirmation record) still loads, shows the attached file names read-only, and resumes", async () => {
+  const snapshot = await create();
+  const id = snapshot.conversation.id;
+  const hold = gate();
+  const heldLock = planLock.run(() => hold.wait);
+  script = [
+    () => ({
+      call: {
+        action: "update_task",
+        expectedRev: 7,
+        planId: A,
+        taskId: "t_00000001",
+        status: "done",
+        operationId: "old-1",
+      },
+    }),
+    () => ({ text: "resumed fine" }),
+  ];
+  await post(id, page(A, 1), "Edit task 1");
+  await vi.waitFor(() =>
+    expect(readFileSync(historyPath(snapshot), "utf8")).toContain('"phase":"begin"')
+  );
+  // Rewrite the stored history as the removed attachment feature wrote it (ticket 15): metadata in the user envelope,
+  // and a durable confirmation record of a removed kind that was asked and never answered.
+  const file = historyPath(snapshot);
+  const legacy = {
+    id: "00000000-0000-4000-8000-000000000009",
+    filename: "old-paper.pdf",
+    size: 12,
+    contentType: "application/pdf",
+    sha256: "a".repeat(64),
+    createdAt: "2026-10-04T00:00:00.000Z",
+  };
+  const lines = readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const entry = JSON.parse(line);
+      if (entry.type === "message" && entry.message?.role === "user") {
+        const part = entry.message.content[0];
+        part.text = JSON.stringify({ ...JSON.parse(part.text), attachments: [legacy] });
+      }
+      return JSON.stringify(entry);
+    });
+  // An unanswered confirmation of a removed kind, as ticket 15 recorded it, right after the last entry.
+  const runId = (await host.snapshot(id)).conversation.run?.id;
+  const last = JSON.parse(lines.at(-1) as string);
+  lines.push(
+    JSON.stringify({
+      type: "custom",
+      customType: "argelander.confirmation.v1",
+      id: "ffffffff",
+      parentId: last.id,
+      timestamp: new Date().toISOString(),
+      data: {
+        version: 1,
+        phase: "requested",
+        confirmationId: randomUUID(),
+        runId,
+        toolCallId: "call-legacy",
+        baseRev: 0,
+        action: "accept_pdf_resource_warning",
+        workId: "w",
+        attachmentId: legacy.id,
+      },
+    })
+  );
+  writeFileSync(file, `${lines.join("\n")}\n`);
+  const old = host;
+  newHost();
+  const restarted = await host.snapshot(id);
+  expect(restarted.conversation.run?.status).toBe("interrupted");
+  const user = restarted.messages.find((m) => m.role === "user" && m.kind !== "resume");
+  expect(user?.text).toBe("Edit task 1");
+  expect(user?.attachments?.map((a) => a.filename)).toEqual(["old-paper.pdf"]);
+  expect((await host.list()).unreadable).toEqual([]);
+  const context = page(A, 1);
+  await publish(context);
+  const resumed = await request(`/conversations/${id}/resume`, "POST", {
+    clientMessageId: randomUUID(),
+    viewId: context.viewId,
+    contextRevision: context.revision,
+  });
+  expect(resumed.status).toBe(202);
+  await until(id, ["completed"]);
+  // The earlier delivery is frozen as sent: the model sees the metadata only, never bytes of the file.
+  expect(JSON.stringify(seen.at(-1)?.messages)).not.toContain("%PDF");
+  const resumeText = JSON.stringify(seen.at(-1)?.messages);
+  expect(resumeText).toContain(
+    "accept_pdf_resource_warning (an earlier confirmation of a request this version no longer offers"
+  );
+  expect(resumeText).not.toContain("undefined");
+  void old;
+  hold.open();
+  await heldLock;
+});
+
 test("resume is only for stopped, failed or interrupted runs", async () => {
   const { id } = (await create()).conversation;
   const context = page(A, 1);
