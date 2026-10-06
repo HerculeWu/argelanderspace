@@ -105,10 +105,11 @@ describe("RefDetail reading-first interaction", () => {
     });
 
     expect(screen.getByText("暂无全文")).toBeTruthy();
+    // The primary action opens the acquisition dialog itself, also when the Full text tab is already selected.
+    fireEvent.click(screen.getByRole("tab", { name: "全文" }));
     fireEvent.click(screen.getByRole("button", { name: "获取全文" }));
     expect(screen.getByRole("tab", { name: "全文" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText(/可获取 · arXiv 全文/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "获取全文…" }));
     expect(screen.getByRole("radio", { name: /从 arXiv 获取 PDF/ })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /从 arXiv 获取 LaTeX 源码/ })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /上传 LaTeX 源码包/ })).toBeTruthy();

@@ -1005,8 +1005,15 @@ export function RefDetail({
             label={t(mainDoc ? "library.detail.fullText.read" : "library.detail.fullText.acquire")}
             tooltip={t(mainDoc ? "library.detail.fullText.read" : "library.detail.fullText.acquire")}
             onClick={() => {
-              if (mainDoc) onOpenDoc(mainDoc);
-              else setTab("files");
+              if (mainDoc) {
+                onOpenDoc(mainDoc);
+                return;
+              }
+              setTab("files");
+              // A running acquisition already reports in the Full text tab; otherwise open the dialog itself.
+              if (uploadJob === null && arxivJob === null && arxivPdfJob === null && !pdfUploadBusy && pdfUploadJob === null) {
+                openAcquisition();
+              }
             }}
           >
             {t(mainDoc ? "library.detail.fullText.read" : "library.detail.fullText.acquire")}
