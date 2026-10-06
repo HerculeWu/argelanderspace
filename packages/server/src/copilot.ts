@@ -50,7 +50,6 @@ import {
   summarizeReaderPage,
   summarizeTextPage,
   summarizeWriterPage,
-  TASK_UNDO_WINDOW_MS,
   type WsCopilotEvent,
   type WsCopilotViewAction,
   writerKey,
@@ -107,12 +106,8 @@ import {
 import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
 import { jobView, type LibraryOpDeps, prepareArxivRefresh } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
-import {
-  describeDeleteTarget,
-  type PlanOpDeps,
-  type RemovedTask,
-  restoreDeletedTask,
-} from "./plans-actions.js";
+import { describeDeleteTarget, type PlanOpDeps, type RemovedTask } from "./plans-actions.js";
+import { TaskUndoRegistry, type UndoResult } from "./plans-undo.js";
 import { ProviderSettings, ProviderSettingsError } from "./providers.js";
 import type { TextDocService } from "./text-docs.js";
 import { describeManuscriptDelete, type WriterOpDeps } from "./writer-actions.js";
@@ -413,11 +408,8 @@ export class CopilotHost {
   private readonly confirmations = new Map<string, PendingConfirmation>();
   /** What each confirmation ended as in this process, so a repeated click gets the same answer. */
   private readonly settledConfirmations = new Map<string, "approved" | "declined" | "expired">();
-  /** Task deletes that can still be undone (the Plan page's six-second window). */
-  private readonly undoables = new Map<
-    string,
-    { planId: string; removed: RemovedTask; until: number }
-  >();
+  /** Task deletes that can still be undone (8-second window): one registry for the tool, the panel and the Plan page. */
+  readonly taskUndo = new TaskUndoRegistry();
   private closed = false;
   private readonly root: string;
   private readonly cwd: string;
@@ -1630,12 +1622,14 @@ export class CopilotHost {
     planId: string,
     removed: RemovedTask
   ): string {
-    const until = Date.now() + TASK_UNDO_WINDOW_MS;
-    const key = `${conversationId}:${toolCallId}`;
-    this.undoables.set(key, { planId, removed, until });
-    const timer = setTimeout(() => this.undoables.delete(key), TASK_UNDO_WINDOW_MS + 1000);
-    timer.unref();
-    return new Date(until).toISOString();
+    const entry = this.taskUndo.register({
+      planId,
+      taskId: String(removed.raw.id),
+      title: String(removed.raw.title ?? ""),
+      removed,
+      source: { conversationId, toolCallId },
+    });
+    return new Date(entry.until).toISOString();
   }
   /**
    * Tell the model, through the saved conversation, what the user's undo did. Written as a model-visible custom
@@ -1669,7 +1663,7 @@ export class CopilotHost {
       /* the undo outcome stands; the next read of the plans shows the truth */
     }
   }
-  /** Undo of a task delete, inside its window, through the same restore the Plan page's undo means. */
+  /** Undo of a task delete, inside its window, through the one undo the Copilot tool and the Plan page share. */
   async undo(
     id: string,
     toolCallId: string,
@@ -1677,34 +1671,55 @@ export class CopilotHost {
   ): Promise<{ status: "ok" | "noop"; rev: number }> {
     const loaded = await this.get(id);
     if (!this.views.has(viewId)) throw new CopilotError("stale");
-    const key = `${id}:${toolCallId}`;
-    const entry = this.undoables.get(key);
-    if (!entry || !this.workbench) {
+    if (!this.workbench) {
       this.noteUndo(loaded, toolCallId, "failed", "not_found");
       throw new CopilotError("not_found");
     }
-    if (Date.now() > entry.until) {
-      this.undoables.delete(key);
-      this.noteUndo(loaded, toolCallId, "failed", "window_closed");
-      throw new CopilotError("stale");
-    }
-    this.undoables.delete(key);
     try {
-      const outcome = await restoreDeletedTask(this.workbench.plans, {
-        planId: entry.planId,
-        ...entry.removed,
+      const outcome = await this.taskUndo.undo(this.workbench.plans, {
+        conversationId: id,
+        toolCallId,
       });
       if (!outcome.ok) {
-        this.noteUndo(loaded, toolCallId, "failed", outcome.status);
+        this.noteUndo(
+          loaded,
+          toolCallId,
+          "failed",
+          outcome.status === "expired" ? "window_closed" : outcome.status
+        );
         throw new CopilotError(outcome.status === "not_found" ? "not_found" : "stale");
       }
       this.noteUndo(loaded, toolCallId, "restored");
       return { status: outcome.status, rev: outcome.rev };
     } catch (error) {
-      if (!(error instanceof CopilotError) && Date.now() <= entry.until)
-        this.undoables.set(key, entry);
       throw this.failure(error);
     }
+  }
+  /**
+   * The Plan page's undo snackbar for a task the Copilot deleted: the same registry and restore as the tool and the
+   * panel. When the delete came from a conversation, that conversation's model is told what the undo did.
+   */
+  async undoTaskDelete(entryId: string): Promise<UndoResult> {
+    if (!this.workbench)
+      return { ok: false, status: "not_found", detail: "the plans are not available" };
+    const entry = this.taskUndo.find({ id: entryId });
+    const outcome = await this.taskUndo.undo(this.workbench.plans, { id: entryId });
+    if (entry?.source) {
+      try {
+        const loaded = await this.get(entry.source.conversationId);
+        if (outcome.ok) this.noteUndo(loaded, entry.source.toolCallId, "restored");
+        else
+          this.noteUndo(
+            loaded,
+            entry.source.toolCallId,
+            "failed",
+            outcome.status === "expired" ? "window_closed" : outcome.status
+          );
+      } catch {
+        /* the undo outcome stands; the conversation may be gone */
+      }
+    }
+    return outcome;
   }
   private journalEntries(loaded: Loaded): OperationJournal[] {
     return loaded.manager
@@ -2441,6 +2456,7 @@ export class CopilotHost {
           admitting: () => !this.closed && !state.stopRequested,
           journal: this.journalPort(loaded, runId),
           confirm: this.confirmationPort(loaded, state),
+          taskUndo: this.taskUndo,
           taskDeleted: ({ toolCallId, planId, removed }) =>
             this.registerUndo(loaded.record.id, toolCallId, planId, removed),
           runId,

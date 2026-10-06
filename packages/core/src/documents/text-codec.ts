@@ -1899,6 +1899,20 @@ export function parseTextSource(markdown: string, options: TextParseOptions): Te
     report(w, undefined, "empty_document", "the document has no content yet");
   if (w.errors > 0) return finish(w, null, stats);
 
+  // A paper with a reference list whose in-text citations are still plain "[12]": the transcription instruction asks
+  // for [cite: ...] links, so say how many places were left (a count, not a position: nothing is guessed or rewritten).
+  if ((references?.length ?? 0) > 0) {
+    const plain = countPlainNumericCitations(root);
+    if (plain > 0)
+      report(
+        w,
+        undefined,
+        "cite_plain",
+        `${plain} place(s) look like numbered citations written as plain text (such as [12]) although the text has a reference list; link each as [cite: ...] to its reference`,
+        { severity: "warning", subject: String(plain) }
+      );
+  }
+
   fillXrefPreviews(root, buildTargetLookup(root));
   const rows = refsManifest(root).filter((r) => r.kind !== "section" || r.content !== "");
   const title = docMeta?.title ?? firstH1 ?? options.fallbackTitle;
@@ -1935,4 +1949,26 @@ function finish(w: Walk, ir: TextDocIr | null, stats: TextStats): TextParseResul
       count: w.total - w.diagnostics.length,
     });
   return { ir: w.errors > 0 ? null : ir, diagnostics: w.diagnostics, stats };
+}
+
+/** Plain-text numeric bracket citations ([1], [2, 3], [4-6]) in paragraphs, lists and captions; links, math and code are not text segments. */
+const PLAIN_NUMERIC_CITATION = /\[\s*\d{1,3}\s*(?:[,;–-]\s*\d{1,3}\s*)*\]/g;
+function countPlainNumericCitations(sections: readonly IrSection[]): number {
+  let count = 0;
+  const scan = (segments: readonly IrSegment[] | undefined) => {
+    for (const segment of segments ?? [])
+      if (segment.type === "text") count += segment.text.match(PLAIN_NUMERIC_CITATION)?.length ?? 0;
+  };
+  const walk = (list: readonly IrSection[]) => {
+    for (const section of list) {
+      for (const block of section.blocks) {
+        if (block.type === "paragraph") scan(block.segments);
+        else if (block.type === "list") for (const item of block.items) scan(item.segments);
+        else if ("captionSegments" in block) scan(block.captionSegments);
+      }
+      walk(section.children);
+    }
+  };
+  walk(sections);
+  return count;
 }

@@ -1919,6 +1919,39 @@ export function createApp(deps: AppDeps): Hono {
   // never a silent reset.
   app.get("/api/plans", (c) => c.json(readPlans(deps.statusDir)));
 
+  // ---- Task-delete undo (shared with the Copilot tool and panel) --------------- //
+
+  // The deletes the service can still undo (8-second window; today: the ones the Copilot made), so the Plan
+  // page offers the same undo snackbar for them as for the user's own deletes.
+  app.get("/api/plans/undo", (c) =>
+    c.json({
+      undoable: copilot.taskUndo.active().map((entry) => ({
+        id: entry.id,
+        planId: entry.planId,
+        taskId: entry.taskId,
+        title: entry.title,
+        until: new Date(entry.until).toISOString(),
+      })),
+    })
+  );
+  // The same restore the Copilot's `undo_delete_task` runs: 200 restored (or already back), 409 expired or
+  // conflict (nothing written), 404 nothing to undo.
+  app.post("/api/plans/undo", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
+    if (!body || typeof body.id !== "string") {
+      const e = detail("request body needs the undo id", 400);
+      return c.json(e.body, e.status);
+    }
+    const outcome = await copilot.undoTaskDelete(body.id);
+    if (outcome.ok) return c.json({ status: outcome.status, rev: outcome.rev });
+    return c.json(
+      { status: outcome.status, detail: outcome.detail },
+      outcome.status === "not_found" ? 404 : 409
+    );
+  });
+
   // ---- PUT /api/plans -------------------------------------------------------- //
 
   // Whole-document replace with the persisted `rev` optimistic lock: the body

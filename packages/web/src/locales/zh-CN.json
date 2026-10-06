@@ -231,6 +231,7 @@
         "cite_syntax": "[cite: ...] 需要用分号分隔的文献 id（字母、数字和 _ . : -）。",
         "cite_unclosed": "这个 [cite: ... 没有以 ] 闭合。",
         "cite_unresolved": "没有 id 为“{{subject}}”的参考文献。文字按原样保留。",
+        "cite_plain": "有 {{subject}} 处像是以纯文字写出的编号引用（如 [12]）。请把每一处写成指向参考文献的 [cite: ...]。",
         "ref_syntax": "[ref: ...] 需要一个目标 id（字母、数字和 _ . : -）。",
         "ref_unclosed": "这个 [ref: ... 没有以 ] 闭合。",
         "ref_unresolved": "没有 id 为“{{subject}}”的块。文字按原样保留。",
@@ -673,7 +674,10 @@
     },
     "undo": {
       "deleted": "已删除「{{title}}」",
-      "action": "撤销"
+      "action": "撤销",
+      "expired": "撤销时间已过，「{{title}}」保持已删除",
+      "conflict": "无法恢复「{{title}}」：所属计划已不存在",
+      "gone": "无法恢复「{{title}}」"
     },
     "status": {
       "todo": "待办",
@@ -1420,6 +1424,7 @@
         "open_doc": "打开文档",
         "delete_plan": "删除计划",
         "delete_task": "删除任务",
+        "undo_delete_task": "撤销删除任务",
         "read_library": "读取文库",
         "set_main_doc": "设为主文档",
         "filter_library": "搜索文库",

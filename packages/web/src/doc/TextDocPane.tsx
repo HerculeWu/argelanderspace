@@ -250,6 +250,7 @@ const DIAGNOSTIC_KEYS = {
   cite_syntax: "doc.text.diag.cite_syntax",
   cite_unclosed: "doc.text.diag.cite_unclosed",
   cite_unresolved: "doc.text.diag.cite_unresolved",
+  cite_plain: "doc.text.diag.cite_plain",
   ref_syntax: "doc.text.diag.ref_syntax",
   ref_unclosed: "doc.text.diag.ref_unclosed",
   ref_unresolved: "doc.text.diag.ref_unresolved",

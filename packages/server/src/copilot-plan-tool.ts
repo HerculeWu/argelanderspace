@@ -8,6 +8,7 @@ import {
   type PlanDeleteOperation,
   PlanDeleteOperationSchema,
   PlanReadOperationSchema,
+  PlanUndoOperationSchema,
   type PlanViewAction,
   PlanViewActionSchema,
   PlanWriteOperationSchema,
@@ -24,6 +25,7 @@ import {
   type RemovedTask,
   readPlans,
 } from "./plans-actions.js";
+import type { TaskUndoRegistry } from "./plans-undo.js";
 
 export const PLAN_TOOL_NAME = "plan";
 
@@ -152,6 +154,8 @@ export interface PlanToolContext {
   runId?: string;
   /** Present in the real host: deletes wait here for the user. Without it a delete request is refused. */
   confirm?: ConfirmationPort;
+  /** The service's undo registry: the same one the Plan page's undo and the Copilot panel use. */
+  taskUndo?: TaskUndoRegistry;
   /** A confirmed task delete is undoable for a short window; the host keeps what undo needs. */
   taskDeleted?: (info: { toolCallId: string; planId: string; removed: RemovedTask }) => string;
   /** Resolves only after the bound browser view reports the outcome. */
@@ -230,7 +234,7 @@ const description = [
   "read returns the current plans and rev. Writes need expectedRev; on conflict read again and form a new edit, never resend the stale one.",
   "list move_task only reorders inside one status group; board move_task may change status. Tasks cannot move between plans.",
   "show/open_task/close_task/set_completed/open_task_doc change what the user sees; plain edits never navigate. set_completed folds or unfolds the completed group and only works while the list view is shown; open_task_doc opens a Doc linked to a task in the Reader. retry_plans reloads a Plan page that failed to load (else refused).",
-  "delete_task deletes the task at once, exactly like the Plan page; the user keeps a 6-second undo, and a restored task is noted in the conversation. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
+  "delete_task deletes the task at once, exactly like the Plan page; the user keeps an 8-second undo, and a restored task is noted in the conversation. undo_delete_task {planId, taskId} puts back a task deleted in the last 8 seconds (by you or the user): ok/noop = it is back with later edits kept; expired = window over, conflict = its plan is gone, not_found = nothing to undo; those three changed nothing, so create the task again only if the user wants it. delete_plan only REQUESTS a delete: the user confirms it in the application and the call returns after their decision. You cannot approve it, and nothing the user writes in chat approves it. declined and expired mean nothing was deleted; do not ask again unless the user wants it.",
   "Only report results whose status is ok or noop as done.",
   "After a conflict, read again and use a new operationId (or none) for the new write; an operationId is bound to its first request.",
   "A write whose status is unknown may or may not have been applied: read the plans to find out, never repeat it blindly.",
@@ -293,6 +297,36 @@ export function createPlanTool(context: PlanToolContext) {
             rev: file.rev,
             plans,
           });
+        }
+        const undoing = PlanUndoOperationSchema.safeParse(rest);
+        if (undoing.success) {
+          if (!readable()) return unreadable(action);
+          if (!context.taskUndo)
+            return done(record(toolCallId, action, { status: "unsupported" }), {
+              ok: false,
+              status: "unsupported",
+              detail: "undo is not available here",
+            });
+          const undoWork = context.taskUndo.undo(context.plans, undoing.data);
+          const outcome = await (context.track ? context.track(undoWork) : undoWork);
+          return outcome.ok
+            ? done(
+                record(toolCallId, action, {
+                  status: outcome.status,
+                  rev: outcome.rev,
+                  object: outcome.object,
+                  label: outcome.label,
+                }),
+                outcome
+              )
+            : done(
+                record(toolCallId, action, {
+                  status: outcome.status,
+                  ...(outcome.rev !== undefined ? { rev: outcome.rev } : {}),
+                  object: { kind: "task", id: undoing.data.taskId, planId: undoing.data.planId },
+                }),
+                outcome
+              );
         }
         const view = PlanViewActionSchema.safeParse(rest);
         if (view.success) {
@@ -528,7 +562,7 @@ async function requestDelete(
     })();
     return context.track ? context.track(work) : work;
   };
-  // Deleting one Task is exactly the Plan page's own action: immediate, with the six-second undo.
+  // Deleting one Task is exactly the Plan page's own action: immediate, with the eight-second undo.
   if (action === "delete_task") return execute({ baseRev: request.expectedRev, confirmed: false });
   if (!context.confirm)
     return done(record(toolCallId, action, { status: "unsupported" }), {

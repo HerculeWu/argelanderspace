@@ -69,12 +69,19 @@ export function Dialog({
   busyRef.current = busy;
   onCloseRef.current = onClose;
 
-  useEffect(() => {
+  // Initial focus is part of the commit that shows the dialog: a passive effect runs a scheduler task later, and in
+  // that gap (under load, a frame or more) the focus was still on the page behind, where a keystroke or a test saw it.
+  useLayoutEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     const initialTarget = initialFocusRef?.current;
     if (canReceiveInitialFocus(initialTarget)) initialTarget?.focus();
     else if (!dialog.contains(document.activeElement)) dialog.focus();
+  }, [initialFocusRef]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
 
     const onDocumentKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {

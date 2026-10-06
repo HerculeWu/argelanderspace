@@ -34,7 +34,7 @@ test("the loader owns the base prompt and the versioned instructions, and nothin
   expect(l.getSkills().skills).toEqual([]);
   expect(l.getSystemPrompt()).not.toContain(APP_INSTRUCTIONS[0]?.text ?? "x");
   const found = l.getInstruction("pdf-transcription");
-  expect(found?.version).toBe(1);
+  expect(found?.version).toBe(2);
   expect(found?.text.length).toBeGreaterThan(3000);
   expect(l.getInstruction("nope")).toBeNull();
   expect(l.getInstruction("../pdf-transcription")).toBeNull();
@@ -57,6 +57,30 @@ test("the instruction tells the model the rules this ticket promises (a drift gu
     "Never output the paper as LaTeX",
   ])
     expect(text).toContain(phrase);
+});
+
+test("instruction version 2: citations and cross-references are linked while converting, by default", () => {
+  const found = loader().getInstruction("pdf-transcription");
+  expect(found?.version).toBe(2);
+  const text = found?.text ?? "";
+  expect(text).toContain("instruction, version 2.");
+  for (const phrase of [
+    // in-text citations become [cite: refid | shown text] to the transcribed reference list, by default
+    "Link every in-text citation",
+    "[cite: ref-12 | [12]]",
+    "stable",
+    "the same reference always gets the same id",
+    // figures, tables and equations referenced in the running text become [ref: blockid | shown text]
+    "[ref: fig-3 | Fig. 3]",
+    "argelander-block",
+    // plain text only where the target cannot be identified, and then it is reported
+    "only where the target cannot be identified",
+    "cite_plain",
+    "no extra button",
+  ])
+    expect(text, phrase).toContain(phrase);
+  // one source of truth for the version: the label the user reads and the text agree
+  expect(text).not.toContain("version 1.");
 });
 
 // ---- what a history really delivered ------------------------------------------------------------------ //

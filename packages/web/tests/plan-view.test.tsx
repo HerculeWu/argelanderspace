@@ -130,6 +130,9 @@ let getCalls: number;
 let plansGetFails: boolean;
 let putGate: Promise<void> | null;
 let putRelease: (() => void) | null;
+let undoable: { id: string; planId: string; taskId: string; title: string; until: string }[];
+let undoPosts: unknown[];
+let undoAnswer: { status: number; body: object };
 
 function okJson(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response;
@@ -162,6 +165,11 @@ function installFetch() {
         putBodies.push(body);
         serverDoc = { ...body, rev: body.rev + 1 };
         return okJson(serverDoc);
+      }
+      if (url === "/api/plans/undo" && method === "GET") return okJson({ undoable });
+      if (url === "/api/plans/undo" && method === "POST") {
+        undoPosts.push(JSON.parse(String(init?.body)));
+        return { ok: undoAnswer.status < 300, status: undoAnswer.status, json: async () => undoAnswer.body } as Response;
       }
       if (url === "/api/library") return okJson(LIBRARY);
       return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
@@ -207,6 +215,9 @@ beforeEach(() => {
   plansGetFails = false;
   putGate = null;
   putRelease = null;
+  undoable = [];
+  undoPosts = [];
+  undoAnswer = { status: 200, body: { status: "ok", rev: 2 } };
   wsMock.planChangedCbs.length = 0;
   vi.mocked(WORKSPACE.openDoc).mockClear();
   installFetch();
@@ -434,7 +445,7 @@ describe("PlanView: linked documents", () => {
   });
 });
 
-describe("PlanView: delete + 6s undo", () => {
+describe("PlanView: delete + 8s undo", () => {
   it("delete removes the task with a toast; 撤销 reinserts it at its index", async () => {
     serverDoc = mkDoc([mkTask({ title: "甲" }), mkTask({ title: "乙" }), mkTask({ title: "丙" })]);
     const { container } = renderPlan();
@@ -468,6 +479,85 @@ describe("PlanView: delete + 6s undo", () => {
     await waitFor(() => expect(container.querySelectorAll(".plan-task-row")).toHaveLength(3));
     const titles = [...container.querySelectorAll(".plan-task-title")].map((e) => e.textContent);
     expect(titles).toEqual(["甲", "乙", "丙"]); // 原位插回
+  });
+});
+
+describe("PlanView: the undo window is eight seconds", () => {
+  it("the user's own delete snackbar stays at 7.9 s and is gone after 8 s", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      serverDoc = mkDoc([mkTask({ title: "甲" }), mkTask({ title: "乙" })]);
+      const { container } = renderPlan();
+      fireEvent.click((await waitFor(() => rowOf(container, "乙"))).querySelector(".plan-task-title")!);
+      const drawer = await waitFor(() => container.querySelector(".plan-drawer") as HTMLElement);
+      fireEvent.click(drawer.querySelector('[data-ui="delete-task"]')!);
+      await waitFor(() => expect(container.querySelector(".plan-undo")).toBeTruthy());
+      await vi.advanceTimersByTimeAsync(7800);
+      expect(container.querySelector(".plan-undo")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(400);
+      expect(container.querySelector(".plan-undo")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("PlanView: a task the Copilot deleted gets the same undo snackbar", () => {
+  const entry = (over: Partial<(typeof undoable)[number]> = {}) => ({
+    id: "u-1",
+    planId: "p_00000001",
+    taskId: "t_ghost",
+    title: "被删的任务",
+    until: new Date(Date.now() + 8000).toISOString(),
+    ...over,
+  });
+
+  it("shows the snackbar with the same control, undoes through the server once, then reloads", async () => {
+    serverDoc = mkDoc([mkTask({ title: "甲" })]);
+    undoable = [entry()];
+    const { container } = renderPlan();
+    const toast = await waitFor(() => { const el = container.querySelector<HTMLElement>('[data-ui="task-delete-undo"]'); expect(el).not.toBeNull(); return el!; });
+    expect(toast.textContent).toContain("已删除「被删的任务」");
+    const before = getCalls;
+    fireEvent.click(toast.querySelector('[data-ui="undo-task-delete"]')!);
+    await waitFor(() => expect(undoPosts).toEqual([{ id: "u-1" }]));
+    await waitFor(() => expect(container.querySelector('[data-ui="task-delete-undo"]')).toBeNull());
+    await waitFor(() => expect(getCalls).toBeGreaterThan(before));
+    expect(putBodies).toHaveLength(0); // the page never overwrites plans.json for it
+  });
+
+  it("an expired or conflicting undo is refused honestly and the snackbar closes", async () => {
+    serverDoc = mkDoc([mkTask({ title: "甲" })]);
+    undoable = [entry()];
+    undoAnswer = { status: 409, body: { status: "expired", detail: "window over" } };
+    const { container } = renderPlan();
+    const toast = await waitFor(() => { const el = container.querySelector<HTMLElement>('[data-ui="task-delete-undo"]'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(toast.querySelector('[data-ui="undo-task-delete"]')!);
+    const notice = await waitFor(() => { const el = container.querySelector<HTMLElement>('[data-ui="plan-notice"]'); expect(el).not.toBeNull(); return el!; });
+    expect(notice.textContent).toContain("撤销时间已过");
+    expect(container.querySelector('[data-ui="task-delete-undo"]')).toBeNull();
+    undoable = [entry({ id: "u-2" })];
+    undoAnswer = { status: 409, body: { status: "conflict", detail: "plan gone" } };
+    wsMock.planChangedCbs.forEach((cb) => cb());
+    const again = await waitFor(() => { const el = container.querySelector<HTMLElement>('[data-ui="task-delete-undo"]'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(again.querySelector('[data-ui="undo-task-delete"]')!);
+    await waitFor(() => expect(container.querySelector('[data-ui="plan-notice"]')?.textContent).toContain("所属计划已不存在"));
+  });
+
+  it("a dismissed or already expired entry is not shown again", async () => {
+    serverDoc = mkDoc([mkTask({ title: "甲" })]);
+    undoable = [entry({ until: new Date(Date.now() - 1000).toISOString() })];
+    const { container } = renderPlan();
+    await waitFor(() => rowOf(container, "甲"));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(container.querySelector('[data-ui="task-delete-undo"]')).toBeNull();
+    undoable = [entry()];
+    wsMock.planChangedCbs.forEach((cb) => cb());
+    const toast = await waitFor(() => { const el = container.querySelector<HTMLElement>('[data-ui="task-delete-undo"]'); expect(el).not.toBeNull(); return el!; });
+    fireEvent.click(toast.querySelector('[data-ui="dismiss-task-delete-undo"]')!);
+    wsMock.planChangedCbs.forEach((cb) => cb());
+    await new Promise((r) => setTimeout(r, 30));
+    expect(container.querySelector('[data-ui="task-delete-undo"]')).toBeNull();
   });
 });
 

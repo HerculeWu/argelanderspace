@@ -377,7 +377,8 @@ async function send(id: string, context: PageContext, text: string) {
 // ticket 32 lane D: the reader tool text gained one sentence about the set_panel floor fold (~0.1 KB), window 40100 -> 40200.
 // tickets 29 and 30 (read_svg_image added ~0.4 KB): the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
 // ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
-const WINDOW_BIG_DOC = 61_800;
+// ticket 33 follow-up: undo_delete_task (action + about 0.35 KB of plan tool text, about 100 tokens): 61800 -> 62000.
+const WINDOW_BIG_DOC = 62_000;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -699,7 +700,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     plan: null,
     pdf,
   };
-  await withWindow(49_700, async () => {
+  // ticket 33 follow-up: undo_delete_task moved this calibration 49700 -> 49900 (about 200 tokens).
+  await withWindow(49_900, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1187,10 +1189,10 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (40200 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (40400 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    40_200, // ticket 32: retry_plans (about 70 bytes of tool text) moved the calibration up by 100 tokens
+    40_400, // ticket 33 follow-up: undo_delete_task added about 200 tokens (40200 -> 40400). Ticket 32: retry_plans (about 70 bytes of tool text) moved the calibration up by 100 tokens
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

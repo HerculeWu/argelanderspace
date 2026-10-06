@@ -569,6 +569,31 @@ describe("argelander-text v1 scientific content (ticket 26)", () => {
   });
 
   describe("cite and ref resolution", () => {
+    describe("plain-text citations next to a reference list (transcription default: link them)", () => {
+      const refs = (n: number) =>
+        marker(
+          "argelander-references",
+          Array.from({ length: n }, (_, i) => ({
+            id: `ref-${i + 1}`,
+            raw: `Author ${i + 1}. Title.`,
+          }))
+        );
+      it("warns once with the count when numeric bracket citations stay plain text although the text has references", () => {
+        const md = `Dark matter [1] and halos [2, 3], also [4-6] and [cite: ref-1 | A 1].\n\n${refs(6)}`;
+        const r = parse(md);
+        expect(r.ir).not.toBeNull();
+        const found = r.diagnostics.filter((d) => d.code === "cite_plain");
+        expect(found).toHaveLength(1);
+        expect(found[0]).toMatchObject({ severity: "warning", subject: "3" });
+        expect(found[0]?.message).toContain("[cite: ...]");
+      });
+      it("is silent without a reference list, for linked citations, math and ordinary brackets", () => {
+        expect(codes("A plain [1] paragraph with no references at all.\n")).toEqual([]);
+        const linked = `Linked [cite: ref-1 | A 1]; $a[1]$ and see [Appendix A]; items [a], [10000].\n\n${refs(2)}`;
+        expect(parse(linked).diagnostics.map((d) => d.code)).not.toContain("cite_plain");
+      });
+    });
+
     it("an unresolved cite or ref keeps its display text, is marked unresolved and warns; nothing is invented", () => {
       const md = "See [cite: ghost | Ghost 1999] and [ref: nothing | Fig. 9] and [cite: z].\n";
       const r = parse(md);

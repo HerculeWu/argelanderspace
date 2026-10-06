@@ -1,10 +1,10 @@
-import type { CopilotViewActionResult, PlanPage, PlanViewAction } from "@argelanderspace/contracts";
+import { type CopilotViewActionResult, type PlanPage, type PlanViewAction, TASK_UNDO_WINDOW_MS } from "@argelanderspace/contracts";
 import { capturePlanPage } from "../copilot/plan-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../argelander/workspace";
 import { fetchLibrary } from "../api/library";
-import { fetchPlans, putPlans } from "../api/plans";
+import { fetchPlans, fetchUndoableDeletes, putPlans, undoServerDelete } from "../api/plans";
 import { onLibraryChanged, onPlanChanged } from "../api/ws";
 import { Icon } from "../lib/icons";
 import { newPlanId, newTaskId } from "../lib/planIds";
@@ -107,7 +107,16 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const [mode, setMode] = useState<"list" | "board">("list");
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>(null);
-  const [undo, setUndo] = useState<{ planId: string; index: number; task: Task } | null>(null);
+  // One snackbar for both sources: the user's own delete (an in-browser handle) and a delete the Copilot made
+  // (the service holds it; the undo goes through the service's one undo, which the Copilot's own tool uses too).
+  const [undo, setUndo] = useState<
+    | { kind: "local"; planId: string; index: number; task: Task }
+    | { kind: "server"; id: string; title: string }
+    | null
+  >(null);
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
+  const dismissedServerUndo = useRef(new Set<string>());
   const undoTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(undoTimer.current), []);
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
@@ -117,17 +126,31 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
     setDoc(d);
   }, []);
 
+  // Offer the undo of a task the Copilot just deleted, once, while the service still holds it.
+  const syncServerUndo = useCallback(async () => {
+    const entries = await fetchUndoableDeletes();
+    const next = entries
+      .filter((entry) => !dismissedServerUndo.current.has(entry.id) && Date.parse(entry.until) > Date.now())
+      .pop();
+    if (!next || undoRef.current?.kind === "local") return;
+    if (undoRef.current?.kind === "server" && undoRef.current.id === next.id) return;
+    setUndo({ kind: "server", id: next.id, title: next.title });
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndo(null), Math.max(0, Date.parse(next.until) - Date.now()));
+  }, []);
+
   const reload = useCallback(async () => {
     const d = await fetchPlans();
     if (d) {
       applyDoc(d);
       setLoadFailed(false);
+      void syncServerUndo();
     } else if (!docRef.current) {
       // only the initial load has nothing to fall back on — later failed
       // reloads just keep the current document
       setLoadFailed(true);
     }
-  }, [applyDoc]);
+  }, [applyDoc, syncServerUndo]);
 
   useEffect(() => {
     void reload();
@@ -282,9 +305,9 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
       if (!task) return;
       patchTasks(planId, (tasks) => tasks.filter((t) => t.id !== taskId));
       setOpenTaskId((cur) => (cur === taskId ? null : cur));
-      setUndo({ planId, index, task });
+      setUndo({ kind: "local", planId, index, task });
       window.clearTimeout(undoTimer.current);
-      undoTimer.current = window.setTimeout(() => setUndo(null), 6000);
+      undoTimer.current = window.setTimeout(() => setUndo(null), TASK_UNDO_WINDOW_MS);
     },
     [patchTasks]
   );
@@ -292,9 +315,23 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
   const undoDelete = useCallback(() => {
     if (!undo) return;
     window.clearTimeout(undoTimer.current);
+    if (undo.kind === "server") {
+      const { id, title } = undo;
+      dismissedServerUndo.current.add(id);
+      setUndo(null);
+      void undoServerDelete(id).then((result) => {
+        if (!result.ok) flash(t(`plan.undo.${result.refused}`, { title }));
+        void reload();
+      });
+      return;
+    }
     patchTasks(undo.planId, (tasks) => reinsertTask(tasks, undo.index, undo.task)); // original index; same array when already back
     setUndo(null);
-  }, [undo, patchTasks]);
+  }, [undo, patchTasks, flash, reload, t]);
+  const dismissUndo = useCallback(() => {
+    if (undo?.kind === "server") dismissedServerUndo.current.add(undo.id);
+    setUndo(null);
+  }, [undo]);
 
   const addPlan = useCallback(
     (values: PlanFormValues) => {
@@ -653,11 +690,11 @@ export function PlanView({ paneId, onContext, onController }: { paneId?: number;
       {undo && (
         <div className="plan-undo view-in" data-ui="task-delete-undo">
           <Icon name="trash-2" cls="ico-sm" />
-          <span>{t("plan.undo.deleted", { title: undo.task.title })}</span>
+          <span>{t("plan.undo.deleted", { title: undo.kind === "server" ? undo.title : undo.task.title })}</span>
           <ActionButton unstyled mode="text" label={t("plan.undo.action")} tooltip={t("plan.undo.action")} className="plan-undo-btn" data-ui="undo-task-delete" onClick={undoDelete}>
             {t("plan.undo.action")}
           </ActionButton>
-          <ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={() => setUndo(null)} />
+          <ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} className="plan-undo-x" data-ui="dismiss-task-delete-undo" onClick={dismissUndo} />
         </div>
       )}
       {notice && <div className="plan-notice view-in" data-ui="plan-notice">{notice}</div>}

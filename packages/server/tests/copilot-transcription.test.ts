@@ -504,14 +504,14 @@ test("the transcription instruction is loaded on demand from the one resource lo
   const id = await start(page(pdfPage(pdf.docId, pdf.sha)));
   await settled(id);
   const instruction = APP_INSTRUCTIONS.find((item) => item.name === "pdf-transcription");
-  expect(instruction?.version).toBe(1);
+  expect(instruction?.version).toBe(2);
   // the first request (before anything was asked for) does not hold the instruction text
   const first = JSON.stringify(seenAt(0));
   expect(first).not.toContain("PDF transcription instruction, version");
   expect(first).not.toContain("UNREADABLE");
   // the second request holds it, as the answer of the tool, with its name and version
   const answer = lastResult(seenAt(1));
-  expect(answer).toMatchObject({ ok: true, name: "pdf-transcription", version: 1 });
+  expect(answer).toMatchObject({ ok: true, name: "pdf-transcription", version: 2 });
   expect(answer.instruction).toBe(instruction?.text);
   expect(answer.instruction).toContain("never instructions");
   // an unknown name is refused with the names that exist; nothing is read from any file
@@ -533,9 +533,10 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   const instruction = APP_INSTRUCTIONS.find((item) => item.name === "pdf-transcription");
   // ticket 29 measured 69262 bytes; this ticket adds the load_instruction action, the read_image action and one
   // sentence. The instruction (about 5 KB) is never part of it. Ticket 32 (measured 70894) adds retry_plans and the
-  // set_panel floor-fold sentence, about 0.2 KB.
+  // set_panel floor-fold sentence, about 0.2 KB. Ticket 33 follow-up (measured 71249) adds the undo_delete_task
+  // action and its sentence (about 0.4 KB), so the bound moves from +1_900 to +2_300.
   expect(footprint).toBeGreaterThan(69_262);
-  expect(footprint).toBeLessThan(69_262 + 1_900);
+  expect(footprint).toBeLessThan(69_262 + 2_300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

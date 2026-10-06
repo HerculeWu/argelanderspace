@@ -7,6 +7,8 @@ import { confirmWorkspaceLeave, useWorkspace } from "../argelander/workspace";
 import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
+import { useElementWidth } from "../doc/auto-fold";
+import { libraryAutoFold } from "./layout";
 import type { GraphCanvasController } from "../graph/GraphCanvas";
 import { RefDetail } from "./RefDetail";
 import { captureLibraryPage } from "../copilot/library-context";
@@ -225,6 +227,20 @@ function LibraryBody({
     : null;
   const curRefRef = useRef(curRef);
   curRefRef.current = curRef;
+  // A narrow pane (the 1024 window with the Copilot open): the detail sits beside the graph, never over it, and the
+  // work list folds to its rail while a detail is open (see layout.ts). A manual unfold wins until the width class changes.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const paneWidth = useElementWidth(rootRef, !explore.active);
+  const autoSide = libraryAutoFold(paneWidth, curRef !== null);
+  const autoSideRef = useRef(autoSide);
+  autoSideRef.current = autoSide;
+  const [sideForcedOpen, setSideForcedOpen] = useState(false);
+  useEffect(() => setSideForcedOpen(false), [autoSide]);
+  const sideFolded = sideCollapsed || (autoSide && !sideForcedOpen);
+  const setSide = useCallback((collapsed: boolean) => {
+    setSideCollapsed(collapsed);
+    setSideForcedOpen(!collapsed && autoSideRef.current);
+  }, []);
   const menuRef = labelMenu ? (refs.find((r) => r.id === labelMenu.refId) ?? null) : null;
 
   // ---- Copilot: the page it sees and the bound-view actions it can ask for ------------------------------ //
@@ -243,9 +259,9 @@ function LibraryBody({
       paneId,
       explore.active
         ? null
-        : captureLibraryPage({ data: payload, live, failure, query: q, selectedNodeId: selNode, tab: detailTab, labels, sidebarCollapsed: sideCollapsed, graphLabelsOn, exploration: explore.sessions.length > 0 ? { sessions: explore.sessions.length, seed: explore.current?.seed ?? null } : undefined })
+        : captureLibraryPage({ data: payload, live, failure, query: q, selectedNodeId: selNode, tab: detailTab, labels, sidebarCollapsed: sideFolded, graphLabelsOn, exploration: explore.sessions.length > 0 ? { sessions: explore.sessions.length, seed: explore.current?.seed ?? null } : undefined })
     );
-  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideCollapsed, graphLabelsOn, explore.active, explore.sessions, explore.current]);
+  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideFolded, graphLabelsOn, explore.active, explore.sessions, explore.current]);
   useEffect(() => {
     if (paneId === undefined) return;
     onDiscovery?.(paneId, explore.active ? explorePage : null);
@@ -348,7 +364,7 @@ function LibraryBody({
       return { ok: true };
     }
     if (action.action === "set_sidebar") {
-      setSideCollapsed(action.collapsed);
+      setSide(action.collapsed);
       return { ok: true };
     }
     // The remaining actions name a work. An id the page does not know yet (just imported) gets one reload.
@@ -401,9 +417,9 @@ function LibraryBody({
   }
 
   return (
-    <div className="view-row" data-ui="library-view">
-      {sideCollapsed ? (
-        <ActionButton unstyled mode="icon" iconName="panel-left-open" label={t("library.side.expand")} tooltip={t("library.side.expand")} data-ui="expand-library-sidebar" className="lib-rail" onClick={() => setSideCollapsed(false)} />
+    <div className="view-row" data-ui="library-view" ref={rootRef}>
+      {sideFolded ? (
+        <ActionButton unstyled mode="icon" iconName="panel-left-open" label={t("library.side.expand")} tooltip={t("library.side.expand")} data-ui="expand-library-sidebar" className="lib-rail" onClick={() => setSide(false)} />
       ) : (
         <div className="lib-side" data-ui="library-sidebar">
           <div className="lib-import" data-ui="library-import">
@@ -450,7 +466,7 @@ function LibraryBody({
           <div className="lib-side-head">
             <span className="lib-side-title">{t("library.side.title")}</span>
             <span className="lib-side-count mono">{list.length}</span>
-            <ActionButton unstyled mode="icon" iconName="panel-left-close" label={t("library.side.collapse")} tooltip={t("library.side.collapse")} data-ui="collapse-library-sidebar" className="lib-side-collapse" onClick={() => setSideCollapsed(true)} />
+            <ActionButton unstyled mode="icon" iconName="panel-left-close" label={t("library.side.collapse")} tooltip={t("library.side.collapse")} data-ui="collapse-library-sidebar" className="lib-side-collapse" onClick={() => setSide(true)} />
           </div>
           <div className="side-reflist" data-ui="work-list">
             {list.map((r) => {
