@@ -29,6 +29,8 @@ export interface ViewActionOutcome {
   status: "displayed" | "not_displayed" | "not_found" | "failed";
   /** With `failed`: the HTTP status the exploration request got (0 = network failure). */
   http?: number;
+  /** A Reader `set_panel` unfold folded this other panel to keep the article's minimum width. */
+  folded?: "outline" | "right";
   /** Why it was not displayed: `offline` (no browser came back in time), `no_report`, or the view's own reason. */
   detail?: "offline" | "no_report" | "stopped" | NonNullable<CopilotViewActionResult["detail"]>;
 }
@@ -41,7 +43,11 @@ export function viewOutcomeResult(
   status: CopilotOperation["status"];
   payload: Record<string, unknown>;
 } {
-  if (outcome.status === "displayed") return { status: "ok", payload: { ok: true, status: "ok" } };
+  if (outcome.status === "displayed")
+    return {
+      status: "ok",
+      payload: { ok: true, status: "ok", ...(outcome.folded ? { folded: outcome.folded } : {}) },
+    };
   if (outcome.status === "not_found")
     return { status: "not_found", payload: { ok: false, status: "not_found" } };
   if (outcome.status === "failed")

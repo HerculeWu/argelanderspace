@@ -10,7 +10,7 @@ import { pdfTargetPageIndex } from "./pdf-navigation";
 /** The search list shows this many results (the Reader's own list); `open_search_result` can reach those. */
 export const PDF_SEARCH_LIST_MAX = 20;
 
-export type PdfViewResult = { ok: boolean; detail?: "not_found" | "unavailable" | "disabled" };
+export type PdfViewResult = { ok: boolean; detail?: "not_found" | "unavailable" | "disabled"; /** set_panel: the other panel the unfolding folded. */ folded?: "outline" | "right" };
 
 export interface PdfViewState {
   /** Zero-based page the viewer is on. */
@@ -35,7 +35,7 @@ export interface PdfViewDeps {
   search: { run: (query: string) => boolean; open: (index: number) => "ok" | "not_found" | "unavailable" } | null;
   navigateTarget: (target: unknown) => void;
   openAnnotation: (annotationId: string) => "ok" | "not_found" | "unavailable";
-  setPanel: (panel: "outline" | "right", collapsed: boolean) => void;
+  setPanel: (panel: "outline" | "right", collapsed: boolean) => "outline" | "right" | null;
   /** The user's own navigation marker: the reading position is saved after it, and a restore stops. */
   markUserNavigation: () => void;
 }
@@ -93,9 +93,10 @@ export function runPdfViewAction(action: ReaderViewAction, state: PdfViewState, 
       else if (action.mode === "out") deps.zoom.zoomOut();
       else deps.zoom.fit(action.mode);
       return ok;
-    case "set_panel":
-      deps.setPanel(action.panel, action.collapsed);
-      return ok;
+    case "set_panel": {
+      const folded = deps.setPanel(action.panel, action.collapsed);
+      return folded ? { ok: true, folded } : ok;
+    }
     case "retry_sync":
       // Nothing to retry in an open Reader.
       return refuse("disabled");

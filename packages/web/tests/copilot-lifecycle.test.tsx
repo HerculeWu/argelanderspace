@@ -96,7 +96,7 @@ test("an interrupted or stopped run waits for an explicit Resume; resume retries
 test("stopped state says what finished and offers Resume; a resume marker replaces the host-written text", async () => {
   current = snap(ID1, { id: running.id, status: "stopped", error: null }, { messages: [{ id: "r1", role: "user", kind: "resume", text: "HOST WRITTEN INSTRUCTION", context: { contextId: "c1", view: "doc", status: "unavailable", revision: 1, objects: [] } }] });
   await open();
-  await screen.findByText(/Stopped\. Changes already submitted/);
+  await screen.findByText(/Stopped\. Operations that already ran/);
   expect(screen.getByText("Resumed after an interruption")).toBeTruthy();
   expect(screen.queryByText("HOST WRITTEN INSTRUCTION")).toBeNull();
   expect(document.querySelector('[data-ui="copilot-resume"]')).not.toBeNull();

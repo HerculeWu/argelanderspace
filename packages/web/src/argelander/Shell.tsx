@@ -54,6 +54,13 @@ export function Shell() {
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  // Opening the panel with its toggle puts the cursor in its input (the panel is after the whole page in tab order).
+  const focusCopilotInput = useRef(false);
+  useEffect(() => {
+    if (!copilotOpen || !focusCopilotInput.current) return;
+    focusCopilotInput.current = false;
+    document.querySelector<HTMLTextAreaElement>('[data-ui="copilot-input"]')?.focus();
+  }, [copilotOpen]);
   const [copilotWaiting, setCopilotWaiting] = useState(false);
   // This tab's Copilot view: stable across a reload, and its revision keeps counting upwards (view-identity.ts).
   const [identity] = useState(loadViewIdentity);
@@ -362,7 +369,7 @@ export function Shell() {
   // outlives the render that started it. Nothing here calls focus(): another tab or window is never raised.
   const shell = useRef({ panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen });
   shell.current = { panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen };
-  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number };
+  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number; folded?: "outline" | "right" };
   const settle = async (check: () => boolean): Promise<boolean> => {
     for (let attempt = 0; attempt < 40; attempt++) {
       if (check()) return true;
@@ -664,7 +671,7 @@ export function Shell() {
               onClick={() => setTweaksOpen((o) => !o)}
             />
             <span className="copilot-toggle-wrap">
-              <ActionButton mode="icon" iconName="panel-right-open" unstyled className="btn icon ghost" iconSize="small" data-ui="copilot-toggle" label={copilotWaiting && !copilotOpen ? t("copilot.waitingToggle") : t("copilot.title")} tooltip={copilotWaiting && !copilotOpen ? t("copilot.waitingToggle") : t("copilot.title")} aria-expanded={copilotOpen} onClick={() => setCopilotOpen((open) => !open)} />
+              <ActionButton mode="icon" iconName="panel-right-open" unstyled className="btn icon ghost" iconSize="small" data-ui="copilot-toggle" label={copilotWaiting && !copilotOpen ? t("copilot.waitingToggle") : t("copilot.title")} tooltip={copilotWaiting && !copilotOpen ? t("copilot.waitingToggle") : t("copilot.title")} aria-expanded={copilotOpen} onClick={() => { focusCopilotInput.current = !copilotOpen; setCopilotOpen((open) => !open); }} />
               {copilotWaiting && !copilotOpen && <span className="copilot-toggle-dot" data-ui="copilot-attention" aria-hidden="true" />}
             </span>
             {tweaksOpen && (

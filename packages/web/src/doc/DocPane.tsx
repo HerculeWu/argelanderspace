@@ -150,9 +150,10 @@ function DocWorkspace({
   const ws = useWorkspace();
   const { t } = useTranslation();
   // The two panels fold on their own when the pane is too narrow to keep a reading column (see autoFold); what the
-  // user (or the Copilot) sets by hand wins until the pane's width class changes. The folds shown are the effective ones.
+  // user (or the Copilot) sets by hand wins until the pane's width class changes, except that unfolding a panel which
+  // would leave the article under MIN_READING_COLUMN folds the other one. The folds shown are the effective ones.
   const mainRef = useRef<HTMLDivElement>(null);
-  const { collapsedLeft, collapsedRight, setCollapsedLeft, setCollapsedRight } = useAutoFoldedPanels(mainRef);
+  const { collapsedLeft, collapsedRight, setCollapsedLeft, setCollapsedRight, setPanelCollapsed } = useAutoFoldedPanels(mainRef);
   // Owned here (not by the right panel) so the Copilot's tab control is the user's own tab control.
   const [rightTab, setRightTab] = useState<"refs" | "annotations">("refs");
   const bridge = useReaderBridge();
@@ -160,7 +161,11 @@ function DocWorkspace({
     bridge.setPanels({ outlineCollapsed: collapsedLeft, rightCollapsed: collapsedRight, rightTab: rightTab === "refs" ? "references" : "annotations" });
   }, [bridge, collapsedLeft, collapsedRight, rightTab]);
   useEffect(() => () => bridge.setPanels(null), [bridge]);
-  const setPanel = (panel: ReaderPanel, collapsed: boolean) => (panel === "outline" ? setCollapsedLeft : setCollapsedRight)(collapsed);
+  // Returns the other panel when unfolding this one folded it (the Copilot's answer says so).
+  const setPanel = (panel: ReaderPanel, collapsed: boolean): ReaderPanel | null => {
+    const folded = setPanelCollapsed(panel === "outline" ? "left" : "right", collapsed);
+    return folded === null ? null : folded === "left" ? "outline" : "right";
+  };
   const setTab = (tab: ReaderRightTab) => setRightTab(tab === "references" ? "refs" : "annotations");
 
   // Deep link: land on the URL's #anchor once the doc has rendered (the blocks
@@ -281,7 +286,7 @@ function ReaderLive() {
  * focusReference, the annotation deep link), the back button's undo and the panel folds. It answers
  * `unavailable` while the session is syncing or showing an error, exactly when the UI's own jumps do nothing.
  */
-function ReaderControls({ setPanel, setTab }: { setPanel: (panel: ReaderPanel, collapsed: boolean) => void; setTab: (tab: ReaderRightTab) => void }) {
+function ReaderControls({ setPanel, setTab }: { setPanel: (panel: ReaderPanel, collapsed: boolean) => ReaderPanel | null; setTab: (tab: ReaderRightTab) => void }) {
   const bridge = useReaderBridge();
   const store = useStore();
   const ann = useAnnotations();

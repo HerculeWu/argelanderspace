@@ -29,7 +29,7 @@ function deps(over: Partial<PdfViewDeps> = {}) {
     search: { run: (q) => { calls.push(["search", q]); return true; }, open: (i) => { calls.push(["open", i]); return "ok"; } },
     navigateTarget: log("navigate"),
     openAnnotation: (id) => { calls.push(["annotation", id]); return id === "pann_1" ? "ok" : "not_found"; },
-    setPanel: log("panel"),
+    setPanel: (...args: [string, boolean]) => { calls.push(["panel", ...args]); return null; },
     markUserNavigation: log("mark"),
     ...over,
   };
@@ -90,6 +90,10 @@ describe("the other controls", () => {
     expect(run({ action: "set_panel", docId: D, panel: "outline", collapsed: true }).calls).toEqual([["panel", "outline", true]]);
     expect(run({ action: "open_annotation", docId: D, annotationId: "pann_1" }).result).toEqual({ ok: true });
     expect(run({ action: "open_annotation", docId: D, annotationId: "pann_x" }).result).toEqual({ ok: false, detail: "not_found" });
+  });
+  it("set_panel reports the other panel an unfold folded (the floor rule)", () => {
+    const { result } = run({ action: "set_panel", docId: D, panel: "outline", collapsed: false }, state(), { setPanel: () => "right" });
+    expect(result).toEqual({ ok: true, folded: "right" });
   });
   it("retry has nothing to retry in an open Reader; the LaTeX Reader's controls do not exist here", () => {
     expect(run({ action: "retry_sync", docId: D }).result).toEqual({ ok: false, detail: "disabled" });

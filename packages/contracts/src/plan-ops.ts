@@ -258,6 +258,8 @@ export const CopilotViewActionResultSchema = z
       .optional(),
     /** With `failed`: the HTTP status the exploration answered (0 = network failure). */
     http: z.number().int().min(0).max(999).optional(),
+    /** A Reader `set_panel` unfold that folded the other side panel to keep the article's minimum width. */
+    folded: z.enum(["outline", "right"]).optional(),
   })
   .strict();
 export type CopilotViewActionResult = z.infer<typeof CopilotViewActionResultSchema>;

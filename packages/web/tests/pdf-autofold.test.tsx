@@ -5,7 +5,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MIN_READING_COLUMN, autoFold, useAutoFoldedPanels } from "../src/doc/auto-fold";
+import { MIN_READING_COLUMN, autoFold, foldedByUnfold, useAutoFoldedPanels } from "../src/doc/auto-fold";
 import { pdfPanelSizes } from "../src/doc/PdfReader";
 
 describe("autoFold for the PDF Reader", () => {
@@ -58,10 +58,10 @@ describe("the hook", () => {
     width = 612;
     render(<Probe />);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
-    act(() => api.setCollapsedLeft(false));
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
+    act(() => api.setCollapsedLeft(false)); // the page column (612 - 430) would fall under the floor: the floor folds the annotations panel
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
     resize(620);
-    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
     resize(1000);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
     resize(300);
@@ -75,5 +75,32 @@ describe("the hook", () => {
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
     rerender(<Probe enabled />);
     expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+  });
+});
+
+describe("the floor rule (ticket 32): an unfold that would push the page column under the minimum folds the other panel", () => {
+  it("foldedByUnfold only fires when the other panel is open and both together leave less than the minimum", () => {
+    const sizes = pdfPanelSizes(1024);
+    expect(foldedByUnfold(612, sizes, "left", false)).toBe("right");
+    expect(foldedByUnfold(612, sizes, "right", false)).toBe("left");
+    expect(foldedByUnfold(612, sizes, "left", true)).toBeNull();
+    expect(foldedByUnfold(sizes.left + sizes.right + MIN_READING_COLUMN, sizes, "left", false)).toBeNull();
+    expect(foldedByUnfold(null, sizes, "left", false)).toBeNull();
+  });
+  it("in the hook: unfolding the outline at 612 folds the annotations panel; room for both leaves both open", () => {
+    width = 612;
+    render(<Probe />);
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+    let folded: string | null = null;
+    act(() => { folded = api.setPanelCollapsed("left", false); });
+    expect(folded).toBe("right");
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, true]);
+    act(() => { folded = api.setPanelCollapsed("right", false); });
+    expect(folded).toBe("left");
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([true, false]);
+    resize(1200);
+    act(() => { folded = api.setPanelCollapsed("left", false); });
+    expect(folded).toBeNull();
+    expect([api.collapsedLeft, api.collapsedRight]).toEqual([false, false]);
   });
 });

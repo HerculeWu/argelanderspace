@@ -374,8 +374,10 @@ async function send(id: string, context: PageContext, text: string) {
   );
   return { status: 202, body: null };
 }
+// ticket 32 lane D: the reader tool text gained one sentence about the set_panel floor fold (~0.1 KB), window 40100 -> 40200.
 // tickets 29 and 30 (read_svg_image added ~0.4 KB): the text tool and its prompt add about 4.2 KB (about 2.1k tokens) to the instruction, so the calibrated windows moved up by that
-const WINDOW_BIG_DOC = 61_700;
+// ticket 32 merge (lanes A + D together): retry_plans and the set_panel floor sentence, 61700 -> 61800.
+const WINDOW_BIG_DOC = 61_800;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {

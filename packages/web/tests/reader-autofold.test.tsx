@@ -101,4 +101,22 @@ describe("the Reader pane", () => {
     await resize(612); // a new narrow phase is automatic again
     await waitFor(() => expect(folded("latex-outline-panel")).toBe(true));
   });
+  it("the floor: unfolding the second panel when the article would fall under 240 px folds the first (either order)", async () => {
+    await mount(612); // both fold on their own
+    await waitFor(() => expect([folded("latex-outline-panel"), folded("latex-right-panel")]).toEqual([true, true]));
+    fireEvent.click(document.querySelector('[data-ui="toggle-latex-outline"]') as HTMLElement);
+    await waitFor(() => expect([folded("latex-outline-panel"), folded("latex-right-panel")]).toEqual([false, true]));
+    fireEvent.click(document.querySelector('[data-ui="toggle-latex-right-panel"]') as HTMLElement);
+    await waitFor(() => expect([folded("latex-outline-panel"), folded("latex-right-panel")]).toEqual([true, false]));
+    fireEvent.click(document.querySelector('[data-ui="toggle-latex-outline"]') as HTMLElement);
+    await waitFor(() => expect([folded("latex-outline-panel"), folded("latex-right-panel")]).toEqual([false, true]));
+  });
+  it("manual wins above the floor: at 1440 with Copilot (pane 996, article 326) both panels may be open", async () => {
+    await mount(996);
+    expect([folded("latex-outline-panel"), folded("latex-right-panel")]).toEqual([false, false]);
+    fireEvent.click(document.querySelector('[data-ui="toggle-latex-outline"]') as HTMLElement);
+    await waitFor(() => expect(folded("latex-outline-panel")).toBe(true));
+    fireEvent.click(document.querySelector('[data-ui="toggle-latex-outline"]') as HTMLElement);
+    await waitFor(() => expect([folded("latex-outline-panel"), folded("latex-right-panel")]).toEqual([false, false]));
+  });
 });
