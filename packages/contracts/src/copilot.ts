@@ -492,8 +492,9 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
 export type OperationConfirmation = z.infer<typeof OperationConfirmationSchema>;
 
 /**
- * What a running run is doing right now (public run status, never raw internal reasoning): `thinking` is only
- * the reasoning text the provider exposes (a summary for OpenAI/Codex); empty when the provider gives none.
+ * What a running run is doing right now (public run status: the operation under way, the reply being written, or
+ * thinking). `thinking` is only the reasoning text the provider exposes (a summary for OpenAI/Codex); empty when the
+ * provider gives none. The UI never promises raw internal reasoning.
  */
 export const CopilotLiveSchema = z
   .object({

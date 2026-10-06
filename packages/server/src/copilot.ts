@@ -181,12 +181,16 @@ interface Loaded {
   pending?: Promise<void>;
 }
 interface LiveState {
+  /** Calls this run has submitted and not yet saved a result for: shown as pending, never as unknown. */
+  inflight: Set<string>;
+  /** A "changed" is already scheduled for the next tick (one refetch per turn, not one per message). */
+  refetch: boolean;
   phase: CopilotLive["phase"];
   operation?: CopilotLive["operation"];
   thinking: string;
   startedAt: number;
 }
-/** The reasoning summary the live panel keeps: the newest part of a long one (the full text is in the saved reply). */
+/** The reasoning text the live panel keeps: the newest part of a long one (the full text is in the saved reply). */
 const LIVE_THINKING_MAX = 6000;
 /** The most reasoning text one saved reply puts in a snapshot (the history keeps all of it). */
 const SNAPSHOT_THINKING_MAX = 20_000;
@@ -910,7 +914,9 @@ export class CopilotHost {
                           ? "expired"
                           : confirmation === "declined"
                             ? "declined"
-                            : "unknown",
+                            : loaded.run && loaded.live?.inflight.has(part.id)
+                              ? "pending"
+                              : "unknown",
                   }
             );
           }
@@ -2698,7 +2704,13 @@ export class CopilotHost {
     loaded.record = record;
     loaded.run = state;
     loaded.stream = "";
-    loaded.live = { phase: "working", thinking: "", startedAt: Date.now() };
+    loaded.live = {
+      inflight: new Set(),
+      refetch: false,
+      phase: "working",
+      thinking: "",
+      startedAt: Date.now(),
+    };
     loaded.manager.appendCustomEntry(
       contextType,
       this.reference(request, { messageId, runId, contextId }, context, pdf, frozenModel, coverage)
@@ -2946,21 +2958,28 @@ export class CopilotHost {
         (event.message.role === "assistant" || event.message.role === "toolResult")
       ) {
         if (event.message.role === "assistant") {
-          // The saved reply carries its own reasoning now; the live panel starts over for the next one. A step
-          // that ends in a call stays on that operation until it runs (no flash of "working" in between).
+          // The saved reply carries its own text and reasoning now; the live panel starts over for the next one.
+          // A step that ends in a call stays on that operation until it runs (no flash of "working" in between).
           const calls = event.message.content.filter((part) => part.type === "toolCall");
           const last = calls.at(-1);
+          for (const call of calls) if (call.type === "toolCall") loaded.live.inflight.add(call.id);
           loaded.live.phase = last ? "operation" : "working";
           loaded.live.operation =
             last && last.type === "toolCall" ? operationOf(last.name, last.arguments) : undefined;
           loaded.live.thinking = "";
+          loaded.stream = "";
           this.emit(loaded, "stream");
-        }
+        } else loaded.live.inflight.delete(event.message.toolCallId);
         // The SDK saves the message right after this listener returns: tell the client to read the record once
-        // that is done, so each finished step (its reasoning and operations) shows while the run goes on.
-        queueMicrotask(() => {
-          if (loaded.run) this.emit(loaded);
-        });
+        // that is done, so each finished step (its reasoning and operations) shows while the run goes on. One
+        // notice covers an assistant message and the results that follow it in the same tick.
+        if (!loaded.live.refetch) {
+          loaded.live.refetch = true;
+          queueMicrotask(() => {
+            if (loaded.live) loaded.live.refetch = false;
+            if (loaded.run) this.emit(loaded);
+          });
+        }
       }
       if (loaded.live && event.type === "tool_execution_end") {
         loaded.live.phase = "working";

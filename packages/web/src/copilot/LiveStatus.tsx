@@ -17,7 +17,7 @@ export const formatElapsed = (ms: number): string => {
  * small elapsed-time counter that keeps ticking between events. Without a live state (an older service, or a run
  * that has not reported yet) it says only that a reply is coming, as before; while stopping it says that.
  */
-export function LiveRunStatus({ live, stopping, actionLabel }: { live: CopilotLive | null; stopping: boolean; actionLabel: (operation: { tool: string; action?: string }) => string }) {
+export function LiveRunStatus({ live, stopping, actionLabel }: { live: CopilotLive | null; stopping: boolean; actionLabel: (operation: { tool: string; action?: string }) => string | null }) {
   const { t } = useTranslation();
   // The elapsed anchor is derived while rendering (never one frame behind): a new server reading re-bases the counter.
   const [anchor, setAnchor] = useState({ key: live?.elapsedMs, ms: live?.elapsedMs ?? 0, at: Date.now() });
@@ -29,19 +29,25 @@ export function LiveRunStatus({ live, stopping, actionLabel }: { live: CopilotLi
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [active]);
-  // A tool call whose action is not parsed yet has no name worth announcing: say only that it works.
+  // A call whose action is not parsed yet (or only partly, "read_pa") has no name worth showing: say only that it works.
+  const label = live?.phase === "operation" && live.operation?.action ? actionLabel(live.operation) : null;
   const target = live
-    ? live.phase === "operation" && live.operation?.action
-      ? { phase: live.phase, text: t(live.operation.page ? "copilot.live.operationPage" : "copilot.live.operation", { action: actionLabel(live.operation), page: live.operation.page }) }
+    ? live.phase === "operation" && live.operation && label
+      ? { phase: live.phase, text: t(live.operation.page ? "copilot.live.operationPage" : "copilot.live.operation", { action: label, page: live.operation.page }) }
       : { phase: live.phase === "operation" ? "working" : live.phase, text: t(live.phase === "operation" ? "copilot.live.working" : `copilot.live.${live.phase}`) }
     : { phase: "working", text: t("copilot.running") };
-  // What is announced changes at most every 300 ms, so quick phase flips do not chatter in a screen reader.
+  // The shown (and so announced) text changes at most every 300 ms: a change right after another waits for the rest of
+  // the interval and then shows the newest value, so it neither chatters nor lags behind.
   const [shown, setShown] = useState(target);
+  const changedAt = useRef(0);
   useEffect(() => {
     if (shown.text === target.text && shown.phase === target.phase) return;
-    const timer = setTimeout(() => setShown(target), 300);
+    const apply = () => { changedAt.current = Date.now(); setShown(target); };
+    const wait = Math.max(0, 300 - (Date.now() - changedAt.current));
+    if (wait === 0) { apply(); return; }
+    const timer = setTimeout(apply, wait);
     return () => clearTimeout(timer);
-  }, [target.text, target.phase, shown.text, shown.phase]);
+  }, [target.text, target.phase]);
   if (stopping) return <span data-ui="copilot-live-status" data-phase="stopping">{t("copilot.stopping")}</span>;
   const elapsed = (live ? anchor.ms : 0) + Math.max(0, now - anchor.at);
   return <>

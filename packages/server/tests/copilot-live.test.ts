@@ -38,6 +38,8 @@ let root: string,
   app: ReturnType<typeof createApp>,
   originalEnv: NodeJS.ProcessEnv;
 let events: WsCopilotEvent[];
+/** For each event, the saved assistant texts at the instant the host announced it (read synchronously). */
+let savedAtEvent: string[][];
 let received: TranscriptContext[];
 let script: Step[];
 let gate: (() => void) | undefined;
@@ -61,6 +63,7 @@ beforeEach(async () => {
     throw new Error("unexpected external fetch");
   });
   events = [];
+  savedAtEvent = [];
   received = [];
   script = [];
   gate = undefined;
@@ -101,7 +104,19 @@ beforeEach(async () => {
       return stream;
     },
   });
-  host = new CopilotHost(join(root, "data"), settings, (event) => events.push(event));
+  host = new CopilotHost(join(root, "data"), settings, (event) => {
+    events.push(event);
+    const loaded = (
+      host as unknown as {
+        loaded: Map<string, { manager: { getEntries(): { type: string; message?: unknown }[] } }>;
+      }
+    ).loaded.get(event.conversationId);
+    savedAtEvent.push(
+      (loaded?.manager.getEntries() ?? [])
+        .filter((entry) => entry.type === "message")
+        .map((entry) => JSON.stringify(entry.message))
+    );
+  });
   app = createApp({
     paths: libraryPaths(join(root, "data")),
     statusDir: join(root, "status"),
@@ -480,6 +495,46 @@ test.each([
       )
     ).toBe(true)
   );
+  gate?.();
+  await settled(id);
+});
+test("after a step ends the saved reply is the only copy of its text, and the record is saved before the client is told", async () => {
+  script = [
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      push({
+        type: "text_delta",
+        contentIndex: 0,
+        delta: "Step one text",
+        partial: make([{ type: "text", text: "Step one text" }]),
+      });
+      push({
+        type: "done",
+        reason: "toolUse",
+        message: make(
+          [{ type: "text", text: "Step one text" }, plainCall({ action: "read" })],
+          "toolUse"
+        ),
+      });
+    },
+    async (_model, push, make) => {
+      push({ type: "start", partial: make([]) });
+      await wait();
+      push({ type: "done", reason: "stop", message: make([{ type: "text", text: "ok" }]) });
+    },
+  ];
+  const id = await start();
+  await vi.waitFor(async () => {
+    const shown = await host.snapshot(id);
+    expect(shown.messages.filter((m) => m.text === "Step one text")).toHaveLength(1);
+    expect(shown.stream).toBe("");
+  });
+  // The first "changed" after the step's text streamed already finds the step saved (a later await between the
+  // SDK's notification and its save would make this fail).
+  const streamedAt = events.findIndex((e) => e.kind === "stream" && e.text === "Step one text");
+  const notified = events.findIndex((e, index) => index > streamedAt && e.kind === "changed");
+  expect(notified).toBeGreaterThan(streamedAt);
+  expect(savedAtEvent[notified]?.some((m) => m.includes("Step one text"))).toBe(true);
   gate?.();
   await settled(id);
 });

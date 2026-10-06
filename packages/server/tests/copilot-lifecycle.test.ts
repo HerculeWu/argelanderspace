@@ -665,6 +665,13 @@ test("restart records an unfinished run as interrupted, never replays, and resum
     contextRevision: context.revision,
   });
   expect(await sameAgain.json()).toEqual(await resumed.json());
+  // While the resumed run works, the settled orphan is a recorded "unknown" outcome, never "in progress" (spec 8.3).
+  for (let polls = 0; polls < 400; polls++) {
+    const shown = await host.snapshot(id);
+    expect(shown.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("unknown");
+    if (shown.conversation.run?.status === "completed") break;
+    await new Promise((r) => setTimeout(r, 5));
+  }
   await until(id, ["completed"]);
   // The resume request told the model which write is unknown, and the model's blind repeat was refused.
   const resumeText = JSON.stringify(seen[1]?.messages);
@@ -1200,4 +1207,35 @@ test("Stop that lands right after the message was saved admits it (202) and ends
   const snapshot = await host.snapshot(id);
   expect(snapshot.messages.map((m) => m.text)).toEqual(["Stop me immediately"]);
   expect(seen).toHaveLength(0);
+});
+
+test("only a call in flight in the current run is pending; a recorded unknown result stays unknown", async () => {
+  const { id } = (await create()).conversation;
+  const hold = gate();
+  const heldLock = planLock.run(() => hold.wait);
+  script = [
+    () => ({
+      call: {
+        action: "update_task",
+        expectedRev: 7,
+        planId: A,
+        taskId: "t_00000001",
+        status: "done",
+        operationId: "inflight-1",
+      },
+    }),
+    () => ({ text: "done" }),
+  ];
+  await post(id, page(A, 1), "Edit task 1");
+  await vi.waitFor(async () => {
+    const shown = await host.snapshot(id);
+    expect(shown.messages.flatMap((m) => m.operations ?? []).map((o) => o.status)).toEqual([
+      "pending",
+    ]);
+  });
+  hold.open();
+  await heldLock;
+  await until(id, ["completed"]);
+  const settled = (await host.snapshot(id)).messages.flatMap((m) => m.operations ?? []);
+  expect(settled.map((o) => o.status)).not.toContain("pending");
 });

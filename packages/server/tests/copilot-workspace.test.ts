@@ -457,8 +457,8 @@ test("an offline view waits for its tab to come back and is shown then; the answ
   hold.open();
   await new Promise((resolve) => setTimeout(resolve, 300));
   expect((await host.snapshot(id)).conversation.run?.status).toBe("running"); // waiting, not failed, not "done"
-  // Nothing is claimed while it waits: an unanswered call shows as unknown, never as applied.
-  expect(operations(await host.snapshot(id)).map((o) => o.status)).toEqual(["unknown"]);
+  // Nothing is claimed while it waits: a call still in flight in this run shows as pending, never as applied.
+  expect(operations(await host.snapshot(id)).map((o) => o.status)).toEqual(["pending"]);
   const again = await openTab(port, a.viewId, id); // same stable view id, new socket
   await settled(id);
   expect(again.actions.map((e) => e.action)).toEqual([{ action: "switch_view", view: "doc" }]);

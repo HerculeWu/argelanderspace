@@ -138,10 +138,19 @@ test("a call whose action is not parsed yet never shows a raw tool id; one persi
   expect(region.contains(status())).toBe(true);
 });
 
-test("the newest reply's call without a result is shown as pending while the run works, finished steps keep their reasoning", async () => {
-  current = snap(ID1, running, { live: live(), messages: [{ id: "a1", role: "assistant", text: "", thinking: "Step one reasoning", operations: [{ id: "c1", tool: "plan", action: "read", status: "unknown" }] }] });
+test("a recorded unknown outcome stays unknown while the run works; only the service's pending shows as pending; finished steps keep their reasoning", async () => {
+  current = snap(ID1, running, { live: live(), messages: [{ id: "a1", role: "assistant", text: "", thinking: "Step one reasoning", operations: [{ id: "c1", tool: "plan", action: "update_task", status: "unknown" }, { id: "c2", tool: "plan", action: "read", status: "pending" }] }] });
   await open();
-  await waitFor(() => expect(document.querySelector('[data-ui="copilot-operation-item"]')?.getAttribute("data-status")).toBe("pending"));
+  await waitFor(() => expect([...document.querySelectorAll('[data-ui="copilot-operation-item"]')].map((item) => item.getAttribute("data-status"))).toEqual(["unknown", "pending"]));
   expect(document.querySelector('[data-ui="copilot-reasoning"]')!.textContent).toContain("Step one reasoning");
   expect(document.querySelector('[data-ui="copilot-reasoning"] summary')!.textContent).toBe("Reasoning");
+});
+
+test("a partly parsed action name is never shown; the status says it works until the action is a known one", async () => {
+  current = snap(ID1, running, { live: live({ phase: "operation", operation: { tool: "reader", action: "read_pa" } }) });
+  await open();
+  await waitFor(() => expect(status()?.textContent).toBe("Working…"));
+  deliver(streamEvent(2, { live: live({ phase: "operation", operation: { tool: "reader", action: "read_page_image" } }) }));
+  await waitFor(() => expect(status()?.textContent).toMatch(/^Running: .+/));
+  expect(status()?.textContent).not.toContain("read_pa");
 });
