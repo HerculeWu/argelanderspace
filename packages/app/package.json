@@ -35,7 +35,8 @@
     "@earendil-works/pi-ai": "1.0.0",
     "@earendil-works/pi-coding-agent": "1.0.0",
     "@embedpdf/engines": "2.15.1",
-    "@embedpdf/pdfium": "2.15.1"
+    "@embedpdf/pdfium": "2.15.1",
+    "@napi-rs/keyring": "2.1.0"
   },
   "devDependencies": {
     "@argelanderspace/cli": "workspace:*",

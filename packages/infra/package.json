@@ -20,6 +20,7 @@
   "dependencies": {
     "@argelanderspace/contracts": "workspace:*",
     "@argelanderspace/core": "workspace:*",
+    "@napi-rs/keyring": "2.1.0",
     "env-paths": "^4.0.0",
     "smol-toml": "^1.8.0"
   },

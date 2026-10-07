@@ -11,6 +11,19 @@
 
 export * from "./arxiv-pdf.js";
 export * from "./config.js";
+export {
+  CREDENTIAL_FILE_NAME,
+  type CredentialErrorCode,
+  type CredentialStore,
+  type CredentialStoreOptions,
+  createCredentialStore,
+  createNapiKeychainBackend,
+  type DeleteCredentialResult,
+  type GetCredentialResult,
+  type KeychainBackend,
+  type SetCredentialOptions,
+  type SetCredentialResult,
+} from "./credential-store.js";
 export * from "./global-dirs.js";
 export * from "./latex/arxiv-source.js";
 export * from "./lib/http.js";
