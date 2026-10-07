@@ -32,6 +32,8 @@ export * from "./lib/pyjson.js";
 export * from "./lib/untar.js";
 export * from "./lib/unzip.js";
 export * from "./lib/zip.js";
+export * from "./mail/account-store.js";
+export * from "./mail/protocol.js";
 export * from "./sources/ads.js";
 export * from "./sources/ads-discovery.js";
 export * from "./sources/cache.js";

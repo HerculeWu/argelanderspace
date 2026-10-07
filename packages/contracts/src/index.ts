@@ -11,6 +11,7 @@ export * from "./doc-ir.js";
 export * from "./jobs.js";
 export * from "./library.js";
 export * from "./library-ops.js";
+export * from "./mail.js";
 export * from "./math.js";
 export * from "./pdf-annotation-ops.js";
 export * from "./pdf-doc.js";
