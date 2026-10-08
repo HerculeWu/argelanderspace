@@ -24,6 +24,7 @@
     "env-paths": "^4.0.0",
     "imapflow": "2.2.7",
     "nodemailer": "10.0.15",
+    "postal-mime": "4.0.4",
     "proper-lockfile": "4.1.2",
     "smol-toml": "^1.8.0"
   },

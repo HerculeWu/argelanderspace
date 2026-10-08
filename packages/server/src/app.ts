@@ -169,6 +169,7 @@ import {
 } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import type { MailAccountService } from "./mail-accounts.js";
+import type { MailReadService } from "./mail-read.js";
 import { mountMailRoutes } from "./mail-routes.js";
 import { PaperCache } from "./paper-cache.js";
 import {
@@ -253,6 +254,8 @@ export interface AppDeps {
   providerSettings?: ProviderSettings;
   /** Mail accounts (global data); tests inject isolated stores, production builds it on first request. */
   mailAccounts?: MailAccountService;
+  /** Mail reading (ticket 05); production builds it over the real global directories on first use. */
+  mailRead?: MailReadService;
   copilot?: CopilotHost;
   /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
   textDocHooks?: Pick<TextDocDeps, "beforePublish">;
@@ -633,7 +636,7 @@ export function createApp(deps: AppDeps): Hono {
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
   mountProviderRoutes(app, providerSettings, guardCsrf);
-  mountMailRoutes(app, deps.mailAccounts, guardCsrf);
+  mountMailRoutes(app, deps.mailAccounts, guardCsrf, deps.mailRead);
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
   mountCopilotRoutes(app, copilot, guardCsrf);
   // Text Docs (ticket 25): create under a Work, source save, validate and explicit generate.

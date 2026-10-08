@@ -2,7 +2,7 @@ import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeed
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { ActionButton } from "../ui";
+import { ActionButton, IconButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
@@ -21,11 +21,12 @@ import type { WriterViewController } from "../writer/WriterView";
 import { manuscriptDeleteGuard, writerPageStatus } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
 import { Copilot } from "../copilot/Copilot";
+import { MailView } from "../mail/MailView";
 
 interface NavItem {
   k: string;
   ic: string;
-  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write";
+  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write" | "shell.nav.mail";
   grp: "core";
 }
 
@@ -34,6 +35,7 @@ const NAV: NavItem[] = [
   { k: "library", ic: "library", labelKey: "shell.nav.library", grp: "core" },
   { k: "doc", ic: "file-text", labelKey: "shell.nav.doc", grp: "core" },
   { k: "write", ic: "pen-line", labelKey: "shell.nav.write", grp: "core" },
+  { k: "mail", ic: "mail", labelKey: "shell.nav.mail", grp: "core" },
 ];
 const NAV_MAP: Record<string, NavItem> = Object.fromEntries(NAV.map((n) => [n.k, n]));
 
@@ -610,6 +612,8 @@ export function Shell() {
         return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
       case "doc":
         return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onTextContext={reportText} onController={registerReaderController} />;
+      case "mail":
+        return <MailView />;
       case "write":
         return <WriterView paneId={p.id} onContext={reportWriter} onController={registerWriterController} />;
       default:
@@ -692,6 +696,8 @@ export function Shell() {
             {NAV.map((n) => {
               const label = t(n.labelKey);
               const className = "nav-icon-action" + (activePane.view === n.k ? " on" : "");
+              // Mail (ticket 05) keeps the approved prototype's lucide icon: a Dazzle icons.json entry for it awaits the user's icon choice.
+              if (n.k === "mail") return <IconButton key={n.k} unstyled icon={<Icon name="mail" />} label={label} data-ui="navigate-view" data-ui-key={n.k} className={className} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />;
               return <ActionButton key={n.k} unstyled iconSize={n.k === "plan" ? undefined : "navigation"} mode="icon" iconName={n.k === "plan" ? "telescope" : n.k === "library" ? "library" : n.k === "doc" ? "file-text" : "pen-line"} label={label} tooltip={label} data-ui="navigate-view" data-ui-key={n.k} className={className} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />;
             })}
           </div>

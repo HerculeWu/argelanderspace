@@ -1,0 +1,100 @@
+/* Mail view (ticket 05); layout and tokens follow the approved prototype (.scratch/mail/prototype). */
+.mail-mail { flex: 1; display: flex; min-width: 0; min-height: 0; position: relative; height: 100%; }
+.mail-folders { width: 232px; flex: none; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--border-soft); min-height: 0; }
+.mail-folders-collapsed { width: 36px; flex: none; display: flex; justify-content: center; padding-top: 6px; background: var(--panel); border-right: 1px solid var(--border-soft); }
+.mail-tree { flex: 1; overflow-y: auto; padding: 0 6px 12px; }
+.mail-folder { display: flex; align-items: center; gap: 8px; width: 100%; height: var(--row-h); padding-right: 8px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); text-align: left; }
+.mail-folder:hover { background: var(--hover); color: var(--text); }
+.mail-folder.on { background: var(--accent-soft); color: var(--text); }
+.mail-folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-count { font-size: var(--fs-xs); font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.mail-account { margin-top: 10px; position: relative; }
+.mail-account-head { display: flex; align-items: center; }
+.mail-account-toggle { flex: 1; display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 4px 4px 6px; border-radius: var(--radius-sm); text-align: left; color: var(--text-faint); }
+.mail-account-toggle:hover { background: var(--hover); }
+.mail-account-text { display: flex; flex-direction: column; min-width: 0; }
+.mail-account-name { font-size: 10.5px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-faint); }
+.mail-account-addr { font-size: var(--fs-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-account-more { opacity: .7; }
+.mail-account-flag { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 4px 4px 26px; font-size: var(--fs-xs); color: var(--warn); }
+.mail-account-flag.danger { color: var(--danger); }
+.mail-account-flag.warn { color: var(--warn); }
+.mail-link { color: var(--accent); font-size: var(--fs-xs); text-decoration: underline; text-underline-offset: 2px; }
+.mail-folders-foot { padding: 8px 10px; border-top: 1px solid var(--border-soft); }
+.mail-folders-foot .btn { width: 100%; justify-content: center; gap: 6px; }
+.mail-list { width: 340px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border-soft); min-height: 0; background: var(--bg); }
+.mail-list-head { padding: 8px 10px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 6px; }
+.mail-list-title { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: var(--fs); min-width: 0; }
+.mail-list-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-search { max-width: none; }
+.mail-search-clear { display: grid; place-items: center; width: 20px; height: 20px; color: var(--text-faint); border-radius: 4px; }
+.mail-search-state { font-size: var(--fs-xs); color: var(--text-faint); }
+.mail-search-state .danger, .danger { color: var(--danger); }
+.mail-rows { flex: 1; overflow-y: auto; padding: 4px 6px 64px; }
+.mail-row { display: flex; gap: 6px; width: 100%; padding: 8px 8px 9px 4px; border-radius: var(--radius-sm); text-align: left; color: var(--text); border-bottom: 1px solid var(--border-soft); }
+.mail-row:hover { background: var(--hover); }
+.mail-row.sel { background: var(--accent-soft); }
+.mail-row-mark { width: 10px; flex: none; padding-top: 6px; display: flex; justify-content: center; }
+.mail-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: block; }
+.mail-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mail-row-top { display: flex; align-items: center; gap: 5px; }
+.mail-row-from { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text-dim); }
+.mail-row.unread .mail-row-from, .mail-row.unread .mail-row-subject { font-weight: 600; color: var(--text); }
+.mail-row-icon { width: 13px; height: 13px; color: var(--text-faint); flex: none; }
+.mail-row-icon.star, .mail-starred { color: var(--warn); fill: currentColor; }
+.mail-row-date { font-size: var(--fs-xs); color: var(--text-faint); flex: none; font-variant-numeric: tabular-nums; }
+.mail-row-subject { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.mail-row-preview { font-size: var(--fs-xs); color: var(--text-faint); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.45; }
+.mail-row-acc { color: var(--text-dim); }
+.mail-empty { padding: 32px 12px; text-align: center; color: var(--text-faint); font-size: var(--fs-sm); display: flex; gap: 8px; justify-content: center; align-items: center; }
+.mail-spin { animation: mail-spin 1s linear infinite; }
+@keyframes mail-spin { to { transform: rotate(360deg); } }
+.mail-reader { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.mail-reader-empty { align-items: center; justify-content: center; gap: 10px; color: var(--text-faint); font-size: var(--fs-sm); }
+.mail-reader-head { padding: 8px 20px 14px; border-bottom: 1px solid var(--border-soft); }
+.mail-reader-actions { display: flex; align-items: center; gap: 2px; margin: 0 -6px 8px; }
+.mail-subject { font: 400 20px/1.35 var(--font-serif); margin: 0 0 12px; overflow-wrap: anywhere; }
+.mail-meta { display: flex; gap: 10px; align-items: flex-start; font-size: var(--fs-sm); }
+.mail-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; font-weight: 600; color: var(--text-dim); flex: none; }
+.mail-meta-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.mail-addr { color: var(--text-faint); font-size: var(--fs-xs); }
+.mail-meta-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: var(--fs-xs); color: var(--text-faint); flex: none; }
+.mail-remote { display: flex; align-items: center; gap: 8px; padding: 7px 20px; font-size: var(--fs-xs); color: var(--text-dim); background: var(--surface); border-bottom: 1px solid var(--border-soft); }
+.mail-remote > span { flex: 1; min-width: 0; }
+.mail-remote.loaded { color: var(--text-faint); }
+.mail-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+.mail-text { padding: 18px 20px; white-space: pre-wrap; line-height: 1.75; font-size: var(--fs); overflow-wrap: anywhere; max-width: 760px; }
+.mail-html { flex: 1; min-height: 420px; border: 0; background: #fff; width: 100%; }
+.mail-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 20px 20px; }
+.mail-attachments.compact { padding: 6px 12px; }
+.mail-attachment { display: flex; align-items: center; gap: 6px; padding: 0 2px 0 9px; height: 32px; border: 1px solid var(--border); border-radius: 5px; font-size: var(--fs-xs); color: var(--text-dim); max-width: 260px; }
+.mail-attachment > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mail-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mail-preset { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 88px; border: 1px solid var(--border); border-radius: 7px; font-size: var(--fs-sm); color: var(--text); }
+.mail-preset:hover { background: var(--hover); border-color: var(--text-faint); }
+.mail-account-form { display: flex; flex-direction: column; gap: 12px; }
+.mail-note { margin: 0; font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.6; }
+.mail-dfield { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-dim); }
+.mail-dfield input, .mail-dfield select { height: var(--control-h); padding: 0 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: var(--fs-sm); }
+.mail-server { display: grid; grid-template-columns: 1fr 72px 110px; gap: 8px; border: 1px solid var(--border-soft); border-radius: 7px; padding: 8px 10px 10px; margin: 0; }
+.mail-server legend { font-size: var(--fs-xs); color: var(--text-faint); padding: 0 4px; }
+.mail-server .full { grid-column: 1 / -1; }
+.mail-server-summary { font-size: var(--fs-xs); color: var(--text-faint); font-family: var(--font-mono, monospace); overflow-wrap: anywhere; }
+.mail-keychain { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.mail-check { display: flex; gap: 8px; align-items: center; font-size: var(--fs-sm); }
+.mail-folders-collapsed { flex-direction: column; align-items: center; gap: 4px; }
+.mail-mail.medium .mail-list { width: 300px; }
+.mail-mail.narrow .mail-list { flex: 1; width: auto; border-right: 0; }
+.mail-drawer-scrim { position: absolute; inset: 0; background: rgba(0,0,0,.46); z-index: 25; }
+.mail-drawer { position: absolute; left: 0; top: 0; bottom: 0; z-index: 26; display: flex; box-shadow: var(--shadow-pop); }
+.mail-drawer .mail-folders { width: 248px; }
+.mail-menu { position: absolute; z-index: 20; top: 32px; right: 4px; min-width: 180px; padding: 4px; background: var(--panel); border: 1px solid var(--border); border-radius: 7px; box-shadow: var(--shadow-2); display: flex; flex-direction: column; }
+.mail-menu button { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 5px; font-size: var(--fs-sm); text-align: left; color: var(--text); }
+.mail-menu button:hover { background: var(--hover); }
+.mail-menu button.danger { color: var(--danger); }
+.mail-more { padding: 8px 10px 0; display: flex; justify-content: center; }
+.mail-banner { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); }
+.mail-reader-state { padding: 24px 20px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; color: var(--text-dim); font-size: var(--fs-sm); }
+.mail-attachments a.btn { text-decoration: none; }
+.mail-test-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--fs-xs); }
+.mail-onboarding { flex: 1; display: grid; place-content: center; justify-items: center; gap: 16px; color: var(--text-faint); }

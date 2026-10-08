@@ -15,6 +15,8 @@ const tlsOptions = require_("smtp-server/lib/tls-options.js") as (o: object) => 
   cert: string;
 };
 const { key, cert } = tlsOptions({});
+/** The throwaway localhost certificate, for other fakes in this directory. */
+export const FAKE_TLS = { key, cert };
 
 export const TEST_USER = "tester";
 export const TEST_PASSWORD = "synthetic-pass-123";
