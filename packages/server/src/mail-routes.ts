@@ -19,6 +19,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MailAccountService, MailServiceError } from "./mail-accounts.js";
 import { MailCache } from "./mail-cache.js";
+import { type MailComposeServices, mountMailComposeRoutes } from "./mail-compose-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
 
 /** Production wiring of the reading service over the real global directories. */
@@ -97,8 +98,11 @@ export function mountMailRoutes(
   host: Hono,
   injected: MailAccountService | undefined,
   guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null,
-  injectedRead?: MailReadService
+  injectedRead?: MailReadService,
+  injectedCompose?: MailComposeServices
 ): void {
+  // Writing and sending (ticket 07) has its own router, registered first so that its larger upload limit applies.
+  mountMailComposeRoutes(host, injectedCompose, guardCsrf);
   let service = injected;
   const get = () => (service ??= createDefaultMailAccountService());
   let reader = injectedRead;

@@ -26,6 +26,8 @@ export interface FakeFolder {
   attrs?: string[]; // e.g. ["\\Sent"]
   uidValidity: number;
   messages: FakeMessage[];
+  /** Highest uid ever assigned, so uids are not reused after an expunge. */
+  lastUid?: number;
 }
 
 export interface FakeMailbox {
@@ -35,6 +37,10 @@ export interface FakeMailbox {
   commands: string[];
   /** Make STORE answer NO (a read-only server). */
   denyStore: boolean;
+  /** Make APPEND answer NO (Mail ticket 07: a server that refuses new drafts / Sent copies). */
+  denyAppend: boolean;
+  /** Withhold the APPENDUID response code, as a server without UIDPLUS does. */
+  hideAppendUid: boolean;
   close(): Promise<void>;
 }
 
@@ -124,10 +130,19 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
     folders,
     commands,
     denyStore: false,
+    denyAppend: false,
+    hideAppendUid: false,
     close: async () => {},
   };
   const handle = (sock: TLSSocket) => {
     let buf = Buffer.alloc(0);
+    let literal: {
+      remaining: number;
+      tag: string;
+      folder: string;
+      flags: string[];
+      chunks: Buffer[];
+    } | null = null;
     let selected: FakeFolder | null = null;
     let authed = false;
     const send = (s: string | Buffer) =>
@@ -184,7 +199,7 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
       const isUid = cmd === "UID";
       const verb = isUid ? `UID ${String(args[0] ?? "").toUpperCase()}` : cmd;
       commands.push(
-        verb === "SELECT" || verb === "EXAMINE" || verb === "UID STORE"
+        verb === "SELECT" || verb === "EXAMINE" || verb === "UID STORE" || verb === "APPEND"
           ? `${verb} ${isUid ? "" : String(args[0] ?? "")}`.trim()
           : verb
       );
@@ -291,7 +306,27 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
             send(`${tag} BAD no mailbox selected`);
             break;
           }
-          send(`* SEARCH ${selected.messages.map((m) => m.uid).join(" ")}`.trimEnd());
+          const upper = args.map((a) => (typeof a === "string" ? a.toUpperCase() : ""));
+          const h = upper.indexOf("HEADER");
+          let hits = selected.messages;
+          if (h >= 0) {
+            const name = String(args[h + 1] ?? "").toLowerCase();
+            const value = String(args[h + 2] ?? "").toLowerCase();
+            hits = hits.filter((m) =>
+              (m.source.split("\r\n\r\n")[0] ?? "").split(/\r\n(?![ \t])/).some((line) => {
+                const i = line.indexOf(":");
+                return (
+                  i > 0 &&
+                  line.slice(0, i).toLowerCase() === name &&
+                  line
+                    .slice(i + 1)
+                    .toLowerCase()
+                    .includes(value)
+                );
+              })
+            );
+          }
+          send(`* SEARCH ${hits.map((m) => m.uid).join(" ")}`.trimEnd());
           send(`${tag} OK done`);
           break;
         }
@@ -333,6 +368,45 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
           send(`${tag} OK done`);
           break;
         }
+        case "APPEND": {
+          if (!requireAuth()) break;
+          const target = String(args[0]);
+          const last = args[args.length - 1];
+          const lit = typeof last === "string" ? /^\{(\d+)\+?\}$/.exec(last) : null;
+          if (!lit) {
+            send(`${tag} BAD APPEND needs a literal`);
+            break;
+          }
+          const flagTok = args.find((a) => Array.isArray(a));
+          // A refused or unknown target still has to swallow the literal the client sends next.
+          literal = {
+            remaining: Number(lit[1]),
+            tag,
+            folder: find(target) && !state.denyAppend ? target : "",
+            flags: (flagTok as string[] | undefined) ?? [],
+            chunks: [],
+          };
+          send("+ ready");
+          break;
+        }
+        case "UID EXPUNGE":
+        case "EXPUNGE": {
+          if (!selected) {
+            send(`${tag} BAD no mailbox selected`);
+            break;
+          }
+          const max = Math.max(0, ...selected.messages.map((m) => m.uid));
+          const inSet = verb === "UID EXPUNGE" ? uidSet(String(args[1]), max) : () => true;
+          for (let i = selected.messages.length - 1; i >= 0; i--) {
+            const m = selected.messages[i] as FakeMessage;
+            if (m.flags.has("\\Deleted") && inSet(m.uid)) {
+              selected.messages.splice(i, 1);
+              send(`* ${i + 1} EXPUNGE`);
+            }
+          }
+          send(`${tag} OK done`);
+          break;
+        }
         case "LOGOUT":
           send("* BYE");
           send(`${tag} OK bye`);
@@ -343,14 +417,58 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
       }
     };
 
+    const finishAppend = (lit: NonNullable<typeof literal>) => {
+      const body = Buffer.concat(lit.chunks);
+      const f = lit.folder ? find(lit.folder) : undefined;
+      if (!f) {
+        send(`${lit.tag} NO [TRYCREATE] append refused`);
+        return;
+      }
+      const source = body.toString("latin1");
+      const head = (source.split("\r\n\r\n")[0] ?? "").replace(/\r\n[ \t]+/g, " ");
+      const header = (name: string) =>
+        new RegExp(`^${name}:[ \\t]*(.*)$`, "im").exec(head)?.[1] ?? "";
+      const fromRaw = header("From").trim();
+      const fm = /^(?:"?([^"<]*?)"?\s*)?<([^>]+)>$/.exec(fromRaw);
+      const uid = Math.max(f.lastUid ?? 0, ...f.messages.map((m) => m.uid)) + 1;
+      f.lastUid = uid;
+      f.messages.push({
+        uid,
+        flags: new Set(lit.flags),
+        source,
+        date: header("Date") || new Date().toUTCString(),
+        subject: header("Subject"),
+        from: [fm?.[1]?.trim() ?? "", fm?.[2] ?? fromRaw],
+        to: [],
+      });
+      send(
+        `${lit.tag} OK ${state.hideAppendUid ? "" : `[APPENDUID ${f.uidValidity} ${uid}] `}done`
+      );
+    };
     sock.on("data", (d: Buffer) => {
       buf = Buffer.concat([buf, d]);
-      let i = buf.indexOf("\r\n");
-      while (i >= 0) {
+      for (;;) {
+        if (literal) {
+          const take = Math.min(literal.remaining, buf.length);
+          if (take > 0) {
+            literal.chunks.push(buf.subarray(0, take));
+            buf = buf.subarray(take);
+            literal.remaining -= take;
+          }
+          if (literal.remaining > 0) return;
+          const eol = buf.indexOf("\r\n");
+          if (eol < 0) return; // the command line's terminator has not arrived yet
+          buf = buf.subarray(eol + 2);
+          const done = literal;
+          literal = null;
+          finishAppend(done);
+          continue;
+        }
+        const i = buf.indexOf("\r\n");
+        if (i < 0) return;
         const line = buf.subarray(0, i).toString("latin1");
         buf = buf.subarray(i + 2);
         run(line);
-        i = buf.indexOf("\r\n");
       }
     });
     sock.on("error", () => {});

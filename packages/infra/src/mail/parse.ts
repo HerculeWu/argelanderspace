@@ -29,7 +29,12 @@ export interface ParsedMail {
   from: ParsedAddress | null;
   to: ParsedAddress[];
   cc: ParsedAddress[];
+  /** Only present on drafts and the sender's own copies. */
+  bcc: ParsedAddress[];
   replyTo: ParsedAddress[];
+  /** `<id>` tokens of In-Reply-To / References, for replies (Mail ticket 07). */
+  inReplyTo: string | null;
+  references: string[];
   text: string | null;
   html: string | null;
   attachments: ParsedAttachment[];
@@ -50,6 +55,8 @@ function isoDate(raw: string | undefined): string | null {
   const d = new Date(raw);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
+
+const msgIds = (raw: string | undefined): string[] => raw?.match(/<[^<>\s]+>/g) ?? [];
 
 const stripBrackets = (id: string) => id.replace(/^<|>$/g, "").trim();
 
@@ -83,6 +90,9 @@ export async function parseMailSource(source: Uint8Array): Promise<ParsedMail> {
     from,
     to: flatten(email.to),
     cc: flatten(email.cc),
+    bcc: flatten(email.bcc),
+    inReplyTo: msgIds(email.inReplyTo)[0] ?? null,
+    references: msgIds(email.references),
     replyTo: flatten(email.replyTo),
     text: email.text ?? null,
     html: email.html ?? null,
