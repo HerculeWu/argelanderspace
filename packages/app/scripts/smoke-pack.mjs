@@ -229,6 +229,22 @@ check(
     /===== marked@[\d.]+ =====\n/.test(notices),
   "bundled notices carry the KaTeX and marked licenses"
 );
+const mailNotices = readFileSync(
+  join(extracted, "package/dist/THIRD-PARTY-MAIL-NOTICES.txt"),
+  "utf8"
+);
+check(
+  [
+    "imapflow",
+    "nodemailer",
+    "postal-mime",
+    "dompurify",
+    "@zone-eu/mailsplit",
+    "@napi-rs/keyring",
+  ].every((name) => mailNotices.includes(`===== ${name}@`)) &&
+    /@zone-eu\/mailsplit@[\d.]+ =====\nLicense: MIT \(/.test(mailNotices),
+  "Mail notices carry the Mail dependencies, with mailsplit elected under MIT"
+);
 
 // ---- 2. clean install --------------------------------------------------------------------------------------------- //
 const clean = join(work, "clean");

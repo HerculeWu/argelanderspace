@@ -18,11 +18,13 @@ export const REQUIRED_FILES = [
   "dist/THIRD-PARTY-EDITOR-NOTICES.txt",
   "dist/THIRD-PARTY-EMBEDPDF-NOTICES.txt",
   "dist/THIRD-PARTY-BUNDLED-NOTICES.txt",
+  "dist/THIRD-PARTY-MAIL-NOTICES.txt",
   "dist/web/THIRD_PARTY_LICENSES.md",
   "dist/web/icons.provenance.json",
   "dist/web/THIRD-PARTY-EDITOR-NOTICES.txt",
   "dist/web/THIRD-PARTY-EMBEDPDF-NOTICES.txt",
   "dist/web/THIRD-PARTY-BUNDLED-NOTICES.txt",
+  "dist/web/THIRD-PARTY-MAIL-NOTICES.txt",
 ];
 
 /** Only these top-level entries may exist in the tarball. */
