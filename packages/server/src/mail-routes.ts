@@ -19,6 +19,8 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MailAccountService, MailServiceError } from "./mail-accounts.js";
 import { MailCache } from "./mail-cache.js";
+import { createDefaultMailManageService, type MailManageService } from "./mail-manage.js";
+import { mountMailManageRoutes } from "./mail-manage-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
 
 /** Production wiring of the reading service over the real global directories. */
@@ -97,12 +99,15 @@ export function mountMailRoutes(
   host: Hono,
   injected: MailAccountService | undefined,
   guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null,
-  injectedRead?: MailReadService
+  injectedRead?: MailReadService,
+  injectedManage?: MailManageService
 ): void {
   let service = injected;
   const get = () => (service ??= createDefaultMailAccountService());
   let reader = injectedRead;
   const read = () => (reader ??= createDefaultMailReadService());
+  let manager = injectedManage;
+  const manage = () => (manager ??= createDefaultMailManageService(read()));
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
@@ -221,5 +226,7 @@ export function mountMailRoutes(
     c.header("Content-Length", String(a.content.byteLength));
     return c.body(a.content as unknown as ArrayBuffer);
   });
+  // ---- managing and searching (ticket 06) ----------------------------------
+  mountMailManageRoutes(app, manage);
   host.route("/api/mail", app);
 }

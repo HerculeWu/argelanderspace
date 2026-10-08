@@ -1,6 +1,6 @@
 /**
  * The narrow seam in front of the mail protocol libraries (spec: single-maintainer
- * risk of imapflow/nodemailer, so nothing outside this file imports them).
+ * risk of imapflow/nodemailer, so nothing outside the mail protocol files imports them).
  * This ticket only needs "can we log in"; later tickets grow the interface.
  *
  * Results carry a failure CODE only. Library error messages and server response
@@ -10,8 +10,17 @@
 
 import type { ConnectionOptions } from "node:tls";
 import type { MailEndpoint, MailProbeFailureCode } from "@argelanderspace/contracts";
-import { type FetchMessageObject, ImapFlow, type MessageStructureObject } from "imapflow";
+import type { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
+import {
+  classifyMailError,
+  imapClient,
+  isConventionalPlace,
+  remoteCode,
+  toHeader,
+} from "./imap-internal.js";
+
+export { classifyMailError };
 
 export interface MailLoginTarget extends MailEndpoint {
   user: string;
@@ -30,58 +39,6 @@ export interface NodeMailProtocolOptions {
   timeoutMs?: number;
   /** TLS overrides (tests pass a private CA); production leaves this unset. */
   tls?: { ca?: string | Buffer; rejectUnauthorized?: boolean; servername?: string };
-}
-
-const TLS_CODES = /CERT|SELF_SIGNED|TLS|SSL|ERR_OSSL|HOSTNAME_MISMATCH|ALTNAME/i;
-
-/** Map an error from either library to a code; the error text is never kept. */
-export function classifyMailError(error: unknown): MailProbeFailureCode {
-  const e = (error ?? {}) as {
-    code?: unknown;
-    authenticationFailed?: unknown;
-    responseStatus?: unknown;
-    command?: unknown;
-    message?: unknown;
-  };
-  const code = typeof e.code === "string" ? e.code : "";
-  if (e.authenticationFailed === true || code === "EAUTH" || code === "AUTHENTICATIONFAILED")
-    return "auth_failed";
-  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "EDNS" || code === "ENODATA")
-    return "host_not_found";
-  if (
-    code === "ECONNREFUSED" ||
-    code === "ECONNRESET" ||
-    code === "EHOSTUNREACH" ||
-    code === "ENETUNREACH"
-  )
-    return "connection_refused";
-  if (/TIMEOUT|TIMEDOUT/i.test(code)) return "timeout";
-  if (code === "ETLS" || TLS_CODES.test(code)) return "tls_failed";
-  const msg = typeof e.message === "string" ? e.message : "";
-  if (/certificate|self[- ]signed|\bTLS\b|\bSSL\b/i.test(msg) && !/STARTTLS/i.test(msg))
-    return "tls_failed";
-  if (/STARTTLS/i.test(msg)) return "starttls_unsupported";
-  if (code === "EPROTOCOL" || code === "EENVELOPE" || code === "ECONNECTION" || code === "ESOCKET")
-    return "protocol_error";
-  return "unknown";
-}
-
-function imapClient(t: MailLoginTarget, timeout: number, tls: ConnectionOptions): ImapFlow {
-  const client = new ImapFlow({
-    host: t.host,
-    port: t.port,
-    secure: t.security === "tls",
-    doSTARTTLS: t.security === "starttls" ? true : undefined,
-    auth: { user: t.user, pass: t.password },
-    logger: false,
-    tls,
-    connectionTimeout: timeout,
-    greetingTimeout: timeout,
-    socketTimeout: timeout,
-    disableAutoIdle: true,
-  });
-  client.on("error", () => {}); // surfaced through the failing call; never logged
-  return client;
 }
 
 export function createNodeMailProtocol(options: NodeMailProtocolOptions = {}): MailProtocol {
@@ -205,46 +162,6 @@ export interface MailMailbox {
   ): Promise<MailResult<RemoteOpened>>;
 }
 
-const addr = (a: { name?: string | undefined; address?: string | undefined }): RemoteAddress => ({
-  name: a.name ?? "",
-  address: a.address ?? "",
-});
-
-function hasAttachment(node: MessageStructureObject | undefined): boolean {
-  if (!node) return false;
-  if (node.disposition === "attachment") return true;
-  if (node.disposition === "inline" && node.dispositionParameters?.filename) return true;
-  return (node.childNodes ?? []).some(hasAttachment);
-}
-
-function toHeader(m: FetchMessageObject): RemoteHeader {
-  const env = m.envelope;
-  let date: string | null = null;
-  const raw = env?.date ?? m.internalDate;
-  if (raw) {
-    const d = raw instanceof Date ? raw : new Date(raw);
-    if (!Number.isNaN(d.getTime())) date = d.toISOString();
-  }
-  const from = env?.from?.[0];
-  return {
-    uid: m.uid,
-    date,
-    from: from ? addr(from) : null,
-    to: (env?.to ?? []).map(addr),
-    subject: env?.subject ?? "",
-    unread: !m.flags?.has("\\Seen"),
-    starred: m.flags?.has("\\Flagged") ?? false,
-    hasAttachments: hasAttachment(m.bodyStructure),
-    size: typeof m.size === "number" ? m.size : null,
-  };
-}
-
-function remoteCode(error: unknown): MailRemoteFailure {
-  if ((error as { mailboxMissing?: unknown } | null)?.mailboxMissing === true)
-    return "folder_not_found";
-  return classifyMailError(error);
-}
-
 export function createNodeMailMailbox(options: NodeMailProtocolOptions = {}): MailMailbox {
   const timeout = options.timeoutMs ?? 10_000;
   const tls: ConnectionOptions = { ...options.tls, minVersion: "TLSv1.2" };
@@ -274,7 +191,14 @@ export function createNodeMailMailbox(options: NodeMailProtocolOptions = {}): Ma
             path: f.path,
             name: f.name,
             delimiter: f.delimiter,
-            specialUse: f.specialUse ?? (f.path.toUpperCase() === "INBOX" ? "\\Inbox" : null),
+            // imapflow also guesses roles from folder NAMES; a guess only counts at the top level or directly
+            // under INBOX (the same rule the Trash lookup of ticket 06 uses), never for `Projects/Deleted`.
+            specialUse:
+              f.specialUse && !(f.specialUseSource === "name" && !isConventionalPlace(f.parent))
+                ? f.specialUse
+                : f.path.toUpperCase() === "INBOX"
+                  ? "\\Inbox"
+                  : null,
             selectable: !f.flags.has("\\Noselect") && !f.flags.has("\\NonExistent"),
             unread: typeof f.status?.unseen === "number" ? f.status.unseen : null,
             total: typeof f.status?.messages === "number" ? f.status.messages : null,
@@ -287,7 +211,11 @@ export function createNodeMailMailbox(options: NodeMailProtocolOptions = {}): Ma
         try {
           const box = client.mailbox;
           if (!box) return { ok: false, code: "folder_not_found" };
-          const all = (await client.search({ all: true }, { uid: true })) || [];
+          const found = await client.search({ all: true }, { uid: true });
+          // imapflow answers `false` for a failed SEARCH. That is not an empty folder: a caller that took it for
+          // one would show nothing and (cache pruning) forget everything it had. Report a failure instead.
+          if (found === false || found === undefined) return { ok: false, code: "protocol_error" };
+          const all = found;
           const older = all
             .filter((u) => q.before === undefined || u < q.before)
             .sort((a, b) => a - b);

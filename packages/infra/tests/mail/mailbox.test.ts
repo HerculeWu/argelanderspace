@@ -243,3 +243,12 @@ test("parseMailSource tolerates garbage input", async () => {
   expect(r.attachments).toEqual([]);
   expect(typeof r.subject).toBe("string");
 });
+
+test("listHeaders: a refused SEARCH is a failure, not an empty folder", async () => {
+  const s = await start();
+  s.denySearch = true;
+  expect(await mailbox.listHeaders(login(s.port), { folder: "INBOX", limit: 5 })).toEqual({
+    ok: false,
+    code: "protocol_error",
+  });
+});

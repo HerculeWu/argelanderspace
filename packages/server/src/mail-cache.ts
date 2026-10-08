@@ -118,7 +118,8 @@ export class MailCache {
     folder: string,
     uidValidity: number,
     total: number,
-    page: MailHeader[]
+    page: MailHeader[],
+    fromTop = false
   ): void {
     const dir = this.folderDir(id, folder);
     if (!dir) return;
@@ -126,6 +127,16 @@ export class MailCache {
     let kept: MailHeader[] = [];
     if (old && old.uidValidity === uidValidity) kept = old.headers;
     else if (old) this.dropGeneration(id, folder, old.uidValidity);
+    // The page lists every message the server has between its oldest and newest uid, so a cached entry
+    // inside that range which is not in the page is gone from the server (moved, deleted, expunged by
+    // another client): drop it instead of letting an offline view resurrect it.
+    // A page that starts at the newest message (`fromTop`) also covers everything above its oldest uid.
+    if (page.length > 0) {
+      const lo = Math.min(...page.map((h) => h.uid));
+      const hi = fromTop ? Number.POSITIVE_INFINITY : Math.max(...page.map((h) => h.uid));
+      const present = new Set(page.map((h) => h.uid));
+      kept = kept.filter((h) => h.uid < lo || h.uid > hi || present.has(h.uid));
+    } else if (fromTop) kept = [];
     const byUid = new Map<number, MailHeader>(kept.map((h) => [h.uid, h]));
     for (const h of page) byUid.set(h.uid, h);
     const headers = [...byUid.values()].sort((a, b) => b.uid - a.uid).slice(0, MAX_CACHED_HEADERS);
@@ -144,6 +155,38 @@ export class MailCache {
       JSON.stringify({
         ...old,
         headers: old.headers.map((h) => (h.uid === uid ? { ...h, unread: false } : h)),
+      })
+    );
+  }
+  /** Reflect flags the server confirmed after a change (read/unread, star) on one cached header. */
+  patchHeader(
+    id: string,
+    folder: string,
+    uid: number,
+    patch: Partial<Pick<MailHeader, "unread" | "starred">>
+  ): void {
+    const old = this.readHeaders(id, folder);
+    const dir = this.folderDir(id, folder);
+    if (!old || !dir) return;
+    this.write(
+      join(dir, "headers.json"),
+      JSON.stringify({
+        ...old,
+        headers: old.headers.map((h) => (h.uid === uid ? { ...h, ...patch } : h)),
+      })
+    );
+  }
+  /** The message left this folder on the server (moved, deleted): forget its cached header. */
+  removeHeader(id: string, folder: string, uid: number): void {
+    const old = this.readHeaders(id, folder);
+    const dir = this.folderDir(id, folder);
+    if (!old || !dir || !old.headers.some((h) => h.uid === uid)) return;
+    this.write(
+      join(dir, "headers.json"),
+      JSON.stringify({
+        ...old,
+        total: Math.max(0, old.total - 1),
+        headers: old.headers.filter((h) => h.uid !== uid),
       })
     );
   }
