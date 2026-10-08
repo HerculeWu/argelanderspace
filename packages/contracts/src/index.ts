@@ -13,6 +13,7 @@ export * from "./library.js";
 export * from "./library-ops.js";
 export * from "./mail.js";
 export * from "./mail-events.js";
+export * from "./mail-manage.js";
 export * from "./mail-read.js";
 export * from "./math.js";
 export * from "./pdf-annotation-ops.js";

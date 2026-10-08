@@ -155,10 +155,14 @@ function toFolders(remote: RemoteFolder[]): MailFolder[] {
 const toHeader = (h: RemoteHeader): MailHeader => ({ ...h });
 
 export class MailReadService {
+  /** The one cache instance; management reuses it instead of building another over the real cache dir. */
+  get cache(): MailCache {
+    return this.deps.cache;
+  }
   private readonly gates = new Map<string, Gate>();
   constructor(private readonly deps: MailReadDeps) {}
 
-  private account(id: string): MailAccount {
+  account(id: string): MailAccount {
     let found: MailAccount | undefined;
     try {
       found = this.deps.accounts.read().accounts.find((a) => a.id === id);
@@ -174,7 +178,7 @@ export class MailReadService {
    * cache directory recreated (nothing would ever reclaim it). A delete in ANOTHER process between this
    * check and the write remains a tiny window (see contracts.md).
    */
-  private ifAccountExists(id: string, write: () => void): void {
+  ifAccountExists(id: string, write: () => void): void {
     let exists = false;
     try {
       exists = this.deps.accounts.read().accounts.some((a) => a.id === id);
@@ -184,13 +188,13 @@ export class MailReadService {
     if (exists) write();
   }
 
-  private async target(a: MailAccount): Promise<MailLoginTarget> {
+  async target(a: MailAccount): Promise<MailLoginTarget> {
     const got = await this.deps.credentials.get(a.credentialRef);
     if (got.status !== "ok") throw new MailReadError("credential_missing");
     return { ...a.imap, user: a.imapUser, password: got.password };
   }
 
-  private gate(id: string): Gate {
+  gate(id: string): Gate {
     const existing = this.gates.get(id);
     if (existing) return existing;
     const created = new Gate();
@@ -227,7 +231,14 @@ export class MailReadService {
     if (r.ok) {
       const headers = r.value.headers.map(toHeader);
       this.ifAccountExists(a.id, () =>
-        this.deps.cache.mergeHeaders(a.id, folder, r.value.uidValidity, r.value.total, headers)
+        this.deps.cache.mergeHeaders(
+          a.id,
+          folder,
+          r.value.uidValidity,
+          r.value.total,
+          headers,
+          before === undefined
+        )
       );
       return {
         accountId: a.id,

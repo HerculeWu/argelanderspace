@@ -3,7 +3,9 @@
  * (Mail ticket 05). Implicit TLS on 127.0.0.1 with the throwaway localhost
  * certificate; synthetic users and mail only. It speaks just enough IMAP for
  * imapflow: CAPABILITY, ID, NAMESPACE, LOGIN, AUTHENTICATE PLAIN, LIST, LSUB,
- * STATUS, SELECT/EXAMINE, UID SEARCH, UID FETCH, UID STORE, NOOP, CLOSE, LOGOUT.
+ * STATUS, SELECT/EXAMINE, UID SEARCH (FROM/TO/CC/SUBJECT/BODY/TEXT/HEADER, SINCE/BEFORE/ON,
+ * flags, UID, OR/NOT/parenthesised groups, CHARSET and literals), UID FETCH, UID STORE,
+ * UID MOVE/COPY, UID EXPUNGE/EXPUNGE, NOOP, CLOSE, LOGOUT.
  */
 
 import { createServer as createTlsServer, type TLSSocket } from "node:tls";
@@ -35,6 +37,21 @@ export interface FakeMailbox {
   commands: string[];
   /** Make STORE answer NO (a read-only server). */
   denyStore: boolean;
+  /** Make MOVE and COPY answer NO (a server refusing to move, e.g. no permission on the destination). */
+  denyMove: boolean;
+  /** Make EXPUNGE and UID EXPUNGE answer NO. */
+  denyExpunge: boolean;
+  /** Make SEARCH answer NO (a server that cannot search). */
+  denySearch: boolean;
+  /** Destroy the socket when this verb arrives (e.g. "UID MOVE"): a connection lost mid-command. */
+  dropOn: string | null;
+  /** Let this many matches of `dropOn` through before the socket is destroyed. */
+  dropSkip: number;
+  /** Delay every SEARCH answer by this many ms (a slow server-side search). */
+  searchDelayMs: number;
+  /** Advertise UIDPLUS (default true) and MOVE (default true); turn off to test the fallbacks. */
+  uidplus: boolean;
+  moveCapability: boolean;
   close(): Promise<void>;
 }
 
@@ -117,6 +134,147 @@ function uidSet(spec: string, max: number): (uid: number) => boolean {
   return (uid) => parts.some(([lo, hi]) => uid >= lo && uid <= hi);
 }
 
+// ---- SEARCH matching (Mail ticket 06) ----------------------------------------
+
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+/** `6-Oct-2026` -> UTC day number, or NaN. */
+function imapDay(s: string): number {
+  const m = /^(\d{1,2})-([A-Za-z]{3})-(\d{4})$/.exec(s);
+  if (!m) return Number.NaN;
+  const mon = MONTHS.indexOf((m[2] as string).toUpperCase());
+  return mon < 0 ? Number.NaN : Math.floor(Date.UTC(Number(m[3]), mon, Number(m[1])) / 86_400_000);
+}
+const dayOf = (rfc: string) => Math.floor(new Date(rfc).getTime() / 86_400_000);
+
+function decodeWords(s: string): string {
+  return s.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (_m, _cs, enc: string, text: string) =>
+    enc.toUpperCase() === "B"
+      ? Buffer.from(text, "base64").toString("utf8")
+      : Buffer.from(
+          text
+            .replace(/_/g, " ")
+            .replace(/=([0-9A-Fa-f]{2})/g, (_x, h: string) =>
+              String.fromCharCode(Number.parseInt(h, 16))
+            ),
+          "latin1"
+        ).toString("utf8")
+  );
+}
+function headerValue(m: FakeMessage, name: string): string {
+  const head = m.source.split("\r\n\r\n")[0] ?? "";
+  const found = new RegExp(`^${name}:[ \\t]*((?:.|\\r\\n[ \\t])*)`, "im").exec(head);
+  return decodeWords((found?.[1] ?? "").replace(/\r\n[ \t]+/g, " "));
+}
+const bodyOf = (m: FakeMessage) => m.source.split("\r\n\r\n").slice(1).join("\r\n\r\n");
+const contains = (hay: string, needle: string) => hay.toLowerCase().includes(needle.toLowerCase());
+
+/** Compile the criteria tokens of a (UID) SEARCH into a predicate; throws on a key it does not know. */
+function searchPredicate(toks: Tok[], maxUid: number): (m: FakeMessage) => boolean {
+  let i = 0;
+  const str = () => {
+    const t = toks[i++];
+    if (typeof t !== "string") throw new Error("bad search argument");
+    return t;
+  };
+  const key = (): ((m: FakeMessage) => boolean) => {
+    const t = toks[i++];
+    if (Array.isArray(t)) return searchPredicate(t, maxUid);
+    const k = String(t).toUpperCase();
+    const flag = (f: string, want: boolean) => (m: FakeMessage) => m.flags.has(f) === want;
+    switch (k) {
+      case "ALL":
+        return () => true;
+      case "SEEN":
+        return flag("\\Seen", true);
+      case "UNSEEN":
+        return flag("\\Seen", false);
+      case "FLAGGED":
+        return flag("\\Flagged", true);
+      case "UNFLAGGED":
+        return flag("\\Flagged", false);
+      case "DELETED":
+        return flag("\\Deleted", true);
+      case "UNDELETED":
+        return flag("\\Deleted", false);
+      case "ANSWERED":
+        return flag("\\Answered", true);
+      case "UNANSWERED":
+        return flag("\\Answered", false);
+      case "DRAFT":
+        return flag("\\Draft", true);
+      case "UNDRAFT":
+        return flag("\\Draft", false);
+      case "FROM": {
+        const v = str();
+        return (m) => contains(`${m.from[0]} <${m.from[1]}>`, v);
+      }
+      case "TO": {
+        const v = str();
+        return (m) => m.to.some(([n, a]) => contains(`${n} <${a}>`, v));
+      }
+      case "CC": {
+        const v = str();
+        return (m) => contains(headerValue(m, "Cc"), v);
+      }
+      case "SUBJECT": {
+        const v = str();
+        return (m) => contains(decodeWords(m.subject), v);
+      }
+      case "BODY": {
+        const v = str();
+        return (m) => contains(bodyOf(m), v);
+      }
+      case "TEXT": {
+        const v = str();
+        return (m) => contains(m.source, v);
+      }
+      case "HEADER": {
+        const name = str();
+        const v = str();
+        return (m) => contains(headerValue(m, name), v);
+      }
+      case "SENTSINCE":
+      case "SINCE": {
+        const d = imapDay(str());
+        return (m) => dayOf(m.date) >= d;
+      }
+      case "SENTBEFORE":
+      case "BEFORE": {
+        const d = imapDay(str());
+        return (m) => dayOf(m.date) < d;
+      }
+      case "ON": {
+        const d = imapDay(str());
+        return (m) => dayOf(m.date) === d;
+      }
+      case "UID": {
+        const inSet = uidSet(str(), maxUid);
+        return (m) => inSet(m.uid);
+      }
+      case "OR": {
+        const a = key();
+        const b = key();
+        return (m) => a(m) || b(m);
+      }
+      case "NOT": {
+        const a = key();
+        return (m) => !a(m);
+      }
+      default:
+        throw new Error(`unsupported search key ${k}`);
+    }
+  };
+  const preds: ((m: FakeMessage) => boolean)[] = [];
+  while (i < toks.length) {
+    if (String(toks[i]).toUpperCase() === "CHARSET") {
+      i += 2;
+      continue;
+    }
+    preds.push(key());
+  }
+  return (m) => preds.every((p) => p(m));
+}
+
 export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailbox> {
   const commands: string[] = [];
   const state: FakeMailbox = {
@@ -124,6 +282,14 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
     folders,
     commands,
     denyStore: false,
+    denyMove: false,
+    denyExpunge: false,
+    denySearch: false,
+    dropOn: null,
+    dropSkip: 0,
+    searchDelayMs: 0,
+    uidplus: true,
+    moveCapability: true,
     close: async () => {},
   };
   const handle = (sock: TLSSocket) => {
@@ -132,7 +298,8 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
     let authed = false;
     const send = (s: string | Buffer) =>
       sock.write(Buffer.concat([Buffer.from(s as string), Buffer.from("\r\n")]));
-    const caps = () => `IMAP4rev1 AUTH=PLAIN ID NAMESPACE UIDPLUS${authed ? "" : ""}`;
+    const caps = () =>
+      `IMAP4rev1 AUTH=PLAIN ID NAMESPACE${state.uidplus ? " UIDPLUS" : ""}${state.moveCapability ? " MOVE" : ""}`;
     let awaitingPlain: string | null = null;
     const find = (path: string) => folders.find((f) => f.path === path);
 
@@ -188,6 +355,13 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
           ? `${verb} ${isUid ? "" : String(args[0] ?? "")}`.trim()
           : verb
       );
+      if (state.dropOn !== null && state.dropOn === verb) {
+        if (state.dropSkip > 0) state.dropSkip--;
+        else {
+          sock.destroy();
+          return;
+        }
+      }
       const requireAuth = () => {
         if (authed) return true;
         send(`${tag} NO not authenticated`);
@@ -291,8 +465,25 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
             send(`${tag} BAD no mailbox selected`);
             break;
           }
-          send(`* SEARCH ${selected.messages.map((m) => m.uid).join(" ")}`.trimEnd());
-          send(`${tag} OK done`);
+          if (state.denySearch) {
+            send(`${tag} NO [CANNOT] search is disabled`);
+            break;
+          }
+          let pred: (m: FakeMessage) => boolean;
+          try {
+            const max = Math.max(0, ...selected.messages.map((m) => m.uid));
+            pred = searchPredicate(args.slice(1), max);
+          } catch {
+            send(`${tag} BAD cannot parse search`);
+            break;
+          }
+          const matched = selected.messages.filter(pred).map((m) => m.uid);
+          const answer = () => {
+            send(`* SEARCH ${matched.join(" ")}`.trimEnd());
+            send(`${tag} OK done`);
+          };
+          if (state.searchDelayMs > 0) setTimeout(answer, state.searchDelayMs);
+          else answer();
           break;
         }
         case "UID FETCH": {
@@ -333,6 +524,69 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
           send(`${tag} OK done`);
           break;
         }
+        case "UID COPY":
+        case "UID MOVE": {
+          if (!selected) {
+            send(`${tag} BAD no mailbox selected`);
+            break;
+          }
+          const dest = find(String(args[2]));
+          if (!dest) {
+            send(`${tag} NO [TRYCREATE] no such mailbox`);
+            break;
+          }
+          if (state.denyMove) {
+            send(`${tag} NO [NOPERM] not allowed`);
+            break;
+          }
+          const max = Math.max(0, ...selected.messages.map((m) => m.uid));
+          const inSet = uidSet(String(args[1]), max);
+          const picked = selected.messages.filter((m) => inSet(m.uid));
+          if (picked.length === 0) {
+            send(`${tag} OK nothing to do`);
+            break;
+          }
+          let next = Math.max(0, ...dest.messages.map((m) => m.uid)) + 1;
+          const from: number[] = [];
+          const to: number[] = [];
+          for (const m of picked) {
+            from.push(m.uid);
+            to.push(next);
+            dest.messages.push({ ...m, uid: next++, flags: new Set(m.flags) });
+          }
+          const copyUid = `[COPYUID ${dest.uidValidity} ${from.join(",")} ${to.join(",")}]`;
+          if (verb === "UID MOVE") {
+            send(`* OK ${copyUid} moved`);
+            for (const m of [...picked].reverse()) {
+              const seq = selected.messages.indexOf(m) + 1;
+              selected.messages.splice(seq - 1, 1);
+              send(`* ${seq} EXPUNGE`);
+            }
+            send(`${tag} OK done`);
+          } else send(`${tag} OK ${copyUid} copied`);
+          break;
+        }
+        case "EXPUNGE":
+        case "UID EXPUNGE": {
+          if (!selected) {
+            send(`${tag} BAD no mailbox selected`);
+            break;
+          }
+          if (state.denyExpunge) {
+            send(`${tag} NO [NOPERM] not allowed`);
+            break;
+          }
+          const max = Math.max(0, ...selected.messages.map((m) => m.uid));
+          const inSet = verb === "UID EXPUNGE" ? uidSet(String(args[1]), max) : () => true;
+          for (const m of [...selected.messages].reverse()) {
+            if (!m.flags.has("\\Deleted") || !inSet(m.uid)) continue;
+            const seq = selected.messages.indexOf(m) + 1;
+            selected.messages.splice(seq - 1, 1);
+            send(`* ${seq} EXPUNGE`);
+          }
+          send(`${tag} OK done`);
+          break;
+        }
         case "LOGOUT":
           send("* BYE");
           send(`${tag} OK bye`);
@@ -343,14 +597,35 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
       }
     };
 
+    let lineAcc = "";
+    let literal: { remaining: number; chunks: Buffer[] } | null = null;
     sock.on("data", (d: Buffer) => {
       buf = Buffer.concat([buf, d]);
-      let i = buf.indexOf("\r\n");
-      while (i >= 0) {
+      for (;;) {
+        if (literal) {
+          const take = Math.min(literal.remaining, buf.length);
+          literal.chunks.push(buf.subarray(0, take));
+          literal.remaining -= take;
+          buf = buf.subarray(take);
+          if (literal.remaining > 0) return;
+          lineAcc += q(Buffer.concat(literal.chunks).toString("utf8"));
+          literal = null;
+          continue;
+        }
+        const i = buf.indexOf("\r\n");
+        if (i < 0) return;
         const line = buf.subarray(0, i).toString("latin1");
         buf = buf.subarray(i + 2);
-        run(line);
-        i = buf.indexOf("\r\n");
+        const lit = awaitingPlain ? null : /\{(\d+)(\+?)\}$/.exec(line);
+        if (lit) {
+          lineAcc += line.slice(0, lit.index);
+          literal = { remaining: Number(lit[1]), chunks: [] };
+          if (lit[2] !== "+") send("+ ready");
+          continue;
+        }
+        const full = lineAcc + line;
+        lineAcc = "";
+        run(full);
       }
     });
     sock.on("error", () => {});

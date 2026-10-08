@@ -23,7 +23,7 @@ export class MailApiError extends Error {
   }
 }
 
-async function request<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
+export async function request<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetch(`/api/mail${path}`, {
@@ -51,7 +51,7 @@ async function request<T>(path: string, method = "GET", body?: unknown, signal?:
   return response.json() as Promise<T>;
 }
 
-const acc = (id: string) => `/accounts/${encodeURIComponent(id)}`;
+export const acc = (id: string) => `/accounts/${encodeURIComponent(id)}`;
 
 export const fetchMailPresets = () => request<MailPresetsResponse>("/presets");
 export const fetchMailAccounts = () => request<MailAccountsResponse>("/accounts");
