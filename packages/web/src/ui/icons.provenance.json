@@ -128,6 +128,21 @@
           "root stroke-linejoin round"
         ]
       },
+      "mail": {
+        "set": "dazzle-line-icons",
+        "file": "mail.svg",
+        "originalHash": "448285a320ceeb1e3cc78ac686f20b037d665d6868c5ec6f8b7fad184b5153ce",
+        "normalizedHash": "5d63c9010ab37f5a2ed4764477d95d8dca98a579985bfd059bb79520fb4e3ad0",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
+      },
       "pen-line": {
         "set": "dazzle-line-icons",
         "file": "pen-square.svg",

@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Icon } from "../lib/icons";
-import { IconButton } from "../ui";
+import { ActionButton } from "../ui";
 import { useMailLive } from "./mailLive";
 import "./mail-live.css";
 
@@ -26,10 +25,13 @@ export function MailNavItem({
   const name = total > 0 ? t("mail.live.navWithUnread", { name: label, n: total }) : label;
   return (
     <span className="mail-nav-wrap">
-      <IconButton
+      <ActionButton
         unstyled
-        icon={<Icon name="mail" />}
+        iconSize="navigation"
+        mode="icon"
+        iconName="mail"
         label={name}
+        tooltip={name}
         data-ui="navigate-view"
         data-ui-key="mail"
         className={className}
