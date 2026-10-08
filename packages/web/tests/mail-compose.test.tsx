@@ -89,6 +89,7 @@ const calls = (re: RegExp, method?: string) => srv.calls.filter((c) => re.test(c
 beforeEach(async () => {
   await i18n.changeLanguage("en");
   localStorage.clear();
+  sessionStorage.clear();
   srv = {
     account: acct(),
     calls: [],
@@ -685,3 +686,685 @@ test("a reply whose answer arrives after another composer was opened is offered,
   await waitFor(() => expect(ui("mail-notice")).toBeTruthy());
   expect((ui("mail-composer-subject") as HTMLInputElement).value).toBe("Typing");
 });
+
+
+// ---- review round 3 -----------------------------------------------------------------
+
+const staged = (id: string, name: string) =>
+  json({ id: id.repeat(32).slice(0, 32), filename: name, contentType: "application/pdf", size: 10 }, 201);
+const attachFile = (name: string) =>
+  fireEvent.change(ui("mail-composer-file")!, {
+    target: { files: [new File([new Uint8Array(10)], name, { type: "application/pdf" })] },
+  });
+const attachmentNames = () =>
+  [...document.querySelectorAll('[data-ui="mail-composer-attachment"]')].map((e) => e.textContent ?? "");
+const mount = async () => {
+  const view = render(<MailView />);
+  await screen.findByText("Subject 3");
+  return view;
+};
+
+test("closing a window while an attachment uploads keeps it open and says so; the file lands in that window, never in the next one", async () => {
+  await mount();
+  await compose1("Window A");
+  await waitFor(() => expect(ui("mail-composer-draft-state")!.textContent).toMatch(/^Saved/), { timeout: 4000 });
+  const h = hold(/\/attachments$/, "POST");
+  attachFile("secret-A.pdf");
+  await waitFor(() => expect(calls(/\/attachments$/, "POST")).toHaveLength(1));
+  fireEvent.click(ui("mail-composer-close")!);
+  await waitFor(() => expect(ui("mail-composer-error")!.textContent).toMatch(/still uploading/i));
+  expect((ui("mail-composer-subject") as HTMLInputElement).value).toBe("Window A");
+  h.release(staged("b", "secret-A.pdf"));
+  await waitFor(() => expect(attachmentNames().join()).toContain("secret-A.pdf"));
+  expect(ui("mail-composer-error")).toBeNull();
+  fireEvent.click(ui("mail-composer-close")!);
+  await waitFor(() => expect(ui("mail-composer")).toBeNull());
+  const puts = calls(/\/draft$/, "PUT");
+  expect(puts[puts.length - 1]!.body.attachments).toEqual(["b".repeat(32)]);
+  await compose1("Window B", "bob@example.test");
+  expect(attachmentNames()).toEqual([]);
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(1));
+  expect(calls(SEND_RE)[0]!.body.draft.attachments).toEqual([]);
+}, 10000);
+
+test("an upload that finishes after the user left Mail is not written over the draft on the server; the next visit says to add it again", async () => {
+  const view = await mount();
+  await compose1("Leaving with a file");
+  await waitFor(() => expect(ui("mail-composer-draft-state")!.textContent).toMatch(/^Saved/), { timeout: 4000 });
+  const h = hold(/\/attachments$/, "POST");
+  attachFile("late.pdf");
+  await waitFor(() => expect(calls(/\/attachments$/, "POST")).toHaveLength(1));
+  const mid = (calls(/\/draft$/, "PUT")[0]!.body as { messageId: string }).messageId;
+  view.unmount();
+  // Back in Mail, the same draft gets newer text (this window, another tab: the page cannot know).
+  await mount();
+  await fetch(`/api/mail/compose/accounts/${A1}/draft`, {
+    method: "PUT",
+    body: JSON.stringify({ ...srv.initDraft, messageId: mid, text: "NEWER TEXT" }),
+  });
+  h.release(staged("c", "late.pdf"));
+  const notice = await waitFor(() => {
+    const n = [...document.querySelectorAll('[data-ui="mail-notice"]')].find((x) => /late\.pdf/.test(x.textContent ?? ""));
+    expect(n).toBeTruthy();
+    return n as HTMLElement;
+  });
+  expect(notice.textContent).toMatch(/was not added to “Leaving with a file”/);
+  // Nothing wrote the old snapshot back over the newer text; the unused staged file was removed.
+  expect(calls(/\/draft$/, "PUT").slice(-1)[0]!.body.text).toBe("NEWER TEXT");
+  expect(calls(new RegExp(`/attachments/${"c".repeat(32)}$`), "DELETE")).toHaveLength(1);
+  // No text is held by this notice, so it closes without asking.
+  fireEvent.click(within(notice).getByLabelText("Dismiss"));
+  await waitFor(() => expect(document.querySelectorAll('[data-ui="mail-notice"]')).toHaveLength(0));
+  expect(ui("mail-left-drop-dialog")).toBeNull();
+  expect(sessionStorage.getItem("argelander.mail.leftBehind")).toBeNull();
+}, 10000);
+
+test("a late upload whose draft text exists only in this tab joins that kept text", async () => {
+  const view = await mount();
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Only here");
+  const h = hold(/\/attachments$/, "POST");
+  attachFile("joins.pdf");
+  await waitFor(() => expect(calls(/\/attachments$/, "POST")).toHaveLength(1));
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input))) throw new TypeError("offline");
+    return real(input as never, init);
+  }));
+  view.unmount();
+  await new Promise((r) => setTimeout(r, 50));
+  h.release(staged("e", "joins.pdf"));
+  await waitFor(() => expect(sessionStorage.getItem("argelander.mail.leftBehind") ?? "").toContain("e".repeat(32)));
+  vi.stubGlobal("fetch", real);
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect(attachmentNames().join()).toContain("joins.pdf"));
+  expect((ui("mail-composer-subject") as HTMLInputElement).value).toBe("Only here");
+}, 10000);
+
+test("an upload that finishes after its draft was discarded is removed again, not attached anywhere", async () => {
+  await mount();
+  fireEvent.click(ui("mail-compose")!);
+  const h = hold(/\/attachments$/, "POST");
+  attachFile("drop.pdf");
+  await waitFor(() => expect(calls(/\/attachments$/, "POST")).toHaveLength(1));
+  fireEvent.click(ui("mail-composer-discard")!);
+  fireEvent.click(await waitFor(() => ui("mail-composer-discard-confirm")!));
+  await waitFor(() => expect(ui("mail-composer")).toBeNull());
+  await compose1("Another one", "bob@example.test"); // a different window is open when the upload lands
+  h.release(staged("d", "drop.pdf"));
+  await waitFor(() =>
+    expect(calls(new RegExp(`/attachments/${"d".repeat(32)}$`), "DELETE")).toHaveLength(1)
+  );
+  expect(attachmentNames()).toEqual([]);
+  expect(ui("mail-notice")).toBeNull(); // the user threw it away: nothing to report
+  await waitFor(() => expect(calls(/\/draft$/, "PUT").length).toBeGreaterThan(0), { timeout: 4000 });
+  expect(calls(/\/draft$/, "PUT").every((c) => c.body.attachments.length === 0)).toBe(true);
+}, 10000);
+
+test("leaving Mail while a send request is in flight: a send that then fails is saved to Drafts, and the next visit says so and can reopen it", async () => {
+  const view = await mount();
+  await compose1("Left behind");
+  const h = hold(SEND_RE, "POST");
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(1));
+  view.unmount();
+  h.release(json({ code: "drafts_unavailable" }, 422));
+  await waitFor(() => expect(calls(/\/draft$/, "PUT").some((c) => c.body.text === "Body of Left behind")).toBe(true));
+  await new Promise((r) => setTimeout(r, 50));
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  expect(notice.textContent).toMatch(/“Left behind” was not sent/);
+  expect(notice.textContent).toMatch(/in Drafts/);
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement).value).toBe("Body of Left behind"));
+  expect((ui("mail-composer-to") as HTMLInputElement).value).toBe("ada@example.test");
+}, 10000);
+
+test("leaving Mail while a send request is in flight: if neither the send nor saving the draft works, the text is kept in the tab and offered on return", async () => {
+  const view = await mount();
+  await compose1("Nowhere");
+  const h = hold(SEND_RE, "POST");
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(1));
+  view.unmount();
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input))) {
+      srv.calls.push({ method: "PUT", url: String(input), body: JSON.parse(String(init?.body)) });
+      return json({ code: "auth_failed" }, 502);
+    }
+    return real(input as never, init);
+  }));
+  h.release(json({ code: "auth_failed" }, 502));
+  await waitFor(() => expect(calls(/\/draft$/, "PUT")).toHaveLength(1));
+  await new Promise((r) => setTimeout(r, 50));
+  vi.stubGlobal("fetch", real);
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  expect(notice.textContent).toMatch(/“Nowhere” was not sent/);
+  expect(notice.textContent).toMatch(/kept in this tab/);
+  expect(ui("mail-composer")).toBeNull(); // offered, not pushed over the page
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement).value).toBe("Body of Nowhere"));
+}, 10000);
+
+test("a draft that could not be saved on leaving is kept in the tab and can be reopened", async () => {
+  srv.account = acct();
+  const view = await mount();
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Kept here");
+  type("mail-composer-body", "words that must survive");
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input))) throw new TypeError("offline");
+    return real(input as never, init);
+  }));
+  view.unmount();
+  await new Promise((r) => setTimeout(r, 50));
+  vi.stubGlobal("fetch", real);
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  expect(notice.textContent).toMatch(/kept in this tab/);
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement).value).toBe("words that must survive"));
+}, 10000);
+
+const lostThenRetry = async (statusOfFirst: () => Response) => {
+  await mount();
+  await compose1("Twice");
+  const real = globalThis.fetch;
+  let failOnce = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    const url = String(input);
+    if (SEND_RE.test(url) && failOnce) {
+      failOnce = false;
+      srv.calls.push({ method: "POST", url, body: JSON.parse(String(init?.body)) });
+      throw new TypeError("Failed to fetch");
+    }
+    if (/\/sends\/[^/]+$/.test(url) && (init?.method ?? "GET") === "GET") {
+      srv.calls.push({ method: "GET", url });
+      return statusOfFirst();
+    }
+    return real(input as never, init);
+  }));
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-composer-error")).toBeTruthy());
+  const firstId = calls(SEND_RE)[0]!.body.sendId as string;
+  type("mail-composer-body", "Body of Twice (typo fixed)");
+  fireEvent.click(ui("mail-composer-send")!);
+  return firstId;
+};
+
+test("a lost send answer is checked before sending again: an accepted first send is joined, never sent a second time", async () => {
+  const firstId = await lostThenRetry(() =>
+    json(status({ sendId: "00000000-0000-4000-8000-000000000001", subject: "Twice", remainingMs: 6000 }))
+  );
+  await waitFor(() => expect(ui("mail-send-undo")).toBeTruthy());
+  expect(calls(SEND_RE)).toHaveLength(1);
+  expect(calls(new RegExp(`/sends/${firstId}$`), "GET")).toHaveLength(1);
+  expect(ui("mail-composer")).toBeNull();
+  expect(screen.getByText(/edits made after it are not in it/)).toBeTruthy();
+  // Undo gives back the latest text, so it can be sent with the fix.
+  fireEvent.click(ui("mail-send-undo-action")!);
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement).value).toBe("Body of Twice (typo fixed)"));
+}, 10000);
+
+test("a lost send answer whose send already went out is not sent again; the window says so", async () => {
+  await lostThenRetry(() => json(status({ state: "sent", remainingMs: null, sentCopy: "saved", draftKept: false })));
+  await waitFor(() => expect(ui("mail-composer-sent")!.textContent).toMatch(/already been sent/i));
+  expect(calls(SEND_RE)).toHaveLength(1);
+  expect(screen.getByText(/^Sent: /)).toBeTruthy();
+  expect(ui("mail-composer-send")!.hasAttribute("disabled")).toBe(true);
+}, 10000);
+
+test("a lost send answer the server never received lets the retry through, under a new id for the changed text", async () => {
+  const firstId = await lostThenRetry(() => json({ code: "not_found" }, 404));
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(2));
+  expect(calls(SEND_RE)[1]!.body.sendId).not.toBe(firstId);
+  expect(calls(SEND_RE)[1]!.body.draft.text).toBe("Body of Twice (typo fixed)");
+}, 10000);
+
+test("a lost send answer that still cannot be checked does not send again", async () => {
+  await lostThenRetry(() => {
+    throw new TypeError("still offline");
+  });
+  await waitFor(() => expect(calls(/\/sends\/[^/]+$/, "GET")).toHaveLength(1));
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls(SEND_RE)).toHaveLength(1);
+  expect(ui("mail-composer-error")!.textContent).toMatch(/could not be reached/);
+  expect(ui("mail-composer-send")!.getAttribute("aria-busy")).not.toBe("true");
+}, 10000);
+
+test("discarding while the first save is still on its way waits for it and then deletes the saved copy", async () => {
+  await mount();
+  await compose1("Discard me");
+  const h = hold(/\/draft$/, "PUT");
+  await waitFor(() => expect(calls(/\/draft$/, "PUT")).toHaveLength(1), { timeout: 4000 });
+  fireEvent.click(ui("mail-composer-discard")!);
+  fireEvent.click(await waitFor(() => ui("mail-composer-discard-confirm")!));
+  await new Promise((r) => setTimeout(r, 100));
+  expect(ui("mail-composer")).toBeTruthy(); // still waiting for the save
+  h.release(json({ messageId: "x", savedAt: "x", folder: "Drafts", uid: 1 }));
+  await waitFor(() => expect(ui("mail-composer")).toBeNull());
+  expect(calls(/\/draft\/discard$/)).toHaveLength(1);
+  expect(calls(/\/draft\/discard$/)[0]!.body.subject).toBe("Discard me");
+}, 10000);
+
+test("a draft save that answers after its window was sent does not mark the next window as saved", async () => {
+  await mount();
+  await compose1("First window");
+  const h = hold(/\/draft$/, "PUT");
+  await waitFor(() => expect(calls(/\/draft$/, "PUT")).toHaveLength(1), { timeout: 4000 });
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-send-undo")).toBeTruthy());
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Second window");
+  h.release(json({ messageId: "x", savedAt: "x", folder: "Drafts", uid: 1 }));
+  await new Promise((r) => setTimeout(r, 100));
+  expect(ui("mail-composer-draft-state")!.textContent).not.toMatch(/Saved|on the server/);
+}, 10000);
+
+test("a send that ends both by the countdown and by a late undo answer is settled once", async () => {
+  srv.sendResult = () => json(status({ remainingMs: 300 }), 202);
+  srv.statusFor = (id) => status({ sendId: id, state: "failed", code: "recipient_rejected", remainingMs: null });
+  await mount();
+  await compose1("Only once");
+  const h = hold(/\/undo$/, "POST");
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-send-undo-action")).toBeTruthy());
+  fireEvent.click(ui("mail-send-undo-action")!);
+  // The countdown ends and the poll reports the failure: the text comes back in the composer.
+  await waitFor(() => expect((ui("mail-composer-subject") as HTMLInputElement | null)?.value).toBe("Only once"), { timeout: 3000 });
+  h.release(json({ code: "not_pending" }, 409));
+  await new Promise((r) => setTimeout(r, 150));
+  expect(document.querySelectorAll('[data-ui="mail-composer"]')).toHaveLength(1);
+  expect(document.querySelectorAll('[data-ui="mail-notice"]')).toHaveLength(0);
+}, 10000);
+
+
+// ---- review round 4 -----------------------------------------------------------------
+
+/** Leave Mail while a send is under way; the send fails and so does saving the draft (text kept in the tab). */
+const leaveWithKeptText = async (body: string) => {
+  const v = await mount();
+  await compose1("Precious");
+  type("mail-composer-body", body);
+  const real = globalThis.fetch;
+  let release: (r: Response) => void = () => {};
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    const u = String(input);
+    const m = init?.method ?? "GET";
+    if (SEND_RE.test(u)) {
+      srv.calls.push({ method: m, url: u });
+      return new Promise<Response>((res) => {
+        release = res;
+      });
+    }
+    if (/\/draft$/.test(u) && m === "PUT") return json({ code: "auth_failed" }, 502);
+    return real(input as never, init);
+  }));
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(1));
+  v.unmount();
+  release(json({ code: "invalid_recipient" }, 422));
+  await waitFor(() => expect(sessionStorage.getItem("argelander.mail.leftBehind") ?? "").toContain(body));
+  vi.stubGlobal("fetch", real);
+};
+const kept = () => sessionStorage.getItem("argelander.mail.leftBehind") ?? "";
+
+test("kept text survives being shown: leaving or reloading again without Open still offers it", async () => {
+  await leaveWithKeptText("PRECIOUS TEXT 123");
+  const v2 = await mount();
+  await waitFor(() => expect(ui("mail-notice")!.textContent).toMatch(/“Precious” was not sent/));
+  expect(kept()).toContain("PRECIOUS TEXT 123"); // shown, not consumed
+  v2.unmount(); // leave (or reload: sessionStorage is what survives)
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  expect(document.querySelectorAll('[data-ui="mail-notice"]')).toHaveLength(1);
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement).value).toBe("PRECIOUS TEXT 123"));
+  // Back in a composer: only now is the tab copy let go.
+  expect(kept()).toBe("");
+}, 15000);
+
+test("dismissing a notice that holds kept text asks first; cancelling keeps it, confirming drops it", async () => {
+  await leaveWithKeptText("DROP ME 456");
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  fireEvent.click(within(notice).getByLabelText("Dismiss"));
+  await waitFor(() => expect(ui("mail-left-drop-dialog")).toBeTruthy());
+  expect(ui("mail-left-drop-dialog")!.textContent).toMatch(/only in this browser tab/);
+  fireEvent.click(within(ui("mail-left-drop-dialog")!).getByText("Cancel"));
+  await waitFor(() => expect(ui("mail-left-drop-dialog")).toBeNull());
+  expect(ui("mail-notice")).toBeTruthy();
+  expect(kept()).toContain("DROP ME 456");
+  fireEvent.click(within(ui("mail-notice")!).getByLabelText("Dismiss"));
+  fireEvent.click(await waitFor(() => ui("mail-left-drop-confirm")!));
+  await waitFor(() => expect(ui("mail-notice")).toBeNull());
+  expect(kept()).toBe("");
+}, 15000);
+
+test("a record made while Mail is open is written to the tab as well, so a reload right away keeps it", async () => {
+  // Leave and come back before the failed send answers: the record arrives while Mail is mounted.
+  const v = await mount();
+  await compose1("Arrives late");
+  const h = hold(SEND_RE, "POST");
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(1));
+  v.unmount();
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input))) return json({ code: "auth_failed" }, 502);
+    return real(input as never, init);
+  }));
+  const v2 = await mount();
+  h.release(json({ code: "invalid_recipient" }, 422));
+  await waitFor(() => expect(ui("mail-notice")?.textContent ?? "").toMatch(/“Arrives late” was not sent/));
+  expect(kept()).toContain("Body of Arrives late");
+  v2.unmount();
+  vi.stubGlobal("fetch", real);
+  await mount();
+  await waitFor(() => expect(ui("mail-notice")?.textContent ?? "").toMatch(/“Arrives late” was not sent/));
+}, 15000);
+
+/** A composer whose message turns out to be sent already (lost answer; the first send went out). */
+const sentWindow = async (sentCopy: "saved" | "failed" = "saved") => {
+  await lostThenRetry(() => json(status({ state: "sent", remainingMs: null, sentCopy, draftKept: sentCopy === "failed" })));
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeTruthy());
+};
+
+test("a sent message's window can be closed; edits made after sending are offered as a new message, not saved over it", async () => {
+  await sentWindow();
+  const putsBefore = calls(/\/draft$/, "PUT").length;
+  type("mail-composer-body", "EDITED AFTER SENDING");
+  await new Promise((r) => setTimeout(r, 1500)); // past the autosave delay: nothing is saved
+  expect(calls(/\/draft$/, "PUT")).toHaveLength(putsBefore);
+  fireEvent.click(ui("mail-composer-close")!);
+  await waitFor(() => expect(ui("mail-composer")).toBeNull());
+  const notice = await waitFor(() => {
+    const n = [...document.querySelectorAll('[data-ui="mail-notice"]')].find((x) => /had already been sent/.test(x.textContent ?? ""));
+    expect(n).toBeTruthy();
+    return n as HTMLElement;
+  });
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement | null)?.value).toBe("EDITED AFTER SENDING"));
+  expect(ui("mail-composer-sent")).toBeNull();
+  expect(ui("mail-composer-send")!.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(2));
+  expect(calls(SEND_RE)[1]!.body.draft.messageId).not.toBe(calls(SEND_RE)[0]!.body.draft.messageId);
+}, 15000);
+
+test("Copy as new message turns a sent message's window into a new message with its text", async () => {
+  await sentWindow();
+  type("mail-composer-body", "keep this wording");
+  fireEvent.click(ui("mail-composer-copy-new")!);
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeNull());
+  expect((ui("mail-composer-body") as HTMLTextAreaElement).value).toBe("keep this wording");
+  await waitFor(() => expect(calls(/\/draft$/, "PUT").some((c) => c.body.text === "keep this wording")).toBe(true), { timeout: 4000 });
+  const mids = new Set(calls(SEND_RE).map((c) => c.body.draft.messageId));
+  expect(mids.has(calls(/\/draft$/, "PUT").slice(-1)[0]!.body.messageId)).toBe(false);
+}, 15000);
+
+test("leaving Mail with edits to a sent message keeps them once, without trying to save", async () => {
+  const real = globalThis.fetch;
+  await sentWindow();
+  type("mail-composer-body", "after-send words");
+  const puts = calls(/\/draft$/, "PUT").length;
+  cleanup(); // leave Mail
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls(/\/draft$/, "PUT")).toHaveLength(puts);
+  expect(kept()).toContain("after-send words");
+  vi.stubGlobal("fetch", real);
+  await mount();
+  const n = await waitFor(() => ui("mail-notice")!);
+  expect(n.textContent).toMatch(/had already been sent/);
+  expect(document.querySelectorAll('[data-ui="mail-notice"]')).toHaveLength(1);
+}, 15000);
+
+test("a save refused as already sent turns the window into its sent state instead of a failure to retry", async () => {
+  await mount();
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input)) && init?.method === "PUT") return json({ code: "already_sent" }, 409);
+    return real(input as never, init);
+  }));
+  await compose1("Sent in another tab");
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeTruthy(), { timeout: 4000 });
+  expect(ui("mail-composer-draft-state")!.textContent).not.toMatch(/Couldn't save/);
+  fireEvent.click(ui("mail-composer-close")!);
+  await waitFor(() => expect(ui("mail-composer")).toBeNull());
+}, 15000);
+
+test("discarding the Drafts copy of a sent message whose Sent copy failed warns that it is the only record", async () => {
+  srv.initDraft = { ...srv.initDraft, messageId: "<left@example.test>" };
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/init$/.test(String(input))) return json({ draft: srv.initDraft, attachments: [], sent: { sentCopy: "failed" } });
+    return real(input as never, init);
+  }));
+  render(<MailView />);
+  await screen.findByText("Subject 3");
+  fireEvent.click(screen.getByText("Subject 3"));
+  await screen.findByText("Plain body 3");
+  fireEvent.click(ui("mail-reply")!);
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeTruthy());
+  expect(ui("mail-composer-send")!.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(ui("mail-composer-discard")!);
+  await waitFor(() => expect(ui("mail-composer-discard-only-record")).toBeTruthy());
+  expect(ui("mail-composer-discard-only-record")!.textContent).toMatch(/only record/);
+}, 15000);
+
+test("while an earlier send's answer is unknown the sender cannot be changed", async () => {
+  await mount();
+  await compose1("Fixed sender");
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (SEND_RE.test(String(input))) {
+      srv.calls.push({ method: "POST", url: String(input), body: JSON.parse(String(init?.body)) });
+      throw new TypeError("Failed to fetch");
+    }
+    return real(input as never, init);
+  }));
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-composer-error")).toBeTruthy());
+  expect(ui("mail-composer-from")!.hasAttribute("disabled")).toBe(true);
+  fireEvent.change(ui("mail-composer-from")!, { target: { value: "acc-bbbbbbbbbbbb" } });
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(calls(SEND_RE)).toHaveLength(2));
+  expect(calls(SEND_RE)[1]!.url).toContain(A1);
+}, 15000);
+
+test("leaving Mail while a discard request runs does not save the discarded draft back", async () => {
+  const view = await mount();
+  await compose1("Going away");
+  await waitFor(() => expect(ui("mail-composer-draft-state")!.textContent).toMatch(/^Saved/), { timeout: 4000 });
+  type("mail-composer-body", "unsaved edit before discard");
+  const h = hold(/\/draft\/discard$/);
+  fireEvent.click(ui("mail-composer-discard")!);
+  fireEvent.click(await waitFor(() => ui("mail-composer-discard-confirm")!));
+  await waitFor(() => expect(calls(/\/draft\/discard$/)).toHaveLength(1));
+  const puts = calls(/\/draft$/, "PUT").length;
+  view.unmount();
+  h.release(json({ ok: true }));
+  await new Promise((r) => setTimeout(r, 100));
+  expect(calls(/\/draft$/, "PUT")).toHaveLength(puts);
+  expect(kept()).toBe("");
+}, 15000);
+
+
+// ---- review round 5 -----------------------------------------------------------------
+
+const sentEditsNotice = () =>
+  [...document.querySelectorAll('[data-ui="mail-notice"]')].find((x) => /had already been sent/.test(x.textContent ?? "")) as
+    | HTMLElement
+    | undefined;
+
+test("edits to a sent message survive closing its window and then leaving Mail", async () => {
+  await sentWindow();
+  type("mail-composer-body", "EDITS ONLY HERE");
+  fireEvent.click(ui("mail-composer-close")!);
+  await waitFor(() => expect(ui("mail-composer")).toBeNull());
+  await waitFor(() => expect(sentEditsNotice()).toBeTruthy());
+  expect(kept()).toContain("EDITS ONLY HERE");
+  cleanup(); // leave Mail
+  await mount();
+  await waitFor(() => expect(sentEditsNotice()).toBeTruthy());
+  fireEvent.click(within(sentEditsNotice()!).getByText("Open"));
+  await waitFor(() => expect((ui("mail-composer-body") as HTMLTextAreaElement | null)?.value).toBe("EDITS ONLY HERE"));
+}, 15000);
+
+test("dismissing the notice with a sent message's edits asks first", async () => {
+  await sentWindow();
+  type("mail-composer-body", "EDITS ONLY HERE");
+  fireEvent.click(ui("mail-composer-close")!);
+  const n = await waitFor(() => {
+    expect(sentEditsNotice()).toBeTruthy();
+    return sentEditsNotice()!;
+  });
+  fireEvent.click(within(n).getByLabelText("Dismiss"));
+  await waitFor(() => expect(ui("mail-left-drop-dialog")).toBeTruthy());
+  expect(sentEditsNotice()).toBeTruthy();
+  expect(kept()).toContain("EDITS ONLY HERE");
+}, 15000);
+
+/** A kept record (its window's save failed on leaving) whose upload is still running; returns the upload hold. */
+const keptWithUploadInFlight = async () => {
+  const v = await mount();
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Kept here");
+  type("mail-composer-body", "KEPT WORDS");
+  const up = hold(/\/attachments$/, "POST");
+  attachFile("later.pdf");
+  await waitFor(() => expect(calls(/\/attachments$/, "POST")).toHaveLength(1));
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input))) throw new TypeError("offline");
+    return real(input as never, init);
+  }));
+  v.unmount();
+  await waitFor(() => expect(kept()).toContain("KEPT WORDS"));
+  vi.stubGlobal("fetch", real);
+  return up;
+};
+
+test("Open does not let go of the kept text when the open composer cannot be saved", async () => {
+  const v = await mount();
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Kept here");
+  type("mail-composer-body", "KEPT WORDS");
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/draft$/.test(String(input))) throw new TypeError("offline");
+    return real(input as never, init);
+  }));
+  v.unmount();
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Current");
+  fireEvent.click(within(notice).getByText("Open"));
+  await new Promise((r) => setTimeout(r, 400));
+  expect((ui("mail-composer-subject") as HTMLInputElement).value).toBe("Current");
+  expect(kept()).toContain("KEPT WORDS");
+  expect(ui("mail-notice")).toBeTruthy();
+}, 15000);
+
+test("a late attachment that joins a kept record while Open is under way is not deleted with the opened version", async () => {
+  const up = await keptWithUploadInFlight();
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-subject", "Current");
+  const put = hold(/\/draft$/, "PUT"); // Open first saves the open composer: keep that save waiting
+  fireEvent.click(within(notice).getByText("Open"));
+  await waitFor(() => expect(calls(/\/draft$/, "PUT").length).toBeGreaterThan(0));
+  up.release(staged("f", "later.pdf")); // joins the kept record: a newer version of it
+  await waitFor(() => expect(kept()).toContain("f".repeat(32)));
+  put.release(json({ messageId: "x", savedAt: "x", folder: "Drafts", uid: 1 }));
+  await waitFor(() => expect((ui("mail-composer-subject") as HTMLInputElement).value).toBe("Kept here"));
+  // The version with the attachment is still kept and still offered.
+  expect(kept()).toContain("f".repeat(32));
+  await waitFor(() => expect(ui("mail-notice")).toBeTruthy());
+}, 15000);
+
+test("confirming the drop works even if the record was replaced while the dialog was open", async () => {
+  const up = await keptWithUploadInFlight();
+  await mount();
+  const notice = await waitFor(() => ui("mail-notice")!);
+  fireEvent.click(within(notice).getByLabelText("Dismiss"));
+  await waitFor(() => expect(ui("mail-left-drop-dialog")).toBeTruthy());
+  up.release(staged("g", "later.pdf"));
+  await waitFor(() => expect(kept()).toContain("g".repeat(32)));
+  fireEvent.click(ui("mail-left-drop-confirm")!);
+  await waitFor(() => expect(kept()).toBe(""));
+  expect(ui("mail-notice")).toBeNull();
+}, 15000);
+
+test("copying a sent message as new leaves out attachments the send already removed, and says so", async () => {
+  await mount();
+  await compose1("With file");
+  attachFile("sent-along.pdf");
+  await waitFor(() => expect(attachmentNames().join()).toContain("sent-along.pdf"));
+  const real = globalThis.fetch;
+  let failOnce = true;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    const u = String(input);
+    if (SEND_RE.test(u) && failOnce) {
+      failOnce = false;
+      srv.calls.push({ method: "POST", url: u, body: JSON.parse(String(init?.body)) });
+      throw new TypeError("Failed to fetch");
+    }
+    if (/\/sends\/[^/]+$/.test(u) && (init?.method ?? "GET") === "GET")
+      return json(status({ state: "sent", remainingMs: null, sentCopy: "saved", draftKept: false }));
+    return real(input as never, init);
+  }));
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-composer-error")).toBeTruthy());
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeTruthy());
+  fireEvent.click(ui("mail-composer-copy-new")!);
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeNull());
+  expect(attachmentNames()).toEqual([]);
+  expect(ui("mail-composer-error")!.textContent).toMatch(/not copied.*sent-along\.pdf/);
+}, 15000);
+
+test("copying the Drafts leftover of a sent message keeps its freshly staged attachments", async () => {
+  const real = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+    if (/\/init$/.test(String(input)))
+      return json({
+        draft: { ...srv.initDraft, messageId: "<left@example.test>", attachments: ["h".repeat(32)] },
+        attachments: [{ id: "h".repeat(32), filename: "restaged.pdf", contentType: "application/pdf", size: 10 }],
+        sent: { sentCopy: "saved" },
+      });
+    return real(input as never, init);
+  }));
+  await openMail();
+  fireEvent.click(ui("mail-reply")!);
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeTruthy());
+  fireEvent.click(ui("mail-composer-copy-new")!);
+  await waitFor(() => expect(ui("mail-composer-sent")).toBeNull());
+  expect(attachmentNames().join()).toContain("restaged.pdf");
+  expect(ui("mail-composer-error")).toBeNull();
+}, 15000);
+
+test("leaving Mail while a discard waits for a save on its way does not save the draft back", async () => {
+  const view = await mount();
+  await compose1("Thrown away");
+  const put = hold(/\/draft$/, "PUT");
+  await waitFor(() => expect(calls(/\/draft$/, "PUT")).toHaveLength(1), { timeout: 4000 });
+  type("mail-composer-body", "edit after the save started");
+  fireEvent.click(ui("mail-composer-discard")!);
+  fireEvent.click(await waitFor(() => ui("mail-composer-discard-confirm")!));
+  await new Promise((r) => setTimeout(r, 50));
+  view.unmount();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(calls(/\/draft$/, "PUT")).toHaveLength(1);
+  put.release(json({ messageId: "x", savedAt: "x", folder: "Drafts", uid: 1 }));
+  await new Promise((r) => setTimeout(r, 100));
+  expect(kept()).toBe("");
+}, 15000);

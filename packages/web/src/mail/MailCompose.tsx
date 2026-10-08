@@ -14,6 +14,7 @@ import {
   type MailComposeDraft,
   type MailMessage,
   type MailSendStatus,
+  type MailStagedAttachment,
 } from "@argelanderspace/contracts";
 import {
   createContext,
@@ -40,15 +41,80 @@ import {
   uploadMailAttachment,
 } from "../api/mail-compose";
 import { Icon } from "../lib/icons";
-import { Button, IconButton } from "../ui";
+import { Button, Dialog, IconButton } from "../ui";
 import { type ComposeState, ComposeWindow } from "./ComposeWindow";
 import "./compose.css";
 
 const SAVE_DELAY_MS = 1200;
 const POLL_MS = 600;
 const GIVE_UP_MS = 10 * 60 * 1000;
-/** Set when leaving Mail could not save the open draft; reported the next time Mail opens. */
-const UNSAVED_KEY = "argelander.mail.unsavedDraft";
+/**
+ * Composer text that could not reach the server after the user left Mail (a draft that could not be
+ * saved, a send that failed or lost its answer meanwhile). It is kept in this tab's sessionStorage and
+ * offered ("Open") the next time Mail opens, instead of being lost. Only this browser tab sees it.
+ */
+const LEFT_KEY = "argelander.mail.leftBehind";
+
+export interface LeftBehind {
+  /** The composer it came from: a later record of the same window replaces an earlier one. */
+  uid: string;
+  /**
+   * unsaved / notSent / notSentSaved / unknown: composer text that is kept here. attachment: a file that
+   * finished uploading after the user left and was not added (no text kept). sentEdits: edits made to a
+   * message that had already gone out (offered as a copy with a new Message-ID).
+   */
+  kind: "unsaved" | "notSent" | "notSentSaved" | "unknown" | "attachment" | "sentEdits";
+  subject: string;
+  code: string | null;
+  /** The attachment of an `attachment` record. */
+  name?: string;
+  /** Version of this record: "Open" lets go only of the version it took over, never a newer one. */
+  rev?: string;
+  state: ComposeState;
+}
+
+/**
+ * A record stays in the tab's storage until the user has it back in a composer ("Open") or explicitly
+ * drops it; showing it is not enough (the user may leave again, or reload). The mounted Mail page is
+ * told about new records and about records a later save made obsolete.
+ */
+let live: { show: (e: LeftBehind) => void; retract: (uid: string, rev?: string) => void } | null = null;
+
+function readLeft(): LeftBehind[] {
+  try {
+    const raw = sessionStorage.getItem(LEFT_KEY);
+    const list = raw ? (JSON.parse(raw) as unknown) : [];
+    return Array.isArray(list) ? (list as LeftBehind[]) : [];
+  } catch {
+    return [];
+  }
+}
+function writeLeft(list: LeftBehind[]): void {
+  try {
+    if (list.length === 0) sessionStorage.removeItem(LEFT_KEY);
+    else sessionStorage.setItem(LEFT_KEY, JSON.stringify(list));
+  } catch {
+    /* storage unavailable or full: nothing more can be kept */
+  }
+}
+function recordLeft(entry: LeftBehind): void {
+  const e = { ...entry, rev: uuid() };
+  writeLeft([...readLeft().filter((x) => x.uid !== e.uid), e]);
+  live?.show(e);
+}
+function findLeft(uid: string): LeftBehind | null {
+  return readLeft().find((x) => x.uid === uid) ?? null;
+}
+/**
+ * The record is no longer needed: back in a composer, dropped by the user, or made obsolete. With `rev`,
+ * only that version goes; a newer one (say, a late attachment joined it meanwhile) stays and is offered.
+ */
+function clearLeft(uid: string, rev?: string): void {
+  const list = readLeft();
+  const gone = (x: LeftBehind) => x.uid === uid && (rev === undefined || x.rev === rev);
+  if (list.some(gone)) writeLeft(list.filter((x) => !gone(x)));
+  live?.retract(uid, rev);
+}
 
 export function uuid(): string {
   const c = globalThis.crypto;
@@ -66,6 +132,11 @@ export function uuid(): string {
 const isUnsaved = (c: ComposeState) =>
   c.touched && (c.draft !== c.savedDraft || c.savedOn !== c.accountId);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Remove one occurrence (two uploads may share a file name). */
+const dropOne = (list: string[], name: string) => {
+  const i = list.indexOf(name);
+  return i < 0 ? list : [...list.slice(0, i), ...list.slice(i + 1)];
+};
 
 const errorCode = (e: unknown) => (e instanceof MailApiError ? e.code : "unreachable");
 const clock = () => {
@@ -80,6 +151,8 @@ export interface Notice {
   action?: { label: string; run: (id: number) => void };
   /** Server marker to forget when the user closes this notice. */
   forget?: { accountId: string; sendId: string };
+  /** The tab-kept record this notice offers. */
+  left?: { uid: string; rev?: string; holdsText: boolean };
   autoCloseMs?: number;
 }
 
@@ -120,8 +193,12 @@ const LayerCtx = createContext<{
     close: () => void;
     discard: () => Promise<string | null>;
     undo: (sendId: string) => void;
-    closeNotice: (id: number) => void;
+    closeNotice: (id: number, confirmed?: boolean) => void;
+    copyNew: () => void;
+    cancelDrop: () => void;
+    dropLeft: (uid: string) => void;
   };
+  confirmDrop: string | null;
   accounts: MailAccount[];
 } | null>(null);
 
@@ -139,10 +216,46 @@ export interface MailComposeProviderProps {
   children: ReactNode;
 }
 
-function emptyDraft(account: MailAccount): MailComposeDraft {
-  const domain = account.address.split("@")[1] ?? "localhost";
+const newMessageId = (address: string | undefined) =>
+  `<${uuid()}@${(address?.split("@")[1] ?? "localhost").replace(/[^A-Za-z0-9.-]/g, "") || "localhost"}>`;
+
+/**
+ * The text of a message that already went out, as a new message (new Message-ID): the only way to
+ * send or keep edits made after it was sent. Attachments come along only when they were staged afresh
+ * from the Drafts copy (`restaged`); after a send the server deleted the staged files, so they are left
+ * out and the window says they have to be added again.
+ */
+function copyAsNew(c: ComposeState, address: string | undefined): ComposeState {
+  const keep = c.sent?.restaged === true;
+  const dropped = keep ? [] : c.attachments.map((a) => a.filename);
   return {
-    messageId: `<${uuid()}@${domain.replace(/[^A-Za-z0-9.-]/g, "")}>`,
+    ...c,
+    uid: uuid(),
+    draft: {
+      ...c.draft,
+      messageId: newMessageId(address),
+      attachments: keep ? c.draft.attachments : [],
+    },
+    attachments: keep ? c.attachments : [],
+    savedDraft: null,
+    savedOn: null,
+    save: "idle",
+    savedAt: null,
+    saveCode: null,
+    touched: true,
+    sent: null,
+    unconfirmed: null,
+    error: dropped.length > 0 ? "attachments_readd" : null,
+    errorName: dropped.length > 0 ? dropped.join(", ") : null,
+    sending: false,
+    uploading: [],
+    minimized: false,
+  };
+}
+
+function emptyDraft(account: MailAccount): MailComposeDraft {
+  return {
+    messageId: newMessageId(account.address),
     inReplyTo: null,
     references: [],
     to: "",
@@ -165,6 +278,8 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
   const [pendings, setPendingsState] = useState<Pending[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [notices, setNotices] = useState<Notice[]>([]);
+  const noticesRef = useRef<Notice[]>([]);
+  noticesRef.current = notices;
   const [busy, setBusy] = useState(false);
   const composeRef = useRef<ComposeState | null>(null);
   const pendingsRef = useRef<Pending[]>([]);
@@ -179,8 +294,6 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
   });
   /** Send ids whose result is being polled right now (one loop each). */
   const watching = useRef(new Set<string>());
-  /** The id of the send the user just asked for: reused while the same draft is retried. */
-  const intent = useRef<{ sig: string; id: string } | null>(null);
 
   const setCompose = useCallback((c: ComposeState | null) => {
     composeRef.current = c;
@@ -207,7 +320,10 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
   const notify = useCallback((n: Omit<Notice, "id">): number => {
     const id = noticeSeq.current++;
     setNotices((list) => [
-      ...list.filter((x) => !(n.forget && x.forget?.sendId === n.forget.sendId)),
+      ...list.filter(
+        (x) =>
+          !(n.forget && x.forget?.sendId === n.forget.sendId) && !(n.left && x.left?.uid === n.left.uid)
+      ),
       { ...n, id },
     ]);
     if (n.autoCloseMs)
@@ -216,12 +332,24 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       }, n.autoCloseMs);
     return id;
   }, []);
-  const closeNotice = useCallback((id: number) => {
-    setNotices((list) => {
-      const gone = list.find((x) => x.id === id);
-      if (gone?.forget) void dismissMailSend(gone.forget.accountId, gone.forget.sendId).catch(() => {});
-      return list.filter((x) => x.id !== id);
-    });
+  /** Remove a notice without any side effect (its action was taken). */
+  const dropNotice = useCallback((id: number) => {
+    setNotices((list) => list.filter((x) => x.id !== id));
+  }, []);
+  /** A notice holding kept text asks before it goes: closing it drops the text for good. */
+  /** The kept record (by uid, not by notice: the notice may be replaced by a newer version meanwhile). */
+  const [confirmDrop, setConfirmDrop] = useState<string | null>(null);
+  const closeNotice = useCallback((id: number, confirmed = false) => {
+    const gone = noticesRef.current.find((x) => x.id === id);
+    if (!gone) return;
+    if (gone.left?.holdsText && !confirmed) {
+      setConfirmDrop(gone.left.uid);
+      return;
+    }
+    if (gone.forget) void dismissMailSend(gone.forget.accountId, gone.forget.sendId).catch(() => {});
+    if (gone.left) clearLeft(gone.left.uid);
+    setConfirmDrop(null);
+    setNotices((list) => list.filter((x) => x.id !== id));
   }, []);
 
   const errText = useCallback(
@@ -242,9 +370,14 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       return;
     }
     const c = composeRef.current;
-    if (!c || !c.touched || c.sending) return;
+    // A message that already went out is never saved again (the server refuses it as well).
+    if (!c || !c.touched || c.sending || c.sent) return;
     s.inflight = true;
-    patchCompose((x) => ({ ...x, save: "saving" }));
+    // The answer belongs to this window only: by then another one may be open.
+    const patchMine = (f: (x: ComposeState) => ComposeState) => {
+      if (alive.current && composeRef.current?.uid === c.uid) patchCompose(f);
+    };
+    patchMine((x) => ({ ...x, save: "saving" }));
     try {
       const staleOn = c.savedOn && c.savedOn !== c.accountId ? c.savedOn : null;
       if (staleOn) {
@@ -253,18 +386,21 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         await discardMailDraft(staleOn, { ...c.draft, attachments: [] }).catch(() => {});
       }
       await saveMailDraft(c.accountId, c.draft);
-      if (alive.current)
-        patchCompose((x) => ({
-          ...x,
-          save: "saved",
-          saveCode: null,
-          savedAt: clock(),
-          savedOn: c.accountId,
-          // Only what was sent counts as saved: an edit made meanwhile stays "unsaved".
-          savedDraft: c.draft,
-        }));
+      patchMine((x) => ({
+        ...x,
+        save: "saved",
+        saveCode: null,
+        savedAt: clock(),
+        savedOn: c.accountId,
+        // Only what was sent counts as saved: an edit made meanwhile stays "unsaved".
+        savedDraft: c.draft,
+      }));
     } catch (e) {
-      if (alive.current) patchCompose((x) => ({ ...x, save: "failed", saveCode: errorCode(e) }));
+      const code = errorCode(e);
+      if (code === "already_sent")
+        // Not a failure to retry: this message went out (from another window, tab or an earlier send).
+        patchMine((x) => ({ ...x, save: "idle", saveCode: null, sent: x.sent ?? { sentCopy: null } }));
+      else patchMine((x) => ({ ...x, save: "failed", saveCode: code }));
     } finally {
       s.inflight = false;
       if (s.dirty) {
@@ -283,31 +419,51 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     }, SAVE_DELAY_MS);
   }, [runSave]);
 
-  // Leaving Mail with text the server does not have yet: send it now, best effort. If that fails too,
-  // remember it so the next visit says so instead of silently losing the edit.
+  /**
+   * Windows that were open when the user left Mail with text the server did not have, or with an upload
+   * still running: the text is saved now and an upload that finishes later is added to the same draft.
+   * What cannot be saved is kept in the tab (see LEFT_KEY) and offered on the next visit.
+   */
+  const detached = useRef(new Map<string, { state: ComposeState; chain: Promise<void> }>());
+  /** Windows the user discarded: an upload of theirs that finishes later is removed again. */
+  const discarded = useRef(new Set<string>());
+  /** Windows whose discard request is running: leaving Mail meanwhile must not save them back. */
+  const discarding = useRef(new Set<string>());
+
+  const saveDetached = useCallback((uid: string) => {
+    const d = detached.current.get(uid);
+    if (!d) return;
+    const st = d.state;
+    // Chained, so that a late upload of this window (see orphanUpload) is decided after this save.
+    d.chain = d.chain.then(async () => {
+      try {
+        await saveMailDraft(st.accountId, st.draft);
+      } catch (e) {
+        recordLeft({ uid, kind: "unsaved", subject: st.draft.subject, code: errorCode(e), state: st });
+      }
+    });
+  }, []);
+
   useEffect(() => {
     alive.current = true;
-    try {
-      if (sessionStorage.getItem(UNSAVED_KEY)) {
-        sessionStorage.removeItem(UNSAVED_KEY);
-        notify({ tone: "warning", text: t("mail.compose.unsavedOnLeave") });
-      }
-    } catch {
-      /* storage unavailable: nothing to report */
-    }
     return () => {
       alive.current = false;
       const s = saver.current;
       const c = composeRef.current;
       if (s.timer) clearTimeout(s.timer);
-      if (c && !c.sending && isUnsaved(c)) {
-        void saveMailDraft(c.accountId, c.draft).catch(() => {
-          try {
-            sessionStorage.setItem(UNSAVED_KEY, "1");
-          } catch {
-            /* storage unavailable */
-          }
-        });
+      // A window that is sending is taken care of by its send, which learns how it ended (see `send`);
+      // one being discarded is going away on purpose.
+      if (!c || c.sending || discarding.current.has(c.uid)) return;
+      if (c.sent) {
+        // It went out already: nothing can be saved. Edits made since are kept once, as a copy to offer.
+        if (c.touched && c.draft !== c.savedDraft)
+          recordLeft({ uid: c.uid, kind: "sentEdits", subject: c.draft.subject, code: null, state: c });
+        if (c.uploading.length > 0) detached.current.set(c.uid, { state: c, chain: Promise.resolve() });
+        return;
+      }
+      if (isUnsaved(c) || c.uploading.length > 0) {
+        detached.current.set(c.uid, { state: c, chain: Promise.resolve() });
+        if (isUnsaved(c)) saveDetached(c.uid);
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -317,8 +473,10 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     (state: ComposeState) => {
       if (saver.current.timer) clearTimeout(saver.current.timer);
       setCompose(state);
+      // Text the server does not have (kept in the tab, a copy as new message) goes to Drafts soon.
+      if (isUnsaved(state) && !state.sent) scheduleSave();
     },
-    [setCompose]
+    [setCompose, scheduleSave]
   );
 
   const baseState = (
@@ -342,20 +500,18 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     error: null,
     errorName: null,
     sending: false,
+    unconfirmed: null,
+    sent: null,
   });
 
-  /** Show a composer, but never over a window that is open: then it is offered in a notice (with "Open"). */
+  /** Offer a composer in a notice ("Open"); opening it first saves (and closes) the window that is open. */
   const closeCurrentRef = useRef<() => Promise<boolean>>(async () => true);
-  const closeNoticeRef = useRef<(id: number) => void>(() => {});
-  const present = useCallback(
-    (state: ComposeState, text: string, tone: Notice["tone"]) => {
-      if (!composeRef.current) {
-        open(state);
-        return;
-      }
+  const offer = useCallback(
+    (state: ComposeState, text: string, tone: Notice["tone"], left?: Notice["left"]) => {
       notify({
         tone,
         text,
+        ...(left ? { left } : {}),
         action: {
           label: t("mail.compose.openIt"),
           run: (id) => {
@@ -363,13 +519,23 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
             void closeCurrentRef.current().then((closed) => {
               if (!closed) return;
               open(state);
-              closeNoticeRef.current(id);
+              dropNotice(id);
+              // Only now, with the text in a composer again, is the tab-kept copy let go.
+              if (left) clearLeft(left.uid, left.rev);
             });
           },
         },
       });
     },
-    [notify, open, t]
+    [dropNotice, notify, open, t]
+  );
+  /** Show a composer, but never over a window that is open: then it is offered in a notice (with "Open"). */
+  const present = useCallback(
+    (state: ComposeState, text: string, tone: Notice["tone"]) => {
+      if (!composeRef.current) open(state);
+      else offer(state, text, tone);
+    },
+    [open, offer]
   );
 
   const startNew = useCallback(() => {
@@ -394,6 +560,8 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         if (!alive.current) return;
         const st = baseState(mode, account.id, r.draft);
         st.attachments = r.attachments;
+        // A copy a sent message left in Drafts: it can be read, copied as new or discarded, not sent again.
+        st.sent = r.sent ? { ...r.sent, restaged: true } : null;
         // An edited draft is already on the server under that Message-ID.
         if (mode === "draft") {
           st.savedOn = account.id;
@@ -423,10 +591,15 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
   const change = useCallback(
     (patch: Partial<MailComposeDraft> & { accountId?: string }) => {
       const { accountId, ...fields } = patch;
-      if (composeRef.current?.sending) return; // a send in flight owns the text
+      const cur = composeRef.current;
+      if (cur?.sending) return; // a send in flight owns the text
+      // While an earlier send's answer is unknown the sender is fixed: the claim and the sent guard are per
+      // account, so the same draft from another account could go out a second time.
+      const sender = cur?.unconfirmed ? undefined : accountId;
+      if (accountId !== undefined && sender === undefined && Object.keys(fields).length === 0) return;
       patchCompose((c) => ({
         ...c,
-        accountId: accountId ?? c.accountId,
+        accountId: sender ?? c.accountId,
         draft: { ...c.draft, ...fields },
         touched: true,
         error: null,
@@ -438,11 +611,58 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     [patchCompose, scheduleSave]
   );
 
+  /** An upload whose window is not the open one any more. It is never attached to another window. */
+  const orphanUpload = useCallback(
+    (uid: string, accountId: string, name: string, staged: MailStagedAttachment | null, code: string | null) => {
+      const d = detached.current.get(uid);
+      if (d) {
+        // The user left Mail meanwhile. The draft on the server may have been edited since (back in Mail,
+        // another tab), and there is no version check: writing the old snapshot plus the file could replace
+        // newer text. So nothing is written to the server here.
+        d.chain = d.chain.then(() => {
+          const kept = findLeft(uid);
+          if (staged && kept && kept.kind === "unsaved") {
+            // The text exists only in this tab anyway (its save failed): the file joins that record.
+            const st = kept.state;
+            recordLeft({
+              ...kept,
+              state: {
+                ...st,
+                attachments: [...st.attachments, staged],
+                draft: { ...st.draft, attachments: [...st.draft.attachments, staged.id] },
+              },
+            });
+            return;
+          }
+          if (staged) void removeMailAttachment(accountId, staged.id).catch(() => {});
+          // Say plainly that the file is not in the draft (no text is kept in this record).
+          recordLeft({
+            uid: `${uid}:${uuid()}`,
+            kind: "attachment",
+            subject: d.state.draft.subject,
+            code,
+            name,
+            state: { ...d.state, draft: { ...d.state.draft, text: "" }, attachments: [] },
+          });
+        });
+        return;
+      }
+      if (!staged) return; // nothing was staged, nothing is lost
+      void removeMailAttachment(accountId, staged.id).catch(() => {});
+      // Discarded: the user threw that message away. Otherwise say plainly that the file was not added.
+      if (!discarded.current.has(uid) && alive.current)
+        notify({ tone: "warning", text: t("mail.compose.attachmentDropped", { name }) });
+    },
+    [notify, t]
+  );
+
   const attach = useCallback(
     (files: File[]) => {
       const c = composeRef.current;
       if (!c || c.sending) return;
-      const accountId = c.accountId;
+      const { accountId, uid } = c;
+      // Every answer goes to the window that started the upload (by uid), never to "the open window".
+      const mine = () => alive.current && composeRef.current?.uid === uid;
       for (const file of files) {
         const have = composeRef.current?.attachments.reduce((n, a) => n + a.size, 0) ?? 0;
         if (file.size > MAIL_ATTACHMENT_MAX_BYTES || have + file.size > MAIL_ATTACHMENT_TOTAL_MAX_BYTES) {
@@ -452,28 +672,33 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         patchCompose((x) => ({ ...x, uploading: [...x.uploading, file.name], error: null, errorName: null }));
         void uploadMailAttachment(accountId, file)
           .then((staged) => {
-            if (!alive.current) return;
-            patchCompose((x) => ({
-              ...x,
-              uploading: x.uploading.filter((n) => n !== file.name),
-              attachments: [...x.attachments, staged],
-              draft: { ...x.draft, attachments: [...x.draft.attachments, staged.id] },
-              touched: true,
-            }));
+            if (!mine()) return orphanUpload(uid, accountId, file.name, staged, null);
+            patchCompose((x) => {
+              const uploading = dropOne(x.uploading, file.name);
+              return {
+                ...x,
+                uploading,
+                attachments: [...x.attachments, staged],
+                draft: { ...x.draft, attachments: [...x.draft.attachments, staged.id] },
+                touched: true,
+                // "Still uploading" is answered once the last one is in.
+                error: x.error === "uploading" && uploading.length === 0 ? null : x.error,
+              };
+            });
             scheduleSave();
           })
           .catch((e) => {
-            if (alive.current)
-              patchCompose((x) => ({
-                ...x,
-                uploading: x.uploading.filter((n) => n !== file.name),
-                error: errorCode(e),
-                errorName: file.name,
-              }));
+            if (!mine()) return orphanUpload(uid, accountId, file.name, null, errorCode(e));
+            patchCompose((x) => ({
+              ...x,
+              uploading: dropOne(x.uploading, file.name),
+              error: errorCode(e),
+              errorName: file.name,
+            }));
           });
       }
     },
-    [patchCompose, scheduleSave]
+    [orphanUpload, patchCompose, scheduleSave]
   );
 
   const removeAttachment = useCallback(
@@ -498,10 +723,23 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     const c = composeRef.current;
     if (!c) return true;
     if (c.sending) return false; // a send in flight cannot be walked away from
+    if (c.uploading.length > 0) {
+      // Closing now would drop the file or (worse) let it land elsewhere: say so and stay.
+      patchCompose((x) => ({ ...x, error: "uploading", errorName: null }));
+      return false;
+    }
     const s = saver.current;
     if (s.timer) {
       clearTimeout(s.timer);
       s.timer = null;
+    }
+    if (c.sent) {
+      // Already sent: there is nothing to save, so closing is free. Edits made since are kept in the tab
+      // (not only in a notice), so leaving Mail or reloading does not lose them either.
+      if (alive.current) setCompose(null);
+      if (c.touched && c.draft !== c.savedDraft)
+        recordLeft({ uid: c.uid, kind: "sentEdits", subject: c.draft.subject, code: null, state: c });
+      return true;
     }
     // Never lose text: whatever the server does not have yet (edits after the last save included, also
     // the ones whose delayed save we just cancelled) is written first; the window stays if that fails.
@@ -515,31 +753,51 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       if (composeRef.current?.save === "failed") return false;
     }
     const last = composeRef.current;
-    if (!last || last.uid !== c.uid || last.sending || isUnsaved(last)) return false;
+    if (!last || last.uid !== c.uid || last.sending || last.uploading.length > 0 || isUnsaved(last))
+      return false;
     if (alive.current) setCompose(null);
     if (c.savedOn) propsRef.current.onChanged();
     return true;
-  }, [runSave, setCompose]);
+  }, [patchCompose, runSave, setCompose]);
 
   closeCurrentRef.current = closeCurrent;
-  closeNoticeRef.current = closeNotice;
 
   /** Returns the failure code (the dialog shows it and stays open) or null when the draft is gone. */
   const discard = useCallback(async (): Promise<string | null> => {
-    const c = composeRef.current;
-    if (!c) return null;
-    if (saver.current.timer) clearTimeout(saver.current.timer);
-    if (c.savedOn) {
-      try {
-        await discardMailDraft(c.savedOn, c.draft);
-      } catch (e) {
-        return errorCode(e);
+    const first = composeRef.current;
+    if (!first) return null;
+    const s = saver.current;
+    if (s.timer) {
+      clearTimeout(s.timer);
+      s.timer = null;
+    }
+    // From here on the user is throwing this window away: leaving Mail meanwhile must not save it back.
+    discarding.current.add(first.uid);
+    let c: ComposeState | null;
+    try {
+      // A save on its way may be about to create the server copy: wait for it, then decide.
+      while (s.inflight) await sleep(50);
+      c = composeRef.current;
+      if (!c || c.uid !== first.uid) return null;
+      // Where a copy may be: the confirmed one, or one a save may have made although its answer was lost.
+      const on = c.savedOn ?? (c.save === "failed" && c.saveCode === "unreachable" ? c.accountId : null);
+      if (on) {
+        try {
+          await discardMailDraft(on, c.draft);
+        } catch (e) {
+          return errorCode(e);
+        }
+        propsRef.current.onChanged();
       }
-      propsRef.current.onChanged();
-    } else {
+    } finally {
+      discarding.current.delete(first.uid);
+    }
+    if (!c.savedOn && !(c.save === "failed" && c.saveCode === "unreachable")) {
       for (const a of c.attachments) void removeMailAttachment(c.accountId, a.id).catch(() => {});
     }
-    setCompose(null);
+    // An upload still running for this window is removed when it finishes.
+    discarded.current.add(c.uid);
+    if (composeRef.current?.uid === c.uid) setCompose(null);
     return null;
   }, [setCompose]);
 
@@ -565,6 +823,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       const restored: ComposeState = {
         ...snap,
         sending: false,
+        unconfirmed: null,
         error: code,
         errorName: null,
         save: "idle",
@@ -584,8 +843,12 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     [errText, notify, present, t]
   );
 
+  /** Sends already reported: the countdown, an undo answer and a status check may all end the same one. */
+  const settled = useRef(new Set<string>());
   const settle = useCallback(
     (p: Pending, st: MailSendStatus) => {
+      if (settled.current.has(p.sendId)) return;
+      settled.current.add(p.sendId);
       setPendings((list) => list.filter((x) => x.sendId !== p.sendId));
       const forget = { accountId: p.accountId, sendId: p.sendId };
       const subject = p.subject || t("mail.noSubject");
@@ -678,9 +941,65 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     [notify, patchPending, setPendings, settle, t]
   );
 
+  /** The server accepted a send of this window: it closes into a countdown (or the "sending" bar). */
+  const accepted = useCallback(
+    (c: ComposeState, st: MailSendStatus) => {
+      // The snapshot is this composer's (by uid); a different window is never closed or rewritten here.
+      const mine = composeRef.current?.uid === c.uid ? composeRef.current : null;
+      const snapshot: ComposeState = { ...(mine ?? c), sending: false, unconfirmed: null, error: null, errorName: null };
+      if (mine) setCompose(null);
+      const p: Pending = {
+        accountId: st.accountId || c.accountId,
+        sendId: st.sendId,
+        subject: st.subject || c.draft.subject,
+        endsAt: Date.now() + (st.remainingMs ?? 0),
+        phase: st.state === "pending" ? "window" : "sending",
+        unreachable: false,
+        snapshot,
+      };
+      setPendings((list) => [...list.filter((x) => x.sendId !== p.sendId), p]);
+      setNow(Date.now());
+      if (p.phase === "sending") void watch(p);
+    },
+    [setCompose, setPendings, watch]
+  );
+
+  /**
+   * The user left Mail while this window's send was on its way, and the send did not open a window.
+   * Its text must not vanish: save it to Drafts if possible, and keep it in the tab either way.
+   */
+  const leftAfterSend = useCallback(
+    async (c: ComposeState, code: string, unconfirmed: ComposeState["unconfirmed"]) => {
+      const base: ComposeState = { ...c, sending: false, uploading: [], error: code, errorName: null, unconfirmed };
+      // Without an answer it may still be under way: never claim "not sent" then.
+      const unknown = code === "unreachable";
+      try {
+        await saveMailDraft(c.accountId, c.draft);
+        recordLeft({
+          uid: c.uid,
+          kind: unknown ? "unknown" : "notSentSaved",
+          subject: c.draft.subject,
+          code,
+          state: { ...base, save: "saved", savedAt: null, savedOn: c.accountId, savedDraft: c.draft },
+        });
+      } catch (e) {
+        // A draft the server refuses to save because a send of it is running (or went out) is not "not sent".
+        const held = ["already_pending", "already_sent"].includes(errorCode(e));
+        recordLeft({
+          uid: c.uid,
+          kind: unknown || held ? "unknown" : "notSent",
+          subject: c.draft.subject,
+          code,
+          state: base,
+        });
+      }
+    },
+    []
+  );
+
   const send = useCallback(async () => {
     const c = composeRef.current;
-    if (!c || c.sending) return;
+    if (!c || c.sending || c.sent) return;
     if (`${c.draft.to}${c.draft.cc}${c.draft.bcc}`.trim() === "") {
       patchCompose((x) => ({ ...x, error: "no_recipients" }));
       return;
@@ -691,36 +1010,85 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       saver.current.timer = null;
     }
     patchCompose((x) => ({ ...x, sending: true, error: null, errorName: null }));
-    // The same content retried (the first answer may have been lost) is the same send, not a second one.
+    const mineOnly = (f: (x: ComposeState) => ComposeState) => {
+      if (composeRef.current?.uid === c.uid) patchCompose(f);
+    };
     const sig = `${c.accountId}\u0000${JSON.stringify(c.draft)}`;
-    const sendId = intent.current?.sig === sig ? intent.current.id : uuid();
-    intent.current = { sig, id: sendId };
+    let unconfirmed = c.unconfirmed;
+    if (unconfirmed) {
+      // An earlier send of this window never got an answer. Ask what became of it before sending again:
+      // it may be in its window right now, and a second send id would send the message twice.
+      let earlier: MailSendStatus | null = null;
+      try {
+        earlier = await fetchMailSendStatus(unconfirmed.accountId, unconfirmed.sendId);
+      } catch (e) {
+        const notThere = e instanceof MailApiError && e.status === 404;
+        if (!notThere) {
+          if (!alive.current) return void leftAfterSend(c, "unreachable", unconfirmed);
+          // Still unknown: do not send. The window keeps its text and the reason.
+          mineOnly((x) => ({ ...x, sending: false, error: errorCode(e), errorName: null }));
+          return;
+        }
+      }
+      if (!alive.current) return void leftAfterSend(c, "unreachable", unconfirmed);
+      if (earlier) {
+        const subject = earlier.subject || c.draft.subject || t("mail.noSubject");
+        if (earlier.state === "pending" || earlier.state === "sending") {
+          // It did arrive: this click joins it. Edits made since then are not in it (undo brings them back).
+          if (unconfirmed.sig !== sig) notify({ tone: "warning", text: t("mail.compose.earlierAccepted", { subject }) });
+          accepted(c, earlier);
+          return;
+        }
+        if (earlier.state === "sent" || earlier.state === "unknown") {
+          settle(
+            { accountId: earlier.accountId, sendId: earlier.sendId, subject, endsAt: 0, phase: "sending", unreachable: false, snapshot: null },
+            earlier
+          );
+          mineOnly((x) => ({
+            ...x,
+            sending: false,
+            unconfirmed: null,
+            ...(earlier.state === "sent"
+              ? { sent: { sentCopy: earlier.sentCopy }, error: null }
+              : { error: "outcome_unknown" }),
+            errorName: null,
+          }));
+          return;
+        }
+        // Failed, undone or interrupted: it did not go out, so this click may send.
+        void dismissMailSend(earlier.accountId, earlier.sendId).catch(() => {});
+        unconfirmed = null;
+      }
+      // 404: the server has no such send (yet). If the old request is still being prepared it holds the
+      // draft's claim, so a new send id is refused rather than sent; the binding stays until resolved.
+    }
+    // The same content retried is the same send id (the server joins it), never a second send.
+    const sendId =
+      unconfirmed && unconfirmed.sig === sig && unconfirmed.accountId === c.accountId ? unconfirmed.sendId : uuid();
     try {
       const st = await startMailSend(c.accountId, sendId, c.draft);
-      intent.current = null;
+      // Gone from Mail meanwhile: the server holds the send and reports it when Mail opens again.
       if (!alive.current) return;
-      // The snapshot is this composer's (by uid); a different window is never closed or rewritten here.
-      const mine = composeRef.current?.uid === c.uid ? composeRef.current : null;
-      const snapshot = { ...(mine ?? c), sending: false };
-      if (mine) setCompose(null);
-      setPendings((list) => [
-        ...list.filter((x) => x.sendId !== sendId),
-        {
-          accountId: c.accountId,
-          sendId,
-          subject: c.draft.subject,
-          endsAt: Date.now() + (st.remainingMs ?? 0),
-          phase: "window",
-          unreachable: false,
-          snapshot,
-        },
-      ]);
-      setNow(Date.now());
+      accepted(c, { ...st, sendId: st.sendId || sendId });
     } catch (e) {
-      if (!alive.current) return;
       const code = errorCode(e);
+      // No answer at all: the request may have reached the server. Bind its id to this window.
+      const next =
+        code === "unreachable"
+          ? { accountId: c.accountId, sendId, sig }
+          : unconfirmed && unconfirmed.sendId !== sendId
+            ? unconfirmed
+            : null;
+      if (!alive.current) return void leftAfterSend(c, code, next);
       if (composeRef.current?.uid === c.uid) {
-        patchCompose((x) => ({ ...x, sending: false, error: code, errorName: null }));
+        patchCompose((x) => ({
+          ...x,
+          sending: false,
+          errorName: null,
+          unconfirmed: next,
+          // The server says this Message-ID went out: the window turns into its "already sent" state.
+          ...(code === "already_sent" ? { sent: x.sent ?? { sentCopy: null }, error: null } : { error: code }),
+        }));
       } else {
         // Its window is gone: the text is not lost, it comes back through a notice.
         present(
@@ -732,6 +1100,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
             save: "idle",
             savedDraft: null,
             minimized: false,
+            unconfirmed: next,
           },
           t("mail.compose.restoreFailed", {
             subject: c.draft.subject || t("mail.noSubject"),
@@ -741,7 +1110,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         );
       }
     }
-  }, [patchCompose, setCompose, setPendings, present, errText, t]);
+  }, [accepted, leftAfterSend, notify, patchCompose, present, errText, settle, t]);
 
   // One ticker for all countdowns; a window that reaches zero starts watching its send.
   const anyWindow = pendings.some((p) => p.phase === "window");
@@ -835,6 +1204,79 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Records kept in this tab after leaving Mail (a draft that could not be saved, a send that did not get
+  // through, a late attachment): say what happened and offer the text back. Never opened over the page.
+  const showLeft = useCallback(
+    (e: LeftBehind) => {
+      const subject = e.subject || t("mail.noSubject");
+      const reason = e.code ? errText(e.code) : "";
+      if (e.kind === "attachment") {
+        // No text is kept: the draft text is on the server; only the file has to be added again.
+        notify({
+          tone: "warning",
+          text: e.code
+            ? t("mail.compose.leftAttachmentFailed", { subject, name: e.name ?? "", reason })
+            : t("mail.compose.leftAttachment", { subject, name: e.name ?? "" }),
+          left: { uid: e.uid, rev: e.rev, holdsText: false },
+          action: {
+            label: t("mail.compose.openDrafts"),
+            run: () => propsRef.current.onOpenDrafts(e.state.accountId),
+          },
+        });
+        return;
+      }
+      if (e.kind === "sentEdits") {
+        const address = propsRef.current.accounts.find((a) => a.id === e.state.accountId)?.address;
+        offer(copyAsNew(e.state, address), t("mail.compose.leftSentEdits", { subject }), "warning", {
+          uid: e.uid,
+          rev: e.rev,
+          holdsText: true,
+        });
+        return;
+      }
+      const text =
+        e.kind === "notSentSaved"
+          ? t("mail.compose.leftNotSentSaved", { subject, reason })
+          : e.kind === "notSent"
+            ? t("mail.compose.leftNotSent", { subject, reason })
+            : e.kind === "unknown"
+              ? t("mail.compose.leftUnknown", { subject })
+              : t("mail.compose.leftUnsaved", { subject });
+      const saved = e.kind === "notSentSaved";
+      const state: ComposeState = {
+        ...e.state,
+        uid: uuid(),
+        sending: false,
+        uploading: [],
+        minimized: false,
+        touched: true,
+        save: saved ? "saved" : "idle",
+        savedDraft: saved ? e.state.draft : null,
+      };
+      offer(state, text, e.kind === "unsaved" || e.kind === "unknown" ? "warning" : "danger", {
+        uid: e.uid,
+        rev: e.rev,
+        holdsText: true,
+      });
+    },
+    [errText, notify, offer, t]
+  );
+  useEffect(() => {
+    const me = {
+      show: (e: LeftBehind) => showLeft(e),
+      retract: (uid: string, rev?: string) =>
+        setNotices((list) =>
+          list.filter((x) => !(x.left?.uid === uid && (rev === undefined || x.left.rev === rev)))
+        ),
+    };
+    live = me;
+    // Shown, not taken: the records stay until opened or explicitly dropped.
+    for (const e of readLeft()) showLeft(e);
+    return () => {
+      if (live === me) live = null;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const api = useMemo<MailComposeApi>(
     () => ({
       startNew,
@@ -865,9 +1307,22 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         discard,
         undo: (sendId: string) => void undo(sendId),
         closeNotice,
+        copyNew: () => {
+          const c = composeRef.current;
+          if (!c?.sent) return;
+          const address = propsRef.current.accounts.find((a) => a.id === c.accountId)?.address;
+          open(copyAsNew(c, address));
+        },
+        cancelDrop: () => setConfirmDrop(null),
+        // Confirmed: every version of that record goes, whichever notice now shows it.
+        dropLeft: (uid: string) => {
+          setConfirmDrop(null);
+          clearLeft(uid);
+        },
       },
+      confirmDrop,
     }),
-    [compose, pendings, now, notices, sendable, change, patchCompose, attach, removeAttachment, send, closeCurrent, discard, undo, closeNotice]
+    [compose, pendings, now, notices, sendable, change, patchCompose, attach, removeAttachment, send, closeCurrent, discard, undo, closeNotice, open, confirmDrop]
   );
 
   return (
@@ -881,8 +1336,9 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
 export function MailComposeLayer() {
   const { t } = useTranslation();
   const layer = useContext(LayerCtx);
+  const keepRef = useRef<HTMLButtonElement>(null);
   if (!layer) return null;
-  const { compose, pendings, now, notices, actions, accounts } = layer;
+  const { compose, pendings, now, notices, actions, accounts, confirmDrop } = layer;
   return (
     <>
       {compose && (
@@ -897,6 +1353,7 @@ export function MailComposeLayer() {
           onSend={actions.send}
           onClose={actions.close}
           onDiscard={actions.discard}
+          onCopyNew={actions.copyNew}
         />
       )}
       {(pendings.length > 0 || notices.length > 0) && (
@@ -962,6 +1419,32 @@ export function MailComposeLayer() {
             </div>
           ))}
         </div>
+      )}
+      {confirmDrop !== null && (
+        <Dialog
+          title={t("mail.compose.leftDropTitle")}
+          uiId="mail-left-drop-dialog"
+          closeLabel={t("mail.compose.close")}
+          onClose={actions.cancelDrop}
+          initialFocusRef={keepRef as React.RefObject<HTMLElement>}
+          footer={
+            <>
+              <Button ref={keepRef} onClick={actions.cancelDrop}>
+                {t("mail.compose.cancel")}
+              </Button>
+              <Button
+                appearance="primary"
+                tone="danger"
+                data-ui="mail-left-drop-confirm"
+                onClick={() => actions.dropLeft(confirmDrop)}
+              >
+                {t("mail.compose.leftDropConfirm")}
+              </Button>
+            </>
+          }
+        >
+          <p>{t("mail.compose.leftDropBody")}</p>
+        </Dialog>
       )}
     </>
   );

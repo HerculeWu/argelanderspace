@@ -3,6 +3,7 @@
  *
  *   <globalCache>/mail/<accountId>/outbox/<sendId>.json      the marker of one send
  *   <globalCache>/mail/<accountId>/outbox/claim-<hash>.json  "this draft is being sent" (one per Message-ID)
+ *   <globalCache>/mail/<accountId>/outbox/sent-<hash>.json   "this Message-ID went out" (kept a week)
  *
  * Why the global CACHE and not global data: the mail itself is safe on the server before a marker is
  * written (the exact message is in the account's Drafts folder, the remote authority), so losing the
@@ -19,6 +20,13 @@
  *
  * The claim file makes "send this draft" exclusive across processes: it is created with O_EXCL, so
  * two processes (or two requests) cannot both put the same Message-ID into an undo window.
+ *
+ * The sent guard covers the time AFTER a claim is released: once SMTP accepted a Message-ID, a later
+ * start for it (a request whose answer was lost and that the page retried with a new send id, an old
+ * request that arrives late, a second browser tab holding the same draft) is refused with
+ * `already_sent`, and so is saving it back into Drafts. It is checked while holding the claim, and
+ * written before the claim is released, so the two together leave no gap. Like the claim it lives in
+ * this cache (plus an in-process copy): wiping the cache loses it for other processes.
  */
 
 import { createHash } from "node:crypto";
@@ -38,10 +46,14 @@ import {
   MAIL_SEND_ID_PATTERN,
   type MailOutboxMarker,
   MailOutboxMarkerSchema,
+  type MailSentCopy,
+  MailSentCopySchema,
 } from "@argelanderspace/contracts";
 
 /** A marker/claim whose owner pid still exists but is this old past its deadline is treated as stale (pid reuse). */
 export const MAIL_OUTBOX_STALE_MS = 10 * 60 * 1000;
+/** How long a Message-ID that went out is refused for a second send (and for saving back into Drafts). */
+export const MAIL_SENT_GUARD_MS = 7 * 24 * 3600 * 1000;
 /** A claim file that cannot be parsed yet is presumed to be mid-creation for this long. */
 const UNREADABLE_CLAIM_GRACE_MS = 5000;
 
@@ -83,9 +95,15 @@ export class MailOutbox {
     return d && MAIL_SEND_ID_PATTERN.test(sendId) ? join(d, `${sendId}.json`) : null;
   }
   private claimPath(accountId: string, messageId: string): string | null {
+    return this.hashedPath("claim", accountId, messageId);
+  }
+  private sentPath(accountId: string, messageId: string): string | null {
+    return this.hashedPath("sent", accountId, messageId);
+  }
+  private hashedPath(kind: string, accountId: string, messageId: string): string | null {
     const d = this.dir(accountId);
     return d
-      ? join(d, `claim-${createHash("sha256").update(messageId).digest("hex").slice(0, 32)}.json`)
+      ? join(d, `${kind}-${createHash("sha256").update(messageId).digest("hex").slice(0, 32)}.json`)
       : null;
   }
 
@@ -180,6 +198,79 @@ export class MailOutbox {
         if ((m.state === "pending" || m.state === "sending") && this.ownerAlive(m, self)) continue;
         this.remove(accountId, m.sendId);
       }
+    }
+    const d = this.dir(accountId);
+    if (!d) return;
+    let names: string[] = [];
+    try {
+      names = readdirSync(d).filter((n) => /^sent-[0-9a-f]{32}\.json$/.test(n));
+    } catch {
+      /* no directory */
+    }
+    for (const name of names) {
+      const at = this.sentAt(join(d, name));
+      if (at === null || this.now() - at > MAIL_SENT_GUARD_MS)
+        rmSync(join(d, name), { force: true });
+    }
+  }
+
+  // ---- the sent guard ------------------------------------------------------------------
+
+  private readonly sent = new Map<string, { at: number; sentCopy: MailSentCopy | null }>();
+
+  /**
+   * SMTP accepted this Message-ID (called again with the Sent copy's fate once known). Always kept in
+   * memory; on disk it is best effort, because the send already happened: if that write fails, other
+   * processes and a restarted one do not see the guard.
+   */
+  markSent(
+    accountId: string,
+    messageId: string,
+    sendId: string,
+    sentCopy: MailSentCopy | null = null
+  ): void {
+    const key = `${accountId}\u0000${messageId}`;
+    const at = this.sent.get(key)?.at ?? this.now();
+    this.sent.set(key, { at, sentCopy });
+    const path = this.sentPath(accountId, messageId);
+    if (!path) return;
+    try {
+      const dir = join(path, "..");
+      if (!existsSync(dir)) return; // an account deleted meanwhile must not get its cache directory back
+      const tmp = `${path}.${process.pid}.tmp`;
+      writeFileSync(tmp, JSON.stringify({ sendId, at, sentCopy }), { mode: 0o600 });
+      renameSync(tmp, path);
+    } catch {
+      /* the in-memory copy still guards this process */
+    }
+  }
+
+  /** Did this Message-ID go out within the guard period (this process, or any process per the cache)? */
+  sentRecently(accountId: string, messageId: string): boolean {
+    return this.sentInfo(accountId, messageId) !== null;
+  }
+
+  /** The sent guard's record within the guard period, or null. */
+  sentInfo(accountId: string, messageId: string): { sentCopy: MailSentCopy | null } | null {
+    const mem = this.sent.get(`${accountId}\u0000${messageId}`);
+    if (mem !== undefined && this.now() - mem.at <= MAIL_SENT_GUARD_MS)
+      return { sentCopy: mem.sentCopy };
+    const path = this.sentPath(accountId, messageId);
+    const rec = path ? this.sentRecord(path) : null;
+    return rec && this.now() - rec.at <= MAIL_SENT_GUARD_MS ? { sentCopy: rec.sentCopy } : null;
+  }
+
+  private sentAt(path: string): number | null {
+    return this.sentRecord(path)?.at ?? null;
+  }
+  private sentRecord(path: string): { at: number; sentCopy: MailSentCopy | null } | null {
+    try {
+      const v = JSON.parse(readFileSync(path, "utf8")) as { at?: unknown; sentCopy?: unknown };
+      if (typeof v.at !== "number") return null;
+      const copy = MailSentCopySchema.safeParse(v.sentCopy);
+      return { at: v.at, sentCopy: copy.success ? copy.data : null };
+    } catch {
+      return null;
     }
   }
 

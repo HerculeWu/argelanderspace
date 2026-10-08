@@ -31,6 +31,7 @@ import {
   type MailComposeInitRequest,
   type MailComposeInitResponse,
   type MailSaveDraftResponse,
+  type MailSentCopy,
   type MailStagedAttachment,
   MailStagedAttachmentSchema,
 } from "@argelanderspace/contracts";
@@ -170,15 +171,32 @@ const normalise = (address: string) => address.trim().toLowerCase();
 
 export class MailComposeService {
   private readonly locks = new Map<string, Promise<unknown>>();
-  private sendGuard: (accountId: string, messageId: string) => boolean = () => false;
+  private sendGuard: (
+    accountId: string,
+    messageId: string
+  ) => "already_pending" | "already_sent" | null = () => null;
   constructor(private readonly deps: MailComposeDeps) {}
 
   /** The send service tells us which drafts are in an undo window / being sent (they must not be edited). */
-  setSendGuard(guard: (accountId: string, messageId: string) => boolean): void {
+  setSendGuard(
+    guard: (accountId: string, messageId: string) => "already_pending" | "already_sent" | null
+  ): void {
     this.sendGuard = guard;
   }
-  private refuseIfSending(accountId: string, messageId: string): void {
-    if (this.sendGuard(accountId, messageId)) throw new MailComposeError("already_pending");
+  private sentLookup: (
+    accountId: string,
+    messageId: string
+  ) => { sentCopy: MailSentCopy | null } | null = () => null;
+  setSentLookup(
+    lookup: (accountId: string, messageId: string) => { sentCopy: MailSentCopy | null } | null
+  ): void {
+    this.sentLookup = lookup;
+  }
+  /** A draft in its window (or being sent) is frozen. With `sent`, also refuse a Message-ID that went out. */
+  private refuseIfSending(accountId: string, messageId: string, sent = false): void {
+    const code = this.sendGuard(accountId, messageId);
+    if (code === "already_pending" || (sent && code === "already_sent"))
+      throw new MailComposeError(code);
   }
 
   /** Remove staged attachments older than the TTL; called when the server starts and when files are staged. */
@@ -363,7 +381,8 @@ export class MailComposeService {
     const t = await this.imapTarget(a);
     const r = await this.withDraftLock(a.id, draft.messageId, () => {
       // A draft in its undo window is frozen: an edit saved now could outlive (or replace) the version being sent.
-      this.refuseIfSending(a.id, draft.messageId);
+      // A Message-ID that already went out is not put back into Drafts (it could only be sent twice from there).
+      this.refuseIfSending(a.id, draft.messageId, true);
       return this.deps.outgoing.saveDraft(t, { raw: built.raw, messageId: draft.messageId });
     });
     if (!r.ok) throw new MailComposeError(r.code);
@@ -455,10 +474,14 @@ export class MailComposeService {
       attachments: [],
     };
     let attachments: MailStagedAttachment[] = [];
+    let sent: { sentCopy: MailSentCopy | null } | null = null;
 
     if (req.mode === "draft") {
       const id = origId && isMailMessageId(origId) ? origId : fresh;
-      if (id !== fresh) this.refuseIfSending(a.id, id);
+      if (id !== fresh) {
+        this.refuseIfSending(a.id, id);
+        sent = this.sentLookup(a.id, id);
+      }
       Object.assign(draft, {
         messageId: id,
         inReplyTo: p.inReplyTo && isMailMessageId(p.inReplyTo) ? p.inReplyTo : null,
@@ -528,6 +551,6 @@ export class MailComposeService {
         text: `\n\n${WROTE[locale](when, who)}\n${quote(bodyText)}\n`,
       });
     }
-    return { draft, attachments };
+    return { draft, attachments, ...(sent ? { sent } : {}) };
   }
 }

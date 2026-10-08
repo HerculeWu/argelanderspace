@@ -932,3 +932,175 @@ test("shutdown that begins while the draft is being stored opens no window and s
   expect(smtp.dataStarted.count).toBe(0);
   expect(drafts.messages).toHaveLength(1); // stored, safe, never sent
 });
+
+// ---- review round 3 -----------------------------------------------------------------
+
+test("a Message-ID that went out cannot go out again: a new send id is refused (also from another process and after the result was acknowledged), and it cannot be saved back into Drafts", async () => {
+  const r = await rig();
+  const first = await json(await startSend(r));
+  await r.send.settled(first.sendId);
+  expect(smtp.messages).toHaveLength(1);
+  // The page acknowledged the result: the marker is gone, the guard is not.
+  expect((await call(r, "DELETE", `/sends/${first.sendId}`)).status).toBe(200);
+
+  // The answer to the first request was lost; the user edits a word and presses Send again.
+  const again = await startSend(r, draftBody({ text: `${SECRET_BODY} (typo fixed)` }), uuid());
+  expect(again.status).toBe(409);
+  const body = await json(again);
+  expect(body.code).toBe("already_sent");
+  expect(JSON.stringify(body)).not.toContain(SECRET_BODY);
+  // Another server process (its own outbox, no shared memory) refuses it as well.
+  const other = r.makeSend({ pid: process.ppid });
+  await expect(
+    other.start(ACC, { sendId: uuid(), draft: draftBody() as never })
+  ).rejects.toMatchObject({
+    code: "already_sent",
+  });
+  // An open composer in another tab cannot put the sent message back into Drafts.
+  const save = await call(r, "PUT", "/draft", draftBody());
+  expect(save.status).toBe(409);
+  expect((await json(save)).code).toBe("already_sent");
+  expect(drafts.messages).toHaveLength(0);
+  await sleep(UNDO + 200);
+  expect(smtp.dataStarted.count).toBe(1);
+  expect(smtp.messages).toHaveLength(1);
+  // A different message is not affected; the claim of the refused attempts was released.
+  expect(r.outbox.hasClaim(ACC, "<draft-aaa@fake.test>")).toBe(false);
+  const fresh = await json(await startSend(r, draftBody({ messageId: "<draft-bbb@fake.test>" })));
+  await r.send.settled(fresh.sendId);
+  expect(smtp.messages).toHaveLength(2);
+});
+
+test("the sent guard survives a deleted cache inside the process, and only a failed or undone send leaves the Message-ID sendable", async () => {
+  const r = await rig();
+  smtp.behavior.rejectRecipients = ["ada@fake.test", "hidden@fake.test"];
+  const failed = await json(await startSend(r));
+  await r.send.settled(failed.sendId);
+  smtp.behavior.rejectRecipients = [];
+  const ok = await json(await startSend(r)); // a definite failure leaves it sendable
+  await r.send.settled(ok.sendId);
+  expect(smtp.messages).toHaveLength(1);
+  rmSync(join(globalCache, "mail"), { recursive: true, force: true });
+  const res = await startSend(r);
+  expect(res.status).toBe(409);
+  expect((await json(res)).code).toBe("already_sent");
+  expect(smtp.messages).toHaveLength(1);
+});
+
+test("the sent guard is kept for a week and then swept with the other old markers", async () => {
+  const r = await rig();
+  const self = { pid: process.pid, boot: "me" };
+  let now = Date.now();
+  const outbox = new MailOutbox(
+    () => r.cache,
+    undefined,
+    () => now
+  );
+  mkdirSync(join(r.cache, "mail", ACC, "outbox"), { recursive: true }); // a real send has its marker there
+  outbox.markSent(ACC, "<old@fake.test>", uuid());
+  const fresh = new MailOutbox(
+    () => r.cache,
+    undefined,
+    () => now
+  );
+  expect(fresh.sentRecently(ACC, "<old@fake.test>")).toBe(true);
+  now += 6 * 24 * 3600 * 1000;
+  fresh.sweep(ACC, 3600 * 1000, 30 * 24 * 3600 * 1000, self);
+  expect(fresh.sentRecently(ACC, "<old@fake.test>")).toBe(true);
+  now += 2 * 24 * 3600 * 1000;
+  expect(fresh.sentRecently(ACC, "<old@fake.test>")).toBe(false);
+  fresh.sweep(ACC, 3600 * 1000, 30 * 24 * 3600 * 1000, self);
+  const left = existsSync(join(r.cache, "mail", ACC, "outbox"))
+    ? (await import("node:fs")).readdirSync(join(r.cache, "mail", ACC, "outbox"))
+    : [];
+  expect(left.filter((n) => n.startsWith("sent-"))).toEqual([]);
+});
+
+// ---- review round 4 -----------------------------------------------------------------
+
+test("opening the copy a sent mail left in Drafts says it went out, and whether that copy is its only record", async () => {
+  const r = await rig();
+  const st = await json(await startSend(r));
+  imap.denyAppend = true; // the Sent copy will fail, so the Drafts copy is kept as the only record
+  await r.send.settled(st.sendId);
+  imap.denyAppend = false;
+  expect(await getStatus(r, st.sendId)).toMatchObject({
+    state: "sent",
+    sentCopy: "failed",
+    draftKept: true,
+  });
+  expect(drafts.messages).toHaveLength(1);
+  const uid = (drafts.messages[0] as { uid: number }).uid;
+  const init = await call(r, "POST", "/init", {
+    mode: "draft",
+    folder: "Drafts",
+    uid,
+    locale: "en",
+  }).then(json);
+  expect(init.draft.messageId).toBe("<draft-aaa@fake.test>");
+  expect(init.sent).toEqual({ sentCopy: "failed" });
+  // Another process sees the same record on disk.
+  const other = new MailOutbox(() => r.cache);
+  expect(other.sentInfo(ACC, "<draft-aaa@fake.test>")).toEqual({ sentCopy: "failed" });
+  // An ordinary draft carries no such flag.
+  const saved = await call(
+    r,
+    "PUT",
+    "/draft",
+    draftBody({ messageId: "<draft-ccc@fake.test>" })
+  ).then(json);
+  const plain = await call(r, "POST", "/init", {
+    mode: "draft",
+    folder: "Drafts",
+    uid: saved.uid,
+    locale: "en",
+  }).then(json);
+  expect(plain.sent).toBeUndefined();
+});
+
+// ---- review round 5 -----------------------------------------------------------------
+
+test("the sent guard is in place as soon as SMTP accepted: a process that takes over the claim during cleanup cannot send again", async () => {
+  const r = await rig();
+  const real = createNodeMailOutgoing({ timeoutMs: 3000, tls: { rejectUnauthorized: false } });
+  let inCleanup: () => void = () => {};
+  const cleanupStarted = new Promise<void>((res) => {
+    inCleanup = res;
+  });
+  let finishCleanup: () => void = () => {};
+  const gate = new Promise<void>((res) => {
+    finishCleanup = res;
+  });
+  // The Sent copy (cleanup, after SMTP accepted) hangs, like a process stuck or dying right there.
+  const slow = {
+    ...real,
+    appendSent: async (
+      t: Parameters<typeof real.appendSent>[0],
+      q: Parameters<typeof real.appendSent>[1]
+    ) => {
+      inCleanup();
+      await gate;
+      return real.appendSent(t, q);
+    },
+  };
+  const owner = new MailSendService({
+    compose: r.compose,
+    outgoing: slow,
+    outbox: new MailOutbox(() => r.cache),
+    undoMs: 100,
+  });
+  const st = await owner.start(ACC, { sendId: uuid(), draft: draftBody() as never });
+  await cleanupStarted;
+  expect(smtp.messages).toHaveLength(1);
+  // Another process that judges the owner dead (its claim stale) takes the claim over.
+  const other = r.makeSend({ pid: process.ppid, alive: () => false });
+  await expect(
+    other.start(ACC, { sendId: uuid(), draft: draftBody() as never })
+  ).rejects.toMatchObject({
+    code: "already_sent",
+  });
+  finishCleanup();
+  await owner.settled(st.sendId);
+  await sleep(300);
+  expect(smtp.dataStarted.count).toBe(1);
+});

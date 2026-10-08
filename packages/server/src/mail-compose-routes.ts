@@ -79,6 +79,7 @@ const STATUS: Record<MailComposeFailureCode, 400 | 404 | 409 | 413 | 422 | 500 |
   recipient_rejected: 422,
   message_too_large: 413,
   already_pending: 409,
+  already_sent: 409,
   not_found: 404,
   not_pending: 409,
   owned_elsewhere: 409,

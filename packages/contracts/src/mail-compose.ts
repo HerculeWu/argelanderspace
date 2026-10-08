@@ -113,10 +113,19 @@ export const MailComposeInitRequestSchema = z
   .strict();
 export type MailComposeInitRequest = z.infer<typeof MailComposeInitRequestSchema>;
 
+/** Where the copy of a sent message went: appended by us, saved by the provider itself, or nowhere. */
+export const MailSentCopySchema = z.enum(["saved", "by_server", "failed"]);
+export type MailSentCopy = z.infer<typeof MailSentCopySchema>;
+
 export const MailComposeInitResponseSchema = z
   .object({
     draft: MailComposeDraftSchema,
     attachments: z.array(MailStagedAttachmentSchema),
+    /**
+     * Editing a draft whose Message-ID already went out (a copy left in Drafts): it can no longer be
+     * sent or saved. `sentCopy` null = unknown; "failed" = this Drafts copy may be the only record.
+     */
+    sent: z.object({ sentCopy: MailSentCopySchema.nullable() }).strict().optional(),
   })
   .strict();
 export type MailComposeInitResponse = z.infer<typeof MailComposeInitResponseSchema>;
@@ -170,6 +179,7 @@ export const MailComposeFailureCodeSchema = z.enum([
   "recipient_rejected",
   "message_too_large",
   "already_pending",
+  "already_sent",
   "not_found",
   "not_pending",
   "owned_elsewhere",
@@ -192,8 +202,6 @@ export const MailSendStateSchema = z.enum([
   "unknown",
 ]);
 export type MailSendState = z.infer<typeof MailSendStateSchema>;
-
-export const MailSentCopySchema = z.enum(["saved", "by_server", "failed"]);
 
 export const MailSendStatusSchema = z
   .object({

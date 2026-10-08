@@ -41,6 +41,20 @@ export interface ComposeState {
   /** Free text for a failure that has a name (e.g. a file too large). */
   errorName: string | null;
   sending: boolean;
+  /**
+   * A send of this window whose answer never arrived (the request may or may not have reached the
+   * server). Before sending again its status is asked, so it can be joined instead of sent twice.
+   */
+  unconfirmed: { accountId: string; sendId: string; sig: string } | null;
+  /**
+   * This Message-ID already went out (the server said so). It can no longer be sent or saved; closing is
+   * free and "Copy as new message" keeps the text. `sentCopy` "failed"/null: this may be the only record.
+   */
+  sent: {
+    sentCopy: "saved" | "by_server" | "failed" | null;
+    /** Its attachments were staged afresh from the Drafts copy (still usable for a copy). */
+    restaged?: boolean;
+  } | null;
 }
 
 export interface ComposeWindowProps {
@@ -55,6 +69,8 @@ export interface ComposeWindowProps {
   onClose: () => void;
   /** Resolves to a failure code (the dialog stays open and shows it) or null when the draft is gone. */
   onDiscard: () => Promise<string | null>;
+  /** An already-sent message: continue with its text as a new message (new Message-ID). */
+  onCopyNew: () => void;
 }
 
 const PROVIDER_NAME: Record<string, string> = { gmail: "Gmail", icloud: "iCloud" };
@@ -144,7 +160,8 @@ export function ComposeWindow(p: ComposeWindowProps) {
           <select
             data-ui="mail-composer-from"
             value={c.accountId}
-            disabled={c.sending}
+            // While an earlier send's answer is unknown the sender stays fixed (see MailCompose `change`).
+            disabled={c.sending || c.unconfirmed !== null}
             onChange={(e) => p.onChange({ accountId: e.target.value })}
           >
             {p.accounts.map((a) => (
@@ -255,9 +272,20 @@ export function ComposeWindow(p: ComposeWindowProps) {
           )}
         </div>
       )}
+      {c.sent && (
+        <div className="mc-error" data-ui="mail-composer-sent">
+          <InlineMessage tone="warning">{t("mail.compose.sentBanner")}</InlineMessage>
+          <Button data-ui="mail-composer-copy-new" onClick={p.onCopyNew}>
+            {t("mail.compose.copyNew")}
+          </Button>
+        </div>
+      )}
       {errorText && (
         <div className="mc-error" data-ui="mail-composer-error">
-          <InlineMessage tone="danger">{errorText}</InlineMessage>
+          {/* Waiting for an upload, or attachments to add again, is not a failure. */}
+          <InlineMessage tone={c.error === "uploading" || c.error === "attachments_readd" ? "warning" : "danger"}>
+            {errorText}
+          </InlineMessage>
         </div>
       )}
       <footer className="mc-foot">
@@ -266,6 +294,7 @@ export function ComposeWindow(p: ComposeWindowProps) {
           data-ui="mail-composer-send"
           busy={c.sending}
           busyLabel={t("mail.compose.sendBusy")}
+          disabled={c.sent !== null}
           onClick={p.onSend}
         >
           <Icon name="send" cls="ico-sm" />
@@ -355,7 +384,22 @@ export function ComposeWindow(p: ComposeWindowProps) {
             </>
           }
         >
-          <p>{c.savedOn ? t("mail.compose.discardBody") : t("mail.compose.discardBodyLocal")}</p>
+          {c.sent ? (
+            // Deleting the leftover of a sent message: say whether it is the only record of what was sent.
+            c.sent.sentCopy === "saved" || c.sent.sentCopy === "by_server" ? (
+              <p>{t("mail.compose.discardSent")}</p>
+            ) : (
+              <div data-ui="mail-composer-discard-only-record">
+                <InlineMessage tone="danger">
+                  {c.sent.sentCopy === "failed"
+                    ? t("mail.compose.discardSentOnly")
+                    : t("mail.compose.discardSentMaybeOnly")}
+                </InlineMessage>
+              </div>
+            )
+          ) : (
+            <p>{c.savedOn ? t("mail.compose.discardBody") : t("mail.compose.discardBodyLocal")}</p>
+          )}
           {discardError && (
             <div data-ui="mail-composer-discard-error">
               <InlineMessage tone="danger">

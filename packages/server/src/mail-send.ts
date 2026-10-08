@@ -4,7 +4,8 @@
  * The sequence for one send, and why it cannot send twice or lose the mail:
  *
  *  1. Claim the draft's Message-ID (O_EXCL file in the global cache): a second send of the same draft,
- *     from another request or another server process, is refused with `already_pending`.
+ *     from another request or another server process, is refused with `already_pending`. Holding the
+ *     claim, a Message-ID that already went out (the sent guard) is refused with `already_sent`.
  *  2. Put the FINAL message into the account's Drafts folder (APPEND, replacing older copies). From
  *     here on the mail is safe on the remote authority whatever happens to this process.
  *  3. Write the marker (state `pending`, owner pid, deadline) and arm an in-memory, unref'd timer.
@@ -86,9 +87,16 @@ export class MailSendService {
     this.owner = { pid: deps.pid ?? process.pid, boot: randomBytes(8).toString("hex") };
     this.undoMs = deps.undoMs ?? MAIL_UNDO_WINDOW_MS;
     this.now = deps.now ?? Date.now;
-    // Editing or discarding a draft that is in its window (or being sent) is refused.
-    deps.compose.setSendGuard((accountId, messageId) =>
-      deps.outbox.claimHeld(accountId, messageId, this.owner)
+    // Editing or discarding a draft that is in its window (or being sent) is refused; so is saving a
+    // Message-ID that already went out back into Drafts (discarding a leftover copy of it stays possible).
+    deps.compose.setSendGuard((accountId, messageId) => {
+      if (deps.outbox.claimHeld(accountId, messageId, this.owner)) return "already_pending";
+      if (deps.outbox.sentRecently(accountId, messageId)) return "already_sent";
+      return null;
+    });
+    // Opening a draft whose Message-ID already went out says so (it can no longer be sent or saved).
+    deps.compose.setSentLookup((accountId, messageId) =>
+      deps.outbox.sentInfo(accountId, messageId)
     );
     if (deps.registerForShutdown) shutdownRegistry.add(this);
   }
@@ -123,6 +131,11 @@ export class MailSendService {
     }
     let armed = false;
     try {
+      // Checked while holding the claim; `fire` records it before releasing the claim. So a request
+      // that arrives after this Message-ID went out (a lost answer retried under a new send id, a late
+      // first request, another tab) can never send it a second time.
+      if (this.deps.outbox.sentRecently(a.id, draft.messageId))
+        throw new MailComposeError("already_sent");
       // An account deleted while we were building must not get its cache directory (claim, marker) back.
       compose.account(a.id);
       // The final message goes to the server's Drafts BEFORE the window opens.
@@ -276,6 +289,7 @@ export class MailSendService {
       // The SMTP server has the message. Record that before the cleanup, so a crash from here on is not
       // mistaken for "possibly unsent".
       set({ state: "sent", rejected: sent.value.rejected });
+      this.deps.outbox.markSent(m.accountId, m.messageId, m.sendId);
 
       let sentCopy: "saved" | "by_server" | "failed";
       let imap: Awaited<ReturnType<MailComposeService["imapTarget"]>> | null = null;
@@ -305,6 +319,7 @@ export class MailSendService {
         draftKept = !removed?.ok;
       }
       set({ sentCopy, draftKept });
+      this.deps.outbox.markSent(m.accountId, m.messageId, m.sendId, sentCopy);
       compose.deleteStaged(m.accountId, rec.staged);
     } catch {
       // Anything unexpected before SMTP confirmed: the outcome is unknown unless we already recorded sent.
