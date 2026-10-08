@@ -190,6 +190,95 @@ const bundledNoticeText =
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, license]) => `===== ${name} =====\n${license}`)
     .join("\n\n");
+// Mail (ticket 10). The roots are infra's declared dependencies (workspace packages and @napi-rs/keyring excluded),
+// so a new dependency is picked up without editing this list, plus web's DOMPurify. Their transitive production
+// closure is declared as a whole: tsup inlines most of it into dist/bin.js, but some packages (e.g. pino's optional
+// worker-thread helpers) may never be reached by the bundle. Deciding which are inlined would need a bundler
+// metafile in the shipped dist/, so we over-declare on purpose and label entries "dependency closure (may be
+// partially inlined)". DOMPurify goes into the SPA bundle. @napi-rs/keyring is the declared runtime dependency
+// (a native module installed next to the package, not bundled). Same rule as above: fail, never omit.
+// Dual-licensed packages name the license we elect and the file that carries exactly that text; anything outside the
+// allowed list stops the build so a new dependency gets a human license decision (docs/engineering.md,
+// scripts/license-scan.mjs).
+const mailNotices = new Map();
+const mailAllowed = new Set(["MIT", "MIT-0", "ISC", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0"]);
+const mailElected = {
+  // "(MIT OR EUPL-1.1+)": elect MIT.
+  "@zone-eu/mailsplit": { license: "MIT", files: ["LICENSE.MIT"] },
+  // "(MPL-2.0 OR Apache-2.0)": elect Apache-2.0.
+  // The upstream LICENSE file is the bare Apache-2.0 text without a copyright line.
+  dompurify: {
+    license: "Apache-2.0",
+    files: ["LICENSE"],
+    copyright: "Copyright (c) Cure53 and other contributors",
+  },
+};
+function locatePackage(name, req) {
+  try {
+    return dirname(req.resolve(`${name}/package.json`));
+  } catch {
+    let dir = dirname(req.resolve(name));
+    for (;;) {
+      const file = join(dir, "package.json");
+      if (existsSync(file) && JSON.parse(readFileSync(file, "utf8")).name === name) return dir;
+      const parent = dirname(dir);
+      if (parent === dir) throw new Error(`Cannot locate package metadata for ${name}`);
+      dir = parent;
+    }
+  }
+}
+function mailNotice(name, req, via) {
+  const root = locatePackage(name, req);
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const key = `${pkg.name}@${pkg.version}`;
+  if (mailNotices.has(key)) return;
+  const elected = mailElected[pkg.name];
+  const license = elected ? elected.license : pkg.license;
+  if (!mailAllowed.has(license))
+    throw new Error(`Review mail dependency license before distribution: ${key} (${pkg.license})`);
+  const files = elected
+    ? elected.files
+    : readdirSync(root).filter((f) => /^licen[sc]e(?:\.(?:md|txt))?$/i.test(f));
+  const text = files.map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+  if (!text) throw new Error(`Missing license text for ${key}`);
+  const note = elected ? ` (declared ${pkg.license}; ${elected.license} elected)` : "";
+  const copyright = elected?.copyright ? `${elected.copyright}\n` : "";
+  mailNotices.set(key, `License: ${license}${note}; ${via}\n${copyright}${text}`);
+  const childRequire = createRequire(join(root, "package.json"));
+  for (const dep of Object.keys(pkg.dependencies ?? {})) mailNotice(dep, childRequire, via);
+}
+const infraRequire = createRequire(join(repoRoot, "packages/infra/package.json"));
+const infraPkg = JSON.parse(readFileSync(join(repoRoot, "packages/infra/package.json"), "utf8"));
+const MAIL_NOTICE_ROOTS = Object.entries(infraPkg.dependencies ?? {})
+  .filter(([name, range]) => !String(range).startsWith("workspace:") && name !== "@napi-rs/keyring")
+  .map(([name]) => name);
+for (const name of MAIL_NOTICE_ROOTS)
+  mailNotice(name, infraRequire, "dependency closure (may be partially inlined into dist/bin.js)");
+mailNotice("dompurify", webRequire, "inlined into the web app bundle");
+// @napi-rs/keyring: a runtime dependency installed beside the package. Its platform packages (optionalDependencies,
+// one native binary each) carry the same release and MIT license but no LICENSE file of their own, so the parent's
+// text is the declaration for all of them.
+{
+  const root = locatePackage("@napi-rs/keyring", createRequire(join(appRoot, "package.json")));
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  if (pkg.license !== "MIT")
+    throw new Error(`Review keyring license before distribution: ${pkg.license}`);
+  const text = readFileSync(join(root, "LICENSE"), "utf8");
+  const platforms = Object.keys(pkg.optionalDependencies ?? {}).sort();
+  mailNotices.set(
+    `${pkg.name}@${pkg.version}`,
+    `License: MIT; installed as a runtime dependency (not bundled); applies equally to its platform binaries ${platforms.join(", ")}\n${text}`
+  );
+}
+const mailNoticeText =
+  "Third-party libraries used by Mail and the infra layer (upstream text; not relicensed by this project).\n" +
+  "Elections: @zone-eu/mailsplit is offered as (MIT OR EUPL-1.1+) and is used under MIT; DOMPurify is offered as (MPL-2.0 OR Apache-2.0) and is used under Apache-2.0.\n\n" +
+  [...mailNotices]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, license]) => `===== ${name} =====\n${license}`)
+    .join("\n\n");
+writeFileSync(join(appRoot, "dist", "THIRD-PARTY-MAIL-NOTICES.txt"), mailNoticeText);
+writeFileSync(join(target, "THIRD-PARTY-MAIL-NOTICES.txt"), mailNoticeText);
 writeFileSync(join(appRoot, "dist", "THIRD-PARTY-BUNDLED-NOTICES.txt"), bundledNoticeText);
 writeFileSync(join(target, "THIRD-PARTY-BUNDLED-NOTICES.txt"), bundledNoticeText);
 writeFileSync(join(appRoot, "dist", "THIRD-PARTY-EDITOR-NOTICES.txt"), noticeText);
@@ -197,5 +286,5 @@ writeFileSync(join(target, "THIRD-PARTY-EDITOR-NOTICES.txt"), noticeText);
 writeFileSync(join(appRoot, "dist", "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
 writeFileSync(join(target, "THIRD-PARTY-EMBEDPDF-NOTICES.txt"), embedPdfNoticeText);
 console.log(
-  `copied web/sty/root assets, ${notices.size} editor notices, ${sdkNotices.size} EmbedPDF notices and ${bundledNotices.size} bundled-library notices`
+  `copied web/sty/root assets, ${notices.size} editor notices, ${sdkNotices.size} EmbedPDF notices, ${bundledNotices.size} bundled-library notices and ${mailNotices.size} Mail notices`
 );

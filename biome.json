@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["packages/**", "!**/tests/fixtures/**/*.html"]
+    "includes": ["packages/**", "scripts/**", "!**/tests/fixtures/**/*.html"]
   },
   "formatter": {
     "enabled": true,
