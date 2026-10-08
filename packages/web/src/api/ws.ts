@@ -1,4 +1,4 @@
-import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent, WsCopilotViewAction, WsTextSourceChanged, WsTextDocPublished } from "@argelanderspace/contracts";
+import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent, WsCopilotViewAction, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
@@ -23,6 +23,8 @@ const annotationListeners = new Set<AnnotationListener>();
 const writerListeners = new Set<WriterListener>();
 const textSourceListeners = new Set<(msg: WsTextSourceChanged) => void>();
 const textPublishedListeners = new Set<(msg: WsTextDocPublished) => void>();
+const mailListeners = new Set<(msg: WsMailChanged) => void>();
+const mailResyncListeners = new Set<() => void>();
 
 interface CopilotSubscription { conversationId: string; viewId: string; event: (event: WsCopilotEvent) => void; viewAction?: (action: WsCopilotViewAction) => void; ready: () => void; connection: (connected: boolean) => void; }
 const copilotSubscriptions = new Set<CopilotSubscription>();
@@ -50,7 +52,12 @@ function dispatch(msg: WsServerMessage): void {
     for (const subscription of copilotSubscriptions) if (subscription.viewId === msg.viewId && subscription.viewAction) { subscription.viewAction(msg); break; }
   } else if (msg.type === "copilot.subscribed") {
     for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId && subscription.viewId === msg.viewId) subscription.ready();
+  } else if (msg.type === "mail.changed") {
+    // Ticket 08: live INBOX counts; explicit branch so it can never fall through to the job branch.
+    for (const cb of mailListeners) cb(msg);
   } else if (msg.type === "hello") {
+    // A (re)connect: Mail may have changed while the socket was down.
+    for (const cb of mailResyncListeners) cb();
     // late-joiner catch-up: surface the snapshot like ordinary job events
     for (const job of msg.jobs) {
       for (const cb of jobListeners) cb(job, "hello");
@@ -143,6 +150,17 @@ export function onTextDocPublished(cb: (msg: WsTextDocPublished) => void): () =>
   ensureStarted();
   return () => {
     textPublishedListeners.delete(cb);
+  };
+}
+
+/** Subscribe to live Mail INBOX changes (`mail.changed`, ticket 08); `onResync` fires on every (re)connect, when events may have been missed. */
+export function onMailChanged(cb: (msg: WsMailChanged) => void, onResync?: () => void): () => void {
+  mailListeners.add(cb);
+  if (onResync) mailResyncListeners.add(onResync);
+  ensureStarted();
+  return () => {
+    mailListeners.delete(cb);
+    if (onResync) mailResyncListeners.delete(onResync);
   };
 }
 

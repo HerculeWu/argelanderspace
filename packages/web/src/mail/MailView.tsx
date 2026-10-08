@@ -14,6 +14,7 @@ import { Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AddAccountDialog, ReenterPasswordDialog, RemoveAccountDialog } from "./AccountDialogs";
 import { addressList, addressName, fileSize, longDate, shortDate } from "./format";
 import { MailHtmlBody, useInlineImages, useSanitizedMailHtml } from "./MailHtmlBody";
+import { reportMailAccounts, useMailLiveEvents } from "./mailLive";
 import "./mail.css";
 
 const PAGE = 50;
@@ -140,22 +141,32 @@ export function MailView() {
     void loadAccounts();
   }, [loadAccounts]);
 
-  const loadFolders = useCallback(async (accountId: string) => {
-    setStates((s) => ({
-      ...s,
-      [accountId]: { health: "loading", code: null, stale: false, folders: s[accountId]?.folders ?? [] },
-    }));
+  // `silent`: a live refresh after a push. It neither shows "loading" nor turns a passing failure into an error state.
+  // It resolves with the folders it loaded (null when it failed or was superseded by a newer request).
+  const folderSeq = useRef(new Map<string, number>());
+  const loadFolders = useCallback(async (accountId: string, silent = false): Promise<MailFolder[] | null> => {
+    const seq = (folderSeq.current.get(accountId) ?? 0) + 1;
+    folderSeq.current.set(accountId, seq);
+    if (!silent)
+      setStates((s) => ({
+        ...s,
+        [accountId]: { health: "loading", code: null, stale: false, folders: s[accountId]?.folders ?? [] },
+      }));
     try {
       const r = await fetchMailFolders(accountId);
-      if (!alive.current) return;
+      // An older response must not overwrite the tree a newer request already produced.
+      if (!alive.current || folderSeq.current.get(accountId) !== seq) return null;
       setStates((s) => ({ ...s, [accountId]: { health: "ok", code: null, stale: r.stale, folders: r.folders } }));
+      return r.folders;
     } catch (e) {
-      if (!alive.current) return;
+      if (!alive.current || folderSeq.current.get(accountId) !== seq) return null;
       const code = errorCode(e);
+      if (silent && !AUTH_CODES.has(code)) return null;
       setStates((s) => ({
         ...s,
         [accountId]: { health: AUTH_CODES.has(code) ? "auth" : "offline", code, stale: false, folders: [] },
       }));
+      return null;
     }
   }, []);
   useEffect(() => {
@@ -175,7 +186,17 @@ export function MailView() {
   // ---- message lists ---------------------------------------------------------
   const sourcesRef = useRef(sources);
   sourcesRef.current = sources;
-  const loadSource = useCallback(async (accountId: string, folder: string, more = false) => {
+  // `live`: refresh the newest page after a push, keeping what is shown and the older pages already loaded
+  // (only within the same UIDVALIDITY epoch: UIDs of another epoch mean other messages).
+  const userLoads = useRef(new Map<string, number>());
+  const deferredLive = useRef(new Set<string>());
+  const loadSourceRef = useRef<(a: string, f: string, more?: boolean, live?: boolean) => Promise<void>>(async () => {});
+  // A live refresh that a user load (e.g. "load more") overtook was discarded: do it again once that load is done.
+  const rerunLive = (key: string, accountId: string, folder: string) => {
+    if ((userLoads.current.get(key) ?? 0) > 0) deferredLive.current.add(key);
+    else void loadSourceRef.current(accountId, folder, false, true);
+  };
+  const loadSourceNow = useCallback(async (accountId: string, folder: string, more = false, live = false) => {
     const key = sourceKey(accountId, folder);
     const seq = (sourceSeq.current.get(key) ?? 0) + 1;
     sourceSeq.current.set(key, seq);
@@ -189,12 +210,24 @@ export function MailView() {
       nextBefore: prev?.nextBefore ?? null,
       stale: false,
     };
-    setSources((s) => ({ ...s, [key]: { ...base, loading: !more, loadingMore: more, error: null } }));
+    if (!live) setSources((s) => ({ ...s, [key]: { ...base, loading: !more, loadingMore: more, error: null } }));
     try {
       const r = await fetchMailHeaders(accountId, folder, { before, limit: PAGE });
-      if (!alive.current || sourceSeq.current.get(key) !== seq) return;
+      if (!alive.current || sourceSeq.current.get(key) !== seq) {
+        if (live && alive.current) rerunLive(key, accountId, folder);
+        return;
+      }
+      const sameEpoch = base.uidValidity === null || r.uidValidity === base.uidValidity;
+      if (more && !sameEpoch) {
+        // The cursor belongs to an older UIDVALIDITY epoch: start this folder over rather than mix UIDs.
+        void loadSourceRef.current(accountId, folder);
+        return;
+      }
       const seen = new Set<number>();
-      const merged = (more ? [...base.headers, ...r.headers] : r.headers).filter((h) => !seen.has(h.uid) && seen.add(h.uid));
+      // A live refresh replaces the newest page and keeps the older, already loaded pages below it.
+      const oldest = r.headers.reduce((m, h) => Math.min(m, h.uid), Number.POSITIVE_INFINITY);
+      const older = live && sameEpoch && r.headers.length > 0 ? base.headers.filter((h) => h.uid < oldest) : [];
+      const merged = (more ? [...base.headers, ...r.headers] : [...r.headers, ...older]).filter((h) => !seen.has(h.uid) && seen.add(h.uid));
       setSources((s) => ({
         ...s,
         [key]: {
@@ -202,7 +235,7 @@ export function MailView() {
           folder,
           headers: merged,
           uidValidity: r.uidValidity,
-          nextBefore: r.nextBefore,
+          nextBefore: live && older.length > 0 ? base.nextBefore : r.nextBefore,
           loading: false,
           loadingMore: false,
           error: null,
@@ -210,13 +243,39 @@ export function MailView() {
         },
       }));
     } catch (e) {
-      if (!alive.current || sourceSeq.current.get(key) !== seq) return;
+      if (!alive.current || sourceSeq.current.get(key) !== seq) {
+        if (live && alive.current) rerunLive(key, accountId, folder);
+        return;
+      }
       const code = errorCode(e);
+      if (live && !AUTH_CODES.has(code)) return;
       if (AUTH_CODES.has(code))
         setStates((s) => ({ ...s, [accountId]: { health: "auth", code, stale: false, folders: [] } }));
       setSources((s) => ({ ...s, [key]: { ...base, loading: false, loadingMore: false, error: code } }));
     }
   }, []);
+  // A live refresh never preempts a load the user asked for (it would discard that page): it waits for it.
+  const loadSource = useCallback(
+    async (accountId: string, folder: string, more = false, live = false) => {
+      const key = sourceKey(accountId, folder);
+      if (live && (userLoads.current.get(key) ?? 0) > 0) {
+        deferredLive.current.add(key);
+        return;
+      }
+      if (!live) userLoads.current.set(key, (userLoads.current.get(key) ?? 0) + 1);
+      try {
+        await loadSourceNow(accountId, folder, more, live);
+      } finally {
+        if (!live) {
+          const left = (userLoads.current.get(key) ?? 1) - 1;
+          userLoads.current.set(key, left);
+          if (left === 0 && deferredLive.current.delete(key)) void loadSourceRef.current(accountId, folder, false, true);
+        }
+      }
+    },
+    [loadSourceNow]
+  );
+  loadSourceRef.current = loadSource;
 
   const scopeSources = useMemo(() => {
     if (scope.kind === "folder") return [{ accountId: scope.accountId, folder: scope.path }];
@@ -238,6 +297,86 @@ export function MailView() {
     for (const a of accounts ?? []) void loadFolders(a.id);
     for (const s of scopeSources) void loadSource(s.accountId, s.folder);
   };
+
+  // ---- live updates (ticket 08) ------------------------------------------------
+  // What this page knows from its own folder fetches goes to the shared live picture, so the Shell badge
+  // is the very number the folder tree shows (INBOX unread of accounts that can log in).
+  useEffect(() => {
+    if (!accounts) return;
+    reportMailAccounts(
+      accounts.map((a) => {
+        const st = states[a.id];
+        return {
+          accountId: a.id,
+          inbox: st?.health === "ok" ? (st.folders.find((f) => f.role === "inbox")?.unread ?? 0) : null,
+          blocked: st?.health === "auth",
+        };
+      })
+    );
+  }, [accounts, states]);
+  const liveRef = useRef({ accounts, scope, states });
+  liveRef.current = { accounts, scope, states };
+  const liveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = liveTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+  // A burst of pushes (many arrivals, a read, an expunge) is one reload of the tree and the visible INBOX list,
+  // and only one reload per account runs at a time: pushes during it cause exactly one more afterwards.
+  const liveRunning = useRef(new Set<string>());
+  const liveAgain = useRef(new Set<string>());
+  const reloadLive = useCallback(
+    (accountId: string) => {
+      const timers = liveTimers.current;
+      if (liveRunning.current.has(accountId)) {
+        liveAgain.current.add(accountId);
+        return;
+      }
+      if (timers.has(accountId)) return;
+      timers.set(
+        accountId,
+        setTimeout(async () => {
+          timers.delete(accountId);
+          const cur = liveRef.current;
+          if (!alive.current || !cur.accounts?.some((a) => a.id === accountId)) return;
+          liveRunning.current.add(accountId);
+          try {
+            const folders = await loadFolders(accountId, true);
+            if (!folders || !alive.current) return;
+            const inbox = folders.find((f) => f.role === "inbox")?.path ?? "INBOX";
+            const sc = liveRef.current.scope;
+            const visible = sc.kind === "unified" || (sc.accountId === accountId && sc.path === inbox);
+            if (visible) await loadSource(accountId, inbox, false, true);
+          } finally {
+            liveRunning.current.delete(accountId);
+            if (liveAgain.current.delete(accountId) && alive.current) reloadLive(accountId);
+          }
+        }, 250)
+      );
+    },
+    [loadFolders, loadSource]
+  );
+  useMailLiveEvents((event) => {
+    if (event.kind === "resync") {
+      // An account whose login was refused is not logged into again just because the socket reconnected.
+      for (const a of liveRef.current.accounts ?? []) if (liveRef.current.states[a.id]?.health !== "auth") reloadLive(a.id);
+    } else if (event.watch === "auth_failed" || event.watch === "credential_missing") {
+      // The server says this account cannot log in: show it like a refused folder fetch (tree and unified list).
+      setStates((s) =>
+        s[event.accountId]?.health === "auth"
+          ? s
+          : { ...s, [event.accountId]: { health: "auth", code: event.watch === "auth_failed" ? "auth_failed" : "credential_missing", stale: false, folders: [] } }
+      );
+    } else {
+      const refused = liveRef.current.states[event.accountId]?.health === "auth";
+      const loggedIn = event.watch === "idle" || event.watch === "polling";
+      // A push for an account shown as refused that is watched again means it works now: reload to show it.
+      if (refused ? loggedIn : event.cause !== "state") reloadLive(event.accountId);
+    }
+  });
 
   const listSources = scopeSources.map((s) => sources[sourceKey(s.accountId, s.folder)]).filter((s): s is Source => !!s);
   const rows = useMemo(() => {

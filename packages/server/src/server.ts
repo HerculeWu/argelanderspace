@@ -30,6 +30,8 @@ import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
+import type { MailWatcher } from "./mail-watch.js";
+import { createDefaultMailWatcher, type MailWatcherOverrides } from "./mail-watch-default.js";
 import { ProviderSettings } from "./providers.js";
 import { startWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
@@ -52,6 +54,11 @@ export interface ServerOptions {
   watchIntervalMs?: number;
   /** Explicit isolated credential/config store; ordinary servers initialize lazily. */
   providerSettings?: ProviderSettings;
+  /**
+   * Live Mail updates (ticket 08): one IMAP connection per account on INBOX. Off unless asked for,
+   * so a test server never reads the real global mail accounts; `startServer` turns it on.
+   */
+  mailWatch?: false | true | MailWatcherOverrides;
 }
 
 export interface RunningServer {
@@ -91,11 +98,19 @@ export function createServer(opts: ServerOptions): RunningServer {
   });
   const port = opts.port ?? 8000;
 
+  let mailWatcher: MailWatcher | undefined;
+
   // hub is referenced by the broadcast closure before construction below;
   // it is only ever *called* after `new WsHub(...)` runs (request time).
   let hub: WsHub;
   const providerSettings = opts.providerSettings ?? new ProviderSettings();
   const copilot = new CopilotHost(opts.dataDir, providerSettings, (event) => hub.broadcast(event));
+  if (opts.mailWatch) {
+    mailWatcher = createDefaultMailWatcher(
+      (msg) => hub.broadcast(msg),
+      opts.mailWatch === true ? {} : opts.mailWatch
+    );
+  }
   const app = createApp({
     paths,
     statusDir,
@@ -109,6 +124,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     port,
     providerSettings,
     copilot,
+    ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
   });
 
   const server = serve({
@@ -124,6 +140,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     onViewSubscribed: (viewId) => copilot.viewConnected(viewId),
   });
   copilot.useViewDelivery((viewId, message) => hub.sendToView(viewId, message));
+  mailWatcher?.start();
 
   // Agent/CLI writes mutate the library and plans.json behind the server's
   // back (Stage 3 / Stage 4): poll for them and rebroadcast as
@@ -187,12 +204,11 @@ export function createServer(opts: ServerOptions): RunningServer {
         watcher.stop();
         hub.close();
         providerSettings.close();
-        void copilot
-          .close()
-          .then(
-            () => server.close((err) => (err ? rejectClose(err) : resolveClose())),
-            rejectClose
-          );
+        // Connections and timers of the mail watcher end before the server is reported closed.
+        void Promise.all([mailWatcher?.stop(), copilot.close()]).then(
+          () => server.close((err) => (err ? rejectClose(err) : resolveClose())),
+          rejectClose
+        );
       }),
   };
 }
@@ -256,7 +272,12 @@ export async function startServer(
   env: NodeJS.ProcessEnv = process.env
 ): Promise<RunningServer> {
   const cfg = resolveServerConfig(argv, env);
-  const srv = createServer({ dataDir: cfg.dataDir, port: cfg.port, webDist: cfg.webDist });
+  const srv = createServer({
+    dataDir: cfg.dataDir,
+    port: cfg.port,
+    webDist: cfg.webDist,
+    mailWatch: true,
+  });
   const port = await srv.ready();
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
   console.log(`  data dir: ${cfg.dataDir}`);

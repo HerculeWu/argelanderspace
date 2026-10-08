@@ -1660,6 +1660,9 @@
     }
   },
   "mail": {
+    "live": {
+      "navWithUnread": "{{name}} · {{n}} 封未读"
+    },
     "title": "邮件",
     "accounts": "账户",
     "unified": "全部收件箱",

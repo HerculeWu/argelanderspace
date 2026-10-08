@@ -21,6 +21,7 @@ import {
   WsCopilotViewActionSchema,
 } from "./copilot.js";
 import { JobStatusSchema } from "./job-status.js";
+import { WsMailChangedSchema } from "./mail-events.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
 import { WsTextDocPublishedSchema, WsTextSourceChangedSchema } from "./text-doc.js";
@@ -113,6 +114,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsPdfReadingPositionChangedSchema,
   WsTextSourceChangedSchema,
   WsTextDocPublishedSchema,
+  WsMailChangedSchema,
 ]);
 
 // ---- async upload (202) ------------------------------------------------------ //

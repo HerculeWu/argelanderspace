@@ -171,6 +171,8 @@ import { AsyncLock } from "./lock.js";
 import type { MailAccountService } from "./mail-accounts.js";
 import type { MailReadService } from "./mail-read.js";
 import { mountMailRoutes } from "./mail-routes.js";
+import type { MailWatcher } from "./mail-watch.js";
+import { mountMailWatchRoutes } from "./mail-watch-routes.js";
 import { PaperCache } from "./paper-cache.js";
 import {
   PdfAnnotationHistory,
@@ -256,6 +258,8 @@ export interface AppDeps {
   mailAccounts?: MailAccountService;
   /** Mail reading (ticket 05); production builds it over the real global directories on first use. */
   mailRead?: MailReadService;
+  /** Live INBOX watcher (ticket 08); `startServer` wires it, tests inject or omit it. */
+  mailWatch?: MailWatcher;
   copilot?: CopilotHost;
   /** Test seam of the text Doc generator (runs between building a candidate and publishing it). */
   textDocHooks?: Pick<TextDocDeps, "beforePublish">;
@@ -636,6 +640,7 @@ export function createApp(deps: AppDeps): Hono {
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
   mountProviderRoutes(app, providerSettings, guardCsrf);
+  mountMailWatchRoutes(app, deps.mailWatch);
   mountMailRoutes(app, deps.mailAccounts, guardCsrf, deps.mailRead);
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
   mountCopilotRoutes(app, copilot, guardCsrf);

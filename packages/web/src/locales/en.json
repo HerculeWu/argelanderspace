@@ -1660,6 +1660,9 @@
     }
   },
   "mail": {
+    "live": {
+      "navWithUnread": "{{name}} · {{n}} unread"
+    },
     "title": "Mail",
     "accounts": "Accounts",
     "unified": "All inboxes",
