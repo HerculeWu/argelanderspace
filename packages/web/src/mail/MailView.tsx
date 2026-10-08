@@ -21,6 +21,7 @@ import { MailToasts } from "./MailToasts";
 import { MessageActions, PermanentDeleteDialog } from "./MessageActions";
 import { type MessageRef, useMailActions } from "./useMailActions";
 import { useMailSearch } from "./useMailSearch";
+import { ComposeButton, MailComposeActions, MailComposeLayer, MailComposeProvider } from "./MailCompose";
 import "./mail.css";
 
 const PAGE = 50;
@@ -629,6 +630,7 @@ export function MailView() {
           onClick={() => (layout === "wide" ? setFolderPane(false) : setDrawer(false))}
         />
       </div>
+      <ComposeButton />
       <div className="mail-tree">
         {folderRow({
           id: "unified",
@@ -913,6 +915,7 @@ export function MailView() {
         busy={actions.pending.has(key)}
         restoreTo={accountFolders.find((f) => f.role === "inbox")?.path ?? null}
         onBack={layout === "narrow" ? () => setReaderOpen(false) : undefined}
+        leading={<MailComposeActions message={opened.message} />}
         onToggleRead={() => actions.toggleRead(shownRef)}
         onToggleStar={() => actions.toggleStar(shownRef)}
         onMove={(path) => void actions.move(shownRef, path)}
@@ -960,7 +963,22 @@ export function MailView() {
       </div>
     );
 
+  const sendableIds = (accounts ?? []).filter((a) => states[a.id]?.health === "ok").map((a) => a.id);
+  const openDrafts = (accountId: string) => {
+    const drafts = states[accountId]?.folders.find((f) => f.role === "drafts");
+    if (drafts) select({ kind: "folder", accountId, path: drafts.path });
+  };
+  const isDraftsFolder = (accountId: string, folder: string) =>
+    states[accountId]?.folders.find((f) => f.path === folder)?.role === "drafts";
+
   return (
+    <MailComposeProvider
+      accounts={accounts ?? []}
+      sendableIds={sendableIds}
+      onOpenDrafts={openDrafts}
+      onChanged={refresh}
+      isDraftsFolder={isDraftsFolder}
+    >
     <div className={"mail-mail " + layout} data-ui="mail-view" data-layout={layout} ref={rootRef}>
       {showFolders ? (
         folderPaneEl
@@ -975,6 +993,7 @@ export function MailView() {
             label={t("mail.expand")}
             onClick={() => (layout === "wide" ? setFolderPane(true) : setDrawer((d) => !d))}
           />
+          <ComposeButton compact />
         </div>
       )}
       {layout !== "wide" && drawer && (
@@ -1040,7 +1059,9 @@ export function MailView() {
           }}
         />
       )}
+      <MailComposeLayer />
     </div>
+    </MailComposeProvider>
   );
 }
 

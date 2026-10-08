@@ -34,6 +34,7 @@ export * from "./lib/unzip.js";
 export * from "./lib/zip.js";
 export * from "./mail/account-store.js";
 export * from "./mail/inbox-watch.js";
+export * from "./mail/outgoing.js";
 export * from "./mail/parse.js";
 export * from "./mail/protocol.js";
 export * from "./mail/protocol-manage.js";

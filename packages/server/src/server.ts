@@ -21,6 +21,7 @@ import {
   type AppConfig,
   fetchArxivPdf as fetchCurrentArxivPdf,
   getConfig,
+  resolveGlobalDirs,
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
@@ -30,6 +31,8 @@ import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
+import { sweepStagedAttachmentsIn } from "./mail-compose.js";
+import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { createDefaultMailWatcher, type MailWatcherOverrides } from "./mail-watch-default.js";
 import { ProviderSettings } from "./providers.js";
@@ -38,6 +41,8 @@ import { WsHub } from "./ws.js";
 
 export interface ServerOptions {
   dataDir: string;
+  /** Global cache directory whose stale mail attachment staging is swept at start; unset = no sweep. */
+  sweepMailStagingIn?: string;
   /** Default 8000; `0` picks an ephemeral port (tests). */
   port?: number;
   /** Default `127.0.0.1` (uvicorn's convention for this local tool). */
@@ -73,6 +78,9 @@ export interface RunningServer {
 }
 
 export function createServer(opts: ServerOptions): RunningServer {
+  // Mail: drop week-old unsent attachment staging in this cache directory. Only when asked for
+  // (startServer, the production entry): a default createServer never resolves the real global dirs.
+  if (opts.sweepMailStagingIn) sweepStagedAttachmentsIn(opts.sweepMailStagingIn);
   const paths = libraryPaths(opts.dataDir);
   const statusDir = statusDirFor(opts.dataDir);
   const runner = new JobRunner({
@@ -201,6 +209,9 @@ export function createServer(opts: ServerOptions): RunningServer {
     ready: () => ready,
     close: () =>
       new Promise((resolveClose, rejectClose) => {
+        // First, synchronously: no mail undo window may end into a send while the rest shuts down
+        // (stopping Copilot runs can take a while). Pending sends become interrupted, back in Drafts.
+        disposeMailSendServices();
         watcher.stop();
         hub.close();
         providerSettings.close();
@@ -272,11 +283,18 @@ export async function startServer(
   env: NodeJS.ProcessEnv = process.env
 ): Promise<RunningServer> {
   const cfg = resolveServerConfig(argv, env);
+  let sweepMailStagingIn: string | undefined;
+  try {
+    sweepMailStagingIn = resolveGlobalDirs().cacheDir;
+  } catch {
+    /* an unresolvable global directory is reported when Mail is used, not here */
+  }
   const srv = createServer({
     dataDir: cfg.dataDir,
     port: cfg.port,
     webDist: cfg.webDist,
     mailWatch: true,
+    ...(sweepMailStagingIn ? { sweepMailStagingIn } : {}),
   });
   const port = await srv.ready();
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);

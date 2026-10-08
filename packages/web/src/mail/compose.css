@@ -1,0 +1,38 @@
+/* Mail composer, undo bar and notices (ticket 07); follows the approved prototype (.scratch/mail/prototype). */
+.mc-write-row { padding: 2px 10px 8px; }
+.mc-write-row .btn { width: 100%; justify-content: center; gap: 6px; }
+.mc-actions { display: flex; align-items: center; gap: 2px; margin: 8px -6px 0; }
+.mc-window { position: absolute; right: 16px; bottom: 0; width: min(560px, calc(100% - 32px)); height: min(540px, calc(100% - 24px)); z-index: 30; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-bottom: 0; border-radius: 9px 9px 0 0; box-shadow: var(--shadow-pop, 0 12px 36px rgba(0, 0, 0, .35)); }
+.mc-window.min { height: auto; width: 300px; }
+.mc-bar { display: flex; justify-content: space-between; align-items: center; width: 100%; height: 36px; padding: 0 12px; font-weight: 600; font-size: var(--fs-sm); color: var(--text); }
+.mc-bar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-head { display: flex; align-items: center; gap: 2px; height: 38px; padding: 0 6px 0 14px; border-bottom: 1px solid var(--border-soft); }
+.mc-title { flex: 1; min-width: 0; font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-fields { display: flex; flex-direction: column; }
+.mc-field { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 14px; border-bottom: 1px solid var(--border-soft); font-size: var(--fs-sm); }
+.mc-field > span { width: 64px; flex: none; color: var(--text-faint); }
+.mc-field input, .mc-field select { flex: 1; min-width: 0; background: none; border: 0; outline: none; height: 32px; font-size: var(--fs-sm); color: var(--text); }
+.mc-field:focus-within { box-shadow: inset 2px 0 0 var(--accent); }
+.mc-field select option { background: var(--panel); }
+.mc-body { flex: 1; min-height: 80px; resize: none; border: 0; outline: none; background: none; padding: 12px 14px; font: var(--fs)/1.7 var(--font-sans); color: var(--text); }
+.mc-attachments { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 12px; max-height: 96px; overflow-y: auto; }
+.mc-attachment { display: flex; align-items: center; gap: 6px; padding: 0 2px 0 9px; height: 32px; border: 1px solid var(--border); border-radius: 5px; font-size: var(--fs-xs); color: var(--text-dim); max-width: 260px; }
+.mc-attachment > span:not(.mc-attachment-size) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-attachment-size { color: var(--text-faint); flex: none; font-variant-numeric: tabular-nums; }
+.mc-size { padding: 0 14px 6px; font-size: var(--fs-xs); color: var(--text-faint); }
+.mc-error { padding: 0 12px 6px; }
+.mc-foot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border-soft); }
+.mc-foot .btn { gap: 6px; }
+.mc-draft-state { flex: 1; font-size: var(--fs-xs); color: var(--text-faint); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-draft-state.danger { color: var(--danger); }
+.mc-toasts { position: absolute; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; width: min(640px, calc(100% - 32px)); }
+.mc-toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; min-height: 40px; background: var(--text); color: var(--bg-deep, var(--bg)); border-radius: 7px; font-size: var(--fs-sm); box-shadow: var(--shadow-2, 0 8px 24px rgba(0, 0, 0, .3)); max-width: 100%; }
+.mc-toast > span { min-width: 0; }
+.mc-toast .btn { flex: none; }
+.mc-toast .btn.icon { color: inherit; }
+.mc-toast-meta { opacity: .7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.mc-toast.warning, .mc-toast.danger { background: var(--panel); color: var(--text); border: 1px solid var(--warn); }
+.mc-toast.danger { border-color: var(--danger); }
+.mc-toast.warning > svg:first-child { color: var(--warn); flex: none; }
+.mc-toast.danger > svg:first-child { color: var(--danger); flex: none; }
+.mail-mail[data-layout="narrow"] .mc-window { right: 0; width: 100%; }

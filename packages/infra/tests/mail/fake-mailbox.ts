@@ -28,6 +28,8 @@ export interface FakeFolder {
   attrs?: string[]; // e.g. ["\\Sent"]
   uidValidity: number;
   messages: FakeMessage[];
+  /** Highest uid ever assigned, so uids are not reused after an expunge. */
+  lastUid?: number;
 }
 
 export interface FakeMailbox {
@@ -52,6 +54,10 @@ export interface FakeMailbox {
   /** Advertise UIDPLUS (default true) and MOVE (default true); turn off to test the fallbacks. */
   uidplus: boolean;
   moveCapability: boolean;
+  /** Make APPEND answer NO (Mail ticket 07: a server that refuses new drafts / Sent copies). */
+  denyAppend: boolean;
+  /** Withhold the APPENDUID response code, as a server without UIDPLUS does. */
+  hideAppendUid: boolean;
   close(): Promise<void>;
 }
 
@@ -290,10 +296,19 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
     searchDelayMs: 0,
     uidplus: true,
     moveCapability: true,
+    denyAppend: false,
+    hideAppendUid: false,
     close: async () => {},
   };
   const handle = (sock: TLSSocket) => {
     let buf = Buffer.alloc(0);
+    let lineAcc = "";
+    let literal: {
+      remaining: number;
+      chunks: Buffer[];
+      /** Set for APPEND (Mail ticket 07): the message is stored; otherwise the literal is folded into the command line. */
+      append?: { tag: string; folder: string; flags: string[] };
+    } | null = null;
     let selected: FakeFolder | null = null;
     let authed = false;
     const send = (s: string | Buffer) =>
@@ -351,7 +366,7 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
       const isUid = cmd === "UID";
       const verb = isUid ? `UID ${String(args[0] ?? "").toUpperCase()}` : cmd;
       commands.push(
-        verb === "SELECT" || verb === "EXAMINE" || verb === "UID STORE"
+        verb === "SELECT" || verb === "EXAMINE" || verb === "UID STORE" || verb === "APPEND"
           ? `${verb} ${isUid ? "" : String(args[0] ?? "")}`.trim()
           : verb
       );
@@ -566,6 +581,29 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
           } else send(`${tag} OK ${copyUid} copied`);
           break;
         }
+        case "APPEND": {
+          if (!requireAuth()) break;
+          const target = String(args[0]);
+          const last = args[args.length - 1];
+          const lit = typeof last === "string" ? /^\{(\d+)\+?\}$/.exec(last) : null;
+          if (!lit) {
+            send(`${tag} BAD APPEND needs a literal`);
+            break;
+          }
+          const flagTok = args.find((a) => Array.isArray(a));
+          // A refused or unknown target still has to swallow the literal the client sends next.
+          literal = {
+            remaining: Number(lit[1]),
+            chunks: [],
+            append: {
+              tag,
+              folder: find(target) && !state.denyAppend ? target : "",
+              flags: (flagTok as string[] | undefined) ?? [],
+            },
+          };
+          send("+ ready");
+          break;
+        }
         case "EXPUNGE":
         case "UID EXPUNGE": {
           if (!selected) {
@@ -597,26 +635,71 @@ export async function startFakeMailbox(folders: FakeFolder[]): Promise<FakeMailb
       }
     };
 
-    let lineAcc = "";
-    let literal: { remaining: number; chunks: Buffer[] } | null = null;
+    const finishAppend = (lit: {
+      chunks: Buffer[];
+      tag: string;
+      folder: string;
+      flags: string[];
+    }) => {
+      const body = Buffer.concat(lit.chunks);
+      const f = lit.folder ? find(lit.folder) : undefined;
+      if (!f) {
+        send(`${lit.tag} NO [TRYCREATE] append refused`);
+        return;
+      }
+      const source = body.toString("latin1");
+      const head = (source.split("\r\n\r\n")[0] ?? "").replace(/\r\n[ \t]+/g, " ");
+      const header = (name: string) =>
+        new RegExp(`^${name}:[ \\t]*(.*)$`, "im").exec(head)?.[1] ?? "";
+      const fromRaw = header("From").trim();
+      const fm = /^(?:"?([^"<]*?)"?\s*)?<([^>]+)>$/.exec(fromRaw);
+      const uid = Math.max(f.lastUid ?? 0, ...f.messages.map((m) => m.uid)) + 1;
+      f.lastUid = uid;
+      f.messages.push({
+        uid,
+        flags: new Set(lit.flags),
+        source,
+        date: header("Date") || new Date().toUTCString(),
+        subject: header("Subject"),
+        from: [fm?.[1]?.trim() ?? "", fm?.[2] ?? fromRaw],
+        to: [],
+      });
+      send(
+        `${lit.tag} OK ${state.hideAppendUid ? "" : `[APPENDUID ${f.uidValidity} ${uid}] `}done`
+      );
+    };
     sock.on("data", (d: Buffer) => {
       buf = Buffer.concat([buf, d]);
       for (;;) {
         if (literal) {
           const take = Math.min(literal.remaining, buf.length);
-          literal.chunks.push(buf.subarray(0, take));
-          literal.remaining -= take;
-          buf = buf.subarray(take);
+          if (take > 0) {
+            literal.chunks.push(buf.subarray(0, take));
+            buf = buf.subarray(take);
+            literal.remaining -= take;
+          }
           if (literal.remaining > 0) return;
-          lineAcc += q(Buffer.concat(literal.chunks).toString("utf8"));
+          const done = literal;
           literal = null;
+          if (done.append) {
+            const eol = buf.indexOf("\r\n");
+            if (eol < 0) {
+              literal = done; // the command line's terminator has not arrived yet
+              return;
+            }
+            buf = buf.subarray(eol + 2);
+            finishAppend({ chunks: done.chunks, ...done.append });
+          } else {
+            lineAcc += q(Buffer.concat(done.chunks).toString("utf8"));
+          }
           continue;
         }
         const i = buf.indexOf("\r\n");
         if (i < 0) return;
         const line = buf.subarray(0, i).toString("latin1");
         buf = buf.subarray(i + 2);
-        const lit = awaitingPlain ? null : /\{(\d+)(\+?)\}$/.exec(line);
+        const lit =
+          awaitingPlain || /^\S+ APPEND /i.test(line) ? null : /\{(\d+)(\+?)\}$/.exec(line);
         if (lit) {
           lineAcc += line.slice(0, lit.index);
           literal = { remaining: Number(lit[1]), chunks: [] };
