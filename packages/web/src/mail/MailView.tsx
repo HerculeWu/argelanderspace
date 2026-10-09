@@ -10,7 +10,7 @@ import {
   openMailMessage,
 } from "../api/mail";
 import { Icon } from "../lib/icons";
-import { Badge, Button, IconButton, InlineMessage } from "../ui";
+import { ActionButton, Badge, Button, InlineMessage } from "../ui";
 import { AddAccountDialog, ReenterPasswordDialog, RemoveAccountDialog } from "./AccountDialogs";
 import { addressList, addressName, fileSize, longDate, shortDate } from "./format";
 import { MailHtmlBody, useInlineImages, useSanitizedMailHtml } from "./MailHtmlBody";
@@ -621,12 +621,14 @@ export function MailView() {
       <div className="lib-side-head">
         <span className="lib-side-title">{t("mail.title")}</span>
         <span className="lib-side-count" />
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="sidebar"
           className="lib-side-collapse"
           data-ui="mail-folders-collapse"
-          icon={<Icon name="panel-left-close" cls="ico-sm" />}
           label={t("mail.collapse")}
+          tooltip={t("mail.collapse")}
           onClick={() => (layout === "wide" ? setFolderPane(false) : setDrawer(false))}
         />
       </div>
@@ -656,13 +658,15 @@ export function MailView() {
                     <span className="mail-account-addr">{a.address}</span>
                   </span>
                 </button>
-                <IconButton
+                <ActionButton
                   unstyled
+                  mode="icon"
+                  iconName="dots-horizontal"
                   className="btn icon ghost mail-account-more"
                   data-ui="mail-account-menu"
                   data-ui-key={a.id}
-                  icon={<Icon name="ellipsis" cls="ico-sm" />}
                   label={t("mail.accountMenu")}
+                  tooltip={t("mail.accountMenu")}
                   aria-expanded={menu === a.id}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -739,12 +743,14 @@ export function MailView() {
       <div className="mail-list-head">
         <div className="mail-list-title">
           <span>{title}</span>
-          <IconButton
+          <ActionButton
             unstyled
+            mode="icon"
+            iconName="refresh-cw"
             className="btn icon ghost"
             data-ui="mail-refresh"
-            icon={<Icon name="refresh-cw" cls="ico-sm" />}
             label={t("mail.refresh")}
+            tooltip={t("mail.refresh")}
             onClick={refresh}
           />
         </div>
@@ -860,12 +866,14 @@ export function MailView() {
     const back =
       layout === "narrow" ? (
         <div className="mail-reader-actions" data-ui="mail-reader-actions">
-          <IconButton
+          <ActionButton
             unstyled
+            mode="icon"
+            iconName="arrow-left"
             className="btn icon ghost"
             data-ui="mail-reader-back"
-            icon={<Icon name="arrow-left" cls="ico-sm" />}
             label={t("mail.backToList")}
+            tooltip={t("mail.backToList")}
             onClick={() => setReaderOpen(false)}
           />
         </div>
@@ -984,13 +992,15 @@ export function MailView() {
         folderPaneEl
       ) : (
         <div className="mail-folders-collapsed">
-          <IconButton
+          <ActionButton
             unstyled
+            mode="icon"
+            iconName="sidebar"
             className="btn icon ghost"
             data-ui="mail-folders-expand"
             aria-expanded={drawer}
-            icon={<Icon name="panel-left-open" cls="ico-sm" />}
             label={t("mail.expand")}
+            tooltip={t("mail.expand")}
             onClick={() => (layout === "wide" ? setFolderPane(true) : setDrawer((d) => !d))}
           />
           <ComposeButton compact />

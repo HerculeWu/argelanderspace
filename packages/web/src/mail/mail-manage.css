@@ -6,7 +6,7 @@
 .mail-menu-label { padding: 4px 10px; font-size: var(--fs-xs); color: var(--text-faint); }
 .mail-move-menu button { width: 100%; }
 .mail-move-menu button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mail-danger-icon { color: var(--danger); }
+[data-ui="mail-delete-forever"] svg { color: var(--danger); }
 .mail-permanent-subject { margin: 0 0 8px; font-weight: 600; overflow-wrap: anywhere; }
 .mail-toasts { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; width: min(640px, calc(100% - 32px)); }
 .mail-toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; min-height: 40px; background: var(--text); color: var(--bg-deep, var(--bg)); border-radius: 7px; font-size: var(--fs-sm); box-shadow: var(--shadow-2); max-width: 100%; }

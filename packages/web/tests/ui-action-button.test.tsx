@@ -159,6 +159,22 @@ describe("parseIconSvg", () => {
     expect(Object.keys(icons["set-task-status"])).toEqual(["circle", "circle-alert", "circle-check", "circle-dot"]);
   });
 
+  it("locates the Mail action icons by data-ui, with state variants under the same key", () => {
+    for (const id of [
+      "mail-reader-back", "mail-folders-collapse", "mail-folders-expand", "mail-account-menu", "mail-refresh",
+      "mail-toast-dismiss", "mail-notice-close", "mail-search-clear", "mail-composer-minimize", "mail-composer-close",
+      "mail-composer-attach", "mail-composer-discard", "mail-composer-attachment-remove", "mail-move", "mail-restore",
+      "mail-delete", "mail-delete-forever", "mail-reply", "mail-forward", "mail-compose-compact", "mail-edit-draft",
+    ]) {
+      expect(typeof (icons as Record<string, unknown>)[id]).toBe("string");
+      expect(getConfiguredIcon("any", id)).not.toBeNull();
+    }
+    expect(Object.keys(icons["mail-star"])).toEqual(["star", "starred"]);
+    expect(Object.keys(icons["mail-mark-unread"])).toEqual(["mail", "mail-open"]);
+    expect(getConfiguredIcon("starred", "mail-star")).not.toBeNull();
+    expect(getConfiguredIcon("mail-open", "mail-mark-unread")).not.toBeNull();
+  });
+
   it("accepts a restricted inline SVG and rejects active, external and unsupported content", () => {
     expect(parseIconSvg('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 2L8 8"/></svg>')).not.toBeNull();
     const unsafe = [

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { IconButton, Tooltip } from "../ui";
+import { ActionButton, Tooltip } from "../ui";
 import { searchReason } from "./manage-error";
 import "./mail-manage.css";
 
@@ -70,12 +70,14 @@ export function MailSearch({
           />
         </Tooltip>
         {(text || state.active) && (
-          <IconButton
+          <ActionButton
             unstyled
+            mode="icon"
+            iconName="xmark"
             className="mail-search-clear"
             data-ui="mail-search-clear"
-            icon={<Icon name="x" cls="ico-sm" />}
             label={t("mail.search.clear")}
+            tooltip={t("mail.search.clear")}
             onClick={() => {
               setText("");
               onClear();

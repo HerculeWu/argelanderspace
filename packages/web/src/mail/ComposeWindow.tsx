@@ -8,7 +8,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Button, Dialog, IconButton, InlineMessage } from "../ui";
+import { ActionButton, Button, Dialog, InlineMessage } from "../ui";
 import { fileSize } from "./format";
 import "./compose.css";
 
@@ -136,20 +136,24 @@ export function ComposeWindow(p: ComposeWindowProps) {
     <section className="mc-window" data-ui="mail-composer" role="dialog" aria-label={title}>
       <header className="mc-head">
         <span className="mc-title">{title}</span>
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="minus"
           className="btn icon ghost"
           data-ui="mail-composer-minimize"
-          icon={<Icon name="minus" cls="ico-sm" />}
           label={t("mail.compose.minimize")}
+          tooltip={t("mail.compose.minimize")}
           onClick={() => p.onMinimize(true)}
         />
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="xmark"
           className="btn icon ghost"
           data-ui="mail-composer-close"
-          icon={<Icon name="x" cls="ico-sm" />}
           label={t("mail.compose.close")}
+          tooltip={t("mail.compose.close")}
           disabled={c.sending}
           onClick={p.onClose}
         />
@@ -239,11 +243,15 @@ export function ComposeWindow(p: ComposeWindowProps) {
               <Icon name="paperclip" cls="ico-sm" />
               <span title={`${a.filename} (${fileSize(a.size)})`}>{a.filename}</span>
               <span className="mc-attachment-size">{fileSize(a.size)}</span>
-              <IconButton
+              <ActionButton
                 unstyled
+                mode="icon"
+                iconName="xmark"
                 className="btn icon ghost"
-                icon={<Icon name="x" cls="ico-sm" />}
+                data-ui="mail-composer-attachment-remove"
+                data-ui-key={a.id}
                 label={t("mail.compose.removeAttachment", { name: a.filename })}
+                tooltip={t("mail.compose.removeAttachment", { name: a.filename })}
                 disabled={c.sending}
                 onClick={() => p.onRemoveAttachment(a.id)}
               />
@@ -300,12 +308,14 @@ export function ComposeWindow(p: ComposeWindowProps) {
           <Icon name="send" cls="ico-sm" />
           {t("mail.compose.send")}
         </Button>
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="paperclip"
           className="btn icon ghost"
           data-ui="mail-composer-attach"
-          icon={<Icon name="paperclip" cls="ico-sm" />}
           label={t("mail.compose.attach")}
+          tooltip={t("mail.compose.attach")}
           disabled={c.sending}
           onClick={() => fileRef.current?.click()}
         />
@@ -329,12 +339,14 @@ export function ComposeWindow(p: ComposeWindowProps) {
         >
           {stateText}
         </span>
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="trash"
           className="btn icon ghost"
           data-ui="mail-composer-discard"
-          icon={<Icon name="trash-2" cls="ico-sm" />}
           label={t("mail.compose.discard")}
+          tooltip={t("mail.compose.discard")}
           disabled={c.sending}
           onClick={() => setConfirmDiscard(true)}
         />

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Button, IconButton } from "../ui";
+import { ActionButton, Button } from "../ui";
 import "./mail-manage.css";
 
 export interface MailToast {
@@ -37,12 +37,14 @@ export function MailToasts({ toasts, onDismiss }: { toasts: MailToast[]; onDismi
               {toast.action.label}
             </Button>
           )}
-          <IconButton
+          <ActionButton
             unstyled
+            mode="icon"
+            iconName="xmark"
             className="btn icon ghost"
             data-ui="mail-toast-dismiss"
-            icon={<Icon name="x" cls="ico-sm" />}
             label={t("mail.close")}
+            tooltip={t("mail.close")}
             onClick={() => onDismiss(toast.id)}
           />
         </div>

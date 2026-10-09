@@ -41,7 +41,7 @@ import {
   uploadMailAttachment,
 } from "../api/mail-compose";
 import { Icon } from "../lib/icons";
-import { Button, Dialog, IconButton } from "../ui";
+import { ActionButton, Button, Dialog, IconButton } from "../ui";
 import { type ComposeState, ComposeWindow } from "./ComposeWindow";
 import "./compose.css";
 
@@ -1408,12 +1408,14 @@ export function MailComposeLayer() {
                   {n.action.label}
                 </Button>
               )}
-              <IconButton
+              <ActionButton
                 unstyled
+                mode="icon"
+                iconName="xmark"
                 className="btn icon ghost"
                 data-ui="mail-notice-close"
-                icon={<Icon name="x" cls="ico-sm" />}
                 label={t("mail.compose.dismiss")}
+                tooltip={t("mail.compose.dismiss")}
                 onClick={() => actions.closeNotice(n.id)}
               />
             </div>
@@ -1456,13 +1458,15 @@ export function ComposeButton({ compact = false }: { compact?: boolean }) {
   const api = useMailCompose();
   if (!api) return null;
   return compact ? (
-    <IconButton
+    <ActionButton
       unstyled
+      mode="icon"
+      iconName="square-pen"
       className="btn icon ghost"
       data-ui="mail-compose-compact"
       disabled={!api.canCompose}
-      icon={<Icon name="square-pen" cls="ico-sm" />}
       label={t("mail.compose.write")}
+      tooltip={t("mail.compose.write")}
       onClick={api.startNew}
     />
   ) : (
@@ -1485,20 +1489,22 @@ export function MailComposeActions({ message }: { message: MailMessage }) {
   return (
     <div className="mc-actions" data-ui="mail-compose-actions" role="group" aria-label={t("mail.compose.actions")}>
       {inDrafts ? (
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="mail-pencil"
           className="btn icon ghost"
           data-ui="mail-edit-draft"
           disabled={disabled}
-          icon={<Icon name="square-pen" cls="ico-sm" />}
           label={t("mail.compose.editDraft")}
+          tooltip={t("mail.compose.editDraft")}
           onClick={() => api.editDraft(message)}
         />
       ) : (
         <>
-          <IconButton unstyled className="btn icon ghost" data-ui="mail-reply" disabled={disabled} icon={<Icon name="reply" cls="ico-sm" />} label={t("mail.compose.reply")} onClick={() => api.startFrom("reply", message)} />
+          <ActionButton unstyled mode="icon" iconName="reply" className="btn icon ghost" data-ui="mail-reply" disabled={disabled} label={t("mail.compose.reply")} tooltip={t("mail.compose.reply")} onClick={() => api.startFrom("reply", message)} />
           <IconButton unstyled className="btn icon ghost" data-ui="mail-reply-all" disabled={disabled} icon={<Icon name="reply-all" cls="ico-sm" />} label={t("mail.compose.replyAll")} onClick={() => api.startFrom("replyAll", message)} />
-          <IconButton unstyled className="btn icon ghost" data-ui="mail-forward" disabled={disabled} icon={<Icon name="forward" cls="ico-sm" />} label={t("mail.compose.forward")} onClick={() => api.startFrom("forward", message)} />
+          <ActionButton unstyled mode="icon" iconName="forward" className="btn icon ghost" data-ui="mail-forward" disabled={disabled} label={t("mail.compose.forward")} tooltip={t("mail.compose.forward")} onClick={() => api.startFrom("forward", message)} />
         </>
       )}
     </div>
