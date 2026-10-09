@@ -16,7 +16,6 @@ import type {
 
 const TLS_CODES = /CERT|SELF_SIGNED|TLS|SSL|ERR_OSSL|HOSTNAME_MISMATCH|ALTNAME/i;
 
-/** Map an error from either library to a code; the error text is never kept. */
 /**
  * Where a special-use folder conventionally lives: at the top level or directly under INBOX. imapflow also GUESSES
  * special use from a folder's name at any depth (`specialUseSource: "name"`); a guess only counts in such a place,
@@ -25,6 +24,7 @@ const TLS_CODES = /CERT|SELF_SIGNED|TLS|SSL|ERR_OSSL|HOSTNAME_MISMATCH|ALTNAME/i
 export const isConventionalPlace = (parent: string[]): boolean =>
   parent.length === 0 || (parent.length === 1 && parent[0]?.toUpperCase() === "INBOX");
 
+/** Map an error from either library to a code; the error text is never kept. */
 export function classifyMailError(error: unknown): MailProbeFailureCode {
   const e = (error ?? {}) as {
     code?: unknown;

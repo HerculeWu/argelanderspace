@@ -27,7 +27,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { MailApiError } from "../api/mail";
+import { MailApiError, mailErrorCode } from "../api/mail";
 import {
   discardMailDraft,
   dismissMailSend,
@@ -138,7 +138,6 @@ const dropOne = (list: string[], name: string) => {
   return i < 0 ? list : [...list.slice(0, i), ...list.slice(i + 1)];
 };
 
-const errorCode = (e: unknown) => (e instanceof MailApiError ? e.code : "unreachable");
 const clock = () => {
   const d = new Date();
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
@@ -396,7 +395,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         savedDraft: c.draft,
       }));
     } catch (e) {
-      const code = errorCode(e);
+      const code = mailErrorCode(e);
       if (code === "already_sent")
         // Not a failure to retry: this message went out (from another window, tab or an earlier send).
         patchMine((x) => ({ ...x, save: "idle", saveCode: null, sent: x.sent ?? { sentCopy: null } }));
@@ -439,7 +438,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       try {
         await saveMailDraft(st.accountId, st.draft);
       } catch (e) {
-        recordLeft({ uid, kind: "unsaved", subject: st.draft.subject, code: errorCode(e), state: st });
+        recordLeft({ uid, kind: "unsaved", subject: st.draft.subject, code: mailErrorCode(e), state: st });
       }
     });
   }, []);
@@ -577,7 +576,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         if (alive.current)
           notify({
             tone: "danger",
-            text: `${t("mail.compose.initFailed")} ${errText(errorCode(e))}`,
+            text: `${t("mail.compose.initFailed")} ${errText(mailErrorCode(e))}`,
             autoCloseMs: 8000,
           });
       } finally {
@@ -688,11 +687,11 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
             scheduleSave();
           })
           .catch((e) => {
-            if (!mine()) return orphanUpload(uid, accountId, file.name, null, errorCode(e));
+            if (!mine()) return orphanUpload(uid, accountId, file.name, null, mailErrorCode(e));
             patchCompose((x) => ({
               ...x,
               uploading: dropOne(x.uploading, file.name),
-              error: errorCode(e),
+              error: mailErrorCode(e),
               errorName: file.name,
             }));
           });
@@ -785,7 +784,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         try {
           await discardMailDraft(on, c.draft);
         } catch (e) {
-          return errorCode(e);
+          return mailErrorCode(e);
         }
         propsRef.current.onChanged();
       }
@@ -984,7 +983,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         });
       } catch (e) {
         // A draft the server refuses to save because a send of it is running (or went out) is not "not sent".
-        const held = ["already_pending", "already_sent"].includes(errorCode(e));
+        const held = ["already_pending", "already_sent"].includes(mailErrorCode(e));
         recordLeft({
           uid: c.uid,
           kind: unknown || held ? "unknown" : "notSent",
@@ -1026,7 +1025,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         if (!notThere) {
           if (!alive.current) return void leftAfterSend(c, "unreachable", unconfirmed);
           // Still unknown: do not send. The window keeps its text and the reason.
-          mineOnly((x) => ({ ...x, sending: false, error: errorCode(e), errorName: null }));
+          mineOnly((x) => ({ ...x, sending: false, error: mailErrorCode(e), errorName: null }));
           return;
         }
       }
@@ -1071,7 +1070,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       if (!alive.current) return;
       accepted(c, { ...st, sendId: st.sendId || sendId });
     } catch (e) {
-      const code = errorCode(e);
+      const code = mailErrorCode(e);
       // No answer at all: the request may have reached the server. Bind its id to this window.
       const next =
         code === "unreachable"
@@ -1135,7 +1134,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       try {
         settle(p, await undoMailSend(p.accountId, p.sendId));
       } catch (e) {
-        const code = errorCode(e);
+        const code = mailErrorCode(e);
         if (code !== "not_pending" && code !== "owned_elsewhere" && code !== "not_found") {
           notify({ tone: "danger", text: errText(code), autoCloseMs: 8000 });
           return;
@@ -1153,7 +1152,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
             void watch({ ...p, phase: "sending" });
           } else settle(p, st);
         } catch (e2) {
-          notify({ tone: "danger", text: errText(errorCode(e2)), autoCloseMs: 8000 });
+          notify({ tone: "danger", text: errText(mailErrorCode(e2)), autoCloseMs: 8000 });
         }
       }
     },
@@ -1182,6 +1181,9 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       .then(({ sends }) => {
         if (cancelled || !alive.current) return;
         for (const st of sends) {
+          // A send the Copilot started has its own card and undo bar; it is not this page's to restore,
+          // report or acknowledge (acknowledging deletes the record the Copilot reads its result from).
+          if (st.origin === "copilot") continue;
           const base: Pending = {
             accountId: st.accountId,
             sendId: st.sendId,

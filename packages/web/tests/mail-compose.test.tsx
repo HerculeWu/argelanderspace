@@ -322,6 +322,22 @@ test("opening Mail after a restart reports what the server still has: interrupte
   expect(text[1]).toContain("unknown whether it went out");
 });
 
+test("closing review B2: sends the Copilot started are neither restored, reported nor dismissed by the Mail page", async () => {
+  srv.outbox = [
+    status({ sendId: "00000000-0000-4000-8000-0000000000c1", state: "sent", remainingMs: null, subject: "By the Copilot", sentCopy: "saved", draftKept: false, origin: "copilot" }),
+    status({ sendId: "00000000-0000-4000-8000-0000000000c2", state: "pending", remainingMs: 5000, subject: "Copilot window", origin: "copilot" }),
+    status({ sendId: "00000000-0000-4000-8000-0000000000c3", state: "interrupted", remainingMs: null, subject: "Mine", origin: "mail" }),
+  ];
+  render(<MailView />);
+  await waitFor(() => expect(document.querySelectorAll('[data-ui="mail-notice"]')).toHaveLength(1));
+  expect(document.body.textContent).toContain("Mine");
+  expect(document.body.textContent).not.toContain("By the Copilot");
+  expect(ui("mail-send-undo")).toBeNull();
+  await new Promise((r) => setTimeout(r, 100));
+  expect(calls(/\/sends\/[^/]+$/, "DELETE")).toHaveLength(0);
+  expect(calls(/\/sends\/[^/]+$/, "GET")).toHaveLength(0);
+});
+
 test("opening Mail inside a running window shows the countdown again", async () => {
   srv.outbox = [status({ remainingMs: 5000, subject: "Still pending" })];
   render(<MailView />);

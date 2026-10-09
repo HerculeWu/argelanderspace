@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isMailFolderPath,
   MAIL_CONFIRMED_ACTIONS,
   MAIL_OPERATION_ACTIONS,
   MAIL_UNTRUSTED_NOTICE,
@@ -67,6 +68,32 @@ describe("Mail tool and page contracts (ticket 09)", () => {
     ).toBe(false);
     expect(MAIL_CONFIRMED_ACTIONS).toEqual(["send", "delete", "move"]);
     expect(MAIL_OPERATION_ACTIONS).toContain("send_status");
+  });
+
+  it("one folder-path rule for every request shape: no control characters, also in Copilot operations", () => {
+    for (const bad of ["IN\u0000BOX", "IN\nBOX", "IN\u007fBOX", ""]) {
+      expect(
+        MailDeleteOperationSchema.safeParse({
+          action: "delete",
+          accountId: ACC,
+          folder: bad,
+          uid: 1,
+          uidValidity: 3,
+        }).success
+      ).toBe(false);
+      expect(
+        MailMoveOperationSchema.safeParse({
+          action: "move",
+          accountId: ACC,
+          folder: "INBOX",
+          uid: 1,
+          uidValidity: 3,
+          destination: bad,
+        }).success
+      ).toBe(false);
+      expect(isMailFolderPath(bad)).toBe(false);
+    }
+    expect(isMailFolderPath("Projects/Euclid é")).toBe(true);
   });
 
   it("delete and move must name the uid generation they were shown", () => {

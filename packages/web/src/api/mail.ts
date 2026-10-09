@@ -23,6 +23,9 @@ export class MailApiError extends Error {
   }
 }
 
+/** The machine code of a failed mail request; a network failure or anything else is "unreachable". */
+export const mailErrorCode = (e: unknown): string => (e instanceof MailApiError ? e.code : "unreachable");
+
 export async function request<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {

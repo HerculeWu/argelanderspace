@@ -5,13 +5,13 @@ import {
   fetchMailAccounts,
   fetchMailFolders,
   fetchMailHeaders,
-  MailApiError,
   mailAttachmentUrl,
+  mailErrorCode,
   openMailMessage,
 } from "../api/mail";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, InlineMessage } from "../ui";
-import { AddAccountDialog, ReenterPasswordDialog, RemoveAccountDialog } from "./AccountDialogs";
+import { AccountSettingsDialog, AddAccountDialog, ReenterPasswordDialog, RemoveAccountDialog } from "./AccountDialogs";
 import { addressList, addressName, fileSize, longDate, shortDate } from "./format";
 import { MailHtmlBody, useInlineImages, useSanitizedMailHtml } from "./MailHtmlBody";
 import { buildMailPage } from "./mail-context";
@@ -69,7 +69,6 @@ type Opened =
 
 const sourceKey = (accountId: string, folder: string) => `${accountId}\u0000${folder}`;
 const refKey = (r: Ref) => `${r.accountId}\u0000${r.folder}\u0000${r.uid}`;
-const errorCode = (e: unknown) => (e instanceof MailApiError ? e.code : "unreachable");
 const AUTH_CODES = new Set(["auth_failed", "credential_missing"]);
 
 export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (paneId: number, page: MailPage | null) => void } = {}) {
@@ -93,6 +92,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
   const [adding, setAdding] = useState(false);
   const [reenter, setReenter] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [settingsOf, setSettingsOf] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const search = useMailSearch();
 
@@ -127,7 +127,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
     window.addEventListener("click", close);
     window.addEventListener("keydown", onKey);
     // The first action takes focus so the keyboard can reach and activate it right away.
-    document.querySelector<HTMLElement>('[data-ui="mail-account-remove"]')?.focus();
+    document.querySelector<HTMLElement>('[data-ui="mail-account-menu-list"] button')?.focus();
     return () => {
       window.removeEventListener("click", close);
       window.removeEventListener("keydown", onKey);
@@ -143,7 +143,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
       setRev(r.rev);
       setAccountsError(null);
     } catch (e) {
-      if (alive.current) setAccountsError(errorCode(e));
+      if (alive.current) setAccountsError(mailErrorCode(e));
     }
   }, []);
   useEffect(() => {
@@ -175,7 +175,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
         return { ok: true, folders: r.folders };
       } catch (e) {
         if (!alive.current || folderSeq.current.get(accountId) !== seq) return { ok: false, folders: null };
-        const code = errorCode(e);
+        const code = mailErrorCode(e);
         if (AUTH_CODES.has(code) || !silent)
           setStates((s) => ({
             ...s,
@@ -299,7 +299,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
         if (silent) overtaken();
         return false;
       }
-      const code = errorCode(e);
+      const code = mailErrorCode(e);
       const auth = AUTH_CODES.has(code);
       if (auth) setStates((s) => ({ ...s, [accountId]: { health: "auth", code, stale: false, folders: [] } }));
       setSources((s) => {
@@ -351,6 +351,24 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
   const refresh = () => {
     for (const a of accounts ?? []) void loadFolders(a.id);
     for (const s of scopeSources) void loadSource(s.accountId, s.folder);
+    if (search.active) search.rerun();
+  };
+
+  /**
+   * The quiet reload for "something changed on the server" (the compose layer closed a window, a send ended):
+   * the same path as a live push (ticket 08) and a management action (ticket 06). Nothing flips to "loading",
+   * loaded older pages stay, a failure keeps what is shown, and an account whose login was refused is not
+   * asked again (the explicit refresh button is the way back).
+   */
+  const refreshQuiet = () => {
+    for (const a of accounts ?? []) {
+      if (states[a.id]?.health === "auth") continue;
+      void loadFolders(a.id, true);
+    }
+    for (const s of scopeSources) {
+      if (states[s.accountId]?.health === "auth") continue;
+      void loadSource(s.accountId, s.folder, false, true);
+    }
     if (search.active) search.rerun();
   };
 
@@ -573,7 +591,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
       if (row.h.unread && r.seen) markReadLocally(ref);
     } catch (e) {
       if (!alive.current || !openedRef.current || refKey(openedRef.current.ref) !== refKey(ref)) return;
-      setOpened({ ref, status: "error", code: errorCode(e) });
+      setOpened({ ref, status: "error", code: mailErrorCode(e) });
     }
   };
 
@@ -691,6 +709,9 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
               </div>
               {menu === a.id && (
                 <div className="mail-menu" data-ui="mail-account-menu-list" onClick={(e) => e.stopPropagation()}>
+                  <button data-ui="mail-account-settings" onClick={() => { setMenu(null); setSettingsOf(a.id); }}>
+                    {t("mail.accountSettings")}
+                  </button>
                   <button className="danger" data-ui="mail-account-remove" onClick={() => { setMenu(null); setRemoving(a.id); }}>
                     {t("mail.removeAccount")}
                   </button>
@@ -962,6 +983,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
   const narrowShowsReader = layout === "narrow" && readerOpen && opened !== null;
   const showFolders = layout === "wide" && folderPane;
   const reenterAccount = reenter ? accountById(reenter) : undefined;
+  const settingsAccount = settingsOf ? accountById(settingsOf) : undefined;
   const removeAccount = removing ? accountById(removing) : undefined;
 
   if (accounts !== null && accounts.length === 0 && !accountsError)
@@ -999,7 +1021,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
       accounts={accounts ?? []}
       sendableIds={sendableIds}
       onOpenDrafts={openDrafts}
-      onChanged={refresh}
+      onChanged={refreshQuiet}
       isDraftsFolder={isDraftsFolder}
     >
     <div className={"mail-mail " + layout} data-ui="mail-view" data-layout={layout} ref={rootRef}>
@@ -1058,6 +1080,18 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
             setAccounts((list) => (list ?? []).map((x) => (x.id === a.id ? a : x)));
             for (const key of [...requested.current]) if (key.includes(a.id)) requested.current.delete(key);
             void loadFolders(a.id);
+          }}
+        />
+      )}
+      {settingsAccount && (
+        <AccountSettingsDialog
+          account={settingsAccount}
+          rev={rev}
+          onClose={() => setSettingsOf(null)}
+          onSaved={(a, newRev) => {
+            setSettingsOf(null);
+            setRev(newRev);
+            setAccounts((list) => (list ?? []).map((x) => (x.id === a.id ? a : x)));
           }}
         />
       )}

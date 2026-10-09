@@ -165,6 +165,20 @@ test("a send the application stopped inside the window is shown as not sent", as
   expect(ui("copilot-mail-undo")?.textContent).toContain("not sent");
 });
 
+test("closing review B2: when the server has no record of the send any more, the bar stops asking and says the result cannot be confirmed", async () => {
+  const until = new Date(Date.now() + 6000).toISOString();
+  current = snap("completed", { messages: [{ id: "m1", role: "assistant", text: "queued", operations: [{ id: "call_1", tool: "mail", action: "send", status: "pending", undo: { until }, mailSend: { accountId: ACC, sendId: "00000000-0000-4000-8000-0000000000dd" } }] }] });
+  const base = fetchMock.getMockImplementation() as (url: string, options?: RequestInit) => Promise<Response>;
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) =>
+    String(url).includes("/api/mail/compose/accounts/") && String(url).includes("/sends/") ? json({ code: "not_found" }, 404) : base(url, options));
+  await open();
+  await waitFor(() => expect(ui("copilot-mail-undo")?.getAttribute("data-state")).toBe("gone"));
+  expect(ui("copilot-mail-undo")?.textContent).toContain("cannot be confirmed");
+  const asked = calls("/sends/").length;
+  await new Promise((r) => setTimeout(r, 1800));
+  expect(calls("/sends/").length).toBe(asked); // no endless retry
+});
+
 // ---- the Mail page context -------------------------------------------------------------------------- //
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({

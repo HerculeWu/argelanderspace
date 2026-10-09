@@ -1,4 +1,4 @@
-import { MAIL_PRESETS, type MailAccount, type MailAccountCreate, type MailPresetId } from "@argelanderspace/contracts";
+import { MAIL_PRESETS, MAIL_SERVER_SAVES_SENT, type MailAccount, type MailAccountCreate, type MailPresetId } from "@argelanderspace/contracts";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createMailAccount, MailApiError, removeMailAccount, updateMailAccount } from "../api/mail";
@@ -78,6 +78,23 @@ function KeychainConsent({ consent, onConsent }: { consent: boolean; onConsent: 
   );
 }
 
+/**
+ * "Keep a copy of sent mail in Sent myself": the inverse of `MailAccount.serverSavesSent`. Turn it off when the
+ * provider's server already files sent mail (otherwise there would be two copies); on when it does not.
+ */
+function SentCopyOption({ keepOwnCopy, onChange }: { keepOwnCopy: boolean; onChange: (keep: boolean) => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="mail-sent-copy" data-ui="mail-sent-copy">
+      <label className="mail-check">
+        <input type="checkbox" data-ui="mail-sent-copy-toggle" checked={keepOwnCopy} onChange={(e) => onChange(e.target.checked)} />
+        {t("mail.sentCopy.label")}
+      </label>
+      <p className="mail-note">{t("mail.sentCopy.hint")}</p>
+    </div>
+  );
+}
+
 export function AddAccountDialog({
   onClose,
   onAdded,
@@ -95,6 +112,8 @@ export function AddAccountDialog({
   const [error, setError] = useState<MailApiError | null>(null);
   const [needConsent, setNeedConsent] = useState(false);
   const [consent, setConsent] = useState(false);
+  // null: follow the provider's default; a choice is sent as the account's own setting
+  const [keepOwnCopy, setKeepOwnCopy] = useState<boolean | null>(null);
   const submitting = useRef(false);
 
   const edited = () => setError(null);
@@ -116,6 +135,7 @@ export function AddAccountDialog({
       displayName: custom ? (address.split("@")[1] ?? address) : t(`mail.add.${preset}`),
       password,
       ...(needConsent && consent ? { fileFallbackConsent: true } : {}),
+      ...(keepOwnCopy !== null ? { serverSavesSent: !keepOwnCopy } : {}),
     };
     if (!custom) return base;
     const endpoint = (s: ServerForm) => ({ host: s.host.trim(), port: Number(s.port), security: s.security });
@@ -214,11 +234,78 @@ export function AddAccountDialog({
             <input data-ui="mail-account-password" type="password" autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); edited(); }} />
           </label>
           {custom ? <>{serverFields("imap", imap, setImap)}{serverFields("smtp", smtp, setSmtp)}</> : <div className="mail-server-summary">{serverSummary(preset as Exclude<MailPresetId, "custom">)}</div>}
+          <SentCopyOption keepOwnCopy={keepOwnCopy ?? !MAIL_SERVER_SAVES_SENT[preset]} onChange={setKeepOwnCopy} />
           {needConsent && <KeychainConsent consent={consent} onConsent={setConsent} />}
           {error && <ErrorBlock error={error} />}
           <button type="submit" hidden />
         </form>
       )}
+    </Dialog>
+  );
+}
+
+/** The account's few settings that are not its server or password (only the Sent copy so far). Saved with the rev check. */
+export function AccountSettingsDialog({
+  account,
+  rev,
+  onClose,
+  onSaved,
+}: {
+  account: MailAccount;
+  rev: number;
+  onClose: () => void;
+  onSaved: (account: MailAccount, rev: number) => void;
+}) {
+  const { t } = useTranslation();
+  const initial = !(account.serverSavesSent ?? MAIL_SERVER_SAVES_SENT[account.preset]);
+  const [keepOwnCopy, setKeepOwnCopy] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<MailApiError | null>(null);
+  const submitting = useRef(false);
+  const submit = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await updateMailAccount(account.id, {
+        rev,
+        preset: account.preset,
+        address: account.address,
+        displayName: account.displayName,
+        imap: account.imap,
+        smtp: account.smtp,
+        imapUser: account.imapUser,
+        smtpUser: account.smtpUser,
+        serverSavesSent: !keepOwnCopy,
+      });
+      onSaved(r.account, r.rev);
+    } catch (e) {
+      setError(e instanceof MailApiError ? e : new MailApiError("unreachable", 0));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      uiId="mail-account-settings-dialog"
+      title={t("mail.settings.title", { a: account.address })}
+      closeLabel={t("mail.close")}
+      onClose={onClose}
+      busy={busy}
+      width={480}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>{t("mail.cancel")}</Button>
+          <Button appearance="primary" data-ui="mail-account-settings-save" disabled={keepOwnCopy === initial} busy={busy} onClick={() => void submit()}>
+            {t("mail.settings.save")}
+          </Button>
+        </>
+      }
+    >
+      <SentCopyOption keepOwnCopy={keepOwnCopy} onChange={(v) => { setKeepOwnCopy(v); setError(null); }} />
+      {error && <ErrorBlock error={error} />}
     </Dialog>
   );
 }

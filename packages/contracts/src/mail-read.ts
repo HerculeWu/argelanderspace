@@ -21,6 +21,7 @@ export const MailFolderRoleSchema = z.enum([
 ]);
 export type MailFolderRole = z.infer<typeof MailFolderRoleSchema>;
 
+/** Response side only: what the server reports about a folder. Requests use `MailFolderPathSchema` (mail.ts). */
 const folderPath = z.string().min(1).max(1024);
 
 export const MailFolderSchema = z

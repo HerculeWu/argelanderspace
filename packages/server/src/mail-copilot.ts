@@ -73,8 +73,11 @@ const REJECTED = new Set([
   "refused",
   "confirmation_required",
 ]);
-/** The change may or may not have happened. */
-const UNKNOWN = new Set(["connection_lost", "partial", "outcome_unknown"]);
+/**
+ * The change may or may not have happened. `partial` is not here: its state is known (the destination has a
+ * copy and the original is still there), so it is an `error` with its own wording in the tool.
+ */
+const UNKNOWN = new Set(["connection_lost", "outcome_unknown"]);
 
 /** A service error as a code and a status; anything else is a plain `error` with no detail. */
 export function mailFailure(error: unknown): MailFailure {
@@ -392,7 +395,11 @@ export async function draftUnchanged(
 export const startSend = (deps: MailOpDeps, plan: SendPlan, sendId: string) =>
   attempt(
     async (): Promise<MailSendStatus> =>
-      deps.services().send.start(plan.snapshot.accountId, { sendId, draft: plan.snapshot.draft })
+      deps.services().send.start(plan.snapshot.accountId, {
+        sendId,
+        draft: plan.snapshot.draft,
+        origin: "copilot",
+      })
   );
 
 export const sendStatusOf = (deps: MailOpDeps, accountId: string, sendId: string) =>

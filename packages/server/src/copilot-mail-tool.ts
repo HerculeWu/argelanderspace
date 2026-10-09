@@ -559,7 +559,10 @@ export function createMailTool(context: MailToolContext) {
           ok: false,
           status: f.status,
           code: f.code,
-          detail: NOTHING_CHANGED[f.status],
+          detail:
+            f.code === "partial"
+              ? "the move was only half done: a copy is now in the destination folder and the original is still in its folder (this is known, not uncertain). Tell the user; do not move it again"
+              : NOTHING_CHANGED[f.status],
         });
       if (!context.admitting())
         return done(record(toolCallId, action, { status: "error" }), {
@@ -713,7 +716,18 @@ export function createMailTool(context: MailToolContext) {
           const p = MailSendStatusOperationSchema.safeParse(rest);
           if (!p.success) return invalid(p.error);
           const r = await sendStatusOf(context.mail, p.data.accountId, p.data.sendId);
-          if (failed(r)) return fail(r);
+          // A status read changes nothing, so "nothing was changed" would be a false comfort here: a missing
+          // record means the answer is unknown (it may have been sent, acknowledged away and swept), not "not sent".
+          if (failed(r))
+            return done(record(toolCallId, action, { status: "unknown" }), {
+              ok: false,
+              status: "unknown",
+              code: r.code,
+              detail:
+                r.status === "not_found"
+                  ? "the record of this send no longer exists, so its result cannot be confirmed: it may or may not have been sent. Look in Sent (list, search) and do not send it again blindly"
+                  : "the send's status could not be read, so its result cannot be confirmed: it may or may not have been sent. Check Sent before anything else and do not send it again blindly",
+            });
           const o = sendOutcome(r);
           return done(record(toolCallId, action, { status: o.status }), o.payload);
         }

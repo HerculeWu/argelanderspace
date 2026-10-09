@@ -1,6 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { libraryPaths } from "@argelanderspace/core";
@@ -112,7 +121,11 @@ interface Rig {
   }): MailSendService;
 }
 
-async function rig(preset: "custom" | "gmail" = "custom", windowMs = UNDO): Promise<Rig> {
+async function rig(
+  preset: "custom" | "gmail" = "custom",
+  windowMs = UNDO,
+  extra: { serverSavesSent?: boolean } = {}
+): Promise<Rig> {
   const cache = globalCache; // captured: a leaked timer of an earlier test must not write into the next test's cache
   imap = await startFakeMailbox(mailboxes());
   smtp = await startRecordingSmtp();
@@ -133,6 +146,7 @@ async function rig(preset: "custom" | "gmail" = "custom", windowMs = UNDO): Prom
         smtpUser: TEST_USER,
         credentialRef: ACC as never,
         credentialProtection: "keychain",
+        ...extra,
       },
     ],
     result: null,
@@ -1103,4 +1117,99 @@ test("the sent guard is in place as soon as SMTP accepted: a process that takes 
   await owner.settled(st.sendId);
   await sleep(300);
   expect(smtp.dataStarted.count).toBe(1);
+});
+
+// ---- closing review B2: whose send is it ------------------------------------------------------
+
+test("a send records who started it; the HTTP route always starts as the Mail page; a gone marker is answered by the sent guard", async () => {
+  const r = await rig();
+  const viaRoute = await json(
+    await call(r, "POST", "/send", { sendId: uuid(), draft: draftBody(), origin: "copilot" })
+  );
+  expect(viaRoute.origin).toBe("mail"); // a client cannot claim to be the Copilot
+  await r.send.settled(viaRoute.sendId);
+
+  const copilotId = uuid();
+  const st = await r.send.start(ACC, {
+    sendId: copilotId,
+    draft: draftBody({ messageId: "<draft-copilot@fake.test>" }) as never,
+    origin: "copilot",
+  });
+  expect(st.origin).toBe("copilot");
+  await r.send.settled(copilotId);
+  expect(r.send.list().find((x) => x.sendId === copilotId)?.origin).toBe("copilot");
+
+  // Its marker is removed (swept, or acknowledged by whoever): the answer is still "sent", never "not found".
+  r.send.dismiss(ACC, copilotId);
+  expect(r.outbox.read(ACC, copilotId)).toBeNull();
+  const after = r.send.status(ACC, copilotId);
+  expect(after).toMatchObject({
+    state: "sent",
+    origin: "copilot",
+    messageId: "<draft-copilot@fake.test>",
+    // What the guard recorded after cleanup, not a fixed guess.
+    draftKept: false,
+    rejected: 0,
+  });
+  // Another process (no shared memory) reads the same from the guard file.
+  expect(r.makeSend({ pid: process.ppid }).status(ACC, copilotId)).toMatchObject({ state: "sent" });
+  // An id the guard never saw is still not found.
+  expect(() => r.send.status(ACC, uuid())).toThrow(expect.objectContaining({ code: "not_found" }));
+});
+
+test("the sent guard answers only what it recorded: refused recipients and a kept Drafts copy survive a gone marker", () => {
+  const cache = mkdtempSync(join(tmpdir(), "mail-guard-"));
+  try {
+    const outbox = new MailOutbox(() => cache);
+    mkdirSync(join(cache, "mail", ACC, "outbox"), { recursive: true });
+    outbox.markSent(ACC, "<g1@fake.test>", "send-g1", "failed", "copilot", {
+      rejected: 2,
+      draftKept: true,
+    });
+    expect(outbox.sentBySendId(ACC, "send-g1")).toMatchObject({ rejected: 2, draftKept: true });
+    // Another process reads the guard file.
+    expect(new MailOutbox(() => cache).sentBySendId(ACC, "send-g1")).toMatchObject({
+      rejected: 2,
+      draftKept: true,
+      sentCopy: "failed",
+    });
+    // A guard file written before these fields existed: the conservative reading (a Drafts copy may remain).
+    const legacy = new MailOutbox(() => cache);
+    legacy.markSent(ACC, "<g2@fake.test>", "send-g2", "saved", "mail");
+    const files = readdirSync(join(cache, "mail", ACC, "outbox")).filter((n: string) =>
+      n.startsWith("sent-")
+    );
+    for (const name of files) {
+      const path = join(cache, "mail", ACC, "outbox", name);
+      const v = JSON.parse(readFileSync(path, "utf8"));
+      if (v.sendId !== "send-g2") continue;
+      delete v.rejected;
+      delete v.draftKept;
+      writeFileSync(path, JSON.stringify(v));
+    }
+    expect(new MailOutbox(() => cache).sentBySendId(ACC, "send-g2")).toMatchObject({
+      rejected: 0,
+      draftKept: true,
+    });
+  } finally {
+    rmSync(cache, { recursive: true, force: true });
+  }
+});
+
+// ---- closing review U1: the account decides whether we append the Sent copy -------------------
+
+test("the account's own setting beats the preset: a custom server that saves Sent itself gets no copy", async () => {
+  const a = await rig("custom", UNDO, { serverSavesSent: true });
+  const one = await json(await startSend(a));
+  await a.send.settled(one.sendId);
+  expect(await getStatus(a, one.sendId)).toMatchObject({ state: "sent", sentCopy: "by_server" });
+  expect(sent.messages).toHaveLength(0);
+});
+
+test("the account's own setting beats the preset: a Gmail account told to keep its own copy appends it", async () => {
+  const b = await rig("gmail", UNDO, { serverSavesSent: false });
+  const two = await json(await startSend(b));
+  await b.send.settled(two.sendId);
+  expect(await getStatus(b, two.sendId)).toMatchObject({ state: "sent", sentCopy: "saved" });
+  expect(sent.messages).toHaveLength(1);
 });

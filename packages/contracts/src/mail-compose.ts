@@ -9,7 +9,13 @@
  */
 
 import { z } from "zod";
-import { MailAccountIdSchema, type MailPresetId, MailProbeFailureCodeSchema } from "./mail.js";
+import {
+  hasMailControlChar,
+  MailAccountIdSchema,
+  MailFolderPathSchema,
+  type MailPresetId,
+  MailProbeFailureCodeSchema,
+} from "./mail.js";
 
 /** The undo window (ADR 0008; same length as the Copilot undo window). */
 export const MAIL_UNDO_WINDOW_MS = 8000;
@@ -33,8 +39,8 @@ export const MAIL_PROVIDER_LIMIT_BYTES: Readonly<Record<MailPresetId, number | n
 };
 
 /**
- * Whether the provider's SMTP server stores the sent message in Sent by itself (then appending a copy
- * would duplicate it). Gmail does. For the other presets the answer is "no" and unverified: a user
+ * The preset DEFAULT for whether the provider's SMTP server stores the sent message in Sent by itself (then
+ * appending a copy would duplicate it); an account can override it (`MailAccount.serverSavesSent`). Gmail does. For the other presets the answer is "no" and unverified: a user
  * smoke on iCloud / Uni Bonn / the custom server settles it.
  */
 export const MAIL_SERVER_SAVES_SENT: Readonly<Record<MailPresetId, boolean>> = {
@@ -44,28 +50,29 @@ export const MAIL_SERVER_SAVES_SENT: Readonly<Record<MailPresetId, boolean>> = {
   custom: false,
 };
 
+/**
+ * Whether to leave the Sent copy to the provider for this account: the account's own setting if it has one,
+ * else the preset's default above (closing review U1).
+ */
+export const mailServerSavesSent = (account: {
+  preset: MailPresetId;
+  serverSavesSent?: boolean | undefined;
+}): boolean => account.serverSavesSent ?? MAIL_SERVER_SAVES_SENT[account.preset];
+
 /** Base64 + MIME line breaks make attachments about 4/3 of their size on the wire. */
 export const estimateMailWireBytes = (attachmentBytes: number, textBytes = 0) =>
   Math.ceil((attachmentBytes * 4) / 3) + textBytes + 2048;
 
 /** `<local@domain>`, the identity of one draft/message across saves and the final send. */
 export const MAIL_MESSAGE_ID_PATTERN = /^<[^<>\s@]{1,200}@[^<>\s@]{1,200}>$/;
-const hasControl = (s: string) =>
-  [...s].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
 /** Shape plus "no control character anywhere" (the regex alone lets \u0000-\u0008 through `\S`). */
 export const isMailMessageId = (s: string) =>
-  s.length <= 420 && MAIL_MESSAGE_ID_PATTERN.test(s) && !hasControl(s);
+  s.length <= 420 && MAIL_MESSAGE_ID_PATTERN.test(s) && !hasMailControlChar(s);
 export const MailMessageIdSchema = z
   .string()
   .max(420)
   .regex(MAIL_MESSAGE_ID_PATTERN)
-  .refine((v) => !hasControl(v));
-/** An IMAP folder path: as the read endpoints, no control characters. */
-const folderPath = z
-  .string()
-  .min(1)
-  .max(1024)
-  .refine((v) => !hasControl(v));
+  .refine((v) => !hasMailControlChar(v));
 export const MAIL_STAGED_ID_PATTERN = /^[0-9a-f]{32}$/;
 export const MAIL_SEND_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -104,7 +111,7 @@ export type MailComposeMode = z.infer<typeof MailComposeModeSchema>;
 export const MailComposeInitRequestSchema = z
   .object({
     mode: MailComposeModeSchema,
-    folder: folderPath,
+    folder: MailFolderPathSchema,
     uid: z.number().int().min(1),
     uidValidity: z.number().int().min(0).optional(),
     /** Language of the quote header lines ("On … wrote:"); the UI language. */
@@ -132,7 +139,7 @@ export type MailComposeInitResponse = z.infer<typeof MailComposeInitResponseSche
 
 export const MailStageFromMessageRequestSchema = z
   .object({
-    folder: folderPath,
+    folder: MailFolderPathSchema,
     uid: z.number().int().min(1),
     uidValidity: z.number().int().min(0).optional(),
   })
@@ -148,11 +155,21 @@ export const MailSaveDraftResponseSchema = z
   .strict();
 export type MailSaveDraftResponse = z.infer<typeof MailSaveDraftResponseSchema>;
 
+/**
+ * Who started a send. The Mail page only confirms, restores and dismisses sends it started itself ("mail",
+ * also what a record without the field means); a send the Copilot started ("copilot") belongs to the Copilot's
+ * own card and undo bar, so the Mail page must never treat it as its own (closing review, B2).
+ */
+export const MailSendOriginSchema = z.enum(["mail", "copilot"]);
+export type MailSendOrigin = z.infer<typeof MailSendOriginSchema>;
+
 export const MailSendRequestSchema = z
   .object({
     /** Client-chosen, makes a repeated POST (double click, retry) the same send instead of a second one. */
     sendId: z.string().regex(MAIL_SEND_ID_PATTERN),
     draft: MailComposeDraftSchema,
+    /** Set by in-process callers only; the HTTP route always starts sends as "mail". */
+    origin: MailSendOriginSchema.optional(),
   })
   .strict();
 export type MailSendRequest = z.infer<typeof MailSendRequestSchema>;
@@ -222,6 +239,8 @@ export const MailSendStatusSchema = z
     rejected: z.number().int().min(0),
     /** Another server process owns this send; this one can only watch. */
     ownedElsewhere: z.boolean(),
+    /** Who started it; absent means "mail". */
+    origin: MailSendOriginSchema.optional(),
   })
   .strict();
 export type MailSendStatus = z.infer<typeof MailSendStatusSchema>;
@@ -248,6 +267,8 @@ export const MailOutboxMarkerSchema = z
     sentCopy: MailSentCopySchema.nullable(),
     draftKept: z.boolean(),
     rejected: z.number().int().min(0),
+    /** Who started the send; a marker without it was started by the Mail page. */
+    origin: MailSendOriginSchema.optional(),
   })
   .strict();
 export type MailOutboxMarker = z.infer<typeof MailOutboxMarkerSchema>;

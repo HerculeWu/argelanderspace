@@ -263,6 +263,27 @@ test("edit: display-name change needs no re-test; host change re-tests with the 
   expect(r4.status).toBe(200);
 });
 
+test("closing review U1: serverSavesSent is optional, stored when given, kept by edits that omit it, changed by one that sends it", async () => {
+  const { body: plain } = await add();
+  expect("serverSavesSent" in plain.account).toBe(false); // an account without the setting stays as it was
+  const { body: other } = await add({ address: "two@example.test", serverSavesSent: true });
+  expect(other.account.serverSavesSent).toBe(true);
+  const id = other.account.id;
+  const keep = await req(`/accounts/${id}`, "PUT", {
+    ...draft({ address: "two@example.test", displayName: "Renamed" }),
+    password: undefined,
+    rev: 2,
+  });
+  expect((await json(keep)).account.serverSavesSent).toBe(true);
+  const change = await req(`/accounts/${id}`, "PUT", {
+    ...draft({ address: "two@example.test", serverSavesSent: false }),
+    password: undefined,
+    rev: 3,
+  });
+  expect(change.status).toBe(200);
+  expect((await json(change)).account.serverSavesSent).toBe(false);
+});
+
 test("stale rev on edit/delete is a 409 carrying the current rev, and nothing is overwritten", async () => {
   const { body: created } = await add();
   const id = created.account.id;

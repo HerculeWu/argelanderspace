@@ -1,6 +1,6 @@
 import type { MailHeader, MailSearchCriteria } from "@argelanderspace/contracts";
 import { useCallback, useRef, useState } from "react";
-import { MailApiError } from "../api/mail";
+import { mailErrorCode } from "../api/mail";
 import { searchMail } from "../api/mail-manage";
 import { parseSearchQuery } from "./search-query";
 
@@ -38,7 +38,6 @@ export interface HeaderRef {
 }
 
 const keyOf = (accountId: string, folder: string) => `${accountId}\u0000${folder}`;
-const errorCode = (e: unknown) => (e instanceof MailApiError ? e.code : "unreachable");
 
 /**
  * Server-side search state (Mail ticket 06). Nothing is searched locally: every
@@ -103,7 +102,7 @@ export function useMailSearch() {
       } catch (e) {
         if ((e as { name?: string } | null)?.name === "AbortError") return;
         if (runSeq.current !== run || pageSeq.current.get(key) !== page) return;
-        put({ ...base, loading: false, loadingMore: false, error: errorCode(e) });
+        put({ ...base, loading: false, loadingMore: false, error: mailErrorCode(e) });
       } finally {
         aborts.current.delete(abort);
       }

@@ -43,9 +43,11 @@ import {
 import { join } from "node:path";
 import {
   MAIL_ACCOUNT_ID_PATTERN,
+  MAIL_MESSAGE_ID_PATTERN,
   MAIL_SEND_ID_PATTERN,
   type MailOutboxMarker,
   MailOutboxMarkerSchema,
+  type MailSendOrigin,
   type MailSentCopy,
   MailSentCopySchema,
 } from "@argelanderspace/contracts";
@@ -216,7 +218,18 @@ export class MailOutbox {
 
   // ---- the sent guard ------------------------------------------------------------------
 
-  private readonly sent = new Map<string, { at: number; sentCopy: MailSentCopy | null }>();
+  private readonly sent = new Map<
+    string,
+    {
+      at: number;
+      sentCopy: MailSentCopy | null;
+      sendId: string;
+      messageId: string;
+      origin: MailSendOrigin;
+      rejected: number;
+      draftKept: boolean;
+    }
+  >();
 
   /**
    * SMTP accepted this Message-ID (called again with the Sent copy's fate once known). Always kept in
@@ -227,18 +240,28 @@ export class MailOutbox {
     accountId: string,
     messageId: string,
     sendId: string,
-    sentCopy: MailSentCopy | null = null
+    sentCopy: MailSentCopy | null = null,
+    origin: MailSendOrigin = "mail",
+    // What the guard can later claim once the marker is gone; before cleanup the Drafts copy still exists.
+    outcome: { rejected: number; draftKept: boolean } = { rejected: 0, draftKept: true }
   ): void {
     const key = `${accountId}\u0000${messageId}`;
     const at = this.sent.get(key)?.at ?? this.now();
-    this.sent.set(key, { at, sentCopy });
+    const { rejected, draftKept } = outcome;
+    this.sent.set(key, { at, sentCopy, sendId, messageId, origin, rejected, draftKept });
     const path = this.sentPath(accountId, messageId);
     if (!path) return;
     try {
       const dir = join(path, "..");
       if (!existsSync(dir)) return; // an account deleted meanwhile must not get its cache directory back
       const tmp = `${path}.${process.pid}.tmp`;
-      writeFileSync(tmp, JSON.stringify({ sendId, at, sentCopy }), { mode: 0o600 });
+      writeFileSync(
+        tmp,
+        JSON.stringify({ sendId, messageId, origin, at, sentCopy, rejected, draftKept }),
+        {
+          mode: 0o600,
+        }
+      );
       renameSync(tmp, path);
     } catch {
       /* the in-memory copy still guards this process */
@@ -258,6 +281,73 @@ export class MailOutbox {
     const path = this.sentPath(accountId, messageId);
     const rec = path ? this.sentRecord(path) : null;
     return rec && this.now() - rec.at <= MAIL_SENT_GUARD_MS ? { sentCopy: rec.sentCopy } : null;
+  }
+
+  /**
+   * The sent guard's record of the send with this id, even after its marker is gone. Null when the guard has
+   * no such record (the id never went out, it is older than the guard period, or the record has no Message-ID).
+   */
+  sentBySendId(
+    accountId: string,
+    sendId: string
+  ): {
+    messageId: string;
+    sentCopy: MailSentCopy | null;
+    origin: MailSendOrigin | null;
+    rejected: number;
+    draftKept: boolean;
+  } | null {
+    for (const [key, v] of this.sent)
+      if (
+        key.startsWith(`${accountId}\u0000`) &&
+        v.sendId === sendId &&
+        this.now() - v.at <= MAIL_SENT_GUARD_MS
+      )
+        return {
+          messageId: v.messageId,
+          sentCopy: v.sentCopy,
+          origin: v.origin,
+          rejected: v.rejected,
+          draftKept: v.draftKept,
+        };
+    const d = this.dir(accountId);
+    if (!d) return null;
+    let names: string[] = [];
+    try {
+      names = readdirSync(d).filter((n) => /^sent-[0-9a-f]{32}\.json$/.test(n));
+    } catch {
+      return null;
+    }
+    for (const name of names) {
+      try {
+        const v = JSON.parse(readFileSync(join(d, name), "utf8")) as Record<string, unknown>;
+        if (
+          v.sendId !== sendId ||
+          typeof v.at !== "number" ||
+          this.now() - v.at > MAIL_SENT_GUARD_MS
+        )
+          continue;
+        if (typeof v.messageId !== "string" || !MAIL_MESSAGE_ID_PATTERN.test(v.messageId)) continue;
+        const copy = MailSentCopySchema.safeParse(v.sentCopy);
+        const origin = v.origin === "copilot" ? "copilot" : v.origin === "mail" ? "mail" : null;
+        // Older guard files lack these: claim the conservative reading (a Drafts copy may remain).
+        const rejected =
+          typeof v.rejected === "number" && Number.isInteger(v.rejected) && v.rejected >= 0
+            ? v.rejected
+            : 0;
+        const draftKept = typeof v.draftKept === "boolean" ? v.draftKept : true;
+        return {
+          messageId: v.messageId,
+          sentCopy: copy.success ? copy.data : null,
+          origin,
+          rejected,
+          draftKept,
+        };
+      } catch {
+        /* unreadable: a miss */
+      }
+    }
+    return null;
   }
 
   private sentAt(path: string): number | null {

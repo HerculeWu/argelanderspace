@@ -41,6 +41,18 @@ const user = z
   .max(254)
   .refine((v) => ![...v].some((c) => c.charCodeAt(0) < 32));
 
+/** True when the text holds a control character (C0 or DEL): never valid in a folder path or Message-ID. */
+export const hasMailControlChar = (s: string): boolean =>
+  [...s].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+
+/** An IMAP folder path in a REQUEST (the one definition: REST bodies, query parameters and Copilot operations). */
+export const MailFolderPathSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine((v) => !hasMailControlChar(v));
+export const isMailFolderPath = (s: string): boolean => MailFolderPathSchema.safeParse(s).success;
+
 export const MailCredentialProtectionSchema = z.enum(["keychain", "file"]);
 export type MailCredentialProtection = z.infer<typeof MailCredentialProtectionSchema>;
 
@@ -58,6 +70,11 @@ export const MailAccountSchema = z
     credentialRef: MailAccountIdSchema,
     /** Where the password was last stored; "file" means not protected by the OS keychain. */
     credentialProtection: MailCredentialProtectionSchema,
+    /**
+     * Whether this account's SMTP server saves a sent message into Sent by itself (then no copy is appended).
+     * Absent (every account file written before this field existed) means "the preset's default".
+     */
+    serverSavesSent: z.boolean().optional(),
   })
   .strict();
 export type MailAccount = z.infer<typeof MailAccountSchema>;
@@ -163,6 +180,7 @@ export const MailAccountCreateSchema = z
     password,
     /** The user agreed (in the UI) to the 0600 file when the keychain is unusable. */
     fileFallbackConsent: z.boolean().optional(),
+    serverSavesSent: z.boolean().optional(),
   })
   .strict();
 export type MailAccountCreate = z.infer<typeof MailAccountCreateSchema>;
@@ -175,6 +193,8 @@ export const MailAccountUpdateSchema = z
     displayName,
     password: password.optional(),
     fileFallbackConsent: z.boolean().optional(),
+    /** Omitted keeps the account's current value. */
+    serverSavesSent: z.boolean().optional(),
   })
   .strict();
 export type MailAccountUpdate = z.infer<typeof MailAccountUpdateSchema>;

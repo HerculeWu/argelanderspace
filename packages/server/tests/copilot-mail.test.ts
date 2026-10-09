@@ -53,6 +53,7 @@ import { MailAccountService } from "../src/mail-accounts.js";
 import { MailCache } from "../src/mail-cache.js";
 import { MailComposeService } from "../src/mail-compose.js";
 import type { MailComposeServices } from "../src/mail-compose-routes.js";
+import { mailFailure } from "../src/mail-copilot.js";
 import { MailManageService } from "../src/mail-manage.js";
 import { MailOutbox } from "../src/mail-outbox.js";
 import { MailReadService } from "../src/mail-read.js";
@@ -979,6 +980,67 @@ test("an approved send that the application stops inside the undo window is repo
   expect(smtp.messages).toHaveLength(0);
   expect(smtp.dataStarted.count).toBe(0);
   expect(drafts.messages).toHaveLength(1);
+});
+
+test("closing review B2: a Copilot send is not the Mail page's to delete, and a gone record is reported as unconfirmable or as sent, never as unchanged", async () => {
+  const view = mailPage();
+  let gate: () => void = () => {};
+  const open = new Promise<void>((resolve) => {
+    gate = resolve;
+  });
+  let sendId = "";
+  script = [
+    () => ({ call: newDraft }),
+    (ctx) => ({
+      call: { action: "send", accountId: ACC, messageId: lastResult(ctx).draft.messageId },
+    }),
+    async (ctx) => {
+      sendId = lastResult(ctx).sendId;
+      await open;
+      return { call: { action: "send_status", accountId: ACC, sendId } };
+    },
+    (ctx) => {
+      const r = lastResult(ctx);
+      // the record was acknowledged away, but the sent guard knows this went out
+      expect(r.status).toBe("ok");
+      expect(r.state).toBe("sent");
+      return { call: { action: "send_status", accountId: ACC, sendId: randomUUID() } };
+    },
+    (ctx) => {
+      const r = lastResult(ctx);
+      expect(r.status).toBe("unknown");
+      expect(String(r.detail)).not.toContain("nothing was changed");
+      expect(String(r.detail)).toContain("cannot be confirmed");
+      return { text: "I cannot confirm that one" };
+    },
+  ];
+  const id = await start(view);
+  const c = await card(id);
+  expect((await answer(c, view, "approve")).status).toBe(200);
+  await vi.waitFor(() => expect(smtp.messages).toHaveLength(1), { timeout: 5000 });
+  await send.settled(sendId);
+  // What the Mail page used to do on mount: it lists the outbox. The record is marked as the Copilot's.
+  const listed = (await (await app.request("/api/mail/compose/outbox")).json()) as {
+    sends: { sendId: string; origin: string }[];
+  };
+  expect(listed.sends.find((x) => x.sendId === sendId)?.origin).toBe("copilot");
+  // ... and the older page then dismissed it; whoever removes the marker, the tool still gets a true answer.
+  send.dismiss(ACC, sendId);
+  gate();
+  const snapshot = await settled(id);
+  expect(operations(snapshot)).toEqual([
+    "create_draft:ok",
+    "send:pending",
+    "send_status:ok",
+    "send_status:unknown",
+  ]);
+});
+
+test("closing review: partial means a known state (copy in the destination, original still there), not an unknown outcome", () => {
+  expect(mailFailure(Object.assign(new Error("x"), { code: "partial" })).status).toBe("error");
+  expect(mailFailure(Object.assign(new Error("x"), { code: "connection_lost" })).status).toBe(
+    "unknown"
+  );
 });
 
 test("closing the host with a card waiting sends nothing and leaves the draft", async () => {

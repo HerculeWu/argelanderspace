@@ -24,13 +24,13 @@
 
 import { randomBytes } from "node:crypto";
 import {
-  MAIL_SERVER_SAVES_SENT,
   MAIL_UNDO_WINDOW_MS,
   type MailAccount,
   type MailComposeFailureCode,
   type MailOutboxMarker,
   type MailSendRequest,
   type MailSendStatus,
+  mailServerSavesSent,
 } from "@argelanderspace/contracts";
 import type { MailOutgoing } from "@argelanderspace/infra";
 import { MailComposeError, type MailComposeService } from "./mail-compose.js";
@@ -166,6 +166,7 @@ export class MailSendService {
           sentCopy: null,
           draftKept: true,
           rejected: 0,
+          origin: req.origin ?? "mail",
         };
         this.deps.outbox.write(gone);
         return this.statusOf(gone);
@@ -186,6 +187,7 @@ export class MailSendService {
         sentCopy: null,
         draftKept: true,
         rejected: 0,
+        origin: req.origin ?? "mail",
       };
       try {
         this.deps.outbox.writeStrict(marker);
@@ -289,7 +291,10 @@ export class MailSendService {
       // The SMTP server has the message. Record that before the cleanup, so a crash from here on is not
       // mistaken for "possibly unsent".
       set({ state: "sent", rejected: sent.value.rejected });
-      this.deps.outbox.markSent(m.accountId, m.messageId, m.sendId);
+      this.deps.outbox.markSent(m.accountId, m.messageId, m.sendId, null, m.origin, {
+        rejected: sent.value.rejected,
+        draftKept: true,
+      });
 
       let sentCopy: "saved" | "by_server" | "failed";
       let imap: Awaited<ReturnType<MailComposeService["imapTarget"]>> | null = null;
@@ -298,7 +303,7 @@ export class MailSendService {
       } catch {
         imap = null;
       }
-      if (MAIL_SERVER_SAVES_SENT[account.preset]) sentCopy = "by_server";
+      if (mailServerSavesSent(account)) sentCopy = "by_server";
       else if (!imap) sentCopy = "failed";
       else {
         const appended = await this.deps.outgoing
@@ -319,7 +324,10 @@ export class MailSendService {
         draftKept = !removed?.ok;
       }
       set({ sentCopy, draftKept });
-      this.deps.outbox.markSent(m.accountId, m.messageId, m.sendId, sentCopy);
+      this.deps.outbox.markSent(m.accountId, m.messageId, m.sendId, sentCopy, m.origin, {
+        rejected: sent.value.rejected,
+        draftKept,
+      });
       compose.deleteStaged(m.accountId, rec.staged);
     } catch {
       // Anything unexpected before SMTP confirmed: the outcome is unknown unless we already recorded sent.
@@ -379,6 +387,7 @@ export class MailSendService {
       draftKept: state === "sent" ? m.draftKept : true,
       rejected: m.rejected,
       ownedElsewhere,
+      origin: m.origin ?? "mail",
     };
   }
 
@@ -386,8 +395,26 @@ export class MailSendService {
     const rec = this.live.get(sendId);
     if (rec && rec.marker.accountId === accountId) return this.statusOf(rec.marker);
     const stored = this.deps.outbox.read(accountId, sendId);
-    if (!stored) throw new MailComposeError("not_found");
-    return this.statusOf(stored);
+    if (stored) return this.statusOf(stored);
+    // The marker is gone (acknowledged, swept), but the sent guard still knows this send went out: say so
+    // rather than "not found" (which would read as "never happened"). Only what the guard recorded is claimed.
+    const went = this.deps.outbox.sentBySendId(accountId, sendId);
+    if (went)
+      return {
+        sendId,
+        accountId,
+        messageId: went.messageId,
+        subject: "",
+        state: "sent",
+        remainingMs: null,
+        code: null,
+        sentCopy: went.sentCopy,
+        draftKept: went.draftKept,
+        rejected: went.rejected,
+        ownedElsewhere: false,
+        origin: went.origin ?? "mail",
+      };
+    throw new MailComposeError("not_found");
   }
 
   /** Sends that still need the user's attention: in the window, in flight, or ended without a send. */

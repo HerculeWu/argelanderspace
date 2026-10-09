@@ -183,6 +183,9 @@ export class MailAccountService {
               smtpUser: c.smtpUser,
               credentialRef: id as MailAccount["credentialRef"],
               credentialProtection: protection,
+              ...(input.serverSavesSent !== undefined
+                ? { serverSavesSent: input.serverSavesSent }
+                : {}),
             };
             return { accounts: [...current.accounts, account], result: account };
           }
@@ -239,6 +242,9 @@ export class MailAccountService {
           imapUser: c.imapUser,
           smtpUser: c.smtpUser,
           credentialProtection: protection,
+          ...(input.serverSavesSent !== undefined
+            ? { serverSavesSent: input.serverSavesSent }
+            : {}),
         };
         return {
           accounts: current.accounts.map((a) => (a.id === id ? account : a)),

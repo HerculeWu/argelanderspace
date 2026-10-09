@@ -1,4 +1,5 @@
 import {
+  isMailFolderPath,
   MAIL_PAGE_DEFAULT,
   MAIL_PRESETS,
   MailAccountCreateSchema,
@@ -6,7 +7,6 @@ import {
   MailAccountUpdateSchema,
   MailOpenRequestSchema,
   type MailPresetsResponse,
-  type MailReadFailureCode,
 } from "@argelanderspace/contracts";
 import {
   createCredentialStore,
@@ -21,6 +21,7 @@ import { MailAccountService, MailServiceError } from "./mail-accounts.js";
 import { MailCache } from "./mail-cache.js";
 import { type MailComposeServices, mountMailComposeRoutes } from "./mail-compose-routes.js";
 import type { MailOpDeps } from "./mail-copilot.js";
+import { READ_FAILURE_STATUS } from "./mail-http.js";
 import { createDefaultMailManageService, type MailManageService } from "./mail-manage.js";
 import { mountMailManageRoutes } from "./mail-manage-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
@@ -34,25 +35,6 @@ export function createDefaultMailReadService(): MailReadService {
     cache: new MailCache(() => resolveGlobalDirs().cacheDir),
   });
 }
-
-const READ_STATUS: Record<MailReadFailureCode, 400 | 404 | 409 | 413 | 500 | 502> = {
-  auth_failed: 502,
-  host_not_found: 502,
-  connection_refused: 502,
-  timeout: 502,
-  tls_failed: 502,
-  starttls_unsupported: 502,
-  protocol_error: 502,
-  unknown: 502,
-  folder_not_found: 404,
-  message_not_found: 404,
-  message_changed: 409,
-  too_large: 413,
-  credential_missing: 409,
-  account_not_found: 404,
-  invalid_input: 400,
-  storage: 500,
-};
 
 const SAFE_INLINE_IMAGE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i;
 const asciiName = (name: string) => name.replace(/[^\x20-\x7e]|["\\]/g, "_") || "attachment";
@@ -134,7 +116,7 @@ export function mountMailRoutes(
       // Fixed text per code; server responses and mail content never reach an error body.
       return c.json(
         { code: error.code, detail: `mail request failed: ${error.code}` },
-        READ_STATUS[error.code]
+        READ_FAILURE_STATUS[error.code]
       );
     }
     if (error instanceof MailServiceError) {
@@ -183,8 +165,7 @@ export function mountMailRoutes(
 
   // ---- reading (ticket 05) --------------------------------------------------
   const folderParam = (v: string | undefined) => {
-    if (!v || v.length > 1024 || [...v].some((ch) => ch.charCodeAt(0) < 32))
-      throw new MailReadError("invalid_input");
+    if (!v || !isMailFolderPath(v)) throw new MailReadError("invalid_input");
     return v;
   };
   const intParam = (v: string | undefined, min: number, required: boolean) => {

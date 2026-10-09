@@ -119,6 +119,11 @@ kind+page label, circular color dots/downward palette, Plan telescope24 and navi
 content is never targeted by these classes. Preserve local geometry, density, callbacks, focus and
 tooltip lifecycle; no global resets or caller-specific optical patches.
 
+Mail icon-button exception (user decision, Mail closing review 2026-10-09): the Mail message toolbar's
+**reply-all** button (`data-ui="mail-reply-all"`) keeps the lucide glyph because the Dazzle collection has no
+reply-all artwork; the other Mail icon buttons use Dazzle. This is a finite preservation exception, not a
+precedent for other lucide controls.
+
 Adopted Dazzle UI resources are traced in `src/ui/icons.provenance.json` (source filename,
 original/normalized hashes, modifications and `data-ui`/variant), with the collection-level
 CC Attribution notice in [`THIRD_PARTY_LICENSES.md`](../../THIRD_PARTY_LICENSES.md).

@@ -24,6 +24,7 @@ import {
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MailComposeError, MailComposeService } from "./mail-compose.js";
+import { READ_FAILURE_STATUS } from "./mail-http.js";
 import { MailOutbox } from "./mail-outbox.js";
 import { MailSendService } from "./mail-send.js";
 
@@ -55,22 +56,7 @@ export function createDefaultMailComposeServices(): MailComposeServices {
 }
 
 const STATUS: Record<MailComposeFailureCode, 400 | 404 | 409 | 413 | 422 | 500 | 502> = {
-  auth_failed: 502,
-  host_not_found: 502,
-  connection_refused: 502,
-  timeout: 502,
-  tls_failed: 502,
-  starttls_unsupported: 502,
-  protocol_error: 502,
-  unknown: 502,
-  folder_not_found: 404,
-  message_not_found: 404,
-  message_changed: 409,
-  too_large: 413,
-  credential_missing: 409,
-  account_not_found: 404,
-  invalid_input: 400,
-  storage: 500,
+  ...READ_FAILURE_STATUS,
   no_recipients: 400,
   invalid_recipient: 400,
   attachment_missing: 409,
@@ -174,7 +160,10 @@ export function mountMailComposeRoutes(
   app.post("/accounts/:id/send", jsonLimit, async (c) => {
     const body = MailSendRequestSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return invalid(c);
-    return c.json(await svc().send.start(accountId(c.req.param("id")), body.data), 202);
+    return c.json(
+      await svc().send.start(accountId(c.req.param("id")), { ...body.data, origin: "mail" }),
+      202
+    );
   });
   app.get("/accounts/:id/sends/:sendId", (c) =>
     c.json(svc().send.status(accountId(c.req.param("id")), sendId(c.req.param("sendId"))))

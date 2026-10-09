@@ -7,10 +7,10 @@
  */
 
 import { z } from "zod";
-import { MailAccountIdSchema } from "./mail.js";
+import { MailAccountIdSchema, MailFolderPathSchema } from "./mail.js";
 import { MailHeaderSchema, MailReadFailureCodeSchema } from "./mail-read.js";
 
-const folderPath = z.string().min(1).max(1024);
+const folderPath = MailFolderPathSchema;
 const uid = z.number().int().min(1);
 const uidValidity = z.number().int().min(0);
 
@@ -158,7 +158,11 @@ export const MailManageFailureCodeSchema = z.enum([
   "not_in_trash",
   /** The server lacks what a safe change needs (UIDPLUS for expunge by uid). */
   "unsupported",
-  /** A copy was made in the destination but the original could not be removed: the outcome is unknown. */
+  /**
+   * A copy was made in the destination but the original could not be removed while the connection was still
+   * alive. The state is KNOWN: the destination has a copy and the original is still there. (A connection lost
+   * mid-command is `connection_lost`, whose outcome is unknown.)
+   */
   "partial",
 ]);
 export type MailManageFailureCode = z.infer<typeof MailManageFailureCodeSchema>;

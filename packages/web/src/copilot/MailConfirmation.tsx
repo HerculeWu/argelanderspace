@@ -2,6 +2,7 @@ import type { CopilotConfirmation, CopilotOperation, MailContextSummary } from "
 import type { TFunction } from "i18next";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MailApiError } from "../api/mail";
 import { fetchMailSendStatus, undoMailSend } from "../api/mail-compose";
 import { Button, InlineMessage } from "../ui";
 
@@ -93,8 +94,15 @@ export function MailSendUndo({ operations }: { operations: CopilotOperation[] })
         if (stop || !alive.current) return;
         setState({ id, state: s.state, remainingMs: s.remainingMs, code: s.code });
         if (s.state === "pending" || s.state === "sending") timer = setTimeout(() => void poll(), 600);
-      } catch {
-        if (!stop && alive.current) timer = setTimeout(() => void poll(), 1500);
+      } catch (error) {
+        if (stop || !alive.current) return;
+        // The server says the record is gone: that is an answer, not a hiccup. Retrying cannot bring it back,
+        // and the result is not known (it may have been sent): say so instead of polling forever.
+        if (error instanceof MailApiError && error.status === 404) {
+          setState({ id, state: "gone", remainingMs: null, code: null });
+          return;
+        }
+        timer = setTimeout(() => void poll(), 1500);
       }
     };
     void poll();
@@ -112,6 +120,6 @@ export function MailSendUndo({ operations }: { operations: CopilotOperation[] })
     return <div className="copilot-notice" data-ui="copilot-mail-undo" data-state="pending" role="status"><span>{t("copilot.mailUndo.pending", { seconds: Math.max(1, Math.ceil((state.remainingMs ?? 0) / 1000)) })}</span><Button data-ui="copilot-mail-undo-action" disabled={busy} onClick={() => void undo()}>{t("copilot.mailUndo.action")}</Button></div>;
   if (state.state === "sending") return <div className="copilot-notice" data-ui="copilot-mail-undo" data-state="sending" role="status"><span>{t("copilot.mailUndo.sending")}</span></div>;
   // A send the mail server may have accepted without telling us (code outcome_unknown) is not "not sent".
-  const key = state.state === "sent" ? "sent" : state.state === "cancelled" ? "cancelled" : state.state === "interrupted" ? "interrupted" : state.state === "unknown" || state.code === "outcome_unknown" ? "unknown" : "failed";
+  const key = state.state === "gone" ? "gone" : state.state === "sent" ? "sent" : state.state === "cancelled" ? "cancelled" : state.state === "interrupted" ? "interrupted" : state.state === "unknown" || state.code === "outcome_unknown" ? "unknown" : "failed";
   return <div className="copilot-notice" data-ui="copilot-mail-undo" data-state={state.state} role="status"><InlineMessage tone={key === "sent" || key === "cancelled" ? "info" : "warning"}>{t(`copilot.mailUndo.${key}`)}</InlineMessage><Button data-ui="copilot-mail-undo-dismiss" aria-label={t("copilot.mailUndo.dismissLabel")} onClick={() => setDismissed((previous) => new Set(previous).add(op.id))}>{t("copilot.mailUndo.dismiss")}</Button></div>;
 }

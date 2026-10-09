@@ -1713,6 +1713,7 @@
       "failed": "The message was not sent. The draft is still in Drafts.",
       "interrupted": "The application stopped before sending: the message was not sent and is back in Drafts.",
       "unknown": "It is not known whether the message was sent (the application stopped while sending, or the connection to the mail server was lost). It may or may not have been sent; check Sent.",
+      "gone": "The server no longer has a record of this send, so its result cannot be confirmed. It may or may not have been sent; check Sent.",
       "dismiss": "Dismiss",
       "dismissLabel": "Dismiss the send undo notice"
     },
@@ -1992,6 +1993,15 @@
     "save": "Verify and save",
     "cancel": "Cancel",
     "close": "Close",
+    "accountSettings": "Settings",
+    "sentCopy": {
+      "label": "Save a copy of sent mail in Sent myself",
+      "hint": "Turn this off if your provider already files sent mail in Sent (Gmail does), otherwise there would be two copies. Turn it on if sent mail does not show up in Sent."
+    },
+    "settings": {
+      "title": "Settings for {{a}}",
+      "save": "Save"
+    },
     "removeAccount": "Remove account",
     "removeTitle": "Remove {{a}}?",
     "removeBody": "This deletes the account's settings, password and mail cache on this computer. Messages on the server are not affected.",

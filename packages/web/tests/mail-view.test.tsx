@@ -461,7 +461,7 @@ test("account menu: Escape closes it and returns focus; removing needs the confi
   fireEvent.click(trigger);
   expect(ui("mail-account-menu-list")).toBeTruthy();
   expect(document.querySelector('[role="menu"]')).toBeNull();
-  expect(document.activeElement).toBe(ui("mail-account-remove"));
+  expect(document.activeElement).toBe(ui("mail-account-settings")); // the first item
   fireEvent.keyDown(window, { key: "Escape" });
   await waitFor(() => expect(ui("mail-account-menu-list")).toBeNull());
   expect(document.activeElement).toBe(trigger);
@@ -478,6 +478,51 @@ test("account menu: Escape closes it and returns focus; removing needs the confi
   fireEvent.click(ui("mail-remove-account-confirm")!);
   await waitFor(() => expect(calls).toEqual([`/api/mail/accounts/${A2}?rev=4`]));
   await waitFor(() => expect(ui("mail-account", A2)).toBeNull());
+});
+
+test("closing review U1: the add dialog sends the Sent-copy choice only when the user changes it, and the account menu's Settings saves it with the rev", async () => {
+  srv.accounts = [];
+  const posts: Record<string, unknown>[] = [];
+  srv.post = (url, body) => {
+    if (url !== "/api/mail/accounts") return null;
+    posts.push(body as Record<string, unknown>);
+    srv.accounts = [acct("acc-cccccccccccc", "Gmail", { preset: "gmail", serverSavesSent: (body as { serverSavesSent?: boolean }).serverSavesSent })];
+    return json({ rev: 5, account: srv.accounts[0] }, 201);
+  };
+  const orig = globalThis.fetch;
+  const puts: Record<string, unknown>[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (u: string, init?: RequestInit) => {
+    if (init?.method === "PUT") {
+      const body = JSON.parse(String(init.body));
+      puts.push(body);
+      srv.accounts = srv.accounts.map((a) => ({ ...a, serverSavesSent: body.serverSavesSent }));
+      return json({ rev: 6, account: srv.accounts[0] });
+    }
+    return orig(u, init);
+  }));
+  render(<MailView />);
+  await waitFor(() => expect(ui("mail-empty")).toBeTruthy());
+  fireEvent.click(ui("mail-add-account")!);
+  fireEvent.click(await screen.findByRole("button", { name: "Gmail" }));
+  // Gmail files sent mail itself: the box (keep my own copy) starts off
+  expect((ui("mail-sent-copy-toggle") as HTMLInputElement).checked).toBe(false);
+  fireEvent.change(ui("mail-account-email")!, { target: { value: "me@gmail.com" } });
+  fireEvent.change(ui("mail-account-password")!, { target: { value: "synthetic-app-password" } });
+  fireEvent.click(ui("mail-add-account-submit")!);
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect("serverSavesSent" in posts[0]!).toBe(false); // untouched: the preset decides
+  await waitFor(() => expect(ui("mail-add-account-dialog")).toBeNull());
+
+  fireEvent.click(await waitFor(() => ui("mail-account-menu", "acc-cccccccccccc")!));
+  fireEvent.click(ui("mail-account-settings")!);
+  const save = await waitFor(() => ui("mail-account-settings-save") as HTMLButtonElement);
+  expect(save.disabled).toBe(true); // nothing changed yet
+  fireEvent.click(ui("mail-sent-copy-toggle")!);
+  fireEvent.click(save);
+  await waitFor(() => expect(puts).toHaveLength(1));
+  expect(puts[0]).toMatchObject({ rev: 4, serverSavesSent: false, address: "gmail@example.test", preset: "gmail" });
+  expect("password" in puts[0]!).toBe(false);
+  await waitFor(() => expect(ui("mail-account-settings-dialog")).toBeNull());
 });
 
 test("the Copilot page report: complete once the lists loaded, carries the open message, and is not republished on every render", async () => {
