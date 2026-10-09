@@ -4,6 +4,7 @@
  * protocol library stays behind the narrow interfaces).
  */
 
+import type { TcpSocketConnectOpts } from "node:net";
 import type { ConnectionOptions } from "node:tls";
 import type { MailProbeFailureCode } from "@argelanderspace/contracts";
 import { type FetchMessageObject, ImapFlow, type MessageStructureObject } from "imapflow";
@@ -23,6 +24,22 @@ const TLS_CODES = /CERT|SELF_SIGNED|TLS|SSL|ERR_OSSL|HOSTNAME_MISMATCH|ALTNAME/i
  */
 export const isConventionalPlace = (parent: string[]): boolean =>
   parent.length === 0 || (parent.length === 1 && parent[0]?.toUpperCase() === "INBOX");
+
+/**
+ * Socket options for an imapflow client (imapflow passes them on to `net`/`tls.connect`). Node tries a host's
+ * addresses one after another (IPv6 and IPv4 interleaved) and by default abandons each attempt after 250 ms, so a
+ * host with an unreachable IPv6 address and a TCP handshake slower than 250 ms (a distant server, e.g.
+ * email.uni-bonn.de from abroad) failed as ETIMEDOUT within half a second, long before `connectionTimeout`.
+ * Half the connection budget per address leaves room for a slow handshake and still reaches the next address.
+ */
+export const imapSocketOptions = (
+  base: ConnectionOptions | undefined,
+  timeout: number
+): ConnectionOptions & Pick<TcpSocketConnectOpts, "autoSelectFamilyAttemptTimeout"> => ({
+  ...base,
+  minVersion: "TLSv1.2",
+  autoSelectFamilyAttemptTimeout: Math.max(250, Math.floor(timeout / 2)),
+});
 
 /** Map an error from either library to a code; the error text is never kept. */
 export function classifyMailError(error: unknown): MailProbeFailureCode {

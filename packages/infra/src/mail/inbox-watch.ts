@@ -13,8 +13,8 @@
  * socket before it returns.
  */
 
-import type { ConnectionOptions } from "node:tls";
 import { ImapFlow } from "imapflow";
+import { imapSocketOptions } from "./imap-internal.js";
 import { classifyMailError, type MailLoginTarget, type MailRemoteFailure } from "./protocol.js";
 
 export interface MailInboxSnapshot {
@@ -143,7 +143,7 @@ export function createNodeMailInboxWatcher(
   const socketTimeout = options.socketTimeoutMs ?? 120_000;
   const pollMs = options.pollIntervalMs ?? 60_000;
   const idleRestartMs = options.idleRestartMs ?? 9 * 60_000;
-  const tls: ConnectionOptions = { ...options.tls, minVersion: "TLSv1.2" };
+  const tls = imapSocketOptions(options.tls, timeout);
 
   return {
     async watch(t, handlers, signal) {

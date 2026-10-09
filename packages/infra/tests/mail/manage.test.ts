@@ -593,6 +593,12 @@ test("date terms are asked as SENT* (the Date header the list shows), not by arr
 });
 
 test("the package index hands out no raw IMAP client helpers", () => {
-  for (const internal of ["imapClient", "toHeader", "remoteCode", "isConventionalPlace"])
+  for (const internal of [
+    "imapClient",
+    "imapSocketOptions",
+    "toHeader",
+    "remoteCode",
+    "isConventionalPlace",
+  ])
     expect(Object.keys(infra)).not.toContain(internal);
 });

@@ -8,11 +8,11 @@
  * Passwords stay inside the call.
  */
 
-import type { ConnectionOptions } from "node:tls";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import addressparser from "nodemailer/lib/addressparser";
 import MailComposer from "nodemailer/lib/mail-composer";
+import { imapSocketOptions } from "./imap-internal.js";
 import {
   classifyMailError,
   type MailLoginTarget,
@@ -209,7 +209,7 @@ export function classifySmtpFailure(
 
 export function createNodeMailOutgoing(options: NodeMailProtocolOptions = {}): MailOutgoing {
   const timeout = options.timeoutMs ?? 10_000;
-  const tls: ConnectionOptions = { ...options.tls, minVersion: "TLSv1.2" };
+  const tls = imapSocketOptions(options.tls, timeout);
 
   async function session<T>(
     t: MailLoginTarget,

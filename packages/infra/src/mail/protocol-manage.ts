@@ -19,10 +19,15 @@
  *    ordinary delete never falls back to a permanent one (no Trash -> error).
  */
 
-import type { ConnectionOptions } from "node:tls";
 import type { MailSearchCriteria } from "@argelanderspace/contracts";
 import type { ImapFlow } from "imapflow";
-import { imapClient, isConventionalPlace, remoteCode, toHeader } from "./imap-internal.js";
+import {
+  imapClient,
+  imapSocketOptions,
+  isConventionalPlace,
+  remoteCode,
+  toHeader,
+} from "./imap-internal.js";
 import type {
   MailLoginTarget,
   MailRemoteFailure,
@@ -175,7 +180,7 @@ export function createNodeMailManage(
 ): MailManage {
   const timeout = options.timeoutMs ?? 10_000;
   const searchTimeout = Math.max(timeout, options.searchTimeoutMs ?? 60_000);
-  const tls: ConnectionOptions = { ...options.tls, minVersion: "TLSv1.2" };
+  const tls = imapSocketOptions(options.tls, timeout);
 
   /** `changing` flips to true just before the first command that modifies the mailbox. */
   interface Phase {

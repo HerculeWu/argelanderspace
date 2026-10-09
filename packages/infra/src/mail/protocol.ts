@@ -8,13 +8,13 @@
  * and never reach logs, API responses or tickets. Passwords stay inside the call.
  */
 
-import type { ConnectionOptions } from "node:tls";
 import type { MailEndpoint, MailProbeFailureCode } from "@argelanderspace/contracts";
 import type { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import {
   classifyMailError,
   imapClient,
+  imapSocketOptions,
   isConventionalPlace,
   remoteCode,
   toHeader,
@@ -43,7 +43,7 @@ export interface NodeMailProtocolOptions {
 
 export function createNodeMailProtocol(options: NodeMailProtocolOptions = {}): MailProtocol {
   const timeout = options.timeoutMs ?? 10_000;
-  const tls: ConnectionOptions = { ...options.tls, minVersion: "TLSv1.2" };
+  const tls = imapSocketOptions(options.tls, timeout);
   return {
     async verifyImapLogin(t) {
       const client = imapClient(t, timeout, tls);
@@ -164,7 +164,7 @@ export interface MailMailbox {
 
 export function createNodeMailMailbox(options: NodeMailProtocolOptions = {}): MailMailbox {
   const timeout = options.timeoutMs ?? 10_000;
-  const tls: ConnectionOptions = { ...options.tls, minVersion: "TLSv1.2" };
+  const tls = imapSocketOptions(options.tls, timeout);
   /** Connect, run, always disconnect; any thrown error becomes a code only. */
   async function session<T>(
     t: MailLoginTarget,
