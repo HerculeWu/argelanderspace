@@ -9,7 +9,7 @@ import { z } from "zod";
 export const MailSecuritySchema = z.enum(["tls", "starttls"]);
 export type MailSecurity = z.infer<typeof MailSecuritySchema>;
 
-export const MailPresetIdSchema = z.enum(["gmail", "icloud", "uni-bonn", "custom"]);
+export const MailPresetIdSchema = z.enum(["gmail", "icloud", "custom"]);
 export type MailPresetId = z.infer<typeof MailPresetIdSchema>;
 
 const host = z
@@ -105,7 +105,8 @@ export interface MailPreset {
  * Hosts/ports verified against the providers' own documentation on 2026-10-07:
  * Gmail  https://developers.google.com/workspace/gmail/imap/imap-smtp
  * iCloud https://support.apple.com/en-us/102525
- * Uni Bonn comes from the spec (HRZ documentation), not re-verified here.
+ * Any other provider (a university, an institute, a self-hosted server) is "custom": no per-institution
+ * presets, so the provider list stays fixed as more mail servers are used.
  */
 export const MAIL_PRESETS: Readonly<Record<MailPresetId, MailPreset>> = {
   gmail: {
@@ -123,14 +124,6 @@ export const MAIL_PRESETS: Readonly<Record<MailPresetId, MailPreset>> = {
     imapUser: "local-part",
     smtpUser: "address",
     appPassword: true,
-  },
-  "uni-bonn": {
-    id: "uni-bonn",
-    imap: { host: "email.uni-bonn.de", port: 993, security: "tls" },
-    smtp: { host: "email.uni-bonn.de", port: 465, security: "tls" },
-    imapUser: "address",
-    smtpUser: "address",
-    appPassword: false,
   },
   custom: {
     id: "custom",

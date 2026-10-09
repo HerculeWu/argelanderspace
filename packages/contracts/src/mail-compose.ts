@@ -34,19 +34,17 @@ export const MAIL_ATTACHMENT_MAX_COUNT = 50;
 export const MAIL_PROVIDER_LIMIT_BYTES: Readonly<Record<MailPresetId, number | null>> = {
   gmail: 25 * 1024 * 1024,
   icloud: 20 * 1024 * 1024,
-  "uni-bonn": null,
   custom: null,
 };
 
 /**
  * The preset DEFAULT for whether the provider's SMTP server stores the sent message in Sent by itself (then
  * appending a copy would duplicate it); an account can override it (`MailAccount.serverSavesSent`). Gmail does. For the other presets the answer is "no" and unverified: a user
- * smoke on iCloud / Uni Bonn / the custom server settles it.
+ * smoke on iCloud / the custom server settles it.
  */
 export const MAIL_SERVER_SAVES_SENT: Readonly<Record<MailPresetId, boolean>> = {
   gmail: true,
   icloud: false,
-  "uni-bonn": false,
   custom: false,
 };
 

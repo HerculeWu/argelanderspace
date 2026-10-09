@@ -113,14 +113,9 @@ async function add(over: Record<string, unknown> = {}) {
   return { status: r.status, body: await json(r) };
 }
 
-test("presets endpoint lists Gmail/iCloud/Uni Bonn/custom", async () => {
+test("presets endpoint lists Gmail/iCloud/custom", async () => {
   const b = await json(await req("/presets"));
-  expect(b.presets.map((p: { id: string }) => p.id)).toEqual([
-    "gmail",
-    "icloud",
-    "uni-bonn",
-    "custom",
-  ]);
+  expect(b.presets.map((p: { id: string }) => p.id)).toEqual(["gmail", "icloud", "custom"]);
   const gmail = b.presets.find((p: { id: string }) => p.id === "gmail");
   expect(gmail.imap).toEqual({ host: "imap.gmail.com", port: 993, security: "tls" });
   expect(gmail.smtp).toEqual({ host: "smtp.gmail.com", port: 465, security: "tls" });

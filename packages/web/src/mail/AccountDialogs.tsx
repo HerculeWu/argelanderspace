@@ -8,7 +8,6 @@ import { Button, Dialog, InlineMessage } from "../ui";
 const PRESETS: { id: MailPresetId; icon: string }[] = [
   { id: "gmail", icon: "mail" },
   { id: "icloud", icon: "cloud" },
-  { id: "uni-bonn", icon: "graduation-cap" },
   { id: "custom", icon: "server" },
 ];
 const endpointText = (e: { host: string; port: number; security: string }) =>
@@ -167,7 +166,7 @@ export function AddAccountDialog({
     }
   };
 
-  const passwordLabel = preset === "uni-bonn" ? t("mail.add.uniPassword") : custom ? t("mail.add.password") : t("mail.add.appPassword");
+  const passwordLabel = custom ? t("mail.add.password") : t("mail.add.appPassword");
   const serverFields = (key: "imap" | "smtp", value: ServerForm, set: (v: ServerForm) => void) => (
     <fieldset className="mail-server" data-ui={`mail-server-${key}`}>
       <legend>{t(`mail.add.${key}`)}</legend>
@@ -224,7 +223,7 @@ export function AddAccountDialog({
         </div>
       ) : (
         <form className="mail-account-form" onSubmit={(e) => { e.preventDefault(); if (canSubmit) void submit(); }}>
-          {!custom && <p className="mail-note">{t(preset === "gmail" ? "mail.add.gmailNote" : preset === "icloud" ? "mail.add.icloudNote" : "mail.add.bonnNote")}</p>}
+          <p className="mail-note">{t(preset === "gmail" ? "mail.add.gmailNote" : preset === "icloud" ? "mail.add.icloudNote" : "mail.add.customNote")}</p>
           <label className="mail-dfield full">
             <span>{t("mail.add.email")}</span>
             <input data-ui="mail-account-email" type="email" autoComplete="off" value={email} onChange={(e) => { setEmail(e.target.value); edited(); }} />

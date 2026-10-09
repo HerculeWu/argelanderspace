@@ -346,8 +346,8 @@ test("add account: a failed login test is explained per protocol and the passwor
   render(<MailView />);
   await waitFor(() => expect(ui("mail-empty")).toBeTruthy());
   fireEvent.click(ui("mail-add-account")!);
-  fireEvent.click(await screen.findByRole("button", { name: "University of Bonn" }));
-  fireEvent.change(ui("mail-account-email")!, { target: { value: "me@uni-bonn.de" } });
+  fireEvent.click(await screen.findByRole("button", { name: "iCloud" }));
+  fireEvent.change(ui("mail-account-email")!, { target: { value: "me@icloud.com" } });
   fireEvent.change(ui("mail-account-password")!, { target: { value: "synthetic-secret-pw" } });
   fireEvent.click(ui("mail-add-account-submit")!);
   const t = await waitFor(() => {
