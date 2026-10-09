@@ -871,7 +871,16 @@ export function copilotContextObjects(context: {
       savedOmitted?: { rev: number };
     } | null;
   } | null;
+  mail?: { open: { accountId: string; folder: string; uid: number } | null } | null;
 }): { id: string; rev: number }[] {
+  // The message an open Mail page shows (account, folder and uid name it).
+  if (context.mail?.open)
+    return [
+      {
+        id: `mail:${context.mail.open.accountId}:${context.mail.open.folder}:${context.mail.open.uid}`,
+        rev: 0,
+      },
+    ];
   if (context.library?.selectedRefId) return [{ id: context.library.selectedRefId, rev: 0 }];
   if (context.reader) return [{ id: context.reader.docId, rev: 0 }];
   if (context.pdf) return [{ id: context.pdf.docId, rev: 0 }];

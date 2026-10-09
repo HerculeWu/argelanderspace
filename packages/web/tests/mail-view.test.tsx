@@ -479,3 +479,21 @@ test("account menu: Escape closes it and returns focus; removing needs the confi
   await waitFor(() => expect(calls).toEqual([`/api/mail/accounts/${A2}?rev=4`]));
   await waitFor(() => expect(ui("mail-account", A2)).toBeNull());
 });
+
+test("the Copilot page report: complete once the lists loaded, carries the open message, and is not republished on every render", async () => {
+  const reports: (import("@argelanderspace/contracts").MailPage | null)[] = [];
+  render(<MailView paneId={1} onContext={(_pane, page) => reports.push(page)} />);
+  await screen.findByText("Subject 3");
+  await waitFor(() => expect(reports[reports.length - 1]?.phase).toBe("ready"));
+  fireEvent.click(row(A1, 3));
+  await screen.findByText("Plain body 3");
+  await waitFor(() => {
+    const open = reports[reports.length - 1]?.open;
+    expect(open?.status === "ok" && open.text).toBe("Plain body 3");
+  });
+  const settled = reports.length;
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  expect(reports.length).toBe(settled);
+  expect(settled).toBeLessThan(25);
+  expect(reports[reports.length - 1]?.untrusted).toBe(true);
+});

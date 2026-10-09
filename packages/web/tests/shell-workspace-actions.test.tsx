@@ -35,6 +35,19 @@ vi.mock("../src/copilot/Copilot", () => ({
 vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="doc-stub" /> }));
 vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="library-stub" /> }));
 vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="writer-stub" /> }));
+vi.mock("../src/mail/MailView", async () => {
+  const react = await import("react");
+  const contracts = await import("@argelanderspace/contracts");
+  return {
+    MailView: ({ paneId, onContext }: { paneId?: number; onContext?: (paneId: number, page: unknown) => void }) => {
+      react.useEffect(() => {
+        if (onContext && paneId !== undefined)
+          onContext(paneId, { untrusted: true, notice: contracts.MAIL_UNTRUSTED_NOTICE, phase: "ready", accounts: [], scope: { kind: "unified" }, lists: [], open: null });
+      }, [onContext, paneId]);
+      return <div data-ui="mail-stub" />;
+    },
+  };
+});
 
 const task = (n: number, over: object = {}) => ({ id: `t_${String(n).padStart(8, "0")}`, title: `Task ${n}`, status: "todo", due: "2026-12-31", links: [], focused: false, created_at: "2026-09-01T08:00:00.000Z", ...over });
 const plan = (id: string, name: string, tasks: object[]) => ({ id, name, due: "2026-12-31", icon: "target", created_at: "2026-08-01T08:00:00.000Z", tasks });
@@ -82,6 +95,15 @@ describe("view switching, split, close and select go through the Shell's own cal
     await waitFor(() => expect(q('[data-ui="writer-stub"]')).not.toBeNull());
     expect(ctx().workspace?.activePaneId).toBe(1); // a named pane becomes active, as the menu does
     expect(await run({ action: "switch_view", view: "plan", paneId: 99 })).toEqual({ ok: false, detail: "not_found" });
+  });
+
+  it("switch_view mail shows the Mail page and the Mail page's report reaches the published context", async () => {
+    await boot();
+    expect(await run({ action: "switch_view", view: "mail" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="mail-stub"]')).not.toBeNull());
+    await waitFor(() => expect(ctx().view).toBe("mail"));
+    await waitFor(() => expect(ctx().mail?.untrusted).toBe(true));
+    expect(ctx().status).toBe("complete");
   });
 
   it("at most three panes: the fourth split is refused as disabled, exactly like the disabled button", async () => {

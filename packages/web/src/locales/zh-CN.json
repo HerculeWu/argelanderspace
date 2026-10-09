@@ -1531,7 +1531,23 @@
       },
       "job": "任务",
       "doc": "文档",
-      "batch": "文档的一部分"
+      "batch": "文档的一部分",
+      "mail": {
+        "accounts": "列出邮件账户",
+        "folders": "列出文件夹",
+        "list": "列出邮件",
+        "search": "搜索邮件",
+        "read": "阅读邮件",
+        "read_attachment": "阅读附件",
+        "read_attachment_page_image": "查看附件页面",
+        "read_draft": "读取草稿",
+        "create_draft": "写草稿",
+        "update_draft": "修改草稿",
+        "send": "发送邮件",
+        "delete": "删除邮件",
+        "move": "移动邮件",
+        "send_status": "查看发送情况"
+      }
     },
     "undo": {
       "restored": "已恢复「{{title}}」",
@@ -1559,7 +1575,10 @@
       "failedManuscript": "结果未知：你的决定可能已到达服务，也可能没有。请先检查稿件列表再重试。",
       "manuscriptDraftGuard": "该稿件在编辑器中有尚未保存的修改，删除会丢弃它们。仍要删除吗？",
       "replaceText": "替换“{{name}}”的阅读正文",
-      "unreadableDoc": "确认时的检查无法读取此文档的数据（标注、文本或图片）。没有替换任何内容，也没有改动任何内容。"
+      "unreadableDoc": "确认时的检查无法读取此文档的数据（标注、文本或图片）。没有替换任何内容，也没有改动任何内容。",
+      "expiredMail": "草稿或邮件在你确认前已变化。没有发送、删除或移动；请让 Copilot 重新请求。",
+      "failedMail": "你的答复没能记录，请重试。",
+      "unreadableMail": "无法向邮件服务器核对草稿，所以没有发送。"
     },
     "thinkingLevels": {
       "off": "关闭",
@@ -1657,6 +1676,57 @@
       "elapsed": "已进行 {{time}}",
       "thinkingTitle": "思考过程",
       "thinkingLive": "思考中…"
+    },
+    "mailCard": {
+      "sendTitle": "要发送这封邮件吗？",
+      "deleteTitle": "要删除这封邮件吗？",
+      "moveTitle": "要移动这封邮件吗？",
+      "from": "发件账户",
+      "to": "收件人",
+      "cc": "抄送",
+      "bcc": "密送",
+      "subject": "主题",
+      "body": "正文全文",
+      "attachments": "附件",
+      "thread": "会话",
+      "isReply": "这是对一封邮件的回复",
+      "none": "（没有收件人）",
+      "folder": "文件夹",
+      "destination": "移动到",
+      "deleteScope": "邮件会移到该账户的“已删除”文件夹。",
+      "deletePermanent": "这封邮件已在“已删除”中。再删除就会永久删除，无法恢复。",
+      "moveScope": "邮件会在邮件服务器上移到该文件夹。",
+      "undoNote": "确认后邮件会等待 8 秒，期间仍可撤销发送。",
+      "confirmSend": "发送",
+      "confirmDelete": "删除",
+      "confirmMove": "移动",
+      "replyTitle": "要发送这封回复吗？",
+      "forwardTitle": "要转发这封邮件吗？",
+      "isForward": "这会把一封已有的邮件（及其附件）转发给下列收件人。"
+    },
+    "mailUndo": {
+      "pending": "{{seconds}} 秒后发送",
+      "action": "撤销",
+      "sending": "正在发送…",
+      "sent": "邮件已发送。",
+      "cancelled": "已撤销，没有发出；草稿仍在草稿箱。",
+      "failed": "邮件没有发出，草稿仍在草稿箱。",
+      "interrupted": "应用在发送前退出：邮件没有发出，已放回草稿箱。",
+      "unknown": "不知道邮件是否已发出（应用在发送时停止，或与邮件服务器的连接中断）。可能已发出也可能没有，请到“已发送”核对。",
+      "dismiss": "关闭",
+      "dismissLabel": "关闭发送撤销提示"
+    },
+    "mailContext": {
+      "ready": "邮件：当前邮件与列表信头",
+      "loading": "邮件（加载中，未发送）",
+      "noAccounts": "邮件（尚无账户）",
+      "error": "邮件（无法读取账户，未发送）",
+      "headers": "已发送 {{count}} 条列表信头",
+      "open": "已发送当前打开邮件的全文",
+      "openLoading": "邮件正在打开（尚未发送）",
+      "openError": "当前邮件无法读取（未发送）",
+      "untrusted": "邮件内容按不可信数据处理，绝不当作指令。",
+      "openCut": "当前打开邮件的正文被截断发送：{{chars}} 个字符中只发送了开头部分"
     }
   },
   "mail": {

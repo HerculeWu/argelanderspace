@@ -1,4 +1,4 @@
-import type { MailAccount, MailFolder, MailHeader, MailMessage } from "@argelanderspace/contracts";
+import type { MailAccount, MailFolder, MailHeader, MailMessage, MailPage } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +14,7 @@ import { ActionButton, Badge, Button, InlineMessage } from "../ui";
 import { AddAccountDialog, ReenterPasswordDialog, RemoveAccountDialog } from "./AccountDialogs";
 import { addressList, addressName, fileSize, longDate, shortDate } from "./format";
 import { MailHtmlBody, useInlineImages, useSanitizedMailHtml } from "./MailHtmlBody";
+import { buildMailPage } from "./mail-context";
 import { reportMailAccounts, useMailLiveEvents } from "./mailLive";
 import { failureKind, manageReason } from "./manage-error";
 import { MailSearch } from "./MailSearch";
@@ -71,7 +72,7 @@ const refKey = (r: Ref) => `${r.accountId}\u0000${r.folder}\u0000${r.uid}`;
 const errorCode = (e: unknown) => (e instanceof MailApiError ? e.code : "unreachable");
 const AUTH_CODES = new Set(["auth_failed", "credential_missing"]);
 
-export function MailView() {
+export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (paneId: number, page: MailPage | null) => void } = {}) {
   const { t, i18n } = useTranslation();
   const rootRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1200);
@@ -440,6 +441,20 @@ export function MailView() {
     const all = listSources.flatMap((s) => s.headers.map((h) => ({ h, accountId: s.accountId, folder: s.folder })));
     return all.sort((a, b) => (b.h.date ?? "").localeCompare(a.h.date ?? "") || b.h.uid - a.h.uid);
   }, [listSources]);
+  const publishedMail = useRef<string | null>(null);
+  // The Copilot's view of this page (Mail ticket 09): the open message in full and the headers the list shows. It is
+  // republished only when what it is made of changes, never on every render.
+  useEffect(() => {
+    if (!onContext || paneId === undefined) return;
+    const listsPending = listSources.length === 0 || listSources.some((s) => s.loading && s.headers.length === 0);
+    const page = buildMailPage({ accounts, accountsError: accountsError !== null, listsPending, scope, lists: listSources, opened });
+    // Only a changed page is published: the derived lists are new arrays on every render.
+    const signature = JSON.stringify(page);
+    if (signature === publishedMail.current) return;
+    publishedMail.current = signature;
+    onContext(paneId, page);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { publishedMail.current = null; if (onContext && paneId !== undefined) onContext(paneId, null); }, [onContext, paneId]);
   const loadingFirst = scopeSources.length > 0 && listSources.some((s) => s.loading && s.headers.length === 0);
   const anyMore = listSources.some((s) => s.nextBefore !== null);
   const moreBusy = listSources.some((s) => s.loadingMore);

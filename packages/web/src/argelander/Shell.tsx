@@ -1,4 +1,4 @@
-import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, MAX_PANES, type PageContext, type PdfPage, type TextSourcePage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema, type WriterPage, type WriterViewAction, WriterViewActionSchema } from "@argelanderspace/contracts";
+import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, type MailPage, MAX_PANES, type PageContext, type PdfPage, type TextSourcePage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema, type WriterPage, type WriterViewAction, WriterViewActionSchema } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
@@ -93,6 +93,8 @@ export function Shell() {
   // The Writer of each Write pane (copilot ticket 22): its page (list or open manuscript with saved content and unsaved draft) and its controller.
   const [writerPages, setWriterPages] = useState<Record<number, WriterPage | null>>({});
   const reportWriter = useCallback((paneId: number, page: WriterPage | null) => { setWriterPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
+  const [mailPages, setMailPages] = useState<Record<number, MailPage | null>>({});
+  const reportMail = useCallback((paneId: number, page: MailPage | null) => { setMailPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
   const writerPagesRef = useRef(writerPages);
   writerPagesRef.current = writerPages;
   // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
@@ -582,6 +584,8 @@ export function Shell() {
       : activePane.view === "doc" && textPages[activePane.id] ? (textPages[activePane.id]?.phase === "ready" ? "complete" : textPages[activePane.id]?.phase === "error" ? "error" : "unavailable")
       : activePane.view === "doc" ? (readerPages[activePane.id]?.reading ? "complete" : ["error", "missing"].includes(readerPages[activePane.id]?.sync.phase ?? "") ? "error" : "unavailable")
       : activePane.view === "write" ? writerPageStatus(writerPages[activePane.id])
+      // A Mail page is complete once its accounts and lists really loaded; loading, no account and errors are not.
+      : activePane.view === "mail" ? (mailPages[activePane.id]?.phase === "ready" ? "complete" : "unavailable")
       : "unavailable",
     plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
     library: activePane.view === "library" && !discoveryPages[activePane.id] ? libraryPages[activePane.id] ?? null : null,
@@ -592,6 +596,8 @@ export function Shell() {
     textSource: activePane.view === "doc" ? textPages[activePane.id] ?? null : null,
     // The Writer of the ACTIVE pane: the list or the open manuscript (saved content, and the draft apart from it).
     writer: activePane.view === "write" ? writerPages[activePane.id] ?? null : null,
+    // The Mail page of the ACTIVE pane: untrusted external data (the open message and the list headers).
+    mail: activePane.view === "mail" ? mailPages[activePane.id] ?? null : null,
     workspace: {
       maxPanes: MAX_PANES, activePaneId: activePane.id,
       panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
@@ -604,7 +610,7 @@ export function Shell() {
       },
       copilotOpen,
     },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, textPages, writerPages, tweaks, copilotOpen]);
+  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, textPages, writerPages, mailPages, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
 
   const renderView = (p: Pane) => {
@@ -614,7 +620,7 @@ export function Shell() {
       case "doc":
         return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onTextContext={reportText} onController={registerReaderController} />;
       case "mail":
-        return <MailView />;
+        return <MailView paneId={p.id} onContext={reportMail} />;
       case "write":
         return <WriterView paneId={p.id} onContext={reportWriter} onController={registerWriterController} />;
       default:

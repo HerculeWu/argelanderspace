@@ -647,7 +647,7 @@ export function createApp(deps: AppDeps): Hono {
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
   mountProviderRoutes(app, providerSettings, guardCsrf);
   mountMailWatchRoutes(app, deps.mailWatch);
-  mountMailRoutes(
+  const mailOps = mountMailRoutes(
     app,
     deps.mailAccounts,
     guardCsrf,
@@ -1140,6 +1140,7 @@ export function createApp(deps: AppDeps): Hono {
     reader: readerOps,
     text: textDocs,
     writer: writerOps,
+    mail: mailOps,
     plans: {
       statusDir: deps.statusDir,
       planLock,

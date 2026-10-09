@@ -20,6 +20,7 @@ import { bodyLimit } from "hono/body-limit";
 import { MailAccountService, MailServiceError } from "./mail-accounts.js";
 import { MailCache } from "./mail-cache.js";
 import { type MailComposeServices, mountMailComposeRoutes } from "./mail-compose-routes.js";
+import type { MailOpDeps } from "./mail-copilot.js";
 import { createDefaultMailManageService, type MailManageService } from "./mail-manage.js";
 import { mountMailManageRoutes } from "./mail-manage-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
@@ -103,9 +104,9 @@ export function mountMailRoutes(
   injectedRead?: MailReadService,
   injectedManage?: MailManageService,
   injectedCompose?: MailComposeServices
-): void {
+): MailOpDeps {
   // Writing and sending (ticket 07) has its own router, registered first so that its larger upload limit applies.
-  mountMailComposeRoutes(host, injectedCompose, guardCsrf);
+  const compose = mountMailComposeRoutes(host, injectedCompose, guardCsrf);
   let service = injected;
   const get = () => (service ??= createDefaultMailAccountService());
   let reader = injectedRead;
@@ -233,4 +234,6 @@ export function mountMailRoutes(
   // ---- managing and searching (ticket 06) ----------------------------------
   mountMailManageRoutes(app, manage);
   host.route("/api/mail", app);
+  // The Copilot's mail tool (ticket 09) uses these very services, so there is one send path and one cache.
+  return { accounts: get, read, manage, services: compose };
 }

@@ -14,7 +14,7 @@ export const MAX_PANES = 3;
 export const MIN_PANE_SHARE = 0.16;
 
 /** Views a pane can show. */
-export const WORKSPACE_VIEWS = ["plan", "library", "doc", "write"] as const;
+export const WORKSPACE_VIEWS = ["plan", "library", "doc", "write", "mail"] as const;
 export const APPEARANCE_THEMES = ["dark", "light"] as const;
 export const APPEARANCE_ACCENTS = ["azure", "teal", "violet", "amber", "neutral"] as const;
 export const APPEARANCE_DENSITIES = ["compact", "regular", "comfy"] as const;

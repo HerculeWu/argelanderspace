@@ -13,6 +13,10 @@ import {
   LibraryPageSchema,
   LibraryViewActionSchema,
 } from "./library-ops.js";
+import { MailAccountIdSchema } from "./mail.js";
+import { MailMessageIdSchema } from "./mail-compose.js";
+import { type MailContextSummary, MailContextSummarySchema, MailPageSchema } from "./mail-ops.js";
+import { MailAddressSchema } from "./mail-read.js";
 import {
   type PdfContextSummary,
   PdfContextSummarySchema,
@@ -106,6 +110,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
       textSource: TextSourcePageSchema.nullable().optional(),
       /** The Writer of the active pane (copilot ticket 22): the manuscript list or one open manuscript. */
       writer: WriterPageSchema.nullable().optional(),
+      /** The Mail page (Mail ticket 09): the open message in full and the list headers, all untrusted external data. */
+      mail: MailPageSchema.nullable().optional(),
       /** Layout and appearance of the Shell; optional so older views and headless callers stay valid. */
       workspace: WorkspaceSnapshotSchema.optional(),
     })
@@ -125,7 +131,9 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
           !!value.writer &&
           (value.writer.list?.phase === "ready" ||
             (value.writer.editor?.phase === "ready" &&
-              !!(value.writer.editor.saved || value.writer.editor.savedOmitted))));
+              !!(value.writer.editor.saved || value.writer.editor.savedOmitted)))) ||
+        // A Mail page is complete once its accounts and lists really loaded.
+        (value.view === "mail" && value.mail?.phase === "ready");
       if ((value.status === "complete") !== covered)
         ctx.addIssue({ code: "custom", message: "invalid page coverage" });
     });
@@ -218,6 +226,7 @@ export interface CopilotMessage {
     pdf?: PdfContextSummary;
     text?: TextContextSummary;
     writer?: WriterContextSummary;
+    mail?: MailContextSummary;
     coverage?: ContextCoverage;
   };
 }
@@ -349,7 +358,104 @@ export const CopilotTextReplaceConfirmationSchema = z
   })
   .strict();
 export type CopilotTextReplaceConfirmation = z.infer<typeof CopilotTextReplaceConfirmationSchema>;
+const MailCardAccountSchema = z
+  .object({
+    id: MailAccountIdSchema,
+    address: z.string().max(254),
+    displayName: z.string().max(200),
+  })
+  .strict();
+const MailCardRecipients = z.array(MailAddressSchema).max(500);
+/**
+ * Sending a message the model asked for (Mail ticket 09). Everything the card shows (account, recipients, subject, the
+ * whole body, attachments) is read from ONE snapshot of the draft, and the very same snapshot is what is sent on
+ * approval; the digest binds the card to the stored draft, so a draft changed after the card was made expires it.
+ * The model cannot supply or see an approval.
+ */
+export const CopilotMailSendConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("send_mail"),
+    object: z
+      .object({
+        kind: z.literal("mail_draft"),
+        id: MailMessageIdSchema,
+        accountId: MailAccountIdSchema,
+      })
+      .strict(),
+    account: MailCardAccountSchema,
+    to: MailCardRecipients,
+    cc: MailCardRecipients,
+    bcc: MailCardRecipients,
+    subject: z.string().max(2000),
+    text: z.string().max(4_000_000),
+    attachments: z
+      .array(
+        z
+          .object({
+            filename: z.string().max(1000),
+            contentType: z.string().max(255),
+            size: z.number().int().min(0),
+          })
+          .strict()
+      )
+      .max(50),
+    /** A reply or forward: the Message-ID it answers (null for a new message). */
+    inReplyTo: MailMessageIdSchema.nullable(),
+    /** What the user is being asked to send: a new message, a reply, or a forward. */
+    kind: z.enum(["new", "reply", "forward"]),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+const MailCardMessage = z
+  .object({
+    folder: z.string().min(1).max(1024),
+    uid: z.number().int().min(1),
+    uidValidity: z.number().int().min(0),
+    from: MailAddressSchema.nullable(),
+    subject: z.string().max(10_000),
+    date: z.string().nullable(),
+  })
+  .strict();
+const MailCardMessageObject = z
+  .object({
+    kind: z.literal("mail_message"),
+    id: z.string().min(1),
+    accountId: MailAccountIdSchema,
+  })
+  .strict();
+/** Deleting one message (into Trash, or for good when it already is in Trash). */
+export const CopilotMailDeleteConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("delete_mail"),
+    object: MailCardMessageObject,
+    account: MailCardAccountSchema,
+    message: MailCardMessage,
+    /** True: the message is already in Trash and is removed for good (cannot be undone). */
+    permanent: z.boolean(),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+/** Moving one message to another folder. */
+export const CopilotMailMoveConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("move_mail"),
+    object: MailCardMessageObject,
+    account: MailCardAccountSchema,
+    message: MailCardMessage,
+    destination: z.string().min(1).max(1024),
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotMailSendConfirmation = z.infer<typeof CopilotMailSendConfirmationSchema>;
+export type CopilotMailDeleteConfirmation = z.infer<typeof CopilotMailDeleteConfirmationSchema>;
+export type CopilotMailMoveConfirmation = z.infer<typeof CopilotMailMoveConfirmationSchema>;
 export const CopilotConfirmationSchema = z.union([
+  CopilotMailSendConfirmationSchema,
+  CopilotMailDeleteConfirmationSchema,
+  CopilotMailMoveConfirmationSchema,
   CopilotTextReplaceConfirmationSchema,
   CopilotPlanConfirmationSchema,
   CopilotDocConfirmationSchema,
@@ -372,6 +478,9 @@ export const CopilotConfirmationDecisionSchema = z
       "delete_doc",
       "delete_manuscript",
       "replace_text_reading",
+      "send_mail",
+      "delete_mail",
+      "move_mail",
     ]),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
@@ -394,6 +503,23 @@ const OperationConfirmationBase = {
   outcome: z.enum(["approved", "declined", "expired"]).optional(),
 };
 export const OperationConfirmationSchema = z.discriminatedUnion("action", [
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("send_mail"),
+      accountId: z.string().min(1),
+      messageId: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.enum(["delete_mail", "move_mail"]),
+      accountId: z.string().min(1),
+      folder: z.string().min(1),
+      uid: z.number().int().min(1),
+    })
+    .strict(),
   z
     .object({
       ...OperationConfirmationBase,
@@ -564,6 +690,8 @@ export const CopilotContextReferenceSchema = z
         text: TextContextSummarySchema.optional(),
         /** What the Writer carried (copilot ticket 22); absent for other pages. */
         writer: WriterContextSummarySchema.optional(),
+        /** What the Mail page carried (Mail ticket 09); no body and no addresses. */
+        mail: MailContextSummarySchema.optional(),
         /** What of the Reader reading / PDF material this message delivered (copilot ticket 24). */
         coverage: ContextCoverageSchema.optional(),
         objects: z.array(
@@ -604,6 +732,8 @@ export const OperationJournalSchema = z
         workId: z.string().optional(),
         /** The Writer manuscript the operation targets (copilot ticket 22). */
         manuscriptId: z.string().optional(),
+        /** The mail send this operation started (Mail ticket 09): chosen by the application, never by the model. */
+        sendId: z.string().max(64).optional(),
         /** The Job-table job this operation submitted (recorded right after the submit). */
         jobId: z.string().optional(),
         /** A readable one-line description of the request (for example an import's mode and text). */

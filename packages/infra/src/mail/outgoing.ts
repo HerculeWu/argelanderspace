@@ -143,6 +143,8 @@ export interface MailOutgoing {
     t: MailLoginTarget,
     q: { raw: Buffer; messageId: string }
   ): Promise<OutResult<DraftRef>>;
+  /** Where the newest copy of the draft with this Message-ID is in Drafts, or null when there is none (Mail ticket 09). */
+  findDraft(t: MailLoginTarget, q: { messageId: string }): Promise<OutResult<DraftRef | null>>;
   /** Remove every copy of the draft with this Message-ID from Drafts. Nothing to remove is success. */
   deleteDraft(
     t: MailLoginTarget,
@@ -265,6 +267,19 @@ export function createNodeMailOutgoing(options: NodeMailProtocolOptions = {}): M
           const older = mine === null ? [] : copies.filter((u) => u < mine);
           if (older.length > 0) await client.messageDelete(older.join(","), { uid: true });
           return { ok: true, value: { folder: path, uid: mine } };
+        } finally {
+          lock.release();
+        }
+      }),
+    findDraft: (t, q) =>
+      session(t, async (client) => {
+        const path = await findFolder(client, "\\Drafts", DRAFT_NAMES);
+        if (!path) return { ok: false, code: "drafts_unavailable" };
+        const lock = await client.getMailboxLock(path);
+        try {
+          const copies = await copiesOf(client, q.messageId);
+          const newest = copies[copies.length - 1];
+          return { ok: true, value: newest === undefined ? null : { folder: path, uid: newest } };
         } finally {
           lock.release();
         }

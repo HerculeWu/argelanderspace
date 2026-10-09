@@ -30,10 +30,12 @@ import {
   DeliveryLedgerEntrySchema,
   IMAGE_BYTES_PER_TOKEN,
   imageTokens,
+  mailKey,
   OPERATION_CONFIRMATION_TYPE,
   OPERATION_JOURNAL_TYPE,
   type OperationConfirmation,
   type OperationJournal,
+  observationMailPage,
   observationPage,
   observationWriterPage,
   type PageContext,
@@ -46,6 +48,7 @@ import {
   STEER_QUEUE_TYPE,
   summarizeDiscoveryPage,
   summarizeLibraryPage,
+  summarizeMailPage,
   summarizePdfPage,
   summarizeReaderPage,
   summarizeTextPage,
@@ -77,6 +80,7 @@ import {
   shedCandidates,
 } from "./copilot-ledger.js";
 import { createLibraryTool, LIBRARY_TOOL_NAME } from "./copilot-library-tool.js";
+import { createMailTool, MAIL_PROMPT, MAIL_TOOL_NAME } from "./copilot-mail-tool.js";
 import {
   type ConfirmationOutcome,
   type ConfirmationPort,
@@ -105,6 +109,8 @@ import {
 import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
 import { jobView, type LibraryOpDeps, prepareArxivRefresh } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
+import { mailAccountProbe } from "./mail-account-probe.js";
+import { accountsOf, draftUnchanged, type MailOpDeps } from "./mail-copilot.js";
 import { describeDeleteTarget, type PlanOpDeps, type RemovedTask } from "./plans-actions.js";
 import { TaskUndoRegistry, type UndoResult } from "./plans-undo.js";
 import { ProviderSettings, ProviderSettingsError } from "./providers.js";
@@ -157,6 +163,8 @@ interface RunState {
   model: { input: readonly string[] };
   /** `readingKey`s of the Reader readings that went to the model with this run's messages (task and steering). */
   readings: Set<string>;
+  /** Whether the mail tool is mounted for this run, decided once when it started (never changes mid-run). */
+  mailMount: "on" | "off" | "unavailable";
 }
 interface Loaded {
   recordBytes: string;
@@ -219,6 +227,10 @@ function readingKeysOf(context: PageContext, coverage?: ContextCoverage): string
     ...(reading && whole ? [readingKey(reading.docId, reading.epoch.fingerprint)] : []),
     // A manuscript the message carried whole is held at that revision (a later observation leaves it out).
     ...(manuscript ? [writerKey(manuscript.id, manuscript.rev)] : []),
+    // The open message the task's first message carried (a later observation leaves its body out).
+    ...(context.mail?.open?.status === "ok"
+      ? [mailKey(context.mail.open.accountId, context.mail.open.folder, context.mail.open.uid)]
+      : []),
   ];
 }
 const SLOW_VIEW_ACTIONS: ReadonlySet<string> = new Set([
@@ -269,6 +281,16 @@ type ConfirmationAsked = Parameters<ConfirmationPort["request"]>[0];
 /** The durable "requested" record's own fields for one asked confirmation. */
 function requestedFields(entry: ConfirmationAsked) {
   switch (entry.action) {
+    case "send_mail":
+      return { action: entry.action, accountId: entry.accountId, messageId: entry.messageId };
+    case "delete_mail":
+    case "move_mail":
+      return {
+        action: entry.action,
+        accountId: entry.accountId,
+        folder: entry.message.folder,
+        uid: entry.message.uid,
+      };
     case "replace_text_reading":
     case "delete_doc":
       return { action: entry.action, docId: entry.docId };
@@ -285,6 +307,50 @@ function requestedFields(entry: ConfirmationAsked) {
 function cardOf(id: string, runId: string, entry: ConfirmationAsked): CopilotConfirmation {
   const head = { id, runId, toolCallId: entry.toolCallId, baseRev: entry.baseRev };
   switch (entry.action) {
+    case "send_mail":
+      return {
+        ...head,
+        action: entry.action,
+        object: { kind: "mail_draft", id: entry.messageId, accountId: entry.accountId },
+        account: entry.account,
+        kind: entry.kind,
+        to: entry.to,
+        cc: entry.cc,
+        bcc: entry.bcc,
+        subject: entry.subject,
+        text: entry.text,
+        attachments: entry.attachments,
+        inReplyTo: entry.inReplyTo,
+        objectDigest: entry.objectDigest,
+      };
+    case "delete_mail":
+      return {
+        ...head,
+        action: entry.action,
+        object: {
+          kind: "mail_message",
+          id: `${entry.accountId}:${entry.message.folder}:${entry.message.uid}`,
+          accountId: entry.accountId,
+        },
+        account: entry.account,
+        message: entry.message,
+        permanent: entry.permanent,
+        objectDigest: entry.objectDigest,
+      };
+    case "move_mail":
+      return {
+        ...head,
+        action: entry.action,
+        object: {
+          kind: "mail_message",
+          id: `${entry.accountId}:${entry.message.folder}:${entry.message.uid}`,
+          accountId: entry.accountId,
+        },
+        account: entry.account,
+        message: entry.message,
+        destination: entry.destination,
+        objectDigest: entry.objectDigest,
+      };
     case "replace_text_reading":
       return {
         ...head,
@@ -338,6 +404,16 @@ function cardOf(id: string, runId: string, entry: ConfirmationAsked): CopilotCon
 /** The durable "resolved" record's own fields for one card. */
 function resolvedFields(card: CopilotConfirmation) {
   switch (card.action) {
+    case "send_mail":
+      return { action: card.action, accountId: card.object.accountId, messageId: card.object.id };
+    case "delete_mail":
+    case "move_mail":
+      return {
+        action: card.action,
+        accountId: card.object.accountId,
+        folder: card.message.folder,
+        uid: card.message.uid,
+      };
     case "replace_text_reading":
     case "delete_doc":
       return { action: card.action, docId: card.object.id };
@@ -353,6 +429,11 @@ function resolvedFields(card: CopilotConfirmation) {
 /** One line of a resume request for a confirmation that was asked and never answered. */
 function askedLine(entry: OperationConfirmation): string {
   switch (entry.action) {
+    case "send_mail":
+      return `${entry.action} ${entry.accountId} ${entry.messageId}`;
+    case "delete_mail":
+    case "move_mail":
+      return `${entry.action} ${entry.accountId} ${entry.folder} uid ${entry.uid}`;
     case "replace_text_reading":
     case "delete_doc":
       return `${entry.action} ${entry.docId}`;
@@ -374,8 +455,22 @@ const TEXT_PROMPT =
   " The text tool writes a text Doc's Markdown source (page.textSource carries the editor's current text; unsaved true means it is the user's draft) and its images; the reading text only changes with generate. A text Doc's generated reading is read and annotated with reader read and create_annotation like a LaTeX Doc. Replacing annotated reading text waits for the user's confirmation card, which you cannot give. To transcribe a PDF, first text load_instruction pdf-transcription.";
 
 /** The base instruction of a session: small and always present; the versioned instructions are loaded on demand. */
-const basePrompt = (writer: boolean, text: boolean): string =>
-  (writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT) + (text ? TEXT_PROMPT : "");
+const basePrompt = (writer: boolean, text: boolean, mail = false): string => {
+  let base = writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT;
+  if (mail) {
+    // The base sentences that list what exists say so for Mail too (a session without an account keeps them as they were).
+    base = base
+      .replace(
+        "PDF Reader and Writer page context is available in this release",
+        "PDF Reader, Writer and Mail page context is available in this release"
+      )
+      .replace(
+        "(and writer and text when present) tools",
+        "(and writer, text and mail when present) tools"
+      );
+  }
+  return base + (text ? TEXT_PROMPT : "") + (mail ? MAIL_PROMPT : "");
+};
 
 /** Business capabilities the app wires in; the host never reaches around them. */
 export interface Workbench {
@@ -388,6 +483,8 @@ export interface Workbench {
   text?: TextOpDeps & Pick<TextDocService, "probeReplacement">;
   /** The Writer's seam (copilot ticket 22): the routes' lock, rev check, save and notification; absent in headless hosts. */
   writer?: WriterOpDeps;
+  /** The Mail services the Mail page's routes use (Mail ticket 09); absent in hosts without Mail. */
+  mail?: MailOpDeps;
   /** Milliseconds a view action may wait for its bound browser to report (default 10 s). */
   viewActionTimeoutMs?: number;
   /** Milliseconds a view action waits for an offline bound browser to reconnect (default 30 s). */
@@ -419,7 +516,9 @@ export class CopilotHost {
   constructor(
     dataDir: string,
     settings: ProviderSettings | undefined,
-    private readonly broadcast: (event: WsCopilotEvent) => void
+    private readonly broadcast: (event: WsCopilotEvent) => void,
+    /** Whether a mail account exists (decides if the mail tool is mounted); production reads the real account store. */
+    private readonly hasMailAccounts?: () => boolean
   ) {
     this.settings = settings;
     this.root = join(dataDir, "copilot");
@@ -1085,6 +1184,7 @@ export class CopilotHost {
           : {}),
         ...(context.textSource ? { text: summarizeTextPage(context.textSource) } : {}),
         ...(context.writer ? { writer: summarizeWriterPage(context.writer) } : {}),
+        ...(context.mail ? { mail: summarizeMailPage(context.mail) } : {}),
         ...(coverage ? { coverage } : {}),
         objects: this.contextObjects(context),
       },
@@ -1365,6 +1465,9 @@ export class CopilotHost {
       | { action: "delete_plan" }
       | { action: "delete_manuscript" }
       | { action: "replace_text_reading" }
+      | { action: "send_mail" }
+      | { action: "delete_mail" }
+      | { action: "move_mail" }
     >
   ): Promise<boolean> {
     if (confirmation.action === "delete_doc") {
@@ -1438,7 +1541,33 @@ export class CopilotHost {
       ? { kind: "valid" }
       : { kind: "changed" };
   }
+  /**
+   * A mail send at the click: the stored draft is exactly what the card showed (the same digest the card was made
+   * from). `error` is a system error (the mail server could not be asked), never reported as a change.
+   */
+  private async mailSendCheck(
+    confirmation: Extract<CopilotConfirmation, { action: "send_mail" }>
+  ): Promise<{ kind: "valid" | "changed" } | { kind: "error"; detail: string }> {
+    const mail = this.workbench?.mail;
+    if (!mail) return { kind: "changed" };
+    const now = await draftUnchanged(
+      mail,
+      confirmation.object.accountId,
+      confirmation.object.id,
+      confirmation.objectDigest
+    );
+    if (now === "same") return { kind: "valid" };
+    if (now === "changed") return { kind: "changed" };
+    // The draft is gone or frozen (in a window, already sent): that is a change; the rest could not be read.
+    return now.status === "not_found" || now.status === "conflict"
+      ? { kind: "changed" }
+      : { kind: "error", detail: now.code };
+  }
   private async confirmationStillValid(confirmation: CopilotConfirmation): Promise<boolean> {
+    if (confirmation.action === "send_mail")
+      return (await this.mailSendCheck(confirmation)).kind === "valid";
+    // A delete or move names one message by uid and uidValidity; the server refuses a changed one when it runs.
+    if (confirmation.action === "delete_mail" || confirmation.action === "move_mail") return true;
     if (confirmation.action === "replace_text_reading")
       return (await this.textConfirmationCheck(confirmation)).kind === "valid";
     return confirmation.action === "delete_plan"
@@ -1470,7 +1599,11 @@ export class CopilotHost {
     for (const pending of [...this.confirmations.values()]) {
       if (
         pending.confirmation.action === "delete_plan" ||
-        pending.confirmation.action === "delete_manuscript"
+        pending.confirmation.action === "delete_manuscript" ||
+        // Mail cards are checked at the click (an IMAP read is not a background poll).
+        pending.confirmation.action === "send_mail" ||
+        pending.confirmation.action === "delete_mail" ||
+        pending.confirmation.action === "move_mail"
       )
         continue;
       if (pending.confirmation.action === "replace_text_reading") {
@@ -1515,8 +1648,14 @@ export class CopilotHost {
       confirmation.baseRev !== body.baseRev
     )
       throw new CopilotError("stale");
-    if (wanted === "approved" && confirmation.action === "replace_text_reading") {
-      const check = await this.textConfirmationCheck(confirmation);
+    if (
+      wanted === "approved" &&
+      (confirmation.action === "replace_text_reading" || confirmation.action === "send_mail")
+    ) {
+      const check =
+        confirmation.action === "send_mail"
+          ? await this.mailSendCheck(confirmation)
+          : await this.textConfirmationCheck(confirmation);
       // The check awaited: another decision, a Stop or a recheck may have settled this card meanwhile. Never append a
       // second resolution; the approving tab is answered by what the card ended as (same answer as a repeated click).
       if (this.confirmations.get(id) !== pending) {
@@ -1685,7 +1824,15 @@ export class CopilotHost {
           .reverse()
           .map((entry) => entry.object?.jobId)
           .find((id) => !!id);
-        return begin ? { state: "begun", hash: begin.hash, ...(jobId ? { jobId } : {}) } : null;
+        const sendId = list.map((entry) => entry.object?.sendId).find((id) => !!id);
+        return begin
+          ? {
+              state: "begun",
+              hash: begin.hash,
+              ...(jobId ? { jobId } : {}),
+              ...(sendId ? { sendId } : {}),
+            }
+          : null;
       },
       begin: (entry) => {
         // The write may only run once the record that explains it is on disk; a refusal leaves no begin behind.
@@ -1862,8 +2009,10 @@ export class CopilotHost {
   ): Promise<{ messageId: string; runId: string }> {
     const state = loaded.run;
     if (!state?.session || state.stopRequested) throw new CopilotError("busy");
-    const context = this.views.get(request.viewId);
-    if (!context || context.revision !== request.contextRevision) throw new CopilotError("stale");
+    const published = this.views.get(request.viewId);
+    if (!published || published.revision !== request.contextRevision)
+      throw new CopilotError("stale");
+    const context = this.forMount(published, state.mailMount);
     if (!loaded.record.model) throw new CopilotError("capabilities");
     const selected = await this.settingsHost().captureConversation(loaded.record.model, true);
     if (!selected.auth) throw new CopilotError("credentials");
@@ -1881,7 +2030,8 @@ export class CopilotHost {
       context,
       state.model,
       loaded,
-      selected.model
+      selected.model,
+      state.mailMount === "on"
     );
     const shed = this.admit(loaded, envelope, selected.model, evictions);
     if (!shed) throw new CopilotError("capacity");
@@ -1942,7 +2092,8 @@ export class CopilotHost {
     context: PageContext,
     model: { input: readonly string[] },
     loaded: Loaded,
-    window: { maxTokens: number; contextWindow: number }
+    window: { maxTokens: number; contextWindow: number },
+    mailOn: boolean
   ): Promise<{
     text: string;
     pdf?: PdfMaterialEnvelope;
@@ -1972,7 +2123,7 @@ export class CopilotHost {
       const soft =
         windowBytes -
         view.stats.size -
-        this.systemMissingBytes(loaded) -
+        this.systemMissingBytes(loaded, mailOn) -
         Math.max(8 * 1024, Math.floor(windowBytes / 8));
       return fitEnvelope(
         parsed.data,
@@ -2108,20 +2259,21 @@ export class CopilotHost {
    * history), else the measure of this very run's instruction and tool schemas, which the first request carries
    * before any entry says so. Only a reading that is batched needs it; a message without one keeps the old rule.
    */
-  private systemMissingBytes(loaded: Loaded): number {
+  private systemMissingBytes(loaded: Loaded, mailOn: boolean): number {
     const raw = loaded.manager.getEntries();
     if (raw.some((entry) => entry.type === "message" && entry.message.role === "system")) return 0;
-    return this.systemFootprint();
+    return this.systemFootprint(mailOn);
   }
   /** The one application resource loader (copilot-resources.ts) for a session with these tools. */
   private resources(
     extensions: Parameters<typeof createApplicationResourceLoader>[0]["extensions"],
     writer: boolean,
-    text: boolean
+    text: boolean,
+    mail = false
   ): ApplicationResourceLoader {
     return createApplicationResourceLoader({
       extensions,
-      systemPrompt: () => basePrompt(writer, text),
+      systemPrompt: () => basePrompt(writer, text, mail),
       refuseExtension: () => {
         throw new CopilotError("unavailable");
       },
@@ -2153,15 +2305,46 @@ export class CopilotHost {
       return { unavailable: `the source PDF cannot be read right now (${read.kind})` };
     return sourceCoverage(entries, source.doc_id, read.material.sha256, read.material.pages);
   }
-  private systemFootprintBytes?: number;
-  private systemFootprint(): number {
-    if (this.systemFootprintBytes !== undefined) return this.systemFootprintBytes;
+  /** The mail tool (and its prompt) is mounted only while at least one mail account exists. */
+  private mailMountState(): "on" | "off" | "unavailable" {
+    const mail = this.workbench?.mail;
+    if (!mail) return "off";
+    try {
+      const probe =
+        this.hasMailAccounts ?? mailAccountProbe.default ?? (() => accountsOf(mail).length > 0);
+      return probe() ? "on" : "off";
+    } catch {
+      // Said once, without the reason (it could name a path): the account store could not be read, so this run has no mail.
+      if (!this.mailProbeWarned) {
+        this.mailProbeWarned = true;
+        console.warn(
+          "copilot: the mail account store could not be read; the mail tool is off for this run"
+        );
+      }
+      return "unavailable";
+    }
+  }
+  private mailProbeWarned = false;
+  private mailMounted(): boolean {
+    return this.mailMountState() === "on";
+  }
+  /** A run whose mail state is unknown tells the model nothing about Mail (the base prompt then says so as before). */
+  private forMount(page: PageContext, mount: "on" | "off" | "unavailable"): PageContext {
+    if (mount !== "unavailable" || !page.mail) return page;
+    return { ...page, mail: null, status: page.view === "mail" ? "unavailable" : page.status };
+  }
+
+  private readonly footprints = new Map<boolean, number>();
+  private systemFootprint(mounted = this.mailMounted()): number {
+    const known = this.footprints.get(mounted);
+    if (known !== undefined) return known;
     const writer = !!this.workbench?.writer;
     // the base instruction exactly as a session's loader hands it over (one loader builds both)
     const loader = this.resources(
       { extensions: [], errors: [], runtime: {} as never },
       writer,
-      !!this.workbench?.text
+      !!this.workbench?.text,
+      mounted
     );
     let bytes = Buffer.byteLength(loader.getSystemPrompt() ?? "");
     // The tool schemas are built the way a run builds them; the closures are never called.
@@ -2174,6 +2357,7 @@ export class CopilotHost {
         if (this.workbench.reader) tools.push(createReaderTool(stub));
         if (this.workbench.writer) tools.push(createWriterTool(stub));
         if (this.workbench.text) tools.push(createTextTool(stub));
+        if (this.workbench.mail && mounted) tools.push(createMailTool(stub));
       }
     } catch {
       // a factory that needs its dependencies at creation: fall back to a generous measure
@@ -2187,7 +2371,7 @@ export class CopilotHost {
       };
       bytes += Buffer.byteLength(JSON.stringify({ name, description, parameters }));
     }
-    this.systemFootprintBytes = bytes;
+    this.footprints.set(mounted, bytes);
     return bytes;
   }
   /**
@@ -2264,7 +2448,8 @@ export class CopilotHost {
         .map(([, docId, version]) => readingKey(docId, version.split("#")[0] ?? ""))
     );
     for (const key of [...state.readings])
-      if (!key.startsWith("writer:") && !present.has(key)) state.readings.delete(key);
+      if (!key.startsWith("writer:") && !key.startsWith("mail:") && !present.has(key))
+        state.readings.delete(key);
   }
   /** Take every present reading delivery (any run) out of the conversation; how many went. */
   private shedAll(loaded: Loaded): number {
@@ -2333,8 +2518,14 @@ export class CopilotHost {
     taskText: string,
     kind?: "resume"
   ): Promise<{ messageId: string; runId: string }> {
-    const context = this.views.get(request.viewId);
-    if (!context || context.revision !== request.contextRevision) throw new CopilotError("stale");
+    const published = this.views.get(request.viewId);
+    if (!published || published.revision !== request.contextRevision)
+      throw new CopilotError("stale");
+    // Mail is mounted only while an account exists, decided here when the run starts: adding or removing an account
+    // takes effect with the next message (the next run), never in the middle of one. A mail state that could not be
+    // read mounts nothing and keeps the Mail page out of what the model is told.
+    const mailMount = this.mailMountState();
+    const context = this.forMount(published, mailMount);
     if (!loaded.record.model) throw new CopilotError("capabilities");
     const selected = await this.settingsHost().captureConversation(loaded.record.model, true);
     // Capture request identity before model streaming; future settings changes cannot change it.
@@ -2355,7 +2546,8 @@ export class CopilotHost {
       context,
       frozenModel,
       loaded,
-      frozenModel
+      frozenModel,
+      mailMount === "on"
     );
     const header = loaded.manager.getHeader();
     if (!header) throw new CopilotError("storage");
@@ -2382,6 +2574,7 @@ export class CopilotHost {
       steers: new Map(),
       inflight: new Set(),
       readings: new Set(readingKeysOf(context, coverage)),
+      mailMount,
       model: frozenModel,
     };
     const planTool = workbench
@@ -2444,10 +2637,12 @@ export class CopilotHost {
         : undefined;
     // The ONE application resource loader of this session: the base instruction and the instructions that are loaded on
     // demand come from it and nowhere else (the same object builds the session and answers `load_instruction`).
+    const mailOn = mailMount === "on";
     const resourceLoader = this.resources(
       extensions,
       !!(workbench?.writer && planTool),
-      !!(workbench?.text && planTool)
+      !!(workbench?.text && planTool),
+      !!(mailOn && planTool)
     );
     const readerTool =
       workbench?.reader && planTool
@@ -2516,6 +2711,25 @@ export class CopilotHost {
             },
           })
         : undefined;
+    const mailTool =
+      mailOn && workbench?.mail && planTool
+        ? createMailTool({
+            mail: workbench.mail,
+            journal: this.journalPort(loaded, runId),
+            confirm: this.confirmationPort(loaded, state),
+            admitting: () => !this.closed && !state.stopRequested,
+            runId,
+            modelAcceptsImages: () => frozenModel.input.includes("image"),
+            budget: () => this.room(loaded, frozenModel),
+            imageBytesUsed: () => this.historyStats(loaded).imageBytes,
+            track: (work) => {
+              state.inflight.add(work);
+              const forget = () => state.inflight.delete(work);
+              work.then(forget, forget);
+              return work;
+            },
+          })
+        : undefined;
     const toolNames =
       planTool && workspaceTool
         ? [
@@ -2525,6 +2739,7 @@ export class CopilotHost {
             ...(readerTool ? [READER_TOOL_NAME] : []),
             ...(writerTool ? [WRITER_TOOL_NAME] : []),
             ...(textTool ? [TEXT_TOOL_NAME] : []),
+            ...(mailTool ? [MAIL_TOOL_NAME] : []),
           ]
         : [];
     const { session } = await pi.createAgentSession({
@@ -2543,6 +2758,7 @@ export class CopilotHost {
               ...(readerTool ? [readerTool] : []),
               ...(writerTool ? [writerTool] : []),
               ...(textTool ? [textTool] : []),
+              ...(mailTool ? [mailTool] : []),
             ],
           }
         : { tools: [], customTools: [], noTools: "all" as const }),
@@ -2622,7 +2838,8 @@ export class CopilotHost {
           4096,
           Math.max(256, Math.floor(frozenModel.contextWindow / 4))
         );
-        const latest = this.views.get(state.viewId);
+        const seenLatest = this.views.get(state.viewId);
+        const latest = seenLatest ? this.forMount(seenLatest, state.mailMount) : seenLatest;
         const observation =
           latest && latest.revision !== state.observedRevision
             ? {
@@ -2634,13 +2851,18 @@ export class CopilotHost {
                   version: 1,
                   taskContextId: state.contextId,
                   // A Reader's whole reading is already in the task's context; repeating it per scroll would fill the window.
-                  page: observationWriterPage(
-                    observationPage(latest, state.readings),
+                  page: observationMailPage(
+                    observationWriterPage(observationPage(latest, state.readings), state.readings),
                     state.readings
                   ),
                 }),
               }
             : null;
+        // A message opened mid-task is delivered once (bounded); later observations leave its body out.
+        if (observation && latest?.mail?.open?.status === "ok")
+          state.readings.add(
+            mailKey(latest.mail.open.accountId, latest.mail.open.folder, latest.mail.open.uid)
+          );
         const windowLimit = Math.max(0, frozenModel.contextWindow - maxTokens - 2048) * 2;
         const build = async (shrinkLastRead: boolean) => {
           const ledger = this.ledgerState(loaded);

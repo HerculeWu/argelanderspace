@@ -593,7 +593,7 @@ test("capabilities tell the model the bound view's layout, why a control is disa
   expect(
     payload.actions.find((entry: { action: string }) => entry.action === "close_pane")
   ).toMatchObject({ available: true });
-  expect(payload.views.available).toEqual(["plan", "library", "doc", "write"]);
+  expect(payload.views.available).toEqual(["plan", "library", "doc", "write", "mail"]);
   expect(Object.keys(payload.views)).toEqual(["available"]);
   expect(
     payload.platform.map(

@@ -225,6 +225,8 @@ export const CopilotOperationSchema = z
           "doc",
           /** A Writer manuscript (copilot ticket 22): its own identity, never a Doc. */
           "manuscript",
+          /** A mail message or draft (Mail ticket 09): `id` is the Message-ID of a draft, else `uid` in `folder`. */
+          "mail",
         ]),
         id: z.string(),
         planId: z.string().optional(),
@@ -236,6 +238,11 @@ export const CopilotOperationSchema = z
     warnings: z.array(z.string()).optional(),
     /** A deleted task can be restored until this instant (the Plan page's eight-second undo window). */
     undo: z.object({ until: z.string() }).strict().optional(),
+    /** A mail send in its undo window (Mail ticket 09): the panel offers the Mail page's own undo for it. */
+    mailSend: z
+      .object({ accountId: z.string().min(1).max(100), sendId: z.string().min(8).max(64) })
+      .strict()
+      .optional(),
     /** The existing Job-table job this operation submitted (upload / arXiv acquisition), with its state when the call ended. */
     job: z
       .object({

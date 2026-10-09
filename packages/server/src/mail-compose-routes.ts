@@ -90,7 +90,7 @@ export function mountMailComposeRoutes(
   host: Hono,
   injected: MailComposeServices | undefined,
   guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null
-): void {
+): () => MailComposeServices {
   let services = injected;
   const svc = () => (services ??= createDefaultMailComposeServices());
   const app = new Hono();
@@ -189,4 +189,5 @@ export function mountMailComposeRoutes(
   app.get("/outbox", (c) => c.json({ sends: svc().send.list() }));
 
   host.route("/api/mail/compose", app);
+  return svc;
 }

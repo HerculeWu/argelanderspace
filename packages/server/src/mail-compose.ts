@@ -7,7 +7,7 @@
  * never logged and never put into an error body.
  */
 
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   mkdirSync,
   readdirSync,
@@ -553,4 +553,119 @@ export class MailComposeService {
     }
     return { draft, attachments, ...(sent ? { sent } : {}) };
   }
+
+  /**
+   * One snapshot of a stored draft (Mail ticket 09): the draft as the server holds it now, its attachments, and a digest of
+   * all of it. The Copilot's confirmation card is made from a snapshot, and the same snapshot is what is sent on approval;
+   * a later snapshot with another digest means the draft changed after the card was shown. `stage` copies the attachments
+   * into the staging area (needed to send); without it only their digests are taken (to compare).
+   */
+  async draftSnapshot(
+    accountId: string,
+    messageId: string,
+    opts: { stage: boolean }
+  ): Promise<DraftSnapshot> {
+    if (!isMailMessageId(messageId)) throw new MailComposeError("invalid_input");
+    const a = this.account(accountId);
+    // A draft in its undo window is frozen, and one that already went out can neither be sent nor edited again.
+    this.refuseIfSending(a.id, messageId, true);
+    const t = await this.imapTarget(a);
+    const found = await this.deps.outgoing.findDraft(t, { messageId });
+    if (!found.ok) throw new MailComposeError(found.code);
+    const stored = found.value;
+    if (!stored || stored.uid === null) throw new MailComposeError("message_not_found");
+    const p = await this.fetchSource(a, { folder: stored.folder, uid: stored.uid });
+    const files = p.attachments.filter((x) => !x.inline);
+    if (
+      files.length > MAIL_ATTACHMENT_MAX_COUNT ||
+      files.reduce((sum, x) => sum + x.size, 0) > MAIL_ATTACHMENT_TOTAL_MAX_BYTES
+    )
+      throw new MailComposeError("attachment_too_large");
+    const fmt = (list: { name: string; address: string }[]) => list.map(formatAddress).join(", ");
+    const draft: MailComposeDraft = {
+      messageId,
+      inReplyTo: p.inReplyTo && isMailMessageId(p.inReplyTo) ? p.inReplyTo : null,
+      references: p.references.filter((r) => isMailMessageId(r)).slice(-100),
+      to: fmt(p.to),
+      cc: fmt(p.cc),
+      bcc: fmt(p.bcc),
+      subject: p.subject,
+      text: p.text ?? (p.html ? htmlToText(p.html) : ""),
+      attachments: [],
+    };
+    const attachments = opts.stage ? this.stageAll(a, p.attachments) : [];
+    draft.attachments = attachments.map((x) => x.id);
+    const meta = files.map((x) => ({
+      filename: x.filename,
+      contentType: x.contentType,
+      size: x.size,
+      sha256: createHash("sha256").update(x.content).digest("hex"),
+    }));
+    return {
+      accountId: a.id,
+      draft,
+      attachments,
+      files: meta.map(({ filename, contentType, size }) => ({ filename, contentType, size })),
+      digest: draftDigest(draft, meta),
+      folder: stored.folder,
+      uid: stored.uid,
+    };
+  }
+
+  /** Replace what a draft says (never its attachments), keeping its Message-ID so the Drafts copy is replaced. */
+  async patchDraft(
+    accountId: string,
+    messageId: string,
+    expectedDigest: string,
+    patch: Partial<Pick<MailComposeDraft, "to" | "cc" | "bcc" | "subject" | "text">>
+  ): Promise<{ saved: MailSaveDraftResponse; snapshot: DraftSnapshot }> {
+    const before = await this.draftSnapshot(accountId, messageId, { stage: true });
+    const release = () =>
+      this.deleteStaged(
+        before.accountId,
+        before.attachments.map((x) => x.id)
+      );
+    if (before.digest !== expectedDigest) {
+      release();
+      throw new MailComposeError("message_changed");
+    }
+    try {
+      const saved = await this.saveDraft(accountId, { ...before.draft, ...patch });
+      const snapshot = await this.draftSnapshot(accountId, messageId, { stage: false });
+      return { saved, snapshot };
+    } finally {
+      release();
+    }
+  }
+}
+
+export interface DraftSnapshot {
+  accountId: string;
+  draft: MailComposeDraft;
+  /** The staged copies of the attachments (empty unless staging was asked for). */
+  attachments: MailStagedAttachment[];
+  files: { filename: string; contentType: string; size: number }[];
+  /** Over the draft's fields and its attachments' bytes: another value means the draft was changed. */
+  digest: string;
+  folder: string;
+  uid: number;
+}
+
+/** The digest of everything a send would put in the message: nothing else may be needed to tell two drafts apart. */
+export function draftDigest(
+  draft: MailComposeDraft,
+  files: { filename: string; contentType: string; size: number; sha256: string }[]
+): string {
+  const canonical = JSON.stringify({
+    id: draft.messageId,
+    inReplyTo: draft.inReplyTo,
+    references: draft.references,
+    to: draft.to,
+    cc: draft.cc,
+    bcc: draft.bcc,
+    subject: draft.subject,
+    text: draft.text,
+    files,
+  });
+  return createHash("sha256").update(canonical).digest("hex");
 }

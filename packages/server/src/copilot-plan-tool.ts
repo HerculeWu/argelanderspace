@@ -32,7 +32,7 @@ export const PLAN_TOOL_NAME = "plan";
 /** What the host remembers about a business write so a repeat or a restart never guesses. */
 export type KnownOperation =
   | { state: "done"; hash: string; payload: Record<string, unknown>; operation: CopilotOperation }
-  | { state: "begun"; hash: string; jobId?: string };
+  | { state: "begun"; hash: string; jobId?: string; sendId?: string };
 export interface OperationJournalPort {
   lookup(operationId: string): KnownOperation | null;
   /** Persist "about to write". Throws when the conversation cannot be saved: then nothing is written. */
@@ -46,6 +46,7 @@ export interface OperationJournalPort {
       taskId?: string;
       workId?: string;
       manuscriptId?: string;
+      sendId?: string;
       summary?: string;
     };
     baseRev?: number;
@@ -64,6 +65,60 @@ export type ConfirmationOutcome =
   | { outcome: "expired"; reason: "error"; detail: string };
 /** What the card shows for a Plan delete (`delete_plan`) or a Doc replacement (`refresh_arxiv_source`). */
 export type ConfirmationRequest =
+  | {
+      toolCallId: string;
+      /** Mail ticket 09: sending a draft. The card shows this very snapshot and this very snapshot is sent. */
+      action: "send_mail";
+      accountId: string;
+      messageId: string;
+      account: { id: string; address: string; displayName: string };
+      kind: "new" | "reply" | "forward";
+      to: { name: string; address: string }[];
+      cc: { name: string; address: string }[];
+      bcc: { name: string; address: string }[];
+      subject: string;
+      text: string;
+      attachments: { filename: string; contentType: string; size: number }[];
+      inReplyTo: string | null;
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /** Mail ticket 09: moving a message to Trash (or deleting it for good from Trash). */
+      action: "delete_mail";
+      accountId: string;
+      account: { id: string; address: string; displayName: string };
+      message: {
+        folder: string;
+        uid: number;
+        uidValidity: number;
+        from: { name: string; address: string } | null;
+        subject: string;
+        date: string | null;
+      };
+      permanent: boolean;
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /** Mail ticket 09: moving a message to another folder. */
+      action: "move_mail";
+      accountId: string;
+      account: { id: string; address: string; displayName: string };
+      message: {
+        folder: string;
+        uid: number;
+        uidValidity: number;
+        from: { name: string; address: string } | null;
+        subject: string;
+        date: string | null;
+      };
+      destination: string;
+      baseRev: number;
+      objectDigest: string;
+    }
   | {
       toolCallId: string;
       /** Replacing the annotated reading text of a text Doc (copilot ticket 29): the source panel's replacement dialog. */

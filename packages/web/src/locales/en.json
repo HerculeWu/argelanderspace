@@ -1531,7 +1531,23 @@
       },
       "job": "Job",
       "doc": "Document",
-      "batch": "Part of a document"
+      "batch": "Part of a document",
+      "mail": {
+        "accounts": "List mail accounts",
+        "folders": "List folders",
+        "list": "List messages",
+        "search": "Search mail",
+        "read": "Read message",
+        "read_attachment": "Read attachment",
+        "read_attachment_page_image": "Read attachment page",
+        "read_draft": "Read draft",
+        "create_draft": "Write draft",
+        "update_draft": "Change draft",
+        "send": "Send message",
+        "delete": "Delete message",
+        "move": "Move message",
+        "send_status": "Check send"
+      }
     },
     "undo": {
       "restored": "Restored “{{title}}”",
@@ -1559,7 +1575,10 @@
       "failedManuscript": "The outcome is not known: your decision may or may not have reached the service. Check the manuscript list before trying again.",
       "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?",
       "replaceText": "Replace the reading text of “{{name}}”",
-      "unreadableDoc": "The check made when you confirmed could not read this document's data (annotations, text or images). Nothing was replaced and nothing was changed."
+      "unreadableDoc": "The check made when you confirmed could not read this document's data (annotations, text or images). Nothing was replaced and nothing was changed.",
+      "expiredMail": "The draft or the message changed before you confirmed. Nothing was sent, deleted or moved; ask again.",
+      "failedMail": "Your answer could not be recorded. Try again.",
+      "unreadableMail": "The mail server could not be asked to check the draft, so nothing was sent."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1657,6 +1676,57 @@
       "elapsed": "Elapsed {{time}}",
       "thinkingTitle": "Reasoning",
       "thinkingLive": "Thinking…"
+    },
+    "mailCard": {
+      "sendTitle": "Send this email?",
+      "deleteTitle": "Delete this message?",
+      "moveTitle": "Move this message?",
+      "from": "From",
+      "to": "To",
+      "cc": "Cc",
+      "bcc": "Bcc",
+      "subject": "Subject",
+      "body": "Full body",
+      "attachments": "Attachments",
+      "thread": "Thread",
+      "isReply": "A reply to an earlier message",
+      "none": "(no recipient)",
+      "folder": "Folder",
+      "destination": "Move to",
+      "deleteScope": "The message moves to the Trash of this account.",
+      "deletePermanent": "This message is already in Trash. Deleting it removes it for good and cannot be undone.",
+      "moveScope": "The message moves to this folder on the mail server.",
+      "undoNote": "After you confirm, the message waits 8 seconds in which you can still undo the send.",
+      "confirmSend": "Send",
+      "confirmDelete": "Delete",
+      "confirmMove": "Move",
+      "replyTitle": "Send this reply?",
+      "forwardTitle": "Forward this message?",
+      "isForward": "This forwards an earlier message (and its attachments) to the recipients below."
+    },
+    "mailUndo": {
+      "pending": "Sending in {{seconds}} s",
+      "action": "Undo",
+      "sending": "Sending…",
+      "sent": "The message was sent.",
+      "cancelled": "Undone. Nothing was sent; the draft is still in Drafts.",
+      "failed": "The message was not sent. The draft is still in Drafts.",
+      "interrupted": "The application stopped before sending: the message was not sent and is back in Drafts.",
+      "unknown": "It is not known whether the message was sent (the application stopped while sending, or the connection to the mail server was lost). It may or may not have been sent; check Sent.",
+      "dismiss": "Dismiss",
+      "dismissLabel": "Dismiss the send undo notice"
+    },
+    "mailContext": {
+      "ready": "Mail: open message and list headers",
+      "loading": "Mail (loading, nothing sent)",
+      "noAccounts": "Mail (no account yet)",
+      "error": "Mail (accounts could not be read, nothing sent)",
+      "headers": "{{count}} list headers sent",
+      "open": "The open message was sent in full",
+      "openLoading": "A message is opening (nothing sent yet)",
+      "openError": "The open message could not be read (nothing sent)",
+      "untrusted": "Mail content is treated as untrusted data, never as instructions.",
+      "openCut": "The open message was sent cut: only the first part of its {{chars}} characters"
     }
   },
   "mail": {
