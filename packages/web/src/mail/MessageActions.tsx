@@ -2,7 +2,7 @@ import type { MailFolder, MailFolderRole, MailHeader } from "@argelanderspace/co
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { Button, Dialog, IconButton, InlineMessage } from "../ui";
+import { ActionButton, Button, Dialog, InlineMessage } from "../ui";
 import type { FailureKind } from "./manage-error";
 import type { PermanentDeleteState } from "./useMailActions";
 import "./mail-manage.css";
@@ -90,46 +90,54 @@ export function MessageActions({
   return (
     <div className="mail-reader-actions" data-ui="mail-reader-actions">
       {onBack && (
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="arrow-left"
           className="btn icon ghost"
           data-ui="mail-reader-back"
-          icon={<Icon name="arrow-left" cls="ico-sm" />}
           label={t("mail.backToList")}
+          tooltip={t("mail.backToList")}
           onClick={onBack}
         />
       )}
       {leading}
       {(onBack || leading) && <span className="mail-actions-sep" />}
-      <IconButton
+      <ActionButton
         unstyled
+        mode="icon"
+        iconName={header?.starred ? "starred" : "star"}
         className="btn icon ghost"
         data-ui="mail-star"
         disabled={disabled}
-        icon={<Icon name="star" cls={`ico-sm${header?.starred ? " mail-starred" : ""}`} />}
         label={header?.starred ? t("mail.manage.unstar") : t("mail.manage.star")}
+        tooltip={header?.starred ? t("mail.manage.unstar") : t("mail.manage.star")}
         data-starred={header?.starred ? "true" : "false"}
         onClick={onToggleStar}
       />
-      <IconButton
+      <ActionButton
         unstyled
+        mode="icon"
+        iconName={header?.unread ? "mail-open" : "mail"}
         className="btn icon ghost"
         data-ui="mail-mark-unread"
         disabled={disabled}
-        icon={<Icon name={header?.unread ? "mail-open" : "mail"} cls="ico-sm" />}
         label={header?.unread ? t("mail.manage.markRead") : t("mail.manage.markUnread")}
+        tooltip={header?.unread ? t("mail.manage.markRead") : t("mail.manage.markUnread")}
         onClick={onToggleRead}
       />
       <span className="mail-move-wrap" ref={wrap}>
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="folder-arrow-right"
           ref={trigger}
           className="btn icon ghost"
           data-ui="mail-move"
           aria-expanded={menu}
           disabled={disabled || targets.length === 0}
-          icon={<Icon name="folder-input" cls="ico-sm" />}
           label={t("mail.manage.move")}
+          tooltip={t("mail.manage.move")}
           onClick={(e) => {
             e.stopPropagation();
             setMenu((o) => !o);
@@ -158,23 +166,27 @@ export function MessageActions({
         )}
       </span>
       {inTrash && restoreTo && (
-        <IconButton
+        <ActionButton
           unstyled
+          mode="icon"
+          iconName="trash-undo"
           className="btn icon ghost"
           data-ui="mail-restore"
           disabled={disabled}
-          icon={<Icon name="undo-2" cls="ico-sm" />}
           label={t("mail.manage.restore")}
+          tooltip={t("mail.manage.restore")}
           onClick={() => onMove(restoreTo)}
         />
       )}
-      <IconButton
+      <ActionButton
         unstyled
+        mode="icon"
+        iconName={inTrash ? "trash-xmark" : "trash"}
         className="btn icon ghost"
         data-ui={inTrash ? "mail-delete-forever" : "mail-delete"}
         disabled={disabled}
-        icon={<Icon name="trash-2" cls={`ico-sm${inTrash ? " mail-danger-icon" : ""}`} />}
         label={inTrash ? t("mail.manage.deleteForever") : t("mail.manage.delete")}
+        tooltip={inTrash ? t("mail.manage.deleteForever") : t("mail.manage.delete")}
         onClick={onDelete}
       />
     </div>

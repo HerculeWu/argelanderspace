@@ -41,7 +41,7 @@
 .mail-row-from { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text-dim); }
 .mail-row.unread .mail-row-from, .mail-row.unread .mail-row-subject { font-weight: 600; color: var(--text); }
 .mail-row-icon { width: 13px; height: 13px; color: var(--text-faint); flex: none; }
-.mail-row-icon.star, .mail-starred { color: var(--warn); fill: currentColor; }
+.mail-row-icon.star, [data-ui="mail-star"][data-starred="true"] svg { color: var(--warn); fill: currentColor; }
 .mail-row-date { font-size: var(--fs-xs); color: var(--text-faint); flex: none; font-variant-numeric: tabular-nums; }
 .mail-row-subject { font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
 .mail-row-preview { font-size: var(--fs-xs); color: var(--text-faint); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.45; }
