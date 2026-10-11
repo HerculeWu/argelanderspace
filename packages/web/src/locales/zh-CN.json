@@ -552,6 +552,7 @@
         "failedGeneric": "arXiv PDF 获取失败，请重试。已有正文未更改。",
         "failedSummary": "arXiv PDF 获取失败；已有正文未更改。可以查看任务状态或重新获取。",
         "submitFailed": "未能提交 arXiv PDF 获取任务，请重试。",
+        "busy": "arXiv PDF 文档正在处理或删除，请稍后重试。",
         "retry": "重新获取 PDF",
         "dismiss": "关闭 arXiv PDF 获取提醒"
       },
@@ -560,6 +561,7 @@
         "ingesting": "正在获取 arXiv 正文…",
         "failed": "获取 arXiv 正文失败：{{error}}",
         "failedGeneric": "获取 arXiv 正文失败，请重试",
+        "busy": "arXiv 正文文档正在处理或删除，请稍后重试",
         "retry": "重试",
         "pdfOnlyHint": "该论文的 arXiv 提交无 LaTeX 源码（仅 PDF），请改用上方上传 zip"
       },
@@ -611,7 +613,8 @@
         "hintNeedsUpload": "该来源被反爬墙 / 无开放源，上传 LaTeX 源码包（zip）后自动摄入并关联到本条",
         "hintDefault": "也可手动上传 LaTeX 源码包 zip（自动摄入并关联到本条；重复上传覆盖同一文档）",
         "failed": "上传失败：{{error}}",
-        "failedGeneric": "上传失败，请重试"
+        "failedGeneric": "上传失败，请重试",
+        "busy": "该文档正在处理或删除，请稍后重试"
       },
       "deleteDoc": {
         "title": "删除这份文档？",

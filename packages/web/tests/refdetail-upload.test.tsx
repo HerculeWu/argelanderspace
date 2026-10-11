@@ -16,10 +16,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "@argelanderspace/contracts";
 import { RefDetail } from "../src/library/RefDetail";
 import type { LibraryRef } from "../src/library/types";
+import type { StartResult } from "../src/api/library";
 
 const h = vi.hoisted(() => ({
   listener: null as ((job: Job, event: string) => void) | null,
-  uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<Job | null>>(),
+  uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<StartResult>>(),
   patchRef: vi.fn<(id: string, patch: Record<string, unknown>) => Promise<boolean>>(),
   fetchAnnotations: vi.fn(),
 }));
@@ -118,7 +119,7 @@ describe("RefDetail upload tracking", () => {
       },
     });
     // never resolves unless the test says so
-    h.uploadLatexZip.mockImplementation(() => new Promise<Job | null>(() => {}));
+    h.uploadLatexZip.mockImplementation(() => new Promise<StartResult>(() => {}));
   });
 
   afterEach(() => cleanup());
@@ -262,10 +263,10 @@ describe("RefDetail upload tracking", () => {
   });
 
   it("tracks job frames that arrive before the fetch response (no rewind on 202)", async () => {
-    let resolveFetch: (j: Job | null) => void = () => {};
+    let resolveFetch: (j: StartResult) => void = () => {};
     h.uploadLatexZip.mockImplementation(
       () =>
-        new Promise<Job | null>((res) => {
+        new Promise<StartResult>((res) => {
           resolveFetch = res;
         })
     );
@@ -291,15 +292,15 @@ describe("RefDetail upload tracking", () => {
     expect(screen.getAllByText(/Ingesting LaTeX source/).length).toBeGreaterThanOrEqual(1);
 
     // the 202 body is the stale queued snapshot — it must not rewind the UI
-    await act(async () => resolveFetch(makeJob()));
+    await act(async () => resolveFetch({ ok: true, job: makeJob() }));
     expect(screen.getAllByText(/Ingesting LaTeX source/).length).toBeGreaterThanOrEqual(1);
   });
 
   it("surfaces a fast failure that beats the fetch response (job.error shown)", async () => {
-    let resolveFetch: (j: Job | null) => void = () => {};
+    let resolveFetch: (j: StartResult) => void = () => {};
     h.uploadLatexZip.mockImplementation(
       () =>
-        new Promise<Job | null>((res) => {
+        new Promise<StartResult>((res) => {
           resolveFetch = res;
         })
     );
@@ -323,7 +324,7 @@ describe("RefDetail upload tracking", () => {
     expect(screen.getByText(/上传失败：no \.tex file found/)).toBeTruthy();
 
     // the late stale 202 must not resurrect the queued state or hide the error
-    await act(async () => resolveFetch(makeJob()));
+    await act(async () => resolveFetch({ ok: true, job: makeJob() }));
     expect(screen.getByText(/上传失败：no \.tex file found/)).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: /获取全文…|添加 \/ 更新全文…/ }) as HTMLButtonElement).disabled
@@ -409,7 +410,7 @@ describe("RefDetail upload tracking", () => {
   });
 
   it("job.done reloads the library and re-enables the button", async () => {
-    h.uploadLatexZip.mockResolvedValue(makeJob());
+    h.uploadLatexZip.mockResolvedValue({ ok: true, job: makeJob() });
     const { onReload } = renderDetail();
     openFilesTab();
     await pickZip();
@@ -425,7 +426,7 @@ describe("RefDetail upload tracking", () => {
   });
 
   it("a null from uploadLatexZip (POST rejected) shows the generic failure", async () => {
-    h.uploadLatexZip.mockResolvedValue(null);
+    h.uploadLatexZip.mockResolvedValue({ ok: false, status: 500, detail: "request failed" });
     renderDetail();
     openFilesTab();
     await pickZip();
@@ -433,10 +434,10 @@ describe("RefDetail upload tracking", () => {
   });
 
   it("does not attach a late upload POST response to a later A → B → A Work session", async () => {
-    let resolveFetch: (job: Job | null) => void = () => {};
+    let resolveFetch: (job: StartResult) => void = () => {};
     h.uploadLatexZip.mockImplementation(
       () =>
-        new Promise<Job | null>((resolve) => {
+        new Promise<StartResult>((resolve) => {
           resolveFetch = resolve;
         })
     );
@@ -462,7 +463,7 @@ describe("RefDetail upload tracking", () => {
         onReload={view.onReload}
       />
     );
-    await act(async () => resolveFetch(makeJob()));
+    await act(async () => resolveFetch({ ok: true, job: makeJob() }));
 
     expect(screen.getByRole("heading", { name: REF.title })).toBeTruthy();
     expect(screen.queryByText("正在排队")).toBeNull();
