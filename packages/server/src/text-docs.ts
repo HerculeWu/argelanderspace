@@ -64,6 +64,7 @@ import {
 } from "@argelanderspace/core";
 import type { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
 import { AsyncLock } from "./lock.js";
 
@@ -808,7 +809,7 @@ export function mountTextDocRoutes(
       : c.json(result.body as never, result.status, { "Cache-Control": "no-store" });
   const idOf = (c: import("hono").Context): string | null => {
     const id = c.req.param("doc_id") ?? "";
-    return !id.trim() || id.includes("/") || id.includes("\\") || id.startsWith(".") ? null : id;
+    return !id.trim() || badDocId(id) ? null : id;
   };
 
   app.post("/api/library/text-docs", async (c) => {
