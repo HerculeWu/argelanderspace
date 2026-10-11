@@ -1576,6 +1576,9 @@
       "manuscriptDraftGuard": "This manuscript has unsaved edits in the editor. Deleting it discards them. Delete anyway?",
       "replaceText": "Replace the reading text of “{{name}}”",
       "unreadableDoc": "The check made when you confirmed could not read this document's data (annotations, text or images). Nothing was replaced and nothing was changed.",
+      "unreadablePlan": "The check made when you confirmed could not read the plans' data. This is not a change you made, and nothing was deleted. Try again, or look at the Plan page.",
+      "unreadableManuscript": "The check made when you confirmed could not read this manuscript's data. This is not a change you made, and nothing was deleted. Try again, or look at the manuscript list.",
+      "unreadableDeleteDoc": "The check made when you confirmed could not read this document's data (its works or annotations). This is not a change you made, and nothing was deleted. Try again, or look at the library.",
       "expiredMail": "The draft or the message changed before you confirmed. Nothing was sent, deleted or moved; ask again.",
       "failedMail": "Your answer could not be recorded. Try again.",
       "unreadableMail": "The mail server could not be asked to check the draft, so nothing was sent."

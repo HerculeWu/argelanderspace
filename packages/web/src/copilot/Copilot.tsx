@@ -16,6 +16,14 @@ import { LiveRunStatus, ThinkingBlock } from "./LiveStatus";
 import { Icon } from "../lib/icons";
 import { copilotMarkdown } from "./markdown";
 import "./copilot.css";
+/** What a click-time system error (`unreadable`) says, by the card's problem scope (ticket 42). */
+const UNREADABLE_COPY = {
+  plan: "copilot.confirmation.unreadablePlan",
+  doc: "copilot.confirmation.unreadableDoc",
+  deleteDoc: "copilot.confirmation.unreadableDeleteDoc",
+  manuscript: "copilot.confirmation.unreadableManuscript",
+  mail: "copilot.confirmation.unreadableMail",
+} as const satisfies Record<ConfirmationProblemScope, string>;
 
 export const OPERATION_ACTION_KEYS = {
   read: "copilot.operations.actions.read", create_plan: "copilot.operations.actions.create_plan", update_plan: "copilot.operations.actions.update_plan",
@@ -439,7 +447,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
       </article>; })}
       {(snapshot?.stream || snapshot?.live?.thinking) && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div>{snapshot.live?.thinking && <ThinkingBlock text={snapshot.live.thinking} live={snapshot.live.phase === "thinking"} />}{snapshot.stream && <div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} />}</article>}
       {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
-      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t(decisionProblem.scope === "mail" ? "copilot.confirmation.unreadableMail" : "copilot.confirmation.unreadableDoc") : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : decisionProblem.scope === "mail" ? "Mail" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
+      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t(UNREADABLE_COPY[decisionProblem.scope]) : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : decisionProblem.scope === "mail" ? "Mail" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
       <div className="copilot-run-live" role="status" aria-atomic="false" data-ui="copilot-run-live">{((running && !waiting) || stopping) && <div className="copilot-run-card" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" /><LiveRunStatus live={stopping ? null : snapshot?.live ?? null} stopping={stopping} actionLabel={(operation) => operation.action && operation.action in OPERATION_ACTION_KEYS ? operationActionLabel(t, operation.tool, operation.action) : null} />{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}</div>
       <MailSendUndo operations={(snapshot?.messages ?? []).flatMap((message) => message.operations ?? [])} />
       {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}

@@ -286,3 +286,17 @@ test("a task delete the service no longer holds (restored on the Plan page, or b
   callbacks.planChanged.forEach((cb) => cb());
   await waitFor(() => expect(ui("copilot-undo")).toBeNull());
 });
+
+test("a decision whose check could not read the plans says so for the plans (ticket 42), in English and Chinese", async () => {
+  const base = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.includes("/confirmations/") ? json({ code: "unreadable" }, 500) : base(url, options));
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("The check made when you confirmed could not read the plans' data. This is not a change you made, and nothing was deleted. Try again, or look at the Plan page."));
+  cleanup(); await i18n.changeLanguage("zh-CN");
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("确认时的检查无法读取计划的数据。这不是你的改动，没有删除任何内容。请重试，或到计划页面查看。"));
+});
