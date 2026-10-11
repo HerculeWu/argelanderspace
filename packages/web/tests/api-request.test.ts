@@ -81,6 +81,8 @@ describe("apiRequest", () => {
     expect(await caught(apiRequest("/api/x"))).toMatchObject({ code: "busy", status: 409 });
     stub(async () => json({ detail: "rev mismatch", rev: 4 }, 409));
     expect(await caught(apiRequest("/api/x"))).toMatchObject({ code: "rev-mismatch", status: 409, body: { rev: 4 } });
+    stub(async () => json({ detail: "document busy" }, 500));
+    expect(await caught(apiRequest("/api/x"))).toMatchObject({ code: "unavailable", status: 500 });
   });
 
   it("falls back to unavailable when the failed answer has neither, and keeps the parse error of a non-JSON one", async () => {
@@ -167,5 +169,12 @@ describe("the three API error classes", () => {
     stub(async () => { throw abort; });
     expect(await caught(fetchMailOutbox())).toBe(abort);
     expect(await caught(fetchMailAccounts())).toBe(abort);
+  });
+
+  it("Copilot passes an abort through, like the provider client", async () => {
+    const abort = abortError();
+    stub(async () => { throw abort; });
+    expect(await caught(fetchConversation("c1"))).toBe(abort);
+    expect(await caught(fetchProviders())).toBe(abort);
   });
 });

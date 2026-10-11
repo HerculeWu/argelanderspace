@@ -62,7 +62,7 @@ const isAbort = (error: unknown) => (error as { name?: string } | null)?.name ==
 /**
  * Fetch `path`. Resolves the parsed JSON (or, with `parse: "none"`, the Response) of an ok answer; a non-JSON ok
  * answer rejects with the parse error itself. Rejects with an `HttpError` otherwise: `unreachable`/0 when fetch
- * failed, else the body's `code`, a contract conflict derived from its `detail`, or `unavailable`. An abort is
+ * failed, else the body's `code`, a contract conflict derived from a 409's `detail`, or `unavailable`. An abort is
  * rethrown as is.
  */
 export async function apiRequest<T>(path: string, init: ApiRequestInit = {}, opts: ApiRequestOptions = {}): Promise<T> {
@@ -93,7 +93,7 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}, opt
       unreadable = error;
     }
     const code = (body as { code?: unknown } | null)?.code;
-    throw new HttpError(typeof code === "string" ? code : (detailKind(body) ?? "unavailable"), response.status, body, unreadable);
+    throw new HttpError(typeof code === "string" ? code : ((response.status === 409 ? detailKind(body) : null) ?? "unavailable"), response.status, body, unreadable);
   }
   if (opts.parse === "none") return response as T;
   return (await response.json()) as T;

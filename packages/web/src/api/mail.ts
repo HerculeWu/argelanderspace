@@ -30,7 +30,7 @@ export const mailErrorCode = (e: unknown): string => (e instanceof MailApiError 
 
 /**
  * Mail's reading of a failed request: no answer is `unreachable`; an answer's code is its body's `code` or
- * `unavailable`. `withDetails` adds the server's field/test details (the account routes). Anything that is not an
+ * `unavailable`. `withDetails` adds the server's field/test details (every api/mail and mail-manage route; compose has none). Anything that is not an
  * HttpError (an abort, a non-JSON ok answer) passes through.
  */
 export function toMailApiError(e: unknown, withDetails: boolean): unknown {
