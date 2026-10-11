@@ -1,9 +1,11 @@
 import type { MailFolderRole, MailHeader } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { MailApiError } from "../api/mail";
 import { deleteMailMessage, moveMailMessage, setMailFlag } from "../api/mail-manage";
 import { failureKind, manageReason } from "./manage-error";
+import type { MailListStore } from "./mail-list-store";
 import type { MailToast } from "./MailToasts";
 
 export interface MessageRef {
@@ -12,8 +14,17 @@ export interface MessageRef {
   uid: number;
 }
 
-/** What the actions need from the page that owns the lists (MailView). */
+/** What the actions need from the page: its lists (the store) and the two things only the page holds. */
 export interface MailActionsEnv {
+  store: MailListStore;
+  /** Close the reader if it shows this message; the returned function reopens what was shown. */
+  closeIfOpen(ref: MessageRef): () => void;
+  /** Run the active search again; false when no search is active. */
+  refreshSearch(): boolean;
+}
+
+/** What the actions do to the lists, read off the store (ticket 47); the bodies below use only this. */
+interface ListEnv {
   find(ref: MessageRef): MailHeader | undefined;
   /** Apply flags to every list showing the row (folder list and search results). */
   patch(ref: MessageRef, p: Partial<Pick<MailHeader, "unread" | "starred">>): void;
@@ -39,6 +50,27 @@ export interface MailActionsEnv {
   trashFolder(accountId: string): string | undefined;
 }
 
+function listEnv({ store, closeIfOpen, refreshSearch }: MailActionsEnv, t: TFunction): ListEnv {
+  return {
+    find: store.header,
+    patch: store.patch,
+    remove: store.remove,
+    bumpUnread: store.bumpUnread,
+    uidValidity: store.uidValidity,
+    folderRole: store.folderRole,
+    folderName: (accountId, path) => {
+      const f = store.folder(accountId, path);
+      return f ? (f.role === "custom" ? f.name : t(`mail.folder.${f.role}`)) : path;
+    },
+    closeIfOpen,
+    refreshLoaded: (accountId, folder) =>
+      store.isLoaded(accountId, folder) ? store.loadSource(accountId, folder, false, true) : Promise.resolve(true),
+    refreshFolders: async (accountId) => (await store.loadFolders(accountId, true)).ok,
+    refreshSearch,
+    trashFolder: store.trashFolder,
+  };
+}
+
 export interface PermanentDeleteState {
   ref: MessageRef;
   subject: string;
@@ -58,8 +90,9 @@ const codeOf = (e: unknown) => (e instanceof MailApiError ? e.code : "unreachabl
  */
 export function useMailActions(env: MailActionsEnv) {
   const { t } = useTranslation();
-  const envRef = useRef(env);
-  envRef.current = env;
+  const lists = listEnv(env, t);
+  const envRef = useRef(lists);
+  envRef.current = lists;
   const [toasts, setToasts] = useState<MailToast[]>([]);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const pendingRef = useRef(new Set<string>());

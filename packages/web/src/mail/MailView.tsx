@@ -1,5 +1,5 @@
-import type { MailAccount, MailFolder, MailHeader, MailMessage, MailPage } from "@argelanderspace/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MailFolder, MailHeader, MailMessage, MailPage } from "@argelanderspace/contracts";
+import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import {
   fetchMailAccounts,
@@ -15,17 +15,27 @@ import { AccountSettingsDialog, AddAccountDialog, ReenterPasswordDialog, RemoveA
 import { addressList, addressName, fileSize, longDate, shortDate } from "./format";
 import { MailHtmlBody, useInlineImages, useSanitizedMailHtml } from "./MailHtmlBody";
 import { buildMailPage } from "./mail-context";
-import { reportMailAccounts, useMailLiveEvents } from "./mailLive";
+import {
+  browserMailClock,
+  createMailListStore,
+  type MailListStore,
+  type Scope,
+  type Source,
+  scopeSourcesOf,
+  sortedRows,
+  sourceKey,
+  totalInboxUnread,
+} from "./mail-list-store";
+import { type MailLiveEvent, reportMailAccounts, useMailLiveEvents } from "./mailLive";
 import { failureKind, manageReason } from "./manage-error";
 import { MailSearch } from "./MailSearch";
 import { MailToasts } from "./MailToasts";
 import { MessageActions, PermanentDeleteDialog } from "./MessageActions";
-import { type MessageRef, useMailActions } from "./useMailActions";
+import { useMailActions } from "./useMailActions";
 import { useMailSearch } from "./useMailSearch";
 import { ComposeButton, MailComposeActions, MailComposeLayer, MailComposeProvider } from "./MailCompose";
 import "./mail.css";
 
-const PAGE = 50;
 const FOLDER_ICON: Record<string, string> = {
   inbox: "inbox",
   drafts: "file-pen-line",
@@ -38,25 +48,6 @@ const FOLDER_ICON: Record<string, string> = {
   custom: "folder",
 };
 
-type Health = "loading" | "ok" | "auth" | "offline";
-interface AccountState {
-  health: Health;
-  code: string | null;
-  stale: boolean;
-  folders: MailFolder[];
-}
-interface Source {
-  accountId: string;
-  folder: string;
-  headers: MailHeader[];
-  uidValidity: number | null;
-  nextBefore: number | null;
-  loading: boolean;
-  loadingMore: boolean;
-  error: string | null;
-  stale: boolean;
-}
-type Scope = { kind: "unified" } | { kind: "folder"; accountId: string; path: string };
 interface Ref {
   accountId: string;
   folder: string;
@@ -67,9 +58,34 @@ type Opened =
   | { ref: Ref; status: "error"; code: string }
   | { ref: Ref; status: "ok"; message: MailMessage; stale: boolean };
 
-const sourceKey = (accountId: string, folder: string) => `${accountId}\u0000${folder}`;
 const refKey = (r: Ref) => `${r.accountId}\u0000${r.folder}\u0000${r.uid}`;
-const AUTH_CODES = new Set(["auth_failed", "credential_missing"]);
+
+/** The page's list store: the real api, the live picture (pushes arrive through the page's own subscription), and the search results. */
+function makeStore(
+  search: { current: ReturnType<typeof useMailSearch> },
+  liveHandlers: Set<(event: MailLiveEvent) => void>
+): { store: MailListStore; disposed: boolean } {
+  const store = createMailListStore({
+    api: { fetchMailAccounts, fetchMailFolders, fetchMailHeaders },
+    live: {
+      subscribe: (handler) => {
+        liveHandlers.add(handler);
+        return () => {
+          liveHandlers.delete(handler);
+        };
+      },
+      report: reportMailAccounts,
+    },
+    clock: browserMailClock,
+    mirror: {
+      patch: (ref, p) => search.current.patchHeader(ref, p),
+      remove: (ref) => search.current.removeHeader(ref),
+      find: (ref) => search.current.find(ref),
+      uidValidity: (ref) => search.current.uidValidity(ref),
+    },
+  });
+  return { store, disposed: false };
+}
 
 export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (paneId: number, page: MailPage | null) => void } = {}) {
   const { t, i18n } = useTranslation();
@@ -77,11 +93,6 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
   const [width, setWidth] = useState(1200);
   const layout = width >= 1000 ? "wide" : width >= 720 ? "medium" : "narrow";
 
-  const [accounts, setAccounts] = useState<MailAccount[] | null>(null);
-  const [rev, setRev] = useState(0);
-  const [accountsError, setAccountsError] = useState<string | null>(null);
-  const [states, setStates] = useState<Record<string, AccountState>>({});
-  const [sources, setSources] = useState<Record<string, Source>>({});
   const [scope, setScope] = useState<Scope>({ kind: "unified" });
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [folderPane, setFolderPane] = useState(true);
@@ -95,9 +106,32 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
   const [settingsOf, setSettingsOf] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const search = useMailSearch();
+  const searchRef = useRef(search);
+  searchRef.current = search;
 
-  const requested = useRef(new Set<string>());
-  const sourceSeq = useRef(new Map<string, number>());
+  // ---- the lists (ticket 47): one store per mounted page -----------------------------
+  const liveHandlers = useRef(new Set<(event: MailLiveEvent) => void>());
+  useMailLiveEvents((event) => {
+    for (const h of [...liveHandlers.current]) h(event);
+  });
+  const own = useRef<{ store: MailListStore; disposed: boolean } | null>(null);
+  own.current ??= makeStore(searchRef, liveHandlers.current);
+  const [, renew] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    // A page mounted again (React may do that with the same component) gets a fresh store.
+    let o = own.current as NonNullable<typeof own.current>;
+    if (o.disposed) {
+      o = own.current = makeStore(searchRef, liveHandlers.current);
+      renew();
+    }
+    return () => {
+      o.disposed = true;
+      o.store.dispose();
+    };
+  }, []);
+  const store = own.current.store;
+  const { accounts, rev, accountsError, states, sources } = useSyncExternalStore(store.subscribe, store.getSnapshot);
+
   const openedRef = useRef<Opened | null>(null);
   openedRef.current = opened;
   const alive = useRef(true);
@@ -134,331 +168,37 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
     };
   }, [menu]);
 
-  // ---- accounts and folders ------------------------------------------------
-  const loadAccounts = useCallback(async () => {
-    try {
-      const r = await fetchMailAccounts();
-      if (!alive.current) return;
-      setAccounts(r.accounts);
-      setRev(r.rev);
-      setAccountsError(null);
-    } catch (e) {
-      if (alive.current) setAccountsError(mailErrorCode(e));
-    }
-  }, []);
   useEffect(() => {
-    void loadAccounts();
-  }, [loadAccounts]);
-
-  /**
-   * `silent` is a reload that only wants the server's truth (a live push, or an unknown outcome after a
-   * management action). It neither flips the account to "loading" (which would make its rows vanish from the
-   * unified inbox) nor throws away what is shown when it fails (except a refused login, which is shown).
-   * Resolves `ok: false` when the server could not be asked, and `folders: null` when it failed or was
-   * superseded by a newer request (which then carries the truth).
-   */
-  const folderSeq = useRef(new Map<string, number>());
-  const loadFolders = useCallback(
-    async (accountId: string, silent = false): Promise<{ ok: boolean; folders: MailFolder[] | null }> => {
-      const seq = (folderSeq.current.get(accountId) ?? 0) + 1;
-      folderSeq.current.set(accountId, seq);
-      if (!silent)
-        setStates((s) => ({
-          ...s,
-          [accountId]: { health: "loading", code: null, stale: false, folders: s[accountId]?.folders ?? [] },
-        }));
-      try {
-        const r = await fetchMailFolders(accountId);
-        // An older response must not overwrite the tree a newer request already produced.
-        if (!alive.current || folderSeq.current.get(accountId) !== seq) return { ok: true, folders: null };
-        setStates((s) => ({ ...s, [accountId]: { health: "ok", code: null, stale: r.stale, folders: r.folders } }));
-        return { ok: true, folders: r.folders };
-      } catch (e) {
-        if (!alive.current || folderSeq.current.get(accountId) !== seq) return { ok: false, folders: null };
-        const code = mailErrorCode(e);
-        if (AUTH_CODES.has(code) || !silent)
-          setStates((s) => ({
-            ...s,
-            [accountId]: { health: AUTH_CODES.has(code) ? "auth" : "offline", code, stale: false, folders: [] },
-          }));
-        return { ok: false, folders: null };
-      }
-    },
-    []
-  );
+    void store.loadAccounts();
+  }, [store]);
   useEffect(() => {
-    for (const a of accounts ?? []) {
-      const key = `folders\u0000${a.id}`;
-      if (requested.current.has(key)) continue;
-      requested.current.add(key);
-      void loadFolders(a.id);
-    }
-  }, [accounts, loadFolders]);
+    store.ensureFolders();
+  }, [store, accounts]);
 
-  const inboxPath = useCallback(
-    (accountId: string) => states[accountId]?.folders.find((f) => f.role === "inbox")?.path ?? "INBOX",
-    [states]
-  );
-
-  // ---- message lists ---------------------------------------------------------
-  const sourcesRef = useRef(sources);
-  sourcesRef.current = sources;
-  const userLoads = useRef(new Map<string, number>());
-  const userSeq = useRef(new Map<string, number>());
-  const deferredSilent = useRef(new Set<string>());
-  const loadSourceRef = useRef<(a: string, f: string, more?: boolean, silent?: boolean) => Promise<boolean>>(
-    async () => true
-  );
-  // A silent reload that a user load (e.g. "load more") overtook was discarded: do it again once that load is done.
-  const rerunSilent = (key: string, accountId: string, folder: string) => {
-    if ((userLoads.current.get(key) ?? 0) > 0) deferredSilent.current.add(key);
-    else void loadSourceRef.current(accountId, folder, false, true);
-  };
-  /**
-   * Every write back to `sources` is a functional update on the CURRENT entry. A `base` captured when the load
-   * started would be the state of that moment, and writing it back after a failed reload would undo whatever
-   * happened meanwhile (a rolled-back row, a rolled-back star).
-   *
-   * `silent` refreshes the newest page for the server's truth: no spinner, the older pages already loaded stay
-   * (only within the same UIDVALIDITY epoch: UIDs of another epoch mean other messages), and what is shown
-   * stays if it fails. Resolves false when the server could not be asked.
-   */
-  const loadSourceNow = useCallback(async (accountId: string, folder: string, more: boolean, silent: boolean): Promise<boolean> => {
-    const key = sourceKey(accountId, folder);
-    const seq = (sourceSeq.current.get(key) ?? 0) + 1;
-    sourceSeq.current.set(key, seq);
-    if (!silent) userSeq.current.set(key, seq);
-    const before = more ? (sourcesRef.current[key]?.nextBefore ?? null) : null;
-    const blank: Source = {
-      accountId,
-      folder,
-      headers: [],
-      uidValidity: null,
-      nextBefore: null,
-      loading: false,
-      loadingMore: false,
-      error: null,
-      stale: false,
-    };
-    if (!silent)
-      setSources((s) => {
-        const cur = s[key] ?? blank;
-        return { ...s, [key]: { ...cur, stale: false, loading: !more, loadingMore: more, error: null } };
-      });
-    // Superseded by a user load: redo once it is done. Superseded by another silent reload: that one carries the truth.
-    const overtaken = () => {
-      if (alive.current && (userSeq.current.get(key) ?? 0) > seq) rerunSilent(key, accountId, folder);
-    };
-    const dedupe = (list: MailHeader[]) => {
-      const seen = new Set<number>();
-      return list.filter((h) => !seen.has(h.uid) && seen.add(h.uid));
-    };
-    try {
-      const r = await fetchMailHeaders(accountId, folder, { before, limit: PAGE });
-      if (!alive.current || sourceSeq.current.get(key) !== seq) {
-        if (silent) overtaken();
-        return true;
-      }
-      const shown = sourcesRef.current[key];
-      if (more && shown && shown.uidValidity !== null && r.uidValidity !== shown.uidValidity) {
-        // The cursor belongs to an older UIDVALIDITY epoch: start this folder over rather than mix UIDs.
-        void loadSourceRef.current(accountId, folder);
-        return true;
-      }
-      setSources((s) => {
-        const cur = s[key] ?? blank;
-        const sameEpoch = cur.uidValidity === null || r.uidValidity === cur.uidValidity;
-        let headers: MailHeader[];
-        let nextBefore: number | null = r.nextBefore;
-        if (more && sameEpoch) headers = dedupe([...cur.headers, ...r.headers]);
-        else if (silent && sameEpoch && r.headers.length > 0) {
-          // the fresh first page, plus the older pages that were already loaded below it
-          const oldest = Math.min(...r.headers.map((h) => h.uid));
-          const older = cur.headers.filter((h) => h.uid < oldest);
-          headers = dedupe([...r.headers, ...older]);
-          if (older.length > 0) nextBefore = cur.nextBefore;
-        } else headers = dedupe(r.headers);
-        return {
-          ...s,
-          [key]: {
-            accountId,
-            folder,
-            headers,
-            uidValidity: r.uidValidity,
-            nextBefore,
-            loading: false,
-            loadingMore: false,
-            error: null,
-            stale: r.stale,
-          },
-        };
-      });
-      return true;
-    } catch (e) {
-      if (!alive.current || sourceSeq.current.get(key) !== seq) {
-        if (silent) overtaken();
-        return false;
-      }
-      const code = mailErrorCode(e);
-      const auth = AUTH_CODES.has(code);
-      if (auth) setStates((s) => ({ ...s, [accountId]: { health: "auth", code, stale: false, folders: [] } }));
-      setSources((s) => {
-        const cur = s[key] ?? blank;
-        return { ...s, [key]: { ...cur, loading: false, loadingMore: false, error: silent && !auth ? cur.error : code } };
-      });
-      return false;
-    }
-  }, []);
-  // A silent reload never preempts a load the user asked for (it would discard that page): it waits for it.
-  const loadSource = useCallback(
-    async (accountId: string, folder: string, more = false, silent = false): Promise<boolean> => {
-      const key = sourceKey(accountId, folder);
-      if (silent && (userLoads.current.get(key) ?? 0) > 0) {
-        deferredSilent.current.add(key);
-        return true;
-      }
-      if (!silent) userLoads.current.set(key, (userLoads.current.get(key) ?? 0) + 1);
-      try {
-        return await loadSourceNow(accountId, folder, more, silent);
-      } finally {
-        if (!silent) {
-          const left = (userLoads.current.get(key) ?? 1) - 1;
-          userLoads.current.set(key, left);
-          if (left === 0 && deferredSilent.current.delete(key)) void loadSourceRef.current(accountId, folder, false, true);
-        }
-      }
-    },
-    [loadSourceNow]
-  );
-  loadSourceRef.current = loadSource;
-
-  const scopeSources = useMemo(() => {
-    if (scope.kind === "folder") return [{ accountId: scope.accountId, folder: scope.path }];
-    return (accounts ?? [])
-      .filter((a) => states[a.id]?.health === "ok")
-      .map((a) => ({ accountId: a.id, folder: inboxPath(a.id) }));
-  }, [scope, accounts, states, inboxPath]);
-
+  const scopeSources = useMemo(() => scopeSourcesOf(scope, accounts, states), [scope, accounts, states]);
   useEffect(() => {
-    for (const s of scopeSources) {
-      const key = `list\u0000${sourceKey(s.accountId, s.folder)}`;
-      if (requested.current.has(key)) continue;
-      requested.current.add(key);
-      void loadSource(s.accountId, s.folder);
-    }
-  }, [scopeSources, loadSource]);
+    store.ensureLoaded(scopeSources);
+  }, [store, scopeSources]);
 
   const refresh = () => {
-    for (const a of accounts ?? []) void loadFolders(a.id);
-    for (const s of scopeSources) void loadSource(s.accountId, s.folder);
+    store.refreshAll(scopeSources);
     if (search.active) search.rerun();
   };
-
-  /**
-   * The quiet reload for "something changed on the server" (the compose layer closed a window, a send ended):
-   * the same path as a live push (ticket 08) and a management action (ticket 06). Nothing flips to "loading",
-   * loaded older pages stay, a failure keeps what is shown, and an account whose login was refused is not
-   * asked again (the explicit refresh button is the way back).
-   */
+  /** Something changed on the server (the compose layer closed a window, a send ended): see `reloadQuiet`. */
   const refreshQuiet = () => {
-    for (const a of accounts ?? []) {
-      if (states[a.id]?.health === "auth") continue;
-      void loadFolders(a.id, true);
-    }
-    for (const s of scopeSources) {
-      if (states[s.accountId]?.health === "auth") continue;
-      void loadSource(s.accountId, s.folder, false, true);
-    }
+    store.reloadQuiet(scopeSources);
     if (search.active) search.rerun();
   };
 
-  // ---- live updates (ticket 08) ------------------------------------------------
-  // What this page knows from its own folder fetches goes to the shared live picture, so the Shell badge
-  // is the very number the folder tree shows (INBOX unread of accounts that can log in).
-  useEffect(() => {
-    if (!accounts) return;
-    reportMailAccounts(
-      accounts.map((a) => {
-        const st = states[a.id];
-        return {
-          accountId: a.id,
-          inbox: st?.health === "ok" ? (st.folders.find((f) => f.role === "inbox")?.unread ?? 0) : null,
-          blocked: st?.health === "auth",
-        };
-      })
-    );
-  }, [accounts, states]);
-  const liveRef = useRef({ accounts, scope, states });
-  liveRef.current = { accounts, scope, states };
-  const liveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  useEffect(() => {
-    const timers = liveTimers.current;
-    return () => {
-      for (const timer of timers.values()) clearTimeout(timer);
-      timers.clear();
-    };
-  }, []);
-  // A burst of pushes (many arrivals, a read, an expunge) is one reload of the tree and the visible INBOX list,
-  // and only one reload per account runs at a time: pushes during it cause exactly one more afterwards.
-  const liveRunning = useRef(new Set<string>());
-  const liveAgain = useRef(new Set<string>());
-  const reloadLive = useCallback(
-    (accountId: string) => {
-      const timers = liveTimers.current;
-      if (liveRunning.current.has(accountId)) {
-        liveAgain.current.add(accountId);
-        return;
-      }
-      if (timers.has(accountId)) return;
-      timers.set(
-        accountId,
-        setTimeout(async () => {
-          timers.delete(accountId);
-          const cur = liveRef.current;
-          if (!alive.current || !cur.accounts?.some((a) => a.id === accountId)) return;
-          liveRunning.current.add(accountId);
-          try {
-            const { folders } = await loadFolders(accountId, true);
-            if (!folders || !alive.current) return;
-            const inbox = folders.find((f) => f.role === "inbox")?.path ?? "INBOX";
-            const sc = liveRef.current.scope;
-            const visible = sc.kind === "unified" || (sc.accountId === accountId && sc.path === inbox);
-            if (visible) await loadSource(accountId, inbox, false, true);
-          } finally {
-            liveRunning.current.delete(accountId);
-            if (liveAgain.current.delete(accountId) && alive.current) reloadLive(accountId);
-          }
-        }, 250)
-      );
-    },
-    [loadFolders, loadSource]
-  );
-  useMailLiveEvents((event) => {
-    if (event.kind === "resync") {
-      // An account whose login was refused is not logged into again just because the socket reconnected.
-      for (const a of liveRef.current.accounts ?? []) if (liveRef.current.states[a.id]?.health !== "auth") reloadLive(a.id);
-    } else if (event.watch === "auth_failed" || event.watch === "credential_missing") {
-      // The server says this account cannot log in: show it like a refused folder fetch (tree and unified list).
-      setStates((s) =>
-        s[event.accountId]?.health === "auth"
-          ? s
-          : { ...s, [event.accountId]: { health: "auth", code: event.watch === "auth_failed" ? "auth_failed" : "credential_missing", stale: false, folders: [] } }
-      );
-    } else {
-      const refused = liveRef.current.states[event.accountId]?.health === "auth";
-      const loggedIn = event.watch === "idle" || event.watch === "polling";
-      // A push for an account shown as refused that is watched again means it works now: reload to show it.
-      if (refused ? loggedIn : event.cause !== "state") reloadLive(event.accountId);
-    }
-  });
+  // ---- live updates (ticket 08): the store reloads; it asks what is shown when a reload is due ----
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  useEffect(() => store.attachLive(() => scopeRef.current), [store]);
 
   const listSources: Source[] = search.active
     ? search.sources
     : scopeSources.map((s) => sources[sourceKey(s.accountId, s.folder)]).filter((s): s is Source => !!s);
-  const rows = useMemo(() => {
-    const all = listSources.flatMap((s) => s.headers.map((h) => ({ h, accountId: s.accountId, folder: s.folder })));
-    return all.sort((a, b) => (b.h.date ?? "").localeCompare(a.h.date ?? "") || b.h.uid - a.h.uid);
-  }, [listSources]);
+  const rows = useMemo(() => sortedRows(listSources), [listSources]);
   const publishedMail = useRef<string | null>(null);
   // The Copilot's view of this page (Mail ticket 09): the open message in full and the headers the list shows. It is
   // republished only when what it is made of changes, never on every render.
@@ -481,75 +221,12 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
 
   // ---- opening a message -----------------------------------------------------
   const markReadLocally = (r: Ref) => {
-    patchHeaders(r, { unread: false });
-    bumpUnread(r.accountId, r.folder, -1);
+    store.patch(r, { unread: false });
+    store.bumpUnread(r.accountId, r.folder, -1);
   };
-
-  // ---- shared list mutations (opening, managing, rolling back) ---------------------
-  /** Flags on a row, in the folder list and in the search results alike. */
-  const patchHeaders = (r: MessageRef, patch: Partial<Pick<MailHeader, "unread" | "starred">>) => {
-    const key = sourceKey(r.accountId, r.folder);
-    setSources((s) => {
-      const cur = s[key];
-      if (!cur) return s;
-      return { ...s, [key]: { ...cur, headers: cur.headers.map((h) => (h.uid === r.uid ? { ...h, ...patch } : h)) } };
-    });
-    search.patchHeader(r, patch);
-  };
-  /** Take a row out of the folder list and the search results; the returned function puts it back in place. */
-  const removeHeaders = (r: MessageRef): (() => void) => {
-    const key = sourceKey(r.accountId, r.folder);
-    const cur = sourcesRef.current[key];
-    const index = cur ? cur.headers.findIndex((h) => h.uid === r.uid) : -1;
-    const header = cur?.headers[index];
-    if (cur && header)
-      setSources((s) => {
-        const c = s[key];
-        return c ? { ...s, [key]: { ...c, headers: c.headers.filter((h) => h.uid !== r.uid) } } : s;
-      });
-    const restoreSearch = search.removeHeader(r);
-    return () => {
-      if (header)
-        setSources((s) => {
-          const c = s[key];
-          if (!c || c.headers.some((h) => h.uid === r.uid)) return s;
-          const headers = [...c.headers];
-          headers.splice(Math.min(index, headers.length), 0, header);
-          return { ...s, [key]: { ...c, headers } };
-        });
-      restoreSearch();
-    };
-  };
-  const bumpUnread = (accountId: string, folder: string, delta: number) =>
-    setStates((s) => {
-      const st = s[accountId];
-      if (!st) return s;
-      return {
-        ...s,
-        [accountId]: {
-          ...st,
-          folders: st.folders.map((f) =>
-            f.path === folder && f.unread !== null ? { ...f, unread: Math.max(0, f.unread + delta) } : f
-          ),
-        },
-      };
-    });
-  const findHeader = (r: MessageRef): MailHeader | undefined =>
-    sourcesRef.current[sourceKey(r.accountId, r.folder)]?.headers.find((h) => h.uid === r.uid) ?? search.find(r);
-  const folderOf = (accountId: string, path: string) => states[accountId]?.folders.find((f) => f.path === path);
 
   const actions = useMailActions({
-    find: findHeader,
-    patch: patchHeaders,
-    remove: removeHeaders,
-    bumpUnread,
-    uidValidity: (r) =>
-      sourcesRef.current[sourceKey(r.accountId, r.folder)]?.uidValidity ?? search.uidValidity(r) ?? undefined,
-    folderRole: (accountId, path) => folderOf(accountId, path)?.role,
-    folderName: (accountId, path) => {
-      const f = folderOf(accountId, path);
-      return f ? (f.role === "custom" ? f.name : t(`mail.folder.${f.role}`)) : path;
-    },
+    store,
     closeIfOpen: (r) => {
       const shown = openedRef.current;
       if (!shown || refKey(shown.ref) !== refKey(r)) return () => {};
@@ -562,12 +239,6 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
         }
       };
     },
-    trashFolder: (accountId) => states[accountId]?.folders.find((f) => f.role === "trash")?.path,
-    refreshFolders: async (accountId) => (await loadFolders(accountId, true)).ok,
-    refreshLoaded: (accountId, folder) =>
-      sourcesRef.current[sourceKey(accountId, folder)]
-        ? loadSource(accountId, folder, false, true)
-        : Promise.resolve(true),
     refreshSearch: () => {
       if (search.active) search.rerun();
       return search.active;
@@ -583,7 +254,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
       const r = await openMailMessage(ref.accountId, {
         folder: ref.folder,
         uid: ref.uid,
-        uidValidity: sources[sourceKey(ref.accountId, ref.folder)]?.uidValidity ?? undefined,
+        uidValidity: store.listUidValidity(ref),
         unread: row.h.unread,
       });
       if (!alive.current || !openedRef.current || refKey(openedRef.current.ref) !== refKey(ref)) return;
@@ -607,9 +278,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
   const lang = i18n.language;
   const accountById = (id: string) => (accounts ?? []).find((a) => a.id === id);
   const folderLabel = (f: MailFolder) => (f.role === "custom" ? f.name : t(`mail.folder.${f.role}`));
-  const inboxUnread = (a: MailAccount) =>
-    states[a.id]?.health === "ok" ? (states[a.id]?.folders.find((f) => f.role === "inbox")?.unread ?? 0) : 0;
-  const totalUnread = (accounts ?? []).reduce((n, a) => n + inboxUnread(a), 0);
+  const totalUnread = totalInboxUnread(accounts, states);
   const scopeFolder =
     scope.kind === "folder" ? states[scope.accountId]?.folders.find((f) => f.path === scope.path) : null;
   const title =
@@ -742,7 +411,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
                 <div className="mail-account-flag warn" data-ui="mail-account-offline" role="status">
                   <Icon name="wifi-off" cls="ico-sm" />
                   <span>{t(`mail.error.${st.code}`, { defaultValue: t("mail.offline") })}</span>
-                  <button className="mail-link" data-ui="mail-account-retry" onClick={() => void loadFolders(a.id)}>
+                  <button className="mail-link" data-ui="mail-account-retry" onClick={() => void store.loadFolders(a.id)}>
                     {t("mail.retry")}
                   </button>
                 </div>
@@ -881,7 +550,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
           <div className="mail-more">
             <Button data-ui="mail-load-more" busy={moreBusy} busyLabel={t("mail.loadingMore")} onClick={() => {
               if (search.active) return search.more();
-              for (const s of listSources) if (s.nextBefore !== null) void loadSource(s.accountId, s.folder, true);
+              for (const s of listSources) if (s.nextBefore !== null) void store.loadSource(s.accountId, s.folder, true);
             }}>
               {t("mail.loadMore")}
             </Button>
@@ -951,8 +620,8 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
     const accountFolders = states[shownRef.accountId]?.folders ?? [];
     const actionBar = (
       <MessageActions
-        header={findHeader(shownRef)}
-        role={folderOf(shownRef.accountId, shownRef.folder)?.role}
+        header={store.header(shownRef)}
+        role={store.folderRole(shownRef.accountId, shownRef.folder)}
         folders={accountFolders}
         currentPath={shownRef.folder}
         folderLabel={folderLabel}
@@ -1001,7 +670,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
             onClose={() => setAdding(false)}
             onAdded={() => {
               setAdding(false);
-              void loadAccounts();
+              void store.loadAccounts();
             }}
           />
         )}
@@ -1054,7 +723,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
           <InlineMessage tone="danger" title={t("mail.listFailed")}>
             {t(`mail.error.${accountsError}`, { defaultValue: t("mail.error.unknown") })}
           </InlineMessage>
-          <Button onClick={() => void loadAccounts()}>{t("mail.retry")}</Button>
+          <Button onClick={() => void store.loadAccounts()}>{t("mail.retry")}</Button>
         </div>
       )}
       {!accountsError && !narrowShowsReader && listEl}
@@ -1064,7 +733,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);
-            void loadAccounts();
+            void store.loadAccounts();
             setScope({ kind: "unified" });
           }}
         />
@@ -1076,10 +745,9 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
           onClose={() => setReenter(null)}
           onSaved={(a, newRev) => {
             setReenter(null);
-            setRev(newRev);
-            setAccounts((list) => (list ?? []).map((x) => (x.id === a.id ? a : x)));
-            for (const key of [...requested.current]) if (key.includes(a.id)) requested.current.delete(key);
-            void loadFolders(a.id);
+            store.accountSaved(a, newRev);
+            store.forgetRequested(a.id);
+            void store.loadFolders(a.id);
           }}
         />
       )}
@@ -1090,8 +758,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
           onClose={() => setSettingsOf(null)}
           onSaved={(a, newRev) => {
             setSettingsOf(null);
-            setRev(newRev);
-            setAccounts((list) => (list ?? []).map((x) => (x.id === a.id ? a : x)));
+            store.accountSaved(a, newRev);
           }}
         />
       )}
@@ -1114,7 +781,7 @@ export function MailView({ paneId, onContext }: { paneId?: number; onContext?: (
             setRemoving(null);
             setScope({ kind: "unified" });
             setOpened(null);
-            void loadAccounts();
+            void store.loadAccounts();
           }}
         />
       )}
