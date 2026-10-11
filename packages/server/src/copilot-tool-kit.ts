@@ -41,14 +41,14 @@ export type JournalObject = {
   summary?: string;
 };
 
-/** How a requested delete was settled by the human (or by the host when the request stopped being valid). */
+/** How a requested confirmation was settled by the human (or by the host when the request stopped being valid). */
 export type ConfirmationOutcome =
   | { outcome: "approved" }
   | { outcome: "declined" }
   | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
   /** A system error at click time (data unreadable): not a change, and never reported as one. */
   | { outcome: "expired"; reason: "error"; detail: string };
-/** What the card shows for a Plan delete (`delete_plan`) or a Doc replacement (`refresh_arxiv_source`). */
+/** What the confirmation card shows: one of the eight kinds of request below, each with exactly what it binds. */
 export type ConfirmationRequest =
   | {
       toolCallId: string;
@@ -251,7 +251,10 @@ export async function runOperation(
      */
     readBack:
       | string
-      | ((known: KnownOperation) => { detail: string; payload?: Record<string, unknown> });
+      | ((known: Extract<KnownOperation, { state: "begun" }>) => {
+          detail: string;
+          payload?: Record<string, unknown>;
+        });
     /**
      * How a finished operation is answered again; by default exactly as it was recorded. A tool whose result names
      * a job still running when it was recorded can answer with what that job did since.
@@ -348,8 +351,9 @@ export async function runOperation(
 }
 
 /**
- * The refusal when no confirmation can be asked here, or null when it can. A tool calls it before reading its target,
- * so a call that could never be confirmed reads nothing; `askUser` still refuses the same way on its own.
+ * The refusal when no confirmation can be asked here, or null when it can. A tool calls it at the earliest point it
+ * can (for some that is before reading the target, for others only once the target or a first answer says a card is
+ * needed); `askUser` refuses with this same result on its own.
  */
 export function confirmUnavailable(
   ctx: ToolHostContext,
@@ -362,7 +366,18 @@ export function confirmUnavailable(
     label?: string;
   }
 ): ToolResult | null {
-  if (ctx.confirm) return null;
+  return ctx.confirm ? null : unsupported(ask);
+}
+
+/** The one wording of "no confirmation can be asked here". */
+function unsupported(ask: {
+  tool: string;
+  toolCallId: string;
+  action: string;
+  nothing: string;
+  object?: CopilotOperation["object"];
+  label?: string;
+}): ToolResult {
   return refusal(
     ask,
     "unsupported",
@@ -414,15 +429,14 @@ export async function askUser(
   }
 ): Promise<{ approved: true } | { approved: false; result: ToolResult }> {
   const { nothing } = ask;
-  const refuse = (status: "unsupported" | "error" | "declined" | "expired", detail: string) => {
+  const refuse = (status: "error" | "declined" | "expired", detail: string) => {
     ask.release?.();
     return { approved: false as const, result: refusal(ask, status, detail) };
   };
-  if (!ctx.confirm)
-    return refuse(
-      "unsupported",
-      `${ask.action} needs the user's confirmation and none is available here; nothing was ${nothing}`
-    );
+  if (!ctx.confirm) {
+    ask.release?.();
+    return { approved: false, result: unsupported(ask) };
+  }
   let decision: ConfirmationOutcome;
   try {
     decision = await ctx.confirm.request(ask.request);

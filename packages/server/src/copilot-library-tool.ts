@@ -254,7 +254,7 @@ async function runAcquisition(input: {
       rest,
       requestedId,
       readBack: (known) => ({
-        detail: `this operation started earlier and its outcome was not recorded; ${"jobId" in known && known.jobId ? `its job is ${known.jobId}: read_jobs shows its state` : "read_jobs for this work shows whether its job exists"}, do not repeat it blindly`,
+        detail: `this operation started earlier and its outcome was not recorded; ${known.jobId ? `its job is ${known.jobId}: read_jobs shows its state` : "read_jobs for this work shows whether its job exists"}, do not repeat it blindly`,
       }),
       // A pending result is replayed with what the Job table says now, never with the stale snapshot.
       replay: (known) => liveReplay(port, known.operation, known.payload),

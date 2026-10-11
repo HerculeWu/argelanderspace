@@ -756,7 +756,7 @@ export function createMailTool(context: MailToolContext) {
             readBack: (known) => ({
               detail:
                 "this operation started earlier and its outcome was not recorded; it may or may not have happened. Read the mailbox (list, read_draft, send_status with the sendId given here) to find out, do not repeat it blindly",
-              payload: "sendId" in known && known.sendId ? { sendId: known.sendId } : {},
+              payload: known.sendId ? { sendId: known.sendId } : {},
             }),
           },
           async (run) => {
