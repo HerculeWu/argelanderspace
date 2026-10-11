@@ -22,11 +22,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "@argelanderspace/contracts";
 import { RefDetail } from "../src/library/RefDetail";
 import type { LibraryRef } from "../src/library/types";
+import type { StartResult } from "../src/api/library";
 
 const h = vi.hoisted(() => ({
   listener: null as ((job: Job, event: string) => void) | null,
-  attachArxiv: vi.fn<(workId: string) => Promise<Job | null>>(),
-  uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<Job | null>>(),
+  attachArxiv: vi.fn<(workId: string) => Promise<StartResult>>(),
+  uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<StartResult>>(),
   patchRef: vi.fn<(id: string, patch: Record<string, unknown>) => Promise<boolean>>(),
   fetchAnnotations: vi.fn(),
 }));
@@ -162,7 +163,7 @@ describe("docless work with an arXiv id", () => {
     openFilesTab();
     expect(screen.queryByText("可获取 · arXiv 全文")).toBeNull();
     const job = makeJob();
-    h.attachArxiv.mockResolvedValueOnce(job);
+    h.attachArxiv.mockResolvedValueOnce({ ok: true, job });
     startArxivAcquisition();
     expect(h.attachArxiv).toHaveBeenCalledWith(REF_ARXIV.id);
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
@@ -188,7 +189,7 @@ describe("docless work with an arXiv id", () => {
     renderDetail(REF_ARXIV);
     openFilesTab();
     const job = makeJob();
-    h.attachArxiv.mockResolvedValueOnce(job);
+    h.attachArxiv.mockResolvedValueOnce({ ok: true, job });
     startArxivAcquisition();
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
     act(() => {
@@ -213,7 +214,7 @@ describe("docless work with an arXiv id", () => {
   it("a plain failure shows no PDF-only hint", async () => {
     renderDetail(REF_ARXIV);
     openFilesTab();
-    h.attachArxiv.mockResolvedValueOnce(makeJob());
+    h.attachArxiv.mockResolvedValueOnce({ ok: true, job: makeJob() });
     startArxivAcquisition();
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
     act(() => {
@@ -247,10 +248,10 @@ describe("docless work with an arXiv id", () => {
   });
 
   it("does not attach a late arXiv POST response to a later A → B → A Work session", async () => {
-    let resolveFetch: (job: Job | null) => void = () => {};
+    let resolveFetch: (job: StartResult) => void = () => {};
     h.attachArxiv.mockImplementationOnce(
       () =>
-        new Promise<Job | null>((resolve) => {
+        new Promise<StartResult>((resolve) => {
           resolveFetch = resolve;
         })
     );
@@ -276,7 +277,7 @@ describe("docless work with an arXiv id", () => {
         onReload={view.onReload}
       />
     );
-    await act(async () => resolveFetch(makeJob()));
+    await act(async () => resolveFetch({ ok: true, job: makeJob() }));
 
     expect(screen.queryByText("正在排队")).toBeNull();
     startArxivAcquisition();
@@ -301,7 +302,7 @@ describe("docless work with an arXiv id", () => {
   });
 
   it("a non-202 trigger surfaces the generic failure line", async () => {
-    h.attachArxiv.mockResolvedValueOnce(null);
+    h.attachArxiv.mockResolvedValueOnce({ ok: false, status: 500, detail: "request failed" });
     renderDetail(REF_ARXIV);
     openFilesTab();
     startArxivAcquisition();
@@ -330,7 +331,7 @@ describe("D17 cleanup of acquisition ads", () => {
 
 describe("works with docs", () => {
   it("an arXiv main doc offers the safe update entry; confirmation queues the refresh", async () => {
-    h.attachArxiv.mockResolvedValueOnce(makeJob());
+    h.attachArxiv.mockResolvedValueOnce({ ok: true, job: makeJob() });
     renderDetail(REF_WITH_ARXIV_DOC);
     // the acquisition line is hidden once a main doc exists
     openFilesTab();

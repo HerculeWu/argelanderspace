@@ -78,11 +78,27 @@ export async function fetchLibrary(): Promise<LibraryLoad> {
   }
 }
 
-/** Attach a user-supplied LaTeX source zip to a work (server-side ingest).
- *  The zip rides as the raw request body; the work id is a query param.
- *  Async: the server answers 202 with the queued job immediately;
- *  watch /ws (`onJobEvent` in ./ws) for progress and the done/failed outcome,
- *  then reload the library. Returns the job, or null when the POST failed. */
+/**
+ * The answer to a job start: the server's 202 with the queued (or already in-flight) job, or why it did not queue
+ * one. `status` is the HTTP status (0: no answer); a busy document is 409 with the detail "document busy".
+ */
+export type StartResult = { ok: true; job: Job } | { ok: false; status: number; detail: string };
+
+async function startJob(url: string, init: RequestInit, what: string): Promise<StartResult> {
+  try {
+    const r = await fetch(url, init);
+    if (r.status !== 202) {
+      const body = (await r.json().catch(() => null)) as { detail?: unknown } | null;
+      const detail = typeof body?.detail === "string" ? body.detail : `${what} ${r.status}`;
+      return { ok: false, status: r.status, detail };
+    }
+    const body = (await r.json()) as { job?: Job };
+    return body.job ? { ok: true, job: body.job } : { ok: false, status: 500, detail: `${what} response did not contain a job` };
+  } catch (error) {
+    return { ok: false, status: 0, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export type UploadPdfResult =
   | { ok: true; job: Job; resourceWarning: boolean }
   | { ok: false; status: number; detail: string };
@@ -107,19 +123,26 @@ export async function uploadPdf(workId: string, file: File): Promise<UploadPdfRe
   }
 }
 
-export async function uploadLatexZip(workId: string, file: File | Blob): Promise<Job | null> {
-  try {
-    const r = await fetch(`/api/library/upload?id=${encodeURIComponent(workId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/zip" },
-      body: file,
-    });
-    if (r.status !== 202) return null;
-    const j = (await r.json()) as { job?: Job };
-    return j.job ?? null;
-  } catch {
-    return null;
-  }
+/** Attach a user-supplied LaTeX source zip to a work (server-side ingest).
+ *  The zip rides as the raw request body; the work id is a query param.
+ *  Async: the server answers 202 with the queued job immediately;
+ *  watch /ws (`onJobEvent` in ./ws) for progress and the done/failed outcome,
+ *  then reload the library. */
+export async function uploadLatexZip(workId: string, file: File | Blob): Promise<StartResult> {
+  return startJob(
+    `/api/library/upload?id=${encodeURIComponent(workId)}`,
+    { method: "POST", headers: { "Content-Type": "application/zip" }, body: file },
+    "LaTeX upload"
+  );
+}
+
+/** Queue a new arXiv PDF acquisition for a work (job kind `"upload"`, payload format `"arxiv-pdf"`). */
+export async function acquireArxivPdf(workId: string): Promise<StartResult> {
+  return startJob(
+    `/api/library/acquire-arxiv-pdf?id=${encodeURIComponent(workId)}`,
+    { method: "POST" },
+    "arXiv PDF acquisition"
+  );
 }
 
 /**
@@ -127,30 +150,10 @@ export async function uploadLatexZip(workId: string, file: File | Blob): Promise
  * job kind `"ingest"`, the work id rides as a query param. The server answers
  * 202 with the queued (or already in-flight) job; watch /ws (`onJobEvent`)
  * for progress and the done/failed outcome, then reload the library.
- * Returns the job, or null when the POST failed (e.g. 409 scenario C).
+ * A 409 is a busy document, a Work that already has a non-arXiv Doc (scenario C) or a Work that changed.
  */
-export async function acquireArxivPdf(workId: string): Promise<Job | null> {
-  try {
-    const r = await fetch(`/api/library/acquire-arxiv-pdf?id=${encodeURIComponent(workId)}`, { method: "POST" });
-    if (r.status !== 202) return null;
-    const body = (await r.json()) as { job?: Job };
-    return body.job ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export async function attachArxiv(workId: string): Promise<Job | null> {
-  try {
-    const r = await fetch(`/api/library/attach-arxiv?id=${encodeURIComponent(workId)}`, {
-      method: "POST",
-    });
-    if (r.status !== 202) return null;
-    const j = (await r.json()) as { job?: Job };
-    return j.job ?? null;
-  } catch {
-    return null;
-  }
+export async function attachArxiv(workId: string): Promise<StartResult> {
+  return startJob(`/api/library/attach-arxiv?id=${encodeURIComponent(workId)}`, { method: "POST" }, "arXiv fetch");
 }
 
 /**

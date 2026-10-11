@@ -1,26 +1,24 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Job, LIBRARY_DETAIL_TABS, libraryRefBibtex } from "@argelanderspace/contracts";
 import { Icon } from "../lib/icons";
-import {
-  acquireArxivPdf,
-  attachArxiv,
-  type DocProvenance,
-  fetchDocProvenance,
-  patchRef,
-  uploadLatexZip,
-  uploadPdf,
-} from "../api/library";
+import { type DocProvenance, fetchDocProvenance, patchRef } from "../api/library";
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
-import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
-import { createTextDoc, fetchTextDeleteImpact } from "../api/text-docs";
-import { onJobEvent } from "../api/ws";
+import { createTextDoc } from "../api/text-docs";
 import i18n from "../i18n";
 import { ActionButton, Badge, Dialog, InlineMessage, Tabs } from "../ui";
 import { cgKfmt } from "../graph/graphPhysics";
 import { AbstractHtml } from "../lib/abstract";
 import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
 import type { GraphNode, LibraryRef } from "./types";
+import {
+  type AcquisitionFlow,
+  type AcquisitionMethod,
+  type DeleteCount,
+  loadDeleteCount,
+  reduceAcquisitionRisk,
+  useWorkJobs,
+} from "./work-jobs";
 
 function Tag({ children }: { children: string }) {
   return <span className="tag mono">{children.replace(/^#/, "")}</span>;
@@ -36,31 +34,6 @@ const bibtexOf = libraryRefBibtex;
 
 const TABS = LIBRARY_DETAIL_TABS;
 export type DetailTab = (typeof TABS)[number];
-type AcquisitionMethod = "pdf" | "arxiv" | "upload" | "pdf-upload";
-
-type AcquisitionRisk =
-  | { state: "new" }
-  | { state: "resolving" }
-  | { state: "loading" }
-  | { state: "known"; count: number }
-  | { state: "unknown" }
-  | { state: "busy"; source: "annotations" | "job" }
-  | { state: "missing" }
-  | { state: "unavailable" };
-
-interface AcquisitionFlow {
-  id: number;
-  riskVersion: number;
-  method: AcquisitionMethod;
-  targetDocId: string | null;
-  risk: AcquisitionRisk;
-  file: File | null;
-  fileError: string | null;
-  pdfWarningAccepted: boolean;
-  busy: boolean;
-  error: string | null;
-}
-
 function acquisitionFileProblem(file: File | null, method: AcquisitionMethod): "required" | "zip" | "pdf" | "empty" | "tooLarge" | null {
   if (!file) return "required";
   if (file.size === 0) return "empty";
@@ -87,25 +60,7 @@ const TAB_LABEL_KEYS = {
   files: "library.detail.tabs.files",
 } as const;
 
-/** The job's target work id rides in `payload.workId` (server app.ts). */
-function jobWorkId(job: Job): string | null {
-  const p = job.payload;
-  if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
-  const w = (p as Record<string, unknown>).workId;
-  return typeof w === "string" && w !== "" ? w : null;
-}
-
-const JOB_STATUS_PHASE: Record<Job["status"], number> = {
-  queued: 0,
-  running: 1,
-  done: 2,
-  failed: 2,
-  interrupted: 2,
-};
-
-function isJobSnapshotRegression(previous: Job | undefined, next: Job): boolean {
-  return previous !== undefined && JOB_STATUS_PHASE[next.status] < JOB_STATUS_PHASE[previous.status];
-}
+const isJobActive = (job: Job | null): boolean => job?.status === "queued" || job?.status === "running";
 
 /**
  * The Doc row's three-dots disclosure toggle. It must stay the immediate `<summary>` of its `<details>`, so the shared
@@ -179,47 +134,27 @@ export function RefDetail({
   const copyRequestId = useRef(0);
   const activeWorkId = useRef(r.id);
   activeWorkId.current = r.id;
-  const workSession = useRef({ workId: r.id, generation: 0 });
-  if (workSession.current.workId !== r.id) {
-    workSession.current = {
-      workId: r.id,
-      generation: workSession.current.generation + 1,
-    };
-  }
-  const isCurrentWorkSession = (session: { workId: string; generation: number }): boolean =>
-    session.workId === workSession.current.workId &&
-    session.generation === workSession.current.generation;
-  // async upload (202 + job): progress arrives over /ws; `uploadJob` is the
-  // queued/running job, null once a terminal state was handled. The ref mirror
-  // lets the WS subscriber see the latest value; `seenJobs` remembers every
-  // event snapshot so a job.* frame that beats the upload POST's fetch
-  // response (fast failure) is never overwritten by the stale 202 body.
-  const [uploadJob, setUploadJobState] = useState<Job | null>(null);
-  const uploadJobRef = useRef<Job | null>(null);
-  const seenJobs = useRef(new Map<string, Job>());
-  const [uploadErr, setUploadErr] = useState<string | null>(null);
-  const [pdfUploadJob, setPdfUploadJobState] = useState<Job | null>(null);
-  const pdfUploadJobRef = useRef<Job | null>(null);
-  const pdfUploadSubmissions = useRef(new Set<string>());
-  const setPdfUploadJob = (job: Job | null) => { pdfUploadJobRef.current = job; setPdfUploadJobState(job); };
-  const [pdfUploadError, setPdfUploadError] = useState<string | null>(null);
-  const [pdfUploadBusy, setPdfUploadBusy] = useState(false);
-  const [pdfErrorDismissed, setPdfErrorDismissed] = useState(false);
-  const adoptedPdfFailure = useRef(false);
-  // Stage 15: this work's arXiv fetch job (kind "ingest", payload.workId) —
-  // the same adoption/race rules as the upload job. `arxivErrCode` carries
-  // the server's machine-readable failure class ("arxiv_pdf_only" → the
-  // bilingual PDF-only guidance).
-  const [arxivJob, setArxivJobState] = useState<Job | null>(null);
-  const arxivJobRef = useRef<Job | null>(null);
-  const [arxivErr, setArxivErr] = useState<string | null>(null);
-  const [arxivErrCode, setArxivErrCode] = useState<string | null>(null);
-  const [arxivPdfJob, setArxivPdfJob] = useState<Job | null>(null);
-  const [arxivPdfError, setArxivPdfError] = useState<string | null>(null);
-  const [arxivPdfErrorDismissed, setArxivPdfErrorDismissed] = useState(false);
-  const [arxivPdfFailureJobId, setArxivPdfFailureJobId] = useState<string | null>(null);
-  const dismissedArxivPdfFailures = useRef(new Set<string>());
-  const arxivPdfJobRef = useRef<Job | null>(null);
+  // The Work's acquisition jobs (LaTeX zip, PDF upload, arXiv source, arXiv PDF) and the Work session that drops
+  // late responses after a switch; progress arrives over /ws (see work-jobs.ts).
+  const jobs = useWorkJobs(r.id, { onReload });
+  const workSession = jobs.session;
+  const isCurrentWorkSession = workSession.isCurrent;
+  const zipUpload = jobs.kinds("zip");
+  const pdfUpload = jobs.kinds("pdf");
+  const arxivSource = jobs.kinds("arxiv");
+  const arxivPdf = jobs.kinds("arxivPdf");
+  const uploadJob = zipUpload.job;
+  const uploadErr = zipUpload.error?.message ?? null;
+  const pdfUploadJob = pdfUpload.job;
+  const pdfUploadError = pdfUpload.error?.message ?? null;
+  const pdfUploadBusy = pdfUpload.submitting;
+  // Stage 15: `arxivErrCode` carries the server's machine-readable failure class ("arxiv_pdf_only" → the bilingual
+  // PDF-only guidance).
+  const arxivJob = arxivSource.job;
+  const arxivErr = arxivSource.error?.message ?? null;
+  const arxivErrCode = arxivSource.error?.extra ?? null;
+  const arxivPdfJob = arxivPdf.job;
+  const arxivPdfError = arxivPdf.error?.message ?? null;
   const [settingMain, setSettingMain] = useState(false);
   const [mainErr, setMainErr] = useState<string | null>(null);
   // Text Doc creation (ticket 25): one in-flight request; the new Doc opens on its source editor.
@@ -281,34 +216,7 @@ export function RefDetail({
   // retain a count for a disappeared target or keep treating a newly-existing
   // target as a first addition.
   useEffect(() => {
-    setAcquisition((current) => {
-      if (!current) return current;
-      if (current.targetDocId && !versions.includes(current.targetDocId)) {
-        return {
-          ...current,
-          riskVersion: current.riskVersion + 1,
-          risk: { state: "missing" },
-        };
-      }
-      if (current.method === "arxiv") {
-        const nextTarget = arxivTarget && versions.includes(arxivTarget) ? arxivTarget : null;
-        if (nextTarget !== current.targetDocId) {
-          return {
-            ...current,
-            riskVersion: current.riskVersion + 1,
-            targetDocId: nextTarget,
-            risk: versions.length === 0 ? { state: "new" } : { state: "unavailable" },
-          };
-        }
-      } else if (current.method === "upload" && current.targetDocId === null && versions.length > 0) {
-        return {
-          ...current,
-          riskVersion: current.riskVersion + 1,
-          risk: { state: "unavailable" },
-        };
-      }
-      return current;
-    });
+    setAcquisition((current) => reduceAcquisitionRisk(current, { type: "payload", versions, arxivTarget }));
   }, [arxivTarget, versionsKey]);
 
   // Any fresh payload for the same Work may reflect an in-place replacement
@@ -317,15 +225,7 @@ export function RefDetail({
   useEffect(() => {
     if (riskPayload.current === r) return;
     riskPayload.current = r;
-    setAcquisition((current) =>
-      current?.targetDocId && versions.includes(current.targetDocId)
-        ? {
-            ...current,
-            riskVersion: current.riskVersion + 1,
-            risk: { state: "loading" },
-          }
-        : current
-    );
+    setAcquisition((current) => reduceAcquisitionRisk(current, { type: "refresh", versions }));
   }, [r, versionsKey]);
 
   useEffect(() => {
@@ -336,38 +236,15 @@ export function RefDetail({
     void uploadAcquisitionDocId(workId)
       .then((expectedDocId) => {
         if (!current) return;
-        setAcquisition((latest) => {
-          if (
-            !latest ||
-            latest.id !== flow.id ||
-            latest.method !== "upload" ||
-            latest.risk.state !== "resolving" ||
-            workSession.current.workId !== workId
-          ) {
-            return latest;
-          }
-          const targetDocId = versions.includes(expectedDocId) ? expectedDocId : null;
-          return {
-            ...latest,
-            riskVersion: latest.riskVersion + 1,
-            targetDocId,
-            risk: targetDocId ? { state: "loading" } : { state: "new" },
-          };
-        });
+        setAcquisition((latest) =>
+          workSession.current().workId !== workId
+            ? latest
+            : reduceAcquisitionRisk(latest, { type: "target-resolved", flowId: flow.id, expectedDocId, versions })
+        );
       })
       .catch(() => {
         if (!current) return;
-        setAcquisition((latest) =>
-          latest?.id === flow.id &&
-          latest.method === "upload" &&
-          latest.risk.state === "resolving"
-            ? {
-                ...latest,
-                riskVersion: latest.riskVersion + 1,
-                risk: { state: "unavailable" },
-              }
-            : latest
-        );
+        setAcquisition((latest) => reduceAcquisitionRisk(latest, { type: "target-failed", flowId: flow.id }));
       });
     return () => {
       current = false;
@@ -380,27 +257,7 @@ export function RefDetail({
     let current = true;
     void fetchAnnotations(flow.targetDocId).then((result) => {
       if (!current) return;
-      setAcquisition((latest) => {
-        if (
-          !latest ||
-          latest.id !== flow.id ||
-          latest.method !== flow.method ||
-          latest.targetDocId !== flow.targetDocId ||
-          latest.risk.state !== "loading"
-        ) {
-          return latest;
-        }
-        if (result.ok) {
-          return {
-            ...latest,
-            risk: { state: "known", count: result.file.annotations.length },
-          };
-        }
-        if (result.status === 409)
-          return { ...latest, risk: { state: "busy", source: "annotations" } };
-        if (result.missing) return { ...latest, risk: { state: "missing" } };
-        return { ...latest, risk: { state: "unknown" } };
-      });
+      setAcquisition((latest) => reduceAcquisitionRisk(latest, { type: "annotations", flow, result }));
     });
     return () => {
       current = false;
@@ -413,29 +270,17 @@ export function RefDetail({
     acquisition?.riskVersion,
   ]);
 
-  // A known queued/running job targeting this Work conservatively blocks a
-  // replacement. Once that job settles, take a fresh annotation snapshot.
+  // A known queued/running zip upload or arXiv source job targeting this Work
+  // conservatively blocks a replacement. Once that job settles, take a fresh
+  // annotation snapshot.
   useEffect(() => {
-    setAcquisition((current) => {
-      if (!current?.targetDocId) return current;
-      const job = current.method === "upload" ? uploadJob : arxivJob;
-      const active = job?.status === "queued" || job?.status === "running";
-      if (active && !(current.risk.state === "busy" && current.risk.source === "job")) {
-        return {
-          ...current,
-          riskVersion: current.riskVersion + 1,
-          risk: { state: "busy", source: "job" },
-        };
-      }
-      if (!active && current.risk.state === "busy" && current.risk.source === "job") {
-        return {
-          ...current,
-          riskVersion: current.riskVersion + 1,
-          risk: { state: "loading" },
-        };
-      }
-      return current;
-    });
+    setAcquisition((current) =>
+      reduceAcquisitionRisk(current, {
+        type: "jobs",
+        uploadActive: isJobActive(uploadJob),
+        arxivActive: isJobActive(arxivJob),
+      })
+    );
   }, [acquisition?.id, uploadJob, arxivJob]);
 
   // Provenance is presentation-only metadata from each Doc's explicit
@@ -460,23 +305,8 @@ export function RefDetail({
     };
   }, [r, versionsKey]);
 
-  const setUploadJob = useCallback((job: Job | null) => {
-    uploadJobRef.current = job;
-    setUploadJobState(job);
-  }, []);
-
-  const setArxivJob = useCallback((job: Job | null) => {
-    arxivJobRef.current = job;
-    setArxivJobState(job);
-  }, []);
-
-  // switching references drops the other ref's upload state
+  // switching references drops the other ref's local state (the job state resets in useWorkJobs)
   useEffect(() => {
-    setUploadJob(null);
-    setUploadErr(null);
-    setArxivJob(null);
-    setArxivErr(null);
-    setArxivErrCode(null);
     setMainErr(null);
     setSettingMain(false);
     acquisitionFlowSequence.current += 1;
@@ -492,10 +322,10 @@ export function RefDetail({
     delBusyRef.current = false;
     delRequestId.current += 1;
     setDelBusy(false);
-  }, [r.id, setUploadJob, setArxivJob]);
+  }, [r.id]);
 
   const onSetMainDoc = async (docId: string) => {
-    const session = workSession.current;
+    const session = workSession.current();
     setMainErr(null);
     setSettingMain(true);
     const ok = await patchRef(session.workId, { doc_id: docId });
@@ -529,263 +359,6 @@ export function RefDetail({
     } else {
       setDelErr({ kind: "error", detail: res.detail });
     }
-  };
-
-  const failMsg = (job: Job | null): string =>
-    job?.error
-      ? i18n.t("library.detail.upload.failed", { error: job.error })
-      : i18n.t("library.detail.upload.failedGeneric");
-
-  const arxivFailMsg = (job: Job | null): string =>
-    job?.error
-      ? i18n.t("library.detail.arxiv.failed", { error: job.error })
-      : i18n.t("library.detail.arxiv.failedGeneric");
-
-  const queuePdfUpload = async (file: File): Promise<boolean> => {
-    const session = workSession.current;
-    if (pdfUploadSubmissions.current.has(session.workId)) return false;
-    pdfUploadSubmissions.current.add(session.workId);
-    setPdfUploadBusy(true);
-    setPdfUploadError(null);
-    setPdfErrorDismissed(false);
-    try {
-      const accepted = await uploadPdf(session.workId, file);
-      if (!isCurrentWorkSession(session)) {
-        if (!accepted.ok) pdfUploadSubmissions.current.delete(session.workId);
-        return false;
-      }
-      setPdfUploadBusy(false);
-      if (!accepted.ok) {
-        pdfUploadSubmissions.current.delete(session.workId);
-        setPdfUploadError(accepted.status === 409 ? i18n.t("library.detail.pdfUpload.busy") : accepted.detail);
-        setPdfErrorDismissed(false);
-        return false;
-      }
-      const seen = seenJobs.current.get(accepted.job.id);
-      if (seen?.status === "failed" || seen?.status === "interrupted") {
-        pdfUploadSubmissions.current.delete(session.workId);
-        setPdfUploadError(seen.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"));
-        return false;
-      } else if (seen?.status === "done") {
-        pdfUploadSubmissions.current.delete(session.workId);
-        onReload?.();
-      } else {
-        setPdfUploadJob(seen ?? accepted.job);
-      }
-      return true;
-    } catch (error) {
-      pdfUploadSubmissions.current.delete(session.workId);
-      if (isCurrentWorkSession(session)) {
-        setPdfUploadBusy(false);
-        setPdfUploadError(error instanceof Error ? error.message : String(error));
-      }
-      return false;
-    }
-  };
-
-  const queueUpload = async (file: File): Promise<boolean> => {
-    const session = workSession.current;
-    setUploadErr(null);
-    const job = await uploadLatexZip(session.workId, file);
-    if (!isCurrentWorkSession(session)) return false;
-    if (!job) {
-      setUploadErr(failMsg(null));
-      return false;
-    }
-    const seen = seenJobs.current.get(job.id);
-    if (!seen || seen.status === "queued" || seen.status === "running") {
-      setUploadJob(seen ?? job); // prefer the newer event snapshot
-    } else if (seen.status === "done") {
-      onReload?.();
-    } else {
-      // terminal frame beat the fetch response: surface it, don't resurrect
-      setUploadErr(failMsg(seen));
-    }
-    return true;
-  };
-
-  // Track this work's job.* events. ONE subscription routes by kind: the
-  // upload job (kind "upload") and the Stage 15 arXiv fetch (kind "ingest")
-  // share the hello-adoption and race rules. `hello` replays (reconnect /
-  // refresh) adopt a queued/running job even without local state, so
-  // tracking resumes; a replayed failed/interrupted job surfaces its
-  // recorded error once (the failure probe: visible after F5).
-  const adoptedFailure = useRef(false);
-  const adoptedArxivFailure = useRef(false);
-  useEffect(() => {
-    adoptedFailure.current = false;
-    adoptedArxivFailure.current = false;
-    adoptedPdfFailure.current = false;
-    setPdfUploadJob(null);
-    setPdfUploadError(null);
-    setPdfUploadBusy(pdfUploadSubmissions.current.has(r.id));
-    arxivPdfJobRef.current = null;
-    setArxivPdfJob(null);
-    setArxivPdfError(null);
-    setArxivPdfErrorDismissed(false);
-    setArxivPdfFailureJobId(null);
-  }, [r.id]);
-  useEffect(
-    () =>
-      onJobEvent((job) => {
-        const targetWorkId = jobWorkId(job);
-        const isPdfUpload = job.kind === "upload" && (job.payload as { format?: unknown } | undefined)?.format === "pdf";
-        if (isPdfUpload && targetWorkId && (job.status === "done" || job.status === "failed" || job.status === "interrupted")) {
-          pdfUploadSubmissions.current.delete(targetWorkId);
-        }
-        if (targetWorkId !== r.id) return;
-        const previous = seenJobs.current.get(job.id);
-        if (isJobSnapshotRegression(previous, job)) return;
-        seenJobs.current.set(job.id, job);
-        const payloadFormat = (job.payload as { format?: unknown } | undefined)?.format;
-        if (job.kind === "upload" && payloadFormat === "arxiv-pdf") {
-          const currentPdfJob = arxivPdfJobRef.current;
-          if (currentPdfJob && currentPdfJob.id === job.id) setArxivPdfJob(job);
-          else if (!currentPdfJob && (job.status === "queued" || job.status === "running")) {
-            arxivPdfJobRef.current = job;
-            setArxivPdfJob(job);
-          } else if (!currentPdfJob && (job.status === "failed" || job.status === "interrupted")) {
-            setArxivPdfError(job.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"));
-            setArxivPdfFailureJobId(job.id);
-            setArxivPdfErrorDismissed(dismissedArxivPdfFailures.current.has(job.id));
-          }
-        } else if (job.kind === "upload" && payloadFormat === "pdf") {
-          const currentPdfJob = pdfUploadJobRef.current;
-          if (currentPdfJob && job.id === currentPdfJob.id) setPdfUploadJob(job);
-          else if (!currentPdfJob && (job.status === "queued" || job.status === "running")) setPdfUploadJob(job);
-          else if (!currentPdfJob && (job.status === "failed" || job.status === "interrupted") && !adoptedPdfFailure.current) {
-            adoptedPdfFailure.current = true;
-            setPdfUploadError(job.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"));
-            setPdfErrorDismissed(false);
-          }
-        } else if (job.kind === "upload") {
-          const cur = uploadJobRef.current;
-          if (cur && job.id === cur.id) setUploadJob(job);
-          else if (!cur && (job.status === "queued" || job.status === "running")) {
-            setUploadJob(job);
-          } else if (
-            !cur &&
-            (job.status === "failed" || job.status === "interrupted") &&
-            !adoptedFailure.current
-          ) {
-            // untracked terminal failure (typically a hello replay of the
-            // persisted job table, newest first): show the newest one, once
-            adoptedFailure.current = true;
-            setUploadErr(failMsg(job));
-          }
-        } else if (job.kind === "ingest") {
-          const cur = arxivJobRef.current;
-          if (cur && job.id === cur.id) setArxivJob(job);
-          else if (!cur && (job.status === "queued" || job.status === "running")) {
-            setArxivJob(job);
-          } else if (
-            !cur &&
-            (job.status === "failed" || job.status === "interrupted") &&
-            !adoptedArxivFailure.current
-          ) {
-            adoptedArxivFailure.current = true;
-            setArxivErr(arxivFailMsg(job));
-            setArxivErrCode(job.errorCode ?? null);
-          }
-        }
-      }),
-    [r.id, setUploadJob, setArxivJob]
-  );
-
-  useEffect(() => {
-    if (!arxivPdfJob) return;
-    if (arxivPdfJob.status === "done") {
-      arxivPdfJobRef.current = null;
-      setArxivPdfJob(null);
-      setArxivPdfError(null);
-      setArxivPdfErrorDismissed(false);
-      setArxivPdfFailureJobId(null);
-      onReload?.();
-    } else if (arxivPdfJob.status === "failed" || arxivPdfJob.status === "interrupted") {
-      arxivPdfJobRef.current = null;
-      setArxivPdfJob(null);
-      setArxivPdfError(arxivPdfJob.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"));
-      setArxivPdfFailureJobId(arxivPdfJob.id);
-      setArxivPdfErrorDismissed(dismissedArxivPdfFailures.current.has(arxivPdfJob.id));
-    }
-  }, [arxivPdfJob, onReload]);
-
-  // react to the terminal states (kept out of the subscriber, which must stay pure)
-  useEffect(() => {
-    if (!pdfUploadJob) return;
-    if (pdfUploadJob.status === "done") {
-      setPdfUploadJob(null);
-      setPdfUploadError(null);
-      onReload?.();
-    } else if (pdfUploadJob.status === "failed" || pdfUploadJob.status === "interrupted") {
-      setPdfUploadError(pdfUploadJob.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"));
-      setPdfErrorDismissed(false);
-      setPdfUploadJob(null);
-    }
-  }, [pdfUploadJob, onReload, setPdfUploadJob]);
-
-  useEffect(() => {
-    if (!uploadJob) return;
-    if (uploadJob.status === "done") {
-      setUploadJob(null);
-      onReload?.();
-    } else if (uploadJob.status === "failed" || uploadJob.status === "interrupted") {
-      setUploadJob(null);
-      setUploadErr(failMsg(uploadJob));
-    }
-  }, [uploadJob, onReload, setUploadJob]);
-
-  // ---- Stage 15: arXiv fetch job (kind "ingest") --------------------------- //
-
-  // The clickable acquisition line / the per-doc refetch entry: queue the
-  // fetch (202 → queued or in-flight job); a non-202 (409 scenario C,
-  // offline demo, …) surfaces as the generic failure line.
-  const onFetchArxivPdf = async (): Promise<boolean> => {
-    const session = workSession.current;
-    setArxivPdfError(null);
-    setArxivPdfErrorDismissed(false);
-    setArxivPdfFailureJobId(null);
-    const job = await acquireArxivPdf(session.workId);
-    if (!isCurrentWorkSession(session)) return false;
-    if (!job) {
-      setArxivPdfError(i18n.t("library.detail.arxivPdf.submitFailed"));
-      return false;
-    }
-    const seen = seenJobs.current.get(job.id);
-    if (!seen || seen.status === "queued" || seen.status === "running") {
-      arxivPdfJobRef.current = seen ?? job;
-      setArxivPdfJob(seen ?? job);
-    } else if (seen.status === "done") {
-      onReload?.();
-    } else {
-      setArxivPdfError(seen.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"));
-      setArxivPdfFailureJobId(seen.id);
-      setArxivPdfErrorDismissed(dismissedArxivPdfFailures.current.has(seen.id));
-    }
-    return true;
-  };
-
-  const onFetchArxiv = async (): Promise<boolean> => {
-    const session = workSession.current;
-    setArxivErr(null);
-    setArxivErrCode(null);
-    const job = await attachArxiv(session.workId);
-    if (!isCurrentWorkSession(session)) return false;
-    if (!job) {
-      setArxivErr(arxivFailMsg(null));
-      return false;
-    }
-    const seen = seenJobs.current.get(job.id);
-    if (!seen || seen.status === "queued" || seen.status === "running") {
-      setArxivJob(seen ?? job); // prefer the newer event snapshot
-    } else if (seen.status === "done") {
-      onReload?.();
-    } else {
-      // terminal frame beat the fetch response: surface it, don't resurrect
-      setArxivErr(arxivFailMsg(seen));
-      setArxivErrCode(seen.errorCode ?? null);
-    }
-    return true;
   };
 
   const openAcquisition = (method?: AcquisitionMethod) => {
@@ -847,7 +420,7 @@ export function RefDetail({
       }
       if (flow.method === "pdf-upload" && flow.file!.size >= 25 * 1024 * 1024 && !flow.pdfWarningAccepted) return;
     }
-    const session = workSession.current;
+    const session = workSession.current();
     submittingAcquisitionFlows.current.add(flow.id);
     setAcquisition((current) =>
       current?.id === flow.id
@@ -856,12 +429,12 @@ export function RefDetail({
     );
     const accepted =
       flow.method === "pdf"
-        ? await onFetchArxivPdf()
+        ? await arxivPdf.start()
         : flow.method === "arxiv"
-          ? await onFetchArxiv()
+          ? await arxivSource.start()
           : flow.method === "pdf-upload"
-            ? await queuePdfUpload(flow.file as File)
-            : await queueUpload(flow.file as File);
+            ? await pdfUpload.start(flow.file as File)
+            : await zipUpload.start(flow.file as File);
     submittingAcquisitionFlows.current.delete(flow.id);
     if (
       acquisitionFlowSequence.current !== flow.id ||
@@ -887,25 +460,8 @@ export function RefDetail({
     }
   };
 
-  // react to the terminal states (kept out of the subscriber, which must stay pure)
-  useEffect(() => {
-    if (!arxivJob) return;
-    if (arxivJob.status === "done") {
-      setArxivJob(null);
-      onReload?.();
-    } else if (arxivJob.status === "failed" || arxivJob.status === "interrupted") {
-      setArxivJob(null);
-      setArxivErr(arxivFailMsg(arxivJob));
-      setArxivErrCode(arxivJob.errorCode ?? null);
-    }
-  }, [arxivJob, onReload, setArxivJob]);
-
   useEffect(
     () => () => {
-      workSession.current = {
-        workId: workSession.current.workId,
-        generation: workSession.current.generation + 1,
-      };
       copyRequestId.current += 1;
       if (copyStatusTimer.current !== null) {
         clearTimeout(copyStatusTimer.current);
@@ -1146,7 +702,7 @@ export function RefDetail({
                 tooltip={t("library.detail.files.createTextTip")}
                 onClick={() => {
                   const workId = r.id;
-                  const session = { ...workSession.current };
+                  const session = { ...workSession.current() };
                   setTextBusy(true);
                   setTextError(null);
                   const attempt =
@@ -1185,8 +741,8 @@ export function RefDetail({
                 )}
                 {arxivPdfError && (
                   <InlineMessage uiId="arxiv-pdf-error" tone="danger" title={t("library.detail.arxivPdf.failedTitle")}>
-                    {!arxivPdfErrorDismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-arxiv-pdf-error" variant="ghost" label={t("library.detail.arxivPdf.dismiss")} tooltip={t("library.detail.arxivPdf.dismiss")} onClick={() => { if (arxivPdfFailureJobId) dismissedArxivPdfFailures.current.add(arxivPdfFailureJobId); setArxivPdfErrorDismissed(true); }} />}
-                    <p>{arxivPdfErrorDismissed ? t("library.detail.arxivPdf.failedSummary") : arxivPdfError}</p>
+                    {!arxivPdf.dismissed && <ActionButton mode="icon" iconName="x" data-ui="dismiss-arxiv-pdf-error" variant="ghost" label={t("library.detail.arxivPdf.dismiss")} tooltip={t("library.detail.arxivPdf.dismiss")} onClick={arxivPdf.dismiss} />}
+                    <p>{arxivPdf.dismissed ? t("library.detail.arxivPdf.failedSummary") : arxivPdfError}</p>
                     <ActionButton mode="text" data-ui="retry-arxiv-pdf" variant="ghost" label={t("library.detail.arxivPdf.retry")} tooltip={t("library.detail.arxivPdf.retry")} onClick={() => openAcquisition("pdf")}>{t("library.detail.arxivPdf.retry")}</ActionButton>
                   </InlineMessage>
                 )}
@@ -1195,14 +751,14 @@ export function RefDetail({
                     {pdfUploadJob.status === "queued" ? t("library.detail.jobs.queueHelp") : pdfUploadJob.progress[pdfUploadJob.progress.length - 1]?.message ?? t("library.detail.pdfUpload.uploading")}
                   </InlineMessage>
                 )}
-                {pdfUploadError && (pdfErrorDismissed ? (
+                {pdfUploadError && (pdfUpload.dismissed ? (
                   <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
                     <p>{t("library.detail.pdfUpload.failedSummary")}</p>
                     <ActionButton mode="text" data-ui="retry-pdf-upload" variant="ghost" label={t("library.detail.pdfUpload.retry")} tooltip={t("library.detail.pdfUpload.retry")} onClick={() => openAcquisition("pdf-upload")}>{t("library.detail.pdfUpload.retry")}</ActionButton>
                   </InlineMessage>
                 ) : (
                   <InlineMessage tone="danger" title={t("library.detail.pdfUpload.failedTitle")}>
-                    <ActionButton mode="icon" iconName="x" data-ui="dismiss-pdf-upload-error" variant="ghost" label={t("library.detail.pdfUpload.dismiss")} tooltip={t("library.detail.pdfUpload.dismiss")} onClick={() => setPdfErrorDismissed(true)} />
+                    <ActionButton mode="icon" iconName="x" data-ui="dismiss-pdf-upload-error" variant="ghost" label={t("library.detail.pdfUpload.dismiss")} tooltip={t("library.detail.pdfUpload.dismiss")} onClick={pdfUpload.dismiss} />
                     <p>{pdfUploadError}</p>
                     <ActionButton mode="text" data-ui="retry-pdf-upload" variant="ghost" label={t("library.detail.pdfUpload.retry")} tooltip={t("library.detail.pdfUpload.retry")} onClick={() => openAcquisition("pdf-upload")}>{t("library.detail.pdfUpload.retry")}</ActionButton>
                   </InlineMessage>
@@ -1728,27 +1284,12 @@ function DeleteDocDialog({
   const { t } = useTranslation();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const deleteLabel = t(busy ? "library.detail.deleteDoc.deleting" : "library.detail.deleteDoc.confirm");
-  const [count, setCount] = useState<
-    { state: "loading" } | { state: "known"; value: number } | { state: "unknown" }
-  >({ state: "loading" });
+  const [count, setCount] = useState<{ state: "loading" } | DeleteCount>({ state: "loading" });
   useEffect(() => {
     let current = true;
     setCount({ state: "loading" });
-    const countAnnotations = () => fetchAnnotations(docId).then((result) => result.ok ? { ok: true as const, count: result.file.annotations.length } : { ok: false as const });
-    // A text Doc that was never generated has no reading text to count annotations against: the server says whether
-    // that is a known zero or unknown (the same answer the Copilot's confirmation card gets).
-    const loadCount = pdf
-      ? fetchPdfAnnotationCount(docId).then((result) => result.ok ? { ok: true as const, count: result.count } : { ok: false as const })
-      : text
-        ? fetchTextDeleteImpact(docId).then((impact) => {
-            if (!impact.ok) return { ok: false as const };
-            if (impact.generated) return countAnnotations();
-            return impact.annotations.state === "known" ? { ok: true as const, count: impact.annotations.count } : { ok: false as const };
-          })
-        : countAnnotations();
-    void loadCount.then((result) => {
-      if (!current) return;
-      setCount(result.ok ? { state: "known", value: result.count } : { state: "unknown" });
+    void loadDeleteCount(docId, pdf ? "pdf" : text ? "text" : "other").then((result) => {
+      if (current) setCount(result);
     });
     return () => {
       current = false;

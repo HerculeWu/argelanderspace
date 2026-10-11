@@ -552,6 +552,7 @@
         "failedGeneric": "Could not fetch the arXiv PDF. Existing documents were not changed; retry.",
         "failedSummary": "arXiv PDF acquisition failed; existing documents are unchanged. View the task or retry acquisition.",
         "submitFailed": "Could not queue arXiv PDF acquisition; retry.",
+        "busy": "The arXiv PDF document is being processed or deleted; retry shortly.",
         "retry": "Fetch another PDF",
         "dismiss": "Dismiss arXiv PDF acquisition notice"
       },
@@ -560,6 +561,7 @@
         "ingesting": "Fetching the arXiv full text…",
         "failed": "arXiv full-text fetch failed: {{error}}",
         "failedGeneric": "Failed to fetch the arXiv full text; please retry",
+        "busy": "The arXiv full-text document is being processed or deleted; try again shortly",
         "retry": "Retry",
         "pdfOnlyHint": "This arXiv submission has no LaTeX source (PDF only) — upload a zip above instead"
       },
@@ -611,7 +613,8 @@
         "hintNeedsUpload": "This source is blocked by an anti-scraping wall / has no open source; uploading a LaTeX source package (zip) automatically ingests it and links it to this entry",
         "hintDefault": "You can also manually upload a LaTeX source package zip (automatically ingested and linked to this entry; re-uploading overwrites the same document)",
         "failed": "Upload failed: {{error}}",
-        "failedGeneric": "Upload failed; try again"
+        "failedGeneric": "Upload failed; try again",
+        "busy": "This document is being processed or deleted; try again shortly"
       },
       "deleteDoc": {
         "title": "Delete this document?",

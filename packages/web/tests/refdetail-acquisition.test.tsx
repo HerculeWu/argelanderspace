@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "@argelanderspace/contracts";
 import { RefDetail } from "../src/library/RefDetail";
 import type { LibraryRef } from "../src/library/types";
+import type { StartResult } from "../src/api/library";
 
 const h = vi.hoisted(() => ({
   listener: null as ((job: Job, event: string) => void) | null,
-  attachArxiv: vi.fn<(workId: string) => Promise<Job | null>>(),
-  uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<Job | null>>(),
+  attachArxiv: vi.fn<(workId: string) => Promise<StartResult>>(),
+  uploadLatexZip: vi.fn<(workId: string, file: File | Blob) => Promise<StartResult>>(),
   patchRef: vi.fn<(id: string, patch: Record<string, unknown>) => Promise<boolean>>(),
   fetchAnnotations: vi.fn(),
 }));
@@ -97,7 +98,7 @@ afterEach(() => {
 
 describe("RefDetail full-text acquisition", () => {
   it("submits a docless arXiv acquisition from the unified method dialog without querying annotations", async () => {
-    h.attachArxiv.mockResolvedValue(job());
+    h.attachArxiv.mockResolvedValue({ ok: true, job: job() });
     renderDetail();
 
     fireEvent.click(screen.getByRole("button", { name: "获取全文" }));
@@ -118,7 +119,7 @@ describe("RefDetail full-text acquisition", () => {
   });
 
   it("requires a real zip selection before submitting a first upload and cancel sends no mutation", async () => {
-    h.uploadLatexZip.mockResolvedValue(job("upload"));
+    h.uploadLatexZip.mockResolvedValue({ ok: true, job: job("upload") });
     renderDetail({ ...REF, arxiv_id: undefined, id: "doi:10.1/upload" });
 
     fireEvent.click(screen.getByRole("button", { name: "获取全文" }));
@@ -176,7 +177,7 @@ describe("RefDetail full-text acquisition", () => {
           resolveCount = resolve;
         })
     );
-    h.attachArxiv.mockResolvedValue(job());
+    h.attachArxiv.mockResolvedValue({ ok: true, job: job() });
     renderDetail({
       ...REF,
       doc_id: "arxiv-2609.17036",
@@ -223,7 +224,7 @@ describe("RefDetail full-text acquisition", () => {
         annotations: [],
       },
     });
-    h.uploadLatexZip.mockResolvedValue(job("upload"));
+    h.uploadLatexZip.mockResolvedValue({ ok: true, job: job("upload") });
     renderDetail({
       ...REF,
       id: "doi:10.1/risk",
@@ -255,7 +256,7 @@ describe("RefDetail full-text acquisition", () => {
 
   it("treats an unavailable annotation count as risk, but blocks a known busy target", async () => {
     h.fetchAnnotations.mockResolvedValueOnce({ ok: false, missing: false, status: 500 });
-    h.attachArxiv.mockResolvedValue(job());
+    h.attachArxiv.mockResolvedValue({ ok: true, job: job() });
     const view = renderDetail({
       ...REF,
       doc_id: "arxiv-2609.17036",
@@ -299,8 +300,8 @@ describe("RefDetail full-text acquisition", () => {
       },
     });
     h.attachArxiv
-      .mockResolvedValueOnce(job())
-      .mockResolvedValueOnce({ ...job(), id: "ingest-retry" });
+      .mockResolvedValueOnce({ ok: true, job: job() })
+      .mockResolvedValueOnce({ ok: true, job: { ...job(), id: "ingest-retry" } });
     renderDetail({
       ...REF,
       doc_id: "arxiv-2609.17036",
@@ -379,7 +380,7 @@ describe("RefDetail full-text acquisition", () => {
         annotations: [{ id: "a_00000001" }],
       },
     });
-    let resolveSubmit: ((value: Job | null) => void) | null = null;
+    let resolveSubmit: ((value: StartResult) => void) | null = null;
     h.attachArxiv.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -405,7 +406,7 @@ describe("RefDetail full-text acquisition", () => {
     expect(screen.getByRole("dialog", { name: "获取全文" })).toBeTruthy();
     expect(h.attachArxiv).toHaveBeenCalledTimes(1);
 
-    await act(async () => resolveSubmit?.(null));
+    await act(async () => resolveSubmit?.({ ok: false, status: 500, detail: "request failed" }));
     expect(screen.getByText("获取 arXiv 正文失败，请重试")).toBeTruthy();
     await waitFor(() => expect(h.fetchAnnotations).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/这份正文有 1 条标注/)).toBeTruthy();
@@ -413,7 +414,7 @@ describe("RefDetail full-text acquisition", () => {
   });
 
   it("does not let a late A submit settle mutate B's independently busy dialog", async () => {
-    const resolvers: Array<(value: Job | null) => void> = [];
+    const resolvers: Array<(value: StartResult) => void> = [];
     h.fetchAnnotations.mockResolvedValue({
       ok: true,
       file: {
@@ -465,11 +466,11 @@ describe("RefDetail full-text acquisition", () => {
     expect(screen.getByRole("heading", { name: "Next Work" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "正在提交…" }) as HTMLButtonElement).disabled).toBe(true);
 
-    await act(async () => resolvers[0]?.(null));
+    await act(async () => resolvers[0]?.({ ok: false, status: 500, detail: "request failed" }));
     expect(screen.getByRole("heading", { name: "Next Work" })).toBeTruthy();
     expect(screen.queryByText("获取 arXiv 正文失败，请重试")).toBeNull();
     expect((screen.getByRole("button", { name: "正在提交…" }) as HTMLButtonElement).disabled).toBe(true);
-    await act(async () => resolvers[1]?.(null));
+    await act(async () => resolvers[1]?.({ ok: false, status: 500, detail: "request failed" }));
   });
 
   it("invalidates a same-target payload snapshot and ignores its delayed old count", async () => {
