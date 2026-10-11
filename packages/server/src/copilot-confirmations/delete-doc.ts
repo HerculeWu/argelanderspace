@@ -22,7 +22,7 @@ export function deleteDocKind(workbench: Workbench | undefined): ConfirmationKin
     askedLine: (entry) => `${entry.action} ${entry.docId}`,
     /**
      * The card shows the Doc, every Work listing it, the annotation count and the content binding: all still the same.
-     * Reading the risk goes through the annotations access path, as the delete dialog does.
+     * Read without writing (no ensure/archive), as the delete dialog does.
      */
     check: async (card) => {
       const deletion = workbench?.library?.deletion;

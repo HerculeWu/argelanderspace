@@ -283,7 +283,10 @@ function measureForWindow(value: unknown): { size: number; imageBytes: number } 
 
 /** One line of a resume request for a confirmation that was asked and never answered. */
 function askedLine(kinds: ConfirmationKinds, entry: OperationConfirmation): string {
-  const kind = (kinds as Partial<Record<string, ConfirmationKind>>)[entry.action];
+  // Own keys only: a record's action never reaches Object.prototype (`constructor` and the like).
+  const kind = Object.hasOwn(kinds, entry.action)
+    ? (kinds as Record<string, ConfirmationKind>)[entry.action]
+    : undefined;
   // A record of a kind this version no longer has (an upload replacement or a large-PDF acceptance from the removed
   // attachment feature): said neutrally, never as "undefined".
   return kind

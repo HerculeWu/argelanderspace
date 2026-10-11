@@ -740,13 +740,13 @@ test("the watcher path (revalidate) expires a card after a rev-neutral hand edit
   edited.x_external = "changed by hand";
   edited.plans[1].name = "Beta renamed by hand"; // another plan: the shown one is untouched
   writeFileSync(plansPath(statusDir), JSON.stringify(edited, null, 2));
-  void host.revalidate("plans");
+  await host.revalidate("plans");
   await vi.waitFor(async () => expect((await host.snapshot(id)).confirmations).toHaveLength(1));
   // Editing the shown plan's own content expires it.
   const again = disk();
   again.plans[0].x_plan = 2;
   writeFileSync(plansPath(statusDir), JSON.stringify(again, null, 2));
-  void host.revalidate("plans");
+  await host.revalidate("plans");
   await until(id, ["completed"]);
   expect((await host.snapshot(id)).confirmations).toEqual([]);
   expect(planIds()).toContain(A);
