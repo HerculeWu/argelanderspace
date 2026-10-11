@@ -1,62 +1,9 @@
-import type { CopilotConfirmation, CopilotOperation, MailContextSummary } from "@argelanderspace/contracts";
-import type { TFunction } from "i18next";
+import type { CopilotOperation, MailContextSummary } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MailApiError } from "../api/mail";
 import { fetchMailSendStatus, undoMailSend } from "../api/mail-compose";
 import { Button, InlineMessage } from "../ui";
-
-export type MailConfirmation = Extract<CopilotConfirmation, { action: "send_mail" | "delete_mail" | "move_mail" }>;
-export const isMailConfirmation = (confirmation: CopilotConfirmation): confirmation is MailConfirmation =>
-  confirmation.action === "send_mail" || confirmation.action === "delete_mail" || confirmation.action === "move_mail";
-
-const person = (a: { name: string; address: string }) => (a.name.trim() ? `${a.name} <${a.address}>` : a.address);
-const list = (people: { name: string; address: string }[]) => people.map(person).join(", ");
-const size = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
-
-/**
- * The card the real user decides on (Mail ticket 09). A send shows the account it leaves from, every recipient (Cc and Bcc
- * included), the subject and the WHOLE body exactly as they will be sent; a delete or move names the one message.
- * Everything here is third-party text, rendered as plain text only.
- */
-export function MailCardBody({ confirmation }: { confirmation: MailConfirmation }) {
-  const { t } = useTranslation();
-  const account = `${confirmation.account.displayName} <${confirmation.account.address}>`;
-  if (confirmation.action === "send_mail")
-    return <>
-      <h3>{t(confirmation.kind === "reply" ? "copilot.mailCard.replyTitle" : confirmation.kind === "forward" ? "copilot.mailCard.forwardTitle" : "copilot.mailCard.sendTitle")}</h3>
-      {confirmation.kind === "forward" && <p className="copilot-mail-note" data-ui="copilot-confirmation-kind">{t("copilot.mailCard.isForward")}</p>}
-      <dl className="copilot-mail-fields" data-ui="copilot-confirmation-mail">
-        <dt>{t("copilot.mailCard.from")}</dt><dd data-ui="copilot-confirmation-account">{account}</dd>
-        <dt>{t("copilot.mailCard.to")}</dt><dd data-ui="copilot-confirmation-to">{list(confirmation.to) || t("copilot.mailCard.none")}</dd>
-        {confirmation.cc.length > 0 && <><dt>{t("copilot.mailCard.cc")}</dt><dd data-ui="copilot-confirmation-cc">{list(confirmation.cc)}</dd></>}
-        {confirmation.bcc.length > 0 && <><dt>{t("copilot.mailCard.bcc")}</dt><dd data-ui="copilot-confirmation-bcc">{list(confirmation.bcc)}</dd></>}
-        <dt>{t("copilot.mailCard.subject")}</dt><dd data-ui="copilot-confirmation-subject">{confirmation.subject || t("mail.noSubject")}</dd>
-        {confirmation.kind === "reply" && <><dt>{t("copilot.mailCard.thread")}</dt><dd>{t("copilot.mailCard.isReply")}</dd></>}
-        {confirmation.attachments.length > 0 && <><dt>{t("copilot.mailCard.attachments")}</dt><dd data-ui="copilot-confirmation-attachments">{confirmation.attachments.map((a) => `${a.filename || t("mail.attachments")} (${size(a.size)})`).join(", ")}</dd></>}
-        <dt>{t("copilot.mailCard.body")}</dt><dd><pre className="copilot-mail-body" data-ui="copilot-confirmation-body">{confirmation.text || t("mail.noBody")}</pre></dd>
-      </dl>
-      <p className="copilot-mail-note" data-ui="copilot-confirmation-undo-note">{t("copilot.mailCard.undoNote")}</p>
-    </>;
-  const m = confirmation.message;
-  return <>
-    <h3>{t(confirmation.action === "delete_mail" ? "copilot.mailCard.deleteTitle" : "copilot.mailCard.moveTitle")}</h3>
-    <dl className="copilot-mail-fields" data-ui="copilot-confirmation-message">
-      <dt>{t("copilot.mailCard.from")}</dt><dd>{m.from ? person(m.from) : t("mail.noSender")}</dd>
-      <dt>{t("copilot.mailCard.subject")}</dt><dd data-ui="copilot-confirmation-subject">{m.subject || t("mail.noSubject")}</dd>
-      <dt>{t("copilot.mailCard.folder")}</dt><dd>{m.folder}</dd>
-      {confirmation.action === "move_mail" && <><dt>{t("copilot.mailCard.destination")}</dt><dd data-ui="copilot-confirmation-destination">{confirmation.destination}</dd></>}
-    </dl>
-    <p data-ui="copilot-confirmation-scope" className={confirmation.action === "delete_mail" && confirmation.permanent ? "copilot-mail-danger" : undefined}>
-      {confirmation.action === "move_mail" ? t("copilot.mailCard.moveScope") : confirmation.permanent ? t("copilot.mailCard.deletePermanent") : t("copilot.mailCard.deleteScope")}
-    </p>
-    <div className="copilot-confirmation-meta" data-ui="copilot-confirmation-account">{account}</div>
-  </>;
-}
-
-export function mailConfirmLabel(t: TFunction, confirmation: MailConfirmation): string {
-  return t(confirmation.action === "send_mail" ? "copilot.mailCard.confirmSend" : confirmation.action === "delete_mail" ? "copilot.mailCard.confirmDelete" : "copilot.mailCard.confirmMove");
-}
 
 /** What the Mail page carried (no body, no addresses): where the user was and which message was open. */
 export function MailSummary({ summary }: { summary: MailContextSummary }) {

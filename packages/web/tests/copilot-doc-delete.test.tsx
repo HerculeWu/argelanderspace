@@ -38,7 +38,7 @@ beforeEach(async () => {
   }); vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const open = async (guard?: (docId: string) => boolean) => { const view = render(<Copilot open context={context} onClose={vi.fn()} onBeforeDocDelete={guard} />); await screen.findByText("Copilot"); return view; };
+const open = async (guard?: (docId: string) => boolean) => { const view = render(<Copilot open context={context} onClose={vi.fn()} guards={{ leaveDoc: guard }} />); await screen.findByText("Copilot"); return view; };
 const ui = (name: string) => document.querySelector(`[data-ui="${name}"]`) as HTMLElement | null;
 const decisionBody = () => JSON.parse(String((calls("/confirmations/")[0] as [string, RequestInit])[1].body));
 

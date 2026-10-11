@@ -3,7 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { type PdfContextSummary, summarizeDiscoveryPage, summarizeMailPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
-import { isMailConfirmation, MailCardBody, mailConfirmLabel, MailSendUndo, MailSummary } from "./MailConfirmation";
+import { MailSendUndo, MailSummary } from "./MailConfirmation";
+import { type ConfirmationGuards, type ConfirmationProblemScope, kindOf } from "./confirmations";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
 import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
@@ -156,7 +157,7 @@ const isApplied = (operation: CopilotOperation) => operation.status === "ok" || 
 
 export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">>;
 
-export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention, onBeforeDocDelete, onBeforeManuscriptDelete }: { open: boolean; /** The page's own guard before a Doc delete takes the open Doc away (unsaved draft protection); false keeps the card. */ onBeforeDocDelete?: (docId: string) => boolean; onBeforeManuscriptDelete?: (manuscriptId: string) => boolean; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
+export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention, guards }: { open: boolean; /** The page's own guards before an approval takes something open away (unsaved draft protection); false keeps the card. A missing guard lets the approval through. */ guards?: Partial<ConfirmationGuards>; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [id, setId] = useState<string | null>(null);
@@ -347,7 +348,8 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   // What the user's undo did stays visible (restored, or why not) until dismissed; the service also tells the model.
   const [undoResult, setUndoResult] = useState<{ kind: "restored" | "failed"; label: string } | null>(null);
   // A refused confirmation click is explained here, not only on the card: the card disappears when the list is reread.
-  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "deleteDoc" | "manuscript" | "mail" } | null>(null);
+  const [decisionProblem, setDecisionProblem] = useState<{ kind: "expired" | "failed" | "unreadable"; scope: ConfirmationProblemScope } | null>(null);
+  const cardGuards: ConfirmationGuards = { leaveDoc: (docId) => guards?.leaveDoc?.(docId) ?? true, leaveManuscript: (id) => guards?.leaveManuscript?.(id) ?? true };
   const waitingForConfirmation = !!snapshot?.confirmations?.length;
   const attentionRef = useRef(onAttention); attentionRef.current = onAttention;
   useEffect(() => { attentionRef.current?.(waitingForConfirmation); return () => attentionRef.current?.(false); }, [waitingForConfirmation]);
@@ -436,7 +438,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
         {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} sent={!message.context.coverage || message.context.coverage.status === "complete"} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.mail && <MailSummary summary={message.context.mail} />}{message.context.view !== "mail" && message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {(snapshot?.stream || snapshot?.live?.thinking) && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div>{snapshot.live?.thinking && <ThinkingBlock text={snapshot.live.thinking} live={snapshot.live.phase === "thinking"} />}{snapshot.stream && <div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} />}</article>}
-      {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} beforeDocDelete={onBeforeDocDelete} beforeManuscriptDelete={onBeforeManuscriptDelete} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
+      {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
       {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t(decisionProblem.scope === "mail" ? "copilot.confirmation.unreadableMail" : "copilot.confirmation.unreadableDoc") : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : decisionProblem.scope === "mail" ? "Mail" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
       <div className="copilot-run-live" role="status" aria-atomic="false" data-ui="copilot-run-live">{((running && !waiting) || stopping) && <div className="copilot-run-card" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" /><LiveRunStatus live={stopping ? null : snapshot?.live ?? null} stopping={stopping} actionLabel={(operation) => operation.action && operation.action in OPERATION_ACTION_KEYS ? operationActionLabel(t, operation.tool, operation.action) : null} />{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}</div>
       <MailSendUndo operations={(snapshot?.messages ?? []).flatMap((message) => message.operations ?? [])} />
@@ -489,50 +491,30 @@ export function ComposerAction({ kind, stopping, disabled, onSend, onStop, onRes
   return <ActionButton unstyled mode="icon" iconName={kind === "send" ? "arrow-up" : kind === "stop" ? "square" : "play"} label={label} tooltip={label} data-ui={`copilot-${kind}`} className={`copilot-send copilot-${kind}`} disabled={disabled} onClick={kind === "send" ? onSend : kind === "stop" ? onStop : onResume} />;
 }
 
-function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem, beforeDocDelete, beforeManuscriptDelete }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: { kind: "expired" | "failed" | "unreadable"; scope: "plan" | "doc" | "deleteDoc" | "manuscript" | "mail" } | null) => void; beforeDocDelete?: (docId: string) => boolean; beforeManuscriptDelete?: (manuscriptId: string) => boolean }) {
+function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProblem, guards }: { confirmation: CopilotConfirmation; viewId: string; connected: boolean; onSettled: () => void; onProblem: (problem: { kind: "expired" | "failed" | "unreadable"; scope: ConfirmationProblemScope } | null) => void; guards: ConfirmationGuards }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
+  // Each card is paired with ONE kind: that kind's `match` picked it, so its `Body`, label and guard receive the card type they expect.
+  const kind = kindOf(confirmation);
+  // Unreachable within the contracts (every member of the union has a kind; `confirmations/index.ts` checks that at compile time):
+  // only an older bundle meeting a newer action lands here, and drawing nothing is safer than passing it off as another card.
+  if (!kind) return null;
   const decide = async (decision: "approve" | "decline") => {
     if (guard.current) return;
-    // The dialog's own order: deleting the open Doc first asks the workspace's leave guard (unsaved drafts); a refusal keeps the card.
-    if (decision === "approve" && confirmation.action === "delete_doc" && beforeDocDelete && !beforeDocDelete(confirmation.object.id)) return;
-    // Deleting an open manuscript would drop its unsaved edits: the workspace asks first, a refusal keeps the card.
-    if (decision === "approve" && confirmation.action === "delete_manuscript" && beforeManuscriptDelete && !beforeManuscriptDelete(confirmation.object.id)) return;
+    // The page's own guard first (the open Doc's leave guard, an open manuscript's unsaved edits); a refusal keeps the card.
+    if (decision === "approve" && kind.beforeApprove && !kind.beforeApprove(confirmation, guards)) return;
     guard.current = true; setBusy(true); onProblem(null);
     try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev }); }
-    catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: isMailConfirmation(confirmation) ? "mail" : confirmation.action === "delete_plan" ? "plan" : confirmation.action === "delete_manuscript" ? "manuscript" : confirmation.action === "delete_doc" ? "deleteDoc" : "doc" }); }
+    catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: kind.problemScope }); }
     finally { guard.current = false; setBusy(false); onSettled(); }
   };
   return <section className="copilot-confirmation" data-ui="copilot-confirmation" data-action={confirmation.action} aria-label={t("copilot.confirmation.needed")}>
     <div className="copilot-confirmation-warn" role="status"><Icon name="triangle-alert" />{t("copilot.confirmation.needed")}</div>
-    {isMailConfirmation(confirmation) ? <MailCardBody confirmation={confirmation} /> : confirmation.action === "replace_text_reading" ? <>
-      <h3>{t("copilot.confirmation.replaceText", { name: confirmation.label })}</h3>
-      <p data-ui="copilot-confirmation-risk">{t("doc.text.replace.body", { count: confirmation.impact.annotations })}</p>
-      <div className="copilot-confirmation-meta" data-ui="copilot-confirmation-basis">{t("doc.text.replace.basis", { source: confirmation.impact.sourceRev, published: confirmation.impact.publishedSourceRev, annotationsRev: confirmation.impact.annotationsRev })}</div>
-    </> : confirmation.action === "delete_plan" ? <>
-      <h3>{t("copilot.confirmation.deletePlan", { name: confirmation.label })}</h3>
-      <p>{t("copilot.confirmation.planScope", { count: confirmation.impact.tasks, open: confirmation.impact.openTasks })}</p>
-      <div className="copilot-confirmation-meta">{t("copilot.confirmation.meta", { id: confirmation.object.id, rev: confirmation.baseRev })}</div>
-    </> : confirmation.action === "delete_manuscript" ? <>
-      <h3>{t("copilot.confirmation.deleteManuscript", { title: confirmation.label })}</h3>
-      <p data-ui="copilot-confirmation-scope">{t("copilot.confirmation.manuscriptScope", { cells: confirmation.impact.cells, comments: confirmation.impact.comments, assets: confirmation.impact.assets })}</p>
-      <div className="copilot-confirmation-meta">{t("copilot.confirmation.metaManuscript", { id: confirmation.object.id, rev: confirmation.baseRev })}</div>
-    </> : confirmation.action === "delete_doc" ? <>
-      <h3>{t("copilot.confirmation.deleteDoc", { id: confirmation.object.id })}</h3>
-      <p data-ui="copilot-confirmation-risk">{t("library.detail.deleteDoc.risk")}</p>
-      <p data-ui="copilot-confirmation-scope"><strong>{t("library.detail.deleteDoc.scopeTitle")}</strong> {t(confirmation.format === "pdf" ? "library.detail.deleteDoc.pdfScope" : confirmation.format === "text" ? "library.detail.deleteDoc.textScope" : "library.detail.deleteDoc.scope")}</p>
-      {confirmation.works.length > 0 && <ul className="copilot-confirmation-works" data-ui="copilot-confirmation-works">{confirmation.works.map((item) => <li key={item.id} data-ui="copilot-confirmation-work" data-ui-key={item.id}>{t("copilot.confirmation.deleteDocWork", { title: item.title || item.id, state: t(item.main ? "library.detail.files.mainBadge" : "library.detail.files.additionalBadge"), count: item.remaining })}</li>)}</ul>}
-      <p role="status" data-ui="copilot-confirmation-count">{confirmation.impact.annotations === "known" ? t("library.detail.deleteDoc.count", { count: confirmation.impact.count }) : t("library.detail.deleteDoc.countUnknown")}</p>
-      <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>
-    </> : <>
-      <h3>{t("copilot.confirmation.refreshArxiv", { name: confirmation.label })}</h3>
-      <p>{confirmation.impact.annotations === "known" ? (confirmation.impact.count > 0 ? t("library.detail.acquisition.riskKnown", { count: confirmation.impact.count }) : t("library.detail.acquisition.riskZero")) : t("library.detail.acquisition.riskUnknown")}</p>
-      <div className="copilot-confirmation-meta">{confirmation.impact.annotations === "known" ? t("copilot.confirmation.metaDoc", { id: confirmation.object.id, rev: confirmation.baseRev }) : confirmation.object.id}</div>
-    </>}
+    <kind.Body card={confirmation} />
     <div className="copilot-confirmation-actions">
       <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
-      <Button appearance="primary" tone={confirmation.action === "send_mail" || confirmation.action === "move_mail" ? undefined : "danger"} data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{isMailConfirmation(confirmation) ? mailConfirmLabel(t, confirmation) : confirmation.action === "replace_text_reading" ? t("doc.text.replace.confirm", { count: confirmation.impact.annotations }) : t(confirmation.action === "delete_plan" ? "plan.deletePlan.confirm" : confirmation.action === "delete_manuscript" ? "common.delete" : confirmation.action === "delete_doc" ? "library.detail.deleteDoc.confirm" : "library.detail.acquisition.confirmUpdate")}</Button>
+      <Button appearance="primary" tone={kind.tone} data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{kind.confirmLabel(t, confirmation)}</Button>
     </div>
   </section>;
 }
