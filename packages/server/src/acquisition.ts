@@ -5,8 +5,10 @@
  *
  * ONE instance, made by `createApp`, serves the routes and the Copilot `library` tool (`libraryOps.acquisition`,
  * `libraryOps.importWorks`). It receives, never makes, the app's one JobRunner, libraryLock, annotationLock and
- * DocMutationRegistry; `libraryChanged` is the app's `library.changed` notification. Every submit is "check
- * isDeleting/isBusy → pinWriter → runner.submit" with no await in between. The PDF upload's pins are released by
+ * DocMutationRegistry; `libraryChanged` is the app's `library.changed` notification. Every Doc-writing submit (arXiv
+ * PDF/source, PDF upload, zip job, sync attach) is "check isDeleting/isBusy → pinWriter → runner.submit" with no
+ * await in between; the refresh instead takes the whole-library `pinRefresh` (no isDeleting check) inside its try and
+ * releases it in `finally`. The PDF upload's pins are released by
  * `onJobEvent` (the app's one `runner.onEvent` hook calls it first); the other jobs release theirs on `waitFor`. The
  * HTTP status mapping stays with the routes.
  */

@@ -4,7 +4,7 @@
  * stub pipelines/sources and a fake arXiv PDF source. The app's one `runner.onEvent` hook is reproduced as
  * `acquisition.onJobEvent` (docs/contracts.md "本地 PDF Doc", "删除生命周期").
  */
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Job, RefreshResponse } from "@argelanderspace/contracts";
@@ -97,6 +97,17 @@ const settle = async (job: Job) => {
   return done;
 };
 
+/** Wait for every job still queued or running, and for the module's own waitFor continuations. */
+async function drain(): Promise<void> {
+  await Promise.all(
+    runner
+      .list()
+      .filter((job) => job.status === "queued" || job.status === "running")
+      .map((job) => runner.waitFor(job.id))
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "acquisition-module-"));
   paths = libraryPaths(join(root, "data"));
@@ -126,8 +137,11 @@ beforeEach(() => {
   build();
 });
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  // No job may keep running into a removed root.
+  await drain();
+  rmSync(root, { recursive: true, force: true });
 });
 
 // ---- the port --------------------------------------------------------------------------------------------- //
@@ -139,7 +153,7 @@ test("the port carries the runner as its job table and the configured wait", () 
 
 // ---- Job reuse and the `reused` snapshot ------------------------------------------------------------------ //
 
-test("startPdf: `reused` comes from the job table BEFORE the submit — a second start reuses the in-flight job", () => {
+test("startPdf: `reused` comes from the job table BEFORE the submit — a second start reuses the in-flight job", async () => {
   const hold = holdRunner();
   const first = acquisition.startPdf(W_ARXIV);
   const second = acquisition.startPdf(W_ARXIV);
@@ -148,9 +162,10 @@ test("startPdf: `reused` comes from the job table BEFORE the submit — a second
   if (first.kind !== "queued" || second.kind !== "queued") throw new Error("not queued");
   expect(second.job.id).toBe(first.job.id);
   hold.release();
+  await drain();
 });
 
-test("startSource: the LaTeX fetch reuses its in-flight job by (ingest, workId), with the same snapshot rule", () => {
+test("startSource: the LaTeX fetch reuses its in-flight job by (ingest, workId), with the same snapshot rule", async () => {
   const hold = holdRunner();
   const first = acquisition.startSource(W_ARXIV);
   const second = acquisition.startSource(W_ARXIV);
@@ -160,9 +175,10 @@ test("startSource: the LaTeX fetch reuses its in-flight job by (ingest, workId),
   expect(second.job.id).toBe(first.job.id);
   expect(first.job.payload).toEqual({ workId: W_ARXIV, arxivId: "2603.00301" });
   hold.release();
+  await drain();
 });
 
-test("a manual PDF acquisition is not swallowed by an automatic one in flight (and vice versa)", () => {
+test("a manual PDF acquisition is not swallowed by an automatic one in flight (and vice versa)", async () => {
   const hold = holdRunner();
   const auto = acquisition.submitArxivPdf(W_ARXIV, true);
   const manual = acquisition.startPdf(W_ARXIV);
@@ -174,6 +190,7 @@ test("a manual PDF acquisition is not swallowed by an automatic one in flight (a
   // A second automatic submit reuses the automatic job, not the manual one.
   expect(acquisition.submitArxivPdf(W_ARXIV, true)?.id).toBe(auto.id);
   hold.release();
+  await drain();
 });
 
 test("startPdf / startSource answer not_found and no_arxiv without queueing", () => {
