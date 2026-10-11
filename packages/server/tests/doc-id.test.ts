@@ -1,8 +1,9 @@
 /**
  * `badDocId` — the server's one Doc id path-traversal guard (Python
  * `_paper_path` / `get_image` parity), shared by app.ts, doc-delete.ts,
- * acquisition.ts and text-docs.ts. The empty string is NOT bad here: every
- * call site pairs the guard with its own `!id.trim()` check.
+ * acquisition.ts and text-docs.ts. The empty string is NOT bad here: most
+ * call sites pair the guard with their own `!id.trim()` check (the image
+ * routes rely on the router never matching an empty segment).
  */
 
 import { describe, expect, test } from "vitest";
