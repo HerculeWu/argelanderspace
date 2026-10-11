@@ -26,9 +26,6 @@ import { type ComposeState, ComposeWindow } from "./ComposeWindow";
 import { browserSendTrackerDeps, createSendTracker, MAIL_PAGE_SEND_POLICY, type SendTracker } from "./send-tracker";
 import "./compose.css";
 
-export type { LeftBehind } from "./compose-session";
-export { uuid };
-
 export interface Notice {
   id: number;
   tone: "info" | "warning" | "danger";

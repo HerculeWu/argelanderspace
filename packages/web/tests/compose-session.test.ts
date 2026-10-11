@@ -560,6 +560,42 @@ test("discard waits for the first save on its way and then deletes the copy it m
   expect(r.host.changed).toBe(1);
 });
 
+test("discard and close wait for a save chained after the one on its way (dirty), not only for the first", async () => {
+  for (const act of ["discard", "close"] as const) {
+    const r = rig();
+    await r.writing();
+    const a = deferred<void>();
+    const b = deferred<void>();
+    r.api.saveMailDraft
+      .mockImplementationOnce(async (_x, d) => {
+        await a.promise;
+        return { messageId: d.messageId, savedAt: "x", folder: "Drafts", uid: 1 };
+      })
+      .mockImplementationOnce(async (_x, d) => {
+        await b.promise;
+        return { messageId: d.messageId, savedAt: "x", folder: "Drafts", uid: 2 };
+      });
+    await r.clk.advance(SAVE_DELAY_MS); // save A starts
+    r.s.edit({ text: "typed during A" });
+    await r.clk.advance(SAVE_DELAY_MS); // A still on its way: marked dirty, B follows A
+    let done = false;
+    const p = (act === "discard" ? r.s.discard() : r.s.close()).then(() => {
+      done = true;
+    });
+    a.resolve();
+    await flush();
+    expect(r.api.saveMailDraft).toHaveBeenCalledTimes(2); // B is on its way now
+    expect(done, act).toBe(false);
+    expect(r.api.discardMailDraft).not.toHaveBeenCalled();
+    expect(r.c(), act).not.toBeNull();
+    b.resolve();
+    await p;
+    expect(r.c(), act).toBeNull();
+    if (act === "discard") expect(r.api.discardMailDraft).toHaveBeenCalledTimes(1);
+    else expect(r.api.saveMailDraft).toHaveBeenCalledTimes(2);
+  }
+});
+
 test("discard after a save whose answer was lost (unreachable) still asks the server to delete a possible copy", async () => {
   const r = rig();
   await r.writing();
@@ -668,6 +704,16 @@ test("an accepted send closes the window into a countdown followed by the tracke
   await r.clk.advance(200);
   expect(r.st().now).toBe(before + 200);
   r.tr.emit("id-3", { phase: "sending" });
+  expect(r.clk.intervals()).toBe(0);
+});
+
+test("leaving Mail during a countdown stops the ticker", async () => {
+  const r = rig();
+  await r.writing();
+  await r.s.send();
+  expect(r.st().pendings.map((p) => p.phase)).toEqual(["window"]);
+  expect(r.clk.intervals()).toBe(1);
+  r.s.dispose();
   expect(r.clk.intervals()).toBe(0);
 });
 
@@ -1305,7 +1351,10 @@ test("sessionLeftStore uses the tab's sessionStorage key and never throws", () =
   const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("quota");
   });
-  expect(() => sessionLeftStore.set([e])).not.toThrow();
-  spy.mockRestore();
-  sessionStorage.clear();
+  try {
+    expect(() => sessionLeftStore.set([e])).not.toThrow();
+  } finally {
+    spy.mockRestore();
+    sessionStorage.clear();
+  }
 });

@@ -317,6 +317,8 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
   const settled = new Set<string>();
   const undoing = new Set<string>();
   let ticker: unknown = null;
+  /** Auto-close timers of notices; cleared on dispose. */
+  const closers = new Set<unknown>();
   let offTracker: (() => void) | null = null;
   let outboxCancelled = false;
 
@@ -355,10 +357,13 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
         { ...n, id },
       ],
     });
-    if (n.autoCloseMs)
-      clock.setTimeout(() => {
+    if (n.autoCloseMs) {
+      const h = clock.setTimeout(() => {
+        closers.delete(h);
         if (alive) set({ notices: state.notices.filter((x) => x.id !== id) });
       }, n.autoCloseMs);
+      closers.add(h);
+    }
     return id;
   };
   /** Remove a notice without any side effect (its action was taken). */
@@ -1268,6 +1273,8 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
         clock.clearInterval(ticker);
         ticker = null;
       }
+      for (const h of closers) clock.clearTimeout(h);
+      closers.clear();
       if (storage.viewer === viewer) storage.viewer = null;
     },
   };
