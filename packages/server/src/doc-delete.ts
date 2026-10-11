@@ -23,6 +23,7 @@ import {
   readVerifiedPdf,
   removeDocFromWorksNarrow,
 } from "@argelanderspace/core";
+import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
 import type { DocDeleteDescription, DocDeleteOutcome, DocDeletionPort } from "./library-actions.js";
 import type { AsyncLock } from "./lock.js";
@@ -41,11 +42,6 @@ export interface DocDeletionDeps {
   text: Pick<TextDocService, "has" | "draftAnnotationImpact">;
   /** `library.changed{patch}`: once per completed delete, after the slot is released, outside the lock. */
   onDeleted: () => void;
-}
-
-/** Python `_paper_path` / `get_image` traversal guards (the same guard as app.ts `badId`). */
-function badId(id: string): boolean {
-  return id.includes("/") || id.includes("\\") || id.startsWith(".");
 }
 
 export function createDocDeletion(deps: DocDeletionDeps): DocDeletionPort {
@@ -96,7 +92,7 @@ export function createDocDeletion(deps: DocDeletionDeps): DocDeletionPort {
     /** The Copilot tool passes what its confirmation showed; the page's own route has no such binding. */
     expect?: { holders: string }
   ): Promise<DocDeleteOutcome> => {
-    if (!docId.trim() || badId(docId)) return { kind: "bad_id" };
+    if (!docId.trim() || badDocId(docId)) return { kind: "bad_id" };
     const docDir = join(outputDir, docId);
     if (!existsSync(docDir) || !statSync(docDir).isDirectory()) return { kind: "not_found" };
     if (!docMutations.tryBeginDelete(docId)) return { kind: "busy" };
@@ -142,7 +138,7 @@ export function createDocDeletion(deps: DocDeletionDeps): DocDeletionPort {
    * upload/refresh pins it, or it is being deleted) is `busy`: no card is worth showing, the delete would be refused.
    */
   const describeDocDelete = async (docId: string): Promise<DocDeleteDescription> => {
-    if (!docId.trim() || badId(docId)) return { kind: "bad_id" };
+    if (!docId.trim() || badDocId(docId)) return { kind: "bad_id" };
     const docDir = join(outputDir, docId);
     if (!existsSync(docDir) || !statSync(docDir).isDirectory()) return { kind: "not_found" };
     if (docMutations.isBusy(docId) || docMutations.isDeleting(docId)) return { kind: "busy" };

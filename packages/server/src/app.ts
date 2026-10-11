@@ -124,6 +124,7 @@ import type {
 } from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
 import { createDocDeletion } from "./doc-delete.js";
+import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
@@ -239,11 +240,6 @@ export interface AppDeps {
 /** FastAPI's `HTTPException(status, msg)` body. */
 function detail(msg: string, status: ContentfulStatusCode) {
   return { body: { detail: msg }, status };
-}
-
-/** Python `_paper_path` / `get_image` traversal guards. */
-function badId(id: string): boolean {
-  return id.includes("/") || id.includes("\\") || id.startsWith(".");
 }
 
 /**
@@ -434,7 +430,7 @@ export function createApp(deps: AppDeps): Hono {
     docId: string,
     options: { expectedHash?: string; annotations?: boolean } = {}
   ): PdfSource => {
-    if (!docId.trim() || badId(docId)) return { kind: "bad_id" };
+    if (!docId.trim() || badDocId(docId)) return { kind: "bad_id" };
     if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
     // The order of GET /api/paper/:doc_id/pdf: unowned 404, ownership not unique 500, then the Doc's own data; an
     // owned Doc without PDF metadata is a data error (500), not "not found".
@@ -621,7 +617,7 @@ export function createApp(deps: AppDeps): Hono {
     scope: { conversationId: string }
   ): Promise<PdfWriteOutcome> => {
     // A PDF action on a Doc that is not a PDF (a LaTeX Doc) is unsupported, not a verification failure.
-    if (!badId(op.docId) && op.docId.trim()) {
+    if (!badDocId(op.docId) && op.docId.trim()) {
       let metadataOrNull: ReturnType<typeof readPdfMetadataIfPresent> | undefined;
       try {
         metadataOrNull = readPdfMetadataIfPresent(paths, op.docId);
@@ -792,7 +788,7 @@ export function createApp(deps: AppDeps): Hono {
   };
   const readerOps: ReaderOpDeps = {
     write: async (op): Promise<ReaderWriteOutcome> => {
-      if (badId(op.docId) || !op.docId.trim()) return { kind: "not_found" };
+      if (badDocId(op.docId) || !op.docId.trim()) return { kind: "not_found" };
       let plan: AnnotationWrite | undefined;
       try {
         const commit = await annotationAccess.commit<AnnotationWrite>(
@@ -892,7 +888,7 @@ export function createApp(deps: AppDeps): Hono {
     // (`readDocumentAsset`: contained path, no symlinks, one byte read), refused while a content mutation is queued
     // or running, and the file must be the one the reading listed (its SHA-256).
     asset: async ({ docId, path, sha256 }): Promise<AssetImageOutcome> => {
-      if (!docId.trim() || badId(docId) || docId.includes("\0")) return { kind: "not_found" };
+      if (!docId.trim() || badDocId(docId) || docId.includes("\0")) return { kind: "not_found" };
       if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
       try {
         const asset = readDocumentAsset(join(outputDir, docId), path);
@@ -976,7 +972,7 @@ export function createApp(deps: AppDeps): Hono {
     // The background read: the same reads as the coherent GET below but READ-ONLY (no ensure, no archive, never the
     // archive's content), refused while a content mutation is queued or running.
     read: async (docId): Promise<ReaderReadOutcome> => {
-      if (badId(docId) || !docId.trim()) return { kind: "not_found" };
+      if (badDocId(docId) || !docId.trim()) return { kind: "not_found" };
       try {
         const peeked = await annotationAccess.peek(docId);
         if (peeked.kind !== "ok") return peeked;
@@ -1040,7 +1036,7 @@ export function createApp(deps: AppDeps): Hono {
   // TexDocIr must validate; source is copied only from explicit metadata.
   app.get("/api/paper/:doc_id/description", (c) => {
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1133,7 +1129,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf/snapshot", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1178,7 +1174,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf/reading-position", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) return c.json({ detail: "bad doc id" }, 400);
+    if (!docId.trim() || badDocId(docId)) return c.json({ detail: "bad doc id" }, 400);
     if (docMutations.isDocumentContentBusy(docId)) return c.json({ detail: "document busy" }, 409);
     const owners = pdfOwners(docId);
     if (owners.length === 0) return c.json({ detail: `paper ${pyRepr(docId)} not found` }, 404);
@@ -1205,7 +1201,7 @@ export function createApp(deps: AppDeps): Hono {
   app.put("/api/paper/:doc_id/pdf/reading-position", async (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) return c.json({ detail: "bad doc id" }, 400);
+    if (!docId.trim() || badDocId(docId)) return c.json({ detail: "bad doc id" }, 400);
     let body: unknown;
     try {
       body = await c.req.json();
@@ -1248,7 +1244,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf/annotations/count", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1282,7 +1278,7 @@ export function createApp(deps: AppDeps): Hono {
   app.put("/api/paper/:doc_id/pdf/annotations", async (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1448,7 +1444,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/pdf", (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1507,7 +1503,7 @@ export function createApp(deps: AppDeps): Hono {
   // before.
   app.get("/api/paper/:doc_id/ir", (c) => {
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1541,7 +1537,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/paper/:doc_id/annotations", async (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -1581,7 +1577,7 @@ export function createApp(deps: AppDeps): Hono {
     const rejected = guardCsrf(c.req.header("origin"));
     if (rejected) return c.json(rejected.body, rejected.status);
     const docId = c.req.param("doc_id");
-    if (!docId.trim() || badId(docId)) {
+    if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -2022,7 +2018,7 @@ export function createApp(deps: AppDeps): Hono {
     const id = c.req.param("id");
     const name = c.req.param("name");
     c.header("Cache-Control", "no-cache");
-    if (badManuscriptId(id) || badId(name)) {
+    if (badManuscriptId(id) || badFileName(name)) {
       const e = detail("bad asset path", 400);
       return c.json(e.body, e.status);
     }
@@ -2044,7 +2040,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/writer/manuscripts/:id/preview-assets/:name", async (c) => {
     const id = c.req.param("id"),
       name = c.req.param("name");
-    if (badManuscriptId(id) || badId(name) || name.includes("\\") || name.includes("\0"))
+    if (badManuscriptId(id) || badFileName(name) || name.includes("\\") || name.includes("\0"))
       return c.json({ detail: "bad asset path" }, 400);
     if (!loadManuscript(writerDataDir, id)) return c.json({ detail: "manuscript not found" }, 404);
     const path = join(manuscriptDir(writerDataDir, id), "build", "assets", name);
@@ -2409,7 +2405,7 @@ export function createApp(deps: AppDeps): Hono {
   // the buffer whose digest was compared. Entire read/check/send is synchronous.
   function verifiedImage(c: Context, docId: string, imgPath: string, expected: string) {
     c.header("Cache-Control", "no-store");
-    if (!docId.trim() || badId(docId) || docId.includes("\0")) {
+    if (!docId.trim() || badDocId(docId) || docId.includes("\0")) {
       return c.json({ detail: "bad doc id" }, 400);
     }
     if (!/^[0-9a-fA-F]{64}$/.test(expected)) {
@@ -2443,11 +2439,11 @@ export function createApp(deps: AppDeps): Hono {
     const filename = c.req.param("filename");
     const expected = c.req.query("sha256");
     if (expected !== undefined) return verifiedImage(c, docId, filename, expected);
-    if (badId(filename)) {
+    if (badFileName(filename)) {
       const e = detail("bad filename", 400);
       return c.json(e.body, e.status);
     }
-    if (badId(docId)) {
+    if (badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
@@ -2478,7 +2474,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad filename", 400);
       return c.json(e.body, e.status);
     }
-    if (badId(docId)) {
+    if (badDocId(docId)) {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }

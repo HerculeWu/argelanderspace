@@ -42,6 +42,7 @@ import {
 } from "@argelanderspace/core";
 import { ArxivPdfOnlyError, extractZip, ZipError } from "@argelanderspace/infra";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
+import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobEventType, JobRunner } from "./jobs.js";
 import {
@@ -122,11 +123,6 @@ export interface Acquisition extends AcquisitionPort {
   submitArxivPdf(workId: string, automatic: boolean): Job | null;
   /** The PDF upload's pin release; the app's one `runner.onEvent` hook calls it before anything else. */
   onJobEvent(type: JobEventType, job: Job): void;
-}
-
-/** Python `_paper_path` / `get_image` traversal guards (the same guard as app.ts `badId`). */
-function badId(id: string): boolean {
-  return id.includes("/") || id.includes("\\") || id.startsWith(".");
 }
 
 /** rebuild through the lock. */
@@ -493,7 +489,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
    */
   const annotationRisk = (docId: string): Promise<AnnotationRisk> =>
     annotationLock.run((): AnnotationRisk => {
-      if (badId(docId) || !docId.trim()) return { state: "unknown" };
+      if (badDocId(docId) || !docId.trim()) return { state: "unknown" };
       if (docMutations.isDocumentContentBusy(docId)) return { state: "busy" };
       try {
         if (readPdfMetadataIfPresent(paths, docId)) return { state: "unknown" };
