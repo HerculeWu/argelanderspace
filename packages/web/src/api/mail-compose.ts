@@ -7,26 +7,16 @@ import type {
   MailSendStatus,
   MailStagedAttachment,
 } from "@argelanderspace/contracts";
-import { MailApiError } from "./mail";
+import { toMailApiError } from "./mail";
+import { apiRequest } from "./request";
 
 /** Writing and sending mail (ticket 07). Same error contract as api/mail: only a machine code, never mail text. */
 async function request<T>(path: string, init: RequestInit = {}, json?: unknown): Promise<T> {
-  let response: Response;
   try {
-    response = await fetch(`/api/mail/compose${path}`, {
-      ...init,
-      headers: { ...(json !== undefined ? { "Content-Type": "application/json" } : {}), ...(init.headers ?? {}) },
-      body: json === undefined ? init.body : JSON.stringify(json),
-      cache: "no-store",
-    });
-  } catch {
-    throw new MailApiError("unreachable", 0);
+    return await apiRequest<T>(`/api/mail/compose${path}`, { ...init, headers: init.headers ?? {}, json, cache: "no-store" });
+  } catch (error) {
+    throw toMailApiError(error, false);
   }
-  if (!response.ok) {
-    const data = (await response.json().catch(() => null)) as { code?: unknown } | null;
-    throw new MailApiError(typeof data?.code === "string" ? data.code : "unavailable", response.status);
-  }
-  return response.json() as Promise<T>;
 }
 
 const acc = (id: string) => `/accounts/${encodeURIComponent(id)}`;

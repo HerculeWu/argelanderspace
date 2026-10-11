@@ -7,6 +7,7 @@
  */
 
 import { type DiscoveryGraph, DiscoveryGraphSchema } from "@argelanderspace/contracts";
+import { apiRequest, HttpError, underlyingError } from "./request";
 
 export type DiscoveryOutcome =
   | { ok: true; graph: DiscoveryGraph }
@@ -17,11 +18,14 @@ export async function fetchDiscovery(
   bibcode: string,
   signal?: AbortSignal
 ): Promise<DiscoveryOutcome> {
-  const r = await fetch(`/api/library/discovery?bibcode=${encodeURIComponent(bibcode)}`, {
-    signal,
-  });
-  if (!r.ok) return { ok: false, status: r.status };
+  let payload: unknown;
+  try {
+    payload = await apiRequest(`/api/library/discovery?bibcode=${encodeURIComponent(bibcode)}`, {}, { signal });
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) return { ok: false, status: e.status };
+    throw underlyingError(e);
+  }
   // a malformed payload renders the honest upstream-failure state, never a crash
-  const parsed = DiscoveryGraphSchema.safeParse(await r.json());
+  const parsed = DiscoveryGraphSchema.safeParse(payload);
   return parsed.success ? { ok: true, graph: parsed.data } : { ok: false, status: 502 };
 }

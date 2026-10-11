@@ -1,4 +1,5 @@
 import { CoherentAnnotationsReadSchema, AnnotationsFileSchema, type CoherentAnnotationsRead, type IrSection, type AnnotationsFile } from "@argelanderspace/contracts";
+import { apiRequest, conflictKind, HttpError, underlyingError } from "./request";
 
 // The reader's annotation store (Stage 8 MS3) talks to
 // `GET/PUT /api/paper/:doc_id/annotations`. Same discipline as api/plans.ts:
@@ -16,10 +17,9 @@ export type FetchAnnotationsResult =
 
 export async function fetchAnnotations(docId: string): Promise<FetchAnnotationsResult> {
   try {
-    const r = await fetch(`/api/paper/${encodeURIComponent(docId)}/annotations`);
-    if (!r.ok) return { ok: false, missing: r.status === 404, status: r.status };
-    return { ok: true, file: (await r.json()) as AnnotationsFile };
-  } catch {
+    return { ok: true, file: await apiRequest<AnnotationsFile>(`/api/paper/${encodeURIComponent(docId)}/annotations`) };
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) return { ok: false, missing: e.status === 404, status: e.status };
     return { ok: false, missing: false, status: 0 };
   }
 }
@@ -30,14 +30,9 @@ export type CoherentReadResult =
 
 export async function fetchCoherentAnnotations(docId: string, signal: AbortSignal): Promise<CoherentReadResult> {
   try {
-    const r = await fetch(`/api/paper/${encodeURIComponent(docId)}/annotations?coherent=1`, {
-      cache: "no-store", signal,
-    });
-    if (!r.ok) {
-      const body = await r.json().catch(() => null);
-      return { ok: false, status: r.status, busy: r.status === 409 && body?.detail === "document busy" };
-    }
-    const value = CoherentAnnotationsReadSchema.parse(await r.json());
+    const value = CoherentAnnotationsReadSchema.parse(
+      await apiRequest(`/api/paper/${encodeURIComponent(docId)}/annotations?coherent=1`, { cache: "no-store" }, { signal })
+    );
     if (value.ir.docId !== docId) throw new Error("document identity mismatch");
     const paths = new Set<string>();
     const collect = (sections: IrSection[]) => {
@@ -53,7 +48,8 @@ export async function fetchCoherentAnnotations(docId: string, signal: AbortSigna
       throw new Error("asset manifest does not match document");
     }
     return { ok: true, value };
-  } catch {
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) return { ok: false, status: e.status, busy: conflictKind(e) === "busy" };
     return { ok: false, status: 0, busy: false };
   }
 }
@@ -76,27 +72,16 @@ export async function putAnnotations(
   file: AnnotationsFile
 ): Promise<PutAnnotationsResult> {
   try {
-    const r = await fetch(`/api/paper/${encodeURIComponent(docId)}/annotations`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(file),
-    });
-    if (r.ok) return { ok: true, file: AnnotationsFileSchema.parse(await r.json()) };
-    const body = (await r.json().catch(() => null)) as {
-      detail?: string;
-      file?: AnnotationsFile;
-      rev?: number;
-    } | null;
-    if (r.status === 409 && body?.detail === "document busy") return { ok: false, kind: "busy" };
-    if (r.status === 409 && body?.detail === "document changed" && body.file) {
-      return { ok: false, kind: "document-changed", file: body.file };
-    }
-    if (r.status === 409 && body?.detail === "rev mismatch") {
-      return { ok: false, kind: "rev-mismatch", rev: body.rev ?? file.rev };
-    }
-    return { ok: false, kind: "error", detail: body?.detail ?? `annotations PUT ${r.status}` };
+    const saved = await apiRequest(`/api/paper/${encodeURIComponent(docId)}/annotations`, { method: "PUT", json: file });
+    return { ok: true, file: AnnotationsFileSchema.parse(saved) };
   } catch (e) {
-    return { ok: false, kind: "error", detail: String(e) };
+    if (!(e instanceof HttpError) || e.status === 0) return { ok: false, kind: "error", detail: String(underlyingError(e)) };
+    const body = e.body as { detail?: string; file?: AnnotationsFile; rev?: number } | null;
+    const conflict = conflictKind(e);
+    if (conflict === "busy") return { ok: false, kind: "busy" };
+    if (conflict === "changed" && body?.file) return { ok: false, kind: "document-changed", file: body.file };
+    if (conflict === "rev-mismatch") return { ok: false, kind: "rev-mismatch", rev: body?.rev ?? file.rev };
+    return { ok: false, kind: "error", detail: body?.detail ?? `annotations PUT ${e.status}` };
   }
 }
 
@@ -112,17 +97,16 @@ export type DeleteDocResult =
  *  removal from every work's doc_ids). */
 export async function deletePaperDoc(docId: string): Promise<DeleteDocResult> {
   try {
-    const r = await fetch(`/api/paper/${encodeURIComponent(docId)}`, { method: "DELETE" });
-    if (r.ok) return { ok: true };
-    const body = (await r.json().catch(() => null)) as { detail?: string } | null;
-    if (r.status === 409) return { ok: false, busy: true };
+    await apiRequest(`/api/paper/${encodeURIComponent(docId)}`, { method: "DELETE" }, { parse: "none" });
+    return { ok: true };
+  } catch (e) {
+    if (!(e instanceof HttpError) || e.status === 0) return { ok: false, busy: false, missing: false, detail: String(underlyingError(e)) };
+    if (e.status === 409) return { ok: false, busy: true };
     return {
       ok: false,
       busy: false,
-      missing: r.status === 404,
-      detail: body?.detail ?? `DELETE ${r.status}`,
+      missing: e.status === 404,
+      detail: (e.body as { detail?: string } | null)?.detail ?? `DELETE ${e.status}`,
     };
-  } catch (e) {
-    return { ok: false, busy: false, missing: false, detail: String(e) };
   }
 }

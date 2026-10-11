@@ -6,17 +6,16 @@ import type {
   ManualWorkResponse,
 } from "../library/types";
 import { LIBRARY_FIXTURE } from "../library/fixture";
+import { type ApiRequestInit, apiRequest, HttpError, underlyingError } from "./request";
 
 // The ArgelanderSpace Library talks to /api/library/*. Each call tries live
 // first and falls back to the ported design fixture when the backend is
 // unreachable — the UI stays interactive and switches to real data
 // automatically once the server is up.
 
-async function tryJson<T>(url: string, init?: RequestInit): Promise<T | null> {
+async function tryJson<T>(url: string, init?: ApiRequestInit): Promise<T | null> {
   try {
-    const r = await fetch(url, init);
-    if (!r.ok) return null;
-    return (await r.json()) as T;
+    return await apiRequest<T>(url, init);
   } catch {
     return null;
   }
@@ -43,9 +42,11 @@ export async function fetchDocProvenance(
   signal?: AbortSignal
 ): Promise<DocProvenance> {
   try {
-    const response = await fetch(`/api/paper/${encodeURIComponent(docId)}/description`, { signal });
-    if (!response.ok) return "unknown";
-    const body = (await response.json()) as { format?: unknown; acquired_via?: unknown };
+    const body = await apiRequest<{ format?: unknown; acquired_via?: unknown }>(
+      `/api/paper/${encodeURIComponent(docId)}/description`,
+      {},
+      { signal }
+    );
     if (body.format === "pdf" && body.acquired_via === "arxiv_pdf") return "arxiv-pdf";
     if (body.format === "pdf" && body.acquired_via === "user_pdf_upload") return "pdf";
     if (body.format === "text") return "text";
@@ -66,11 +67,11 @@ export async function fetchLibrary(): Promise<LibraryLoad> {
   });
   let response: Response;
   try {
-    response = await fetch("/api/library");
-  } catch {
+    response = await apiRequest<Response>("/api/library", {}, { parse: "none" });
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) return example("error", `HTTP ${e.status}`);
     return example("unreachable", "the service did not answer");
   }
-  if (!response.ok) return example("error", `HTTP ${response.status}`);
   try {
     return { data: (await response.json()) as LibraryData, live: true };
   } catch {
@@ -84,14 +85,21 @@ export async function fetchLibrary(): Promise<LibraryLoad> {
  */
 export type StartResult = { ok: true; job: Job } | { ok: false; status: number; detail: string };
 
-async function startJob(url: string, init: RequestInit, what: string): Promise<StartResult> {
+async function startJob(url: string, init: ApiRequestInit, what: string): Promise<StartResult> {
+  const refused = (status: number, body: unknown): StartResult => {
+    const detail = (body as { detail?: unknown } | null)?.detail;
+    return { ok: false, status, detail: typeof detail === "string" ? detail : `${what} ${status}` };
+  };
   try {
-    const r = await fetch(url, init);
-    if (r.status !== 202) {
-      const body = (await r.json().catch(() => null)) as { detail?: unknown } | null;
-      const detail = typeof body?.detail === "string" ? body.detail : `${what} ${r.status}`;
-      return { ok: false, status: r.status, detail };
+    let r: Response;
+    try {
+      r = await apiRequest<Response>(url, init, { parse: "none" });
+    } catch (e) {
+      if (e instanceof HttpError && e.status > 0) return refused(e.status, e.body);
+      throw underlyingError(e);
     }
+    // Only a 202 queued a job; any other ok status is a refusal too.
+    if (r.status !== 202) return refused(r.status, await r.json().catch(() => null));
     const body = (await r.json()) as { job?: Job };
     return body.job ? { ok: true, job: body.job } : { ok: false, status: 500, detail: `${what} response did not contain a job` };
   } catch (error) {
@@ -104,16 +112,28 @@ export type UploadPdfResult =
   | { ok: false; status: number; detail: string };
 
 export async function uploadPdf(workId: string, file: File): Promise<UploadPdfResult> {
+  const refused = (status: number, body: unknown): UploadPdfResult => ({
+    ok: false,
+    status,
+    detail: (body as { detail?: string } | null)?.detail ?? `PDF upload ${status}`,
+  });
   try {
-    const r = await fetch(`/api/library/upload-pdf?id=${encodeURIComponent(workId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name) },
-      body: file,
-    });
-    if (r.status !== 202) {
-      const body = (await r.json().catch(() => null)) as { detail?: string } | null;
-      return { ok: false, status: r.status, detail: body?.detail ?? `PDF upload ${r.status}` };
+    let r: Response;
+    try {
+      r = await apiRequest<Response>(
+        `/api/library/upload-pdf?id=${encodeURIComponent(workId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name) },
+          raw: file,
+        },
+        { parse: "none" }
+      );
+    } catch (e) {
+      if (e instanceof HttpError && e.status > 0) return refused(e.status, e.body);
+      throw underlyingError(e);
     }
+    if (r.status !== 202) return refused(r.status, await r.json().catch(() => null));
     const body = (await r.json()) as { job?: Job; resourceWarning?: boolean };
     return body.job
       ? { ok: true, job: body.job, resourceWarning: Boolean(body.resourceWarning) }
@@ -131,7 +151,7 @@ export async function uploadPdf(workId: string, file: File): Promise<UploadPdfRe
 export async function uploadLatexZip(workId: string, file: File | Blob): Promise<StartResult> {
   return startJob(
     `/api/library/upload?id=${encodeURIComponent(workId)}`,
-    { method: "POST", headers: { "Content-Type": "application/zip" }, body: file },
+    { method: "POST", headers: { "Content-Type": "application/zip" }, raw: file },
     "LaTeX upload"
   );
 }
@@ -162,11 +182,7 @@ export async function attachArxiv(workId: string): Promise<StartResult> {
  * backend is unreachable or rejected the request wholesale.
  */
 export async function createWorks(req: ManualWorkRequest): Promise<ManualWorkResponse | null> {
-  return tryJson<ManualWorkResponse>("/api/library/works", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
-  });
+  return tryJson<ManualWorkResponse>("/api/library/works", { method: "POST", json: req });
 }
 
 /** Persist a per-reference state change (color label, read flag, note, tags, main doc). */
@@ -175,10 +191,6 @@ export async function patchRef(
   patch: Partial<Pick<LibraryRef, "label" | "read" | "star" | "tags" | "doc_id">>
 ): Promise<boolean> {
   // work ids contain slashes/colons → id rides in the body, not the path
-  const r = await tryJson<unknown>("/api/library/refs", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, ...patch }),
-  });
+  const r = await tryJson<unknown>("/api/library/refs", { method: "PATCH", json: { id, ...patch } });
   return r !== null;
 }

@@ -1,4 +1,5 @@
 import { DocDescriptionSchema, type DocDescription } from "@argelanderspace/contracts";
+import { apiRequest, HttpError } from "./request";
 
 export type DocDescriptionResult =
   | { ok: true; description: DocDescription }
@@ -9,12 +10,10 @@ export async function fetchDocDescription(
   signal?: AbortSignal
 ): Promise<DocDescriptionResult> {
   try {
-    const response = await fetch(`/api/paper/${encodeURIComponent(docId)}/description`, { signal });
-    if (!response.ok) return { ok: false, reason: "http" };
-    const parsed = DocDescriptionSchema.safeParse(await response.json());
+    const parsed = DocDescriptionSchema.safeParse(await apiRequest(`/api/paper/${encodeURIComponent(docId)}/description`, {}, { signal }));
     if (!parsed.success || parsed.data.doc_id !== docId) return { ok: false, reason: "invalid" };
     return { ok: true, description: parsed.data };
-  } catch {
-    return { ok: false, reason: "network" };
+  } catch (e) {
+    return { ok: false, reason: e instanceof HttpError && e.status > 0 ? "http" : "network" };
   }
 }

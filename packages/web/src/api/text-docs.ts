@@ -13,20 +13,31 @@ import {
   TextValidationResultSchema,
 } from "@argelanderspace/contracts";
 import i18n from "../i18n";
+import { type ApiRequestInit, apiRequest, conflictKind, HttpError } from "./request";
 
 // The text Doc's HTTP client (ticket 25). No fixture fallback: an unreachable server or an unexpected body is a typed
 // failure the page shows, never an empty source.
 
 const base = (docId: string) => `/api/paper/${encodeURIComponent(docId)}`;
-const json = (body: unknown): RequestInit => ({
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify(body),
-});
+const json = (body: unknown): ApiRequestInit => ({ method: "POST", json: body });
 
-async function detailOf(response: Response): Promise<{ detail: string; body: Record<string, unknown> }> {
-  const body = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-  return { detail: typeof body.detail === "string" ? body.detail : `HTTP ${response.status}`, body };
+/**
+ * Answer the request: an ok Response, or the HttpError of a server that answered with a failure. No answer at all (a
+ * network failure, an abort) rejects, which every caller below reports as unreachable.
+ */
+async function answer(path: string, init?: ApiRequestInit): Promise<Response | HttpError> {
+  try {
+    return await apiRequest<Response>(path, init, { parse: "none" });
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) return e;
+    throw e;
+  }
+}
+
+/** A failed answer's detail and body; a body that is not JSON reads as empty. Throws on a JSON null body, as before. */
+function detailOf(error: HttpError): { detail: string; body: Record<string, unknown> } {
+  const body = (error.cause !== undefined ? {} : error.body) as Record<string, unknown>;
+  return { detail: typeof body.detail === "string" ? body.detail : `HTTP ${error.status}`, body };
 }
 
 export type CreateTextDocResult =
@@ -35,9 +46,9 @@ export type CreateTextDocResult =
 
 export async function createTextDoc(workId: string, operationId: string): Promise<CreateTextDocResult> {
   try {
-    const response = await fetch("/api/library/text-docs", json({ workId, operationId }));
-    if (!response.ok)
-      return { ok: false, detail: (await detailOf(response)).detail, status: response.status };
+    const response = await answer("/api/library/text-docs", json({ workId, operationId }));
+    if (response instanceof HttpError)
+      return { ok: false, detail: detailOf(response).detail, status: response.status };
     const body = (await response.json()) as { description?: DocDescription };
     if (!body.description?.doc_id)
       return { ok: false, detail: i18n.t("doc.text.net.unexpected"), status: 0 };
@@ -53,8 +64,8 @@ export type TextSourceRead =
 
 export async function fetchTextSource(docId: string, signal?: AbortSignal): Promise<TextSourceRead> {
   try {
-    const response = await fetch(`${base(docId)}/source`, { cache: "no-store", ...(signal ? { signal } : {}) });
-    if (!response.ok) return { ok: false, missing: response.status === 404, detail: (await detailOf(response)).detail };
+    const response = await answer(`${base(docId)}/source`, { cache: "no-store", ...(signal ? { signal } : {}) });
+    if (response instanceof HttpError) return { ok: false, missing: response.status === 404, detail: detailOf(response).detail };
     const parsed = TextSourceDtoSchema.safeParse(await response.json());
     if (!parsed.success || parsed.data.doc_id !== docId) return { ok: false, missing: false, detail: i18n.t("doc.text.net.unexpected") };
     return { ok: true, source: parsed.data };
@@ -71,17 +82,13 @@ export type TextSourceSave =
 
 export async function saveTextSource(docId: string, expectedRev: number, markdown: string): Promise<TextSourceSave> {
   try {
-    const response = await fetch(`${base(docId)}/source`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expectedRev, markdown }),
-    });
-    if (response.ok) {
+    const response = await answer(`${base(docId)}/source`, { method: "PUT", json: { expectedRev, markdown } });
+    if (!(response instanceof HttpError)) {
       const parsed = TextSourceDtoSchema.safeParse(await response.json());
       return parsed.success ? { ok: true, source: parsed.data } : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
     }
-    const { detail, body } = await detailOf(response);
-    if (response.status === 409 && detail === "rev mismatch") {
+    const { detail, body } = detailOf(response);
+    if (conflictKind(response) === "rev-mismatch") {
       const parsed = TextSourceDtoSchema.safeParse(body.source);
       return { ok: false, kind: "conflict", source: parsed.success ? parsed.data : null };
     }
@@ -98,12 +105,12 @@ export type TextValidate =
 
 export async function validateTextSource(docId: string, sourceRev: number): Promise<TextValidate> {
   try {
-    const response = await fetch(`${base(docId)}/source/validate`, json({ sourceRev }));
-    if (response.ok) {
+    const response = await answer(`${base(docId)}/source/validate`, json({ sourceRev }));
+    if (!(response instanceof HttpError)) {
       const parsed = TextValidationResultSchema.safeParse(await response.json());
       return parsed.success ? { ok: true, result: parsed.data } : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
     }
-    return { ok: false, kind: response.status === 409 ? "stale" : "error", detail: (await detailOf(response)).detail };
+    return { ok: false, kind: response.status === 409 ? "stale" : "error", detail: detailOf(response).detail };
   } catch {
     return { ok: false, kind: "error", detail: i18n.t("doc.text.net.unreachable") };
   }
@@ -132,12 +139,12 @@ export async function generateTextDoc(
   confirm?: TextReplacementImpact
 ): Promise<TextGenerate> {
   try {
-    const response = await fetch(`${base(docId)}/source/generate`, json({ sourceRev, operationId, ...(confirm ? { confirm } : {}) }));
-    if (response.ok) {
+    const response = await answer(`${base(docId)}/source/generate`, json({ sourceRev, operationId, ...(confirm ? { confirm } : {}) }));
+    if (!(response instanceof HttpError)) {
       const parsed = TextGenerationResultSchema.safeParse(await response.json());
       return parsed.success ? { ok: true, result: parsed.data } : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
     }
-    const { detail, body } = await detailOf(response);
+    const { detail, body } = detailOf(response);
     if (response.status === 422 && Array.isArray(body.diagnostics))
       return { ok: false, kind: "diagnostics", diagnostics: body.diagnostics as TextDiagnostic[], detail };
     if (response.status === 409) {
@@ -165,15 +172,15 @@ export type TextAssetUpload =
   /** The server refused this file; `code` is the stable reason (unsupported_type, corrupt_image, too_large...). */
   | { ok: false; kind: "rejected"; code: string; detail: string };
 
-async function assetResult(response: Response): Promise<TextAssetUpload> {
-  if (response.ok) {
+async function assetResult(response: Response | HttpError): Promise<TextAssetUpload> {
+  if (!(response instanceof HttpError)) {
     const parsed = TextAssetAddedSchema.safeParse(await response.json());
     return parsed.success
       ? { ok: true, source: parsed.data.source, asset: parsed.data.asset, reused: parsed.data.reused, restored: parsed.data.restored }
       : { ok: false, kind: "error", detail: i18n.t("doc.text.net.unexpected") };
   }
-  const { detail, body } = await detailOf(response);
-  if (response.status === 409 && detail === "rev mismatch") {
+  const { detail, body } = detailOf(response);
+  if (conflictKind(response) === "rev-mismatch") {
     const parsed = TextSourceDtoSchema.safeParse(body.source);
     return { ok: false, kind: "conflict", source: parsed.success ? parsed.data : null };
   }
@@ -186,9 +193,9 @@ async function assetResult(response: Response): Promise<TextAssetUpload> {
 export async function uploadTextAsset(docId: string, expectedRev: number, file: File): Promise<TextAssetUpload> {
   try {
     return await assetResult(
-      await fetch(
+      await answer(
         `${base(docId)}/source/assets?expectedRev=${expectedRev}&filename=${encodeURIComponent(file.name)}`,
-        { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: file }
+        { method: "POST", headers: { "Content-Type": "application/octet-stream" }, raw: file }
       )
     );
   } catch {
@@ -205,7 +212,7 @@ export async function addPdfImage(
   request: { expectedRev: number; sha256: string; pageIndex: number; pdfDocId?: string; region?: { x: number; y: number; width: number; height: number }; longEdge?: number }
 ): Promise<TextAssetUpload> {
   try {
-    return await assetResult(await fetch(`${base(docId)}/source/assets/from-pdf`, json(request)));
+    return await assetResult(await answer(`${base(docId)}/source/assets/from-pdf`, json(request)));
   } catch {
     return { ok: false, kind: "error", detail: i18n.t("doc.text.net.unreachable") };
   }
@@ -219,9 +226,7 @@ export type TextDeleteImpact =
 /** What deleting a text Doc takes with it, for a Doc that was never generated (a generated one is counted the usual way). */
 export async function fetchTextDeleteImpact(docId: string): Promise<TextDeleteImpact> {
   try {
-    const response = await fetch(`${base(docId)}/source/delete-impact`, { cache: "no-store" });
-    if (!response.ok) return { ok: false };
-    return { ok: true, ...((await response.json()) as object) } as TextDeleteImpact;
+    return { ok: true, ...(await apiRequest<object>(`${base(docId)}/source/delete-impact`, { cache: "no-store" })) } as TextDeleteImpact;
   } catch {
     return { ok: false };
   }

@@ -14,6 +14,7 @@ import type {
   WriterNumberingResponse,
   WriterTemplate,
 } from "@argelanderspace/contracts";
+import { apiRequest, HttpError, underlyingError } from "./request";
 
 export interface TemplatesResult {
   templates: WriterTemplate[];
@@ -23,9 +24,7 @@ export interface TemplatesResult {
 /** null = unreachable/failed (caller shows an error state). */
 export async function fetchTemplates(): Promise<TemplatesResult | null> {
   try {
-    const r = await fetch("/api/writer/templates");
-    if (!r.ok) return null;
-    return (await r.json()) as TemplatesResult;
+    return await apiRequest<TemplatesResult>("/api/writer/templates");
   } catch {
     return null;
   }
@@ -39,9 +38,7 @@ export interface ManuscriptsResult {
 /** null = unreachable/failed. */
 export async function fetchManuscripts(): Promise<ManuscriptsResult | null> {
   try {
-    const r = await fetch("/api/writer/manuscripts");
-    if (!r.ok) return null;
-    return (await r.json()) as ManuscriptsResult;
+    return await apiRequest<ManuscriptsResult>("/api/writer/manuscripts");
   } catch {
     return null;
   }
@@ -52,9 +49,7 @@ export async function fetchManuscripts(): Promise<ManuscriptsResult | null> {
  *  context (initial load vs. refetch keeps the current doc on failure). */
 export async function fetchManuscript(id: string): Promise<WriterManuscript | null> {
   try {
-    const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}`);
-    if (!r.ok) return null;
-    return (await r.json()) as WriterManuscript;
+    return await apiRequest<WriterManuscript>(`/api/writer/manuscripts/${encodeURIComponent(id)}`);
   } catch {
     return null;
   }
@@ -63,10 +58,10 @@ export async function fetchManuscript(id: string): Promise<WriterManuscript | nu
 /** Whether the server has the manuscript: `error` is a failed request, never reported as missing. */
 export async function probeManuscript(id: string): Promise<"found" | "missing" | "error"> {
   try {
-    const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}`);
-    return r.ok ? "found" : r.status === 404 ? "missing" : "error";
-  } catch {
-    return "error";
+    await apiRequest(`/api/writer/manuscripts/${encodeURIComponent(id)}`, {}, { parse: "none" });
+    return "found";
+  } catch (e) {
+    return e instanceof HttpError && e.status === 404 ? "missing" : "error";
   }
 }
 
@@ -75,13 +70,12 @@ export async function createManuscript(input: {
   template: string;
   title?: string;
 }): Promise<WriterManuscript> {
-  const r = await fetch("/api/writer/manuscripts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
-  if (!r.ok) throw new Error(`create manuscript failed: ${r.status}`);
-  return (await r.json()) as WriterManuscript;
+  try {
+    return await apiRequest<WriterManuscript>("/api/writer/manuscripts", { method: "POST", json: input });
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) throw new Error(`create manuscript failed: ${e.status}`);
+    throw underlyingError(e);
+  }
 }
 
 export type PutManuscriptResult =
@@ -92,28 +86,23 @@ export type PutManuscriptResult =
 /** Whole-document replace; the body carries the client's rev. */
 export async function putManuscript(doc: WriterManuscript): Promise<PutManuscriptResult> {
   try {
-    const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(doc.id)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(doc),
-    });
-    if (r.ok) return { ok: true, doc: (await r.json()) as WriterManuscript };
-    if (r.status === 409) {
-      const body = (await r.json()) as { current: WriterManuscript };
-      return { ok: false, conflict: body.current };
+    return {
+      ok: true,
+      doc: await apiRequest<WriterManuscript>(`/api/writer/manuscripts/${encodeURIComponent(doc.id)}`, { method: "PUT", json: doc }),
+    };
+  } catch (e) {
+    // A 409 body without the current doc (not JSON, or null) is an ordinary failure.
+    if (e instanceof HttpError && e.status === 409 && e.body !== null) {
+      return { ok: false, conflict: (e.body as { current: WriterManuscript }).current };
     }
-    return { ok: false, conflict: null };
-  } catch {
     return { ok: false, conflict: null };
   }
 }
 
 export async function deleteManuscript(id: string): Promise<boolean> {
   try {
-    const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
-    return r.ok;
+    await apiRequest(`/api/writer/manuscripts/${encodeURIComponent(id)}`, { method: "DELETE" }, { parse: "none" });
+    return true;
   } catch {
     return false;
   }
@@ -122,12 +111,16 @@ export async function deleteManuscript(id: string): Promise<boolean> {
 /** Raw-body upload; resolves to the stored asset name (may differ from the
  *  file's name on collision). Throws on any non-2xx. */
 export async function uploadAsset(id: string, file: File): Promise<string> {
-  const r = await fetch(
-    `/api/writer/manuscripts/${encodeURIComponent(id)}/assets?filename=${encodeURIComponent(file.name)}`,
-    { method: "POST", body: file }
-  );
-  if (!r.ok) throw new Error(`asset upload failed: ${r.status}`);
-  const body = (await r.json()) as { name: string };
+  let body: { name: string };
+  try {
+    body = await apiRequest(
+      `/api/writer/manuscripts/${encodeURIComponent(id)}/assets?filename=${encodeURIComponent(file.name)}`,
+      { method: "POST", raw: file }
+    );
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) throw new Error(`asset upload failed: ${e.status}`);
+    throw underlyingError(e);
+  }
   return body.name;
 }
 
@@ -143,10 +136,13 @@ export function exportUrl(id: string): string {
 
 /** Numbering state (D14); 404 → null. */
 export async function fetchNumbering(id: string): Promise<WriterNumberingResponse | null> {
-  const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}/numbering`);
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error(`numbering fetch failed: ${r.status}`);
-  return (await r.json()) as WriterNumberingResponse;
+  try {
+    return await apiRequest<WriterNumberingResponse>(`/api/writer/manuscripts/${encodeURIComponent(id)}/numbering`);
+  } catch (e) {
+    if (e instanceof HttpError && e.status === 404) return null;
+    if (e instanceof HttpError && e.status > 0) throw new Error(`numbering fetch failed: ${e.status}`);
+    throw underlyingError(e);
+  }
 }
 
 /** Force a numbering re-compile now (manual refresh). */
@@ -154,11 +150,14 @@ export async function refreshNumbering(
   id: string,
   opts: { copilot?: boolean } = {}
 ): Promise<WriterNumberingResponse> {
-  const r = await fetch(`/api/writer/manuscripts/${encodeURIComponent(id)}/numbering/refresh`, {
-    method: "POST",
-    // The page marks a render it makes for a Copilot view action; the service decides whether that is allowed.
-    ...(opts.copilot ? { headers: { "X-Copilot-Action": "1" } } : {}),
-  });
-  if (!r.ok) throw Object.assign(new Error(`numbering refresh failed: ${r.status}`), { status: r.status });
-  return (await r.json()) as WriterNumberingResponse;
+  try {
+    return await apiRequest<WriterNumberingResponse>(`/api/writer/manuscripts/${encodeURIComponent(id)}/numbering/refresh`, {
+      method: "POST",
+      // The page marks a render it makes for a Copilot view action; the service decides whether that is allowed.
+      ...(opts.copilot ? { headers: { "X-Copilot-Action": "1" } } : {}),
+    });
+  } catch (e) {
+    if (e instanceof HttpError && e.status > 0) throw Object.assign(new Error(`numbering refresh failed: ${e.status}`), { status: e.status });
+    throw underlyingError(e);
+  }
 }

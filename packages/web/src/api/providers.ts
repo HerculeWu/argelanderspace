@@ -1,18 +1,20 @@
 import type { ProviderLoginResponse, ProviderModelConfig, ProviderMutationResult, ProvidersResponse, ProviderTestResult } from "@argelanderspace/contracts";
 
-export class ProviderApiError extends Error {
-  constructor(readonly code: string) { super(code); }
+import { apiRequest, HttpError } from "./request";
+
+export class ProviderApiError extends HttpError {
+  constructor(code: string, status = 0, body: unknown = null) { super(code, status, body); }
 }
+/** A failed answer is its body's `code` or `unavailable`; a network failure, an abort or a non-JSON ok answer passes through as is. */
 async function request<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/copilot/providers${path}`, {
-    method, headers: { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body), signal, cache: "no-store",
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    throw new ProviderApiError(typeof data?.code === "string" ? data.code : "unavailable");
+  try {
+    return await apiRequest<T>(`/api/copilot/providers${path}`, { method, headers: { "Content-Type": "application/json" }, json: body, cache: "no-store" }, { signal });
+  } catch (error) {
+    if (!(error instanceof HttpError)) throw error;
+    if (error.status === 0) throw error.cause;
+    const code = (error.body as { code?: unknown } | null)?.code;
+    throw new ProviderApiError(typeof code === "string" ? code : "unavailable", error.status, error.body);
   }
-  return response.json();
 }
 export const fetchProviders = () => request<ProvidersResponse>("");
 export const saveProviderKey = (id: string, key: string) => request<ProviderMutationResult>(`/${encodeURIComponent(id)}/credential`, "PUT", { key });
