@@ -14,7 +14,7 @@ import {
 /**
  * The agent's PDF workbench annotation writes (copilot ticket 21) as pure functions of ONE verified state: the stored
  * sidecar exactly as read (every key the application does not know is still on it) and the Doc's metadata. They run
- * inside the annotations lock (see `writePdfAnnotation` in app.ts) after the shared commit has checked the
+ * inside the annotations lock (see `writeAnnotation` in pdf-access.ts) after the shared commit has checked the
  * original's SHA-256 and the revision the caller named. They only build the next annotation list; locking, the
  * checks, the atomic save and the notification stay with the shared handler.
  *
