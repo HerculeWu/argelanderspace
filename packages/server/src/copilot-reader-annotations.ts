@@ -15,7 +15,7 @@ import { newAnnotationId } from "@argelanderspace/core";
 /**
  * The agent's annotation writes (copilot ticket 19), as pure functions of ONE ensured epoch: the stored IR, the
  * asset manifest and the current annotations file of the same fingerprint. They run inside the annotations PUT's
- * critical section (see `commitAnnotations` in app.ts), after that access path has ensured the epoch and checked
+ * critical section (see `commit` in annotations-access.ts), after that access path has ensured the epoch and checked
  * the fingerprint and revision the caller named. They only build the next file; saving, locking, the three-state
  * fingerprint rules, archiving and notification stay with the shared handler.
  */

@@ -121,7 +121,7 @@ describe("GET /api/paper/:doc_id/annotations", () => {
   test("missing doc → 404", async () => {
     const res = await get("/api/paper/nope/annotations");
     expect(res.status).toBe(404);
-    expect(((await res.json()) as { detail: string }).detail).toContain("not found");
+    expect(((await res.json()) as { detail: string }).detail).toBe("no such Doc");
   });
 
   test("traversal-ish doc id → 400", async () => {

@@ -665,7 +665,9 @@ describe("the annotations access path after a publish reports the contract's sta
     try {
       const res = await coherent(docId);
       expect(res.status).toBe(500);
-      expect(((await res.json()) as { detail: string }).detail).toMatch(/failed to archive/);
+      expect(((await res.json()) as { detail: string }).detail).toMatch(
+        /could not be moved to the archive/
+      );
     } finally {
       chmodSync(archiveDir(docId), 0o755);
     }
@@ -682,7 +684,7 @@ describe("the annotations access path after a publish reports the contract's sta
     const res = await coherent(docId);
     expect(res.status).toBe(500);
     expect(((await res.json()) as { detail: string }).detail).toMatch(
-      /archived but the new current/
+      /were archived .*but the new, empty annotations file could not be created/
     );
     expect(archive(docId)).toHaveLength(1);
     expect(
