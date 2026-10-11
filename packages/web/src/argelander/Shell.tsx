@@ -21,6 +21,7 @@ import type { WriterViewController } from "../writer/WriterView";
 import { manuscriptDeleteGuard, writerPageStatus } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
 import { Copilot } from "../copilot/Copilot";
+import type { ConfirmationGuards } from "../copilot/confirmations";
 import { MailNavItem } from "../mail/MailNavItem";
 import { MailView } from "../mail/MailView";
 
@@ -101,6 +102,12 @@ export function Shell() {
   const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
     return manuscriptDeleteGuard(Object.values(writerPagesRef.current), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
   }, [t]);
+  // The workspace's guards before a Copilot approval takes something open away; a refusal keeps the card.
+  const confirmationGuards = useMemo<ConfirmationGuards>(() => ({
+    // Only the open Doc asks the workspace's leave guard (unsaved drafts), as the delete dialog does.
+    leaveDoc: (docId) => docId !== currentDocRef.current || confirmWorkspaceLeave(),
+    leaveManuscript: beforeManuscriptDelete,
+  }), [beforeManuscriptDelete]);
   const writerControllers = useRef(new Map<number, WriterViewController>());
   const registerWriterController = useCallback((paneId: number, controller: WriterViewController | null) => {
     if (controller) writerControllers.current.set(paneId, controller); else writerControllers.current.delete(paneId);
@@ -729,7 +736,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} onBeforeDocDelete={(docId) => docId !== currentDocRef.current || confirmWorkspaceLeave()} onBeforeManuscriptDelete={beforeManuscriptDelete} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} guards={confirmationGuards} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette

@@ -23,9 +23,9 @@ vi.mock("../src/api/ws", () => ({
   onWriterChanged: () => () => {},
 }));
 vi.mock("../src/copilot/Copilot", () => ({
-  Copilot: ({ onViewAction, onBeforeDocDelete }: { onViewAction: typeof h.viewAction; onBeforeDocDelete: typeof h.beforeDelete }) => {
+  Copilot: ({ onViewAction, guards }: { onViewAction: typeof h.viewAction; guards: { leaveDoc: NonNullable<typeof h.beforeDelete> } }) => {
     h.viewAction = onViewAction;
-    h.beforeDelete = onBeforeDocDelete;
+    h.beforeDelete = guards.leaveDoc;
     return null;
   },
 }));
