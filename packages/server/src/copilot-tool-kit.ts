@@ -252,14 +252,28 @@ export async function runOperation(
     readBack:
       | string
       | ((known: KnownOperation) => { detail: string; payload?: Record<string, unknown> });
+    /**
+     * How a finished operation is answered again; by default exactly as it was recorded. A tool whose result names
+     * a job still running when it was recorded can answer with what that job did since.
+     */
+    replay?: (known: Extract<KnownOperation, { state: "done" }>) => {
+      operation: CopilotOperation;
+      payload: Record<string, unknown>;
+    };
+    /** The object and label the kit's own records (closed, rejected, unknown, not saved) carry, when given. */
+    named?: { object?: CopilotOperation["object"]; label?: string };
   },
   body: (op: Op) => Promise<ToolResult>
 ): Promise<ToolResult> {
   const { tool, toolCallId, action } = call;
   const row = (name: string, partial: Partial<CopilotOperation>) =>
     record(tool, toolCallId, name, partial);
+  const named: Partial<CopilotOperation> = {
+    ...(call.named?.object ? { object: call.named.object } : {}),
+    ...(call.named?.label !== undefined ? { label: call.named.label } : {}),
+  };
   if (!ctx.admitting())
-    return done(row(action, { status: "error" }), { ok: false, status: "closed" });
+    return done(row(action, { status: "error", ...named }), { ok: false, status: "closed" });
   const journal = ctx.journal;
   const operationId =
     typeof call.requestedId === "string" && call.requestedId
@@ -268,13 +282,15 @@ export async function runOperation(
   const hash = digest(call.rest);
   const known = journal?.lookup(operationId);
   if (known && known.hash !== hash)
-    return done(row(action, { status: "rejected" }), {
+    return done(row(action, { status: "rejected", ...named }), {
       ok: false,
       status: "rejected",
       detail: "operationId was already used for a different request",
     });
-  if (known?.state === "done")
-    return done({ ...known.operation, id: toolCallId }, { ...known.payload, duplicate: true });
+  if (known?.state === "done") {
+    const again = call.replay ? call.replay(known) : known;
+    return done({ ...again.operation, id: toolCallId }, { ...again.payload, duplicate: true });
+  }
   if (known) {
     const unrecorded =
       typeof call.readBack === "string"
@@ -282,7 +298,7 @@ export async function runOperation(
             detail: `this operation started earlier and its outcome was not recorded; ${call.readBack}, do not repeat it blindly`,
           }
         : call.readBack(known);
-    return done(row(action, { status: "unknown" }), {
+    return done(row(action, { status: "unknown", ...named }), {
       ok: false,
       status: "unknown",
       ...unrecorded.payload,
@@ -309,7 +325,7 @@ export async function runOperation(
       }
     },
     notSaved: (nothing) =>
-      done(row(action, { status: "error" }), {
+      done(row(action, { status: "error", ...named }), {
         ok: false,
         status: "error",
         detail: `the conversation could not be saved; nothing was ${nothing}`,
@@ -419,7 +435,7 @@ export async function askUser(
   if (decision.reason === "error")
     return refuse(
       "error",
-      `the check made when the user confirmed found a system error (${decision.detail}); nothing was ${nothing} and nothing was changed. This is not a change by the user: tell them, and do not retry blindly`
+      `the check made when the user confirmed found a system error (${decision.detail}); nothing was ${nothing}. This is not a change by the user: tell them, and do not retry blindly`
     );
   return refuse(
     "expired",

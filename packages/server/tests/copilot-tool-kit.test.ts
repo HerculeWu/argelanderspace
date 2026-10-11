@@ -214,6 +214,75 @@ describe("runOperation", () => {
     });
   });
 
+  test("replay: a finished operation can be answered with what happened since, still as a duplicate", async () => {
+    const operation: CopilotOperation = {
+      id: "c0",
+      tool: "library",
+      action: "attach_arxiv",
+      status: "pending",
+      job: { id: "j_1", status: "queued" },
+    };
+    known.set("op-1", {
+      state: "done",
+      hash: digest(rest),
+      payload: { ok: true, status: "pending" },
+      operation,
+    });
+    const result = await runOperation(
+      { journal: journal(), admitting: () => true },
+      {
+        ...call,
+        requestedId: "op-1",
+        replay: (k) => ({
+          operation: { ...k.operation, status: "ok", job: { id: "j_1", status: "done" } },
+          payload: { ...k.payload, ok: true, status: "ok" },
+        }),
+      },
+      okBody
+    );
+    expect(result.details).toEqual({
+      ...operation,
+      id: "c1",
+      status: "ok",
+      job: { id: "j_1", status: "done" },
+    });
+    expect(payloadOf(result)).toEqual({ ok: true, status: "ok", duplicate: true });
+  });
+
+  test("named: the kit's own records carry the object and label only when given", async () => {
+    const object = { kind: "doc", id: "d_1" } as NonNullable<CopilotOperation["object"]>;
+    const named = { object, label: "d_1" };
+    const ctx = (admitting = true, failBegin = false) => ({
+      journal: journal(failBegin),
+      admitting: () => admitting,
+    });
+    const closed = await runOperation(ctx(false), { ...call, named }, okBody);
+    known.set("op-r", { state: "begun", hash: "other" });
+    const rejected = await runOperation(ctx(), { ...call, named, requestedId: "op-r" }, okBody);
+    known.set("op-u", { state: "begun", hash: digest(rest) });
+    const unknown = await runOperation(ctx(), { ...call, named, requestedId: "op-u" }, okBody);
+    const unsaved = await runOperation(ctx(true, true), { ...call, named }, async (op) =>
+      op.begin() ? okBody(op) : op.notSaved("deleted")
+    );
+    for (const [result, status] of [
+      [closed, "error"],
+      [rejected, "rejected"],
+      [unknown, "unknown"],
+      [unsaved, "error"],
+    ] as const)
+      expect(result.details).toEqual({
+        id: "c1",
+        tool: "plan",
+        action: "rename",
+        status,
+        object,
+        label: "d_1",
+      });
+    // without `named` the same records stay bare
+    const bare = await runOperation(ctx(false), call, okBody);
+    expect(bare.details).toEqual({ id: "c1", tool: "plan", action: "rename", status: "error" });
+  });
+
   test("finish can journal the handler's own answer instead of the wording the model read", async () => {
     const result = await runOperation(
       { journal: journal(), runId: "r1", admitting: () => true },
@@ -544,7 +613,7 @@ describe("askUser", () => {
       ok: false,
       status: "error",
       detail:
-        "the check made when the user confirmed found a system error (plans.json unreadable); nothing was deleted and nothing was changed. This is not a change by the user: tell them, and do not retry blindly",
+        "the check made when the user confirmed found a system error (plans.json unreadable); nothing was deleted. This is not a change by the user: tell them, and do not retry blindly",
     });
     expect(released.n).toBe(1);
   });
