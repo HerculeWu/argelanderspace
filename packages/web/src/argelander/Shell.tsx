@@ -1,5 +1,5 @@
-import { type DiscoveryPage, DiscoverySavedViewActionSchema, discoveryActionNeedsExploration, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, type LibraryPage, type LibraryViewAction, LibraryViewActionSchema, type MailPage, MAX_PANES, type PageContext, type PdfPage, type TextSourcePage, type PlanPage, type PlanViewAction, type ReaderPage, type ReaderViewAction, ReaderViewActionSchema, type WorkspaceViewAction, WorkspaceViewActionSchema, type WriterPage, type WriterViewAction, WriterViewActionSchema } from "@argelanderspace/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DiscoverySavedViewActionSchema, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -8,22 +8,26 @@ import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { planResize, resizeDivider, shareOf } from "./layout";
+import { createPaneManager, type Pane, type PaneAdapter, type PaneManager, type ViewActionOutcome } from "./panes";
 import { ACCENTS, useTweaks } from "./theme";
 import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
 import { applyDocDeletion, confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
-import type { ReaderViewController } from "../doc/reader-bridge";
-import { LibraryView, type LibraryViewController } from "../library/LibraryView";
-import { PlanView, type PlanViewController } from "../plan/PlanView";
-import type { WriterViewController } from "../writer/WriterView";
-import { manuscriptDeleteGuard, writerPageStatus } from "../writer/writer-context";
+import { createDocPane, type DocPaneHost } from "../doc/doc-pane-adapter";
+import { LibraryView } from "../library/LibraryView";
+import { createLibraryPane } from "../library/library-pane";
+import { PlanView } from "../plan/PlanView";
+import { createPlanPane } from "../plan/plan-pane";
+import { manuscriptDeleteGuard } from "../writer/writer-context";
 import { WriterView } from "../writer/WriterView";
+import { createWriterPane } from "../writer/writer-pane";
 import { Copilot } from "../copilot/Copilot";
 import type { ConfirmationGuards } from "../copilot/confirmations";
 import { MailNavItem } from "../mail/MailNavItem";
 import { MailView } from "../mail/MailView";
+import { createMailPane } from "../mail/mail-pane";
 
 interface NavItem {
   k: string;
@@ -41,12 +45,9 @@ const NAV: NavItem[] = [
 ];
 const NAV_MAP: Record<string, NavItem> = Object.fromEntries(NAV.map((n) => [n.k, n]));
 
-interface Pane {
-  id: number;
-  view: string;
-  size: number;
-}
-
+/** The pane the Shell starts with. */
+const INITIAL_PANE_ID = 1;
+const noChange = () => {};
 
 export function Shell() {
   const { t } = useTranslation();
@@ -73,56 +74,30 @@ export function Shell() {
     setViewClaimed(false);
     return claimViewId(viewId, { onHeld: () => setViewClaimed(true), onTaken: () => { revision.current = 0; setViewId(crypto.randomUUID()); } });
   }, [viewId]);
-  const [planPages, setPlanPages] = useState<Record<number, PlanPage | null>>({});
-  const reportPlan = useCallback((paneId: number, page: PlanPage | null) => { setPlanPages((previous) => ({ ...previous, [paneId]: page })); }, []);
-  const [libraryPages, setLibraryPages] = useState<Record<number, LibraryPage | null>>({});
-  const reportLibrary = useCallback((paneId: number, page: LibraryPage | null) => { setLibraryPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  // The exploration of a Library pane (Discovery): while a pane explores, this page replaces its Library page for the Copilot.
-  const [discoveryPages, setDiscoveryPages] = useState<Record<number, DiscoveryPage | null>>({});
-  const reportDiscovery = useCallback((paneId: number, page: DiscoveryPage | null) => { setDiscoveryPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  const discoveryPagesRef = useRef(discoveryPages);
-  discoveryPagesRef.current = discoveryPages;
-  // The Reader of each Doc pane: the page it reports (built from its admitted epoch) and its own controllers.
-  const [readerPages, setReaderPages] = useState<Record<number, ReaderPage | null>>({});
-  const reportReader = useCallback((paneId: number, page: ReaderPage | null) => { setReaderPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  // The PDF Reader of each Doc pane (copilot ticket 20): identity, position and control state; the pages' content is the service's.
-  // A text Doc's source panel (copilot ticket 29): the editor's current text, assets, diagnostics and revisions.
-  const [textPages, setTextPages] = useState<Record<number, TextSourcePage | null>>({});
-  const reportText = useCallback((paneId: number, page: TextSourcePage | null) => { setTextPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  const [pdfPages, setPdfPages] = useState<Record<number, PdfPage | null>>({});
-  const reportPdf = useCallback((paneId: number, page: PdfPage | null) => { setPdfPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  // The Writer of each Write pane (copilot ticket 22): its page (list or open manuscript with saved content and unsaved draft) and its controller.
-  const [writerPages, setWriterPages] = useState<Record<number, WriterPage | null>>({});
-  const reportWriter = useCallback((paneId: number, page: WriterPage | null) => { setWriterPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  const [mailPages, setMailPages] = useState<Record<number, MailPage | null>>({});
-  const reportMail = useCallback((paneId: number, page: MailPage | null) => { setMailPages((previous) => (previous[paneId] === page ? previous : { ...previous, [paneId]: page })); }, []);
-  const writerPagesRef = useRef(writerPages);
-  writerPagesRef.current = writerPages;
-  // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
-  const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
-    return manuscriptDeleteGuard(Object.values(writerPagesRef.current), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
-  }, [t]);
-  const writerControllers = useRef(new Map<number, WriterViewController>());
-  const registerWriterController = useCallback((paneId: number, controller: WriterViewController | null) => {
-    if (controller) writerControllers.current.set(paneId, controller); else writerControllers.current.delete(paneId);
-  }, []);
-  const readerControllers = useRef(new Map<number, ReaderViewController>());
-  const registerReaderController = useCallback((paneId: number, controller: ReaderViewController | null) => {
-    if (controller) readerControllers.current.set(paneId, controller); else readerControllers.current.delete(paneId);
-  }, []);
-  const libraryControllers = useRef(new Map<number, LibraryViewController>());
-  const registerLibraryController = useCallback((paneId: number, controller: LibraryViewController | null) => {
-    if (controller) libraryControllers.current.set(paneId, controller); else libraryControllers.current.delete(paneId);
-  }, []);
-  const planControllers = useRef(new Map<number, PlanViewController>());
-  const registerPlanController = useCallback((paneId: number, controller: PlanViewController | null) => {
-    if (controller) planControllers.current.set(paneId, controller); else planControllers.current.delete(paneId);
-  }, []);
 
   const [papers, setPapers] = useState<string[]>([]);
   const [currentDoc, setCurrentDocState] = useState<string | null>(null);
   const currentDocRef = useRef(currentDoc);
   currentDocRef.current = currentDoc;
+  const openLibraryDocRef = useRef<(docId: string) => Promise<ViewActionOutcome>>(async () => ({ ok: false, detail: "unavailable" }));
+  // A Doc pane's Reader actions name their Doc; one that is not open is opened through the Shell's own openDoc.
+  const [docHost] = useState<DocPaneHost>(() => ({ currentDoc: () => currentDocRef.current, openDoc: (docId) => openLibraryDocRef.current(docId) }));
+  // The panes, and each pane's page as the Copilot sees it (panes/): the Shell renders from the manager's state.
+  const [manager] = useState(() =>
+    createPaneManager({
+      panes: [{ id: INITIAL_PANE_ID, view: "plan", size: 1 }],
+      activeId: INITIAL_PANE_ID,
+      pages: [createPlanPane(noChange).adapter, createLibraryPane(noChange).adapter, createDocPane(noChange, docHost).adapter, createWriterPane(noChange).adapter, createMailPane(noChange).adapter],
+      confirmLeave: confirmWorkspaceLeave,
+    })
+  );
+  const { panes, activeId, pagesVersion } = useSyncExternalStore(manager.subscribe, manager.getState);
+  const { select: setActiveId, setActiveView, setPaneView, split: splitFrom, close: closePane } = manager;
+
+  // Approving a manuscript delete would discard unsaved edits of an open editor (or its Info/Preamble dialog): ask first.
+  const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
+    return manuscriptDeleteGuard(manager.mounted("write").map((writer) => writer.context().writer), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
+  }, [t, manager]);
   // The workspace's guards before a Copilot approval takes something open away; a refusal keeps the card.
   const confirmationGuards = useMemo<ConfirmationGuards>(() => ({
     // Only the open Doc asks the workspace's leave guard (unsaved drafts), as the delete dialog does.
@@ -132,12 +107,9 @@ export function Shell() {
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
   const clearPendingAnchor = useCallback(() => setPendingAnchor(null), []);
 
-  const [panes, setPanes] = useState<Pane[]>([{ id: 1, view: "plan", size: 1 }]);
-  const [activeId, setActiveId] = useState(1);
-  const nextId = useRef(2);
   const panesRef = useRef<HTMLDivElement>(null);
   const multi = panes.length > 1;
-  const activePane = panes.find((p) => p.id === activeId) || panes[0];
+  const activePane = panes.find((p) => p.id === activeId) || panes[0]!;
 
   // load the ingested-papers list once, pick an initial document; a
   // `/doc/<id>[#anchor]` deep link takes precedence and opens the doc pane
@@ -163,10 +135,10 @@ export function Shell() {
       // mounted — exploreBus keeps it pending until then)
       const exploreSeed = parseExploreHash(window.location.hash);
       if (exploreSeed) {
-        setPanes((ps) =>
+        manager.update((ps) =>
           ps.some((p) => p.view === "library")
             ? ps
-            : ps.map((p) => (p.id === activeId ? { ...p, view: "library" } : p))
+            : ps.map((p) => (p.id === INITIAL_PANE_ID ? { ...p, view: "library" } : p))
         );
         exploreBus.request(exploreSeed);
         return;
@@ -180,120 +152,6 @@ export function Shell() {
       alive = false;
     };
   }, []);
-
-  // These return whether the change was made: the leave-draft protection can refuse it, and a Copilot
-  // request must then say so instead of claiming the page changed.
-  const setActiveView = useCallback(
-    (view: string): boolean => {
-      const currentPane = panes.find((pane) => pane.id === activeId);
-      if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return false;
-      setPanes((ps) => ps.map((p) => (p.id === activeId ? { ...p, view } : p)));
-      return true;
-    },
-    [activeId, panes]
-  );
-  const setPaneView = (id: number, view: string): boolean => {
-    const currentPane = panes.find((pane) => pane.id === id);
-    if (currentPane?.view === "doc" && view !== "doc" && !confirmWorkspaceLeave()) return false;
-    setPanes((ps) => ps.map((p) => (p.id === id ? { ...p, view } : p)));
-    setActiveId(id);
-    return true;
-  };
-
-  // Copilot-requested navigation: runs on the visible Plan page, or opens one first. Background edits
-  // never come through here.
-  const viewActionState = useRef({ panes, activeId, setPaneView });
-  viewActionState.current = { panes, activeId, setPaneView };
-  const runPlanViewAction = useCallback(async (action: PlanViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number }> => {
-    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-    const state = viewActionState.current;
-    const active = state.panes.find((pane) => pane.id === state.activeId) ?? state.panes[0];
-    // An action that only a mounted list can do must not first take the user to the Plan page and then fail.
-    if (action.action === "set_completed") {
-      const candidates = [active, ...state.panes].filter((pane) => pane.view === "plan");
-      if (!candidates.some((pane) => planControllers.current.get(pane.id)?.available(action))) return { ok: false, detail: "unavailable" };
-    }
-    let pane = active.view === "plan" ? active : state.panes.find((candidate) => candidate.view === "plan");
-    // Retry presses a button that exists only on a Plan page that failed to load: never open or switch to a Plan page for it.
-    if (action.action === "retry_plans") {
-      const plans = [active, ...state.panes].filter((candidate) => candidate.view === "plan");
-      if (plans.length === 0) return { ok: false, detail: "unavailable" };
-      const failed = plans.find((candidate) => planControllers.current.get(candidate.id)?.available(action));
-      // refused before any pane switch: a refusal must not change what the user is looking at
-      if (!failed) return { ok: false, detail: "disabled" };
-      pane = failed;
-    }
-    if (action.action === "set_completed")
-      pane = [active, ...state.panes].find((candidate) => candidate.view === "plan" && planControllers.current.get(candidate.id)?.available(action)) ?? pane;
-    if (!pane) {
-      state.setPaneView(active.id, "plan");
-      for (let attempt = 0; attempt < 40 && !planControllers.current.has(active.id); attempt++) await wait(50);
-      if (!planControllers.current.has(active.id))
-        return { ok: false, detail: viewActionState.current.panes.find((candidate) => candidate.id === active.id)?.view === "doc" ? "leave_blocked" : "unavailable" };
-      pane = active;
-    } else if (pane.id !== state.activeId) setActiveId(pane.id);
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const controller = planControllers.current.get(pane.id);
-      const result = controller ? await controller.apply(action) : { ok: false, detail: "unavailable" as const };
-      if (result.detail !== "unavailable") return result;
-      await wait(50);
-    }
-    return { ok: false, detail: "unavailable" };
-  }, []);
-
-  // Copilot-requested Library navigation: runs on the visible Library page, or opens one first. Background
-  // reads and edits never come through here.
-  const runLibraryViewAction = useCallback(async (action: LibraryViewAction): Promise<{ ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number }> => {
-    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-    const state = viewActionState.current;
-    const active = state.panes.find((pane) => pane.id === state.activeId) ?? state.panes[0];
-    // An exploration control acts on the pane the Copilot was shown: the ACTIVE pane, when it is a Library pane that
-    // explores (its page is the published context and the one `save_candidate` checks). It never opens a Library page,
-    // switches pane or reaches into another pane. Every other Library action, and the two entry actions (the work's
-    // explore button, resume), open or use a Library page as before.
-    const isDiscoveryControl = discoveryActionNeedsExploration(action);
-    if (isDiscoveryControl && !(active.view === "library" && discoveryPagesRef.current[active.id])) return { ok: false, detail: "unavailable" };
-    let pane = isDiscoveryControl || active.view === "library" ? active : state.panes.find((candidate) => candidate.view === "library");
-    if (!pane) {
-      if (state.setPaneView(active.id, "library") === false) return { ok: false, detail: "leave_blocked" };
-      pane = active;
-    } else if (pane.id !== state.activeId) setActiveId(pane.id);
-    for (let attempt = 0; attempt < 40; attempt++) {
-      const controller = libraryControllers.current.get(pane.id);
-      const result = controller ? await controller.apply(action) : { ok: false, detail: "unavailable" as const };
-      if (result.detail !== "unavailable") return result;
-      await wait(50);
-    }
-    return { ok: false, detail: "unavailable" };
-  }, []);
-
-  const splitFrom = useCallback(
-    (id: number) => {
-      setPanes((ps) => {
-        if (ps.length >= MAX_PANES) return ps;
-        const src = ps.find((p) => p.id === id) || ps[0];
-        const nid = nextId.current++;
-        const i = ps.findIndex((p) => p.id === id);
-        const copy = ps.map((p) => ({ ...p, size: 1 }));
-        copy.splice(i + 1, 0, { id: nid, view: src.view, size: 1 });
-        setActiveId(nid);
-        return copy;
-      });
-    },
-    []
-  );
-
-  const closePane = (id: number): boolean => {
-    const currentPane = panes.find((pane) => pane.id === id);
-    if (currentPane?.view === "doc" && !confirmWorkspaceLeave()) return false;
-    setPanes((ps) => {
-      if (ps.length <= 1) return ps;
-      const filtered = ps.filter((p) => p.id !== id).map((p) => ({ ...p, size: 1 }));
-      if (id === activeId) setActiveId(filtered[0].id);
-      return filtered;
-    });
-    return true;
-  };
 
   const setCurrentDoc = useCallback((id: string) => {
     if (id === currentDocRef.current) return;
@@ -317,13 +175,14 @@ export function Shell() {
         setPendingAnchor(anchor ?? null);
       }
       // ensure a pane shows the document: prefer an existing doc pane, else the active one
-      setPanes((ps) => {
+      manager.update((ps) => {
         if (ps.some((p) => p.view === "doc")) return ps;
-        return ps.map((p) => (p.id === activeId ? { ...p, view: "doc" } : p));
+        const active = manager.getState().activeId;
+        return ps.map((p) => (p.id === active ? { ...p, view: "doc" } : p));
       });
       return true;
     },
-    [activeId, papers]
+    [manager, papers]
   );
 
   // deep links: react to browser back/forward and manual hash edits
@@ -375,9 +234,10 @@ export function Shell() {
   // Everything below drives the same callbacks the controls use: the pane limit, the leave-draft
   // protection and the divider rule are the UI's own. Reads go through `shell.current` because an action
   // outlives the render that started it. Nothing here calls focus(): another tab or window is never raised.
+  // A page's own actions go to its pane adapter through the pane manager (panes/).
   const shell = useRef({ panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen });
   shell.current = { panes, activeId, setActiveView, setPaneView, splitFrom, closePane, setTweak, tweaks, papers, setPapers, openDoc, copilotOpen };
-  type Report = { ok: boolean; detail?: "not_found" | "unavailable" | "leave_blocked" | "disabled" | "failed" | "cancelled"; http?: number; folded?: "outline" | "right" };
+  type Report = ViewActionOutcome;
   const settle = async (check: () => boolean): Promise<boolean> => {
     for (let attempt = 0; attempt < 40; attempt++) {
       if (check()) return true;
@@ -420,7 +280,7 @@ export function Shell() {
         if (index < 0) return { ok: false, detail: "not_found" };
         const sizes = planResize(s().panes.map((pane) => pane.size), index, action.share);
         if (!sizes) return { ok: false, detail: "disabled" };
-        setPanes((ps) => (ps.length === sizes.length ? ps.map((pane, i) => ({ ...pane, size: sizes[i] ?? pane.size })) : ps));
+        manager.update((ps) => (ps.length === sizes.length ? ps.map((pane, i) => ({ ...pane, size: sizes[i] ?? pane.size })) : ps));
         return { ok: true };
       }
       case "set_appearance": {
@@ -457,54 +317,8 @@ export function Shell() {
     if (shell.current.openDoc(docId) === false) return { ok: false, detail: "leave_blocked" };
     return (await settle(() => currentDocRef.current === docId && shell.current.panes.some((pane) => pane.view === "doc"))) ? { ok: true } : { ok: false, detail: "unavailable" };
   }, []);
+  openLibraryDocRef.current = openLibraryDoc;
   const openTaskDoc = openLibraryDoc;
-  // Copilot-requested Reader navigation. The Doc is named; if it is not the one open it is opened first by the
-  // Shell's own openDoc (leave-draft protection included). The action then runs on the ACTIVE pane when that is a
-  // Doc pane (the pane whose page the Copilot was shown), else on the first Doc pane, through that Reader's own
-  // controllers; a Reader that is still loading or syncing answers `unavailable` and is given the UI's own two
-  // seconds (longer after opening a Doc, which has to load first). Background reads never come through here.
-  const runReaderViewAction = useCallback(async (action: ReaderViewAction): Promise<Report> => {
-    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-    const opened = currentDocRef.current === action.docId && shell.current.panes.some((pane) => pane.view === "doc");
-    if (!opened) {
-      // Retry has nothing to retry on a Doc that is not open: opening it is the user's open button, not a retry.
-      // Download is the Reader's own toolbar button: with no open PDF Reader there is none to press (nothing is opened for it).
-      if (action.action === "retry_sync" || action.action === "download_original") return { ok: false, detail: "unavailable" };
-      const result = await openLibraryDoc(action.docId);
-      if (!result.ok) return result;
-    }
-    let attempts = opened ? 40 : 100;
-    for (; attempts > 0; attempts--) {
-      const { panes, activeId } = shell.current;
-      const active = panes.find((pane) => pane.id === activeId) ?? panes[0];
-      const pane = active?.view === "doc" ? active : panes.find((candidate) => candidate.view === "doc");
-      const controller = pane ? readerControllers.current.get(pane.id) : undefined;
-      if (pane && controller) {
-        if (pane.id !== shell.current.activeId) setActiveId(pane.id);
-        const result = await controller.apply(action);
-        if (result.detail !== "unavailable") return result;
-      }
-      await wait(50);
-    }
-    return { ok: false, detail: "unavailable" };
-  }, [openLibraryDoc]);
-  // Copilot-requested Writer navigation: runs on the active Write pane (the page the Copilot was shown), else the first
-  // one, else the active pane is switched to the Writer first (the activity-bar button, with its leave protection).
-  const runWriterViewAction = useCallback(async (action: WriterViewAction): Promise<Report> => {
-    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-    const { panes: current, activeId: activeNow } = shell.current;
-    const active = current.find((pane) => pane.id === activeNow) ?? current[0];
-    let pane = active?.view === "write" ? active : current.find((candidate) => candidate.view === "write");
-    if (!pane) {
-      if (action.action === "close_manuscript") return { ok: true };
-      if (!active || shell.current.setPaneView(active.id, "write") === false) return { ok: false, detail: "leave_blocked" };
-      for (let attempt = 0; attempt < 40 && !writerControllers.current.has(active.id); attempt++) await wait(50);
-      if (!writerControllers.current.has(active.id)) return { ok: false, detail: "unavailable" };
-      pane = active;
-    } else if (pane.id !== shell.current.activeId) setActiveId(pane.id);
-    const controller = writerControllers.current.get(pane.id);
-    return controller ? controller.apply(action) : { ok: false, detail: "unavailable" };
-  }, []);
   const docDeletedRef = useRef(docDeleted);
   docDeletedRef.current = docDeleted;
   const runViewAction = useCallback(async (action: CopilotViewAction): Promise<Report> => {
@@ -518,20 +332,15 @@ export function Shell() {
     // not exploring ignores it). It never opens or switches anything.
     const saved = DiscoverySavedViewActionSchema.safeParse(action);
     if (saved.success) {
-      for (const controller of libraryControllers.current.values()) void controller.apply(saved.data);
+      for (const library of manager.mounted("library")) void library.apply?.(saved.data);
       return { ok: true };
     }
     const workspaceAction = WorkspaceViewActionSchema.safeParse(action);
     if (workspaceAction.success) return runWorkspaceAction(workspaceAction.data);
     if (action.action === "open_task_doc") return openTaskDoc(action.docId);
-    const readerAction = ReaderViewActionSchema.safeParse(action);
-    if (readerAction.success) return runReaderViewAction(readerAction.data);
-    const writerAction = WriterViewActionSchema.safeParse(action);
-    if (writerAction.success) return runWriterViewAction(writerAction.data);
-    const libraryAction = LibraryViewActionSchema.safeParse(action);
-    if (libraryAction.success) return runLibraryViewAction(libraryAction.data);
-    return runPlanViewAction(action as PlanViewAction);
-  }, [runPlanViewAction, runWorkspaceAction, openTaskDoc, runLibraryViewAction, runReaderViewAction, runWriterViewAction]);
+    // Every page action (Plan, Library and Discovery, Reader and PDF, Writer) goes to the adapter that handles it.
+    return manager.runViewAction(action);
+  }, [manager, runWorkspaceAction, openTaskDoc]);
 
   // divider drag-resize
   const onDividerDown = (i: number, e: React.MouseEvent) => {
@@ -543,7 +352,7 @@ export function Shell() {
     const move = (ev: MouseEvent) => {
       const d = ((ev.clientX - startX) / rect.width) * total;
       const sizes = resizeDivider(start, i, d);
-      setPanes((ps) => ps.map((p, idx) => ({ ...p, size: sizes[idx] ?? p.size })));
+      manager.update((ps) => ps.map((p, idx) => ({ ...p, size: sizes[idx] ?? p.size })));
     };
     const up = () => {
       document.removeEventListener("mousemove", move);
@@ -579,62 +388,41 @@ export function Shell() {
     [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, tweaks]
   );
 
-  const pageContext = useMemo<PageContext>(() => ({
-    version: 1, viewId, revision: ++revision.current, paneId: activePane.id, view: activePane.view,
-    otherPanes: panes.filter((pane) => pane.id !== activePane.id).map((pane) => ({ paneId: pane.id, view: pane.view })),
-    // Example data (or a Library still loading / replaced by Discovery) is never reported as complete.
-    status: activePane.view === "plan" ? planPages[activePane.id] ? "complete" : "error"
-      : activePane.view === "library" && discoveryPages[activePane.id] ? (discoveryPages[activePane.id]?.graph ? "complete" : discoveryPages[activePane.id]?.error ? "error" : "unavailable")
-      : activePane.view === "library" ? (libraryPages[activePane.id]?.source === "live" ? "complete" : libraryPages[activePane.id]?.source === "error" ? "error" : "unavailable")
-      // A Reader is complete only with the reading of an admitted epoch; updating is unavailable, a failed read is an error.
-      : activePane.view === "doc" && pdfPages[activePane.id] ? (pdfPages[activePane.id]?.phase === "ready" ? "complete" : ["error", "changed"].includes(pdfPages[activePane.id]?.phase ?? "") ? "error" : "unavailable")
-      : activePane.view === "doc" && textPages[activePane.id] ? (textPages[activePane.id]?.phase === "ready" ? "complete" : textPages[activePane.id]?.phase === "error" ? "error" : "unavailable")
-      : activePane.view === "doc" ? (readerPages[activePane.id]?.reading ? "complete" : ["error", "missing"].includes(readerPages[activePane.id]?.sync.phase ?? "") ? "error" : "unavailable")
-      : activePane.view === "write" ? writerPageStatus(writerPages[activePane.id])
-      // A Mail page is complete once its accounts and lists really loaded; loading, no account and errors are not.
-      : activePane.view === "mail" ? (mailPages[activePane.id]?.phase === "ready" ? "complete" : "unavailable")
-      : "unavailable",
-    plan: activePane.view === "plan" ? planPages[activePane.id] ?? null : null,
-    library: activePane.view === "library" && !discoveryPages[activePane.id] ? libraryPages[activePane.id] ?? null : null,
-    discovery: activePane.view === "library" ? discoveryPages[activePane.id] ?? null : null,
-    // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
-    reader: activePane.view === "doc" ? readerPages[activePane.id] ?? null : null,
-    pdf: activePane.view === "doc" ? pdfPages[activePane.id] ?? null : null,
-    textSource: activePane.view === "doc" ? textPages[activePane.id] ?? null : null,
-    // The Writer of the ACTIVE pane: the list or the open manuscript (saved content, and the draft apart from it).
-    writer: activePane.view === "write" ? writerPages[activePane.id] ?? null : null,
-    // The Mail page of the ACTIVE pane: untrusted external data (the open message and the list headers).
-    mail: activePane.view === "mail" ? mailPages[activePane.id] ?? null : null,
-    workspace: {
-      maxPanes: MAX_PANES, activePaneId: activePane.id,
-      panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
-      // Stored tweaks can be damaged; the published snapshot only ever carries values the service accepts.
-      appearance: {
-        theme: (APPEARANCE_THEMES as readonly string[]).includes(tweaks.theme) ? tweaks.theme : "dark",
-        accent: tweaks.accent in ACCENTS ? tweaks.accent : "azure",
-        density: (APPEARANCE_DENSITIES as readonly string[]).includes(tweaks.density) ? tweaks.density : "regular",
-        language: (APPEARANCE_LANGUAGES as readonly string[]).includes(tweaks.language ?? "") ? tweaks.language ?? DEFAULT_LANGUAGE : DEFAULT_LANGUAGE,
+  // The page fields and status are the active pane's page adapter's (`pagesVersion` changes with what pages report).
+  const pageContext = useMemo<PageContext>(() => {
+    const page = manager.pageOf(activePane);
+    const fields = page?.context() ?? {};
+    return {
+      version: 1, viewId, revision: ++revision.current, paneId: activePane.id, view: activePane.view,
+      otherPanes: panes.filter((pane) => pane.id !== activePane.id).map((pane) => ({ paneId: pane.id, view: pane.view })),
+      // Example data (or a Library still loading / replaced by Discovery) is never reported as complete.
+      status: page?.status() ?? "unavailable",
+      plan: fields.plan ?? null,
+      library: fields.library ?? null,
+      discovery: fields.discovery ?? null,
+      // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
+      reader: fields.reader ?? null,
+      pdf: fields.pdf ?? null,
+      textSource: fields.textSource ?? null,
+      // The Writer of the ACTIVE pane: the list or the open manuscript (saved content, and the draft apart from it).
+      writer: fields.writer ?? null,
+      // The Mail page of the ACTIVE pane: untrusted external data (the open message and the list headers).
+      mail: fields.mail ?? null,
+      workspace: {
+        maxPanes: MAX_PANES, activePaneId: activePane.id,
+        panes: panes.map((pane, index) => ({ paneId: pane.id, view: pane.view, share: shareOf(panes.map((item) => item.size), index) })),
+        // Stored tweaks can be damaged; the published snapshot only ever carries values the service accepts.
+        appearance: {
+          theme: (APPEARANCE_THEMES as readonly string[]).includes(tweaks.theme) ? tweaks.theme : "dark",
+          accent: tweaks.accent in ACCENTS ? tweaks.accent : "azure",
+          density: (APPEARANCE_DENSITIES as readonly string[]).includes(tweaks.density) ? tweaks.density : "regular",
+          language: (APPEARANCE_LANGUAGES as readonly string[]).includes(tweaks.language ?? "") ? tweaks.language ?? DEFAULT_LANGUAGE : DEFAULT_LANGUAGE,
+        },
+        copilotOpen,
       },
-      copilotOpen,
-    },
-  }), [viewId, activePane.id, activePane.view, panes, planPages, libraryPages, discoveryPages, readerPages, pdfPages, textPages, writerPages, mailPages, tweaks, copilotOpen]);
+    };
+  }, [manager, viewId, activePane.id, activePane.view, panes, pagesVersion, tweaks, copilotOpen]);
   useEffect(() => { saveViewIdentity({ viewId, revision: pageContext.revision }); }, [viewId, pageContext]);
-
-  const renderView = (p: Pane) => {
-    switch (p.view) {
-      case "library":
-        return <LibraryView paneId={p.id} onContext={reportLibrary} onDiscovery={reportDiscovery} onController={registerLibraryController} />;
-      case "doc":
-        return <DocPane paneId={p.id} onContext={reportReader} onPdfContext={reportPdf} onTextContext={reportText} onController={registerReaderController} />;
-      case "mail":
-        return <MailView paneId={p.id} onContext={reportMail} />;
-      case "write":
-        return <WriterView paneId={p.id} onContext={reportWriter} onController={registerWriterController} />;
-      default:
-        // "plan" and any unknown view: the plan view is the default landing.
-        return <PlanView paneId={p.id} onContext={reportPlan} onController={registerPlanController} />;
-    }
-  };
 
   // F12 locators: data-ui names a semantic role (never translated copy),
   // data-ui-key distinguishes repeated instances using an existing public id.
@@ -731,7 +519,7 @@ export function Shell() {
                   onSplit={() => splitFrom(p.id)}
                   onClose={() => closePane(p.id)}
                   onDividerDown={(e) => onDividerDown(i, e)}
-                  render={() => renderView(p)}
+                  render={() => <PaneHost key={p.view} pane={p} manager={manager} docHost={docHost} />}
                 />
               ))}
             </div>
@@ -748,6 +536,45 @@ export function Shell() {
       </div>
     </WorkspaceProvider>
   );
+}
+
+/** A page mounted in a pane, with the adapter it reports to (created for this mount, registered while it lasts). */
+interface MountedPage {
+  adapter: PaneAdapter;
+  render: (paneId: number) => React.ReactNode;
+}
+
+function mountPage(view: string, changed: () => void, docHost: DocPaneHost): MountedPage {
+  switch (view) {
+    case "library": {
+      const { adapter, props } = createLibraryPane(changed);
+      return { adapter, render: (paneId) => <LibraryView paneId={paneId} {...props} /> };
+    }
+    case "doc": {
+      const { adapter, props } = createDocPane(changed, docHost);
+      return { adapter, render: (paneId) => <DocPane paneId={paneId} {...props} /> };
+    }
+    case "mail": {
+      const { adapter, props } = createMailPane(changed);
+      return { adapter, render: (paneId) => <MailView paneId={paneId} {...props} /> };
+    }
+    case "write": {
+      const { adapter, props } = createWriterPane(changed);
+      return { adapter, render: (paneId) => <WriterView paneId={paneId} {...props} /> };
+    }
+    default: {
+      // "plan" and any unknown view: the plan view is the default landing.
+      const { adapter, props } = createPlanPane(changed);
+      return { adapter, render: (paneId) => <PlanView paneId={paneId} {...props} /> };
+    }
+  }
+}
+
+/** One pane's page: keyed by its view, so a new page gets a new adapter. */
+function PaneHost({ pane, manager, docHost }: { pane: Pane; manager: PaneManager; docHost: DocPaneHost }) {
+  const [page] = useState(() => mountPage(pane.view, manager.changed, docHost));
+  useEffect(() => manager.register(pane.id, page.adapter), [manager, pane.id, page]);
+  return page.render(pane.id);
 }
 
 function PaneFragment({

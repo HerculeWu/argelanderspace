@@ -115,7 +115,7 @@ pnpm workspace，ESM-only，TypeScript strict + noUncheckedIndexedAccess，Biome
 | infra | workspace/compile/instrument/figures/ingest；arXiv 抓取解包；ADS/Crossref/OpenAlex、config、zip、pyjson 缓存兼容；Writer opt-in 编译缓存 |
 | server | REST/SPA/images/WS、jobs/watcher、领域锁、DocMutationRegistry、Writer single-flight/drain；Copilot 各 tool 的调用生命周期（operationId/journal 三态、begin/done）与真人确认请求流程（unsupported/declined/expired）统一在 `copilot-tool-kit`，tool 只决定调哪个业务操作和卡片怎么描述；每种真人确认 kind 的卡片字段、持久记录、点击时三态检查（读不到→error、没了/变了→changed）、后台复查触发类别与绑定 view 规则各是 `copilot-confirmations/` 下一个 adapter，host 只做持久化、等待与 decide |
 | cli | 命令注册、冻结 agent 输出、磁盘读写 |
-| web | 阅读/文献/计划/标注/Writer/探索，共享 IR 展示、ReaderSession、i18n、graph 共享 renderer 与两个 adapter |
+| web | 阅读/文献/计划/标注/Writer/探索，共享 IR 展示、ReaderSession、i18n、graph 共享 renderer 与两个 adapter；Shell 的窗格状态、leave-draft 保护与 Copilot 视图动作的「等页面就绪 / unavailable 重试」在 `argelander/panes/` 的窗格管理器，每个页面以一个 PaneAdapter 注册（页面上下文、status、动作路由） |
 | app | npm 单包；tsup bin/web/argelander.sty/许可 notices；createRequire banner 有实际运行作用 |
 
 单用户文件存储，不使用 SQLite。源码结构优先通过 CodeGraph 定位；工具不足再读源码。旧“截至 Stage 8 无 CI”的历史观测不是本次对 CI 的重验证。
