@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PdfAnnotationOperation } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths, publishPdfDoc } from "@argelanderspace/core";
-import { beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test } from "vitest";
 import { DocMutationRegistry } from "../src/doc-mutations.js";
 import { AsyncLock } from "../src/lock.js";
 import { createPdfAccess } from "../src/pdf-access.js";
@@ -45,6 +45,7 @@ class WatchedLock extends AsyncLock {
   }
 }
 
+let root: string;
 let paths: LibraryPaths;
 let lock: WatchedLock;
 let registry: DocMutationRegistry;
@@ -88,7 +89,7 @@ const createOp = (over: Partial<PdfAnnotationOperation> = {}): PdfAnnotationOper
   }) as PdfAnnotationOperation;
 
 beforeEach(() => {
-  const root = mkdtempSync(join(tmpdir(), "pdf-access-"));
+  root = mkdtempSync(join(tmpdir(), "pdf-access-"));
   paths = libraryPaths(join(root, "data"));
   mkdirSync(paths.libraryDir, { recursive: true });
   mkdirSync(paths.outputDir, { recursive: true });
@@ -116,6 +117,10 @@ beforeEach(() => {
     onChanged: (docId, kind) =>
       changes.push({ docId, kind, inLock: lock.held, rev: sidecar().rev as number }),
   });
+});
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
 });
 
 // ---- owners --------------------------------------------------------------------------------------------------- //
