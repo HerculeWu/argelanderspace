@@ -33,7 +33,14 @@ export interface CopilotSubscription {
 }
 
 export interface WsBus {
-  /** Listen to one message type; the same handler is held once per type. */
+  /**
+   * Listen to one message type; the same handler is held once per type.
+   * For the job.*, copilot.* and hello types the built-in listeners (job,
+   * resync, Copilot subscriptions) run first and `on` handlers after them, so
+   * a built-in listener that throws keeps this frame from `on` handlers — as
+   * before, a throwing listener ends that frame's dispatch and onmessage
+   * swallows the error.
+   */
   on<T extends WsType>(type: T, handler: (msg: WsMessageOf<T>) => void): () => void;
   /** Job transitions (`job.*`, under their own type) and the `hello` snapshot replay (under `"hello"`). */
   onJob(cb: JobListener): () => void;

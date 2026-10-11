@@ -4,10 +4,9 @@ import { type CopilotSubscription, type JobListener, createWsBus } from "./ws-bu
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
 //
-// Protocol (server → client JSON frames): `hello` (job-table snapshot on
-// connect), `job.created|progress|done|failed` (full job each time),
-// `library.changed`, `plan.changed` (Stage 4), and `annotation.changed`
-// (Stage 8).
+// Protocol (server → client JSON frames): the complete list is the contracts
+// `WsServerMessageSchema`, and each type's routing is a row of `HANDLERS` in
+// `ws-bus.ts`.
 // Reconnects with exponential backoff (1s → 2s → … → 15s)
 // so a server restart silently re-subscribes.
 //
@@ -38,6 +37,7 @@ function adapter<C extends object, H>(make: (cb: C) => H): (cb: C) => H {
     return handler;
   };
 }
+// Pure identity caches: they keep the old Set semantics (the same cb registered twice is delivered once, one off removes it).
 const withoutMessage = adapter((cb: () => void) => () => cb());
 const docIdOf = adapter((cb: AnnotationListener) => (msg: { doc_id: string }) => cb(msg.doc_id));
 
