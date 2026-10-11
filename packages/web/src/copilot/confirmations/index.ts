@@ -19,5 +19,5 @@ void covered;
 
 /** The card kind of a confirmation (none only for an action this build does not know). */
 export function kindOf(card: CopilotConfirmation): ConfirmationCardKind | undefined {
-  return CONFIRMATION_KINDS.find((kind) => kind.match(card)) as ConfirmationCardKind | undefined;
+  return CONFIRMATION_KINDS.find((kind) => kind.match(card));
 }

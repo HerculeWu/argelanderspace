@@ -102,12 +102,6 @@ export function Shell() {
   const beforeManuscriptDelete = useCallback((manuscriptId: string) => {
     return manuscriptDeleteGuard(Object.values(writerPagesRef.current), manuscriptId, () => window.confirm(t("copilot.confirmation.manuscriptDraftGuard")));
   }, [t]);
-  // The workspace's guards before a Copilot approval takes something open away; a refusal keeps the card.
-  const confirmationGuards = useMemo<ConfirmationGuards>(() => ({
-    // Only the open Doc asks the workspace's leave guard (unsaved drafts), as the delete dialog does.
-    leaveDoc: (docId) => docId !== currentDocRef.current || confirmWorkspaceLeave(),
-    leaveManuscript: beforeManuscriptDelete,
-  }), [beforeManuscriptDelete]);
   const writerControllers = useRef(new Map<number, WriterViewController>());
   const registerWriterController = useCallback((paneId: number, controller: WriterViewController | null) => {
     if (controller) writerControllers.current.set(paneId, controller); else writerControllers.current.delete(paneId);
@@ -129,6 +123,12 @@ export function Shell() {
   const [currentDoc, setCurrentDocState] = useState<string | null>(null);
   const currentDocRef = useRef(currentDoc);
   currentDocRef.current = currentDoc;
+  // The workspace's guards before a Copilot approval takes something open away; a refusal keeps the card.
+  const confirmationGuards = useMemo<ConfirmationGuards>(() => ({
+    // Only the open Doc asks the workspace's leave guard (unsaved drafts), as the delete dialog does.
+    leaveDoc: (docId) => docId !== currentDocRef.current || confirmWorkspaceLeave(),
+    leaveManuscript: beforeManuscriptDelete,
+  }), [beforeManuscriptDelete]);
   const [pendingAnchor, setPendingAnchor] = useState<string | null>(null);
   const clearPendingAnchor = useCallback(() => setPendingAnchor(null), []);
 

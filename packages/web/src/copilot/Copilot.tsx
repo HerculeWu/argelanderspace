@@ -495,7 +495,10 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const guard = useRef(false);
+  // Each card is paired with ONE kind: that kind's `match` picked it, so its `Body`, label and guard receive the card type they expect.
   const kind = kindOf(confirmation);
+  // Unreachable within the contracts (every member of the union has a kind; `confirmations/index.ts` checks that at compile time):
+  // only an older bundle meeting a newer action lands here, and drawing nothing is safer than passing it off as another card.
   if (!kind) return null;
   const decide = async (decision: "approve" | "decline") => {
     if (guard.current) return;
