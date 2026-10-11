@@ -11,47 +11,48 @@ import type {
   MailPresetsResponse,
   MailTestResponse,
 } from "@argelanderspace/contracts";
+import { apiRequest, HttpError } from "./request";
 
 /** A failed mail request: only the machine code (and the server's field/test details); never mail text. */
-export class MailApiError extends Error {
+export class MailApiError extends HttpError {
   constructor(
-    readonly code: string,
-    readonly status: number,
-    readonly extra: { fields?: string[]; test?: MailTestResponse } = {}
+    code: string,
+    status: number,
+    readonly extra: { fields?: string[]; test?: MailTestResponse } = {},
+    body: unknown = null
   ) {
-    super(code);
+    super(code, status, body);
   }
 }
 
 /** The machine code of a failed mail request; a network failure or anything else is "unreachable". */
 export const mailErrorCode = (e: unknown): string => (e instanceof MailApiError ? e.code : "unreachable");
 
+/**
+ * Mail's reading of a failed request: no answer is `unreachable`; an answer's code is its body's `code` or
+ * `unavailable`. `withDetails` adds the server's field/test details (the account routes). Anything that is not an
+ * HttpError (an abort, a non-JSON ok answer) passes through.
+ */
+export function toMailApiError(e: unknown, withDetails: boolean): unknown {
+  if (!(e instanceof HttpError)) return e;
+  if (e.status === 0) return new MailApiError("unreachable", 0);
+  const data = e.body as { code?: unknown; fields?: string[]; test?: MailTestResponse } | null;
+  const extra = withDetails
+    ? { ...(Array.isArray(data?.fields) ? { fields: data.fields } : {}), ...(data?.test ? { test: data.test } : {}) }
+    : {};
+  return new MailApiError(typeof data?.code === "string" ? data.code : "unavailable", e.status, extra, e.body);
+}
+
 export async function request<T>(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<T> {
-  let response: Response;
   try {
-    response = await fetch(`/api/mail${path}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal,
-      cache: "no-store",
-    });
+    return await apiRequest<T>(
+      `/api/mail${path}`,
+      { method, headers: { "Content-Type": "application/json" }, json: body, cache: "no-store" },
+      { signal }
+    );
   } catch (error) {
-    if ((error as { name?: string } | null)?.name === "AbortError") throw error;
-    throw new MailApiError("unreachable", 0);
+    throw toMailApiError(error, true);
   }
-  if (!response.ok) {
-    const data = (await response.json().catch(() => null)) as {
-      code?: unknown;
-      fields?: string[];
-      test?: MailTestResponse;
-    } | null;
-    throw new MailApiError(typeof data?.code === "string" ? data.code : "unavailable", response.status, {
-      ...(Array.isArray(data?.fields) ? { fields: data.fields } : {}),
-      ...(data?.test ? { test: data.test } : {}),
-    });
-  }
-  return response.json() as Promise<T>;
 }
 
 export const acc = (id: string) => `/accounts/${encodeURIComponent(id)}`;

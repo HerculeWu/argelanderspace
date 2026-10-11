@@ -1,10 +1,16 @@
 import type { CopilotConfirmationDecision, CopilotConversationList, CopilotResumeRequest, CopilotViewActionResult, ConversationModel, ConversationSnapshot, CopilotMessageRequest, PageContext } from "@argelanderspace/contracts";
-export class CopilotApiError extends Error { constructor(readonly code: string) { super(code); } }
+import { apiRequest, HttpError } from "./request";
+export class CopilotApiError extends HttpError { constructor(code: string, status = 0, body: unknown = null) { super(code, status, body); } }
+/** A failed answer is its body's `code` or `unavailable`, and so is an answer that is not JSON; a network failure passes through as is. */
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`/api/copilot${path}`, { method, cache: "no-store", headers: { "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const data = await response.json();
-  if (!response.ok) throw new CopilotApiError(typeof data.code === "string" ? data.code : "unavailable");
-  return data as T;
+  try {
+    return await apiRequest<T>(`/api/copilot${path}`, { method, cache: "no-store", headers: { "Content-Type": "application/json" }, json: body });
+  } catch (error) {
+    if (!(error instanceof HttpError)) throw new CopilotApiError("unavailable");
+    if (error.status === 0) throw error.cause;
+    const code = (error.body as { code?: unknown } | null)?.code;
+    throw new CopilotApiError(typeof code === "string" ? code : "unavailable", error.status, error.body);
+  }
 }
 export const listConversations = () => request<CopilotConversationList>("/conversations");
 export const createConversation = (model: ConversationModel | null) => request<ConversationSnapshot>("/conversations", "POST", { model });
