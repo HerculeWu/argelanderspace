@@ -65,6 +65,12 @@ import {
 } from "@earendil-works/pi-ai";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
 import { type FittedEnvelope, fitEnvelope, historyCost } from "./copilot-batching.js";
+import {
+  type ConfirmationKind,
+  type ConfirmationKinds,
+  type ConfirmationTrigger,
+  createConfirmationKinds,
+} from "./copilot-confirmations/index.js";
 import { atomicCopilotFile, readCopilotHistory, saveCopilotHistory } from "./copilot-history.js";
 import {
   annotateCoverage,
@@ -106,15 +112,15 @@ import {
   WORKSPACE_TOOL_NAME,
 } from "./copilot-workspace-tool.js";
 import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
-import { jobView, type LibraryOpDeps, prepareArxivRefresh } from "./library-actions.js";
+import { jobView, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { mailAccountProbe } from "./mail-account-probe.js";
-import { accountsOf, draftUnchanged, type MailOpDeps } from "./mail-copilot.js";
-import { describeDeleteTarget, type PlanOpDeps, type RemovedTask } from "./plans-actions.js";
+import { accountsOf, type MailOpDeps } from "./mail-copilot.js";
+import type { PlanOpDeps, RemovedTask } from "./plans-actions.js";
 import { TaskUndoRegistry, type UndoResult } from "./plans-undo.js";
 import { ProviderSettings, ProviderSettingsError } from "./providers.js";
 import type { TextDocService } from "./text-docs.js";
-import { describeManuscriptDelete, type WriterOpDeps } from "./writer-actions.js";
+import type { WriterOpDeps } from "./writer-actions.js";
 
 export class CopilotError extends Error {
   constructor(
@@ -275,178 +281,14 @@ function measureForWindow(value: unknown): { size: number; imageBytes: number } 
   return { size: Buffer.byteLength(text) + images, imageBytes };
 }
 
-type ConfirmationAsked = Parameters<ConfirmationPort["request"]>[0];
-
-/** The durable "requested" record's own fields for one asked confirmation. */
-function requestedFields(entry: ConfirmationAsked) {
-  switch (entry.action) {
-    case "send_mail":
-      return { action: entry.action, accountId: entry.accountId, messageId: entry.messageId };
-    case "delete_mail":
-    case "move_mail":
-      return {
-        action: entry.action,
-        accountId: entry.accountId,
-        folder: entry.message.folder,
-        uid: entry.message.uid,
-      };
-    case "replace_text_reading":
-    case "delete_doc":
-      return { action: entry.action, docId: entry.docId };
-    case "delete_plan":
-      return { action: entry.action, planId: entry.planId };
-    case "delete_manuscript":
-      return { action: entry.action, manuscriptId: entry.manuscriptId };
-    default:
-      return { action: entry.action, workId: entry.workId, docId: entry.docId };
-  }
-}
-
-/** The card the real user sees for one asked confirmation. */
-function cardOf(id: string, runId: string, entry: ConfirmationAsked): CopilotConfirmation {
-  const head = { id, runId, toolCallId: entry.toolCallId, baseRev: entry.baseRev };
-  switch (entry.action) {
-    case "send_mail":
-      return {
-        ...head,
-        action: entry.action,
-        object: { kind: "mail_draft", id: entry.messageId, accountId: entry.accountId },
-        account: entry.account,
-        kind: entry.kind,
-        to: entry.to,
-        cc: entry.cc,
-        bcc: entry.bcc,
-        subject: entry.subject,
-        text: entry.text,
-        attachments: entry.attachments,
-        inReplyTo: entry.inReplyTo,
-        objectDigest: entry.objectDigest,
-      };
-    case "delete_mail":
-      return {
-        ...head,
-        action: entry.action,
-        object: {
-          kind: "mail_message",
-          id: `${entry.accountId}:${entry.message.folder}:${entry.message.uid}`,
-          accountId: entry.accountId,
-        },
-        account: entry.account,
-        message: entry.message,
-        permanent: entry.permanent,
-        objectDigest: entry.objectDigest,
-      };
-    case "move_mail":
-      return {
-        ...head,
-        action: entry.action,
-        object: {
-          kind: "mail_message",
-          id: `${entry.accountId}:${entry.message.folder}:${entry.message.uid}`,
-          accountId: entry.accountId,
-        },
-        account: entry.account,
-        message: entry.message,
-        destination: entry.destination,
-        objectDigest: entry.objectDigest,
-      };
-    case "replace_text_reading":
-      return {
-        ...head,
-        action: entry.action,
-        object: { kind: "doc", id: entry.docId },
-        label: entry.label,
-        impact: entry.impact,
-        objectDigest: entry.objectDigest,
-      };
-    case "delete_plan":
-      return {
-        ...head,
-        action: entry.action,
-        object: { kind: "plan", id: entry.planId, planId: entry.planId },
-        label: entry.label,
-        planName: entry.planName,
-        impact: entry.impact,
-        objectDigest: entry.objectDigest,
-      };
-    case "delete_manuscript":
-      return {
-        ...head,
-        action: entry.action,
-        object: { kind: "manuscript", id: entry.manuscriptId },
-        label: entry.label,
-        impact: entry.impact,
-        objectDigest: entry.objectDigest,
-      };
-    case "delete_doc":
-      return {
-        ...head,
-        action: entry.action,
-        object: { kind: "doc", id: entry.docId },
-        format: entry.format,
-        works: entry.works,
-        impact: entry.impact,
-        objectDigest: entry.objectDigest,
-      };
-    default:
-      return {
-        ...head,
-        action: entry.action,
-        object: { kind: "doc", id: entry.docId, workId: entry.workId },
-        label: entry.label,
-        impact: entry.impact,
-        objectDigest: entry.objectDigest,
-      };
-  }
-}
-
-/** The durable "resolved" record's own fields for one card. */
-function resolvedFields(card: CopilotConfirmation) {
-  switch (card.action) {
-    case "send_mail":
-      return { action: card.action, accountId: card.object.accountId, messageId: card.object.id };
-    case "delete_mail":
-    case "move_mail":
-      return {
-        action: card.action,
-        accountId: card.object.accountId,
-        folder: card.message.folder,
-        uid: card.message.uid,
-      };
-    case "replace_text_reading":
-    case "delete_doc":
-      return { action: card.action, docId: card.object.id };
-    case "delete_plan":
-      return { action: card.action, planId: card.object.planId };
-    case "delete_manuscript":
-      return { action: card.action, manuscriptId: card.object.id };
-    default:
-      return { action: card.action, workId: card.object.workId, docId: card.object.id };
-  }
-}
-
 /** One line of a resume request for a confirmation that was asked and never answered. */
-function askedLine(entry: OperationConfirmation): string {
-  switch (entry.action) {
-    case "send_mail":
-      return `${entry.action} ${entry.accountId} ${entry.messageId}`;
-    case "delete_mail":
-    case "move_mail":
-      return `${entry.action} ${entry.accountId} ${entry.folder} uid ${entry.uid}`;
-    case "replace_text_reading":
-    case "delete_doc":
-      return `${entry.action} ${entry.docId}`;
-    case "delete_plan":
-      return `${entry.action} ${entry.planId}`;
-    case "delete_manuscript":
-      return `${entry.action} ${entry.manuscriptId}`;
-    case "refresh_arxiv_source":
-      return `${entry.action} ${entry.workId} ${entry.docId}`;
-    default:
-      // A record of a kind this version no longer has (an upload replacement or a large-PDF acceptance from the
-      // removed attachment feature): said neutrally, never as "undefined".
-      return `${(entry as { action: string }).action} (an earlier confirmation of a request this version no longer offers; nothing was changed)`;
-  }
+function askedLine(kinds: ConfirmationKinds, entry: OperationConfirmation): string {
+  const kind = (kinds as Partial<Record<string, ConfirmationKind>>)[entry.action];
+  // A record of a kind this version no longer has (an upload replacement or a large-PDF acceptance from the removed
+  // attachment feature): said neutrally, never as "undefined".
+  return kind
+    ? kind.askedLine(entry)
+    : `${(entry as { action: string }).action} (an earlier confirmation of a request this version no longer offers; nothing was changed)`;
 }
 
 /** Added when the text tool exists (ticket 29): kept short, the tool description holds the actions. */
@@ -499,6 +341,8 @@ export class CopilotHost {
   private readonly views = new Map<string, PageContext>();
   private settings?: ProviderSettings;
   private workbench?: Workbench;
+  /** What each confirmation kind shows, records and checks; its checks read the workbench (none yet: changed). */
+  private kinds: ConfirmationKinds = createConfirmationKinds(undefined);
   private deliverToView?: ViewDelivery;
   private readonly pendingViewActions = new Map<string, PendingViewAction>();
   /** Deletes waiting for the real user. In memory only: a restart revives none of them. */
@@ -536,11 +380,12 @@ export class CopilotHost {
           try {
             original();
           } finally {
-            this.revalidateConfirmations();
+            void this.revalidate("plans").catch(() => {});
           }
         },
       },
     };
+    this.kinds = createConfirmationKinds(this.workbench);
   }
   /** The transport that can reach exactly one browser view; absent in headless hosts. */
   useViewDelivery(deliver: ViewDelivery): void {
@@ -1347,11 +1192,11 @@ export class CopilotHost {
           runId: state.runId,
           toolCallId: entry.toolCallId,
           baseRev: entry.baseRev,
-          ...requestedFields(entry),
+          ...this.kindOf(entry.action).requestedFields(entry),
         } satisfies OperationConfirmation);
         return new Promise<ConfirmationOutcome>((resolve) => {
           this.confirmations.set(id, {
-            confirmation: cardOf(id, state.runId, entry),
+            confirmation: this.kindOf(entry.action).card(id, state.runId, entry),
             loaded,
             state,
             resolve,
@@ -1417,7 +1262,7 @@ export class CopilotHost {
       toolCallId: confirmation.toolCallId,
       baseRev: confirmation.baseRev,
       outcome,
-      ...resolvedFields(confirmation),
+      ...this.kindOf(confirmation.action).resolvedFields(confirmation),
     } satisfies OperationConfirmation);
   }
   private expireConfirmations(
@@ -1434,186 +1279,21 @@ export class CopilotHost {
         this.settleConfirmation(id, { outcome: "expired", reason });
       }
   }
-  /** Plan deletes: the plan's rev and content digest still match what the card showed (synchronous). */
-  private planConfirmationStillValid(
-    confirmation: Extract<CopilotConfirmation, { action: "delete_plan" }>
-  ): boolean {
-    const statusDir = this.workbench?.plans.statusDir;
-    if (!statusDir) return false;
-    try {
-      const now = describeDeleteTarget(statusDir, {
-        action: confirmation.action,
-        planId: confirmation.object.planId,
-      });
-      // The version AND the content shown: a hand edit of plans.json that leaves the rev alone also ends it.
-      return (
-        !!now && now.rev === confirmation.baseRev && now.objectDigest === confirmation.objectDigest
-      );
-    } catch {
-      return false;
-    }
+  /** The kind of one action, as the host uses it (each kind is typed by its own action). */
+  private kindOf(action: ConfirmationKind["action"]): ConfirmationKind {
+    return this.kinds[action] as ConfirmationKind;
   }
   /**
-   * Doc replacements: the Work still refreshes the same arXiv Doc and the dialog's annotation risk (count, rev,
-   * the Work's Docs) is what the card showed. Reading the risk goes through the annotations access path, as the
-   * acquisition dialog does.
+   * A change notification (plans, Writer, or a library/Doc/annotation change) may make a pending card obsolete: each
+   * kind it concerns is checked again, and only a value that really changed ends a card. A system error leaves it
+   * pending: it is reported at the click, never as a change. Click time is still the authority.
    */
-  private async docConfirmationStillValid(
-    confirmation: Exclude<
-      CopilotConfirmation,
-      | { action: "delete_plan" }
-      | { action: "delete_manuscript" }
-      | { action: "replace_text_reading" }
-      | { action: "send_mail" }
-      | { action: "delete_mail" }
-      | { action: "move_mail" }
-    >
-  ): Promise<boolean> {
-    if (confirmation.action === "delete_doc") {
-      // The card shows the Doc, every Work listing it, the annotation count and the content binding: all still the same.
-      const deletion = this.workbench?.library?.deletion;
-      if (!deletion) return false;
-      try {
-        const now = await deletion.describe(confirmation.object.id);
-        return (
-          now.kind === "ready" &&
-          now.digest === confirmation.objectDigest &&
-          now.rev === confirmation.baseRev
-        );
-      } catch {
-        return false;
-      }
-    }
-    const library = this.workbench?.library;
-    if (!library?.acquisition) return false;
-    try {
-      const workId = confirmation.object.workId;
-      const plan = library.acquisition.describeSource(workId);
-      if (plan.kind !== "refresh" || plan.docId !== confirmation.object.id) return false;
-      const now = await prepareArxivRefresh(library, workId, plan);
-      return now.ok && now.digest === confirmation.objectDigest && now.rev === confirmation.baseRev;
-    } catch {
-      return false;
-    }
-  }
-  /** Manuscript deletes: the manuscript still has the revision and the stored bytes the card showed (synchronous). */
-  private manuscriptConfirmationStillValid(
-    confirmation: Extract<CopilotConfirmation, { action: "delete_manuscript" }>
-  ): boolean {
-    const writer = this.workbench?.writer;
-    if (!writer) return false;
-    try {
-      const now = describeManuscriptDelete(writer, confirmation.object.id);
-      return (
-        !!now &&
-        !("error" in now) &&
-        now.rev === confirmation.baseRev &&
-        now.digest === confirmation.objectDigest
-      );
-    } catch {
-      return false;
-    }
-  }
-  /**
-   * A text replacement at the click and at every background recheck: `valid` (the Doc's source revision, annotated
-   * reading text, annotation count and revision and both content fingerprints are exactly what the card showed, by the
-   * generation's own code probed without writing), `changed` (a bound value really differs) or `error` (a system error:
-   * annotations, reading text, fingerprint or an asset cannot be read; reported as that, never as a change).
-   */
-  private async textConfirmationCheck(
-    confirmation: Extract<CopilotConfirmation, { action: "replace_text_reading" }>
-  ): Promise<{ kind: "valid" | "changed" } | { kind: "error"; detail: string }> {
-    const text = this.workbench?.text;
-    if (!text) return { kind: "changed" };
-    const now = await text.probeReplacement(confirmation.object.id, confirmation.impact.sourceRev);
-    if (now.kind === "error") return { kind: "error", detail: `${now.code}: ${now.detail}` };
-    if (now.kind !== "impact" || !now.impact) return { kind: "changed" };
-    const a = now.impact;
-    const b = confirmation.impact;
-    return a.docId === b.docId &&
-      a.sourceRev === b.sourceRev &&
-      a.publishedSourceRev === b.publishedSourceRev &&
-      a.annotations === b.annotations &&
-      a.annotationsRev === b.annotationsRev &&
-      a.oldFingerprint === b.oldFingerprint &&
-      a.newFingerprint === b.newFingerprint
-      ? { kind: "valid" }
-      : { kind: "changed" };
-  }
-  /**
-   * A mail send at the click: the stored draft is exactly what the card showed (the same digest the card was made
-   * from). `error` is a system error (the mail server could not be asked), never reported as a change.
-   */
-  private async mailSendCheck(
-    confirmation: Extract<CopilotConfirmation, { action: "send_mail" }>
-  ): Promise<{ kind: "valid" | "changed" } | { kind: "error"; detail: string }> {
-    const mail = this.workbench?.mail;
-    if (!mail) return { kind: "changed" };
-    const now = await draftUnchanged(
-      mail,
-      confirmation.object.accountId,
-      confirmation.object.id,
-      confirmation.objectDigest
-    );
-    if (now === "same") return { kind: "valid" };
-    if (now === "changed") return { kind: "changed" };
-    // The draft is gone or frozen (in a window, already sent): that is a change; the rest could not be read.
-    return now.status === "not_found" || now.status === "conflict"
-      ? { kind: "changed" }
-      : { kind: "error", detail: now.code };
-  }
-  private async confirmationStillValid(confirmation: CopilotConfirmation): Promise<boolean> {
-    if (confirmation.action === "send_mail")
-      return (await this.mailSendCheck(confirmation)).kind === "valid";
-    // A delete or move names one message by uid and uidValidity; the server refuses a changed one when it runs.
-    if (confirmation.action === "delete_mail" || confirmation.action === "move_mail") return true;
-    if (confirmation.action === "replace_text_reading")
-      return (await this.textConfirmationCheck(confirmation)).kind === "valid";
-    return confirmation.action === "delete_plan"
-      ? this.planConfirmationStillValid(confirmation)
-      : confirmation.action === "delete_manuscript"
-        ? this.manuscriptConfirmationStillValid(confirmation)
-        : this.docConfirmationStillValid(confirmation);
-  }
-  /** A Writer change (save, create, delete, external edit) ends every manuscript delete bound to an older version. */
-  revalidateWriterConfirmations(): void {
-    this.expireConfirmations(
-      (pending) =>
-        pending.confirmation.action === "delete_manuscript" &&
-        !this.manuscriptConfirmationStillValid(pending.confirmation),
-      "stale"
-    );
-  }
-  /** A plans change (UI save, agent write, external edit) ends every confirmation bound to an older version. */
-  revalidateConfirmations(): void {
-    this.expireConfirmations(
-      (pending) =>
-        pending.confirmation.action === "delete_plan" &&
-        !this.planConfirmationStillValid(pending.confirmation),
-      "stale"
-    );
-  }
-  /** A library, Doc or annotation change may make a pending Doc replacement obsolete; click time is still the authority. */
-  async revalidateDocConfirmations(): Promise<void> {
+  async revalidate(trigger: ConfirmationTrigger): Promise<void> {
     for (const pending of [...this.confirmations.values()]) {
-      if (
-        pending.confirmation.action === "delete_plan" ||
-        pending.confirmation.action === "delete_manuscript" ||
-        // Mail cards are checked at the click (an IMAP read is not a background poll).
-        pending.confirmation.action === "send_mail" ||
-        pending.confirmation.action === "delete_mail" ||
-        pending.confirmation.action === "move_mail"
-      )
-        continue;
-      if (pending.confirmation.action === "replace_text_reading") {
-        // Only a value that really changed ends a card; a system error is reported at the click, never as a change.
-        const check = await this.textConfirmationCheck(pending.confirmation);
-        if (check.kind === "changed" && this.confirmations.get(pending.confirmation.id) === pending)
-          this.expireConfirmations((item) => item === pending, "stale");
-        continue;
-      }
-      if (await this.docConfirmationStillValid(pending.confirmation)) continue;
-      if (this.confirmations.get(pending.confirmation.id) === pending)
+      const kind = this.kindOf(pending.confirmation.action);
+      if (kind.revalidateOn !== trigger) continue;
+      const check = await kind.check(pending.confirmation);
+      if (check === "changed" && this.confirmations.get(pending.confirmation.id) === pending)
         this.expireConfirmations((item) => item === pending, "stale");
     }
   }
@@ -1634,12 +1314,11 @@ export class CopilotHost {
       throw new CopilotError(settled ? "stale" : "not_found");
     }
     const { confirmation } = pending;
-    // A Doc delete can take the open Doc away from the bound view and the leave guard (unsaved drafts) is asked by the
-    // clicking tab about ITS Doc: only the view this run is bound to may decide it (the rule of ticket 12).
-    if (
-      (confirmation.action === "delete_doc" || confirmation.action === "delete_manuscript") &&
-      body.viewId !== pending.state.navViewId
-    )
+    const kind = this.kindOf(confirmation.action);
+    // A Doc or manuscript delete can take the open object away from the bound view and the leave guard (unsaved
+    // drafts) is asked by the clicking tab about ITS object: only the view this run is bound to may decide it (the
+    // rule of ticket 12).
+    if (kind.boundToNavView && body.viewId !== pending.state.navViewId)
       throw new CopilotError("stale");
     if (
       confirmation.action !== body.action ||
@@ -1647,14 +1326,8 @@ export class CopilotHost {
       confirmation.baseRev !== body.baseRev
     )
       throw new CopilotError("stale");
-    if (
-      wanted === "approved" &&
-      (confirmation.action === "replace_text_reading" || confirmation.action === "send_mail")
-    ) {
-      const check =
-        confirmation.action === "send_mail"
-          ? await this.mailSendCheck(confirmation)
-          : await this.textConfirmationCheck(confirmation);
+    if (wanted === "approved") {
+      const check = await kind.check(confirmation);
       // The check awaited: another decision, a Stop or a recheck may have settled this card meanwhile. Never append a
       // second resolution; the approving tab is answered by what the card ended as (same answer as a repeated click).
       if (this.confirmations.get(id) !== pending) {
@@ -1662,23 +1335,20 @@ export class CopilotHost {
         if (settled === wanted) return { status: wanted };
         throw new CopilotError("stale");
       }
-      if (check.kind === "error") {
+      if (typeof check === "object") {
         // not a change: the real reason goes to the user (the click) and to the model (the tool result)
         try {
           this.recordResolution(pending, "expired");
         } catch {
           /* the record still shows the request as unresolved, which reads as expired */
         }
-        this.settleConfirmation(id, { outcome: "expired", reason: "error", detail: check.detail });
+        this.settleConfirmation(id, { outcome: "expired", reason: "error", detail: check.error });
         throw new CopilotError("unreadable");
       }
-      if (check.kind === "changed") {
+      if (check === "changed") {
         this.expireConfirmations((item) => item === pending, "stale");
         throw new CopilotError("stale");
       }
-    } else if (wanted === "approved" && !(await this.confirmationStillValid(confirmation))) {
-      this.expireConfirmations((item) => item === pending, "stale");
-      throw new CopilotError("stale");
     }
     // The check above may have awaited: another decision, a Stop or a change may have settled it meanwhile.
     if (this.confirmations.get(id) !== pending) throw new CopilotError("stale");
@@ -1917,7 +1587,7 @@ export class CopilotHost {
           entry.phase === "requested" &&
           !entries.some((other) => other.toolCallId === entry.toolCallId)
       )
-      .map((entry) => `- ${askedLine(entry)}`);
+      .map((entry) => `- ${askedLine(this.kinds, entry)}`);
     return [
       `Resume request. The previous run ended as ${loaded.record.run?.status}. Nothing was retried automatically.`,
       `Deletes and replacements that were requested but never ran (declined, withdrawn or expired confirmations; nothing was deleted or replaced):\n${askedToDelete.join("\n") || "none"}\nA delete or replacement needs a new request and the user's new confirmation.`,

@@ -168,7 +168,7 @@ export function createServer(opts: ServerOptions): RunningServer {
       hub.broadcast({ type: "library.changed", cause: "external", at: new Date().toISOString() }),
     onPlansChange: () => {
       hub.broadcast({ type: "plan.changed", cause: "external", at: new Date().toISOString() });
-      copilot.revalidateConfirmations();
+      void copilot.revalidate("plans").catch(() => {});
     },
     onAnnotationsChange: (docIds) => {
       const at = new Date().toISOString();
@@ -185,7 +185,7 @@ export function createServer(opts: ServerOptions): RunningServer {
         hub.broadcast({ type: "writer.changed", cause: "external", id, at });
       }
       // A hand edit may make a pending Copilot manuscript delete obsolete (click time stays the authority).
-      copilot.revalidateWriterConfirmations();
+      void copilot.revalidate("writer").catch(() => {});
       if (templates) {
         hub.broadcast({ type: "writer.changed", cause: "template", at });
       }

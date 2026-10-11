@@ -563,7 +563,7 @@ test("N2: an unreadable annotations file at the click is an error with its reaso
   const current = join(root, "data", "annotations", docId, "current.json");
   writeFileSync(current, "{ damaged");
   // a background recheck meets the error and leaves the card alone: only a changed value ends a card
-  await host.revalidateDocConfirmations();
+  await host.revalidate("doc");
   expect((await host.snapshot(id)).confirmations).toHaveLength(1);
   const click = await request(`/confirmations/${c.id}`, "POST", {
     decision: "approve",
