@@ -15,6 +15,7 @@
 
 import { z } from "zod";
 import { WsAnnotationChangedSchema } from "./annotations.js";
+import { WsArgumentGraphChangedSchema } from "./argument-graph.js";
 import {
   WsCopilotEventSchema,
   WsCopilotSubscribedSchema,
@@ -109,6 +110,7 @@ export const WsServerMessageSchema = z.discriminatedUnion("type", [
   WsJobEventSchema,
   WsLibraryChangedSchema,
   WsPlanChangedSchema,
+  WsArgumentGraphChangedSchema,
   WsAnnotationChangedSchema,
   WsWriterChangedSchema,
   WsPdfReadingPositionChangedSchema,

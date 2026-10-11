@@ -45,6 +45,7 @@ import type {
 } from "@argelanderspace/contracts";
 import {
   AnnotationsFileSchema,
+  ArgumentGraphSchema,
   buildReaderReading,
   DocDescriptionSchema,
   ManualWorkRequestSchema,
@@ -109,6 +110,7 @@ import {
   createAnnotationAccess,
   DocMetadataError,
 } from "./annotations-access.js";
+import { readArgumentGraph, writeArgumentGraph } from "./argument-graph-actions.js";
 import { CopilotHost } from "./copilot.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
 import type {
@@ -338,6 +340,8 @@ export function createApp(deps: AppDeps): Hono {
   const annotationLock = new AsyncLock();
   /** Reading position is independently versioned user data. */
   const readingPositionLock = new AsyncLock();
+  /** Argument-graph writes: own lock too (ADR 0009; mirrors planLock). */
+  const argumentGraphLock = new AsyncLock();
   /** Writer manuscript writes: own lock (Stage 10; mirrors planLock). */
   const writerLock = new AsyncLock();
   /** The §8 delete↔job lifecycle lock (see doc-mutations.ts). */
@@ -359,6 +363,14 @@ export function createApp(deps: AppDeps): Hono {
   };
   const planChanged = (cause: "put" | "external"): void => {
     broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
+  };
+  const argumentGraphChanged = (workId: string): void => {
+    broadcast({
+      type: "argument-graph.changed",
+      cause: "put",
+      work_id: workId,
+      at: new Date().toISOString(),
+    });
   };
   /** Stage 10: `id` names the manuscript; template-dir changes omit it. */
   const writerChanged = (cause: "put" | "create" | "delete" | "numbering", id: string): void => {
@@ -1523,6 +1535,86 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
     }
     return c.json(outcome.saved);
+  });
+
+  // ---- GET/PUT /api/works/:workId/argument-graph ---------------------------- //
+
+  // The Work's argument graph (ADR 0009). `:workId` is the URL-encoded Work id
+  // (it holds `:` and `/`). GET: unknown Work 404; a Work without a graph reads
+  // as the empty graph at rev 0 (not 404). PUT: whole-graph replace with the
+  // persisted rev lock (mismatch → 409 with the current rev, nothing written);
+  // schema/structure failures 400 with the issue list. An unreadable graph file
+  // (corrupt JSON, schema-invalid, future version) is a 500 and is never
+  // overwritten. Writes serialize on argumentGraphLock.
+  const knownWork = (workId: string): boolean | "error" => {
+    try {
+      return LibraryStore.load(paths).get(workId) !== undefined;
+    } catch {
+      return "error";
+    }
+  };
+  const argumentGraphFailure = (err: unknown) =>
+    detail(err instanceof Error ? err.message : "argument graph could not be read", 500);
+
+  app.get("/api/works/:workId/argument-graph", (c) => {
+    c.header("Cache-Control", "no-store");
+    const workId = c.req.param("workId");
+    const known = knownWork(workId);
+    if (known === "error") {
+      const e = detail("library could not be read", 500);
+      return c.json(e.body, e.status);
+    }
+    if (!known) {
+      const e = detail(`work ${pyRepr(workId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    try {
+      return c.json(readArgumentGraph(paths.dataDir, workId));
+    } catch (err) {
+      const e = argumentGraphFailure(err);
+      return c.json(e.body, e.status);
+    }
+  });
+
+  app.put("/api/works/:workId/argument-graph", async (c) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status);
+    const workId = c.req.param("workId");
+    const known = knownWork(workId);
+    if (known === "error") {
+      const e = detail("library could not be read", 500);
+      return c.json(e.body, e.status);
+    }
+    if (!known) {
+      const e = detail(`work ${pyRepr(workId)} not found`, 404);
+      return c.json(e.body, e.status);
+    }
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = ArgumentGraphSchema.safeParse(body);
+    if (!parsed.success) {
+      const issues = parsed.error.issues
+        .slice(0, 20)
+        .map((i) => `${i.path.join(".") || "<root>"}: ${i.message}`)
+        .join("; ");
+      const e = detail(`request body is not a valid argument graph: ${issues}`, 400);
+      return c.json(e.body, e.status);
+    }
+    if (parsed.data.work_id !== workId) {
+      const e = detail("body work_id does not match the URL", 400);
+      return c.json(e.body, e.status);
+    }
+    try {
+      const outcome = await writeArgumentGraph(paths.dataDir, argumentGraphLock, parsed.data, () =>
+        argumentGraphChanged(workId)
+      );
+      if ("conflictRev" in outcome) {
+        return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
+      }
+      return c.json(outcome.saved);
+    } catch (err) {
+      const e = argumentGraphFailure(err);
+      return c.json(e.body, e.status);
+    }
   });
 
   // ===========================================================================

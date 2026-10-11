@@ -70,6 +70,7 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 ├── annotations/<doc_id>/
 │   ├── current.json      # 独立用户数据，不是 IR
 │   └── archive/          # 原批次标注，不对正常 reader/agent 开放
+├── argument-graphs/      # 论证图：每个 Work 一个 <编码 work id>.json，见 argument-graph
 ├── manuscripts/<m_id>/   # manuscript.json、原始 assets/、派生 build/
 └── templates/            # <id>.json 覆盖与 <id>.deps/ 依赖
 <有效 dataDir 的父目录>/status/plans.json

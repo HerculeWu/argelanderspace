@@ -176,6 +176,14 @@ export function createServer(opts: ServerOptions): RunningServer {
         hub.broadcast({ type: "annotation.changed", doc_id: docId, cause: "external", at });
       }
     },
+    // ADR 0009: a Work's argument-graph file changed on disk (the server's own
+    // PUT re-arrives here as "external" too — the page's refetch is idempotent).
+    onArgumentGraphChange: (workIds) => {
+      const at = new Date().toISOString();
+      for (const workId of workIds) {
+        hub.broadcast({ type: "argument-graph.changed", cause: "external", work_id: workId, at });
+      }
+    },
     // Stage 10: writer manuscripts/templates re-broadcast as writer.changed;
     // a templates-dir change carries cause:"template" without an id. The
     // server's own writes re-arrive here too — idempotent refetch precedent.

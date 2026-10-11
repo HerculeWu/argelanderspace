@@ -16,13 +16,15 @@
  * first, the JSON written into it later), and per-directory watchers are far
  * more machinery than this needs; a poll is deterministic in tests.
  *
- * The three sub-fingerprints are compared independently so the rebroadcast
+ * The sub-fingerprints are compared independently so the rebroadcast
  * names the right domain: the library one is `library/library.json`'s
  * mtime+size plus the `output/` first-level directory listing with each
  * `<dir>/<dir>.json`'s mtime+size; the plans one is `status/plans.json`'s
  * mtime+size; the annotations one is each `annotations/<docId>/current.json`'s
  * mtime+size, PER DOC — the callback carries the changed doc ids so the
- * broadcast can name the doc. `archive/` is deliberately NOT observed
+ * broadcast can name the doc; the argument-graph one (ADR 0009) is each
+ * `argument-graphs/<encoded work id>.json`'s mtime+size, PER WORK, the callback
+ * carrying the decoded work ids. `archive/` is deliberately NOT observed
  * (archives are server-produced, immutable, and invisible to readers), and
  * the watcher only notifies — archiving itself happens on the REST access
  * path (roadmap §4), never here. Missing entries are tolerated (a
@@ -33,7 +35,7 @@
 
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { plansPath } from "@argelanderspace/core";
+import { argumentGraphDir, decodeWorkIdFromFile, plansPath } from "@argelanderspace/core";
 
 export interface WatcherOptions {
   dataDir: string;
@@ -54,6 +56,10 @@ export interface WatcherOptions {
    *  deliberately NOT fingerprinted (epoch-review D4). Optional: pre-Stage-10
    *  callers don't observe the domain. */
   onWriterChange?: (changes: { ids: string[]; templates: boolean }) => void;
+  /** Called once per poll in which any Work's argument-graph file changed
+   *  (created/rewritten/deleted), with those Work ids (decoded, sorted).
+   *  Optional: pre-argument-graph callers don't observe the domain. */
+  onArgumentGraphChange?: (workIds: string[]) => void;
 }
 
 export interface Watcher {
@@ -66,6 +72,7 @@ export function startWatcher(opts: WatcherOptions): Watcher {
   let lastPlans = plansFingerprint(opts.statusDir);
   let lastAnnotations = annotationsFingerprint(opts.dataDir);
   let lastWriter = writerFingerprint(opts.dataDir);
+  let lastGraphs = argumentGraphFingerprint(opts.dataDir);
   const timer = setInterval(() => {
     const nextLibrary = libraryFingerprint(opts.dataDir);
     if (nextLibrary !== lastLibrary) {
@@ -88,6 +95,12 @@ export function startWatcher(opts: WatcherOptions): Watcher {
     if (writerChanges.ids.length > 0 || writerChanges.templates) {
       lastWriter = nextWriter;
       opts.onWriterChange?.(writerChanges);
+    }
+    const nextGraphs = argumentGraphFingerprint(opts.dataDir);
+    const changedGraphs = changedKeys(lastGraphs, nextGraphs);
+    if (changedGraphs.length > 0) {
+      lastGraphs = nextGraphs;
+      opts.onArgumentGraphChange?.(changedGraphs);
     }
   }, opts.intervalMs ?? 1500);
   timer.unref(); // never keep the process alive just for watching
@@ -218,6 +231,41 @@ function changedWriter(
     if (!next.manuscripts.has(id)) ids.add(id);
   }
   return { ids: [...ids].sort(), templates: prev.templates !== next.templates };
+}
+
+/**
+ * The argument-graph fingerprint (ADR 0009): per Work, the stamp of its
+ * `argument-graphs/<encoded id>.json`, keyed by the DECODED work id. Names the
+ * store would not write (tmp files, strays) are ignored.
+ */
+function argumentGraphFingerprint(dataDir: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const root = argumentGraphDir(dataDir);
+  let names: string[] = [];
+  try {
+    if (statSync(root).isDirectory()) names = readdirSync(root).sort();
+  } catch {
+    names = []; // not a directory / missing: empty listing (library pattern above)
+  }
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const workId = decodeWorkIdFromFile(name.slice(0, -".json".length));
+    if (workId === null) continue;
+    out.set(workId, stamp(join(root, name)));
+  }
+  return out;
+}
+
+/** Keys whose stamp changed between two polls (changed, created, deleted), sorted. */
+function changedKeys(prev: Map<string, string>, next: Map<string, string>): string[] {
+  const changed = new Set<string>();
+  for (const [k, s] of next) {
+    if (prev.get(k) !== s) changed.add(k);
+  }
+  for (const k of prev.keys()) {
+    if (!next.has(k)) changed.add(k);
+  }
+  return [...changed].sort();
 }
 
 /** `mtimeNs:size` (bigint stats: `mtimeNs` only exists there); `-` if absent. */

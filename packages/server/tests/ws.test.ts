@@ -8,11 +8,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { WsServerMessage } from "@argelanderspace/contracts";
+import { argumentGraphDir, argumentGraphPath } from "@argelanderspace/core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { WebSocket } from "ws";
 import { statusDirFor } from "../src/deps.js";
 import { createServer, type RunningServer } from "../src/server.js";
-import { makeDataDir, stubSources } from "./helpers.js";
+import { KNOWN_WORK_ID, makeDataDir, stubSources } from "./helpers.js";
 
 let srv: RunningServer;
 let port: number;
@@ -131,5 +132,37 @@ describe("WS /ws", () => {
     const messages = await done;
     const changed = messages.find((m) => m.type === "plan.changed");
     expect(changed).toMatchObject({ type: "plan.changed", cause: "external" });
+  });
+
+  test("PUT /api/works/:id/argument-graph broadcasts argument-graph.changed(put) naming the Work", async () => {
+    const { ready, done } = collectUntil((m) => m.type === "argument-graph.changed");
+    await ready;
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/works/${encodeURIComponent(KNOWN_WORK_ID)}/argument-graph`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          rev: 0,
+          work_id: KNOWN_WORK_ID,
+          arguments: [],
+          edges: [],
+        }),
+      }
+    );
+    expect(res.status).toBe(200);
+    const changed = (await done).find((m) => m.type === "argument-graph.changed");
+    expect(changed).toMatchObject({ cause: "put", work_id: KNOWN_WORK_ID });
+  });
+
+  test("an external write to a graph file broadcasts argument-graph.changed(external) with the decoded id", async () => {
+    const { ready, done } = collectUntil((m) => m.type === "argument-graph.changed");
+    await ready; // socket live + the baseline poll already done at server start
+    mkdirSync(argumentGraphDir(dataDir), { recursive: true });
+    const workId = "doi:10.1051/0004-6361/202453302";
+    writeFileSync(argumentGraphPath(dataDir, workId), "{}");
+    const changed = (await done).find((m) => m.type === "argument-graph.changed");
+    expect(changed).toMatchObject({ cause: "external", work_id: workId });
   });
 });
