@@ -32,7 +32,7 @@ import { WebSocket } from "ws";
 import { createApp } from "../src/app.js";
 import { CopilotHost } from "../src/copilot.js";
 import { createLibraryTool } from "../src/copilot-library-tool.js";
-import { digest } from "../src/copilot-plan-tool.js";
+import { digest } from "../src/copilot-tool-kit.js";
 import { JobRunner } from "../src/jobs.js";
 import { AsyncLock } from "../src/lock.js";
 import { ProviderSettings } from "../src/providers.js";

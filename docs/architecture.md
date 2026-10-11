@@ -113,7 +113,7 @@ pnpm workspace，ESM-only，TypeScript strict + noUncheckedIndexedAccess，Biome
 | contracts | Zod 数据/REST/WS 契约，canonical annotation text 与 Writer 序列化纯函数，web runtime 可用 |
 | core | tex facts/source/fuse/IR 编排；文档展示与引用；library store/seed/graph/build；acquire/upload；plans/annotations/writer store、导出和预览 |
 | infra | workspace/compile/instrument/figures/ingest；arXiv 抓取解包；ADS/Crossref/OpenAlex、config、zip、pyjson 缓存兼容；Writer opt-in 编译缓存 |
-| server | REST/SPA/images/WS、jobs/watcher、领域锁、DocMutationRegistry、Writer single-flight/drain |
+| server | REST/SPA/images/WS、jobs/watcher、领域锁、DocMutationRegistry、Writer single-flight/drain；Copilot 各 tool 的调用生命周期（operationId/journal 三态、begin/done）与真人确认请求流程（unsupported/declined/expired）统一在 `copilot-tool-kit`，tool 只决定调哪个业务操作和卡片怎么描述 |
 | cli | 命令注册、冻结 agent 输出、磁盘读写 |
 | web | 阅读/文献/计划/标注/Writer/探索，共享 IR 展示、ReaderSession、i18n、graph 共享 renderer 与两个 adapter |
 | app | npm 单包；tsup bin/web/argelander.sty/许可 notices；createRequire banner 有实际运行作用 |

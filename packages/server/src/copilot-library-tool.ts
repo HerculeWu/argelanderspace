@@ -26,7 +26,14 @@ import {
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { type ConfirmationPort, digest, type OperationJournalPort } from "./copilot-plan-tool.js";
+import {
+  askUser,
+  confirmUnavailable,
+  done,
+  record as recordFor,
+  runOperation,
+  type ToolHostContext,
+} from "./copilot-tool-kit.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 import {
   type AcquireOutcome,
@@ -46,15 +53,9 @@ import {
 
 export const LIBRARY_TOOL_NAME = "library";
 
-export interface LibraryToolContext {
+/** Writes are journaled; replacing an existing arXiv Doc and deleting a Doc wait for the user through `confirm`. */
+export interface LibraryToolContext extends ToolHostContext {
   library: LibraryOpDeps;
-  /** Present in the real host; the write is journaled so a repeated operationId is answered, not rerun. */
-  journal?: OperationJournalPort;
-  /** Counts an operation as in flight until it settles, so a terminal run state waits for it. */
-  track?: <T>(work: Promise<T>) => Promise<T>;
-  runId?: string;
-  /** Present in the real host: replacing an existing arXiv Doc waits here for the user. Without it that refresh is refused. */
-  confirm?: ConfirmationPort;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (action: LibraryViewAction) => Promise<ViewActionOutcome>;
   /**
@@ -68,8 +69,6 @@ export interface LibraryToolContext {
    * candidate against the exploration it shows. Discovery has no service-side session to ask instead.
    */
   page?: () => PageContext | undefined;
-  /** False once the host stopped admitting operations (Stop, shutdown). */
-  admitting: () => boolean;
 }
 
 const lit = <T extends string>(values: readonly T[]) =>
@@ -184,9 +183,8 @@ function importSummary(op: { mode: string; text: string } | undefined): string {
   return `${op.mode}: ${flat.length > 80 ? `${flat.slice(0, 80)}…` : flat}`;
 }
 
-function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
-  return { id, tool: LIBRARY_TOOL_NAME, action, status: "error", ...partial };
-}
+const record = (id: string, action: string, partial: Partial<CopilotOperation>) =>
+  recordFor(LIBRARY_TOOL_NAME, id, action, partial);
 
 /** A recorded `pending` result, brought up to date from the Job table (other results are returned as recorded). */
 function liveReplay(
@@ -224,11 +222,6 @@ function liveReplay(
   };
 }
 
-type DoneFn = (
-  operation: CopilotOperation,
-  payload: object
-) => { content: { type: "text"; text: string }[]; details: CopilotOperation };
-
 /**
  * acquire_arxiv_pdf / attach_arxiv: the dialog's submit. Journaled like every durable action; a refresh of an
  * existing arXiv Doc replaces its text, so it first waits for the real user (the dialog's annotation-risk step)
@@ -242,9 +235,8 @@ async function runAcquisition(input: {
   action: string;
   refId: string;
   kind: "pdf" | "source";
-  done: DoneFn;
 }) {
-  const { context, rest, requestedId, toolCallId, action, refId, kind, done } = input;
+  const { context, rest, requestedId, toolCallId, action, refId, kind } = input;
   const workObject = { kind: "work" as const, id: refId };
   const port = context.library.acquisition;
   if (!port)
@@ -253,192 +245,152 @@ async function runAcquisition(input: {
       status: "unsupported",
       detail: "acquisition is not available in this host",
     });
-  const journal = context.journal;
-  const operationId =
-    typeof requestedId === "string" && requestedId
-      ? requestedId
-      : `${context.runId ?? "run"}:${toolCallId}`;
-  const hash = digest(rest);
-  const known = journal?.lookup(operationId);
-  if (known && known.hash !== hash)
-    return done(record(toolCallId, action, { status: "rejected" }), {
-      ok: false,
-      status: "rejected",
-      detail: "operationId was already used for a different request",
-    });
-  if (known?.state === "done") {
-    // A pending result is replayed with what the Job table says now, never with the stale snapshot.
-    const live = liveReplay(port, known.operation, known.payload);
-    return done({ ...live.operation, id: toolCallId }, { ...live.payload, duplicate: true });
-  }
-  if (known)
-    return done(record(toolCallId, action, { status: "unknown" }), {
-      ok: false,
-      status: "unknown",
-      detail: `this operation started earlier and its outcome was not recorded; ${known.jobId ? `its job is ${known.jobId}: read_jobs shows its state` : "read_jobs for this work shows whether its job exists"}, do not repeat it blindly`,
-    });
-
-  // A replacement overwrites text that may carry annotations: the real user decides first.
-  let label: string | undefined;
-  type Replacement = {
-    action: "refresh_arxiv_source";
-    title: string;
-    docId: string;
-    docIds: string[];
-    binding: Record<string, unknown>;
-    /** The same check again against the library as it is now (null = no longer a replacement of this Doc). */
-    current: () => { docId: string; title: string; docIds: string[] } | null;
-  };
-  let replacement: Replacement | null = null;
-  if (kind === "source") {
-    const plan = port.describeSource(refId);
-    if (plan.kind === "refresh")
-      replacement = {
-        action: "refresh_arxiv_source",
-        title: plan.title,
-        docId: plan.docId,
-        docIds: plan.docIds,
-        binding: {},
-        current: () => {
-          const again = port.describeSource(refId);
-          return again.kind === "refresh" ? again : null;
-        },
+  return runOperation(
+    context,
+    {
+      tool: LIBRARY_TOOL_NAME,
+      toolCallId,
+      action,
+      rest,
+      requestedId,
+      readBack: (known) => ({
+        detail: `this operation started earlier and its outcome was not recorded; ${known.jobId ? `its job is ${known.jobId}: read_jobs shows its state` : "read_jobs for this work shows whether its job exists"}, do not repeat it blindly`,
+      }),
+      // A pending result is replayed with what the Job table says now, never with the stale snapshot.
+      replay: (known) => liveReplay(port, known.operation, known.payload),
+    },
+    async (op) => {
+      // A replacement overwrites text that may carry annotations: the real user decides first.
+      let label: string | undefined;
+      type Replacement = {
+        action: "refresh_arxiv_source";
+        title: string;
+        docId: string;
+        docIds: string[];
+        binding: Record<string, unknown>;
+        /** The same check again against the library as it is now (null = no longer a replacement of this Doc). */
+        current: () => { docId: string; title: string; docIds: string[] } | null;
       };
-  }
-  /**
-   * Ask the real user and hear the decision. Returns the tool result when the answer is anything but "approved"
-   * (nothing was changed, no job started); null when approved and `recheck` still holds.
-   */
-  const askUser = async (
-    request: Parameters<ConfirmationPort["request"]>[0],
-    title: string,
-    recheck: () => Promise<boolean>
-  ) => {
-    const common = { object: workObject, label: title };
-    if (!context.confirm)
-      return done(record(toolCallId, action, { status: "unsupported", object: workObject }), {
-        ok: false,
-        status: "unsupported",
-        detail: "this step needs the user's confirmation and none is available here",
-      });
-    let decision: Awaited<ReturnType<ConfirmationPort["request"]>>;
-    try {
-      decision = await context.confirm.request(request);
-    } catch {
-      return done(record(toolCallId, action, { status: "error", object: workObject }), {
-        ok: false,
-        status: "error",
-        detail: "the confirmation could not be saved; nothing was changed and no job was started",
-      });
-    }
-    if (decision.outcome === "declined")
-      return done(record(toolCallId, action, { status: "declined", ...common }), {
-        ok: false,
-        status: "declined",
-        detail: "the user declined; nothing was changed and no job was started",
-      });
-    if (decision.outcome === "expired")
-      return done(record(toolCallId, action, { status: "expired", ...common }), {
-        ok: false,
-        status: "expired",
-        detail:
-          decision.reason === "stale"
-            ? "the library or the document's annotations changed before the user confirmed; nothing was changed. Read again and ask only if it is still wanted"
-            : "the request ended before the user confirmed; nothing was changed and no job was started",
-      });
-    // Approved. The same check the click made, now that the job is about to be submitted.
-    if (!(await recheck()))
-      return done(record(toolCallId, action, { status: "expired", ...common }), {
-        ok: false,
-        status: "expired",
-        detail:
-          "the library or the document's annotations changed after the user confirmed; nothing was changed. Read again and ask only if it is still wanted",
-      });
-    return null;
-  };
-  if (replacement) {
-    const current = replacement;
-    label = current.title;
-    const prepared = await prepareArxivRefresh(context.library, refId, current, current.binding);
-    if (!prepared.ok)
-      return done(record(toolCallId, action, { status: prepared.status, object: workObject }), {
-        ok: false,
-        status: prepared.status,
-        detail: prepared.detail,
-      });
-    const early = await askUser(
-      {
-        toolCallId,
-        action: current.action,
-        workId: refId,
-        docId: prepared.docId,
-        label: prepared.title,
-        impact: prepared.impact,
-        baseRev: prepared.rev,
-        objectDigest: prepared.digest,
-      },
-      prepared.title,
-      async () => {
+      let replacement: Replacement | null = null;
+      if (kind === "source") {
+        const plan = port.describeSource(refId);
+        if (plan.kind === "refresh")
+          replacement = {
+            action: "refresh_arxiv_source",
+            title: plan.title,
+            docId: plan.docId,
+            docIds: plan.docIds,
+            binding: {},
+            current: () => {
+              const again = port.describeSource(refId);
+              return again.kind === "refresh" ? again : null;
+            },
+          };
+      }
+      if (replacement) {
+        const current = replacement;
+        label = current.title;
+        const prepared = await prepareArxivRefresh(
+          context.library,
+          refId,
+          current,
+          current.binding
+        );
+        if (!prepared.ok)
+          return done(record(toolCallId, action, { status: prepared.status, object: workObject }), {
+            ok: false,
+            status: prepared.status,
+            detail: prepared.detail,
+          });
+        const nothing = "changed and no job was started";
+        const unavailable = confirmUnavailable(context, {
+          tool: LIBRARY_TOOL_NAME,
+          toolCallId,
+          action,
+          nothing,
+          object: workObject,
+        });
+        if (unavailable) return unavailable;
+        // The wait for the user is not tracked: Stop must still be able to end the card.
+        const answer = await askUser(context, {
+          tool: LIBRARY_TOOL_NAME,
+          toolCallId,
+          action,
+          object: workObject,
+          label: prepared.title,
+          request: {
+            toolCallId,
+            action: current.action,
+            workId: refId,
+            docId: prepared.docId,
+            label: prepared.title,
+            impact: prepared.impact,
+            baseRev: prepared.rev,
+            objectDigest: prepared.digest,
+          },
+          nothing,
+          changed: "the library or the document's annotations",
+        });
+        if (!answer.approved) return answer.result;
+        // Approved. The same check the click made, now that the job is about to be submitted.
         const again = current.current();
         const recheck = again
           ? await prepareArxivRefresh(context.library, refId, again, current.binding)
           : null;
-        return !!recheck?.ok && recheck.digest === prepared.digest;
+        if (!recheck?.ok || recheck.digest !== prepared.digest)
+          return done(
+            record(toolCallId, action, {
+              status: "expired",
+              object: workObject,
+              label: prepared.title,
+            }),
+            {
+              ok: false,
+              status: "expired",
+              detail:
+                "the library or the document's annotations changed after the user confirmed; nothing was changed. Read again and ask only if it is still wanted",
+            }
+          );
       }
-    );
-    if (early) return early;
-  }
-  // Nothing new starts once Stop or shutdown closed the door (a confirmation that came back after it too).
-  if (!context.admitting())
-    return done(record(toolCallId, action, { status: "expired", object: workObject }), {
-      ok: false,
-      status: "expired",
-      detail: "the run was stopped before the job was submitted; nothing was changed",
-    });
-  try {
-    journal?.begin({
-      operationId,
-      toolCallId,
-      action,
-      hash,
-      object: { workId: refId },
-    });
-  } catch {
-    return done(record(toolCallId, action, { status: "error" }), {
-      ok: false,
-      status: "error",
-      detail: "the conversation could not be saved; nothing was written",
-    });
-  }
-  const admitting = context.admitting;
-  const onSubmitted = (jobId: string) => journal?.submitted?.(operationId, jobId);
-  const ctx = { admitting, onSubmitted };
-  const work: Promise<AcquireOutcome> =
-    kind === "pdf"
-      ? applyAcquireArxivPdf(context.library, refId, ctx)
-      : applyAttachArxiv(context.library, refId, ctx);
-  const outcome = await (context.track ? context.track(work) : work);
-  const result = outcome.ok
-    ? done(
-        record(toolCallId, action, {
-          status: outcome.status,
-          object: outcome.object,
-          ...((outcome.label ?? label) ? { label: outcome.label ?? label } : {}),
-          job: { id: outcome.job.id, status: outcome.job.status },
-          ...(outcome.docId ? { docId: outcome.docId } : {}),
-        }),
-        outcome
-      )
-    : done(
-        record(toolCallId, action, {
-          status: outcome.status,
-          object: workObject,
-          ...(outcome.job ? { job: { id: outcome.job.id, status: outcome.job.status } } : {}),
-        }),
-        outcome
+      // Nothing new starts once Stop or shutdown closed the door (a confirmation that came back after it too).
+      if (!context.admitting())
+        return done(record(toolCallId, action, { status: "expired", object: workObject }), {
+          ok: false,
+          status: "expired",
+          detail: "the run was stopped before the job was submitted; nothing was changed",
+        });
+      if (!op.begin({ workId: refId })) return op.notSaved("written");
+      const admitting = context.admitting;
+      const onSubmitted = (jobId: string) => context.journal?.submitted?.(op.operationId, jobId);
+      const ctx = { admitting, onSubmitted };
+      const outcome = await op.track<AcquireOutcome>(
+        kind === "pdf"
+          ? applyAcquireArxivPdf(context.library, refId, ctx)
+          : applyAttachArxiv(context.library, refId, ctx)
       );
-  journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
-  return result;
+      return op.finish(
+        outcome.ok
+          ? done(
+              record(toolCallId, action, {
+                status: outcome.status,
+                object: outcome.object,
+                ...((outcome.label ?? label) ? { label: outcome.label ?? label } : {}),
+                job: { id: outcome.job.id, status: outcome.job.status },
+                ...(outcome.docId ? { docId: outcome.docId } : {}),
+              }),
+              outcome
+            )
+          : done(
+              record(toolCallId, action, {
+                status: outcome.status,
+                object: workObject,
+                ...(outcome.job ? { job: { id: outcome.job.id, status: outcome.job.status } } : {}),
+              }),
+              outcome
+            )
+      );
+    }
+  );
 }
 
 /**
@@ -453,9 +405,8 @@ async function runDocDelete(input: {
   requestedId: unknown;
   toolCallId: string;
   docId: string;
-  done: DoneFn;
 }) {
-  const { context, rest, requestedId, toolCallId, docId, done } = input;
+  const { context, rest, requestedId, toolCallId, docId } = input;
   const action = "delete_doc";
   const docObject = { kind: "doc" as const, id: docId };
   const fail = (status: CopilotOperation["status"], detail: string, extra: object = {}) =>
@@ -467,130 +418,129 @@ async function runDocDelete(input: {
     });
   const port = context.library.deletion;
   if (!port) return fail("unsupported", "deleting documents is not available in this host");
-  const journal = context.journal;
-  const operationId =
-    typeof requestedId === "string" && requestedId
-      ? requestedId
-      : `${context.runId ?? "run"}:${toolCallId}`;
-  const hash = digest(rest);
-  const known = journal?.lookup(operationId);
-  if (known && known.hash !== hash)
-    return fail("rejected", "operationId was already used for a different request");
-  if (known?.state === "done")
-    return done({ ...known.operation, id: toolCallId }, { ...known.payload, duplicate: true });
-  if (known)
-    return fail(
-      "unknown",
-      "this delete started earlier and its outcome was not recorded; read the work to see whether the Doc is still listed, do not repeat it blindly"
-    );
-
-  // What the dialog would show, read without writing anything.
-  let described: Awaited<ReturnType<typeof port.describe>>;
-  try {
-    described = await port.describe(docId);
-  } catch {
-    return fail("error", "the document could not be checked; nothing was deleted");
-  }
-  if (described.kind !== "ready") {
-    if (described.kind === "error")
-      return fail("error", `${described.detail}; nothing was deleted`);
-    if (described.kind === "bad_id") return fail("rejected", "that is not a valid Doc id");
-    if (described.kind === "orphan")
-      return fail(
-        "rejected",
-        "no work lists this Doc, and the Files tab can only delete Docs a work lists, so it is not offered here either; nothing was deleted. Tell the user it has to be dealt with outside the application"
-      );
-    if (described.kind === "busy")
-      return fail(
-        "rejected",
-        "the document is busy (an upload or refresh is writing it, or it is being deleted); nothing was deleted and no confirmation was asked. Try again when the task finishes"
-      );
-    return fail("not_found", "no such Doc (it may already have been deleted); nothing was deleted");
-  }
-
-  if (!context.confirm)
-    return fail(
-      "unsupported",
-      "this step needs the user's confirmation and none is available here"
-    );
-  let decision: Awaited<ReturnType<ConfirmationPort["request"]>>;
-  try {
-    decision = await context.confirm.request({
-      toolCallId,
-      action: "delete_doc",
-      docId,
-      format: described.format,
-      works: described.works,
-      impact: described.impact,
-      baseRev: described.rev,
-      objectDigest: described.digest,
-    });
-  } catch {
-    return fail("error", "the confirmation could not be saved; nothing was deleted");
-  }
-  if (decision.outcome === "declined")
-    return fail("declined", "the user declined; nothing was deleted");
-  if (decision.outcome === "expired")
-    return fail(
-      "expired",
-      decision.reason === "stale"
-        ? "the Doc, the works that list it or its annotations changed before the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
-        : "the request ended before the user confirmed; nothing was deleted"
-    );
-  // Approved. The same check the click made, now that the delete is about to run.
-  let again: Awaited<ReturnType<typeof port.describe>>;
-  try {
-    again = await port.describe(docId);
-  } catch {
-    return fail("error", "the document could not be checked again; nothing was deleted");
-  }
-  if (again.kind !== "ready" || again.digest !== described.digest)
-    return fail(
-      "expired",
-      "the Doc, the works that list it or its annotations changed after the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
-    );
-  // The click IS the commit, as on the page ("Delete permanently" deletes): a Stop after it does not undo it.
-  try {
-    journal?.begin({
-      operationId,
+  return runOperation(
+    context,
+    {
+      tool: LIBRARY_TOOL_NAME,
       toolCallId,
       action,
-      hash,
-      object: { summary: `delete ${docId}` },
-    });
-  } catch {
-    return fail("error", "the conversation could not be saved; nothing was deleted");
-  }
-  const work = applyDocDelete(context.library, docId, { holders: again.holders });
-  const outcome = await (context.track ? context.track(work) : work);
-  if (outcome.ok) {
-    // The page's own three-state update of the Shell, by the work that now holds Docs.
-    const keeper = outcome.works.find((entry) => entry.remaining.length > 0);
-    try {
-      context.shellSync?.({
-        action: "doc_deleted",
-        docId,
-        remaining: keeper?.remaining ?? [],
+      rest,
+      requestedId,
+      readBack: () => ({
+        detail:
+          "this delete started earlier and its outcome was not recorded; read the work to see whether the Doc is still listed, do not repeat it blindly",
+      }),
+      named: { object: docObject, label: docId },
+    },
+    async (op) => {
+      // What the dialog would show, read without writing anything.
+      let described: Awaited<ReturnType<typeof port.describe>>;
+      try {
+        described = await port.describe(docId);
+      } catch {
+        return fail("error", "the document could not be checked; nothing was deleted");
+      }
+      if (described.kind !== "ready") {
+        if (described.kind === "error")
+          return fail("error", `${described.detail}; nothing was deleted`);
+        if (described.kind === "bad_id") return fail("rejected", "that is not a valid Doc id");
+        if (described.kind === "orphan")
+          return fail(
+            "rejected",
+            "no work lists this Doc, and the Files tab can only delete Docs a work lists, so it is not offered here either; nothing was deleted. Tell the user it has to be dealt with outside the application"
+          );
+        if (described.kind === "busy")
+          return fail(
+            "rejected",
+            "the document is busy (an upload or refresh is writing it, or it is being deleted); nothing was deleted and no confirmation was asked. Try again when the task finishes"
+          );
+        return fail(
+          "not_found",
+          "no such Doc (it may already have been deleted); nothing was deleted"
+        );
+      }
+
+      const unavailable = confirmUnavailable(context, {
+        tool: LIBRARY_TOOL_NAME,
+        toolCallId,
+        action,
+        nothing: "deleted",
+        object: docObject,
+        label: docId,
       });
-    } catch {
-      /* the view loads the real list when it reconnects */
-    }
-  }
-  const result = outcome.ok
-    ? done(
-        record(toolCallId, action, {
-          status: outcome.status,
-          object: outcome.object,
-          label: outcome.label,
-        }),
-        outcome
-      )
-    : done(
-        record(toolCallId, action, { status: outcome.status, object: docObject, label: docId }),
-        outcome
+      if (unavailable) return unavailable;
+      // The wait for the user is not tracked: Stop must still be able to end the card.
+      const answer = await askUser(context, {
+        tool: LIBRARY_TOOL_NAME,
+        toolCallId,
+        action,
+        object: docObject,
+        label: docId,
+        request: {
+          toolCallId,
+          action: "delete_doc",
+          docId,
+          format: described.format,
+          works: described.works,
+          impact: described.impact,
+          baseRev: described.rev,
+          objectDigest: described.digest,
+        },
+        nothing: "deleted",
+        changed: "the Doc, the works that list it or its annotations",
+      });
+      if (!answer.approved) return answer.result;
+      // Approved. The same check the click made, now that the delete is about to run.
+      let again: Awaited<ReturnType<typeof port.describe>>;
+      try {
+        again = await port.describe(docId);
+      } catch {
+        return fail("error", "the document could not be checked again; nothing was deleted");
+      }
+      if (again.kind !== "ready" || again.digest !== described.digest)
+        return fail(
+          "expired",
+          "the Doc, the works that list it or its annotations changed after the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
+        );
+      // The click IS the commit, as on the page ("Delete permanently" deletes): a Stop after it does not undo it.
+      if (!op.begin({ summary: `delete ${docId}` })) return op.notSaved("deleted");
+      const outcome = await op.track(
+        applyDocDelete(context.library, docId, { holders: again.holders })
       );
-  journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
-  return result;
+      if (outcome.ok) {
+        // The page's own three-state update of the Shell, by the work that now holds Docs.
+        const keeper = outcome.works.find((entry) => entry.remaining.length > 0);
+        try {
+          context.shellSync?.({
+            action: "doc_deleted",
+            docId,
+            remaining: keeper?.remaining ?? [],
+          });
+        } catch {
+          /* the view loads the real list when it reconnects */
+        }
+      }
+      return op.finish(
+        outcome.ok
+          ? done(
+              record(toolCallId, action, {
+                status: outcome.status,
+                object: outcome.object,
+                label: outcome.label,
+              }),
+              outcome
+            )
+          : done(
+              record(toolCallId, action, {
+                status: outcome.status,
+                object: docObject,
+                label: docId,
+              }),
+              outcome
+            )
+      );
+    }
+  );
 }
 
 export function createLibraryTool(context: LibraryToolContext) {
@@ -602,10 +552,6 @@ export function createLibraryTool(context: LibraryToolContext) {
     parameters,
     async execute(toolCallId, params) {
       const action = typeof params.action === "string" ? params.action : "unknown";
-      const done = (operation: CopilotOperation, payload: object) => ({
-        content: [{ type: "text" as const, text: JSON.stringify(payload) }],
-        details: operation,
-      });
       if (!context.admitting())
         return done(record(toolCallId, action, { status: "error" }), {
           ok: false,
@@ -694,7 +640,6 @@ export function createLibraryTool(context: LibraryToolContext) {
             requestedId,
             toolCallId,
             docId: deleteDoc.data.docId,
-            done,
           });
         const pdfJob = LibraryAcquireArxivPdfSchema.safeParse(rest);
         const sourceJob = LibraryAttachArxivSchema.safeParse(rest);
@@ -710,7 +655,6 @@ export function createLibraryTool(context: LibraryToolContext) {
             action,
             refId,
             kind: pdfJob.success ? "pdf" : "source",
-            done,
           });
         }
         const importOp = LibraryImportWorksSchema.safeParse(rest);
@@ -740,107 +684,92 @@ export function createLibraryTool(context: LibraryToolContext) {
               .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
         }
-        const journal = context.journal;
-        const operationId =
-          typeof requestedId === "string" && requestedId
-            ? requestedId
-            : `${context.runId ?? "run"}:${toolCallId}`;
-        const hash = digest(rest);
-        const known = journal?.lookup(operationId);
-        if (known && known.hash !== hash)
-          return done(record(toolCallId, action, { status: "rejected" }), {
-            ok: false,
-            status: "rejected",
-            detail: "operationId was already used for a different request",
-          });
-        if (known?.state === "done")
-          return done(
-            { ...known.operation, id: toolCallId },
-            { ...known.payload, duplicate: true }
-          );
-        if (known)
-          return done(record(toolCallId, action, { status: "unknown" }), {
-            ok: false,
-            status: "unknown",
-            detail:
-              "this operation started earlier and its outcome was not recorded; read the library (the work, or search the identifier or title) to find out, do not repeat it blindly",
-          });
-        // A candidate is something the exploration the user has open shows (its visible nodes, the open one and
-        // the nodes its inspector lists); anything else is the import menu's business (import_works).
-        if (save.success) {
-          const shown = context.page?.()?.discovery;
-          const candidates = shown ? discoveryReachableBibcodes(shown) : new Set<string>();
-          if (!candidates.has(save.data.bibcode))
-            return done(record(toolCallId, action, { status: "rejected" }), {
-              ok: false,
-              status: "rejected",
-              detail: shown?.graph
-                ? "that bibcode is not a candidate of the exploration the user has open (read_discovery lists them, and a filter or search may hide some); nothing was written. Papers outside it are added with import_works"
-                : "no exploration is open in the pane the user is looking at (the page you were given), so there is no candidate to save; nothing was written (the user opens one with the work's explore button)",
-            });
-        }
-        try {
-          journal?.begin({
-            operationId,
+        return await runOperation(
+          context,
+          {
+            tool: LIBRARY_TOOL_NAME,
             toolCallId,
             action,
-            hash,
-            object: write.success
-              ? { workId: write.data.refId }
-              : save.success
-                ? { summary: `candidate: ${save.data.bibcode}` }
-                : { summary: importSummary(importOp.success ? importOp.data : undefined) },
-          });
-        } catch {
-          return done(record(toolCallId, action, { status: "error" }), {
-            ok: false,
-            status: "error",
-            detail: "the conversation could not be saved; nothing was written",
-          });
-        }
-        const work: Promise<LibraryOpOutcome | LibraryImportOutcome> = importOp.success
-          ? applyLibraryImport(context.library, importOp.data)
-          : save.success
-            ? applyLibraryImport(context.library, {
-                action: "import_works",
-                mode: "bibcode",
-                text: save.data.bibcode,
-              })
-            : applyLibraryOperation(context.library, (write as { data: LibrarySetMainDoc }).data);
-        const outcome = await (context.track ? context.track(work) : work);
-        const failedObject = write.success
-          ? { object: { kind: "work" as const, id: write.data.refId } }
-          : {};
-        // The candidate stays named in the result and in the journal, so a repeated call answers the same way.
-        const payload: LibraryOpOutcome | LibraryImportOutcome | Record<string, unknown> =
-          save.success ? { ...outcome, candidate: save.data.bibcode } : outcome;
-        const result = outcome.ok
-          ? done(
-              record(toolCallId, action, {
-                status: outcome.status,
-                object: outcome.object,
-                label: outcome.label,
-                ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
-              }),
-              payload
+            rest,
+            requestedId,
+            readBack: "read the library (the work, or search the identifier or title) to find out",
+          },
+          async (op) => {
+            // A candidate is something the exploration the user has open shows (its visible nodes, the open one and
+            // the nodes its inspector lists); anything else is the import menu's business (import_works).
+            if (save.success) {
+              const shown = context.page?.()?.discovery;
+              const candidates = shown ? discoveryReachableBibcodes(shown) : new Set<string>();
+              if (!candidates.has(save.data.bibcode))
+                return done(record(toolCallId, action, { status: "rejected" }), {
+                  ok: false,
+                  status: "rejected",
+                  detail: shown?.graph
+                    ? "that bibcode is not a candidate of the exploration the user has open (read_discovery lists them, and a filter or search may hide some); nothing was written. Papers outside it are added with import_works"
+                    : "no exploration is open in the pane the user is looking at (the page you were given), so there is no candidate to save; nothing was written (the user opens one with the work's explore button)",
+                });
+            }
+            if (
+              !op.begin(
+                write.success
+                  ? { workId: write.data.refId }
+                  : save.success
+                    ? { summary: `candidate: ${save.data.bibcode}` }
+                    : { summary: importSummary(importOp.success ? importOp.data : undefined) }
+              )
             )
-          : done(
-              record(toolCallId, action, {
-                status: outcome.status,
-                ...failedObject,
-              }),
-              payload
+              return op.notSaved("written");
+            const outcome = await op.track<LibraryOpOutcome | LibraryImportOutcome>(
+              importOp.success
+                ? applyLibraryImport(context.library, importOp.data)
+                : save.success
+                  ? applyLibraryImport(context.library, {
+                      action: "import_works",
+                      mode: "bibcode",
+                      text: save.data.bibcode,
+                    })
+                  : applyLibraryOperation(
+                      context.library,
+                      (write as { data: LibrarySetMainDoc }).data
+                    )
             );
-        journal?.done(operationId, payload as unknown as Record<string, unknown>, result.details);
-        // The page's own Add marks the node saved in place; the bound view does the same for this save (state sync,
-        // not navigation, not awaited: the save is already committed and a view that is gone loads the real library).
-        if (save.success && outcome.ok && outcome.object)
-          context.shellSync?.({
-            action: "discovery_saved",
-            bibcode: save.data.bibcode,
-            workId: outcome.object.id,
-          });
-        return result;
+            const failedObject = write.success
+              ? { object: { kind: "work" as const, id: write.data.refId } }
+              : {};
+            // The candidate stays named in the result and in the journal, so a repeated call answers the same way.
+            const payload: LibraryOpOutcome | LibraryImportOutcome | Record<string, unknown> =
+              save.success ? { ...outcome, candidate: save.data.bibcode } : outcome;
+            const result = op.finish(
+              outcome.ok
+                ? done(
+                    record(toolCallId, action, {
+                      status: outcome.status,
+                      object: outcome.object,
+                      label: outcome.label,
+                      ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+                    }),
+                    payload
+                  )
+                : done(
+                    record(toolCallId, action, {
+                      status: outcome.status,
+                      ...failedObject,
+                    }),
+                    payload
+                  )
+            );
+            // The page's own Add marks the node saved in place; the bound view does the same for this save (state
+            // sync, not navigation, not awaited: the save is already committed and a view that is gone loads the
+            // real library).
+            if (save.success && outcome.ok && outcome.object)
+              context.shellSync?.({
+                action: "discovery_saved",
+                bibcode: save.data.bibcode,
+                workId: outcome.object.id,
+              });
+            return result;
+          }
+        );
       } catch {
         return done(record(toolCallId, action, { status: "unknown" }), {
           ok: false,

@@ -1,8 +1,6 @@
-import { createHash } from "node:crypto";
 import {
   type CopilotOperation,
   type CopilotViewActionResult,
-  type DocReplaceImpact,
   PLAN_ICONS,
   PLAN_OPERATION_ACTIONS,
   type PlanDeleteOperation,
@@ -12,10 +10,18 @@ import {
   type PlanViewAction,
   PlanViewActionSchema,
   PlanWriteOperationSchema,
-  type WriterDeleteImpact,
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import {
+  askUser,
+  confirmUnavailable,
+  done,
+  type Op,
+  record as recordFor,
+  runOperation,
+  type ToolHostContext,
+} from "./copilot-tool-kit.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 import {
   applyPlanDelete,
@@ -29,173 +35,8 @@ import type { TaskUndoRegistry } from "./plans-undo.js";
 
 export const PLAN_TOOL_NAME = "plan";
 
-/** What the host remembers about a business write so a repeat or a restart never guesses. */
-export type KnownOperation =
-  | { state: "done"; hash: string; payload: Record<string, unknown>; operation: CopilotOperation }
-  | { state: "begun"; hash: string; jobId?: string; sendId?: string };
-export interface OperationJournalPort {
-  lookup(operationId: string): KnownOperation | null;
-  /** Persist "about to write". Throws when the conversation cannot be saved: then nothing is written. */
-  begin(entry: {
-    operationId: string;
-    toolCallId: string;
-    action: string;
-    hash: string;
-    object?: {
-      planId?: string;
-      taskId?: string;
-      workId?: string;
-      manuscriptId?: string;
-      sendId?: string;
-      summary?: string;
-    };
-    baseRev?: number;
-  }): void;
-  done(operationId: string, payload: Record<string, unknown>, operation: CopilotOperation): void;
-  /** Record the Job-table job a begun operation submitted, so a restart can name it. Best effort. */
-  submitted?(operationId: string, jobId: string): void;
-}
-
-/** How a requested delete was settled by the human (or by the host when the request stopped being valid). */
-export type ConfirmationOutcome =
-  | { outcome: "approved" }
-  | { outcome: "declined" }
-  | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
-  /** A system error at click time (data unreadable): not a change, and never reported as one. */
-  | { outcome: "expired"; reason: "error"; detail: string };
-/** What the card shows for a Plan delete (`delete_plan`) or a Doc replacement (`refresh_arxiv_source`). */
-export type ConfirmationRequest =
-  | {
-      toolCallId: string;
-      /** Mail ticket 09: sending a draft. The card shows this very snapshot and this very snapshot is sent. */
-      action: "send_mail";
-      accountId: string;
-      messageId: string;
-      account: { id: string; address: string; displayName: string };
-      kind: "new" | "reply" | "forward";
-      to: { name: string; address: string }[];
-      cc: { name: string; address: string }[];
-      bcc: { name: string; address: string }[];
-      subject: string;
-      text: string;
-      attachments: { filename: string; contentType: string; size: number }[];
-      inReplyTo: string | null;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Mail ticket 09: moving a message to Trash (or deleting it for good from Trash). */
-      action: "delete_mail";
-      accountId: string;
-      account: { id: string; address: string; displayName: string };
-      message: {
-        folder: string;
-        uid: number;
-        uidValidity: number;
-        from: { name: string; address: string } | null;
-        subject: string;
-        date: string | null;
-      };
-      permanent: boolean;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Mail ticket 09: moving a message to another folder. */
-      action: "move_mail";
-      accountId: string;
-      account: { id: string; address: string; displayName: string };
-      message: {
-        folder: string;
-        uid: number;
-        uidValidity: number;
-        from: { name: string; address: string } | null;
-        subject: string;
-        date: string | null;
-      };
-      destination: string;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Replacing the annotated reading text of a text Doc (copilot ticket 29): the source panel's replacement dialog. */
-      action: "replace_text_reading";
-      docId: string;
-      label: string;
-      impact: import("@argelanderspace/contracts").TextReplacementImpact;
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** Only a whole Plan waits for the user; a Task delete is immediate like on the Plan page. */
-      action: "delete_plan";
-      planId: string;
-      label: string;
-      planName: string;
-      impact: { tasks: number; openTasks: number };
-      baseRev: number;
-      /** Content digest of the target at request time; a change that leaves the rev alone still expires the card. */
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /**
-       * Replacing the text of an existing LaTeX Doc: the arXiv refresh. The Files tab dialog's annotation-risk step.
-       */
-      action: "refresh_arxiv_source";
-      workId: string;
-      docId: string;
-      label: string;
-      impact: DocReplaceImpact;
-      /** The annotations rev the count was read at (0 when it could not be read). */
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** The Files tab's "delete document" dialog: the global physical delete of one Doc. */
-      action: "delete_doc";
-      docId: string;
-      format: "pdf" | "latex" | "text";
-      works: { id: string; title: string; main: boolean; remaining: number }[];
-      impact: DocReplaceImpact;
-      /** The annotations revision the count was read at (0 when it could not be read). */
-      baseRev: number;
-      objectDigest: string;
-    }
-  | {
-      toolCallId: string;
-      /** The Writer list's delete dialog: the physical delete of one manuscript folder. */
-      action: "delete_manuscript";
-      manuscriptId: string;
-      label: string;
-      impact: WriterDeleteImpact;
-      baseRev: number;
-      objectDigest: string;
-    };
-/**
- * The only way a delete can proceed. `request` makes the application show a card to the real user and
- * resolves with the user's decision. The tool never sees an id or a way to answer: it cannot approve.
- * It throws when the request cannot be saved, and then nothing was shown or written.
- */
-export interface ConfirmationPort {
-  request(entry: ConfirmationRequest): Promise<ConfirmationOutcome>;
-}
-
-export interface PlanToolContext {
+export interface PlanToolContext extends ToolHostContext {
   plans: PlanOpDeps;
-  /** Present in the real host; business writes are journaled so a repeated operationId is answered, not rerun. */
-  journal?: OperationJournalPort;
-  /** Counts an operation as in flight until it settles, so a terminal run state waits for it. */
-  track?: <T>(work: Promise<T>) => Promise<T>;
-  /** The run this call belongs to; scopes default operation ids. */
-  runId?: string;
-  /** Present in the real host: deletes wait here for the user. Without it a delete request is refused. */
-  confirm?: ConfirmationPort;
   /** The service's undo registry: the same one the Plan page's undo and the Copilot panel use. */
   taskUndo?: TaskUndoRegistry;
   /** The calling conversation: the tool's undo only reaches a delete this conversation made. */
@@ -204,8 +45,6 @@ export interface PlanToolContext {
   taskDeleted?: (info: { toolCallId: string; planId: string; removed: RemovedTask }) => string;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (action: PlanViewAction) => Promise<ViewActionOutcome>;
-  /** False once the host stopped admitting operations (shutdown). */
-  admitting: () => boolean;
 }
 
 const lit = <T extends string>(values: readonly T[]) =>
@@ -284,9 +123,8 @@ const description = [
   "A write whose status is unknown may or may not have been applied: read the plans to find out, never repeat it blindly.",
 ].join(" ");
 
-function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
-  return { id, tool: PLAN_TOOL_NAME, action, status: "error", ...partial };
-}
+const record = (id: string, action: string, partial: Partial<CopilotOperation>) =>
+  recordFor(PLAN_TOOL_NAME, id, action, partial);
 
 export function createPlanTool(context: PlanToolContext) {
   return defineTool({
@@ -297,10 +135,6 @@ export function createPlanTool(context: PlanToolContext) {
     parameters,
     async execute(toolCallId, params) {
       const action = typeof params.action === "string" ? params.action : "unknown";
-      const done = (operation: CopilotOperation, payload: object) => ({
-        content: [{ type: "text" as const, text: JSON.stringify(payload) }],
-        details: operation,
-      });
       if (!context.admitting())
         return done(record(toolCallId, action, { status: "error" }), {
           ok: false,
@@ -387,129 +221,91 @@ export function createPlanTool(context: PlanToolContext) {
               .slice(0, 5)
               .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
-        const journal = context.journal;
-        const operationId =
-          typeof requestedId === "string" && requestedId
-            ? requestedId
-            : `${context.runId ?? "run"}:${toolCallId}`;
-        const hash = digest(rest);
-        const known = journal?.lookup(operationId);
-        if (known && known.hash !== hash)
-          return done(record(toolCallId, action, { status: "rejected" }), {
-            ok: false,
-            status: "rejected",
-            detail: "operationId was already used for a different request",
-          });
-        if (known?.state === "done")
-          return done(
-            { ...known.operation, id: toolCallId },
-            { ...known.payload, duplicate: true }
-          );
-        if (known)
-          return done(record(toolCallId, action, { status: "unknown" }), {
-            ok: false,
-            status: "unknown",
-            detail:
-              "this operation started earlier and its outcome was not recorded; read the plans to find out, do not repeat it blindly",
-          });
-        // Before anything is journaled: a store that cannot be read at all cannot have been written to.
-        if (!readable()) return unreadable(action);
-        if (deletion.success)
-          return await requestDelete(context, toolCallId, deletion.data, {
-            operationId,
-            hash,
-            done,
-          });
-        if (undoing.success) {
-          // A write like the others (spec 8.3): journaled by operationId, so a repeat returns the first result and a
-          // crash between the save and the result reads back as `unknown`.
-          if (!context.taskUndo)
-            return done(record(toolCallId, action, { status: "unsupported" }), {
-              ok: false,
-              status: "unsupported",
-              detail: "undo is not available here",
-            });
-          const target = { planId: undoing.data.planId, taskId: undoing.data.taskId };
-          try {
-            journal?.begin({ operationId, toolCallId, action, hash, object: target });
-          } catch {
-            return done(record(toolCallId, action, { status: "error" }), {
-              ok: false,
-              status: "error",
-              detail: "the conversation could not be saved; nothing was restored",
-            });
-          }
-          const undoWork = context.taskUndo.undo(context.plans, {
-            ...undoing.data,
-            ...(context.conversationId ? { conversationId: context.conversationId } : {}),
-          });
-          const outcome = await (context.track ? context.track(undoWork) : undoWork);
-          const result = outcome.ok
-            ? done(
-                record(toolCallId, action, {
-                  status: outcome.status,
-                  rev: outcome.rev,
-                  object: outcome.object,
-                  label: outcome.label,
-                }),
-                outcome
-              )
-            : done(
-                record(toolCallId, action, {
-                  status: outcome.status,
-                  ...(outcome.rev !== undefined ? { rev: outcome.rev } : {}),
-                  object: { kind: "task", id: target.taskId, planId: target.planId },
-                }),
-                outcome
-              );
-          journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
-          return result;
-        }
-        if (!write?.success) throw new Error("unreachable");
-        const target = write.data as { planId?: string; taskId?: string; expectedRev?: number };
-        try {
-          journal?.begin({
-            operationId,
+        return await runOperation(
+          context,
+          {
+            tool: PLAN_TOOL_NAME,
             toolCallId,
             action,
-            hash,
-            object: { planId: target.planId, taskId: target.taskId },
-            baseRev: target.expectedRev,
-          });
-        } catch {
-          // The conversation cannot be saved, so no write may be committed that the record cannot explain.
-          return done(record(toolCallId, action, { status: "error" }), {
-            ok: false,
-            status: "error",
-            detail: "the conversation could not be saved; nothing was written",
-          });
-        }
-        const work = applyPlanOperation(context.plans, write.data);
-        const settled = await (context.track ? context.track(work) : work);
-        const outcome =
-          !settled.ok && settled.status === "conflict"
-            ? {
-                ...settled,
-                detail: `${settled.detail}; read again, then write with a new operationId`,
-              }
-            : settled;
-        const result = outcome.ok
-          ? done(
-              record(toolCallId, action, {
-                status: outcome.status,
-                rev: outcome.rev,
-                object: outcome.object,
-                label: outcome.label,
-                ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
-              }),
-              outcome
-            )
-          : done(
-              record(toolCallId, action, { status: outcome.status, rev: outcome.currentRev }),
-              outcome
+            rest,
+            requestedId,
+            readBack: "read the plans to find out",
+          },
+          async (op) => {
+            // Before anything is journaled: a store that cannot be read at all cannot have been written to.
+            if (!readable()) return unreadable(action);
+            if (deletion.success)
+              return await requestDelete(context, toolCallId, deletion.data, op);
+            if (undoing.success) {
+              // A write like the others (spec 8.3): journaled by operationId, so a repeat returns the first result
+              // and a crash between the save and the result reads back as `unknown`.
+              if (!context.taskUndo)
+                return done(record(toolCallId, action, { status: "unsupported" }), {
+                  ok: false,
+                  status: "unsupported",
+                  detail: "undo is not available here",
+                });
+              const target = { planId: undoing.data.planId, taskId: undoing.data.taskId };
+              if (!op.begin(target)) return op.notSaved("restored");
+              const outcome = await op.track(
+                context.taskUndo.undo(context.plans, {
+                  ...undoing.data,
+                  ...(context.conversationId ? { conversationId: context.conversationId } : {}),
+                })
+              );
+              return op.finish(
+                outcome.ok
+                  ? done(
+                      record(toolCallId, action, {
+                        status: outcome.status,
+                        rev: outcome.rev,
+                        object: outcome.object,
+                        label: outcome.label,
+                      }),
+                      outcome
+                    )
+                  : done(
+                      record(toolCallId, action, {
+                        status: outcome.status,
+                        ...(outcome.rev !== undefined ? { rev: outcome.rev } : {}),
+                        object: { kind: "task", id: target.taskId, planId: target.planId },
+                      }),
+                      outcome
+                    )
+              );
+            }
+            if (!write?.success) throw new Error("unreachable");
+            const target = write.data as { planId?: string; taskId?: string; expectedRev?: number };
+            // The conversation cannot be saved, so no write may be committed that the record cannot explain.
+            if (!op.begin({ planId: target.planId, taskId: target.taskId }, target.expectedRev))
+              return op.notSaved("written");
+            const settled = await op.track(applyPlanOperation(context.plans, write.data));
+            const outcome =
+              !settled.ok && settled.status === "conflict"
+                ? {
+                    ...settled,
+                    detail: `${settled.detail}; read again, then write with a new operationId`,
+                  }
+                : settled;
+            return op.finish(
+              outcome.ok
+                ? done(
+                    record(toolCallId, action, {
+                      status: outcome.status,
+                      rev: outcome.rev,
+                      object: outcome.object,
+                      label: outcome.label,
+                      ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+                    }),
+                    outcome
+                  )
+                : done(
+                    record(toolCallId, action, { status: outcome.status, rev: outcome.currentRev }),
+                    outcome
+                  )
             );
-        journal?.done(operationId, outcome as unknown as Record<string, unknown>, result.details);
-        return result;
+          }
+        );
       } catch {
         // An unexpected failure: the store either rejected the write or something after it failed.
         // Never claim "nothing changed"; the model must read again to find out.
@@ -524,12 +320,6 @@ export function createPlanTool(context: PlanToolContext) {
   });
 }
 
-type PlanDeleteRequest = PlanDeleteOperation;
-type Done = (
-  operation: CopilotOperation,
-  payload: object
-) => { content: { type: "text"; text: string }[]; details: CopilotOperation };
-
 /**
  * A delete the model asked for. Before anything is written: the target must exist at the version the
  * model read, then the user is asked and the call waits WITHOUT holding any business lock. Only an
@@ -539,10 +329,9 @@ type Done = (
 async function requestDelete(
   context: PlanToolContext,
   toolCallId: string,
-  request: PlanDeleteRequest,
-  ids: { operationId: string; hash: string; done: Done }
+  request: PlanDeleteOperation,
+  op: Op
 ) {
-  const { operationId, hash, done } = ids;
   const { action } = request;
   const target = {
     planId: request.planId,
@@ -554,83 +343,69 @@ async function requestDelete(
     objectDigest?: string;
     label?: string;
     confirmed: boolean;
-  }) => {
-    const work = (async () => {
-      try {
-        context.journal?.begin({
-          operationId,
-          toolCallId,
+  }) =>
+    op.track(
+      (async () => {
+        if (!op.begin(target, bound.baseRev)) return op.notSaved("deleted");
+        const outcome = await applyPlanDelete(context.plans, {
           action,
-          hash,
-          object: target,
+          ...target,
           baseRev: bound.baseRev,
+          ...(bound.objectDigest ? { objectDigest: bound.objectDigest } : {}),
         });
-      } catch {
-        return done(record(toolCallId, action, { status: "error" }), {
-          ok: false,
-          status: "error",
-          detail: "the conversation could not be saved; nothing was deleted",
-        });
-      }
-      const outcome = await applyPlanDelete(context.plans, {
-        action,
-        ...target,
-        baseRev: bound.baseRev,
-        ...(bound.objectDigest ? { objectDigest: bound.objectDigest } : {}),
-      });
-      const { removed, ...payload } = outcome as typeof outcome & { removed?: RemovedTask };
-      const undo =
-        outcome.ok && removed && context.taskDeleted
-          ? { until: context.taskDeleted({ toolCallId, planId: request.planId, removed }) }
-          : undefined;
-      // A confirmed delete whose target changed under the user's click is an expired confirmation;
-      // a direct task delete behaves like every other write (conflict: read again).
-      const expired = bound.confirmed && !outcome.ok && outcome.status === "conflict";
-      const result = outcome.ok
-        ? done(
-            record(toolCallId, action, {
-              status: outcome.status,
-              rev: outcome.rev,
-              object: outcome.object,
-              label: outcome.label,
-              ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
-              ...(undo ? { undo } : {}),
-            }),
-            payload
-          )
-        : done(
-            record(toolCallId, action, {
-              status: expired ? "expired" : outcome.status,
-              rev: outcome.currentRev,
-              ...(bound.label ? { label: bound.label } : {}),
-            }),
-            expired
-              ? {
-                  ok: false,
-                  status: "expired",
-                  detail:
-                    "plans changed before the delete ran; nothing was deleted. Read again and ask only if it is still wanted",
-                }
-              : outcome.status === "conflict"
+        const { removed, ...payload } = outcome as typeof outcome & { removed?: RemovedTask };
+        const undo =
+          outcome.ok && removed && context.taskDeleted
+            ? { until: context.taskDeleted({ toolCallId, planId: request.planId, removed }) }
+            : undefined;
+        // A confirmed delete whose target changed under the user's click is an expired confirmation;
+        // a direct task delete behaves like every other write (conflict: read again).
+        const expired = bound.confirmed && !outcome.ok && outcome.status === "conflict";
+        const result = outcome.ok
+          ? done(
+              record(toolCallId, action, {
+                status: outcome.status,
+                rev: outcome.rev,
+                object: outcome.object,
+                label: outcome.label,
+                ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+                ...(undo ? { undo } : {}),
+              }),
+              payload
+            )
+          : done(
+              record(toolCallId, action, {
+                status: expired ? "expired" : outcome.status,
+                rev: outcome.currentRev,
+                ...(bound.label ? { label: bound.label } : {}),
+              }),
+              expired
                 ? {
-                    ...payload,
-                    detail: `${(payload as { detail?: string }).detail}; read again, then delete with a new operationId`,
+                    ok: false,
+                    status: "expired",
+                    detail:
+                      "plans changed before the delete ran; nothing was deleted. Read again and ask only if it is still wanted",
                   }
-                : payload
-          );
-      context.journal?.done(operationId, payload as Record<string, unknown>, result.details);
-      return result;
-    })();
-    return context.track ? context.track(work) : work;
-  };
+                : outcome.status === "conflict"
+                  ? {
+                      ...payload,
+                      detail: `${(payload as { detail?: string }).detail}; read again, then delete with a new operationId`,
+                    }
+                  : payload
+            );
+        // The journal keeps the shared handler's own answer, not the wording the model got for it.
+        return op.finish(result, payload as Record<string, unknown>);
+      })()
+    );
   // Deleting one Task is exactly the Plan page's own action: immediate, with the eight-second undo.
   if (action === "delete_task") return execute({ baseRev: request.expectedRev, confirmed: false });
-  if (!context.confirm)
-    return done(record(toolCallId, action, { status: "unsupported" }), {
-      ok: false,
-      status: "unsupported",
-      detail: "deleting a plan needs the user's confirmation and none is available here",
-    });
+  const unavailable = confirmUnavailable(context, {
+    tool: PLAN_TOOL_NAME,
+    toolCallId,
+    action,
+    nothing: "deleted",
+  });
+  if (unavailable) return unavailable;
   const described = describeDeleteTarget(context.plans.statusDir, { action, ...target });
   if (!described)
     return done(record(toolCallId, action, { status: "not_found" }), {
@@ -645,10 +420,14 @@ async function requestDelete(
       currentRev: described.rev,
       detail: "plans changed; read again, then request the delete with a new operationId",
     });
-  const object = { kind: "plan", id: request.planId } as NonNullable<CopilotOperation["object"]>;
-  let decision: ConfirmationOutcome;
-  try {
-    decision = await context.confirm.request({
+  // The wait for the user is not tracked: Stop must still be able to end the card.
+  const answer = await askUser(context, {
+    tool: PLAN_TOOL_NAME,
+    toolCallId,
+    action,
+    object: { kind: "plan", id: request.planId },
+    label: described.label,
+    request: {
       toolCallId,
       action: "delete_plan",
       planId: request.planId,
@@ -657,28 +436,11 @@ async function requestDelete(
       impact: described.impact,
       baseRev: described.rev,
       objectDigest: described.objectDigest,
-    });
-  } catch {
-    return done(record(toolCallId, action, { status: "error" }), {
-      ok: false,
-      status: "error",
-      detail: "the confirmation could not be saved; nothing was deleted",
-    });
-  }
-  if (decision.outcome === "declined")
-    return done(
-      record(toolCallId, action, { status: "declined", object, label: described.label }),
-      { ok: false, status: "declined", detail: "the user declined; nothing was deleted" }
-    );
-  if (decision.outcome === "expired")
-    return done(record(toolCallId, action, { status: "expired", object, label: described.label }), {
-      ok: false,
-      status: "expired",
-      detail:
-        decision.reason === "stale"
-          ? "plans changed before the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
-          : "the request ended before the user confirmed; nothing was deleted",
-    });
+    },
+    nothing: "deleted",
+    changed: "plans",
+  });
+  if (!answer.approved) return answer.result;
   // Approved by the user. From here the delete is a submitted write: Stop does not interrupt it.
   return execute({
     baseRev: described.rev,
@@ -686,22 +448,6 @@ async function requestDelete(
     label: described.label,
     confirmed: true,
   });
-}
-
-export function digest(value: Record<string, unknown>): string {
-  const sorted = (input: unknown): unknown =>
-    Array.isArray(input)
-      ? input.map(sorted)
-      : input && typeof input === "object"
-        ? Object.fromEntries(
-            Object.entries(input as Record<string, unknown>)
-              .sort(([a], [b]) => a.localeCompare(b))
-              .map(([key, v]) => [key, sorted(v)])
-          )
-        : input;
-  return createHash("sha256")
-    .update(JSON.stringify(sorted(value)))
-    .digest("hex");
 }
 
 export type { CopilotViewActionResult };
