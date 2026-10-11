@@ -14,7 +14,14 @@ import {
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { type ConfirmationPort, digest, type OperationJournalPort } from "./copilot-tool-kit.js";
+import {
+  askUser,
+  confirmUnavailable,
+  done,
+  record as recordFor,
+  runOperation,
+  type ToolHostContext,
+} from "./copilot-tool-kit.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 import {
   cellOperation,
@@ -30,19 +37,13 @@ import {
 
 export const WRITER_TOOL_NAME = "writer";
 
-export interface WriterToolContext {
+/** create/update/delete are journaled; a delete waits for the user (the list's delete dialog) through `confirm`. */
+export interface WriterToolContext extends ToolHostContext {
   writer: WriterOpDeps;
-  /** Present in the real host; create/update/delete are journaled so a repeated operationId is answered, not rerun. */
-  journal?: OperationJournalPort;
-  track?: <T>(work: Promise<T>) => Promise<T>;
-  runId?: string;
-  /** A delete waits here for the user (the list's delete dialog). Without it a delete request is refused. */
-  confirm?: ConfirmationPort;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (
     action: ReturnType<typeof WriterViewActionSchema.parse>
   ) => Promise<ViewActionOutcome>;
-  admitting: () => boolean;
   /** Bytes this conversation can still take in one tool result; a larger reading is refused whole. */
   budget?: () => number;
 }
@@ -216,17 +217,10 @@ const description = [
 export const WRITER_PROMPT =
   " Writer addendum (in addition to everything above, including the statements about which page context and tools exist): the Writer page context and the writer tool exist too. A Writer page is the manuscript list (id, title, template, rev, and the template catalog) or one open manuscript: page.writer.editor.saved is the WHOLE manuscript as last saved on disk (every cell in full, comments, info, preamble), and page.writer.editor.draft, when present, is only what the user has typed and not saved yet (changed fields, changed or new cells in full, removed cells): it is the user's, never on disk, you never replace or save it yourself (only the page's own autosave does, which export_manuscript and commit_cell trigger exactly as their buttons do), and a saved value and a draft value of the same thing must not be confused. A later observation may say the saved manuscript was left out because the task already holds that revision; call writer read for the current one. writer read, create_manuscript, update_manuscript (title, authors, affiliations, userPreamble, infoValues, template; expectedRev from your latest read of that manuscript; the file's unknown keys are kept; a conflict wrote nothing, so read again and form a new request, never just replace the number) and delete_manuscript (it only requests: the user confirms in the application, like delete_plan, and declined or expired mean nothing was deleted) are the Writer list, New dialog, Info and Preamble modals, template select and delete dialog; open_manuscript, close_manuscript, export_manuscript, select_cell, edit_cell, commit_cell, set_writer_panel, set_writer_tab, dismiss_template_warning and retry_manuscript_list only change what the user sees. The cell operations (insert_cell, update_cell, delete_cell, convert_cell, add_comment, insert_reference) are the editor's add and type menus, editing forms, Comments tab, and References and Crossrefs inserts: each needs expectedRev from your latest read, writes only what it names, and its result carries the new rev for the next one; convert_cell is lossy by design (tell the user first when the cell has content); text you write that reads or writes files, runs programs or hides control words is refused. render_manuscript compiles the saved manuscript when you call it and only then (saving, opening and switching never compile); a compile error is a failure, not a result to hide; export_manuscript starts the user's download (the page first saves its own pending autosave, like the Export button; that is the page's save, not yours). commit_cell and export_manuscript act on the user's open editor. The template catalog cannot be changed and cells cannot be reordered, because the page cannot.";
 
-type ToolResult = { content: { type: "text"; text: string }[]; details: CopilotOperation };
-
-function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
-  return { id, tool: WRITER_TOOL_NAME, action, status: "error", ...partial };
-}
+const record = (id: string, action: string, partial: Partial<CopilotOperation>) =>
+  recordFor(WRITER_TOOL_NAME, id, action, partial);
 
 export function createWriterTool(context: WriterToolContext) {
-  const done = (operation: CopilotOperation, payload: object): ToolResult => ({
-    content: [{ type: "text" as const, text: JSON.stringify(payload) }],
-    details: operation,
-  });
   const reread = "read the manuscript again to see what is stored now";
 
   /** A shared outcome as the model's result and the operation record. */
@@ -424,174 +418,137 @@ export function createWriterTool(context: WriterToolContext) {
               .slice(0, 5)
               .map((issue) => ({ path: issue.path.join("."), message: issue.message })),
           });
-        const journal = context.journal;
-        const operationId =
-          typeof requestedId === "string" && requestedId
-            ? requestedId
-            : `${context.runId ?? "run"}:${toolCallId}`;
-        const hash = digest(rest);
-        const known = journal?.lookup(operationId);
-        if (known && known.hash !== hash)
-          return done(record(toolCallId, action, { status: "rejected" }), {
-            ok: false,
-            status: "rejected",
-            detail: "operationId was already used for a different request",
-          });
-        if (known?.state === "done")
-          return done(
-            { ...known.operation, id: toolCallId },
-            { ...known.payload, duplicate: true }
-          );
-        if (known)
-          return done(record(toolCallId, action, { status: "unknown" }), {
-            ok: false,
-            status: "unknown",
-            detail:
-              "this operation started earlier and its outcome was not recorded; read the manuscripts to find out, do not repeat it blindly",
-          });
-        const track = <T>(work: Promise<T>) => (context.track ? context.track(work) : work);
-        const begin = (object: { manuscriptId?: string }, baseRev?: number) => {
-          try {
-            journal?.begin({ operationId, toolCallId, action, hash, object, baseRev });
-            return true;
-          } catch {
-            return false;
-          }
-        };
-        const notSaved = () =>
-          done(record(toolCallId, action, { status: "error" }), {
-            ok: false,
-            status: "error",
-            detail: "the conversation could not be saved; nothing was written",
-          });
-        if (deletion.success) {
-          const request = deletion.data;
-          if (!context.confirm)
-            return done(record(toolCallId, action, { status: "unsupported" }), {
-              ok: false,
-              status: "unsupported",
-              detail:
-                "deleting a manuscript needs the user's confirmation and none is available here",
-            });
-          const target = describeManuscriptDelete(context.writer, request.manuscriptId);
-          if (target === null)
-            return done(record(toolCallId, action, { status: "not_found" }), {
-              ok: false,
-              status: "not_found",
-              detail: "no such manuscript",
-            });
-          if ("error" in target)
-            return done(record(toolCallId, action, { status: "error" }), {
-              ok: false,
-              status: "error",
-              detail: target.error,
-            });
-          if (target.rev !== request.expectedRev)
-            return done(record(toolCallId, action, { status: "conflict", rev: target.rev }), {
-              ok: false,
-              status: "conflict",
-              currentRev: target.rev,
-              detail: `the manuscript changed since your reading; ${reread}, then request the delete with a new operationId`,
-            });
-          const object = { kind: "manuscript" as const, id: target.id };
-          let decision: Awaited<ReturnType<ConfirmationPort["request"]>>;
-          try {
-            decision = await context.confirm.request({
-              toolCallId,
-              action: "delete_manuscript",
-              manuscriptId: target.id,
-              label: target.title,
-              impact: target.impact,
-              baseRev: target.rev,
-              objectDigest: target.digest,
-            });
-          } catch {
-            return done(record(toolCallId, action, { status: "error" }), {
-              ok: false,
-              status: "error",
-              detail: "the confirmation could not be saved; nothing was deleted",
-            });
-          }
-          if (decision.outcome === "declined")
-            return done(
-              record(toolCallId, action, { status: "declined", object, label: target.title }),
-              {
-                ok: false,
-                status: "declined",
-                detail: "the user declined; nothing was deleted",
-              }
-            );
-          if (decision.outcome === "expired")
-            return done(
-              record(toolCallId, action, { status: "expired", object, label: target.title }),
-              {
-                ok: false,
-                status: "expired",
-                detail:
-                  decision.reason === "stale"
-                    ? "the manuscript changed before the user confirmed; nothing was deleted. Read again and ask only if it is still wanted"
-                    : "the request ended before the user confirmed; nothing was deleted",
-              }
-            );
-          // Approved by the user. From here the delete is a submitted write: Stop does not interrupt it.
-          if (!begin({ manuscriptId: target.id }, target.rev)) return notSaved();
-          const outcome = await track(
-            deleteManuscriptOp(context.writer, target.id, {
-              rev: target.rev,
-              digest: target.digest,
-            })
-          );
-          const expiredNow = !outcome.ok && outcome.status === "conflict";
-          const result = expiredNow
-            ? done(record(toolCallId, action, { status: "expired", object, label: target.title }), {
-                ok: false,
-                status: "expired",
-                detail:
-                  "the manuscript changed before the delete ran; nothing was deleted. Read again and ask only if it is still wanted",
-              })
-            : settle(
+        return await runOperation(
+          context,
+          {
+            tool: WRITER_TOOL_NAME,
+            toolCallId,
+            action,
+            rest,
+            requestedId,
+            readBack: "read the manuscripts to find out",
+          },
+          async (op) => {
+            if (deletion.success) {
+              const request = deletion.data;
+              const unavailable = confirmUnavailable(context, {
+                tool: WRITER_TOOL_NAME,
                 toolCallId,
                 action,
-                outcome.ok ? { ...outcome, label: target.title } : outcome
+                nothing: "deleted",
+              });
+              if (unavailable) return unavailable;
+              const target = describeManuscriptDelete(context.writer, request.manuscriptId);
+              if (target === null)
+                return done(record(toolCallId, action, { status: "not_found" }), {
+                  ok: false,
+                  status: "not_found",
+                  detail: "no such manuscript",
+                });
+              if ("error" in target)
+                return done(record(toolCallId, action, { status: "error" }), {
+                  ok: false,
+                  status: "error",
+                  detail: target.error,
+                });
+              if (target.rev !== request.expectedRev)
+                return done(record(toolCallId, action, { status: "conflict", rev: target.rev }), {
+                  ok: false,
+                  status: "conflict",
+                  currentRev: target.rev,
+                  detail: `the manuscript changed since your reading; ${reread}, then request the delete with a new operationId`,
+                });
+              const object = { kind: "manuscript" as const, id: target.id };
+              // The wait for the user is not tracked: Stop must still be able to end the card.
+              const answer = await askUser(context, {
+                tool: WRITER_TOOL_NAME,
+                toolCallId,
+                action,
+                object,
+                label: target.title,
+                request: {
+                  toolCallId,
+                  action: "delete_manuscript",
+                  manuscriptId: target.id,
+                  label: target.title,
+                  impact: target.impact,
+                  baseRev: target.rev,
+                  objectDigest: target.digest,
+                },
+                nothing: "deleted",
+                changed: "the manuscript",
+              });
+              if (!answer.approved) return answer.result;
+              // Approved by the user. From here the delete is a submitted write: Stop does not interrupt it.
+              if (!op.begin({ manuscriptId: target.id }, target.rev)) return op.notSaved("written");
+              const outcome = await op.track(
+                deleteManuscriptOp(context.writer, target.id, {
+                  rev: target.rev,
+                  digest: target.digest,
+                })
               );
-          journal?.done(operationId, JSON.parse(result.content[0]?.text ?? "{}"), result.details);
-          return result;
-        }
-        if (!write?.success) throw new Error("unreachable");
-        const op: WriterWriteOperation | WriterCellOperation = write.data;
-        if (
-          !begin(
-            { manuscriptId: "manuscriptId" in op ? op.manuscriptId : undefined },
-            "expectedRev" in op ? op.expectedRev : undefined
-          )
-        )
-          return notSaved();
-        const work =
-          op.action === "create_manuscript"
-            ? createManuscriptOp(
-                context.writer,
-                { template: op.template, title: op.title },
-                { screen: true }
+              const expiredNow = !outcome.ok && outcome.status === "conflict";
+              return op.finish(
+                expiredNow
+                  ? done(
+                      record(toolCallId, action, {
+                        status: "expired",
+                        object,
+                        label: target.title,
+                      }),
+                      {
+                        ok: false,
+                        status: "expired",
+                        detail:
+                          "the manuscript changed before the delete ran; nothing was deleted. Read again and ask only if it is still wanted",
+                      }
+                    )
+                  : settle(
+                      toolCallId,
+                      action,
+                      outcome.ok ? { ...outcome, label: target.title } : outcome
+                    )
+              );
+            }
+            if (!write?.success) throw new Error("unreachable");
+            const operation: WriterWriteOperation | WriterCellOperation = write.data;
+            if (
+              !op.begin(
+                {
+                  manuscriptId: "manuscriptId" in operation ? operation.manuscriptId : undefined,
+                },
+                "expectedRev" in operation ? operation.expectedRev : undefined
               )
-            : op.action === "update_manuscript"
-              ? patchManuscript(context.writer, op)
-              : cellOperation(context.writer, op);
-        const outcome = await track(work);
-        const result = settle(
-          toolCallId,
-          action,
-          outcome,
-          outcome.ok && "unsupportedCells" in outcome && outcome.unsupportedCells
-            ? {
-                unsupportedCells: outcome.unsupportedCells,
-                note: `${outcome.unsupportedCells} cell(s) have a type the new template does not list; they are kept unchanged and flagged for the user`,
-              }
-            : outcome.ok && outcome.detail
-              ? outcome.detail
-              : {}
+            )
+              return op.notSaved("written");
+            const outcome = await op.track(
+              operation.action === "create_manuscript"
+                ? createManuscriptOp(
+                    context.writer,
+                    { template: operation.template, title: operation.title },
+                    { screen: true }
+                  )
+                : operation.action === "update_manuscript"
+                  ? patchManuscript(context.writer, operation)
+                  : cellOperation(context.writer, operation)
+            );
+            return op.finish(
+              settle(
+                toolCallId,
+                action,
+                outcome,
+                outcome.ok && "unsupportedCells" in outcome && outcome.unsupportedCells
+                  ? {
+                      unsupportedCells: outcome.unsupportedCells,
+                      note: `${outcome.unsupportedCells} cell(s) have a type the new template does not list; they are kept unchanged and flagged for the user`,
+                    }
+                  : outcome.ok && outcome.detail
+                    ? outcome.detail
+                    : {}
+              )
+            );
+          }
         );
-        journal?.done(operationId, JSON.parse(result.content[0]?.text ?? "{}"), result.details);
-        return result;
       } catch {
         // Never claim "nothing changed": the write may or may not have reached the disk.
         return done(record(toolCallId, action, { status: "unknown" }), {
