@@ -1,209 +1,73 @@
-import type { Job, WsServerMessage, WsWriterChanged, WsCopilotEvent, WsCopilotViewAction, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
+import type { WsWriterChanged, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
+import { type CopilotSubscription, type JobListener, createWsBus } from "./ws-bus";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
 // lazily-opened connection per page, native WebSocket only, no dependencies.
 //
-// Protocol (server → client JSON frames): `hello` (job-table snapshot on
-// connect), `job.created|progress|done|failed` (full job each time),
-// `library.changed`, `plan.changed` (Stage 4), and `annotation.changed`
-// (Stage 8).
+// Protocol (server → client JSON frames): the complete list is the contracts
+// `WsServerMessageSchema`, and each type's routing is a row of `HANDLERS` in
+// `ws-bus.ts`.
 // Reconnects with exponential backoff (1s → 2s → … → 15s)
 // so a server restart silently re-subscribes.
+//
+// Routing and the connection live in `ws-bus.ts`; the exports below forward to
+// the page's one bus.
 
-type JobListener = (job: Job, event: string) => void;
 type LibraryListener = () => void;
 type PlanListener = () => void;
 type AnnotationListener = (docId: string) => void;
 type WriterListener = (msg: WsWriterChanged) => void;
-
-const jobListeners = new Set<JobListener>();
-const libraryListeners = new Set<LibraryListener>();
-const planListeners = new Set<PlanListener>();
-const annotationListeners = new Set<AnnotationListener>();
-const writerListeners = new Set<WriterListener>();
-const textSourceListeners = new Set<(msg: WsTextSourceChanged) => void>();
-const textPublishedListeners = new Set<(msg: WsTextDocPublished) => void>();
-const mailListeners = new Set<(msg: WsMailChanged) => void>();
-const mailResyncListeners = new Set<() => void>();
-
-interface CopilotSubscription { conversationId: string; viewId: string; event: (event: WsCopilotEvent) => void; viewAction?: (action: WsCopilotViewAction) => void; ready: () => void; connection: (connected: boolean) => void; }
-const copilotSubscriptions = new Set<CopilotSubscription>();
-function sendSubscription(subscription: CopilotSubscription, type = "copilot.subscribe") {
-  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type, conversationId: subscription.conversationId, viewId: subscription.viewId }));
-}
-
-const RETRY_MAX_MS = 15000;
-
-let started = false;
-let socket: WebSocket | null = null;
-let retryMs = 1000;
-let retryTimer: number | undefined;
 
 function wsUrl(): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}/ws`;
 }
 
-function dispatch(msg: WsServerMessage): void {
-  if (msg.type === "copilot.event") {
-    for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId) subscription.event(msg);
-  } else if (msg.type === "copilot.view-action") {
-    // Targeted at one view: exactly one local subscription may execute it.
-    for (const subscription of copilotSubscriptions) if (subscription.viewId === msg.viewId && subscription.viewAction) { subscription.viewAction(msg); break; }
-  } else if (msg.type === "copilot.subscribed") {
-    for (const subscription of copilotSubscriptions) if (subscription.conversationId === msg.conversationId && subscription.viewId === msg.viewId) subscription.ready();
-  } else if (msg.type === "mail.changed") {
-    // Ticket 08: live INBOX counts; explicit branch so it can never fall through to the job branch.
-    for (const cb of mailListeners) cb(msg);
-  } else if (msg.type === "hello") {
-    // A (re)connect: Mail may have changed while the socket was down.
-    for (const cb of mailResyncListeners) cb();
-    // late-joiner catch-up: surface the snapshot like ordinary job events
-    for (const job of msg.jobs) {
-      for (const cb of jobListeners) cb(job, "hello");
+const bus = createWsBus(() => new WebSocket(wsUrl()));
+
+/** One adapter per listener, so registering the same listener twice still holds it once (set semantics). */
+function adapter<C extends object, H>(make: (cb: C) => H): (cb: C) => H {
+  const made = new WeakMap<C, H>();
+  return (cb) => {
+    let handler = made.get(cb);
+    if (!handler) {
+      handler = make(cb);
+      made.set(cb, handler);
     }
-  } else if (msg.type === "library.changed") {
-    for (const cb of libraryListeners) cb();
-  } else if (msg.type === "plan.changed") {
-    for (const cb of planListeners) cb();
-  } else if (msg.type === "annotation.changed") {
-    // Stage 8 MS1: the listener set is in place (the else branch must never
-    // treat this as a job event — the Stage-4 MS1 blocker precedent); MS3
-    // wires the reader's annotation store to it.
-    for (const cb of annotationListeners) cb(msg.doc_id);
-  } else if (msg.type === "writer.changed") {
-    // Stage 10 M1: explicit branch — a writer change must never fall through
-    // to the job branch (`msg.job` would be undefined). The writer view wires
-    // its reload to onWriterChanged in M2.
-    for (const cb of writerListeners) cb(msg);
-  } else if (msg.type === "text-source.changed") {
-    for (const cb of textSourceListeners) cb(msg);
-  } else if (msg.type === "text-doc.published") {
-    for (const cb of textPublishedListeners) cb(msg);
-  } else if (msg.type === "pdf-reading-position.changed") {
-    // Position notifications never navigate another tab; its reader remains user-controlled.
-  } else {
-    for (const cb of jobListeners) cb(msg.job, msg.type);
-  }
-}
-
-function scheduleReconnect(): void {
-  if (!started) return;
-  window.clearTimeout(retryTimer);
-  retryTimer = window.setTimeout(connect, retryMs);
-  retryMs = Math.min(retryMs * 2, RETRY_MAX_MS);
-}
-
-function connect(): void {
-  try {
-    socket = new WebSocket(wsUrl());
-  } catch {
-    scheduleReconnect();
-    return;
-  }
-  socket.onopen = () => {
-    retryMs = 1000;
-    for (const subscription of copilotSubscriptions) sendSubscription(subscription);
-  };
-  socket.onmessage = (ev: MessageEvent) => {
-    try {
-      dispatch(JSON.parse(String(ev.data)) as WsServerMessage);
-    } catch {
-      /* a malformed frame must not kill the channel */
-    }
-  };
-  socket.onclose = () => {
-    socket = null;
-    for (const subscription of copilotSubscriptions) subscription.connection(false);
-    scheduleReconnect();
-  };
-  socket.onerror = () => {
-    socket?.close();
+    return handler;
   };
 }
-
-function ensureStarted(): void {
-  if (started) return;
-  started = true;
-  connect();
-}
+// Pure identity caches: they keep the old Set semantics (the same cb registered twice is delivered once, one off removes it).
+const withoutMessage = adapter((cb: () => void) => () => cb());
+const docIdOf = adapter((cb: AnnotationListener) => (msg: { doc_id: string }) => cb(msg.doc_id));
 
 /** Subscribe to job transitions (`hello` replays the current table once). */
-export function onJobEvent(cb: JobListener): () => void {
-  jobListeners.add(cb);
-  ensureStarted();
-  return () => {
-    jobListeners.delete(cb);
-  };
-}
+export const onJobEvent = (cb: JobListener): (() => void) => bus.onJob(cb);
 
 /** A text Doc's source was saved (`text-source.changed`), or its reading text published (`text-doc.published`). */
-export function onTextSourceChanged(cb: (msg: WsTextSourceChanged) => void): () => void {
-  textSourceListeners.add(cb);
-  ensureStarted();
-  return () => {
-    textSourceListeners.delete(cb);
-  };
-}
-export function onTextDocPublished(cb: (msg: WsTextDocPublished) => void): () => void {
-  textPublishedListeners.add(cb);
-  ensureStarted();
-  return () => {
-    textPublishedListeners.delete(cb);
-  };
-}
+export const onTextSourceChanged = (cb: (msg: WsTextSourceChanged) => void): (() => void) => bus.on("text-source.changed", cb);
+export const onTextDocPublished = (cb: (msg: WsTextDocPublished) => void): (() => void) => bus.on("text-doc.published", cb);
 
 /** Subscribe to live Mail INBOX changes (`mail.changed`, ticket 08); `onResync` fires on every (re)connect, when events may have been missed. */
 export function onMailChanged(cb: (msg: WsMailChanged) => void, onResync?: () => void): () => void {
-  mailListeners.add(cb);
-  if (onResync) mailResyncListeners.add(onResync);
-  ensureStarted();
+  const offs = [bus.on("mail.changed", cb), ...(onResync ? [bus.onResync(onResync)] : [])];
   return () => {
-    mailListeners.delete(cb);
-    if (onResync) mailResyncListeners.delete(onResync);
+    for (const off of offs) off();
   };
 }
 
 /** Subscribe to library mutations (refresh / patch / add / upload-done). */
-export function onLibraryChanged(cb: LibraryListener): () => void {
-  libraryListeners.add(cb);
-  ensureStarted();
-  return () => {
-    libraryListeners.delete(cb);
-  };
-}
+export const onLibraryChanged = (cb: LibraryListener): (() => void) => bus.on("library.changed", withoutMessage(cb));
 
 /** Subscribe to plan mutations (`PUT /api/plans` or an external plans.json write). */
-export function onPlanChanged(cb: PlanListener): () => void {
-  planListeners.add(cb);
-  ensureStarted();
-  return () => {
-    planListeners.delete(cb);
-  };
-}
+export const onPlanChanged = (cb: PlanListener): (() => void) => bus.on("plan.changed", withoutMessage(cb));
 
 /** Subscribe to annotation mutations of one doc (`PUT` / invalidation /
  *  external write; Stage 8 — MS1 listener set, the reader subscribes in MS3). */
-export function onAnnotationChanged(cb: AnnotationListener): () => void {
-  annotationListeners.add(cb);
-  ensureStarted();
-  return () => {
-    annotationListeners.delete(cb);
-  };
-}
+export const onAnnotationChanged = (cb: AnnotationListener): (() => void) => bus.on("annotation.changed", docIdOf(cb));
 
 /** Subscribe to writer mutations (`writer.changed`, Stage 10; wired in M2). */
-export function onWriterChanged(cb: WriterListener): () => void {
-  writerListeners.add(cb);
-  ensureStarted();
-  return () => {
-    writerListeners.delete(cb);
-  };
-}
+export const onWriterChanged = (cb: WriterListener): (() => void) => bus.on("writer.changed", cb);
 
 /** Install event buffering before subscribe. The server acknowledgement precedes authoritative GET. */
-export function subscribeCopilot(subscription: CopilotSubscription): () => void {
-  copilotSubscriptions.add(subscription);
-  ensureStarted(); sendSubscription(subscription);
-  return () => { copilotSubscriptions.delete(subscription); sendSubscription(subscription, "copilot.unsubscribe"); };
-}
+export const subscribeCopilot = (subscription: CopilotSubscription): (() => void) => bus.subscribeCopilot(subscription);
