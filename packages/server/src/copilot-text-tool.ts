@@ -17,7 +17,7 @@ import {
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { largestFit, RESULT_OVERHEAD_BYTES } from "./copilot-batching.js";
-import { type ConfirmationPort, digest, type OperationJournalPort } from "./copilot-plan-tool.js";
+import { type ConfirmationPort, digest, type OperationJournalPort } from "./copilot-tool-kit.js";
 import {
   coverageWarnings,
   type SourceCoverage,

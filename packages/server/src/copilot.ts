@@ -81,20 +81,19 @@ import {
 } from "./copilot-ledger.js";
 import { createLibraryTool, LIBRARY_TOOL_NAME } from "./copilot-library-tool.js";
 import { createMailTool, MAIL_PROMPT, MAIL_TOOL_NAME } from "./copilot-mail-tool.js";
-import {
-  type ConfirmationOutcome,
-  type ConfirmationPort,
-  createPlanTool,
-  type KnownOperation,
-  type OperationJournalPort,
-  PLAN_TOOL_NAME,
-} from "./copilot-plan-tool.js";
+import { createPlanTool, PLAN_TOOL_NAME } from "./copilot-plan-tool.js";
 import { createReaderTool, READER_TOOL_NAME, type ReaderOpDeps } from "./copilot-reader-tool.js";
 import {
   type ApplicationResourceLoader,
   createApplicationResourceLoader,
 } from "./copilot-resources.js";
 import { createTextTool, TEXT_TOOL_NAME, type TextOpDeps } from "./copilot-text-tool.js";
+import type {
+  ConfirmationOutcome,
+  ConfirmationPort,
+  KnownOperation,
+  OperationJournalPort,
+} from "./copilot-tool-kit.js";
 import {
   type SourceCoverage,
   type SourceCoverageUnavailable,

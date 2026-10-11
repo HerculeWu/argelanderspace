@@ -9,12 +9,8 @@ import { join } from "node:path";
 import type { CopilotOperation } from "@argelanderspace/contracts";
 import { plansPath } from "@argelanderspace/core";
 import { beforeEach, expect, test } from "vitest";
-import {
-  createPlanTool,
-  digest,
-  type KnownOperation,
-  type OperationJournalPort,
-} from "../src/copilot-plan-tool.js";
+import { createPlanTool } from "../src/copilot-plan-tool.js";
+import { digest, type KnownOperation, type OperationJournalPort } from "../src/copilot-tool-kit.js";
 import { AsyncLock } from "../src/lock.js";
 import { applyPlanDelete, type PlanOpDeps } from "../src/plans-actions.js";
 import { TaskUndoRegistry } from "../src/plans-undo.js";

@@ -47,7 +47,7 @@ import { type RecordingSmtp, startRecordingSmtp } from "../../infra/tests/mail/f
 import { createApp } from "../src/app.js";
 import { CopilotHost } from "../src/copilot.js";
 import { createMailTool, sendOutcome } from "../src/copilot-mail-tool.js";
-import { digest } from "../src/copilot-plan-tool.js";
+import { digest } from "../src/copilot-tool-kit.js";
 import { JobRunner } from "../src/jobs.js";
 import { MailAccountService } from "../src/mail-accounts.js";
 import { MailCache } from "../src/mail-cache.js";
