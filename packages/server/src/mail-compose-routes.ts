@@ -10,7 +10,6 @@ import {
   MAIL_SEND_ID_PATTERN,
   MAIL_STAGED_ID_PATTERN,
   MailComposeDraftSchema,
-  type MailComposeFailureCode,
   MailComposeInitRequestSchema,
   MailSendRequestSchema,
 } from "@argelanderspace/contracts";
@@ -24,7 +23,7 @@ import {
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { MailComposeError, MailComposeService } from "./mail-compose.js";
-import { READ_FAILURE_STATUS } from "./mail-http.js";
+import { mailHttpStatus } from "./mail-failures.js";
 import { MailOutbox } from "./mail-outbox.js";
 import { MailSendService } from "./mail-send.js";
 
@@ -55,23 +54,6 @@ export function createDefaultMailComposeServices(): MailComposeServices {
   };
 }
 
-const STATUS: Record<MailComposeFailureCode, 400 | 404 | 409 | 413 | 422 | 500 | 502> = {
-  ...READ_FAILURE_STATUS,
-  no_recipients: 400,
-  invalid_recipient: 400,
-  attachment_missing: 409,
-  attachment_too_large: 413,
-  drafts_unavailable: 422,
-  recipient_rejected: 422,
-  message_too_large: 413,
-  already_pending: 409,
-  already_sent: 409,
-  not_found: 404,
-  not_pending: 409,
-  owned_elsewhere: 409,
-  outcome_unknown: 502,
-};
-
 export function mountMailComposeRoutes(
   host: Hono,
   injected: MailComposeServices | undefined,
@@ -96,7 +78,7 @@ export function mountMailComposeRoutes(
     if (error instanceof MailComposeError)
       return c.json(
         { code: error.code, detail: `mail request failed: ${error.code}` },
-        STATUS[error.code]
+        mailHttpStatus(error.code)
       );
     return c.json({ code: "storage", detail: "mail storage failed" }, 500);
   });

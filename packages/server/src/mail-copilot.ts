@@ -25,6 +25,7 @@ import {
   type MailComposeService,
 } from "./mail-compose.js";
 import type { MailComposeServices } from "./mail-compose-routes.js";
+import { type MailFailureCode, type MailToolCategory, mailToolCategory } from "./mail-failures.js";
 import type { MailManageService } from "./mail-manage.js";
 import type { MailReadService } from "./mail-read.js";
 
@@ -36,68 +37,24 @@ export interface MailOpDeps {
   services: () => MailComposeServices;
 }
 
-export type MailFailureStatus = "not_found" | "conflict" | "rejected" | "error" | "unknown";
+export type MailFailureStatus = MailToolCategory;
 export interface MailFailure {
   ok: false;
   status: MailFailureStatus;
-  code: string;
+  /** A Mail code, or the code of a non-Mail error passed through as it was (its category is `error`). */
+  code: MailFailureCode | (string & {});
 }
 
-const NOT_FOUND = new Set([
-  "message_not_found",
-  "folder_not_found",
-  "account_not_found",
-  "destination_not_found",
-  "not_found",
-]);
-const CONFLICT = new Set([
-  "message_changed",
-  "already_pending",
-  "already_sent",
-  "owned_elsewhere",
-  "not_pending",
-]);
-const REJECTED = new Set([
-  "invalid_input",
-  "invalid_recipient",
-  "no_recipients",
-  "attachment_missing",
-  "attachment_too_large",
-  "message_too_large",
-  "too_large",
-  "drafts_unavailable",
-  "recipient_rejected",
-  "not_in_trash",
-  "trash_not_found",
-  "unsupported",
-  "refused",
-  "confirmation_required",
-]);
 /**
- * The change may or may not have happened. `partial` is not here: its state is known (the destination has a
- * copy and the original is still there), so it is an `error` with its own wording in the tool.
+ * A service error as a code and its tool category (mail-failures.ts). An error with a code that is not a Mail
+ * code keeps that code with category `error`; anything without a code is `unknown`, `error`, with no detail.
  */
-const UNKNOWN = new Set(["connection_lost", "outcome_unknown"]);
-
-/** A service error as a code and a status; anything else is a plain `error` with no detail. */
 export function mailFailure(error: unknown): MailFailure {
   const code =
     error instanceof Error && typeof (error as unknown as { code?: unknown }).code === "string"
       ? (error as unknown as { code: string }).code
       : "unknown";
-  return {
-    ok: false,
-    code,
-    status: NOT_FOUND.has(code)
-      ? "not_found"
-      : CONFLICT.has(code)
-        ? "conflict"
-        : REJECTED.has(code)
-          ? "rejected"
-          : UNKNOWN.has(code)
-            ? "unknown"
-            : "error",
-  };
+  return { ok: false, code, status: mailToolCategory(code) };
 }
 
 /** Run a service call and return its value or its failure. */
