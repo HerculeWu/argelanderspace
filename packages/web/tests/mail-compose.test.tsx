@@ -1384,3 +1384,29 @@ test("leaving Mail while a discard waits for a save on its way does not save the
   await new Promise((r) => setTimeout(r, 100));
   expect(kept()).toBe("");
 }, 15000);
+
+// ---- Copilot ticket 40 (Q3) -----------------------------------------------------------
+
+test("a failure whose outcome cannot be known (outcome_unknown) is reported as unknown, never put back as unsent text", async () => {
+  srv.sendResult = () => json(status({ remainingMs: 300 }), 202);
+  srv.statusSeq = [status({ state: "failed", remainingMs: null, code: "outcome_unknown", subject: "Maybe gone" })];
+  render(<MailView />);
+  await screen.findByText("Subject 3");
+  fireEvent.click(ui("mail-compose")!);
+  type("mail-composer-to", "ada@example.test");
+  type("mail-composer-subject", "Maybe gone");
+  fireEvent.click(ui("mail-composer-send")!);
+  await waitFor(() => expect(ui("mail-notice")).toBeTruthy(), { timeout: 4000 });
+  const notice = ui("mail-notice")!;
+  expect(notice.getAttribute("data-tone")).toBe("warning");
+  expect(notice.textContent).toContain("unknown whether it went out");
+  expect(within(notice).getByText("Open Drafts")).toBeTruthy();
+  // Not restored as a composer with a failure (that would say it was not sent).
+  expect(ui("mail-composer")).toBeNull();
+  expect(ui("mail-send-undo")).toBeNull();
+  // The server keeps the record until the user closes the notice.
+  await new Promise((r) => setTimeout(r, 100));
+  expect(calls(/\/sends\/[^/]+$/, "DELETE")).toHaveLength(0);
+  fireEvent.click(ui("mail-notice-close")!);
+  await waitFor(() => expect(calls(/\/sends\/[^/]+$/, "DELETE")).toHaveLength(1));
+}, 10000);
