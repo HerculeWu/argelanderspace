@@ -31,7 +31,7 @@ export interface PaneTimeouts {
   /** `applyMs` after `open` showed the page (a Doc that has to load first). */
   openedApplyMs?: number;
 }
-export const DEFAULT_TIMEOUTS: PaneTimeouts = { readyMs: 2000, applyMs: 2000 };
+export const DEFAULT_TIMEOUTS: Readonly<PaneTimeouts> = { readyMs: 2000, applyMs: 2000 };
 
 export interface PaneAdapter {
   page: PanePage;

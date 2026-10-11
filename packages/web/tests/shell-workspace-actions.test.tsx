@@ -18,6 +18,7 @@ const h = vi.hoisted(() => ({
   openPanel: null as null | (() => void),
   open: false,
   ready: true,
+  writerApply: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
 }));
 vi.mock("../src/api/ws", () => ({
   onPlanChanged: () => () => {},
@@ -34,7 +35,21 @@ vi.mock("../src/copilot/Copilot", () => ({
 }));
 vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="doc-stub" /> }));
 vi.mock("../src/library/LibraryView", () => ({ LibraryView: () => <div data-ui="library-stub" /> }));
-vi.mock("../src/writer/WriterView", () => ({ WriterView: () => <div data-ui="writer-stub" /> }));
+vi.mock("../src/writer/WriterView", async () => {
+  const react = await import("react");
+  return {
+    // The Writer's controller, when a test gives it one (h.writerApply).
+    WriterView: ({ paneId, onController }: { paneId?: number; onController?: (paneId: number, controller: unknown) => void }) => {
+      react.useEffect(() => {
+        if (!onController || paneId === undefined || !h.writerApply) return;
+        const apply = h.writerApply;
+        onController(paneId, { apply: (action: unknown) => apply(action) });
+        return () => onController(paneId, null);
+      }, [onController, paneId]);
+      return <div data-ui="writer-stub" />;
+    },
+  };
+});
 vi.mock("../src/mail/MailView", async () => {
   const react = await import("react");
   const contracts = await import("@argelanderspace/contracts");
@@ -60,7 +75,7 @@ beforeEach(async () => {
   window.sessionStorage.clear(); window.localStorage.clear();
   papers = ["d1", "d2"];
   serverDoc = { version: 1, rev: 3, plans: [plan("p_0000000a", "Alpha", [task(1), task(2, { status: "done" })])] } as PlansFile;
-  h.viewAction = null; h.context = null;
+  h.viewAction = null; h.context = null; h.writerApply = null;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input), method = init?.method ?? "GET";
     if (url === "/api/plans" && method === "GET") return ok(serverDoc);
@@ -430,5 +445,37 @@ describe("a tab does not subscribe or publish until its view id is known to be i
     await waitFor(() => expect(h.ready).toBe(true));
     expect(ctx().viewId).toBe(id);
     expect(names).toEqual([`argelander-view-${id}`]);
+  });
+});
+
+describe("Writer view actions go through the Writer pane (ticket 37)", () => {
+  it("close_manuscript with no Write pane is done: ok, and no Writer is opened for it", async () => {
+    await boot();
+    expect(await run({ action: "close_manuscript" })).toEqual({ ok: true });
+    expect(q('[data-ui="writer-stub"]')).toBeNull();
+    expect(q('[data-ui="navigate-view"][data-ui-key="plan"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("open_manuscript from a Doc pane with unsaved work is leave_blocked, and the Doc stays", async () => {
+    await boot();
+    fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="doc"]')!);
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    const release = registerWorkspaceLeaveGuard(() => false);
+    try {
+      expect(await run({ action: "open_manuscript", manuscriptId: "m_00000001" })).toEqual({ ok: false, detail: "leave_blocked" });
+      expect(q('[data-ui="doc-stub"]')).not.toBeNull();
+      expect(q('[data-ui="writer-stub"]')).toBeNull();
+    } finally { release(); }
+  });
+
+  it("an unavailable answer of the Writer's controller is not retried: one call", async () => {
+    const apply = vi.fn(async () => ({ ok: false, detail: "unavailable" }));
+    h.writerApply = apply;
+    await boot();
+    expect(await run({ action: "switch_view", view: "write" })).toEqual({ ok: true });
+    await waitFor(() => expect(q('[data-ui="writer-stub"]')).not.toBeNull());
+    expect(await run({ action: "open_manuscript", manuscriptId: "m_00000001" })).toEqual({ ok: false, detail: "unavailable" });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(apply).toHaveBeenCalledTimes(1);
   });
 });

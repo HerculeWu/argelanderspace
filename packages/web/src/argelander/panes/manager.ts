@@ -40,7 +40,7 @@ export interface PaneManagerOptions {
 
 export type PaneManager = ReturnType<typeof createPaneManager>;
 
-type Ensured = { result: ViewActionOutcome } | { opened: boolean; pin?: number };
+type Ensured = { result: ViewActionOutcome } | { opened: boolean; pin?: number; gated?: boolean };
 
 export function createPaneManager(options: PaneManagerOptions) {
   let state: PaneState = { panes: options.panes, activeId: options.activeId, pagesVersion: 0 };
@@ -125,11 +125,15 @@ export function createPaneManager(options: PaneManagerOptions) {
     const adapter = adapterOn(pane.id, page);
     return !!adapter && (adapter.available ? adapter.available(action) : true);
   };
-  /** The pane an action runs on: the pinned one (active-only), else the active pane when it shows the page, else the first. */
-  const resolve = (page: PanePage, pin?: number) => {
+  /**
+   * The pane an action runs on: the pinned one (active-only), else the active pane when it shows the page, else the
+   * first; `gate` keeps only panes that are `available` for it (an existing-only action never moves to one that is not).
+   */
+  const resolve = (page: PanePage, pin?: number, gate?: (pane: Pane) => boolean) => {
     if (pin !== undefined) return state.panes.find((pane) => pane.id === pin && pane.view === page);
+    const usable = (pane: Pane) => pane.view === page && (!gate || gate(pane));
     const active = activePane();
-    return active.view === page ? active : state.panes.find((pane) => pane.view === page);
+    return usable(active) ? active : state.panes.find(usable);
   };
   const whenReady = async (paneId: number, page: PanePage, readyMs: number) => {
     const ready = () => {
@@ -157,6 +161,7 @@ export function createPaneManager(options: PaneManagerOptions) {
         const pane = ofPage.find((candidate) => can(candidate, page, action));
         if (!pane) return { result: kind.refused?.(action) ?? unavailable() };
         select(pane.id);
+        return { opened: false, gated: true };
       }
       return { opened: false };
     }
@@ -173,10 +178,11 @@ export function createPaneManager(options: PaneManagerOptions) {
     return { opened: true };
   };
   /** Runs the action on the page's pane; an `unavailable` answer is tried again for `applyMs` (0: once). */
-  const applyUntilAvailable = async (kind: PaneAdapter, action: CopilotViewAction, applyMs: number, pin?: number): Promise<ViewActionOutcome> => {
+  const applyUntilAvailable = async (kind: PaneAdapter, action: CopilotViewAction, applyMs: number, pin?: number, gated = false): Promise<ViewActionOutcome> => {
     const total = Math.max(1, rounds(applyMs));
+    const gate = gated ? (pane: Pane) => can(pane, kind.page, action) : undefined;
     for (let attempt = 0; attempt < total; attempt++) {
-      const pane = resolve(kind.page, pin);
+      const pane = resolve(kind.page, pin, gate);
       if (!pane) return unavailable();
       if (pin === undefined) select(pane.id);
       const adapter = adapterOn(pane.id, kind.page);
@@ -193,7 +199,7 @@ export function createPaneManager(options: PaneManagerOptions) {
     if ("result" in ensured) return ensured.result;
     const timeouts = { ...DEFAULT_TIMEOUTS, ...kind.timeouts };
     const applyMs = ensured.opened && timeouts.openedApplyMs !== undefined ? timeouts.openedApplyMs : timeouts.applyMs;
-    return applyUntilAvailable(kind, action, applyMs, ensured.pin);
+    return applyUntilAvailable(kind, action, applyMs, ensured.pin, ensured.gated);
   };
 
   return {

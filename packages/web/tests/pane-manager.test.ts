@@ -253,6 +253,19 @@ describe("refusals never move the user (active-only, existing-only, available)",
     expect(manager.getState().activeId).toBe(3);
   });
 
+  it("existing-only retries stay on available panes: another pane of the page that becomes active but is not available is not used", async () => {
+    const kind = page("plan", { needsPane: () => "existing-only", available: () => true });
+    const manager = setup(["plan", "plan"], kind);
+    const first = mounted("plan", [{ ok: false, detail: "unavailable" }, { ok: true }], { available: () => true });
+    const second = mounted("plan", [{ ok: true }], { available: () => false });
+    manager.register(1, first.adapter);
+    manager.register(2, second.adapter);
+    void vi.advanceTimersByTimeAsync(20).then(() => manager.select(2));
+    expect((await run(manager, RETRY)).answer).toEqual({ ok: true });
+    expect(first.calls).toHaveLength(2);
+    expect(second.calls).toHaveLength(0);
+  });
+
   it("without a refused answer, none available is unavailable", async () => {
     const manager = setup(["plan"], page("plan", { needsPane: () => "existing-only", available: () => true }));
     manager.register(1, mounted("plan", [{ ok: true }], { available: () => false }).adapter);
