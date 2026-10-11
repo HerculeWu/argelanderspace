@@ -108,3 +108,17 @@ test("a stale decision says nothing was deleted; a failed one says the outcome i
   fireEvent.click(ui("copilot-confirmation-confirm")!);
   await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain(i18n.t("copilot.confirmation.failedManuscript")));
 });
+
+test("a decision whose check could not read the manuscript says so for the manuscript (ticket 42), in English and Chinese", async () => {
+  const base = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url: string, options?: RequestInit) => url.includes("/confirmations/") ? json({ code: "unreadable" }, 500) : base(url, options));
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("The check made when you confirmed could not read this manuscript's data. This is not a change you made, and nothing was deleted. Try again, or look at the manuscript list."));
+  cleanup(); await i18n.changeLanguage("zh-CN");
+  await open();
+  await waitFor(() => expect(ui("copilot-confirmation-confirm")).not.toBeNull());
+  fireEvent.click(ui("copilot-confirmation-confirm")!);
+  await waitFor(() => expect(ui("copilot-confirmation-problem")?.textContent).toContain("确认时的检查无法读取此稿件的数据。这不是你的改动，没有删除任何内容。请重试，或到稿件列表查看。"));
+});

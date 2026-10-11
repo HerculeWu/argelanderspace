@@ -740,15 +740,36 @@ test("the watcher path (revalidate) expires a card after a rev-neutral hand edit
   edited.x_external = "changed by hand";
   edited.plans[1].name = "Beta renamed by hand"; // another plan: the shown one is untouched
   writeFileSync(plansPath(statusDir), JSON.stringify(edited, null, 2));
-  host.revalidateConfirmations();
+  await host.revalidate("plans");
   await vi.waitFor(async () => expect((await host.snapshot(id)).confirmations).toHaveLength(1));
   // Editing the shown plan's own content expires it.
   const again = disk();
   again.plans[0].x_plan = 2;
   writeFileSync(plansPath(statusDir), JSON.stringify(again, null, 2));
-  host.revalidateConfirmations();
+  await host.revalidate("plans");
   await until(id, ["completed"]);
   expect((await host.snapshot(id)).confirmations).toEqual([]);
+  expect(planIds()).toContain(A);
+});
+
+test("unreadable plans are a system error, not a change: a background recheck keeps the card and the click is unreadable, the tool an error (ticket 35)", async () => {
+  const view = page(A);
+  script = [() => askDelete(), () => ({ text: "x" })];
+  const id = await start(view);
+  const shown = await card(id);
+  const bytes = diskBytes();
+  writeFileSync(plansPath(statusDir), "{ damaged");
+  await host.revalidate("plans");
+  expect((await host.snapshot(id)).confirmations).toHaveLength(1);
+  const click = await answer(shown, view, "approve");
+  expect(click.status).toBe(500);
+  expect(((await click.json()) as { code: string }).code).toBe("unreadable");
+  await until(id, ["completed"]);
+  expect((await operations(id)).map((o) => o.status)).toEqual(["error"]);
+  expect((await host.snapshot(id)).confirmations).toEqual([]);
+  // Nothing was written: the damaged bytes are as the user left them.
+  expect(diskBytes()).toBe("{ damaged");
+  writeFileSync(plansPath(statusDir), bytes);
   expect(planIds()).toContain(A);
 });
 

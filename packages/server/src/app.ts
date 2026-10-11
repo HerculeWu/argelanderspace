@@ -421,7 +421,7 @@ export function createApp(deps: AppDeps): Hono {
   const libraryChanged = (cause: "refresh" | "patch" | "add" | "upload" | "ingest"): void => {
     broadcast({ type: "library.changed", cause, at: new Date().toISOString() });
     // A pending Doc-replacement confirmation may no longer match what it showed (click time stays the authority).
-    void copilot.revalidateDocConfirmations().catch(() => {});
+    void copilot.revalidate("doc").catch(() => {});
   };
   const planChanged = (cause: "put" | "external"): void => {
     broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
@@ -430,7 +430,7 @@ export function createApp(deps: AppDeps): Hono {
   const writerChanged = (cause: "put" | "create" | "delete" | "numbering", id: string): void => {
     broadcast({ type: "writer.changed", cause, id, at: new Date().toISOString() });
     // A pending Copilot manuscript delete may no longer match its card (click time stays the authority).
-    copilot.revalidateWriterConfirmations();
+    void copilot.revalidate("writer").catch(() => {});
   };
   const writerDataDir = paths.dataDir;
   // The Copilot `writer` tool and these routes share one lock, rev check, save and writer.changed notification.
@@ -449,7 +449,7 @@ export function createApp(deps: AppDeps): Hono {
   };
   const annotationChanged = (docId: string, cause: "put" | "invalidate"): void => {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
-    void copilot.revalidateDocConfirmations().catch(() => {});
+    void copilot.revalidate("doc").catch(() => {});
   };
   const pdfOwners = (docId: string) =>
     LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
@@ -667,7 +667,7 @@ export function createApp(deps: AppDeps): Hono {
     broadcast: (message) => {
       broadcast(message);
       if (message.type === "text-source.changed" || message.type === "text-doc.published")
-        void copilot.revalidateDocConfirmations().catch(() => {});
+        void copilot.revalidate("doc").catch(() => {});
     },
     libraryChanged: () => libraryChanged("add"),
     // The source panel's "add image from the source PDF" and the tool's add_pdf_image: the same verified, queued read.
@@ -1995,7 +1995,7 @@ export function createApp(deps: AppDeps): Hono {
     const outcome = await replacePlans(deps.statusDir, planLock, parsed.data, () => {
       planChanged("put");
       // A delete the model asked for is bound to the plans version the user saw; this save may end it.
-      copilot.revalidateConfirmations();
+      void copilot.revalidate("plans").catch(() => {});
     });
     if ("conflictRev" in outcome) {
       return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
@@ -2229,7 +2229,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     // A pending Copilot delete card names the figure files it would delete: a new one ends it.
-    copilot.revalidateWriterConfirmations();
+    void copilot.revalidate("writer").catch(() => {});
     return c.json({ name: outcome.name }, 201);
   });
 
