@@ -339,6 +339,9 @@ describe("useWorkJobs", () => {
   it("409 from a start shows busy and is not accepted", async () => {
     h.uploadLatexZip.mockResolvedValue({ ok: false, status: 409, detail: "document busy" });
     h.attachArxiv.mockResolvedValue({ ok: false, status: 409, detail: "document busy" });
+    // Today `POST /api/library/acquire-arxiv-pdf` answers every non-queued start with 409 "could not queue…", never
+    // "document busy", so `library.detail.arxivPdf.busy` is unreachable for now; this pins the web side for when the
+    // server gains a busy branch.
     h.acquireArxivPdf.mockResolvedValue({ ok: false, status: 409, detail: "document busy" });
     const view = renderJobs();
     const results: boolean[] = [];
