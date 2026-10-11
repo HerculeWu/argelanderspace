@@ -11,7 +11,7 @@
  * the local one ended (clock skew) sends the view back to `window`.
  */
 
-import type { MailSendStatus } from "@argelanderspace/contracts";
+import type { MailSendState, MailSendStatus } from "@argelanderspace/contracts";
 import { MailApiError, mailErrorCode } from "../api/mail";
 import { fetchMailSendStatus, undoMailSend } from "../api/mail-compose";
 
@@ -65,7 +65,7 @@ export interface SendTracker {
 }
 
 /** The Mail page: back off while the server cannot be reached and say so; give up after 10 minutes. */
-export const MAIL_PAGE_SEND_POLICY: SendPolicy = {
+export const MAIL_PAGE_SEND_POLICY: Readonly<SendPolicy> = {
   pollMs: 600,
   backoff: 1.6,
   maxPollMs: 4000,
@@ -76,7 +76,7 @@ export const MAIL_PAGE_SEND_POLICY: SendPolicy = {
 };
 
 /** The Copilot's undo bar: asks during the window as well, retries quietly every 1.5 s, never gives up. */
-export const COPILOT_SEND_POLICY: SendPolicy = {
+export const COPILOT_SEND_POLICY: Readonly<SendPolicy> = {
   pollMs: 600,
   backoff: null,
   maxPollMs: 1500,
@@ -107,7 +107,19 @@ interface Entry {
   undoing: Promise<UndoResult> | null;
 }
 
-const TERMINAL = new Set(["sent", "cancelled", "failed", "interrupted", "unknown"]);
+/** Which states end a send. Exhaustive: a state added to the contracts must be classified here (tsc fails otherwise). */
+const ENDS = {
+  pending: false,
+  sending: false,
+  sent: true,
+  cancelled: true,
+  failed: true,
+  interrupted: true,
+  unknown: true,
+} satisfies Record<MailSendState, boolean>;
+const TERMINAL: ReadonlySet<MailSendState> = new Set(
+  (Object.keys(ENDS) as MailSendState[]).filter((state) => ENDS[state])
+);
 
 export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): SendTracker {
   const { api, clock } = deps;
@@ -246,6 +258,29 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
     emit();
   };
 
+  /** One status request outside the loop (after a failed undo); a failure keeps the view as it is. */
+  const refresh = async (e: Entry) => {
+    let st: MailSendStatus;
+    try {
+      st = await api.status(e.view.accountId, e.view.sendId);
+    } catch {
+      return;
+    }
+    if (!open(e)) return;
+    if (TERMINAL.has(st.state)) return settleWith(e, st);
+    if (st.state === "pending") {
+      if (st.remainingMs !== null && (e.view.phase === "window" || (!st.ownedElsewhere && st.remainingMs > 0)))
+        toWindow(e, st.remainingMs);
+      patch(e, { status: st });
+      emit();
+      return;
+    }
+    stopWindow(e);
+    patch(e, { phase: "sending", status: st });
+    emit();
+    startPolling(e);
+  };
+
   return {
     track(accountId, sendId, initial) {
       if (disposed || entries.has(sendId)) return;
@@ -291,7 +326,11 @@ export function createSendTracker(deps: SendTrackerDeps, policy: SendPolicy): Se
           st = await api.undo(accountId, sendId);
         } catch (error) {
           const code = mailErrorCode(error);
-          if (code !== "not_pending" && code !== "owned_elsewhere" && code !== "not_found") return { error: code };
+          if (code !== "not_pending" && code !== "owned_elsewhere" && code !== "not_found") {
+            // Reported as is; the send's state is still refreshed once right away (what the bar shows stays real).
+            await refresh(e);
+            return { error: code };
+          }
           // The server says it is not (or no longer) undoable. Ask what actually happened before saying anything:
           // after a restart the window is simply gone, which is not the same as "already being sent".
           let now: MailSendStatus;

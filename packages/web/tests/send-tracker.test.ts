@@ -377,15 +377,28 @@ test("undo: not_found after a restart asks what happened and reports that, not '
   expect(view()).toMatchObject({ phase: "settled", status: { state: "interrupted" } });
 });
 
-test("undo: any other error is reported as is, without asking for the status", async () => {
-  const { api, tracker, view } = setup(MAIL_PAGE_SEND_POLICY);
+test("undo: any other error is reported as is; the state is refreshed once (a failed refresh changes nothing)", async () => {
+  const { api, tracker, view } = setup(MAIL_PAGE_SEND_POLICY, [
+    () => {
+      throw down();
+    },
+  ]);
   api.undo.mockRejectedValueOnce(new MailApiError("auth_failed", 502));
   tracker.track(ACC, ID, status());
   await expect(tracker.undo(ID)).resolves.toEqual({ error: "auth_failed" });
-  expect(api.status).not.toHaveBeenCalled();
+  expect(api.status).toHaveBeenCalledTimes(1);
   expect(view()?.phase).toBe("window");
   api.undo.mockRejectedValueOnce(new TypeError("network down"));
   await expect(tracker.undo(ID)).resolves.toEqual({ error: "unreachable" });
+  expect(api.status).toHaveBeenCalledTimes(2);
+});
+
+test("undo: after an unreachable undo the refreshed state is shown (here: it was undone after all)", async () => {
+  const { api, tracker, view } = setup(MAIL_PAGE_SEND_POLICY, [status({ state: "cancelled", remainingMs: null })]);
+  api.undo.mockRejectedValueOnce(new TypeError("network down"));
+  tracker.track(ACC, ID, status());
+  await expect(tracker.undo(ID)).resolves.toEqual({ error: "unreachable" });
+  expect(view()).toMatchObject({ phase: "settled", status: { state: "cancelled" } });
 });
 
 test("undo: when the status check after a refusal fails, its error is reported", async () => {

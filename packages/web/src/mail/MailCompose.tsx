@@ -953,6 +953,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       off();
       tr.dispose();
       if (tracker.current === tr) tracker.current = null;
+      sendMeta.current.clear();
     };
   }, []);
 
