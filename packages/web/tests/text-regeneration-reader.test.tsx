@@ -168,7 +168,7 @@ describe("a regenerated text Doc in the shared Reader", () => {
     const view = await opened();
     const main = view.container.querySelector("main.reader")!;
     publish();
-    await answer(1, { detail: "annotations store: the old current was archived but the new current could not be created" }, 500);
+    await answer(1, { detail: "the annotations of older text were archived (they are no longer current), but the new, empty annotations file could not be created, so nothing of your request was written; the next access creates it" }, 500);
     await waitFor(() => expect(status(view.container)).toContain("已发布"));
     expect(status(view.container)).toContain("旧正文");
     expect(main.textContent).toContain("Real body A");

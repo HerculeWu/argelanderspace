@@ -27,7 +27,8 @@
  *   other).
  * - Stage 8 adds `GET`/`PUT /api/paper/:doc_id/annotations` (the reader's
  *   annotation store: fingerprint+rev double-checked PUT with 409×2, the
- *   `annotation.changed` broadcast, a dedicated annotationLock) and
+ *   `annotation.changed` broadcast, a dedicated annotationLock; the access
+ *   path itself is annotations-access.ts) and
  *   `DELETE /api/paper/:doc_id` (global physical delete + all-works doc_ids
  *   removal). The DocMutationRegistry (doc-mutations.ts) is the §8 lifecycle
  *   lock between document deletes and doc-writing jobs; upload/refresh pin
@@ -48,7 +49,6 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join, normalize, relative, resolve, sep } from "node:path";
 import type {
-  AnnotationsFile,
   DocDescription,
   DocReplaceImpact,
   Job,
@@ -86,7 +86,6 @@ import {
   commitPdfAnnotationChange,
   DocumentAssetError,
   discoverLiterature,
-  ensureCurrentAnnotationsWithDocument,
   findMatchingPdfDoc,
   findWork,
   healGraph,
@@ -110,7 +109,6 @@ import {
   type RemovedDocWork,
   readAnnotationRisk,
   readDocumentAsset,
-  readDocumentForReading,
   readManuscriptAsset,
   readPdfAnnotationsFile,
   readPdfMetadataIfPresent,
@@ -119,7 +117,6 @@ import {
   rebuild,
   removeDocFromWorksNarrow,
   restoreUnknownKeys,
-  saveAnnotationsFile,
   savePdfAnnotationsFile,
   savePdfReadingPosition,
   uploadDocId,
@@ -141,6 +138,12 @@ import {
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import {
+  type AnnotationsCommit,
+  type AnnotationsRead,
+  createAnnotationAccess,
+  DocMetadataError,
+} from "./annotations-access.js";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
@@ -451,6 +454,16 @@ export function createApp(deps: AppDeps): Hono {
     broadcast({ type: "annotation.changed", doc_id: docId, cause, at: new Date().toISOString() });
     void copilot.revalidate("doc").catch(() => {});
   };
+  /**
+   * The archive authority (see annotations-access.ts): GET/PUT annotations and the Copilot `reader` tool's annotation
+   * reads and writes share this one instance, on the one annotationLock.
+   */
+  const annotationAccess = createAnnotationAccess({
+    paths,
+    lock: annotationLock,
+    docMutations,
+    onChanged: annotationChanged,
+  });
   const pdfOwners = (docId: string) =>
     LibraryStore.load(paths).works.filter((work) => work.doc_ids.includes(docId));
   /**
@@ -507,72 +520,6 @@ export function createApp(deps: AppDeps): Hono {
       return { status: 503, detail: error.message };
     return { status: 500, detail: "PDF page material could not be produced" };
   };
-  /** AnnotationsError → the route's response (roadmap §3: not_found → 404,
-   *  every other store failure → 500, never a silent reset). */
-  const annotationsError = (err: AnnotationsError) =>
-    detail(err.message, err.code === "not_found" ? 404 : 500);
-  /**
-   * The ONE commit of a LaTeX Doc's annotations: `PUT /api/paper/:doc_id/annotations` and the Copilot `reader` tool's
-   * annotation writes both come here. One critical section on annotationLock: content-busy check, PDF refusal,
-   * the idempotent ensure (which alone may archive and then announces `invalidate`), the fingerprint check, the
-   * revision check, `build`, and the atomic save. Failures to compute the fingerprint or to read the stored file
-   * throw `AnnotationsError` (a system error, never a mismatch) and leave the user's data as it was, except the
-   * contract's intermediate state (code `new_current`: the old batch is safely archived, the new current is not
-   * there yet). `build` gets the ensured epoch and returns the file to save (`next`; `preserveUnknown` keeps keys the
-   * schema does not know, as the Copilot's narrow writes do and the page's whole-file PUT does not) or `skip` when
-   * there is nothing to write. `archived` says how many annotations of older content this very access archived.
-   */
-  type AnnotationsEpoch = ReturnType<typeof ensureCurrentAnnotationsWithDocument>;
-  type Archived = { archived?: number };
-  type AnnotationsCommit<T = never> =
-    | { kind: "busy" }
-    | { kind: "pdf" }
-    | ({ kind: "document_changed"; file: AnnotationsFile } & Archived)
-    | ({ kind: "rev_mismatch"; rev: number } & Archived)
-    | ({ kind: "saved"; file: AnnotationsFile } & Archived)
-    | ({ kind: "skipped"; file: AnnotationsFile; value: T } & Archived);
-  function commitAnnotations<T = never>(
-    docId: string,
-    expect: { fingerprint: string; rev: number },
-    build: (
-      epoch: AnnotationsEpoch
-    ) => { next: AnnotationsFile; preserveUnknown?: boolean } | { skip: T }
-  ): Promise<AnnotationsCommit<T>> {
-    let saved = false;
-    const outcome = annotationLock.run((): AnnotationsCommit<T> => {
-      if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
-      let pdf: unknown;
-      try {
-        pdf = readPdfMetadataIfPresent(paths, docId);
-      } catch (err) {
-        throw new DocMetadataError(err);
-      }
-      if (pdf) return { kind: "pdf" };
-      const ensured = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
-      if (ensured.invalidated) annotationChanged(docId, "invalidate");
-      const archived: Archived = ensured.invalidated
-        ? { archived: ensured.archivedCount ?? 0 }
-        : {};
-      const current = ensured.file;
-      if (expect.fingerprint !== current.content_fingerprint)
-        return { kind: "document_changed", file: current, ...archived };
-      if (expect.rev !== current.rev)
-        return { kind: "rev_mismatch", rev: current.rev, ...archived };
-      const built = build(ensured);
-      if ("skip" in built)
-        return { kind: "skipped", file: current, value: built.skip, ...archived };
-      saveAnnotationsFile(paths.dataDir, docId, built.next, {
-        bumpRev: true,
-        ...(built.preserveUnknown ? { preserveUnknown: true } : {}),
-      });
-      saved = true;
-      return { kind: "saved", file: { ...built.next, rev: built.next.rev + 1 }, ...archived };
-    });
-    return outcome.then((result) => {
-      if (saved) annotationChanged(docId, "put");
-      return result;
-    });
-  }
   /** rebuild through the lock. */
   const lockedRebuild = (
     p: LibraryPaths,
@@ -725,29 +672,6 @@ export function createApp(deps: AppDeps): Hono {
       delete: (docId, expect) => deleteDocGlobally(docId, expect),
     },
   };
-  /** What a system error of the shared access path says; it names no path. Each code has its own, accurate, message. */
-  const annotationsErrorDetail = (err: AnnotationsError): string => {
-    switch (err.code) {
-      case "corrupt_ir":
-        return "the stored document is damaged or outdated and cannot be read; nothing was changed";
-      case "corrupt_store":
-        return "the saved annotations file is damaged; nothing was changed and nothing was read";
-      case "fingerprint":
-        return "an image or other asset the document declares is missing or unreadable, so the document cannot be verified; nothing was changed";
-      case "archive":
-        return "the annotations of older text could not be moved to the archive, so the saved annotations were left exactly as they were; nothing was changed";
-      case "new_current":
-        return "the annotations of older text were archived (they are no longer current), but the new, empty annotations file could not be created, so nothing of your request was written; the next access creates it";
-      case "not_found":
-        return "no such Doc";
-    }
-  };
-  /** The Doc's metadata file could not be read (a corrupt PDF metadata file): a system error, nothing was changed. */
-  class DocMetadataError extends Error {
-    constructor(cause: unknown) {
-      super("the Doc's metadata could not be read", { cause });
-    }
-  }
   /**
    * The Copilot's PDF annotation writes. The original is read once and verified (and must be the one the request names)
    * before anything else; the text of a text annotation is resolved from that same verified snapshot outside the lock
@@ -935,7 +859,7 @@ export function createApp(deps: AppDeps): Hono {
       if (badId(op.docId) || !op.docId.trim()) return { kind: "not_found" };
       let plan: AnnotationWrite | undefined;
       try {
-        const commit = await commitAnnotations<AnnotationWrite>(
+        const commit = await annotationAccess.commit<AnnotationWrite>(
           op.docId,
           { fingerprint: op.fingerprint, rev: op.rev },
           (epoch) => {
@@ -1013,7 +937,7 @@ export function createApp(deps: AppDeps): Hono {
             ? { kind: "not_found" }
             : {
                 kind: "error",
-                detail: annotationsErrorDetail(err),
+                detail: annotationAccess.describeError(err).detail,
                 ...(err.code === "new_current" ? { archivedOlder: true } : {}),
               };
         if (err instanceof DocMetadataError)
@@ -1115,25 +1039,22 @@ export function createApp(deps: AppDeps): Hono {
     },
     // The background read: the same reads as the coherent GET below but READ-ONLY (no ensure, no archive, never the
     // archive's content), refused while a content mutation is queued or running.
-    read: (docId) =>
-      annotationLock.run((): ReaderReadOutcome => {
-        if (badId(docId) || !docId.trim()) return { kind: "not_found" };
-        if (docMutations.isDocumentContentBusy(docId)) return { kind: "busy" };
-        try {
-          if (readPdfMetadataIfPresent(paths, docId)) return { kind: "pdf" };
-        } catch {
+    read: async (docId): Promise<ReaderReadOutcome> => {
+      if (badId(docId) || !docId.trim()) return { kind: "not_found" };
+      try {
+        const peeked = await annotationAccess.peek(docId);
+        if (peeked.kind !== "ok") return peeked;
+        const { ir, file, assets, stale } = peeked.reading;
+        return { kind: "ok", reading: buildReaderReading({ ir, file, assets, stale }) };
+      } catch (err) {
+        if (err instanceof DocMetadataError)
           return { kind: "error", detail: "the Doc's metadata could not be read" };
-        }
-        try {
-          const { ir, file, assets, stale } = readDocumentForReading(paths.dataDir, docId);
-          return { kind: "ok", reading: buildReaderReading({ ir, file, assets, stale }) };
-        } catch (err) {
-          if (!(err instanceof AnnotationsError)) throw err;
-          // The message names no path: the user's data stays untouched, whatever the reason.
-          if (err.code === "not_found") return { kind: "not_found" };
-          return { kind: "error", detail: annotationsErrorDetail(err) };
-        }
-      }),
+        if (!(err instanceof AnnotationsError)) throw err;
+        // The message names no path: the user's data stays untouched, whatever the reason.
+        if (err.code === "not_found") return { kind: "not_found" };
+        return { kind: "error", detail: annotationAccess.describeError(err).detail };
+      }
+    },
   };
   copilot.useWorkbench({
     library: libraryOps,
@@ -1688,29 +1609,26 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("bad doc id", 400);
       return c.json(e.body, e.status);
     }
+    let read: AnnotationsRead;
     try {
-      return await annotationLock.run(() => {
-        if (docMutations.isDocumentContentBusy(docId)) {
-          return c.json({ detail: "document busy" }, 409);
-        }
-        if (readPdfMetadataIfPresent(paths, docId)) {
-          return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
-        }
-        const result = ensureCurrentAnnotationsWithDocument(paths.dataDir, docId);
-        if (result.invalidated) annotationChanged(docId, "invalidate");
-        return c.json(
-          c.req.query("coherent") === "1"
-            ? { version: 1 as const, ir: result.ir, file: result.file, assets: result.assets }
-            : result.file
-        );
-      });
+      read = await annotationAccess.read(docId);
     } catch (err) {
       if (err instanceof AnnotationsError) {
-        const e = annotationsError(err);
+        const failure = annotationAccess.describeError(err);
+        const e = detail(failure.detail, failure.status);
         return c.json(e.body, e.status);
       }
       throw err;
     }
+    if (read.kind === "busy") return c.json({ detail: "document busy" }, 409);
+    if (read.kind === "pdf")
+      return c.json({ detail: "PDF annotations use the PDF reader contract" }, 400);
+    const result = read.epoch;
+    return c.json(
+      c.req.query("coherent") === "1"
+        ? { version: 1 as const, ir: result.ir, file: result.file, assets: result.assets }
+        : result.file
+    );
   });
 
   // ---- PUT /api/paper/{doc_id}/annotations ---------------------------------- //
@@ -1739,14 +1657,15 @@ export function createApp(deps: AppDeps): Hono {
     }
     let outcome: AnnotationsCommit;
     try {
-      outcome = await commitAnnotations(
+      outcome = await annotationAccess.commit(
         docId,
         { fingerprint: parsed.data.content_fingerprint, rev: parsed.data.rev },
         () => ({ next: parsed.data })
       );
     } catch (err) {
       if (err instanceof AnnotationsError) {
-        const e = annotationsError(err);
+        const failure = annotationAccess.describeError(err);
+        const e = detail(failure.detail, failure.status);
         return c.json(e.body, e.status);
       }
       throw err;
