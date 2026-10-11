@@ -10,25 +10,12 @@
 import {
   MailDeleteRequestSchema,
   MailFlagRequestSchema,
-  type MailManageFailureCode,
   MailMoveRequestSchema,
   MailSearchRequestSchema,
 } from "@argelanderspace/contracts";
 import type { Context, Hono } from "hono";
-import { READ_FAILURE_STATUS } from "./mail-http.js";
+import { mailHttpStatus } from "./mail-failures.js";
 import { MailManageError, type MailManageService } from "./mail-manage.js";
-
-const STATUS: Record<MailManageFailureCode, 400 | 404 | 409 | 413 | 500 | 502> = {
-  ...READ_FAILURE_STATUS,
-  refused: 502,
-  connection_lost: 502,
-  destination_not_found: 404,
-  trash_not_found: 409,
-  confirmation_required: 409,
-  not_in_trash: 409,
-  unsupported: 502,
-  partial: 502,
-};
 
 /** Only field NAMES from zod issues, never messages or values. */
 function invalid(c: Context, issues: { path: PropertyKey[] }[]) {
@@ -51,7 +38,7 @@ export function mountMailManageRoutes(app: Hono, service: () => MailManageServic
       if (!(error instanceof MailManageError)) throw error;
       return c.json(
         { code: error.code, detail: `mail request failed: ${error.code}` },
-        STATUS[error.code]
+        mailHttpStatus(error.code)
       );
     }
   };

@@ -21,7 +21,7 @@ import { MailAccountService, MailServiceError } from "./mail-accounts.js";
 import { MailCache } from "./mail-cache.js";
 import { type MailComposeServices, mountMailComposeRoutes } from "./mail-compose-routes.js";
 import type { MailOpDeps } from "./mail-copilot.js";
-import { READ_FAILURE_STATUS } from "./mail-http.js";
+import { mailAccountDetail, mailHttpStatus } from "./mail-failures.js";
 import { createDefaultMailManageService, type MailManageService } from "./mail-manage.js";
 import { mountMailManageRoutes } from "./mail-manage-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
@@ -49,32 +49,11 @@ export function createDefaultMailAccountService(): MailAccountService {
   });
 }
 
-const STATUS = {
-  invalid_input: 400,
-  not_found: 404,
-  rev_mismatch: 409,
-  duplicate_address: 409,
-  connection_failed: 422,
-  keychain_unavailable: 422,
-  credential_store_failed: 500,
-} as const;
-
-const DETAIL = {
-  invalid_input: "invalid mail account input",
-  not_found: "mail account not found",
-  rev_mismatch: "mail accounts changed elsewhere; reload and retry",
-  duplicate_address: "an account with this address already exists",
-  connection_failed: "login test failed; nothing was saved",
-  keychain_unavailable:
-    "the OS keychain is unavailable; resend with fileFallbackConsent to store the password in a restricted file",
-  credential_store_failed: "the credential could not be stored or removed",
-} as const;
-
 /** Only field NAMES from zod issues, never messages or values (a password could be among them). */
 function invalid(issues: { path: PropertyKey[] }[]) {
   return {
     code: "invalid_input",
-    detail: DETAIL.invalid_input,
+    detail: mailAccountDetail("invalid_input"),
     fields: [...new Set(issues.map((i) => i.path.map(String).join(".")))],
   };
 }
@@ -116,13 +95,13 @@ export function mountMailRoutes(
       // Fixed text per code; server responses and mail content never reach an error body.
       return c.json(
         { code: error.code, detail: `mail request failed: ${error.code}` },
-        READ_FAILURE_STATUS[error.code]
+        mailHttpStatus(error.code)
       );
     }
     if (error instanceof MailServiceError) {
       return c.json(
-        { code: error.code, detail: DETAIL[error.code], ...error.extra },
-        STATUS[error.code]
+        { code: error.code, detail: mailAccountDetail(error.code), ...error.extra },
+        mailHttpStatus(error.code)
       );
     }
     // Anything else (unreadable store, bad global dir config, ...): fixed text, no error message.
