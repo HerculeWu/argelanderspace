@@ -36,6 +36,13 @@ import { sniffImage, TextAssetError } from "@argelanderspace/core";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { pdfBatch, pdfVersion, readerBatch, readerVersion } from "./copilot-batching.js";
+import {
+  done,
+  type Part,
+  record as recordFor,
+  type ToolHostContext,
+  type ToolResult,
+} from "./copilot-tool-kit.js";
 import { type ViewActionOutcome, viewOutcomeResult } from "./copilot-workspace-tool.js";
 import { renderSvgFigure, type SvgEngine } from "./svg-raster.js";
 
@@ -196,14 +203,12 @@ export interface ReaderOpDeps {
   write: (operation: ReaderWriteOperation) => Promise<ReaderWriteOutcome>;
 }
 
-export interface ReaderToolContext {
+export interface ReaderToolContext extends ToolHostContext {
   reader: ReaderOpDeps;
   /** The conversation this tool serves (the owner of the PDF annotation undo history it builds). */
   conversationId: string;
   /** Resolves only after the bound browser view reports the outcome. */
   viewAction: (action: ReaderViewAction) => Promise<ViewActionOutcome>;
-  /** False once the host stopped admitting operations (Stop, shutdown). */
-  admitting: () => boolean;
   /** Whether the SELECTED model takes images (its own capability); a model that cannot never gets a page image. */
   modelAcceptsImages?: () => boolean;
   /** The bound view's latest page (the PDF search results the Reader shows after a search). */
@@ -453,15 +458,8 @@ const description = [
   "set_text_view switches a text Doc between its reading and its source tab. navigate/jump_back/set_panel/set_right_tab/retry_sync act on the user's visible Reader like the outline, reference cards, chips, the undo-navigation button, the panel folds, the tabs and Retry: call them only when asked to show something, never to read. navigate and jump_back stop at a Reader that is syncing or showing an error (nothing moves, not_displayed); set_panel, set_right_tab and retry_sync are folds, tabs and Retry and work in any state. Unfolding a panel that would leave the article under 240 px folds the other one: the result says folded.",
 ].join(" ");
 
-/** What `execute` returns: the payload as the model's text and the operation record as details. */
-type ToolResult = {
-  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
-  details: CopilotOperation;
-};
-
-function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
-  return { id, tool: READER_TOOL_NAME, action, status: "error", ...partial };
-}
+const record = (id: string, action: string, partial: Partial<CopilotOperation>) =>
+  recordFor(READER_TOOL_NAME, id, action, partial);
 
 export function createReaderTool(context: ReaderToolContext) {
   const write = async (
@@ -902,11 +900,7 @@ export function createReaderTool(context: ReaderToolContext) {
    * that can see. A model that cannot is told so (the same rule and words as a PDF page); a picture in a format a model
    * cannot take (an SVG, a GIF, a PDF figure) is said so and nothing is converted behind the user's back.
    */
-  type PictureDone = (
-    operation: CopilotOperation,
-    payload: object,
-    image?: { data: string; mimeType: string }
-  ) => ToolResult;
+  type PictureDone = (operation: CopilotOperation, payload: object, parts?: Part[]) => ToolResult;
   const NO_PICTURE_NOTICE =
     "no image was produced: this model cannot take images, so the pictures of the document cannot be looked at; do not guess what a figure shows from anything else (use its caption and the text of the reading, and say the picture was not seen). Tell the user to choose an image-capable model in the model selector.";
   /**
@@ -1032,7 +1026,7 @@ export function createReaderTool(context: ReaderToolContext) {
         },
         sha256: got.sha256,
       },
-      { data: got.bytes.toString("base64"), mimeType: sniffed.mediaType }
+      [{ type: "image", data: got.bytes.toString("base64"), mimeType: sniffed.mediaType }]
     );
   };
   /**
@@ -1109,18 +1103,14 @@ export function createReaderTool(context: ReaderToolContext) {
         },
         sha256: got.sha256,
       },
-      { data: rendered.png.toString("base64"), mimeType: "image/png" }
+      [{ type: "image", data: rendered.png.toString("base64"), mimeType: "image/png" }]
     );
   };
   /** `read_page_image`: one original page as an image; a model that cannot see is told so and gets nothing. */
   const readPageImage = async (
     id: string,
     op: ReturnType<typeof ReaderReadPageImageOperationSchema.parse>,
-    done: (
-      operation: CopilotOperation,
-      payload: object,
-      image?: { data: string; mimeType: string }
-    ) => ToolResult
+    done: (operation: CopilotOperation, payload: object, parts?: Part[]) => ToolResult
   ): Promise<ToolResult> => {
     const object = { kind: "doc" as const, id: op.docId };
     if (context.modelAcceptsImages && !context.modelAcceptsImages())
@@ -1170,7 +1160,7 @@ export function createReaderTool(context: ReaderToolContext) {
         },
         sha256: outcome.contentSha256,
       },
-      { data, mimeType: "image/png" }
+      [{ type: "image", data, mimeType: "image/png" }]
     );
   };
   /** The Reader's search results once its search has settled for this query (the box and its list are the Reader's). */
@@ -1204,17 +1194,6 @@ export function createReaderTool(context: ReaderToolContext) {
     parameters,
     async execute(toolCallId, params) {
       const action = typeof params.action === "string" ? params.action : "unknown";
-      const done = (
-        operation: CopilotOperation,
-        payload: object,
-        image?: { data: string; mimeType: string }
-      ): ToolResult => ({
-        content: [
-          { type: "text" as const, text: JSON.stringify(payload) },
-          ...(image ? [{ type: "image" as const, ...image }] : []),
-        ],
-        details: operation,
-      });
       if (!context.admitting())
         return done(record(toolCallId, action, { status: "error" }), {
           ok: false,

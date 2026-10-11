@@ -20,6 +20,7 @@ import {
 } from "@argelanderspace/contracts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
+import { done, record as recordFor, type ToolHostContext } from "./copilot-tool-kit.js";
 
 export const WORKSPACE_TOOL_NAME = "workspace";
 
@@ -102,7 +103,7 @@ export function viewOutcomeResult(
   };
 }
 
-export interface WorkspaceToolContext {
+export interface WorkspaceToolContext extends ToolHostContext {
   /** The page the bound view last published; the tool reports exactly this, never a guess. */
   page: () => PageContext | undefined;
   /** Resolves only after the bound browser view reports the outcome. */
@@ -115,8 +116,6 @@ export interface WorkspaceToolContext {
     model: string;
     thinking: string | null;
   }) => Promise<{ provider: string; model: string; thinking: string | null }>;
-  /** False once the host stopped admitting operations (Stop, shutdown). */
-  admitting: () => boolean;
 }
 
 // A plain string enum keeps the provider schema small: tool schemas count against the model's window.
@@ -150,9 +149,8 @@ const description = [
   "capabilities reports layout, appearance, disabled controls and why, and what the browser platform does not allow you (clipboard, file choosers, links, local paths; downloads only through the named actions reader download_original and writer export_manuscript). provider_status reads redacted provider state; select_model sets this conversation's model and thinking from it.",
 ].join(" ");
 
-function record(id: string, action: string, partial: Partial<CopilotOperation>): CopilotOperation {
-  return { id, tool: WORKSPACE_TOOL_NAME, action, status: "error", ...partial };
-}
+const record = (id: string, action: string, partial: Partial<CopilotOperation>) =>
+  recordFor(WORKSPACE_TOOL_NAME, id, action, partial);
 
 export function createWorkspaceTool(context: WorkspaceToolContext) {
   return defineTool({
@@ -163,10 +161,6 @@ export function createWorkspaceTool(context: WorkspaceToolContext) {
     parameters,
     async execute(toolCallId, params) {
       const action = typeof params.action === "string" ? params.action : "unknown";
-      const done = (operation: CopilotOperation, payload: object) => ({
-        content: [{ type: "text" as const, text: JSON.stringify(payload) }],
-        details: operation,
-      });
       if (!context.admitting())
         return done(record(toolCallId, action, { status: "error" }), {
           ok: false,
