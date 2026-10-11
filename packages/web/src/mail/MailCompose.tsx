@@ -37,17 +37,21 @@ import {
   removeMailAttachment,
   saveMailDraft,
   startMailSend,
-  undoMailSend,
   uploadMailAttachment,
 } from "../api/mail-compose";
 import { Icon } from "../lib/icons";
 import { ActionButton, Button, Dialog, IconButton } from "../ui";
 import { type ComposeState, ComposeWindow } from "./ComposeWindow";
+import {
+  browserSendTrackerDeps,
+  createSendTracker,
+  MAIL_PAGE_SEND_POLICY,
+  type SendTracker,
+  type SendView,
+} from "./send-tracker";
 import "./compose.css";
 
 const SAVE_DELAY_MS = 1200;
-const POLL_MS = 600;
-const GIVE_UP_MS = 10 * 60 * 1000;
 /**
  * Composer text that could not reach the server after the user left Mail (a draft that could not be
  * saved, a send that failed or lost its answer meanwhile). It is kept in this tab's sessionStorage and
@@ -291,8 +295,10 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     inflight: false,
     dirty: false,
   });
-  /** Send ids whose result is being polled right now (one loop each). */
-  const watching = useRef(new Set<string>());
+  /** Follows each send from its window to its end (see send-tracker); created and disposed with the page. */
+  const tracker = useRef<SendTracker | null>(null);
+  /** What this page knows about each followed send that the server does not: its subject and the composer text. */
+  const sendMeta = useRef(new Map<string, { subject: string; snapshot: ComposeState | null }>());
 
   const setCompose = useCallback((c: ComposeState | null) => {
     composeRef.current = c;
@@ -310,11 +316,6 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     pendingsRef.current = next;
     setPendingsState(next);
   }, []);
-  const patchPending = useCallback(
-    (sendId: string, patch: Partial<Pending>) =>
-      setPendings((list) => list.map((p) => (p.sendId === sendId ? { ...p, ...patch } : p))),
-    [setPendings]
-  );
 
   const notify = useCallback((n: Omit<Notice, "id">): number => {
     const id = noticeSeq.current++;
@@ -867,7 +868,8 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
           notify({ tone: "warning", text: warnings.join(" "), action: openDrafts, forget });
         else void dismissMailSend(p.accountId, p.sendId).catch(() => {});
         propsRef.current.onChanged();
-      } else if (st.state === "failed") {
+      } else if (st.state === "failed" && st.code !== "outcome_unknown") {
+        // Definitely not sent: the text comes back. A failure whose outcome cannot be known is reported below.
         void dismissMailSend(p.accountId, p.sendId).catch(() => {});
         restoreCompose(p, st.code ?? "unknown");
         propsRef.current.onChanged();
@@ -883,6 +885,7 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
         });
         propsRef.current.onChanged();
       } else {
+        // unknown, or failed with outcome_unknown: it may or may not have gone out. Never "not sent".
         notify({
           tone: "warning",
           text: t("mail.compose.unknown", { subject }),
@@ -895,50 +898,64 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     [notify, restoreCompose, setPendings, t]
   );
 
-  /** After the window: ask the server until the send reached a final state (also across a server restart). */
-  const watch = useCallback(
-    async (first: Pending) => {
-      if (watching.current.has(first.sendId)) return;
-      watching.current.add(first.sendId);
-      const started = Date.now();
-      let delay = POLL_MS;
-      const lost = (p: Pending) => {
-        setPendings((list) => list.filter((x) => x.sendId !== p.sendId));
-        notify({
-          tone: "warning",
-          text: t("mail.compose.statusLost", { subject: p.subject || t("mail.noSubject") }),
-          action: { label: t("mail.compose.openDrafts"), run: () => propsRef.current.onOpenDrafts(p.accountId) },
-        });
-      };
-      try {
-        for (;;) {
-          const p = pendingsRef.current.find((x) => x.sendId === first.sendId);
-          if (!alive.current || !p) return;
-          try {
-            const st = await fetchMailSendStatus(p.accountId, p.sendId);
-            if (!alive.current) return;
-            if (st.state === "pending" && !st.ownedElsewhere && st.remainingMs !== null && st.remainingMs > 0) {
-              // Clock skew: the server still counts the window down.
-              patchPending(p.sendId, { endsAt: Date.now() + st.remainingMs, phase: "window", unreachable: false });
-              return;
-            }
-            if (st.state !== "pending" && st.state !== "sending") return settle(p, st);
-            if (p.unreachable) patchPending(p.sendId, { unreachable: false });
-            delay = POLL_MS;
-          } catch (e) {
-            if (e instanceof MailApiError && e.status === 404) return lost(p);
-            patchPending(p.sendId, { unreachable: true });
-            delay = Math.min(delay * 1.6, 4000);
-          }
-          if (Date.now() - started > GIVE_UP_MS) return lost(p);
-          await new Promise((r) => setTimeout(r, delay));
-        }
-      } finally {
-        watching.current.delete(first.sendId);
+  /** The server no longer knows the send, or it could not be learned in time how it ended. */
+  const lost = useCallback(
+    (p: Pending) => {
+      setPendings((list) => list.filter((x) => x.sendId !== p.sendId));
+      notify({
+        tone: "warning",
+        text: t("mail.compose.statusLost", { subject: p.subject || t("mail.noSubject") }),
+        action: { label: t("mail.compose.openDrafts"), run: () => propsRef.current.onOpenDrafts(p.accountId) },
+      });
+    },
+    [notify, setPendings, t]
+  );
+
+  /**
+   * The tracker's views become the countdown bars; a send that ended is reported here (what to say and whether the
+   * text comes back stays this page's business) and is no longer followed.
+   */
+  const onSends = useCallback(
+    (views: SendView[]) => {
+      const shown: Pending[] = [];
+      const ended: Array<{ p: Pending; status: MailSendStatus | null }> = [];
+      for (const v of views) {
+        const m = sendMeta.current.get(v.sendId);
+        const p: Pending = {
+          accountId: v.accountId,
+          sendId: v.sendId,
+          subject: m?.subject ?? v.status?.subject ?? "",
+          endsAt: v.endsAt ?? 0,
+          phase: v.phase === "window" ? "window" : "sending",
+          unreachable: v.unreachable,
+          snapshot: m?.snapshot ?? null,
+        };
+        if (v.phase === "window" || v.phase === "sending") shown.push(p);
+        else ended.push({ p, status: v.phase === "settled" ? v.status : null });
+      }
+      setPendings(() => shown);
+      for (const { p, status } of ended) {
+        tracker.current?.untrack(p.sendId);
+        sendMeta.current.delete(p.sendId);
+        if (status) settle(p, status);
+        else lost(p);
       }
     },
-    [notify, patchPending, setPendings, settle, t]
+    [lost, setPendings, settle]
   );
+  const onSendsRef = useRef(onSends);
+  onSendsRef.current = onSends;
+  useEffect(() => {
+    const tr = createSendTracker(browserSendTrackerDeps, MAIL_PAGE_SEND_POLICY);
+    tracker.current = tr;
+    const off = tr.subscribe((views) => onSendsRef.current(views));
+    return () => {
+      off();
+      tr.dispose();
+      if (tracker.current === tr) tracker.current = null;
+      sendMeta.current.clear();
+    };
+  }, []);
 
   /** The server accepted a send of this window: it closes into a countdown (or the "sending" bar). */
   const accepted = useCallback(
@@ -947,20 +964,11 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
       const mine = composeRef.current?.uid === c.uid ? composeRef.current : null;
       const snapshot: ComposeState = { ...(mine ?? c), sending: false, unconfirmed: null, error: null, errorName: null };
       if (mine) setCompose(null);
-      const p: Pending = {
-        accountId: st.accountId || c.accountId,
-        sendId: st.sendId,
-        subject: st.subject || c.draft.subject,
-        endsAt: Date.now() + (st.remainingMs ?? 0),
-        phase: st.state === "pending" ? "window" : "sending",
-        unreachable: false,
-        snapshot,
-      };
-      setPendings((list) => [...list.filter((x) => x.sendId !== p.sendId), p]);
+      sendMeta.current.set(st.sendId, { subject: st.subject || c.draft.subject, snapshot });
       setNow(Date.now());
-      if (p.phase === "sending") void watch(p);
+      tracker.current?.track(st.accountId || c.accountId, st.sendId, st);
     },
-    [setCompose, setPendings, watch]
+    [setCompose]
   );
 
   /**
@@ -1111,67 +1119,35 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
     }
   }, [accepted, leftAfterSend, notify, patchCompose, present, errText, settle, t]);
 
-  // One ticker for all countdowns; a window that reaches zero starts watching its send.
+  // One ticker for all countdowns (display only: the tracker ends each window and starts asking the server).
   const anyWindow = pendings.some((p) => p.phase === "window");
   useEffect(() => {
     if (!anyWindow) return;
-    const id = setInterval(() => {
-      const t0 = Date.now();
-      setNow(t0);
-      for (const p of pendingsRef.current) {
-        if (p.phase === "window" && t0 >= p.endsAt) {
-          const next = { ...p, phase: "sending" as const };
-          patchPending(p.sendId, { phase: "sending" });
-          void watch(next);
-        }
-      }
-    }, 200);
+    const id = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(id);
-  }, [anyWindow, watch, patchPending]);
-
-  const undoOnce = useCallback(
-    async (p: Pending) => {
-      try {
-        settle(p, await undoMailSend(p.accountId, p.sendId));
-      } catch (e) {
-        const code = mailErrorCode(e);
-        if (code !== "not_pending" && code !== "owned_elsewhere" && code !== "not_found") {
-          notify({ tone: "danger", text: errText(code), autoCloseMs: 8000 });
-          return;
-        }
-        // The server said it is not (or no longer) undoable. Ask what actually happened before saying anything:
-        // after a restart the window is simply gone, which is not the same as "already being sent".
-        try {
-          const st = await fetchMailSendStatus(p.accountId, p.sendId);
-          if (st.ownedElsewhere && st.state === "pending") {
-            // Another Mail window of the app holds this send; only it can undo.
-            notify({ tone: "warning", text: t("mail.compose.ownedElsewhere"), autoCloseMs: 8000 });
-          } else if (st.state === "sending" || st.state === "pending") {
-            notify({ tone: "warning", text: t("mail.compose.tooLate"), autoCloseMs: 6000 });
-            patchPending(p.sendId, { phase: "sending" });
-            void watch({ ...p, phase: "sending" });
-          } else settle(p, st);
-        } catch (e2) {
-          notify({ tone: "danger", text: errText(mailErrorCode(e2)), autoCloseMs: 8000 });
-        }
-      }
-    },
-    [errText, notify, patchPending, settle, t, watch]
-  );
+  }, [anyWindow]);
 
   const undoing = useRef(new Set<string>());
   const undo = useCallback(
     async (sendId: string) => {
       const p = pendingsRef.current.find((x) => x.sendId === sendId);
-      if (!p || undoing.current.has(sendId)) return;
+      const tr = tracker.current;
+      if (!p || !tr || undoing.current.has(sendId)) return;
       undoing.current.add(sendId);
       try {
-        await undoOnce(p);
+        // A send that ended (undone, or found to have ended otherwise) is reported through the tracker's views.
+        const r = await tr.undo(sendId);
+        if (!alive.current) return;
+        if (r === "ownedElsewhere")
+          // Another Mail window of the app holds this send; only it can undo.
+          notify({ tone: "warning", text: t("mail.compose.ownedElsewhere"), autoCloseMs: 8000 });
+        else if (r === "tooLate") notify({ tone: "warning", text: t("mail.compose.tooLate"), autoCloseMs: 6000 });
+        else if (typeof r === "object") notify({ tone: "danger", text: errText(r.error), autoCloseMs: 8000 });
       } finally {
         undoing.current.delete(sendId);
       }
     },
-    [undoOnce]
+    [errText, notify, t]
   );
 
   // On opening Mail: anything the server still holds from before (in its window, finished, or ended without a send).
@@ -1194,9 +1170,9 @@ export function MailComposeProvider(props: MailComposeProviderProps) {
             snapshot: null,
           };
           if (st.state === "pending" || st.state === "sending") {
-            if (pendingsRef.current.some((x) => x.sendId === st.sendId)) continue;
-            setPendings((list) => [...list, base]);
-            if (base.phase === "sending") void watch(base);
+            if (sendMeta.current.has(st.sendId)) continue;
+            sendMeta.current.set(st.sendId, { subject: st.subject, snapshot: null });
+            tracker.current?.track(st.accountId, st.sendId, st);
           } else settle(base, st);
         }
       })
