@@ -16,6 +16,7 @@ import { addressList, addressName, fileSize, longDate, shortDate } from "./forma
 import { MailHtmlBody, useInlineImages, useSanitizedMailHtml } from "./MailHtmlBody";
 import { buildMailPage } from "./mail-context";
 import {
+  browserMailClock,
   createMailListStore,
   type MailListStore,
   type Scope,
@@ -75,6 +76,7 @@ function makeStore(
       },
       report: reportMailAccounts,
     },
+    clock: browserMailClock,
     mirror: {
       patch: (ref, p) => search.current.patchHeader(ref, p),
       remove: (ref) => search.current.removeHeader(ref),

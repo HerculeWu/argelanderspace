@@ -73,15 +73,16 @@ export interface MailListStoreDeps {
       opts: { before: number | null; limit: number }
     ): Promise<Pick<MailHeadersResponse, "headers" | "uidValidity" | "nextBefore" | "stale">>;
   };
-  /** The shared live picture (mailLive): its pushes, and what this page knows from its own folder fetches. */
+  /**
+   * The shared live picture (mailLive): its pushes, and what this page knows from its own folder fetches. The pushes
+   * do not come from the mailLive singleton directly: MailView receives them with `useMailLiveEvents` (which keeps
+   * the live channel open while the page is mounted) and forwards them into `subscribe`.
+   */
   live: {
     subscribe(handler: (event: MailLiveEvent) => void): () => void;
     report(views: readonly { accountId: string; inbox: number | null; blocked: boolean }[]): void;
   };
-  clock?: {
-    setTimeout(fn: () => void, ms: number): unknown;
-    clearTimeout(handle: unknown): void;
-  };
+  clock: MailListClock;
   /**
    * The search results (useMailSearch), which show rows of the same messages: an optimistic change is made there
    * as well, and a row only the search shows is still found.
@@ -94,13 +95,19 @@ export interface MailListStoreDeps {
   };
 }
 
+export interface MailListClock {
+  setTimeout(fn: () => void, ms: number): unknown;
+  clearTimeout(handle: unknown): void;
+}
+
 export type MailListStore = ReturnType<typeof createMailListStore>;
 
 export const sourceKey = (accountId: string, folder: string) => `${accountId}\u0000${folder}`;
 
-const browserClock = {
-  setTimeout: (fn: () => void, ms: number): unknown => setTimeout(fn, ms),
-  clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+/** The browser's clock. */
+export const browserMailClock: MailListClock = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
 const inboxOf = (st: AccountState | undefined) => st?.folders.find((f) => f.role === "inbox");
@@ -135,8 +142,7 @@ export function sortedRows(lists: readonly Source[]) {
 }
 
 export function createMailListStore(deps: MailListStoreDeps) {
-  const { api, live, mirror } = deps;
-  const clock = deps.clock ?? browserClock;
+  const { api, live, clock, mirror } = deps;
   let snap: MailListSnapshot = { accounts: null, rev: 0, accountsError: null, states: {}, sources: {} };
   const listeners = new Set<() => void>();
   let disposed = false;
@@ -153,7 +159,19 @@ export function createMailListStore(deps: MailListStoreDeps) {
   const detachers = new Set<() => void>();
 
   // What this page knows from its own folder fetches goes to the shared live picture, so the Shell badge
-  // is the very number the folder tree shows (INBOX unread of accounts that can log in).
+  // is the very number the folder tree shows (INBOX unread of accounts that can log in). It is told once per
+  // burst of changes, after them (as the page's render used to): an in-between state of the same tick (a list
+  // refused as auth, then the tree fetched fine) must not reach the live picture, where it would leave the
+  // account's watch state behind.
+  let reportQueued = false;
+  const queueReport = () => {
+    if (reportQueued) return;
+    reportQueued = true;
+    queueMicrotask(() => {
+      reportQueued = false;
+      if (!disposed) report();
+    });
+  };
   const report = () => {
     const { accounts, states } = snap;
     if (!accounts) return;
@@ -172,7 +190,7 @@ export function createMailListStore(deps: MailListStoreDeps) {
     if (disposed || next === snap) return;
     const prev = snap;
     snap = next;
-    if (prev.accounts !== next.accounts || prev.states !== next.states) report();
+    if (prev.accounts !== next.accounts || prev.states !== next.states) queueReport();
     for (const l of [...listeners]) l();
   };
   const setStates = (fn: (s: MailListSnapshot["states"]) => MailListSnapshot["states"]) => {

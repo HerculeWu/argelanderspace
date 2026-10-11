@@ -62,6 +62,37 @@ let mirror: {
 };
 let store: MailListStore;
 
+/** A hand-driven clock: `advance` fires every timer that is due, then lets the promises it started settle. */
+function fakeClock() {
+  let now = 0;
+  let id = 0;
+  const timers = new Map<number, { at: number; fn: () => void }>();
+  return {
+    pending: () => timers.size,
+    setTimeout: (fn: () => void, ms: number) => {
+      timers.set(++id, { at: now + ms, fn });
+      return id;
+    },
+    clearTimeout: (handle: unknown) => {
+      timers.delete(handle as number);
+    },
+    advance: async (ms: number) => {
+      const until = now + ms;
+      for (;;) {
+        const due = [...timers.entries()].filter(([, t]) => t.at <= until).sort((a, b) => a[1].at - b[1].at)[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].fn();
+        await flush();
+      }
+      now = until;
+      await flush();
+    },
+  };
+}
+let clock: ReturnType<typeof fakeClock>;
+
 const pending = (c: Omit<Call, "resolve" | "reject">) =>
   new Promise<never>((resolve, reject) => {
     calls.push({ ...c, resolve: resolve as (v: unknown) => void, reject });
@@ -82,6 +113,7 @@ function deps(): MailListStoreDeps {
       },
       report: (views) => reports.push([...views]),
     },
+    clock,
     mirror: {
       patch: (ref, p) => mirror.patched.push({ ref, p }),
       remove: (ref) => {
@@ -135,11 +167,11 @@ beforeEach(() => {
   liveHandlers = new Set();
   reports = [];
   mirror = { patched: [], removed: [], restored: 0, found: undefined, validity: undefined };
+  clock = fakeClock();
   store = createMailListStore(deps());
 });
 afterEach(() => {
   store.dispose();
-  vi.useRealTimers();
 });
 
 // ---- accounts and folders -------------------------------------------------------------------
@@ -474,13 +506,43 @@ describe("report to the live picture", () => {
       { accountId: A2, inbox: null, blocked: true },
     ]);
     store.bumpUnread(A1, "INBOX", -1);
+    await flush();
     expect(reports[reports.length - 1]?.[0]?.inbox).toBe(3);
+  });
+
+  test("changes in one tick are told once, after them, with the final state (no in-between state reaches it)", async () => {
+    await withAccounts();
+    void store.loadSource(A1, "INBOX");
+    await answer(last("headers"), page([1]));
+    const told = reports.length;
+    // a list refused as auth, then in the same tick the tree written back as fine
+    void store.loadSource(A1, "INBOX", false, true);
+    const list = last("headers");
+    void store.loadFolders(A1, true);
+    const tree = last("folders", A1);
+    calls.splice(calls.indexOf(list), 1);
+    calls.splice(calls.indexOf(tree), 1);
+    list.reject(authError());
+    tree.resolve({ folders: [folder("INBOX", "inbox", 5)], stale: false });
+    expect(reports.length).toBe(told);
+    await flush();
+    expect(snap().states[A1]?.health).toBe("ok");
+    expect(reports.length).toBe(told + 1);
+    expect(reports[reports.length - 1]?.[0]).toEqual({ accountId: A1, inbox: 5, blocked: false });
+    // two synchronous changes: one report, after both
+    store.bumpUnread(A1, "INBOX", -1);
+    store.bumpUnread(A1, "INBOX", -1);
+    expect(reports.length).toBe(told + 1);
+    await flush();
+    expect(reports.length).toBe(told + 2);
+    expect(reports[reports.length - 1]?.[0]).toEqual({ accountId: A1, inbox: 3, blocked: false });
   });
 
   test("an inbox without a count reports 0, an account still loading reports null", async () => {
     await withAccounts({ [A1]: [folder("INBOX", "inbox", null)] });
     expect(reports[reports.length - 1]).toEqual([{ accountId: A1, inbox: 0, blocked: false }]);
     void store.loadFolders(A1);
+    await flush();
     expect(reports[reports.length - 1]).toEqual([{ accountId: A1, inbox: null, blocked: false }]);
   });
 });
@@ -495,7 +557,6 @@ describe("live reloads", () => {
     push({ kind: "changed", accountId, watch, cause } as MailLiveEvent);
 
   beforeEach(() => {
-    vi.useFakeTimers();
     scope = unified;
   });
 
@@ -514,9 +575,9 @@ describe("live reloads", () => {
     await attached();
     changed(A1);
     changed(A1);
-    await vi.advanceTimersByTimeAsync(249);
+    await clock.advance(249);
     expect(open("folders")).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(1);
+    await clock.advance(1);
     expect(open("folders").map((c) => c.accountId)).toEqual([A1]);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     const list = last("headers", A1, "INBOX");
@@ -529,33 +590,33 @@ describe("live reloads", () => {
   test("pushes during a running reload cause exactly one more afterwards", async () => {
     await attached();
     changed(A1);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     changed(A1);
     changed(A1);
-    await vi.advanceTimersByTimeAsync(1000);
+    await clock.advance(1000);
     expect(open("folders", A1)).toHaveLength(1);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     await answer(last("headers", A1), page([3, 2, 1]));
     expect(open("folders", A1)).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders", A1)).toHaveLength(1);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     await answer(last("headers", A1), page([3, 2, 1]));
-    await vi.advanceTimersByTimeAsync(1000);
+    await clock.advance(1000);
     expect(open("folders", A1)).toHaveLength(0);
   });
 
   test("a timer for an account that is gone does nothing", async () => {
     await attached();
     changed("acc-zzzzzzzzzzzz");
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders")).toHaveLength(0);
   });
 
   test("a tree answer that was superseded (folders:null) stops there: no list reload", async () => {
     await attached();
     changed(A1);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     const live = last("folders", A1);
     void store.loadFolders(A1); // newer request
     await answer(live, { folders: [folder("INBOX", "inbox", 3)], stale: false });
@@ -566,17 +627,17 @@ describe("live reloads", () => {
     await attached();
     scope = { kind: "folder", accountId: A1, path: "Work" };
     changed(A1);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     expect(open("headers")).toHaveLength(0);
     scope = { kind: "folder", accountId: A2, path: "INBOX" };
     changed(A1);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     expect(open("headers")).toHaveLength(0);
     scope = { kind: "folder", accountId: A1, path: "INBOX" };
     changed(A1);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     expect(open("headers").map((c) => `${c.accountId}:${c.folder}`)).toEqual([`${A1}:INBOX`]);
   });
@@ -586,7 +647,7 @@ describe("live reloads", () => {
     void store.loadFolders(A2);
     await refuse(last("folders", A2), authError());
     push({ kind: "resync" });
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders").map((c) => c.accountId)).toEqual([A1]);
   });
 
@@ -599,7 +660,7 @@ describe("live reloads", () => {
     expect(snap()).toBe(before);
     changed(A2, "auth_failed");
     expect(snap().states[A2]?.code).toBe("auth_failed");
-    await vi.advanceTimersByTimeAsync(1000);
+    await clock.advance(1000);
     expect(open("folders")).toHaveLength(0);
   });
 
@@ -608,15 +669,15 @@ describe("live reloads", () => {
     changed(A1, "auth_failed");
     changed(A1, "connecting", "state");
     changed(A1, "connecting", "inbox");
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders")).toHaveLength(0);
     changed(A1, "polling", "state");
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders", A1)).toHaveLength(1);
     await answer(last("folders", A1), { folders: [folder("INBOX", "inbox", 3)], stale: false });
     await answer(last("headers", A1), page([2, 1]));
     changed(A2, "idle", "state");
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders", A2)).toHaveLength(0);
   });
 
@@ -624,7 +685,7 @@ describe("live reloads", () => {
     const detach = await attached();
     detach();
     changed(A1);
-    await vi.advanceTimersByTimeAsync(250);
+    await clock.advance(250);
     expect(open("folders")).toHaveLength(0);
     expect(liveHandlers.size).toBe(0);
   });
@@ -728,7 +789,6 @@ describe("optimistic changes", () => {
 
 describe("dispose", () => {
   test("stops everything: answers in flight, pending live timers, the live subscription, further loads", async () => {
-    vi.useFakeTimers();
     await withAccounts();
     store.attachLive(() => ({ kind: "unified" }));
     void store.loadSource(A1, "INBOX");
@@ -740,7 +800,7 @@ describe("dispose", () => {
     store.dispose();
     expect(liveHandlers.size).toBe(0);
     await answer(list, page([1]));
-    await vi.advanceTimersByTimeAsync(1000);
+    await clock.advance(1000);
     expect(open("folders")).toHaveLength(0);
     void store.loadAccounts();
     void store.loadFolders(A1);

@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MailFolder, MailHeader } from "@argelanderspace/contracts";
 import i18n from "../src/i18n";
-import { createMailListStore, type MailListStore } from "../src/mail/mail-list-store";
+import { browserMailClock, createMailListStore, type MailListStore } from "../src/mail/mail-list-store";
 import { useMailActions } from "../src/mail/useMailActions";
 
 const A = "acc-aaaaaaaaaaaa";
@@ -50,6 +50,7 @@ function makeStore() {
       },
     },
     live: { subscribe: () => () => {}, report: () => {} },
+    clock: browserMailClock,
   });
 }
 
