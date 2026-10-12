@@ -51,6 +51,9 @@ literatures/annotations/
 literatures/manuscripts/
 literatures/templates/
 
+# Argument graphs: Work-owned project data (ADR 0009)
+literatures/argument-graphs/
+
 # Copilot conversations and native session history (user data; Copilot 07)
 literatures/copilot/
 

@@ -106,6 +106,7 @@ function createRouter(send: (frame: object) => void) {
     "library.changed": emit,
     "plan.changed": emit,
     "annotation.changed": emit,
+    "argument-graph.changed": emit,
     "writer.changed": emit,
     "text-source.changed": emit,
     "text-doc.published": emit,

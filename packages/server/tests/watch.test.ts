@@ -14,6 +14,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { encodeWorkIdForFile } from "@argelanderspace/core";
 import { afterEach, describe, expect, test } from "vitest";
 import { startWatcher, type Watcher } from "../src/watch.js";
 
@@ -30,9 +31,12 @@ async function waitFor(pred: () => boolean): Promise<void> {
 
 let watcher: Watcher | undefined;
 
+const tmpRoots: string[] = [];
+
 afterEach(() => {
   watcher?.stop();
   watcher = undefined;
+  for (const root of tmpRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 interface Fires {
@@ -42,6 +46,8 @@ interface Fires {
   annotations: () => string[][];
   /** Per-fire writer payloads (Stage 10): changed manuscript ids + templates flag. */
   writer: () => { ids: string[]; templates: boolean }[];
+  /** Per-fire decoded work-id lists of the argument-graph sub-fingerprint. */
+  graphs: () => string[][];
 }
 
 /** Watch the quartet at the test interval; returns the per-domain fire counts. */
@@ -50,6 +56,7 @@ function start(dataDir: string, statusDir: string): Fires {
   let plans = 0;
   const annotations: string[][] = [];
   const writer: { ids: string[]; templates: boolean }[] = [];
+  const graphs: string[][] = [];
   watcher = startWatcher({
     dataDir,
     statusDir,
@@ -58,18 +65,21 @@ function start(dataDir: string, statusDir: string): Fires {
     onPlansChange: () => plans++,
     onAnnotationsChange: (docIds) => annotations.push(docIds),
     onWriterChange: (changes) => writer.push(changes),
+    onArgumentGraphChange: (workIds) => graphs.push(workIds),
   });
   return {
     library: () => library,
     plans: () => plans,
     annotations: () => annotations,
     writer: () => writer,
+    graphs: () => graphs,
   };
 }
 
 /** `<tmp>/aspace-watch-XXX/{data,status}` — the server layout in miniature. */
 function tmpDirs(): { dataDir: string; statusDir: string } {
   const root = mkdtempSync(join(tmpdir(), "aspace-watch-"));
+  tmpRoots.push(root);
   return { dataDir: join(root, "data"), statusDir: join(root, "status") };
 }
 
@@ -299,5 +309,57 @@ describe("writer watcher (Stage 10)", () => {
     writeFileSync(join(dataDir, "manuscripts", "scratch", "manuscript.json"), MS);
     await sleep(250);
     expect(fires.writer()).toHaveLength(0);
+  });
+});
+
+describe("argument-graph watcher (ADR 0009)", () => {
+  const DOI = "doi:10.1051/0004-6361/202039341";
+  const graphFile = (dataDir: string, workId: string) =>
+    join(dataDir, "argument-graphs", `${encodeWorkIdForFile(workId)}.json`);
+
+  test("a graph file create/rewrite fires with the DECODED work id — once, then quiet", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    const fires = start(dataDir, statusDir);
+    await sleep(150); // a missing argument-graphs/ is the baseline
+    mkdirSync(join(dataDir, "argument-graphs"), { recursive: true });
+    writeFileSync(graphFile(dataDir, DOI), "{}");
+    await waitFor(() => fires.graphs().length === 1);
+    expect(fires.graphs()[0]).toEqual([DOI]);
+    await sleep(150);
+    expect(fires.graphs()).toHaveLength(1);
+    writeFileSync(graphFile(dataDir, DOI), '{"rev":1}');
+    await waitFor(() => fires.graphs().length === 2);
+  });
+
+  test("two Works in one poll window arrive in one call, sorted; a delete fires too", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    const fires = start(dataDir, statusDir);
+    await sleep(150);
+    mkdirSync(join(dataDir, "argument-graphs"), { recursive: true });
+    writeFileSync(graphFile(dataDir, "arxiv:2"), "{}");
+    writeFileSync(graphFile(dataDir, "arxiv:1"), "{}");
+    await waitFor(() => fires.graphs().length >= 1);
+    expect(fires.graphs()[0]).toEqual(["arxiv:1", "arxiv:2"]);
+    rmSync(graphFile(dataDir, "arxiv:1"));
+    await waitFor(() => fires.graphs().length === 2);
+    expect(fires.graphs()[1]).toEqual(["arxiv:1"]);
+  });
+
+  test("pre-existing graphs only baseline; tmp files and strays never fire; other domains stay silent", async () => {
+    const { dataDir, statusDir } = tmpDirs();
+    mkdirSync(join(dataDir, "argument-graphs"), { recursive: true });
+    writeFileSync(graphFile(dataDir, DOI), "{}");
+    const fires = start(dataDir, statusDir);
+    await sleep(200);
+    expect(fires.graphs()).toHaveLength(0);
+    writeFileSync(`${graphFile(dataDir, DOI)}.tmp`, "x");
+    writeFileSync(join(dataDir, "argument-graphs", "stray.v2.json"), "x"); // not a name the store writes
+    writeFileSync(join(dataDir, "argument-graphs", "notes.txt"), "x");
+    await sleep(250);
+    expect(fires.graphs()).toHaveLength(0);
+    mkdirSync(statusDir, { recursive: true });
+    writeFileSync(join(statusDir, "plans.json"), "{}");
+    await waitFor(() => fires.plans() === 1);
+    expect(fires.graphs()).toHaveLength(0);
   });
 });

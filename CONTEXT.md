@@ -56,6 +56,29 @@ _Avoid_: 将 Useful 一律称作 Foundation。
 
 **引用边（Citation edge）**：从引用者指向被引用文献的有向关系；similar 和 useful 都不产生另一种边义。
 
+### 论证
+
+**论证图（Argument graph）**：属于一个 Work、由用户或 agent 整理出的该文献的论证结构，由论证和论证边构成；每个 Work 至多一张。它不是 Doc，也可以带环。
+_Avoid_: Argument DAG（无环是审计通过后的性质，不是对象名）、Doc、文档标注。
+
+**论证（Argument）**：论证图的节点，按 Toulmin 模型记录一个主张及其依据：Claim、Grounds、Warrant，以及可选的 Backing、Qualifier、Rebuttal，另带一个短标题。
+_Avoid_: 用 A1、E1 这类编号指称论证。
+
+**论证边（Argument edge）**：从论证 A 指向论证 B 的有向关系，表示 A 的 Claim 在 B 中充当 Grounds、Warrant、Backing 或 Rebuttal 之一。
+_Avoid_: 引用边；把 Qualifier 画成边。
+
+**Native 论证**：依据完全来自本文之外（引文、既有数据、物理定律、领域常识）的论证，由整理者显式标记。
+_Avoid_: 把没有入边的论证自动当作 Native。
+
+**End 论证**：代表本文最终贡献或结论的论证，由整理者显式标记；不应再被其他论证使用。
+_Avoid_: 把没有出边的论证自动当作 End。
+
+**出处（Source）**：论证在原文中的位置说明，可带跳转目标；只作参考，不保证正文变化后仍然有效。
+_Avoid_: 标注目标（Target）、有效性受保护的寻址。
+
+**论证审计（Audit）**：从论证图现算出的问题清单，如环、无法到达 End 论证的论证；不是保存的数据。
+_Avoid_: 可手动编辑的审计标记。
+
 ### 计划与写作
 
 **Plan（科研计划）**：用户在工作台中管理的一组科研任务及其计划期限。

@@ -60,6 +60,7 @@ const FRAMES: Record<WsServerMessage["type"], WsServerMessage> = {
   "library.changed": { type: "library.changed", cause: "patch", at: "2026-10-11T00:00:00Z" },
   "plan.changed": { type: "plan.changed" } as unknown as WsServerMessage,
   "annotation.changed": { type: "annotation.changed", doc_id: "d1" } as unknown as WsServerMessage,
+  "argument-graph.changed": { type: "argument-graph.changed", work_id: "w1" } as unknown as WsServerMessage,
   "writer.changed": { type: "writer.changed" } as unknown as WsServerMessage,
   "pdf-reading-position.changed": { type: "pdf-reading-position.changed", doc_id: "d1" } as unknown as WsServerMessage,
   "text-source.changed": { type: "text-source.changed", doc_id: "d1" } as unknown as WsServerMessage,
