@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
+import { setOpenArgumentWork } from "../src/lib/argument-route";
 
 const h = vi.hoisted(() => ({
   /** pane id -> the Work whose graph that Library pane shows */
@@ -160,6 +161,24 @@ describe("popstate", () => {
     expect(h.exits).toEqual([1, 1]);
     expect(h.open.size).toBe(0);
     await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+  });
+
+  it("with an unsaved draft in the open graph, the browser's Back out of it asks first; refused, the URL goes back to the graph and the view stays (ticket 05)", async () => {
+    window.history.replaceState(null, "", "/#argument/w1");
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    setOpenArgumentWork("w1"); // the real view does this while open
+    let allow = false;
+    const off = registerWorkspaceLeaveGuard(() => allow, "library");
+    popTo("/");
+    expect(h.exits).toEqual([]);
+    expect(h.open.get(1)).toBe("w1");
+    expect(window.location.hash).toBe("#argument/w1");
+    allow = true;
+    popTo("/");
+    expect(h.exits).toEqual([1]);
+    off();
+    setOpenArgumentWork(null);
   });
 
   it("exploration and the graph exclude each other by URL: an #explore/ URL closes the graph, an #argument/ URL goes to the graph only", async () => {

@@ -41,17 +41,22 @@ export function applyDocDeletion(
   return { papers, currentDoc: remaining[0] ?? null };
 }
 
-const leaveGuards = new Set<() => boolean>();
+const leaveGuards = new Map<() => boolean, string | undefined>();
 
-/** Register a transient user-data leave guard for workspace navigation. */
-export function registerWorkspaceLeaveGuard(guard: () => boolean): () => void {
-  leaveGuards.add(guard);
+/**
+ * Register a transient user-data leave guard for workspace navigation. A guard with a `view` (the Library page's
+ * unsaved argument draft) only speaks when a pane of that view is being left; one without asks on every guarded change,
+ * as before.
+ */
+export function registerWorkspaceLeaveGuard(guard: () => boolean, view?: string): () => void {
+  leaveGuards.set(guard, view);
   return () => leaveGuards.delete(guard);
 }
 
-/** Ask active transient work sessions before changing a Doc or leaving its pane. */
-export function confirmWorkspaceLeave(): boolean {
-  for (const guard of leaveGuards) if (!guard()) return false;
+/** Ask active transient work sessions before changing a Doc or leaving a pane (`view`: the view that pane shows). */
+export function confirmWorkspaceLeave(view?: string): boolean {
+  // an unscoped guard belongs to the Doc views (the Reader, the text editor); no `view` asks every guard
+  for (const [guard, scope] of [...leaveGuards]) if ((view === undefined || (scope ?? "doc") === view) && !guard()) return false;
   return true;
 }
 

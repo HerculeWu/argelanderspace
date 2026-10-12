@@ -5,7 +5,7 @@ import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, pushDocUrl, replaceDocUrl } from "../lib/deeplink";
-import { argumentBus, parseArgumentHash } from "../lib/argument-route";
+import { argumentBus, argumentUrl, openArgumentWork, parseArgumentHash } from "../lib/argument-route";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { planResize, resizeDivider, shareOf } from "./layout";
@@ -215,6 +215,13 @@ export function Shell() {
     const onNav = () => {
       const route = parseDocRoute(window.location.pathname, window.location.hash);
       const argumentWork = parseArgumentHash(window.location.hash);
+      // Leaving the argument graph view by the browser's Back/Forward with an unsaved draft asks first (the Library
+      // page's leave guard); refused, the URL goes back to the graph's.
+      const open = openArgumentWork();
+      if (!argumentWork && open !== null && !confirmWorkspaceLeave("library")) {
+        window.history.pushState(null, "", argumentUrl(open));
+        return;
+      }
       // `#argument/<work id>` drives the argument graph view; any other URL (a Doc, a plain URL, an exploration) leaves it
       if (!argumentWork) argumentBus.exit();
       if (route) {

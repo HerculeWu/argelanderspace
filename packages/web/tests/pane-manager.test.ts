@@ -367,3 +367,25 @@ describe("each page adapter keeps its page's own status rule", () => {
     expect(notify).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("leave-draft protection on a Library pane (an unsaved argument draft, ticket 05)", () => {
+  it("switching away from, or closing, a Library pane asks with its view; staying does not; refused, nothing moves", () => {
+    const asked: string[] = [];
+    let allow = false;
+    const manager = createPaneManager({ panes: [{ id: 1, view: "library", size: 1 }, { id: 2, view: "plan", size: 1 }], activeId: 1, pages: [page("library")], confirmLeave: (view) => {
+      asked.push(view);
+      return allow;
+    } });
+    expect(manager.setActiveView("library")).toBe(true);
+    expect(asked).toEqual([]);
+    expect(manager.setActiveView("plan")).toBe(false);
+    expect(manager.setPaneView(1, "write")).toBe(false);
+    expect(manager.close(1)).toBe(false);
+    expect(asked).toEqual(["library", "library", "library"]);
+    expect(manager.getState().panes.map((p) => p.view)).toEqual(["library", "plan"]);
+    expect(manager.close(2)).toBe(true); // a Plan pane has nothing to protect
+    allow = true;
+    expect(manager.setActiveView("plan")).toBe(true);
+    expect(manager.getState().panes[0]!.view).toBe("plan");
+  });
+});

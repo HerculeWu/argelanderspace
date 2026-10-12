@@ -156,7 +156,7 @@ const panel = (id: string, graph = clean(), extra: Partial<Parameters<typeof Arg
   const argument = graph.arguments.find((a) => a.id === id)!;
   const findings = listFindings(auditArgumentGraph(graph)).filter((f) => f.ids.some((x) => x === id));
   return render(
-    <ArgumentPanel graph={graph} argument={argument} findings={findings} describe={(f) => `finding:${f.kind}`} workDocIds={["arxiv-0000.00001"]} onSelect={() => {}} onClose={() => {}} onOpenSource={() => {}} {...extra} />
+    <ArgumentPanel graph={graph} argument={argument} findings={findings} describe={(f) => `finding:${f.kind}`} workDocIds={["arxiv-0000.00001"]} onSelect={() => {}} onClose={() => {}} onOpenSource={() => {}} onSave={async () => ({ kind: "ok" })} onDiscardNew={() => {}} onDelete={() => {}} onAddEdge={() => {}} onRemoveEdge={() => {}} onReload={async () => null} onDirtyChange={() => {}} {...extra} />
   );
 };
 
@@ -276,21 +276,21 @@ describe("view states", () => {
     expect(container.querySelector('[data-ui="argument-audit-summary"]')!.textContent).toBe("审计通过");
   });
 
-  it("the new-argument and clear controls are present, disabled and say why", async () => {
+  it("the new-argument and clear controls are present and live (ticket 05)", async () => {
     const { container } = mount();
     await ready(container);
     for (const id of ["create-argument", "clear-argument-graph"]) {
       const b = container.querySelector<HTMLButtonElement>(`[data-ui="${id}"]`)!;
-      expect(b.disabled).toBe(true);
+      expect(b.disabled).toBe(false);
     }
   });
 
-  it("an empty graph shows the explanation and the disabled new-argument entry, no outline or canvas, no Copilot button", async () => {
+  it("an empty graph shows the explanation and the new-argument entry, no outline or canvas, no Copilot button", async () => {
     reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.empty() });
     const { container } = mount();
     await ready(container);
     expect(container.querySelector('[data-ui="argument-graph-empty"]')).not.toBeNull();
-    expect(container.querySelector<HTMLButtonElement>('[data-ui="create-first-argument"]')!.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[data-ui="create-first-argument"]')!.disabled).toBe(false);
     expect(container.querySelector('[data-ui="argument-outline"]')).toBeNull();
     expect(container.querySelector('[data-ui="argument-canvas"]')).toBeNull();
     expect(container.querySelector('[data-ui="argument-audit-summary"]')).toBeNull();
@@ -466,22 +466,21 @@ describe("selection, audit and refresh", () => {
 describe("review fixes (round A)", () => {
   const tooltipOf = (el: HTMLElement) => document.getElementById(el.getAttribute("aria-describedby")!.split(" ").pop()!)!.textContent;
 
-  it("the disabled new-argument and clear controls carry their explanation, not just the disabled flag", async () => {
+  it("the new-argument and clear controls are live and carry their names (ticket 05 connected them)", async () => {
     const { container } = mount();
     await ready(container);
-    for (const id of ["create-argument", "clear-argument-graph"]) {
+    for (const [id, name] of [["create-argument", "argument.edit.newArgTooltip"], ["clear-argument-graph", "argument.edit.clearTooltip"]] as const) {
       const b = container.querySelector<HTMLButtonElement>(`[data-ui="${id}"]`)!;
-      expect(b.disabled).toBe(true);
-      expect(tooltipOf(b)).toBe(i18n.t("argument.view.editLater"));
+      expect(b.disabled).toBe(false);
+      expect(tooltipOf(b)).toBe(i18n.t(name));
     }
-    expect(i18n.t("argument.view.editLater")).not.toBe("argument.view.editLater");
     cleanup();
     reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.empty() });
     const { container: empty } = mount();
     await ready(empty);
     const first = empty.querySelector<HTMLButtonElement>('[data-ui="create-first-argument"]')!;
-    expect(first.disabled).toBe(true);
-    expect(tooltipOf(first)).toBe(i18n.t("argument.view.editLater"));
+    expect(first.disabled).toBe(false);
+    expect(tooltipOf(first)).toBe(i18n.t("argument.edit.newArgTooltip"));
   });
 
   it("a passed audit is a plain badge, not a button; the list closes after a pick and Escape returns the focus to the badge", async () => {

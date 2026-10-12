@@ -105,9 +105,9 @@
 
 完整接纳/草稿/图片规则见 [annotations](annotations.md)，原指纹三态及错误分支全部不变。
 
-## 论证图（已决定；数据、读写接口与只读视图已实施，编辑、CLI、Copilot 工具、Work 合并尚未）
+## 论证图（已决定；数据、读写接口、视图与手动编辑已实施，CLI、Copilot 工具、Work 合并尚未）
 
-来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)，其中数据层、HTTP 与只读视图（含视图发布的页面上下文）已实施，其余能力（编辑、CLI、Copilot 工具、Work 合并跟随）不表示已存在。
+来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)，其中数据层、HTTP、视图（含视图发布的页面上下文）与手动编辑已实施，其余能力（CLI、Copilot 工具、Work 合并跟随）不表示已存在。
 
 - 论证图是 **Work 级项目数据**，每个 Work 至多一张，不是 Doc。它不参与内容指纹、标注归档或 Doc 的全局物理删除；出处的跳转目标不受保护，失效时只剩显示文字。
 - 存储允许环，自环是结构错误、直接拒绝。同一对论证、同一角色至多一条边。只有论证的短标题必填；缺 Claim/Grounds/Warrant 是审计发现，不是写入失败。审计结果永不落盘。

@@ -35,7 +35,7 @@ export interface PaneManagerOptions {
   /** One detached adapter per page: what a page answers when no pane of it is open. */
   pages: PaneAdapter[];
   /** The workspace's leave-draft protection; false keeps the Doc pane as it is. */
-  confirmLeave: () => boolean;
+  confirmLeave: (view: string) => boolean;
 }
 
 export type PaneManager = ReturnType<typeof createPaneManager>;
@@ -57,7 +57,9 @@ export function createPaneManager(options: PaneManagerOptions) {
     const adapter = adapters.get(paneId);
     return adapter && adapter.page === page ? adapter : undefined;
   };
-  const leaves = (pane: Pane | undefined, view?: string) => pane?.view === "doc" && view !== "doc";
+  /** Leaving a pane whose view holds unsaved user work: a Doc, or the Library page with an argument draft. */
+  const guarded = (pane: Pane | undefined) => pane?.view === "doc" || pane?.view === "library";
+  const leaves = (pane: Pane | undefined, view?: string) => guarded(pane) && view !== pane?.view;
 
   // ---- the panes ----------------------------------------------------------------------------- //
 
@@ -66,13 +68,15 @@ export function createPaneManager(options: PaneManagerOptions) {
   };
   /** The activity bar: the active pane shows `view`. False when the leave-draft protection keeps a Doc pane. */
   const setActiveView = (view: string): boolean => {
-    if (leaves(state.panes.find((pane) => pane.id === state.activeId), view) && !options.confirmLeave()) return false;
+    const from = state.panes.find((pane) => pane.id === state.activeId);
+    if (leaves(from, view) && !options.confirmLeave(from!.view)) return false;
     set({ panes: state.panes.map((pane) => (pane.id === state.activeId ? { ...pane, view } : pane)) });
     return true;
   };
   /** The pane header menu: pane `id` shows `view` and becomes active. */
   const setPaneView = (id: number, view: string): boolean => {
-    if (leaves(state.panes.find((pane) => pane.id === id), view) && !options.confirmLeave()) return false;
+    const from = state.panes.find((pane) => pane.id === id);
+    if (leaves(from, view) && !options.confirmLeave(from!.view)) return false;
     set({ panes: state.panes.map((pane) => (pane.id === id ? { ...pane, view } : pane)), activeId: id });
     return true;
   };
@@ -89,7 +93,8 @@ export function createPaneManager(options: PaneManagerOptions) {
   };
   /** False when the leave-draft protection keeps a Doc pane; the last pane is kept. */
   const close = (id: number): boolean => {
-    if (state.panes.find((pane) => pane.id === id)?.view === "doc" && !options.confirmLeave()) return false;
+    const closing = state.panes.find((pane) => pane.id === id);
+    if (guarded(closing) && !options.confirmLeave(closing!.view)) return false;
     if (state.panes.length <= 1) return true;
     const filtered = state.panes.filter((pane) => pane.id !== id).map((pane) => ({ ...pane, size: 1 }));
     set({ panes: filtered, ...(id === state.activeId ? { activeId: filtered[0]!.id } : {}) });

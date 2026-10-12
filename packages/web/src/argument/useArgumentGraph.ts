@@ -18,7 +18,10 @@ const fromLoad = (load: ArgumentGraphLoad): ArgumentGraphState => (load.kind ===
 /** Equal reads keep the same object, so an idempotent refresh (the server's own write fires two events) re-renders nothing. */
 const sameGraph = (a: ArgumentGraph, b: ArgumentGraph) => JSON.stringify(a) === JSON.stringify(b);
 
-export function useArgumentGraph(workId: string, enabled = true): { state: ArgumentGraphState; reload: () => void; refresh: () => void; refreshFailed: boolean; refreshing: boolean } {
+export function useArgumentGraph(
+  workId: string,
+  enabled = true
+): { state: ArgumentGraphState; reload: () => void; refresh: () => void; refreshFailed: boolean; refreshing: boolean; adopt: (graph: ArgumentGraph) => void } {
   const [state, setState] = useState<ArgumentGraphState>({ phase: "loading" });
   const [refreshFailed, setRefreshFailed] = useState(false);
   /** A read that keeps the graph on screen is under way (the notice's Retry shows it). */
@@ -59,6 +62,18 @@ export function useArgumentGraph(workId: string, enabled = true): { state: Argum
     [workId]
   );
 
+  /**
+   * Takes a graph the page itself just wrote or read (the server's answer to its PUT, or a reload the person asked for) as
+   * the current one without waiting for the broadcast. A read still in flight started earlier, so it is dropped.
+   */
+  const adopt = useCallback((graph: ArgumentGraph) => {
+    generation.current++;
+    abort.current?.abort();
+    setRefreshing(false);
+    setRefreshFailed(false);
+    setState((current) => (current.phase === "ready" && sameGraph(current.graph, graph) ? current : { phase: "ready", graph }));
+  }, []);
+
   useEffect(() => {
     if (!enabled) return;
     read(true);
@@ -75,5 +90,5 @@ export function useArgumentGraph(workId: string, enabled = true): { state: Argum
     };
   }, [enabled, workId, read]);
 
-  return { state, reload: () => read(true), refresh: () => read(false), refreshFailed, refreshing };
+  return { state, reload: () => read(true), refresh: () => read(false), refreshFailed, refreshing, adopt };
 }

@@ -50,3 +50,10 @@ export const argumentBus = {
   exit: (): void => bus.exit(),
   register: (t: ArgumentTarget): (() => void) => bus.register(t),
 };
+
+let openWork: string | null = null;
+/** The Work whose graph the open view shows (null when none is open): what Shell restores the URL to when a draft keeps the view. */
+export const openArgumentWork = (): string | null => openWork;
+export const setOpenArgumentWork = (workId: string | null): void => {
+  openWork = workId;
+};

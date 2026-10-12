@@ -1062,6 +1062,47 @@ svg.ui-icon.ui-icon { width: var(--ui-icon-side) !important; height: var(--ui-ic
 .ag-source { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); padding: 3px 8px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-dim); overflow-wrap: anywhere; text-align: left; }
 .ag-source.link { color: var(--accent); cursor: pointer; }
 .ag-source.link:hover { background: var(--hover); }
+/* editing (ticket 05, prototype variant C) */
+.ag-spacer { flex: 1; }
+.ag-hint.warn { color: var(--warn); margin-top: 4px; }
+.ag-picker-wrap { margin-top: 6px; }
+.ag-picker { display: flex; gap: 6px; }
+.ag-picker-scope { margin-top: 5px; font-family: var(--font-sans); }
+.ag-picker-scope .ag-hint { font-size: 11px; }
+.ag-picker .ag-input { flex: 1; min-width: 0; }
+.ag-picker .ag-input.narrow { flex: none; width: 96px; }
+.ag-field-label { display: block; margin: 12px 0 5px; font: 600 10.5px var(--font-mono); letter-spacing: .7px; text-transform: uppercase; color: var(--text-faint); }
+.ag-input { height: 30px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); font: 12.5px var(--font-sans); width: 100%; }
+.ag-input:focus { outline: none; border-color: var(--accent); }
+.ag-input.title { height: 34px; font-size: 14px; font-weight: 500; }
+.ag-input.area { height: auto; padding: 7px 8px; line-height: 1.55; resize: vertical; font-family: var(--font-mono); font-size: 12px; margin-top: 4px; }
+.ag-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.ag-seg button { padding: 5px 12px; font-size: 12px; color: var(--text-dim); }
+.ag-seg button + button { border-left: 1px solid var(--border); }
+.ag-seg button.on { background: var(--active); color: var(--text); }
+.ag-check { display: inline-flex; align-items: center; gap: 4px; font: 11px var(--font-mono); color: var(--text-dim); }
+.ag-sources-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.ag-source-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: center; }
+.ag-source-row > .ag-source-text { grid-column: 1 / 3; }
+.ag-source-row > .ui-tooltip-anchor, .ag-source-row > .btn { grid-column: 3; grid-row: 1; }
+.ag-source-row > .ag-source-note { grid-column: 1 / -1; }
+.ag-add { display: inline-flex; align-items: center; gap: 5px; align-self: flex-start; padding: 5px 8px; border-radius: var(--radius-sm); font-size: var(--fs-sm); color: var(--accent); }
+.ag-add:hover { background: var(--hover); }
+.ag-footer-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.ag-issue-list { margin: 0; padding-left: 16px; }
+.ag-role-chip.big { font-size: 12px; padding: 5px 10px; background: var(--surface-2); cursor: pointer; }
+.ag-role-chip.big:hover:not(:disabled) { background: var(--hover); }
+.ag-role-chip.big:disabled { opacity: .4; cursor: not-allowed; }
+.ag-chooser { position: fixed; z-index: 60; width: 264px; padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-pop); }
+.ag-chooser:focus { outline: none; }
+.ag-chooser p { font-size: 12px; line-height: 1.55; color: var(--text-dim); }
+.ag-chooser-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ag-chooser-roles > .ui-tooltip-anchor { display: flex; }
+.ag-chooser-roles .ag-role-chip { width: 100%; justify-content: center; }
+.explore-root[data-ui="argument-graph-view"] { position: relative; }
+.ag-notices { position: absolute; left: 16px; bottom: 16px; z-index: 40; display: flex; flex-direction: column; gap: 6px; max-width: min(460px, calc(100% - 32px)); }
+.ag-notice-row { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ag-notices:empty { display: none; }
 .ag-reader-entry { gap: 5px; margin-left: 8px; flex: none; }
 .ag-reader-entry-note { font-size: 11px; color: var(--warn); margin-left: 8px; white-space: nowrap; }
 /* narrow pane (user decision 2026-10-12): the outline and panel keep 300 / 392 at every width; the view folds the outline
