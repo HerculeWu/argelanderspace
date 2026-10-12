@@ -31,6 +31,8 @@ const FIELDS: { key: TextField; name: string; role?: ArgumentEdgeRole; required?
 ];
 export const ROLE_NAME: Record<ArgumentEdgeRole, string> = { grounds: "Grounds", warrant: "Warrant", backing: "Backing", rebuttal: "Rebuttal" };
 
+const KINDS: ArgumentKind[] = ["normal", "native", "end"];
+
 const Md = ({ text }: { text: string }) => <div className="plan-md-body ag-md" dangerouslySetInnerHTML={{ __html: mdWithMath(text, { safe: true }) }} />;
 
 /** A source can be opened when it has a target and that Doc still belongs to the Work; nothing else is checked. */
@@ -214,16 +216,28 @@ export function ArgumentPanel({
       setReloading(false);
     }
   };
+  /** Arrow keys move the kind choice along the three options (roving tabindex: only the chosen one is in the Tab order). */
+  const moveKind = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : e.key === "Home" ? "first" : e.key === "End" ? "last" : null;
+    if (step === null) return;
+    e.preventDefault();
+    const at = KINDS.indexOf(draft.kind);
+    const next = KINDS[step === "first" ? 0 : step === "last" ? KINDS.length - 1 : (at + step + KINDS.length) % KINDS.length]!;
+    setField("kind", next);
+    const group = e.currentTarget;
+    requestAnimationFrame(() => group.querySelector<HTMLElement>(`[data-ui-key="${next}"]`)?.focus());
+  };
   const setField = useCallback(<K extends keyof DraftFields>(key: K, value: DraftFields[K]) => setDraft((d) => ({ ...d, [key]: value })), []);
 
+  // an argument can be linked in several roles at once: the key names the edge (the other end and the role), not just the end
   const linkRow = (e: ArgumentEdge, otherId: string, chip: React.ReactNode, icon: string) => (
-    <div className="ag-link" key={`${e.from}>${e.to}:${e.role}`} data-ui="argument-link" data-ui-key={otherId}>
+    <div className="ag-link" key={`${e.from}>${e.to}:${e.role}`} data-ui="argument-link" data-ui-key={chip === null ? otherId : `${otherId}:${e.role}`}>
       <button type="button" className="ag-link-title" data-ui="select-linked-argument" onClick={() => onSelect(otherId)}>
         <Icon name={icon} cls="ico-sm" />
         <span>{titleOf(otherId)}</span>
       </button>
       {chip}
-      <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="remove-argument-link" label={t("argument.edit.removeLink", { title: titleOf(otherId) })} tooltip={t("argument.edit.removeLink", { title: titleOf(otherId) })} disabled={busy} onClick={() => onRemoveEdge(e)} />
+      <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="remove-argument-link" data-ui-key={`${otherId}:${e.role}`} label={t("argument.edit.removeLink", { title: titleOf(otherId) })} tooltip={t("argument.edit.removeLink", { title: titleOf(otherId) })} disabled={busy} onClick={() => onRemoveEdge(e)} />
     </div>
   );
 
@@ -255,12 +269,16 @@ export function ArgumentPanel({
             <div className="ag-field-label" id={`${titleId}-kind`}>
               {t("argument.edit.kind")}
             </div>
-            <div className="ag-seg" role="radiogroup" aria-labelledby={`${titleId}-kind`} data-ui="argument-kind">
-              {(["normal", "native", "end"] as ArgumentKind[]).map((k) => (
-                <button key={k} type="button" role="radio" aria-checked={draft.kind === k} className={draft.kind === k ? "on" : ""} data-ui="argument-kind-option" data-ui-key={k} title={k === "native" ? t("argument.edit.kindNativeHint") : k === "end" ? t("argument.edit.kindEndHint") : undefined} onClick={() => setField("kind", k)}>
+            <div className="ag-seg" role="radiogroup" aria-labelledby={`${titleId}-kind`} aria-describedby={`${titleId}-kind-help`} data-ui="argument-kind" onKeyDown={moveKind}>
+              {KINDS.map((k) => (
+                <button key={k} type="button" role="radio" aria-checked={draft.kind === k} tabIndex={draft.kind === k ? 0 : -1} className={draft.kind === k ? "on" : ""} data-ui="argument-kind-option" data-ui-key={k} onClick={() => setField("kind", k)}>
                   {kindName(k)}
                 </button>
               ))}
+            </div>
+            <div className="ag-hint ag-kind-help" id={`${titleId}-kind-help`} data-ui="argument-kind-help">
+              <span><b>{kindName("native")}</b> — {t("argument.edit.kindNativeHint")}</span>
+              <span><b>{kindName("end")}</b> — {t("argument.edit.kindEndHint")}</span>
             </div>
           </>
         ) : (
@@ -323,7 +341,7 @@ export function ArgumentPanel({
               {f.role && adding === f.role && (
                 (() => {
                   const free = others.filter((o) => !hasEdge(o.id, argument.id, f.role!));
-                  return <ArgumentPicker uiKey={f.role!} near={below(free)} all={free} nearLabel={t("argument.edit.pickBelow")} roleName={roleName} busy={busy} onPick={(id) => { onAddEdge({ from: id, to: argument.id, role: f.role! }); setAdding(null); }} />;
+                  return <ArgumentPicker uiKey={f.role!} near={below(free)} all={free} nearLabel={t("argument.edit.pickBelow")} countLabel={(n) => t("argument.edit.pickCountBelow", { n })} roleName={roleName} busy={busy} onPick={(id) => { onAddEdge({ from: id, to: argument.id, role: f.role! }); setAdding(null); }} />;
                 })()
               )}
             </section>
@@ -343,7 +361,7 @@ export function ArgumentPanel({
           {adding === "use" &&
             (() => {
               const free = others.filter((o) => (["grounds", "warrant", "backing", "rebuttal"] as ArgumentEdgeRole[]).some((r) => !hasEdge(argument.id, o.id, r)));
-              return <ArgumentPicker uiKey="use" withRole near={above(free)} all={free} nearLabel={t("argument.edit.pickAbove")} roleName={roleName} disabledFor={(id, role) => hasEdge(argument.id, id, role)} busy={busy} onPick={(id, role) => { onAddEdge({ from: argument.id, to: id, role }); setAdding(null); }} />;
+              return <ArgumentPicker uiKey="use" withRole near={above(free)} all={free} nearLabel={t("argument.edit.pickAbove")} countLabel={(n) => t("argument.edit.pickCountAbove", { n })} roleName={roleName} disabledFor={(id, role) => hasEdge(argument.id, id, role)} busy={busy} onPick={(id, role) => { onAddEdge({ from: argument.id, to: id, role }); setAdding(null); }} />;
             })()}
         </section>
 

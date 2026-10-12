@@ -8,6 +8,7 @@
 import { type ArgumentSource, autoSourceText } from "@argelanderspace/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { fetchDocDescription } from "../api/doc";
 import { type DocStructure, type StructureOption, fetchDocStructure } from "../api/doc-structure";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -28,6 +29,26 @@ export const toDraftSource = (s: ArgumentSource): DraftSource => ({
   ...(s.target && "anchor" in s.target && s.target.anchor ? { anchor: s.target.anchor } : {}),
   ...(s.target && "page" in s.target && s.target.page ? { page: s.target.page } : {}),
 });
+
+/** Each Doc's format (`pdf`, `latex`, `text`), read once from its description, to name it in the Doc list. */
+function useDocFormats(docIds: readonly string[]): Map<string, string> {
+  const [formats, setFormats] = useState<Map<string, string>>(new Map());
+  const asked = useRef(new Set<string>());
+  const key = docIds.join("\n");
+  useEffect(() => {
+    const controller = new AbortController();
+    for (const id of key.split("\n").filter(Boolean)) {
+      if (asked.current.has(id)) continue;
+      asked.current.add(id);
+      void fetchDocDescription(id, controller.signal).then(
+        (r) => r.ok && setFormats((m) => new Map(m).set(id, r.description.format)),
+        () => asked.current.delete(id)
+      );
+    }
+    return () => controller.abort();
+  }, [key]);
+  return formats;
+}
 
 type Structures = Map<string, { status: "loading" } | { status: "failed" } | { status: "ok"; structure: DocStructure }>;
 
@@ -71,6 +92,11 @@ export function SourceEditor({ sources, onChange, workDocIds }: { sources: Draft
   const { t } = useTranslation();
   const used = sources.map((s) => s.docId).filter(Boolean);
   const structures = useDocStructures([...new Set(used)]);
+  const formats = useDocFormats([...new Set([...workDocIds, ...used])]);
+  const formatName = (id: string) => {
+    const f = formats.get(id);
+    return f ? t(`argument.edit.sourceDocFormat.${f}` as "argument.edit.sourceDocFormat.pdf", { defaultValue: f.toUpperCase() }) : null;
+  };
   const set = (i: number, s: DraftSource) => onChange(sources.map((x, k) => (k === i ? s : x)));
   const groupName = (k: StructureOption["kind"]) => t(`argument.edit.sourceGroup${k[0]!.toUpperCase()}${k.slice(1)}` as "argument.edit.sourceGroupSection");
 
@@ -88,8 +114,7 @@ export function SourceEditor({ sources, onChange, workDocIds }: { sources: Draft
               <option value="">{t("argument.edit.sourceNone")}</option>
               {docIds.map((id, k) => (
                 <option key={id} value={id}>
-                  {id}
-                  {k === 0 && workDocIds.includes(id) ? ` · ${t("argument.edit.sourceMain")}` : ""}
+                  {[id, formatName(id), k === 0 && workDocIds.includes(id) ? t("argument.edit.sourceMain") : null].filter(Boolean).join(" · ")}
                   {workDocIds.includes(id) ? "" : ` ${t("argument.edit.sourceOutsideWork")}`}
                 </option>
               ))}

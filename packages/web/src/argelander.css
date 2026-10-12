@@ -1066,18 +1066,21 @@ svg.ui-icon.ui-icon { width: var(--ui-icon-side) !important; height: var(--ui-ic
 .ag-spacer { flex: 1; }
 .ag-hint.warn { color: var(--warn); margin-top: 4px; }
 .ag-picker-wrap { margin-top: 6px; }
-.ag-picker { display: flex; gap: 6px; }
+.ag-picker { display: flex; gap: 6px; align-items: center; }
 .ag-picker-scope { margin-top: 5px; font-family: var(--font-sans); }
 .ag-picker-scope .ag-hint { font-size: 11px; }
 .ag-picker .ag-input { flex: 1; min-width: 0; }
 .ag-picker .ag-input.narrow { flex: none; width: 96px; }
 .ag-field-label { display: block; margin: 12px 0 5px; font: 600 10.5px var(--font-mono); letter-spacing: .7px; text-transform: uppercase; color: var(--text-faint); }
-.ag-input { height: 30px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); font: 12.5px var(--font-sans); width: 100%; }
+.ag-input { height: var(--control-h); padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); font: var(--fs-sm) var(--font-sans); width: 100%; }
 .ag-input:focus { outline: none; border-color: var(--accent); }
-.ag-input.title { height: 34px; font-size: 14px; font-weight: 500; }
-.ag-input.area { height: auto; padding: 7px 8px; line-height: 1.55; resize: vertical; font-family: var(--font-mono); font-size: 12px; margin-top: 4px; }
+.ag-input.title { height: calc(var(--control-h) + 4px); font-size: var(--fs); font-weight: 500; }
+.ag-input.area { height: auto; padding: 7px 8px; line-height: 1.55; resize: vertical; font-family: var(--font-mono); font-size: var(--fs-sm); margin-top: 4px; }
 .ag-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-.ag-seg button { padding: 5px 12px; font-size: 12px; color: var(--text-dim); }
+.ag-seg button { min-height: calc(var(--control-h) - 2px); padding: 0 12px; font-size: var(--fs-sm); color: var(--text-dim); }
+.ag-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ag-kind-help { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.ag-kind-help b { font-weight: 600; color: var(--text-dim); }
 .ag-seg button + button { border-left: 1px solid var(--border); }
 .ag-seg button.on { background: var(--active); color: var(--text); }
 .ag-check { display: inline-flex; align-items: center; gap: 4px; font: 11px var(--font-mono); color: var(--text-dim); }
@@ -1098,11 +1101,16 @@ svg.ui-icon.ui-icon { width: var(--ui-icon-side) !important; height: var(--ui-ic
 .ag-chooser p { font-size: 12px; line-height: 1.55; color: var(--text-dim); }
 .ag-chooser-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .ag-chooser-roles > .ui-tooltip-anchor { display: flex; }
+.ag-chooser-cancel { width: 100%; justify-content: center; }
 .ag-chooser-roles .ag-role-chip { width: 100%; justify-content: center; }
 .explore-root[data-ui="argument-graph-view"] { position: relative; }
-.ag-notices { position: absolute; left: 16px; bottom: 16px; z-index: 40; display: flex; flex-direction: column; gap: 6px; max-width: min(460px, calc(100% - 32px)); }
-.ag-notice-row { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ag-notices { position: absolute; left: 76px; right: 76px; bottom: var(--ag-toast-bottom, 22px); z-index: 80; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
 .ag-notices:empty { display: none; }
+.ag-toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; max-width: min(460px, 100%); padding: 8px 8px 8px 12px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-pop); }
+.ag-toast > svg { flex: none; color: var(--text-faint); }
+.ag-toast.warning > svg { color: var(--warn); }
+.ag-toast.danger > svg { color: var(--danger); }
+.ag-toast-text { font-size: var(--fs-sm); color: var(--text-dim); line-height: 1.45; overflow-wrap: anywhere; min-width: 0; }
 .ag-reader-entry { gap: 5px; margin-left: 8px; flex: none; }
 .ag-reader-entry-note { font-size: 11px; color: var(--warn); margin-left: 8px; white-space: nowrap; }
 /* narrow pane (user decision 2026-10-12): the outline and panel keep 300 / 392 at every width; the view folds the outline

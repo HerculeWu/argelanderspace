@@ -18,7 +18,13 @@ let drop: ((from: string, to: string, at: { x: number; y: number }) => void) | u
 vi.mock("../src/argument/ArgumentGraphCanvas", () => ({
   ArgumentGraphCanvas: (props: { onConnect?: typeof drop }) => {
     drop = props.onConnect;
-    return <div data-ui="argument-canvas" />;
+    return (
+      <div data-ui="argument-canvas">
+        {["n1", "m1", "m3"].map((id) => (
+          <button key={id} type="button" data-ui="argument-node" data-ui-key={id} />
+        ))}
+      </div>
+    );
   },
 }));
 
@@ -114,6 +120,37 @@ describe("drag to connect", () => {
     fireEvent.click(chooser()!.querySelector('[data-ui="cancel-argument-role"]')!);
     expect(chooser()).toBeNull();
     expect(puts).toHaveLength(0);
+  });
+
+  it("Esc closes only the popover (nothing else hears it) and the focus returns to the node the drag started from; Cancel does the same, an outside press leaves the focus alone", async () => {
+    await mount();
+    const elsewhere = vi.fn();
+    document.addEventListener("keydown", elsewhere);
+    const node = () => document.querySelector<HTMLElement>('[data-ui="argument-node"][data-ui-key="n1"]')!;
+    act(() => drop!("n1", "m3", { x: 10, y: 10 }));
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    expect(chooser()).toBeNull();
+    expect(elsewhere).not.toHaveBeenCalled();
+    await waitFor(() => expect(document.activeElement).toBe(node()));
+    document.removeEventListener("keydown", elsewhere);
+    act(() => drop!("n1", "m3", { x: 10, y: 10 }));
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.click(chooser()!.querySelector('[data-ui="cancel-argument-role"]')!);
+    await waitFor(() => expect(document.activeElement).toBe(node()));
+    act(() => drop!("n1", "m3", { x: 10, y: 10 }));
+    (document.activeElement as HTMLElement).blur();
+    fireEvent.pointerDown(document.body);
+    expect(chooser()).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.activeElement).not.toBe(node());
+  });
+
+  it("the chooser's Cancel button fills the row", async () => {
+    await mount();
+    act(() => drop!("n1", "m3", { x: 10, y: 10 }));
+    const cancel = chooser()!.querySelector<HTMLElement>('[data-ui="cancel-argument-role"]')!;
+    expect(cancel.className).toContain("ag-chooser-cancel");
+    expect(cancel.querySelector("[data-ui]")).toBeNull();
   });
 
   it("a drop that lost the race to another writer is not written and says so", async () => {

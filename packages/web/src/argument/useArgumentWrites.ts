@@ -8,7 +8,7 @@ import type { ArgumentEditResult, ArgumentGraph } from "@argelanderspace/contrac
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchArgumentGraph } from "../api/argument-graph";
-import { type CommitOutcome, commitArgumentEdit } from "./commit";
+import { type CommitOutcome, type StaleEdit, commitArgumentEdit } from "./commit";
 import { rejectionMessages, serverInvalidText } from "./editText";
 
 export interface ArgumentNotice {
@@ -59,14 +59,14 @@ export function useArgumentWrites({ workId, graph, adopt, refresh }: { workId: s
    * its delete produced, so a graph that moved on in between is a conflict, not a silent overwrite).
    */
   const commit = useCallback(
-    <T extends object>(edit: (graph: ArgumentGraph) => ArgumentEditResult<T>, base?: ArgumentGraph): Promise<CommitOutcome<T>> => {
+    <T extends object>(edit: (graph: ArgumentGraph) => ArgumentEditResult<T> | StaleEdit, base?: ArgumentGraph): Promise<CommitOutcome<T>> => {
       setPending((n) => n + 1);
       const run = queue.current.then(async (): Promise<CommitOutcome<T>> => {
         const from = base ?? latest.current;
         if (!from) return { kind: "error", unreachable: false };
         const outcome = await commitArgumentEdit(workId, from, edit);
         if (outcome.kind === "ok") {
-          latest.current = outcome.graph;
+          if (!latest.current || outcome.graph.rev >= latest.current.rev) latest.current = outcome.graph;
           adopt(outcome.graph);
         } else if (outcome.kind === "conflict") refresh();
         return outcome;
@@ -105,7 +105,7 @@ export function useArgumentWrites({ workId, graph, adopt, refresh }: { workId: s
 
   /** Writes and, if it did not go through, tells the person why. */
   const perform = useCallback(
-    async <T extends object>(edit: (graph: ArgumentGraph) => ArgumentEditResult<T>, base?: ArgumentGraph): Promise<CommitOutcome<T>> => {
+    async <T extends object>(edit: (graph: ArgumentGraph) => ArgumentEditResult<T> | StaleEdit, base?: ArgumentGraph): Promise<CommitOutcome<T>> => {
       const outcome = await commit(edit, base);
       const failure = failureText(outcome);
       if (failure) notify(outcome.kind === "rejected" ? "warning" : "danger", failure);
@@ -114,16 +114,27 @@ export function useArgumentWrites({ workId, graph, adopt, refresh }: { workId: s
     [commit, failureText, notify]
   );
 
-  /** Reads the graph again for a person who asked for it (the conflict box's Reload); the answer becomes the current graph. */
-  const reload = useCallback(async (): Promise<ArgumentGraph | null> => {
-    const load = await fetchArgumentGraph(workId);
-    if (load.kind !== "ok") {
-      notify("danger", load.kind === "error" && load.unreachable ? t("argument.edit.writeUnreachable") : t("argument.edit.writeError"));
-      return null;
-    }
-    latest.current = load.graph;
-    adopt(load.graph);
-    return load.graph;
+  /**
+   * Reads the graph again for a person who asked for it (the conflict box's Reload); the answer becomes the current graph.
+   * It waits its turn in the write queue, so it never overtakes a write in flight (the answer to that write would then land
+   * after it and put an older graph back).
+   */
+  const reload = useCallback((): Promise<ArgumentGraph | null> => {
+    const run = queue.current.then(async (): Promise<ArgumentGraph | null> => {
+      const load = await fetchArgumentGraph(workId);
+      if (load.kind !== "ok") {
+        notify("danger", load.kind === "error" && load.unreachable ? t("argument.edit.writeUnreachable") : t("argument.edit.writeError"));
+        return null;
+      }
+      if (!latest.current || load.graph.rev >= latest.current.rev) latest.current = load.graph;
+      adopt(load.graph);
+      return load.graph;
+    });
+    queue.current = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   }, [workId, adopt, notify, t]);
 
   return { commit, perform, reload, failureText, notices, notify, dismiss, writing: pending > 0, latest };

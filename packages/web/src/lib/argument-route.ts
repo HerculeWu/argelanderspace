@@ -23,7 +23,7 @@ export interface ArgumentTarget {
   /** Whether this Library page currently shows an argument graph. */
   isOpen(): boolean;
   /** Show the Work's graph; `push` writes the URL (a UI entry), a hash-driven request leaves it as it is. */
-  open(workId: string, opts: { push: boolean }): void;
+  open(workId: string, opts: { push: boolean; confirmed?: boolean }): void;
   /** Leave the view (the URL no longer names a graph). */
   exit(): void;
 }
@@ -32,19 +32,21 @@ interface ArgumentRequest {
   workId: string;
   push: boolean;
   paneId?: number;
+  /** The caller already asked about leaving the graph that is open (the Shell, for the browser's Back/Forward). */
+  confirmed?: boolean;
 }
 
 const bus = createRouteBus<ArgumentTarget, ArgumentRequest>({
   active: (t) => t.isOpen(),
-  open: (t, r) => t.open(r.workId, { push: r.push }),
+  open: (t, r) => t.open(r.workId, { push: r.push, ...(r.confirmed ? { confirmed: true } : {}) }),
   exit: (t) => t.exit(),
   accepts: (t, r) => r.paneId === undefined || t.paneId === r.paneId,
 });
 
 export const argumentBus = {
   /** Shell on boot / popstate / hashchange (`push: false`), and any entry point outside the Library page (`push: true`, with the pane it chose). */
-  request(workId: string, opts: { push?: boolean; paneId?: number } = {}): void {
-    bus.request({ workId, push: opts.push ?? false, ...(opts.paneId === undefined ? {} : { paneId: opts.paneId }) });
+  request(workId: string, opts: { push?: boolean; paneId?: number; confirmed?: boolean } = {}): void {
+    bus.request({ workId, push: opts.push ?? false, ...(opts.paneId === undefined ? {} : { paneId: opts.paneId }), ...(opts.confirmed ? { confirmed: true } : {}) });
   },
   /** The URL stopped naming a graph (popstate to a plain URL). */
   exit: (): void => bus.exit(),

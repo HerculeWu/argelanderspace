@@ -10,7 +10,7 @@ import { type ArgumentGraph, ArgumentGraphSchema } from "@argelanderspace/contra
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../src/i18n";
-import { confirmWorkspaceLeave } from "../src/argelander/workspace";
+import { askWorkspaceLeave } from "../src/argelander/workspace";
 import { ArgumentGraphMode } from "../src/argument/ArgumentGraphMode";
 import type { LibraryRef } from "../src/library/types";
 import { ARGUMENT_FIXTURES } from "./fixtures/argument-graphs";
@@ -68,6 +68,8 @@ let store: ArgumentGraph;
 let puts: ArgumentGraph[];
 let putReply: ((body: ArgumentGraph) => Response | null) | null;
 let beforePut: (() => void) | null;
+/** While set, a PUT waits for it before the server looks at it (a write in flight). */
+let holdPut: Promise<void> | null;
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
 beforeEach(() => {
@@ -77,6 +79,7 @@ beforeEach(() => {
   puts = [];
   putReply = null;
   beforePut = null;
+  holdPut = null;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -86,6 +89,7 @@ beforeEach(() => {
           beforePut?.();
           const body = JSON.parse(String(init.body)) as ArgumentGraph;
           puts.push(body);
+          if (holdPut) await holdPut;
           const forced = putReply?.(body);
           if (forced) return forced;
           if (body.rev !== store.rev) return json(409, { detail: "rev mismatch", rev: store.rev });
@@ -174,7 +178,7 @@ describe("new argument", () => {
     type(must(container, "argument-title-input"), "第一个");
     await act(async () => fireEvent.click(must(container, "save-argument")));
     await waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0]).toMatchObject({ rev: 0, arguments: [{ id: "a1", title: "第一个" }] });
+    expect(puts[0]).toMatchObject({ rev: 0, arguments: [{ id: expect.stringMatching(/^a[0-9a-z]{5}$/), title: "第一个" }] });
     await waitFor(() => expect(q(container, "argument-graph-empty")).toBeNull());
   });
 
@@ -320,7 +324,7 @@ describe("delete and undo", () => {
     await ready(container);
     await open(container, "m5");
     await act(async () => fireEvent.click(must(container, "delete-argument")));
-    expect(q(document.body, "dialog")).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull(); // no confirmation dialog of any kind
     expect(window.confirm).not.toHaveBeenCalled();
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(puts[0]!.rev).toBe(7);
@@ -361,6 +365,30 @@ describe("delete and undo", () => {
     await act(async () => fireEvent.click(must(must(must(container, "argument-field", "grounds"), "argument-link", "m2"), "remove-argument-link")));
     await waitFor(() => expect(puts).toHaveLength(2));
     await waitFor(() => expect(q(container, "argument-notice-action")).toBeNull());
+  });
+});
+
+describe("notices (toast position and keyboard)", () => {
+  it("each notice and its buttons carry a key that tells the instances apart; Undo is reachable by Ctrl+Z outside a text field, and not inside one", async () => {
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m5");
+    await act(async () => fireEvent.click(must(container, "delete-argument")));
+    const action = await waitFor(() => must(container, "argument-notice-action"));
+    const notice = must(container, "argument-notice");
+    expect(notice.getAttribute("data-ui-key")).toBe(action.getAttribute("data-ui-key"));
+    expect(must(container, "dismiss-argument-notice").getAttribute("data-ui-key")).toBe(action.getAttribute("data-ui-key"));
+    expect(must(container, "argument-notices").getAttribute("aria-live")).toBe("polite");
+    // the notices sit inside the canvas column (the toast convention), not as a corner box over the view
+    expect(must(container, "argument-main").contains(must(container, "argument-notices"))).toBe(true);
+    // typing in a field: Ctrl+Z is the field's own
+    await open(container, "m2");
+    fireEvent.click(must(container, "edit-argument"));
+    fireEvent.keyDown(must(container, "argument-title-input"), { key: "z", ctrlKey: true });
+    expect(store.arguments.some((a) => a.id === "m5")).toBe(false);
+    fireEvent.click(must(container, "cancel-argument-edit"));
+    await act(async () => fireEvent.keyDown(document.body, { key: "z", ctrlKey: true }));
+    await waitFor(() => expect(store.arguments.some((a) => a.id === "m5")).toBe(true));
   });
 });
 
@@ -418,6 +446,33 @@ describe("refused saves keep the draft", () => {
     await act(async () => fireEvent.click(must(container, "save-argument")));
     await waitFor(() => expect(store.arguments.find((a) => a.id === "m2")!.title).toBe("我的标题"));
     expect(store.rev).toBe(9);
+  });
+
+  it("a Save queued behind another write is judged against the graph it runs on: an argument changed elsewhere meanwhile is not overwritten", async () => {
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m1");
+    fireEvent.click(must(container, "edit-argument"));
+    type(must(container, "argument-title-input"), "我改的标题");
+    let release!: () => void;
+    holdPut = new Promise<void>((r) => (release = r));
+    // a link's x is a write in flight (held) ...
+    fireEvent.click(container.querySelector<HTMLElement>('[data-ui="remove-argument-link"]')!);
+    await waitFor(() => expect(puts).toHaveLength(1));
+    // ... Save is queued behind it (the page still believes nothing changed) ...
+    fireEvent.click(must(container, "save-argument"));
+    // ... and someone else edits this very argument; the page reads the newer graph before the first PUT answers
+    store = { ...store, rev: store.rev + 1, arguments: store.arguments.map((a) => (a.id === "m1" ? { ...a, qualifier: "别处写的" } : a)) };
+    await act(async () => graphChanged(WORK_ID));
+    await waitFor(() => expect(q(container, "argument-save-conflict")).not.toBeNull());
+    await act(async () => release());
+    await waitFor(() => expect(q(container, "argument-save-conflict")).not.toBeNull());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(puts).toHaveLength(1); // the queued Save never wrote
+    expect(store.arguments.find((a) => a.id === "m1")!.qualifier).toBe("别处写的");
+    expect(must<HTMLInputElement>(container, "argument-title-input").value).toBe("我改的标题");
   });
 
   it("an update from elsewhere during editing never drops the draft; one that touches this argument blocks Save until Reload", async () => {
@@ -484,79 +539,208 @@ describe("refused saves keep the draft", () => {
   });
 });
 
-describe("leave-draft protection", () => {
-  it("moving to another argument or closing the panel asks while the draft is dirty, and only then", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+describe("leave-draft protection (the app's own dialog, never window.confirm)", () => {
+  const leaveDialog = () => q(document.body, "argument-leave-dialog");
+  const answer = async (ui: "keep-editing-argument" | "discard-argument-draft") => {
+    await act(async () => fireEvent.click(must(must(document.body, "argument-leave-dialog"), ui)));
+  };
+
+  it("moving to another argument or closing the panel asks with a dialog while the draft is dirty, and only then", async () => {
+    const confirm = vi.spyOn(window, "confirm");
     const { container } = mount();
     await ready(container);
     await open(container, "m2");
     fireEvent.click(must(container, "edit-argument"));
     fireEvent.click(must(container, "argument-outline-row", "m3")); // not dirty: no question
     await waitFor(() => expect(q(container, "argument-detail")?.getAttribute("data-ui-key")).toBe("m3"));
-    expect(confirm).not.toHaveBeenCalled();
+    expect(leaveDialog()).toBeNull();
     await open(container, "m2");
     fireEvent.click(must(container, "edit-argument"));
     type(must(container, "argument-title-input"), "没存的");
     fireEvent.click(must(container, "argument-outline-row", "m3"));
-    expect(confirm).toHaveBeenCalledTimes(1);
+    const dialog = await waitFor(() => must(document.body, "argument-leave-dialog"));
+    // names the argument whose changes would go; the default focus is on keeping them
+    expect(dialog.textContent).toContain("成员延伸到潮汐半径之外");
+    expect(document.activeElement).toBe(must(dialog, "keep-editing-argument"));
+    await answer("keep-editing-argument");
+    expect(leaveDialog()).toBeNull();
     expect(must(container, "argument-detail").getAttribute("data-ui-key")).toBe("m2");
     expect(must<HTMLInputElement>(container, "argument-title-input").value).toBe("没存的");
     fireEvent.click(must(container, "close-argument-detail"));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("keep-editing-argument");
     expect(q(container, "argument-detail")).not.toBeNull();
-    confirm.mockReturnValue(true);
     fireEvent.click(must(container, "argument-outline-row", "m3"));
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("discard-argument-draft");
     await waitFor(() => expect(q(container, "argument-detail")?.getAttribute("data-ui-key")).toBe("m3"));
     expect(q(container, "argument-title-input")).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("the return button and a new-argument click are guarded the same way; a dirty new argument too", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("the return button and a new-argument click are guarded the same way; discarding a dirty new draft starts a blank one", async () => {
     const onExit = vi.fn();
     const { container } = mount({ onExit });
     await ready(container);
     await startNew(container);
     type(must(container, "argument-title-input"), "半截");
     fireEvent.click(must(container, "argument-return-to-library"));
-    expect(confirm).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    expect(leaveDialog()!.textContent).toContain("新建的论证");
+    await answer("keep-editing-argument");
     expect(onExit).not.toHaveBeenCalled();
     fireEvent.click(must(container, "create-argument")); // starting another new one is the same question
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("keep-editing-argument");
     expect(must<HTMLInputElement>(container, "argument-title-input").value).toBe("半截");
-    confirm.mockReturnValue(true);
+    fireEvent.click(must(container, "create-argument"));
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("discard-argument-draft");
+    await waitFor(() => expect(must<HTMLInputElement>(container, "argument-title-input").value).toBe(""));
+    expect(document.activeElement).toBe(must(container, "argument-title-input"));
     fireEvent.click(must(container, "argument-return-to-library"));
-    expect(onExit).toHaveBeenCalledTimes(1);
+    expect(onExit).toHaveBeenCalledTimes(1); // the blank form is untouched: nothing to ask
   });
 
   it("an untouched new argument is not a draft: leaving asks nothing", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const onExit = vi.fn();
     const { container } = mount({ onExit });
     await ready(container);
     await startNew(container);
     fireEvent.click(must(container, "argument-return-to-library"));
-    expect(confirm).not.toHaveBeenCalled();
+    expect(leaveDialog()).toBeNull();
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
-  it("registers the workspace leave guard for the Library page only while a draft is unsaved", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  it("clearing the graph over a dirty draft asks the same question first", async () => {
     const { container } = mount();
     await ready(container);
-    expect(confirmWorkspaceLeave("library")).toBe(true);
     await open(container, "m2");
     fireEvent.click(must(container, "edit-argument"));
-    expect(confirmWorkspaceLeave("library")).toBe(true);
     type(must(container, "argument-title-input"), "没存的");
-    await waitFor(() => expect(confirmWorkspaceLeave("library")).toBe(false));
-    expect(confirm).toHaveBeenCalled();
-    expect(confirmWorkspaceLeave("doc")).toBe(true); // leaving a Doc pane is not about this draft
-    confirm.mockReturnValue(true);
-    expect(confirmWorkspaceLeave("library")).toBe(true);
-    fireEvent.click(must(container, "cancel-argument-edit"));
-    confirm.mockReturnValue(false);
-    await waitFor(() => expect(confirmWorkspaceLeave("library")).toBe(true));
+    fireEvent.click(must(container, "clear-argument-graph"));
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    expect(q(document.body, "clear-argument-graph-dialog")).toBeNull();
+    await answer("discard-argument-draft");
+    await waitFor(() => expect(q(document.body, "clear-argument-graph-dialog")).not.toBeNull());
   });
+
+  it("the workspace leave guard exists only while a draft is unsaved, speaks only for leaving this pane's Library page, and waits for the dialog", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    const { container } = mount({ paneId: 3 });
+    await ready(container);
+    expect(askWorkspaceLeave("library")).toBe(true);
+    await open(container, "m2");
+    fireEvent.click(must(container, "edit-argument"));
+    expect(askWorkspaceLeave("library")).toBe(true);
+    type(must(container, "argument-title-input"), "没存的");
+    await waitFor(() => expect(askWorkspaceLeave("doc")).toBe(true)); // leaving a Doc pane is not about this draft ...
+    expect(askWorkspaceLeave()).toBe(true); // ... nor is switching the open Doc ...
+    expect(askWorkspaceLeave("library", 4)).toBe(true); // ... nor closing another Library pane
+    expect(leaveDialog()).toBeNull();
+    const pending = askWorkspaceLeave("library", 3);
+    expect(typeof pending).toBe("object");
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("keep-editing-argument");
+    await expect(pending).resolves.toBe(false);
+    const second = askWorkspaceLeave("library"); // no pane named: the draft speaks
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("discard-argument-draft");
+    await expect(second).resolves.toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
+    fireEvent.click(must(container, "cancel-argument-edit"));
+    await waitFor(() => expect(askWorkspaceLeave("library")).toBe(true));
+  });
+
+  it("Undo after a delete restores the argument but never switches away from a form being edited", async () => {
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m5");
+    await act(async () => fireEvent.click(must(container, "delete-argument")));
+    await waitFor(() => expect(q(container, "argument-notice-action")).not.toBeNull());
+    await open(container, "m2");
+    fireEvent.click(must(container, "edit-argument"));
+    type(must(container, "argument-title-input"), "没存的");
+    await act(async () => fireEvent.click(must(container, "argument-notice-action")));
+    await waitFor(() => expect(store.arguments.some((a) => a.id === "m5")).toBe(true));
+    expect(leaveDialog()).toBeNull();
+    expect(must(container, "argument-detail").getAttribute("data-ui-key")).toBe("m2");
+    expect(must<HTMLInputElement>(container, "argument-title-input").value).toBe("没存的");
+  });
+});
+
+describe("form details", () => {
+  it("the picker counts the near group in its own direction's words: 'used by' says one layer above", async () => {
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m1");
+    fireEvent.click(must(container, "add-argument-use"));
+    const used = must(container, "argument-picker", "use");
+    expect(used.textContent).toMatch(/高一层 \d+ 个/);
+    expect(used.textContent).not.toMatch(/低一层 \d+ 个/);
+    fireEvent.click(must(container, "edit-argument"));
+    fireEvent.click(must(must(container, "argument-field", "backing"), "add-argument-link"));
+    expect(must(container, "argument-picker", "backing").textContent).toMatch(/低一层 \d+ 个/);
+  });
+
+  it("a target linked in two roles has two distinguishable link rows and remove buttons", async () => {
+    store = { ...store, edges: [...store.edges, { from: "m1", to: "m2", role: "backing" }] };
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m1");
+    const keys = [...container.querySelectorAll('[data-ui="remove-argument-link"]')].map((e) => e.getAttribute("data-ui-key"));
+    expect(keys.filter((k) => k?.startsWith("m2:")).sort()).toEqual(["m2:backing", "m2:grounds"]);
+    const rows = [...must(container, "argument-used-by").querySelectorAll('[data-ui="argument-link"]')].map((e) => e.getAttribute("data-ui-key"));
+    expect(new Set(rows).size).toBe(rows.length);
+  });
+
+  it("the kind control is one tab stop and the arrow keys move the choice; Native and End are explained in visible text", async () => {
+    const { container } = mount();
+    await ready(container);
+    await startNew(container);
+    const group = must(container, "argument-kind");
+    const radios = [...group.querySelectorAll<HTMLElement>('[role="radio"]')];
+    expect(radios.map((r) => r.tabIndex)).toEqual([0, -1, -1]);
+    radios[0]!.focus();
+    fireEvent.keyDown(radios[0]!, { key: "ArrowRight" });
+    expect(radios.map((r) => r.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
+    expect(radios.map((r) => r.tabIndex)).toEqual([-1, 0, -1]);
+    await waitFor(() => expect(document.activeElement).toBe(radios[1]));
+    fireEvent.keyDown(radios[1]!, { key: "End" });
+    expect(radios[2]!.getAttribute("aria-checked")).toBe("true");
+    fireEvent.keyDown(radios[2]!, { key: "ArrowRight" });
+    expect(radios[0]!.getAttribute("aria-checked")).toBe("true");
+    const help = must(container, "argument-kind-help");
+    expect(help.textContent).toContain("依据完全来自本文之外");
+    expect(help.textContent).toContain("本文的最终贡献或结论");
+    expect(group.getAttribute("aria-describedby")).toBe(help.id);
+  });
+
+  it("the Doc list names each Doc's format", async () => {
+    const { container } = mount();
+    await ready(container);
+    await open(container, "m4");
+    fireEvent.click(must(container, "edit-argument"));
+    fireEvent.click(must(container, "add-argument-source"));
+    const rows = container.querySelectorAll('[data-ui="argument-source-row"]');
+    const doc = must(rows[rows.length - 1] as HTMLElement, "argument-source-doc");
+    await waitFor(() => expect([...doc.querySelectorAll("option")].some((o) => /· PDF/.test(o.textContent ?? ""))).toBe(true));
+  });
+
+  it("while Clear is being written the dialog's Cancel is disabled and has no tooltip of its own", async () => {
+    const { container } = mount();
+    await ready(container);
+    fireEvent.click(must(container, "clear-argument-graph"));
+    const dialog = await waitFor(() => must(document.body, "clear-argument-graph-dialog"));
+    expect(must(dialog, "cancel-clear-argument-graph").closest(".ui-tooltip-anchor")).toBeNull(); // no tooltip repeating its own label
+    let release!: () => void;
+    holdPut = new Promise<void>((r) => (release = r));
+    await act(async () => fireEvent.click(must(dialog, "confirm-clear-argument-graph")));
+    await waitFor(() => expect(must<HTMLButtonElement>(dialog, "cancel-clear-argument-graph").disabled).toBe(true));
+    await act(async () => release());
+    await waitFor(() => expect(q(document.body, "clear-argument-graph-dialog")).toBeNull());
+  });
+
 });
 
 describe("sources", () => {

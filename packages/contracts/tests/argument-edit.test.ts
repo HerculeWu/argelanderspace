@@ -42,10 +42,10 @@ const built = () => {
 describe("createArgument / updateArgument", () => {
   it("appends with a fresh id, keeps rev, and fills every other field with its default", () => {
     const r = must(createArgument(empty, { title: "  Gaia  " }));
-    expect(r.id).toBe("a1");
+    expect(r.id).toMatch(/^a[0-9a-z]{5}$/);
     expect(r.graph.rev).toBe(3);
     expect(r.graph.arguments[0]).toMatchObject({
-      id: "a1",
+      id: r.id,
       title: "  Gaia  ",
       claim: "",
       kind: "normal",
@@ -53,12 +53,29 @@ describe("createArgument / updateArgument", () => {
       sources: [],
     });
     expect(ArgumentGraphSchema.safeParse(r.graph).success).toBe(true);
-    expect(nextArgumentId(r.graph)).toBe("a2");
+    expect(nextArgumentId(r.graph)).not.toBe(r.id);
+  });
+  it("an id is never the smallest free number: deleting the last argument does not hand its id to the next one", () => {
+    const seq = [0, 0, 0, 0, 0, 0.5, 0.5, 0.5, 0.5, 0.5];
+    const draws = (): (() => number) => {
+      let i = 0;
+      return () => seq[i++ % seq.length] ?? 0;
+    };
+    expect(nextArgumentId({ arguments: [] }, draws())).toBe("a00000");
+    // the pinned draw repeats until the id is free
+    expect(nextArgumentId({ arguments: [{ id: "a00000" }] }, draws())).toBe("aiiiii");
+    const first = must(createArgument(empty, { title: "一" }));
+    const gone = must(deleteArgument(first.graph, first.id));
+    const second = must(createArgument(gone.graph, { title: "二" }));
+    expect(second.id).not.toBe(first.id);
   });
   it("refuses a blank title and a taken id, saying which", () => {
     expect(createArgument(empty, { title: "  " })).toEqual({
       ok: false,
-      rejection: { code: "invalid", issues: [{ code: "title_blank", argumentId: "a1" }] },
+      rejection: {
+        code: "invalid",
+        issues: [{ code: "title_blank", argumentId: expect.stringMatching(/^a[0-9a-z]{5}$/) }],
+      },
     });
     const g = built();
     const dup = createArgument(g, { title: "x" }, "a");

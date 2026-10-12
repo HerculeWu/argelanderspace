@@ -41,23 +41,66 @@ export function applyDocDeletion(
   return { papers, currentDoc: remaining[0] ?? null };
 }
 
-const leaveGuards = new Map<() => boolean, string | undefined>();
+/**
+ * A leave guard answers at once (`true` leave / `false` stay) or later: a `Promise` is a decision still pending (the
+ * argument graph page asks with its own dialog), and the change it guards waits for it. Only the argument graph page
+ * answers late; the Doc views' guards stay synchronous.
+ */
+export type LeaveVerdict = boolean | Promise<boolean>;
+
+interface GuardScope {
+  /** The view whose pane this guard speaks for; absent: the Doc views (the Reader, the text editor). */
+  view?: string;
+  /** The pane that holds the guarded page; absent: any pane of `view`. */
+  paneId?: number;
+}
+const leaveGuards = new Map<() => LeaveVerdict, GuardScope>();
 
 /**
  * Register a transient user-data leave guard for workspace navigation. A guard with a `view` (the Library page's
- * unsaved argument draft) only speaks when a pane of that view is being left; one without asks on every guarded change,
- * as before.
+ * unsaved argument draft) only speaks when its page is being left or unmounted: a pane of that view is switched or
+ * closed (`scope.paneId` narrows it to that one pane), never when a Doc is switched.
  */
-export function registerWorkspaceLeaveGuard(guard: () => boolean, view?: string): () => void {
-  leaveGuards.set(guard, view);
+export function registerWorkspaceLeaveGuard(guard: () => LeaveVerdict, scope: string | GuardScope = {}): () => void {
+  leaveGuards.set(guard, typeof scope === "string" ? { view: scope } : scope);
   return () => leaveGuards.delete(guard);
 }
 
-/** Ask active transient work sessions before changing a Doc or leaving a pane (`view`: the view that pane shows). */
-export function confirmWorkspaceLeave(view?: string): boolean {
-  // an unscoped guard belongs to the Doc views (the Reader, the text editor); no `view` asks every guard
-  for (const [guard, scope] of [...leaveGuards]) if ((view === undefined || (scope ?? "doc") === view) && !guard()) return false;
-  return true;
+/**
+ * Ask the guards that speak for leaving `view` (a pane's view; none: changing the open Doc, the Doc views' own guards) and,
+ * of those, the ones of pane `paneId`. `true`/`false` at once, or a promise when a guard decides later; the guards are
+ * asked one after the other and the first refusal ends it.
+ */
+export function askWorkspaceLeave(view?: string, paneId?: number): LeaveVerdict {
+  const guards = [...leaveGuards]
+    .filter(([, scope]) => (scope.view ?? "doc") === (view ?? "doc") && (scope.paneId === undefined || paneId === undefined || scope.paneId === paneId))
+    .map(([guard]) => guard);
+  const from = (index: number): LeaveVerdict => {
+    for (let i = index; i < guards.length; i++) {
+      const verdict = guards[i]!();
+      if (verdict === true) continue;
+      if (verdict === false) return false;
+      return verdict.then((ok) => (ok ? from(i + 1) : false));
+    }
+    return true;
+  };
+  return from(0);
+}
+
+/** Runs `proceed` once the guards for leaving `view` allow it (at once, or when a pending decision says yes); false: not yet or never. */
+export function whenWorkspaceMayLeave(proceed: () => void, view?: string, paneId?: number): boolean {
+  const verdict = askWorkspaceLeave(view, paneId);
+  if (verdict === true) {
+    proceed();
+    return true;
+  }
+  if (verdict !== false) void verdict.then((ok) => ok && proceed());
+  return false;
+}
+
+/** Synchronous form for callers that cannot wait: a guard that decides later counts as a refusal here. */
+export function confirmWorkspaceLeave(view?: string, paneId?: number): boolean {
+  return askWorkspaceLeave(view, paneId) === true;
 }
 
 const Ctx = createContext<Workspace | null>(null);

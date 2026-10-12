@@ -34,8 +34,12 @@ export interface PaneManagerOptions {
   activeId: number;
   /** One detached adapter per page: what a page answers when no pane of it is open. */
   pages: PaneAdapter[];
-  /** The workspace's leave-draft protection; false keeps the Doc pane as it is. */
-  confirmLeave: (view: string) => boolean;
+  /**
+   * The workspace's leave-draft protection for leaving pane `paneId` (showing `view`); false keeps the pane as it is. A
+   * promise is a decision still pending (the argument graph page's own dialog): the change waits for it and is not made
+   * when it says no; the call that asked answers false meanwhile.
+   */
+  confirmLeave: (view: string, paneId?: number) => boolean | Promise<boolean>;
 }
 
 export type PaneManager = ReturnType<typeof createPaneManager>;
@@ -60,6 +64,19 @@ export function createPaneManager(options: PaneManagerOptions) {
   /** Leaving a pane whose view holds unsaved user work: a Doc, or the Library page with an argument draft. */
   const guarded = (pane: Pane | undefined) => pane?.view === "doc" || pane?.view === "library";
   const leaves = (pane: Pane | undefined, view?: string) => guarded(pane) && view !== pane?.view;
+  /**
+   * Runs `change` once leaving `pane` is allowed: at once (true), never (false), or when a pending decision says yes
+   * (false meanwhile; `change` then checks the pane is still there).
+   */
+  const whenMayLeave = (pane: Pane, change: () => void): boolean => {
+    const verdict = options.confirmLeave(pane.view, pane.id);
+    if (verdict === true) {
+      change();
+      return true;
+    }
+    if (verdict !== false) void verdict.then((ok) => ok && state.panes.some((p) => p.id === pane.id && p.view === pane.view) && change());
+    return false;
+  };
 
   // ---- the panes ----------------------------------------------------------------------------- //
 
@@ -69,15 +86,17 @@ export function createPaneManager(options: PaneManagerOptions) {
   /** The activity bar: the active pane shows `view`. False when the leave-draft protection keeps a Doc pane. */
   const setActiveView = (view: string): boolean => {
     const from = state.panes.find((pane) => pane.id === state.activeId);
-    if (leaves(from, view) && !options.confirmLeave(from!.view)) return false;
-    set({ panes: state.panes.map((pane) => (pane.id === state.activeId ? { ...pane, view } : pane)) });
+    const change = () => set({ panes: state.panes.map((pane) => (pane.id === from?.id ? { ...pane, view } : pane)) });
+    if (leaves(from, view)) return whenMayLeave(from!, change);
+    change();
     return true;
   };
   /** The pane header menu: pane `id` shows `view` and becomes active. */
   const setPaneView = (id: number, view: string): boolean => {
     const from = state.panes.find((pane) => pane.id === id);
-    if (leaves(from, view) && !options.confirmLeave(from!.view)) return false;
-    set({ panes: state.panes.map((pane) => (pane.id === id ? { ...pane, view } : pane)), activeId: id });
+    const change = () => set({ panes: state.panes.map((pane) => (pane.id === id ? { ...pane, view } : pane)), activeId: id });
+    if (leaves(from, view)) return whenMayLeave(from!, change);
+    change();
     return true;
   };
   /** A copy of pane `id` next to it, which becomes active; nothing past the pane limit. */
@@ -91,13 +110,16 @@ export function createPaneManager(options: PaneManagerOptions) {
     copy.splice(index + 1, 0, { id: created, view: source.view, size: 1 });
     set({ panes: copy, activeId: created });
   };
-  /** False when the leave-draft protection keeps a Doc pane; the last pane is kept. */
+  /** False when the leave-draft protection keeps a Doc pane (or has not answered yet); the last pane is kept. */
   const close = (id: number): boolean => {
     const closing = state.panes.find((pane) => pane.id === id);
-    if (guarded(closing) && !options.confirmLeave(closing!.view)) return false;
-    if (state.panes.length <= 1) return true;
-    const filtered = state.panes.filter((pane) => pane.id !== id).map((pane) => ({ ...pane, size: 1 }));
-    set({ panes: filtered, ...(id === state.activeId ? { activeId: filtered[0]!.id } : {}) });
+    const change = () => {
+      if (state.panes.length <= 1) return;
+      const filtered = state.panes.filter((pane) => pane.id !== id).map((pane) => ({ ...pane, size: 1 }));
+      set({ panes: filtered, ...(id === state.activeId ? { activeId: filtered[0]!.id } : {}) });
+    };
+    if (guarded(closing)) return whenMayLeave(closing!, change);
+    change();
     return true;
   };
   /** Any other change of the pane list (sizes, a Doc shown by openDoc); no leave protection of its own. */

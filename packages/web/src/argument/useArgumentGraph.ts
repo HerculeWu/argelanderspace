@@ -5,6 +5,11 @@
  * socket reads once more (an event may have been missed). A refresh that fails for a transient reason (no answer, a server
  * failure) keeps the graph on screen and reports `refreshFailed`; only a missing Work (404) or an unreadable file replaces
  * it, as before. The first read has no graph to keep, so its failure is the error state.
+ *
+ * The page never goes back to an older version of what it has seen: a graph the page adopts (the answer to its own write,
+ * a reload) replaces the shown one only when its `rev` is not lower, and a read that was already under way when something
+ * was adopted is ignored if it turns out older than what is shown (it may have started before that write), while a read
+ * that started after the last adopt is the server's current word and wins whatever its `rev` (a file restored by hand).
  */
 import type { ArgumentGraph } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,6 +34,8 @@ export function useArgumentGraph(
   const stateRef = useRef(state);
   stateRef.current = state;
   const generation = useRef(0);
+  /** Counts the graphs adopted; a read compares it with the count at its start. */
+  const adopted = useRef(0);
   const abort = useRef<AbortController | null>(null);
 
   const read = useCallback(
@@ -37,6 +44,7 @@ export function useArgumentGraph(
       const controller = new AbortController();
       abort.current = controller;
       const mine = ++generation.current;
+      const adoptedAtStart = adopted.current;
       if (initial) {
         setState({ phase: "loading" });
         setRefreshFailed(false);
@@ -54,7 +62,13 @@ export function useArgumentGraph(
           }
           setRefreshFailed(false);
           const next = fromLoad(load);
-          setState((current) => (current.phase === "ready" && next.phase === "ready" && sameGraph(current.graph, next.graph) ? current : next));
+          setState((current) => {
+            if (current.phase !== "ready" || next.phase !== "ready") return next;
+            if (sameGraph(current.graph, next.graph)) return current;
+            // something was adopted while this read was under way and it is older than that: it started before the write
+            if (!initial && adopted.current !== adoptedAtStart && next.graph.rev < current.graph.rev) return current;
+            return next;
+          });
         },
         () => undefined // aborted
       );
@@ -64,14 +78,17 @@ export function useArgumentGraph(
 
   /**
    * Takes a graph the page itself just wrote or read (the server's answer to its PUT, or a reload the person asked for) as
-   * the current one without waiting for the broadcast. A read still in flight started earlier, so it is dropped.
+   * the current one without waiting for the broadcast; never over a newer `rev` already shown. A read in flight is not
+   * dropped: it may have started after a change from elsewhere that this answer does not know of (see the header).
    */
   const adopt = useCallback((graph: ArgumentGraph) => {
-    generation.current++;
-    abort.current?.abort();
-    setRefreshing(false);
+    adopted.current++;
     setRefreshFailed(false);
-    setState((current) => (current.phase === "ready" && sameGraph(current.graph, graph) ? current : { phase: "ready", graph }));
+    setState((current) => {
+      if (current.phase !== "ready") return { phase: "ready", graph };
+      if (sameGraph(current.graph, graph) || graph.rev < current.graph.rev) return current;
+      return { phase: "ready", graph };
+    });
   }, []);
 
   useEffect(() => {

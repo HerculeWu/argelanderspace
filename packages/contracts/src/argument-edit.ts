@@ -165,13 +165,30 @@ const refuse = (
 
 // ---- Operations --------------------------------------------------------------- //
 
-/** The smallest unused `a<n>` id. */
-export function nextArgumentId(graph: Pick<ArgumentGraph, "arguments">): string {
+/** The alphabet of a generated id's random part (lowercase base 36: short, readable to a person, a CLI and the Copilot). */
+const ID_CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";
+const ID_RANDOM_LENGTH = 5;
+
+/**
+ * A fresh argument id: `a` and five random base-36 characters (`a7k3q2`). Not the smallest free number: an id a deleted
+ * argument held must not come back for a different one, because conflict detection and Undo recognise an argument by its
+ * id. The id differs from every argument now in `graph` (the draw is repeated until it does); `random` is injectable
+ * (a function giving a number in [0, 1)) so a test can pin it.
+ */
+export function nextArgumentId(
+  graph: { arguments: readonly { id: string }[] },
+  random: () => number = Math.random
+): string {
   const used = new Set(graph.arguments.map((a) => a.id));
-  for (let n = graph.arguments.length + 1; ; n++) if (!used.has(`a${n}`)) return `a${n}`;
+  for (;;) {
+    let id = "a";
+    for (let i = 0; i < ID_RANDOM_LENGTH; i++)
+      id += ID_CHARS[Math.min(ID_CHARS.length - 1, Math.floor(random() * ID_CHARS.length))];
+    if (!used.has(id)) return id;
+  }
 }
 
-/** Appends a new argument. `id` defaults to {@link nextArgumentId}; a taken id is refused as `invalid` (duplicate). */
+/** Appends a new argument. `id` defaults to a fresh {@link nextArgumentId}; a taken id is refused as `invalid` (duplicate). */
 export function createArgument(
   graph: ArgumentGraph,
   draft: ArgumentDraft,

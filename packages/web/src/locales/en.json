@@ -2145,7 +2145,6 @@
       "pickAbove": "One layer above",
       "pickAll": "Show all arguments",
       "pickOther": "Other arguments",
-      "pickCount": "{{n}} one layer below",
       "pickRole": "As",
       "pickNone": "No argument to choose",
       "add": "Add",
@@ -2185,7 +2184,7 @@
       "conflictBody": "The version moved from {{a}} to {{b}} while you were editing (an external agent may have written it). Your text is kept below; reload, then save again.",
       "conflictBodyUnknown": "The argument graph was updated elsewhere while you were editing (an external agent may have written it). Your text is kept below; reload, then save again.",
       "conflictStale": "This argument was changed elsewhere. Your text is kept below; reload, then save again.",
-      "conflictGone": "This argument was deleted elsewhere. Your text is kept below; after reloading, saving creates it again.",
+      "conflictGone": "This argument was deleted elsewhere. Your text is kept below; after reloading, saving creates it again. The edges it had will not come back.",
       "reload": "Reload",
       "reloading": "Reloading…",
       "writeConflict": "The argument graph was updated elsewhere, so this change was not written; the latest version has been loaded. Please try again.",
@@ -2206,12 +2205,24 @@
         "other": "{{message}}",
         "serverDetail": "Server: {{detail}}"
       },
-      "discardConfirm": "This argument has unsaved changes. Discard them?",
-      "unsavedLeave": "The argument graph has unsaved changes. Leave anyway?",
       "notFoundArg": "This argument cannot be found; it may have just been deleted.",
       "edgeGone": "That edge no longer exists.",
       "dismiss": "Dismiss",
-      "notices": "Notices"
+      "notices": "Notices",
+      "leave": {
+        "title": "Discard unsaved changes?",
+        "body": "“{{title}}” has unsaved changes. Leaving now discards them.",
+        "bodyNew": "The new argument has not been saved. Leaving now discards it.",
+        "stay": "Keep editing",
+        "discard": "Discard changes"
+      },
+      "pickCountBelow": "{{n}} one layer below",
+      "pickCountAbove": "{{n}} one layer above",
+      "sourceDocFormat": {
+        "pdf": "PDF",
+        "latex": "LaTeX",
+        "text": "Text"
+      }
     }
   }
 }

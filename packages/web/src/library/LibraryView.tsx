@@ -3,7 +3,7 @@ import { type CopilotViewActionResult, type DiscoveryPage, type DiscoverySavedVi
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
-import { confirmWorkspaceLeave, useWorkspace } from "../argelander/workspace";
+import { confirmWorkspaceLeave, useWorkspace, whenWorkspaceMayLeave } from "../argelander/workspace";
 import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
@@ -207,16 +207,25 @@ function LibraryBody({
   argumentOpenRef.current = argumentWorkId !== null;
   const exploreRef = useRef(explore);
   exploreRef.current = explore;
+  const argumentWorkRef = useRef<string | null>(null);
+  argumentWorkRef.current = argumentWorkId;
   const openArgument = useCallback(
-    (workId: string, opts: { push: boolean }) => {
-      // one mode at a time: a hash-driven open leaves an exploration (its session stays resumable)
-      // (its plain-URL history entry is skipped: this open writes the one entry the user's Back returns through)
-      if (exploreRef.current.active) exploreRef.current.yieldExplore();
-      setArgumentWorkId(workId);
-      setSelNode(refToNodeRef.current[workId] ?? workId);
-      if (opts.push) pushArgumentUrl(workId);
+    (workId: string, opts: { push: boolean; confirmed?: boolean }) => {
+      const show = () => {
+        // one mode at a time: a hash-driven open leaves an exploration (its session stays resumable)
+        // (its plain-URL history entry is skipped: this open writes the one entry the user's Back returns through)
+        if (exploreRef.current.active) exploreRef.current.yieldExplore();
+        setArgumentWorkId(workId);
+        setSelNode(refToNodeRef.current[workId] ?? workId);
+        if (opts.push) pushArgumentUrl(workId);
+      };
+      // Showing another Work's graph replaces the one that is open, with its unsaved draft: that is asked first (the
+      // Shell already asked when the request came from the browser's Back/Forward). Cancelled: nothing changes, no entry is written.
+      const open = argumentWorkRef.current;
+      if (open !== null && open !== workId && !opts.confirmed) whenWorkspaceMayLeave(show, "library", paneId);
+      else show();
     },
-    []
+    [paneId]
   );
   const exitArgument = useCallback(() => setArgumentWorkId(null), []);
   const leaveArgument = useCallback(() => {
@@ -469,6 +478,7 @@ function LibraryBody({
         key={argumentWorkId}
         workId={argumentWorkId}
         work={refs.find((r) => r.id === argumentWorkId) ?? null}
+        paneId={paneId}
         onExit={leaveArgument}
         onOpenDoc={onOpenDoc}
         onPage={onArgumentPage}

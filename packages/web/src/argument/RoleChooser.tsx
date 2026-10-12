@@ -1,7 +1,9 @@
 /**
  * The role choice that follows a drag on the canvas (ticket 05, approved prototype variant C): a small popover at the
  * drop point asking which Toulmin element the source's Claim plays in the target. A role the pair already has is disabled.
- * Not modal (the canvas stays visible); Esc and an outside press close it, the first free role takes the focus.
+ * Not modal (the canvas stays visible); Esc and an outside press close it, the first free role takes the focus. Esc is
+ * taken in the capture phase and consumed: it closes this popover only, never also the panel behind it. Closing by Esc or
+ * the Cancel button (or choosing) asks for the focus to go back to the canvas node the drag started from.
  */
 import type { ArgumentEdgeRole } from "@argelanderspace/contracts";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -27,7 +29,8 @@ export function RoleChooser({
   taken: ReadonlySet<ArgumentEdgeRole>;
   roleName: (role: ArgumentEdgeRole) => string;
   onChoose: (role: ArgumentEdgeRole) => void;
-  onCancel: () => void;
+  /** `restoreFocus`: closed from the keyboard or its own buttons, so the focus returns to the source node (an outside press keeps it where the person clicked). */
+  onCancel: (opts: { restoreFocus: boolean }) => void;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -41,16 +44,17 @@ export function RoleChooser({
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        cancelRef.current();
+        e.stopPropagation();
+        cancelRef.current({ restoreFocus: true });
       }
     };
     const press = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) cancelRef.current();
+      if (!ref.current?.contains(e.target as Node)) cancelRef.current({ restoreFocus: false });
     };
-    document.addEventListener("keydown", key);
+    document.addEventListener("keydown", key, true);
     document.addEventListener("pointerdown", press, true);
     return () => {
-      document.removeEventListener("keydown", key);
+      document.removeEventListener("keydown", key, true);
       document.removeEventListener("pointerdown", press, true);
     };
   }, []);
@@ -77,7 +81,7 @@ export function RoleChooser({
           </ActionButton>
         ))}
       </div>
-      <ActionButton mode="text" label={t("argument.edit.cancel")} tooltip={t("argument.edit.cancel")} data-ui="cancel-argument-role" onClick={onCancel}>
+      <ActionButton mode="text" className="ag-chooser-cancel" label={t("argument.edit.cancel")} data-ui="cancel-argument-role" onClick={() => onCancel({ restoreFocus: true })}>
         {t("argument.edit.cancel")}
       </ActionButton>
     </div>

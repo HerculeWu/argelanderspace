@@ -12,7 +12,7 @@ import { planResize, resizeDivider, shareOf } from "./layout";
 import { createPaneManager, type Pane, type PaneAdapter, type PaneManager, type ViewActionOutcome } from "./panes";
 import { ACCENTS, useTweaks } from "./theme";
 import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
-import { applyDocDeletion, confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "./workspace";
+import { applyDocDeletion, askWorkspaceLeave, confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
@@ -89,7 +89,7 @@ export function Shell() {
       panes: [{ id: INITIAL_PANE_ID, view: "plan", size: 1 }],
       activeId: INITIAL_PANE_ID,
       pages: [createPlanPane(noChange).adapter, createLibraryPane(noChange).adapter, createDocPane(noChange, docHost).adapter, createWriterPane(noChange).adapter, createMailPane(noChange).adapter],
-      confirmLeave: confirmWorkspaceLeave,
+      confirmLeave: askWorkspaceLeave,
     })
   );
   const { panes, activeId, pagesVersion } = useSyncExternalStore(manager.subscribe, manager.getState);
@@ -180,29 +180,50 @@ export function Shell() {
   }, []);
 
   const openDoc = useCallback(
-    (docId?: string, anchor?: string | null): boolean => {
+    (docId?: string, anchor?: string | null, opts: { libraryAsked?: boolean } = {}): boolean => {
       const nextDoc = docId ?? currentDocRef.current ?? papers[0] ?? null;
+      // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
+      // it (the view is still open, and its URL must still say so).
+      const restoreUrl = () => {
+        if (currentDocRef.current && parseArgumentHash(window.location.hash) === null) replaceDocUrl(currentDocRef.current);
+      };
       if (nextDoc !== currentDocRef.current && !confirmWorkspaceLeave()) {
-        // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
-        // it (the view is still open, and its URL must still say so).
-        if (currentDocRef.current && parseArgumentHash(window.location.hash) === null)
-          replaceDocUrl(currentDocRef.current);
+        restoreUrl();
         return false;
       }
-      currentDocRef.current = nextDoc;
-      setCurrentDocState(nextDoc);
-      if (docId) {
-        // Opened from the argument graph view (its URL is `#argument/…`): keep that entry, so Back returns to the graph.
-        if (parseArgumentHash(window.location.hash) !== null) pushDocUrl(docId, anchor);
-        else replaceDocUrl(docId, anchor);
-        setPendingAnchor(anchor ?? null);
+      const apply = () => {
+        currentDocRef.current = nextDoc;
+        setCurrentDocState(nextDoc);
+        if (docId) {
+          // Opened from the argument graph view (its URL is `#argument/…`): keep that entry, so Back returns to the graph.
+          if (parseArgumentHash(window.location.hash) !== null) pushDocUrl(docId, anchor);
+          else replaceDocUrl(docId, anchor);
+          setPendingAnchor(anchor ?? null);
+        }
+        // ensure a pane shows the document: prefer an existing doc pane, else the active one
+        manager.update((ps) => {
+          if (ps.some((p) => p.view === "doc")) return ps;
+          const active = manager.getState().activeId;
+          return ps.map((p) => (p.id === active ? { ...p, view: "doc" } : p));
+        });
+      };
+      // With no Doc pane the active pane becomes one: if that pane is a Library page, its unsaved argument draft is lost
+      // (the page asks, unless the caller already asked about leaving it: the browser's Back).
+      const { panes: current, activeId } = manager.getState();
+      const replaced = current.some((p) => p.view === "doc") ? undefined : current.find((p) => p.id === activeId);
+      if (replaced?.view === "library" && !opts.libraryAsked) {
+        const verdict = askWorkspaceLeave("library", replaced.id);
+        if (verdict !== true) {
+          if (verdict === false) restoreUrl();
+          else
+            void verdict.then((ok) => {
+              if (ok) apply();
+              else restoreUrl();
+            });
+          return false;
+        }
       }
-      // ensure a pane shows the document: prefer an existing doc pane, else the active one
-      manager.update((ps) => {
-        if (ps.some((p) => p.view === "doc")) return ps;
-        const active = manager.getState().activeId;
-        return ps.map((p) => (p.id === active ? { ...p, view: "doc" } : p));
-      });
+      apply();
       return true;
     },
     [manager, papers]
@@ -211,21 +232,39 @@ export function Shell() {
   // deep links: react to browser back/forward and manual hash edits
   const openDocRef = useRef(openDoc);
   openDocRef.current = openDoc;
+  /** The URL a confirmed Back/Forward is let through to (see onNav). */
+  const allowedHref = useRef<string | null>(null);
   useEffect(() => {
     const onNav = () => {
       const route = parseDocRoute(window.location.pathname, window.location.hash);
       const argumentWork = parseArgumentHash(window.location.hash);
-      // Leaving the argument graph view by the browser's Back/Forward with an unsaved draft asks first (the Library
-      // page's leave guard); refused, the URL goes back to the graph's.
+      // The browser's Back/Forward (or a hand-edited hash) away from the open argument graph, to a plain URL, a Doc, an
+      // exploration or another Work's graph: the Library page's leave guard decides first (an unsaved draft is asked
+      // about with the app's own dialog, which answers later). The URL has already moved. Until the answer is yes, the
+      // graph's URL is pushed back over it (a new entry after the one the browser moved to, so the forward entries are
+      // dropped); on yes, `history.back()` returns to the entry the person chose, and that one navigation is let through
+      // without asking again (`allowedHref`).
       const open = openArgumentWork();
-      if (!argumentWork && open !== null && !confirmWorkspaceLeave("library")) {
-        window.history.pushState(null, "", argumentUrl(open));
-        return;
+      const leavingView = open !== null && argumentWork !== open;
+      const href = window.location.href;
+      if (leavingView && allowedHref.current !== href) {
+        const verdict = askWorkspaceLeave("library");
+        if (verdict !== true) {
+          window.history.pushState(null, "", argumentUrl(open));
+          if (verdict !== false)
+            void verdict.then((ok) => {
+              if (!ok) return;
+              allowedHref.current = href;
+              window.history.back();
+            });
+          return;
+        }
       }
+      if (allowedHref.current !== href) allowedHref.current = null;
       // `#argument/<work id>` drives the argument graph view; any other URL (a Doc, a plain URL, an exploration) leaves it
       if (!argumentWork) argumentBus.exit();
       if (route) {
-        openDocRef.current(route.docId, route.anchor);
+        openDocRef.current(route.docId, route.anchor, { libraryAsked: leavingView });
         return;
       }
       // Stage 14: `#explore/<bibcode>` drives the discovery mode; losing the
@@ -234,7 +273,7 @@ export function Shell() {
       if (seed) exploreBus.request(seed);
       else exploreBus.exit();
       // Back to a graph URL with no Library pane (the Reader replaced it): make one first, as the boot path does
-      if (argumentWork && ensureLibraryPane(true)) argumentBus.request(argumentWork);
+      if (argumentWork && ensureLibraryPane(true)) argumentBus.request(argumentWork, { confirmed: leavingView });
     };
     window.addEventListener("popstate", onNav);
     window.addEventListener("hashchange", onNav);

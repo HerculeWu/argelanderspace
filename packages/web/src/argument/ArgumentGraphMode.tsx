@@ -7,11 +7,13 @@
  * Editing: every write is a pure edit operation (contracts `argument-edit.ts`) applied by the one commit path
  * (`useArgumentWrites` over `commit.ts`). The only unsaved state is the panel's draft (a new argument, or a form edit);
  * it is guarded here against every way of leaving it: another argument, closing the panel, the back button, a pane
- * switch (the workspace leave guard) and closing the page. Deleting an argument is not confirmed and is undoable for a
- * few seconds; clearing the graph is confirmed.
+ * switch or close and a browser Back/Forward or another Work's graph (the workspace leave guard, which answers later),
+ * and closing the page (the browser's own prompt). Every in-app question is the app's Dialog, not `window.confirm`: the
+ * navigation waits for the answer and happens only on "discard". Deleting an argument is not confirmed and is undoable
+ * for a few seconds; clearing the graph is confirmed.
  */
 import { type Argument, type ArgumentDraft, type ArgumentEdge, type ArgumentEdgeRole, type ArgumentGraph, type ArgumentSource, BLANK_ARGUMENT, addEdge, auditArgumentGraph, clearArgumentGraph, createArgument, deleteArgument, removeEdge, restoreArgument, sameArgument, updateArgument } from "@argelanderspace/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { registerWorkspaceLeaveGuard } from "../argelander/workspace";
 import { Icon } from "../lib/icons";
@@ -24,6 +26,7 @@ import { ArgumentGraphCanvas, type ArgumentCanvasStash } from "./ArgumentGraphCa
 import { ArgumentOutline, type OutlineOpenState } from "./ArgumentOutline";
 import { ArgumentPanel, type PanelSaveOutcome, ROLE_NAME, sourceAnchor } from "./ArgumentPanel";
 import { rejectionMessages, serverInvalidText } from "./editText";
+import { STALE } from "./commit";
 import { RoleChooser } from "./RoleChooser";
 import { useArgumentWrites } from "./useArgumentWrites";
 import { findingsOf, listFindings } from "./findings";
@@ -42,6 +45,7 @@ function workHeading(workId: string, work: LibraryRef | null): string {
 export function ArgumentGraphMode({
   workId,
   work,
+  paneId,
   onExit,
   onOpenDoc,
   onPage,
@@ -49,6 +53,8 @@ export function ArgumentGraphMode({
   workId: string;
   /** The library's entry for the work; null when the library does not list it (the server's answer still decides). */
   work: LibraryRef | null;
+  /** The pane that holds this page: the workspace leave guard speaks only when this pane is switched or closed. */
+  paneId?: number;
   onExit: () => void;
   /** The reading pane: a Doc at a structural anchor, or `page-<n>` for a PDF Doc. */
   onOpenDoc: (docId: string, anchor: string | null) => void;
@@ -73,6 +79,7 @@ export function ArgumentGraphMode({
   // ---- the draft and its protection ------------------------------------------------------------------------ //
   /** A new argument is being written (not in the graph until it is saved). */
   const [creating, setCreating] = useState(false);
+  const [newSeq, setNewSeq] = useState(0);
   const creatingRef = useRef(false);
   creatingRef.current = creating;
   const [dirty, setDirty] = useState(false);
@@ -82,35 +89,65 @@ export function ArgumentGraphMode({
   if (selected) lastSelected.current = selected;
   // an argument deleted elsewhere while its form is dirty stays on screen with the draft (the panel says so)
   const panelArgument: Argument | null = creating ? { ...BLANK_ARGUMENT, id: "" } : (selected ?? (selectedId !== null && dirty ? lastSelected.current : null));
-  const confirmDiscard = useCallback(() => !dirtyRef.current || window.confirm(t("argument.edit.discardConfirm")), [t]);
+  /** The question "discard this unsaved draft?" being asked; `resolve` is what the waiting navigation is told. */
+  const [leaveAsk, setLeaveAsk] = useState<{ subject: string | null; resolve: (discard: boolean) => void } | null>(null);
+  const leaveAskRef = useRef(leaveAsk);
+  leaveAskRef.current = leaveAsk;
+  const stayRef = useRef<HTMLButtonElement>(null);
+  const panelTitleRef = useRef<string | null>(null);
+  panelTitleRef.current = creating ? null : (panelArgument?.title || t("argument.view.panel.untitled"));
+  /** Asks (with the dialog) whether the unsaved draft may go; resolves true at once when there is none. One question at a time. */
+  const askDiscard = useCallback((): Promise<boolean> => {
+    if (!dirtyRef.current) return Promise.resolve(true);
+    if (leaveAskRef.current) return Promise.resolve(false);
+    return new Promise<boolean>((resolve) => setLeaveAsk({ subject: panelTitleRef.current, resolve }));
+  }, []);
+  const answerLeave = (discard: boolean) => {
+    leaveAskRef.current?.resolve(discard);
+    leaveAskRef.current = null;
+    setLeaveAsk(null);
+  };
+  // a question still open when the page goes away (the pane was closed some other way) is a no
+  useEffect(() => () => leaveAskRef.current?.resolve(false), []);
+  /** Runs `proceed` now, or after the dialog's "discard" when a draft would be lost; "keep editing" leaves everything as it was. */
+  const afterDiscard = useCallback(
+    (proceed: () => void) => {
+      if (!dirtyRef.current) {
+        proceed();
+        return;
+      }
+      void askDiscard().then((discard) => discard && proceed());
+    },
+    [askDiscard]
+  );
   /** Select an argument (or none); a dirty draft is asked about first. */
   const choose = useCallback(
     (id: string | null) => {
       if (id === selectedIdRef.current && !creatingRef.current) return;
-      if (!confirmDiscard()) return;
-      setCreating(false);
-      setSelectedId(id);
+      afterDiscard(() => {
+        setCreating(false);
+        setSelectedId(id);
+      });
     },
-    [confirmDiscard]
+    [afterDiscard]
   );
   useEffect(() => {
     setOpenArgumentWork(workId);
     return () => setOpenArgumentWork(null);
   }, [workId]);
-  // leaving the page (a pane switch or close: the workspace guard; the browser's Back: Shell; closing the tab: here)
+  // leaving the page (a pane switch or close, the browser's Back, another Work's graph: the workspace guard, which
+  // answers with the dialog; closing the tab: the browser's own prompt)
   useEffect(() => {
     if (!dirty) return;
-    const off = registerWorkspaceLeaveGuard(() => window.confirm(t("argument.edit.unsavedLeave")), "library");
+    const off = registerWorkspaceLeaveGuard(() => askDiscard(), { view: "library", ...(paneId === undefined ? {} : { paneId }) });
     const beforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", beforeUnload);
     return () => {
       off();
       window.removeEventListener("beforeunload", beforeUnload);
     };
-  }, [dirty, t]);
-  const exit = () => {
-    if (confirmDiscard()) onExit();
-  };
+  }, [dirty, paneId, askDiscard]);
+  const exit = () => afterDiscard(onExit);
 
   // Narrow pane (user decision 2026-10-12, see layout.ts): an open panel folds the outline, then floats over the canvas.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -140,11 +177,17 @@ export function ArgumentGraphMode({
   const closePanel = useCallback(() => {
     const active = document.activeElement;
     const inPanel = !!rootRef.current?.querySelector('[data-ui="argument-detail"]')?.contains(active);
-    if (!confirmDiscard()) return;
-    if (selectedIdRef.current !== null && (inPanel || !active || active === document.body)) refocus.current = selectedIdRef.current;
-    setCreating(false);
-    setSelectedId(null);
-  }, [confirmDiscard]);
+    const refocusNode = selectedIdRef.current !== null && (inPanel || !active || active === document.body) ? selectedIdRef.current : null;
+    afterDiscard(() => {
+      if (refocusNode !== null) refocus.current = refocusNode;
+      setCreating(false);
+      setSelectedId(null);
+    });
+  }, [afterDiscard]);
+  /** The canvas node of an argument gets the keyboard focus (after the chooser or the panel that came from it closes). */
+  const focusNode = useCallback((id: string) => {
+    requestAnimationFrame(() => [...(rootRef.current?.querySelectorAll<HTMLElement>('[data-ui="argument-node"]') ?? [])].find((node) => node.getAttribute("data-ui-key") === id)?.focus());
+  }, []);
   useEffect(() => {
     const id = refocus.current;
     if (selectedId !== null || id === null) return;
@@ -157,7 +200,7 @@ export function ArgumentGraphMode({
     if (!overlay) return;
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector('[data-ui="argument-audit-popover"], [data-ui="command-palette"], [role="dialog"][aria-modal="true"]')) return;
+      if (document.querySelector('[data-ui="argument-audit-popover"], [data-ui="argument-role-chooser"], [data-ui="command-palette"], [role="dialog"][aria-modal="true"]')) return;
       closePanel();
     };
     document.addEventListener("keydown", key);
@@ -186,13 +229,14 @@ export function ArgumentGraphMode({
     undoNotice.current = null;
   };
   const saveArgument = async (draft: ArgumentDraft, base: Argument | null, id: string | null): Promise<PanelSaveOutcome> => {
-    const current = writes.latest.current;
-    // the argument changed (or went) since the form started: nothing is sent, the draft stays, the person reloads first
-    if (base) {
-      const stored = current?.arguments.find((a) => a.id === base.id);
-      if (!stored || !sameArgument(stored, base)) return { kind: "conflict", rev: current?.rev ?? null };
-    }
-    const outcome = base ? await writes.commit((g) => updateArgument(g, base.id, draft)) : await writes.commit((g) => createArgument(g, draft, id ?? undefined));
+    // The argument changing (or going) under the form is judged on the graph the write runs on, not the one at click time:
+    // a Save queued behind another write must not put the draft's old fields over what was written elsewhere meanwhile.
+    const outcome = await writes.commit((g) => {
+      if (!base) return createArgument(g, draft, id ?? undefined);
+      const stored = g.arguments.find((a) => a.id === base.id);
+      if (!stored || !sameArgument(stored, base)) return STALE;
+      return updateArgument(g, base.id, draft);
+    });
     if (outcome.kind === "ok") {
       settleUndo();
       if (!base) {
@@ -209,9 +253,11 @@ export function ArgumentGraphMode({
   };
   const startCreate = () => {
     if (creatingRef.current && !dirtyRef.current) return;
-    if (!confirmDiscard()) return;
-    setSelectedId(null);
-    setCreating(true);
+    afterDiscard(() => {
+      setSelectedId(null);
+      setCreating(true);
+      setNewSeq((n) => n + 1); // a new form every time: "discard" on a dirty new draft starts a blank one
+    });
   };
   const linkEdge = async (edge: ArgumentEdge) => {
     const outcome = await writes.perform((g) => addEdge(g, edge));
@@ -226,12 +272,13 @@ export function ArgumentGraphMode({
     const outcome = await writes.commit((g) => restoreArgument(g, removed), after);
     if (outcome.kind === "ok") {
       writes.notify("info", t("argument.edit.undone", { title: removed.argument.title }));
-      setSelectedId(removed.argument.id);
-    } else if (outcome.kind === "conflict") writes.notify("danger", t("argument.edit.undoFailedChanged"), { ttl: 0 });
+      // the restored argument is shown only when no other form is open: a draft under way is never switched away from
+      if (!dirtyRef.current) setSelectedId(removed.argument.id);
+    } else if (outcome.kind === "conflict") writes.notify("danger", t("argument.edit.undoFailedChanged"), { ttl: 15000 });
     else writes.notify("danger", writes.failureText(outcome) ?? "");
   };
   const removeArgument = async (id: string) => {
-    if (!confirmDiscard()) return;
+    if (!(await askDiscard())) return;
     const outcome = await writes.perform((g) => deleteArgument(g, id));
     if (outcome.kind !== "ok") return;
     settleUndo();
@@ -243,6 +290,37 @@ export function ArgumentGraphMode({
       action: { label: t("argument.edit.undo"), run: () => void undoDelete(removed, outcome.graph) },
     });
   };
+
+  // The notices float at the bottom centre of the canvas column (the toast convention of .plan-undo / .ann-toast), raised
+  // over the canvas legend when that is in the way: --ag-toast-bottom is the legend's height plus a gap.
+  const noticesRef = useRef<HTMLDivElement>(null);
+  const noticeCount = writes.notices.length;
+  useLayoutEffect(() => {
+    const box = noticesRef.current;
+    if (!box) return;
+    const legend = box.parentElement?.querySelector<HTMLElement>(".lg-legend:not([hidden])");
+    const main = box.parentElement?.getBoundingClientRect();
+    const lift = legend && main ? Math.max(0, main.bottom - legend.getBoundingClientRect().top) + 8 : 22;
+    box.style.setProperty("--ag-toast-bottom", `${Math.max(22, Math.round(lift))}px`);
+  }, [noticeCount, width, panelOpen, layout.outlineFolded]);
+  // Undo is reachable from the keyboard: Tab reaches the notice (it is the last thing in the canvas column), and so does
+  // Ctrl/Cmd+Z while a delete can still be undone and the focus is not in a text field.
+  const undoRef = useRef<(() => void) | null>(null);
+  undoRef.current = (() => {
+    const live = writes.notices.find((n) => n.id === undoNotice.current && n.action);
+    return live?.action ? () => { writes.dismiss(live.id); live.action?.run(); } : null;
+  })();
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "z" || e.defaultPrevented || !undoRef.current) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target && (target.closest("input, textarea, select, [contenteditable]") || target.closest('[role="dialog"]'))) return;
+      e.preventDefault();
+      undoRef.current();
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, []);
 
   // a drag on the canvas: the role is chosen where it was dropped
   const [chooser, setChooser] = useState<{ from: string; to: string; at: { x: number; y: number } } | null>(null);
@@ -266,7 +344,9 @@ export function ArgumentGraphMode({
   const clearGraph = async () => {
     setClearing(true);
     setClearError(null);
-    const outcome = await writes.commit((g) => clearArgumentGraph(g));
+    const shown = graph ? { a: graph.arguments.length, e: graph.edges.length } : null;
+    // the dialog named these counts: a graph that has grown or shrunk since is not cleared on that confirmation
+    const outcome = await writes.commit((g) => (shown && (g.arguments.length !== shown.a || g.edges.length !== shown.e) ? STALE : clearArgumentGraph(g)));
     setClearing(false);
     if (outcome.kind === "ok") {
       settleUndo();
@@ -312,11 +392,12 @@ export function ArgumentGraphMode({
               data-ui="clear-argument-graph"
               label={t("argument.view.clear")}
               tooltip={t("argument.edit.clearTooltip")}
-              onClick={() => {
-                if (!confirmDiscard()) return;
-                setClearError(null);
-                setClearOpen(true);
-              }}
+              onClick={() =>
+                afterDiscard(() => {
+                  setClearError(null);
+                  setClearOpen(true);
+                })
+              }
             />
           )}
         </div>
@@ -394,11 +475,37 @@ export function ArgumentGraphMode({
             </div>
           )}
           {graph && hasArguments && <ArgumentGraphCanvas graph={graph} selectedId={selectedId} onSelect={choose} stash={stash} sceneKey={workId} coverRight={coverRight} onConnect={connect} />}
+          <div className="ag-notices" ref={noticesRef} role="region" aria-label={t("argument.edit.notices")} aria-live="polite" data-ui="argument-notices">
+            {writes.notices.map((n) => (
+              <div key={n.id} className={`ag-toast view-in ${n.tone}`} data-ui="argument-notice" data-ui-key={n.id} role={n.tone === "danger" ? "alert" : "status"}>
+                <Icon name={n.tone === "info" ? "info" : "triangle-alert"} cls="ico-sm" />
+                <span className="ag-toast-text">{n.text}</span>
+                {n.action && (
+                  <ActionButton
+                    unstyled
+                    mode="text"
+                    className="plan-undo-btn"
+                    label={n.action.label}
+                    tooltip={n.action.label}
+                    data-ui="argument-notice-action"
+                    data-ui-key={n.id}
+                    onClick={() => {
+                      writes.dismiss(n.id);
+                      n.action?.run();
+                    }}
+                  >
+                    {n.action.label}
+                  </ActionButton>
+                )}
+                <ActionButton unstyled mode="icon" iconName="x" className="plan-undo-x" data-ui="dismiss-argument-notice" data-ui-key={n.id} label={t("argument.edit.dismiss")} tooltip={t("argument.edit.dismiss")} onClick={() => writes.dismiss(n.id)} />
+              </div>
+            ))}
+          </div>
         </div>
 
         {graph && panelArgument && (
           <ArgumentPanel
-            key={creating ? "new" : panelArgument.id}
+            key={creating ? `new-${newSeq}` : panelArgument.id}
             graph={graph}
             argument={panelArgument}
             isNew={creating}
@@ -430,10 +537,15 @@ export function ArgumentGraphMode({
           at={chooser.at}
           taken={new Set(graph.edges.filter((e) => e.from === chooser.from && e.to === chooser.to).map((e) => e.role))}
           roleName={roleName}
-          onCancel={() => setChooser(null)}
+          onCancel={({ restoreFocus }) => {
+            const source = chooser.from;
+            setChooser(null);
+            if (restoreFocus) focusNode(source);
+          }}
           onChoose={(role) => {
             const edge = { from: chooser.from, to: chooser.to, role };
             setChooser(null);
+            focusNode(edge.from);
             void linkEdge(edge);
           }}
         />
@@ -450,10 +562,10 @@ export function ArgumentGraphMode({
           initialFocusRef={cancelClearRef}
           footer={
             <>
-              <ActionButton ref={cancelClearRef} mode="text" label={t("argument.edit.cancel")} tooltip={t("argument.edit.cancel")} data-ui="cancel-clear-argument-graph" onClick={() => setClearOpen(false)}>
+              <ActionButton ref={cancelClearRef} mode="text" label={t("argument.edit.cancel")} data-ui="cancel-clear-argument-graph" disabled={clearing} onClick={() => setClearOpen(false)}>
                 {t("argument.edit.cancel")}
               </ActionButton>
-              <ActionButton mode="text" appearance="primary" tone="danger" label={t("argument.edit.clearConfirm")} tooltip={t("argument.edit.clearConfirm")} data-ui="confirm-clear-argument-graph" busy={clearing} busyLabel={t("argument.edit.clearing")} onClick={() => void clearGraph()}>
+              <ActionButton mode="text" appearance="primary" tone="danger" label={t("argument.edit.clearConfirm")} data-ui="confirm-clear-argument-graph" busy={clearing} busyLabel={t("argument.edit.clearing")} onClick={() => void clearGraph()}>
                 {t("argument.edit.clearConfirm")}
               </ActionButton>
             </>
@@ -464,30 +576,28 @@ export function ArgumentGraphMode({
         </Dialog>
       )}
 
-      <div className="ag-notices" role="region" aria-label={t("argument.edit.notices")} aria-live="polite" data-ui="argument-notices">
-        {writes.notices.map((n) => (
-          <InlineMessage key={n.id} tone={n.tone} uiId="argument-notice">
-            <span className="ag-notice-row">
-              <span>{n.text}</span>
-              {n.action && (
-                <ActionButton
-                  mode="text"
-                  label={n.action.label}
-                  tooltip={n.action.label}
-                  data-ui="argument-notice-action"
-                  onClick={() => {
-                    writes.dismiss(n.id);
-                    n.action?.run();
-                  }}
-                >
-                  {n.action.label}
-                </ActionButton>
-              )}
-              <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="dismiss-argument-notice" label={t("argument.edit.dismiss")} tooltip={t("argument.edit.dismiss")} onClick={() => writes.dismiss(n.id)} />
-            </span>
-          </InlineMessage>
-        ))}
-      </div>
+      {leaveAsk && (
+        <Dialog
+          title={t("argument.edit.leave.title")}
+          uiId="argument-leave-dialog"
+          closeLabel={t("argument.view.panel.close")}
+          onClose={() => answerLeave(false)}
+          width={420}
+          initialFocusRef={stayRef}
+          footer={
+            <>
+              <ActionButton ref={stayRef} mode="text" label={t("argument.edit.leave.stay")} data-ui="keep-editing-argument" onClick={() => answerLeave(false)}>
+                {t("argument.edit.leave.stay")}
+              </ActionButton>
+              <ActionButton mode="text" appearance="primary" tone="danger" label={t("argument.edit.leave.discard")} data-ui="discard-argument-draft" onClick={() => answerLeave(true)}>
+                {t("argument.edit.leave.discard")}
+              </ActionButton>
+            </>
+          }
+        >
+          <p data-ui="argument-leave-body">{leaveAsk.subject === null ? t("argument.edit.leave.bodyNew") : t("argument.edit.leave.body", { title: leaveAsk.subject })}</p>
+        </Dialog>
+      )}
     </div>
   );
 }

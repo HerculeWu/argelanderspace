@@ -19,13 +19,23 @@ export type CommitOutcome<T extends object = Record<never, never>> =
   | { kind: "corrupt" }
   | { kind: "error"; unreachable: boolean };
 
+/**
+ * What an edit returns when the graph it finally runs on no longer is the one the person's request was made against (the
+ * argument under a form changed elsewhere, the counts a confirmation showed moved on): nothing is written, the outcome is a
+ * `conflict`. The check belongs inside the edit because a queued write runs on the graph of the moment it runs, not of the
+ * moment it was asked for.
+ */
+export const STALE = { ok: false, stale: true } as const;
+export type StaleEdit = typeof STALE;
+
 /** Applies `edit` to `base` and writes the result at `base.rev`. */
 export async function commitArgumentEdit<T extends object = Record<never, never>>(
   workId: string,
   base: ArgumentGraph,
-  edit: (graph: ArgumentGraph) => ArgumentEditResult<T>
+  edit: (graph: ArgumentGraph) => ArgumentEditResult<T> | StaleEdit
 ): Promise<CommitOutcome<T>> {
   const result = edit(base);
+  if ("stale" in result) return { kind: "conflict", rev: base.rev };
   if (!result.ok) return { kind: "rejected", rejection: result.rejection };
   const { ok: _ok, graph: next, ...extra } = result;
   const written = await putArgumentGraph(workId, { ...next, rev: base.rev, work_id: base.work_id });

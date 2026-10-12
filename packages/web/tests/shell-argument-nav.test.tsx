@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   /** pane id -> the Work whose graph that Library pane shows */
   open: new Map<number, string>(),
   opens: [] as { paneId: number | undefined; workId: string; push: boolean }[],
+  requests: [] as { workId: string; confirmed: boolean }[],
   exits: [] as (number | undefined)[],
   explores: [] as string[],
   exploring: new Set<number>(),
@@ -42,15 +43,18 @@ vi.mock("../src/library/LibraryView", async () => {
   const react = await import("react");
   const { argumentBus, pushArgumentUrl, clearArgumentUrl } = await import("../src/lib/argument-route");
   const { exploreBus } = await import("../src/lib/explore-route");
+  const { useWorkspace: workspace } = await import("../src/argelander/workspace");
   return {
     LibraryView: ({ paneId }: { paneId?: number }) => {
       const [, rerender] = react.useState(0);
+      const ws = workspace();
       react.useEffect(() => {
         const offs = [
           argumentBus.register({
             paneId,
             isOpen: () => h.open.has(paneId ?? -1),
             open: (workId, opts) => {
+              h.requests.push({ workId, confirmed: !!opts.confirmed });
               // (happy-dom fires `hashchange` for pushState, a browser does not; the real view opens idempotently)
               if (h.open.get(paneId ?? -1) === workId) return;
               h.opens.push({ paneId, workId, push: opts.push });
@@ -77,7 +81,12 @@ vi.mock("../src/library/LibraryView", async () => {
         ];
         return () => offs.forEach((off) => off());
       }, [paneId]);
-      return <div data-ui="library-stub" data-ui-key={paneId} data-graph={h.open.get(paneId ?? -1) ?? ""} />;
+      return (
+        <div data-ui="library-stub" data-ui-key={paneId} data-graph={h.open.get(paneId ?? -1) ?? ""}>
+          <button type="button" data-ui="stub-lib-open-d1" onClick={() => ws.openDoc("d1")} />
+          <button type="button" data-ui="stub-lib-enter-w2" onClick={() => ws.openArgumentGraph?.("w2")} />
+        </div>
+      );
     },
   };
 });
@@ -89,6 +98,7 @@ beforeEach(async () => {
   window.localStorage.clear();
   h.open.clear();
   h.opens.length = 0;
+  h.requests.length = 0;
   h.exits.length = 0;
   h.explores.length = 0;
   h.exploring.clear();
@@ -279,3 +289,102 @@ describe("opening a Doc from the graph", () => {
   });
 });
 
+describe("a guard that answers later (the argument graph's own dialog, ticket 05 fix round A)", () => {
+  /** A guard whose answer the test gives; counts how often it is asked. */
+  function lateGuard() {
+    const asked: ((ok: boolean) => void)[] = [];
+    const off = registerWorkspaceLeaveGuard(() => new Promise<boolean>((resolve) => asked.push(resolve)), "library");
+    return { asked, off };
+  }
+  const boot = async (hash = "/#argument/w1") => {
+    window.history.replaceState(null, "", hash);
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBeDefined());
+    setOpenArgumentWork("w1");
+  };
+
+  it("the browser's Back waits: the graph's URL is put back at once, the view stays, and 'discard' then goes back for real, asking once", async () => {
+    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/#argument/w1");
+    await boot("/#argument/w1");
+    const guard = lateGuard();
+    window.history.back();
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1"); // restored while the question is open
+    await act(async () => guard.asked[0]!(true));
+    await waitFor(() => expect(h.exits).toEqual([1]));
+    expect(window.location.hash).toBe("");
+    expect(guard.asked).toHaveLength(1); // the one navigation asked once
+    guard.off();
+    setOpenArgumentWork(null);
+  });
+
+  it("'keep editing' leaves the view and the graph's URL in place", async () => {
+    await boot();
+    const guard = lateGuard();
+    popTo("/");
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    await act(async () => guard.asked[0]!(false));
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1");
+    guard.off();
+    setOpenArgumentWork(null);
+  });
+
+  it("between two graph URLs it asks too, and the confirmed request is not asked about again by the view", async () => {
+    window.history.pushState(null, "", "/#argument/w2");
+    window.history.pushState(null, "", "/#argument/w1");
+    await boot("/#argument/w1");
+    const guard = lateGuard();
+    window.history.back();
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    expect(h.open.get(1)).toBe("w1");
+    expect(window.location.hash).toBe("#argument/w1");
+    await act(async () => guard.asked[0]!(true));
+    await waitFor(() => expect(h.open.get(1)).toBe("w2"));
+    expect(h.requests[h.requests.length - 1]).toEqual({ workId: "w2", confirmed: true });
+    expect(guard.asked).toHaveLength(1);
+    guard.off();
+    setOpenArgumentWork(null);
+  });
+
+  it("Back to a Doc that is not the open one asks once, not once for the navigation and again for the pane it replaces", async () => {
+    await boot("/#argument/w1");
+    const guard = lateGuard();
+    popTo("/doc/d2");
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    await act(async () => guard.asked[0]!(true));
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    expect(guard.asked).toHaveLength(1);
+    guard.off();
+    setOpenArgumentWork(null);
+  });
+
+  it("opening the Doc that is already current, with no Doc pane, replaces the Library page and asks first", async () => {
+    window.history.replaceState(null, "", "/doc/d1");
+    render(<Shell />);
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    fireEvent.click(q('[data-ui="stub-enter-graph"]')!);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    expect(q('[data-ui="doc-stub"]')).toBeNull();
+    const guard = lateGuard();
+    fireEvent.click(q('[data-ui="stub-lib-open-d1"]')!);
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    expect(q('[data-ui="doc-stub"]')).toBeNull(); // not yet
+    await act(async () => guard.asked[0]!(false));
+    expect(q('[data-ui="doc-stub"]')).toBeNull();
+    fireEvent.click(q('[data-ui="stub-lib-open-d1"]')!);
+    await waitFor(() => expect(guard.asked).toHaveLength(2));
+    await act(async () => guard.asked[1]!(true));
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    guard.off();
+  });
+
+  it("the Reader's entry to another Work's graph reaches the view unconfirmed, so the view itself asks", async () => {
+    await boot();
+    fireEvent.click(q('[data-ui="stub-lib-enter-w2"]')!);
+    await waitFor(() => expect(h.requests[h.requests.length - 1]).toEqual({ workId: "w2", confirmed: false }));
+    setOpenArgumentWork(null);
+  });
+});

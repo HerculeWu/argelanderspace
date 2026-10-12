@@ -15,6 +15,7 @@ export function ArgumentPicker({
   near,
   all,
   nearLabel,
+  countLabel,
   withRole,
   roleName,
   disabledFor,
@@ -26,6 +27,8 @@ export function ArgumentPicker({
   near: Argument[];
   all: Argument[];
   nearLabel: string;
+  /** How many near arguments there are, in this direction's words ("one layer below" / "one layer above"). */
+  countLabel: (n: number) => string;
   /** "Used by": also choose which role this argument plays in the target. */
   withRole?: boolean;
   roleName: (role: ArgumentEdgeRole) => string;
@@ -74,7 +77,6 @@ export function ArgumentPicker({
         <ActionButton
           mode="text"
           label={t("argument.edit.add")}
-          tooltip={t("argument.edit.add")}
           data-ui="add-picked-argument"
           disabled={!id || !!taken || all.length === 0}
           busy={busy}
@@ -99,7 +101,7 @@ export function ArgumentPicker({
           }}
         />
         {t("argument.edit.pickAll")}
-        <span className="ag-hint">{showAll ? "" : ` · ${t("argument.edit.pickCount", { n: near.length })}`}</span>
+        <span className="ag-hint">{showAll ? "" : ` · ${countLabel(near.length)}`}</span>
       </label>
     </div>
   );
