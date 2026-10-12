@@ -237,6 +237,7 @@ function LibraryBody({
       argumentBus.register({
         paneId,
         isOpen: () => argumentOpenRef.current,
+        workId: () => argumentWorkRef.current,
         open: openArgument,
         exit: exitArgument,
       }),

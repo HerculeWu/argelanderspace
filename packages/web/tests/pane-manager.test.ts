@@ -436,3 +436,23 @@ describe("a leave guard that answers later (the argument graph's dialog, ticket 
     expect(manager.getState().panes.map((p) => p.id)).toEqual([1]);
   });
 });
+
+describe("who asks to leave (ticket 05 fix round B)", () => {
+  it("the person's switches, closes and the pane header ask as the user; the Copilot's view actions ask as the agent, and a refusal is leave_blocked", async () => {
+    const origins: (string | undefined)[] = [];
+    const manager = createPaneManager({ panes: [{ id: 1, view: "library", size: 1 }, { id: 2, view: "library", size: 1 }], activeId: 1, pages: [page("plan")], confirmLeave: (_view, _paneId, origin) => {
+      origins.push(origin);
+      return false;
+    } });
+    expect(manager.setActiveView("plan")).toBe(false);
+    expect(manager.setPaneView(1, "write")).toBe(false);
+    expect(manager.close(2)).toBe(false);
+    expect(origins).toEqual(["user", "user", "user"]);
+    origins.length = 0;
+    expect(manager.setActiveView("plan", "agent")).toBe(false);
+    expect(manager.close(2, "agent")).toBe(false);
+    const { answer } = await run(manager, SHOW);
+    expect(answer).toEqual({ ok: false, detail: "leave_blocked" });
+    expect(origins).toEqual(["agent", "agent", "agent"]);
+  });
+});

@@ -17,7 +17,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useTranslation } from "react-i18next";
 import { registerWorkspaceLeaveGuard } from "../argelander/workspace";
 import { Icon } from "../lib/icons";
-import { setOpenArgumentWork } from "../lib/argument-route";
 import { useElementWidth } from "../doc/auto-fold";
 import { ActionButton, Dialog, InlineMessage } from "../ui";
 import type { LibraryRef } from "../library/types";
@@ -68,6 +67,10 @@ export function ArgumentGraphMode({
   selectedIdRef.current = selectedId;
   const stash = useRef<ArgumentCanvasStash>({}).current;
   const graph = state.phase === "ready" ? state.graph : null;
+  // The last graph that was read: while a draft is open it keeps the panel up when a refresh finds the file unreadable
+  // (or the Work gone), so the draft is not unmounted with it. The page behind is the error state meanwhile.
+  const lastGraph = useRef<ArgumentGraph | null>(null);
+  if (graph) lastGraph.current = graph;
   const audit = useMemo(() => (graph ? auditArgumentGraph(graph) : null), [graph]);
   const findings = useMemo(() => (audit ? listFindings(audit) : []), [audit]);
   const describe = useFindingText(graph);
@@ -88,6 +91,8 @@ export function ArgumentGraphMode({
   const lastSelected = useRef<Argument | null>(null);
   if (selected) lastSelected.current = selected;
   // an argument deleted elsewhere while its form is dirty stays on screen with the draft (the panel says so)
+  const panelGraph = graph ?? (dirty ? lastGraph.current : null);
+  const unavailable = graph === null && panelGraph !== null ? t(state.phase === "corrupt" ? "argument.edit.unavailableCorrupt" : state.phase === "not-found" ? "argument.edit.unavailableNotFound" : "argument.edit.unavailableOther") : null;
   const panelArgument: Argument | null = creating ? { ...BLANK_ARGUMENT, id: "" } : (selected ?? (selectedId !== null && dirty ? lastSelected.current : null));
   /** The question "discard this unsaved draft?" being asked; `resolve` is what the waiting navigation is told. */
   const [leaveAsk, setLeaveAsk] = useState<{ subject: string | null; resolve: (discard: boolean) => void } | null>(null);
@@ -131,15 +136,11 @@ export function ArgumentGraphMode({
     },
     [afterDiscard]
   );
-  useEffect(() => {
-    setOpenArgumentWork(workId);
-    return () => setOpenArgumentWork(null);
-  }, [workId]);
   // leaving the page (a pane switch or close, the browser's Back, another Work's graph: the workspace guard, which
-  // answers with the dialog; closing the tab: the browser's own prompt)
+  // answers with the dialog, and refuses without one when the Copilot asked; closing the tab: the browser's own prompt)
   useEffect(() => {
     if (!dirty) return;
-    const off = registerWorkspaceLeaveGuard(() => askDiscard(), { view: "library", ...(paneId === undefined ? {} : { paneId }) });
+    const off = registerWorkspaceLeaveGuard((origin) => (origin === "agent" ? !dirtyRef.current : askDiscard()), { view: "library", ...(paneId === undefined ? {} : { paneId }) });
     const beforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", beforeUnload);
     return () => {
@@ -284,6 +285,11 @@ export function ArgumentGraphMode({
     settleUndo();
     setCreating(false);
     setSelectedId(null);
+    // the button that was clicked is gone: the keyboard stays in this view (Ctrl/Cmd+Z undoes only from inside it)
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body) rootRef.current?.focus({ preventScroll: true });
+    });
     const { removed } = outcome;
     undoNotice.current = writes.notify("info", t("argument.edit.deleted", { title: removed.argument.title, e: removed.edges.length }), {
       ttl: 8000,
@@ -304,7 +310,7 @@ export function ArgumentGraphMode({
     box.style.setProperty("--ag-toast-bottom", `${Math.max(22, Math.round(lift))}px`);
   }, [noticeCount, width, panelOpen, layout.outlineFolded]);
   // Undo is reachable from the keyboard: Tab reaches the notice (it is the last thing in the canvas column), and so does
-  // Ctrl/Cmd+Z while a delete can still be undone and the focus is not in a text field.
+  // Ctrl/Cmd+Z while a delete can still be undone, the focus is inside this view and not in a text field.
   const undoRef = useRef<(() => void) | null>(null);
   undoRef.current = (() => {
     const live = writes.notices.find((n) => n.id === undoNotice.current && n.action);
@@ -314,7 +320,9 @@ export function ArgumentGraphMode({
     const key = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "z" || e.defaultPrevented || !undoRef.current) return;
       const target = e.target instanceof HTMLElement ? e.target : null;
-      if (target && (target.closest("input, textarea, select, [contenteditable]") || target.closest('[role="dialog"]'))) return;
+      // only while the keyboard is in this view (another pane, or the page behind, has its own Ctrl+Z)
+      if (!target || !rootRef.current?.contains(target)) return;
+      if (target.closest("input, textarea, select, [contenteditable]") || target.closest('[role="dialog"]')) return;
       e.preventDefault();
       undoRef.current();
     };
@@ -357,7 +365,7 @@ export function ArgumentGraphMode({
   };
 
   return (
-    <div className="explore-root" ref={rootRef} data-ui="argument-graph-view" data-ui-key={workId} data-phase={state.phase}>
+    <div className="explore-root" ref={rootRef} tabIndex={-1} style={{ outline: "none" }} data-ui="argument-graph-view" data-ui-key={workId} data-phase={state.phase}>
       <div className="explore-header" data-ui="argument-graph-header">
         <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" data-ui="argument-return-to-library" label={t("argument.view.back")} tooltip={t("argument.view.backTooltip")} onClick={exit} />
         <div className="explore-context">
@@ -503,10 +511,10 @@ export function ArgumentGraphMode({
           </div>
         </div>
 
-        {graph && panelArgument && (
+        {panelGraph && panelArgument && (
           <ArgumentPanel
             key={creating ? `new-${newSeq}` : panelArgument.id}
-            graph={graph}
+            graph={panelGraph}
             argument={panelArgument}
             isNew={creating}
             findings={creating ? [] : findingsOf(findings, panelArgument.id)}
@@ -516,7 +524,8 @@ export function ArgumentGraphMode({
             onClose={closePanel}
             onOpenSource={openSource}
             overlay={overlay}
-            busy={writes.writing}
+            busy={writes.writing || unavailable !== null}
+            unavailable={unavailable}
             onSave={saveArgument}
             onDiscardNew={() => {
               setCreating(false);

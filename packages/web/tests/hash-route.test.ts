@@ -100,7 +100,7 @@ describe("the two buses over it", () => {
   });
   it("the argument bus serves exactly the pane a request names", () => {
     const calls: string[] = [];
-    const target = (paneId: number, open = false) => ({ paneId, isOpen: () => open, open: (w: string, o: { push: boolean }) => calls.push(`${paneId}:${w}:${o.push}`), exit: vi.fn() });
+    const target = (paneId: number, open = false) => ({ paneId, isOpen: () => open, workId: () => (open ? "w" : null), open: (w: string, o: { push: boolean }) => calls.push(`${paneId}:${w}:${o.push}`), exit: vi.fn() });
     const offs = [argumentBus.register(target(1, true)), argumentBus.register(target(2))];
     argumentBus.request("w", { push: true, paneId: 2 });
     argumentBus.request("v");

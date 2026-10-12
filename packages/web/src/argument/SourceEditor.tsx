@@ -93,6 +93,9 @@ export function SourceEditor({ sources, onChange, workDocIds }: { sources: Draft
   const used = sources.map((s) => s.docId).filter(Boolean);
   const structures = useDocStructures([...new Set(used)]);
   const formats = useDocFormats([...new Set([...workDocIds, ...used])]);
+  /** What the Doc list shows: the format and the main-Doc mark first (a narrow list cuts the end), the whole id last. */
+  const docLabel = (id: string, index: number): string =>
+    [formatName(id), index === 0 && workDocIds.includes(id) ? t("argument.edit.sourceMain") : null, workDocIds.includes(id) ? null : t("argument.edit.sourceOutsideWork"), id].filter(Boolean).join(" · ");
   const formatName = (id: string) => {
     const f = formats.get(id);
     return f ? t(`argument.edit.sourceDocFormat.${f}` as "argument.edit.sourceDocFormat.pdf", { defaultValue: f.toUpperCase() }) : null;
@@ -110,12 +113,11 @@ export function SourceEditor({ sources, onChange, workDocIds }: { sources: Draft
           <div className="ag-source-row" key={i} data-ui="argument-source-row" data-ui-key={i}>
             <input className="ag-input ag-source-text" data-ui="argument-source-text-input" aria-label={t("argument.edit.sourceText")} placeholder={t("argument.edit.sourceText")} value={s.text} onChange={(e) => set(i, { ...s, text: e.target.value })} />
             <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="remove-argument-source" label={t("argument.edit.sourceRemove")} tooltip={t("argument.edit.sourceRemove")} onClick={() => onChange(sources.filter((_, k) => k !== i))} />
-            <select className="ag-input" data-ui="argument-source-doc" aria-label={t("argument.edit.sourceDoc")} value={s.docId} onChange={(e) => set(i, { text: s.text, docId: e.target.value })}>
+            <select className="ag-input ag-source-doc" data-ui="argument-source-doc" aria-label={t("argument.edit.sourceDoc")} title={s.docId ? docLabel(s.docId, docIds.indexOf(s.docId)) : undefined} value={s.docId} onChange={(e) => set(i, { text: s.text, docId: e.target.value })}>
               <option value="">{t("argument.edit.sourceNone")}</option>
               {docIds.map((id, k) => (
-                <option key={id} value={id}>
-                  {[id, formatName(id), k === 0 && workDocIds.includes(id) ? t("argument.edit.sourceMain") : null].filter(Boolean).join(" · ")}
-                  {workDocIds.includes(id) ? "" : ` ${t("argument.edit.sourceOutsideWork")}`}
+                <option key={id} value={id} title={docLabel(id, k)}>
+                  {docLabel(id, k)}
                 </option>
               ))}
             </select>

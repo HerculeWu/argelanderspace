@@ -5,7 +5,7 @@
  * overwritten: the page reloads the latest graph and tells the person the change was not written.
  */
 import type { ArgumentEditResult, ArgumentGraph } from "@argelanderspace/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchArgumentGraph } from "../api/argument-graph";
 import { type CommitOutcome, type StaleEdit, commitArgumentEdit } from "./commit";
@@ -23,8 +23,13 @@ export interface ArgumentNotice {
 
 export function useArgumentWrites({ workId, graph, adopt, refresh }: { workId: string; graph: ArgumentGraph | null; adopt: (graph: ArgumentGraph) => void; refresh: () => void }) {
   const { t } = useTranslation();
+  // The newest graph the page holds. It follows the `graph` prop only when the prop changes (a layout effect, not the render
+  // body): a render that still carries the previous graph (another state change, a replayed render) must not write it back
+  // over the answer to a write that has already been taken (`commit` sets it before the page adopts it).
   const latest = useRef<ArgumentGraph | null>(graph);
-  latest.current = graph;
+  useLayoutEffect(() => {
+    latest.current = graph;
+  }, [graph]);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const [pending, setPending] = useState(0);
   const [notices, setNotices] = useState<ArgumentNotice[]>([]);

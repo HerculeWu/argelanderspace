@@ -667,11 +667,11 @@ describe("deep link", () => {
   it("a request waits for a Library page to register, and goes to the one that is open", () => {
     const open = vi.fn();
     argumentBus.request("w-late", { push: false });
-    const off = argumentBus.register({ isOpen: () => false, open, exit: vi.fn() });
+    const off = argumentBus.register({ isOpen: () => false, workId: () => null, open, exit: vi.fn() });
     return Promise.resolve().then(() => {
       expect(open).toHaveBeenCalledWith("w-late", { push: false });
       const exit = vi.fn();
-      const off2 = argumentBus.register({ isOpen: () => true, open: vi.fn(), exit });
+      const off2 = argumentBus.register({ isOpen: () => true, workId: () => null, open: vi.fn(), exit });
       argumentBus.exit();
       expect(exit).toHaveBeenCalled();
       off2();

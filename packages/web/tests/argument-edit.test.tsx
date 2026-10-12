@@ -387,7 +387,10 @@ describe("notices (toast position and keyboard)", () => {
     fireEvent.keyDown(must(container, "argument-title-input"), { key: "z", ctrlKey: true });
     expect(store.arguments.some((a) => a.id === "m5")).toBe(false);
     fireEvent.click(must(container, "cancel-argument-edit"));
+    // the keyboard outside this view (another pane, the page behind) is not ours
     await act(async () => fireEvent.keyDown(document.body, { key: "z", ctrlKey: true }));
+    expect(store.arguments.some((a) => a.id === "m5")).toBe(false);
+    await act(async () => fireEvent.keyDown(must(container, "argument-main"), { key: "z", ctrlKey: true }));
     await waitFor(() => expect(store.arguments.some((a) => a.id === "m5")).toBe(true));
   });
 });
@@ -652,6 +655,21 @@ describe("leave-draft protection (the app's own dialog, never window.confirm)", 
     await waitFor(() => expect(askWorkspaceLeave("library")).toBe(true));
   });
 
+  it("when the Copilot asks to leave, the draft refuses at once: no dialog, nothing pending, and the person's own ask still shows the dialog", async () => {
+    const { container } = mount({ paneId: 3 });
+    await ready(container);
+    await open(container, "m2");
+    fireEvent.click(must(container, "edit-argument"));
+    type(must(container, "argument-title-input"), "没存的");
+    await waitFor(() => expect(askWorkspaceLeave("library", 3, "agent")).toBe(false));
+    expect(leaveDialog()).toBeNull();
+    expect(must<HTMLInputElement>(container, "argument-title-input").value).toBe("没存的");
+    const user = askWorkspaceLeave("library", 3);
+    await waitFor(() => expect(leaveDialog()).not.toBeNull());
+    await answer("keep-editing-argument");
+    await expect(user).resolves.toBe(false);
+  });
+
   it("Undo after a delete restores the argument but never switches away from a form being edited", async () => {
     const { container } = mount();
     await ready(container);
@@ -724,7 +742,14 @@ describe("form details", () => {
     fireEvent.click(must(container, "add-argument-source"));
     const rows = container.querySelectorAll('[data-ui="argument-source-row"]');
     const doc = must(rows[rows.length - 1] as HTMLElement, "argument-source-doc");
-    await waitFor(() => expect([...doc.querySelectorAll("option")].some((o) => /· PDF/.test(o.textContent ?? ""))).toBe(true));
+    // the format and the main-Doc mark come before the id, so a narrow list that cuts the end still shows them
+    await waitFor(() => expect([...doc.querySelectorAll("option")].some((o) => /^PDF · /.test(o.textContent ?? ""))).toBe(true));
+    const labels = [...doc.querySelectorAll("option")].map((o) => o.textContent ?? "");
+    expect(labels.find((l) => l.endsWith(LATEX))).toMatch(/^LaTeX · 主 · /);
+    expect(labels.find((l) => l.endsWith(PDF))).toBe(`PDF · ${PDF}`);
+    // the whole label is also the tooltip of the closed list and of each option
+    fireEvent.change(doc, { target: { value: PDF } });
+    expect(doc.getAttribute("title")).toBe(`PDF · ${PDF}`);
   });
 
   it("while Clear is being written the dialog's Cancel is disabled and has no tooltip of its own", async () => {

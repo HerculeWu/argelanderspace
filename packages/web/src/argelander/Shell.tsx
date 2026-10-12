@@ -5,14 +5,14 @@ import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, pushDocUrl, replaceDocUrl } from "../lib/deeplink";
-import { argumentBus, argumentUrl, openArgumentWork, parseArgumentHash } from "../lib/argument-route";
+import { argumentBus, argumentUrl, parseArgumentHash } from "../lib/argument-route";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { planResize, resizeDivider, shareOf } from "./layout";
 import { createPaneManager, type Pane, type PaneAdapter, type PaneManager, type ViewActionOutcome } from "./panes";
 import { ACCENTS, useTweaks } from "./theme";
 import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
-import { applyDocDeletion, askWorkspaceLeave, confirmWorkspaceLeave, WorkspaceProvider, type Workspace } from "./workspace";
+import { applyDocDeletion, askWorkspaceLeave, confirmWorkspaceLeave, type LeaveOrigin, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
 import { DocPane } from "../doc/DocPane";
@@ -180,7 +180,7 @@ export function Shell() {
   }, []);
 
   const openDoc = useCallback(
-    (docId?: string, anchor?: string | null, opts: { libraryAsked?: boolean } = {}): boolean => {
+    (docId?: string, anchor?: string | null, opts: { libraryAsked?: boolean; origin?: LeaveOrigin } = {}): boolean => {
       const nextDoc = docId ?? currentDocRef.current ?? papers[0] ?? null;
       // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
       // it (the view is still open, and its URL must still say so).
@@ -212,7 +212,7 @@ export function Shell() {
       const { panes: current, activeId } = manager.getState();
       const replaced = current.some((p) => p.view === "doc") ? undefined : current.find((p) => p.id === activeId);
       if (replaced?.view === "library" && !opts.libraryAsked) {
-        const verdict = askWorkspaceLeave("library", replaced.id);
+        const verdict = askWorkspaceLeave("library", replaced.id, opts.origin);
         if (verdict !== true) {
           if (verdict === false) restoreUrl();
           else
@@ -232,35 +232,77 @@ export function Shell() {
   // deep links: react to browser back/forward and manual hash edits
   const openDocRef = useRef(openDoc);
   openDocRef.current = openDoc;
-  /** The URL a confirmed Back/Forward is let through to (see onNav). */
-  const allowedHref = useRef<string | null>(null);
+  /**
+   * The URL a confirmed Back/Forward is let through to (see onNav): one navigation's worth of permission. It is taken by the
+   * navigation that arrives at that URL (a traversal fires `popstate` and then, when the hash differs, `hashchange`: the
+   * second must not ask again, so a taken permission lingers for a moment), and it is dropped when a graph is entered again
+   * and after a couple of seconds, so it can never excuse a later, different Back.
+   */
+  const allowed = useRef<{ href: string; timer: number } | null>(null);
+  const dropAllowed = useCallback(() => {
+    if (allowed.current) window.clearTimeout(allowed.current.timer);
+    allowed.current = null;
+  }, []);
+  const allowHref = useCallback(
+    (href: string) => {
+      dropAllowed();
+      const entry = { href, timer: 0 };
+      entry.timer = window.setTimeout(() => {
+        if (allowed.current === entry) allowed.current = null;
+      }, 2000);
+      allowed.current = entry;
+    },
+    [dropAllowed]
+  );
+  /** Whether `href` is the navigation that was let through; taking it shortens the permission to the rest of this navigation. */
+  const takeAllowed = useCallback((href: string): boolean => {
+    const entry = allowed.current;
+    if (!entry || entry.href !== href) return false;
+    window.clearTimeout(entry.timer);
+    entry.timer = window.setTimeout(() => {
+      if (allowed.current === entry) allowed.current = null;
+    }, 100);
+    return true;
+  }, []);
+  useEffect(() => dropAllowed, [dropAllowed]);
+  /** The question a browser navigation is waiting on (a late-answering guard): the newest URL asked for, where "discard" goes. */
+  const pendingNav = useRef<{ href: string } | null>(null);
   useEffect(() => {
     const onNav = () => {
       const route = parseDocRoute(window.location.pathname, window.location.hash);
       const argumentWork = parseArgumentHash(window.location.hash);
-      // The browser's Back/Forward (or a hand-edited hash) away from the open argument graph, to a plain URL, a Doc, an
-      // exploration or another Work's graph: the Library page's leave guard decides first (an unsaved draft is asked
-      // about with the app's own dialog, which answers later). The URL has already moved. Until the answer is yes, the
-      // graph's URL is pushed back over it (a new entry after the one the browser moved to, so the forward entries are
-      // dropped); on yes, `history.back()` returns to the entry the person chose, and that one navigation is let through
-      // without asking again (`allowedHref`).
-      const open = openArgumentWork();
-      const leavingView = open !== null && argumentWork !== open;
+      // The browser's Back/Forward (or a hand-edited hash) away from an open argument graph, to a plain URL, a Doc, an
+      // exploration or another Work's graph: the leave guard of the pane that shows that graph decides first (an unsaved
+      // draft is asked about with the app's own dialog, which answers later). The URL has already moved. Until the answer
+      // is yes, the graph's URL is pushed back over it (a new entry after the one the browser moved to, so the forward
+      // entries are dropped); on yes, `history.back()` returns to the entry the person chose and that one navigation is
+      // let through without asking again (`allowed`). A navigation made while the question is open asks nothing more: it
+      // only becomes the destination "discard" goes to (every such navigation adds its own entry and the graph's URL again).
+      const hit = argumentBus.affected(argumentWork);
+      const leavingView = hit !== null;
       const href = window.location.href;
-      if (leavingView && allowedHref.current !== href) {
-        const verdict = askWorkspaceLeave("library");
+      if (hit && !takeAllowed(href)) {
+        if (pendingNav.current) {
+          pendingNav.current.href = href;
+          window.history.pushState(null, "", argumentUrl(hit.open));
+          return;
+        }
+        const verdict = askWorkspaceLeave("library", hit.paneId);
         if (verdict !== true) {
-          window.history.pushState(null, "", argumentUrl(open));
-          if (verdict !== false)
+          window.history.pushState(null, "", argumentUrl(hit.open));
+          if (verdict !== false) {
+            const pending = { href };
+            pendingNav.current = pending;
             void verdict.then((ok) => {
+              if (pendingNav.current === pending) pendingNav.current = null;
               if (!ok) return;
-              allowedHref.current = href;
+              allowHref(pending.href);
               window.history.back();
             });
+          }
           return;
         }
       }
-      if (allowedHref.current !== href) allowedHref.current = null;
       // `#argument/<work id>` drives the argument graph view; any other URL (a Doc, a plain URL, an exploration) leaves it
       if (!argumentWork) argumentBus.exit();
       if (route) {
@@ -281,7 +323,7 @@ export function Shell() {
       window.removeEventListener("popstate", onNav);
       window.removeEventListener("hashchange", onNav);
     };
-  }, [ensureLibraryPane]);
+  }, [ensureLibraryPane, allowHref, takeAllowed]);
 
   // Stage 8 §8: a document delete lands here (the papers list is fetched only
   // once at boot, so the deleted id must be dropped locally; currentDoc
@@ -326,7 +368,7 @@ export function Shell() {
       case "switch_view": {
         const id = action.paneId ?? s().activeId;
         if (missing(id)) return { ok: false, detail: "not_found" };
-        const applied = action.paneId === undefined ? s().setActiveView(action.view) : s().setPaneView(id, action.view);
+        const applied = action.paneId === undefined ? s().setActiveView(action.view, "agent") : s().setPaneView(id, action.view, "agent");
         if (!applied) return { ok: false, detail: "leave_blocked" };
         return (await settle(() => s().panes.find((pane) => pane.id === id)?.view === action.view && (action.paneId === undefined || s().activeId === id))) ? { ok: true } : { ok: false, detail: "unavailable" };
       }
@@ -341,7 +383,7 @@ export function Shell() {
       case "close_pane": {
         if (missing(action.paneId)) return { ok: false, detail: "not_found" };
         if (s().panes.length <= 1) return { ok: false, detail: "disabled" };
-        if (!s().closePane(action.paneId)) return { ok: false, detail: "leave_blocked" };
+        if (!s().closePane(action.paneId, "agent")) return { ok: false, detail: "leave_blocked" };
         return (await settle(() => missing(action.paneId))) ? { ok: true } : { ok: false, detail: "unavailable" };
       }
       case "select_pane": {
@@ -388,7 +430,7 @@ export function Shell() {
       if (!fresh.includes(docId)) return { ok: false, detail: "not_found" };
       shell.current.setPapers(fresh);
     }
-    if (shell.current.openDoc(docId) === false) return { ok: false, detail: "leave_blocked" };
+    if (shell.current.openDoc(docId, undefined, { origin: "agent" }) === false) return { ok: false, detail: "leave_blocked" };
     return (await settle(() => currentDocRef.current === docId && shell.current.panes.some((pane) => pane.view === "doc"))) ? { ok: true } : { ok: false, detail: "unavailable" };
   }, []);
   openLibraryDocRef.current = openLibraryDoc;
@@ -461,6 +503,7 @@ export function Shell() {
   // work's graph there; entering the view writes its history entry.
   const openArgumentGraph = useCallback(
     (workId: string) => {
+      dropAllowed(); // entering a graph again ends any earlier "let this one Back through"
       // The pane that shows the view is chosen here and named in the request, so the bus serves exactly it.
       const { panes: current, activeId: active } = manager.getState();
       const library = current.find((p) => p.id === active && p.view === "library") ?? current.find((p) => p.view === "library");
@@ -468,7 +511,7 @@ export function Shell() {
       else if (!manager.setActiveView("library")) return;
       argumentBus.request(workId, { push: true, paneId: library?.id ?? manager.getState().activeId });
     },
-    [manager]
+    [manager, dropAllowed]
   );
   const workspace: Workspace = useMemo(
     () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, tweaks }),

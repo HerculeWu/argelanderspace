@@ -69,6 +69,17 @@ describe("createArgument / updateArgument", () => {
     const second = must(createArgument(gone.graph, { title: "二" }));
     expect(second.id).not.toBe(first.id);
   });
+  it("a random source that always gives the same draw, on an id already taken, still ends: the draw is lengthened by a counter", () => {
+    let draws = 0;
+    const stuck = (): number => {
+      if (++draws > 1000) throw new Error("did not end");
+      return 0;
+    };
+    const graph = { arguments: [{ id: "a00000" }, { id: "a000001" }] };
+    const id = nextArgumentId(graph, stuck);
+    expect(id).toBe("a000002");
+    expect(graph.arguments.map((a) => a.id)).not.toContain(id);
+  });
   it("refuses a blank title and a taken id, saying which", () => {
     expect(createArgument(empty, { title: "  " })).toEqual({
       ok: false,

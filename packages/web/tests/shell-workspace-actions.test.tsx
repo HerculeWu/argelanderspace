@@ -249,6 +249,29 @@ describe("the leave-draft protection holds for Copilot requests too", () => {
   });
 });
 
+describe("an unsaved argument draft and the Copilot (ticket 05 fix round B)", () => {
+  it("a view action that would leave the Library page with a draft is leave_blocked at once: no question is asked of the person, nothing is left pending, and the person's own switch still asks", async () => {
+    await boot();
+    fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="library"]')!);
+    await waitFor(() => expect(q('[data-ui="library-stub"]')).not.toBeNull());
+    const questions: ((ok: boolean) => void)[] = [];
+    const release = registerWorkspaceLeaveGuard((origin) => (origin === "agent" ? false : new Promise<boolean>((resolve) => questions.push(resolve))), "library");
+    try {
+      expect(await run({ action: "switch_view", view: "plan" })).toEqual({ ok: false, detail: "leave_blocked" });
+      expect(await run({ action: "open_doc", docId: "d2" })).toEqual({ ok: false, detail: "leave_blocked" }); // no Doc pane: it would replace this one
+      await run({ action: "split_pane" });
+      await waitFor(() => expect(paneIds()).toHaveLength(2));
+      expect(await run({ action: "close_pane", paneId: 1 })).toEqual({ ok: false, detail: "leave_blocked" });
+      expect(await run({ action: "switch_view", view: "plan", paneId: 1 })).toEqual({ ok: false, detail: "leave_blocked" });
+      expect(questions).toHaveLength(0);
+      expect(q('[data-ui="library-stub"]')).not.toBeNull();
+      // the person's own switch asks (and waits)
+      fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="plan"]')!);
+      expect(questions.length).toBeGreaterThan(0);
+    } finally { release(); }
+  });
+});
+
 describe("appearance goes through the Tweaks setter", () => {
   it("sets theme, accent, density and language like the popover, and persists them the same way", async () => {
     await boot();

@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
-import { setOpenArgumentWork } from "../src/lib/argument-route";
 
 const h = vi.hoisted(() => ({
   /** pane id -> the Work whose graph that Library pane shows */
@@ -53,6 +52,7 @@ vi.mock("../src/library/LibraryView", async () => {
           argumentBus.register({
             paneId,
             isOpen: () => h.open.has(paneId ?? -1),
+            workId: () => h.open.get(paneId ?? -1) ?? null,
             open: (workId, opts) => {
               h.requests.push({ workId, confirmed: !!opts.confirmed });
               // (happy-dom fires `hashchange` for pushState, a browser does not; the real view opens idempotently)
@@ -177,7 +177,6 @@ describe("popstate", () => {
     window.history.replaceState(null, "", "/#argument/w1");
     render(<Shell />);
     await waitFor(() => expect(h.open.get(1)).toBe("w1"));
-    setOpenArgumentWork("w1"); // the real view does this while open
     let allow = false;
     const off = registerWorkspaceLeaveGuard(() => allow, "library");
     popTo("/");
@@ -188,7 +187,6 @@ describe("popstate", () => {
     popTo("/");
     expect(h.exits).toEqual([1]);
     off();
-    setOpenArgumentWork(null);
   });
 
   it("exploration and the graph exclude each other by URL: an #explore/ URL closes the graph, an #argument/ URL goes to the graph only", async () => {
@@ -300,7 +298,6 @@ describe("a guard that answers later (the argument graph's own dialog, ticket 05
     window.history.replaceState(null, "", hash);
     render(<Shell />);
     await waitFor(() => expect(h.open.get(1)).toBeDefined());
-    setOpenArgumentWork("w1");
   };
 
   it("the browser's Back waits: the graph's URL is put back at once, the view stays, and 'discard' then goes back for real, asking once", async () => {
@@ -317,7 +314,6 @@ describe("a guard that answers later (the argument graph's own dialog, ticket 05
     expect(window.location.hash).toBe("");
     expect(guard.asked).toHaveLength(1); // the one navigation asked once
     guard.off();
-    setOpenArgumentWork(null);
   });
 
   it("'keep editing' leaves the view and the graph's URL in place", async () => {
@@ -329,7 +325,6 @@ describe("a guard that answers later (the argument graph's own dialog, ticket 05
     expect(h.exits).toEqual([]);
     expect(window.location.hash).toBe("#argument/w1");
     guard.off();
-    setOpenArgumentWork(null);
   });
 
   it("between two graph URLs it asks too, and the confirmed request is not asked about again by the view", async () => {
@@ -343,10 +338,10 @@ describe("a guard that answers later (the argument graph's own dialog, ticket 05
     expect(window.location.hash).toBe("#argument/w1");
     await act(async () => guard.asked[0]!(true));
     await waitFor(() => expect(h.open.get(1)).toBe("w2"));
-    expect(h.requests[h.requests.length - 1]).toEqual({ workId: "w2", confirmed: true });
+    expect(h.requests).toContainEqual({ workId: "w2", confirmed: true }); // (the hashchange that follows a traversal asks nothing)
+    expect(h.requests.filter((r) => r.workId === "w2" && !r.confirmed && h.open.get(1) !== "w2")).toEqual([]);
     expect(guard.asked).toHaveLength(1);
     guard.off();
-    setOpenArgumentWork(null);
   });
 
   it("Back to a Doc that is not the open one asks once, not once for the navigation and again for the pane it replaces", async () => {
@@ -358,7 +353,6 @@ describe("a guard that answers later (the argument graph's own dialog, ticket 05
     await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
     expect(guard.asked).toHaveLength(1);
     guard.off();
-    setOpenArgumentWork(null);
   });
 
   it("opening the Doc that is already current, with no Doc pane, replaces the Library page and asks first", async () => {
@@ -385,6 +379,109 @@ describe("a guard that answers later (the argument graph's own dialog, ticket 05
     await boot();
     fireEvent.click(q('[data-ui="stub-lib-enter-w2"]')!);
     await waitFor(() => expect(h.requests[h.requests.length - 1]).toEqual({ workId: "w2", confirmed: false }));
-    setOpenArgumentWork(null);
+  });
+});
+
+describe("a Back that was let through is let through once (ticket 05 fix round B)", () => {
+  /**
+   * A browser fires neither `popstate` nor `hashchange` for pushState, but happy-dom fires `hashchange` a tick later; that
+   * event would clear a leftover permission by accident and hide the bug. Dropped here, as a browser would not send it.
+   */
+  function browserLikePushState() {
+    const pushed = new Set<string>();
+    const push = window.history.pushState.bind(window.history);
+    const dispatch = window.dispatchEvent.bind(window);
+    window.history.pushState = (state: unknown, unused: string, url?: string | URL | null) => {
+      push(state, unused, url);
+      pushed.add(window.location.href);
+    };
+    window.dispatchEvent = (event: Event) => {
+      if (event.type === "hashchange" && pushed.delete((event as HashChangeEvent).newURL)) return true;
+      return dispatch(event);
+    };
+    return () => {
+      window.history.pushState = push;
+      window.dispatchEvent = dispatch;
+    };
+  }
+  const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 20))));
+
+  it("a draft made after re-entering the graph is asked about again on the next Back", async () => {
+    const restore = browserLikePushState();
+    try {
+      window.history.pushState(null, "", "/");
+      window.history.pushState(null, "", "/#argument/w1");
+      window.history.replaceState(null, "", "/#argument/w1");
+      render(<Shell />);
+      await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+      const asked: ((ok: boolean) => void)[] = [];
+      const off = registerWorkspaceLeaveGuard(() => new Promise<boolean>((resolve) => asked.push(resolve)), "library");
+      window.history.back();
+      await waitFor(() => expect(asked).toHaveLength(1));
+      await act(async () => asked[0]!(true));
+      await waitFor(() => expect(h.exits).toEqual([1]));
+      await tick();
+      // the person enters the graph again from the Reader's entry (pushState: no popstate, no hashchange) and edits
+      fireEvent.click(q('[data-ui="stub-lib-enter-w2"]')!);
+      await waitFor(() => expect(h.open.get(1)).toBe("w2"));
+      await tick();
+      window.history.back();
+      await waitFor(() => expect(asked).toHaveLength(2));
+      expect(h.exits).toEqual([1]); // still open: asked, not let through
+      expect(window.location.hash).toBe("#argument/w2");
+      await act(async () => asked[1]!(false));
+      off();
+    } finally {
+      restore();
+    }
+  });
+
+  it("with two Library panes that have shown a graph, Back asks the pane that still shows it with a draft", async () => {
+    window.history.replaceState(null, "", "/#argument/w1");
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    fireEvent.click(q('[data-ui="split-pane"]')!);
+    await waitFor(() => expect(qa('[data-ui="workspace-pane"]')).toHaveLength(2));
+    const pane2 = qa('[data-ui="workspace-pane"]').find((el) => el.getAttribute("data-ui-key") === "2")!;
+    fireEvent.click(pane2.querySelector('[data-ui="choose-pane-view"]')!);
+    fireEvent.click([...pane2.querySelectorAll<HTMLElement>('[data-ui="pane-view-option"]')].find((el) => el.getAttribute("data-ui-key") === "library")!);
+    await waitFor(() => expect(libraries().sort()).toEqual([1, 2]));
+    // pane 2 had shown a graph and went back to the Library; pane 1 keeps its graph with a draft
+    let asked = 0;
+    const off = registerWorkspaceLeaveGuard(() => {
+      asked++;
+      return false;
+    }, { view: "library", paneId: 1 });
+    const other = registerWorkspaceLeaveGuard(() => false, { view: "library", paneId: 2 });
+    popTo("/");
+    expect(asked).toBe(1);
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1");
+    off();
+    other();
+  });
+
+  it("while the question is open, a further navigation asks nothing more: 'discard' goes to the last place asked for, 'keep editing' leaves the graph", async () => {
+    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/#argument/w1");
+    window.history.replaceState(null, "", "/#argument/w1");
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    const asked: ((ok: boolean) => void)[] = [];
+    const off = registerWorkspaceLeaveGuard(() => new Promise<boolean>((resolve) => asked.push(resolve)), "library");
+    window.history.back();
+    await waitFor(() => expect(asked).toHaveLength(1));
+    popTo("/#explore/2020X"); // a hand-edited hash while the dialog is open
+    await tick();
+    popTo("/doc/d2");
+    await tick();
+    expect(asked).toHaveLength(1); // no second dialog
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1");
+    await act(async () => asked[0]!(true));
+    await waitFor(() => expect(window.location.pathname).toBe("/doc/d2"));
+    expect(h.exits).toEqual([1]);
+    expect(asked).toHaveLength(1);
+    off();
   });
 });

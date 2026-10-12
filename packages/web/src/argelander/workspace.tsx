@@ -48,20 +48,28 @@ export function applyDocDeletion(
  */
 export type LeaveVerdict = boolean | Promise<boolean>;
 
+/**
+ * Who asked to leave: the person (`user`, the default: a dialog may be shown) or the Copilot acting on the view (`agent`: the
+ * model is waiting for an answer and the person has not chosen to leave, so a guard that would need a dialog refuses
+ * instead; the Doc views' guards ignore the difference).
+ */
+export type LeaveOrigin = "user" | "agent";
+type LeaveGuard = (origin: LeaveOrigin) => LeaveVerdict;
+
 interface GuardScope {
   /** The view whose pane this guard speaks for; absent: the Doc views (the Reader, the text editor). */
   view?: string;
   /** The pane that holds the guarded page; absent: any pane of `view`. */
   paneId?: number;
 }
-const leaveGuards = new Map<() => LeaveVerdict, GuardScope>();
+const leaveGuards = new Map<LeaveGuard, GuardScope>();
 
 /**
  * Register a transient user-data leave guard for workspace navigation. A guard with a `view` (the Library page's
  * unsaved argument draft) only speaks when its page is being left or unmounted: a pane of that view is switched or
  * closed (`scope.paneId` narrows it to that one pane), never when a Doc is switched.
  */
-export function registerWorkspaceLeaveGuard(guard: () => LeaveVerdict, scope: string | GuardScope = {}): () => void {
+export function registerWorkspaceLeaveGuard(guard: LeaveGuard, scope: string | GuardScope = {}): () => void {
   leaveGuards.set(guard, typeof scope === "string" ? { view: scope } : scope);
   return () => leaveGuards.delete(guard);
 }
@@ -71,13 +79,13 @@ export function registerWorkspaceLeaveGuard(guard: () => LeaveVerdict, scope: st
  * of those, the ones of pane `paneId`. `true`/`false` at once, or a promise when a guard decides later; the guards are
  * asked one after the other and the first refusal ends it.
  */
-export function askWorkspaceLeave(view?: string, paneId?: number): LeaveVerdict {
+export function askWorkspaceLeave(view?: string, paneId?: number, origin: LeaveOrigin = "user"): LeaveVerdict {
   const guards = [...leaveGuards]
     .filter(([, scope]) => (scope.view ?? "doc") === (view ?? "doc") && (scope.paneId === undefined || paneId === undefined || scope.paneId === paneId))
     .map(([guard]) => guard);
   const from = (index: number): LeaveVerdict => {
     for (let i = index; i < guards.length; i++) {
-      const verdict = guards[i]!();
+      const verdict = guards[i]!(origin);
       if (verdict === true) continue;
       if (verdict === false) return false;
       return verdict.then((ok) => (ok ? from(i + 1) : false));

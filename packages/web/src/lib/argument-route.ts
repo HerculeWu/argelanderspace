@@ -22,6 +22,8 @@ export interface ArgumentTarget {
   paneId?: number;
   /** Whether this Library page currently shows an argument graph. */
   isOpen(): boolean;
+  /** The Work whose graph this Library page shows (null when it shows none). */
+  workId(): string | null;
   /** Show the Work's graph; `push` writes the URL (a UI entry), a hash-driven request leaves it as it is. */
   open(workId: string, opts: { push: boolean; confirmed?: boolean }): void;
   /** Leave the view (the URL no longer names a graph). */
@@ -51,11 +53,19 @@ export const argumentBus = {
   /** The URL stopped naming a graph (popstate to a plain URL). */
   exit: (): void => bus.exit(),
   register: (t: ArgumentTarget): (() => void) => bus.register(t),
+  /**
+   * The Library page whose open graph a navigation to `workId` (null: the URL no longer names a graph) would replace or
+   * close, with the Work it shows; null when that navigation leaves every open graph as it is. This is per pane: which pane
+   * shows a graph is the pane's own business (two Library panes can both have shown one, and one of them be back at the
+   * Library), and it is asked of the page the bus would act on. The Shell asks that pane's leave guard before it lets a
+   * browser Back/Forward through.
+   */
+  affected(workId: string | null): { paneId: number | undefined; open: string } | null {
+    const target = workId === null ? bus.peek() : bus.peek({ workId, push: false });
+    const open = target?.isOpen() ? target.workId() : null;
+    if (!target || open === null || open === workId) return null;
+    return { paneId: target.paneId, open };
+  },
 };
 
-let openWork: string | null = null;
-/** The Work whose graph the open view shows (null when none is open): what Shell restores the URL to when a draft keeps the view. */
-export const openArgumentWork = (): string | null => openWork;
-export const setOpenArgumentWork = (workId: string | null): void => {
-  openWork = workId;
-};
+

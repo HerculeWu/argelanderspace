@@ -69,6 +69,11 @@ export function createRouteBus<T, R>(config: RouteBusConfig<T, R>) {
         config.open(t, request);
       }
     },
+    /** The page `request` would be served by (no request: the one an `exit` would act on), without acting; undefined when none. */
+    peek(request?: R): T | undefined {
+      if (request === undefined) return targets.find((x) => config.active(x));
+      return targets.find((x) => accepts(x, request) && config.active(x)) ?? targets.find((x) => accepts(x, request));
+    },
     /** The URL stopped naming the mode. */
     exit(): void {
       pending = null;

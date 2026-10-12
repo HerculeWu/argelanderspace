@@ -82,6 +82,7 @@ export function ArgumentPanel({
   onOpenSource,
   overlay = false,
   busy = false,
+  unavailable = null,
   onSave,
   onDiscardNew,
   onDelete,
@@ -107,6 +108,8 @@ export function ArgumentPanel({
   overlay?: boolean;
   /** A write is in flight: the controls that would start another wait. */
   busy?: boolean;
+  /** Why nothing can be written now (the graph file is unreadable, the Work is gone): the draft stays, Save is off and this says why. */
+  unavailable?: string | null;
   /** Save the draft over `base` (the stored argument it was started from; null when it creates one). */
   onSave: (draft: ArgumentDraft, base: Argument | null, id: string | null) => Promise<PanelSaveOutcome>;
   onDiscardNew: () => void;
@@ -394,6 +397,11 @@ export function ArgumentPanel({
 
       {editing && (
         <div className="detail-footer" data-ui="argument-editor-footer">
+          {unavailable && (
+            <InlineMessage tone="danger" uiId="argument-save-unavailable">
+              {unavailable}
+            </InlineMessage>
+          )}
           {conflicted && (
             <InlineMessage tone="danger" title={t("argument.edit.conflictTitle")} uiId="argument-save-conflict">
               {stale === "gone" ? t("argument.edit.conflictGone") : stale === "changed" ? t("argument.edit.conflictStale") : conflict?.rev != null ? t("argument.edit.conflictBody", { a: baseRev, b: conflict.rev }) : t("argument.edit.conflictBodyUnknown")}
@@ -417,7 +425,7 @@ export function ArgumentPanel({
             <ActionButton mode="text" label={t("argument.edit.cancel")} tooltip={t("argument.edit.cancel")} data-ui="cancel-argument-edit" onClick={cancel}>
               {t("argument.edit.cancel")}
             </ActionButton>
-            <ActionButton mode="text" appearance="primary" label={t("argument.edit.save")} tooltip={t("argument.edit.save")} data-ui="save-argument" disabled={!draft.title.trim() || conflicted || (!isNew && !dirty)} busy={saving} busyLabel={t("argument.edit.saving")} onClick={save}>
+            <ActionButton mode="text" appearance="primary" label={t("argument.edit.save")} tooltip={t("argument.edit.save")} data-ui="save-argument" disabled={!draft.title.trim() || conflicted || unavailable !== null || (!isNew && !dirty)} busy={saving} busyLabel={t("argument.edit.saving")} onClick={save}>
               {t("argument.edit.save")}
             </ActionButton>
           </div>
