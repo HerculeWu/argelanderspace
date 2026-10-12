@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   context: null as null | PageContext,
 }));
 vi.mock("../src/api/ws", () => ({
+  onArgumentGraphChanged: () => () => {},
   onPlanChanged: () => () => {},
   onLibraryChanged: () => () => {},
   onJobEvent: () => () => {},

@@ -5,6 +5,7 @@ import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
+import { argumentBus, parseArgumentHash } from "../lib/argument-route";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { planResize, resizeDivider, shareOf } from "./layout";
@@ -143,6 +144,17 @@ export function Shell() {
         exploreBus.request(exploreSeed);
         return;
       }
+      // Argument graph ticket 04: a boot `#argument/<work id>` hash opens the library pane the same way
+      const argumentWork = parseArgumentHash(window.location.hash);
+      if (argumentWork) {
+        manager.update((ps) =>
+          ps.some((p) => p.view === "library")
+            ? ps
+            : ps.map((p) => (p.id === INITIAL_PANE_ID ? { ...p, view: "library" } : p))
+        );
+        argumentBus.request(argumentWork);
+        return;
+      }
       const want = new URL(window.location.href).searchParams.get("doc");
       const initialDoc = want && list.includes(want) ? want : list[0] ?? null;
       currentDocRef.current = initialDoc;
@@ -198,8 +210,12 @@ export function Shell() {
       // Stage 14: `#explore/<bibcode>` drives the discovery mode; losing the
       // explore hash exits explore mode (the session stays resumable)
       const seed = parseExploreHash(window.location.hash);
+      const argumentWork = parseArgumentHash(window.location.hash);
       if (seed) exploreBus.request(seed);
       else exploreBus.exit();
+      // `#argument/<work id>` drives the argument graph view; losing the hash leaves it
+      if (argumentWork) argumentBus.request(argumentWork);
+      else argumentBus.exit();
     };
     window.addEventListener("popstate", onNav);
     window.addEventListener("hashchange", onNav);
@@ -383,9 +399,20 @@ export function Shell() {
     return () => window.removeEventListener("keydown", h);
   }, [activeId, splitFrom]);
 
+  // The Reader's "argument graph" entry: show a Library page (the pane that has one, else the active pane) and open the
+  // work's graph there; entering the view writes its history entry.
+  const openArgumentGraph = useCallback(
+    (workId: string) => {
+      const library = manager.getState().panes.find((p) => p.view === "library");
+      if (library) manager.select(library.id);
+      else if (!manager.setActiveView("library")) return;
+      argumentBus.request(workId, { push: true });
+    },
+    [manager]
+  );
   const workspace: Workspace = useMemo(
-    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, tweaks }),
-    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, tweaks]
+    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, tweaks }),
+    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, tweaks]
   );
 
   // The page fields and status are the active pane's page adapter's (`pagesVersion` changes with what pages report).

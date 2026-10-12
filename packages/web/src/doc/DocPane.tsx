@@ -10,6 +10,7 @@ import { RightPanel } from "../components/RightPanel";
 import { MathText } from "../lib/segments";
 import { applyAnchor, applyAnnotationAnchor, isAnnotationAnchor } from "../lib/deeplink";
 import { useWorkspace } from "../argelander/workspace";
+import { ReaderArgumentEntry } from "../argument/ArgumentEntry";
 import { fetchDocDescription } from "../api/doc";
 import { onTextDocPublished } from "../api/ws";
 import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab, TextSourcePage } from "@argelanderspace/contracts";
@@ -210,6 +211,7 @@ function DocWorkspace({
           {ir.nPages !== undefined && t("doc.metaPages", { n: ir.nPages })}
           {t("doc.metaRefsFigs", { refs: ir.bib.length, figs: nFigs })}
         </span>
+        <ReaderArgumentEntry docId={currentId} onOpen={ws.openArgumentGraph} />
       </header>
 
       <span className="reader-position-note">{t("doc.positionNote")}</span>

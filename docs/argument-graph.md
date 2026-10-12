@@ -1,6 +1,6 @@
 # 论证图：数据、审计与读写接口
 
-状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）。界面、CLI、Copilot 工具、Work 合并跟随尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
+状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）与只读视图（票 04）已实施。编辑、CLI、Copilot 工具、Work 合并跟随尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
 
 ## 存储
 
@@ -61,3 +61,16 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 - **布局是纯函数**（`graph/layered/layout.ts`）：Native 在底、End 在顶，其余按最长支撑链；闭合环的边只在分层时忽略、照常绘制，并在 `backEdges` 里报告；跨层的边经不可见路径点；每个论证的列宽 = 它自己短标题的宽度（按最大字号 14 预留）；同输入同输出。短标题（`layered/text.ts`）：拉丁文在空白与连字符处断行，单词超过一行才在词内断，中文逐字断，最多两行、超出以 `…` 截断；宽度按字符类别估算（窄字母、小写、大写、宽大写 W/M/O/Q、数字、全角），偏保守，纯函数、不量 DOM。短标题与边标签的避让也是纯函数（`placement.ts`）：右侧被占时改下、左、上里最空的一侧。
 - **结构、置底置顶或短标题变化即重新布局**，拖动只在此之前有效，不保存；视图适应窗口时避开标题和图例（量实际尺寸；缩放控件在右缘，由右留白避开），画布尺寸变化时若未手动平移或缩放则重新适应，选中的论证保持在可见范围内。
 - **画布拖拽连边**：选中论证左侧出现手柄，拖到任一论证（含自己）后回调 `onConnect(from, to, 屏幕位置)`；自环拒绝、角色选择与写入由调用方（票 05）负责。手势在松手时用当时最新的 `onConnect` 与节点集合（拖动中父组件重渲染不会使它作废）。键盘选中（Enter）后焦点仍在节点上，整条链路保持点亮；没有选中时焦点才点亮一跳邻域，指针悬停始终是一跳邻域。
+
+## 视图（`packages/web/src/argument/`；票 04，只读）
+
+文献页（Library 页）内的临时模式，与探索模式同级，二者互斥；不是新的页面或活动栏项。
+
+- **入口**：Work 详情底部的「论证图」按钮（与「探索相关文献」并列；`WorkArgumentEntry` 读该 Work 的图，按钮上写论证数，没有图时写 `—`；无后端的示例数据下禁用；没有正文、没有 bibcode 的 Work 同样可进）。Reader 顶部的「论证图」按钮（LaTeX/文本 Doc 的 topbar，PDF Doc 的工具栏）：按下时才用文库 refs 查 Doc 所属 Work（Reader 平时不读文库），经 `Workspace.openArgumentGraph` 切到一个 Library 页（已有的，否则当前窗格）并打开该 Work 的图；查不到所属 Work 在按钮旁说明、不跳转。
+- **深链接**：`#argument/<URL 编码的 work id>`（`lib/argument-route.ts`，与 `explore-route.ts` 同构）。从 UI 进入时 pushState 一条历史，浏览器后退回到文献库；Shell 的启动与 hashchange/popstate 把 hash 交给 `argumentBus`，没有 Library 页时先建一个，请求挂起到 Library 页注册。F5 或直接打开回到同一视图；选中的论证不进 URL。坏链接、Work 不存在、文件损坏都是可返回文献库的正常错误态，不破坏 shell。
+- **读取与刷新**：`api/argument-graph.ts` 的 `fetchArgumentGraph` 走 `apiRequest`，结果为 `ok / not-found（404）/ corrupt（500 且 detail 以固定文案 "argument graph file is unreadable" 开头）/ error`；无图是服务端给的空图（`rev: 0`），显示空图状态，**不与 corrupt 混淆**。`useArgumentGraph` 在收到本 Work 的 `argument-graph.changed`（`put` 与 `external` 一视同仁）后重取；重取期间保留旧图，内容相同的重取不换对象（server 自写会再触发一次 external）；重取失败如实切到对应错误态，文件修好后下一次事件恢复。选中是视图自己的状态：论证仍在则保留，被删除（图读成功但不含它）才清除；错误态不清除。
+- **页面上下文（Copilot）**：`argument/page.ts` 的 `ArgumentPage`（Work、整张图、阶段、选中的论证；审计由图现算，不带）经 Library pane adapter 的 `argument`（`library-pane.ts`）保存。**现状限制**：共享 `PageContext`（contracts `copilot.ts`，strict）还没有论证图字段，此票不改 contracts，所以视图打开期间 Library pane 对外发布 `unavailable` 且 `library: null`（与探索期间同样不再把 Library 页当作当前页），`ArgumentPage` 只留在 adapter 里；票 09 先把该形状收入 contracts，再让 adapter 的 `status()/context()` 发布它。视图打开时 Library 的页面动作（选中文献、过滤等）一律 `unavailable`，同探索期间。
+- **出处跳转**：有目标且目标 `doc_id` 仍在该 Work 的 `doc_ids` 里才是可点按钮，否则只显示文字，不报错、不校验目标是否存在。点击经 `Workspace.openDoc(doc_id, anchor)`：共享 IR 的 Doc 用结构 id，PDF Doc 用 Reader 已有的 `page-<n>` 锚点；因此在单窗格布局下阅读窗格替换当前窗格（视图随之卸载，要回到图用 Reader 顶部入口或活动栏），有多个窗格时用已有的 Doc 窗格。
+- **没有的东西**：新建、清空、编辑、删除、连边都不在本票；标题栏的「新建论证」「清空」和空图状态的「新建论证」显示为禁用并带说明，票 05 接通。没有触发 Copilot 的按钮。
+- **窄屏**：容器宽度 ≤ 1100 px 时右面板 340 px、大纲 240 px（原型固定 392/300，1024 宽未测）；此时面板打开后画布约 380 px 宽。
+

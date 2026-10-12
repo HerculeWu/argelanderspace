@@ -9,6 +9,7 @@ import i18n from "../i18n";
 import { ActionButton, Badge, Dialog, InlineMessage, Tabs } from "../ui";
 import { cgKfmt } from "../graph/graphPhysics";
 import { AbstractHtml } from "../lib/abstract";
+import { WorkArgumentEntry } from "../argument/ArgumentEntry";
 import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
 import type { GraphNode, LibraryRef } from "./types";
 import {
@@ -100,6 +101,7 @@ export function RefDetail({
   onDocDeleted,
   onBeforeDocDelete,
   explore,
+  argumentGraph,
   tab: controlledTab,
   onTabChange,
 }: {
@@ -118,6 +120,8 @@ export function RefDetail({
    * a usable ADS bibcode AND a live backend (no demo/fixture exploration).
    */
   explore?: { bibcode: string | null; live: boolean; onExplore: (bibcode: string) => void };
+  /** Ticket 04: the argument graph entry, beside the explore entry (works without a bibcode or a Doc). */
+  argumentGraph?: { live: boolean; onOpen: (workId: string) => void };
   tab?: DetailTab;
   onTabChange?: (tab: DetailTab) => void;
 }) {
@@ -952,9 +956,9 @@ export function RefDetail({
         )}
         </Tabs>
       </div>
-      {explore && (
+      {(explore || argumentGraph) && (
         <div className="detail-footer" data-ui="work-detail-footer">
-          <ActionButton
+          {explore && <ActionButton
             unstyled
             mode="text"
             className="btn primary large"
@@ -965,8 +969,9 @@ export function RefDetail({
             onClick={() => explore.bibcode && explore.onExplore(explore.bibcode)}
           >
             {t("explore.entry")}
-          </ActionButton>
-          {(!explore.live || !explore.bibcode) && (
+          </ActionButton>}
+          {argumentGraph && <WorkArgumentEntry workId={r.id} live={argumentGraph.live} onOpen={argumentGraph.onOpen} />}
+          {explore && (!explore.live || !explore.bibcode) && (
             <div className="detail-footer-note">
               {!explore.live ? t("explore.demoOff") : t("explore.noBibcode")}
             </div>

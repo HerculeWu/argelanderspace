@@ -13,6 +13,7 @@ import { effectiveLabel, labelColor, LibraryView } from "../src/library/LibraryV
 import type { LibraryData, LibraryRef } from "../src/library/types";
 
 vi.mock("../src/api/ws", () => ({
+  onArgumentGraphChanged: () => () => {},
   onLibraryChanged: () => () => {},
   onJobEvent: () => () => {},
 }));

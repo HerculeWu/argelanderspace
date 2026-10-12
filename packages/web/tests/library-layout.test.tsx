@@ -13,7 +13,7 @@ import { libraryAutoFold, MIN_GRAPH_COLUMN } from "../src/library/layout";
 import { LibraryView } from "../src/library/LibraryView";
 import type { LibraryData, LibraryRef } from "../src/library/types";
 
-vi.mock("../src/api/ws", () => ({ onLibraryChanged: () => () => {}, onJobEvent: () => () => {} }));
+vi.mock("../src/api/ws", () => ({ onArgumentGraphChanged: () => () => {}, onLibraryChanged: () => () => {}, onJobEvent: () => () => {} }));
 
 describe("libraryAutoFold", () => {
   it("folds the work list only while a detail is open and the graph would fall below its minimum", () => {

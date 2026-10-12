@@ -31,6 +31,7 @@ import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
 import { buildPdfTextTarget, pdfPageRectFromVisible, pdfPageRectToVisible, pdfSelectionQuote } from "./pdf-text-target";
 import { registerWorkspaceLeaveGuard, useWorkspace } from "../argelander/workspace";
+import { ReaderArgumentEntry } from "../argument/ArgumentEntry";
 import { fetchPdfDoc } from "../api/pdf";
 import { PdfReadingPositionWriter, type PositionWriterFailure, type PositionWriterState } from "./PdfReadingPositionWriter";
 import { ActionButton } from "../ui";
@@ -960,6 +961,7 @@ function PdfSearchControls({ docId, pages, onUserNavigation, controlRef, onState
 
 function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUserNavigation, onCurrentPage, searchControl, onSearchState }: { docId: string; filename: string; workTitle: string; bytes: ArrayBuffer; totalPages: number; pages: Array<{ width: number; height: number; rotation: number }>; onUserNavigation: () => void; onCurrentPage: (page: number) => void; searchControl: MutableRefObject<PdfSearchControl | null>; onSearchState: (state: PdfSearchState | null) => void }) {
   const { t } = useTranslation();
+  const workspace = useWorkspace();
   const { provides: scroll } = useScrollCapability();
   const { provides: zoom } = useZoomCapability();
   const [page, setPage] = useState(1);
@@ -1003,6 +1005,7 @@ function PdfToolbar({ docId, filename, workTitle, bytes, totalPages, pages, onUs
       <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="fit-page" className="pdf-icon-action" data-ui="fit-pdf-page" disabled={!zoom} label={t("pdfReader.fitPage")} tooltip={t("pdfReader.fitPage")} onClick={() => zoom?.forDocument(docId).requestZoom(ZoomMode.FitPage)} />
       <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="plus" className="pdf-icon-action" disabled={!zoom} data-ui="zoom-in-pdf" label={t("pdfReader.zoomIn")} tooltip={t("pdfReader.zoomIn")} onClick={() => zoom?.forDocument(docId).zoomIn()} />
     </div>
+    <ReaderArgumentEntry docId={docId} onOpen={workspace.openArgumentGraph} />
     <ActionButton unstyled mode="icon" iconSize="regular" appearance="quiet" iconName="download" className="pdf-icon-action" data-ui="download-original-pdf" label={t("pdfReader.downloadOriginal")} tooltip={t("pdfReader.downloadOriginal")} onClick={download} />
   </header>;
 }

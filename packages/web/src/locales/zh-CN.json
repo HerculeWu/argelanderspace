@@ -2030,6 +2030,82 @@
       "legendAudit": "有审计发现",
       "connectHint": "从这里拖到另一个论证：把本论证的 Claim 交给它使用",
       "notFilled": "未填写"
+    },
+    "view": {
+      "entry": "论证图",
+      "entryCount": "论证图 · {{count}} 个论证",
+      "entryNone": "论证图 · —",
+      "entryDemoOff": "论证图需要 ArgelanderSpace 后端",
+      "open": "打开论证图",
+      "breadcrumb": "论证图",
+      "back": "返回文献",
+      "backTooltip": "返回文献",
+      "argCount": "{{n}} 个论证",
+      "edgeCount": "{{n}} 条边",
+      "newArg": "新建论证",
+      "clear": "清空论证图",
+      "editLater": "编辑功能尚未开放，将在后续版本接通",
+      "audit": {
+        "none": "审计通过",
+        "count": "{{n}} 项审计发现",
+        "title": "审计发现",
+        "listLabel": "审计清单",
+        "cycle": "环：{{list}}",
+        "noEnd": "图中没有 End 论证",
+        "noPathToEnd": "「{{a}}」没有通往任何 End 论证的路径",
+        "endWithOutEdge": "End 论证「{{a}}」又被其他论证使用",
+        "nativeWithInEdge": "Native 论证「{{a}}」依赖本文的其他论证",
+        "incomplete": "「{{a}}」不完整：缺 {{m}}",
+        "joiner": "、",
+        "cycleArrow": " → "
+      },
+      "outline": {
+        "title": "按结论展开",
+        "orphans": "未通往 End 的论证",
+        "noEnd": "没有 End 论证，无法按结论展开。以下列出全部论证。",
+        "cycle": "环",
+        "expand": "展开 {{title}}",
+        "collapse": "收起 {{title}}",
+        "flagged": "有审计发现",
+        "label": "论证大纲"
+      },
+      "panel": {
+        "label": "论证详情",
+        "close": "关闭",
+        "implicit": "(implicit)",
+        "implicitLabel": "原文未明说，由整理者补出",
+        "notFilled": "未填写",
+        "findings": "审计发现",
+        "usedBy": "被用于",
+        "usedByNone": "还没有论证使用它的 Claim。",
+        "asRole": "作为 {{role}}",
+        "sources": "出处",
+        "sourcesNone": "没有出处。",
+        "openSource": "在阅读窗格打开",
+        "sourceText": "出处文字",
+        "fromArgument": "来自论证「{{title}}」",
+        "untitled": "—"
+      },
+      "state": {
+        "loading": "正在读取论证图…",
+        "notFound": "找不到这篇文献",
+        "notFoundHint": "它可能已被删除或合并，或链接有误。",
+        "corrupt": "论证图文件无法读取",
+        "corruptHint": "文件已损坏，工作台不会修改它。请修复或移走该文件后重试。",
+        "error": "读取论证图失败",
+        "errorUnreachable": "无法连接到工作台服务。",
+        "errorOther": "服务返回了意外的结果。",
+        "retry": "重试",
+        "emptyTitle": "这篇文献还没有论证图",
+        "emptyHint": "可以手动添加第一个论证；也可以在 Copilot 里说「整理这篇的论证图」。",
+        "emptyNote": "手动新建将在后续版本开放。"
+      },
+      "kind": {
+        "native": "Native",
+        "end": "End",
+        "normal": "普通"
+      },
+      "readerNoWork": "找不到这个文档所属的文献"
     }
   }
 }
