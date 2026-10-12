@@ -16,6 +16,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
+import { GraphZoomControls } from "./GraphZoomControls";
 import {
   cgComputeLayout,
   cgHue,
@@ -694,13 +695,13 @@ export function GraphCanvas({
         </div>
       )}
 
-      <div className="cg-zoom" data-ui="graph-zoom-controls">
-        <ActionButton unstyled mode="icon" iconName="plus" appearance="quiet" iconSize="small" className="cg-zbtn" label={t("graph.zoomIn")} tooltip={t("graph.zoomIn")} data-testid="zoom-in" data-ui="zoom-in" onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} />
-        <span className="zoom-value mono">{Math.round(v.k * 100)}%</span>
-        <ActionButton unstyled mode="icon" iconName="minus" appearance="quiet" iconSize="small" className="cg-zbtn" label={t("graph.zoomOut")} tooltip={t("graph.zoomOut")} data-ui="zoom-out" onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} />
-        <ActionButton unstyled mode="icon" iconName="expand" className="cg-zbtn" label={t("graph.fitView")} tooltip={t("graph.fitView")} data-testid="fit-view" data-ui="fit-graph" onClick={fitView} />
-        <ActionButton unstyled mode="icon" iconName="rotate-ccw" className="cg-zbtn" label={t("graph.relayout")} tooltip={t("graph.relayout")} data-ui="relayout-graph" onClick={relayout} />
-      </div>
+      <GraphZoomControls
+        zoom={v.k}
+        onZoomIn={() => zoomAt(1.25, size.w / 2, size.h / 2)}
+        onZoomOut={() => zoomAt(0.8, size.w / 2, size.h / 2)}
+        onFit={fitView}
+        onRelayout={relayout}
+      />
 
       {hoverNode && tooltip && !drag.current && (
         <div className="tooltip" data-ui="graph-node-tooltip" data-ui-key={hoverNode.id} style={{ left: tooltip.x, top: tooltip.y }}>

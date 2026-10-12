@@ -2014,5 +2014,22 @@
     "recipients": "To: {{list}}",
     "ccList": "Cc: {{list}}",
     "staleFolders": "Folder list is from the last saved copy"
+  },
+  "argument": {
+    "canvas": {
+      "heading": "Argument graph",
+      "note": "Bottom-up: Native arguments at the bottom, End arguments at the top. A → B means B uses A’s Claim.",
+      "kindNative": "Native",
+      "kindEnd": "End",
+      "kindNormal": "Regular",
+      "roleGrounds": "Grounds",
+      "roleWarrant": "Warrant",
+      "roleBacking": "Backing",
+      "roleRebuttal": "Rebuttal",
+      "legendCycle": "Edge on a cycle",
+      "legendAudit": "Has audit findings",
+      "connectHint": "Drag from here to another argument to let it use this Claim",
+      "notFilled": "Not filled in"
+    }
   }
 }

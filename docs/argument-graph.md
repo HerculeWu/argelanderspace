@@ -52,3 +52,11 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 ## WebSocket
 
 `{ type: "argument-graph.changed", work_id, cause?: "put" | "external", at }`。`work_id` 是原始 Work id，不是文件名编码。server 自己的 PUT 成功后立即广播 `put`；watcher 轮询 `argument-graphs/*.json` 的 mtime+size 指纹（按 Work，回调带解码后的 id，已排序；tmp 文件和不是 store 写出的名字被忽略），变化时广播 `external`。server 自写会再触发一次 `external`，与 plans 先例相同，接收方的重取是幂等的。
+
+## 画布（`packages/web/src/graph/`、`argument/`；票 03，只有渲染，页面入口与写入在后续票）
+
+共享图 renderer 有两种布局：`GraphCanvas`（力导向，Library 与 Discovery 两个 adapter）和 `LayeredGraphCanvas`（分层，论证图 adapter）。两者共用缩放控件 `GraphZoomControls` 和 `cg-*` 样式；分层 renderer 不认识「论证」，只收到节点（短标题、颜色、双环、置底/置顶、角标）和边（颜色、静止色、虚线/点线、可选文字）。领域语义全部在 `argument/`：`canvasModel.ts`（种类与角色到颜色、线型、置底置顶；审计角标与环上的边取自 contracts 的 `auditArgumentGraph`）和 `ArgumentGraphCanvas.tsx`（图例、tooltip、双语文案 `argument.canvas.*`）。
+
+- **布局是纯函数**（`graph/layered/layout.ts`）：Native 在底、End 在顶，其余按最长支撑链；闭合环的边只在分层时忽略、照常绘制，并在 `backEdges` 里报告；跨层的边经不可见路径点；每个论证的列宽 = 它自己短标题的宽度（按最大字号 14 预留）；同输入同输出。短标题与边标签的避让也是纯函数（`placement.ts`）：右侧被占时改下、左、上里最空的一侧。
+- **结构、置底置顶或短标题变化即重新布局**，拖动只在此之前有效，不保存；视图适应窗口时避开标题、图例和缩放控件（量实际尺寸），画布尺寸变化时若未手动平移或缩放则重新适应，选中的论证保持在可见范围内。
+- **画布拖拽连边**：选中论证左侧出现手柄，拖到任一论证（含自己）后回调 `onConnect(from, to, 屏幕位置)`；自环拒绝、角色选择与写入由调用方（票 05）负责。
