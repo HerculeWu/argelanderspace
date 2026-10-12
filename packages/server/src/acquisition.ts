@@ -119,7 +119,12 @@ export type ZipSyncOutcome =
     }
   | { kind: "busy" }
   | { kind: "no_work"; message: string }
-  | { kind: "failed"; message: string };
+  | {
+      kind: "failed";
+      message: string;
+      /** Present when a Work merge had already moved graphs before the ingest failed (relative paths). */
+      argument_graph_merges?: ArgumentGraphMergeNote[];
+    };
 
 /** The library refresh: the rebuild summary, or the failed job's error (500 at the route). */
 export type RefreshOutcome =
@@ -847,16 +852,23 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       `argelanderspace-upload-${Date.now()}-${Math.random().toString(36).slice(2)}.zip`
     );
     if (uploadDoc !== undefined) docMutations.pinWriter(uploadDoc);
+    let failedNotes: readonly ArgumentGraphMergeNote[] = [];
     try {
       writeFileSync(tmp, data);
-      const { ref, argument_graph_merges } = await runAttachFor(query, tmp);
+      const { ref, argument_graph_merges } = await runAttachFor(query, tmp, undefined, (notes) => {
+        failedNotes = notes;
+      });
       return { kind: "attached", ref, argument_graph_merges };
     } catch (e) {
       // Python: ValueError/FileNotFoundError → 404, anything else → 500.
       const msg = e instanceof Error ? e.message : String(e);
       return msg.startsWith("no matching work in the library")
         ? { kind: "no_work", message: msg }
-        : { kind: "failed", message: msg };
+        : {
+            kind: "failed",
+            message: msg,
+            ...(failedNotes.length > 0 ? { argument_graph_merges: relNotes(failedNotes) } : {}),
+          };
     } finally {
       if (uploadDoc !== undefined) docMutations.unpinWriter(uploadDoc);
       rmSync(tmp, { force: true });
@@ -876,7 +888,11 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
         "refresh",
         async (j) => {
           try {
-            return await lockedRebuild(paths, { sources: deps.makeSources(offline) });
+            const out = await lockedRebuild(paths, { sources: deps.makeSources(offline) });
+            // the task record (jobs/<id>.json, job.done, hello) must never hold an absolute path either
+            return out.argument_graph_merges === undefined
+              ? out
+              : { ...out, argument_graph_merges: relNotes(out.argument_graph_merges) };
           } catch (error) {
             // failed after the Work merge was saved: the failed job keeps the notes
             const notes = mergesOf(error);
@@ -894,10 +910,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       const summary = done.result as RefreshResponse;
       return {
         kind: "done",
-        summary:
-          summary.argument_graph_merges === undefined
-            ? summary
-            : { ...summary, argument_graph_merges: relNotes(summary.argument_graph_merges) },
+        summary,
       };
     } finally {
       docMutations.unpinRefresh();

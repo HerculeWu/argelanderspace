@@ -54,7 +54,7 @@ import { argumentGraphDir, argumentGraphPath, loadArgumentGraph } from "./store.
 
 /** A leftover scratch file older than this is a crash residue, not another process mid-write. */
 const STALE_SCRATCH_MS = 60 * 60 * 1000;
-/** `<file>.json.m<6 hex>.tmp` (11 bytes over the file name, so a name the store can write fits); the older long form is still cleaned. */
+/** `<file>.json.m<6 hex>.tmp` (12 bytes over the file name, so a name the store can write fits); the older long form is still cleaned. */
 const SCRATCH_NAME = /\.json\.(?:merge-\d+-\d+|m[0-9a-f]{6})\.tmp$/;
 function scratchName(file: string): string {
   return `${file}.m${randomBytes(3).toString("hex")}.tmp`;
@@ -116,13 +116,31 @@ function fileId(file: string): FileId | null {
 }
 
 /** Remove `file` only when it is still the very file we published (same device and inode). */
-function retract(file: string, ours: FileId | null): void {
+function retract(file: string, ours: FileId | null): boolean {
   try {
     const now = fileId(file);
-    if (ours !== null && now !== null && now.dev === ours.dev && now.ino === ours.ino)
+    if (ours !== null && now !== null && now.dev === ours.dev && now.ino === ours.ino) {
       unlinkSync(file);
+      return true;
+    }
   } catch {
     /* nothing more can be done; the original is untouched either way */
+  }
+  return false;
+}
+
+/**
+ * Put the survivor's previous (empty, readable) graph file back after a bad replacement was taken down: atomic
+ * (scratch file, then rename), and only while nothing else has appeared under the name. Best effort; when it fails
+ * the survivor simply has no file, which is the same as "no graph" and is reported as the failed transfer it is.
+ */
+function restoreFile(file: string, bytes: Buffer, scratch: string): void {
+  try {
+    if (lstatExists(file)) return; // someone else wrote meanwhile: not ours to overwrite
+    writeDurable(scratch, bytes);
+    renameSync(scratch, file);
+  } catch {
+    /* reported as write_failed by the caller; the absorbed original is untouched */
   }
 }
 
@@ -239,6 +257,7 @@ export function followFold(
     };
   }
   const tmp = scratchName(survivorFile);
+  const restoreTmp = scratchName(survivorFile);
   const failed = (): ArgumentGraphMergeNote => ({
     ...base,
     outcome: "transfer_failed",
@@ -265,6 +284,15 @@ export function followFold(
       // The scratch file must hold every byte before anything is published from it.
       if (!readFileSync(tmp).equals(bytes)) return failed();
       const ours = fileId(tmp);
+      // The survivor's own empty graph, already confirmed readable: put back if the replacement turns out bad.
+      let prior: Buffer | null = null;
+      if (state.kind === "empty") {
+        try {
+          prior = readFileSync(survivorFile);
+        } catch {
+          prior = null;
+        }
+      }
       if (state.kind === "absent") {
         if (!publishExclusive(tmp, survivorFile)) continue; // someone published meanwhile: classify again
       } else {
@@ -277,7 +305,8 @@ export function followFold(
       // Read the published file back through the store's own reader: only a complete, correct graph under the
       // survivor's name lets the original go. Otherwise take our file down again (only if it is still ours).
       if (!publishedMatches(dataDir, survivor, expected)) {
-        retract(survivorFile, ours);
+        const removed = retract(survivorFile, ours);
+        if (removed && prior !== null) restoreFile(survivorFile, prior, restoreTmp);
         return failed();
       }
       let left = false;
@@ -295,13 +324,20 @@ export function followFold(
       };
     }
     // Two rounds lost to concurrent writers: report what is true now.
-    if (survivorState(dataDir, survivor, survivorFile).kind === "occupied")
-      return { ...base, outcome: "kept_survivor", survivor_file: survivorFile };
+    const last = survivorState(dataDir, survivor, survivorFile).kind;
+    if (last === "occupied" || last === "unreadable")
+      return {
+        ...base,
+        outcome: "kept_survivor",
+        survivor_file: survivorFile,
+        ...(last === "unreadable" ? { survivor_unreadable: true } : {}),
+      };
     return failed();
   } catch {
     return failed();
   } finally {
     try {
+      rmSync(restoreTmp, { force: true });
       rmSync(tmp, { force: true }); // our own scratch file (a hard link leaves the published name in place)
     } catch {
       /* a scratch file that cannot be removed must not turn into an exception, or hide the outcome */

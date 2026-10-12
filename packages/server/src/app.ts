@@ -2196,7 +2196,12 @@ export function createApp(deps: AppDeps): Hono {
       }
       if (attached.kind === "failed") {
         const e = detail(`ingest failed: ${attached.message}`, 500);
-        return c.json(e.body, e.status);
+        return c.json(
+          attached.argument_graph_merges !== undefined
+            ? { ...e.body, argument_graph_merges: attached.argument_graph_merges }
+            : e.body,
+          e.status
+        );
       }
       return c.json(
         attached.argument_graph_merges.length > 0

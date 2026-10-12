@@ -73,13 +73,43 @@ export function ingestMergeNotice(job: Job): void {
 /** Subscribe the store to the job feed for the page's lifetime (idempotent). */
 export function startMergeNotices(): void {
   if (stop !== null) return;
-  stop = onJobEvent((job) => ingestMergeNotice(job));
+  const off = onJobEvent((job) => ingestMergeNotice(job));
+  window.addEventListener("storage", onStorage);
+  stop = () => {
+    off();
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/** Fold what another tab (or an earlier load) stored into this page's set; order is kept, the newest last. */
+function absorbStored(): void {
+  for (const id of loadDismissed()) {
+    // an id seen again moves to the recent end, so the cap drops the oldest, not the latest closed
+    dismissed.delete(id);
+    dismissed.add(id);
+  }
+}
+
+function onStorage(e: StorageEvent): void {
+  if (e.key !== DISMISSED_KEY && e.key !== null) return;
+  absorbStored();
+  publish();
 }
 
 export function dismissMergeNotice(jobId: string): void {
-  dismissed.add(jobId);
+  // another tab may have closed notices since this page last wrote: take the union, never overwrite it
+  const stored = loadDismissed();
+  const merged = new Set<string>(stored);
+  for (const id of dismissed) {
+    merged.delete(id);
+    merged.add(id);
+  }
+  merged.delete(jobId);
+  merged.add(jobId); // the one just closed is the most recent
+  while (merged.size > DISMISSED_CAP) merged.delete(merged.values().next().value as string);
+  dismissed = merged;
   try {
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissed].slice(-DISMISSED_CAP)));
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissed]));
   } catch {
     /* kept for this page only */
   }

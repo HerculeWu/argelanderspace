@@ -238,21 +238,69 @@ describe("the move, step by step", () => {
     expect(loadArgumentGraph(dir, "c").arguments[0]?.title).toBe("the graph");
   });
 
-  it("an empty survivor replaced by rename that does not read back: original stays, no bad file remains", () => {
+  it("an empty survivor replaced by rename that does not read back: original stays, the survivor's empty graph is put back unchanged", () => {
     const dir = mkdtempSync(join(tmpdir(), "aspace-argsteps-"));
     dirs.push(dir);
     const e = put(dir, "a", "x");
     replaceArgumentGraph(dir, { ...e, arguments: [], edges: [] });
     put(dir, "c", "the graph");
     const before = readFileSync(argumentGraphPath(dir, "c"));
+    const emptyBefore = readFileSync(argumentGraphPath(dir, "a"));
+    const revBefore = loadArgumentGraph(dir, "a").rev;
+    let renames = 0;
     hooks.after = (op) => {
-      if (op === "renameSync") writeFileSync(argumentGraphPath(dir, "a"), "{broken");
+      if (op === "renameSync" && renames++ === 0)
+        writeFileSync(argumentGraphPath(dir, "a"), "{broken");
     };
     const note = followWorkFolds(dir, [...fold])[0];
-    expect(note?.outcome).toBe("transfer_failed");
+    expect(note).toMatchObject({ outcome: "transfer_failed", error: "write_failed" });
     expect(readFileSync(argumentGraphPath(dir, "c")).equals(before)).toBe(true);
     expect(readdirSync(argumentGraphDir(dir)).filter((n) => n.includes(".tmp"))).toEqual([]);
-    expect(() => loadArgumentGraph(dir, "a")).not.toThrow(); // either missing (empty) or a valid graph, never a corrupt file
+    expect(readFileSync(argumentGraphPath(dir, "a")).equals(emptyBefore)).toBe(true);
+    expect(loadArgumentGraph(dir, "a").rev).toBe(revBefore); // rev did not go back to 0
+  });
+
+  it("the put-back itself failing: still transfer_failed, original intact, nothing broken left, no scratch", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aspace-argsteps-"));
+    dirs.push(dir);
+    const e = put(dir, "a", "x");
+    replaceArgumentGraph(dir, { ...e, arguments: [], edges: [] });
+    put(dir, "c", "the graph");
+    hooks.after = (op) => {
+      if (op === "renameSync") {
+        writeFileSync(argumentGraphPath(dir, "a"), "{broken");
+        // from now on every rename (the put-back's) fails
+        hooks.fail.set("renameSync", Object.assign(new Error("EIO"), { code: "EIO" }));
+      }
+    };
+    const note = followWorkFolds(dir, [...fold])[0];
+    expect(note).toMatchObject({ outcome: "transfer_failed", error: "write_failed" });
+    expect(loadArgumentGraph(dir, "c").arguments[0]?.title).toBe("the graph");
+    expect(readdirSync(argumentGraphDir(dir)).filter((n) => n.includes(".tmp"))).toEqual([]);
+    expect(() => readFileSync(argumentGraphPath(dir, "a"))).toThrow(); // no broken file left
+  });
+
+  it("two lost rounds ending on an unreadable survivor: kept_survivor + survivor_unreadable, as in the first round", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aspace-argsteps-"));
+    dirs.push(dir);
+    put(dir, "c", "the graph");
+    // round 1: a valid empty graph appears under the survivor name before our link (lost); round 2: it turns
+    // into garbage between our scratch write and the re-confirm before the replace (lost again)
+    const other = mkdtempSync(join(tmpdir(), "aspace-argsteps-"));
+    dirs.push(other);
+    const e = put(other, "a", "x");
+    replaceArgumentGraph(other, { ...e, arguments: [], edges: [] });
+    const emptyBytes = readFileSync(argumentGraphPath(other, "a"));
+    let fsyncs = 0;
+    hooks.before = (op) => {
+      if (op === "linkSync") writeFileSync(argumentGraphPath(dir, "a"), emptyBytes);
+      if (op === "fsyncSync" && ++fsyncs === 2)
+        writeFileSync(argumentGraphPath(dir, "a"), "{garbage");
+    };
+    const note = followWorkFolds(dir, [...fold])[0];
+    expect(note).toMatchObject({ outcome: "kept_survivor", survivor_unreadable: true });
+    expect(readFileSync(argumentGraphPath(dir, "a"), "utf8")).toBe("{garbage");
+    expect(loadArgumentGraph(dir, "c").arguments[0]?.title).toBe("the graph");
   });
 
   it("only a link error that means 'no hard links' falls back to rename; others fail with the original intact", () => {

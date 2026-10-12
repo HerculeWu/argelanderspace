@@ -75,13 +75,13 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 
 用户 2026-10-12 裁决：只有被并入者有图时，转移成功后被并入者的原文件**不再保留**，磁盘上只有一张图（取代实施轮的「拷贝加保留原件」）。步骤与任意两步之间进程被杀时的磁盘状态——**每个状态下至少有一份完整的图在一个已发布的文件名下**：
 
-1. 在幸存者文件名旁写 `<幸存者文件名>.m<6位十六进制>.tmp`（即 `….json.mXXXXXX.tmp`，比 store 自己的 `.json.tmp` 只长 7 字节，store 能写的 id 这里也能转移），**写完全部字节**（`writeSync` 的短写不是错误，循环写到底，没有进展就抛错）并 fsync，再把临时文件读回与预期字节逐字节比对。被杀：被并入者的文件原样；残留一个不完整或完整的临时文件。
+1. 在幸存者文件名旁写 `<幸存者文件名>.m<6位十六进制>.tmp`（即 `….json.mXXXXXX.tmp`，比 store 自己的 `.json.tmp` 只长 8 字节，store 能写的 id 这里也能转移），**写完全部字节**（`writeSync` 的短写不是错误，循环写到底，没有进展就抛错）并 fsync，再把临时文件读回与预期字节逐字节比对。被杀：被并入者的文件原样；残留一个不完整或完整的临时文件。
 2. 发布：幸存者没有文件时用硬链接（目标已存在则失败，绝不覆盖；只有「文件系统不支持硬链接」的错误码 `EPERM` / `ENOTSUP` / `EOPNOTSUPP` / `ENOSYS` 才退回检查后 rename，其余错误直接 `transfer_failed`）；幸存者是空图时用 rename 替换。被杀（发布前）：同 1。发布是原子的，不存在半个文件。
 3. 发布成功、删临时文件前被杀：幸存者名下有完整的图，被并入者的原文件还在，临时文件还在（硬链接路径上临时文件与幸存者的文件是同一个 inode，两个名字一份内容；rename 路径上没有这一状态）。
-4. **回读确认**：发布后用 store 自己的读取函数读幸存者名下的文件，确认可读、`work_id` 是幸存者、`rev` 与论证、边内容与预期一致。不符则**不删**原文件，撤掉刚发布的文件（仅当它仍是本次发布的那个文件：设备号与 inode 一致），报告 `transfer_failed`（`write_failed`）。
+4. **回读确认**：发布后用 store 自己的读取函数读幸存者名下的文件，确认可读、`work_id` 是幸存者、`rev` 与论证、边内容与预期一致。不符则**不删**原文件，撤掉刚发布的文件（仅当它仍是本次发布的那个文件：设备号与 inode 一致），报告 `transfer_failed`（`write_failed`）。幸存者原来是零论证空图（rename 替换路径）时，替换前把它的原内容留在内存里（已确认可读的零论证图）；撤掉坏文件后，在名下仍没有别的文件的前提下用原子写（临时文件加 rename）把它放回，`rev` 不变；放回也失败则幸存者名下暂时没有文件（等同「没有图」），仍如实报告 `transfer_failed`（`write_failed`），被并入者的原文件原样。
 5. 回读通过、删原文件前被杀：幸存者名下有完整的图，被并入者的原文件还在（两份相同内容；原文件已无主，无视图读它）。
 6. 删原文件之后：只有幸存者名下一份。
-- 两轮重试都输给并发写入者：按此刻实际情况报告——幸存者文件存在且可读且有论证则 `kept_survivor`，否则 `transfer_failed`。
+- 两轮重试都输给并发写入者：按此刻实际情况报告——幸存者文件存在且有论证则 `kept_survivor`，存在但读不出来则 `kept_survivor` 加 `survivor_unreadable`（与首轮同一状态同一报告），否则 `transfer_failed`。
 - 发布失败：原文件原样，报告 `transfer_failed`，不删任何东西。发布成功但删原文件失败：图已在幸存者名下，原文件仍在，说明为 `moved` 加 `absorbed_file_left`，文字里写明原文件还在、不再使用。
 - 库保存与整个图处理之间被杀（`library.json` 已含合并、图一步未动）：被并入者的图原样留在原处，幸存者没有（或保留自己的）图，没有说明；按下面的办法手工找回。
 - 临时文件的清理：每次处理折叠前删除目录里超过一小时的 `*.json.m<hex>.tmp`（及旧版的 `*.json.merge-*.tmp`）（崩溃残留；一小时内的可能是另一进程正在写，不动）。这些文件不是 `.json`，不被 store 当作图、不被 watcher 看见。
@@ -99,13 +99,13 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 | `add-manual` 单条（`commitWork`）与批量（`addManualBibText`，说明挂在触发折叠的那一条上，按折叠对象而不是 id 对应） | 能 | core 测试 |
 | `library build`、`library build --bib`、`acquire`（含 `--fetch`/`--fetch-remaining` 的二次 rebuild） | 能 | stdout 的摘要 JSON 多可选键 `argument_graph_merges`（绝对路径）；`acquire` 的最终摘要带上**所有阶段**的说明；无合并时输出一字不变 |
 | `POST /api/library/refresh` | 能 | 响应摘要多同一个可选键（相对路径） |
-| Files 标签页：上传 zip 的任务、`?sync=1`、获取 arXiv LaTeX 的任务（`attach_arxiv` 同一任务） | 能（任务里的 rebuild） | 任务结果（`job.result`）多可选键 `argument_graph_merges`（相对路径；`?sync=1` 的响应体同键）；**任务在 rebuild 已合并并移动图之后才失败时，失败任务的 `result` 同样带这个键**（其余失败的任务 `result` 仍为 `null`）。服务端保留每条任务记录（`jobs/<id>.json`，没有清理），`hello` 重放整张任务表（含 `result`）。页面的通知**来自任务记录本身**：模块级的 `merge-notices` 在应用外壳挂载时订阅任务事件，有已完成（或带说明的失败）任务的 Work，打开其 Files 标签页就显示一条可关闭的提示，不要求「本页面看着它跑完」，所以关闭 Work 详情、切到 Reader、刷新页面都不丢；「已关闭」按任务 id 记在浏览器 `localStorage`（键 `argelander.dismissedGraphMergeNotices`，最多 300 条），重载后不重现已关闭的；Copilot 的任务行（`read_jobs`、`attach_arxiv` 的 `job`）多可选字段 `argumentGraphMerges`，模型据此如实告知用户（工具描述文字未改，受 footprint 预算约束）。服务端日志照旧各写一行 |
-
-合并移动了图（`moved`）之后，server 立刻为幸存者和被并入者各广播一次 `argument-graph.changed`（`cause: external`），不等 watcher 轮询；覆盖导入、各 rebuild 路径（含失败后带说明的）。
+| Files 标签页：上传 zip 的任务、`?sync=1`、获取 arXiv LaTeX 的任务（`attach_arxiv` 同一任务） | 能（任务里的 rebuild） | 任务结果（`job.result`）多可选键 `argument_graph_merges`（相对路径；`?sync=1` 的响应体同键，`?sync=1` 在 rebuild 之后才失败时 500 的错误体也带这个键；`POST /api/library/refresh` 成功时的任务记录与响应同样是相对路径）；**任务在 rebuild 已合并并移动图之后才失败时，失败任务的 `result` 同样带这个键**（其余失败的任务 `result` 仍为 `null`）。服务端保留每条任务记录（`jobs/<id>.json`，没有清理），`hello` 重放整张任务表（含 `result`）。页面的通知**来自任务记录本身**：模块级的 `merge-notices` 在应用外壳挂载时订阅任务事件，有已完成（或带说明的失败）任务的 Work，打开其 Files 标签页就显示一条可关闭的提示，不要求「本页面看着它跑完」，所以关闭 Work 详情、切到 Reader、刷新页面都不丢；「已关闭」按任务 id 记在浏览器 `localStorage`（键 `argelander.dismissedGraphMergeNotices`，最多 300 条，写回前先与本地已有集合取并集、淘汰最旧的；`storage` 事件同步多标签页），重载后不重现已关闭的；Copilot 的任务行（`read_jobs`、`attach_arxiv` 的 `job`）多可选字段 `argumentGraphMerges`，模型据此如实告知用户（工具描述文字未改，受 footprint 预算约束）。服务端日志照旧各写一行 |
 | 自动 arXiv 摄入（`autoIngestArxiv`） | 不会：只提交 arXiv PDF 任务，那条路径不 rebuild | 说明 |
 | `acquire --dry-run` | 内存里的 store，不落盘，不碰图 | 说明 |
 | CLI `ingest <DOI>`（`addDoiWork`） | 不会：记录只有一个未命中的新 DOI 加一个标题，最多命中一个已存 Work | core 测试 |
 | `ingest`（LaTeX）/ Doc 挂载 / PATCH / 上传 | 不改 Work 集合，只改 `doc_ids` 等 | 说明 |
+
+合并移动了图（`moved`）之后，server 立刻为幸存者和被并入者各广播一次 `argument-graph.changed`（`cause: external`），不等 watcher 轮询；覆盖导入、各 rebuild 路径（含失败后带说明的）。
 
 ### 留在磁盘上的图
 

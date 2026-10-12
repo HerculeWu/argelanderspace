@@ -4,7 +4,7 @@
  * relative to the data directory, and the Copilot's job view carries them. The rebuild is a stand-in that reports a
  * merge; the real merge paths are covered in core and in argument-graph-merge.test.ts.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArgumentGraphMergeNote, RefreshResponse } from "@argelanderspace/contracts";
@@ -190,4 +190,36 @@ test("a merge that moved a graph is announced for both Works at once; one that d
   if (b.kind !== "queued") throw new Error(JSON.stringify(b));
   await runner.waitFor(b.job.id);
   expect(announced).toEqual([]);
+});
+
+test("a successful refresh keeps relative locations in the task record, not just in the response", async () => {
+  const out = await acquisition.refreshLibrary(false);
+  if (out.kind !== "done") throw new Error(JSON.stringify(out));
+  const merges = out.summary.argument_graph_merges ?? [];
+  expect(merges).toHaveLength(1);
+  expect(merges[0]?.absorbed_file).toMatch(/^argument-graphs\/[^/]+\.json$/);
+  const refresh = runner.list().find((j) => j.kind === "refresh");
+  expect(refresh).toBeDefined();
+  expect(JSON.stringify(refresh)).not.toContain(root);
+  const dir = join(root, "jobs");
+  const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  expect(files.length).toBeGreaterThan(0);
+  for (const f of files) expect(readFileSync(join(dir, f), "utf8")).not.toContain(root);
+});
+
+test("?sync=1 whose ingest fails after the merge still reports the notes, relative", async () => {
+  failAfterMerge = true;
+  const out = await acquisition.attachZipSync({ workId: W, doi: null, arxiv: null }, UPLOAD_ZIP);
+  if (out.kind !== "failed") throw new Error(JSON.stringify(out));
+  expect(out.argument_graph_merges).toHaveLength(1);
+  expect(out.argument_graph_merges?.[0]?.absorbed_file).toMatch(/^argument-graphs\//);
+  expect(JSON.stringify(out)).not.toContain(root);
+});
+
+test("?sync=1 that failed without any merge carries no such key", async () => {
+  const out = await acquisition.attachZipSync(
+    { workId: "doi:10.9/none", doi: null, arxiv: null },
+    UPLOAD_ZIP
+  );
+  expect("argument_graph_merges" in out).toBe(false);
 });
