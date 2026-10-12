@@ -165,6 +165,33 @@ describe("ArgumentGraphSchema", () => {
       }
     });
 
+    it("the field-level custom issues (blank title, target jump) carry a rule too", () => {
+      const parsed = ArgumentGraphSchema.safeParse(
+        graph(
+          [
+            arg("a", { title: "  " }),
+            arg("b", { sources: [{ text: "x", target: { doc_id: "d" } as never }] }),
+          ],
+          []
+        )
+      );
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(
+          parsed.error.issues.map((i) => ({
+            path: i.path,
+            params: (i as { params?: unknown }).params,
+          }))
+        ).toEqual([
+          { path: ["arguments", 0, "title"], params: { rule: "blank_title" } },
+          {
+            path: ["arguments", 1, "sources", 0, "target"],
+            params: { rule: "target_anchor_or_page" },
+          },
+        ]);
+      }
+    });
+
     it("source target carries an anchor or a page, not both", () => {
       const withTarget = (target: object) =>
         graph([arg("a", { sources: [{ text: "x", target: target as never }] })], []);

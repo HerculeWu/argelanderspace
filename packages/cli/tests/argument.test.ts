@@ -5,7 +5,7 @@
  * (contracts "论证图"); the full list lives in the ticket's Comments.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -421,7 +421,28 @@ describe("argument get", () => {
     expect(r).toEqual({
       status: 1,
       stdout: "",
-      stderr: 'error: unknown work "nope" — the library has no works\n',
+      stderr: `error: unknown work "nope" — the library at "${join(f.dataDir, "library", "library.json")}" has no works\n`,
+    });
+  });
+
+  test("an empty work id is not matched against everything: the available list", () => {
+    const f = makeDataDir();
+    const r = runCli(["argument", "get", "", "--data-dir", f.dataDir], f.env);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toMatch(/^error: unknown work "" — available: .+ … \(34 total\)\n$/);
+    expect(r.stderr).not.toMatch(/closest/);
+  });
+
+  test("a wrong --data-dir names where it looked", () => {
+    const f = makeDataDir();
+    const empty = f.file("elsewhere");
+    mkdirSync(empty);
+    const r = runCli(["argument", "get", WORK_ID, "--data-dir", empty], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: unknown work "${WORK_ID}" — the library at "${join(empty, "library", "library.json")}" has no works\n`,
     });
   });
 
@@ -450,6 +471,29 @@ describe("argument put", () => {
     const r = putGraph(f, noWork);
     expect(r.stdout).toBe(putOut(1));
   });
+
+  test("version may be left out (it is 1); a version that is written must be 1", () => {
+    const f = makeDataDir();
+    const { version: _v, ...noVersion } = GRAPH;
+    expect(putGraph(f, noVersion)).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+    // get still prints the version
+    const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(g.stdout).toBe(GRAPH_GOLDEN);
+    for (const bad of [2, 0, "1", null, true]) {
+      const r = putGraph(f, { ...GRAPH, version: bad }, ["--rev", "1", "--replace"]);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toBe(
+        `error: "${f.file("graph.json")}" is not a valid argument graph (1 issue); nothing was written\n  version: must be 1\n`
+      );
+    }
+    // a hand-written graph with only the arguments: version, rev and work_id are all optional
+    const bare = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "1", "--replace", "--data-dir", f.dataDir],
+      f.env,
+      '{"arguments":[{"id":"x","title":"X"}],"edges":[]}'
+    );
+    expect(bare).toEqual({ status: 0, stdout: putOut(2), stderr: "" });
+  }, 60_000);
 
   test("reads stdin with '-'", () => {
     const f = makeDataDir();
@@ -578,12 +622,25 @@ describe("argument put", () => {
     expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
   });
 
-  test("a work_id in the file that is not a string is shown as its JSON text", () => {
+  test.each([
+    ["a number", 5],
+    ["null", null],
+    ["an object", {}],
+  ])("a work_id in the file that is %s: its own sentence, zero write", (_n, value) => {
     const f = makeDataDir();
-    const r = putGraph(f, { ...GRAPH, work_id: 5 });
-    expect(r.stderr).toBe(
-      `error: work_id in "${f.file("graph.json")}" is "5", which does not match work "${WORK_ID}"\n`
+    const r = putGraph(f, { ...GRAPH, work_id: value });
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: work_id in "${f.file("graph.json")}" must be a string\n`,
+    });
+    expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
+    const viaStdin = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      f.env,
+      JSON.stringify({ ...GRAPH, work_id: value })
     );
+    expect(viaStdin.stderr).toBe("error: work_id in stdin must be a string\n");
   });
 
   test("input that cannot be read or parsed: fixed own messages, zero write", () => {
@@ -880,7 +937,8 @@ describe("argument put", () => {
     ],
     ["arguments missing", { version: 1, edges: [] }, ["arguments: is required"]],
     ["wrong version", { version: 2, arguments: [], edges: [] }, ["version: must be 1"]],
-    ["version missing", { arguments: [], edges: [] }, ["version: is required"]],
+    ["version null", { version: null, arguments: [], edges: [] }, ["version: must be 1"]],
+    ["version as a string", { version: "1", arguments: [], edges: [] }, ["version: must be 1"]],
     ["not an object (array)", [], ["<root>: must be an object"]],
     ["not an object (null)", null, ["<root>: must be an object"]],
     ["not an object (number)", 5, ["<root>: must be an object"]],
@@ -1258,7 +1316,9 @@ describe("pdf-path", () => {
       const r = runCli(["pdf-path", id, "--data-dir", f.dataDir], f.env);
       expect(r.status).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr).toBe(`error: unknown PDF doc "${id}" — there are no PDF docs\n`);
+      expect(r.stderr).toBe(
+        `error: unknown PDF doc "${id}" — there are no PDF docs in "${join(f.dataDir, "output")}"\n`
+      );
     }
     expect(snapshot(f.root)).toEqual(before);
   });
@@ -1379,7 +1439,390 @@ describe("pdf-path", () => {
     expect(r).toEqual({
       status: 1,
       stdout: "",
-      stderr: `error: doc "${PDF_ID}": the output directory is not a directory\n`,
+      stderr: `error: doc "${PDF_ID}": the output directory is not a plain directory\n`,
+    });
+  });
+});
+
+describe("argument put: stdin that never ends, and stdin that is a terminal", () => {
+  function startPut(f: ReturnType<typeof makeDataDir>) {
+    return spawn(
+      process.execPath,
+      [BIN, "argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      { env: f.env, stdio: ["pipe", "pipe", "pipe"] }
+    );
+  }
+
+  /** Wait for exit; `null` if the process is still alive after `ms` (it is then killed for good). */
+  function exitWithin(child: ReturnType<typeof spawn>, ms: number) {
+    return new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+      stdout: string;
+      stderr: string;
+    } | null>((resolve) => {
+      let stdout = "";
+      let stderr = "";
+      child.stdout?.on("data", (d) => {
+        stdout += String(d);
+      });
+      child.stderr?.on("data", (d) => {
+        stderr += String(d);
+      });
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        resolve(null);
+      }, ms);
+      child.on("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolve({ code, signal, stdout, stderr });
+      });
+    });
+  }
+
+  const pause = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  test.each(["SIGINT", "SIGTERM"] as const)(
+    "%s ends a put that waits for a writer that never closes: quickly, non-zero, nothing written",
+    async (sig) => {
+      const f = makeDataDir();
+      const before = snapshot(f.root);
+      const child = startPut(f);
+      child.stdin?.write('{"version":1,"arguments":['); // a half-sent graph; the pipe stays open
+      await pause(1500); // let it load and sit in the read
+      child.kill(sig);
+      const result = await exitWithin(child, 8000);
+      expect(result).not.toBeNull();
+      expect(result?.code === 0).toBe(false);
+      expect(result?.signal ?? result?.code).toBeTruthy();
+      expect(result?.stdout).toBe("");
+      expect(snapshot(f.root)).toEqual(before);
+      expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
+    },
+    30_000
+  );
+
+  test("a graph cut in the middle of a multi-byte character arrives intact", async () => {
+    const f = makeDataDir();
+    const title = "论证图é€𝔘x";
+    const bytes = Buffer.from(
+      JSON.stringify({ arguments: [{ id: "a", title }], edges: [] }),
+      "utf8"
+    );
+    // cut inside the 3-byte "论" and inside the 4-byte "𝔘"
+    const cuts = [bytes.indexOf(Buffer.from("论")) + 1, bytes.indexOf(Buffer.from("𝔘")) + 2];
+    const child = startPut(f);
+    let from = 0;
+    for (const cut of cuts) {
+      child.stdin?.write(bytes.subarray(from, cut));
+      from = cut;
+      await pause(300);
+    }
+    child.stdin?.end(bytes.subarray(from));
+    const result = await exitWithin(child, 20_000);
+    expect(result).toMatchObject({ code: 0, stdout: putOut(1), stderr: "" });
+    const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(JSON.parse(g.stdout).arguments[0].title).toBe(title);
+  }, 60_000);
+
+  test("stdin is a terminal: refused at once with one own line, exit 1, nothing written", () => {
+    const f = makeDataDir();
+    const before = snapshot(f.root);
+    // util-linux `script` gives the CLI a real pty as stdin/stdout/stderr (so the output carries CRLF)
+    const r = spawnSync(
+      "script",
+      [
+        "-qec",
+        `${process.execPath} ${BIN} argument put ${WORK_ID} - --rev 0 --data-dir ${f.dataDir}`,
+        "/dev/null",
+      ],
+      { env: f.env, encoding: "utf8", timeout: 20_000, input: "" }
+    );
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe(
+      'error: stdin is a terminal; "-" reads the graph from a pipe or a redirected file\r\n'
+    );
+    expect(snapshot(f.root)).toEqual(before);
+  });
+
+  test("the terminal check comes after --rev and the work, like reading any input", () => {
+    const f = makeDataDir();
+    const r = spawnSync(
+      "script",
+      [
+        "-qec",
+        `${process.execPath} ${BIN} argument put nope - --rev 0 --data-dir ${f.dataDir}`,
+        "/dev/null",
+      ],
+      { env: f.env, encoding: "utf8", timeout: 20_000, input: "" }
+    );
+    expect(r.stdout).toMatch(/^error: unknown work "nope" — /);
+  });
+});
+
+describe("argument commands: messages that must stay one safe line", () => {
+  const AWKWARD = [
+    "\u2028",
+    "\u2029",
+    "\u0085",
+    "\u007f",
+    "\u0080",
+    "\u009f",
+    "\u202a",
+    "\u202e",
+    "\u2066",
+    "\u2069",
+    "\u200e",
+    "\u200f",
+    "\u061c",
+    "\u001b",
+  ];
+
+  test("line separators, C1 controls and bidi controls are written as \\uXXXX in every quoted value", () => {
+    const f = makeDataDir();
+    const all = AWKWARD.join("");
+    const hexes = AWKWARD.map(
+      (ch) => `\\u${(ch.codePointAt(0) ?? 0).toString(16).padStart(4, "0")}`
+    ).join("");
+    const get = runCli(["argument", "get", `a${all}b`, "--data-dir", f.dataDir], f.env);
+    expect(get.stderr).toContain(`error: unknown work "a${hexes}b" — `);
+    const pdf = runCli(["pdf-path", `a${all}b`, "--data-dir", f.dataDir], f.env);
+    expect(pdf.stderr).toContain(`unknown PDF doc "a${hexes}b"`);
+    const put = runCli(
+      ["argument", "put", WORK_ID, `x${all}y.json`, "--rev", "0", "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(put.stderr).toBe(`error: cannot read "x${hexes}y.json" (ENOENT)\n`);
+    for (const out of [get.stderr, pdf.stderr, put.stderr]) {
+      // nothing of the awkward characters survives, and the message is exactly one line however it is split
+      for (const ch of AWKWARD) expect(out).not.toContain(ch);
+      expect(out.split(/[\n\r\u2028\u2029\u0085]/)).toHaveLength(2);
+    }
+    // an id inside the graph, in a validation line
+    const dup = JSON.stringify({
+      arguments: [
+        { id: "a\u2028\u202e", title: "t" },
+        { id: "a\u2028\u202e", title: "t" },
+      ],
+      edges: [],
+    });
+    const r = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      f.env,
+      dup
+    );
+    expect(r.stderr).toContain('duplicate id "a\\u2028\\u202e"');
+    expect(r.stderr).not.toMatch(/[\u2028\u202e]/);
+  });
+
+  test("a __proto__ key is reported as an unknown field at every depth, not ignored", () => {
+    const f = makeDataDir();
+    const text =
+      '{"__proto__":{"x":1},"arguments":[{"id":"a","title":"t","__proto__":1,"sources":[{"text":"s","__proto__":null}]},{"id":"b","title":"t"}],"edges":[{"from":"a","to":"b","role":"grounds","__proto__":{}}]}';
+    const r = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      f.env,
+      text
+    );
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    const lines = r.stderr.split("\n").slice(1, -1);
+    expect(r.stderr.split("\n")[0]).toBe(
+      "error: stdin is not a valid argument graph (4 issues); nothing was written"
+    );
+    expect(lines.sort()).toEqual(
+      [
+        '  <root>: unknown field "__proto__"',
+        '  arguments[0]: unknown field "__proto__"',
+        '  arguments[0].sources[0]: unknown field "__proto__"',
+        '  edges[0]: unknown field "__proto__"',
+      ].sort()
+    );
+    expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
+    // and a graph whose ONLY fault is __proto__ is refused too
+    const only = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      f.env,
+      '{"arguments":[],"edges":[],"__proto__":{}}'
+    );
+    expect(only.stderr).toBe(
+      'error: stdin is not a valid argument graph (1 issue); nothing was written\n  <root>: unknown field "__proto__"\n'
+    );
+  });
+
+  test("unknown keys that share their first 100 characters are all counted, each shown cut", () => {
+    const f = makeDataDir();
+    const k1 = `${"k".repeat(100)}1`;
+    const k2 = `${"k".repeat(100)}2`;
+    const r = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      f.env,
+      JSON.stringify({ arguments: [], edges: [], [k1]: 1, [k2]: 2 })
+    );
+    const cut = `  <root>: unknown field "${"k".repeat(100)}…"`;
+    expect(r.stderr).toBe(
+      `error: stdin is not a valid argument graph (2 issues); nothing was written\n${cut}\n${cut}\n`
+    );
+  });
+
+  test("a config.toml that does not load: the repository's own sentence, as `note` prints it", () => {
+    const f = makeDataDir();
+    const cfgDir = join(f.root, "xdg", "argelanderspace");
+    mkdirSync(cfgDir, { recursive: true });
+    writeFileSync(join(cfgDir, "config.toml"), 'port = "abc"\n');
+    const expected = `error: ${join(cfgDir, "config.toml")}: "port" must be an integer between 0 and 65535\n`;
+    const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(g).toEqual({ status: 1, stdout: "", stderr: expected });
+    const file = f.file("g.json");
+    writeFileSync(file, JSON.stringify(GRAPH));
+    const p = runCli(
+      ["argument", "put", WORK_ID, file, "--rev", "0", "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(p).toEqual({ status: 1, stdout: "", stderr: expected });
+    const d = runCli(["pdf-path", "pdf-x", "--data-dir", f.dataDir], f.env);
+    expect(d).toEqual({ status: 1, stdout: "", stderr: expected });
+    // the same sentence the existing `note` prints
+    const note = runCli(["note", "list", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(note.stderr).toBe(expected);
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "a write that fails on a directory this very run created leaves no directory behind",
+    () => {
+      const f = makeDataDir();
+      const file = f.file("g.json");
+      writeFileSync(file, JSON.stringify(GRAPH));
+      const before = snapshot(f.root);
+      // a zero file-size limit makes every write fail (EFBIG) while the directory can still be made
+      const r = spawnSync(
+        "sh",
+        [
+          "-c",
+          `ulimit -f 0; exec ${process.execPath} ${BIN} argument put ${WORK_ID} ${file} --rev 0 --data-dir ${f.dataDir}`,
+        ],
+        { env: f.env, encoding: "utf8", timeout: 30_000 }
+      );
+      expect(r.stdout).toBe("");
+      expect(r.stderr).toMatch(
+        /^error: could not write the argument graph \([A-Z]+\); nothing was written\n$/
+      );
+      expect(r.status).toBe(1);
+      expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
+      expect(snapshot(f.root)).toEqual(before);
+    }
+  );
+});
+
+describe("pdf-path: only a missing path means 'no such doc'", () => {
+  const PDF_ID = "pdf-22222222-2222-4222-8222-222222222222";
+  function addPdfDoc(dataDir: string, id: string) {
+    const dir = join(dataDir, "output", id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${id}.json`),
+      JSON.stringify({
+        version: 1,
+        doc_id: id,
+        format: "pdf",
+        display_name: "paper.pdf",
+        original_filename: "paper.pdf",
+        acquired_via: "user_pdf_upload",
+        acquired_at: "2026-10-12T00:00:00.000Z",
+        byte_length: 9,
+        sha256: "a".repeat(64),
+        page_count: 1,
+        pages: [{ width: 612, height: 792, rotation: 0 }],
+      })
+    );
+    writeFileSync(join(dir, "original.pdf"), "%PDF-1.7\n");
+  }
+
+  test("an empty doc id gets the available list, never 'closest matches'", () => {
+    const f = makeDataDir();
+    addPdfDoc(f.dataDir, PDF_ID);
+    const r = runCli(["pdf-path", "", "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: unknown PDF doc "" — available: ${PDF_ID}\n`,
+    });
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "output/ that cannot be searched or listed: a system error, not 'unknown PDF doc'",
+    () => {
+      const f = makeDataDir();
+      addPdfDoc(f.dataDir, PDF_ID);
+      const out = join(f.dataDir, "output");
+      chmodSync(out, 0o000);
+      try {
+        for (const id of [PDF_ID, "nope"]) {
+          const r = runCli(["pdf-path", id, "--data-dir", f.dataDir], f.env);
+          expect(r).toEqual({
+            status: 1,
+            stdout: "",
+            stderr: `error: the output directory "${out}" could not be read (EACCES)\n`,
+          });
+        }
+      } finally {
+        chmodSync(out, 0o755);
+      }
+    }
+  );
+
+  test.skipIf(process.getuid?.() === 0)(
+    "output/ that can be searched but not listed: a known doc still resolves, an unknown one is a system error",
+    () => {
+      const f = makeDataDir();
+      addPdfDoc(f.dataDir, PDF_ID);
+      const out = join(f.dataDir, "output");
+      chmodSync(out, 0o311);
+      try {
+        const ok = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+        expect(ok.status).toBe(0);
+        const r = runCli(["pdf-path", "nope", "--data-dir", f.dataDir], f.env);
+        expect(r).toEqual({
+          status: 1,
+          stdout: "",
+          stderr: `error: the output directory "${out}" could not be read (EACCES)\n`,
+        });
+      } finally {
+        chmodSync(out, 0o755);
+      }
+    }
+  );
+
+  test.skipIf(process.getuid?.() === 0)(
+    "a Doc folder that cannot be searched: a system error naming the doc",
+    () => {
+      const f = makeDataDir();
+      addPdfDoc(f.dataDir, PDF_ID);
+      const dir = join(f.dataDir, "output", PDF_ID);
+      chmodSync(dir, 0o000);
+      try {
+        const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+        expect(r).toEqual({
+          status: 1,
+          stdout: "",
+          stderr: `error: doc "${PDF_ID}": its files could not be read (EACCES)\n`,
+        });
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    }
+  );
+
+  test("the output directory is a symlink to a directory: not a plain directory", () => {
+    const f = makeDataDir();
+    const real = f.file("real-output");
+    mkdirSync(real);
+    symlinkSync(real, join(f.dataDir, "output"));
+    const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: doc "${PDF_ID}": the output directory is not a plain directory\n`,
     });
   });
 });

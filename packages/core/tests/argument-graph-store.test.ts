@@ -246,6 +246,27 @@ describe("unreadable files are system errors, never reset or overwritten", () =>
     expect(loadArgumentGraph(dataDir, DOI)).toEqual(emptyArgumentGraph(DOI));
   });
 
+  it("a failed write reports the ORIGINAL error even when cleaning up the tmp path fails too", () => {
+    const dataDir = tmpDataDir();
+    mkdirSync(argumentGraphDir(dataDir));
+    // the tmp path is a (non-empty) directory: writing to it fails with EISDIR, and rmSync on it fails as well
+    const tmp = `${argumentGraphPath(dataDir, DOI)}.tmp`;
+    mkdirSync(tmp);
+    writeFileSync(join(tmp, "keep"), "x");
+    let caught: unknown;
+    try {
+      replaceArgumentGraph(dataDir, sample());
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as NodeJS.ErrnoException).code).toBe("EISDIR");
+    expect((caught as Error).message).not.toMatch(/ERR_FS_EISDIR/);
+    expect(readFileSync(join(tmp, "keep"), "utf8")).toBe("x");
+    expect(readdirSync(argumentGraphDir(dataDir))).toEqual([
+      `${encodeWorkIdForFile(DOI)}.json.tmp`,
+    ]);
+  });
+
   it.skipIf(process.getuid?.() === 0)("a failed write leaves no tmp file behind", () => {
     const dataDir = tmpDataDir();
     const dir = argumentGraphDir(dataDir);

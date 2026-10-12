@@ -19,7 +19,7 @@
  * `arguments[1].title`) plus our own sentence, see {@link describeGraphIssue}.
  */
 
-import { existsSync, lstatSync, readFileSync, readSync, realpathSync } from "node:fs";
+import { fstatSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import {
   type Argument,
@@ -38,8 +38,9 @@ import {
   readPdfMetadataIfPresent,
   replaceArgumentGraph,
 } from "@argelanderspace/core";
+import { ConfigError } from "@argelanderspace/infra";
 import type { Command } from "commander";
-import { listDocIds, resolveLinkPort, unknownMsg } from "./agent.js";
+import { resolveLinkPort } from "./agent.js";
 import { fail, resolveDataDir, withDataDir } from "./common.js";
 
 /** At most this many validation issues are listed; the rest are counted. */
@@ -54,32 +55,74 @@ const MAX_QUOTED_CHARS = 100;
 /** An error whose message is already final: one line, our wording. */
 class ArgumentCliError extends Error {}
 
-/** The characters of `s` as they appear between JSON quotes (escapes for newline, quote, backslash, controls). */
+/**
+ * Characters `JSON.stringify` leaves as they are but that can start a new line or reorder text where a terminal or a
+ * log viewer shows them: DEL, the C1 controls (U+0080–U+009F, NEL included), the line and paragraph separators, and
+ * the bidirectional marks and controls.
+ */
+const UNSAFE_TO_SHOW = /[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g;
+
+/**
+ * The characters of `s` as they appear between JSON quotes: the escapes JSON makes (newline, quote, backslash, the
+ * C0 controls, lone surrogates) plus `\uXXXX` for everything in {@link UNSAFE_TO_SHOW}.
+ */
 function escaped(s: string): string {
-  return JSON.stringify(s).slice(1, -1);
+  return JSON.stringify(s)
+    .slice(1, -1)
+    .replace(UNSAFE_TO_SHOW, (c) => `\\u${(c.codePointAt(0) ?? 0).toString(16).padStart(4, "0")}`);
 }
 
-/** A JSON-quoted string, cut to {@link MAX_QUOTED_CHARS} characters; never contains a raw newline. */
+/** `s` in double quotes with {@link escaped} inside (a path, a file name): never a raw line break. */
+function q(s: string): string {
+  return `"${escaped(s)}"`;
+}
+
+/** Like {@link q}, cut to {@link MAX_QUOTED_CHARS} characters (ids): `"abc…"`. */
 function quote(s: string): string {
   const chars = [...s];
-  if (chars.length <= MAX_QUOTED_CHARS) return JSON.stringify(s);
+  if (chars.length <= MAX_QUOTED_CHARS) return q(s);
   return `"${escaped(chars.slice(0, MAX_QUOTED_CHARS).join(""))}…"`;
 }
 
 function errnoCode(e: unknown): string {
   const code = (e as NodeJS.ErrnoException | null)?.code;
-  return typeof code === "string" ? code : "unknown error";
+  return typeof code === "string" ? code : "UNKNOWN";
 }
 
-/** `unknown <kind> "<id>" — closest matches: … | available: … (N total) | <none>`, same shape as `note`'s. */
+function isMissing(e: unknown): boolean {
+  return (e as NodeJS.ErrnoException | null)?.code === "ENOENT";
+}
+
+/** How many candidates are listed in an "unknown id" message (as `note` does). */
+const MAX_CANDIDATES = 12;
+
+/**
+ * `unknown <kind> "<id>" — closest matches: … | available: … (N total) | <none>`, the shape of `note`'s. Same
+ * wording, but built here: an empty id is matched against nothing (it would match every candidate as a "close"
+ * one), and the "none" text says where we looked.
+ */
 function unknownMessage(
   kind: string,
   noneText: string,
   query: string,
   candidates: readonly string[]
 ) {
-  if (candidates.length === 0) return `unknown ${kind} "${escaped(query)}" — ${noneText}`;
-  return unknownMsg(kind, escaped(query), candidates.map(escaped));
+  const head = `unknown ${kind} "${escaped(query)}" — `;
+  if (candidates.length === 0) return `${head}${noneText}`;
+  const shown = candidates.map(escaped);
+  const lower = query.toLowerCase();
+  const close =
+    query === ""
+      ? []
+      : candidates.filter((c) => {
+          const cl = c.toLowerCase();
+          return cl.includes(lower) || (lower.length >= 4 && lower.includes(cl));
+        });
+  if (close.length > 0) {
+    return `${head}closest matches: ${close.slice(0, MAX_CANDIDATES).map(escaped).join(", ")}`;
+  }
+  const more = shown.length > MAX_CANDIDATES ? ` … (${shown.length} total)` : "";
+  return `${head}available: ${shown.slice(0, MAX_CANDIDATES).join(", ")}${more}`;
 }
 
 // --------------------------------------------------------------------------- //
@@ -185,10 +228,23 @@ const EXPECTED_TYPE: Record<string, string> = {
   int: "must be an integer",
 };
 
-function sentenceFor(issue: GraphIssueLike, data: unknown): string[] {
+/** A sentence about a position, and what makes two of them "the same" (the full text, not the shown cut). */
+interface Sentence {
+  text: string;
+  identity: string;
+}
+
+const plain = (text: string): Sentence[] => [{ text, identity: text }];
+
+/** One unknown key: shown cut to {@link MAX_QUOTED_CHARS} characters, but told apart by its whole name. */
+function unknownField(key: string): Sentence {
+  return { text: `unknown field ${quote(key)}`, identity: `unknown field ${key}` };
+}
+
+function sentencesFor(issue: GraphIssueLike, data: unknown): Sentence[] {
   const code = issue.code;
   if (code === "unrecognized_keys" && Array.isArray(issue.keys)) {
-    return issue.keys.map((k) => `unknown field ${quote(String(k))}`);
+    return issue.keys.map((k) => unknownField(String(k)));
   }
   if (code === "custom") {
     const rule = (issue.params as { rule?: unknown } | undefined)?.rule;
@@ -198,20 +254,20 @@ function sentenceFor(issue: GraphIssueLike, data: unknown): string[] {
       return typeof v === "string" ? quote(v) : "?";
     };
     const edgePath = issue.path.slice(0, 2);
-    if (rule === "duplicate_id") return [`duplicate id ${idAt("id", issue.path.slice(0, 2))}`];
+    if (rule === "duplicate_id") return plain(`duplicate id ${idAt("id", issue.path.slice(0, 2))}`);
     if (rule === "unknown_argument" && (last === "from" || last === "to")) {
-      return [`refers to unknown argument ${idAt(last, edgePath)}`];
+      return plain(`refers to unknown argument ${idAt(last, edgePath)}`);
     }
-    if (rule === "self_loop") return [`connects argument ${idAt("from", edgePath)} to itself`];
+    if (rule === "self_loop") return plain(`connects argument ${idAt("from", edgePath)} to itself`);
     if (rule === "duplicate_edge") {
       const role = valueAt(data, [...edgePath, "role"]);
-      return [
-        `duplicate ${typeof role === "string" ? role : "?"} edge from ${idAt("from", edgePath)} to ${idAt("to", edgePath)}`,
-      ];
+      return plain(
+        `duplicate ${typeof role === "string" ? role : "?"} edge from ${idAt("from", edgePath)} to ${idAt("to", edgePath)}`
+      );
     }
-    if (last === "title") return ["must not be blank"];
-    if (last === "target") return ["must have exactly one of anchor or page"];
-    return [FALLBACK];
+    if (rule === "blank_title") return plain("must not be blank");
+    if (rule === "target_anchor_or_page") return plain("must have exactly one of anchor or page");
+    return plain(FALLBACK);
   }
   // Everything else is about a value: absent means "is required" whatever the library calls it.
   const valueRules = ["invalid_type", "invalid_value", "too_small", "too_big"];
@@ -220,51 +276,52 @@ function sentenceFor(issue: GraphIssueLike, data: unknown): string[] {
     issue.path.length > 0 &&
     valueAt(data, issue.path) === undefined
   ) {
-    return ["is required"];
+    return plain("is required");
   }
   switch (code) {
     case "invalid_type": {
       const expected =
         typeof issue.expected === "string" ? EXPECTED_TYPE[issue.expected] : undefined;
-      return [expected ?? FALLBACK];
+      return plain(expected ?? FALLBACK);
     }
     case "too_big": {
       const max = issue.maximum;
-      if (typeof max !== "number" && typeof max !== "bigint") return [FALLBACK];
-      if (issue.origin === "string") return [`must be at most ${max} characters`];
-      if (issue.origin === "array") return [`must have at most ${max} items`];
-      if (issue.origin === "number" || issue.origin === "int") return [`must be at most ${max}`];
-      return [FALLBACK];
+      if (typeof max !== "number" && typeof max !== "bigint") return plain(FALLBACK);
+      if (issue.origin === "string") return plain(`must be at most ${max} characters`);
+      if (issue.origin === "array") return plain(`must have at most ${max} items`);
+      if (issue.origin === "number" || issue.origin === "int")
+        return plain(`must be at most ${max}`);
+      return plain(FALLBACK);
     }
     case "too_small": {
       const min = issue.minimum;
-      if (typeof min !== "number" && typeof min !== "bigint") return [FALLBACK];
+      if (typeof min !== "number" && typeof min !== "bigint") return plain(FALLBACK);
       if (issue.origin === "string") {
-        return [
+        return plain(
           min === 1 && issue.inclusive !== false
             ? "must not be empty"
-            : `must be at least ${min} characters`,
-        ];
+            : `must be at least ${min} characters`
+        );
       }
-      if (issue.origin === "array") return [`must have at least ${min} items`];
+      if (issue.origin === "array") return plain(`must have at least ${min} items`);
       if (issue.origin === "number" || issue.origin === "int") {
-        return [
-          issue.inclusive === false ? `must be greater than ${min}` : `must be at least ${min}`,
-        ];
+        return plain(
+          issue.inclusive === false ? `must be greater than ${min}` : `must be at least ${min}`
+        );
       }
-      return [FALLBACK];
+      return plain(FALLBACK);
     }
     case "invalid_value": {
       const values = issue.values;
-      if (!Array.isArray(values) || values.length === 0) return [FALLBACK];
-      return [
+      if (!Array.isArray(values) || values.length === 0) return plain(FALLBACK);
+      return plain(
         values.length === 1
           ? `must be ${String(values[0])}`
-          : `must be one of ${values.map(String).join(", ")}`,
-      ];
+          : `must be one of ${values.map(String).join(", ")}`
+      );
     }
     default:
-      return [FALLBACK];
+      return plain(FALLBACK);
   }
 }
 
@@ -274,7 +331,46 @@ function sentenceFor(issue: GraphIssueLike, data: unknown): string[] {
  */
 export function describeGraphIssue(issue: GraphIssueLike, data: unknown): string[] {
   const position = positionOf(issue.path);
-  return sentenceFor(issue, data).map((sentence) => `${position}: ${sentence}`);
+  return sentencesFor(issue, data).map((sentence) => `${position}: ${sentence.text}`);
+}
+
+/** A line of the report, with the key two lines are the same by (position and the uncut sentence). */
+interface IssueLine {
+  identity: string;
+  line: string;
+}
+
+function issueLines(path: readonly PropertyKey[], sentences: readonly Sentence[]): IssueLine[] {
+  const position = positionOf(path);
+  return sentences.map((s) => ({
+    identity: `${position}\u0000${s.identity}`,
+    line: `${position}: ${s.text}`,
+  }));
+}
+
+/**
+ * Every object (at any depth) that has an OWN key named `__proto__`. `JSON.parse` keeps it as an ordinary property,
+ * but the schema library never sees it as a key, so it would be ignored in silence; it is reported as an unknown
+ * field like any other. Iterative: the depth of the input is the caller's.
+ */
+function protoKeyPositions(root: unknown): PropertyKey[][] {
+  const found: PropertyKey[][] = [];
+  const stack: { value: unknown; path: PropertyKey[] }[] = [{ value: root, path: [] }];
+  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+    const { value, path } = item;
+    // The format is six levels deep at most; anything below that is an unknown field of its parent anyway.
+    if (value === null || typeof value !== "object" || path.length > 10) continue;
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => {
+        stack.push({ value: v, path: [...path, i] });
+      });
+      continue;
+    }
+    const obj = value as Record<string, unknown>;
+    if (Object.hasOwn(obj, "__proto__")) found.push(path);
+    for (const key of Object.keys(obj)) stack.push({ value: obj[key], path: [...path, key] });
+  }
+  return found;
 }
 
 // --------------------------------------------------------------------------- //
@@ -286,7 +382,7 @@ function loadLibrary(dataDir: string): LibraryStore {
   try {
     return LibraryStore.load(paths);
   } catch (e) {
-    const file = JSON.stringify(paths.libraryJson);
+    const file = q(paths.libraryJson);
     if (e instanceof SyntaxError)
       throw new ArgumentCliError(`library file ${file} is not valid JSON`);
     const code = (e as NodeJS.ErrnoException).code;
@@ -304,7 +400,7 @@ function requireWork(dataDir: string, workId: string): void {
     throw new ArgumentCliError(
       unknownMessage(
         "work",
-        "the library has no works",
+        `the library at ${q(libraryPaths(dataDir).libraryJson)} has no works`,
         workId,
         store.works.map((w) => w.id)
       )
@@ -323,7 +419,7 @@ function requireWork(dataDir: string, workId: string): void {
 }
 
 function describeStoreProblem(e: ArgumentGraphFileError): string {
-  const file = JSON.stringify(e.file ?? "?");
+  const file = q(e.file ?? "?");
   const p = e.problem;
   const tail =
     p === undefined
@@ -355,6 +451,8 @@ function loadStored(dataDir: string, workId: string): ArgumentGraph {
 /** Any error that is not already one of ours becomes one fixed line (the exception's own text is not printed). */
 function asCliError(e: unknown): unknown {
   if (e instanceof ArgumentCliError) return e;
+  // This repository's own sentence (`<path>/config.toml: "port" must be …`), printed as `note` prints it.
+  if (e instanceof ConfigError) return new ArgumentCliError(e.message);
   const code = (e as NodeJS.ErrnoException | null)?.code;
   if (typeof code === "string") return new ArgumentCliError(`file system error (${code})`);
   return new ArgumentCliError(`unexpected failure (${e instanceof Error ? e.name : typeof e})`);
@@ -383,39 +481,40 @@ function parseRev(raw: string | undefined): number {
 }
 
 /**
- * All of stdin. The pipe fd may be non-blocking (a dependency can set that when it loads), so "no data yet" is
- * EAGAIN, not an error: wait a little and read again until EOF.
+ * All of stdin, read asynchronously to EOF: while it waits for a writer the event loop keeps running, so Ctrl-C and
+ * SIGTERM end the command at once (a blocking read cannot be interrupted by a signal handler). The bytes are joined
+ * before they are decoded, so a multi-byte character cut between two chunks is intact.
  */
-function readStdin(): string {
+async function readStdin(): Promise<string> {
+  // A stream over a directory just ends: that is not "empty input", so say what it is.
+  let isDirectory = false;
+  try {
+    isDirectory = fstatSync(0).isDirectory();
+  } catch {
+    /* no usable fd 0: the read below reports it */
+  }
+  if (isDirectory) throw Object.assign(new Error("stdin is a directory"), { code: "EISDIR" });
   const chunks: Buffer[] = [];
-  const buf = Buffer.allocUnsafe(1 << 16);
-  const pause = new Int32Array(new SharedArrayBuffer(4));
-  for (;;) {
-    let n: number;
-    try {
-      n = readSync(0, buf, 0, buf.length, null);
-    } catch (e) {
-      const code = errnoCode(e);
-      if (code === "EAGAIN") {
-        Atomics.wait(pause, 0, 0, 5);
-        continue;
-      }
-      if (code === "EOF") break;
-      throw e;
-    }
-    if (n === 0) break;
-    chunks.push(Buffer.from(buf.subarray(0, n)));
+  for await (const chunk of process.stdin) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer));
   }
   return Buffer.concat(chunks).toString("utf8");
 }
 
-function readGraphText(file: string): string {
+async function readGraphText(file: string): Promise<string> {
   try {
-    return file === "-" ? readStdin() : readFileSync(file, "utf8");
+    if (file !== "-") return readFileSync(file, "utf8");
+    // Waiting for a person to type a whole graph is never what `-` is for (and the line is easily forgotten in a
+    // pipeline that lost its writer): refuse at once instead of waiting.
+    if (process.stdin.isTTY === true) {
+      throw new ArgumentCliError(
+        'stdin is a terminal; "-" reads the graph from a pipe or a redirected file'
+      );
+    }
+    return await readStdin();
   } catch (e) {
-    throw new ArgumentCliError(
-      `cannot read ${file === "-" ? "stdin" : JSON.stringify(file)} (${errnoCode(e)})`
-    );
+    if (e instanceof ArgumentCliError) throw e;
+    throw new ArgumentCliError(`cannot read ${file === "-" ? "stdin" : q(file)} (${errnoCode(e)})`);
   }
 }
 
@@ -424,35 +523,61 @@ interface PutOpts {
   replace?: boolean;
 }
 
-function runArgumentPut(workId: string, file: string, opts: PutOpts, dataDir: string): void {
+async function runArgumentPut(
+  workId: string,
+  file: string,
+  opts: PutOpts,
+  dataDir: string
+): Promise<void> {
   const rev = parseRev(opts.rev);
   requireWork(dataDir, workId);
-  const label = file === "-" ? "stdin" : JSON.stringify(file);
+  const label = file === "-" ? "stdin" : q(file);
   let data: unknown;
-  const text = readGraphText(file);
+  const text = await readGraphText(file);
   try {
     data = JSON.parse(text);
   } catch {
     throw new ArgumentCliError(`${label} is not valid JSON`);
   }
   // `work_id` is fixed by the command line: absent in the file → filled in; present → must agree.
-  // `rev` in the file is ignored; `--rev` is the one the caller read.
+  // `rev` in the file is ignored; `--rev` is the one the caller read. `version` may be left out (it is 1).
+  const protoKeys = protoKeyPositions(data);
   if (data !== null && typeof data === "object" && !Array.isArray(data)) {
     const fileWork = (data as Record<string, unknown>).work_id;
+    if (fileWork !== undefined && typeof fileWork !== "string") {
+      throw new ArgumentCliError(`work_id in ${label} must be a string`);
+    }
     if (fileWork !== undefined && fileWork !== workId) {
       throw new ArgumentCliError(
-        `work_id in ${label} is ${quote(typeof fileWork === "string" ? fileWork : JSON.stringify(fileWork))}, which does not match work ${quote(workId)}`
+        `work_id in ${label} is ${quote(fileWork)}, which does not match work ${quote(workId)}`
       );
     }
-    data = { ...(data as Record<string, unknown>), rev, work_id: workId };
+    const withDefaults: Record<string, unknown> = {
+      ...(data as Record<string, unknown>),
+      rev,
+      work_id: workId,
+    };
+    if (withDefaults.version === undefined) withDefaults.version = 1;
+    data = withDefaults;
   }
   const parsed = ArgumentGraphSchema.safeParse(data);
-  if (!parsed.success) {
-    const lines = [
-      ...new Set(
-        parsed.error.issues.flatMap((i) => describeGraphIssue(i as unknown as GraphIssueLike, data))
-      ),
+  if (!parsed.success || protoKeys.length > 0) {
+    const entries = [
+      ...(parsed.success
+        ? []
+        : parsed.error.issues.flatMap((i) => {
+            const issue = i as unknown as GraphIssueLike;
+            return issueLines(issue.path, sentencesFor(issue, data));
+          })),
+      ...protoKeys.flatMap((path) => issueLines(path, [unknownField("__proto__")])),
     ];
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    for (const entry of entries) {
+      if (seen.has(entry.identity)) continue;
+      seen.add(entry.identity);
+      lines.push(entry.line);
+    }
     const shown = lines.slice(0, MAX_REPORTED_ISSUES).map((l) => `  ${l}`);
     if (lines.length > shown.length) shown.push(`  … ${lines.length - shown.length} more`);
     throw new ArgumentCliError(
@@ -492,20 +617,41 @@ function runArgumentPut(workId: string, file: string, opts: PutOpts, dataDir: st
 // pdf-path
 // --------------------------------------------------------------------------- //
 
-/** Doc ids under `output/` that are PDF Docs (unreadable metadata is skipped; this only feeds candidates). */
+/**
+ * Doc ids under `output/` that are PDF Docs. Only a missing directory is "no docs"; one that cannot be listed is a
+ * system error. A single Doc whose files cannot be read is skipped (this only feeds the candidates).
+ */
 function pdfDocIds(paths: ReturnType<typeof libraryPaths>): string[] {
-  return listDocIds(paths.outputDir).filter((id) => {
-    try {
-      return readPdfMetadataIfPresent(paths, id) !== null;
-    } catch {
-      return false;
-    }
-  });
+  let names: string[];
+  try {
+    names = readdirSync(paths.outputDir);
+  } catch (e) {
+    if (isMissing(e)) return [];
+    throw outputDirError(paths, e);
+  }
+  return names
+    .filter((id) => {
+      try {
+        return (
+          lstatSync(join(paths.outputDir, id, `${id}.json`)).isFile() &&
+          readPdfMetadataIfPresent(paths, id) !== null
+        );
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+}
+
+function outputDirError(paths: ReturnType<typeof libraryPaths>, e: unknown): ArgumentCliError {
+  return new ArgumentCliError(
+    `the output directory ${q(paths.outputDir)} could not be read (${errnoCode(e)})`
+  );
 }
 
 /** The core's fixed messages for a PDF Doc whose files are not what they should be, in our wording. */
 const PDF_METADATA_REASONS: Record<string, string> = {
-  "invalid output directory": "the output directory is not a directory",
+  "invalid output directory": "the output directory is not a plain directory",
   "unsafe PDF Doc directory": "its folder is not a plain directory",
   "unsafe PDF Doc file": "its metadata file is not a regular file",
   "PDF metadata missing": "its metadata file is missing",
@@ -530,10 +676,49 @@ function runPdfPath(docId: string, dataDir: string): void {
   const paths = libraryPaths(dataDir);
   const unknown = (): ArgumentCliError =>
     new ArgumentCliError(
-      unknownMessage("PDF doc", "there are no PDF docs", docId, pdfDocIds(paths))
+      unknownMessage(
+        "PDF doc",
+        `there are no PDF docs in ${q(paths.outputDir)}`,
+        docId,
+        pdfDocIds(paths)
+      )
     );
+  const unreadable = (e: unknown): ArgumentCliError =>
+    new ArgumentCliError(`doc ${quote(docId)}: its files could not be read (${errnoCode(e)})`);
+
+  // Only "there is no such file or directory" means "no such doc": a path we may not search, or an I/O error, says
+  // so (the stored-graph reader makes the same distinction).
+  try {
+    if (!lstatSync(paths.outputDir).isDirectory()) {
+      throw new ArgumentCliError(
+        `doc ${quote(docId)}: ${PDF_METADATA_REASONS["invalid output directory"]}`
+      );
+    }
+  } catch (e) {
+    if (e instanceof ArgumentCliError) throw e;
+    if (isMissing(e)) throw unknown();
+    throw outputDirError(paths, e);
+  }
   const plainName = docId !== "" && !/[/\\]/.test(docId) && !docId.startsWith(".");
-  if (!plainName || !existsSync(paths.outputDir)) throw unknown();
+  if (!plainName) throw unknown();
+  const docDir = join(paths.outputDir, docId);
+  let json: "present" | "absent" | "not-probed" = "not-probed";
+  let docIsDirectory = false;
+  try {
+    docIsDirectory = lstatSync(docDir).isDirectory(); // failing to reach the entry is about output/ itself
+  } catch (e) {
+    if (isMissing(e)) throw unknown();
+    throw outputDirError(paths, e);
+  }
+  if (docIsDirectory) {
+    try {
+      lstatSync(join(docDir, `${docId}.json`));
+      json = "present";
+    } catch (e) {
+      if (!isMissing(e)) throw unreadable(e);
+      json = "absent";
+    }
+  }
   let metadata: ReturnType<typeof readPdfMetadataIfPresent>;
   try {
     metadata = readPdfMetadataIfPresent(paths, docId);
@@ -541,24 +726,22 @@ function runPdfPath(docId: string, dataDir: string): void {
     throw new ArgumentCliError(`doc ${quote(docId)}: ${describePdfMetadataError(e)}`);
   }
   if (metadata === null) {
-    if (existsSync(join(paths.outputDir, docId, `${docId}.json`))) {
-      throw new ArgumentCliError(`doc ${quote(docId)} is not a PDF doc`);
-    }
+    if (json === "present") throw new ArgumentCliError(`doc ${quote(docId)} is not a PDF doc`);
     throw unknown();
   }
   let original: string;
   try {
     original = join(realpathSync(paths.outputDir), docId, "original.pdf");
   } catch (e) {
-    throw new ArgumentCliError(
-      `doc ${quote(docId)}: its files could not be read (${errnoCode(e)})`
-    );
+    throw unreadable(e);
   }
   let stat: ReturnType<typeof lstatSync>;
   try {
     stat = lstatSync(original);
-  } catch {
-    throw new ArgumentCliError(`the original PDF of doc ${quote(docId)} is missing`);
+  } catch (e) {
+    if (isMissing(e))
+      throw new ArgumentCliError(`the original PDF of doc ${quote(docId)} is missing`);
+    throw unreadable(e);
   }
   if (!stat.isFile() || stat.isSymbolicLink()) {
     throw new ArgumentCliError(`the original PDF of doc ${quote(docId)} is not a regular file`);
@@ -574,6 +757,15 @@ function runPdfPath(docId: string, dataDir: string): void {
 function guarded(body: () => void): void {
   try {
     body();
+  } catch (e) {
+    fail(asCliError(e));
+  }
+}
+
+/** The same for a body that waits (stdin): the command's promise settles only after the failure is printed. */
+async function guardedAsync(body: () => Promise<void>): Promise<void> {
+  try {
+    await body();
   } catch (e) {
     fail(asCliError(e));
   }
@@ -605,8 +797,10 @@ export function registerArgumentCommands(program: Command): void {
     .argument("<file>", 'JSON file with the whole graph, or "-" for stdin')
     .option("--rev <n>", "the rev of the graph you read (0 when the work has none); required")
     .option("--replace", "allow replacing a graph that already has arguments")
-    .action((workId: string, file: string, opts: PutOpts, cmd: Command) => {
-      guarded(() => runArgumentPut(workId, file, opts, resolveDataDir(cmd.optsWithGlobals())));
+    .action(async (workId: string, file: string, opts: PutOpts, cmd: Command) => {
+      await guardedAsync(() =>
+        runArgumentPut(workId, file, opts, resolveDataDir(cmd.optsWithGlobals()))
+      );
     });
 
   withDataDir(program.command("pdf-path"))

@@ -22,7 +22,15 @@
  * or hidden). The mapping is injective and reversible.
  */
 
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { type ArgumentGraph, ArgumentGraphSchema } from "@argelanderspace/contracts";
 
@@ -166,7 +174,7 @@ export function loadArgumentGraph(dataDir: string, workId: string): ArgumentGrap
     throw new ArgumentGraphFileError(
       "corrupt",
       `argument graph: ${file} could not be read: ${(err as Error).message}`,
-      { reason: "unreadable", code: typeof code === "string" ? code : "unknown" },
+      { reason: "unreadable", code: typeof code === "string" ? code : "UNKNOWN" },
       file
     );
   }
@@ -233,13 +241,27 @@ export function replaceArgumentGraph(
     );
   }
   const file = argumentGraphPath(dataDir, graph.work_id);
-  mkdirSync(argumentGraphDir(dataDir), { recursive: true });
+  // `mkdirSync(recursive)` returns the first directory it had to create (undefined when it already existed).
+  const created = mkdirSync(argumentGraphDir(dataDir), { recursive: true });
   const tmp = file.replace(/\.json$/, ".json.tmp");
   try {
     writeFileSync(tmp, JSON.stringify(result.data, null, 2), "utf8");
     renameSync(tmp, file);
   } catch (err) {
-    rmSync(tmp, { force: true }); // a failed write must not leave a half-written tmp behind
+    // A failed write must not leave a half-written tmp behind, nor an `argument-graphs/` this very call created and
+    // that is still empty. Cleaning up is best effort: it must never replace the error that matters.
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* the original error is the one to report */
+    }
+    if (created === argumentGraphDir(dataDir)) {
+      try {
+        rmdirSync(created); // fails (and stays) unless it is empty
+      } catch {
+        /* not empty, or gone already */
+      }
+    }
     throw err;
   }
   return { saved: result.data };

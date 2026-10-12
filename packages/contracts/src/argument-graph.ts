@@ -41,6 +41,13 @@ export const ARGUMENT_GRAPH_UNREADABLE_PREFIX = "argument graph file is unreadab
 
 // ---- Pieces ----------------------------------------------------------------- //
 
+/**
+ * The field-level custom rules (a refinement on a value, not a structural rule of the whole graph). Like
+ * {@link ArgumentGraphStructureRule} they travel in the issue's `params.rule`, so a consumer words its own message
+ * without parsing ours.
+ */
+export type ArgumentGraphFieldRule = "blank_title" | "target_anchor_or_page";
+
 export const ArgumentKindSchema = z.enum(["native", "end", "normal"]);
 
 /** Which Toulmin element the edge's source Claim plays in the target argument. */
@@ -59,6 +66,7 @@ export const ArgumentSourceTargetSchema = z
   })
   .refine((t) => (t.anchor === undefined) !== (t.page === undefined), {
     message: "a source target carries exactly one of anchor or page",
+    params: { rule: "target_anchor_or_page" satisfies ArgumentGraphFieldRule },
   });
 
 export const ArgumentSourceSchema = z.strictObject({
@@ -76,7 +84,10 @@ export const ArgumentSchema = z.strictObject({
   title: z
     .string()
     .max(L.titleChars)
-    .refine((s) => s.trim().length > 0, { message: "title must not be blank" }),
+    .refine((s) => s.trim().length > 0, {
+      message: "title must not be blank",
+      params: { rule: "blank_title" satisfies ArgumentGraphFieldRule },
+    }),
   claim: field(),
   grounds: field(),
   warrant: field(),
