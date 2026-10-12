@@ -381,7 +381,9 @@ async function send(id: string, context: PageContext, text: string) {
 // about 2.6 KB (about 1.3k tokens) out of the instruction, 61800 -> 60500, then 60400 after its fix round dropped the remaining
 // attachment sentences (about 100 tokens). Ticket 33 lane 3 (reader download_original text, "Writer" in the page-context sentence,
 // the downloads exception, its own failure text) added about 0.7 KB (-> 60700), lane 4 (undo_delete_task, about 200 tokens) and its scoped-lookup sentence -> 61000 (measured).
-const WINDOW_BIG_DOC = 61_000;
+// ticket 09 (argument tool: description, parameter schema, one prompt sentence) took the footprint from 69438 to 71928 bytes (+2490 B); the window
+// budget counts 2 bytes per token, so the same room needs +1245 tokens: 61000 -> 62245 (62100 fails two tests, 62245 and above pass).
+const WINDOW_BIG_DOC = 62_245;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -1192,10 +1194,10 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (39500 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (40745 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    39_500, // ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
+    40_745, // 39_500 + 1_245 for the argument tool (ticket 09, +2490 B = 1245 tokens at 2 B/token; 40_600 fails, 40_745 to about 41_100 pass). ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

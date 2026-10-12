@@ -427,6 +427,7 @@ test("the reader tool is registered beside plan, workspace and library and nothi
     "reader",
     "writer",
     "text",
+    "argument",
   ]);
 });
 

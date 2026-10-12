@@ -12,7 +12,7 @@
  * navigation waits for the answer and happens only on "discard". Deleting an argument is not confirmed and is undoable
  * for a few seconds; clearing the graph is confirmed.
  */
-import { type Argument, type ArgumentDraft, type ArgumentEdge, type ArgumentEdgeRole, type ArgumentGraph, type ArgumentSource, BLANK_ARGUMENT, addEdge, auditArgumentGraph, clearArgumentGraph, createArgument, deleteArgument, removeEdge, restoreArgument, sameArgument, updateArgument } from "@argelanderspace/contracts";
+import { type Argument, type ArgumentDraft, type CopilotViewActionResult, type ArgumentEdge, type ArgumentEdgeRole, type ArgumentGraph, type ArgumentSource, BLANK_ARGUMENT, addEdge, auditArgumentGraph, clearArgumentGraph, createArgument, deleteArgument, removeEdge, restoreArgument, sameArgument, updateArgument } from "@argelanderspace/contracts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { registerWorkspaceLeaveGuard } from "../argelander/workspace";
@@ -41,6 +41,12 @@ function workHeading(workId: string, work: LibraryRef | null): string {
   return `${author} · ${work.year} — ${work.title}`;
 }
 
+/** What the Copilot's view actions can do inside the open view (its selection; the Library page does the rest). */
+export interface ArgumentModeControl {
+  /** Select an argument (the panel opens on it) or none (the panel closes); refused while a draft would be lost. */
+  select: (id: string | null) => Pick<CopilotViewActionResult, "ok" | "detail">;
+}
+
 export function ArgumentGraphMode({
   workId,
   work,
@@ -48,6 +54,7 @@ export function ArgumentGraphMode({
   onExit,
   onOpenDoc,
   onPage,
+  onControl,
 }: {
   workId: string;
   /** The library's entry for the work; null when the library does not list it (the server's answer still decides). */
@@ -59,6 +66,8 @@ export function ArgumentGraphMode({
   onOpenDoc: (docId: string, anchor: string | null) => void;
   /** The page as the Copilot should see it (null when this view goes away). */
   onPage?: (page: ArgumentPage | null) => void;
+  /** The Copilot's way into the view's own selection (null when this view goes away). */
+  onControl?: (control: ArgumentModeControl | null) => void;
 }) {
   const { t } = useTranslation();
   const { state, reload, refresh, refreshFailed, refreshing, adopt } = useArgumentGraph(workId);
@@ -136,6 +145,26 @@ export function ArgumentGraphMode({
     },
     [afterDiscard]
   );
+  // The Copilot's selection (a view action): the same state change `choose` makes, but a draft is never asked about (the
+  // model is waiting for an answer and the user has not chosen to leave it): it is refused as `leave_blocked`.
+  const graphRef = useRef<ArgumentGraph | null>(null);
+  graphRef.current = graph;
+  useEffect(() => {
+    if (!onControl) return;
+    onControl({
+      select: (id) => {
+        const current = graphRef.current;
+        if (!current) return { ok: false, detail: "unavailable" };
+        if (id !== null && !current.arguments.some((a) => a.id === id)) return { ok: false, detail: "not_found" };
+        if (id === selectedIdRef.current && !creatingRef.current) return { ok: true };
+        if (dirtyRef.current) return { ok: false, detail: "leave_blocked" };
+        setCreating(false);
+        setSelectedId(id);
+        return { ok: true };
+      },
+    });
+    return () => onControl(null);
+  }, [onControl]);
   // leaving the page (a pane switch or close, the browser's Back, another Work's graph: the workspace guard, which
   // answers with the dialog, and refuses without one when the Copilot asked; closing the tab: the browser's own prompt)
   useEffect(() => {

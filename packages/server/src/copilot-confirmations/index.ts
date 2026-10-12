@@ -5,6 +5,7 @@ import { deletePlanKind } from "./delete-plan.js";
 import type { ConfirmationKinds } from "./kind.js";
 import { deleteMailKind, moveMailKind } from "./mail-message.js";
 import { refreshArxivSourceKind } from "./refresh-arxiv-source.js";
+import { replaceArgumentGraphKind } from "./replace-argument-graph.js";
 import { replaceTextReadingKind } from "./replace-text-reading.js";
 import { sendMailKind } from "./send-mail.js";
 
@@ -27,5 +28,6 @@ export function createConfirmationKinds(workbench: Workbench | undefined): Confi
     delete_manuscript: deleteManuscriptKind(workbench),
     delete_doc: deleteDocKind(workbench),
     refresh_arxiv_source: refreshArxivSourceKind(workbench),
+    replace_argument_graph: replaceArgumentGraphKind(workbench),
   };
 }

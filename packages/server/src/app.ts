@@ -119,6 +119,7 @@ import {
 } from "./annotations-access.js";
 import { readArgumentGraph, writeArgumentGraph } from "./argument-graph-actions.js";
 import { CopilotHost } from "./copilot.js";
+import { ArgumentUndoRegistry } from "./copilot-argument-tool.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
 import type {
   AssetImageOutcome,
@@ -378,6 +379,8 @@ export function createApp(deps: AppDeps): Hono {
       work_id: workId,
       at: new Date().toISOString(),
     });
+    // A pending Copilot replace/clear card may no longer match the graph it showed (click time stays the authority).
+    void copilot.revalidate("argument").catch(() => {});
   };
   /** Stage 10: `id` names the manuscript; template-dir changes omit it. */
   const writerChanged = (cause: "put" | "create" | "delete" | "numbering", id: string): void => {
@@ -780,6 +783,23 @@ export function createApp(deps: AppDeps): Hono {
     text: textDocs,
     writer: writerOps,
     mail: mailOps,
+    // The argument graph tool (ticket 09): the page's PUT writes through the same store, lock, Work check and broadcast.
+    argument: {
+      dataDir: paths.dataDir,
+      lock: argumentGraphLock,
+      onChanged: argumentGraphChanged,
+      work: (workId) => {
+        try {
+          const found = LibraryStore.load(paths).get(workId);
+          return found
+            ? { id: found.id, title: found.title, docIds: [...(found.doc_ids ?? [])] }
+            : null;
+        } catch {
+          return "error";
+        }
+      },
+      undo: new ArgumentUndoRegistry(),
+    },
     plans: {
       statusDir: deps.statusDir,
       planLock,

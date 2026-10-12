@@ -302,6 +302,7 @@ test("the library tool is registered beside plan and workspace and nothing else"
     "reader",
     "writer",
     "text",
+    "argument",
   ]);
 });
 

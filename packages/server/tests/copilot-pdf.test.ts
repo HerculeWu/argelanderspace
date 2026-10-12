@@ -631,7 +631,8 @@ test("a PDF image larger than the room left in the window is refused whole with 
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 40_000;
+  // 40_000 + 1_245: the room left after the instruction and tools stays what it was (window bytes are 2 per token; the argument tool (ticket 09) added 2_490 B to the footprint)
+  model.contextWindow = 41_245;
   model.maxTokens = 1024;
   try {
     script = [

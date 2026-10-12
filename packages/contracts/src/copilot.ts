@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ArgumentGraphSizeSchema, ArgumentViewActionSchema } from "./argument-copilot.js";
 import {
   type ArgumentContextSummary,
   ArgumentContextSummarySchema,
@@ -460,6 +461,32 @@ export const CopilotMailMoveConfirmationSchema = z
     objectDigest: z.string().min(1),
   })
   .strict();
+/**
+ * Replacing the whole argument graph of a Work, or clearing it, while it holds arguments (argument graph ticket 09): the
+ * page's "Clear" dialog, widened to the whole-graph write. Bound to the graph's rev and to the digest of both the stored
+ * graph and the proposed one, so a change to either expires it. The counts are what the card shows.
+ */
+export const CopilotArgumentReplaceConfirmationSchema = z
+  .object({
+    ...ConfirmationBase,
+    action: z.literal("replace_argument_graph"),
+    object: z
+      .object({ kind: z.literal("work"), id: z.string().min(1), workId: z.string().min(1) })
+      .strict(),
+    /** The Work's title. */
+    label: z.string(),
+    /** `clear` empties the graph; `replace` writes the proposed one. */
+    mode: z.enum(["replace", "clear"]),
+    /** What the graph holds now (it is lost). */
+    current: ArgumentGraphSizeSchema,
+    /** What it holds after (0 and 0 for a clear). */
+    next: ArgumentGraphSizeSchema,
+    objectDigest: z.string().min(1),
+  })
+  .strict();
+export type CopilotArgumentReplaceConfirmation = z.infer<
+  typeof CopilotArgumentReplaceConfirmationSchema
+>;
 export type CopilotMailSendConfirmation = z.infer<typeof CopilotMailSendConfirmationSchema>;
 export type CopilotMailDeleteConfirmation = z.infer<typeof CopilotMailDeleteConfirmationSchema>;
 export type CopilotMailMoveConfirmation = z.infer<typeof CopilotMailMoveConfirmationSchema>;
@@ -472,6 +499,7 @@ export const CopilotConfirmationSchema = z.union([
   CopilotDocConfirmationSchema,
   CopilotDocDeleteConfirmationSchema,
   CopilotManuscriptDeleteConfirmationSchema,
+  CopilotArgumentReplaceConfirmationSchema,
 ]);
 export type CopilotDocDeleteConfirmation = z.infer<typeof CopilotDocDeleteConfirmationSchema>;
 export type CopilotPlanConfirmation = z.infer<typeof CopilotPlanConfirmationSchema>;
@@ -488,6 +516,7 @@ export const CopilotConfirmationDecisionSchema = z
       "refresh_arxiv_source",
       "delete_doc",
       "delete_manuscript",
+      "replace_argument_graph",
       "replace_text_reading",
       "send_mail",
       "delete_mail",
@@ -567,6 +596,13 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
       docId: z.string().min(1),
     })
     .strict(),
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.literal("replace_argument_graph"),
+      workId: z.string().min(1),
+    })
+    .strict(),
 ]);
 export type OperationConfirmation = z.infer<typeof OperationConfirmationSchema>;
 
@@ -631,6 +667,7 @@ export const WsCopilotViewActionSchema = z
       DiscoverySavedViewActionSchema,
       ReaderViewActionSchema,
       WriterViewActionSchema,
+      ArgumentViewActionSchema,
     ]),
   })
   .strict();

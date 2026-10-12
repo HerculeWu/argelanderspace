@@ -281,7 +281,7 @@ export const ARGUMENT_STALE_NOTE =
   "The last attempt to refresh the graph failed: it may be out of date.";
 const READ_ONLY = "this is the Library tab showing one Work's argument graph, read-only";
 const LATER =
-  "The argument tools come with a later release: until then say which text you cannot see, never guess it.";
+  "Fetch the text you cannot see with the argument tool (read: from continues, ids names arguments), never guess it.";
 
 /** What a whole page says of itself. */
 export const ARGUMENT_WHOLE_NOTE = `${READ_ONLY}: page.graph is the whole graph and selectedId the argument the user has open. ${ARGUMENT_ACTIONS_NOTE}.`;

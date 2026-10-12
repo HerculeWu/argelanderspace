@@ -154,6 +154,18 @@ export type ConfirmationRequest =
     }
   | {
       toolCallId: string;
+      /** Argument graph ticket 09: replacing or clearing a graph that holds arguments (the page's Clear dialog, widened). */
+      action: "replace_argument_graph";
+      workId: string;
+      label: string;
+      mode: "replace" | "clear";
+      current: { arguments: number; edges: number };
+      next: { arguments: number; edges: number };
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
       /** The Writer list's delete dialog: the physical delete of one manuscript folder. */
       action: "delete_manuscript";
       manuscriptId: string;

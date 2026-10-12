@@ -7,7 +7,7 @@
  * it is open the pane publishes its `ArgumentPage` (and no Library page); the graph really loaded (ready or empty) is complete,
  * a failed read is `error`, a read still going `unavailable`. The Library page's own actions answer `unavailable` meanwhile.
  */
-import { type CopilotViewAction, type DiscoveryPage, type DiscoverySavedViewAction, discoveryActionNeedsExploration, type LibraryPage, LibraryViewActionSchema, type LibraryViewAction } from "@argelanderspace/contracts";
+import { type ArgumentViewAction, ArgumentViewActionSchema, type CopilotViewAction, type DiscoveryPage, type DiscoverySavedViewAction, discoveryActionNeedsExploration, type LibraryPage, isArgumentViewAction, LibraryViewActionSchema, type LibraryViewAction } from "@argelanderspace/contracts";
 import type { ArgumentPage } from "../argument/page";
 import { type PaneAdapter, registered, reported, unavailable } from "../argelander/panes";
 import type { LibraryViewController } from "./LibraryView";
@@ -29,14 +29,19 @@ export function createLibraryPane(notify: () => void) {
       return source === "live" ? "complete" : source === "error" ? "error" : "unavailable";
     },
     context: () => ({ library: discovery.get() || argument.get() ? null : library.get(), discovery: discovery.get(), argument: argument.get() }),
-    handles: (action) => LibraryViewActionSchema.safeParse(action).success,
-    needsPane: (action) => (discoveryActionNeedsExploration(action) ? "active-only" : "any"),
-    // an exploration control needs this pane to be exploring
-    available: () => discovery.get() !== null,
+    handles: (action) => LibraryViewActionSchema.safeParse(action).success || ArgumentViewActionSchema.safeParse(action).success,
+    // Opening an argument graph opens or uses a Library page; selecting an argument and leaving the view need one that shows
+    // the graph. An exploration control needs this pane to be exploring.
+    needsPane: (action) => (isArgumentViewAction(action) ? (action.action === "open_argument_graph" ? "any" : "existing-only") : discoveryActionNeedsExploration(action) ? "active-only" : "any"),
+    available: (action) => {
+      if (!isArgumentViewAction(action)) return discovery.get() !== null;
+      const shown = argument.get();
+      return shown !== null && (action.action !== "select_argument" || shown.work.id === action.workId);
+    },
     // also the service's `discovery_saved` sync, which the Shell hands every Library pane
     apply: async (action: CopilotViewAction) => {
       const current = controller.get();
-      return current ? current.apply(action as LibraryViewAction | DiscoverySavedViewAction) : unavailable();
+      return current ? current.apply(action as LibraryViewAction | DiscoverySavedViewAction | ArgumentViewAction) : unavailable();
     },
     timeouts: { readyMs: 0, applyMs: 2000 },
   };
