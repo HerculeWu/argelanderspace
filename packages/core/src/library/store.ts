@@ -353,13 +353,28 @@ export const DEFAULT_PROJECT: Record<string, unknown> = {
   field: "",
 };
 
+/**
+ * One Work folded into another by {@link LibraryStore.upsert}. `stored` is true when the absorbed Work was
+ * already in the store at construction (loaded from the file), so it can own an argument graph file; a Work
+ * created earlier in the same session cannot.
+ */
+export interface WorkFold {
+  absorbed: string;
+  survivor: string;
+  stored: boolean;
+}
+
 export class LibraryStore {
   works: Work[];
   project: Record<string, unknown>;
+  /** Every fold `upsert` made on this instance, in order (the argument graphs follow it; ticket 06). */
+  readonly folds: WorkFold[] = [];
+  private readonly storedIds: Set<string>;
   private byKey = new Map<string, Work>();
 
   constructor(works: Work[] = [], project?: Record<string, unknown> | null) {
     this.works = works;
+    this.storedIds = new Set(works.map((w) => w.id));
     this.project = (pyOr(project) as Record<string, unknown> | undefined) ?? {
       ...DEFAULT_PROJECT,
     };
@@ -424,6 +439,11 @@ export class LibraryStore {
       // collapse works the new record bridges
       mergeInto(survivor, extra);
       this.works.splice(this.works.indexOf(extra), 1);
+      this.folds.push({
+        absorbed: extra.id,
+        survivor: survivor.id,
+        stored: this.storedIds.has(extra.id),
+      });
     }
     mergeInto(survivor, w);
     this.reindex();

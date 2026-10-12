@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { libraryImportRequest } from "@argelanderspace/contracts";
+import { type ArgumentGraphMergeNote, libraryImportRequest } from "@argelanderspace/contracts";
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -50,6 +50,31 @@ function ResultRow({ r, index }: { r: ManualWorkResult; index: number }) {
   );
 }
 
+/** What a Work merge did with the absorbed Work's argument graph (ticket 06); file paths are shown as stored. */
+function MergeNoteRow({ n, index }: { n: ArgumentGraphMergeNote; index: number }) {
+  const { t } = useTranslation();
+  const body = t(`library.importDialog.graphMerge.${n.outcome}`, {
+    absorbed: n.absorbed_id,
+    survivor: n.survivor_id,
+  });
+  return (
+    <div
+      className={`import-result ${n.outcome === "transfer_failed" ? "error" : "exists"}`}
+      data-ui="import-graph-merge"
+      data-ui-key={index}
+    >
+      <Icon name={n.outcome === "transfer_failed" ? "x-circle" : "info"} cls="ico-sm" />
+      <span className="import-result-body">
+        <span className="import-result-title">{body}</span>
+        {n.outcome === "transfer_failed" && n.error && (
+          <span className="import-result-err">{n.error}</span>
+        )}
+        <span className="import-result-key mono">{n.absorbed_file}</span>
+      </span>
+    </div>
+  );
+}
+
 export function ImportDialog({
   mode,
   onClose,
@@ -65,6 +90,7 @@ export function ImportDialog({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<ManualWorkResult[] | null>(null);
+  const [merges, setMerges] = useState<ArgumentGraphMergeNote[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,13 +114,16 @@ export function ImportDialog({
       return;
     }
     const first = resp.results[0];
-    if (!batch && first && first.status !== "error" && first.ref) {
+    const notes = resp.argument_graph_merges ?? [];
+    // A merge that met an argument graph must be read, so the dialog stays open and shows it.
+    if (!batch && first && first.status !== "error" && first.ref && notes.length === 0) {
       // single modes: success opens the work's detail immediately
       onResolved(first.ref);
       onClose();
       return;
     }
     setResults(resp.results);
+    setMerges(notes);
   };
 
   const close = () => {
@@ -102,6 +131,11 @@ export function ImportDialog({
     // batch: closing after a partial/complete import selects the first created
     const firstCreated = results?.find((r) => r.status === "created" && r.ref);
     if (firstCreated?.ref) onResolved(firstCreated.ref);
+    else if (!batch && merges.length > 0) {
+      // single mode would have opened the Work right away; the merge note delayed it to here
+      const open = results?.find((r) => r.status !== "error" && r.ref);
+      if (open?.ref) onResolved(open.ref);
+    }
     onClose();
   };
 
@@ -153,6 +187,9 @@ export function ImportDialog({
             <div className="import-results" data-ui="import-results">
               {results.map((r, i) => (
                 <ResultRow key={r.key ?? i} r={r} index={i} />
+              ))}
+              {merges.map((n, i) => (
+                <MergeNoteRow key={`${n.absorbed_id}>${n.survivor_id}`} n={n} index={i} />
               ))}
             </div>
           )}

@@ -654,7 +654,12 @@
       "created": "Created",
       "exists": "Already in library",
       "failed": "Failed",
-      "unreachable": "Cannot reach the server — make sure serve is running"
+      "unreachable": "Cannot reach the server — make sure serve is running",
+      "graphMerge": {
+        "moved": "Merged {{absorbed}} into {{survivor}}: its argument graph now belongs to {{survivor}}. The original file stays on disk (below), unused.",
+        "kept_survivor": "Merged {{absorbed}} into {{survivor}}: both had an argument graph. {{survivor}}'s was kept; the one of {{absorbed}} stays on disk, not shown and not deleted:",
+        "transfer_failed": "Merged {{absorbed}} into {{survivor}}, but its argument graph could not be moved. It is intact on disk:"
+      }
     }
   },
   "plan": {

@@ -131,6 +131,39 @@ describe("ImportDialog", () => {
     expect(onResolved).toHaveBeenCalledWith(REF);
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("a merge that met an argument graph keeps the dialog open, shows the note, and opens the Work on close (ticket 06)", async () => {
+    h.createWorks.mockResolvedValue({
+      results: [{ status: "exists", ref: REF, key: "doe2024" }],
+      argument_graph_merges: [
+        {
+          outcome: "kept_survivor",
+          absorbed_id: "doi:10.1/c",
+          survivor_id: REF.id,
+          absorbed_file: "/data/argument-graphs/doi%3A10%2E1%2Fc.json",
+          survivor_file: "/data/argument-graphs/x.json",
+        },
+      ],
+    });
+    const onResolved = vi.fn();
+    const onClose = vi.fn();
+    const { container } = render(
+      <ImportDialog mode="identifier" onClose={onClose} onResolved={onResolved} />
+    );
+    fireEvent.change(container.querySelector("input")!, { target: { value: "10.1234/x" } });
+    fireEvent.click(container.querySelector(".btn.primary")!);
+    await waitFor(() =>
+      expect(container.querySelector("[data-ui='import-graph-merge']")).not.toBeNull()
+    );
+    const note = container.querySelector("[data-ui='import-graph-merge']")!.textContent ?? "";
+    expect(note).toContain("doi:10.1/c");
+    expect(note).toContain("/data/argument-graphs/doi%3A10%2E1%2Fc.json");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onResolved).not.toHaveBeenCalled();
+    fireEvent.click(container.querySelector(".plan-modal-foot .btn")!);
+    expect(onResolved).toHaveBeenCalledWith(REF);
+    expect(onClose).toHaveBeenCalled();
+  });
 });
 
 // ------------------------------------------------------- menu wiring --------

@@ -1979,8 +1979,13 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid request body (expected {mode: identifier|bibcode|bib, …})", 400);
       return c.json(e.body, e.status);
     }
-    const { results } = await acquisition.importManualWorks(parsed.data);
-    return c.json({ results });
+    const { results, argumentGraphMerges = [] } = await acquisition.importManualWorks(parsed.data);
+    // `argument_graph_merges` rides along only when a fold met an argument graph (ticket 06).
+    return c.json(
+      argumentGraphMerges.length > 0
+        ? { results, argument_graph_merges: argumentGraphMerges }
+        : { results }
+    );
   });
 
   // ---- PATCH /api/library/refs --------------------------------------------- //

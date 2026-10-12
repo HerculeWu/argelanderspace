@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  type ArgumentGraphMergeNote,
   type CopilotOperation,
   type DocReplaceImpact,
   type Job,
@@ -252,6 +253,8 @@ export interface ManualImportResult {
   updated: string[];
   /** The record would have folded stored Works into one; the tool path refuses it and writes nothing. */
   rejected: boolean;
+  /** What the folds did with an absorbed Work's argument graph (page path only; empty when none had one). */
+  argumentGraphMerges?: ArgumentGraphMergeNote[];
 }
 
 /**
@@ -300,6 +303,7 @@ export async function runManualImport(
     changed: outcomes.some((o) => o.status === "created" || o.changed === true),
     updated,
     rejected: outcomes.some((o) => o.bridged !== undefined),
+    argumentGraphMerges: outcomes.flatMap((o) => o.argumentGraphMerges ?? []),
   };
 }
 

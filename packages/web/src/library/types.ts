@@ -87,4 +87,6 @@ export interface ManualWorkResult {
 
 export interface ManualWorkResponse {
   results: ManualWorkResult[];
+  /** Only when the import folded Works and an absorbed Work had an argument graph (ticket 06). */
+  argument_graph_merges?: import("@argelanderspace/contracts").ArgumentGraphMergeNote[];
 }

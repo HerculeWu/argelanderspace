@@ -30,7 +30,11 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { type LibraryRef, WRITER_JOURNAL_MACROS } from "@argelanderspace/contracts";
+import {
+  type ArgumentGraphMergeNote,
+  type LibraryRef,
+  WRITER_JOURNAL_MACROS,
+} from "@argelanderspace/contracts";
 import {
   type AdsBibFields,
   type BibRecord,
@@ -41,6 +45,7 @@ import {
 import { classify, planToDict } from "../acquire/planner.js";
 import { resolveWork } from "../acquire/resolve.js";
 import { planFor } from "../acquire/run.js";
+import { followWorkFolds } from "../argument-graphs/merge.js";
 import { pyOr } from "../documents/pyregex.js";
 import { healGraph, loadCurrentGraph } from "./build.js";
 import { assignCiteKey, mergeWorkIntoGraph, workToRef } from "./graph.js";
@@ -74,6 +79,8 @@ export interface ManualAddOutcome {
   changed?: boolean;
   /** Only with `bridge: "reject"`: the entry was not imported because it would fold these stored Works into one. */
   bridged?: string[];
+  /** What the merge did with an absorbed Work's argument graph (only when one had a graph; ticket 06). */
+  argumentGraphMerges?: ArgumentGraphMergeNote[];
 }
 
 /**
@@ -189,12 +196,15 @@ async function commitWork(
     paths,
     matched === undefined ? { created: [saved], removeIds } : { updated: [saved], removeIds }
   );
+  // Only after the library file was written (a failed save throws above and leaves every graph where it is).
+  const argumentGraphMerges = followWorkFolds(paths.dataDir, store.folds);
   await mergeGraphQuiet(paths, store, saved);
   return {
     status: matched !== undefined ? "exists" : "created",
     ref: workToRef(saved),
     key: saved.cite_key ?? undefined,
     changed: changedIds.size > 0,
+    ...(argumentGraphMerges.length > 0 ? { argumentGraphMerges } : {}),
   };
 }
 
@@ -370,6 +380,8 @@ export async function addManualBibText(
   const touched: Work[] = [];
   const touchedAt = new Map<Work, number[]>();
   const removeIds: string[] = [];
+  /** absorbed Work id → index of the entry whose record folded it (the argument-graph note rides on that entry) */
+  const foldAt = new Map<string, number>();
   let refusedBridge = false;
   for (const rec of recs) {
     const key = rec.key.trim();
@@ -406,7 +418,9 @@ export async function addManualBibText(
     }
     w.cite_key = key; // the user's own key (Stage 13 D5)
     for (const extra of matches.slice(1)) removeIds.push(extra.id);
+    const foldsBefore = store.folds.length;
     const saved = store.upsert(w);
+    for (const fold of store.folds.slice(foldsBefore)) foldAt.set(fold.absorbed, outcomes.length);
     if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, used);
     else used.add(saved.cite_key);
     saved.acquisition = planToDict(planFor(saved));
@@ -441,6 +455,12 @@ export async function addManualBibText(
     for (const [saved, indexes] of touchedAt)
       for (const index of indexes)
         (outcomes[index] as ManualAddOutcome).changed = changedIds.has(saved.id);
+    // Only after the library file was written (a failed save throws above and leaves every graph where it is).
+    for (const note of followWorkFolds(paths.dataDir, store.folds)) {
+      const at = outcomes[foldAt.get(note.absorbed_id) ?? outcomes.length - 1];
+      if (at === undefined) continue;
+      at.argumentGraphMerges = [...(at.argumentGraphMerges ?? []), note];
+    }
   }
   // Bare saved nodes only — batch mode defers resolution/neighbours to the
   // next build, but the new entries must be selectable in the graph view now.

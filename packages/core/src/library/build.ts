@@ -30,6 +30,7 @@ import {
 import { parseBibtex } from "../acquire/bibtex.js";
 import { classify, planToDict } from "../acquire/planner.js";
 import { addBibRecords, enrichAndPlan, planFor } from "../acquire/run.js";
+import { followWorkFolds } from "../argument-graphs/merge.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
 import { assignCiteKey, buildGraph, workToRef } from "./graph.js";
 import { findDamagedTextDocs, seedFromOutput } from "./seed.js";
@@ -68,6 +69,8 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
   await enrichAndPlan(store, opts.sources);
   const graph = buildGraph(store, paths.outputDir);
   store.save(paths);
+  // Only after the library file was written: a failed save throws above and leaves every argument graph in place.
+  const argumentGraphMerges = followWorkFolds(paths.dataDir, store.folds);
   mkdirSync(paths.cacheDir, { recursive: true });
   writeFileSync(paths.graphJson, JSON.stringify(graph), "utf8");
   return {
@@ -80,6 +83,7 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
     acquisition: acquisitionSummary(store),
     resolution: resolutionSummary(store),
     ...(damagedTextDocs.length > 0 ? { damaged_text_docs: damagedTextDocs } : {}),
+    ...(argumentGraphMerges.length > 0 ? { argument_graph_merges: argumentGraphMerges } : {}),
   };
 }
 

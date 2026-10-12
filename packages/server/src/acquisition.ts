@@ -24,6 +24,7 @@ import {
   arxivDocId,
   attachArxivDoc,
   attachLatexZip,
+  describeArgumentGraphMerge,
   findMatchingPdfDoc,
   findWork,
   type IngestPipelines,
@@ -158,6 +159,10 @@ export function createLockedRebuild(libraryLock: AsyncLock): LockedRebuild {
           `the library was rebuilt but keys the application does not know could not be put back: ${error instanceof Error ? error.message : String(error)}`
         );
       }
+      // Rebuilds started by an upload or an arXiv fetch job discard their summary, so a merge that met an
+      // argument graph (ticket 06) would otherwise be silent: say it in the server log. The summary carries it too.
+      for (const note of result.argument_graph_merges ?? [])
+        console.warn(`library rebuild: ${describeArgumentGraphMerge(note)}`);
       return result;
     });
 }

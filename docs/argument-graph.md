@@ -1,6 +1,6 @@
 # 论证图：数据、审计与读写接口
 
-状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）与手动编辑（票 05）已实施。CLI、Copilot 工具、Work 合并跟随尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
+状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）、手动编辑（票 05）与 Work 合并跟随（票 06，2026-10-12）已实施。CLI、Copilot 工具尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
 
 ## 存储
 
@@ -52,6 +52,45 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 ## WebSocket
 
 `{ type: "argument-graph.changed", work_id, cause?: "put" | "external", at }`。`work_id` 是原始 Work id，不是文件名编码。server 自己的 PUT 成功后立即广播 `put`；watcher 轮询 `argument-graphs/*.json` 的 mtime+size 指纹（按 Work，回调带解码后的 id，已排序；tmp 文件和不是 store 写出的名字被忽略），变化时广播 `external`。server 自写会再触发一次 `external`，与 plans 先例相同，接收方的重取是幂等的。
+
+## Work 合并（票 06；`core/src/argument-graphs/merge.ts`）
+
+每个 Work 至多一张图，所以两个 Work 合并成一个时要决定图的去向。合并只发生在 `LibraryStore.upsert`：一条记录同时命中两个已存 Work 时，后者并入前者（幸存者）并从库中删除。`upsert` 把每次折叠记在 `store.folds`（`{absorbed, survivor, stored}`，`stored` 表示被并入者在本次加载时已在文件里，才可能有图文件）；调用方在**库文件保存成功之后**调用 `followWorkFolds(dataDir, store.folds)`，它永不抛错，对每个有图文件的被并入 Work 返回一条 `ArgumentGraphMergeNote`（contracts）。同一批里的链（B 并入 A、A 又并入 C）先折成「各自并入最终幸存者」再处理；两张图争同一个没有图的幸存者时，先折叠的那张得到它，另一张按「两边都有」处理。
+
+| 被并入 Work | 幸存 Work | 结果（`outcome`） |
+|---|---|---|
+| 没有图文件 | 任意 | 无事发生，不产生说明 |
+| 有图 | 没有图文件 | `moved`：在幸存者名下发布一份拷贝，`work_id` 改成幸存者的 id，`rev` 原样保留 |
+| 有图 | 已有图文件（不读内容，损坏的也算） | `kept_survivor`：幸存者的原样不动；被并入者的留在原处 |
+| 有图但拷贝失败（文件读不出来、`work_id` 不符、文件系统错误） | 没有图文件 | `transfer_failed`，带 `error`；合并照样生效，图原样留在原处 |
+
+- **被并入 Work 的文件在任何结果里都不被改动、改名或删除**（用户数据，任何路径都不删论证图文件）。`moved` 之后它是一份不再使用的备份；本模块唯一删除的是自己的临时拷贝。因此「转移」是拷贝加发布，不是移动。
+- **`rev` 保留**：图的内容（论证与边）没有被编辑，只是换了所有者；幸存者原本没有文件（等价于 rev 0），保留的 rev ≥ 1，持有旧空图 rev 0 的页面写入会 409，不会覆盖。不加一，是因为 rev 数的是编辑。
+- **时机与原子性**：先保存 `library.json`（各调用路径自己的写法不变），保存成功才动图。库保存失败时调用方抛错、一张图都没动；图拷贝失败时库已保存、合并成立，被并入者的图仍在原处，说明里如实写。拷贝先写到 `<幸存者文件名>.json.merge-<pid>.tmp`（目录里不被 store 当作图、不被 watcher 看见的名字），再以**硬链接发布**（目标已存在则失败，不覆盖；不支持硬链接的文件系统退回检查后 rename）。所以在库保存与拷贝之间有人给幸存者新建了图，不会被盖掉，结果按 `kept_survivor` 报告。库保存与图拷贝之间进程被杀，则图留在原处、幸存者没有图，按下面的办法手工找回。
+- **不加锁**：图文件由 server 的论证图锁串行化，合并发生在库锁内，两把锁不互堵（同上「不与其他锁互堵」）。合并与同一时刻对被并入 Work 的 PUT 之间留有极窄窗口：PUT 在合并前通过了「Work 存在」检查、合并后才落盘，它写进的是被并入者的文件，不会进入幸存者的拷贝；该文件仍在原处。跨进程同样不支持。
+
+### 调用路径
+
+| 路径 | 能否合并 | 覆盖 |
+|---|---|---|
+| 页面导入菜单（`POST /api/library/works`：标识符 / bibcode / BibTeX） | 能 | 响应体在有说明时多一个 `argument_graph_merges`（没有则保持 `{results}` 原样）；导入对话框在有说明时不自动关闭，列出说明与文件位置，关闭时再打开该 Work |
+| Copilot `library` 工具的 `import_works`、`save_candidate` | 会合并的导入整条拒绝（`bridge: "reject"`，零写入），不会产生合并 | 既有行为，不变；core 测试断言拒绝时图也不动 |
+| `add-manual` 单条（标识符、bibcode；`commitWork`）与批量（`addManualBibText`，说明挂在触发折叠的那一条上） | 能 | core 测试 |
+| `library build`、`library build --bib`、`acquire`（含 `--fetch`/`--fetch-remaining` 的二次 rebuild）、`POST /api/library/refresh`、上传/arXiv 获取任务里的 rebuild（`seedFromOutput` 与 `addBibRecords` 的 `upsert`） | 能 | `rebuild()` 在 `store.save` 之后自己处理，摘要多一个可选键 `argument_graph_merges`（只在合并遇到图时出现，其余输出一字不变，`damaged_text_docs` 同款先例）；`library build`/`acquire` 的 stdout JSON 与 refresh 响应因此带上它；丢弃摘要的任务型 rebuild 由 `lockedRebuild` 写一行服务端日志 |
+| `acquire --dry-run` | 内存里的 store，不落盘，不碰图 | 说明 |
+| CLI `ingest <DOI>`（`addDoiWork`） | 不会：记录只有一个未命中的新 DOI 加一个标题，最多命中一个已存 Work | core 测试 |
+| `ingest`（LaTeX）/ Doc 挂载 / PATCH / 上传 | 不改 Work 集合，只改 `doc_ids` 等 | 说明 |
+
+### 留在磁盘上的图
+
+- 位置：`<dataDir>/argument-graphs/<编码后的被并入 Work id>.json`（编码见「存储」；例：`doi:10.1051/0004-6361/202039341` → `doi%3A10%2E1051%2F0004-6361%2F202039341.json`），即它一直所在的地方。合并结果里的 `absorbed_file` 是它的绝对路径。
+- 它的 Work 已不在库里，所以没有任何视图读它：`GET /api/works/:id/argument-graph` 对该 id 是 404（「Work 不在库中」），Work 详情没有入口，Copilot 工具读不到。watcher 按文件名与 mtime+size 取指纹、不检查 Work 是否还在库、不读内容，所以它既不会报错，也不会反复广播（文件不变就没有变化）；合并本身不改它。没有任何自动清理。
+- 手工找回：确认目标 Work 在目标名下没有文件，把它复制成目标 Work 的文件名，并把文件里的 `"work_id"` 改成目标 Work 的 id（否则读取报 `wrong_work`）；工作台的 watcher 会发现新文件。没有界面。
+- 注意：若之后又出现一个 id 与被并入者相同的 Work（例如重新导入它的 DOI，而幸存者已有另一个 DOI），这个遗留文件会被它读到，因为文件名与 `work_id` 都对得上。这是同一篇文献的图，不判为错误。
+
+### Work id 在 rebuild 后会变吗（调查，不处理）
+
+`docs/library.md` 提到 rebuild 后 id 被改的 Work 无法对回。现状：已存 Work 的 id **从不被改**——`id` 只在新记录建立时由 `canonicalId` 计算（`seedFromOutput`、`workFromBibrecord`、手动添加的 `recanonicalize`），`upsert` 命中已存 Work 时幸存者保留自己的 id，`resolveWork`/`enrichAndPlan` 即使补出 DOI 也不动 id（core 测试覆盖）。所以 rebuild 不会让图失联，唯一会让已存图「失联」的 rebuild 事件是上面的合并（被并入者的 id 消失）。另外两种仍可能：`library.json` 丢失后从零 rebuild，id 按 `canonicalId` 对当时的 DOI/arXiv/标题重新推导，可能与原来不同；手工改了 `library.json` 里的 id。两种情形下图文件都留在磁盘上、不展示、不删除，找回办法同上。本票不处理。
 
 ## 画布（`packages/web/src/graph/`、`argument/`；票 03，只有渲染，页面入口与写入在后续票）
 

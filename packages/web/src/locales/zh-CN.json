@@ -654,7 +654,12 @@
       "created": "已创建",
       "exists": "库中已存在",
       "failed": "失败",
-      "unreachable": "无法连接服务器，请确认 serve 正在运行"
+      "unreachable": "无法连接服务器，请确认 serve 正在运行",
+      "graphMerge": {
+        "moved": "已将 {{absorbed}} 并入 {{survivor}}：它的论证图现在属于 {{survivor}}。原文件仍留在磁盘上（见下），不再使用。",
+        "kept_survivor": "已将 {{absorbed}} 并入 {{survivor}}：两者都有论证图，保留了 {{survivor}} 的；{{absorbed}} 的那张留在磁盘上，不展示、未删除：",
+        "transfer_failed": "已将 {{absorbed}} 并入 {{survivor}}，但它的论证图未能转移。图仍完好地留在磁盘上："
+      }
     }
   },
   "plan": {

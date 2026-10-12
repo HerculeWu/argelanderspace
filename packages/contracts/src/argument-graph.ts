@@ -175,6 +175,34 @@ export const WsArgumentGraphChangedSchema = z.object({
   at: z.string(),
 });
 
+// ---- Work merge note ---------------------------------------------------------------- //
+
+/**
+ * What a Work merge (a record that matched two stored Works; the later one is
+ * folded into the first) did with the absorbed Work's argument graph. Only
+ * produced when the absorbed Work HAD a graph file; "neither has one" is not
+ * reported. The absorbed Work's file is never modified or deleted: it stays at
+ * `absorbed_file` (a Work that is no longer in the library, so no view shows it).
+ *
+ * - `moved`: the survivor had no graph; it now has a copy of the absorbed one
+ *   (`work_id` rewritten, `rev` kept) at `survivor_file`.
+ * - `kept_survivor`: both had one; the survivor's file is untouched, the
+ *   absorbed one stays at `absorbed_file`, not shown.
+ * - `transfer_failed`: the survivor had none but the copy could not be made
+ *   (`error`); the absorbed graph is intact at `absorbed_file`.
+ */
+export const ArgumentGraphMergeNoteSchema = z.object({
+  outcome: z.enum(["moved", "kept_survivor", "transfer_failed"]),
+  absorbed_id: z.string(),
+  survivor_id: z.string(),
+  /** Absolute path of the absorbed Work's graph file (never removed). */
+  absorbed_file: z.string(),
+  /** Absolute path of the survivor's graph file (not present after `transfer_failed`). */
+  survivor_file: z.string(),
+  error: z.string().optional(),
+});
+export type ArgumentGraphMergeNote = z.infer<typeof ArgumentGraphMergeNoteSchema>;
+
 // ---- Audit ---------------------------------------------------------------------------- //
 
 export type ArgumentGraph = z.infer<typeof ArgumentGraphSchema>;
