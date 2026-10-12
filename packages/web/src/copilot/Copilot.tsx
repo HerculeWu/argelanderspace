@@ -101,7 +101,7 @@ function ArgumentSummary({ summary }: { summary: ArgumentContextSummary }) {
   return <div className="copilot-library-summary" data-ui="copilot-argument-summary">
     <p>{t(`copilot.argument.${summary.state}`)}</p>
     {loaded && <p>{t("copilot.argument.counts", { arguments: summary.arguments, edges: summary.edges, rev: summary.rev })}{summary.findings > 0 && ` · ${t("copilot.argument.findings", { count: summary.findings })}`}</p>}
-    {summary.selectedId && <p>{t("copilot.argument.open", { id: summary.selectedId })}</p>}
+    {summary.selectedId && <p>{t("copilot.argument.open", { title: summary.selectedTitle ?? summary.selectedId })}</p>}
     {summary.partial && <p data-ui="copilot-argument-partial">{t("copilot.argument.partial")}</p>}
   </div>;
 }

@@ -46,8 +46,10 @@ export function ArgumentGraphMode({
   onPage?: (page: ArgumentPage | null) => void;
 }) {
   const { t } = useTranslation();
-  const { state, reload, refresh, refreshFailed } = useArgumentGraph(workId);
+  const { state, reload, refresh, refreshFailed, refreshing } = useArgumentGraph(workId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
   const stash = useRef<ArgumentCanvasStash>({}).current;
   const graph = state.phase === "ready" ? state.graph : null;
   const audit = useMemo(() => (graph ? auditArgumentGraph(graph) : null), [graph]);
@@ -79,23 +81,40 @@ export function ArgumentGraphMode({
   // what the floating panel covers of the canvas: its width, kept 60 px short of the canvas so the zoom stack stays on it
   const canvasWidth = width === null ? null : width - (graphHasArguments ? (layout.outlineFolded ? OUTLINE_RAIL : OUTLINE_WIDTH) : 0);
   const coverRight = overlay ? Math.max(0, Math.min(PANEL_WIDTH, (canvasWidth ?? PANEL_WIDTH + 60) - 60)) : 0;
-  // Esc closes a floating panel (an open audit list takes the first Esc)
+  // Closing the panel drops the selection; the keyboard goes back to the node of the argument that was open (never to
+  // the page behind), unless the focus was somewhere else on purpose.
+  const refocus = useRef<string | null>(null);
+  const closePanel = useCallback(() => {
+    const active = document.activeElement;
+    const inPanel = !!rootRef.current?.querySelector('[data-ui="argument-detail"]')?.contains(active);
+    if (selectedIdRef.current !== null && (inPanel || !active || active === document.body)) refocus.current = selectedIdRef.current;
+    setSelectedId(null);
+  }, []);
+  useEffect(() => {
+    const id = refocus.current;
+    if (selectedId !== null || id === null) return;
+    refocus.current = null;
+    [...(rootRef.current?.querySelectorAll<HTMLElement>('[data-ui="argument-node"]') ?? [])].find((node) => node.getAttribute("data-ui-key") === id)?.focus();
+  }, [selectedId]);
+  // Esc closes a floating panel. An open audit list takes the first Esc, and so does any layer above the panel: a modal
+  // Dialog (it prevents the default in the capture phase) or the command palette (closed by the Shell's own listener).
   useEffect(() => {
     if (!overlay) return;
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector('[data-ui="argument-audit-popover"]')) return;
-      setSelectedId(null);
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[data-ui="argument-audit-popover"], [data-ui="command-palette"], [role="dialog"][aria-modal="true"]')) return;
+      closePanel();
     };
     document.addEventListener("keydown", key);
     return () => document.removeEventListener("keydown", key);
-  }, [overlay]);
+  }, [overlay, closePanel]);
 
   // the selection follows the argument, not the read: it is dropped only when a graph that was read no longer has it
   useEffect(() => {
     if (graph && selectedId !== null && !graph.arguments.some((a) => a.id === selectedId)) setSelectedId(null);
   }, [graph, selectedId]);
 
-  const page = useMemo(() => captureArgumentPage({ workId, title: work?.title ?? workId, graph, phase: state.phase, selectedId }), [workId, work?.title, graph, state.phase, selectedId]);
+  const page = useMemo(() => captureArgumentPage({ workId, title: work?.title ?? workId, graph, phase: state.phase, selectedId, stale: refreshFailed }), [workId, work?.title, graph, state.phase, selectedId, refreshFailed]);
   useEffect(() => {
     onPage?.(page);
   }, [page, onPage]);
@@ -140,7 +159,7 @@ export function ArgumentGraphMode({
         <div className="ag-refresh-failed" data-ui="argument-graph-refresh-failed">
           <InlineMessage tone="warning" uiId="argument-graph-refresh-failed-message">
             {t("argument.view.state.refreshFailed")}{" "}
-            <ActionButton mode="text" label={t("argument.view.state.retry")} tooltip={t("argument.view.state.retry")} data-ui="retry-argument-graph-refresh" onClick={refresh}>
+            <ActionButton mode="text" label={t("argument.view.state.retry")} tooltip={t("argument.view.state.retry")} data-ui="retry-argument-graph-refresh" busy={refreshing} busyLabel={t("argument.view.state.retrying")} onClick={refresh}>
               {t("argument.view.state.retry")}
             </ActionButton>
           </InlineMessage>
@@ -220,7 +239,7 @@ export function ArgumentGraphMode({
             describe={describe}
             workDocIds={workDocIds}
             onSelect={setSelectedId}
-            onClose={() => setSelectedId(null)}
+            onClose={closePanel}
             onOpenSource={openSource}
             overlay={overlay}
           />

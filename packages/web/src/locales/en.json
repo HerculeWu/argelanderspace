@@ -1393,8 +1393,8 @@
       "error": "Argument graph (could not be read)",
       "counts": "{{arguments}} arguments · {{edges}} edges · revision {{rev}}",
       "findings": "{{count}} audit findings",
-      "open": "Open argument: {{id}}",
-      "partial": "Partial: only the selected argument's field text was sent"
+      "open": "Open argument: {{title}}",
+      "partial": "Partial: not every argument's field text was sent"
     },
     "operations": {
       "count": "{{count}} Plan actions",
@@ -2108,6 +2108,7 @@
         "refreshFailed": "The latest change to this graph could not be read. The graph shown may be out of date.",
         "errorOther": "The service returned an unexpected result.",
         "retry": "Retry",
+        "retrying": "Retrying…",
         "emptyTitle": "This work has no argument graph yet",
         "emptyHint": "Add the first argument by hand, or ask Copilot to “build the argument graph for this paper”.",
         "emptyNote": "Creating arguments by hand opens in a later version."

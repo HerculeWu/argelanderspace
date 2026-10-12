@@ -1393,8 +1393,8 @@
       "error": "论证图（读取失败）",
       "counts": "{{arguments}} 个论证 · {{edges}} 条边 · 版本 {{rev}}",
       "findings": "{{count}} 项审计发现",
-      "open": "已打开论证：{{id}}",
-      "partial": "部分发送：只发送了选中论证的字段内容"
+      "open": "已打开论证：{{title}}",
+      "partial": "部分发送：并非每个论证的字段内容都已发送"
     },
     "operations": {
       "count": "{{count}} 项计划操作",
@@ -2108,6 +2108,7 @@
         "refreshFailed": "没能读到这张图的最新改动，下面显示的可能不是最新内容。",
         "errorOther": "服务返回了意外的结果。",
         "retry": "重试",
+        "retrying": "重试中…",
         "emptyTitle": "这篇文献还没有论证图",
         "emptyHint": "可以手动添加第一个论证；也可以在 Copilot 里说「整理这篇的论证图」。",
         "emptyNote": "手动新建将在后续版本开放。"

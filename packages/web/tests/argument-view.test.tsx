@@ -578,6 +578,32 @@ describe("review fixes (round A)", () => {
     expect(container.querySelector('[data-ui="argument-detail"]')).not.toBeNull();
   });
 
+  it("Retry shows it is working while the read is in flight, cannot be pressed twice, and goes away on success", async () => {
+    const { container } = mount();
+    await ready(container);
+    reply = () => ({ status: 503, body: { detail: "busy" } });
+    fire(WORK_ID);
+    await waitFor(() => expect(container.querySelector('[data-ui="retry-argument-graph-refresh"]')).not.toBeNull());
+    const button = () => container.querySelector<HTMLButtonElement>('[data-ui="retry-argument-graph-refresh"]')!;
+    expect(button().disabled).toBe(false);
+    expect(button().textContent).toBe("重试");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const fetchMock = vi.fn(async () => {
+      await gate;
+      return new Response(JSON.stringify(clean()), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    fireEvent.click(button());
+    await waitFor(() => expect(button().disabled).toBe(true));
+    expect(button().getAttribute("aria-busy")).toBe("true");
+    expect(button().textContent).toBe("重试中…");
+    fireEvent.click(button());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-refresh-failed"]')).toBeNull());
+  });
+
   it("a missing Work (404) and an unreadable file still replace the graph; the first read has no graph to keep", async () => {
     const { container } = mount();
     await ready(container);

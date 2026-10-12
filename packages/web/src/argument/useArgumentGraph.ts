@@ -18,9 +18,11 @@ const fromLoad = (load: ArgumentGraphLoad): ArgumentGraphState => (load.kind ===
 /** Equal reads keep the same object, so an idempotent refresh (the server's own write fires two events) re-renders nothing. */
 const sameGraph = (a: ArgumentGraph, b: ArgumentGraph) => JSON.stringify(a) === JSON.stringify(b);
 
-export function useArgumentGraph(workId: string, enabled = true): { state: ArgumentGraphState; reload: () => void; refresh: () => void; refreshFailed: boolean } {
+export function useArgumentGraph(workId: string, enabled = true): { state: ArgumentGraphState; reload: () => void; refresh: () => void; refreshFailed: boolean; refreshing: boolean } {
   const [state, setState] = useState<ArgumentGraphState>({ phase: "loading" });
   const [refreshFailed, setRefreshFailed] = useState(false);
+  /** A read that keeps the graph on screen is under way (the notice's Retry shows it). */
+  const [refreshing, setRefreshing] = useState(false);
   const stateRef = useRef(state);
   stateRef.current = state;
   const generation = useRef(0);
@@ -36,10 +38,12 @@ export function useArgumentGraph(workId: string, enabled = true): { state: Argum
         setState({ phase: "loading" });
         setRefreshFailed(false);
       }
+      setRefreshing(!initial);
       void fetchArgumentGraph(workId, controller.signal).then(
         (load) => {
           // a later read (or another Work) owns the state now
           if (mine !== generation.current) return;
+          setRefreshing(false);
           // a graph that is on screen survives a failed refresh; the failure is reported beside it
           if (!initial && load.kind === "error" && stateRef.current.phase === "ready") {
             setRefreshFailed(true);
@@ -71,5 +75,5 @@ export function useArgumentGraph(workId: string, enabled = true): { state: Argum
     };
   }, [enabled, workId, read]);
 
-  return { state, reload: () => read(true), refresh: () => read(false), refreshFailed };
+  return { state, reload: () => read(true), refresh: () => read(false), refreshFailed, refreshing };
 }

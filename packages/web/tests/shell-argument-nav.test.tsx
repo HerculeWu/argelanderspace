@@ -7,6 +7,7 @@
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
+import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
 
 const h = vi.hoisted(() => ({
@@ -229,6 +230,25 @@ describe("opening a Doc from the graph", () => {
     expect(window.history.length).toBe(before + 1);
     window.history.back();
     await waitFor(() => expect(window.location.hash).toBe("#argument/w1"));
+  });
+
+  it("a leave guard that says no keeps the graph's URL: the entry is not rewritten to the open Doc", async () => {
+    await bootInDoc(); // a Doc (d1) is open, so a refused switch has a Doc to fall back to
+    fireEvent.click(q('[data-ui="split-pane"]')!);
+    await waitFor(() => expect(qa('[data-ui="workspace-pane"]')).toHaveLength(2));
+    fireEvent.click(qa('[data-ui="stub-enter-graph"]')[0]!);
+    await waitFor(() => expect(window.location.hash).toBe("#argument/w1"));
+    await waitFor(() => expect(qa('[data-ui="doc-stub"]').length).toBeGreaterThan(0));
+    const off = registerWorkspaceLeaveGuard(() => false);
+    try {
+      const before = window.history.length;
+      fireEvent.click(qa('[data-ui="stub-open-d2"]')[0]!);
+      expect(window.location.hash).toBe("#argument/w1");
+      expect(window.location.pathname).toBe("/");
+      expect(window.history.length).toBe(before);
+    } finally {
+      off();
+    }
   });
 
   it("from any other URL it replaces the entry as before", async () => {

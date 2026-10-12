@@ -183,7 +183,10 @@ export function Shell() {
     (docId?: string, anchor?: string | null): boolean => {
       const nextDoc = docId ?? currentDocRef.current ?? papers[0] ?? null;
       if (nextDoc !== currentDocRef.current && !confirmWorkspaceLeave()) {
-        if (currentDocRef.current) replaceDocUrl(currentDocRef.current);
+        // A refused switch puts a URL the browser already moved back; a click from the argument graph view has not moved
+        // it (the view is still open, and its URL must still say so).
+        if (currentDocRef.current && parseArgumentHash(window.location.hash) === null)
+          replaceDocUrl(currentDocRef.current);
         return false;
       }
       currentDocRef.current = nextDoc;

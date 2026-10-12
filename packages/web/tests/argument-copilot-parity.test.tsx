@@ -117,6 +117,21 @@ describe("the page the view publishes", () => {
     expect(h.context?.argument?.graph?.rev).toBe(5);
   });
 
+  it("a failed refresh keeps the graph and tells the assistant it may be out of date; the next good read clears that", async () => {
+    await open();
+    await waitFor(() => expect(h.context?.argument?.rev).toBe(4));
+    expect(arg().note).not.toContain("out of date");
+    answer = () => ({ status: 503, body: {} });
+    act(() => graphChanged(WORK));
+    await waitFor(() => expect(arg().note).toContain("may be out of date"));
+    expect(arg()).toMatchObject({ phase: "ready", rev: 4, partial: false });
+    expect(PageContextSchema.safeParse(h.context).success).toBe(true);
+    answer = () => ({ status: 200, body: { ...graph(), rev: 5 } });
+    act(() => graphChanged(WORK));
+    await waitFor(() => expect(arg().rev).toBe(5));
+    expect(arg().note).not.toContain("out of date");
+  });
+
   it("a graph past the budget is published partial: every argument listed, only the selected one in full", async () => {
     graph = () => {
       const big = ARGUMENT_FIXTURES.large();

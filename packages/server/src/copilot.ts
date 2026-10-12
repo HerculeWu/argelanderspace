@@ -90,6 +90,7 @@ import {
 } from "./copilot-ledger.js";
 import { createLibraryTool, LIBRARY_TOOL_NAME } from "./copilot-library-tool.js";
 import { createMailTool, MAIL_PROMPT, MAIL_TOOL_NAME } from "./copilot-mail-tool.js";
+import { recordableObservation } from "./copilot-observation.js";
 import { createPlanTool, PLAN_TOOL_NAME } from "./copilot-plan-tool.js";
 import { createReaderTool, READER_TOOL_NAME, type ReaderOpDeps } from "./copilot-reader-tool.js";
 import {
@@ -236,7 +237,10 @@ function readingKeysOf(context: PageContext, coverage?: ContextCoverage): string
     // A manuscript the message carried whole is held at that revision (a later observation leaves it out).
     ...(manuscript ? [writerKey(manuscript.id, manuscript.rev)] : []),
     // A whole argument graph the message carried is held at its revision (a later observation lists it instead).
-    ...(context.argument && !context.argument.partial && context.argument.graph
+    ...(context.argument &&
+    !context.argument.partial &&
+    context.argument.phase === "ready" &&
+    context.argument.graph
       ? [argumentKey(context.argument.work.id, context.argument.graph.rev)]
       : []),
     // The open message the task's first message carried (a later observation leaves its body out).
@@ -2528,35 +2532,40 @@ export class CopilotHost {
         );
         const seenLatest = this.views.get(state.viewId);
         const latest = seenLatest ? this.forMount(seenLatest, state.mailMount) : seenLatest;
-        const observation =
+        // The page as an observation shows it. A Reader's whole reading is already in the task's context; repeating it
+        // per scroll would fill the window.
+        const observed =
           latest && latest.revision !== state.observedRevision
-            ? {
-                role: "custom" as const,
-                customType: "argelander.page-observation.v1",
-                display: false,
-                timestamp: Date.now(),
-                content: JSON.stringify({
-                  version: 1,
-                  taskContextId: state.contextId,
-                  // A Reader's whole reading is already in the task's context; repeating it per scroll would fill the window.
-                  page: observationArgumentPage(
-                    observationMailPage(
-                      observationWriterPage(
-                        observationPage(latest, state.readings),
-                        state.readings
-                      ),
-                      state.readings
-                    ),
+            ? recordableObservation(
+                state.contextId,
+                observationArgumentPage(
+                  observationMailPage(
+                    observationWriterPage(observationPage(latest, state.readings), state.readings),
                     state.readings
                   ),
-                }),
-              }
+                  state.readings
+                )
+              )
             : null;
+        const observation = observed
+          ? {
+              role: "custom" as const,
+              customType: "argelander.page-observation.v1",
+              display: false,
+              timestamp: Date.now(),
+              content: observed.content,
+            }
+          : null;
         // A message opened mid-task is delivered once (bounded); later observations leave its body out.
         if (observation && latest?.mail?.open?.status === "ok")
           state.readings.add(
             mailKey(latest.mail.open.accountId, latest.mail.open.folder, latest.mail.open.uid)
           );
+        // A whole argument graph this observation carried is now in the task's context at its revision: a later one
+        // lists it (until the revision changes) instead of sending it again.
+        const shown = observed?.page.argument;
+        if (shown && !shown.partial && shown.phase === "ready" && shown.graph)
+          state.readings.add(argumentKey(shown.work.id, shown.graph.rev));
         const windowLimit = Math.max(0, frozenModel.contextWindow - maxTokens - 2048) * 2;
         const build = async (shrinkLastRead: boolean) => {
           const ledger = this.ledgerState(loaded);

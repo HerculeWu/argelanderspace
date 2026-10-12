@@ -217,6 +217,54 @@ describe("the view in a narrow pane", () => {
     await waitFor(() => expect(ui(container, "argument-detail")).toBeNull());
   });
 
+  it("an Esc that closes a dialog or the command palette does not also close the floating panel", async () => {
+    const { container } = await mount(600);
+    select(container, "e1");
+    await waitFor(() => expect(ui(container, "argument-detail")).not.toBeNull());
+    // the shared Dialog: a modal that takes Escape in the capture phase and prevents the default
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    document.body.append(dialog);
+    const takeEscape = (event: KeyboardEvent) => event.key === "Escape" && event.preventDefault();
+    document.addEventListener("keydown", takeEscape, true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    document.removeEventListener("keydown", takeEscape, true);
+    expect(ui(container, "argument-detail")).not.toBeNull();
+    // a dialog that does not prevent the default is still a layer above the panel
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(ui(container, "argument-detail")).not.toBeNull();
+    dialog.remove();
+    // the command palette closes on the window's Escape, after the panel's listener would have run
+    const palette = document.createElement("div");
+    palette.setAttribute("data-ui", "command-palette");
+    document.body.append(palette);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(ui(container, "argument-detail")).not.toBeNull();
+    palette.remove();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(ui(container, "argument-detail")).toBeNull());
+  });
+
+  it("closing a floating panel puts the focus back on the argument's node, not on the page", async () => {
+    const { container } = await mount(600);
+    select(container, "e1");
+    await waitFor(() => expect(ui(container, "argument-detail")).not.toBeNull());
+    ui(container, "close-argument-detail")!.focus();
+    fireEvent.click(ui(container, "close-argument-detail")!);
+    await waitFor(() => expect(ui(container, "argument-detail")).toBeNull());
+    const node = container.querySelector<HTMLElement>('[data-ui="argument-node"][data-ui-key="e1"]')!;
+    expect(node).not.toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(node));
+    // Esc does the same
+    select(container, "e1");
+    await waitFor(() => expect(ui(container, "argument-detail")).not.toBeNull());
+    ui(container, "close-argument-detail")!.focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(ui(container, "argument-detail")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(container.querySelector('[data-ui="argument-node"][data-ui-key="e1"]')));
+  });
+
   it("a wide pane leaves Esc alone", async () => {
     const { container } = await mount(1440);
     select(container, "e1");

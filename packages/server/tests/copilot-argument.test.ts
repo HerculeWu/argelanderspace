@@ -282,6 +282,7 @@ describe("argument graph page", () => {
       edges: 2,
       findings: expect.any(Number),
       selectedId: "a1",
+      selectedTitle: "Argument 1",
       partial: false,
     });
     expect(message?.context?.objects).toEqual([{ id: WORK, rev: 3, name: "Work number 1" }]);
@@ -365,11 +366,12 @@ describe("argument graph page", () => {
   });
 
   test("a later observation of the same task lists the graph the task holds instead of repeating it", async () => {
-    const graph = graphOf(4);
+    // long claims: a listing of this graph is shorter than the graph, so the task's held copy is not repeated
+    const graph = graphOf(4, 3000);
     const viewId = randomUUID();
     const first = viewing(argumentPage(graph, "a1"), 1, viewId);
     const second = viewing(argumentPage(graph, "a2"), 2, viewId);
-    const third = viewing(argumentPage(graphOf(4, 0, 4), "a2"), 3, viewId);
+    const third = viewing(argumentPage(graphOf(4, 3000, 4), "a2"), 3, viewId);
     script = [
       async () => {
         expect((await put(second)).status).toBe(200);
@@ -389,12 +391,90 @@ describe("argument graph page", () => {
       partial: true,
       graph: null,
       selectedId: "a2",
-      selected: { id: "a2", claim: "Claim 2" },
+      selected: { id: "a2" },
     });
     expect(selection?.page.argument?.note).toContain("in the task's context");
     // request 3: a new revision is not held, so it comes whole
     const latest = observations(seen[2] as TranscriptContext).at(-1);
     expect(latest?.page.argument).toMatchObject({ partial: false, selectedId: "a2" });
     expect(latest?.page.argument?.graph?.rev).toBe(4);
+  });
+
+  test("a revision change in an empty graph never writes a page the history cannot read back", async () => {
+    const viewId = randomUUID();
+    const first = viewing(argumentPage(graphOf(0, 0, 3)), 1, viewId);
+    const second = viewing(argumentPage(graphOf(0, 0, 3)), 2, viewId);
+    script = [
+      async () => {
+        expect((await put(second)).status).toBe(200);
+        return { tool: "library", call: { action: "read_discovery" } };
+      },
+      () => ({ text: "done" }),
+    ];
+    const id = await create();
+    await send(id, first);
+    expect(seen).toHaveLength(2);
+    const [observation] = observations(seen[1] as TranscriptContext);
+    expect(observation?.page.argument).toMatchObject({
+      phase: "empty",
+      partial: false,
+      graph: { rev: 3 },
+    });
+    // a new host on the same data directory: the conversation lists and loads
+    await host.close();
+    host = new CopilotHost(join(root, "data"), settings, () => {});
+    const listed = await host.list();
+    expect(listed.unreadable).toEqual([]);
+    expect(listed.conversations.map((c) => c.id)).toContain(id);
+    const snapshot = await host.snapshot(id);
+    expect(snapshot.conversation.id).toBe(id);
+  });
+
+  test.each(["loading", "not-found", "corrupt", "error"] as const)(
+    "an observation of a %s page is written and read back",
+    async (phase) => {
+      const viewId = randomUUID();
+      const first = viewing(argumentPage(graphOf(3), "a1"), 1, viewId);
+      const second = viewing(argumentPage(null, null, phase), 2, viewId);
+      script = [
+        async () => {
+          expect((await put(second)).status).toBe(200);
+          return { tool: "library", call: { action: "read_discovery" } };
+        },
+        () => ({ text: "done" }),
+      ];
+      const id = await create();
+      await send(id, first);
+      expect(observations(seen[1] as TranscriptContext).at(-1)?.page.argument?.phase).toBe(phase);
+      await host.close();
+      host = new CopilotHost(join(root, "data"), settings, () => {});
+      expect((await host.list()).unreadable).toEqual([]);
+      expect((await host.snapshot(id)).conversation.id).toBe(id);
+    }
+  );
+
+  test("a whole graph an observation sends is listed, not sent again, until its revision changes", async () => {
+    // the task starts on a view without the graph, so the first observation of it is the whole graph
+    const viewId = randomUUID();
+    const g = (rev: number) => graphOf(4, 3000, rev);
+    const first = viewing(argumentPage(null, null, "loading"), 1, viewId);
+    const steps = [
+      viewing(argumentPage(g(5), "a1"), 2, viewId),
+      viewing(argumentPage(g(5), "a2"), 3, viewId),
+      viewing(argumentPage(g(5), "a3"), 4, viewId),
+      viewing(argumentPage(g(6), "a3"), 5, viewId),
+      viewing(argumentPage(g(6), "a1"), 6, viewId),
+    ];
+    script = steps.map((context) => async () => {
+      expect((await put(context)).status).toBe(200);
+      return { tool: "library", call: { action: "read_discovery" } };
+    });
+    script.push(() => ({ text: "done" }));
+    await send(await create(), first);
+    const forms = steps.map((_, i) => {
+      const page = observations(seen[i + 1] as TranscriptContext).at(-1)?.page.argument;
+      return `${page?.partial ? "partial" : "whole"}:${page?.rev}`;
+    });
+    expect(forms).toEqual(["whole:5", "partial:5", "partial:5", "whole:6", "partial:6"]);
   });
 });
