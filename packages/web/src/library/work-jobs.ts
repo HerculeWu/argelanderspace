@@ -6,6 +6,10 @@ import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
 import { fetchTextDeleteImpact } from "../api/text-docs";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
+import { dismissMergeNotice, ingestMergeNotice, type MergeNotice, useMergeNotices } from "./merge-notices";
+
+export type { MergeNotice };
+export { jobMergeNotes } from "./merge-notices";
 
 /*
  * The jobs a Work's full-text tab follows (ticket 48): the LaTeX zip upload, the local PDF upload, the arXiv source
@@ -281,6 +285,9 @@ export interface WorkJobHandle<Extra, Args extends unknown[]> {
 
 export interface WorkJobs {
   kinds<N extends WorkJobName>(name: N): WorkJobHandle<KindExtra<N>, KindArgs<N>>;
+  /** Dismissible notices of tasks started here whose rebuild moved or left behind an argument graph. */
+  mergeNotices: readonly MergeNotice[];
+  dismissMergeNotice(jobId: string): void;
   /** Newest WS snapshot per job id for this Work (shared by every kind and the submit paths). */
   seen: ReadonlyMap<string, Job>;
   /** The Work session; a response whose session is no longer current is dropped. */
@@ -328,6 +335,8 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
     Object.fromEntries(WORK_JOB_NAMES.map((name) => [name, new Set<string>()])) as Record<WorkJobName, Set<string>>
   );
   const [state, dispatch] = useReducer(reduceJobs, undefined, initialJobs);
+  // Merge notes come from the finished task records (module-level store, see merge-notices.ts), not from this hook.
+  const allNotices = useMergeNotices();
 
   // Switching Works drops the other Work's job state; a PDF submission this Work still has in flight stays busy.
   useEffect(() => {
@@ -348,6 +357,7 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
             }
           }
         }
+        ingestMergeNotice(job);
         if (targetWorkId !== workId) return;
         const previous = seen.current.get(job.id);
         if (isJobSnapshotRegression(previous, job)) return;
@@ -431,6 +441,8 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
 
   return {
     kinds,
+    mergeNotices: allNotices.filter((n) => n.workId === workId),
+    dismissMergeNotice,
     seen: seen.current,
     session: { current: () => session.current, isCurrent },
   };

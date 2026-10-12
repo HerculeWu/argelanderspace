@@ -22,6 +22,7 @@
  */
 
 import { z } from "zod";
+import { ArgumentGraphMergeNoteSchema } from "./argument-graph.js";
 import { LibraryPayloadSchema, LibraryRefSchema } from "./library.js";
 
 // ---- GET /api/papers ------------------------------------------------------- //
@@ -94,6 +95,8 @@ export const RefreshResponseSchema = z.object({
   }),
   /** Text Docs whose files cannot be read; their Work links are kept and nothing is repaired (ticket 25). */
   damaged_text_docs: z.array(z.string()).optional(),
+  /** Present only when this rebuild folded Works and an absorbed Work had an argument graph (ticket 06). */
+  argument_graph_merges: z.array(ArgumentGraphMergeNoteSchema).optional(),
 });
 
 // ---- POST /api/library/upload ---------------------------------------------- //

@@ -50,6 +50,7 @@ export * from "./acquire/run.js";
 export * from "./acquire/upload.js";
 export { DocumentAssetError, readDocumentAsset } from "./annotations/assets.js";
 export * from "./annotations/store.js";
+export * from "./argument-graphs/merge.js";
 export * from "./argument-graphs/store.js";
 export * from "./documents/references.js";
 export * from "./documents/render.js";

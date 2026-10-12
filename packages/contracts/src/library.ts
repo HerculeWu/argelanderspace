@@ -15,6 +15,7 @@
  */
 
 import { z } from "zod";
+import { ArgumentGraphMergeNoteSchema } from "./argument-graph.js";
 
 export const LibraryProjectSchema = z.object({
   name: z.string(),
@@ -143,6 +144,8 @@ export const ManualWorkResultSchema = z.object({
 /** Response of `POST /api/library/works` (always 200 for well-formed bodies). */
 export const ManualWorkResponseSchema = z.object({
   results: z.array(ManualWorkResultSchema),
+  /** Present only when the import folded Works and an absorbed Work had an argument graph. */
+  argument_graph_merges: z.array(ArgumentGraphMergeNoteSchema).optional(),
 });
 
 /** Response of `GET /api/library`. */

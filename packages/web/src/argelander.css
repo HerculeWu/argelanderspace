@@ -338,6 +338,9 @@ input, textarea { font-family: inherit; color: inherit; }
 .import-result-title { font-size: var(--fs-sm); line-height: 1.4; word-break: break-word; }
 .import-result-status { margin-left: 8px; font-size: 10px; color: var(--text-faint); }
 .import-result-key { font-size: 10.5px; color: var(--text-faint); }
+.merge-note-file { overflow-wrap: anywhere; word-break: break-all; white-space: normal; }
+.merge-note-bar { display: flex; flex-direction: column; gap: 6px; margin: 8px 12px 0; padding: 8px 10px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--panel); min-width: 0; }
+.merge-note-bar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: var(--fs-sm); }
 .import-result-err { font-size: var(--fs-sm); color: oklch(0.70 0.16 25); line-height: 1.45; word-break: break-word; }
 
 .lib-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }

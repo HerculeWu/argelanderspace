@@ -1,4 +1,4 @@
-import type { Job } from "@argelanderspace/contracts";
+import { ArgumentGraphMergeNoteSchema, type Job } from "@argelanderspace/contracts";
 import type {
   LibraryData,
   LibraryRef,
@@ -182,7 +182,17 @@ export async function attachArxiv(workId: string): Promise<StartResult> {
  * backend is unreachable or rejected the request wholesale.
  */
 export async function createWorks(req: ManualWorkRequest): Promise<ManualWorkResponse | null> {
-  return tryJson<ManualWorkResponse>("/api/library/works", { method: "POST", json: req });
+  try {
+    return await apiRequest<ManualWorkResponse>("/api/library/works", { method: "POST", json: req });
+  } catch (error) {
+    // The Work merge was saved but a later step failed: the answer carries what became of the argument graphs
+    // (ticket 06), which the page must still show.
+    const body = error instanceof HttpError ? (error.body as { argument_graph_merges?: unknown } | null) : null;
+    const parsed = ArgumentGraphMergeNoteSchema.array().safeParse(body?.argument_graph_merges);
+    if (parsed.success && parsed.data.length > 0)
+      return { results: [], argument_graph_merges: parsed.data, failed_after_merge: true };
+    return null;
+  }
 }
 
 /** Persist a per-reference state change (color label, read flag, note, tags, main doc). */

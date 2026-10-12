@@ -24,6 +24,7 @@ import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { DiscoveryDetail } from "./DiscoveryDetail";
 import { DiscoveryGraphView } from "./DiscoveryGraphView";
+import { MergeNoteList } from "./MergeNotes";
 import {
   exploreReport,
   type ExploreError,
@@ -340,6 +341,15 @@ export function ExploreMode({
         </div>
 
         <div className="lib-main" data-ui="discovery-main">
+          {explore.mergeNotes.length > 0 && (
+            <div className="merge-note-bar" data-ui="discovery-graph-merges">
+              <div className="merge-note-bar-head">
+                <strong>{t("library.graphMerge.title")}</strong>
+                <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" label={t("library.graphMerge.dismiss")} tooltip={t("library.graphMerge.dismiss")} data-ui="dismiss-discovery-graph-merges" onClick={explore.dismissMergeNotes} />
+              </div>
+              <MergeNoteList notes={explore.mergeNotes} uiId="discovery-graph-merge" />
+            </div>
+          )}
           <div className="lib-toolbar">
             <div className="lib-search">
               <Icon name="search" cls="ico-sm" />

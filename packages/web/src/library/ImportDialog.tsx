@@ -10,10 +10,11 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { libraryImportRequest } from "@argelanderspace/contracts";
+import { type ArgumentGraphMergeNote, libraryImportRequest } from "@argelanderspace/contracts";
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
+import { MergeNoteList } from "./MergeNotes";
 import type { LibraryRef, ManualWorkRequest, ManualWorkResult } from "./types";
 
 export type ImportMode = "identifier" | "bibcode" | "bib";
@@ -65,6 +66,7 @@ export function ImportDialog({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<ManualWorkResult[] | null>(null);
+  const [merges, setMerges] = useState<ArgumentGraphMergeNote[]>([]);
   const [fatal, setFatal] = useState<string | null>(null);
 
   useEffect(() => {
@@ -88,13 +90,17 @@ export function ImportDialog({
       return;
     }
     const first = resp.results[0];
-    if (!batch && first && first.status !== "error" && first.ref) {
+    const notes = resp.argument_graph_merges ?? [];
+    if (resp.failed_after_merge === true) setFatal(t("library.graphMerge.partial"));
+    // A merge that met an argument graph must be read, so the dialog stays open and shows it.
+    if (!batch && first && first.status !== "error" && first.ref && notes.length === 0) {
       // single modes: success opens the work's detail immediately
       onResolved(first.ref);
       onClose();
       return;
     }
     setResults(resp.results);
+    setMerges(notes);
   };
 
   const close = () => {
@@ -102,6 +108,11 @@ export function ImportDialog({
     // batch: closing after a partial/complete import selects the first created
     const firstCreated = results?.find((r) => r.status === "created" && r.ref);
     if (firstCreated?.ref) onResolved(firstCreated.ref);
+    else if (!batch && merges.length > 0) {
+      // single mode would have opened the Work right away; the merge note delayed it to here
+      const open = results?.find((r) => r.status !== "error" && r.ref);
+      if (open?.ref) onResolved(open.ref);
+    }
     onClose();
   };
 
@@ -154,6 +165,7 @@ export function ImportDialog({
               {results.map((r, i) => (
                 <ResultRow key={r.key ?? i} r={r} index={i} />
               ))}
+              <MergeNoteList notes={merges} uiId="import-graph-merge" />
             </div>
           )}
         </div>

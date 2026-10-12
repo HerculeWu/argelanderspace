@@ -325,9 +325,116 @@ describe("library build smoke (built CLI, offline)", () => {
     >;
     expect(json.works).toBe(1);
     expect(json.ads_status).toBe("no-token");
+    // the argument-graph merge note is an additive key that only a merge produces (frozen summary shape)
+    expect("argument_graph_merges" in json).toBe(false);
     // library.json was written
     expect(existsSync(join(dataDir, "library", "library.json"))).toBe(true);
   }, 60_000);
+});
+
+/** A library with two Works, A and C (C carries an argument graph), and a bib entry that bridges them. */
+function mergeFixture() {
+  const root = mkdtempSync(join(tmpdir(), "aspace-cli-argmerge-"));
+  const dataDir = join(root, "data");
+  mkdirSync(join(dataDir, "library"), { recursive: true });
+  mkdirSync(join(dataDir, "argument-graphs"), { recursive: true });
+  const work = (id: string, title: string, doi: string, key: string) => ({
+    id,
+    title,
+    authors: ["X"],
+    year: 2001,
+    doi,
+    cite_key: key,
+  });
+  writeFileSync(
+    join(dataDir, "library", "library.json"),
+    JSON.stringify({
+      version: 1,
+      project: { name: "S", short: "S", field: "" },
+      works: [
+        work("doi:10.1/a", "Alpha galaxies", "10.1/a", "a2001"),
+        work("doi:10.1/c", "Gamma", "10.1/c", "c2001"),
+      ],
+    })
+  );
+  const cFile = join(dataDir, "argument-graphs", "doi%3A10%2E1%2Fc.json");
+  const graph = {
+    version: 1,
+    rev: 3,
+    work_id: "doi:10.1/c",
+    arguments: [
+      {
+        id: "a1",
+        title: "t",
+        claim: "",
+        grounds: "",
+        warrant: "",
+        backing: "",
+        qualifier: "",
+        rebuttal: "",
+        warrant_implicit: false,
+        kind: "end",
+        sources: [],
+      },
+    ],
+    edges: [],
+  };
+  writeFileSync(cFile, JSON.stringify(graph, null, 2));
+  const bib = join(root, "bridge.bib");
+  writeFileSync(
+    bib,
+    "@article{b1,\n author={Ann},\n title={Gamma},\n year={2001},\n doi={10.1/a}\n}\n"
+  );
+  return { root, dataDir, cFile, graph, bib };
+}
+
+describe("library build folds Works that have argument graphs (ticket 06)", () => {
+  test("a bridging --bib entry moves the absorbed Work's graph and says so in the summary JSON", () => {
+    const { root, dataDir, cFile, bib } = mergeFixture();
+    const r = runCli(
+      ["library", "build", "--data-dir", dataDir, "--offline", "--bib", bib],
+      childEnv(root)
+    );
+    expect(r.status).toBe(0);
+    const json = JSON.parse(r.stdout.slice(0, r.stdout.indexOf("\n}\n") + 3)) as {
+      works: number;
+      argument_graph_merges?: { outcome: string; absorbed_file: string }[];
+    };
+    expect(json.works).toBe(1);
+    expect(json.argument_graph_merges).toHaveLength(1);
+    // the command line is local: absolute locations
+    expect(json.argument_graph_merges?.[0]).toMatchObject({
+      outcome: "moved",
+      absorbed_file: cFile,
+    });
+    const moved = JSON.parse(
+      readFileSync(join(dataDir, "argument-graphs", "doi%3A10%2E1%2Fa.json"), "utf8")
+    ) as { work_id: string; rev: number };
+    expect(moved).toMatchObject({ work_id: "doi:10.1/a", rev: 3 });
+    expect(existsSync(cFile)).toBe(false); // a real move: one graph on disk
+  }, 60_000);
+
+  test.each([[[]], [["--fetch"]], [["--fetch-remaining"]]] as string[][][])(
+    "acquire %j: the merge note of the first rebuild survives the later ones",
+    (extra) => {
+      const { root, dataDir, bib } = mergeFixture();
+      const r = runCli(
+        ["acquire", bib, "--data-dir", dataDir, "--offline", ...extra],
+        childEnv(root)
+      );
+      expect(r.status).toBe(0);
+      const printed = /^\{\n[\s\S]*?\n\}$/m.exec(r.stdout)?.[0] ?? "";
+      const json = JSON.parse(printed) as {
+        argument_graph_merges?: { outcome: string; survivor_id: string }[];
+      };
+      expect(json.argument_graph_merges).toHaveLength(1);
+      expect(json.argument_graph_merges?.[0]).toMatchObject({
+        outcome: "moved",
+        survivor_id: "doi:10.1/a",
+      });
+    },
+    120_000
+  );
 });
 
 describe("serve smoke (built CLI)", () => {

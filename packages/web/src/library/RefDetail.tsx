@@ -11,6 +11,7 @@ import { cgKfmt } from "../graph/graphPhysics";
 import { AbstractHtml } from "../lib/abstract";
 import { WorkArgumentEntry } from "../argument/ArgumentEntry";
 import { arxivAcquisitionDocId, uploadAcquisitionDocId } from "./acquisitionTargets";
+import { MergeNoteList } from "./MergeNotes";
 import type { GraphNode, LibraryRef } from "./types";
 import {
   type AcquisitionFlow,
@@ -736,8 +737,17 @@ export function RefDetail({
                 onClick={() => openAcquisition()}
               />
             </div>
-            {(uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textError || pdfUploadJob || pdfUploadError) && (
+            {(jobs.mergeNotices.length > 0 || uploadJob || arxivJob || arxivPdfJob || uploadErr || arxivErr || arxivPdfError || mainErr || textError || pdfUploadJob || pdfUploadError) && (
               <div className="ref-task-messages" data-ui="acquisition-status">
+                {jobs.mergeNotices.map((notice) => (
+                  <div key={notice.jobId} className="merge-note-bar" data-ui="task-graph-merges" data-ui-key={notice.jobId}>
+                    <div className="merge-note-bar-head">
+                      <strong>{t("library.graphMerge.title")}</strong>
+                      <ActionButton mode="icon" iconName="x" data-ui="dismiss-task-graph-merges" variant="ghost" label={t("library.graphMerge.dismiss")} tooltip={t("library.graphMerge.dismiss")} onClick={() => jobs.dismissMergeNotice(notice.jobId)} />
+                    </div>
+                    <MergeNoteList notes={notice.notes} uiId="task-graph-merge" />
+                  </div>
+                ))}
                 {arxivPdfJob && (
                   <InlineMessage title={t(arxivPdfJob.status === "queued" ? "library.detail.jobs.queued" : "library.detail.arxivPdf.fetching")}>
                     {arxivPdfJob.status === "queued" ? t("library.detail.jobs.queueHelp") : arxivPdfJob.progress[arxivPdfJob.progress.length - 1]?.message ?? t("library.detail.arxivPdf.fetching")}

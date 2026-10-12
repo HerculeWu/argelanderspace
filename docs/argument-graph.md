@@ -1,6 +1,6 @@
 # 论证图：数据、审计与读写接口
 
-状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）与手动编辑（票 05）已实施。CLI、Copilot 工具、Work 合并跟随尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
+状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）、手动编辑（票 05）与 Work 合并跟随（票 06，2026-10-12）已实施。CLI、Copilot 工具尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
 
 ## 存储
 
@@ -52,6 +52,73 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 ## WebSocket
 
 `{ type: "argument-graph.changed", work_id, cause?: "put" | "external", at }`。`work_id` 是原始 Work id，不是文件名编码。server 自己的 PUT 成功后立即广播 `put`；watcher 轮询 `argument-graphs/*.json` 的 mtime+size 指纹（按 Work，回调带解码后的 id，已排序；tmp 文件和不是 store 写出的名字被忽略），变化时广播 `external`。server 自写会再触发一次 `external`，与 plans 先例相同，接收方的重取是幂等的。
+
+## Work 合并（票 06；`core/src/argument-graphs/merge.ts`）
+
+每个 Work 至多一张图，所以两个 Work 合并成一个时要决定图的去向。合并只发生在 `LibraryStore.upsert`：一条记录同时命中两个已存 Work 时，后者并入前者（幸存者）并从库中删除。`upsert` 把每次折叠记在 `store.folds`（`{absorbed, survivor, stored, absorbedWork, survivorWork}`；`stored` 按 **Work 对象身份**判断，表示被并入的这个对象在本次加载时已在文件里，才可能有图文件——同一批里后来新建、碰巧复用了已折叠 Work 的 id 的对象不是它。**例外**：本批新建的 Work 在本次 `followWorkFolds` 的前面某一步里确实接手过图（该步 `moved`，幸存者就是这个对象）之后，它名下的文件才算它的图，它再被并入别人时第二步照样处理；按对象身份记录，不靠 id，所以一个与本批无关的同 id 遗留文件不会被误当成它的图）。调用方在**库文件保存成功之后**调用 `followWorkFolds(dataDir, store.folds)`：它**按折叠发生的顺序一步一步**套用下面的规则（链不折叠：C 并入 A、A 再并入 D，第二步里 A 的图是第一步之后的 A 的图；中间环节 A 即使是本批新建的也一样，只要它在前一步接手了图），每一步产生自己的说明，永不抛错，处理完把 `store.folds` 清空（同一个 store 实例再调一次不会重报）。
+
+「有图」的含义：**零论证的图文件算没有图**（2026-10-12 父代理补定，待用户终验确认；契约条文只说「没有图 / 有图」，未写明空图；schema 允许手写的 `rev: 0` 文件，故下面的 rev 规则不假定「有文件则 rev ≥ 1」）。
+
+| 被并入 Work | 幸存 Work | 结果（`outcome`） |
+|---|---|---|
+| 没有文件，或只有零论证的空图 | 任意 | 无事发生，不产生说明；空图文件留在原处 |
+| 有图 | 没有文件 | `moved`：新内容（`work_id` 改成幸存者的 id，`rev` 取 max(原 rev, 1)）发布在幸存者名下，**随后**删除被并入者的原文件 |
+| 有图 | 文件是零论证的可读空图 | `moved`：同上，但用原子 rename **替换**空文件，`rev` = max(两者 rev) + 1（持旧 rev 的写入方得 409）；替换前重新确认它仍是同一张可读的空图 |
+| 有图 | 有图 | `kept_survivor`：幸存者的原样不动；被并入者的留在原处，不展示、不删除 |
+| 有图 | 文件在但读不出来（损坏、是目录、符号链接等） | `kept_survivor` 加 `survivor_unreadable`：不覆盖，如实报告 |
+| 被并入者的文件读不出来 | 任意 | `transfer_failed`（`error: absorbed_unreadable`），文件不动 |
+| 有图，但写入或发布失败 / 幸存者 id 不能作文件名 | 没有图 | `transfer_failed`（`write_failed` / `survivor_name_unusable`），被并入者的文件原样；合并照样生效 |
+
+`error` 是固定的 kind，不带系统消息或路径；说明里的文件位置：core 与 CLI 是绝对路径（本机命令行），HTTP 响应与页面是相对 dataDir 的 `argument-graphs/<编码>.json`（`relativeMergeNote`）。`survivor_file` 是幸存者的图文件位置，仅当幸存者 id 不能作文件名时为 `""`。
+
+### 真移动与崩溃状态
+
+用户 2026-10-12 裁决：只有被并入者有图时，转移成功后被并入者的原文件**不再保留**，磁盘上只有一张图（取代实施轮的「拷贝加保留原件」）。步骤与任意两步之间进程被杀时的磁盘状态——**每个状态下至少有一份完整的图在一个已发布的文件名下**：
+
+1. 在幸存者文件名旁写 `<幸存者文件名>.m<6位十六进制>.tmp`（即 `….json.mXXXXXX.tmp`，比 store 自己的 `.json.tmp` 只长 8 字节，store 能写的 id 这里也能转移），**写完全部字节**（`writeSync` 的短写不是错误，循环写到底，没有进展就抛错）并 fsync，再把临时文件读回与预期字节逐字节比对。被杀：被并入者的文件原样；残留一个不完整或完整的临时文件。
+2. 发布：幸存者没有文件时用硬链接（目标已存在则失败，绝不覆盖；只有「文件系统不支持硬链接」的错误码 `EPERM` / `ENOTSUP` / `EOPNOTSUPP` / `ENOSYS` 才退回检查后 rename，其余错误直接 `transfer_failed`）；幸存者是空图时用 rename 替换。被杀（发布前）：同 1。发布是原子的，不存在半个文件。
+3. 发布成功、删临时文件前被杀：幸存者名下有完整的图，被并入者的原文件还在，临时文件还在（硬链接路径上临时文件与幸存者的文件是同一个 inode，两个名字一份内容；rename 路径上没有这一状态）。
+4. **回读确认**：发布后用 store 自己的读取函数读幸存者名下的文件，确认可读、`work_id` 是幸存者、`rev` 与论证、边内容与预期一致。不符则**不删**原文件，撤掉刚发布的文件（仅当它仍是本次发布的那个文件：设备号与 inode 一致），报告 `transfer_failed`（`write_failed`）。幸存者原来是零论证空图（rename 替换路径）时，替换前把它的原内容留在内存里（已确认可读的零论证图）；撤掉坏文件后，在名下仍没有别的文件的前提下用原子写（临时文件加 rename）把它放回，`rev` 不变；放回也失败则幸存者名下暂时没有文件（等同「没有图」），仍如实报告 `transfer_failed`（`write_failed`），被并入者的原文件原样。
+5. 回读通过、删原文件前被杀：幸存者名下有完整的图，被并入者的原文件还在（两份相同内容；原文件已无主，无视图读它）。
+6. 删原文件之后：只有幸存者名下一份。
+- 两轮重试都输给并发写入者：按此刻实际情况报告——幸存者文件存在且有论证则 `kept_survivor`，存在但读不出来则 `kept_survivor` 加 `survivor_unreadable`（与首轮同一状态同一报告），否则 `transfer_failed`。
+- 发布失败：原文件原样，报告 `transfer_failed`，不删任何东西。发布成功但删原文件失败：图已在幸存者名下，原文件仍在，说明为 `moved` 加 `absorbed_file_left`，文字里写明原文件还在、不再使用。
+- 库保存与整个图处理之间被杀（`library.json` 已含合并、图一步未动）：被并入者的图原样留在原处，幸存者没有（或保留自己的）图，没有说明；按下面的办法手工找回。
+- 临时文件的清理：每次处理折叠前删除目录里超过一小时的 `*.json.m<hex>.tmp`（及旧版的 `*.json.merge-*.tmp`）（崩溃残留；一小时内的可能是另一进程正在写，不动）。这些文件不是 `.json`，不被 store 当作图、不被 watcher 看见。
+
+- **时机**：先保存 `library.json`（各调用路径自己的写法不变），保存成功才动图。库保存失败（`library.json` 没被替换）时调用方抛错、一张图都没动。**半失败**：`library.json` 已被替换而随后写 `library.bib` 失败时，合并已落盘，图必须跟上。是否已替换**由保存流程自己记录**：`LibraryStore.save` 与 `saveWorksNarrow` 的 `commit` 在 `library.json` 的 rename 成功之后才失败时，给抛出的错误打标记（`markLibraryJsonReplaced`）；`followFoldsAfterFailedSave` 只在错误带这个标记时处理折叠，不从文件内容推断（id 在同批里被新 Work 复用时，保存前后的 id 集合可以相同，推断会在 staging 阶段失败、`library.json` 逐字节未变时把图移走）。说明挂在抛出的错误上（`argumentGraphMerges`）、追加进错误消息（相对路径）；HTTP 导入此时答 500 加 `argument_graph_merges`，导入对话框照样显示说明。`rebuild` 在图处理之后写图缓存（`graph.json`）失败，同样把说明挂在错误上（`attachMergeNotes`）。`lockedRebuild` 里 `restoreUnknownKeys` 失败同理（rebuild 已完成，说明随错误带出）。
+- **与论证图 PUT 的互斥**：合并在库锁内、`library.json` 被替换之后的同一个同步回合里处理折叠；论证图 PUT 在论证图锁内、**同一个同步回合里**重新读 `library.json` 检查「Work 仍在库」再写。单线程下两者不可能交错：PUT 要么先落盘（合并随后把它的最新内容带走），要么发现 Work 已不在库而答 404、零写入。读请求体之前的那次检查只是早退，不再是保证。跨进程仍不支持。
+
+### 各调用路径与说明的呈现
+
+| 路径 | 能否合并 | 说明送到哪里 |
+|---|---|---|
+| 页面导入菜单（`POST /api/library/works`：标识符 / bibcode / BibTeX） | 能 | 响应体在有说明时多 `argument_graph_merges`（相对路径；没有则保持 `{results}` 原样）；导入对话框在有说明时不自动关闭，列出说明与位置，关闭时再打开该 Work。库保存半失败：500 加同一键，对话框显示说明加固定提示 |
+| 探索视图（Discovery）的「Add to library」 | 能（同一个 `POST /api/library/works`，默认合并） | `explore-state` 的 `addToLibrary` 把响应里的说明留在 `mergeNotes`，探索视图顶部显示一条可关闭的提示（与导入对话框同一组件、同一文案），下一次不产生合并的 Add 不动它，产生合并的 Add 把新说明接在后面，用户关闭才消失 |
+| Copilot `library` 工具的 `import_works`、`save_candidate` | 会合并的导入整条拒绝（`bridge: "reject"`，零写入），不会产生合并 | 既有行为，不变；core 测试断言拒绝时图也不动 |
+| `add-manual` 单条（`commitWork`）与批量（`addManualBibText`，说明挂在触发折叠的那一条上，按折叠对象而不是 id 对应） | 能 | core 测试 |
+| `library build`、`library build --bib`、`acquire`（含 `--fetch`/`--fetch-remaining` 的二次 rebuild） | 能 | stdout 的摘要 JSON 多可选键 `argument_graph_merges`（绝对路径）；`acquire` 的最终摘要带上**所有阶段**的说明；无合并时输出一字不变 |
+| `POST /api/library/refresh` | 能 | 响应摘要多同一个可选键（相对路径） |
+| Files 标签页：上传 zip 的任务、`?sync=1`、获取 arXiv LaTeX 的任务（`attach_arxiv` 同一任务） | 能（任务里的 rebuild） | 任务结果（`job.result`）多可选键 `argument_graph_merges`（相对路径；`?sync=1` 的响应体同键，`?sync=1` 在 rebuild 之后才失败时 500 的错误体也带这个键；`POST /api/library/refresh` 成功时的任务记录与响应同样是相对路径）；**任务在 rebuild 已合并并移动图之后才失败时，失败任务的 `result` 同样带这个键**（其余失败的任务 `result` 仍为 `null`）。服务端保留每条任务记录（`jobs/<id>.json`，没有清理），`hello` 重放整张任务表（含 `result`）。页面的通知**来自任务记录本身**：模块级的 `merge-notices` 在应用外壳挂载时订阅任务事件，有已完成（或带说明的失败）任务的 Work，打开其 Files 标签页就显示一条可关闭的提示，不要求「本页面看着它跑完」，所以关闭 Work 详情、切到 Reader、刷新页面都不丢；「已关闭」按任务 id 记在浏览器 `localStorage`（键 `argelander.dismissedGraphMergeNotices`，最多 300 条，写回前先与本地已有集合取并集、淘汰最旧的；`storage` 事件同步多标签页），重载后不重现已关闭的；Copilot 的任务行（`read_jobs`、`attach_arxiv` 的 `job`）多可选字段 `argumentGraphMerges`，模型据此如实告知用户（工具描述文字未改，受 footprint 预算约束）。服务端日志照旧各写一行 |
+| 自动 arXiv 摄入（`autoIngestArxiv`） | 不会：只提交 arXiv PDF 任务，那条路径不 rebuild | 说明 |
+| `acquire --dry-run` | 内存里的 store，不落盘，不碰图 | 说明 |
+| CLI `ingest <DOI>`（`addDoiWork`） | 不会：记录只有一个未命中的新 DOI 加一个标题，最多命中一个已存 Work | core 测试 |
+| `ingest`（LaTeX）/ Doc 挂载 / PATCH / 上传 | 不改 Work 集合，只改 `doc_ids` 等 | 说明 |
+
+合并移动了图（`moved`）之后，server 立刻为幸存者和被并入者各广播一次 `argument-graph.changed`（`cause: external`），不等 watcher 轮询；覆盖导入、各 rebuild 路径（含失败后带说明的）。
+
+### 留在磁盘上的图
+
+真移动之后，只有「两边都有图」（含幸存者的文件读不出来）和「转移失败」「原文件删不掉」三种情形会在磁盘上留下被并入者的文件：
+
+- 位置：`<dataDir>/argument-graphs/<编码后的被并入 Work id>.json`（编码见「存储」；例：`doi:10.1051/0004-6361/202039341` → `doi%3A10%2E1051%2F0004-6361%2F202039341.json`），即它一直所在的地方。说明里的 `absorbed_file` 在页面是相对路径，在 CLI 是绝对路径。
+- 它的 Work 已不在库里，所以没有任何视图读它：`GET /api/works/:id/argument-graph` 对该 id 是 404（「Work 不在库中」），Work 详情没有入口，Copilot 工具读不到。watcher 按文件名与 mtime+size 取指纹、不检查 Work 是否还在库、不读内容，所以它既不会报错，也不会反复广播；合并本身不改它。没有任何自动清理。
+- 手工找回：确认目标 Work 在目标名下没有文件，把它复制成目标 Work 的文件名，并把文件里的 `"work_id"` 改成目标 Work 的 id（否则读取报 `wrong_work`）；工作台的 watcher 会发现新文件。没有界面。
+- 注意：若之后又出现一个 id 与被并入者相同的 Work（例如重新导入它的 DOI，而幸存者已有另一个 DOI），这个遗留文件会被它读到，因为文件名与 `work_id` 都对得上。这是同一篇文献的图，不判为错误；逐步套用的链里则相反：一个**本批新建**的 Work 名下的文件，只有在本批前面的步骤确实把图转给了这个对象（按对象身份记录）时才算它的图并被带走；与本批无关的同 id 遗留文件不会被当作它的图移走（它会让转给这个新 Work 的那一步报 `kept_survivor`）。本批之前就在库里的 Work 则始终按「它名下此刻有没有图文件」处理。
+
+### Work id 在 rebuild 后会变吗（调查，不处理）
+
+`docs/library.md` 提到 rebuild 后 id 被改的 Work 无法对回。现状：已存 Work 的 id **从不被改**——`id` 只在新记录建立时由 `canonicalId` 计算（`seedFromOutput`、`workFromBibrecord`、手动添加的 `recanonicalize`），`upsert` 命中已存 Work 时幸存者保留自己的 id，`resolveWork`/`enrichAndPlan` 即使补出 DOI 也不动 id（core 测试覆盖）。所以 rebuild 不会让图失联，唯一会让已存图「失联」的 rebuild 事件是上面的合并（被并入者的 id 消失）。另外两种仍可能：`library.json` 丢失后从零 rebuild，id 按 `canonicalId` 对当时的 DOI/arXiv/标题重新推导，可能与原来不同；手工改了 `library.json` 里的 id。两种情形下图文件都留在磁盘上、不展示、不删除，找回办法同上。本票不处理。
 
 ## 画布（`packages/web/src/graph/`、`argument/`；票 03，只有渲染，页面入口与写入在后续票）
 
