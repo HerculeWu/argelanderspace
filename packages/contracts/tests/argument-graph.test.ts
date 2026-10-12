@@ -146,6 +146,50 @@ describe("ArgumentGraphSchema", () => {
         "edges.0",
         "edges.1.to",
       ]);
+      expect(issues.map((i) => i.rule)).toEqual(["duplicate_id", "self_loop", "unknown_argument"]);
+    });
+
+    it("the schema's custom issues carry the rule in params (so a consumer need not parse the message)", () => {
+      const parsed = ArgumentGraphSchema.safeParse(
+        graph(
+          [arg("a"), arg("b")],
+          [edge("a", "a", "grounds"), edge("a", "b", "grounds"), edge("a", "b", "grounds")]
+        )
+      );
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map((i) => (i as { params?: unknown }).params)).toEqual([
+          { rule: "self_loop" },
+          { rule: "duplicate_edge" },
+        ]);
+      }
+    });
+
+    it("the field-level custom issues (blank title, target jump) carry a rule too", () => {
+      const parsed = ArgumentGraphSchema.safeParse(
+        graph(
+          [
+            arg("a", { title: "  " }),
+            arg("b", { sources: [{ text: "x", target: { doc_id: "d" } as never }] }),
+          ],
+          []
+        )
+      );
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(
+          parsed.error.issues.map((i) => ({
+            path: i.path,
+            params: (i as { params?: unknown }).params,
+          }))
+        ).toEqual([
+          { path: ["arguments", 0, "title"], params: { rule: "blank_title" } },
+          {
+            path: ["arguments", 1, "sources", 0, "target"],
+            params: { rule: "target_anchor_or_page" },
+          },
+        ]);
+      }
     });
 
     it("source target carries an anchor or a page, not both", () => {

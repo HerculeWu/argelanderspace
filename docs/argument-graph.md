@@ -1,6 +1,6 @@
 # 论证图：数据、审计与读写接口
 
-状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）、手动编辑（票 05）与 Work 合并跟随（票 06，2026-10-12）已实施。CLI、Copilot 工具尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
+状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）、手动编辑（票 05）与 Work 合并跟随（票 06，2026-10-12）已实施。CLI（票 07，2026-10-12）已实施；Copilot 工具尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
 
 ## 存储
 
@@ -48,6 +48,34 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 - `GET /api/works/:workId/argument-graph`：Work 不在库中 404；没有图返回空图 `rev: 0`（200，不是 404）；文件不可读 500。`Cache-Control: no-store`。
 - `PUT /api/works/:workId/argument-graph`：body 是整张图，`rev` 必须等于当前 rev；成功返回 `rev + 1` 的图。Work 不存在 404；body 不是合法 JSON/不满足 schema 或结构规则、或 `work_id` 与 URL 不符 400（`detail` 含前 20 条原因）；`rev` 不符 409 `{ detail: "rev mismatch", rev: <当前> }`，不覆盖；已存在的文件不可读 500，不覆盖。CSRF 守卫同其他写接口。
 - 「覆盖非空图须带替换标志」等确认流程属于 CLI/Copilot/页面各自的票，这两个接口只做整图替换。
+
+## CLI（票 07；`packages/cli/src/argument.ts`）
+
+外部 agent（Claude Code）读写论证图与取得 PDF 原件路径。CLI 直读直写磁盘，不依赖 server；与页面、HTTP 共用 `ArgumentGraphSchema`（含结构规则）与 core `loadArgumentGraph` / `replaceArgumentGraph`（rev 乐观检查、同目录 tmp＋rename 原子写）。读命令真只读：不建目录、不写文件。目标 Work 不在库中（含被合并掉的 Work，其遗留图文件不展示）一律按未知 Work 报错并给候选，沿用 `note` 的形态。
+
+| 命令 | 行为 |
+| --- | --- |
+| `argument get <workId>` | 整张图的 JSON（缩进 2 空格，`version: 1`，含 `rev`）。没有图时是空图、`rev: 0`，exit 0。图文件不可读（损坏、schema 不符、未来版本、属于别的 Work，以及 `argument-graphs/` 目录本身读不了）是系统错误：`error: …`、exit 1、stdout 为空，不输出空图。只有「文件不存在」（ENOENT，父目录不存在也算）才是没有图 |
+| `argument put <workId> <file> --rev <n> [--replace]` | 从文件读整张图（`-` 读 stdin），校验后原子写入；成功时 stdout 一行 `{"work_id":…,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<URL 编码的 work id>"}`。端口取法同其他带深链接的命令：`ARGELANDERSPACE_PORT` > config `port` > 8000；路由格式与 web 的 `lib/argument-route.ts` 一致 |
+| `pdf-path <docId>` | 只读，stdout 一行 PDF Doc 原件的绝对路径（dataDir 经 realpath）。**不要求 Doc 挂在某个 Work 上，也不核对 hash**：这与 Reader 的原件端点（核对归属与 hash）不同，与既有 CLI `read` / `show` 的直读信任模型一致——本机命令行，调用者本来就能读 dataDir。不读 PDF 内容 |
+
+`put` 的规则
+
+- 检查顺序：先解析 `--rev`（缺失或非法即报错，此时还没读任何东西）→ 读库并查 Work（不在库中、`library.json` 不可读、id 不能作文件名）→ 读输入文件或 stdin → 是否合法 JSON → 文件里的 `work_id` 是否一致 → schema 与结构校验 → 读已存图（不可读则报错）→ `rev` → `--replace` → 写入。任何一步失败都零写入（不建 `argument-graphs/`，不留 tmp）。
+- `--rev` 必填，是调用方读到的 rev（没有图为 0），必须是非负整数。与存储的 rev 不符即拒绝、零写入，报告当前 rev，要求重新 `get` 并在新版本上重做改动。
+- 存储里已有**非空**图（至少一个论证）时必须另带 `--replace`，否则拒绝、零写入。零论证的图算「没有图」，无需 `--replace`，但 `--rev` 仍要等于存储的 rev。
+- 文件里的 `work_id` 可省；若有必须与命令行的 Work 一致，不一致拒绝（不静默纠正，避免把一张图写到错误的 Work 上）。文件里的 `rev` 不作依据，以 `--rev` 为准。`version` 也可省（缺省按 1）；写了就必须是 1（否则 `version: must be 1`）；`get` 的输出始终带 `version: 1`。`work_id` 不是字符串（数字、`null`）单独一句 `work_id in <file> must be a string`。其余键沿用 schema：未知键拒绝（含名为 `__proto__` 的键：`JSON.parse` 把它留作自有属性，CLI 在校验前逐层检查并按未知字段报出，而不是静默忽略），省略的论证字段取默认值。
+- 校验失败逐条报告，**每条一行，位置加我们自己的句子**，去重、最多列 100 条，exit 1，零写入。位置是 JSON 路径，**下标 0 起始**（`arguments[1].title`、`edges[0].to`，根为 `<root>`）。句子由 CLI 按 zod issue 的 `code` 与参数自己写（`must be at most 80 characters`、`unknown field "x"`、`must be a boolean`、`must be one of native, end, normal`、`is required` 等），没映射到的种类用固定兜底句子；结构规则（重复 id、悬空边、自环、重复边）与字段级的两条自定义规则（短标题仅空白 `blank_title`、出处目标 `target_anchor_or_page`）的种类都由 contracts 在 issue 的 `params.rule` 里给出（只加 params，message 与 schema 形状不变），CLI 按 rule 映射，不看路径末段；句子同样是我们的。去重按完整内容（两个前 100 字符相同的未知键各占一行，显示时才截断）。引用 id 与路径一律按 JSON 字符串转义（id 并截到 100 字符），并且额外把 U+007F、C1 控制符（U+0080–U+009F，含 U+0085）、U+2028/2029、bidi 标记与控制符（U+061C、U+200E/F、U+202A–U+202E、U+2066–U+2069）写成 `\uXXXX`，所以含换行或这些字符的 id 不会伪造出额外的行，也不会改变显示顺序。同一轮报出哪些问题的组合与行的顺序不冻结，冻结的是每类问题的行形与文案。存在类型级错误（缺字段、值类型不对）时，zod 不运行结构规则（superRefine），所以重复 id、悬空边这些不在同一轮报出：改完类型错误再提交才会看到；长度/规模超限不阻止结构规则，会和它们一起报。不可读的已存图永不被覆盖（`put` 同样报错）。
+- 从 stdin 读用 `-`（便于管道，不落临时文件）。**异步**读到 EOF（`put` 的 action 是 async，由 `parseAsync` 等待；其余命令仍同步）：等待写端时事件循环照常运转，所以 Ctrl-C / SIGTERM 立即结束进程（先前的同步等待循环让 `signal-exit` 的处理器转不起来，只能 SIGKILL）；也不会因 stdin 管道 fd 是非阻塞（依赖在加载时设的）而得 `EAGAIN`。字节先拼完再解码，多字节字符被切在两块之间不出错。stdin 是终端（TTY）时直接拒绝，不等待：`error: stdin is a terminal; "-" reads the graph from a pipe or a redirected file`，exit 1，零写入（检查顺序在读输入这一步：`--rev` 与 Work 先查）。stdin 是目录报 `cannot read stdin (EISDIR)`。其余既有命令不读 stdin，这是本命令的约定。
+- 写盘失败时不留图文件与 tmp，也不留下本次调用刚建、仍为空的 `argument-graphs/`（`replaceArgumentGraph` 清理时自己的错误不盖掉原始错误）。`ConfigError`（坏的 `config.toml`）的文案是本仓库自己的，原样透出，与 `note` 同形。`pdf-path` 只把 ENOENT 当作「没有这个 Doc」，`output/` 或 Doc 目录的权限与 I/O 错误是系统错误，与图 store 一致。
+
+**消息措辞**：所有 `error: …` 都是单行、由本仓库措辞，不转述 zod、commander（用法错误除外）、V8 / Node 的原句；系统错误只可在末尾括号里附 errno 码（如 `(EACCES)`）。底层错误码本身不属于冻结面。缺位置参数、多余参数、未知选项、裸 `argument`、`--rev` 缺值这些 commander 的用法错误不冻结（exit 1，stderr 为帮助/用法文本）。
+
+`get` 的键序是确定的：`version, rev, work_id, arguments, edges`；论证 `id, title, claim, grounds, warrant, backing, qualifier, rebuttal, warrant_implicit, kind, sources`；出处 `text, target`；目标 `doc_id` 然后 `anchor` 或 `page`；边 `from, to, role`。输出由固定顺序的构造函数生成，不依赖存储文件的键序；构造函数的对象字面量带「覆盖 schema 全部键」的类型约束，schema 以后增字段时编译失败，而不会让 `get` 静默丢字段（随后的整图替换会把它抹掉）。
+
+**并发**：工作台可能在运行。`rev` 检查挡住基于旧读取的写入，server 的 watcher 发现文件变化后通知页面刷新。读 rev 与写入之间没有跨进程锁：两个进程在同一瞬间写同一张图不支持，也不加文件锁（contracts I013）。CLI 写图与 server 端的 Work 合并（`followWorkFolds` 在库锁内移动图）之间同样没有跨进程互斥，这个竞态属于 I013 的边界：合并期间不要同时用 CLI 写入该 Work 的图。
+
+**冻结**：命令的 stdout / stderr / exit code、JSON 字段与键序有 golden 测试（`packages/cli/tests/argument.test.ts`），完整清单在 `.scratch/argument-graph/issues/07-cli.md` 的 Comments；票 10 用户验收通过后才算发布生效。既有命令（`search` / `read` / `show` / `ref` / `note` / `label` / `list` / `annot`）输出不变。
 
 ## WebSocket
 

@@ -8,7 +8,7 @@
 - doc id：`arxiv-…` / 本地 `latex-…` / LaTeX zip 上传 `upload-…`；用于 read/show/ref/list/annot 与阅读器。`search` 行的 `doc_ids` 映射正文。
 - LaTeX Doc 经身份归并可被多个 Work 引用；**本地 PDF Doc 恰好属于一个 Work**，归属权威仅为 Library `doc_ids`。主 Doc 为 **`doc_ids[0]`**；主位是用户选择，不是发表稿或最新版本判定。
 - `ingest` 只写 output；**随后必须 `library build`** 才成为可 search/note/label 的 Work。docless Work 也可来自 bib 导入、历史 graph-node 或 DOI 建条目。
-- CLI 支持 arXiv id/URL、本地 `.tex`、目录和 tarball。Web 的 Work 内正文入口包括 LaTeX zip attach、本地 PDF 上传和 arXiv PDF 获取；均要求 Work 已存在。本地 PDF 不进入 CLI/agent 接口。
+- CLI 支持 arXiv id/URL、本地 `.tex`、目录和 tarball。Web 的 Work 内正文入口包括 LaTeX zip attach、本地 PDF 上传和 arXiv PDF 获取；均要求 Work 已存在。**局部修订（2026-10-12，用户论证图第四轮 Q3；见 [argument-graph](argument-graph.md)「CLI」）**：旧定位是本地 PDF Doc 完全不经 CLI/agent 接口暴露；新结论是 CLI 只提供只读的 `pdf-path <docId>`，输出 PDF Doc 原件 `original.pdf` 的绝对路径，由 Claude Code 自己读文件；CLI 仍不读取、不输出 PDF 文字或页面，也不上传、获取、删除 PDF。范围仅限外部 agent 整理论证图等阅读用途、只需支持 Claude Code；原因是用户希望外部 agent 能读到论文原文。PDF Doc 在 server 与 Reader 里的规则（唯一归属、hash 绑定、标注与阅读位置 sidecar）不变；`pdf-path` 本身不核对唯一归属，也不核对原件 hash（与 Reader 的原件端点不同，沿用既有 CLI `read` / `show` 的直读信任模型）。
 - CLI 可解析 DOI 建 docless Work：DOI、`doi:` 或 URL 路径明确携带 DOI；Crossref 立即富化，失败留裸条目，重复 DOI 不写盘、不 rebuild。不可解析 DOI 的出版商 URL 或裸字符串仍报错，不能声称任意 URL 都能建条目。`10.48550/arXiv.*` 回 arXiv LaTeX 管线。
 
 ## 上传、多 Doc 与主位

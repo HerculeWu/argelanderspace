@@ -31,6 +31,7 @@ import { ingestTexSource } from "@argelanderspace/infra";
 import { realPipelines, realSources, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
+import { registerArgumentCommands } from "./argument.js";
 import { fail, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
 import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
@@ -365,6 +366,9 @@ export function buildProgram(): Command {
 
   // Stage 2 / MS1: agent-facing subcommands (search/read/show/ref/note/label/list)
   registerAgentCommands(program);
+
+  // Argument-graph ticket 07: `argument get|put` + `pdf-path` (agent-facing, frozen on release)
+  registerArgumentCommands(program);
 
   return program;
 }

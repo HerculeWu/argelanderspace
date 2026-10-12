@@ -41,6 +41,13 @@ export const ARGUMENT_GRAPH_UNREADABLE_PREFIX = "argument graph file is unreadab
 
 // ---- Pieces ----------------------------------------------------------------- //
 
+/**
+ * The field-level custom rules (a refinement on a value, not a structural rule of the whole graph). Like
+ * {@link ArgumentGraphStructureRule} they travel in the issue's `params.rule`, so a consumer words its own message
+ * without parsing ours.
+ */
+export type ArgumentGraphFieldRule = "blank_title" | "target_anchor_or_page";
+
 export const ArgumentKindSchema = z.enum(["native", "end", "normal"]);
 
 /** Which Toulmin element the edge's source Claim plays in the target argument. */
@@ -59,6 +66,7 @@ export const ArgumentSourceTargetSchema = z
   })
   .refine((t) => (t.anchor === undefined) !== (t.page === undefined), {
     message: "a source target carries exactly one of anchor or page",
+    params: { rule: "target_anchor_or_page" satisfies ArgumentGraphFieldRule },
   });
 
 export const ArgumentSourceSchema = z.strictObject({
@@ -76,7 +84,10 @@ export const ArgumentSchema = z.strictObject({
   title: z
     .string()
     .max(L.titleChars)
-    .refine((s) => s.trim().length > 0, { message: "title must not be blank" }),
+    .refine((s) => s.trim().length > 0, {
+      message: "title must not be blank",
+      params: { rule: "blank_title" satisfies ArgumentGraphFieldRule },
+    }),
   claim: field(),
   grounds: field(),
   warrant: field(),
@@ -96,9 +107,17 @@ export const ArgumentEdgeSchema = z.strictObject({
 
 // ---- Structural validation --------------------------------------------------- //
 
+/** Which structural rule an issue is about (stable; consumers such as the CLI word their own message from it). */
+export type ArgumentGraphStructureRule =
+  | "duplicate_id"
+  | "unknown_argument"
+  | "self_loop"
+  | "duplicate_edge";
+
 export interface ArgumentGraphStructureIssue {
   path: (string | number)[];
   message: string;
+  rule: ArgumentGraphStructureRule;
 }
 
 /** Write-time rules beyond field shapes. Returns every violation found. */
@@ -110,7 +129,11 @@ export function checkArgumentGraphStructure(graph: {
   const ids = new Set<string>();
   graph.arguments.forEach((a, i) => {
     if (ids.has(a.id)) {
-      issues.push({ path: ["arguments", i, "id"], message: `duplicate argument id ${a.id}` });
+      issues.push({
+        path: ["arguments", i, "id"],
+        message: `duplicate argument id ${a.id}`,
+        rule: "duplicate_id",
+      });
     }
     ids.add(a.id);
   });
@@ -121,17 +144,23 @@ export function checkArgumentGraphStructure(graph: {
         issues.push({
           path: ["edges", i, end],
           message: `edge ${end} refers to unknown argument ${e[end]}`,
+          rule: "unknown_argument",
         });
       }
     }
     if (e.from === e.to) {
-      issues.push({ path: ["edges", i], message: `self-loop on argument ${e.from}` });
+      issues.push({
+        path: ["edges", i],
+        message: `self-loop on argument ${e.from}`,
+        rule: "self_loop",
+      });
     }
     const key = JSON.stringify([e.from, e.to, e.role]);
     if (seen.has(key)) {
       issues.push({
         path: ["edges", i],
         message: `duplicate ${e.role} edge from ${e.from} to ${e.to}`,
+        rule: "duplicate_edge",
       });
     }
     seen.add(key);
@@ -156,7 +185,12 @@ export const ArgumentGraphSchema = z
   })
   .superRefine((graph, ctx) => {
     for (const issue of checkArgumentGraphStructure(graph)) {
-      ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+      ctx.addIssue({
+        code: "custom",
+        path: issue.path,
+        message: issue.message,
+        params: { rule: issue.rule },
+      });
     }
   });
 

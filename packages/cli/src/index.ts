@@ -4,6 +4,7 @@
 // Stage 2 / MS1 adds the agent-facing subcommands in agent.ts.
 
 export * from "./agent.js";
+export * from "./argument.js";
 export * from "./common.js";
 export * from "./detect.js";
 export * from "./program.js";
