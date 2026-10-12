@@ -182,6 +182,11 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
 
   let summary = await acquireReferences(paths, bib, { sources });
   const pipelines = realPipelines(paths);
+  // Each rebuild reports the argument-graph moves of its own Work merges (ticket 06); a later summary replaces
+  // the earlier one, so the notes of every stage are kept here and put back into the one printed at the end.
+  const merges: NonNullable<typeof summary.argument_graph_merges> = [
+    ...(summary.argument_graph_merges ?? []),
+  ];
 
   if (opts.fetch) {
     const store = LibraryStore.load(paths);
@@ -201,6 +206,7 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
     }
     // relink the new reader docs to their works + refresh plans/graph
     summary = await rebuild(paths, { sources });
+    merges.push(...(summary.argument_graph_merges ?? []));
   }
 
   if (opts.fetchRemaining) {
@@ -229,8 +235,11 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
       }
     }
     summary = await rebuild(paths, { sources });
+    merges.push(...(summary.argument_graph_merges ?? []));
   }
 
+  // No merge met an argument graph: the summary is printed exactly as before (no new key).
+  if (merges.length > 0) summary = { ...summary, argument_graph_merges: merges };
   console.log(JSON.stringify(summary, null, 2));
   printPlanTable(LibraryStore.load(paths).works);
 }

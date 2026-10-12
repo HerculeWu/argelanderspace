@@ -354,9 +354,10 @@ export const DEFAULT_PROJECT: Record<string, unknown> = {
 };
 
 /**
- * One Work folded into another by {@link LibraryStore.upsert}. `stored` is true when the absorbed Work was
+ * One Work folded into another by {@link LibraryStore.upsert}. `stored` is true when the absorbed Work OBJECT was
  * already in the store at construction (loaded from the file), so it can own an argument graph file; a Work
- * created earlier in the same session cannot.
+ * created earlier in the same session cannot, even when it was given the id of a stored Work that was folded
+ * away before it (ids are reused, identity is the object).
  */
 export interface WorkFold {
   absorbed: string;
@@ -367,14 +368,17 @@ export interface WorkFold {
 export class LibraryStore {
   works: Work[];
   project: Record<string, unknown>;
-  /** Every fold `upsert` made on this instance, in order (the argument graphs follow it; ticket 06). */
+  /**
+   * The folds `upsert` made on this instance that the argument graphs have not followed yet, in order (ticket 06).
+   * `followWorkFolds` empties it.
+   */
   readonly folds: WorkFold[] = [];
-  private readonly storedIds: Set<string>;
+  private readonly storedWorks: Set<Work>;
   private byKey = new Map<string, Work>();
 
   constructor(works: Work[] = [], project?: Record<string, unknown> | null) {
     this.works = works;
-    this.storedIds = new Set(works.map((w) => w.id));
+    this.storedWorks = new Set(works);
     this.project = (pyOr(project) as Record<string, unknown> | undefined) ?? {
       ...DEFAULT_PROJECT,
     };
@@ -442,7 +446,7 @@ export class LibraryStore {
       this.folds.push({
         absorbed: extra.id,
         survivor: survivor.id,
-        stored: this.storedIds.has(extra.id),
+        stored: this.storedWorks.has(extra),
       });
     }
     mergeInto(survivor, w);

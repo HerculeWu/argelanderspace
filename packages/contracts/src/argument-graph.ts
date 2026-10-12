@@ -180,26 +180,46 @@ export const WsArgumentGraphChangedSchema = z.object({
 /**
  * What a Work merge (a record that matched two stored Works; the later one is
  * folded into the first) did with the absorbed Work's argument graph. Only
- * produced when the absorbed Work HAD a graph file; "neither has one" is not
- * reported. The absorbed Work's file is never modified or deleted: it stays at
- * `absorbed_file` (a Work that is no longer in the library, so no view shows it).
+ * produced when the absorbed Work HAD a graph file with at least one argument
+ * (a missing file or a zero-argument graph counts as "no graph" and is not
+ * reported). One note per fold, in the order the folds happened.
  *
- * - `moved`: the survivor had no graph; it now has a copy of the absorbed one
- *   (`work_id` rewritten, `rev` kept) at `survivor_file`.
+ * - `moved`: the survivor had no graph (no file, or a zero-argument one); it now
+ *   holds the absorbed graph (`work_id` rewritten) at `survivor_file` and the
+ *   absorbed file was removed. When the removal failed the graph is on both
+ *   files and `absorbed_file_left` is true.
  * - `kept_survivor`: both had one; the survivor's file is untouched, the
- *   absorbed one stays at `absorbed_file`, not shown.
- * - `transfer_failed`: the survivor had none but the copy could not be made
+ *   absorbed one stays at `absorbed_file`, not shown and not deleted. When the
+ *   survivor's file could not be read (it is never overwritten), `survivor_unreadable`.
+ * - `transfer_failed`: the survivor had none but the move could not be done
  *   (`error`); the absorbed graph is intact at `absorbed_file`.
+ *
+ * Paths: absolute from core and the CLI (a local command line); the HTTP layer
+ * rewrites them relative to the data directory (`argument-graphs/<name>.json`),
+ * so no response carries an absolute path. `error` is a fixed kind, never a raw
+ * system message.
  */
+export const ArgumentGraphMergeErrorKindSchema = z.enum([
+  /** The absorbed graph file could not be read or is not a valid graph of that Work. */
+  "absorbed_unreadable",
+  /** The surviving Work's id cannot be used as a graph file name. */
+  "survivor_name_unusable",
+  /** Writing or publishing the survivor's file failed. */
+  "write_failed",
+]);
 export const ArgumentGraphMergeNoteSchema = z.object({
   outcome: z.enum(["moved", "kept_survivor", "transfer_failed"]),
   absorbed_id: z.string(),
   survivor_id: z.string(),
-  /** Absolute path of the absorbed Work's graph file (never removed). */
+  /** Location of the absorbed Work's graph file (after `moved` it no longer exists unless `absorbed_file_left`). */
   absorbed_file: z.string(),
-  /** Absolute path of the survivor's graph file (not present after `transfer_failed`). */
+  /** Location of the survivor's graph file; "" only when the survivor's id cannot be a file name. */
   survivor_file: z.string(),
-  error: z.string().optional(),
+  error: ArgumentGraphMergeErrorKindSchema.optional(),
+  /** `kept_survivor` only: the survivor's file exists but could not be read, so it was not replaced. */
+  survivor_unreadable: z.boolean().optional(),
+  /** `moved` only: the graph is published at the survivor's name but the absorbed file could not be removed. */
+  absorbed_file_left: z.boolean().optional(),
 });
 export type ArgumentGraphMergeNote = z.infer<typeof ArgumentGraphMergeNoteSchema>;
 

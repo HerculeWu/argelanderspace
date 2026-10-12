@@ -14,6 +14,7 @@ import { type ArgumentGraphMergeNote, libraryImportRequest } from "@argelandersp
 import { createWorks } from "../api/library";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
+import { MergeNoteList } from "./MergeNotes";
 import type { LibraryRef, ManualWorkRequest, ManualWorkResult } from "./types";
 
 export type ImportMode = "identifier" | "bibcode" | "bib";
@@ -45,31 +46,6 @@ function ResultRow({ r, index }: { r: ManualWorkResult; index: number }) {
         </span>
         {r.key && r.ref && <span className="import-result-key mono">{r.key}</span>}
         {r.error && <span className="import-result-err">{r.error}</span>}
-      </span>
-    </div>
-  );
-}
-
-/** What a Work merge did with the absorbed Work's argument graph (ticket 06); file paths are shown as stored. */
-function MergeNoteRow({ n, index }: { n: ArgumentGraphMergeNote; index: number }) {
-  const { t } = useTranslation();
-  const body = t(`library.importDialog.graphMerge.${n.outcome}`, {
-    absorbed: n.absorbed_id,
-    survivor: n.survivor_id,
-  });
-  return (
-    <div
-      className={`import-result ${n.outcome === "transfer_failed" ? "error" : "exists"}`}
-      data-ui="import-graph-merge"
-      data-ui-key={index}
-    >
-      <Icon name={n.outcome === "transfer_failed" ? "x-circle" : "info"} cls="ico-sm" />
-      <span className="import-result-body">
-        <span className="import-result-title">{body}</span>
-        {n.outcome === "transfer_failed" && n.error && (
-          <span className="import-result-err">{n.error}</span>
-        )}
-        <span className="import-result-key mono">{n.absorbed_file}</span>
       </span>
     </div>
   );
@@ -115,6 +91,7 @@ export function ImportDialog({
     }
     const first = resp.results[0];
     const notes = resp.argument_graph_merges ?? [];
+    if (resp.failed_after_merge === true) setFatal(t("library.graphMerge.partial"));
     // A merge that met an argument graph must be read, so the dialog stays open and shows it.
     if (!batch && first && first.status !== "error" && first.ref && notes.length === 0) {
       // single modes: success opens the work's detail immediately
@@ -188,9 +165,7 @@ export function ImportDialog({
               {results.map((r, i) => (
                 <ResultRow key={r.key ?? i} r={r} index={i} />
               ))}
-              {merges.map((n, i) => (
-                <MergeNoteRow key={`${n.absorbed_id}>${n.survivor_id}`} n={n} index={i} />
-              ))}
+              <MergeNoteList notes={merges} uiId="import-graph-merge" />
             </div>
           )}
         </div>

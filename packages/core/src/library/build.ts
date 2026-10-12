@@ -30,7 +30,7 @@ import {
 import { parseBibtex } from "../acquire/bibtex.js";
 import { classify, planToDict } from "../acquire/planner.js";
 import { addBibRecords, enrichAndPlan, planFor } from "../acquire/run.js";
-import { followWorkFolds } from "../argument-graphs/merge.js";
+import { followFoldsAfterFailedSave, followWorkFolds } from "../argument-graphs/merge.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
 import { assignCiteKey, buildGraph, workToRef } from "./graph.js";
 import { findDamagedTextDocs, seedFromOutput } from "./seed.js";
@@ -68,7 +68,12 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
   }
   await enrichAndPlan(store, opts.sources);
   const graph = buildGraph(store, paths.outputDir);
-  store.save(paths);
+  try {
+    store.save(paths);
+  } catch (error) {
+    // library.json is renamed before library.bib is written: when only the latter failed the merge stands.
+    throw followFoldsAfterFailedSave(paths, store, error);
+  }
   // Only after the library file was written: a failed save throws above and leaves every argument graph in place.
   const argumentGraphMerges = followWorkFolds(paths.dataDir, store.folds);
   mkdirSync(paths.cacheDir, { recursive: true });

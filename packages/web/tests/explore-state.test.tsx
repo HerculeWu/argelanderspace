@@ -68,6 +68,7 @@ function makeGraph(seed: string): DiscoveryGraph {
 
 /** Deferred fetch for cancellation tests. */
 let gate: ((r: Response) => void) | null = null;
+let withMergeNote = false;
 
 function okJson(data: unknown): Response {
   return { ok: true, status: 200, json: async () => data } as unknown as Response;
@@ -90,7 +91,22 @@ function stubNet() {
       return okJson(makeGraph(bc));
     }
     if (url === "/api/library/works") {
-      return okJson({ results: [{ status: "created", ref: { id: "doi:10.1/x" } }] });
+      return okJson({
+        results: [{ status: "created", ref: { id: "doi:10.1/x" } }],
+        ...(withMergeNote
+          ? {
+              argument_graph_merges: [
+                {
+                  outcome: "kept_survivor",
+                  absorbed_id: "doi:10.1/old",
+                  survivor_id: "doi:10.1/x",
+                  absorbed_file: "argument-graphs/doi%3A10%2E1%2Fold.json",
+                  survivor_file: "argument-graphs/doi%3A10%2E1%2Fx.json",
+                },
+              ],
+            }
+          : {}),
+      });
     }
     return { ok: false, status: 404, json: async () => ({}) } as Response;
   });
@@ -108,6 +124,8 @@ function Harness() {
       <div data-testid="index">{String(ex.index)}</div>
       <div data-testid="loading">{ex.loading?.seed ?? ""}</div>
       <div data-testid="error">{ex.error ? `${ex.error.seed}:${ex.error.status}` : ""}</div>
+      <div data-testid="merges">{ex.mergeNotes.map((n) => `${n.outcome}:${n.absorbed_file}`).join(",")}</div>
+      <button data-testid="dismissMerges" onClick={ex.dismissMergeNotes} />
       <div data-testid="libid">{ex.current?.graph.nodes.find((n) => n.bibcode === "R1")?.libraryId ?? ""}</div>
       <button data-testid="goS" onClick={() => void ex.startExplore("S")} />
       <button data-testid="goT" onClick={() => void ex.startExplore("T")} />
@@ -221,6 +239,24 @@ describe("useExploreStack", () => {
     expect(txt(container, "sessions")).toBe("S");
     expect(txt(container, "seed")).toBe("S");
     expect(window.location.hash).toBe("#explore/S");
+  });
+
+  it("an Add whose merge met an argument graph keeps the note until dismissed (ticket 06)", async () => {
+    withMergeNote = true;
+    try {
+      const { container } = render(<Harness />);
+      fireEvent.click(container.querySelector('[data-testid="goS"]')!);
+      await waitFor(() => expect(txt(container, "seed")).toBe("S"));
+      expect(txt(container, "merges")).toBe("");
+      fireEvent.click(container.querySelector('[data-testid="addR1"]')!);
+      await waitFor(() =>
+        expect(txt(container, "merges")).toBe("kept_survivor:argument-graphs/doi%3A10%2E1%2Fold.json")
+      );
+      fireEvent.click(container.querySelector('[data-testid="dismissMerges"]')!);
+      expect(txt(container, "merges")).toBe("");
+    } finally {
+      withMergeNote = false;
+    }
   });
 
   it("exitExplore leaves the mode and clears the explore hash", async () => {

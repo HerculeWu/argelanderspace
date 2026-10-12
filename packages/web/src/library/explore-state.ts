@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import type { DiscoveryGraph } from "@argelanderspace/contracts";
+import type { ArgumentGraphMergeNote, DiscoveryGraph } from "@argelanderspace/contracts";
 import { fetchDiscovery } from "../api/discovery";
 import { createWorks } from "../api/library";
 import type { GraphCanvasStash } from "../graph/GraphCanvas";
@@ -73,6 +73,7 @@ export function useExploreStack() {
   /** In-flight add-to-library bibcode (dashed ring; per-candidate). */
   const [adding, setAdding] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+  const [mergeNotes, setMergeNotes] = useState<ArgumentGraphMergeNote[]>([]);
   const counter = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const activeRef = useRef(active);
@@ -224,6 +225,8 @@ export function useExploreStack() {
     setAddError(null);
     try {
       const resp = await createWorks({ mode: "bibcode", bibcode });
+      // A merge that met an argument graph is said where the Add was pressed (ticket 06); a later Add replaces it.
+      setMergeNotes(resp?.argument_graph_merges ?? []);
       const r = resp?.results[0];
       if (r && (r.status === "created" || r.status === "exists") && r.ref) {
         const workId = r.ref.id;
@@ -237,6 +240,8 @@ export function useExploreStack() {
     }
   }, [adding, markSaved]);
 
+  const dismissMergeNotes = useCallback(() => setMergeNotes([]), []);
+
   /** Dismiss the error banner (the current session stays). */
   const dismissError = useCallback(() => setError(null), []);
 
@@ -249,6 +254,8 @@ export function useExploreStack() {
     error,
     adding,
     addError,
+    mergeNotes,
+    dismissMergeNotes,
     startExplore,
     cancelExplore,
     step,

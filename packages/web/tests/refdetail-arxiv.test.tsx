@@ -157,6 +157,57 @@ afterEach(() => {
   cleanup();
 });
 
+describe("Work merge notice after a task (ticket 06)", () => {
+  const note = {
+    outcome: "kept_survivor" as const,
+    absorbed_id: "doi:10.1/old",
+    survivor_id: BASE.id,
+    absorbed_file: "argument-graphs/doi%3A10%2E1%2Fold-with-a-very-long-name-that-must-wrap-instead-of-overflowing.json",
+    survivor_file: "argument-graphs/x.json",
+  };
+
+  it("a finished task whose rebuild merged Works shows a dismissible notice; a replayed job does not", async () => {
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    h.attachArxiv.mockResolvedValueOnce({ ok: true, job: makeJob() });
+    startArxivAcquisition();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
+    act(() => {
+      h.listener?.(makeJob({ status: "running" }), "job.progress");
+    });
+    act(() => {
+      h.listener?.(makeJob({ status: "done", result: { status: "attached", argument_graph_merges: [note] } }), "job.done");
+    });
+    const bar = await waitFor(() => {
+      const el = document.querySelector("[data-ui='task-graph-merges']");
+      expect(el).not.toBeNull();
+      return el as HTMLElement;
+    });
+    expect(bar.textContent).toContain("doi:10.1/old");
+    expect(bar.textContent).toContain(note.absorbed_file);
+    expect(bar.querySelector(".merge-note-file")).not.toBeNull();
+    fireEvent.click(bar.querySelector("[data-ui='dismiss-task-graph-merges']")!);
+    expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
+    // the same finished job replayed by a reconnect (hello) is not a task this page watched: no new notice
+    act(() => {
+      h.listener?.(makeJob({ status: "done", result: { status: "attached", argument_graph_merges: [note] } }), "job.done");
+    });
+    expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
+  });
+
+  it("a task without notes shows none", async () => {
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    h.attachArxiv.mockResolvedValueOnce({ ok: true, job: makeJob() });
+    startArxivAcquisition();
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("正在排队"));
+    act(() => {
+      h.listener?.(makeJob({ status: "done", result: { status: "attached" } }), "job.done");
+    });
+    expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
+  });
+});
+
 describe("docless work with an arXiv id", () => {
   it("uses the unified acquisition dialog and shows arXiv progress below", async () => {
     renderDetail(REF_ARXIV);

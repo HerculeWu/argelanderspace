@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type ArgumentGraphMergeNote,
+  ArgumentGraphMergeNoteSchema,
   type CopilotOperation,
   type DocReplaceImpact,
   type Job,
@@ -578,6 +579,12 @@ export interface JobView {
   errorCode?: string;
   /** The Doc the finished job created or refreshed. */
   docId?: string;
+  /**
+   * What the job's library rebuild did with argument graphs when it merged Works (ticket 06); present only then.
+   * Locations are relative to the data directory. Tell the user: a graph moved to another Work, or one is left
+   * on disk unshown.
+   */
+  argumentGraphMerges?: ArgumentGraphMergeNote[];
 }
 
 const payloadOf = (job: Job): { workId?: string; format?: string } =>
@@ -595,9 +602,18 @@ function jobDocId(job: Job): string | undefined {
   return undefined;
 }
 
+/** The argument-graph notes a finished job carried in its result (parsed, so a foreign shape is dropped). */
+function jobMerges(job: Job): ArgumentGraphMergeNote[] {
+  if (job.status !== "done") return [];
+  const raw = (job.result as { argument_graph_merges?: unknown } | null)?.argument_graph_merges;
+  const parsed = ArgumentGraphMergeNoteSchema.array().safeParse(raw);
+  return parsed.success ? parsed.data : [];
+}
+
 export function jobView(job: Job): JobView {
   const payload = payloadOf(job);
   const docId = job.status === "done" ? jobDocId(job) : undefined;
+  const merges = jobMerges(job);
   return {
     id: job.id,
     kind: job.kind,
@@ -610,6 +626,7 @@ export function jobView(job: Job): JobView {
     error: job.error,
     ...(job.errorCode ? { errorCode: job.errorCode } : {}),
     ...(docId ? { docId } : {}),
+    ...(merges.length > 0 ? { argumentGraphMerges: merges } : {}),
   };
 }
 

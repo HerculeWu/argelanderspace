@@ -4,7 +4,7 @@
  * it and nothing deletes it. Without a graph the response body keeps its old shape. Tmp data dir only.
  */
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ArgumentGraph, ArgumentGraphMergeNote } from "@argelanderspace/contracts";
 import {
@@ -117,7 +117,8 @@ describe("POST /api/library/works folds Works", () => {
     const body = await importBridge();
     expect(body.argument_graph_merges?.[0]).toMatchObject({
       outcome: "kept_survivor",
-      absorbed_file: argumentGraphPath(dataDir, C),
+      absorbed_file: "argument-graphs/doi%3A10%2E1%2Fc.json", // relative to the data directory
+      survivor_file: "argument-graphs/doi%3A10%2E1%2Fa.json",
     });
     expect(((await (await getGraph(A)).json()) as ArgumentGraph).arguments[0]?.title).toBe(
       "from A"
@@ -128,5 +129,92 @@ describe("POST /api/library/works folds Works", () => {
     expect(readFileSync(argumentGraphPath(dataDir, C), "utf8")).toBe(leftBytes);
     // the watcher's file listing still sees it (it fingerprints files, not Works); nothing reads its content
     expect(listArgumentGraphWorkIds(dataDir)).toContain(C);
+  });
+});
+
+describe("what the response may contain", () => {
+  test("no absolute path and no raw system message, also when the transfer failed", async () => {
+    mkdirSync(join(dataDir, "argument-graphs"), { recursive: true });
+    writeFileSync(argumentGraphPath(dataDir, C), "{broken");
+    const res = await app.request("/api/library/works", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "bib", bib: BRIDGE }),
+    });
+    const text = await res.text();
+    expect(text).not.toContain(dataDir);
+    const body = JSON.parse(text) as { argument_graph_merges: ArgumentGraphMergeNote[] };
+    expect(body.argument_graph_merges[0]).toMatchObject({
+      outcome: "transfer_failed",
+      error: "absorbed_unreadable",
+    });
+  });
+
+  test("only the survivor's file is read after a move: the moved graph is the user's, byte-complete", async () => {
+    const saved = putGraph(C, "from C");
+    await importBridge();
+    const served = (await (await getGraph(A)).json()) as ArgumentGraph;
+    expect(served).toEqual({ ...saved, work_id: A });
+    expect(existsSync(argumentGraphPath(dataDir, C))).toBe(false);
+  });
+});
+
+describe("PUT on a Work that a merge removes while the body is still arriving", () => {
+  test("404, nothing written, the survivor and the orphan file are untouched", async () => {
+    const before = putGraph(C, "C v1");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const edited = { ...before, arguments: [{ ...before.arguments[0], title: "C v2 (late)" }] };
+    const body = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        await gate;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(edited)));
+        controller.close();
+      },
+    });
+    const put = app.request(`/api/works/${encodeURIComponent(C)}/argument-graph`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body,
+      // node fetch needs duplex for streamed bodies
+      duplex: "half",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await importBridge(); // C is merged into A and its graph moved while the PUT body has not arrived
+    release();
+    const res = await put;
+    expect(res.status).toBe(404);
+    expect(existsSync(argumentGraphPath(dataDir, C))).toBe(false);
+    const survivor = (await (await getGraph(A)).json()) as ArgumentGraph;
+    expect(survivor.arguments[0]?.title).toBe("C v1");
+  });
+});
+
+describe("library.json saved, library.bib failed", () => {
+  test("500 with the notes (relative paths) instead of a silent merge; the graph did follow", async () => {
+    const paths = libraryPaths(dataDir);
+    putGraph(C, "from C");
+    rmSync(paths.libraryBib, { force: true });
+    mkdirSync(paths.libraryBib, { recursive: true });
+    writeFileSync(join(paths.libraryBib, "keep"), "x");
+    const res = await app.request("/api/library/works", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "bib", bib: BRIDGE }),
+    });
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).not.toContain(dataDir);
+    const body = JSON.parse(text) as {
+      detail: string;
+      argument_graph_merges: ArgumentGraphMergeNote[];
+    };
+    expect(body.argument_graph_merges[0]).toMatchObject({ outcome: "moved", survivor_id: A });
+    expect(body.detail).toContain("argument graph");
+    expect(((await (await getGraph(A)).json()) as ArgumentGraph).arguments[0]?.title).toBe(
+      "from C"
+    );
   });
 });

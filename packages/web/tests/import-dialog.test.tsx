@@ -166,6 +166,56 @@ describe("ImportDialog", () => {
   });
 });
 
+describe("ImportDialog merge notes, other outcomes (ticket 06)", () => {
+  beforeEach(() => h.createWorks.mockReset());
+
+  it("a save that failed after the merge was saved still shows what became of the graph", async () => {
+    h.createWorks.mockResolvedValue({
+      results: [],
+      failed_after_merge: true,
+      argument_graph_merges: [
+        {
+          outcome: "moved",
+          absorbed_id: "doi:10.1/c",
+          survivor_id: REF.id,
+          absorbed_file: "argument-graphs/doi%3A10%2E1%2Fc.json",
+          survivor_file: "argument-graphs/x.json",
+          absorbed_file_left: true,
+        },
+      ],
+    });
+    const { container } = render(<ImportDialog mode="identifier" onClose={() => {}} onResolved={() => {}} />);
+    fireEvent.change(container.querySelector("input")!, { target: { value: "10.1234/x" } });
+    fireEvent.click(container.querySelector(".btn.primary")!);
+    await waitFor(() => expect(container.querySelector("[data-ui='import-graph-merge']")).not.toBeNull());
+    expect(container.querySelector("[data-ui='import-error']")?.textContent).toBeTruthy();
+    // the original could not be removed: its location is shown, wrapping instead of overflowing
+    expect(container.querySelector(".merge-note-file")?.textContent).toBe("argument-graphs/doi%3A10%2E1%2Fc.json");
+  });
+
+  it("a failed move names a fixed cause, not a system message", async () => {
+    h.createWorks.mockResolvedValue({
+      results: [{ status: "exists", ref: REF, key: "doe2024" }],
+      argument_graph_merges: [
+        {
+          outcome: "transfer_failed",
+          absorbed_id: "doi:10.1/c",
+          survivor_id: REF.id,
+          absorbed_file: "argument-graphs/doi%3A10%2E1%2Fc.json",
+          survivor_file: "argument-graphs/x.json",
+          error: "write_failed",
+        },
+      ],
+    });
+    const { container } = render(<ImportDialog mode="identifier" onClose={() => {}} onResolved={() => {}} />);
+    fireEvent.change(container.querySelector("input")!, { target: { value: "10.1234/x" } });
+    fireEvent.click(container.querySelector(".btn.primary")!);
+    await waitFor(() => expect(container.querySelector("[data-ui='import-graph-merge']")).not.toBeNull());
+    expect(container.querySelector(".import-result-err")?.textContent).toBeTruthy();
+    expect(container.querySelector(".import-result-err")?.textContent).not.toContain("write_failed");
+  });
+});
+
 // ------------------------------------------------------- menu wiring --------
 
 const PAYLOAD = {

@@ -5,22 +5,25 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArgumentGraph } from "@argelanderspace/contracts";
 import { afterEach, describe, expect, it } from "vitest";
-import { followWorkFolds, resolveFolds } from "../src/argument-graphs/merge.js";
+import { followWorkFolds } from "../src/argument-graphs/merge.js";
 import {
   argumentGraphDir,
   argumentGraphPath,
+  listArgumentGraphWorkIds,
   loadArgumentGraph,
   replaceArgumentGraph,
 } from "../src/argument-graphs/store.js";
@@ -31,7 +34,7 @@ import {
 } from "../src/library/add-manual.js";
 import { addDoiWork, rebuild } from "../src/library/build.js";
 import type { MetadataSources } from "../src/library/sources.js";
-import { LibraryStore, libraryPaths } from "../src/library/store.js";
+import { emptyWork, LibraryStore, libraryPaths } from "../src/library/store.js";
 
 const A = "doi:10.1/a"; // survivor
 const C = "doi:10.1/c"; // absorbed
@@ -123,7 +126,18 @@ const libIds = (paths: ReturnType<typeof libraryPaths>) =>
 // A record carrying the DOI of A and the title of C bridges the two; A is the survivor.
 const BRIDGE = "@article{b1,\n author={Ann},\n title={Gamma},\n year={2001},\n doi={10.1/a}\n}\n";
 
-describe("the four combinations", () => {
+/** A cleared graph: still a file, zero arguments, rev bumped by the clear. */
+function clearGraph(dataDir: string, saved: ArgumentGraph): ArgumentGraph {
+  const r = replaceArgumentGraph(dataDir, { ...saved, arguments: [], edges: [] });
+  if (!("saved" in r)) throw new Error("fixture");
+  return r.saved;
+}
+const bibEntry = (key: string, title: string, doi: string) =>
+  `@article{${key},\n author={Ann},\n title={${title}},\n year={2001},\n doi={${doi}}\n}\n`;
+const titleOf = (dataDir: string, id: string) =>
+  loadArgumentGraph(dataDir, id).arguments[0]?.title ?? "(empty)";
+
+describe("the four combinations (a real move: one graph on disk afterwards)", () => {
   it("neither Work has a graph: nothing happens, no file, no note", async () => {
     const paths = seed();
     const out = await addManualBibText(paths, BRIDGE);
@@ -132,26 +146,39 @@ describe("the four combinations", () => {
     expect(graphFiles(paths.dataDir)).toEqual([]);
   });
 
-  it("only the absorbed Work has one: the survivor gets it (work_id rewritten, rev kept), the original stays", async () => {
+  it("only the absorbed Work has one: the survivor gets it and the absorbed file is gone", async () => {
     const paths = seed();
     const saved = putGraph(paths.dataDir, C, "from C");
-    const originalBytes = read(argumentGraphPath(paths.dataDir, C));
     const out = await addManualBibText(paths, BRIDGE);
     expect(libIds(paths)).toEqual([A, D]);
-    const note = out[0]?.argumentGraphMerges?.[0];
-    expect(note).toMatchObject({
+    expect(out[0]?.argumentGraphMerges?.[0]).toMatchObject({
       outcome: "moved",
       absorbed_id: C,
       survivor_id: A,
       absorbed_file: argumentGraphPath(paths.dataDir, C),
       survivor_file: argumentGraphPath(paths.dataDir, A),
     });
+    expect(out[0]?.argumentGraphMerges?.[0]?.absorbed_file_left).toBeUndefined();
+    expect(loadArgumentGraph(paths.dataDir, A)).toEqual({ ...saved, work_id: A });
+    expect(existsSync(argumentGraphPath(paths.dataDir, C))).toBe(false);
+    expect(graphFiles(paths.dataDir)).toHaveLength(1);
+  });
+
+  it("a hand-written rev 0 graph arrives at rev 1, so a stale writer holding rev 0 gets a conflict", async () => {
+    const paths = seed();
+    mkdirSync(argumentGraphDir(paths.dataDir), { recursive: true });
+    const hand = putGraph(paths.dataDir, D, "hand");
+    writeFileSync(
+      argumentGraphPath(paths.dataDir, C),
+      JSON.stringify({ ...hand, work_id: C, rev: 0 }),
+      "utf8"
+    );
+    rmSync(argumentGraphPath(paths.dataDir, D));
+    await addManualBibText(paths, BRIDGE);
     const survivor = loadArgumentGraph(paths.dataDir, A);
-    expect(survivor).toEqual({ ...saved, work_id: A });
-    expect(survivor.rev).toBe(saved.rev);
-    // never touched, never removed
-    expect(read(argumentGraphPath(paths.dataDir, C))).toBe(originalBytes);
-    expect(graphFiles(paths.dataDir)).toHaveLength(2);
+    expect(survivor.rev).toBe(1);
+    const stale = replaceArgumentGraph(paths.dataDir, { ...survivor, rev: 0, arguments: [] });
+    expect(stale).toEqual({ conflictRev: 1 });
   });
 
   it("both have one: the survivor's is kept byte for byte, the absorbed one stays on disk and is reported", async () => {
@@ -161,13 +188,13 @@ describe("the four combinations", () => {
     const aBytes = read(argumentGraphPath(paths.dataDir, A));
     const cBytes = read(argumentGraphPath(paths.dataDir, C));
     const out = await addManualBibText(paths, BRIDGE);
-    const note = out[0]?.argumentGraphMerges?.[0];
-    expect(note).toMatchObject({
+    expect(out[0]?.argumentGraphMerges?.[0]).toMatchObject({
       outcome: "kept_survivor",
       absorbed_id: C,
       survivor_id: A,
       absorbed_file: argumentGraphPath(paths.dataDir, C),
     });
+    expect(out[0]?.argumentGraphMerges?.[0]?.survivor_unreadable).toBeUndefined();
     expect(read(argumentGraphPath(paths.dataDir, A))).toBe(aBytes);
     expect(read(argumentGraphPath(paths.dataDir, C))).toBe(cBytes);
   });
@@ -181,16 +208,53 @@ describe("the four combinations", () => {
     expect(read(argumentGraphPath(paths.dataDir, A))).toBe(aBytes);
     expect(graphFiles(paths.dataDir)).toHaveLength(1);
   });
+});
 
-  it("a graph file the survivor's name already holds is never replaced, even an unreadable one", async () => {
+describe("zero-argument graphs count as no graph (2026-10-12)", () => {
+  it("an empty survivor file is replaced by the absorbed Work's graph; rev is max+1 so a stale writer conflicts", async () => {
     const paths = seed();
-    putGraph(paths.dataDir, C, "from C");
-    mkdirSync(argumentGraphDir(paths.dataDir), { recursive: true });
-    writeFileSync(argumentGraphPath(paths.dataDir, A), "{not json", "utf8");
+    const emptyA = clearGraph(paths.dataDir, putGraph(paths.dataDir, A, "x")); // rev 3
+    const cSaved = putGraph(paths.dataDir, C, "from C"); // rev 2
     const out = await addManualBibText(paths, BRIDGE);
-    expect(out[0]?.argumentGraphMerges?.[0]?.outcome).toBe("kept_survivor");
-    expect(read(argumentGraphPath(paths.dataDir, A))).toBe("{not json");
+    expect(out[0]?.argumentGraphMerges?.[0]).toMatchObject({ outcome: "moved", survivor_id: A });
+    const survivor = loadArgumentGraph(paths.dataDir, A);
+    expect(survivor.arguments[0]?.title).toBe("from C");
+    expect(survivor.rev).toBe(Math.max(emptyA.rev, cSaved.rev) + 1);
+    expect(survivor.work_id).toBe(A);
+    expect(existsSync(argumentGraphPath(paths.dataDir, C))).toBe(false);
+    expect(graphFiles(paths.dataDir)).toHaveLength(1);
+    expect(replaceArgumentGraph(paths.dataDir, { ...emptyA })).toEqual({
+      conflictRev: survivor.rev,
+    });
   });
+
+  it("an empty absorbed graph is not transferred and not reported; its file stays", async () => {
+    const paths = seed();
+    clearGraph(paths.dataDir, putGraph(paths.dataDir, C, "x"));
+    const before = read(argumentGraphPath(paths.dataDir, C));
+    const out = await addManualBibText(paths, BRIDGE);
+    expect(out[0]?.argumentGraphMerges).toBeUndefined();
+    expect(read(argumentGraphPath(paths.dataDir, C))).toBe(before);
+    expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
+  });
+
+  it.each([
+    ["corrupt JSON", (f: string) => writeFileSync(f, "{broken", "utf8")],
+    ["a directory", (f: string) => mkdirSync(f)],
+  ])(
+    "an unreadable survivor file (%s) is not an empty graph: not overwritten, reported",
+    async (_n, make) => {
+      const paths = seed();
+      putGraph(paths.dataDir, C, "from C");
+      make(argumentGraphPath(paths.dataDir, A));
+      const cBytes = read(argumentGraphPath(paths.dataDir, C));
+      const out = await addManualBibText(paths, BRIDGE);
+      const note = out[0]?.argumentGraphMerges?.[0];
+      expect(note).toMatchObject({ outcome: "kept_survivor", survivor_unreadable: true });
+      expect(read(argumentGraphPath(paths.dataDir, C))).toBe(cBytes);
+      if (_n === "corrupt JSON") expect(read(argumentGraphPath(paths.dataDir, A))).toBe("{broken");
+    }
+  );
 });
 
 describe("failure paths: the graph is still there", () => {
@@ -198,7 +262,6 @@ describe("failure paths: the graph is still there", () => {
     const paths = seed();
     putGraph(paths.dataDir, C, "from C");
     const libraryBefore = read(paths.libraryJson);
-    // the library's scratch file name is taken by a directory: writing it fails
     mkdirSync(`${paths.libraryJson.replace(/\.json$/, ".json.tmp")}`);
     await expect(addManualBibText(paths, BRIDGE)).rejects.toThrow();
     expect(read(paths.libraryJson)).toBe(libraryBefore);
@@ -217,57 +280,182 @@ describe("failure paths: the graph is still there", () => {
     expect(loadArgumentGraph(paths.dataDir, C).work_id).toBe(C);
   });
 
-  it("the transfer fails: the merge stands, the note says so, the original is intact", async () => {
-    const paths = seed();
-    putGraph(paths.dataDir, C, "from C");
-    const cBytes = read(argumentGraphPath(paths.dataDir, C));
-    // this module's scratch name for the survivor is taken by a directory
-    mkdirSync(`${argumentGraphPath(paths.dataDir, A)}.merge-${process.pid}.tmp`);
-    const out = await addManualBibText(paths, BRIDGE);
-    expect(libIds(paths)).toEqual([A, D]);
-    const note = out[0]?.argumentGraphMerges?.[0];
-    expect(note?.outcome).toBe("transfer_failed");
-    expect(note?.error).toBeTruthy();
-    expect(note?.absorbed_file).toBe(argumentGraphPath(paths.dataDir, C));
-    expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
-    expect(read(argumentGraphPath(paths.dataDir, C))).toBe(cBytes);
-  });
+  it.skipIf(process.getuid?.() === 0)(
+    "the publish fails: transfer_failed with a fixed kind, the original is intact",
+    async () => {
+      const paths = seed();
+      putGraph(paths.dataDir, C, "from C");
+      const cBytes = read(argumentGraphPath(paths.dataDir, C));
+      chmodSync(argumentGraphDir(paths.dataDir), 0o500);
+      try {
+        const out = await addManualBibText(paths, BRIDGE);
+        expect(libIds(paths)).toEqual([A, D]);
+        const note = out[0]?.argumentGraphMerges?.[0];
+        expect(note).toMatchObject({ outcome: "transfer_failed", error: "write_failed" });
+        expect(note?.absorbed_file).toBe(argumentGraphPath(paths.dataDir, C));
+      } finally {
+        chmodSync(argumentGraphDir(paths.dataDir), 0o700);
+      }
+      expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
+      expect(read(argumentGraphPath(paths.dataDir, C))).toBe(cBytes);
+    }
+  );
 
   it("an unreadable absorbed graph is reported as a failed transfer and left alone", async () => {
     const paths = seed();
     mkdirSync(argumentGraphDir(paths.dataDir), { recursive: true });
     writeFileSync(argumentGraphPath(paths.dataDir, C), "{broken", "utf8");
     const out = await addManualBibText(paths, BRIDGE);
-    expect(out[0]?.argumentGraphMerges?.[0]?.outcome).toBe("transfer_failed");
+    expect(out[0]?.argumentGraphMerges?.[0]).toMatchObject({
+      outcome: "transfer_failed",
+      error: "absorbed_unreadable",
+    });
     expect(read(argumentGraphPath(paths.dataDir, C))).toBe("{broken");
+    expect(graphFiles(paths.dataDir)).toHaveLength(1);
+  });
+
+  it("library.json is saved but library.bib fails: the merge stands, the graph still follows, the error carries the note", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    mkdirSync(paths.libraryBib, { recursive: true });
+    writeFileSync(join(paths.libraryBib, "keep"), "x");
+    let error: (Error & { argumentGraphMerges?: { outcome: string }[] }) | null = null;
+    try {
+      await addManualBibText(paths, BRIDGE);
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error).not.toBeNull();
+    expect(libIds(paths)).toEqual([A, D]);
+    expect(titleOf(paths.dataDir, A)).toBe("from C");
+    expect(existsSync(argumentGraphPath(paths.dataDir, C))).toBe(false);
+    expect(error?.argumentGraphMerges?.[0]?.outcome).toBe("moved");
+    expect(error?.message).toContain("argument graph");
+    expect(error?.message.split("(the Work merge itself was saved")[1]).not.toContain(
+      paths.dataDir
+    );
+  });
+
+  it("the same half failure in a rebuild", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    const bib = join(paths.dataDir, "x.bib");
+    writeFileSync(bib, BRIDGE, "utf8");
+    mkdirSync(paths.libraryBib, { recursive: true });
+    writeFileSync(join(paths.libraryBib, "keep"), "x");
+    let error: (Error & { argumentGraphMerges?: { outcome: string }[] }) | null = null;
+    try {
+      await rebuild(paths, { sources: nullSources, bibPath: bib });
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error?.argumentGraphMerges?.[0]?.outcome).toBe("moved");
+    expect(titleOf(paths.dataDir, A)).toBe("from C");
+  });
+});
+
+describe("folds are followed one step at a time, in the order they happened", () => {
+  it("C into A (both have graphs), then A into D (D has none): D gets A's graph, C's stays", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, A, "from A");
+    putGraph(paths.dataDir, C, "from C");
+    const second = bibEntry("b2", "Alpha galaxies", "10.1/d");
+    const out = await addManualBibText(paths, `${BRIDGE}\n${second}`);
+    expect(libIds(paths)).toEqual([D]);
+    expect(
+      out.map((o) => o.argumentGraphMerges?.map((n) => [n.absorbed_id, n.survivor_id, n.outcome]))
+    ).toEqual([[[C, A, "kept_survivor"]], [[A, D, "moved"]]]);
+    expect(titleOf(paths.dataDir, D)).toBe("from A");
     expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
-    // no scratch file is left behind
-    expect(graphFiles(paths.dataDir)).toEqual([
-      `${argumentGraphPath(paths.dataDir, C)}`.split("/").pop(),
+    expect(titleOf(paths.dataDir, C)).toBe("from C"); // the leftover stays where it was
+  });
+
+  it("the same chain through a rebuild", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, A, "from A");
+    putGraph(paths.dataDir, C, "from C");
+    const bib = join(paths.dataDir, "x.bib");
+    writeFileSync(bib, `${BRIDGE}\n${bibEntry("b2", "Alpha galaxies", "10.1/d")}`, "utf8");
+    const summary = await rebuild(paths, { sources: nullSources, bibPath: bib });
+    expect(
+      summary.argument_graph_merges?.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])
+    ).toEqual([
+      [C, A, "kept_survivor"],
+      [A, D, "moved"],
     ]);
+    expect(titleOf(paths.dataDir, D)).toBe("from A");
+  });
+
+  it("an id that reappears inside the batch is a different Work: the graph of the stored one is not attached to an unrelated Work", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, A, "from the STORED A");
+    // e1 folds the stored A into C; e2 creates a NEW Work with id A; e3 folds that new A into D
+    const out = await addManualBibText(
+      paths,
+      [
+        bibEntry("e1", "Alpha galaxies", "10.1/c"),
+        bibEntry("e2", "Brand new", "10.1/a"),
+        bibEntry("e3", "Brand new", "10.1/d"),
+      ].join("\n")
+    );
+    expect(out.map((o) => o.status)).toEqual(["exists", "created", "exists"]);
+    expect(libIds(paths).sort()).toEqual([C, D]);
+    const notes = out.flatMap((o) => o.argumentGraphMerges ?? []);
+    expect(notes.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])).toEqual([[A, C, "moved"]]);
+    expect(titleOf(paths.dataDir, C)).toBe("from the STORED A");
+    expect(existsSync(argumentGraphPath(paths.dataDir, D))).toBe(false);
+  });
+
+  it("A into C, a new A appears, C into the new A (a cycle of ids): both steps are applied and reported, nothing is lost", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, A, "from the STORED A");
+    putGraph(paths.dataDir, C, "from C");
+    const out = await addManualBibText(
+      paths,
+      [
+        bibEntry("e1", "Alpha galaxies", "10.1/c"),
+        bibEntry("e2", "Brand new", "10.1/a"),
+        bibEntry("e3", "Gamma", "10.1/a"),
+      ].join("\n")
+    );
+    const notes = out.flatMap((o) => o.argumentGraphMerges ?? []);
+    expect(notes.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])).toEqual([
+      [A, C, "kept_survivor"],
+      [C, A, "kept_survivor"],
+    ]);
+    expect(graphFiles(paths.dataDir)).toHaveLength(2);
+  });
+
+  it("store.folds is emptied once followed: following the same store again reports nothing", () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    const store = LibraryStore.load(paths);
+    store.upsert({ ...emptyWork("x"), title: "Gamma", doi: "10.1/a" });
+    expect(store.folds).toHaveLength(1);
+    expect(followWorkFolds(paths.dataDir, store.folds)).toHaveLength(1);
+    expect(store.folds).toHaveLength(0);
+    expect(followWorkFolds(paths.dataDir, store.folds)).toEqual([]);
+  });
+});
+
+describe("scratch files", () => {
+  it("a merge removes its own stale scratch files and leaves a fresh one (another process may be writing it)", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    const stale = `${argumentGraphPath(paths.dataDir, A)}.merge-99999-1.tmp`;
+    const fresh = `${argumentGraphPath(paths.dataDir, D)}.merge-99998-1.tmp`;
+    writeFileSync(stale, "{}");
+    writeFileSync(fresh, "{}");
+    const old = new Date(Date.now() - 3 * 3600_000);
+    utimesSync(stale, old, old);
+    await addManualBibText(paths, BRIDGE);
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(fresh)).toBe(true);
+    expect(listArgumentGraphWorkIds(paths.dataDir)).toEqual([A]);
   });
 });
 
 describe("the call paths that can fold Works", () => {
-  it("manual bib import (page, merge mode) — covered above; a chain inside one batch follows to the final survivor", async () => {
-    const paths = seed();
-    putGraph(paths.dataDir, C, "from C");
-    putGraph(paths.dataDir, D, "from D");
-    // entry 1 folds C into A; entry 2 (DOI of D, title of A) makes D the survivor of A, so C and A end in D
-    const second =
-      "@article{b2,\n author={Ann},\n title={Alpha galaxies},\n year={2001},\n doi={10.1/d}\n}\n";
-    const out = await addManualBibText(paths, `${BRIDGE}\n${second}`);
-    expect(out.map((o) => o.status)).toEqual(["exists", "exists"]);
-    const notes = out.flatMap((o) => o.argumentGraphMerges ?? []);
-    // whichever Work survives, every graph is still on disk and the survivor has exactly one graph
-    const alive = libIds(paths);
-    expect(alive).toHaveLength(1);
-    expect(existsSync(argumentGraphPath(paths.dataDir, alive[0] as string))).toBe(true);
-    expect(graphFiles(paths.dataDir).length).toBeGreaterThanOrEqual(2);
-    expect(notes.length).toBeGreaterThan(0);
-    for (const n of notes) expect(n.survivor_id).toBe(alive[0]);
-  });
-
   it("manual single identifier / bibcode (commitWork) follows the fold", async () => {
     const paths = seed();
     putGraph(paths.dataDir, C, "from C");
@@ -283,7 +471,6 @@ describe("the call paths that can fold Works", () => {
     const out = await addManualBibcode(paths, sources, "2020A&A...1..1X");
     expect(out.argumentGraphMerges?.[0]).toMatchObject({ outcome: "moved", survivor_id: A });
     expect(loadArgumentGraph(paths.dataDir, A).work_id).toBe(A);
-    // an identifier add that matches an existing Work writes nothing and folds nothing
     const again = await addManualIdentifier(paths, nullSources, { kind: "doi", doi: "10.1/a" });
     expect(again.argumentGraphMerges).toBeUndefined();
   });
@@ -296,6 +483,7 @@ describe("the call paths that can fold Works", () => {
     expect(out.every((o) => o.status === "error")).toBe(true);
     expect(read(paths.libraryJson)).toBe(before);
     expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
+    expect(existsSync(argumentGraphPath(paths.dataDir, C))).toBe(true);
   });
 
   it("library build --bib / acquire / refresh (rebuild) reports the note in its summary", async () => {
@@ -321,7 +509,7 @@ describe("the call paths that can fold Works", () => {
     const store = LibraryStore.load(paths);
     const titleSlug = store.works[0];
     if (!titleSlug) throw new Error("fixture");
-    titleSlug.id = "work:alpha-galaxies-2001"; // a Work whose id was derived before it had a DOI
+    titleSlug.id = "work:alpha-galaxies-2001";
     store.save(paths);
     putGraph(paths.dataDir, "work:alpha-galaxies-2001", "mine");
     await rebuild(paths, { sources: nullSources });
@@ -345,40 +533,8 @@ describe("the call paths that can fold Works", () => {
     } as unknown as Parameters<typeof addDoiWork>[2];
     const r = await addDoiWork(paths, "10.1234/new", crossref);
     expect(r?.created).toBe(true);
-    // the title matched C only (the new DOI matches nobody): nothing was removed, so no graph moves
     expect(libIds(paths)).toEqual([A, C, D]);
     expect(loadArgumentGraph(paths.dataDir, C).work_id).toBe(C);
     expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
-  });
-});
-
-describe("resolveFolds", () => {
-  it("collapses chains and drops folds of Works that were never stored", () => {
-    expect(
-      resolveFolds([
-        { absorbed: "b", survivor: "a", stored: true },
-        { absorbed: "a", survivor: "c", stored: true },
-        { absorbed: "n", survivor: "c", stored: false },
-      ])
-    ).toEqual([
-      { absorbed: "b", survivor: "c" },
-      { absorbed: "a", survivor: "c" },
-    ]);
-  });
-
-  it("followWorkFolds gives the first fold's graph to a survivor without one; the next is left in place", () => {
-    const dir = mkdtempSync(join(tmpdir(), "aspace-argmerge-"));
-    dirs.push(dir);
-    putGraph(dir, "b", "from b");
-    putGraph(dir, "a", "from a");
-    const notes = followWorkFolds(dir, [
-      { absorbed: "b", survivor: "a", stored: true },
-      { absorbed: "a", survivor: "c", stored: true },
-    ]);
-    expect(notes.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])).toEqual([
-      ["b", "c", "moved"],
-      ["a", "c", "kept_survivor"],
-    ]);
-    expect(loadArgumentGraph(dir, "c").arguments[0]?.title).toBe("from b");
   });
 });

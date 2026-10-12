@@ -89,4 +89,6 @@ export interface ManualWorkResponse {
   results: ManualWorkResult[];
   /** Only when the import folded Works and an absorbed Work had an argument graph (ticket 06). */
   argument_graph_merges?: import("@argelanderspace/contracts").ArgumentGraphMergeNote[];
+  /** Client-side only: the server answered 500 after the Work merge was saved (the notes are still true). */
+  failed_after_merge?: boolean;
 }

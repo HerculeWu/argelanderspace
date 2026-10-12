@@ -45,7 +45,11 @@ import {
 import { classify, planToDict } from "../acquire/planner.js";
 import { resolveWork } from "../acquire/resolve.js";
 import { planFor } from "../acquire/run.js";
-import { followWorkFolds } from "../argument-graphs/merge.js";
+import {
+  followFolds,
+  followFoldsAfterFailedSave,
+  followWorkFolds,
+} from "../argument-graphs/merge.js";
 import { pyOr } from "../documents/pyregex.js";
 import { healGraph, loadCurrentGraph } from "./build.js";
 import { assignCiteKey, mergeWorkIntoGraph, workToRef } from "./graph.js";
@@ -59,6 +63,7 @@ import {
   normArxiv,
   normDoi,
   type Work,
+  type WorkFold,
 } from "./store.js";
 
 // --------------------------------------------------------------------------- //
@@ -192,10 +197,16 @@ async function commitWork(
   const saved = store.upsert(w);
   if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, usedKeys(store));
   saved.acquisition = planToDict(planFor(saved));
-  const changedIds = saveWorksNarrow(
-    paths,
-    matched === undefined ? { created: [saved], removeIds } : { updated: [saved], removeIds }
-  );
+  let changedIds: Set<string>;
+  try {
+    changedIds = saveWorksNarrow(
+      paths,
+      matched === undefined ? { created: [saved], removeIds } : { updated: [saved], removeIds }
+    );
+  } catch (error) {
+    // library.json may already hold the merge when only library.bib failed: the graphs follow it then.
+    throw followFoldsAfterFailedSave(paths, store, error);
+  }
   // Only after the library file was written (a failed save throws above and leaves every graph where it is).
   const argumentGraphMerges = followWorkFolds(paths.dataDir, store.folds);
   await mergeGraphQuiet(paths, store, saved);
@@ -380,8 +391,8 @@ export async function addManualBibText(
   const touched: Work[] = [];
   const touchedAt = new Map<Work, number[]>();
   const removeIds: string[] = [];
-  /** absorbed Work id → index of the entry whose record folded it (the argument-graph note rides on that entry) */
-  const foldAt = new Map<string, number>();
+  /** fold → index of the entry whose record made it (the argument-graph note rides on that entry) */
+  const foldAt = new Map<WorkFold, number>();
   let refusedBridge = false;
   for (const rec of recs) {
     const key = rec.key.trim();
@@ -420,7 +431,7 @@ export async function addManualBibText(
     for (const extra of matches.slice(1)) removeIds.push(extra.id);
     const foldsBefore = store.folds.length;
     const saved = store.upsert(w);
-    for (const fold of store.folds.slice(foldsBefore)) foldAt.set(fold.absorbed, outcomes.length);
+    for (const fold of store.folds.slice(foldsBefore)) foldAt.set(fold, outcomes.length);
     if (!saved.cite_key) saved.cite_key = assignCiteKey(saved, used);
     else used.add(saved.cite_key);
     saved.acquisition = planToDict(planFor(saved));
@@ -447,17 +458,22 @@ export async function addManualBibText(
   if (touched.length > 0 || removeIds.length > 0) {
     // a Work an earlier entry created and a later bridging entry folded away is gone from the store
     const alive = touched.filter((t) => store.works.includes(t));
-    const changedIds = saveWorksNarrow(paths, {
-      created: alive.filter((t) => created.includes(t)),
-      updated: alive.filter((t) => !created.includes(t)),
-      removeIds,
-    });
+    let changedIds: Set<string>;
+    try {
+      changedIds = saveWorksNarrow(paths, {
+        created: alive.filter((t) => created.includes(t)),
+        updated: alive.filter((t) => !created.includes(t)),
+        removeIds,
+      });
+    } catch (error) {
+      throw followFoldsAfterFailedSave(paths, store, error);
+    }
     for (const [saved, indexes] of touchedAt)
       for (const index of indexes)
         (outcomes[index] as ManualAddOutcome).changed = changedIds.has(saved.id);
     // Only after the library file was written (a failed save throws above and leaves every graph where it is).
-    for (const note of followWorkFolds(paths.dataDir, store.folds)) {
-      const at = outcomes[foldAt.get(note.absorbed_id) ?? outcomes.length - 1];
+    for (const { fold, note } of followFolds(paths.dataDir, store.folds)) {
+      const at = outcomes[foldAt.get(fold) ?? outcomes.length - 1];
       if (at === undefined) continue;
       at.argumentGraphMerges = [...(at.argumentGraphMerges ?? []), note];
     }

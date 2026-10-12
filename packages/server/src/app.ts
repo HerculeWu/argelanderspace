@@ -105,7 +105,12 @@ import {
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { createAcquisition, createLockedRebuild, isReadableZip } from "./acquisition.js";
+import {
+  createAcquisition,
+  createLockedRebuild,
+  ImportAfterMergeError,
+  isReadableZip,
+} from "./acquisition.js";
 import {
   type AnnotationsCommit,
   type AnnotationsRead,
@@ -1614,9 +1619,21 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     try {
-      const outcome = await writeArgumentGraph(paths.dataDir, argumentGraphLock, parsed.data, () =>
-        argumentGraphChanged(workId)
+      const outcome = await writeArgumentGraph(
+        paths.dataDir,
+        argumentGraphLock,
+        parsed.data,
+        () => argumentGraphChanged(workId),
+        () => knownWork(workId) // again, inside the lock: a Work merge may have removed it while the body was read
       );
+      if ("gone" in outcome) {
+        const e = detail(`work ${pyRepr(workId)} not found`, 404);
+        return c.json(e.body, e.status);
+      }
+      if ("libraryUnreadable" in outcome) {
+        const e = detail("library could not be read", 500);
+        return c.json(e.body, e.status);
+      }
       if ("conflictRev" in outcome) {
         return c.json({ detail: "rev mismatch", rev: outcome.conflictRev }, 409);
       }
@@ -1979,7 +1996,16 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("invalid request body (expected {mode: identifier|bibcode|bib, …})", 400);
       return c.json(e.body, e.status);
     }
-    const { results, argumentGraphMerges = [] } = await acquisition.importManualWorks(parsed.data);
+    let imported: Awaited<ReturnType<typeof acquisition.importManualWorks>>;
+    try {
+      imported = await acquisition.importManualWorks(parsed.data);
+    } catch (error) {
+      // The merge is saved but a later step failed: a fixed message and the notes (relative paths), no raw error.
+      if (error instanceof ImportAfterMergeError)
+        return c.json({ detail: error.message, argument_graph_merges: error.notes }, 500);
+      throw error;
+    }
+    const { results, argumentGraphMerges = [] } = imported;
     // `argument_graph_merges` rides along only when a fold met an argument graph (ticket 06).
     return c.json(
       argumentGraphMerges.length > 0
@@ -2165,7 +2191,11 @@ export function createApp(deps: AppDeps): Hono {
         const e = detail(`ingest failed: ${attached.message}`, 500);
         return c.json(e.body, e.status);
       }
-      return c.json({ ref: attached.ref });
+      return c.json(
+        attached.argument_graph_merges.length > 0
+          ? { ref: attached.ref, argument_graph_merges: attached.argument_graph_merges }
+          : { ref: attached.ref }
+      );
     }
 
     // Async (new default): spool the bytes, queue the ingest job, answer 202.
