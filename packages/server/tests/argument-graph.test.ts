@@ -129,6 +129,18 @@ describe("GET", () => {
     expect(JSON.stringify(await put500.json())).not.toContain(dirname(dataDir));
   });
 
+  test("argument-graphs being a plain file is the same 500, not an empty graph", async () => {
+    writeFileSync(argumentGraphDir(dataDir), "x");
+    const res = await get(KNOWN_WORK_ID);
+    expect(res.status).toBe(500);
+    const { detail } = (await res.json()) as { detail: string };
+    expect(detail).toBe("argument graph file is unreadable (corrupt)");
+    expect(JSON.stringify(detail)).not.toContain(dirname(dataDir));
+    const put500 = await put(KNOWN_WORK_ID, graphFor(KNOWN_WORK_ID));
+    expect(put500.status).toBe(500);
+    expect(readFileSync(argumentGraphDir(dataDir), "utf8")).toBe("x");
+  });
+
   test("a future-version file is 500", async () => {
     mkdirSync(argumentGraphDir(dataDir), { recursive: true });
     const body = JSON.stringify({ version: 2, rev: 1, work_id: KNOWN_WORK_ID });

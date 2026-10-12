@@ -7,20 +7,25 @@
 
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ArgumentSchema } from "@argelanderspace/contracts";
 import { argumentGraphPath } from "@argelanderspace/core";
 import { describe, expect, test } from "vitest";
+import { describeGraphIssue, orderedGraph } from "../src/argument.js";
 
 const PKG = fileURLToPath(new URL("..", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
@@ -48,7 +53,19 @@ function runCli(args: string[], env: NodeJS.ProcessEnv, input?: string): RunResu
     env,
     encoding: "utf8",
     timeout: 60_000,
+    maxBuffer: 64 << 20,
     ...(input !== undefined ? { input } : {}),
+  });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+}
+
+/** A real shell pipeline (so stdin of the CLI is a pipe fd, not a spawnSync buffer). */
+function sh(command: string, env: NodeJS.ProcessEnv): RunResult {
+  const r = spawnSync("sh", ["-c", command], {
+    env,
+    encoding: "utf8",
+    timeout: 100_000,
+    maxBuffer: 64 << 20,
   });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
 }
@@ -179,6 +196,11 @@ const EMPTY_GOLDEN = `{
 }
 `;
 
+/** The one JSON line `argument put` prints on success (frozen key order: work_id, rev, link). */
+function putOut(rev: number, port = 8000, workId = WORK_ID): string {
+  return `{"work_id":${JSON.stringify(workId)},"rev":${rev},"link":"http://localhost:${port}/#argument/${encodeURIComponent(workId)}"}\n`;
+}
+
 function putGraph(
   f: ReturnType<typeof makeDataDir>,
   graph: unknown,
@@ -262,8 +284,13 @@ describe("argument get", () => {
   });
 
   test.each([
-    ["not JSON", "{oops", "not valid JSON"],
-    ["schema-invalid", JSON.stringify({ version: 1 }), "failed schema validation"],
+    ["not JSON", "{oops", "is not valid JSON"],
+    ["schema-invalid", JSON.stringify({ version: 1 }), "does not match the argument graph format"],
+    [
+      "unknown key on disk",
+      JSON.stringify({ version: 1, rev: 1, work_id: WORK_ID, arguments: [], edges: [], x: 1 }),
+      "does not match the argument graph format",
+    ],
     [
       "future version",
       JSON.stringify({ version: 2, rev: 1, work_id: WORK_ID, arguments: [], edges: [] }),
@@ -275,43 +302,143 @@ describe("argument get", () => {
       `belongs to work "${OTHER_WORK_ID}"`,
     ],
   ])(
-    "unreadable graph file (%s): error, exit 1, no graph on stdout, file untouched",
-    (_n, text, msg) => {
+    "unreadable graph file (%s): one own line, exit 1, no graph on stdout, file untouched",
+    (_n, text, tail) => {
       const f = makeDataDir();
       mkdirSync(join(f.dataDir, "argument-graphs"));
       const file = argumentGraphPath(f.dataDir, WORK_ID);
       writeFileSync(file, text);
       const r = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
-      expect(r.status).toBe(1);
-      expect(r.stdout).toBe("");
-      expect(r.stderr).toBe(`error: argument graph: ${file} ${msgTail(msg, text)}\n`);
+      expect(r).toEqual({
+        status: 1,
+        stdout: "",
+        stderr: `error: stored argument graph ${JSON.stringify(file)} ${tail}\n`,
+      });
       expect(readFileSync(file, "utf8")).toBe(text);
     }
   );
-});
 
-/** The store's own message tails, spelled out so the CLI's `error: ` + store message form is pinned. */
-function msgTail(msg: string, text: string): string {
-  if (msg === "not valid JSON") {
-    let detail = "";
-    try {
-      JSON.parse(text);
-    } catch (e) {
-      detail = (e as Error).message;
+  test("the graph file is a directory: unreadable (EISDIR), not an empty graph", () => {
+    const f = makeDataDir();
+    mkdirSync(argumentGraphPath(f.dataDir, WORK_ID), { recursive: true });
+    const r = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: stored argument graph ${JSON.stringify(argumentGraphPath(f.dataDir, WORK_ID))} could not be read (EISDIR)\n`,
+    });
+  });
+
+  test("argument-graphs is a plain file: a system error (ENOTDIR), never an empty rev 0 graph", () => {
+    const f = makeDataDir();
+    writeFileSync(join(f.dataDir, "argument-graphs"), "x");
+    const r = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: stored argument graph ${JSON.stringify(argumentGraphPath(f.dataDir, WORK_ID))} could not be read (ENOTDIR)\n`,
+    });
+    const p = putGraph(f, GRAPH);
+    expect(p.status).toBe(1);
+    expect(p.stdout).toBe("");
+    expect(p.stderr).toMatch(/^error: stored argument graph ".+" could not be read \(ENOTDIR\)\n$/);
+    expect(readFileSync(join(f.dataDir, "argument-graphs"), "utf8")).toBe("x");
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "argument-graphs without permission: a system error (EACCES), never an empty graph",
+    () => {
+      const f = makeDataDir();
+      const dir = join(f.dataDir, "argument-graphs");
+      mkdirSync(dir);
+      chmodSync(dir, 0o000);
+      try {
+        const r = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+        expect(r).toEqual({
+          status: 1,
+          stdout: "",
+          stderr: `error: stored argument graph ${JSON.stringify(argumentGraphPath(f.dataDir, WORK_ID))} could not be read (EACCES)\n`,
+        });
+      } finally {
+        chmodSync(dir, 0o755);
+      }
     }
-    return `is not valid JSON: ${detail}`;
-  }
-  if (msg === "failed schema validation") {
-    return "failed schema validation: rev: Invalid input: expected number, received undefined; work_id: Invalid input: expected string, received undefined; arguments: Invalid input: expected array, received undefined; edges: Invalid input: expected array, received undefined";
-  }
-  return msg;
-}
+  );
+
+  test("library.json damaged: one own line naming the file, nothing on stdout", () => {
+    const f = makeDataDir();
+    const lib = join(f.dataDir, "library", "library.json");
+    writeFileSync(lib, "{oops");
+    const r = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: library file ${JSON.stringify(lib)} is not valid JSON\n`,
+    });
+    writeFileSync(lib, JSON.stringify({ works: [null] }));
+    const r2 = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(r2).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: library file ${JSON.stringify(lib)} has an unexpected structure\n`,
+    });
+    mkdirSync(join(f.root, "d2", "library", "library.json"), { recursive: true });
+    const r3 = runCli(["argument", "get", WORK_ID, "--data-dir", join(f.root, "d2")], f.env);
+    expect(r3).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: library file ${JSON.stringify(join(f.root, "d2", "library", "library.json"))} could not be read (EISDIR)\n`,
+    });
+  });
+
+  test("a work whose id cannot be a file name: own line, zero write", () => {
+    const f = makeDataDir();
+    const lib = JSON.parse(readFileSync(join(f.dataDir, "library", "library.json"), "utf8"));
+    const longId = `x${"y".repeat(300)}`;
+    lib.works[0].id = longId;
+    writeFileSync(join(f.dataDir, "library", "library.json"), JSON.stringify(lib));
+    const r = runCli(["argument", "get", longId, "--data-dir", f.dataDir], f.env);
+    const quoted = `"${longId.slice(0, 100)}…"`;
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: work ${quoted} cannot have an argument graph: its id cannot be used as a file name\n`,
+    });
+    const file = f.file("g.json");
+    writeFileSync(file, JSON.stringify(GRAPH));
+    const p = runCli(
+      ["argument", "put", longId, file, "--rev", "0", "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(p).toEqual(r);
+    expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
+  });
+
+  test("an empty library: unknown work says there are none", () => {
+    const f = makeDataDir();
+    writeFileSync(join(f.dataDir, "library", "library.json"), JSON.stringify({ works: [] }));
+    const r = runCli(["argument", "get", "nope", "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: 'error: unknown work "nope" — the library has no works\n',
+    });
+  });
+
+  test("an id with a newline or quote cannot forge extra lines", () => {
+    const f = makeDataDir();
+    const r = runCli(["argument", "get", 'a\nerror: x"', "--data-dir", f.dataDir], f.env);
+    expect(r.status).toBe(1);
+    expect(r.stderr.split("\n")).toHaveLength(2);
+    expect(r.stderr).toMatch(/^error: unknown work "a\\nerror: x\\"" — /);
+  });
+});
 
 describe("argument put", () => {
   test("writes a new graph: stdout is the new rev, then get prints it back", () => {
     const f = makeDataDir();
     const r = putGraph(f, GRAPH);
-    expect(r).toEqual({ status: 0, stdout: `{"work_id":"${WORK_ID}","rev":1}\n`, stderr: "" });
+    expect(r).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
     const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
     expect(g.stdout).toBe(GRAPH_GOLDEN);
     expect(existsSync(`${argumentGraphPath(f.dataDir, WORK_ID)}.tmp`)).toBe(false);
@@ -321,7 +448,7 @@ describe("argument put", () => {
     const f = makeDataDir();
     const { work_id: _w, ...noWork } = { ...GRAPH, rev: 99 };
     const r = putGraph(f, noWork);
-    expect(r.stdout).toBe(`{"work_id":"${WORK_ID}","rev":1}\n`);
+    expect(r.stdout).toBe(putOut(1));
   });
 
   test("reads stdin with '-'", () => {
@@ -331,7 +458,7 @@ describe("argument put", () => {
       f.env,
       JSON.stringify(GRAPH)
     );
-    expect(r).toEqual({ status: 0, stdout: `{"work_id":"${WORK_ID}","rev":1}\n`, stderr: "" });
+    expect(r).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
   });
 
   test("a zero-argument stored graph needs no --replace; rev 3 → 4", () => {
@@ -342,7 +469,7 @@ describe("argument put", () => {
       JSON.stringify({ version: 1, rev: 3, work_id: WORK_ID, arguments: [], edges: [] })
     );
     const r = putGraph(f, GRAPH, ["--rev", "3"]);
-    expect(r.stdout).toBe(`{"work_id":"${WORK_ID}","rev":4}\n`);
+    expect(r.stdout).toBe(putOut(4));
   });
 
   test("a non-empty stored graph: without --replace refused, zero write", () => {
@@ -363,7 +490,7 @@ describe("argument put", () => {
     const f = makeDataDir();
     expect(putGraph(f, GRAPH).status).toBe(0);
     const r = putGraph(f, { version: 1, arguments: [], edges: [] }, ["--rev", "1", "--replace"]);
-    expect(r.stdout).toBe(`{"work_id":"${WORK_ID}","rev":2}\n`);
+    expect(r.stdout).toBe(putOut(2));
     const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
     expect(g.stdout).toBe(EMPTY_GOLDEN.replace('"rev": 0', '"rev": 2'));
   });
@@ -384,7 +511,7 @@ describe("argument put", () => {
     expect(readFileSync(file, "utf8")).toBe(before);
   });
 
-  test("--rev is required, and must be a non-negative integer", () => {
+  test("--rev is required: our own sentence, not commander's", () => {
     const f = makeDataDir();
     const file = f.file("g.json");
     writeFileSync(file, JSON.stringify(GRAPH));
@@ -392,11 +519,18 @@ describe("argument put", () => {
     expect(missing).toEqual({
       status: 1,
       stdout: "",
-      stderr: "error: required option '--rev <n>' not specified\n",
+      stderr:
+        "error: --rev is required: pass the rev that `argument get` printed (0 when the work has no graph)\n",
     });
-    for (const bad of ["-1", "1.5", "abc", "01", ""]) {
+  });
+
+  test("--rev must be a non-negative integer (checked before anything else)", () => {
+    const f = makeDataDir();
+    const file = f.file("g.json");
+    writeFileSync(file, JSON.stringify(GRAPH));
+    for (const bad of ["-1", "1.5", "abc", "01", "", "9007199254740993", "1e3", " 1"]) {
       const r = runCli(
-        ["argument", "put", WORK_ID, file, `--rev=${bad}`, "--data-dir", f.dataDir],
+        ["argument", "put", "no-such-work", file, `--rev=${bad}`, "--data-dir", f.dataDir],
         f.env
       );
       expect(r).toEqual({
@@ -405,8 +539,19 @@ describe("argument put", () => {
         stderr: `error: --rev must be a non-negative integer, got "${bad}"\n`,
       });
     }
+    const odd = runCli(
+      ["argument", "put", WORK_ID, file, '--rev=a\nb"', "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(odd.stderr).toBe('error: --rev must be a non-negative integer, got "a\\nb\\""\n');
+    // a separate value is read as the option's argument too
+    const sep = runCli(
+      ["argument", "put", WORK_ID, file, "--rev", "-1", "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(sep.stderr).toBe('error: --rev must be a non-negative integer, got "-1"\n');
     expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
-  }, 30_000);
+  }, 60_000);
 
   test("unknown work: error with candidates, nothing written", () => {
     const f = makeDataDir();
@@ -428,12 +573,20 @@ describe("argument put", () => {
     expect(r).toEqual({
       status: 1,
       stdout: "",
-      stderr: `error: work_id in "${f.file("graph.json")}" ("${OTHER_WORK_ID}") does not match the work given ("${WORK_ID}")\n`,
+      stderr: `error: work_id in "${f.file("graph.json")}" is "${OTHER_WORK_ID}", which does not match work "${WORK_ID}"\n`,
     });
     expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
   });
 
-  test("file missing / not JSON: fixed messages, zero write", () => {
+  test("a work_id in the file that is not a string is shown as its JSON text", () => {
+    const f = makeDataDir();
+    const r = putGraph(f, { ...GRAPH, work_id: 5 });
+    expect(r.stderr).toBe(
+      `error: work_id in "${f.file("graph.json")}" is "5", which does not match work "${WORK_ID}"\n`
+    );
+  });
+
+  test("input that cannot be read or parsed: fixed own messages, zero write", () => {
     const f = makeDataDir();
     const gone = f.file("nope.json");
     const r1 = runCli(
@@ -444,6 +597,24 @@ describe("argument put", () => {
       status: 1,
       stdout: "",
       stderr: `error: cannot read "${gone}" (ENOENT)\n`,
+    });
+    // a path with a newline stays on one line
+    const odd = runCli(
+      ["argument", "put", WORK_ID, "a\nb.json", "--rev", "0", "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(odd.stderr).toBe('error: cannot read "a\\nb.json" (ENOENT)\n');
+    // a directory
+    const dir = f.file("adir");
+    mkdirSync(dir);
+    const r4 = runCli(
+      ["argument", "put", WORK_ID, dir, "--rev", "0", "--data-dir", f.dataDir],
+      f.env
+    );
+    expect(r4).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: cannot read "${dir}" (EISDIR)\n`,
     });
     const r2 = putGraph(f, "{oops");
     expect(r2).toEqual({
@@ -457,7 +628,42 @@ describe("argument put", () => {
       "not json"
     );
     expect(r3.stderr).toBe("error: stdin is not valid JSON\n");
+    const empty = runCli(
+      ["argument", "put", WORK_ID, "-", "--rev", "0", "--data-dir", f.dataDir],
+      f.env,
+      ""
+    );
+    expect(empty.stderr).toBe("error: stdin is not valid JSON\n");
     expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
+  }, 60_000);
+
+  test.skipIf(process.getuid?.() === 0)("an unreadable file (EACCES)", () => {
+    const f = makeDataDir();
+    const file = f.file("locked.json");
+    writeFileSync(file, JSON.stringify(GRAPH));
+    chmodSync(file, 0o000);
+    try {
+      const r = runCli(
+        ["argument", "put", WORK_ID, file, "--rev", "0", "--data-dir", f.dataDir],
+        f.env
+      );
+      expect(r).toEqual({
+        status: 1,
+        stdout: "",
+        stderr: `error: cannot read "${file}" (EACCES)\n`,
+      });
+    } finally {
+      chmodSync(file, 0o644);
+    }
+  });
+
+  test("stdin that is a directory: cannot read stdin (EISDIR)", () => {
+    const f = makeDataDir();
+    const r = sh(
+      `node ${BIN} argument put ${WORK_ID} - --rev 0 --data-dir ${f.dataDir} < ${f.root}`,
+      f.env
+    );
+    expect(r).toEqual({ status: 1, stdout: "", stderr: "error: cannot read stdin (EISDIR)\n" });
   });
 
   const withArgs = (args: unknown[], edges: unknown[] = []) => ({
@@ -467,28 +673,58 @@ describe("argument put", () => {
   });
   const A1 = { id: "a1", title: "One" };
   const A2 = { id: "a2", title: "Two" };
+  const src = (source: unknown) => withArgs([{ id: "a1", title: "One", sources: [source] }]);
+  const tgt = (target: unknown) => src({ text: "s", target });
+  const arg = (extra: Record<string, unknown>) => withArgs([{ id: "a1", title: "One", ...extra }]);
+  const big = (n: number) => "x".repeat(n);
+  /** `n` distinct (from, to, role) edges among `ids` (no self-loops). */
+  const distinctEdges = (ids: string[], n: number) => {
+    const edges: { from: string; to: string; role: string }[] = [];
+    for (const from of ids)
+      for (const to of ids)
+        for (const role of ["grounds", "warrant", "backing", "rebuttal"])
+          if (from !== to && edges.length < n) edges.push({ from, to, role });
+    return edges;
+  };
 
-  test.each([
+  /** [name, graph, the exact issue lines (position: sentence), 0-based positions] */
+  const CASES: [string, unknown, string[]][] = [
     [
       "blank title",
       withArgs([{ id: "a1", title: "  " }]),
-      ["arguments.0.title: title must not be blank"],
+      ["arguments[0].title: must not be blank"],
     ],
     [
       "title too long",
-      withArgs([{ id: "a1", title: "x".repeat(81) }]),
-      ["arguments.0.title: Too big: expected string to have <=80 characters"],
+      withArgs([A1, { id: "a2", title: big(81) }]),
+      ["arguments[1].title: must be at most 80 characters"],
     ],
-    ["duplicate id", withArgs([A1, A1]), ["arguments.1.id: duplicate argument id a1"]],
+    ["empty id", withArgs([{ id: "", title: "t" }]), ["arguments[0].id: must not be empty"]],
+    [
+      "id too long",
+      withArgs([{ id: big(65), title: "t" }]),
+      ["arguments[0].id: must be at most 64 characters"],
+    ],
+    ["duplicate id", withArgs([A1, A1]), ['arguments[1].id: duplicate id "a1"']],
     [
       "edge to a missing argument",
       withArgs([A1], [{ from: "a1", to: "ghost", role: "grounds" }]),
-      ["edges.0.to: edge to refers to unknown argument ghost"],
+      ['edges[0].to: refers to unknown argument "ghost"'],
+    ],
+    [
+      "edge from a missing argument",
+      withArgs([A1], [{ from: "ghost", to: "a1", role: "grounds" }]),
+      ['edges[0].from: refers to unknown argument "ghost"'],
+    ],
+    [
+      "an unknown id with a newline cannot forge a line",
+      withArgs([A1], [{ from: "a1", to: "x\nerror: fake", role: "grounds" }]),
+      ['edges[0].to: refers to unknown argument "x\\nerror: fake"'],
     ],
     [
       "self-loop",
       withArgs([A1], [{ from: "a1", to: "a1", role: "warrant" }]),
-      ["edges.0: self-loop on argument a1"],
+      ['edges[0]: connects argument "a1" to itself'],
     ],
     [
       "duplicate edge",
@@ -499,45 +735,162 @@ describe("argument put", () => {
           { from: "a1", to: "a2", role: "grounds" },
         ]
       ),
-      ["edges.1: duplicate grounds edge from a1 to a2"],
+      ['edges[1]: duplicate grounds edge from "a1" to "a2"'],
+    ],
+    [
+      "a duplicated self-loop is both",
+      withArgs(
+        [A1],
+        [
+          { from: "a1", to: "a1", role: "grounds" },
+          { from: "a1", to: "a1", role: "grounds" },
+        ]
+      ),
+      [
+        'edges[0]: connects argument "a1" to itself',
+        'edges[1]: connects argument "a1" to itself',
+        'edges[1]: duplicate grounds edge from "a1" to "a1"',
+      ],
     ],
     [
       "unknown edge role",
       withArgs([A1, A2], [{ from: "a1", to: "a2", role: "claim" }]),
-      ['edges.0.role: Invalid option: expected one of "grounds"|"warrant"|"backing"|"rebuttal"'],
+      ["edges[0].role: must be one of grounds, warrant, backing, rebuttal"],
     ],
+    [
+      "missing edge role",
+      withArgs([A1, A2], [{ from: "a1", to: "a2" }]),
+      ["edges[0].role: is required"],
+    ],
+    ["edge that is not an object", withArgs([A1], [5]), ["edges[0]: must be an object"]],
     [
       "unknown key on an argument",
       withArgs([{ id: "a1", title: "One", mood: "x" }]),
-      ['arguments.0: Unrecognized key: "mood"'],
+      ['arguments[0]: unknown field "mood"'],
     ],
     [
-      "source with both anchor and page",
-      withArgs([
-        {
-          id: "a1",
-          title: "One",
-          sources: [{ text: "s", target: { doc_id: "d", anchor: "sec-1", page: 2 } }],
-        },
-      ]),
-      ["arguments.0.sources.0.target: a source target carries exactly one of anchor or page"],
+      "two unknown keys, one with a newline",
+      withArgs([{ id: "a1", title: "One", mood: "x", "a\nb": 1 }]),
+      ['arguments[0]: unknown field "mood"', 'arguments[0]: unknown field "a\\nb"'],
     ],
     [
-      "blank source text",
-      withArgs([{ id: "a1", title: "One", sources: [{ text: "" }] }]),
-      ["arguments.0.sources.0.text: Too small: expected string to have >=1 characters"],
+      "unknown key at the root",
+      { version: 1, arguments: [], edges: [], extra: 1 },
+      ['<root>: unknown field "extra"'],
     ],
     [
-      "wrong version",
-      { version: 2, arguments: [], edges: [] },
-      ["version: Invalid input: expected 1"],
+      "source target with both anchor and page",
+      tgt({ doc_id: "d", anchor: "sec-1", page: 2 }),
+      ["arguments[0].sources[0].target: must have exactly one of anchor or page"],
     ],
-    ["not an object", [], ["<root>: Invalid input: expected object, received array"]],
-  ])(
-    "validation failure (%s): every issue by position, exit 1, zero write",
+    [
+      "source target with neither",
+      tgt({ doc_id: "d" }),
+      ["arguments[0].sources[0].target: must have exactly one of anchor or page"],
+    ],
+    [
+      "target without doc_id",
+      tgt({ page: 1 }),
+      ["arguments[0].sources[0].target.doc_id: is required"],
+    ],
+    [
+      "doc_id too long",
+      tgt({ doc_id: big(513), page: 1 }),
+      ["arguments[0].sources[0].target.doc_id: must be at most 512 characters"],
+    ],
+    [
+      "anchor too long",
+      tgt({ doc_id: "d", anchor: big(513) }),
+      ["arguments[0].sources[0].target.anchor: must be at most 512 characters"],
+    ],
+    [
+      "empty anchor",
+      tgt({ doc_id: "d", anchor: "" }),
+      ["arguments[0].sources[0].target.anchor: must not be empty"],
+    ],
+    [
+      "page 0",
+      tgt({ doc_id: "d", page: 0 }),
+      ["arguments[0].sources[0].target.page: must be greater than 0"],
+    ],
+    [
+      "page 1.5",
+      tgt({ doc_id: "d", page: 1.5 }),
+      ["arguments[0].sources[0].target.page: must be an integer"],
+    ],
+    [
+      "page 1e300",
+      tgt({ doc_id: "d", page: 1e300 }),
+      ["arguments[0].sources[0].target.page: must be at most 9007199254740991"],
+    ],
+    [
+      "page as a string",
+      tgt({ doc_id: "d", page: "4" }),
+      ["arguments[0].sources[0].target.page: must be a number"],
+    ],
+    ["target null", tgt(null), ["arguments[0].sources[0].target: must be an object"]],
+    ["blank source text", src({ text: "" }), ["arguments[0].sources[0].text: must not be empty"]],
+    [
+      "source text too long",
+      src({ text: big(20_001) }),
+      ["arguments[0].sources[0].text: must be at most 20000 characters"],
+    ],
+    ["source text a number", src({ text: 5 }), ["arguments[0].sources[0].text: must be a string"]],
+    [
+      "51 sources",
+      arg({ sources: Array.from({ length: 51 }, () => ({ text: "s" })) }),
+      ["arguments[0].sources: must have at most 50 items"],
+    ],
+    ["sources not an array", arg({ sources: {} }), ["arguments[0].sources: must be an array"]],
+    [
+      "field over 20000",
+      arg({ claim: big(20_001), backing: big(20_001) }),
+      [
+        "arguments[0].claim: must be at most 20000 characters",
+        "arguments[0].backing: must be at most 20000 characters",
+      ],
+    ],
+    ["a field that is a number", arg({ claim: 3 }), ["arguments[0].claim: must be a string"]],
+    ["bad kind", arg({ kind: "foo" }), ["arguments[0].kind: must be one of native, end, normal"]],
+    [
+      "boolean as a string",
+      arg({ warrant_implicit: "yes" }),
+      ["arguments[0].warrant_implicit: must be a boolean"],
+    ],
+    [
+      "501 arguments",
+      withArgs(Array.from({ length: 501 }, (_, i) => ({ id: `a${i}`, title: "t" }))),
+      ["arguments: must have at most 500 items"],
+    ],
+    [
+      "5001 edges",
+      withArgs(
+        Array.from({ length: 40 }, (_, i) => ({ id: `a${i}`, title: "t" })),
+        distinctEdges(
+          Array.from({ length: 40 }, (_, i) => `a${i}`),
+          5001
+        )
+      ),
+      ["edges: must have at most 5000 items"],
+    ],
+    [
+      "arguments not an array",
+      { version: 1, arguments: {}, edges: [] },
+      ["arguments: must be an array"],
+    ],
+    ["arguments missing", { version: 1, edges: [] }, ["arguments: is required"]],
+    ["wrong version", { version: 2, arguments: [], edges: [] }, ["version: must be 1"]],
+    ["version missing", { arguments: [], edges: [] }, ["version: is required"]],
+    ["not an object (array)", [], ["<root>: must be an object"]],
+    ["not an object (null)", null, ["<root>: must be an object"]],
+    ["not an object (number)", 5, ["<root>: must be an object"]],
+  ];
+
+  test.each(CASES)(
+    "validation failure (%s): every issue by 0-based position in our own words, exit 1, zero write",
     (_name, graph, lines) => {
       const f = makeDataDir();
-      const r = putGraph(f, graph);
+      const r = putGraph(f, JSON.stringify(graph));
       expect(r.status).toBe(1);
       expect(r.stdout).toBe("");
       expect(r.stderr).toBe(
@@ -547,6 +900,23 @@ describe("argument put", () => {
     }
   );
 
+  test("no pinned issue line carries a library's own wording", () => {
+    const forbidden = /Invalid input|Too big|Too small|Unrecognized|Invalid option|expected /;
+    for (const [, , lines] of CASES) for (const l of lines) expect(l).not.toMatch(forbidden);
+  });
+
+  test("a library issue of a kind we did not map gets the fixed fallback sentence", () => {
+    expect(
+      describeGraphIssue({ code: "not_multiple_of", path: ["arguments", 2, "x"] }, {})
+    ).toEqual(["arguments[2].x: does not satisfy the argument graph format"]);
+    expect(describeGraphIssue({ code: "custom", path: ["weird"] }, { weird: 1 })).toEqual([
+      "weird: does not satisfy the argument graph format",
+    ]);
+    expect(describeGraphIssue({ code: "invalid_type", path: [], expected: "bigint" }, 5)).toEqual([
+      "<root>: does not satisfy the argument graph format",
+    ]);
+  });
+
   test("several problems are all listed, in the order found", () => {
     const f = makeDataDir();
     const r = putGraph(
@@ -555,10 +925,98 @@ describe("argument put", () => {
     );
     expect(r.status).toBe(1);
     expect(r.stderr.split("\n").slice(1, -1)).toEqual([
-      "  arguments.1.title: title must not be blank",
-      "  arguments.1.id: duplicate argument id a1",
-      "  edges.0: self-loop on argument a1",
+      "  arguments[1].title: must not be blank",
+      '  arguments[1].id: duplicate id "a1"',
+      '  edges[0]: connects argument "a1" to itself',
     ]);
+  });
+
+  test("structural rules are not reported in the same round as shape problems", () => {
+    const f = makeDataDir();
+    const r = putGraph(f, withArgs([A1, A1, { id: "a3", title: 5 }]));
+    expect(r.stderr.split("\n").slice(1, -1)).toEqual(["  arguments[2].title: must be a string"]);
+  });
+
+  test("more than 100 issues: the first 100 lines, then a count of the rest", () => {
+    const f = makeDataDir();
+    const r = putGraph(
+      f,
+      withArgs(Array.from({ length: 150 }, (_, i) => ({ id: `a${i}`, title: "" })))
+    );
+    expect(r.status).toBe(1);
+    const lines = r.stderr.split("\n");
+    expect(lines[0]).toBe(
+      `error: "${f.file("graph.json")}" is not a valid argument graph (150 issues); nothing was written`
+    );
+    expect(lines).toHaveLength(1 + 100 + 1 + 1);
+    expect(lines[1]).toBe("  arguments[0].title: must not be blank");
+    expect(lines[100]).toBe("  arguments[99].title: must not be blank");
+    expect(lines[101]).toBe("  … 50 more");
+    expect(lines[102]).toBe("");
+  });
+
+  test("exactly the limits are accepted", () => {
+    const f = makeDataDir();
+    const args: Record<string, unknown>[] = Array.from({ length: 500 }, (_, i) => ({
+      id: i === 0 ? big(64) : `a${i}`,
+      title: big(80),
+    }));
+    args[1] = {
+      ...args[1],
+      claim: big(20_000),
+      sources: Array.from({ length: 50 }, () => ({ text: big(20_000) })),
+    };
+    const edges = distinctEdges(
+      args.map((a) => a.id as string),
+      5000
+    );
+    const r = putGraph(f, withArgs(args, edges));
+    expect(r).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+  }, 60_000);
+
+  test("a graph with a cycle (and a missing Claim, an End with an out-edge) is written as is", () => {
+    const f = makeDataDir();
+    const cyc = withArgs(
+      [
+        { id: "a1", title: "One", kind: "end" },
+        { id: "a2", title: "Two" },
+      ],
+      [
+        { from: "a1", to: "a2", role: "grounds" },
+        { from: "a2", to: "a1", role: "grounds" },
+      ]
+    );
+    expect(putGraph(f, cyc)).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+    const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(JSON.parse(g.stdout).edges).toHaveLength(2);
+  });
+
+  test("Markdown, math and non-ASCII text round-trip byte for byte", () => {
+    const f = makeDataDir();
+    const text = String.raw`**bold** \`code\`
+
+- item
+
+$$\sum_{i=1}^{n} \alpha_i \le \frac{1}{2}$$
+中文、日本語、ελληνικά — 😀 "quoted" \ back`;
+    const graph = withArgs([
+      {
+        id: "α-1",
+        title: "標題 😀",
+        claim: text,
+        grounds: text,
+        sources: [{ text: "第 3.2 节" }],
+      },
+    ]);
+    expect(putGraph(f, graph).status).toBe(0);
+    const g = JSON.parse(
+      runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env).stdout
+    );
+    expect(g.arguments[0].claim).toBe(text);
+    expect(g.arguments[0].grounds).toBe(text);
+    expect(g.arguments[0].id).toBe("α-1");
+    expect(g.arguments[0].title).toBe("標題 😀");
+    expect(g.arguments[0].sources[0].text).toBe("第 3.2 节");
   });
 
   test("an unreadable stored graph is never overwritten", () => {
@@ -567,10 +1025,134 @@ describe("argument put", () => {
     const file = argumentGraphPath(f.dataDir, WORK_ID);
     writeFileSync(file, "{oops");
     const r = putGraph(f, GRAPH, ["--rev", "0", "--replace"]);
-    expect(r.status).toBe(1);
-    expect(r.stdout).toBe("");
-    expect(r.stderr).toMatch(/^error: argument graph: .+ is not valid JSON: /);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: stored argument graph ${JSON.stringify(file)} is not valid JSON\n`,
+    });
     expect(readFileSync(file, "utf8")).toBe("{oops");
+  });
+
+  test.skipIf(process.getuid?.() === 0)(
+    "a write that fails: one own line with the error code, nothing left behind",
+    () => {
+      const f = makeDataDir();
+      const dir = join(f.dataDir, "argument-graphs");
+      mkdirSync(dir);
+      chmodSync(dir, 0o555);
+      try {
+        const r = putGraph(f, GRAPH);
+        expect(r).toEqual({
+          status: 1,
+          stdout: "",
+          stderr: "error: could not write the argument graph (EACCES); nothing was written\n",
+        });
+        expect(readdirSync(dir)).toEqual([]);
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    }
+  );
+
+  test("the link follows ARGELANDERSPACE_PORT; ids are URL-encoded", () => {
+    const f = makeDataDir();
+    const file = f.file("g.json");
+    writeFileSync(file, JSON.stringify(GRAPH));
+    const r = runCli(["argument", "put", WORK_ID, file, "--rev", "0", "--data-dir", f.dataDir], {
+      ...f.env,
+      ARGELANDERSPACE_PORT: "9123",
+    });
+    expect(r).toEqual({ status: 0, stdout: putOut(1, 9123), stderr: "" });
+    expect(JSON.parse(r.stdout).link).toBe("http://localhost:9123/#argument/arxiv%3A2603.03522");
+  });
+});
+
+describe("argument put over a real pipe (stdin as a non-blocking pipe fd)", () => {
+  test("a writer that starts late (sleeps first)", () => {
+    const f = makeDataDir();
+    writeFileSync(f.file("g.json"), JSON.stringify(GRAPH));
+    const r = sh(
+      `(sleep 2; cat ${f.file("g.json")}) | node ${BIN} argument put ${WORK_ID} - --rev 0 --data-dir ${f.dataDir}`,
+      f.env
+    );
+    expect(r).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+  }, 60_000);
+
+  test("a writer that sends in slow pieces", () => {
+    const f = makeDataDir();
+    const text = JSON.stringify(GRAPH);
+    const half = Math.floor(text.length / 2);
+    writeFileSync(f.file("p1"), text.slice(0, half));
+    writeFileSync(f.file("p2"), text.slice(half));
+    const r = sh(
+      `(cat ${f.file("p1")}; sleep 1; cat ${f.file("p2")}) | node ${BIN} argument put ${WORK_ID} - --rev 0 --data-dir ${f.dataDir}`,
+      f.env
+    );
+    expect(r).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+  }, 60_000);
+
+  test("a multi-megabyte graph through cat", () => {
+    const f = makeDataDir();
+    const args = Array.from({ length: 500 }, (_, i) => ({
+      id: `a${i}`,
+      title: `t${i}`,
+      claim: "é".repeat(9_500),
+    }));
+    const text = JSON.stringify({ version: 1, arguments: args, edges: [] });
+    expect(text.length).toBeGreaterThan(4_700_000);
+    writeFileSync(f.file("big.json"), text);
+    const r = sh(
+      `cat ${f.file("big.json")} | node ${BIN} argument put ${WORK_ID} - --rev 0 --data-dir ${f.dataDir}`,
+      f.env
+    );
+    expect(r).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+    const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(JSON.parse(g.stdout).arguments[499].claim).toBe("é".repeat(9_500));
+  }, 120_000);
+
+  test("argument get | argument put - --rev N --replace, repeatedly", () => {
+    const f = makeDataDir();
+    expect(putGraph(f, GRAPH).status).toBe(0);
+    for (let rev = 1; rev <= 5; rev++) {
+      const r = sh(
+        `node ${BIN} argument get ${WORK_ID} --data-dir ${f.dataDir} | node ${BIN} argument put ${WORK_ID} - --rev ${rev} --replace --data-dir ${f.dataDir}`,
+        f.env
+      );
+      expect(r).toEqual({ status: 0, stdout: putOut(rev + 1), stderr: "" });
+    }
+    const g = runCli(["argument", "get", WORK_ID, "--data-dir", f.dataDir], f.env);
+    expect(g.stdout).toBe(GRAPH_GOLDEN.replace('"rev": 1', '"rev": 6'));
+  }, 120_000);
+});
+
+describe("get output key order is exhaustive over the schema", () => {
+  test("every field the schema knows is printed (a new field must be added to the ordered builders)", () => {
+    const full = {
+      version: 1 as const,
+      rev: 1,
+      work_id: "w",
+      arguments: [
+        ArgumentSchema.parse({
+          id: "a",
+          title: "t",
+          sources: [
+            { text: "s", target: { doc_id: "d", anchor: "x" } },
+            { text: "s", target: { doc_id: "d", page: 2 } },
+          ],
+        }),
+      ],
+      edges: [{ from: "a", to: "a", role: "grounds" as const }],
+    };
+    const out = orderedGraph(full) as {
+      arguments: { sources: { target: object }[] }[];
+      edges: object[];
+    };
+    expect(Object.keys(out)).toEqual(["version", "rev", "work_id", "arguments", "edges"]);
+    expect(Object.keys(out.arguments[0] ?? {})).toEqual(Object.keys(ArgumentSchema.shape));
+    expect(Object.keys(out.edges[0] ?? {})).toEqual(["from", "to", "role"]);
+    expect(Object.keys(out.arguments[0]?.sources[0] ?? {})).toEqual(["text", "target"]);
+    expect(Object.keys(out.arguments[0]?.sources[0]?.target ?? {})).toEqual(["doc_id", "anchor"]);
+    expect(Object.keys(out.arguments[0]?.sources[1]?.target ?? {})).toEqual(["doc_id", "page"]);
   });
 });
 
@@ -606,10 +1188,31 @@ describe("pdf-path", () => {
     const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
     expect(r).toEqual({
       status: 0,
-      stdout: `${join(f.dataDir, "output", PDF_ID, "original.pdf")}\n`,
+      stdout: `${join(realpathSync(f.dataDir), "output", PDF_ID, "original.pdf")}\n`,
       stderr: "",
     });
     expect(snapshot(f.root)).toEqual(before);
+  });
+
+  test("a data dir reached through a symlink prints the real path", () => {
+    const f = makeDataDir();
+    addPdfDoc(f.dataDir, PDF_ID);
+    const link = f.file("data-link");
+    symlinkSync(f.dataDir, link);
+    const r = runCli(["pdf-path", PDF_ID, "--data-dir", link], f.env);
+    expect(r).toEqual({
+      status: 0,
+      stdout: `${join(realpathSync(f.dataDir), "output", PDF_ID, "original.pdf")}\n`,
+      stderr: "",
+    });
+  });
+
+  test("the doc does not have to belong to a work, and its hash is not checked", () => {
+    const f = makeDataDir();
+    addPdfDoc(f.dataDir, PDF_ID);
+    writeFileSync(join(f.dataDir, "output", PDF_ID, "original.pdf"), "different bytes");
+    const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+    expect(r.status).toBe(0);
   });
 
   test("a LaTeX doc is not a PDF doc", () => {
@@ -655,7 +1258,7 @@ describe("pdf-path", () => {
       const r = runCli(["pdf-path", id, "--data-dir", f.dataDir], f.env);
       expect(r.status).toBe(1);
       expect(r.stdout).toBe("");
-      expect(r.stderr).toBe(`error: unknown PDF doc "${id}" — available: \n`);
+      expect(r.stderr).toBe(`error: unknown PDF doc "${id}" — there are no PDF docs\n`);
     }
     expect(snapshot(f.root)).toEqual(before);
   });
@@ -685,14 +1288,117 @@ describe("pdf-path", () => {
     });
   });
 
-  test("metadata gone but the bundle is there: system error naming the doc", () => {
+  test("original.pdf is a directory: not a regular file", () => {
+    const f = makeDataDir();
+    addPdfDoc(f.dataDir, PDF_ID, { original: false });
+    mkdirSync(join(f.dataDir, "output", PDF_ID, "original.pdf"));
+    const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: the original PDF of doc "${PDF_ID}" is not a regular file\n`,
+    });
+  });
+
+  test("an id with a newline cannot forge extra lines", () => {
     const f = makeDataDir();
     addPdfDoc(f.dataDir, PDF_ID);
-    const meta = join(f.dataDir, "output", PDF_ID, `${PDF_ID}.json`);
-    writeFileSync(meta, "{oops");
+    const r = runCli(["pdf-path", "a\nerror: x", "--data-dir", f.dataDir], f.env);
+    expect(r.stderr).toBe(`error: unknown PDF doc "a\\nerror: x" — available: ${PDF_ID}\n`);
+  });
+
+  test("candidates are truncated like note's: 12 and a total", () => {
+    const f = makeDataDir();
+    for (let i = 0; i < 14; i++) {
+      addPdfDoc(f.dataDir, `pdf-00000000-0000-4000-8000-0000000000${String(10 + i)}`);
+    }
+    const r = runCli(["pdf-path", "nope", "--data-dir", f.dataDir], f.env);
+    expect(r.stderr).toMatch(
+      /^error: unknown PDF doc "nope" — available: (pdf-[0-9a-f-]+, ){11}pdf-[0-9a-f-]+ … \(14 total\)\n$/
+    );
+  });
+
+  test.each([
+    ["not JSON", "{oops", "its metadata is not valid JSON"],
+    ["not an object", "[]", "its metadata is not a JSON object"],
+    [
+      "wrong shape (no 80-line dump)",
+      JSON.stringify({ format: "pdf", doc_id: PDF_ID }),
+      "its metadata does not match the PDF doc format",
+    ],
+    [
+      "another doc's metadata",
+      JSON.stringify({
+        version: 1,
+        doc_id: "pdf-other",
+        format: "pdf",
+        display_name: "p.pdf",
+        original_filename: "p.pdf",
+        acquired_via: "user_pdf_upload",
+        acquired_at: "2026-10-12T00:00:00.000Z",
+        byte_length: 9,
+        sha256: "a".repeat(64),
+        page_count: 1,
+        pages: [{ width: 612, height: 792, rotation: 0 }],
+      }),
+      "its metadata belongs to another doc",
+    ],
+    [
+      "format missing next to a PDF original",
+      JSON.stringify({ version: 1, doc_id: PDF_ID }),
+      "its metadata is not marked as a PDF doc",
+    ],
+  ])("damaged metadata (%s): one own line", (_n, text, reason) => {
+    const f = makeDataDir();
+    addPdfDoc(f.dataDir, PDF_ID);
+    writeFileSync(join(f.dataDir, "output", PDF_ID, `${PDF_ID}.json`), text);
     const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: doc "${PDF_ID}": ${reason}\n`,
+    });
+  });
+
+  test("metadata file gone but the bundle is there", () => {
+    const f = makeDataDir();
+    addPdfDoc(f.dataDir, PDF_ID);
+    rmSync(join(f.dataDir, "output", PDF_ID, `${PDF_ID}.json`));
+    const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: doc "${PDF_ID}": its metadata file is missing\n`,
+    });
+  });
+
+  test("the output directory is a plain file", () => {
+    const f = makeDataDir();
+    writeFileSync(join(f.dataDir, "output"), "x");
+    const r = runCli(["pdf-path", PDF_ID, "--data-dir", f.dataDir], f.env);
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: doc "${PDF_ID}": the output directory is not a directory\n`,
+    });
+  });
+});
+
+describe("usage errors (not frozen: exit 1, stderr is commander's help/usage text)", () => {
+  test.each([
+    ["bare argument", ["argument"]],
+    ["unknown subcommand", ["argument", "frobnicate"]],
+    ["get without its argument", ["argument", "get"]],
+    ["put without its file", ["argument", "put", WORK_ID, "--rev", "0"]],
+    ["too many arguments", ["argument", "get", WORK_ID, "extra"]],
+    ["an unknown option", ["argument", "get", WORK_ID, "--bogus"]],
+    ["pdf-path without its argument", ["pdf-path"]],
+    ["--rev without a value", ["argument", "put", WORK_ID, "f.json", "--rev"]],
+  ])("%s: exit 1, nothing on stdout", (_n, args) => {
+    const f = makeDataDir();
+    const r = runCli([...args, "--data-dir", f.dataDir], f.env);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
-    expect(r.stderr).toMatch(new RegExp(`^error: doc "${PDF_ID}": `));
+    expect(r.stderr.length).toBeGreaterThan(0);
   });
 });

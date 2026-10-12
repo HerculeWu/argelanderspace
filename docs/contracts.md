@@ -115,7 +115,7 @@
 - **覆盖非空的图**：页面的清空有确认对话框；Copilot 逐条增删改不需确认，整图替换或清空非空的图必须经真人确认卡（写明将被替换的论证数，模型不能自批）；CLI 整图写入覆盖非空的图须带显式的替换标志。
 - **Work 合并**：幸存 Work 没有图时接手被并入 Work 的图；两边都有时保留幸存者的，另一张留在磁盘上不删除、不展示，并在结果中如实说明。Copilot 路径对会合并 Work 的导入照旧整条拒绝。
 - 跨进程同时写同一张图不支持，不加文件锁（I013 的边界同样适用）；工作台发现磁盘变化后刷新页面。
-- 新的 CLI 论证图命令在发布后进入冻结面：读出与写入的 JSON 带 `version: 1`，字段、键序和错误形态的改动需要新的明确决定。实现与原型验收完成之前不算发布。既有冻结命令的输出不因此改动。命令为 `argument get` / `argument put` / `pdf-path`（票 07 已实施，尚未发布），冻结面的完整清单（每个命令每种结果的 stdout / stderr / exit code）在 `.scratch/argument-graph/issues/07-cli.md` 的 Comments，机制见 [argument-graph](argument-graph.md)「CLI」；票 10 用户验收通过后生效。
+- 新的 CLI 论证图命令在发布后进入冻结面：读出与写入的 JSON 带 `version: 1`，字段、键序和错误形态的改动需要新的明确决定。实现与原型验收完成之前不算发布。既有冻结命令的输出不因此改动。命令为 `argument get` / `argument put` / `pdf-path`（票 07 已实施，尚未发布；范围经用户 2026-10-12 批准的票 07 与 spec 3-Q8），冻结面的完整清单（每个命令每种结果的 stdout / stderr / exit code）在 `.scratch/argument-graph/issues/07-cli.md` 的 Comments，机制见 [argument-graph](argument-graph.md)「CLI」；票 10 用户验收通过后生效，发布生效时该清单迁入本文件（由票 10 执行）。
 
 ## CLI annot 冻结契约
 

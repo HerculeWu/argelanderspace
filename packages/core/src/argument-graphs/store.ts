@@ -9,7 +9,8 @@
  * of one graph is unsupported (contracts, I013's boundary) and there is no file
  * lock.
  *
- * Failure semantics: a missing file is the empty graph at rev 0. A file that
+ * Failure semantics: a missing file (ENOENT, a missing `argument-graphs/` directory included) is the empty graph
+ * at rev 0; every other failure to read it (EACCES, ENOTDIR, EISDIR, ...) is a system error. A file that
  * is not valid JSON, fails the schema, claims another Work, or carries a
  * version this build does not know is a SYSTEM error ({@link ArgumentGraphFileError}),
  * never "no graph": it may be the user's only copy, so it is neither reset nor
@@ -21,14 +22,7 @@
  * or hidden). The mapping is injective and reversible.
  */
 
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { type ArgumentGraph, ArgumentGraphSchema } from "@argelanderspace/contracts";
 
@@ -37,10 +31,26 @@ export const ARGUMENT_GRAPH_DIR = "argument-graphs";
 /** Longest file name we accept (most filesystems cap a name at 255 bytes). */
 const MAX_FILE_NAME = 240;
 
+/**
+ * Why a graph file is unusable, in a form callers can word themselves (the CLI's frozen messages) without quoting
+ * the system, JSON or schema library: `message` carries those details for logs only.
+ */
+export type ArgumentGraphFileProblem =
+  | { reason: "unreadable"; code: string }
+  | { reason: "not_json" }
+  | { reason: "schema" }
+  | { reason: "future_version"; version: number }
+  | { reason: "wrong_work"; workId: string }
+  | { reason: "unsafe_id" };
+
 export class ArgumentGraphFileError extends Error {
   constructor(
     readonly kind: "corrupt" | "future_version" | "wrong_work" | "unsafe_id",
-    message: string
+    message: string,
+    /** Structured reason (absent only on errors built by older callers). */
+    readonly problem?: ArgumentGraphFileProblem,
+    /** The graph file concerned, when there is one. */
+    readonly file?: string
   ) {
     super(message);
     this.name = "ArgumentGraphFileError";
@@ -57,12 +67,17 @@ export function argumentGraphDir(dataDir: string): string {
  * and collide with another id), or one whose file name would exceed 240 bytes.
  */
 export function encodeWorkIdForFile(workId: string): string {
-  if (workId === "") throw new ArgumentGraphFileError("unsafe_id", "argument graph: empty work id");
+  if (workId === "") {
+    throw new ArgumentGraphFileError("unsafe_id", "argument graph: empty work id", {
+      reason: "unsafe_id",
+    });
+  }
   if (/\p{Surrogate}/u.test(workId)) {
     // with the u flag only a LONE surrogate is a match (pairs are one code point)
     throw new ArgumentGraphFileError(
       "unsafe_id",
-      "argument graph: work id is not well-formed Unicode"
+      "argument graph: work id is not well-formed Unicode",
+      { reason: "unsafe_id" }
     );
   }
   let out = "";
@@ -73,7 +88,8 @@ export function encodeWorkIdForFile(workId: string): string {
   if (out.length + ".json".length > MAX_FILE_NAME) {
     throw new ArgumentGraphFileError(
       "unsafe_id",
-      "argument graph: work id too long for a file name"
+      "argument graph: work id too long for a file name",
+      { reason: "unsafe_id" }
     );
   }
   return out;
@@ -139,14 +155,19 @@ function formatIssues(error: { issues: { path: PropertyKey[]; message: string }[
  */
 export function loadArgumentGraph(dataDir: string, workId: string): ArgumentGraph {
   const file = argumentGraphPath(dataDir, workId);
-  if (!existsSync(file)) return emptyArgumentGraph(workId);
   let text: string;
   try {
     text = readFileSync(file, "utf8");
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // Only "there is no such file" (or no such directory above it) means "no graph yet"; a directory that cannot be
+    // searched, a plain file where the directory should be, ... are system errors, not an empty graph.
+    if (code === "ENOENT") return emptyArgumentGraph(workId);
     throw new ArgumentGraphFileError(
       "corrupt",
-      `argument graph: ${file} could not be read: ${(err as Error).message}`
+      `argument graph: ${file} could not be read: ${(err as Error).message}`,
+      { reason: "unreadable", code: typeof code === "string" ? code : "unknown" },
+      file
     );
   }
   let data: unknown;
@@ -155,27 +176,35 @@ export function loadArgumentGraph(dataDir: string, workId: string): ArgumentGrap
   } catch (err) {
     throw new ArgumentGraphFileError(
       "corrupt",
-      `argument graph: ${file} is not valid JSON: ${(err as Error).message}`
+      `argument graph: ${file} is not valid JSON: ${(err as Error).message}`,
+      { reason: "not_json" },
+      file
     );
   }
   const version = (data as { version?: unknown } | null)?.version;
   if (typeof version === "number" && version > 1) {
     throw new ArgumentGraphFileError(
       "future_version",
-      `argument graph: ${file} has version ${version}; this build only reads version 1`
+      `argument graph: ${file} has version ${version}; this build only reads version 1`,
+      { reason: "future_version", version },
+      file
     );
   }
   const result = ArgumentGraphSchema.safeParse(data);
   if (!result.success) {
     throw new ArgumentGraphFileError(
       "corrupt",
-      `argument graph: ${file} failed schema validation: ${formatIssues(result.error)}`
+      `argument graph: ${file} failed schema validation: ${formatIssues(result.error)}`,
+      { reason: "schema" },
+      file
     );
   }
   if (result.data.work_id !== workId) {
     throw new ArgumentGraphFileError(
       "wrong_work",
-      `argument graph: ${file} belongs to work ${JSON.stringify(result.data.work_id)}`
+      `argument graph: ${file} belongs to work ${JSON.stringify(result.data.work_id)}`,
+      { reason: "wrong_work", workId: result.data.work_id },
+      file
     );
   }
   return result.data;
@@ -206,7 +235,12 @@ export function replaceArgumentGraph(
   const file = argumentGraphPath(dataDir, graph.work_id);
   mkdirSync(argumentGraphDir(dataDir), { recursive: true });
   const tmp = file.replace(/\.json$/, ".json.tmp");
-  writeFileSync(tmp, JSON.stringify(result.data, null, 2), "utf8");
-  renameSync(tmp, file);
+  try {
+    writeFileSync(tmp, JSON.stringify(result.data, null, 2), "utf8");
+    renameSync(tmp, file);
+  } catch (err) {
+    rmSync(tmp, { force: true }); // a failed write must not leave a half-written tmp behind
+    throw err;
+  }
   return { saved: result.data };
 }

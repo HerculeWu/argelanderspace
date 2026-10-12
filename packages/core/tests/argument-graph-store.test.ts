@@ -6,7 +6,15 @@
  * overwritten.
  */
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArgumentGraph } from "@argelanderspace/contracts";
@@ -194,6 +202,80 @@ describe("unreadable files are system errors, never reset or overwritten", () =>
         kind: "corrupt",
         message: expect.stringContaining("could not be read"),
       })
+    );
+  });
+
+  it("argument-graphs is a plain file: a system error with the errno code, not the empty graph", () => {
+    const dataDir = tmpDataDir();
+    writeFileSync(join(dataDir, "argument-graphs"), "x");
+    expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+      expect.objectContaining({
+        name: "ArgumentGraphFileError",
+        kind: "corrupt",
+        problem: { reason: "unreadable", code: "ENOTDIR" },
+      })
+    );
+    expect(() => replaceArgumentGraph(dataDir, sample())).toThrow(ArgumentGraphFileError);
+    expect(readFileSync(join(dataDir, "argument-graphs"), "utf8")).toBe("x");
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    "argument-graphs without permission: a system error (EACCES), not the empty graph",
+    () => {
+      const dataDir = tmpDataDir();
+      const dir = argumentGraphDir(dataDir);
+      mkdirSync(dir);
+      chmodSync(dir, 0o000);
+      try {
+        expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+          expect.objectContaining({
+            kind: "corrupt",
+            problem: { reason: "unreadable", code: "EACCES" },
+          })
+        );
+      } finally {
+        chmodSync(dir, 0o755);
+      }
+    }
+  );
+
+  it("only a missing file (also with no argument-graphs directory) is the empty graph", () => {
+    const dataDir = tmpDataDir();
+    expect(loadArgumentGraph(dataDir, DOI)).toEqual(emptyArgumentGraph(DOI));
+    mkdirSync(argumentGraphDir(dataDir));
+    expect(loadArgumentGraph(dataDir, DOI)).toEqual(emptyArgumentGraph(DOI));
+  });
+
+  it.skipIf(process.getuid?.() === 0)("a failed write leaves no tmp file behind", () => {
+    const dataDir = tmpDataDir();
+    const dir = argumentGraphDir(dataDir);
+    mkdirSync(dir);
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => replaceArgumentGraph(dataDir, sample())).toThrow();
+    } finally {
+      chmodSync(dir, 0o755);
+    }
+    expect(readdirSync(dir)).toEqual([]);
+  });
+
+  it("the error carries structured reasons for each kind", () => {
+    const dataDir = tmpDataDir();
+    const file = plant(dataDir, "{oops");
+    expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+      expect.objectContaining({ file, problem: { reason: "not_json" } })
+    );
+    writeFileSync(file, JSON.stringify({ version: 1 }));
+    expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+      expect.objectContaining({ problem: { reason: "schema" } })
+    );
+    writeFileSync(file, JSON.stringify({ version: 3 }));
+    expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+      expect.objectContaining({ problem: { reason: "future_version", version: 3 } })
+    );
+    writeFileSync(file, JSON.stringify(sample("arxiv:other", 1)));
+    expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+      expect.objectContaining({ problem: { reason: "wrong_work", workId: "arxiv:other" } })
     );
   });
 

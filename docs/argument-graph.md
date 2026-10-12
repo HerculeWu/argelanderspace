@@ -55,21 +55,24 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 
 | 命令 | 行为 |
 | --- | --- |
-| `argument get <workId>` | 整张图的 JSON（缩进 2 空格，`version: 1`，含 `rev`）。没有图时是空图、`rev: 0`，exit 0。图文件不可读（损坏、schema 不符、未来版本、属于别的 Work）是系统错误：`error: …`、exit 1、stdout 为空，不输出空图 |
-| `argument put <workId> <file> --rev <n> [--replace]` | 从文件读整张图（`-` 读 stdin），校验后原子写入；成功时 stdout 一行 `{"work_id":…,"rev":<新 rev>}` |
-| `pdf-path <docId>` | 只读，stdout 一行 PDF Doc 原件的绝对路径。不读 PDF 内容、不核对 hash（hash 绑定仍由 Reader 的原件端点校验） |
+| `argument get <workId>` | 整张图的 JSON（缩进 2 空格，`version: 1`，含 `rev`）。没有图时是空图、`rev: 0`，exit 0。图文件不可读（损坏、schema 不符、未来版本、属于别的 Work，以及 `argument-graphs/` 目录本身读不了）是系统错误：`error: …`、exit 1、stdout 为空，不输出空图。只有「文件不存在」（ENOENT，父目录不存在也算）才是没有图 |
+| `argument put <workId> <file> --rev <n> [--replace]` | 从文件读整张图（`-` 读 stdin），校验后原子写入；成功时 stdout 一行 `{"work_id":…,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<URL 编码的 work id>"}`。端口取法同其他带深链接的命令：`ARGELANDERSPACE_PORT` > config `port` > 8000；路由格式与 web 的 `lib/argument-route.ts` 一致 |
+| `pdf-path <docId>` | 只读，stdout 一行 PDF Doc 原件的绝对路径（dataDir 经 realpath）。**不要求 Doc 挂在某个 Work 上，也不核对 hash**：这与 Reader 的原件端点（核对归属与 hash）不同，与既有 CLI `read` / `show` 的直读信任模型一致——本机命令行，调用者本来就能读 dataDir。不读 PDF 内容 |
 
 `put` 的规则
 
+- 检查顺序：先解析 `--rev`（缺失或非法即报错，此时还没读任何东西）→ 读库并查 Work（不在库中、`library.json` 不可读、id 不能作文件名）→ 读输入文件或 stdin → 是否合法 JSON → 文件里的 `work_id` 是否一致 → schema 与结构校验 → 读已存图（不可读则报错）→ `rev` → `--replace` → 写入。任何一步失败都零写入（不建 `argument-graphs/`，不留 tmp）。
 - `--rev` 必填，是调用方读到的 rev（没有图为 0），必须是非负整数。与存储的 rev 不符即拒绝、零写入，报告当前 rev，要求重新 `get` 并在新版本上重做改动。
-- 存储里已有**非空**图（至少一个论证）时必须另带 `--replace`，否则拒绝、零写入。零论证的图算「没有图」，无需 `--replace`，但 `--rev` 仍要等于存储的 rev。检查顺序：文件与校验 → rev → `--replace`。
+- 存储里已有**非空**图（至少一个论证）时必须另带 `--replace`，否则拒绝、零写入。零论证的图算「没有图」，无需 `--replace`，但 `--rev` 仍要等于存储的 rev。
 - 文件里的 `work_id` 可省；若有必须与命令行的 Work 一致，不一致拒绝（不静默纠正，避免把一张图写到错误的 Work 上）。文件里的 `rev` 不作依据，以 `--rev` 为准。其余键沿用 schema：`version` 必须为 1，未知键拒绝，省略的论证字段取默认值。
-- 校验失败逐条报告位置（zod 的路径，如 `arguments.1.title`、`edges.0`），去重、最多列 100 条，exit 1，零写入。不可读的已存图永不被覆盖（`put` 同样报错）。
-- 从 stdin 读用 `-`（便于管道，不落临时文件）。其余既有命令不读 stdin，这是本命令的约定。
+- 校验失败逐条报告，**每条一行，位置加我们自己的句子**，去重、最多列 100 条，exit 1，零写入。位置是 JSON 路径，**下标 0 起始**（`arguments[1].title`、`edges[0].to`，根为 `<root>`）。句子由 CLI 按 zod issue 的 `code` 与参数自己写（`must be at most 80 characters`、`unknown field "x"`、`must be a boolean`、`must be one of native, end, normal`、`is required` 等），没映射到的种类用固定兜底句子；结构规则（重复 id、悬空边、自环、重复边）的种类由 contracts 在 issue 的 `params.rule` 里给出，句子同样是我们的。引用 id 一律 `JSON.stringify`（并截到 100 字符），所以含换行的 id 不会伪造出额外的行。存在类型级错误（缺字段、值类型不对）时，zod 不运行结构规则（superRefine），所以重复 id、悬空边这些不在同一轮报出：改完类型错误再提交才会看到；长度/规模超限不阻止结构规则，会和它们一起报。不可读的已存图永不被覆盖（`put` 同样报错）。
+- 从 stdin 读用 `-`（便于管道，不落临时文件）。stdin 是管道时其 fd 可能是非阻塞的（依赖在加载时设的），所以读取遇 `EAGAIN` 要等待重试直到 EOF，不能直接 `readFileSync(0)`。其余既有命令不读 stdin，这是本命令的约定。
 
-`get` 的键序是确定的：`version, rev, work_id, arguments, edges`；论证 `id, title, claim, grounds, warrant, backing, qualifier, rebuttal, warrant_implicit, kind, sources`；出处 `text, target`；目标 `doc_id` 然后 `anchor` 或 `page`；边 `from, to, role`。输出由固定顺序的构造函数生成，不依赖存储文件的键序。
+**消息措辞**：所有 `error: …` 都是单行、由本仓库措辞，不转述 zod、commander（用法错误除外）、V8 / Node 的原句；系统错误只可在末尾括号里附 errno 码（如 `(EACCES)`）。底层错误码本身不属于冻结面。缺位置参数、多余参数、未知选项、裸 `argument`、`--rev` 缺值这些 commander 的用法错误不冻结（exit 1，stderr 为帮助/用法文本）。
 
-**并发**：工作台可能在运行。`rev` 检查挡住基于旧读取的写入，server 的 watcher 发现文件变化后通知页面刷新。读 rev 与写入之间没有跨进程锁：两个进程在同一瞬间写同一张图不支持，也不加文件锁（contracts I013）。
+`get` 的键序是确定的：`version, rev, work_id, arguments, edges`；论证 `id, title, claim, grounds, warrant, backing, qualifier, rebuttal, warrant_implicit, kind, sources`；出处 `text, target`；目标 `doc_id` 然后 `anchor` 或 `page`；边 `from, to, role`。输出由固定顺序的构造函数生成，不依赖存储文件的键序；构造函数的对象字面量带「覆盖 schema 全部键」的类型约束，schema 以后增字段时编译失败，而不会让 `get` 静默丢字段（随后的整图替换会把它抹掉）。
+
+**并发**：工作台可能在运行。`rev` 检查挡住基于旧读取的写入，server 的 watcher 发现文件变化后通知页面刷新。读 rev 与写入之间没有跨进程锁：两个进程在同一瞬间写同一张图不支持，也不加文件锁（contracts I013）。CLI 写图与 server 端的 Work 合并（`followWorkFolds` 在库锁内移动图）之间同样没有跨进程互斥，这个竞态属于 I013 的边界：合并期间不要同时用 CLI 写入该 Work 的图。
 
 **冻结**：命令的 stdout / stderr / exit code、JSON 字段与键序有 golden 测试（`packages/cli/tests/argument.test.ts`），完整清单在 `.scratch/argument-graph/issues/07-cli.md` 的 Comments；票 10 用户验收通过后才算发布生效。既有命令（`search` / `read` / `show` / `ref` / `note` / `label` / `list` / `annot`）输出不变。
 

@@ -96,9 +96,17 @@ export const ArgumentEdgeSchema = z.strictObject({
 
 // ---- Structural validation --------------------------------------------------- //
 
+/** Which structural rule an issue is about (stable; consumers such as the CLI word their own message from it). */
+export type ArgumentGraphStructureRule =
+  | "duplicate_id"
+  | "unknown_argument"
+  | "self_loop"
+  | "duplicate_edge";
+
 export interface ArgumentGraphStructureIssue {
   path: (string | number)[];
   message: string;
+  rule: ArgumentGraphStructureRule;
 }
 
 /** Write-time rules beyond field shapes. Returns every violation found. */
@@ -110,7 +118,11 @@ export function checkArgumentGraphStructure(graph: {
   const ids = new Set<string>();
   graph.arguments.forEach((a, i) => {
     if (ids.has(a.id)) {
-      issues.push({ path: ["arguments", i, "id"], message: `duplicate argument id ${a.id}` });
+      issues.push({
+        path: ["arguments", i, "id"],
+        message: `duplicate argument id ${a.id}`,
+        rule: "duplicate_id",
+      });
     }
     ids.add(a.id);
   });
@@ -121,17 +133,23 @@ export function checkArgumentGraphStructure(graph: {
         issues.push({
           path: ["edges", i, end],
           message: `edge ${end} refers to unknown argument ${e[end]}`,
+          rule: "unknown_argument",
         });
       }
     }
     if (e.from === e.to) {
-      issues.push({ path: ["edges", i], message: `self-loop on argument ${e.from}` });
+      issues.push({
+        path: ["edges", i],
+        message: `self-loop on argument ${e.from}`,
+        rule: "self_loop",
+      });
     }
     const key = JSON.stringify([e.from, e.to, e.role]);
     if (seen.has(key)) {
       issues.push({
         path: ["edges", i],
         message: `duplicate ${e.role} edge from ${e.from} to ${e.to}`,
+        rule: "duplicate_edge",
       });
     }
     seen.add(key);
@@ -156,7 +174,12 @@ export const ArgumentGraphSchema = z
   })
   .superRefine((graph, ctx) => {
     for (const issue of checkArgumentGraphStructure(graph)) {
-      ctx.addIssue({ code: "custom", path: issue.path, message: issue.message });
+      ctx.addIssue({
+        code: "custom",
+        path: issue.path,
+        message: issue.message,
+        params: { rule: issue.rule },
+      });
     }
   });
 

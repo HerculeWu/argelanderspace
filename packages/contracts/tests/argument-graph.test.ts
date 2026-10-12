@@ -146,6 +146,23 @@ describe("ArgumentGraphSchema", () => {
         "edges.0",
         "edges.1.to",
       ]);
+      expect(issues.map((i) => i.rule)).toEqual(["duplicate_id", "self_loop", "unknown_argument"]);
+    });
+
+    it("the schema's custom issues carry the rule in params (so a consumer need not parse the message)", () => {
+      const parsed = ArgumentGraphSchema.safeParse(
+        graph(
+          [arg("a"), arg("b")],
+          [edge("a", "a", "grounds"), edge("a", "b", "grounds"), edge("a", "b", "grounds")]
+        )
+      );
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.map((i) => (i as { params?: unknown }).params)).toEqual([
+          { rule: "self_loop" },
+          { rule: "duplicate_edge" },
+        ]);
+      }
     });
 
     it("source target carries an anchor or a page, not both", () => {
