@@ -19,12 +19,13 @@
  * badge text, tooltip content, legend and copy all arrive from the adapter.
  * The layout is derived from the nodes and edges; any change to their
  * structure, pins or labels recomputes it, so a drag lasts only until then.
- * Pan, wheel and pinch zoom, select and the zoom controls behave as in
- * `GraphCanvas`.
+ * Pan, wheel and pinch zoom, node drag, hover, select and the zoom controls are the shared
+ * `useGraphViewport`, the same state machine `GraphCanvas` runs.
  */
 
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GraphZoomControls } from "./GraphZoomControls";
+import { ZOOM_MIN, useGraphViewport } from "./useGraphViewport";
 import { edgePath, focusChain, pairFan } from "./layered/geometry";
 import { type LayoutPoint, layeredLayout } from "./layered/layout";
 import { type Box, placeEdgeLabels, placeNodeLabels } from "./layered/placement";
@@ -102,22 +103,12 @@ export interface LayeredGraphCanvasProps {
   connectHint?: string;
 }
 
-const ZOOM_MIN = 0.25;
-const ZOOM_MAX = 3.2;
 const R = 10;
 const NEUTRAL = "var(--border)";
 /** Fallback overlay clearance when the overlays cannot be measured. */
 const INSET = { l: 24, r: 64, t: 78, b: 104 };
 /** Keep-visible margins for the selected node (its label sits to its right). */
 const KEEP = { l: 64, r: 176, t: 74, b: 96 };
-
-type View = { tx: number; ty: number; k: number };
-type Drag =
-  | { mode: "pan"; x: number; y: number; tx: number; ty: number; moved: boolean }
-  | { mode: "node"; id: string; x: number; y: number; moved: boolean }
-  | { mode: "connect"; from: string }
-  | { mode: "pinch"; d: number; k: number; wx: number; wy: number }
-  | null;
 
 export function LayeredGraphCanvas({
   nodes,
@@ -134,27 +125,14 @@ export function LayeredGraphCanvas({
   onConnect,
   connectHint,
 }: LayeredGraphCanvasProps) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
   const noteRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const [hover, setHover] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
   const [tipBox, setTipBox] = useState({ w: 280, h: 150 });
   const tipRef = useRef<HTMLDivElement>(null);
   const [rubber, setRubber] = useState<{ from: string; x: number; y: number } | null>(null);
-  const [, bump] = useReducer((x: number) => x + 1, 0);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
-  const adj = useMemo(() => {
-    const m = new Map<string, Set<string>>(nodes.map((n) => [n.id, new Set<string>()]));
-    for (const e of edges) {
-      m.get(e.from)?.add(e.to);
-      m.get(e.to)?.add(e.from);
-    }
-    return m;
-  }, [nodes, edges]);
+  const links = useMemo(() => edges.map((e) => [e.from, e.to] as [string, string]), [edges]);
   const chain = useMemo(
     () => (selectedId && nodeById.has(selectedId) ? focusChain(edges, selectedId) : null),
     [selectedId, edges, nodeById]
@@ -182,27 +160,47 @@ export function LayeredGraphCanvas({
   }
   P.current = stash.pos;
 
-  const view = useRef<View | null>(null);
-  const viewKey = useRef<string | null>(null);
-  if (viewKey.current !== sceneKey) {
-    viewKey.current = sceneKey;
-    view.current = stash.view ? { ...stash.view } : null;
-  }
-  const persist = () => {
-    if (view.current) stash.view = { ...view.current };
-  };
+  // The layered half of the shared viewport: a dragged node follows the pointer (until the next layout), and a
+  // drag that starts on the connect handle is the rubber-band gesture.
+  const vp = useGraphViewport({
+    sceneKey,
+    stash,
+    nodes,
+    links,
+    onSelect,
+    onNodeDrag: (id, w, moved) => {
+      const p = P.current[id];
+      if (moved && p) {
+        p.x = w.x;
+        p.y = w.y;
+      }
+      vp.redraw();
+    },
+    onUserView: () => {
+      stash.auto = false;
+    },
+    gesture: (target, { world, setHover, nodeAt }) => {
+      const from = target.closest("[data-connect-from]")?.getAttribute("data-connect-from");
+      if (!from) return null;
+      setRubber({ from, x: world.x, y: world.y });
+      return {
+        move: (e, w) => {
+          setRubber({ from, x: w.x, y: w.y });
+          setHover(nodeAt(e));
+        },
+        end: (e) => {
+          const to = nodeAt(e);
+          setRubber(null);
+          if (to) onConnect?.(from, to, { x: e.clientX, y: e.clientY });
+        },
+        cancel: () => setRubber(null),
+      };
+    },
+  });
+  const { size, hover, tooltip } = vp;
 
   useEffect(() => {
-    if (!wrapRef.current) return;
-    const ro = new ResizeObserver((es) => {
-      const r = es[0]!.contentRect;
-      setSize({ w: r.width, h: r.height });
-    });
-    ro.observe(wrapRef.current);
-    return () => ro.disconnect();
-  }, []);
-  useEffect(() => {
-    if (size.w > 0 && (view.current === null || stash.auto)) fitView();
+    if (size.w > 0 && (!vp.hasView() || stash.auto)) fitView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.w, size.h, sceneKey, sig]);
 
@@ -211,7 +209,7 @@ export function LayeredGraphCanvas({
    * right edge and is cleared by the right inset, so it does not enter the bottom inset.
    */
   function overlayInsets() {
-    const wrap = wrapRef.current?.getBoundingClientRect();
+    const wrap = vp.wrapRef.current?.getBoundingClientRect();
     const rect = (el: HTMLElement | null) => (wrap && el ? el.getBoundingClientRect() : null);
     const head = rect(noteRef.current);
     const leg = rect(legendRef.current);
@@ -232,20 +230,18 @@ export function LayeredGraphCanvas({
     const w = Math.max(120, size.w - inset.l - inset.r);
     const h = Math.max(120, size.h - inset.t - inset.b);
     const k = Math.max(ZOOM_MIN, Math.min(1.4, Math.min(w / (maxX - minX || 1), h / (maxY - minY || 1))));
-    view.current = {
+    stash.auto = true;
+    vp.setView({
       tx: inset.l + w / 2 - ((minX + maxX) / 2) * k,
       ty: inset.t + h / 2 - ((minY + maxY) / 2) * k,
       k,
-    };
-    persist();
-    stash.auto = true;
-    bump();
+    });
   }
 
   // A narrower canvas (a panel opening), a new selection or a new layout: keep the selected node, and its label, on screen.
   useEffect(() => {
     const p = selectedId ? P.current[selectedId] : null;
-    const cur = view.current;
+    const cur = vp.getView();
     if (!p || !cur || !size.w) return;
     const sx = p.x * cur.k + cur.tx;
     const sy = p.y * cur.k + cur.ty;
@@ -253,159 +249,19 @@ export function LayeredGraphCanvas({
     const dx = sx < KEEP.l ? KEEP.l - sx : sx > size.w - KEEP.r ? size.w - KEEP.r - sx : 0;
     const dy = sy < m.t - 4 ? m.t - 4 - sy : sy > size.h - m.b + 8 ? size.h - m.b + 8 - sy : 0;
     if (dx || dy) {
-      view.current = { ...cur, tx: cur.tx + dx, ty: cur.ty + dy };
-      persist();
-      bump();
+      vp.setView({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, size.w, size.h, sig]);
 
-  const zoomAt = (f: number, cx: number, cy: number) => {
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    const k = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v.k * f));
-    const r = k / v.k;
-    view.current = { tx: cx - (cx - v.tx) * r, ty: cy - (cy - v.ty) * r, k };
-    persist();
-    stash.auto = false;
-    setHover(null);
-    setTooltip(null);
-    bump();
-  };
   const relayout = () => {
     stash.pos = Object.fromEntries(Object.entries(layout.pos).map(([k, v]) => [k, { ...v }]));
     P.current = stash.pos;
     fitView();
   };
 
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const drag = useRef<Drag>(null);
-  const svgPoint = (e: { clientX: number; clientY: number }) => {
-    const r = wrapRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
-  };
-  const toWorld = (x: number, y: number) => {
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    return { x: (x - v.tx) / v.k, y: (y - v.ty) / v.k };
-  };
-  /** The node of this canvas under a screen point; elements of other canvases or unknown ids do not count. */
-  const nodeAt = (e: { clientX: number; clientY: number }) => {
-    const el = document.elementFromPoint?.(e.clientX, e.clientY)?.closest("[data-node-id]");
-    if (!el || !wrapRef.current?.contains(el)) return null;
-    const id = el.getAttribute("data-node-id");
-    return id && nodeById.has(id) ? id : null;
-  };
-
-  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.button !== 0 && e.pointerType !== "touch") return;
-    e.preventDefault();
-    const target = e.target as Element;
-    const pt = svgPoint(e);
-    try {
-      svgRef.current?.setPointerCapture(e.pointerId);
-    } catch {
-      // synthetic/legacy pointer streams may not hold an active pointer
-    }
-    pointers.current.set(e.pointerId, pt);
-    if (pointers.current.size === 2) {
-      const [a, b] = [...pointers.current.values()];
-      const w = toWorld((a!.x + b!.x) / 2, (a!.y + b!.y) / 2);
-      drag.current = { mode: "pinch", d: Math.hypot(a!.x - b!.x, a!.y - b!.y), k: (view.current ?? { k: 1 }).k, wx: w.x, wy: w.y };
-      setRubber(null);
-      return;
-    }
-    const handle = target.closest("[data-connect-from]")?.getAttribute("data-connect-from") ?? null;
-    const id = target.closest("[data-node-id]")?.getAttribute("data-node-id") ?? null;
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    if (handle) {
-      drag.current = { mode: "connect", from: handle };
-      const w = toWorld(pt.x, pt.y);
-      setRubber({ from: handle, x: w.x, y: w.y });
-    } else {
-      drag.current = id
-        ? { mode: "node", id, x: pt.x, y: pt.y, moved: false }
-        : { mode: "pan", x: pt.x, y: pt.y, tx: v.tx, ty: v.ty, moved: false };
-    }
-    setHover(null);
-    setTooltip(null);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    const pt = svgPoint(e);
-    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, pt);
-    const d = drag.current;
-    if (d?.mode === "pinch") {
-      if (pointers.current.size >= 2) {
-        const [a, b] = [...pointers.current.values()];
-        const cx = (a!.x + b!.x) / 2;
-        const cy = (a!.y + b!.y) / 2;
-        const k = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (d.k * Math.hypot(a!.x - b!.x, a!.y - b!.y)) / (d.d || 1)));
-        view.current = { tx: cx - d.wx * k, ty: cy - d.wy * k, k };
-        persist();
-        stash.auto = false;
-        bump();
-      }
-      return;
-    }
-    if (d?.mode === "connect") {
-      const w = toWorld(pt.x, pt.y);
-      setRubber({ from: d.from, x: w.x, y: w.y });
-      setHover(nodeAt(e));
-      return;
-    }
-    if (d) {
-      const dx = pt.x - d.x;
-      const dy = pt.y - d.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
-      if (d.mode === "pan") {
-        view.current = { tx: d.tx + dx, ty: d.ty + dy, k: (view.current ?? { k: 1 }).k };
-        persist();
-        if (d.moved) stash.auto = false;
-      } else if (d.moved) {
-        const w = toWorld(pt.x, pt.y);
-        const p = P.current[d.id];
-        if (p) {
-          p.x = w.x;
-          p.y = w.y;
-        }
-      }
-      bump();
-      return;
-    }
-    if (e.pointerType === "touch") return;
-    const id = (e.target as Element).closest("[data-node-id]")?.getAttribute("data-node-id") ?? null;
-    if (id && nodeById.has(id)) {
-      setHover(id);
-      setTooltip({ x: pt.x, y: pt.y });
-    } else if (hover) {
-      setHover(null);
-      setTooltip(null);
-    }
-  };
-
-  const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    const d = drag.current;
-    pointers.current.delete(e.pointerId);
-    if (svgRef.current?.hasPointerCapture(e.pointerId)) svgRef.current.releasePointerCapture(e.pointerId);
-    if (d?.mode === "pinch") {
-      drag.current = pointers.current.size > 0 ? d : null;
-      return;
-    }
-    drag.current = null;
-    if (d?.mode === "connect") {
-      const to = nodeAt(e);
-      setRubber(null);
-      setHover(null);
-      if (to) onConnect?.(d.from, to, { x: e.clientX, y: e.clientY });
-      return;
-    }
-    if (d && !d.moved) onSelect(d.mode === "node" ? d.id : null);
-    setHover(null);
-    setTooltip(null);
-  };
-
-  const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-  const neighbors = hover ? adj.get(hover) : null;
-  const lit = (id: string) => (hover ? id === hover || (neighbors?.has(id) ?? false) : chain ? chain.nodes.has(id) : true);
+  const v = vp.v;
+  const lit = (id: string) => (hover ? vp.near(id) : chain ? chain.nodes.has(id) : true);
   const dimAll = !!hover || !!chain;
 
   // marker per distinct edge colour; ids are scoped to the scene so two canvases never share one
@@ -446,7 +302,7 @@ export function LayeredGraphCanvas({
   );
 
   const hoverNode = hover ? nodeById.get(hover) : null;
-  const showTip = !!hoverNode && !!tooltip && !drag.current;
+  const showTip = !!hoverNode && !!tooltip && !vp.dragging;
   // The tooltip is clamped by its measured size (its height depends on the text), before paint.
   const measureTip = () => {
     const el = tipRef.current;
@@ -466,32 +322,15 @@ export function LayeredGraphCanvas({
     : null;
 
   return (
-    <div className="cg-wrap lg-canvas" ref={wrapRef} data-ui={`${ui}-canvas`} data-scene={sceneKey}>
+    <div className="cg-wrap lg-canvas" ref={vp.wrapRef} data-ui={`${ui}-canvas`} data-scene={sceneKey}>
       <svg
         className="cg-svg"
-        ref={svgRef}
+        ref={vp.svgRef}
         width="100%"
         height="100%"
         role="img"
         aria-label={heading}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          pointers.current.clear();
-          drag.current = null;
-          setRubber(null);
-        }}
-        onWheel={(e) => {
-          const pt = svgPoint(e);
-          zoomAt(Math.exp(-e.deltaY * 0.0014), pt.x, pt.y);
-        }}
-        onMouseLeave={() => {
-          if (!drag.current) {
-            setHover(null);
-            setTooltip(null);
-          }
-        }}
+        {...vp.svgProps}
       >
         <defs>
           {colors.map((c) => (
@@ -543,17 +382,7 @@ export function LayeredGraphCanvas({
                 data-ui-key={n.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className={"cg-node lg-node" + (sel ? " sel" : "") + (lit(n.id) ? "" : " dim")}
-                tabIndex={0}
-                role="button"
-                aria-label={n.name}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    onSelect(n.id);
-                  }
-                }}
-                onFocus={() => setHover(n.id)}
-                onBlur={() => setHover((h) => (h === n.id ? null : h))}
+                {...vp.nodeProps(n.id, n.name)}
               >
                 <circle r={Math.max(R + 8, 18 / v.k)} fill="transparent" />
                 {sel && <circle r={R + 6} className="cg-ring" />}
@@ -616,8 +445,8 @@ export function LayeredGraphCanvas({
 
       <GraphZoomControls
         zoom={v.k}
-        onZoomIn={() => zoomAt(1.25, size.w / 2, size.h / 2)}
-        onZoomOut={() => zoomAt(0.8, size.w / 2, size.h / 2)}
+        onZoomIn={() => vp.zoomCenter(1.25)}
+        onZoomOut={() => vp.zoomCenter(0.8)}
         onFit={fitView}
         onRelayout={relayout}
       />

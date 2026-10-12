@@ -55,8 +55,9 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 
 ## 画布（`packages/web/src/graph/`、`argument/`；票 03，只有渲染，页面入口与写入在后续票）
 
-共享图 renderer 有两种布局：`GraphCanvas`（力导向，Library 与 Discovery 两个 adapter）和 `LayeredGraphCanvas`（分层，论证图 adapter）。两者共用缩放控件 `GraphZoomControls` 和 `cg-*` 样式；分层 renderer 不认识「论证」，只收到节点（短标题、颜色、双环、置底/置顶、角标）和边（颜色、静止色、虚线/点线、可选文字）。领域语义全部在 `argument/`：`canvasModel.ts`（种类与角色到颜色、线型、置底置顶；审计角标与环上的边取自 contracts 的 `auditArgumentGraph`）和 `ArgumentGraphCanvas.tsx`（图例、tooltip、双语文案 `argument.canvas.*`）。
+共享图 renderer 有两种布局：`GraphCanvas`（力导向，Library 与 Discovery 两个 adapter）和 `LayeredGraphCanvas`（分层，论证图 adapter）。两者共用缩放控件 `GraphZoomControls`、`cg-*` 样式和视口状态机 `useGraphViewport`（`graph/useGraphViewport.ts`：画布尺寸、视图与 stash、缩放上下限 0.3–3.2、滚轮、平移、双指缩放、拖节点、hover 与 tooltip 锚点、hover 邻域、节点 `g` 的键盘与焦点外壳）；分层 renderer 不认识「论证」，只收到节点（短标题、颜色、双环、置底/置顶、角标）和边（颜色、静止色、虚线/点线、可选文字）。领域语义全部在 `argument/`：`canvasModel.ts`（种类与角色到颜色、线型、置底置顶；审计角标与环上的边取自 contracts 的 `auditArgumentGraph`）和 `ArgumentGraphCanvas.tsx`（图例、tooltip、双语文案 `argument.canvas.*`）。
 
-- **布局是纯函数**（`graph/layered/layout.ts`）：Native 在底、End 在顶，其余按最长支撑链；闭合环的边只在分层时忽略、照常绘制，并在 `backEdges` 里报告；跨层的边经不可见路径点；每个论证的列宽 = 它自己短标题的宽度（按最大字号 14 预留）；同输入同输出。短标题与边标签的避让也是纯函数（`placement.ts`）：右侧被占时改下、左、上里最空的一侧。
+- **共享视口与各自保留的部分**：`useGraphViewport` 不认识节点怎么画、怎么摆；renderer 以回调接入——`onNodeDrag` / `onNodeRelease`（力导向：钉住并 reheat；分层：直接移动点）、`onUserView`（用户接管视图，分层据此停止自动适应）、`gesture`（在特殊目标上起手的拖拽，分层的连边手柄）、`tooltipAt`（力导向夹取 tooltip）；适应窗口的规则、物理、布局、controller 由各 renderer 自己写，经 `setView` 落回。controller（放大、缩小、适应、重新布局）由 renderer 用 `zoomCenter` 加自己的 fit / relayout 组装，见 `GraphCanvas`；分层 renderer 暂未暴露 controller。
+- **布局是纯函数**（`graph/layered/layout.ts`）：Native 在底、End 在顶，其余按最长支撑链；闭合环的边只在分层时忽略、照常绘制，并在 `backEdges` 里报告；跨层的边经不可见路径点；每个论证的列宽 = 它自己短标题的宽度（按最大字号 14 预留）；同输入同输出。短标题（`layered/text.ts`）：拉丁文在空白与连字符处断行，单词超过一行才在词内断，中文逐字断，最多两行、超出以 `…` 截断；宽度按字符类别估算（窄字母、小写、大写、宽大写 W/M/O/Q、数字、全角），偏保守，纯函数、不量 DOM。短标题与边标签的避让也是纯函数（`placement.ts`）：右侧被占时改下、左、上里最空的一侧。
 - **结构、置底置顶或短标题变化即重新布局**，拖动只在此之前有效，不保存；视图适应窗口时避开标题和图例（量实际尺寸；缩放控件在右缘，由右留白避开），画布尺寸变化时若未手动平移或缩放则重新适应，选中的论证保持在可见范围内。
 - **画布拖拽连边**：选中论证左侧出现手柄，拖到任一论证（含自己）后回调 `onConnect(from, to, 屏幕位置)`；自环拒绝、角色选择与写入由调用方（票 05）负责。
