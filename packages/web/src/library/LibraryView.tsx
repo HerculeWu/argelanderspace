@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type CopilotViewActionResult, type DiscoveryPage, type DiscoverySavedViewAction, type DiscoveryViewAction, isDiscoveryViewAction, type LibraryDetailTab, type LibraryPage, type LibraryViewAction, libraryRefMatches } from "@argelanderspace/contracts";
+import { type ArgumentViewAction, type CopilotViewActionResult, type DiscoveryPage, type DiscoverySavedViewAction, type DiscoveryViewAction, isArgumentViewAction, isDiscoveryViewAction, type LibraryDetailTab, type LibraryPage, type LibraryViewAction, libraryRefMatches } from "@argelanderspace/contracts";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
-import { confirmWorkspaceLeave, useWorkspace, whenWorkspaceMayLeave } from "../argelander/workspace";
+import { askWorkspaceLeave, confirmWorkspaceLeave, useWorkspace, whenWorkspaceMayLeave } from "../argelander/workspace";
 import { fetchLibrary, type LibraryLoad } from "../api/library";
 import { onLibraryChanged } from "../api/ws";
 import { LibraryGraph } from "./LibraryGraph";
@@ -17,7 +17,7 @@ import { type ExploreControl, ExploreMode } from "./ExploreMode";
 import { exploreReport, useExploreStack } from "./explore-state";
 import { exploreBus } from "../lib/explore-route";
 import { argumentBus, clearArgumentUrl, pushArgumentUrl } from "../lib/argument-route";
-import { ArgumentGraphMode } from "../argument/ArgumentGraphMode";
+import { ArgumentGraphMode, type ArgumentModeControl } from "../argument/ArgumentGraphMode";
 import type { ArgumentPage } from "../argument/page";
 import type { LibraryData, LibraryRef } from "./types";
 
@@ -67,7 +67,7 @@ const IMPORTS = [
 /** What the Shell can ask the visible Library page to do for a Copilot view action. */
 export interface LibraryViewController {
   /** `DiscoverySavedViewAction` is the service's own state sync after it saved a candidate (never a tool action). */
-  apply: (action: LibraryViewAction | DiscoverySavedViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">>;
+  apply: (action: LibraryViewAction | DiscoverySavedViewAction | ArgumentViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">>;
 }
 export function LibraryView({
   paneId,
@@ -227,6 +227,10 @@ function LibraryBody({
     },
     [paneId]
   );
+  const argumentControl = useRef<ArgumentModeControl | null>(null);
+  const registerArgumentControl = useCallback((control: ArgumentModeControl | null) => {
+    argumentControl.current = control;
+  }, []);
   const exitArgument = useCallback(() => setArgumentWorkId(null), []);
   const leaveArgument = useCallback(() => {
     setArgumentWorkId(null);
@@ -408,6 +412,32 @@ function LibraryBody({
       }
     }
   };
+  // The argument graph view's navigation for the Copilot (ticket 09): open a Work's graph, select an argument, leave the
+  // view. The model is waiting for an answer and the user has not chosen to leave, so a draft that would be lost is
+  // never asked about: the guards are asked as `agent`, and a refusal is `leave_blocked`.
+  const runArgumentAction = async (action: ArgumentViewAction): Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http">> => {
+    const state = latest.current;
+    const mayLeave = () => askWorkspaceLeave("library", paneId, "agent") === true;
+    if (action.action === "open_argument_graph") {
+      if (argumentWorkRef.current === action.workId && !state.exploring) return { ok: true };
+      let known = state.refs.some((r) => r.id === action.workId);
+      if (!known) known = (await state.onRefetch()).data.refs.some((r) => r.id === action.workId);
+      if (!known) return { ok: false, detail: "not_found" };
+      if (argumentWorkRef.current !== null && !mayLeave()) return { ok: false, detail: "leave_blocked" };
+      // a UI entry: one history entry, so the browser's Back returns to the Library (the guard was asked just above)
+      openArgument(action.workId, { push: true, confirmed: true });
+      return { ok: true };
+    }
+    if (action.action === "exit_argument_graph") {
+      if (!state.argumentOpen) return { ok: false, detail: "unavailable" };
+      if (!mayLeave()) return { ok: false, detail: "leave_blocked" };
+      leaveArgument();
+      return { ok: true };
+    }
+    // select_argument: the view that shows this Work's graph
+    if (!state.argumentOpen || argumentWorkRef.current !== action.workId) return { ok: false, detail: "unavailable" };
+    return argumentControl.current ? argumentControl.current.select(action.argumentId) : { ok: false, detail: "unavailable" };
+  };
   applyViewAction.current = async (action) => {
     const state = latest.current;
     // The service saved a candidate: mark it in place, as the page's own Add does.
@@ -415,6 +445,7 @@ function LibraryBody({
       state.explore.markSaved(action.bibcode, action.workId);
       return { ok: true };
     }
+    if (isArgumentViewAction(action)) return runArgumentAction(action);
     if (isDiscoveryViewAction(action)) return runDiscoveryAction(action);
     // Exploration replaces this page: its own controls are the discovery actions above.
     if (state.exploring || state.argumentOpen) return { ok: false, detail: "unavailable" };
@@ -483,6 +514,7 @@ function LibraryBody({
         onExit={leaveArgument}
         onOpenDoc={onOpenDoc}
         onPage={onArgumentPage}
+        onControl={registerArgumentControl}
       />
     );
   }

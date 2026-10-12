@@ -1577,6 +1577,21 @@
         "delete": "Delete message",
         "move": "Move message",
         "send_status": "Check send"
+      },
+      "argument": {
+        "read": "Read the argument graph",
+        "guide": "Read the argument method",
+        "create": "Create an argument",
+        "update": "Edit an argument",
+        "delete": "Delete an argument",
+        "undo_delete": "Undo an argument delete",
+        "add_edge": "Add an argument edge",
+        "remove_edge": "Remove an argument edge",
+        "replace": "Replace the argument graph",
+        "clear": "Clear the argument graph",
+        "open": "Open the argument graph",
+        "select": "Select an argument",
+        "exit": "Leave the argument graph"
       }
     },
     "undo": {
@@ -1611,7 +1626,15 @@
       "unreadableDeleteDoc": "The check made when you confirmed could not read this document's data (its works or annotations). This is not a change you made, and nothing was deleted. Try again, or look at the library.",
       "expiredMail": "The draft or the message changed before you confirmed. Nothing was sent, deleted or moved; ask again.",
       "failedMail": "Your answer could not be recorded. Try again.",
-      "unreadableMail": "The mail server could not be asked to check the draft, so nothing was sent."
+      "unreadableMail": "The mail server could not be asked to check the draft, so nothing was sent.",
+      "replaceArgument": "Replace the argument graph",
+      "clearArgument": "Clear the argument graph",
+      "replaceArgumentScope": "The existing {{currentArguments}} arguments and {{currentEdges}} edges will be replaced by {{nextArguments}} arguments and {{nextEdges}} edges.",
+      "clearArgumentScope": "All {{currentArguments}} arguments and {{currentEdges}} edges of this work will be deleted. This cannot be undone.",
+      "replaceArgumentConfirm": "Replace",
+      "expiredArgument": "The argument graph changed before your decision. Nothing was replaced.",
+      "failedArgument": "Your decision could not be saved. Nothing was changed; try again.",
+      "unreadableArgument": "The check made when you confirmed could not read this argument graph. This is not a change you made, and nothing was changed. Try again, or look at the graph."
     },
     "thinkingLevels": {
       "off": "Off",

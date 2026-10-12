@@ -10,7 +10,7 @@ export type ConfirmationAction = ConfirmationRequest["action"];
 /** What a check says about a card now: still what it showed, really changed, or not readable (a system error). */
 export type ConfirmationCheck = "valid" | "changed" | { error: string };
 /** Which change notification makes the host recheck a kind's pending cards in the background. */
-export type ConfirmationTrigger = "plans" | "writer" | "doc";
+export type ConfirmationTrigger = "plans" | "writer" | "doc" | "argument";
 
 type RecordBase =
   | "version"

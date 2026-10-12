@@ -1577,6 +1577,21 @@
         "delete": "删除邮件",
         "move": "移动邮件",
         "send_status": "查看发送情况"
+      },
+      "argument": {
+        "read": "读取论证图",
+        "guide": "读取整理方法",
+        "create": "新建论证",
+        "update": "修改论证",
+        "delete": "删除论证",
+        "undo_delete": "撤销删除论证",
+        "add_edge": "添加论证边",
+        "remove_edge": "移除论证边",
+        "replace": "替换论证图",
+        "clear": "清空论证图",
+        "open": "打开论证图",
+        "select": "选中论证",
+        "exit": "退出论证图"
       }
     },
     "undo": {
@@ -1611,7 +1626,15 @@
       "unreadableDeleteDoc": "确认时的检查无法读取此文档的数据（关联条目或标注）。这不是你的改动，没有删除任何内容。请重试，或到文献库查看。",
       "expiredMail": "草稿或邮件在你确认前已变化。没有发送、删除或移动；请让 Copilot 重新请求。",
       "failedMail": "你的答复没能记录，请重试。",
-      "unreadableMail": "无法向邮件服务器核对草稿，所以没有发送。"
+      "unreadableMail": "无法向邮件服务器核对草稿，所以没有发送。",
+      "replaceArgument": "替换论证图",
+      "clearArgument": "清空论证图",
+      "replaceArgumentScope": "现有的 {{currentArguments}} 个论证和 {{currentEdges}} 条边将被 {{nextArguments}} 个论证、{{nextEdges}} 条边替换。",
+      "clearArgumentScope": "将删除这篇文献的全部 {{currentArguments}} 个论证和 {{currentEdges}} 条边。此操作不能撤销。",
+      "replaceArgumentConfirm": "替换",
+      "expiredArgument": "论证图在你决定之前已被改动，未替换任何内容。",
+      "failedArgument": "你的决定没有保存成功，论证图未改动，请重试。",
+      "unreadableArgument": "你确认时的检查没能读取这张论证图。这不是你做的改动，论证图未改动。请重试，或查看论证图。"
     },
     "thinkingLevels": {
       "off": "关闭",

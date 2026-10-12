@@ -17,6 +17,7 @@ const reads = vi.hoisted(() => ({
   describeManuscriptDelete: vi.fn(),
   prepareArxivRefresh: vi.fn(),
   draftUnchanged: vi.fn(),
+  describeArgumentTarget: vi.fn(),
 }));
 vi.mock("../src/plans-actions.js", async (original) => ({
   ...(await original<object>()),
@@ -29,6 +30,10 @@ vi.mock("../src/writer-actions.js", async (original) => ({
 vi.mock("../src/library-actions.js", async (original) => ({
   ...(await original<object>()),
   prepareArxivRefresh: reads.prepareArxivRefresh,
+}));
+vi.mock("../src/copilot-argument-tool.js", async (original) => ({
+  ...(await original<object>()),
+  describeArgumentTarget: reads.describeArgumentTarget,
 }));
 vi.mock("../src/mail-copilot.js", async (original) => ({
   ...(await original<object>()),
@@ -130,6 +135,17 @@ const requests: { [A in ConfirmationAction]: Extract<ConfirmationRequest, { acti
     baseRev: 3,
     objectDigest: "doc-digest",
   },
+  replace_argument_graph: {
+    toolCallId: "call",
+    action: "replace_argument_graph",
+    workId: "doi:10.1/x",
+    label: "A paper",
+    mode: "replace",
+    current: { arguments: 4, edges: 3 },
+    next: { arguments: 6, edges: 7 },
+    baseRev: 5,
+    objectDigest: "graph-digest",
+  },
   refresh_arxiv_source: {
     toolCallId: "call",
     action: "refresh_arxiv_source",
@@ -153,6 +169,7 @@ const workbench = () =>
     library: { deletion: { describe: describe_ }, acquisition: { describeSource } },
     text: { probeReplacement },
     mail: {},
+    argument: {},
   }) as unknown as Workbench;
 const checkOf = <A extends ConfirmationAction>(action: A) =>
   (kinds[action] as ConfirmationKinds[ConfirmationAction]).check(
@@ -185,6 +202,26 @@ test("delete_plan: valid when rev and content digest match, changed otherwise, a
     throw new Error("plans.json: Unexpected token");
   });
   expect(await checkOf("delete_plan")).toEqual({ error: "plans.json: Unexpected token" });
+});
+
+test("replace_argument_graph: valid on the same rev and stored content, changed otherwise, an error when the graph cannot be read", async () => {
+  reads.describeArgumentTarget.mockReturnValue({ rev: 5, objectDigest: "graph-digest" });
+  expect(await checkOf("replace_argument_graph")).toBe("valid");
+  expect(reads.describeArgumentTarget).toHaveBeenCalledWith({}, "doi:10.1/x");
+  // a hand edit that leaves the rev alone also ends the card
+  reads.describeArgumentTarget.mockReturnValue({ rev: 5, objectDigest: "edited by hand" });
+  expect(await checkOf("replace_argument_graph")).toBe("changed");
+  reads.describeArgumentTarget.mockReturnValue({ rev: 6, objectDigest: "graph-digest" });
+  expect(await checkOf("replace_argument_graph")).toBe("changed");
+  // the Work left the library
+  reads.describeArgumentTarget.mockReturnValue(null);
+  expect(await checkOf("replace_argument_graph")).toBe("changed");
+  reads.describeArgumentTarget.mockImplementation(() => {
+    throw new Error("the argument graph file could not be read");
+  });
+  expect(await checkOf("replace_argument_graph")).toEqual({
+    error: "the argument graph file could not be read",
+  });
 });
 
 test("delete_manuscript: valid on the same rev and bytes, changed otherwise, an error when reading throws", async () => {
@@ -307,6 +344,7 @@ test("without a workbench seam every check says changed, as the host did", async
     "delete_manuscript",
     "delete_doc",
     "refresh_arxiv_source",
+    "replace_argument_graph",
     "replace_text_reading",
     "send_mail",
   ] as const)
@@ -322,6 +360,7 @@ test("background trigger and bound-view rule per kind are what the host had", ()
     delete_manuscript: ["writer", true],
     delete_doc: ["doc", true],
     refresh_arxiv_source: ["doc", false],
+    replace_argument_graph: ["argument", false],
     replace_text_reading: ["doc", false],
     send_mail: [null, false],
     delete_mail: [null, false],
@@ -351,6 +390,16 @@ test("records and resume lines keep their fields and wording", () => {
     workId: "w_1",
     docId: "d_1",
   });
+  const replaced = kinds.replace_argument_graph.card("c1", "r1", requests.replace_argument_graph);
+  expect(replaced.object).toEqual({ kind: "work", id: "doi:10.1/x", workId: "doi:10.1/x" });
+  expect(kinds.replace_argument_graph.requestedFields(requests.replace_argument_graph)).toEqual({
+    action: "replace_argument_graph",
+    workId: "doi:10.1/x",
+  });
+  expect(kinds.replace_argument_graph.resolvedFields(replaced)).toEqual({
+    action: "replace_argument_graph",
+    workId: "doi:10.1/x",
+  });
   const base = {
     version: 1,
     phase: "requested",
@@ -379,4 +428,11 @@ test("records and resume lines keep their fields and wording", () => {
   expect(
     kinds.send_mail.askedLine({ ...base, action: "send_mail", accountId: "acc", messageId: "<m>" })
   ).toBe("send_mail acc <m>");
+  expect(
+    kinds.replace_argument_graph.askedLine({
+      ...base,
+      action: "replace_argument_graph",
+      workId: "w",
+    })
+  ).toBe("replace_argument_graph w");
 });

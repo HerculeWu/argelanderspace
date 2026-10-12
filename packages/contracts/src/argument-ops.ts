@@ -275,16 +275,16 @@ const shortEntry = (a: Argument): ArgumentOutlineEntry => ({
 
 /** Every form of every phase says why a Library page action is refused while the view is open. */
 export const ARGUMENT_ACTIONS_NOTE =
-  "Library page actions (filters, selecting a Work, the exploration) are unavailable while the argument graph view is open, so a Library action that is refused is refused for that reason";
+  "Library page actions (filters, selecting a Work, the exploration) are unavailable while the argument graph view is open; one that is refused is refused for that reason";
 /** Appended when the last refresh of the graph failed and the view still shows the graph it had. */
-export const ARGUMENT_STALE_NOTE =
-  "The last attempt to refresh the graph failed: it may be out of date.";
-const READ_ONLY = "this is the Library tab showing one Work's argument graph, read-only";
+export const ARGUMENT_STALE_NOTE = "The last refresh failed: this may be out of date.";
+const WHICH = "this is the Library tab showing one Work's argument graph";
 const LATER =
-  "The argument tools come with a later release: until then say which text you cannot see, never guess it.";
+  "Fetch missing text with the argument tool, read {workId, ids} (its note says how to continue); never guess it.";
+const HELD_LATER = "Fetch the text you need with argument read {workId, ids}.";
 
 /** What a whole page says of itself. */
-export const ARGUMENT_WHOLE_NOTE = `${READ_ONLY}: page.graph is the whole graph and selectedId the argument the user has open. ${ARGUMENT_ACTIONS_NOTE}.`;
+export const ARGUMENT_WHOLE_NOTE = `${WHICH}: page.graph is the whole graph and selectedId the argument the user has open. ${ARGUMENT_ACTIONS_NOTE}.`;
 
 const PHASE_NOTES: Record<"loading" | "not-found" | "corrupt" | "error", string> = {
   loading: "the argument graph of this Work is still loading; this page carries no graph yet",
@@ -307,27 +307,35 @@ const AUDIT_CAP = { ids: 30, cycles: 5, cycleIds: 20 } as const;
 function levelText(level: 1 | 2 | 3 | 4): string {
   const text = SHAPES[level].text;
   const cut = text
-    ? `selected is the selected argument with each field cut to ${text.field} characters and each source text to ${text.source} (reduction.truncated says which)`
+    ? `selected: the selected argument, fields cut to ${text.field} characters and sources to ${text.source} (reduction.truncated says which)`
     : "selected is the selected argument in full";
-  const list = "outline lists every argument and which fields have text, edges every edge";
+  const others = "other arguments' text is not in this page";
   if (level < 3)
-    return `the field text of the other arguments is not in this page; ${cut}; ${list}.`;
+    return `${others}; ${cut}; outline lists every argument and which fields have text; edges lists every edge.`;
   if (level === 3)
-    return `the field text of the other arguments is not in this page; ${cut}; outline lists every argument and which fields have text; edges lists only the selected argument's edges (counts.edges is the total).`;
-  return `the field text of the other arguments is not in this page; ${cut}; outline lists id, title and kind only, and not every argument if the page would be too long (reduction.outlineOmitted); edges lists only the selected argument's edges (counts.edges is the total); the audit's lists are capped (audit.total is the real number).`;
+    return `${others}; ${cut}; outline lists every argument and which fields have text; edges lists only the selected argument's edges (counts.edges is the total).`;
+  return `${others}; ${cut}; outline has id, title, kind of the arguments that fit (reduction.outlineOmitted counts the rest; read {workId} without ids lists them all); edges has only the selected argument's (counts.edges is the total); audit lists are capped (audit.total is the count).`;
 }
 
-function partialNote(level: 1 | 2 | 3 | 4, heldRev: number | null, stale: boolean): string {
+/**
+ * The note of a partial page. `heldRev` set: that revision's whole graph was carried earlier in this conversation or
+ * written by the Copilot itself, so its text may already be in the context but is not in this page. The note makes no
+ * claim beyond that. Every form of every phase stays well under {@link ARGUMENT_NOTE_MAX} (a test holds each one to it).
+ */
+export function argumentPartialNote(
+  level: 1 | 2 | 3 | 4,
+  heldRev: number | null,
+  stale: boolean
+): string {
   const intro =
     heldRev === null
-      ? `${READ_ONLY}. Partial: the whole graph is too large to carry,`
-      : `${READ_ONLY}. The whole graph of revision ${heldRev} is in the task's context and is not repeated; this page is partial:`;
-  const tail =
-    heldRev === null ? LATER : "The held graph is the only copy of the text omitted here.";
+      ? `${WHICH}. Partial (too large to carry whole):`
+      : `${WHICH}. Partial, revision ${heldRev} (carried earlier or written by you; its text is not repeated):`;
+  const tail = heldRev === null ? LATER : HELD_LATER;
   return `${intro} ${levelText(level)} ${tail} ${ARGUMENT_ACTIONS_NOTE}.${stale ? ` ${ARGUMENT_STALE_NOTE}` : ""}`;
 }
 /** The level-1 partial note, for the callers that only need to recognise one. */
-export const ARGUMENT_PARTIAL_NOTE = partialNote(1, null, false);
+export const ARGUMENT_PARTIAL_NOTE = argumentPartialNote(1, null, false);
 
 // ---- Reduction ------------------------------------------------------------------------------------------------------- //
 
@@ -411,7 +419,7 @@ function partialAt(page: WholePage, level: 1 | 2 | 3 | 4, heldRev: number | null
         : [];
   const { audit, capped } =
     level === 4 ? capAudit(page.audit) : { audit: page.audit, capped: false };
-  const note = partialNote(level, heldRev, !!page.note?.includes(ARGUMENT_STALE_NOTE));
+  const note = argumentPartialNote(level, heldRev, !!page.note?.includes(ARGUMENT_STALE_NOTE));
   const make = (outline: ArgumentOutlineEntry[], omittedSources: number): ArgumentPage => ({
     ...page,
     audit,

@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "nod
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  type ArgumentPage,
   argumentKey,
   buildPdfReading,
   type ContextCoverage,
@@ -67,6 +68,12 @@ import {
   isRetryableAssistantError,
 } from "@earendil-works/pi-ai";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import {
+  ARGUMENT_PROMPT,
+  ARGUMENT_TOOL_NAME,
+  type ArgumentOpDeps,
+  createArgumentTool,
+} from "./copilot-argument-tool.js";
 import { type FittedEnvelope, fitEnvelope, historyCost } from "./copilot-batching.js";
 import {
   type ConfirmationKind,
@@ -310,7 +317,7 @@ const TEXT_PROMPT =
   " The text tool writes a text Doc's Markdown source (page.textSource carries the editor's current text; unsaved true means it is the user's draft) and its images; the reading text only changes with generate. A text Doc's generated reading is read and annotated with reader read and create_annotation like a LaTeX Doc. Replacing annotated reading text waits for the user's confirmation card, which you cannot give. To transcribe a PDF, first text load_instruction pdf-transcription.";
 
 /** The base instruction of a session: small and always present; the versioned instructions are loaded on demand. */
-const basePrompt = (writer: boolean, text: boolean, mail = false): string => {
+const basePrompt = (writer: boolean, text: boolean, mail = false, argument = false): string => {
   let base = writer ? SYSTEM_PROMPT + WRITER_PROMPT : SYSTEM_PROMPT;
   if (mail) {
     // The base sentences that list what exists say so for Mail too (a session without an account keeps them as they were).
@@ -324,7 +331,17 @@ const basePrompt = (writer: boolean, text: boolean, mail = false): string => {
         "(and writer, text and mail when present) tools"
       );
   }
-  return base + (text ? TEXT_PROMPT : "") + (mail ? MAIL_PROMPT : "");
+  if (argument) {
+    // The sentence that lists the tools which exist names the argument tool too.
+    base = base.replace(
+      /\(and (writer(?:, text and mail| and text)) when present\) tools/,
+      (_match, list: string) =>
+        `(and ${list.replace(/ and (\w+)$/, ", $1")} and argument when present) tools`
+    );
+  }
+  return (
+    base + (text ? TEXT_PROMPT : "") + (mail ? MAIL_PROMPT : "") + (argument ? ARGUMENT_PROMPT : "")
+  );
 };
 
 /** Business capabilities the app wires in; the host never reaches around them. */
@@ -340,6 +357,8 @@ export interface Workbench {
   writer?: WriterOpDeps;
   /** The Mail services the Mail page's routes use (Mail ticket 09); absent in hosts without Mail. */
   mail?: MailOpDeps;
+  /** The argument graph store, its lock and the library lookup of the page's PUT (argument graph ticket 09); absent in headless hosts. */
+  argument?: ArgumentOpDeps;
   /** Milliseconds a view action may wait for its bound browser to report (default 10 s). */
   viewActionTimeoutMs?: number;
   /** Milliseconds a view action waits for an offline bound browser to reconnect (default 30 s). */
@@ -1652,9 +1671,11 @@ export class CopilotHost {
         const outcomeWord =
           part.name === TEXT_TOOL_NAME
             ? "published"
-            : part.name === LIBRARY_TOOL_NAME && part.arguments?.action !== "delete_doc"
-              ? "replaced and no job was started"
-              : "deleted";
+            : part.name === ARGUMENT_TOOL_NAME
+              ? "written"
+              : part.name === LIBRARY_TOOL_NAME && part.arguments?.action !== "delete_doc"
+                ? "replaced and no job was started"
+                : "deleted";
         const payload =
           done?.result?.payload ??
           (declined
@@ -1675,7 +1696,9 @@ export class CopilotHost {
                   detail:
                     part.name === TEXT_TOOL_NAME
                       ? "interrupted before a result was recorded; read_source and the reading (reader read) to find out whether it was written or published, and do not repeat it blindly"
-                      : "interrupted before a result was recorded; read the plans (or, for a library call, the work and read_jobs; for a writer call, the manuscript) to find out what happened",
+                      : part.name === ARGUMENT_TOOL_NAME
+                        ? "interrupted before a result was recorded; argument read the graph to find out what happened, and do not repeat the write blindly"
+                        : "interrupted before a result was recorded; read the plans (or, for a library call, the work and read_jobs; for a writer call, the manuscript) to find out what happened",
                 });
         loaded.manager.appendMessage({
           role: "toolResult",
@@ -1711,6 +1734,7 @@ export class CopilotHost {
       text: envelope,
       pdf,
       coverage,
+      argument: sentArgument,
       evictions,
     } = await this.buildEnvelope(
       { messageId, text: request.text },
@@ -1733,7 +1757,7 @@ export class CopilotHost {
     const reference = this.reference(
       request,
       { messageId, runId: state.runId, contextId },
-      context,
+      sentArgument ? { ...context, argument: sentArgument } : context,
       pdf,
       state.model,
       coverage
@@ -1774,6 +1798,39 @@ export class CopilotHost {
    * the contract) must never be written, because it would make the whole conversation unreadable. The PDF material
    * then degrades to an `error` envelope that says it was not attached.
    */
+  /**
+   * The page this message sends: when it carries a whole argument graph that an earlier user message of the conversation
+   * already carried whole at the same revision, the listing form (never longer than the whole page; the graph itself stays
+   * whole when it changed, when it is not ready or when nothing earlier held it).
+   */
+  private listHeldArgument(loaded: Loaded, context: PageContext): PageContext {
+    const page = context.argument;
+    if (!page || page.partial || page.phase !== "ready" || !page.graph) return context;
+    const needle = `"rev":${page.graph.rev}`;
+    const held = loaded.manager.getEntries().some((entry) => {
+      if (entry.type !== "message" || entry.message.role !== "user") return false;
+      const content = entry.message.content;
+      const text =
+        typeof content === "string"
+          ? content
+          : content.map((part) => (part.type === "text" ? part.text : "")).join("");
+      if (!text.includes(needle) || !text.includes(page.work.id)) return false;
+      try {
+        const earlier = (JSON.parse(text) as { context?: PageContext }).context?.argument;
+        return (
+          !!earlier &&
+          !earlier.partial &&
+          earlier.work.id === page.work.id &&
+          earlier.graph?.rev === page.graph?.rev
+        );
+      } catch {
+        return false;
+      }
+    });
+    return held
+      ? observationArgumentPage(context, new Set([argumentKey(page.work.id, page.graph.rev)]))
+      : context;
+  }
   private async buildEnvelope(
     fields: { kind?: "resume"; messageId: string; text: string },
     context: PageContext,
@@ -1785,16 +1842,22 @@ export class CopilotHost {
     text: string;
     pdf?: PdfMaterialEnvelope;
     coverage?: ContextCoverage;
+    /** The argument graph page as it was really sent (a held graph is listed, not carried): what the record summarizes. */
+    argument?: ArgumentPage;
     /** Deliveries this message needs taken out of the conversation (`kind:id` keys); persisted only once it is accepted. */
     evictions: Set<string>;
   }> {
     let pdf = await this.pdfMaterial(context, model);
+    // An argument graph an earlier message of this conversation carried whole (same Work, same revision) is still in the
+    // conversation: this message lists it (outline, edges, the selected argument) instead of carrying it again, so a
+    // 100 000-character graph does not take the window once per message. `argument read` fetches any part.
+    const sent = this.listHeldArgument(loaded, context);
     const prompt = (material: PdfMaterialEnvelope | undefined) => ({
       version: 1 as const,
       ...(fields.kind ? { kind: fields.kind } : {}),
       messageId: fields.messageId,
       text: fields.text,
-      context,
+      context: sent,
       ...(material ? { pdf: material } : {}),
     });
     // Ticket 24: a reading or PDF material too large for the room left in the window is delivered in parts (or,
@@ -1863,6 +1926,7 @@ export class CopilotHost {
       evictions,
       ...(delivered.pdf ? { pdf: delivered.pdf } : {}),
       ...(fitted.coverage ? { coverage: fitted.coverage } : {}),
+      ...(delivered.context.argument ? { argument: delivered.context.argument } : {}),
     };
   }
   /**
@@ -1956,11 +2020,12 @@ export class CopilotHost {
     extensions: Parameters<typeof createApplicationResourceLoader>[0]["extensions"],
     writer: boolean,
     text: boolean,
-    mail = false
+    mail = false,
+    argument = false
   ): ApplicationResourceLoader {
     return createApplicationResourceLoader({
       extensions,
-      systemPrompt: () => basePrompt(writer, text, mail),
+      systemPrompt: () => basePrompt(writer, text, mail, argument),
       refuseExtension: () => {
         throw new CopilotError("unavailable");
       },
@@ -2031,7 +2096,8 @@ export class CopilotHost {
       { extensions: [], errors: [], runtime: {} as never },
       writer,
       !!this.workbench?.text,
-      mounted
+      mounted,
+      !!this.workbench?.argument
     );
     let bytes = Buffer.byteLength(loader.getSystemPrompt() ?? "");
     // The tool schemas are built the way a run builds them; the closures are never called.
@@ -2045,6 +2111,7 @@ export class CopilotHost {
         if (this.workbench.writer) tools.push(createWriterTool(stub));
         if (this.workbench.text) tools.push(createTextTool(stub));
         if (this.workbench.mail && mounted) tools.push(createMailTool(stub));
+        if (this.workbench.argument) tools.push(createArgumentTool(stub));
       }
     } catch {
       // a factory that needs its dependencies at creation: fall back to a generous measure
@@ -2229,7 +2296,13 @@ export class CopilotHost {
     const messageId = randomUUID(),
       runId = randomUUID(),
       contextId = randomUUID();
-    const { text, pdf, coverage, evictions } = await this.buildEnvelope(
+    const {
+      text,
+      pdf,
+      coverage,
+      argument: sentArgument,
+      evictions,
+    } = await this.buildEnvelope(
       {
         ...(kind ? { kind } : {}),
         messageId,
@@ -2334,7 +2407,8 @@ export class CopilotHost {
       extensions,
       !!(workbench?.writer && planTool),
       !!(workbench?.text && planTool),
-      !!(mailOn && planTool)
+      !!(mailOn && planTool),
+      !!(workbench?.argument && planTool)
     );
     const readerTool =
       workbench?.reader && planTool
@@ -2422,6 +2496,26 @@ export class CopilotHost {
             },
           })
         : undefined;
+    const argumentTool =
+      workbench?.argument && planTool
+        ? createArgumentTool({
+            argument: workbench.argument,
+            viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
+            admitting: () => !this.closed && !state.stopRequested,
+            budget: () => this.room(loaded, frozenModel),
+            // The model learns what it wrote from the tool result: the page showing that revision is an outline.
+            wrote: (workId, rev) => state.readings.add(argumentKey(workId, rev)),
+            journal: this.journalPort(loaded, runId),
+            confirm: this.confirmationPort(loaded, state),
+            runId,
+            track: (work) => {
+              state.inflight.add(work);
+              const forget = () => state.inflight.delete(work);
+              work.then(forget, forget);
+              return work;
+            },
+          })
+        : undefined;
     const toolNames =
       planTool && workspaceTool
         ? [
@@ -2432,6 +2526,7 @@ export class CopilotHost {
             ...(writerTool ? [WRITER_TOOL_NAME] : []),
             ...(textTool ? [TEXT_TOOL_NAME] : []),
             ...(mailTool ? [MAIL_TOOL_NAME] : []),
+            ...(argumentTool ? [ARGUMENT_TOOL_NAME] : []),
           ]
         : [];
     const { session } = await pi.createAgentSession({
@@ -2451,6 +2546,7 @@ export class CopilotHost {
               ...(writerTool ? [writerTool] : []),
               ...(textTool ? [textTool] : []),
               ...(mailTool ? [mailTool] : []),
+              ...(argumentTool ? [argumentTool] : []),
             ],
           }
         : { tools: [], customTools: [], noTools: "all" as const }),
@@ -2498,7 +2594,14 @@ export class CopilotHost {
     };
     loaded.manager.appendCustomEntry(
       contextType,
-      this.reference(request, { messageId, runId, contextId }, context, pdf, frozenModel, coverage)
+      this.reference(
+        request,
+        { messageId, runId, contextId },
+        sentArgument ? { ...context, argument: sentArgument } : context,
+        pdf,
+        frozenModel,
+        coverage
+      )
     );
     let accept!: () => void, reject!: (error: unknown) => void;
     const admitted = new Promise<void>((resolve, fail) => {

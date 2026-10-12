@@ -381,7 +381,12 @@ async function send(id: string, context: PageContext, text: string) {
 // about 2.6 KB (about 1.3k tokens) out of the instruction, 61800 -> 60500, then 60400 after its fix round dropped the remaining
 // attachment sentences (about 100 tokens). Ticket 33 lane 3 (reader download_original text, "Writer" in the page-context sentence,
 // the downloads exception, its own failure text) added about 0.7 KB (-> 60700), lane 4 (undo_delete_task, about 200 tokens) and its scoped-lookup sentence -> 61000 (measured).
-const WINDOW_BIG_DOC = 61_000;
+// ticket 09 (argument tool: description, parameter schema, one prompt sentence) took the footprint from 69438 to 71928 bytes (+2490 B), review round A
+// to 71958 (+30 B more). The room a message can use is windowBytes - history - footprint - max(8 KB, windowBytes / 8) with windowBytes = 2 *
+// (tokens - 3072) here, so keeping the same room after +ΔF bytes of footprint takes Δwindow = ΔF * 8 / 7 bytes = ΔF * 4 / 7 tokens (the
+// eighth held back grows with the window): ΔF = 2520 -> +1440 tokens, 61000 -> 62440. (The earlier rounds added ΔF / 2 instead and
+// ignored the held-back eighth: 62260, 180 tokens short.)
+const WINDOW_BIG_DOC = 62_440;
 
 // ---- Reader: a document many windows long -------------------------------------------------------------- //
 test("a Reader document several windows long is delivered in parts with its range; reading on reaches the last unique marker, earlier parts leave the conversation and the record stays", async () => {
@@ -704,7 +709,8 @@ test("a PDF several windows long is delivered in page parts, reading on reaches 
     pdf,
   };
   // ticket 33: lane 1 removed attachment tool text, lane 3 added download_original, lane 4 undo_delete_task; merged: 49700 -> 50_300.
-  await withWindow(50_300, async () => {
+  // Review rounds A and B: bound to the fixed footprint like the others, +1440 tokens (see WINDOW_BIG_DOC for the derivation).
+  await withWindow(51_740, async () => {
     const reader: Step = (c) => {
       const state = progress(c);
       const batch = state.batch;
@@ -1192,10 +1198,10 @@ test("a tool-call id of 225 characters is mapped to a bounded key: the ledger is
   expect(reloaded.messages.flatMap((m) => m.operations ?? [])[0]?.status).toBe("ok");
 });
 
-test("a window barely above the instruction (39500 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
+test("a window barely above the instruction (40940 tokens): a read that finds no room is an honest gap, not a failed run", async () => {
   writeDoc(docIr(900));
   await withWindow(
-    39_500, // ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
+    40_940, // 39_500 + 1_440 for the argument tool (footprint +2520 B, times 4/7 because the held-back eighth of the window grows with it; see WINDOW_BIG_DOC). ticket 32: retry_plans +100 tokens; ticket 33 lane 1 (attachment tools removed) -1300, lane 3 (download_original) +300, lane 4 (undo_delete_task) +300
     async () => {
       script = [() => ({ call: { action: "read", docId: DOC } }), () => ({ text: "gap noted" })];
       const { snapshot } = await run(page(), "read it");

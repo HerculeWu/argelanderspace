@@ -5,12 +5,13 @@ import { deletePlan } from "./delete-plan";
 import type { ConfirmationCardKind } from "./kind";
 import { deleteMail, moveMail, sendMail } from "./mail";
 import { refreshArxivSource } from "./refresh-arxiv-source";
+import { replaceArgumentGraph } from "./replace-argument-graph";
 import { replaceTextReading } from "./replace-text-reading";
 
 export type { ConfirmationCardKind, ConfirmationGuards, ConfirmationProblemScope } from "./kind";
 
 /** Every kind of human confirmation card, in lookup order. */
-export const CONFIRMATION_KINDS = [sendMail, deleteMail, moveMail, replaceTextReading, deletePlan, deleteManuscript, deleteDoc, refreshArxivSource] as const;
+export const CONFIRMATION_KINDS = [sendMail, deleteMail, moveMail, replaceTextReading, deletePlan, deleteManuscript, deleteDoc, refreshArxivSource, replaceArgumentGraph] as const;
 
 // Compile-time check: every confirmation the contracts define has a card kind.
 type KindCard<K> = K extends ConfirmationCardKind<infer C> ? C : never;

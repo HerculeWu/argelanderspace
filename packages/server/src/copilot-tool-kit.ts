@@ -48,7 +48,7 @@ export type ConfirmationOutcome =
   | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
   /** A system error at click time (data unreadable): not a change, and never reported as one. */
   | { outcome: "expired"; reason: "error"; detail: string };
-/** What the confirmation card shows: one of the eight kinds of request below, each with exactly what it binds. */
+/** What the confirmation card shows: one of the nine kinds of request below, each with exactly what it binds. */
 export type ConfirmationRequest =
   | {
       toolCallId: string;
@@ -149,6 +149,18 @@ export type ConfirmationRequest =
       works: { id: string; title: string; main: boolean; remaining: number }[];
       impact: DocReplaceImpact;
       /** The annotations revision the count was read at (0 when it could not be read). */
+      baseRev: number;
+      objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /** Argument graph ticket 09: replacing or clearing a graph that holds arguments (the page's Clear dialog, widened). */
+      action: "replace_argument_graph";
+      workId: string;
+      label: string;
+      mode: "replace" | "clear";
+      current: { arguments: number; edges: number };
+      next: { arguments: number; edges: number };
       baseRev: number;
       objectDigest: string;
     }

@@ -8,8 +8,10 @@ import {
   ARGUMENT_NOTE_MAX,
   ARGUMENT_PAGE_FULL_MAX,
   ARGUMENT_PAGE_MAX,
+  ARGUMENT_STALE_NOTE,
   ArgumentPageSchema,
   argumentKey,
+  argumentPartialNote,
   buildArgumentPage,
   observationArgumentPage,
   summarizeArgumentPage,
@@ -60,7 +62,8 @@ describe("buildArgumentPage", () => {
       selected: null,
     });
     expect(page.graph).toEqual(graph);
-    expect(page.note).toContain("read-only");
+    expect(page.note).toContain("page.graph is the whole graph");
+    expect(page.note).not.toContain("read-only");
     expect(ArgumentPageSchema.safeParse(page).success).toBe(true);
   });
 
@@ -551,7 +554,8 @@ describe("the observation form", () => {
     expect(page.partial).toBe(false);
     const listed = observationArgumentPage({ argument: page }, held).argument;
     expect(listed?.partial).toBe(true);
-    expect(listed?.note).toContain("in the task's context");
+    expect(listed?.note).toContain("revision 2");
+    expect(listed?.note).toContain("its text is not repeated");
     expect(listed?.note).toContain(ACTIONS);
     expect(
       CopilotObservationSchema.safeParse(observation(listed as never, "complete")).success
@@ -566,5 +570,89 @@ describe("the observation form", () => {
     const held = new Set([argumentKey("doi:10.1/x", 2)]);
     const listed = observationArgumentPage({ argument: page }, held).argument;
     expect(length(listed)).toBeLessThanOrEqual(length(page));
+  });
+});
+
+describe("the notes of every form leave a clear margin under the note limit", () => {
+  // The limit is the schema's: a note over it makes the whole page invalid (PUT /views 400, then a message 409).
+  const MARGIN = 40;
+  const widest = Number.MAX_SAFE_INTEGER;
+  const staleOf = (note: string) => `${note} ${ARGUMENT_STALE_NOTE}`;
+
+  it("every partial form: each reduction level x stale or not x revision held or not", () => {
+    for (const level of [1, 2, 3, 4] as const)
+      for (const held of [null, 0, 7, widest])
+        for (const stale of [false, true]) {
+          const note = argumentPartialNote(level, held, stale);
+          expect({ level, held, stale, ok: note.length <= ARGUMENT_NOTE_MAX - MARGIN }).toEqual({
+            level,
+            held,
+            stale,
+            ok: true,
+          });
+          expect(note.includes(ARGUMENT_STALE_NOTE)).toBe(stale);
+          expect(note).toContain(ACTIONS);
+        }
+  });
+
+  it("every phase and the whole forms, stale or not", () => {
+    const graph = graphOf(5);
+    const pages = [
+      ...(["loading", "error"] as const).map((phase) => build(null, null, phase)),
+      buildArgumentPage({
+        workId: "doi:10.1/x",
+        title: "W",
+        phase: "not-found",
+        graph: null,
+        selectedId: null,
+      }),
+      buildArgumentPage({
+        workId: "doi:10.1/x",
+        title: "W",
+        phase: "corrupt",
+        graph: null,
+        selectedId: null,
+      }),
+      build(graph, "a1"),
+      build(graphOf(0)),
+      buildArgumentPage({
+        workId: "doi:10.1/x",
+        title: "W",
+        phase: "ready",
+        graph,
+        selectedId: "a1",
+        stale: true,
+      }),
+      buildArgumentPage({
+        workId: "doi:10.1/x",
+        title: "W",
+        phase: "ready",
+        graph: graphOf(0),
+        selectedId: null,
+        stale: true,
+      }),
+    ];
+    for (const page of pages) {
+      expect(page.note?.length).toBeLessThanOrEqual(ARGUMENT_NOTE_MAX - MARGIN);
+      expect(ArgumentPageSchema.safeParse(page).success).toBe(true);
+      expect(page.note).toContain(ACTIONS);
+    }
+    expect(staleOf("x")).toContain(ARGUMENT_STALE_NOTE);
+  });
+
+  it("a stale page that must be reduced keeps the stale line and still validates, at every level", () => {
+    const graph = worstGraph();
+    const stale = buildArgumentPage({
+      workId: "doi:10.1/x",
+      title: "W",
+      phase: "ready",
+      graph,
+      selectedId: longId(250),
+      stale: true,
+    });
+    expect(stale.partial).toBe(true);
+    expect(stale.note).toContain(ARGUMENT_STALE_NOTE);
+    expect(ArgumentPageSchema.safeParse(stale).success).toBe(true);
+    expect(stale.note?.length).toBeLessThanOrEqual(ARGUMENT_NOTE_MAX - MARGIN);
   });
 });

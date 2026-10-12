@@ -631,7 +631,9 @@ test("a PDF image larger than the room left in the window is refused whole with 
     .find((candidate) => candidate.id === "gpt-4.1");
   if (!model) throw new Error("fixture model");
   const original = { contextWindow: model.contextWindow, maxTokens: model.maxTokens };
-  model.contextWindow = 40_000;
+  // 40_000 + 1_440: the room left after the instruction and tools stays what it was (the argument tool added 2_520 B to the footprint; the window
+  // holds back an eighth of its bytes, so the same room takes 4/7 token per footprint byte, see WINDOW_BIG_DOC in copilot-batching.test.ts)
+  model.contextWindow = 41_440;
   model.maxTokens = 1024;
   try {
     script = [

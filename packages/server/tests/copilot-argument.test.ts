@@ -393,7 +393,7 @@ describe("argument graph page", () => {
       selectedId: "a2",
       selected: { id: "a2" },
     });
-    expect(selection?.page.argument?.note).toContain("in the task's context");
+    expect(selection?.page.argument?.note).toContain("its text is not repeated");
     // request 3: a new revision is not held, so it comes whole
     const latest = observations(seen[2] as TranscriptContext).at(-1);
     expect(latest?.page.argument).toMatchObject({ partial: false, selectedId: "a2" });
