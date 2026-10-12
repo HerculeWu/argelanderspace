@@ -151,3 +151,24 @@ test("a transcription's validate/generate rows list the PDF pages not looked at,
   expect(rows()[1]).toContain("无法核对来源 PDF 的页");
   expect(rows()[3]).toContain("将图形渲染为图片读取");
 });
+
+test("an argument graph's summary names the open argument by its short title, and a partial page is described accurately with or without one", async () => {
+  const summary = (over: object) => ({ state: "ready", rev: 3, arguments: 60, edges: 59, findings: 0, selectedId: null, partial: true, ...over });
+  const withMessage = (argument: Record<string, unknown>): ConversationSnapshot => ({ ...snapshot, messages: [
+    { id: "u1", role: "user", text: "Look", context: { contextId: "c", view: "library", status: "complete", revision: 1, argument: argument as never, objects: [] } },
+  ] });
+  for (const [language, open, partial] of [["en", "Open argument: Tail shape", "Partial: not every argument's field text was sent"], ["zh-CN", "已打开论证：Tail shape", "部分发送：并非每个论证的字段内容都已发送"]] as const) {
+    await i18n.changeLanguage(language);
+    for (const [argument, expectOpen] of [[summary({ selectedId: "m4-internal-id", selectedTitle: "Tail shape" }), true], [summary({}), false]] as const) {
+      fetchMock.mockImplementation(async (url: string) => url.endsWith("/providers") ? json({ providers: [provider] }) : url.endsWith("/conversations") ? json({ conversations: [snapshot.conversation] }) : url.includes("/views/") ? json({ saved: true }) : json(withMessage(argument)));
+      const view = render(<Copilot open context={{ ...context, view: "library", status: "complete" } as PageContext} onClose={vi.fn()} />);
+      const found = await waitFor(() => { const el = document.querySelector('[data-ui="copilot-argument-summary"]'); expect(el).not.toBeNull(); return el!; });
+      expect(found.textContent).toContain(partial);
+      if (expectOpen) {
+        expect(found.textContent).toContain(open);
+        expect(found.textContent).not.toContain("m4-internal-id");
+      } else expect(found.textContent).not.toContain(open.split(":")[0]);
+      view.unmount();
+    }
+  }
+});

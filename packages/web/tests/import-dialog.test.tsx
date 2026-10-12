@@ -24,6 +24,7 @@ vi.mock("../src/api/library", async (orig) => ({
 }));
 
 vi.mock("../src/api/ws", () => ({
+  onArgumentGraphChanged: () => () => {},
   onLibraryChanged: (cb: () => void) => {
     h.libChanged = cb;
     return () => {};

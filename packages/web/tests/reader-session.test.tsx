@@ -13,6 +13,7 @@ const events = vi.hoisted(() => ({
   annotation: new Set<(id: string) => void>(),
 }));
 vi.mock("../src/api/ws", () => ({
+  onArgumentGraphChanged: () => () => {},
   onLibraryChanged: (cb: () => void) => {
     events.library.add(cb);
     return () => events.library.delete(cb);

@@ -19,6 +19,8 @@ export interface Workspace {
       Shell only fetches it once at boot) and migrates currentDoc per the
       three-state rule (see applyDocDeletion). */
   docDeleted: (docId: string, remaining: string[]) => void;
+  /** Show the work's argument graph on a Library page (the Reader's "argument graph" entry; absent where it cannot). */
+  openArgumentGraph?: (workId: string) => void;
   tweaks: Tweaks;
 }
 

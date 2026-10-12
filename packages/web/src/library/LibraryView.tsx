@@ -16,6 +16,9 @@ import { ImportDialog, type ImportMode } from "./ImportDialog";
 import { type ExploreControl, ExploreMode } from "./ExploreMode";
 import { exploreReport, useExploreStack } from "./explore-state";
 import { exploreBus } from "../lib/explore-route";
+import { argumentBus, clearArgumentUrl, pushArgumentUrl } from "../lib/argument-route";
+import { ArgumentGraphMode } from "../argument/ArgumentGraphMode";
+import type { ArgumentPage } from "../argument/page";
 import type { LibraryData, LibraryRef } from "./types";
 
 // color labels users assign by right-clicking a reference (replaces the star)
@@ -70,12 +73,15 @@ export function LibraryView({
   paneId,
   onContext,
   onDiscovery,
+  onArgument,
   onController,
 }: {
   paneId?: number;
   onContext?: (paneId: number, page: LibraryPage | null) => void;
   /** The exploration page while this tab explores (null otherwise); replaces the Library page for the Copilot then. */
   onDiscovery?: (paneId: number, page: DiscoveryPage | null) => void;
+  /** The argument graph page while this tab shows one (null otherwise). */
+  onArgument?: (paneId: number, page: ArgumentPage | null) => void;
   onController?: (paneId: number, controller: LibraryViewController | null) => void;
 } = {}) {
   const ws = useWorkspace();
@@ -124,6 +130,7 @@ export function LibraryView({
       paneId={paneId}
       onContext={onContext}
       onDiscovery={onDiscovery}
+      onArgument={onArgument}
       onController={onController}
       onDocDeleted={ws.docDeleted}
       onBeforeDocDelete={(docId) => docId !== ws.currentDoc || confirmWorkspaceLeave()}
@@ -141,6 +148,7 @@ function LibraryBody({
   paneId,
   onContext,
   onDiscovery,
+  onArgument,
   onController,
   onDocDeleted,
   onBeforeDocDelete,
@@ -148,13 +156,14 @@ function LibraryBody({
   payload: LibraryData;
   live: boolean;
   failure?: LibraryLoad["failure"];
-  onOpenDoc: (docId?: string) => void;
+  onOpenDoc: (docId?: string, anchor?: string | null) => void;
   onReload: () => void;
   /** Read the library again and hand back what was read (an id the page does not know yet gets one reload). */
   onRefetch: () => Promise<{ data: LibraryData; live: boolean }>;
   paneId?: number;
   onContext?: (paneId: number, page: LibraryPage | null) => void;
   onDiscovery?: (paneId: number, page: DiscoveryPage | null) => void;
+  onArgument?: (paneId: number, page: ArgumentPage | null) => void;
   onController?: (paneId: number, controller: LibraryViewController | null) => void;
   /** Stage 8 §8: forwarded to RefDetail — the workspace three-state transition
    *  after a document is physically deleted. */
@@ -172,6 +181,8 @@ function LibraryBody({
     return m;
   }, [graph]);
 
+  const refToNodeRef = useRef(refToNode);
+  refToNodeRef.current = refToNode;
   const [selNode, setSelNode] = useState<string | null>(graph.nodes.find((n) => n.ref)?.id ?? null);
   const [q, setQ] = useState("");
   const [sideCollapsed, setSideCollapsed] = useState(false);
@@ -189,6 +200,48 @@ function LibraryBody({
       }),
     [explore.isExploringRef, explore.exploreFromHash, explore.exitExplore]
   );
+
+  // ---- Argument graph view (ticket 04): a sibling mode of exploration, `#argument/<work id>` ---------------- //
+  const [argumentWorkId, setArgumentWorkId] = useState<string | null>(null);
+  const argumentOpenRef = useRef(false);
+  argumentOpenRef.current = argumentWorkId !== null;
+  const exploreRef = useRef(explore);
+  exploreRef.current = explore;
+  const openArgument = useCallback(
+    (workId: string, opts: { push: boolean }) => {
+      // one mode at a time: a hash-driven open leaves an exploration (its session stays resumable)
+      // (its plain-URL history entry is skipped: this open writes the one entry the user's Back returns through)
+      if (exploreRef.current.active) exploreRef.current.yieldExplore();
+      setArgumentWorkId(workId);
+      setSelNode(refToNodeRef.current[workId] ?? workId);
+      if (opts.push) pushArgumentUrl(workId);
+    },
+    []
+  );
+  const exitArgument = useCallback(() => setArgumentWorkId(null), []);
+  const leaveArgument = useCallback(() => {
+    setArgumentWorkId(null);
+    clearArgumentUrl();
+  }, []);
+  useEffect(
+    () =>
+      argumentBus.register({
+        paneId,
+        isOpen: () => argumentOpenRef.current,
+        open: openArgument,
+        exit: exitArgument,
+      }),
+    [openArgument, exitArgument, paneId]
+  );
+  // an exploration that starts takes over the page
+  useEffect(() => {
+    if (explore.active) setArgumentWorkId(null);
+  }, [explore.active]);
+  useEffect(() => {
+    if (paneId === undefined) return;
+    if (argumentWorkId === null) onArgument?.(paneId, null);
+  }, [paneId, onArgument, argumentWorkId]);
+  const onArgumentPage = useCallback((page: ArgumentPage | null) => { if (paneId !== undefined) onArgument?.(paneId, page); }, [paneId, onArgument]);
 
   // color labels: session-local overlay (right-click menu) on top of the
   // persisted `label` field; unset refs keep the star→amber seeding
@@ -257,11 +310,11 @@ function LibraryBody({
     if (paneId === undefined || !onContext) return;
     onContext(
       paneId,
-      explore.active
+      explore.active || argumentWorkId !== null
         ? null
         : captureLibraryPage({ data: payload, live, failure, query: q, selectedNodeId: selNode, tab: detailTab, labels, sidebarCollapsed: sideFolded, graphLabelsOn, exploration: explore.sessions.length > 0 ? { sessions: explore.sessions.length, seed: explore.current?.seed ?? null } : undefined })
     );
-  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideFolded, graphLabelsOn, explore.active, explore.sessions, explore.current]);
+  }, [paneId, onContext, payload, live, failure, q, selNode, detailTab, labels, sideFolded, graphLabelsOn, explore.active, argumentWorkId, explore.sessions, explore.current]);
   useEffect(() => {
     if (paneId === undefined) return;
     onDiscovery?.(paneId, explore.active ? explorePage : null);
@@ -273,8 +326,15 @@ function LibraryBody({
     },
     [paneId, onDiscovery]
   );
-  const latest = useRef({ refs, graph, live, exploring: explore.active, explore, onRefetch });
-  latest.current = { refs, graph, live, exploring: explore.active, explore, onRefetch };
+  // A pane that leaves the Library page holds no argument graph page either.
+  useEffect(
+    () => () => {
+      if (paneId !== undefined) onArgument?.(paneId, null);
+    },
+    [paneId, onArgument]
+  );
+  const latest = useRef({ refs, graph, live, exploring: explore.active, argumentOpen: argumentWorkId !== null, explore, onRefetch });
+  latest.current = { refs, graph, live, exploring: explore.active, argumentOpen: argumentWorkId !== null, explore, onRefetch };
   const applyViewAction = useRef<LibraryViewController["apply"]>(async () => ({ ok: false, detail: "unavailable" }));
   // The explore UI's controls. Each answers what the control itself would do: an absent control is `unavailable`
   // (the page that has it is not shown), a present but unusable one `disabled`; a request the click would send is
@@ -284,8 +344,8 @@ function LibraryBody({
     const stack = state.explore;
     switch (action.action) {
       case "explore_work": {
-        // the work detail's button lives on the Library page, which exploration replaces
-        if (stack.active) return { ok: false, detail: "unavailable" };
+        // the work detail's button lives on the Library page, which exploration (or the argument graph view) replaces
+        if (stack.active || state.argumentOpen) return { ok: false, detail: "unavailable" };
         let current = { refs: state.refs, graph: state.graph, live: state.live };
         if (!current.refs.some((r) => r.id === action.refId)) {
           const fresh = await state.onRefetch();
@@ -328,7 +388,7 @@ function LibraryBody({
         return { ok: true };
       case "resume_exploration":
         // the toolbar's button shows only on the Library page, and only with a history
-        if (stack.active) return { ok: false, detail: "unavailable" };
+        if (stack.active || state.argumentOpen) return { ok: false, detail: "unavailable" };
         if (stack.sessions.length === 0) return { ok: false, detail: "disabled" };
         stack.resumeExplore();
         return { ok: true };
@@ -347,7 +407,7 @@ function LibraryBody({
     }
     if (isDiscoveryViewAction(action)) return runDiscoveryAction(action);
     // Exploration replaces this page: its own controls are the discovery actions above.
-    if (state.exploring) return { ok: false, detail: "unavailable" };
+    if (state.exploring || state.argumentOpen) return { ok: false, detail: "unavailable" };
     if (action.action === "filter_library") {
       setQ(action.query);
       return { ok: true };
@@ -402,6 +462,19 @@ function LibraryBody({
     setSelNode(refToNode[workId] ?? workId);
     onReload(); // the new member's node arrives with the fresh payload
   };
+
+  if (argumentWorkId !== null && !explore.active) {
+    return (
+      <ArgumentGraphMode
+        key={argumentWorkId}
+        workId={argumentWorkId}
+        work={refs.find((r) => r.id === argumentWorkId) ?? null}
+        onExit={leaveArgument}
+        onOpenDoc={onOpenDoc}
+        onPage={onArgumentPage}
+      />
+    );
+  }
 
   if (explore.active) {
     return (
@@ -596,6 +669,7 @@ function LibraryBody({
           onDocDeleted={onDocDeleted}
           onBeforeDocDelete={onBeforeDocDelete}
           explore={{ bibcode: curRef.bibcode ?? null, live, onExplore: (b) => void explore.startExplore(b) }}
+          argumentGraph={{ live, onOpen: (workId) => openArgument(workId, { push: true }) }}
         />
       )}
     </div>

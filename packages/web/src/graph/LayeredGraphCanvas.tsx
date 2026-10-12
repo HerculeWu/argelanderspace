@@ -23,7 +23,7 @@
  * `useGraphViewport`, the same state machine `GraphCanvas` runs.
  */
 
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GraphZoomControls } from "./GraphZoomControls";
 import { ZOOM_MIN, useGraphViewport } from "./useGraphViewport";
 import { edgePath, focusChain, pairFan } from "./layered/geometry";
@@ -101,6 +101,11 @@ export interface LayeredGraphCanvasProps {
   onConnect?: (from: string, to: string, at: { x: number; y: number }) => void;
   /** Tooltip of the handle. */
   connectHint?: string;
+  /**
+   * Pixels at the right edge that something lies over (a floating panel). Fit and keep-visible use only the
+   * uncovered part, and the zoom stack moves left of the cover.
+   */
+  coverRight?: number;
 }
 
 const R = 10;
@@ -124,6 +129,7 @@ export function LayeredGraphCanvas({
   renderTooltip,
   onConnect,
   connectHint,
+  coverRight = 0,
 }: LayeredGraphCanvasProps) {
   const noteRef = useRef<HTMLDivElement>(null);
   const legendRef = useRef<HTMLDivElement>(null);
@@ -208,7 +214,7 @@ export function LayeredGraphCanvas({
   useEffect(() => {
     if (size.w > 0 && (!vp.hasView() || stash.auto)) fitView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [size.w, size.h, sceneKey, sig]);
+  }, [size.w, size.h, coverRight, sceneKey, sig]);
 
   /**
    * How far the heading (top) and the legend (bottom) reach into the canvas. The zoom stack sits at the
@@ -234,7 +240,7 @@ export function LayeredGraphCanvas({
     const maxX = Math.max(...ps.map((p) => p.x)) + 34 + widest;
     const minY = Math.min(...ps.map((p) => p.y)) - 30;
     const maxY = Math.max(...ps.map((p) => p.y)) + 30;
-    const w = Math.max(120, size.w - inset.l - inset.r);
+    const w = Math.max(120, size.w - coverRight - inset.l - inset.r);
     const h = Math.max(120, size.h - inset.t - inset.b);
     const k = Math.max(ZOOM_MIN, Math.min(1.4, Math.min(w / (maxX - minX || 1), h / (maxY - minY || 1))));
     stash.auto = true;
@@ -253,13 +259,13 @@ export function LayeredGraphCanvas({
     const sx = p.x * cur.k + cur.tx;
     const sy = p.y * cur.k + cur.ty;
     const m = { ...KEEP, ...overlayInsets() };
-    const dx = sx < KEEP.l ? KEEP.l - sx : sx > size.w - KEEP.r ? size.w - KEEP.r - sx : 0;
+    const dx = sx < KEEP.l ? KEEP.l - sx : sx > size.w - coverRight - KEEP.r ? size.w - coverRight - KEEP.r - sx : 0;
     const dy = sy < m.t - 4 ? m.t - 4 - sy : sy > size.h - m.b + 8 ? size.h - m.b + 8 - sy : 0;
     if (dx || dy) {
       vp.setView({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, size.w, size.h, sig]);
+  }, [selectedId, size.w, size.h, coverRight, sig]);
 
   const relayout = () => {
     stash.pos = Object.fromEntries(Object.entries(layout.pos).map(([k, v]) => [k, { ...v }]));
@@ -329,7 +335,7 @@ export function LayeredGraphCanvas({
     : null;
 
   return (
-    <div className="cg-wrap lg-canvas" ref={vp.wrapRef} data-ui={`${ui}-canvas`} data-scene={sceneKey}>
+    <div className="cg-wrap lg-canvas" ref={vp.wrapRef} data-ui={`${ui}-canvas`} data-scene={sceneKey} style={coverRight ? ({ "--cover-r": `${coverRight}px` } as CSSProperties) : undefined}>
       <svg
         className="cg-svg"
         ref={vp.svgRef}
@@ -446,7 +452,7 @@ export function LayeredGraphCanvas({
         <p>{note}</p>
       </div>
 
-      <div className="cg-legend lg-legend" data-ui="graph-legend" ref={legendRef}>
+      <div className="cg-legend lg-legend" data-ui="graph-legend" ref={legendRef} hidden={coverRight > 0 && size.w - coverRight - 84 < 110}>
         {legend}
       </div>
 

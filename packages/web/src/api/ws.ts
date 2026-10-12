@@ -1,4 +1,4 @@
-import type { WsWriterChanged, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
+import type { WsArgumentGraphChanged, WsWriterChanged, WsTextSourceChanged, WsTextDocPublished, WsMailChanged } from "@argelanderspace/contracts";
 import { type CopilotSubscription, type JobListener, createWsBus } from "./ws-bus";
 
 // Minimal WebSocket client for the server's /ws progress channel (M4). One
@@ -65,6 +65,17 @@ export const onPlanChanged = (cb: PlanListener): (() => void) => bus.on("plan.ch
 /** Subscribe to annotation mutations of one doc (`PUT` / invalidation /
  *  external write; Stage 8 — MS1 listener set, the reader subscribes in MS3). */
 export const onAnnotationChanged = (cb: AnnotationListener): (() => void) => bus.on("annotation.changed", docIdOf(cb));
+
+/**
+ * A Work's argument graph was written (`PUT`, or its file changed on disk); the message names the Work. `onResync` fires on
+ * every (re)connect, when a change may have been missed (the view reads once more).
+ */
+export function onArgumentGraphChanged(cb: (msg: WsArgumentGraphChanged) => void, onResync?: () => void): () => void {
+  const offs = [bus.on("argument-graph.changed", cb), ...(onResync ? [bus.onResync(onResync)] : [])];
+  return () => {
+    for (const off of offs) off();
+  };
+}
 
 /** Subscribe to writer mutations (`writer.changed`, Stage 10; wired in M2). */
 export const onWriterChanged = (cb: WriterListener): (() => void) => bus.on("writer.changed", cb);

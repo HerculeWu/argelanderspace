@@ -32,6 +32,13 @@ export const ARGUMENT_GRAPH_LIMITS = {
 
 const L = ARGUMENT_GRAPH_LIMITS;
 
+/**
+ * The fixed wording the server's `GET /api/works/:id/argument-graph` answers a graph file it cannot read with (HTTP 500,
+ * `detail` = this prefix + ` (<kind>)`). The web view tells "corrupt" from any other server failure by it, so both ends
+ * name this one constant.
+ */
+export const ARGUMENT_GRAPH_UNREADABLE_PREFIX = "argument graph file is unreadable";
+
 // ---- Pieces ----------------------------------------------------------------- //
 
 export const ArgumentKindSchema = z.enum(["native", "end", "normal"]);

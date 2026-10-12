@@ -1384,6 +1384,18 @@
       "filter": "filter “{{filter}}”",
       "open": "Open candidate: {{bibcode}}"
     },
+    "argument": {
+      "ready": "Argument graph",
+      "empty": "Argument graph (no arguments yet)",
+      "loading": "Argument graph (loading)",
+      "not-found": "Argument graph (work not found)",
+      "corrupt": "Argument graph (file unreadable)",
+      "error": "Argument graph (could not be read)",
+      "counts": "{{arguments}} arguments · {{edges}} edges · revision {{rev}}",
+      "findings": "{{count}} audit findings",
+      "open": "Open argument: {{title}}",
+      "partial": "Partial: not every argument's field text was sent"
+    },
     "operations": {
       "count": "{{count}} Plan actions",
       "countMixed": "{{count}} actions",
@@ -2030,6 +2042,84 @@
       "legendAudit": "Has audit findings",
       "connectHint": "Drag from here to another argument to let it use this Claim",
       "notFilled": "Not filled in"
+    },
+    "view": {
+      "entry": "Argument graph",
+      "entryCount": "Argument graph · {{count}} arguments",
+      "entryNone": "Argument graph · —",
+      "entryDemoOff": "The argument graph needs the ArgelanderSpace backend",
+      "open": "Open the argument graph",
+      "breadcrumb": "Argument graph",
+      "back": "Back to the work",
+      "backTooltip": "Back to the work",
+      "argCount": "{{n}} arguments",
+      "edgeCount": "{{n}} edges",
+      "newArg": "New argument",
+      "clear": "Clear argument graph",
+      "editLater": "Editing is not available yet; a later version will enable it",
+      "audit": {
+        "none": "Audit passed",
+        "count": "{{n}} audit findings",
+        "listLabel": "Audit list",
+        "cycle": "Cycle: {{list}}",
+        "noEnd": "The graph has no End argument",
+        "noPathToEnd": "“{{a}}” has no path to any End argument",
+        "endWithOutEdge": "End argument “{{a}}” is used by another argument",
+        "nativeWithInEdge": "Native argument “{{a}}” depends on another argument of this paper",
+        "incomplete": "“{{a}}” is incomplete: missing {{m}}",
+        "joiner": ", ",
+        "cycleArrow": " → "
+      },
+      "outline": {
+        "title": "By conclusion",
+        "orphans": "Arguments with no path to an End",
+        "noEnd": "No End argument, so there is nothing to expand from. All arguments are listed below.",
+        "cycle": "cycle",
+        "expand": "Expand {{title}}",
+        "collapse": "Collapse {{title}}",
+        "flagged": "Has audit findings",
+        "label": "Argument outline",
+        "foldSide": "Collapse outline",
+        "unfoldSide": "Expand outline"
+      },
+      "panel": {
+        "label": "Argument detail",
+        "close": "Close",
+        "implicit": "(implicit)",
+        "implicitLabel": "Not stated in the paper; inferred while reading",
+        "notFilled": "Not filled in",
+        "findings": "Audit findings",
+        "usedBy": "Used by",
+        "usedByNone": "No argument uses this Claim yet.",
+        "asRole": "as {{role}}",
+        "sources": "Sources",
+        "sourcesNone": "No sources.",
+        "openSource": "Open in the reading pane",
+        "untitled": "—"
+      },
+      "state": {
+        "loading": "Reading the argument graph…",
+        "notFound": "This work was not found",
+        "notFoundHint": "It may have been deleted or merged, or the link is wrong.",
+        "corrupt": "The argument graph file cannot be read",
+        "corruptHint": "The file is damaged and the workbench will not change it. Repair or move the file, then try again.",
+        "error": "Could not read the argument graph",
+        "errorUnreachable": "The workbench service cannot be reached.",
+        "refreshFailed": "The latest change to this graph could not be read. The graph shown may be out of date.",
+        "errorOther": "The service returned an unexpected result.",
+        "retry": "Retry",
+        "retrying": "Retrying…",
+        "emptyTitle": "This work has no argument graph yet",
+        "emptyHint": "Add the first argument by hand, or ask Copilot to “build the argument graph for this paper”.",
+        "emptyNote": "Creating arguments by hand opens in a later version."
+      },
+      "kind": {
+        "native": "Native",
+        "end": "End",
+        "normal": "Regular"
+      },
+      "readerLibraryUnreadable": "The library could not be read, so the work of this document is unknown. Try again.",
+      "readerNoWork": "No work in the library owns this document"
     }
   }
 }

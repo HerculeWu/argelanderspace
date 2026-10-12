@@ -861,6 +861,8 @@ export const READER_OPERATION_ACTIONS = [
 export function copilotContextObjects(context: {
   plan?: { rev: number; plans: { id: string }[]; detail: { planId: string } | null } | null;
   library?: { selectedRefId: string | null } | null;
+  /** The argument graph view: the Work, at the graph's revision (like a manuscript at its rev). */
+  argument?: { work: { id: string }; rev: number | null } | null;
   reader?: { docId: string } | null;
   pdf?: { docId: string } | null;
   textSource?: { docId: string } | null;
@@ -881,6 +883,7 @@ export function copilotContextObjects(context: {
         rev: 0,
       },
     ];
+  if (context.argument) return [{ id: context.argument.work.id, rev: context.argument.rev ?? 0 }];
   if (context.library?.selectedRefId) return [{ id: context.library.selectedRefId, rev: 0 }];
   if (context.reader) return [{ id: context.reader.docId, rev: 0 }];
   if (context.pdf) return [{ id: context.pdf.docId, rev: 0 }];

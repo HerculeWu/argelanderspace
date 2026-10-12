@@ -155,14 +155,20 @@ export function useExploreStack() {
     []
   );
 
-  /** Leave explore mode (back-to-library / URL no longer names an exploration). */
-  const exitExplore = useCallback(() => {
+  const leaveExplore = useCallback((clearUrl: boolean) => {
     abortRef.current?.abort();
     setActive(false);
     setLoading(null);
     setError(null);
-    clearExploreUrl();
+    if (clearUrl) clearExploreUrl();
   }, []);
+  /** Leave explore mode (back-to-library / URL no longer names an exploration). */
+  const exitExplore = useCallback(() => leaveExplore(true), [leaveExplore]);
+  /**
+   * Leave explore mode because another mode takes the page over and is about to write its own history entry (the argument
+   * graph view): no plain-URL entry is pushed in between, so Back from that mode returns to this exploration.
+   */
+  const yieldExplore = useCallback(() => leaveExplore(false), [leaveExplore]);
 
   /** Re-enter explore mode at the current stack position (sessions survive). */
   const resumeExplore = useCallback(() => {
@@ -247,6 +253,7 @@ export function useExploreStack() {
     cancelExplore,
     step,
     exitExplore,
+    yieldExplore,
     resumeExplore,
     exploreFromHash,
     addToLibrary,

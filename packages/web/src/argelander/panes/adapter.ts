@@ -14,7 +14,7 @@ export type PanePage = "plan" | "library" | "doc" | "write" | "mail";
 export type ViewActionOutcome = Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">;
 export type PaneStatus = PageContext["status"];
 /** The page fields of a PageContext; an adapter fills only its own. */
-export type PageFields = Partial<Pick<PageContext, "plan" | "library" | "discovery" | "reader" | "pdf" | "textSource" | "writer" | "mail">>;
+export type PageFields = Partial<Pick<PageContext, "plan" | "library" | "discovery" | "argument" | "reader" | "pdf" | "textSource" | "writer" | "mail">>;
 
 /**
  * any: with no pane of this page the active pane is switched to it (or `open` shows it);

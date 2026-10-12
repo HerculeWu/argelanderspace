@@ -947,7 +947,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .lg-handle circle { fill: var(--panel); stroke: var(--accent); stroke-width: 1.4; }
 .lg-handle path { stroke: var(--accent); stroke-width: 1.6; fill: none; }
 .lg-handle:hover circle { fill: var(--accent-soft); }
-.lg-legend .cg-leg-row { flex-wrap: wrap; max-width: 330px; }
+.lg-legend .cg-leg-row { flex-wrap: wrap; }
 .lg-leg-node { width: 11px; height: 11px; border-radius: 50%; flex: none; margin-left: 4px; }
 .lg-leg-node.ag-leg-native { background: var(--ag-native); }
 .lg-leg-node.ag-leg-normal { background: var(--ag-normal); }
@@ -1003,3 +1003,78 @@ svg.ui-icon.ui-icon { width: var(--ui-icon-side) !important; height: var(--ui-ic
 .ui-icon-size--small { --ui-icon-side: 18px; --ui-icon-stroke: 2.333333333333333; }
 .ui-icon-size--regular { --ui-icon-side: 24px; --ui-icon-stroke: 1.75; }
 .ui-icon-size--navigation { --ui-icon-side: 33px; --ui-icon-stroke: 1.272727272727273; }
+
+/* ---------- argument graph view (ticket 04): header, outline, reading panel; the canvas is above ---------- */
+.ag-header-actions { gap: 8px; }
+.ag-header-actions .history-count { margin-right: 4px; }
+.ag-header-actions .btn { gap: 5px; white-space: nowrap; }
+.ag-chip-anchor { position: relative; flex: none; }
+.ag-refresh-failed { flex: none; padding: 6px 16px; border-bottom: 1px solid var(--border-soft); }
+.ag-audit-chip { white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border-radius: 13px; font-size: 11px; border: 1px solid var(--border-soft); }
+.ag-audit-chip.warn { color: var(--warn); border-color: color-mix(in oklch, var(--warn) 45%, transparent); background: color-mix(in oklch, var(--warn) 10%, transparent); }
+.ag-audit-ok { flex: none; display: inline-flex; color: var(--ok); }
+.ag-audit-pop { position: absolute; right: 0; top: 32px; width: 360px; max-width: calc(100vw - 32px); max-height: 320px; overflow: auto; z-index: 30; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-pop); padding: 6px; }
+.ag-audit-list { display: flex; flex-direction: column; gap: 2px; }
+.ag-audit-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px; border-radius: var(--radius-sm); text-align: left; font-size: var(--fs-sm); line-height: 1.45; color: var(--text); width: 100%; }
+.ag-audit-row:hover:not(:disabled) { background: var(--hover); }
+.ag-audit-row:disabled { cursor: default; }
+.ag-audit-row svg { color: var(--warn); margin-top: 2px; flex: none; }
+.ag-audit-row.kind-cycle svg { color: var(--danger); }
+
+.lib-side.wide { width: 300px; }
+.ag-kind-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; background: var(--ag-normal); }
+.ag-kind-dot.kind-native { background: var(--ag-native); }
+.ag-kind-dot.kind-end { background: var(--ag-end); box-shadow: 0 0 0 1.5px var(--panel), 0 0 0 2.6px var(--ag-end); }
+.ag-outline { overflow: auto; flex: 1; min-height: 0; padding: 2px 4px 14px; }
+.ag-out-row { display: flex; align-items: center; min-height: 28px; border-radius: var(--radius-sm); }
+.ag-out-row:hover { background: var(--hover); }
+.ag-out-row.sel { background: var(--accent-soft); }
+.ag-out-tw { width: 18px; min-width: 18px; height: 22px; min-height: 22px; padding: 0; display: grid; place-items: center; color: var(--text-faint); flex: none; }
+.ag-out-title { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; text-align: left; padding: 4px 6px 4px 0; font-size: var(--fs-sm); color: var(--text); }
+.ag-out-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ag-out-loop { display: inline-flex; align-items: center; gap: 3px; color: var(--danger); font-size: 10px; flex: none; }
+.ag-out-group { margin: 12px 8px 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .6px; text-transform: uppercase; color: var(--text-faint); }
+.ag-role-chip { font: 500 9.5px var(--font-mono); padding: 1px 5px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; flex: none; color: var(--ag-grounds); }
+.ag-role-chip.role-warrant { color: var(--ag-warrant); }
+.ag-role-chip.role-backing { color: var(--text-dim); border-style: dashed; }
+.ag-role-chip.role-rebuttal { color: var(--ag-rebuttal); border-style: dotted; }
+
+.ag-panel { width: 392px; }
+.ag-panel .ref-detail-title { font-size: 19px; line-height: 1.35; margin-bottom: 4px; overflow-wrap: anywhere; }
+.ag-kind.kind-native { color: var(--ag-native); background: color-mix(in oklch, var(--ag-native) 16%, transparent); }
+.ag-kind.kind-normal { color: var(--text-dim); background: var(--surface-2); }
+.ag-findings { margin: 12px 0 2px; }
+.ag-findings ul { margin: 2px 0 0; padding-left: 16px; }
+.ag-section { margin-top: 16px; }
+.ag-section-head { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.ag-section-head h4 { font: 600 10.5px var(--font-mono); letter-spacing: .7px; text-transform: uppercase; color: var(--text-faint); }
+.ag-md { color: var(--text); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.ag-md p { margin: 3px 0; }
+.ag-hint { font-size: var(--fs-sm); color: var(--text-faint); line-height: 1.6; }
+.ag-hint.pad { padding: 10px; }
+.ag-links { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.ag-link { display: flex; align-items: center; gap: 6px; padding-left: 2px; border-left: 2px solid var(--border); }
+.ag-link-title { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; text-align: left; padding: 5px 6px; border-radius: var(--radius-sm); font-size: var(--fs-sm); color: var(--accent); }
+.ag-link-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-link-title:hover { background: var(--hover); }
+.ag-link-title svg { color: var(--text-faint); flex: none; }
+.ag-source-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ag-source { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-sm); padding: 3px 8px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-dim); overflow-wrap: anywhere; text-align: left; }
+.ag-source.link { color: var(--accent); cursor: pointer; }
+.ag-source.link:hover { background: var(--hover); }
+.ag-reader-entry { gap: 5px; margin-left: 8px; flex: none; }
+.ag-reader-entry-note { font-size: 11px; color: var(--warn); margin-left: 8px; white-space: nowrap; }
+/* narrow pane (user decision 2026-10-12): the outline and panel keep 300 / 392 at every width; the view folds the outline
+   and then floats the panel (argument/layout.ts), so there is no width media rule here */
+.ag-view-row { position: relative; }
+.ag-view-row > .ui-tooltip-anchor { display: flex; flex: none; width: 34px; }
+.ag-view-row > .ui-tooltip-anchor .lib-rail, .ag-view-row > .lib-rail { width: 34px; min-width: 34px; height: 100%; }
+.ag-side-title { flex: 1; }
+.ag-panel { max-width: 100%; }
+.ag-panel-overlay { position: absolute; top: 0; right: 0; bottom: 0; z-index: 25; box-shadow: var(--shadow-pop); }
+/* the canvas keeps its overlays whole in a narrow column; --cover-r is what a floating panel covers at the right */
+.lg-canvas .cg-zoom { right: calc(14px + var(--cover-r, 0px)); }
+.lg-canvas .graph-note { max-width: max(180px, min(330px, calc(100% - 36px - var(--cover-r, 0px)))); }
+.lg-canvas .lg-legend { max-width: max(130px, min(354px, calc(100% - 84px - var(--cover-r, 0px)))); }
+.lg-legend .cg-leg-row { max-width: 100%; }
+.lg-legend[hidden] { display: none; }
