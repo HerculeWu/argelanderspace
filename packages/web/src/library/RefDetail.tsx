@@ -970,12 +970,12 @@ export function RefDetail({
           >
             {t("explore.entry")}
           </ActionButton>}
-          {argumentGraph && <WorkArgumentEntry workId={r.id} live={argumentGraph.live} onOpen={argumentGraph.onOpen} />}
           {explore && (!explore.live || !explore.bibcode) && (
             <div className="detail-footer-note">
               {!explore.live ? t("explore.demoOff") : t("explore.noBibcode")}
             </div>
           )}
+          {argumentGraph && <WorkArgumentEntry workId={r.id} live={argumentGraph.live} onOpen={argumentGraph.onOpen} />}
         </div>
       )}
       {acquisition && (

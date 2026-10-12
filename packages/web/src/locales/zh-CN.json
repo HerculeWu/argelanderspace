@@ -1384,6 +1384,18 @@
       "filter": "筛选“{{filter}}”",
       "open": "已打开候选：{{bibcode}}"
     },
+    "argument": {
+      "ready": "论证图",
+      "empty": "论证图（还没有论证）",
+      "loading": "论证图（加载中）",
+      "not-found": "论证图（找不到该文献）",
+      "corrupt": "论证图（文件无法读取）",
+      "error": "论证图（读取失败）",
+      "counts": "{{arguments}} 个论证 · {{edges}} 条边 · 版本 {{rev}}",
+      "findings": "{{count}} 项审计发现",
+      "open": "已打开论证：{{id}}",
+      "partial": "部分发送：只发送了选中论证的字段内容"
+    },
     "operations": {
       "count": "{{count}} 项计划操作",
       "countMixed": "{{count}} 项操作",
@@ -2048,7 +2060,6 @@
       "audit": {
         "none": "审计通过",
         "count": "{{n}} 项审计发现",
-        "title": "审计发现",
         "listLabel": "审计清单",
         "cycle": "环：{{list}}",
         "noEnd": "图中没有 End 论证",
@@ -2082,8 +2093,6 @@
         "sources": "出处",
         "sourcesNone": "没有出处。",
         "openSource": "在阅读窗格打开",
-        "sourceText": "出处文字",
-        "fromArgument": "来自论证「{{title}}」",
         "untitled": "—"
       },
       "state": {
@@ -2094,6 +2103,7 @@
         "corruptHint": "文件已损坏，工作台不会修改它。请修复或移走该文件后重试。",
         "error": "读取论证图失败",
         "errorUnreachable": "无法连接到工作台服务。",
+        "refreshFailed": "没能读到这张图的最新改动，下面显示的可能不是最新内容。",
         "errorOther": "服务返回了意外的结果。",
         "retry": "重试",
         "emptyTitle": "这篇文献还没有论证图",
@@ -2105,6 +2115,7 @@
         "end": "End",
         "normal": "普通"
       },
+      "readerLibraryUnreadable": "没能读取文献库，不知道这篇文档属于哪篇文献，请稍后再试。",
       "readerNoWork": "找不到这个文档所属的文献"
     }
   }

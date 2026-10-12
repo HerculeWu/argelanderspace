@@ -9,7 +9,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { mdWithMath } from "../lib/mdWithMath";
 import { ActionButton, InlineMessage } from "../ui";
-import type { Finding } from "./findings";
+import { type Finding, findingKey } from "./findings";
 import { type DescribeFinding } from "./useFindingText";
 
 type TextField = "claim" | "grounds" | "warrant" | "backing" | "qualifier" | "rebuttal";
@@ -90,7 +90,7 @@ export function ArgumentPanel({
             <InlineMessage tone="warning" title={t("argument.view.panel.findings")}>
               <ul>
                 {findings.map((f, i) => (
-                  <li key={i} data-ui="argument-finding" data-ui-key={f.kind}>
+                  <li key={i} data-ui="argument-finding" data-ui-key={findingKey(f)}>
                     {describe(f)}
                   </li>
                 ))}
@@ -140,12 +140,12 @@ export function ArgumentPanel({
             <div className="ag-source-list">
               {argument.sources.map((s, i) =>
                 s.target && sourceOpenable(s, workDocIds) ? (
-                  <button key={i} type="button" className="ag-source link" data-ui="open-argument-source" data-ui-key={`${s.target.doc_id}`} title={t("argument.view.panel.openSource")} onClick={() => onOpenSource(s.target!)}>
+                  <button key={i} type="button" className="ag-source link" data-ui="open-argument-source" data-ui-key={i} title={t("argument.view.panel.openSource")} onClick={() => onOpenSource(s.target!)}>
                     <Icon name="file-text" cls="ico-sm" />
                     {s.text || s.target.doc_id}
                   </button>
                 ) : (
-                  <span key={i} className="ag-source" data-ui="argument-source-text">
+                  <span key={i} className="ag-source" data-ui="argument-source-text" data-ui-key={i}>
                     {s.text}
                   </span>
                 )

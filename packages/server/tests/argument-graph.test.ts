@@ -11,7 +11,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ArgumentGraph } from "@argelanderspace/contracts";
+import { ARGUMENT_GRAPH_UNREADABLE_PREFIX, type ArgumentGraph } from "@argelanderspace/contracts";
 import {
   argumentGraphDir,
   argumentGraphPath,
@@ -113,6 +113,8 @@ describe("GET", () => {
     expect(res.status).toBe(500);
     const { detail } = (await res.json()) as { detail: string };
     expect(detail).toBe("argument graph file is unreadable (corrupt)");
+    // the web view recognises a corrupt file by this shared prefix (contracts), not by its own copy of the wording
+    expect(detail.startsWith(ARGUMENT_GRAPH_UNREADABLE_PREFIX)).toBe(true);
     expect(detail).not.toContain(dataDir);
     expect(readFileSync(argumentGraphPath(dataDir, KNOWN_WORK_ID), "utf8")).toBe("{ not json");
   });

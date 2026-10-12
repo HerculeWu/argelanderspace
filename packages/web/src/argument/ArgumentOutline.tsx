@@ -41,7 +41,7 @@ export function ArgumentOutline({ graph, audit, selectedId, onSelect }: { graph:
           {r.role && <span className={`ag-role-chip role-${r.role}`}>{ROLE_NAME[r.role]}</span>}
           <span className={`ag-kind-dot kind-${a.kind}`} aria-hidden="true" />
           <KindText kind={a.kind} />
-          <span className="ag-out-text">{title}</span>
+          <span className="ag-out-text" title={title}>{title}</span>
           {r.cycle && (
             <span className="ag-out-loop" data-ui="argument-outline-cycle">
               <Icon name="refresh-cw" cls="ico-sm" />
@@ -81,5 +81,5 @@ export function ArgumentOutline({ graph, audit, selectedId, onSelect }: { graph:
 /** The kind said in words for assistive technology only; the dot carries it visually. */
 function KindText({ kind }: { kind: ArgumentKind }) {
   const { t } = useTranslation();
-  return <span className="ag-sr-only">{t(kind === "native" ? "argument.view.kind.native" : kind === "end" ? "argument.view.kind.end" : "argument.view.kind.normal")}</span>;
+  return <span className="visually-hidden">{t(kind === "native" ? "argument.view.kind.native" : kind === "end" ? "argument.view.kind.end" : "argument.view.kind.normal")}</span>;
 }

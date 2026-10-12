@@ -4,7 +4,7 @@
  * list, source opening, the entries and the deep link. The server is a stubbed global fetch (the real `api/` module
  * runs); the WebSocket is a listener set the test fires. Layout, fit and pixels are checked in a real browser.
  */
-import { type Argument, type ArgumentGraph, auditArgumentGraph } from "@argelanderspace/contracts";
+import { type Argument, type ArgumentGraph, ArgumentPageSchema, auditArgumentGraph } from "@argelanderspace/contracts";
 import { act, cleanup, fireEvent, render, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../src/i18n";
@@ -17,16 +17,9 @@ import { captureArgumentPage } from "../src/argument/page";
 import { argumentBus, argumentUrl, parseArgumentHash } from "../src/lib/argument-route";
 import type { LibraryRef } from "../src/library/types";
 import { ARGUMENT_FIXTURES } from "./fixtures/argument-graphs";
+import { fakeBus, graphChanged } from "./fake-ws";
 
-const listeners = new Set<(msg: { work_id: string }) => void>();
-vi.mock("../src/api/ws", () => ({
-  onArgumentGraphChanged: (cb: (msg: { work_id: string }) => void) => {
-    listeners.add(cb);
-    return () => listeners.delete(cb);
-  },
-  onLibraryChanged: () => () => {},
-  onJobEvent: () => () => {},
-}));
+vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
 
 class RO {
   observe() {}
@@ -55,7 +48,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
-  listeners.clear();
   vi.unstubAllGlobals();
   reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.clean() });
 });
@@ -154,7 +146,7 @@ describe("findings list", () => {
 describe("page for the Copilot", () => {
   it("carries the work, the whole graph and the selected argument; a selection that is gone is dropped", () => {
     const g = clean();
-    expect(captureArgumentPage({ workId: WORK_ID, title: "T", graph: g, phase: "ready", selectedId: "m1" })).toMatchObject({ version: 1, work: { id: WORK_ID, title: "T" }, phase: "ready", selectedId: "m1" });
+    expect(captureArgumentPage({ workId: WORK_ID, title: "T", graph: g, phase: "ready", selectedId: "m1" })).toMatchObject({ work: { id: WORK_ID, title: "T" }, phase: "ready", selectedId: "m1" });
     expect(captureArgumentPage({ workId: WORK_ID, title: "T", graph: g, phase: "ready", selectedId: "nope" }).selectedId).toBeNull();
     expect(captureArgumentPage({ workId: WORK_ID, title: "T", graph: null, phase: "corrupt", selectedId: "m1" })).toMatchObject({ graph: null, selectedId: null });
   });
@@ -268,7 +260,7 @@ const mount = (props: Partial<Parameters<typeof ArgumentGraphMode>[0]> = {}) =>
 const ready = async (container: HTMLElement) => {
   await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-view"]')!.getAttribute("data-phase")).toBe("ready"));
 };
-const fire = (workId: string) => act(() => void [...listeners].forEach((cb) => cb({ work_id: workId })));
+const fire = (workId: string) => act(() => graphChanged(workId));
 
 describe("view states", () => {
   it("reads the graph of the work by its encoded id and shows the header, outline, canvas", async () => {
@@ -312,7 +304,7 @@ describe("view states", () => {
     await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-not-found"]')).not.toBeNull());
     expect(container.querySelector('[data-ui="argument-graph-title"]')!.textContent).toBe(WORK_ID);
     expect(container.querySelector('[data-ui="argument-graph-empty"]')).toBeNull();
-    fireEvent.click(container.querySelector('[data-ui="argument-graph-not-found"] [data-ui="return-to-library"]')!);
+    fireEvent.click(container.querySelector('[data-ui="argument-graph-not-found"] [data-ui="argument-not-found-return"]')!);
     expect(onExit).toHaveBeenCalled();
   });
 
@@ -468,6 +460,172 @@ describe("selection, audit and refresh", () => {
     await ready(container);
     expect(container.querySelector('[data-ui="argument-graph-counts"]')!.textContent).toBe("11 arguments · 13 edges");
     expect(container.querySelector('[data-ui="argument-audit-summary"]')!.textContent).toBe("Audit passed");
+  });
+});
+
+describe("review fixes (round A)", () => {
+  const tooltipOf = (el: HTMLElement) => document.getElementById(el.getAttribute("aria-describedby")!.split(" ").pop()!)!.textContent;
+
+  it("the disabled new-argument and clear controls carry their explanation, not just the disabled flag", async () => {
+    const { container } = mount();
+    await ready(container);
+    for (const id of ["create-argument", "clear-argument-graph"]) {
+      const b = container.querySelector<HTMLButtonElement>(`[data-ui="${id}"]`)!;
+      expect(b.disabled).toBe(true);
+      expect(tooltipOf(b)).toBe(i18n.t("argument.view.editLater"));
+    }
+    expect(i18n.t("argument.view.editLater")).not.toBe("argument.view.editLater");
+    cleanup();
+    reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.empty() });
+    const { container: empty } = mount();
+    await ready(empty);
+    const first = empty.querySelector<HTMLButtonElement>('[data-ui="create-first-argument"]')!;
+    expect(first.disabled).toBe(true);
+    expect(tooltipOf(first)).toBe(i18n.t("argument.view.editLater"));
+  });
+
+  it("a passed audit is a plain badge, not a button; the list closes after a pick and Escape returns the focus to the badge", async () => {
+    const { container } = mount();
+    await ready(container);
+    const passed = container.querySelector<HTMLElement>('[data-ui="argument-audit-summary"]')!;
+    expect(passed.tagName).not.toBe("BUTTON");
+    expect(passed.querySelector("button")).toBeNull();
+    expect(passed.getAttribute("data-state")).toBe("passed");
+    cleanup();
+    reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.flawed() });
+    const { container: c2 } = mount();
+    await ready(c2);
+    const badge = c2.querySelector<HTMLButtonElement>('[data-ui="argument-audit-summary"]')!;
+    expect(badge.tagName).toBe("BUTTON");
+    fireEvent.click(badge);
+    // a pick selects the argument and closes the list that would cover the panel
+    fireEvent.click(ui(c2, "argument-audit-finding").find((r) => r.textContent!.includes("不完整"))! as HTMLElement);
+    expect(c2.querySelector('[data-ui="argument-detail"]')).not.toBeNull();
+    expect(c2.querySelector('[data-ui="argument-audit-popover"]')).toBeNull();
+    // Escape closes an open list and puts the focus back on the badge
+    fireEvent.click(badge);
+    expect(c2.querySelector('[data-ui="argument-audit-popover"]')).not.toBeNull();
+    (ui(c2, "argument-audit-finding")[0] as HTMLElement).focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(c2.querySelector('[data-ui="argument-audit-popover"]')).toBeNull();
+    expect(document.activeElement).toBe(badge);
+  });
+
+  it("findings of one kind have different keys", async () => {
+    reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.flawed() });
+    const { container } = mount();
+    await ready(container);
+    fireEvent.click(container.querySelector('[data-ui="argument-audit-summary"]')!);
+    const keys = ui(container, "argument-audit-finding").map((r) => r.getAttribute("data-ui-key"));
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.filter((k) => k!.startsWith("incomplete:")).length).toBeGreaterThan(1);
+  });
+
+  it("several sources of one Doc, and text-only sources, each have their own key", async () => {
+    const g = clean();
+    const m4 = g.arguments.find((a) => a.id === "m4")!;
+    m4.sources = [
+      { text: "Figure 3", target: { doc_id: "arxiv-0000.00001", anchor: "fig-3" } },
+      { text: "Section 2", target: { doc_id: "arxiv-0000.00001", anchor: "sec-2" } },
+      { text: "Appendix" },
+      { text: "Appendix B" },
+    ];
+    reply = () => ({ status: 200, body: g });
+    const { container } = mount();
+    await ready(container);
+    fireEvent.click(byKey(container, "argument-outline-row", "m4")!);
+    const open = ui(container, "open-argument-source").map((e) => e.getAttribute("data-ui-key"));
+    const text = ui(container, "argument-source-text").map((e) => e.getAttribute("data-ui-key"));
+    expect(open).toEqual(["0", "1"]);
+    expect(text).toEqual(["2", "3"]);
+  });
+
+  it("the not-found button and the header's back button are not the exploration's data-ui", async () => {
+    reply = () => ({ status: 404, body: { detail: "work not found" } });
+    const { container } = mount();
+    await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-not-found"]')).not.toBeNull());
+    expect(container.querySelector('[data-ui="return-to-library"]')).toBeNull();
+    expect(container.querySelector('[data-ui="argument-graph-not-found"] [data-ui="argument-not-found-return"]')).not.toBeNull();
+    expect(container.querySelector('[data-ui="argument-graph-header"] [data-ui="argument-return-to-library"]')).not.toBeNull();
+    expect(container.querySelector('[data-ui="return-to-work"]')).toBeNull();
+    // icons are configured per data-ui (ui/icons.json): the renamed back button still draws its arrow, not its label
+    expect(container.querySelector('[data-ui="argument-return-to-library"] svg')).not.toBeNull();
+  });
+
+  it("an outline row's title carries a tooltip with the whole title (the row truncates it)", async () => {
+    const { container } = mount();
+    await ready(container);
+    const row = byKey(container, "argument-outline-row", "m4")!;
+    const text = row.querySelector<HTMLElement>(".ag-out-text")!;
+    expect(text.getAttribute("title")).toBe(text.textContent);
+    expect(row.querySelector(".ag-sr-only")).toBeNull();
+    expect(row.querySelector(".visually-hidden")).not.toBeNull();
+  });
+
+  it("a refresh that fails for a transient reason keeps the graph on screen with a notice; Retry clears it", async () => {
+    const { container } = mount();
+    await ready(container);
+    fireEvent.click(byKey(container, "argument-outline-row", "m4")!);
+    reply = () => ({ status: 503, body: { detail: "busy" } });
+    fire(WORK_ID);
+    await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-refresh-failed"]')).not.toBeNull());
+    expect(container.querySelector('[data-ui="argument-graph-error"]')).toBeNull();
+    expect(container.querySelector('[data-ui="argument-canvas"]')).not.toBeNull();
+    expect(container.querySelector('[data-ui="argument-detail"]')!.getAttribute("data-ui-key")).toBe("m4");
+    reply = () => ({ status: 200, body: clean() });
+    fireEvent.click(container.querySelector('[data-ui="retry-argument-graph-refresh"]')!);
+    await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-refresh-failed"]')).toBeNull());
+    expect(container.querySelector('[data-ui="argument-detail"]')).not.toBeNull();
+  });
+
+  it("a missing Work (404) and an unreadable file still replace the graph; the first read has no graph to keep", async () => {
+    const { container } = mount();
+    await ready(container);
+    reply = () => ({ status: 404, body: { detail: "gone" } });
+    fire(WORK_ID);
+    await waitFor(() => expect(container.querySelector('[data-ui="argument-graph-not-found"]')).not.toBeNull());
+    cleanup();
+    reply = () => ({ status: 503, body: { detail: "busy" } });
+    const { container: first } = mount();
+    await waitFor(() => expect(first.querySelector('[data-ui="argument-graph-error"]')).not.toBeNull());
+    expect(first.querySelector('[data-ui="argument-graph-refresh-failed"]')).toBeNull();
+  });
+
+  it("a reconnect of the socket reads the graph once more", async () => {
+    const { container } = mount();
+    await ready(container);
+    expect(requested.length).toBe(1);
+    const changed = clean();
+    changed.rev = 9;
+    changed.arguments = changed.arguments.map((a) => (a.id === "m4" ? { ...a, title: "重连后的标题" } : a));
+    reply = () => ({ status: 200, body: changed });
+    act(() => fakeBus.emit("hello", { jobs: [] }));
+    await waitFor(() => expect(requested.length).toBe(2));
+    fireEvent.click(await waitFor(() => byKey(container, "argument-outline-row", "m4")!));
+    expect(container.querySelector('[data-ui="argument-detail-title"]')!.textContent).toBe("重连后的标题");
+  });
+
+  it("publishes the contract's page: whole graph, rev, audit, selection; a graph with no arguments is empty", async () => {
+    const onPage = vi.fn();
+    const { container } = mount({ onPage });
+    await ready(container);
+    fireEvent.click(byKey(container, "argument-outline-row", "m4")!);
+    const page = onPage.mock.calls.slice(-1)[0]![0];
+    expect(page).toMatchObject({ phase: "ready", partial: false, selectedId: "m4", counts: { arguments: 11, edges: 13 }, audit: { total: 0 } });
+    expect(ArgumentPageSchema.safeParse(page).success).toBe(true);
+    cleanup();
+    reply = () => ({ status: 200, body: ARGUMENT_FIXTURES.empty() });
+    const onEmpty = vi.fn();
+    const { container: empty } = mount({ onPage: onEmpty });
+    await ready(empty);
+    expect(onEmpty.mock.calls.slice(-1)[0]![0]).toMatchObject({ phase: "empty", counts: { arguments: 0, edges: 0 } });
+    for (const [status, body, phase] of [[404, { detail: "x" }, "not-found"], [500, { detail: "argument graph file is unreadable (corrupt)" }, "corrupt"], [503, {}, "error"]] as const) {
+      cleanup();
+      reply = () => ({ status, body });
+      const spy = vi.fn();
+      mount({ onPage: spy });
+      await waitFor(() => expect(spy.mock.calls.slice(-1)[0]![0]).toMatchObject({ phase }));
+    }
   });
 });
 

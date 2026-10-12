@@ -9,7 +9,7 @@ import { auditArgumentGraph, type ArgumentSource } from "@argelanderspace/contra
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { ActionButton } from "../ui";
+import { ActionButton, InlineMessage } from "../ui";
 import type { LibraryRef } from "../library/types";
 import { ArgumentAudit } from "./ArgumentAudit";
 import { ArgumentGraphCanvas, type ArgumentCanvasStash } from "./ArgumentGraphCanvas";
@@ -44,7 +44,7 @@ export function ArgumentGraphMode({
   onPage?: (page: ArgumentPage | null) => void;
 }) {
   const { t } = useTranslation();
-  const { state, reload } = useArgumentGraph(workId);
+  const { state, reload, refresh, refreshFailed } = useArgumentGraph(workId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const stash = useRef<ArgumentCanvasStash>({}).current;
   const graph = state.phase === "ready" ? state.graph : null;
@@ -73,7 +73,7 @@ export function ArgumentGraphMode({
   return (
     <div className="explore-root" data-ui="argument-graph-view" data-ui-key={workId} data-phase={state.phase}>
       <div className="explore-header" data-ui="argument-graph-header">
-        <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" data-ui="return-to-work" label={t("argument.view.back")} tooltip={t("argument.view.backTooltip")} onClick={onExit} />
+        <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" data-ui="argument-return-to-library" label={t("argument.view.back")} tooltip={t("argument.view.backTooltip")} onClick={onExit} />
         <div className="explore-context">
           <div className="explore-eyebrow">
             <span>{t("shell.nav.library")}</span>
@@ -101,6 +101,17 @@ export function ArgumentGraphMode({
         </div>
       </div>
 
+      {refreshFailed && (
+        <div className="ag-refresh-failed" data-ui="argument-graph-refresh-failed">
+          <InlineMessage tone="warning" uiId="argument-graph-refresh-failed-message">
+            {t("argument.view.state.refreshFailed")}{" "}
+            <ActionButton mode="text" label={t("argument.view.state.retry")} tooltip={t("argument.view.state.retry")} data-ui="retry-argument-graph-refresh" onClick={refresh}>
+              {t("argument.view.state.retry")}
+            </ActionButton>
+          </InlineMessage>
+        </div>
+      )}
+
       <div className="view-row">
         {hasArguments && graph && audit && (
           <div className="lib-side wide" data-ui="argument-side">
@@ -123,7 +134,7 @@ export function ArgumentGraphMode({
               <Icon name="info" cls="ico-lg" />
               <h3>{t("argument.view.state.notFound")}</h3>
               <p>{t("argument.view.state.notFoundHint")}</p>
-              <ActionButton mode="text" label={t("argument.view.back")} tooltip={t("argument.view.back")} data-ui="return-to-library" onClick={onExit}>
+              <ActionButton mode="text" label={t("argument.view.back")} tooltip={t("argument.view.back")} data-ui="argument-not-found-return" onClick={onExit}>
                 {t("argument.view.back")}
               </ActionButton>
             </div>

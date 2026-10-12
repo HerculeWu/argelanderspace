@@ -45,6 +45,7 @@ import type {
 } from "@argelanderspace/contracts";
 import {
   AnnotationsFileSchema,
+  ARGUMENT_GRAPH_UNREADABLE_PREFIX,
   ArgumentGraphSchema,
   buildReaderReading,
   DocDescriptionSchema,
@@ -1560,7 +1561,7 @@ export function createApp(deps: AppDeps): Hono {
     if (err instanceof ArgumentGraphFileError) {
       if (err.kind === "unsafe_id")
         return detail("work id cannot be used for an argument graph", 400);
-      return detail(`argument graph file is unreadable (${err.kind})`, 500);
+      return detail(`${ARGUMENT_GRAPH_UNREADABLE_PREFIX} (${err.kind})`, 500);
     }
     return detail("argument graph could not be accessed", 500);
   };

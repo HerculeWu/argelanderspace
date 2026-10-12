@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  type ArgumentContextSummary,
+  ArgumentContextSummarySchema,
+  ArgumentPageSchema,
+} from "./argument-ops.js";
 import { type ContextCoverage, ContextCoverageSchema } from "./context-batch.js";
 import {
   type DiscoveryContextSummary,
@@ -102,6 +107,8 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
       library: LibraryPageSchema.nullable().optional(),
       /** The Library tab's exploration (Discovery) while it is open (copilot ticket 17); replaces `library` then. */
       discovery: DiscoveryPageSchema.nullable().optional(),
+      /** The Library tab's argument graph view while it is open (argument graph ticket 04); replaces `library` then. */
+      argument: ArgumentPageSchema.nullable().optional(),
       /** The LaTeX Reader of the active pane (copilot ticket 18); optional so older views and headless callers stay valid. */
       reader: reader.nullable().optional(),
       /** The PDF Reader of the active pane (copilot ticket 20); identity, position and control state, not the pages. */
@@ -122,6 +129,9 @@ const pageContext = (reader: typeof ReaderPageSchema | typeof ReaderObservationP
         (value.view === "plan" && value.plan !== null) ||
         (value.view === "library" && value.library?.source === "live") ||
         (value.view === "library" && !!value.discovery?.graph) ||
+        // An argument graph page is complete once its graph really loaded (ready, or empty: no graph yet is an answer).
+        (value.view === "library" &&
+          (value.argument?.phase === "ready" || value.argument?.phase === "empty")) ||
         (value.view === "doc" &&
           (!!(value.reader?.reading || value.reader?.readingRef || value.reader?.readingOmitted) ||
             value.pdf?.phase === "ready" ||
@@ -222,6 +232,7 @@ export interface CopilotMessage {
     objects: { id: string; rev: number; name?: string }[];
     library?: LibraryContextSummary;
     discovery?: DiscoveryContextSummary;
+    argument?: ArgumentContextSummary;
     reader?: ReaderContextSummary;
     pdf?: PdfContextSummary;
     text?: TextContextSummary;
@@ -682,6 +693,8 @@ export const CopilotContextReferenceSchema = z
         library: LibraryContextSummarySchema.optional(),
         /** What the Library tab's exploration carried (copilot ticket 17); absent otherwise. */
         discovery: DiscoveryContextSummarySchema.optional(),
+        /** What the argument graph view carried (argument graph ticket 04); absent otherwise. */
+        argument: ArgumentContextSummarySchema.optional(),
         /** What the Reader carried (copilot ticket 18); absent for other pages. */
         reader: ReaderContextSummarySchema.optional(),
         /** What the PDF Reader carried (copilot ticket 20); absent for other pages. */

@@ -41,6 +41,14 @@ export function replaceDocUrl(docId: string, anchor?: string | null): void {
   window.history.replaceState(null, "", docRouteUrl(docId, anchor));
 }
 
+/**
+ * Open a Doc as a new history entry (Back returns to where the user was). Used when the Doc is opened from a mode that
+ * owns a URL of its own (the argument graph view), so Back lands on that view again instead of leaving the app.
+ */
+export function pushDocUrl(docId: string, anchor?: string | null): void {
+  window.history.pushState(null, "", docRouteUrl(docId, anchor));
+}
+
 // Give the rail a beat after the jump: a citation card only renders once its
 // citing block scrolls into the reading band (the jump animation is ~700ms).
 const REF_FOCUS_DELAY_MS = 850;

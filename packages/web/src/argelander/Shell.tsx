@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
-import { parseDocRoute, replaceDocUrl } from "../lib/deeplink";
+import { parseDocRoute, pushDocUrl, replaceDocUrl } from "../lib/deeplink";
 import { argumentBus, parseArgumentHash } from "../lib/argument-route";
 import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { DEFAULT_LANGUAGE } from "../i18n";
@@ -112,6 +112,20 @@ export function Shell() {
   const multi = panes.length > 1;
   const activePane = panes.find((p) => p.id === activeId) || panes[0]!;
 
+  // A mode that lives in the Library page (exploration, the argument graph view) needs a Library pane to open in: the one
+  // already there, else the active pane becomes one. `guard`: ask the leave guard first (a navigation of the user's, with
+  // a Doc possibly holding a draft); the boot path has nothing to lose. False: refused, nothing changed.
+  const ensureLibraryPane = useCallback(
+    (guard: boolean): boolean => {
+      if (manager.getState().panes.some((p) => p.view === "library")) return true;
+      if (guard) return manager.setActiveView("library");
+      const active = manager.getState().activeId;
+      manager.update((ps) => ps.map((p) => (p.id === active ? { ...p, view: "library" } : p)));
+      return true;
+    },
+    [manager]
+  );
+
   // load the ingested-papers list once, pick an initial document; a
   // `/doc/<id>[#anchor]` deep link takes precedence and opens the doc pane
   useEffect(() => {
@@ -136,22 +150,14 @@ export function Shell() {
       // mounted — exploreBus keeps it pending until then)
       const exploreSeed = parseExploreHash(window.location.hash);
       if (exploreSeed) {
-        manager.update((ps) =>
-          ps.some((p) => p.view === "library")
-            ? ps
-            : ps.map((p) => (p.id === INITIAL_PANE_ID ? { ...p, view: "library" } : p))
-        );
+        ensureLibraryPane(false);
         exploreBus.request(exploreSeed);
         return;
       }
       // Argument graph ticket 04: a boot `#argument/<work id>` hash opens the library pane the same way
       const argumentWork = parseArgumentHash(window.location.hash);
       if (argumentWork) {
-        manager.update((ps) =>
-          ps.some((p) => p.view === "library")
-            ? ps
-            : ps.map((p) => (p.id === INITIAL_PANE_ID ? { ...p, view: "library" } : p))
-        );
+        ensureLibraryPane(false);
         argumentBus.request(argumentWork);
         return;
       }
@@ -183,7 +189,9 @@ export function Shell() {
       currentDocRef.current = nextDoc;
       setCurrentDocState(nextDoc);
       if (docId) {
-        replaceDocUrl(docId, anchor);
+        // Opened from the argument graph view (its URL is `#argument/…`): keep that entry, so Back returns to the graph.
+        if (parseArgumentHash(window.location.hash) !== null) pushDocUrl(docId, anchor);
+        else replaceDocUrl(docId, anchor);
         setPendingAnchor(anchor ?? null);
       }
       // ensure a pane shows the document: prefer an existing doc pane, else the active one
@@ -203,6 +211,9 @@ export function Shell() {
   useEffect(() => {
     const onNav = () => {
       const route = parseDocRoute(window.location.pathname, window.location.hash);
+      const argumentWork = parseArgumentHash(window.location.hash);
+      // `#argument/<work id>` drives the argument graph view; any other URL (a Doc, a plain URL, an exploration) leaves it
+      if (!argumentWork) argumentBus.exit();
       if (route) {
         openDocRef.current(route.docId, route.anchor);
         return;
@@ -210,12 +221,10 @@ export function Shell() {
       // Stage 14: `#explore/<bibcode>` drives the discovery mode; losing the
       // explore hash exits explore mode (the session stays resumable)
       const seed = parseExploreHash(window.location.hash);
-      const argumentWork = parseArgumentHash(window.location.hash);
       if (seed) exploreBus.request(seed);
       else exploreBus.exit();
-      // `#argument/<work id>` drives the argument graph view; losing the hash leaves it
-      if (argumentWork) argumentBus.request(argumentWork);
-      else argumentBus.exit();
+      // Back to a graph URL with no Library pane (the Reader replaced it): make one first, as the boot path does
+      if (argumentWork && ensureLibraryPane(true)) argumentBus.request(argumentWork);
     };
     window.addEventListener("popstate", onNav);
     window.addEventListener("hashchange", onNav);
@@ -223,7 +232,7 @@ export function Shell() {
       window.removeEventListener("popstate", onNav);
       window.removeEventListener("hashchange", onNav);
     };
-  }, []);
+  }, [ensureLibraryPane]);
 
   // Stage 8 §8: a document delete lands here (the papers list is fetched only
   // once at boot, so the deleted id must be dropped locally; currentDoc
@@ -403,10 +412,12 @@ export function Shell() {
   // work's graph there; entering the view writes its history entry.
   const openArgumentGraph = useCallback(
     (workId: string) => {
-      const library = manager.getState().panes.find((p) => p.view === "library");
+      // The pane that shows the view is chosen here and named in the request, so the bus serves exactly it.
+      const { panes: current, activeId: active } = manager.getState();
+      const library = current.find((p) => p.id === active && p.view === "library") ?? current.find((p) => p.view === "library");
       if (library) manager.select(library.id);
       else if (!manager.setActiveView("library")) return;
-      argumentBus.request(workId, { push: true });
+      argumentBus.request(workId, { push: true, paneId: library?.id ?? manager.getState().activeId });
     },
     [manager]
   );
@@ -427,6 +438,8 @@ export function Shell() {
       plan: fields.plan ?? null,
       library: fields.library ?? null,
       discovery: fields.discovery ?? null,
+      // The Library tab's argument graph view (it replaces `library` while open).
+      argument: fields.argument ?? null,
       // The Reader of the ACTIVE pane: the page the user is working in, and the one navigation acts on.
       reader: fields.reader ?? null,
       pdf: fields.pdf ?? null,

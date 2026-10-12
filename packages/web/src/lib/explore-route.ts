@@ -8,43 +8,17 @@
  * currently exploring, else the first registered); the URL never encodes a
  * pane id. A boot-time `#explore/…` hash is held as `pending` until a
  * LibraryView registers (Shell meanwhile ensures a library pane exists).
+ * The mechanics are shared with the argument graph view (`hash-route.ts`).
  */
+import { createHashRoute, createRouteBus } from "./hash-route";
 
-export function parseExploreHash(hash: string): string | null {
-  const m = /^#explore\/([^/?#]+)/.exec(hash);
-  if (!m?.[1]) return null;
-  try {
-    return decodeURIComponent(m[1]);
-  } catch {
-    return null;
-  }
-}
+const route = createHashRoute("explore");
 
-export function exploreUrl(seed: string): string {
-  return `/#explore/${encodeURIComponent(seed)}`;
-}
-
+export const parseExploreHash = route.parse;
+export const exploreUrl = route.url;
 /** pushState (not replaceState): browser Back/Forward walk the seed history. */
-export function pushExploreUrl(seed: string): void {
-  try {
-    const url = exploreUrl(seed);
-    if (window.location.pathname + window.location.hash !== url) {
-      window.history.pushState(null, "", url);
-    }
-  } catch {
-    /* sandboxed previews may disallow History — exploration still works */
-  }
-}
-
-export function clearExploreUrl(): void {
-  try {
-    if (parseExploreHash(window.location.hash) !== null) {
-      window.history.pushState(null, "", window.location.pathname || "/");
-    }
-  } catch {
-    /* ignore */
-  }
-}
+export const pushExploreUrl = route.push;
+export const clearExploreUrl = route.clear;
 
 export interface ExploreTarget {
   /** Whether this LibraryView currently hosts the active exploration. */
@@ -55,35 +29,16 @@ export interface ExploreTarget {
   exit(): void;
 }
 
-const targets: ExploreTarget[] = [];
-let pending: string | null = null;
+const bus = createRouteBus<ExploreTarget, string>({
+  active: (t) => t.isExploring(),
+  open: (t, seed) => t.explore(seed),
+  exit: (t) => t.exit(),
+});
 
 export const exploreBus = {
   /** Called by Shell on boot / popstate / hashchange for `#explore/…`. */
-  request(seed: string): void {
-    pending = seed;
-    const t = targets.find((x) => x.isExploring()) ?? targets[0];
-    if (t) {
-      pending = null;
-      t.explore(seed);
-    }
-  },
+  request: (seed: string): void => bus.request(seed),
   /** Called when the URL stops naming an exploration (popstate to a plain URL). */
-  exit(): void {
-    pending = null;
-    targets.find((x) => x.isExploring())?.exit();
-  },
-  register(t: ExploreTarget): () => void {
-    targets.push(t);
-    if (pending !== null) {
-      const seed = pending;
-      pending = null;
-      // defer so the registering component finishes mounting first
-      queueMicrotask(() => t.explore(seed));
-    }
-    return () => {
-      const i = targets.indexOf(t);
-      if (i >= 0) targets.splice(i, 1);
-    };
-  },
+  exit: (): void => bus.exit(),
+  register: (t: ExploreTarget): (() => void) => bus.register(t),
 };

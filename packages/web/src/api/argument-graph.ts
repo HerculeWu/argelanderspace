@@ -1,4 +1,4 @@
-import { type ArgumentGraph, ArgumentGraphSchema } from "@argelanderspace/contracts";
+import { ARGUMENT_GRAPH_UNREADABLE_PREFIX, type ArgumentGraph, ArgumentGraphSchema } from "@argelanderspace/contracts";
 import { apiRequest, HttpError } from "./request";
 
 /**
@@ -14,8 +14,6 @@ export type ArgumentGraphLoad =
   /** Anything else: no answer, another server failure, an answer that is not a graph. */
   | { kind: "error"; unreachable: boolean };
 
-const UNREADABLE_FILE = "argument graph file is unreadable";
-
 /** `GET /api/works/:workId/argument-graph`; the Work id is URL-encoded (it holds `:` and `/`). */
 export async function fetchArgumentGraph(workId: string, signal?: AbortSignal): Promise<ArgumentGraphLoad> {
   try {
@@ -27,7 +25,7 @@ export async function fetchArgumentGraph(workId: string, signal?: AbortSignal): 
     if (error instanceof HttpError) {
       if (error.status === 404) return { kind: "not-found" };
       const detail = (error.body as { detail?: unknown } | null)?.detail;
-      if (error.status === 500 && typeof detail === "string" && detail.startsWith(UNREADABLE_FILE)) return { kind: "corrupt" };
+      if (error.status === 500 && typeof detail === "string" && detail.startsWith(ARGUMENT_GRAPH_UNREADABLE_PREFIX)) return { kind: "corrupt" };
       return { kind: "error", unreachable: error.status === 0 };
     }
     return { kind: "error", unreachable: false };

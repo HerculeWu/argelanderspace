@@ -1384,6 +1384,18 @@
       "filter": "filter “{{filter}}”",
       "open": "Open candidate: {{bibcode}}"
     },
+    "argument": {
+      "ready": "Argument graph",
+      "empty": "Argument graph (no arguments yet)",
+      "loading": "Argument graph (loading)",
+      "not-found": "Argument graph (work not found)",
+      "corrupt": "Argument graph (file unreadable)",
+      "error": "Argument graph (could not be read)",
+      "counts": "{{arguments}} arguments · {{edges}} edges · revision {{rev}}",
+      "findings": "{{count}} audit findings",
+      "open": "Open argument: {{id}}",
+      "partial": "Partial: only the selected argument's field text was sent"
+    },
     "operations": {
       "count": "{{count}} Plan actions",
       "countMixed": "{{count}} actions",
@@ -2048,7 +2060,6 @@
       "audit": {
         "none": "Audit passed",
         "count": "{{n}} audit findings",
-        "title": "Audit findings",
         "listLabel": "Audit list",
         "cycle": "Cycle: {{list}}",
         "noEnd": "The graph has no End argument",
@@ -2082,8 +2093,6 @@
         "sources": "Sources",
         "sourcesNone": "No sources.",
         "openSource": "Open in the reading pane",
-        "sourceText": "Source text",
-        "fromArgument": "From the argument “{{title}}”",
         "untitled": "—"
       },
       "state": {
@@ -2094,6 +2103,7 @@
         "corruptHint": "The file is damaged and the workbench will not change it. Repair or move the file, then try again.",
         "error": "Could not read the argument graph",
         "errorUnreachable": "The workbench service cannot be reached.",
+        "refreshFailed": "The latest change to this graph could not be read. The graph shown may be out of date.",
         "errorOther": "The service returned an unexpected result.",
         "retry": "Retry",
         "emptyTitle": "This work has no argument graph yet",
@@ -2105,6 +2115,7 @@
         "end": "End",
         "normal": "Regular"
       },
+      "readerLibraryUnreadable": "The library could not be read, so the work of this document is unknown. Try again.",
       "readerNoWork": "No work in the library owns this document"
     }
   }

@@ -3,7 +3,7 @@
  * says whether the work has a graph and how many arguments), and the Reader's top-bar button (which finds the work the
  * open Doc belongs to).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchLibrary } from "../api/library";
 import { Icon } from "../lib/icons";
@@ -16,28 +16,40 @@ export function WorkArgumentEntry({ workId, live, onOpen }: { workId: string; li
   const count = state.phase === "ready" ? state.graph.arguments.length : null;
   const label = !live ? t("argument.view.entry") : count === null ? t("argument.view.entry") : count > 0 ? t("argument.view.entryCount", { count }) : t("argument.view.entryNone");
   return (
-    <ActionButton
-      unstyled
-      mode="text"
-      className="btn large"
-      data-ui="open-argument-graph"
-      data-count={count ?? undefined}
-      label={label}
-      tooltip={!live ? t("argument.view.entryDemoOff") : t("argument.view.open")}
-      disabled={!live}
-      onClick={() => onOpen(workId)}
-    >
-      <Icon name="workflow" cls="ico-sm" />
-      {label}
-    </ActionButton>
+    <>
+      <ActionButton
+        unstyled
+        mode="text"
+        className="btn large"
+        data-ui="open-argument-graph"
+        data-count={count ?? undefined}
+        label={label}
+        tooltip={!live ? t("argument.view.entryDemoOff") : t("argument.view.open")}
+        disabled={!live}
+        onClick={() => onOpen(workId)}
+      >
+        <Icon name="workflow" cls="ico-sm" />
+        {label}
+      </ActionButton>
+      {!live && (
+        <div className="detail-footer-note" data-ui="open-argument-graph-note">
+          {t("argument.view.entryDemoOff")}
+        </div>
+      )}
+    </>
   );
 }
 
-/** The work a Doc belongs to, from the library; null when the library cannot be read live or lists none. */
-async function workOfDoc(docId: string): Promise<string | null> {
-  const { data, live } = await fetchLibrary();
-  if (!live) return null;
-  return data.refs.find((r) => r.doc_ids?.includes(docId) || r.doc_id === docId)?.id ?? null;
+/** The work a Doc belongs to, from the library: `unreadable` when the library cannot be read live, `none` when no listed work owns the Doc. */
+async function workOfDoc(docId: string): Promise<{ workId: string } | "unreadable" | "none"> {
+  try {
+    const { data, live } = await fetchLibrary();
+    if (!live) return "unreadable";
+    const workId = data.refs.find((r) => r.doc_ids?.includes(docId) || r.doc_id === docId)?.id;
+    return workId === undefined ? "none" : { workId };
+  } catch {
+    return "unreadable";
+  }
 }
 
 /**
@@ -46,14 +58,24 @@ async function workOfDoc(docId: string): Promise<string | null> {
  */
 export function ReaderArgumentEntry({ docId, onOpen }: { docId: string; onOpen?: (workId: string) => void }) {
   const { t } = useTranslation();
-  const [state, setState] = useState<"idle" | "busy" | "missing">("idle");
-  useEffect(() => setState("idle"), [docId]);
-  const press = async () => {
-    setState("busy");
-    const workId = await workOfDoc(docId);
-    if (workId === null) return setState("missing");
+  const [state, setState] = useState<"idle" | "busy" | "missing" | "unreadable">("idle");
+  // An answer that arrives after the Reader moved to another Doc (or the entry went away) belongs to nobody: it must not take the user anywhere.
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current++;
     setState("idle");
-    onOpen?.(workId);
+    return () => {
+      generation.current++;
+    };
+  }, [docId]);
+  const press = async () => {
+    const mine = ++generation.current;
+    setState("busy");
+    const found = await workOfDoc(docId);
+    if (mine !== generation.current) return;
+    if (found === "none" || found === "unreadable") return setState(found === "none" ? "missing" : "unreadable");
+    setState("idle");
+    onOpen?.(found.workId);
   };
   return (
     <>
@@ -75,6 +97,11 @@ export function ReaderArgumentEntry({ docId, onOpen }: { docId: string; onOpen?:
       {state === "missing" && (
         <span className="ag-reader-entry-note" role="status" data-ui="argument-reader-entry-missing">
           {t("argument.view.readerNoWork")}
+        </span>
+      )}
+      {state === "unreadable" && (
+        <span className="ag-reader-entry-note" role="status" data-ui="argument-reader-entry-unreadable">
+          {t("argument.view.readerLibraryUnreadable")}
         </span>
       )}
     </>

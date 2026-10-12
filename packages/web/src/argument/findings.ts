@@ -26,3 +26,6 @@ export function listFindings(audit: ArgumentAudit): Finding[] {
 
 /** The findings that name this argument (the panel lists these; a graph-level `noEnd` names none). */
 export const findingsOf = (findings: readonly Finding[], id: string): Finding[] => findings.filter((f) => f.ids.some((x) => x === id));
+
+/** Tells repeated findings of one kind apart (`data-ui-key`): the kind and the arguments it names. */
+export const findingKey = (f: Finding): string => `${f.kind}:${f.ids.join("|")}`;

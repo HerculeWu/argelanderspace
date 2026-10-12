@@ -210,7 +210,8 @@ function LibraryBody({
   const openArgument = useCallback(
     (workId: string, opts: { push: boolean }) => {
       // one mode at a time: a hash-driven open leaves an exploration (its session stays resumable)
-      if (exploreRef.current.active) exploreRef.current.exitExplore();
+      // (its plain-URL history entry is skipped: this open writes the one entry the user's Back returns through)
+      if (exploreRef.current.active) exploreRef.current.yieldExplore();
       setArgumentWorkId(workId);
       setSelNode(refToNodeRef.current[workId] ?? workId);
       if (opts.push) pushArgumentUrl(workId);
@@ -225,11 +226,12 @@ function LibraryBody({
   useEffect(
     () =>
       argumentBus.register({
+        paneId,
         isOpen: () => argumentOpenRef.current,
         open: openArgument,
         exit: exitArgument,
       }),
-    [openArgument, exitArgument]
+    [openArgument, exitArgument, paneId]
   );
   // an exploration that starts takes over the page
   useEffect(() => {
