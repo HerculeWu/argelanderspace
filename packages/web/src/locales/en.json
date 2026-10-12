@@ -2078,7 +2078,9 @@
         "expand": "Expand {{title}}",
         "collapse": "Collapse {{title}}",
         "flagged": "Has audit findings",
-        "label": "Argument outline"
+        "label": "Argument outline",
+        "foldSide": "Collapse outline",
+        "unfoldSide": "Expand outline"
       },
       "panel": {
         "label": "Argument detail",

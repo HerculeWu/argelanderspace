@@ -1,6 +1,6 @@
 /** The left column of the argument graph view (ticket 04): the outline by conclusion. Rows come from `buildOutline`. */
 import type { ArgumentAudit, ArgumentGraph, ArgumentKind } from "@argelanderspace/contracts";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { ActionButton } from "../ui";
 import { auditCounts } from "./canvasModel";
@@ -8,10 +8,25 @@ import { buildOutline, type OutlineRow } from "./outline";
 import { ROLE_NAME } from "./ArgumentPanel";
 import { Icon } from "../lib/icons";
 
-export function ArgumentOutline({ graph, audit, selectedId, onSelect }: { graph: ArgumentGraph; audit: ArgumentAudit; selectedId: string | null; onSelect: (id: string) => void }) {
+export type OutlineOpenState = ReadonlyMap<string, boolean>;
+
+export function ArgumentOutline({
+  graph,
+  audit,
+  selectedId,
+  onSelect,
+  openState,
+  setOpenState,
+}: {
+  graph: ArgumentGraph;
+  audit: ArgumentAudit;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  /** Only what the user toggled; the rest follows the default depth. Held by the caller so a folded outline keeps it. */
+  openState: OutlineOpenState;
+  setOpenState: (update: (m: OutlineOpenState) => OutlineOpenState) => void;
+}) {
   const { t } = useTranslation();
-  // only what the user toggled; the rest follows the default depth
-  const [openState, setOpenState] = useState<ReadonlyMap<string, boolean>>(new Map());
   const outline = useMemo(() => buildOutline(graph, audit, openState), [graph, audit, openState]);
   const flagged = useMemo(() => auditCounts(audit), [audit]);
   const byId = useMemo(() => new Map(graph.arguments.map((a) => [a.id, a])), [graph]);

@@ -6,16 +6,18 @@
  * as long as the argument still exists.
  */
 import { auditArgumentGraph, type ArgumentSource } from "@argelanderspace/contracts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
+import { useElementWidth } from "../doc/auto-fold";
 import { ActionButton, InlineMessage } from "../ui";
 import type { LibraryRef } from "../library/types";
 import { ArgumentAudit } from "./ArgumentAudit";
 import { ArgumentGraphCanvas, type ArgumentCanvasStash } from "./ArgumentGraphCanvas";
-import { ArgumentOutline } from "./ArgumentOutline";
+import { ArgumentOutline, type OutlineOpenState } from "./ArgumentOutline";
 import { ArgumentPanel, sourceAnchor } from "./ArgumentPanel";
 import { findingsOf, listFindings } from "./findings";
+import { OUTLINE_RAIL, OUTLINE_WIDTH, PANEL_WIDTH, argumentLayout, outlineAutoFold } from "./layout";
 import { type ArgumentPage, captureArgumentPage } from "./page";
 import { useArgumentGraph } from "./useArgumentGraph";
 import { useFindingText } from "./useFindingText";
@@ -55,6 +57,39 @@ export function ArgumentGraphMode({
   const selected = graph?.arguments.find((a) => a.id === selectedId) ?? null;
   const heading = workHeading(workId, work);
 
+  // Narrow pane (user decision 2026-10-12, see layout.ts): an open panel folds the outline, then floats over the canvas.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const width = useElementWidth(rootRef);
+  const [outlineOpen, setOutlineOpen] = useState<OutlineOpenState>(new Map());
+  const [userFolded, setUserFolded] = useState(false);
+  const [userUnfolded, setUserUnfolded] = useState(false);
+  const graphHasArguments = !!graph && graph.arguments.length > 0;
+  const panelOpen = selected !== null;
+  const autoFold = outlineAutoFold(width, panelOpen);
+  const autoFoldRef = useRef(autoFold);
+  autoFoldRef.current = autoFold;
+  // a manual unfold wins while the panel stays open at this width class; closing the panel gives the fold back
+  useEffect(() => setUserUnfolded(false), [autoFold]);
+  const layout = argumentLayout({ width, panelOpen, userFolded, userUnfolded });
+  const setOutlineFolded = useCallback((folded: boolean) => {
+    setUserFolded(folded);
+    setUserUnfolded(!folded && autoFoldRef.current);
+  }, []);
+  const overlay = layout.panel === "overlay";
+  // what the floating panel covers of the canvas: its width, kept 60 px short of the canvas so the zoom stack stays on it
+  const canvasWidth = width === null ? null : width - (graphHasArguments ? (layout.outlineFolded ? OUTLINE_RAIL : OUTLINE_WIDTH) : 0);
+  const coverRight = overlay ? Math.max(0, Math.min(PANEL_WIDTH, (canvasWidth ?? PANEL_WIDTH + 60) - 60)) : 0;
+  // Esc closes a floating panel (an open audit list takes the first Esc)
+  useEffect(() => {
+    if (!overlay) return;
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || document.querySelector('[data-ui="argument-audit-popover"]')) return;
+      setSelectedId(null);
+    };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [overlay]);
+
   // the selection follows the argument, not the read: it is dropped only when a graph that was read no longer has it
   useEffect(() => {
     if (graph && selectedId !== null && !graph.arguments.some((a) => a.id === selectedId)) setSelectedId(null);
@@ -71,7 +106,7 @@ export function ArgumentGraphMode({
   const hasArguments = !!graph && graph.arguments.length > 0;
 
   return (
-    <div className="explore-root" data-ui="argument-graph-view" data-ui-key={workId} data-phase={state.phase}>
+    <div className="explore-root" ref={rootRef} data-ui="argument-graph-view" data-ui-key={workId} data-phase={state.phase}>
       <div className="explore-header" data-ui="argument-graph-header">
         <ActionButton unstyled mode="icon" iconName="arrow-left" className="btn icon ghost" data-ui="argument-return-to-library" label={t("argument.view.back")} tooltip={t("argument.view.backTooltip")} onClick={onExit} />
         <div className="explore-context">
@@ -112,15 +147,18 @@ export function ArgumentGraphMode({
         </div>
       )}
 
-      <div className="view-row">
-        {hasArguments && graph && audit && (
+      <div className="view-row ag-view-row" data-layout={layout.panel} data-outline={layout.outlineFolded ? "folded" : "open"}>
+        {hasArguments && graph && audit && (layout.outlineFolded ? (
+          <ActionButton unstyled mode="icon" iconName="panel-left-open" label={t("argument.view.outline.unfoldSide")} tooltip={t("argument.view.outline.unfoldSide")} data-ui="expand-argument-outline" className="lib-rail" onClick={() => setOutlineFolded(false)} />
+        ) : (
           <div className="lib-side wide" data-ui="argument-side">
             <div className="lib-side-head">
-              <span className="lib-side-title">{t("argument.view.outline.title")}</span>
+              <span className="lib-side-title ag-side-title">{t("argument.view.outline.title")}</span>
+              <ActionButton unstyled mode="icon" iconName="panel-left-close" label={t("argument.view.outline.foldSide")} tooltip={t("argument.view.outline.foldSide")} data-ui="collapse-argument-outline" className="lib-side-collapse" onClick={() => setOutlineFolded(true)} />
             </div>
-            <ArgumentOutline graph={graph} audit={audit} selectedId={selectedId} onSelect={setSelectedId} />
+            <ArgumentOutline graph={graph} audit={audit} selectedId={selectedId} onSelect={setSelectedId} openState={outlineOpen} setOpenState={setOutlineOpen} />
           </div>
-        )}
+        ))}
 
         <div className="lib-main" data-ui="argument-main">
           {state.phase === "loading" && (
@@ -170,7 +208,7 @@ export function ArgumentGraphMode({
               <p className="record-note">{t("argument.view.state.emptyNote")}</p>
             </div>
           )}
-          {graph && hasArguments && <ArgumentGraphCanvas graph={graph} selectedId={selectedId} onSelect={setSelectedId} stash={stash} sceneKey={workId} />}
+          {graph && hasArguments && <ArgumentGraphCanvas graph={graph} selectedId={selectedId} onSelect={setSelectedId} stash={stash} sceneKey={workId} coverRight={coverRight} />}
         </div>
 
         {graph && selected && (
@@ -184,6 +222,7 @@ export function ArgumentGraphMode({
             onSelect={setSelectedId}
             onClose={() => setSelectedId(null)}
             onOpenSource={openSource}
+            overlay={overlay}
           />
         )}
       </div>

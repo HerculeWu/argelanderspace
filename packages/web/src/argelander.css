@@ -947,7 +947,7 @@ input, textarea { font-family: inherit; color: inherit; }
 .lg-handle circle { fill: var(--panel); stroke: var(--accent); stroke-width: 1.4; }
 .lg-handle path { stroke: var(--accent); stroke-width: 1.6; fill: none; }
 .lg-handle:hover circle { fill: var(--accent-soft); }
-.lg-legend .cg-leg-row { flex-wrap: wrap; max-width: 330px; }
+.lg-legend .cg-leg-row { flex-wrap: wrap; }
 .lg-leg-node { width: 11px; height: 11px; border-radius: 50%; flex: none; margin-left: 4px; }
 .lg-leg-node.ag-leg-native { background: var(--ag-native); }
 .lg-leg-node.ag-leg-normal { background: var(--ag-normal); }
@@ -1064,7 +1064,17 @@ svg.ui-icon.ui-icon { width: var(--ui-icon-side) !important; height: var(--ui-ic
 .ag-source.link:hover { background: var(--hover); }
 .ag-reader-entry { gap: 5px; margin-left: 8px; flex: none; }
 .ag-reader-entry-note { font-size: 11px; color: var(--warn); margin-left: 8px; white-space: nowrap; }
-@container (max-width: 1100px) {
-  .ag-panel { width: 340px; }
-  .lib-side.wide { width: 240px; }
-}
+/* narrow pane (user decision 2026-10-12): the outline and panel keep 300 / 392 at every width; the view folds the outline
+   and then floats the panel (argument/layout.ts), so there is no width media rule here */
+.ag-view-row { position: relative; }
+.ag-view-row > .ui-tooltip-anchor { display: flex; flex: none; width: 34px; }
+.ag-view-row > .ui-tooltip-anchor .lib-rail, .ag-view-row > .lib-rail { width: 34px; min-width: 34px; height: 100%; }
+.ag-side-title { flex: 1; }
+.ag-panel { max-width: 100%; }
+.ag-panel-overlay { position: absolute; top: 0; right: 0; bottom: 0; z-index: 25; box-shadow: var(--shadow-pop); }
+/* the canvas keeps its overlays whole in a narrow column; --cover-r is what a floating panel covers at the right */
+.lg-canvas .cg-zoom { right: calc(14px + var(--cover-r, 0px)); }
+.lg-canvas .graph-note { max-width: max(180px, min(330px, calc(100% - 36px - var(--cover-r, 0px)))); }
+.lg-canvas .lg-legend { max-width: max(130px, min(354px, calc(100% - 84px - var(--cover-r, 0px)))); }
+.lg-legend .cg-leg-row { max-width: 100%; }
+.lg-legend[hidden] { display: none; }

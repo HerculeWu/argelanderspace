@@ -28,9 +28,11 @@ export interface ArgumentGraphCanvasProps {
   onConnect?: (from: string, to: string, at: { x: number; y: number }) => void;
   /** Edge ids whose role text stays on while not highlighted. */
   labelledEdges?: ReadonlySet<string>;
+  /** Pixels at the right that a floating panel covers (the narrow-pane layout). */
+  coverRight?: number;
 }
 
-export function ArgumentGraphCanvas({ graph, selectedId, onSelect, stash, sceneKey, onConnect, labelledEdges }: ArgumentGraphCanvasProps) {
+export function ArgumentGraphCanvas({ graph, selectedId, onSelect, stash, sceneKey, onConnect, labelledEdges, coverRight }: ArgumentGraphCanvasProps) {
   const { t } = useTranslation();
   const audit = useMemo(() => auditArgumentGraph(graph), [graph]);
   const roleName = (role: ArgumentEdgeRole) => t(`argument.canvas.role${role[0]!.toUpperCase()}${role.slice(1)}` as "argument.canvas.roleGrounds");
@@ -91,6 +93,7 @@ export function ArgumentGraphCanvas({ graph, selectedId, onSelect, stash, sceneK
       legend={legend}
       connectHint={t("argument.canvas.connectHint")}
       onConnect={onConnect}
+      coverRight={coverRight}
       renderTooltip={(id) => {
         const a = byId.get(id);
         if (!a) return null;

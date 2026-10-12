@@ -2078,7 +2078,9 @@
         "expand": "展开 {{title}}",
         "collapse": "收起 {{title}}",
         "flagged": "有审计发现",
-        "label": "论证大纲"
+        "label": "论证大纲",
+        "foldSide": "收起大纲",
+        "unfoldSide": "展开大纲"
       },
       "panel": {
         "label": "论证详情",

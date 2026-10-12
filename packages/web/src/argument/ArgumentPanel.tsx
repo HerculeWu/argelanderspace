@@ -41,6 +41,7 @@ export function ArgumentPanel({
   onSelect,
   onClose,
   onOpenSource,
+  overlay = false,
 }: {
   graph: ArgumentGraph;
   argument: Argument;
@@ -52,6 +53,8 @@ export function ArgumentPanel({
   onSelect: (id: string) => void;
   onClose: () => void;
   onOpenSource: (target: NonNullable<ArgumentSource["target"]>) => void;
+  /** Floats over the canvas's right edge (a pane too narrow to hold it beside). */
+  overlay?: boolean;
 }) {
   const { t } = useTranslation();
   const byId = new Map(graph.arguments.map((a) => [a.id, a]));
@@ -71,7 +74,7 @@ export function ArgumentPanel({
   );
 
   return (
-    <aside className="ref-detail ag-panel" data-ui="argument-detail" data-ui-key={argument.id} aria-label={t("argument.view.panel.label")}>
+    <aside className={`ref-detail ag-panel${overlay ? " ag-panel-overlay" : ""}`} data-ui="argument-detail" data-ui-key={argument.id} data-placement={overlay ? "overlay" : "side"} aria-label={t("argument.view.panel.label")}>
       <div className="ref-detail-scroll">
         <div className="ref-detail-head">
           <span className={`ref-type-badge ag-kind kind-${argument.kind}`} data-ui="argument-kind-badge">
