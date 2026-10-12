@@ -29,7 +29,7 @@ import { ZOOM_MIN, useGraphViewport } from "./useGraphViewport";
 import { edgePath, focusChain, pairFan } from "./layered/geometry";
 import { type LayoutPoint, layeredLayout } from "./layered/layout";
 import { type Box, placeEdgeLabels, placeNodeLabels } from "./layered/placement";
-import { LABEL_FONT_MAX, LABEL_ZOOM_FLOOR, labelWidth, textUnits, wrapLabel } from "./layered/text";
+import { LABEL_ZOOM_FLOOR, displayLabel, labelWidth, wrapLabel } from "./layered/text";
 
 export interface LayeredNodeSpec {
   id: string;
@@ -129,6 +129,9 @@ export function LayeredGraphCanvas({
   const legendRef = useRef<HTMLDivElement>(null);
   const [tipBox, setTipBox] = useState({ w: 280, h: 150 });
   const tipRef = useRef<HTMLDivElement>(null);
+  // The connect gesture outlives the render it started in: it calls whichever onConnect is current when it ends.
+  const onConnectRef = useRef(onConnect);
+  onConnectRef.current = onConnect;
   const [rubber, setRubber] = useState<{ from: string; x: number; y: number } | null>(null);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
@@ -191,13 +194,16 @@ export function LayeredGraphCanvas({
         end: (e) => {
           const to = nodeAt(e);
           setRubber(null);
-          if (to) onConnect?.(from, to, { x: e.clientX, y: e.clientY });
+          if (to) onConnectRef.current?.(from, to, { x: e.clientX, y: e.clientY });
         },
         cancel: () => setRubber(null),
       };
     },
   });
-  const { size, hover, tooltip } = vp;
+  const { size, tooltip } = vp;
+  // Keyboard focus lights a node's neighbourhood only while nothing is selected; with a selection the whole
+  // chain stays lit (Enter selects but leaves the focus on the node). A pointer hover always wins.
+  const hover = vp.hoverByFocus && selectedId && nodeById.has(selectedId) ? null : vp.hover;
 
   useEffect(() => {
     if (size.w > 0 && (!vp.hasView() || stash.auto)) fitView();
@@ -222,7 +228,8 @@ export function LayeredGraphCanvas({
     const ps = nodes.map((n) => P.current[n.id]).filter((p): p is LayoutPoint => !!p);
     if (!ps.length || !size.w) return;
     const inset = { ...INSET, ...overlayInsets() };
-    const widest = Math.max(...nodes.map((n) => textUnits(wrapLabel(n.label || "—")[0] ?? "")), 0) * LABEL_FONT_MAX;
+    // the widest line of any label, not the first: after a word break the second line can be the wider one
+    const widest = Math.max(...nodes.map((n) => labelWidth(n.label)), 0);
     const minX = Math.min(...ps.map((p) => p.x)) - 34;
     const maxX = Math.max(...ps.map((p) => p.x)) + 34 + widest;
     const minY = Math.min(...ps.map((p) => p.y)) - 30;
@@ -270,7 +277,7 @@ export function LayeredGraphCanvas({
 
   const fs = 10.5 / Math.max(v.k, LABEL_ZOOM_FLOOR);
   const lfs = 9.5 / Math.max(v.k, 0.7);
-  const lines = new Map(nodes.map((n) => [n.id, wrapLabel(n.label || "—")]));
+  const lines = new Map(nodes.map((n) => [n.id, wrapLabel(displayLabel(n.label))]));
 
   // 1. edge geometry
   const fan = pairFan(edges);

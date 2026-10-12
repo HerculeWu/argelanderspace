@@ -271,7 +271,7 @@ export function GraphCanvas({
   const focusSeed = () => {
     if (!seedId || !P.current[seedId]) return;
     onSelect(seedId);
-    const v = vp.v;
+    const v = vp.getView() ?? vp.v;
     vp.setView({
       ...v,
       tx: size.w / 2 - P.current[seedId].x * v.k,

@@ -34,6 +34,12 @@ const charUnits = (ch: string): number => {
   return 0.7;
 };
 
+/** What is drawn for a node label: an empty or white-space-only label shows a dash. */
+export const displayLabel = (label: string): string => (label.trim() ? label : "—");
+
+/** Width in em of a text in the monospace face (edge labels): a full-width character is 1em, any other about 0.62em. */
+export const monoUnits = (s: string): number => [...s].reduce((n, ch) => n + (WIDE.test(ch) ? 1 : 0.62), 0);
+
 /** Width of a text in em, summed per character. */
 export const textUnits = (s: string): number => [...s].reduce((n, ch) => n + charUnits(ch), 0);
 
@@ -95,4 +101,4 @@ export function wrapLabel(s: string, max = 9): string[] {
 
 /** Width in layout units reserved for a label: its widest line at the largest size it is drawn. */
 export const labelWidth = (label: string): number =>
-  Math.max(...wrapLabel(label || "—").map(textUnits), 0) * LABEL_FONT_MAX;
+  Math.max(...wrapLabel(displayLabel(label)).map(textUnits), 0) * LABEL_FONT_MAX;

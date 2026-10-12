@@ -9,7 +9,7 @@
  */
 
 import type { LayoutPoint } from "./layout";
-import { textUnits } from "./text";
+import { monoUnits, textUnits } from "./text";
 
 export type LabelSide = "right" | "below" | "left" | "above";
 export interface Box {
@@ -95,8 +95,8 @@ export function placeEdgeLabels(
   const at = new Map<string, LayoutPoint>();
   for (const g of wanted) {
     if (!g.samples.length) continue;
-    // mono face: a Latin character is about 0.62em, i.e. 0.62/0.55 of the unit textUnits counts
-    const w = textUnits(g.text) * fs * (0.62 / 0.55) + 4;
+    // monospace face (`.lg-edge-label`): characters counted, a Latin one about 0.62em, a full-width one 1em
+    const w = monoUnits(g.text) * fs + 4;
     const h = fs * 1.3;
     const box = (c: LayoutPoint): Box => ({ l: c.x - w / 2, r: c.x + w / 2, t: c.y - h / 2, b: c.y + h / 2 });
     const cands = EDGE_LABEL_SPOTS.map((f) => g.samples[Math.min(g.samples.length - 1, Math.floor(f * g.samples.length))]!);

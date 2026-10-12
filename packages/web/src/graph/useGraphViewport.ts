@@ -79,7 +79,13 @@ export function useGraphViewport(o: ViewportOptions) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [hover, setHover] = useState<string | null>(null);
+  const [hover, setHoverId] = useState<string | null>(null);
+  /** Who set the hover: the pointer, or keyboard focus on a node. */
+  const [hoverByFocus, setHoverByFocus] = useState(false);
+  const setHover = (id: string | null) => {
+    setHoverId(id);
+    setHoverByFocus(false);
+  };
   const [tooltip, setTooltip] = useState<Point | null>(null);
   const [, bump] = useReducer((x: number) => x + 1, 0);
 
@@ -92,6 +98,9 @@ export function useGraphViewport(o: ViewportOptions) {
     }
     return m;
   }, [o.nodes, o.links]);
+  // A gesture lives from press to release; the node set it drops onto is the latest one, not the one at press.
+  const adjRef = useRef(adj);
+  adjRef.current = adj;
 
   const view = useRef<View | null>(null);
   const viewKey = useRef<string | null>(null);
@@ -153,11 +162,17 @@ export function useGraphViewport(o: ViewportOptions) {
     const el = document.elementFromPoint?.(e.clientX, e.clientY)?.closest("[data-node-id]");
     if (!el || !wrapRef.current?.contains(el)) return null;
     const id = el.getAttribute("data-node-id");
-    return id && adj.has(id) ? id : null;
+    return id && adjRef.current.has(id) ? id : null;
   };
   const pair = () => {
     const [a, b] = [...pointers.current.values()];
     return { cx: (a!.x + b!.x) / 2, cy: (a!.y + b!.y) / 2, dist: Math.hypot(a!.x - b!.x, a!.y - b!.y) };
+  };
+
+  /** Drop whatever drag is under way; a gesture is told, so it can clean up what it drew. */
+  const endDrag = () => {
+    if (drag.current?.mode === "gesture") drag.current.g.cancel();
+    drag.current = null;
   };
 
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
@@ -171,8 +186,8 @@ export function useGraphViewport(o: ViewportOptions) {
     }
     const pt = svgPoint(e);
     pointers.current.set(e.pointerId, pt);
+    endDrag();
     if (pointers.current.size === 2) {
-      if (drag.current?.mode === "gesture") drag.current.g.cancel();
       const p = pair();
       const w = toWorld(p.cx, p.cy);
       drag.current = { mode: "pinch", d: p.dist, k: (view.current ?? { k: 1 }).k, wx: w.x, wy: w.y };
@@ -253,9 +268,8 @@ export function useGraphViewport(o: ViewportOptions) {
   };
 
   const onPointerCancel = () => {
-    if (drag.current?.mode === "gesture") drag.current.g.cancel();
+    endDrag();
     pointers.current.clear();
-    drag.current = null;
   };
 
   const onWheel = (e: WheelEvent) => {
@@ -286,6 +300,8 @@ export function useGraphViewport(o: ViewportOptions) {
     zoomCenter: (f: number) => zoomAt(f, size.w / 2, size.h / 2),
     redraw: bump,
     hover,
+    /** The hover comes from keyboard focus on a node, not from the pointer. */
+    hoverByFocus,
     setHover,
     tooltip,
     /** True while a pointer drag is under way (the tooltip stays hidden). */
@@ -306,8 +322,11 @@ export function useGraphViewport(o: ViewportOptions) {
           o.onSelect(id);
         }
       },
-      onFocus: () => setHover(id),
-      onBlur: () => setHover((h) => (h === id ? null : h)),
+      onFocus: () => {
+        setHoverId(id);
+        setHoverByFocus(true);
+      },
+      onBlur: () => setHoverId((h) => (h === id ? null : h)),
     }),
   };
 }
