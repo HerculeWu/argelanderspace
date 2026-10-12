@@ -4,15 +4,18 @@
  * operation that does the same. The pure edits are `argument-edit.ts`'s (the page calls the same functions); this file
  * is only the shape of a request.
  *
- * Reading is bounded: one `read` result is never longer than {@link argumentReadLimit} characters (a ceiling that
- * shrinks with the room the model's window has left, never below {@link ARGUMENT_READ_MIN_TOTAL}), whatever the graph,
- * the parameters or the room. The arguments, the edges and the audit lists share that ceiling and each comes in parts,
+ * Reading is bounded, and measured with the one ruler the host's window uses: UTF-8 bytes of the result as the history
+ * holds it (the result text JSON-escaped once more, `historyCost`), never UTF-16 characters. One `read` result is never
+ * larger than {@link argumentReadLimit} bytes (a ceiling that shrinks with the room the model's window has left), and
+ * when the room cannot hold even the smallest part the result is an honest `rejected` gap saying so, never a result the
+ * host would have to withdraw. The arguments, the edges and the audit lists share the ceiling and each comes in parts,
  * saying what is delivered (`batch`, `edgesBatch`) and what is cut (`batch.clipped`, `audit.capped`). One protocol for
  * every form: `offset` / `edgeOffset` index the list being read (all arguments, or the `ids` named, in the order given;
- * the edges of the graph, or the edges touching the named arguments); `ids` fetches particular arguments (what a
- * partial page context leaves out); an argument too big for one result comes alone with its long texts cut, and
- * `field` (with one id and `offset` as a character offset) reads the rest of a cut text. Writes carry the `expectedRev`
- * of the model's latest read.
+ * the edges of the graph, or the edges touching the named arguments), and a continuing call passes BOTH (a list that is
+ * already complete is passed its total and returns nothing); `ids` fetches particular arguments (what a partial page
+ * context leaves out); an argument too big for one result comes alone with its long texts cut, and `field` (with one
+ * id and `offset` as a character offset) reads the rest of a cut text. Writes carry the `expectedRev` of the model's
+ * latest read.
  */
 import { z } from "zod";
 import {
@@ -26,25 +29,29 @@ const WorkId = z.string().min(1).max(500);
 const ArgumentId = z.string().min(1).max(L.idChars);
 const Rev = z.number().int().nonnegative();
 
-/** The most characters of argument JSON one `read` call returns (a larger graph comes in parts). */
-export const ARGUMENT_READ_MAX_CHARS = 60_000;
+/** The most bytes (as the history counts them) of argument JSON one `read` call returns (a larger graph comes in parts). */
+export const ARGUMENT_READ_MAX_BYTES = 60_000;
 /** The most edges one `read` call returns. */
 export const ARGUMENT_READ_MAX_EDGES = 800;
-/** The longest `read` result (JSON characters, whole payload) when the window has room to spare. */
+/** The longest `read` result (history bytes, whole payload) when the window has room to spare. */
 export const ARGUMENT_READ_MAX_TOTAL = 70_000;
-/** The shortest ceiling a `read` result is held to, however little room the window has (enough to make progress). */
+/** The shortest soft ceiling of a `read` result (history bytes); the room itself can still be smaller (then a gap). */
 export const ARGUMENT_READ_MIN_TOTAL = 8_000;
 /**
- * The ceiling on one `read` result, in JSON characters: half the room the model's window has left (a result is counted
- * JSON-escaped), between {@link ARGUMENT_READ_MIN_TOTAL} and {@link ARGUMENT_READ_MAX_TOTAL}. No room given: the maximum.
+ * The soft ceiling on one `read` result, in the bytes the history holds it in (UTF-8, JSON-escaped): half the room the
+ * model's window has left, between {@link ARGUMENT_READ_MIN_TOTAL} and {@link ARGUMENT_READ_MAX_TOTAL}. No room given:
+ * the maximum. The host also never lets a result exceed the room itself (less the record that travels with it).
  */
 export function argumentReadLimit(room?: number): number {
   const half = room === undefined ? Number.POSITIVE_INFINITY : Math.floor(Math.max(0, room) / 2);
   return Math.max(ARGUMENT_READ_MIN_TOTAL, Math.min(ARGUMENT_READ_MAX_TOTAL, half));
 }
-/** What `field` may name: a text field of an argument, or `sources.N` (the N-th source, zero-based). */
+/**
+ * What `field` may name: a text field of an argument, or `sources.N` (the N-th source, zero-based; `sources.N.text` is
+ * the same, the spelling the page's `reduction.truncated` uses).
+ */
 export const ARGUMENT_READ_FIELD =
-  /^(claim|grounds|warrant|backing|qualifier|rebuttal|sources\.\d{1,2})$/;
+  /^(claim|grounds|warrant|backing|qualifier|rebuttal|sources\.\d{1,2}(\.text)?)$/;
 /** The most arguments one `read` call may name by id. */
 export const ARGUMENT_READ_MAX_IDS = 50;
 
