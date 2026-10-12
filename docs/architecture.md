@@ -9,6 +9,7 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 - **文献库与正文**：arXiv LaTeX / 本地源码摄入，条目内 LaTeX zip 挂载；现支持 Work 内不可变本地 PDF 上传、阅读、原件下载、设主与删除。Web 添加时的 arXiv 获取仍只处理 LaTeX 源码。身份、存储规则及获取场景见 [library](library.md)。
 - **文献发现**：从详情页进入 ADS related/useful 临时探索；库图只含已存 Work。边义、失败语义、缓存与用户状态分离见 [discovery](discovery.md)。
 - **阅读器**：LaTeX Reader 用共享 IR/标注及共同 epoch；本地 PDF 使用固定 EmbedPDF 2.15.1、同次 hash 校验的原始 bytes 和独立用户 sidecar，PDF 内嵌标注只读。PDF 基础分页/缩放/下载已接入，PDF 工作台标注编辑、搜索/目录和进度保存不属于此边界。LaTeX 规则见 [annotations](annotations.md)，PDF 数据保护见 [contracts](contracts.md)。
+- **论证图**：Work 级项目数据（每个 Work 至多一张，不是 Doc，存于 `<dataDir>/argument-graphs/`），是文献页内与「探索相关文献」同级的模式，入口在 Work 详情与 Reader 顶部；论证为 Toulmin 六字段加种类与出处，边带角色，审计现算不落盘。页面可从空图手动整理；外部 agent 经 CLI `argument get` / `argument put` 整图读写（skill `argelander-argument-graph`），Copilot 经 `argument` 工具编辑，整图替换/清空须经真人确认卡。数据保护见 [contracts](contracts.md)，机制见 [argument-graph](argument-graph.md)，取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。
 - **计划页**：默认 landing，plans→tasks 的列表/看板/时间线/今日聚焦，webui 可独立 CRUD。详细模型和否决项见 [plans](plans.md)。
 - **Writer**：独立稿件、八型 cell、CodeMirror、显式 Render/Shift+Enter、共享编译→IR 预览及源码 zip；不展示 PDF。工作流见 [writer](writer.md)，文件协议沿用 [writer-data-model](writer-data-model.md)。
 - **web i18n**：zh-CN/en，默认中文、不探测浏览器，Tweaks 即时切换，偏好存 localStorage。server detail/job.error 和用户数据不纳入翻译；CLI 不变。
@@ -100,6 +101,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 CLI + 仓库 `skills/argelander-*` 三件套（ingest/query-library/read-paper），无 MCP 是项目选择；本机安装方式不成为跨机器保证。
 
 - search/read/show/ref/note/label/list + 只读 annot，CLI 直读磁盘，不依赖 HTTP。论证图另有 `argument get` / `argument put`（整图读写，写入带 rev，覆盖非空图须 `--replace`）与只读的 `pdf-path <docId>`（只输出 PDF 原件路径），见 [argument-graph](argument-graph.md)「CLI」。
+- `skills/argelander-argument-graph` 读一篇已摄入文献并把论证图写入工作台（读正文走既有 `read`/`show`/`ref`，PDF Doc 经 `pdf-path` 取原件路径，写入走 `argument put`）；覆盖非空图前须问用户，不是第四个文献问答 skill。
 - 文献问答从项目根走 CLI/skills，不传 `--data-dir`，不读内部 JSON/源码替代文献接口。开发任务不受此源码禁读限制。
 - 仓库 CLI：`node packages/app/dist/bin.js`；全局安装后 `argelanderspace`。
 - 深链接端口：`ARGELANDERSPACE_PORT` > config `port` > 8000。

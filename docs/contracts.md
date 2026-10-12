@@ -105,9 +105,9 @@
 
 完整接纳/草稿/图片规则见 [annotations](annotations.md)，原指纹三态及错误分支全部不变。
 
-## 论证图（已决定；数据、读写接口、视图、手动编辑、Work 合并跟随、CLI 与 Copilot 工具已实施）
+## 论证图（现行）
 
-来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)，其中数据层、HTTP、视图（含视图发布的页面上下文）、手动编辑、Work 合并跟随、CLI 与 Copilot 工具（`argument` 工具、整图替换/清空的确认卡与视图动作，票 09）已实施。
+来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)。数据层、读写接口、视图、手动编辑、Work 合并跟随、CLI、Copilot 工具与整图替换确认卡均已实施并经工程核查；用户终验是单独的一步，CLI 命令的冻结面在其通过后生效（见「CLI 论证图命令冻结契约」）。
 
 - 论证图是 **Work 级项目数据**，每个 Work 至多一张，不是 Doc。它不参与内容指纹、标注归档或 Doc 的全局物理删除；出处的跳转目标不受保护，失效时只剩显示文字。
 - 存储允许环，自环是结构错误、直接拒绝。同一对论证、同一角色至多一条边。只有论证的短标题必填；缺 Claim/Grounds/Warrant 是审计发现，不是写入失败。审计结果永不落盘。
@@ -115,7 +115,7 @@
 - **覆盖非空的图**：页面的清空有确认对话框；Copilot 逐条增删改不需确认，整图替换或清空非空的图必须经真人确认卡（写明将被替换的论证数，模型不能自批）；CLI 整图写入覆盖非空的图须带显式的替换标志。
 - **Work 合并**：幸存 Work 没有图时接手被并入 Work 的图；两边都有时保留幸存者的，另一张留在磁盘上不删除、不展示，并在结果中如实说明。Copilot 路径对会合并 Work 的导入照旧整条拒绝。
 - 跨进程同时写同一张图不支持，不加文件锁（I013 的边界同样适用）；工作台发现磁盘变化后刷新页面。
-- 新的 CLI 论证图命令在发布后进入冻结面：读出与写入的 JSON 带 `version: 1`，字段、键序和错误形态的改动需要新的明确决定。实现与原型验收完成之前不算发布。既有冻结命令的输出不因此改动。命令为 `argument get` / `argument put` / `pdf-path`（票 07 已实施，尚未发布；范围经用户 2026-10-12 批准的票 07 与 spec 3-Q8），冻结面的完整清单（每个命令每种结果的 stdout / stderr / exit code）在 `.scratch/argument-graph/issues/07-cli.md` 的 Comments，机制见 [argument-graph](argument-graph.md)「CLI」；票 10 用户验收通过后生效，发布生效时该清单迁入本文件（由票 10 执行）。
+- 新的 CLI 论证图命令在发布后进入冻结面：读出与写入的 JSON 带 `version: 1`，字段、键序和错误形态的改动需要新的明确决定。实现与原型验收完成之前不算发布。既有冻结命令的输出不因此改动。命令为 `argument get` / `argument put` / `pdf-path`；每个命令每种结果的 stdout / stderr / exit code 见「CLI 论证图命令冻结契约」（用户终验通过后生效），机制见 [argument-graph](argument-graph.md)「CLI」。
 
 ## CLI annot 冻结契约
 
@@ -138,6 +138,70 @@ note: document content changed since its annotations were written; they are arch
 - equation/figure/table/code/algorithm 完整正文由 show 读取，section/full doc 由 read；annot 只告诉 agent 用户在何处留了什么意见。
 - link `/doc/<doc_id>#ann-<annotation_id>`，端口链沿用 env > config >8000。
 - archive 不暴露。未来迁移若需访问必须另立 sanctioned CLI surface；skills 不准直接读内部 current/archive JSON 代替接口。
+
+## CLI 论证图命令冻结契约（在用户终验通过后生效）
+
+**状态：尚未生效。** 下列清单与已构建的 CLI 实现逐条一致（`packages/cli/tests/argument.test.ts` 的 golden 钉住），但按「论证图」一节，用户终验通过之前不算发布，也就还不是冻结面；终验通过后本节才成为与「CLI annot 冻结契约」同等的冻结面，届时在此处写明生效日期。既有命令的冻结输出不受影响。来源：论证图票 07 的最终清单（用户 2026-10-12 批准范围）。
+
+### 约定
+
+错误一律 `stdout` 空、`stderr` 为 `error: …` 加换行、exit 1，除特别注明每条都是**单行**（只有「校验失败」是头一行加每个问题一行）。`<q>` 是 JSON 字符串（引号、反斜杠、换行、C0 控制字符转义），**另外**把 U+007F、C1 控制符（U+0080–U+009F，含 NEL U+0085）、U+2028 / U+2029、bidi 标记与控制符（U+061C、U+200E / U+200F、U+202A–U+202E、U+2066–U+2069）写成 `\uXXXX`，所以任何值都不可能伪造出额外的行，也不会改变显示顺序；用到 work id / doc id 的 `<q>` 在超过 100 个字符时截到 100 个字符加 `…`（在引号内）。`<file>` 是命令行给的原样路径经 JSON 引号；stdin 写作 `stdin`。所有措辞由本仓库写，不转述 zod、commander（用法错误除外）、V8 / Node 的原句。**形态冻结**＝上述 stdout / stderr / exit code 的文字、JSON 字段与键序，golden 逐字钉住。**同一轮报出哪些问题的组合与行的顺序不冻结，冻结的是每类问题的行形与文案**（例如 `put` 的校验问题行的先后，以及类型级错误存在时结构规则是否同轮出现）。**不冻结**＝括号里的底层错误码 `(<CODE>)` 的取值（EACCES、ENOENT、EISDIR 等随系统与场景而定，格式 `(<大写错误码>)` 冻结；拿不到错误码时拼作 `UNKNOWN`，CLI 与 store 一致）、帮助与用法文本、`unexpected failure (<名>)` 的名。
+
+### `argument get <workId>`
+- 成功：exit 0，stderr 空，stdout 为缩进 2 空格的 JSON 加结尾换行；键序 `version, rev, work_id, arguments, edges`；论证 `id, title, claim, grounds, warrant, backing, qualifier, rebuttal, warrant_implicit, kind, sources`；出处 `text, target`；目标 `doc_id`，然后 `anchor` 或 `page`（只出现其一；无 target 则无该键）；边 `from, to, role`。没有图（文件不存在，含 `argument-graphs/` 不存在）：`arguments: []`、`edges: []`、`rev: 0`。零论证的已存图按存储的 `rev` 原样输出。键序由类型上穷尽 schema 全部键的构造函数生成，与存储文件的键序无关。读命令不写盘。
+- 未知 Work（含已被合并掉的 Work）：`error: unknown work "<id>" — closest matches: <最多 12 个，逗号分隔>` / `error: unknown work "<id>" — available: <最多 12 个> … (<N> total)`（超过 12 个时才有 ` … (<N> total)`）/ 库里没有任何 Work 时 `error: unknown work "<id>" — the library at <q> has no works`（`<q>` 是 `library.json` 的绝对路径，`--data-dir` 指错时据此看出找的位置）。这里 `<id>` 与候选是转义后的原值（不截断，不带额外引号）。**空 id**（`argument get ""`）不与候选做匹配（空串会匹配一切），直接走 `available:` 分支。
+- `library.json` 读不了：`error: library file <q> is not valid JSON` / `error: library file <q> could not be read (<CODE>)` / `error: library file <q> has an unexpected structure`（`<q>` 是库文件绝对路径）。
+- Work 的 id 不能作文件名（过长；非良构 Unicode 的 id 无法经命令行给出，不可达，不在冻结面）：`error: work <q> cannot have an argument graph: its id cannot be used as a file name`。
+- 已存图文件不可用，文件不被改动，stdout 空：`error: stored argument graph <q> <尾部>`，`<q>` 是图文件绝对路径，尾部之一：`could not be read (<CODE>)`（权限、是目录 EISDIR、`argument-graphs/` 是普通文件 ENOTDIR 等任何非 ENOENT 的读取失败）、`is not valid JSON`、`does not match the argument graph format`（含磁盘文件里的未知键）、`has version <n>; this build only reads version 1`、`belongs to work <q>`。
+- 坏的 `config.toml`（`ConfigError`）：原样透出仓库自己的文案，与既有 `note` 同形，例如 `error: <path>/config.toml: "port" must be an integer between 0 and 65535`；三个新命令都是这样。
+- 其余未预料的失败：`error: file system error (<CODE>)` 或 `error: unexpected failure (<名>)`。
+
+### `argument put <workId> <file> --rev <n> [--replace]`
+- 检查顺序（先失败者先报告）：`--rev` → 库与 Work（未知 Work / 库文件 / id 不能作文件名，同 `get`）→ 读输入（stdin 是终端在此拒绝）→ JSON → `work_id` → schema＋结构校验 → 已存图可读 → `rev` → `--replace` → 写入。
+- 成功：exit 0，stderr 空，stdout 一行 `{"work_id":<q>,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<encodeURIComponent(work id)>"}` 加换行；键序 `work_id, rev, link`；`<port>` 取 `ARGELANDERSPACE_PORT` > config `port` > 8000（同其他带深链接的命令；`link` 与 web 的 `lib/argument-route.ts` 同格式）。
+- `--rev` 缺失：`error: --rev is required: pass the rev that \`argument get\` printed (0 when the work has no graph)`。`--rev` 不是非负安全整数（`-1`、`1.5`、`abc`、`01`、空串、`1e3`、超过 2^53-1）：`error: --rev must be a non-negative integer, got "<转义后的原值>"`。两者都在读库之前，故与 Work 是否存在无关。
+- 未知 Work / 库文件读不了 / id 不能作文件名：同 `get`。
+- 输入读不了：`error: cannot read <file> (<CODE>)`，stdin：`error: cannot read stdin (<CODE>)`（stdin 是目录：`EISDIR`）。
+- **stdin 是终端（TTY）**：`error: stdin is a terminal; "-" reads the graph from a pipe or a redirected file`，单行，exit 1，stdout 空，零写入；不等待输入。`-` 异步读 stdin 到 EOF：写端一直不关时 SIGINT / SIGTERM 立即终止进程（非 0 退出，零写入）；管道写端延迟、分段、多 MB、多字节字符被分块切开，都完整读入。
+- 不是 JSON（含空输入）：`error: <file> is not valid JSON`，stdin：`error: stdin is not valid JSON`，不带引擎消息。
+- `work_id` 不符（文件里写了字符串且不等于命令行）：`error: work_id in <file> is <q>, which does not match work <q>`（前一个是文件里的值，后一个是命令行的）。文件里的 `work_id` 不是字符串（数字、`null`、对象）：`error: work_id in <file> must be a string`（stdin 写作 `stdin`）。
+- 校验失败：第一行 `error: <file> is not a valid argument graph (<N> issue[s]); nothing was written`，随后每个问题**恰好一行** `  <位置>: <句子>`（去重，超过 100 条则末行 `  … <M> more`）。位置是 JSON 路径，**下标 0 起始**：`arguments[1].title`、`edges[0].to`、`arguments[0].sources[2].target.page`，根为 `<root>`。句子（逐字冻结）：
+  - `is required`（缺必填字段，且仅限这些位置：根的 `arguments`、`edges`，`arguments[i].id`、`arguments[i].title`，`arguments[i].sources[j].text`，`…target.doc_id`，`edges[i].from`、`edges[i].to`、`edges[i].role`；`version`、`rev`、`work_id` 在文件里可省，其余论证字段有默认值）
+  - `must be an object` / `must be an array` / `must be a string` / `must be a number` / `must be a boolean` / `must be an integer`
+  - `must be at most <N> characters`（字符串；N 为 64 / 80 / 512 / 20000）、`must have at most <N> items`（`arguments` 500、`edges` 5000、出处 50）、`must be at most <N>`（数值，如页码 9007199254740991）
+  - `must not be empty`（空字符串）、`must be at least <N> characters`、`must have at least <N> items`、`must be at least <N>` / `must be greater than <N>`（数值，页码为 `must be greater than 0`）
+  - `must be 1`（`version`：缺省按 1，不报；写了不是 1，含 `null`、字符串 `"1"`、2、0，就报这一句）、`must be one of native, end, normal` / `must be one of grounds, warrant, backing, rebuttal`
+  - `unknown field <q>`（每个未知键一行，位置是它所在的对象；`<q>` 截到 100 字符，**去重按完整键名**，所以前 100 字符相同的两个键各占一行、计数不少；名为 `__proto__` 的键也是未知字段，在任一层都报，不会被静默忽略）
+  - `must not be blank`（短标题仅空白）、`must have exactly one of anchor or page`（出处目标）：这两条与结构规则一样，由 contracts 在 issue 的 `params.rule`（`blank_title`、`target_anchor_or_page`）里给出，CLI 按 rule 映射，不看路径
+  - `duplicate id <q>`（位置 `arguments[i].id`）、`refers to unknown argument <q>`（位置 `edges[i].from` / `.to`）、`connects argument <q> to itself`（位置 `edges[i]`）、`duplicate <role> edge from <q> to <q>`（位置 `edges[i]`）
+  - 兜底：`does not satisfy the argument graph format`（库里出现我们没映射的 issue 种类时；不透传库的原文）
+  （类型级错误存在时 zod 不运行结构规则，重复 id / 悬空边 / 自环 / 重复边不在同一轮报出；规模超限不阻止结构规则；这属于「同一轮报出哪些问题的组合不冻结」。）
+- 已存图不可用（不覆盖）：同 `get` 的 `error: stored argument graph …`。
+- `rev` 不符：`error: rev mismatch: the stored graph of work <q> is at rev <当前>, --rev <给的> was given; run \`argument get\` again and rebase your changes; nothing was written`。
+- 已存图非空且无 `--replace`：`error: work <q> already has a graph with <N> argument[s]; pass --replace to replace it; nothing was written`。
+- 写盘失败：`error: could not write the argument graph (<CODE>); nothing was written`（tmp 文件被清掉；本次调用刚建、仍为空的 `argument-graphs/` 也被移除；清理自己出错不盖掉原始错误）。写入瞬间发现 rev 已变同 `rev` 不符；发现已存图不可用同上。
+- 其余未预料的失败：同 `get`。
+- **以上失败 stdout 均空、零写入**（不留图文件与 tmp，不改任何已有文件；调用前不存在的 `argument-graphs/` 不会被留下）。
+
+### `pdf-path <docId>`
+
+（只读，不读 PDF 内容，不写盘）
+- 成功：exit 0，stderr 空，stdout 一行 `<dataDir 经 realpath 的绝对路径>/output/<docId>/original.pdf`（dataDir 经符号链接给出时仍是真实路径）。不要求 Doc 挂在某个 Work 上，不核对 hash。
+- 不存在（空 id、含 `/` `\` 或以 `.` 开头的 id、没有 output 目录、没有这个 Doc；只有 ENOENT 算「没有」）：`error: unknown PDF doc "<id>" — closest matches: …` / `— available: …（最多 12 个，超过则 … (<N> total)）` / 一个 PDF Doc 都没有时 `— there are no PDF docs in <q>`（`<q>` 是 `output/` 的绝对路径）；候选只列 PDF Doc。空 id 走 `available:` 分支（不与候选匹配）。
+- 系统错误（权限、I/O，**不**报成「不存在」）：`error: the output directory <q> could not be read (<CODE>)`（`output/` 搜索或列举失败）、`error: doc <q>: its files could not be read (<CODE>)`（Doc 目录、元数据或原件路径读不了）。
+- LaTeX/文本等非 PDF Doc：`error: doc <q> is not a PDF doc`。
+- 原件缺失：`error: the original PDF of doc <q> is missing`；原件是符号链接、目录或其他非普通文件：`error: the original PDF of doc <q> is not a regular file`。
+- Doc 的元数据 / 目录损坏：`error: doc <q>: <原因>`，原因之一：`its metadata is not valid JSON`、`its metadata does not match the PDF doc format`、`its metadata is not a JSON object`、`its metadata is not marked as a PDF doc`、`its metadata belongs to another doc`、`its metadata file is missing`、`its metadata file is not a regular file`、`its folder is not a plain directory`、`the output directory is not a plain directory`（`output` 是普通文件或指向目录的符号链接）、`its files could not be read (<CODE>)`、`its metadata could not be read`。
+- 其余未预料的失败：同 `get`。
+
+### 不冻结的用法错误
+
+缺位置参数、多余参数、未知选项或子命令、裸 `argument`、`--rev` 缺值（`argument put W f --rev`）、`--help`：exit 1（`--help` 为 0），stderr 为 commander 的帮助/用法文本，不逐字钉，只测 exit code 与 stdout 为空。顶层 `--help` 的命令列表会多出新命令，契约与既有测试均未冻结帮助文本。
+
+### 不写盘
+
+`get` 与 `pdf-path` 真只读（不建目录、不改文件，测试比对 dataDir 文件列表）；`put` 只有成功才写（原子 tmp＋rename），各种失败零写入。
+
 
 ## 已接受边界的稳定标识
 
