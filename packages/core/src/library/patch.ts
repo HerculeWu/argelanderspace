@@ -19,6 +19,7 @@ import {
   emptyWork,
   type LibraryPaths,
   LibraryStore,
+  markLibraryJsonReplaced,
   type Work,
   workFromJson,
   workToDict,
@@ -260,12 +261,15 @@ function commit(paths: LibraryPaths, data: Raw, works: unknown[]): void {
     works.filter((w) => w !== null && typeof w === "object").map((w) => workFromJson(w as Raw)),
     typeof data.project === "object" && data.project !== null ? (data.project as Raw) : undefined
   );
+  let jsonReplaced = false;
   try {
     writeFileSync(jsonTmp, JSON.stringify(data, null, 2), "utf8");
     writeFileSync(bibTmp, store.toBibtex(), "utf8");
     renameSync(jsonTmp, paths.libraryJson);
+    jsonReplaced = true;
     renameSync(bibTmp, paths.libraryBib);
   } catch (error) {
+    if (jsonReplaced) markLibraryJsonReplaced(error);
     // A failed cleanup must never replace the error that explains the failure.
     for (const tmp of [jsonTmp, bibTmp]) {
       try {

@@ -83,6 +83,8 @@ export interface AcquisitionDeps {
   libraryChanged: (cause: "refresh" | "add" | "upload" | "ingest") => void;
   /** rebuild through the libraryLock (`createLockedRebuild`). */
   lockedRebuild: LockedRebuild;
+  /** `argument-graph.changed` for a Work, right after a Work merge moved a graph (no waiting for the file poller). */
+  argumentGraphChanged?: ((workId: string) => void) | undefined;
   pipelines: IngestPipelines;
   makeSources: (offline: boolean) => MetadataSources;
   /** External current arXiv PDF bytes; absent → the PDF job fails ("arXiv PDF source is unavailable"). */
@@ -241,10 +243,37 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     annotationLock,
     docMutations,
     libraryChanged,
-    lockedRebuild,
     autoIngestArxiv,
     pdfOwners,
   } = deps;
+  /** A merge that moved a graph changed the survivor's and the absorbed Work's graph; say so now. */
+  const announceMerges = (notes: readonly ArgumentGraphMergeNote[]): void => {
+    if (deps.argumentGraphChanged === undefined) return;
+    const ids = new Set<string>();
+    for (const n of notes)
+      if (n.outcome === "moved") {
+        ids.add(n.survivor_id);
+        ids.add(n.absorbed_id);
+      }
+    for (const id of ids) {
+      try {
+        deps.argumentGraphChanged(id);
+      } catch (e) {
+        console.error(`argument-graph.changed broadcast failed for ${id}:`, e);
+      }
+    }
+  };
+  /** Every rebuild of this module announces the graph moves it made, whether it succeeded or failed afterwards. */
+  const lockedRebuild: LockedRebuild = async (p, opts) => {
+    try {
+      const out = await deps.lockedRebuild(p, opts);
+      announceMerges(out.argument_graph_merges ?? []);
+      return out;
+    } catch (error) {
+      announceMerges(mergesOf(error));
+      throw error;
+    }
+  };
   const fetchArxivPdf = deps.fetchArxivPdf;
   /** PDF upload job → the Docs it pinned (its own, plus a duplicate found at run time); released by onJobEvent. */
   const pdfPinsByJob = new Map<string, string[]>();
@@ -381,6 +410,9 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             });
             return withMerges(attached, collected.notes);
           } catch (e) {
+            // A rebuild that already merged Works and moved graphs before a later step failed: the failed job
+            // keeps the notes in its result so the page can still show them.
+            if (collected.notes.length > 0) j.result = withMerges({}, collected.notes);
             if (e instanceof ArxivPdfOnlyError) {
               stage = "extract";
               // Machine-readable class for the web UI's bilingual guidance.
@@ -695,9 +727,25 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
   const runAttachFor = async (
     query: ZipQuery,
     zipPath: string,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
+    onFailureNotes?: (notes: readonly ArgumentGraphMergeNote[]) => void
   ): Promise<{ ref: LibraryRef; argument_graph_merges: ArgumentGraphMergeNote[] }> => {
     const collected = collectingRebuild();
+    let ref: LibraryRef;
+    try {
+      ref = await attachZip(zipPath, query, collected, onProgress);
+    } catch (error) {
+      onFailureNotes?.(collected.notes);
+      throw error;
+    }
+    return { ref, argument_graph_merges: relNotes(collected.notes) };
+  };
+  const attachZip = async (
+    zipPath: string,
+    query: ZipQuery,
+    collected: ReturnType<typeof collectingRebuild>,
+    onProgress?: (message: string) => void
+  ): Promise<LibraryRef> => {
     const ref = await attachLatexZip(zipPath, query, {
       paths,
       pipelines: deps.pipelines,
@@ -711,7 +759,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
         libraryLock.run(() => patchWorkNarrow(p, workId, { doc_id: docId }).status === "ok"),
       onProgress,
     });
-    return { ref, argument_graph_merges: relNotes(collected.notes) };
+    return ref;
   };
   /** The zip upload's link step, inside the library lock: the same Work (identity unchanged), this Doc appended and main. */
   const linkUploadDoc = (
@@ -747,7 +795,15 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
         async (j, report) => {
           const zip = runner.spoolPath(j.id);
           try {
-            const { ref, argument_graph_merges } = await runAttachFor(query, zip, report);
+            const { ref, argument_graph_merges } = await runAttachFor(
+              query,
+              zip,
+              report,
+              (notes) => {
+                // failed after merging Works: the failed job keeps the notes (see the arXiv fetch above)
+                if (notes.length > 0) j.result = withMerges({}, notes);
+              }
+            );
             return {
               ref,
               docId: uploadDocId(ref.id),
@@ -818,7 +874,16 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       docMutations.pinRefresh();
       const job = runner.submit(
         "refresh",
-        () => lockedRebuild(paths, { sources: deps.makeSources(offline) }),
+        async (j) => {
+          try {
+            return await lockedRebuild(paths, { sources: deps.makeSources(offline) });
+          } catch (error) {
+            // failed after the Work merge was saved: the failed job keeps the notes
+            const notes = mergesOf(error);
+            if (notes.length > 0) j.result = withMerges({}, notes);
+            throw error;
+          }
+        },
         { offline }
       );
       const done = await runner.waitFor(job.id);
@@ -858,11 +923,14 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       const notes = mergesOf(error);
       if (notes.length === 0) throw error;
       logMerges(notes);
+      announceMerges(notes);
       libraryChanged("add");
       throw new ImportAfterMergeError(relNotes(notes), error);
     }
-    if (outcome.argumentGraphMerges !== undefined && outcome.argumentGraphMerges.length > 0)
+    if (outcome.argumentGraphMerges !== undefined && outcome.argumentGraphMerges.length > 0) {
+      announceMerges(outcome.argumentGraphMerges);
       outcome = { ...outcome, argumentGraphMerges: relNotes(outcome.argumentGraphMerges) };
+    }
     if (req.mode !== "bib" && autoIngestArxiv()) {
       for (const r of outcome.results) {
         if ((r.status === "created" || r.status === "exists") && r.ref !== undefined) {

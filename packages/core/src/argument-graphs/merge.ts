@@ -26,6 +26,7 @@
  * every problem is a note.
  */
 
+import { randomBytes } from "node:crypto";
 import {
   closeSync,
   fsyncSync,
@@ -43,13 +44,21 @@ import {
 } from "node:fs";
 import { relative, sep } from "node:path";
 import type { ArgumentGraph, ArgumentGraphMergeNote } from "@argelanderspace/contracts";
-import type { LibraryPaths, LibraryStore, WorkFold } from "../library/store.js";
+import {
+  type LibraryPaths,
+  type LibraryStore,
+  libraryJsonWasReplaced,
+  type WorkFold,
+} from "../library/store.js";
 import { argumentGraphDir, argumentGraphPath, loadArgumentGraph } from "./store.js";
 
 /** A leftover scratch file older than this is a crash residue, not another process mid-write. */
 const STALE_SCRATCH_MS = 60 * 60 * 1000;
-const SCRATCH_NAME = /\.json\.merge-\d+-\d+\.tmp$/;
-let scratchSeq = 0;
+/** `<file>.json.m<6 hex>.tmp` (11 bytes over the file name, so a name the store can write fits); the older long form is still cleaned. */
+const SCRATCH_NAME = /\.json\.(?:merge-\d+-\d+|m[0-9a-f]{6})\.tmp$/;
+function scratchName(file: string): string {
+  return `${file}.m${randomBytes(3).toString("hex")}.tmp`;
+}
 
 function safePath(dataDir: string, workId: string): string | null {
   try {
@@ -77,13 +86,58 @@ function cleanStaleScratch(dataDir: string): void {
   }
 }
 
-function writeDurable(file: string, text: string): void {
+/** Write every byte (a short write is not an error for `writeSync`, so loop) and fsync; a stalled write throws. */
+function writeDurable(file: string, data: Buffer): void {
   const fd = openSync(file, "w");
   try {
-    writeSync(fd, text);
+    let done = 0;
+    while (done < data.length) {
+      const n = writeSync(fd, data, done, data.length - done);
+      if (!(n > 0)) throw new Error("short write: no progress");
+      done += n;
+    }
     fsyncSync(fd);
   } finally {
     closeSync(fd);
+  }
+}
+
+/** Link errors that mean "this filesystem has no hard links"; any other error is a real failure. */
+const NO_HARD_LINKS = new Set(["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS"]);
+
+type FileId = { dev: number; ino: number };
+function fileId(file: string): FileId | null {
+  try {
+    const s = lstatSync(file);
+    return { dev: s.dev, ino: s.ino };
+  } catch {
+    return null;
+  }
+}
+
+/** Remove `file` only when it is still the very file we published (same device and inode). */
+function retract(file: string, ours: FileId | null): void {
+  try {
+    const now = fileId(file);
+    if (ours !== null && now !== null && now.dev === ours.dev && now.ino === ours.ino)
+      unlinkSync(file);
+  } catch {
+    /* nothing more can be done; the original is untouched either way */
+  }
+}
+
+/** Whether the survivor's published file reads back as exactly the graph we meant to publish. */
+function publishedMatches(dataDir: string, workId: string, expected: ArgumentGraph): boolean {
+  try {
+    const got = loadArgumentGraph(dataDir, workId);
+    return (
+      got.work_id === workId &&
+      got.rev === expected.rev &&
+      JSON.stringify(got.arguments) === JSON.stringify(expected.arguments) &&
+      JSON.stringify(got.edges) === JSON.stringify(expected.edges)
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -130,8 +184,9 @@ function publishExclusive(tmp: string, target: string): boolean {
     linkSync(tmp, target);
     return true;
   } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
+    const code = (error as NodeJS.ErrnoException).code ?? "";
     if (code === "EEXIST") return false;
+    if (!NO_HARD_LINKS.has(code)) throw error; // a real failure: nothing is published
     // A filesystem without hard links: check-then-rename (the same-process window is the only one left).
     if (lstatExists(target)) return false;
     renameSync(tmp, target);
@@ -183,7 +238,13 @@ export function followFold(
       error: "survivor_name_unusable",
     };
   }
-  const tmp = `${survivorFile}.merge-${process.pid}-${++scratchSeq}.tmp`;
+  const tmp = scratchName(survivorFile);
+  const failed = (): ArgumentGraphMergeNote => ({
+    ...base,
+    outcome: "transfer_failed",
+    survivor_file: survivorFile,
+    error: "write_failed",
+  });
   try {
     mkdirSync(argumentGraphDir(dataDir), { recursive: true });
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -198,7 +259,12 @@ export function followFold(
       }
       const rev =
         state.kind === "empty" ? Math.max(graph.rev, state.rev) + 1 : Math.max(graph.rev, 1);
-      writeDurable(tmp, JSON.stringify({ ...graph, work_id: survivor, rev }, null, 2));
+      const expected: ArgumentGraph = { ...graph, work_id: survivor, rev };
+      const bytes = Buffer.from(JSON.stringify(expected, null, 2), "utf8");
+      writeDurable(tmp, bytes);
+      // The scratch file must hold every byte before anything is published from it.
+      if (!readFileSync(tmp).equals(bytes)) return failed();
+      const ours = fileId(tmp);
       if (state.kind === "absent") {
         if (!publishExclusive(tmp, survivorFile)) continue; // someone published meanwhile: classify again
       } else {
@@ -208,7 +274,12 @@ export function followFold(
         renameSync(tmp, survivorFile);
       }
       syncDirectory(argumentGraphDir(dataDir));
-      // The graph is now complete under the survivor's name; only now may the original go.
+      // Read the published file back through the store's own reader: only a complete, correct graph under the
+      // survivor's name lets the original go. Otherwise take our file down again (only if it is still ours).
+      if (!publishedMatches(dataDir, survivor, expected)) {
+        retract(survivorFile, ours);
+        return failed();
+      }
       let left = false;
       try {
         unlinkSync(absorbedFile);
@@ -223,15 +294,12 @@ export function followFold(
         ...(left ? { absorbed_file_left: true } : {}),
       };
     }
-    // Two rounds lost to concurrent writers: whatever is there now is not ours to replace.
-    return { ...base, outcome: "kept_survivor", survivor_file: survivorFile };
+    // Two rounds lost to concurrent writers: report what is true now.
+    if (survivorState(dataDir, survivor, survivorFile).kind === "occupied")
+      return { ...base, outcome: "kept_survivor", survivor_file: survivorFile };
+    return failed();
   } catch {
-    return {
-      ...base,
-      outcome: "transfer_failed",
-      survivor_file: survivorFile,
-      error: "write_failed",
-    };
+    return failed();
   } finally {
     try {
       rmSync(tmp, { force: true }); // our own scratch file (a hard link leaves the published name in place)
@@ -250,16 +318,26 @@ export interface FoldNote {
  * Follow every fold of a saved merge, one step at a time in the order they happened, and EMPTY `folds`
  * (a second call on the same store reports nothing again). Call it only after the library file holding the
  * merge was written. Never throws. Returns the fold each note belongs to, in order.
+ *
+ * Whose graph a fold may touch: a Work that was in the library file when the store was loaded owns whatever
+ * file carries its id. A Work created in this batch owns none (its id may be one a folded-away Work had) UNLESS an
+ * earlier step of this very call moved a graph to it: only then is the file under its name that graph, and the
+ * next fold of it carries the graph on (tracked by Work object, never by id).
  */
 export function followFolds(dataDir: string, folds: WorkFold[]): FoldNote[] {
   const todo = folds.splice(0, folds.length);
   if (todo.length === 0) return [];
   cleanStaleScratch(dataDir);
   const out: FoldNote[] = [];
+  const took = new Set<object>(); // Work objects that received a graph in this call
   for (const fold of todo) {
-    if (!fold.stored) continue; // a Work created in this session owns no file (its id may be a reused one)
+    const owns = fold.stored || (fold.absorbedWork !== undefined && took.has(fold.absorbedWork));
+    if (!owns) continue;
     const note = followFold(dataDir, fold.absorbed, fold.survivor);
-    if (note !== null) out.push({ fold, note });
+    if (note !== null) {
+      out.push({ fold, note });
+      if (note.outcome === "moved" && fold.survivorWork !== undefined) took.add(fold.survivorWork);
+    }
   }
   return out;
 }
@@ -269,20 +347,8 @@ export function followWorkFolds(dataDir: string, folds: WorkFold[]): ArgumentGra
   return followFolds(dataDir, folds).map((x) => x.note);
 }
 
-/** The ids in library.json right now, or null when it cannot be read. */
-function libraryIds(paths: LibraryPaths): Set<string> | null {
-  try {
-    const data = JSON.parse(readFileSync(paths.libraryJson, "utf8")) as {
-      works?: { id?: unknown }[];
-    };
-    return new Set((data.works ?? []).map((w) => String(w.id)));
-  } catch {
-    return null;
-  }
-}
-
 /**
- * A library save threw. When library.json was nevertheless replaced (the save renames it before it writes
+ * A library save threw. When library.json was nevertheless replaced (the save flagged the error; it renames it before it writes
  * library.bib), the merge is part of the library and its graphs must follow: do it, put the notes on the error
  * (`argumentGraphMerges`) and say so in its message (paths relative to the data directory). The error is returned
  * for the caller to throw; nothing else changes about it.
@@ -293,15 +359,21 @@ export function followFoldsAfterFailedSave(
   error: unknown
 ): unknown {
   if (store.folds.length === 0 || !(error instanceof Error)) return error;
-  const ids = libraryIds(paths);
-  const mine = new Set(store.works.map((w) => w.id));
-  const committed = ids !== null && ids.size === mine.size && [...mine].every((id) => ids.has(id));
-  if (!committed) return error;
-  const notes = followWorkFolds(paths.dataDir, store.folds);
-  if (notes.length === 0) return error;
+  // The save itself recorded that library.json was renamed into place; nothing is inferred from file contents.
+  if (!libraryJsonWasReplaced(error)) return error;
+  return attachMergeNotes(paths.dataDir, error, followWorkFolds(paths.dataDir, store.folds));
+}
+
+/** Put the notes of an already saved (and followed) merge on an error that happened afterwards. Returns the error. */
+export function attachMergeNotes(
+  dataDir: string,
+  error: unknown,
+  notes: ArgumentGraphMergeNote[]
+): unknown {
+  if (notes.length === 0 || !(error instanceof Error)) return error;
   (error as Error & { argumentGraphMerges?: ArgumentGraphMergeNote[] }).argumentGraphMerges = notes;
   error.message += ` (the Work merge itself was saved. ${notes
-    .map((n) => describeArgumentGraphMerge(relativeMergeNote(paths.dataDir, n)))
+    .map((n) => describeArgumentGraphMerge(relativeMergeNote(dataDir, n)))
     .join(" ")})`;
   return error;
 }

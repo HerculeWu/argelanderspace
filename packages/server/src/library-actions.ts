@@ -602,9 +602,8 @@ function jobDocId(job: Job): string | undefined {
   return undefined;
 }
 
-/** The argument-graph notes a finished job carried in its result (parsed, so a foreign shape is dropped). */
+/** The argument-graph notes a finished (or failed after merging) job carried in its result (parsed, so a foreign shape is dropped). */
 function jobMerges(job: Job): ArgumentGraphMergeNote[] {
-  if (job.status !== "done") return [];
   const raw = (job.result as { argument_graph_merges?: unknown } | null)?.argument_graph_merges;
   const parsed = ArgumentGraphMergeNoteSchema.array().safeParse(raw);
   return parsed.success ? parsed.data : [];

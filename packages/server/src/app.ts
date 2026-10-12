@@ -543,6 +543,13 @@ export function createApp(deps: AppDeps): Hono {
     annotationLock,
     docMutations,
     libraryChanged,
+    argumentGraphChanged: (workId) =>
+      broadcast({
+        type: "argument-graph.changed",
+        cause: "external", // not a PUT: a Work merge moved the file
+        work_id: workId,
+        at: new Date().toISOString(),
+      }),
     lockedRebuild: createLockedRebuild(libraryLock),
     pipelines: deps.pipelines,
     makeSources: deps.makeSources,

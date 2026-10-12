@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { type ArgumentGraphMergeNote, ArgumentGraphMergeNoteSchema, type Job } from "@argelanderspace/contracts";
+import { useCallback, useEffect, useReducer, useRef } from "react";
+import type { Job } from "@argelanderspace/contracts";
 import { acquireArxivPdf, attachArxiv, type StartResult, uploadLatexZip, uploadPdf } from "../api/library";
 import { type FetchAnnotationsResult, fetchAnnotations } from "../api/annotations";
 import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
 import { fetchTextDeleteImpact } from "../api/text-docs";
 import { onJobEvent } from "../api/ws";
 import i18n from "../i18n";
+import { dismissMergeNotice, ingestMergeNotice, type MergeNotice, useMergeNotices } from "./merge-notices";
+
+export type { MergeNotice };
+export { jobMergeNotes } from "./merge-notices";
 
 /*
  * The jobs a Work's full-text tab follows (ticket 48): the LaTeX zip upload, the local PDF upload, the arXiv source
@@ -279,21 +283,6 @@ export interface WorkJobHandle<Extra, Args extends unknown[]> {
   start(...args: Args): Promise<boolean>;
 }
 
-/** What a finished task's library rebuild did with argument graphs when it merged Works (ticket 06). */
-export interface MergeNotice {
-  jobId: string;
-  /** The Work the task was started for (the notice is shown on that Work). */
-  workId: string;
-  notes: ArgumentGraphMergeNote[];
-}
-
-/** The notes a finished job carries in its result (a foreign shape yields none). */
-export function jobMergeNotes(job: Job): ArgumentGraphMergeNote[] {
-  const raw = (job.result as { argument_graph_merges?: unknown } | null)?.argument_graph_merges;
-  const parsed = ArgumentGraphMergeNoteSchema.array().safeParse(raw);
-  return parsed.success ? parsed.data : [];
-}
-
 export interface WorkJobs {
   kinds<N extends WorkJobName>(name: N): WorkJobHandle<KindExtra<N>, KindArgs<N>>;
   /** Dismissible notices of tasks started here whose rebuild moved or left behind an argument graph. */
@@ -346,10 +335,8 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
     Object.fromEntries(WORK_JOB_NAMES.map((name) => [name, new Set<string>()])) as Record<WorkJobName, Set<string>>
   );
   const [state, dispatch] = useReducer(reduceJobs, undefined, initialJobs);
-  // A notice belongs to a task this page watched run (seen queued or running), never to a hello replay of the job
-  // table: a dismissed notice must not come back after a reload.
-  const watched = useRef(new Set<string>());
-  const [mergeNotices, setMergeNotices] = useState<MergeNotice[]>([]);
+  // Merge notes come from the finished task records (module-level store, see merge-notices.ts), not from this hook.
+  const allNotices = useMergeNotices();
 
   // Switching Works drops the other Work's job state; a PDF submission this Work still has in flight stays busy.
   useEffect(() => {
@@ -370,18 +357,7 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
             }
           }
         }
-        if (targetWorkId) {
-          if (isActive(job)) watched.current.add(job.id);
-          else if (job.status === "done" && watched.current.has(job.id)) {
-            watched.current.delete(job.id);
-            const notes = jobMergeNotes(job);
-            if (notes.length > 0)
-              setMergeNotices((all) => [
-                ...all.filter((n) => n.jobId !== job.id),
-                { jobId: job.id, workId: targetWorkId, notes },
-              ]);
-          }
-        }
+        ingestMergeNotice(job);
         if (targetWorkId !== workId) return;
         const previous = seen.current.get(job.id);
         if (isJobSnapshotRegression(previous, job)) return;
@@ -465,8 +441,8 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
 
   return {
     kinds,
-    mergeNotices: mergeNotices.filter((n) => n.workId === workId),
-    dismissMergeNotice: (jobId: string) => setMergeNotices((all) => all.filter((n) => n.jobId !== jobId)),
+    mergeNotices: allNotices.filter((n) => n.workId === workId),
+    dismissMergeNotice,
     seen: seen.current,
     session: { current: () => session.current, isCurrent },
   };

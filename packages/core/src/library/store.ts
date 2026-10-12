@@ -363,6 +363,24 @@ export interface WorkFold {
   absorbed: string;
   survivor: string;
   stored: boolean;
+  /**
+   * The Work objects themselves (identity, not id: ids are reused within a batch). `followFolds` uses them to know
+   * that a Work created in this batch took over a graph in an earlier step, so a later fold of it follows that graph.
+   */
+  absorbedWork?: object;
+  survivorWork?: object;
+}
+
+const replacedLibraryJson = new WeakSet<object>();
+
+/** Mark an error thrown by a library save that happened AFTER `library.json` was renamed into place. */
+export function markLibraryJsonReplaced(error: unknown): void {
+  if (error !== null && typeof error === "object") replacedLibraryJson.add(error);
+}
+
+/** Whether a failed library save had already replaced `library.json` (the save recorded it; nothing is inferred). */
+export function libraryJsonWasReplaced(error: unknown): boolean {
+  return error !== null && typeof error === "object" && replacedLibraryJson.has(error);
 }
 
 export class LibraryStore {
@@ -447,6 +465,8 @@ export class LibraryStore {
         absorbed: extra.id,
         survivor: survivor.id,
         stored: this.storedWorks.has(extra),
+        absorbedWork: extra,
+        survivorWork: survivor,
       });
     }
     mergeInto(survivor, w);
@@ -486,9 +506,15 @@ export class LibraryStore {
     mkdirSync(paths.libraryDir, { recursive: true });
     mkdirSync(paths.cacheDir, { recursive: true });
     this.saveJson(paths);
-    const btmp = paths.libraryBib.replace(/\.bib$/, ".bib.tmp");
-    writeFileSync(btmp, this.toBibtex(), "utf8");
-    renameSync(btmp, paths.libraryBib);
+    // From here library.json holds this store; a failure below is a save that half-happened.
+    try {
+      const btmp = paths.libraryBib.replace(/\.bib$/, ".bib.tmp");
+      writeFileSync(btmp, this.toBibtex(), "utf8");
+      renameSync(btmp, paths.libraryBib);
+    } catch (error) {
+      markLibraryJsonReplaced(error);
+      throw error;
+    }
   }
 
   // ---- exports ----

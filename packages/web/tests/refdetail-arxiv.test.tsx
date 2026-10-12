@@ -21,6 +21,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Job } from "@argelanderspace/contracts";
 import { RefDetail } from "../src/library/RefDetail";
+import { resetMergeNoticesForTests, startMergeNotices } from "../src/library/merge-notices";
 import type { LibraryRef } from "../src/library/types";
 import type { StartResult } from "../src/api/library";
 
@@ -141,6 +142,7 @@ function startArxivAcquisition(): void {
 }
 
 beforeEach(() => {
+  resetMergeNoticesForTests();
   h.attachArxiv.mockReset().mockReturnValue(new Promise(() => {})); // pending by default
   h.fetchAnnotations.mockReset().mockResolvedValue({
     ok: true,
@@ -188,10 +190,73 @@ describe("Work merge notice after a task (ticket 06)", () => {
     expect(bar.querySelector(".merge-note-file")).not.toBeNull();
     fireEvent.click(bar.querySelector("[data-ui='dismiss-task-graph-merges']")!);
     expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
-    // the same finished job replayed by a reconnect (hello) is not a task this page watched: no new notice
+    // the same finished job replayed by a reconnect (hello): the user closed it, so it stays closed
     act(() => {
-      h.listener?.(makeJob({ status: "done", result: { status: "attached", argument_graph_merges: [note] } }), "job.done");
+      h.listener?.(makeJob({ status: "done", result: { status: "attached", argument_graph_merges: [note] } }), "hello");
     });
+    expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
+  });
+
+  const doneWithNote = (over: Partial<Job> = {}) =>
+    makeJob({ status: "done", result: { status: "attached", argument_graph_merges: [note] }, ...over });
+
+  it("a task that finished while the Work detail was closed still shows its note when the Files tab opens (scenario B)", async () => {
+    const first = renderDetail(REF_ARXIV);
+    first.unmount(); // the detail is closed: nothing in the Work detail listens to jobs any more
+    startMergeNotices(); // the app shell's own subscription
+    act(() => {
+      h.listener?.(makeJob({ status: "running" }), "job.progress");
+      h.listener?.(doneWithNote(), "job.done");
+    });
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    expect(document.querySelector("[data-ui='task-graph-merges']")).not.toBeNull();
+  });
+
+  it("an undismissed note comes back from the hello replay after a reload; a dismissed one stays closed", async () => {
+    startMergeNotices();
+    act(() => {
+      h.listener?.(doneWithNote(), "hello"); // a fresh page: the server replays the job table
+    });
+    const view = renderDetail(REF_ARXIV);
+    openFilesTab();
+    const bar = document.querySelector("[data-ui='task-graph-merges']") as HTMLElement;
+    expect(bar).not.toBeNull();
+    fireEvent.click(bar.querySelector("[data-ui='dismiss-task-graph-merges']")!);
+    view.unmount();
+    // the browser keeps the dismissal: a reload (empty page state, same localStorage) replays the job again
+    expect(localStorage.getItem("argelander.dismissedGraphMergeNotices")).toContain("ingest-j1");
+    resetMergeNoticesForTests(true);
+    startMergeNotices();
+    act(() => {
+      h.listener?.(doneWithNote(), "hello");
+    });
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
+  });
+
+  it("a task that failed after it merged Works and moved a graph still shows its note", async () => {
+    startMergeNotices();
+    act(() => {
+      h.listener?.(
+        makeJob({ status: "failed", error: "boom", result: { argument_graph_merges: [note] } }),
+        "hello"
+      );
+    });
+    renderDetail(REF_ARXIV);
+    openFilesTab();
+    expect(document.querySelector("[data-ui='task-graph-merges']")).not.toBeNull();
+  });
+
+  it("a failed task without notes, and a note for another Work, show nothing here", async () => {
+    startMergeNotices();
+    act(() => {
+      h.listener?.(makeJob({ status: "failed", error: "boom" }), "hello");
+      h.listener?.(doneWithNote({ id: "ingest-j2", payload: { workId: "doi:10.1/other" } }), "hello");
+    });
+    renderDetail(REF_ARXIV);
+    openFilesTab();
     expect(document.querySelector("[data-ui='task-graph-merges']")).toBeNull();
   });
 

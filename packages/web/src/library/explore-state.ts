@@ -225,8 +225,10 @@ export function useExploreStack() {
     setAddError(null);
     try {
       const resp = await createWorks({ mode: "bibcode", bibcode });
-      // A merge that met an argument graph is said where the Add was pressed (ticket 06); a later Add replaces it.
-      setMergeNotes(resp?.argument_graph_merges ?? []);
+      // A merge that met an argument graph is said where the Add was pressed (ticket 06). An unclosed earlier note
+      // stays until the user closes it: an Add that merged nothing leaves it alone, one that merged adds to it.
+      const fresh = resp?.argument_graph_merges ?? [];
+      if (fresh.length > 0) setMergeNotes((prev) => [...prev, ...fresh]);
       const r = resp?.results[0];
       if (r && (r.status === "created" || r.status === "exists") && r.ref) {
         const workId = r.ref.id;

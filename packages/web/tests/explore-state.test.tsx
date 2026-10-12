@@ -259,6 +259,24 @@ describe("useExploreStack", () => {
     }
   });
 
+  it("a later Add that merged nothing leaves an unclosed merge note in place", async () => {
+    withMergeNote = true;
+    try {
+      const { container } = render(<Harness />);
+      fireEvent.click(container.querySelector('[data-testid="goS"]')!);
+      await waitFor(() => expect(txt(container, "seed")).toBe("S"));
+      fireEvent.click(container.querySelector('[data-testid="addR1"]')!);
+      await waitFor(() => expect(txt(container, "merges")).not.toBe(""));
+      withMergeNote = false;
+      fireEvent.click(container.querySelector('[data-testid="addR1"]')!);
+      await waitFor(() => expect(txt(container, "libid")).toBe("doi:10.1/x"));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(txt(container, "merges")).toBe("kept_survivor:argument-graphs/doi%3A10%2E1%2Fold.json");
+    } finally {
+      withMergeNote = false;
+    }
+  });
+
   it("exitExplore leaves the mode and clears the explore hash", async () => {
     const { container } = render(<Harness />);
     fireEvent.click(container.querySelector('[data-testid="goS"]')!);

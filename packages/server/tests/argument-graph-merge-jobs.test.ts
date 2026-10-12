@@ -26,6 +26,8 @@ let runner: JobRunner;
 let acquisition: ReturnType<typeof createAcquisition>;
 let note: ArgumentGraphMergeNote;
 let reportMerge: boolean;
+let failAfterMerge: boolean;
+let announced: string[];
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "acq-argmerge-"));
@@ -58,6 +60,8 @@ beforeEach(() => {
     survivor_file: argumentGraphPath(paths.dataDir, W),
   };
   reportMerge = true;
+  failAfterMerge = false;
+  announced = [];
   runner = new JobRunner({ dir: join(root, "jobs") });
   acquisition = createAcquisition({
     paths,
@@ -66,11 +70,17 @@ beforeEach(() => {
     annotationLock: new AsyncLock(),
     docMutations: new DocMutationRegistry(),
     libraryChanged: () => {},
-    lockedRebuild: async () =>
-      ({
+    argumentGraphChanged: (id) => announced.push(id),
+    lockedRebuild: async () => {
+      if (failAfterMerge)
+        throw Object.assign(new Error("graph cache could not be written"), {
+          argumentGraphMerges: [note],
+        });
+      return {
         works: 1,
         ...(reportMerge ? { argument_graph_merges: [note] } : {}),
-      }) as unknown as RefreshResponse,
+      } as unknown as RefreshResponse;
+    },
     pipelines: stubPipelines(),
     makeSources: () => stubSources(),
     autoIngestArxiv: () => false,
@@ -134,4 +144,50 @@ test("a job view of a task without notes has no such key", async () => {
   if (started.kind !== "queued") throw new Error(JSON.stringify(started));
   const done = await runner.waitFor(started.job.id);
   expect("argumentGraphMerges" in jobView(done)).toBe(false);
+});
+
+test("a zip task whose rebuild failed AFTER the merge keeps the notes in its failed result", async () => {
+  failAfterMerge = true;
+  const z = acquisition.startZipJob({ workId: W, doi: null, arxiv: null }, UPLOAD_ZIP);
+  if (z.kind !== "queued") throw new Error("not queued");
+  const zipDone = await runner.waitFor(z.job.id);
+  expect(zipDone.status).toBe("failed");
+  expect(
+    (zipDone.result as { argument_graph_merges?: ArgumentGraphMergeNote[] }).argument_graph_merges
+  ).toHaveLength(1);
+});
+
+test("the same for the arXiv LaTeX fetch", async () => {
+  failAfterMerge = true;
+  const a = acquisition.startSource(W);
+  if (a.kind !== "queued") throw new Error(JSON.stringify(a));
+  const arxivDone = await runner.waitFor(a.job.id);
+  expect(arxivDone.status).toBe("failed");
+  expect(jobView(arxivDone).argumentGraphMerges).toHaveLength(1);
+  expect(JSON.stringify(arxivDone)).not.toContain(root);
+});
+
+test("a failed task that merged nothing keeps result null", async () => {
+  const failing = acquisition.startZipJob(
+    { workId: "doi:10.9/none", doi: null, arxiv: null },
+    UPLOAD_ZIP
+  );
+  if (failing.kind !== "queued") return; // no such work: refused up front
+  const done = await runner.waitFor(failing.job.id);
+  expect(done.status).toBe("failed");
+  expect(done.result).toBeNull();
+});
+
+test("a merge that moved a graph is announced for both Works at once; one that did not move is not", async () => {
+  note = { ...note, outcome: "moved" };
+  const a = acquisition.startSource(W);
+  if (a.kind !== "queued") throw new Error(JSON.stringify(a));
+  await runner.waitFor(a.job.id);
+  expect(announced.sort()).toEqual([GONE, W].sort());
+  announced.length = 0;
+  note = { ...note, outcome: "kept_survivor" };
+  const b = acquisition.startSource(W);
+  if (b.kind !== "queued") throw new Error(JSON.stringify(b));
+  await runner.waitFor(b.job.id);
+  expect(announced).toEqual([]);
 });

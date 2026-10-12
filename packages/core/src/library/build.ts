@@ -30,7 +30,11 @@ import {
 import { parseBibtex } from "../acquire/bibtex.js";
 import { classify, planToDict } from "../acquire/planner.js";
 import { addBibRecords, enrichAndPlan, planFor } from "../acquire/run.js";
-import { followFoldsAfterFailedSave, followWorkFolds } from "../argument-graphs/merge.js";
+import {
+  attachMergeNotes,
+  followFoldsAfterFailedSave,
+  followWorkFolds,
+} from "../argument-graphs/merge.js";
 import { pyOr, pyTruthy } from "../documents/pyregex.js";
 import { assignCiteKey, buildGraph, workToRef } from "./graph.js";
 import { findDamagedTextDocs, seedFromOutput } from "./seed.js";
@@ -76,8 +80,13 @@ export async function rebuild(paths: LibraryPaths, opts: RebuildOptions): Promis
   }
   // Only after the library file was written: a failed save throws above and leaves every argument graph in place.
   const argumentGraphMerges = followWorkFolds(paths.dataDir, store.folds);
-  mkdirSync(paths.cacheDir, { recursive: true });
-  writeFileSync(paths.graphJson, JSON.stringify(graph), "utf8");
+  try {
+    mkdirSync(paths.cacheDir, { recursive: true });
+    writeFileSync(paths.graphJson, JSON.stringify(graph), "utf8");
+  } catch (error) {
+    // The library and the moved graphs are already saved: the error must not hide what the merge did.
+    throw attachMergeNotes(paths.dataDir, error, argumentGraphMerges);
+  }
   return {
     works: store.works.length,
     bib_entries: nBib,

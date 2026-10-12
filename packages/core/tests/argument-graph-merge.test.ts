@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { ArgumentGraph } from "@argelanderspace/contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { followWorkFolds } from "../src/argument-graphs/merge.js";
@@ -280,6 +280,65 @@ describe("failure paths: the graph is still there", () => {
     expect(loadArgumentGraph(paths.dataDir, C).work_id).toBe(C);
   });
 
+  describe("id reuse plus a failure while staging: library.json is byte-identical, so nothing may move", () => {
+    // e1 folds the stored A into C; e2 creates a NEW Work with the id A: the id sets before and after are equal.
+    const REUSE = (): string =>
+      [bibEntry("e1", "Alpha galaxies", "10.1/c"), bibEntry("e2", "Brand new", "10.1/a")].join(
+        "\n"
+      );
+    for (const [name, tmpOf] of [
+      [
+        "json tmp",
+        (p: ReturnType<typeof libraryPaths>) => p.libraryJson.replace(/\.json$/, ".json.tmp"),
+      ],
+      [
+        "bib tmp",
+        (p: ReturnType<typeof libraryPaths>) => p.libraryBib.replace(/\.bib$/, ".bib.tmp"),
+      ],
+    ] as const) {
+      it(`addManualBibText, ${name} is a directory`, async () => {
+        const paths = seed();
+        putGraph(paths.dataDir, A, "from the STORED A");
+        const before = read(paths.libraryJson);
+        mkdirSync(tmpOf(paths));
+        const err = await addManualBibText(paths, REUSE()).then(
+          () => null,
+          (e: unknown) => e as { argumentGraphMerges?: unknown; message: string }
+        );
+        expect(err).not.toBeNull();
+        expect(read(paths.libraryJson)).toBe(before);
+        expect(err?.argumentGraphMerges).toBeUndefined();
+        expect(err?.message).not.toContain("merge itself was saved");
+        expect(titleOf(paths.dataDir, A)).toBe("from the STORED A");
+        expect(graphFiles(paths.dataDir)).toEqual([basename(argumentGraphPath(paths.dataDir, A))]);
+      });
+      it(`rebuild --bib, ${name} is a directory`, async () => {
+        const paths = seed();
+        putGraph(paths.dataDir, A, "from the STORED A");
+        const before = read(paths.libraryJson);
+        const bib = join(paths.dataDir, "x.bib");
+        writeFileSync(bib, REUSE(), "utf8");
+        mkdirSync(tmpOf(paths));
+        const err = await rebuild(paths, { sources: nullSources, bibPath: bib }).then(
+          () => null,
+          (e: unknown) => e as { argumentGraphMerges?: unknown }
+        );
+        expect(err).not.toBeNull();
+        if (name === "bib tmp") {
+          // a rebuild renames library.json BEFORE it writes library.bib: here the merge IS saved, the graph follows
+          expect(read(paths.libraryJson)).not.toBe(before);
+          expect(titleOf(paths.dataDir, C)).toBe("from the STORED A");
+          expect(existsSync(argumentGraphPath(paths.dataDir, A))).toBe(false);
+          return;
+        }
+        expect(read(paths.libraryJson)).toBe(before);
+        expect(err?.argumentGraphMerges).toBeUndefined();
+        expect(titleOf(paths.dataDir, A)).toBe("from the STORED A");
+        expect(existsSync(argumentGraphPath(paths.dataDir, C))).toBe(false);
+      });
+    }
+  });
+
   it.skipIf(process.getuid?.() === 0)(
     "the publish fails: transfer_failed with a fixed kind, the original is intact",
     async () => {
@@ -300,6 +359,34 @@ describe("failure paths: the graph is still there", () => {
       expect(read(argumentGraphPath(paths.dataDir, C))).toBe(cBytes);
     }
   );
+
+  it("the graph cache cannot be written after the graphs were moved: the error still carries the note", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    const bib = join(paths.dataDir, "x.bib");
+    writeFileSync(bib, BRIDGE, "utf8");
+    mkdirSync(paths.graphJson, { recursive: true }); // graph.json is a directory
+    const err = await rebuild(paths, { sources: nullSources, bibPath: bib }).then(
+      () => null,
+      (e: unknown) => e as Error & { argumentGraphMerges?: { outcome: string }[] }
+    );
+    expect(err?.argumentGraphMerges?.map((n) => n.outcome)).toEqual(["moved"]);
+    expect(err?.message).toContain("merge itself was saved");
+    expect(titleOf(paths.dataDir, A)).toBe("from C");
+  });
+
+  it("a survivor id whose store file name is as long as the store allows can still receive a graph", () => {
+    const dir = mkdtempSync(join(tmpdir(), "aspace-argmerge-"));
+    dirs.push(dir);
+    for (const len of [229, 232, 235]) {
+      const longId = `w${"s".repeat(len - 1)}`; // encodes to len chars; len 235 + ".json" is the longest name the store accepts (240)
+      putGraph(dir, C, "from C");
+      const notes = followWorkFolds(dir, [{ absorbed: C, survivor: longId, stored: true }]);
+      expect(notes[0]?.outcome).toBe("moved");
+      expect(titleOf(dir, longId)).toBe("from C");
+      rmSync(argumentGraphPath(dir, longId));
+    }
+  });
 
   it("an unreadable absorbed graph is reported as a failed transfer and left alone", async () => {
     const paths = seed();
@@ -424,6 +511,71 @@ describe("folds are followed one step at a time, in the order they happened", ()
       [C, A, "kept_survivor"],
     ]);
     expect(graphFiles(paths.dataDir)).toHaveLength(2);
+  });
+
+  const N = "doi:10.1/n"; // created inside the batch
+  const CHAIN = (): string =>
+    [
+      bibEntry("e1", "Nu", "10.1/n"), // creates N
+      bibEntry("e2", "Gamma", "10.1/n"), // folds the stored C (with a graph) into the new N
+      bibEntry("e3", "Nu", "10.1/d"), // folds N into the stored D
+    ].join("\n");
+
+  it("a Work created in the batch that took over a graph passes it on when it is folded away (addManualBibText)", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    const out = await addManualBibText(paths, CHAIN());
+    expect(libIds(paths).sort()).toEqual([A, D]);
+    const notes = out.flatMap((o) => o.argumentGraphMerges ?? []);
+    expect(notes.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])).toEqual([
+      [C, N, "moved"],
+      [N, D, "moved"],
+    ]);
+    expect(titleOf(paths.dataDir, D)).toBe("from C");
+    expect(graphFiles(paths.dataDir)).toEqual([basename(argumentGraphPath(paths.dataDir, D))]);
+  });
+
+  it("the same chain through a rebuild --bib", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, C, "from C");
+    const bib = join(paths.dataDir, "x.bib");
+    writeFileSync(bib, CHAIN(), "utf8");
+    const summary = await rebuild(paths, { sources: nullSources, bibPath: bib });
+    expect(
+      summary.argument_graph_merges?.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])
+    ).toEqual([
+      [C, N, "moved"],
+      [N, D, "moved"],
+    ]);
+    expect(titleOf(paths.dataDir, D)).toBe("from C");
+    expect(graphFiles(paths.dataDir)).toEqual([basename(argumentGraphPath(paths.dataDir, D))]);
+  });
+
+  it("an unrelated leftover file under a new Work's id is not taken for its graph", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, N, "stale leftover of an old N"); // no such Work in the library
+    putGraph(paths.dataDir, C, "from C");
+    // N is created, C (stored, graph) folds in: the survivor N already has a file, so C's stays; then N folds into D
+    const out = await addManualBibText(paths, CHAIN());
+    const notes = out.flatMap((o) => o.argumentGraphMerges ?? []);
+    expect(notes.map((n) => [n.absorbed_id, n.survivor_id, n.outcome])).toEqual([
+      [C, N, "kept_survivor"],
+    ]);
+    expect(titleOf(paths.dataDir, N)).toBe("stale leftover of an old N");
+    expect(existsSync(argumentGraphPath(paths.dataDir, D))).toBe(false);
+    expect(titleOf(paths.dataDir, C)).toBe("from C");
+  });
+
+  it("a new Work that took over nothing is folded without touching a same-id leftover", async () => {
+    const paths = seed();
+    putGraph(paths.dataDir, N, "stale leftover of an old N");
+    const out = await addManualBibText(
+      paths,
+      [bibEntry("e1", "Nu", "10.1/n"), bibEntry("e3", "Nu", "10.1/d")].join("\n")
+    );
+    expect(out.flatMap((o) => o.argumentGraphMerges ?? [])).toEqual([]);
+    expect(titleOf(paths.dataDir, N)).toBe("stale leftover of an old N");
+    expect(existsSync(argumentGraphPath(paths.dataDir, D))).toBe(false);
   });
 
   it("store.folds is emptied once followed: following the same store again reports nothing", () => {
