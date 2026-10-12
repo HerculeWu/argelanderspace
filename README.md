@@ -84,13 +84,14 @@ workflows:
 | `argelander-paper-ingest` | arXiv id / local LaTeX → `ingest` → `library build` → confirm in `search` → asks the user for a note (agent drafts the suggestion) for every paper |
 | `argelander-read-paper` | Deep-read one ingested doc: resolves equations/figures/tables via `show`, citations via `ref`, keeps paper claims vs cited work apart, cites evidence as deep links |
 | `argelander-query-paper-library` | Ranks the whole library against a research question (`note` is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
+| `argelander-argument-graph` | Reads one ingested paper and writes its argument graph (Toulmin arguments, Native/End arguments, edges, sources) into the workbench with `argument put`; asks before replacing an existing graph and reports End arguments, main chains and audit findings |
 
 Install by symlinking into pi's skills directory (`~/.pi/agent/skills/`
 globally, or `.pi/skills/` in a project):
 
 ```bash
 mkdir -p ~/.pi/agent/skills
-for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library; do
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-argument-graph; do
   ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
 done
 ```
