@@ -1,6 +1,6 @@
 /**
- * Layered layout for directed graphs (pure, deterministic): the third layout
- * the shared graph renderer can draw, next to the force layout.
+ * Layered layout for directed graphs (pure, deterministic): the shared graph renderer's
+ * layered layout, next to the force layout used by the citation graphs.
  *
  * Rows run bottom to top ("first" row at y = 0, higher rows at negative y).
  * Nodes pinned `first` sit on the bottom row, nodes pinned `last` on the top
@@ -61,13 +61,13 @@ export function layeredLayout(input: {
 }): LayeredLayout {
   const ids = input.nodes.map((n) => n.id);
   const pin = new Map(input.nodes.map((n) => [n.id, n.pin]));
-  const out = new Map<string, string[]>(ids.map((i) => [i, []]));
+  const out = new Map<string, { to: string; ei: number }[]>(ids.map((i) => [i, []]));
   const edges = input.edges.filter((e) => out.has(e.from) && out.has(e.to) && e.from !== e.to);
-  for (const e of edges) out.get(e.from)!.push(e.to);
+  edges.forEach((e, ei) => out.get(e.from)!.push({ to: e.to, ei }));
 
   // cycle-closing edges: the back edges of a depth-first search (iterative: chains can be deep)
   const state = new Map<string, 0 | 1 | 2>();
-  const back = new Set<string>();
+  const back = new Set<number>(); // indices into `edges` (ids are arbitrary strings, so no string keys)
   for (const root of ids) {
     if (state.get(root)) continue;
     state.set(root, 1);
@@ -76,9 +76,9 @@ export function layeredLayout(input: {
       const frame = work[work.length - 1]!;
       const succ = out.get(frame.v)!;
       if (frame.next < succ.length) {
-        const w = succ[frame.next++]!;
+        const { to: w, ei } = succ[frame.next++]!;
         const s = state.get(w) ?? 0;
-        if (s === 1) back.add(`${frame.v}>${w}`);
+        if (s === 1) back.add(ei);
         else if (s === 0) {
           state.set(w, 1);
           work.push({ v: w, next: 0 });
@@ -89,7 +89,7 @@ export function layeredLayout(input: {
       }
     }
   }
-  const forward = edges.filter((e) => !back.has(`${e.from}>${e.to}`));
+  const forward = edges.filter((_, ei) => !back.has(ei));
 
   // longest-chain layering over the acyclic part
   const hasFirst = input.nodes.some((n) => n.pin === "first");
@@ -128,6 +128,8 @@ export function layeredLayout(input: {
     nb.get(b)!.push(a);
   };
   const chains = new Map<string, string[]>();
+  const waypoints = new Set<string>();
+  const taken = new Set(ids);
   for (const e of edges) {
     const a = layer.get(e.from)!;
     const b = layer.get(e.to)!;
@@ -135,7 +137,10 @@ export function layeredLayout(input: {
     let prev = e.from;
     const chain: string[] = [];
     for (let k = a + step; step !== 0 && k !== b; k += step) {
-      const d = `~${e.id}~${k}`;
+      let d = `~${e.id}~${k}`;
+      while (taken.has(d)) d = `~${d}`; // a waypoint never shares a key with a node, whatever the node ids are
+      taken.add(d);
+      waypoints.add(d);
       nb.set(d, []);
       rowOf.set(d, k);
       rows[k]!.push(d);
@@ -167,8 +172,8 @@ export function layeredLayout(input: {
 
   // x: pack each row by slot width, then pull every circle towards its neighbours in adjacent rows
   const labelWidth = new Map(input.nodes.map((n) => [n.id, n.labelWidth]));
-  const width = (id: string) => (id.startsWith("~") ? WAYPOINT_SLOT : Math.max(MIN_SLOT, labelWidth.get(id)! + SLOT_PAD));
-  const off = (id: string) => (id.startsWith("~") ? 0 : CIRCLE_INSET - width(id) / 2);
+  const width = (id: string) => (waypoints.has(id) ? WAYPOINT_SLOT : Math.max(MIN_SLOT, labelWidth.get(id)! + SLOT_PAD));
+  const off = (id: string) => (waypoints.has(id) ? 0 : CIRCLE_INSET - width(id) / 2);
   const x = new Map<string, number>();
   const cx = (id: string) => x.get(id)! + off(id);
   for (const r of rows) {
@@ -206,6 +211,6 @@ export function layeredLayout(input: {
     layerOf[i] = layer.get(i)!;
   }
   for (const [key, chain] of chains) routes[key] = chain.map((d) => ({ x: x.get(d)! - mid, y: 0 - rowOf.get(d)! * ROW_GAP }));
-  const backEdges = edges.filter((e) => back.has(`${e.from}>${e.to}`)).map((e) => e.id);
+  const backEdges = edges.filter((_, ei) => back.has(ei)).map((e) => e.id);
   return { pos, layers, layerOf, routes, backEdges };
 }

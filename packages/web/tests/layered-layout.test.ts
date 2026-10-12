@@ -55,7 +55,7 @@ describe("layeredLayout: rows", () => {
     const { nodes, edges } = input("flawed");
     const lay = layeredLayout({ nodes, edges });
     // m1 -> m2 -> m4 -> m1 is the cycle; the DFS closes it at m4 -> m1
-    expect(lay.backEdges).toEqual(["m4>m1:warrant"]);
+    expect(lay.backEdges).toEqual([argumentEdgeId({ from: "m4", to: "m1", role: "warrant" })]);
     expect(lay.layerOf.m1!).toBeLessThan(lay.layerOf.m2!);
     expect(lay.layerOf.m2!).toBeLessThan(lay.layerOf.m4!);
     for (const n of nodes) expect(Number.isFinite(lay.pos[n.id]!.x)).toBe(true);
@@ -79,6 +79,49 @@ describe("layeredLayout: rows", () => {
     });
     expect(lay.layerOf).toEqual({ a: 0, b: 1 });
     expect(lay.backEdges).toEqual([]);
+  });
+
+  it("treats ids containing > or starting with ~ as ordinary nodes, never as edges or waypoints", () => {
+    // "a>b" -> "c" and "a" -> "b>c" would both be keyed "a>b>c" by a joined-string key: only A -> B closes the cycle
+    const lay = layeredLayout({
+      nodes: ["B", "A", "a>b", "c"].map((id) => ({ id, labelWidth: 20 })),
+      edges: [
+        { id: "e1", from: "B", to: "A" },
+        { id: "e2", from: "A", to: "B" },
+        { id: "e3", from: "a>b", to: "c" },
+      ],
+    });
+    expect(lay.backEdges).toEqual(["e2"]);
+    expect(lay.layerOf.c).toBe(lay.layerOf["a>b"]! + 1);
+    // a node whose id starts with "~" has a full slot, not a waypoint's
+    const row = layeredLayout({
+      nodes: [
+        { id: "~x", pin: "first", labelWidth: 20 },
+        { id: "y", pin: "first", labelWidth: 20 },
+        { id: "z", labelWidth: 20 },
+      ],
+      edges: [
+        { id: "xz", from: "~x", to: "z" },
+        { id: "yz", from: "y", to: "z" },
+      ],
+    });
+    expect(Math.abs(row.pos["~x"]!.x - row.pos.y!.x)).toBeGreaterThanOrEqual(112 - 1e-6);
+    // a node id equal to a waypoint's internal key does not clash with it
+    const clash = layeredLayout({
+      nodes: [
+        { id: "a", pin: "first", labelWidth: 20 },
+        { id: "~e~1", labelWidth: 20 },
+        { id: "c", pin: "last", labelWidth: 20 },
+      ],
+      edges: [
+        { id: "e", from: "a", to: "c" },
+        { id: "up", from: "a", to: "~e~1" },
+        { id: "up2", from: "~e~1", to: "c" },
+      ],
+    });
+    expect(clash.routes.e).toHaveLength(1);
+    expect(Object.keys(clash.pos).sort()).toEqual(["a", "c", "~e~1"]);
+    for (const p of Object.values(clash.pos)) expect(Number.isFinite(p.x) && Number.isFinite(p.y)).toBe(true);
   });
 
   it("does not overlap slots within a row, and the slot width follows the node's own label", () => {
@@ -248,6 +291,29 @@ describe("edge geometry and chain focus", () => {
     const p = edgePath({ x: 0, y: 0 }, { x: 0, y: -128 }, 13, 21, [], 0);
     const q = edgePath({ x: 0, y: 0 }, { x: 0, y: -128 }, 13, 21, [], 30);
     expect(p.d).not.toBe(q.d);
+  });
+
+  it("samples a same-row arc on the very curve it draws (a quadratic Bezier)", () => {
+    const p = { x: 0, y: 0 };
+    const q = { x: 240, y: 6 };
+    const { d, samples } = edgePath(p, q, 13, 21, [], 0);
+    const m = d.match(/^M(-?[\d.e-]+),(-?[\d.e-]+) Q(-?[\d.e-]+),(-?[\d.e-]+) (-?[\d.e-]+),(-?[\d.e-]+)$/)!;
+    expect(m).toBeTruthy();
+    const [ax, ay, cx, cy, bx, by] = m.slice(1).map(Number) as [number, number, number, number, number, number];
+    expect(samples.length).toBeGreaterThan(10);
+    samples.forEach((s, i) => {
+      const t = 0.05 * (i + 1);
+      const u = 1 - t;
+      expect(s.x).toBeCloseTo(u * u * ax + 2 * u * t * cx + t * t * bx, 6);
+      expect(s.y).toBeCloseTo(u * u * ay + 2 * u * t * cy + t * t * by, 6);
+    });
+  });
+
+  it("fans parallel edges by node id pair even when the ids contain the separator", () => {
+    expect(pairFan([{ from: "a>b", to: "c" }, { from: "a", to: "b>c" }])).toEqual([
+      { index: 0, total: 1 },
+      { index: 0, total: 1 },
+    ]);
   });
 
   it("collects the whole upstream and downstream chain of a node with the edges between", () => {

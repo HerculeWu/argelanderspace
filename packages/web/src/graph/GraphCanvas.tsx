@@ -2,7 +2,9 @@
  * Shared graph canvas (Stage 14, D4): the single renderer behind both the
  * Library graph and the ADS Discovery graph. It owns SVG rendering, pan/zoom
  * (incl. pinch), directed edge arrows, collision-avoided labels, the hover
- * tooltip, selection, node dragging, the legend and the zoom control stack.
+ * tooltip, selection, node dragging and the legend. The zoom control stack is the
+ * shared `GraphZoomControls`, which `LayeredGraphCanvas` (the argument graph's
+ * layered layout) uses as well.
  *
  * Domain semantics stay in the adapters: node shape/role/styling arrive as
  * plain `CanvasNode` props (`filled` = in library, `diamond` = Useful,

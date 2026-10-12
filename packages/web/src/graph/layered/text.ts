@@ -5,7 +5,7 @@ export const LABEL_FONT_MAX = 14;
 /** Smallest zoom at which the label font still grows to compensate; below it labels shrink with the picture. */
 export const LABEL_ZOOM_FLOOR = 0.75;
 
-const WIDE = /[⺀-￿]/;
+const WIDE = /[\u2E80-\uFFFF]/;
 
 /** Width of a text in em: full-width characters 1, others 0.55. */
 export const textUnits = (s: string): number => [...s].reduce((n, ch) => n + (WIDE.test(ch) ? 1 : 0.55), 0);

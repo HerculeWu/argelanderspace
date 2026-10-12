@@ -11,6 +11,11 @@ const cubic = (a: LayoutPoint, c1: LayoutPoint, c2: LayoutPoint, b: LayoutPoint,
   return { x: k0 * a.x + k1 * c1.x + k2 * c2.x + k3 * b.x, y: k0 * a.y + k1 * c1.y + k2 * c2.y + k3 * b.y };
 };
 
+const quad = (a: LayoutPoint, c: LayoutPoint, b: LayoutPoint, t: number): LayoutPoint => {
+  const u = 1 - t;
+  return { x: u * u * a.x + 2 * u * t * c.x + t * t * b.x, y: u * u * a.y + 2 * u * t * c.y + t * t * b.y };
+};
+
 /**
  * Vertical-tangent curve from `p` to `q` through the layout's waypoints.
  * `samples` are points along the curve (for label placement and crowding).
@@ -35,7 +40,7 @@ export function edgePath(
     const a = { x: p.x + ux * r1, y: p.y + uy * r1 };
     const b = { x: q.x - ux * r2, y: q.y - uy * r2 };
     const c = { x: (a.x + b.x) / 2 - uy * (30 + shift), y: (a.y + b.y) / 2 + ux * (30 + shift) - 26 };
-    for (let t = 0.05; t < 0.98; t += 0.05) samples.push(cubic(a, c, c, b, t));
+    for (let t = 0.05; t < 0.98; t += 0.05) samples.push(quad(a, c, b, t)); // the arc is drawn as a quadratic, so it is sampled as one
     return { d: `M${a.x},${a.y} Q${c.x},${c.y} ${b.x},${b.y}`, samples };
   }
   const s0 = Math.sign((way[0] ?? q).y - p.y) || -1;
@@ -62,11 +67,12 @@ export function edgePath(
 
 /** Parallel edges between the same two nodes: index and count within their pair. */
 export function pairFan(edges: readonly { from: string; to: string }[]): { index: number; total: number }[] {
+  const key = (e: { from: string; to: string }) => JSON.stringify([e.from, e.to]);
   const total = new Map<string, number>();
-  for (const e of edges) total.set(`${e.from}>${e.to}`, (total.get(`${e.from}>${e.to}`) ?? 0) + 1);
+  for (const e of edges) total.set(key(e), (total.get(key(e)) ?? 0) + 1);
   const seen = new Map<string, number>();
   return edges.map((e) => {
-    const k = `${e.from}>${e.to}`;
+    const k = key(e);
     const index = seen.get(k) ?? 0;
     seen.set(k, index + 1);
     return { index, total: total.get(k) ?? 1 };

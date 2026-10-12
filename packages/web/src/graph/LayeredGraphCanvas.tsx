@@ -1,5 +1,5 @@
 /**
- * Layered graph canvas: the shared renderer's second layout. Where `GraphCanvas`
+ * Layered graph canvas: the shared renderer's layered layout. Where `GraphCanvas`
  * runs a force layout for citation graphs, this one draws a directed graph in
  * rows (see `layered/layout.ts`), with
  *
@@ -23,7 +23,7 @@
  * `GraphCanvas`.
  */
 
-import { type ReactNode, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import { GraphZoomControls } from "./GraphZoomControls";
 import { edgePath, focusChain, pairFan } from "./layered/geometry";
 import { type LayoutPoint, layeredLayout } from "./layered/layout";
@@ -42,8 +42,8 @@ export interface LayeredNodeSpec {
   ringed?: boolean;
   /** `first`: pinned to the bottom row. `last`: pinned to the top row. */
   pin?: "first" | "last";
-  /** Small badge on the node, with its accessible name. */
-  mark?: { text: string; label: string };
+  /** Small badge on the node, with its accessible name; colours are the adapter's (the canvas has a neutral default). */
+  mark?: { text: string; label: string; color?: string; textColor?: string };
 }
 
 export interface LayeredEdgeSpec {
@@ -59,6 +59,10 @@ export interface LayeredEdgeSpec {
   /** Text drawn on the edge while it is lit, or always when `showLabel`. */
   label?: string;
   showLabel?: boolean;
+  /** Colour of the label text; omitted = the normal text colour. */
+  labelColor?: string;
+  /** Drawn a little heavier than the other edges, at rest and lit. */
+  heavy?: boolean;
   /** Opaque adapter tag, exposed as `data-edge-tag`. */
   tag?: string;
 }
@@ -137,6 +141,8 @@ export function LayeredGraphCanvas({
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
+  const [tipBox, setTipBox] = useState({ w: 280, h: 150 });
+  const tipRef = useRef<HTMLDivElement>(null);
   const [rubber, setRubber] = useState<{ from: string; x: number; y: number } | null>(null);
   const [, bump] = useReducer((x: number) => x + 1, 0);
 
@@ -200,16 +206,18 @@ export function LayeredGraphCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.w, size.h, sceneKey, sig]);
 
-  /** How far the overlays (heading, legend, zoom stack) reach into the canvas from each edge. */
+  /**
+   * How far the heading (top) and the legend (bottom) reach into the canvas. The zoom stack sits at the
+   * right edge and is cleared by the right inset, so it does not enter the bottom inset.
+   */
   function overlayInsets() {
     const wrap = wrapRef.current?.getBoundingClientRect();
     const rect = (el: HTMLElement | null) => (wrap && el ? el.getBoundingClientRect() : null);
     const head = rect(noteRef.current);
     const leg = rect(legendRef.current);
-    const zoom = rect(wrapRef.current?.querySelector<HTMLElement>('[data-ui="graph-zoom-controls"]') ?? null);
     const top = head && head.height > 0 ? head.bottom - wrap!.top + 14 : 0;
-    const bottoms = [leg, zoom].filter((r): r is DOMRect => !!r && r.height > 0).map((r) => wrap!.bottom - r.top + 14);
-    return { t: Math.max(INSET.t, top), b: Math.max(INSET.b, ...bottoms) };
+    const bottom = leg && leg.height > 0 ? wrap!.bottom - leg.top + 14 : 0;
+    return { t: Math.max(INSET.t, top), b: Math.max(INSET.b, bottom) };
   }
 
   function fitView() {
@@ -234,7 +242,7 @@ export function LayeredGraphCanvas({
     bump();
   }
 
-  // A narrower canvas (a panel opening) or a new selection: keep the selected node, and its label, on screen.
+  // A narrower canvas (a panel opening), a new selection or a new layout: keep the selected node, and its label, on screen.
   useEffect(() => {
     const p = selectedId ? P.current[selectedId] : null;
     const cur = view.current;
@@ -250,7 +258,7 @@ export function LayeredGraphCanvas({
       bump();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, size.w, size.h]);
+  }, [selectedId, size.w, size.h, sig]);
 
   const zoomAt = (f: number, cx: number, cy: number) => {
     const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
@@ -279,8 +287,13 @@ export function LayeredGraphCanvas({
     const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
     return { x: (x - v.tx) / v.k, y: (y - v.ty) / v.k };
   };
-  const nodeAt = (e: { clientX: number; clientY: number }) =>
-    document.elementFromPoint?.(e.clientX, e.clientY)?.closest("[data-node-id]")?.getAttribute("data-node-id") ?? null;
+  /** The node of this canvas under a screen point; elements of other canvases or unknown ids do not count. */
+  const nodeAt = (e: { clientX: number; clientY: number }) => {
+    const el = document.elementFromPoint?.(e.clientX, e.clientY)?.closest("[data-node-id]");
+    if (!el || !wrapRef.current?.contains(el)) return null;
+    const id = el.getAttribute("data-node-id");
+    return id && nodeById.has(id) ? id : null;
+  };
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (e.button !== 0 && e.pointerType !== "touch") return;
@@ -362,7 +375,7 @@ export function LayeredGraphCanvas({
     const id = (e.target as Element).closest("[data-node-id]")?.getAttribute("data-node-id") ?? null;
     if (id && nodeById.has(id)) {
       setHover(id);
-      setTooltip({ x: Math.max(8, Math.min(pt.x + 18, size.w - 288)), y: Math.max(8, Math.min(pt.y + 15, size.h - 150)) });
+      setTooltip({ x: pt.x, y: pt.y });
     } else if (hover) {
       setHover(null);
       setTooltip(null);
@@ -433,6 +446,24 @@ export function LayeredGraphCanvas({
   );
 
   const hoverNode = hover ? nodeById.get(hover) : null;
+  const showTip = !!hoverNode && !!tooltip && !drag.current;
+  // The tooltip is clamped by its measured size (its height depends on the text), before paint.
+  const measureTip = () => {
+    const el = tipRef.current;
+    if (el) setTipBox((t) => (t.w === el.offsetWidth && t.h === el.offsetHeight ? t : { w: el.offsetWidth, h: el.offsetHeight }));
+  };
+  useLayoutEffect(measureTip);
+  useEffect(() => {
+    // fonts and math settle after the first paint and change the height
+    const el = tipRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measureTip);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showTip, hover]);
+  const tipPos = tooltip
+    ? { left: Math.max(8, Math.min(tooltip.x + 18, size.w - tipBox.w - 8)), top: Math.max(8, Math.min(tooltip.y + 15, size.h - tipBox.h - 8)) }
+    : null;
 
   return (
     <div className="cg-wrap lg-canvas" ref={wrapRef} data-ui={`${ui}-canvas`} data-scene={sceneKey}>
@@ -481,12 +512,12 @@ export function LayeredGraphCanvas({
                   <path
                     d={g.d}
                     fill="none"
-                    className={"cg-edge lg-edge" + (e.dash ? ` lg-edge-${e.dash}` : "") + (on ? " on" : "")}
+                    className={"cg-edge lg-edge" + (e.dash ? ` lg-edge-${e.dash}` : "") + (e.heavy ? " lg-edge-heavy" : "") + (on ? " on" : "")}
                     style={stroke ? { stroke } : undefined}
                     markerEnd={`url(#${markerId(stroke ?? NEUTRAL)})`}
                   />
                   {label && (
-                    <text className="lg-edge-label" x={label.x} y={label.y + lfs * 0.35} textAnchor="middle" style={{ fontSize: lfs, strokeWidth: 4 / v.k, fill: stroke ?? undefined }}>
+                    <text className="lg-edge-label" x={label.x} y={label.y + lfs * 0.35} textAnchor="middle" style={{ fontSize: lfs, strokeWidth: 4 / v.k, fill: e.labelColor }}>
                       {e.label}
                     </text>
                   )}
@@ -521,6 +552,8 @@ export function LayeredGraphCanvas({
                     onSelect(n.id);
                   }
                 }}
+                onFocus={() => setHover(n.id)}
+                onBlur={() => setHover((h) => (h === n.id ? null : h))}
               >
                 <circle r={Math.max(R + 8, 18 / v.k)} fill="transparent" />
                 {sel && <circle r={R + 6} className="cg-ring" />}
@@ -529,8 +562,8 @@ export function LayeredGraphCanvas({
                 {n.mark && (
                   <g transform={`translate(${R * 0.85} ${-R * 0.85})`} className="lg-badge" data-ui={`${ui}-node-mark`}>
                     <title>{n.mark.label}</title>
-                    <circle r={6.2} />
-                    <text y={3.2} textAnchor="middle">
+                    <circle r={6.2} style={n.mark.color ? { fill: n.mark.color } : undefined} />
+                    <text y={3.2} textAnchor="middle" style={n.mark.textColor ? { fill: n.mark.textColor } : undefined}>
                       {n.mark.text}
                     </text>
                   </g>
@@ -589,8 +622,8 @@ export function LayeredGraphCanvas({
         onRelayout={relayout}
       />
 
-      {hoverNode && tooltip && !drag.current && (
-        <div className="tooltip lg-tooltip" data-ui={`${ui}-node-tooltip`} data-ui-key={hoverNode.id} style={{ left: tooltip.x, top: tooltip.y, width: 280 }}>
+      {showTip && hoverNode && tipPos && (
+        <div className="tooltip lg-tooltip" ref={tipRef} data-ui={`${ui}-node-tooltip`} data-ui-key={hoverNode.id} style={tipPos}>
           {renderTooltip(hoverNode.id)}
         </div>
       )}

@@ -923,22 +923,26 @@ input, textarea { font-family: inherit; color: inherit; }
   --ag-end: oklch(var(--cg-l) var(--cg-c) var(--accent-h));
   --ag-normal: oklch(var(--cg-l) 0.025 260);
   --ag-grounds: var(--accent-line);
-  --ag-warrant: oklch(0.70 0.14 305);
+  /* same lightness and chroma as the other roles in both themes (dark: oklch(0.70 0.14 305)) */
+  --ag-warrant: oklch(var(--cg-l) calc(var(--cg-c) + 0.005) 305);
+  --ag-mark-fg: oklch(0.2 0.03 78);
   --ag-backing: var(--text-faint);
   --ag-rebuttal: var(--danger);
 }
+[data-theme="light"] { --ag-mark-fg: oklch(0.18 0.03 70); } /* dark text on the light theme's amber (--warn) as well; contrast measured in the ticket */
 .lg-canvas { user-select: none; }
 .lg-canvas .lg-edge { stroke-width: 1.5; }
 .lg-canvas .lg-edge.on { stroke-width: 1.9; }
 .lg-edge-dashed { stroke-dasharray: 6 4; }
 .lg-edge-dotted { stroke-dasharray: 2 4; stroke-linecap: round; }
+.lg-canvas .lg-edge.lg-edge-heavy { stroke-width: 2; }
 .lg-edge-g.dim { opacity: .22; }
 .lg-edge-label { font-family: var(--font-mono); font-weight: 500; fill: var(--text); paint-order: stroke; stroke: var(--bg-deep); pointer-events: none; }
 .lg-rubber { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 5 4; pointer-events: none; }
 .lg-label { font-family: var(--font-sans); fill: var(--text-dim); pointer-events: all; }
 .lg-node.sel .lg-label, .lg-node:hover .lg-label { fill: var(--text); }
-.lg-badge circle { fill: var(--warn); stroke: var(--bg-deep); stroke-width: 1.2; }
-.lg-badge text { font: 700 9px var(--font-sans); fill: oklch(0.2 0.03 78); pointer-events: none; }
+.lg-badge circle { fill: var(--text-dim); stroke: var(--bg-deep); stroke-width: 1.2; }
+.lg-badge text { font: 700 9px var(--font-sans); fill: var(--bg-deep); pointer-events: none; }
 .lg-handle { cursor: crosshair; }
 .lg-handle circle { fill: var(--panel); stroke: var(--accent); stroke-width: 1.4; }
 .lg-handle path { stroke: var(--accent); stroke-width: 1.6; fill: none; }
@@ -952,10 +956,11 @@ input, textarea { font-family: inherit; color: inherit; }
 .lg-leg-node.ag-leg-end.lg-leg-ring { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.4px var(--ag-end); }
 .lg-leg-edge { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; }
 .lg-leg-edge .lg-edge { stroke-width: 1.8; }
-.lg-leg-mark { display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; background: var(--warn); color: oklch(0.2 0.03 78); font: 700 9px var(--font-sans); flex: none; }
-.lg-tip-body { font-size: 11px; line-height: 1.55; color: var(--text-dim); margin-top: 6px; }
+.ag-leg-mark { display: inline-grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; background: var(--warn); color: var(--ag-mark-fg); font: 700 9px var(--font-sans); flex: none; }
+.lg-tooltip { width: 280px; max-height: 240px; overflow: hidden; }
+.lg-tip-body { font-size: 11px; line-height: 1.55; color: var(--text-dim); margin-top: 6px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 8; line-clamp: 8; overflow: hidden; }
 .lg-tip-body p { margin: 0; }
-.lg-tip-audit { color: var(--warn); }
+.ag-tip-audit { color: var(--warn); }
 
 /* candidate inspector extras */
 .ref-type-badge.useful { color: var(--text-dim); background: var(--surface-2); }

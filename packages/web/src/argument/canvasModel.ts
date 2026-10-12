@@ -24,8 +24,11 @@ export const ROLE_COLOR: Record<ArgumentEdgeRole, string> = {
   rebuttal: "var(--ag-rebuttal)",
 };
 const CYCLE_COLOR = "var(--danger)";
+const MARK_COLOR = "var(--warn)";
+const MARK_TEXT_COLOR = "var(--ag-mark-fg)";
 
-export const argumentEdgeId = (e: Pick<ArgumentEdge, "from" | "to" | "role">): string => `${e.from}>${e.to}:${e.role}`;
+/** Argument ids are arbitrary strings, so the edge id is a JSON encoding: two different edges never share one. */
+export const argumentEdgeId = (e: Pick<ArgumentEdge, "from" | "to" | "role">): string => JSON.stringify([e.from, e.to, e.role]);
 
 /** How many audit findings name each argument (graph-level `noEnd` names none). */
 export function auditCounts(audit: ArgumentAudit): Map<string, number> {
@@ -46,6 +49,8 @@ export function cycleEdgeIds(audit: ArgumentAudit): Set<string> {
 
 export interface ArgumentCanvasText {
   roleName: (role: ArgumentEdgeRole) => string;
+  kindName: (kind: ArgumentKind) => string;
+  /** Names the audit mark ("has audit findings"); also part of the accessible name of a flagged argument. */
   auditMark: string;
 }
 
@@ -62,11 +67,12 @@ export function buildArgumentCanvas(
     (a: Argument): LayeredNodeSpec => ({
       id: a.id,
       label: a.title,
-      name: a.title,
+      // kind and the audit finding are said in words too, not only by colour and badge
+      name: [a.title, text.kindName(a.kind), ...(marks.has(a.id) ? [text.auditMark] : [])].join(", "),
       color: KIND_COLOR[a.kind],
       ringed: a.kind === "end",
       pin: a.kind === "native" ? "first" : a.kind === "end" ? "last" : undefined,
-      mark: marks.has(a.id) ? { text: "!", label: text.auditMark } : undefined,
+      mark: marks.has(a.id) ? { text: "!", label: text.auditMark, color: MARK_COLOR, textColor: MARK_TEXT_COLOR } : undefined,
     })
   );
   const edges = graph.edges.map((e): LayeredEdgeSpec => {
@@ -81,6 +87,8 @@ export function buildArgumentCanvas(
       dash: e.role === "backing" ? "dashed" : e.role === "rebuttal" ? "dotted" : undefined,
       label: text.roleName(e.role),
       showLabel: labelled.has(id),
+      labelColor: cyc || e.role === "rebuttal" ? CYCLE_COLOR : undefined,
+      heavy: cyc,
       tag: e.role,
     };
   });

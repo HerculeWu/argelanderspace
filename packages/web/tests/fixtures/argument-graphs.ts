@@ -1,7 +1,7 @@
 /**
  * Synthetic argument graphs for the layout and canvas tests and the browser checks.
- * Copied in shape from the approved prototype's data (.scratch/argument-graph/prototype/data.ts);
- * the paper, its claims and numbers are invented. Three graphs: well-formed (11), flawed (13: a cycle,
+ * The data is fictional and synthetic: the paper, its claims, numbers and sources are invented (no real
+ * literature or user data); only the shapes follow what the approved design called for. Three graphs: well-formed (11), flawed (13: a cycle,
  * an incomplete argument, an End that is used again, a Native with an in-edge, an orphan) and large (28).
  */
 import type { Argument, ArgumentEdge, ArgumentEdgeRole, ArgumentGraph, ArgumentKind } from "@argelanderspace/contracts";

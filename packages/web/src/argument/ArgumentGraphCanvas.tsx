@@ -38,7 +38,7 @@ export function ArgumentGraphCanvas({ graph, selectedId, onSelect, stash, sceneK
     kind === "native" ? t("argument.canvas.kindNative") : kind === "end" ? t("argument.canvas.kindEnd") : t("argument.canvas.kindNormal");
   const auditMark = t("argument.canvas.legendAudit");
   const { nodes, edges } = useMemo(
-    () => buildArgumentCanvas(graph, audit, { roleName, auditMark }, labelledEdges),
+    () => buildArgumentCanvas(graph, audit, { roleName, kindName, auditMark }, labelledEdges),
     [graph, audit, labelledEdges, t]
   );
   const counts = useMemo(() => auditCounts(audit), [audit]);
@@ -71,7 +71,7 @@ export function ArgumentGraphCanvas({ graph, selectedId, onSelect, stash, sceneK
           </svg>
           <span className="cg-leg-note">{t("argument.canvas.legendCycle")}</span>
         </span>
-        <span className="lg-leg-mark">!</span>
+        <span className="ag-leg-mark">!</span>
         <span className="cg-leg-note">{auditMark}</span>
       </div>
     </>
@@ -105,7 +105,7 @@ export function ArgumentGraphCanvas({ graph, selectedId, onSelect, stash, sceneK
             )}
             <div className="role">
               {kindName(a.kind)}
-              {n > 0 && <span className="lg-tip-audit">{` · ! ${n}`}</span>}
+              {n > 0 && <span className="ag-tip-audit">{` · ! ${n}`}</span>}
             </div>
           </>
         );

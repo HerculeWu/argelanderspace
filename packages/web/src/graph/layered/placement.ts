@@ -95,7 +95,8 @@ export function placeEdgeLabels(
   const at = new Map<string, LayoutPoint>();
   for (const g of wanted) {
     if (!g.samples.length) continue;
-    const w = g.text.length * fs * 0.62 + 4;
+    // mono face: a Latin character is about 0.62em, i.e. 0.62/0.55 of the unit textUnits counts
+    const w = textUnits(g.text) * fs * (0.62 / 0.55) + 4;
     const h = fs * 1.3;
     const box = (c: LayoutPoint): Box => ({ l: c.x - w / 2, r: c.x + w / 2, t: c.y - h / 2, b: c.y + h / 2 });
     const cands = EDGE_LABEL_SPOTS.map((f) => g.samples[Math.min(g.samples.length - 1, Math.floor(f * g.samples.length))]!);
