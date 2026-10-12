@@ -9,6 +9,7 @@
  * (the active pane when it shows the page, else the first one): a pane the user closed meanwhile ends the wait.
  */
 import { MAX_PANES, type CopilotViewAction } from "@argelanderspace/contracts";
+import type { LeaveOrigin } from "../workspace";
 import { DEFAULT_TIMEOUTS, type PaneAdapter, type PanePage, unavailable, type ViewActionOutcome } from "./adapter";
 
 export interface Pane {
@@ -34,8 +35,12 @@ export interface PaneManagerOptions {
   activeId: number;
   /** One detached adapter per page: what a page answers when no pane of it is open. */
   pages: PaneAdapter[];
-  /** The workspace's leave-draft protection; false keeps the Doc pane as it is. */
-  confirmLeave: () => boolean;
+  /**
+   * The workspace's leave-draft protection for leaving pane `paneId` (showing `view`); false keeps the pane as it is. A
+   * promise is a decision still pending (the argument graph page's own dialog): the change waits for it and is not made
+   * when it says no; the call that asked answers false meanwhile.
+   */
+  confirmLeave: (view: string, paneId?: number, origin?: LeaveOrigin) => boolean | Promise<boolean>;
 }
 
 export type PaneManager = ReturnType<typeof createPaneManager>;
@@ -57,7 +62,22 @@ export function createPaneManager(options: PaneManagerOptions) {
     const adapter = adapters.get(paneId);
     return adapter && adapter.page === page ? adapter : undefined;
   };
-  const leaves = (pane: Pane | undefined, view?: string) => pane?.view === "doc" && view !== "doc";
+  /** Leaving a pane whose view holds unsaved user work: a Doc, or the Library page with an argument draft. */
+  const guarded = (pane: Pane | undefined) => pane?.view === "doc" || pane?.view === "library";
+  const leaves = (pane: Pane | undefined, view?: string) => guarded(pane) && view !== pane?.view;
+  /**
+   * Runs `change` once leaving `pane` is allowed: at once (true), never (false), or when a pending decision says yes
+   * (false meanwhile; `change` then checks the pane is still there).
+   */
+  const whenMayLeave = (pane: Pane, change: () => void, origin: LeaveOrigin): boolean => {
+    const verdict = options.confirmLeave(pane.view, pane.id, origin);
+    if (verdict === true) {
+      change();
+      return true;
+    }
+    if (verdict !== false) void verdict.then((ok) => ok && state.panes.some((p) => p.id === pane.id && p.view === pane.view) && change());
+    return false;
+  };
 
   // ---- the panes ----------------------------------------------------------------------------- //
 
@@ -65,15 +85,19 @@ export function createPaneManager(options: PaneManagerOptions) {
     if (state.activeId !== id) set({ activeId: id });
   };
   /** The activity bar: the active pane shows `view`. False when the leave-draft protection keeps a Doc pane. */
-  const setActiveView = (view: string): boolean => {
-    if (leaves(state.panes.find((pane) => pane.id === state.activeId), view) && !options.confirmLeave()) return false;
-    set({ panes: state.panes.map((pane) => (pane.id === state.activeId ? { ...pane, view } : pane)) });
+  const setActiveView = (view: string, origin: LeaveOrigin = "user"): boolean => {
+    const from = state.panes.find((pane) => pane.id === state.activeId);
+    const change = () => set({ panes: state.panes.map((pane) => (pane.id === from?.id ? { ...pane, view } : pane)) });
+    if (leaves(from, view)) return whenMayLeave(from!, change, origin);
+    change();
     return true;
   };
   /** The pane header menu: pane `id` shows `view` and becomes active. */
-  const setPaneView = (id: number, view: string): boolean => {
-    if (leaves(state.panes.find((pane) => pane.id === id), view) && !options.confirmLeave()) return false;
-    set({ panes: state.panes.map((pane) => (pane.id === id ? { ...pane, view } : pane)), activeId: id });
+  const setPaneView = (id: number, view: string, origin: LeaveOrigin = "user"): boolean => {
+    const from = state.panes.find((pane) => pane.id === id);
+    const change = () => set({ panes: state.panes.map((pane) => (pane.id === id ? { ...pane, view } : pane)), activeId: id });
+    if (leaves(from, view)) return whenMayLeave(from!, change, origin);
+    change();
     return true;
   };
   /** A copy of pane `id` next to it, which becomes active; nothing past the pane limit. */
@@ -87,12 +111,16 @@ export function createPaneManager(options: PaneManagerOptions) {
     copy.splice(index + 1, 0, { id: created, view: source.view, size: 1 });
     set({ panes: copy, activeId: created });
   };
-  /** False when the leave-draft protection keeps a Doc pane; the last pane is kept. */
-  const close = (id: number): boolean => {
-    if (state.panes.find((pane) => pane.id === id)?.view === "doc" && !options.confirmLeave()) return false;
-    if (state.panes.length <= 1) return true;
-    const filtered = state.panes.filter((pane) => pane.id !== id).map((pane) => ({ ...pane, size: 1 }));
-    set({ panes: filtered, ...(id === state.activeId ? { activeId: filtered[0]!.id } : {}) });
+  /** False when the leave-draft protection keeps a Doc pane (or has not answered yet); the last pane is kept. */
+  const close = (id: number, origin: LeaveOrigin = "user"): boolean => {
+    const closing = state.panes.find((pane) => pane.id === id);
+    const change = () => {
+      if (state.panes.length <= 1) return;
+      const filtered = state.panes.filter((pane) => pane.id !== id).map((pane) => ({ ...pane, size: 1 }));
+      set({ panes: filtered, ...(id === state.activeId ? { activeId: filtered[0]!.id } : {}) });
+    };
+    if (guarded(closing)) return whenMayLeave(closing!, change, origin);
+    change();
     return true;
   };
   /** Any other change of the pane list (sizes, a Doc shown by openDoc); no leave protection of its own. */
@@ -172,7 +200,8 @@ export function createPaneManager(options: PaneManagerOptions) {
       const opened = await kind.open(action);
       return opened.ok ? { opened: true } : { result: opened };
     }
-    if (!setPaneView(active.id, page)) return { result: { ok: false, detail: "leave_blocked" } };
+    // (this is the Copilot's path: a draft that needs the person's answer is refused, not asked about)
+    if (!setPaneView(active.id, page, "agent")) return { result: { ok: false, detail: "leave_blocked" } };
     const readyMs = kind.timeouts?.readyMs ?? DEFAULT_TIMEOUTS.readyMs;
     if (readyMs > 0 && !(await whenReady(active.id, page, readyMs))) return { result: unavailable() };
     return { opened: true };

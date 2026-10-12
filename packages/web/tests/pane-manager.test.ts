@@ -367,3 +367,92 @@ describe("each page adapter keeps its page's own status rule", () => {
     expect(notify).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("leave-draft protection on a Library pane (an unsaved argument draft, ticket 05)", () => {
+  it("switching away from, or closing, a Library pane asks with its view; staying does not; refused, nothing moves", () => {
+    const asked: string[] = [];
+    let allow = false;
+    const manager = createPaneManager({ panes: [{ id: 1, view: "library", size: 1 }, { id: 2, view: "plan", size: 1 }], activeId: 1, pages: [page("library")], confirmLeave: (view) => {
+      asked.push(view);
+      return allow;
+    } });
+    expect(manager.setActiveView("library")).toBe(true);
+    expect(asked).toEqual([]);
+    expect(manager.setActiveView("plan")).toBe(false);
+    expect(manager.setPaneView(1, "write")).toBe(false);
+    expect(manager.close(1)).toBe(false);
+    expect(asked).toEqual(["library", "library", "library"]);
+    expect(manager.getState().panes.map((p) => p.view)).toEqual(["library", "plan"]);
+    expect(manager.close(2)).toBe(true); // a Plan pane has nothing to protect
+    allow = true;
+    expect(manager.setActiveView("plan")).toBe(true);
+    expect(manager.getState().panes[0]!.view).toBe("plan");
+  });
+});
+
+describe("a leave guard that answers later (the argument graph's dialog, ticket 05 fix round A)", () => {
+  const setupLate = () => {
+    const asked: { view: string; paneId: number | undefined; answer: (ok: boolean) => void }[] = [];
+    const manager = createPaneManager({
+      panes: [{ id: 1, view: "library", size: 1 }, { id: 2, view: "library", size: 1 }, { id: 3, view: "plan", size: 1 }],
+      activeId: 1,
+      pages: [page("library")],
+      confirmLeave: (view, paneId) => new Promise<boolean>((answer) => asked.push({ view, paneId, answer })),
+    });
+    return { asked, manager };
+  };
+
+  it("nothing changes until the answer, names the pane that is left, and 'yes' then makes the change", async () => {
+    const { asked, manager } = setupLate();
+    expect(manager.setActiveView("plan")).toBe(false); // not yet
+    expect(asked.map((a) => [a.view, a.paneId])).toEqual([["library", 1]]);
+    expect(manager.getState().panes[0]!.view).toBe("library");
+    asked[0]!.answer(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(manager.getState().panes[0]!.view).toBe("plan");
+    // the other Library pane is asked about by its own id when it is the one closed
+    expect(manager.close(2)).toBe(false);
+    expect(asked[1]).toMatchObject({ view: "library", paneId: 2 });
+    asked[1]!.answer(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(manager.getState().panes.map((p) => p.id)).toEqual([1, 3]);
+  });
+
+  it("'no' leaves the pane as it is, and a pane that went away meanwhile is not touched", async () => {
+    const { asked, manager } = setupLate();
+    expect(manager.setPaneView(1, "write")).toBe(false);
+    asked[0]!.answer(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(manager.getState().panes[0]!.view).toBe("library");
+    expect(manager.setPaneView(2, "write")).toBe(false);
+    expect(manager.close(3)).toBe(true); // a Plan pane closes at once
+    manager.update(() => [{ id: 1, view: "library", size: 1 }]);
+    asked[1]!.answer(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(manager.getState().panes.map((p) => p.id)).toEqual([1]);
+  });
+});
+
+describe("who asks to leave (ticket 05 fix round B)", () => {
+  it("the person's switches, closes and the pane header ask as the user; the Copilot's view actions ask as the agent, and a refusal is leave_blocked", async () => {
+    const origins: (string | undefined)[] = [];
+    const manager = createPaneManager({ panes: [{ id: 1, view: "library", size: 1 }, { id: 2, view: "library", size: 1 }], activeId: 1, pages: [page("plan")], confirmLeave: (_view, _paneId, origin) => {
+      origins.push(origin);
+      return false;
+    } });
+    expect(manager.setActiveView("plan")).toBe(false);
+    expect(manager.setPaneView(1, "write")).toBe(false);
+    expect(manager.close(2)).toBe(false);
+    expect(origins).toEqual(["user", "user", "user"]);
+    origins.length = 0;
+    expect(manager.setActiveView("plan", "agent")).toBe(false);
+    expect(manager.close(2, "agent")).toBe(false);
+    const { answer } = await run(manager, SHOW);
+    expect(answer).toEqual({ ok: false, detail: "leave_blocked" });
+    expect(origins).toEqual(["agent", "agent", "agent"]);
+  });
+});

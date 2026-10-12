@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   /** pane id -> the Work whose graph that Library pane shows */
   open: new Map<number, string>(),
   opens: [] as { paneId: number | undefined; workId: string; push: boolean }[],
+  requests: [] as { workId: string; confirmed: boolean }[],
   exits: [] as (number | undefined)[],
   explores: [] as string[],
   exploring: new Set<number>(),
@@ -41,15 +42,19 @@ vi.mock("../src/library/LibraryView", async () => {
   const react = await import("react");
   const { argumentBus, pushArgumentUrl, clearArgumentUrl } = await import("../src/lib/argument-route");
   const { exploreBus } = await import("../src/lib/explore-route");
+  const { useWorkspace: workspace } = await import("../src/argelander/workspace");
   return {
     LibraryView: ({ paneId }: { paneId?: number }) => {
       const [, rerender] = react.useState(0);
+      const ws = workspace();
       react.useEffect(() => {
         const offs = [
           argumentBus.register({
             paneId,
             isOpen: () => h.open.has(paneId ?? -1),
+            workId: () => h.open.get(paneId ?? -1) ?? null,
             open: (workId, opts) => {
+              h.requests.push({ workId, confirmed: !!opts.confirmed });
               // (happy-dom fires `hashchange` for pushState, a browser does not; the real view opens idempotently)
               if (h.open.get(paneId ?? -1) === workId) return;
               h.opens.push({ paneId, workId, push: opts.push });
@@ -76,7 +81,12 @@ vi.mock("../src/library/LibraryView", async () => {
         ];
         return () => offs.forEach((off) => off());
       }, [paneId]);
-      return <div data-ui="library-stub" data-ui-key={paneId} data-graph={h.open.get(paneId ?? -1) ?? ""} />;
+      return (
+        <div data-ui="library-stub" data-ui-key={paneId} data-graph={h.open.get(paneId ?? -1) ?? ""}>
+          <button type="button" data-ui="stub-lib-open-d1" onClick={() => ws.openDoc("d1")} />
+          <button type="button" data-ui="stub-lib-enter-w2" onClick={() => ws.openArgumentGraph?.("w2")} />
+        </div>
+      );
     },
   };
 });
@@ -88,6 +98,7 @@ beforeEach(async () => {
   window.localStorage.clear();
   h.open.clear();
   h.opens.length = 0;
+  h.requests.length = 0;
   h.exits.length = 0;
   h.explores.length = 0;
   h.exploring.clear();
@@ -160,6 +171,22 @@ describe("popstate", () => {
     expect(h.exits).toEqual([1, 1]);
     expect(h.open.size).toBe(0);
     await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+  });
+
+  it("with an unsaved draft in the open graph, the browser's Back out of it asks first; refused, the URL goes back to the graph and the view stays (ticket 05)", async () => {
+    window.history.replaceState(null, "", "/#argument/w1");
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    let allow = false;
+    const off = registerWorkspaceLeaveGuard(() => allow, "library");
+    popTo("/");
+    expect(h.exits).toEqual([]);
+    expect(h.open.get(1)).toBe("w1");
+    expect(window.location.hash).toBe("#argument/w1");
+    allow = true;
+    popTo("/");
+    expect(h.exits).toEqual([1]);
+    off();
   });
 
   it("exploration and the graph exclude each other by URL: an #explore/ URL closes the graph, an #argument/ URL goes to the graph only", async () => {
@@ -260,3 +287,201 @@ describe("opening a Doc from the graph", () => {
   });
 });
 
+describe("a guard that answers later (the argument graph's own dialog, ticket 05 fix round A)", () => {
+  /** A guard whose answer the test gives; counts how often it is asked. */
+  function lateGuard() {
+    const asked: ((ok: boolean) => void)[] = [];
+    const off = registerWorkspaceLeaveGuard(() => new Promise<boolean>((resolve) => asked.push(resolve)), "library");
+    return { asked, off };
+  }
+  const boot = async (hash = "/#argument/w1") => {
+    window.history.replaceState(null, "", hash);
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBeDefined());
+  };
+
+  it("the browser's Back waits: the graph's URL is put back at once, the view stays, and 'discard' then goes back for real, asking once", async () => {
+    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/#argument/w1");
+    await boot("/#argument/w1");
+    const guard = lateGuard();
+    window.history.back();
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1"); // restored while the question is open
+    await act(async () => guard.asked[0]!(true));
+    await waitFor(() => expect(h.exits).toEqual([1]));
+    expect(window.location.hash).toBe("");
+    expect(guard.asked).toHaveLength(1); // the one navigation asked once
+    guard.off();
+  });
+
+  it("'keep editing' leaves the view and the graph's URL in place", async () => {
+    await boot();
+    const guard = lateGuard();
+    popTo("/");
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    await act(async () => guard.asked[0]!(false));
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1");
+    guard.off();
+  });
+
+  it("between two graph URLs it asks too, and the confirmed request is not asked about again by the view", async () => {
+    window.history.pushState(null, "", "/#argument/w2");
+    window.history.pushState(null, "", "/#argument/w1");
+    await boot("/#argument/w1");
+    const guard = lateGuard();
+    window.history.back();
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    expect(h.open.get(1)).toBe("w1");
+    expect(window.location.hash).toBe("#argument/w1");
+    await act(async () => guard.asked[0]!(true));
+    await waitFor(() => expect(h.open.get(1)).toBe("w2"));
+    expect(h.requests).toContainEqual({ workId: "w2", confirmed: true }); // (the hashchange that follows a traversal asks nothing)
+    expect(h.requests.filter((r) => r.workId === "w2" && !r.confirmed && h.open.get(1) !== "w2")).toEqual([]);
+    expect(guard.asked).toHaveLength(1);
+    guard.off();
+  });
+
+  it("Back to a Doc that is not the open one asks once, not once for the navigation and again for the pane it replaces", async () => {
+    await boot("/#argument/w1");
+    const guard = lateGuard();
+    popTo("/doc/d2");
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    await act(async () => guard.asked[0]!(true));
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    expect(guard.asked).toHaveLength(1);
+    guard.off();
+  });
+
+  it("opening the Doc that is already current, with no Doc pane, replaces the Library page and asks first", async () => {
+    window.history.replaceState(null, "", "/doc/d1");
+    render(<Shell />);
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    fireEvent.click(q('[data-ui="stub-enter-graph"]')!);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    expect(q('[data-ui="doc-stub"]')).toBeNull();
+    const guard = lateGuard();
+    fireEvent.click(q('[data-ui="stub-lib-open-d1"]')!);
+    await waitFor(() => expect(guard.asked).toHaveLength(1));
+    expect(q('[data-ui="doc-stub"]')).toBeNull(); // not yet
+    await act(async () => guard.asked[0]!(false));
+    expect(q('[data-ui="doc-stub"]')).toBeNull();
+    fireEvent.click(q('[data-ui="stub-lib-open-d1"]')!);
+    await waitFor(() => expect(guard.asked).toHaveLength(2));
+    await act(async () => guard.asked[1]!(true));
+    await waitFor(() => expect(q('[data-ui="doc-stub"]')).not.toBeNull());
+    guard.off();
+  });
+
+  it("the Reader's entry to another Work's graph reaches the view unconfirmed, so the view itself asks", async () => {
+    await boot();
+    fireEvent.click(q('[data-ui="stub-lib-enter-w2"]')!);
+    await waitFor(() => expect(h.requests[h.requests.length - 1]).toEqual({ workId: "w2", confirmed: false }));
+  });
+});
+
+describe("a Back that was let through is let through once (ticket 05 fix round B)", () => {
+  /**
+   * A browser fires neither `popstate` nor `hashchange` for pushState, but happy-dom fires `hashchange` a tick later; that
+   * event would clear a leftover permission by accident and hide the bug. Dropped here, as a browser would not send it.
+   */
+  function browserLikePushState() {
+    const pushed = new Set<string>();
+    const push = window.history.pushState.bind(window.history);
+    const dispatch = window.dispatchEvent.bind(window);
+    window.history.pushState = (state: unknown, unused: string, url?: string | URL | null) => {
+      push(state, unused, url);
+      pushed.add(window.location.href);
+    };
+    window.dispatchEvent = (event: Event) => {
+      if (event.type === "hashchange" && pushed.delete((event as HashChangeEvent).newURL)) return true;
+      return dispatch(event);
+    };
+    return () => {
+      window.history.pushState = push;
+      window.dispatchEvent = dispatch;
+    };
+  }
+  const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 20))));
+
+  it("a draft made after re-entering the graph is asked about again on the next Back", async () => {
+    const restore = browserLikePushState();
+    try {
+      window.history.pushState(null, "", "/");
+      window.history.pushState(null, "", "/#argument/w1");
+      window.history.replaceState(null, "", "/#argument/w1");
+      render(<Shell />);
+      await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+      const asked: ((ok: boolean) => void)[] = [];
+      const off = registerWorkspaceLeaveGuard(() => new Promise<boolean>((resolve) => asked.push(resolve)), "library");
+      window.history.back();
+      await waitFor(() => expect(asked).toHaveLength(1));
+      await act(async () => asked[0]!(true));
+      await waitFor(() => expect(h.exits).toEqual([1]));
+      await tick();
+      // the person enters the graph again from the Reader's entry (pushState: no popstate, no hashchange) and edits
+      fireEvent.click(q('[data-ui="stub-lib-enter-w2"]')!);
+      await waitFor(() => expect(h.open.get(1)).toBe("w2"));
+      await tick();
+      window.history.back();
+      await waitFor(() => expect(asked).toHaveLength(2));
+      expect(h.exits).toEqual([1]); // still open: asked, not let through
+      expect(window.location.hash).toBe("#argument/w2");
+      await act(async () => asked[1]!(false));
+      off();
+    } finally {
+      restore();
+    }
+  });
+
+  it("with two Library panes that have shown a graph, Back asks the pane that still shows it with a draft", async () => {
+    window.history.replaceState(null, "", "/#argument/w1");
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    fireEvent.click(q('[data-ui="split-pane"]')!);
+    await waitFor(() => expect(qa('[data-ui="workspace-pane"]')).toHaveLength(2));
+    const pane2 = qa('[data-ui="workspace-pane"]').find((el) => el.getAttribute("data-ui-key") === "2")!;
+    fireEvent.click(pane2.querySelector('[data-ui="choose-pane-view"]')!);
+    fireEvent.click([...pane2.querySelectorAll<HTMLElement>('[data-ui="pane-view-option"]')].find((el) => el.getAttribute("data-ui-key") === "library")!);
+    await waitFor(() => expect(libraries().sort()).toEqual([1, 2]));
+    // pane 2 had shown a graph and went back to the Library; pane 1 keeps its graph with a draft
+    let asked = 0;
+    const off = registerWorkspaceLeaveGuard(() => {
+      asked++;
+      return false;
+    }, { view: "library", paneId: 1 });
+    const other = registerWorkspaceLeaveGuard(() => false, { view: "library", paneId: 2 });
+    popTo("/");
+    expect(asked).toBe(1);
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1");
+    off();
+    other();
+  });
+
+  it("while the question is open, a further navigation asks nothing more: 'discard' goes to the last place asked for, 'keep editing' leaves the graph", async () => {
+    window.history.pushState(null, "", "/");
+    window.history.pushState(null, "", "/#argument/w1");
+    window.history.replaceState(null, "", "/#argument/w1");
+    render(<Shell />);
+    await waitFor(() => expect(h.open.get(1)).toBe("w1"));
+    const asked: ((ok: boolean) => void)[] = [];
+    const off = registerWorkspaceLeaveGuard(() => new Promise<boolean>((resolve) => asked.push(resolve)), "library");
+    window.history.back();
+    await waitFor(() => expect(asked).toHaveLength(1));
+    popTo("/#explore/2020X"); // a hand-edited hash while the dialog is open
+    await tick();
+    popTo("/doc/d2");
+    await tick();
+    expect(asked).toHaveLength(1); // no second dialog
+    expect(h.exits).toEqual([]);
+    expect(window.location.hash).toBe("#argument/w1");
+    await act(async () => asked[0]!(true));
+    await waitFor(() => expect(window.location.pathname).toBe("/doc/d2"));
+    expect(h.exits).toEqual([1]);
+    expect(asked).toHaveLength(1);
+    off();
+  });
+});

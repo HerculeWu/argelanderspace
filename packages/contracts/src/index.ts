@@ -1,6 +1,7 @@
 export * from "./annotation-targets.js";
 export * from "./annotations.js";
 export * from "./api.js";
+export * from "./argument-edit.js";
 export * from "./argument-graph.js";
 export * from "./argument-ops.js";
 export * from "./context-batch.js";
