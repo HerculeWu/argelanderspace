@@ -1,8 +1,10 @@
 /**
  * Shared graph canvas (Stage 14, D4): the single renderer behind both the
  * Library graph and the ADS Discovery graph. It owns SVG rendering, pan/zoom
- * (incl. pinch), directed edge arrows, collision-avoided labels, the hover
- * tooltip, selection, node dragging, the legend and the zoom control stack.
+ * (incl. pinch; the viewport and pointer state machine is the shared `useGraphViewport`), directed edge arrows, collision-avoided labels, the hover
+ * tooltip, selection, node dragging and the legend. The zoom control stack is the
+ * shared `GraphZoomControls`, which `LayeredGraphCanvas` (the argument graph's
+ * layered layout) uses as well.
  *
  * Domain semantics stay in the adapters: node shape/role/styling arrive as
  * plain `CanvasNode` props (`filled` = in library, `diamond` = Useful,
@@ -12,10 +14,11 @@
  * session restores its viewport.
  */
 
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
+import { GraphZoomControls } from "./GraphZoomControls";
 import {
   cgComputeLayout,
   cgHue,
@@ -24,6 +27,7 @@ import {
   cgTick,
   type PMap,
 } from "./graphPhysics";
+import { ZOOM_MIN, useGraphViewport } from "./useGraphViewport";
 
 export interface CanvasNode {
   id: string;
@@ -86,9 +90,6 @@ export interface GraphCanvasProps {
   isolatedNote?: boolean;
 }
 
-const ZOOM_MIN = 0.3;
-const ZOOM_MAX = 3.2;
-
 export function GraphCanvas({
   nodes,
   edges,
@@ -108,11 +109,6 @@ export function GraphCanvas({
   onController,
 }: GraphCanvasProps) {
   const { t } = useTranslation();
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const [hover, setHover] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number } | null>(null);
   const [ownLabelsOn, setOwnLabelsOn] = useState(false);
   const labelsOn = controlledLabels ?? ownLabelsOn;
   const setLabelsOn = (next: boolean | ((previous: boolean) => boolean)) => {
@@ -120,9 +116,40 @@ export function GraphCanvas({
     setOwnLabelsOn(value);
     onLabelsOnChange?.(value);
   };
-  const [, bump] = useReducer((x: number) => x + 1, 0);
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes]);
+  // The force-layout half of the shared viewport: dragging a node pins it at the pointer and reheats the physics.
+  const vp = useGraphViewport({
+    sceneKey: layoutKey,
+    stash,
+    nodes,
+    links: edges,
+    onSelect,
+    canDrag: (id) => id !== seedId,
+    onNodeDrag: (id, w) => {
+      const p = P.current[id];
+      if (p) {
+        p.x = w.x;
+        p.y = w.y;
+        p.fx = w.x;
+        p.fy = w.y;
+        reheat(0.3);
+      }
+    },
+    onNodeRelease: (id) => {
+      const p = P.current[id];
+      if (p) {
+        p.fx = null;
+        p.fy = null;
+      }
+      reheat(0.2);
+    },
+    tooltipAt: (pt, size) => ({
+      x: Math.max(8, Math.min(pt.x + 18, size.w - 268)),
+      y: Math.max(8, Math.min(pt.y + 15, size.h - 165)),
+    }),
+  });
+  const { size, hover, tooltip, adj } = vp;
   const Rmap = useMemo(() => {
     const m: Record<string, number> = {};
     for (const n of nodes) m[n.id] = cgRadius(n.citations);
@@ -131,16 +158,6 @@ export function GraphCanvas({
   const years = nodes.map((n) => n.year).filter((y): y is number => y !== null);
   const minY = years.length ? Math.min(...years) : 0;
   const maxY = years.length ? Math.max(...years) : 0;
-
-  const adj = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    for (const n of nodes) m.set(n.id, new Set());
-    for (const [a, b] of edges) {
-      m.get(a)?.add(b);
-      m.get(b)?.add(a);
-    }
-    return m;
-  }, [nodes, edges]);
 
   const connected = useMemo(() => {
     const s = new Set<string>();
@@ -180,16 +197,6 @@ export function GraphCanvas({
     }
   }
 
-  const view = useRef<{ tx: number; ty: number; k: number } | null>(null);
-  const viewKey = useRef<string | null>(null);
-  if (viewKey.current !== layoutKey) {
-    viewKey.current = layoutKey;
-    view.current = stash.view ? { ...stash.view } : null;
-  }
-  const persistView = () => {
-    if (view.current) stash.view = { ...view.current };
-  };
-
   // ---- live physics (drag reheat) ----
   const sim = useRef({ alpha: 0, running: false, raf: 0 });
   const step = () => cgTick(P.current, Rmap, nodes.map((n) => n.id), edges, sim.current.alpha);
@@ -197,7 +204,7 @@ export function GraphCanvas({
     sim.current.running = true;
     step();
     sim.current.alpha *= 0.984;
-    bump();
+    vp.redraw();
     if (sim.current.alpha > 0.02) sim.current.raf = requestAnimationFrame(loop);
     else sim.current.running = false;
   };
@@ -207,18 +214,9 @@ export function GraphCanvas({
   };
   useEffect(() => () => cancelAnimationFrame(sim.current.raf), []);
 
-  // ---- sizing / initial fit ----
+  // ---- initial fit ----
   useEffect(() => {
-    if (!wrapRef.current) return;
-    const ro = new ResizeObserver((es) => {
-      const r = es[0]!.contentRect;
-      setSize({ w: r.width, h: r.height });
-    });
-    ro.observe(wrapRef.current);
-    return () => ro.disconnect();
-  }, []);
-  useEffect(() => {
-    if (size.w > 0 && view.current === null) fitView();
+    if (size.w > 0 && !vp.hasView()) fitView();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [size.w, size.h, layoutKey]);
 
@@ -234,25 +232,12 @@ export function GraphCanvas({
       ZOOM_MIN,
       Math.min(2.4, Math.min(size.w / (maxX - minX || 1), size.h / (maxYv - minYv || 1)))
     );
-    view.current = {
+    vp.setView({
       tx: size.w / 2 - ((minX + maxX) / 2) * k,
       ty: size.h / 2 - ((minYv + maxYv) / 2) * k,
       k,
-    };
-    persistView();
-    bump();
+    });
   }
-
-  const zoomAt = (f: number, cx: number, cy: number) => {
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    const k = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v.k * f));
-    const r = k / v.k;
-    view.current = { tx: cx - (cx - v.tx) * r, ty: cy - (cy - v.ty) * r, k };
-    persistView();
-    setHover(null);
-    setTooltip(null);
-    bump();
-  };
 
   const relayout = () => {
     const salt = String((stash.layout ? 1 : 0) + Date.now() % 100000);
@@ -265,8 +250,8 @@ export function GraphCanvas({
   // The buttons below call these same functions; the controller lets another caller press them.
   const buttons = useRef<GraphCanvasController>({ zoomIn: () => {}, zoomOut: () => {}, fit: () => {}, relayout: () => {}, focusSeed: () => {} });
   buttons.current = {
-    zoomIn: () => zoomAt(1.25, size.w / 2, size.h / 2),
-    zoomOut: () => zoomAt(0.8, size.w / 2, size.h / 2),
+    zoomIn: () => vp.zoomCenter(1.25),
+    zoomOut: () => vp.zoomCenter(0.8),
     fit: fitView,
     relayout,
     focusSeed: () => focusSeed(),
@@ -286,167 +271,25 @@ export function GraphCanvas({
   const focusSeed = () => {
     if (!seedId || !P.current[seedId]) return;
     onSelect(seedId);
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    view.current = {
+    const v = vp.getView() ?? vp.v;
+    vp.setView({
       ...v,
       tx: size.w / 2 - P.current[seedId].x * v.k,
       ty: size.h / 2 - P.current[seedId].y * v.k,
-    };
-    persistView();
-    bump();
-  };
-
-  // ---- pointer interaction: pan / node drag / pinch ----
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const drag = useRef<
-    | { mode: "pan"; x: number; y: number; tx: number; ty: number; moved: boolean }
-    | { mode: "node"; id: string; x: number; y: number; moved: boolean }
-    | { mode: "pinch"; d: number; k: number; wx: number; wy: number }
-    | null
-  >(null);
-
-  const svgPoint = (e: { clientX: number; clientY: number }) => {
-    const r = wrapRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top, rect: r };
-  };
-  const toWorld = (x: number, y: number) => {
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    return { x: (x - v.tx) / v.k, y: (y - v.ty) / v.k };
-  };
-
-  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (e.button !== 0 && e.pointerType !== "touch") return;
-    e.preventDefault();
-    svgRef.current?.focus({ preventScroll: true });
-    try {
-      svgRef.current?.setPointerCapture(e.pointerId);
-    } catch {
-      // synthetic/legacy pointer streams may not hold an active pointer
-    }
-    const pt = svgPoint(e);
-    pointers.current.set(e.pointerId, { x: pt.x, y: pt.y });
-    if (pointers.current.size === 2) {
-      const [a, b] = [...pointers.current.values()];
-      const cx = (a!.x + b!.x) / 2;
-      const cy = (a!.y + b!.y) / 2;
-      const w = toWorld(cx, cy);
-      drag.current = {
-        mode: "pinch",
-        d: Math.hypot(a!.x - b!.x, a!.y - b!.y),
-        k: (view.current ?? { k: 1 }).k,
-        wx: w.x,
-        wy: w.y,
-      };
-      return;
-    }
-    const g = (e.target as Element).closest("[data-node-id]");
-    const id = g?.getAttribute("data-node-id") ?? null;
-    const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
-    drag.current =
-      id && id !== seedId
-        ? { mode: "node", id, x: pt.x, y: pt.y, moved: false }
-        : { mode: "pan", x: pt.x, y: pt.y, tx: v.tx, ty: v.ty, moved: false };
-    setHover(null);
-    setTooltip(null);
-  };
-
-  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    const pt = svgPoint(e);
-    if (pointers.current.has(e.pointerId)) {
-      pointers.current.set(e.pointerId, { x: pt.x, y: pt.y });
-    }
-    const d = drag.current;
-    if (!d) {
-      // fall through to hover tracking below
-    } else if (d.mode === "pinch") {
-      if (pointers.current.size >= 2) {
-        const [a, b] = [...pointers.current.values()];
-        const cx = (a!.x + b!.x) / 2;
-        const cy = (a!.y + b!.y) / 2;
-        const nd = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        const k = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, (d.k * nd) / (d.d || 1)));
-        view.current = { tx: cx - d.wx * k, ty: cy - d.wy * k, k };
-        persistView();
-        bump();
-      }
-      return;
-    } else {
-      const dx = pt.x - d.x;
-      const dy = pt.y - d.y;
-      if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
-      if (d.mode === "pan") {
-        const cur = view.current ?? { k: 1 };
-        view.current = { tx: d.tx + dx, ty: d.ty + dy, k: cur.k };
-        persistView();
-        bump();
-      } else {
-        const w = toWorld(pt.x, pt.y);
-        const p = P.current[d.id];
-        if (p) {
-          p.x = w.x;
-          p.y = w.y;
-          p.fx = w.x;
-          p.fy = w.y;
-          reheat(0.3);
-        }
-      }
-      return;
-    }
-    if (e.pointerType === "touch") return;
-    const g = (e.target as Element).closest("[data-node-id]");
-    const id = g?.getAttribute("data-node-id") ?? null;
-    if (id && nodeById.has(id)) {
-      setHover(id);
-      setTooltip({
-        x: Math.max(8, Math.min(pt.x + 18, size.w - 268)),
-        y: Math.max(8, Math.min(pt.y + 15, size.h - 165)),
-      });
-    } else if (hover) {
-      setHover(null);
-      setTooltip(null);
-    }
-  };
-
-  const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    const d = drag.current;
-    pointers.current.delete(e.pointerId);
-    if (svgRef.current?.hasPointerCapture(e.pointerId)) {
-      svgRef.current.releasePointerCapture(e.pointerId);
-    }
-    if (d && d.mode === "node") {
-      const p = P.current[d.id];
-      if (p) {
-        p.fx = null;
-        p.fy = null;
-      }
-      reheat(0.2);
-    }
-    if (d && d.mode !== "pinch" && !d.moved) {
-      onSelect(d.mode === "node" ? d.id : null);
-    }
-    drag.current = pointers.current.size > 0 && d?.mode === "pinch" ? d : null;
-    setHover(null);
-    setTooltip(null);
-  };
-
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const pt = svgPoint(e);
-    zoomAt(Math.exp(-e.deltaY * 0.0014), pt.x, pt.y);
+    });
   };
 
   // ---- emphasis: hover neighbourhood / search matches dim the rest ----
   const q = query.trim().toLowerCase();
   const matchesQ = (n: CanvasNode) => !!q && (n.title + " " + n.label).toLowerCase().includes(q);
-  const neighbors = hover ? adj.get(hover) : null;
   const isLit = (id: string) => {
-    if (hover) return id === hover || (neighbors?.has(id) ?? false);
+    if (hover) return vp.near(id);
     if (q) return matchesQ(nodeById.get(id)!);
     return true;
   };
   const dimAll = !!hover || !!q;
 
-  const v = view.current ?? { tx: size.w / 2, ty: size.h / 2, k: 1 };
+  const v = vp.v;
   const markerId = `cg-arrow-${layoutKey.replace(/[^a-z0-9]/gi, "")}`;
   const hoverNode = hover ? nodeById.get(hover) : null;
 
@@ -489,28 +332,15 @@ export function GraphCanvas({
   }
 
   return (
-    <div className="cg-wrap" ref={wrapRef} data-testid="graph-canvas" data-scene={layoutKey} data-ui="graph-canvas">
+    <div className="cg-wrap" ref={vp.wrapRef} data-testid="graph-canvas" data-scene={layoutKey} data-ui="graph-canvas">
       <svg
         className="cg-svg"
-        ref={svgRef}
+        ref={vp.svgRef}
         width="100%"
         height="100%"
         role="img"
         aria-label={heading}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          pointers.current.clear();
-          drag.current = null;
-        }}
-        onWheel={onWheel}
-        onMouseLeave={() => {
-          if (!drag.current) {
-            setHover(null);
-            setTooltip(null);
-          }
-        }}
+        {...vp.svgProps}
       >
         <defs>
           <marker
@@ -576,17 +406,7 @@ export function GraphCanvas({
                 data-ui="graph-node" data-ui-key={n.id}
                 transform={`translate(${p.x} ${p.y})`}
                 className={"cg-node" + (sel ? " sel" : "") + (lit ? "" : " dim")}
-                tabIndex={0}
-                role="button"
-                aria-label={n.title}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    onSelect(n.id);
-                  }
-                }}
-                onFocus={() => setHover(n.id)}
-                onBlur={() => setHover((h) => (h === n.id ? null : h))}
+                {...vp.nodeProps(n.id, n.title)}
               >
                 <circle r={Math.max(r + 7, 17 / v.k)} fill="transparent" />
                 {n.seed && <circle r={r + 11} className="cg-seed-ring" />}
@@ -694,15 +514,15 @@ export function GraphCanvas({
         </div>
       )}
 
-      <div className="cg-zoom" data-ui="graph-zoom-controls">
-        <ActionButton unstyled mode="icon" iconName="plus" appearance="quiet" iconSize="small" className="cg-zbtn" label={t("graph.zoomIn")} tooltip={t("graph.zoomIn")} data-testid="zoom-in" data-ui="zoom-in" onClick={() => zoomAt(1.25, size.w / 2, size.h / 2)} />
-        <span className="zoom-value mono">{Math.round(v.k * 100)}%</span>
-        <ActionButton unstyled mode="icon" iconName="minus" appearance="quiet" iconSize="small" className="cg-zbtn" label={t("graph.zoomOut")} tooltip={t("graph.zoomOut")} data-ui="zoom-out" onClick={() => zoomAt(0.8, size.w / 2, size.h / 2)} />
-        <ActionButton unstyled mode="icon" iconName="expand" className="cg-zbtn" label={t("graph.fitView")} tooltip={t("graph.fitView")} data-testid="fit-view" data-ui="fit-graph" onClick={fitView} />
-        <ActionButton unstyled mode="icon" iconName="rotate-ccw" className="cg-zbtn" label={t("graph.relayout")} tooltip={t("graph.relayout")} data-ui="relayout-graph" onClick={relayout} />
-      </div>
+      <GraphZoomControls
+        zoom={v.k}
+        onZoomIn={() => vp.zoomCenter(1.25)}
+        onZoomOut={() => vp.zoomCenter(0.8)}
+        onFit={fitView}
+        onRelayout={relayout}
+      />
 
-      {hoverNode && tooltip && !drag.current && (
+      {hoverNode && tooltip && !vp.dragging && (
         <div className="tooltip" data-ui="graph-node-tooltip" data-ui-key={hoverNode.id} style={{ left: tooltip.x, top: tooltip.y }}>
           <strong>{hoverNode.title}</strong>
           <div className="meta">

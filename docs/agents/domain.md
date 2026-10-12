@@ -24,7 +24,7 @@
 | LaTeX 编译、插桩、宏、编号、引用、作者、图转换 | [tex-pipeline](../tex-pipeline.md) |
 | Reader、标注 target/canonical text、共同 epoch、资产与草稿 | [annotations](../annotations.md)；数据保护和冻结 CLI 全文在 [contracts](../contracts.md) |
 | 科研计划页面、plans 存储、未来 agent 计划接口 | [plans](../plans.md) |
-| 论证图的存储、schema、审计、HTTP 与 WS | [argument-graph](../argument-graph.md)；数据保护边界在 [contracts](../contracts.md) |
+| 论证图的存储、schema、审计、HTTP 与 WS，以及共享 renderer 上的画布（分层布局与 adapter） | [argument-graph](../argument-graph.md)；数据保护边界在 [contracts](../contracts.md) |
 | ADS 探索、saved-only 库图与缓存自愈 | [discovery](../discovery.md) |
 | Writer 工作流、共享预览、陈旧保护与兼容性 | [writer](../writer.md)；文件协议用既有 [writer-data-model](../writer-data-model.md)；共享管线另读 tex-pipeline |
 | 构建、测试、打包、依赖与迁移教训 | [engineering](../engineering.md) |

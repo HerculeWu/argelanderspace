@@ -2014,5 +2014,22 @@
     "recipients": "收件人：{{list}}",
     "ccList": "抄送：{{list}}",
     "staleFolders": "文件夹列表来自上次保存的副本"
+  },
+  "argument": {
+    "canvas": {
+      "heading": "论证图",
+      "note": "自下而上：Native 论证在底，End 论证在顶。A → B 表示 A 的 Claim 被 B 使用。",
+      "kindNative": "Native",
+      "kindEnd": "End",
+      "kindNormal": "普通",
+      "roleGrounds": "Grounds",
+      "roleWarrant": "Warrant",
+      "roleBacking": "Backing",
+      "roleRebuttal": "Rebuttal",
+      "legendCycle": "环上的边",
+      "legendAudit": "有审计发现",
+      "connectHint": "从这里拖到另一个论证：把本论证的 Claim 交给它使用",
+      "notFilled": "未填写"
+    }
   }
 }
