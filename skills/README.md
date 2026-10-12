@@ -20,6 +20,18 @@ same; the mechanics are now plain CLI calls.
 Data flow: **A** builds the library → **C** selects from it → **B** reads what
 C selected. B and C never ingest; A never answers questions.
 
+## Organizing a paper's logic: `argelander-argument-graph`
+
+Another skill reads one ingested paper and writes its **argument graph** (论证图)
+into the workbench: Toulmin arguments (Claim / Grounds / Warrant, optional
+Backing / Qualifier / Rebuttal) with Native and End arguments marked, edges that
+say how one Claim is used by another, and sources that jump into the paper. It
+follows six steps (Native arguments, intermediate chain, Qualifiers and
+Rebuttals, End arguments, audit, write) and ends with `argument put`. It reads
+the paper through `read` / `show` / `ref` (PDF Docs via `pdf-path`), asks the
+user before replacing a non-empty graph, and reports the End arguments, the main
+chains and its own audit findings.
+
 ## Install
 
 pi discovers skills in `~/.pi/agent/skills/` (global) or `.pi/skills/`
@@ -28,7 +40,7 @@ pi discovers skills in `~/.pi/agent/skills/` (global) or `.pi/skills/`
 ```bash
 # global, symlinked from this repo
 mkdir -p ~/.pi/agent/skills
-for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library; do
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-argument-graph; do
   ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
 done
 
@@ -59,6 +71,9 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 | `show <docId> <floatId>` | one float (fig/tab/eq/code/alg) as JSON: full latex/caption/body/image + `link` | JSON |
 | `ref <docId> <refIdOrKey>` | one bibliography entry as JSON: metadata + `cited_in` + `link` | JSON |
 | `annot <docId>` | a doc's current annotations (the user's reading notes/requests) as JSONL rows `{id, doc_id, target, context, body, created_at, updated_at, link}` in reading order, document-level first — read-only; annotations bound to a since-replaced document are hidden (fixed `note:` on stderr, exit 0), archived ones are never exposed | JSONL |
+| `argument get <workId>` | the Work's whole argument graph as JSON, with `rev` (no graph: empty, `rev: 0`) | JSON |
+| `argument put <workId> <file\|-> --rev <n> [--replace]` | validate and write the whole graph; `--replace` only after the user agreed to overwrite a non-empty one | one JSON line with the new `rev` and a workbench `link` |
+| `pdf-path <docId>` | absolute path of a PDF Doc's original file (for agents that read the PDF themselves) | one line |
 | `note <workId> [text...]` | set (or print) a work's note | JSON |
 | `label <workId> [--label c] [--read b] [--star b] [--tags a,b]` | patch user state, print the result | JSON |
 
