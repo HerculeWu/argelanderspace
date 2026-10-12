@@ -60,7 +60,8 @@ describe("buildArgumentPage", () => {
       selected: null,
     });
     expect(page.graph).toEqual(graph);
-    expect(page.note).toContain("read-only");
+    expect(page.note).toContain("page.graph is the whole graph");
+    expect(page.note).not.toContain("read-only");
     expect(ArgumentPageSchema.safeParse(page).success).toBe(true);
   });
 

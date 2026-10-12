@@ -4,9 +4,15 @@
  * operation that does the same. The pure edits are `argument-edit.ts`'s (the page calls the same functions); this file
  * is only the shape of a request.
  *
- * Reading is bounded: {@link ARGUMENT_READ_MAX_CHARS} characters of arguments and {@link ARGUMENT_READ_MAX_EDGES} edges
- * per call, `offset` / `edgeOffset` to continue, `ids` to fetch particular arguments whole (what a partial page context
- * leaves out). Writes carry the `expectedRev` of the model's latest read.
+ * Reading is bounded: one `read` result is never longer than {@link argumentReadLimit} characters (a ceiling that
+ * shrinks with the room the model's window has left, never below {@link ARGUMENT_READ_MIN_TOTAL}), whatever the graph,
+ * the parameters or the room. The arguments, the edges and the audit lists share that ceiling and each comes in parts,
+ * saying what is delivered (`batch`, `edgesBatch`) and what is cut (`batch.clipped`, `audit.capped`). One protocol for
+ * every form: `offset` / `edgeOffset` index the list being read (all arguments, or the `ids` named, in the order given;
+ * the edges of the graph, or the edges touching the named arguments); `ids` fetches particular arguments (what a
+ * partial page context leaves out); an argument too big for one result comes alone with its long texts cut, and
+ * `field` (with one id and `offset` as a character offset) reads the rest of a cut text. Writes carry the `expectedRev`
+ * of the model's latest read.
  */
 import { z } from "zod";
 import {
@@ -24,6 +30,21 @@ const Rev = z.number().int().nonnegative();
 export const ARGUMENT_READ_MAX_CHARS = 60_000;
 /** The most edges one `read` call returns. */
 export const ARGUMENT_READ_MAX_EDGES = 800;
+/** The longest `read` result (JSON characters, whole payload) when the window has room to spare. */
+export const ARGUMENT_READ_MAX_TOTAL = 70_000;
+/** The shortest ceiling a `read` result is held to, however little room the window has (enough to make progress). */
+export const ARGUMENT_READ_MIN_TOTAL = 8_000;
+/**
+ * The ceiling on one `read` result, in JSON characters: half the room the model's window has left (a result is counted
+ * JSON-escaped), between {@link ARGUMENT_READ_MIN_TOTAL} and {@link ARGUMENT_READ_MAX_TOTAL}. No room given: the maximum.
+ */
+export function argumentReadLimit(room?: number): number {
+  const half = room === undefined ? Number.POSITIVE_INFINITY : Math.floor(Math.max(0, room) / 2);
+  return Math.max(ARGUMENT_READ_MIN_TOTAL, Math.min(ARGUMENT_READ_MAX_TOTAL, half));
+}
+/** What `field` may name: a text field of an argument, or `sources.N` (the N-th source, zero-based). */
+export const ARGUMENT_READ_FIELD =
+  /^(claim|grounds|warrant|backing|qualifier|rebuttal|sources\.\d{1,2})$/;
 /** The most arguments one `read` call may name by id. */
 export const ARGUMENT_READ_MAX_IDS = 50;
 
@@ -102,6 +123,7 @@ export const ArgumentToolReadSchema = z.strictObject({
   offset: z.number().int().nonnegative().optional(),
   edgeOffset: z.number().int().nonnegative().optional(),
   ids: z.array(ArgumentId).min(1).max(ARGUMENT_READ_MAX_IDS).optional(),
+  field: z.string().regex(ARGUMENT_READ_FIELD).optional(),
 });
 export const ArgumentToolWriteSchema = z.discriminatedUnion("action", [
   z.strictObject({

@@ -372,10 +372,10 @@ export function createApp(deps: AppDeps): Hono {
   const planChanged = (cause: "put" | "external"): void => {
     broadcast({ type: "plan.changed", cause, at: new Date().toISOString() });
   };
-  const argumentGraphChanged = (workId: string): void => {
+  const argumentGraphChanged = (workId: string, cause: "put" | "external" = "put"): void => {
     broadcast({
       type: "argument-graph.changed",
-      cause: "put",
+      cause,
       work_id: workId,
       at: new Date().toISOString(),
     });
@@ -546,13 +546,8 @@ export function createApp(deps: AppDeps): Hono {
     annotationLock,
     docMutations,
     libraryChanged,
-    argumentGraphChanged: (workId) =>
-      broadcast({
-        type: "argument-graph.changed",
-        cause: "external", // not a PUT: a Work merge moved the file
-        work_id: workId,
-        at: new Date().toISOString(),
-      }),
+    // not a PUT: a Work merge moved the file; a pending Copilot card on either Work is rechecked like after a PUT
+    argumentGraphChanged: (workId) => argumentGraphChanged(workId, "external"),
     lockedRebuild: createLockedRebuild(libraryLock),
     pipelines: deps.pipelines,
     makeSources: deps.makeSources,

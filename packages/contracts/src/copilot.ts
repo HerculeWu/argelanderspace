@@ -463,8 +463,9 @@ export const CopilotMailMoveConfirmationSchema = z
   .strict();
 /**
  * Replacing the whole argument graph of a Work, or clearing it, while it holds arguments (argument graph ticket 09): the
- * page's "Clear" dialog, widened to the whole-graph write. Bound to the graph's rev and to the digest of both the stored
- * graph and the proposed one, so a change to either expires it. The counts are what the card shows.
+ * page's "Clear" dialog, widened to the whole-graph write. Bound to the stored graph's rev and to the digest of the
+ * stored graph (rev, arguments, edges), so a change to it expires the card. The proposed graph is not bound: it is the
+ * model's own request, checked before the card is shown and written as given. The counts are what the card shows.
  */
 export const CopilotArgumentReplaceConfirmationSchema = z
   .object({

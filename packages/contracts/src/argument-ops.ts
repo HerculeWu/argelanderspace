@@ -279,12 +279,13 @@ export const ARGUMENT_ACTIONS_NOTE =
 /** Appended when the last refresh of the graph failed and the view still shows the graph it had. */
 export const ARGUMENT_STALE_NOTE =
   "The last attempt to refresh the graph failed: it may be out of date.";
-const READ_ONLY = "this is the Library tab showing one Work's argument graph, read-only";
+const WHICH = "this is the Library tab showing one Work's argument graph";
 const LATER =
-  "Fetch the text you cannot see with the argument tool (read: from continues, ids names arguments), never guess it.";
+  "Fetch the text you cannot see with the argument tool: read {workId, ids} (its note says how to continue when a result is partial or cut), never guess it.";
+const HELD_LATER = "argument read {workId, ids} fetches any text omitted here.";
 
 /** What a whole page says of itself. */
-export const ARGUMENT_WHOLE_NOTE = `${READ_ONLY}: page.graph is the whole graph and selectedId the argument the user has open. ${ARGUMENT_ACTIONS_NOTE}.`;
+export const ARGUMENT_WHOLE_NOTE = `${WHICH}: page.graph is the whole graph and selectedId the argument the user has open. ${ARGUMENT_ACTIONS_NOTE}.`;
 
 const PHASE_NOTES: Record<"loading" | "not-found" | "corrupt" | "error", string> = {
   loading: "the argument graph of this Work is still loading; this page carries no graph yet",
@@ -320,10 +321,9 @@ function levelText(level: 1 | 2 | 3 | 4): string {
 function partialNote(level: 1 | 2 | 3 | 4, heldRev: number | null, stale: boolean): string {
   const intro =
     heldRev === null
-      ? `${READ_ONLY}. Partial: the whole graph is too large to carry,`
-      : `${READ_ONLY}. The whole graph of revision ${heldRev} is in the task's context and is not repeated; this page is partial:`;
-  const tail =
-    heldRev === null ? LATER : "The held graph is the only copy of the text omitted here.";
+      ? `${WHICH}. Partial: the whole graph is too large to carry,`
+      : `${WHICH}. Revision ${heldRev} is already in the task's context (carried whole earlier, or written by you), so this page is partial:`;
+  const tail = heldRev === null ? LATER : HELD_LATER;
   return `${intro} ${levelText(level)} ${tail} ${ARGUMENT_ACTIONS_NOTE}.${stale ? ` ${ARGUMENT_STALE_NOTE}` : ""}`;
 }
 /** The level-1 partial note, for the callers that only need to recognise one. */

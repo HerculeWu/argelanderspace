@@ -538,8 +538,9 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // set_figure_image and their prompt text), about 2.6 KB less; lane 3 added reader download_original, "Writer" in the
   // page-context sentence and the downloads exception, about 0.6 KB; lane 4 added undo_delete_task, about 0.4 KB. Merged: measured 69370.
   // Argument graph ticket 09 added the argument tool (description, parameter schema, one system-prompt sentence), about 2.5 KB. Measured 71928.
+  // Review round A added the read tool's `field` parameter (and reworded its read line): +30 bytes. Measured 71958.
   expect(footprint).toBeGreaterThan(70_000);
-  expect(footprint).toBeLessThan(71_928 + 300);
+  expect(footprint).toBeLessThan(71_958 + 300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

@@ -183,6 +183,8 @@ export function createServer(opts: ServerOptions): RunningServer {
       for (const workId of workIds) {
         hub.broadcast({ type: "argument-graph.changed", cause: "external", work_id: workId, at });
       }
+      // A CLI write or a hand edit may make a pending Copilot replace/clear card obsolete (click time stays the authority).
+      void copilot.revalidate("argument").catch(() => {});
     },
     // Stage 10: writer manuscripts/templates re-broadcast as writer.changed;
     // a templates-dir change carries cause:"template" without an id. The

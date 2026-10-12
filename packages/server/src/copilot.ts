@@ -3,6 +3,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync } from "nod
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  type ArgumentPage,
   argumentKey,
   buildPdfReading,
   type ContextCoverage,
@@ -1733,6 +1734,7 @@ export class CopilotHost {
       text: envelope,
       pdf,
       coverage,
+      argument: sentArgument,
       evictions,
     } = await this.buildEnvelope(
       { messageId, text: request.text },
@@ -1755,7 +1757,7 @@ export class CopilotHost {
     const reference = this.reference(
       request,
       { messageId, runId: state.runId, contextId },
-      context,
+      sentArgument ? { ...context, argument: sentArgument } : context,
       pdf,
       state.model,
       coverage
@@ -1840,6 +1842,8 @@ export class CopilotHost {
     text: string;
     pdf?: PdfMaterialEnvelope;
     coverage?: ContextCoverage;
+    /** The argument graph page as it was really sent (a held graph is listed, not carried): what the record summarizes. */
+    argument?: ArgumentPage;
     /** Deliveries this message needs taken out of the conversation (`kind:id` keys); persisted only once it is accepted. */
     evictions: Set<string>;
   }> {
@@ -1922,6 +1926,7 @@ export class CopilotHost {
       evictions,
       ...(delivered.pdf ? { pdf: delivered.pdf } : {}),
       ...(fitted.coverage ? { coverage: fitted.coverage } : {}),
+      ...(delivered.context.argument ? { argument: delivered.context.argument } : {}),
     };
   }
   /**
@@ -2291,7 +2296,13 @@ export class CopilotHost {
     const messageId = randomUUID(),
       runId = randomUUID(),
       contextId = randomUUID();
-    const { text, pdf, coverage, evictions } = await this.buildEnvelope(
+    const {
+      text,
+      pdf,
+      coverage,
+      argument: sentArgument,
+      evictions,
+    } = await this.buildEnvelope(
       {
         ...(kind ? { kind } : {}),
         messageId,
@@ -2492,6 +2503,8 @@ export class CopilotHost {
             viewAction: (action) => this.dispatchViewAction(state.navViewId, action, runId),
             admitting: () => !this.closed && !state.stopRequested,
             budget: () => this.room(loaded, frozenModel),
+            // The model learns what it wrote from the tool result: the page showing that revision is an outline.
+            wrote: (workId, rev) => state.readings.add(argumentKey(workId, rev)),
             journal: this.journalPort(loaded, runId),
             confirm: this.confirmationPort(loaded, state),
             runId,
@@ -2581,7 +2594,14 @@ export class CopilotHost {
     };
     loaded.manager.appendCustomEntry(
       contextType,
-      this.reference(request, { messageId, runId, contextId }, context, pdf, frozenModel, coverage)
+      this.reference(
+        request,
+        { messageId, runId, contextId },
+        sentArgument ? { ...context, argument: sentArgument } : context,
+        pdf,
+        frozenModel,
+        coverage
+      )
     );
     let accept!: () => void, reject!: (error: unknown) => void;
     const admitted = new Promise<void>((resolve, fail) => {

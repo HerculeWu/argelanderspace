@@ -48,7 +48,7 @@ export type ConfirmationOutcome =
   | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
   /** A system error at click time (data unreadable): not a change, and never reported as one. */
   | { outcome: "expired"; reason: "error"; detail: string };
-/** What the confirmation card shows: one of the eight kinds of request below, each with exactly what it binds. */
+/** What the confirmation card shows: one of the nine kinds of request below, each with exactly what it binds. */
 export type ConfirmationRequest =
   | {
       toolCallId: string;
