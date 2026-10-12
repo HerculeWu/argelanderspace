@@ -6,11 +6,11 @@
  * overwritten.
  */
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArgumentGraph } from "@argelanderspace/contracts";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   ArgumentGraphFileError,
   argumentGraphDir,
@@ -25,9 +25,15 @@ import {
 
 const DOI = "doi:10.1051/0004-6361/202039341";
 
+const tmpDirs: string[] = [];
 function tmpDataDir(): string {
-  return mkdtempSync(join(tmpdir(), "aspace-arggraph-"));
+  const dir = mkdtempSync(join(tmpdir(), "aspace-arggraph-"));
+  tmpDirs.push(dir);
+  return dir;
 }
+afterEach(() => {
+  for (const dir of tmpDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function sample(workId = DOI, rev = 0): ArgumentGraph {
   return {
@@ -73,6 +79,15 @@ describe("work id file-name encoding", () => {
     }
   });
 
+  it("rejects ill-formed Unicode (lone surrogates) instead of colliding on U+FFFD", () => {
+    for (const id of ["a\uD800b", "\uDC00", "x\uD83D"]) {
+      expect(() => encodeWorkIdForFile(id)).toThrow(
+        expect.objectContaining({ name: "ArgumentGraphFileError", kind: "unsafe_id" })
+      );
+    }
+    expect(decodeWorkIdFromFile(encodeWorkIdForFile("😀"))).toBe("😀");
+  });
+
   it("is injective on the cases that collide under naive schemes", () => {
     const stems = new Set(["a/b", "a:b", "a%2Fb", "a_b", "a-b", "a b"].map(encodeWorkIdForFile));
     expect(stems.size).toBe(6);
@@ -90,6 +105,9 @@ describe("work id file-name encoding", () => {
   it("rejects an empty or over-long id; decode refuses names the store would not write", () => {
     expect(() => encodeWorkIdForFile("")).toThrow(ArgumentGraphFileError);
     expect(() => encodeWorkIdForFile("/".repeat(100))).toThrow(ArgumentGraphFileError);
+    // file name incl. ".json" <= 240: 235-char stem is the longest accepted
+    expect(encodeWorkIdForFile("a".repeat(235))).toHaveLength(235);
+    expect(() => encodeWorkIdForFile("a".repeat(236))).toThrow(ArgumentGraphFileError);
     for (const stem of ["", "a.b", "a%2", "a%zz", "a%41", "%FF", "a%2fb"]) {
       expect(decodeWorkIdFromFile(stem)).toBeNull();
     }
@@ -165,6 +183,18 @@ describe("unreadable files are system errors, never reset or overwritten", () =>
     );
     expect(() => replaceArgumentGraph(dataDir, sample())).toThrow(ArgumentGraphFileError);
     expect(readFileSync(file, "utf8")).toBe('{"version": 1, "rev": 4, "work_');
+  });
+
+  it("an unreadable file (a directory in its place) says so, not 'invalid JSON'", () => {
+    const dataDir = tmpDataDir();
+    mkdirSync(argumentGraphPath(dataDir, DOI), { recursive: true });
+    expect(() => loadArgumentGraph(dataDir, DOI)).toThrow(
+      expect.objectContaining({
+        name: "ArgumentGraphFileError",
+        kind: "corrupt",
+        message: expect.stringContaining("could not be read"),
+      })
+    );
   });
 
   it("schema-invalid content", () => {

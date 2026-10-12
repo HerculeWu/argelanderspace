@@ -31,9 +31,12 @@ async function waitFor(pred: () => boolean): Promise<void> {
 
 let watcher: Watcher | undefined;
 
+const tmpRoots: string[] = [];
+
 afterEach(() => {
   watcher?.stop();
   watcher = undefined;
+  for (const root of tmpRoots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 interface Fires {
@@ -76,6 +79,7 @@ function start(dataDir: string, statusDir: string): Fires {
 /** `<tmp>/aspace-watch-XXX/{data,status}` — the server layout in miniature. */
 function tmpDirs(): { dataDir: string; statusDir: string } {
   const root = mkdtempSync(join(tmpdir(), "aspace-watch-"));
+  tmpRoots.push(root);
   return { dataDir: join(root, "data"), statusDir: join(root, "status") };
 }
 

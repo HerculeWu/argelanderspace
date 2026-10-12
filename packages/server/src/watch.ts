@@ -35,7 +35,7 @@
 
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { argumentGraphDir, decodeWorkIdFromFile, plansPath } from "@argelanderspace/core";
+import { argumentGraphPath, listArgumentGraphWorkIds, plansPath } from "@argelanderspace/core";
 
 export interface WatcherOptions {
   dataDir: string;
@@ -85,7 +85,7 @@ export function startWatcher(opts: WatcherOptions): Watcher {
       opts.onPlansChange();
     }
     const nextAnnotations = annotationsFingerprint(opts.dataDir);
-    const changedDocs = changedAnnotationDocs(lastAnnotations, nextAnnotations);
+    const changedDocs = changedKeys(lastAnnotations, nextAnnotations);
     if (changedDocs.length > 0) {
       lastAnnotations = nextAnnotations;
       opts.onAnnotationsChange(changedDocs);
@@ -160,15 +160,15 @@ function annotationsFingerprint(dataDir: string): Map<string, string> {
   return out;
 }
 
-/** Doc ids whose stamp changed between two polls: changed, created, or
- *  deleted `current.json`. Sorted for a deterministic callback payload. */
-function changedAnnotationDocs(prev: Map<string, string>, next: Map<string, string>): string[] {
+/** Keys (doc ids, work ids) whose stamp changed between two polls: changed,
+ *  created, or deleted file. Sorted for a deterministic callback payload. */
+function changedKeys(prev: Map<string, string>, next: Map<string, string>): string[] {
   const changed = new Set<string>();
-  for (const [docId, s] of next) {
-    if (prev.get(docId) !== s) changed.add(docId);
+  for (const [key, s] of next) {
+    if (prev.get(key) !== s) changed.add(key);
   }
-  for (const docId of prev.keys()) {
-    if (!next.has(docId)) changed.add(docId);
+  for (const key of prev.keys()) {
+    if (!next.has(key)) changed.add(key);
   }
   return [...changed].sort();
 }
@@ -240,32 +240,10 @@ function changedWriter(
  */
 function argumentGraphFingerprint(dataDir: string): Map<string, string> {
   const out = new Map<string, string>();
-  const root = argumentGraphDir(dataDir);
-  let names: string[] = [];
-  try {
-    if (statSync(root).isDirectory()) names = readdirSync(root).sort();
-  } catch {
-    names = []; // not a directory / missing: empty listing (library pattern above)
-  }
-  for (const name of names) {
-    if (!name.endsWith(".json")) continue;
-    const workId = decodeWorkIdFromFile(name.slice(0, -".json".length));
-    if (workId === null) continue;
-    out.set(workId, stamp(join(root, name)));
+  for (const workId of listArgumentGraphWorkIds(dataDir)) {
+    out.set(workId, stamp(argumentGraphPath(dataDir, workId)));
   }
   return out;
-}
-
-/** Keys whose stamp changed between two polls (changed, created, deleted), sorted. */
-function changedKeys(prev: Map<string, string>, next: Map<string, string>): string[] {
-  const changed = new Set<string>();
-  for (const [k, s] of next) {
-    if (prev.get(k) !== s) changed.add(k);
-  }
-  for (const k of prev.keys()) {
-    if (!next.has(k)) changed.add(k);
-  }
-  return [...changed].sort();
 }
 
 /** `mtimeNs:size` (bigint stats: `mtimeNs` only exists there); `-` if absent. */

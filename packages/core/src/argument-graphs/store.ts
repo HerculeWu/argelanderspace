@@ -51,9 +51,20 @@ export function argumentGraphDir(dataDir: string): string {
   return join(dataDir, ARGUMENT_GRAPH_DIR);
 }
 
-/** Work id → file stem (without `.json`). Throws `unsafe_id` for an empty or over-long id. */
+/**
+ * Work id → file stem (without `.json`). Throws `unsafe_id` for an empty id,
+ * one that is not well-formed Unicode (a lone surrogate would encode to U+FFFD
+ * and collide with another id), or one whose file name would exceed 240 bytes.
+ */
 export function encodeWorkIdForFile(workId: string): string {
   if (workId === "") throw new ArgumentGraphFileError("unsafe_id", "argument graph: empty work id");
+  if (/\p{Surrogate}/u.test(workId)) {
+    // with the u flag only a LONE surrogate is a match (pairs are one code point)
+    throw new ArgumentGraphFileError(
+      "unsafe_id",
+      "argument graph: work id is not well-formed Unicode"
+    );
+  }
   let out = "";
   for (const byte of Buffer.from(workId, "utf8")) {
     const ch = String.fromCharCode(byte);
@@ -129,9 +140,18 @@ function formatIssues(error: { issues: { path: PropertyKey[]; message: string }[
 export function loadArgumentGraph(dataDir: string, workId: string): ArgumentGraph {
   const file = argumentGraphPath(dataDir, workId);
   if (!existsSync(file)) return emptyArgumentGraph(workId);
+  let text: string;
+  try {
+    text = readFileSync(file, "utf8");
+  } catch (err) {
+    throw new ArgumentGraphFileError(
+      "corrupt",
+      `argument graph: ${file} could not be read: ${(err as Error).message}`
+    );
+  }
   let data: unknown;
   try {
-    data = JSON.parse(readFileSync(file, "utf8"));
+    data = JSON.parse(text);
   } catch (err) {
     throw new ArgumentGraphFileError(
       "corrupt",

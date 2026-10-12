@@ -105,7 +105,7 @@
 
 完整接纳/草稿/图片规则见 [annotations](annotations.md)，原指纹三态及错误分支全部不变。
 
-## 论证图（已决定；数据与读写接口已实施，界面、CLI、Copilot 尚未）
+## 论证图（已决定；数据与读写接口已实施，界面、CLI、Copilot、Work 合并尚未）
 
 来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)，其中只有数据层与 HTTP 已实施，其余能力不表示已存在。
 

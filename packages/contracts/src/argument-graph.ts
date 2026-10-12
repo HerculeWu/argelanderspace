@@ -9,7 +9,7 @@
  * Structural rules (a violation is a write failure, `ArgumentGraphSchema`
  * reports it as a zod issue): ids unique; short title non-empty after trim;
  * both ends of every edge exist; no self-loop; at most one edge per
- * (from, to, role); size limits ({@link ARGUMENT_GRAPH_LIMITS}). Cycles, a
+ * (from, to, role); size limits ({@link ARGUMENT_GRAPH_LIMITS}, lengths in UTF-16 code units). Cycles, a
  * missing Claim/Grounds/Warrant, an End with out-edges and a Native with
  * in-edges are NOT write failures — they are audit findings, computed from
  * the graph on demand and never persisted ({@link auditArgumentGraph}).
@@ -25,6 +25,9 @@ export const ARGUMENT_GRAPH_LIMITS = {
   titleChars: 80,
   fieldChars: 20_000,
   sourcesPerArgument: 50,
+  idChars: 64,
+  /** `doc_id` and `anchor` of a source target. */
+  targetChars: 512,
 } as const;
 
 const L = ARGUMENT_GRAPH_LIMITS;
@@ -43,12 +46,12 @@ export const ArgumentEdgeRoleSchema = z.enum(["grounds", "warrant", "backing", "
  */
 export const ArgumentSourceTargetSchema = z
   .strictObject({
-    doc_id: z.string().min(1),
-    anchor: z.string().min(1).optional(),
+    doc_id: z.string().min(1).max(L.targetChars),
+    anchor: z.string().min(1).max(L.targetChars).optional(),
     page: z.number().int().positive().optional(),
   })
-  .refine((t) => t.anchor === undefined || t.page === undefined, {
-    message: "a source target carries an anchor or a page, not both",
+  .refine((t) => (t.anchor === undefined) !== (t.page === undefined), {
+    message: "a source target carries exactly one of anchor or page",
   });
 
 export const ArgumentSourceSchema = z.strictObject({
@@ -61,7 +64,7 @@ const field = () => z.string().max(L.fieldChars).default("");
 
 export const ArgumentSchema = z.strictObject({
   /** Stable id; any non-empty string (agents may write their own). */
-  id: z.string().min(1).max(64),
+  id: z.string().min(1).max(L.idChars),
   /** Short title: required, shown on the canvas node. */
   title: z
     .string()
@@ -186,11 +189,10 @@ export interface ArgumentAudit {
   cycles: { arguments: string[]; edges: ArgumentEdge[] }[];
   /**
    * 2. Non-End arguments with no path to any End argument (edges followed
-   * from → to). With no End at all, every non-End argument is listed (and
-   * `noEnd` is true).
+   * from → to). Empty when the graph has no End at all: `noEnd` reports that.
    */
   noPathToEnd: string[];
-  /** 3. The graph has no End argument. */
+  /** 3. The graph has arguments but none is an End. An empty graph has no findings. */
   noEnd: boolean;
   /** 4. End arguments that have an out-edge. */
   endWithOutEdge: string[];
@@ -301,7 +303,12 @@ export function auditArgumentGraph(graph: {
       }
     }
   }
-  const noPathToEnd = args.filter((a) => a.kind !== "end" && !reaches.has(a.id)).map((a) => a.id);
+  // Without any End the graph-level `noEnd` says it all; listing every
+  // argument as "no path" would only repeat it (approved prototype).
+  const noPathToEnd =
+    ends.length === 0
+      ? []
+      : args.filter((a) => a.kind !== "end" && !reaches.has(a.id)).map((a) => a.id);
 
   // 4/5. End with an out-edge, Native with an in-edge.
   const endWithOutEdge = ends.filter((a) => (outCount.get(a.id) ?? 0) > 0).map((a) => a.id);
@@ -323,7 +330,7 @@ export function auditArgumentGraph(graph: {
   return {
     cycles,
     noPathToEnd,
-    noEnd: ends.length === 0,
+    noEnd: args.length > 0 && ends.length === 0,
     endWithOutEdge,
     nativeWithInEdge,
     incomplete,

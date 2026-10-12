@@ -5,8 +5,8 @@
  * upgrade rejection off-path.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { WsServerMessage } from "@argelanderspace/contracts";
 import { argumentGraphDir, argumentGraphPath } from "@argelanderspace/core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -34,6 +34,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await srv.close();
+  rmSync(dirname(dataDir), { recursive: true, force: true }); // makeDataDir's temp root
 });
 
 /** Connect, collect messages until *pred* arrives; `ready` resolves on hello. */

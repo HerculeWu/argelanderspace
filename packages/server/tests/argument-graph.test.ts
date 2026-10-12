@@ -9,8 +9,8 @@
  * `argument-graph.changed` is in ws.test.ts.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ArgumentGraph } from "@argelanderspace/contracts";
 import {
   argumentGraphDir,
@@ -19,7 +19,7 @@ import {
   libraryPaths,
 } from "@argelanderspace/core";
 import type { Hono } from "hono";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createApp } from "../src/app.js";
 import { statusDirFor } from "../src/deps.js";
 import { JobRunner } from "../src/jobs.js";
@@ -50,6 +50,10 @@ beforeEach(() => {
     runner: new JobRunner({ dir: join(dataDir, "jobs") }),
     broadcast: collector.broadcast,
   });
+});
+
+afterEach(() => {
+  rmSync(dirname(dataDir), { recursive: true, force: true }); // makeDataDir's temp root
 });
 
 const url = (workId: string) => `/api/works/${encodeURIComponent(workId)}/argument-graph`;
@@ -107,7 +111,20 @@ describe("GET", () => {
     writeFileSync(argumentGraphPath(dataDir, KNOWN_WORK_ID), "{ not json");
     const res = await get(KNOWN_WORK_ID);
     expect(res.status).toBe(500);
+    const { detail } = (await res.json()) as { detail: string };
+    expect(detail).toBe("argument graph file is unreadable (corrupt)");
+    expect(detail).not.toContain(dataDir);
     expect(readFileSync(argumentGraphPath(dataDir, KNOWN_WORK_ID), "utf8")).toBe("{ not json");
+  });
+
+  test("an unreadable path (a directory) is 500 without leaking the data dir", async () => {
+    mkdirSync(argumentGraphPath(dataDir, KNOWN_WORK_ID), { recursive: true });
+    const res = await get(KNOWN_WORK_ID);
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain(dirname(dataDir));
+    const put500 = await put(KNOWN_WORK_ID, graphFor(KNOWN_WORK_ID));
+    expect(put500.status).toBe(500);
+    expect(JSON.stringify(await put500.json())).not.toContain(dirname(dataDir));
   });
 
   test("a future-version file is 500", async () => {
@@ -116,7 +133,9 @@ describe("GET", () => {
     writeFileSync(argumentGraphPath(dataDir, KNOWN_WORK_ID), body);
     const res = await get(KNOWN_WORK_ID);
     expect(res.status).toBe(500);
-    expect(((await res.json()) as { detail: string }).detail).toMatch(/version 2/);
+    const { detail } = (await res.json()) as { detail: string };
+    expect(detail).toBe("argument graph file is unreadable (future_version)");
+    expect(detail).not.toContain(dataDir);
   });
 });
 

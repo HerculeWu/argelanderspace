@@ -61,6 +61,7 @@ import {
 import {
   type AdsDiscoverySource,
   AnnotationsError,
+  ArgumentGraphFileError,
   buildWriterExport,
   DocumentAssetError,
   discoverLiterature,
@@ -1553,8 +1554,16 @@ export function createApp(deps: AppDeps): Hono {
       return "error";
     }
   };
-  const argumentGraphFailure = (err: unknown) =>
-    detail(err instanceof Error ? err.message : "argument graph could not be read", 500);
+  // Fixed wording: the store's messages carry absolute data-dir paths, which
+  // must not reach the client.
+  const argumentGraphFailure = (err: unknown) => {
+    if (err instanceof ArgumentGraphFileError) {
+      if (err.kind === "unsafe_id")
+        return detail("work id cannot be used for an argument graph", 400);
+      return detail(`argument graph file is unreadable (${err.kind})`, 500);
+    }
+    return detail("argument graph could not be accessed", 500);
+  };
 
   app.get("/api/works/:workId/argument-graph", (c) => {
     c.header("Cache-Control", "no-store");

@@ -163,6 +163,20 @@ describe("ArgumentGraphSchema", () => {
       expect(ArgumentGraphSchema.safeParse(withTarget({ doc_id: "" })).success).toBe(false);
     });
 
+    it("source target carries exactly one jump: anchor or page", () => {
+      const withTarget = (target: object) =>
+        graph([arg("a", { sources: [{ text: "x", target: target as never }] })], []);
+      const ok = (t: object) => ArgumentGraphSchema.safeParse(withTarget(t)).success;
+      expect(ok({ doc_id: "d", anchor: "sec-1" })).toBe(true);
+      expect(ok({ doc_id: "d", page: 3 })).toBe(true);
+      expect(ok({ doc_id: "d" })).toBe(false);
+      expect(ok({ doc_id: "d", anchor: "sec-1", page: 3 })).toBe(false);
+      // a source without any target stays valid (display text only)
+      expect(
+        ArgumentGraphSchema.safeParse(graph([arg("a", { sources: [{ text: "x" }] })], [])).success
+      ).toBe(true);
+    });
+
     it("a cycle, missing Claim/Grounds/Warrant, End with out-edge, Native with in-edge are NOT write failures", () => {
       const g = graph(
         [
@@ -199,6 +213,19 @@ describe("ArgumentGraphSchema", () => {
       };
       expect(ArgumentGraphSchema.safeParse(graph(args, edgesN(5000))).success).toBe(true);
       expect(ArgumentGraphSchema.safeParse(graph(args, edgesN(5001))).success).toBe(false);
+    });
+    it("argument id <= 64 chars", () => {
+      expect(ArgumentGraphSchema.safeParse(graph([arg(at(64))], [])).success).toBe(true);
+      expect(ArgumentGraphSchema.safeParse(graph([arg(at(65))], [])).success).toBe(false);
+    });
+    it("source target doc_id and anchor <= 512 chars", () => {
+      const withTarget = (target: object) =>
+        graph([arg("a", { sources: [{ text: "x", target: target as never }] })], []);
+      const ok = (t: object) => ArgumentGraphSchema.safeParse(withTarget(t)).success;
+      expect(ok({ doc_id: at(512), anchor: "s" })).toBe(true);
+      expect(ok({ doc_id: at(513), anchor: "s" })).toBe(false);
+      expect(ok({ doc_id: "d", anchor: at(512) })).toBe(true);
+      expect(ok({ doc_id: "d", anchor: at(513) })).toBe(false);
     });
     it("title <= 80 chars", () => {
       expect(ArgumentGraphSchema.safeParse(graph([arg("a", { title: at(80) })], [])).success).toBe(
@@ -320,13 +347,23 @@ describe("auditArgumentGraph", () => {
     expect(auditArgumentGraph(clean()).noPathToEnd).toEqual([]);
   });
 
-  it("3. no End argument (and then every non-End argument has no path)", () => {
+  it("3. no End argument: only the graph-level noEnd, no per-argument noPathToEnd", () => {
     const g = graph([arg("a"), arg("b")], [edge("a", "b")]);
     const audit = auditArgumentGraph(g);
     expect(audit.noEnd).toBe(true);
-    expect(audit.noPathToEnd).toEqual(["a", "b"]);
+    expect(audit.noPathToEnd).toEqual([]);
     expect(auditArgumentGraph(clean()).noEnd).toBe(false);
-    expect(auditArgumentGraph(graph([], [])).noEnd).toBe(true);
+  });
+
+  it("an empty graph has no findings (not even noEnd)", () => {
+    expect(auditArgumentGraph(graph([], []))).toEqual({
+      cycles: [],
+      noPathToEnd: [],
+      noEnd: false,
+      endWithOutEdge: [],
+      nativeWithInEdge: [],
+      incomplete: [],
+    });
   });
 
   it("4. End with an out-edge", () => {
