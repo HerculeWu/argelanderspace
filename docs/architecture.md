@@ -99,7 +99,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 CLI + 仓库 `skills/argelander-*` 三件套（ingest/query-library/read-paper），无 MCP 是项目选择；本机安装方式不成为跨机器保证。
 
-- search/read/show/ref/note/label/list + 只读 annot，CLI 直读磁盘，不依赖 HTTP。
+- search/read/show/ref/note/label/list + 只读 annot，CLI 直读磁盘，不依赖 HTTP。论证图另有 `argument get` / `argument put`（整图读写，写入带 rev，覆盖非空图须 `--replace`）与只读的 `pdf-path <docId>`（只输出 PDF 原件路径），见 [argument-graph](argument-graph.md)「CLI」。
 - 文献问答从项目根走 CLI/skills，不传 `--data-dir`，不读内部 JSON/源码替代文献接口。开发任务不受此源码禁读限制。
 - 仓库 CLI：`node packages/app/dist/bin.js`；全局安装后 `argelanderspace`。
 - 深链接端口：`ARGELANDERSPACE_PORT` > config `port` > 8000。

@@ -1,6 +1,6 @@
 # 论证图：数据、审计与读写接口
 
-状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）、手动编辑（票 05）与 Work 合并跟随（票 06，2026-10-12）已实施。CLI、Copilot 工具尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
+状态：数据层与 HTTP 接口已实施（论证图票 02，2026-10-12）；画布（票 03）、只读视图（票 04）、手动编辑（票 05）与 Work 合并跟随（票 06，2026-10-12）已实施。CLI（票 07，2026-10-12）已实施；Copilot 工具尚未实施，见 `.scratch/argument-graph/`。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
 
 ## 存储
 
@@ -48,6 +48,30 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 - `GET /api/works/:workId/argument-graph`：Work 不在库中 404；没有图返回空图 `rev: 0`（200，不是 404）；文件不可读 500。`Cache-Control: no-store`。
 - `PUT /api/works/:workId/argument-graph`：body 是整张图，`rev` 必须等于当前 rev；成功返回 `rev + 1` 的图。Work 不存在 404；body 不是合法 JSON/不满足 schema 或结构规则、或 `work_id` 与 URL 不符 400（`detail` 含前 20 条原因）；`rev` 不符 409 `{ detail: "rev mismatch", rev: <当前> }`，不覆盖；已存在的文件不可读 500，不覆盖。CSRF 守卫同其他写接口。
 - 「覆盖非空图须带替换标志」等确认流程属于 CLI/Copilot/页面各自的票，这两个接口只做整图替换。
+
+## CLI（票 07；`packages/cli/src/argument.ts`）
+
+外部 agent（Claude Code）读写论证图与取得 PDF 原件路径。CLI 直读直写磁盘，不依赖 server；与页面、HTTP 共用 `ArgumentGraphSchema`（含结构规则）与 core `loadArgumentGraph` / `replaceArgumentGraph`（rev 乐观检查、同目录 tmp＋rename 原子写）。读命令真只读：不建目录、不写文件。目标 Work 不在库中（含被合并掉的 Work，其遗留图文件不展示）一律按未知 Work 报错并给候选，沿用 `note` 的形态。
+
+| 命令 | 行为 |
+| --- | --- |
+| `argument get <workId>` | 整张图的 JSON（缩进 2 空格，`version: 1`，含 `rev`）。没有图时是空图、`rev: 0`，exit 0。图文件不可读（损坏、schema 不符、未来版本、属于别的 Work）是系统错误：`error: …`、exit 1、stdout 为空，不输出空图 |
+| `argument put <workId> <file> --rev <n> [--replace]` | 从文件读整张图（`-` 读 stdin），校验后原子写入；成功时 stdout 一行 `{"work_id":…,"rev":<新 rev>}` |
+| `pdf-path <docId>` | 只读，stdout 一行 PDF Doc 原件的绝对路径。不读 PDF 内容、不核对 hash（hash 绑定仍由 Reader 的原件端点校验） |
+
+`put` 的规则
+
+- `--rev` 必填，是调用方读到的 rev（没有图为 0），必须是非负整数。与存储的 rev 不符即拒绝、零写入，报告当前 rev，要求重新 `get` 并在新版本上重做改动。
+- 存储里已有**非空**图（至少一个论证）时必须另带 `--replace`，否则拒绝、零写入。零论证的图算「没有图」，无需 `--replace`，但 `--rev` 仍要等于存储的 rev。检查顺序：文件与校验 → rev → `--replace`。
+- 文件里的 `work_id` 可省；若有必须与命令行的 Work 一致，不一致拒绝（不静默纠正，避免把一张图写到错误的 Work 上）。文件里的 `rev` 不作依据，以 `--rev` 为准。其余键沿用 schema：`version` 必须为 1，未知键拒绝，省略的论证字段取默认值。
+- 校验失败逐条报告位置（zod 的路径，如 `arguments.1.title`、`edges.0`），去重、最多列 100 条，exit 1，零写入。不可读的已存图永不被覆盖（`put` 同样报错）。
+- 从 stdin 读用 `-`（便于管道，不落临时文件）。其余既有命令不读 stdin，这是本命令的约定。
+
+`get` 的键序是确定的：`version, rev, work_id, arguments, edges`；论证 `id, title, claim, grounds, warrant, backing, qualifier, rebuttal, warrant_implicit, kind, sources`；出处 `text, target`；目标 `doc_id` 然后 `anchor` 或 `page`；边 `from, to, role`。输出由固定顺序的构造函数生成，不依赖存储文件的键序。
+
+**并发**：工作台可能在运行。`rev` 检查挡住基于旧读取的写入，server 的 watcher 发现文件变化后通知页面刷新。读 rev 与写入之间没有跨进程锁：两个进程在同一瞬间写同一张图不支持，也不加文件锁（contracts I013）。
+
+**冻结**：命令的 stdout / stderr / exit code、JSON 字段与键序有 golden 测试（`packages/cli/tests/argument.test.ts`），完整清单在 `.scratch/argument-graph/issues/07-cli.md` 的 Comments；票 10 用户验收通过后才算发布生效。既有命令（`search` / `read` / `show` / `ref` / `note` / `label` / `list` / `annot`）输出不变。
 
 ## WebSocket
 

@@ -83,7 +83,7 @@ export function docLink(port: number, docId: string, anchor?: string): string {
 }
 
 /** Doc ids under `<dataDir>/output` (dirs holding a `<id>/<id>.json`). */
-function listDocIds(outputDir: string): string[] {
+export function listDocIds(outputDir: string): string[] {
   let names: string[];
   try {
     names = readdirSync(outputDir);
@@ -97,7 +97,7 @@ function listDocIds(outputDir: string): string[] {
  * Actionable "unknown id" error: substring matches when there are any, else
  * the (truncated) full candidate list.
  */
-function unknownMsg(kind: string, query: string, candidates: readonly string[]): string {
+export function unknownMsg(kind: string, query: string, candidates: readonly string[]): string {
   const q = query.toLowerCase();
   const close = candidates.filter((c) => {
     const cl = c.toLowerCase();
@@ -158,7 +158,7 @@ function docFloats(ir: DocIr): IrFloat[] {
   return out;
 }
 
-function loadWork(paths: LibraryPaths, workId: string): Work {
+export function loadWork(paths: LibraryPaths, workId: string): Work {
   const store = LibraryStore.load(paths);
   const w = store.get(workId);
   if (w === undefined) {
