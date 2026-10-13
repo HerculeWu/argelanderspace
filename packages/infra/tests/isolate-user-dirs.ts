@@ -5,8 +5,9 @@
  * `user-dirs-guard.ts` asserts that it worked.
  *
  * It must run before any module that fixes the home directory when it is imported (env-paths does), so it is listed
- * first in `setupFiles` and imports nothing but Node built-ins and vitest. Anything else a package's setup needs
- * goes in a later setup file.
+ * first in `setupFiles` and imports no product module. Anything else a package's setup needs goes in a later setup
+ * file. It relies on Vitest's default forks pool: in a worker thread, writing process.env does not reach the real
+ * environment that os.homedir() reads (the guard fails there).
  */
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";

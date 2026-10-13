@@ -50,8 +50,9 @@ export function describeUserDirsGuard(resolveDirs: () => Record<string, string>)
       expectAllInside();
     });
 
-    // Many tests replace process.env wholesale and keep only HOME. What protects them is the home directory that
-    // was already fixed when the resolver was first imported, so that one has to be the isolated one too.
+    // With the directory variables gone, what is left is the home directory that was already fixed when the
+    // resolver was first imported, so that one has to be the isolated one too. (Tests that replace process.env
+    // wholesale do not get here: the resolver keeps reading the original object, which still has the variables.)
     test("still inside with only the home directory left to go by", () => {
       const iso = isolation();
       for (const k of iso?.vars ?? []) if (!iso?.homeVars.includes(k)) delete process.env[k];
