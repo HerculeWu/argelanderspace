@@ -11,6 +11,8 @@
 
 export * from "./arxiv-pdf.js";
 export * from "./config.js";
+export * from "./config-edit.js";
+export * from "./config-write.js";
 export {
   CREDENTIAL_FILE_NAME,
   type CredentialErrorCode,

@@ -9,9 +9,11 @@
 
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
+import { SETTINGS_LOG_LEVELS } from "@argelanderspace/contracts";
 import { LogField, type LogJson, type RenderContext } from "./fields.js";
 
-export const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+/** Lowest first. The list is the Settings schema's: `log_level` in config.toml takes exactly these. */
+export const LOG_LEVELS = SETTINGS_LOG_LEVELS;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 export const DEFAULT_LOG_LEVEL: LogLevel = "info";
 
