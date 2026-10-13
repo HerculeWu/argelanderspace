@@ -661,6 +661,8 @@ describe("a failed Writer render", () => {
           log_file: "manuscripts/m_<manuscript>/build/compile-failure.log",
         });
 
+      // a collecting file a killed run left behind (a render that succeeds at once never opens one of its own)
+      writeFileSync(join(build, "compile-failure.log.partial"), `\\${MARK.macro}\n`);
       // and the source, once right, renders at once on the same cache: the clearing still does its work
       const put = await srv.app.request(
         `/api/writer/manuscripts/${manuscript.id}`,
@@ -674,7 +676,7 @@ describe("a failed Writer render", () => {
       );
       expect(((await ok.json()) as { lastError: string | null }).lastError).toBeNull();
       expect(eventsNamed("tex.compile_failed", from)).toHaveLength(2);
-      // the last render succeeded: the log of the failure before it is not kept any more
+      // the last render succeeded: the log of the failure before it is not kept any more, nor the collecting file
       expect(logsIn()).toEqual([]);
       // … and the next failure has one again
       expect(await render(MARK.macro)).toContain(MARK.macro);

@@ -99,17 +99,15 @@ let windowStart = Number.NEGATIVE_INFINITY;
 let sentInWindow = 0;
 let reporting = false;
 
-/** Takes one report out of the current window's budget; false when there is none left. */
-function withinBudget(): boolean {
+/** Whether the current window's budget has a report left; a window that is over starts anew. */
+function budgetLeft(): boolean {
   const now = Date.now();
   // A clock set back starts a new window too, so the page cannot be left waiting for a time long past.
   if (now - windowStart >= REPORT_WINDOW_MS || now < windowStart) {
     windowStart = now;
     sentInWindow = 0;
   }
-  if (sentInWindow >= REPORTS_PER_WINDOW) return false;
-  sentInWindow += 1;
-  return true;
+  return sentInWindow < REPORTS_PER_WINDOW;
 }
 
 /** Sends one report. Never throws and never rejects. */
@@ -117,8 +115,9 @@ export async function reportPageError(
   kind: PageErrorKind,
   thrown: unknown
 ): Promise<PageErrorOutcome> {
-  // An error raised while a report is being put together (a getter on the thrown value, say) is not reported.
-  if (reporting) return "not_recorded";
+  // An error raised while a report is being put together (a getter on the thrown value, say) is not reported, and
+  // with no budget left the thrown value is not even looked at.
+  if (reporting || !budgetLeft()) return "not_recorded";
   let body: string;
   reporting = true;
   try {
@@ -128,7 +127,7 @@ export async function reportPageError(
   } finally {
     reporting = false;
   }
-  if (!withinBudget()) return "not_recorded";
+  sentInWindow += 1;
   try {
     const response = await fetch("/api/page-errors", {
       method: "POST",

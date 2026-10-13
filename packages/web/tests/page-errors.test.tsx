@@ -151,6 +151,18 @@ describe("reporting never causes more reporting", () => {
     }
   });
 
+  it("with no budget left the thrown value is not looked at", async () => {
+    for (let i = 0; i < REPORTS_PER_WINDOW; i++) await reportPageError("error", new Error("again"));
+    let read = 0;
+    const watched = Object.create(Error.prototype, {
+      name: { get: () => ((read += 1), "Error") },
+      stack: { get: () => ((read += 1), "") },
+    }) as Error;
+    expect(await reportPageError("error", watched)).toBe("not_recorded");
+    expect(read).toBe(0);
+    expect(sent).toHaveLength(REPORTS_PER_WINDOW);
+  });
+
   it("a window error event that carries no error — a cross-origin script's, a ResizeObserver notice — is not reported and costs nothing", async () => {
     const stop = installPageErrorReporting();
     for (let i = 0; i < REPORTS_PER_WINDOW + 5; i++) {

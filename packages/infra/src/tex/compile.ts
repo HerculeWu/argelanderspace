@@ -372,23 +372,29 @@ async function attemptCompile(opts: {
         timedOut: result.timedOut,
         missingFiles: [],
       };
-      if (opts.capture) {
-        const bibLog = await readTexSideLog(path.join(runDir, `${opts.jobname}.blg`));
-        run.missingFiles = missingFilesFromTexLog(
-          [log, bibLog, result.stdout, result.stderr].join("\n")
-        );
-        await opts.capture.add({
-          engine: opts.engine,
-          instrumented: opts.instrumented,
-          exitCode: run.exitCode,
-          timedOut: run.timedOut,
-          log,
-          bibLog,
-          stdout: result.stdout,
-          stderr: result.stderr,
-        });
+      // Keeping the log never changes the compile: whatever goes wrong while it is kept, the run state is cleared.
+      try {
+        if (opts.capture) {
+          const bibLog = await readTexSideLog(path.join(runDir, `${opts.jobname}.blg`));
+          run.missingFiles = missingFilesFromTexLog(
+            [log, bibLog, result.stdout, result.stderr].join("\n")
+          );
+          await opts.capture.add({
+            engine: opts.engine,
+            instrumented: opts.instrumented,
+            exitCode: run.exitCode,
+            timedOut: run.timedOut,
+            log,
+            bibLog,
+            stdout: result.stdout,
+            stderr: result.stderr,
+          });
+        }
+      } catch {
+        /* no log is kept for this attempt */
+      } finally {
+        await clearLatexmkRunState(runDir, opts.jobname);
       }
-      await clearLatexmkRunState(runDir, opts.jobname);
       return run;
     };
 

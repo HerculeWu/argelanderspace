@@ -63,14 +63,18 @@ export function writerFailureLogPath(buildDir: string): string {
 
 /**
  * A render that succeeded: the log of the failure before it is not the last render's any more and is removed (a
- * manuscript long since fixed keeps no failure log). A plain file only; what cannot be removed stays, and the
- * render is not affected.
+ * manuscript long since fixed keeps no failure log), and with it a collecting file a killed run left beside it (a
+ * render that succeeds at once never opens one, so nothing else would remove it). A file or a link of either name,
+ * never a directory; what cannot be removed stays, and the render is not affected.
  */
 export function removeWriterFailureLog(buildDir: string): void {
-  try {
-    rmSync(writerFailureLogPath(buildDir), { force: true });
-  } catch {
-    /* the render succeeded all the same */
+  const file = writerFailureLogPath(buildDir);
+  for (const path of [file, `${file}.partial`]) {
+    try {
+      rmSync(path, { force: true });
+    } catch {
+      /* the render succeeded all the same */
+    }
   }
 }
 
