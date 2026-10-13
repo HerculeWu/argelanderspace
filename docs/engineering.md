@@ -39,6 +39,7 @@
 ## 测试与前端验证
 
 - 网络测试用 fetchImpl 注入离线 stub；config 测试 `$XDG_CONFIG_HOME` 指 tmp。spawn 测试 `HOME=<tmp>` 才能逼 ADS no-token；空 `ADS_DEV_KEY` 会被忽略并回退真实 key 文件。
+- `skills/argelander-find-papers/scripts/` 在 workspace 之外，四门与 biome 都不覆盖；其离线测试单独运行：`node --test skills/argelander-find-papers/scripts/ads.test.mjs`（fetch 与 HOME 注入，不触网、不读真实 key）。
 - `--offline` 自 Stage 7 起 gate ADS/Crossref/OpenAlex，缓存仍可读。迁移声称离线仍应核实所走路径，不将 env 恰有 token 当测试前提。
 - web Vitest ^3 与 Vite 5 配套，其余包 Vitest 4；独立 vitest.config 不加载 React 插件。happy-dom 全局 URL 不是 Node URL，读文件用 `node:url` 的 fileURLToPath；IntersectionObserver 需 stub。
 - happy-dom 无布局：rect/selection/scroll 相关测试“绿”不能证明真实像素正确。Stage 8 selbar-y 钳制测试零 rect 恒过，真实 Chrome 双轴探针才是证据。测试局限不是产品缺陷。

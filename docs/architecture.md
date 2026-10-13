@@ -106,6 +106,7 @@ CLI + 仓库 `skills/argelander-*` 三件套（ingest/query-library/read-paper�
 - 仓库 CLI：`node packages/app/dist/bin.js`；全局安装后 `argelanderspace`。
 - 深链接端口：`ARGELANDERSPACE_PORT` > config `port` > 8000。
 - search 空 note 提示只走 stderr，stdout JSONL 保持可 pipe；摄入后每篇询问 note 并给建议稿。输出冻结以 contracts 为准。
+- `skills/argelander-find-papers` 是三件套之外的独立 skill（2026-10-10）：自带零依赖脚本 `scripts/ads.mjs` 直接查询 ADS（search / similar / useful），token 只读 `~/.ads/dev_key`，不经过 CLI、不读写 Library、不落盘、无缓存。它由 agent 编排多次查询并自行排序，不是 Discovery 的实现，也不改变 [discovery](discovery.md) 的固定查询语义；入库仍是另行的显式动作。
 
 ## 包职责
 

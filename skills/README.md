@@ -20,6 +20,23 @@ same; the mechanics are now plain CLI calls.
 Data flow: **A** builds the library → **C** selects from it → **B** reads what
 C selected. B and C never ingest; A never answers questions.
 
+## Outside the library: `argelander-find-papers`
+
+A fourth, **self-contained** skill finds papers that are not in any library
+yet: it searches NASA ADS for seed papers, expands from them with ADS
+`similar` / `useful`, and returns a ranked list in the conversation. It is the
+one skill here that does **not** go through the `argelanderspace` CLI — it
+ships its own zero-dependency script, `scripts/ads.mjs`, needs only Node and
+an ADS key in `~/.ads/dev_key` (it reads no other token source), and is
+read-only: it never touches a library and writes no files. Adding a found
+paper to the library stays a separate, explicit step.
+
+```bash
+node skills/argelander-find-papers/scripts/ads.mjs search 'author:"Kroupa, P" abs:"tidal tails"' --rows 10
+node skills/argelander-find-papers/scripts/ads.mjs similar 2024ApJ...970...94K
+node --test skills/argelander-find-papers/scripts/ads.test.mjs    # offline tests
+```
+
 ## Organizing a paper's logic: `argelander-argument-graph`
 
 Another skill reads one ingested paper and writes its **argument graph** (论证图)
@@ -40,7 +57,7 @@ pi discovers skills in `~/.pi/agent/skills/` (global) or `.pi/skills/`
 ```bash
 # global, symlinked from this repo
 mkdir -p ~/.pi/agent/skills
-for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-argument-graph; do
+for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-library argelander-find-papers argelander-argument-graph; do
   ln -sfn "$PWD/skills/$s" ~/.pi/agent/skills/$s
 done
 
@@ -79,9 +96,10 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 
 Conventions the skills rely on:
 
-- **The CLI is the only interface**: agents never read repo source code or the
-  JSON files under `literatures/` to answer library questions — each skill
-  carries this as a hard rule up front.
+- **The CLI is the only interface** to the library: agents never read repo
+  source code or the JSON files under `literatures/` to answer library
+  questions — each library skill carries this as a hard rule up front.
+  (`argelander-find-papers` does not read the library at all.)
 - **One library per project**: the default data dir is `./literatures` under
   the project root, resolved against the *current working directory* with **no
   upward search** — run the CLI from the project root and don't pass
