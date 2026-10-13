@@ -23,9 +23,9 @@
  * This file is the workbench's one configuration source: a command-line flag
  * (`--data-dir`, `--port`) overrides it for a single run, and no environment
  * variable of the workbench's own does (the two key fallbacks above are
- * credentials, handled apart). Unknown
- * keys are ignored (forward compatibility); a known key with the wrong type
- * is an error. Key values are never logged or echoed in error messages.
+ * credentials, handled apart). Unknown keys are ignored (forward
+ * compatibility); a known key with the wrong type is an error. Key values
+ * are never logged or echoed in error messages.
  *
  * Parsed with smol-toml (full TOML spec; hand-rolling the "flat subset"
  * invites string-escaping edge cases for zero gain).
@@ -33,7 +33,7 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
 /** The config object; property names mirror the TOML keys verbatim. */
@@ -91,11 +91,6 @@ export function parseConfigToml(text: string, path: string = "<config>"): AppCon
     }
     out[key] = value;
   }
-  // The project's data sits at a relative path below the project root; an absolute one would tie the file to one
-  // machine. `--data-dir` is the way to point a single run anywhere.
-  if (out.data_dir !== undefined && isAbsolute(out.data_dir)) {
-    throw new ConfigError(`${path}: "data_dir" must be a relative path`);
-  }
   const port = doc.port;
   if (port !== undefined) {
     if (typeof port !== "number" || !Number.isInteger(port) || port < 0 || port > 65535) {
@@ -109,6 +104,16 @@ export function parseConfigToml(text: string, path: string = "<config>"): AppCon
       throw new ConfigError(`${path}: "auto_ingest_arxiv" must be a boolean`);
     }
     out.auto_ingest_arxiv = autoIngestArxiv;
+  }
+  // The project's data sits at a relative path below the project root; an absolute one would tie the file to one
+  // machine. `--data-dir` is the way to point a single run anywhere. Absolute in either platform's writing counts
+  // (the file is meant to be shared across machines), and the check comes after the type checks above so that a
+  // file with several faults still reports the one it always did.
+  if (
+    out.data_dir !== undefined &&
+    (posix.isAbsolute(out.data_dir) || win32.isAbsolute(out.data_dir))
+  ) {
+    throw new ConfigError(`${path}: "data_dir" must be a relative path`);
   }
   return out;
 }

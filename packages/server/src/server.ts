@@ -1,7 +1,7 @@
 /**
  * Server entry: `createServer` (programmatic; the Hono app + node http server
  * + job runner + WS hub + external-write library/plans poller wired together)
- * and `startServer` (CLI-friendly: argv/env config resolution, listen, log).
+ * and `startServer` (CLI-friendly: argv/config resolution, listen, log).
  *
  * Config resolution (decisions 3 + 23): `--data-dir` > config `data_dir`
  * (relative only) > `./literatures`; the port chain is `--port` > config

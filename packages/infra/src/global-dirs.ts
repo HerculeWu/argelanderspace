@@ -10,8 +10,8 @@
  *
  * Resolving never touches the filesystem (it reads config.toml when no
  * `config` is passed); OS defaults come from env-paths, which fixes homedir at
- * import. `ensureGlobalDirs` creates
- * the directories on demand with mode 0700 (they may hold credentials).
+ * import. `ensureGlobalDirs` creates the directories on demand with mode 0700
+ * (they may hold credentials).
  */
 
 import { mkdirSync } from "node:fs";
