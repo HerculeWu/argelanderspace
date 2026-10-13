@@ -161,13 +161,18 @@ describe("the controls an agent may press", () => {
     await waitFor(() => expect(state.controller).not.toBeNull());
     expect(await state.controller?.apply({ action: "open_manuscript", manuscriptId: "m_0000ffff" })).toEqual({ ok: false, detail: "not_found" });
     expect(await state.controller?.apply({ action: "open_manuscript", manuscriptId: ID })).toEqual({ ok: true });
+    // What the controller answers for, with no wait: the editor is on screen with the manuscript's cells.
+    expect(view.container.querySelector('[data-cell="c_0ab50002"]')).not.toBeNull();
+    // The page the pane reports follows in its next effect, which can run after the answer (the Copilot panel waits
+    // for the page to settle before it reports an action), so the report is awaited rather than read at once.
+    await waitFor(() => expect(state.page?.editor?.phase).toBe("ready"));
     expect(state.page?.editor?.manuscriptId).toBe(ID);
-    expect(state.page?.editor?.phase).toBe("ready");
     editCell(view.container, "c_0ab50002", "Typed before close");
     expect(await state.controller?.apply({ action: "close_manuscript" })).toEqual({ ok: true });
     // The back button's own order: the unsaved text is saved before the editor goes away.
     expect(JSON.stringify(h.store.get(ID))).toContain("Typed before close");
-    expect(state.page?.mode).toBe("list");
+    expect(view.container.querySelector("[data-cell]")).toBeNull();
+    await waitFor(() => expect(state.page?.mode).toBe("list"));
     expect(await state.controller?.apply({ action: "close_manuscript" })).toEqual({ ok: true });
   });
 
