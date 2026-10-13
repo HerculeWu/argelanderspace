@@ -27,14 +27,9 @@ async function load(
   env: Record<string, string | undefined>
 ): Promise<typeof import("../src/global-dirs.js")> {
   Object.defineProperty(process, "platform", { value: platform });
-  for (const k of [
-    "XDG_DATA_HOME",
-    "XDG_CACHE_HOME",
-    "LOCALAPPDATA",
-    "ARGELANDERSPACE_GLOBAL_DIR",
-    "ARGELANDERSPACE_GLOBAL_CACHE_DIR",
-  ])
-    delete process.env[k];
+  // The workbench's own variables are already gone from process.env (tests/isolate-user-dirs.ts); the cases below
+  // that exercise them pass them explicitly.
+  for (const k of ["XDG_DATA_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA"]) delete process.env[k];
   for (const [k, v] of Object.entries(env)) if (v !== undefined) process.env[k] = v;
   vi.resetModules();
   return import("../src/global-dirs.js");

@@ -19,6 +19,7 @@ import {
   createNodeMailMailbox,
   createNodeMailOutgoing,
   type KeychainBackend,
+  resolveGlobalDirs,
 } from "@argelanderspace/infra";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import {
@@ -826,38 +827,31 @@ test("input checks: control characters in a folder name or Message-ID are refuse
 });
 
 test("createServer never sweeps a global cache by itself; the sweep runs only when a directory is passed in explicitly", async () => {
-  const cache = join(root, "sweep-cache");
+  // The place the product resolves as the global cache by default (a throwaway one in tests): the default server
+  // leaves even that alone.
+  const cache = resolveGlobalDirs().cacheDir;
   const staged = join(cache, "mail", "_staged");
   mkdirSync(staged, { recursive: true });
   const old = join(staged, `${"b".repeat(32)}.bin`);
   writeFileSync(old, "x");
   const ancient = new Date(Date.now() - 30 * 24 * 3600 * 1000);
   utimesSync(old, ancient, ancient);
-  // Even with the env pointing the *resolved* global cache at this directory, the default server leaves it alone.
-  const prior = process.env.ARGELANDERSPACE_GLOBAL_CACHE_DIR;
-  process.env.ARGELANDERSPACE_GLOBAL_CACHE_DIR = cache;
-  try {
-    const { createServer } = await import("../src/server.js");
-    const opts = {
-      port: 0,
-      heartbeatMs: 0,
-      webDist: null,
-      providerSettings: new ProviderSettings(),
-      deps: { makeSources: () => stubSources() },
-    };
-    const plain = createServer({ ...opts, dataDir: makeDataDir() });
-    await plain.ready();
-    await plain.close();
-    expect(existsSync(old)).toBe(true);
-    const swept = createServer({ ...opts, dataDir: makeDataDir(), sweepMailStagingIn: cache });
-    await swept.ready();
-    await swept.close();
-    expect(existsSync(old)).toBe(false);
-  } finally {
-    if (prior === undefined) {
-      delete process.env.ARGELANDERSPACE_GLOBAL_CACHE_DIR;
-    } else process.env.ARGELANDERSPACE_GLOBAL_CACHE_DIR = prior;
-  }
+  const { createServer } = await import("../src/server.js");
+  const opts = {
+    port: 0,
+    heartbeatMs: 0,
+    webDist: null,
+    providerSettings: new ProviderSettings(),
+    deps: { makeSources: () => stubSources() },
+  };
+  const plain = createServer({ ...opts, dataDir: makeDataDir() });
+  await plain.ready();
+  await plain.close();
+  expect(existsSync(old)).toBe(true);
+  const swept = createServer({ ...opts, dataDir: makeDataDir(), sweepMailStagingIn: cache });
+  await swept.ready();
+  await swept.close();
+  expect(existsSync(old)).toBe(false);
 });
 
 // ---- review round 2 -----------------------------------------------------------------
