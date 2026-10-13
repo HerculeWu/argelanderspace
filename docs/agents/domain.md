@@ -9,6 +9,7 @@
 - Copilot 与新增文本输入的设计决定：[UI 能力对等与结构化上下文](../adr/0005-copilot-ui-parity.md)、[可读文本接入共享 IR](../adr/0006-text-input-to-shared-ir.md)。这些决定不代表新能力已经实现。
 - 全局数据与邮件：[全局数据范围](../adr/0007-global-data-scope.md)、[邮件以远端为准与真人确认](../adr/0008-mail-remote-authority.md)。尚未实施。
 - 论证图：[属于 Work，出处只作参考](../adr/0009-argument-graph-work-owned.md)。数据与读写接口、画布、视图（发布页面上下文）、手动编辑、Work 合并跟随、CLI、Copilot 工具与确认卡、整理 skill 均已实施并经工程核查；用户终验是独立的一步，CLI 新命令的冻结面（[contracts](../contracts.md)「CLI 论证图命令冻结契约」）在其通过后生效。
+- 桌面应用：[Tauri 壳加 Node sidecar，页面经本地 HTTP 加载](../adr/0010-desktop-app-tauri-node-sidecar.md)。尚未实施。
 - 输出、票据、测试命名使用 glossary 中的规范术语；定义冲突立即指出，不漂移到被排除的同义词。
 - `CONTEXT.md` 只写领域定义，不收实现细节、规格、工作进度或工程笔记；成熟的领域词条一经确认就在获授权任务内更新。
 - ADR 只记录同时满足“难以逆转、没有背景会令人困惑、确有取舍”的决定。保留原决策日期、来源、理由；迁移日期不是重新批准日期。重大修订通过明确的替代关系记录。
