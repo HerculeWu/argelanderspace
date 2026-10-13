@@ -322,16 +322,19 @@ export async function startServer(
   } catch {
     /* an unresolvable global directory is reported when Mail is used, not here */
   }
-  const srv = createServer({
-    dataDir: cfg.dataDir,
-    port: cfg.port,
-    webDist: cfg.webDist,
-    mailWatch: true,
-    log: serveLog.log,
-    ...(sweepMailStagingIn ? { sweepMailStagingIn } : {}),
-  });
+  // Whatever stops the start — the server cannot be created, the port cannot be bound — the log file is closed and
+  // the process is no longer watched.
+  let srv: RunningServer;
   let port: number;
   try {
+    srv = createServer({
+      dataDir: cfg.dataDir,
+      port: cfg.port,
+      webDist: cfg.webDist,
+      mailWatch: true,
+      log: serveLog.log,
+      ...(sweepMailStagingIn ? { sweepMailStagingIn } : {}),
+    });
     port = await srv.ready();
   } catch (error) {
     serveLog.close();

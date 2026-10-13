@@ -1,7 +1,8 @@
 /**
  * The user-level log and the built CLI (desktop-app ticket 06): only `serve` writes one. Every other command runs
  * and ends without creating a file anywhere — no log file, no log directory — and `serve` still prints its three
- * lines, exactly, while its log goes to the log directory.
+ * lines, exactly, while its log goes to the log directory. An error no route handled is printed on `serve`'s
+ * terminal as it always was; the log file gets the same failure without the error's words.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -142,17 +143,27 @@ describe("serve", () => {
           }
         });
       });
+      // A request that succeeds: the terminal shows the three start lines and nothing else.
+      expect((await fetch(`http://127.0.0.1:${port}/api/papers`)).status).toBe(200);
+      const startLines =
+        `ArgelanderSpace server listening on http://127.0.0.1:${port}\n` +
+        `  data dir: ${dataDir}\n` +
+        "  web dist: (none — API only)\n";
+      expect(stdout).toBe(startLines);
+      expect(stderr).toBe("");
+
       const failed = await fetch(`http://127.0.0.1:${port}/api/plans`);
       expect(failed.status).toBe(500);
+      expect(failed.headers.get("content-type")).toBe("text/plain; charset=UTF-8");
       expect(await failed.text()).toBe("Internal Server Error");
-
-      expect(stdout).toBe(
-        `ArgelanderSpace server listening on http://127.0.0.1:${port}\n` +
-          `  data dir: ${dataDir}\n` +
-          "  web dist: (none — API only)\n"
-      );
-      // The failed request went to the log, not to the terminal.
-      expect(stderr).toBe("");
+      // An error no route handled is printed whole on the terminal, as it was before there was a log …
+      for (let i = 0; i < 100 && !stderr.includes("\n    at "); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(stderr).toContain("plans store:");
+      expect(stderr).toContain(join(root, "project", "status", "plans.json"));
+      expect(stderr).toMatch(/\n {4}at /);
+      expect(stdout).toBe(startLines);
 
       const files = readdirSync(logDir);
       expect(files).toHaveLength(1);
@@ -183,7 +194,13 @@ describe("serve", () => {
           status: 500,
         },
       ]);
+      // … and the log file has the failure without any of those words.
+      const failure = records[1]?.error as { name: string; message?: string; stack: string[] };
+      expect(failure.name).toBe("Error");
+      expect(failure.message).toBeUndefined();
+      expect(failure.stack.length).toBeGreaterThan(0);
       expect(text).not.toContain("MARKER");
+      expect(text).not.toContain("plans store");
       expect(text).not.toContain(root);
     } finally {
       child.kill("SIGTERM");

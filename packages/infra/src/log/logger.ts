@@ -1,7 +1,7 @@
 /**
  * The logger: one record = one event name from a fixed catalog + fields made by `f` (fields.ts). It has no method
  * that takes text, so there is no way to hand it a sentence built from runtime values. Where the records go is the
- * sink, which is injected: a file per process run in production (files.ts), memory in tests.
+ * sink, which is injected: a file per process run in production (files.ts); tests bring their own.
  *
  * Logging never throws and never fails its caller: an unknown event, a malformed field or a sink that cannot write
  * costs at most the record.
@@ -26,21 +26,6 @@ export interface LogSink {
 
 /** A sink that keeps nothing; a logger on it does no work at all. */
 export const discardSink: LogSink = { write() {} };
-
-export interface MemorySink extends LogSink {
-  readonly lines: string[];
-  /** The records written so far, parsed. */
-  records(): Array<Record<string, LogJson>>;
-}
-
-export function createMemorySink(): MemorySink {
-  const lines: string[] = [];
-  return {
-    lines,
-    write: (line) => void lines.push(line),
-    records: () => lines.map((line) => JSON.parse(line) as Record<string, LogJson>),
-  };
-}
 
 export type LogFields = Readonly<Record<string, LogField | undefined>>;
 

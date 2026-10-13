@@ -158,15 +158,16 @@ const MERGE_OUTCOMES = ["moved", "kept_survivor", "transfer_failed"] as const;
 const MERGE_ERRORS = ["absorbed_unreadable", "survivor_name_unusable", "write_failed"] as const;
 const YES_NO = ["yes", "no"] as const;
 
-/** The log keeps every note (ids and file locations): background tasks may discard their summary. */
+/**
+ * The log keeps every note, since a background task may discard its summary: what happened, and to which two Works.
+ * Not where the files are — a graph file is named after its Work's id, which may be made from the Work's title.
+ */
 function logMerges(log: ServerLog, notes: readonly ArgumentGraphMergeNote[]): void {
   for (const note of notes) {
     log.warn("library.argument_graph_merged", {
       outcome: f.oneOf(MERGE_OUTCOMES, note.outcome),
-      absorbed: f.id(note.absorbed_id),
-      survivor: f.id(note.survivor_id),
-      absorbed_file: f.path(note.absorbed_file),
-      ...(note.survivor_file === "" ? {} : { survivor_file: f.path(note.survivor_file) }),
+      absorbed: f.workId(note.absorbed_id),
+      survivor: f.workId(note.survivor_id),
       ...(note.error === undefined ? {} : { reason: f.oneOf(MERGE_ERRORS, note.error) }),
       ...(note.survivor_unreadable === undefined
         ? {}
@@ -290,7 +291,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       try {
         deps.argumentGraphChanged(id);
       } catch (e) {
-        log.error("argument_graph.broadcast_failed", { work: f.id(id), error: f.error(e) });
+        log.error("argument_graph.broadcast_failed", { work: f.workId(id), error: f.error(e) });
       }
     }
   };
@@ -980,7 +981,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             submitArxivPdf(r.ref.id, true);
           } catch (e) {
             log.error("arxiv_ingest.auto_submit_failed", {
-              work: f.id(r.ref.id),
+              work: f.workId(r.ref.id),
               error: f.error(e),
             });
           }

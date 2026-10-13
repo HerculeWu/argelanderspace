@@ -87,21 +87,40 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 ## 用户日志
 
-desktop-app 票 06（2026-10-13）。隐私规则与并发范围是硬契约，见 [contracts](contracts.md#用户日志2026-10-13-新增)；这里记机制。它与项目数据目录里的 `logs/arxiv-fetch.jsonl`、任务记录和 Copilot 的操作记录无关，那些都不动。
+desktop-app 票 06（2026-10-13）。「什么不进日志」与日志目录的并发范围是硬契约，见 [contracts](contracts.md#用户日志2026-10-13-新增)；这里记机制和不属于硬契约的运行约定。它与项目数据目录里的 `logs/arxiv-fetch.jsonl`、任务记录和 Copilot 的操作记录无关，那些都不动。
 
-- **模块**在 infra `log/`（`fields.ts` / `logger.ts` / `files.ts` / `process.ts`），server 与今后的桌面宿主共用，web 运行时不引用。一条记录＝事件名＋字段。事件名来自创建 logger 时给出的目录（`createLogger({ events })`，类型上是字面量联合，运行时不在目录里的名字写成 `log.rejected`、原名丢弃）；字段值只能由 `f` 的构造函数产生，logger 没有接收文本的方法，不是 `LogField` 的值（字符串、对象）在类型上不通过，运行时被丢弃并计入 `dropped_fields`。
-- **字段种类与各自的检查**：`f.id` 标识符（ASCII、无空白、无 `@`、至多 128 字符，否则写 `<invalid-id>`；带空格的标题、邮件地址、中文因此进不来，单个英文单词拦不住）；`f.oneOf` 枚举（必须是调用处给出的那张代码表里的值，否则 `<invalid-enum>`）；`f.ids` / `f.someOf` 是前两者的列表（至多 64 项）；`f.num`；`f.ms`；`f.path`（主目录及其 realpath 写成 `~`，控制字符替换，至多 1024 字符）；`f.url`（只留协议和主机，不含用户名密码）；`f.error`（名称、`code`，系统错误另有 `syscall` 与 `path`，逐帧 `文件:行:列` 的调用栈〔丢掉首行与函数名，主目录写成 `~`，至多 40 帧〕、`cause` 至多三层；抛出的不是 Error 时只记它的类型）。
-- **错误消息**：默认丢弃。保留的唯一途径是错误类在自己身上声明 `static readonly [LOG_SAFE_MESSAGE] = true`（只对该类本身有效，子类要自己声明）；保留的消息仍替换主目录、去掉控制字符、截到 500 字符。现在没有任何产品错误类做了声明：`ConfigError` 的文案带配置文件路径，TOML 语法错误时还带解析器摘出的原文行，所以不声明。
-- **输出端可注入**：`LogSink` 一个 `write(line)`。生产用 `openLogFile`：`<全局数据目录>/logs/<UTC 时间到毫秒>-<进程种类>-<pid>.jsonl`，一行一条 JSON（`t`、`level`、`event`，然后是字段），目录 0700、文件 0600，同步追加（进程崩溃前写下的记录已经在盘上）。打开时清理：按文件名（即启动时间）只留最新 20 个，且从新到旧累计不超过 50 MB，超出的连同更旧的一起删；只碰符合上述命名的文件，本次运行的文件不删；单次运行写满 50 MB 后不再写。建目录、开文件、写、清理的任何失败都被吞掉，只是没有日志。测试用 `createMemorySink`；`discardSink` 上的 logger 什么都不做。
+- **模块**在 infra `log/`（`fields.ts` / `logger.ts` / `files.ts` / `process.ts`），server 与今后的桌面宿主共用，web 运行时不引用。一条记录＝事件名＋字段。事件名来自创建 logger 时给出的目录（`createLogger({ events })`，类型上是字面量联合，运行时不在目录里的名字写成 `log.rejected`、原名与字段都丢弃）；字段值只能由 `f` 的构造函数产生，logger 没有接收文本的方法，不是 `LogField` 的值（字符串、对象）在类型上不通过，运行时被丢弃并计入 `dropped_fields`；字段名须是 `[a-z][a-z0-9_]{0,39}`，否则同样丢弃。
+- **字段种类与各自的检查**（`fields.ts`）：
+  - `f.id` 标识符：ASCII、无空白、无 `@`、至多 128 字符，否则写 `<invalid-id>`。带空格的标题、邮件地址、中文因此进不来，单个英文单词拦不住。以 `work:`、`latex-`、`upload-` 开头的值（`upload-<uuid>` 这种任务 id 除外）按下面的 Work / Doc 规则写出，不原样写。
+  - `f.workId` / `f.docId`：Work / Doc 标识符，判定表见下。
+  - `f.oneOf` 枚举：必须是调用处给出的那张表里的值，否则 `<invalid-enum>`；表由调用处的代码提供（请求记录里是 app 注册过的路由模式）。`f.ids` / `f.someOf` 是列表（至多 64 项）。
+  - `f.num` 有限数；`f.ms` 非负有限数，保留一位小数。
+  - `f.path`：只认绝对路径形态——`/…`、`X:\…` 或 `X:/…`、`\\server\…`，以及已经写成 `~` 或 `~/…` 的；其余（标题、句子、相对路径、文件名）写 `<invalid-path>`。主目录及其 realpath 写成 `~`，控制字符与 bidi 控制符（U+061C、U+200E / U+200F、U+202A–U+202E、U+2066–U+2069，与 CLI 冻结契约里 `<q>` 的集合相同）换成 `?`，至多 1024 字符。拦不住的是以 `/` 开头的任意文本；主目录以下的文件夹名（项目文件夹名）照实写出。
+  - `f.url`：只留协议和主机，不含用户名密码、路径、查询。协议须在写定的名单内（`http` `https` `ws` `wss` `ftp` `file` `mailto` `data` `blob` `about` `imap` `imaps` `smtp` `smtps` `tauri`），所以 `dark.matter:halo mass` 这类「词:其余」写成 `<invalid-url>`；没有主机的（`mailto:` `data:` `blob:` `file:`）只写协议；主机至多 255 字符；传入的不是字符串或 `URL` 对象也写 `<invalid-url>`。
+  - `f.error`：见下。
+- **Work / Doc 标识符在日志里的写法**（用户 2026-10-13 裁决；标识符的真实构成在 core `canonicalId`、`uploadDocId`、`arxivDocId`，infra `docIdFor`，以及 PDF / 文本 Doc 的 `pdf-<uuid>` / `text-<uuid>`）。原样写出的只有下表左列的形态，并且还要通过 `f.id` 的字符与长度检查；其余一律取哈希，判断不了的形态也取哈希。
+
+  | 原样写出 | 写成哈希 |
+  | --- | --- |
+  | Work：`doi:10.<4–9 位数字>/<无空白>`、`arxiv:<YYMM.NNNNN>`、`arxiv:<旧式 archive[.XX]/NNNNNNN>`、`openalex:<字母＋数字>` | Work：`work:<标题 slug>[-<年份>]` 及任何其他形态 → `work:#<12 位十六进制>` |
+  | Doc：`arxiv-<YYMM.NNNNN>[vN]`、`arxiv-<旧式号，/ 换成 ->`、`pdf-<uuid>`、`text-<uuid>`、`upload-doi-10-…-<6 位十六进制>`、`upload-arxiv-…-<6 位>`、`upload-openalex-…-<6 位>`（所属 Work 的 id 是 DOI / arXiv / OpenAlex 时，`uploadDocId` 的 slug 以这三个前缀开头） | Doc：`latex-<本地文件或文件夹名>` → `latex-#<12 位>`；`upload-work-<标题 slug>-…` 及其他 `upload-` → `upload-#<12 位>`；其余形态 → `doc-#<12 位>` |
+
+  哈希是整个标识符的 SHA-256 的前 12 位十六进制，不加盐、不含任何与本次运行有关的东西，所以同一个对象在所有记录、所有运行里是同一个写法，记录之间对得上；代价是知道或猜到标题的人可以验证某条记录说的是不是那篇文献。带这类 id 的事件不再带以 id 命名的文件路径（`library.argument_graph_merged` 原先的 `absorbed_file` / `survivor_file` 已去掉）。调用方仍可能绕过的地方：把 Work / Doc id 交给 `f.id` 而它又不是上述三个前缀之一的形态时，只受 `f.id` 的一般检查；一个真实形态的 DOI 本身若含有词语，按裁决原样写出。
+- **错误**：记 `name`（须是标识符形态，否则写 `Error`）、`code`（标识符形态的字符串或有限数）；系统错误（带合法的 `syscall`）另记 `syscall` 与 `path`（按 `f.path` 的规则，相对路径写成 `<invalid-path>`）；`stack` 是逐帧的 `文件:行:列`，至多 40 帧，丢掉函数名，文件按路径规则写（主目录写成 `~`），`node:` 开头的运行时模块名原样写；`cause` 按同样规则递归，至多三层；抛出的不是 Error 时只记 `{name: "NonError", thrown: <typeof>}`。**调用栈的首行是 `名称: 消息`，消息可以有多行，其中任何一行都可能长得像栈帧**，所以解析帧之前先把消息按它的原文从栈文本开头切掉：栈必须以 `<消息>`、`<名称>: <消息>` 或（消息为空时）`<名称>` 开头并紧跟换行或结束，其中名称是标识符形态、可带 Node 的 ` [CODE]`；对不上（消息在栈生成后被改过、`stack` 被换成别的文本或不是字符串、`Error.prepareStackTrace` 产出了别的格式、名称里带换行）就不记调用栈，`stack` 为空数组。
+- **错误消息**：默认丢弃，引擎内建类型（`TypeError`、`SyntaxError` 等）也不例外。保留的唯一途径是错误类在自己身上声明 `static readonly [LOG_SAFE_MESSAGE] = true`（只对该类本身有效，子类要自己声明）；保留的消息仍替换主目录、把控制字符与 bidi 控制符换成空格、截到 500 字符。现在没有任何产品错误类做了声明：`ConfigError` 的文案带配置文件路径，TOML 语法错误时还带解析器摘出的原文行，所以不声明。
+- **输出端可注入**：`LogSink` 一个 `write(line)`。生产用 `openLogFile`：`<全局数据目录>/logs/<UTC 时间到毫秒>-<进程种类>-<pid>.jsonl`，一行一条 JSON（`t`、`level`、`event`，然后是字段），目录 0700、文件 0600，同步追加（进程崩溃前写下的记录已经在盘上）。文件以独占创建方式打开（`ax`）：同名的文件或符号链接已经在那里时既不追加也不跟随，改用 `…-<pid>-1.jsonl` 到 `-8` 中第一个空着的名字，都被占了就不记录、不抛错。打开时清理：按文件名（即启动时间）只留最新 20 个（`LOG_KEEP_FILES`），且从新到旧累计不超过 50 MB（`LOG_MAX_TOTAL_BYTES`，50 × 1024 × 1024 字节），超出的连同更旧的一起删；只碰符合上述命名的文件，本次运行的文件不删。单次运行也以 50 MB 为限：第一条写不下的记录换成一条截断标记 `{"t":…,"level":"warn","event":"log.truncated"}`（标记的位置事先留出，文件不会超过上限），此后这次运行不再写任何记录。`discardSink` 上的 logger 什么都不做。测试用的内存输出端不在产品代码里，在 `packages/infra/tests/log-memory-sink.ts`，server / cli 的测试按路径引用。
 - **级别**：`debug` / `info` / `warn` / `error`，config.toml 的 `log_level`（默认 `info`；类型或取值不对是点名该键的 `ConfigError`）。logger 的级别可在运行中用 `setLevel` 改，下一条记录起生效；界面入口与不重启生效的接线在后续票。
-- **谁写**：只有 `startServer`（即 `serve`）打开日志文件（`openServeLog`）；`createServer` / `createApp` 只往传入的 `log` 里写，没传就是不记录、不解析也不创建日志目录，所以测试服务器默认没有日志。其余 CLI 命令不碰日志。`serve` 打印到终端的三行不变。
+- **谁写**：只有长时间运行的进程写用户日志，现在是 `serve`：只有 `startServer` 打开日志文件（`openServeLog`）；`createServer` / `createApp` 只往传入的 `log` 里写，没传就是不记录、不解析也不创建日志目录，所以测试服务器默认没有日志。其余 CLI 命令不写日志文件、不创建日志目录，它们的 stdout / stderr / exit code 不因日志而变；`serve` 启动时打印到终端的三行不变。`startServer` 打开日志之后若启动失败（server 建不起来、端口绑不上），日志文件被关闭、对进程的观察被撤掉。
+- **写日志失败不影响别的事**：建目录、开文件、写、清理的任何失败都被吞掉，只是没有日志；记录一条请求出错也不改变它的应答。请求不因此失败，进程不因此退出。
+- **未捕获的异常与 Promise 拒绝只被记下**：经 `uncaughtExceptionMonitor` 只观察不接管，Node 照旧把错误打印到 stderr 并以原退出码结束。
 - **server 的事件**（目录在 server `log.ts` 的 `SERVER_LOG_EVENTS`）：
-  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist、配置文件里出现的已知键名与未知键的个数、日志级别、pid、Node 版本、平台与架构。
-  - `request.failed`：方法、路由模式、状态码、耗时、应答 JSON 里的 `code`（有才记）、错误（有才记）。状态码 ≥ 500 为 error 级；400–499 为 warn 级；**GET / HEAD 的 404 不算失败**（查一个已不存在的 Doc、页面资源、source map 都是正常问答）。路由模式取自实际应答的那条路由，并且必须是 app 注册过的模式之一。路由里抛出的不是 Error 时（Hono 不交给 `onError`，原样交给 HTTP 层应答），记录里没有状态码。
+  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist（三者都是绝对路径，按路径规则写）、日志级别、pid、Node 版本、平台与架构，以及配置文件里出现的本版本认识的键名和其余键的个数。也就是说端口、数据目录、日志级别记的是生效值；其他配置值不记，不认识的键名也不记。
+  - `request.failed`：方法、路由模式（如 `/api/paper/:doc_id`）、状态码、耗时、错误码（有才记）、错误（有才记）。不记实际路径、查询参数、请求体；应答体只在它是 JSON 时取其中的 `code` 字段，并按 `f.id` 的规则校验后写出，其余不读不记。状态码 ≥ 500 为 error 级；400–499 为 warn 级；**GET / HEAD 的 404 不算失败**（查一个已不存在的 Doc、页面资源、source map 都是正常问答）。路由模式取自实际应答的那条路由，并且必须是 app 注册过的模式之一。路由里抛出的不是 Error 时（Hono 不交给错误处理，原样交给 HTTP 层应答），记录里没有状态码。路由自己返回 5xx 而没有抛错时，记录里没有调用栈。
   - `request.completed`：debug 级，状态码 < 400 的请求和上面那种 404。
-  - `process.uncaught_exception` / `process.unhandled_rejection`：经 `uncaughtExceptionMonitor` 只观察不接管，Node 照旧打印并以原退出码结束。
-  - 原先打印到控制台的几处：`library.argument_graph_merged`、`argument_graph.broadcast_failed`、`arxiv_fetch.log_append_failed`、`arxiv_ingest.auto_submit_failed`、`copilot.observation_not_recordable`、`copilot.mail_accounts_unreadable`。
-- **主应用的错误处理**：`logRequests` 在所有路由之前注册，并给主应用装上唯一的 `onError`：应答与此前 Hono 的默认行为相同（纯文本 `Internal Server Error`、500），只是不再把错误打印到 stderr，改由上面的 `request.failed` 记录。Mail、provider 等自带固定文案的子路由照旧用它们自己的处理，记录从同一处产生。任务、外部程序、外部服务、Copilot、邮件监听的事件，以及页面错误，属于后续票。
+  - `process.uncaught_exception` / `process.unhandled_rejection`：见上。
+  - 原先打印到控制台的几处：`library.argument_graph_merged`（结果、两个 Work 的 id、原因等枚举；不带文件路径）、`argument_graph.broadcast_failed`、`arxiv_fetch.log_append_failed`、`arxiv_ingest.auto_submit_failed`、`copilot.observation_not_recordable`、`copilot.mail_accounts_unreadable`。
+- **请求里未处理的异常**：`logRequests` 在所有路由之前注册一个中间件，只做记录，**不给主应用装 `onError`**。路由抛出的 Error 仍由 Hono 的默认处理应答——带 `getResponse` 的错误用它自己的应答（并入已设置的头），其余是纯文本 `Internal Server Error`、500——并照旧由它把整个错误（含消息）用 `console.error` 打印到 `serve` 的 stderr；中间件随后从 context 上取到这个错误，记一条不含消息的 `request.failed`。终端输出是用户自己的终端，不属于用户日志，隐私规则只管日志文件。没有传 `log` 的 `createApp` / `createServer` 不注册这个中间件，日志文件打不开的 `serve` 照常应答与打印，三种情形的应答体和 stderr 都与有日志之前相同。Mail、provider 等自带固定文案的子路由照旧用它们自己的处理，记录从同一处产生。
+- **改动日志模块时**：新增字段种类、放宽某种字段的检查、把某个错误类型声明为消息安全、给事件加字段，都要对照 [contracts](contracts.md#用户日志2026-10-13-新增) 的「不进用户日志的内容」逐项核对。任务、外部程序、外部服务、Copilot、邮件监听的事件，以及页面错误，属于后续票。
 
 ## LaTeX 数据流
 

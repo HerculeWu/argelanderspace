@@ -34,7 +34,8 @@ export function arxivFetchLogPath(dataDir: string): string {
 
 /**
  * Append one entry (best-effort fs: a logging failure must never mask the
- * job's own outcome, so callers wrap this in try/catch + console.error).
+ * job's own outcome, so callers wrap this in try/catch and record the failure
+ * in the user-level log as `arxiv_fetch.log_append_failed`).
  */
 export function appendArxivFetchLog(dataDir: string, entry: ArxivFetchLogEntry): void {
   mkdirSync(join(dataDir, "logs"), { recursive: true });

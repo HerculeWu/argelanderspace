@@ -16,8 +16,9 @@ import {
   publishPdfDoc,
   uploadDocId,
 } from "@argelanderspace/core";
-import { createLogger, createMemorySink } from "@argelanderspace/infra";
+import { createLogger } from "@argelanderspace/infra";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createMemorySink } from "../../infra/tests/log-memory-sink.js";
 import { createAcquisition, createLockedRebuild } from "../src/acquisition.js";
 import { DocMutationRegistry } from "../src/doc-mutations.js";
 import { JobRunner } from "../src/jobs.js";

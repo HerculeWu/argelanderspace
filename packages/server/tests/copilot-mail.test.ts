@@ -21,7 +21,6 @@ import {
   createCredentialStore,
   createLogger,
   createMailAccountStore,
-  createMemorySink,
   createNodeMailMailbox,
   createNodeMailManage,
   createNodeMailOutgoing,
@@ -37,6 +36,7 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createMemorySink } from "../../infra/tests/log-memory-sink.js";
 import {
   attachmentMail,
   type FakeFolder,

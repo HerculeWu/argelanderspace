@@ -19,17 +19,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
+import * as infra from "../src/index.js";
 import {
   createLogger,
-  createMemorySink,
   discardSink,
   f,
+  LOG_KEEP_FILES,
+  LOG_MAX_TOTAL_BYTES,
   LOG_SAFE_MESSAGE,
   type LogFields,
   openLogFile,
   pruneLogDir,
   resolveLogDir,
 } from "../src/log/index.js";
+import { createMemorySink } from "./log-memory-sink.js";
 
 const HOME = "/home/ann";
 const EVENTS = ["test.happened", "test.other"] as const;
@@ -253,14 +256,12 @@ describe("paths", () => {
       home: f.path("/home/ann"),
       elsewhere: f.path("/srv/data/literatures"),
       sibling: f.path("/home/anna/notes"),
-      relative: f.path("literatures/output"),
     });
     expect(record).toMatchObject({
       project: "~/research/halos",
       home: "~",
       elsewhere: "/srv/data/literatures",
       sibling: "/home/anna/notes",
-      relative: "literatures/output",
     });
   });
 
@@ -295,7 +296,50 @@ describe("paths", () => {
     const p = sink.records()[0]?.p as string;
     expect(p.startsWith("/tmp/a?b?c/")).toBe(true);
     expect(p.length).toBe(1025);
-    expect(recordOf({ p: f.path(7 as never) }).p).toBe("<invalid>");
+    expect(recordOf({ p: f.path(7 as never) }).p).toBe("<invalid-path>");
+  });
+
+  test("only an absolute path is a path: text, a relative path or a bare name is not written", () => {
+    const record = recordOf({
+      title: f.path("This is the title of a paper, plainly not a path"),
+      relative: f.path("literatures/output"),
+      dotted: f.path("./notes/private.md"),
+      name: f.path("private-notes.md"),
+      sentence: f.path("see /home/ann/secret for the draft"),
+      empty: f.path(""),
+      posix: f.path("/srv/data"),
+      windows: f.path("D:\\data\\lit"),
+      windows_slash: f.path("D:/data/lit"),
+      unc: f.path("\\\\server\\share\\x"),
+      tilde: f.path("~/research"),
+      tilde_alone: f.path("~"),
+      tilde_name: f.path("~title of something"),
+    });
+    for (const key of ["title", "relative", "dotted", "name", "sentence", "empty", "tilde_name"]) {
+      expect(record[key], key).toBe("<invalid-path>");
+    }
+    expect(record).toMatchObject({
+      posix: "/srv/data",
+      windows: "D:\\data\\lit",
+      windows_slash: "D:/data/lit",
+      unc: "\\\\server\\share\\x",
+      tilde: "~/research",
+      tilde_alone: "~",
+    });
+  });
+
+  test("bidi controls and marks cannot reorder what a path shows", () => {
+    const marks = [
+      0x061c, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068,
+      0x2069,
+    ];
+    for (const code of marks) {
+      const ch = String.fromCharCode(code);
+      const { sink, log } = setup();
+      log.info("test.happened", { p: f.path(`/tmp/a${ch}b`) });
+      expect(sink.lines[0], code.toString(16)).not.toContain(ch);
+      expect(sink.records()[0]?.p).toBe("/tmp/a?b");
+    }
   });
 });
 
@@ -317,6 +361,177 @@ describe("URLs", () => {
       mail: "mailto:",
       bad: "<invalid-url>",
     });
+  });
+
+  test("schemes without a host keep the scheme alone; an IPv6 host keeps its brackets", () => {
+    expect(
+      recordOf({
+        data: f.url("data:text/plain;base64,U0VDUkVU"),
+        blob: f.url("blob:https://example.org/7f3a-SECRET"),
+        file: f.url("file:///home/ann/SECRET/notes.txt"),
+        v6: f.url("http://[::1]:1859/api/SECRET"),
+        imap: f.url("imaps://ann:pw@imap.example.org:993/INBOX"),
+      })
+    ).toMatchObject({
+      data: "data:",
+      blob: "blob:",
+      file: "file:",
+      v6: "http://[::1]:1859",
+      imap: "imaps://imap.example.org:993",
+    });
+  });
+
+  test("text shaped like `word:rest` is not a URL: the word is not written as a scheme", () => {
+    const { sink, log } = setup();
+    log.info("test.happened", {
+      a: f.url("dark.matter:halo mass"),
+      b: f.url("Abstract:we study SECRET things"),
+      c: f.url("secretword://another.secretword/x"),
+      d: f.url(42 as never),
+      e: f.url({ toString: () => "https://example.org" } as never),
+    });
+    expect(sink.records()[0]).toMatchObject({
+      a: "<invalid-url>",
+      b: "<invalid-url>",
+      c: "<invalid-url>",
+      d: "<invalid-url>",
+      e: "<invalid-url>",
+    });
+    expect(sink.lines[0]).not.toMatch(/dark|matter|abstract|secret/i);
+  });
+
+  test("a host has a length limit", () => {
+    const label = "a".repeat(60);
+    const long = Array.from({ length: 6 }, () => label).join(".");
+    expect(recordOf({ u: f.url(`https://${long}.example.org/x`) }).u).toBe("<invalid-url>");
+    const ok = `${label}.${label}.example.org`;
+    expect(recordOf({ u: f.url(`https://${ok}/x`) }).u).toBe(`https://${ok}`);
+  });
+});
+
+describe("Work and Doc identifiers", () => {
+  const HASHED_WORK = /^work:#[0-9a-f]{12}$/;
+
+  test("a Work id made of a DOI, an arXiv number or an OpenAlex number is written as it is", () => {
+    expect(
+      recordOf({
+        doi: f.workId("doi:10.1016/s0370-2693(99)00123-4"),
+        arxiv: f.workId("arxiv:2603.03522"),
+        arxiv_old: f.workId("arxiv:astro-ph/0601001"),
+        openalex: f.workId("openalex:W2741809807"),
+      })
+    ).toMatchObject({
+      doi: "doi:10.1016/s0370-2693(99)00123-4",
+      arxiv: "arxiv:2603.03522",
+      arxiv_old: "arxiv:astro-ph/0601001",
+      openalex: "openalex:W2741809807",
+    });
+  });
+
+  test("a Work id made from a title is written as a hash, the same one every time", () => {
+    const id = "work:dark-matter-halos-in-the-early-universe-2024";
+    const { sink, log } = setup();
+    log.info("test.happened", { work: f.workId(id) });
+    log.info("test.other", { work: f.workId(id), other: f.workId(`${id}x`) });
+    const [first, second] = sink.records() as Array<Record<string, string>>;
+    expect(first?.work).toMatch(HASHED_WORK);
+    expect(second?.work).toBe(first?.work);
+    expect(second?.other).toMatch(HASHED_WORK);
+    expect(second?.other).not.toBe(first?.work);
+    expect(sink.lines.join("")).not.toMatch(/dark|matter|halos|universe|2024/);
+    // Another logger (another run) writes the same thing: nothing about the run goes into the hash.
+    const again = createMemorySink();
+    createLogger({ events: EVENTS, sink: again, home: "/elsewhere" }).info("test.happened", {
+      work: f.workId(id),
+    });
+    expect(again.records()[0]?.work).toBe(first?.work);
+  });
+
+  test("anything that is not one of the three known shapes is hashed, whatever it claims to be", () => {
+    const record = recordOf({
+      doi_text: f.workId("doi:a-title-typed-where-a-doi-goes"),
+      doi_spaces: f.workId("doi:10.1234/with spaces SECRET"),
+      arxiv_text: f.workId("arxiv:secret-title-words"),
+      openalex_text: f.workId("openalex:secretwords"),
+      bare: f.workId("A Title Passed By Mistake"),
+      empty: f.workId(""),
+      long: f.workId(`doi:10.1234/${"x".repeat(200)}`),
+    });
+    for (const key of Object.keys(record).filter((k) => !["t", "level", "event"].includes(k))) {
+      expect(record[key], key).toMatch(HASHED_WORK);
+    }
+    expect(recordOf({ w: f.workId(42 as never) }).w).toBe("<invalid-id>");
+  });
+
+  test("a Doc id made of an arXiv number or a random number is written as it is", () => {
+    const uuid = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a9b";
+    expect(
+      recordOf({
+        arxiv: f.docId("arxiv-2501.17225"),
+        arxiv_old: f.docId("arxiv-astro-ph-0601001"),
+        pdf: f.docId(`pdf-${uuid}`),
+        text: f.docId(`text-${uuid}`),
+        upload_doi: f.docId("upload-doi-10-1016-s0370-2693-99-00123-4-a1b2c3"),
+        upload_arxiv: f.docId("upload-arxiv-2603-03522-0f9e8d"),
+        upload_openalex: f.docId("upload-openalex-w2741809807-abcdef"),
+      })
+    ).toMatchObject({
+      arxiv: "arxiv-2501.17225",
+      arxiv_old: "arxiv-astro-ph-0601001",
+      pdf: `pdf-${uuid}`,
+      text: `text-${uuid}`,
+      upload_doi: "upload-doi-10-1016-s0370-2693-99-00123-4-a1b2c3",
+      upload_arxiv: "upload-arxiv-2603-03522-0f9e8d",
+      upload_openalex: "upload-openalex-w2741809807-abcdef",
+    });
+  });
+
+  test("a Doc id made from a title or a folder name is written as a hash that keeps only the kind", () => {
+    const { sink, log } = setup();
+    log.info("test.happened", {
+      latex: f.docId("latex-my-secret-thesis-draft"),
+      upload: f.docId("upload-work-dark-matter-halos-in-the-early-univ-a1b2c3"),
+      arxiv_text: f.docId("arxiv-secret-folder-name"),
+      pdf_text: f.docId("pdf-secret-file-name"),
+      other: f.docId("secret-folder"),
+      same: f.docId("latex-my-secret-thesis-draft"),
+    });
+    const record = sink.records()[0] as Record<string, string>;
+    expect(record.latex).toMatch(/^latex-#[0-9a-f]{12}$/);
+    expect(record.upload).toMatch(/^upload-#[0-9a-f]{12}$/);
+    expect(record.arxiv_text).toMatch(/^doc-#[0-9a-f]{12}$/);
+    expect(record.pdf_text).toMatch(/^doc-#[0-9a-f]{12}$/);
+    expect(record.other).toMatch(/^doc-#[0-9a-f]{12}$/);
+    expect(record.same).toBe(record.latex);
+    expect(sink.lines[0]).not.toMatch(/secret|thesis|dark|matter|halos/);
+    expect(recordOf({ d: f.docId(null as never) }).d).toBe("<invalid-id>");
+  });
+
+  test("the plain identifier field does not write a title-made id either; a job id is still an id", () => {
+    const uuid = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a9b";
+    const { sink, log } = setup();
+    log.info("test.happened", {
+      work: f.id("work:dark-matter-halos-2024"),
+      latex: f.id("latex-my-secret-thesis"),
+      upload: f.id("upload-work-dark-matter-halos-a1b2c3"),
+      list: f.ids(["work:dark-matter-halos-2024", "arxiv:2603.03522"]),
+      job: f.id(`upload-${uuid}`),
+      ingest: f.id(`ingest-${uuid}`),
+    });
+    const record = sink.records()[0] as Record<string, unknown>;
+    expect(record.work).toBe(recordOf({ w: f.workId("work:dark-matter-halos-2024") }).w);
+    expect(record.latex).toBe(recordOf({ d: f.docId("latex-my-secret-thesis") }).d);
+    expect(record.upload).toMatch(/^upload-#[0-9a-f]{12}$/);
+    expect(record.list).toEqual([record.work, "arxiv:2603.03522"]);
+    expect(record.job).toBe(`upload-${uuid}`);
+    expect(record.ingest).toBe(`ingest-${uuid}`);
+    expect(sink.lines[0]).not.toMatch(/secret|thesis|dark|matter|halos/);
+  });
+});
+
+describe("what production code can import", () => {
+  test("the memory sink is a test helper, not an export of the package", () => {
+    expect("createMemorySink" in infra).toBe(false);
   });
 });
 
@@ -396,6 +611,83 @@ describe("errors", () => {
       "~/app/dist/plain.js:3:1",
       "node:internal/process/task_queues:95:5",
     ]);
+  });
+
+  test("a line of the message that looks like a stack frame is not written as one", () => {
+    const { sink, log } = setup();
+    log.error("test.happened", {
+      error: f.error(
+        new Error("compile failed\n    at /Dear Bob the secret mail body is here:1:2")
+      ),
+      type_error: f.error(new TypeError("x\n    at fn (/SECRET/one:3:4)\n    at /SECRET/two:5:6")),
+    });
+    expect(sink.lines[0]).not.toMatch(/Dear Bob|secret|SECRET/);
+    const record = sink.records()[0] as Record<string, { stack: string[] }>;
+    // The real frames are still there.
+    expect(record.error?.stack.length).toBeGreaterThan(0);
+    expect(record.error?.stack[0]).toContain("log.test.ts");
+    expect(record.type_error?.stack[0]).toContain("log.test.ts");
+  });
+
+  test("the frames survive a class that names itself, an empty message and a Node error code in the first line", () => {
+    const here = /log\.test\.ts:\d+:\d+$/;
+    const named = recordOf({ error: f.error(new Declared("SECRET\n    at /SECRET/x:1:2")) })
+      .error as { stack: string[] };
+    expect(named.stack[0]).toMatch(here);
+    expect(JSON.stringify(named.stack)).not.toContain("SECRET");
+    const empty = recordOf({ error: f.error(new RangeError()) }).error as { stack: string[] };
+    expect(empty.stack[0]).toMatch(here);
+    let coded: unknown;
+    try {
+      readFileSync({} as never);
+    } catch (e) {
+      coded = e;
+    }
+    const node = recordOf({ error: f.error(coded) }).error as { code: string; stack: string[] };
+    expect(node.code).toBe("ERR_INVALID_ARG_TYPE");
+    expect(node.stack.length).toBeGreaterThan(0);
+  });
+
+  test("a stack whose first line cannot be told from the message is not written at all", () => {
+    const secretFrame = "    at /SECRET/frame:1:2";
+    // The message was changed after the stack was made: where the old message ends is unknown.
+    const changed = new Error(`old message\n${secretFrame}`);
+    expect(changed.stack).toContain("old message"); // V8 writes the stack when it is first read
+    changed.message = "new message";
+    // The stack was replaced by something that does not start the way V8 starts one.
+    const replaced = new Error("m");
+    replaced.stack = `whatever\n${secretFrame}`;
+    // A name with a line of its own.
+    const renamed = new Error("");
+    renamed.name = `Odd\n${secretFrame}`;
+    Error.captureStackTrace(renamed);
+    const notText = new Error("m");
+    (notText as { stack: unknown }).stack = [secretFrame];
+    const noMessage = new Error("m");
+    (noMessage as { message: unknown }).message = { text: "m" };
+    for (const error of [changed, replaced, renamed, notText, noMessage]) {
+      const { sink, log } = setup();
+      log.error("test.happened", { error: f.error(error) });
+      expect(sink.lines[0]).not.toContain("SECRET");
+      expect(sink.records()[0]).toMatchObject({ error: { stack: [] } });
+      expect((sink.records()[0] as { error: { stack: unknown[] } }).error.stack).toHaveLength(0);
+    }
+  });
+
+  test("a kept message loses bidi controls", () => {
+    const out = recordOf({ error: f.error(new Declared("left\u202eright\u2066x\u200f")) })
+      .error as { message: string };
+    expect(out.message).toBe("left right x ");
+  });
+
+  test("a system error's path follows the path rule", () => {
+    const relative = Object.assign(new Error("ENOENT"), {
+      code: "ENOENT",
+      syscall: "open",
+      path: "private notes/SECRET.md",
+    });
+    const out = recordOf({ error: f.error(relative) }).error as Record<string, unknown>;
+    expect(out.path).toBe("<invalid-path>");
   });
 
   test("a real stack points at this file, with nothing of the message in it", () => {
@@ -528,12 +820,90 @@ describe("log files", () => {
     ]);
   });
 
-  test("this run's file is never tidied away, and one run stops growing at the total size", () => {
+  test("the default limits are 20 files and 50 MB", () => {
+    expect(LOG_KEEP_FILES).toBe(20);
+    expect(LOG_MAX_TOTAL_BYTES).toBe(50 * 1024 * 1024);
+    // And the default is what a run without options stops at.
+    const dir = tmp();
+    const file = openLogFile({ dir, process: "serve", now: at(1), pid: 1 });
+    const mib = "x".repeat(1024 * 1024 - 1);
+    for (let i = 0; i < 52; i++) file.write(mib);
+    file.close();
+    const size = statSync(file.path as string).size;
+    expect(size).toBeLessThanOrEqual(50 * 1024 * 1024);
+    expect(size).toBeGreaterThan(49 * 1024 * 1024);
+  });
+
+  test("a run that reaches the size limit writes one last record saying so, and then nothing", () => {
+    const dir = tmp();
+    const file = openLogFile({ dir, process: "serve", now: at(1), pid: 1, maxTotalBytes: 300 });
+    const line = JSON.stringify({ event: "test.happened", pad: "x".repeat(40) });
+    for (let i = 0; i < 50; i++) file.write(line);
+    // A record small enough to fit in what is left is not written either: the file ends at the marker.
+    file.write("{}");
+    file.close();
+    const text = readFileSync(file.path as string, "utf8");
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(300);
+    const lines = text.trimEnd().split("\n");
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.slice(0, -1).every((l) => l === line)).toBe(true);
+    const last = JSON.parse(lines.at(-1) as string) as Record<string, unknown>;
+    expect(last).toEqual({ t: expect.any(String), level: "warn", event: "log.truncated" });
+    expect(last.t).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+  });
+
+  test("a file is only ever created: a name that is taken, or a symbolic link left there, is not written to", () => {
+    const dir = tmp();
+    const name = "20261013T080100000Z-serve-4242.jsonl";
+    const target = join(tmp(), "victim.txt");
+    writeFileSync(target, "someone else's file\n");
+    symlinkSync(target, join(dir, name));
+    const file = openLogFile({ dir, process: "serve", now: at(1), pid: 4242 });
+    file.write("{}");
+    file.close();
+    expect(readFileSync(target, "utf8")).toBe("someone else's file\n");
+    expect(file.path).not.toBe(join(dir, name));
+    expect(file.path).toBe(join(dir, "20261013T080100000Z-serve-4242-1.jsonl"));
+    expect(readFileSync(file.path as string, "utf8")).toBe("{}\n");
+
+    // An existing regular file of the same name is not appended to.
+    const dir2 = tmp();
+    writeFileSync(join(dir2, name), "earlier\n");
+    const second = openLogFile({ dir: dir2, process: "serve", now: at(1), pid: 4242 });
+    second.write("{}");
+    second.close();
+    expect(readFileSync(join(dir2, name), "utf8")).toBe("earlier\n");
+    expect(second.path).toBe(join(dir2, "20261013T080100000Z-serve-4242-1.jsonl"));
+
+    // Every candidate name taken: no file, no throw.
+    const dir3 = tmp();
+    writeFileSync(join(dir3, name), "");
+    for (let n = 1; n <= 8; n++)
+      writeFileSync(join(dir3, name.replace(".jsonl", `-${n}.jsonl`)), "");
+    const before = readdirSync(dir3).sort();
+    const third = openLogFile({ dir: dir3, process: "serve", now: at(1), pid: 4242 });
+    expect(third.path).toBeNull();
+    expect(() => third.write("{}")).not.toThrow();
+    third.close();
+    expect(readdirSync(dir3).sort()).toEqual(before);
+  });
+
+  test("a file with a numbered name is tidied like any other", () => {
+    const dir = tmp();
+    for (let i = 0; i < 4; i++) {
+      writeFileSync(join(dir, `20261013T080${i}00000Z-serve-1-1.jsonl`), "{}\n");
+    }
+    pruneLogDir(dir, { keepFiles: 2 });
+    expect(readdirSync(dir).sort()).toEqual([
+      "20261013T080200000Z-serve-1-1.jsonl",
+      "20261013T080300000Z-serve-1-1.jsonl",
+    ]);
+  });
+
+  test("this run's file is never tidied away", () => {
     const dir = tmp();
     const file = openLogFile({ dir, process: "serve", now: at(1), pid: 1, maxTotalBytes: 100 });
-    for (let i = 0; i < 50; i++) file.write("0123456789");
     file.close();
-    expect(statSync(file.path as string).size).toBe(99);
     // A newer start by another process, with this one's file larger than the limit: it is the other one's to keep.
     pruneLogDir(dir, { maxTotalBytes: 10, current: "20261013T080100000Z-serve-1.jsonl" });
     expect(readdirSync(dir)).toEqual(["20261013T080100000Z-serve-1.jsonl"]);

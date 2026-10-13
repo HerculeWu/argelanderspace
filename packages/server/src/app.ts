@@ -446,7 +446,7 @@ export function createApp(deps: AppDeps): Hono {
   };
 
   const app = new Hono();
-  // First, so that it sees every request: the record of failed requests, and the one handler for unhandled errors.
+  // First, so that it sees every request: the record of failed requests (the answers themselves are not changed).
   logRequests(app, log);
 
   // Dev: the Vite dev server (localhost:5173) calls this API directly.

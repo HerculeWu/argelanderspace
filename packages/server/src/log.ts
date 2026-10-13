@@ -3,6 +3,10 @@
  * file `serve` writes. Privacy is the log module's business — every value below goes through one of its field
  * constructors — and this file only decides which events exist and when they are written.
  *
+ * Recording a request changes nothing else about it: the answer is the one the app gives without a log, and an
+ * error no route handled is still printed whole on the server's terminal by Hono's default handling (the terminal
+ * is the user's own; only the log file is written to be handed on).
+ *
  * Which requests count as failed:
  *   - status 500 and above: `request.failed` at level error, with the error that caused it when there is one;
  *   - status 400–499: `request.failed` at level warn — the server refused something the page or a tool asked for;
@@ -70,8 +74,9 @@ async function errorCodeOf(response: Response): Promise<string | undefined> {
 }
 
 /**
- * Records every request this app answers, and gives the app its one handler for errors no route handled. Call it
- * before any route is registered.
+ * Records every request this app answers. Call it before any route is registered. It installs no error handler:
+ * an Error a route throws is answered (and printed) by Hono's default one, which leaves it on the context for the
+ * record below; a server without a log gets nothing installed at all.
  */
 export function logRequests(app: Hono, log: ServerLog): void {
   let patterns: readonly string[] | undefined;
@@ -133,16 +138,6 @@ export function logRequests(app: Hono, log: ServerLog): void {
         /* recording a request never changes its answer */
       }
     });
-
-  // The answer is the one Hono gave before this handler existed (it also printed the error to the console; the
-  // record above replaces that): an error that carries its own response answers with it, anything else is a
-  // plain-text 500.
-  app.onError((error, c) => {
-    if ("getResponse" in error && typeof error.getResponse === "function") {
-      return (error as { getResponse(): Response }).getResponse();
-    }
-    return c.text("Internal Server Error", 500);
-  });
 }
 
 export interface ServeLog {

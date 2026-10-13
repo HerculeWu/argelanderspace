@@ -1,21 +1,30 @@
 /**
  * The values a log record may carry. A record is a fixed event name plus named fields, and a field value is one
- * of seven kinds: identifier, enum value, number, duration, path, URL, error. There is no text kind: a field can
- * only be made by one of the constructors in `f`, each of which reduces what it is given to something that is safe
- * to publish — so what a record can say is decided here, not at the place that logs.
+ * of seven kinds: identifier, enum value, number, duration, path, URL, error. There is no kind that takes a
+ * sentence: a field can only be made by one of the constructors in `f`, each of which reduces what it is given to
+ * what its kind allows — so what a record can say is decided here, not at the place that logs. Three kinds are
+ * still strings whose content the caller chooses within limits (identifier, path, the host of a URL); the limits
+ * are below, and what they do not stop is said where each is rendered.
  *
- *   id      a short ASCII token without spaces or `@`; anything else is written as `<invalid-id>`
+ *   id      a short ASCII token without spaces or `@`; anything else is written as `<invalid-id>`. An id of one of
+ *           the shapes that are made from a title or a folder name is written as a hash (see workId / docId)
+ *   workId  a Work id: written as it is when it is made of a DOI, an arXiv number or an OpenAlex number, otherwise
+ *           as `work:#<hash>`
+ *   docId   a Doc id: written as it is when it is made of an arXiv number or a random number (or belongs to a
+ *           Work whose id is one of the three above), otherwise as `<kind>-#<hash>`
  *   oneOf   a member of a list written in code; anything else is written as `<invalid-enum>`
  *   num     a finite number
  *   ms      a duration in milliseconds
- *   path    a file path, with the user's home directory written as `~`
- *   url     scheme and host only
- *   error   name, code and the file:line:column of each stack frame; the message is dropped unless the error's
- *           class declares `LOG_SAFE_MESSAGE`
+ *   path    an absolute file path, with the user's home directory written as `~`; anything that is not an
+ *           absolute path is written as `<invalid-path>`
+ *   url     scheme and host only, for a scheme from a fixed list; anything else is written as `<invalid-url>`
+ *   error   name, code, the system call and path of a system error, the file:line:column of each stack frame,
+ *           and the cause; the message is dropped unless the error's class declares `LOG_SAFE_MESSAGE`
  *
- * `ids` and `someOf` are lists of the first two. Rendering never throws.
+ * `ids` and `someOf` are lists. Rendering never throws.
  */
 
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const MADE_HERE = Symbol("log field");
@@ -23,6 +32,8 @@ const MADE_HERE = Symbol("log field");
 type FieldSpec =
   | { kind: "id"; value: unknown }
   | { kind: "ids"; value: unknown }
+  | { kind: "work"; value: unknown }
+  | { kind: "doc"; value: unknown }
   | { kind: "enum"; allowed: readonly string[]; value: unknown }
   | { kind: "enums"; allowed: readonly string[]; value: unknown }
   | { kind: "num"; value: unknown }
@@ -80,19 +91,35 @@ const INVALID = "<invalid>";
 const INVALID_ID = "<invalid-id>";
 const INVALID_ENUM = "<invalid-enum>";
 const INVALID_URL = "<invalid-url>";
+const INVALID_PATH = "<invalid-path>";
+export const LOG_HOST_MAX = 255;
+/** Hex digits of the hash a title-made id is written as. */
+export const LOG_ID_HASH_LENGTH = 12;
+// Longer than any id the library makes; beyond it the value is not even hashed.
+const HASHED_ID_INPUT_MAX = 4096;
 
 // No whitespace (a title has some), no `@` (a mail address has one), nothing outside ASCII.
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/+()-]*$/;
 const ERROR_NAME = /^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$/;
 const ERROR_CODE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SYSCALL = /^[a-z0-9_]{1,32}$/;
-// Control characters and the two Unicode line separators: none may end up inside a record.
+// Control characters, the two Unicode line separators, and the bidi marks and controls (U+061C, U+200E / U+200F,
+// U+202A–U+202E, U+2066–U+2069, the same set the CLI escapes): none may end up inside a record — the first two
+// could break the line, the last could change the order in which a path or a message is shown.
 function withoutControl(text: string, replacement: string): string {
   let out = "";
   for (const ch of text) {
     const code = ch.charCodeAt(0);
     const control =
-      code <= 0x1f || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
+      code <= 0x1f ||
+      (code >= 0x7f && code <= 0x9f) ||
+      code === 0x2028 ||
+      code === 0x2029 ||
+      code === 0x061c ||
+      code === 0x200e ||
+      code === 0x200f ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069);
     out += control ? replacement : ch;
   }
   return out;
@@ -103,8 +130,15 @@ function field(spec: FieldSpec): LogField {
 }
 
 export const f = {
-  /** A stable identifier: a Doc id, a Work id, a job id, a version. Not a title, a name or an address. */
+  /**
+   * A stable identifier: a job id, an account id, an error code, a version. Not a title, a name or an address —
+   * and for a Work id or a Doc id use `workId` / `docId`, which know which of them are made from a title.
+   */
   id: (value: string): LogField => field({ kind: "id", value }),
+  /** A Work id. One made from the Work's title is written as a hash, the same hash every time. */
+  workId: (value: string): LogField => field({ kind: "work", value }),
+  /** A Doc id. One made from a title or from the name of a local folder is written as a hash. */
+  docId: (value: string): LogField => field({ kind: "doc", value }),
   /** Several identifiers (at most `LOG_LIST_MAX` are written). */
   ids: (values: readonly string[]): LogField => field({ kind: "ids", value: values }),
   /** One of the values listed in code. `allowed` is a list written in the source, never built from runtime data. */
@@ -118,7 +152,9 @@ export const f = {
   num: (value: number): LogField => field({ kind: "num", value }),
   /** A duration in milliseconds. */
   ms: (value: number): LogField => field({ kind: "ms", value }),
+  /** An absolute path. */
   path: (value: string): LogField => field({ kind: "path", value }),
+  /** Only the scheme and the host are written. */
   url: (value: string | URL): LogField => field({ kind: "url", value }),
   /** Whatever was thrown. */
   error: (value: unknown): LogField => field({ kind: "error", value }),
@@ -130,6 +166,10 @@ function render(spec: FieldSpec, context: RenderContext): LogJson {
       return renderId(spec.value);
     case "ids":
       return list(spec.value, renderId);
+    case "work":
+      return renderWorkId(spec.value);
+    case "doc":
+      return renderDocId(spec.value);
     case "enum":
       return renderEnum(spec.allowed, spec.value);
     case "enums":
@@ -141,7 +181,7 @@ function render(spec: FieldSpec, context: RenderContext): LogJson {
         ? Math.round(spec.value * 10) / 10
         : null;
     case "path":
-      return typeof spec.value === "string" ? renderPath(spec.value, context) : INVALID;
+      return renderPath(spec.value, context);
     case "url":
       return renderUrl(spec.value);
     case "error":
@@ -153,10 +193,76 @@ function list(value: unknown, each: (item: unknown) => LogJson): LogJson {
   return Array.isArray(value) ? value.slice(0, LOG_LIST_MAX).map(each) : INVALID;
 }
 
+function plainId(value: string): boolean {
+  return value.length <= LOG_ID_MAX && ID.test(value);
+}
+
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+// A job id is `<kind>-<uuid>`, and one kind is `upload`: not an upload Doc id.
+const UPLOAD_JOB_ID = new RegExp(`^upload-${UUID}$`);
+
 function renderId(value: unknown): string {
-  return typeof value === "string" && value.length <= LOG_ID_MAX && ID.test(value)
-    ? value
-    : INVALID_ID;
+  if (typeof value !== "string") return INVALID_ID;
+  // The shapes the library gives an id it makes from a title or a folder name. Whoever passes one here meant
+  // `workId` / `docId`; it is written the way they would write it, so the same object reads the same everywhere.
+  if (value.startsWith("work:")) return renderWorkId(value);
+  if (value.startsWith("latex-")) return renderDocId(value);
+  if (value.startsWith("upload-") && !UPLOAD_JOB_ID.test(value)) return renderDocId(value);
+  return plainId(value) ? value : INVALID_ID;
+}
+
+/** A hash of the whole id: the same id is the same hash in every record of every run (nothing else goes in). */
+function hashed(prefix: string, value: string): string {
+  if (value.length > HASHED_ID_INPUT_MAX) return INVALID_ID;
+  const digest = createHash("sha256").update(value, "utf8").digest("hex");
+  return `${prefix}#${digest.slice(0, LOG_ID_HASH_LENGTH)}`;
+}
+
+// What core's `canonicalId` makes (library/store.ts): `doi:<DOI>`, `arxiv:<number>`, `openalex:<number>`, and —
+// when a Work has none of the three — `work:<slug of the title>[-<year>]`. Only the first three are written as
+// they are, and only in their real shape: a DOI starts with its registrant prefix `10.<digits>/`, an arXiv number
+// is `YYMM.NNNNN` or the old `archive[.XX]/NNNNNNN`, an OpenAlex number is a letter and digits.
+const WORK_ID_AS_IS = [
+  /^doi:10\.\d{4,9}\/\S+$/,
+  /^arxiv:\d{4}\.\d{4,5}$/,
+  /^arxiv:[a-z]{2,10}(?:-[a-z]{2,4})?(?:\.[a-z]{2})?\/\d{7}$/,
+  /^openalex:[A-Za-z]\d+$/,
+];
+
+function renderWorkId(value: unknown): string {
+  if (typeof value !== "string") return INVALID_ID;
+  if (plainId(value) && WORK_ID_AS_IS.some((shape) => shape.test(value))) return value;
+  return hashed("work:", value);
+}
+
+// The Doc ids the workbench makes:
+//   arxiv-<number>                 infra `docIdFor`, core `arxivDocId` (a `/` in an old number becomes `-`)
+//   pdf-<uuid>, text-<uuid>        core pdf-storage / text-docs, server acquisition
+//   upload-<slug of the Work id, at most 44 characters>-<6 hex>   core `uploadDocId`
+//   latex-<name of the local file or folder>                      infra `docIdFor`
+// A `latex-` id is the user's folder name; an `upload-` id carries its Work's id, so it is written as it is only
+// when that Work id is a DOI, an arXiv number or an OpenAlex number (the slug then starts `doi-10-`, `arxiv-` or
+// `openalex-`; the slug of a title-made Work id starts `work-`). Everything else is hashed.
+const DOC_ID_AS_IS = [
+  /^arxiv-\d{4}\.\d{4,5}(?:v\d+)?$/,
+  /^arxiv-[a-z]{2,10}(?:-[a-z]{2,4})?(?:\.[A-Za-z]{2})?-\d{7}(?:v\d+)?$/,
+  new RegExp(`^(?:pdf|text)-${UUID}$`),
+  /^upload-doi-10-\d{4,9}-[a-z0-9-]*-[0-9a-f]{6}$/,
+  /^upload-arxiv-\d{4}-\d{4,5}-[0-9a-f]{6}$/,
+  /^upload-arxiv-[a-z]{2,10}(?:-[a-z]{2,4}){0,2}-\d{7}-[0-9a-f]{6}$/,
+  /^upload-openalex-[a-z]\d+-[0-9a-f]{6}$/,
+];
+
+function renderDocId(value: unknown): string {
+  if (typeof value !== "string") return INVALID_ID;
+  if (plainId(value) && DOC_ID_AS_IS.some((shape) => shape.test(value))) return value;
+  // The kind is kept when it is one of the two title-made ones; any other shape says nothing about itself.
+  const kind = value.startsWith("latex-")
+    ? "latex-"
+    : value.startsWith("upload-")
+      ? "upload-"
+      : "doc-";
+  return hashed(kind, value);
 }
 
 function renderEnum(allowed: readonly string[], value: unknown): string {
@@ -198,15 +304,48 @@ function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-function renderPath(value: string, context: RenderContext): string {
+// `/…`, `X:\…` or `X:/…`, `\\server\…`, and a path already written with `~` for the home directory.
+const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|\\\\|~(?:[\\/]|$))/;
+
+/**
+ * Only an absolute path is written: a sentence, a title, a bare file name or a relative path is not one. What this
+ * cannot stop is text that begins like an absolute path, and it does not hide the names of the folders in the path
+ * (a project folder is named by its user) — only the home directory is replaced.
+ */
+function renderPath(value: unknown, context: RenderContext): string {
+  if (typeof value !== "string" || !ABSOLUTE_PATH.test(value)) return INVALID_PATH;
   return clip(withoutControl(withoutHome(value, context), "?"), LOG_PATH_MAX);
 }
 
+// Written in code: a word in front of a colon is a scheme only if it is one of these.
+const URL_SCHEMES = new Set([
+  "http:",
+  "https:",
+  "ws:",
+  "wss:",
+  "ftp:",
+  "file:",
+  "mailto:",
+  "data:",
+  "blob:",
+  "about:",
+  "imap:",
+  "imaps:",
+  "smtp:",
+  "smtps:",
+  "tauri:",
+]);
+
 function renderUrl(value: unknown): string {
   try {
-    const url = value instanceof URL ? value : new URL(String(value));
-    // `host` leaves out the user name and password; a scheme without a host (mailto:) keeps the scheme alone.
-    return url.host ? `${url.protocol}//${url.host}` : url.protocol;
+    if (typeof value !== "string" && !(value instanceof URL)) return INVALID_URL;
+    const url = value instanceof URL ? value : new URL(value);
+    if (!URL_SCHEMES.has(url.protocol)) return INVALID_URL;
+    // `host` leaves out the user name and password; a scheme without a host (mailto:, data:, blob:, file:) keeps
+    // the scheme alone.
+    if (!url.host) return url.protocol;
+    if (url.host.length > LOG_HOST_MAX) return INVALID_URL;
+    return `${url.protocol}//${withoutControl(url.host, "?")}`;
   } catch {
     return INVALID_URL;
   }
@@ -223,13 +362,48 @@ function declaredSafe(error: Error): boolean {
 
 // "    at name (location)" or "    at location"; the location ends in :line:column.
 const FRAME = /^\s*at (?:.* \()?(.+?):(\d+):(\d+)\)?$/;
+const NODE_MODULE = /^node:[A-Za-z0-9_/.-]{1,200}$/;
 const LOCATION_START = /^(?:\/|\\\\|[A-Za-z]:[\\/]|file:|node:)/;
 
+// What V8 puts in front of the message on the first line: the name the error had when the stack was made, and
+// Node's ` [CODE]` for its own errors.
+const STACK_HEAD_NAME = /^[A-Za-z_$][A-Za-z0-9_$.]*(?: \[[A-Za-z0-9_.]+\])?/;
+
+/**
+ * The part of a stack after its first "line" — which is `name: message`, and the message may have lines of its own,
+ * any of which may look like a frame. So the message is cut off as the exact text it is, not by looking for where
+ * the frames seem to start. Returns null when the stack does not begin with this error's message in the way V8
+ * writes it (the message was changed later, the stack was replaced, `Error.prepareStackTrace` made something
+ * else): then nothing of it can be told apart from message text, and no frame is written.
+ */
+function framesPart(error: Error): string | null {
+  const { stack, message, name } = error as { stack?: unknown; message?: unknown; name?: unknown };
+  if (typeof stack !== "string" || typeof message !== "string") return null;
+  // A name with a line of its own (possible when the stack is captured after the name was set) is the same problem.
+  if (typeof name === "string" && name.includes("\n")) return null;
+  const afterHead = (rest: string): string | null =>
+    rest === "" ? "" : rest.startsWith("\n") ? rest.slice(1) : null;
+  // `message` alone (an error without a name) …
+  if (message !== "" && stack.startsWith(message)) {
+    const rest = afterHead(stack.slice(message.length));
+    if (rest !== null) return rest;
+  }
+  const head = STACK_HEAD_NAME.exec(stack);
+  if (!head) return null;
+  // … or `name: message` …
+  if (stack.startsWith(`: ${message}`, head[0].length)) {
+    return afterHead(stack.slice(head[0].length + 2 + message.length));
+  }
+  // … or, without a message, the name alone.
+  return message === "" ? afterHead(stack.slice(head[0].length)) : null;
+}
+
 /** The frames of a stack as `file:line:column`. The first line (name and message) and function names are left out. */
-function renderStack(stack: unknown, context: RenderContext): string[] {
-  if (typeof stack !== "string") return [];
+function renderStack(error: Error, context: RenderContext): string[] {
+  const part = framesPart(error);
+  if (part === null) return [];
   const frames: string[] = [];
-  for (const line of stack.split("\n")) {
+  for (const line of part.split("\n")) {
     if (frames.length >= LOG_STACK_FRAMES_MAX) break;
     const match = FRAME.exec(line);
     if (!match) continue;
@@ -242,7 +416,9 @@ function renderStack(stack: unknown, context: RenderContext): string[] {
         continue;
       }
     }
-    frames.push(`${renderPath(file, context)}:${match[2]}:${match[3]}`);
+    // A module of the runtime (`node:internal/…`) is not a path on this machine and is written as it is.
+    const where = NODE_MODULE.test(file) ? file : renderPath(file, context);
+    frames.push(`${where}:${match[2]}:${match[3]}`);
   }
   return frames;
 }
@@ -261,12 +437,12 @@ function renderError(value: unknown, context: RenderContext, depth: number): Log
   // A system error (it names its system call) says which file; `path` on any other error could be anything.
   if (typeof extra.syscall === "string" && SYSCALL.test(extra.syscall)) {
     out.syscall = extra.syscall;
-    if (typeof extra.path === "string") out.path = renderPath(extra.path, context);
+    if (extra.path !== undefined) out.path = renderPath(extra.path, context);
   }
   if (declaredSafe(value) && typeof value.message === "string") {
     out.message = clip(withoutControl(withoutHome(value.message, context), " "), LOG_MESSAGE_MAX);
   }
-  out.stack = renderStack(value.stack, context);
+  out.stack = renderStack(value, context);
   if (extra.cause !== undefined && depth < CAUSE_DEPTH_MAX) {
     out.cause = renderError(extra.cause, context, depth + 1);
   }

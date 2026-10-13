@@ -24,6 +24,7 @@ import {
   resolveLogDir,
 } from "@argelanderspace/infra";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { createApp } from "../src/app.js";
@@ -37,12 +38,33 @@ type Record_ = Record<string, unknown>;
 const running: RunningServer[] = [];
 const roots: string[] = [];
 
+function isolatedRoot(): string {
+  const isolation = (globalThis as Record<symbol, unknown>)[USER_DIRS_ISOLATION] as
+    | { root: string }
+    | undefined;
+  if (!isolation) throw new Error("isolate-user-dirs.ts did not run");
+  return isolation.root;
+}
+
+/** `path`, once it is seen to lie below the throwaway home of this test run; anything else is refused. */
+function isolated(path: string): string {
+  const rel = relative(isolatedRoot(), path);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(
+      "a per-user path of this test run is outside its throwaway home; not touching it"
+    );
+  }
+  return path;
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   for (const srv of running.splice(0)) await srv.close();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-  rmSync(dirname(configFilePath()), { recursive: true, force: true });
-  rmSync(resolveLogDir(), { recursive: true, force: true });
+  // Checked before anything is removed: these are the user's own directories if isolation ever fails. The config
+  // goes first — a test may have pointed `global_dir` somewhere else, and the log directory is resolved without it.
+  rmSync(isolated(dirname(configFilePath())), { recursive: true, force: true });
+  rmSync(isolated(resolveLogDir()), { recursive: true, force: true });
 });
 
 /** A log that writes a file in its own temporary directory. */
@@ -93,7 +115,7 @@ function breakPlans(dataDir: string, marker: string): void {
 }
 
 describe("a failed request", () => {
-  test("an unhandled error is recorded with route, status and stack — and the answer is the one it always was", async () => {
+  test("an unhandled error is recorded with route, status and stack — and the answer and the terminal are what they always were", async () => {
     const printed = vi.spyOn(console, "error").mockImplementation(() => {});
     const { log, dir } = fileLog();
     const { url, dataDir } = await serve(log);
@@ -122,8 +144,48 @@ describe("a failed request", () => {
     expect(text).not.toContain("PLAN-CONTENT-MARKER");
     expect(error.stack.length).toBeGreaterThan(0);
     for (const frame of error.stack) expect(frame).toMatch(/:\d+:\d+$/);
-    // The error went to the log instead of the terminal.
+    // The terminal still gets the whole error, as it did before there was a log; only the log file is public.
+    expect(printed).toHaveBeenCalledTimes(1);
+    const shown = printed.mock.calls[0]?.[0] as Error;
+    expect(shown).toBeInstanceOf(Error);
+    // Its message names the file and quotes the start of what could not be parsed.
+    expect(shown.message).toContain(join(dirname(dataDir), "status", "plans.json"));
+    expect(shown.message).toContain("PLAN-CONTE");
+  });
+
+  test("an error that carries its own response answers exactly as it does without a log", async () => {
+    const answer = async (log?: ServerLog) => {
+      const app = new Hono();
+      if (log) logRequests(app, log);
+      app.use("*", async (c, next) => {
+        c.header("X-Set-Before", "kept");
+        await next();
+      });
+      app.get("/things/:id", () => {
+        throw new HTTPException(418, {
+          res: new Response("teapot body", { status: 418, headers: { "X-Own": "own" } }),
+        });
+      });
+      const response = await app.request("/things/ID-MARKER");
+      return {
+        status: response.status,
+        body: await response.text(),
+        headers: [...response.headers.entries()].sort(),
+      };
+    };
+    const printed = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { log, dir } = fileLog();
+    const plain = await answer();
+    const logged = await answer(log);
+    expect(plain).toMatchObject({ status: 418, body: "teapot body" });
+    expect(plain.headers).toContainEqual(["x-set-before", "kept"]);
+    expect(logged).toEqual(plain);
     expect(printed).not.toHaveBeenCalled();
+    const { records, text } = readLog(dir);
+    expect(records).toMatchObject([
+      { level: "warn", event: "request.failed", route: "/things/:id", status: 418 },
+    ]);
+    expect(text).not.toContain("MARKER");
   });
 
   test("the route is the pattern, never the path that was asked for", async () => {
@@ -277,27 +339,65 @@ describe("the level", () => {
 });
 
 describe("a server nobody gave a log", () => {
-  test("records nothing and makes no log directory", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+  test("records nothing, makes no log directory, and prints the error as it always did", async () => {
+    const printed = vi.spyOn(console, "error").mockImplementation(() => {});
     const { url, dataDir } = await serve();
     breakPlans(dataDir, "x");
     expect((await fetch(`${url}/api/plans`)).status).toBe(500);
     expect(existsSync(resolveLogDir())).toBe(false);
+    expect(printed).toHaveBeenCalledTimes(1);
+    expect(printed.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  });
+});
+
+describe("what used to be printed by the server", () => {
+  test("an arXiv fetch log that cannot be appended to is recorded by job, without the reason's words", async () => {
+    const { log, dir } = fileLog();
+    const dataDir = project();
+    // A fetch that was running when the last server stopped …
+    const jobId = "ingest-3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a9b";
+    mkdirSync(join(dataDir, "jobs"), { recursive: true });
+    writeFileSync(
+      join(dataDir, "jobs", `${jobId}.json`),
+      JSON.stringify({
+        id: jobId,
+        kind: "ingest",
+        status: "running",
+        createdAt: "2026-10-13T08:00:00.000Z",
+        payload: { workId: "work:a-private-title-2024", arxivId: "2603.00301" },
+      })
+    );
+    // … and a file where the project's own `logs/` directory should be.
+    writeFileSync(join(dataDir, "logs"), "FETCH-LOG-MARKER");
+    const srv = createServer({
+      dataDir,
+      port: 0,
+      heartbeatMs: 0,
+      webDist: null,
+      deps: { makeSources: () => stubSources() },
+      log,
+    });
+    running.push(srv);
+    await srv.ready();
+    const { records, text } = readLog(dir);
+    expect(records).toMatchObject([
+      {
+        level: "error",
+        event: "arxiv_fetch.log_append_failed",
+        job: jobId,
+        error: { name: "Error", syscall: "mkdir" },
+      },
+    ]);
+    expect(text).not.toMatch(/MARKER|private|title/);
+    expect(readFileSync(join(dataDir, "logs"), "utf8")).toBe("FETCH-LOG-MARKER");
   });
 });
 
 describe("serve (startServer)", () => {
-  function isolatedRoot(): string {
-    const isolation = (globalThis as Record<symbol, unknown>)[USER_DIRS_ISOLATION] as
-      | { root: string }
-      | undefined;
-    if (!isolation) throw new Error("isolate-user-dirs.ts did not run");
-    return isolation.root;
-  }
-
   function writeConfig(toml: string): void {
-    mkdirSync(dirname(configFilePath()), { recursive: true });
-    writeFileSync(configFilePath(), toml);
+    const file = isolated(configFilePath());
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, toml);
   }
 
   async function start(dataDir: string): Promise<{ url: string; lines: string[] }> {
@@ -323,9 +423,7 @@ describe("serve (startServer)", () => {
       `  web dist: ${dataDir}`,
     ]);
 
-    const logDir = resolveLogDir();
-    const rel = relative(isolatedRoot(), logDir);
-    expect(rel.startsWith("..") || isAbsolute(rel)).toBe(false);
+    const logDir = isolated(resolveLogDir());
     const { records, files } = readLog(logDir);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(new RegExp(`^\\d{8}T\\d{9}Z-serve-${process.pid}\\.jsonl$`));
@@ -409,5 +507,32 @@ describe("serve (startServer)", () => {
     expect(lines).toHaveLength(3);
     expect((await fetch(`${url}/api/papers`)).status).toBe(200);
     expect(readFileSync(blocker, "utf8")).toBe("not a directory");
+    // Without a log file the terminal is still told about a request that failed, as before.
+    const printed = vi.spyOn(console, "error").mockImplementation(() => {});
+    breakPlans(dataDir, "x");
+    const failed = await fetch(`${url}/api/plans`);
+    expect([failed.status, await failed.text()]).toEqual([500, "Internal Server Error"]);
+    expect(printed).toHaveBeenCalledTimes(1);
+    expect(printed.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  });
+
+  test("a server that cannot be created leaves no watch on the process and no open log", async () => {
+    const before = process.listenerCount("uncaughtExceptionMonitor");
+    // A file where the project data directory should be: the server cannot make its job directory.
+    const root = mkdtempSync(join(tmpdir(), "aspace-nodata-"));
+    roots.push(root);
+    const dataDir = join(root, "literatures");
+    writeFileSync(dataDir, "not a directory");
+    const printed = vi.spyOn(console, "log").mockImplementation(() => {});
+    await expect(startServer(["--port", "0", "--data-dir", dataDir])).rejects.toMatchObject({
+      code: expect.stringMatching(/^(ENOTDIR|EEXIST)$/),
+    });
+    expect(printed).not.toHaveBeenCalled();
+    expect(process.listenerCount("uncaughtExceptionMonitor")).toBe(before);
+    // The log file this start opened is closed: it can be removed and the directory with it (also on Windows).
+    const logDir = isolated(resolveLogDir());
+    expect(readLog(logDir).records).toEqual([]);
+    rmSync(logDir, { recursive: true, force: true });
+    expect(existsSync(logDir)).toBe(false);
   });
 });

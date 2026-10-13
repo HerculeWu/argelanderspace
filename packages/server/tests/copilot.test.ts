@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ConversationSnapshot, PageContext } from "@argelanderspace/contracts";
+import {
+  buildArgumentPage,
+  type ConversationSnapshot,
+  type PageContext,
+} from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
+import { createLogger } from "@argelanderspace/infra";
 import {
   type Api,
   type AssistantMessage,
@@ -15,9 +20,11 @@ import {
   type TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createMemorySink } from "../../infra/tests/log-memory-sink.js";
 import { createApp } from "../src/app.js";
 import { CopilotHost } from "../src/copilot.js";
 import { JobRunner } from "../src/jobs.js";
+import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { ProviderSettings } from "../src/providers.js";
 import { stubPipelines, stubSources } from "./helpers.js";
 
@@ -743,6 +750,46 @@ test("existing native history records actual model and thinking on every admitte
   buildApp();
   expect((await host.snapshot(snapshot.conversation.id)).messages).toHaveLength(4);
   expect(readFileSync(historyPath(snapshot), "utf8")).toContain('"thinkingLevel":"high"');
+});
+
+test("a page the history would refuse, seen during a run, is logged as a bare fact", async () => {
+  const logged = createMemorySink();
+  host.useLog(createLogger({ events: SERVER_LOG_EVENTS, sink: logged }));
+  const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const snapshot = await create(),
+    a = page();
+  let attempts = 0;
+  streamOverride = (model) =>
+    reply(model, attempts++ === 0 ? "429 rate limit; retry after 0.8 seconds" : undefined);
+  await send(snapshot.conversation.id, a);
+  // The page changes while the run waits to retry: an argument page of the shape the history does not read back.
+  const good = buildArgumentPage({
+    workId: "work:observed-private-title-2024",
+    title: "OBSERVED PRIVATE TITLE",
+    phase: "ready",
+    graph: {
+      version: 1,
+      rev: 2,
+      work_id: "work:observed-private-title-2024",
+      arguments: [],
+      edges: [],
+    },
+    selectedId: null,
+  });
+  host.publish({
+    ...a,
+    revision: 2,
+    argument: { ...good, phase: "empty", partial: true, counts: { arguments: 0, edges: 0 } },
+  } as PageContext);
+  await settled(snapshot.conversation.id);
+  expect(attempts).toBe(2);
+  expect(logged.records()).toMatchObject([
+    { level: "warn", event: "copilot.observation_not_recordable" },
+  ]);
+  expect(Object.keys(logged.records()[0] ?? {}).sort()).toEqual(["event", "level", "t"]);
+  expect(logged.lines.join("")).not.toMatch(/observed|private|title/i);
+  // It no longer goes to the terminal.
+  expect(warned).not.toHaveBeenCalled();
 });
 
 test("next actual SDK retry sees bound page B and new choice while original A stays fixed", async () => {

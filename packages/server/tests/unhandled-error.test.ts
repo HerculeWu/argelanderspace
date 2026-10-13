@@ -1,7 +1,7 @@
 /**
- * What a client gets when a route of the main app throws and nothing handles it: a plain-text 500. Pinned on the
- * code as it was before the app had an error handler of its own (desktop-app ticket 06), so that adding the handler
- * — which records the failure — is seen not to change the answer.
+ * What happens when a route of the main app throws and nothing handles it: the client gets a plain-text 500 and the
+ * server's terminal gets the error. This is the behaviour from before the user-level log (desktop-app ticket 06),
+ * which records the failure without changing either.
  */
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -20,7 +20,7 @@ afterEach(async () => {
 });
 
 test("a route that throws answers 500 with the plain text `Internal Server Error`", async () => {
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  const printed = vi.spyOn(console, "error").mockImplementation(() => {});
   const dataDir = makeDataDir();
   roots.push(dirname(dataDir));
   // GET /api/plans reads this file with no error handling of its own.
@@ -40,4 +40,9 @@ test("a route that throws answers 500 with the plain text `Internal Server Error
   expect(response.status).toBe(500);
   expect(response.headers.get("content-type")).toBe("text/plain; charset=UTF-8");
   expect(await response.text()).toBe("Internal Server Error");
+  // And the server's terminal gets the error itself, once (Hono's default handling).
+  expect(printed).toHaveBeenCalledTimes(1);
+  const shown = printed.mock.calls[0]?.[0] as Error;
+  expect(shown).toBeInstanceOf(Error);
+  expect(shown.message).toContain("is not valid JSON");
 });
