@@ -1,10 +1,9 @@
 /**
  * The page's error reporting and its top-level boundary (desktop-app ticket 08): what leaves the page is cut down
  * to a kind, a class name, script locations and a pane; reporting cannot cause more reporting; a render error shows
- * a notice that says whether the error reached the log, and "Reload" brings the page back.
+ * a notice that says whether the error reached the log, and "Reload" reloads the whole page.
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../src/i18n";
 import i18n from "../src/i18n";
@@ -13,7 +12,8 @@ import {
   framesOf,
   installPageErrorReporting,
   notePane,
-  REPORTS_PER_PAGE_LOAD,
+  REPORTS_PER_WINDOW,
+  REPORT_WINDOW_MS,
   reduceError,
   reportPageError,
   resetPageErrorReportingForTests,
@@ -56,7 +56,7 @@ describe("what leaves the page", () => {
       "    at http://127.0.0.1:8000/assets/browser-BKLM0ThC-CjI6Ronm.js#frag:7:8",
       "    at async Promise.all (index 0)",
       "    at <anonymous>",
-      `secretFn@http://127.0.0.1:8000/assets/direct-engine-BtsyFEAM.js:3:4`,
+      `secretFn@http://127.0.0.1:8000/assets/direct-engine-BMwLK-Tl.js:3:4`,
       `    at eval (chrome-extension://abcdef/${SECRET}/inject.js:1:2)`,
       `    at Object.x (http://127.0.0.1:8000/doc/${SECRET}:1:2)`,
     ]);
@@ -70,7 +70,7 @@ describe("what leaves the page", () => {
       stack: [
         "index-eZgqHfVD.js:12:3456",
         "browser-BKLM0ThC-CjI6Ronm.js:7:8",
-        "direct-engine-BtsyFEAM.js:3:4",
+        "direct-engine-BMwLK-Tl.js:3:4",
         "inject.js:1:2",
       ],
       pane: "library",
@@ -116,7 +116,7 @@ describe("reporting never causes more reporting", () => {
     window.removeEventListener("unhandledrejection", unhandled);
   });
 
-  it("an error raised while a report is put together is not reported, and the page stops asking after its budget", async () => {
+  it("an error raised while a report is put together is not reported", async () => {
     const hostile = new Error("x");
     Object.defineProperty(hostile, "stack", {
       get() {
@@ -128,9 +128,45 @@ describe("reporting never causes more reporting", () => {
     expect(await reportPageError("error", hostile)).toBe("recorded");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.body.stack).toEqual([]);
+  });
 
-    for (let i = 0; i < REPORTS_PER_PAGE_LOAD + 20; i++) await reportPageError("error", new Error("again"));
-    expect(sent).toHaveLength(REPORTS_PER_PAGE_LOAD);
+  it("the page stops asking after its budget for a window, and asks again in the next one", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-13T10:00:00Z"));
+      for (let i = 0; i < REPORTS_PER_WINDOW + 20; i++) await reportPageError("error", new Error("again"));
+      expect(sent).toHaveLength(REPORTS_PER_WINDOW);
+      // still the same window: nothing more
+      vi.setSystemTime(Date.now() + REPORT_WINDOW_MS - 1);
+      expect(await reportPageError("error", new Error("again"))).toBe("not_recorded");
+      expect(sent).toHaveLength(REPORTS_PER_WINDOW);
+      // a window that has been open for a long time reports again, however many it has reported before
+      for (let round = 1; round <= 3; round++) {
+        vi.setSystemTime(Date.now() + REPORT_WINDOW_MS);
+        for (let i = 0; i < REPORTS_PER_WINDOW + 5; i++) await reportPageError("error", new Error("again"));
+        expect(sent).toHaveLength(REPORTS_PER_WINDOW * (round + 1));
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a window error event that carries no error — a cross-origin script's, a ResizeObserver notice — is not reported and costs nothing", async () => {
+    const stop = installPageErrorReporting();
+    for (let i = 0; i < REPORTS_PER_WINDOW + 5; i++) {
+      window.dispatchEvent(new ErrorEvent("error", { message: "Script error." }));
+      window.dispatchEvent(
+        new ErrorEvent("error", { message: "ResizeObserver loop completed with undelivered notifications.", error: null })
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sent).toHaveLength(0);
+    // the budget is untouched: a real error is still reported, and so is a thrown value that is not an Error
+    window.dispatchEvent(new ErrorEvent("error", { error: new RangeError("x") }));
+    window.dispatchEvent(new ErrorEvent("error", { error: "a thrown string" }));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent.map((s) => s.body.name)).toEqual(["RangeError", "NonError"]);
+    stop();
   });
 
   it("window errors and unhandled rejections are reported by kind; after stopping, nothing is", async () => {
@@ -154,33 +190,32 @@ describe("reporting never causes more reporting", () => {
 });
 
 describe("the top-level boundary", () => {
-  let broken = true;
-  function Page() {
-    const [count, setCount] = useState(0);
-    if (broken) throw new TypeError(`render failed with ${SECRET}`);
-    return (
-      <button type="button" data-ui="page-content" onClick={() => setCount(count + 1)}>
-        content {count}
-      </button>
-    );
+  function Page(): never {
+    throw new TypeError(`render failed with ${SECRET}`);
   }
+  const status = (container: HTMLElement) =>
+    container.querySelector('[data-ui="page-error-status"]') as HTMLElement;
+  /** The sentence about the log that is shown; the others are in the page only to hold its place. */
+  const shown = (container: HTMLElement): string[] =>
+    [...status(container).querySelectorAll("[data-variant]")]
+      .filter((el) => el.getAttribute("aria-hidden") !== "true")
+      .map((el) => el.textContent ?? "");
   beforeEach(() => {
-    broken = true;
     // React prints the caught error; keep the test output readable.
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("shows the notice in place of the page: the class name and the pane, not the message; Reload brings the page back", async () => {
+  it("shows the notice in place of the page: the class name and the pane, not the message; Reload reloads the whole page", async () => {
     notePane("write");
+    const reload = vi.fn();
     const { container } = render(
-      <PageErrorBoundary>
+      <PageErrorBoundary reload={reload}>
         <Page />
       </PageErrorBoundary>
     );
     const notice = container.querySelector('[data-ui="page-error"]') as HTMLElement;
     expect(notice).not.toBeNull();
     expect(notice.getAttribute("role")).toBe("alert");
-    expect(container.querySelector('[data-ui="page-content"]')).toBeNull();
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("页面出错了");
     expect(container.querySelector('[data-ui="page-error-name"]')?.textContent).toBe("TypeError");
     expect(container.querySelector('[data-ui="page-error-pane"]')?.textContent).toBe("write");
@@ -195,60 +230,83 @@ describe("the top-level boundary", () => {
     expect(sent[0]?.body).toMatchObject({ kind: "render", name: "TypeError", pane: "write" });
     expect(String(sent[0]?.init.body)).not.toContain("secret");
     // … and only once the server has said so does the notice say it is in the log
-    await waitFor(() =>
-      expect(container.querySelector('[data-ui="page-error-status"]')?.textContent).toBe(
-        "错误已记入日志，记录里没有你的内容。 重新加载通常可以继续工作。"
-      )
-    );
+    await waitFor(() => expect(shown(container)).toEqual(["错误已记入日志，记录里没有你的内容。"]));
+    // the two sentences are two elements: no space is put between them in code
+    expect(container.querySelector('[data-ui="page-error-hint"]')?.textContent).toBe("重新加载通常可以继续工作。");
+    expect(notice.textContent).not.toMatch(/。\s/);
 
-    const reload = screen.getByRole("button", { name: "重新加载" });
-    expect(reload.getAttribute("data-ui")).toBe("page-error-reload");
-    expect(reload.className).toContain("primary");
-    broken = false;
-    fireEvent.click(reload);
-    expect(container.querySelector('[data-ui="page-error"]')).toBeNull();
-    const content = container.querySelector('[data-ui="page-content"]') as HTMLElement;
-    expect(content.textContent).toBe("content 0");
-    fireEvent.click(content);
-    expect(content.textContent).toBe("content 1");
+    // a text button: no icon in it; the keyboard is on it as soon as the notice is there
+    const button = screen.getByRole("button", { name: "重新加载" });
+    expect(button.getAttribute("data-ui")).toBe("page-error-reload");
+    expect(button.className).toContain("primary");
+    expect(button.querySelector("svg")).toBeNull();
+    expect(button.textContent).toBe("重新加载");
+    expect(document.activeElement).toBe(button);
+
+    expect(reload).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(reload).toHaveBeenCalledTimes(1);
+    // the page itself is not mounted again: what brings it back is the reload
+    expect(container.querySelector('[data-ui="page-error"]')).not.toBeNull();
+    expect(sent).toHaveLength(1);
   });
 
-  it("says so when the error did not reach the log, and says neither before the server has answered", async () => {
-    let release: (response: Response) => void = () => {};
-    answer = () => new Promise<Response>((resolve) => (release = resolve));
-    const { container } = render(
+  it("without a reload of its own it reloads the window's location", () => {
+    const reload = vi.fn();
+    vi.stubGlobal("location", { ...window.location, reload });
+    render(
       <PageErrorBoundary>
         <Page />
       </PageErrorBoundary>
     );
-    const status = () => container.querySelector('[data-ui="page-error-status"]') as HTMLElement;
-    expect(status().getAttribute("data-logged")).toBe("pending");
-    expect(status().textContent).toBe("重新加载通常可以继续工作。");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("says so when the error did not reach the log; before the server has answered it says neither, and the sentence's place is held", async () => {
+    let release: (response: Response) => void = () => {};
+    answer = () => new Promise<Response>((resolve) => (release = resolve));
+    const { container } = render(
+      <PageErrorBoundary reload={() => {}}>
+        <Page />
+      </PageErrorBoundary>
+    );
+    const structure = (): string =>
+      [...container.querySelectorAll('[data-ui="page-error"] *')].map((el) => `${el.tagName}.${el.className}`).join(" ");
+    expect(status(container).getAttribute("data-logged")).toBe("pending");
+    expect(shown(container)).toEqual([]);
+    // both sentences are laid out from the first frame, hidden: the answer changes which one shows, not the layout
+    expect([...status(container).querySelectorAll("[data-variant]")].map((el) => el.getAttribute("data-variant"))).toEqual([
+      "recorded",
+      "not_recorded",
+    ]);
+    expect(container.querySelector('[data-ui="page-error-hint"]')?.textContent).toBe("重新加载通常可以继续工作。");
+    const before = structure();
     await waitFor(() => expect(sent).toHaveLength(1));
     await act(async () => {
       release(Response.json({ recorded: false, reason: "per_minute" }));
       await Promise.resolve();
     });
-    await waitFor(() => expect(status().getAttribute("data-logged")).toBe("not_recorded"));
-    expect(status().textContent).toBe("这次错误没有记入日志。 重新加载通常可以继续工作。");
-    expect(status().textContent).not.toContain("已记入");
+    await waitFor(() => expect(status(container).getAttribute("data-logged")).toBe("not_recorded"));
+    expect(shown(container)).toEqual(["这次错误没有记入日志。"]);
+    expect(container.querySelector('[data-ui="page-error-hint"]')?.textContent).toBe("重新加载通常可以继续工作。");
+    expect(structure()).toBe(before);
   });
 
-  it("a page that fails again after Reload shows the notice again; the copy follows the language", async () => {
+  it("the copy follows the language", async () => {
     await i18n.changeLanguage("en");
     const { container } = render(
-      <PageErrorBoundary>
+      <PageErrorBoundary reload={() => {}}>
         <Page />
       </PageErrorBoundary>
     );
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("The page hit an error");
-    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
-    expect(container.querySelector('[data-ui="page-error"]')).not.toBeNull();
-    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(screen.getByRole("button", { name: "Reload" })).not.toBeNull();
     await waitFor(() =>
-      expect(container.querySelector('[data-ui="page-error-status"]')?.textContent).toBe(
-        "The error was written to the log, which contains none of your content. Reloading usually lets you continue."
-      )
+      expect(shown(container)).toEqual(["The error was written to the log, which contains none of your content."])
+    );
+    expect(container.querySelector('[data-ui="page-error-hint"]')?.textContent).toBe(
+      "Reloading usually lets you continue."
     );
   });
 });

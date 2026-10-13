@@ -36,7 +36,7 @@ import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
 import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
-import { ingestFailureLog } from "./compile-failure-log.js";
+import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
@@ -142,6 +142,11 @@ export function createServer(opts: ServerOptions): RunningServer {
       }
     },
   });
+  // A failed compile's log is collected in `<job id>.compile.log.partial` and renamed when the job has failed. One
+  // left by a run that was killed holds lines of the source: the runner has just marked every unfinished job of this
+  // directory interrupted (none is re-run), so whatever collecting file is here belongs to no running job.
+  sweepIngestPartials(jobsDir);
+  let writePendingPageErrorCounts: () => void = () => {};
   const port = opts.port ?? DEFAULT_PORT;
 
   let mailWatcher: MailWatcher | undefined;
@@ -190,7 +195,12 @@ export function createServer(opts: ServerOptions): RunningServer {
     providerSettings,
     copilot,
     log,
-    ...(opts.pageErrors ? { pageErrors: opts.pageErrors } : {}),
+    pageErrors: {
+      ...opts.pageErrors,
+      atClose: (writePending) => {
+        writePendingPageErrorCounts = writePending;
+      },
+    },
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
   });
 
@@ -278,6 +288,8 @@ export function createServer(opts: ServerOptions): RunningServer {
         // First, synchronously: no mail undo window may end into a send while the rest shuts down
         // (stopping Copilot runs can take a while). Pending sends become interrupted, back in Drafts.
         disposeMailSendServices();
+        // Dropped page-error reports whose count was waiting for its window to end are counted in the log now.
+        writePendingPageErrorCounts();
         watcher.stop();
         hub.close();
         providerSettings.close();

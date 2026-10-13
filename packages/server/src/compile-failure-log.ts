@@ -5,9 +5,11 @@
  *
  * The kept log is a file of the project — it quotes the source — and is not part of the user-level log:
  *   - a failed ingest job: `<dataDir>/jobs/<job id>.compile.log`, beside the job's record (a failed ingest has no
- *     Doc directory). The newest {@link INGEST_FAILURE_LOGS_KEPT} of a project are kept;
- *   - a Writer render: `<dataDir>/manuscripts/<manuscript id>/build/compile-failure.log`, the last failure only
- *     (each failure replaces it; a later successful render leaves it there).
+ *     Doc directory). The newest {@link INGEST_FAILURE_LOGS_KEPT} of a project are kept. While a job compiles, the
+ *     log is collected in `<job id>.compile.log.partial`; one left behind by a run that was killed is removed when
+ *     the server next starts, or by the pruning once it is older than any compile can run;
+ *   - a Writer render: `<dataDir>/manuscripts/<manuscript id>/build/compile-failure.log`, the log of the last
+ *     render if that render failed (each failure replaces it; a render that succeeds removes it).
  *
  * The record (`tex.compile_failed`) carries no line of the log and no message: which job or manuscript, the
  * engine, the exit code, what was missing, and where the kept log is, relative to the project data directory.
@@ -30,6 +32,12 @@ import {
 import { type ServerLog, silentLog } from "./log.js";
 
 export const INGEST_FAILURE_LOGS_KEPT = 20;
+/**
+ * How old (by its last write) a collecting file must be before the pruning of a running server removes it. A
+ * compile appends to the file after each failed latexmk attempt, an attempt ends at its timeout (two minutes by
+ * default) and jobs run one at a time — an hour without a write means nothing is collecting into it.
+ */
+export const INGEST_PARTIAL_STALE_MS = 60 * 60 * 1000;
 const INGEST_LOG_SUFFIX = ".compile.log";
 export const WRITER_FAILURE_LOG_NAME = "compile-failure.log";
 
@@ -37,6 +45,10 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const JOB_ID = new RegExp(`^(?:${JobKindSchema.options.join("|")})-${UUID}$`);
 const INGEST_LOG_NAME = new RegExp(
   `^(?:${JobKindSchema.options.join("|")})-${UUID}${INGEST_LOG_SUFFIX.replaceAll(".", "\\.")}$`
+);
+
+const INGEST_PARTIAL_NAME = new RegExp(
+  `^(?:${JobKindSchema.options.join("|")})-${UUID}${INGEST_LOG_SUFFIX.replaceAll(".", "\\.")}\\.partial$`
 );
 
 /** `<dataDir>/jobs/<job id>.compile.log`. */
@@ -50,8 +62,23 @@ export function writerFailureLogPath(buildDir: string): string {
 }
 
 /**
+ * A render that succeeded: the log of the failure before it is not the last render's any more and is removed (a
+ * manuscript long since fixed keeps no failure log). A plain file only; what cannot be removed stays, and the
+ * render is not affected.
+ */
+export function removeWriterFailureLog(buildDir: string): void {
+  try {
+    rmSync(writerFailureLogPath(buildDir), { force: true });
+  } catch {
+    /* the render succeeded all the same */
+  }
+}
+
+/**
  * Keeps the newest {@link INGEST_FAILURE_LOGS_KEPT} ingest failure logs of a project (by modification time, then by
- * name) and removes the rest. Only files named like one are looked at; nothing else in the jobs directory is touched.
+ * name) and removes the rest, and removes collecting files nothing has written to for
+ * {@link INGEST_PARTIAL_STALE_MS}. Only files named like one are looked at; nothing else in the jobs directory is
+ * touched.
  */
 export function pruneIngestFailureLogs(jobsDir: string, keep = INGEST_FAILURE_LOGS_KEPT): void {
   const logs: Array<{ name: string; mtimeMs: number }> = [];
@@ -65,6 +92,30 @@ export function pruneIngestFailureLogs(jobsDir: string, keep = INGEST_FAILURE_LO
   }
   logs.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? 1 : -1));
   for (const old of logs.slice(Math.max(0, keep))) rmSync(join(jobsDir, old.name), { force: true });
+  sweepIngestPartials(jobsDir, INGEST_PARTIAL_STALE_MS);
+}
+
+/**
+ * Removes the collecting files (`<job id>.compile.log.partial`) of ingest jobs that were not written to for
+ * `olderThanMs` — all of them by default, which is right only when no job of this directory is running (a server
+ * that is starting). Plain files named like one only; never throws.
+ */
+export function sweepIngestPartials(jobsDir: string, olderThanMs = 0): void {
+  try {
+    const now = Date.now();
+    for (const entry of readdirSync(jobsDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !INGEST_PARTIAL_NAME.test(entry.name)) continue;
+      try {
+        const file = join(jobsDir, entry.name);
+        if (olderThanMs > 0 && now - statSync(file).mtimeMs < olderThanMs) continue;
+        rmSync(file, { force: true });
+      } catch {
+        /* gone meanwhile, or not removable: left for the next time */
+      }
+    }
+  } catch {
+    /* no jobs directory yet */
+  }
 }
 
 // --------------------------------------------------------------------------- //

@@ -34,7 +34,7 @@ import {
   TEX_WORKSPACE_LIMITS,
   type TexCompileFailure,
 } from "@argelanderspace/infra";
-import { writerFailureLogPath } from "./compile-failure-log.js";
+import { removeWriterFailureLog, writerFailureLogPath } from "./compile-failure-log.js";
 
 const COMPILE_TIMEOUT_MS = 30_000;
 const PREVIEW_PROFILE = "writer-ir-v1";
@@ -245,8 +245,9 @@ export async function computeWriterNumbering(
       },
       {
         observer,
-        // The last failed render's complete log, replaced by the next failure. The build directory is outside the
-        // compile workspace, so the (sandboxed) engine cannot reach the file; it is written by this process.
+        // The last render's complete log if it failed: replaced by the next failure, removed below by a render whose
+        // compile succeeds. The build directory is outside the compile workspace, so the (sandboxed) engine cannot
+        // reach the file; it is written by this process.
         failureLog: {
           file: writerFailureLogPath(root),
           ...(onCompileFailure ? { onFailure: (failure) => onCompileFailure(id, failure) } : {}),
@@ -259,6 +260,7 @@ export async function computeWriterNumbering(
         id,
         compiled.message + (compiled.excerpt ? `\n${compiled.excerpt}` : "")
       );
+    removeWriterFailureLog(root);
     const result = await buildWriterPreview({
       srcDir: stage,
       mainTex,

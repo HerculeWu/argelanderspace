@@ -40,6 +40,7 @@ import { findOnPath } from "../lib/proc.js";
 import { createCachedTexWorkspace } from "./cache.js";
 import {
   missingFilesFromTexLog,
+  readTexSideLog,
   type TexCompileFailure,
   TexFailureCapture,
   type TexFailureLogHook,
@@ -363,20 +364,30 @@ async function attemptCompile(opts: {
     const log = await fs.readFile(logPath, "utf8").catch(() => "");
     const mainBase = path.basename(opts.mainRel);
 
-    // A failed run: its complete log is handed to the keeper first, then the run state is cleared as always.
+    // A failed run: what it wrote — the engine's log, the bibliography program's .blg, latexmk's own output — is
+    // handed to the keeper first, then the run state is cleared as always.
     const failedRun = async (): Promise<NonNullable<AttemptResult["run"]>> => {
-      const run = {
+      const run: NonNullable<AttemptResult["run"]> = {
         exitCode: result.timedOut ? null : result.code,
         timedOut: result.timedOut,
-        missingFiles: opts.capture ? missingFilesFromTexLog(log) : [],
+        missingFiles: [],
       };
-      await opts.capture?.add({
-        engine: opts.engine,
-        instrumented: opts.instrumented,
-        exitCode: run.exitCode,
-        timedOut: run.timedOut,
-        log,
-      });
+      if (opts.capture) {
+        const bibLog = await readTexSideLog(path.join(runDir, `${opts.jobname}.blg`));
+        run.missingFiles = missingFilesFromTexLog(
+          [log, bibLog, result.stdout, result.stderr].join("\n")
+        );
+        await opts.capture.add({
+          engine: opts.engine,
+          instrumented: opts.instrumented,
+          exitCode: run.exitCode,
+          timedOut: run.timedOut,
+          log,
+          bibLog,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        });
+      }
       await clearLatexmkRunState(runDir, opts.jobname);
       return run;
     };

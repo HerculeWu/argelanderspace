@@ -11,11 +11,12 @@
  *   - `name`: one of {@link KNOWN_ERROR_NAMES}, or a short name of the shape error classes have — a capital letter,
  *     letters and digits, ending in `Error` or `Exception`; anything else is written as `UnrecognizedName`.
  *   - `stack`: at most {@link PAGE_ERROR_FRAMES_MAX} frames, each the text `file:line:column`. A frame is kept only
- *     when its file is one of the page's own built scripts: it has the name Vite gives them (`index-eZgqHfVD.js`: a
- *     name, a hyphen, the eight characters of the build's content hash, `.js`) AND a file of that name is in the
- *     `assets/` directory of the web build this server serves. Every other frame — a browser extension's, an
- *     inline script's, anything with a path, a query or a function name in it — is dropped; a server that serves no
- *     web build (the Vite dev server does) keeps no frame.
+ *     when its file is one of the page's own built scripts, which is decided by looking: a plain file of that name
+ *     is in the `assets/` directory of the web build this server serves. The text itself only has to be a script's
+ *     file name without a directory (letters, digits and `._-`, ending in `.js` or `.mjs`; Vite's names are
+ *     `index-eZgqHfVD.js`, `direct-engine-BMwLK-Tl.js`, `browser-BKLM0ThC-D7mrvnwI.js`). Every other frame — a
+ *     browser extension's, an inline script's, anything with a path, a query or a function name in it — is
+ *     dropped; a server that serves no web build (the Vite dev server does) keeps no frame.
  *   - `pane`: one of {@link PAGE_ERROR_PANES}.
  *
  * The record is written with the log module's own error field (no new kind of field): an Error is put together
@@ -26,6 +27,7 @@
  * request at most {@link PAGE_ERROR_BODY_MAX_BYTES} bytes (enforced while the body is read). What is over is
  * dropped and counted, and the counts are written as `page.errors_dropped` — once when the minute in which the
  * first report was dropped is over, so a page that keeps failing costs one count record a minute, not one a report.
+ * A server that closes before that minute is over writes the counts it holds as it closes.
  */
 
 import { readdirSync } from "node:fs";
@@ -72,10 +74,10 @@ const KNOWN_ERROR_NAMES = new Set([
 const NAME_SHAPE = /^[A-Z][A-Za-z0-9]{0,39}(?:Error|Exception)$/;
 export const UNRECOGNIZED_NAME = "UnrecognizedName";
 
-// `<name>-<hash>.js:<line>:<column>` — what Vite names the page's scripts (rollup's default `[name]-[hash].js`, an
-// 8-character base64url hash; a shared chunk's name can itself end in one more hash: `browser-BKLM0ThC-CjI6Ronm.js`).
-const FRAME =
-  /^([A-Za-z0-9][A-Za-z0-9._]{0,39}(?:-[A-Za-z0-9_-]{8}){1,2}\.m?js):([1-9]\d{0,6}):([1-9]\d{0,6})$/;
+// `<file>:<line>:<column>`, the file a script's name with no path separator in it. Whether it is one of the page's
+// scripts is not read off the name (a name and a base64url hash both may have hyphens: `direct-engine-BMwLK-Tl.js`,
+// `worker-engine-2r7-DNkh.js`): the file has to be there (`builtScripts`).
+const FRAME = /^([A-Za-z0-9][A-Za-z0-9._-]{0,99}\.m?js):([1-9]\d{0,6}):([1-9]\d{0,6})$/;
 
 const DROP_REASONS = ["per_minute", "per_launch", "too_large", "malformed"] as const;
 type DropReason = (typeof DROP_REASONS)[number];
@@ -85,6 +87,11 @@ export interface PageErrorOptions {
   webDist?: string | null | undefined;
   /** The length of the rate window and of the wait before dropped reports are counted in the log; default a minute. */
   windowMs?: number | undefined;
+  /**
+   * Handed, once, the function a closing server calls: it writes the counts of dropped reports that are still
+   * waiting for their window to end.
+   */
+  atClose?: ((writePending: () => void) => void) | undefined;
 }
 
 type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
@@ -113,7 +120,7 @@ function checkedFrames(value: unknown, scripts: ReadonlySet<string>): string[] {
   const frames: string[] = [];
   // Only so many are looked at, however many were sent.
   for (const raw of value.slice(0, PAGE_ERROR_FRAMES_MAX)) {
-    if (typeof raw !== "string" || raw.length > 80) continue;
+    if (typeof raw !== "string" || raw.length > 120) continue;
     const m = FRAME.exec(raw);
     if (m?.[1] !== undefined && scripts.has(m[1])) frames.push(`/assets/${m[1]}:${m[2]}:${m[3]}`);
   }
@@ -169,6 +176,7 @@ export function mountPageErrorRoute(
   let flush: ReturnType<typeof setTimeout> | null = null;
 
   const writeDropped = (): void => {
+    if (flush !== null) clearTimeout(flush);
     flush = null;
     for (const [reason, count] of dropped) {
       log.warn("page.errors_dropped", {
@@ -186,6 +194,7 @@ export function mountPageErrorRoute(
       flush.unref?.();
     }
   };
+  options.atClose?.(writeDropped);
   const refused = (c: Context, reason: DropReason | "no_log", status: 200 | 400 | 413 = 200) =>
     c.json({ recorded: false, reason }, status);
 
