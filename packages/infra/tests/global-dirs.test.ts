@@ -27,8 +27,6 @@ async function load(
   env: Record<string, string | undefined>
 ): Promise<typeof import("../src/global-dirs.js")> {
   Object.defineProperty(process, "platform", { value: platform });
-  // The workbench's own variables are already gone from process.env (tests/isolate-user-dirs.ts); the cases below
-  // that exercise them pass them explicitly.
   for (const k of ["XDG_DATA_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA"]) delete process.env[k];
   for (const [k, v] of Object.entries(env)) if (v !== undefined) process.env[k] = v;
   vi.resetModules();
@@ -71,38 +69,44 @@ describe("OS defaults", () => {
 });
 
 describe("override precedence", () => {
-  test("env > config > OS default, per directory", async () => {
+  test("config > OS default, per directory", async () => {
     const m = await load("linux", { HOME: "/home/u" });
     const config = { global_dir: "/cfg/data", global_cache_dir: "/cfg/cache" };
-    expect(m.resolveGlobalDirs({ config, env: {} })).toEqual({
+    expect(m.resolveGlobalDirs({ config })).toEqual({
       dataDir: "/cfg/data",
       cacheDir: "/cfg/cache",
     });
-    expect(
-      m.resolveGlobalDirs({
-        config,
-        env: {
-          ARGELANDERSPACE_GLOBAL_DIR: "/env/data",
-          ARGELANDERSPACE_GLOBAL_CACHE_DIR: "/env/cache",
-        },
-      })
-    ).toEqual({ dataDir: "/env/data", cacheDir: "/env/cache" });
     // overriding data does not move the cache
-    expect(
-      m.resolveGlobalDirs({ config: {}, env: { ARGELANDERSPACE_GLOBAL_DIR: "/env/data" } })
-    ).toEqual({ dataDir: "/env/data", cacheDir: "/home/u/.cache/argelanderspace" });
-  });
-
-  test("blank env values are ignored", async () => {
-    const m = await load("linux", { HOME: "/home/u" });
-    const r = m.resolveGlobalDirs({
-      config: { global_dir: "/cfg/data" },
-      env: { ARGELANDERSPACE_GLOBAL_DIR: "  " },
+    expect(m.resolveGlobalDirs({ config: { global_dir: "/cfg/data" } })).toEqual({
+      dataDir: "/cfg/data",
+      cacheDir: "/home/u/.cache/argelanderspace",
     });
-    expect(r.dataDir).toBe("/cfg/data");
   });
 
-  test("relative overrides are rejected, naming the source but not the value", async () => {
+  test("the removed environment variables change nothing", async () => {
+    const m = await load("linux", {
+      HOME: "/home/u",
+      ARGELANDERSPACE_GLOBAL_DIR: "/env/data",
+      ARGELANDERSPACE_GLOBAL_CACHE_DIR: "/env/cache",
+    });
+    expect(m.resolveGlobalDirs({ config: {} })).toEqual({
+      dataDir: "/home/u/.local/share/argelanderspace",
+      cacheDir: "/home/u/.cache/argelanderspace",
+    });
+    expect(m.resolveGlobalDirs({ config: { global_cache_dir: "/cfg/cache" } })).toEqual({
+      dataDir: "/home/u/.local/share/argelanderspace",
+      cacheDir: "/cfg/cache",
+    });
+  });
+
+  test("blank config values are ignored", async () => {
+    const m = await load("linux", { HOME: "/home/u" });
+    expect(m.resolveGlobalDirs({ config: { global_dir: "  " } }).dataDir).toBe(
+      "/home/u/.local/share/argelanderspace"
+    );
+  });
+
+  test("relative overrides are rejected, naming the key but not the value", async () => {
     const m = await load("linux", { HOME: "/home/u" });
     expect(() => m.resolveGlobalDirs({ config: { global_dir: "secret/rel" } })).toThrow(
       /"global_dir" must be an absolute path/
@@ -110,9 +114,9 @@ describe("override precedence", () => {
     expect(() => m.resolveGlobalDirs({ config: { global_dir: "secret/rel" } })).not.toThrow(
       /secret/
     );
-    expect(() =>
-      m.resolveGlobalDirs({ config: {}, env: { ARGELANDERSPACE_GLOBAL_CACHE_DIR: "rel" } })
-    ).toThrow(/ARGELANDERSPACE_GLOBAL_CACHE_DIR must be an absolute path/);
+    expect(() => m.resolveGlobalDirs({ config: { global_cache_dir: "rel" } })).toThrow(
+      /"global_cache_dir" must be an absolute path/
+    );
   });
 
   test("windows absolute-ness follows win32 rules", async () => {
@@ -149,16 +153,14 @@ describe("ensureGlobalDirs", () => {
     const root = mkdtempSync(join(tmpdir(), "gd-"));
     tmps.push(root);
     const m = await load("linux", { HOME: root });
-    const env = {
-      ARGELANDERSPACE_GLOBAL_DIR: join(root, "d/x"),
-      ARGELANDERSPACE_GLOBAL_CACHE_DIR: join(root, "c/y"),
-    };
+    const config = { global_dir: join(root, "d/x"), global_cache_dir: join(root, "c/y") };
     expect(existsSync(join(root, "d"))).toBe(false); // resolving never creates
-    m.resolveGlobalDirs({ config: {}, env });
+    m.resolveGlobalDirs({ config });
     expect(existsSync(join(root, "d"))).toBe(false);
-    const r = m.ensureGlobalDirs({ config: {}, env });
+    const r = m.ensureGlobalDirs({ config });
+    expect(r).toEqual({ dataDir: join(root, "d/x"), cacheDir: join(root, "c/y") });
     expect(statSync(r.dataDir).isDirectory()).toBe(true);
     expect(statSync(r.cacheDir).isDirectory()).toBe(true);
-    m.ensureGlobalDirs({ config: {}, env }); // idempotent
+    m.ensureGlobalDirs({ config }); // idempotent
   });
 });

@@ -3,10 +3,10 @@
  * + job runner + WS hub + external-write library/plans poller wired together)
  * and `startServer` (CLI-friendly: argv/env config resolution, listen, log).
  *
- * Config resolution (decisions 3 + 23): `--data-dir` >
- * `ARGELANDERSPACE_DATA_DIR` > config `data_dir` > `./literatures`; the port chain is
- * the same shape with default 8000 (uvicorn's convention). Web dist:
- * `--web-dist` > `ARGELANDERSPACE_WEB_DIST` > the first existing of
+ * Config resolution (decisions 3 + 23): `--data-dir` > config `data_dir`
+ * (relative only) > `./literatures`; the port chain is `--port` > config
+ * `port` > `DEFAULT_PORT`. No environment variable of the workbench's own
+ * takes part. Web dist: `--web-dist` > the first existing of
  * `<this module>/web` (the bundled single-package layout, decision 22) and
  * `<cwd>/packages/web/dist` (the repo dev layout). The status dir (Stage 4)
  * has no flag: it always sits next to the effective data dir
@@ -16,6 +16,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
@@ -43,7 +44,7 @@ export interface ServerOptions {
   dataDir: string;
   /** Global cache directory whose stale mail attachment staging is swept at start; unset = no sweep. */
   sweepMailStagingIn?: string;
-  /** Default 8000; `0` picks an ephemeral port (tests). */
+  /** Default `DEFAULT_PORT`; `0` picks an ephemeral port (tests). */
   port?: number;
   /** Default `127.0.0.1` (uvicorn's convention for this local tool). */
   hostname?: string;
@@ -77,6 +78,12 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
+/** The port the server is listening on; undefined before it listens and after it closed. */
+function boundPort(server: ServerType): number | undefined {
+  const address = server.address();
+  return typeof address === "object" && address !== null ? address.port : undefined;
+}
+
 export function createServer(opts: ServerOptions): RunningServer {
   // Mail: drop week-old unsent attachment staging in this cache directory. Only when asked for
   // (startServer, the production entry): a default createServer never resolves the real global dirs.
@@ -104,7 +111,7 @@ export function createServer(opts: ServerOptions): RunningServer {
       }
     },
   });
-  const port = opts.port ?? 8000;
+  const port = opts.port ?? DEFAULT_PORT;
 
   let mailWatcher: MailWatcher | undefined;
 
@@ -129,7 +136,8 @@ export function createServer(opts: ServerOptions): RunningServer {
     runner,
     broadcast: (msg) => hub.broadcast(msg),
     webDist: opts.webDist,
-    port,
+    // Read at request time: with port 0 the port is only known once the server listens.
+    boundPort: () => boundPort(server),
     providerSettings,
     copilot,
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
@@ -203,10 +211,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {
-    server.on("listening", () => {
-      const addr = server.address();
-      resolveReady(typeof addr === "object" && addr !== null ? addr.port : port);
-    });
+    server.on("listening", () => resolveReady(boundPort(server) ?? port));
     server.on("error", rejectReady);
   });
 
@@ -255,22 +260,19 @@ function argValue(argv: readonly string[], name: string): string | undefined {
 }
 
 /**
- * flag > env > config file (decision 23) > ./literatures; same pattern for port and
- * web-dist. `config` is injectable for tests; production callers leave it to
- * `getConfig()` (a missing config file is `{}`).
+ * flag > config file (decision 23) > default, for the data dir and the port; the web dist is the flag or the
+ * directory found next to the bundle / in the repo. `config` is injectable for tests; production callers leave it
+ * to `getConfig()` (a missing config file is `{}`).
  */
 export function resolveServerConfig(
   argv: readonly string[] = [],
-  env: NodeJS.ProcessEnv = process.env,
   cwd: string = process.cwd(),
   config: AppConfig = getConfig()
 ): ResolvedConfig {
-  const dataDir = resolve(
-    argValue(argv, "data-dir") ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./literatures"
-  );
-  const portRaw = argValue(argv, "port") ?? env.ARGELANDERSPACE_PORT;
-  const port = portRaw === undefined ? (config.port ?? 8000) : Number.parseInt(portRaw, 10);
-  const webRaw = argValue(argv, "web-dist") ?? env.ARGELANDERSPACE_WEB_DIST;
+  const dataDir = resolve(argValue(argv, "data-dir") ?? config.data_dir ?? "./literatures");
+  const portRaw = argValue(argv, "port");
+  const port = portRaw === undefined ? (config.port ?? DEFAULT_PORT) : Number.parseInt(portRaw, 10);
+  const webRaw = argValue(argv, "web-dist");
   let webDist: string | null;
   if (webRaw !== undefined) {
     webDist = resolve(webRaw);
@@ -284,15 +286,14 @@ export function resolveServerConfig(
     ];
     webDist = candidates.find((p) => existsSync(p)) ?? null;
   }
-  return { dataDir, port: Number.isNaN(port) ? 8000 : port, webDist };
+  return { dataDir, port: Number.isNaN(port) ? DEFAULT_PORT : port, webDist };
 }
 
 /** Resolve config, create the server, wait for the listen, log the URL. */
 export async function startServer(
-  argv: readonly string[] = process.argv.slice(2),
-  env: NodeJS.ProcessEnv = process.env
+  argv: readonly string[] = process.argv.slice(2)
 ): Promise<RunningServer> {
-  const cfg = resolveServerConfig(argv, env);
+  const cfg = resolveServerConfig(argv);
   let sweepMailStagingIn: string | undefined;
   try {
     sweepMailStagingIn = resolveGlobalDirs().cacheDir;

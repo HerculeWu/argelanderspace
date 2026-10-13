@@ -31,7 +31,7 @@ beforeEach(() => {
     runner: new JobRunner({ dir: join(dataDir, "jobs") }),
     broadcast: collector.broadcast,
     webDist: null,
-    port: TEST_PORT,
+    boundPort: () => TEST_PORT,
     // Stage 15: this file pins CREATION semantics; the automatic arXiv fetch
     // (which would queue ingest jobs on created/exists) is covered in
     // attach-arxiv.test.ts — keep it off here.
@@ -201,7 +201,7 @@ describe("POST /api/library/works", () => {
       runner: new JobRunner({ dir: join(dir, "jobs") }),
       broadcast: collector.broadcast,
       webDist: null,
-      port: TEST_PORT,
+      boundPort: () => TEST_PORT,
     });
     const res = await app2.request("/api/library/works", {
       method: "POST",

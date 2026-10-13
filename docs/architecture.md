@@ -20,11 +20,15 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 
 默认项目级 `./literatures`，只按 cwd 相对解析，不向上查找。优先级：
 
-`--data-dir` > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`。
+`--data-dir` > config.toml `data_dir` > `./literatures`。
 
-配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；env 优先，未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。
+config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错误（点名该键、不回显值）；`--data-dir` 是单次显式覆盖，可以给绝对路径。
 
-**全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定；目录解析已在 infra 实现，Mail 账户已使用）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 `ARGELANDERSPACE_GLOBAL_DIR` > config 键 `global_dir` > OS 默认；全局缓存对称：`ARGELANDERSPACE_GLOBAL_CACHE_DIR` > `global_cache_dir` > OS 默认，两者互不影响（改数据目录不移动缓存）。空白 env 视为未设，相对路径一律拒绝（ConfigError，只报来源名；按探测到的平台判断绝对路径，避免随 cwd 分裂全局目录）；`global_dir`/`global_cache_dir` 类型错只报键名。`resolveGlobalDirs` 不访问文件系统（未传 config 时读 config.toml）；OS 默认目录由 env-paths 在 import 时固定 homedir，测试隔离须在导入前把 `HOME`/`XDG_*` 指向 tmp；目录由 `ensureGlobalDirs` 按需创建，权限 0700（infra `global-dirs.ts`）。既有 config.toml 位置不变，项目数据不迁移。
+工作台的配置只有一个来源：`config.toml`，加命令行参数（`--data-dir`、`--port`）作单次覆盖。工作台自己的环境变量（数据目录、端口、全局数据目录、全局缓存目录、web dist 位置）自 2026-10-13（desktop-app 票 05）起不再读取，设置了也不起作用；操作系统自己的变量（`XDG_CONFIG_HOME` 等）照旧。ADS token 与 OpenAlex 的 key、联系邮箱的环境变量不在这次改动内。默认端口 1859 是 contracts 的常量 `DEFAULT_PORT`，CLI 深链接、`serve` 与 web 的开发代理共用。
+
+配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。
+
+**全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定；目录解析已在 infra 实现，Mail 账户已使用）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 config 键 `global_dir` > OS 默认；全局缓存对称：`global_cache_dir` > OS 默认，两者互不影响（改数据目录不移动缓存）；只认 config.toml 的键，不认环境变量（2026-10-13 起，desktop-app 票 05；此前各有一个优先于 config 的环境变量）。空白值视为未设，相对路径一律拒绝（ConfigError，只报键名；按探测到的平台判断绝对路径，避免随 cwd 分裂全局目录）；`global_dir`/`global_cache_dir` 类型错只报键名。`resolveGlobalDirs` 不访问文件系统（未传 config 时读 config.toml）；OS 默认目录由 env-paths 在 import 时固定 homedir，测试隔离须在导入前把 `HOME`/`XDG_*` 指向 tmp；目录由 `ensureGlobalDirs` 按需创建，权限 0700（infra `global-dirs.ts`）。既有 config.toml 位置不变，项目数据不迁移。
 
 **凭据存储**（Mail 票 02，ADR 0008；infra `credential-store.ts`，Mail 账户服务已调用）：窄接口 `get/set/delete(accountId)`，后端 `@napi-rs/keyring`（MIT，service `argelanderspace.mail`，原生模块惰性加载，失败按“不可用”处理；Linux 上 Entry 显式固定 `{linux:{store:"secret-service"}}`，否则绑定会静默回退到内核 keyutils（仅内存、重启即失），固定后无 Secret Service 时构造抛错即“不可用”；app 包将其列为运行时依赖，因原生 `.node` 不可内联）且可注入。钥匙串任何失败都返回 `keychain-unavailable`，不自动降级；仅当调用方传 `{ fileFallbackConsent: true }`（严格 `true`，表示用户已在 UI 同意）才写全局数据目录下 `credentials.json`（0600，tmp+rename 原子替换，AES-256-GCM 轻度加密，密钥由文件内盐与本机用户名/主机名派生，只防误看，不防同用户读取），结果带 `keychainProtected:false` 供 UI 持续标示。读取时钥匙串优先、其次文件；钥匙串可用后再 `set` 会迁入钥匙串并移除文件副本。钥匙串写成功后若旧文件副本无法移除，结果带 `staleFileCopy:true`；钥匙串不可用但文件副本已删时 `delete` 返回 `{status:"deleted", keychainUnavailable:true}`（钥匙串里可能仍有副本，未检查）；文件重写失败为 `file-write-failed`。失败结果只含状态码（`invalid-input`/`file-unreadable`/`file-write-failed`），不含异常消息或密码；唯一含密码的是成功 `get` 的返回值，调用方不得日志/广播/回显。跨进程：文件读-改-写同刻并发写不同账户可能丢一次写（后写者胜），按 ADR 0007 的要求在此明示并同步写入 contracts，可接受（用户重输一个密码）。账户 id 在文件中以 Map 保存，`__proto__` 等同普通键。
 
@@ -89,7 +93,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 ## Web 与同步
 
-- `serve` 默认 8000；Hono REST、SPA、images、`/ws`。
+- `serve` 端口：`--port` > config.toml `port` > 1859；Hono REST、SPA、images、`/ws`。写请求的 CSRF 守卫与 `/ws` 升级的来源白名单相同：本机地址（`localhost`、`127.0.0.1`）上的开发端口 5173，加 server 实际绑定的端口（逐请求读取，`--port 0` 的临时端口同样成立）；不带 `Origin` 的本地工具放行。web 的开发代理指向默认端口。
 - watcher 轮询 library、plans、per-doc current annotations、manuscript JSON 和模板 JSON 指纹；server 自写可再收到 external，前端幂等重取。没有资产目录 watcher。
 - JobRunner 串行、持久化；boot 将未完成 job 标 interrupted，不重跑；hello 回放，失败在详情刷新后仍可见；job.done 先于 library.changed。upload、refresh 和 arXiv ingest 生命周期不能与 Discovery 只读请求混淆。
 - 文献 label 色板：red重点 / amber待读 / green已精读 / blue方法 / violet灵感；overlay > 持久 label > star 播种。已读标题灰化及“已读”，未读蓝点。
@@ -104,7 +108,7 @@ CLI + 仓库 `skills/argelander-*` 三件套（ingest/query-library/read-paper�
 - `skills/argelander-argument-graph` 读一篇已摄入文献并把论证图写入工作台（读正文走既有 `read`/`show`/`ref`，PDF Doc 经 `pdf-path` 取原件路径，写入走 `argument put`）；覆盖非空图前须问用户，不是第四个文献问答 skill。
 - 文献问答从项目根走 CLI/skills，不传 `--data-dir`，不读内部 JSON/源码替代文献接口。开发任务不受此源码禁读限制。
 - 仓库 CLI：`node packages/app/dist/bin.js`；全局安装后 `argelanderspace`。
-- 深链接端口：`ARGELANDERSPACE_PORT` > config `port` > 8000。
+- 深链接端口：config.toml `port` > 1859，不读环境变量；`serve` 用 `--port` 起在别的端口而 config 没写时，CLI 打印的链接仍指向 config 或默认端口。
 - search 空 note 提示只走 stderr，stdout JSONL 保持可 pipe；摄入后每篇询问 note 并给建议稿。输出冻结以 contracts 为准。
 - `skills/argelander-find-papers` 是三件套之外的独立 skill（2026-10-10）：自带零依赖脚本 `scripts/ads.mjs` 直接查询 ADS（search / similar / useful），token 只读 `~/.ads/dev_key`，不经过 CLI、不读写 Library、不落盘、无缓存。它由 agent 编排多次查询并自行排序，不是 Discovery 的实现，也不改变 [discovery](discovery.md) 的固定查询语义；入库仍是另行的显式动作。
 

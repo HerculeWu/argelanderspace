@@ -6,8 +6,7 @@
  * auto-detection (latex-only routing; DOI/URL gets a friendly error).
  *
  * Hermeticity: the spawned CLI gets `HOME=<tmp>` so the ADS token file is
- * absent (ADS self-degrades to "no-token", no network) and the ambient
- * `ARGELANDERSPACE_*` env is scrubbed.
+ * absent (ADS self-degrades to "no-token", no network).
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -17,9 +16,11 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "node:fs";
+import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,13 +39,10 @@ function haveLatexmk(env: NodeJS.ProcessEnv): boolean {
   );
 }
 
-/** Child env: scrubbed ARGELANDERSPACE_*, HOME in a tmp dir, astro bin on PATH
+/** Child env: HOME in a tmp dir, astro bin on PATH
  *  (pandoc is only needed by the retired pandoc-gated suites elsewhere). */
 function childEnv(home: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
-  for (const k of Object.keys(env)) {
-    if (k.startsWith("ARGELANDERSPACE_")) delete env[k];
-  }
   env.PATH = `${ASTRO_BIN_HINT}${delimiter}${env.PATH ?? ""}`;
   return env;
 }
@@ -435,6 +433,136 @@ describe("library build folds Works that have argument graphs (ticket 06)", () =
     },
     120_000
   );
+});
+
+/** Spawn `serve` with the given extra args/env; resolves with the port of its "listening on" line. */
+async function serve(
+  args: string[],
+  env: NodeJS.ProcessEnv
+): Promise<{ port: number; stdout: () => string; stop: () => Promise<number | null> }> {
+  const child = spawn(process.execPath, [BIN, "serve", ...args], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stdout = "";
+  child.stdout.on("data", (d: Buffer) => {
+    stdout += d.toString();
+  });
+  const stop = (): Promise<number | null> =>
+    new Promise((resolvePromise) => {
+      child.on("exit", (code) => resolvePromise(code));
+      child.kill("SIGTERM");
+    });
+  try {
+    const port = await new Promise<number>((resolvePromise, rejectPromise) => {
+      const timer = setTimeout(
+        () => rejectPromise(new Error(`no listen line; got: ${stdout}`)),
+        20_000
+      );
+      child.stdout.on("data", () => {
+        // the three start-up lines end with the web dist one
+        const m = /listening on http:\/\/127\.0\.0\.1:(\d+)\n[\s\S]*web dist: .*\n/.exec(stdout);
+        if (m) {
+          clearTimeout(timer);
+          resolvePromise(Number.parseInt(m[1] as string, 10));
+        }
+      });
+    });
+    return { port, stdout: () => stdout, stop };
+  } catch (e) {
+    await stop();
+    throw e;
+  }
+}
+
+describe("serve: configuration comes from flags and config.toml only (desktop-app ticket 05)", () => {
+  test("the removed variables change nothing; a same-origin write passes on the bound port", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aspace-cli-serve-"));
+    const dataDir = makeDataDir(root);
+    const decoy = join(root, "decoy");
+    mkdirSync(decoy);
+    const srv = await serve(["--data-dir", dataDir, "--port", "0"], {
+      ...childEnv(root),
+      ARGELANDERSPACE_DATA_DIR: decoy,
+      ARGELANDERSPACE_PORT: "9",
+      ARGELANDERSPACE_WEB_DIST: decoy,
+      ARGELANDERSPACE_GLOBAL_DIR: "relative/global",
+      ARGELANDERSPACE_GLOBAL_CACHE_DIR: "relative/cache",
+    });
+    try {
+      expect(srv.stdout()).toContain(`  data dir: ${dataDir}\n`);
+      expect(srv.stdout()).not.toContain(decoy);
+      const papers = await fetch(`http://127.0.0.1:${srv.port}/api/papers`);
+      expect(await papers.json()).toEqual({ papers: ["arxiv-2501.17225"] });
+      const put = async (origin: string): Promise<number> =>
+        (
+          await fetch(`http://127.0.0.1:${srv.port}/api/plans`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Origin: origin },
+            body: JSON.stringify({ version: 1, rev: 0, plans: [] }),
+          })
+        ).status;
+      expect(await put("http://evil.example")).toBe(403);
+      expect(await put("http://127.0.0.1:8000")).toBe(403);
+      expect(await put(`http://127.0.0.1:${srv.port}`)).toBe(200);
+    } finally {
+      expect(await srv.stop()).toBe(0);
+    }
+    expect(readdirSync(decoy)).toEqual([]);
+  }, 60_000);
+
+  test("without --port it binds config.toml `port`, not the removed variable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aspace-cli-serve-"));
+    const dataDir = makeDataDir(root);
+    // a port that is free right now
+    const probe = createNetServer();
+    await new Promise<void>((resolvePromise) => probe.listen(0, "127.0.0.1", resolvePromise));
+    const free = (probe.address() as { port: number }).port;
+    await new Promise<void>((resolvePromise) => probe.close(() => resolvePromise()));
+    const xdg = join(root, "xdg");
+    mkdirSync(join(xdg, "argelanderspace"), { recursive: true });
+    writeFileSync(join(xdg, "argelanderspace", "config.toml"), `port = ${free}\n`);
+    const srv = await serve(["--data-dir", dataDir], {
+      ...childEnv(root),
+      XDG_CONFIG_HOME: xdg,
+      ARGELANDERSPACE_PORT: "9",
+    });
+    try {
+      expect(srv.port).toBe(free);
+    } finally {
+      expect(await srv.stop()).toBe(0);
+    }
+  }, 60_000);
+
+  test("config.toml `data_dir` as an absolute path: serve refuses to start, naming the key", () => {
+    const root = mkdtempSync(join(tmpdir(), "aspace-cli-serve-"));
+    const dataDir = makeDataDir(root);
+    const xdg = join(root, "xdg");
+    mkdirSync(join(xdg, "argelanderspace"), { recursive: true });
+    const file = join(xdg, "argelanderspace", "config.toml");
+    writeFileSync(file, `data_dir = "${dataDir}"\n`);
+    const r = runCli(["serve", "--port", "0"], { ...childEnv(root), XDG_CONFIG_HOME: xdg });
+    expect(r).toEqual({
+      status: 1,
+      stdout: "",
+      stderr: `error: ${file}: "data_dir" must be a relative path\n`,
+    });
+  });
+
+  test("help names config.toml, not environment variables, and the default port", () => {
+    for (const args of [["--help"], ["serve", "--help"], ["read", "--help"]]) {
+      const r = runCli(args, childEnv(mkdtempSync(join(tmpdir(), "aspace-cli-help-"))));
+      expect(r.status).toBe(0);
+      expect(r.stdout).not.toMatch(/ARGELANDERSPACE_|\benv\b|8000/);
+      expect(r.stdout.replace(/\s+/g, " ")).toContain(
+        "data directory (default ./literatures, or data_dir in config.toml)"
+      );
+    }
+    const serveHelp = runCli(["serve", "--help"], childEnv(mkdtempSync(join(tmpdir(), "aspace-"))));
+    expect(serveHelp.stdout.replace(/\s+/g, " ")).toContain(
+      "port (default 1859, or port in config.toml)"
+    );
+  });
 });
 
 describe("serve smoke (built CLI)", () => {

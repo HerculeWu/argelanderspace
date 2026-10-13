@@ -36,7 +36,6 @@ const LATEX_DOC_ID = "arxiv-2501.17225";
 
 function childEnv(home: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
-  for (const k of Object.keys(env)) if (k.startsWith("ARGELANDERSPACE_")) delete env[k];
   env.XDG_CONFIG_HOME = join(home, "xdg");
   env.PATH = `${env.PATH ?? ""}${delimiter}/home/wwu/miniforge3/envs/astro/bin`;
   return env;
@@ -197,7 +196,7 @@ const EMPTY_GOLDEN = `{
 `;
 
 /** The one JSON line `argument put` prints on success (frozen key order: work_id, rev, link). */
-function putOut(rev: number, port = 8000, workId = WORK_ID): string {
+function putOut(rev: number, port = 1859, workId = WORK_ID): string {
   return `{"work_id":${JSON.stringify(workId)},"rev":${rev},"link":"http://localhost:${port}/#argument/${encodeURIComponent(workId)}"}\n`;
 }
 
@@ -1112,16 +1111,33 @@ $$\sum_{i=1}^{n} \alpha_i \le \frac{1}{2}$$
     }
   );
 
-  test("the link follows ARGELANDERSPACE_PORT; ids are URL-encoded", () => {
-    const f = makeDataDir();
-    const file = f.file("g.json");
-    writeFileSync(file, JSON.stringify(GRAPH));
-    const r = runCli(["argument", "put", WORK_ID, file, "--rev", "0", "--data-dir", f.dataDir], {
-      ...f.env,
-      ARGELANDERSPACE_PORT: "9123",
-    });
-    expect(r).toEqual({ status: 0, stdout: putOut(1, 9123), stderr: "" });
-    expect(JSON.parse(r.stdout).link).toBe("http://localhost:9123/#argument/arxiv%3A2603.03522");
+  test("the link follows config.toml `port`, else 1859; ids are URL-encoded; the removed variable changes nothing", () => {
+    const put = (env: NodeJS.ProcessEnv) => {
+      const f = makeDataDir();
+      const file = f.file("g.json");
+      writeFileSync(file, JSON.stringify(GRAPH));
+      return {
+        f,
+        run: () =>
+          runCli(["argument", "put", WORK_ID, file, "--rev", "0", "--data-dir", f.dataDir], {
+            ...f.env,
+            ...env,
+          }),
+      };
+    };
+    const byDefault = put({ ARGELANDERSPACE_PORT: "9999" });
+    expect(byDefault.run()).toEqual({ status: 0, stdout: putOut(1), stderr: "" });
+    expect(putOut(1)).toContain('"link":"http://localhost:1859/#argument/arxiv%3A2603.03522"');
+
+    for (const env of [{}, { ARGELANDERSPACE_PORT: "9999" }]) {
+      const configured = put(env);
+      const cfgDir = join(configured.f.root, "xdg", "argelanderspace");
+      mkdirSync(cfgDir, { recursive: true });
+      writeFileSync(join(cfgDir, "config.toml"), "port = 9123\n");
+      const r = configured.run();
+      expect(r).toEqual({ status: 0, stdout: putOut(1, 9123), stderr: "" });
+      expect(JSON.parse(r.stdout).link).toBe("http://localhost:9123/#argument/arxiv%3A2603.03522");
+    }
   });
 });
 
@@ -1685,6 +1701,28 @@ describe("argument commands: messages that must stay one safe line", () => {
     // the same sentence the existing `note` prints
     const note = runCli(["note", "list", WORK_ID, "--data-dir", f.dataDir], f.env);
     expect(note.stderr).toBe(expected);
+  });
+
+  test("config.toml `data_dir` as an absolute path: the config error names the key, never the value", () => {
+    const f = makeDataDir();
+    const cfgDir = join(f.root, "xdg", "argelanderspace");
+    mkdirSync(cfgDir, { recursive: true });
+    writeFileSync(join(cfgDir, "config.toml"), `data_dir = "${f.dataDir}"\n`);
+    const expected = `error: ${join(cfgDir, "config.toml")}: "data_dir" must be a relative path\n`;
+    const file = f.file("g.json");
+    writeFileSync(file, JSON.stringify(GRAPH));
+    for (const args of [
+      ["argument", "get", WORK_ID],
+      ["argument", "put", WORK_ID, file, "--rev", "0"],
+      ["pdf-path", "pdf-x"],
+    ]) {
+      expect(runCli([...args, "--data-dir", f.dataDir], f.env)).toEqual({
+        status: 1,
+        stdout: "",
+        stderr: expected,
+      });
+    }
+    expect(existsSync(join(f.dataDir, "argument-graphs"))).toBe(false);
   });
 
   test.skipIf(process.getuid?.() === 0)(

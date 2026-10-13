@@ -14,8 +14,9 @@
  *   the rebuild runs inside the serial job runner (mutual exclusion with
  *   other library writes, decisions 13/16) — WS clients see it as a
  *   `refresh` job.
- * - The CSRF allowlist gains the server's own port (`localhost`/`127.0.0.1`)
- *   so same-origin SPA POSTs work on ports other than the hardcoded 8000.
+ * - The CSRF allowlist is the Vite dev origin plus the port the server is
+ *   actually bound to (`localhost`/`127.0.0.1`), looked up per request, so
+ *   same-origin SPA POSTs work on any port, an ephemeral one included.
  * - Malformed `?offline=` values answer `422 {"detail": string}` (FastAPI's
  *   validation body is a `detail` *array*; the string shape is kept uniform).
  * - The SPA fallback serves `index.html` for unknown non-API GET paths
@@ -143,6 +144,7 @@ import type { MailReadService } from "./mail-read.js";
 import { mountMailRoutes } from "./mail-routes.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { mountMailWatchRoutes } from "./mail-watch-routes.js";
+import { DEV_ORIGINS, ownOrigins } from "./origins.js";
 import { PaperCache } from "./paper-cache.js";
 import { createPdfAccess } from "./pdf-access.js";
 import {
@@ -207,8 +209,12 @@ export interface AppDeps {
   docMutations?: DocMutationRegistry;
   /** Built SPA directory; served last (API routes take precedence). */
   webDist?: string | null;
-  /** The server's own port — same-origin SPA POSTs carry it in `Origin`. */
-  port?: number;
+  /**
+   * The port the server is bound to — same-origin SPA POSTs carry it in `Origin`. A function because an ephemeral
+   * port (`0`) is only known once the server listens; undefined (no server, or not listening) allows the dev
+   * origins only.
+   */
+  boundPort?: () => number | undefined;
   /** Isolated settings storage/runtime in tests; production is initialized on first provider request. */
   providerSettings?: ProviderSettings;
   /** Mail accounts (global data); tests inject isolated stores, production builds it on first request. */
@@ -428,17 +434,12 @@ export function createApp(deps: AppDeps): Hono {
     lock: annotationLock,
     onChanged: annotationChanged,
   });
-  // app.py's `_ALLOWED_ORIGINS` + the server's own port (see header note).
-  const allowedOrigins = new Set([
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-  ]);
-  if (deps.port !== undefined && deps.port !== 8000) {
-    allowedOrigins.add(`http://localhost:${deps.port}`);
-    allowedOrigins.add(`http://127.0.0.1:${deps.port}`);
-  }
+  // Mutations may come from the Vite dev server or from the page this server itself serves.
+  const originAllowed = (origin: string): boolean => {
+    if ((DEV_ORIGINS as readonly string[]).includes(origin)) return true;
+    const port = deps.boundPort?.();
+    return port !== undefined && ownOrigins(port).includes(origin);
+  };
 
   const app = new Hono();
 
@@ -448,7 +449,7 @@ export function createApp(deps: AppDeps): Hono {
   app.use(
     "*",
     cors({
-      origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+      origin: [...DEV_ORIGINS],
       allowMethods: ["GET"],
     })
   );
@@ -457,7 +458,7 @@ export function createApp(deps: AppDeps): Hono {
   const guardCsrf = (
     origin: string | undefined
   ): { body: { detail: string }; status: 403 } | null =>
-    origin !== undefined && !allowedOrigins.has(origin)
+    origin !== undefined && !originAllowed(origin)
       ? { body: { detail: "cross-site request rejected" }, status: 403 }
       : null;
 

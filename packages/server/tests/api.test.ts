@@ -47,7 +47,7 @@ beforeEach(() => {
     runner,
     broadcast: collector.broadcast,
     webDist,
-    port: TEST_PORT,
+    boundPort: () => TEST_PORT,
   });
 });
 

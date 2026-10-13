@@ -27,7 +27,7 @@
  * - every command that references a doc location also prints a deep link
  *   `http://localhost:<port>/doc/<docId>#<anchor>` (decision 8; the web route
  *   itself is MS2). The port follows serve's chain minus its `--port` flag:
- *   `ARGELANDERSPACE_PORT` > config `port` > 8000.
+ *   config `port` > 1859 (contracts `DEFAULT_PORT`).
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -37,6 +37,7 @@ import {
   type AnnotationTarget,
   canonicalContainerText,
   canonicalSegmentsText,
+  DEFAULT_PORT,
   type DocIr,
   type IrBlock,
   type IrSection,
@@ -64,17 +65,9 @@ import { fail, resolveDataDir, withDataDir } from "./common.js";
 // Shared helpers
 // --------------------------------------------------------------------------- //
 
-/** Deep-link port: env `ARGELANDERSPACE_PORT` > config `port` > 8000. */
-export function resolveLinkPort(
-  env: NodeJS.ProcessEnv = process.env,
-  config: AppConfig = getConfig()
-): number {
-  const raw = env.ARGELANDERSPACE_PORT;
-  if (raw !== undefined) {
-    const p = Number.parseInt(raw, 10);
-    if (!Number.isNaN(p)) return p;
-  }
-  return config.port ?? 8000;
+/** Deep-link port: config `port` > `DEFAULT_PORT`. No environment variable takes part. */
+export function resolveLinkPort(config: AppConfig = getConfig()): number {
+  return config.port ?? DEFAULT_PORT;
 }
 
 /** `http://localhost:<port>/doc/<docId>[#<anchor>]` (decision 8). */
