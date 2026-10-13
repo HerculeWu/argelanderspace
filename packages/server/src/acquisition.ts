@@ -88,6 +88,11 @@ export interface AcquisitionDeps {
   /** `argument-graph.changed` for a Work, right after a Work merge moved a graph (no waiting for the file poller). */
   argumentGraphChanged?: ((workId: string) => void) | undefined;
   pipelines: IngestPipelines;
+  /**
+   * The pipelines for one job: the same, except that a failed compile keeps its complete log beside that job's record
+   * (compile-failure-log.ts). Absent (injected pipelines) → `pipelines`.
+   */
+  pipelinesForJob?: ((jobId: string) => IngestPipelines) | undefined;
   makeSources: (offline: boolean) => MetadataSources;
   /** External current arXiv PDF bytes; absent → the PDF job fails ("arXiv PDF source is unavailable"). */
   fetchArxivPdf?: ((arxivId: string) => Promise<Buffer>) | undefined;
@@ -429,7 +434,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
           try {
             const attached = await attachArxivDoc(workId, {
               paths,
-              pipelines: deps.pipelines,
+              pipelines: deps.pipelinesForJob?.(j.id) ?? deps.pipelines,
               sources: deps.makeSources(false),
               rebuild: collected.rebuild,
               // N1 (upload precedent): the main-doc re-assert must be mutually
@@ -764,12 +769,14 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     query: ZipQuery,
     zipPath: string,
     onProgress?: (message: string) => void,
-    onFailureNotes?: (notes: readonly ArgumentGraphMergeNote[]) => void
+    onFailureNotes?: (notes: readonly ArgumentGraphMergeNote[]) => void,
+    /** The job this runs in; the synchronous upload has none (and so keeps no compile failure log). */
+    jobId?: string
   ): Promise<{ ref: LibraryRef; argument_graph_merges: ArgumentGraphMergeNote[] }> => {
     const collected = collectingRebuild();
     let ref: LibraryRef;
     try {
-      ref = await attachZip(zipPath, query, collected, onProgress);
+      ref = await attachZip(zipPath, query, collected, onProgress, jobId);
     } catch (error) {
       onFailureNotes?.(collected.notes);
       throw error;
@@ -780,11 +787,13 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     zipPath: string,
     query: ZipQuery,
     collected: ReturnType<typeof collectingRebuild>,
-    onProgress?: (message: string) => void
+    onProgress?: (message: string) => void,
+    jobId?: string
   ): Promise<LibraryRef> => {
     const ref = await attachLatexZip(zipPath, query, {
       paths,
-      pipelines: deps.pipelines,
+      pipelines:
+        (jobId === undefined ? undefined : deps.pipelinesForJob?.(jobId)) ?? deps.pipelines,
       sources: deps.makeSources(false),
       rebuild: collected.rebuild,
       // The link runs inside the library lock with narrow writes (the ingest itself does not): nothing written
@@ -838,7 +847,8 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
               (notes) => {
                 // failed after merging Works: the failed job keeps the notes (see the arXiv fetch above)
                 if (notes.length > 0) j.result = withMerges({}, notes);
-              }
+              },
+              j.id
             );
             return {
               ref,

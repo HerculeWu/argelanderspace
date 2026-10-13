@@ -50,7 +50,7 @@
 - reader epoch 真浏览器验证必须真实替换 IR/正文/图，不能只变 fingerprint mock；正常合成 zip 上传→latexmk→job.done→自然 library.changed 才证明真实通知链。CDP composition 不等于 OS 输入法，fetch 取消也不穷举 decode/onLoad 全时序。最终 17 个受测用例通过的范围与局限在历史原文，不抹掉中途失败。
 - Stage 11 有 65 组合成 citation 与 PDF/pdftotext 对拍及发布包真实 Chrome/CDP 证据，**不推翻用户 Report citation 未通过**。四门绿、合成 smoke、用户 smoke、阶段关闭是不同结论。
 - Stage 12 四门 1066 passed + 1 可选 skip；真实 Chrome/CDP 探针验证显式渲染（打开/输入/暂停 0 编译、Shift+Enter 恰好 1 次、Render 按钮有效），导出 zip 产物 latexmk 自编译 EXIT=0；用户 smoke 通过，I030/I031 关闭。CDP 教训：`Runtime.evaluate` 的 returnByValue 不能序列化 DOM 节点（waitFor 表达式需 `Boolean()` 包裹）；点击类 evaluate 返回值序列化偶发 -32000，用效果断言代替调用成功。IME 全角逗号是真实用户输入风险，按 Stage 12 决定属用户语法责任（I034）。
-- **latexmk 稳定缓存在编译失败后曾死锁**：“Nothing to do”+“previous invocation error”，坏 bbl 阻断 bibtex 重跑；Stage 12 起 compileTex 失败路径清理 aux/bbl/blg/fdb_latexmk/log（输入不动），下次编译自愈。
+- **latexmk 稳定缓存在编译失败后曾死锁**：“Nothing to do”+“previous invocation error”，坏 bbl 阻断 bibtex 重跑；Stage 12 起 compileTex 失败路径清理 aux/bbl/blg/fdb_latexmk/log（输入不动），下次编译自愈。desktop-app 票 08 起，完整日志的另存发生在这次清理之前（`tex/failure-log.ts`），清理的文件集合不变；`infra/tests/tex-failure-log.test.ts` 钉住「失败后被清掉的文件」与「同一份源立即重试能重新编译」。
 - web Vitest 经 workspace **dist** 解析；改 contracts/core 后先 build 再跑下游测试，否则可能误报旧实现故障。CodeMirror 的 happy-dom selectionchange 同步重入用测试 shim，不当真实浏览器证据。Shift-Enter 高优先级及 compositionStarted 防 IME 误提交是当前集成教训。
 - biome web legacy override 关闭了部分格式/导入/a11y；不要对旧前端文件盲目 `--write` 全量重排。新代码保持 clean；parse 级错误不能靠 override 关闭，真实 HTML 夹具当年需 files.includes 排除。
 

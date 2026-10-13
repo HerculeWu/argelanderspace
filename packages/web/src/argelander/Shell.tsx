@@ -11,6 +11,7 @@ import { DEFAULT_LANGUAGE } from "../i18n";
 import { planResize, resizeDivider, shareOf } from "./layout";
 import { createPaneManager, type Pane, type PaneAdapter, type PaneManager, type ViewActionOutcome } from "./panes";
 import { ACCENTS, useTweaks } from "./theme";
+import { notePane } from "../page-errors";
 import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
 import { applyDocDeletion, askWorkspaceLeave, confirmWorkspaceLeave, type LeaveOrigin, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
@@ -111,6 +112,8 @@ export function Shell() {
   const panesRef = useRef<HTMLDivElement>(null);
   const multi = panes.length > 1;
   const activePane = panes.find((p) => p.id === activeId) || panes[0]!;
+  // A page error is reported with the name of the pane that was open (page-errors.ts).
+  useEffect(() => notePane(activePane.view), [activePane.view]);
 
   // A mode that lives in the Library page (exploration, the argument graph view) needs a Library pane to open in: the one
   // already there, else the active pane becomes one. `guard`: ask the leave guard first (a navigation of the user's, with

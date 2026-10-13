@@ -36,6 +36,7 @@ import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
 import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
+import { ingestFailureLog } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
@@ -71,6 +72,8 @@ export interface ServerOptions {
   fetchImpl?: FetchImpl;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
+  /** The rate window of the page-error reports (page-errors.ts): a dependency-injection point like `heartbeatMs`. */
+  pageErrors?: Pick<import("./page-errors.js").PageErrorOptions, "windowMs">;
   /** External-write poll interval (default 1500); tests inject ~50. */
   watchIntervalMs?: number;
   /** Explicit isolated credential/config store; ordinary servers initialize lazily. */
@@ -113,8 +116,9 @@ export function createServer(opts: ServerOptions): RunningServer {
   const observer = externalObserver(log);
   const wiring = { observer, fetchImpl: opts.fetchImpl };
   const observeJobs = jobLogger(log);
+  const jobsDir = join(opts.dataDir, "jobs");
   const runner = new JobRunner({
-    dir: join(opts.dataDir, "jobs"),
+    dir: jobsDir,
     ...(observeJobs ? { observe: observeJobs } : {}),
     // Stage 15 (D12): a boot-interrupted arXiv fetch is a failure worth
     // iterating on too — it lands in the same plain-text JSONL log.
@@ -162,6 +166,13 @@ export function createServer(opts: ServerOptions): RunningServer {
     makeDiscoverySource:
       opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths, wiring)),
     pipelines: opts.deps?.pipelines ?? realPipelines(paths, wiring),
+    // The real pipelines keep a failed compile's complete latexmk log beside the job's record.
+    ...(opts.deps?.pipelines === undefined
+      ? {
+          pipelinesForJob: (jobId: string) =>
+            realPipelines(paths, { ...wiring, failureLog: ingestFailureLog(jobsDir, jobId, log) }),
+        }
+      : {}),
     fetchArxivPdf:
       opts.deps?.fetchArxivPdf ??
       ((arxivId) =>
@@ -179,6 +190,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     providerSettings,
     copilot,
     log,
+    ...(opts.pageErrors ? { pageErrors: opts.pageErrors } : {}),
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
   });
 

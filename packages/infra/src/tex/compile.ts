@@ -38,6 +38,12 @@ import { TEX_COMPILE_DEFAULT_TIMEOUT_MS } from "@argelanderspace/core";
 import type { ExternalObserver } from "../lib/observe.js";
 import { findOnPath } from "../lib/proc.js";
 import { createCachedTexWorkspace } from "./cache.js";
+import {
+  missingFilesFromTexLog,
+  type TexCompileFailure,
+  TexFailureCapture,
+  type TexFailureLogHook,
+} from "./failure-log.js";
 import { prepareTexInstrumentation, texStyPath } from "./instrument.js";
 import { runTexProcess } from "./proc.js";
 import { ensureWriterSandboxProbe, writerSandboxCommand } from "./sandbox.js";
@@ -208,6 +214,8 @@ interface AttemptResult {
   excerpt: string;
   artifacts?: TexArtifacts;
   warnings: string[];
+  /** Set when latexmk ran and failed: what the keeper of failure logs is told (failure-log.ts). */
+  run?: Pick<TexCompileFailure, "exitCode" | "timedOut" | "missingFiles">;
 }
 
 const ARTIFACT_EXTS = ["aux", "bbl", "toc", "lof", "lot", "fls"] as const;
@@ -271,6 +279,8 @@ async function attemptCompile(opts: {
   renderProfile?: "writer";
   signal?: AbortSignal;
   observer?: ExternalObserver | undefined;
+  /** Given the log of a failed run before the run state (the .log included) is cleared. */
+  capture?: TexFailureCapture | undefined;
 }): Promise<AttemptResult> {
   opts.signal?.throwIfAborted();
   const fail = (
@@ -353,21 +363,45 @@ async function attemptCompile(opts: {
     const log = await fs.readFile(logPath, "utf8").catch(() => "");
     const mainBase = path.basename(opts.mainRel);
 
-    if (result.timedOut) {
+    // A failed run: its complete log is handed to the keeper first, then the run state is cleared as always.
+    const failedRun = async (): Promise<NonNullable<AttemptResult["run"]>> => {
+      const run = {
+        exitCode: result.timedOut ? null : result.code,
+        timedOut: result.timedOut,
+        missingFiles: opts.capture ? missingFilesFromTexLog(log) : [],
+      };
+      await opts.capture?.add({
+        engine: opts.engine,
+        instrumented: opts.instrumented,
+        exitCode: run.exitCode,
+        timedOut: run.timedOut,
+        log,
+      });
       await clearLatexmkRunState(runDir, opts.jobname);
-      return fail(
-        "compile-timeout",
-        `TeX compilation timed out after ${opts.timeoutMs}ms (engine: ${opts.engine}, main: ${mainBase})`
-      );
+      return run;
+    };
+
+    if (result.timedOut) {
+      const run = await failedRun();
+      return {
+        ...fail(
+          "compile-timeout",
+          `TeX compilation timed out after ${opts.timeoutMs}ms (engine: ${opts.engine}, main: ${mainBase})`
+        ),
+        run,
+      };
     }
 
     if (result.code !== 0) {
-      await clearLatexmkRunState(runDir, opts.jobname);
+      const run = await failedRun();
       if (log && logHintsUnsupported(log)) {
-        return fail(
-          "unsupported-build",
-          "the project appears to require shell escape, which is not supported"
-        );
+        return {
+          ...fail(
+            "unsupported-build",
+            "the project appears to require shell escape, which is not supported"
+          ),
+          run,
+        };
       }
       const logLines = extractRelevantLogLines(log || `${result.stdout}\n${result.stderr}`);
       const missingFile = log ? missingFileFromLog(log) : null;
@@ -380,7 +414,7 @@ async function attemptCompile(opts: {
       ]
         .filter((s): s is string => s !== null)
         .join("\n");
-      return fail("compile-error", summary, logLines.join("\n"));
+      return { ...fail("compile-error", summary, logLines.join("\n")), run };
     }
 
     // Exit 0: the recorder + .aux must exist, otherwise the run was a no-op
@@ -479,11 +513,44 @@ export type TexCompileOptions = TexCompileInput & {
 export interface TexCompileHooks {
   /** Told of every latexmk run (lib/observe.ts). */
   observer?: ExternalObserver | undefined;
+  /**
+   * Where the complete latexmk log of a failed compile is kept, and who is told (failure-log.ts). Without it
+   * nothing is kept and nothing about a failed compile differs from before.
+   */
+  failureLog?: TexFailureLogHook | undefined;
 }
 
 export async function compileTex(
   input: TexCompileOptions,
   hooks: TexCompileHooks = {}
+): Promise<TexCompileOutcome> {
+  if (hooks.failureLog === undefined) return runCompile(input, hooks, undefined, () => {});
+  const capture = new TexFailureCapture(hooks.failureLog);
+  let reported: AttemptResult | null = null;
+  let outcome: TexCompileOutcome;
+  try {
+    outcome = await runCompile(input, hooks, capture, (attempt) => {
+      reported = attempt;
+    });
+  } catch (error) {
+    await capture.discard();
+    throw error;
+  }
+  const attempt = reported as AttemptResult | null;
+  await capture.finish(
+    outcome.ok || attempt === null || attempt.run === undefined || attempt.status === "ok"
+      ? null
+      : { kind: attempt.status, engine: attempt.engine, ...attempt.run }
+  );
+  return outcome;
+}
+
+async function runCompile(
+  input: TexCompileOptions,
+  hooks: TexCompileHooks,
+  capture: TexFailureCapture | undefined,
+  /** Told which failed attempt the returned failure is the one of. */
+  reportedAs: (attempt: AttemptResult) => void
 ): Promise<TexCompileOutcome> {
   const timeoutMs = input.timeoutMs ?? TEX_COMPILE_DEFAULT_TIMEOUT_MS;
   const preferred: TexEngine = input.engine ?? "pdflatex";
@@ -541,6 +608,7 @@ export async function compileTex(
     ...(input.renderProfile !== undefined ? { renderProfile: input.renderProfile } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
     observer: hooks.observer,
+    capture,
   };
   const warnings: string[] = [];
   let lastError: AttemptResult | null = null;
@@ -571,9 +639,11 @@ export async function compileTex(
         };
       }
       if (r.status === "compile-timeout") {
+        reportedAs(r);
         return { ok: false, kind: "compile-timeout", message: r.message, excerpt: r.excerpt };
       }
       if (r.status === "unsupported-build") {
+        reportedAs(r);
         return { ok: false, kind: "unsupported-build", message: r.message, excerpt: r.excerpt };
       }
       lastError = r;
@@ -615,9 +685,11 @@ export async function compileTex(
       };
     }
     if (r.status === "compile-timeout") {
+      reportedAs(r);
       return { ok: false, kind: "compile-timeout", message: r.message, excerpt: r.excerpt };
     }
     if (r.status === "unsupported-build") {
+      reportedAs(r);
       return { ok: false, kind: "unsupported-build", message: r.message, excerpt: r.excerpt };
     }
     lastError ??= r;
@@ -625,6 +697,7 @@ export async function compileTex(
 
   const final = lastError;
   if (final !== null) {
+    reportedAs(final);
     return { ok: false, kind: "compile-error", message: final.message, excerpt: final.excerpt };
   }
   return compileError("TeX compilation failed (no engine attempted)");

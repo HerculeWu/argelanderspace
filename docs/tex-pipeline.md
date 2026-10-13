@@ -11,6 +11,7 @@ core `pipelines/tex/ports.ts` 定义编译/图端口，infra `tex/` 执行 works
 - minted/write18 预扫描逐行剥注释再整文匹配，反斜杠奇偶决定 % 是否注释，多行 usepackage 也能识别。verbatim 示例中的同样文本仍可误拒（I012）。
 - **没有加 no-shell-escape**：会破坏 TeX Live 受限白名单的 epstopdf 等可编译论文；预扫描并非通用安全沙箱，默认受限 shell 残余面属于单用户工作台已接受模型。
 - 插桩失败回退干净编译并 warning；完全编译失败分类 COMPILE_ERROR/TIMEOUT/UNSUPPORTED + `!` 摘录。干净成功丢 log，降级成功留 log；warnings 经 onProgress/job log，不入 IR。
+- **编译失败日志的另存**（desktop-app 票 08，2026-10-13）：`compileTex` 的 `failureLog` 钩子（infra `tex/failure-log.ts`）。每次失败的 latexmk 尝试在清理运行状态**之前**把它的完整 `.log` 追加进 `<目标>.partial`（每次尝试前有一行 `%% argelanderspace: latexmk attempt — engine …` 说明引擎、是否插桩、退出码；单次尝试超过 16 MiB 的只留首尾各 8 MiB）；整个编译失败时改名为目标文件（替换旧的），编译最终成功（换引擎或干净回退成功）或被取消时丢弃。清理的文件集合、编译结果、错误摘录都不因此改变；另存的任何失败都被吞掉，只是没有这份日志。它含源码片段，是项目内文件，不是用户日志。摄入：只有 server 的任务（arXiv 摄入、zip 上传）另存，位置是 `<dataDir>/jobs/<任务 id>.compile.log`（任务记录旁边；失败的摄入没有 Doc 目录），每个 Project 按修改时间只留最新 20 份（server `compile-failure-log.ts`，只碰合乎这个命名的文件）。**CLI 的摄入与 legacy 同步上传（`attachZipSync`）没有任务记录，不另存**，CLI 的 stdout / stderr / exit code 不变。Writer 的位置见 [writer](writer.md#编译与-ir共享主干隔离外层副作用)。用户日志对一次失败只记 `tex.compile_failed`，见 [architecture](architecture.md#用户日志)。
 - recorder 只给引擎，不给 bibtex，fls 通常无 bib 只有 bbl；若需 bib 从 bibliography 源扫描，不能宣称 recorder 已覆盖。
 - `--figure-dpi` 历史兼容接收但忽略，不代表 SVG 有 DPI；`--no-assets` 不物化图。
 

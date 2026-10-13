@@ -32,7 +32,9 @@ import {
   type ExternalObserver,
   observedTexFigurePort,
   TEX_WORKSPACE_LIMITS,
+  type TexCompileFailure,
 } from "@argelanderspace/infra";
+import { writerFailureLogPath } from "./compile-failure-log.js";
 
 const COMPILE_TIMEOUT_MS = 30_000;
 const PREVIEW_PROFILE = "writer-ir-v1";
@@ -211,7 +213,9 @@ export async function computeWriterNumbering(
   id: string,
   signal?: AbortSignal,
   /** Told of the latexmk and figure-conversion runs (the server's user-level log). */
-  observer?: ExternalObserver
+  observer?: ExternalObserver,
+  /** Told of a failed compile, after its complete latexmk log is in the build directory (compile-failure-log.ts). */
+  onCompileFailure?: (id: string, failure: TexCompileFailure) => void
 ): Promise<WriterNumberingFile> {
   let stage: string | undefined;
   try {
@@ -239,7 +243,15 @@ export async function computeWriterNumbering(
         timeoutMs: COMPILE_TIMEOUT_MS,
         ...(signal ? { signal } : {}),
       },
-      { observer }
+      {
+        observer,
+        // The last failed render's complete log, replaced by the next failure. The build directory is outside the
+        // compile workspace, so the (sandboxed) engine cannot reach the file; it is written by this process.
+        failureLog: {
+          file: writerFailureLogPath(root),
+          ...(onCompileFailure ? { onFailure: (failure) => onCompileFailure(id, failure) } : {}),
+        },
+      }
     );
     if (!compiled.ok)
       return persistFailure(
@@ -330,8 +342,10 @@ type ComputeFn = (
   dataDir: string,
   id: string,
   signal?: AbortSignal,
-  observer?: ExternalObserver
+  observer?: ExternalObserver,
+  onCompileFailure?: CompileFailureFn
 ) => Promise<WriterNumberingFile>;
+type CompileFailureFn = (id: string, failure: TexCompileFailure) => void;
 interface Scheduled {
   timer: ReturnType<typeof setTimeout> | null;
   running: Promise<void> | null;
@@ -340,6 +354,7 @@ interface Scheduled {
   controller: AbortController;
   broadcast: BroadcastFn;
   observer: ExternalObserver | undefined;
+  onCompileFailure: CompileFailureFn | undefined;
   dataDir: string;
   id: string;
 }
@@ -357,7 +372,8 @@ function entryFor(
   dataDir: string,
   id: string,
   broadcast: BroadcastFn,
-  observer: ExternalObserver | undefined
+  observer: ExternalObserver | undefined,
+  onCompileFailure: CompileFailureFn | undefined
 ): Scheduled {
   const key = scheduleKey(dataDir, id);
   let entry = scheduled.get(key);
@@ -370,6 +386,7 @@ function entryFor(
       controller: new AbortController(),
       broadcast,
       observer,
+      onCompileFailure,
       dataDir,
       id,
     };
@@ -377,6 +394,7 @@ function entryFor(
   }
   entry.broadcast = broadcast;
   entry.observer = observer;
+  entry.onCompileFailure = onCompileFailure;
   return entry;
 }
 function runScheduled(entry: Scheduled): Promise<void> {
@@ -395,7 +413,8 @@ function runScheduled(entry: Scheduled): Promise<void> {
           entry.dataDir,
           entry.id,
           entry.controller.signal,
-          entry.observer
+          entry.observer,
+          entry.onCompileFailure
         );
         // Failures also notify the UI; leaving an old green preview is misleading.
         if (!entry.canceled)
@@ -417,9 +436,9 @@ function runScheduled(entry: Scheduled): Promise<void> {
 export async function runWriterNumberingNow(
   dataDir: string,
   id: string,
-  opts: { broadcast: BroadcastFn; observer?: ExternalObserver }
+  opts: { broadcast: BroadcastFn; observer?: ExternalObserver; onCompileFailure?: CompileFailureFn }
 ): Promise<WriterNumberingResponse> {
-  const entry = entryFor(dataDir, id, opts.broadcast, opts.observer);
+  const entry = entryFor(dataDir, id, opts.broadcast, opts.observer, opts.onCompileFailure);
   if (entry.timer) {
     clearTimeout(entry.timer);
     entry.timer = null;

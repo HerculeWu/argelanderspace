@@ -1004,6 +1004,15 @@
       "bibMissing": "已下载，但 references.bib 有 {{count}} 个引用未入库"
     }
   },
+  "pageError": {
+    "title": "页面出错了",
+    "recorded": "错误已记入日志，记录里没有你的内容。",
+    "notRecorded": "这次错误没有记入日志。",
+    "reloadHint": "重新加载通常可以继续工作。",
+    "name": "错误",
+    "pane": "窗格",
+    "reload": "重新加载"
+  },
   "common": {
     "cancel": "取消",
     "close": "关闭",
