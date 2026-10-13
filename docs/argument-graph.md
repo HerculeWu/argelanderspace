@@ -1,6 +1,6 @@
 # 论证图：数据、审计与读写接口
 
-状态：已实施并经工程核查（2026-10-12）：数据层与 HTTP 接口、画布、只读视图、手动编辑、Work 合并跟随、CLI（`argument get` / `argument put` / `pdf-path`）、Copilot 工具与整图替换确认卡，以及 `skills/argelander-argument-graph`。用户终验是独立的一步；CLI 新命令的冻结面在其通过后生效。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
+状态：已实施并经工程核查（2026-10-12）：数据层与 HTTP 接口、画布、只读视图、手动编辑、Work 合并跟随、CLI（`argument get` / `argument put` / `pdf-path`）、Copilot 工具与整图替换确认卡，以及 `skills/argelander-argument-graph`。用户终验于 2026-10-13 通过，CLI 新命令的冻结面自该日生效。归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)，数据保护与冻结边界以 [contracts](contracts.md)「论证图」一节为准，本文只写技术机制。
 
 ## 存储
 
@@ -75,7 +75,7 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 
 **并发**：工作台可能在运行。`rev` 检查挡住基于旧读取的写入，server 的 watcher 发现文件变化后通知页面刷新。读 rev 与写入之间没有跨进程锁：两个进程在同一瞬间写同一张图不支持，也不加文件锁（contracts I013）。CLI 写图与 server 端的 Work 合并（`followWorkFolds` 在库锁内移动图）之间同样没有跨进程互斥，这个竞态属于 I013 的边界：合并期间不要同时用 CLI 写入该 Work 的图。
 
-**冻结**：命令的 stdout / stderr / exit code、JSON 字段与键序有 golden 测试（`packages/cli/tests/argument.test.ts`），完整清单见 [contracts](contracts.md)「CLI 论证图命令冻结契约」，该节在用户终验通过后生效。既有命令（`search` / `read` / `show` / `ref` / `note` / `label` / `list` / `annot`）输出不变。
+**冻结**：命令的 stdout / stderr / exit code、JSON 字段与键序有 golden 测试（`packages/cli/tests/argument.test.ts`），完整清单见 [contracts](contracts.md)「CLI 论证图命令冻结契约」，该节自 2026-10-13 生效。既有命令（`search` / `read` / `show` / `ref` / `note` / `label` / `list` / `annot`）输出不变。
 
 ## WebSocket
 
@@ -85,7 +85,7 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 
 每个 Work 至多一张图，所以两个 Work 合并成一个时要决定图的去向。合并只发生在 `LibraryStore.upsert`：一条记录同时命中两个已存 Work 时，后者并入前者（幸存者）并从库中删除。`upsert` 把每次折叠记在 `store.folds`（`{absorbed, survivor, stored, absorbedWork, survivorWork}`；`stored` 按 **Work 对象身份**判断，表示被并入的这个对象在本次加载时已在文件里，才可能有图文件——同一批里后来新建、碰巧复用了已折叠 Work 的 id 的对象不是它。**例外**：本批新建的 Work 在本次 `followWorkFolds` 的前面某一步里确实接手过图（该步 `moved`，幸存者就是这个对象）之后，它名下的文件才算它的图，它再被并入别人时第二步照样处理；按对象身份记录，不靠 id，所以一个与本批无关的同 id 遗留文件不会被误当成它的图）。调用方在**库文件保存成功之后**调用 `followWorkFolds(dataDir, store.folds)`：它**按折叠发生的顺序一步一步**套用下面的规则（链不折叠：C 并入 A、A 再并入 D，第二步里 A 的图是第一步之后的 A 的图；中间环节 A 即使是本批新建的也一样，只要它在前一步接手了图），每一步产生自己的说明，永不抛错，处理完把 `store.folds` 清空（同一个 store 实例再调一次不会重报）。
 
-「有图」的含义：**零论证的图文件算没有图**（2026-10-12 父代理补定，待用户终验确认；契约条文只说「没有图 / 有图」，未写明空图；schema 允许手写的 `rev: 0` 文件，故下面的 rev 规则不假定「有文件则 rev ≥ 1」）。
+「有图」的含义：**零论证的图文件算没有图**（2026-10-12 实施时补定，随 2026-10-13 用户终验通过成为现行；契约条文只说「没有图 / 有图」，未写明空图；schema 允许手写的 `rev: 0` 文件，故下面的 rev 规则不假定「有文件则 rev ≥ 1」）。
 
 | 被并入 Work | 幸存 Work | 结果（`outcome`） |
 |---|---|---|

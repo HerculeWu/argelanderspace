@@ -107,7 +107,7 @@
 
 ## 论证图（现行）
 
-来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)。数据层、读写接口、视图、手动编辑、Work 合并跟随、CLI、Copilot 工具与整图替换确认卡均已实施并经工程核查；用户终验是单独的一步，CLI 命令的冻结面在其通过后生效（见「CLI 论证图命令冻结契约」）。
+来源：2026-10-11 至 10-12 论证图设计访谈；归属取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。以下是必须成立的边界；机制见 [argument-graph](argument-graph.md)。数据层、读写接口、视图、手动编辑、Work 合并跟随、CLI、Copilot 工具与整图替换确认卡均已实施并经工程核查；用户终验于 2026-10-13 通过，CLI 命令的冻结面自该日生效（见「CLI 论证图命令冻结契约」）。
 
 - 论证图是 **Work 级项目数据**，每个 Work 至多一张，不是 Doc。它不参与内容指纹、标注归档或 Doc 的全局物理删除；出处的跳转目标不受保护，失效时只剩显示文字。
 - 存储允许环，自环是结构错误、直接拒绝。同一对论证、同一角色至多一条边。只有论证的短标题必填；缺 Claim/Grounds/Warrant 是审计发现，不是写入失败。审计结果永不落盘。
@@ -115,7 +115,7 @@
 - **覆盖非空的图**：页面的清空有确认对话框；Copilot 逐条增删改不需确认，整图替换或清空非空的图必须经真人确认卡（写明将被替换的论证数，模型不能自批）；CLI 整图写入覆盖非空的图须带显式的替换标志。
 - **Work 合并**：幸存 Work 没有图时接手被并入 Work 的图；两边都有时保留幸存者的，另一张留在磁盘上不删除、不展示，并在结果中如实说明。Copilot 路径对会合并 Work 的导入照旧整条拒绝。
 - 跨进程同时写同一张图不支持，不加文件锁（I013 的边界同样适用）；工作台发现磁盘变化后刷新页面。
-- 新的 CLI 论证图命令在发布后进入冻结面：读出与写入的 JSON 带 `version: 1`，字段、键序和错误形态的改动需要新的明确决定。实现与原型验收完成之前不算发布。既有冻结命令的输出不因此改动。命令为 `argument get` / `argument put` / `pdf-path`；每个命令每种结果的 stdout / stderr / exit code 见「CLI 论证图命令冻结契约」（用户终验通过后生效），机制见 [argument-graph](argument-graph.md)「CLI」。
+- 新的 CLI 论证图命令在发布后进入冻结面：`argument get` 读出的 JSON 带 `version: 1`；`argument put` 的输入文件可省 `version`（写了必须是 1），成功输出是 `{work_id, rev, link}` 一行、不含 `version`（2026-10-13 修订：原句「读出与写入的 JSON 带 `version: 1`」与终验通过的实现不符，按实现改写）。字段、键序和错误形态的改动需要新的明确决定。实现与原型验收完成之前不算发布；用户终验已于 2026-10-13 通过。既有冻结命令的输出不因此改动。命令为 `argument get` / `argument put` / `pdf-path`；每个命令每种结果的 stdout / stderr / exit code 见「CLI 论证图命令冻结契约」（2026-10-13 生效），机制见 [argument-graph](argument-graph.md)「CLI」。
 
 ## CLI annot 冻结契约
 
@@ -139,9 +139,9 @@ note: document content changed since its annotations were written; they are arch
 - link `/doc/<doc_id>#ann-<annotation_id>`，端口链沿用 env > config >8000。
 - archive 不暴露。未来迁移若需访问必须另立 sanctioned CLI surface；skills 不准直接读内部 current/archive JSON 代替接口。
 
-## CLI 论证图命令冻结契约（在用户终验通过后生效）
+## CLI 论证图命令冻结契约（2026-10-13 生效）
 
-**状态：尚未生效。** 下列清单与已构建的 CLI 实现逐条一致（`packages/cli/tests/argument.test.ts` 的 golden 钉住），但按「论证图」一节，用户终验通过之前不算发布，也就还不是冻结面；终验通过后本节才成为与「CLI annot 冻结契约」同等的冻结面，届时在此处写明生效日期。既有命令的冻结输出不受影响。来源：论证图票 07 的最终清单（用户 2026-10-12 批准范围）。
+**状态：自 2026-10-13 生效**（用户终验通过）。下列清单与已构建的 CLI 实现逐条一致（`packages/cli/tests/argument.test.ts` 的 golden 钉住），自生效日起是与「CLI annot 冻结契约」同等的冻结面，改动需要新的明确决定。既有命令的冻结输出不受影响。来源：论证图票 07 的最终清单（用户 2026-10-12 批准范围）。
 
 ### 约定
 
