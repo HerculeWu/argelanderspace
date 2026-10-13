@@ -52,7 +52,7 @@ import { ArxivPdfOnlyError, extractZip, f, ZipError } from "@argelanderspace/inf
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
-import type { JobEventType, JobRunner } from "./jobs.js";
+import type { JobErrorCode, JobEventType, JobRunner } from "./jobs.js";
 import {
   type AcquisitionPort,
   type AnnotationRisk,
@@ -63,6 +63,7 @@ import {
 } from "./library-actions.js";
 import type { AsyncLock } from "./lock.js";
 import { type ServerLog, silentLog } from "./log.js";
+import { jobIdField } from "./log-observers.js";
 import { probePdf } from "./pdfium-probe.js";
 
 export type LockedRebuild = (
@@ -448,7 +449,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             if (e instanceof ArxivPdfOnlyError) {
               stage = "extract";
               // Machine-readable class for the web UI's bilingual guidance.
-              j.errorCode = "arxiv_pdf_only";
+              j.errorCode = "arxiv_pdf_only" satisfies JobErrorCode;
             }
             throw e;
           }
@@ -480,7 +481,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
           });
         } catch (logErr) {
           log.error("arxiv_fetch.log_append_failed", {
-            job: f.id(j.id),
+            job: jobIdField(j.id),
             error: f.error(logErr),
           });
         }

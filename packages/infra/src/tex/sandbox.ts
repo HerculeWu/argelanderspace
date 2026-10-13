@@ -11,6 +11,7 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { type ExternalObserver, type ExternalProgramCall, reportProgram } from "../lib/observe.js";
 
 export const SANDBOX_WORKDIR = "/work";
 const PROBE_RETRY_MS = 60_000;
@@ -19,6 +20,10 @@ let override: boolean | null = null;
 let available: boolean | null = null;
 let probedAt = 0;
 let inflight: Promise<boolean> | null = null;
+/** Who is told how the probe in flight ended. */
+let watching: Set<ExternalObserver> | null = null;
+/** Tests only: the program the probe runs as bwrap. */
+let forcedBwrap: string | null = null;
 /** Read-only extras beyond /usr: the TeX Live installation root and the directories of the TeX binaries, if elsewhere. */
 let texBinds: string[] = [];
 let texBinDirs: string[] = [];
@@ -27,6 +32,17 @@ let bwrapPath = "bwrap";
 /** Tests only: force the sandbox on/off (null = detect). */
 export function __setWriterSandboxForTests(value: boolean | null): void {
   override = value;
+}
+
+/**
+ * Tests only: forget what the last probe found and run `bwrap` as the program the next probes use (null = look for the
+ * real one). Returns once a probe in flight has ended.
+ */
+export async function __resetWriterSandboxProbeForTests(bwrap: string | null): Promise<void> {
+  await inflight?.catch(() => {});
+  forcedBwrap = bwrap;
+  available = null;
+  probedAt = 0;
 }
 
 const SYSTEM_TREES = ["/usr"];
@@ -135,31 +151,52 @@ async function discoverTexRoots(): Promise<void> {
   texBinDirs = [...bins];
 }
 
-async function probe(): Promise<boolean> {
+/** How the probe's one run of bwrap ended, as it is reported (lib/observe.ts). */
+type ProbeEnd = Pick<ExternalProgramCall, "exitCode" | "signal" | "timedOut" | "error">;
+
+/**
+ * One real probe: bwrap is run once (or cannot be), and that is one call to report — a bwrap that is not there is a
+ * program that could not be started (`error`), not one that exited.
+ */
+async function probe(): Promise<{ ok: boolean; call: ExternalProgramCall }> {
+  const started = performance.now();
+  const ended = (end: ProbeEnd): ExternalProgramCall => ({
+    program: "bwrap",
+    sandboxed: false,
+    ...end,
+    durationMs: performance.now() - started,
+  });
   try {
     await discoverTexRoots();
-    bwrapPath = (await run("sh", ["-c", "command -v bwrap"])).stdout.trim() || "bwrap";
+    bwrapPath =
+      forcedBwrap ?? ((await run("sh", ["-c", "command -v bwrap"])).stdout.trim() || "bwrap");
     const child = spawn(bwrapPath, [...baseArgs(), "/usr/bin/true"], {
       stdio: "ignore",
       env: { PATH: SAFE_SYSTEM_PATH.join(":") },
     });
-    const status = await new Promise<number | null>((resolve) => {
+    // The first of the three that happens is how it ended (a bwrap that cannot be started gets `error`, then `close`).
+    const end = await new Promise<ProbeEnd>((resolve) => {
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
-        resolve(null);
+        resolve({ exitCode: null, signal: "SIGKILL", timedOut: true });
       }, 10_000);
-      child.on("error", () => {
+      child.on("error", (error) => {
         clearTimeout(timer);
-        resolve(null);
+        resolve({ exitCode: null, signal: null, timedOut: false, error });
       });
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
         clearTimeout(timer);
-        resolve(code);
+        resolve({ exitCode: code, signal, timedOut: false });
       });
     });
-    return status === 0;
+    return { ok: end.exitCode === 0 && end.error === undefined && !end.timedOut, call: ended(end) };
   } catch {
-    return false;
+    // The probe failed before it got to run bwrap (the TeX installation could not be looked at): not started, and
+    // no system code to say why — the error here is not bwrap's.
+    return {
+      ok: false,
+      call: ended({ exitCode: null, signal: null, timedOut: false, error: new Error("not run") }),
+    };
   }
 }
 
@@ -167,30 +204,41 @@ async function probe(): Promise<boolean> {
  * Probe (asynchronously, never blocking the event loop) whether the bubblewrap boundary really works here. A positive
  * answer is kept; a negative one is retried at most once a minute, so a machine that gains bwrap or user namespaces is
  * picked up without a restart.
+ *
+ * Every real probe is reported once to each observer that asked while it ran — also to one that joined a probe
+ * somebody else started (the cached-answer gate below starts them too). A cached answer is not a probe and is not
+ * reported.
  */
-export function ensureWriterSandboxProbe(): Promise<boolean> {
+export function ensureWriterSandboxProbe(observer?: ExternalObserver): Promise<boolean> {
   if (override !== null) return Promise.resolve(override);
   if (available === true) return Promise.resolve(true);
   if (available === false && Date.now() - probedAt < PROBE_RETRY_MS) return Promise.resolve(false);
-  inflight ??= probe()
-    .then((ok) => {
-      available = ok;
-      probedAt = Date.now();
-      return ok;
-    })
-    .finally(() => {
-      inflight = null;
-    });
+  if (inflight === null) {
+    const told = new Set<ExternalObserver>();
+    watching = told;
+    inflight = probe()
+      .then(({ ok, call }) => {
+        available = ok;
+        probedAt = Date.now();
+        for (const each of told) reportProgram(each, call);
+        return ok;
+      })
+      .finally(() => {
+        inflight = null;
+        watching = null;
+      });
+  }
+  if (observer !== undefined) watching?.add(observer);
   return inflight;
 }
 
 /**
  * The cached answer, never blocking: false until a probe has said true (so a gate that asks before the first probe
- * finished is conservative). A stale negative triggers a background re-probe.
+ * finished is conservative). A stale negative triggers a background re-probe, reported to `observer` like any other.
  */
-export function writerSandboxAvailable(): boolean {
+export function writerSandboxAvailable(observer?: ExternalObserver): boolean {
   if (override !== null) return override;
-  if (available !== true) void ensureWriterSandboxProbe();
+  if (available !== true) void ensureWriterSandboxProbe(observer);
   return available === true;
 }
 

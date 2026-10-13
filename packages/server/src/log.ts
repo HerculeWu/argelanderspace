@@ -47,10 +47,41 @@ export const SERVER_LOG_EVENTS = [
   "arxiv_ingest.auto_submit_failed",
   "copilot.observation_not_recordable",
   "copilot.mail_accounts_unreadable",
+  // Desktop-app ticket 07 (log-observers.ts, and the call sites named there):
+  "server.environment",
+  "job.created",
+  "job.started",
+  "job.progress",
+  "job.done",
+  "job.failed",
+  "job.interrupted",
+  "external_program.exited",
+  "external_program.not_started",
+  "external_service.answered",
+  "external_service.no_answer",
+  "mail.remote_call",
+  "mail_watch.state_changed",
+  "mail_watch.connection_ended",
+  "credentials.keychain_state",
+  "copilot.run_started",
+  "copilot.run_finished",
+  "copilot.tool_called",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];
 export type ServerLog = Logger<ServerLogEvent>;
+
+/**
+ * A list of enum values for a record, written out in code and checked against the type its values come from: a
+ * value that is not of the type, and a value of the type that the list leaves out, are both type errors. So a
+ * value added to the source type cannot be forgotten here and end up written as `<invalid-enum>`.
+ *
+ *   const CALLS = allOf<keyof Protocol>()(["open", "close"]);
+ */
+export function allOf<T extends string>() {
+  return <const A extends readonly T[]>(list: A & ([T] extends [A[number]] ? unknown : never)): A =>
+    list;
+}
 
 /** The log of a server nobody gave one: records go nowhere (every test server, unless it asks). */
 export const silentLog: ServerLog = createLogger({ events: SERVER_LOG_EVENTS, sink: discardSink });

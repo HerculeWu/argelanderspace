@@ -17,6 +17,8 @@ import {
 } from "@argelanderspace/infra";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { type ServerLog, silentLog } from "./log.js";
+import { observedCredentials, observedMail } from "./log-observers.js";
 import { MailAccountService, MailServiceError } from "./mail-accounts.js";
 import { MailCache } from "./mail-cache.js";
 import { type MailComposeServices, mountMailComposeRoutes } from "./mail-compose-routes.js";
@@ -27,11 +29,11 @@ import { mountMailManageRoutes } from "./mail-manage-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
 
 /** Production wiring of the reading service over the real global directories. */
-export function createDefaultMailReadService(): MailReadService {
+export function createDefaultMailReadService(log: ServerLog = silentLog): MailReadService {
   return new MailReadService({
     accounts: createMailAccountStore(),
-    credentials: createCredentialStore(),
-    mailbox: createNodeMailMailbox(),
+    credentials: observedCredentials(createCredentialStore(), log),
+    mailbox: observedMail(createNodeMailMailbox(), log),
     cache: new MailCache(() => resolveGlobalDirs().cacheDir),
   });
 }
@@ -40,11 +42,11 @@ const SAFE_INLINE_IMAGE = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i;
 const asciiName = (name: string) => name.replace(/[^\x20-\x7e]|["\\]/g, "_") || "attachment";
 
 /** Production wiring over the real global directories, built on first use. */
-export function createDefaultMailAccountService(): MailAccountService {
+export function createDefaultMailAccountService(log: ServerLog = silentLog): MailAccountService {
   return new MailAccountService({
     store: createMailAccountStore(),
-    credentials: createCredentialStore(),
-    protocol: createNodeMailProtocol(),
+    credentials: observedCredentials(createCredentialStore(), log),
+    protocol: observedMail(createNodeMailProtocol(), log),
     cacheDir: () => resolveGlobalDirs().cacheDir,
   });
 }
@@ -64,16 +66,18 @@ export function mountMailRoutes(
   guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null,
   injectedRead?: MailReadService,
   injectedManage?: MailManageService,
-  injectedCompose?: MailComposeServices
+  injectedCompose?: MailComposeServices,
+  /** The user-level log the services built HERE record their mail-server calls in; injected services bring their own. */
+  log: ServerLog = silentLog
 ): MailOpDeps {
   // Writing and sending (ticket 07) has its own router, registered first so that its larger upload limit applies.
-  const compose = mountMailComposeRoutes(host, injectedCompose, guardCsrf);
+  const compose = mountMailComposeRoutes(host, injectedCompose, guardCsrf, log);
   let service = injected;
-  const get = () => (service ??= createDefaultMailAccountService());
+  const get = () => (service ??= createDefaultMailAccountService(log));
   let reader = injectedRead;
-  const read = () => (reader ??= createDefaultMailReadService());
+  const read = () => (reader ??= createDefaultMailReadService(log));
   let manager = injectedManage;
-  const manage = () => (manager ??= createDefaultMailManageService(read()));
+  const manage = () => (manager ??= createDefaultMailManageService(read(), log));
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");

@@ -22,7 +22,8 @@
  *           `<invalid-url>`
  *   error   name, code (written like an `id`), the system call and path of a system error, the file:line:column
  *           of each stack frame, and the cause; the message is dropped unless the error's class declares
- *           `LOG_SAFE_MESSAGE`
+ *           `LOG_SAFE_MESSAGE`. The call site may ask for less: `omitSystemPath` leaves out the path of a system
+ *           error, at every depth of the cause chain
  *
  * `ids` and `someOf` are lists. Rendering never throws.
  */
@@ -43,7 +44,7 @@ type FieldSpec =
   | { kind: "ms"; value: unknown }
   | { kind: "path"; value: unknown }
   | { kind: "url"; value: unknown }
-  | { kind: "error"; value: unknown };
+  | { kind: "error"; value: unknown; omitSystemPath: boolean };
 
 /** An opaque field value. Only the constructors in `f` make one; a logger ignores anything else. */
 export class LogField {
@@ -131,6 +132,12 @@ function withoutControl(text: string, replacement: string): string {
   return out;
 }
 
+/** What a call site may ask `f.error` to leave out. Every option writes less than the default. */
+export interface LogErrorOptions {
+  /** Do not write the `path` of a system error, at any depth of the cause chain. */
+  omitSystemPath?: boolean;
+}
+
 function field(spec: FieldSpec): LogField {
   return new LogField(MADE_HERE, spec);
 }
@@ -162,8 +169,14 @@ export const f = {
   path: (value: string): LogField => field({ kind: "path", value }),
   /** Only the scheme, the host and the port are written. */
   url: (value: string | URL): LogField => field({ kind: "url", value }),
-  /** Whatever was thrown. */
-  error: (value: unknown): LogField => field({ kind: "error", value }),
+  /**
+   * Whatever was thrown. `omitSystemPath` writes less, never more: the path a system error names (the file it
+   * could not open) is left out, here and in every cause — for an error raised while working on the user's own
+   * files, whose folder may be named after a paper. The frames of the stack are still written: they are the
+   * locations of code.
+   */
+  error: (value: unknown, options?: LogErrorOptions): LogField =>
+    field({ kind: "error", value, omitSystemPath: options?.omitSystemPath === true }),
 } as const;
 
 function render(spec: FieldSpec, context: RenderContext): LogJson {
@@ -191,7 +204,7 @@ function render(spec: FieldSpec, context: RenderContext): LogJson {
     case "url":
       return renderUrl(spec.value);
     case "error":
-      return renderError(spec.value, context, 0);
+      return renderError(spec.value, context, 0, spec.omitSystemPath);
   }
 }
 
@@ -485,7 +498,12 @@ function renderStack(error: Error, context: RenderContext): string[] {
   return frames;
 }
 
-function renderError(value: unknown, context: RenderContext, depth: number): LogJson {
+function renderError(
+  value: unknown,
+  context: RenderContext,
+  depth: number,
+  omitSystemPath: boolean
+): LogJson {
   if (!(value instanceof Error)) {
     // A thrown string or object may be anything; only what kind of thing it was is recorded.
     return { name: "NonError", thrown: value === null ? "null" : typeof value };
@@ -501,14 +519,14 @@ function renderError(value: unknown, context: RenderContext, depth: number): Log
   // A system error (it names its system call) says which file; `path` on any other error could be anything.
   if (typeof extra.syscall === "string" && SYSCALL.test(extra.syscall)) {
     out.syscall = extra.syscall;
-    if (extra.path !== undefined) out.path = renderPath(extra.path, context);
+    if (extra.path !== undefined && !omitSystemPath) out.path = renderPath(extra.path, context);
   }
   if (declaredSafe(value) && typeof value.message === "string") {
     out.message = clip(withoutControl(withoutHome(value.message, context), " "), LOG_MESSAGE_MAX);
   }
   out.stack = renderStack(value, context);
   if (extra.cause !== undefined && depth < CAUSE_DEPTH_MAX) {
-    out.cause = renderError(extra.cause, context, depth + 1);
+    out.cause = renderError(extra.cause, context, depth + 1, omitSystemPath);
   }
   return out;
 }

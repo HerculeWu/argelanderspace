@@ -22,11 +22,36 @@ import {
   AdsClient,
   AdsDiscoveryClient,
   CrossrefClient,
+  type ExternalObserver,
+  type FetchImpl,
   ingestArxivEprint,
   ingestTexSource,
   ingestTexZip,
   OpenAlexClient,
+  observedFetch,
 } from "@argelanderspace/infra";
+
+/**
+ * What a composition may add to the real adapters. Both are optional and both default to nothing: the CLI composes
+ * the adapters without either, so its commands are observed by nobody and write no log.
+ */
+export interface AdapterWiring {
+  /**
+   * Told of every request the sources make and every program the pipelines run (infra `lib/observe.ts`). The
+   * server hands in the one that writes its user-level log.
+   */
+  observer?: ExternalObserver | undefined;
+  /** The HTTP implementation under the sources and the arXiv fetcher (tests: an offline stub); default global fetch. */
+  fetchImpl?: FetchImpl | undefined;
+}
+
+function fetchOf(
+  wiring: AdapterWiring,
+  service: Parameters<typeof observedFetch>[1]
+): { fetchImpl?: FetchImpl } {
+  if (wiring.observer === undefined && wiring.fetchImpl === undefined) return {};
+  return { fetchImpl: observedFetch(wiring.fetchImpl ?? fetch, service, wiring.observer) };
+}
 
 /**
  * The status dir (Stage 4) always sits next to the effective data dir:
@@ -38,11 +63,27 @@ export function statusDirFor(dataDir: string): string {
 }
 
 /** The resolution-chain sources; `offline` skips remote enrichment. */
-export function realSources(paths: LibraryPaths, offline: boolean): MetadataSources {
+export function realSources(
+  paths: LibraryPaths,
+  offline: boolean,
+  wiring: AdapterWiring = {}
+): MetadataSources {
   return {
-    ads: new AdsClient({ cacheDir: join(paths.cacheDir, "ads"), enabled: !offline }),
-    crossref: new CrossrefClient({ cacheDir: join(paths.cacheDir, "crossref"), enabled: !offline }),
-    oa: new OpenAlexClient({ cacheDir: join(paths.cacheDir, "openalex"), enabled: !offline }),
+    ads: new AdsClient({
+      cacheDir: join(paths.cacheDir, "ads"),
+      enabled: !offline,
+      ...fetchOf(wiring, "ads"),
+    }),
+    crossref: new CrossrefClient({
+      cacheDir: join(paths.cacheDir, "crossref"),
+      enabled: !offline,
+      ...fetchOf(wiring, "crossref"),
+    }),
+    oa: new OpenAlexClient({
+      cacheDir: join(paths.cacheDir, "openalex"),
+      enabled: !offline,
+      ...fetchOf(wiring, "openalex"),
+    }),
   };
 }
 
@@ -51,18 +92,31 @@ export function realSources(paths: LibraryPaths, offline: boolean): MetadataSour
  * cache namespace (`<dataDir>/library/cache/ads-discovery`), never the
  * metadata `<cacheDir>/ads` cache.
  */
-export function realDiscoverySource(paths: LibraryPaths): AdsDiscoverySource {
-  return new AdsDiscoveryClient({ cacheDir: join(paths.cacheDir, "ads-discovery") });
+export function realDiscoverySource(
+  paths: LibraryPaths,
+  wiring: AdapterWiring = {}
+): AdsDiscoverySource {
+  return new AdsDiscoveryClient({
+    cacheDir: join(paths.cacheDir, "ads-discovery"),
+    ...fetchOf(wiring, "ads"),
+  });
 }
 
 /** The ingest pipeline writing under `<dataDir>/output` (Stage 5 tex pipeline). */
-export function realPipelines(paths: LibraryPaths): IngestPipelines {
+export function realPipelines(paths: LibraryPaths, wiring: AdapterWiring = {}): IngestPipelines {
+  // Nothing is added to the options when the composition asked for nothing: the CLI's calls are the ones they were.
+  const extra = {
+    ...(wiring.observer !== undefined ? { observer: wiring.observer } : {}),
+    ...(wiring.fetchImpl !== undefined ? { fetchImpl: wiring.fetchImpl } : {}),
+  };
   return {
     ingestLatex: async (arxivId) =>
-      (await ingestTexSource(arxivId, { outRoot: paths.outputDir })).ir,
+      (await ingestTexSource(arxivId, { outRoot: paths.outputDir, ...extra })).ir,
     // attachLatexZip passes outRoot/docId through; the composition binds nothing extra.
-    ingestLatexZip: async (zipPath, opts) => (await ingestTexZip(zipPath, opts)).ir,
+    ingestLatexZip: async (zipPath, opts) =>
+      (await ingestTexZip(zipPath, { ...opts, ...extra })).ir,
     // Stage 15: attachArxivDoc passes outRoot/docId; always fresh (never the stale cache).
-    ingestArxivEprint: async (arxivId, opts) => (await ingestArxivEprint(arxivId, opts)).ir,
+    ingestArxivEprint: async (arxivId, opts) =>
+      (await ingestArxivEprint(arxivId, { ...opts, ...extra })).ir,
   };
 }

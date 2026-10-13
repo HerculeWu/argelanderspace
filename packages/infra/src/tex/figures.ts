@@ -29,6 +29,7 @@ import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { TexFigureOutcome, TexFigurePort, TexFigureRequest } from "@argelanderspace/core";
 import { texFigureOutName } from "@argelanderspace/core";
+import type { ExternalObserver } from "../lib/observe.js";
 import { findOnPath } from "../lib/proc.js";
 import { runTexProcess, type TexProcResult } from "./proc.js";
 
@@ -66,13 +67,17 @@ export function haveGhostscript(): boolean {
 export { texFigureOutName };
 
 async function runStep(
-  cmd: string,
+  cmd: "pdftocairo" | "gs",
   args: readonly string[],
-  label: string
+  label: string,
+  observer: ExternalObserver | undefined
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   let result: TexProcResult;
   try {
-    result = await runTexProcess(cmd, args, { timeoutMs: CONVERT_TIMEOUT_MS });
+    result = await runTexProcess(cmd, args, {
+      timeoutMs: CONVERT_TIMEOUT_MS,
+      observe: { observer, program: cmd },
+    });
   } catch (err) {
     return { ok: false, reason: `${label} invocation failed: ${String(err)}` };
   }
@@ -97,9 +102,10 @@ async function producedFile(p: string): Promise<boolean> {
 /** `pdftocairo -svg <src> <dest>` — writes `<dest>` exactly as named (first page only). */
 async function pdfToSvg(
   src: string,
-  dest: string
+  dest: string,
+  observer: ExternalObserver | undefined
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const ran = await runStep("pdftocairo", ["-svg", src, dest], "pdftocairo pdf→svg");
+  const ran = await runStep("pdftocairo", ["-svg", src, dest], "pdftocairo pdf→svg", observer);
   if (!ran.ok) return ran;
   if (!(await producedFile(dest))) {
     return { ok: false, reason: "pdftocairo pdf→svg produced no output file" };
@@ -114,7 +120,8 @@ async function pdfToSvg(
  */
 async function epsToSvg(
   src: string,
-  dest: string
+  dest: string,
+  observer: ExternalObserver | undefined
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!haveGhostscript()) {
     return { ok: false, reason: "gs (ghostscript) not on PATH; EPS figure not converted" };
@@ -134,13 +141,14 @@ async function epsToSvg(
         `-sOutputFile=${tmpPdf}`,
         src,
       ],
-      "gs eps→pdf"
+      "gs eps→pdf",
+      observer
     );
     if (!gs.ok) return gs;
     if (!(await producedFile(tmpPdf))) {
       return { ok: false, reason: "gs eps→pdf produced no output file" };
     }
-    return await pdfToSvg(tmpPdf, dest);
+    return await pdfToSvg(tmpPdf, dest, observer);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
@@ -149,7 +157,8 @@ async function epsToSvg(
 async function convertVector(
   kind: "pdf" | "eps",
   src: string,
-  dest: string
+  dest: string,
+  observer: ExternalObserver | undefined
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!havePdftocairo()) {
     return {
@@ -157,10 +166,13 @@ async function convertVector(
       reason: "pdftocairo (poppler-utils) not on PATH; vector figure not converted",
     };
   }
-  return kind === "pdf" ? pdfToSvg(src, dest) : epsToSvg(src, dest);
+  return kind === "pdf" ? pdfToSvg(src, dest, observer) : epsToSvg(src, dest, observer);
 }
 
-export async function materializeTexFigure(req: TexFigureRequest): Promise<TexFigureOutcome> {
+export async function materializeTexFigure(
+  req: TexFigureRequest,
+  hooks: { observer?: ExternalObserver | undefined } = {}
+): Promise<TexFigureOutcome> {
   try {
     const stat = await fs.stat(req.src).catch(() => null);
     if (!stat?.isFile()) {
@@ -182,7 +194,12 @@ export async function materializeTexFigure(req: TexFigureRequest): Promise<TexFi
     }
     if (ext === ".pdf" || ext === ".eps") {
       const dest = path.join(req.destDir, texFigureOutName(srcRoot, srcReal, ".svg"));
-      const converted = await convertVector(ext === ".pdf" ? "pdf" : "eps", srcReal, dest);
+      const converted = await convertVector(
+        ext === ".pdf" ? "pdf" : "eps",
+        srcReal,
+        dest,
+        hooks.observer
+      );
       if (!converted.ok) return { ok: false, reason: converted.reason };
       return { ok: true, file: path.basename(dest) };
     }
@@ -193,4 +210,11 @@ export async function materializeTexFigure(req: TexFigureRequest): Promise<TexFi
 }
 
 /** Structural check: materializeTexFigure satisfies the core port. */
-export const texFigurePort: TexFigurePort = { materialize: materializeTexFigure };
+export const texFigurePort: TexFigurePort = { materialize: (req) => materializeTexFigure(req) };
+
+/** The figure port with its conversions reported to `observer` (lib/observe.ts). */
+export function observedTexFigurePort(observer: ExternalObserver | undefined): TexFigurePort {
+  return observer === undefined
+    ? texFigurePort
+    : { materialize: (req) => materializeTexFigure(req, { observer }) };
+}

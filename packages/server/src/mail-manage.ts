@@ -22,6 +22,8 @@ import type {
   MailSearchResponse,
 } from "@argelanderspace/contracts";
 import { createNodeMailManage, type MailManage } from "@argelanderspace/infra";
+import { type ServerLog, silentLog } from "./log.js";
+import { observedMail } from "./log-observers.js";
 import type { MailCache } from "./mail-cache.js";
 import type { MailReadService } from "./mail-read.js";
 
@@ -182,6 +184,10 @@ export class MailManageService {
 }
 
 /** Production wiring: the real protocol over the reading service's account and credential access. */
-export function createDefaultMailManageService(read: MailReadService) {
-  return new MailManageService({ read, manage: createNodeMailManage(), cache: read.cache });
+export function createDefaultMailManageService(read: MailReadService, log: ServerLog = silentLog) {
+  return new MailManageService({
+    read,
+    manage: observedMail(createNodeMailManage(), log),
+    cache: read.cache,
+  });
 }

@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { libraryPaths } from "@argelanderspace/core";
 import {
+  __setWriterSandboxForTests,
   configFilePath,
   createLogger,
   f,
@@ -27,7 +28,7 @@ import {
 } from "@argelanderspace/infra";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { createApp } from "../src/app.js";
 import { JobRunner } from "../src/jobs.js";
@@ -39,6 +40,13 @@ type Record_ = Record<string, unknown>;
 
 const running: RunningServer[] = [];
 const roots: string[] = [];
+
+// Every app asks whether the Writer's sandbox works, off the event loop, and a server with a log records that probe
+// when it ends — in whichever test's log is open by then. The tests here count records, so the question is answered
+// for them up front (no probe runs); the probe's own record is tested in infra's observe.test.ts and in
+// logging-coverage-wiring.test.ts.
+beforeAll(() => __setWriterSandboxForTests(false));
+afterAll(() => __setWriterSandboxForTests(null));
 
 function isolatedRoot(): string {
   const isolation = (globalThis as Record<symbol, unknown>)[USER_DIRS_ISOLATION] as
@@ -588,7 +596,30 @@ describe("serve (startServer)", () => {
     const { records, files } = readLog(logDir);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(new RegExp(`^\\d{8}T\\d{9}Z-serve-${process.pid}\\.jsonl$`));
-    expect(records).toHaveLength(1);
+    // The start record, then what the server found on this machine (desktop-app ticket 07): which tools are on
+    // PATH, by name. (The probe of the Writer's sandbox is recorded when it ends, which may be later.)
+    const atStart = records.filter((record) => record.event !== "external_program.exited");
+    expect(atStart.map((record) => record.event)).toEqual(["server.started", "server.environment"]);
+    const environment = atStart[1] ?? {};
+    expect(environment.level).toBe("info");
+    expect(
+      [...(environment.tools_found as string[]), ...(environment.tools_missing as string[])].sort()
+    ).toEqual(
+      [
+        "bibtex",
+        "biber",
+        "bwrap",
+        "gs",
+        "kpsewhich",
+        "latexmk",
+        "pdflatex",
+        "pdftocairo",
+        "xelatex",
+      ].sort()
+    );
+    expect(Object.keys(atStart[1] ?? {}).sort()).toEqual(
+      ["event", "level", "t", "tools_found", "tools_missing"].sort()
+    );
     expect(records[0]).toMatchObject({
       level: "info",
       event: "server.started",
@@ -628,7 +659,7 @@ describe("serve (startServer)", () => {
     const { records, text } = readLog(resolveLogDir());
     expect(text).not.toContain("MARKER");
     expect(text).not.toContain(home);
-    expect(records[0]).toMatchObject({
+    expect(records.find((record) => record.event === "server.started")).toMatchObject({
       event: "server.started",
       data_dir: "~/research/literatures",
       web_dist: "~/research/literatures",
@@ -642,9 +673,17 @@ describe("serve (startServer)", () => {
       config_unknown_keys: 2,
       log_level: "debug",
     });
-    // log_level = "debug" in config.toml: the successful request is there.
-    expect(records.slice(1)).toMatchObject([
+    // log_level = "debug" in config.toml: the successful request is there — once, and nothing else of its kind.
+    expect(records.filter((record) => String(record.event).startsWith("request."))).toMatchObject([
       { level: "debug", event: "request.completed", route: "/api/papers", status: 200 },
+    ]);
+    // And the whole run, at the level that writes the most, is these events and no others: the start, what was
+    // found on PATH, and the one request. (The sandbox probe would add one record of its own at a moment of its
+    // choosing; it is switched off for this file, see the top.)
+    expect(records.map((record) => String(record.event)).sort()).toEqual([
+      "request.completed",
+      "server.environment",
+      "server.started",
     ]);
   });
 

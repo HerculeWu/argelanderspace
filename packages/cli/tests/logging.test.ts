@@ -173,7 +173,17 @@ describe("serve", () => {
         .trimEnd()
         .split("\n")
         .map((line) => JSON.parse(line) as Record<string, unknown>);
-      expect(records).toMatchObject([
+      // The start, what was found on PATH (desktop-app ticket 07: tool names only), then the failed request. The
+      // probe of the Writer's sandbox is recorded when it ends, wherever that falls.
+      // It is one record at most: bwrap ran and exited, or — on a machine without it — could not be started.
+      const isProbe = (record: Record<string, unknown>) =>
+        record.event === "external_program.exited" ||
+        record.event === "external_program.not_started";
+      const sandboxProbe = records.filter(isProbe);
+      expect(sandboxProbe.length).toBeLessThanOrEqual(1);
+      expect(sandboxProbe.every((record) => record.program === "bwrap")).toBe(true);
+      const told = records.filter((record) => !isProbe(record));
+      expect(told).toMatchObject([
         {
           level: "info",
           event: "server.started",
@@ -186,6 +196,7 @@ describe("serve", () => {
           config_unknown_keys: 0,
           log_level: "info",
         },
+        { level: "info", event: "server.environment" },
         {
           level: "error",
           event: "request.failed",
@@ -195,7 +206,7 @@ describe("serve", () => {
         },
       ]);
       // … and the log file has the failure without any of those words.
-      const failure = records[1]?.error as { name: string; message?: string; stack: string[] };
+      const failure = told[2]?.error as { name: string; message?: string; stack: string[] };
       expect(failure.name).toBe("Error");
       expect(failure.message).toBeUndefined();
       expect(failure.stack.length).toBeGreaterThan(0);

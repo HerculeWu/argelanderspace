@@ -458,6 +458,49 @@ describe("a path segment that is a Work or Doc id made from a title or a folder 
   });
 });
 
+describe("an error whose system path is left out (`omitSystemPath`)", () => {
+  const file = "/home/ann/papers/PRIVATE Thesis Title/main.tex";
+  const system = () =>
+    Object.assign(new Error(`ENOENT: no such file or directory, open '${file}'`), {
+      code: "ENOENT",
+      syscall: "open",
+      path: file,
+    });
+
+  test("name, code, system call and stack are written; the path is not — in the error or in any cause", () => {
+    const inner = system();
+    const middle = new Error("PRIVATE middle", { cause: inner });
+    const outer = new TypeError("PRIVATE outer", { cause: middle });
+    const { sink, log } = setup();
+    log.error("test.happened", {
+      direct: f.error(system(), { omitSystemPath: true }),
+      outer: f.error(outer, { omitSystemPath: true }),
+    });
+    const record = sink.records()[0] as Record<string, Record<string, unknown>>;
+    expect(Object.keys(record.direct ?? {}).sort()).toEqual(["code", "name", "stack", "syscall"]);
+    expect(record.direct).toMatchObject({ name: "Error", code: "ENOENT", syscall: "open" });
+    expect(record.direct?.stack).not.toEqual([]);
+    const middleCause = record.outer?.cause as { cause: Record<string, unknown> } | undefined;
+    const cause = middleCause?.cause ?? {};
+    expect(Object.keys(cause).sort()).toEqual(["code", "name", "stack", "syscall"]);
+    expect(record.outer).toMatchObject({ name: "TypeError", cause: { name: "Error" } });
+    expect(sink.lines[0]).not.toMatch(/PRIVATE|Thesis|papers/);
+  });
+
+  test("the option only takes away: without it the same error is written with its path, as before", () => {
+    const withPath = recordOf({ error: f.error(system()) }).error as Record<string, unknown>;
+    const without = recordOf({ error: f.error(system(), { omitSystemPath: false }) })
+      .error as Record<string, unknown>;
+    expect(Object.keys(withPath).sort()).toEqual(["code", "name", "path", "stack", "syscall"]);
+    expect(Object.keys(without).sort()).toEqual(Object.keys(withPath).sort());
+    const less = recordOf({ error: f.error(system(), { omitSystemPath: true }) }).error as Record<
+      string,
+      unknown
+    >;
+    for (const key of Object.keys(less)) expect(Object.keys(withPath)).toContain(key);
+  });
+});
+
 describe("characters that do not show", () => {
   const invisible = [0x200b, 0x200c, 0x200d, 0x2060, 0xfeff, 0x00ad];
 
