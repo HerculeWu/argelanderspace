@@ -82,10 +82,15 @@ export function runTexProcess(
     const stderr: Buffer[] = [];
     child.stdout.on("data", (d: Buffer) => stdout.push(d));
     child.stderr.on("data", (d: Buffer) => stderr.push(d));
+    // One run is reported once. A program that cannot be started gets `error` and then `close` (with a negative
+    // code): that is one "not started". An `error` of a child that did start (a kill that failed) is left to the
+    // `close` that follows, which knows how it ended.
+    let reported = false;
     child.on("error", (err) => {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", kill);
-      if (watched)
+      if (watched && !reported && child.pid === undefined) {
+        reported = true;
         reportProgram(watched.observer, {
           program: watched.program,
           sandboxed: watched.sandboxed === true,
@@ -95,12 +100,14 @@ export function runTexProcess(
           durationMs: performance.now() - started,
           error: err,
         });
+      }
       reject(err);
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", kill);
-      if (watched)
+      if (watched && !reported) {
+        reported = true;
         reportProgram(watched.observer, {
           program: watched.program,
           sandboxed: watched.sandboxed === true,
@@ -109,6 +116,7 @@ export function runTexProcess(
           timedOut,
           durationMs: performance.now() - started,
         });
+      }
       resolve({
         code,
         signal,

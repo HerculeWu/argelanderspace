@@ -25,6 +25,7 @@ import {
   type CopilotPrompt,
   CopilotPromptSchema,
   type CopilotResumeRequest,
+  type CopilotRun,
   type CopilotViewAction,
   type CopilotViewActionResult,
   copilotContextObjects,
@@ -126,7 +127,7 @@ import {
 import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
 import { jobView, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
-import { type ServerLog, silentLog } from "./log.js";
+import { allOf, type ServerLog, silentLog } from "./log.js";
 import { mailAccountProbe } from "./mail-account-probe.js";
 import { accountsOf, type MailOpDeps } from "./mail-copilot.js";
 import type { PlanOpDeps, RemovedTask } from "./plans-actions.js";
@@ -2853,7 +2854,7 @@ export class CopilotHost {
     const toolStarted = new Map<string, number>();
     this.log.info("copilot.run_started", { conversation: f.id(conversationId), run: f.id(runId) });
     // The end of the run as the record keeps it: status and the error CODE (a value from a fixed list).
-    const logFinished = (status: string, error: string | null): void => {
+    const logFinished = (status: CopilotRunEnd, error: CopilotRunErrorCode | null): void => {
       const fields = {
         conversation: f.id(conversationId),
         run: f.id(runId),
@@ -2882,15 +2883,19 @@ export class CopilotHost {
         // Which tool, how its call ended and how long it took: never its arguments or what it returned.
         const began = toolStarted.get(event.toolCallId);
         toolStarted.delete(event.toolCallId);
+        const category = toolResultCategory(event.result, event.isError);
         const fields = {
           conversation: f.id(conversationId),
           run: f.id(runId),
           tool: f.oneOf(COPILOT_TOOL_NAMES, event.toolName),
-          result: f.oneOf(COPILOT_TOOL_RESULTS, toolResultCategory(event.result, event.isError)),
+          result: f.oneOf(COPILOT_TOOL_RESULTS, category),
           ...(began === undefined ? {} : { duration_ms: f.ms(performance.now() - began) }),
         };
-        if (event.isError) this.log.info("copilot.tool_called", fields);
-        else this.log.debug("copilot.tool_called", fields);
+        // A call that did what was asked is one of many (debug); every other end — refused, conflicting, failed,
+        // thrown, nothing to do, waiting for the user — is kept at the default level.
+        // "noop" is a success too (the change was already there); everything else did not do what was asked.
+        if (category === "ok" || category === "noop") this.log.debug("copilot.tool_called", fields);
+        else this.log.info("copilot.tool_called", fields);
       }
       if (loaded.live && event.type === "tool_execution_start") {
         loaded.live.started.add(event.toolCallId);
@@ -2954,7 +2959,7 @@ export class CopilotHost {
     });
     const settle = (
       status: "completed" | "failed" | "stopped" | "interrupted",
-      error: string | null
+      error: CopilotRunErrorCode | null
     ) => {
       loaded.record = { ...loaded.record, run: { id: runId, status, error } };
       this.save(loaded.record);
@@ -2990,7 +2995,7 @@ export class CopilotHost {
           settle(failed ? "failed" : "completed", failureCode);
         }
       } catch (error) {
-        const code =
+        const code: CopilotRunErrorCode =
           error instanceof CopilotError
             ? error.code
             : error instanceof ProviderSettingsError && error.code === "refresh_failed"
@@ -3077,8 +3082,13 @@ const COPILOT_TOOL_NAMES = [
   MAIL_TOOL_NAME,
   ARGUMENT_TOOL_NAME,
 ] as const;
-/** How a tool call ended: the status of its operation row, or `thrown` when the tool threw. */
-const COPILOT_TOOL_RESULTS = [
+/**
+ * How a tool call ended: the status of its operation row (every status of the contract's `CopilotOperation` — one
+ * added there and left out here is a type error), `thrown` when the tool threw, `other` for a status word that is
+ * none of them.
+ */
+type CopilotToolResult = CopilotOperation["status"] | "thrown" | "other";
+const COPILOT_TOOL_RESULTS = allOf<CopilotToolResult>()([
   "ok",
   "noop",
   "conflict",
@@ -3089,15 +3099,37 @@ const COPILOT_TOOL_RESULTS = [
   "unsupported",
   "unknown",
   "error",
+  "confirmation_required",
   "pending",
   "declined",
   "expired",
   "thrown",
   "other",
-] as const;
-const COPILOT_RUN_ENDS = ["completed", "failed", "stopped", "interrupted", "refused"] as const;
-/** Every code a run can end with: `CopilotError`'s codes and what `providerErrorCode` answers. */
-const COPILOT_RUN_ERROR_CODES = [
+]);
+/** How a run ends: the terminal statuses of the contract's run, and `refused` for a message that was not admitted. */
+type CopilotRunEnd =
+  | Exclude<CopilotRun["status"], "running" | "waiting-for-user" | "stopping">
+  | "refused";
+const COPILOT_RUN_ENDS = allOf<CopilotRunEnd>()([
+  "completed",
+  "failed",
+  "stopped",
+  "interrupted",
+  "refused",
+]);
+/** What a provider's failure is reduced to (`providerErrorCode`). */
+type ProviderRunErrorCode =
+  | "provider_capacity"
+  | "rate_limit"
+  | "transient"
+  | "quota"
+  | "unavailable";
+/**
+ * Every code a run can end with: `CopilotError`'s codes and what `providerErrorCode` answers. A code added to
+ * either and left out here is a type error.
+ */
+type CopilotRunErrorCode = CopilotError["code"] | ProviderRunErrorCode;
+const COPILOT_RUN_ERROR_CODES = allOf<CopilotRunErrorCode>()([
   "storage",
   "not_found",
   "busy",
@@ -3112,13 +3144,15 @@ const COPILOT_RUN_ERROR_CODES = [
   "rate_limit",
   "transient",
   "quota",
-] as const;
+]);
 /** Only the status word of the result's operation row is read: nothing else of what the tool returned. */
-function toolResultCategory(result: unknown, isError: boolean): string {
+function toolResultCategory(result: unknown, isError: boolean): CopilotToolResult {
   if (isError) return "thrown";
   const status = (result as { details?: { status?: unknown } } | null | undefined)?.details?.status;
   if (typeof status !== "string") return "ok";
-  return (COPILOT_TOOL_RESULTS as readonly string[]).includes(status) ? status : "other";
+  return (COPILOT_TOOL_RESULTS as readonly string[]).includes(status)
+    ? (status as CopilotToolResult)
+    : "other";
 }
 
 /** The tool call as the user's operation record names it: tool, action and, for a page image read, the page. */
@@ -3177,7 +3211,7 @@ function safeProviderError(message: AssistantMessage): AssistantMessage {
     errorMessage: category + (retryAfter ? `; retry after ${retryAfter / 1000} seconds` : ""),
   };
 }
-function providerErrorCode(message: string): string {
+function providerErrorCode(message: string): ProviderRunErrorCode {
   return message.startsWith("provider capacity")
     ? "provider_capacity"
     : message.startsWith("provider rate limit")

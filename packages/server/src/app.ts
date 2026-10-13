@@ -415,7 +415,7 @@ export function createApp(deps: AppDeps): Hono {
     // The Render button's own compile, for the Copilot's render_manuscript (the refresh route calls the same function).
     render: (id) =>
       runWriterNumberingNow(writerDataDir, id, { broadcast, ...(observer ? { observer } : {}) }),
-    sandboxed: () => writerSandboxAvailable(),
+    sandboxed: () => writerSandboxAvailable(observer),
     // The References tab's list: the saved works' cite keys, read fresh at each use.
     citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
   };

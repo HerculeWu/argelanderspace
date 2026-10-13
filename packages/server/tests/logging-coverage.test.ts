@@ -14,7 +14,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -85,13 +85,12 @@ import { MailReadService } from "../src/mail-read.js";
 import { ProviderSettings } from "../src/providers.js";
 import { createServer, type RunningServer } from "../src/server.js";
 import { makeZip, stubPipelines, stubSources } from "./helpers.js";
+import { logText, markersInText, ROOT } from "./log-markers.js";
 
 // --------------------------------------------------------------------------- //
 // Markers
 // --------------------------------------------------------------------------- //
 
-/** Every marker contains this word, in some case: one search for it finds any of them, however it was respelled. */
-const ROOT = "zqxmark";
 const MARK = {
   adsToken: "ZqxMarkAdsToken7f3a91",
   mailPassword: "ZqxMarkMailPassword5c2e",
@@ -99,6 +98,8 @@ const MARK = {
   mailSubject: "ZqxMarkMailSubject about the referee",
   mailFrom: "zqxmark.sender@zqxmark-mail.test",
   mailFromName: "Zqxmark Sender",
+  // A login name is usually the mail address itself.
+  mailLogin: "zqxmark.login@zqxmark-login.test",
   serverReply: "ZqxMarkServerReply mailbox of dr.someone is locked",
   docBody: "ZqxMarkDocBody an unpublished result",
   annotation: "ZqxMarkAnnotation this proof is wrong",
@@ -107,6 +108,7 @@ const MARK = {
   chat: "ZqxMarkChat please summarize my secret plan",
   chatReply: "ZqxMarkChatReply here is the summary",
   toolArgument: "ZqxMarkToolArgument",
+  providerError: "ZqxMarkProviderError the account of someone@zqxmark-lab.test is suspended",
   discoverySeed: "2026ZqxMarkSeed.....A",
   texSource: "zqxmarkundefinedmacro",
   title: "Zqxmark Hidden Thesis Title",
@@ -117,45 +119,20 @@ const MARK = {
 const WORK_ID = "work:zqxmark-hidden-thesis-title-2001";
 const DOC_ID = uploadDocId(WORK_ID);
 const BROKEN_WORK_ID = "work:zqxmark-broken-source-2002";
+// A Doc made from a local folder: its id is the folder's name.
+const LOCAL_DOC_ID = "latex-zqxmark-local-folder";
 const hashOf = (id: string) => createHash("sha256").update(id).digest("hex").slice(0, 12);
-
-/** The spellings a marker may take on its way: as it is, lower case, a slug, URL-encoded, JSON-escaped. */
-function spellings(marker: string): string[] {
-  const slug = marker
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  return [
-    ...new Set([
-      marker,
-      marker.toLowerCase(),
-      marker.toUpperCase(),
-      slug,
-      slug.replaceAll("-", "_"),
-      encodeURIComponent(marker),
-      encodeURIComponent(marker).toLowerCase(),
-      marker.replaceAll(" ", "+"),
-      Buffer.from(marker).toString("base64"),
-    ]),
-  ];
-}
-
-/** Everything in a log directory, as one text. */
-function logText(dir: string): string {
-  return readdirSync(dir)
-    .sort()
-    .map((name) => readFileSync(join(dir, name), "utf8"))
-    .join("\n");
-}
 
 /** Every marker spelling found in the directory's files (empty = the log can be handed on). */
 function markersIn(dir: string): string[] {
-  const text = logText(dir);
-  const found: string[] = [];
-  if (text.toLowerCase().includes(ROOT)) found.push(`<${ROOT}>`);
-  for (const marker of [...Object.values(MARK), WORK_ID, DOC_ID, BROKEN_WORK_ID, TEST_PASSWORD])
-    for (const spelling of spellings(marker)) if (text.includes(spelling)) found.push(spelling);
-  return found;
+  return markersInText(logText(dir), [
+    ...Object.values(MARK),
+    WORK_ID,
+    DOC_ID,
+    BROKEN_WORK_ID,
+    LOCAL_DOC_ID,
+    TEST_PASSWORD,
+  ]);
 }
 
 // --------------------------------------------------------------------------- //
@@ -171,7 +148,7 @@ let file: LogFile;
 let log: ServerLog;
 let srv: RunningServer;
 let settings: ProviderSettings;
-let script: Array<() => { text?: string; call?: Record<string, unknown> }> = [];
+let script: Array<() => { text?: string; call?: Record<string, unknown>; error?: string }> = [];
 let adsKeyFile: string;
 
 const records = (): LogRecord[] =>
@@ -184,6 +161,9 @@ const eventsNamed = (name: string, from = 0): LogRecord[] =>
     .slice(from)
     .filter((record) => record.event === name);
 const mark = (): number => records().length;
+
+/** A stack frame as it is written: the location of code — a file and a line and column, no function name. */
+const FRAME = /^(?:node:[A-Za-z0-9_/.-]+|(?:~|[A-Za-z]:)?[\\/][^\s()]*):\d+:\d+$/;
 
 /** After a flow: nothing of any marker is in the log directory. */
 function expectNoMarkers(): void {
@@ -231,15 +211,15 @@ let fakeImap: Fake;
 let fakeSmtp: Fake;
 let mailApp: ReturnType<typeof createApp>;
 
-const account = (id: string, port: number): MailAccount => ({
+const account = (id: string, port: number, user: string = TEST_USER): MailAccount => ({
   id: id as never,
   displayName: MARK.mailFromName,
   address: MARK.mailFrom,
   preset: "custom",
   imap: { host: "127.0.0.1", port, security: "tls" },
   smtp: { host: "127.0.0.1", port: 1, security: "tls" },
-  imapUser: TEST_USER,
-  smtpUser: TEST_USER,
+  imapUser: user,
+  smtpUser: user,
   credentialRef: id as never,
   credentialProtection: "keychain",
 });
@@ -296,7 +276,7 @@ beforeAll(async () => {
     api: "openai-responses",
     streamSimple(model: Model<Api>, _context: TranscriptContext) {
       const step = script.shift();
-      const out = step ? step() : { text: "done" };
+      const out: ReturnType<(typeof script)[number]> = step ? step() : { text: "done" };
       const stream = createAssistantMessageEventStream();
       const message: AssistantMessage = {
         role: "assistant",
@@ -325,6 +305,15 @@ beforeAll(async () => {
         },
       };
       queueMicrotask(() => {
+        if (out.error !== undefined) {
+          // The provider failed, with a text of its own.
+          stream.push({
+            type: "error",
+            reason: "error",
+            error: { ...message, content: [], stopReason: "error", errorMessage: out.error },
+          });
+          return;
+        }
         stream.push({ type: "start", partial: message });
         stream.push({ type: "done", reason: message.stopReason as "stop" | "toolUse", message });
       });
@@ -338,7 +327,10 @@ beforeAll(async () => {
   const accounts = createMailAccountStore({ dataDir: globalData });
   const credentials = createCredentialStore({ backend: backend(), dataDir: globalData });
   await credentials.set(REFUSED, MARK.mailPassword, { fileFallbackConsent: false });
-  await accounts.update(0, async () => ({ accounts: [account(REFUSED, idle.port)], result: null }));
+  await accounts.update(0, async () => ({
+    accounts: [account(REFUSED, idle.port, MARK.mailLogin)],
+    result: null,
+  }));
 
   srv = createServer({
     dataDir,
@@ -408,7 +400,7 @@ test("mail watcher: a refused login is a state and a code — not the server's r
   expectNoMarkers();
 });
 
-test("mail servers: every call by name, host and code; nothing of the mail, the address or the reply", async () => {
+test("mail servers: every call by name, provider and code; nothing of the mail, the address, the login name or the reply", async () => {
   const from = mark();
   mailbox = await startFakeMailbox([
     {
@@ -436,7 +428,7 @@ test("mail servers: every call by name, host and code; nothing of the mail, the 
   await credentials.set(GOOD, TEST_PASSWORD, { fileFallbackConsent: false });
   await credentials.set(REFUSED, MARK.mailPassword, { fileFallbackConsent: false });
   await store.update(0, async () => ({
-    accounts: [account(GOOD, mailbox.port), account(REFUSED, mailbox.port)],
+    accounts: [account(GOOD, mailbox.port), account(REFUSED, mailbox.port, MARK.mailLogin)],
     result: null,
   }));
   const tls = { timeoutMs: 3000, tls: { rejectUnauthorized: false } };
@@ -484,8 +476,8 @@ test("mail servers: every call by name, host and code; nothing of the mail, the 
       address: MARK.mailFrom,
       imap: { host: "127.0.0.1", port: fakeImap.port, security: "tls" },
       smtp: { host: "127.0.0.1", port: fakeSmtp.port, security: "tls" },
-      imapUser: TEST_USER,
-      smtpUser: TEST_USER,
+      imapUser: MARK.mailLogin,
+      smtpUser: MARK.mailLogin,
       password: MARK.mailPassword,
     })
   );
@@ -502,7 +494,8 @@ test("mail servers: every call by name, host and code; nothing of the mail, the 
       protocol: "imap",
       call: "listHeaders",
       outcome: "ok",
-      host: `imaps://127.0.0.1:${mailbox.port}`,
+      // 127.0.0.1 is no preset's server
+      provider: "custom",
     })
   );
   expect(calls).toContainEqual(expect.objectContaining({ call: "openMessage", outcome: "ok" }));
@@ -523,15 +516,23 @@ test("mail servers: every call by name, host and code; nothing of the mail, the 
       call: "verifySmtpLogin",
       outcome: "failed",
       code: "auth_failed",
-      host: `smtps://127.0.0.1:${fakeSmtp.port}`,
+      provider: "custom",
     })
   );
   // a mail call is recorded by these fields and no others
   for (const call of calls)
     expect(Object.keys(call).sort()).toEqual(
-      ["call", "code", "duration_ms", "event", "host", "level", "outcome", "protocol", "t"].filter(
-        (key) => key !== "code" || "code" in call
-      )
+      [
+        "call",
+        "code",
+        "duration_ms",
+        "event",
+        "level",
+        "outcome",
+        "protocol",
+        "provider",
+        "t",
+      ].filter((key) => key !== "code" || "code" in call)
     );
   expectNoMarkers();
 });
@@ -581,8 +582,83 @@ const upload = async (workId: string, tex: string): Promise<Response> =>
     body: makeZip({ "main.tex": tex }),
   });
 
+test("an annotation and a note (no TeX needed): the requests by route pattern, the Doc's folder-made id never", async () => {
+  const from = mark();
+  // A Doc as an ingest of a local folder leaves it: the id is the folder's name, the text is the user's.
+  const dir = join(dataDir, "output", LOCAL_DOC_ID);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${LOCAL_DOC_ID}.json`),
+    JSON.stringify({
+      version: 1,
+      docId: LOCAL_DOC_ID,
+      sections: [],
+      refsManifest: [],
+      bib: [],
+      citationsByBlock: {},
+      source: { type: "latex", origin: dir, main_tex: "main.tex" },
+      meta: { title: MARK.title, abstract: MARK.docBody },
+    })
+  );
+  const read = await srv.app.request(`/api/paper/${LOCAL_DOC_ID}/annotations`);
+  expect(read.status).toBe(200);
+  const current = (await read.json()) as AnnotationsFile;
+  const saved = await srv.app.request(
+    `/api/paper/${LOCAL_DOC_ID}/annotations`,
+    json("PUT", {
+      version: 1,
+      rev: current.rev,
+      content_fingerprint: current.content_fingerprint,
+      annotations: [
+        {
+          id: "a_0123abcd",
+          target: { type: "document" },
+          body: MARK.annotation,
+          created_at: "2026-09-10T10:00:00.000Z",
+          updated_at: "2026-09-10T10:00:00.000Z",
+        },
+      ],
+    })
+  );
+  expect(saved.status).toBe(200);
+  // the annotation is on disk, with its text
+  const stored = await srv.app.request(`/api/paper/${LOCAL_DOC_ID}/annotations`);
+  expect(await stored.text()).toContain(MARK.annotation);
+  // a refused write too (a stale rev): a failed request, by pattern, status and code
+  const stale = await srv.app.request(
+    `/api/paper/${LOCAL_DOC_ID}/annotations`,
+    json("PUT", {
+      version: 1,
+      rev: current.rev,
+      content_fingerprint: current.content_fingerprint,
+      annotations: [],
+    })
+  );
+  expect(stale.status).toBe(409);
+  // a note on a Work
+  const noted = await srv.app.request(
+    "/api/library/refs",
+    json("PATCH", { id: WORK_ID, note: MARK.note })
+  );
+  expect(noted.status).toBe(200);
+  expect(readFileSync(libraryPaths(dataDir).libraryJson, "utf8")).toContain(MARK.note);
+
+  // the requests themselves: by route pattern, never by path (the Doc id is in the path)
+  expect(eventsNamed("request.completed", from)).toContainEqual(
+    expect.objectContaining({ method: "PUT", route: "/api/paper/:doc_id/annotations", status: 200 })
+  );
+  expect(eventsNamed("request.completed", from)).toContainEqual(
+    expect.objectContaining({ method: "PATCH", route: "/api/library/refs", status: 200 })
+  );
+  expect(eventsNamed("request.failed", from)).toContainEqual(
+    expect.objectContaining({ method: "PUT", route: "/api/paper/:doc_id/annotations", status: 409 })
+  );
+  expect(logText(logDir)).not.toContain(LOCAL_DOC_ID);
+  expectNoMarkers();
+});
+
 test.skipIf(!haveLatexmk())(
-  "a Doc, an annotation and a note: the job and latexmk are recorded, the title-made ids as hashes",
+  "a Doc: the job and latexmk are recorded, the title-made ids as hashes",
   async () => {
     const from = mark();
     const res = await upload(
@@ -605,35 +681,6 @@ test.skipIf(!haveLatexmk())(
     const ir = await srv.app.request(`/api/paper/${DOC_ID}/ir`);
     expect(ir.status).toBe(200);
     expect(await ir.text()).toContain(MARK.docBody);
-
-    // 3b. an annotation on it, and a note on its Work
-    const current = (await (
-      await srv.app.request(`/api/paper/${DOC_ID}/annotations`)
-    ).json()) as AnnotationsFile;
-    const saved = await srv.app.request(
-      `/api/paper/${DOC_ID}/annotations`,
-      json("PUT", {
-        version: 1,
-        rev: current.rev,
-        content_fingerprint: current.content_fingerprint,
-        annotations: [
-          {
-            id: "a_0123abcd",
-            target: { type: "document" },
-            body: MARK.annotation,
-            created_at: "2026-09-10T10:00:00.000Z",
-            updated_at: "2026-09-10T10:00:00.000Z",
-          },
-        ],
-      })
-    );
-    expect(saved.status).toBe(200);
-    const noted = await srv.app.request(
-      "/api/library/refs",
-      json("PATCH", { id: WORK_ID, note: MARK.note })
-    );
-    expect(noted.status).toBe(200);
-    expect(readFileSync(libraryPaths(dataDir).libraryJson, "utf8")).toContain(MARK.note);
 
     const mine = (name: string) => eventsNamed(name, from).filter((r) => r.job === job.id);
     expect(mine("job.created")[0]).toMatchObject({
@@ -678,11 +725,11 @@ test.skipIf(!haveLatexmk())(
     );
     // the requests themselves: by route pattern, never by path (the Doc id is in the path)
     expect(eventsNamed("request.completed", from)).toContainEqual(
-      expect.objectContaining({ method: "PUT", route: "/api/paper/:doc_id/annotations" })
+      expect.objectContaining({ method: "GET", route: "/api/paper/:doc_id/ir" })
     );
     expect(logText(logDir)).not.toContain(DOC_ID);
-    // At the default level this whole flow (an upload, a compile, a library rebuild that asks three services,
-    // an annotation, a note) is a handful of records, not hundreds.
+    // At the default level this whole flow (an upload, a compile, a library rebuild that asks three services)
+    // is a handful of records, not hundreds.
     const kept = records()
       .slice(from)
       .filter((record) => record.level !== "debug");
@@ -693,7 +740,7 @@ test.skipIf(!haveLatexmk())(
 );
 
 test.skipIf(!haveLatexmk())(
-  "a compile that fails: the job by id, kind, stage and category — not its error text; latexmk by its exit code",
+  "a compile that fails: the job by id, kind, stage, category and the error's name and stack — not its text; latexmk by its exit code",
   async () => {
     const from = mark();
     const res = await upload(
@@ -713,7 +760,7 @@ test.skipIf(!haveLatexmk())(
     // the job record (and the page) keep the excerpt of the TeX log, with the source in it …
     expect(job.error).toContain(MARK.texSource);
 
-    // … the log has the job's id, kind, stage and category, and nothing else.
+    // … the log has the job's id, kind, stage and category, what was thrown by name and stack, and nothing else.
     const [failed] = eventsNamed("job.failed", from);
     expect(failed).toMatchObject({
       level: "warn",
@@ -723,8 +770,13 @@ test.skipIf(!haveLatexmk())(
       category: "unclassified",
     });
     expect(Object.keys(failed ?? {}).sort()).toEqual(
-      ["category", "duration_ms", "event", "job", "kind", "level", "stage", "t"].sort()
+      ["category", "duration_ms", "error", "event", "job", "kind", "level", "stage", "t"].sort()
     );
+    const thrown = failed?.error as { name: string; stack: string[] };
+    expect(Object.keys(thrown).sort()).toEqual(["name", "stack"]);
+    expect(thrown.name).toBe("Error");
+    expect(thrown.stack.length).toBeGreaterThan(0);
+    for (const frame of thrown.stack) expect(frame).toMatch(FRAME);
     const runs = eventsNamed("external_program.exited", from).filter(
       (r) => r.program === "latexmk"
     );
@@ -775,16 +827,8 @@ test.skipIf(!haveLatexmk())(
   240_000
 );
 
-test("Copilot: the run and each tool call by id, tool and result; nothing that was said", async () => {
-  const from = mark();
-  const created = await srv.app.request(
-    "/api/copilot/conversations",
-    json("POST", { model: { provider: "openai", model: "gpt-4.1", thinking: null } })
-  );
-  expect(created.status).toBe(201);
-  const { conversation } = (await created.json()) as ConversationSnapshot;
-  const viewId = randomUUID();
-  const page: PageContext = {
+const planPage = (viewId: string): PageContext =>
+  ({
     version: 1,
     viewId,
     revision: 1,
@@ -801,12 +845,25 @@ test("Copilot: the run and each tool call by id, tool and result; nothing that w
       detail: null,
       plans: [],
     },
-  } as unknown as PageContext;
+  }) as unknown as PageContext;
+
+test("Copilot: the run and each tool call by id, tool and result; nothing that was said", async () => {
+  const from = mark();
+  const created = await srv.app.request(
+    "/api/copilot/conversations",
+    json("POST", { model: { provider: "openai", model: "gpt-4.1", thinking: null } })
+  );
+  expect(created.status).toBe(201);
+  const { conversation } = (await created.json()) as ConversationSnapshot;
+  const viewId = randomUUID();
+  const page = planPage(viewId);
   expect((await srv.app.request(`/api/copilot/views/${viewId}`, json("PUT", page))).status).toBe(
     200
   );
   script = [
     () => ({ call: { action: "read" } }),
+    // a call the tool answers without doing it: a plan that is not there
+    () => ({ call: { action: "read", planId: "plan-that-is-not-there" } }),
     // a call the tool refuses: its argument is the user's text
     () => ({ call: { action: MARK.toolArgument, planId: MARK.toolArgument } }),
     () => ({ text: MARK.chatReply }),
@@ -838,15 +895,63 @@ test("Copilot: the run and each tool call by id, tool and result; nothing that w
     status: "completed",
   });
   const tools = eventsNamed("copilot.tool_called", from);
-  expect(tools).toHaveLength(2);
+  expect(tools).toHaveLength(3);
+  // a call that did what was asked: one of many, at debug
   expect(tools[0]).toMatchObject({ level: "debug", run: runId, tool: "plan", result: "ok" });
-  // the refused call: by its result category, at a level the default log keeps
-  expect(tools[1]?.tool).toBe("plan");
-  expect(tools[1]?.result).not.toBe("ok");
+  // every other end is kept at the default level, by its result category: answered "not there" …
+  expect(tools[1]).toMatchObject({ level: "info", tool: "plan", result: "not_found" });
+  // … and a call the tool refused by throwing (its argument was the user's text)
+  expect(tools[2]).toMatchObject({ level: "info", tool: "plan", result: "thrown" });
   for (const tool of tools)
     expect(Object.keys(tool).sort()).toEqual(
       ["conversation", "duration_ms", "event", "level", "result", "run", "t", "tool"].sort()
     );
+  expectNoMarkers();
+}, 60_000);
+
+test("Copilot: a run the provider fails is `failed` with a code from the list — not the provider's text", async () => {
+  const from = mark();
+  const created = await srv.app.request(
+    "/api/copilot/conversations",
+    json("POST", { model: { provider: "openai", model: "gpt-4.1", thinking: null } })
+  );
+  expect(created.status).toBe(201);
+  const { conversation } = (await created.json()) as ConversationSnapshot;
+  const viewId = randomUUID();
+  expect(
+    (await srv.app.request(`/api/copilot/views/${viewId}`, json("PUT", planPage(viewId)))).status
+  ).toBe(200);
+  // the provider fails every time it is asked (the host asks again once on its own)
+  script = Array.from({ length: 6 }, () => () => ({ error: MARK.providerError }));
+  const sent = await srv.app.request(
+    `/api/copilot/conversations/${conversation.id}/messages`,
+    json("POST", { clientMessageId: randomUUID(), text: MARK.chat, viewId, contextRevision: 1 })
+  );
+  expect(sent.status).toBe(202);
+  const { runId } = (await sent.json()) as { runId: string };
+  await vi.waitFor(() => expect(eventsNamed("copilot.run_finished", from)).toHaveLength(1), {
+    timeout: 30_000,
+  });
+  script = [];
+  const [finished] = eventsNamed("copilot.run_finished", from);
+  expect(finished).toMatchObject({
+    level: "warn",
+    conversation: conversation.id,
+    run: runId,
+    status: "failed",
+  });
+  // the code is one of the list written in code (what the provider's failure was reduced to)
+  expect(["provider_capacity", "rate_limit", "transient", "quota", "unavailable"]).toContain(
+    finished?.code
+  );
+  expect(Object.keys(finished ?? {}).sort()).toEqual(
+    ["code", "conversation", "duration_ms", "event", "level", "run", "status", "t"].sort()
+  );
+  // the page is told the same state
+  const snapshot = (await (
+    await srv.app.request(`/api/copilot/conversations/${conversation.id}`)
+  ).json()) as ConversationSnapshot;
+  expect(snapshot.conversation.run).toMatchObject({ status: "failed", error: finished?.code });
   expectNoMarkers();
 }, 60_000);
 
@@ -884,17 +989,29 @@ test("a job the last run left unfinished is recorded as interrupted; a watcher t
   // the same runner, the watcher still throwing: jobs run and fail exactly as they would unwatched
   const done = await runner.waitFor(runner.submit("refresh", async () => ({ ok: true })).id);
   expect(done).toMatchObject({ status: "done", result: { ok: true } });
+  const unreadable = `/home/someone/papers/${MARK.title}/output/${DOC_ID}/main.tex`;
   const failed = await runner.waitFor(
     runner.submit("refresh", async () => {
-      throw Object.assign(new Error(`cannot read ${MARK.docBody}`), { syscall: "open" });
+      // What Node throws when a file of the user's cannot be opened: the message and `path` name the file — here
+      // in a folder called after a paper, inside a Doc whose id is made from the Work's title.
+      throw Object.assign(new Error(`ENOENT: no such file, open '${unreadable}'`), {
+        code: "ENOENT",
+        syscall: "open",
+        path: unreadable,
+      });
     }).id
   );
-  expect(failed).toMatchObject({ status: "failed", error: `cannot read ${MARK.docBody}` });
-  expect(eventsNamed("job.failed", from).at(-1)).toMatchObject({
+  expect(failed).toMatchObject({ status: "failed" });
+  expect(failed.error).toContain(MARK.title);
+  const record = eventsNamed("job.failed", from).at(-1);
+  expect(record).toMatchObject({
     job: failed.id,
     stage: "start",
     category: "file_system",
+    // the system call and the code, but not the path
+    error: { name: "Error", code: "ENOENT", syscall: "open" },
   });
+  expect(Object.keys(record?.error ?? {}).sort()).toEqual(["code", "name", "stack", "syscall"]);
   expectNoMarkers();
 });
 
@@ -902,7 +1019,7 @@ test("a job the last run left unfinished is recorded as interrupted; a watcher t
 // The whole log, and the proof that the search can find something
 // --------------------------------------------------------------------------- //
 
-test("the records this ticket added carry no error, no path and no text field", () => {
+test("the records this ticket added carry no path and no text field; only a failed job carries an error, without message or path", () => {
   const added = records().filter((record) =>
     /^(job|external_program|external_service|mail|mail_watch|credentials|copilot\.run|copilot\.tool|server\.environment)/.test(
       String(record.event)
@@ -910,12 +1027,34 @@ test("the records this ticket added carry no error, no path and no text field", 
   );
   expect(added.length).toBeGreaterThan(10);
   const fields = new Set(added.flatMap((record) => Object.keys(record)));
-  for (const forbidden of ["error", "stack", "message", "path", "detail", "args", "url", "query"])
+  for (const forbidden of ["stack", "message", "path", "detail", "args", "url", "query"])
     expect(fields.has(forbidden)).toBe(false);
-  // every value is a short token, a number or a list of names: nothing a sentence fits in
+  expect(added.filter((record) => "error" in record).every((r) => r.event === "job.failed")).toBe(
+    true
+  );
+  // A mail server's host is nowhere: the web services' hosts are constants of the code.
+  expect(
+    added
+      .filter((record) => "host" in record)
+      .every((r) => /^external_service\./.test(`${r.event}`))
+  ).toBe(true);
+  // What a failed job threw: a name, a code, a system call, code locations, and the same of its causes.
+  const checkError = (error: LogJson | undefined): void => {
+    const e = error as Record<string, LogJson>;
+    for (const key of Object.keys(e))
+      expect(["name", "code", "syscall", "stack", "cause", "thrown"]).toContain(key);
+    expect(String(e.name)).toMatch(/^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$/);
+    for (const frame of (e.stack ?? []) as string[]) expect(frame).toMatch(FRAME);
+    if (e.cause !== undefined) checkError(e.cause);
+  };
+  // every other value is a short token, a number or a list of names: nothing a sentence fits in
   for (const record of added)
     for (const [name, value] of Object.entries(record)) {
       if (name === "t") continue;
+      if (name === "error") {
+        checkError(value);
+        continue;
+      }
       for (const item of Array.isArray(value) ? value : [value]) {
         expect(["string", "number"]).toContain(typeof item);
         if (typeof item === "string") expect(item).toMatch(/^[A-Za-z0-9_.:#/<>-]{1,80}$/);
@@ -932,9 +1071,9 @@ test("the search is not blind: a marker written through a call site of this tick
   const controlLog = createLogger({ events: SERVER_LOG_EVENTS, sink: control, level: "debug" });
   try {
     expect(markersIn(dir)).toEqual([]);
-    // The job logger writes the job's id as an identifier. A real job id is `<kind>-<uuid>`; had a call site put
-    // a marker there instead (no spaces, so the identifier field lets it through), the search must report it.
-    const job = (id: string): Job => ({
+    // The job logger writes the Work a job is about by the Work id rules, and those write an id of the shape of a
+    // DOI as it is. Had a call site put a marker where such an id goes, the search must report it.
+    const job = (id: string, workId: string): Job => ({
       id,
       kind: "refresh",
       status: "queued",
@@ -944,12 +1083,17 @@ test("the search is not blind: a marker written through a call site of this tick
       progress: [],
       result: null,
       error: null,
+      payload: { workId },
     });
-    jobLogger(controlLog)?.({ type: "created", job: job(`refresh-${MARK.adsToken}`) });
+    const id = `refresh-${randomUUID()}`;
+    jobLogger(controlLog)?.({ type: "created", job: job(id, `doi:10.1234/${MARK.adsToken}`) });
     expect(logText(dir)).toContain("job.created");
     expect(markersIn(dir)).toEqual([`<${ROOT}>`, MARK.adsToken]);
     // … and in a respelling: the slug a title becomes on its way into an id.
-    jobLogger(controlLog)?.({ type: "created", job: job("refresh-zqxmark-hidden-thesis-title") });
+    jobLogger(controlLog)?.({
+      type: "created",
+      job: job(id, "doi:10.1234/zqxmark-hidden-thesis-title"),
+    });
     expect(markersIn(dir)).toContain("zqxmark-hidden-thesis-title");
   } finally {
     control.close();

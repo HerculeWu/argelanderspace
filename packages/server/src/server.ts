@@ -40,7 +40,7 @@ import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
 import { logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
-import { externalObserver, jobLogger, logEnvironment } from "./log-observers.js";
+import { externalObserver, jobIdField, jobLogger, logEnvironment } from "./log-observers.js";
 import { sweepStagedAttachmentsIn } from "./mail-compose.js";
 import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
@@ -131,7 +131,10 @@ export function createServer(opts: ServerOptions): RunningServer {
           error: "job interrupted by server restart (never re-run)",
         });
       } catch (logErr) {
-        log.error("arxiv_fetch.log_append_failed", { job: f.id(job.id), error: f.error(logErr) });
+        log.error("arxiv_fetch.log_append_failed", {
+          job: jobIdField(job.id),
+          error: f.error(logErr),
+        });
       }
     },
   });

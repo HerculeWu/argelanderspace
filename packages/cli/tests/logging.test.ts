@@ -175,9 +175,14 @@ describe("serve", () => {
         .map((line) => JSON.parse(line) as Record<string, unknown>);
       // The start, what was found on PATH (desktop-app ticket 07: tool names only), then the failed request. The
       // probe of the Writer's sandbox is recorded when it ends, wherever that falls.
-      const sandboxProbe = records.filter((record) => record.event === "external_program.exited");
+      // It is one record at most: bwrap ran and exited, or — on a machine without it — could not be started.
+      const isProbe = (record: Record<string, unknown>) =>
+        record.event === "external_program.exited" ||
+        record.event === "external_program.not_started";
+      const sandboxProbe = records.filter(isProbe);
+      expect(sandboxProbe.length).toBeLessThanOrEqual(1);
       expect(sandboxProbe.every((record) => record.program === "bwrap")).toBe(true);
-      const told = records.filter((record) => record.event !== "external_program.exited");
+      const told = records.filter((record) => !isProbe(record));
       expect(told).toMatchObject([
         {
           level: "info",

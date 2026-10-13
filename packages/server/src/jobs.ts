@@ -24,7 +24,20 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, JobKind, WsJobEvent } from "@argelanderspace/contracts";
-import type { JobTransition } from "./log-observers.js";
+
+/** What the runner tells whoever watches it. `error` is what the handler threw, on `failed` only. */
+export interface JobTransition {
+  type: "created" | "started" | "progress" | "done" | "failed" | "interrupted";
+  job: Job;
+  error?: unknown;
+}
+
+/**
+ * The machine-readable classes a handler may put in its job's record (`Job.errorCode`, a free string in the
+ * contract). A handler that sets one writes `"…" satisfies JobErrorCode`, so a new class is added here first.
+ */
+export const JOB_ERROR_CODES = ["arxiv_pdf_only"] as const;
+export type JobErrorCode = (typeof JOB_ERROR_CODES)[number];
 
 /** What a job does; `report` appends a progress entry (persisted + broadcast). */
 export type JobHandler = (job: Job, report: (message: string) => void) => Promise<unknown>;

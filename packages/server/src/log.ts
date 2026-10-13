@@ -71,6 +71,18 @@ export const SERVER_LOG_EVENTS = [
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];
 export type ServerLog = Logger<ServerLogEvent>;
 
+/**
+ * A list of enum values for a record, written out in code and checked against the type its values come from: a
+ * value that is not of the type, and a value of the type that the list leaves out, are both type errors. So a
+ * value added to the source type cannot be forgotten here and end up written as `<invalid-enum>`.
+ *
+ *   const CALLS = allOf<keyof Protocol>()(["open", "close"]);
+ */
+export function allOf<T extends string>() {
+  return <const A extends readonly T[]>(list: A & ([T] extends [A[number]] ? unknown : never)): A =>
+    list;
+}
+
 /** The log of a server nobody gave one: records go nowhere (every test server, unless it asks). */
 export const silentLog: ServerLog = createLogger({ events: SERVER_LOG_EVENTS, sink: discardSink });
 

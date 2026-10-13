@@ -4,12 +4,15 @@
  * command (it hands none in) behaves and prints exactly as before.
  */
 
-import { expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import {
+  __resetWriterSandboxProbeForTests,
   type ExternalProgramCall,
   type ExternalServiceCall,
+  ensureWriterSandboxProbe,
   observedFetch,
   runTexProcess,
+  writerSandboxAvailable,
 } from "../src/index.js";
 
 test("without an observer, the fetch that comes back is the one that went in", () => {
@@ -107,6 +110,9 @@ test("a program that cannot be started: the rejection is the system's own, and i
       observe: { observer: { program: (call) => calls.push(call) }, program: "pdftocairo" },
     })
   ).rejects.toMatchObject({ code: "ENOENT" });
+  // Node tells of a failed spawn twice (`error`, then `close` with a negative code): it is one call, not started.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ program: "pdftocairo", exitCode: null });
   expect(calls[0]?.error).toMatchObject({ code: "ENOENT" });
 });
@@ -123,5 +129,63 @@ test("a run that times out is reported as timed out", async () => {
     timedOut: true,
     exitCode: null,
     signal: "SIGKILL",
+  });
+});
+
+describe("the sandbox probe", () => {
+  const watcher = () => {
+    const calls: ExternalProgramCall[] = [];
+    return { calls, observer: { program: (call: ExternalProgramCall) => calls.push(call) } };
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+  afterEach(() => __resetWriterSandboxProbeForTests(null));
+
+  test("no bwrap: one probe is one call that could not be started — not an exit without a code", async () => {
+    await __resetWriterSandboxProbeForTests("/nonexistent/argelander-no-bwrap");
+    const { calls, observer } = watcher();
+    expect(await ensureWriterSandboxProbe(observer)).toBe(false);
+    await settle();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ program: "bwrap", sandboxed: false, exitCode: null });
+    expect(calls[0]?.error).toMatchObject({ code: "ENOENT" });
+    // The answer is kept for a minute: asking again is not a probe and is not reported.
+    expect(await ensureWriterSandboxProbe(observer)).toBe(false);
+    expect(writerSandboxAvailable(observer)).toBe(false);
+    await settle();
+    expect(calls).toHaveLength(1);
+  });
+
+  test("a probe that ran and failed is an exit with its code", async () => {
+    await __resetWriterSandboxProbeForTests("/bin/false");
+    const { calls, observer } = watcher();
+    expect(await ensureWriterSandboxProbe(observer)).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ program: "bwrap", exitCode: 1, timedOut: false });
+    expect(calls[0]?.error).toBeUndefined();
+  });
+
+  test("a probe somebody else started is reported to whoever asks while it runs, once", async () => {
+    await __resetWriterSandboxProbeForTests("/nonexistent/argelander-no-bwrap");
+    const { calls, observer } = watcher();
+    // The gate that reads the cached answer starts a probe without naming anyone …
+    expect(writerSandboxAvailable()).toBe(false);
+    // … and the callers that do name an observer get that probe's one report between them.
+    const first = ensureWriterSandboxProbe(observer);
+    const second = ensureWriterSandboxProbe(observer);
+    expect(writerSandboxAvailable(observer)).toBe(false);
+    expect(await first).toBe(false);
+    expect(await second).toBe(false);
+    await settle();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.error).toMatchObject({ code: "ENOENT" });
+  });
+
+  test("the gate's own re-probe is reported to the observer it was given", async () => {
+    await __resetWriterSandboxProbeForTests("/nonexistent/argelander-no-bwrap");
+    const { calls, observer } = watcher();
+    expect(writerSandboxAvailable(observer)).toBe(false);
+    await ensureWriterSandboxProbe();
+    await settle();
+    expect(calls).toHaveLength(1);
   });
 });
