@@ -48,7 +48,7 @@ import {
   uploadDocId,
   type Work,
 } from "@argelanderspace/core";
-import { ArxivPdfOnlyError, extractZip, ZipError } from "@argelanderspace/infra";
+import { ArxivPdfOnlyError, extractZip, f, ZipError } from "@argelanderspace/infra";
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
@@ -62,6 +62,7 @@ import {
   runManualImport,
 } from "./library-actions.js";
 import type { AsyncLock } from "./lock.js";
+import { type ServerLog, silentLog } from "./log.js";
 import { probePdf } from "./pdfium-probe.js";
 
 export type LockedRebuild = (
@@ -95,6 +96,8 @@ export interface AcquisitionDeps {
   pdfOwners: (docId: string) => Work[];
   /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending`. */
   acquisitionWaitMs?: number | undefined;
+  /** The user-level log; absent → nothing is recorded. */
+  log?: ServerLog | undefined;
 }
 
 /** The zip upload's Work query (`?id=|doi=|arxiv=`). */
@@ -151,9 +154,28 @@ function mergesOf(error: unknown): ArgumentGraphMergeNote[] {
   return Array.isArray(notes) ? (notes as ArgumentGraphMergeNote[]) : [];
 }
 
-/** The server log keeps every note (local, absolute paths): background tasks may discard their summary. */
-function logMerges(notes: readonly ArgumentGraphMergeNote[]): void {
-  for (const note of notes) console.warn(`library rebuild: ${describeArgumentGraphMerge(note)}`);
+const MERGE_OUTCOMES = ["moved", "kept_survivor", "transfer_failed"] as const;
+const MERGE_ERRORS = ["absorbed_unreadable", "survivor_name_unusable", "write_failed"] as const;
+const YES_NO = ["yes", "no"] as const;
+
+/** The log keeps every note (ids and file locations): background tasks may discard their summary. */
+function logMerges(log: ServerLog, notes: readonly ArgumentGraphMergeNote[]): void {
+  for (const note of notes) {
+    log.warn("library.argument_graph_merged", {
+      outcome: f.oneOf(MERGE_OUTCOMES, note.outcome),
+      absorbed: f.id(note.absorbed_id),
+      survivor: f.id(note.survivor_id),
+      absorbed_file: f.path(note.absorbed_file),
+      ...(note.survivor_file === "" ? {} : { survivor_file: f.path(note.survivor_file) }),
+      ...(note.error === undefined ? {} : { reason: f.oneOf(MERGE_ERRORS, note.error) }),
+      ...(note.survivor_unreadable === undefined
+        ? {}
+        : { survivor_unreadable: f.oneOf(YES_NO, note.survivor_unreadable ? "yes" : "no") }),
+      ...(note.absorbed_file_left === undefined
+        ? {}
+        : { absorbed_file_left: f.oneOf(YES_NO, note.absorbed_file_left ? "yes" : "no") }),
+    });
+  }
 }
 
 /** A library import that failed after its Work merge was saved; the notes are for the page (relative paths). */
@@ -172,7 +194,10 @@ export class ImportAfterMergeError extends Error {
 }
 
 /** rebuild through the lock. */
-export function createLockedRebuild(libraryLock: AsyncLock): LockedRebuild {
+export function createLockedRebuild(
+  libraryLock: AsyncLock,
+  log: ServerLog = silentLog
+): LockedRebuild {
   return (p, opts) =>
     libraryLock.run(async () => {
       // rebuild re-saves library.json with the typed model, which strips keys it does not know. Inside the same
@@ -195,13 +220,13 @@ export function createLockedRebuild(libraryLock: AsyncLock): LockedRebuild {
         } catch {
           /* the rebuild error below is the one that explains the failure */
         }
-        logMerges(mergesOf(rebuildError));
+        logMerges(log, mergesOf(rebuildError));
         throw rebuildError;
       }
       // The merge notes of this rebuild (ticket 06). A job that discards its summary has them from the collector
       // below; the server log keeps them either way.
       const merges = result.argument_graph_merges ?? [];
-      logMerges(merges);
+      logMerges(log, merges);
       try {
         restoreUnknownKeys(p, before);
       } catch (error) {
@@ -241,6 +266,7 @@ export function isReadableZip(data: Uint8Array): boolean {
 }
 
 export function createAcquisition(deps: AcquisitionDeps): Acquisition {
+  const log = deps.log ?? silentLog;
   const {
     paths,
     runner,
@@ -264,7 +290,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       try {
         deps.argumentGraphChanged(id);
       } catch (e) {
-        console.error(`argument-graph.changed broadcast failed for ${id}:`, e);
+        log.error("argument_graph.broadcast_failed", { work: f.id(id), error: f.error(e) });
       }
     }
   };
@@ -452,7 +478,10 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             error: j.error ?? "unknown failure",
           });
         } catch (logErr) {
-          console.error("arxiv-fetch log append failed:", logErr);
+          log.error("arxiv_fetch.log_append_failed", {
+            job: f.id(j.id),
+            error: f.error(logErr),
+          });
         }
       }
     });
@@ -935,7 +964,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       // library.json already holds the merge (only a later file failed): the page must hear what the graphs did.
       const notes = mergesOf(error);
       if (notes.length === 0) throw error;
-      logMerges(notes);
+      logMerges(log, notes);
       announceMerges(notes);
       libraryChanged("add");
       throw new ImportAfterMergeError(relNotes(notes), error);
@@ -950,7 +979,10 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
           try {
             submitArxivPdf(r.ref.id, true);
           } catch (e) {
-            console.error(`auto arXiv ingest submit failed for ${r.ref.id}:`, e);
+            log.error("arxiv_ingest.auto_submit_failed", {
+              work: f.id(r.ref.id),
+              error: f.error(e),
+            });
           }
         }
       }

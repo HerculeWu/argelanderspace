@@ -26,7 +26,7 @@ config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错�
 
 工作台的配置只有一个来源：`config.toml`，加命令行参数（`--data-dir`、`--port`）作单次覆盖。工作台自己的环境变量（数据目录、端口、全局数据目录、全局缓存目录、web dist 位置）自 2026-10-13（desktop-app 票 05）起不再读取，设置了也不起作用；操作系统自己的变量（`XDG_CONFIG_HOME` 等）照旧。ADS token 与 OpenAlex 的 key、联系邮箱的环境变量不在这次改动内。默认端口 1859 是 contracts 的常量 `DEFAULT_PORT`，CLI 深链接、`serve` 与 web 的开发代理共用。
 
-配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。
+配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。
 
 **全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定；目录解析已在 infra 实现，Mail 账户已使用）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 config 键 `global_dir` > OS 默认；全局缓存对称：`global_cache_dir` > OS 默认，两者互不影响（改数据目录不移动缓存）；只认 config.toml 的键，不认环境变量（2026-10-13 起，desktop-app 票 05；此前各有一个优先于 config 的环境变量）。空白值视为未设，相对路径一律拒绝（ConfigError，只报键名；按探测到的平台判断绝对路径，避免随 cwd 分裂全局目录）；`global_dir`/`global_cache_dir` 类型错只报键名。`resolveGlobalDirs` 不访问文件系统（未传 config 时读 config.toml）；OS 默认目录由 env-paths 在 import 时固定 homedir，测试隔离须在导入前把 `HOME`/`XDG_*` 指向 tmp；目录由 `ensureGlobalDirs` 按需创建，权限 0700（infra `global-dirs.ts`）。既有 config.toml 位置不变，项目数据不迁移。
 
@@ -85,6 +85,24 @@ config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错�
 
 TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/citationsByBlock 和原生 text/math/cite/xref segments。旧 Document 桥与双轨 occurrences 已删除。`/api/paper/:id/ir` 只服务 LaTeX IR；`/description` 的格式是显式描述，不能替代正文一致性证明。PDF `GET /pdf/snapshot` 验证 owner、实际原件 hash 和 annotation sidecar；`GET /pdf` 返回受同一固定 hash 校验的原始 Buffer，Web 再校验收到的 bytes 并将那份 buffer 交给 EmbedPDF。PDF hash 已知不同返回 409，不归档/重绑或重写用户数据；损坏 metadata/annotations 返回 500并保留原 bytes。reading-position 独立校验；其损坏/缺失以snapshot中的明确 progress error表示，正文仍可读但不假称位置已恢复，且不写空替代文件。EmbedPDF worker 的 WASM URL 由 Vite 本地资产解析成**绝对同源 URL**后再交给 blob worker（相对 URL 按 blob 基址解析会卡在 loading）；font fallback 关闭。产品错误层以 10 秒 timeout 收束 worker/WASM 异步无响应（它不能抢占同步 CPU/WASM 阻塞，不声称此类情况的硬时限）；部署若加 CSP，至少需允许 `worker-src blob:` 与 `script-src 'wasm-unsafe-eval'`。旧 raw GET `/api/paper/:id` 已删除，不能与同路径的新 DELETE 混淆；旧无 version 文档需要重摄入，不再投影。
 
+## 用户日志
+
+desktop-app 票 06（2026-10-13）。隐私规则与并发范围是硬契约，见 [contracts](contracts.md#用户日志2026-10-13-新增)；这里记机制。它与项目数据目录里的 `logs/arxiv-fetch.jsonl`、任务记录和 Copilot 的操作记录无关，那些都不动。
+
+- **模块**在 infra `log/`（`fields.ts` / `logger.ts` / `files.ts` / `process.ts`），server 与今后的桌面宿主共用，web 运行时不引用。一条记录＝事件名＋字段。事件名来自创建 logger 时给出的目录（`createLogger({ events })`，类型上是字面量联合，运行时不在目录里的名字写成 `log.rejected`、原名丢弃）；字段值只能由 `f` 的构造函数产生，logger 没有接收文本的方法，不是 `LogField` 的值（字符串、对象）在类型上不通过，运行时被丢弃并计入 `dropped_fields`。
+- **字段种类与各自的检查**：`f.id` 标识符（ASCII、无空白、无 `@`、至多 128 字符，否则写 `<invalid-id>`；带空格的标题、邮件地址、中文因此进不来，单个英文单词拦不住）；`f.oneOf` 枚举（必须是调用处给出的那张代码表里的值，否则 `<invalid-enum>`）；`f.ids` / `f.someOf` 是前两者的列表（至多 64 项）；`f.num`；`f.ms`；`f.path`（主目录及其 realpath 写成 `~`，控制字符替换，至多 1024 字符）；`f.url`（只留协议和主机，不含用户名密码）；`f.error`（名称、`code`，系统错误另有 `syscall` 与 `path`，逐帧 `文件:行:列` 的调用栈〔丢掉首行与函数名，主目录写成 `~`，至多 40 帧〕、`cause` 至多三层；抛出的不是 Error 时只记它的类型）。
+- **错误消息**：默认丢弃。保留的唯一途径是错误类在自己身上声明 `static readonly [LOG_SAFE_MESSAGE] = true`（只对该类本身有效，子类要自己声明）；保留的消息仍替换主目录、去掉控制字符、截到 500 字符。现在没有任何产品错误类做了声明：`ConfigError` 的文案带配置文件路径，TOML 语法错误时还带解析器摘出的原文行，所以不声明。
+- **输出端可注入**：`LogSink` 一个 `write(line)`。生产用 `openLogFile`：`<全局数据目录>/logs/<UTC 时间到毫秒>-<进程种类>-<pid>.jsonl`，一行一条 JSON（`t`、`level`、`event`，然后是字段），目录 0700、文件 0600，同步追加（进程崩溃前写下的记录已经在盘上）。打开时清理：按文件名（即启动时间）只留最新 20 个，且从新到旧累计不超过 50 MB，超出的连同更旧的一起删；只碰符合上述命名的文件，本次运行的文件不删；单次运行写满 50 MB 后不再写。建目录、开文件、写、清理的任何失败都被吞掉，只是没有日志。测试用 `createMemorySink`；`discardSink` 上的 logger 什么都不做。
+- **级别**：`debug` / `info` / `warn` / `error`，config.toml 的 `log_level`（默认 `info`；类型或取值不对是点名该键的 `ConfigError`）。logger 的级别可在运行中用 `setLevel` 改，下一条记录起生效；界面入口与不重启生效的接线在后续票。
+- **谁写**：只有 `startServer`（即 `serve`）打开日志文件（`openServeLog`）；`createServer` / `createApp` 只往传入的 `log` 里写，没传就是不记录、不解析也不创建日志目录，所以测试服务器默认没有日志。其余 CLI 命令不碰日志。`serve` 打印到终端的三行不变。
+- **server 的事件**（目录在 server `log.ts` 的 `SERVER_LOG_EVENTS`）：
+  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist、配置文件里出现的已知键名与未知键的个数、日志级别、pid、Node 版本、平台与架构。
+  - `request.failed`：方法、路由模式、状态码、耗时、应答 JSON 里的 `code`（有才记）、错误（有才记）。状态码 ≥ 500 为 error 级；400–499 为 warn 级；**GET / HEAD 的 404 不算失败**（查一个已不存在的 Doc、页面资源、source map 都是正常问答）。路由模式取自实际应答的那条路由，并且必须是 app 注册过的模式之一。路由里抛出的不是 Error 时（Hono 不交给 `onError`，原样交给 HTTP 层应答），记录里没有状态码。
+  - `request.completed`：debug 级，状态码 < 400 的请求和上面那种 404。
+  - `process.uncaught_exception` / `process.unhandled_rejection`：经 `uncaughtExceptionMonitor` 只观察不接管，Node 照旧打印并以原退出码结束。
+  - 原先打印到控制台的几处：`library.argument_graph_merged`、`argument_graph.broadcast_failed`、`arxiv_fetch.log_append_failed`、`arxiv_ingest.auto_submit_failed`、`copilot.observation_not_recordable`、`copilot.mail_accounts_unreadable`。
+- **主应用的错误处理**：`logRequests` 在所有路由之前注册，并给主应用装上唯一的 `onError`：应答与此前 Hono 的默认行为相同（纯文本 `Internal Server Error`、500），只是不再把错误打印到 stderr，改由上面的 `request.failed` 记录。Mail、provider 等自带固定文案的子路由照旧用它们自己的处理，记录从同一处产生。任务、外部程序、外部服务、Copilot、邮件监听的事件，以及页面错误，属于后续票。
+
 ## LaTeX 数据流
 
 隔离 workspace → latexmk（编译事实与插桩事件）＋unified-latex 源码树/有界宏展开 → 融合 IR → 图资产物化 → 直接存储/展示。
@@ -120,8 +138,8 @@ pnpm workspace，ESM-only，TypeScript strict + noUncheckedIndexedAccess，Biome
 |---|---|
 | contracts | Zod 数据/REST/WS 契约，canonical annotation text 与 Writer 序列化纯函数，web runtime 可用 |
 | core | tex facts/source/fuse/IR 编排；文档展示与引用；library store/seed/graph/build；acquire/upload；plans/annotations/writer store、导出和预览 |
-| infra | workspace/compile/instrument/figures/ingest；arXiv 抓取解包；ADS/Crossref/OpenAlex、config、zip、pyjson 缓存兼容；Writer opt-in 编译缓存 |
-| server | REST/SPA/images/WS、jobs/watcher、领域锁、DocMutationRegistry、Writer single-flight/drain；Copilot 各 tool 的调用生命周期（operationId/journal 三态、begin/done）与真人确认请求流程（unsupported/declined/expired）统一在 `copilot-tool-kit`（论证图的 `argument` 工具在 `copilot-argument-tool`，其整理方法在 `copilot-argument-guide`，整图替换/清空的确认 kind 是 `replace_argument_graph`，见 [argument-graph](argument-graph.md)「Copilot」），tool 只决定调哪个业务操作和卡片怎么描述；每种真人确认 kind 的卡片字段、持久记录、点击时三态检查（读不到→error、没了/变了→changed）、后台复查触发类别与绑定 view 规则各是 `copilot-confirmations/` 下一个 adapter，host 只做持久化、等待与 decide；Doc 删除在 `doc-delete`（DELETE 路由与 Copilot `delete_doc` 共用一个实例）；获取/上传/导入在 `acquisition`（上传、刷新、导入、arXiv 获取路由与 Copilot `library` 的获取/导入共用一个实例）；PDF 访问在 `pdf-access`（owner、验证过的原件 source、Copilot PDF 工作台标注写入与两张失败映射；PDF 路由、描述、文本 Doc 的 PDF 区域渲染、`reader` 的 PDF 读/图/写与 arXiv 描述共用一个实例） |
+| infra | workspace/compile/instrument/figures/ingest；arXiv 抓取解包；ADS/Crossref/OpenAlex、config、zip、pyjson 缓存兼容；Writer opt-in 编译缓存；全局目录、凭据存储、Mail 协议；用户日志模块 `log/`（字段种类与隐私规则、logger、日志目录与文件、进程级异常的观察），server 与今后的桌面宿主共用，见[用户日志](#用户日志) |
+| server | REST/SPA/images/WS、jobs/watcher、领域锁、DocMutationRegistry、Writer single-flight/drain；用户日志的事件目录、请求记录与主应用的统一错误处理在 `log.ts`（`serve` 才打开日志文件）；Copilot 各 tool 的调用生命周期（operationId/journal 三态、begin/done）与真人确认请求流程（unsupported/declined/expired）统一在 `copilot-tool-kit`（论证图的 `argument` 工具在 `copilot-argument-tool`，其整理方法在 `copilot-argument-guide`，整图替换/清空的确认 kind 是 `replace_argument_graph`，见 [argument-graph](argument-graph.md)「Copilot」），tool 只决定调哪个业务操作和卡片怎么描述；每种真人确认 kind 的卡片字段、持久记录、点击时三态检查（读不到→error、没了/变了→changed）、后台复查触发类别与绑定 view 规则各是 `copilot-confirmations/` 下一个 adapter，host 只做持久化、等待与 decide；Doc 删除在 `doc-delete`（DELETE 路由与 Copilot `delete_doc` 共用一个实例）；获取/上传/导入在 `acquisition`（上传、刷新、导入、arXiv 获取路由与 Copilot `library` 的获取/导入共用一个实例）；PDF 访问在 `pdf-access`（owner、验证过的原件 source、Copilot PDF 工作台标注写入与两张失败映射；PDF 路由、描述、文本 Doc 的 PDF 区域渲染、`reader` 的 PDF 读/图/写与 arXiv 描述共用一个实例） |
 | cli | 命令注册、冻结 agent 输出、磁盘读写 |
 | web | 阅读/文献/计划/标注/Writer/探索，共享 IR 展示、ReaderSession、i18n、graph 共享 renderer（力导向 `GraphCanvas` 供文库图与 Discovery 图两个 adapter，分层 `LayeredGraphCanvas` 供论证图 adapter）；Shell 的窗格状态、leave-draft 保护与 Copilot 视图动作的「等页面就绪 / unavailable 重试」在 `argelander/panes/` 的窗格管理器，每个页面以一个 PaneAdapter 注册（页面上下文、status、动作路由） |
 | app | npm 单包；tsup bin/web/argelander.sty/许可 notices；createRequire banner 有实际运行作用 |

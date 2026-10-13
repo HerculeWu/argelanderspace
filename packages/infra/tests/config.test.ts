@@ -13,6 +13,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import {
   type AppConfig,
   ConfigError,
+  configFileKeys,
   configFilePath,
   getConfig,
   loadConfigFile,
@@ -218,5 +219,45 @@ describe("OpenAlexClient api key", () => {
       doi: "10.1/two",
     });
     expect(calls[1]?.url).not.toContain("api_key=");
+  });
+});
+
+describe("log_level and the keys a file has", () => {
+  test("log_level is one of the four levels; anything else names the key, never the value", () => {
+    expect(parseConfigToml('log_level = "debug"', "/p").log_level).toBe("debug");
+    expect(parseConfigToml("", "/p").log_level).toBeUndefined();
+    for (const toml of ['log_level = "LOUD-marker"', "log_level = 3", "log_level = true"]) {
+      let err: unknown;
+      try {
+        parseConfigToml(toml, "/p/config.toml");
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(ConfigError);
+      expect((err as Error).message).toBe(
+        '/p/config.toml: "log_level" must be one of debug, info, warn, error'
+      );
+    }
+  });
+
+  test("a file with an older fault and a bad log_level still reports the older fault", () => {
+    expect(() => parseConfigToml('log_level = "x"\nport = 1.5', "/p")).toThrow(
+      '/p: "port" must be an integer between 0 and 65535'
+    );
+    expect(() => parseConfigToml('log_level = "x"\ndata_dir = "/abs"', "/p")).toThrow(
+      '/p: "data_dir" must be a relative path'
+    );
+  });
+
+  test("configFileKeys names the keys this build reads and only counts the others", () => {
+    const xdg = xdgWithConfig(
+      'port = 1900\nmy_private_key_name = "v"\nlog_level = "debug"\n[ui]\ntheme = "dark"\n'
+    );
+    const path = join(xdg, "argelanderspace", "config.toml");
+    expect(configFileKeys(path)).toEqual({ known: ["port", "log_level"], unknown: 2 });
+    expect(configFileKeys()).toEqual({ known: ["port", "log_level"], unknown: 2 });
+    expect(configFileKeys(join(xdg, "missing.toml"))).toEqual({ known: [], unknown: 0 });
+    writeFileSync(path, "this is = = not toml", "utf-8");
+    expect(configFileKeys(path)).toEqual({ known: [], unknown: 0 });
   });
 });

@@ -19,7 +19,9 @@ import { MAIL_UNTRUSTED_NOTICE } from "@argelanderspace/contracts";
 import { libraryPaths } from "@argelanderspace/core";
 import {
   createCredentialStore,
+  createLogger,
   createMailAccountStore,
+  createMemorySink,
   createNodeMailMailbox,
   createNodeMailManage,
   createNodeMailOutgoing,
@@ -49,6 +51,7 @@ import { CopilotHost } from "../src/copilot.js";
 import { createMailTool, sendOutcome } from "../src/copilot-mail-tool.js";
 import { digest } from "../src/copilot-tool-kit.js";
 import { JobRunner } from "../src/jobs.js";
+import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { MailAccountService } from "../src/mail-accounts.js";
 import { MailCache } from "../src/mail-cache.js";
 import { MailComposeService } from "../src/mail-compose.js";
@@ -1296,6 +1299,8 @@ test("the card's kind is the mode the draft was made in, not a guess from its su
 
 test("when the account store cannot be read the run has no mail: no tool, no Mail page in what the model is told, and one diagnostic without detail", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const logged = createMemorySink();
+  host.useLog(createLogger({ events: SERVER_LOG_EVENTS, sink: logged }));
   (host as unknown as { hasMailAccounts: () => boolean }).hasMailAccounts = () => {
     throw new Error("/secret/path/accounts.json is damaged");
   };
@@ -1307,8 +1312,12 @@ test("when the account store cannot be read the run has no mail: no tool, no Mai
     expect(told).not.toContain("attacker@evil.test");
     expect(told).not.toContain("The mail tool reads");
     expect(snapshot.messages[0]?.context?.mail).toBeUndefined();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).not.toContain("/secret/path");
+    // Said once, in the user-level log and no longer on the terminal, without the reason.
+    expect(warn).not.toHaveBeenCalled();
+    expect(logged.records()).toMatchObject([
+      { level: "warn", event: "copilot.mail_accounts_unreadable" },
+    ]);
+    expect(logged.lines.join("")).not.toContain("/secret/path");
   } finally {
     warn.mockRestore();
   }

@@ -137,6 +137,7 @@ import { DocMutationRegistry } from "./doc-mutations.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
+import { logRequests, type ServerLog, silentLog } from "./log.js";
 import type { MailAccountService } from "./mail-accounts.js";
 import type { MailComposeServices } from "./mail-compose-routes.js";
 import type { MailManageService } from "./mail-manage.js";
@@ -232,6 +233,8 @@ export interface AppDeps {
   textDocHooks?: Pick<TextDocDeps, "beforePublish">;
   /** Longest the Copilot `library` tool waits for an acquisition job before answering `pending` (default ten minutes). */
   acquisitionWaitMs?: number;
+  /** The user-level log (see log.ts). Absent → nothing is recorded; only `serve` hands one in. */
+  log?: ServerLog;
 }
 
 // --------------------------------------------------------------------------- //
@@ -344,6 +347,7 @@ function mimeFor(path: string): string {
 
 export function createApp(deps: AppDeps): Hono {
   const { paths, runner } = deps;
+  const log = deps.log ?? silentLog;
   const outputDir = paths.outputDir;
   const paperCache = new PaperCache();
   /** Python `_WRITE_LOCK`: rebuild vs PATCH/POST refs (see lock.ts). */
@@ -442,6 +446,8 @@ export function createApp(deps: AppDeps): Hono {
   };
 
   const app = new Hono();
+  // First, so that it sees every request: the record of failed requests, and the one handler for unhandled errors.
+  logRequests(app, log);
 
   // Dev: the Vite dev server (localhost:5173) calls this API directly.
   // allowHeaders left empty → hono reflects the requested headers, matching
@@ -549,7 +555,7 @@ export function createApp(deps: AppDeps): Hono {
     libraryChanged,
     // not a PUT: a Work merge moved the file; a pending Copilot card on either Work is rechecked like after a PUT
     argumentGraphChanged: (workId) => argumentGraphChanged(workId, "external"),
-    lockedRebuild: createLockedRebuild(libraryLock),
+    lockedRebuild: createLockedRebuild(libraryLock, log),
     pipelines: deps.pipelines,
     makeSources: deps.makeSources,
     fetchArxivPdf: deps.fetchArxivPdf,
@@ -557,6 +563,7 @@ export function createApp(deps: AppDeps): Hono {
     autoIngestArxiv: deps.autoIngestArxiv ?? (() => getConfig().auto_ingest_arxiv !== false),
     pdfOwners: pdfAccess.owners,
     acquisitionWaitMs: deps.acquisitionWaitMs,
+    log,
   });
   // The Copilot `library` tool shares the library lock, the narrow work patch and library.changed with
   // PATCH /api/library/refs, and reads the same payload as GET /api/library.

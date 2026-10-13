@@ -11,6 +11,10 @@
  * `<cwd>/packages/web/dist` (the repo dev layout). The status dir (Stage 4)
  * has no flag: it always sits next to the effective data dir
  * (`statusDirFor`).
+ *
+ * The user-level log (log.ts): `createServer` records only into the `log` it is given, and by default into nothing;
+ * `startServer` — the `serve` command, the one long-running process so far — opens this run's file in the log
+ * directory, records the start, and closes the file when the server closes.
  */
 
 import { existsSync } from "node:fs";
@@ -20,6 +24,7 @@ import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
+  f,
   fetchArxivPdf as fetchCurrentArxivPdf,
   getConfig,
   resolveGlobalDirs,
@@ -32,6 +37,7 @@ import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
+import { logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
 import { sweepStagedAttachmentsIn } from "./mail-compose.js";
 import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
@@ -65,6 +71,8 @@ export interface ServerOptions {
    * so a test server never reads the real global mail accounts; `startServer` turns it on.
    */
   mailWatch?: false | true | MailWatcherOverrides;
+  /** The user-level log (log.ts). Absent → nothing is recorded, and no log directory is resolved or made. */
+  log?: ServerLog;
 }
 
 export interface RunningServer {
@@ -90,6 +98,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   if (opts.sweepMailStagingIn) sweepStagedAttachmentsIn(opts.sweepMailStagingIn);
   const paths = libraryPaths(opts.dataDir);
   const statusDir = statusDirFor(opts.dataDir);
+  const log = opts.log ?? silentLog;
   const runner = new JobRunner({
     dir: join(opts.dataDir, "jobs"),
     // Stage 15 (D12): a boot-interrupted arXiv fetch is a failure worth
@@ -107,7 +116,7 @@ export function createServer(opts: ServerOptions): RunningServer {
           error: "job interrupted by server restart (never re-run)",
         });
       } catch (logErr) {
-        console.error("arxiv-fetch log append failed:", logErr);
+        log.error("arxiv_fetch.log_append_failed", { job: f.id(job.id), error: f.error(logErr) });
       }
     },
   });
@@ -120,6 +129,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   let hub: WsHub;
   const providerSettings = opts.providerSettings ?? new ProviderSettings();
   const copilot = new CopilotHost(opts.dataDir, providerSettings, (event) => hub.broadcast(event));
+  copilot.useLog(log);
   if (opts.mailWatch) {
     mailWatcher = createDefaultMailWatcher(
       (msg) => hub.broadcast(msg),
@@ -140,6 +150,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     boundPort: () => boundPort(server),
     providerSettings,
     copilot,
+    log,
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
   });
 
@@ -289,11 +300,22 @@ export function resolveServerConfig(
   return { dataDir, port: Number.isNaN(port) ? DEFAULT_PORT : port, webDist };
 }
 
-/** Resolve config, create the server, wait for the listen, log the URL. */
+export interface StartOptions {
+  /** The version of the program that is starting the server, for the start record. */
+  version?: string;
+}
+
+/**
+ * Resolve config, create the server, wait for the listen, print the URL. This is the long-running process: it writes
+ * the user-level log (a bad config.toml is reported before any log is opened, as before).
+ */
 export async function startServer(
-  argv: readonly string[] = process.argv.slice(2)
+  argv: readonly string[] = process.argv.slice(2),
+  start: StartOptions = {}
 ): Promise<RunningServer> {
-  const cfg = resolveServerConfig(argv);
+  const config = getConfig();
+  const cfg = resolveServerConfig(argv, process.cwd(), config);
+  const serveLog = openServeLog(config);
   let sweepMailStagingIn: string | undefined;
   try {
     sweepMailStagingIn = resolveGlobalDirs().cacheDir;
@@ -305,11 +327,28 @@ export async function startServer(
     port: cfg.port,
     webDist: cfg.webDist,
     mailWatch: true,
+    log: serveLog.log,
     ...(sweepMailStagingIn ? { sweepMailStagingIn } : {}),
   });
-  const port = await srv.ready();
+  let port: number;
+  try {
+    port = await srv.ready();
+  } catch (error) {
+    serveLog.close();
+    throw error;
+  }
+  logServerStarted(serveLog.log, {
+    version: start.version,
+    mode: "browser",
+    port,
+    projectRoot: process.cwd(),
+    dataDir: cfg.dataDir,
+    webDist: cfg.webDist,
+  });
+  // These three lines are what `serve` prints to the terminal; the log does not replace them.
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
   console.log(`  data dir: ${cfg.dataDir}`);
   console.log(`  web dist: ${cfg.webDist ?? "(none — API only)"}`);
-  return srv;
+  const close = srv.close;
+  return { ...srv, close: () => close().finally(() => serveLog.close()) };
 }

@@ -19,6 +19,9 @@
  *                              & compile the arXiv source when an added work
  *                              has an arXiv id (hidden setting; the web UI
  *                              exposes no toggle; manual triggers stay on)
+ *   log_level         string   default "info"; one of debug, info, warn,
+ *                              error — the lowest level `serve` writes to
+ *                              the user-level log
  *
  * This file is the workbench's one configuration source: a command-line flag
  * (`--data-dir`, `--port`) overrides it for a single run, and no environment
@@ -35,6 +38,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, posix, win32 } from "node:path";
 import { parse as parseToml } from "smol-toml";
+import { isLogLevel, LOG_LEVELS, type LogLevel } from "./log/logger.js";
 
 /** The config object; property names mirror the TOML keys verbatim. */
 export interface AppConfig {
@@ -47,7 +51,21 @@ export interface AppConfig {
   /** Global cache dir override; must be absolute. */
   global_cache_dir?: string;
   auto_ingest_arxiv?: boolean;
+  /** The lowest level written to the user-level log; unset means `info`. */
+  log_level?: LogLevel;
 }
+
+/** Every key this build reads from config.toml. */
+export const CONFIG_KEYS = [
+  "data_dir",
+  "port",
+  "openalex_api_key",
+  "ads_dev_key",
+  "global_dir",
+  "global_cache_dir",
+  "auto_ingest_arxiv",
+  "log_level",
+] as const satisfies readonly (keyof AppConfig)[];
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -115,6 +133,14 @@ export function parseConfigToml(text: string, path: string = "<config>"): AppCon
   ) {
     throw new ConfigError(`${path}: "data_dir" must be a relative path`);
   }
+  // Checked last, for the same reason: the faults that were reported before this key existed still come first.
+  const logLevel = doc.log_level;
+  if (logLevel !== undefined) {
+    if (!isLogLevel(logLevel)) {
+      throw new ConfigError(`${path}: "log_level" must be one of ${LOG_LEVELS.join(", ")}`);
+    }
+    out.log_level = logLevel;
+  }
   return out;
 }
 
@@ -132,6 +158,25 @@ export function loadConfigFile(path: string = configFilePath()): AppConfig {
     throw new ConfigError(`cannot read config file ${path}: ${(e as Error).message}`);
   }
   return parseConfigToml(text, path);
+}
+
+/**
+ * Which keys the config file has at its top level: the ones this build reads, by name, and how many others. The
+ * names of the others are the user's own text and are not returned; no value is. A file that is missing, unreadable
+ * or not TOML has no keys here (loading it is what reports that).
+ */
+export function configFileKeys(path: string = configFilePath()): {
+  known: Array<(typeof CONFIG_KEYS)[number]>;
+  unknown: number;
+} {
+  let present: string[];
+  try {
+    present = Object.keys(parseToml(readFileSync(path, "utf-8")));
+  } catch {
+    return { known: [], unknown: 0 };
+  }
+  const known = CONFIG_KEYS.filter((key) => present.includes(key));
+  return { known, unknown: present.length - known.length };
 }
 
 /**

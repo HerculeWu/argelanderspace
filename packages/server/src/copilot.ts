@@ -125,6 +125,7 @@ import {
 import { createWriterTool, WRITER_PROMPT, WRITER_TOOL_NAME } from "./copilot-writer-tool.js";
 import { jobView, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
+import { type ServerLog, silentLog } from "./log.js";
 import { mailAccountProbe } from "./mail-account-probe.js";
 import { accountsOf, type MailOpDeps } from "./mail-copilot.js";
 import type { PlanOpDeps, RemovedTask } from "./plans-actions.js";
@@ -419,6 +420,11 @@ export class CopilotHost {
       },
     };
     this.kinds = createConfirmationKinds(this.workbench);
+  }
+  private log: ServerLog = silentLog;
+  /** The user-level log this host writes its few diagnostics to; none unless the server hands one in. */
+  useLog(log: ServerLog): void {
+    this.log = log;
   }
   /** The transport that can reach exactly one browser view; absent in headless hosts. */
   useViewDelivery(deliver: ViewDelivery): void {
@@ -2069,9 +2075,8 @@ export class CopilotHost {
       // Said once, without the reason (it could name a path): the account store could not be read, so this run has no mail.
       if (!this.mailProbeWarned) {
         this.mailProbeWarned = true;
-        console.warn(
-          "copilot: the mail account store could not be read; the mail tool is off for this run"
-        );
+        // The mail account store could not be read; the mail tool is off for this run.
+        this.log.warn("copilot.mail_accounts_unreadable");
       }
       return "unavailable";
     }
@@ -2647,7 +2652,8 @@ export class CopilotHost {
                     state.readings
                   ),
                   state.readings
-                )
+                ),
+                () => this.log.warn("copilot.observation_not_recordable")
               )
             : null;
         const observation = observed
