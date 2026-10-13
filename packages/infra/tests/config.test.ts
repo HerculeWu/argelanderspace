@@ -254,8 +254,8 @@ describe("log_level and the keys a file has", () => {
       'port = 1900\nmy_private_key_name = "v"\nlog_level = "debug"\n[ui]\ntheme = "dark"\n'
     );
     const path = join(xdg, "argelanderspace", "config.toml");
-    expect(configFileKeys(path)).toEqual({ known: ["port", "log_level"], unknown: 2 });
-    expect(configFileKeys()).toEqual({ known: ["port", "log_level"], unknown: 2 });
+    expect(configFileKeys(path)).toEqual({ known: ["port", "log_level", "ui.theme"], unknown: 1 });
+    expect(configFileKeys()).toEqual({ known: ["port", "log_level", "ui.theme"], unknown: 1 });
     expect(configFileKeys(join(xdg, "missing.toml"))).toEqual({ known: [], unknown: 0 });
     writeFileSync(path, "this is = = not toml", "utf-8");
     expect(configFileKeys(path)).toEqual({ known: [], unknown: 0 });

@@ -1,0 +1,305 @@
+/**
+ * Change one key of the config file on disk: inside a cross-process lock, read the file again, edit its text
+ * (`config-edit.ts`), and replace the file atomically. Two writers of different keys both keep their change; two
+ * writers of the same key leave the later one's value.
+ *
+ * - The lock is proper-lockfile's: a `config.toml.lock` directory next to the file, there only while a write runs.
+ *   One left by a process that died is taken over once it is stale (15 s). That also happens to a writer that is
+ *   alive but was stopped for that long (a suspended process, a machine that slept): its lock is taken over while
+ *   it still believes it holds it. proper-lockfile tells such a writer when it next looks; the notice is kept, and
+ *   it is checked right before the new file is put in place. A writer that was told replaces nothing, removes its
+ *   temporary file and answers `busy`: what the other writer wrote stays. The notice comes from a timer and can be
+ *   later than the replacement; what keeps both changes then is the comparison of the file's identity below (the
+ *   writer that finds the file replaced under it does its step again).
+ * - An editor does not take the lock. What keeps its save from being written over: the file is read inside the
+ *   lock, its identity at that reading is remembered (inode, size, modification time in nanoseconds; or "no
+ *   file"), and right before the replacement the file is looked at again. If it is not the file that was read,
+ *   the temporary file is dropped and the whole step — read, edit, write — is done again on the new text, up to
+ *   three times in all; a file that changed every time gives `busy`. What is left is the moment between that last
+ *   look and the rename: a save that lands exactly there is written over, and so is, at any time, a save that
+ *   changes neither the inode, nor the size, nor the modification time. Neither can be closed without the editor
+ *   taking the lock.
+ * - The replacement is a temporary file in the same directory, flushed, then renamed over the file. A failure before
+ *   the rename leaves the file as it was and removes the temporary file.
+ * - A file that is a symbolic link is edited where it points (the lock and the temporary file are beside the
+ *   target), so the link stays a link. A link that points nowhere is refused. Where the link points is looked at
+ *   again right before the replacement: a link that was pointed elsewhere, or replaced by a plain file, meanwhile
+ *   gives `busy` and nothing is replaced (the same last moment as above is left).
+ * - The file's permission bits are kept, whatever the process's file-creation mask. A missing file is created
+ *   (mode 0600), and so is its directory (0700); restoring the default of a key in a missing file creates nothing.
+ * - A file the user cannot write is refused, even where the directory would allow replacing it.
+ * - A file that is not valid UTF-8 is refused: decoding it would not give back its bytes.
+ * - Nothing is thrown and no result carries a path, a value or a system error message: a refusal is a category.
+ */
+
+import { randomBytes } from "node:crypto";
+import { constants } from "node:fs";
+import { access, chmod, lstat, mkdir, open, realpath, rename, rm, stat } from "node:fs/promises";
+import { dirname } from "node:path";
+import { isSettingKey } from "@argelanderspace/contracts";
+import lockfile from "proper-lockfile";
+import { configFilePath } from "./config.js";
+import {
+  type ConfigChange,
+  type ConfigEditRefusal,
+  editConfigText,
+  normalizeConfigChange,
+} from "./config-edit.js";
+
+/**
+ * Why the file was not changed: one of the line editor's refusals, or
+ *
+ *   busy              another writer held the lock for the whole wait; or this writer's lock was taken over while
+ *                     it worked; or the file was changed by something else on every one of the tries; or the
+ *                     config path, a symbolic link, came to lead elsewhere. Nothing was written, and asking again
+ *                     is the thing to do
+ *   unreadable        the file (or what its link points at) could not be read, or is not a regular file
+ *   invalid_encoding  the file is not valid UTF-8
+ *   not_writable      the file or its directory does not allow writing
+ *   write_failed      writing or replacing the file failed for another reason
+ */
+export const SETTING_WRITE_REFUSALS = [
+  "busy",
+  "unreadable",
+  "invalid_encoding",
+  "not_writable",
+  "write_failed",
+] as const;
+export type SettingWriteRefusal = ConfigEditRefusal | (typeof SETTING_WRITE_REFUSALS)[number];
+
+export type SettingWriteResult =
+  | { ok: true; changed: boolean }
+  | { ok: false; reason: SettingWriteRefusal };
+
+export interface SettingWriteOptions {
+  /** The config file; default `configFilePath()`. */
+  path?: string;
+  /**
+   * The step that puts the new file in place; default `fs.rename`. It is called with the finished temporary file
+   * and the config file, after the last look at the lock and at the file.
+   *
+   * This and `beforeReplace` are for tests, and for a caller that has to replace the step itself. They are not
+   * settings of a write: the settings endpoint must build its options itself and never pass on anything a request
+   * carries.
+   */
+  rename?: (from: string, to: string) => Promise<void>;
+  /**
+   * A step run on every try, inside the lock, once the temporary file is complete and before the last look at the
+   * lock and at the file — that is, in the window in which another writer or an editor can get in. Default: nothing.
+   * If it throws, the write is refused (`write_failed`) and the file is left as it is. For tests; see `rename`.
+   */
+  beforeReplace?: () => Promise<void>;
+}
+
+/** How many times the read–edit–write step is done when the file keeps changing under it. */
+const REPLACE_TRIES = 3;
+
+const DENIED = new Set(["EACCES", "EPERM", "EROFS"]);
+const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | null)?.code;
+const writeRefusal = (e: unknown): SettingWriteRefusal =>
+  DENIED.has(codeOf(e) ?? "") ? "not_writable" : "write_failed";
+
+/** Where the bytes live: the path itself, or what a symbolic link at the path points at. */
+async function target(
+  path: string
+): Promise<{ file: string; exists: boolean } | { refused: SettingWriteRefusal }> {
+  try {
+    const info = await lstat(path);
+    const file = info.isSymbolicLink() ? await realpath(path) : path;
+    if (!(await stat(file)).isFile()) return { refused: "unreadable" };
+    return { file, exists: true };
+  } catch (e) {
+    // ENOENT from `realpath` is a link that points nowhere: `lstat` had found the link.
+    if (codeOf(e) !== "ENOENT") return { refused: "unreadable" };
+    try {
+      await lstat(path);
+      return { refused: "unreadable" };
+    } catch {
+      return { file: path, exists: false };
+    }
+  }
+}
+
+/** Change one key of the config file. Never throws. */
+export async function writeSetting(
+  key: string,
+  asked: ConfigChange,
+  options: SettingWriteOptions = {}
+): Promise<SettingWriteResult> {
+  try {
+    // Settled before anything is looked at or made on disk; the line editor would say the same.
+    if (!isSettingKey(key)) return { ok: false, reason: "unknown_key" };
+    const change = normalizeConfigChange(asked);
+    if (change === null) return { ok: false, reason: "invalid_value" };
+
+    const path = options.path ?? configFilePath();
+    const found = await target(path);
+    if ("refused" in found) return { ok: false, reason: found.refused };
+    const { file } = found;
+    if (!found.exists) {
+      if ("reset" in change) return { ok: true, changed: false };
+      try {
+        await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+      } catch (e) {
+        return { ok: false, reason: writeRefusal(e) };
+      }
+    }
+
+    // The lock is a directory made beside the file, and taking it retries on any failure: a directory that does
+    // not allow writing is found out here, at once, rather than after the whole wait.
+    try {
+      await access(dirname(file), constants.W_OK);
+    } catch (e) {
+      return { ok: false, reason: writeRefusal(e) };
+    }
+    // Set when proper-lockfile finds that the lock is no longer this process's (it was taken over as stale, or
+    // could not be kept fresh). Only recorded here — the notice comes from a timer, where a throw (the default)
+    // would be an uncaught exception — and looked at right before the file is replaced.
+    let lockLost = false;
+    let release: () => Promise<void>;
+    try {
+      release = await lockfile.lock(file, {
+        realpath: false,
+        stale: 15_000,
+        onCompromised: () => {
+          lockLost = true;
+        },
+        retries: { retries: 40, minTimeout: 25, maxTimeout: 150 },
+      });
+    } catch (e) {
+      return { ok: false, reason: codeOf(e) === "ELOCKED" ? "busy" : writeRefusal(e) };
+    }
+    try {
+      // Whether the config path still leads to the file that is locked and about to be replaced: a path that is a
+      // symbolic link can be pointed elsewhere, or be replaced by a plain file, while the write is under way.
+      const stillTarget = async (): Promise<boolean> => {
+        const again = await target(path);
+        return !("refused" in again) && again.file === file;
+      };
+      return await replaceUnderLock(file, key, change, options, () => lockLost, stillTarget);
+    } finally {
+      await release().catch(() => {});
+    }
+  } catch {
+    return { ok: false, reason: "write_failed" };
+  }
+}
+
+/** What tells one state of the file from another without reading it; `null` is "no file". */
+interface FileIdentity {
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+}
+
+function sameFile(a: FileIdentity | null, b: FileIdentity | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs;
+}
+
+async function identityOf(file: string): Promise<FileIdentity | null> {
+  try {
+    const { ino, size, mtimeNs } = await stat(file, { bigint: true });
+    return { ino, size, mtimeNs };
+  } catch (e) {
+    if (codeOf(e) === "ENOENT") return null;
+    throw e;
+  }
+}
+
+/** The file's bytes, its identity as of before they were read, and its permission bits; all `null` for no file. */
+async function readWithIdentity(
+  file: string
+): Promise<{ bytes: Buffer; identity: FileIdentity; mode: number } | null> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(file, "r");
+  } catch (e) {
+    if (codeOf(e) === "ENOENT") return null;
+    throw e;
+  }
+  try {
+    // Before the bytes: a save that lands while they are read moves the modification time past this one.
+    const { ino, size, mtimeNs, mode } = await handle.stat({ bigint: true });
+    const bytes = await handle.readFile();
+    return { bytes, identity: { ino, size, mtimeNs }, mode: Number(mode) & 0o7777 };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function replaceUnderLock(
+  file: string,
+  key: string,
+  change: ConfigChange,
+  options: SettingWriteOptions,
+  lockLost: () => boolean,
+  stillTarget: () => Promise<boolean>
+): Promise<SettingWriteResult> {
+  const moveIntoPlace = options.rename ?? rename;
+  for (let attempt = 1; attempt <= REPLACE_TRIES; attempt++) {
+    let read: Awaited<ReturnType<typeof readWithIdentity>>;
+    try {
+      read = await readWithIdentity(file);
+    } catch {
+      return { ok: false, reason: "unreadable" };
+    }
+    let text = "";
+    if (read !== null) {
+      try {
+        text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(read.bytes);
+      } catch {
+        return { ok: false, reason: "invalid_encoding" };
+      }
+    }
+    const edited = editConfigText(text, key, change);
+    if (!edited.ok) return edited;
+    if (!edited.changed) return { ok: true, changed: false };
+
+    if (read !== null) {
+      try {
+        await access(file, constants.W_OK);
+      } catch (e) {
+        // Gone since it was read: the next try starts from no file.
+        if (codeOf(e) === "ENOENT") continue;
+        return { ok: false, reason: writeRefusal(e) };
+      }
+    }
+    const mode = read === null ? 0o600 : read.mode;
+    const temporary = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+    try {
+      const handle = await open(temporary, "wx", mode);
+      try {
+        await handle.writeFile(edited.text, "utf-8");
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      // `open` applies the umask; the file being replaced may have bits the umask clears.
+      await chmod(temporary, mode);
+      await options.beforeReplace?.();
+      // The path no longer leads here: replacing this file would answer "written" for a change the config path
+      // does not show. Nothing is replaced; asking again writes where the path leads now.
+      if (!(await stillTarget())) {
+        await rm(temporary, { force: true }).catch(() => {});
+        return { ok: false, reason: "busy" };
+      }
+      const now = await identityOf(file);
+      // Nothing is awaited between these checks and the call that replaces the file.
+      if (lockLost()) {
+        await rm(temporary, { force: true }).catch(() => {});
+        return { ok: false, reason: "busy" };
+      }
+      if (!sameFile(read === null ? null : read.identity, now)) {
+        await rm(temporary, { force: true }).catch(() => {});
+        continue;
+      }
+      await moveIntoPlace(temporary, file);
+    } catch (e) {
+      await rm(temporary, { force: true }).catch(() => {});
+      return { ok: false, reason: writeRefusal(e) };
+    }
+    return { ok: true, changed: true };
+  }
+  return { ok: false, reason: "busy" };
+}

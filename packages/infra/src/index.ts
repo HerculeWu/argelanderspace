@@ -11,6 +11,16 @@
 
 export * from "./arxiv-pdf.js";
 export * from "./config.js";
+// The proposing step of the line editor (`proposeConfigEdit`) stays inside the package: callers get the checked edit.
+export {
+  CONFIG_EDIT_REFUSALS,
+  type ConfigChange,
+  type ConfigEditRefusal,
+  type ConfigEditResult,
+  checkConfigEdit,
+  editConfigText,
+} from "./config-edit.js";
+export * from "./config-write.js";
 export {
   CREDENTIAL_FILE_NAME,
   type CredentialErrorCode,
