@@ -8,7 +8,9 @@
  *   alive but was stopped for that long (a suspended process, a machine that slept): its lock is taken over while
  *   it still believes it holds it. proper-lockfile tells such a writer when it next looks; the notice is kept, and
  *   it is checked right before the new file is put in place. A writer that was told replaces nothing, removes its
- *   temporary file and answers `busy`: what the other writer wrote stays.
+ *   temporary file and answers `busy`: what the other writer wrote stays. The notice comes from a timer and can be
+ *   later than the replacement; what keeps both changes then is the comparison of the file's identity below (the
+ *   writer that finds the file replaced under it does its step again).
  * - An editor does not take the lock. What keeps its save from being written over: the file is read inside the
  *   lock, its identity at that reading is remembered (inode, size, modification time in nanoseconds; or "no
  *   file"), and right before the replacement the file is looked at again. If it is not the file that was read,
@@ -20,7 +22,9 @@
  * - The replacement is a temporary file in the same directory, flushed, then renamed over the file. A failure before
  *   the rename leaves the file as it was and removes the temporary file.
  * - A file that is a symbolic link is edited where it points (the lock and the temporary file are beside the
- *   target), so the link stays a link. A link that points nowhere is refused.
+ *   target), so the link stays a link. A link that points nowhere is refused. Where the link points is looked at
+ *   again right before the replacement: a link that was pointed elsewhere, or replaced by a plain file, meanwhile
+ *   gives `busy` and nothing is replaced (the same last moment as above is left).
  * - The file's permission bits are kept, whatever the process's file-creation mask. A missing file is created
  *   (mode 0600), and so is its directory (0700); restoring the default of a key in a missing file creates nothing.
  * - A file the user cannot write is refused, even where the directory would allow replacing it.
@@ -46,8 +50,9 @@ import {
  * Why the file was not changed: one of the line editor's refusals, or
  *
  *   busy              another writer held the lock for the whole wait; or this writer's lock was taken over while
- *                     it worked; or the file was changed by something else on every one of the tries. Nothing was
- *                     written, and asking again is the thing to do
+ *                     it worked; or the file was changed by something else on every one of the tries; or the
+ *                     config path, a symbolic link, came to lead elsewhere. Nothing was written, and asking again
+ *                     is the thing to do
  *   unreadable        the file (or what its link points at) could not be read, or is not a regular file
  *   invalid_encoding  the file is not valid UTF-8
  *   not_writable      the file or its directory does not allow writing
@@ -127,7 +132,8 @@ export async function writeSetting(
     const change = normalizeConfigChange(asked);
     if (change === null) return { ok: false, reason: "invalid_value" };
 
-    const found = await target(options.path ?? configFilePath());
+    const path = options.path ?? configFilePath();
+    const found = await target(path);
     if ("refused" in found) return { ok: false, reason: found.refused };
     const { file } = found;
     if (!found.exists) {
@@ -164,7 +170,13 @@ export async function writeSetting(
       return { ok: false, reason: codeOf(e) === "ELOCKED" ? "busy" : writeRefusal(e) };
     }
     try {
-      return await replaceUnderLock(file, key, change, options, () => lockLost);
+      // Whether the config path still leads to the file that is locked and about to be replaced: a path that is a
+      // symbolic link can be pointed elsewhere, or be replaced by a plain file, while the write is under way.
+      const stillTarget = async (): Promise<boolean> => {
+        const again = await target(path);
+        return !("refused" in again) && again.file === file;
+      };
+      return await replaceUnderLock(file, key, change, options, () => lockLost, stillTarget);
     } finally {
       await release().catch(() => {});
     }
@@ -221,7 +233,8 @@ async function replaceUnderLock(
   key: string,
   change: ConfigChange,
   options: SettingWriteOptions,
-  lockLost: () => boolean
+  lockLost: () => boolean,
+  stillTarget: () => Promise<boolean>
 ): Promise<SettingWriteResult> {
   const moveIntoPlace = options.rename ?? rename;
   for (let attempt = 1; attempt <= REPLACE_TRIES; attempt++) {
@@ -265,6 +278,12 @@ async function replaceUnderLock(
       // `open` applies the umask; the file being replaced may have bits the umask clears.
       await chmod(temporary, mode);
       await options.beforeReplace?.();
+      // The path no longer leads here: replacing this file would answer "written" for a change the config path
+      // does not show. Nothing is replaced; asking again writes where the path leads now.
+      if (!(await stillTarget())) {
+        await rm(temporary, { force: true }).catch(() => {});
+        return { ok: false, reason: "busy" };
+      }
       const now = await identityOf(file);
       // Nothing is awaited between these checks and the call that replaces the file.
       if (lockLost()) {

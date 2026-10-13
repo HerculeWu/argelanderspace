@@ -28,9 +28,13 @@
  * - A string is written as a basic string with `"` and `\` escaped; other characters are written as they are. A
  *   string with a control character (U+0000–U+001F, U+007F) or an unpaired surrogate is refused, not escaped: no
  *   setting takes one. Integers are written in decimal; minus zero is zero.
- * - A bare value (a number, a boolean, a date) ends where the parser ends it: before everything JavaScript's
- *   `trimEnd` removes, which is more than the blank and the tab TOML allows (a no-break space, U+2028, U+FEFF, a
- *   form feed, a carriage return that is not part of a line ending, …). Those bytes are after the value and stay.
+ * - A bare number or date ends where the parser ends it: before everything JavaScript's `trimEnd` removes, which
+ *   is more than the blank and the tab TOML allows (a no-break space, U+2028, U+FEFF, a form feed, a carriage
+ *   return that is not part of a line ending, …). Those bytes are after the value and stay. The parser allows them
+ *   after a number or a date only — after a boolean or a string such a file is not TOML — so replacing a number
+ *   that is followed by one with a boolean or a string (a key written with the wrong type, `data_dir = 12` and a
+ *   no-break space) gives text that is not TOML: the self-check stops it and the edit is refused
+ *   (`self_check_failed`). Replacing it with a number, or restoring the default, works.
  * - A change that is neither `{ set: scalar }` nor `{ reset: true }` is `invalid_value`.
  * - `unsupported_layout`: the parser accepts the text and the line scan here does not follow it. It happens: the
  *   parser (smol-toml 1.8.0) reads a quoted key with no `=` after it together with the next line, and takes any one

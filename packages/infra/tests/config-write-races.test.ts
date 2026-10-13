@@ -14,12 +14,14 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
+  unlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const lockCalls = vi.hoisted(() => [] as Array<{ onCompromised?: (err: Error) => void }>);
 vi.mock("proper-lockfile", async (importOriginal) => {
@@ -46,6 +48,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aspace-cfgrace-"));
   path = join(dir, "config.toml");
   lockCalls.length = 0;
+});
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
 });
 const text = (): string => readFileSync(path, "utf-8");
 /** What is beside the config file once a write is over: nothing — no lock, no temporary file. */
@@ -224,6 +229,38 @@ describe("writeSetting: the file is saved by something that does not take the lo
     expect(text()).toBe(saved.replace("1859", "1900"));
   });
 
+
+  test("written in place with another size and the time put back: the size gives it away", async () => {
+    writeFileSync(path, START);
+    // a time a save can be given again exactly: whole seconds
+    const when = new Date("2026-01-02T03:04:05Z");
+    utimesSync(path, when, when);
+    const read = statSync(path, { bigint: true });
+    const saved = `${START}# one more line\n`;
+    let first = true;
+    const got = await writeSetting(
+      "port",
+      { set: 1900 },
+      {
+        path,
+        beforeReplace: async () => {
+          if (!first) return;
+          first = false;
+          writeFileSync(path, saved);
+          utimesSync(path, when, when);
+          // only the size tells the two states apart
+          const now = statSync(path, { bigint: true });
+          expect(now.ino).toBe(read.ino);
+          expect(now.mtimeNs).toBe(read.mtimeNs);
+          expect(now.size).not.toBe(read.size);
+        },
+      }
+    );
+    expect(got).toEqual({ ok: true, changed: true });
+    expect(text()).toBe(saved.replace("1859", "1900"));
+    expect(beside()).toEqual([]);
+  });
+
   test("the editor set the very key being written: the later writer, this one, has its value there", async () => {
     writeFileSync(path, START);
     let first = true;
@@ -305,13 +342,14 @@ describe("writeSetting: the file is saved by something that does not take the lo
         path,
         beforeReplace: async () => {
           saves++;
-          writeFileSync(path, `${START}# save ${saves}\n`);
+          // another size every time: the save is seen whatever the file system's time stamps can tell apart
+          writeFileSync(path, `${START}# save ${"!".repeat(saves)}\n`);
         },
       }
     );
     expect(got).toEqual({ ok: false, reason: "busy" });
     expect(saves).toBe(3);
-    expect(text()).toBe(`${START}# save 3\n`);
+    expect(text()).toBe(`${START}# save !!!\n`);
     expect(beside()).toEqual([]);
     expect(existsSync(`${path}.lock`)).toBe(false);
   });
@@ -326,13 +364,13 @@ describe("writeSetting: the file is saved by something that does not take the lo
         path,
         beforeReplace: async () => {
           tries++;
-          if (tries < 3) writeFileSync(path, `${START}# save ${tries}\n`);
+          if (tries < 3) writeFileSync(path, `${START}# save ${"!".repeat(tries)}\n`);
         },
       }
     );
     expect(got).toEqual({ ok: true, changed: true });
     expect(tries).toBe(3);
-    expect(text()).toBe(`${START.replace("1859", "1900")}# save 2\n`);
+    expect(text()).toBe(`${START.replace("1859", "1900")}# save !!\n`);
   });
 
   test("a step that fails leaves the file and no temporary file", async () => {
@@ -350,5 +388,70 @@ describe("writeSetting: the file is saved by something that does not take the lo
     expect(got).toEqual({ ok: false, reason: "write_failed" });
     expect(text()).toBe(START);
     expect(beside()).toEqual([]);
+  });
+});
+
+
+describe("writeSetting: the config path is a symbolic link that comes to lead elsewhere", () => {
+  let targetDir: string;
+  let target: string;
+  beforeEach(() => {
+    targetDir = mkdtempSync(join(tmpdir(), "aspace-cfgrace-"));
+    target = join(targetDir, "real.toml");
+    writeFileSync(target, START);
+    symlinkSync(target, path);
+  });
+  afterEach(() => {
+    rmSync(targetDir, { recursive: true, force: true });
+  });
+
+  test("an editor replaces the link by a plain file: nothing is replaced, and the answer is `busy`, not written", async () => {
+    const saved = `${START}# the editor's\n`;
+    const got = await writeSetting(
+      "port",
+      { set: 1900 },
+      {
+        path,
+        beforeReplace: async () => {
+          const temporary = join(dir, "editor-save");
+          writeFileSync(temporary, saved);
+          renameSync(temporary, path);
+        },
+      }
+    );
+    expect(got).toEqual({ ok: false, reason: "busy" });
+    expect(text()).toBe(saved);
+    // the file the link led to is as it was, with nothing left beside it
+    expect(readFileSync(target, "utf-8")).toBe(START);
+    expect(readdirSync(targetDir)).toEqual(["real.toml"]);
+    // asked again, the change is written where the path leads now
+    expect(await writeSetting("port", { set: 1900 }, { path })).toEqual({ ok: true, changed: true });
+    expect(text()).toBe(saved.replace("1859", "1900"));
+  });
+
+  test("the link is pointed at another file: the same", async () => {
+    const other = join(targetDir, "other.toml");
+    writeFileSync(other, "port = 1\n");
+    const got = await writeSetting(
+      "port",
+      { set: 1900 },
+      {
+        path,
+        beforeReplace: async () => {
+          unlinkSync(path);
+          symlinkSync(other, path);
+        },
+      }
+    );
+    expect(got).toEqual({ ok: false, reason: "busy" });
+    expect(readFileSync(target, "utf-8")).toBe(START);
+    expect(readFileSync(other, "utf-8")).toBe("port = 1\n");
+    expect(readdirSync(targetDir).sort()).toEqual(["other.toml", "real.toml"]);
+  });
+
+  test("a link that still leads to the same file is written through as before", async () => {
+    expect(await writeSetting("port", { set: 1900 }, { path })).toEqual({ ok: true, changed: true });
+    expect(readFileSync(target, "utf-8")).toBe(START.replace("1859", "1900"));
+    expect(readdirSync(targetDir)).toEqual(["real.toml"]);
   });
 });

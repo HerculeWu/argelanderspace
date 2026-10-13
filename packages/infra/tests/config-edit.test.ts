@@ -684,8 +684,8 @@ describe("refusals: nothing is changed", () => {
   });
 
   test("every refusal the editor can give has a case above or below", () => {
-    // self_check_failed cannot be reached with a correct proposer: it is the check below. unsupported_layout is
-    // the next test.
+    // self_check_failed is the check further down, and one corner of real text (two tests on). unsupported_layout
+    // is the next test.
     expect([...CONFIG_EDIT_REFUSALS].sort()).toEqual(
       [
         "array_of_tables",
@@ -703,6 +703,28 @@ describe("refusals: nothing is changed", () => {
         "unsupported_layout",
       ].sort()
     );
+  });
+
+  test("a wrongly typed number followed by what only a number may be followed by: the self-check refuses", () => {
+    // The parser trims a no-break space, a form feed, … after a number, and takes none of them after a boolean or
+    // a string. Keeping those bytes (they are not the value's) and writing a boolean or a string before them gives
+    // text that is not TOML; the candidate never leaves the editor.
+    expect(refusal("data_dir = 12\u00a0\n", "data_dir", set("lit"))).toBe("self_check_failed");
+    expect(refusal("auto_ingest_arxiv = 1\u00a0# c\n", "auto_ingest_arxiv", set(true))).toBe(
+      "self_check_failed"
+    );
+    expect(refusal("[ui]\nlabels = 0\f\n", "ui.labels", set(false))).toBe("self_check_failed");
+    // a number in its place, or no line at all, is fine
+    expect(editConfigText("port = 80\u00a0# c\n", "port", set(81))).toEqual({
+      ok: true,
+      text: "port = 81\u00a0# c\n",
+      changed: true,
+    });
+    expect(editConfigText("data_dir = 12\u00a0\n", "data_dir", RESET)).toEqual({
+      ok: true,
+      text: "",
+      changed: true,
+    });
   });
 
   test("text the parser lets through and the line scan does not follow", () => {

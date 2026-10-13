@@ -57,8 +57,8 @@
  *
  * A byte order mark (U+FEFF) at the very start of the file is looked past by
  * both readings, by `configFileKeys` and by the line editor — one mark, at
- * the start only; anywhere else outside a string it is not TOML (the parser
- * refuses it). Until 2026-10-14 the strict reading reported such a file as
+ * the start only (a second one right after it is not TOML; what the parser
+ * makes of the character elsewhere is its own matter). Until 2026-10-14 the strict reading reported such a file as
  * invalid TOML; this is the one place where it reads differently from before
  * the schema.
  *
