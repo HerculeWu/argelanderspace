@@ -28,7 +28,7 @@ Do NOT use this skill to answer questions about a paper — that's `argelander-r
 ## Configuration
 
 - **The CLI**: run `argelanderspace`. If it is not on PATH, use the built bundle from the repo checkout by absolute path — `node /path/to/repo/packages/app/dist/bin.js` (build once with `corepack pnpm -r build` inside the repo). All examples below write `argelanderspace` — substitute as needed.
-- **Data directory**: one library per project, at `./literatures` under the **project root** (the directory that contains `literatures/`). The default resolves against the *current working directory* with **no upward search**, so **run every CLI command from the project root** — if your shell is somewhere else, `cd` there first. Do **not** pass `--data-dir`; it survives only as an escape hatch for unusual layouts (chain: `--data-dir` flag > `ARGELANDERSPACE_DATA_DIR` env > `config.toml` `data_dir` > `./literatures`). The old `LITERATURE_LIBRARY` env var is dead; do not look for it.
+- **Data directory**: one library per project, at `./literatures` under the **project root** (the directory that contains `literatures/`). The default resolves against the *current working directory* with **no upward search**, so **run every CLI command from the project root** — if your shell is somewhere else, `cd` there first. Do **not** pass `--data-dir`; it survives only as an escape hatch for unusual layouts (chain: `--data-dir` flag > `config.toml` `data_dir` > `./literatures`). No environment variable sets the data dir — `ARGELANDERSPACE_DATA_DIR` and the older `LITERATURE_LIBRARY` are ignored; do not look for them.
 - **LaTeX pipeline prerequisite**: **TeX Live** (`latexmk` + `pdflatex`/`xelatex` on PATH) for arXiv / local-LaTeX ingest. `pdftocairo` (poppler-utils) is optional (vector PDF figures → SVG; plus `gs`/ghostscript for EPS; figures degrade without them).
 
 ## Inputs the user might give
@@ -122,7 +122,7 @@ Tell the user: the work id, the doc id, title/authors/year as recorded, the note
 http://localhost:<port>/doc/<doc_id>
 ```
 
-(`<port>` is what the user's `serve` runs on; the CLI prints links using `ARGELANDERSPACE_PORT` > config `port` > 8000.)
+(`<port>` is what the user's `serve` runs on; the CLI prints links using config.toml `port` > 1859; no environment variable is read.)
 
 ## No arXiv version? (2026-08, measured)
 

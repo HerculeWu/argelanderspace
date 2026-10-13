@@ -20,9 +20,9 @@ The paper must be ingested first. Check with `argelanderspace list` (one line pe
 
 ## Configuration
 
-- **CLI**: `argelanderspace` (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` — the built bundle, by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently hits an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts (chain: flag > `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`).
+- **CLI**: `argelanderspace` (or, when it's not on PATH, `node /path/to/repo/packages/app/dist/bin.js` — the built bundle, by absolute path). **Run it from the project root** — the directory containing `literatures/` — and do **not** pass `--data-dir`: the default data dir is `./literatures` relative to the current working directory, with **no upward search**, so a wrong cwd silently hits an empty or wrong library. `cd` to the project root first; `--data-dir` remains only as an escape hatch for unusual layouts (chain: flag > config.toml `data_dir` > `./literatures`; no environment variable is read).
 - **Doc id vs work id**: `read` / `show` / `ref` / `annot` take a **doc id** (e.g. `arxiv-2501.17225`; see `list`, or the `doc_ids` field of `search` rows). `note` / `label` take a **work id** (`arxiv:...` / `doi:...`). Don't mix them up.
-- **Deep-link port**: the CLI prints links as `http://localhost:<port>/doc/...` with port = `ARGELANDERSPACE_PORT` env > config.toml `port` > 8000. If the user's server runs on a custom `--port`, the printed port may not match — set `ARGELANDERSPACE_PORT` in your shell before running CLI commands, or rewrite the port when quoting links.
+- **Deep-link port**: the CLI prints links as `http://localhost:<port>/doc/...` with port = config.toml `port` > 1859 (no environment variable is read). If the user's server runs on a custom `--port`, the printed port may not match — rewrite the port when quoting links, or have the user set `port` in config.toml.
 
 ## The command surface (reading priority)
 
@@ -114,7 +114,7 @@ http://localhost:<port>/doc/<docId>#<anchor>
 
 Anchors: `#sec-N` (section), `#eq-N` / `#fig-N` / `#tab-N` / `#code-N` / `#alg-N` (floats), `#ref-N` (bibliography entry), `#ann-<id>` (annotation — from `annot` output). Clicking one opens the webui reader at exactly that spot. **Whenever your answer rests on a specific passage, end the point with its deep link** so the user can verify you in one click:
 
-> 式 (2) 把观测自行投影到 CP 方向：…（变量定义见紧接的下一段）。http://localhost:8000/doc/arxiv-2501.17225#eq-2
+> 式 (2) 把观测自行投影到 CP 方向：…（变量定义见紧接的下一段）。http://localhost:1859/doc/arxiv-2501.17225#eq-2
 
 ## Accuracy rules
 

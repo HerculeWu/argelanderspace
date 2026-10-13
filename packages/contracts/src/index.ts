@@ -5,6 +5,7 @@ export * from "./argument-copilot.js";
 export * from "./argument-edit.js";
 export * from "./argument-graph.js";
 export * from "./argument-ops.js";
+export * from "./config-defaults.js";
 export * from "./context-batch.js";
 export * from "./copilot.js";
 export * from "./copilot-history.js";

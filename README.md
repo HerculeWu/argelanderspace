@@ -46,7 +46,7 @@ skills in `skills/` — see **Agent integration (skills)** below.
 ## Quickstart
 
 ```bash
-npx argelanderspace serve          # → http://127.0.0.1:8000
+npx argelanderspace serve          # → http://127.0.0.1:1859
 ```
 
 Then ingest a paper and open it in the reader:
@@ -120,8 +120,8 @@ the web reader at exactly that spot.
 
 One library per project: the default is `./literatures` under the project
 root, resolved against the current working directory (no upward search — run
-the CLI and `serve` from the project root). Override with `--data-dir`,
-`ARGELANDERSPACE_DATA_DIR`, or the config file (below).
+the CLI and `serve` from the project root). Override with `--data-dir` for a
+single run, or with `data_dir` in the config file (below; a relative path).
 
 ```
 literatures/
@@ -138,8 +138,12 @@ note tab; color labels and read markers are rendered in the library view.
 
 ## Configuration
 
-Precedence, everywhere: **CLI flag > environment variable > config file >
-default.**
+The config file is the one place the workbench is configured; a command-line
+flag (`--data-dir`, `--port`) overrides it for a single run. Precedence:
+**CLI flag > config file > default.** The workbench reads no environment
+variables of its own for the data directory, the port, the global directories
+or the web UI directory (`ARGELANDERSPACE_*` variables from earlier versions
+are ignored).
 
 The config file is optional: `$XDG_CONFIG_HOME/argelanderspace/config.toml`
 (default `~/.config/argelanderspace/config.toml`). Unknown keys are ignored; a
@@ -147,8 +151,9 @@ known key with a wrong type is a startup error naming the key (values are
 never logged or echoed).
 
 ```toml
-data_dir = "/srv/papers"     # default ./literatures
-port = 8000                  # server port
+data_dir = "papers"          # default ./literatures; relative to the project root
+                             # (an absolute path is a config error: use --data-dir)
+port = 1859                  # server port and the port in CLI deep links (default 1859)
 
 # API-key fallbacks (the env vars win when both are set):
 openalex_api_key = "..."     # env OPENALEX_API_KEY
@@ -159,9 +164,6 @@ Environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `ARGELANDERSPACE_DATA_DIR` | data directory |
-| `ARGELANDERSPACE_PORT` | server port (default 8000) |
-| `ARGELANDERSPACE_WEB_DIST` | override the bundled web UI directory |
 | `OPENALEX_API_KEY` | OpenAlex premium pool (sent as `api_key`; optional) |
 | `OPENALEX_MAILTO` | polite-pool identity for OpenAlex/Crossref |
 | `ADS_DEV_KEY` | NASA ADS token; without any token ADS degrades to `no-token` and the rest of the library keeps working |

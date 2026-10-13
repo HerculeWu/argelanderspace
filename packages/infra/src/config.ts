@@ -4,23 +4,28 @@
  * `~/.config/argelanderspace/config.toml`). Flat TOML subset — every key is
  * optional:
  *
- *   data_dir          string   default "./literatures"
- *   port              integer  default 8000
+ *   data_dir          string   default "./literatures"; a relative path
+ *                              (resolved against the working directory) —
+ *                              an absolute one is a config error, so a
+ *                              shared file never points at one machine
+ *   port              integer  default 1859 (contracts `DEFAULT_PORT`)
  *   openalex_api_key  string   fallback for $OPENALEX_API_KEY
  *   ads_dev_key       string   fallback for $ADS_DEV_KEY (itself a fallback
  *                              for ~/.ads/dev_key)
- *   global_dir        string   global data dir override (ADR 0007; env
- *                              $ARGELANDERSPACE_GLOBAL_DIR wins)
- *   global_cache_dir  string   global cache dir override (env
- *                              $ARGELANDERSPACE_GLOBAL_CACHE_DIR wins)
+ *   global_dir        string   global data dir override (ADR 0007);
+ *                              absolute
+ *   global_cache_dir  string   global cache dir override; absolute
  *   auto_ingest_arxiv boolean  default true — Stage 15: automatically fetch
  *                              & compile the arXiv source when an added work
  *                              has an arXiv id (hidden setting; the web UI
  *                              exposes no toggle; manual triggers stay on)
  *
- * Precedence everywhere: CLI flag > env var > config file > default. Unknown
- * keys are ignored (forward compatibility); a known key with the wrong type
- * is an error. Key values are never logged or echoed in error messages.
+ * This file is the workbench's one configuration source: a command-line flag
+ * (`--data-dir`, `--port`) overrides it for a single run, and no environment
+ * variable of the workbench's own does (the two key fallbacks above are
+ * credentials, handled apart). Unknown keys are ignored (forward
+ * compatibility); a known key with the wrong type is an error. Key values
+ * are never logged or echoed in error messages.
  *
  * Parsed with smol-toml (full TOML spec; hand-rolling the "flat subset"
  * invites string-escaping edge cases for zero gain).
@@ -28,7 +33,7 @@
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { parse as parseToml } from "smol-toml";
 
 /** The config object; property names mirror the TOML keys verbatim. */
@@ -37,9 +42,9 @@ export interface AppConfig {
   port?: number;
   openalex_api_key?: string;
   ads_dev_key?: string;
-  /** Global data dir override (ADR 0007); below $ARGELANDERSPACE_GLOBAL_DIR. */
+  /** Global data dir override (ADR 0007); must be absolute. */
   global_dir?: string;
-  /** Global cache dir override; below $ARGELANDERSPACE_GLOBAL_CACHE_DIR. */
+  /** Global cache dir override; must be absolute. */
   global_cache_dir?: string;
   auto_ingest_arxiv?: boolean;
 }
@@ -99,6 +104,16 @@ export function parseConfigToml(text: string, path: string = "<config>"): AppCon
       throw new ConfigError(`${path}: "auto_ingest_arxiv" must be a boolean`);
     }
     out.auto_ingest_arxiv = autoIngestArxiv;
+  }
+  // The project's data sits at a relative path below the project root; an absolute one would tie the file to one
+  // machine. `--data-dir` is the way to point a single run anywhere. Absolute in either platform's writing counts
+  // (the file is meant to be shared across machines), and the check comes after the type checks above so that a
+  // file with several faults still reports the one it always did.
+  if (
+    out.data_dir !== undefined &&
+    (posix.isAbsolute(out.data_dir) || win32.isAbsolute(out.data_dir))
+  ) {
+    throw new ConfigError(`${path}: "data_dir" must be a relative path`);
   }
   return out;
 }

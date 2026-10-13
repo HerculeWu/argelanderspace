@@ -9,23 +9,23 @@ import { resolve } from "node:path";
 import { type AppConfig, getConfig } from "@argelanderspace/infra";
 import type { Command } from "commander";
 
-/** flag > env > config file (decision 23) > ./literatures (same chain as the server's). */
+/**
+ * `--data-dir` > config file `data_dir` (decision 23; relative only) > ./literatures, resolved against the working
+ * directory (same chain as the server's). No environment variable takes part.
+ */
 export function resolveDataDir(
   opts: { dataDir?: string | undefined },
-  env: NodeJS.ProcessEnv = process.env,
   config: AppConfig = getConfig()
 ): string {
-  return resolve(
-    opts.dataDir ?? env.ARGELANDERSPACE_DATA_DIR ?? config.data_dir ?? "./literatures"
-  );
+  return resolve(opts.dataDir ?? config.data_dir ?? "./literatures");
 }
+
+/** Help text of every `--data-dir` option. */
+export const DATA_DIR_HELP = "data directory (default ./literatures, or data_dir in config.toml)";
 
 /** Allow `--data-dir` after the subcommand as well as before it. */
 export function withDataDir(cmd: Command): Command {
-  return cmd.option(
-    "--data-dir <dir>",
-    "data directory (default ./literatures; env ARGELANDERSPACE_DATA_DIR)"
-  );
+  return cmd.option("--data-dir <dir>", DATA_DIR_HELP);
 }
 
 export function errorMessage(e: unknown): string {

@@ -65,7 +65,7 @@ function makeApp(source?: AdsDiscoverySource): Hono {
     runner: new JobRunner({ dir: join(dataDir, "jobs") }),
     broadcast: collector.broadcast,
     webDist: null,
-    port: TEST_PORT,
+    boundPort: () => TEST_PORT,
   });
 }
 

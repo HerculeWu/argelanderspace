@@ -104,16 +104,18 @@ Conventions the skills rely on:
   the project root, resolved against the *current working directory* with **no
   upward search** — run the CLI from the project root and don't pass
   `--data-dir` (it survives only as an escape hatch; chain: flag >
-  `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`). The
-  old `LITERATURE_LIBRARY` env var is dead.
+  config.toml `data_dir` > `./literatures`). No environment variable sets the
+  data dir: `ARGELANDERSPACE_DATA_DIR` and the older `LITERATURE_LIBRARY` are
+  both ignored.
 - **Two id families**: works (`arxiv:…` / `doi:…` — `search`, `note`, `label`)
   vs docs (`arxiv-…` — `read`, `show`, `ref`, `list`). `search` rows map one to
   the other via `doc_ids`.
 - **Deep links**: every doc-referencing command prints
   `http://localhost:<port>/doc/<docId>[#<anchor>]` (anchors: `#sec-N`,
   `#eq-N`/`#fig-N`/`#tab-N`/`#code-N`/`#alg-N`, `#ref-N`, `#ann-<id>`). Port:
-  `ARGELANDERSPACE_PORT` > config `port` > 8000 — if `serve` runs on a custom
-  `--port`, export `ARGELANDERSPACE_PORT` so printed links match.
+  config.toml `port` > 1859 (no environment variable is read) — if `serve`
+  runs on a custom `--port`, set `port` in config.toml so printed links match,
+  or rewrite the port when quoting links.
 - **Machine-clean stdout**: JSONL streams (`search`, `read --manifest`) stay
   pure; headers go to stderr. `search` also prints
   `hint: N/M works have empty notes` on stderr when any works lack notes — the

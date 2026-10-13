@@ -30,7 +30,7 @@ Report in the user's language. Use the Chinese terms (论证图, 论证, 论证�
 
 ## Configuration
 
-Same as `argelander-read-paper`: CLI `argelanderspace` (or `node /path/to/repo/packages/app/dist/bin.js` by absolute path); **run from the project root** (the directory containing `literatures/`) and do not pass `--data-dir` unless the layout is unusual. Set `ARGELANDERSPACE_PORT` if the user's server runs on a custom port, so printed links match. If you only have the `node /path/to/bin.js` form, write it out in full in every command or wrap it in a shell **function** (`argel() { node /path/to/bin.js "$@"; }`): storing the two words in an ordinary variable (`CLI="node /path/bin.js"`) does not word-split in zsh and fails with `command not found`.
+Same as `argelander-read-paper`: CLI `argelanderspace` (or `node /path/to/repo/packages/app/dist/bin.js` by absolute path); **run from the project root** (the directory containing `literatures/`) and do not pass `--data-dir` unless the layout is unusual. Printed links use the port from config.toml `port` (default 1859); no environment variable changes it, so if the user's server runs on another port, rewrite the port when quoting a link (or have the user set `port` in config.toml). If you only have the `node /path/to/bin.js` form, write it out in full in every command or wrap it in a shell **function** (`argel() { node /path/to/bin.js "$@"; }`): storing the two words in an ordinary variable (`CLI="node /path/bin.js"`) does not word-split in zsh and fails with `command not found`.
 
 Two id families — keep them straight:
 

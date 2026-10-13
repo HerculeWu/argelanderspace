@@ -10,9 +10,11 @@
  * freeze guard over the golden tex doc + its assets, which the content
  * fingerprint hashes).
  *
- * Hermeticity: same conventions as smoke.test.ts — `HOME` in a tmp dir,
- * ambient `ARGELANDERSPACE_*` scrubbed, and `XDG_CONFIG_HOME` pointed at the
- * tmp home so a real user config.toml can't leak a `port` into the deep links.
+ * Hermeticity: same conventions as smoke.test.ts — `HOME` in a tmp dir and
+ * `XDG_CONFIG_HOME` pointed at the tmp home so a real user config.toml can't
+ * leak a `port` into the deep links. The last block pins where configuration
+ * comes from (desktop-app ticket 05): config.toml and flags, never the
+ * workbench's former environment variables.
  */
 
 import { spawnSync } from "node:child_process";
@@ -22,6 +24,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -47,14 +50,11 @@ const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const BIN = join(PKG, "dist", "bin.js");
 const DOC_ID = "arxiv-2501.17225";
 const WORK_ID = "arxiv:2603.03522";
-const LINK = `http://localhost:8000/doc/${DOC_ID}`;
+const LINK = `http://localhost:1859/doc/${DOC_ID}`;
 
-/** Child env: scrubbed ARGELANDERSPACE_*, HOME + XDG_CONFIG_HOME in tmp. */
+/** Child env: HOME + XDG_CONFIG_HOME in tmp. */
 function childEnv(home: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
-  for (const k of Object.keys(env)) {
-    if (k.startsWith("ARGELANDERSPACE_")) delete env[k];
-  }
   env.XDG_CONFIG_HOME = join(home, "xdg");
   env.PATH = `${env.PATH ?? ""}${delimiter}/home/wwu/miniforge3/envs/astro/bin`;
   return env;
@@ -94,6 +94,15 @@ function makeDataDir(): { root: string; dataDir: string; env: NodeJS.ProcessEnv 
     join(dataDir, "library", "library.json")
   );
   return { root, dataDir, env: childEnv(root) };
+}
+
+/** Write the user's config.toml of a child env; returns its path. */
+function writeConfig(env: NodeJS.ProcessEnv, toml: string): string {
+  const dir = join(env.XDG_CONFIG_HOME ?? "", "argelanderspace");
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "config.toml");
+  writeFileSync(file, toml);
+  return file;
 }
 
 /** stdout lines parsed as JSON (JSONL assertions). */
@@ -655,6 +664,22 @@ describe("annot", () => {
     return { dataDir, env, docDir, currentPath, expected };
   }
 
+  test("the link port follows config.toml `port`; the removed variable changes nothing", () => {
+    const f = setupAnnotatedDoc();
+    const rows = (port: number) =>
+      `${f.expected
+        .map((row) =>
+          JSON.stringify({ ...row, link: String(row.link).replace(":1859/", `:${port}/`) })
+        )
+        .join("\n")}\n`;
+    const args = ["annot", DOC_ID, "--data-dir", f.dataDir];
+    const withEnv = { ...f.env, ARGELANDERSPACE_PORT: "9999" };
+    expect(runCli(args, withEnv)).toEqual({ status: 0, stdout: rows(1859), stderr: "" });
+    writeConfig(f.env, "port = 9123\n");
+    expect(runCli(args, f.env)).toEqual({ status: 0, stdout: rows(9123), stderr: "" });
+    expect(runCli(args, withEnv)).toEqual({ status: 0, stdout: rows(9123), stderr: "" });
+  });
+
   test("one JSONL row per annotation, reading order — whole stdout byte-exact", () => {
     const f = setupAnnotatedDoc();
     const r = runCli(["annot", DOC_ID, "--data-dir", f.dataDir], f.env);
@@ -881,4 +906,128 @@ describe("annot", () => {
     );
     expect(readFileSync(f.currentPath, "utf8")).toBe(before);
   });
+});
+
+// --------------------------------------------------------------------------- //
+// Configuration sources (desktop-app ticket 05)
+// --------------------------------------------------------------------------- //
+
+describe("configuration sources: config.toml and flags only", () => {
+  /** Every command that prints a deep link, with the output stream the link is on. */
+  const LINK_COMMANDS: [string[], "stdout" | "stderr"][] = [
+    [["read", DOC_ID], "stdout"],
+    [["read", DOC_ID, "--section", "sec-2"], "stdout"],
+    [["read", DOC_ID, "--manifest", "refs"], "stderr"],
+    [["show", DOC_ID, "fig-1"], "stdout"],
+    [["show", DOC_ID, "eq-1"], "stdout"],
+    [["ref", DOC_ID, "ref-6"], "stdout"],
+    [["list"], "stdout"],
+  ];
+
+  /** The variables the workbench used to read, each pointing somewhere that would change the outcome. */
+  function removedEnv(root: string): NodeJS.ProcessEnv {
+    const decoy = join(root, "decoy");
+    mkdirSync(join(decoy, "data"), { recursive: true });
+    return {
+      ARGELANDERSPACE_DATA_DIR: join(decoy, "data"),
+      ARGELANDERSPACE_PORT: "9999",
+      ARGELANDERSPACE_GLOBAL_DIR: join(decoy, "global"),
+      ARGELANDERSPACE_GLOBAL_CACHE_DIR: "relative/cache",
+      ARGELANDERSPACE_WEB_DIST: join(decoy, "web"),
+    };
+  }
+
+  test("no configured port: every link-bearing command prints 1859", () => {
+    const f = makeDataDir();
+    for (const [args, stream] of LINK_COMMANDS) {
+      const r = runCli([...args, "--data-dir", f.dataDir], f.env);
+      expect(r.status).toBe(0);
+      expect(r[stream]).toContain(`http://localhost:1859/doc/${DOC_ID}`);
+      expect(r.stdout + r.stderr).not.toMatch(/localhost:(?!1859\/)/);
+    }
+  }, 120_000);
+
+  test("config.toml `port`: every link-bearing command prints that port", () => {
+    const f = makeDataDir();
+    writeConfig(f.env, "port = 9123\n");
+    for (const [args, stream] of LINK_COMMANDS) {
+      const r = runCli([...args, "--data-dir", f.dataDir], f.env);
+      expect(r.status).toBe(0);
+      expect(r[stream]).toContain(`http://localhost:9123/doc/${DOC_ID}`);
+      expect(r.stdout + r.stderr).not.toMatch(/localhost:(?!9123\/)/);
+    }
+  }, 120_000);
+
+  test("the removed environment variables change nothing, with or without a config file", () => {
+    const f = makeDataDir();
+    const commands = [...LINK_COMMANDS.map(([args]) => args), ["search"], ["note", WORK_ID]];
+    for (const toml of [null, "port = 9123\n"]) {
+      if (toml !== null) writeConfig(f.env, toml);
+      for (const args of commands) {
+        const argv = [...args, "--data-dir", f.dataDir];
+        const plain = runCli(argv, f.env);
+        expect(plain.status).toBe(0);
+        expect(runCli(argv, { ...f.env, ...removedEnv(f.root) })).toEqual(plain);
+      }
+    }
+  }, 120_000);
+
+  test("the data dir comes from the flag, config.toml `data_dir`, then ./literatures; never the variable", () => {
+    const f = makeDataDir();
+    // the project root holds the library under ./literatures and under ./papers
+    const project = join(f.root, "project");
+    cpSync(f.dataDir, join(project, "literatures"), { recursive: true });
+    cpSync(f.dataDir, join(project, "papers"), { recursive: true });
+    const inProject = (args: string[], env: NodeJS.ProcessEnv): RunResult => {
+      const r = spawnSync(process.execPath, [BIN, ...args], {
+        env,
+        cwd: project,
+        encoding: "utf8",
+        timeout: 60_000,
+      });
+      return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+    };
+    const noteIn = (dir: string): string =>
+      (
+        JSON.parse(readFileSync(join(project, dir, "library", "library.json"), "utf8")) as {
+          works: { id: string; note?: string }[];
+        }
+      ).works.find((w) => w.id === WORK_ID)?.note ?? "";
+    const withEnv = { ...f.env, ...removedEnv(f.root) };
+
+    expect(inProject(["note", WORK_ID, "default dir"], withEnv).status).toBe(0);
+    expect(noteIn("literatures")).toBe("default dir");
+    expect(readdirSync(join(f.root, "decoy", "data"))).toEqual([]);
+
+    writeConfig(f.env, 'data_dir = "papers"\n');
+    expect(inProject(["note", WORK_ID, "config dir"], withEnv).status).toBe(0);
+    expect(noteIn("papers")).toBe("config dir");
+    expect(noteIn("literatures")).toBe("default dir");
+
+    // the flag still wins, and may be absolute
+    expect(inProject(["note", WORK_ID, "flag dir", "--data-dir", f.dataDir], withEnv).status).toBe(
+      0
+    );
+    expect(noteIn("papers")).toBe("config dir");
+    expect(runCli(["note", WORK_ID, "--data-dir", f.dataDir], f.env).stdout).toContain("flag dir");
+    expect(readdirSync(join(f.root, "decoy", "data"))).toEqual([]);
+  }, 120_000);
+
+  test("config.toml `data_dir` as an absolute path: a config error naming the key, exit 1, value not echoed", () => {
+    const f = makeDataDir();
+    const file = writeConfig(f.env, `data_dir = "${f.dataDir}"\n`);
+    const expected = `error: ${file}: "data_dir" must be a relative path\n`;
+    for (const args of [
+      ["search"],
+      ["read", DOC_ID],
+      ["list"],
+      ["note", WORK_ID],
+      // an explicit flag does not excuse a bad config file (as with a bad `port`)
+      ["list", "--data-dir", f.dataDir],
+    ]) {
+      const r = runCli(args, f.env);
+      expect(r).toEqual({ status: 1, stdout: "", stderr: expected });
+    }
+    expect(expected).not.toContain(f.dataDir);
+  }, 120_000);
 });

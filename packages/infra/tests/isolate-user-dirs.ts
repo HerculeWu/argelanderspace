@@ -33,11 +33,6 @@ const vars: Record<string, string> = {
   LOCALAPPDATA: join(home, "AppData", "Local"),
 };
 Object.assign(process.env, vars);
-// The workbench's own variables outrank the directories above, so whatever the shell running the tests exported
-// must not survive into them; tests that exercise one of these variables pass it explicitly.
-for (const k of Object.keys(process.env)) {
-  if (k.startsWith("ARGELANDERSPACE_")) delete process.env[k];
-}
 
 const isolation: UserDirsIsolation = {
   root,

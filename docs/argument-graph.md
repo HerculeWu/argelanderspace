@@ -56,7 +56,7 @@ schema 内（`checkArgumentGraphStructure`，zod `superRefine`）：论证 id �
 | 命令 | 行为 |
 | --- | --- |
 | `argument get <workId>` | 整张图的 JSON（缩进 2 空格，`version: 1`，含 `rev`）。没有图时是空图、`rev: 0`，exit 0。图文件不可读（损坏、schema 不符、未来版本、属于别的 Work，以及 `argument-graphs/` 目录本身读不了）是系统错误：`error: …`、exit 1、stdout 为空，不输出空图。只有「文件不存在」（ENOENT，父目录不存在也算）才是没有图 |
-| `argument put <workId> <file> --rev <n> [--replace]` | 从文件读整张图（`-` 读 stdin），校验后原子写入；成功时 stdout 一行 `{"work_id":…,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<URL 编码的 work id>"}`。端口取法同其他带深链接的命令：`ARGELANDERSPACE_PORT` > config `port` > 8000；路由格式与 web 的 `lib/argument-route.ts` 一致 |
+| `argument put <workId> <file> --rev <n> [--replace]` | 从文件读整张图（`-` 读 stdin），校验后原子写入；成功时 stdout 一行 `{"work_id":…,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<URL 编码的 work id>"}`。端口取法同其他带深链接的命令：config.toml `port` > 1859；路由格式与 web 的 `lib/argument-route.ts` 一致 |
 | `pdf-path <docId>` | 只读，stdout 一行 PDF Doc 原件的绝对路径（dataDir 经 realpath）。**不要求 Doc 挂在某个 Work 上，也不核对 hash**：这与 Reader 的原件端点（核对归属与 hash）不同，与既有 CLI `read` / `show` 的直读信任模型一致——本机命令行，调用者本来就能读 dataDir。不读 PDF 内容 |
 
 `put` 的规则

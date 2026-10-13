@@ -18,14 +18,17 @@ Two processes; open the **Vite** URL.
 
 ```bash
 # 1) backend (from the repo root; serves ./data by default)
-node packages/cli/dist/bin.js serve --port 8000
+node packages/cli/dist/bin.js serve          # default port 1859
 
 # 2) frontend
 corepack pnpm --filter @argelanderspace/web dev   # -> http://localhost:5173
 ```
 
-Vite proxies `/api`, `/images`, and `/ws` (WebSocket) to the backend on :8000,
+Vite proxies `/api`, `/images`, and `/ws` (WebSocket) to the backend on its
+default port (1859, contracts `DEFAULT_PORT`; build contracts first),
 so the same code also works when the server hosts the production build.
+The proxy does not follow `config.toml`: with `port` set there, or `serve
+--port`, the dev server cannot reach the backend.
 
 Pick a paper with `?doc=<id>` (defaults to the first one in `data/output/`):
 `http://localhost:5173/?doc=2603.03522`
@@ -33,8 +36,8 @@ Pick a paper with `?doc=<id>` (defaults to the first one in `data/output/`):
 ## Production build (single port)
 ```bash
 corepack pnpm --filter @argelanderspace/web build   # emits packages/web/dist
-node packages/cli/dist/bin.js serve --port 8000
-# -> http://localhost:8000  (server hosts packages/web/dist + the API)
+node packages/cli/dist/bin.js serve
+# -> http://localhost:1859  (server hosts packages/web/dist + the API)
 ```
 
 ## Endpoints

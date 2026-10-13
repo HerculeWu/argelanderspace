@@ -5,7 +5,7 @@
 ## 产品与执行边界
 
 - ArgelanderSpace 是单用户科研工作台；webui 是可独立操作的应用，不只是 agent 看板。note/label 等尚未补齐的写路径不构成永久只读定位。
-- 项目级文件存储；dataDir 按 cwd/显式配置解析，不向上查找。全局库复用、SQLite、多用户部署没有实施授权。
+- 项目级文件存储；dataDir 按 cwd/显式配置解析，不向上查找。全局库复用、SQLite、多用户部署没有实施授权。（2026-10-13 修订，desktop-app 票 05。旧定位：本条的「显式配置」原指解析链 `--data-dir` > 环境变量 `ARGELANDERSPACE_DATA_DIR` > config.toml `data_dir` > `./literatures`。新结论：解析链为 `--data-dir` > config.toml `data_dir` > `./literatures`，环境变量一级去掉，设置了也不起作用；config.toml 的 `data_dir` 只接受相对路径，写绝对路径（POSIX 或 Windows 任一种写法）是配置错误（`ConfigError`，点名该键、不回显值，CLI exit 1），`--data-dir` 仍可给绝对路径。范围：只改 dataDir 的来源与 config 值的合法性；「按 cwd 解析、不向上查找」与本条其余内容不变。同批：全局数据目录、全局缓存目录只认 config.toml 的 `global_dir` / `global_cache_dir`，不再认环境变量，仍须是绝对路径，见 [architecture](architecture.md#数据与配置)。原因：工作台的配置只留 config.toml 一个来源，命令行参数作单次覆盖；配置文件要能分享，不应指向某台机器上的路径。批准：用户 2026-10-13 一次性批准的约束变更清单中的修改 2、3。）
 - CLI + skills、无 MCP 是现行接入选择，不依赖对 agent 上游能力的永久断言。文献问答必须走 sanctioned CLI/skills，不以内部 JSON、源码或标注 archive 替代文献接口；开发任务可以读源码。
 - 正文摄入支持既有 LaTeX 路线与本阶段新增的本地 PDF Doc（条目内上传、arXiv PDF 获取），其不可变原件与独立标注/进度规则见下文。DOI 创建无正文条目不表示恢复 DOI/出版商 PDF、OCR 或 HTML 摄入；这些旧能力仍封存于 `ocr-features`。
 - 具体条目、主正文、cite key、上传/arXiv 场景规则见 [library](library.md)；技术文档不能把“已有能力”扩成“所有输入都兼容”。
@@ -136,7 +136,7 @@ note: document content changed since its annotations were written; they are arch
 - target 直接用存储 contract，不新造 agent target。
 - context 按类别提供：document 只有 title；section/float 走 section_id+section_path；text/paragraph/list 另带完整 canonical container_text。不能为所有类型伪造相同字段集。
 - equation/figure/table/code/algorithm 完整正文由 show 读取，section/full doc 由 read；annot 只告诉 agent 用户在何处留了什么意见。
-- link `/doc/<doc_id>#ann-<annotation_id>`，端口链沿用 env > config >8000。
+- link `/doc/<doc_id>#ann-<annotation_id>`，端口取 config.toml `port` > 1859。（2026-10-13 修订，desktop-app 票 05。旧定位：原句「端口链沿用 env > config >8000」，即环境变量 `ARGELANDERSPACE_PORT` > config `port` > 8000。新结论：config.toml `port` > 1859，环境变量不再读取，设置了也不起作用。范围：只改 link 里端口数字的来源与默认值，所有带深链接的既有冻结命令同此；link 的字段、键序、格式与其余冻结输出逐字不变。原因：工作台自己的环境变量全部去掉，默认端口改为 1859，CLI、`serve` 共用一个常量。批准：用户 2026-10-13 一次性批准的约束变更清单中的修改 1。）
 - archive 不暴露。未来迁移若需访问必须另立 sanctioned CLI surface；skills 不准直接读内部 current/archive JSON 代替接口。
 
 ## CLI 论证图命令冻结契约（2026-10-13 生效）
@@ -158,7 +158,7 @@ note: document content changed since its annotations were written; they are arch
 
 ### `argument put <workId> <file> --rev <n> [--replace]`
 - 检查顺序（先失败者先报告）：`--rev` → 库与 Work（未知 Work / 库文件 / id 不能作文件名，同 `get`）→ 读输入（stdin 是终端在此拒绝）→ JSON → `work_id` → schema＋结构校验 → 已存图可读 → `rev` → `--replace` → 写入。
-- 成功：exit 0，stderr 空，stdout 一行 `{"work_id":<q>,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<encodeURIComponent(work id)>"}` 加换行；键序 `work_id, rev, link`；`<port>` 取 `ARGELANDERSPACE_PORT` > config `port` > 8000（同其他带深链接的命令；`link` 与 web 的 `lib/argument-route.ts` 同格式）。
+- 成功：exit 0，stderr 空，stdout 一行 `{"work_id":<q>,"rev":<新 rev>,"link":"http://localhost:<port>/#argument/<encodeURIComponent(work id)>"}` 加换行；键序 `work_id, rev, link`；`<port>` 取 config.toml `port` > 1859（同其他带深链接的命令；`link` 与 web 的 `lib/argument-route.ts` 同格式）。（2026-10-13 修订，desktop-app 票 05。旧定位：原句「`<port>` 取 `ARGELANDERSPACE_PORT` > config `port` > 8000」。新结论：config.toml `port` > 1859，环境变量不再读取。范围：只改 `<port>` 的来源与默认值；成功输出的字段、键序、格式不变。原因与批准同「CLI annot 冻结契约」link 一条的修订：用户 2026-10-13 一次性批准的约束变更清单中的修改 1。）
 - `--rev` 缺失：`error: --rev is required: pass the rev that \`argument get\` printed (0 when the work has no graph)`。`--rev` 不是非负安全整数（`-1`、`1.5`、`abc`、`01`、空串、`1e3`、超过 2^53-1）：`error: --rev must be a non-negative integer, got "<转义后的原值>"`。两者都在读库之前，故与 Work 是否存在无关。
 - 未知 Work / 库文件读不了 / id 不能作文件名：同 `get`。
 - 输入读不了：`error: cannot read <file> (<CODE>)`，stdin：`error: cannot read stdin (<CODE>)`（stdin 是目录：`EISDIR`）。

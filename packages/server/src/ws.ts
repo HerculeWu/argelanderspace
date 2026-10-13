@@ -19,6 +19,7 @@ import {
   type WsServerMessage,
 } from "@argelanderspace/contracts";
 import { WebSocket, WebSocketServer } from "ws";
+import { DEV_ORIGINS, ownOrigins } from "./origins.js";
 
 export interface WsHubOptions {
   /** Upgrade path (default `/ws`); any other upgrade request is refused. */
@@ -49,13 +50,11 @@ export class WsHub {
         return;
       }
       if (req.headers.origin !== undefined) {
+        // Same rule as the REST CSRF guard: the Vite dev origin, plus the port this server is bound to.
         const address = server.address();
-        const port = address && typeof address === "object" ? address.port : 8000;
-        const origins = new Set([
-          "http://localhost:5173",
-          "http://127.0.0.1:5173",
-          `http://localhost:${port}`,
-          `http://127.0.0.1:${port}`,
+        const origins = new Set<string>([
+          ...DEV_ORIGINS,
+          ...(address && typeof address === "object" ? ownOrigins(address.port) : []),
         ]);
         if (!origins.has(req.headers.origin)) {
           socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");

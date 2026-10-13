@@ -7,13 +7,14 @@
  * `note` / `label` / `list`, registered from `./agent.js`).
  *
  * `--data-dir` (decision 3) is global and may appear before or after the
- * subcommand; resolution is flag > `ARGELANDERSPACE_DATA_DIR` > config file
- * (decision 23) > `./literatures`. The ingest pipelines root at `<dataDir>/output`
+ * subcommand; resolution is flag > config file `data_dir` (decision 23) >
+ * `./literatures`. The ingest pipelines root at `<dataDir>/output`
  * (Python's `data/output`).
  */
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import {
   acquireReferences,
   addBibRecords,
@@ -32,7 +33,7 @@ import { realPipelines, realSources, startServer } from "@argelanderspace/server
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
-import { fail, resolveDataDir, withDataDir } from "./common.js";
+import { DATA_DIR_HELP, fail, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
 import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
 
@@ -252,7 +253,7 @@ interface ServeOpts {
 }
 
 async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Promise<void> {
-  // Defer to the server's resolution chain (flag > env > default) by only
+  // Defer to the server's resolution chain (flag > config file > default) by only
   // forwarding flags the user actually passed.
   const argv: string[] = [];
   const dataDir = opts.dataDir ?? globalDataDir;
@@ -279,10 +280,7 @@ export function buildProgram(): Command {
         "structured JSON and manage the citation-graph library."
     )
     .version("0.1.0")
-    .option(
-      "--data-dir <dir>",
-      "data directory (default ./literatures; env ARGELANDERSPACE_DATA_DIR)"
-    );
+    .option("--data-dir <dir>", DATA_DIR_HELP);
 
   withDataDir(program.command("ingest"))
     .description(
@@ -350,11 +348,8 @@ export function buildProgram(): Command {
   program
     .command("serve")
     .description("Start the ArgelanderSpace server (API + web UI + WebSocket progress).")
-    .option("--port <n>", "port (default 8000; env ARGELANDERSPACE_PORT)")
-    .option(
-      "--data-dir <dir>",
-      "data directory (default ./literatures; env ARGELANDERSPACE_DATA_DIR)"
-    )
+    .option("--port <n>", `port (default ${DEFAULT_PORT}, or port in config.toml)`)
+    .option("--data-dir <dir>", DATA_DIR_HELP)
     .option("--web-dist <dir>", "built SPA directory (default packages/web/dist)")
     .action(async (opts: ServeOpts, cmd: Command) => {
       try {

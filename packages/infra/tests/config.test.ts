@@ -72,7 +72,7 @@ describe("parseConfigToml", () => {
   test("parses the full flat subset; unknown keys are ignored", () => {
     const cfg = parseConfigToml(
       [
-        'data_dir = "/srv/papers"',
+        'data_dir = "srv/papers"',
         "port = 8123",
         'openalex_api_key = "o"',
         'ads_dev_key = "a"',
@@ -83,7 +83,7 @@ describe("parseConfigToml", () => {
       "/p/config.toml"
     );
     expect(cfg).toEqual({
-      data_dir: "/srv/papers",
+      data_dir: "srv/papers",
       port: 8123,
       openalex_api_key: "o",
       ads_dev_key: "a",
@@ -102,6 +102,39 @@ describe("parseConfigToml", () => {
       expect((e as Error).message).toContain('"openalex_api_key" must be a string');
       expect((e as Error).message).not.toContain("42");
     }
+  });
+
+  test("data_dir must be relative: an absolute path names the key, never the value", () => {
+    for (const rel of ["papers", "./literatures", "../shared/lit", "a/b"]) {
+      expect(parseConfigToml(`data_dir = "${rel}"`, "/p").data_dir).toBe(rel);
+    }
+    let err: unknown;
+    try {
+      parseConfigToml('data_dir = "/home/someone/secret-lit"', "/p/config.toml");
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(ConfigError);
+    expect((err as Error).message).toBe('/p/config.toml: "data_dir" must be a relative path');
+  });
+
+  test("data_dir: an absolute path in the other platform's writing is refused too; a backslash inside a relative path is not", () => {
+    for (const abs of ["C:\\Users\\me\\lit", "C:/Users/me/lit", "\\\\host\\share\\lit", "\\lit"]) {
+      // A TOML literal string (single quotes): backslashes are taken as written.
+      expect(() => parseConfigToml(`data_dir = '${abs}'`, "/p/config.toml")).toThrow(
+        '/p/config.toml: "data_dir" must be a relative path'
+      );
+    }
+    expect(parseConfigToml("data_dir = 'a\\b'", "/p").data_dir).toBe("a\\b");
+  });
+
+  test("a file with an older fault and an absolute data_dir still reports the older fault", () => {
+    expect(() => parseConfigToml('data_dir = "/abs"\nport = "x"', "/p")).toThrow(
+      '/p: "port" must be an integer between 0 and 65535'
+    );
+    expect(() => parseConfigToml('data_dir = "/abs"\nauto_ingest_arxiv = 1', "/p")).toThrow(
+      '/p: "auto_ingest_arxiv" must be a boolean'
+    );
   });
 
   test("auto_ingest_arxiv (Stage 15 hidden toggle): boolean, default unset (=on)", () => {
