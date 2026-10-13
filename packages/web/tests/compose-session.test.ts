@@ -16,7 +16,13 @@ import {
   SAVE_DELAY_MS,
   sessionLeftStore,
 } from "../src/mail/compose-session";
-import type { SendTracker, SendView, UndoResult } from "../src/mail/send-tracker";
+import {
+  createSendTracker,
+  MAIL_PAGE_SEND_POLICY,
+  type SendTracker,
+  type SendView,
+  type UndoResult,
+} from "../src/mail/send-tracker";
 
 const A1 = "acc-aaaaaaaaaaaa";
 const A2 = "acc-bbbbbbbbbbbb";
@@ -86,14 +92,21 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-/** Timers and intervals run only when the test advances the clock. */
-function fakeClock() {
+/**
+ * Timers and intervals run only when the test advances the clock. With `step`, every reading of the clock is that
+ * many ms later than the one before (a real clock read twice does not give the same number twice).
+ */
+function fakeClock(step = 0) {
   let t = 1_000_000;
   let seq = 0;
   const timers = new Map<number, { at: number; fn: () => void; every: number | null }>();
   return {
     clock: {
-      now: () => t,
+      now: () => {
+        const read = t;
+        t += step;
+        return read;
+      },
       setTimeout: (fn: () => void, ms: number) => {
         timers.set(++seq, { at: t + ms, fn, every: null });
         return seq;
@@ -240,10 +253,23 @@ afterEach(() => {
   sessions = [];
 });
 
-function rig(o: { store?: ReturnType<typeof memoryStore>; accounts?: MailAccount[] } = {}) {
+function rig(
+  o: {
+    store?: ReturnType<typeof memoryStore>;
+    accounts?: MailAccount[];
+    /** The real send tracker on the session's clock, which moves on by this many ms at every reading. */
+    realTracker?: { step: number };
+  } = {}
+) {
   const api = fakeApi();
   const tr = fakeTracker();
-  const clk = fakeClock();
+  const clk = fakeClock(o.realTracker?.step ?? 0);
+  const tracker = o.realTracker
+    ? createSendTracker(
+        { api: { status: api.fetchMailSendStatus, undo: async () => status({ state: "cancelled" }) }, clock: clk.clock },
+        MAIL_PAGE_SEND_POLICY
+      )
+    : tr.tracker;
   const store = o.store ?? memoryStore();
   let n = 0;
   const host = {
@@ -253,7 +279,7 @@ function rig(o: { store?: ReturnType<typeof memoryStore>; accounts?: MailAccount
   };
   const s = createComposeSession({
     api: api as unknown as ComposeApi,
-    tracker: tr.tracker,
+    tracker,
     clock: clk.clock,
     uuid: () => `id-${++n}`,
     storage: store,
@@ -276,7 +302,16 @@ function rig(o: { store?: ReturnType<typeof memoryStore>; accounts?: MailAccount
     s.startNew();
     s.edit({ to: "ada@example.test", subject, text });
   };
-  return { s, api, tr, clk, store, host, st, c, notices, kinds, writing };
+  /**
+   * What the undo bar shows each time the session publishes a state with a send in its window: the page computes
+   * the seconds from exactly these two numbers (`endsAt` of the send and `now`).
+   */
+  const shownSeconds: number[] = [];
+  s.subscribe(() => {
+    const p = st().pendings.find((x) => x.phase === "window");
+    if (p) shownSeconds.push(Math.max(0, Math.ceil((p.endsAt - st().now) / 1000)));
+  });
+  return { s, api, tr, clk, store, host, st, c, notices, kinds, writing, shownSeconds };
 }
 
 // ---- saving -----------------------------------------------------------------------------------
@@ -706,6 +741,41 @@ test("an accepted send closes the window into a countdown followed by the tracke
   r.tr.emit("id-3", { phase: "sending" });
   expect(r.clk.intervals()).toBe(0);
 });
+
+// The seconds on the bar are `endsAt - now`, two readings of the clock: `now` must not be the older one.
+test.each([0, 1, 7, 150])(
+  "web-test-flake 02: a send accepted with 8 s left never shows more than 8 s (clock moving %i ms per reading)",
+  async (step) => {
+    const r = rig({ realTracker: { step } });
+    await r.writing();
+    await r.s.send();
+    expect(r.st().pendings).toMatchObject([{ phase: "window", subject: "Hello" }]);
+    expect(r.shownSeconds.length).toBeGreaterThan(0);
+    expect(Math.max(...r.shownSeconds)).toBeLessThanOrEqual(8);
+    expect(r.shownSeconds[0]).toBe(8);
+  }
+);
+
+test.each([
+  [0, 700],
+  [1, 700],
+  [0, 1500],
+  [7, 300],
+])(
+  "web-test-flake 02: a window found in the outbox with 5 s left shows 5 s however long the outbox took (clock step %i ms, outbox %i ms)",
+  async (step, loadMs) => {
+    const r = rig({ realTracker: { step } });
+    const outbox = deferred<{ sends: MailSendStatus[] }>();
+    r.api.fetchMailOutbox.mockReturnValueOnce(outbox.promise);
+    const started = r.s.start();
+    await r.clk.advance(loadMs);
+    outbox.resolve({ sends: [status({ sendId: "o-1", remainingMs: 5000, subject: "Counting" })] });
+    await started;
+    expect(r.st().pendings).toMatchObject([{ sendId: "o-1", phase: "window", subject: "Counting" }]);
+    expect(r.shownSeconds[0]).toBe(5);
+    expect(Math.max(...r.shownSeconds)).toBe(5);
+  }
+);
 
 test("leaving Mail during a countdown stops the ticker", async () => {
   const r = rig();

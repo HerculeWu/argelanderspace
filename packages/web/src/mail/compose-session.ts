@@ -329,9 +329,13 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
     set({ compose: f(cur) });
   };
   const setPendings = (f: (list: Pending[]) => Pending[]) => {
-    set({ pendings: f(state.pendings) });
+    const pendings = f(state.pendings);
+    const anyWindow = pendings.some((p) => p.phase === "window");
+    // A bar shows `endsAt - now`, two readings of the clock. Every bar reaches the page through here, so this is
+    // where `now` is read: after the `endsAt` of any window in the list, and published in the same state. An older
+    // `now` (the session's start, the last tick) would show more seconds than the window has left.
+    set(anyWindow ? { pendings, now: clock.now() } : { pendings });
     // One ticker for all countdowns (display only: the tracker ends each window and starts asking the server).
-    const anyWindow = state.pendings.some((p) => p.phase === "window");
     if (anyWindow && ticker === null) ticker = clock.setInterval(() => set({ now: clock.now() }), 200);
     else if (!anyWindow && ticker !== null) {
       clock.clearInterval(ticker);
@@ -939,7 +943,6 @@ export function createComposeSession(deps: ComposeSessionDeps): ComposeSession {
     const snapshot: ComposeState = { ...(mine ?? c), sending: false, unconfirmed: null, error: null, errorName: null };
     if (mine) setCompose(null);
     sendMeta.set(st.sendId, { subject: st.subject || c.draft.subject, snapshot });
-    set({ now: clock.now() });
     tracker.track(st.accountId || c.accountId, st.sendId, st);
   };
 
