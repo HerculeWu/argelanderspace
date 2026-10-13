@@ -15,11 +15,14 @@
  *   oneOf   a member of a list written in code; anything else is written as `<invalid-enum>`
  *   num     a finite number
  *   ms      a duration in milliseconds
- *   path    an absolute file path, with the user's home directory written as `~`; anything that is not an
+ *   path    an absolute file path, with the user's home directory written as `~` and every folder or file name
+ *           that has the shape of a title-made Work / Doc id written as that id's hash; anything that is not an
  *           absolute path is written as `<invalid-path>`
- *   url     scheme and host only, for a scheme from a fixed list; anything else is written as `<invalid-url>`
- *   error   name, code, the system call and path of a system error, the file:line:column of each stack frame,
- *           and the cause; the message is dropped unless the error's class declares `LOG_SAFE_MESSAGE`
+ *   url     scheme, host and port only, for a scheme from a fixed list; anything else is written as
+ *           `<invalid-url>`
+ *   error   name, code (written like an `id`), the system call and path of a system error, the file:line:column
+ *           of each stack frame, and the cause; the message is dropped unless the error's class declares
+ *           `LOG_SAFE_MESSAGE`
  *
  * `ids` and `someOf` are lists. Rendering never throws.
  */
@@ -103,9 +106,10 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:/+()-]*$/;
 const ERROR_NAME = /^[A-Za-z_$][A-Za-z0-9_$.]{0,63}$/;
 const ERROR_CODE = /^[A-Za-z0-9_.:-]{1,64}$/;
 const SYSCALL = /^[a-z0-9_]{1,32}$/;
-// Control characters, the two Unicode line separators, and the bidi marks and controls (U+061C, U+200E / U+200F,
-// U+202A–U+202E, U+2066–U+2069, the same set the CLI escapes): none may end up inside a record — the first two
-// could break the line, the last could change the order in which a path or a message is shown.
+// Control characters, the two Unicode line separators, the bidi marks and controls (U+061C, U+200E / U+200F,
+// U+202A–U+202E, U+2066–U+2069, the same set the CLI escapes), and the characters that take no room (U+200B–U+200D,
+// U+2060, U+FEFF, and the soft hyphen U+00AD): none may end up inside a record — the first two could break the line,
+// the bidi ones could change the order in which a path or a message is shown, the last could hide in it.
 function withoutControl(text: string, replacement: string): string {
   let out = "";
   for (const ch of text) {
@@ -116,8 +120,10 @@ function withoutControl(text: string, replacement: string): string {
       code === 0x2028 ||
       code === 0x2029 ||
       code === 0x061c ||
-      code === 0x200e ||
-      code === 0x200f ||
+      code === 0x00ad ||
+      (code >= 0x200b && code <= 0x200f) ||
+      code === 0x2060 ||
+      code === 0xfeff ||
       (code >= 0x202a && code <= 0x202e) ||
       (code >= 0x2066 && code <= 0x2069);
     out += control ? replacement : ch;
@@ -152,9 +158,9 @@ export const f = {
   num: (value: number): LogField => field({ kind: "num", value }),
   /** A duration in milliseconds. */
   ms: (value: number): LogField => field({ kind: "ms", value }),
-  /** An absolute path. */
+  /** An absolute path. A folder or file name in it that is a title-made Work / Doc id is written as its hash. */
   path: (value: string): LogField => field({ kind: "path", value }),
-  /** Only the scheme and the host are written. */
+  /** Only the scheme, the host and the port are written. */
   url: (value: string | URL): LogField => field({ kind: "url", value }),
   /** Whatever was thrown. */
   error: (value: unknown): LogField => field({ kind: "error", value }),
@@ -222,10 +228,16 @@ function hashed(prefix: string, value: string): string {
 // when a Work has none of the three — `work:<slug of the title>[-<year>]`. Only the first three are written as
 // they are, and only in their real shape: a DOI starts with its registrant prefix `10.<digits>/`, an arXiv number
 // is `YYMM.NNNNN` or the old `archive[.XX]/NNNNNNN`, an OpenAlex number is a letter and digits.
+//
+// The old arXiv number is the shape core recognizes one by (`documents/references.ts`, `pipelines/tex/facts/bbl.ts`:
+// `[a-z-]+(?:\.[A-Z]{2})?\/\d{7}`, letters in either case): an archive is letters and hyphens — `q-bio`, `q-alg`,
+// `hep-th`, `alg-geom`, `cs` — with an optional two-letter subject class. What makes it a number and not a title
+// is the seven digits.
+const OLD_ARXIV_ARCHIVE = String.raw`[A-Za-z-]+(?:\.[A-Za-z]{2})?`;
 const WORK_ID_AS_IS = [
   /^doi:10\.\d{4,9}\/\S+$/,
   /^arxiv:\d{4}\.\d{4,5}$/,
-  /^arxiv:[a-z]{2,10}(?:-[a-z]{2,4})?(?:\.[a-z]{2})?\/\d{7}$/,
+  new RegExp(`^arxiv:${OLD_ARXIV_ARCHIVE}/\\d{7}$`),
   /^openalex:[A-Za-z]\d+$/,
 ];
 
@@ -245,11 +257,12 @@ function renderWorkId(value: unknown): string {
 // `openalex-`; the slug of a title-made Work id starts `work-`). Everything else is hashed.
 const DOC_ID_AS_IS = [
   /^arxiv-\d{4}\.\d{4,5}(?:v\d+)?$/,
-  /^arxiv-[a-z]{2,10}(?:-[a-z]{2,4})?(?:\.[A-Za-z]{2})?-\d{7}(?:v\d+)?$/,
+  new RegExp(`^arxiv-${OLD_ARXIV_ARCHIVE}-\\d{7}(?:v\\d+)?$`),
   new RegExp(`^(?:pdf|text)-${UUID}$`),
   /^upload-doi-10-\d{4,9}-[a-z0-9-]*-[0-9a-f]{6}$/,
   /^upload-arxiv-\d{4}-\d{4,5}-[0-9a-f]{6}$/,
-  /^upload-arxiv-[a-z]{2,10}(?:-[a-z]{2,4}){0,2}-\d{7}-[0-9a-f]{6}$/,
+  // The slug of `arxiv:<archive[.xx]>/<number>`: lower case, and the dot and the slash are hyphens.
+  /^upload-arxiv-[a-z-]+-\d{7}-[0-9a-f]{6}$/,
   /^upload-openalex-[a-z]\d+-[0-9a-f]{6}$/,
 ];
 
@@ -307,14 +320,62 @@ function clip(text: string, max: number): string {
 // `/…`, `X:\…` or `X:/…`, `\\server\…`, and a path already written with `~` for the home directory.
 const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|\\\\|~(?:[\\/]|$))/;
 
+// A Work id as it stands in a file name (core `encodeWorkIdForFile` writes every byte outside `[A-Za-z0-9_-]` as
+// `%XX`) is read back before it is looked at; a name that is not such an encoding is looked at as it is.
+function decoded(segment: string): string {
+  if (!segment.includes("%")) return segment;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+// The names the workbench gives a Work or a Doc: `work:` (and the three Work ids that are written as they are
+// when they have their real shape), `latex-`, `upload-`. In either case of letters: a name that only looks like
+// one is hashed too.
+const ID_SEGMENT = /^(?:(work|doi|arxiv|openalex):|latex-|upload-)/i;
+// What the workbench (or its build) puts after an id to name a file: `<id>.json`, `<id>.json.tmp`,
+// `<id>.json.tmp-<uuid>`. The list is written here; any other ending may be part of a folder's name (`latex-` is
+// followed by one, dots included) and is hashed with it.
+const ID_FILE_ENDING =
+  /^(.*?)((?:\.(?:json|jsonl|tmp(?:-[0-9a-f-]{1,36})?|bak|lock|pdf|tex|bib|zip|gz|tgz|tar|js|mjs|cjs|ts|map))*)$/is;
+
+/**
+ * One folder or file name of a path. A name that is a Work or Doc id of a shape the identifier fields write as a
+ * hash is written as that hash — the same one, so a record that names the object and a record that names its file
+ * can be matched — and keeps its file ending. Every other name is returned as it was given.
+ *
+ * Only a name that begins the way an id begins is looked at, so the folders and files of code are untouched —
+ * except one whose own name begins `latex-` or `upload-` (a package, a source file, a project folder), which is
+ * hashed like an id. That is the side this errs on: such a name cannot be told from the Doc id of a folder called
+ * the same, and its hash is the same every time, so it can still be matched.
+ */
+function renderSegment(segment: string): string {
+  const name = decoded(segment);
+  const kind = ID_SEGMENT.exec(name);
+  if (!kind) return segment;
+  const parts = ID_FILE_ENDING.exec(name);
+  const id = parts?.[1] ?? name;
+  const ending = parts?.[2] ?? "";
+  const written =
+    kind[1] !== undefined ? renderWorkId(id) : UPLOAD_JOB_ID.test(id) ? id : renderDocId(id);
+  return written === id ? segment : `${written}${ending}`;
+}
+
 /**
  * Only an absolute path is written: a sentence, a title, a bare file name or a relative path is not one. What this
  * cannot stop is text that begins like an absolute path, and it does not hide the names of the folders in the path
- * (a project folder is named by its user) — only the home directory is replaced.
+ * (a project folder is named by its user) — only the home directory is replaced, and a name that is a title-made
+ * Work / Doc id is written as its hash (`renderSegment`). Every path a record carries is written here: a path
+ * field, the path of a system error at any depth of the cause chain, and the file of a stack frame.
  */
 function renderPath(value: unknown, context: RenderContext): string {
   if (typeof value !== "string" || !ABSOLUTE_PATH.test(value)) return INVALID_PATH;
-  return clip(withoutControl(withoutHome(value, context), "?"), LOG_PATH_MAX);
+  const names = withoutHome(value, context)
+    .split(/([\\/])/)
+    .map((part) => (part === "/" || part === "\\" ? part : renderSegment(part)));
+  return clip(withoutControl(names.join(""), "?"), LOG_PATH_MAX);
 }
 
 // Written in code: a word in front of a colon is a scheme only if it is one of these.
@@ -360,8 +421,9 @@ function declaredSafe(error: Error): boolean {
   );
 }
 
-// "    at name (location)" or "    at location"; the location ends in :line:column.
-const FRAME = /^\s*at (?:.* \()?(.+?):(\d+):(\d+)\)?$/;
+// "    at name (location)" or "    at location", either after `async `; the location ends in :line:column. A line
+// without one (`at async Promise.all (index 0)`, `at <anonymous>`) is no frame.
+const FRAME = /^\s*at (?:async )?(?:.* \()?(.+?):(\d+):(\d+)\)?$/;
 const NODE_MODULE = /^node:[A-Za-z0-9_/.-]{1,200}$/;
 const LOCATION_START = /^(?:\/|\\\\|[A-Za-z]:[\\/]|file:|node:)/;
 
@@ -432,7 +494,9 @@ function renderError(value: unknown, context: RenderContext, depth: number): Log
   const name = value.name;
   out.name = typeof name === "string" && ERROR_NAME.test(name) ? name : "Error";
   const extra = value as { code?: unknown; syscall?: unknown; path?: unknown; cause?: unknown };
-  if (typeof extra.code === "string" && ERROR_CODE.test(extra.code)) out.code = extra.code;
+  // A code is an identifier and is written like one: a Work / Doc id put there is not written as it is.
+  if (typeof extra.code === "string" && ERROR_CODE.test(extra.code))
+    out.code = renderId(extra.code);
   else if (typeof extra.code === "number" && Number.isFinite(extra.code)) out.code = extra.code;
   // A system error (it names its system call) says which file; `path` on any other error could be anything.
   if (typeof extra.syscall === "string" && SYSCALL.test(extra.syscall)) {

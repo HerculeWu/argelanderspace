@@ -343,6 +343,148 @@ describe("paths", () => {
   });
 });
 
+describe("a path segment that is a Work or Doc id made from a title or a folder name", () => {
+  const docHash = (id: string) => recordOf({ d: f.docId(id) }).d as string;
+  const workHash = (id: string) => recordOf({ w: f.workId(id) }).w as string;
+  const uuid = "3f2b8c1e-9a4d-4e7f-8b21-0c5d6e7f8a9b";
+
+  test("is written as the hash the identifier fields write, with the extension kept", () => {
+    const latex = "latex-MyPrivateThesisTitle";
+    const upload = "upload-work-attention-is-all-you-need-2017-a1b2c3";
+    const { sink, log } = setup();
+    log.info("test.happened", {
+      ir: f.path(`/srv/lit/output/${latex}/${latex}.json`),
+      annot: f.path(`/home/ann/lit/annotations/${latex}/current.json`),
+      up: f.path(`/srv/lit/output/${upload}/${upload}.json`),
+      temp: f.path(`/srv/lit/output/${upload}/${upload}.json.tmp-${uuid}`),
+      last: f.path(`/srv/lit/output/${latex}`),
+    });
+    const record = sink.records()[0] as Record<string, string>;
+    expect(docHash(latex)).toMatch(/^latex-#[0-9a-f]{12}$/);
+    expect(docHash(upload)).toMatch(/^upload-#[0-9a-f]{12}$/);
+    expect(record).toMatchObject({
+      ir: `/srv/lit/output/${docHash(latex)}/${docHash(latex)}.json`,
+      annot: `~/lit/annotations/${docHash(latex)}/current.json`,
+      up: `/srv/lit/output/${docHash(upload)}/${docHash(upload)}.json`,
+      temp: `/srv/lit/output/${docHash(upload)}/${docHash(upload)}.json.tmp-${uuid}`,
+      last: `/srv/lit/output/${docHash(latex)}`,
+    });
+    expect(sink.lines[0]).not.toMatch(/Private|Thesis|attention|you-need/i);
+  });
+
+  test("a Work id in a file name is recognized through its URL encoding", () => {
+    const id = "work:attention-is-all-you-need-2017";
+    const { sink, log } = setup();
+    log.info("test.happened", {
+      encoded: f.path("/srv/lit/argument-graphs/work%3Aattention-is-all-you-need-2017.json"),
+      lower_hex: f.path("/srv/lit/argument-graphs/work%3aattention-is-all-you-need-2017.json"),
+      literal: f.path("/srv/lit/argument-graphs/work:attention-is-all-you-need-2017.json"),
+      doi_text: f.path("/srv/lit/argument-graphs/doi%3Aa-title-typed-where-a-doi-goes.json"),
+    });
+    const record = sink.records()[0] as Record<string, string>;
+    expect(workHash(id)).toMatch(/^work:#[0-9a-f]{12}$/);
+    expect(record.encoded).toBe(`/srv/lit/argument-graphs/${workHash(id)}.json`);
+    expect(record.lower_hex).toBe(record.encoded);
+    expect(record.literal).toBe(record.encoded);
+    expect(record.doi_text).toBe(
+      `/srv/lit/argument-graphs/${workHash("doi:a-title-typed-where-a-doi-goes")}.json`
+    );
+    expect(sink.lines[0]).not.toMatch(/attention|you-need|typed/);
+  });
+
+  test("Windows separators, another spelling of the prefix, an unknown extension", () => {
+    const { sink, log } = setup();
+    log.info("test.happened", {
+      win: f.path("C:\\lit\\output\\latex-MyPrivateThesisTitle\\latex-MyPrivateThesisTitle.json"),
+      upper: f.path("/srv/lit/output/LaTeX-MyPrivateThesisTitle/x.json"),
+      upper_work: f.path("/srv/lit/argument-graphs/WORK%3AMyPrivateThesisTitle.json"),
+      // Not an extension the workbench writes: it may be part of the folder's name, so it is hashed with it.
+      dotted: f.path("/srv/lit/output/latex-My.PrivateThesisTitle"),
+      bad_escape: f.path("/srv/lit/output/latex-MyPrivateThesisTitle%ZZ/x"),
+    });
+    const record = sink.records()[0] as Record<string, string>;
+    const hash = docHash("latex-MyPrivateThesisTitle");
+    expect(record.win).toBe(`C:\\lit\\output\\${hash}\\${hash}.json`);
+    expect(record.upper).toMatch(/^\/srv\/lit\/output\/doc-#[0-9a-f]{12}\/x\.json$/);
+    expect(record.upper_work).toMatch(/^\/srv\/lit\/argument-graphs\/work:#[0-9a-f]{12}\.json$/);
+    expect(record.dotted).toBe(`/srv/lit/output/${docHash("latex-My.PrivateThesisTitle")}`);
+    expect(record.bad_escape).toMatch(/^\/srv\/lit\/output\/latex-#[0-9a-f]{12}\/x$/);
+    expect(sink.lines[0]).not.toMatch(/Private|Thesis/i);
+  });
+
+  test("an id that the identifier fields write as it is, and every ordinary folder name, stays as it is", () => {
+    const paths = [
+      "/srv/lit/output/arxiv-2101.00001/arxiv-2101.00001.json",
+      "/srv/lit/output/arxiv-astro-ph-0601001/arxiv-astro-ph-0601001.json",
+      `/srv/lit/output/pdf-${uuid}/pdf-${uuid}.json`,
+      `/srv/lit/output/text-${uuid}/text-source.json`,
+      "/srv/lit/output/upload-arxiv-2603-03522-0f9e8d/upload-arxiv-2603-03522-0f9e8d.json",
+      "/srv/lit/output/upload-doi-10-1016-s0370-2693-99-00123-4-a1b2c3/assets/fig.pdf",
+      `/srv/lit/jobs/upload-${uuid}.json`,
+      "/srv/lit/argument-graphs/doi%3A10%2E1016%2Fs0370-2693%2899%2900123-4.json",
+      "/srv/lit/argument-graphs/arxiv%3A2603%2E03522.json",
+      "/srv/lit/argument-graphs/openalex%3AW2741809807.json",
+      "/srv/app/node_modules/pdf-lib/dist/index.js",
+      "/srv/research/latex/workspace/uploads/work/main.tex",
+      "/srv/my%20notes/100%/x",
+      "C:\\Program Files\\Argelander\\resources\\app.js",
+    ];
+    for (const path of paths) expect(recordOf({ p: f.path(path) }).p, path).toBe(path);
+  });
+
+  test("the same in the path of a system error, in its cause, and in a stack frame", () => {
+    const latex = "latex-MyPrivateThesisTitle";
+    const file = `/home/ann/lit/output/${latex}/${latex}.json`;
+    const system = () =>
+      Object.assign(new Error(`EACCES: permission denied, open '${file}'`), {
+        code: "EACCES",
+        syscall: "open",
+        path: file,
+      });
+    const outer = new Error("could not read the document", { cause: system() });
+    outer.stack = `Error: could not read the document\n    at load (${file}:3:4)\n    at async file:///home/ann/lit/output/${latex}/x.js:5:6`;
+    const { sink, log } = setup();
+    log.error("test.happened", { direct: f.error(system()), outer: f.error(outer) });
+    const hash = docHash(latex);
+    const written = `~/lit/output/${hash}/${hash}.json`;
+    const record = sink.records()[0] as Record<
+      string,
+      { path?: string; stack: string[]; cause?: { path: string } }
+    >;
+    expect(record.direct?.path).toBe(written);
+    expect(record.outer?.cause?.path).toBe(written);
+    expect(record.outer?.stack).toEqual([`${written}:3:4`, `~/lit/output/${hash}/x.js:5:6`]);
+    expect(sink.lines[0]).not.toMatch(/Private|Thesis/);
+  });
+});
+
+describe("characters that do not show", () => {
+  const invisible = [0x200b, 0x200c, 0x200d, 0x2060, 0xfeff, 0x00ad];
+
+  test("zero-width characters and the soft hyphen are replaced in a path", () => {
+    for (const code of invisible) {
+      const ch = String.fromCharCode(code);
+      const { sink, log } = setup();
+      log.info("test.happened", { p: f.path(`/tmp/a${ch}b`) });
+      expect(sink.lines[0], code.toString(16)).not.toContain(ch);
+      expect(sink.records()[0]?.p, code.toString(16)).toBe("/tmp/a?b");
+    }
+  });
+
+  test("and in a message that is kept", () => {
+    class Kept extends Error {
+      static readonly [LOG_SAFE_MESSAGE] = true;
+    }
+    for (const code of invisible) {
+      const ch = String.fromCharCode(code);
+      const out = recordOf({ error: f.error(new Kept(`left${ch}right`)) }).error as {
+        message: string;
+      };
+      expect(out.message, code.toString(16)).toBe("left right");
+    }
+  });
+});
+
 describe("URLs", () => {
   test("only the scheme and host are written", () => {
     const record = recordOf({
@@ -426,6 +568,43 @@ describe("Work and Doc identifiers", () => {
       arxiv_old: "arxiv:astro-ph/0601001",
       openalex: "openalex:W2741809807",
     });
+  });
+
+  test("an old-style arXiv number is written as it is whatever its archive is called", () => {
+    const works = [
+      "arxiv:q-bio/0401001",
+      "arxiv:q-alg/9701001",
+      "arxiv:hep-th/9901001",
+      "arxiv:math.ag/0601001",
+      "arxiv:cs/0112017",
+      "arxiv:alg-geom/9202004",
+      "arxiv:funct-an/9301001",
+    ];
+    for (const id of works) expect(recordOf({ w: f.workId(id) }).w, id).toBe(id);
+    const docs = [
+      "arxiv-q-bio-0401001",
+      "arxiv-q-alg-9701001v2",
+      "arxiv-math.AG-0601001",
+      "arxiv-cs-0112017",
+      "upload-arxiv-q-bio-0401001-a1b2c3",
+      "upload-arxiv-q-alg-9701001-a1b2c3",
+      "upload-arxiv-math-ag-0601001-a1b2c3",
+      "upload-arxiv-cs-0112017-a1b2c3",
+    ];
+    for (const id of docs) {
+      expect(recordOf({ d: f.docId(id) }).d, id).toBe(id);
+      expect(recordOf({ d: f.id(id) }).d, id).toBe(id);
+    }
+    // A real DOI with characters an identifier may not have is hashed: the safe side of the rule.
+    expect(
+      recordOf({
+        w: f.workId("doi:10.1002/(sici)1097-4571(199601)47:1<23::aid-asi3>3.0.co;2-p"),
+      }).w
+    ).toMatch(HASHED_WORK);
+    // Still not an arXiv number: no seven digits where the number goes.
+    expect(recordOf({ w: f.workId("arxiv:secret-title/words") }).w).toMatch(HASHED_WORK);
+    expect(recordOf({ d: f.docId("arxiv-secret-folder-name") }).d).toMatch(/^doc-#/);
+    expect(recordOf({ d: f.docId("upload-arxiv-secret-title-a1b2c3") }).d).toMatch(/^upload-#/);
   });
 
   test("a Work id made from a title is written as a hash, the same one every time", () => {
@@ -652,7 +831,9 @@ describe("errors", () => {
     const secretFrame = "    at /SECRET/frame:1:2";
     // The message was changed after the stack was made: where the old message ends is unknown.
     const changed = new Error(`old message\n${secretFrame}`);
-    expect(changed.stack).toContain("old message"); // V8 writes the stack when it is first read
+    // The text of the stack, first line included, is made when `stack` is first read (Node 24): reading it here
+    // is what fixes "old message" in it, and the change below no longer reaches it.
+    expect(changed.stack).toContain("old message");
     changed.message = "new message";
     // The stack was replaced by something that does not start the way V8 starts one.
     const replaced = new Error("m");
@@ -728,6 +909,57 @@ describe("errors", () => {
     log.error("test.happened", { error: f.error(error) });
     expect(sink.lines[0]).not.toContain("SECRET");
     expect(sink.records()[0]).toMatchObject({ error: { name: "Error" } });
+  });
+
+  test("a code that has the shape of a title-made id is written the way the identifier field writes it", () => {
+    const codes = [
+      "work:my-private-title-2020",
+      "latex-my-private-title",
+      "upload-work-my-private-title-a1b2c3",
+    ];
+    for (const code of codes) {
+      const { sink, log } = setup();
+      log.error("test.happened", {
+        error: f.error(Object.assign(new Error("m"), { code })),
+        same: f.id(code),
+      });
+      const record = sink.records()[0] as { error: { code: string }; same: string };
+      expect(sink.lines[0], code).not.toMatch(/private|title/);
+      expect(record.error.code, code).toBe(record.same);
+      expect(record.error.code, code).toMatch(/^(?:work:|latex-|upload-)#[0-9a-f]{12}$/);
+    }
+    const plain = Object.assign(new Error("m"), { code: "ERR_MODULE_NOT_FOUND" });
+    expect(recordOf({ error: f.error(plain) }).error).toMatchObject({
+      code: "ERR_MODULE_NOT_FOUND",
+    });
+    const numeric = Object.assign(new Error("m"), { code: 11 });
+    expect(recordOf({ error: f.error(numeric) }).error).toMatchObject({ code: 11 });
+  });
+
+  test("a frame without a function name is a frame, awaited or not; a line without a place is none", () => {
+    const error = new Error("m");
+    error.stack = [
+      "Error: m",
+      "    at async /home/ann/app/dist/anonymous.js:5:6",
+      "    at async file:///home/ann/app/dist/module.js:7:8",
+      "    at async C:\\app\\dist\\win.js:9:10",
+      "    at new Foo (/home/ann/app/dist/foo.js:1:2)",
+      "    at async Promise.all (index 0)",
+      "    at <anonymous>",
+      "    at async secretName (/home/ann/app/dist/named.js:3:4)",
+      "    at async node:internal/process/task_queues:95:5",
+    ].join("\n");
+    const { sink, log } = setup();
+    log.error("test.happened", { error: f.error(error) });
+    expect((sink.records()[0] as { error: { stack: string[] } }).error.stack).toEqual([
+      "~/app/dist/anonymous.js:5:6",
+      "~/app/dist/module.js:7:8",
+      "C:\\app\\dist\\win.js:9:10",
+      "~/app/dist/foo.js:1:2",
+      "~/app/dist/named.js:3:4",
+      "node:internal/process/task_queues:95:5",
+    ]);
+    expect(sink.lines[0]).not.toMatch(/async|Foo|secretName|Promise|anonymous>/);
   });
 
   test("a cause is recorded the same way; a thrown non-error only by its kind", () => {

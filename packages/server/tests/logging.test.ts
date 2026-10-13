@@ -5,6 +5,7 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -19,6 +20,7 @@ import { libraryPaths } from "@argelanderspace/core";
 import {
   configFilePath,
   createLogger,
+  f,
   type LogLevel,
   openLogFile,
   resolveLogDir,
@@ -266,6 +268,165 @@ describe("a failed request", () => {
     });
     expect(records[0]).toMatchObject({ error: { name: "Error" } });
     expect(text).not.toContain("MAIL-MARKER");
+  });
+});
+
+describe("a Doc whose id is made from a title or a folder name", () => {
+  /** What the identifier field writes for this Doc id. */
+  function written(docId: string): string {
+    const lines: string[] = [];
+    createLogger({ events: SERVER_LOG_EVENTS, sink: { write: (l) => lines.push(l) } }).info(
+      "server.started",
+      { doc: f.docId(docId) }
+    );
+    return (JSON.parse(lines[0] as string) as { doc: string }).doc;
+  }
+
+  const cases = [
+    { docId: "latex-MyPrivateThesisTitle", words: /Private|Thesis|Title/i, kind: "latex-" },
+    {
+      docId: "upload-work-attention-is-all-you-need-2017-a1b2c3",
+      words: /attention|you-need/i,
+      kind: "upload-",
+    },
+  ];
+
+  for (const { docId, words, kind } of cases) {
+    for (const route of ["ir", "annotations"] as const) {
+      test(`${kind}… on /${route}: a file that cannot be read is named in the log by the id's hash, never by the id`, async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        const { log, dir } = fileLog();
+        const { url, dataDir } = await serve(log);
+        const docDir = join(dataDir, "output", docId);
+        mkdirSync(docDir, { recursive: true });
+        const file = join(docDir, `${docId}.json`);
+        writeFileSync(file, JSON.stringify({ doc_id: docId, meta: { title: "x" } }));
+        chmodSync(file, 0o000);
+
+        const response = await fetch(`${url}/api/paper/${docId}/${route}`);
+        expect(response.status).toBe(500);
+        chmodSync(file, 0o600);
+
+        const { records, text } = readLog(dir);
+        expect(records).toHaveLength(1);
+        expect(records[0]).toMatchObject({
+          level: "error",
+          event: "request.failed",
+          route: `/api/paper/:doc_id/${route}`,
+          status: 500,
+        });
+        expect(text).not.toMatch(words);
+        const hash = written(docId);
+        expect(hash).toMatch(new RegExp(`^${kind}#[0-9a-f]{12}$`));
+        // The file is still named — by the same hash a record about the Doc itself would carry.
+        const paths: string[] = [];
+        for (
+          let error = (records[0] as { error?: Record_ }).error;
+          error;
+          error = error.cause as Record_ | undefined
+        ) {
+          if (typeof error.path === "string") paths.push(error.path);
+        }
+        expect(paths.length).toBeGreaterThan(0);
+        for (const path of paths) {
+          expect(path.endsWith(`/output/${hash}/${hash}.json`), path).toBe(true);
+        }
+      });
+    }
+  }
+});
+
+describe("the answer to a failed request is sent the way it is sent without a log", () => {
+  /** A JSON error answer that is not made by `c.json`: its body is a stream, so it goes out in chunks. */
+  function streamingApp(log?: ServerLog): Hono {
+    const app = new Hono();
+    if (log) logRequests(app, log);
+    app.get("/stream", () => {
+      const encoder = new TextEncoder();
+      // One piece: a reader that had the whole body before the answer went out would send it with a length.
+      const pieces = [`{"code":"stream_failed","detail":"${"x".repeat(2000)}"}`];
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          if (sent < pieces.length) controller.enqueue(encoder.encode(pieces[sent++] as string));
+          else controller.close();
+        },
+      });
+      return new Response(body, {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    app.get("/plain", (c) => c.json({ code: "plain_failed", detail: "d" }, 500));
+    return app;
+  }
+
+  async function over(app: Hono, path: string) {
+    const { serve: listen } = await import("@hono/node-server");
+    const server = listen({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
+    try {
+      await new Promise<void>((resolve) => server.once("listening", () => resolve()));
+      const { port } = server.address() as { port: number };
+      const response = await fetch(`http://127.0.0.1:${port}${path}`);
+      const headers = [...response.headers.entries()]
+        .filter(([name]) => name !== "date")
+        .sort(([a], [b]) => a.localeCompare(b));
+      return { status: response.status, headers, body: await response.text() };
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  }
+
+  test("a streamed JSON error answer keeps its headers and its body; an answer made by c.json keeps its code in the record", async () => {
+    const { log, dir } = fileLog();
+    const plainStream = await over(streamingApp(), "/stream");
+    const loggedStream = await over(streamingApp(log), "/stream");
+    expect(plainStream.headers).toContainEqual(["transfer-encoding", "chunked"]);
+    expect(plainStream.headers.map(([name]) => name)).not.toContain("content-length");
+    expect(loggedStream).toEqual(plainStream);
+
+    const plainJson = await over(streamingApp(), "/plain");
+    const loggedJson = await over(streamingApp(log), "/plain");
+    expect(loggedJson).toEqual(plainJson);
+
+    const { records } = readLog(dir);
+    expect(records).toMatchObject([
+      { event: "request.failed", route: "/stream", status: 500 },
+      { event: "request.failed", route: "/plain", status: 500, code: "plain_failed" },
+    ]);
+    // Nothing of the streamed body was read to find a code.
+    expect(records[0]?.code).toBeUndefined();
+  });
+
+  test("the code is the one of the answer that was sent, not of a body some handler made and dropped", async () => {
+    const { log, dir } = fileLog();
+    const app = new Hono();
+    logRequests(app, log);
+    app.get("/dropped", (c) => {
+      c.json({ code: "not_sent" }, 500);
+      return c.text("fixed text", 500);
+    });
+    app.get("/other-status", (c) => {
+      c.json({ code: "not_sent" }, 400);
+      return new Response('{"detail":"d"}', {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    app.get("/not-a-string", (c) => c.json({ code: { text: "SECRET" } } as never, 500));
+    app.get("/title", (c) => c.json({ code: "work:my-private-title-2020" }, 500));
+    for (const path of ["/dropped", "/other-status", "/not-a-string"]) {
+      expect((await app.request(path)).status).toBe(500);
+    }
+    expect(await (await app.request("/title")).json()).toEqual({
+      code: "work:my-private-title-2020",
+    });
+    const { records, text } = readLog(dir);
+    expect(records).toHaveLength(4);
+    for (const record of records.slice(0, 3)) expect(record.code).toBeUndefined();
+    expect(records[3]?.code).toMatch(/^work:#[0-9a-f]{12}$/);
+    expect(text).not.toMatch(/SECRET|private|not_sent/);
   });
 });
 

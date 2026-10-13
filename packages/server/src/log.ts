@@ -61,16 +61,36 @@ export type ServerMode = (typeof SERVER_MODES)[number];
 
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const;
 
-/** The `code` of a JSON error body (`{code, detail}`), when the answer has one. The body is read from a copy. */
-async function errorCodeOf(response: Response): Promise<string | undefined> {
-  if (!response.headers.get("Content-Type")?.includes("application/json")) return undefined;
-  try {
-    const body: unknown = await response.clone().json();
-    const code = (body as { code?: unknown } | null)?.code;
-    return typeof code === "string" ? code : undefined;
-  } catch {
-    return undefined;
-  }
+/**
+ * The `code` of a JSON error answer (`{code, detail}`), without reading the answer: the object a route hands to
+ * `c.json` is looked at as it goes by. Reading the body of a Response — even of a copy — can change how it is sent
+ * (a streamed body that has been read through goes out with a length instead of in chunks, and only once all of it
+ * is there), so the body is never read.
+ *
+ * The Response `c.json` returns is not always the object that is sent (Hono rebuilds it when a sub-app's error
+ * handler answered), so the code is taken from the last `c.json` call of the request and counts only when the
+ * answer that is sent has the status that call gave and a JSON content type. An answer made any other way
+ * (`new Response`, `Response.json`) is recorded without a code.
+ */
+function watchJsonCode(c: Context): (sent: Response) => string | undefined {
+  let last: { status: number; code: string | undefined } | undefined;
+  const json = c.json as (...args: unknown[]) => Response;
+  c.json = ((...args: unknown[]) => {
+    const response = json(...args);
+    try {
+      const code = (args[0] as { code?: unknown } | null | undefined)?.code;
+      last = { status: response.status, code: typeof code === "string" ? code : undefined };
+    } catch {
+      last = undefined; // an object that cannot be looked at has no code to record
+    }
+    return response;
+  }) as typeof c.json;
+  return (sent) =>
+    last !== undefined &&
+    last.status === sent.status &&
+    sent.headers.get("Content-Type")?.includes("application/json")
+      ? last.code
+      : undefined;
 }
 
 /**
@@ -90,6 +110,12 @@ export function logRequests(app: Hono, log: ServerLog): void {
   if (log !== silentLog)
     app.use("*", async (c, next) => {
       const started = performance.now();
+      let codeOf: (sent: Response) => string | undefined = () => undefined;
+      try {
+        codeOf = watchJsonCode(c);
+      } catch {
+        /* the request is recorded without a code */
+      }
       try {
         await next();
       } catch (thrown) {
@@ -126,7 +152,7 @@ export function logRequests(app: Hono, log: ServerLog): void {
           log.debug("request.completed", fields);
           return;
         }
-        const code = await errorCodeOf(c.res);
+        const code = codeOf(c.res);
         const record = {
           ...fields,
           ...(code === undefined ? {} : { code: f.id(code) }),
