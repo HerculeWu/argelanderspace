@@ -588,7 +588,30 @@ describe("serve (startServer)", () => {
     const { records, files } = readLog(logDir);
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(new RegExp(`^\\d{8}T\\d{9}Z-serve-${process.pid}\\.jsonl$`));
-    expect(records).toHaveLength(1);
+    // The start record, then what the server found on this machine (desktop-app ticket 07): which tools are on
+    // PATH, by name. (The probe of the Writer's sandbox is recorded when it ends, which may be later.)
+    const atStart = records.filter((record) => record.event !== "external_program.exited");
+    expect(atStart.map((record) => record.event)).toEqual(["server.started", "server.environment"]);
+    const environment = atStart[1] ?? {};
+    expect(environment.level).toBe("info");
+    expect(
+      [...(environment.tools_found as string[]), ...(environment.tools_missing as string[])].sort()
+    ).toEqual(
+      [
+        "bibtex",
+        "biber",
+        "bwrap",
+        "gs",
+        "kpsewhich",
+        "latexmk",
+        "pdflatex",
+        "pdftocairo",
+        "xelatex",
+      ].sort()
+    );
+    expect(Object.keys(atStart[1] ?? {}).sort()).toEqual(
+      ["event", "level", "t", "tools_found", "tools_missing"].sort()
+    );
     expect(records[0]).toMatchObject({
       level: "info",
       event: "server.started",
@@ -643,7 +666,7 @@ describe("serve (startServer)", () => {
       log_level: "debug",
     });
     // log_level = "debug" in config.toml: the successful request is there.
-    expect(records.slice(1)).toMatchObject([
+    expect(records.filter((record) => String(record.event).startsWith("request."))).toMatchObject([
       { level: "debug", event: "request.completed", route: "/api/papers", status: 200 },
     ]);
   });

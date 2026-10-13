@@ -24,6 +24,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Job, JobKind, WsJobEvent } from "@argelanderspace/contracts";
+import type { JobTransition } from "./log-observers.js";
 
 /** What a job does; `report` appends a progress entry (persisted + broadcast). */
 export type JobHandler = (job: Job, report: (message: string) => void) => Promise<unknown>;
@@ -44,6 +45,11 @@ export interface JobRunnerOptions {
   onInterrupted?: (job: Job) => void;
   /** Clock seam for tests. */
   now?: () => Date;
+  /**
+   * Told of every change of a job's state, with what the handler threw when it failed (the user-level log,
+   * log-observers.ts). It only watches: what it does or throws changes nothing about the job.
+   */
+  observe?: (transition: JobTransition) => void;
 }
 
 export class JobRunner {
@@ -54,6 +60,11 @@ export class JobRunner {
    * app ← runner), so the listener is attached last.
    */
   onEvent?: (type: JobEventType, job: Job) => void;
+  /**
+   * See {@link JobRunnerOptions.observe}. Reassignable like `onEvent`: `createApp` attaches its log's observer to a
+   * runner that has none.
+   */
+  observe?: (transition: JobTransition) => void;
   private readonly now: () => Date;
   private readonly onInterrupted?: (job: Job) => void;
   private readonly jobs = new Map<string, Job>();
@@ -67,6 +78,7 @@ export class JobRunner {
     this.onEvent = opts.onEvent;
     this.now = opts.now ?? (() => new Date());
     this.onInterrupted = opts.onInterrupted;
+    this.observe = opts.observe;
     mkdirSync(this.dir, { recursive: true });
     this.recover();
   }
@@ -85,6 +97,7 @@ export class JobRunner {
         job.status = "interrupted";
         job.finishedAt = this.now().toISOString();
         this.persist(job);
+        this.note("interrupted", job);
         this.onInterrupted?.(job);
       }
       this.jobs.set(job.id, job);
@@ -118,6 +131,7 @@ export class JobRunner {
     };
     this.jobs.set(job.id, job);
     this.persist(job);
+    this.note("created", job);
     this.emit("job.created", job);
     this.chain = this.chain.then(() => this.run(job, handler));
     return job;
@@ -146,25 +160,39 @@ export class JobRunner {
     job.status = "running";
     job.startedAt = this.now().toISOString();
     this.persist(job);
+    this.note("started", job);
     const report = (message: string): void => {
       job.progress.push({ at: this.now().toISOString(), message });
       this.persist(job);
+      this.note("progress", job);
       this.emit("job.progress", job);
     };
+    let thrown: unknown;
     try {
       job.result = (await handler(job, report)) ?? null;
       job.status = "done";
     } catch (e) {
+      thrown = e;
       job.error = e instanceof Error ? e.message : String(e);
       job.status = "failed";
     }
     job.finishedAt = this.now().toISOString();
     this.persist(job);
+    if (job.status === "done") this.note("done", job);
+    else this.note("failed", job, thrown);
     this.emit(job.status === "done" ? "job.done" : "job.failed", job);
     const list = this.waiters.get(job.id);
     if (list) {
       this.waiters.delete(job.id);
       for (const waiter of list) waiter(job);
+    }
+  }
+
+  private note(type: JobTransition["type"], job: Job, error?: unknown): void {
+    try {
+      this.observe?.(type === "failed" ? { type, job, error } : { type, job });
+    } catch {
+      /* watching a job never changes it */
     }
   }
 

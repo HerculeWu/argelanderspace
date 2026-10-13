@@ -11,6 +11,7 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
+import { type ExternalObserver, reportProgram } from "../lib/observe.js";
 
 export const SANDBOX_WORKDIR = "/work";
 const PROBE_RETRY_MS = 60_000;
@@ -135,7 +136,8 @@ async function discoverTexRoots(): Promise<void> {
   texBinDirs = [...bins];
 }
 
-async function probe(): Promise<boolean> {
+async function probe(observer: ExternalObserver | undefined): Promise<boolean> {
+  const started = performance.now();
   try {
     await discoverTexRoots();
     bwrapPath = (await run("sh", ["-c", "command -v bwrap"])).stdout.trim() || "bwrap";
@@ -157,6 +159,14 @@ async function probe(): Promise<boolean> {
         resolve(code);
       });
     });
+    reportProgram(observer, {
+      program: "bwrap",
+      sandboxed: false,
+      exitCode: status,
+      signal: null,
+      timedOut: false,
+      durationMs: performance.now() - started,
+    });
     return status === 0;
   } catch {
     return false;
@@ -168,11 +178,11 @@ async function probe(): Promise<boolean> {
  * answer is kept; a negative one is retried at most once a minute, so a machine that gains bwrap or user namespaces is
  * picked up without a restart.
  */
-export function ensureWriterSandboxProbe(): Promise<boolean> {
+export function ensureWriterSandboxProbe(observer?: ExternalObserver): Promise<boolean> {
   if (override !== null) return Promise.resolve(override);
   if (available === true) return Promise.resolve(true);
   if (available === false && Date.now() - probedAt < PROBE_RETRY_MS) return Promise.resolve(false);
-  inflight ??= probe()
+  inflight ??= probe(observer)
     .then((ok) => {
       available = ok;
       probedAt = Date.now();

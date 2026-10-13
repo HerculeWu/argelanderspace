@@ -1314,9 +1314,10 @@ test("when the account store cannot be read the run has no mail: no tool, no Mai
     expect(snapshot.messages[0]?.context?.mail).toBeUndefined();
     // Said once, in the user-level log and no longer on the terminal, without the reason.
     expect(warn).not.toHaveBeenCalled();
-    expect(logged.records()).toMatchObject([
-      { level: "warn", event: "copilot.mail_accounts_unreadable" },
-    ]);
+    // (The run itself is recorded too since desktop-app ticket 07: by its ids only.)
+    expect(
+      logged.records().filter((record) => !String(record.event).startsWith("copilot.run_"))
+    ).toMatchObject([{ level: "warn", event: "copilot.mail_accounts_unreadable" }]);
     expect(logged.lines.join("")).not.toContain("/secret/path");
   } finally {
     warn.mockRestore();

@@ -87,7 +87,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 ## 用户日志
 
-desktop-app 票 06（2026-10-13）。「什么不进日志」与日志目录的并发范围是硬契约，见 [contracts](contracts.md#用户日志2026-10-13-新增)；这里记机制和不属于硬契约的运行约定。它与项目数据目录里的 `logs/arxiv-fetch.jsonl`、任务记录和 Copilot 的操作记录无关，那些都不动。
+desktop-app 票 06、07（2026-10-13）。「什么不进日志」与日志目录的并发范围是硬契约，见 [contracts](contracts.md#用户日志2026-10-13-新增)；这里记机制和不属于硬契约的运行约定。它与项目数据目录里的 `logs/arxiv-fetch.jsonl`、任务记录和 Copilot 的操作记录无关，那些都不动。
 
 - **模块**在 infra `log/`（`fields.ts` / `logger.ts` / `files.ts` / `process.ts`），server 与今后的桌面宿主共用，web 运行时不引用。一条记录＝事件名＋字段。事件名来自创建 logger 时给出的目录（`createLogger({ events })`，类型上是字面量联合，运行时不在目录里的名字写成 `log.rejected`、原名与字段都丢弃）；字段值只能由 `f` 的构造函数产生，logger 没有接收文本的方法，不是 `LogField` 的值（字符串、对象）在类型上不通过，运行时被丢弃并计入 `dropped_fields`；字段名须是 `[a-z][a-z0-9_]{0,39}`，否则同样丢弃。
 - **字段种类与各自的检查**（`fields.ts`）：
@@ -129,8 +129,40 @@ desktop-app 票 06（2026-10-13）。「什么不进日志」与日志目录的�
   - `request.completed`：debug 级，状态码 < 400 的请求和上面那种 404。
   - `process.uncaught_exception` / `process.unhandled_rejection`：见上。
   - 原先打印到控制台的几处：`library.argument_graph_merged`（结果、两个 Work 的 id、原因等枚举；不带文件路径）、`argument_graph.broadcast_failed`、`arxiv_fetch.log_append_failed`、`arxiv_ingest.auto_submit_failed`、`copilot.observation_not_recordable`、`copilot.mail_accounts_unreadable`。
+- **任务、外部程序、外部服务、邮件、Copilot 的事件**（desktop-app 票 07，2026-10-13；名字同在 `SERVER_LOG_EVENTS`，写的地方在 server `log-observers.ts`、`copilot.ts`、`mail-watch.ts`）。这些记录没有错误字段、没有路径字段，也没有取自被观察对象的文本：只有工作台自己用随机数生成的标识符、代码里写定的表中的名字、数字、时长，以及网址的协议、主机和端口。枚举表都是源码里的字面量表或由它们直接得出（`JobKindSchema.options`、`MailWatchStateSchema.options`、`MAIL_FAILURES` 的键、各 Copilot 工具文件的名字常量），没有由运行时数据构造的表。
+
+  | 事件 | 级别 | 字段（括号内是字段种类） | 写的地方 |
+  | --- | --- | --- | --- |
+  | `server.environment` | info | `tools_found` / `tools_missing`（枚举列表：`latexmk` `pdflatex` `xelatex` `bibtex` `biber` `kpsewhich` `pdftocairo` `gs` `bwrap`） | `logEnvironment`，`startServer` 在启动记录之后调用 |
+  | `job.created` | info | `job`（标识符）、`kind`（枚举）；任务自带时另有 `work`（Work 标识符）、`doc`（Doc 标识符） | `jobLogger` ← `JobRunner.submit` |
+  | `job.started` | info | `job`、`kind`、`queued_ms`（时长） | `JobRunner.run` |
+  | `job.progress` | debug | `job`、`kind`、`step`（数字，第几条进度）、`stage`（枚举） | 任务每报一条进度 |
+  | `job.done` | info | `job`、`kind`、`duration_ms` | `JobRunner.run` |
+  | `job.failed` | warn | `job`、`kind`、`stage`（枚举）、`category`（枚举）、`error_code`（枚举，任务记录里有 `errorCode` 才记）、`duration_ms` | `JobRunner.run` |
+  | `job.interrupted` | warn | `job`、`kind`、`stage` | 启动时 `JobRunner.recover` 把上次没跑完的任务改成 `interrupted` |
+  | `external_program.exited` | 退出码 0：`latexmk`、`bwrap` 为 info，`pdftocairo`、`gs` 为 debug；非 0 或超时为 warn | `program`（枚举）、`sandboxed`（枚举 yes / no）、`exit_code`（数字，被杀掉时没有）、`signal`（枚举）、`timed_out`（枚举）、`duration_ms` | `externalObserver` ← infra `runTexProcess`、沙箱探测 |
+  | `external_program.not_started` | warn | `program`、`sandboxed`、`code`（枚举：`ENOENT` 等系统码）、`duration_ms` | 同上，程序起不来时 |
+  | `external_service.answered` | 状态码 < 400 与 404 为 debug，其余为 warn | `service`（枚举：`ads` `crossref` `openalex` `arxiv`）、`host`（网址）、`status`（数字）、`duration_ms` | `externalObserver` ← infra `observedFetch` |
+  | `external_service.no_answer` | warn | `service`、`host`、`reason`（枚举：`timeout` `aborted` `network`）、`duration_ms` | 同上，请求没有得到应答时 |
+  | `mail.remote_call` | 成功为 debug，失败为 warn | `protocol`（枚举 imap / smtp）、`call`（枚举：infra 四个邮件协议接口的方法名）、`host`（网址，`imap(s)://主机:端口` 或 `smtp(s)://…`）、`outcome`（枚举 ok / failed / threw）、`code`（枚举：`MAIL_FAILURES` 的失败码，失败时）、`duration_ms` | `observedMail`，包在 infra 的协议对象外面 |
+  | `mail_watch.state_changed` | info；变成 `auth_failed` / `credential_missing` 为 warn | `account`（标识符）、`state`、`previous`（枚举：监听状态） | `MailWatcher.setState` |
+  | `mail_watch.connection_ended` | info | `account`、`code`（枚举：失败码）、`temporary_refusal`（枚举 yes / no）、`connected_ms`（连上过才有） | `MailWatcher.run` |
+  | `credentials.keychain_state` | 可用为 info，不可用为 warn | `state`（枚举 available / unavailable） | `observedCredentials`，包在凭据存储外面 |
+  | `copilot.run_started` | info | `conversation`、`run`（标识符） | `CopilotHost`，一次运行开始 |
+  | `copilot.run_finished` | info；`failed` / `interrupted` 为 warn | `conversation`、`run`、`status`（枚举：`completed` `failed` `stopped` `interrupted` `refused`）、`code`（枚举：运行的错误码）、`duration_ms` | 同上，运行结束 |
+  | `copilot.tool_called` | 工具抛错为 info，其余为 debug | `conversation`、`run`、`tool`（枚举：八个工具名）、`result`（枚举：操作记录的状态词，或 `thrown`）、`duration_ms` | 同上，每次工具调用结束 |
+
+  - **各标识符的构成**：任务 id 是 `<kind>-<随机 uuid>`（`JobRunner.submit`）；Copilot 的对话 id 与运行 id 都是随机 uuid（`CopilotHost`）；邮件账户 id 是 `acc-<12 位随机十六进制>`（`MailAccountService`，`MAIL_ACCOUNT_ID_PATTERN`），不含地址，不合这个形态的写成 `acc-unrecognized`。这三种原样写。`job.created` 的 `work` / `doc` 走 `f.workId` / `f.docId`，由标题或本地文件夹名派生的写成哈希。稿件 id、标注 id、邮件的文件夹与 uid、发送 id 都不记。
+  - **任务失败不记错误信息**：`job.error`（它可能带 TeX 日志摘录）只留在任务记录和界面上。日志里的 `stage` 是任务最后一条指明步骤的进度消息所属的阶段——只看这条消息以代码里哪个词开头（`Fetching` → `download`、`Unpacking` → `extract`、`Validating` → `validate`、`Compiling` → `compile`、`Fusing` → `fuse`、`Materializing` → `figures`、`Rebuilding library` → `attach`、`Publishing` → `publish`；还没开始是 `queued`，没有进度是 `start`，对不上是 `other`；`warning: …` 行引用 TeX 日志，跳过不看），消息本身不记。`category` 只看抛出物的类别，不看消息：`source_has_no_latex`（`ArxivPdfOnlyError`）、`archive`（zip / tar 损坏）、`tex_workspace`、`http_status`（`HttpError`）、`timeout`、`aborted`、`file_system`（带 `syscall` 的系统错误）、`unclassified`。编译失败抛的是普通 `Error`，所以它是 `stage: compile`、`category: unclassified`，配合同一时段的 `external_program.exited` 的退出码看。
+  - **外部程序与外部服务**：程序只记名字、退出码、耗时，不记参数与输出；程序名来自调用处写定的值，不取自实际执行的命令（沙箱里的 latexmk 记 `program: latexmk`、`sandboxed: yes`）。请求只记服务名与网址的协议、主机、端口，不记路径、查询参数、请求头、请求体，也不读应答（`observedFetch` 把实现返回的 `Response` 原样交回）；没有应答时不记错误对象，只记 `reason`。
+  - **邮件**：`observedMail` 只看调用的方法名、第一个参数里的主机、端口、加密方式，以及结果的 `ok` 与 `code`；用户名、密码、文件夹名、邮件内容与服务器应答文本都不看——应答文本在 infra 的协议层就已经被换成失败码。协议对象抛出异常时只记 `outcome: threw`，不记异常。
+  - **钥匙串**：不为日志去问钥匙串。`observedCredentials` 从凭据存储本来就在做的读写结果里看钥匙串有没有应答，每个存储对象在状态变化时记一条；所以没有邮件账户的机器上启动后不会有这条记录。（启动时主动探测要不要做，留给用户决定。）
+  - **接线：infra 的调用点怎样把事件交到 `serve` 的日志**。infra 不认识 logger，只认识一个观察者接口（`lib/observe.ts` 的 `ExternalObserver`：`program(call)` 与 `service(call)`），它是普通的参数，**没有进程级的注册处**：`runTexProcess` 的 `observe` 选项、`compileTex` / `materializeTexFigure` 的第二个参数、`ingestTexSource` 等的 `observer` 选项、`ensureWriterSandboxProbe(observer)`、`observedFetch(impl, service, observer)`。`createServer` 用自己的 log 造出观察者（`externalObserver(log)`），经 server `deps.ts` 的组合函数 `realSources` / `realDiscoverySource` / `realPipelines` 的第三个参数（`AdapterWiring`）交给各适配器，arXiv PDF 下载与 Writer 的编译同样带上；任务的记录是 `JobRunner` 的 `observe` 选项（`createApp` 也会给一个还没有观察者的 runner 接上）；邮件的四个协议对象与凭据存储在 `createDefaultMail*Service(log)`、`createDefaultMailWatcher(…, log)` 里被包一层。`ServerOptions.fetchImpl` 是同一条线上给离线测试用的口子：换掉底层的 `fetch`，适配器仍是真实的。
+  - **CLI 为什么必然静默**：短时运行的命令调用同样的组合函数，但不传 `AdapterWiring`（`cli/src/program.ts`），直接调 `ingestTexSource` 时也不传 `observer`。没有观察者时这些函数不包装任何东西——`observedFetch` 返回传入的那个函数本身，`runTexProcess` 不计时也不上报——所以 CLI 走的就是接入日志之前的代码；它也从不创建 logger、不打开日志文件。没有 log 的 server（测试服务器的默认情形）同理：`externalObserver(silentLog)`、`jobLogger(silentLog)` 返回 `undefined`，`observedMail` / `observedCredentials` 返回传入的对象本身。
+  - **观察不改变被观察的调用**：观察者与记录函数的任何异常都被吞掉；不重试、不延迟、不改超时与并发；任务的结果、任务记录里的错误信息、HTTP 应答、邮件的发送与监听行为都与接入前相同。
+  - **量**：默认 info 级别下，一次上传摄入是 `job.created`、`job.started`、每次 latexmk 一条、`job.done`，外加失败的外部请求；逐张图的转换、成功的请求、成功的邮件调用、每条任务进度、每次成功的工具调用都在 debug。
 - **请求里未处理的异常**：`logRequests` 在所有路由之前注册一个中间件，只做记录，**不给主应用装 `onError`**。路由抛出的 Error 仍由 Hono 的默认处理应答——带 `getResponse` 的错误用它自己的应答（并入已设置的头），其余是纯文本 `Internal Server Error`、500——并照旧由它把整个错误（含消息）用 `console.error` 打印到 `serve` 的 stderr；中间件随后从 context 上取到这个错误，记一条不含消息的 `request.failed`。终端输出是用户自己的终端，不属于用户日志，隐私规则只管日志文件。没有传 `log` 的 `createApp` / `createServer` 不注册这个中间件，日志文件打不开的 `serve` 照常应答与打印，三种情形的应答体和 stderr 都与有日志之前相同。Mail、provider 等自带固定文案的子路由照旧用它们自己的处理，记录从同一处产生。
-- **改动日志模块时**：新增字段种类、放宽某种字段的检查、把某个错误类型声明为消息安全、给事件加字段，都要对照 [contracts](contracts.md#用户日志2026-10-13-新增) 的「不进用户日志的内容」逐项核对。任务、外部程序、外部服务、Copilot、邮件监听的事件，以及页面错误，属于后续票。
+- **改动日志模块时**：新增字段种类、放宽某种字段的检查、把某个错误类型声明为消息安全、给事件加字段，都要对照 [contracts](contracts.md#用户日志2026-10-13-新增) 的「不进用户日志的内容」逐项核对。页面错误与编译失败日志的另存属于后续票。
 
 ## LaTeX 数据流
 

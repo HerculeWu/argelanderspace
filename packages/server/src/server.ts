@@ -24,9 +24,11 @@ import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
+  type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
   getConfig,
+  observedFetch,
   resolveGlobalDirs,
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
@@ -38,6 +40,7 @@ import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
 import { logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
+import { externalObserver, jobLogger, logEnvironment } from "./log-observers.js";
 import { sweepStagedAttachmentsIn } from "./mail-compose.js";
 import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
@@ -60,6 +63,12 @@ export interface ServerOptions {
   deps?: Partial<
     Pick<AppDeps, "makeSources" | "makeDiscoverySource" | "fetchArxivPdf" | "pipelines">
   >;
+  /**
+   * The HTTP implementation under the real sources, the arXiv e-print fetcher and the arXiv PDF download (offline
+   * tests pass a stub and keep the real clients); default the global fetch. Ignored where `deps` replaces the
+   * adapter itself.
+   */
+  fetchImpl?: FetchImpl;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
   /** External-write poll interval (default 1500); tests inject ~50. */
@@ -99,8 +108,14 @@ export function createServer(opts: ServerOptions): RunningServer {
   const paths = libraryPaths(opts.dataDir);
   const statusDir = statusDirFor(opts.dataDir);
   const log = opts.log ?? silentLog;
+  // What the adapters report of their external calls goes to this server's log; without a log there is no observer
+  // and the adapters are composed exactly as the CLI composes them.
+  const observer = externalObserver(log);
+  const wiring = { observer, fetchImpl: opts.fetchImpl };
+  const observeJobs = jobLogger(log);
   const runner = new JobRunner({
     dir: join(opts.dataDir, "jobs"),
+    ...(observeJobs ? { observe: observeJobs } : {}),
     // Stage 15 (D12): a boot-interrupted arXiv fetch is a failure worth
     // iterating on too — it lands in the same plain-text JSONL log.
     onInterrupted: (job) => {
@@ -133,16 +148,26 @@ export function createServer(opts: ServerOptions): RunningServer {
   if (opts.mailWatch) {
     mailWatcher = createDefaultMailWatcher(
       (msg) => hub.broadcast(msg),
-      opts.mailWatch === true ? {} : opts.mailWatch
+      opts.mailWatch === true ? {} : opts.mailWatch,
+      log
     );
   }
   const app = createApp({
     paths,
     statusDir,
-    makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline)),
-    makeDiscoverySource: opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths)),
-    pipelines: opts.deps?.pipelines ?? realPipelines(paths),
-    fetchArxivPdf: opts.deps?.fetchArxivPdf ?? ((arxivId) => fetchCurrentArxivPdf(arxivId)),
+    makeSources: opts.deps?.makeSources ?? ((offline) => realSources(paths, offline, wiring)),
+    makeDiscoverySource:
+      opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths, wiring)),
+    pipelines: opts.deps?.pipelines ?? realPipelines(paths, wiring),
+    fetchArxivPdf:
+      opts.deps?.fetchArxivPdf ??
+      ((arxivId) =>
+        fetchCurrentArxivPdf(
+          arxivId,
+          observer === undefined && opts.fetchImpl === undefined
+            ? {}
+            : { fetchImpl: observedFetch(opts.fetchImpl ?? fetch, "arxiv", observer) }
+        )),
     runner,
     broadcast: (msg) => hub.broadcast(msg),
     webDist: opts.webDist,
@@ -348,6 +373,7 @@ export async function startServer(
     dataDir: cfg.dataDir,
     webDist: cfg.webDist,
   });
+  logEnvironment(serveLog.log);
   // These three lines are what `serve` prints to the terminal; the log does not replace them.
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
   console.log(`  data dir: ${cfg.dataDir}`);

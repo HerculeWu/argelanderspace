@@ -47,6 +47,25 @@ export const SERVER_LOG_EVENTS = [
   "arxiv_ingest.auto_submit_failed",
   "copilot.observation_not_recordable",
   "copilot.mail_accounts_unreadable",
+  // Desktop-app ticket 07 (log-observers.ts, and the call sites named there):
+  "server.environment",
+  "job.created",
+  "job.started",
+  "job.progress",
+  "job.done",
+  "job.failed",
+  "job.interrupted",
+  "external_program.exited",
+  "external_program.not_started",
+  "external_service.answered",
+  "external_service.no_answer",
+  "mail.remote_call",
+  "mail_watch.state_changed",
+  "mail_watch.connection_ended",
+  "credentials.keychain_state",
+  "copilot.run_started",
+  "copilot.run_finished",
+  "copilot.tool_called",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];

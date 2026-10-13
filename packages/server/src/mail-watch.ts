@@ -13,8 +13,10 @@
  * connection is retried with exponential backoff; a login the server refuses
  * is NOT retried until the account changes (hammering a wrong password locks
  * accounts). `stop()` aborts every connection and timer and resolves once
- * they are gone. Nothing is logged: errors become a watch state, and no
- * credential, server text or mail content ever leaves this file.
+ * they are gone. Errors become a watch state, and no credential, server text
+ * or mail content ever leaves this file. What goes to the user-level log is
+ * the account id (`acc-<random hex>`, never the address), the watch state and
+ * the failure code a connection ended with: all values from fixed lists.
  *
  * Time is injected ({@link MailWatchClock}) so reconnect tests need no real waiting.
  */
@@ -24,6 +26,7 @@ import {
   type MailUnreadAccount,
   type MailUnreadSummary,
   type MailWatchState,
+  MailWatchStateSchema,
   mailUnreadTotal,
   type WsMailChanged,
 } from "@argelanderspace/contracts";
@@ -35,6 +38,9 @@ import type {
   MailWatchEnd,
   MailWatchEvent,
 } from "@argelanderspace/infra";
+import { f } from "@argelanderspace/infra";
+import { type ServerLog, silentLog } from "./log.js";
+import { MAIL_FAILURE_CODES, mailAccountField } from "./log-observers.js";
 
 export interface MailWatchClock {
   now(): number;
@@ -78,6 +84,8 @@ export interface MailWatcherDeps {
   };
   /** How often accounts.json is compared with the running connections (default 5 s). */
   reconcileMs?: number;
+  /** The user-level log; absent = nothing is recorded. */
+  log?: ServerLog;
 }
 
 interface Entry {
@@ -90,6 +98,9 @@ interface Entry {
   last: MailInboxSnapshot | null;
   loop: Promise<void>;
 }
+
+const WATCH_STATES = MailWatchStateSchema.options;
+const YES_NO = ["yes", "no"] as const;
 
 /** What identifies the connection: a change of any of these restarts it. */
 const fingerprint = (a: MailAccount) =>
@@ -106,6 +117,7 @@ export class MailWatcher {
   private readonly maxRefusals: number;
   private readonly random: () => number;
   private readonly reconcileMs: number;
+  private readonly log: ServerLog;
   private readonly lifetime = new AbortController();
   private readonly retired = new Set<Promise<void>>();
   private ticker: Promise<void> | null = null;
@@ -118,6 +130,7 @@ export class MailWatcher {
     this.maxRefusals = deps.backoff?.maxTemporaryRefusals ?? 3;
     this.random = deps.backoff?.random ?? Math.random;
     this.reconcileMs = deps.reconcileMs ?? 5000;
+    this.log = deps.log ?? silentLog;
   }
 
   /** Begin watching: connect for the accounts that exist now and keep following accounts.json. */
@@ -227,6 +240,14 @@ export class MailWatcher {
 
   private setState(e: Entry, state: MailWatchState): void {
     if (e.state === state || e.controller.signal.aborted) return;
+    const fields = {
+      account: mailAccountField(e.account.id),
+      state: f.oneOf(WATCH_STATES, state),
+      previous: f.oneOf(WATCH_STATES, e.state),
+    };
+    if (state === "auth_failed" || state === "credential_missing")
+      this.log.warn("mail_watch.state_changed", fields);
+    else this.log.info("mail_watch.state_changed", fields);
     e.state = state;
     this.emit(e, "state");
   }
@@ -283,6 +304,14 @@ export class MailWatcher {
             signal
           );
           if (end.reason === "aborted" || signal.aborted) return;
+          this.log.info("mail_watch.connection_ended", {
+            account: mailAccountField(e.account.id),
+            code: f.oneOf(MAIL_FAILURE_CODES, end.code),
+            temporary_refusal: f.oneOf(YES_NO, end.temporaryRefusal ? "yes" : "no"),
+            ...(connectedAt === null
+              ? {}
+              : { connected_ms: f.ms(Math.max(0, this.clock.now() - connectedAt)) }),
+          });
           if (end.code === "auth_failed") {
             this.setState(e, "auth_failed");
             return; // not retried: a changed account (reconcile) starts a new connection

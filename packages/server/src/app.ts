@@ -138,6 +138,7 @@ import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { logRequests, type ServerLog, silentLog } from "./log.js";
+import { externalObserver, jobLogger } from "./log-observers.js";
 import type { MailAccountService } from "./mail-accounts.js";
 import type { MailComposeServices } from "./mail-compose-routes.js";
 import type { MailManageService } from "./mail-manage.js";
@@ -348,6 +349,10 @@ function mimeFor(path: string): string {
 export function createApp(deps: AppDeps): Hono {
   const { paths, runner } = deps;
   const log = deps.log ?? silentLog;
+  // What the Writer's compile reports of the programs it runs (undefined without a log), and the record of job
+  // transitions for a runner that was built without one (createServer builds its runner with it).
+  const observer = externalObserver(log);
+  runner.observe ??= jobLogger(log);
   const outputDir = paths.outputDir;
   const paperCache = new PaperCache();
   /** Python `_WRITE_LOCK`: rebuild vs PATCH/POST refs (see lock.ts). */
@@ -401,14 +406,15 @@ export function createApp(deps: AppDeps): Hono {
   const writerDataDir = paths.dataDir;
   // The Copilot `writer` tool and these routes share one lock, rev check, save and writer.changed notification.
   // Find out (off the event loop) whether the OS sandbox for Writer compiles works; the gates read the cached answer.
-  void ensureWriterSandboxProbe();
+  void ensureWriterSandboxProbe(observer);
   const writerOps: WriterOpDeps = {
     dataDir: writerDataDir,
     writerLock,
     changed: writerChanged,
     cancelCompile: (id) => cancelNumberingCompile(id, writerDataDir),
     // The Render button's own compile, for the Copilot's render_manuscript (the refresh route calls the same function).
-    render: (id) => runWriterNumberingNow(writerDataDir, id, { broadcast }),
+    render: (id) =>
+      runWriterNumberingNow(writerDataDir, id, { broadcast, ...(observer ? { observer } : {}) }),
     sandboxed: () => writerSandboxAvailable(),
     // The References tab's list: the saved works' cite keys, read fresh at each use.
     citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
@@ -477,9 +483,12 @@ export function createApp(deps: AppDeps): Hono {
     guardCsrf,
     deps.mailRead,
     deps.mailManage,
-    deps.mailCompose
+    deps.mailCompose,
+    log
   );
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
+  // A host built here records where this app records; one handed in was given its log by whoever built it.
+  if (deps.copilot === undefined) copilot.useLog(log);
   mountCopilotRoutes(app, copilot, guardCsrf);
   // Text Docs (ticket 25): create under a Work, source save, validate and explicit generate.
   const textDocs = new TextDocService({
@@ -1825,7 +1834,12 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(e.body, e.status);
     }
     try {
-      return c.json(await runWriterNumberingNow(writerDataDir, id, { broadcast }));
+      return c.json(
+        await runWriterNumberingNow(writerDataDir, id, {
+          broadcast,
+          ...(observer ? { observer } : {}),
+        })
+      );
     } catch (err) {
       if (err instanceof WriterNumberingError) {
         const e = detail(err.message, err.kind === "canceled" ? 409 : 404);

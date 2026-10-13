@@ -20,6 +20,7 @@ import type { TexDocIr } from "@argelanderspace/contracts";
 import { ingestTex } from "@argelanderspace/core";
 import { ArxivFetcher, acquireSource } from "../latex/arxiv-source.js";
 import type { FetchImpl } from "../lib/http.js";
+import { type ExternalObserver, observedFetch } from "../lib/observe.js";
 import { extractZip } from "../lib/unzip.js";
 import { compileTex } from "./compile.js";
 import { materializeTexFigure } from "./figures.js";
@@ -39,6 +40,11 @@ export interface TexIngestOptions {
   fetchImpl?: FetchImpl;
   /** Stage sink: compile/fuse/figures progress + warnings. */
   onProgress?: (message: string) => void;
+  /**
+   * Told of the arXiv request and of every latexmk / pdftocairo / gs run (lib/observe.ts). The server hands in the
+   * one that writes its user-level log; the CLI hands in none.
+   */
+  observer?: ExternalObserver;
 }
 
 export interface TexIngestResult {
@@ -50,10 +56,16 @@ export interface TexIngestResult {
   docId: string;
 }
 
-const ports = {
-  compile: { compile: compileTex },
-  figures: { materialize: materializeTexFigure },
-} as const;
+const portsFor = (observer: ExternalObserver | undefined) =>
+  ({
+    compile: {
+      compile: (input: Parameters<typeof compileTex>[0]) => compileTex(input, { observer }),
+    },
+    figures: {
+      materialize: (req: Parameters<typeof materializeTexFigure>[0]) =>
+        materializeTexFigure(req, { observer }),
+    },
+  }) as const;
 
 function reportWarnings(onProgress: ((m: string) => void) | undefined, warnings: string[]): void {
   if (onProgress === undefined) return;
@@ -71,7 +83,9 @@ export async function ingestTexSource(
       // same UA the pandoc-era config used (polite-pool etiquette)
       userAgent: "bibgraph/0.1 (https://arxiv.org; mailto:wuwenjiegogo@gmail.com)",
       useCache: !(opts.noCache ?? false),
-      ...(opts.fetchImpl !== undefined ? { fetchImpl: opts.fetchImpl } : {}),
+      ...(opts.fetchImpl !== undefined || opts.observer !== undefined
+        ? { fetchImpl: observedFetch(opts.fetchImpl ?? fetch, "arxiv", opts.observer) }
+        : {}),
     }),
     ...(opts.docId !== undefined ? { docId: opts.docId } : {}),
   });
@@ -80,6 +94,7 @@ export async function ingestTexSource(
   mkdirSync(buildDir, { recursive: true });
   const doAssets = opts.assets !== false;
   if (doAssets) mkdirSync(assetsDir, { recursive: true });
+  const ports = portsFor(opts.observer);
   opts.onProgress?.("Compiling LaTeX (latexmk)");
   const r = await ingestTex(
     {

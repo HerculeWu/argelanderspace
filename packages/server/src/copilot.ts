@@ -61,6 +61,7 @@ import {
   type WsCopilotViewAction,
   writerKey,
 } from "@argelanderspace/contracts";
+import { f } from "@argelanderspace/infra";
 import {
   type AssistantMessage,
   clampThinkingLevel,
@@ -2847,6 +2848,23 @@ export class CopilotHost {
         throw failed;
       }
     };
+    const conversationId = loaded.record.id;
+    const runStarted = performance.now();
+    const toolStarted = new Map<string, number>();
+    this.log.info("copilot.run_started", { conversation: f.id(conversationId), run: f.id(runId) });
+    // The end of the run as the record keeps it: status and the error CODE (a value from a fixed list).
+    const logFinished = (status: string, error: string | null): void => {
+      const fields = {
+        conversation: f.id(conversationId),
+        run: f.id(runId),
+        status: f.oneOf(COPILOT_RUN_ENDS, status),
+        ...(error === null ? {} : { code: f.oneOf(COPILOT_RUN_ERROR_CODES, error) }),
+        duration_ms: f.ms(performance.now() - runStarted),
+      };
+      if (status === "failed" || status === "interrupted")
+        this.log.warn("copilot.run_finished", fields);
+      else this.log.info("copilot.run_finished", fields);
+    };
     session.subscribe((event) => {
       if (event.type === "message_update" && event.message.role === "assistant") {
         const before = `${loaded.stream}\u0000${JSON.stringify(loaded.live)}`;
@@ -2857,6 +2875,22 @@ export class CopilotHost {
         if (loaded.live) this.trackLive(loaded.live, event);
         if (before !== `${loaded.stream}\u0000${JSON.stringify(loaded.live)}`)
           this.emit(loaded, "stream");
+      }
+      if (event.type === "tool_execution_start")
+        toolStarted.set(event.toolCallId, performance.now());
+      if (event.type === "tool_execution_end") {
+        // Which tool, how its call ended and how long it took: never its arguments or what it returned.
+        const began = toolStarted.get(event.toolCallId);
+        toolStarted.delete(event.toolCallId);
+        const fields = {
+          conversation: f.id(conversationId),
+          run: f.id(runId),
+          tool: f.oneOf(COPILOT_TOOL_NAMES, event.toolName),
+          result: f.oneOf(COPILOT_TOOL_RESULTS, toolResultCategory(event.result, event.isError)),
+          ...(began === undefined ? {} : { duration_ms: f.ms(performance.now() - began) }),
+        };
+        if (event.isError) this.log.info("copilot.tool_called", fields);
+        else this.log.debug("copilot.tool_called", fields);
       }
       if (loaded.live && event.type === "tool_execution_start") {
         loaded.live.started.add(event.toolCallId);
@@ -2924,6 +2958,7 @@ export class CopilotHost {
     ) => {
       loaded.record = { ...loaded.record, run: { id: runId, status, error } };
       this.save(loaded.record);
+      logFinished(status, error);
     };
     const pending = (async () => {
       try {
@@ -2990,6 +3025,8 @@ export class CopilotHost {
         } catch {
           /* Keep the explicit in-memory state; restart sees interrupted. */
         }
+        // A message the host refused to admit left no run behind; it is recorded as refused, by its code.
+        logFinished(accepted ? "failed" : "refused", code);
         session.dispose();
         loaded.session = undefined;
       } finally {
@@ -3027,6 +3064,61 @@ export class CopilotHost {
     await Promise.all([...this.loaded.values()].map((loaded) => loaded.pending));
     for (const loaded of this.loaded.values()) loaded.session?.dispose();
   }
+}
+
+/** The tools a run can be given (each tool's file names its own). */
+const COPILOT_TOOL_NAMES = [
+  PLAN_TOOL_NAME,
+  WORKSPACE_TOOL_NAME,
+  LIBRARY_TOOL_NAME,
+  READER_TOOL_NAME,
+  WRITER_TOOL_NAME,
+  TEXT_TOOL_NAME,
+  MAIL_TOOL_NAME,
+  ARGUMENT_TOOL_NAME,
+] as const;
+/** How a tool call ended: the status of its operation row, or `thrown` when the tool threw. */
+const COPILOT_TOOL_RESULTS = [
+  "ok",
+  "noop",
+  "conflict",
+  "not_found",
+  "rejected",
+  "invalid",
+  "not_displayed",
+  "unsupported",
+  "unknown",
+  "error",
+  "pending",
+  "declined",
+  "expired",
+  "thrown",
+  "other",
+] as const;
+const COPILOT_RUN_ENDS = ["completed", "failed", "stopped", "interrupted", "refused"] as const;
+/** Every code a run can end with: `CopilotError`'s codes and what `providerErrorCode` answers. */
+const COPILOT_RUN_ERROR_CODES = [
+  "storage",
+  "not_found",
+  "busy",
+  "stale",
+  "capabilities",
+  "credentials",
+  "capacity",
+  "invalid_input",
+  "unavailable",
+  "unreadable",
+  "provider_capacity",
+  "rate_limit",
+  "transient",
+  "quota",
+] as const;
+/** Only the status word of the result's operation row is read: nothing else of what the tool returned. */
+function toolResultCategory(result: unknown, isError: boolean): string {
+  if (isError) return "thrown";
+  const status = (result as { details?: { status?: unknown } } | null | undefined)?.details?.status;
+  if (typeof status !== "string") return "ok";
+  return (COPILOT_TOOL_RESULTS as readonly string[]).includes(status) ? status : "other";
 }
 
 /** The tool call as the user's operation record names it: tool, action and, for a page image read, the page. */

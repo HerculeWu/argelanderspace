@@ -12,6 +12,7 @@
 
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import type { Readable } from "node:stream";
+import { type ExternalObserver, type ExternalProgram, reportProgram } from "../lib/observe.js";
 
 export interface TexProcResult {
   code: number | null;
@@ -33,9 +34,20 @@ export function runTexProcess(
     /** Bytes written to a fourth pipe (fd 3) of the child (bwrap `--args 3`), so they appear in no command line. */
     fdInput?: Buffer;
     signal?: AbortSignal;
+    /**
+     * Who is told how the run ended (lib/observe.ts): the program by its name from the fixed list — `cmd` may be the
+     * sandbox's path — its exit code and how long it took. Never the arguments.
+     */
+    observe?: {
+      observer: ExternalObserver | undefined;
+      program: ExternalProgram;
+      sandboxed?: boolean;
+    };
   }
 ): Promise<TexProcResult> {
   opts.signal?.throwIfAborted();
+  const watched = opts.observe?.observer === undefined ? undefined : opts.observe;
+  const started = watched ? performance.now() : 0;
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
@@ -73,11 +85,30 @@ export function runTexProcess(
     child.on("error", (err) => {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", kill);
+      if (watched)
+        reportProgram(watched.observer, {
+          program: watched.program,
+          sandboxed: watched.sandboxed === true,
+          exitCode: null,
+          signal: null,
+          timedOut,
+          durationMs: performance.now() - started,
+          error: err,
+        });
       reject(err);
     });
     child.on("close", (code, signal) => {
       clearTimeout(timer);
       opts.signal?.removeEventListener("abort", kill);
+      if (watched)
+        reportProgram(watched.observer, {
+          program: watched.program,
+          sandboxed: watched.sandboxed === true,
+          exitCode: code,
+          signal,
+          timedOut,
+          durationMs: performance.now() - started,
+        });
       resolve({
         code,
         signal,

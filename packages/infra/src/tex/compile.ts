@@ -35,6 +35,7 @@ import type {
   TexEngine,
 } from "@argelanderspace/core";
 import { TEX_COMPILE_DEFAULT_TIMEOUT_MS } from "@argelanderspace/core";
+import type { ExternalObserver } from "../lib/observe.js";
 import { findOnPath } from "../lib/proc.js";
 import { createCachedTexWorkspace } from "./cache.js";
 import { prepareTexInstrumentation, texStyPath } from "./instrument.js";
@@ -269,6 +270,7 @@ async function attemptCompile(opts: {
   cacheDir?: string;
   renderProfile?: "writer";
   signal?: AbortSignal;
+  observer?: ExternalObserver | undefined;
 }): Promise<AttemptResult> {
   opts.signal?.throwIfAborted();
   const fail = (
@@ -323,7 +325,7 @@ async function attemptCompile(opts: {
     ];
     // Writer: inside bubblewrap when it works (the real boundary, see sandbox.ts); the hardening below always applies.
     const writerEnv = opts.renderProfile === "writer" ? writerTexEnv(runDir) : null;
-    const sandboxed = writerEnv !== null && (await ensureWriterSandboxProbe());
+    const sandboxed = writerEnv !== null && (await ensureWriterSandboxProbe(opts.observer));
     const sandbox =
       sandboxed && writerEnv ? writerSandboxCommand(runDir, writerEnv, "latexmk", args) : null;
     const result = await runTexProcess(
@@ -342,6 +344,7 @@ async function attemptCompile(opts: {
             ? { env: writerEnv, replaceEnv: true }
             : {}),
         ...(opts.signal ? { signal: opts.signal } : {}),
+        observe: { observer: opts.observer, program: "latexmk", sandboxed: sandbox !== null },
       }
     );
     opts.signal?.throwIfAborted();
@@ -472,7 +475,16 @@ export type TexCompileOptions = TexCompileInput & {
   styPath?: string | null;
 };
 
-export async function compileTex(input: TexCompileOptions): Promise<TexCompileOutcome> {
+/** What a caller may hand `compileTex` besides the port's input. */
+export interface TexCompileHooks {
+  /** Told of every latexmk run (lib/observe.ts). */
+  observer?: ExternalObserver | undefined;
+}
+
+export async function compileTex(
+  input: TexCompileOptions,
+  hooks: TexCompileHooks = {}
+): Promise<TexCompileOutcome> {
   const timeoutMs = input.timeoutMs ?? TEX_COMPILE_DEFAULT_TIMEOUT_MS;
   const preferred: TexEngine = input.engine ?? "pdflatex";
   const other: TexEngine = preferred === "pdflatex" ? "xelatex" : "pdflatex";
@@ -528,6 +540,7 @@ export async function compileTex(input: TexCompileOptions): Promise<TexCompileOu
     ...(input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {}),
     ...(input.renderProfile !== undefined ? { renderProfile: input.renderProfile } : {}),
     ...(input.signal ? { signal: input.signal } : {}),
+    observer: hooks.observer,
   };
   const warnings: string[] = [];
   let lastError: AttemptResult | null = null;
@@ -619,7 +632,7 @@ export async function compileTex(input: TexCompileOptions): Promise<TexCompileOu
 
 /** Structural check: compileTex satisfies the core port. */
 export const texCompilePort: import("@argelanderspace/core").TexCompilePort = {
-  compile: compileTex,
+  compile: (input) => compileTex(input),
 };
 
 export interface TexCompileAttemptInput {

@@ -27,7 +27,12 @@ import {
   manuscriptJsonPath,
   templatesDir,
 } from "@argelanderspace/core";
-import { compileTex, TEX_WORKSPACE_LIMITS, texFigurePort } from "@argelanderspace/infra";
+import {
+  compileTex,
+  type ExternalObserver,
+  observedTexFigurePort,
+  TEX_WORKSPACE_LIMITS,
+} from "@argelanderspace/infra";
 
 const COMPILE_TIMEOUT_MS = 30_000;
 const PREVIEW_PROFILE = "writer-ir-v1";
@@ -204,7 +209,9 @@ async function snapshot(dataDir: string, id: string): Promise<Snapshot> {
 export async function computeWriterNumbering(
   dataDir: string,
   id: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Told of the latexmk and figure-conversion runs (the server's user-level log). */
+  observer?: ExternalObserver
 ): Promise<WriterNumberingFile> {
   let stage: string | undefined;
   try {
@@ -222,15 +229,18 @@ export async function computeWriterNumbering(
       await fs.writeFile(path, value);
     }
     const mainTex = join(stage, "main.tex");
-    const compiled = await compileTex({
-      srcDir: stage,
-      mainTex,
-      outDir: join(root, "artifacts"),
-      cacheDir: join(root, "latexmk"),
-      renderProfile: "writer",
-      timeoutMs: COMPILE_TIMEOUT_MS,
-      ...(signal ? { signal } : {}),
-    });
+    const compiled = await compileTex(
+      {
+        srcDir: stage,
+        mainTex,
+        outDir: join(root, "artifacts"),
+        cacheDir: join(root, "latexmk"),
+        renderProfile: "writer",
+        timeoutMs: COMPILE_TIMEOUT_MS,
+        ...(signal ? { signal } : {}),
+      },
+      { observer }
+    );
     if (!compiled.ok)
       return persistFailure(
         dataDir,
@@ -244,7 +254,7 @@ export async function computeWriterNumbering(
       origin: `writer:${id}`,
       engine: compiled.engine,
       factFiles: compiled.artifacts,
-      figures: texFigurePort,
+      figures: observedTexFigurePort(observer),
       assetsDir: join(root, "assets"),
       manuscript: input.manuscript,
       template: input.template,
@@ -319,7 +329,8 @@ type BroadcastFn = (msg: WsWriterChanged) => void;
 type ComputeFn = (
   dataDir: string,
   id: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  observer?: ExternalObserver
 ) => Promise<WriterNumberingFile>;
 interface Scheduled {
   timer: ReturnType<typeof setTimeout> | null;
@@ -328,6 +339,7 @@ interface Scheduled {
   canceled: boolean;
   controller: AbortController;
   broadcast: BroadcastFn;
+  observer: ExternalObserver | undefined;
   dataDir: string;
   id: string;
 }
@@ -341,7 +353,12 @@ export function __setNumberingComputeForTests(impl: ComputeFn): () => void {
     computeImpl = prev;
   };
 }
-function entryFor(dataDir: string, id: string, broadcast: BroadcastFn): Scheduled {
+function entryFor(
+  dataDir: string,
+  id: string,
+  broadcast: BroadcastFn,
+  observer: ExternalObserver | undefined
+): Scheduled {
   const key = scheduleKey(dataDir, id);
   let entry = scheduled.get(key);
   if (!entry) {
@@ -352,12 +369,14 @@ function entryFor(dataDir: string, id: string, broadcast: BroadcastFn): Schedule
       canceled: false,
       controller: new AbortController(),
       broadcast,
+      observer,
       dataDir,
       id,
     };
     scheduled.set(key, entry);
   }
   entry.broadcast = broadcast;
+  entry.observer = observer;
   return entry;
 }
 function runScheduled(entry: Scheduled): Promise<void> {
@@ -372,7 +391,12 @@ function runScheduled(entry: Scheduled): Promise<void> {
       do {
         entry.again = false;
         if (entry.canceled) break;
-        const file = await computeImpl(entry.dataDir, entry.id, entry.controller.signal);
+        const file = await computeImpl(
+          entry.dataDir,
+          entry.id,
+          entry.controller.signal,
+          entry.observer
+        );
         // Failures also notify the UI; leaving an old green preview is misleading.
         if (!entry.canceled)
           entry.broadcast({
@@ -393,9 +417,9 @@ function runScheduled(entry: Scheduled): Promise<void> {
 export async function runWriterNumberingNow(
   dataDir: string,
   id: string,
-  opts: { broadcast: BroadcastFn }
+  opts: { broadcast: BroadcastFn; observer?: ExternalObserver }
 ): Promise<WriterNumberingResponse> {
-  const entry = entryFor(dataDir, id, opts.broadcast);
+  const entry = entryFor(dataDir, id, opts.broadcast, opts.observer);
   if (entry.timer) {
     clearTimeout(entry.timer);
     entry.timer = null;

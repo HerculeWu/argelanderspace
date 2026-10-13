@@ -27,6 +27,7 @@ export {
 export * from "./global-dirs.js";
 export * from "./latex/arxiv-source.js";
 export * from "./lib/http.js";
+export * from "./lib/observe.js";
 export * from "./lib/proc.js";
 export * from "./lib/pyjson.js";
 export * from "./lib/untar.js";

@@ -783,10 +783,12 @@ test("a page the history would refuse, seen during a run, is logged as a bare fa
   } as PageContext);
   await settled(snapshot.conversation.id);
   expect(attempts).toBe(2);
-  expect(logged.records()).toMatchObject([
-    { level: "warn", event: "copilot.observation_not_recordable" },
-  ]);
-  expect(Object.keys(logged.records()[0] ?? {}).sort()).toEqual(["event", "level", "t"]);
+  // (The run itself is recorded too since desktop-app ticket 07: by its ids only.)
+  const facts = logged
+    .records()
+    .filter((record) => !String(record.event).startsWith("copilot.run_"));
+  expect(facts).toMatchObject([{ level: "warn", event: "copilot.observation_not_recordable" }]);
+  expect(Object.keys(facts[0] ?? {}).sort()).toEqual(["event", "level", "t"]);
   expect(logged.lines.join("")).not.toMatch(/observed|private|title/i);
   // It no longer goes to the terminal.
   expect(warned).not.toHaveBeenCalled();

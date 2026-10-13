@@ -22,6 +22,8 @@ import {
 } from "@argelanderspace/infra";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { type ServerLog, silentLog } from "./log.js";
+import { observedCredentials, observedMail } from "./log-observers.js";
 import { MailComposeError, MailComposeService } from "./mail-compose.js";
 import { mailHttpStatus } from "./mail-failures.js";
 import { MailOutbox } from "./mail-outbox.js";
@@ -33,13 +35,13 @@ export interface MailComposeServices {
 }
 
 /** Production wiring over the real global directories. */
-export function createDefaultMailComposeServices(): MailComposeServices {
+export function createDefaultMailComposeServices(log: ServerLog = silentLog): MailComposeServices {
   const cacheDir = () => resolveGlobalDirs().cacheDir;
-  const outgoing = createNodeMailOutgoing();
+  const outgoing = observedMail(createNodeMailOutgoing(), log);
   const compose = new MailComposeService({
     accounts: createMailAccountStore(),
-    credentials: createCredentialStore(),
-    mailbox: createNodeMailMailbox(),
+    credentials: observedCredentials(createCredentialStore(), log),
+    mailbox: observedMail(createNodeMailMailbox(), log),
     outgoing,
     cacheDir,
   });
@@ -57,10 +59,11 @@ export function createDefaultMailComposeServices(): MailComposeServices {
 export function mountMailComposeRoutes(
   host: Hono,
   injected: MailComposeServices | undefined,
-  guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null
+  guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null,
+  log: ServerLog = silentLog
 ): () => MailComposeServices {
   let services = injected;
-  const svc = () => (services ??= createDefaultMailComposeServices());
+  const svc = () => (services ??= createDefaultMailComposeServices(log));
   const app = new Hono();
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
