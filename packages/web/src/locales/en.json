@@ -1004,6 +1004,15 @@
       "bibMissing": "Downloaded, but {{count}} citation(s) are missing from the library"
     }
   },
+  "pageError": {
+    "title": "The page hit an error",
+    "recorded": "The error was written to the log, which contains none of your content.",
+    "notRecorded": "This error was not written to the log.",
+    "reloadHint": "Reloading usually lets you continue.",
+    "name": "Error",
+    "pane": "Pane",
+    "reload": "Reload"
+  },
   "common": {
     "cancel": "Cancel",
     "close": "Close",

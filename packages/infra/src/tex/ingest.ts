@@ -23,6 +23,7 @@ import type { FetchImpl } from "../lib/http.js";
 import { type ExternalObserver, observedFetch } from "../lib/observe.js";
 import { extractZip } from "../lib/unzip.js";
 import { compileTex } from "./compile.js";
+import type { TexFailureLogHook } from "./failure-log.js";
 import { materializeTexFigure } from "./figures.js";
 
 export interface TexIngestOptions {
@@ -45,6 +46,11 @@ export interface TexIngestOptions {
    * one that writes its user-level log; the CLI hands in none.
    */
   observer?: ExternalObserver;
+  /**
+   * Where the complete latexmk log is kept when the compile fails, and who is told (failure-log.ts). The server
+   * hands one in per job; the CLI hands in none and keeps none.
+   */
+  failureLog?: TexFailureLogHook;
 }
 
 export interface TexIngestResult {
@@ -56,10 +62,11 @@ export interface TexIngestResult {
   docId: string;
 }
 
-const portsFor = (observer: ExternalObserver | undefined) =>
+const portsFor = (observer: ExternalObserver | undefined, failureLog?: TexFailureLogHook) =>
   ({
     compile: {
-      compile: (input: Parameters<typeof compileTex>[0]) => compileTex(input, { observer }),
+      compile: (input: Parameters<typeof compileTex>[0]) =>
+        compileTex(input, failureLog === undefined ? { observer } : { observer, failureLog }),
     },
     figures: {
       materialize: (req: Parameters<typeof materializeTexFigure>[0]) =>
@@ -94,7 +101,7 @@ export async function ingestTexSource(
   mkdirSync(buildDir, { recursive: true });
   const doAssets = opts.assets !== false;
   if (doAssets) mkdirSync(assetsDir, { recursive: true });
-  const ports = portsFor(opts.observer);
+  const ports = portsFor(opts.observer, opts.failureLog);
   opts.onProgress?.("Compiling LaTeX (latexmk)");
   const r = await ingestTex(
     {

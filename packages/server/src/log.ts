@@ -66,6 +66,10 @@ export const SERVER_LOG_EVENTS = [
   "copilot.run_started",
   "copilot.run_finished",
   "copilot.tool_called",
+  // Desktop-app ticket 08 (compile-failure-log.ts, page-errors.ts):
+  "tex.compile_failed",
+  "page.error",
+  "page.errors_dropped",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];

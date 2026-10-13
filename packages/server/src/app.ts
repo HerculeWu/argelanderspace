@@ -100,6 +100,7 @@ import {
   AdsDiscoveryError,
   ensureWriterSandboxProbe,
   getConfig,
+  type TexCompileFailure,
   writerSandboxAvailable,
   zipEntries,
 } from "@argelanderspace/infra";
@@ -119,6 +120,7 @@ import {
   DocMetadataError,
 } from "./annotations-access.js";
 import { readArgumentGraph, writeArgumentGraph } from "./argument-graph-actions.js";
+import { logWriterCompileFailure } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
 import { ArgumentUndoRegistry } from "./copilot-argument-tool.js";
 import { type AnnotationWrite, planAnnotationWrite } from "./copilot-reader-annotations.js";
@@ -147,6 +149,7 @@ import { mountMailRoutes } from "./mail-routes.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { mountMailWatchRoutes } from "./mail-watch-routes.js";
 import { DEV_ORIGINS, ownOrigins } from "./origins.js";
+import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { PaperCache } from "./paper-cache.js";
 import { createPdfAccess } from "./pdf-access.js";
 import {
@@ -195,6 +198,10 @@ export interface AppDeps {
   makeDiscoverySource?: () => AdsDiscoverySource;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
+  /** The rate window of the page-error reports (page-errors.ts); a test shortens it. Default a minute. */
+  pageErrors?: PageErrorOptions | undefined;
+  /** The pipelines for one job (acquisition.ts `pipelinesForJob`); absent → `pipelines`. */
+  pipelinesForJob?: ((jobId: string) => IngestPipelines) | undefined;
   /** External current arXiv PDF bytes; isolated tests replace only this network boundary. */
   fetchArxivPdf?: (arxivId: string) => Promise<Buffer>;
   /**
@@ -407,6 +414,9 @@ export function createApp(deps: AppDeps): Hono {
   // The Copilot `writer` tool and these routes share one lock, rev check, save and writer.changed notification.
   // Find out (off the event loop) whether the OS sandbox for Writer compiles works; the gates read the cached answer.
   void ensureWriterSandboxProbe(observer);
+  // A failed render keeps its complete latexmk log in the manuscript's build directory; this is its log record.
+  const writerCompileFailed = (id: string, failure: TexCompileFailure): void =>
+    logWriterCompileFailure(log, id, failure);
   const writerOps: WriterOpDeps = {
     dataDir: writerDataDir,
     writerLock,
@@ -414,7 +424,11 @@ export function createApp(deps: AppDeps): Hono {
     cancelCompile: (id) => cancelNumberingCompile(id, writerDataDir),
     // The Render button's own compile, for the Copilot's render_manuscript (the refresh route calls the same function).
     render: (id) =>
-      runWriterNumberingNow(writerDataDir, id, { broadcast, ...(observer ? { observer } : {}) }),
+      runWriterNumberingNow(writerDataDir, id, {
+        broadcast,
+        onCompileFailure: writerCompileFailed,
+        ...(observer ? { observer } : {}),
+      }),
     sandboxed: () => writerSandboxAvailable(observer),
     // The References tab's list: the saved works' cite keys, read fresh at each use.
     citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
@@ -473,6 +487,9 @@ export function createApp(deps: AppDeps): Hono {
     origin !== undefined && !originAllowed(origin)
       ? { body: { detail: "cross-site request rejected" }, status: 403 }
       : null;
+
+  // What the page reports of its own errors (page-errors.ts): checked field by field, limited in number.
+  mountPageErrorRoute(app, log, guardCsrf, { ...deps.pageErrors, webDist: deps.webDist });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
   mountProviderRoutes(app, providerSettings, guardCsrf);
@@ -566,6 +583,7 @@ export function createApp(deps: AppDeps): Hono {
     argumentGraphChanged: (workId) => argumentGraphChanged(workId, "external"),
     lockedRebuild: createLockedRebuild(libraryLock, log),
     pipelines: deps.pipelines,
+    pipelinesForJob: deps.pipelinesForJob,
     makeSources: deps.makeSources,
     fetchArxivPdf: deps.fetchArxivPdf,
     /** Hidden config gate: re-read config.toml before automatic PDF submission. */
@@ -1837,6 +1855,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json(
         await runWriterNumberingNow(writerDataDir, id, {
           broadcast,
+          onCompileFailure: writerCompileFailed,
           ...(observer ? { observer } : {}),
         })
       );

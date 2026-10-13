@@ -29,6 +29,7 @@ import {
   ingestTexZip,
   OpenAlexClient,
   observedFetch,
+  type TexFailureLogHook,
 } from "@argelanderspace/infra";
 
 /**
@@ -43,6 +44,11 @@ export interface AdapterWiring {
   observer?: ExternalObserver | undefined;
   /** The HTTP implementation under the sources and the arXiv fetcher (tests: an offline stub); default global fetch. */
   fetchImpl?: FetchImpl | undefined;
+  /**
+   * Where the complete latexmk log of a failed compile is kept (infra `tex/failure-log.ts`). The server hands one in
+   * per job (compile-failure-log.ts); the CLI hands in none and keeps none.
+   */
+  failureLog?: TexFailureLogHook | undefined;
 }
 
 function fetchOf(
@@ -108,6 +114,7 @@ export function realPipelines(paths: LibraryPaths, wiring: AdapterWiring = {}): 
   const extra = {
     ...(wiring.observer !== undefined ? { observer: wiring.observer } : {}),
     ...(wiring.fetchImpl !== undefined ? { fetchImpl: wiring.fetchImpl } : {}),
+    ...(wiring.failureLog !== undefined ? { failureLog: wiring.failureLog } : {}),
   };
   return {
     ingestLatex: async (arxivId) =>

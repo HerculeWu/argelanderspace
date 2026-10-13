@@ -36,6 +36,7 @@ import { serve } from "@hono/node-server";
 import type { Hono } from "hono";
 import { type AppDeps, createApp } from "./app.js";
 import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
+import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
@@ -71,6 +72,8 @@ export interface ServerOptions {
   fetchImpl?: FetchImpl;
   /** WS heartbeat interval; `0` disables (tests). */
   heartbeatMs?: number;
+  /** The rate window of the page-error reports (page-errors.ts): a dependency-injection point like `heartbeatMs`. */
+  pageErrors?: Pick<import("./page-errors.js").PageErrorOptions, "windowMs">;
   /** External-write poll interval (default 1500); tests inject ~50. */
   watchIntervalMs?: number;
   /** Explicit isolated credential/config store; ordinary servers initialize lazily. */
@@ -113,8 +116,9 @@ export function createServer(opts: ServerOptions): RunningServer {
   const observer = externalObserver(log);
   const wiring = { observer, fetchImpl: opts.fetchImpl };
   const observeJobs = jobLogger(log);
+  const jobsDir = join(opts.dataDir, "jobs");
   const runner = new JobRunner({
-    dir: join(opts.dataDir, "jobs"),
+    dir: jobsDir,
     ...(observeJobs ? { observe: observeJobs } : {}),
     // Stage 15 (D12): a boot-interrupted arXiv fetch is a failure worth
     // iterating on too — it lands in the same plain-text JSONL log.
@@ -138,6 +142,11 @@ export function createServer(opts: ServerOptions): RunningServer {
       }
     },
   });
+  // A failed compile's log is collected in `<job id>.compile.log.partial` and renamed when the job has failed. One
+  // left by a run that was killed holds lines of the source: the runner has just marked every unfinished job of this
+  // directory interrupted (none is re-run), so whatever collecting file is here belongs to no running job.
+  sweepIngestPartials(jobsDir);
+  let writePendingPageErrorCounts: () => void = () => {};
   const port = opts.port ?? DEFAULT_PORT;
 
   let mailWatcher: MailWatcher | undefined;
@@ -162,6 +171,13 @@ export function createServer(opts: ServerOptions): RunningServer {
     makeDiscoverySource:
       opts.deps?.makeDiscoverySource ?? (() => realDiscoverySource(paths, wiring)),
     pipelines: opts.deps?.pipelines ?? realPipelines(paths, wiring),
+    // The real pipelines keep a failed compile's complete latexmk log beside the job's record.
+    ...(opts.deps?.pipelines === undefined
+      ? {
+          pipelinesForJob: (jobId: string) =>
+            realPipelines(paths, { ...wiring, failureLog: ingestFailureLog(jobsDir, jobId, log) }),
+        }
+      : {}),
     fetchArxivPdf:
       opts.deps?.fetchArxivPdf ??
       ((arxivId) =>
@@ -179,6 +195,12 @@ export function createServer(opts: ServerOptions): RunningServer {
     providerSettings,
     copilot,
     log,
+    pageErrors: {
+      ...opts.pageErrors,
+      atClose: (writePending) => {
+        writePendingPageErrorCounts = writePending;
+      },
+    },
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
   });
 
@@ -266,6 +288,8 @@ export function createServer(opts: ServerOptions): RunningServer {
         // First, synchronously: no mail undo window may end into a send while the rest shuts down
         // (stopping Copilot runs can take a while). Pending sends become interrupted, back in Drafts.
         disposeMailSendServices();
+        // Dropped page-error reports whose count was waiting for its window to end are counted in the log now.
+        writePendingPageErrorCounts();
         watcher.stop();
         hub.close();
         providerSettings.close();

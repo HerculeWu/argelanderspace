@@ -77,6 +77,7 @@
 - 稳定 latexmk 工作目录保留中间物，输入未变保 mtime。input fingerprint 包括模板、cell 身份/源码、bib、deps、资产；仅 main.tex hash 不足。刷新仍交 latexmk 检查其记录的系统样式依赖，并以当前 fuser 投影，不直接缓存短路。
 - 显式渲染请求按 dataDir+稿件隔离 single-flight，运行中合并一个最新 follow-up，不积压全部中间版本。Stage 12 起自动入口已取消（见文头显式触发）；不将加长 debounce 当成完成修复。
 - **latexmk 缓存自愈**：稳定工作目录曾在编译失败后死锁（坏 bbl 阻断 bibtex 重跑）；失败路径现清理 aux/bbl/blg/fdb_latexmk/log（输入不动），下次显式编译自动恢复。
+- **失败日志只留最近一次**（desktop-app 票 08，2026-10-13）：渲染失败时，完整的编译日志——引擎的 `.log`、bibtex 的 `.blg`、latexmk 自己的 stdout / stderr（biber 在 Writer 里被禁用，走 biber 的稿件失败时，线索 `Error return from 'biber main'` 就在 latexmk 的输出里）——在上述清理之前另存为 `<dataDir>/manuscripts/<稿件 id>/build/compile-failure.log`（机制与大小上限见 [tex-pipeline](tex-pipeline.md#执行层)），下一次失败替换它。「最近一次」指最近一次渲染：**编译成功的渲染会删掉这份旧日志**（早已修好的稿件不再留着失败日志），连同进程被杀时可能留在旁边的收集文件 `compile-failure.log.partial` 一起删；删不掉（例如那里是个目录）不影响渲染结果。文件在编译工作目录（`build/latexmk/…`）之外，由 server 进程写入，内容是 `compileTex` 本来就要读的那份日志；沙箱的可写范围没有为此放宽。稿件删除时随目录一起删除。预览的错误信息、`numbering.json`、缓存与重试行为不变。
 - **bib 与期刊宏（Stage 12）**：书目字段、转义和 cite key 规则以 [library](library.md) 为权威。Writer 编译组装 preamble 与导出 manuscript.tex 注入同一组 `\providecommand` 期刊宏（覆盖 ADS 常见天文期刊，标注映射来源）；reader 管线不动。
 - 输入/保存不等待编译；只能在精确源码、模板、目标仍对应时保留旧投影并标陈旧。**同名 label/旧 envIndex 不足以绑定新目标**；新增或结构变化处未解析。失败提供可查看错误，不清稿件、不假装成功。
 
