@@ -155,8 +155,18 @@ describe("reporting never causes more reporting", () => {
     for (let i = 0; i < REPORTS_PER_WINDOW; i++) await reportPageError("error", new Error("again"));
     let read = 0;
     const watched = Object.create(Error.prototype, {
-      name: { get: () => ((read += 1), "Error") },
-      stack: { get: () => ((read += 1), "") },
+      name: {
+        get: () => {
+          read += 1;
+          return "Error";
+        },
+      },
+      stack: {
+        get: () => {
+          read += 1;
+          return "";
+        },
+      },
     }) as Error;
     expect(await reportPageError("error", watched)).toBe("not_recorded");
     expect(read).toBe(0);

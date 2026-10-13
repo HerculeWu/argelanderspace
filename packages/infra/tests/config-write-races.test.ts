@@ -229,7 +229,6 @@ describe("writeSetting: the file is saved by something that does not take the lo
     expect(text()).toBe(saved.replace("1859", "1900"));
   });
 
-
   test("written in place with another size and the time put back: the size gives it away", async () => {
     writeFileSync(path, START);
     // a time a save can be given again exactly: whole seconds
@@ -391,7 +390,6 @@ describe("writeSetting: the file is saved by something that does not take the lo
   });
 });
 
-
 describe("writeSetting: the config path is a symbolic link that comes to lead elsewhere", () => {
   let targetDir: string;
   let target: string;
@@ -425,7 +423,10 @@ describe("writeSetting: the config path is a symbolic link that comes to lead el
     expect(readFileSync(target, "utf-8")).toBe(START);
     expect(readdirSync(targetDir)).toEqual(["real.toml"]);
     // asked again, the change is written where the path leads now
-    expect(await writeSetting("port", { set: 1900 }, { path })).toEqual({ ok: true, changed: true });
+    expect(await writeSetting("port", { set: 1900 }, { path })).toEqual({
+      ok: true,
+      changed: true,
+    });
     expect(text()).toBe(saved.replace("1859", "1900"));
   });
 
@@ -450,7 +451,10 @@ describe("writeSetting: the config path is a symbolic link that comes to lead el
   });
 
   test("a link that still leads to the same file is written through as before", async () => {
-    expect(await writeSetting("port", { set: 1900 }, { path })).toEqual({ ok: true, changed: true });
+    expect(await writeSetting("port", { set: 1900 }, { path })).toEqual({
+      ok: true,
+      changed: true,
+    });
     expect(readFileSync(target, "utf-8")).toBe(START.replace("1859", "1900"));
     expect(readdirSync(targetDir)).toEqual(["real.toml"]);
   });
