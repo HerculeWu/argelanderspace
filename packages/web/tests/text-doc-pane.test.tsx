@@ -457,7 +457,9 @@ describe("text Doc pane: conflict, leave protection, source PDF", () => {
     expect(ui(view.container, "text-source-conflict-latest")?.textContent).toBe("server text");
     expect(backend.markdown).toBe("server text");
     expect(posts("generate")).toHaveLength(0);
-    expect(input(view.container)!.readOnly).toBe(true);
+    // The editor takes the read-only state in an effect of its wrapper, one step after the render that shows the
+    // conflict notice: `conflicted()` returns as soon as the notice is in the page, which can be before that step.
+    await waitFor(() => expect(input(view.container)!.readOnly).toBe(true));
     expect((ui(view.container, "text-source-generate") as HTMLButtonElement).disabled).toBe(true);
   });
 
