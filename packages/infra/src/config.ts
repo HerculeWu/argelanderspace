@@ -21,7 +21,10 @@
  *   global_cache_dir  string   global cache dir override; absolute
  *   auto_ingest_arxiv boolean  default true — Stage 15: automatically fetch
  *                              & compile the arXiv source when an added work
- *                              has an arXiv id (manual triggers stay on)
+ *                              has an arXiv id (manual triggers stay on).
+ *                              Hidden setting today: the web UI exposes no
+ *                              toggle (the schema marks it for one; the
+ *                              settings page is desktop-app ticket 11)
  *   log_level         string   default "info"; one of debug, info, warn,
  *                              error — the lowest level `serve` writes to
  *                              the user-level log
@@ -52,6 +55,13 @@
  *            is not TOML gives every default, and the result lists what is
  *            wrong by key and category. `serve` does not use it yet.
  *
+ * A byte order mark (U+FEFF) at the very start of the file is looked past by
+ * both readings, by `configFileKeys` and by the line editor — one mark, at
+ * the start only; anywhere else outside a string it is not TOML (the parser
+ * refuses it). Until 2026-10-14 the strict reading reported such a file as
+ * invalid TOML; this is the one place where it reads differently from before
+ * the schema.
+ *
  * Changing the file is `config-edit.ts` (the text) and `config-write.ts`
  * (the file, under a lock).
  *
@@ -65,6 +75,8 @@ import { join } from "node:path";
 import {
   evaluateSettings,
   isSettingKey,
+  SETTING_KEYS,
+  SETTINGS_TABLES,
   type SETTINGS_UI_ACCENTS,
   type SETTINGS_UI_DENSITIES,
   type SETTINGS_UI_LANGUAGES,
@@ -73,7 +85,6 @@ import {
   type SettingsEvaluation,
   type SettingsProblem,
   settingDef,
-  TOP_LEVEL_SETTING_KEYS,
 } from "@argelanderspace/contracts";
 import { parse as parseToml } from "smol-toml";
 import type { LogLevel } from "./log/logger.js";
@@ -108,11 +119,11 @@ export interface AppConfig {
 }
 
 /**
- * Every top-level key this build reads from config.toml, in the Settings schema's order. The schema is the one list
- * of key names; this is its top-level part, for `configFileKeys` and the server's start record.
+ * Every key this build knows in config.toml, by identifier (`port`, `ui.theme`) and in the Settings schema's order.
+ * The schema is the one list of key names; this is that list, under the name `configFileKeys` and the server's
+ * start record use (the record's `config_keys` field writes nothing that is not in it).
  */
-export const CONFIG_KEYS: readonly (keyof AppConfig & (typeof TOP_LEVEL_SETTING_KEYS)[number])[] =
-  TOP_LEVEL_SETTING_KEYS;
+export const CONFIG_KEYS: readonly SettingKey[] = SETTING_KEYS;
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -204,13 +215,24 @@ function configOf(doc: Record<string, unknown>, present: readonly SettingKey[]):
 }
 
 /**
+ * Byte order mark. smol-toml refuses it; every reader of the file and the line editor look past one at the very
+ * start.
+ */
+export const CONFIG_FILE_BOM = "\uFEFF";
+
+/** The text without the one byte order mark it may start with. */
+function withoutBom(text: string): string {
+  return text.startsWith(CONFIG_FILE_BOM) ? text.slice(1) : text;
+}
+
+/**
  * Parse config TOML text, strictly: the first fault of a known key throws ConfigError (path + reason, never values).
- * This is the reading of the CLI and of every caller of `getConfig`.
+ * This is the reading of the CLI and of every caller of `getConfig`. A leading byte order mark is skipped.
  */
 export function parseConfigToml(text: string, path: string = "<config>"): AppConfig {
   let doc: Record<string, unknown>;
   try {
-    doc = parseToml(text) as Record<string, unknown>;
+    doc = parseToml(withoutBom(text)) as Record<string, unknown>;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     throw new ConfigError(`invalid TOML in ${path}:\n${msg}`);
@@ -240,9 +262,6 @@ function wholeFile(reason: "unparseable" | "unreadable"): SettingsReading {
   return { ...evaluateSettings({}), problems: [{ key: null, reason }], file: reason };
 }
 
-/** Byte order mark. smol-toml refuses it; the lenient reading and the line editor look past it. */
-export const BOM = "\uFEFF";
-
 /**
  * Read config TOML text, leniently: nothing throws. A file that is not TOML gives every default and one whole-file
  * problem; a known key that is not acceptable gets its default and a problem naming the key and a category. No
@@ -251,7 +270,7 @@ export const BOM = "\uFEFF";
 export function readSettingsText(text: string): SettingsReading {
   let doc: unknown;
   try {
-    doc = parseToml(text.startsWith(BOM) ? text.slice(1) : text);
+    doc = parseToml(withoutBom(text));
   } catch {
     return wholeFile("unparseable");
   }
@@ -289,23 +308,45 @@ export function loadConfigFile(path: string = configFilePath()): AppConfig {
 }
 
 /**
- * Which keys the config file has at its top level: the ones this build reads, by name and in schema order, and how
- * many others. The names of the others are the user's own text and are not returned; no value is. A table is one
- * top-level entry among the others, `[ui]` included, and the keys inside a table are neither named nor counted. A
- * file that is missing, unreadable or not TOML has no keys here (loading it is what reports that).
+ * Which keys the config file has: the ones this build knows, by identifier (`port`, `ui.theme`) and in schema
+ * order, and how many others. A known key is named whether or not its value is acceptable. The others are counted
+ * and never named — their names are the user's own text — and no value is returned:
+ *
+ * - at the top level, every entry that is neither a known key nor a known table (an unknown table is one entry;
+ *   what is inside it is not counted);
+ * - inside a known table (`[ui]`), every entry that is not a known key of it; the table itself is not counted;
+ * - a known table's name written as something that is not a table (`ui = 3`, `[[ui]]`) is one entry.
+ *
+ * A leading byte order mark is skipped. A file that is missing, unreadable or not TOML has no keys here (loading it
+ * is what reports that).
  */
 export function configFileKeys(path: string = configFilePath()): {
-  known: Array<(typeof CONFIG_KEYS)[number]>;
+  known: SettingKey[];
   unknown: number;
 } {
-  let present: string[];
+  let doc: Record<string, unknown>;
   try {
-    present = Object.keys(parseToml(readFileSync(path, "utf-8")));
+    doc = parseToml(withoutBom(readFileSync(path, "utf-8"))) as Record<string, unknown>;
   } catch {
     return { known: [], unknown: 0 };
   }
-  const known = CONFIG_KEYS.filter((key) => present.includes(key));
-  return { known, unknown: present.length - known.length };
+  const known = evaluateSettings(doc).present;
+  // Every entry is one of the others until it is accounted for.
+  let unknown = Object.keys(doc).length;
+  for (const table of SETTINGS_TABLES) {
+    if (!Object.hasOwn(doc, table)) continue;
+    const inner = doc[table];
+    if (
+      typeof inner !== "object" ||
+      inner === null ||
+      Array.isArray(inner) ||
+      inner instanceof Date
+    ) {
+      continue;
+    }
+    unknown += Object.keys(inner).length - 1;
+  }
+  return { known, unknown: unknown - known.length };
 }
 
 /**

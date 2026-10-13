@@ -27,11 +27,19 @@
  *   afterwards (an empty file gets one).
  * - A string is written as a basic string with `"` and `\` escaped; other characters are written as they are. A
  *   string with a control character (U+0000–U+001F, U+007F) or an unpaired surrogate is refused, not escaped: no
- *   setting takes one. Integers are written in decimal.
+ *   setting takes one. Integers are written in decimal; minus zero is zero.
+ * - A bare value (a number, a boolean, a date) ends where the parser ends it: before everything JavaScript's
+ *   `trimEnd` removes, which is more than the blank and the tab TOML allows (a no-break space, U+2028, U+FEFF, a
+ *   form feed, a carriage return that is not part of a line ending, …). Those bytes are after the value and stay.
+ * - A change that is neither `{ set: scalar }` nor `{ reset: true }` is `invalid_value`.
+ * - `unsupported_layout`: the parser accepts the text and the line scan here does not follow it. It happens: the
+ *   parser (smol-toml 1.8.0) reads a quoted key with no `=` after it together with the next line, and takes any one
+ *   character after `[[a]` as the second `]`. The scan refuses both.
  * - The self-check: the result is parsed again; the key must have the asked value (or be gone), and every other
  *   value of the file must be what it was. `proposeConfigEdit` makes the candidate and `checkConfigEdit` judges it;
  *   `editConfigText` is the two together, and takes the proposing step as an argument so that the check can be
- *   shown to stop a bad candidate.
+ *   shown to stop a bad candidate. The check compares parsed values, not how they are written: see
+ *   `checkConfigEdit` for what it cannot see.
  */
 
 import { isDeepStrictEqual } from "node:util";
@@ -42,8 +50,8 @@ import {
   type SettingValue,
   settingDef,
 } from "@argelanderspace/contracts";
-import { parse as parseToml } from "smol-toml";
-import { BOM } from "./config.js";
+import { parse as parseToml, TomlDate } from "smol-toml";
+import { CONFIG_FILE_BOM as BOM } from "./config.js";
 
 /** Set a key to a value, or remove it so that its default applies. */
 export type ConfigChange = { set: SettingValue } | { reset: true };
@@ -52,7 +60,7 @@ export type ConfigChange = { set: SettingValue } | { reset: true };
  * Why an edit was refused. A category; never text from the file or the value.
  *
  *   unknown_key            not a key of the Settings schema
- *   invalid_value          the new value is not acceptable for the key
+ *   invalid_value          the new value is not acceptable for the key, or the change is not a change at all
  *   unrepresentable_value  a string with a control character or an unpaired surrogate
  *   unparseable            the file is not TOML
  *   unsupported_layout     the file is TOML, but this editor could not follow how it is laid out
@@ -122,12 +130,30 @@ class ScanError extends Error {}
 
 const BARE_KEY = /[A-Za-z0-9_-]/;
 
+/**
+ * A change as the rest of this file uses it, or `null` when it is not one: exactly `{ set: scalar }` or exactly
+ * `{ reset: true }`. Minus zero becomes zero (it is written `0` and reads back as zero).
+ */
+export function normalizeConfigChange(change: unknown): ConfigChange | null {
+  if (typeof change !== "object" || change === null || Array.isArray(change)) return null;
+  const keys = Object.keys(change);
+  if (keys.length !== 1) return null;
+  const record = change as Record<string, unknown>;
+  if (keys[0] === "reset") return record.reset === true ? { reset: true } : null;
+  if (keys[0] !== "set") return null;
+  const value = record.set;
+  if (typeof value === "number") return { set: value === 0 ? 0 : value };
+  return typeof value === "string" || typeof value === "boolean" ? { set: value } : null;
+}
+
 /** The statements of `text` from `start` on. Throws ScanError on anything it does not recognise. */
 function scan(text: string, start: number): Layout {
   const headers: Header[] = [];
   const pairs: Pair[] = [];
   let pos = start;
   let header: Header | null = null;
+  /** Where the last bare value read ends; `pos` is left after what trails it. */
+  let bareEnd = start;
 
   const fail = (): never => {
     throw new ScanError();
@@ -297,8 +323,10 @@ function scan(text: string, start: number): Layout {
     }
     const from = pos;
     while (!atLineEnd() && !"#,]}".includes(text[pos] as string)) pos++;
-    while (pos > from && (text[pos - 1] === " " || text[pos - 1] === "\t")) pos--;
-    if (pos === from) fail();
+    // The parser ends a bare value with `trimEnd`, which removes more than blanks and tabs. What it removes is
+    // not part of the value, and `pos` stays after it: it is on the line, and nothing here reads it again.
+    bareEnd = from + text.slice(from, pos).trimEnd().length;
+    if (bareEnd === from) fail();
     return "bare";
   };
 
@@ -328,7 +356,7 @@ function scan(text: string, start: number): Layout {
     skipBlank();
     const valueStart = pos;
     const valueKind = value();
-    const valueEnd = pos;
+    const valueEnd = valueKind === "bare" ? bareEnd : pos;
     endLine();
     pairs.push({
       header,
@@ -420,11 +448,13 @@ function attachedCommentStart(text: string, pos: number, floor: number): number 
 export function proposeConfigEdit(
   text: string,
   key: string,
-  change: ConfigChange
+  asked: ConfigChange
 ): ConfigEditResult {
   const refuse = (reason: ConfigEditRefusal): ConfigEditResult => ({ ok: false, reason });
   const unchanged: ConfigEditResult = { ok: true, text, changed: false };
   if (!isSettingKey(key)) return refuse("unknown_key");
+  const change = normalizeConfigChange(asked);
+  if (change === null) return refuse("invalid_value");
   const { table, name } = settingDef(key);
   if ("set" in change) {
     if (checkSettingValue(key, change.set) !== null) return refuse("invalid_value");
@@ -547,16 +577,42 @@ export function proposeConfigEdit(
 // --------------------------------------------------------------------------- //
 
 /**
+ * Whether two parsed documents have dates of the same kind in the same places. `isDeepStrictEqual` compares two
+ * dates by their instant, and the parser gives a local date, a local time, a local date-time and a date-time with
+ * an offset the same `Date` when they fall on the same instant; its `toISOString` writes each kind, and the offset,
+ * differently.
+ */
+function sameDates(a: unknown, b: unknown): boolean {
+  if (a instanceof TomlDate || b instanceof TomlDate) {
+    return a instanceof TomlDate && b instanceof TomlDate && a.toISOString() === b.toISOString();
+  }
+  if (Array.isArray(a) && Array.isArray(b)) return a.every((item, i) => sameDates(item, b[i]));
+  if (isPlainTable(a) && isPlainTable(b)) {
+    return Object.keys(a).every((name) => sameDates(a[name], b[name]));
+  }
+  return true;
+}
+
+/**
  * Whether `candidate` is `original` with exactly this change: it parses, the key has the asked value (or is gone),
  * every other value is what it was, and the byte order mark is as it was. A table of the key that is left or made
- * empty counts as no value.
+ * empty counts as no value. A change that is not well formed is never accepted.
+ *
+ * It compares what the parser returns, not the text. Seen: a value of another type or another amount, a missing or
+ * an added key, the order of an array, a date of another kind (local date, local time, local date-time, date-time
+ * with an offset) or under another offset. Not seen, because the parser returns the same thing for both: another
+ * writing of the same value (`1.0` and `1`, `nan` and `-nan`, `0x10` and `16`, `"a"` and `'a'`, a date-time with
+ * `T` or with a blank), comments and blank lines, and the order of the keys. Those stay as they were because the
+ * proposing step leaves every other line alone, not because this check would notice.
  */
 export function checkConfigEdit(
   original: string,
   candidate: string,
   key: SettingKey,
-  change: ConfigChange
+  asked: ConfigChange
 ): boolean {
+  const change = normalizeConfigChange(asked);
+  if (change === null) return false;
   if (original.startsWith(BOM) !== candidate.startsWith(BOM)) return false;
   const body = (text: string): string => (text.startsWith(BOM) ? text.slice(1) : text);
   const before = parseOrNull(body(original));
@@ -582,7 +638,7 @@ export function checkConfigEdit(
     delete inner[name];
     if (table !== null && Object.keys(inner).length === 0) delete doc[table];
   }
-  return isDeepStrictEqual(before, after);
+  return isDeepStrictEqual(before, after) && sameDates(before, after);
 }
 
 /**
@@ -596,6 +652,8 @@ export function editConfigText(
   change: ConfigChange,
   propose: typeof proposeConfigEdit = proposeConfigEdit
 ): ConfigEditResult {
+  if (isSettingKey(key) && normalizeConfigChange(change) === null)
+    return { ok: false, reason: "invalid_value" };
   const proposed = propose(text, key, change);
   if (!proposed.ok || !proposed.changed) return proposed;
   if (!isSettingKey(key) || !checkConfigEdit(text, proposed.text, key, change)) {

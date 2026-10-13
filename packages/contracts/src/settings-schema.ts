@@ -61,6 +61,11 @@ export interface SettingDef {
   restart: boolean;
   /** Still a known key, but the workbench no longer wants it in the file. */
   deprecated?: true;
+  /**
+   * The value is a credential. It is never given to the page or put in a report: `redactSettingsValues` replaces it
+   * with whether it is set. Only the keys that carry this mark are secret.
+   */
+  secret?: true;
 }
 
 const def = <const D extends SettingDef>(d: D): D => d;
@@ -106,6 +111,7 @@ export const SETTINGS_SCHEMA = {
     group: "services",
     ui: "none",
     restart: false,
+    secret: true,
   }),
   ads_dev_key: def({
     table: null,
@@ -116,6 +122,7 @@ export const SETTINGS_SCHEMA = {
     ui: "none",
     restart: false,
     deprecated: true,
+    secret: true,
   }),
   global_dir: def({
     table: null,
@@ -303,6 +310,55 @@ export function defaultSettings(): SettingsValues {
   const out = {} as SettingsValues;
   for (const key of SETTING_KEYS) out[key] = SETTINGS_SCHEMA[key].default;
   return out;
+}
+
+type SecretKeyOf<K extends SettingKey> = K extends unknown
+  ? (typeof SETTINGS_SCHEMA)[K] extends { secret: true }
+    ? K
+    : never
+  : never;
+/** A key whose value is a credential. */
+export type SecretSettingKey = SecretKeyOf<SettingKey>;
+
+/** The keys the schema marks `secret`, in schema order. */
+export const SECRET_SETTING_KEYS = SETTING_KEYS.filter(
+  (key) => (SETTINGS_SCHEMA[key] as SettingDef).secret === true
+) as SecretSettingKey[];
+
+export function isSecretSetting(key: SettingKey): key is SecretSettingKey {
+  return (SETTINGS_SCHEMA[key] as SettingDef).secret === true;
+}
+
+/** What is said about a secret key in place of its value: only whether it has one. */
+export interface RedactedSetting {
+  secret: true;
+  /** `false` when the key is not set, or is set to an empty or whitespace-only string. */
+  set: boolean;
+}
+
+/** `SettingsValues` as it may be given to the page or put in a report. */
+export type RedactedSettingsValues = {
+  [K in SettingKey]: K extends SecretSettingKey ? RedactedSetting : SettingValue | null;
+};
+
+/**
+ * The values as they may leave the process that read the file: every key of the schema, in schema order; a secret
+ * key has `{ secret: true, set }` and no value, every other key has its value unchanged. A fresh object; the input
+ * is not changed. `evaluateSettings` itself still returns the secret values, for the code that uses them.
+ */
+export function redactSettingsValues(values: SettingsValues): RedactedSettingsValues {
+  const out: Record<string, SettingValue | null | RedactedSetting> = {};
+  for (const key of SETTING_KEYS) {
+    const value = values[key];
+    if (isSecretSetting(key)) {
+      const set =
+        typeof value === "string" ? !isBlank(value) : value !== null && value !== undefined;
+      out[key] = { secret: true, set };
+    } else {
+      out[key] = value;
+    }
+  }
+  return out as RedactedSettingsValues;
 }
 
 /**

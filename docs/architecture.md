@@ -26,7 +26,7 @@ config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错�
 
 工作台的配置只有一个来源：`config.toml`，加命令行参数（`--data-dir`、`--port`）作单次覆盖。工作台自己的环境变量（数据目录、端口、全局数据目录、全局缓存目录、web dist 位置）自 2026-10-13（desktop-app 票 05）起不再读取，设置了也不起作用；操作系统自己的变量（`XDG_CONFIG_HOME` 等）照旧。ADS token 与 OpenAlex 的 key、联系邮箱的环境变量不在这次改动内。默认端口 1859 是 contracts 的常量 `DEFAULT_PORT`，CLI 深链接、`serve` 与 web 的开发代理共用。
 
-配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。 完整的键表、严格与宽松两种读取、按行修改与写入见本节末的 [Settings 的 schema、两种读取与按行修改](#settings-的-schema两种读取与按行修改desktop-app-票-09)。
+配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。完整的键表、严格与宽松两种读取、按行修改与写入见本节末的 [Settings 的 schema、两种读取与按行修改](#settings-的-schema两种读取与按行修改desktop-app-票-09)。
 
 **全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定；目录解析已在 infra 实现，Mail 账户已使用）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 config 键 `global_dir` > OS 默认；全局缓存对称：`global_cache_dir` > OS 默认，两者互不影响（改数据目录不移动缓存）；只认 config.toml 的键，不认环境变量（2026-10-13 起，desktop-app 票 05；此前各有一个优先于 config 的环境变量）。空白值视为未设，相对路径一律拒绝（ConfigError，只报键名；按探测到的平台判断绝对路径，避免随 cwd 分裂全局目录）；`global_dir`/`global_cache_dir` 类型错只报键名。`resolveGlobalDirs` 不访问文件系统（未传 config 时读 config.toml）；OS 默认目录由 env-paths 在 import 时固定 homedir，测试隔离须在导入前把 `HOME`/`XDG_*` 指向 tmp；目录由 `ensureGlobalDirs` 按需创建，权限 0700（infra `global-dirs.ts`）。既有 config.toml 位置不变，项目数据不迁移。
 
@@ -89,14 +89,14 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 本节是 `config.toml` 的键表、读取方式与修改方式的权威位置。本票只交付这几样底层能力：HTTP 接口、设置页、文件监视和 `serve` 启动改用宽松读取都还没有；`contact_email`、`tex_dir`、`[ui]` 只定义和校验，没有任何代码读它们的值（主题仍来自浏览器本地存储，联系邮箱不发给任何服务，TeX 目录不参与查找）。
 
-**schema**：contracts 的 `settings-schema.ts`（`SETTINGS_SCHEMA`），纯数据加纯函数，不依赖 Node、平台或 TOML 解析器，web 运行时可以直接引用。它是键名的唯一来源：infra 的 `CONFIG_KEYS`（`configFileKeys` 与 server 启动记录用）就是其中的顶层键，日志模块的 `LOG_LEVELS` 就是 `log_level` 的取值表。每个键有：所在的 TOML 表（顶层或 `[ui]`）、类型、默认值、设置页分组、界面形态（`edit` 有控件 / `readonly` 只显示、只能在文件里改 / `none` 不显示）、改后是否需要重启；`ads_dev_key` 另带「已失效」标记。键的标识符是顶层键名，或 `表名.键名`。
+**schema**：contracts 的 `settings-schema.ts`（`SETTINGS_SCHEMA`），纯数据加纯函数，不依赖 Node、平台或 TOML 解析器，web 运行时可以直接引用。它是键名的唯一来源：infra 的 `CONFIG_KEYS`（`configFileKeys` 与 server 启动记录用）就是全部键的标识符，按 schema 顺序，日志模块的 `LOG_LEVELS` 就是 `log_level` 的取值表。每个键有：所在的 TOML 表（顶层或 `[ui]`）、类型、默认值、设置页分组、界面形态（`edit` 有控件 / `readonly` 只显示、只能在文件里改 / `none` 不显示）、改后是否需要重启；`ads_dev_key` 另带「已失效」标记；两个凭据键 `openalex_api_key`、`ads_dev_key` 另带显式的「机密」标记（`secret: true`，其余键不带）。键的标识符是顶层键名，或 `表名.键名`。
 
 | 键 | 位置 | 类型与取值 | 默认 | 分组 | 界面 | 需重启 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `data_dir` | 顶层 | 字符串，相对路径 | `"./literatures"` | project | edit | 是 |
 | `port` | 顶层 | 整数 0–65535 | 1859 | advanced | edit | 是 |
-| `openalex_api_key` | 顶层 | 字符串 | 无 | services | none | 否 |
-| `ads_dev_key`（已失效标记） | 顶层 | 字符串 | 无 | services | none | 否 |
+| `openalex_api_key`（机密） | 顶层 | 字符串 | 无 | services | none | 否 |
+| `ads_dev_key`（机密；已失效标记） | 顶层 | 字符串 | 无 | services | none | 否 |
 | `global_dir` | 顶层 | 字符串，绝对路径，空白视为未设 | 无（用 OS 默认） | advanced | readonly | 是 |
 | `global_cache_dir` | 顶层 | 同上 | 无（用 OS 默认） | advanced | readonly | 是 |
 | `auto_ingest_arxiv` | 顶层 | 布尔 | `true` | project | edit | 否 |
@@ -109,35 +109,48 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 | `density` | `[ui]` | `compact` / `regular` / `comfy` | `"regular"` | appearance | edit | 否 |
 | `labels` | `[ui]` | 布尔 | `true` | appearance | edit | 否 |
 
+`ads_dev_key` 的「已失效」标记先于行为：今天 `sources/ads.ts` 仍会读它（作为 `$ADS_DEV_KEY` 与 `~/.ads/dev_key` 之后的后备），停止读取是 desktop-app 票 12。
+
+`global_dir` / `global_cache_dir` 标「需重启」是用户 2026-10-14 的裁决，与获批原型有一处差别（原型这两行没有重启徽标）。原因：这两个键多数使用方每次调用时现读，只有日志目录在启动时固定，运行中改会让全局数据分到新旧两处。
+
+**机密键**：`SECRET_SETTING_KEYS` 是带机密标记的键，`isSecretSetting(键)` 判断单个键。`redactSettingsValues(values)` 把一份 `SettingsValues` 变成可以交给页面或写进报告的样子：返回 schema 全部键（schema 顺序）的新对象，机密键的位置是 `{ secret: true, set: 布尔 }`，不含值；其余键的值原样。`set` 为假指没设，或设成了空串 / 只有空白的字符串。`evaluateSettings` 与两种读取的返回不变，仍带机密键的值（票 12 之前 `sources` 还要读）；凡是要把设置值送出读取它的进程的地方（票 10 的接口）都必须先过这个函数。
+
 分组名是设置页九组里的六个（另三组 copilot、mail、cli 没有配置键）。「需重启」「界面」两列描述的是设置页该怎样呈现，接上行为的是后面的票：例如 `log_level` 今天只在启动时读一次。`[ui]` 的取值与默认值和页面现有偏好（`argelander/theme.ts`、`i18n.ts`）相同，web 的 `tests/settings-schema-parity.test.ts` 在两边不一致时变红。未知键与未知表照旧忽略。
 
 值的校验（`checkSettingValue`）只给原因类别，从不带值：`wrong_type`、`out_of_range`、`not_one_of`、`must_be_relative`、`must_be_absolute`。「绝对路径」指 POSIX 写法或 Windows 写法任一种下是绝对路径（与 `node:path` 的 `posix.isAbsolute || win32.isAbsolute` 相同，有测试对拍）。`data_dir` 只要求「不是绝对路径」：`""` 合法并解析为 cwd，`"~/lit"` 是名为 `~` 的相对目录，这是既有行为，schema 照实描述。
 
 **两种读取**（infra `config.ts`）：
 
-- **严格**：`parseConfigToml` / `loadConfigFile` / `getConfig`，CLI 与所有既有调用方（含今天的 `serve`）用它。已知键的第一处错即抛 `ConfigError`，点名键、不回显值。文案与一个文件有多处错时报哪一条的顺序和 schema 出现之前逐字相同：各字符串键的类型（`data_dir`、`openalex_api_key`、`ads_dev_key`、`global_dir`、`global_cache_dir`）→ `port` → `auto_ingest_arxiv` → `data_dir` 的相对路径规则 → `log_level`；之后才是新键，按 schema 顺序：`contact_email`、`tex_dir`、`ui` 不是表（`"ui" must be a table`）、`ui.language`、`ui.theme`、`ui.accent`、`ui.density`、`ui.labels`（键写作 `"ui.theme"`；句式与旧键相同：`must be a string` / `must be a boolean` / `must be one of …` / `must be an absolute path`）。`global_dir` / `global_cache_dir` 是否绝对仍在解析目录时按本机平台判断（`global-dirs.ts`），严格读取不查。返回值是文件里写的原值（空白字符串原样返回）。带字节序标记的文件对严格读取仍是 `invalid TOML`（smol-toml 不接受），没有改。
-- **宽松**：`readSettingsText` / `readSettingsFile`，供设置接口用，从不抛出。返回每个键的生效值（文件里的合格值，否则默认值；「空白视为未设」的键写了空白时也是默认值）、每个值来自 `default` 还是 `file`、文件里出现了哪些已知键（据此可知 `ads_dev_key` 是否还在）、文件状态（`missing` / `read` / `unparseable` / `unreadable`）和问题清单。问题清单的每一项是「键名（或表名 `ui`，或表示整个文件的 `null`）加原因类别」：上面五种值的类别，加 `not_a_table`、`unparseable`、`unreadable`。清单里没有值、没有解析器的原句（它会引用文件内容）、也没有未知键的名字。文件无法解析或读不了时全部用默认值，只有一项整个文件的问题；文件不存在时没有问题。开头的字节序标记被跳过。
+- **严格**：`parseConfigToml` / `loadConfigFile` / `getConfig`，CLI 与所有既有调用方（含今天的 `serve`）用它。已知键的第一处错即抛 `ConfigError`，点名键、不回显值。文案与一个文件有多处错时报哪一条的顺序和 schema 出现之前逐字相同：各字符串键的类型（`data_dir`、`openalex_api_key`、`ads_dev_key`、`global_dir`、`global_cache_dir`）→ `port` → `auto_ingest_arxiv` → `data_dir` 的相对路径规则 → `log_level`；之后才是新键，按 schema 顺序：`contact_email`、`tex_dir`、`ui` 不是表（`"ui" must be a table`）、`ui.language`、`ui.theme`、`ui.accent`、`ui.density`、`ui.labels`（键写作 `"ui.theme"`；句式与旧键相同：`must be a string` / `must be a boolean` / `must be one of …` / `must be an absolute path`）。`global_dir` / `global_cache_dir` 是否绝对仍在解析目录时按本机平台判断（`global-dirs.ts`），严格读取不查。返回值是文件里写的原值（空白字符串原样返回）。
+- **宽松**：`readSettingsText` / `readSettingsFile`，供设置接口用，从不抛出。返回每个键的生效值（文件里的合格值，否则默认值；「空白视为未设」的键写了空白时也是默认值）、每个值来自 `default` 还是 `file`、文件里出现了哪些已知键（据此可知 `ads_dev_key` 是否还在）、文件状态（`missing` / `read` / `unparseable` / `unreadable`）和问题清单。问题清单的每一项是「键名（或表名 `ui`，或表示整个文件的 `null`）加原因类别」：上面五种值的类别，加 `not_a_table`、`unparseable`、`unreadable`。清单里没有值、没有解析器的原句（它会引用文件内容）、也没有未知键的名字。文件无法解析或读不了时全部用默认值，只有一项整个文件的问题；文件不存在时没有问题。
+
+**字节序标记**：文件开头的一个 U+FEFF 在三处读取里一致地被跳过——严格读取、宽松读取、`configFileKeys`——按行修改也跳过它并原样保留。只跳过开头的一个：第二个，或出现在文件别处（字符串之外）的 U+FEFF，仍是 smol-toml 不接受的内容（严格读取报 `invalid TOML`，宽松读取是 `unparseable`）；字符串里的 U+FEFF 是值的一部分。严格读取跳过它是用户 2026-10-14 的裁决（此前带标记的文件对严格读取是 `invalid TOML`），这是严格读取相对 schema 出现之前唯一一处有意的行为改动；带标记的文件得到的结果、报的错与去掉标记后相同。
+
+**`configFileKeys`**（server 启动记录的 `config_keys` / `config_unknown_keys` 用，见[用户日志](#用户日志)）：`known` 是文件里出现的已知键的标识符（`port`、`ui.theme`），按 schema 顺序，值合不合格都算；`unknown` 是其余条目的个数——顶层既不是已知键也不是已知表的条目（未知表算一个，表内不计），加已知表（`[ui]`）里不是已知键的条目；已知表本身不计入；已知表名被写成非表（`ui = 3`、`[[ui]]`）时计一个。未知键的名字与任何值都不返回。文件不存在、读不了或不是 TOML 时是 `{ known: [], unknown: 0 }`。
 
 **按行修改**（infra `config-edit.ts`，纯函数，不读写文件）：`editConfigText(原文, 键, {set: 值} 或 {reset: true})` 返回新原文与是否有变化，或拒绝及原因类别。
 
-- 只改两种形状：顶层的 `键 = 标量`，和一层表头（`[ui]`）下的 `键 = 标量`。被改的只有值的那几个字节；键本身、等号两边的空白、行尾注释、其他所有行、各行的换行符、文件开头的字节序标记原样保留。
+- 只改两种形状：顶层的 `键 = 标量`，和一层表头（`[ui]`）下的 `键 = 标量`。被改的只有值的那几个字节；裸值（数字、布尔、日期）的结尾按解析器的算法定——smol-toml 对裸值用 JS 的 `trimEnd`，它去掉的不只是 TOML 允许的空格与制表符，还有 NBSP、U+2028、U+FEFF、换页符、不属于换行符的落单 `\r` 等——这些字节在值之后，原样留在行上；键本身、等号两边的空白、行尾注释、其他所有行、各行的换行符、文件开头的字节序标记原样保留。
 - 键名按去引号后的名字比对，`"port" = 1`、`'port' = 1` 都是 `port`，键的写法不动；表头同理（`[ ui ]`、`["ui"]`、表头后带注释）。注释里、字符串里、多行字符串或多行数组内部、别的表、子表（`[ui.extra]`）、表数组（`[[rows]]`）里出现的同名文字都不是这个键；顶层的 `language` 与 `[ui]` 下的 `language` 是两个键。
 - 新值与键现有的值相同（按解析后的值比，`port = 0x10` 要改成 16 时）不改任何字节。
 - **恢复默认**是删去该键所在的行连同它自己的换行符，别的不动：表里最后一个键被删后空表头保留；被删的是没有换行符的最后一行时，文件改以上一行的换行符结尾。键本来就不在文件里时不做任何事（返回原文，不算拒绝）。
 - **键不存在时追加**：放在所属段落最后一个 `键 = 值` 行之后（值跨多行时在它结束的那一行之后），沿用那一行的缩进；段落指顶层的表头之前部分，或表头之后到下一个表头之前。表里还没有键时紧跟表头。顶层还没有键时，放在第一个表头及紧贴其上的注释行之前；文件没有表头时放在文件末尾。
 - **表不存在时**在文件末尾空一行后新建表头和这一行（只因 `[ui.extra]` 而隐式存在的 `ui` 也算不存在）。
 - **换行符**：新行用它前一行的换行符；前面没有行时用文件里第一个换行符；文件里没有换行符时用 LF。最后一行原本没有换行符的文件，修改后仍然没有（空文件除外，写入后以换行符结尾）。
-- **值的写法**：字符串一律写成基本字符串，只转义 `"` 与 `\`，其余字符（含非 ASCII）原样写；含控制字符（U+0000–U+001F、U+007F，换行与制表符在内）或落单代理项的字符串拒绝而不是转义。整数写十进制。Windows 路径的反斜杠因此写成 `\\`。
-- **拒绝类别**（都不带原文或值的任何片段，原文不变）：`unknown_key`（不是 schema 的键）、`invalid_value`（新值不合 schema）、`unrepresentable_value`、`unparseable`（文件不是 TOML）、`duplicate_key`（该键写了不止一次；别的键重复属于 `unparseable`）、`dotted_key`（该键或它的表以点号键写成，如 `ui.theme = …`）、`inline_table`（该键的值或它的表是行内表）、`multiline_string`（值是 `"""` 或 `'''` 字符串，即使写在一行里）、`array_of_tables`（它的表是 `[[ui]]`）、`not_a_scalar`（值是数组，或该键被写成了表）、`table_not_a_table`（`ui = 3` 一类）、`unsupported_layout`（文件是合法 TOML 但本模块的行扫描没能跟上它的写法；保守拒绝）、`self_check_failed`。类型不对的单行标量（如 `port = "x"`）可以改，也可以恢复默认。
-- **自检**：`proposeConfigEdit` 生成候选原文，`checkConfigEdit` 把它重新解析：目标键必须得到预期值（恢复默认时必须不在），其余所有键的值必须与修改前深相等，字节序标记的有无不变，否则 `self_check_failed`。`editConfigText` 是两步的组合，生成这一步可以由调用方传入，测试以此证明坏候选过不了自检。行扫描是本模块自己写的（没有引入保留格式的 TOML 编辑库），解析仍用 smol-toml。
+- **值的写法**：字符串一律写成基本字符串，只转义 `"` 与 `\`，其余字符（含非 ASCII）原样写；含控制字符（U+0000–U+001F、U+007F，换行与制表符在内）或落单代理项的字符串拒绝而不是转义。整数写十进制，`-0` 当作 `0`。Windows 路径的反斜杠因此写成 `\\`。
+- **拒绝类别**（都不带原文或值的任何片段，原文不变）：`unknown_key`（不是 schema 的键）、`invalid_value`（新值不合 schema，或改动本身不成形：既不是恰好 `{set: 标量}` 也不是恰好 `{reset: true}`）、`unrepresentable_value`、`unparseable`（文件不是 TOML）、`duplicate_key`（该键写了不止一次；别的键重复属于 `unparseable`）、`dotted_key`（该键或它的表以点号键写成，如 `ui.theme = …`）、`inline_table`（该键的值或它的表是行内表）、`multiline_string`（值是 `"""` 或 `'''` 字符串，即使写在一行里）、`array_of_tables`（它的表是 `[[ui]]`）、`not_a_scalar`（值是数组，或该键被写成了表）、`table_not_a_table`（`ui = 3` 一类）、`unsupported_layout`（解析器接受而本模块的行扫描没能跟上的写法；保守拒绝。它是到得了的：smol-toml 1.8.0 有两处宽松，把后面没有 `=` 的带引号键与下一行连读（`"a=b"` 换行 `port = 80` 读成 `{"a=b": 80}`），把 `[[a]` 之后的任意一个字符当作第二个 `]`（`[[a]x`、`[[a]` 后接空行）；行扫描两种都拒绝，测试钉住）、`self_check_failed`。类型不对的单行标量（如 `port = "x"`）可以改，也可以恢复默认。
+- **自检**：`proposeConfigEdit` 生成候选原文，`checkConfigEdit` 把它重新解析：目标键必须得到预期值（恢复默认时必须不在），其余所有键的值必须与修改前深相等，字节序标记的有无不变，否则 `self_check_failed`。自检比的是解析后的值，不比写法。看得见的：别的键换了类型或数值、多了或少了键、数组顺序变了、日期换了种类（本地日期 / 本地时间 / 本地日期时间 / 带时区的日期时间，按 smol-toml `TomlDate` 自带的信息分辨）或换了时区写法。看不见的（解析器对两边返回同样的东西）：同一个值的另一种写法（`1.0` 与 `1`、`nan` 与 `-nan`、`0x10` 与 `16`、`"a"` 与 `'a'`）、注释与空行、键的先后。这些之所以不变，靠的是生成这一步从不碰别的行，不是自检；自检只是兜底层。`editConfigText` 是两步的组合，生成这一步可以由调用方传入，测试以此证明坏候选过不了自检；`proposeConfigEdit` 不从 infra 包顶层导出。行扫描是本模块自己写的（没有引入保留格式的 TOML 编辑库），解析仍用 smol-toml。
 
-**写入**（infra `config-write.ts`）：`writeSetting(键, 改动, {path})` 在跨进程文件锁内重新读取文件、按上面的规则修改、原子替换，从不抛出，结果是「已改 / 无需改」或一个拒绝类别（不带路径、值或系统错误原句）。
+**写入**（infra `config-write.ts`）：`writeSetting(键, 改动, {path})` 在跨进程文件锁内读取文件、按上面的规则修改、原子替换，从不抛出，结果是「已改 / 无需改」或一个拒绝类别（不带路径、值或系统错误原句）。
 
-- 锁用 proper-lockfile：配置文件旁的 `config.toml.lock` 目录，只在一次写入期间存在；持锁进程崩溃留下的锁 15 秒后被视为过期并接管。等待约 6 秒仍拿不到锁返回 `busy`。外部编辑器不认这把锁——保护它对其他键的改动的是「锁内重新读取」；同一个键两边都改时后写的赢。
+- 锁用 proper-lockfile：配置文件旁的 `config.toml.lock` 目录，只在一次写入期间存在；持锁进程崩溃留下的锁 15 秒后被视为过期并接管。等待约 6 秒仍拿不到锁返回 `busy`。同一个键两边都改时后写的赢。
+- **锁被判定失效**：活着的持锁进程被挂起超过 15 秒（进程被暂停、机器休眠）时，它的锁同样会被别的写入者当作过期接管，而它自己还以为持有。proper-lockfile 在它恢复后会通知它（`onCompromised`）；`writeSetting` 把通知记成标志（回调本身不抛出——默认实现会从定时器里抛成未捕获异常），在把新文件换到位之前检查：命中则不替换、删掉临时文件、返回 `busy`，对方写下的内容保留。
+- **外部编辑器**不认这把锁。防止覆盖它的保存靠的是比对：锁内读取时记下文件的身份（inode、大小、纳秒级修改时间；或「没有文件」），替换之前再看一次，不是读到的那个文件就丢掉临时文件，把「读取、修改、写临时文件」整步在新内容上重做，最多做三次；三次都被改返回 `busy`。读取时不存在而替换前出现了、读取时在而替换前没了，都算变过。**剩余窗口无法完全消除**：最后一次比对到 rename 之间落下的保存仍会被覆盖；inode、大小、修改时间三样都没变的保存任何时候都看不出来（修改时间粒度粗的文件系统上更容易出现）。要关上它只能让编辑器也拿锁。
+- 选项里的 `rename`（把新文件换到位的那一步）与 `beforeReplace`（每次尝试中，临时文件写完之后、最后一次看锁与文件之前执行的一步）是给测试与需要替换这一步实现的调用方用的注入点，不是一次写入的设置：票 10 的接口必须自己构造选项，不得把请求里的任何东西传进来。
 - 替换是同目录临时文件写完并落盘后 rename；rename 之前失败时原文件完好，临时文件被删掉。没有变化时不写文件。进程恰在写临时文件时被杀会留下一个 `config.toml.<pid>.<随机串>.tmp`，不会被自动清理，也不影响读取。
-- 文件不存在时创建（0600），目录不存在时一并创建（0700）；对不存在的文件恢复默认不创建任何东西。已有文件的权限位保留。
+- 文件不存在时创建（0600），目录不存在时一并创建（0700）；对不存在的文件恢复默认不创建任何东西。已有文件的权限位保留，与进程的 umask 无关（临时文件创建后再显式设一次权限位）。
 - 文件是符号链接时改它指向的文件（锁与临时文件在目标旁边），链接仍是链接；指向不存在目标的链接返回 `unreadable`。
-- 写入独有的拒绝类别：`busy`、`unreadable`（读不了，或不是普通文件）、`invalid_encoding`（不是合法 UTF-8，解码再写回会改动字节）、`not_writable`（用户对文件没有写权限——即使目录权限允许替换它——或目录不可写）、`write_failed`。
+- 写入独有的拒绝类别：`busy`（等不到锁；或自己的锁被接管；或文件在三次尝试里每次都被别人改了——都没有写任何东西，重试即可）、`unreadable`（读不了，或不是普通文件）、`invalid_encoding`（不是合法 UTF-8，解码再写回会改动字节）、`not_writable`（用户对文件没有写权限——即使目录权限允许替换它——或目录不可写）、`write_failed`。
 - 并发范围：多个工作台进程可以同时调用；它不与严格/宽松读取互斥，读取方读到的是替换前或替换后的完整文件。
 
 ## 用户日志
@@ -179,7 +192,7 @@ desktop-app 票 06、07（2026-10-13）。「什么不进日志」与日志目�
 - **写日志失败不影响别的事**：建目录、开文件、写、清理的任何失败都被吞掉，只是没有日志；记录一条请求出错也不改变它的应答。请求不因此失败，进程不因此退出。
 - **未捕获的异常与 Promise 拒绝只被记下**：经 `uncaughtExceptionMonitor` 只观察不接管，Node 照旧把错误打印到 stderr 并以原退出码结束。
 - **server 的事件**（目录在 server `log.ts` 的 `SERVER_LOG_EVENTS`）：
-  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist（三者都是绝对路径，按路径规则写）、日志级别、pid、Node 版本、平台与架构，以及配置文件里出现的本版本认识的键名和其余键的个数。也就是说端口、数据目录、日志级别记的是生效值；其他配置值不记，不认识的键名也不记。
+  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist（三者都是绝对路径，按路径规则写）、日志级别、pid、Node 版本、平台与架构，以及配置文件里出现的本版本认识的键（`config_keys`：键的标识符，顶层键名或 `ui.theme` 这样的 `表名.键名`，按 schema 顺序；只会写出 `CONFIG_KEYS` 里有的值）和其余条目的个数（`config_unknown_keys`：顶层的未知条目，加已知表 `[ui]` 里的未知键；`[ui]` 本身不计入。算法见 [`configFileKeys`](#settings-的-schema两种读取与按行修改desktop-app-票-09)）。也就是说端口、数据目录、日志级别记的是生效值；其他配置值不记，不认识的键名也不记。
   - `request.failed`：方法、路由模式（如 `/api/paper/:doc_id`）、状态码、耗时、错误码（有才记）、错误（有才记）。不记实际路径、查询参数、请求体，**也不读应答体**：读应答体（哪怕读的是副本）会改变它的传输形态——流式的 JSON 应答被读完后会从分块变成定长，并且要等整个应答体到齐才发出。错误码取自路由交给 `c.json` 的那个对象的 `code`（请求中间件在 `next()` 之前把这次请求的 `c.json` 包一层，只看经过的对象，原样返回它的应答），并且只在满足三个条件时记：它是字符串；发出的应答的状态码等于这次（最后一次）`c.json` 调用给出的状态码；发出的应答的 `Content-Type` 是 JSON。写出时按 `f.id` 的规则。用别的方式构造的应答（`new Response`、`Response.json`、流）不记 `code`。不按对象同一性比对，是因为子路由自己的错误处理应答之后 Hono 会重建应答对象；残余：路由调了 `c.json` 却丢掉结果、另行构造一个同状态码的 JSON 应答发出时，记下的是被丢掉的那个 `code`（它仍是路由代码里写的值）。状态码 ≥ 500 为 error 级；400–499 为 warn 级；**GET / HEAD 的 404 不算失败**（查一个已不存在的 Doc、页面资源、source map 都是正常问答）。路由模式取自实际应答的那条路由，并且必须是 app 注册过的模式之一。路由里抛出的不是 Error 时（Hono 不交给错误处理，原样交给 HTTP 层应答），记录里没有状态码。路由自己返回 5xx 而没有抛错时，记录里没有调用栈。
   - `request.completed`：debug 级，状态码 < 400 的请求和上面那种 404。
   - `process.uncaught_exception` / `process.unhandled_rejection`：见上。

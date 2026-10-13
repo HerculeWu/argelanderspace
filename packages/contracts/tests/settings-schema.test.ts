@@ -5,7 +5,10 @@ import {
   defaultSettings,
   evaluateSettings,
   isAbsoluteOnAnyPlatform,
+  isSecretSetting,
   isSettingKey,
+  redactSettingsValues,
+  SECRET_SETTING_KEYS,
   SETTING_KEYS,
   SETTINGS_GROUPS,
   SETTINGS_SCHEMA,
@@ -322,5 +325,62 @@ describe("evaluateSettings", () => {
     expect(JSON.stringify(got.problems)).not.toContain(marker);
     expect(JSON.stringify(got.values)).not.toContain(marker);
     expect(JSON.stringify(got.present)).not.toContain(marker);
+  });
+});
+
+describe("secret settings", () => {
+  test("the two credentials are marked secret in the schema, and no other key is", () => {
+    const marked = SETTING_KEYS.filter(
+      (key) => (SETTINGS_SCHEMA[key] as { secret?: true }).secret === true
+    );
+    expect(marked).toEqual(["openalex_api_key", "ads_dev_key"]);
+    expect([...SECRET_SETTING_KEYS]).toEqual(marked);
+    for (const key of SETTING_KEYS) {
+      expect(Object.hasOwn(SETTINGS_SCHEMA[key], "secret"), key).toBe(marked.includes(key));
+      expect(isSecretSetting(key), key).toBe(marked.includes(key));
+    }
+  });
+
+  test("redactSettingsValues: a secret key says only whether it is set; every other value is as it was", () => {
+    const marker = "SECRET-MARKER-7f3a";
+    const { values } = evaluateSettings({
+      openalex_api_key: `${marker}-openalex`,
+      ads_dev_key: `${marker}-ads`,
+      port: 1900,
+      contact_email: "reader@example.org",
+      ui: { theme: "light" },
+    });
+    // the reading itself still has the values (ticket 12 stops reading them)
+    expect(values.openalex_api_key).toBe(`${marker}-openalex`);
+    const shown = redactSettingsValues(values);
+    expect(JSON.stringify(shown)).not.toContain(marker);
+    expect(shown.openalex_api_key).toEqual({ secret: true, set: true });
+    expect(shown.ads_dev_key).toEqual({ secret: true, set: true });
+    expect(Object.keys(shown)).toEqual(SETTING_KEYS);
+    for (const key of SETTING_KEYS) {
+      if (!isSecretSetting(key)) expect(shown[key], key).toBe(values[key]);
+    }
+    expect(shown.port).toBe(1900);
+    expect(shown["ui.theme"]).toBe("light");
+    // the input is not changed
+    expect(values.ads_dev_key).toBe(`${marker}-ads`);
+  });
+
+  test("redactSettingsValues: not set, and set to nothing but blanks, are both 'not set'", () => {
+    const none = redactSettingsValues(defaultSettings());
+    expect(none.openalex_api_key).toEqual({ secret: true, set: false });
+    expect(none.ads_dev_key).toEqual({ secret: true, set: false });
+    const blank = redactSettingsValues(
+      evaluateSettings({ openalex_api_key: "", ads_dev_key: " \t" }).values
+    );
+    expect(blank.openalex_api_key).toEqual({ secret: true, set: false });
+    expect(blank.ads_dev_key).toEqual({ secret: true, set: false });
+    // a value that should never be there is still not shown
+    const odd = redactSettingsValues({
+      ...defaultSettings(),
+      openalex_api_key: 12345678 as unknown as string,
+    });
+    expect(odd.openalex_api_key).toEqual({ secret: true, set: true });
+    expect(JSON.stringify(odd)).not.toContain("12345678");
   });
 });

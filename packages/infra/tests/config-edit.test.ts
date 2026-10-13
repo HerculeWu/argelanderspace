@@ -3,6 +3,7 @@
  * or removed, or a refusal with the input untouched.
  */
 
+import { parse as parseToml } from "smol-toml";
 import { describe, expect, test } from "vitest";
 import { parseConfigToml, readSettingsText } from "../src/config.js";
 import {
@@ -26,14 +27,16 @@ function edited(text: string, key: string, change: ConfigChange): string {
   return got.text;
 }
 
+/**
+ * The refusal's category; fails the test when the edit goes through. A refusal has `ok` and `reason` and nothing
+ * else, so there is no text in it that could be a changed file. (That the file on disk keeps its bytes is
+ * `config-write.test.ts`.)
+ */
 function refusal(text: string, key: string, change: ConfigChange): ConfigEditRefusal {
-  const copy = `${text}`;
   const got = editConfigText(text, key, change);
   if (got.ok) throw new Error(`not refused: ${JSON.stringify(got.text)}`);
-  // A refusal is a category and nothing else, and the input is what it was.
   expect(Object.keys(got)).toEqual(["ok", "reason"]);
   expect(CONFIG_EDIT_REFUSALS).toContain(got.reason);
-  expect(text).toBe(copy);
   return got.reason;
 }
 
@@ -139,6 +142,48 @@ describe("changing a value in place", () => {
     for (const [text, key, change, expected] of cases) {
       expect(edited(text, key, change), text).toBe(expected);
     }
+  });
+
+  test("what follows a bare value on its line stays, whatever the parser trims", () => {
+    // The parser ends a bare value with JavaScript's `trimEnd`: more than the blank and the tab TOML allows.
+    const cases: Array<[string, string]> = [
+      ["port = 80\u00a0# c\n", "port = 81\u00a0# c\n"],
+      ["port = 80\r# c\n", "port = 81\r# c\n"],
+      ["port = 80\r", "port = 81\r"],
+      ["port = 80\f\n", "port = 81\f\n"],
+      ["port = 80\u2028# c\n", "port = 81\u2028# c\n"],
+      ["port = 80\ufeff\n", "port = 81\ufeff\n"],
+      ["port = 80\u00a0", "port = 81\u00a0"],
+      ["port = 80 \u00a0\t\u3000 # c\r\n", "port = 81 \u00a0\t\u3000 # c\r\n"],
+      [
+        "port = 80\v\u2029\u202f\u205f\u1680\u2003\nx = 1\n",
+        "port = 81\v\u2029\u202f\u205f\u1680\u2003\nx = 1\n",
+      ],
+    ];
+    for (const [text, expected] of cases) {
+      // the parser does read the value, so this is a file the editor is asked about
+      expect(parseToml(text).port, JSON.stringify(text)).toBe(80);
+      expect(edited(text, "port", set(81)), JSON.stringify(text)).toBe(expected);
+      // and removing the line removes what trails the value with it
+      expect(edited(`a = 1\n${text}`, "port", RESET), JSON.stringify(text)).toBe(
+        text.includes("x = 1") ? "a = 1\nx = 1\n" : "a = 1\n"
+      );
+    }
+    // the parser trims after a number and a date, not after a boolean: that file is not TOML
+    expect(refusal("[ui]\nlabels = true\u00a0# c\n", "ui.labels", set(false))).toBe("unparseable");
+    // a quoted value never had this: the parser does not trim after it
+    expect(refusal('data_dir = "a"\u00a0# c\n', "data_dir", set("b"))).toBe("unparseable");
+  });
+
+  test("minus zero is zero", () => {
+    expect(edited("", "port", set(-0))).toBe("port = 0\n");
+    expect(edited("port = 1 # c\n", "port", set(-0))).toBe("port = 0 # c\n");
+    expect(editConfigText("port = 0\n", "port", set(-0))).toEqual({
+      ok: true,
+      text: "port = 0\n",
+      changed: false,
+    });
+    expect(checkConfigEdit("port = 1\n", "port = 0\n", "port", set(-0))).toBe(true);
   });
 
   test("a quoted key is the key; its own bytes are kept", () => {
@@ -639,8 +684,8 @@ describe("refusals: nothing is changed", () => {
   });
 
   test("every refusal the editor can give has a case above or below", () => {
-    // unsupported_layout and self_check_failed cannot be reached with a correct scanner and a correct proposer:
-    // the first is the scanner declining valid TOML, the second is the check below.
+    // self_check_failed cannot be reached with a correct proposer: it is the check below. unsupported_layout is
+    // the next test.
     expect([...CONFIG_EDIT_REFUSALS].sort()).toEqual(
       [
         "array_of_tables",
@@ -658,6 +703,49 @@ describe("refusals: nothing is changed", () => {
         "unsupported_layout",
       ].sort()
     );
+  });
+
+  test("text the parser lets through and the line scan does not follow", () => {
+    // smol-toml 1.8.0 is lenient in two places; the scan is not, and the file is left alone.
+    // A quoted key that is not followed by `=`: the parser reads the key as `a=b` with the next line's value.
+    expect(parseToml('"a=b"\nport = 80\n')).toEqual({ "a=b": 80 });
+    // A `[[` closed by one `]`: the parser takes whatever one character follows as the second `]` and reads an
+    // array of tables. (With the line's own ending as that character the next line must be empty, or the parser
+    // gives up: `[[a]\nport = 1\n` is not TOML to it either.)
+    expect(parseToml("[[a]\n\nport = 1\n")).toEqual({ a: [{ port: 1 }] });
+    expect(parseToml("[[a]x\nport = 1\n")).toEqual({ a: [{ port: 1 }] });
+    expect(refusal("[[a]\nport = 1\n", "port", set(81))).toBe("unparseable");
+    for (const text of ['"a=b"\nport = 80\n', "[[a]\n\nport = 1\n", "[[a]x\nport = 1\n"]) {
+      expect(refusal(text, "port", set(81)), text).toBe("unsupported_layout");
+      expect(refusal(text, "port", RESET), text).toBe("unsupported_layout");
+      expect(refusal(text, "ui.theme", set("dark")), text).toBe("unsupported_layout");
+    }
+  });
+
+  test("a change that is not a change: neither `set` nor `reset`, or both", () => {
+    const shapes = [
+      {},
+      null,
+      undefined,
+      { set: 1, reset: true },
+      { reset: false },
+      { set: undefined },
+      { set: null },
+      { set: [1] },
+      { set: { toString: () => "1" } },
+      { set: 1, extra: 2 },
+      "reset",
+      7,
+    ] as unknown as ConfigChange[];
+    for (const change of shapes) {
+      for (const text of ["", "port = 1\n", "port = 1\n[ui]\ntheme = 3\n"]) {
+        expect(refusal(text, "port", change), JSON.stringify(change)).toBe("invalid_value");
+        expect(refusal(text, "ui.theme", change), JSON.stringify(change)).toBe("invalid_value");
+      }
+      expect(checkConfigEdit("port = 1\n", "port = 1\n", "port", change)).toBe(false);
+    }
+    // the key is looked at first
+    expect(refusal("", "nope", {} as ConfigChange)).toBe("unknown_key");
   });
 
   test("no refusal carries text of the file or the value", () => {
@@ -764,6 +852,71 @@ describe("the self-check", () => {
     );
     expect(ok(before.replace("port = 1", "port = 2").replace("x = 1", "x = 2"))).toBe(false);
     expect(ok(before.replace("port = 1", "port = 2").replace("e = nan", "e = inf"))).toBe(false);
+  });
+});
+
+describe("the self-check compares values, not how they are written", () => {
+  const before = [
+    "d = 1979-05-27",
+    "t = 07:32:00",
+    "l = 1979-05-27T07:32:00",
+    "o = 1979-05-27T07:32:00Z",
+    "z = 1979-05-27T07:32:00+02:00",
+    "f = 1.0",
+    "n = nan",
+    "h = 0x10 # sixteen",
+    's = "a"',
+    "port = 1",
+    "",
+  ].join("\n");
+  const withPort = before.replace("port = 1", "port = 2");
+  const ok = (candidate: string): boolean => checkConfigEdit(before, candidate, "port", set(2));
+
+  test("a date that became another kind of date is a changed value", () => {
+    expect(ok(withPort)).toBe(true);
+    for (const [from, to] of [
+      // a local date to a date-time of the same instant, in each writing
+      ["d = 1979-05-27", "d = 1979-05-27T00:00:00"],
+      ["d = 1979-05-27", "d = 1979-05-27T00:00:00Z"],
+      // a local time to a time with an offset (the parser reads `07:32:00Z` as a time on 0000-01-01)
+      ["l = 1979-05-27T07:32:00", "l = 1979-05-27T07:32:00Z"],
+      ["o = 1979-05-27T07:32:00Z", "o = 1979-05-27T07:32:00"],
+      // the same instant under another offset
+      ["o = 1979-05-27T07:32:00Z", "o = 1979-05-27T09:32:00+02:00"],
+      ["z = 1979-05-27T07:32:00+02:00", "z = 1979-05-27T05:32:00Z"],
+    ] as const) {
+      expect(before).toContain(`${from}\n`);
+      expect(ok(withPort.replace(`${from}\n`, `${to}\n`)), to).toBe(false);
+    }
+    // inside an array and inside a table too
+    expect(
+      checkConfigEdit(
+        "a = [1979-05-27]\n[t]\nx = 1979-05-27\nport = 1\n",
+        "a = [1979-05-27T00:00:00]\n[t]\nx = 1979-05-27\n",
+        "port",
+        RESET
+      )
+    ).toBe(false);
+    expect(
+      checkConfigEdit(
+        "a = [1979-05-27]\n[t]\nx = 1979-05-27\nport = 1\n",
+        "a = [1979-05-27]\n[t]\nx = 1979-05-27T00:00:00\n",
+        "port",
+        RESET
+      )
+    ).toBe(false);
+    // the same date written another way is the same value
+    expect(ok(withPort.replace("l = 1979-05-27T07:32:00", "l = 1979-05-27 07:32:00"))).toBe(true);
+  });
+
+  test("what the check cannot see: another writing of the same value, comments, the order of keys", () => {
+    // These are accepted. The proposing step never touches another line; the check is the second line of defence
+    // and compares what the parser returns.
+    expect(ok(withPort.replace("f = 1.0", "f = 1"))).toBe(true);
+    expect(ok(withPort.replace("n = nan", "n = -nan"))).toBe(true);
+    expect(ok(withPort.replace("h = 0x10 # sixteen", "h = 16"))).toBe(true);
+    expect(ok(withPort.replace('s = "a"', "s = 'a'"))).toBe(true);
+    expect(ok(withPort.replace('s = "a"\nport = 2\n', 'port = 2\ns = "a"\n'))).toBe(true);
   });
 });
 

@@ -169,6 +169,36 @@ describe("writeSetting: refusals leave the file's bytes alone", () => {
     }
   });
 
+  test("a change that is not a change is an invalid value, whether or not the file is there", async () => {
+    const shapes = [
+      {},
+      null,
+      undefined,
+      { set: 1, reset: true },
+      { reset: false },
+      { set: null },
+      7,
+    ];
+    for (const change of shapes as unknown as Array<Parameters<typeof writeSetting>[1]>) {
+      put("port = 1\n");
+      expect(await refused("port", change), JSON.stringify(change)).toBe("invalid_value");
+      expect(bytes()).toBe("port = 1\n");
+      expect(readdirSync(dir)).toEqual(["config.toml"]);
+      const missing = join(dir, "sub", "config.toml");
+      expect(await refused("port", change, { path: missing })).toBe("invalid_value");
+      expect(existsSync(join(dir, "sub"))).toBe(false);
+    }
+    // the key is looked at first, as in the line editor
+    expect(await refused("nope", {} as never)).toBe("unknown_key");
+  });
+
+  test("minus zero is written as zero", async () => {
+    put("port = 1\n");
+    expect(await writeSetting("port", { set: -0 }, { path })).toEqual({ ok: true, changed: true });
+    expect(bytes()).toBe("port = 0\n");
+    expect(await writeSetting("port", { set: -0 }, { path })).toEqual({ ok: true, changed: false });
+  });
+
   test("a file that is not UTF-8", async () => {
     const latin = Buffer.from([
       0x23, 0x20, 0xe9, 0x0a, 0x70, 0x6f, 0x72, 0x74, 0x20, 0x3d, 0x20, 0x31, 0x0a,
@@ -281,12 +311,19 @@ describe("writeSetting: a config file that is a symbolic link", () => {
 
 const WORKER = fileURLToPath(new URL("./config-write-worker.mjs", import.meta.url));
 
-function child(key: string, value: unknown | "--reset"): Promise<SettingWriteResult> {
+function child(
+  key: string,
+  value: unknown | "--reset",
+  umask?: string
+): Promise<SettingWriteResult> {
   return new Promise((resolve, reject) => {
     const p = spawn(
       process.execPath,
       ["--no-warnings", WORKER, path, key, value === "--reset" ? "--reset" : JSON.stringify(value)],
-      { stdio: ["ignore", "pipe", "pipe"] }
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: umask === undefined ? process.env : { ...process.env, ASPACE_TEST_UMASK: umask },
+      }
     );
     let out = "";
     let err = "";
@@ -322,6 +359,17 @@ describe("writeSetting: two processes", () => {
     expect(bytes()).toBe(START.replace("1859", "1901"));
     expect(await child("port", "--reset")).toEqual({ ok: true, changed: true });
     expect(bytes()).toBe(START.replace("port = 1859\n", ""));
+  }, 30_000);
+
+  test("a process whose file-creation mask clears bits the file has: the file keeps its bits", async () => {
+    // A new file is made with the mask applied, so without setting the bits again 0664 would come back as 0600.
+    for (const mode of [0o664, 0o666, 0o640, 0o600]) {
+      put(START, mode);
+      expect(await child("port", 1900, "077")).toEqual({ ok: true, changed: true });
+      expect(modeOf(path), mode.toString(8)).toBe(mode);
+      expect(bytes()).toBe(START.replace("1859", "1900"));
+    }
+    expect(readdirSync(dir)).toEqual(["config.toml"]);
   }, 30_000);
 
   test("at the same time, different keys: every change is there", async () => {

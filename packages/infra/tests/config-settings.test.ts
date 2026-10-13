@@ -12,7 +12,6 @@ import {
   isAbsoluteOnAnyPlatform,
   SETTING_KEYS,
   SETTINGS_LOG_LEVELS,
-  SETTINGS_SCHEMA,
   TOP_LEVEL_SETTING_KEYS,
 } from "@argelanderspace/contracts";
 import { describe, expect, test } from "vitest";
@@ -25,6 +24,7 @@ import {
   readSettingsFile,
   readSettingsText,
 } from "../src/config.js";
+import { f } from "../src/log/fields.js";
 import { LOG_LEVELS } from "../src/log/logger.js";
 
 function fileWith(text: string | Buffer): string {
@@ -45,8 +45,8 @@ function strictError(toml: string): string {
 }
 
 describe("the key list comes from the schema", () => {
-  test("CONFIG_KEYS is the schema's top-level keys, the long-standing ones first and in their order", () => {
-    expect(CONFIG_KEYS).toBe(TOP_LEVEL_SETTING_KEYS);
+  test("CONFIG_KEYS is every key of the schema, by identifier, the long-standing ones first and in their order", () => {
+    expect(CONFIG_KEYS).toBe(SETTING_KEYS);
     expect([...CONFIG_KEYS]).toEqual([
       "data_dir",
       "port",
@@ -58,8 +58,25 @@ describe("the key list comes from the schema", () => {
       "log_level",
       "contact_email",
       "tex_dir",
+      "ui.language",
+      "ui.theme",
+      "ui.accent",
+      "ui.density",
+      "ui.labels",
     ]);
-    for (const key of CONFIG_KEYS) expect(SETTINGS_SCHEMA[key].table).toBeNull();
+    expect(CONFIG_KEYS.slice(0, TOP_LEVEL_SETTING_KEYS.length)).toEqual(TOP_LEVEL_SETTING_KEYS);
+  });
+
+  test("every key identifier can be written to the user log as one of CONFIG_KEYS", () => {
+    // The server's start record lists them with `f.someOf(CONFIG_KEYS, …)`; an identifier with a dot is a value
+    // of that list like any other, and a name that is not in the list is not written.
+    const rendered = f
+      .someOf(CONFIG_KEYS, [...CONFIG_KEYS, "ui.private_name", "private_name"])
+      .render({ homes: [] }) as string[];
+    expect(rendered.slice(0, CONFIG_KEYS.length)).toEqual([...CONFIG_KEYS]);
+    expect(rendered).toHaveLength(CONFIG_KEYS.length + 2);
+    expect(rendered).toContain("ui.theme");
+    expect(JSON.stringify(rendered)).not.toContain("private");
   });
 
   test("the log levels are the schema's list", () => {
@@ -67,27 +84,81 @@ describe("the key list comes from the schema", () => {
     expect([...LOG_LEVELS]).toEqual(["debug", "info", "warn", "error"]);
   });
 
-  test("configFileKeys: new top-level keys are named; a table is one more entry, and nothing in it is named", () => {
+  test("configFileKeys: known keys are named by identifier, in a known table too; the others are only counted", () => {
     const path = fileWith(
       [
         'tex_dir = "/opt/tex"',
         'contact_email = "a@example.org"',
         "port = 1",
-        'private_name = "v"',
+        'private_name = "VALUE-MARKER"',
         "[ui]",
         'theme = "dark"',
-        'private_ui_name = "v"',
+        'private_ui_name = "VALUE-MARKER"',
+        "labels = 3",
         "[other]",
         "x = 1",
+        "y = 2",
         "",
       ].join("\n")
     );
-    // Schema order, not file order. `[ui]`, `[other]` and `private_name` are the three others.
+    // Schema order, not file order; a known key is named whether or not its value is acceptable. The others:
+    // `private_name` and `[other]` at the top level (what is inside an unknown table is not counted), and
+    // `private_ui_name` in `[ui]`. `[ui]` itself is not one of them.
     expect(configFileKeys(path)).toEqual({
-      known: ["port", "contact_email", "tex_dir"],
+      known: ["port", "contact_email", "tex_dir", "ui.theme", "ui.labels"],
       unknown: 3,
     });
-    expect(JSON.stringify(configFileKeys(path))).not.toMatch(/private|theme|ui|other/);
+    expect(JSON.stringify(configFileKeys(path))).not.toMatch(/private|other|MARKER|dark|opt/);
+  });
+
+  test("configFileKeys: a known table and nothing else is no unknown entry", () => {
+    expect(configFileKeys(fileWith('[ui]\ntheme = "dark"\n'))).toEqual({
+      known: ["ui.theme"],
+      unknown: 0,
+    });
+    expect(configFileKeys(fileWith("[ui]\n"))).toEqual({ known: [], unknown: 0 });
+    expect(configFileKeys(fileWith('ui = { language = "en", x = 1 }\n'))).toEqual({
+      known: ["ui.language"],
+      unknown: 1,
+    });
+    expect(configFileKeys(fileWith('ui.accent = "teal"\n'))).toEqual({
+      known: ["ui.accent"],
+      unknown: 0,
+    });
+    // a sub-table of a known table is one unknown entry of that table
+    expect(configFileKeys(fileWith("[ui.extra]\na = 1\nb = 2\n"))).toEqual({
+      known: [],
+      unknown: 1,
+    });
+  });
+
+  test("configFileKeys: a known table's name written as something else is one unknown entry", () => {
+    for (const text of [
+      "ui = 3\n",
+      'ui = "dark"\n',
+      "[[ui]]\ntheme = 1\n[[ui]]\ntheme = 2\n",
+      "ui = 1979-05-27\n",
+    ]) {
+      expect(configFileKeys(fileWith(text)), text).toEqual({ known: [], unknown: 1 });
+    }
+    expect(configFileKeys(fileWith("port = 1\nui = 3\nx = 1\n"))).toEqual({
+      known: ["port"],
+      unknown: 2,
+    });
+  });
+
+  test("configFileKeys: a file that is missing, unreadable as a file, or not TOML has no keys", () => {
+    const path = fileWith("port = \n");
+    expect(configFileKeys(path)).toEqual({ known: [], unknown: 0 });
+    expect(configFileKeys(join(path, "..", "missing.toml"))).toEqual({ known: [], unknown: 0 });
+    expect(configFileKeys(join(path, ".."))).toEqual({ known: [], unknown: 0 });
+  });
+
+  test("configFileKeys: a leading byte order mark is looked past", () => {
+    expect(configFileKeys(fileWith('\uFEFFport = 1\n[ui]\ntheme = "dark"\n'))).toEqual({
+      known: ["port", "ui.theme"],
+      unknown: 0,
+    });
   });
 });
 
@@ -228,8 +299,30 @@ describe("the strict reading: the keys added with the schema", () => {
     expect(parseConfigToml('data_dir = "~/lit"', "/p")).toEqual({ data_dir: "~/lit" });
   });
 
-  test("a byte order mark is still not TOML to the strict reading", () => {
-    expect(strictError("\uFEFFport = 1")).toMatch(/^invalid TOML in \/p\/config\.toml:\n/);
+  test("a leading byte order mark is looked past by the strict reading: the file reads as it does without it", () => {
+    const text = '# c\r\ndata_dir = "lit"\r\nport = 1900\r\n[ui]\r\ntheme = "dark"\r\n';
+    expect(parseConfigToml(`\uFEFF${text}`, "/p/config.toml")).toEqual(
+      parseConfigToml(text, "/p/config.toml")
+    );
+    expect(parseConfigToml("\uFEFFport = 1")).toEqual({ port: 1 });
+    expect(parseConfigToml("\uFEFF")).toEqual({});
+    expect(loadConfigFile(fileWith(Buffer.from("\uFEFFport = 1\n", "utf-8")))).toEqual({ port: 1 });
+    // a fault is reported as it is without the mark
+    expect(strictError("\uFEFFport = 70000")).toBe(strictError("port = 70000"));
+    expect(strictError("\uFEFFport = ")).toMatch(/^invalid TOML in \/p\/config\.toml:\n/);
+  });
+
+  test("only the one mark at the very start is looked past", () => {
+    // a second mark, and a mark anywhere else outside a string, is still not TOML
+    expect(strictError("\uFEFF\uFEFFport = 1")).toMatch(/^invalid TOML in \/p\/config\.toml:\n/);
+    expect(strictError("port = 1\n\uFEFFdata_dir = 'x'\n")).toMatch(
+      /^invalid TOML in \/p\/config\.toml:\n/
+    );
+    expect(strictError(" \uFEFFport = 1")).toMatch(/^invalid TOML in \/p\/config\.toml:\n/);
+    expect(readSettingsText("\uFEFF\uFEFFport = 1").file).toBe("unparseable");
+    // inside a string it is a character of the value, with or without a mark at the start
+    expect(parseConfigToml('\uFEFFdata_dir = "a\uFEFFb"').data_dir).toBe("a\uFEFFb");
+    expect(parseConfigToml('data_dir = "\uFEFFb"').data_dir).toBe("\uFEFFb");
   });
 
   test("the absolute-path rule is node:path's on both platforms", () => {
