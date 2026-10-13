@@ -252,6 +252,9 @@ interface ServeOpts {
   webDist?: string;
 }
 
+/** Kept in step with the app package's version by hand (there is no single source). */
+const CLI_VERSION = "0.1.0";
+
 async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Promise<void> {
   // Defer to the server's resolution chain (flag > config file > default) by only
   // forwarding flags the user actually passed.
@@ -260,7 +263,7 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   if (dataDir !== undefined) argv.push("--data-dir", dataDir);
   if (opts.port !== undefined) argv.push("--port", opts.port);
   if (opts.webDist !== undefined) argv.push("--web-dist", opts.webDist);
-  const srv = await startServer(argv);
+  const srv = await startServer(argv, { version: CLI_VERSION });
   const shutdown = () => {
     void srv.close().then(
       () => process.exit(0),
@@ -279,7 +282,7 @@ export function buildProgram(): Command {
       "ArgelanderSpace — ingest papers (arXiv / local LaTeX sources) into " +
         "structured JSON and manage the citation-graph library."
     )
-    .version("0.1.0")
+    .version(CLI_VERSION)
     .option("--data-dir <dir>", DATA_DIR_HELP);
 
   withDataDir(program.command("ingest"))

@@ -63,7 +63,7 @@ describe("recordableObservation", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  test("an argument page the history would refuse is replaced by a legal one without details, and logged", () => {
+  test("an argument page the history would refuse is replaced by a legal one without details, and reported", () => {
     const warn = vi.fn();
     const good = buildArgumentPage({
       workId: "doi:10.1/x",
@@ -88,8 +88,8 @@ describe("recordableObservation", () => {
     expect(written.page.argument).toMatchObject({ phase: "error", graph: null, outline: null });
     expect(written.page.argument.note).toContain("Library page actions");
     expect(written.page.status).toBe("error");
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(warn.mock.calls)).not.toContain("doi:10.1/x");
+    // Reported as a bare fact: the callback gets nothing of the page.
+    expect(warn.mock.calls).toEqual([[]]);
   });
 
   test("a page that is wrong for another reason is not written at all", () => {

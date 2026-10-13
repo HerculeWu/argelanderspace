@@ -32,6 +32,7 @@ export * from "./lib/pyjson.js";
 export * from "./lib/untar.js";
 export * from "./lib/unzip.js";
 export * from "./lib/zip.js";
+export * from "./log/index.js";
 export * from "./mail/account-store.js";
 export * from "./mail/inbox-watch.js";
 export * from "./mail/outgoing.js";

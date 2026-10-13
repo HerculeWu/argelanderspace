@@ -16,11 +16,14 @@ import {
   publishPdfDoc,
   uploadDocId,
 } from "@argelanderspace/core";
+import { createLogger } from "@argelanderspace/infra";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { createMemorySink } from "../../infra/tests/log-memory-sink.js";
 import { createAcquisition, createLockedRebuild } from "../src/acquisition.js";
 import { DocMutationRegistry } from "../src/doc-mutations.js";
 import { JobRunner } from "../src/jobs.js";
 import { AsyncLock } from "../src/lock.js";
+import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { stubPipelines, stubSources, UPLOAD_ZIP } from "./helpers.js";
 
 const PDF_FIXTURE = new URL("./fixtures/pdf/scanned-no-text.pdf", import.meta.url);
@@ -56,7 +59,11 @@ let rebuildImpl: () => Promise<RefreshResponse>;
 let acquisition: ReturnType<typeof createAcquisition>;
 let pipelines: ReturnType<typeof stubPipelines>;
 
+/** What the acquisition wrote to the user-level log. */
+const logged = createMemorySink();
+
 function build(overrides: { runner?: JobRunner } = {}) {
+  logged.lines.length = 0;
   const jobs = overrides.runner ?? runner;
   acquisition = createAcquisition({
     paths,
@@ -72,6 +79,7 @@ function build(overrides: { runner?: JobRunner } = {}) {
     autoIngestArxiv: () => autoIngest,
     pdfOwners: (docId) => LibraryStore.load(paths).works.filter((w) => w.doc_ids.includes(docId)),
     acquisitionWaitMs: 1234,
+    log: createLogger({ events: SERVER_LOG_EVENTS, sink: logged }),
   });
   // The app's one hook: acquisition first (the PDF pin release), then the bus and the Copilot.
   jobs.onEvent = (type, job) => acquisition.onJobEvent(type, job);
@@ -396,7 +404,6 @@ test("startPdfUpload: a submit that throws releases the pin and answers failed",
 // ---- the manual import ------------------------------------------------------------------------------------ //
 
 test("importManualWorks: a failing automatic PDF submit is only logged; the Work stays and add is broadcast once", async () => {
-  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(runner, "submit").mockImplementation(() => {
     throw new Error("queue unavailable");
   });
@@ -406,10 +413,16 @@ test("importManualWorks: a failing automatic PDF submit is only logged; the Work
   });
   expect(outcome.results).toMatchObject([{ status: "created" }]);
   expect(LibraryStore.load(paths).get("arxiv:2603.00399")).toBeDefined();
-  expect(errors).toHaveBeenCalledWith(
-    "auto arXiv ingest submit failed for arxiv:2603.00399:",
-    expect.any(Error)
-  );
+  expect(logged.records()).toMatchObject([
+    {
+      level: "error",
+      event: "arxiv_ingest.auto_submit_failed",
+      work: "arxiv:2603.00399",
+      error: { name: "Error" },
+    },
+  ]);
+  // The error's own words stay out of the log.
+  expect(logged.lines.join("")).not.toContain("queue unavailable");
   expect(changes).toEqual(["add"]);
   expect(registry.isBusy("anything")).toBe(false);
 });

@@ -8,6 +8,7 @@ export * from "./app.js";
 export * from "./deps.js";
 export * from "./jobs.js";
 export * from "./lock.js";
+export * from "./log.js";
 export * from "./paper-cache.js";
 export * from "./providers.js";
 export * from "./server.js";

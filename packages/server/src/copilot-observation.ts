@@ -42,7 +42,7 @@ const failed = (page: PageContext): ArgumentPage => ({
 export function recordableObservation(
   taskContextId: string,
   page: PageContext,
-  warn: (message: string) => void = console.warn
+  notRecordable: () => void = () => {}
 ): RecordableObservation | null {
   const record = (candidate: PageContext) =>
     CopilotObservationSchema.safeParse({ version: 1, taskContextId, page: candidate });
@@ -52,9 +52,8 @@ export function recordableObservation(
       page,
       degraded: false,
     };
-  warn(
-    "copilot: a page observation did not satisfy the history contract; it is not recorded as built"
-  );
+  // The page did not satisfy the history contract and is not recorded as built; the caller logs that it happened.
+  notRecordable();
   if (!page.argument) return null;
   const fallback: PageContext = { ...page, status: "error", argument: failed(page) };
   if (!record(fallback).success) return null;

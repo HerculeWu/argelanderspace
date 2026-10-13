@@ -154,6 +154,7 @@ never logged or echoed).
 data_dir = "papers"          # default ./literatures; relative to the project root
                              # (an absolute path is a config error: use --data-dir)
 port = 1859                  # server port and the port in CLI deep links (default 1859)
+log_level = "info"           # lowest level `serve` writes to its log: debug, info, warn, error
 
 # API-key fallbacks (the env vars win when both are set):
 openalex_api_key = "..."     # env OPENALEX_API_KEY
