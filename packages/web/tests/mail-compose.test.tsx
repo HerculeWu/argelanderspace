@@ -254,6 +254,29 @@ test("Send closes the composer into the undo bar; Undo brings the text back and 
   expect(ui("mail-send-undo")).toBeNull();
 });
 
+// web-test-flake 02. The bar's seconds are the difference of two readings of the page clock; a clock that moves at
+// every reading (as the real one may, between any two of them) must not make an 8 s window read "9s".
+test("the undo bar never starts above the server's window, even when the clock moves between every two readings", async () => {
+  const real = Date.now.bind(Date);
+  let last = 0;
+  const spy = vi.spyOn(Date, "now").mockImplementation(() => {
+    last = Math.max(real(), last + 1);
+    return last;
+  });
+  try {
+    render(<MailView />);
+    await screen.findByText("Subject 3");
+    fireEvent.click(ui("mail-compose")!);
+    type("mail-composer-to", "ada@example.test");
+    type("mail-composer-subject", "Hello");
+    fireEvent.click(ui("mail-composer-send")!);
+    await waitFor(() => expect(ui("mail-send-undo")).toBeTruthy());
+    expect(ui("mail-send-undo")!.textContent).toMatch(/Sending in [78]s/);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
 test("when the window runs out the bar becomes 'Sending…' and the server's answer is reported: sent", async () => {
   srv.sendResult = () => json(status({ remainingMs: 300 }), 202);
   srv.statusSeq = [status({ state: "sending", remainingMs: null }), status({ state: "sent", remainingMs: null, sentCopy: "saved", draftKept: false })];
