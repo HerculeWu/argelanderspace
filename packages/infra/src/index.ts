@@ -22,10 +22,16 @@ export {
 } from "./config-edit.js";
 export * from "./config-write.js";
 export {
+  ADS_CREDENTIAL_FILE_NAME,
+  ADS_TOKEN_ID,
   CREDENTIAL_FILE_NAME,
+  CREDENTIAL_STORE_METHODS,
   type CredentialErrorCode,
+  type CredentialPurpose,
+  type CredentialStatusResult,
   type CredentialStore,
   type CredentialStoreOptions,
+  createAdsCredentialStore,
   createCredentialStore,
   createNapiKeychainBackend,
   type DeleteCredentialResult,
@@ -52,6 +58,7 @@ export * from "./mail/protocol.js";
 export * from "./mail/protocol-manage.js";
 export * from "./sources/ads.js";
 export * from "./sources/ads-discovery.js";
+export * from "./sources/ads-token-test.js";
 export * from "./sources/cache.js";
 export * from "./sources/crossref.js";
 export * from "./sources/openalex.js";

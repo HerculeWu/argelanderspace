@@ -46,6 +46,15 @@ export function describeUserDirsGuard(resolveDirs: () => Record<string, string>)
       }
     }
 
+    // The OS keychain is reached over the session bus: none of the user's may be reachable (isolate-user-dirs.ts).
+    test("the user's session bus and display are out of reach (no real keychain)", () => {
+      const root = isolation()?.root as string;
+      expect(process.env.DBUS_SESSION_BUS_ADDRESS).toBe(`unix:path=${root}/no-session-bus`);
+      expect(inside(root, process.env.XDG_RUNTIME_DIR ?? "")).toBe(true);
+      expect(process.env.DISPLAY).toBeUndefined();
+      expect(process.env.WAYLAND_DISPLAY).toBeUndefined();
+    });
+
     test("every resolved directory is inside the isolated root", () => {
       expectAllInside();
     });

@@ -91,3 +91,19 @@
 }
 /* A note under a field takes the field's width and wraps, so the control does not move when it appears. */
 .st-text > .st-changed-outside, .st-text > .st-field-error { width: 0; min-width: 100%; text-align: left; }
+
+/* desktop-app ticket 12: the ADS token row, as in the approved prototype. */
+.st-pill.ok { --t: var(--ok); }
+.st-stack { display: flex; flex-direction: column; gap: 10px; }
+.st-stack:empty { display: none; }
+.st-check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; color: var(--text); cursor: pointer; }
+.st-check input { accent-color: var(--accent); margin-top: 3px; }
+.st-testing { display: flex; align-items: center; gap: 8px; color: var(--text-dim); font-size: var(--fs-sm); }
+.st-import { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--radius); background: var(--panel); font-size: var(--fs-sm); color: var(--text-dim); }
+.st-import .st-hint { margin: 0; flex-basis: 100%; }
+.st-with-action { display: flex; align-items: flex-start; gap: 10px; }
+.st-with-action .ui-inline-message { flex: 1; min-width: 0; }
+.st-cred-actions .st-input { width: 240px; }
+.st-spin { animation: st-spin 1s linear infinite; }
+@keyframes st-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .st-spin { animation: none; } }

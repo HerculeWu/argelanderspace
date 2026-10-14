@@ -6,12 +6,11 @@
  * restores env afterwards.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, sep } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
-  type AppConfig,
   ConfigError,
   configFileKeys,
   configFilePath,
@@ -19,8 +18,8 @@ import {
   loadConfigFile,
   parseConfigToml,
 } from "../src/config.js";
-import { readAdsToken } from "../src/sources/ads.js";
-import { OpenAlexClient } from "../src/sources/openalex.js";
+import { ADS_TOKEN_READ_TIMEOUT_MS, readAdsToken } from "../src/sources/ads.js";
+import { OpenAlexClient, readOpenAlexApiKey } from "../src/sources/openalex.js";
 import { jsonResponse, stubFetch } from "./helpers.js";
 
 // --------------------------------------------------------------------------- //
@@ -181,16 +180,107 @@ describe("loadConfigFile", () => {
 // API-key fallbacks: env var > config file (values never logged)
 // --------------------------------------------------------------------------- //
 
-describe("readAdsToken chain", () => {
-  test("env > config > ~/.ads/dev_key > null", () => {
-    const home = mkdtempSync(join(tmpdir(), "aspace-ads-"));
+describe("readAdsToken: only the credential store (desktop-app ticket 12)", () => {
+  test("the environment variable, the config key and ~/.ads/dev_key are not read", async () => {
+    // The HOME here is the isolated one (isolate-user-dirs.ts); the key file is a fake made for the test.
+    const home = homedir();
+    // Written only into a temporary home (isolate-user-dirs.ts): never the user's real ~/.ads.
+    const temporary = home.startsWith(tmpdir() + sep);
+    expect(temporary).toBe(true);
+    if (!temporary) return;
     mkdirSync(join(home, ".ads"), { recursive: true });
     writeFileSync(join(home, ".ads", "dev_key"), "from-file\n", "utf-8");
-    const cfg: AppConfig = { ads_dev_key: " from-config " };
-    expect(readAdsToken({ ADS_DEV_KEY: "from-env" }, home, cfg)).toBe("from-env");
-    expect(readAdsToken({}, home, cfg)).toBe("from-config");
-    expect(readAdsToken({}, home, {})).toBe("from-file");
-    expect(readAdsToken({}, "/nonexistent-home", {})).toBeNull();
+    const xdg = xdgWithConfig('ads_dev_key = "from-config"\n');
+    setEnv("ADS_DEV_KEY", "from-env");
+    try {
+      const empty = { get: async () => ({ status: "not-found" as const }) };
+      expect(await readAdsToken(empty)).toBeNull();
+      // The default store: no keychain in the tests (isolate-user-dirs.ts) and no fallback file, so no token.
+      expect(await readAdsToken()).toBeNull();
+    } finally {
+      setEnv("ADS_DEV_KEY", undefined);
+      rmSync(join(home, ".ads"), { recursive: true, force: true });
+      rmSync(xdg, { recursive: true, force: true });
+    }
+  });
+
+  test("the saved token, trimmed; an unavailable keychain or a damaged file is no token, not an error", async () => {
+    const saved = {
+      get: async () => ({
+        status: "ok" as const,
+        password: " tok-1 ",
+        protection: "keychain" as const,
+        keychainProtected: true,
+      }),
+    };
+    expect(await readAdsToken(saved)).toBe("tok-1");
+    const blank = {
+      get: async () => ({
+        status: "ok" as const,
+        password: "  ",
+        protection: "file" as const,
+        keychainProtected: false,
+      }),
+    };
+    expect(await readAdsToken(blank)).toBeNull();
+    expect(
+      await readAdsToken({ get: async () => ({ status: "keychain-unavailable" as const }) })
+    ).toBeNull();
+    expect(
+      await readAdsToken({
+        get: async () => ({ status: "error" as const, code: "file-unreadable" as const }),
+      })
+    ).toBeNull();
+    expect(
+      await readAdsToken({
+        get: async () => {
+          throw new Error("boom");
+        },
+      })
+    ).toBeNull();
+  });
+});
+
+describe("readAdsToken: a keychain that does not answer in time (ticket 12 revision)", () => {
+  test("a read that hangs is no token after the timeout; nothing is left to hold the process", async () => {
+    const hanging = { get: () => new Promise<never>(() => {}) };
+    const started = Date.now();
+    expect(await readAdsToken(hanging, { timeoutMs: 50 })).toBeNull();
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(ADS_TOKEN_READ_TIMEOUT_MS).toBe(5000);
+  });
+
+  test("a read that answers before the timeout is used", async () => {
+    const slow = {
+      get: () =>
+        new Promise<{
+          status: "ok";
+          password: string;
+          protection: "keychain";
+          keychainProtected: true;
+        }>((ok) =>
+          setTimeout(
+            () =>
+              ok({
+                status: "ok",
+                password: "tok-2",
+                protection: "keychain",
+                keychainProtected: true,
+              }),
+            10
+          )
+        ),
+    };
+    expect(await readAdsToken(slow, { timeoutMs: 1000 })).toBe("tok-2");
+  });
+});
+
+describe("readOpenAlexApiKey: a blank key is no key (ticket 09 reminder, aligned in ticket 12)", () => {
+  test("blank in the config or the environment is null", () => {
+    expect(readOpenAlexApiKey({}, { openalex_api_key: "   " })).toBeNull();
+    expect(readOpenAlexApiKey({}, { openalex_api_key: "" })).toBeNull();
+    expect(readOpenAlexApiKey({ OPENALEX_API_KEY: " " }, { openalex_api_key: "K" })).toBe("K");
+    expect(readOpenAlexApiKey({}, { openalex_api_key: "K" })).toBe("K");
   });
 });
 

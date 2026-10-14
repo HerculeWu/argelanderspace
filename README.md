@@ -84,7 +84,7 @@ workflows, plus one self-contained skill that finds new papers on NASA ADS:
 | `argelander-paper-ingest` | arXiv id / local LaTeX → `ingest` → `library build` → confirm in `search` → asks the user for a note (agent drafts the suggestion) for every paper |
 | `argelander-read-paper` | Deep-read one ingested doc: resolves equations/figures/tables via `show`, citations via `ref`, keeps paper claims vs cited work apart, cites evidence as deep links |
 | `argelander-query-paper-library` | Ranks the whole library against a research question (`note` is the primary signal), shows a shortlist, hands picks to read-paper, synthesizes with work ids + deep links |
-| `argelander-find-papers` | Standalone, read-only: searches NASA ADS for seed papers, expands with `similar` / `useful`, returns a ranked list. Uses its own script and `~/.ads/dev_key`, not the CLI |
+| `argelander-find-papers` | Standalone, read-only: searches NASA ADS for seed papers, expands with `similar` / `useful`, returns a ranked list. Uses its own script and `~/.ads/dev_key`, not the CLI — a separate copy from the token saved in the workbench |
 | `argelander-argument-graph` | Reads one ingested paper and writes its argument graph (Toulmin arguments, Native/End arguments, edges, sources) into the workbench with `argument put`; asks before replacing an existing graph and reports End arguments, main chains and audit findings |
 
 Install by symlinking into pi's skills directory (`~/.pi/agent/skills/`
@@ -174,23 +174,27 @@ theme = "dark"               # dark or light
 accent = "azure"             # azure, teal, violet, amber, neutral
 density = "regular"          # compact, regular, comfy
 
-# API-key fallbacks (the env vars win when both are set):
+# API-key fallback (the env var wins when both are set):
 openalex_api_key = "..."     # env OPENALEX_API_KEY
-ads_dev_key = "..."          # env ADS_DEV_KEY, itself a fallback for ~/.ads/dev_key
 ```
 
 Before you share your `config.toml` with someone, check it for a
-`contact_email` (it is your address) and for the two API keys above.
+`contact_email` (it is your address) and for the API key above.
 
 Environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `OPENALEX_API_KEY` | OpenAlex premium pool (sent as `api_key`; optional) |
-| `ADS_DEV_KEY` | NASA ADS token; without any token ADS degrades to `no-token` and the rest of the library keeps working |
+| `OPENALEX_API_KEY` | OpenAlex premium pool (sent as `api_key`; optional; a blank value counts as unset) |
 
-ADS additionally reads `~/.ads/dev_key` (the ADS convention), after the env var
-and the config file.
+**The NASA ADS token** is kept by the workbench itself: enter it on the
+Settings page (*Literature services & credentials*), where you can also test
+it, remove it, or import it from `~/.ads/dev_key`. It goes into the system
+keychain; only when there is none, and only if you agree, into a restricted
+file in the global data directory. The CLI uses the same saved token. Without
+one, ADS degrades to `no-token` and the rest of the library keeps working. A locked keychain may make the system ask you to unlock it when a command reads the token.
+`$ADS_DEV_KEY`, an `ads_dev_key` line in `config.toml` and `~/.ads/dev_key` are
+no longer read (the import copies the file once and leaves it as it is).
 
 ## Stored IR (sketch)
 

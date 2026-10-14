@@ -266,11 +266,13 @@ describe("napi backend adapter", () => {
       }
     }
     const backend = createNapiKeychainBackend(async () => ({ Entry: FakeEntry }));
-    await backend.set("acc1", PW);
-    expect(await backend.get("acc1")).toBe(PW);
-    expect(await backend.get("nope")).toBeNull();
-    expect(await backend.delete("acc1")).toBe(true);
-    expect(await backend.delete("acc1")).toBe(false);
+    // The service is the store's purpose (desktop-app ticket 12); the mail one is unchanged.
+    const MAIL = "argelanderspace.mail";
+    await backend.set("acc1", PW, MAIL);
+    expect(await backend.get("acc1", MAIL)).toBe(PW);
+    expect(await backend.get("nope", MAIL)).toBeNull();
+    expect(await backend.delete("acc1", MAIL)).toBe(true);
+    expect(await backend.delete("acc1", MAIL)).toBe(false);
     expect(calls.every((c) => c.startsWith("argelanderspace.mail/"))).toBe(true);
     // Linux must never fall back silently to the in-memory kernel keyutils store.
     expect(opts.length).toBeGreaterThan(0);

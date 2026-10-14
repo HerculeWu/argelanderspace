@@ -35,13 +35,17 @@ type Json = Record<string, unknown>;
 
 /**
  * The API key: `$OPENALEX_API_KEY`, else config `openalex_api_key`, else none. `config` defaults to the strict reading
- * (the commands); the server hands in its lenient reading.
+ * (the commands); the server hands in its lenient reading. A blank value (empty or only whitespace) counts as not set,
+ * as the settings page reports it (desktop-app ticket 12, aligning a ticket 09 finding): it is not sent.
  */
 export function readOpenAlexApiKey(
   env: NodeJS.ProcessEnv = process.env,
   config?: AppConfig
 ): string | null {
-  return env.OPENALEX_API_KEY ?? (config ?? getConfig()).openalex_api_key ?? null;
+  const set = (v: string | undefined): v is string => v !== undefined && v.trim() !== "";
+  if (set(env.OPENALEX_API_KEY)) return env.OPENALEX_API_KEY;
+  const fromConfig = (config ?? getConfig()).openalex_api_key;
+  return set(fromConfig) ? fromConfig : null;
 }
 
 /** The User-Agent of the requests: the address is in it only when there is one. */

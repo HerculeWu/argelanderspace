@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
-import { AdsClient, normalizeAdsDoc, readAdsToken, titleMatches } from "../src/sources/ads.js";
+import { AdsClient, normalizeAdsDoc, titleMatches } from "../src/sources/ads.js";
 import { CrossrefClient } from "../src/sources/crossref.js";
 import { normalizeOpenAlex, OpenAlexClient } from "../src/sources/openalex.js";
 import { jsonResponse, stubFetch } from "./helpers.js";
@@ -126,10 +126,10 @@ describe("AdsClient (library/sources/ads.py)", () => {
     expect(titleMatches("Completely unrelated title", n.title)).toBe(false);
   });
 
-  test("readAdsToken prefers env, falls back to ~/.ads/dev_key, else null", () => {
-    // explicit empty config: the config-file fallback is tested in config.test.ts
-    expect(readAdsToken({ ADS_DEV_KEY: "  abc  " }, "/nonexistent-home", {})).toBe("abc");
-    expect(readAdsToken({}, "/nonexistent-home", {})).toBeNull();
+  test("an AdsClient without a token given has none (it reads no source itself; ticket 12)", () => {
+    const ads = new AdsClient({ cacheDir: tmpCache(), enabled: false });
+    expect(ads.token).toBeNull();
+    expect(ads.status).toBe("no-token");
   });
 
   test("disabled client returns null without network (offline parity)", async () => {

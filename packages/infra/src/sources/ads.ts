@@ -3,7 +3,9 @@
  * citation metrics, token-gated. Without a valid token the client degrades to
  * a no-op (`status` records why) so the rest of the library keeps working.
  *
- * Token: `$ADS_DEV_KEY`, else config `ads_dev_key`, else `~/.ads/dev_key`.
+ * Token: the one saved in the workbench, in the credential store's `ads` purpose
+ * (desktop-app ticket 12), read by the composition at each use and handed in.
+ * `$ADS_DEV_KEY`, config `ads_dev_key` and `~/.ads/dev_key` are no longer read.
  *
  * Parity notes:
  * - The disk cache key is `sha1(query-string)`, byte-identical to Python.
@@ -13,12 +15,13 @@
  *   `undici`/`node`. ADS keys auth off the Authorization header only.
  */
 
-import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { AdsResolution, AdsSource, AdsStatus } from "@argelanderspace/core";
 import { normDoi, normTitle } from "@argelanderspace/core";
-import { type AppConfig, getConfig } from "../config.js";
+import {
+  ADS_TOKEN_ID,
+  type CredentialStore,
+  createAdsCredentialStore,
+} from "../credential-store.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
 import { SourceCache, sha1Hex } from "./cache.js";
 
@@ -27,27 +30,49 @@ const EXPORT_BASE = "https://ui.adsabs.harvard.edu/v1/export/bibtex";
 const FL = "bibcode,title,author,year,citation_count,pub,doi,abstract,reference";
 const TIMEOUT = 30;
 
-/** `_read_token`: `$ADS_DEV_KEY`, else config `ads_dev_key`, else `~/.ads/dev_key` — stripped. */
-export function readAdsToken(
-  env: NodeJS.ProcessEnv = process.env,
-  home: string = homedir(),
-  config: AppConfig = getConfig()
-): string | null {
-  const tok = env.ADS_DEV_KEY;
-  if (tok?.trim()) return tok.trim();
-  const fromConfig = config.ads_dev_key?.trim();
-  if (fromConfig) return fromConfig;
+/**
+ * How long a read of the ADS token may take (desktop-app ticket 12). A locked keychain can make the Secret Service ask
+ * the user to unlock it; a read that has not answered by then counts as "no token", so no request or job waits on it.
+ */
+export const ADS_TOKEN_READ_TIMEOUT_MS = 5000;
+
+/**
+ * The ADS token saved in the workbench (desktop-app ticket 12): the credential store's `ads` purpose, trimmed. Not
+ * saved, a keychain that does not answer (or not within {@link ADS_TOKEN_READ_TIMEOUT_MS}) with no fallback file, a
+ * damaged file, any failure: no token (null), never an error. Read when it is needed, so a token saved or removed
+ * applies without a restart. The environment variable `ADS_DEV_KEY`, config.toml's `ads_dev_key` and `~/.ads/dev_key`
+ * are not read.
+ *
+ * The timeout bounds the wait of the caller, not the store's own work: the timer is cleared once either side settles
+ * and never keeps the process alive. (A store whose backend blocks the thread synchronously cannot be interrupted by
+ * any timer; the OS keychain backend's calls are such calls.)
+ */
+export async function readAdsToken(
+  store: Pick<CredentialStore, "get"> = createAdsCredentialStore(),
+  opts: { timeoutMs?: number } = {}
+): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), opts.timeoutMs ?? ADS_TOKEN_READ_TIMEOUT_MS);
+    timer.unref?.();
+  });
   try {
-    return readFileSync(join(home, ".ads", "dev_key"), "utf-8").trim() || null;
+    const read = (async () => {
+      const got = await store.get(ADS_TOKEN_ID);
+      return got.status === "ok" ? got.password.trim() || null : null;
+    })().catch(() => null);
+    return await Promise.race([read, timedOut]);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 export interface AdsClientOptions {
   /** Disk cache dir (Python `CACHE_DIR / "ads"` = `<dataDir>/library/cache/ads`). */
   cacheDir: string;
-  /** Explicit token override; defaults to {@link readAdsToken}. */
+  /** The token (the composition reads it with {@link readAdsToken}); absent = no token. */
   token?: string | null;
   /** Fixed pre-request sleep in seconds (Python default 0.25). */
   delay?: number;
@@ -101,7 +126,7 @@ export class AdsClient implements AdsSource {
   private readonly log?: (msg: string) => void;
 
   constructor(opts: AdsClientOptions) {
-    this.token = opts.token !== undefined ? opts.token : readAdsToken();
+    this.token = opts.token ?? null;
     this.delay = opts.delay ?? 0.25;
     this.enabled = opts.enabled ?? true;
     this.status = this.token ? "ok" : "no-token";

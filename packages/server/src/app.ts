@@ -98,8 +98,11 @@ import {
 } from "@argelanderspace/core";
 import {
   AdsDiscoveryError,
+  type CredentialStore,
   configFilePath,
+  createAdsCredentialStore,
   ensureWriterSandboxProbe,
+  type FetchImpl,
   pinnedGlobalDirs,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
@@ -116,6 +119,7 @@ import {
   ImportAfterMergeError,
   isReadableZip,
 } from "./acquisition.js";
+import { mountAdsCredentialRoutes } from "./ads-credential.js";
 import {
   type AnnotationsCommit,
   type AnnotationsRead,
@@ -143,7 +147,7 @@ import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
 import { logRequests, type ServerLog, silentLog } from "./log.js";
-import { externalObserver, jobLogger } from "./log-observers.js";
+import { externalObserver, jobLogger, observedCredentials } from "./log-observers.js";
 import type { MailAccountService } from "./mail-accounts.js";
 import type { MailComposeServices } from "./mail-compose-routes.js";
 import type { MailManageService } from "./mail-manage.js";
@@ -193,13 +197,14 @@ export interface AppDeps {
   /** The plan page's status dir (holds `plans.json`); `statusDirFor(dataDir)`. */
   statusDir: string;
   /** Sources factory: `offline` toggles remote enrichment (Crossref/OpenAlex). */
-  makeSources: (offline: boolean) => MetadataSources;
+  /** May be asynchronous: the real one reads the ADS token from the credential store at each composition. */
+  makeSources: (offline: boolean) => MetadataSources | Promise<MetadataSources>;
   /**
    * Stage 14 discovery source factory (the ADS discovery client). Optional:
    * when absent the discovery route answers 503 — production wires it in
    * server.ts; tests inject stubs.
    */
-  makeDiscoverySource?: () => AdsDiscoverySource;
+  makeDiscoverySource?: () => AdsDiscoverySource | Promise<AdsDiscoverySource>;
   /** The ingest pipelines (the upload endpoint consumes `ingestLatexZip`). */
   pipelines: IngestPipelines;
   /** The rate window of the page-error reports (page-errors.ts); a test shortens it. Default a minute. */
@@ -252,6 +257,15 @@ export interface AppDeps {
   log?: ServerLog;
   /** The config file the settings endpoints read and change (settings.ts); default `configFilePath()`. */
   configPath?: string | undefined;
+  /**
+   * The ADS token's credential store (desktop-app ticket 12), the one the sources read the token from: `createServer`
+   * hands in the same store to both. Default: the `ads` purpose over the OS keychain, wrapped for the log.
+   */
+  adsCredentials?: CredentialStore | undefined;
+  /** The HTTP implementation of the ADS token test (ads-credential.ts); default the global fetch. */
+  adsTestFetch?: FetchImpl | undefined;
+  /** Where the ADS import looks for `~/.ads/dev_key` (ads-credential.ts); default under the home directory. */
+  adsDevKeyPath?: (() => string) | undefined;
   /** Where `serve` keeps the process's data, fixed at its start (settings.ts `startupLocations`); default null. */
   startup?: import("@argelanderspace/contracts").StartupLocations | null;
   /**
@@ -534,6 +548,13 @@ export function createApp(deps: AppDeps): Hono {
     },
     written: () =>
       broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() }),
+  });
+
+  // The ADS token (ads-credential.ts): kept in the credential store, never in config.toml; no answer carries it.
+  mountAdsCredentialRoutes(app, guardCsrf, {
+    store: deps.adsCredentials ?? observedCredentials(createAdsCredentialStore(), log),
+    fetchImpl: deps.adsTestFetch,
+    devKeyPath: deps.adsDevKeyPath,
   });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
@@ -1550,7 +1571,7 @@ export function createApp(deps: AppDeps): Hono {
       const e = detail("missing or invalid bibcode query parameter", 400);
       return c.json(e.body, e.status);
     }
-    const source = deps.makeDiscoverySource?.();
+    const source = await deps.makeDiscoverySource?.();
     if (!source) {
       const e = detail("ADS discovery is not configured on this server", 503);
       return c.json(e.body, e.status);

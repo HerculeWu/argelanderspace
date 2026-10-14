@@ -25,7 +25,6 @@ import { join } from "node:path";
 import type { AdsDiscoveryRecord, AdsDiscoverySource } from "@argelanderspace/core";
 import { normArxiv, normDoi } from "@argelanderspace/core";
 import { type FetchImpl, withQuery } from "../lib/http.js";
-import { readAdsToken } from "./ads.js";
 import { sha1Hex } from "./cache.js";
 
 const BASE = "https://api.adsabs.harvard.edu/v1/search/query";
@@ -182,7 +181,7 @@ class DiscoveryCache {
 export interface AdsDiscoveryClientOptions {
   /** `<dataDir>/library/cache/ads-discovery` — the dedicated namespace. */
   cacheDir: string;
-  /** Explicit token override; defaults to {@link readAdsToken}. */
+  /** The token (the composition reads it with `readAdsToken`); absent = no token. */
   token?: string | null;
   /** false = unavailable (cache stays readable; network attempts raise no-token). */
   enabled?: boolean;
@@ -202,7 +201,7 @@ export class AdsDiscoveryClient implements AdsDiscoverySource {
   private readonly log?: (msg: string) => void;
 
   constructor(opts: AdsDiscoveryClientOptions) {
-    this.token = opts.token !== undefined ? opts.token : readAdsToken();
+    this.token = opts.token ?? null;
     this.enabled = opts.enabled ?? true;
     this.cache = new DiscoveryCache(
       opts.cacheDir,

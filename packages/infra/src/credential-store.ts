@@ -1,7 +1,14 @@
 /**
- * Credential store (Mail ticket 02; ADR 0008). A narrow get/set/delete(accountId)
+ * Credential store (Mail ticket 02; ADR 0008). A narrow get/set/delete(id)
  * over the OS keychain (`@napi-rs/keyring`), plus an opt-in 0600 file under the
  * global data directory (ADR 0007) for machines whose keychain is unusable.
+ *
+ * Addressed by purpose and id (desktop-app ticket 12): a store serves one
+ * purpose — `mail` (the default: the mail passwords, by account id) or `ads`
+ * (the ADS token, id {@link ADS_TOKEN_ID}). Each purpose has its own keychain
+ * service and its own fallback file. The mail purpose keeps the service name,
+ * the file name, the file format and the key derivation it had before, so the
+ * passwords saved earlier are read without any migration.
  *
  * Rules:
  * - The keychain is always tried first. If it fails (no Secret Service on
@@ -38,15 +45,46 @@ import { hostname, userInfo } from "node:os";
 import { join } from "node:path";
 import { ensureGlobalDirs, resolveGlobalDirs } from "./global-dirs.js";
 
+/** The mail passwords' fallback file (unchanged since Mail ticket 02). */
 export const CREDENTIAL_FILE_NAME = "credentials.json";
-const KEYCHAIN_SERVICE = "argelanderspace.mail";
+/** The ADS token's fallback file (desktop-app ticket 12), next to the mail one. */
+export const ADS_CREDENTIAL_FILE_NAME = "ads-credentials.json";
+/** The one id the ADS purpose stores. */
+export const ADS_TOKEN_ID = "token";
 
-/** Synchronous or async; a throw means "keychain unusable". */
+export type CredentialPurpose = "mail" | "ads";
+
+interface PurposeSpec {
+  /** The keychain service the entries are filed under. */
+  service: string;
+  fileName: string;
+  /** The label mixed into the file key's derivation. */
+  keyLabel: string;
+}
+
+const PURPOSES: Record<CredentialPurpose, PurposeSpec> = {
+  // Unchanged from Mail ticket 02: saved passwords must stay readable.
+  mail: {
+    service: "argelanderspace.mail",
+    fileName: CREDENTIAL_FILE_NAME,
+    keyLabel: "argelanderspace.mail.credentials",
+  },
+  ads: {
+    service: "argelanderspace.ads",
+    fileName: ADS_CREDENTIAL_FILE_NAME,
+    keyLabel: "argelanderspace.ads.credentials",
+  },
+};
+
+/**
+ * Synchronous or async; a throw means "keychain unusable". `service` is the purpose's keychain service: a backend
+ * that holds entries of several purposes keys them by service and id, as an OS keychain does.
+ */
 export interface KeychainBackend {
-  get(accountId: string): string | null | Promise<string | null>;
-  set(accountId: string, password: string): void | Promise<void>;
+  get(id: string, service: string): string | null | Promise<string | null>;
+  set(id: string, password: string, service: string): void | Promise<void>;
   /** true when an entry existed and was removed. */
-  delete(accountId: string): boolean | Promise<boolean>;
+  delete(id: string, service: string): boolean | Promise<boolean>;
 }
 
 /** Structural view of the native module (kept out of the package index). */
@@ -75,15 +113,15 @@ export function createNapiKeychainBackend(
     import("@napi-rs/keyring") as unknown as Promise<NapiKeyringModule>
 ): KeychainBackend {
   let mod: Promise<NapiKeyringModule> | undefined;
-  const entry = async (accountId: string): Promise<NapiEntryLike> => {
+  const entry = async (id: string, service: string): Promise<NapiEntryLike> => {
     mod ??= load();
     const { Entry } = await mod;
-    return new Entry(KEYCHAIN_SERVICE, accountId, { linux: { store: "secret-service" } });
+    return new Entry(service, id, { linux: { store: "secret-service" } });
   };
   return {
-    get: async (a) => (await entry(a)).getPassword() ?? null,
-    set: async (a, p) => (await entry(a)).setPassword(p),
-    delete: async (a) => (await entry(a)).deletePassword(),
+    get: async (a, s) => (await entry(a, s)).getPassword() ?? null,
+    set: async (a, p, s) => (await entry(a, s)).setPassword(p),
+    delete: async (a, s) => (await entry(a, s)).deletePassword(),
   };
 }
 
@@ -119,6 +157,16 @@ export type DeleteCredentialResult =
   | { status: "keychain-unavailable" }
   | { status: "error"; code: CredentialErrorCode };
 
+/** What is saved, never the value; and whether the keychain answered this time. */
+export type CredentialStatusResult =
+  | {
+      status: "stored";
+      protection: "keychain" | "file";
+      keychain: "available" | "unavailable";
+    }
+  | { status: "not-found"; keychain: "available" | "unavailable" }
+  | { status: "error"; code: CredentialErrorCode };
+
 export interface SetCredentialOptions {
   /** Only a literal `true` (the user agreed in the UI) permits the file fallback. */
   fileFallbackConsent?: boolean;
@@ -132,9 +180,27 @@ export interface CredentialStore {
     opts?: SetCredentialOptions
   ): Promise<SetCredentialResult>;
   delete(accountId: string): Promise<DeleteCredentialResult>;
+  /** Saved or not, and where; the value is read to decide but never returned. */
+  status(accountId: string): Promise<CredentialStatusResult>;
 }
 
+/**
+ * Every method of a {@link CredentialStore}. A wrapper (the server's logging one) is built from this list, so a method
+ * added to the interface and not here fails to type-check instead of silently disappearing behind the wrapper.
+ */
+export const CREDENTIAL_STORE_METHODS = [
+  "get",
+  "set",
+  "delete",
+  "status",
+] as const satisfies readonly (keyof CredentialStore)[];
+type MissingMethod = Exclude<keyof CredentialStore, (typeof CREDENTIAL_STORE_METHODS)[number]>;
+const allMethodsListed: [MissingMethod] extends [never] ? true : never = true;
+void allMethodsListed;
+
 export interface CredentialStoreOptions {
+  /** Which secrets this store holds; default `mail` (the passwords of the mail accounts). */
+  purpose?: CredentialPurpose;
   /** Defaults to the OS keychain via @napi-rs/keyring. */
   backend?: KeychainBackend;
   /** Directory for the fallback file; defaults to the global data dir (created on demand). */
@@ -156,19 +222,19 @@ interface FileDoc {
 
 class FileUnreadable extends Error {}
 
-function deriveKey(salt: Buffer): Buffer {
+function deriveKey(label: string, salt: Buffer): Buffer {
   let who = "";
   try {
     who = `${userInfo().username}@${hostname()}`;
   } catch {
     // userInfo can throw for uid without passwd entry; the key is obfuscation only
   }
-  return scryptSync(`argelanderspace.mail.credentials|${who}`, salt, 32);
+  return scryptSync(`${label}|${who}`, salt, 32);
 }
 
-function encrypt(doc: FileDoc, accountId: string, password: string): FileEntry {
+function encrypt(label: string, doc: FileDoc, accountId: string, password: string): FileEntry {
   const iv = randomBytes(12);
-  const c = createCipheriv("aes-256-gcm", deriveKey(Buffer.from(doc.salt, "base64")), iv);
+  const c = createCipheriv("aes-256-gcm", deriveKey(label, Buffer.from(doc.salt, "base64")), iv);
   c.setAAD(Buffer.from(accountId));
   const ct = Buffer.concat([c.update(password, "utf8"), c.final()]);
   return {
@@ -178,11 +244,11 @@ function encrypt(doc: FileDoc, accountId: string, password: string): FileEntry {
   };
 }
 
-function decrypt(doc: FileDoc, accountId: string, e: FileEntry): string {
+function decrypt(label: string, doc: FileDoc, accountId: string, e: FileEntry): string {
   try {
     const d = createDecipheriv(
       "aes-256-gcm",
-      deriveKey(Buffer.from(doc.salt, "base64")),
+      deriveKey(label, Buffer.from(doc.salt, "base64")),
       Buffer.from(e.iv, "base64")
     );
     d.setAAD(Buffer.from(accountId));
@@ -280,55 +346,59 @@ async function tryKeychain<T>(fn: () => T | Promise<T>): Promise<KeychainOutcome
 
 export function createCredentialStore(options: CredentialStoreOptions = {}): CredentialStore {
   const backend = options.backend ?? createNapiKeychainBackend();
+  const spec = PURPOSES[options.purpose ?? "mail"];
+  const { service, keyLabel } = spec;
   const filePath = (): string => {
     const dir = options.dataDir ?? ensureGlobalDirs().dataDir;
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    return join(dir, CREDENTIAL_FILE_NAME);
+    return join(dir, spec.fileName);
   };
   /** Read-only lookups must not create directories. */
   const existingFilePath = (): string | null => {
     try {
       const dir = options.dataDir ?? resolveGlobalDirs().dataDir;
-      return join(dir, CREDENTIAL_FILE_NAME);
+      return join(dir, spec.fileName);
     } catch {
       return null;
     }
   };
   const valid = (...xs: string[]) => xs.every((x) => typeof x === "string" && x.length > 0);
 
-  return {
-    async get(accountId) {
-      if (!valid(accountId)) return { status: "error", code: "invalid-input" };
-      const kc = await tryKeychain(() => backend.get(accountId));
-      if (kc.ok && kc.value !== null) {
+  const get: CredentialStore["get"] = async (accountId) => {
+    if (!valid(accountId)) return { status: "error", code: "invalid-input" };
+    const kc = await tryKeychain(() => backend.get(accountId, service));
+    if (kc.ok && kc.value !== null) {
+      return {
+        status: "ok",
+        password: kc.value,
+        protection: "keychain",
+        keychainProtected: true,
+      };
+    }
+    try {
+      const path = existingFilePath();
+      const doc = path ? readDoc(path) : null;
+      const e = doc?.entries.get(accountId);
+      if (doc && e) {
         return {
           status: "ok",
-          password: kc.value,
-          protection: "keychain",
-          keychainProtected: true,
+          password: decrypt(keyLabel, doc, accountId, e),
+          protection: "file",
+          keychainProtected: false,
         };
       }
-      try {
-        const path = existingFilePath();
-        const doc = path ? readDoc(path) : null;
-        const e = doc?.entries.get(accountId);
-        if (doc && e) {
-          return {
-            status: "ok",
-            password: decrypt(doc, accountId, e),
-            protection: "file",
-            keychainProtected: false,
-          };
-        }
-      } catch {
-        return { status: "error", code: "file-unreadable" };
-      }
-      return kc.ok ? { status: "not-found" } : { status: "keychain-unavailable" };
-    },
+    } catch {
+      return { status: "error", code: "file-unreadable" };
+    }
+    return kc.ok ? { status: "not-found" } : { status: "keychain-unavailable" };
+  };
+
+  return {
+    get,
 
     async set(accountId, password, opts = {}) {
       if (!valid(accountId, password)) return { status: "error", code: "invalid-input" };
-      const kc = await tryKeychain(() => backend.set(accountId, password));
+      const kc = await tryKeychain(() => backend.set(accountId, password, service));
       if (kc.ok) {
         // A keychain now works: drop any older file copy. Failure is reported, not hidden.
         const removed = removeFileEntry(existingFilePath(), accountId);
@@ -357,7 +427,7 @@ export function createCredentialStore(options: CredentialStoreOptions = {}): Cre
       }
       try {
         doc ??= { v: 1, salt: randomBytes(16).toString("base64"), entries: new Map() };
-        doc.entries.set(accountId, encrypt(doc, accountId, password));
+        doc.entries.set(accountId, encrypt(keyLabel, doc, accountId, password));
         writeDoc(path, doc);
       } catch {
         return { status: "error", code: "file-write-failed" };
@@ -367,7 +437,7 @@ export function createCredentialStore(options: CredentialStoreOptions = {}): Cre
 
     async delete(accountId) {
       if (!valid(accountId)) return { status: "error", code: "invalid-input" };
-      const kc = await tryKeychain(() => backend.delete(accountId));
+      const kc = await tryKeychain(() => backend.delete(accountId, service));
       const removed = removeFileEntry(existingFilePath(), accountId);
       if (removed === "unreadable") return { status: "error", code: "file-unreadable" };
       if (removed === "write-failed") return { status: "error", code: "file-write-failed" };
@@ -377,5 +447,30 @@ export function createCredentialStore(options: CredentialStoreOptions = {}): Cre
         ? { status: "deleted", keychainUnavailable: true }
         : { status: "keychain-unavailable" };
     },
+
+    async status(accountId) {
+      if (!valid(accountId)) return { status: "error", code: "invalid-input" };
+      const kc = await tryKeychain(() => backend.get(accountId, service));
+      const keychain = kc.ok ? "available" : "unavailable";
+      if (kc.ok && kc.value !== null) return { status: "stored", protection: "keychain", keychain };
+      try {
+        const path = existingFilePath();
+        const doc = path ? readDoc(path) : null;
+        const e = doc?.entries.get(accountId);
+        // Decrypted only to tell a usable entry from a damaged one; the value is dropped here.
+        if (doc && e && decrypt(keyLabel, doc, accountId, e).length > 0)
+          return { status: "stored", protection: "file", keychain };
+      } catch {
+        return { status: "error", code: "file-unreadable" };
+      }
+      return { status: "not-found", keychain };
+    },
   };
+}
+
+/** The store of the ADS token (desktop-app ticket 12): the `ads` purpose over the OS keychain and its own file. */
+export function createAdsCredentialStore(
+  options: Omit<CredentialStoreOptions, "purpose"> = {}
+): CredentialStore {
+  return createCredentialStore({ ...options, purpose: "ads" });
 }

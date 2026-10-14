@@ -140,8 +140,8 @@ export interface SettingsSnapshot {
    */
   uneditable: Partial<Record<SettingKey, SettingChangeRefusal>>;
   /**
-   * The deprecated keys the file still sets. Today only `ads_dev_key`, which is still read as an ADS token until the
-   * ADS credential replaces it (desktop-app ticket 12).
+   * The deprecated keys the file still sets. Today only `ads_dev_key`, which no longer has any effect: the ADS token is
+   * kept in the credential store (desktop-app ticket 12); the page says so in the ADS token row.
    */
   legacy: SettingKey[];
   /**
