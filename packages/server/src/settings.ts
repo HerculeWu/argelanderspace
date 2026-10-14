@@ -24,7 +24,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import {
-  affectsDataLocation,
+  defaultSettings,
   isSettingKey,
   redactSettingsValues,
   SETTING_KEYS,
@@ -39,12 +39,14 @@ import {
   type SettingsSnapshot,
   type SettingsValues,
   type SettingValue,
+  type StartupLocations,
   settingDef,
 } from "@argelanderspace/contracts";
 import {
   type ConfigChange,
   configFilePath,
   editConfigText,
+  isAbsoluteOnThisPlatform,
   readSettingsText,
   type SettingsReading,
   type SettingWriteRefusal,
@@ -64,6 +66,8 @@ export interface SettingsRouteOptions {
   path?: string | undefined;
   /** Called after a change that rewrote the file. */
   written?: (() => void) | undefined;
+  /** Where the process's data lives, fixed when `serve` started (`SettingsSnapshot.startup`); default null. */
+  startup?: StartupLocations | null | undefined;
 }
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -113,7 +117,54 @@ function readWithText(path: string): { reading: SettingsReading; file: FileText 
           file,
         };
   }
-  return { reading: readSettingsText(file.text), file };
+  return { reading: withPlatformPaths(readSettingsText(file.text)), file };
+}
+
+const GLOBAL_DIR_KEYS = ["global_dir", "global_cache_dir"] as const;
+
+/**
+ * The schema takes an absolute path in any platform's writing; a global directory must be absolute on this machine
+ * (infra `isAbsoluteOnThisPlatform`). A value this machine cannot use is a `must_be_absolute` problem here too, with
+ * its default in effect — so the page lists what `serve` reported at its start (desktop-app ticket 10).
+ */
+function withPlatformPaths(reading: SettingsReading): SettingsReading {
+  const defaults = defaultSettings();
+  let out = reading;
+  for (const key of GLOBAL_DIR_KEYS) {
+    const value = out.values[key];
+    if (
+      out.sources[key] !== "file" ||
+      typeof value !== "string" ||
+      isAbsoluteOnThisPlatform(value.trim())
+    )
+      continue;
+    out = {
+      ...out,
+      values: { ...out.values, [key]: defaults[key] },
+      sources: { ...out.sources, [key]: "default" },
+      problems: [...out.problems, { key, reason: "must_be_absolute" }],
+    };
+  }
+  return out;
+}
+
+/**
+ * Where the process's data lives, from the reading `serve` started with (`StartupLocations`): the source of each
+ * location and what was wrong with its key, or with the whole file, at that moment.
+ */
+export function startupLocations(
+  reading: SettingsReading,
+  dataDirGiven: boolean
+): StartupLocations {
+  const whole = reading.problems.find((problem) => problem.key === null)?.reason ?? null;
+  const problem = (key: SettingKey) => reading.problems.find((p) => p.key === key)?.reason ?? whole;
+  const source = (key: SettingKey): "file" | "default" =>
+    reading.sources[key] === "file" ? "file" : "default";
+  return {
+    data_dir: { source: dataDirGiven ? "flag" : source("data_dir"), problem: problem("data_dir") },
+    global_dir: { source: source("global_dir"), problem: problem("global_dir") },
+    global_cache_dir: { source: source("global_cache_dir"), problem: problem("global_cache_dir") },
+  };
 }
 
 /** The lenient reading of the config file; never throws. */
@@ -156,7 +207,10 @@ function refusalFor(
 }
 
 /** The settings as the page may see them. Never throws. */
-export function settingsSnapshot(path: string = configFilePath()): SettingsSnapshot {
+export function settingsSnapshot(
+  path: string = configFilePath(),
+  startup: StartupLocations | null = null
+): SettingsSnapshot {
   const { reading, file } = readWithText(path);
   const readonly = reading.file === "unparseable" || reading.file === "unreadable";
   const uneditable: Partial<Record<SettingKey, SettingChangeRefusal>> = {};
@@ -179,6 +233,7 @@ export function settingsSnapshot(path: string = configFilePath()): SettingsSnaps
     problems: reading.problems,
     uneditable,
     legacy: reading.present.filter((key) => settingDef(key).deprecated === true),
+    startup,
   };
 }
 
@@ -222,14 +277,36 @@ const REASON_TEXT: Record<ConfigProblem["reason"], string> = {
   unreadable: "could not be read",
 };
 
+const LOCATION_NAME = {
+  data_dir: "project data",
+  global_dir: "global data (Mail, credentials, log)",
+  global_cache_dir: "global cache",
+} as const;
+
+/** What the terminal says of one location the process uses, from the start's state; null when nothing is to say. */
+function locationLine(
+  key: keyof StartupLocations,
+  at: StartupLocations[keyof StartupLocations]
+): string | null {
+  if (at.problem === null) return null;
+  if (at.source === "flag")
+    return `${LOCATION_NAME[key]}: the location given by --data-dir is in use`;
+  if (at.source === "default") {
+    const where =
+      key === "data_dir" ? "the default location ./literatures" : "the default directory";
+    return `${LOCATION_NAME[key]}: ${where} is in use, not the one the file names`;
+  }
+  return null;
+}
+
 /**
  * What `serve` prints to stderr when config.toml has problems: one line for the file, one per problem, by key and
- * category — never a value, never the TOML parser's text. When the problem is about where data lives, the line says
- * that the default location is in use (for `data_dir` only when no `--data-dir` was given).
+ * category — never a value, never the TOML parser's text — then, from the locations the process has just fixed
+ * (`startupLocations`), where its data lives for each location the problems touch.
  */
 export function configProblemLines(
   problems: readonly ConfigProblem[],
-  context: { path: string; dataDirGiven: boolean }
+  context: { path: string; startup: StartupLocations }
 ): string[] {
   if (problems.length === 0) return [];
   const lines = [
@@ -237,24 +314,30 @@ export function configProblemLines(
   ];
   for (const problem of problems) {
     if (problem.key === null) {
-      lines.push(
-        `  the file ${REASON_TEXT[problem.reason]}: every setting has its default, and the default data locations (project data, global data, global cache) are in use instead of the ones the file names`
-      );
+      lines.push(`  the file ${REASON_TEXT[problem.reason]}: every setting has its default`);
+      continue;
+    }
+    if ((["data_dir", "global_dir", "global_cache_dir"] as const).includes(problem.key as never)) {
+      lines.push(`  "${problem.key}" ${REASON_TEXT[problem.reason]}`);
       continue;
     }
     const where = problem.key === "ui" ? "table [ui]" : `"${problem.key}"`;
-    let tail = "its default is in use";
-    if (affectsDataLocation(problem)) {
-      tail =
-        problem.key === "data_dir"
-          ? context.dataDirGiven
-            ? "--data-dir is in use"
-            : "the default data location ./literatures is in use, not the one the file names"
-          : `the default ${problem.key === "global_dir" ? "global data" : "global cache"} directory is in use, not the one the file names`;
-    }
-    lines.push(`  ${where} ${REASON_TEXT[problem.reason]}: ${tail}`);
+    lines.push(`  ${where} ${REASON_TEXT[problem.reason]}: its default is in use`);
   }
-  lines.push("  (the settings page lists them too; fix the file and restart for data locations)");
+  const keys = ["data_dir", "global_dir", "global_cache_dir"] as const;
+  const locations = keys.flatMap((key) => {
+    const line = locationLine(key, context.startup[key]);
+    return line === null ? [] : [`  ${line}`];
+  });
+  lines.push(...locations);
+  const restart = keys.some(
+    (key) => context.startup[key].problem !== null && context.startup[key].source === "default"
+  );
+  lines.push(
+    restart
+      ? "  (the settings page lists them too; fix the file and restart the workbench for the data locations to change)"
+      : "  (the settings page lists them too)"
+  );
   return lines;
 }
 
@@ -304,7 +387,9 @@ export function mountSettingsRoutes(
 ): void {
   const pathNow = (): string => options.path ?? configFilePath();
 
-  app.get("/api/settings", (c) => c.json(settingsSnapshot(pathNow()), 200, NO_STORE));
+  app.get("/api/settings", (c) =>
+    c.json(settingsSnapshot(pathNow(), options.startup ?? null), 200, NO_STORE)
+  );
 
   app.put("/api/settings/:key", async (c) => {
     const rejected = guardCsrf(c.req.header("origin"));
@@ -343,7 +428,7 @@ export function mountSettingsRoutes(
       {
         ok: true,
         changed: result.changed,
-        settings: settingsSnapshot(path),
+        settings: settingsSnapshot(path, options.startup ?? null),
       } satisfies SettingChangeResponse,
       200,
       NO_STORE

@@ -71,3 +71,6 @@
 .config-banner-text strong { font-weight: 600; margin-right: 6px; }
 .config-banner-open { flex: none; min-height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; }
 .config-banner-open:hover { background: var(--hover); }
+.config-banner-row { display: block; }
+.config-banner.location .config-banner-row + .config-banner-row { color: var(--text-dim); }
+.st-hidden-note { max-width: 320px; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-dim); text-align: right; }

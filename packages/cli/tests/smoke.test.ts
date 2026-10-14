@@ -585,7 +585,7 @@ describe("serve: configuration comes from flags and config.toml only (desktop-ap
         };
         expect(settings.problems).toContainEqual({ key: "data_dir", reason: "must_be_relative" });
         // The terminal line is written once the server listens.
-        for (let i = 0; i < 50 && !stderr.includes('"data_dir"'); i++) {
+        for (let i = 0; i < 50 && !stderr.includes("the settings page lists them too"); i++) {
           await new Promise((r) => setTimeout(r, 100));
         }
       } finally {
@@ -596,8 +596,9 @@ describe("serve: configuration comes from flags and config.toml only (desktop-ap
       });
       expect(exit).toBe(0);
       // The terminal names the key and says the default location is in use; the value is never repeated.
+      expect(stderr).toContain('"data_dir" must be a relative path');
       expect(stderr).toContain(
-        '"data_dir" must be a relative path: the default data location ./literatures is in use'
+        "project data: the default location ./literatures is in use, not the one the file names"
       );
       expect(stderr).not.toContain(dataDir);
     } finally {

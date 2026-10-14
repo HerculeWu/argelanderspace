@@ -50,6 +50,27 @@ export const SETTING_CHANGE_REFUSALS = [
 ] as const;
 export type SettingChangeRefusal = (typeof SETTING_CHANGE_REFUSALS)[number];
 
+/**
+ * Where one kind of data lives in the running process, as `serve` fixed it at its start (desktop-app ticket 10):
+ * `flag` — `--data-dir` (project data only); `file` — the value in config.toml; `default` — the default location.
+ * `problem` is what was wrong with the key in the file at the start (or with the whole file: `unparseable`,
+ * `unreadable`), whatever the source ended up being; null when nothing was. No path, no value.
+ */
+export interface StartupLocation {
+  source: "flag" | "file" | "default";
+  problem: SettingsProblem["reason"] | null;
+}
+
+/** The three data locations of the running process (`SettingsSnapshot.startup`). */
+export interface StartupLocations {
+  /** Project data (`data_dir`, or `--data-dir`). */
+  data_dir: StartupLocation;
+  /** Global data: Mail accounts, credentials, the user-level log (`global_dir`). */
+  global_dir: StartupLocation;
+  /** Global cache (`global_cache_dir`). */
+  global_cache_dir: StartupLocation;
+}
+
 /** `GET /api/settings`: the settings as the page may see them. */
 export interface SettingsSnapshot {
   version: 1;
@@ -62,10 +83,11 @@ export interface SettingsSnapshot {
    */
   readonly: boolean;
   /**
-   * The value of every key as the file gives it (the lenient reading, with the default for a key that is not set or
-   * is faulty); a secret key has `{ secret: true, set }` and no value. This is the file, not necessarily what the
+   * The value of every key as the file gives it now (the lenient reading, with the default for a key that is not set
+   * or is faulty); a secret key has `{ secret: true, set }` and no value. This is the file, not necessarily what the
    * running process uses: a `--port` / `--data-dir` given to `serve`, and a key that takes effect only at a restart
-   * (`data_dir`, `port`, `global_dir`, `global_cache_dir`) changed since the start, are not reflected here.
+   * (`data_dir`, `port`, `global_dir`, `global_cache_dir`) changed since the start, are not reflected here. Where the
+   * process keeps its data is `startup`.
    */
   values: RedactedSettingsValues;
   sources: Record<SettingKey, "default" | "file">;
@@ -78,21 +100,13 @@ export interface SettingsSnapshot {
   uneditable: Partial<Record<SettingKey, SettingChangeRefusal>>;
   /** The deprecated keys the file still sets (`ads_dev_key`): they no longer do anything. */
   legacy: SettingKey[];
-}
-
-/**
- * The keys that say where data lives. A problem with one of them, or with the whole file (`key: null`), means the
- * server runs on the default location of that data and not on the one the file means to give (desktop-app ticket
- * 10): the workbench says so more loudly than for any other key.
- */
-export const SETTINGS_DATA_LOCATION_KEYS = ["data_dir", "global_dir", "global_cache_dir"] as const;
-
-/** Whether a problem of the file is about where data lives (see `SETTINGS_DATA_LOCATION_KEYS`). */
-export function affectsDataLocation(problem: SettingsProblem): boolean {
-  return (
-    problem.key === null ||
-    (SETTINGS_DATA_LOCATION_KEYS as readonly (string | null)[]).includes(problem.key)
-  );
+  /**
+   * Where the running process keeps its data, fixed when `serve` started and unchanged until it restarts — unlike
+   * `values`, `sources` and `problems`, which are the file as it is now. A file repaired (or broken) while the server
+   * runs changes `problems` at once and `startup` only at the next start. Null for a server not started by `serve`
+   * (one made by `createServer` alone, in tests). Sources and categories only: no path, no value.
+   */
+  startup: StartupLocations | null;
 }
 
 /** The body of `PUT /api/settings/:key`: set the key, or remove it so that its default applies. */

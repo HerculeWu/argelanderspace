@@ -25,6 +25,8 @@ export interface FakeSettings {
   state: SettingsFileState;
   /** Refuse the next changes of a key with this category (the file stays as it is). */
   refuse: Partial<Record<SettingKey, SettingChangeRefusal>>;
+  /** Where the "running process" keeps its data (fixed at its start; the file's state does not change it). */
+  startup: SettingsSnapshot["startup"];
   /** Every change the page asked for, in order. */
   puts: { key: string; body: unknown }[];
   gets: number;
@@ -58,6 +60,7 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
     gets: 0,
     down: false,
     refusalDelayMs: 200,
+    startup: null,
     writeDelays: [],
     getDelays: [],
     snapshot() {
@@ -82,6 +85,7 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
         problems: readonly ? [{ key: null, reason: fake.state as "unparseable" | "unreadable" }] : fake.problems,
         uneditable: readonly ? {} : fake.uneditable,
         legacy: [],
+        startup: fake.startup,
       };
     },
     handle(input, init) {

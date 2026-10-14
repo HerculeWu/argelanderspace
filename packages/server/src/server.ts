@@ -20,7 +20,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PORT } from "@argelanderspace/contracts";
+import { DEFAULT_PORT, type StartupLocations } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
@@ -58,6 +58,7 @@ import {
   configProblemLines,
   readSettings,
   startSettingsWatcher,
+  startupLocations,
 } from "./settings.js";
 import { startWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
@@ -109,6 +110,8 @@ export interface ServerOptions {
    * file when the server is created.
    */
   globalDirs?: GlobalDirs;
+  /** Where `serve` keeps the process's data (settings.ts `startupLocations`), for `GET /api/settings`; default null. */
+  startup?: StartupLocations;
 }
 
 export interface RunningServer {
@@ -232,6 +235,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     },
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
     configPath: opts.configPath,
+    startup: opts.startup ?? null,
   });
 
   const server = serve({
@@ -405,19 +409,22 @@ export function resolveServerConfig(
  * that take effect at a restart (`data_dir`, `port`, `global_dir`, `global_cache_dir`) are fixed here for the whole
  * run; `problems` is what the terminal line and the start record name (never a value).
  */
-export function serveStart(path: string = configFilePath()): {
+export function serveStart(
+  path: string = configFilePath(),
+  argv: readonly string[] = []
+): {
   config: AppConfig;
   globalDirs: GlobalDirs;
   problems: ConfigProblem[];
+  startup: StartupLocations;
 } {
+  // The server's reading already names a global directory this platform cannot use (settings.ts), so the page, the
+  // terminal and the start record list the same problems.
   const reading = readSettings(path);
   const config = configOfReading(reading);
-  const { dirs, faulty } = resolveGlobalDirsLeniently(config);
-  const problems: ConfigProblem[] = [...reading.problems];
-  // A global directory the file writes absolutely in another platform's way: the schema accepts it, this platform
-  // cannot use it.
-  for (const key of faulty) problems.push({ key, reason: "must_be_absolute" });
-  return { config, globalDirs: dirs, problems };
+  const { dirs } = resolveGlobalDirsLeniently(config);
+  const startup = startupLocations(reading, argValue(argv, "data-dir") !== undefined);
+  return { config, globalDirs: dirs, problems: [...reading.problems], startup };
 }
 
 export interface StartOptions {
@@ -434,7 +441,7 @@ export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
 ): Promise<RunningServer> {
-  const { config, globalDirs, problems } = serveStart();
+  const { config, globalDirs, problems, startup } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
   const serveLog = openServeLog(config, join(globalDirs.dataDir, LOG_DIR_NAME));
@@ -452,6 +459,7 @@ export async function startServer(
       log: serveLog.log,
       sweepMailStagingIn,
       globalDirs,
+      startup,
     });
     port = await srv.ready();
   } catch (error) {
@@ -473,10 +481,7 @@ export async function startServer(
   console.log(`  data dir: ${cfg.dataDir}`);
   console.log(`  web dist: ${cfg.webDist ?? "(none — API only)"}`);
   // A faulty config.toml: named by key and category on the terminal too (never a value, never the parser's text).
-  for (const line of configProblemLines(problems, {
-    path: configFilePath(),
-    dataDirGiven: argValue(argv, "data-dir") !== undefined,
-  })) {
+  for (const line of configProblemLines(problems, { path: configFilePath(), startup })) {
     console.error(line);
   }
   const close = srv.close;

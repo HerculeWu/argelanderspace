@@ -248,6 +248,8 @@ export interface AppDeps {
   log?: ServerLog;
   /** The config file the settings endpoints read and change (settings.ts); default `configFilePath()`. */
   configPath?: string | undefined;
+  /** Where `serve` keeps the process's data, fixed at its start (settings.ts `startupLocations`); default null. */
+  startup?: import("@argelanderspace/contracts").StartupLocations | null;
 }
 
 // --------------------------------------------------------------------------- //
@@ -499,6 +501,7 @@ export function createApp(deps: AppDeps): Hono {
   // Settings (settings.ts): the page reads them and changes one key of config.toml at a time; a change that rewrote
   // the file is told to every page at once (the file watcher of `createServer` finds it too, a moment later).
   mountSettingsRoutes(app, guardCsrf, {
+    startup: deps.startup ?? null,
     path: deps.configPath,
     written: () =>
       broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() }),

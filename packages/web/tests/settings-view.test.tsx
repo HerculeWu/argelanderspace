@@ -571,10 +571,13 @@ describe("the browser's own storage is not the authority", () => {
 
 describe("the workbench's banner for a faulty config.toml", () => {
   const banner = () => q('[data-ui="config-problems-banner"]');
+  const fine = { source: "default" as const, problem: null };
+  const startup = (over: Partial<NonNullable<FakeSettings["startup"]>> = {}): FakeSettings["startup"] => ({ data_dir: fine, global_dir: fine, global_cache_dir: fine, ...over });
 
   it("a faulty key that is not about data: a quiet line above every view, naming the key and never a value", async () => {
     settings.file = { ...EN, "ui.theme": "light" };
     settings.problems = [{ key: "ui.theme", reason: "wrong_type" }];
+    settings.startup = startup();
     render(<Shell />);
     await waitFor(() => expect(banner()).not.toBeNull());
     const b = banner()!;
@@ -598,31 +601,91 @@ describe("the workbench's banner for a faulty config.toml", () => {
     await waitFor(() => expect(banner()).toBeNull());
   });
 
-  it("the data location: a whole file that is unparseable, or a faulty data_dir / global directory, is a warning", async () => {
-    settings.state = "unparseable";
+  it("project data in the default location since the start: a warning that says so, with the restart", async () => {
+    settings.problems = [{ key: "data_dir", reason: "must_be_relative" }];
+    settings.startup = startup({ data_dir: { source: "default", problem: "must_be_relative" } });
     render(<Shell />);
-    await waitFor(() => expect(banner()).not.toBeNull());
-    expect(banner()!.getAttribute("data-severity")).toBe("data-location");
+    await waitFor(() => expect(banner()?.getAttribute("data-severity")).toBe("data-location"));
     expect(banner()!.getAttribute("role")).toBe("alert");
-    // Nothing is taken from such a file, the language included: the page is in the default language.
-    await waitFor(() => expect(banner()!.textContent).toContain("现在打开的是默认数据位置，不是配置里写的位置"));
-    expect(banner()!.textContent).toContain("整个文件无法解析或读不了");
-
-    for (const key of ["data_dir", "global_dir", "global_cache_dir"] as const) {
-      settings.state = "read";
-      settings.problems = [{ key, reason: key === "data_dir" ? "must_be_relative" : "must_be_absolute" }, { key: "ui.density", reason: "not_one_of" }];
-      fakeBus.emit("settings.changed", { cause: "external", at: "2026-10-14T00:00:00.000Z" });
-      await waitFor(() => expect(banner()!.textContent).toContain(`Faulty keys: ${key}, ui.density.`));
-      expect(banner()!.getAttribute("data-severity")).toBe("data-location");
-      expect(banner()!.textContent).not.toContain("The whole file");
-    }
+    await waitFor(() => expect(banner()!.textContent).toContain("Project data is in the default location, not the one config.toml names"));
+    expect(banner()!.textContent).toContain("Faulty when the workbench started: data_dir.");
+    expect(banner()!.textContent).toContain("Restart the workbench");
+    expect(banner()!.textContent).not.toContain("global");
+    // No sentence starts with a stray space.
+    expect(q('[data-ui="config-problems-location"]')!.textContent).not.toMatch(/^\s|\s{2}/);
   });
 
-  it("is not there while the file is fine, or while the settings could not be read", async () => {
+  it("repaired while running: the warning stays, because the process is on the default location until a restart", async () => {
+    settings.problems = [];
+    settings.startup = startup({ data_dir: { source: "default", problem: "must_be_relative" } });
+    render(<Shell />);
+    await waitFor(() => expect(banner()?.getAttribute("data-severity")).toBe("data-location"));
+    expect(banner()!.textContent).toContain("Restart the workbench");
+    expect(q('[data-ui="config-problems-now"]')).toBeNull();
+  });
+
+  it("(a) a file that broke while running: only the quiet line, the data stays where it was", async () => {
+    settings.state = "unparseable";
+    settings.startup = startup({ data_dir: { source: "file", problem: null } });
+    render(<Shell />);
+    await waitFor(() => expect(banner()).not.toBeNull());
+    expect(banner()!.getAttribute("data-severity")).toBe("keys");
+    expect(q('[data-ui="config-problems-location"]')).toBeNull();
+    await waitFor(() => expect(banner()!.textContent).toContain("正在运行的工作台仍用启动时的设置"));
+    expect(banner()!.textContent).not.toContain("默认位置");
+  });
+
+  it("(b) data_dir faulty but --data-dir given: says the command line's location is in use, no default, no restart", async () => {
+    settings.problems = [{ key: "data_dir", reason: "must_be_relative" }];
+    settings.startup = startup({ data_dir: { source: "flag", problem: "must_be_relative" } });
+    render(<Shell />);
+    await waitFor(() => expect(banner()?.textContent).toContain("data_dir in config.toml is not valid; project data is in the location given by --data-dir."));
+    expect(banner()!.getAttribute("data-severity")).toBe("keys");
+    expect(banner()!.textContent).not.toMatch(/default|Restart/);
+  });
+
+  it("(c) a global directory on its default: the warning names the global directories, not project data", async () => {
+    settings.problems = [{ key: "global_dir", reason: "must_be_absolute" }];
+    settings.startup = startup({ global_dir: { source: "default", problem: "must_be_absolute" } });
+    render(<Shell />);
+    await waitFor(() => expect(banner()?.textContent).toContain("The global directories (Mail, credentials, log) are the default ones"));
+    expect(banner()!.getAttribute("data-severity")).toBe("data-location");
+    expect(banner()!.textContent).not.toContain("Project data");
+    expect(banner()!.textContent).toContain("Faulty when the workbench started: global_dir.");
+    // The key is not repeated in the quiet line.
+    expect(q('[data-ui="config-problems-now"]')).toBeNull();
+  });
+
+  it("a whole file unparseable at the start: both kinds of location, and the file now", async () => {
+    settings.state = "unparseable";
+    const broken = { source: "default" as const, problem: "unparseable" as const };
+    settings.startup = startup({ data_dir: broken, global_dir: broken, global_cache_dir: broken });
+    render(<Shell />);
+    await waitFor(() => expect(banner()?.textContent).toContain("项目数据和全局目录（邮件、凭据、日志）现在都用默认位置"));
+    expect(banner()!.textContent).toContain("启动时配置文件无法解析或读不了。");
+    expect(banner()!.textContent).toContain("配置文件现在无法解析或读不了，设置页只读");
+  });
+
+  it("is not there while the file is fine", async () => {
+    settings.startup = startup();
     render(<Shell />);
     await waitFor(() => expect(settings.gets).toBeGreaterThan(0));
     await new Promise((r) => setTimeout(r, 30));
     expect(banner()).toBeNull();
+  });
+});
+
+describe("the hidden labels key, when the file has it wrong", () => {
+  it("shows a row with only a note and the restore action, which resets the key", async () => {
+    settings.file = { ...EN, "ui.labels": "yes" as never };
+    settings.problems = [{ key: "ui.labels", reason: "wrong_type" }];
+    await open();
+    const r = row("ui.labels");
+    expect(q('[data-ui="labels-switch"]')).toBeNull();
+    expect(q('[data-ui="labels-hidden-note"]', r)).not.toBeNull();
+    fireEvent.click(q('[data-ui="restore-default"][data-ui-key="ui.labels"]', r)!);
+    await waitFor(() => expect(settings.puts).toEqual([{ key: "ui.labels", body: { reset: true } }]));
+    await waitFor(() => expect(q('[data-ui="setting-row"][data-ui-key="ui.labels"]')).toBeNull());
   });
 });
 

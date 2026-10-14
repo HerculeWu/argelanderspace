@@ -255,7 +255,13 @@ function Appearance({ state }: { state: RowState }) {
           items={SETTINGS_UI_DENSITIES.map((v) => ({ v, text: t(DENSITY_LABEL[v]) }))} />
       )} />
       {/* `ui.labels` (show labels) is not shown for now (user decision 2026-10-14, desktop-app ticket 10): the key stays
-          in the schema and is read, written and checked as before, until its meaning is defined. */}
+          in the schema and is read, written and checked as before, until its meaning is defined. When the file has it
+          wrong, a row without a control appears so that the key can still be restored to its default from here. */}
+      {state.settings.problems.some((problem) => problem.key === "ui.labels") && (
+        <Row state={state} k="ui.labels" label={t("settings.appearance.labels")} control={() => (
+          <span className="st-hidden-note" data-ui="labels-hidden-note">{t("settings.appearance.labelsHidden")}</span>
+        )} />
+      )}
     </>
   );
 }

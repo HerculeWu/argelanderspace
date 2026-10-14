@@ -117,8 +117,9 @@ describe("serve starts with a faulty config.toml", () => {
       { key: "port", reason: "wrong_type" },
     ]);
     const terminal = errors.join("\n");
+    expect(terminal).toContain('"data_dir" must be a relative path');
     expect(terminal).toContain(
-      '"data_dir" must be a relative path: the default data location ./literatures is in use'
+      "project data: the default location ./literatures is in use, not the one the file names"
     );
     expect(terminal).toContain('"port" has the wrong type: its default is in use');
     expect(terminal).not.toMatch(/zqxmark|also wrong/);
@@ -153,7 +154,11 @@ describe("serve starts with a faulty config.toml", () => {
     await serve(project());
     const terminal = errors.join("\n");
     expect(terminal).toContain("the file is not valid TOML: every setting has its default");
-    expect(terminal).toContain("default data locations");
+    // Project data comes from --data-dir here; the global directories are the defaults.
+    expect(terminal).toContain("project data: the location given by --data-dir is in use");
+    expect(terminal).toContain(
+      "global data (Mail, credentials, log): the default directory is in use, not the one the file names"
+    );
     expect(terminal).not.toMatch(/zqxsecret|\^/);
     for (const srv of running.splice(0)) await srv.close();
     const { readdirSync, readFileSync } = await import("node:fs");
@@ -163,6 +168,77 @@ describe("serve starts with a faulty config.toml", () => {
       .join("");
     expect(text).toContain('"config_problems":["file:unparseable"]');
     expect(text).not.toContain("zqxsecret");
+  });
+});
+
+describe("the locations the process uses are the ones of its start, not the file as it is now", () => {
+  async function serveIn(
+    argv: string[] = []
+  ): Promise<{ url: string; cwd: string; errors: string[] }> {
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(String(line));
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwd = mkdtempSync(join(tmpdir(), "aspace-settings-serve-cwd-"));
+    roots.push(cwd);
+    vi.spyOn(process, "cwd").mockReturnValue(cwd);
+    const srv = await startServer(["--port", "0", "--web-dist", cwd, ...argv]);
+    running.push(srv);
+    return { url: `http://127.0.0.1:${await srv.ready()}`, cwd, errors };
+  }
+  const fine = { source: "default", problem: null };
+
+  test("(a) a good data_dir broken while running: the process keeps the file's location; the page says so", async () => {
+    const file = writeConfig('data_dir = "papers"\n');
+    const { url } = await serveIn();
+    writeFileSync(file, 'data_dir = "papers"\n[ui\n');
+    const body = await settings(url);
+    expect(body.readonly).toBe(true);
+    expect(body.startup).toEqual({
+      data_dir: { source: "file", problem: null },
+      global_dir: fine,
+      global_cache_dir: fine,
+    });
+  });
+
+  test("(b) data_dir absolute in the file, --data-dir given: the location given on the command line", async () => {
+    writeConfig('data_dir = "/zqxmark/abs"\n');
+    const dir = mkdtempSync(join(tmpdir(), "aspace-settings-serve-flag-"));
+    roots.push(dir);
+    const { url, errors } = await serveIn(["--data-dir", join(dir, "data")]);
+    expect((await settings(url)).startup?.data_dir).toEqual({
+      source: "flag",
+      problem: "must_be_relative",
+    });
+    const terminal = errors.join("\n");
+    expect(terminal).toContain("project data: the location given by --data-dir is in use");
+    expect(terminal).not.toMatch(/default location|restart|zqxmark/);
+  });
+
+  test("(c) a global directory this platform cannot use: the page lists it, as the terminal says", async () => {
+    writeConfig('global_dir = "C:\\\\Users\\\\me\\\\aspace"\n');
+    const { url, errors } = await serveIn();
+    const body = await settings(url);
+    expect(body.problems).toEqual([{ key: "global_dir", reason: "must_be_absolute" }]);
+    expect(body.startup?.global_dir).toEqual({ source: "default", problem: "must_be_absolute" });
+    expect(body.startup?.data_dir).toEqual(fine);
+    const terminal = errors.join("\n");
+    expect(terminal).toContain('"global_dir" must be an absolute path');
+    expect(terminal).toContain(
+      "global data (Mail, credentials, log): the default directory is in use"
+    );
+    expect(terminal).toContain("the settings page lists them too");
+    expect(terminal).not.toContain("project data:");
+  });
+
+  test("a faulty data_dir repaired while running: the process is still on the default location until a restart", async () => {
+    const file = writeConfig('data_dir = "/zqxmark/abs"\n');
+    const { url } = await serveIn();
+    writeFileSync(file, 'data_dir = "papers"\n');
+    const body = await settings(url);
+    expect(body.problems).toEqual([]);
+    expect(body.startup?.data_dir).toEqual({ source: "default", problem: "must_be_relative" });
   });
 });
 

@@ -35,7 +35,14 @@ export interface GlobalDirsOptions {
   config?: AppConfig;
 }
 
-/** Absolute-ness follows the detected platform's path rules, not the host's. */
+/**
+ * Absolute-ness follows the detected platform's path rules, not the host's. The settings schema accepts an absolute
+ * path in any platform's writing; this is whether this machine can use it as a global directory.
+ */
+export function isAbsoluteOnThisPlatform(p: string): boolean {
+  return isAbsolutePath(p);
+}
+
 function isAbsolutePath(p: string): boolean {
   if (process.platform !== "win32") return posix.isAbsolute(p);
   // "\\data" is rooted but drive-relative; require a drive letter or UNC prefix.
