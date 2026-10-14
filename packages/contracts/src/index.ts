@@ -10,6 +10,7 @@ export * from "./config-defaults.js";
 export * from "./context-batch.js";
 export * from "./copilot.js";
 export * from "./copilot-history.js";
+export * from "./diagnostics-api.js";
 export * from "./discovery.js";
 export * from "./discovery-ops.js";
 export * from "./doc.js";

@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { withTranslation, type WithTranslation } from "react-i18next";
+import { fetchDiagnostics } from "./api/diagnostics";
 import { Icon } from "./lib/icons";
 import { currentPaneName, errorNameOf, reportPageError, type PageErrorOutcome } from "./page-errors";
 import { Button } from "./ui";
@@ -15,6 +16,8 @@ interface State {
   failure: { name: string; pane: string } | null;
   /** Whether the error reached the log; `pending` until the server has answered. */
   logged: PageErrorOutcome | "pending";
+  /** The log folder as the server shows it (home written as `~`); `pending` until it answered, null when it did not. */
+  logDir: string | null | "pending";
 }
 
 const reloadPage = (): void => window.location.reload();
@@ -27,19 +30,24 @@ const LOG_SENTENCES = [
 
 /**
  * The page's top-level error boundary: a render error shows a notice that can be recovered from instead of a blank
- * page. It names the error's class and the pane, never the error's message, and says whether the error reached the
- * log. "Reload" loads the whole page again (the address stays): state held in modules, which mounting the page anew
+ * page. It names the error's class and the pane, never the error's message, says whether the error reached the
+ * log, and where the log is (asked of the server; the home directory written as `~`). "Reload" loads the whole page again (the address stays): state held in modules, which mounting the page anew
  * would keep, starts over too, and a desktop window has no reload key of its own.
  */
 class Boundary extends Component<Props & WithTranslation, State> {
-  state: State = { failure: null, logged: "pending" };
+  state: State = { failure: null, logged: "pending", logDir: "pending" };
 
   static getDerivedStateFromError(error: unknown): Partial<State> {
-    return { failure: { name: errorNameOf(error), pane: currentPaneName() }, logged: "pending" };
+    return { failure: { name: errorNameOf(error), pane: currentPaneName() }, logged: "pending", logDir: "pending" };
   }
 
   componentDidCatch(error: unknown, _info: ErrorInfo): void {
     void reportPageError("render", error).then((logged) => this.setState({ logged }));
+    // Where the log is (desktop-app ticket 14): asked of the server, which writes the home directory as `~`.
+    void fetchDiagnostics().then(
+      (info) => this.setState({ logDir: info?.logDir.display ?? null }),
+      () => this.setState({ logDir: null })
+    );
   }
 
   // Called when the button is put into the page, that is, when the notice appears. The workbench, and whatever had
@@ -50,7 +58,7 @@ class Boundary extends Component<Props & WithTranslation, State> {
   };
 
   render(): ReactNode {
-    const { failure, logged } = this.state;
+    const { failure, logged, logDir } = this.state;
     const { t } = this.props;
     if (failure === null) return this.props.children;
     return (
@@ -71,6 +79,12 @@ class Boundary extends Component<Props & WithTranslation, State> {
             <dd><code data-ui="page-error-name">{failure.name}</code></dd>
             <dt>{t("pageError.pane")}</dt>
             <dd><code data-ui="page-error-pane">{failure.pane}</code></dd>
+            <dt>{t("pageError.logDir")}</dt>
+            <dd>
+              <code className="page-error-path" data-ui="page-error-log-dir" data-state={logDir === "pending" ? "pending" : logDir === null ? "unknown" : "known"}>
+                {logDir === "pending" ? "…" : logDir === null ? t("pageError.logDirUnknown") : logDir}
+              </code>
+            </dd>
           </dl>
           <div className="page-error-actions">
             <Button ref={this.focusReload} appearance="primary" data-ui="page-error-reload" onClick={this.props.reload ?? reloadPage}>

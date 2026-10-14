@@ -33,7 +33,12 @@ import {
 } from "@argelanderspace/infra";
 import type { Context, Hono } from "hono";
 import { matchedRoutes } from "hono/route";
-import { CONFIG_PROBLEM_ENTRIES, type ConfigProblem, configProblemEntry } from "./settings.js";
+import {
+  CONFIG_PROBLEM_ENTRIES,
+  type ConfigProblem,
+  configProblemEntry,
+  readSettings,
+} from "./settings.js";
 
 export const SERVER_LOG_EVENTS = [
   "server.started",
@@ -71,6 +76,8 @@ export const SERVER_LOG_EVENTS = [
   "tex.compile_failed",
   "page.error",
   "page.errors_dropped",
+  // Desktop-app ticket 14 (diagnostics.ts): a diagnostics bundle was asked for; `compile_logs` yes / no only.
+  "diagnostics.exported",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];
@@ -90,6 +97,23 @@ export function allOf<T extends string>() {
 
 /** The log of a server nobody gave one: records go nowhere (every test server, unless it asks). */
 export const silentLog: ServerLog = createLogger({ events: SERVER_LOG_EVENTS, sink: discardSink });
+
+/**
+ * Sets the level of a server's log to what config.toml says now (`log_level`; its default `info` when the file does not
+ * set it or sets it wrong): called after the settings page changed the file and when the file watcher finds it changed,
+ * so a new level takes effect from the next record, without a restart (desktop-app ticket 14). The silent log of a test
+ * server is shared and left alone. Never throws.
+ */
+export function applyLogLevel(log: ServerLog, configPath?: string): void {
+  if (log === silentLog) return;
+  try {
+    const level = readSettings(configPath).values.log_level;
+    if (typeof level === "string" && (LOG_LEVELS as readonly string[]).includes(level))
+      log.setLevel(level as (typeof LOG_LEVELS)[number]);
+  } catch {
+    /* the level stays as it was */
+  }
+}
 
 /** How the workbench is delivered; only `serve` (the browser) exists so far. */
 export const SERVER_MODES = ["browser", "desktop"] as const;

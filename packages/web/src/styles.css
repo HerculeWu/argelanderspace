@@ -620,4 +620,5 @@ ul.doc-list li, ol.doc-list li { margin: 2px 0; }
 .page-error-facts dt { color: var(--text-faint); }
 .page-error-facts dd { margin: 0; min-width: 0; }
 .page-error-facts code { font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.page-error-facts .page-error-path { color: var(--text-dim); }
 .page-error-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }

@@ -1012,7 +1012,9 @@
     "reloadHint": "Reloading usually lets you continue.",
     "name": "Error",
     "pane": "Pane",
-    "reload": "Reload"
+    "reload": "Reload",
+    "logDir": "Log location",
+    "logDirUnknown": "not known (could not be fetched)"
   },
   "common": {
     "cancel": "Cancel",
@@ -2558,6 +2560,34 @@
         "removeKeychain": "The system keychain did not answer, so the token was not removed. Try again later.",
         "removeOther": "The ADS token could not be removed. Nothing was changed."
       }
+    },
+    "diagnostics": {
+      "logFolder": "Log location",
+      "logFolderUnknown": "Not known: it could not be fetched",
+      "copyPath": "Copy the log folder path",
+      "showLogs": "Show the log folder",
+      "logLevel": "Log level",
+      "exportRow": "Export diagnostics",
+      "exportOpen": "Export diagnostics…",
+      "exportTitle": "Export diagnostics",
+      "exportBody": "Creates a zip with the log files and a one-page environment report. Nothing is uploaded; you decide who receives it.",
+      "exportCompile": "Include the latest compile-failure logs (contains paper or manuscript source snippets)",
+      "noCompileLogs": "This project has no compile-failure log to include.",
+      "compileAllTooLarge": "The compile-failure logs of this project are too large to include.",
+      "compileUnknown": "Whether there are compile-failure logs is not known: the list could not be fetched.",
+      "compileListTitle_one": "{{count}} file will be added ({{size}}):",
+      "compileListTitle_other": "{{count}} files will be added ({{size}} together):",
+      "compileOverLimit_one": "{{count}} older file is left out: the logs added stay within {{limit}} and {{files}} files.",
+      "compileOverLimit_other": "{{count}} older files are left out: the logs added stay within {{limit}} and {{files}} files.",
+      "exportRun": "Export",
+      "exporting": "Creating…",
+      "exportDone": "Created {{name}} ({{size}}).",
+      "exportDoneNote": "It was handed to the browser’s downloads; where it is saved follows the browser’s settings.",
+      "exportFailed": "The bundle could not be created. Try again.",
+      "exportFailedPicked": "The place you chose may now hold an empty file; it can be deleted.",
+      "done": "Done",
+      "exportSaved": "Saved {{name}} ({{size}}) to the location you chose.",
+      "zipType": "Zip archive"
     }
   }
 }

@@ -127,3 +127,13 @@
   .st-tr { grid-template-columns: minmax(0, 1fr) auto; }
   .st-tr .detail { grid-column: 1 / -1; }
 }
+
+/* Diagnostics (desktop-app ticket 14): the log level's select and the export dialog's list of compile-failure logs. */
+.st-select { width: 120px; }
+.st-select:disabled { opacity: .55; cursor: not-allowed; }
+.st-check.disabled { color: var(--text-faint); cursor: not-allowed; }
+.st-export-note { margin: 8px 0 0; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); }
+.st-export-files ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.st-export-files li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.st-export-files .st-path { flex: 1 1 auto; }
+.st-export-size { flex: none; font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }

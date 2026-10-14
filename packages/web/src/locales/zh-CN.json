@@ -1012,7 +1012,9 @@
     "reloadHint": "重新加载通常可以继续工作。",
     "name": "错误",
     "pane": "窗格",
-    "reload": "重新加载"
+    "reload": "重新加载",
+    "logDir": "日志位置",
+    "logDirUnknown": "不知道（没能取得）"
   },
   "common": {
     "cancel": "取消",
@@ -2558,6 +2560,34 @@
         "removeKeychain": "系统钥匙串没有应答，token 没有被移除。请稍后再试。",
         "removeOther": "无法移除 ADS token，没有做任何更改。"
       }
+    },
+    "diagnostics": {
+      "logFolder": "日志位置",
+      "logFolderUnknown": "不知道：没能取得",
+      "copyPath": "复制日志文件夹路径",
+      "showLogs": "显示日志文件夹",
+      "logLevel": "日志级别",
+      "exportRow": "导出诊断包",
+      "exportOpen": "导出诊断包…",
+      "exportTitle": "导出诊断包",
+      "exportBody": "生成一个 zip：日志文件，加一页环境报告。不会上传任何东西，由你自己决定发给谁。",
+      "exportCompile": "附带最近的编译失败日志（含论文或稿件的源码片段）",
+      "noCompileLogs": "这个项目没有可附带的编译失败日志。",
+      "compileAllTooLarge": "这个项目的编译失败日志太大，无法附带。",
+      "compileUnknown": "不知道有没有编译失败日志：没能取得清单。",
+      "compileListTitle_one": "将放入 {{count}} 个文件（{{size}}）：",
+      "compileListTitle_other": "将放入 {{count}} 个文件（共 {{size}}）：",
+      "compileOverLimit_one": "另有 {{count}} 个较早的文件不放入：附带的日志合计不超过 {{limit}}、{{files}} 个。",
+      "compileOverLimit_other": "另有 {{count}} 个较早的文件不放入：附带的日志合计不超过 {{limit}}、{{files}} 个。",
+      "exportRun": "导出",
+      "exporting": "正在生成…",
+      "exportDone": "已生成 {{name}}（{{size}}）。",
+      "exportDoneNote": "文件已交给浏览器下载，保存位置按浏览器的设置。",
+      "exportFailed": "没能生成诊断包。可以再试一次。",
+      "exportFailedPicked": "所选位置可能留下了一个空文件，可以删掉。",
+      "done": "完成",
+      "exportSaved": "已保存 {{name}}（{{size}}）到你选择的位置。",
+      "zipType": "Zip 压缩包"
     }
   }
 }
