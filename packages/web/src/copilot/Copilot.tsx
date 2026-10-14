@@ -181,7 +181,7 @@ const isApplied = (operation: CopilotOperation) => operation.status === "ok" || 
 
 export type CopilotViewActionHandler = (action: CopilotViewAction) => Promise<Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">>;
 
-export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, viewReady = true, onAttention, guards }: { open: boolean; /** The page's own guards before an approval takes something open away (unsaved draft protection); false keeps the card. A missing guard lets the approval through. */ guards?: Partial<ConfirmationGuards>; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
+export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, settingsAsked = 0, viewReady = true, onAttention, guards }: { open: boolean; /** Counts the requests to open the provider settings dialog from elsewhere (the settings page's entry): each new count opens it, as the panel's own settings button does. */ settingsAsked?: number; /** The page's own guards before an approval takes something open away (unsaved draft protection); false keeps the card. A missing guard lets the approval through. */ guards?: Partial<ConfirmationGuards>; context: PageContext; onClose: () => void; onViewAction?: CopilotViewActionHandler; /** Shows the panel itself: an explicit request to open its settings must be visible. */ onOpenPanel?: () => void; /** False until this tab knows its view id is its own: nothing subscribes or publishes before. */ viewReady?: boolean; /** True while a confirmation waits for the user, so a collapsed panel can say so. */ onAttention?: (waiting: boolean) => void }) {
   const { t } = useTranslation();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [id, setId] = useState<string | null>(null);
@@ -194,6 +194,7 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, vie
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [settings, setSettings] = useState(false);
+  useEffect(() => { if (settingsAsked > 0) setSettings(true); }, [settingsAsked]);
   const [list, setList] = useState(false);
   const [detail, setDetail] = useState(false);
   const [newContent, setNewContent] = useState(false);

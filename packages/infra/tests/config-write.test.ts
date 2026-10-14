@@ -159,7 +159,7 @@ describe("writeSetting: refusals leave the file's bytes alone", () => {
       ["port = \n", "port", { set: 3 }, "unparseable"],
       ["port = 1\n", "port", { set: 70000 }, "invalid_value"],
       ["port = 1\n", "nope", { set: 1 }, "unknown_key"],
-      ["port = 1\n", "contact_email", { set: "a\nb" }, "unrepresentable_value"],
+      ["port = 1\n", "data_dir", { set: "a\nb" }, "unrepresentable_value"],
     ];
     for (const [text, key, change, reason] of cases) {
       put(text);

@@ -1030,4 +1030,23 @@ describe("configuration sources: config.toml and flags only", () => {
     }
     expect(expected).not.toContain(f.dataDir);
   }, 120_000);
+
+  test("config.toml `contact_email` not shaped like an address: a config error naming the key, exit 1, value not echoed (desktop-app ticket 11)", () => {
+    const f = makeDataDir();
+    try {
+      const marker = "not-an-address-7d1e";
+      const file = writeConfig(f.env, `contact_email = "${marker}"\n`);
+      const expected = `error: ${file}: "contact_email" must be an email address\n`;
+      for (const args of [["list"], ["search"], ["note", WORK_ID]]) {
+        expect(runCli(args, f.env)).toEqual({ status: 1, stdout: "", stderr: expected });
+      }
+      // a well-formed address, and a blank one, are fine
+      writeConfig(f.env, 'contact_email = "reader@example.org"\n');
+      expect(runCli(["list"], f.env).status).toBe(0);
+      writeConfig(f.env, 'contact_email = "  "\n');
+      expect(runCli(["list"], f.env).status).toBe(0);
+    } finally {
+      rmSync(f.root, { recursive: true, force: true });
+    }
+  }, 120_000);
 });

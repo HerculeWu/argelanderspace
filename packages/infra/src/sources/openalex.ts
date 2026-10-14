@@ -1,13 +1,18 @@
 /**
  * OpenAlex client (`bibgraph/library/sources/openalex.py`): resolve a work,
- * fetch metadata in batches, disk-cached. Free; polite pool via `mailto`.
+ * fetch metadata in batches, disk-cached. Free; the polite pool via a contact
+ * email (config `contact_email`, desktop-app ticket 11) in the `mailto` param
+ * and the User-Agent — without one, no address is sent at all (there is no
+ * default address and no environment variable).
  *
  * Deliberate divergence (approved): when `$OPENALEX_API_KEY` (or the config
  * file's `openalex_api_key`, decision 23) is set it is sent
  * as the `api_key` query param on every request — the Python client ignores
  * the key entirely (OpenAlex's premium pool needs it). The key is NOT part of
- * the disk-cache key: the response content is key-independent, so cache
- * entries stay shared with the Python client either way.
+ * the disk-cache key: the response content is key-independent. Nor is the
+ * contact email (since desktop-app ticket 11); entries keyed the old way, with
+ * the `mailto` param, are still found through the legacy-key fallback
+ * (`readKeyed` in cache.ts, user decision 2026-10-14).
  *
  * Resolution gotcha (from the Python docstring, preserved): an arXiv-DOI
  * lookup returns a bare stub (cited_by 0, no references) — the *published*
@@ -17,10 +22,9 @@
 
 import type { OpenAlexResolution, OpenAlexSource } from "@argelanderspace/core";
 import { normArxiv, normDoi, normTitle } from "@argelanderspace/core";
-import { type AppConfig, getConfig } from "../config.js";
+import { type AppConfig, getConfig, readContactEmail } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
-import { pyJsonStable } from "../lib/pyjson.js";
-import { SourceCache, sha1Hex } from "./cache.js";
+import { readKeyed, SourceCache } from "./cache.js";
 
 const BASE = "https://api.openalex.org";
 const TIMEOUT = 30;
@@ -40,8 +44,9 @@ export function readOpenAlexApiKey(
   return env.OPENALEX_API_KEY ?? (config ?? getConfig()).openalex_api_key ?? null;
 }
 
-function defaultMailto(env: NodeJS.ProcessEnv = process.env): string {
-  return env.OPENALEX_MAILTO ?? "wuwenjiegogo@gmail.com";
+/** The User-Agent of the requests: the address is in it only when there is one. */
+export function openAlexUserAgent(mailto: string | null): string {
+  return mailto === null ? "ArgelanderSpace/0.1" : `ArgelanderSpace/0.1 (mailto:${mailto})`;
 }
 
 /** `_short_id`: "https://openalex.org/W123" → "W123". */
@@ -120,7 +125,8 @@ export interface OpenAlexClientOptions {
   cacheDir: string;
   delay?: number; // 0.12
   enabled?: boolean; // true
-  mailto?: string;
+  /** The contact email; `null` sends none. Default: `readContactEmail()` (config `contact_email`, read strictly). */
+  mailto?: string | null;
   /** Explicit key override; defaults to `$OPENALEX_API_KEY` (see divergence note). */
   apiKey?: string | null;
   fetchImpl?: FetchImpl;
@@ -130,7 +136,7 @@ export interface OpenAlexClientOptions {
 export class OpenAlexClient implements OpenAlexSource {
   private readonly delay: number;
   private readonly enabled: boolean;
-  private readonly mailto: string;
+  private readonly mailto: string | null;
   private readonly apiKey: string | null;
   private readonly userAgent: string;
   private readonly cache: SourceCache;
@@ -140,31 +146,29 @@ export class OpenAlexClient implements OpenAlexSource {
   constructor(opts: OpenAlexClientOptions) {
     this.delay = opts.delay ?? 0.12;
     this.enabled = opts.enabled ?? true;
-    this.mailto = opts.mailto ?? defaultMailto();
+    this.mailto = opts.mailto !== undefined ? opts.mailto : readContactEmail();
     this.apiKey = opts.apiKey !== undefined ? opts.apiKey : readOpenAlexApiKey();
-    // Descriptive UA for the polite pool (renamed from the Python
-    // `HubbleSpace/0.1` in Stage 7 MS1).
-    this.userAgent = `ArgelanderSpace/0.1 (mailto:${this.mailto})`;
+    // Descriptive UA (renamed from the Python `HubbleSpace/0.1` in Stage 7 MS1).
+    this.userAgent = openAlexUserAgent(this.mailto);
     this.cache = new SourceCache(opts.cacheDir);
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.log = opts.log;
   }
 
   /**
-   * `OpenAlex._get`: disk-cached GET. The cache key covers only the Python
-   * params (`mailto` included); `api_key` goes on the wire but not into the
-   * key, so cache files stay interchangeable with the Python client's.
+   * `OpenAlex._get`: disk-cached GET. The cache key covers only the request's
+   * own params; `mailto` and `api_key` go on the wire but not into the key
+   * (with the legacy `mailto` key as a fallback, see cache.ts).
    */
   private async get(
     path: string,
     params: Record<string, string | number> = {}
   ): Promise<Json | null> {
-    const cacheParams: Record<string, string | number> = { ...params, mailto: this.mailto };
-    const key = sha1Hex(`${path}?${pyJsonStable(cacheParams)}`);
-    const hit = this.cache.read(key);
+    const { key, hit } = readKeyed(this.cache, path, params, this.mailto);
     if (hit !== undefined) return hit as Json;
     if (!this.enabled) return null;
-    const wireParams: Record<string, string | number> = { ...cacheParams };
+    const wireParams: Record<string, string | number> = { ...params };
+    if (this.mailto !== null) wireParams.mailto = this.mailto;
     if (this.apiKey) wireParams.api_key = this.apiKey;
     try {
       await sleep(this.delay); // Python: fixed sleep, not a throttle

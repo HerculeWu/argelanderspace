@@ -19,16 +19,19 @@
  *   global_dir        string   global data dir override (ADR 0007);
  *                              absolute
  *   global_cache_dir  string   global cache dir override; absolute
- *   auto_ingest_arxiv boolean  default true — Stage 15: automatically fetch
- *                              & compile the arXiv source when an added work
- *                              has an arXiv id (manual triggers stay on).
- *                              Hidden setting today: the web UI exposes no
- *                              toggle (the schema marks it for one; the
- *                              settings page is desktop-app ticket 11)
+ *   auto_ingest_arxiv boolean  default true — automatically fetch the arXiv
+ *                              PDF (as a new PDF Doc) when an added work has
+ *                              an arXiv id; manual fetches stay on. The
+ *                              settings page's Project group switch "Fetch
+ *                              the arXiv PDF when adding literature"
+ *                              (desktop-app ticket 11)
  *   log_level         string   default "info"; one of debug, info, warn,
  *                              error — the lowest level `serve` writes to
  *                              the user-level log
- *   contact_email     string   optional; blank means not set
+ *   contact_email     string   optional; blank means not set; otherwise
+ *                              shaped like an email address (the schema's
+ *                              `isEmailAddress`) — sent to Crossref and
+ *                              OpenAlex with each request (`readContactEmail`)
  *   tex_dir           string   optional; an absolute path (in POSIX or in
  *                              Windows writing); blank means not set
  *   [ui]                       language ("zh-CN" | "en"), theme ("dark" |
@@ -36,8 +39,8 @@
  *                              amber | neutral), density (compact | regular
  *                              | comfy), labels (boolean)
  *
- * `contact_email`, `tex_dir` and `[ui]` are defined and checked only:
- * nothing reads them yet.
+ * `tex_dir` is defined and checked only: nothing reads it yet. `[ui]` is
+ * read by the server for the page (desktop-app ticket 10).
  *
  * This file is the workbench's one configuration source: a command-line flag
  * (`--data-dir`, `--port`) overrides it for a single run, and no environment
@@ -184,6 +187,7 @@ function strictSentence(problem: SettingsProblem): string {
     if (problem.reason === "not_a_table" || !isSettingKey(problem.key)) return "a table";
     if (problem.reason === "must_be_relative") return "a relative path";
     if (problem.reason === "must_be_absolute") return "an absolute path";
+    if (problem.reason === "must_be_email") return "an email address";
     const type = settingDef(problem.key).type;
     switch (type.kind) {
       case "string":
@@ -380,6 +384,19 @@ export function configFileKeys(path: string = configFilePath()): {
     unknown += Object.keys(inner).length - 1;
   }
   return { known, unknown: unknown - known.length };
+}
+
+/**
+ * The contact email sent to Crossref and OpenAlex (desktop-app ticket 11): `contact_email` trimmed, or `null` when the
+ * key is not set or blank. There is no default address and no environment variable. `config` defaults to the strict
+ * reading (the commands: a value not shaped like an address is a ConfigError); the server hands in its lenient reading,
+ * where such a value is left out and so means "not set".
+ */
+export function readContactEmail(config?: AppConfig): string | null {
+  const value = (config ?? getConfig()).contact_email;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
 }
 
 /**

@@ -57,7 +57,7 @@ export async function fetchArxivPdf(
       redirect: "manual",
       headers: {
         Accept: "application/pdf",
-        "User-Agent": "bibgraph/0.1 (https://arxiv.org; mailto:wuwenjiegogo@gmail.com)",
+        "User-Agent": "bibgraph/0.1 (https://arxiv.org)",
       },
       signal,
     });

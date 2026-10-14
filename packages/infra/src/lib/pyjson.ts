@@ -6,7 +6,10 @@
  * serialization byte-for-byte (key order, `", "`/`": "` separators,
  * `ensure_ascii` `\uXXXX` escaping) means the TS clients reuse the *existing*
  * `data/library/cache/{ads,crossref,openalex}/<sha1>.json` entries written by
- * the Python pipeline instead of cold-refetching every query.
+ * the Python pipeline instead of cold-refetching every query. Crossref and
+ * OpenAlex leave the contact email out of the params of the key since
+ * desktop-app ticket 11, and fall back to the old key with `mailto` in it
+ * (sources/cache.ts `readKeyed`; user decision 2026-10-14).
  *
  * Only the JSON value shapes the sources actually put in params are supported:
  * strings, finite integers, booleans, null (no floats, no nested structures —

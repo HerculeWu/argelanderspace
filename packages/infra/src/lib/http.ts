@@ -192,6 +192,9 @@ export function decodeResponseText(buf: Uint8Array, contentType: string | null):
 export function withQuery(url: string, params: Record<string, string | number>): string {
   const q = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) q.append(k, String(v));
+  const query = q.toString();
+  // No parameters, no `?` (a Crossref / OpenAlex DOI lookup without a contact email has none).
+  if (query === "") return url;
   const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}${q.toString()}`;
+  return `${url}${sep}${query}`;
 }

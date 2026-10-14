@@ -74,3 +74,20 @@
 .config-banner-row { display: block; }
 .config-banner.location .config-banner-row + .config-banner-row { color: var(--text-dim); }
 .st-hidden-note { max-width: 320px; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-dim); text-align: right; }
+
+/* desktop-app ticket 11: the rows of the Project, Services and Advanced groups, as in the approved prototype. */
+.st-hint { margin-top: 6px; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); overflow-wrap: anywhere; }
+.st-pill.warn { --t: var(--warn); }
+.st-control-path { flex-wrap: wrap; justify-content: flex-end; max-width: 520px; }
+.st-control-path .st-path { flex: 1 1 200px; text-align: left; }
+.st-input { width: 260px; max-width: 100%; }
+.st-input.mono { font-family: var(--font-mono); font-size: var(--fs-sm); width: 340px; }
+.st-input:disabled { opacity: .55; cursor: not-allowed; }
+.st-text { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
+.st-field-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 6px; color: var(--danger); font-size: var(--fs-sm); }
+.st-legacy { padding: 0 0 14px; }
+@container st (max-width: 640px) {
+  .st-control-path { justify-content: flex-start; max-width: 100%; }
+}
+/* A note under a field takes the field's width and wraps, so the control does not move when it appears. */
+.st-text > .st-changed-outside, .st-text > .st-field-error { width: 0; min-width: 100%; text-align: left; }

@@ -88,7 +88,7 @@ export async function ingestTexSource(
   const src = await acquireSource(source, outRoot, {
     fetcher: new ArxivFetcher(join(outRoot, ".latexcache"), {
       // same UA the pandoc-era config used (polite-pool etiquette)
-      userAgent: "bibgraph/0.1 (https://arxiv.org; mailto:wuwenjiegogo@gmail.com)",
+      userAgent: "bibgraph/0.1 (https://arxiv.org)",
       useCache: !(opts.noCache ?? false),
       ...(opts.fetchImpl !== undefined || opts.observer !== undefined
         ? { fetchImpl: observedFetch(opts.fetchImpl ?? fetch, "arxiv", opts.observer) }

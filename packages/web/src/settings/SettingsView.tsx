@@ -1,4 +1,6 @@
 import {
+  isEmailAddress,
+  isAbsoluteOnAnyPlatform,
   SETTING_KEYS,
   SETTINGS_GROUPS,
   SETTINGS_SCHEMA,
@@ -7,6 +9,7 @@ import {
   SETTINGS_UI_LANGUAGES,
   SETTINGS_UI_THEMES,
   type SettingChangeRefusal,
+  type SettingChangeRequest,
   type SettingKey,
   type SettingsGroup,
   type SettingsProblem,
@@ -16,17 +19,28 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SettingChangeFailure } from "../api/settings";
 import { type Preferences, type SettingsNotice, usePreferences } from "../argelander/preferences";
+import { useWorkspace } from "../argelander/workspace";
 import { ACCENTS, type ThemeName } from "../argelander/theme";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import "./settings.css";
 
 /**
- * The settings page (desktop-app ticket 10): one group at a time, the groups listed at the left. This ticket fills
- * the Appearance group; the others are listed and say that they have nothing yet. Every value comes from the
- * settings endpoint and every change is one key of config.toml; a save is acknowledged, and a refused one explained,
- * by a floating notice at the foot of the page (`SettingsNotices`), never inside the row.
+ * The settings page (desktop-app tickets 10, 11): one group at a time, the groups listed at the left. Appearance,
+ * Project, Services (the contact email), Copilot, Mail and Advanced have their rows; TeX and Diagnostics say that they
+ * have nothing yet (later tickets). Every value comes from the settings endpoint and every change is one key of
+ * config.toml; a save is acknowledged, and a refused one explained, by a floating notice at the foot of the page
+ * (`SettingsNotices`), never inside the row.
  */
+
+/** The groups this page fills; the others show one line saying so. */
+const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "copilot", "mail", "advanced"]);
+
+/**
+ * Opening the config file in the system's editor belongs to the desktop app's host (a later ticket). Until a host
+ * offers it, every page is the browser form: the path, shown and copied.
+ */
+const openConfigInHost: ((path: string) => void) | null = null;
 
 /** `cli` belongs to the desktop app only; a page in a browser does not list it. */
 const BROWSER_GROUPS = SETTINGS_GROUPS.filter((group) => group !== "cli");
@@ -60,6 +74,7 @@ const PROBLEM_REASON = {
   not_one_of: "settings.problems.reason.not_one_of",
   must_be_relative: "settings.problems.reason.must_be_relative",
   must_be_absolute: "settings.problems.reason.must_be_absolute",
+  must_be_email: "settings.problems.reason.must_be_email",
   not_a_table: "settings.problems.reason.not_a_table",
   unparseable: "settings.problems.reason.unparseable",
   unreadable: "settings.problems.reason.unreadable",
@@ -115,24 +130,17 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/**
- * The path as the page shows it: the home directory written as `~` (as in the approved prototype). The page does
- * not know the home directory; it recognises the usual home folders of Linux, macOS and Windows at the start of the
- * path. What is copied is always the whole path.
- */
-export function displayPath(path: string): string {
-  const posix = /^(?:\/home\/[^/]+|\/Users\/[^/]+|\/root)(?=\/)/.exec(path);
-  if (posix) return `~${path.slice(posix[0].length)}`;
-  const windows = /^[A-Za-z]:\\Users\\[^\\]+(?=\\)/.exec(path);
-  if (windows) return `~${path.slice(windows[0].length)}`;
-  return path;
-}
-
-function ConfigPath({ P, path }: { P: Preferences; path: string }) {
+/** The config file: in the browser form its path (the home written as `~` by the server) and a copy action. */
+function ConfigPath({ P, settings }: { P: Preferences; settings: SettingsSnapshot }) {
   const { t } = useTranslation();
+  const path = settings.path;
+  if (openConfigInHost !== null) {
+    const open = openConfigInHost;
+    return <Button data-ui="open-config-file" onClick={() => open(path)}>{t("settings.configFile.openInEditor")}</Button>;
+  }
   return (
     <>
-      <code className="st-path" data-ui="config-file-path" title={path}>{displayPath(path)}</code>
+      <code className="st-path" data-ui="config-file-path" title={path}>{settings.pathDisplay}</code>
       <ActionButton
         mode="icon"
         iconName="copy"
@@ -154,13 +162,18 @@ interface RowState {
   locked: boolean;
 }
 
-function Row({ state, k, label, control }: { state: RowState; k: SettingKey; label: string; control: (disabled: boolean) => ReactNode }) {
+function Row({ state, k, label, control, hint, fileOnly, extra }: { state: RowState; k: SettingKey; label: string; control: (disabled: boolean) => ReactNode; hint?: ReactNode; fileOnly?: boolean; extra?: ReactNode }) {
   const { t } = useTranslation();
   const { P, settings, locked } = state;
   const bad = settings.problems.some((problem) => problem.key === k);
   const refusal: SettingChangeRefusal | undefined = settings.uneditable[k];
   const fromFile = settings.sources[k] === "file";
-  const canRestore = !locked && refusal === undefined && (fromFile || bad);
+  const canRestore = !fileOnly && !locked && refusal === undefined && (fromFile || bad);
+  const restart = SETTINGS_SCHEMA[k].restart;
+  const pending = settings.restartPending.includes(k);
+  // Given on serve's command line (`--port`, `--data-dir`): the file's value does not apply to this run.
+  const flag = k === "port" ? "--port" : k === "data_dir" ? "--data-dir" : null;
+  const fromFlag = flag !== null && settings.running.from_flag.includes(k as "port" | "data_dir");
   const why = refusal === undefined ? null : layoutReason(refusal);
   return (
     <div className="st-row" data-ui="setting-row" data-ui-key={k}>
@@ -180,11 +193,26 @@ function Row({ state, k, label, control }: { state: RowState; k: SettingKey; lab
           ) : (
             <Badge>{t("settings.source.default")}</Badge>
           )}
+          {restart && !pending && <Badge>{t("settings.row.restart")}</Badge>}
+          {pending && (
+            <span className="st-pill warn" data-ui="setting-pending-restart" data-ui-key={k}>
+              <Icon name="rotate-cw" cls="ico-sm" />
+              {fileOnly ? t("settings.row.pendingRestartFile") : t("settings.row.pendingRestart")}
+            </span>
+          )}
+          {fileOnly && <Badge>{t("settings.row.fileOnly")}</Badge>}
         </div>
+        {hint && <div className="st-hint">{hint}</div>}
+        {fromFlag && (
+          <div className="st-hint" data-ui="setting-from-flag" data-ui-key={k}>
+            {t("settings.row.fromFlag", { flag })}
+          </div>
+        )}
+        {pending && <RunningValue settings={settings} k={k} />}
       </div>
-      <div className="st-control">
+      <div className={"st-control" + (fileOnly ? " st-control-path" : "")}>
         {control(locked || refusal !== undefined)}
-        <span className="st-restore-slot">
+        {!fileOnly && <span className="st-restore-slot">
           {canRestore && (
             <ActionButton
               mode="icon"
@@ -198,16 +226,137 @@ function Row({ state, k, label, control }: { state: RowState; k: SettingKey; lab
               onClick={() => void P.change(k, { reset: true }, { fromSettingsPage: true })}
             />
           )}
-        </span>
+        </span>}
       </div>
       {refusal !== undefined && !settings.readonly && (
         <div className="st-row-wide">
           <InlineMessage tone="warning" uiId="setting-unsafe" title={t("settings.uneditable.title", { key: k })}>
             {why ? t(why) : t("settings.uneditable.reason.other")} {t("settings.uneditable.tail")}
             <div className="st-inline-actions">
-              <ConfigPath P={P} path={settings.path} />
+              <ConfigPath P={P} settings={settings} />
             </div>
           </InlineMessage>
+        </div>
+      )}
+      {extra && <div className="st-row-wide">{extra}</div>}
+    </div>
+  );
+}
+
+/** What the process still uses for a restart-only key changed since it started (`SettingsSnapshot.running`). */
+function RunningValue({ settings, k }: { settings: SettingsSnapshot; k: SettingKey }) {
+  const { t } = useTranslation();
+  const running = settings.running;
+  const shown =
+    k === "port"
+      ? running.port === null ? null : { display: String(running.port), path: String(running.port) }
+      : k === "data_dir" || k === "global_dir" || k === "global_cache_dir"
+        ? running[k]
+        : null;
+  if (shown === null) return null;
+  return (
+    <div className="st-hint st-still" data-ui="setting-still-in-use" data-ui-key={k}>
+      {t("settings.row.stillUsing")}<code className="st-path" title={shown.path}>{shown.display}</code>
+    </div>
+  );
+}
+
+function Switch({ on, onChange, label, ui, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; ui: string; disabled: boolean }) {
+  return (
+    <Button unstyled data-ui={ui} role="switch" aria-checked={on} aria-label={label} disabled={disabled} className={"tweak-switch" + (on ? " on" : "")} onClick={() => onChange(!on)}>
+      <span />
+    </Button>
+  );
+}
+
+/**
+ * A text setting: typed freely, written on Enter or when the field is left. Emptied, the key is restored to its
+ * default (the line goes from the file). A value the page can tell is wrong is not sent and is explained under the
+ * field; a refused save keeps the typed text (Enter retries; Escape goes back to the saved value).
+ */
+function TextSetting({ state, k, value, ui, label, disabled, validate, placeholder, mono, numeric, type = "text" }: {
+  state: RowState; k: SettingKey; value: string; ui: string; label: string; disabled: boolean;
+  validate?: (text: string) => string | null; placeholder?: string; mono?: boolean; numeric?: boolean; type?: string;
+}) {
+  const { t } = useTranslation();
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState<string | null>(null);
+  // The value the field showed when editing began: the draft differs from it while the person is typing.
+  const base = useRef(value);
+  // The file's value changed while a draft was being typed: the draft stays, and the field says so.
+  const [changedOutside, setChangedOutside] = useState(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  // The text last sent: the value that comes back for it (a default after clearing, 1870 for "01870") is this
+  // field's own change, not one made outside.
+  const submitted = useRef<string | null>(null);
+  useEffect(() => {
+    const typed = draftRef.current;
+    if (typed === base.current || typed.trim() === value || typed.trim() === submitted.current) {
+      submitted.current = null;
+      setDraft(value);
+      setError(null);
+      setChangedOutside(false);
+    } else {
+      setChangedOutside(true);
+    }
+    base.current = value;
+  }, [value]);
+  const commit = () => {
+    const text = draft.trim();
+    // Judged against the file's value now, which may have changed while typing.
+    if (text === value) {
+      setChangedOutside(false);
+      return;
+    }
+    let change: SettingChangeRequest;
+    if (text === "") {
+      change = { reset: true };
+    } else {
+      const wrong = validate?.(text) ?? null;
+      setError(wrong);
+      if (wrong) return;
+      change = { set: numeric ? Number(text) : text };
+    }
+    setError(null);
+    setChangedOutside(false);
+    submitted.current = text;
+    void state.P.change(k, change, HERE);
+  };
+  return (
+    <div className="st-text">
+      <input
+        data-ui={ui}
+        className={"plan-field-input st-input" + (mono ? " mono" : "")}
+        type={type}
+        inputMode={numeric ? "numeric" : undefined}
+        spellCheck={false}
+        autoComplete="off"
+        value={draft}
+        placeholder={placeholder}
+        disabled={disabled}
+        aria-label={label}
+        aria-invalid={error !== null}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) commit();
+          if (e.key === "Escape") {
+            setDraft(value);
+            setError(null);
+            setChangedOutside(false);
+          }
+        }}
+      />
+      {changedOutside && (
+        <div className="st-hint st-changed-outside" role="status" data-ui="setting-changed-outside" data-ui-key={k}>
+          {t("settings.row.changedOutside")}
+        </div>
+      )}
+      {error && (
+        <div className="st-field-error" role="alert" data-ui="setting-field-error" data-ui-key={k}>
+          <Icon name="circle-alert" cls="ico-sm" />
+          {error}
         </div>
       )}
     </div>
@@ -266,6 +415,133 @@ function Appearance({ state }: { state: RowState }) {
   );
 }
 
+function Project({ state }: { state: RowState }) {
+  const { t } = useTranslation();
+  const { settings } = state;
+  const dataDir = String(settings.values.data_dir ?? "");
+  const root = settings.running.project_root;
+  return (
+    <>
+      {/* The project is the directory serve was started in: shown, not stored in the file (the desktop app's "open
+          another folder" belongs to its host, a later ticket). */}
+      <div className="st-row" data-ui="setting-row" data-ui-key="project-root">
+        <div className="st-row-main">
+          <div className="st-label"><span>{t("settings.project.current")}</span></div>
+          <div className="st-hint">{t("settings.project.currentBrowser")}</div>
+          <div className="st-badges"><Badge>{t("settings.row.notInFile")}</Badge></div>
+        </div>
+        <div className="st-control st-control-path">
+          <code className="st-path" data-ui="project-root-path" title={root.path}>{root.display}</code>
+        </div>
+      </div>
+      <Row state={state} k="data_dir" label={t("settings.project.dataDir")}
+        hint={settings.restartPending.includes("data_dir") ? undefined : (
+          <span data-ui="data-dir-in-use">{t("settings.row.inUse")}<code className="st-path" title={settings.running.data_dir.path}>{settings.running.data_dir.display}</code></span>
+        )}
+        control={(disabled) => (
+          <TextSetting state={state} k="data_dir" ui="data-dir-input" label={t("settings.project.dataDir")} mono disabled={disabled} value={dataDir}
+            validate={(text) => (isAbsoluteOnAnyPlatform(text) ? t("settings.project.absolute") : null)} />
+        )} />
+      <Row state={state} k="auto_ingest_arxiv" label={t("settings.project.autoIngest")} control={(disabled) => (
+        <Switch ui="auto-ingest-switch" label={t("settings.project.autoIngest")} disabled={disabled} on={settings.values.auto_ingest_arxiv !== false}
+          onChange={(on) => void state.P.change("auto_ingest_arxiv", { set: on }, HERE)} />
+      )} />
+    </>
+  );
+}
+
+function Services({ state }: { state: RowState }) {
+  const { t } = useTranslation();
+  const { settings } = state;
+  return (
+    <>
+      {settings.legacy.includes("ads_dev_key") && (
+        <div className="st-legacy">
+          {/* Where the prototype has it: with the ADS token, above the contact email. The key is still read as the ADS
+              token until the ADS credential replaces it (desktop-app ticket 12): this says so, and does not claim it no
+              longer works. */}
+          <InlineMessage tone="warning" uiId="ads-legacy-key" title={t("settings.services.legacyTitle")}>
+            {t("settings.services.legacyBody")}
+          </InlineMessage>
+        </div>
+      )}
+      <Row state={state} k="contact_email" label={t("settings.services.contactEmail")} hint={t("settings.services.contactNote")}
+        control={(disabled) => (
+          <TextSetting state={state} k="contact_email" ui="contact-email-input" type="email" label={t("settings.services.contactEmail")} disabled={disabled}
+            value={String(settings.values.contact_email ?? "")} placeholder={t("settings.services.contactPlaceholder")}
+            validate={(text) => (isEmailAddress(text) ? null : t("settings.services.notEmail"))} />
+        )} />
+    </>
+  );
+}
+
+/** An entry to a setting kept outside config.toml: the Copilot's providers, the Mail accounts. */
+function Entry({ kind }: { kind: "copilot" | "mail" }) {
+  const { t } = useTranslation();
+  const ws = useWorkspace();
+  const copilot = kind === "copilot";
+  const open = copilot ? ws.openCopilotSettings : ws.openMailAccounts;
+  return (
+    <div className="st-row" data-ui="setting-row" data-ui-key={copilot ? "copilot-provider" : "mail-accounts"}>
+        <div className="st-row-main">
+          <div className="st-label"><span>{copilot ? t("settings.entries.provider") : t("settings.entries.mailAccounts")}</span></div>
+          <div className="st-badges"><Badge>{t("settings.row.notInFile")}</Badge></div>
+        </div>
+        <div className="st-control">
+          <Button data-ui={copilot ? "open-provider-settings" : "open-mail-accounts"} disabled={open === undefined} onClick={() => open?.()}>
+            {copilot ? t("settings.entries.openProvider") : t("settings.entries.openMailAccounts")}
+          </Button>
+        </div>
+    </div>
+  );
+}
+
+function Advanced({ state }: { state: RowState }) {
+  const { t } = useTranslation();
+  const { settings } = state;
+  const port = (text: string) => (/^\d+$/.test(text) && Number(text) <= 65535 ? null : t("settings.advanced.portRange"));
+  const globalRow = (k: "global_dir" | "global_cache_dir") => (
+    <Row state={state} k={k} fileOnly label={k === "global_dir" ? t("settings.advanced.globalData") : t("settings.advanced.globalCache")}
+      control={() =>
+        // Changed in the file since the start: the new value here, the one still in use under the label.
+        settings.restartPending.includes(k) ? (
+          <code className="st-path" data-ui="global-dir-path" data-ui-key={k} data-state="file">{String(settings.values[k] ?? t("settings.advanced.defaultLocation"))}</code>
+        ) : (
+          <code className="st-path" data-ui="global-dir-path" data-ui-key={k} title={settings.running[k].path}>{settings.running[k].display}</code>
+        )
+      } />
+  );
+  return (
+    <>
+      <Row state={state} k="port" label={t("settings.advanced.port")}
+        hint={settings.restartPending.includes("port") || settings.running.port === null ? undefined : (
+          <span data-ui="port-in-use">{t("settings.row.inUse")}<code className="st-path">{settings.running.port}</code></span>
+        )}
+        control={(disabled) => (
+        <TextSetting state={state} k="port" ui="port-input" label={t("settings.advanced.port")} mono numeric disabled={disabled}
+          value={String(settings.values.port ?? "")} validate={port} />
+      )} />
+      {globalRow("global_dir")}
+      {globalRow("global_cache_dir")}
+    </>
+  );
+}
+
+function GroupRows({ group, state }: { group: SettingsGroup; state: RowState }) {
+  switch (group) {
+    case "appearance":
+      return <Appearance state={state} />;
+    case "project":
+      return <Project state={state} />;
+    case "services":
+      return <Services state={state} />;
+    case "advanced":
+      return <Advanced state={state} />;
+    default:
+      return null;
+  }
+}
+
 export function SettingsView(_props: { paneId?: number }) {
   const { t } = useTranslation();
   const P = usePreferences();
@@ -287,7 +563,7 @@ export function SettingsView(_props: { paneId?: number }) {
         {settings && (
           <div className="st-config" data-ui="config-file">
             <span className="st-config-label">{t("settings.configFile.label")}</span>
-            <ConfigPath P={P} path={settings.path} />
+            <ConfigPath P={P} settings={settings} />
           </div>
         )}
       </header>
@@ -336,10 +612,13 @@ export function SettingsView(_props: { paneId?: number }) {
         <div className="st-body" ref={body} data-ui="settings-group-body" data-group={group}>
           <h2 className="st-group-title">{t(GROUP_LABEL[group])}</h2>
           <div className="st-rows">
-            {group !== "appearance" ? (
+            {!FILLED.has(group) ? (
               <p className="st-note" data-ui="settings-group-empty">{t("settings.groupEmpty")}</p>
+            ) : group === "copilot" || group === "mail" ? (
+              // Kept outside config.toml: shown whatever the state of the file.
+              <Entry kind={group} />
             ) : settings ? (
-              <Appearance state={{ P, settings, locked: settings.readonly || unreachable }} />
+              <GroupRows group={group} state={{ P, settings, locked: settings.readonly || unreachable }} />
             ) : (
               !unreachable && <p className="st-note" data-ui="settings-loading" role="status">{t("settings.loading")}</p>
             )}

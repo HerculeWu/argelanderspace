@@ -197,3 +197,18 @@ test("the panel's own close button returns focus to the toolbar toggle", async (
   expect(onClose).toHaveBeenCalled();
   expect(document.activeElement).toBe(document.querySelector('[data-ui="copilot-toggle"]'));
 });
+
+test("a request from elsewhere (the settings page's entry) opens the provider settings dialog, once per request", async () => {
+  const view = render(<Copilot open context={context} onClose={vi.fn()} settingsAsked={0} />);
+  await screen.findByText("Copilot");
+  expect(document.querySelector('[data-ui="provider-settings"]')).toBeNull();
+  view.rerender(<Copilot open context={context} onClose={vi.fn()} settingsAsked={1} />);
+  await waitFor(() => expect(document.querySelector('[data-ui="provider-settings"]')).not.toBeNull());
+  // Closed by the person; the same count does not open it again, a new one does.
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await waitFor(() => expect(document.querySelector('[data-ui="provider-settings"]')).toBeNull());
+  view.rerender(<Copilot open context={{ ...context, revision: 2 }} onClose={vi.fn()} settingsAsked={1} />);
+  expect(document.querySelector('[data-ui="provider-settings"]')).toBeNull();
+  view.rerender(<Copilot open context={{ ...context, revision: 2 }} onClose={vi.fn()} settingsAsked={2} />);
+  await waitFor(() => expect(document.querySelector('[data-ui="provider-settings"]')).not.toBeNull());
+});

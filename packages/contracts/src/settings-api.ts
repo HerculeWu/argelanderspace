@@ -71,11 +71,52 @@ export interface StartupLocations {
   global_cache_dir: StartupLocation;
 }
 
+/**
+ * A path of the machine that runs the server, and the same path as the page shows it: the server's home directory
+ * written as `~` (judged by the server, which knows its home directory; the page does not guess). What is copied is
+ * `path`.
+ */
+export interface ShownPath {
+  path: string;
+  display: string;
+}
+
+/**
+ * What the running process uses for the keys that take effect only at a restart (desktop-app ticket 11), fixed when
+ * the server was made and unchanged until it stops. Unlike `values` (the file now) and `startup` (where each location
+ * came from at the start, with no path), these are the actual port and the actual absolute directories — with
+ * `--port` / `--data-dir` applied and a faulty key's default in effect. They hold the user's home and folder names:
+ * they are given to the settings page only (this answer is `no-store`) and never written to the user log.
+ */
+export interface RunningSettings {
+  /** The project root: the working directory of the server, against which a relative `data_dir` is resolved. */
+  project_root: ShownPath;
+  /** The port this server listens on; null when it is not listening (before the listen, after the close). */
+  port: number | null;
+  /** The project data directory in use (`--data-dir`, or `data_dir` resolved against the working directory). */
+  data_dir: ShownPath;
+  /** The global data directory in use (Mail accounts, credentials, the user log). */
+  global_dir: ShownPath;
+  /** The global cache directory in use. */
+  global_cache_dir: ShownPath;
+  /**
+   * The restart-only keys whose value in use was given on the command line (`--port`, `--data-dir`) when `serve`
+   * started: the file's value does not apply to this run, nor to a later one started with the same flag. Such a key is
+   * never in `restartPending`. Empty for a server not started by `serve`.
+   */
+  from_flag: RunningFlagKey[];
+}
+
+/** The keys a command-line flag of `serve` can give (`--port`, `--data-dir`). */
+export type RunningFlagKey = "port" | "data_dir";
+
 /** `GET /api/settings`: the settings as the page may see them. */
 export interface SettingsSnapshot {
   version: 1;
   /** The config file, as an absolute path on the machine that runs the server. */
   path: string;
+  /** `path` as the page shows it, with the server's home directory written as `~`. */
+  pathDisplay: string;
   file: SettingsFileState;
   /**
    * The file is there and nothing could be taken from it (`unparseable`, `unreadable`): every value is its default
@@ -98,7 +139,10 @@ export interface SettingsSnapshot {
    * file is `readonly` (nothing can be changed then, whatever the key).
    */
   uneditable: Partial<Record<SettingKey, SettingChangeRefusal>>;
-  /** The deprecated keys the file still sets (`ads_dev_key`): they no longer do anything. */
+  /**
+   * The deprecated keys the file still sets. Today only `ads_dev_key`, which is still read as an ADS token until the
+   * ADS credential replaces it (desktop-app ticket 12).
+   */
   legacy: SettingKey[];
   /**
    * Where the running process keeps its data, fixed when `serve` started and unchanged until it restarts — unlike
@@ -107,6 +151,14 @@ export interface SettingsSnapshot {
    * (one made by `createServer` alone, in tests). Sources and categories only: no path, no value.
    */
   startup: StartupLocations | null;
+  /** What the process actually uses for the restart-only keys (see `RunningSettings`). */
+  running: RunningSettings;
+  /**
+   * The keys that take effect at a restart (`restart: true` in the schema) whose value in the file now differs from
+   * the one the file had when the server was made: changed since, so the process still uses the old value (`running`)
+   * until it restarts. In schema order. Empty while the file is `readonly` (it cannot be read, so says nothing).
+   */
+  restartPending: SettingKey[];
 }
 
 /** The body of `PUT /api/settings/:key`: set the key, or remove it so that its default applies. */

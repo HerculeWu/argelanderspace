@@ -34,9 +34,10 @@ export type SettingType =
   /**
    * `path` restricts the string to a relative or an absolute path; a path counts as absolute when it is absolute in
    * POSIX or in Windows writing, whichever machine reads the file. `blankIsUnset` means an empty or whitespace-only
-   * string is the same as leaving the key out.
+   * string is the same as leaving the key out. `format: "email"` restricts the string to the shape of an email address
+   * (`isEmailAddress`; desktop-app ticket 11, user decision 2026-10-14).
    */
-  | { kind: "string"; path?: "relative" | "absolute"; blankIsUnset?: boolean }
+  | { kind: "string"; path?: "relative" | "absolute"; blankIsUnset?: boolean; format?: "email" }
   | { kind: "integer"; min: number; max: number }
   | { kind: "boolean" }
   | { kind: "enum"; values: readonly string[] };
@@ -160,10 +161,11 @@ export const SETTINGS_SCHEMA = {
     ui: "edit",
     restart: false,
   }),
+  // Sent to Crossref and OpenAlex when set (desktop-app ticket 11); a value not shaped like an address is a faulty key.
   contact_email: def({
     table: null,
     name: "contact_email",
-    type: { kind: "string", blankIsUnset: true },
+    type: { kind: "string", blankIsUnset: true, format: "email" },
     default: null,
     group: "services",
     ui: "edit",
@@ -259,6 +261,7 @@ export function settingDef(key: SettingKey): SettingDef {
  *   not_one_of        a string that is none of the key's choices
  *   must_be_relative  an absolute path where a relative one is required
  *   must_be_absolute  a relative path where an absolute one is required
+ *   must_be_email     a string that is not shaped like an email address (`isEmailAddress`)
  */
 export const SETTING_VALUE_PROBLEMS = [
   "wrong_type",
@@ -266,6 +269,7 @@ export const SETTING_VALUE_PROBLEMS = [
   "not_one_of",
   "must_be_relative",
   "must_be_absolute",
+  "must_be_email",
 ] as const;
 export type SettingValueProblem = (typeof SETTING_VALUE_PROBLEMS)[number];
 
@@ -275,6 +279,33 @@ export type SettingValueProblem = (typeof SETTING_VALUE_PROBLEMS)[number];
  */
 export function isAbsoluteOnAnyPlatform(path: string): boolean {
   return /^(?:[/\\]|[A-Za-z]:[/\\])/.test(path);
+}
+
+/** The longest address `isEmailAddress` accepts, in characters (RFC 5321's limit on a path, less the brackets). */
+export const EMAIL_ADDRESS_MAX_LENGTH = 254;
+
+const EMAIL_LOCAL = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/;
+const EMAIL_LABEL = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
+
+/**
+ * Whether a string is shaped like an email address, by a deliberately narrow rule (desktop-app ticket 11; not the
+ * whole of RFC 5322): printable ASCII only, so no whitespace, control character, bidi control or zero-width character
+ * can reach a request; at most 254 characters; exactly one `@`; a local part of 1–64 characters from the RFC's
+ * "atext" set, in dot-separated runs (no leading, trailing or doubled dot; no quoted local part); a domain of at least
+ * two dot-separated labels of letters, digits and hyphens, each 1–63 characters and neither starting nor ending with a
+ * hyphen (no IP literal, no internationalised form). The address is what the workbench sends to Crossref and OpenAlex
+ * as the contact of its requests: in a query parameter, and in a comment of the User-Agent header — none of the
+ * accepted characters is a parenthesis or a backslash, so it cannot close or escape that comment.
+ */
+export function isEmailAddress(value: string): boolean {
+  if (value.length > EMAIL_ADDRESS_MAX_LENGTH) return false;
+  const at = value.indexOf("@");
+  if (at <= 0 || at !== value.lastIndexOf("@")) return false;
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (local.length > 64 || !EMAIL_LOCAL.test(local)) return false;
+  const labels = domain.split(".");
+  return labels.length >= 2 && labels.every((label) => EMAIL_LABEL.test(label));
 }
 
 function isBlank(value: string): boolean {
@@ -298,6 +329,7 @@ export function checkSettingValue(key: SettingKey, value: unknown): SettingValue
       if (type.blankIsUnset && isBlank(value)) return null;
       if (type.path === "relative" && isAbsoluteOnAnyPlatform(value)) return "must_be_relative";
       if (type.path === "absolute" && !isAbsoluteOnAnyPlatform(value)) return "must_be_absolute";
+      if (type.format === "email" && !isEmailAddress(value)) return "must_be_email";
       return null;
   }
 }

@@ -528,9 +528,17 @@ export function Shell() {
     },
     [manager, dropAllowed]
   );
+  // The settings page's entries: the provider dialog belongs to the Copilot panel (asked for by a counter it watches),
+  // the accounts to the Mail view.
+  const [providerSettingsAsked, setProviderSettingsAsked] = useState(0);
+  const openCopilotSettings = useCallback(() => {
+    setCopilotOpen(true);
+    setProviderSettingsAsked((n) => n + 1);
+  }, []);
+  const openMailAccounts = useCallback(() => setActiveView("mail"), [setActiveView]);
   const workspace: Workspace = useMemo(
-    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, tweaks }),
-    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, tweaks]
+    () => ({ papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, openCopilotSettings, openMailAccounts, tweaks }),
+    [papers, currentDoc, setCurrentDoc, openDoc, pendingAnchor, clearPendingAnchor, docDeleted, openArgumentGraph, openCopilotSettings, openMailAccounts, tweaks]
   );
 
   // The page fields and status are the active pane's page adapter's (`pagesVersion` changes with what pages report).
@@ -681,7 +689,7 @@ export function Shell() {
               ))}
             </div>
           </div>
-          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} guards={confirmationGuards} onOpenPanel={() => setCopilotOpen(true)} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
+          <Copilot open={copilotOpen} context={pageContext} onClose={() => setCopilotOpen(false)} onViewAction={runViewAction} guards={confirmationGuards} onOpenPanel={() => setCopilotOpen(true)} settingsAsked={providerSettingsAsked} viewReady={viewClaimed} onAttention={setCopilotWaiting} />
         </div>
 
         <CommandPalette
