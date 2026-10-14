@@ -8,7 +8,10 @@
  */
 
 import { Buffer } from "node:buffer";
-import { deflateRawSync, crc32 as zlibCrc32 } from "node:zlib";
+import { promisify } from "node:util";
+import { deflateRaw, deflateRawSync, crc32 as zlibCrc32 } from "node:zlib";
+
+const deflateRawAsync = promisify(deflateRaw);
 
 export interface ZipEntryInput {
   /** Archive member name; forward slashes, no leading `/` or drive letters. */
@@ -47,21 +50,61 @@ function dosDateTime(d: Date): { date: number; time: number } {
   };
 }
 
+interface Prepared {
+  name: Buffer;
+  data: Buffer;
+  compressed: Buffer;
+  crc: number;
+}
+
+const entryName = (entry: ZipEntryInput): Buffer =>
+  Buffer.from(entry.name.replaceAll("\\", "/"), "utf8");
+const entryData = (entry: ZipEntryInput): Buffer =>
+  Buffer.isBuffer(entry.data)
+    ? entry.data
+    : typeof entry.data === "string"
+      ? Buffer.from(entry.data)
+      : Buffer.from(entry.data.buffer, entry.data.byteOffset, entry.data.byteLength);
+
 /** Build a zip archive (deflate, UTF-8 names) and return it as a Buffer. */
 export function zipEntries(entries: ZipEntryInput[], when: Date = new Date()): Buffer {
+  return assemble(
+    entries.map((entry) => {
+      const data = entryData(entry);
+      return { name: entryName(entry), data, compressed: deflateRawSync(data), crc: crc32(data) };
+    }),
+    when
+  );
+}
+
+/**
+ * The same archive as {@link zipEntries}, with each entry compressed on libuv's thread pool: the event loop keeps
+ * answering while a large archive is made (the diagnostics bundle). Entries are compressed one after another.
+ */
+export async function zipEntriesAsync(
+  entries: ZipEntryInput[],
+  when: Date = new Date()
+): Promise<Buffer> {
+  const prepared: Prepared[] = [];
+  for (const entry of entries) {
+    const data = entryData(entry);
+    prepared.push({
+      name: entryName(entry),
+      data,
+      compressed: await deflateRawAsync(data),
+      crc: crc32(data),
+    });
+  }
+  return assemble(prepared, when);
+}
+
+function assemble(entries: Prepared[], when: Date): Buffer {
   const { date, time } = dosDateTime(when);
   const chunks: Buffer[] = [];
   const central: Buffer[] = [];
   let offset = 0;
 
-  for (const entry of entries) {
-    const name = Buffer.from(entry.name.replaceAll("\\", "/"), "utf8");
-    const data = Buffer.isBuffer(entry.data)
-      ? entry.data
-      : Buffer.from(typeof entry.data === "string" ? entry.data : entry.data);
-    const compressed = deflateRawSync(data);
-    const crc = crc32(data);
-
+  for (const { name, data, compressed, crc } of entries) {
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0); // local file header signature
     local.writeUInt16LE(20, 4); // version needed

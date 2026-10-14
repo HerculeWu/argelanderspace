@@ -1014,7 +1014,7 @@
     "pane": "窗格",
     "reload": "重新加载",
     "logDir": "日志位置",
-    "logDirUnknown": "不知道（服务没有应答）"
+    "logDirUnknown": "不知道（没能取得）"
   },
   "common": {
     "cancel": "取消",
@@ -2563,7 +2563,7 @@
     },
     "diagnostics": {
       "logFolder": "日志位置",
-      "logFolderUnknown": "不知道：工作台服务没有应答",
+      "logFolderUnknown": "不知道：没能取得",
       "copyPath": "复制日志文件夹路径",
       "showLogs": "显示日志文件夹",
       "logLevel": "日志级别",
@@ -2574,17 +2574,19 @@
       "exportCompile": "附带最近的编译失败日志（含论文或稿件的源码片段）",
       "noCompileLogs": "这个项目没有可附带的编译失败日志。",
       "compileAllTooLarge": "这个项目的编译失败日志太大，无法附带。",
-      "compileUnknown": "不知道有没有编译失败日志：工作台服务没有应答。",
+      "compileUnknown": "不知道有没有编译失败日志：没能取得清单。",
       "compileListTitle_one": "将放入 {{count}} 个文件（{{size}}）：",
       "compileListTitle_other": "将放入 {{count}} 个文件（共 {{size}}）：",
-      "compileOverLimit_one": "另有 {{count}} 个较早的文件不放入：附带的日志合计不超过 {{limit}}。",
-      "compileOverLimit_other": "另有 {{count}} 个较早的文件不放入：附带的日志合计不超过 {{limit}}。",
+      "compileOverLimit_one": "另有 {{count}} 个较早的文件不放入：附带的日志合计不超过 {{limit}}、{{files}} 个。",
+      "compileOverLimit_other": "另有 {{count}} 个较早的文件不放入：附带的日志合计不超过 {{limit}}、{{files}} 个。",
       "exportRun": "导出",
       "exporting": "正在生成…",
       "exportDone": "已生成 {{name}}（{{size}}）。",
       "exportDoneNote": "文件已交给浏览器下载，保存位置按浏览器的设置。",
-      "exportFailed": "没能生成诊断包：工作台服务没有应答。可以再试一次。",
-      "done": "完成"
+      "exportFailed": "没能生成诊断包。可以再试一次。",
+      "done": "完成",
+      "exportSaved": "已保存 {{name}}（{{size}}）到你选择的位置。",
+      "zipType": "Zip 压缩包"
     }
   }
 }

@@ -20,7 +20,13 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import type { DiagnosticsInfo } from "@argelanderspace/contracts";
+import {
+  DIAGNOSTICS_CLIENT_MAX_LENGTH,
+  DIAGNOSTICS_COMPILE_LOGS_MAX_FILES,
+  DIAGNOSTICS_EXPORT_BODY_MAX_BYTES,
+  type DiagnosticsInfo,
+  SECRET_SETTING_KEYS,
+} from "@argelanderspace/contracts";
 import {
   __setWriterSandboxForTests,
   ADS_TOKEN_ID,
@@ -32,6 +38,7 @@ import {
   openLogFile,
 } from "@argelanderspace/infra";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { DIAGNOSTICS_OMITTED_KEYS } from "../src/diagnostics.js";
 import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { createServer, type RunningServer } from "../src/server.js";
 import { makeDataDir, stubSources } from "./helpers.js";
@@ -44,7 +51,11 @@ const MARK = {
   token: `${ROOT}ADSTOKEN0123456789`,
   globalDir: `${ROOT}GLOBALDIR`,
   source: `${ROOT}SOURCESNIPPET`,
+  stray: `${ROOT}STRAYFILE`,
 };
+
+/** A log file's name, as infra `log/files.ts` writes them (the one rule the bundle follows). */
+const LOG_NAME = /^\d{8}T\d{9}Z-[a-z][a-z0-9]*-\d+(?:-\d+)?\.jsonl$/;
 
 const JOB_A = "ingest-11111111-2222-4333-8444-555555555555";
 const JOB_B = "ingest-66666666-7777-4888-8999-aaaaaaaaaaaa";
@@ -95,10 +106,13 @@ beforeAll(async () => {
   // An older run's log, a directory that is not a log file, then this run's file.
   mkdirSync(logDir, { recursive: true });
   writeFileSync(
-    join(logDir, "2026-10-13T01-02-03.004Z-serve-123.jsonl"),
+    join(logDir, "20261013T010203004Z-serve-123.jsonl"),
     `{"t":"2026-10-13T01:02:03.004Z","level":"info","event":"server.started"}\n`
   );
   mkdirSync(join(logDir, "not-a-file"));
+  // Files whose names are not a log file's: never in a bundle, never counted (whatever put them there).
+  writeFileSync(join(logDir, "notes.txt"), `${MARK.stray}\n`);
+  writeFileSync(join(logDir, "2026-10-13T01-02-03.004Z-serve-123.jsonl"), `${MARK.stray}\n`);
   file = openLogFile({ dir: logDir, process: "serve" });
   const ads = createCredentialStore({ purpose: "ads", backend, dataDir: globalDir });
   expect((await ads.set(ADS_TOKEN_ID, MARK.token)).status).toBe("stored");
@@ -204,7 +218,7 @@ async function exportBundle(body: unknown): Promise<Bundle> {
 
 const logFileNames = (): string[] =>
   readdirSync(logDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile())
+    .filter((entry) => entry.isFile() && LOG_NAME.test(entry.name))
     .map((entry) => `logs/${entry.name}`);
 
 const logRecords = (): Array<Record<string, unknown>> =>
@@ -262,7 +276,7 @@ describe("the log directory and the bundle", () => {
   test("ticked: the compile-failure logs GET listed are added — the same ones, never a .partial", async () => {
     writeCompileLogs();
     const listed = (await info()).compileLogs.filter((c) => c.included).map((c) => c.name);
-    const bundle = await exportBundle({ includeCompileLogs: true });
+    const bundle = await exportBundle({ includeCompileLogs: true, compileLogs: listed });
     expect(bundle.entries).toEqual(
       ["environment-report.json", ...logFileNames(), ...listed].sort()
     );
@@ -279,7 +293,7 @@ describe("the log directory and the bundle", () => {
   });
 
   test("ticked with no compile-failure log: the bundle is the same as not ticked", async () => {
-    const bundle = await exportBundle({ includeCompileLogs: true });
+    const bundle = await exportBundle({ includeCompileLogs: true, compileLogs: [] });
     expect(bundle.entries).toEqual(["environment-report.json", ...logFileNames()].sort());
   });
 
@@ -299,7 +313,11 @@ describe("the log directory and the bundle", () => {
         included: false,
       },
     ]);
-    const bundle = await exportBundle({ includeCompileLogs: true });
+    // Even when the page names it, a log over the limit stays out.
+    const bundle = await exportBundle({
+      includeCompileLogs: true,
+      compileLogs: got.compileLogs.map((c) => c.name),
+    });
     expect(bundle.entries).toContain(`compile-failures/jobs/${JOB_A}.compile.log`);
     expect(bundle.entries).not.toContain(`compile-failures/jobs/${JOB_B}.compile.log`);
   });
@@ -351,13 +369,110 @@ describe("the log directory and the bundle", () => {
   });
 
   test("an export writes one record: the event and whether compile logs were asked for, nothing else", async () => {
-    await exportBundle({ includeCompileLogs: true });
+    await exportBundle({ includeCompileLogs: true, compileLogs: [] });
     await exportBundle({});
     const exports = logRecords().filter((r) => r.event === "diagnostics.exported");
     expect(exports.slice(-2).map(({ t: _t, ...rest }) => rest)).toEqual([
       { level: "info", event: "diagnostics.exported", compile_logs: "yes" },
       { level: "info", event: "diagnostics.exported", compile_logs: "no" },
     ]);
+  });
+
+  test("the log directory: only files named like a log file are counted and bundled", async () => {
+    const got = await info();
+    expect(got.logFiles.count).toBe(logFileNames().length);
+    const sizes = logFileNames().reduce(
+      (sum, n) => sum + statSync(join(logDir, n.slice(5))).size,
+      0
+    );
+    expect(got.logFiles.bytes).toBeLessThanOrEqual(sizes + 4096); // this run's file grows between the two reads
+    const bundle = await exportBundle({});
+    expect(bundle.entries).not.toContain("logs/notes.txt");
+    expect(bundle.entries).not.toContain("logs/2026-10-13T01-02-03.004Z-serve-123.jsonl");
+    expect(bundle.entries).toContain("logs/20261013T010203004Z-serve-123.jsonl");
+    for (const spelling of spellings(MARK.stray)) expect(bundle.all).not.toContain(spelling);
+  });
+
+  test("ticked: only the logs the page listed go in — one that appeared after the listing stays out", async () => {
+    writeCompileLogs();
+    const listed = (await info()).compileLogs.filter((c) => c.included).map((c) => c.name);
+    const later = "ingest-77777777-8888-4999-8aaa-bbbbbbbbbbbb";
+    writeFileSync(join(dataDir, "jobs", `${later}.compile.log`), `later ${MARK.source}\n`);
+    const bundle = await exportBundle({ includeCompileLogs: true, compileLogs: listed });
+    expect(bundle.entries.filter((e) => e.startsWith("compile-failures/")).sort()).toEqual(
+      [...listed].sort()
+    );
+    expect(bundle.entries.join()).not.toContain(later);
+  });
+
+  test("names the page sends that are not a kept log now are ignored: gone, .partial, ../, any path", async () => {
+    writeCompileLogs();
+    const outside = join(root, "outside.compile.log");
+    writeFileSync(outside, `outside ${MARK.source}\n`);
+    const bundle = await exportBundle({
+      includeCompileLogs: true,
+      compileLogs: [
+        `compile-failures/jobs/${JOB_A}.compile.log`,
+        "compile-failures/jobs/ingest-99999999-9999-4999-8999-999999999999.compile.log",
+        `compile-failures/jobs/${JOB_A}.compile.log.partial`,
+        "compile-failures/jobs/notes.compile.log",
+        `compile-failures/jobs/../jobs/${JOB_B}.compile.log`,
+        `compile-failures/../../${JOB_B}.compile.log`,
+        outside,
+        `compile-failures/${outside}`,
+      ],
+    });
+    expect(bundle.entries.filter((e) => e.startsWith("compile-failures/"))).toEqual([
+      `compile-failures/jobs/${JOB_A}.compile.log`,
+    ]);
+    expect(bundle.all).not.toContain("outside");
+    expect(bundle.all).not.toContain("collecting");
+  });
+
+  test("ticked without a list of names is a bad request; so is a list too long or not of strings", async () => {
+    const post = (body: unknown) =>
+      fetch(`${url}/api/diagnostics/export`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    expect((await post({ includeCompileLogs: true })).status).toBe(400);
+    expect((await post({ includeCompileLogs: true, compileLogs: [1] })).status).toBe(400);
+    expect(
+      (
+        await post({
+          includeCompileLogs: true,
+          compileLogs: Array.from({ length: DIAGNOSTICS_COMPILE_LOGS_MAX_FILES + 1 }, () => "x"),
+        })
+      ).status
+    ).toBe(400);
+  });
+
+  test("the longest list the page can send, with the longest client, fits the request size limit", () => {
+    const kinds = ["upload", "refresh", "ingest"];
+    const longest = `compile-failures/jobs/${kinds.sort((a, b) => b.length - a.length)[0]}-${"0".repeat(8)}-0000-4000-8000-${"0".repeat(12)}.compile.log`;
+    const body = JSON.stringify({
+      includeCompileLogs: true,
+      compileLogs: Array.from({ length: DIAGNOSTICS_COMPILE_LOGS_MAX_FILES }, () => longest),
+      client: "x".repeat(DIAGNOSTICS_CLIENT_MAX_LENGTH),
+    });
+    expect(Buffer.byteLength(body)).toBeLessThanOrEqual(DIAGNOSTICS_EXPORT_BODY_MAX_BYTES);
+  });
+
+  test("every secret key of the schema is left out of the report, value and source", async () => {
+    for (const key of SECRET_SETTING_KEYS) expect(DIAGNOSTICS_OMITTED_KEYS).toContain(key);
+    for (const key of ["contact_email", "global_dir", "global_cache_dir"])
+      expect(DIAGNOSTICS_OMITTED_KEYS).toContain(key);
+    const bundle = await exportBundle({});
+    const report = JSON.parse(bundle.text("environment-report.json")) as {
+      config: { values: object; sources: object };
+    };
+    for (const key of SECRET_SETTING_KEYS) {
+      expect(report.config.values).not.toHaveProperty(key);
+      expect(report.config.sources).not.toHaveProperty(key);
+    }
+    for (const mark of [MARK.openalex, MARK.devKey])
+      for (const s of spellings(mark)) expect(bundle.all).not.toContain(s);
   });
 
   test("an export from another origin is refused, and so is a body that is not a request", async () => {

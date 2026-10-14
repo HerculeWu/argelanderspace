@@ -41,6 +41,13 @@ export function resolveLogDir(opts: GlobalDirsOptions = {}): string {
 // <UTC time to the millisecond>-<process kind>-<pid>[-<n>].jsonl; sorting by name is sorting by start time. The
 // number is there only when the plain name was already taken.
 const LOG_FILE = /^\d{8}T\d{9}Z-[a-z][a-z0-9]*-\d+(?:-\d+)?\.jsonl$/;
+/**
+ * Whether a name is a log file's (the rule the cleanup goes by). The diagnostics bundle takes only these from the log
+ * directory (server `diagnostics.ts`).
+ */
+export function isLogFileName(name: string): boolean {
+  return LOG_FILE.test(name);
+}
 const PROCESS_KIND = /^[a-z][a-z0-9]*$/;
 /** How many numbered names are tried after the plain one. */
 const NAME_ATTEMPTS = 8;

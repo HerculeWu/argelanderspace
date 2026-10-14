@@ -232,24 +232,30 @@ conversations, and never the titles of papers. **Diagnostics → Log level** cha
 how much is recorded and takes effect at once.
 
 To report a problem, open **Settings → Diagnostics → Export diagnostics…** and press
-Export. The workbench makes a zip and hands it to your browser's download; nothing
-is uploaded, ever — there is no telemetry and no crash reporting, and you decide
-whether and to whom to send the file. The zip holds:
+Export. Where the browser offers it (Chrome, Edge), the system's save window opens
+first and the bundle is written to the file you choose; cancelling it makes nothing.
+Elsewhere the bundle goes to the browser's downloads, wherever the browser's settings
+put them. Nothing is uploaded, ever — there is no telemetry and no crash reporting,
+and you decide whether and to whom to send the file. The zip holds:
 
-- every file of the log folder;
+- the log files of the log folder — only files named as the workbench names its
+  logs; anything else you put in that folder is not taken;
 - `environment-report.json`: the version, browser or desktop form, operating
-  system and architecture, Node version, your browser's identification, the
-  environment check (where TeX and the other programs are, their versions, whether
-  a keychain is there) and the config file's values in effect. It leaves out your
-  contact email, the global directories and the `openalex_api_key` /
-  `ads_dev_key` lines; paths have your home directory written as `~`; the ADS
-  token is reported only as saved (and how it is protected) or not saved.
+  system, its kernel version and the architecture, Node version, your browser's
+  identification, the environment check (where TeX and the other programs are,
+  their versions, whether a keychain is there), the config file's values in effect,
+  the project folder and its data folder and the port in use. Paths have your home
+  directory written as `~`. It leaves out your contact email, the global directories
+  and every secret key of the config file (`openalex_api_key`, `ads_dev_key`); the
+  ADS token is reported only as saved (in the keychain, or in the file), not saved,
+  or unreadable — never its value.
 
 The dialog also offers **Include the latest compile-failure logs**. These are the
 complete LaTeX logs the workbench keeps when an ingest or a manuscript render fails
 to compile; they quote lines of the paper's or manuscript's source, which may be
 unpublished work, so the box is never ticked by default. Ticked, the dialog lists
-the files that will go in (the newest, up to 32 MB together).
+the files that will go in (the newest, up to 32 MB and 40 files together), and the
+bundle holds exactly those.
 
 ## Stored IR (sketch)
 

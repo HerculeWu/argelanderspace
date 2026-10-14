@@ -1,7 +1,7 @@
-import type { DiagnosticsInfo } from "@argelanderspace/contracts";
+import { DIAGNOSTICS_CLIENT_MAX_LENGTH, DIAGNOSTICS_COMPILE_LOGS_MAX_FILES, type DiagnosticsInfo } from "@argelanderspace/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { exportDiagnostics, fetchDiagnostics, saveBundle } from "../api/diagnostics";
+import { chooseSaveTarget, exportDiagnostics, fetchDiagnostics, saveBundle, suggestedBundleName, writeBundle } from "../api/diagnostics";
 import { Icon } from "../lib/icons";
 import { Button, Dialog, InlineMessage } from "../ui";
 
@@ -9,8 +9,13 @@ import { Button, Dialog, InlineMessage } from "../ui";
  * The "Export diagnostics" dialog (desktop-app ticket 14), as in the approved prototype: what the bundle holds, one
  * box for the compile-failure logs — not ticked, and saying that they quote the paper's or manuscript's source — and
  * Export. Ticked, the dialog lists the files that will go in and their size together. With no compile-failure log in
- * the project the box cannot be ticked and says so. The bundle is made on the server when Export is pressed and handed
- * to the browser's download; nothing is uploaded.
+ * the project the box cannot be ticked and says so; until the list has come, the box waits. The request names the
+ * files listed, and the bundle holds those (as far as they are still there) — never one the user was not shown.
+ *
+ * Saving (user decision 2026-10-14): where the browser has the system's save window (`showSaveFilePicker`), Export
+ * opens it first — in the click itself, before the bundle is asked for, since the window may only open from a click —
+ * and the bundle is written to the file chosen; cancelling it asks for nothing and leaves the dialog as it was.
+ * Elsewhere the bundle goes to the browser's downloads. Nothing is uploaded.
  */
 
 /** Bytes as the page shows sizes: `812 B`, `14.2 KB`, `3.4 MB`. */
@@ -20,7 +25,11 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-type Phase = { kind: "idle" } | { kind: "busy" } | { kind: "done"; name: string; bytes: number } | { kind: "failed" };
+type Phase =
+  | { kind: "idle" }
+  | { kind: "busy" }
+  | { kind: "done"; name: string; bytes: number; saved: "picker" | "download" }
+  | { kind: "failed" };
 
 export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
@@ -39,24 +48,44 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
   const logs = info !== null && info !== "loading" ? info.compileLogs : [];
   const included = logs.filter((log) => log.included);
   const left = logs.length - included.length;
-  const none = info !== "loading" && included.length === 0;
+  const loading = info === "loading";
+  const none = !loading && included.length === 0;
   const busy = phase.kind === "busy";
   const finished = phase.kind === "done";
 
   const run = async () => {
+    const ticked = include && !none && !loading;
     setPhase({ kind: "busy" });
     try {
-      const bundle = await exportDiagnostics({ includeCompileLogs: include && !none, client: navigator.userAgent });
-      saveBundle(bundle);
-      setPhase({ kind: "done", name: bundle.name, bytes: bundle.blob.size });
+      // First, in the click itself: where to save (the system's save window, when there is one).
+      const target = await chooseSaveTarget(suggestedBundleName(), t("settings.diagnostics.zipType"));
+      if (target === null) {
+        // Cancelled: nothing was asked for, nothing is said.
+        setPhase({ kind: "idle" });
+        return;
+      }
+      const bundle = await exportDiagnostics({
+        includeCompileLogs: ticked,
+        ...(ticked ? { compileLogs: included.map((log) => log.name) } : {}),
+        client: navigator.userAgent.slice(0, DIAGNOSTICS_CLIENT_MAX_LENGTH),
+      });
+      if (target.kind === "picker") {
+        await writeBundle(target.handle, bundle);
+        setPhase({ kind: "done", name: target.handle.name, bytes: bundle.blob.size, saved: "picker" });
+      } else {
+        saveBundle(bundle);
+        setPhase({ kind: "done", name: bundle.name, bytes: bundle.blob.size, saved: "download" });
+      }
     } catch {
       setPhase({ kind: "failed" });
     }
   };
 
+  // After the export: the keyboard goes to "Done", or back to "Cancel" when it failed or the save window was cancelled.
   useEffect(() => {
-    if (finished) done.current?.focus();
-  }, [finished]);
+    if (phase.kind === "done") done.current?.focus();
+    else if (phase.kind === "failed" || phase.kind === "idle") cancel.current?.focus();
+  }, [phase.kind]);
 
   return (
     <Dialog
@@ -85,7 +114,7 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
           type="checkbox"
           data-ui="export-include-compile"
           checked={include && !none}
-          disabled={none || busy || finished}
+          disabled={loading || none || busy || finished}
           onChange={(e) => setInclude(e.target.checked)}
         />
         <span>{t("settings.diagnostics.exportCompile")}</span>
@@ -116,14 +145,20 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
           </ul>
           {left > 0 && (
             <p className="st-export-note" data-ui="export-compile-over-limit">
-              {t("settings.diagnostics.compileOverLimit", { count: left, limit: formatBytes(info !== null && info !== "loading" ? info.compileLogsLimitBytes : 0) })}
+              {t("settings.diagnostics.compileOverLimit", {
+                count: left,
+                limit: formatBytes(info !== null && info !== "loading" ? info.compileLogsLimitBytes : 0),
+                files: DIAGNOSTICS_COMPILE_LOGS_MAX_FILES,
+              })}
             </p>
           )}
         </div>
       )}
       {phase.kind === "done" && (
         <InlineMessage tone="info" uiId="export-diagnostics-result">
-          {t("settings.diagnostics.exportDone", { name: phase.name, size: formatBytes(phase.bytes) })} {t("settings.diagnostics.exportDoneNote")}
+          {phase.saved === "picker"
+            ? t("settings.diagnostics.exportSaved", { name: phase.name, size: formatBytes(phase.bytes) })
+            : `${t("settings.diagnostics.exportDone", { name: phase.name, size: formatBytes(phase.bytes) })} ${t("settings.diagnostics.exportDoneNote")}`}
         </InlineMessage>
       )}
       {phase.kind === "failed" && (

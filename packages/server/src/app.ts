@@ -603,14 +603,12 @@ export function createApp(deps: AppDeps): Hono {
     configPath: deps.configPath,
     log,
     version: deps.version,
+    // Only `serve` exists so far; the desktop host's ticket (second batch) hands in its own form here.
     mode: "browser",
     running: () => ({
       project_root: shownPath(projectRoot),
       port: deps.boundPort?.() ?? null,
       data_dir: shownPath(deps.paths.dataDir),
-      // The global directories are not in the report; these two are there only for the type.
-      global_dir: shownPath(""),
-      global_cache_dir: shownPath(""),
       from_flag: [...(deps.settingsFromFlags ?? [])],
     }),
     adsCredentials: adsCredentials,
