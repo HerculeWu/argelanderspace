@@ -182,15 +182,18 @@ export function listCompileLogs(
   found.sort((a, b) => b.mtimeMs - a.mtimeMs || (a.name < b.name ? -1 : 1));
   let total = 0;
   let count = 0;
+  // The newest first until the next one would go over: from then on every older one stays out too, so what is left
+  // out is always older than what goes in (the dialog says so).
+  let full = false;
   return found
     .filter(({ name }) => only === undefined || only.has(name))
     .map(({ name, path, bytes }) => {
-      const included = total + bytes <= limit && count < DIAGNOSTICS_COMPILE_LOGS_MAX_FILES;
-      if (included) {
+      full ||= total + bytes > limit || count >= DIAGNOSTICS_COMPILE_LOGS_MAX_FILES;
+      if (!full) {
         total += bytes;
         count += 1;
       }
-      return { name, path, bytes, included };
+      return { name, path, bytes, included: !full };
     });
 }
 
@@ -237,7 +240,9 @@ export function replaceHome(
   platform: NodeJS.Platform = process.platform
 ): string {
   const windows = platform === "win32";
-  const norm = (t: string) => (windows ? t.replaceAll("\\", "/").toLowerCase() : t);
+  // Only ASCII letters are folded: `toLowerCase` can lengthen a string (`İ`), and the cut below needs equal lengths.
+  const norm = (t: string) =>
+    windows ? t.replaceAll("\\", "/").replace(/[A-Z]/g, (c) => c.toLowerCase()) : t;
   const base = norm(home).replace(/\/+$/, "");
   if (base.length <= 1) return text;
   // Same length either way: the replacement is found on the normalized text and cut from the original.

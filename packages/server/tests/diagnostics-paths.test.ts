@@ -30,6 +30,8 @@ test("Windows: either separator, any case", () => {
   expect(withoutHome("c:/USERS/wu", home, "win32")).toBe("~");
   expect(withoutHome("C:\\Users\\Wu2\\proj", home, "win32")).toBe("C:\\Users\\Wu2\\proj");
   expect(withoutHome("C:/Users/Wu.old/x", home, "win32")).toBe("C:/Users/Wu.old/x");
+  // A character whose lower case is longer (İ) before the home directory does not shift where it is cut.
+  expect(withoutHome("İ C:\\Users\\Wu\\proj", home, "win32")).toBe("İ ~\\proj");
 });
 
 test("objects and arrays: every string, a {path, display} pair becomes one string", () => {

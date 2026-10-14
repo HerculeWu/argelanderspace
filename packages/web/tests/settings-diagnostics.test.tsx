@@ -279,7 +279,7 @@ describe("the export dialog", () => {
 });
 
 describe("saving in the system's save window (showSaveFilePicker)", () => {
-  function fakePicker(behaviour: "save" | "cancel") {
+  function fakePicker(behaviour: "save" | "cancel" | "write-fails") {
     const order: string[] = [];
     const written: Blob[] = [];
     const picker = vi.fn(async (options: { suggestedName?: string }) => {
@@ -290,10 +290,14 @@ describe("saving in the system's save window (showSaveFilePicker)", () => {
         createWritable: async () => ({
           write: async (blob: Blob) => {
             order.push("write");
+            if (behaviour === "write-fails") throw new DOMException("No space left.", "QuotaExceededError");
             written.push(blob);
           },
           close: async () => {
             order.push("close");
+          },
+          abort: async () => {
+            order.push("abort");
           },
         }),
       };
@@ -330,6 +334,28 @@ describe("saving in the system's save window (showSaveFilePicker)", () => {
     expect(q('[data-ui="export-diagnostics-result"]')).toBeNull();
     expect((q('[data-ui="export-diagnostics-run"]') as HTMLButtonElement).disabled).toBe(false);
     expect((q('[data-ui="export-diagnostics-cancel"]') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("writing to the chosen file fails: the write is aborted, the export failed, and the empty file is mentioned", async () => {
+    const { order } = fakePicker("write-fails");
+    await openDialog();
+    fireEvent.click(q('[data-ui="export-diagnostics-run"]')!);
+    await waitFor(() => expect(q('[data-ui="export-diagnostics-failed"]')).not.toBeNull());
+    expect(order).toEqual(["picker:0", "write", "abort"]);
+    expect(q('[data-ui="export-diagnostics-failed"]')!.textContent).toBe(
+      "The bundle could not be created. Try again. The place you chose may now hold an empty file; it can be deleted."
+    );
+    expect(q('[data-ui="export-diagnostics-result"]')).toBeNull();
+  });
+
+  it("the export request fails after a place was chosen: the empty file is mentioned, nothing is written", async () => {
+    const { order } = fakePicker("save");
+    exportFails = true;
+    await openDialog();
+    fireEvent.click(q('[data-ui="export-diagnostics-run"]')!);
+    await waitFor(() => expect(q('[data-ui="export-diagnostics-failed"]')).not.toBeNull());
+    expect(order).toEqual(["picker:0"]);
+    expect(q('[data-ui="export-diagnostics-failed"]')!.textContent).toMatch(/may now hold an empty file/);
   });
 
   it("without the window, the bundle goes to the browser's downloads, said as such", async () => {

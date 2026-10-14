@@ -322,6 +322,46 @@ describe("the log directory and the bundle", () => {
     expect(bundle.entries).not.toContain(`compile-failures/jobs/${JOB_B}.compile.log`);
   });
 
+  test("the newest log over the limit stops the list: an older small one stays out too (what is left out is older)", async () => {
+    const jobs = join(dataDir, "jobs");
+    mkdirSync(jobs, { recursive: true });
+    const big = join(jobs, `${JOB_B}.compile.log`);
+    const small = join(jobs, `${JOB_A}.compile.log`);
+    writeFileSync(big, Buffer.alloc(33 * 1024 * 1024, 0x61));
+    writeFileSync(small, "small\n");
+    utimesSync(small, new Date(2020, 0, 1), new Date(2020, 0, 1));
+    const got = await info();
+    expect(got.compileLogs.map((c) => [c.name, c.included])).toEqual([
+      [`compile-failures/jobs/${JOB_B}.compile.log`, false],
+      [`compile-failures/jobs/${JOB_A}.compile.log`, false],
+    ]);
+  });
+
+  test("more than the most files: the newest go in, every older one is listed as left out", async () => {
+    const jobs = join(dataDir, "jobs");
+    mkdirSync(jobs, { recursive: true });
+    const total = DIAGNOSTICS_COMPILE_LOGS_MAX_FILES + 3;
+    for (let i = 0; i < total; i++) {
+      const id = `ingest-${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`;
+      const path = join(jobs, `${id}.compile.log`);
+      writeFileSync(path, "log\n");
+      // i = 0 is the newest.
+      const at = new Date(Date.UTC(2026, 0, 1) - i * 60_000);
+      utimesSync(path, at, at);
+    }
+    const got = await info();
+    expect(got.compileLogs).toHaveLength(total);
+    expect(got.compileLogs.filter((c) => c.included)).toHaveLength(
+      DIAGNOSTICS_COMPILE_LOGS_MAX_FILES
+    );
+    expect(
+      got.compileLogs.slice(0, DIAGNOSTICS_COMPILE_LOGS_MAX_FILES).every((c) => c.included)
+    ).toBe(true);
+    expect(got.compileLogs.slice(DIAGNOSTICS_COMPILE_LOGS_MAX_FILES).some((c) => c.included)).toBe(
+      false
+    );
+  });
+
   test("the environment report: version, form, system, Node, the page's browser, the check, the config file — redacted", async () => {
     const bundle = await exportBundle({ client: "Mozilla/5.0 TestBrowser/1" });
     // biome-ignore lint/suspicious/noExplicitAny: the test reads a JSON document field by field

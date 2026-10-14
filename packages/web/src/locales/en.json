@@ -2584,6 +2584,7 @@
       "exportDone": "Created {{name}} ({{size}}).",
       "exportDoneNote": "It was handed to the browser’s downloads; where it is saved follows the browser’s settings.",
       "exportFailed": "The bundle could not be created. Try again.",
+      "exportFailedPicked": "The place you chose may now hold an empty file; it can be deleted.",
       "done": "Done",
       "exportSaved": "Saved {{name}} ({{size}}) to the location you chose.",
       "zipType": "Zip archive"

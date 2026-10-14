@@ -29,7 +29,7 @@ type Phase =
   | { kind: "idle" }
   | { kind: "busy" }
   | { kind: "done"; name: string; bytes: number; saved: "picker" | "download" }
-  | { kind: "failed" };
+  | { kind: "failed"; picked: boolean };
 
 export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
@@ -56,6 +56,8 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
   const run = async () => {
     const ticked = include && !none && !loading;
     setPhase({ kind: "busy" });
+    // A place chosen in the save window may already hold an empty file when the export then fails.
+    let picked = false;
     try {
       // First, in the click itself: where to save (the system's save window, when there is one).
       const target = await chooseSaveTarget(suggestedBundleName(), t("settings.diagnostics.zipType"));
@@ -64,6 +66,7 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
         setPhase({ kind: "idle" });
         return;
       }
+      picked = target.kind === "picker";
       const bundle = await exportDiagnostics({
         includeCompileLogs: ticked,
         ...(ticked ? { compileLogs: included.map((log) => log.name) } : {}),
@@ -77,7 +80,7 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
         setPhase({ kind: "done", name: bundle.name, bytes: bundle.blob.size, saved: "download" });
       }
     } catch {
-      setPhase({ kind: "failed" });
+      setPhase({ kind: "failed", picked });
     }
   };
 
@@ -162,7 +165,9 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
         </InlineMessage>
       )}
       {phase.kind === "failed" && (
-        <InlineMessage tone="danger" uiId="export-diagnostics-failed">{t("settings.diagnostics.exportFailed")}</InlineMessage>
+        <InlineMessage tone="danger" uiId="export-diagnostics-failed">
+          {phase.picked ? `${t("settings.diagnostics.exportFailed")} ${t("settings.diagnostics.exportFailedPicked")}` : t("settings.diagnostics.exportFailed")}
+        </InlineMessage>
       )}
     </Dialog>
   );
