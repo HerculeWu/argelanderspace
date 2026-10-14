@@ -579,6 +579,8 @@ describe("serve (startServer)", () => {
     });
     printed.mockRestore();
     running.push(srv);
+    // The environment record is written once its probes are done (desktop-app ticket 13 revision): wait for it here.
+    await srv.environmentLogged;
     const port = await srv.ready();
     return { url: `http://127.0.0.1:${port}`, lines };
   }
@@ -705,6 +707,40 @@ describe("serve (startServer)", () => {
       "server.environment",
       "server.started",
     ]);
+  });
+
+  test("the start does not wait for the keychain probe: the lines first, the environment record later", async () => {
+    const dataDir = project();
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lines: string[] = [];
+    const printed = vi.spyOn(console, "log").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const srv = await startServer(["--port", "0", "--data-dir", dataDir, "--web-dist", dataDir], {
+      keychainProbe: async () => {
+        await held;
+        return { state: "available", reason: "secret_service" };
+      },
+    });
+    printed.mockRestore();
+    running.push(srv);
+    // started and printed while the probe is still held
+    expect(lines[0]).toMatch(/^ArgelanderSpace server listening on /);
+    const logDir = isolated(resolveLogDir());
+    expect(readLog(logDir).records.map((record) => record.event)).not.toContain(
+      "server.environment"
+    );
+    release();
+    await srv.environmentLogged;
+    expect(
+      readLog(logDir).records.find((record) => record.event === "server.environment")
+    ).toMatchObject({
+      keychain: "available",
+      keychain_reason: "secret_service",
+    });
   });
 
   test("closing the server stops watching the process", async () => {

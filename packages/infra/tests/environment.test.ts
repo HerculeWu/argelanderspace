@@ -3,12 +3,26 @@
  * a real bus: the isolation setup points the session bus at a socket that does not exist, and the one test that runs
  * the real `dbus-send` asserts that it does), and the version lines of constructed programs.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { checkEnvironment, type DbusSend, probeKeychain, versionLine } from "../src/environment.js";
-import { locateToolchain } from "../src/tex/toolchain.js";
+import {
+  checkEnvironment,
+  type DbusSend,
+  probeKeychain,
+  toolVersion,
+  versionLine,
+} from "../src/environment.js";
+import { locateTool, locateToolchain } from "../src/tex/toolchain.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -181,7 +195,7 @@ describe("version lines", () => {
     // bubblewrap is also looked for in the system directories (where the sandbox runs it from): this machine's, or none
     expect(bwrap === null || /^bubblewrap /.test(String(bwrap))).toBe(true);
     expect(version).toEqual({
-      latexmk: "Latexmk, fake, args: -v",
+      latexmk: "Latexmk, fake, args: -norc -v",
       pdflatex: "pdfTeX fake --version",
       xelatex: null,
       bibtex: null,
@@ -193,3 +207,136 @@ describe("version lines", () => {
     expect(check.keychain).toEqual({ state: "available", reason: "secret_service" });
   });
 });
+
+describe("revision: the bus address, the version lines, and what is never run", () => {
+  test("without DBUS_SESSION_BUS_ADDRESS, $XDG_RUNTIME_DIR/bus is used only when it exists", async () => {
+    const r = mkdtempSync(join(tmpdir(), "aspace-env-run-"));
+    roots.push(r);
+    const bus = fakeBus({ "org.freedesktop.DBus.NameHasOwner": "boolean true" });
+    expect(
+      await probeKeychain({
+        platform: "linux",
+        env: { XDG_RUNTIME_DIR: r },
+        dbusSend: bus.send,
+        moduleLoads: loads,
+      })
+    ).toEqual({ state: "unavailable", reason: "no_bus" });
+    expect(bus.asked).toHaveLength(0);
+    writeFileSync(join(r, "bus"), "");
+    expect(
+      await probeKeychain({
+        platform: "linux",
+        env: { XDG_RUNTIME_DIR: r },
+        dbusSend: bus.send,
+        moduleLoads: loads,
+      })
+    ).toEqual({ state: "available", reason: "secret_service" });
+    expect(bus.asked[0]?.env.DBUS_SESSION_BUS_ADDRESS).toBe(`unix:path=${join(r, "bus")}`);
+  });
+
+  test("invisible characters of every kind are replaced; C1 controls too; cut by code points with an ellipsis", () => {
+    const invisible = [
+      "\u0085",
+      "\u00ad",
+      "\u061c",
+      "\u180e",
+      "\u200b",
+      "\u2028",
+      "\u2029",
+      "\u2066",
+      "\ufeff",
+      "\ufff9",
+      "\ufffb",
+      "\u{e0001}",
+      "\u{e007f}",
+    ];
+    for (const ch of invisible) expect(versionLine(`a${ch}b`)).toBe("a b");
+    const long = versionLine(`${"x".repeat(158)}\u{1f600}\u{1f600}tail`);
+    expect(long).toBe(`${"x".repeat(158)}\u{1f600}…`);
+    expect(Array.from(long ?? "")).toHaveLength(160);
+    // never half of a surrogate pair at the cut
+    const emoji = versionLine("\u{1f600}".repeat(200)) ?? "";
+    expect(emoji.endsWith("\u{1f600}…")).toBe(true);
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])/.test(emoji)).toBe(false);
+  });
+
+  test("a program that does not answer in time has no version line; a batch file is never run", async () => {
+    const r = mkdtempSync(join(tmpdir(), "aspace-env-slow-"));
+    roots.push(r);
+    const slow = join(r, "biber");
+    writeFileSync(slow, "#!/bin/sh\nsleep 5\necho late\n");
+    chmodSync(slow, 0o755);
+    const started = Date.now();
+    expect(
+      await toolVersion("biber", { path: slow, source: "path" }, {}, { cwd: r, timeoutMs: 300 })
+    ).toBeNull();
+    expect(Date.now() - started).toBeLessThan(3000);
+    const mark = join(r, "batch-ran");
+    for (const name of ["latexmk.bat", "latexmk.CMD"]) {
+      const bat = join(r, name);
+      writeFileSync(bat, `#!/bin/sh\necho ran > ${JSON.stringify(mark)}\necho Latexmk\n`);
+      chmodSync(bat, 0o755);
+      expect(
+        await toolVersion("latexmk", { path: bat, source: "path" }, {}, { cwd: r })
+      ).toBeNull();
+    }
+    expect(existsSync(mark)).toBe(false);
+  });
+
+  test("the version commands run in an empty directory of their own, removed afterwards", async () => {
+    const r = mkdtempSync(join(tmpdir(), "aspace-env-cwd-"));
+    roots.push(r);
+    const bin = join(r, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "latexmk"), '#!/bin/sh\necho "cwd: $(pwd) files: $(ls -A | wc -l)"\n');
+    chmodSync(join(bin, "latexmk"), 0o755);
+    const before = readdirSync(tmpdir()).filter((n) => n.startsWith("aspace-env-check-"));
+    const check = await checkEnvironment({
+      toolchain: locateToolchain({ platform: "linux", env: { PATH: bin } }),
+      keychain: async () => ({ state: "unknown", reason: "no_probe" }),
+    });
+    const line = check.tools.find((t) => t.tool === "latexmk")?.version ?? "";
+    expect(line).toMatch(/^cwd: .*aspace-env-check-.* files: 0$/);
+    const after = readdirSync(tmpdir()).filter((n) => n.startsWith("aspace-env-check-"));
+    expect(after.sort()).toEqual(before.sort());
+  });
+});
+
+const REAL_LATEXMK = locateTool("latexmk");
+describe.skipIf(REAL_LATEXMK === null)(
+  "the real latexmk is asked for its version without reading an rc file",
+  () => {
+    test("a latexmkrc in the working directory and a ~/.latexmkrc that leave a mark: no mark, a normal line", async () => {
+      // the home directory is the isolated one of this test file (isolate-user-dirs.ts)
+      expect(homedir().startsWith(tmpdir())).toBe(true);
+      const r = mkdtempSync(join(tmpdir(), "aspace-env-rc-"));
+      roots.push(r);
+      const markHome = join(r, "home-rc-ran");
+      const markCwd = join(r, "cwd-rc-ran");
+      const homeRc = join(homedir(), ".latexmkrc");
+      writeFileSync(
+        homeRc,
+        `open(my $f, '>', ${JSON.stringify(markHome)}); print $f "x"; close $f; print "RC OUTPUT\\n";\n`
+      );
+      const previous = process.cwd();
+      writeFileSync(
+        join(r, "latexmkrc"),
+        `open(my $f, '>', ${JSON.stringify(markCwd)}); print $f "x"; close $f; print "RC OUTPUT\\n";\n`
+      );
+      process.chdir(r);
+      try {
+        const check = await checkEnvironment({
+          toolchain: locateToolchain(),
+          keychain: async () => ({ state: "unknown", reason: "no_probe" }),
+        });
+        const line = check.tools.find((t) => t.tool === "latexmk")?.version ?? "";
+        expect(line).toMatch(/^Latexmk, /);
+        expect(existsSync(markHome)).toBe(false);
+        expect(existsSync(markCwd)).toBe(false);
+      } finally {
+        process.chdir(previous);
+        rmSync(homeRc, { force: true });
+      }
+    });
+  }
+);

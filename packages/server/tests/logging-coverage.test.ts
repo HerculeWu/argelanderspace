@@ -402,6 +402,26 @@ test("the start: which tools were found and from where, by name only; whether th
   expectNoMarkers();
 });
 
+test("the start record names what is the matter with the TeX directory: missing, no latexmk, not absolute", async () => {
+  const empty = join(root, "empty-texdir");
+  mkdirSync(empty, { recursive: true });
+  const cases: [string, string][] = [
+    [join(root, "no-such-texdir"), "missing"],
+    [empty, "no_latexmk"],
+    ["relative/texdir", "not_absolute"],
+  ];
+  for (const [texDir, state] of cases) {
+    const from = mark();
+    await logEnvironment(log, {
+      toolchain: locateToolchain({ texDir, platform: "linux", env: { PATH: join(root, "bin") } }),
+      keychain: async () => ({ state: "unknown", reason: "no_probe" }),
+    });
+    const [record] = eventsNamed("server.environment", from);
+    expect(record?.tex_dir).toBe(state);
+    expect(JSON.stringify(record)).not.toContain(texDir);
+  }
+});
+
 test("mail watcher: a refused login is a state and a code — not the server's reply, the address or the password", async () => {
   await vi.waitFor(
     () => expect(eventsNamed("mail_watch.state_changed").at(-1)?.state).toBe("auth_failed"),

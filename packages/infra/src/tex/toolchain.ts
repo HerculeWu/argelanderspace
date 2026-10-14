@@ -265,23 +265,51 @@ export interface Toolchain {
   texDir: string | null;
   texDirState: TexDirState;
   tools: Record<ToolchainTool, LocatedTool | null>;
-  /** The directory latexmk was found in: put first on the PATH latexmk runs with, so it finds its engines beside it. */
+  /**
+   * The directory put first on the PATH latexmk runs with, so it finds its engines beside it: latexmk's own directory
+   * when it was found in the TeX directory or a usual install location; null when it was found on PATH (the user's PATH
+   * is left as it is) or not at all.
+   */
   texBinDir: string | null;
 }
+
+/** The engines and bibliography programs latexmk runs: looked for where latexmk will find them. */
+const LATEXMK_RUNS: readonly ToolchainTool[] = ["pdflatex", "xelatex", "bibtex", "biber"];
 
 export function locateToolchain(opts: LocateOptions = {}): Toolchain {
   const ctx = contextOf(opts);
   const texDir = blank(opts.texDir) ? null : (opts.texDir as string).trim();
+  const latexmk = locateTool("latexmk", opts);
+  // The directory put first on latexmk's PATH: only when latexmk was found in the TeX directory or a usual place. Found
+  // on PATH, the user's PATH is left as it is, so nothing earlier on it (a newer biber, say) is shadowed.
+  const texBinDir =
+    latexmk === null || latexmk.source === "path"
+      ? null
+      : pathOf(ctx.platform).dirname(latexmk.path);
   const tools = Object.fromEntries(
-    TOOLCHAIN_TOOLS.map((tool) => [tool, locateTool(tool, opts)])
+    TOOLCHAIN_TOOLS.map((tool) => {
+      if (tool === "latexmk") return [tool, latexmk];
+      // With latexmk found, what it runs is what its PATH gives: its own directory (when that is put first), then
+      // PATH — not the TeX directory or a usual place by themselves. So the check reports the programs the compile uses.
+      if (latexmk !== null && LATEXMK_RUNS.includes(tool)) {
+        const beside = texBinDir === null ? null : inDirectory(tool, texBinDir, ctx);
+        if (beside !== null && latexmk.source !== "path")
+          return [tool, { path: beside, source: latexmk.source }];
+        for (const dir of pathDirs(ctx)) {
+          const found = inDirectory(tool, dir, ctx);
+          if (found !== null) return [tool, { path: found, source: "path" }];
+        }
+        return [tool, null];
+      }
+      return [tool, locateTool(tool, opts)];
+    })
   ) as Record<ToolchainTool, LocatedTool | null>;
-  const latexmk = tools.latexmk;
   return {
     platform: ctx.platform,
     texDir,
     texDirState: texDirState(texDir, ctx.platform, opts),
     tools,
-    texBinDir: latexmk === null ? null : pathOf(ctx.platform).dirname(latexmk.path),
+    texBinDir,
   };
 }
 

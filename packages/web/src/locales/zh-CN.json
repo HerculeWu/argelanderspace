@@ -2443,6 +2443,7 @@
       "foundAt": "位置",
       "affects": "缺失时不可用",
       "listSeparator": "、",
+      "fallback": "（改用 {{engine}}）",
       "source": {
         "tex_dir": "TeX 程序目录",
         "path": "PATH",
@@ -2465,8 +2466,8 @@
       "feature": {
         "latex_ingest": "LaTeX 摄入",
         "writer_render": "Writer 渲染",
-        "pdflatex": "用 pdflatex 的编译（改用 xelatex）",
-        "xelatex": "用 xelatex 的编译（改用 pdflatex）",
+        "pdflatex": "用 pdflatex 的编译",
+        "xelatex": "用 xelatex 的编译",
         "bibtex": "用 bibtex 的参考文献处理",
         "biber": "用 biber 的参考文献处理",
         "figures": "LaTeX 摄入时 PDF 与 EPS 图片的转换",
@@ -2475,6 +2476,10 @@
       },
       "noSandboxTitle": "本机没有编译沙箱",
       "noSandboxBody": "Copilot 可以修改稿件文字，但不会触发编译；你自己点 Render 仍可编译（不在沙箱里运行）。",
+      "sandboxTexMissingTitle": "Writer 渲染在沙箱里找不到这个 TeX",
+      "sandboxTexMissingBody": "编译沙箱只看得到系统目录和启动工作台时 PATH 上的 TeX，看不到上面配置的 TeX 程序目录，所以 Writer 渲染会失败（不会改为在沙箱外编译）。LaTeX 摄入不受影响。要让 Writer 用这个 TeX，请把这个目录加入启动工作台时的 PATH，然后重启工作台。",
+      "sandboxTexOtherTitle": "Writer 渲染在沙箱里用的是另一套 TeX",
+      "sandboxTexOtherBody": "编译沙箱只看得到系统目录和启动工作台时 PATH 上的 TeX，看不到上面配置的 TeX 程序目录；LaTeX 摄入用配置目录里的 TeX，Writer 渲染用沙箱里的这一套：",
       "noTexTitle": "没有找到 TeX",
       "noTexBody": "阅读 PDF、标注、计划、邮件和 Copilot 照常可用；LaTeX 摄入和 Writer 渲染需要先安装 TeX，或在上面指定 TeX 程序目录。"
     },

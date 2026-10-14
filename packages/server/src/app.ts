@@ -272,6 +272,8 @@ export interface AppDeps {
    * probe that asks only the D-Bus daemon — never the keychain itself (infra `probeKeychain`).
    */
   keychainProbe?: (() => Promise<import("@argelanderspace/infra").KeychainProbe>) | undefined;
+  /** Tests only: where the environment check looks for the Writer sandbox's latexmk (infra `sandbox-view.ts`). */
+  sandboxView?: import("@argelanderspace/infra").SandboxViewOptions | undefined;
   /** Where `serve` keeps the process's data, fixed at its start (settings.ts `startupLocations`); default null. */
   startup?: import("@argelanderspace/contracts").StartupLocations | null;
   /**
@@ -567,6 +569,7 @@ export function createApp(deps: AppDeps): Hono {
   mountEnvironmentRoutes(app, guardCsrf, {
     configPath: deps.configPath,
     keychain: deps.keychainProbe,
+    sandboxView: deps.sandboxView,
     observer,
   });
 

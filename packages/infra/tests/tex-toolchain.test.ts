@@ -12,6 +12,7 @@ import {
   locateTool,
   locateToolchain,
   TOOLCHAIN_TOOLS,
+  texChildEnv,
   texChildPath,
   texDirState,
 } from "../src/tex/toolchain.js";
@@ -243,5 +244,84 @@ describe("Windows (constructed layout, injected platform)", () => {
     });
     expect(chain.texBinDir).toBe("D:\\tex");
     expect(texChildPath(chain, "C:\\Windows", "win32")).toBe("D:\\tex;C:\\Windows");
+  });
+});
+
+describe("the PATH latexmk runs with (ticket 13 revision)", () => {
+  test("found on PATH: the user's PATH is left as it is (a newer biber earlier on PATH is not shadowed)", () => {
+    const r = root();
+    const early = join(r, "early");
+    const tex = join(r, "texlive");
+    exe(early, "biber");
+    for (const name of ["latexmk", "pdflatex", "biber"]) exe(tex, name);
+    const chain = locateToolchain({ platform: "linux", env: { PATH: `${early}:${tex}` } });
+    expect(chain.tools.latexmk).toEqual({ path: join(tex, "latexmk"), source: "path" });
+    expect(chain.texBinDir).toBeNull();
+    expect(texChildPath(chain, `${early}:${tex}`, "linux")).toBe(`${early}:${tex}`);
+    expect(texChildEnv(chain, { PATH: `${early}:${tex}`, X: "1" }, "linux")).toEqual({
+      PATH: `${early}:${tex}`,
+      X: "1",
+    });
+    // what latexmk will run is what is reported: the biber that comes first on PATH
+    expect(chain.tools.biber).toEqual({ path: join(early, "biber"), source: "path" });
+  });
+
+  test("found in the TeX directory or a usual place: that directory comes first", () => {
+    const r = root();
+    const tex = join(r, "texbin");
+    exe(tex, "latexmk");
+    const viaDir = locateToolchain({ texDir: tex, platform: "linux", env: { PATH: "/usr/bin" } });
+    expect(texChildPath(viaDir, "/usr/bin", "linux")).toBe(`${tex}:/usr/bin`);
+    const fsPath = (p: string) => join(r, "mac", p);
+    exe(fsPath("/Library/TeX/texbin"), "latexmk");
+    const viaCommon = locateToolchain({ platform: "darwin", env: { PATH: "/usr/bin" }, fsPath });
+    expect(viaCommon.tools.latexmk?.source).toBe("common");
+    expect(texChildPath(viaCommon, "/usr/bin", "darwin")).toBe("/Library/TeX/texbin:/usr/bin");
+  });
+});
+
+describe("the engines are reported as latexmk will find them (ticket 13 revision)", () => {
+  test("the TeX directory has engines but no latexmk: latexmk comes from PATH, and so do its engines", () => {
+    const r = root();
+    const tex = join(r, "texbin");
+    const bin = join(r, "bin");
+    exe(tex, "pdflatex");
+    exe(tex, "xelatex");
+    exe(bin, "latexmk");
+    exe(bin, "pdflatex");
+    const chain = locateToolchain({ texDir: tex, platform: "linux", env: { PATH: bin } });
+    expect(chain.texDirState).toBe("no_latexmk");
+    expect(chain.tools.latexmk).toEqual({ path: join(bin, "latexmk"), source: "path" });
+    expect(chain.tools.pdflatex).toEqual({ path: join(bin, "pdflatex"), source: "path" });
+    // xelatex is only in the TeX directory, which latexmk does not see: missing for the compile
+    expect(chain.tools.xelatex).toBeNull();
+  });
+
+  test("latexmk in the TeX directory: an engine beside it comes from there, one that is not, from PATH", () => {
+    const r = root();
+    const tex = join(r, "texbin");
+    const bin = join(r, "bin");
+    exe(tex, "latexmk");
+    exe(tex, "pdflatex");
+    exe(bin, "pdflatex");
+    exe(bin, "xelatex");
+    const chain = locateToolchain({ texDir: tex, platform: "linux", env: { PATH: bin } });
+    expect(chain.tools.pdflatex).toEqual({ path: join(tex, "pdflatex"), source: "tex_dir" });
+    expect(chain.tools.xelatex).toEqual({ path: join(bin, "xelatex"), source: "path" });
+  });
+});
+
+describe("Windows PATHEXT is read from the environment", () => {
+  test("an extension the environment's PATHEXT lists counts; one the default lists but it does not, does not", () => {
+    const r = root();
+    const fsPath = (p: string) =>
+      join(r, ...p.replace(/^[A-Za-z]:/, (d) => d.slice(0, 1).toUpperCase()).split(/[\\/]+/));
+    exe(fsPath("C:\\tools"), "biber.ps1");
+    exe(fsPath("C:\\tools"), "latexmk.exe");
+    const env = { Path: "C:\\tools", PATHEXT: ".PS1" };
+    expect(locateTool("biber", { platform: "win32", env, fsPath })?.path).toBe(
+      win32.join("C:\\tools", "biber.ps1")
+    );
+    expect(locateTool("latexmk", { platform: "win32", env, fsPath })).toBeNull();
   });
 });

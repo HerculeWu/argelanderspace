@@ -2443,6 +2443,7 @@
       "foundAt": "Location",
       "affects": "Unavailable without it",
       "listSeparator": ", ",
+      "fallback": " ({{engine}} is used instead)",
       "source": {
         "tex_dir": "TeX program directory",
         "path": "PATH",
@@ -2465,8 +2466,8 @@
       "feature": {
         "latex_ingest": "LaTeX ingest",
         "writer_render": "Writer rendering",
-        "pdflatex": "Compiling with pdflatex (xelatex is used instead)",
-        "xelatex": "Compiling with xelatex (pdflatex is used instead)",
+        "pdflatex": "Compiling with pdflatex",
+        "xelatex": "Compiling with xelatex",
         "bibtex": "Bibliography processing with bibtex",
         "biber": "Bibliography processing with biber",
         "figures": "PDF and EPS figure conversion during LaTeX ingest",
@@ -2475,6 +2476,10 @@
       },
       "noSandboxTitle": "No compile sandbox on this machine",
       "noSandboxBody": "Copilot can edit manuscript text but will not trigger compilation. Pressing Render yourself still compiles (outside a sandbox).",
+      "sandboxTexMissingTitle": "Writer rendering cannot find this TeX in the sandbox",
+      "sandboxTexMissingBody": "The compile sandbox sees only the system directories and the TeX on the PATH the workbench was started with, not the TeX program directory set above, so Writer rendering fails (it never falls back to compiling outside the sandbox). LaTeX ingest is not affected. To let the Writer use this TeX, add this directory to the PATH the workbench is started with, then restart the workbench.",
+      "sandboxTexOtherTitle": "Writer rendering uses another TeX in the sandbox",
+      "sandboxTexOtherBody": "The compile sandbox sees only the system directories and the TeX on the PATH the workbench was started with, not the TeX program directory set above; LaTeX ingest uses the TeX of that directory, Writer rendering uses this one in the sandbox:",
       "noTexTitle": "TeX was not found",
       "noTexBody": "Reading PDFs, annotations, plans, mail and Copilot work as usual. LaTeX ingest and Writer rendering need TeX installed, or a TeX program directory set above."
     },

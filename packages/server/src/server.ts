@@ -46,6 +46,7 @@ import {
   readAdsToken,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
+  type SandboxViewOptions,
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
@@ -144,6 +145,8 @@ export interface ServerOptions {
    * hand in a fake. Default infra `probeKeychain`, which asks only the D-Bus daemon, never the keychain.
    */
   keychainProbe?: (() => Promise<KeychainProbe>) | undefined;
+  /** Tests only: where the environment check looks for the Writer sandbox's latexmk (infra `sandbox-view.ts`). */
+  sandboxView?: SandboxViewOptions | undefined;
 }
 
 export interface RunningServer {
@@ -279,6 +282,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     adsCredentials,
     adsDevKeyPath: opts.adsDevKeyPath,
     keychainProbe: opts.keychainProbe,
+    sandboxView: opts.sandboxView,
     adsTestFetch:
       observer === undefined && opts.fetchImpl === undefined
         ? undefined
@@ -487,6 +491,8 @@ export function serveStart(
 export interface StartOptions {
   /** The version of the program that is starting the server, for the start record. */
   version?: string;
+  /** Tests only: the keychain probe of the start record (default infra `probeKeychain`). */
+  keychainProbe?: () => Promise<KeychainProbe>;
 }
 
 /**
@@ -497,7 +503,7 @@ export interface StartOptions {
 export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
-): Promise<RunningServer> {
+): Promise<RunningServer & { environmentLogged: Promise<void> }> {
   const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
@@ -538,9 +544,12 @@ export async function startServer(
     configProblems: problems,
   });
   // The full lookup (TeX directory, PATH, usual places) and whether the keychain can be used — asked of the bus daemon
-  // only, never of the keychain (desktop-app ticket 13).
-  await logEnvironment(serveLog.log, {
+  // only, never of the keychain (desktop-app ticket 13). Not waited for: the keychain probe may take a few seconds (two
+  // D-Bus calls of at most 3 s each), and the start does not wait for it — the record is written when it is done (and
+  // not at all if the server closes first). `environmentLogged` resolves then.
+  const environmentLogged = logEnvironment(serveLog.log, {
     toolchain: currentToolchain(configFilePath()),
+    ...(start.keychainProbe ? { keychain: start.keychainProbe } : {}),
   });
   // These three lines are what `serve` prints to the terminal; the log does not replace them.
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
@@ -551,5 +560,5 @@ export async function startServer(
     console.error(line);
   }
   const close = srv.close;
-  return { ...srv, close: () => close().finally(() => serveLog.close()) };
+  return { ...srv, environmentLogged, close: () => close().finally(() => serveLog.close()) };
 }

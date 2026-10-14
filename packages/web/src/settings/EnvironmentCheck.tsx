@@ -87,6 +87,20 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
   const { t } = useTranslation();
   const { report, checking, failed } = state;
   const latexmk = report?.tools.find((tool) => tool.tool === "latexmk");
+  /** A label from a table, or the identifier itself when this page does not know it (a newer server). */
+  const label = <K extends string>(table: Partial<Record<K, string>>, key: K): string => {
+    const k = table[key];
+    return k === undefined ? key : t(k as never);
+  };
+  // Without one engine latexmk compiles with the other: said only when the other one was found.
+  const found = (name: EnvironmentTool) => report?.tools.find((tool) => tool.tool === name)?.found === true;
+  const featureText = (feature: EnvironmentFeature): string => {
+    const text = label(FEATURE_LABEL, feature);
+    if (feature === "pdflatex" && found("xelatex")) return `${text}${t("settings.tex.fallback", { engine: "xelatex" })}`;
+    if (feature === "xelatex" && found("pdflatex")) return `${text}${t("settings.tex.fallback", { engine: "pdflatex" })}`;
+    return text;
+  };
+  const sandboxTex = report?.sandbox === "available" ? report.writerSandboxTex : null;
   return (
     <section className="st-env" data-ui="environment-check" data-state={checking ? "checking" : "done"} aria-labelledby="env-h" aria-busy={checking}>
       <div className="st-sub-head">
@@ -110,49 +124,51 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
       {report === null ? (
         checking && <p className="st-note" data-ui="environment-loading" role="status">{t("settings.tex.checking")}</p>
       ) : (
-        <div className="st-table" role="list" aria-label={t("settings.tex.envCheck")}>
+        <div className="st-table" role="table" aria-label={t("settings.tex.envCheck")}>
           {report.tools.map((tool) => (
-            <div className="st-tr" role="listitem" key={tool.tool} data-ui="environment-tool" data-ui-key={tool.tool} data-found={tool.found}>
-              <div className="st-td name">
+            // biome-ignore lint/a11y/useFocusableInteractive: a static table read row by row (the prototype's roles)
+            <div className="st-tr" role="row" key={tool.tool} data-ui="environment-tool" data-ui-key={tool.tool} data-found={tool.found}>
+              <div className="st-td name" role="cell">
                 <code>{tool.tool}</code>
                 {OPTIONAL.has(tool.tool) && <span className="st-opt">{t("settings.tex.optional")}</span>}
               </div>
-              <div className="st-td state">
+              <div className="st-td state" role="cell">
                 {tool.found ? (
                   <span className="st-pill ok"><Icon name="check" cls="ico-sm" />{t("settings.tex.found")}</span>
                 ) : (
                   <span className="st-pill warn"><Icon name="circle-alert" cls="ico-sm" />{t("settings.tex.notFound")}</span>
                 )}
               </div>
-              <div className="st-td detail">
+              <div className="st-td detail" role="cell">
                 {tool.found ? (
                   <>
                     {tool.version !== null && <code className="st-ver" data-ui="environment-version">{tool.version}</code>}
                     <span className="st-where" data-ui="environment-location" data-source={tool.source ?? undefined}>
                       {t("settings.tex.foundAt")}
-                      {tool.source !== null && <span className="st-from"> · {t(SOURCE_LABEL[tool.source])}</span>}
+                      {tool.source !== null && <span className="st-from"> · {label(SOURCE_LABEL, tool.source)}</span>}
                       : <code className="st-path" title={tool.path?.path}>{tool.path?.display}</code>
                     </span>
                   </>
                 ) : (
                   <span className="st-affects" data-ui="environment-affects">
-                    {t("settings.tex.affects")}: {tool.affects.map((feature) => t(FEATURE_LABEL[feature])).join(t("settings.tex.listSeparator"))}
+                    {t("settings.tex.affects")}: {tool.affects.map((feature) => featureText(feature)).join(t("settings.tex.listSeparator"))}
                   </span>
                 )}
               </div>
             </div>
           ))}
-          <div className="st-tr" role="listitem" data-ui="environment-tool" data-ui-key="keychain" data-found={report.keychain.state === "available"} data-state={report.keychain.state}>
-            <div className="st-td name"><code>{t("settings.tex.keychain")}</code></div>
-            <div className="st-td state">
+          {/* biome-ignore lint/a11y/useFocusableInteractive: a static table read row by row (the prototype's roles) */}
+          <div className="st-tr" role="row" data-ui="environment-tool" data-ui-key="keychain" data-found={report.keychain.state === "available"} data-state={report.keychain.state}>
+            <div className="st-td name" role="cell"><code>{t("settings.tex.keychain")}</code></div>
+            <div className="st-td state" role="cell">
               {report.keychain.state === "available" ? (
                 <span className="st-pill ok"><Icon name="check" cls="ico-sm" />{t("settings.tex.available")}</span>
               ) : (
                 <span className="st-pill warn"><Icon name="circle-alert" cls="ico-sm" />{report.keychain.state === "unknown" ? t("settings.tex.unknown") : t("settings.tex.unavailable")}</span>
               )}
             </div>
-            <div className="st-td detail">
-              <span className="st-where" data-ui="environment-keychain-reason">{t(KEYCHAIN_REASON_LABEL[report.keychain.reason])}</span>
+            <div className="st-td detail" role="cell">
+              <span className="st-where" data-ui="environment-keychain-reason">{label(KEYCHAIN_REASON_LABEL, report.keychain.reason)}</span>
               {report.keychain.state !== "available" && <span className="st-affects">{t("settings.tex.affects")}: {t("settings.tex.keychainAffects")}</span>}
             </div>
           </div>
@@ -160,6 +176,15 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
       )}
       {latexmk !== undefined && !latexmk.found && (
         <InlineMessage tone="warning" uiId="env-no-tex" title={t("settings.tex.noTexTitle")}>{t("settings.tex.noTexBody")}</InlineMessage>
+      )}
+      {sandboxTex?.state === "not_found" && (
+        <InlineMessage tone="warning" uiId="env-sandbox-tex" title={t("settings.tex.sandboxTexMissingTitle")}>{t("settings.tex.sandboxTexMissingBody")}</InlineMessage>
+      )}
+      {sandboxTex?.state === "different" && (
+        <InlineMessage tone="info" uiId="env-sandbox-tex" title={t("settings.tex.sandboxTexOtherTitle")}>
+          {t("settings.tex.sandboxTexOtherBody")}{" "}
+          <code className="st-path" data-ui="env-sandbox-tex-path" title={sandboxTex.path?.path}>{sandboxTex.path?.display}</code>
+        </InlineMessage>
       )}
       {report !== null && report.sandbox === "unavailable" && (
         <InlineMessage tone="info" uiId="env-no-sandbox" title={t("settings.tex.noSandboxTitle")}>{t("settings.tex.noSandboxBody")}</InlineMessage>

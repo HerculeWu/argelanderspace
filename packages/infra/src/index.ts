@@ -70,5 +70,6 @@ export * from "./tex/ingest.js";
 export * from "./tex/instrument.js";
 export * from "./tex/proc.js";
 export * from "./tex/sandbox.js";
+export * from "./tex/sandbox-view.js";
 export * from "./tex/toolchain.js";
 export * from "./tex/workspace.js";

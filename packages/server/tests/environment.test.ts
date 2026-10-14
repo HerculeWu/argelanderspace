@@ -7,7 +7,7 @@
  */
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   ENVIRONMENT_TOOLS,
   type EnvironmentReport,
@@ -52,7 +52,11 @@ function fillBin(except: string[] = []): void {
 
 async function start(extra: Partial<Parameters<typeof createServer>[0]> = {}): Promise<void> {
   srv = createServer({
-    dataDir: makeDataDir(),
+    dataDir: (() => {
+      const dir = makeDataDir();
+      made.push(dirname(dir));
+      return dir;
+    })(),
     port: 0,
     heartbeatMs: 0,
     webDist: null,
@@ -86,9 +90,12 @@ beforeAll(() => {
   configPath = join(root, "config.toml");
   __setWriterSandboxForTests(true);
 });
+/** The temporary project directories `makeDataDir` made: removed after each test. */
+const made: string[] = [];
 afterEach(async () => {
   await srv?.close();
   srv = undefined;
+  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
   process.env.PATH = ORIGINAL_PATH;
   rmSync(configPath, { force: true });
   keychain = { state: "available", reason: "secret_service" };
@@ -222,5 +229,58 @@ describe("GET /api/environment", () => {
       headers: { origin: "https://evil.example" },
     });
     expect(res.status).toBe(403);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+  });
+
+  test("a check running when tex_dir changes is not shared with a request that arrives after the change", async () => {
+    fillBin();
+    // latexmk on PATH answers slowly: the first check is still running when the file changes
+    writeFileSync(join(bin, "latexmk"), '#!/bin/sh\n/bin/sleep 1.5\necho "Latexmk, slow"\n');
+    chmodSync(join(bin, "latexmk"), 0o755);
+    process.env.PATH = bin;
+    await start();
+    const first = check();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const texDir = join(root, "texbin-later");
+    program(texDir, "latexmk", "Latexmk from the TeX directory");
+    writeFileSync(configPath, `tex_dir = ${JSON.stringify(texDir)}\n`);
+    const second = await check();
+    expect(second.body.texDir.state).toBe("ok");
+    expect(tool(second.body, "latexmk")).toMatchObject({
+      source: "tex_dir",
+      version: "Latexmk from the TeX directory",
+    });
+    const firstBody = (await first).body;
+    expect(firstBody.texDir.state).toBe("unset");
+    expect(tool(firstBody, "latexmk")).toMatchObject({ source: "path", version: "Latexmk, slow" });
+  });
+
+  test("the Writer sandbox and the TeX directory: not found, another TeX, the same; never asked without a sandbox", async () => {
+    fillBin(["latexmk", "pdflatex", "xelatex", "bibtex", "biber"]);
+    process.env.PATH = bin;
+    const texDir = join(root, "texbin-sb");
+    program(texDir, "latexmk", "Latexmk from the TeX directory");
+    const systemDir = join(root, "system-bin");
+    mkdirSync(systemDir, { recursive: true });
+    writeFileSync(configPath, `tex_dir = ${JSON.stringify(texDir)}\n`);
+    await start({ sandboxView: { systemDirs: [systemDir] } });
+    let { body } = await check();
+    expect(body.writerSandboxTex).toEqual({ state: "not_found", path: null });
+    program(systemDir, "latexmk", "Latexmk of the system");
+    ({ body } = await check());
+    expect(body.writerSandboxTex).toEqual({
+      state: "different",
+      path: { path: join(systemDir, "latexmk"), display: join(systemDir, "latexmk") },
+    });
+    writeFileSync(configPath, `tex_dir = ${JSON.stringify(systemDir)}\n`);
+    ({ body } = await check());
+    expect(body.writerSandboxTex.state).toBe("same");
+    __setWriterSandboxForTests(false);
+    try {
+      ({ body } = await check());
+      expect(body.writerSandboxTex).toEqual({ state: "not_applicable", path: null });
+    } finally {
+      __setWriterSandboxForTests(true);
+    }
   });
 });

@@ -93,6 +93,17 @@ export type KeychainReason = (typeof KEYCHAIN_REASONS)[number];
 
 export const ENVIRONMENT_PLATFORMS = ["linux", "darwin", "win32"] as const;
 
+/**
+ * Whether the Writer's compile sandbox sees the TeX the workbench found (ticket 13 revision; user decision 2026-10-14:
+ * the sandbox is not changed, the check says so). The sandbox has its own PATH — the system directories and the TeX
+ * directories it found on the server's PATH — so a TeX only in the configured TeX directory is not there: `not_found`
+ * (Writer rendering fails in the sandbox; it never falls back to compiling outside it), or `different` when the system
+ * directories hold another TeX, which the sandbox then uses (`path`). `same`; `not_applicable` without a sandbox or
+ * without latexmk.
+ */
+export const SANDBOX_TEX_STATES = ["same", "different", "not_found", "not_applicable"] as const;
+export type SandboxTexState = (typeof SANDBOX_TEX_STATES)[number];
+
 export interface EnvironmentReport {
   version: 1;
   /** The platform the lookup used (anything but macOS and Windows is looked up like Linux). */
@@ -102,24 +113,45 @@ export interface EnvironmentReport {
   keychain: { state: KeychainState; reason: KeychainReason };
   /** Whether the Writer's compile sandbox works (bubblewrap runs): without it the Copilot never causes a compile. */
   sandbox: "available" | "unavailable";
+  /** Which latexmk the sandbox would run, compared with the one found ({@link SANDBOX_TEX_STATES}). */
+  writerSandboxTex: { state: SandboxTexState; path: ShownPath | null };
 }
 
-/** Whether `value` is a report this version of the page can show. */
+const oneOf = (list: readonly string[], value: unknown): boolean =>
+  typeof value === "string" && list.includes(value);
+const isShownPath = (value: unknown): boolean =>
+  value === null ||
+  (typeof value === "object" &&
+    typeof (value as { path?: unknown }).path === "string" &&
+    typeof (value as { display?: unknown }).display === "string");
+
+/** Whether `value` is a report this version of the page can show: every field of the shape, every enum a known value. */
 export function isEnvironmentReport(value: unknown): value is EnvironmentReport {
   const v = value as Partial<EnvironmentReport> | null;
   return (
     typeof v === "object" &&
     v !== null &&
     v.version === 1 &&
+    oneOf(ENVIRONMENT_PLATFORMS, v.platform) &&
     Array.isArray(v.tools) &&
     v.tools.every(
       (t) =>
-        (ENVIRONMENT_TOOLS as readonly unknown[]).includes(t?.tool) &&
+        typeof t === "object" &&
+        t !== null &&
+        oneOf(ENVIRONMENT_TOOLS, t.tool) &&
         typeof t.found === "boolean" &&
-        Array.isArray(t.affects)
+        (t.source === null || oneOf(TOOL_SOURCES, t.source)) &&
+        isShownPath(t.path) &&
+        (t.version === null || typeof t.version === "string") &&
+        Array.isArray(t.affects) &&
+        t.affects.every((feature) => oneOf(ENVIRONMENT_FEATURES, feature))
     ) &&
-    (TEX_DIR_STATES as readonly unknown[]).includes(v.texDir?.state) &&
-    (KEYCHAIN_STATES as readonly unknown[]).includes(v.keychain?.state) &&
-    (v.sandbox === "available" || v.sandbox === "unavailable")
+    oneOf(TEX_DIR_STATES, v.texDir?.state) &&
+    isShownPath(v.texDir?.path ?? null) &&
+    oneOf(KEYCHAIN_STATES, v.keychain?.state) &&
+    oneOf(KEYCHAIN_REASONS, v.keychain?.reason) &&
+    (v.sandbox === "available" || v.sandbox === "unavailable") &&
+    oneOf(SANDBOX_TEX_STATES, v.writerSandboxTex?.state) &&
+    isShownPath(v.writerSandboxTex?.path ?? null)
   );
 }

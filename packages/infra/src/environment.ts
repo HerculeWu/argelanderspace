@@ -23,7 +23,9 @@
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { posix } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, posix } from "node:path";
 import type { KeychainReason, KeychainState } from "@argelanderspace/contracts";
 import {
   currentToolchain,
@@ -53,7 +55,8 @@ function runCapture(
   cmd: string,
   args: readonly string[],
   env: Record<string, string>,
-  timeoutMs: number
+  timeoutMs: number,
+  cwd: string
 ): Promise<{ ok: true; stdout: string; stderr: string } | { ok: false; missing: boolean }> {
   return new Promise((resolve) => {
     let done = false;
@@ -67,7 +70,7 @@ function runCapture(
     };
     let child: ReturnType<typeof spawn>;
     try {
-      child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+      child = spawn(cmd, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     } catch {
       resolve({ ok: false, missing: false });
       return;
@@ -203,7 +206,8 @@ export async function probeKeychain(opts: KeychainProbeOptions = {}): Promise<Ke
 
 /** The fixed option each program prints its version for. */
 const VERSION_ARGS: Record<ToolchainTool, readonly string[]> = {
-  latexmk: ["-v"],
+  // -norc: latexmk reads no rc file (latexmkrc in the working directory, ~/.latexmkrc, the system ones are Perl code)
+  latexmk: ["-norc", "-v"],
   pdflatex: ["--version"],
   xelatex: ["--version"],
   bibtex: ["--version"],
@@ -213,25 +217,61 @@ const VERSION_ARGS: Record<ToolchainTool, readonly string[]> = {
   bwrap: ["--version"],
 };
 
-/** The first non-empty line of `text`, without control characters, cut to {@link VERSION_LINE_MAX}. */
+/**
+ * What a version line may not keep: C0 and C1 control characters and DEL, the soft hyphen, the Arabic letter mark, the
+ * Mongolian vowel separator, zero-width characters and bidi marks and controls, the line and paragraph separators, the
+ * word joiner and invisible operators, the byte order mark, the interlinear annotation characters and the tag
+ * characters. Each is replaced by a space.
+ */
+// Written as a string of escapes, so the source holds no invisible character itself.
+const INVISIBLE = new RegExp(
+  "[\\u{0}-\\u{1f}\\u{7f}-\\u{9f}\\u{ad}\\u{61c}\\u{180e}\\u{200b}-\\u{200f}\\u{2028}-\\u{202e}" +
+    "\\u{2060}-\\u{206f}\\u{feff}\\u{fff9}-\\u{fffb}\\u{e0000}-\\u{e007f}]",
+  "gu"
+);
+
+/**
+ * The first non-empty line of `text`, invisible and control characters replaced, cut to {@link VERSION_LINE_MAX} code
+ * points (never inside a surrogate pair) with an ellipsis.
+ */
 export function versionLine(text: string): string | null {
-  for (const raw of text.split(/\r?\n/)) {
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is removed
-    const line = raw.replace(/[\u0000-\u001f\u007f-\u009f؜​-‏‪-‮⁠-⁩﻿]/g, " ").trim();
+  for (const raw of text.split(/\r\n|\n|\r/)) {
+    const line = raw.replace(INVISIBLE, " ").trim();
     if (line === "") continue;
-    return line.length > VERSION_LINE_MAX ? `${line.slice(0, VERSION_LINE_MAX - 1)}…` : line;
+    const points = Array.from(line);
+    return points.length > VERSION_LINE_MAX
+      ? `${points.slice(0, VERSION_LINE_MAX - 1).join("")}…`
+      : line;
   }
   return null;
 }
 
-/** The version line of one located program, or null (no answer, a batch file, nothing printed). */
+export interface VersionOptions {
+  /** The working directory the program runs in: an empty directory of its own (`checkEnvironment` makes one). */
+  cwd: string;
+  /** Default {@link VERSION_TIMEOUT_MS}. */
+  timeoutMs?: number;
+}
+
+/**
+ * The version line of one located program, or null (no answer in time, a batch file, nothing printed). It runs with
+ * the fixed option of {@link VERSION_ARGS} only, in `cwd`.
+ */
 export async function toolVersion(
   tool: ToolchainTool,
   located: LocatedTool,
-  env: Record<string, string>
+  env: Record<string, string>,
+  opts: VersionOptions
 ): Promise<string | null> {
+  // A batch file runs only through cmd.exe, which would parse its arguments: not run.
   if (/\.(bat|cmd)$/i.test(located.path)) return null;
-  const r = await runCapture(located.path, VERSION_ARGS[tool], env, VERSION_TIMEOUT_MS);
+  const r = await runCapture(
+    located.path,
+    VERSION_ARGS[tool],
+    env,
+    opts.timeoutMs ?? VERSION_TIMEOUT_MS,
+    opts.cwd
+  );
   if (!r.ok) return null;
   // ghostscript prints only the number; pdftocairo writes to standard error.
   const line = versionLine(r.stdout) ?? versionLine(r.stderr);
@@ -256,6 +296,8 @@ export interface EnvironmentCheckOptions {
   toolchain?: Toolchain;
   /** Whether version lines are asked for (the start record does not need them). Default true. */
   versions?: boolean;
+  /** How long a program may take to print its version; default {@link VERSION_TIMEOUT_MS}. */
+  versionTimeoutMs?: number;
   keychain?: () => Promise<KeychainProbe>;
 }
 
@@ -265,20 +307,35 @@ export async function checkEnvironment(
 ): Promise<EnvironmentCheck> {
   const toolchain = opts.toolchain ?? currentToolchain();
   const env = texChildEnv(toolchain);
-  const [tools, keychain] = await Promise.all([
-    Promise.all(
-      (Object.keys(toolchain.tools) as ToolchainTool[]).map(async (tool) => {
-        const located = toolchain.tools[tool];
-        const version =
-          located !== null && opts.versions !== false
-            ? await toolVersion(tool, located, env).catch(() => null)
-            : null;
-        return { tool, located, version };
-      })
-    ),
-    (opts.keychain ?? (() => probeKeychain()))().catch(
-      (): KeychainProbe => ({ state: "unknown", reason: "no_probe" })
-    ),
-  ]);
-  return { toolchain, tools, keychain };
+  // The version commands run in an empty directory of their own, removed afterwards: nothing of the project's
+  // directory (a latexmkrc, say) is in their way.
+  const cwd =
+    opts.versions === false
+      ? null
+      : await mkdtemp(join(tmpdir(), "aspace-env-check-")).catch(() => null);
+  try {
+    const [tools, keychain] = await Promise.all([
+      Promise.all(
+        (Object.keys(toolchain.tools) as ToolchainTool[]).map(async (tool) => {
+          const located = toolchain.tools[tool];
+          const version =
+            located !== null && cwd !== null
+              ? await toolVersion(tool, located, env, {
+                  cwd,
+                  ...(opts.versionTimeoutMs !== undefined
+                    ? { timeoutMs: opts.versionTimeoutMs }
+                    : {}),
+                }).catch(() => null)
+              : null;
+          return { tool, located, version };
+        })
+      ),
+      (opts.keychain ?? (() => probeKeychain()))().catch(
+        (): KeychainProbe => ({ state: "unknown", reason: "no_probe" })
+      ),
+    ]);
+    return { toolchain, tools, keychain };
+  } finally {
+    if (cwd !== null) await rm(cwd, { recursive: true, force: true }).catch(() => {});
+  }
 }
