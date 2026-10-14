@@ -104,6 +104,15 @@ export const ENVIRONMENT_PLATFORMS = ["linux", "darwin", "win32"] as const;
 export const SANDBOX_TEX_STATES = ["same", "different", "not_found", "not_applicable"] as const;
 export type SandboxTexState = (typeof SANDBOX_TEX_STATES)[number];
 
+/**
+ * Whether the directory of the latexmk found would reach the sandbox through the PATH the workbench starts with:
+ * `bindable` (it would: putting it on that PATH and restarting helps), `under_usr` (a directory under /usr that is not a
+ * system directory, such as TeX Live's own /usr/local/texlive/<year>/bin/<arch>: bound with /usr but never on the
+ * sandbox's PATH), `not_bindable` (the home directory, /tmp, /var, /mnt and other places the sandbox never binds).
+ */
+export const SANDBOX_REACHES = ["bindable", "under_usr", "not_bindable"] as const;
+export type SandboxReach = (typeof SANDBOX_REACHES)[number];
+
 export interface EnvironmentReport {
   version: 1;
   /** The platform the lookup used (anything but macOS and Windows is looked up like Linux). */
@@ -114,7 +123,15 @@ export interface EnvironmentReport {
   /** Whether the Writer's compile sandbox works (bubblewrap runs): without it the Copilot never causes a compile. */
   sandbox: "available" | "unavailable";
   /** Which latexmk the sandbox would run, compared with the one found ({@link SANDBOX_TEX_STATES}). */
-  writerSandboxTex: { state: SandboxTexState; path: ShownPath | null };
+  writerSandboxTex: {
+    state: SandboxTexState;
+    /** The latexmk the sandbox would run (`same` / `different`). */
+    path: ShownPath | null;
+    /** Whether the latexmk the workbench found came from the configured TeX directory. */
+    fromTexDir: boolean;
+    /** With `different` / `not_found`: whether that latexmk's directory could reach the sandbox; null otherwise. */
+    reach: SandboxReach | null;
+  };
 }
 
 const oneOf = (list: readonly string[], value: unknown): boolean =>
@@ -152,6 +169,8 @@ export function isEnvironmentReport(value: unknown): value is EnvironmentReport 
     oneOf(KEYCHAIN_REASONS, v.keychain?.reason) &&
     (v.sandbox === "available" || v.sandbox === "unavailable") &&
     oneOf(SANDBOX_TEX_STATES, v.writerSandboxTex?.state) &&
-    isShownPath(v.writerSandboxTex?.path ?? null)
+    isShownPath(v.writerSandboxTex?.path ?? null) &&
+    typeof v.writerSandboxTex?.fromTexDir === "boolean" &&
+    (v.writerSandboxTex?.reach === null || oneOf(SANDBOX_REACHES, v.writerSandboxTex?.reach))
   );
 }

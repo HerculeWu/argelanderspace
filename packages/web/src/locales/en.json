@@ -2476,10 +2476,17 @@
       },
       "noSandboxTitle": "No compile sandbox on this machine",
       "noSandboxBody": "Copilot can edit manuscript text but will not trigger compilation. Pressing Render yourself still compiles (outside a sandbox).",
-      "sandboxTexMissingTitle": "Writer rendering cannot find this TeX in the sandbox",
-      "sandboxTexMissingBody": "The compile sandbox sees only the system directories and the TeX on the PATH the workbench was started with, not the TeX program directory set above, so Writer rendering fails (it never falls back to compiling outside the sandbox). LaTeX ingest is not affected. To let the Writer use this TeX, add this directory to the PATH the workbench is started with, then restart the workbench.",
+      "sandboxTexMissingTitle": "Writer rendering cannot find TeX in the sandbox",
+      "sandboxTexMissingBody": "The compile sandbox sees only the system directories and the TeX directories on the PATH the workbench was started with that can be put into the sandbox. It does not see the TeX the workbench found ({{path}}), so Writer rendering fails; it never falls back to compiling outside the sandbox. LaTeX ingest is not affected.",
+      "sandboxTexPathEnd": ".",
       "sandboxTexOtherTitle": "Writer rendering uses another TeX in the sandbox",
-      "sandboxTexOtherBody": "The compile sandbox sees only the system directories and the TeX on the PATH the workbench was started with, not the TeX program directory set above; LaTeX ingest uses the TeX of that directory, Writer rendering uses this one in the sandbox:",
+      "sandboxTexOtherBody": "The compile sandbox sees only the system directories and the TeX directories on the PATH the workbench was started with that can be put into the sandbox. LaTeX ingest uses the TeX the workbench found ({{path}}), which the sandbox does not see; Writer rendering uses this one in the sandbox:",
+      "sandboxReach": {
+        "bindable": "Add the directory of this TeX to the PATH the workbench is started with, then restart the workbench, and the Writer can use it in the sandbox.",
+        "bindableOnPath": "This directory can be put into the sandbox and is already on the PATH the workbench was started with; which TeX the sandbox sees is settled when the sandbox is first checked after the start, and a restart settles it again.",
+        "under_usr": "It is in a directory under /usr that is not a system directory (such as /usr/local/texlive/…, where the TeX Live installer puts it), and such a directory does not get into the sandbox even on PATH. Nothing on this page can change that for now; letting the sandbox use TeX in such places is still awaiting approval.",
+        "not_bindable": "It is in a place that is never put into the sandbox (such as the home directory, /tmp, /var or /mnt), so putting it on PATH does not help. Nothing on this page can change that for now; letting the sandbox use TeX in such places is still awaiting approval."
+      },
       "noTexTitle": "TeX was not found",
       "noTexBody": "Reading PDFs, annotations, plans, mail and Copilot work as usual. LaTeX ingest and Writer rendering need TeX installed, or a TeX program directory set above."
     },

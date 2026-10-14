@@ -21,7 +21,7 @@ function valid(): EnvironmentReport {
     })),
     keychain: { state: "unknown", reason: "no_probe" },
     sandbox: "unavailable",
-    writerSandboxTex: { state: "not_applicable", path: null },
+    writerSandboxTex: { state: "not_applicable", path: null, fromTexDir: false, reach: null },
   };
 }
 
@@ -44,5 +44,6 @@ describe("isEnvironmentReport", () => {
     expect(bad((r) => ((r as { platform: string }).platform = "plan9"))).toBe(false);
     expect(bad((r) => ((r.tools[0] as { path: unknown }).path = "/usr/bin/latexmk"))).toBe(false);
     expect(bad((r) => delete (r as Partial<EnvironmentReport>).writerSandboxTex)).toBe(false);
+    expect(bad((r) => ((r.writerSandboxTex as { reach: string }).reach = "somewhere"))).toBe(false);
   });
 });

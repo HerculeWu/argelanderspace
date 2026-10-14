@@ -54,7 +54,7 @@ function allFound(): EnvironmentReport {
     ],
     keychain: { state: "available", reason: "secret_service" },
     sandbox: "available",
-    writerSandboxTex: { state: "same", path: null },
+    writerSandboxTex: { state: "same", path: null, fromTexDir: false, reach: null },
   } as EnvironmentReport;
 }
 
@@ -212,12 +212,12 @@ describe("TeX & environment", () => {
   });
 
   it("the Writer sandbox does not see the TeX of the directory: said; another TeX: said with its path; none without a sandbox", async () => {
-    report.writerSandboxTex = { state: "not_found", path: null };
+    report.writerSandboxTex = { state: "not_found", path: null, fromTexDir: true, reach: "bindable" };
     await openTex();
-    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("Writer rendering cannot find this TeX in the sandbox");
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("Writer rendering cannot find TeX in the sandbox");
     expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("never falls back to compiling outside the sandbox");
     cleanup();
-    report.writerSandboxTex = { state: "different", path: { path: "/usr/bin/latexmk", display: "/usr/bin/latexmk" } };
+    report.writerSandboxTex = { state: "different", path: { path: "/usr/bin/latexmk", display: "/usr/bin/latexmk" }, fromTexDir: true, reach: "bindable" };
     await openTex();
     expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("Writer rendering uses another TeX in the sandbox");
     expect(q('[data-ui="env-sandbox-tex-path"]')!.textContent).toBe("/usr/bin/latexmk");
@@ -225,6 +225,43 @@ describe("TeX & environment", () => {
     report.sandbox = "unavailable";
     await openTex();
     expect(q('[data-ui="env-sandbox-tex"]')).toBeNull();
+  });
+
+  // ticket 13, second revision: the reason and the advice follow where that TeX is
+  const reachText = () => q('[data-ui="env-sandbox-tex-reach"]')?.textContent ?? "";
+  it("(tex_dir, bindable) the advice to put the directory on PATH and restart", async () => {
+    report.writerSandboxTex = { state: "not_found", path: null, fromTexDir: true, reach: "bindable" };
+    await openTex();
+    expect(reachText()).toContain("Add the directory of this TeX to the PATH the workbench is started with");
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("/usr/bin/latexmk");
+  });
+
+  it("(1) TeX Live under /usr/local/texlive, found on PATH, no tex_dir: no PATH advice; under /usr, nothing to do here", async () => {
+    report.writerSandboxTex = { state: "not_found", path: null, fromTexDir: false, reach: "under_usr" };
+    await openTex();
+    expect(reachText()).toContain("under /usr");
+    expect(reachText()).toContain("Nothing on this page can change that");
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).not.toContain("Add the directory");
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).not.toContain("directory set above");
+  });
+
+  it("(2) TeX in the home directory or /tmp: never bound; putting it on PATH does not help", async () => {
+    report.writerSandboxTex = { state: "not_found", path: null, fromTexDir: true, reach: "not_bindable" };
+    await openTex();
+    expect(reachText()).toContain("never put into the sandbox");
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).not.toContain("Add the directory");
+  });
+
+  it("(3)/(4) found on PATH without tex_dir: neither the not-found nor the other-TeX note speaks of a configured directory", async () => {
+    report.writerSandboxTex = { state: "not_found", path: null, fromTexDir: false, reach: "bindable" };
+    await openTex();
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).not.toMatch(/set above|configured/);
+    expect(reachText()).toContain("already on the PATH");
+    cleanup();
+    report.writerSandboxTex = { state: "different", path: { path: "/usr/bin/latexmk", display: "/usr/bin/latexmk" }, fromTexDir: false, reach: "bindable" };
+    await openTex();
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).not.toMatch(/set above|configured|that directory/);
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("LaTeX ingest uses the TeX the workbench found (/usr/bin/latexmk)");
   });
 
   it("an answer that comes after a later check's answer is dropped", async () => {

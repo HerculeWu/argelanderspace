@@ -2476,10 +2476,17 @@
       },
       "noSandboxTitle": "本机没有编译沙箱",
       "noSandboxBody": "Copilot 可以修改稿件文字，但不会触发编译；你自己点 Render 仍可编译（不在沙箱里运行）。",
-      "sandboxTexMissingTitle": "Writer 渲染在沙箱里找不到这个 TeX",
-      "sandboxTexMissingBody": "编译沙箱只看得到系统目录和启动工作台时 PATH 上的 TeX，看不到上面配置的 TeX 程序目录，所以 Writer 渲染会失败（不会改为在沙箱外编译）。LaTeX 摄入不受影响。要让 Writer 用这个 TeX，请把这个目录加入启动工作台时的 PATH，然后重启工作台。",
+      "sandboxTexMissingTitle": "Writer 渲染在沙箱里找不到 TeX",
+      "sandboxTexMissingBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录；它看不到工作台找到的这一套 TeX（{{path}}），所以 Writer 渲染会失败，不会改为在沙箱外编译。LaTeX 摄入不受影响。",
+      "sandboxTexPathEnd": "。",
       "sandboxTexOtherTitle": "Writer 渲染在沙箱里用的是另一套 TeX",
-      "sandboxTexOtherBody": "编译沙箱只看得到系统目录和启动工作台时 PATH 上的 TeX，看不到上面配置的 TeX 程序目录；LaTeX 摄入用配置目录里的 TeX，Writer 渲染用沙箱里的这一套：",
+      "sandboxTexOtherBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录。LaTeX 摄入用的是工作台找到的这一套（{{path}}），沙箱看不到它；Writer 渲染用的是沙箱里的这一套：",
+      "sandboxReach": {
+        "bindable": "把这个 TeX 所在的目录加入启动工作台时的 PATH，然后重启工作台，Writer 就能在沙箱里用它。",
+        "bindableOnPath": "这个目录本可以放进沙箱，而且已经在启动工作台时的 PATH 上；沙箱看得到哪些 TeX 是在启动后第一次检查沙箱时定下的，重启工作台后会重新确定。",
+        "under_usr": "它在 /usr 下的非系统目录里（例如 TeX Live 安装器默认的 /usr/local/texlive/…），这类目录即使加进 PATH 也进不了沙箱。目前在页面上没有办法改变这一点；让沙箱也能用这类位置的 TeX 还在等待批准。",
+        "not_bindable": "它在不允许放进沙箱的位置（例如主目录、/tmp、/var、/mnt 下），即使加进 PATH 也没有用。目前在页面上没有办法改变这一点；让沙箱也能用这类位置的 TeX 还在等待批准。"
+      },
       "noTexTitle": "没有找到 TeX",
       "noTexBody": "阅读 PDF、标注、计划、邮件和 Copilot 照常可用；LaTeX 摄入和 Writer 渲染需要先安装 TeX，或在上面指定 TeX 程序目录。"
     },

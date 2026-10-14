@@ -2,11 +2,19 @@
  * Which latexmk the Writer's sandbox would run (ticket 13 revision): the sandbox is not changed; the check says whether
  * it sees the TeX the workbench found. Constructed directories stand in for the system directories.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { sandboxLatexmk, sandboxTexState } from "../src/tex/sandbox-view.js";
+import { sandboxLatexmk, sandboxReach, sandboxTexState } from "../src/tex/sandbox-view.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -36,6 +44,7 @@ describe("the sandbox's latexmk", () => {
     ).toEqual({
       state: "not_found",
       latexmk: null,
+      reach: "not_bindable",
     });
   });
 
@@ -46,6 +55,7 @@ describe("the sandbox's latexmk", () => {
     expect(sandboxTexState(located, true, { hostPath: "", systemDirs: [join(r, "sys")] })).toEqual({
       state: "different",
       latexmk: other,
+      reach: "not_bindable",
     });
   });
 
@@ -74,5 +84,35 @@ describe("the sandbox's latexmk", () => {
     writeFileSync(join(r, "sys", "latexmk"), "x");
     chmodSync(join(r, "sys", "latexmk"), 0o644);
     expect(sandboxLatexmk({ hostPath: "", systemDirs: [join(r, "sys")] })).toBeNull();
+  });
+
+  // (4) of the second revision: the latexmk found is on PATH in a bindable place (/opt), the system directories hold
+  // another TeX: `different`, `bindable`. The stand-in is a link to an existing file under /opt; nothing is run.
+  test.skipIf(!existsSync("/opt/google/chrome/chrome"))(
+    "a TeX under /opt found on PATH, another in the system directories: different, bindable",
+    () => {
+      const { r, exe } = setup();
+      mkdirSync(join(r, "opt-like"));
+      symlinkSync("/opt/google/chrome/chrome", join(r, "opt-like", "latexmk"));
+      const other = exe(join(r, "sys"), "latexmk");
+      expect(
+        sandboxTexState(join(r, "opt-like", "latexmk"), true, {
+          hostPath: join(r, "opt-like"),
+          systemDirs: [join(r, "sys")],
+        })
+      ).toEqual({
+        state: "different",
+        latexmk: other,
+        reach: "bindable",
+      });
+    }
+  );
+
+  test("reach: under /usr, never bound, bindable", () => {
+    expect(sandboxReach("/usr/local/texlive/2025/bin/x86_64-linux")).toBe("under_usr");
+    expect(sandboxReach("/usr/bin")).toBe("under_usr");
+    expect(sandboxReach(tmpdir())).toBe("not_bindable");
+    expect(sandboxReach("/home/someone/texlive/bin")).toBe("not_bindable");
+    expect(sandboxReach("/opt/texlive/2025/bin/x86_64-linux")).toBe("bindable");
   });
 });

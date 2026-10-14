@@ -5,7 +5,15 @@
  * the default probe, which asks only the bus daemon of this test process — a socket that does not exist
  * (isolate-user-dirs.ts) — so the user's real keychain is never reached. The sandbox answer is forced either way.
  */
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -265,12 +273,20 @@ describe("GET /api/environment", () => {
     writeFileSync(configPath, `tex_dir = ${JSON.stringify(texDir)}\n`);
     await start({ sandboxView: { systemDirs: [systemDir] } });
     let { body } = await check();
-    expect(body.writerSandboxTex).toEqual({ state: "not_found", path: null });
+    // a TeX directory under /tmp: never bound, so putting it on PATH would not help
+    expect(body.writerSandboxTex).toEqual({
+      state: "not_found",
+      path: null,
+      fromTexDir: true,
+      reach: "not_bindable",
+    });
     program(systemDir, "latexmk", "Latexmk of the system");
     ({ body } = await check());
     expect(body.writerSandboxTex).toEqual({
       state: "different",
       path: { path: join(systemDir, "latexmk"), display: join(systemDir, "latexmk") },
+      fromTexDir: true,
+      reach: "not_bindable",
     });
     writeFileSync(configPath, `tex_dir = ${JSON.stringify(systemDir)}\n`);
     ({ body } = await check());
@@ -278,9 +294,71 @@ describe("GET /api/environment", () => {
     __setWriterSandboxForTests(false);
     try {
       ({ body } = await check());
-      expect(body.writerSandboxTex).toEqual({ state: "not_applicable", path: null });
+      expect(body.writerSandboxTex).toEqual({
+        state: "not_applicable",
+        path: null,
+        fromTexDir: true,
+        reach: null,
+      });
     } finally {
       __setWriterSandboxForTests(true);
     }
+  });
+
+  // Second revision: the four situations the review found (constructed directories; the sandbox forced on, its system
+  // directories injected). A latexmk that is a link into /usr/bin or /opt stands for a TeX installed there.
+  describe("why the sandbox does not see the TeX found", () => {
+    const linkTex = (dir: string, target: string) => {
+      rmSync(dir, { recursive: true, force: true });
+      mkdirSync(dir, { recursive: true });
+      symlinkSync(target, join(dir, "latexmk"));
+    };
+    const sandboxed = async (pathDirs: string[], systemDir: string) => {
+      process.env.PATH = pathDirs.join(":");
+      await start({ sandboxView: { systemDirs: [systemDir] } });
+      return (await check()).body.writerSandboxTex;
+    };
+
+    test.skipIf(!existsSync("/usr/bin/latexmk"))(
+      "(1) TeX Live under /usr (not a system directory), found on PATH, no tex_dir: not found, under /usr, not from tex_dir",
+      async () => {
+        const onPath = join(root, "texlive-under-usr");
+        linkTex(onPath, "/usr/bin/latexmk");
+        const empty = join(root, "sys-empty-1");
+        mkdirSync(empty, { recursive: true });
+        expect(await sandboxed([onPath], empty)).toEqual({
+          state: "not_found",
+          path: null,
+          fromTexDir: false,
+          reach: "under_usr",
+        });
+      }
+    );
+
+    test("(2) TeX in a place never bound (/tmp here), on PATH: not found, not bindable", async () => {
+      const onPath = join(root, "texlive-in-tmp");
+      program(onPath, "latexmk", "Latexmk in tmp");
+      const empty = join(root, "sys-empty-2");
+      mkdirSync(empty, { recursive: true });
+      expect(await sandboxed([onPath], empty)).toEqual({
+        state: "not_found",
+        path: null,
+        fromTexDir: false,
+        reach: "not_bindable",
+      });
+    });
+
+    test("(3) no tex_dir, latexmk from PATH, not found: reported as not from tex_dir", async () => {
+      const onPath = join(root, "texlive-path-3");
+      program(onPath, "latexmk", "Latexmk on PATH");
+      const empty = join(root, "sys-empty-3");
+      mkdirSync(empty, { recursive: true });
+      const view = await sandboxed([onPath], empty);
+      expect(view.state).toBe("not_found");
+      expect(view.fromTexDir).toBe(false);
+    });
+
+    // (4) runs in infra tex-sandbox-view.test.ts: a stand-in for a TeX under /opt must be a real file there, and this
+    // endpoint would run it for its version line — nothing outside TeX is run here.
   });
 });

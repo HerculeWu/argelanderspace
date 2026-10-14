@@ -42,8 +42,22 @@ function real(p: string): string {
   }
 }
 
-/** The latexmk the sandbox would find on its PATH, as the real path of the file; null when it has none. */
-export function sandboxLatexmk(opts: SandboxViewOptions = {}): string | null {
+/**
+ * Whether a directory, put on the PATH the workbench starts with, would be on the sandbox's PATH: `bindable` (not under
+ * /usr and `isSafeTexRoot`), `under_usr` (bound with /usr but never on the sandbox's PATH, e.g. TeX Live's own
+ * /usr/local/texlive/<year>/bin/<arch>), `not_bindable` (the home directory, /tmp, /var, /mnt and the other places
+ * `isSafeTexRoot` refuses). By the directory's real path, as `sandbox.ts` does.
+ */
+export type SandboxReach = "bindable" | "under_usr" | "not_bindable";
+
+export function sandboxReach(dir: string): SandboxReach {
+  const r = real(dir);
+  if (r === "/usr" || r.startsWith("/usr/")) return "under_usr";
+  return isSafeTexRoot(r) ? "bindable" : "not_bindable";
+}
+
+/** The directories of the sandbox's PATH, in order: the system directories, then the TeX directories found on PATH. */
+export function sandboxPathDirs(opts: SandboxViewOptions = {}): string[] {
   const hostDirs = (opts.hostPath ?? process.env.PATH ?? "").split(":");
   const bins: string[] = [];
   for (const name of DISCOVERED) {
@@ -51,17 +65,16 @@ export function sandboxLatexmk(opts: SandboxViewOptions = {}): string | null {
       const candidate = path.join(dir, name);
       if (!dir || !existsSync(candidate)) continue;
       const dirOf = path.dirname(real(candidate));
-      if (
-        !dirOf.startsWith("/usr/") &&
-        dirOf !== "/usr" &&
-        isSafeTexRoot(dirOf) &&
-        !bins.includes(dirOf)
-      )
-        bins.push(dirOf);
+      if (sandboxReach(dirOf) === "bindable" && !bins.includes(dirOf)) bins.push(dirOf);
       break;
     }
   }
-  for (const dir of [...(opts.systemDirs ?? SANDBOX_SYSTEM_DIRS), ...bins]) {
+  return [...(opts.systemDirs ?? SANDBOX_SYSTEM_DIRS), ...bins];
+}
+
+/** The latexmk the sandbox would find on its PATH, as the real path of the file; null when it has none. */
+export function sandboxLatexmk(opts: SandboxViewOptions = {}): string | null {
+  for (const dir of sandboxPathDirs(opts)) {
     const candidate = path.join(dir, "latexmk");
     if (program(candidate)) return real(candidate);
   }
@@ -70,7 +83,8 @@ export function sandboxLatexmk(opts: SandboxViewOptions = {}): string | null {
 
 /**
  * How the sandbox's latexmk compares with the one the workbench found (`located`): the same file, another one, none;
- * `not_applicable` when the sandbox is not used here or no latexmk was found at all.
+ * `not_applicable` when the sandbox is not used here or no latexmk was found at all. With `different` / `not_found`,
+ * `reach` says whether the found latexmk's directory could reach the sandbox through the PATH the workbench starts with.
  */
 export type SandboxTexState = "same" | "different" | "not_found" | "not_applicable";
 
@@ -78,9 +92,13 @@ export function sandboxTexState(
   located: string | null,
   sandboxAvailable: boolean,
   opts: SandboxViewOptions = {}
-): { state: SandboxTexState; latexmk: string | null } {
-  if (!sandboxAvailable || located === null) return { state: "not_applicable", latexmk: null };
+): { state: SandboxTexState; latexmk: string | null; reach: SandboxReach | null } {
+  if (!sandboxAvailable || located === null)
+    return { state: "not_applicable", latexmk: null, reach: null };
   const inside = sandboxLatexmk(opts);
-  if (inside === null) return { state: "not_found", latexmk: null };
-  return { state: inside === real(located) ? "same" : "different", latexmk: inside };
+  const reach = sandboxReach(path.dirname(real(located)));
+  if (inside === null) return { state: "not_found", latexmk: null, reach };
+  return inside === real(located)
+    ? { state: "same", latexmk: inside, reach: null }
+    : { state: "different", latexmk: inside, reach };
 }

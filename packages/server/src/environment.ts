@@ -73,7 +73,12 @@ export async function environmentReport(
         sandbox,
         options.sandboxView
       );
-      return { state: view.state, path: view.latexmk === null ? null : shownPath(view.latexmk) };
+      return {
+        state: view.state,
+        path: view.latexmk === null ? null : shownPath(view.latexmk),
+        fromTexDir: toolchain.tools.latexmk?.source === "tex_dir",
+        reach: view.reach,
+      };
     })(),
   };
 }

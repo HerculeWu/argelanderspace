@@ -87,11 +87,8 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
   const { t } = useTranslation();
   const { report, checking, failed } = state;
   const latexmk = report?.tools.find((tool) => tool.tool === "latexmk");
-  /** A label from a table, or the identifier itself when this page does not know it (a newer server). */
-  const label = <K extends string>(table: Partial<Record<K, string>>, key: K): string => {
-    const k = table[key];
-    return k === undefined ? key : t(k as never);
-  };
+  // Every enum value has its label: the report is checked against the same contracts (`isEnvironmentReport`).
+  const label = <K extends string>(table: Record<K, string>, key: K): string => t(table[key] as never);
   // Without one engine latexmk compiles with the other: said only when the other one was found.
   const found = (name: EnvironmentTool) => report?.tools.find((tool) => tool.tool === name)?.found === true;
   const featureText = (feature: EnvironmentFeature): string => {
@@ -101,6 +98,20 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
     return text;
   };
   const sandboxTex = report?.sandbox === "available" ? report.writerSandboxTex : null;
+  // Why the sandbox does not see the TeX found, and whether anything helps: putting its directory on the PATH the
+  // workbench starts with helps only when the directory can be bound and is not on that PATH already (it came from the
+  // configured TeX directory); a directory under /usr or in a place never bound cannot get in at all.
+  const reachKey =
+    sandboxTex?.reach === "bindable"
+      ? sandboxTex.fromTexDir
+        ? "settings.tex.sandboxReach.bindable"
+        : "settings.tex.sandboxReach.bindableOnPath"
+      : sandboxTex?.reach === "under_usr"
+        ? "settings.tex.sandboxReach.under_usr"
+        : sandboxTex?.reach === "not_bindable"
+          ? "settings.tex.sandboxReach.not_bindable"
+          : null;
+  const foundPath = latexmk?.path?.display ?? "";
   return (
     <section className="st-env" data-ui="environment-check" data-state={checking ? "checking" : "done"} aria-labelledby="env-h" aria-busy={checking}>
       <div className="st-sub-head">
@@ -178,12 +189,17 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
         <InlineMessage tone="warning" uiId="env-no-tex" title={t("settings.tex.noTexTitle")}>{t("settings.tex.noTexBody")}</InlineMessage>
       )}
       {sandboxTex?.state === "not_found" && (
-        <InlineMessage tone="warning" uiId="env-sandbox-tex" title={t("settings.tex.sandboxTexMissingTitle")}>{t("settings.tex.sandboxTexMissingBody")}</InlineMessage>
+        <InlineMessage tone="warning" uiId="env-sandbox-tex" title={t("settings.tex.sandboxTexMissingTitle")}>
+          {t("settings.tex.sandboxTexMissingBody", { path: foundPath })}
+          {reachKey !== null && <span data-ui="env-sandbox-tex-reach" data-reach={sandboxTex.reach ?? undefined}> {t(reachKey)}</span>}
+        </InlineMessage>
       )}
       {sandboxTex?.state === "different" && (
         <InlineMessage tone="info" uiId="env-sandbox-tex" title={t("settings.tex.sandboxTexOtherTitle")}>
-          {t("settings.tex.sandboxTexOtherBody")}{" "}
+          {t("settings.tex.sandboxTexOtherBody", { path: foundPath })}{" "}
           <code className="st-path" data-ui="env-sandbox-tex-path" title={sandboxTex.path?.path}>{sandboxTex.path?.display}</code>
+          {t("settings.tex.sandboxTexPathEnd")}
+          {reachKey !== null && <span data-ui="env-sandbox-tex-reach" data-reach={sandboxTex.reach ?? undefined}> {t(reachKey)}</span>}
         </InlineMessage>
       )}
       {report !== null && report.sandbox === "unavailable" && (
