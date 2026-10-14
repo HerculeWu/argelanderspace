@@ -268,7 +268,7 @@ if (offlineLock) {
   const integrity = `sha512-${createHash("sha512").update(readFileSync(tarball)).digest("base64")}`;
   const head = lock.slice(0, lock.indexOf("importers:"));
   const rest = lock.slice(lock.indexOf("\npackages:\n"));
-  const entry = `  argelanderspace@file:${tgzName}:\n    resolution: {integrity: ${integrity}, tarball: file:${tgzName}}\n    version: 0.1.0\n    engines: {node: '>=24'}\n\n`;
+  const entry = `  argelanderspace@file:${tgzName}:\n    resolution: {integrity: ${integrity}, tarball: file:${tgzName}}\n    version: ${packJson[0].version}\n    engines: {node: '>=24'}\n\n`;
   const snapshot = `  argelanderspace@file:${tgzName}:\n    dependencies:\n${snapshotDeps}\n\n`;
   // Keep only what the tarball's dependencies reach, so the store is asked for nothing else.
   const [packagesText, snapshotsText] = rest.split("\nsnapshots:\n");
