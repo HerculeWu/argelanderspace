@@ -11,6 +11,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -44,10 +45,16 @@ function fileUnderOpt(): string | null {
     for (const entry of readdirSync("/opt", { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const dir = join("/opt", entry.name);
-      for (const name of readdirSync(dir)) {
+      let names: string[];
+      try {
+        names = readdirSync(dir);
+      } catch {
+        continue; // a directory this user cannot read: the next one
+      }
+      for (const name of names) {
         const file = join(dir, name);
         try {
-          if (statSync(file).isFile()) return file;
+          if (statSync(file).isFile()) return realpathSync(file);
         } catch {
           /* unreadable: the next one */
         }

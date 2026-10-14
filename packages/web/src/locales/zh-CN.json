@@ -2478,6 +2478,7 @@
       "noSandboxBody": "Copilot 可以修改稿件文字，但不会触发编译；你自己点 Render 仍可编译（不在沙箱里运行）。",
       "sandboxTexMissingTitle": "Writer 渲染在沙箱里找不到 TeX",
       "sandboxTexMissingBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录；它看不到工作台找到的这一套 TeX（{{path}}），所以 Writer 渲染会失败，不会改为在沙箱外编译。LaTeX 摄入不受影响。",
+      "sandboxTexOtherWhy": "沙箱总是先用系统目录里的 TeX，把别的目录加进 PATH 也改变不了这一点；目前页面上没有办法让它改用工作台找到的这一套。",
       "sandboxTexPathEnd": "。",
       "sandboxTexOtherTitle": "Writer 渲染在沙箱里用的是另一套 TeX",
       "sandboxTexOtherBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录。LaTeX 摄入用的是工作台找到的这一套（{{path}}），沙箱看不到它；Writer 渲染用的是沙箱里的这一套：",

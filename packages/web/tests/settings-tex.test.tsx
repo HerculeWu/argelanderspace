@@ -221,6 +221,10 @@ describe("TeX & environment", () => {
     await openTex();
     expect(q('[data-ui="env-sandbox-tex"]')!.textContent).toContain("Writer rendering uses another TeX in the sandbox");
     expect(q('[data-ui="env-sandbox-tex-path"]')!.textContent).toBe("/usr/bin/latexmk");
+    // the system directories come first in the sandbox: no advice that PATH or a restart would change it
+    expect(q('[data-ui="env-sandbox-tex-reach"]')).toBeNull();
+    expect(q('[data-ui="env-sandbox-tex-why"]')!.textContent).toContain("system directories first");
+    expect(q('[data-ui="env-sandbox-tex"]')!.textContent).not.toMatch(/restart|Add the directory/i);
     cleanup();
     report.sandbox = "unavailable";
     await openTex();

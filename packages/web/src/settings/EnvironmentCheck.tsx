@@ -198,8 +198,9 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
         <InlineMessage tone="info" uiId="env-sandbox-tex" title={t("settings.tex.sandboxTexOtherTitle")}>
           {t("settings.tex.sandboxTexOtherBody", { path: foundPath })}{" "}
           <code className="st-path" data-ui="env-sandbox-tex-path" title={sandboxTex.path?.path}>{sandboxTex.path?.display}</code>
-          {t("settings.tex.sandboxTexPathEnd")}
-          {reachKey !== null && <span data-ui="env-sandbox-tex-reach" data-reach={sandboxTex.reach ?? undefined}> {t(reachKey)}</span>}
+          {t("settings.tex.sandboxTexPathEnd")}{" "}
+          {/* The sandbox looks in the system directories first: whatever is put on PATH, it keeps using that TeX. */}
+          <span data-ui="env-sandbox-tex-why">{t("settings.tex.sandboxTexOtherWhy")}</span>
         </InlineMessage>
       )}
       {report !== null && report.sandbox === "unavailable" && (
