@@ -14,9 +14,12 @@ import { join } from "node:path";
 import type { Job } from "@argelanderspace/contracts";
 import { emptyWork, LibraryStore, libraryPaths, plansPath } from "@argelanderspace/core";
 import {
+  CREDENTIAL_STORE_METHODS,
   type CredentialStore,
+  createCredentialStore,
   createLogger,
   type FetchImpl,
+  type KeychainBackend,
   type LogJson,
 } from "@argelanderspace/infra";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -452,6 +455,7 @@ test("a keychain that does not answer: recorded as unavailable, once per change 
         : { status: "keychain-unavailable" },
     set: async () => ({ status: "keychain-unavailable" }),
     delete: async () => ({ status: "deleted" }) as never,
+    status: async () => ({ status: "not-found", keychain: "unavailable" }),
   };
   const watched = observedCredentials(store, log);
   const account = "zqxmark.account@zqxmark-mail.test";
@@ -470,5 +474,41 @@ test("a keychain that does not answer: recorded as unavailable, once per change 
   for (const record of records)
     expect(Object.keys(record).sort()).toEqual(["event", "level", "state", "t"]);
   expect(sink.lines).toHaveLength(2);
+  expectNoMarkers(sink);
+});
+
+test("the logging wrapper keeps every method of the credential store, the ADS one's status included (ticket 12)", async () => {
+  const { sink, log } = memoryLog();
+  const keychain: KeychainBackend = { get: () => MARK.password, set: () => {}, delete: () => true };
+  for (const purpose of ["mail", "ads"] as const) {
+    const real = createCredentialStore({
+      purpose,
+      backend: keychain,
+      dataDir: "/nonexistent-cred-dir",
+    });
+    const watched = observedCredentials(real, log);
+    // Built from CREDENTIAL_STORE_METHODS: a method the store gains is not silently left out.
+    expect(Object.keys(watched).sort()).toEqual(Object.keys(real).sort());
+    expect(Object.keys(watched).sort()).toEqual([...CREDENTIAL_STORE_METHODS].sort());
+    for (const name of CREDENTIAL_STORE_METHODS) expect(typeof watched[name]).toBe("function");
+  }
+  const watched = observedCredentials(
+    createCredentialStore({
+      purpose: "ads",
+      backend: {
+        get: () => {
+          throw new Error(`no bus ${MARK.password}`);
+        },
+        set: () => {},
+        delete: () => true,
+      },
+      dataDir: "/nonexistent-cred-dir",
+    }),
+    log
+  );
+  expect(await watched.status("token")).toEqual({ status: "not-found", keychain: "unavailable" });
+  expect(named(sink, "credentials.keychain_state")).toMatchObject([
+    { level: "warn", state: "unavailable" },
+  ]);
   expectNoMarkers(sink);
 });

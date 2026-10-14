@@ -13,9 +13,11 @@
  *                              shared file never points at one machine
  *   port              integer  default 1859 (contracts `DEFAULT_PORT`)
  *   openalex_api_key  string   fallback for $OPENALEX_API_KEY
- *   ads_dev_key       string   fallback for $ADS_DEV_KEY (itself a fallback
- *                              for ~/.ads/dev_key); marked deprecated in
- *                              the schema
+ *   ads_dev_key       string   no longer read as the ADS token (desktop-app
+ *                              ticket 12: the token is in the credential
+ *                              store); deprecated in the schema, still
+ *                              type-checked, shown by the settings page as
+ *                              a leftover
  *   global_dir        string   global data dir override (ADR 0007);
  *                              absolute
  *   global_cache_dir  string   global cache dir override; absolute

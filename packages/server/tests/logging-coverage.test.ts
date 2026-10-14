@@ -238,7 +238,8 @@ beforeAll(async () => {
   globalData = join(root, "global");
   mkdirSync(dataDir, { recursive: true });
 
-  // 1. the ADS token, where the clients read it today (the isolated home's key file)
+  // 1. the ADS token: in the isolated home's key file, imported below into the credential store through the settings
+  //    endpoint (desktop-app ticket 12; the clients no longer read the file itself)
   adsKeyFile = join(homedir(), ".ads", "dev_key");
   expect(adsKeyFile.startsWith(tmpdir())).toBe(true);
   mkdirSync(join(homedir(), ".ads"), { recursive: true });
@@ -340,6 +341,11 @@ beforeAll(async () => {
     log,
     fetchImpl: fetchStub,
     providerSettings: settings,
+    adsCredentials: createCredentialStore({
+      purpose: "ads",
+      backend: backend(),
+      dataDir: globalData,
+    }),
     mailWatch: {
       accounts,
       credentials,
@@ -347,6 +353,9 @@ beforeAll(async () => {
     },
   });
   await srv.ready();
+  // The ADS token goes into the credential store the way a user puts it there: the import from ~/.ads/dev_key.
+  const imported = await srv.app.request("/api/credentials/ads/import", json("POST", {}));
+  expect(imported.status).toBe(200);
 }, 60_000);
 
 afterAll(async () => {
@@ -572,6 +581,27 @@ test("web services: host, status and duration; no query, token or body — answe
     ["duration_ms", "event", "host", "level", "reason", "service", "t"].sort()
   );
   web.ads = "ok";
+  expectNoMarkers();
+});
+
+test("the ADS credential endpoints (ticket 12): saving, testing, importing, removing log no token", async () => {
+  const from = mark();
+  const other = `${MARK.adsToken}Other`;
+  const put = await srv.app.request("/api/credentials/ads", json("PUT", { token: other }));
+  expect(put.status).toBe(200);
+  expect(await (await srv.app.request("/api/credentials/ads")).text()).not.toContain(MARK.adsToken);
+  // the saved token and an input not yet saved, each tested against the offline ADS
+  for (const body of [{}, { token: `${MARK.adsToken}Unsaved` }]) {
+    const tested = await srv.app.request("/api/credentials/ads/test", json("POST", body));
+    expect(await tested.json()).toEqual({ ok: true, result: "valid" });
+  }
+  expect(requests.filter((r) => r.authorization === `Bearer ${other}`).length).toBeGreaterThan(0);
+  expect(eventsNamed("external_service.answered", from)).toContainEqual(
+    expect.objectContaining({ service: "ads", host: "https://api.adsabs.harvard.edu", status: 200 })
+  );
+  expect((await srv.app.request("/api/credentials/ads", { method: "DELETE" })).status).toBe(200);
+  // back to the token the other flows use, by the import again
+  expect((await srv.app.request("/api/credentials/ads/import", json("POST", {}))).status).toBe(200);
   expectNoMarkers();
 });
 

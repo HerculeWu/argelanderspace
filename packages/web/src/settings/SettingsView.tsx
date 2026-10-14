@@ -23,11 +23,12 @@ import { useWorkspace } from "../argelander/workspace";
 import { ACCENTS, type ThemeName } from "../argelander/theme";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
+import { AdsCredential } from "./AdsCredential";
 import "./settings.css";
 
 /**
  * The settings page (desktop-app tickets 10, 11): one group at a time, the groups listed at the left. Appearance,
- * Project, Services (the contact email), Copilot, Mail and Advanced have their rows; TeX and Diagnostics say that they
+ * Project, Services (the ADS token, ticket 12, and the contact email), Copilot, Mail and Advanced have their rows; TeX and Diagnostics say that they
  * have nothing yet (later tickets). Every value comes from the settings endpoint and every change is one key of
  * config.toml; a save is acknowledged, and a refused one explained, by a floating notice at the foot of the page
  * (`SettingsNotices`), never inside the row.
@@ -455,16 +456,8 @@ function Services({ state }: { state: RowState }) {
   const { settings } = state;
   return (
     <>
-      {settings.legacy.includes("ads_dev_key") && (
-        <div className="st-legacy">
-          {/* Where the prototype has it: with the ADS token, above the contact email. The key is still read as the ADS
-              token until the ADS credential replaces it (desktop-app ticket 12): this says so, and does not claim it no
-              longer works. */}
-          <InlineMessage tone="warning" uiId="ads-legacy-key" title={t("settings.services.legacyTitle")}>
-            {t("settings.services.legacyBody")}
-          </InlineMessage>
-        </div>
-      )}
+      {/* The ADS token, first in the group as in the prototype; the notice for a leftover ads_dev_key is inside its row. */}
+      <AdsCredential P={state.P} legacy={settings.legacy.includes("ads_dev_key")} />
       <Row state={state} k="contact_email" label={t("settings.services.contactEmail")} hint={t("settings.services.contactNote")}
         control={(disabled) => (
           <TextSetting state={state} k="contact_email" ui="contact-email-input" type="email" label={t("settings.services.contactEmail")} disabled={disabled}

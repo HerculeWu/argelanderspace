@@ -175,7 +175,9 @@ describe("Services: the contact email", () => {
     expect(q('[data-ui="setting-invalid"]')).not.toBeNull();
   });
 
-  it("the legacy ads_dev_key: a notice that does not say the key stopped working", async () => {
+  // Ticket 12 replaced this ticket-11 expectation ("still read"): the key no longer has any effect, and the notice
+  // now sits in the ADS token row (settings-ads-credential.test.tsx covers the row; the ADS endpoint is absent here).
+  it("the legacy ads_dev_key: a notice that says the key no longer has any effect", async () => {
     await open();
     await group("services");
     expect(q('[data-ui="ads-legacy-key"]')).toBeNull();
@@ -183,10 +185,11 @@ describe("Services: the contact email", () => {
     cleanup();
     await open();
     await group("services");
+    await waitFor(() => expect(q('[data-ui="ads-legacy-key"]')).not.toBeNull());
     const notice = q('[data-ui="ads-legacy-key"]')!;
     expect(notice.textContent).toContain("ads_dev_key");
-    expect(notice.textContent).toContain("still read");
-    expect(notice.textContent).not.toMatch(/no longer has any effect/);
+    expect(notice.textContent).toMatch(/no longer has any effect/);
+    expect(notice.textContent).not.toContain("still read");
   });
 });
 
@@ -342,12 +345,13 @@ describe("review round (desktop-app ticket 11)", () => {
     expect(q('[data-ui="setting-still-in-use"][data-ui-key="global_dir"]')!.textContent).toBe("Still in use: ~/.local/share/argelanderspace");
   });
 
-  it("the legacy notice points at no row that is not there", async () => {
+  // Ticket 12: the row the notice points at ("below") is there now.
+  it("the legacy notice points at the ADS token row it sits in", async () => {
     settings.legacy = ["ads_dev_key"];
     await open();
     await group("services");
-    const text = q('[data-ui="ads-legacy-key"]')!.textContent ?? "";
-    expect(text).toContain("still read");
-    expect(text).not.toMatch(/in this group|below/);
+    await waitFor(() => expect(q('[data-ui="ads-legacy-key"]')).not.toBeNull());
+    expect(q('[data-ui="ads-credential"] [data-ui="ads-legacy-key"]')).not.toBeNull();
+    expect(q('[data-ui="ads-legacy-key"]')!.textContent).toContain("Enter the ADS token below");
   });
 });

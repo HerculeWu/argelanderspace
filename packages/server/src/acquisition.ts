@@ -93,7 +93,7 @@ export interface AcquisitionDeps {
    * (compile-failure-log.ts). Absent (injected pipelines) → `pipelines`.
    */
   pipelinesForJob?: ((jobId: string) => IngestPipelines) | undefined;
-  makeSources: (offline: boolean) => MetadataSources;
+  makeSources: (offline: boolean) => MetadataSources | Promise<MetadataSources>;
   /** External current arXiv PDF bytes; absent → the PDF job fails ("arXiv PDF source is unavailable"). */
   fetchArxivPdf?: ((arxivId: string) => Promise<Buffer>) | undefined;
   /** The `auto_ingest_arxiv` gate (the settings page's "fetch the arXiv PDF when adding literature" switch), read fresh at every automatic submit. */
@@ -435,7 +435,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             const attached = await attachArxivDoc(workId, {
               paths,
               pipelines: deps.pipelinesForJob?.(j.id) ?? deps.pipelines,
-              sources: deps.makeSources(false),
+              sources: await deps.makeSources(false),
               rebuild: collected.rebuild,
               // N1 (upload precedent): the main-doc re-assert must be mutually
               // exclusive with PATCH — the weld runs outside the lock.
@@ -794,7 +794,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       paths,
       pipelines:
         (jobId === undefined ? undefined : deps.pipelinesForJob?.(jobId)) ?? deps.pipelines,
-      sources: deps.makeSources(false),
+      sources: await deps.makeSources(false),
       rebuild: collected.rebuild,
       // The link runs inside the library lock with narrow writes (the ingest itself does not): nothing written
       // meanwhile (imports, edits, unknown keys) is overwritten.
@@ -929,7 +929,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
         "refresh",
         async (j) => {
           try {
-            const out = await lockedRebuild(paths, { sources: deps.makeSources(offline) });
+            const out = await lockedRebuild(paths, { sources: await deps.makeSources(offline) });
             // the task record (jobs/<id>.json, job.done, hello) must never hold an absolute path either
             return out.argument_graph_merges === undefined
               ? out

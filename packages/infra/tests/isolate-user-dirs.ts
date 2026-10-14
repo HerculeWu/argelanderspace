@@ -34,6 +34,19 @@ const vars: Record<string, string> = {
 };
 Object.assign(process.env, vars);
 
+// The OS keychain (desktop-app ticket 12): the credential store reaches it over the user's D-Bus session bus (Secret
+// Service). A test that reaches a store's default backend, and every child process a test spawns with a copy of this
+// environment, must find no bus: a bus address that leads nowhere, no X11 / Wayland display through which libdbus
+// could discover the user's bus, and a runtime directory (where `$XDG_RUNTIME_DIR/bus` would be looked for) inside
+// the throwaway root. The keychain then reads as unavailable, which the store reports as such.
+const runtimeDir = join(root, "runtime");
+mkdirSync(runtimeDir, { mode: 0o700 });
+process.env.DBUS_SESSION_BUS_ADDRESS = `unix:path=${join(root, "no-session-bus")}`;
+process.env.XDG_RUNTIME_DIR = runtimeDir;
+delete process.env.DISPLAY;
+delete process.env.WAYLAND_DISPLAY;
+delete process.env.DBUS_SYSTEM_BUS_ADDRESS;
+
 const isolation: UserDirsIsolation = {
   root,
   vars: Object.keys(vars),

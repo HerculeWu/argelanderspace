@@ -103,7 +103,7 @@ async function runAddDoiStub(
     console.error(`note: ${ignored.join(" ")} ignored — a DOI entry has no ingest output`);
   }
   const paths = libraryPaths(dataDir);
-  const r = await addDoiWork(paths, doi, realSources(paths, false).crossref);
+  const r = await addDoiWork(paths, doi, (await realSources(paths, false)).crossref);
   if (r === null) throw new Error(`invalid DOI: ${doi}`);
   if (!r.created) {
     console.log(`library entry already exists for this DOI: ${r.ref.id}`);
@@ -128,19 +128,24 @@ async function runAddDoiStub(
   );
 }
 
-/** The trailing ADS hint of `library/__main__.py` (status != "ok"). */
+/**
+ * The trailing ADS hint of `library/__main__.py` (status != "ok"). Where to put the token is a fixed line pointing at
+ * the settings page (desktop-app ticket 12; not part of the frozen surface): the token is read only from the
+ * workbench's credential store, which the page fills — never from `$ADS_DEV_KEY`, config.toml or `~/.ads/dev_key`.
+ */
+export const ADS_TOKEN_HINT =
+  "  Save an ADS token on the workbench's settings page (Literature services & credentials) to enable astro citation counts;";
+
 function printAdsWarning(status: string): void {
   console.log(`\n⚠ ADS enrichment was not applied (status: ${status}).`);
-  console.log(
-    "  Put a valid token in ~/.ads/dev_key or $ADS_DEV_KEY to enable astro citation counts;"
-  );
+  console.log(ADS_TOKEN_HINT);
   console.log("  Crossref + OpenAlex still supply counts/metadata meanwhile.");
 }
 
 async function runLibraryBuild(opts: { offline?: boolean; bib?: string }, dataDir: string) {
   const paths = libraryPaths(dataDir);
   const summary = await rebuild(paths, {
-    sources: realSources(paths, opts.offline ?? false),
+    sources: await realSources(paths, opts.offline ?? false),
     bibPath: opts.bib ?? null,
   });
   console.log(JSON.stringify(summary, null, 2));
@@ -171,7 +176,7 @@ async function runAcquire(bib: string, opts: AcquireOpts, dataDir: string): Prom
   const paths = libraryPaths(dataDir);
   const offline = opts.offline ?? false;
   const limit = opts.limit !== undefined ? Number.parseInt(opts.limit, 10) : null;
-  const sources = realSources(paths, offline);
+  const sources = await realSources(paths, offline);
 
   if (opts.dryRun) {
     // Plan only: an in-memory store, no library write (acquire/__main__.py).

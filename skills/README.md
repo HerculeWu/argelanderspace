@@ -27,7 +27,8 @@ yet: it searches NASA ADS for seed papers, expands from them with ADS
 `similar` / `useful`, and returns a ranked list in the conversation. It is the
 one skill here that does **not** go through the `argelanderspace` CLI — it
 ships its own zero-dependency script, `scripts/ads.mjs`, needs only Node and
-an ADS key in `~/.ads/dev_key` (it reads no other token source), and is
+an ADS key in `~/.ads/dev_key` (it reads no other token source — not the
+token saved on the workbench's settings page, which is a separate copy), and is
 read-only: it never touches a library and writes no files. Adding a found
 paper to the library stays a separate, explicit step.
 
@@ -72,7 +73,10 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
   `node <repo>/packages/app/dist/bin.js` (absolute path) in place of
   `argelanderspace`.
 - **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) on PATH for the LaTeX (arXiv) ingest pipeline; optional `pdftocairo` (poppler-utils) + `gs` (ghostscript, EPS only) for vector figures.
-- Optional: `ADS_DEV_KEY` / `OPENALEX_API_KEY` for richer library enrichment.
+- Optional, for richer library enrichment: an ADS token saved on the
+  workbench's settings page (*Literature services & credentials*; the CLI reads
+  the same one — `$ADS_DEV_KEY` and `~/.ads/dev_key` are not read), and
+  `OPENALEX_API_KEY`.
 - A running server (`argelanderspace serve`) only for the deep links to open —
   the CLI itself works without it.
 

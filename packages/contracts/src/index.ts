@@ -1,3 +1,4 @@
+export * from "./ads-credential-api.js";
 export * from "./annotation-targets.js";
 export * from "./annotations.js";
 export * from "./api.js";

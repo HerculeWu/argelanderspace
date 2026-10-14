@@ -29,8 +29,10 @@ import {
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
+  type CredentialStore,
   configFilePath,
   configOfReading,
+  createAdsCredentialStore,
   type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
@@ -39,6 +41,7 @@ import {
   LOG_DIR_NAME,
   observedFetch,
   pinGlobalDirs,
+  readAdsToken,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
 } from "@argelanderspace/infra";
@@ -52,7 +55,13 @@ import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
 import { logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
-import { externalObserver, jobIdField, jobLogger, logEnvironment } from "./log-observers.js";
+import {
+  externalObserver,
+  jobIdField,
+  jobLogger,
+  logEnvironment,
+  observedCredentials,
+} from "./log-observers.js";
 import { sweepStagedAttachmentsIn } from "./mail-compose.js";
 import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
@@ -121,6 +130,11 @@ export interface ServerOptions {
   settingsAtStart?: SettingsValues;
   /** The restart-only keys given on `serve`'s command line (`--port`, `--data-dir`), for `running.from_flag`. */
   settingsFromFlags?: readonly RunningFlagKey[];
+  /**
+   * The ADS token's credential store (desktop-app ticket 12): tests hand in one over a fake keychain. Default: the
+   * `ads` purpose over the OS keychain. The settings endpoints write it and the sources read it at each composition.
+   */
+  adsCredentials?: CredentialStore;
 }
 
 export interface RunningServer {
@@ -150,11 +164,18 @@ export function createServer(opts: ServerOptions): RunningServer {
   // What the adapters report of their external calls goes to this server's log; without a log there is no observer
   // and the adapters are composed exactly as the CLI composes them.
   const observer = externalObserver(log);
-  // The sources take their keys from a lenient reading of config.toml at each use: a faulty file means "not set".
+  // One ADS credential store for the endpoints that save the token and the sources that use it (ticket 12).
+  const adsCredentials = observedCredentials(
+    opts.adsCredentials ?? createAdsCredentialStore(),
+    log
+  );
+  // The sources take their keys from a lenient reading of config.toml at each use: a faulty file means "not set";
+  // the ADS token from the credential store at each use, so a token saved or removed applies without a restart.
   const wiring = {
     observer,
     fetchImpl: opts.fetchImpl,
     config: () => readConfigLeniently(opts.configPath ?? configFilePath()),
+    adsToken: () => readAdsToken(adsCredentials),
   };
   const observeJobs = jobLogger(log);
   const jobsDir = join(opts.dataDir, "jobs");
@@ -244,6 +265,11 @@ export function createServer(opts: ServerOptions): RunningServer {
     },
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
     configPath: opts.configPath,
+    adsCredentials,
+    adsTestFetch:
+      observer === undefined && opts.fetchImpl === undefined
+        ? undefined
+        : observedFetch(opts.fetchImpl ?? fetch, "ads", observer),
     startup: opts.startup ?? null,
     ...(opts.settingsAtStart ? { settingsAtStart: opts.settingsAtStart } : {}),
     ...(opts.settingsFromFlags ? { settingsFromFlags: opts.settingsFromFlags } : {}),

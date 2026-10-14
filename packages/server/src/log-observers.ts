@@ -24,6 +24,7 @@ import {
 } from "@argelanderspace/contracts";
 import {
   ArxivPdfOnlyError,
+  CREDENTIAL_STORE_METHODS,
   type CredentialStore,
   EXTERNAL_PROGRAMS,
   EXTERNAL_SERVICES,
@@ -439,52 +440,73 @@ export function mailAccountField(id: string): LogField {
 
 const KEYCHAIN_STATES = ["available", "unavailable"] as const;
 
+type KeychainState = (typeof KEYCHAIN_STATES)[number];
+type StoreMethod = (typeof CREDENTIAL_STORE_METHODS)[number];
+
+/**
+ * What each method's result says about the keychain. Keyed by every method of the store (infra
+ * `CREDENTIAL_STORE_METHODS`), so a method added to the store must be named here or the build fails: the wrapper
+ * below is made from this table and loses no method (desktop-app ticket 07 warned that rebuilding get/set/delete by
+ * hand would silently drop a new one; ticket 12 added `status`).
+ */
+const KEYCHAIN_STATE_OF: {
+  [K in StoreMethod]: (
+    result: Awaited<ReturnType<CredentialStore[K]>>
+  ) => KeychainState | undefined;
+} = {
+  get: (result) =>
+    result.status === "keychain-unavailable"
+      ? "unavailable"
+      : result.status === "not-found" ||
+          (result.status === "ok" && result.protection === "keychain")
+        ? "available"
+        : undefined,
+  set: (result) =>
+    result.status === "keychain-unavailable" ||
+    (result.status === "stored" && result.protection === "file")
+      ? "unavailable"
+      : result.status === "stored"
+        ? "available"
+        : undefined,
+  // A removal does not tell whether the keychain answered in every case; nothing is recorded for it.
+  delete: () => undefined,
+  status: (result) => (result.status === "error" ? undefined : result.keychain),
+};
+
 /**
  * A credential store that records whether the OS keychain answered, each time that changes: read from what the
  * store already does for its callers (it tries the keychain first), so nothing asks the keychain on the log's
- * behalf. The account and the password are not looked at.
+ * behalf. The id and the secret are not looked at. Every method the store has is passed through (wrapped); the
+ * wrapper has exactly the store's methods.
  */
-export function observedCredentials<
-  T extends Pick<CredentialStore, "get"> & Partial<Pick<CredentialStore, "set" | "delete">>,
->(store: T, log: ServerLog): T {
+export function observedCredentials<T extends Partial<CredentialStore>>(
+  store: T,
+  log: ServerLog
+): T {
   if (log === silentLog) return store;
-  const { set, delete: remove } = store;
-  let last: (typeof KEYCHAIN_STATES)[number] | undefined;
-  const note = (state: (typeof KEYCHAIN_STATES)[number] | undefined): void => {
+  let last: KeychainState | undefined;
+  const note = (state: KeychainState | undefined): void => {
     if (state === undefined || state === last) return;
     last = state;
     if (state === "available")
       log.info("credentials.keychain_state", { state: f.oneOf(KEYCHAIN_STATES, state) });
     else log.warn("credentials.keychain_state", { state: f.oneOf(KEYCHAIN_STATES, state) });
   };
-  const watched: Pick<CredentialStore, "get"> & Partial<Pick<CredentialStore, "set" | "delete">> = {
-    async get(accountId) {
-      const result = await store.get(accountId);
-      note(
-        result.status === "keychain-unavailable"
-          ? "unavailable"
-          : result.status === "not-found" ||
-              (result.status === "ok" && result.protection === "keychain")
-            ? "available"
-            : undefined
-      );
-      return result;
-    },
-  };
-  if (set)
-    watched.set = async (accountId, password, opts) => {
-      const result = await set.call(store, accountId, password, opts);
-      note(
-        result.status === "keychain-unavailable" ||
-          (result.status === "stored" && result.protection === "file")
-          ? "unavailable"
-          : result.status === "stored"
-            ? "available"
-            : undefined
-      );
+  const watched: Record<string, unknown> = {};
+  for (const name of CREDENTIAL_STORE_METHODS) {
+    const method = store[name] as ((...args: unknown[]) => Promise<unknown>) | undefined;
+    if (typeof method !== "function") continue;
+    const stateOf = KEYCHAIN_STATE_OF[name] as (result: unknown) => KeychainState | undefined;
+    watched[name] = async (...args: unknown[]) => {
+      const result = await method.apply(store, args);
+      try {
+        note(stateOf(result));
+      } catch {
+        /* recording a call never changes its result */
+      }
       return result;
     };
-  if (remove) watched.delete = (accountId) => remove.call(store, accountId);
+  }
   return watched as T;
 }
 

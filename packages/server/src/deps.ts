@@ -11,7 +11,6 @@
  * run showed live ADS writes during an offline rebuild).
  */
 
-import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type {
   AdsDiscoverySource,
@@ -55,28 +54,38 @@ export interface AdapterWiring {
    */
   failureLog?: TexFailureLogHook | undefined;
   /**
-   * Where the sources take `ads_dev_key`, `openalex_api_key` and `contact_email` from. The server hands in a function
-   * that reads config.toml leniently at each call (desktop-app ticket 10: a faulty file means "not set" and fails
-   * nothing; a contact email not shaped like an address is faulty, so no address is sent); the CLI hands in none, and
-   * the clients read the file strictly themselves (a faulty file stops the command).
+   * Where the sources take `openalex_api_key` and `contact_email` from. The server hands in a function that reads
+   * config.toml leniently at each call (desktop-app ticket 10: a faulty file means "not set" and fails nothing; a
+   * contact email not shaped like an address is faulty, so no address is sent); the CLI hands in none, and the clients
+   * read the file strictly themselves (a faulty file stops the command).
    */
   config?: (() => AppConfig) | undefined;
+  /**
+   * The ADS token, asked at each composition (desktop-app ticket 12): the server hands in a reading of its own ADS
+   * credential store (the one the settings endpoints write, wrapped for its log); default `readAdsToken()`, the
+   * credential store over the OS keychain. Never from the environment, config.toml or `~/.ads/dev_key`.
+   */
+  adsToken?: (() => Promise<string | null>) | undefined;
+}
+
+/** The ADS token of this composition: read from the credential store now, so a saved or removed token applies at once. */
+async function adsTokenOf(wiring: AdapterWiring): Promise<{ token: string | null }> {
+  return { token: await (wiring.adsToken ?? (() => readAdsToken()))() };
 }
 
 /**
- * The keys and the contact email of the sources, when the composition gave a config; nothing otherwise (the clients'
- * own reading). Read at each composition, so a change of config.toml applies to the next request without a restart.
+ * The OpenAlex key and the contact email of the sources, when the composition gave a config; nothing otherwise (the
+ * clients' own reading). Read at each composition, so a change of config.toml applies to the next request without a
+ * restart.
  */
 function keysOf(wiring: AdapterWiring): {
-  ads: { token?: string | null };
   oa: { apiKey?: string | null; mailto?: string | null };
   crossref: { mailto?: string | null };
 } {
-  if (wiring.config === undefined) return { ads: {}, oa: {}, crossref: {} };
+  if (wiring.config === undefined) return { oa: {}, crossref: {} };
   const config = wiring.config();
   const mailto = readContactEmail(config);
   return {
-    ads: { token: readAdsToken(process.env, homedir(), config) },
     oa: { apiKey: readOpenAlexApiKey(process.env, config), mailto },
     crossref: { mailto },
   };
@@ -99,16 +108,20 @@ export function statusDirFor(dataDir: string): string {
   return resolve(dataDir, "..", "status");
 }
 
-/** The resolution-chain sources; `offline` skips remote enrichment. */
-export function realSources(
+/**
+ * The resolution-chain sources; `offline` skips remote enrichment. Asynchronous because the ADS token is read from the
+ * credential store at each composition (even offline: the summary's `ads_status` says whether there is one).
+ */
+export async function realSources(
   paths: LibraryPaths,
   offline: boolean,
   wiring: AdapterWiring = {}
-): MetadataSources {
+): Promise<MetadataSources> {
   const keys = keysOf(wiring);
+  const ads = await adsTokenOf(wiring);
   return {
     ads: new AdsClient({
-      ...keys.ads,
+      ...ads,
       cacheDir: join(paths.cacheDir, "ads"),
       enabled: !offline,
       ...fetchOf(wiring, "ads"),
@@ -133,12 +146,12 @@ export function realSources(
  * cache namespace (`<dataDir>/library/cache/ads-discovery`), never the
  * metadata `<cacheDir>/ads` cache.
  */
-export function realDiscoverySource(
+export async function realDiscoverySource(
   paths: LibraryPaths,
   wiring: AdapterWiring = {}
-): AdsDiscoverySource {
+): Promise<AdsDiscoverySource> {
   return new AdsDiscoveryClient({
-    ...keysOf(wiring).ads,
+    ...(await adsTokenOf(wiring)),
     cacheDir: join(paths.cacheDir, "ads-discovery"),
     ...fetchOf(wiring, "ads"),
   });

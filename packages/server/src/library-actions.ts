@@ -241,7 +241,7 @@ export function detectIdentifier(value: string): ManualIdentifier | { error: str
 export interface ManualImportDeps {
   paths: LibraryPaths;
   libraryLock: AsyncLock;
-  makeSources: () => MetadataSources;
+  makeSources: () => MetadataSources | Promise<MetadataSources>;
 }
 
 /** What one import did, beyond the per-entry results the page shows. */
@@ -270,7 +270,7 @@ export async function runManualImport(
   req: ManualWorkRequest,
   options: { bridge?: "merge" | "reject" } = {}
 ): Promise<ManualImportResult> {
-  const sources = deps.makeSources();
+  const sources = await deps.makeSources();
   const outcomes = await deps.libraryLock.run(async (): Promise<ManualAddOutcome[]> => {
     if (req.mode === "identifier") {
       const id = detectIdentifier(req.value);

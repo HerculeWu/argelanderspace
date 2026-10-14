@@ -9,6 +9,8 @@ Turn a request like *"papers on tidal tails; start from a few that Pavel Kroupa 
 
 This skill is self-contained and read-only. It needs Node 18+ and an ADS API key in `~/.ads/dev_key`; it does not need the `argelanderspace` CLI, a library or a server, and it writes no files.
 
+`~/.ads/dev_key` and the ADS token saved in the workbench (its settings page, which can import that file once) are two separate copies: this skill reads only the file, the workbench and its CLI only their own saved token. Changing or removing one does not change the other.
+
 ## Non-negotiable: every paper comes from the script's output
 
 List only papers that `ads.mjs` returned in this session, with the bibcode it printed. Never add a paper from memory, never guess or repair a bibcode, and never fall back to web search when ADS fails — a list that mixes real and remembered papers is worse than a short one.
@@ -84,7 +86,7 @@ Below the table, say in a few sentences why these seeds were chosen, what you dr
 
 Report the script's error message and stop.
 
-- `no ADS token` — the user must put their key (from the ADS account settings page) in `~/.ads/dev_key`. Do not ask them to paste it into the conversation.
+- `no ADS token` — the user must put their key (from the ADS account settings page) in `~/.ads/dev_key`; a token saved in the workbench's settings does not count here. Do not ask them to paste it into the conversation.
 - `rejected the token` — the key is wrong or expired.
 - `rate limit exceeded` — wait for the stated time; do not retry in a loop.
 - `ADS HTTP 400` — your query is malformed; fix the syntax and rerun.

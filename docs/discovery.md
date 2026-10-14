@@ -17,6 +17,8 @@
 
 core 不知 ADS URL/Solr/token/HTTP/cache 路径；infra 不改 Library/UI 状态；server 不实现排序或图组装；web 不从 raw provider references 重建边。Discovery port 不扩张旧元数据 AdsSource 的接口和缓存语义。
 
+ADS token（desktop-app 票 12）：用户在设置页「文献服务与凭据」里填写或从 `~/.ads/dev_key` 导入，保存在工作台的凭据存储（系统钥匙串；钥匙串不可用时仅经用户同意才落受限文件）；server 每次组装探索来源时现读，保存或移除后不用重启。`ADS_DEV_KEY` 环境变量、config.toml 的 `ads_dev_key` 与 `~/.ads/dev_key` 都不再被读取；没有 token 即下表的「token 缺失」。机制见 [architecture](architecture.md)「ADS 凭据」。
+
 查询次序固定：
 
 1. seed bibcode 精确查询。
