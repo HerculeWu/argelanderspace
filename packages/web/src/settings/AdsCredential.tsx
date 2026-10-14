@@ -78,7 +78,10 @@ export function AdsCredential({ P, legacy }: { P: Preferences; legacy: boolean }
   const legacyNotice = legacy && !dismissed && (
     <div className="st-with-action">
       <InlineMessage tone="warning" uiId="ads-legacy-key" title={t("settings.services.legacyTitle")}>
-        {t("settings.services.legacyBody")}
+        {/* Where to enter it only while nothing is saved (and the row's state is known); no direction words. */}
+        {typeof status === "object" && status !== null && status.saved === "none"
+          ? t("settings.services.legacyBody")
+          : t("settings.services.legacyBodySaved")}
       </InlineMessage>
       <Button
         data-ui="ads-legacy-dismiss"
@@ -175,7 +178,17 @@ export function AdsCredential({ P, legacy }: { P: Preferences; legacy: boolean }
   const remove = async () => {
     setBusy(true);
     try {
-      if (settle(await removeAdsToken(), "settings.ads.removedNotice")) setRemoving(false);
+      const outcome = await removeAdsToken();
+      if (outcome.ok) {
+        settle(outcome, "settings.ads.removedNotice");
+        setRemoving(false);
+      } else {
+        // A removal that failed says so in its own words; the row stays as it is (no input, no consent card).
+        P.notify(
+          t(outcome.reason === "keychain_unavailable" ? "settings.ads.failed.removeKeychain" : "settings.ads.failed.removeOther")
+        );
+        setRemoving(false);
+      }
     } finally {
       setBusy(false);
     }

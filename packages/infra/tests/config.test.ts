@@ -18,7 +18,7 @@ import {
   loadConfigFile,
   parseConfigToml,
 } from "../src/config.js";
-import { readAdsToken } from "../src/sources/ads.js";
+import { ADS_TOKEN_READ_TIMEOUT_MS, readAdsToken } from "../src/sources/ads.js";
 import { OpenAlexClient, readOpenAlexApiKey } from "../src/sources/openalex.js";
 import { jsonResponse, stubFetch } from "./helpers.js";
 
@@ -184,6 +184,10 @@ describe("readAdsToken: only the credential store (desktop-app ticket 12)", () =
   test("the environment variable, the config key and ~/.ads/dev_key are not read", async () => {
     // The HOME here is the isolated one (isolate-user-dirs.ts); the key file is a fake made for the test.
     const home = homedir();
+    // Written only into a temporary home (isolate-user-dirs.ts): never the user's real ~/.ads.
+    const temporary = home.startsWith(tmpdir()) && home !== tmpdir();
+    expect(temporary).toBe(true);
+    if (!temporary) return;
     mkdirSync(join(home, ".ads"), { recursive: true });
     writeFileSync(join(home, ".ads", "dev_key"), "from-file\n", "utf-8");
     const xdg = xdgWithConfig('ads_dev_key = "from-config"\n');
@@ -234,6 +238,40 @@ describe("readAdsToken: only the credential store (desktop-app ticket 12)", () =
         },
       })
     ).toBeNull();
+  });
+});
+
+describe("readAdsToken: a keychain that does not answer in time (ticket 12 revision)", () => {
+  test("a read that hangs is no token after the timeout; nothing is left to hold the process", async () => {
+    const hanging = { get: () => new Promise<never>(() => {}) };
+    const started = Date.now();
+    expect(await readAdsToken(hanging, { timeoutMs: 50 })).toBeNull();
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(ADS_TOKEN_READ_TIMEOUT_MS).toBe(5000);
+  });
+
+  test("a read that answers before the timeout is used", async () => {
+    const slow = {
+      get: () =>
+        new Promise<{
+          status: "ok";
+          password: string;
+          protection: "keychain";
+          keychainProtected: true;
+        }>((ok) =>
+          setTimeout(
+            () =>
+              ok({
+                status: "ok",
+                password: "tok-2",
+                protection: "keychain",
+                keychainProtected: true,
+              }),
+            10
+          )
+        ),
+    };
+    expect(await readAdsToken(slow, { timeoutMs: 1000 })).toBe("tok-2");
   });
 });
 

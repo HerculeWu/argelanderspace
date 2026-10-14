@@ -264,6 +264,8 @@ export interface AppDeps {
   adsCredentials?: CredentialStore | undefined;
   /** The HTTP implementation of the ADS token test (ads-credential.ts); default the global fetch. */
   adsTestFetch?: FetchImpl | undefined;
+  /** Where the ADS import looks for `~/.ads/dev_key` (ads-credential.ts); default under the home directory. */
+  adsDevKeyPath?: (() => string) | undefined;
   /** Where `serve` keeps the process's data, fixed at its start (settings.ts `startupLocations`); default null. */
   startup?: import("@argelanderspace/contracts").StartupLocations | null;
   /**
@@ -552,6 +554,7 @@ export function createApp(deps: AppDeps): Hono {
   mountAdsCredentialRoutes(app, guardCsrf, {
     store: deps.adsCredentials ?? observedCredentials(createAdsCredentialStore(), log),
     fetchImpl: deps.adsTestFetch,
+    devKeyPath: deps.adsDevKeyPath,
   });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();

@@ -9,7 +9,7 @@ Turn a request like *"papers on tidal tails; start from a few that Pavel Kroupa 
 
 This skill is self-contained and read-only. It needs Node 18+ and an ADS API key in `~/.ads/dev_key`; it does not need the `argelanderspace` CLI, a library or a server, and it writes no files.
 
-`~/.ads/dev_key` and the ADS token saved in the workbench (its settings page, which can import that file once) are two separate copies: this skill reads only the file, the workbench and its CLI only their own saved token. Changing or removing one does not change the other.
+`~/.ads/dev_key` and the ADS token saved in the workbench (entered on its settings page, or imported there by copying the file's content — the file itself is left as it is) are two separate copies: this skill reads only the file, the workbench and its CLI only their own saved token. Changing or removing one does not change the other.
 
 ## Non-negotiable: every paper comes from the script's output
 

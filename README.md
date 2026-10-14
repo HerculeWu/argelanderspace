@@ -192,8 +192,8 @@ Settings page (*Literature services & credentials*), where you can also test
 it, remove it, or import it from `~/.ads/dev_key`. It goes into the system
 keychain; only when there is none, and only if you agree, into a restricted
 file in the global data directory. The CLI uses the same saved token. Without
-one, ADS degrades to `no-token` and the rest of the library keeps working.
-`$ADS_DEV_KEY`, a `ads_dev_key` line in `config.toml` and `~/.ads/dev_key` are
+one, ADS degrades to `no-token` and the rest of the library keeps working. A locked keychain may make the system ask you to unlock it when a command reads the token.
+`$ADS_DEV_KEY`, an `ads_dev_key` line in `config.toml` and `~/.ads/dev_key` are
 no longer read (the import copies the file once and leaves it as it is).
 
 ## Stored IR (sketch)

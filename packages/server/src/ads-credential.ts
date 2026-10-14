@@ -10,7 +10,7 @@
  * own: the two are separate copies from then on.
  */
 
-import { closeSync, fstatSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -75,13 +75,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** `~/.ads/dev_key`: the content, or why it could not be had. Read-only: opened for reading, nothing else. */
+/**
+ * `~/.ads/dev_key`: the content, or why it could not be had. Read-only: opened for reading, nothing else. Opened
+ * non-blocking, so a FIFO (or a device) there does not hang the request: anything but a regular file is "no key file".
+ * A symbolic link is followed, as before.
+ */
 function readDevKey(
   path: string
 ): { ok: true; text: string } | { ok: false; reason: AdsCredentialRefusal } {
   let fd: number;
   try {
-    fd = openSync(path, "r");
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     return {

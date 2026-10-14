@@ -2413,7 +2413,8 @@
       "contactPlaceholder": "name@example.org",
       "notEmail": "不是邮箱地址的写法",
       "legacyTitle": "配置文件里还有 ads_dev_key",
-      "legacyBody": "这个键已不再生效。ADS token 请在下面填写；可以从配置文件里删掉这一行。",
+      "legacyBody": "这个键已不再生效。ADS token 请在本行填写；可以从配置文件里删掉这一行。",
+      "legacyBodySaved": "这个键已不再生效。可以从配置文件里删掉这一行。",
       "legacyDismiss": "知道了"
     },
     "entries": {
@@ -2479,7 +2480,9 @@
         "not_saved": "没有已保存的 ADS token。",
         "file_unreadable": "保存 token 的受限文件无法读取。",
         "other": "无法更改 ADS token，没有保存任何内容。",
-        "unreachable": "服务器没有应答，没有做任何更改。"
+        "unreachable": "服务器没有应答，没有做任何更改。",
+        "removeKeychain": "系统钥匙串没有应答，token 没有被移除。请稍后再试。",
+        "removeOther": "无法移除 ADS token，没有做任何更改。"
       }
     }
   }

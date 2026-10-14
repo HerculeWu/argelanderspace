@@ -1,12 +1,14 @@
 /**
  * The ADS credential endpoints over HTTP (desktop-app ticket 12): a real server in a temporary project, real requests.
  * The keychain is a fake handed in (`adsCredentials`), the fallback file goes to a temporary directory, the network
- * is an offline stub (`fetchImpl`): nothing here reaches the real keychain, the real `~/.ads/dev_key` (HOME is the
- * isolated one of isolate-user-dirs.ts; the file there is a fake written by the test) or ADS.
+ * is an offline stub (`fetchImpl`): nothing here reaches the real keychain, the real `~/.ads/dev_key` or ADS. The
+ * import reads a fake key file in a temporary directory handed in as `adsDevKeyPath`; the one test that needs the
+ * file at the home directory (the old source must not count) first checks that the home is a temporary one.
  *
  * Every answer is searched for the token (a marked value): none may carry it.
  */
 
+import { execFileSync } from "node:child_process";
 import {
   mkdirSync,
   mkdtempSync,
@@ -17,13 +19,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { libraryPaths } from "@argelanderspace/core";
 import {
   createCredentialStore,
   type FetchImpl,
   type KeychainBackend,
 } from "@argelanderspace/infra";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { realSources } from "../src/deps.js";
 import { createServer, type RunningServer } from "../src/server.js";
 import { makeDataDir, stubSources } from "./helpers.js";
 
@@ -37,11 +41,17 @@ let globalDir: string;
 let keychainUp = true;
 let keychain: Map<string, string>;
 let adsAnswer: () => Response;
+let devKeyDir: string;
+/** Set by a test to make the keychain's read hang (a locked keychain waiting for the user). */
+let keychainHangs = false;
+let keychainReads = 0;
 let requests: Array<{ url: string; auth: string | null }>;
 const answers: string[] = [];
 
 const backend: KeychainBackend = {
   get: (id, service) => {
+    keychainReads += 1;
+    if (keychainHangs) return new Promise<never>(() => {});
     if (!keychainUp) throw new Error(`no secret service (${service})`);
     return keychain.get(`${service}/${id}`) ?? null;
   },
@@ -62,9 +72,14 @@ const fetchStub: FetchImpl = (async (input: string | URL | Request, init?: Reque
   return new Response("not found", { status: 404 });
 }) as FetchImpl;
 
-async function start(): Promise<void> {
+/** Every temporary directory a start made (a test may start twice); all removed after each test. */
+const made: string[] = [];
+
+async function start(extra: Partial<Parameters<typeof createServer>[0]> = {}): Promise<void> {
   dataDir = makeDataDir();
   globalDir = mkdtempSync(join(tmpdir(), "aspace-ads-cred-global-"));
+  devKeyDir = mkdtempSync(join(tmpdir(), "aspace-ads-cred-home-"));
+  made.push(dirname(dataDir), globalDir, devKeyDir);
   srv = createServer({
     dataDir,
     port: 0,
@@ -74,6 +89,8 @@ async function start(): Promise<void> {
     fetchImpl: fetchStub,
     configPath: join(dataDir, "config.toml"),
     adsCredentials: createCredentialStore({ purpose: "ads", backend, dataDir: globalDir }),
+    adsDevKeyPath: devKeyPath,
+    ...extra,
   });
   base = `http://127.0.0.1:${await srv.ready()}`;
 }
@@ -98,10 +115,19 @@ async function call(
   };
 }
 
-const devKeyPath = () => join(homedir(), ".ads", "dev_key");
+/** The fake `~/.ads/dev_key` of these tests: in a temporary directory, never the home directory. */
+const devKeyPath = () => join(devKeyDir, ".ads", "dev_key");
+const writeDevKey = (content: string | Buffer) => {
+  mkdirSync(join(devKeyDir, ".ads"), { recursive: true });
+  writeFileSync(devKeyPath(), content);
+};
+/** Only a home directory below the temporary directory may be written to (isolate-user-dirs.ts sets one). */
+const homeIsTemporary = () => homedir().startsWith(tmpdir()) && homedir() !== tmpdir();
 
 beforeEach(async () => {
   keychainUp = true;
+  keychainHangs = false;
+  keychainReads = 0;
   keychain = new Map();
   requests = [];
   adsAnswer = () => new Response('{"response":{"docs":[]}}', { status: 200 });
@@ -117,9 +143,7 @@ afterEach(async () => {
   }
   await srv?.close();
   srv = undefined;
-  rmSync(dataDir, { recursive: true, force: true });
-  rmSync(globalDir, { recursive: true, force: true });
-  rmSync(join(homedir(), ".ads"), { recursive: true, force: true });
+  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("status, save, remove", () => {
@@ -264,8 +288,7 @@ describe("test", () => {
 
 describe("import from ~/.ads/dev_key", () => {
   test("saves the file's token; the file's bytes and modification time are unchanged", async () => {
-    mkdirSync(join(homedir(), ".ads"), { recursive: true });
-    writeFileSync(devKeyPath(), `${TOKEN}\n`);
+    writeDevKey(`${TOKEN}\n`);
     const when = new Date("2024-01-02T03:04:05Z");
     utimesSync(devKeyPath(), when, when);
     const bytes = readFileSync(devKeyPath());
@@ -273,9 +296,7 @@ describe("import from ~/.ads/dev_key", () => {
 
     const status = await call("GET", "/api/credentials/ads");
     expect(status.body).toMatchObject({ saved: "none", devKey: { exists: true } });
-    expect((status.body.devKey as { path: { display: string } }).path.display).toBe(
-      "~/.ads/dev_key"
-    );
+    expect((status.body.devKey as { path: { path: string } }).path.path).toBe(devKeyPath());
 
     const imported = await call("POST", "/api/credentials/ads/import", {});
     expect(imported.status).toBe(200);
@@ -297,8 +318,7 @@ describe("import from ~/.ads/dev_key", () => {
       ok: false,
       reason: "no_dev_key",
     });
-    mkdirSync(join(homedir(), ".ads"), { recursive: true });
-    writeFileSync(devKeyPath(), "  \n");
+    writeDevKey("  \n");
     expect((await call("POST", "/api/credentials/ads/import", {})).body).toEqual({
       ok: false,
       reason: "invalid_token",
@@ -350,13 +370,138 @@ describe("the sources take the token at each use, without a restart", () => {
     process.env.ADS_DEV_KEY = "old-env-token-333";
     try {
       writeFileSync(join(dataDir, "config.toml"), 'ads_dev_key = "old-config-token-222"\n');
+      // The old source is the file at the home directory itself: written only when that home is a temporary one.
+      expect(homeIsTemporary()).toBe(true);
+      if (!homeIsTemporary()) return;
       mkdirSync(join(homedir(), ".ads"), { recursive: true });
-      writeFileSync(devKeyPath(), "old-file-token-111\n");
+      writeFileSync(join(homedir(), ".ads", "dev_key"), "old-file-token-111\n");
       expect(await discover()).toBe(503);
       expect(requests).toEqual([]);
     } finally {
+      if (homeIsTemporary()) rmSync(join(homedir(), ".ads"), { recursive: true, force: true });
       if (saved === undefined) delete process.env.ADS_DEV_KEY;
       else process.env.ADS_DEV_KEY = saved;
     }
+  });
+});
+
+describe("ticket 12 revision", () => {
+  test("refusals are no-store too", async () => {
+    keychainUp = false;
+    const refused = await call("PUT", "/api/credentials/ads", { token: TOKEN });
+    expect(refused.status).toBe(422);
+    expect(refused.cache).toBe("no-store");
+    const bad = await call("PUT", "/api/credentials/ads", { token: " " });
+    expect(bad.cache).toBe("no-store");
+    const missing = await call("POST", "/api/credentials/ads/import", {});
+    expect(missing.status).toBe(404);
+    expect(missing.cache).toBe("no-store");
+    const notSaved = await call("POST", "/api/credentials/ads/test", {});
+    expect(notSaved.cache).toBe("no-store");
+  });
+
+  test("import: only a literal true is consent to the file", async () => {
+    keychainUp = false;
+    writeDevKey(`${TOKEN}\n`);
+    for (const consent of ["true", 1, {}, [true]]) {
+      const r = await call("POST", "/api/credentials/ads/import", { fileFallbackConsent: consent });
+      expect(r.body).toEqual({ ok: false, reason: "keychain_unavailable" });
+    }
+    expect(() => statSync(join(globalDir, "ads-credentials.json"))).toThrow();
+  });
+
+  test("import: a key file over 8 KiB is refused and not saved", async () => {
+    writeDevKey("a".repeat(8 * 1024 + 1));
+    const r = await call("POST", "/api/credentials/ads/import", {});
+    expect(r.status).toBe(400);
+    expect(r.body).toEqual({ ok: false, reason: "invalid_token" });
+    expect(keychain.size).toBe(0);
+    // exactly 8 KiB of a too-long token: read, then refused by the token rule (over 1024 characters)
+    writeDevKey("a".repeat(8 * 1024));
+    expect((await call("POST", "/api/credentials/ads/import", {})).body).toEqual({
+      ok: false,
+      reason: "invalid_token",
+    });
+    // A good token padded with whitespace past 8 KiB: it would be accepted after trimming, but the file is too large.
+    writeDevKey(`${TOKEN}${" ".repeat(8 * 1024)}`);
+    expect((await call("POST", "/api/credentials/ads/import", {})).body).toEqual({
+      ok: false,
+      reason: "invalid_token",
+    });
+    expect(keychain.size).toBe(0);
+    writeDevKey(`${TOKEN}${" ".repeat(100)}\n`);
+    expect((await call("POST", "/api/credentials/ads/import", {})).body).toMatchObject({
+      ok: true,
+    });
+  });
+
+  test("import: a FIFO at ~/.ads/dev_key is not a key file and does not block the server", async () => {
+    mkdirSync(join(devKeyDir, ".ads"), { recursive: true });
+    execFileSync("mkfifo", [devKeyPath()]);
+    const status = await call("GET", "/api/credentials/ads");
+    expect(status.body).toMatchObject({ devKey: { exists: false } });
+    const r = await call("POST", "/api/credentials/ads/import", {});
+    expect(r.body).toEqual({ ok: false, reason: "no_dev_key" });
+    expect(keychain.size).toBe(0);
+  }, 10_000);
+
+  test("a damaged restricted file: status unreadable, never a value", async () => {
+    keychainUp = false;
+    writeFileSync(join(globalDir, "ads-credentials.json"), "{ not json");
+    const r = await call("GET", "/api/credentials/ads");
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ saved: "unreadable" });
+  });
+
+  test("the default key file is ~/.ads/dev_key (shown with ~), looked for without writing anything", async () => {
+    await srv?.close();
+    await start({ adsDevKeyPath: undefined });
+    const r = await call("GET", "/api/credentials/ads");
+    expect((r.body.devKey as { path: { display: string } }).path.display).toBe("~/.ads/dev_key");
+  });
+
+  test("a keychain whose read hangs: the request answers anyway, as without a token", async () => {
+    await call("PUT", "/api/credentials/ads", { token: TOKEN });
+    keychainHangs = true;
+    const started = Date.now();
+    const status = await fetch(`${base}/api/library/discovery?bibcode=2016ApJ...818...46F`).then(
+      (r) => r.status
+    );
+    expect(status).toBe(503);
+    expect(Date.now() - started).toBeLessThan(9000);
+    expect(requests).toEqual([]);
+  }, 15_000);
+
+  test("an offline refresh reads the ADS credential like an online one: the summary says ok, not no-token", async () => {
+    await srv?.close();
+    await start({ deps: {} });
+    await call("PUT", "/api/credentials/ads", { token: TOKEN });
+    keychainReads = 0;
+    const offline = await fetch(`${base}/api/library/refresh?offline=true`, { method: "POST" });
+    expect(offline.status).toBe(200);
+    expect(((await offline.json()) as { ads_status: string }).ads_status).toBe("ok");
+    expect(keychainReads).toBeGreaterThan(0);
+    // and no request left the machine: offline sends nothing, to ADS or anywhere
+    expect(requests).toEqual([]);
+  }, 30_000);
+});
+
+describe("the composition (also the CLI's, which composes the same way)", () => {
+  test("offline (`--offline`, an offline refresh) reads the token as online does; without one, no-token", async () => {
+    let reads = 0;
+    let saved: string | null = TOKEN;
+    const adsToken = async () => {
+      reads += 1;
+      return saved;
+    };
+    const paths = libraryPaths(dataDir);
+    const offline = await realSources(paths, true, { adsToken });
+    expect(reads).toBe(1);
+    expect(offline.ads.status).toBe("ok");
+    const online = await realSources(paths, false, { adsToken, fetchImpl: fetchStub });
+    expect(reads).toBe(2);
+    expect(online.ads.status).toBe("ok");
+    saved = null;
+    expect((await realSources(paths, true, { adsToken })).ads.status).toBe("no-token");
   });
 });

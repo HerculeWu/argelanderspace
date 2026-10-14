@@ -31,19 +31,41 @@ const FL = "bibcode,title,author,year,citation_count,pub,doi,abstract,reference"
 const TIMEOUT = 30;
 
 /**
+ * How long a read of the ADS token may take (desktop-app ticket 12). A locked keychain can make the Secret Service ask
+ * the user to unlock it; a read that has not answered by then counts as "no token", so no request or job waits on it.
+ */
+export const ADS_TOKEN_READ_TIMEOUT_MS = 5000;
+
+/**
  * The ADS token saved in the workbench (desktop-app ticket 12): the credential store's `ads` purpose, trimmed. Not
- * saved, a keychain that does not answer with no fallback file, a damaged file, any failure: no token (null), never an
- * error. Read when it is needed, so a token saved or removed applies without a restart. The environment variable
- * `ADS_DEV_KEY`, config.toml's `ads_dev_key` and `~/.ads/dev_key` are not read.
+ * saved, a keychain that does not answer (or not within {@link ADS_TOKEN_READ_TIMEOUT_MS}) with no fallback file, a
+ * damaged file, any failure: no token (null), never an error. Read when it is needed, so a token saved or removed
+ * applies without a restart. The environment variable `ADS_DEV_KEY`, config.toml's `ads_dev_key` and `~/.ads/dev_key`
+ * are not read.
+ *
+ * The timeout bounds the wait of the caller, not the store's own work: the timer is cleared once either side settles
+ * and never keeps the process alive. (A store whose backend blocks the thread synchronously cannot be interrupted by
+ * any timer; the OS keychain backend's calls are such calls.)
  */
 export async function readAdsToken(
-  store: Pick<CredentialStore, "get"> = createAdsCredentialStore()
+  store: Pick<CredentialStore, "get"> = createAdsCredentialStore(),
+  opts: { timeoutMs?: number } = {}
 ): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), opts.timeoutMs ?? ADS_TOKEN_READ_TIMEOUT_MS);
+    timer.unref?.();
+  });
   try {
-    const got = await store.get(ADS_TOKEN_ID);
-    return got.status === "ok" ? got.password.trim() || null : null;
+    const read = (async () => {
+      const got = await store.get(ADS_TOKEN_ID);
+      return got.status === "ok" ? got.password.trim() || null : null;
+    })().catch(() => null);
+    return await Promise.race([read, timedOut]);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

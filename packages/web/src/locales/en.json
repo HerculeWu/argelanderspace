@@ -2413,7 +2413,8 @@
       "contactPlaceholder": "name@example.org",
       "notEmail": "not written like an email address",
       "legacyTitle": "The config file still has ads_dev_key",
-      "legacyBody": "This key no longer has any effect. Enter the ADS token below; you can delete that line from the file.",
+      "legacyBody": "This key no longer has any effect. Enter the ADS token in this row; you can delete that line from the config file.",
+      "legacyBodySaved": "This key no longer has any effect. You can delete that line from the config file.",
       "legacyDismiss": "Got it"
     },
     "entries": {
@@ -2479,7 +2480,9 @@
         "not_saved": "No ADS token is saved.",
         "file_unreadable": "The restricted file that holds the token cannot be read.",
         "other": "The ADS token could not be changed. Nothing was saved.",
-        "unreachable": "The server did not answer. Nothing was changed."
+        "unreachable": "The server did not answer. Nothing was changed.",
+        "removeKeychain": "The system keychain did not answer, so the token was not removed. Try again later.",
+        "removeOther": "The ADS token could not be removed. Nothing was changed."
       }
     }
   }

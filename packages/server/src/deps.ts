@@ -68,7 +68,10 @@ export interface AdapterWiring {
   adsToken?: (() => Promise<string | null>) | undefined;
 }
 
-/** The ADS token of this composition: read from the credential store now, so a saved or removed token applies at once. */
+/**
+ * The ADS token of this composition: read from the credential store now, so a saved or removed token applies at once.
+ * Offline compositions read it too (as before ticket 12): the summary's `ads_status` then says whether there is one.
+ */
 async function adsTokenOf(wiring: AdapterWiring): Promise<{ token: string | null }> {
   return { token: await (wiring.adsToken ?? (() => readAdsToken()))() };
 }
@@ -110,7 +113,7 @@ export function statusDirFor(dataDir: string): string {
 
 /**
  * The resolution-chain sources; `offline` skips remote enrichment. Asynchronous because the ADS token is read from the
- * credential store at each composition (even offline: the summary's `ads_status` says whether there is one).
+ * credential store at each composition, offline ones included (see `adsTokenOf`).
  */
 export async function realSources(
   paths: LibraryPaths,

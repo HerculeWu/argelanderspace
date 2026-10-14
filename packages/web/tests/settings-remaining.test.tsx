@@ -345,13 +345,18 @@ describe("review round (desktop-app ticket 11)", () => {
     expect(q('[data-ui="setting-still-in-use"][data-ui-key="global_dir"]')!.textContent).toBe("Still in use: ~/.local/share/argelanderspace");
   });
 
-  // Ticket 12: the row the notice points at ("below") is there now.
-  it("the legacy notice points at the ADS token row it sits in", async () => {
+  // Ticket 12 (revision): the notice sits in the ADS token row and points nowhere ("below" was wrong for where it is).
+  // The ADS endpoint is absent in this file, so the row's state is unknown: the notice gives only the part that holds
+  // in any state (the line can go from the file); where to enter the token is said only when nothing is saved
+  // (settings-ads-credential.test.tsx).
+  it("the legacy notice sits in the ADS token row and names no direction", async () => {
     settings.legacy = ["ads_dev_key"];
     await open();
     await group("services");
     await waitFor(() => expect(q('[data-ui="ads-legacy-key"]')).not.toBeNull());
     expect(q('[data-ui="ads-credential"] [data-ui="ads-legacy-key"]')).not.toBeNull();
-    expect(q('[data-ui="ads-legacy-key"]')!.textContent).toContain("Enter the ADS token below");
+    const text = q('[data-ui="ads-legacy-key"]')!.textContent ?? "";
+    expect(text).toContain("you can delete that line from the config file".replace("you", "You"));
+    expect(text).not.toMatch(/below|above|in this group/);
   });
 });

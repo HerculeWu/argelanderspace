@@ -47,7 +47,12 @@ function world(): { root: string; dataDir: string; logDir: string; env: NodeJS.P
     XDG_CONFIG_HOME: join(root, ".config"),
     XDG_DATA_HOME: join(root, ".local", "share"),
     XDG_CACHE_HOME: join(root, ".cache"),
+    // No way to the user's session bus, so no real keychain (docs/engineering.md): a bus address that leads nowhere
+    // and a runtime directory of the throwaway root (made before the tree snapshots, so it is in both); no display.
+    DBUS_SESSION_BUS_ADDRESS: `unix:path=${join(root, "no-session-bus")}`,
+    XDG_RUNTIME_DIR: join(root, "runtime"),
   };
+  mkdirSync(join(root, "runtime"), { mode: 0o700 });
   return { root, dataDir, logDir: join(root, ".local", "share", "argelanderspace", "logs"), env };
 }
 

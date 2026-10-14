@@ -230,3 +230,16 @@ describe("status: what is saved, never the value", () => {
     expect(Object.keys(store).sort()).toEqual([...CREDENTIAL_STORE_METHODS].sort());
   });
 });
+
+describe("a damaged ADS fallback file (ticket 12 revision)", () => {
+  test("status and get report the file as unreadable; nothing of it is returned; the mail file is not involved", async () => {
+    const dir = tmpDir();
+    writeFileSync(join(dir, ADS_CREDENTIAL_FILE_NAME), "{ not json");
+    const ads = createCredentialStore({ purpose: "ads", backend: brokenBackend(), dataDir: dir });
+    expect(await ads.status(ADS_TOKEN_ID)).toEqual({ status: "error", code: "file-unreadable" });
+    expect(await ads.get(ADS_TOKEN_ID)).toEqual({ status: "error", code: "file-unreadable" });
+    const mail = createCredentialStore({ backend: brokenBackend(), dataDir: dir });
+    expect(await mail.get("acc-0123456789ab")).toEqual({ status: "keychain-unavailable" });
+    expect(readFileSync(join(dir, ADS_CREDENTIAL_FILE_NAME), "utf8")).toBe("{ not json");
+  });
+});

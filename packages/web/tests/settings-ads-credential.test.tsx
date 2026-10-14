@@ -22,7 +22,13 @@ const TOKEN = "zqxWebTokenMARK0123456789";
 
 let settings: FakeSettings;
 /** The fake server's credential: where it is, whether the keychain answers, whether ~/.ads/dev_key is there. */
-let ads: { saved: AdsCredentialStatus["saved"]; keychain: boolean; devKey: boolean; testResult: string };
+let ads: {
+  saved: AdsCredentialStatus["saved"];
+  keychain: boolean;
+  devKey: boolean;
+  testResult: string;
+  removeRefusal?: string;
+};
 let calls: Array<{ method: string; url: string; body: unknown }>;
 
 const json = (body: unknown, status = 200): Response =>
@@ -48,6 +54,7 @@ function handleAds(url: string, init?: RequestInit): Response | null {
   if (url === "/api/credentials/ads" && method === "GET") return json(status());
   if (url === "/api/credentials/ads" && method === "PUT") return store(body?.fileFallbackConsent === true);
   if (url === "/api/credentials/ads" && method === "DELETE") {
+    if (ads.removeRefusal) return json({ ok: false, reason: ads.removeRefusal }, 422);
     ads.saved = "none";
     return json({ ok: true, status: status() });
   }
@@ -167,12 +174,47 @@ describe("the ADS token row", () => {
     await waitFor(() => expect(calls.some((c) => c.url.endsWith("/import"))).toBe(true));
   });
 
+  it("a removal that fails: its own message; the row is not turned into an input with a consent card", async () => {
+    ads.saved = "keychain";
+    ads.removeRefusal = "keychain_unavailable";
+    await openServices();
+    fireEvent.click(q('[data-ui="ads-token-remove"]')!);
+    await waitFor(() => expect(q('[data-ui="remove-ads-token"]')).not.toBeNull());
+    fireEvent.click(q('[data-ui="remove-ads-token-confirm"]')!);
+    await waitFor(() => expect(document.body.textContent).toContain("so the token was not removed"));
+    expect(document.body.textContent).not.toContain("Agree to keep the token in a local file");
+    expect(input()).toBeNull();
+    expect(q('[data-ui="ads-keychain-unavailable"]')).toBeNull();
+    expect(q('[data-ui="ads-credential-status"]')!.getAttribute("data-state")).toBe("keychain");
+  });
+
+  it("a damaged restricted file: saved state unreadable, with its note; remove and replace offered, never a value", async () => {
+    ads.saved = "unreadable";
+    await openServices();
+    expect(q('[data-ui="ads-credential-status"]')!.getAttribute("data-state")).toBe("unreadable");
+    expect(q('[data-ui="ads-protection"]')!.textContent).toBe("Cannot be read");
+    expect(q('[data-ui="ads-file-unreadable"]')!.textContent).toContain("cannot be read");
+    expect(q('[data-ui="ads-token-replace"]')).not.toBeNull();
+    expect(q('[data-ui="ads-token-remove"]')).not.toBeNull();
+  });
+
+  it("the leftover ads_dev_key while a token is saved: no word about entering it, no direction", async () => {
+    settings.legacy = ["ads_dev_key"];
+    ads.saved = "keychain";
+    await openServices();
+    const text = q('[data-ui="ads-legacy-key"]')!.textContent ?? "";
+    expect(text).toContain("no longer has any effect");
+    expect(text).not.toMatch(/Enter the ADS token|below|above/);
+  });
+
   // Last: "Got it" holds for the rest of the page session (the module stays loaded across the tests of this file).
   it("the leftover ads_dev_key: says it no longer has any effect, in the ADS row; Got it hides it", async () => {
     settings.legacy = ["ads_dev_key"];
     await openServices();
     const notice = q('[data-ui="ads-credential"] [data-ui="ads-legacy-key"]')!;
     expect(notice.textContent).toContain("no longer has any effect");
+    expect(notice.textContent).toContain("Enter the ADS token in this row");
+    expect(notice.textContent).not.toMatch(/below|above/);
     fireEvent.click(q('[data-ui="ads-legacy-dismiss"]')!);
     expect(q('[data-ui="ads-legacy-key"]')).toBeNull();
     cleanup();

@@ -135,6 +135,8 @@ export interface ServerOptions {
    * `ads` purpose over the OS keychain. The settings endpoints write it and the sources read it at each composition.
    */
   adsCredentials?: CredentialStore;
+  /** Where the ADS import looks for `~/.ads/dev_key`; default under the home directory (tests: a temporary file). */
+  adsDevKeyPath?: (() => string) | undefined;
 }
 
 export interface RunningServer {
@@ -266,6 +268,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
     configPath: opts.configPath,
     adsCredentials,
+    adsDevKeyPath: opts.adsDevKeyPath,
     adsTestFetch:
       observer === undefined && opts.fetchImpl === undefined
         ? undefined
