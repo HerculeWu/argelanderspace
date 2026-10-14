@@ -37,11 +37,33 @@ skills in `skills/` — see **Agent integration (skills)** below.
 ## Requirements
 
 - **Node.js ≥ 24**
-- **TeX Live** (`latexmk` + `pdflatex`/`xelatex` + `bibtex`/`biber` on PATH) —
-  required for ingest.
+- **TeX** (TeX Live or MiKTeX: `latexmk` + `pdflatex`/`xelatex` +
+  `bibtex`/`biber`) — required for LaTeX ingest and Writer rendering. It is
+  **not installed with the app**; install it yourself. Everything else
+  (reading PDFs, annotations, plans, mail, Copilot) works without it.
 - Optional: **poppler-utils** (`pdftocairo`; vector PDF figures → SVG) and
   **ghostscript** (`gs`; EPS figures) — figures degrade without them, ingests
   still succeed.
+- Optional (Linux): **bubblewrap** (`bwrap`) — the Writer's compile sandbox.
+  Without it the Copilot never triggers a compile; pressing Render yourself
+  still compiles (outside a sandbox).
+
+How the app finds TeX: first the **TeX program directory** set in Settings →
+TeX & environment (`tex_dir` in `config.toml`), then `PATH`, then the usual
+install locations — macOS: MacTeX (`/Library/TeX/texbin`) and Homebrew
+(`/opt/homebrew/bin`, `/usr/local/bin`); Windows: TeX Live
+(`C:\texlive\<year>\bin\windows`), MiKTeX and Ghostscript's install folder.
+On Windows a program is found by the `PATHEXT` extensions (`latexmk.exe`). The
+directory TeX was found in is put first on latexmk's `PATH`. A changed
+`tex_dir` applies to the next check and the next compile without a restart.
+Linux is the only platform this was tested on; the macOS and Windows lookup is
+implemented and unit-checked with constructed layouts, not tried on those
+platforms.
+
+Where to see what is missing: Settings → **TeX & environment** lists each
+program (found or not, where, its version line, and what is unavailable
+without it) and whether the system keychain can be used; "Check again" re-runs
+it (`GET /api/environment`).
 
 ## Quickstart
 
@@ -165,7 +187,8 @@ auto_ingest_arxiv = true     # fetch the arXiv PDF when a work with an arXiv id 
 contact_email = "you@example.org"  # optional; sent to Crossref and OpenAlex with each
                              # request (their "polite pool"); without it no email is sent.
                              # Must be written like an address, or it is a config error
-tex_dir = "/opt/texlive/bin" # optional; an absolute path (not used yet)
+tex_dir = "/opt/texlive/bin" # optional; an absolute path: where TeX's programs are, looked in
+                             # before PATH (see Requirements); no restart needed
 # global_dir / global_cache_dir = "/abs/path"   # where Mail, credentials and the log live
 
 [ui]                         # how the web UI looks (the Settings page writes these)

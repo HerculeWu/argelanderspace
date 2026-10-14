@@ -24,18 +24,20 @@ import { ACCENTS, type ThemeName } from "../argelander/theme";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
+import { EnvironmentCheck, useEnvironment } from "./EnvironmentCheck";
 import "./settings.css";
 
 /**
  * The settings page (desktop-app tickets 10, 11): one group at a time, the groups listed at the left. Appearance,
- * Project, Services (the ADS token, ticket 12, and the contact email), Copilot, Mail and Advanced have their rows; TeX and Diagnostics say that they
- * have nothing yet (later tickets). Every value comes from the settings endpoint and every change is one key of
+ * Project, Services (the ADS token, ticket 12, and the contact email), TeX & environment (the TeX directory and the
+ * environment check, ticket 13), Copilot, Mail and Advanced have their rows; Diagnostics says that it has nothing yet
+ * (a later ticket). Every value comes from the settings endpoint and every change is one key of
  * config.toml; a save is acknowledged, and a refused one explained, by a floating notice at the foot of the page
  * (`SettingsNotices`), never inside the row.
  */
 
 /** The groups this page fills; the others show one line saying so. */
-const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "copilot", "mail", "advanced"]);
+const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "tex", "copilot", "mail", "advanced"]);
 
 /**
  * Opening the config file in the system's editor belongs to the desktop app's host (a later ticket). Until a host
@@ -468,6 +470,41 @@ function Services({ state }: { state: RowState }) {
   );
 }
 
+/**
+ * TeX & environment (desktop-app ticket 13): the TeX directory (`tex_dir`, an absolute path; emptied = search
+ * automatically), what is the matter with it when it is set, and the environment check. Saving the directory checks
+ * again; nothing needs a restart. (Choosing the folder in a dialog belongs to the desktop app's host.)
+ */
+function Tex({ state }: { state: RowState }) {
+  const { t } = useTranslation();
+  const { settings } = state;
+  const texDir = String(settings.values.tex_dir ?? "");
+  const env = useEnvironment(texDir);
+  const dirState = env.report?.texDir.state;
+  const dirProblem =
+    dirState === "missing"
+      ? "settings.tex.texDirMissing"
+      : dirState === "no_latexmk"
+        ? "settings.tex.texDirNoLatexmk"
+        : dirState === "not_absolute"
+          ? "settings.tex.texDirNotAbsolute"
+          : null;
+  return (
+    <>
+      <Row state={state} k="tex_dir" label={t("settings.tex.texDir")}
+        control={(disabled) => (
+          <TextSetting state={state} k="tex_dir" ui="tex-dir-input" label={t("settings.tex.texDir")} mono disabled={disabled} value={texDir}
+            placeholder={t("settings.tex.texDirPlaceholder")}
+            validate={(text) => (isAbsoluteOnAnyPlatform(text) ? null : t("settings.tex.texDirAbsolute"))} />
+        )}
+        extra={dirProblem !== null && texDir !== "" && (
+          <InlineMessage tone="warning" uiId="tex-dir-problem" title={t(`${dirProblem}.title`)}>{t(`${dirProblem}.body`)}</InlineMessage>
+        )} />
+      <EnvironmentCheck state={env} />
+    </>
+  );
+}
+
 /** An entry to a setting kept outside config.toml: the Copilot's providers, the Mail accounts. */
 function Entry({ kind }: { kind: "copilot" | "mail" }) {
   const { t } = useTranslation();
@@ -528,6 +565,8 @@ function GroupRows({ group, state }: { group: SettingsGroup; state: RowState }) 
       return <Project state={state} />;
     case "services":
       return <Services state={state} />;
+    case "tex":
+      return <Tex state={state} />;
     case "advanced":
       return <Advanced state={state} />;
     default:

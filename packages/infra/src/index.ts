@@ -40,6 +40,7 @@ export {
   type SetCredentialOptions,
   type SetCredentialResult,
 } from "./credential-store.js";
+export * from "./environment.js";
 export * from "./global-dirs.js";
 export * from "./latex/arxiv-source.js";
 export * from "./lib/http.js";
@@ -69,4 +70,5 @@ export * from "./tex/ingest.js";
 export * from "./tex/instrument.js";
 export * from "./tex/proc.js";
 export * from "./tex/sandbox.js";
+export * from "./tex/toolchain.js";
 export * from "./tex/workspace.js";

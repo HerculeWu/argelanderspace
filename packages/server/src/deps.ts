@@ -34,6 +34,7 @@ import {
   readContactEmail,
   readOpenAlexApiKey,
   type TexFailureLogHook,
+  type Toolchain,
 } from "@argelanderspace/infra";
 
 /**
@@ -66,6 +67,12 @@ export interface AdapterWiring {
    * credential store over the OS keychain. Never from the environment, config.toml or `~/.ads/dev_key`.
    */
   adsToken?: (() => Promise<string | null>) | undefined;
+  /**
+   * Where TeX is, asked at each compile (desktop-app ticket 13): the server hands in a lookup with the TeX directory
+   * its config file sets then, so a changed `tex_dir` applies to the next ingest without a restart. Default (the CLI):
+   * the same lookup with the default config.toml.
+   */
+  texToolchain?: (() => Toolchain) | undefined;
 }
 
 /**
@@ -167,6 +174,7 @@ export function realPipelines(paths: LibraryPaths, wiring: AdapterWiring = {}): 
     ...(wiring.observer !== undefined ? { observer: wiring.observer } : {}),
     ...(wiring.fetchImpl !== undefined ? { fetchImpl: wiring.fetchImpl } : {}),
     ...(wiring.failureLog !== undefined ? { failureLog: wiring.failureLog } : {}),
+    ...(wiring.texToolchain !== undefined ? { toolchain: wiring.texToolchain } : {}),
   };
   return {
     ingestLatex: async (arxivId) =>

@@ -2417,6 +2417,67 @@
       "legacyBodySaved": "这个键已不再生效。可以从配置文件里删掉这一行。",
       "legacyDismiss": "知道了"
     },
+    "tex": {
+      "texDir": "TeX 程序目录",
+      "texDirPlaceholder": "留空则自动查找",
+      "texDirAbsolute": "请填写绝对路径。",
+      "texDirMissing": {
+        "title": "这个目录不存在",
+        "body": "环境检查照常按 PATH 与常见安装位置查找；目录建好后不需要重启。"
+      },
+      "texDirNoLatexmk": {
+        "title": "这个目录里没有 latexmk",
+        "body": "环境检查照常按 PATH 与常见安装位置查找。请指向 TeX 程序所在的 bin 目录。"
+      },
+      "texDirNotAbsolute": {
+        "title": "这个目录不是绝对路径",
+        "body": "环境检查不使用它。"
+      },
+      "envCheck": "环境检查",
+      "recheck": "重新检查",
+      "checking": "正在检查…",
+      "unreachable": "没有收到环境检查的应答。",
+      "found": "找到",
+      "notFound": "未找到",
+      "optional": "可选",
+      "foundAt": "位置",
+      "affects": "缺失时不可用",
+      "listSeparator": "、",
+      "source": {
+        "tex_dir": "TeX 程序目录",
+        "path": "PATH",
+        "common": "常见安装位置"
+      },
+      "keychain": "系统钥匙串",
+      "available": "可用",
+      "unavailable": "不可用",
+      "unknown": "无法判断",
+      "keychainAffects": "凭据存入钥匙串；不可用时需同意才落文件",
+      "keychainReason": {
+        "secret_service": "Secret Service 正在运行",
+        "activatable": "Secret Service 会在首次使用时启动",
+        "platform": "本平台自带钥匙串",
+        "no_bus": "没有会话总线",
+        "no_service": "会话总线上没有 Secret Service",
+        "no_module": "钥匙串模块无法加载",
+        "no_probe": "无法询问会话总线"
+      },
+      "feature": {
+        "latex_ingest": "LaTeX 摄入",
+        "writer_render": "Writer 渲染",
+        "pdflatex": "用 pdflatex 的编译（改用 xelatex）",
+        "xelatex": "用 xelatex 的编译（改用 pdflatex）",
+        "bibtex": "用 bibtex 的参考文献处理",
+        "biber": "用 biber 的参考文献处理",
+        "figures": "LaTeX 摄入时 PDF 与 EPS 图片的转换",
+        "eps_figures": "LaTeX 摄入时 EPS 图片的转换",
+        "copilot_compile": "Copilot 触发编译（Writer 沙箱）"
+      },
+      "noSandboxTitle": "本机没有编译沙箱",
+      "noSandboxBody": "Copilot 可以修改稿件文字，但不会触发编译；你自己点 Render 仍可编译（不在沙箱里运行）。",
+      "noTexTitle": "没有找到 TeX",
+      "noTexBody": "阅读 PDF、标注、计划、邮件和 Copilot 照常可用；LaTeX 摄入和 Writer 渲染需要先安装 TeX，或在上面指定 TeX 程序目录。"
+    },
     "entries": {
       "provider": "模型与登录",
       "openProvider": "打开模型设置",

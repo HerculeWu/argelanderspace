@@ -33,11 +33,13 @@ import {
   configFilePath,
   configOfReading,
   createAdsCredentialStore,
+  currentToolchain,
   type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
   type GlobalDirs,
   getConfig,
+  type KeychainProbe,
   LOG_DIR_NAME,
   observedFetch,
   pinGlobalDirs,
@@ -137,6 +139,11 @@ export interface ServerOptions {
   adsCredentials?: CredentialStore;
   /** Where the ADS import looks for `~/.ads/dev_key`; default under the home directory (tests: a temporary file). */
   adsDevKeyPath?: (() => string) | undefined;
+  /**
+   * Whether the OS keychain can be used, for the environment check and the start record (desktop-app ticket 13): tests
+   * hand in a fake. Default infra `probeKeychain`, which asks only the D-Bus daemon, never the keychain.
+   */
+  keychainProbe?: (() => Promise<KeychainProbe>) | undefined;
 }
 
 export interface RunningServer {
@@ -178,6 +185,8 @@ export function createServer(opts: ServerOptions): RunningServer {
     fetchImpl: opts.fetchImpl,
     config: () => readConfigLeniently(opts.configPath ?? configFilePath()),
     adsToken: () => readAdsToken(adsCredentials),
+    // Where TeX is: looked up at each compile with the TeX directory the config file sets then (ticket 13).
+    texToolchain: () => currentToolchain(opts.configPath ?? configFilePath()),
   };
   const observeJobs = jobLogger(log);
   const jobsDir = join(opts.dataDir, "jobs");
@@ -269,6 +278,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     configPath: opts.configPath,
     adsCredentials,
     adsDevKeyPath: opts.adsDevKeyPath,
+    keychainProbe: opts.keychainProbe,
     adsTestFetch:
       observer === undefined && opts.fetchImpl === undefined
         ? undefined
@@ -527,7 +537,11 @@ export async function startServer(
     webDist: cfg.webDist,
     configProblems: problems,
   });
-  logEnvironment(serveLog.log);
+  // The full lookup (TeX directory, PATH, usual places) and whether the keychain can be used — asked of the bus daemon
+  // only, never of the keychain (desktop-app ticket 13).
+  await logEnvironment(serveLog.log, {
+    toolchain: currentToolchain(configFilePath()),
+  });
   // These three lines are what `serve` prints to the terminal; the log does not replace them.
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
   console.log(`  data dir: ${cfg.dataDir}`);
