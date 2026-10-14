@@ -30,16 +30,17 @@ import * as path from "node:path";
 import type { TexFigureOutcome, TexFigurePort, TexFigureRequest } from "@argelanderspace/core";
 import { texFigureOutName } from "@argelanderspace/core";
 import type { ExternalObserver } from "../lib/observe.js";
-import { findOnPath } from "../lib/proc.js";
 import { runTexProcess, type TexProcResult } from "./proc.js";
+import { locateTool } from "./toolchain.js";
 
 const RASTER_EXTS: ReadonlySet<string> = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 /** pdftocairo/gs conversions are seconds at most; the bound only guards against hangs. */
 const CONVERT_TIMEOUT_MS = 60_000;
 
+// PATH, then the usual install locations of the platform (toolchain.ts; the TeX directory is for TeX's programs only).
 export function pdftocairoPath(): string | null {
-  return findOnPath("pdftocairo");
+  return locateTool("pdftocairo")?.path ?? null;
 }
 
 export function havePdftocairo(): boolean {
@@ -47,7 +48,7 @@ export function havePdftocairo(): boolean {
 }
 
 export function ghostscriptPath(): string | null {
-  return findOnPath("gs");
+  return locateTool("ghostscript")?.path ?? null;
 }
 
 export function haveGhostscript(): boolean {
@@ -73,8 +74,10 @@ async function runStep(
   observer: ExternalObserver | undefined
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   let result: TexProcResult;
+  // The program where the lookup found it; the name when it is nowhere (the run then fails as it did before).
+  const program = (cmd === "gs" ? ghostscriptPath() : pdftocairoPath()) ?? cmd;
   try {
-    result = await runTexProcess(cmd, args, {
+    result = await runTexProcess(program, args, {
       timeoutMs: CONVERT_TIMEOUT_MS,
       observe: { observer, program: cmd },
     });

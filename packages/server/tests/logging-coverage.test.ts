@@ -43,6 +43,7 @@ import {
   type KeychainBackend,
   type LogFile,
   type LogJson,
+  locateToolchain,
   openLogFile,
 } from "@argelanderspace/infra";
 import {
@@ -370,17 +371,55 @@ afterAll(async () => {
 // The flows
 // --------------------------------------------------------------------------- //
 
-test("the start: which tools are on PATH, by name only", () => {
+test("the start: which tools were found and from where, by name only; whether the keychain can be used", async () => {
   const from = mark();
   const bin = join(root, "bin");
+  const texDir = join(root, "texbin");
   mkdirSync(bin, { recursive: true });
-  writeFileSync(join(bin, "latexmk"), "#!/bin/sh\n", { mode: 0o755 });
-  logEnvironment(log, bin);
+  mkdirSync(texDir, { recursive: true });
+  writeFileSync(join(bin, "pdftocairo"), "#!/bin/sh\n", { mode: 0o755 });
+  writeFileSync(join(texDir, "latexmk"), "#!/bin/sh\n", { mode: 0o755 });
+  // desktop-app ticket 13: the full lookup (the TeX directory, then PATH), and the keychain probe (a fake here)
+  await logEnvironment(log, {
+    toolchain: locateToolchain({ texDir, platform: "linux", env: { PATH: bin } }),
+    keychain: async () => ({ state: "unavailable", reason: "no_bus" }),
+  });
   const [record] = eventsNamed("server.environment", from);
-  expect(record).toMatchObject({ level: "info", tools_found: ["latexmk"] });
-  expect(record?.tools_missing).toContain("pdftocairo");
+  // bubblewrap is also looked for in the system directories (where the sandbox runs it from): found there or not
+  const bwrapHere = (record?.tools_found as string[] | undefined)?.includes("bwrap") === true;
+  expect(record).toMatchObject({
+    level: "info",
+    tools_found: bwrapHere ? ["latexmk", "pdftocairo", "bwrap"] : ["latexmk", "pdftocairo"],
+    tools_from_tex_dir: ["latexmk"],
+    tools_from_common: bwrapHere ? ["bwrap"] : [],
+    tex_dir: "ok",
+    keychain: "unavailable",
+    keychain_reason: "no_bus",
+  });
+  expect(record?.tools_missing).toContain("ghostscript");
   expect(JSON.stringify(record)).not.toContain(bin);
+  expect(JSON.stringify(record)).not.toContain(texDir);
   expectNoMarkers();
+});
+
+test("the start record names what is the matter with the TeX directory: missing, no latexmk, not absolute", async () => {
+  const empty = join(root, "empty-texdir");
+  mkdirSync(empty, { recursive: true });
+  const cases: [string, string][] = [
+    [join(root, "no-such-texdir"), "missing"],
+    [empty, "no_latexmk"],
+    ["relative/texdir", "not_absolute"],
+  ];
+  for (const [texDir, state] of cases) {
+    const from = mark();
+    await logEnvironment(log, {
+      toolchain: locateToolchain({ texDir, platform: "linux", env: { PATH: join(root, "bin") } }),
+      keychain: async () => ({ state: "unknown", reason: "no_probe" }),
+    });
+    const [record] = eventsNamed("server.environment", from);
+    expect(record?.tex_dir).toBe(state);
+    expect(JSON.stringify(record)).not.toContain(texDir);
+  }
 });
 
 test("mail watcher: a refused login is a state and a code — not the server's reply, the address or the password", async () => {

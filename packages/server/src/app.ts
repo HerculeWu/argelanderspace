@@ -143,6 +143,7 @@ import { mountCopilotRoutes } from "./copilot-routes.js";
 import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
+import { mountEnvironmentRoutes } from "./environment.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
@@ -266,6 +267,13 @@ export interface AppDeps {
   adsTestFetch?: FetchImpl | undefined;
   /** Where the ADS import looks for `~/.ads/dev_key` (ads-credential.ts); default under the home directory. */
   adsDevKeyPath?: (() => string) | undefined;
+  /**
+   * Whether the OS keychain can be used, for the environment check (environment.ts): tests hand in a fake. Default the
+   * probe that asks only the D-Bus daemon — never the keychain itself (infra `probeKeychain`).
+   */
+  keychainProbe?: (() => Promise<import("@argelanderspace/infra").KeychainProbe>) | undefined;
+  /** Tests only: where the environment check looks for the Writer sandbox's latexmk (infra `sandbox-view.ts`). */
+  sandboxView?: import("@argelanderspace/infra").SandboxViewOptions | undefined;
   /** Where `serve` keeps the process's data, fixed at its start (settings.ts `startupLocations`); default null. */
   startup?: import("@argelanderspace/contracts").StartupLocations | null;
   /**
@@ -555,6 +563,14 @@ export function createApp(deps: AppDeps): Hono {
     store: deps.adsCredentials ?? observedCredentials(createAdsCredentialStore(), log),
     fetchImpl: deps.adsTestFetch,
     devKeyPath: deps.adsDevKeyPath,
+  });
+
+  // The environment check (environment.ts): where TeX and the other programs are, their versions, the keychain.
+  mountEnvironmentRoutes(app, guardCsrf, {
+    configPath: deps.configPath,
+    keychain: deps.keychainProbe,
+    sandboxView: deps.sandboxView,
+    observer,
   });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();

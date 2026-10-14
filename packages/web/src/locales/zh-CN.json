@@ -2417,6 +2417,80 @@
       "legacyBodySaved": "这个键已不再生效。可以从配置文件里删掉这一行。",
       "legacyDismiss": "知道了"
     },
+    "tex": {
+      "texDir": "TeX 程序目录",
+      "texDirPlaceholder": "留空则自动查找",
+      "texDirAbsolute": "请填写绝对路径。",
+      "texDirMissing": {
+        "title": "这个目录不存在",
+        "body": "环境检查照常按 PATH 与常见安装位置查找；目录建好后不需要重启。"
+      },
+      "texDirNoLatexmk": {
+        "title": "这个目录里没有 latexmk",
+        "body": "环境检查照常按 PATH 与常见安装位置查找。请指向 TeX 程序所在的 bin 目录。"
+      },
+      "texDirNotAbsolute": {
+        "title": "这个目录不是绝对路径",
+        "body": "环境检查不使用它。"
+      },
+      "envCheck": "环境检查",
+      "recheck": "重新检查",
+      "checking": "正在检查…",
+      "unreachable": "没有收到环境检查的应答。",
+      "found": "找到",
+      "notFound": "未找到",
+      "optional": "可选",
+      "foundAt": "位置",
+      "affects": "缺失时不可用",
+      "listSeparator": "、",
+      "fallback": "（改用 {{engine}}）",
+      "source": {
+        "tex_dir": "TeX 程序目录",
+        "path": "PATH",
+        "common": "常见安装位置"
+      },
+      "keychain": "系统钥匙串",
+      "available": "可用",
+      "unavailable": "不可用",
+      "unknown": "无法判断",
+      "keychainAffects": "凭据存入钥匙串；不可用时需同意才落文件",
+      "keychainReason": {
+        "secret_service": "Secret Service 正在运行",
+        "activatable": "Secret Service 会在首次使用时启动",
+        "platform": "本平台自带钥匙串",
+        "no_bus": "没有会话总线",
+        "no_service": "会话总线上没有 Secret Service",
+        "no_module": "钥匙串模块无法加载",
+        "no_probe": "无法询问会话总线"
+      },
+      "feature": {
+        "latex_ingest": "LaTeX 摄入",
+        "writer_render": "Writer 渲染",
+        "pdflatex": "用 pdflatex 的编译",
+        "xelatex": "用 xelatex 的编译",
+        "bibtex": "用 bibtex 的参考文献处理",
+        "biber": "用 biber 的参考文献处理",
+        "figures": "LaTeX 摄入时 PDF 与 EPS 图片的转换",
+        "eps_figures": "LaTeX 摄入时 EPS 图片的转换",
+        "copilot_compile": "Copilot 触发编译（Writer 沙箱）"
+      },
+      "noSandboxTitle": "本机没有编译沙箱",
+      "noSandboxBody": "Copilot 可以修改稿件文字，但不会触发编译；你自己点 Render 仍可编译（不在沙箱里运行）。",
+      "sandboxTexMissingTitle": "Writer 渲染在沙箱里找不到 TeX",
+      "sandboxTexMissingBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录；它看不到工作台找到的这一套 TeX（{{path}}），所以 Writer 渲染会失败，不会改为在沙箱外编译。LaTeX 摄入不受影响。",
+      "sandboxTexOtherWhy": "沙箱总是先用系统目录里的 TeX，把别的目录加进 PATH 也改变不了这一点；目前页面上没有办法让它改用工作台找到的这一套。",
+      "sandboxTexPathEnd": "。",
+      "sandboxTexOtherTitle": "Writer 渲染在沙箱里用的是另一套 TeX",
+      "sandboxTexOtherBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录。LaTeX 摄入用的是工作台找到的这一套（{{path}}），沙箱看不到它；Writer 渲染用的是沙箱里的这一套：",
+      "sandboxReach": {
+        "bindable": "把这个 TeX 所在的目录加入启动工作台时的 PATH，然后重启工作台，Writer 就能在沙箱里用它。",
+        "bindableOnPath": "这个目录本可以放进沙箱，而且已经在启动工作台时的 PATH 上；沙箱看得到哪些 TeX 是在启动后第一次检查沙箱时定下的，重启工作台后会重新确定。",
+        "under_usr": "它在 /usr 下的非系统目录里（例如 TeX Live 安装器默认的 /usr/local/texlive/…），这类目录即使加进 PATH 也进不了沙箱。目前在页面上没有办法改变这一点；让沙箱也能用这类位置的 TeX 还在等待批准。",
+        "not_bindable": "它在不允许放进沙箱的位置（例如主目录、/tmp、/var、/mnt 下），即使加进 PATH 也没有用。目前在页面上没有办法改变这一点；让沙箱也能用这类位置的 TeX 还在等待批准。"
+      },
+      "noTexTitle": "没有找到 TeX",
+      "noTexBody": "阅读 PDF、标注、计划、邮件和 Copilot 照常可用；LaTeX 摄入和 Writer 渲染需要先安装 TeX，或在上面指定 TeX 程序目录。"
+    },
     "entries": {
       "provider": "模型与登录",
       "openProvider": "打开模型设置",

@@ -17,29 +17,36 @@
 
 import type { Job } from "@argelanderspace/contracts";
 import {
+  ENVIRONMENT_TOOLS,
   JobKindSchema,
+  KEYCHAIN_STATES as KEYCHAIN_PROBE_STATES,
+  KEYCHAIN_REASONS,
   MAIL_ACCOUNT_ID_PATTERN,
   MAIL_PRESETS,
   MailPresetIdSchema,
+  TEX_DIR_STATES,
 } from "@argelanderspace/contracts";
 import {
   ArxivPdfOnlyError,
   CREDENTIAL_STORE_METHODS,
   type CredentialStore,
+  currentToolchain,
   EXTERNAL_PROGRAMS,
   EXTERNAL_SERVICES,
   type ExternalObserver,
   f,
-  findOnPath,
   HttpError,
+  type KeychainProbe,
   type LogField,
   type MailMailbox,
   type MailManage,
   type MailOutgoing,
   type MailProtocol,
   NotATarError,
+  probeKeychain,
   TarCorruptError,
   TexWorkspaceError,
+  type Toolchain,
   ZipError,
 } from "@argelanderspace/infra";
 import { JOB_ERROR_CODES, type JobTransition } from "./jobs.js";
@@ -514,31 +521,42 @@ export function observedCredentials<T extends Partial<CredentialStore>>(
 // What the server found when it started
 // --------------------------------------------------------------------------- //
 
-/** The programs the workbench runs or needs on PATH (the full check with versions is a later ticket). */
-export const PROBED_TOOLS = [
-  "latexmk",
-  "pdflatex",
-  "xelatex",
-  "bibtex",
-  "biber",
-  "kpsewhich",
-  "pdftocairo",
-  "gs",
-  "bwrap",
-] as const;
-
-/** Which of the tools are on PATH — found or not, nothing more (not where: a path names the user's directories). */
-export function logEnvironment(
+/**
+ * What the server found when it started (desktop-app ticket 13: the full lookup of the environment check, not just
+ * PATH): which programs were found and from which step — the configured TeX directory, PATH, the usual install
+ * locations — what is the matter with the configured TeX directory, and whether the OS keychain can be used (asked
+ * without prompting and without reading anything in it: infra `probeKeychain`). Names and categories only: no path (a
+ * path names the user's folders; the settings page has them), no version line (program output).
+ */
+export async function logEnvironment(
   log: ServerLog,
-  pathEnv: string | undefined = process.env.PATH
-): void {
+  options: {
+    /** Where the programs are; default looked up now with the TeX directory config.toml sets now. */
+    toolchain?: Toolchain;
+    /** Default infra `probeKeychain`. */
+    keychain?: () => Promise<KeychainProbe>;
+  } = {}
+): Promise<void> {
   if (log === silentLog) return;
   try {
-    const found = PROBED_TOOLS.filter((tool) => findOnPath(tool, pathEnv) !== null);
-    const missing = PROBED_TOOLS.filter((tool) => !found.includes(tool));
+    const toolchain = options.toolchain ?? currentToolchain();
+    const keychain = await (options.keychain ?? (() => probeKeychain()))().catch(
+      (): KeychainProbe => ({ state: "unknown", reason: "no_probe" })
+    );
+    const located = ENVIRONMENT_TOOLS.filter((tool) => toolchain.tools[tool] !== null);
+    const from = (source: "tex_dir" | "common") =>
+      ENVIRONMENT_TOOLS.filter((tool) => toolchain.tools[tool]?.source === source);
     log.info("server.environment", {
-      tools_found: f.someOf(PROBED_TOOLS, found),
-      tools_missing: f.someOf(PROBED_TOOLS, missing),
+      tools_found: f.someOf(ENVIRONMENT_TOOLS, located),
+      tools_missing: f.someOf(
+        ENVIRONMENT_TOOLS,
+        ENVIRONMENT_TOOLS.filter((tool) => !located.includes(tool))
+      ),
+      tools_from_tex_dir: f.someOf(ENVIRONMENT_TOOLS, from("tex_dir")),
+      tools_from_common: f.someOf(ENVIRONMENT_TOOLS, from("common")),
+      tex_dir: f.oneOf(TEX_DIR_STATES, toolchain.texDirState),
+      keychain: f.oneOf(KEYCHAIN_PROBE_STATES, keychain.state),
+      keychain_reason: f.oneOf(KEYCHAIN_REASONS, keychain.reason),
     });
   } catch {
     /* the start is recorded without it */

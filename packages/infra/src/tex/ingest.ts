@@ -25,6 +25,7 @@ import { extractZip } from "../lib/unzip.js";
 import { compileTex } from "./compile.js";
 import type { TexFailureLogHook } from "./failure-log.js";
 import { materializeTexFigure } from "./figures.js";
+import type { Toolchain } from "./toolchain.js";
 
 export interface TexIngestOptions {
   /** Pipeline output root (`<dataDir>/output`). */
@@ -51,6 +52,11 @@ export interface TexIngestOptions {
    * hands one in per job; the CLI hands in none and keeps none.
    */
   failureLog?: TexFailureLogHook;
+  /**
+   * Where TeX is, asked at each compile (toolchain.ts); default: looked up then with the TeX directory the default
+   * config.toml sets. The server hands in one that reads its own config file.
+   */
+  toolchain?: () => Toolchain;
 }
 
 export interface TexIngestResult {
@@ -62,11 +68,19 @@ export interface TexIngestResult {
   docId: string;
 }
 
-const portsFor = (observer: ExternalObserver | undefined, failureLog?: TexFailureLogHook) =>
+const portsFor = (
+  observer: ExternalObserver | undefined,
+  failureLog?: TexFailureLogHook,
+  toolchain?: () => Toolchain
+) =>
   ({
     compile: {
       compile: (input: Parameters<typeof compileTex>[0]) =>
-        compileTex(input, failureLog === undefined ? { observer } : { observer, failureLog }),
+        compileTex(input, {
+          observer,
+          ...(failureLog !== undefined ? { failureLog } : {}),
+          ...(toolchain !== undefined ? { toolchain: toolchain() } : {}),
+        }),
     },
     figures: {
       materialize: (req: Parameters<typeof materializeTexFigure>[0]) =>
@@ -101,7 +115,7 @@ export async function ingestTexSource(
   mkdirSync(buildDir, { recursive: true });
   const doAssets = opts.assets !== false;
   if (doAssets) mkdirSync(assetsDir, { recursive: true });
-  const ports = portsFor(opts.observer, opts.failureLog);
+  const ports = portsFor(opts.observer, opts.failureLog, opts.toolchain);
   opts.onProgress?.("Compiling LaTeX (latexmk)");
   const r = await ingestTex(
     {

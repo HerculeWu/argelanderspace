@@ -14,6 +14,7 @@ export * from "./discovery.js";
 export * from "./discovery-ops.js";
 export * from "./doc.js";
 export * from "./doc-ir.js";
+export * from "./environment-api.js";
 export * from "./jobs.js";
 export * from "./library.js";
 export * from "./library-ops.js";

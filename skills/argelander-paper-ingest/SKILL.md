@@ -29,7 +29,7 @@ Do NOT use this skill to answer questions about a paper — that's `argelander-r
 
 - **The CLI**: run `argelanderspace`. If it is not on PATH, use the built bundle from the repo checkout by absolute path — `node /path/to/repo/packages/app/dist/bin.js` (build once with `corepack pnpm -r build` inside the repo). All examples below write `argelanderspace` — substitute as needed.
 - **Data directory**: one library per project, at `./literatures` under the **project root** (the directory that contains `literatures/`). The default resolves against the *current working directory* with **no upward search**, so **run every CLI command from the project root** — if your shell is somewhere else, `cd` there first. Do **not** pass `--data-dir`; it survives only as an escape hatch for unusual layouts (chain: `--data-dir` flag > `config.toml` `data_dir` > `./literatures`). No environment variable sets the data dir — `ARGELANDERSPACE_DATA_DIR` and the older `LITERATURE_LIBRARY` are ignored; do not look for them.
-- **LaTeX pipeline prerequisite**: **TeX Live** (`latexmk` + `pdflatex`/`xelatex` on PATH) for arXiv / local-LaTeX ingest. `pdftocairo` (poppler-utils) is optional (vector PDF figures → SVG; plus `gs`/ghostscript for EPS; figures degrade without them).
+- **LaTeX pipeline prerequisite**: **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) for arXiv / local-LaTeX ingest — found in the directory `tex_dir` of `config.toml` names (absolute path), else on PATH, else in the platform's usual install locations. The workbench's settings page (*TeX & environment*) shows what was found. `pdftocairo` (poppler-utils) is optional (vector PDF figures → SVG; plus `gs`/ghostscript for EPS; figures degrade without them).
 
 ## Inputs the user might give
 

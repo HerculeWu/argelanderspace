@@ -2417,6 +2417,80 @@
       "legacyBodySaved": "This key no longer has any effect. You can delete that line from the config file.",
       "legacyDismiss": "Got it"
     },
+    "tex": {
+      "texDir": "TeX program directory",
+      "texDirPlaceholder": "Empty means search automatically",
+      "texDirAbsolute": "Enter an absolute path.",
+      "texDirMissing": {
+        "title": "This directory does not exist",
+        "body": "The check looks on PATH and in the usual install locations as before; no restart is needed once the directory exists."
+      },
+      "texDirNoLatexmk": {
+        "title": "This directory has no latexmk",
+        "body": "The check looks on PATH and in the usual install locations as before. Point it at the bin directory of your TeX installation."
+      },
+      "texDirNotAbsolute": {
+        "title": "This directory is not an absolute path",
+        "body": "The check does not use it."
+      },
+      "envCheck": "Environment check",
+      "recheck": "Check again",
+      "checking": "Checking…",
+      "unreachable": "The environment check did not answer.",
+      "found": "Found",
+      "notFound": "Not found",
+      "optional": "optional",
+      "foundAt": "Location",
+      "affects": "Unavailable without it",
+      "listSeparator": ", ",
+      "fallback": " ({{engine}} is used instead)",
+      "source": {
+        "tex_dir": "TeX program directory",
+        "path": "PATH",
+        "common": "usual install location"
+      },
+      "keychain": "System keychain",
+      "available": "Available",
+      "unavailable": "Unavailable",
+      "unknown": "Cannot tell",
+      "keychainAffects": "Storing credentials in the keychain; without it a file needs your consent",
+      "keychainReason": {
+        "secret_service": "Secret Service is running",
+        "activatable": "Secret Service starts on first use",
+        "platform": "Built into this platform",
+        "no_bus": "No session bus",
+        "no_service": "No Secret Service on the session bus",
+        "no_module": "The keychain module cannot be loaded",
+        "no_probe": "The session bus could not be asked"
+      },
+      "feature": {
+        "latex_ingest": "LaTeX ingest",
+        "writer_render": "Writer rendering",
+        "pdflatex": "Compiling with pdflatex",
+        "xelatex": "Compiling with xelatex",
+        "bibtex": "Bibliography processing with bibtex",
+        "biber": "Bibliography processing with biber",
+        "figures": "PDF and EPS figure conversion during LaTeX ingest",
+        "eps_figures": "EPS figure conversion during LaTeX ingest",
+        "copilot_compile": "Copilot-triggered compilation (Writer sandbox)"
+      },
+      "noSandboxTitle": "No compile sandbox on this machine",
+      "noSandboxBody": "Copilot can edit manuscript text but will not trigger compilation. Pressing Render yourself still compiles (outside a sandbox).",
+      "sandboxTexMissingTitle": "Writer rendering cannot find TeX in the sandbox",
+      "sandboxTexMissingBody": "The compile sandbox sees only the system directories and the TeX directories on the PATH the workbench was started with that can be put into the sandbox. It does not see the TeX the workbench found ({{path}}), so Writer rendering fails; it never falls back to compiling outside the sandbox. LaTeX ingest is not affected.",
+      "sandboxTexOtherWhy": "The sandbox always takes the TeX in the system directories first, and putting another directory on PATH does not change that; there is nothing to do on this page to make it use the TeX the workbench found.",
+      "sandboxTexPathEnd": ".",
+      "sandboxTexOtherTitle": "Writer rendering uses another TeX in the sandbox",
+      "sandboxTexOtherBody": "The compile sandbox sees only the system directories and the TeX directories on the PATH the workbench was started with that can be put into the sandbox. LaTeX ingest uses the TeX the workbench found ({{path}}), which the sandbox does not see; Writer rendering uses this one in the sandbox:",
+      "sandboxReach": {
+        "bindable": "Add the directory of this TeX to the PATH the workbench is started with, then restart the workbench, and the Writer can use it in the sandbox.",
+        "bindableOnPath": "This directory can be put into the sandbox and is already on the PATH the workbench was started with; which TeX the sandbox sees is settled when the sandbox is first checked after the start, and a restart settles it again.",
+        "under_usr": "It is in a directory under /usr that is not a system directory (such as /usr/local/texlive/…, where the TeX Live installer puts it), and such a directory does not get into the sandbox even on PATH. Nothing on this page can change that for now; letting the sandbox use TeX in such places is still awaiting approval.",
+        "not_bindable": "It is in a place that is never put into the sandbox (such as the home directory, /tmp, /var or /mnt), so putting it on PATH does not help. Nothing on this page can change that for now; letting the sandbox use TeX in such places is still awaiting approval."
+      },
+      "noTexTitle": "TeX was not found",
+      "noTexBody": "Reading PDFs, annotations, plans, mail and Copilot work as usual. LaTeX ingest and Writer rendering need TeX installed, or a TeX program directory set above."
+    },
     "entries": {
       "provider": "Models and sign-in",
       "openProvider": "Open model settings",

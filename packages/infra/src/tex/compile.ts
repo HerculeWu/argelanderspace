@@ -36,7 +36,6 @@ import type {
 } from "@argelanderspace/core";
 import { TEX_COMPILE_DEFAULT_TIMEOUT_MS } from "@argelanderspace/core";
 import type { ExternalObserver } from "../lib/observe.js";
-import { findOnPath } from "../lib/proc.js";
 import { createCachedTexWorkspace } from "./cache.js";
 import {
   missingFilesFromTexLog,
@@ -48,6 +47,7 @@ import {
 import { prepareTexInstrumentation, texStyPath } from "./instrument.js";
 import { runTexProcess } from "./proc.js";
 import { ensureWriterSandboxProbe, writerSandboxCommand } from "./sandbox.js";
+import { currentToolchain, type Toolchain, texChildEnv, texChildPath } from "./toolchain.js";
 import {
   createTexWorkspace,
   guardTexWorkspaceSize,
@@ -59,8 +59,10 @@ import {
 // Toolchain discovery
 // --------------------------------------------------------------------------- //
 
+// Where TeX is: the configured TeX directory, PATH, the usual install locations (toolchain.ts), asked again each time.
+
 export function latexmkPath(): string | null {
-  return findOnPath("latexmk");
+  return currentToolchain().tools.latexmk?.path ?? null;
 }
 
 export function haveLatexmk(): boolean {
@@ -68,7 +70,7 @@ export function haveLatexmk(): boolean {
 }
 
 export function haveTexEngine(engine: TexEngine): boolean {
-  return findOnPath(engine) !== null;
+  return currentToolchain().tools[engine] !== null;
 }
 
 // --------------------------------------------------------------------------- //
@@ -282,6 +284,8 @@ async function attemptCompile(opts: {
   observer?: ExternalObserver | undefined;
   /** Given the log of a failed run before the run state (the .log included) is cleared. */
   capture?: TexFailureCapture | undefined;
+  /** Where latexmk and its engines are (toolchain.ts): latexmk runs from there with that directory first on PATH. */
+  toolchain: Toolchain;
 }): Promise<AttemptResult> {
   opts.signal?.throwIfAborted();
   const fail = (
@@ -340,7 +344,7 @@ async function attemptCompile(opts: {
     const sandbox =
       sandboxed && writerEnv ? writerSandboxCommand(runDir, writerEnv, "latexmk", args) : null;
     const result = await runTexProcess(
-      sandbox ? sandbox.cmd : "latexmk",
+      sandbox ? sandbox.cmd : (opts.toolchain.tools.latexmk?.path ?? "latexmk"),
       sandbox ? sandbox.args : args,
       {
         cwd: sandbox ? sandbox.cwd : runDir,
@@ -349,11 +353,17 @@ async function attemptCompile(opts: {
         // document \input any readable absolute path (openin_any = a); paranoid mode refuses absolute and parent paths
         // and dotfiles, so a Writer compile can only read its own workspace and the TeX trees. The reader/ingest
         // compiles are untouched (their sources are arXiv papers, not agent text).
+        // Outside the sandbox, the directory TeX was found in comes first on latexmk's PATH, so that it finds the engines
+        // and bibtex/biber beside it (an app started from an icon may have no TeX on its PATH at all). The sandbox has
+        // its own PATH (sandbox.ts) and is unchanged.
         ...(sandbox
           ? { env: sandbox.env, replaceEnv: true, fdInput: sandbox.fdInput }
           : writerEnv
-            ? { env: writerEnv, replaceEnv: true }
-            : {}),
+            ? {
+                env: { ...writerEnv, PATH: texChildPath(opts.toolchain, writerEnv.PATH) },
+                replaceEnv: true,
+              }
+            : { env: texChildEnv(opts.toolchain), replaceEnv: true }),
         ...(opts.signal ? { signal: opts.signal } : {}),
         observe: { observer: opts.observer, program: "latexmk", sandboxed: sandbox !== null },
       }
@@ -531,6 +541,11 @@ export interface TexCompileHooks {
   /** Told of every latexmk run (lib/observe.ts). */
   observer?: ExternalObserver | undefined;
   /**
+   * Where TeX is (toolchain.ts); default: looked up now with the TeX directory config.toml sets now, so a changed
+   * `tex_dir` applies to the next compile without a restart.
+   */
+  toolchain?: Toolchain | undefined;
+  /**
    * Where the complete latexmk log of a failed compile is kept, and who is told (failure-log.ts). Without it
    * nothing is kept and nothing about a failed compile differs from before.
    */
@@ -586,10 +601,13 @@ async function runCompile(
     excerpt,
   });
 
-  if (!haveLatexmk()) {
+  const toolchain = hooks.toolchain ?? currentToolchain();
+  // Not found anywhere (the TeX directory, PATH, the usual places): the same refusal, word for word, as before the
+  // lookup looked beyond PATH.
+  if (toolchain.tools.latexmk === null) {
     return unsupported("latexmk is not on PATH (required for TeX ingest: TeX Live)");
   }
-  const engines = [preferred, other].filter((e) => haveTexEngine(e));
+  const engines = [preferred, other].filter((e) => toolchain.tools[e] !== null);
   if (engines.length === 0) {
     return unsupported(`neither ${preferred} nor ${other} is on PATH (required: TeX Live)`);
   }
@@ -626,6 +644,7 @@ async function runCompile(
     ...(input.signal ? { signal: input.signal } : {}),
     observer: hooks.observer,
     capture,
+    toolchain,
   };
   const warnings: string[] = [];
   let lastError: AttemptResult | null = null;
@@ -759,6 +778,7 @@ export async function compileTexAttempt(input: TexCompileAttemptInput): Promise<
     instrumented,
     styPath: instrumented ? (input.styPath ?? texStyPath()) : null,
     keepLog: !instrumented,
+    toolchain: currentToolchain(),
   });
   if (r.status === "ok") {
     return { ok: true, engine: r.engine, artifacts: r.artifacts ?? {}, warnings: r.warnings };

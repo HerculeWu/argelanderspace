@@ -107,3 +107,23 @@
 .st-spin { animation: st-spin 1s linear infinite; }
 @keyframes st-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .st-spin { animation: none; } }
+
+/* ---------- TeX & environment (desktop-app ticket 13; the prototype's environment table) ---------- */
+.st-sub-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 22px 0 8px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.st-sub-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.st-env { display: flex; flex-direction: column; gap: 10px; }
+.st-table { display: flex; flex-direction: column; border: 1px solid var(--border-soft); border-radius: var(--radius); overflow: hidden; }
+.st-tr { display: grid; grid-template-columns: 148px 104px minmax(0, 1fr); gap: 6px 12px; align-items: start; padding: 9px 12px; border-top: 1px solid var(--border-soft); }
+.st-tr:first-child { border-top: none; }
+.st-td code { font: var(--fs-sm) var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
+.st-opt { margin-left: 6px; font-size: var(--fs-xs); color: var(--text-faint); }
+.st-td.detail { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: var(--fs-sm); }
+.st-td .st-ver { color: var(--text-dim); }
+.st-where { color: var(--text-faint); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.st-where .st-path { font-size: var(--fs-xs); color: var(--text); }
+.st-affects { color: var(--text-dim); }
+.st-env[aria-busy="true"] .st-table { opacity: 0.6; }
+@container st (max-width: 640px) {
+  .st-tr { grid-template-columns: minmax(0, 1fr) auto; }
+  .st-tr .detail { grid-column: 1 / -1; }
+}

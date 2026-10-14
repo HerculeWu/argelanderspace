@@ -72,7 +72,7 @@ mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
   or from a built repo checkout — `corepack pnpm -r build`, then the skills use
   `node <repo>/packages/app/dist/bin.js` (absolute path) in place of
   `argelanderspace`.
-- **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) on PATH for the LaTeX (arXiv) ingest pipeline; optional `pdftocairo` (poppler-utils) + `gs` (ghostscript, EPS only) for vector figures.
+- **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) for the LaTeX (arXiv) ingest pipeline: in the directory `tex_dir` of `config.toml` names (an absolute path; the settings page's *TeX & environment* group sets it and shows what was found), else on PATH, else in the platform's usual install locations; optional `pdftocairo` (poppler-utils) + `gs` (ghostscript, EPS only) for vector figures.
 - Optional, for richer library enrichment: an ADS token saved on the
   workbench's settings page (*Literature services & credentials*; the CLI reads
   the same one — `$ADS_DEV_KEY` and `~/.ads/dev_key` are not read), and

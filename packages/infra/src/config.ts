@@ -41,8 +41,10 @@
  *                              amber | neutral), density (compact | regular
  *                              | comfy), labels (boolean)
  *
- * `tex_dir` is defined and checked only: nothing reads it yet. `[ui]` is
- * read by the server for the page (desktop-app ticket 10).
+ * `tex_dir` is where TeX's programs are looked for before PATH (desktop-app
+ * ticket 13; `tex/toolchain.ts` reads it leniently at each compile and each
+ * environment check). `[ui]` is read by the server for the page (desktop-app
+ * ticket 10).
  *
  * This file is the workbench's one configuration source: a command-line flag
  * (`--data-dir`, `--port`) overrides it for a single run, and no environment

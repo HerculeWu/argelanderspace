@@ -33,17 +33,20 @@ import {
   configFilePath,
   configOfReading,
   createAdsCredentialStore,
+  currentToolchain,
   type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
   type GlobalDirs,
   getConfig,
+  type KeychainProbe,
   LOG_DIR_NAME,
   observedFetch,
   pinGlobalDirs,
   readAdsToken,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
+  type SandboxViewOptions,
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
@@ -137,6 +140,13 @@ export interface ServerOptions {
   adsCredentials?: CredentialStore;
   /** Where the ADS import looks for `~/.ads/dev_key`; default under the home directory (tests: a temporary file). */
   adsDevKeyPath?: (() => string) | undefined;
+  /**
+   * Whether the OS keychain can be used, for the environment check and the start record (desktop-app ticket 13): tests
+   * hand in a fake. Default infra `probeKeychain`, which asks only the D-Bus daemon, never the keychain.
+   */
+  keychainProbe?: (() => Promise<KeychainProbe>) | undefined;
+  /** Tests only: where the environment check looks for the Writer sandbox's latexmk (infra `sandbox-view.ts`). */
+  sandboxView?: SandboxViewOptions | undefined;
 }
 
 export interface RunningServer {
@@ -178,6 +188,8 @@ export function createServer(opts: ServerOptions): RunningServer {
     fetchImpl: opts.fetchImpl,
     config: () => readConfigLeniently(opts.configPath ?? configFilePath()),
     adsToken: () => readAdsToken(adsCredentials),
+    // Where TeX is: looked up at each compile with the TeX directory the config file sets then (ticket 13).
+    texToolchain: () => currentToolchain(opts.configPath ?? configFilePath()),
   };
   const observeJobs = jobLogger(log);
   const jobsDir = join(opts.dataDir, "jobs");
@@ -269,6 +281,8 @@ export function createServer(opts: ServerOptions): RunningServer {
     configPath: opts.configPath,
     adsCredentials,
     adsDevKeyPath: opts.adsDevKeyPath,
+    keychainProbe: opts.keychainProbe,
+    sandboxView: opts.sandboxView,
     adsTestFetch:
       observer === undefined && opts.fetchImpl === undefined
         ? undefined
@@ -477,6 +491,8 @@ export function serveStart(
 export interface StartOptions {
   /** The version of the program that is starting the server, for the start record. */
   version?: string;
+  /** Tests only: the keychain probe of the start record (default infra `probeKeychain`). */
+  keychainProbe?: () => Promise<KeychainProbe>;
 }
 
 /**
@@ -487,7 +503,7 @@ export interface StartOptions {
 export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
-): Promise<RunningServer> {
+): Promise<RunningServer & { environmentLogged: Promise<void> }> {
   const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
@@ -527,7 +543,14 @@ export async function startServer(
     webDist: cfg.webDist,
     configProblems: problems,
   });
-  logEnvironment(serveLog.log);
+  // The full lookup (TeX directory, PATH, usual places) and whether the keychain can be used — asked of the bus daemon
+  // only, never of the keychain (desktop-app ticket 13). Not waited for: the keychain probe may take a few seconds (two
+  // D-Bus calls of at most 3 s each), and the start does not wait for it — the record is written when it is done (and
+  // not at all if the server closes first). `environmentLogged` resolves then.
+  const environmentLogged = logEnvironment(serveLog.log, {
+    toolchain: currentToolchain(configFilePath()),
+    ...(start.keychainProbe ? { keychain: start.keychainProbe } : {}),
+  });
   // These three lines are what `serve` prints to the terminal; the log does not replace them.
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
   console.log(`  data dir: ${cfg.dataDir}`);
@@ -537,5 +560,5 @@ export async function startServer(
     console.error(line);
   }
   const close = srv.close;
-  return { ...srv, close: () => close().finally(() => serveLog.close()) };
+  return { ...srv, environmentLogged, close: () => close().finally(() => serveLog.close()) };
 }
