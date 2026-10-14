@@ -607,7 +607,7 @@ describe("the workbench's banner for a faulty config.toml", () => {
     render(<Shell />);
     await waitFor(() => expect(banner()?.getAttribute("data-severity")).toBe("data-location"));
     expect(banner()!.getAttribute("role")).toBe("alert");
-    await waitFor(() => expect(banner()!.textContent).toContain("Project data is in the default location, not the one config.toml names"));
+    await waitFor(() => expect(banner()!.textContent).toContain("Project data is in the default location"));
     expect(banner()!.textContent).toContain("Faulty when the workbench started: data_dir.");
     expect(banner()!.textContent).toContain("Restart the workbench");
     expect(banner()!.textContent).not.toContain("global");

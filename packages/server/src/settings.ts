@@ -160,8 +160,13 @@ export function startupLocations(
   const problem = (key: SettingKey) => reading.problems.find((p) => p.key === key)?.reason ?? whole;
   const source = (key: SettingKey): "file" | "default" =>
     reading.sources[key] === "file" ? "file" : "default";
+  // With --data-dir the file's state says nothing about where project data is, except that a data_dir the file
+  // does name is not used: only data_dir's own problem is told, not the whole file's.
+  const own = (key: SettingKey) => reading.problems.find((p) => p.key === key)?.reason ?? null;
   return {
-    data_dir: { source: dataDirGiven ? "flag" : source("data_dir"), problem: problem("data_dir") },
+    data_dir: dataDirGiven
+      ? { source: "flag", problem: own("data_dir") }
+      : { source: source("data_dir"), problem: problem("data_dir") },
     global_dir: { source: source("global_dir"), problem: problem("global_dir") },
     global_cache_dir: { source: source("global_cache_dir"), problem: problem("global_cache_dir") },
   };
@@ -294,7 +299,12 @@ function locationLine(
   if (at.source === "default") {
     const where =
       key === "data_dir" ? "the default location ./literatures" : "the default directory";
-    return `${LOCATION_NAME[key]}: ${where} is in use, not the one the file names`;
+    // A file that could not be read names nothing that is known here.
+    const why =
+      at.problem === "unparseable" || at.problem === "unreadable"
+        ? "the file could not be read"
+        : "not the one the file names";
+    return `${LOCATION_NAME[key]}: ${where} is in use, ${why}`;
   }
   return null;
 }
@@ -310,7 +320,7 @@ export function configProblemLines(
 ): string[] {
   if (problems.length === 0) return [];
   const lines = [
-    `warning: ${context.path} has problems; the workbench started with defaults for them:`,
+    `warning: ${context.path} has problems; what they concern was not taken from the file:`,
   ];
   for (const problem of problems) {
     if (problem.key === null) {

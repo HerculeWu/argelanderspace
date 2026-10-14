@@ -154,10 +154,11 @@ describe("serve starts with a faulty config.toml", () => {
     await serve(project());
     const terminal = errors.join("\n");
     expect(terminal).toContain("the file is not valid TOML: every setting has its default");
-    // Project data comes from --data-dir here; the global directories are the defaults.
-    expect(terminal).toContain("project data: the location given by --data-dir is in use");
+    // Project data comes from --data-dir here, and an unreadable file says nothing against it; the global
+    // directories are the defaults, and the file names nothing that could be told.
+    expect(terminal).not.toContain("project data:");
     expect(terminal).toContain(
-      "global data (Mail, credentials, log): the default directory is in use, not the one the file names"
+      "global data (Mail, credentials, log): the default directory is in use, the file could not be read"
     );
     expect(terminal).not.toMatch(/zqxsecret|\^/);
     for (const srv of running.splice(0)) await srv.close();

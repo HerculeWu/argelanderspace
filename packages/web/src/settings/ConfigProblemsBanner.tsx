@@ -62,7 +62,7 @@ export function ConfigProblemsBanner({ settings, onOpenSettings }: { settings: S
       <div className="config-banner-text">
         {warning && (
           <span className="config-banner-row" data-ui="config-problems-location">
-            <strong>{title}</strong>
+            <strong>{title}</strong>{" "}
             {[...(atStartFile ? [t("settings.banner.startupFile")] : []), ...(atStartKeys.length > 0 ? [t("settings.banner.startupKeys", { keys: atStartKeys.join(", ") })] : []), t("settings.banner.restart")].join(" ")}
           </span>
         )}
