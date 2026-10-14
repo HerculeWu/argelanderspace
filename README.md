@@ -219,6 +219,38 @@ one, ADS degrades to `no-token` and the rest of the library keeps working. A loc
 `$ADS_DEV_KEY`, an `ads_dev_key` line in `config.toml` and `~/.ads/dev_key` are
 no longer read (the import copies the file once and leaves it as it is).
 
+## Reporting a problem
+
+`serve` keeps a log of what it does: one file per start, in the `logs/` folder of
+the global data directory (default `~/.local/share/argelanderspace/logs` on Linux;
+the Settings page shows where it is under **Diagnostics**, and so does the notice
+the page shows when it fails). The newest 20 files, at most 50 MB together, are
+kept. The log is written so that it can be shared: it records events, identifiers,
+status codes, timings and paths with your home directory written as `~` — never
+credentials, mail, the text of papers, annotations, notes, manuscripts or Copilot
+conversations, and never the titles of papers. **Diagnostics → Log level** changes
+how much is recorded and takes effect at once.
+
+To report a problem, open **Settings → Diagnostics → Export diagnostics…** and press
+Export. The workbench makes a zip and hands it to your browser's download; nothing
+is uploaded, ever — there is no telemetry and no crash reporting, and you decide
+whether and to whom to send the file. The zip holds:
+
+- every file of the log folder;
+- `environment-report.json`: the version, browser or desktop form, operating
+  system and architecture, Node version, your browser's identification, the
+  environment check (where TeX and the other programs are, their versions, whether
+  a keychain is there) and the config file's values in effect. It leaves out your
+  contact email, the global directories and the `openalex_api_key` /
+  `ads_dev_key` lines; paths have your home directory written as `~`; the ADS
+  token is reported only as saved (and how it is protected) or not saved.
+
+The dialog also offers **Include the latest compile-failure logs**. These are the
+complete LaTeX logs the workbench keeps when an ingest or a manuscript render fails
+to compile; they quote lines of the paper's or manuscript's source, which may be
+unpublished work, so the box is never ticked by default. Ticked, the dialog lists
+the files that will go in (the newest, up to 32 MB together).
+
 ## Stored IR (sketch)
 
 Each `<doc_id>.json` IS the render IR (`version: 1`) — the same object the web

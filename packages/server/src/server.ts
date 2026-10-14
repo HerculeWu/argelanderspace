@@ -57,7 +57,7 @@ import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js"
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
 import { JobRunner } from "./jobs.js";
-import { logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
+import { applyLogLevel, logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
 import {
   externalObserver,
   jobIdField,
@@ -147,6 +147,10 @@ export interface ServerOptions {
   keychainProbe?: (() => Promise<KeychainProbe>) | undefined;
   /** Tests only: where the environment check looks for the Writer sandbox's latexmk (infra `sandbox-view.ts`). */
   sandboxView?: SandboxViewOptions | undefined;
+  /** The user-level log directory the diagnostics show and bundle (app.ts `AppDeps.logDir`). */
+  logDir?: string;
+  /** The program's version, for the diagnostics' environment report. */
+  version?: string;
 }
 
 export interface RunningServer {
@@ -288,6 +292,8 @@ export function createServer(opts: ServerOptions): RunningServer {
         ? undefined
         : observedFetch(opts.fetchImpl ?? fetch, "ads", observer),
     startup: opts.startup ?? null,
+    ...(opts.logDir === undefined ? {} : { logDir: opts.logDir }),
+    ...(opts.version === undefined ? {} : { version: opts.version }),
     ...(opts.settingsAtStart ? { settingsAtStart: opts.settingsAtStart } : {}),
     ...(opts.settingsFromFlags ? { settingsFromFlags: opts.settingsFromFlags } : {}),
   });
@@ -369,8 +375,11 @@ export function createServer(opts: ServerOptions): RunningServer {
   const settingsWatcher = startSettingsWatcher({
     path: opts.configPath,
     intervalMs: opts.watchIntervalMs,
-    onChange: () =>
-      hub.broadcast({ type: "settings.changed", cause: "external", at: new Date().toISOString() }),
+    onChange: () => {
+      // A hand edit of `log_level` takes effect at once too (desktop-app ticket 14).
+      applyLogLevel(log, opts.configPath);
+      hub.broadcast({ type: "settings.changed", cause: "external", at: new Date().toISOString() });
+    },
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {
@@ -507,7 +516,8 @@ export async function startServer(
   const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
-  const serveLog = openServeLog(config, join(globalDirs.dataDir, LOG_DIR_NAME));
+  const logDir = join(globalDirs.dataDir, LOG_DIR_NAME);
+  const serveLog = openServeLog(config, logDir);
   const sweepMailStagingIn = globalDirs.cacheDir;
   // Whatever stops the start — the server cannot be created, the port cannot be bound — the log file is closed and
   // the process is no longer watched.
@@ -520,6 +530,8 @@ export async function startServer(
       webDist: cfg.webDist,
       mailWatch: true,
       log: serveLog.log,
+      logDir,
+      ...(start.version === undefined ? {} : { version: start.version }),
       sweepMailStagingIn,
       globalDirs,
       startup,

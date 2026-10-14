@@ -1,8 +1,10 @@
 import {
+  type DiagnosticsInfo,
   isEmailAddress,
   isAbsoluteOnAnyPlatform,
   SETTING_KEYS,
   SETTINGS_GROUPS,
+  SETTINGS_LOG_LEVELS,
   SETTINGS_SCHEMA,
   SETTINGS_UI_ACCENTS,
   SETTINGS_UI_DENSITIES,
@@ -24,26 +26,30 @@ import { ACCENTS, type ThemeName } from "../argelander/theme";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
+import { fetchDiagnostics } from "../api/diagnostics";
+import { DiagnosticsExportDialog } from "./DiagnosticsExport";
 import { EnvironmentCheck, useEnvironment } from "./EnvironmentCheck";
 import "./settings.css";
 
 /**
  * The settings page (desktop-app tickets 10, 11): one group at a time, the groups listed at the left. Appearance,
  * Project, Services (the ADS token, ticket 12, and the contact email), TeX & environment (the TeX directory and the
- * environment check, ticket 13), Copilot, Mail and Advanced have their rows; Diagnostics says that it has nothing yet
- * (a later ticket). Every value comes from the settings endpoint and every change is one key of
+ * environment check, ticket 13), Copilot, Mail, Diagnostics (the log folder, the log level and the diagnostics bundle,
+ * ticket 14) and Advanced have their rows. Every value comes from the settings endpoint and every change is one key of
  * config.toml; a save is acknowledged, and a refused one explained, by a floating notice at the foot of the page
  * (`SettingsNotices`), never inside the row.
  */
 
 /** The groups this page fills; the others show one line saying so. */
-const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "tex", "copilot", "mail", "advanced"]);
+const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "tex", "copilot", "mail", "diagnostics", "advanced"]);
 
 /**
  * Opening the config file in the system's editor belongs to the desktop app's host (a later ticket). Until a host
  * offers it, every page is the browser form: the path, shown and copied.
  */
 const openConfigInHost: ((path: string) => void) | null = null;
+/** Showing the log folder in the system's file manager belongs to the desktop app's host too (a later ticket). */
+const openLogFolderInHost: (() => void) | null = null;
 
 /** `cli` belongs to the desktop app only; a page in a browser does not list it. */
 const BROWSER_GROUPS = SETTINGS_GROUPS.filter((group) => group !== "cli");
@@ -557,6 +563,74 @@ function Advanced({ state }: { state: RowState }) {
   );
 }
 
+/**
+ * Diagnostics (desktop-app ticket 14), as in the approved prototype: where the log is (in the browser its path and a
+ * copy action; the desktop app's "show the log folder" belongs to its host), the log level (it takes effect at once,
+ * no restart) and the diagnostics bundle. These rows are there whatever the state of the config file, except the
+ * level, which is a key of the file.
+ */
+function Diagnostics({ state }: { state: RowState }) {
+  const { t } = useTranslation();
+  const { P, settings } = state;
+  const [info, setInfo] = useState<DiagnosticsInfo | null | "loading">("loading");
+  const [exporting, setExporting] = useState(false);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchDiagnostics(ac.signal).then(setInfo, () => {});
+    return () => ac.abort();
+  }, []);
+  const dir = info !== null && info !== "loading" ? info.logDir : null;
+  return (
+    <>
+      <div className="st-row" data-ui="setting-row" data-ui-key="log-folder">
+        <div className="st-row-main">
+          <div className="st-label"><span>{t("settings.diagnostics.logFolder")}</span></div>
+        </div>
+        <div className="st-control st-control-path">
+          {dir !== null ? (
+            <code className="st-path" data-ui="log-folder-path" title={dir.path}>{dir.display}</code>
+          ) : (
+            <span className="st-path" data-ui="log-folder-path" data-state={info === null ? "unknown" : "loading"}>
+              {info === null ? t("settings.diagnostics.logFolderUnknown") : "…"}
+            </span>
+          )}
+          {openLogFolderInHost !== null ? (
+            <Button data-ui="show-log-folder" onClick={() => openLogFolderInHost?.()}>{t("settings.diagnostics.showLogs")}</Button>
+          ) : (
+            dir !== null && (
+              <ActionButton
+                mode="icon"
+                iconName="copy"
+                iconSize="small"
+                tooltipAlign="end"
+                data-ui="copy-log-path"
+                label={t("settings.diagnostics.copyPath")}
+                tooltip={t("settings.diagnostics.copyPath")}
+                onClick={() => void copyText(dir.path).then((ok) => P.notify(ok ? t("settings.configFile.pathCopied") : t("settings.configFile.copyFailed")))}
+              />
+            )
+          )}
+        </div>
+      </div>
+      <Row state={state} k="log_level" label={t("settings.diagnostics.logLevel")} control={(disabled) => (
+        <select data-ui="log-level-select" className="plan-field-input st-select" aria-label={t("settings.diagnostics.logLevel")} disabled={disabled}
+          value={String(settings.values.log_level ?? "info")} onChange={(e) => void P.change("log_level", { set: e.target.value }, HERE)}>
+          {SETTINGS_LOG_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
+        </select>
+      )} />
+      <div className="st-row" data-ui="setting-row" data-ui-key="export-diagnostics">
+        <div className="st-row-main">
+          <div className="st-label"><span>{t("settings.diagnostics.exportRow")}</span></div>
+        </div>
+        <div className="st-control">
+          <Button data-ui="export-diagnostics-open" onClick={() => setExporting(true)}>{t("settings.diagnostics.exportOpen")}</Button>
+        </div>
+      </div>
+      {exporting && <DiagnosticsExportDialog onClose={() => setExporting(false)} />}
+    </>
+  );
+}
+
 function GroupRows({ group, state }: { group: SettingsGroup; state: RowState }) {
   switch (group) {
     case "appearance":
@@ -567,6 +641,8 @@ function GroupRows({ group, state }: { group: SettingsGroup; state: RowState }) 
       return <Services state={state} />;
     case "tex":
       return <Tex state={state} />;
+    case "diagnostics":
+      return <Diagnostics state={state} />;
     case "advanced":
       return <Advanced state={state} />;
     default:

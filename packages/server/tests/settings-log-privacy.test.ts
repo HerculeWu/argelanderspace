@@ -49,7 +49,9 @@ beforeAll(async () => {
   mkdirSync(dirname(configPath));
   writeFileSync(
     configPath,
-    `ads_dev_key = "${MARK.secret}"\nopenalex_api_key = "${MARK.openalex}"\nport = "${MARK.faulty}"\n\n[ui]\ntheme = "dark"\n`
+    // `log_level = "debug"`: the level follows the file from the first change on (desktop-app ticket 14), and this test
+    // reads every request's record.
+    `log_level = "debug"\nads_dev_key = "${MARK.secret}"\nopenalex_api_key = "${MARK.openalex}"\nport = "${MARK.faulty}"\n\n[ui]\ntheme = "dark"\n`
   );
   file = openLogFile({ dir: logDir, process: "serve" });
   srv = createServer({

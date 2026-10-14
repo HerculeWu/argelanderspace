@@ -103,6 +103,7 @@ import {
   createAdsCredentialStore,
   ensureWriterSandboxProbe,
   type FetchImpl,
+  LOG_DIR_NAME,
   pinnedGlobalDirs,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
@@ -140,14 +141,15 @@ import type {
   ReaderWriteOutcome,
 } from "./copilot-reader-tool.js";
 import { mountCopilotRoutes } from "./copilot-routes.js";
+import { mountDiagnosticsRoutes } from "./diagnostics.js";
 import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
-import { mountEnvironmentRoutes } from "./environment.js";
+import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
-import { logRequests, type ServerLog, silentLog } from "./log.js";
+import { applyLogLevel, logRequests, type ServerLog, silentLog } from "./log.js";
 import { externalObserver, jobLogger, observedCredentials } from "./log-observers.js";
 import type { MailAccountService } from "./mail-accounts.js";
 import type { MailComposeServices } from "./mail-compose-routes.js";
@@ -283,6 +285,13 @@ export interface AppDeps {
   settingsAtStart?: import("@argelanderspace/contracts").SettingsValues;
   /** The restart-only keys `serve` was given on its command line (`--port`, `--data-dir`); default none. */
   settingsFromFlags?: readonly import("@argelanderspace/contracts").RunningFlagKey[];
+  /**
+   * The user-level log directory the diagnostics show and bundle (diagnostics.ts); default `logs/` in the global data
+   * directory this process uses (the pinned one, or the lenient reading of config.toml at each request).
+   */
+  logDir?: string | undefined;
+  /** The program's version, for the diagnostics' environment report. */
+  version?: string | undefined;
 }
 
 // --------------------------------------------------------------------------- //
@@ -554,13 +563,19 @@ export function createApp(deps: AppDeps): Hono {
         from_flag: [...(deps.settingsFromFlags ?? [])],
       };
     },
-    written: () =>
-      broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() }),
+    written: () => {
+      // `log_level` takes effect at once (desktop-app ticket 14); the file watcher of `createServer` does the same for
+      // a hand edit.
+      applyLogLevel(log, deps.configPath);
+      broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() });
+    },
   });
 
   // The ADS token (ads-credential.ts): kept in the credential store, never in config.toml; no answer carries it.
+  const adsCredentials =
+    deps.adsCredentials ?? observedCredentials(createAdsCredentialStore(), log);
   mountAdsCredentialRoutes(app, guardCsrf, {
-    store: deps.adsCredentials ?? observedCredentials(createAdsCredentialStore(), log),
+    store: adsCredentials,
     fetchImpl: deps.adsTestFetch,
     devKeyPath: deps.adsDevKeyPath,
   });
@@ -571,6 +586,41 @@ export function createApp(deps: AppDeps): Hono {
     keychain: deps.keychainProbe,
     sandboxView: deps.sandboxView,
     observer,
+  });
+
+  // Diagnostics (diagnostics.ts): the log directory, and a bundle made only when the user asks for one.
+  mountDiagnosticsRoutes(app, guardCsrf, {
+    dataDir: paths.dataDir,
+    logDir: () =>
+      deps.logDir ??
+      join(
+        (
+          pinnedGlobalDirs() ??
+          resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs
+        ).dataDir,
+        LOG_DIR_NAME
+      ),
+    configPath: deps.configPath,
+    log,
+    version: deps.version,
+    mode: "browser",
+    running: () => ({
+      project_root: shownPath(projectRoot),
+      port: deps.boundPort?.() ?? null,
+      data_dir: shownPath(deps.paths.dataDir),
+      // The global directories are not in the report; these two are there only for the type.
+      global_dir: shownPath(""),
+      global_cache_dir: shownPath(""),
+      from_flag: [...(deps.settingsFromFlags ?? [])],
+    }),
+    adsCredentials: adsCredentials,
+    environment: () =>
+      environmentReport({
+        configPath: deps.configPath,
+        keychain: deps.keychainProbe,
+        sandboxView: deps.sandboxView,
+        observer,
+      }),
   });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
