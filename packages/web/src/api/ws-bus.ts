@@ -111,6 +111,7 @@ function createRouter(send: (frame: object) => void) {
     "text-source.changed": emit,
     "text-doc.published": emit,
     "mail.changed": emit,
+    "settings.changed": emit,
     // Position notifications never navigate another tab; its reader remains
     // user-controlled. No built-in routing: only an explicit `on` sees it.
     "pdf-reading-position.changed": emit,

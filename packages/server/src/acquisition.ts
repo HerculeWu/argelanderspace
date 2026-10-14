@@ -52,7 +52,7 @@ import { ArxivPdfOnlyError, extractZip, f, ZipError } from "@argelanderspace/inf
 import { type ArxivFetchStage, appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { badDocId } from "./doc-id.js";
 import type { DocMutationRegistry } from "./doc-mutations.js";
-import type { JobErrorCode, JobEventType, JobRunner } from "./jobs.js";
+import { type JobErrorCode, type JobEventType, type JobRunner, jobErrorText } from "./jobs.js";
 import {
   type AcquisitionPort,
   type AnnotationRisk,
@@ -902,7 +902,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
       return { kind: "attached", ref, argument_graph_merges };
     } catch (e) {
       // Python: ValueError/FileNotFoundError → 404, anything else → 500.
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = jobErrorText(e);
       return msg.startsWith("no matching work in the library")
         ? { kind: "no_work", message: msg }
         : {

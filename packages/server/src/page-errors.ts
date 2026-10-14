@@ -32,7 +32,7 @@
 
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { WORKSPACE_VIEWS } from "@argelanderspace/contracts";
+import { PANE_VIEWS } from "@argelanderspace/contracts";
 import { f } from "@argelanderspace/infra";
 import type { Context, Hono } from "hono";
 import { type ServerLog, silentLog } from "./log.js";
@@ -44,8 +44,11 @@ export const PAGE_ERROR_FRAMES_MAX = 30;
 const WINDOW_MS = 60_000;
 
 export const PAGE_ERROR_KINDS = ["error", "unhandledrejection", "render"] as const;
-/** The workbench's panes (contracts `WORKSPACE_VIEWS`), and `none` for an error outside any of them. */
-export const PAGE_ERROR_PANES = [...WORKSPACE_VIEWS, "none"] as const;
+/**
+ * What a pane can show (contracts `PANE_VIEWS`: the workbench views and the settings page), and `none` for an error
+ * outside any of them.
+ */
+export const PAGE_ERROR_PANES = [...PANE_VIEWS, "none"] as const;
 
 /** The error names of the JavaScript engine and of the DOM, and the page's word for a thrown non-Error. */
 const KNOWN_ERROR_NAMES = new Set([
@@ -135,8 +138,11 @@ function errorOf(name: string, frames: readonly string[]): Error {
   return error;
 }
 
-/** Reads at most `limit` bytes of the body; null when there is more (the rest is not read). */
-async function readLimited(c: Context, limit: number): Promise<Uint8Array | null> {
+/**
+ * Reads at most `limit` bytes of the body; null when there is more (the rest is not read: the stream is cancelled at
+ * the first chunk over the limit, so a chunked request with no length cannot make the server hold more).
+ */
+export async function readLimited(c: Context, limit: number): Promise<Uint8Array | null> {
   const declared = Number(c.req.header("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > limit) return null;
   const stream = c.req.raw.body;

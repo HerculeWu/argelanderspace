@@ -18,6 +18,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { createServer as createNetServer } from "node:net";
@@ -534,20 +535,76 @@ describe("serve: configuration comes from flags and config.toml only (desktop-ap
     }
   }, 60_000);
 
-  test("config.toml `data_dir` as an absolute path: serve refuses to start, naming the key", () => {
+  // Hard contract 「产品与执行边界」 item 2, as revised 2026-10-14 (desktop-app ticket 10): `serve` starts on the
+  // default data location and names the key — on the terminal and in the settings' problem list — where a command
+  // stops with a ConfigError (the commands' refusal is pinned in agent.test.ts and argument.test.ts).
+  test("config.toml `data_dir` as an absolute path: serve starts on the default data location, naming the key", async () => {
     const root = mkdtempSync(join(tmpdir(), "aspace-cli-serve-"));
-    const dataDir = makeDataDir(root);
-    const xdg = join(root, "xdg");
-    mkdirSync(join(xdg, "argelanderspace"), { recursive: true });
-    const file = join(xdg, "argelanderspace", "config.toml");
-    writeFileSync(file, `data_dir = "${dataDir}"\n`);
-    const r = runCli(["serve", "--port", "0"], { ...childEnv(root), XDG_CONFIG_HOME: xdg });
-    expect(r).toEqual({
-      status: 1,
-      stdout: "",
-      stderr: `error: ${file}: "data_dir" must be a relative path\n`,
-    });
-  });
+    try {
+      const dataDir = makeDataDir(root);
+      const xdg = join(root, "xdg");
+      mkdirSync(join(xdg, "argelanderspace"), { recursive: true });
+      writeFileSync(join(xdg, "argelanderspace", "config.toml"), `data_dir = "${dataDir}"\n`);
+      const project = join(root, "project");
+      mkdirSync(project);
+      const child = spawn(process.execPath, [BIN, "serve", "--port", "0"], {
+        cwd: project,
+        env: { ...childEnv(root), XDG_CONFIG_HOME: xdg },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d: Buffer) => {
+        stdout += d.toString();
+      });
+      child.stderr.on("data", (d: Buffer) => {
+        stderr += d.toString();
+      });
+      try {
+        const port = await new Promise<number>((resolvePromise, rejectPromise) => {
+          const timer = setTimeout(
+            () => rejectPromise(new Error(`no listen line; got: ${stdout} / ${stderr}`)),
+            20_000
+          );
+          child.stdout.on("data", () => {
+            const m = /listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(stdout);
+            if (m) {
+              clearTimeout(timer);
+              resolvePromise(Number.parseInt(m[1] as string, 10));
+            }
+          });
+        });
+        // The default data location, not the one the file names (the line follows the listening line).
+        for (let i = 0; i < 50 && !stdout.includes("web dist:"); i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        expect(stdout).toContain(`data dir: ${join(project, "literatures")}`);
+        // The page's problem list names the key.
+        const settings = (await (await fetch(`http://127.0.0.1:${port}/api/settings`)).json()) as {
+          problems: { key: string | null; reason: string }[];
+        };
+        expect(settings.problems).toContainEqual({ key: "data_dir", reason: "must_be_relative" });
+        // The terminal line is written once the server listens.
+        for (let i = 0; i < 50 && !stderr.includes("the settings page lists them too"); i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      } finally {
+        child.kill("SIGTERM");
+      }
+      const exit = await new Promise<number | null>((resolvePromise) => {
+        child.on("exit", (code) => resolvePromise(code));
+      });
+      expect(exit).toBe(0);
+      // The terminal names the key and says the default location is in use; the value is never repeated.
+      expect(stderr).toContain('"data_dir" must be a relative path');
+      expect(stderr).toContain(
+        "project data: the default location ./literatures is in use, not the one the file names"
+      );
+      expect(stderr).not.toContain(dataDir);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   test("help names config.toml, not environment variables, and the default port", () => {
     for (const args of [["--help"], ["serve", "--help"], ["read", "--help"]]) {

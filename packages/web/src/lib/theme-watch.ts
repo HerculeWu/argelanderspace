@@ -48,7 +48,7 @@ function subscribe(cb: () => void): () => void {
 const getSnapshot = (): ThemeName => current;
 const getServerSnapshot = (): ThemeName => "dark";
 
-/** Track the shell's active theme (set as `data-theme` on <html> by useTweaks).
+/** Track the shell's active theme (set as `data-theme` on <html> by the preferences state, preferences.tsx).
  *  Kept reader-local — the document components depend only on the attribute the
  *  shell already writes, not on the ArgelanderSpace Workspace context. */
 export function useThemeName(): ThemeName {

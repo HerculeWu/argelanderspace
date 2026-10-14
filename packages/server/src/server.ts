@@ -20,16 +20,22 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PORT } from "@argelanderspace/contracts";
+import { DEFAULT_PORT, type StartupLocations } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
+  configFilePath,
+  configOfReading,
   type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
+  type GlobalDirs,
   getConfig,
+  LOG_DIR_NAME,
   observedFetch,
-  resolveGlobalDirs,
+  pinGlobalDirs,
+  readConfigLeniently,
+  resolveGlobalDirsLeniently,
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
@@ -47,6 +53,13 @@ import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { createDefaultMailWatcher, type MailWatcherOverrides } from "./mail-watch-default.js";
 import { ProviderSettings } from "./providers.js";
+import {
+  type ConfigProblem,
+  configProblemLines,
+  readSettings,
+  startSettingsWatcher,
+  startupLocations,
+} from "./settings.js";
 import { startWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
 
@@ -85,6 +98,20 @@ export interface ServerOptions {
   mailWatch?: false | true | MailWatcherOverrides;
   /** The user-level log (log.ts). Absent → nothing is recorded, and no log directory is resolved or made. */
   log?: ServerLog;
+  /**
+   * The config file the settings endpoints read and change and the server watches (settings.ts); default
+   * `configFilePath()`.
+   */
+  configPath?: string;
+  /**
+   * The global data and cache directories for as long as this server runs (infra `pinGlobalDirs`): Mail, the
+   * credential store and every other user of the global directories in this process get these, whatever config.toml
+   * says later. `startServer` hands in the ones it resolved at the start; default: the lenient reading of the config
+   * file when the server is created.
+   */
+  globalDirs?: GlobalDirs;
+  /** Where `serve` keeps the process's data (settings.ts `startupLocations`), for `GET /api/settings`; default null. */
+  startup?: StartupLocations;
 }
 
 export interface RunningServer {
@@ -114,7 +141,12 @@ export function createServer(opts: ServerOptions): RunningServer {
   // What the adapters report of their external calls goes to this server's log; without a log there is no observer
   // and the adapters are composed exactly as the CLI composes them.
   const observer = externalObserver(log);
-  const wiring = { observer, fetchImpl: opts.fetchImpl };
+  // The sources take their keys from a lenient reading of config.toml at each use: a faulty file means "not set".
+  const wiring = {
+    observer,
+    fetchImpl: opts.fetchImpl,
+    config: () => readConfigLeniently(opts.configPath ?? configFilePath()),
+  };
   const observeJobs = jobLogger(log);
   const jobsDir = join(opts.dataDir, "jobs");
   const runner = new JobRunner({
@@ -202,6 +234,8 @@ export function createServer(opts: ServerOptions): RunningServer {
       },
     },
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
+    configPath: opts.configPath,
+    startup: opts.startup ?? null,
   });
 
   const server = serve({
@@ -217,6 +251,12 @@ export function createServer(opts: ServerOptions): RunningServer {
     onViewSubscribed: (viewId) => copilot.viewConnected(viewId),
   });
   copilot.useViewDelivery((viewId, message) => hub.sendToView(viewId, message));
+  // The global directories are fixed for this server's life (released at close): a change of config.toml takes effect
+  // at a restart, and a file broken meanwhile fails no request.
+  const releaseGlobalDirs = pinGlobalDirs(
+    opts.globalDirs ??
+      resolveGlobalDirsLeniently(readConfigLeniently(opts.configPath ?? configFilePath())).dirs
+  );
   mailWatcher?.start();
 
   // Agent/CLI writes mutate the library and plans.json behind the server's
@@ -271,6 +311,14 @@ export function createServer(opts: ServerOptions): RunningServer {
     },
   });
 
+  // config.toml changed on disk (an editor's save, or this server's own write): every page reads the settings again.
+  const settingsWatcher = startSettingsWatcher({
+    path: opts.configPath,
+    intervalMs: opts.watchIntervalMs,
+    onChange: () =>
+      hub.broadcast({ type: "settings.changed", cause: "external", at: new Date().toISOString() }),
+  });
+
   const ready = new Promise<number>((resolveReady, rejectReady) => {
     server.on("listening", () => resolveReady(boundPort(server) ?? port));
     server.on("error", rejectReady);
@@ -291,6 +339,8 @@ export function createServer(opts: ServerOptions): RunningServer {
         // Dropped page-error reports whose count was waiting for its window to end are counted in the log now.
         writePendingPageErrorCounts();
         watcher.stop();
+        settingsWatcher.stop();
+        releaseGlobalDirs();
         hub.close();
         providerSettings.close();
         // Connections and timers of the mail watcher end before the server is reported closed.
@@ -324,8 +374,8 @@ function argValue(argv: readonly string[], name: string): string | undefined {
 
 /**
  * flag > config file (decision 23) > default, for the data dir and the port; the web dist is the flag or the
- * directory found next to the bundle / in the repo. `config` is injectable for tests; production callers leave it
- * to `getConfig()` (a missing config file is `{}`).
+ * directory found next to the bundle / in the repo. `config` defaults to the strict `getConfig()` (a missing config
+ * file is `{}`); `startServer` hands in its lenient reading of the file.
  */
 export function resolveServerConfig(
   argv: readonly string[] = [],
@@ -352,6 +402,31 @@ export function resolveServerConfig(
   return { dataDir, port: Number.isNaN(port) ? DEFAULT_PORT : port, webDist };
 }
 
+/**
+ * What `serve` starts with (desktop-app ticket 10; hard contract, 「产品与执行边界」 item 2 as revised 2026-10-14):
+ * the lenient reading of config.toml, once. A file that is not TOML, or cannot be read, gives every default; a faulty
+ * key — `data_dir` written as an absolute path included — gives that key's default. Nothing is rewritten. The keys
+ * that take effect at a restart (`data_dir`, `port`, `global_dir`, `global_cache_dir`) are fixed here for the whole
+ * run; `problems` is what the terminal line and the start record name (never a value).
+ */
+export function serveStart(
+  path: string = configFilePath(),
+  argv: readonly string[] = []
+): {
+  config: AppConfig;
+  globalDirs: GlobalDirs;
+  problems: ConfigProblem[];
+  startup: StartupLocations;
+} {
+  // The server's reading already names a global directory this platform cannot use (settings.ts), so the page, the
+  // terminal and the start record list the same problems.
+  const reading = readSettings(path);
+  const config = configOfReading(reading);
+  const { dirs } = resolveGlobalDirsLeniently(config);
+  const startup = startupLocations(reading, argValue(argv, "data-dir") !== undefined);
+  return { config, globalDirs: dirs, problems: [...reading.problems], startup };
+}
+
 export interface StartOptions {
   /** The version of the program that is starting the server, for the start record. */
   version?: string;
@@ -359,21 +434,18 @@ export interface StartOptions {
 
 /**
  * Resolve config, create the server, wait for the listen, print the URL. This is the long-running process: it writes
- * the user-level log (a bad config.toml is reported before any log is opened, as before).
+ * the user-level log. It starts with a faulty config.toml too (`serveStart`): the faulty keys have their defaults,
+ * and the terminal, the start record and the page say which.
  */
 export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
 ): Promise<RunningServer> {
-  const config = getConfig();
+  const { config, globalDirs, problems, startup } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
-  const serveLog = openServeLog(config);
-  let sweepMailStagingIn: string | undefined;
-  try {
-    sweepMailStagingIn = resolveGlobalDirs().cacheDir;
-  } catch {
-    /* an unresolvable global directory is reported when Mail is used, not here */
-  }
+  // The log is in the global data directory this run uses, the one Mail and the credentials use too.
+  const serveLog = openServeLog(config, join(globalDirs.dataDir, LOG_DIR_NAME));
+  const sweepMailStagingIn = globalDirs.cacheDir;
   // Whatever stops the start — the server cannot be created, the port cannot be bound — the log file is closed and
   // the process is no longer watched.
   let srv: RunningServer;
@@ -385,7 +457,9 @@ export async function startServer(
       webDist: cfg.webDist,
       mailWatch: true,
       log: serveLog.log,
-      ...(sweepMailStagingIn ? { sweepMailStagingIn } : {}),
+      sweepMailStagingIn,
+      globalDirs,
+      startup,
     });
     port = await srv.ready();
   } catch (error) {
@@ -399,12 +473,17 @@ export async function startServer(
     projectRoot: process.cwd(),
     dataDir: cfg.dataDir,
     webDist: cfg.webDist,
+    configProblems: problems,
   });
   logEnvironment(serveLog.log);
   // These three lines are what `serve` prints to the terminal; the log does not replace them.
   console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
   console.log(`  data dir: ${cfg.dataDir}`);
   console.log(`  web dist: ${cfg.webDist ?? "(none — API only)"}`);
+  // A faulty config.toml: named by key and category on the terminal too (never a value, never the parser's text).
+  for (const line of configProblemLines(problems, { path: configFilePath(), startup })) {
+    console.error(line);
+  }
   const close = srv.close;
   return { ...srv, close: () => close().finally(() => serveLog.close()) };
 }

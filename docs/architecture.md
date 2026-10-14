@@ -12,7 +12,7 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 - **论证图**：Work 级项目数据（每个 Work 至多一张，不是 Doc，存于 `<dataDir>/argument-graphs/`），是文献页内与「探索相关文献」同级的模式，入口在 Work 详情与 Reader 顶部；论证为 Toulmin 六字段加种类与出处，边带角色，审计现算不落盘。页面可从空图手动整理；外部 agent 经 CLI `argument get` / `argument put` 整图读写（skill `argelander-argument-graph`），Copilot 经 `argument` 工具编辑，整图替换/清空须经真人确认卡。数据保护见 [contracts](contracts.md)，机制见 [argument-graph](argument-graph.md)，取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。
 - **计划页**：默认 landing，plans→tasks 的列表/看板/时间线/今日聚焦，webui 可独立 CRUD。详细模型和否决项见 [plans](plans.md)。
 - **Writer**：独立稿件、八型 cell、CodeMirror、显式 Render/Shift+Enter、共享编译→IR 预览及源码 zip；不展示 PDF。工作流见 [writer](writer.md)，文件协议沿用 [writer-data-model](writer-data-model.md)。
-- **web i18n**：zh-CN/en，默认中文、不探测浏览器，Tweaks 即时切换，偏好存 localStorage。server detail/job.error 和用户数据不纳入翻译；CLI 不变。
+- **web i18n**：zh-CN/en，默认中文、不探测浏览器，设置页与标题栏的外观速调即时切换；语言与其余界面偏好存在 `config.toml` 的 `[ui]`，经设置接口读写，浏览器本地存储只留一份不作权威的副本（desktop-app 票 10，见[设置接口、文件监视与界面偏好](#设置接口文件监视与界面偏好desktop-app-票-10)）。server detail/job.error 和用户数据不纳入翻译；CLI 不变。
 - **尚未完整的写路径**：文献 note tab 当前只读；持久 note/label 主要通过 CLI，右键色点 overlay 仅会话级。这是能力缺口，不推翻独立应用定位。
 - **不在 main**：OCR/出版商 HTML 摄入封存于 `ocr-features` 快照分支。现行 PDF 是不可变原文件阅读，不是 OCR/LaTeX 转换能力。
 
@@ -26,7 +26,7 @@ config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错�
 
 工作台的配置只有一个来源：`config.toml`，加命令行参数（`--data-dir`、`--port`）作单次覆盖。工作台自己的环境变量（数据目录、端口、全局数据目录、全局缓存目录、web dist 位置）自 2026-10-13（desktop-app 票 05）起不再读取，设置了也不起作用；操作系统自己的变量（`XDG_CONFIG_HOME` 等）照旧。ADS token 与 OpenAlex 的 key、联系邮箱的环境变量不在这次改动内。默认端口 1859 是 contracts 的常量 `DEFAULT_PORT`，CLI 深链接、`serve` 与 web 的开发代理共用。
 
-配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。完整的键表、严格与宽松两种读取、按行修改与写入见本节末的 [Settings 的 schema、两种读取与按行修改](#settings-的-schema两种读取与按行修改desktop-app-票-09)。
+配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`[ui]` 分组（`language`、`theme`、`accent`、`density`、`labels`）是界面偏好的权威位置，设置页与标题栏的外观速调都改它（desktop-app 票 10）。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。完整的键表、严格与宽松两种读取、按行修改与写入见本节末的 [Settings 的 schema、两种读取与按行修改](#settings-的-schema两种读取与按行修改desktop-app-票-09)。
 
 **全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定；目录解析已在 infra 实现，Mail 账户已使用）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 config 键 `global_dir` > OS 默认；全局缓存对称：`global_cache_dir` > OS 默认，两者互不影响（改数据目录不移动缓存）；只认 config.toml 的键，不认环境变量（2026-10-13 起，desktop-app 票 05；此前各有一个优先于 config 的环境变量）。空白值视为未设，相对路径一律拒绝（ConfigError，只报键名；按探测到的平台判断绝对路径，避免随 cwd 分裂全局目录）；`global_dir`/`global_cache_dir` 类型错只报键名。`resolveGlobalDirs` 不访问文件系统（未传 config 时读 config.toml）；OS 默认目录由 env-paths 在 import 时固定 homedir，测试隔离须在导入前把 `HOME`/`XDG_*` 指向 tmp；目录由 `ensureGlobalDirs` 按需创建，权限 0700（infra `global-dirs.ts`）。既有 config.toml 位置不变，项目数据不迁移。
 
@@ -87,7 +87,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 ### Settings 的 schema、两种读取与按行修改（desktop-app 票 09）
 
-本节是 `config.toml` 的键表、读取方式与修改方式的权威位置。本票只交付这几样底层能力：HTTP 接口、设置页、文件监视和 `serve` 启动改用宽松读取都还没有；`contact_email`、`tex_dir`、`[ui]` 只定义和校验，没有任何代码读它们的值（主题仍来自浏览器本地存储，联系邮箱不发给任何服务，TeX 目录不参与查找）。
+本节是 `config.toml` 的键表、读取方式与修改方式的权威位置。票 09 只交付这几样底层能力；HTTP 接口、设置页、文件监视、`serve` 启动改用宽松读取和 `[ui]` 的使用是票 10 接上的，见下一小节[设置接口、文件监视与界面偏好](#设置接口文件监视与界面偏好desktop-app-票-10)。`contact_email`、`tex_dir` 仍只定义和校验，没有任何代码读它们的值（联系邮箱不发给任何服务，TeX 目录不参与查找）。
 
 **schema**：contracts 的 `settings-schema.ts`（`SETTINGS_SCHEMA`），纯数据加纯函数，不依赖 Node、平台或 TOML 解析器，web 运行时可以直接引用。它是键名的唯一来源：infra 的 `CONFIG_KEYS`（`configFileKeys` 与 server 启动记录用）就是全部键的标识符，按 schema 顺序，日志模块的 `LOG_LEVELS` 就是 `log_level` 的取值表。每个键有：所在的 TOML 表（顶层或 `[ui]`）、类型、默认值、设置页分组、界面形态（`edit` 有控件 / `readonly` 只显示、只能在文件里改 / `none` 不显示）、改后是否需要重启；`ads_dev_key` 另带「已失效」标记；两个凭据键 `openalex_api_key`、`ads_dev_key` 另带显式的「机密」标记（`secret: true`，其余键不带）。键的标识符是顶层键名，或 `表名.键名`。
 
@@ -121,7 +121,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 **两种读取**（infra `config.ts`）：
 
-- **严格**：`parseConfigToml` / `loadConfigFile` / `getConfig`，CLI 与所有既有调用方（含今天的 `serve`）用它。已知键的第一处错即抛 `ConfigError`，点名键、不回显值。文案与一个文件有多处错时报哪一条的顺序和 schema 出现之前逐字相同：各字符串键的类型（`data_dir`、`openalex_api_key`、`ads_dev_key`、`global_dir`、`global_cache_dir`）→ `port` → `auto_ingest_arxiv` → `data_dir` 的相对路径规则 → `log_level`；之后才是新键，按 schema 顺序：`contact_email`、`tex_dir`、`ui` 不是表（`"ui" must be a table`）、`ui.language`、`ui.theme`、`ui.accent`、`ui.density`、`ui.labels`（键写作 `"ui.theme"`；句式与旧键相同：`must be a string` / `must be a boolean` / `must be one of …` / `must be an absolute path`）。`global_dir` / `global_cache_dir` 是否绝对仍在解析目录时按本机平台判断（`global-dirs.ts`），严格读取不查。返回值是文件里写的原值（空白字符串原样返回）。
+- **严格**：`parseConfigToml` / `loadConfigFile` / `getConfig`，CLI 的命令用它（`serve` 自 desktop-app 票 10 起不用，见下文「`serve` 的启动与运行中的读取」）。已知键的第一处错即抛 `ConfigError`，点名键、不回显值。文案与一个文件有多处错时报哪一条的顺序和 schema 出现之前逐字相同：各字符串键的类型（`data_dir`、`openalex_api_key`、`ads_dev_key`、`global_dir`、`global_cache_dir`）→ `port` → `auto_ingest_arxiv` → `data_dir` 的相对路径规则 → `log_level`；之后才是新键，按 schema 顺序：`contact_email`、`tex_dir`、`ui` 不是表（`"ui" must be a table`）、`ui.language`、`ui.theme`、`ui.accent`、`ui.density`、`ui.labels`（键写作 `"ui.theme"`；句式与旧键相同：`must be a string` / `must be a boolean` / `must be one of …` / `must be an absolute path`）。`global_dir` / `global_cache_dir` 是否绝对仍在解析目录时按本机平台判断（`global-dirs.ts`），严格读取不查。返回值是文件里写的原值（空白字符串原样返回）。
 - **宽松**：`readSettingsText` / `readSettingsFile`，供设置接口用，从不抛出。返回每个键的生效值（文件里的合格值，否则默认值；「空白视为未设」的键写了空白时也是默认值）、每个值来自 `default` 还是 `file`、文件里出现了哪些已知键（据此可知 `ads_dev_key` 是否还在）、文件状态（`missing` / `read` / `unparseable` / `unreadable`）和问题清单。问题清单的每一项是「键名（或表名 `ui`，或表示整个文件的 `null`）加原因类别」：上面五种值的类别，加 `not_a_table`、`unparseable`、`unreadable`。清单里没有值、没有解析器的原句（它会引用文件内容）、也没有未知键的名字。文件无法解析或读不了时全部用默认值，只有一项整个文件的问题；文件不存在时没有问题。
 
 **字节序标记**：文件开头的一个 U+FEFF 在三处读取里一致地被跳过——严格读取、宽松读取、`configFileKeys`——按行修改也跳过它并原样保留。只跳过开头的一个：紧跟其后的第二个 U+FEFF 仍是 smol-toml 不接受的内容（严格读取报 `invalid TOML`，宽松读取是 `unparseable`）；字符串里的 U+FEFF 是值的一部分。文件别处的 U+FEFF 怎么读由解析器决定，与本条无关：smol-toml 在裸数字之后和注释里接受它（见下面按行修改的「裸值」一条），在其余位置不接受。严格读取跳过它是用户 2026-10-14 的裁决（此前带标记的文件对严格读取是 `invalid TOML`），这是严格读取相对 schema 出现之前唯一一处有意的行为改动；带标记的文件得到的结果、报的错与去掉标记后相同。
@@ -152,6 +152,53 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 - 文件是符号链接时改它指向的文件（锁与临时文件在目标旁边），链接仍是链接；指向不存在目标的链接返回 `unreadable`。
 - 写入独有的拒绝类别：`busy`（等不到锁；或自己的锁被接管；或文件在三次尝试里每次都被别人改了——都没有写任何东西，重试即可）、`unreadable`（读不了，或不是普通文件）、`invalid_encoding`（不是合法 UTF-8，解码再写回会改动字节）、`not_writable`（用户对文件没有写权限——即使目录权限允许替换它——或目录不可写）、`write_failed`。
 - 并发范围：多个工作台进程可以同时调用；它不与严格/宽松读取互斥，读取方读到的是替换前或替换后的完整文件。
+
+### 设置接口、文件监视与界面偏好（desktop-app 票 10）
+
+实现在 server 的 `settings.ts`；应答的形状、拒绝类别表与 WebSocket 消息在 contracts 的 `settings-api.ts`。硬契约里对应的条文是 [contracts 的「设置与 config.toml」](contracts.md#设置与-configtoml2026-10-13-批准desktop-app-票-10-写入)。
+
+**接口**（应答一律 `Cache-Control: no-store`）：
+
+- `GET /api/settings` → `SettingsSnapshot`：`version: 1`；`path`（配置文件的绝对路径）；`file`（`missing` / `read` / `unparseable` / `unreadable`）；`readonly`（文件在却什么也取不出来，即后两种）；`values`（每个键的生效值，经 `redactSettingsValues`：机密键只有 `{ secret: true, set }`）；`sources`（每个键 `default` 或 `file`，有问题的键是 `default`）；`problems`（`{ key, reason }`，`key` 是已知键、表名 `ui` 或 `null`，从不带值）；`uneditable`（有控件的键里页面现在无法安全修改的那些及其类别；只读时为空）；`legacy`（文件里还留着的已失效键，今天只有 `ads_dev_key`）。读取是宽松读取，从不报错。`uneditable` 在读取时就算出来：对每个 `ui: "edit"` 的键，拿当前文件原文各问一次按行修改器「恢复默认」与「设成另一个合法值」（`editConfigText`，纯函数，不写任何东西），任一次被拒就记下类别；文件字节不是合法 UTF-8 时所有键都记 `invalid_encoding`。
+- `PUT /api/settings/:key`，请求体恰好是 `{ "set": 标量 }` 或 `{ "reset": true }`（至多 4096 字节）→ 成功 200 `{ ok: true, changed, settings }`（`settings` 是写入后的 `SettingsSnapshot`；新值与现值相同或恢复一个没设的键时 `changed: false`，不写文件）；被拒绝 `{ ok: false, reason }`，文件字节不变。经 `writeSetting` 落盘（锁、按行修改、原子替换，见上一小节）。与其他写接口相同的 CSRF 守卫（跨站 403 `{ detail }`）。接口只放行 schema 里 `ui: "edit"` 的键；`writeSetting` 的选项由接口自己构造，只给配置文件路径，请求里的任何东西（请求体的多余字段、查询串）都到不了它。
+
+| 状态码 | `reason` |
+| --- | --- |
+| 400 | `invalid_request`（请求体不是一次修改，或过大）、`invalid_value`（这个键不接受该值）、`unrepresentable_value` |
+| 404 | `unknown_key` |
+| 422 | `not_editable`（`readonly` 或 `none` 的键） |
+| 409 | 文件此刻的写法或状态：`unparseable`、`unsupported_layout`、`duplicate_key`、`dotted_key`、`inline_table`、`multiline_string`、`array_of_tables`、`not_a_scalar`、`table_not_a_table`、`self_check_failed`、`busy` |
+| 500 | 文件读不了或写不进：`unreadable`、`invalid_encoding`、`not_writable`、`write_failed` |
+
+应答、问题清单与拒绝原因都不带键的值，也不带文件原文或系统错误消息；接口不把请求里的值写进任何日志，也不新增日志事件。
+
+**文件变化通知**：`createServer` 起一个只看配置文件这一个路径的轮询（`startSettingsWatcher`，间隔与另一个外部写入 watcher 相同，默认 1.5 秒），比较文件的 inode、大小与纳秒级修改时间（或「不存在」），变了就广播 `{ type: "settings.changed", cause: "external", at }`。不用 `fs.watch`：文件是靠 rename 替换的（每次都是新 inode），所在目录可能还不存在，路径可以是符号链接，而写入时短暂出现在旁边的 `config.toml.lock/` 与 `config.toml.<pid>.<随机串>.tmp` 不该算变化——只看这一个路径就都覆盖了。接口自己写入成功且确有改动时立即另发一条 `cause: "write"`，随后轮询还会再发现一次（`external`），页面重取是幂等的。消息不带任何设置内容，页面收到后重新 `GET`；WebSocket 重连（`hello`）时也重取一次。
+
+**`serve` 的启动与运行中的读取**：
+
+- `startServer` 在启动时用宽松读取把文件读**一次**（`serveStart`）：文件无法解析或读不了时全部用默认值，单个键出错时该键用默认值——`data_dir` 写成绝对路径也一样（用 `./literatures`，硬契约「产品与执行边界」第 2 条 2026-10-14 的修订）——都照常启动；文件不被改写。需重启才生效的键在这里固定、整个进程期间不变：`data_dir`、`port`（命令行参数照旧优先）、`global_dir`、`global_cache_dir`、`log_level`。两个全局目录经 infra 的 `pinGlobalDirs` 固定（`createServer` 收 `globalDirs`，关闭时释放；`createServer` 没收到时按创建时的宽松读取固定）：此后本进程里不带 `config` 的 `resolveGlobalDirs()` / `ensureGlobalDirs()`——infra 的 `credential-store.ts`、`mail/account-store.ts`，server 的 `mail-routes.ts`、`mail-compose-routes.ts`，以及用户日志目录——拿到的都是这一份，运行中改动或改坏文件不会让全局数据换位置，也不会让这些请求失败。`global_dir` / `global_cache_dir` 写成本机平台用不了的绝对路径（schema 按任一平台的写法判，例如 Linux 上的 `C:\x`）时，server 的读取（settings.ts 的 `withPlatformPaths`）把它当作 `must_be_absolute` 问题、该键用默认目录——启动时的问题清单、终端与设置页的问题清单因此一致。
+
+  `serveStart` 同时产出**启动位置状态**（`startupLocations`，交给 `createServer` 的 `startup`，再由 `GET /api/settings` 的 `startup` 字段原样给出，进程期间不变）：项目数据（`data_dir`）、全局数据（`global_dir`）、全局缓存（`global_cache_dir`）三处各自的来源——`flag`（`--data-dir`，只对项目数据）、`file`、`default`——以及启动时该键（或整个文件：`unparseable` / `unreadable`）的问题类别，没有就是 null。不带路径与值。它与同一应答里的 `values` / `sources` / `problems` 不同：后者是文件**现在**的样子，运行中改坏或修好文件立刻变，`startup` 要到下次启动才变。只经 `createServer` 起的 server（测试）没有它，是 null。
+- 配置有问题时 `serve` 在 stderr 打出问题清单（`configProblemLines`）：一行说明文件，每个问题一行，只有键名与原因类别，不带值、不带解析器原句；随后按启动位置状态为受影响的每处位置写一行：`project data: the default location ./literatures is in use…`、`project data: the location given by --data-dir is in use`、`global data (Mail, credentials, log): the default directory is in use…`、`global cache: …`；末行说设置页也列出这些问题，只有某处位置因此落在默认位置时才建议改好文件后重启。启动记录 `server.started` 带 `config_problems`（见[用户日志](#用户日志)）。页面在工作台顶部常驻横幅（`ConfigProblemsBanner`，下文「设置页」）。
+- 即时生效的键在用到时宽松读取，读不出（文件坏、键坏）当作没设：`auto_ingest_arxiv`（`app.ts` 的 `autoIngestArxiv` 默认实现，按默认值「开」）；`openalex_api_key`、`ads_dev_key`（server 组装来源时经 `AdapterWiring.config` 交给 `realSources` / `realDiscoverySource`，每次组装现读）；`[ui]`（设置接口与送出页面时写进 `<html>` 的属性）。
+- 兜底：任务记录与添加文献的失败应答遇到 `ConfigError` 时写固定文案 `config.toml could not be read`（server `jobs.ts` 的 `jobErrorText`），因为严格读取的报错会引用解析器原句（带文件的行）；server 自己已不再严格读取，这只是防线。邮件路由的错误本就是固定文案。
+- CLI 的其余命令仍是严格读取，行为不变：`getConfig()`、`resolveGlobalDirs()`（不固定）、`readAdsToken()` / `readOpenAlexApiKey()` 的默认参数，坏文件即 `ConfigError`、exit 1。
+
+**界面偏好**（`[ui]`）：权威是 `config.toml`。页面的状态在 web 的 `argelander/preferences.tsx`（Shell 持有一份，经 context 交给设置页；标题栏的主题切换、外观速调浮层与 Copilot 的 `set_appearance` 走同一个 setter）。改一项时页面先按新值显示，同时 `PUT` 那一个键；应答回来以应答里的设置为准，被拒绝时退回文件里的值并在页面底部的浮层说明。首次绘制前的值按这个顺序取：
+
+1. server 送出 `index.html` 时写在 `<html>` 上的属性（`lang`、`data-theme`、`data-density`、`data-accent`、`data-labels`，加 `data-ui-from="config"`；每次请求现读配置，取值只会是 schema 的枚举或默认值）。主题的颜色是 CSS 里按 `data-theme` 写的规则，所以从没打开过工作台的浏览器第一帧也是配置的主题；
+2. 没有这些属性时（页面不是 server 自己送出的，例如 Vite 开发服务器）用浏览器本地存储里的副本 `argelander.ui`——页面每次应用外观后写下的一份拷贝；
+3. 都没有则用默认值。
+
+设置读到之后一律以配置为准，副本随之改写；副本从不写回配置。旧版本存在浏览器里的偏好（本地存储键 `argelander.tweaks`）不再读取，也不迁移进配置，原样留在浏览器里。`ui.labels` 留在 schema 里照常读、写、校验，也照旧写进 `<html data-labels>`，但没有界面读它的值，设置页暂不显示它的开关（用户 2026-10-14 裁决：等定义了含义再做）。
+
+**同一键的连续修改**：页面按键串行：一个键的修改在途时，之后对它的修改只留最后一次，前一次应答回来后再发（`preferences.tsx` 的 lane），所以文件最后是最后一次点击的值；被替换掉的那次的调用方得到最后那次的结果。有修改在途时（任一键），读到的设置只更新页面持有的设置，不移动外观控件；在途的修改全部答复之后，才按读到的设置更新外观。修改发出之前就出发、在它之后才答复的读取被丢弃。「已写入配置文件」浮层只对设置页里发起的修改出现；标题栏、外观速调与 Copilot 的修改不弹成功提示，失败提示在任何入口都出现。Copilot 的 `set_appearance` 等每个键的写入结果，全部成功才报完成，任一被拒报 `unavailable`。
+
+**设置页**：`settings/SettingsView.tsx`，是一个窗格视图（contracts 的 `SETTINGS_VIEW`；`PANE_VIEWS` 是五个工作视图加它，页面错误上报的 `pane` 枚举取自 `PANE_VIEWS`）。它不在 `WORKSPACE_VIEWS` 里，所以 Copilot 的 `switch_view` 不能切到它，发布给 Copilot 的页面上下文里它只有视图名、状态是 `unavailable`。入口是导航栏底部的齿轮。配置文件路径显示时主目录写成 `~`（页面按 Linux / macOS / Windows 常见的主目录前缀识别），复制给出完整路径。九个分组里票 10 只填了「外观」，其余分组列在导航里、内容为一行占位；`cli` 分组只属于桌面应用，浏览器形态不列出。
+
+**配置问题横幅**：`settings/ConfigProblemsBanner.tsx`，Shell 把它放在标题栏与工作区之间，每个视图都看得到；有话要说时出现、没有时自然消失，不能被关闭（`data-ui="config-problems-banner"`，唯一的控件是去设置页的 `config-problems-open-settings`）。两部分各有来源：**数据位置**只看 `startup`——项目数据或全局目录因启动时的问题落在默认位置时，用警告色（`data-severity="data-location"`、`role="alert"`，行 `config-problems-location`），分别说「项目数据现在用的是默认位置」「全局目录（邮件、凭据、日志）现在用的是默认位置」或两者都是，点名启动时出错的键（或说启动时整个文件读不出），并提醒改好文件后重启；文件在运行中修好，这一行照样在，直到重启。**文件现在的样子**只决定较轻的一行（`config-problems-now`；没有警告时 `data-severity="keys"`、`role="status"`）：文件现在无法解析或读不了（设置页只读，运行中的工作台仍用启动时的设置）；`data_dir` 无效但给了 `--data-dir`（说明用的是命令行指定的位置，不说默认、不建议重启）；运行中才写坏的位置键（说进程在重启前仍用启动时的位置）；其余出错的键（暂用默认值）。都只点名键，不带值。出现时工作区让出它的高度（`.app` 是纵向 flex，横幅 `flex: none`）。
+
+**隐藏的 `ui.labels` 写错时**：外观组出现一行 `ui.labels`，只有一句说明（`labels-hidden-note`）和恢复默认，没有开关；文件修好或恢复默认后这一行消失。
 
 ## 用户日志
 
@@ -187,12 +234,12 @@ desktop-app 票 06、07（2026-10-13）。「什么不进日志」与日志目�
 - **错误**：记 `name`（须是 `[A-Za-z_$][A-Za-z0-9_$.]{0,63}`，否则写 `Error`）、`code`（有限数；或字符串，须是 `[A-Za-z0-9_.:-]{1,64}`，再按 `f.id` 的规则写出——所以 `work:<标题 slug>`、`latex-…`、`upload-…` 形态的错误码写成哈希，与 `f.id` 对同一个值的写法相同；不合字符集的不记）；系统错误（带合法的 `syscall`）另记 `syscall` 与 `path`（按 `f.path` 的规则，相对路径写成 `<invalid-path>`）——调用处可以用 `f.error(值, { omitSystemPath: true })` 要求不记这个 `path`，原因链各层同样不记（这个选项只会少写，不会多写；调用栈帧照常写，它们是代码文件的位置。用户 2026-10-13 在票 07 实施中的裁决，现在只有 `job.failed` 用它）；`stack` 是逐帧的 `文件:行:列`，至多 40 帧，丢掉函数名，文件按路径规则写（主目录写成 `~`，标识符形态的路径段写成哈希），`node:` 开头的运行时模块名原样写。帧的形态是 `at 名字 (位置)` 或 `at 位置`，两者前面都可以有 `async `（`at async /path/file.js:5:6` 是一帧，`async` 与 `new Foo` 之类的名字都不写出）；没有 `:行:列` 位置的行（`at async Promise.all (index 0)`、`at <anonymous>`、`at Array.map (<anonymous>)`）不是帧，丢弃；`cause` 按同样规则递归，至多三层；抛出的不是 Error 时只记 `{name: "NonError", thrown: <typeof>}`。**调用栈的首行是 `名称: 消息`，消息可以有多行，其中任何一行都可能长得像栈帧**，所以解析帧之前先把消息按它的原文从栈文本开头切掉：栈必须以 `<消息>`、`<名称>: <消息>` 或（消息为空时）`<名称>` 开头并紧跟换行或结束，其中名称是标识符形态、可带 Node 的 ` [CODE]`；对不上（消息在栈生成后被改过、`stack` 被换成别的文本或不是字符串、`Error.prepareStackTrace` 产出了别的格式、名称里带换行）就不记调用栈，`stack` 为空数组。**残余条件（调用方仍可能绕过的地方）**：切除比对的是错误**当前**的名称与消息，而首行在栈文本生成时就定了（Node v24.15 实测是 `stack` 第一次被读取的时候，不是构造的时候：读取之前改写消息，首行跟着新消息走）。消息在栈文本生成之后被改写成原消息的一个前缀并且恰好停在换行之前（原消息 `a\n    at /x:1:2`，读过 `stack` 之后 `message = "a"`），或 `stack` 被整个换成以「当前名称: 当前消息」开头的任意文本时，比对通过，其后形如栈帧的行会被当成帧写出（位置仍要过路径规则：须是绝对路径形态）。接口拿不到栈文本生成时的消息，挡不住；现在没有产品代码这样做。
 - **错误消息**：默认丢弃，引擎内建类型（`TypeError`、`SyntaxError` 等）也不例外。保留的唯一途径是错误类在自己身上声明 `static readonly [LOG_SAFE_MESSAGE] = true`（只对该类本身有效，子类要自己声明）；保留的消息仍替换主目录、把控制字符、bidi 控制符与零宽字符换成空格、截到 500 字符。现在没有任何产品错误类做了声明：`ConfigError` 的文案带配置文件路径，TOML 语法错误时还带解析器摘出的原文行，所以不声明。
 - **输出端可注入**：`LogSink` 一个 `write(line)`。生产用 `openLogFile`：`<全局数据目录>/logs/<UTC 时间到毫秒>-<进程种类>-<pid>.jsonl`，一行一条 JSON（`t`、`level`、`event`，然后是字段），目录 0700、文件 0600，同步追加（进程崩溃前写下的记录已经在盘上）。文件以独占创建方式打开（`ax`）：同名的文件或符号链接已经在那里时既不追加也不跟随，改用 `…-<pid>-1.jsonl` 到 `-8` 中第一个空着的名字，都被占了就不记录、不抛错。打开时清理：按文件名（即启动时间）只留最新 20 个（`LOG_KEEP_FILES`），且从新到旧累计不超过 50 MB（`LOG_MAX_TOTAL_BYTES`，50 × 1024 × 1024 字节），超出的连同更旧的一起删；只碰符合上述命名的文件，本次运行的文件不删。单次运行也以 50 MB 为限：第一条写不下的记录换成一条截断标记 `{"t":…,"level":"warn","event":"log.truncated"}`（标记的位置事先留出，文件不会超过上限），此后这次运行不再写任何记录。`discardSink` 上的 logger 什么都不做。测试用的内存输出端不在产品代码里，在 `packages/infra/tests/log-memory-sink.ts`，server / cli 的测试按路径引用。
-- **级别**：`debug` / `info` / `warn` / `error`，config.toml 的 `log_level`（默认 `info`；类型或取值不对是点名该键的 `ConfigError`）。logger 的级别可在运行中用 `setLevel` 改，下一条记录起生效；界面入口与不重启生效的接线在后续票。
+- **级别**：`debug` / `info` / `warn` / `error`，config.toml 的 `log_level`（默认 `info`；类型或取值不对时，CLI 命令是点名该键的 `ConfigError`，`serve` 用默认值 `info` 启动并在问题清单里点名该键，desktop-app 票 10）。logger 的级别可在运行中用 `setLevel` 改，下一条记录起生效；界面入口与不重启生效的接线在后续票。
 - **谁写**：只有长时间运行的进程写用户日志，现在是 `serve`：只有 `startServer` 打开日志文件（`openServeLog`）；`createServer` / `createApp` 只往传入的 `log` 里写，没传就是不记录、不解析也不创建日志目录，所以测试服务器默认没有日志。其余 CLI 命令不写日志文件、不创建日志目录，它们的 stdout / stderr / exit code 不因日志而变；`serve` 启动时打印到终端的三行不变。`startServer` 打开日志之后若启动失败（server 建不起来、端口绑不上），日志文件被关闭、对进程的观察被撤掉。
 - **写日志失败不影响别的事**：建目录、开文件、写、清理的任何失败都被吞掉，只是没有日志；记录一条请求出错也不改变它的应答。请求不因此失败，进程不因此退出。
 - **未捕获的异常与 Promise 拒绝只被记下**：经 `uncaughtExceptionMonitor` 只观察不接管，Node 照旧把错误打印到 stderr 并以原退出码结束。
 - **server 的事件**（目录在 server `log.ts` 的 `SERVER_LOG_EVENTS`）：
-  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist（三者都是绝对路径，按路径规则写）、日志级别、pid、Node 版本、平台与架构，以及配置文件里出现的本版本认识的键（`config_keys`：键的标识符，顶层键名或 `ui.theme` 这样的 `表名.键名`，按 schema 顺序；只会写出 `CONFIG_KEYS` 里有的值）和其余条目的个数（`config_unknown_keys`：顶层的未知条目，加已知表 `[ui]` 里的未知键；`[ui]` 本身不计入。算法见 [`configFileKeys`](#settings-的-schema两种读取与按行修改desktop-app-票-09)）。也就是说端口、数据目录、日志级别记的是生效值；其他配置值不记，不认识的键名也不记。
+  - `server.started`：版本、形态（现只有 `browser`）、端口、项目根（cwd）、项目数据目录、web dist（三者都是绝对路径，按路径规则写）、日志级别、pid、Node 版本、平台与架构，以及配置文件里出现的本版本认识的键（`config_keys`：键的标识符，顶层键名或 `ui.theme` 这样的 `表名.键名`，按 schema 顺序；只会写出 `CONFIG_KEYS` 里有的值）和其余条目的个数（`config_unknown_keys`：顶层的未知条目，加已知表 `[ui]` 里的未知键；`[ui]` 本身不计入。算法见 [`configFileKeys`](#settings-的-schema两种读取与按行修改desktop-app-票-09)），以及配置问题清单（`config_problems`，desktop-app 票 10：每项写成 `<对象>:<原因>`，对象是 schema 的键、表名 `ui` 或表示整个文件的 `file`，原因是问题类别；取值表由 server `settings.ts` 的 `CONFIG_PROBLEM_ENTRIES` 从 schema 与类别生成，不在表里的写不出；不带值）。也就是说端口、数据目录、日志级别记的是生效值；其他配置值不记，不认识的键名也不记。
   - `request.failed`：方法、路由模式（如 `/api/paper/:doc_id`）、状态码、耗时、错误码（有才记）、错误（有才记）。不记实际路径、查询参数、请求体，**也不读应答体**：读应答体（哪怕读的是副本）会改变它的传输形态——流式的 JSON 应答被读完后会从分块变成定长，并且要等整个应答体到齐才发出。错误码取自路由交给 `c.json` 的那个对象的 `code`（请求中间件在 `next()` 之前把这次请求的 `c.json` 包一层，只看经过的对象，原样返回它的应答），并且只在满足三个条件时记：它是字符串；发出的应答的状态码等于这次（最后一次）`c.json` 调用给出的状态码；发出的应答的 `Content-Type` 是 JSON。写出时按 `f.id` 的规则。用别的方式构造的应答（`new Response`、`Response.json`、流）不记 `code`。不按对象同一性比对，是因为子路由自己的错误处理应答之后 Hono 会重建应答对象；残余：路由调了 `c.json` 却丢掉结果、另行构造一个同状态码的 JSON 应答发出时，记下的是被丢掉的那个 `code`（它仍是路由代码里写的值）。状态码 ≥ 500 为 error 级；400–499 为 warn 级；**GET / HEAD 的 404 不算失败**（查一个已不存在的 Doc、页面资源、source map 都是正常问答）。路由模式取自实际应答的那条路由，并且必须是 app 注册过的模式之一。路由里抛出的不是 Error 时（Hono 不交给错误处理，原样交给 HTTP 层应答），记录里没有状态码。路由自己返回 5xx 而没有抛错时，记录里没有调用栈。
   - `request.completed`：debug 级，状态码 < 400 的请求和上面那种 404。
   - `process.uncaught_exception` / `process.unhandled_rejection`：见上。
@@ -237,7 +284,7 @@ desktop-app 票 06、07（2026-10-13）。「什么不进日志」与日志目�
   | 事件 | 级别 | 字段（括号内是字段种类） | 写的地方 |
   | --- | --- | --- | --- |
   | `tex.compile_failed` | warn | `source`（枚举 `ingest` / `writer`）；摄入带 `job`（标识符，任务 id），Writer 带 `manuscript`（标识符：稿件 id 去掉 `m_` 的 8 位十六进制）；`kind`（枚举 `compile-error` / `compile-timeout` / `unsupported-build`）、`engine`（枚举 `pdflatex` / `xelatex`）、`exit_code`（数字，被杀掉时没有）、`timed_out`（枚举 yes / no）、`missing_tex_files`（标识符列表）、`missing_other_files`（枚举列表）、`log_file`（另存成功才有；摄入是标识符 `jobs/<任务 id>.compile.log`，Writer 是枚举，唯一的值是字面量 `manuscripts/m_<manuscript>/build/compile-failure.log`） | infra `compileTex` 的 `failureLog` 钩子 ← `ingestFailureLog`（每个任务一个）、`logWriterCompileFailure` |
-  | `page.error` | error | `kind`（枚举 `error` / `unhandledrejection` / `render`）、`pane`（枚举：contracts `WORKSPACE_VIEWS` 加 `none`）、`error`（错误：名称与调用栈帧，没有消息） | `POST /api/page-errors` |
+  | `page.error` | error | `kind`（枚举 `error` / `unhandledrejection` / `render`）、`pane`（枚举：contracts `PANE_VIEWS`——五个工作视图加设置页——再加 `none`）、`error`（错误：名称与调用栈帧，没有消息） | `POST /api/page-errors` |
   | `page.errors_dropped` | warn | `reason`（枚举 `per_minute` / `per_launch` / `too_large` / `malformed`）、`count`（数字）、`recorded_this_launch`（数字） | 同上，见「限量」 |
 
   - **编译失败的记录**：一次失败的编译（`compileTex` 返回失败且 latexmk 确实跑过）恰好一条，说的是返回的那个错误所属的那次尝试（与任务记录里的错误信息是同一次：引擎、退出码相同）。**例外**：最终返回的错误是「latexmk 退出码为 0 但缺 `.aux` / `.fls`」时不另存也不写这条记录，此前失败的尝试已经收集的日志随之丢弃（那次尝试没有失败的 latexmk 运行可说）。另存不成（目标位置写不了、已有同名目录）时记录照写，只是没有 `log_file`。不记源码行、日志内容与错误消息。**缺失的文件**取自失败那次尝试的四处文本——引擎的 `.log`、参考文献程序的 `.blg`、latexmk 自己的 stdout 与 stderr——里的这几种报告：`File `…' not found`、`I can't find file `…'`、字体度量缺失、bibtex 的 `I couldn't open style file …` / `I couldn't open database file …`、biber 的 `Cannot find '…'`；都是文档可以控制的文本（相对硬契约「稿件内容不进日志」的这一处例外写在 [contracts](contracts.md#用户日志2026-10-13-新增) 第一条）：扩展名在写定名单内（`sty` `cls` `clo` `def` `cfg` `fd` `tfm` `vf` `enc` `map` `bst` `ldf` `bbx` `cbx` `lbx`——宏包、文类及其选项 / 定义 / 配置文件，字体定义与度量，参考文献样式，babel 与 biblatex 的语言和样式文件）的算 TeX 发行版一类的文件，名字合乎 `[A-Za-z0-9][A-Za-z0-9._+-]{0,63}`（没有目录、空格）才记进 `missing_tex_files`，不合的整条不记，至多 16 个；其余缺失文件是用户自己的，只在 `missing_other_files` 里记扩展名，而且必须是写定名单里的一个（`tex` `bib` `pdf` `png` 等），不在名单里的写 `other`，没有扩展名的写 `none`（用户 2026-10-13 裁决）。`missing_tex_files` 经 `f.ids`，所以名字以 `latex-` / `upload-` 开头的宏包会被写成哈希；用户自己写的 `.sty` 的名字按裁决照记。**日志的位置**不用路径字段（它只认绝对路径）：摄入的相对路径由代码写的 `jobs/` 与任务 id 构成，任务 id 是 `<kind>-<随机 uuid>`、先验过形态（不合的任务不另存也不记录）；稿件 id 是 `m_<8 位随机十六进制>`（core `newManuscriptId`，contracts `ManuscriptIdSchema`），带下划线、过不了标识符字段，所以相对路径写成一个固定的枚举值，随机部分记在 `manuscript`。两种 id 都不含标题；Doc id 不出现在这条记录里。稿件 id 的随机部分自票 08 起进用户日志（票 07 时「稿件 id 不记」的说法到此改写），只有这一个事件带它。**已知局限**（用户 2026-10-13 裁决，接受）：命令行的摄入与 legacy 同步上传没有任务记录，失败时不另存完整日志，也不写这条记录。另存的文件本身不是用户日志，位置与保留规则见 [tex-pipeline](tex-pipeline.md#执行层) 与 [writer](writer.md#编译与-ir共享主干隔离外层副作用)。

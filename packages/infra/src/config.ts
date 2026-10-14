@@ -53,7 +53,8 @@
  *   lenient  `readSettingsText` / `readSettingsFile` — for the settings
  *            page. Never throws: a faulty key gets its default, a file that
  *            is not TOML gives every default, and the result lists what is
- *            wrong by key and category. `serve` does not use it yet.
+ *            wrong by key and category. `serve` starts from it and the
+ *            settings endpoints answer with it (server `settings.ts`).
  *
  * A byte order mark (U+FEFF) at the very start of the file is looked past by
  * both readings, by `configFileKeys` and by the line editor — one mark, at
@@ -289,6 +290,38 @@ export function readSettingsFile(path: string = configFilePath()): SettingsReadi
     return wholeFile("unreadable");
   }
   return readSettingsText(text);
+}
+
+/**
+ * What a lenient reading took from the file, in the shape the strict reading returns (`AppConfig`): the keys whose
+ * value in effect comes from the file, and nothing for a key that is not set, is blank where blank means not set,
+ * or is faulty — the reader of an `AppConfig` applies the default for those. For the long-running server, which
+ * starts and keeps running with a faulty file where a command stops.
+ */
+export function configOfReading(reading: SettingsEvaluation): AppConfig {
+  const out: Record<string, unknown> = {};
+  for (const key of SETTING_KEYS) {
+    if (reading.sources[key] !== "file") continue;
+    const { table, name } = settingDef(key);
+    if (table === null) {
+      out[name] = reading.values[key];
+    } else {
+      const inner = (out[table] ?? {}) as Record<string, unknown>;
+      inner[name] = reading.values[key];
+      out[table] = inner;
+    }
+  }
+  return out as AppConfig;
+}
+
+/**
+ * The lenient reading of the config file in the shape of the strict one (`configOfReading(readSettingsFile(path))`).
+ * Never throws: a file that cannot be read or parsed is `{}`, a faulty key is left out. For the server process, where
+ * a key that takes effect at once is read where it is used and a faulty file means "not set" (desktop-app ticket
+ * 10); the commands keep the strict `getConfig()`.
+ */
+export function readConfigLeniently(path: string = configFilePath()): AppConfig {
+  return configOfReading(readSettingsFile(path));
 }
 
 /**

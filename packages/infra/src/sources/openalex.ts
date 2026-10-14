@@ -17,7 +17,7 @@
 
 import type { OpenAlexResolution, OpenAlexSource } from "@argelanderspace/core";
 import { normArxiv, normDoi, normTitle } from "@argelanderspace/core";
-import { getConfig } from "../config.js";
+import { type AppConfig, getConfig } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
 import { pyJsonStable } from "../lib/pyjson.js";
 import { SourceCache, sha1Hex } from "./cache.js";
@@ -28,6 +28,17 @@ const NOT_FOUND = { __notfound__: true };
 const ARXIV_LOC_RE = /arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5}|[a-z-]+\/\d{7})/i;
 
 type Json = Record<string, unknown>;
+
+/**
+ * The API key: `$OPENALEX_API_KEY`, else config `openalex_api_key`, else none. `config` defaults to the strict reading
+ * (the commands); the server hands in its lenient reading.
+ */
+export function readOpenAlexApiKey(
+  env: NodeJS.ProcessEnv = process.env,
+  config?: AppConfig
+): string | null {
+  return env.OPENALEX_API_KEY ?? (config ?? getConfig()).openalex_api_key ?? null;
+}
 
 function defaultMailto(env: NodeJS.ProcessEnv = process.env): string {
   return env.OPENALEX_MAILTO ?? "wuwenjiegogo@gmail.com";
@@ -130,10 +141,7 @@ export class OpenAlexClient implements OpenAlexSource {
     this.delay = opts.delay ?? 0.12;
     this.enabled = opts.enabled ?? true;
     this.mailto = opts.mailto ?? defaultMailto();
-    this.apiKey =
-      opts.apiKey !== undefined
-        ? opts.apiKey
-        : (process.env.OPENALEX_API_KEY ?? getConfig().openalex_api_key ?? null);
+    this.apiKey = opts.apiKey !== undefined ? opts.apiKey : readOpenAlexApiKey();
     // Descriptive UA for the polite pool (renamed from the Python
     // `HubbleSpace/0.1` in Stage 7 MS1).
     this.userAgent = `ArgelanderSpace/0.1 (mailto:${this.mailto})`;

@@ -1,0 +1,76 @@
+/* The settings page (desktop-app ticket 10), on the argelander tokens. Layout and measures follow the approved prototype. */
+.st-root { height: 100%; display: flex; flex-direction: column; container: st / inline-size; background: var(--bg); min-width: 0; }
+.st-head { flex: none; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 24px; padding: 12px 24px; border-bottom: 1px solid var(--border-soft); background: var(--panel); }
+.st-title { margin: 0; font-size: 17px; font-weight: 600; }
+.st-config { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; max-width: 100%; }
+.st-config-label { font-size: var(--fs-xs); letter-spacing: .5px; text-transform: uppercase; color: var(--text-faint); }
+.st-path { font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.6; color: var(--text-dim); overflow-wrap: anywhere; min-width: 0; }
+.st-banner { flex: none; padding: 12px 24px 0; }
+.st-bad-list { margin: 6px 0 0; padding-left: 18px; line-height: 1.8; }
+.st-bad-list code { font-family: var(--font-mono); color: var(--text); }
+.st-layout { flex: 1; min-height: 0; display: flex; }
+.st-nav { width: 212px; flex: none; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; border-right: 1px solid var(--border-soft); background: var(--bg-deep); }
+.st-nav-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: var(--control-h); padding: 0 10px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs); text-align: left; position: relative; }
+.st-nav-item span:not(.st-nav-count) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.st-nav-item:hover { background: var(--hover); color: var(--text); }
+.st-nav-item.on { background: var(--accent-soft); color: var(--text); font-weight: 500; }
+.st-nav-item.on svg { color: var(--accent); }
+.st-nav-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--ag-mark-fg, #222); font-size: 10.5px; font-weight: 700; line-height: 18px; text-align: center; }
+.st-body { flex: 1; min-width: 0; overflow-y: auto; padding: 20px 24px 48px; }
+.st-group-title { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.st-rows { max-width: 880px; display: flex; flex-direction: column; }
+.st-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 20px; padding: 14px 0; border-top: 1px solid var(--border-soft); }
+.st-rows > .st-row:first-child { border-top: none; }
+.st-row-main { min-width: 0; }
+.st-row-wide { grid-column: 1 / -1; min-width: 0; }
+.st-label { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; font-size: var(--fs); font-weight: 500; color: var(--text); }
+.st-key { font: var(--fs-xs) var(--font-mono); color: var(--text-faint); }
+.st-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.st-note { margin: 0; padding: 14px 0; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); }
+.st-pill { --t: var(--warn); display: inline-flex; align-items: center; gap: 4px; min-height: 22px; max-width: 100%; padding: 1px 6px; border: 1px solid color-mix(in oklch, var(--t) 45%, transparent); border-radius: var(--radius-sm); background: color-mix(in oklch, var(--t) 10%, var(--surface)); color: color-mix(in oklch, var(--t) 62%, var(--text)); font-size: 10.5px; line-height: 1.4; }
+.st-pill.danger { --t: var(--danger); }
+.st-control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
+/* Always there, so a control does not move when its key becomes "from file" and the restore action appears. */
+.st-restore-slot { flex: none; display: inline-flex; width: var(--control-h); height: var(--control-h); }
+.st-seg { display: inline-flex; }
+.st-seg .tweak-seg-btn { flex: none; width: auto; height: var(--control-h); padding: 0 12px; }
+.st-root .tweak-seg-btn:disabled, .st-root .tweak-swatch:disabled, .st-root .tweak-switch:disabled { opacity: .5; cursor: default; }
+.st-root .tweak-swatch:disabled:hover { transform: none; }
+.st-inline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+@container st (max-width: 780px) {
+  .st-layout { flex-direction: column; }
+  .st-nav { width: auto; flex-direction: row; flex-wrap: wrap; overflow: visible; border-right: none; border-bottom: 1px solid var(--border-soft); padding: 8px 12px; }
+  .st-nav-item { width: auto; flex: none; white-space: nowrap; }
+  .st-nav-item svg { display: none; }
+  .st-head, .st-banner, .st-body { padding-left: 16px; padding-right: 16px; }
+}
+@container st (max-width: 640px) {
+  .st-row { grid-template-columns: minmax(0, 1fr); }
+  .st-control { justify-content: flex-start; max-width: 100%; }
+}
+
+/* The settings entry sits at the foot of the navigation rail. */
+.activity .rail-spacer { flex: 1; }
+
+/* Notices of a save: floating at the foot of the page, never inside the row that was edited. */
+.st-notices { position: fixed; left: 76px; right: 76px; bottom: 22px; z-index: 400; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.st-notices .ag-toast { padding-right: 12px; }
+.st-notices .st-notice-fail { align-items: flex-start; max-width: min(560px, 100%); padding: 10px 8px 10px 12px; border-color: var(--danger); }
+.st-notices .st-notice-fail > svg { margin-top: 2px; }
+.st-notice-title { display: block; color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sm); margin-bottom: 2px; overflow-wrap: anywhere; }
+.st-notice-fail .ui-button, .st-notice-fail .ui-tooltip-anchor { flex: none; }
+
+/* The workbench's banner for a faulty config.toml (ConfigProblemsBanner): a row between the title bar and the
+   workspace, which gives up its height. A warning when the data location is affected, a quiet line otherwise. */
+.config-banner { flex: none; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 16px; border-bottom: 1px solid var(--border-soft); background: var(--panel); color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.5; }
+.config-banner.location { background: color-mix(in srgb, var(--warn) 22%, var(--panel)); border-bottom-color: var(--warn); color: var(--text); }
+.config-banner > svg { flex: none; color: var(--text-faint); }
+.config-banner.location > svg { color: var(--warn); }
+.config-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.config-banner-text strong { font-weight: 600; margin-right: 6px; }
+.config-banner-open { flex: none; min-height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; }
+.config-banner-open:hover { background: var(--hover); }
+.config-banner-row { display: block; }
+.config-banner.location .config-banner-row + .config-banner-row { color: var(--text-dim); }
+.st-hidden-note { max-width: 320px; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-dim); text-align: right; }

@@ -6,16 +6,25 @@ import en from "./locales/en.json";
 export type AppLanguage = "zh-CN" | "en";
 export const DEFAULT_LANGUAGE: AppLanguage = "zh-CN";
 
-// Same localStorage key as useTweaks (argelander/theme.ts); language is one of its fields.
-const TWEAKS_LS_KEY = "argelander.tweaks";
+/**
+ * Where this browser keeps a copy of the appearance the page last applied (argelander/preferences.tsx). It is not
+ * the authority — config.toml is — and is only looked at when the page was not served with the configured values.
+ */
+export const UI_MIRROR_KEY = "argelander.ui";
 
+/**
+ * The language the page starts in, before the settings are read: the one the server put on `<html>` when it served
+ * the page from config.toml, else this browser's copy, else the default.
+ */
 export function initialLanguage(): AppLanguage {
   try {
-    const raw = localStorage.getItem(TWEAKS_LS_KEY);
+    const root = document.documentElement;
+    if (root.getAttribute("data-ui-from") === "config" && (root.lang === "zh-CN" || root.lang === "en")) return root.lang;
+    const raw = localStorage.getItem(UI_MIRROR_KEY);
     const lang = raw ? (JSON.parse(raw) as { language?: unknown }).language : undefined;
     if (lang === "zh-CN" || lang === "en") return lang;
   } catch {
-    /* localStorage unavailable or malformed — fall back to default */
+    /* no document, no storage, or a malformed copy — fall back to the default */
   }
   return DEFAULT_LANGUAGE;
 }

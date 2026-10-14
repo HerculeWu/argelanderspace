@@ -11,6 +11,7 @@ import { PageContextSchema } from "@argelanderspace/contracts";
 import { Shell } from "../src/argelander/Shell";
 import { registerWorkspaceLeaveGuard } from "../src/argelander/workspace";
 import i18n from "../src/i18n";
+import { type FakeSettings, fakeSettings } from "./settings-fake";
 
 const h = vi.hoisted(() => ({
   viewAction: null as null | ((action: unknown) => Promise<{ ok: boolean; detail?: string }>),
@@ -68,12 +69,15 @@ const task = (n: number, over: object = {}) => ({ id: `t_${String(n).padStart(8,
 const plan = (id: string, name: string, tasks: object[]) => ({ id, name, due: "2026-12-31", icon: "target", created_at: "2026-08-01T08:00:00.000Z", tasks });
 let serverDoc: PlansFile;
 let papers: string[];
+// config.toml as the server holds it: the appearance is read from it and written to it (desktop-app ticket 10).
+let settings: FakeSettings;
 const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body }) as Response;
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
   window.sessionStorage.clear(); window.localStorage.clear();
   papers = ["d1", "d2"];
+  settings = fakeSettings();
   serverDoc = { version: 1, rev: 3, plans: [plan("p_0000000a", "Alpha", [task(1), task(2, { status: "done" })])] } as PlansFile;
   h.viewAction = null; h.context = null; h.writerApply = null;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,6 +85,8 @@ beforeEach(async () => {
     if (url === "/api/plans" && method === "GET") return ok(serverDoc);
     if (url === "/api/library") return ok({ project: { name: "P" }, refs: [], tags: [], graph: { nodes: [], links: [] } });
     if (url === "/api/papers") return ok({ papers });
+    const settingsAnswer = settings.handle(input, init);
+    if (settingsAnswer) return settingsAnswer;
     return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
   }));
 });
@@ -277,16 +283,39 @@ describe("appearance goes through the Tweaks setter", () => {
     await boot();
     expect(await run({ action: "set_appearance", theme: "light", density: "compact", accent: "teal", language: "zh-CN" })).toEqual({ ok: true });
     const root = document.documentElement;
-    // The setter returns once the state is set; the attributes and the stored copy follow in the next effect flush,
-    // which a loaded machine can delay: wait for them instead of reading them in the same tick.
+    // The setter returns once the state is set; the attributes follow in the next effect flush, which a loaded
+    // machine can delay: wait for them instead of reading them in the same tick.
     await waitFor(() => {
       expect(root.getAttribute("data-theme")).toBe("light");
       expect(root.getAttribute("data-density")).toBe("compact");
       expect(root.lang).toBe("zh-CN");
-      expect(JSON.parse(window.localStorage.getItem("argelander.tweaks")!)).toMatchObject({ theme: "light", density: "compact", accent: "teal", language: "zh-CN" });
     });
+    // Persisted the way the popover persists them: one key of config.toml each, through the settings endpoint.
+    await waitFor(() => expect(settings.file).toEqual({ "ui.theme": "light", "ui.accent": "teal", "ui.density": "compact", "ui.language": "zh-CN" }));
+    expect(settings.puts.map((put) => put.key).sort()).toEqual(["ui.accent", "ui.density", "ui.language", "ui.theme"]);
+    // The browser's old store of preferences is not written any more.
+    expect(window.localStorage.getItem("argelander.tweaks")).toBeNull();
     await waitFor(() => expect(ctx().workspace?.appearance).toEqual({ theme: "light", accent: "teal", density: "compact", language: "zh-CN" }));
+    // Every answer is in when the action reports: the appearance is still the one that was asked for. The "written"
+    // notice belongs to the settings page's own changes; a Copilot change does not raise it.
+    expect(ctx().workspace?.appearance).toEqual({ theme: "light", accent: "teal", density: "compact", language: "zh-CN" });
+    expect(q('[data-ui="toast"][data-ui-key="settings-saved"]')).toBeNull();
     await i18n.changeLanguage("en");
+  });
+
+  it("a change config.toml does not take is not reported as done, and the appearance stays what the file has", async () => {
+    settings.refuse["ui.theme"] = "dotted_key";
+    await boot();
+    await waitFor(() => expect(settings.gets).toBeGreaterThan(0));
+    // The refusal arrives late (the fake answers a refused change after 200 ms): the action waits for it.
+    expect(settings.refusalDelayMs).toBeGreaterThanOrEqual(200);
+    expect(await run({ action: "set_appearance", theme: "light" })).toEqual({ ok: false, detail: "unavailable" });
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+      expect(ctx().workspace?.appearance?.theme).toBe("dark");
+      // A failure is told wherever the change was made.
+      expect(q('[data-ui="settings-save-failed"][data-ui-key="ui.theme"]')).not.toBeNull();
+    });
   });
 });
 
@@ -409,8 +438,10 @@ describe("opening the panel with its toggle", () => {
 });
 
 describe("the published appearance is always one the service accepts", () => {
-  it("damaged stored tweaks are normalised in the context (the page itself is left alone)", async () => {
-    window.localStorage.setItem("argelander.tweaks", JSON.stringify({ theme: "sepia", accent: "red", density: "huge", language: "fr" }));
+  it("a damaged copy in the browser is normalised in the context (the page itself is left alone)", async () => {
+    // The copy this browser keeps of the appearance it last applied; the server here never answers, so nothing replaces it.
+    settings.down = true;
+    window.localStorage.setItem("argelander.ui", JSON.stringify({ theme: "sepia", accent: "red", density: "huge", language: "fr" }));
     await boot();
     expect(ctx().workspace?.appearance).toEqual({ theme: "dark", accent: "azure", density: "regular", language: "zh-CN" });
     expect(PageContextSchema.safeParse(ctx()).success).toBe(true);

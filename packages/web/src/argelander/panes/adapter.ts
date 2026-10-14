@@ -9,7 +9,7 @@
  */
 import type { CopilotViewAction, CopilotViewActionResult, PageContext } from "@argelanderspace/contracts";
 
-export type PanePage = "plan" | "library" | "doc" | "write" | "mail";
+export type PanePage = "plan" | "library" | "doc" | "write" | "mail" | "settings";
 /** What a view action answers; the detail words are the contract's own. */
 export type ViewActionOutcome = Pick<CopilotViewActionResult, "ok" | "detail" | "http" | "folded">;
 export type PaneStatus = PageContext["status"];

@@ -1,5 +1,5 @@
-import { DiscoverySavedViewActionSchema, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { DiscoverySavedViewActionSchema, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, SETTINGS_VIEW, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
@@ -10,7 +10,8 @@ import { exploreBus, parseExploreHash } from "../lib/explore-route";
 import { DEFAULT_LANGUAGE } from "../i18n";
 import { planResize, resizeDivider, shareOf } from "./layout";
 import { createPaneManager, type Pane, type PaneAdapter, type PaneManager, type ViewActionOutcome } from "./panes";
-import { ACCENTS, useTweaks } from "./theme";
+import { PreferencesProvider, usePreferencesState } from "./preferences";
+import { ACCENTS } from "./theme";
 import { notePane } from "../page-errors";
 import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity";
 import { applyDocDeletion, askWorkspaceLeave, confirmWorkspaceLeave, type LeaveOrigin, WorkspaceProvider, type Workspace } from "./workspace";
@@ -30,12 +31,16 @@ import type { ConfirmationGuards } from "../copilot/confirmations";
 import { MailNavItem } from "../mail/MailNavItem";
 import { MailView } from "../mail/MailView";
 import { createMailPane } from "../mail/mail-pane";
+import { ConfigProblemsBanner } from "../settings/ConfigProblemsBanner";
+import { SettingsNotices, SettingsView } from "../settings/SettingsView";
+import { createSettingsPane } from "../settings/settings-pane";
 
 interface NavItem {
   k: string;
   ic: string;
-  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write" | "shell.nav.mail";
-  grp: "core";
+  labelKey: "shell.nav.plan" | "shell.nav.library" | "shell.nav.doc" | "shell.nav.write" | "shell.nav.mail" | "shell.nav.settings";
+  /** `core`: the workbench views at the head of the rail; `foot`: the settings page, at its foot. */
+  grp: "core" | "foot";
 }
 
 const NAV: NavItem[] = [
@@ -44,6 +49,7 @@ const NAV: NavItem[] = [
   { k: "doc", ic: "file-text", labelKey: "shell.nav.doc", grp: "core" },
   { k: "write", ic: "pen-line", labelKey: "shell.nav.write", grp: "core" },
   { k: "mail", ic: "mail", labelKey: "shell.nav.mail", grp: "core" },
+  { k: SETTINGS_VIEW, ic: "settings", labelKey: "shell.nav.settings", grp: "foot" },
 ];
 const NAV_MAP: Record<string, NavItem> = Object.fromEntries(NAV.map((n) => [n.k, n]));
 
@@ -53,7 +59,9 @@ const noChange = () => {};
 
 export function Shell() {
   const { t } = useTranslation();
-  const [tweaks, setTweak] = useTweaks();
+  // The appearance and the settings behind it: read from and written to config.toml through the server (preferences.tsx).
+  const preferences = usePreferencesState();
+  const { tweaks, setTweak } = preferences;
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -89,7 +97,7 @@ export function Shell() {
     createPaneManager({
       panes: [{ id: INITIAL_PANE_ID, view: "plan", size: 1 }],
       activeId: INITIAL_PANE_ID,
-      pages: [createPlanPane(noChange).adapter, createLibraryPane(noChange).adapter, createDocPane(noChange, docHost).adapter, createWriterPane(noChange).adapter, createMailPane(noChange).adapter],
+      pages: [createPlanPane(noChange).adapter, createLibraryPane(noChange).adapter, createDocPane(noChange, docHost).adapter, createWriterPane(noChange).adapter, createMailPane(noChange).adapter, createSettingsPane().adapter],
       confirmLeave: askWorkspaceLeave,
     })
   );
@@ -406,12 +414,14 @@ export function Shell() {
       }
       case "set_appearance": {
         const { theme, accent, density, language } = action;
-        if (theme) s().setTweak("theme", theme);
-        if (accent) s().setTweak("accent", accent);
-        if (density) s().setTweak("density", density);
-        if (language) s().setTweak("language", language);
-        const done = () => (!theme || s().tweaks.theme === theme) && (!accent || s().tweaks.accent === accent) && (!density || s().tweaks.density === density) && (!language || s().tweaks.language === language);
-        return (await settle(done)) ? { ok: true } : { ok: false, detail: "unavailable" };
+        // Done only when config.toml has every one of them: each change resolves with what the file took.
+        const made = await Promise.all([
+          ...(theme ? [s().setTweak("theme", theme)] : []),
+          ...(accent ? [s().setTweak("accent", accent)] : []),
+          ...(density ? [s().setTweak("density", density)] : []),
+          ...(language ? [s().setTweak("language", language)] : []),
+        ]);
+        return made.every(Boolean) ? { ok: true } : { ok: false, detail: "unavailable" };
       }
       case "open_copilot":
       case "close_copilot": {
@@ -565,6 +575,7 @@ export function Shell() {
   // data-ui-key distinguishes repeated instances using an existing public id.
   // Scope selectors by workspace-pane key when multiple panes show the same view.
   return (
+    <PreferencesProvider value={preferences}>
     <WorkspaceProvider value={workspace}>
       <div className="app" data-ui="app-shell">
         <div className="titlebar" data-ui="app-titlebar">
@@ -630,10 +641,19 @@ export function Shell() {
           </div>
         </div>
 
+        <ConfigProblemsBanner settings={preferences.settings} onOpenSettings={() => setActiveView(SETTINGS_VIEW)} />
         <div className="app-body" data-ui="app-workspace">
           <div className="activity" data-ui="primary-navigation">
             {NAV.map((n) => {
               const label = t(n.labelKey);
+              // The settings page: the gear at the foot of the rail, selected like the views above it.
+              if (n.grp === "foot")
+                return (
+                  <Fragment key={n.k}>
+                    <div className="rail-spacer" />
+                    <ActionButton unstyled iconSize="navigation" mode="icon" iconName="settings" label={label} tooltip={label} data-ui="navigate-view" data-ui-key={n.k} className={"nav-icon-action" + (activePane.view === n.k ? " on" : "")} aria-current={activePane.view === n.k ? "page" : undefined} onClick={() => setActiveView(n.k)} />
+                  </Fragment>
+                );
               const className = "nav-icon-action" + (activePane.view === n.k ? " on" : "");
               // Mail (ticket 05) keeps the approved prototype's lucide icon: a Dazzle icons.json entry for it awaits the user's icon choice.
               if (n.k === "mail") return <MailNavItem key={n.k} label={label} className={className} active={activePane.view === n.k} onClick={() => setActiveView(n.k)} />;
@@ -670,8 +690,10 @@ export function Shell() {
           onNav={(v) => setActiveView(v)}
           onSplit={() => splitFrom(activeId)}
         />
+        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} />
       </div>
     </WorkspaceProvider>
+    </PreferencesProvider>
   );
 }
 
@@ -699,6 +721,8 @@ function mountPage(view: string, changed: () => void, docHost: DocPaneHost): Mou
       const { adapter, props } = createWriterPane(changed);
       return { adapter, render: (paneId) => <WriterView paneId={paneId} {...props} /> };
     }
+    case SETTINGS_VIEW:
+      return { adapter: createSettingsPane().adapter, render: (paneId) => <SettingsView paneId={paneId} /> };
     default: {
       // "plan" and any unknown view: the plan view is the default landing.
       const { adapter, props } = createPlanPane(changed);

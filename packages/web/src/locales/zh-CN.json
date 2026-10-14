@@ -5,7 +5,8 @@
       "library": "文献",
       "doc": "文档",
       "write": "写作",
-      "mail": "邮件"
+      "mail": "邮件",
+      "settings": "设置"
     },
     "tagline": "文献工作台 · Literature",
     "split": "向右分屏",
@@ -16,7 +17,7 @@
     "titlebar": {
       "split": "向右分屏 (⌘\\)",
       "toggleTheme": "切换主题",
-      "tweaks": "外观设置"
+      "tweaks": "外观速调"
     },
     "palette": {
       "placeholder": "搜索命令、文件、文献…",
@@ -2273,6 +2274,118 @@
         "latex": "LaTeX",
         "text": "文本"
       }
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "groupsLabel": "设置分组",
+    "groups": {
+      "appearance": "外观",
+      "project": "项目",
+      "services": "文献服务与凭据",
+      "tex": "TeX 与环境",
+      "copilot": "Copilot",
+      "mail": "邮件",
+      "cli": "命令行与 agent",
+      "diagnostics": "诊断",
+      "advanced": "高级"
+    },
+    "groupProblems": "{{name}}（{{n}} 个键有问题）",
+    "groupEmpty": "这一组还没有内容。",
+    "loading": "正在读取设置…",
+    "unreachable": {
+      "title": "读不到设置",
+      "body": "没有收到工作台服务的应答。下面显示的是页面上一次知道的值，现在改不了。"
+    },
+    "configFile": {
+      "label": "配置文件",
+      "copyPath": "复制路径",
+      "pathCopied": "路径已复制",
+      "copyFailed": "没有复制成功：浏览器不允许写剪贴板"
+    },
+    "source": {
+      "default": "默认值",
+      "file": "来自文件",
+      "invalid": "文件中的值无效，已用默认值"
+    },
+    "restore": {
+      "label": "恢复默认值：{{key}}",
+      "tooltip": "恢复默认值"
+    },
+    "appearance": {
+      "language": "语言",
+      "theme": "主题",
+      "accent": "强调色",
+      "density": "密度",
+      "labels": "显示标签",
+      "labelsHidden": "这个键现在不在页面上显示；它在文件里写错了，可以恢复默认值。"
+    },
+    "problems": {
+      "title_one": "配置文件里有 {{count}} 个键出错，已改用默认值",
+      "title_other": "配置文件里有 {{count}} 个键出错，已改用默认值",
+      "body": "下面只列出键名和原因，不显示值。修好文件后页面会自动重新读取。",
+      "reason": {
+        "wrong_type": "类型不对",
+        "out_of_range": "超出允许范围",
+        "not_one_of": "不是允许的取值之一",
+        "must_be_relative": "只接受相对路径",
+        "must_be_absolute": "必须是绝对路径",
+        "not_a_table": "应当是一个分组，却被写成了普通的值",
+        "unparseable": "无法解析",
+        "unreadable": "读不了"
+      }
+    },
+    "readonly": {
+      "unparseableTitle": "配置文件无法解析，设置页暂时只读",
+      "unreadableTitle": "配置文件读不了，设置页暂时只读",
+      "body": "页面上的值现在都是默认值；正在运行的工作台仍用启动时的设置，数据位置在重启前不变。页面不会改写这个文件；修好后会自动重新读取。"
+    },
+    "uneditable": {
+      "title": "页面无法安全修改 {{key}}",
+      "tail": "请直接在配置文件中修改，页面不会动这一行。",
+      "reason": {
+        "dotted_key": "它或它所在的分组在文件里用点号形式写成。",
+        "inline_table": "它或它所在的分组在文件里写成了行内表。",
+        "multiline_string": "它的值在文件里写成了多行字符串。",
+        "array_of_tables": "它所在的分组在文件里写成了表数组。",
+        "not_a_scalar": "它的值在文件里是数组或表。",
+        "table_not_a_table": "它所在的分组在文件里被写成了普通的值。",
+        "duplicate_key": "它在文件里出现了不止一次。",
+        "unsupported_layout": "页面读不懂文件里这一部分的写法。",
+        "self_check_failed": "页面试着改动后核对不上，为了不弄坏文件而放弃。",
+        "invalid_encoding": "配置文件不是合法的 UTF-8 编码。",
+        "other": "页面现在无法安全修改这个键。"
+      }
+    },
+    "notices": {
+      "saved": "已写入配置文件",
+      "dismiss": "关闭",
+      "failedTitle": "没有保存 {{key}}",
+      "failed": {
+        "layout": "{{why}}文件没有被改动，请直接在文件里改。",
+        "unparseable": "配置文件现在无法解析。文件没有被改动，修好后再试。",
+        "busy": "配置文件正在被别的程序改动。文件没有被改动，请再试一次。",
+        "unreadable": "读不了配置文件。文件没有被改动。",
+        "not_writable": "配置文件或它所在的文件夹不允许写入。文件没有被改动。",
+        "write_failed": "无法写入配置文件。文件没有被改动。",
+        "invalid_value": "这个值不被接受。文件没有被改动。",
+        "not_editable": "页面不能修改这个键。文件没有被改动。",
+        "unreachable": "没有收到工作台服务的应答，不确定有没有保存；页面已重新读取配置。"
+      }
+    },
+    "banner": {
+      "otherTitle_one": "配置文件里有 {{count}} 个键出错，暂用默认值：{{keys}}",
+      "otherTitle_other": "配置文件里有 {{count}} 个键出错，暂用默认值：{{keys}}",
+      "restart": "改好文件后重启工作台，数据位置才会按配置生效。",
+      "open": "打开设置",
+      "projectTitle": "项目数据现在用的是默认位置",
+      "globalTitle": "全局目录（邮件、凭据、日志）现在用的是默认位置",
+      "bothTitle": "项目数据和全局目录（邮件、凭据、日志）现在都用默认位置",
+      "startupKeys": "启动时出错的键：{{keys}}。",
+      "startupFile": "启动时配置文件无法解析或读不了。",
+      "fileNow": "配置文件现在无法解析或读不了，设置页只读；正在运行的工作台仍用启动时的设置。",
+      "locationNow": "{{keys}} 现在写错了；正在运行的工作台仍用启动时的位置，重启前不变。",
+      "flagIgnored": "配置里的 data_dir 无效，项目数据用的是命令行 --data-dir 指定的位置。"
     }
   }
 }

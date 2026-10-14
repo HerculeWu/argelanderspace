@@ -155,7 +155,7 @@ describe("parseIconSvg", () => {
       "export-manuscript", "cancel-task-note", "save-task-note", "set-task-status",
       "delete-task", "gather-doc",
     ]) expect(icons).toHaveProperty(id);
-    expect(Object.keys(icons["navigate-view"])).toEqual(["file-text", "library", "mail", "pen-line", "telescope"]);
+    expect(Object.keys(icons["navigate-view"])).toEqual(["file-text", "library", "mail", "pen-line", "telescope", "settings"]);
     expect(Object.keys(icons["set-task-status"])).toEqual(["circle", "circle-alert", "circle-check", "circle-dot"]);
   });
 
