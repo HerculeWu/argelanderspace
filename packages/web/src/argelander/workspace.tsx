@@ -21,6 +21,12 @@ export interface Workspace {
   docDeleted: (docId: string, remaining: string[]) => void;
   /** Show the work's argument graph on a Library page (the Reader's "argument graph" entry; absent where it cannot). */
   openArgumentGraph?: (workId: string) => void;
+  /**
+   * The settings page's entries (desktop-app ticket 11): open the Copilot panel and its model/provider settings dialog,
+   * as the panel's own settings button does; switch the active pane to Mail, where accounts are managed.
+   */
+  openCopilotSettings?: () => void;
+  openMailAccounts?: () => void;
   tweaks: Tweaks;
 }
 

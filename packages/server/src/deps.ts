@@ -32,6 +32,7 @@ import {
   OpenAlexClient,
   observedFetch,
   readAdsToken,
+  readContactEmail,
   readOpenAlexApiKey,
   type TexFailureLogHook,
 } from "@argelanderspace/infra";
@@ -54,23 +55,30 @@ export interface AdapterWiring {
    */
   failureLog?: TexFailureLogHook | undefined;
   /**
-   * Where the sources take `ads_dev_key` and `openalex_api_key` from. The server hands in a function that reads
-   * config.toml leniently at each call (desktop-app ticket 10: a faulty file means "not set" and fails nothing); the
-   * CLI hands in none, and the clients read the file strictly themselves (a faulty file stops the command).
+   * Where the sources take `ads_dev_key`, `openalex_api_key` and `contact_email` from. The server hands in a function
+   * that reads config.toml leniently at each call (desktop-app ticket 10: a faulty file means "not set" and fails
+   * nothing; a contact email not shaped like an address is faulty, so no address is sent); the CLI hands in none, and
+   * the clients read the file strictly themselves (a faulty file stops the command).
    */
   config?: (() => AppConfig) | undefined;
 }
 
-/** The keys of the sources, when the composition gave a config; nothing otherwise (the clients' own reading). */
+/**
+ * The keys and the contact email of the sources, when the composition gave a config; nothing otherwise (the clients'
+ * own reading). Read at each composition, so a change of config.toml applies to the next request without a restart.
+ */
 function keysOf(wiring: AdapterWiring): {
   ads: { token?: string | null };
-  oa: { apiKey?: string | null };
+  oa: { apiKey?: string | null; mailto?: string | null };
+  crossref: { mailto?: string | null };
 } {
-  if (wiring.config === undefined) return { ads: {}, oa: {} };
+  if (wiring.config === undefined) return { ads: {}, oa: {}, crossref: {} };
   const config = wiring.config();
+  const mailto = readContactEmail(config);
   return {
     ads: { token: readAdsToken(process.env, homedir(), config) },
-    oa: { apiKey: readOpenAlexApiKey(process.env, config) },
+    oa: { apiKey: readOpenAlexApiKey(process.env, config), mailto },
+    crossref: { mailto },
   };
 }
 
@@ -106,6 +114,7 @@ export function realSources(
       ...fetchOf(wiring, "ads"),
     }),
     crossref: new CrossrefClient({
+      ...keys.crossref,
       cacheDir: join(paths.cacheDir, "crossref"),
       enabled: !offline,
       ...fetchOf(wiring, "crossref"),

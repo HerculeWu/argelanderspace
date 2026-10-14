@@ -98,7 +98,11 @@ import {
 } from "@argelanderspace/core";
 import {
   AdsDiscoveryError,
+  configFilePath,
   ensureWriterSandboxProbe,
+  pinnedGlobalDirs,
+  readConfigLeniently,
+  resolveGlobalDirsLeniently,
   type TexCompileFailure,
   writerSandboxAvailable,
   zipEntries,
@@ -160,7 +164,7 @@ import {
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
-import { mountSettingsRoutes, readSettings, withAppearance } from "./settings.js";
+import { mountSettingsRoutes, readSettings, shownPath, withAppearance } from "./settings.js";
 import {
   mountTextDocRoutes,
   type PdfRegionOutcome,
@@ -250,6 +254,11 @@ export interface AppDeps {
   configPath?: string | undefined;
   /** Where `serve` keeps the process's data, fixed at its start (settings.ts `startupLocations`); default null. */
   startup?: import("@argelanderspace/contracts").StartupLocations | null;
+  /**
+   * The values config.toml gave when this process started (`serve`'s reading); a restart-only key changed since is
+   * reported as pending a restart. Default: the reading when the app is made.
+   */
+  settingsAtStart?: import("@argelanderspace/contracts").SettingsValues;
 }
 
 // --------------------------------------------------------------------------- //
@@ -500,9 +509,26 @@ export function createApp(deps: AppDeps): Hono {
 
   // Settings (settings.ts): the page reads them and changes one key of config.toml at a time; a change that rewrote
   // the file is told to every page at once (the file watcher of `createServer` finds it too, a moment later).
+  // What the process actually uses for the restart-only keys: its own data directory, the port it listens on, and the
+  // global directories pinned for its life (or, for an app made without a server, as the file gives them now).
+  const settingsAtStart = deps.settingsAtStart ?? readSettings(deps.configPath).values;
+  const projectRoot = process.cwd();
   mountSettingsRoutes(app, guardCsrf, {
     startup: deps.startup ?? null,
     path: deps.configPath,
+    atStart: settingsAtStart,
+    running: () => {
+      const dirs =
+        pinnedGlobalDirs() ??
+        resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs;
+      return {
+        project_root: shownPath(projectRoot),
+        port: deps.boundPort?.() ?? null,
+        data_dir: shownPath(deps.paths.dataDir),
+        global_dir: shownPath(dirs.dataDir),
+        global_cache_dir: shownPath(dirs.cacheDir),
+      };
+    },
     written: () =>
       broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() }),
   });

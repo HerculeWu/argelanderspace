@@ -23,9 +23,12 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { sep } from "node:path";
 import {
   defaultSettings,
   isSettingKey,
+  type RunningSettings,
   redactSettingsValues,
   SETTING_KEYS,
   SETTING_VALUE_PROBLEMS,
@@ -39,6 +42,7 @@ import {
   type SettingsSnapshot,
   type SettingsValues,
   type SettingValue,
+  type ShownPath,
   type StartupLocations,
   settingDef,
 } from "@argelanderspace/contracts";
@@ -68,6 +72,13 @@ export interface SettingsRouteOptions {
   written?: (() => void) | undefined;
   /** Where the process's data lives, fixed when `serve` started (`SettingsSnapshot.startup`); default null. */
   startup?: StartupLocations | null | undefined;
+  /** What the process actually uses for the restart-only keys (`SettingsSnapshot.running`), asked at each answer. */
+  running: () => RunningSettings;
+  /**
+   * The values the file gave when the server was made (`serve`: the reading it started with): a restart-only key whose
+   * value in the file differs from this now is `restartPending`.
+   */
+  atStart: SettingsValues;
 }
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
@@ -172,6 +183,29 @@ export function startupLocations(
   };
 }
 
+/**
+ * A path as the page shows it: the home directory of the process (`home`) written as `~`. Only a whole leading
+ * component is replaced (`/home/ab` is not the home `/home/a`); anything else is returned as it is.
+ */
+export function displayPath(path: string, home: string = homedir()): string {
+  const base = home.endsWith(sep) ? home.slice(0, -1) : home;
+  if (base === "") return path;
+  if (path === base) return "~";
+  return path.startsWith(base + sep) ? `~${path.slice(base.length)}` : path;
+}
+
+/** A path and the way the page shows it. */
+export function shownPath(path: string, home: string = homedir()): ShownPath {
+  return { path, display: displayPath(path, home) };
+}
+
+const RESTART_KEYS = SETTING_KEYS.filter((key) => settingDef(key).restart);
+
+/** The restart-only keys whose value in the file now is not the one it had when the server was made. */
+export function restartPending(now: SettingsValues, atStart: SettingsValues): SettingKey[] {
+  return RESTART_KEYS.filter((key) => now[key] !== atStart[key]);
+}
+
 /** The lenient reading of the config file; never throws. */
 export function readSettings(path: string = configFilePath()): SettingsReading {
   return readWithText(path).reading;
@@ -191,7 +225,8 @@ function otherValue(def: SettingDef, current: SettingValue | null): SettingValue
     case "enum":
       return type.values.find((value) => value !== current) ?? type.values[0] ?? "";
     case "string": {
-      const sample = type.path === "absolute" ? "/a" : "a";
+      const sample =
+        type.format === "email" ? "a@example.org" : type.path === "absolute" ? "/a" : "a";
       return current === sample ? `${sample}a` : sample;
     }
   }
@@ -211,11 +246,15 @@ function refusalFor(
   return null;
 }
 
+/** What a snapshot says of the running process (`SettingsRouteOptions`). */
+export interface ProcessSettings {
+  startup: StartupLocations | null;
+  running: () => RunningSettings;
+  atStart: SettingsValues;
+}
+
 /** The settings as the page may see them. Never throws. */
-export function settingsSnapshot(
-  path: string = configFilePath(),
-  startup: StartupLocations | null = null
-): SettingsSnapshot {
+export function settingsSnapshot(path: string, proc: ProcessSettings): SettingsSnapshot {
   const { reading, file } = readWithText(path);
   const readonly = reading.file === "unparseable" || reading.file === "unreadable";
   const uneditable: Partial<Record<SettingKey, SettingChangeRefusal>> = {};
@@ -231,6 +270,7 @@ export function settingsSnapshot(
   return {
     version: 1,
     path,
+    pathDisplay: displayPath(path),
     file: reading.file,
     readonly,
     values: redactSettingsValues(reading.values),
@@ -238,7 +278,10 @@ export function settingsSnapshot(
     problems: reading.problems,
     uneditable,
     legacy: reading.present.filter((key) => settingDef(key).deprecated === true),
-    startup,
+    startup: proc.startup,
+    running: proc.running(),
+    // A file that cannot be read says nothing about what it sets: nothing is reported as pending then.
+    restartPending: readonly ? [] : restartPending(reading.values, proc.atStart),
   };
 }
 
@@ -277,6 +320,7 @@ const REASON_TEXT: Record<ConfigProblem["reason"], string> = {
   not_one_of: "is not one of its choices",
   must_be_relative: "must be a relative path",
   must_be_absolute: "must be an absolute path",
+  must_be_email: "must be an email address",
   not_a_table: "is not a table",
   unparseable: "is not valid TOML",
   unreadable: "could not be read",
@@ -393,12 +437,17 @@ function changeOf(body: unknown): ConfigChange | null {
 export function mountSettingsRoutes(
   app: Hono,
   guardCsrf: Guard,
-  options: SettingsRouteOptions = {}
+  options: SettingsRouteOptions
 ): void {
   const pathNow = (): string => options.path ?? configFilePath();
+  const processSettings: ProcessSettings = {
+    startup: options.startup ?? null,
+    running: options.running,
+    atStart: options.atStart,
+  };
 
   app.get("/api/settings", (c) =>
-    c.json(settingsSnapshot(pathNow(), options.startup ?? null), 200, NO_STORE)
+    c.json(settingsSnapshot(pathNow(), processSettings), 200, NO_STORE)
   );
 
   app.put("/api/settings/:key", async (c) => {
@@ -438,7 +487,7 @@ export function mountSettingsRoutes(
       {
         ok: true,
         changed: result.changed,
-        settings: settingsSnapshot(path, options.startup ?? null),
+        settings: settingsSnapshot(path, processSettings),
       } satisfies SettingChangeResponse,
       200,
       NO_STORE

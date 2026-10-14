@@ -3,8 +3,10 @@ import {
   checkSettingValue,
   DEFAULT_PORT,
   defaultSettings,
+  EMAIL_ADDRESS_MAX_LENGTH,
   evaluateSettings,
   isAbsoluteOnAnyPlatform,
+  isEmailAddress,
   isSecretSetting,
   isSettingKey,
   redactSettingsValues,
@@ -147,9 +149,12 @@ describe("checkSettingValue", () => {
     ["log_level", "loud", "not_one_of"],
     ["log_level", "INFO", "not_one_of"],
     ["log_level", 3, "wrong_type"],
-    // contact_email: any string
+    // contact_email: blank, or shaped like an address (desktop-app ticket 11)
     ["contact_email", "reader@example.org", null],
     ["contact_email", "", null],
+    ["contact_email", "   ", null],
+    ["contact_email", "reader", "must_be_email"],
+    ["contact_email", " reader@example.org", "must_be_email"],
     ["contact_email", 5, "wrong_type"],
     ["contact_email", new Date(0), "wrong_type"],
     // tex_dir: absolute in either writing, blank means not set
@@ -382,5 +387,67 @@ describe("secret settings", () => {
     });
     expect(odd.openalex_api_key).toEqual({ secret: true, set: true });
     expect(JSON.stringify(odd)).not.toContain("12345678");
+  });
+});
+
+describe("isEmailAddress (desktop-app ticket 11)", () => {
+  test("accepts the usual shapes", () => {
+    for (const good of [
+      "a@example.org",
+      "first.last@example.org",
+      "first.last+tag@mail.example.co.uk",
+      "o'brien@example.org",
+      "x_y-z@ex-ample.net",
+      "1@2.io",
+      `${"l".repeat(64)}@example.org`,
+      `a@${"d".repeat(63)}.org`,
+    ]) {
+      expect(isEmailAddress(good), good).toBe(true);
+    }
+  });
+
+  test("refuses whitespace, control, bidi and zero-width characters, odd shapes and over-long values", () => {
+    const long = `${"a".repeat(64)}@${`${"d".repeat(60)}.`.repeat(4)}org`;
+    expect(long.length).toBeGreaterThan(EMAIL_ADDRESS_MAX_LENGTH);
+    for (const bad of [
+      "",
+      "a",
+      "@example.org",
+      "a@",
+      "a@b",
+      "a@@example.org",
+      "a@b@example.org",
+      "a b@example.org",
+      " a@example.org",
+      "a@example.org ",
+      "a@example.org\n",
+      "a\t@example.org",
+      "a\u0000@example.org",
+      "a\u007f@example.org",
+      "a@exa\u200bmple.org",
+      "\u200ba@example.org",
+      "a@example.org\ufeff",
+      "\u202ea@example.org",
+      "a\u2066@example.org",
+      "a\u00a0@example.org",
+      ".a@example.org",
+      "a.@example.org",
+      "a..b@example.org",
+      "a@.example.org",
+      "a@example..org",
+      "a@-example.org",
+      "a@example-.org",
+      "a(b)@example.org",
+      "a\\b@example.org",
+      '"a b"@example.org',
+      "a@[127.0.0.1]",
+      "é@example.org",
+      "a@exämple.org",
+      `${"l".repeat(65)}@example.org`,
+      `a@${"d".repeat(64)}.org`,
+      long,
+    ]) {
+      expect(isEmailAddress(bad), JSON.stringify(bad)).toBe(false);
+    }
   });
 });

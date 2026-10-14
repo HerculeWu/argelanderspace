@@ -2301,7 +2301,8 @@
       "label": "配置文件",
       "copyPath": "复制路径",
       "pathCopied": "路径已复制",
-      "copyFailed": "没有复制成功：浏览器不允许写剪贴板"
+      "copyFailed": "没有复制成功：浏览器不允许写剪贴板",
+      "openInEditor": "打开配置文件"
     },
     "source": {
       "default": "默认值",
@@ -2332,7 +2333,8 @@
         "must_be_absolute": "必须是绝对路径",
         "not_a_table": "应当是一个分组，却被写成了普通的值",
         "unparseable": "无法解析",
-        "unreadable": "读不了"
+        "unreadable": "读不了",
+        "must_be_email": "不是邮箱地址的写法"
       }
     },
     "readonly": {
@@ -2386,6 +2388,41 @@
       "fileNow": "配置文件现在无法解析或读不了，设置页只读；正在运行的工作台仍用启动时的设置。",
       "locationNow": "{{keys}} 现在写错了；正在运行的工作台仍用启动时的位置，重启前不变。",
       "flagIgnored": "配置里的 data_dir 无效，项目数据用的是命令行 --data-dir 指定的位置。"
+    },
+    "row": {
+      "restart": "改后需重启",
+      "pendingRestart": "已保存，重启后生效",
+      "stillUsing": "当前仍在用：",
+      "inUse": "进程正在用：",
+      "fileOnly": "只能在文件中修改",
+      "notInFile": "不保存在配置文件中"
+    },
+    "project": {
+      "current": "当前项目",
+      "currentBrowser": "由启动 serve 时所在的目录决定",
+      "dataDir": "项目数据目录",
+      "autoIngest": "添加文献时自动摄入 arXiv 源码",
+      "absolute": "只接受相对路径"
+    },
+    "services": {
+      "contactEmail": "联系邮箱",
+      "contactNote": "可选。填写后，Crossref 与 OpenAlex 的请求会带上它；不填则请求里不带任何邮箱。它写在配置文件里，分享该文件前请自行检查。",
+      "contactPlaceholder": "name@example.org",
+      "notEmail": "不是邮箱地址的写法",
+      "legacyTitle": "配置文件里还有 ads_dev_key",
+      "legacyBody": "这个键目前仍被当作 ADS token 读取；它即将由设置页这一组里的 ADS 凭据取代，届时不再生效。"
+    },
+    "entries": {
+      "provider": "模型与登录",
+      "openProvider": "打开模型设置",
+      "mailAccounts": "邮箱账户",
+      "openMailAccounts": "管理邮箱账户"
+    },
+    "advanced": {
+      "port": "端口",
+      "portRange": "必须是 0 到 65535 之间的整数",
+      "globalData": "全局数据目录",
+      "globalCache": "全局缓存目录"
     }
   }
 }

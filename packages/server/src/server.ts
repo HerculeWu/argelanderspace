@@ -20,7 +20,11 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_PORT, type StartupLocations } from "@argelanderspace/contracts";
+import {
+  DEFAULT_PORT,
+  type SettingsValues,
+  type StartupLocations,
+} from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
@@ -112,6 +116,8 @@ export interface ServerOptions {
   globalDirs?: GlobalDirs;
   /** Where `serve` keeps the process's data (settings.ts `startupLocations`), for `GET /api/settings`; default null. */
   startup?: StartupLocations;
+  /** The values config.toml gave at the start (`serveStart`), for `restartPending`; default: the reading at creation. */
+  settingsAtStart?: SettingsValues;
 }
 
 export interface RunningServer {
@@ -236,6 +242,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
     configPath: opts.configPath,
     startup: opts.startup ?? null,
+    ...(opts.settingsAtStart ? { settingsAtStart: opts.settingsAtStart } : {}),
   });
 
   const server = serve({
@@ -417,6 +424,7 @@ export function serveStart(
   globalDirs: GlobalDirs;
   problems: ConfigProblem[];
   startup: StartupLocations;
+  values: SettingsValues;
 } {
   // The server's reading already names a global directory this platform cannot use (settings.ts), so the page, the
   // terminal and the start record list the same problems.
@@ -424,7 +432,13 @@ export function serveStart(
   const config = configOfReading(reading);
   const { dirs } = resolveGlobalDirsLeniently(config);
   const startup = startupLocations(reading, argValue(argv, "data-dir") !== undefined);
-  return { config, globalDirs: dirs, problems: [...reading.problems], startup };
+  return {
+    config,
+    globalDirs: dirs,
+    problems: [...reading.problems],
+    startup,
+    values: reading.values,
+  };
 }
 
 export interface StartOptions {
@@ -441,7 +455,7 @@ export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
 ): Promise<RunningServer> {
-  const { config, globalDirs, problems, startup } = serveStart(configFilePath(), argv);
+  const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
   const serveLog = openServeLog(config, join(globalDirs.dataDir, LOG_DIR_NAME));
@@ -460,6 +474,7 @@ export async function startServer(
       sweepMailStagingIn,
       globalDirs,
       startup,
+      settingsAtStart: values,
     });
     port = await srv.ready();
   } catch (error) {

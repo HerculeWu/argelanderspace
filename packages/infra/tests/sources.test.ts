@@ -16,7 +16,7 @@ import { normalizeOpenAlex, OpenAlexClient } from "../src/sources/openalex.js";
 import { jsonResponse, stubFetch } from "./helpers.js";
 
 const FIXTURES = fileURLToPath(new URL("fixtures", import.meta.url));
-const MAILTO = "wuwenjiegogo@gmail.com";
+const MAILTO = "someone@example.org";
 
 function load(name: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(FIXTURES, name), "utf-8")) as Record<string, unknown>;
@@ -183,13 +183,14 @@ describe("CrossrefClient (library/sources/crossref.py)", () => {
     expect(calls.length).toBe(1);
   });
 
-  test("cache key is byte-identical to the Python client", async () => {
+  test("cache key: sha1(path + '?' + json.dumps(params)) over the request's own params, without the contact email", async () => {
     const { fetchImpl } = stubFetch(() => jsonResponse(load("crossref-work.json")));
     const cacheDir = tmpCache();
     const cr = new CrossrefClient({ cacheDir, delay: 0, mailto: MAILTO, fetchImpl });
     await cr.resolve({ doi: "10.1086/161130" });
-    // sha1("/works/10.1086/161130?" + json.dumps({"mailto": ...}, sort_keys=True))
-    expect(readdirSync(cacheDir)).toEqual(["0dfc3c7fc8bde3609f7253ca86412b1c0c4013a3.json"]);
+    // sha1("/works/10.1086/161130?" + json.dumps({}, sort_keys=True)) — the contact email is not in the key
+    // (desktop-app ticket 11; before, the key held the address then built in).
+    expect(readdirSync(cacheDir)).toEqual(["bc5d14e60bdaccd1bbbdcbfb24371bcfdac5653d.json"]);
   });
 
   test("404 is cached as the __notfound__ sentinel and not re-fetched", async () => {
@@ -238,7 +239,7 @@ describe("OpenAlexClient (library/sources/openalex.py)", () => {
     expect(n.abstract?.endsWith("census might still be incomplete.")).toBe(true);
   });
 
-  test("resolve by journal doi, cache key byte-identical to Python", async () => {
+  test("resolve by journal doi; the cache key leaves out the contact email", async () => {
     const work = load("openalex-work.json");
     const { fetchImpl, calls } = stubFetch((c) => {
       expect(c.url).toContain("/works/https://doi.org/10.1051/0004-6361/202038192"); // path: raw
@@ -249,7 +250,7 @@ describe("OpenAlexClient (library/sources/openalex.py)", () => {
     const n = await oa.resolve({ doi: "10.1051/0004-6361/202038192" });
     expect(n?.openalex_id).toBe("W3017279354");
     expect(calls.length).toBe(1);
-    expect(readdirSync(cacheDir)).toEqual(["bc548d3cd214a67f5c94dbc49d381b8782f67635.json"]);
+    expect(readdirSync(cacheDir)).toEqual(["e26e62872e851df442f050a58641e9149815ffbb.json"]);
   });
 
   test("$OPENALEX_API_KEY goes on the wire but NOT into the cache key", async () => {
@@ -265,6 +266,6 @@ describe("OpenAlexClient (library/sources/openalex.py)", () => {
     await oa.resolve({ doi: "10.1051/0004-6361/202038192" });
     expect(calls[0]?.url).toContain("api_key=KEY-123");
     // same filename as the keyless client (see previous test)
-    expect(readdirSync(cacheDir)).toEqual(["bc548d3cd214a67f5c94dbc49d381b8782f67635.json"]);
+    expect(readdirSync(cacheDir)).toEqual(["e26e62872e851df442f050a58641e9149815ffbb.json"]);
   });
 });

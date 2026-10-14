@@ -2301,7 +2301,8 @@
       "label": "Config file",
       "copyPath": "Copy path",
       "pathCopied": "Path copied",
-      "copyFailed": "Not copied: the browser does not allow writing to the clipboard"
+      "copyFailed": "Not copied: the browser does not allow writing to the clipboard",
+      "openInEditor": "Open config file"
     },
     "source": {
       "default": "Default",
@@ -2332,7 +2333,8 @@
         "must_be_absolute": "must be an absolute path",
         "not_a_table": "must be a table but is written as a plain value",
         "unparseable": "cannot be parsed",
-        "unreadable": "cannot be read"
+        "unreadable": "cannot be read",
+        "must_be_email": "is not written like an email address"
       }
     },
     "readonly": {
@@ -2386,6 +2388,41 @@
       "fileNow": "config.toml cannot be parsed or read now, so the settings page is read-only; the running workbench keeps the settings it started with.",
       "locationNow": "{{keys}} is faulty now; the running workbench keeps the location it started with until a restart.",
       "flagIgnored": "data_dir in config.toml is not valid; project data is in the location given by --data-dir."
+    },
+    "row": {
+      "restart": "Restart needed",
+      "pendingRestart": "Saved; applies after restart",
+      "stillUsing": "Still in use: ",
+      "inUse": "In use: ",
+      "fileOnly": "Editable in the file only",
+      "notInFile": "Not stored in the config file"
+    },
+    "project": {
+      "current": "Current project",
+      "currentBrowser": "Decided by the directory serve was started in",
+      "dataDir": "Project data directory",
+      "autoIngest": "Auto-ingest arXiv source when adding a work",
+      "absolute": "only relative paths are accepted"
+    },
+    "services": {
+      "contactEmail": "Contact email",
+      "contactNote": "Optional. When set, Crossref and OpenAlex requests carry it; when empty, requests carry no email at all. It is written to the config file; check it before sharing that file.",
+      "contactPlaceholder": "name@example.org",
+      "notEmail": "not written like an email address",
+      "legacyTitle": "The config file still has ads_dev_key",
+      "legacyBody": "This key is still read as the ADS token for now; it is about to be replaced by the ADS credential in this group, and will then have no effect."
+    },
+    "entries": {
+      "provider": "Models and sign-in",
+      "openProvider": "Open model settings",
+      "mailAccounts": "Mail accounts",
+      "openMailAccounts": "Manage mail accounts"
+    },
+    "advanced": {
+      "port": "Port",
+      "portRange": "must be a whole number from 0 to 65535",
+      "globalData": "Global data directory",
+      "globalCache": "Global cache directory"
     }
   }
 }

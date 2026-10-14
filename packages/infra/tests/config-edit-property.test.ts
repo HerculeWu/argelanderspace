@@ -279,6 +279,9 @@ function newValue(key: SettingKey, next: () => number): string | number | boolea
     case "enum":
       return pick(type.values);
     case "string":
+      // An address keeps the shape the schema asks for (desktop-app ticket 11); the tail is not used.
+      if ("format" in type && type.format === "email")
+        return pick(["a@example.org", "first.last+tag@sub.example.com", "x_y@ex-ample.net"]);
       if ("path" in type && type.path === "absolute")
         return pick(["/", "C:\\", "\\\\host\\"]) + tail;
       if ("path" in type && type.path === "relative")

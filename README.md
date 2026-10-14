@@ -146,11 +146,14 @@ or the web UI directory (`ARGELANDERSPACE_*` variables from earlier versions
 are ignored).
 
 The config file is optional: `$XDG_CONFIG_HOME/argelanderspace/config.toml`
-(default `~/.config/argelanderspace/config.toml`). Unknown keys are ignored. For
-a command, a known key with a wrong value is an error naming the key; `serve`
-starts anyway, with the default for that key (a file that cannot be parsed
-gives every default, data locations included), and names the key on the
-terminal and in the web UI. Values are never logged or echoed.
+(default `~/.config/argelanderspace/config.toml`). The web UI's Settings page
+shows it and changes it one line at a time, keeping your comments and layout.
+Keys this version does not know (for example ones from a newer version, or
+your own notes) are ignored and left as they are. For a command, a known key
+with a wrong value is an error naming the key; `serve` starts anyway, with the
+default for that key (a file that cannot be parsed gives every default, data
+locations included), and names the key on the terminal and in the web UI.
+Values are never logged or echoed.
 
 ```toml
 data_dir = "papers"          # default ./literatures; relative to the project root
@@ -158,18 +161,32 @@ data_dir = "papers"          # default ./literatures; relative to the project ro
                              # serve uses ./literatures instead: use --data-dir)
 port = 1859                  # server port and the port in CLI deep links (default 1859)
 log_level = "info"           # lowest level `serve` writes to its log: debug, info, warn, error
+auto_ingest_arxiv = true     # fetch the arXiv PDF when a work with an arXiv id is added
+contact_email = "you@example.org"  # optional; sent to Crossref and OpenAlex with each
+                             # request (their "polite pool"); without it no email is sent.
+                             # Must be written like an address, or it is a config error
+tex_dir = "/opt/texlive/bin" # optional; an absolute path (not used yet)
+# global_dir / global_cache_dir = "/abs/path"   # where Mail, credentials and the log live
+
+[ui]                         # how the web UI looks (the Settings page writes these)
+language = "en"              # zh-CN or en
+theme = "dark"               # dark or light
+accent = "azure"             # azure, teal, violet, amber, neutral
+density = "regular"          # compact, regular, comfy
 
 # API-key fallbacks (the env vars win when both are set):
 openalex_api_key = "..."     # env OPENALEX_API_KEY
 ads_dev_key = "..."          # env ADS_DEV_KEY, itself a fallback for ~/.ads/dev_key
 ```
 
+Before you share your `config.toml` with someone, check it for a
+`contact_email` (it is your address) and for the two API keys above.
+
 Environment variables:
 
 | Variable | Purpose |
 |---|---|
 | `OPENALEX_API_KEY` | OpenAlex premium pool (sent as `api_key`; optional) |
-| `OPENALEX_MAILTO` | polite-pool identity for OpenAlex/Crossref |
 | `ADS_DEV_KEY` | NASA ADS token; without any token ADS degrades to `no-token` and the rest of the library keeps working |
 
 ADS additionally reads `~/.ads/dev_key` (the ADS convention), after the env var

@@ -93,7 +93,7 @@ describe("the entry and the skeleton", () => {
     expect(q('[data-ui="navigate-view"][data-ui-key="plan"]')!.getAttribute("aria-current")).toBeNull();
   });
 
-  it("lists the groups in the approved order (no command-line group in a browser); only Appearance has content", async () => {
+  it("lists the groups in the approved order (no command-line group in a browser); TeX and Diagnostics have no content yet", async () => {
     await open();
     const nav = q('[data-ui="settings-groups"]')!;
     expect(nav.tagName).toBe("NAV");
@@ -111,8 +111,13 @@ describe("the entry and the skeleton", () => {
     expect(q('[data-ui="settings-group-body"]')!.getAttribute("data-group")).toBe("advanced");
     expect(groups[7]!.getAttribute("aria-current")).toBe("page");
     expect(groups[0]!.getAttribute("aria-current")).toBeNull();
-    expect(qa('[data-ui="setting-row"]')).toEqual([]);
-    expect(q('[data-ui="settings-group-empty"]')!.textContent).toBe("Nothing in this group yet.");
+    // desktop-app ticket 11 fills Project, Services, Copilot, Mail and Advanced; TeX and Diagnostics are later tickets.
+    expect(qa('[data-ui="setting-row"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["port", "global_dir", "global_cache_dir"]);
+    for (const empty of [3, 6]) {
+      fireEvent.click(groups[empty]!);
+      expect(qa('[data-ui="setting-row"]')).toEqual([]);
+      expect(q('[data-ui="settings-group-empty"]')!.textContent).toBe("Nothing in this group yet.");
+    }
   });
 
   it("shows the config file's path above every group, with a copy action that says whether it copied", async () => {

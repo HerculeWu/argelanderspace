@@ -1,20 +1,27 @@
 /**
  * Crossref client (`bibgraph/library/sources/crossref.py`): DOI metadata,
- * citation counts, reference lists, and publisher full-text links. Keyless;
- * the polite pool is joined with a `mailto` param + a descriptive User-Agent.
+ * citation counts, reference lists, and publisher full-text links. Keyless.
+ * With a contact email (config `contact_email`, desktop-app ticket 11) the
+ * polite pool is joined with a `mailto` param and the address in the
+ * User-Agent; without one neither the query nor the User-Agent has any
+ * address (there is no default address and no environment variable).
  *
  * The message normalizer is NOT here — it is test-pinned, so M1b put
  * `normalizeCrossref` in core (`library/sources.ts`). This module is the
  * cached/throttled HTTP client + the guarded title search.
  *
- * Parity: cache key `sha1(path + "?" + json.dumps(params, sort_keys=True))`
- * is byte-identical (lib/pyjson.ts); a 404 is cached as the
+ * Cache key `sha1(path + "?" + json.dumps(params, sort_keys=True))` (lib/
+ * pyjson.ts) over the request's own params — the contact email is not part
+ * of it (the answer does not depend on it, and changing the address keeps the
+ * cache; since desktop-app ticket 11, so entries written before, keyed with
+ * the address then built in, are no longer found and are fetched again); a 404 is cached as the
  * `{"__notfound__": true}` sentinel exactly like Python so misses aren't
  * re-fetched.
  */
 
 import type { CrossrefResolution, CrossrefSource } from "@argelanderspace/core";
 import { arxivFromDoi, normalizeCrossref, normDoi, normTitle } from "@argelanderspace/core";
+import { readContactEmail } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
 import { pyJsonStable } from "../lib/pyjson.js";
 import { SourceCache, sha1Hex } from "./cache.js";
@@ -23,15 +30,19 @@ const BASE = "https://api.crossref.org";
 const TIMEOUT = 30;
 const NOT_FOUND = { __notfound__: true };
 
-function defaultMailto(env: NodeJS.ProcessEnv = process.env): string {
-  return env.OPENALEX_MAILTO ?? "wuwenjiegogo@gmail.com";
+/** The User-Agent of the requests: the address is in it only when there is one. */
+export function crossrefUserAgent(mailto: string | null): string {
+  return mailto === null ? "ArgelanderSpace/0.1" : `ArgelanderSpace/0.1 (mailto:${mailto})`;
 }
 
 export interface CrossrefClientOptions {
   cacheDir: string;
   delay?: number; // 0.15
   enabled?: boolean; // true
-  mailto?: string; // default $OPENALEX_MAILTO or the Python default
+  /**
+   * The contact email; `null` sends none. Default: `readContactEmail()` (config `contact_email`, read strictly).
+   */
+  mailto?: string | null;
   fetchImpl?: FetchImpl;
   log?: (msg: string) => void;
 }
@@ -41,7 +52,7 @@ type Json = Record<string, unknown>;
 export class CrossrefClient implements CrossrefSource {
   private readonly delay: number;
   private readonly enabled: boolean;
-  private readonly mailto: string;
+  private readonly mailto: string | null;
   private readonly userAgent: string;
   private readonly cache: SourceCache;
   private readonly fetchImpl: FetchImpl;
@@ -50,10 +61,9 @@ export class CrossrefClient implements CrossrefSource {
   constructor(opts: CrossrefClientOptions) {
     this.delay = opts.delay ?? 0.15;
     this.enabled = opts.enabled ?? true;
-    this.mailto = opts.mailto ?? defaultMailto();
-    // Descriptive UA for the polite pool (renamed from the Python
-    // `HubbleSpace/0.1` in Stage 7 MS1).
-    this.userAgent = `ArgelanderSpace/0.1 (https://github.com/; mailto:${this.mailto})`;
+    this.mailto = opts.mailto !== undefined ? opts.mailto : readContactEmail();
+    // Descriptive UA (renamed from the Python `HubbleSpace/0.1` in Stage 7 MS1).
+    this.userAgent = crossrefUserAgent(this.mailto);
     this.cache = new SourceCache(opts.cacheDir);
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.log = opts.log;
@@ -64,17 +74,20 @@ export class CrossrefClient implements CrossrefSource {
     path: string,
     params: Record<string, string | number> = {}
   ): Promise<Json | null> {
-    const withMailto: Record<string, string | number> = { ...params, mailto: this.mailto };
-    const key = sha1Hex(`${path}?${pyJsonStable(withMailto)}`);
+    const key = sha1Hex(`${path}?${pyJsonStable(params)}`);
     const hit = this.cache.read(key);
     if (hit !== undefined) return hit as Json;
     if (!this.enabled) return null;
     try {
       await sleep(this.delay); // Python: fixed sleep, not a throttle
-      const { text } = await fetchText(this.fetchImpl, withQuery(BASE + path, withMailto), {
-        headers: { "User-Agent": this.userAgent },
-        timeout: TIMEOUT,
-      });
+      const { text } = await fetchText(
+        this.fetchImpl,
+        withQuery(BASE + path, this.mailto === null ? params : { ...params, mailto: this.mailto }),
+        {
+          headers: { "User-Agent": this.userAgent },
+          timeout: TIMEOUT,
+        }
+      );
       const data: Json = JSON.parse(text);
       this.cache.write(key, data);
       return data;

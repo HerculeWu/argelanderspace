@@ -494,9 +494,7 @@ describe("writing a string value", () => {
         value
       );
     }
-    expect(edited("", "contact_email", set('"a b"@example.org'))).toBe(
-      'contact_email = "\\"a b\\"@example.org"\n'
-    );
+    expect(edited("", "data_dir", set('"a b"/x'))).toBe('data_dir = "\\"a b\\"/x"\n');
     expect(edited("", "data_dir", set(""))).toBe('data_dir = ""\n');
   });
 
@@ -512,14 +510,12 @@ describe("writing a string value", () => {
       "\ud800",
       "x\udfffy",
     ]) {
-      expect(refusal("", "contact_email", set(bad))).toBe("unrepresentable_value");
-      expect(refusal('contact_email = "x"\n', "contact_email", set(bad))).toBe(
-        "unrepresentable_value"
-      );
+      expect(refusal("", "data_dir", set(bad))).toBe("unrepresentable_value");
+      expect(refusal('data_dir = "x"\n', "data_dir", set(bad))).toBe("unrepresentable_value");
       expect(refusal("", "tex_dir", set(`/${bad}`))).toBe("unrepresentable_value");
     }
     // a paired surrogate is a character
-    expect(edited("", "contact_email", set("\ud83d\ude00"))).toBe('contact_email = "😀"\n');
+    expect(edited("", "data_dir", set("\ud83d\ude00"))).toBe('data_dir = "😀"\n');
   });
 });
 

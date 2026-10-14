@@ -27,6 +27,10 @@ export interface FakeSettings {
   refuse: Partial<Record<SettingKey, SettingChangeRefusal>>;
   /** Where the "running process" keeps its data (fixed at its start; the file's state does not change it). */
   startup: SettingsSnapshot["startup"];
+  /** What the "running process" uses for the restart-only keys (desktop-app ticket 11). */
+  running: SettingsSnapshot["running"];
+  /** The deprecated keys the file still sets. */
+  legacy: SettingKey[];
   /** Every change the page asked for, in order. */
   puts: { key: string; body: unknown }[];
   gets: number;
@@ -49,7 +53,14 @@ export interface FakeSettings {
 const json = (body: unknown, status = 200): Response =>
   ({ ok: status >= 200 && status < 300, status, json: async () => body }) as unknown as Response;
 
+/** The value in effect for each key of a "file" (the default where it does not set the key). */
+function effective(file: Partial<Record<SettingKey, SettingValue>>): Record<SettingKey, SettingValue | null> {
+  return { ...defaultSettings(), ...file };
+}
+
 export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {}): FakeSettings {
+  // The file as the "process" started with it: a restart-only key changed since is pending a restart.
+  const atStart = effective(file);
   const fake: FakeSettings = {
     file: { ...file },
     problems: [],
@@ -61,6 +72,14 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
     down: false,
     refusalDelayMs: 200,
     startup: null,
+    running: {
+      project_root: { path: "/home/someone/project", display: "~/project" },
+      port: 1859,
+      data_dir: { path: "/home/someone/project/literatures", display: "~/project/literatures" },
+      global_dir: { path: "/home/someone/.local/share/argelanderspace", display: "~/.local/share/argelanderspace" },
+      global_cache_dir: { path: "/home/someone/.cache/argelanderspace", display: "~/.cache/argelanderspace" },
+    },
+    legacy: [],
     writeDelays: [],
     getDelays: [],
     snapshot() {
@@ -78,14 +97,19 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
       return {
         version: 1,
         path: "/home/someone/.config/argelanderspace/config.toml",
+        pathDisplay: "~/.config/argelanderspace/config.toml",
         file: fake.state,
         readonly,
         values: redactSettingsValues(values),
         sources,
         problems: readonly ? [{ key: null, reason: fake.state as "unparseable" | "unreadable" }] : fake.problems,
         uneditable: readonly ? {} : fake.uneditable,
-        legacy: [],
+        legacy: fake.legacy,
         startup: fake.startup,
+        running: fake.running,
+        restartPending: (Object.keys(SETTINGS_SCHEMA) as SettingKey[]).filter(
+          (key) => !readonly && SETTINGS_SCHEMA[key].restart && values[key] !== atStart[key]
+        ),
       };
     },
     handle(input, init) {
