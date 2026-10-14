@@ -157,6 +157,21 @@
           "root stroke-linecap round",
           "root stroke-linejoin round"
         ]
+      },
+      "settings": {
+        "set": "dazzle-line-icons",
+        "file": "gear.svg",
+        "originalHash": "835041f7e26d4f1a583fcfa615aa7634758823a1785d9d55fe2fc458fd6b7589",
+        "normalizedHash": "8c7c441bd385bca05085e058656ebb02d6681acdae57998e59df292aea860d41",
+        "modifications": [
+          "removed XML declaration",
+          "removed comments",
+          "removed root download dimensions",
+          "monochrome paint to currentColor",
+          "removed explicit stroke widths (preset-owned)",
+          "root stroke-linecap round",
+          "root stroke-linejoin round"
+        ]
       }
     },
     "split-pane": {
@@ -1041,6 +1056,51 @@
           "root stroke-linejoin round"
         ]
       }
+    },
+    "restore-default": {
+      "set": "dazzle-line-icons",
+      "file": "refresh-ccw.svg",
+      "originalHash": "6f6ee0aab7b8ea063e82903e4beb40c456cc849ce61d3a833282c3aa5008cc27",
+      "normalizedHash": "fb5e07d52c7b0fc3ab7d47082db4d0483fbda98fc3edbbc1c0e2d326855968d4",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "copy-config-path": {
+      "set": "dazzle-line-icons",
+      "file": "clone.svg",
+      "originalHash": "bb8bdf2275151fc0e72e981fdb58c07d506d222fcb8d3e028eae85748a44314f",
+      "normalizedHash": "4cdbf2596c6136e276fd228e07cbb595a58f65a52ae54ed24042ee5c7be1affa",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
+    },
+    "settings-save-failed-dismiss": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
     }
   }
 }

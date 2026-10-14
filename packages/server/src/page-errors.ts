@@ -138,8 +138,11 @@ function errorOf(name: string, frames: readonly string[]): Error {
   return error;
 }
 
-/** Reads at most `limit` bytes of the body; null when there is more (the rest is not read). */
-async function readLimited(c: Context, limit: number): Promise<Uint8Array | null> {
+/**
+ * Reads at most `limit` bytes of the body; null when there is more (the rest is not read: the stream is cancelled at
+ * the first chunk over the limit, so a chunked request with no length cannot make the server hold more).
+ */
+export async function readLimited(c: Context, limit: number): Promise<Uint8Array | null> {
   const declared = Number(c.req.header("content-length") ?? 0);
   if (Number.isFinite(declared) && declared > limit) return null;
   const stream = c.req.raw.body;

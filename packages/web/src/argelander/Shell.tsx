@@ -31,6 +31,7 @@ import type { ConfirmationGuards } from "../copilot/confirmations";
 import { MailNavItem } from "../mail/MailNavItem";
 import { MailView } from "../mail/MailView";
 import { createMailPane } from "../mail/mail-pane";
+import { ConfigProblemsBanner } from "../settings/ConfigProblemsBanner";
 import { SettingsNotices, SettingsView } from "../settings/SettingsView";
 import { createSettingsPane } from "../settings/settings-pane";
 
@@ -413,12 +414,14 @@ export function Shell() {
       }
       case "set_appearance": {
         const { theme, accent, density, language } = action;
-        if (theme) s().setTweak("theme", theme);
-        if (accent) s().setTweak("accent", accent);
-        if (density) s().setTweak("density", density);
-        if (language) s().setTweak("language", language);
-        const done = () => (!theme || s().tweaks.theme === theme) && (!accent || s().tweaks.accent === accent) && (!density || s().tweaks.density === density) && (!language || s().tweaks.language === language);
-        return (await settle(done)) ? { ok: true } : { ok: false, detail: "unavailable" };
+        // Done only when config.toml has every one of them: each change resolves with what the file took.
+        const made = await Promise.all([
+          ...(theme ? [s().setTweak("theme", theme)] : []),
+          ...(accent ? [s().setTweak("accent", accent)] : []),
+          ...(density ? [s().setTweak("density", density)] : []),
+          ...(language ? [s().setTweak("language", language)] : []),
+        ]);
+        return made.every(Boolean) ? { ok: true } : { ok: false, detail: "unavailable" };
       }
       case "open_copilot":
       case "close_copilot": {
@@ -638,6 +641,7 @@ export function Shell() {
           </div>
         </div>
 
+        <ConfigProblemsBanner settings={preferences.settings} onOpenSettings={() => setActiveView(SETTINGS_VIEW)} />
         <div className="app-body" data-ui="app-workspace">
           <div className="activity" data-ui="primary-navigation">
             {NAV.map((n) => {

@@ -296,9 +296,10 @@ describe("appearance goes through the Tweaks setter", () => {
     // The browser's old store of preferences is not written any more.
     expect(window.localStorage.getItem("argelander.tweaks")).toBeNull();
     await waitFor(() => expect(ctx().workspace?.appearance).toEqual({ theme: "light", accent: "teal", density: "compact", language: "zh-CN" }));
-    // Once every answer is in, the appearance is still the one that was asked for.
-    await waitFor(() => expect(q('[data-ui="toast"][data-ui-key="settings-saved"]')).not.toBeNull());
+    // Every answer is in when the action reports: the appearance is still the one that was asked for. The "written"
+    // notice belongs to the settings page's own changes; a Copilot change does not raise it.
     expect(ctx().workspace?.appearance).toEqual({ theme: "light", accent: "teal", density: "compact", language: "zh-CN" });
+    expect(q('[data-ui="toast"][data-ui-key="settings-saved"]')).toBeNull();
     await i18n.changeLanguage("en");
   });
 
@@ -306,10 +307,15 @@ describe("appearance goes through the Tweaks setter", () => {
     settings.refuse["ui.theme"] = "dotted_key";
     await boot();
     await waitFor(() => expect(settings.gets).toBeGreaterThan(0));
+    // The refusal arrives late (the fake answers a refused change after 200 ms): the action waits for it.
+    expect(settings.refusalDelayMs).toBeGreaterThanOrEqual(200);
     expect(await run({ action: "set_appearance", theme: "light" })).toEqual({ ok: false, detail: "unavailable" });
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    expect(ctx().workspace?.appearance?.theme).toBe("dark");
-    expect(q('[data-ui="settings-save-failed"][data-ui-key="ui.theme"]')).not.toBeNull();
+    await waitFor(() => {
+      expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
+      expect(ctx().workspace?.appearance?.theme).toBe("dark");
+      // A failure is told wherever the change was made.
+      expect(q('[data-ui="settings-save-failed"][data-ui-key="ui.theme"]')).not.toBeNull();
+    });
   });
 });
 

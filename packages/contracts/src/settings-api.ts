@@ -61,7 +61,12 @@ export interface SettingsSnapshot {
    * and the page changes nothing until the file is repaired.
    */
   readonly: boolean;
-  /** The value in effect for every key; a secret key has `{ secret: true, set }` and no value. */
+  /**
+   * The value of every key as the file gives it (the lenient reading, with the default for a key that is not set or
+   * is faulty); a secret key has `{ secret: true, set }` and no value. This is the file, not necessarily what the
+   * running process uses: a `--port` / `--data-dir` given to `serve`, and a key that takes effect only at a restart
+   * (`data_dir`, `port`, `global_dir`, `global_cache_dir`) changed since the start, are not reflected here.
+   */
   values: RedactedSettingsValues;
   sources: Record<SettingKey, "default" | "file">;
   /** What is wrong with the file, by key and category; never a value. */
@@ -73,6 +78,21 @@ export interface SettingsSnapshot {
   uneditable: Partial<Record<SettingKey, SettingChangeRefusal>>;
   /** The deprecated keys the file still sets (`ads_dev_key`): they no longer do anything. */
   legacy: SettingKey[];
+}
+
+/**
+ * The keys that say where data lives. A problem with one of them, or with the whole file (`key: null`), means the
+ * server runs on the default location of that data and not on the one the file means to give (desktop-app ticket
+ * 10): the workbench says so more loudly than for any other key.
+ */
+export const SETTINGS_DATA_LOCATION_KEYS = ["data_dir", "global_dir", "global_cache_dir"] as const;
+
+/** Whether a problem of the file is about where data lives (see `SETTINGS_DATA_LOCATION_KEYS`). */
+export function affectsDataLocation(problem: SettingsProblem): boolean {
+  return (
+    problem.key === null ||
+    (SETTINGS_DATA_LOCATION_KEYS as readonly (string | null)[]).includes(problem.key)
+  );
 }
 
 /** The body of `PUT /api/settings/:key`: set the key, or remove it so that its default applies. */

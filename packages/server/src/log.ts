@@ -33,6 +33,7 @@ import {
 } from "@argelanderspace/infra";
 import type { Context, Hono } from "hono";
 import { matchedRoutes } from "hono/route";
+import { CONFIG_PROBLEM_ENTRIES, type ConfigProblem, configProblemEntry } from "./settings.js";
 
 export const SERVER_LOG_EVENTS = [
   "server.started",
@@ -213,10 +214,11 @@ export interface ServeLog {
  * The log of a `serve` process: a new file in the user-level log directory, at the level config.toml asks for, and
  * a record of whatever ends the process. Never throws — a log that cannot be opened is a log that stays empty.
  */
-export function openServeLog(config: AppConfig): ServeLog {
+export function openServeLog(config: AppConfig, dir?: string): ServeLog {
   let file: LogFile;
   try {
-    file = openLogFile({ dir: resolveLogDir({ config }), process: "serve" });
+    // `serve` hands in the log directory of the global directories it fixed at its start (server.ts `serveStart`).
+    file = openLogFile({ dir: dir ?? resolveLogDir({ config }), process: "serve" });
   } catch {
     // The global data directory could not be resolved (a relative `global_dir`); Mail reports that when it is used.
     file = { path: null, write() {}, close() {} };
@@ -250,6 +252,8 @@ export function logServerStarted(
     projectRoot: string;
     dataDir: string;
     webDist: string | null;
+    /** What is wrong with config.toml (server.ts `serveStart`): by key and category, never a value. */
+    configProblems?: readonly ConfigProblem[];
   }
 ): void {
   let keys: ReturnType<typeof configFileKeys> = { known: [], unknown: 0 };
@@ -267,6 +271,10 @@ export function logServerStarted(
     ...(info.webDist === null ? {} : { web_dist: f.path(info.webDist) }),
     config_keys: f.someOf(CONFIG_KEYS, keys.known),
     config_unknown_keys: f.num(keys.unknown),
+    config_problems: f.someOf(
+      CONFIG_PROBLEM_ENTRIES,
+      (info.configProblems ?? []).map(configProblemEntry)
+    ),
     log_level: f.oneOf(LOG_LEVELS, log.level()),
     pid: f.num(process.pid),
     node: f.id(process.version),

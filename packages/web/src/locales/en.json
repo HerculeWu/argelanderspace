@@ -2337,7 +2337,7 @@
     "readonly": {
       "unparseableTitle": "The config file cannot be parsed; settings are read-only for now",
       "unreadableTitle": "The config file cannot be read; settings are read-only for now",
-      "body": "Every key uses its default. The page will not rewrite this file; it re-reads it automatically once fixed. Credentials, the command-line tool and diagnostics are not affected."
+      "body": "Every key has its default now, the data locations included. The page does not rewrite this file; once it is repaired it is read again by itself."
     },
     "uneditable": {
       "title": "The page cannot safely change {{key}}",
@@ -2357,7 +2357,6 @@
       }
     },
     "notices": {
-      "label": "Settings notices",
       "saved": "Written to the config file",
       "dismiss": "Dismiss",
       "failedTitle": "{{key}} was not saved",
@@ -2372,6 +2371,15 @@
         "not_editable": "The page cannot change this key. The file was not modified.",
         "unreachable": "The workbench service did not answer, so it is not known whether this was saved; the page has read the settings again."
       }
+    },
+    "banner": {
+      "locationTitle": "config.toml does not give the data locations: the default data location is open, not the one the file names",
+      "locationFile": "The whole file cannot be parsed or read; every key has its default.",
+      "locationKeys": "Faulty keys: {{keys}}.",
+      "otherTitle_one": "{{count}} key in config.toml is faulty and has its default: {{keys}}",
+      "otherTitle_other": "{{count}} keys in config.toml are faulty and have their defaults: {{keys}}",
+      "restart": "Restart the workbench after fixing the file for the data location to change.",
+      "open": "Open settings"
     }
   }
 }

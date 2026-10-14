@@ -24,7 +24,7 @@ import {
   type WsServerMessage,
 } from "@argelanderspace/contracts";
 import { CONFIG_EDIT_REFUSALS, SETTING_WRITE_REFUSALS } from "@argelanderspace/infra";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket } from "ws";
 import { createServer, type RunningServer } from "../src/server.js";
 import { withAppearance } from "../src/settings.js";
@@ -475,6 +475,27 @@ describe("PUT /api/settings/:key", () => {
     }
     expect(readFileSync(configPath, "utf-8")).toBe(COMMENTED);
     expect(existsSync(elsewhere)).toBe(false);
+    // A body sent in chunks with no length: reading stops at the limit. This one sends 8 KiB and then neither sends
+    // more nor ends — a server that read to the end before judging the size would never answer.
+    let sent = 0;
+    let stall: () => void = () => {};
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent >= 8192) return new Promise<void>((resolve) => (stall = resolve));
+        sent += 1024;
+        controller.enqueue(new Uint8Array(1024).fill(32));
+        return undefined;
+      },
+    });
+    const chunked = await fetch(url("/api/settings/ui.theme"), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: endless,
+      duplex: "half",
+    } as RequestInit);
+    expect(chunked.status).toBe(400);
+    expect(await chunked.json()).toEqual({ ok: false, reason: "invalid_request" });
+    stall();
     // A query string is not an option either.
     const res = await fetch(url(`/api/settings/ui.theme?path=${encodeURIComponent(elsewhere)}`), {
       method: "PUT",
@@ -525,6 +546,51 @@ describe("PUT /api/settings/:key", () => {
 });
 
 describe("the page is told when the file changed", () => {
+  test("a file replaced by one of the same size and modification time is a change (its inode differs)", async () => {
+    const { renameSync, utimesSync } = await import("node:fs");
+    writeFileSync(configPath, '[ui]\ntheme = "dark"\n');
+    utimesSync(configPath, 1_000_000, 1_000_000);
+    await start();
+    const heard = await listen();
+    await new Promise((r) => setTimeout(r, 100));
+    const fresh = `${configPath}.editor`;
+    writeFileSync(fresh, '[ui]\ntheme = "lite"\n');
+    utimesSync(fresh, 1_000_000, 1_000_000);
+    renameSync(fresh, configPath);
+    await heard.next(1);
+    expect(heard.causes()).toEqual(["external"]);
+  });
+
+  test("the watcher stops when the server closes", async () => {
+    const created: unknown[] = [];
+    const cleared = new Set<unknown>();
+    const realSet = globalThis.setInterval;
+    const realClear = globalThis.clearInterval;
+    const setSpy = vi.spyOn(globalThis, "setInterval").mockImplementation(((
+      fn: () => void,
+      ms?: number
+    ) => {
+      const timer = realSet(fn, ms);
+      if (ms === 40) created.push(timer);
+      return timer;
+    }) as typeof setInterval);
+    const clearSpy = vi.spyOn(globalThis, "clearInterval").mockImplementation(((timer: unknown) => {
+      cleared.add(timer);
+      realClear(timer as never);
+    }) as typeof clearInterval);
+    try {
+      await start();
+      // The library watcher and the config file watcher poll at the injected interval.
+      expect(created.length).toBe(2);
+      await srv?.close();
+      srv = undefined;
+      expect(created.filter((timer) => !cleared.has(timer))).toEqual([]);
+    } finally {
+      setSpy.mockRestore();
+      clearSpy.mockRestore();
+    }
+  });
+
   test("a change made through the endpoint: told at once, and found on disk by the watcher as well", async () => {
     writeFileSync(configPath, COMMENTED);
     await start();
@@ -619,6 +685,35 @@ describe("the page starts with the configured appearance", () => {
     const broken = await (await fetch(url("/"))).text();
     expect(broken).not.toContain(marker);
     expect(broken).toContain('data-theme="dark"');
+  });
+
+  test("only the first real <html> start tag changes: not one in a comment; attributes of the same name go first", () => {
+    const values = {
+      "ui.language": "en",
+      "ui.theme": "light",
+      "ui.density": "comfy",
+      "ui.accent": "teal",
+      "ui.labels": false,
+    } as never;
+    const added =
+      ' lang="en" data-theme="light" data-density="comfy" data-accent="teal" data-labels="false" data-ui-from="config"';
+    expect(
+      withAppearance(
+        '<!doctype html><!-- <html data-theme="x"> --><HTML class="a" data-labels LANG=zh-CN data-theme=\'dark\' xml:lang="zh"><html>',
+        values
+      )
+    ).toBe(
+      `<!doctype html><!-- <html data-theme="x"> --><html class="a" xml:lang="zh"${added}><html>`
+    );
+    // A name that only begins like one of them is kept.
+    expect(withAppearance('<html data-theme-extra="1" data-labelsx>', values)).toBe(
+      `<html data-theme-extra="1" data-labelsx${added}>`
+    );
+    // Whatever a value is, it cannot leave its attribute.
+    const odd = { ...(values as object), "ui.theme": '"><script>x</script>' } as never;
+    expect(withAppearance("<html>", odd)).toContain(
+      'data-theme="&quot;&gt;&lt;script&gt;x&lt;/script&gt;"'
+    );
   });
 
   test("a document without an <html> tag is served as it is", () => {

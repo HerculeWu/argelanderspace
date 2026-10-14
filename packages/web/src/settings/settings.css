@@ -32,8 +32,6 @@
 .st-control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
 /* Always there, so a control does not move when its key becomes "from file" and the restore action appears. */
 .st-restore-slot { flex: none; display: inline-flex; width: var(--control-h); height: var(--control-h); }
-/* These two sit at the right edge of the page: their tooltip opens leftwards, so a narrow window does not cut it off. */
-.st-restore-slot .ui-tooltip, .st-head .st-config .ui-tooltip { left: auto; right: 0; transform: none; }
 .st-seg { display: inline-flex; }
 .st-seg .tweak-seg-btn { flex: none; width: auto; height: var(--control-h); padding: 0 12px; }
 .st-root .tweak-seg-btn:disabled, .st-root .tweak-swatch:disabled, .st-root .tweak-switch:disabled { opacity: .5; cursor: default; }
@@ -62,3 +60,14 @@
 .st-notices .st-notice-fail > svg { margin-top: 2px; }
 .st-notice-title { display: block; color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sm); margin-bottom: 2px; overflow-wrap: anywhere; }
 .st-notice-fail .ui-button, .st-notice-fail .ui-tooltip-anchor { flex: none; }
+
+/* The workbench's banner for a faulty config.toml (ConfigProblemsBanner): a row between the title bar and the
+   workspace, which gives up its height. A warning when the data location is affected, a quiet line otherwise. */
+.config-banner { flex: none; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 16px; border-bottom: 1px solid var(--border-soft); background: var(--panel); color: var(--text-dim); font-size: var(--fs-sm); line-height: 1.5; }
+.config-banner.location { background: color-mix(in srgb, var(--warn) 22%, var(--panel)); border-bottom-color: var(--warn); color: var(--text); }
+.config-banner > svg { flex: none; color: var(--text-faint); }
+.config-banner.location > svg { color: var(--warn); }
+.config-banner-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.config-banner-text strong { font-weight: 600; margin-right: 6px; }
+.config-banner-open { flex: none; min-height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; }
+.config-banner-open:hover { background: var(--hover); }

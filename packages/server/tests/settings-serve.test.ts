@@ -9,10 +9,11 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { DEFAULT_PORT, type SettingsSnapshot } from "@argelanderspace/contracts";
 import {
-  ConfigError,
   configFilePath,
   configOfReading,
+  pinnedGlobalDirs,
   readSettingsText,
+  resolveGlobalDirs,
   resolveLogDir,
 } from "@argelanderspace/infra";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -97,12 +98,114 @@ describe("serve starts with a faulty config.toml", () => {
     ]);
   });
 
-  test("`data_dir` written as an absolute path still stops the start, naming the key and not the value", async () => {
-    const file = writeConfig('data_dir = "/zqxmark/elsewhere"\nport = "also wrong"\n');
-    const attempt = startServer(["--port", "0", "--data-dir", project()]);
-    await expect(attempt).rejects.toBeInstanceOf(ConfigError);
-    await expect(attempt).rejects.toThrow(`${file}: "data_dir" must be a relative path`);
-    await expect(attempt).rejects.not.toThrow(/zqxmark/);
+  test("`data_dir` written as an absolute path: the server starts on the default data location and names the key", async () => {
+    writeConfig('data_dir = "/zqxmark/elsewhere"\nport = "also wrong"\n');
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(String(line));
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const cwd = mkdtempSync(join(tmpdir(), "aspace-settings-serve-cwd-"));
+    roots.push(cwd);
+    vi.spyOn(process, "cwd").mockReturnValue(cwd);
+    const srv = await startServer(["--port", "0", "--web-dist", cwd]);
+    running.push(srv);
+    const url = `http://127.0.0.1:${await srv.ready()}`;
+    expect(srv.paths.dataDir).toBe(join(cwd, "literatures"));
+    expect((await settings(url)).problems).toEqual([
+      { key: "data_dir", reason: "must_be_relative" },
+      { key: "port", reason: "wrong_type" },
+    ]);
+    const terminal = errors.join("\n");
+    expect(terminal).toContain(
+      '"data_dir" must be a relative path: the default data location ./literatures is in use'
+    );
+    expect(terminal).toContain('"port" has the wrong type: its default is in use');
+    expect(terminal).not.toMatch(/zqxmark|also wrong/);
+  });
+
+  test("the start record lists the problems by key and category, never a value", async () => {
+    writeConfig('openalex_api_key = "zqxsecret"\n[ui]\ntheme = 3\n');
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const dataDir = project();
+    await serve(dataDir);
+    for (const srv of running.splice(0)) await srv.close();
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const dir = resolveLogDir({ config: {} });
+    const text = readdirSync(dir)
+      .map((name) => readFileSync(join(dir, name), "utf-8"))
+      .join("");
+    const started = text
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as { event?: string; config_problems?: string[] })
+      .find((record) => record.event === "server.started");
+    expect(started?.config_problems).toEqual(["ui.theme:wrong_type"]);
+    expect(text).not.toContain("zqxsecret");
+  });
+
+  test("a file that is not TOML: the start record and the terminal say every default is in use, the data location too", async () => {
+    writeConfig('openalex_api_key = "zqxsecret"\n[ui\n');
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: unknown) => {
+      errors.push(String(line));
+    });
+    await serve(project());
+    const terminal = errors.join("\n");
+    expect(terminal).toContain("the file is not valid TOML: every setting has its default");
+    expect(terminal).toContain("default data locations");
+    expect(terminal).not.toMatch(/zqxsecret|\^/);
+    for (const srv of running.splice(0)) await srv.close();
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const dir = resolveLogDir({ config: {} });
+    const text = readdirSync(dir)
+      .map((name) => readFileSync(join(dir, name), "utf-8"))
+      .join("");
+    expect(text).toContain('"config_problems":["file:unparseable"]');
+    expect(text).not.toContain("zqxsecret");
+  });
+});
+
+describe("the global directories are fixed when serve starts", () => {
+  test("Mail, the credentials and the log use the directories of the start; a later edit of the file moves nothing", async () => {
+    const globalRoot = mkdtempSync(join(tmpdir(), "aspace-settings-serve-global-"));
+    roots.push(globalRoot);
+    const startDir = join(globalRoot, "start");
+    const file = writeConfig(`global_dir = "${startDir}"\n`);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const url = await serve(project());
+    expect(pinnedGlobalDirs()?.dataDir).toBe(startDir);
+    // The log of this run is in the global data directory of the start.
+    const { existsSync, readdirSync } = await import("node:fs");
+    expect(readdirSync(join(startDir, "logs")).length).toBe(1);
+    // The file names another directory, then becomes unreadable as TOML: the run keeps the one of its start.
+    writeFileSync(file, `global_dir = "${join(globalRoot, "later")}"\n`);
+    expect(resolveGlobalDirs().dataDir).toBe(startDir);
+    writeFileSync(file, "global_dir = = 1\n");
+    expect(resolveGlobalDirs().dataDir).toBe(startDir);
+    const accounts = await fetch(`${url}/api/mail/accounts`);
+    expect(accounts.status).toBe(200);
+    expect(existsSync(join(globalRoot, "later"))).toBe(false);
+    // The pin ends with the server.
+    for (const srv of running.splice(0)) await srv.close();
+    expect(pinnedGlobalDirs()).toBeNull();
+  });
+
+  test("createServer pins the directories it is given and releases them when it closes", async () => {
+    const globalRoot = mkdtempSync(join(tmpdir(), "aspace-settings-serve-global-"));
+    roots.push(globalRoot);
+    const dirs = { dataDir: join(globalRoot, "data"), cacheDir: join(globalRoot, "cache") };
+    const srv = createServer({
+      dataDir: project(),
+      port: 0,
+      heartbeatMs: 0,
+      webDist: null,
+      globalDirs: dirs,
+    });
+    await srv.ready();
+    expect(pinnedGlobalDirs()).toEqual(dirs);
+    await srv.close();
+    expect(pinnedGlobalDirs()).toBeNull();
   });
 });
 
@@ -120,7 +223,7 @@ describe("a config.toml broken while the server runs", () => {
     expect(body.values.port).toBe(DEFAULT_PORT);
   });
 
-  test("adding a work does not fail: the automatic arXiv fetch falls back to its default (on)", async () => {
+  test("the automatic arXiv fetch reads `auto_ingest_arxiv` leniently at each add: a broken file means its default (on)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aspace-settings-serve-"));
     roots.push(dir);
     const configPath = join(dir, "config.toml");

@@ -99,19 +99,37 @@ export type SettingsNotice =
 export const SAVED_NOTICE_MS = 2200;
 const INFO_NOTICE_MS = 3200;
 
+/** Where a change was asked for: the settings page acknowledges its own saves; every other entry stays quiet. */
+export interface ChangeOptions {
+  /** The change was made on the settings page: a save is acknowledged with the "written" notice. */
+  fromSettingsPage?: boolean;
+}
+
 export interface Preferences {
   tweaks: Tweaks;
-  setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => void;
+  /** Show the value at once and write it to config.toml; resolves whether the file now has it. */
+  setTweak: <K extends keyof Tweaks>(key: K, value: Tweaks[K], options?: ChangeOptions) => Promise<boolean>;
   /** The settings as the server last gave them; null before the first answer. */
   settings: SettingsSnapshot | null;
   /** The last read got no usable answer (the values shown are the ones read before, or what the page started with). */
   unreachable: boolean;
-  /** Change one key; resolves whether config.toml now has the change. */
-  change: (key: SettingKey, change: SettingChangeRequest) => Promise<boolean>;
+  /**
+   * Change one key; resolves whether config.toml now has the change. Changes of one key are sent one after another,
+   * and of several asked for while one is on its way only the last is sent: the file ends with the last click.
+   */
+  change: (key: SettingKey, change: SettingChangeRequest, options?: ChangeOptions) => Promise<boolean>;
   notices: SettingsNotice[];
   dismiss: (id: number) => void;
   /** A short notice of the page's own (a copied path). */
   notify: (text: string) => void;
+}
+
+/** The changes of one key: whether one is on its way, and the one to send after it (the latest asked for). */
+interface Lane {
+  running: boolean;
+  /** This lane is counted in `pending` (from its first change until its last one is answered). */
+  counted: boolean;
+  next: { request: SettingChangeRequest; fromSettingsPage: boolean; settle: ((made: boolean) => void)[] } | null;
 }
 
 export function usePreferencesState(): Preferences {
@@ -120,12 +138,13 @@ export function usePreferencesState(): Preferences {
   const [unreachable, setUnreachable] = useState(false);
   const [notices, setNotices] = useState<SettingsNotice[]>([]);
   const latest = useRef<SettingsSnapshot | null>(null);
-  /** Changes on their way: while there is one, a settings answer does not move the controls under the user's hand. */
+  /** Keys with changes on their way: while there is one, a settings answer does not move the controls under the user's hand. */
   const pending = useRef(0);
   const readSeq = useRef(0);
   const noticeId = useRef(0);
   const alive = useRef(true);
   const timers = useRef(new Set<number>());
+  const lanes = useRef(new Map<SettingKey, Lane>());
 
   useEffect(() => applyToDocument(tweaks), [tweaks]);
 
@@ -182,23 +201,28 @@ export function usePreferencesState(): Preferences {
     [later]
   );
 
-  const change = useCallback(
-    async (key: SettingKey, request: SettingChangeRequest): Promise<boolean> => {
-      pending.current += 1;
+  /** Send one change of `key` (its lane says whether another waits behind it). */
+  const send = useCallback(
+    async (key: SettingKey, lane: Lane, request: SettingChangeRequest, fromSettingsPage: boolean): Promise<boolean> => {
       // Anything read before this change was sent may not have it: such an answer is dropped.
       readSeq.current += 1;
       const outcome = await changeSetting(key, request);
-      pending.current -= 1;
+      // The key's last change is answered: settings answers may move its controls again.
+      if (lane.next === null && lane.counted) {
+        lane.counted = false;
+        pending.current -= 1;
+      }
       if (!alive.current) return outcome.ok;
       if (outcome.ok) {
         accept(outcome.settings);
         const id = ++noticeId.current;
-        // One "written" notice at a time; a failure of the same key is over.
+        // One "written" notice at a time, and only for a change made on the settings page; a failure of the same key is over.
+        const saved = outcome.changed && fromSettingsPage;
         setNotices((all) => [
           ...all.filter((n) => n.kind !== "saved" && !(n.kind === "failed" && n.key === key)),
-          ...(outcome.changed ? [{ id, kind: "saved" as const }] : []),
+          ...(saved ? [{ id, kind: "saved" as const }] : []),
         ]);
-        if (outcome.changed) later(id, SAVED_NOTICE_MS);
+        if (saved) later(id, SAVED_NOTICE_MS);
         return true;
       }
       // Not made: the controls go back to what the file has, and a notice that stays says why. The file may be
@@ -215,20 +239,57 @@ export function usePreferencesState(): Preferences {
     [accept, later, read]
   );
 
+  const change = useCallback(
+    (key: SettingKey, request: SettingChangeRequest, options: ChangeOptions = {}): Promise<boolean> =>
+      new Promise<boolean>((settle) => {
+        let lane = lanes.current.get(key);
+        if (!lane) {
+          lane = { running: false, counted: false, next: null };
+          lanes.current.set(key, lane);
+        }
+        const fromSettingsPage = options.fromSettingsPage === true;
+        if (lane.next) {
+          // A change of this key already waits: this one replaces it, and whoever asked for that one hears how this
+          // one went (it is what the file ends with).
+          lane.next = { request, fromSettingsPage: lane.next.fromSettingsPage || fromSettingsPage, settle: [...lane.next.settle, settle] };
+        } else {
+          lane.next = { request, fromSettingsPage, settle: [settle] };
+        }
+        if (!lane.counted) {
+          lane.counted = true;
+          pending.current += 1;
+        }
+        if (lane.running) return;
+        const running = lane;
+        running.running = true;
+        void (async () => {
+          while (running.next) {
+            const job = running.next;
+            running.next = null;
+            const made = await send(key, running, job.request, job.fromSettingsPage);
+            for (const done of job.settle) done(made);
+          }
+          running.running = false;
+        })();
+      }),
+    [send]
+  );
+
   const setTweak = useCallback(
-    <K extends keyof Tweaks>(key: K, value: Tweaks[K]) => {
-      if (value === undefined) return;
+    <K extends keyof Tweaks>(key: K, value: Tweaks[K], options?: ChangeOptions): Promise<boolean> => {
+      if (value === undefined) return Promise.resolve(false);
       let before: Tweaks | null = null;
       setTweaks((prev) => {
         before = prev;
         return { ...prev, [key]: value };
       });
-      void change(TWEAK_KEY[key], { set: value }).then((made) => {
+      return change(TWEAK_KEY[key], { set: value }, options).then((made) => {
         // No settings were ever read (no server answered): there is nothing to go back to but the value before.
         if (!made && alive.current && latest.current === null && before) {
           const previous: Tweaks = before;
           setTweaks((now) => ({ ...now, [key]: previous[key] }));
         }
+        return made;
       });
     },
     [change]

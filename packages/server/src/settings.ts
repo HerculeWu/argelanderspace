@@ -24,14 +24,18 @@
 
 import { readFileSync, statSync } from "node:fs";
 import {
+  affectsDataLocation,
   isSettingKey,
   redactSettingsValues,
   SETTING_KEYS,
+  SETTING_VALUE_PROBLEMS,
+  SETTINGS_TABLES,
   type SettingChangeRefusal,
   type SettingChangeResponse,
   type SettingDef,
   type SettingKey,
   type SettingsFileState,
+  type SettingsProblem,
   type SettingsSnapshot,
   type SettingsValues,
   type SettingValue,
@@ -48,6 +52,7 @@ import {
 } from "@argelanderspace/infra";
 import type { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { readLimited } from "./page-errors.js";
 
 /** The longest body a change may have; a value is a short scalar. */
 export const SETTING_CHANGE_BODY_MAX_BYTES = 4096;
@@ -178,6 +183,82 @@ export function settingsSnapshot(path: string = configFilePath()): SettingsSnaps
 }
 
 // --------------------------------------------------------------------------- //
+// What is wrong with the file, for the terminal and the start record
+// --------------------------------------------------------------------------- //
+
+/** A problem of the file: a key (or the `ui` table, or `null` for the whole file) and a category. Never a value. */
+export type ConfigProblem = SettingsProblem;
+
+const PROBLEM_REASONS = [
+  ...SETTING_VALUE_PROBLEMS,
+  "not_a_table",
+  "unparseable",
+  "unreadable",
+] as const;
+/** Who a problem is about, as the start record writes it: a schema key, the `ui` table, or `file` for the whole file. */
+const PROBLEM_SUBJECTS = [...SETTING_KEYS, ...SETTINGS_TABLES, "file"] as const;
+
+/**
+ * Every `<subject>:<reason>` the start record can write (`config_problems`): a list made here from the schema's keys
+ * and the problem categories, so the log writes nothing that is not one of them.
+ */
+export const CONFIG_PROBLEM_ENTRIES: readonly string[] = PROBLEM_SUBJECTS.flatMap((subject) =>
+  PROBLEM_REASONS.map((reason) => `${subject}:${reason}`)
+);
+
+/** A problem as the start record writes it: `ui.theme:wrong_type`, `file:unparseable`. */
+export function configProblemEntry(problem: ConfigProblem): string {
+  return `${problem.key ?? "file"}:${problem.reason}`;
+}
+
+const REASON_TEXT: Record<ConfigProblem["reason"], string> = {
+  wrong_type: "has the wrong type",
+  out_of_range: "is out of range",
+  not_one_of: "is not one of its choices",
+  must_be_relative: "must be a relative path",
+  must_be_absolute: "must be an absolute path",
+  not_a_table: "is not a table",
+  unparseable: "is not valid TOML",
+  unreadable: "could not be read",
+};
+
+/**
+ * What `serve` prints to stderr when config.toml has problems: one line for the file, one per problem, by key and
+ * category — never a value, never the TOML parser's text. When the problem is about where data lives, the line says
+ * that the default location is in use (for `data_dir` only when no `--data-dir` was given).
+ */
+export function configProblemLines(
+  problems: readonly ConfigProblem[],
+  context: { path: string; dataDirGiven: boolean }
+): string[] {
+  if (problems.length === 0) return [];
+  const lines = [
+    `warning: ${context.path} has problems; the workbench started with defaults for them:`,
+  ];
+  for (const problem of problems) {
+    if (problem.key === null) {
+      lines.push(
+        `  the file ${REASON_TEXT[problem.reason]}: every setting has its default, and the default data locations (project data, global data, global cache) are in use instead of the ones the file names`
+      );
+      continue;
+    }
+    const where = problem.key === "ui" ? "table [ui]" : `"${problem.key}"`;
+    let tail = "its default is in use";
+    if (affectsDataLocation(problem)) {
+      tail =
+        problem.key === "data_dir"
+          ? context.dataDirGiven
+            ? "--data-dir is in use"
+            : "the default data location ./literatures is in use, not the one the file names"
+          : `the default ${problem.key === "global_dir" ? "global data" : "global cache"} directory is in use, not the one the file names`;
+    }
+    lines.push(`  ${where} ${REASON_TEXT[problem.reason]}: ${tail}`);
+  }
+  lines.push("  (the settings page lists them too; fix the file and restart for data locations)");
+  return lines;
+}
+
+// --------------------------------------------------------------------------- //
 // Changing one key
 // --------------------------------------------------------------------------- //
 
@@ -235,17 +316,12 @@ export function mountSettingsRoutes(
     if (!isSettingKey(key)) return refuse("unknown_key");
     if (settingDef(key).ui !== "edit") return refuse("not_editable");
 
-    const declared = Number(c.req.header("content-length") ?? 0);
-    if (Number.isFinite(declared) && declared > SETTING_CHANGE_BODY_MAX_BYTES) {
-      return refuse("invalid_request");
-    }
+    // The limit holds while the body is read (page-errors.ts `readLimited`): reading stops at the first chunk over it.
     let body: unknown;
     try {
-      const text = await c.req.text();
-      if (Buffer.byteLength(text, "utf-8") > SETTING_CHANGE_BODY_MAX_BYTES) {
-        return refuse("invalid_request");
-      }
-      body = JSON.parse(text);
+      const bytes = await readLimited(c, SETTING_CHANGE_BODY_MAX_BYTES);
+      if (bytes === null) return refuse("invalid_request");
+      body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
     } catch {
       return refuse("invalid_request");
     }
@@ -325,14 +401,27 @@ export function startSettingsWatcher(options: SettingsWatcherOptions): { stop():
 // --------------------------------------------------------------------------- //
 
 const escapeAttribute = (value: string): string =>
-  value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+/** An attribute of a start tag by name, with or without a value (`data-labels`, `lang="en"`, `lang=en`). */
+const attributePattern = (name: string): RegExp =>
+  new RegExp(`\\s${name}(?=[\\s=/>]|$)(?:\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]+))?`, "gi");
 
 /**
  * The served `index.html` with the configured appearance on its `<html>` element: `lang`, `data-theme`,
  * `data-density`, `data-accent`, `data-labels`, and `data-ui-from="config"` to say where they come from. The theme's
  * colours are CSS rules on `data-theme`, so the very first paint has them, in a browser that has never opened the
- * workbench as well; the page starts from these attributes and not from what a browser stored. A document without an
- * `<html …>` tag is returned as it is. The values are the schema's own choices (or its defaults), never file text.
+ * workbench as well; the page starts from these attributes and not from what a browser stored.
+ *
+ * Only the first real `<html …>` start tag is changed — one inside a comment is not a tag — and an attribute of the
+ * same name it already has (with a value or without) is taken out first. The values are the schema's own choices
+ * (or its defaults), never file text; they are escaped all the same. A document without an `<html …>` tag is
+ * returned as it is.
  */
 export function withAppearance(html: string, values: SettingsValues): string {
   const attributes: Record<string, string> = {
@@ -343,14 +432,18 @@ export function withAppearance(html: string, values: SettingsValues): string {
     "data-labels": String(values["ui.labels"]),
     "data-ui-from": "config",
   };
-  return html.replace(/<html\b([^>]*)>/i, (_tag, rest: string) => {
-    let kept = rest;
-    for (const name of Object.keys(attributes)) {
-      kept = kept.replace(new RegExp(`\\s${name}\\s*=\\s*("[^"]*"|'[^']*'|[^\\s>]+)`, "gi"), "");
-    }
+  const tags = /<!--[\s\S]*?(?:-->|$)|<html(?=[\s>/])([^>]*)>/gi;
+  for (let match = tags.exec(html); match !== null; match = tags.exec(html)) {
+    if (match[0].startsWith("<!--")) continue;
+    let kept = match[1] ?? "";
+    for (const name of Object.keys(attributes)) kept = kept.replace(attributePattern(name), "");
+    const selfClosing = /\/\s*$/.test(kept);
+    if (selfClosing) kept = kept.replace(/\/\s*$/, "");
     const added = Object.entries(attributes)
       .map(([name, value]) => ` ${name}="${escapeAttribute(value)}"`)
       .join("");
-    return `<html${kept}${added}>`;
-  });
+    const tag = `<html${kept.replace(/\s+$/, "")}${added}>`;
+    return html.slice(0, match.index) + tag + html.slice(match.index + match[0].length);
+  }
+  return html;
 }

@@ -146,13 +146,16 @@ or the web UI directory (`ARGELANDERSPACE_*` variables from earlier versions
 are ignored).
 
 The config file is optional: `$XDG_CONFIG_HOME/argelanderspace/config.toml`
-(default `~/.config/argelanderspace/config.toml`). Unknown keys are ignored; a
-known key with a wrong type is a startup error naming the key (values are
-never logged or echoed).
+(default `~/.config/argelanderspace/config.toml`). Unknown keys are ignored. For
+a command, a known key with a wrong value is an error naming the key; `serve`
+starts anyway, with the default for that key (a file that cannot be parsed
+gives every default, data locations included), and names the key on the
+terminal and in the web UI. Values are never logged or echoed.
 
 ```toml
 data_dir = "papers"          # default ./literatures; relative to the project root
-                             # (an absolute path is a config error: use --data-dir)
+                             # (an absolute path is a config error for a command, and
+                             # serve uses ./literatures instead: use --data-dir)
 port = 1859                  # server port and the port in CLI deep links (default 1859)
 log_level = "info"           # lowest level `serve` writes to its log: debug, info, warn, error
 

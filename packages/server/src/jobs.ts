@@ -25,6 +25,19 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { join } from "node:path";
 import type { Job, JobKind, WsJobEvent } from "@argelanderspace/contracts";
 
+/** What a job record and an answer say for a config.toml that could not be read (desktop-app ticket 10). */
+export const CONFIG_UNREADABLE_TEXT = "config.toml could not be read";
+
+/**
+ * The text of a failure for a job record or an answer. A config error is a fixed sentence: the strict reading's
+ * message can quote the TOML parser, whose text shows lines of the file — a line with a key, perhaps. The server
+ * reads config.toml leniently, so none should arrive here; this is the backstop.
+ */
+export function jobErrorText(e: unknown): string {
+  if (e instanceof Error && e.name === "ConfigError") return CONFIG_UNREADABLE_TEXT;
+  return e instanceof Error ? e.message : String(e);
+}
+
 /** What the runner tells whoever watches it. `error` is what the handler threw, on `failed` only. */
 export interface JobTransition {
   type: "created" | "started" | "progress" | "done" | "failed" | "interrupted";
@@ -186,7 +199,7 @@ export class JobRunner {
       job.status = "done";
     } catch (e) {
       thrown = e;
-      job.error = e instanceof Error ? e.message : String(e);
+      job.error = jobErrorText(e);
       job.status = "failed";
     }
     job.finishedAt = this.now().toISOString();

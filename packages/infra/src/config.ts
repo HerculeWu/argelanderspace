@@ -315,6 +315,16 @@ export function configOfReading(reading: SettingsEvaluation): AppConfig {
 }
 
 /**
+ * The lenient reading of the config file in the shape of the strict one (`configOfReading(readSettingsFile(path))`).
+ * Never throws: a file that cannot be read or parsed is `{}`, a faulty key is left out. For the server process, where
+ * a key that takes effect at once is read where it is used and a faulty file means "not set" (desktop-app ticket
+ * 10); the commands keep the strict `getConfig()`.
+ */
+export function readConfigLeniently(path: string = configFilePath()): AppConfig {
+  return configOfReading(readSettingsFile(path));
+}
+
+/**
  * Load the config file; a missing file is `{}`. Malformed TOML or an
  * unreadable file is a loud ConfigError (it would otherwise silently
  * misconfigure every key fallback).

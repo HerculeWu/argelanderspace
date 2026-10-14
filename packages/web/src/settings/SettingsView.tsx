@@ -115,15 +115,29 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * The path as the page shows it: the home directory written as `~` (as in the approved prototype). The page does
+ * not know the home directory; it recognises the usual home folders of Linux, macOS and Windows at the start of the
+ * path. What is copied is always the whole path.
+ */
+export function displayPath(path: string): string {
+  const posix = /^(?:\/home\/[^/]+|\/Users\/[^/]+|\/root)(?=\/)/.exec(path);
+  if (posix) return `~${path.slice(posix[0].length)}`;
+  const windows = /^[A-Za-z]:\\Users\\[^\\]+(?=\\)/.exec(path);
+  if (windows) return `~${path.slice(windows[0].length)}`;
+  return path;
+}
+
 function ConfigPath({ P, path }: { P: Preferences; path: string }) {
   const { t } = useTranslation();
   return (
     <>
-      <code className="st-path" data-ui="config-file-path">{path}</code>
+      <code className="st-path" data-ui="config-file-path" title={path}>{displayPath(path)}</code>
       <ActionButton
         mode="icon"
         iconName="copy"
         iconSize="small"
+        tooltipAlign="end"
         data-ui="copy-config-path"
         label={t("settings.configFile.copyPath")}
         tooltip={t("settings.configFile.copyPath")}
@@ -176,11 +190,12 @@ function Row({ state, k, label, control }: { state: RowState; k: SettingKey; lab
               mode="icon"
               iconName="rotate-ccw"
               iconSize="small"
+              tooltipAlign="end"
               data-ui="restore-default"
               data-ui-key={k}
               label={t("settings.restore.label", { key: k })}
               tooltip={t("settings.restore.tooltip")}
-              onClick={() => void P.change(k, { reset: true })}
+              onClick={() => void P.change(k, { reset: true }, { fromSettingsPage: true })}
             />
           )}
         </span>
@@ -211,9 +226,13 @@ function Segments<T extends string>({ ui, label, items, value, disabled, onChang
   );
 }
 
+/** A change made on this page: the page acknowledges it with the "written" notice. */
+const HERE = { fromSettingsPage: true } as const;
+
 function Appearance({ state }: { state: RowState }) {
   const { t } = useTranslation();
-  const { tweaks, setTweak } = state.P;
+  const { tweaks } = state.P;
+  const setTweak: Preferences["setTweak"] = (key, value) => state.P.setTweak(key, value, HERE);
   return (
     <>
       <Row state={state} k="ui.language" label={t("settings.appearance.language")} control={(disabled) => (
@@ -235,11 +254,8 @@ function Appearance({ state }: { state: RowState }) {
         <Segments ui="density-option" label={t("settings.appearance.density")} disabled={disabled} value={tweaks.density} onChange={(v) => setTweak("density", v)}
           items={SETTINGS_UI_DENSITIES.map((v) => ({ v, text: t(DENSITY_LABEL[v]) }))} />
       )} />
-      <Row state={state} k="ui.labels" label={t("settings.appearance.labels")} control={(disabled) => (
-        <Button unstyled data-ui="labels-switch" role="switch" aria-checked={tweaks.labels} aria-label={t("settings.appearance.labels")} disabled={disabled} className={"tweak-switch" + (tweaks.labels ? " on" : "")} onClick={() => setTweak("labels", !tweaks.labels)}>
-          <span />
-        </Button>
-      )} />
+      {/* `ui.labels` (show labels) is not shown for now (user decision 2026-10-14, desktop-app ticket 10): the key stays
+          in the schema and is read, written and checked as before, until its meaning is defined. */}
     </>
   );
 }

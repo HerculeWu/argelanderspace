@@ -103,7 +103,9 @@ describe("the entry and the skeleton", () => {
     expect(groups.map((el) => el.textContent)).toEqual(["Appearance", "Project", "Literature services & credentials", "TeX & environment", "Copilot", "Mail", "Diagnostics", "Advanced"]);
     expect(groups[0]!.getAttribute("aria-current")).toBe("page");
     expect(q('[data-ui="settings-group-body"]')!.getAttribute("data-group")).toBe("appearance");
-    expect(qa('[data-ui="setting-row"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["ui.language", "ui.theme", "ui.accent", "ui.density", "ui.labels"]);
+    // "Show labels" (`ui.labels`) is not shown for now (user decision 2026-10-14); the key itself stays in the schema.
+    expect(qa('[data-ui="setting-row"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["ui.language", "ui.theme", "ui.accent", "ui.density"]);
+    expect(q('[data-ui="labels-switch"]')).toBeNull();
 
     fireEvent.click(groups[7]!);
     expect(q('[data-ui="settings-group-body"]')!.getAttribute("data-group")).toBe("advanced");
@@ -117,7 +119,8 @@ describe("the entry and the skeleton", () => {
     await open();
     const file = q('[data-ui="config-file"]')!;
     expect(file.textContent).toContain("Config file");
-    expect(q('[data-ui="config-file-path"]', file)!.textContent).toBe("/home/someone/.config/argelanderspace/config.toml");
+    // Shown with the home directory as `~` (as in the prototype); copied whole.
+    expect(q('[data-ui="config-file-path"]', file)!.textContent).toBe("~/.config/argelanderspace/config.toml");
     const copy = q('[data-ui="copy-config-path"]', file)!;
     expect(copy.getAttribute("aria-label")).toBe("Copy path");
     expect(copy.querySelector("svg")).not.toBeNull();
@@ -145,28 +148,27 @@ describe("the Appearance group reads config.toml", () => {
     expect(pressed("theme-option")).toEqual(["light"]);
     expect(pressed("accent-option")).toEqual(["azure"]);
     expect(pressed("density-option")).toEqual(["compact"]);
-    expect(q('[data-ui="labels-switch"]')!.getAttribute("aria-checked")).toBe("false");
+    expect(q('[data-ui="labels-switch"]')).toBeNull();
 
     expect(row("ui.theme").querySelector(".st-key")!.textContent).toBe("ui.theme");
     expect(row("ui.theme").querySelector(".st-label span")!.textContent).toBe("Theme");
     const badge = (key: string) => row(key).querySelector(".st-badges")!.textContent;
     expect(badge("ui.theme")).toBe("From file");
     expect(badge("ui.density")).toBe("From file");
-    expect(badge("ui.labels")).toBe("From file");
     expect(badge("ui.language")).toBe("Default");
     expect(badge("ui.accent")).toBe("Default");
     // Restoring the default is offered where the file sets the key, and the slot for it is there in every row.
-    expect(qa('[data-ui="restore-default"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["ui.theme", "ui.density", "ui.labels"]);
-    expect(qa(".st-restore-slot")).toHaveLength(5);
+    expect(qa('[data-ui="restore-default"]').map((el) => el.getAttribute("data-ui-key"))).toEqual(["ui.theme", "ui.density"]);
+    expect(qa(".st-restore-slot")).toHaveLength(4);
     expect(q('[data-ui="restore-default"][data-ui-key="ui.theme"]')!.getAttribute("aria-label")).toBe("Restore default: ui.theme");
 
-    // The page itself has the configured appearance.
+    // The page itself has the configured appearance; `ui.labels` is still read and put on <html>.
     expect(root.getAttribute("data-theme")).toBe("light");
     expect(root.getAttribute("data-density")).toBe("compact");
     expect(root.getAttribute("data-labels")).toBe("false");
   });
 
-  it("every control has its name: groups are labelled, options say what they are, the switch is a switch", async () => {
+  it("every control has its name: groups are labelled, options say what they are", async () => {
     await open();
     for (const [key, label] of [["ui.language", "Language"], ["ui.theme", "Theme"], ["ui.accent", "Accent"], ["ui.density", "Density"]] as const) {
       expect(row(key).querySelector('[role="group"]')!.getAttribute("aria-label")).toBe(label);
@@ -178,10 +180,6 @@ describe("the Appearance group reads config.toml", () => {
     expect(accents.map((el) => el.getAttribute("data-ui-key"))).toEqual(["azure", "teal", "violet", "amber", "neutral"]);
     expect(accents.map((el) => el.getAttribute("aria-label"))).toEqual(["Deep space blue", "Teal", "Violet", "Warm amber", "Neutral"]);
     expect(accents.map((el) => el.textContent)).toEqual(["", "", "", "", ""]);
-    const labels = q('[data-ui="labels-switch"]')!;
-    expect(labels.getAttribute("role")).toBe("switch");
-    expect(labels.getAttribute("aria-label")).toBe("Show labels");
-    expect(labels.getAttribute("aria-checked")).toBe("true");
   });
 });
 
@@ -242,22 +240,18 @@ describe("a change is one key of config.toml and takes effect at once", () => {
     expect(i18n.language).toBe("en");
   });
 
-  it("accent, density and labels each write their key and show on <html>", async () => {
+  it("accent and density each write their key and show on <html>", async () => {
     await open();
     fireEvent.click(option("accent-option", "teal"));
     await waitFor(() => expect(root.style.getPropertyValue("--accent-h")).toBe("178"));
     expect(root.getAttribute("data-accent")).toBe("teal");
     fireEvent.click(option("density-option", "comfy"));
     await waitFor(() => expect(root.getAttribute("data-density")).toBe("comfy"));
-    fireEvent.click(q('[data-ui="labels-switch"]')!);
-    await waitFor(() => expect(q('[data-ui="labels-switch"]')!.getAttribute("aria-checked")).toBe("false"));
-    await waitFor(() => expect(settings.file).toEqual({ ...EN, "ui.accent": "teal", "ui.density": "comfy", "ui.labels": false }));
+    await waitFor(() => expect(settings.file).toEqual({ ...EN, "ui.accent": "teal", "ui.density": "comfy" }));
     expect(settings.puts).toEqual([
       { key: "ui.accent", body: { set: "teal" } },
       { key: "ui.density", body: { set: "comfy" } },
-      { key: "ui.labels", body: { set: false } },
     ]);
-    expect(root.getAttribute("data-labels")).toBe("false");
     await waitFor(() => expect(pressed("accent-option")).toEqual(["teal"]));
     expect(pressed("density-option")).toEqual(["comfy"]);
   });
@@ -267,6 +261,9 @@ describe("a change is one key of config.toml and takes effect at once", () => {
     fireEvent.click(q('[data-ui="toggle-theme"]')!);
     await waitFor(() => expect(settings.file).toEqual({ ...EN, "ui.theme": "light" }));
     expect(pressed("theme-option")).toEqual(["light"]);
+    // The "written" notice is the settings page's own: a change made elsewhere does not raise it.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(saved()).toBeNull();
     fireEvent.click(q('[data-ui="open-tweaks"]')!);
     expect(q('[data-ui="open-tweaks"]')!.getAttribute("aria-label")).toBe("Quick appearance");
     const popover = q('[data-ui="tweaks-popover"]')!;
@@ -332,17 +329,19 @@ describe("a faulty config.toml", () => {
     const banner = q(`[data-ui="${ui}"]`)!;
     expect(banner.getAttribute("role")).toBe("alert");
     expect(banner.querySelector("strong")!.textContent).toBe(title);
-    expect(banner.textContent).toContain("The page will not rewrite this file");
+    expect(banner.textContent).toContain("The page does not rewrite this file");
+    // What it says is true of this page: no promise about parts of the workbench that do not exist yet.
+    expect(banner.textContent).not.toMatch(/credential|command-line|diagnostic/i);
     expect(q('[data-ui="config-bad-keys"]')).toBeNull();
     // Every default, nothing can be changed, nothing can be restored.
     expect(pressed("theme-option")).toEqual(["dark"]);
     const controls = qa('[data-ui="setting-row"] button');
-    expect(controls.length).toBeGreaterThan(12);
+    expect(controls.length).toBe(12);
     for (const control of controls) expect(control.hasAttribute("disabled")).toBe(true);
     expect(qa('[data-ui="restore-default"]')).toEqual([]);
     expect(qa('[data-ui="setting-unsafe"]')).toEqual([]);
     fireEvent.click(option("theme-option", "light"));
-    fireEvent.click(q('[data-ui="labels-switch"]')!);
+    fireEvent.click(option("accent-option", "teal"));
     await new Promise((r) => setTimeout(r, 30));
     expect(settings.puts).toEqual([]);
     // The path is still there to go and repair the file.
@@ -358,7 +357,7 @@ describe("a faulty config.toml", () => {
     const message = q('[data-ui="setting-unsafe"]', row("ui.theme"))!;
     expect(message.querySelector("strong")!.textContent).toBe("The page cannot safely change ui.theme");
     expect(message.textContent).toContain("In the file it, or its table, is written with a dotted key. Edit the config file directly; the page will not touch that line.");
-    expect(q('[data-ui="config-file-path"]', message)!.textContent).toBe("/home/someone/.config/argelanderspace/config.toml");
+    expect(q('[data-ui="config-file-path"]', message)!.textContent).toBe("~/.config/argelanderspace/config.toml");
     expect(q('[data-ui="copy-config-path"]', message)).not.toBeNull();
     // A reason without a sentence of its own still says to edit the file.
     expect(q('[data-ui="setting-unsafe"]', row("ui.accent"))!.textContent).toContain("The page cannot safely change this key right now. Edit the config file directly");
@@ -373,37 +372,37 @@ describe("a faulty config.toml", () => {
 
 describe("a change that was not made", () => {
   it("is explained by a floating alert that names the key and stays; the control goes back and the row stays as it was", async () => {
-    settings.refuse = { "ui.labels": "dotted_key" };
+    settings.refuse = { "ui.accent": "dotted_key" };
     await open();
-    const before = row("ui.labels").querySelector(".st-row-main")!.textContent;
-    fireEvent.click(q('[data-ui="labels-switch"]')!);
-    await waitFor(() => expect(failed("ui.labels")).not.toBeNull());
-    const alert = failed("ui.labels")!;
+    const before = row("ui.accent").querySelector(".st-row-main")!.textContent;
+    fireEvent.click(option("accent-option", "teal"));
+    await waitFor(() => expect(failed("ui.accent")).not.toBeNull());
+    const alert = failed("ui.accent")!;
     expect(alert.getAttribute("role")).toBe("alert");
     expect(alert.closest('[data-ui="settings-notices"]')).not.toBeNull();
     expect(alert.closest('[data-ui="settings-page"]')).toBeNull();
-    expect(alert.querySelector("strong")!.textContent).toBe("ui.labels was not saved");
+    expect(alert.querySelector("strong")!.textContent).toBe("ui.accent was not saved");
     expect(alert.textContent).toContain("In the file it, or its table, is written with a dotted key. The file was not modified; edit it directly.");
     expect(saved()).toBeNull();
     // The value is what the file has, the row carries no error and no "from file".
-    await waitFor(() => expect(q('[data-ui="labels-switch"]')!.getAttribute("aria-checked")).toBe("true"));
-    expect(row("ui.labels").querySelector(".st-row-main")!.textContent).toBe(before);
-    expect(q('[data-ui="restore-default"][data-ui-key="ui.labels"]')).toBeNull();
+    await waitFor(() => expect(pressed("accent-option")).toEqual(["azure"]));
+    expect(row("ui.accent").querySelector(".st-row-main")!.textContent).toBe(before);
+    expect(q('[data-ui="restore-default"][data-ui-key="ui.accent"]')).toBeNull();
     expect(settings.file).toEqual(EN);
-    expect(root.getAttribute("data-labels")).toBe("true");
+    expect(root.getAttribute("data-accent")).toBe("azure");
 
     // It does not go away by itself.
     await new Promise((r) => setTimeout(r, SAVED_NOTICE_MS + 400));
-    expect(failed("ui.labels")).not.toBeNull();
+    expect(failed("ui.accent")).not.toBeNull();
 
     // Another key that fails has its own; the same key failing again does not stack.
     settings.refuse["ui.density"] = "busy";
     fireEvent.click(option("density-option", "comfy"));
     await waitFor(() => expect(failed("ui.density")).not.toBeNull());
     expect(failed("ui.density")!.textContent).toContain("Another program is changing the config file. The file was not modified; try again.");
-    fireEvent.click(q('[data-ui="labels-switch"]')!);
-    await waitFor(() => expect(settings.puts.filter((put) => put.key === "ui.labels")).toHaveLength(2));
-    await waitFor(() => expect(qa('[data-ui="settings-save-failed"]').map((el) => el.getAttribute("data-ui-key")).sort()).toEqual(["ui.density", "ui.labels"]));
+    fireEvent.click(option("accent-option", "teal"));
+    await waitFor(() => expect(settings.puts.filter((put) => put.key === "ui.accent")).toHaveLength(2));
+    await waitFor(() => expect(qa('[data-ui="settings-save-failed"]').map((el) => el.getAttribute("data-ui-key")).sort()).toEqual(["ui.accent", "ui.density"]));
 
     // Dismissed by its own button…
     const dismiss = within(failed("ui.density")!).getByRole("button", { name: "Dismiss" });
@@ -412,9 +411,9 @@ describe("a change that was not made", () => {
     expect(failed("ui.density")).toBeNull();
     // …or taken away when the same key is saved after all.
     settings.refuse = {};
-    fireEvent.click(q('[data-ui="labels-switch"]')!);
-    await waitFor(() => expect(failed("ui.labels")).toBeNull());
-    expect(settings.file).toEqual({ ...EN, "ui.labels": false });
+    fireEvent.click(option("accent-option", "teal"));
+    await waitFor(() => expect(failed("ui.accent")).toBeNull());
+    expect(settings.file).toEqual({ ...EN, "ui.accent": "teal" });
   }, 15_000);
 
   it.each([
@@ -567,5 +566,142 @@ describe("the browser's own storage is not the authority", () => {
     fakeBus.emit("hello", { jobs: [] });
     await waitFor(() => expect(row("ui.theme")).not.toBeNull());
     expect(q('[data-ui="settings-unreachable"]')).toBeNull();
+  });
+});
+
+describe("the workbench's banner for a faulty config.toml", () => {
+  const banner = () => q('[data-ui="config-problems-banner"]');
+
+  it("a faulty key that is not about data: a quiet line above every view, naming the key and never a value", async () => {
+    settings.file = { ...EN, "ui.theme": "light" };
+    settings.problems = [{ key: "ui.theme", reason: "wrong_type" }];
+    render(<Shell />);
+    await waitFor(() => expect(banner()).not.toBeNull());
+    const b = banner()!;
+    expect(b.getAttribute("data-severity")).toBe("keys");
+    expect(b.getAttribute("role")).toBe("status");
+    expect(b.textContent).toContain("1 key in config.toml is faulty and has its default: ui.theme");
+    expect(b.textContent).not.toContain("light");
+    // Between the title bar and the workspace, whatever the view.
+    expect(b.previousElementSibling?.getAttribute("data-ui")).toBe("app-titlebar");
+    expect(b.nextElementSibling?.getAttribute("data-ui")).toBe("app-workspace");
+    fireEvent.click(q('[data-ui="navigate-view"][data-ui-key="library"]')!);
+    await waitFor(() => expect(q('[data-ui="stub-library"]')).not.toBeNull());
+    expect(banner()).not.toBeNull();
+    // Nothing hides it but repairing the file; its one control opens the settings page.
+    expect(qa("button", banner()!).map((el) => el.getAttribute("data-ui"))).toEqual(["config-problems-open-settings"]);
+    fireEvent.click(q('[data-ui="config-problems-open-settings"]')!);
+    await waitFor(() => expect(q('[data-ui="settings-page"]')).not.toBeNull());
+    expect(banner()).not.toBeNull();
+    settings.problems = [];
+    fakeBus.emit("settings.changed", { cause: "external", at: "2026-10-14T00:00:00.000Z" });
+    await waitFor(() => expect(banner()).toBeNull());
+  });
+
+  it("the data location: a whole file that is unparseable, or a faulty data_dir / global directory, is a warning", async () => {
+    settings.state = "unparseable";
+    render(<Shell />);
+    await waitFor(() => expect(banner()).not.toBeNull());
+    expect(banner()!.getAttribute("data-severity")).toBe("data-location");
+    expect(banner()!.getAttribute("role")).toBe("alert");
+    // Nothing is taken from such a file, the language included: the page is in the default language.
+    await waitFor(() => expect(banner()!.textContent).toContain("现在打开的是默认数据位置，不是配置里写的位置"));
+    expect(banner()!.textContent).toContain("整个文件无法解析或读不了");
+
+    for (const key of ["data_dir", "global_dir", "global_cache_dir"] as const) {
+      settings.state = "read";
+      settings.problems = [{ key, reason: key === "data_dir" ? "must_be_relative" : "must_be_absolute" }, { key: "ui.density", reason: "not_one_of" }];
+      fakeBus.emit("settings.changed", { cause: "external", at: "2026-10-14T00:00:00.000Z" });
+      await waitFor(() => expect(banner()!.textContent).toContain(`Faulty keys: ${key}, ui.density.`));
+      expect(banner()!.getAttribute("data-severity")).toBe("data-location");
+      expect(banner()!.textContent).not.toContain("The whole file");
+    }
+  });
+
+  it("is not there while the file is fine, or while the settings could not be read", async () => {
+    render(<Shell />);
+    await waitFor(() => expect(settings.gets).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(banner()).toBeNull();
+  });
+});
+
+describe("changes of one key in quick succession", () => {
+  it("the file ends with the last click, even when the writes would finish out of order", async () => {
+    await open();
+    // Were the three sent at once, the first would reach the file last.
+    settings.writeDelays = [120, 10, 40];
+    fireEvent.click(option("theme-option", "light"));
+    fireEvent.click(option("theme-option", "dark"));
+    fireEvent.click(option("theme-option", "light"));
+    expect(pressed("theme-option")).toEqual(["light"]);
+    await new Promise((r) => setTimeout(r, 400));
+    expect(settings.file["ui.theme"]).toBe("light");
+    expect(pressed("theme-option")).toEqual(["light"]);
+    expect(root.getAttribute("data-theme")).toBe("light");
+    // The one in between was never sent: only the first and the last.
+    expect(settings.puts.map((put) => put.body)).toEqual([{ set: "light" }, { set: "light" }]);
+  });
+
+  it("while a change is on its way, a settings answer does not move the control back", async () => {
+    await open();
+    settings.writeDelays = [250];
+    fireEvent.click(option("theme-option", "light"));
+    // The file still says dark: a read now answers dark.
+    const reads = settings.gets;
+    fakeBus.emit("settings.changed", { cause: "external", at: "2026-10-14T00:00:00.000Z" });
+    await waitFor(() => expect(settings.gets).toBe(reads + 1));
+    await new Promise((r) => setTimeout(r, 60));
+    expect(pressed("theme-option")).toEqual(["light"]);
+    expect(root.getAttribute("data-theme")).toBe("light");
+    await waitFor(() => expect(settings.file["ui.theme"]).toBe("light"));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(pressed("theme-option")).toEqual(["light"]);
+  });
+
+  it("a read that left before a change and answers after it is dropped", async () => {
+    await open();
+    // A read leaves now (the file says dark) and answers late.
+    settings.getDelays = [200];
+    fakeBus.emit("settings.changed", { cause: "external", at: "2026-10-14T00:00:00.000Z" });
+    await new Promise((r) => setTimeout(r, 20));
+    fireEvent.click(option("theme-option", "light"));
+    await waitFor(() => expect(settings.file["ui.theme"]).toBe("light"));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(pressed("theme-option")).toEqual(["light"]);
+    expect(root.getAttribute("data-theme")).toBe("light");
+  });
+});
+
+describe("before and without an answer", () => {
+  it("the browser's copy is checked before it is used: a value that is none of the choices is the default", async () => {
+    settings.down = true;
+    window.localStorage.setItem("argelander.ui", JSON.stringify({ theme: "sepia", accent: "red", density: "huge", labels: "yes", language: "fr" }));
+    render(<Shell />);
+    // What the page starts with, before (and without) any answer.
+    expect(root.getAttribute("data-theme")).toBe("dark");
+    expect(root.getAttribute("data-density")).toBe("regular");
+    expect(root.getAttribute("data-accent")).toBe("azure");
+    expect(root.getAttribute("data-labels")).toBe("true");
+    expect(root.lang).toBe("zh-CN");
+  });
+
+  it("with settings never read, a change that is not made goes back to the value before it", async () => {
+    settings.down = true;
+    render(<Shell />);
+    await waitFor(() => expect(settings.gets).toBeGreaterThan(0));
+    expect(root.getAttribute("data-theme")).toBe("dark");
+    fireEvent.click(q('[data-ui="toggle-theme"]')!);
+    await waitFor(() => expect(settings.puts).toHaveLength(1));
+    await waitFor(() => expect(root.getAttribute("data-theme")).toBe("dark"));
+  });
+
+  it("the settings are read past the browser's cache", async () => {
+    render(<Shell />);
+    await waitFor(() => expect(settings.gets).toBeGreaterThan(0));
+    const calls = (fetch as unknown as { mock: { calls: [RequestInfo | URL, RequestInit | undefined][] } }).mock.calls;
+    const reads = calls.filter(([input, init]) => String(input) === "/api/settings" && (init?.method ?? "GET") === "GET");
+    expect(reads.length).toBeGreaterThan(0);
+    for (const [, init] of reads) expect(init?.cache).toBe("no-store");
   });
 });
