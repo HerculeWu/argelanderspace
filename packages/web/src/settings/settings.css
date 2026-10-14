@@ -89,3 +89,5 @@
 @container st (max-width: 640px) {
   .st-control-path { justify-content: flex-start; max-width: 100%; }
 }
+/* A note under a field takes the field's width and wraps, so the control does not move when it appears. */
+.st-text > .st-changed-outside, .st-text > .st-field-error { width: 0; min-width: 100%; text-align: left; }

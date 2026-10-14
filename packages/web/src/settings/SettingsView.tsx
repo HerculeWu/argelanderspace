@@ -171,6 +171,9 @@ function Row({ state, k, label, control, hint, fileOnly, extra }: { state: RowSt
   const canRestore = !fileOnly && !locked && refusal === undefined && (fromFile || bad);
   const restart = SETTINGS_SCHEMA[k].restart;
   const pending = settings.restartPending.includes(k);
+  // Given on serve's command line (`--port`, `--data-dir`): the file's value does not apply to this run.
+  const flag = k === "port" ? "--port" : k === "data_dir" ? "--data-dir" : null;
+  const fromFlag = flag !== null && settings.running.from_flag.includes(k as "port" | "data_dir");
   const why = refusal === undefined ? null : layoutReason(refusal);
   return (
     <div className="st-row" data-ui="setting-row" data-ui-key={k}>
@@ -194,12 +197,17 @@ function Row({ state, k, label, control, hint, fileOnly, extra }: { state: RowSt
           {pending && (
             <span className="st-pill warn" data-ui="setting-pending-restart" data-ui-key={k}>
               <Icon name="rotate-cw" cls="ico-sm" />
-              {t("settings.row.pendingRestart")}
+              {fileOnly ? t("settings.row.pendingRestartFile") : t("settings.row.pendingRestart")}
             </span>
           )}
           {fileOnly && <Badge>{t("settings.row.fileOnly")}</Badge>}
         </div>
         {hint && <div className="st-hint">{hint}</div>}
+        {fromFlag && (
+          <div className="st-hint" data-ui="setting-from-flag" data-ui-key={k}>
+            {t("settings.row.fromFlag", { flag })}
+          </div>
+        )}
         {pending && <RunningValue settings={settings} k={k} />}
       </div>
       <div className={"st-control" + (fileOnly ? " st-control-path" : "")}>
@@ -270,15 +278,33 @@ function TextSetting({ state, k, value, ui, label, disabled, validate, placehold
   state: RowState; k: SettingKey; value: string; ui: string; label: string; disabled: boolean;
   validate?: (text: string) => string | null; placeholder?: string; mono?: boolean; numeric?: boolean; type?: string;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState(value);
   const [error, setError] = useState<string | null>(null);
+  // The value the field showed when editing began: the draft differs from it while the person is typing.
+  const base = useRef(value);
+  // The file's value changed while a draft was being typed: the draft stays, and the field says so.
+  const [changedOutside, setChangedOutside] = useState(false);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   useEffect(() => {
-    setDraft(value);
-    setError(null);
+    const typed = draftRef.current;
+    if (typed === base.current || typed.trim() === value) {
+      setDraft(value);
+      setError(null);
+      setChangedOutside(false);
+    } else {
+      setChangedOutside(true);
+    }
+    base.current = value;
   }, [value]);
   const commit = () => {
     const text = draft.trim();
-    if (text === value) return;
+    // Judged against the file's value now, which may have changed while typing.
+    if (text === value) {
+      setChangedOutside(false);
+      return;
+    }
     let change: SettingChangeRequest;
     if (text === "") {
       change = { reset: true };
@@ -289,6 +315,7 @@ function TextSetting({ state, k, value, ui, label, disabled, validate, placehold
       change = { set: numeric ? Number(text) : text };
     }
     setError(null);
+    setChangedOutside(false);
     void state.P.change(k, change, HERE);
   };
   return (
@@ -312,9 +339,15 @@ function TextSetting({ state, k, value, ui, label, disabled, validate, placehold
           if (e.key === "Escape") {
             setDraft(value);
             setError(null);
+            setChangedOutside(false);
           }
         }}
       />
+      {changedOutside && (
+        <div className="st-hint st-changed-outside" role="status" data-ui="setting-changed-outside" data-ui-key={k}>
+          {t("settings.row.changedOutside")}
+        </div>
+      )}
       {error && (
         <div className="st-field-error" role="alert" data-ui="setting-field-error" data-ui-key={k}>
           <Icon name="circle-alert" cls="ico-sm" />
@@ -464,13 +497,22 @@ function Advanced({ state }: { state: RowState }) {
   const port = (text: string) => (/^\d+$/.test(text) && Number(text) <= 65535 ? null : t("settings.advanced.portRange"));
   const globalRow = (k: "global_dir" | "global_cache_dir") => (
     <Row state={state} k={k} fileOnly label={k === "global_dir" ? t("settings.advanced.globalData") : t("settings.advanced.globalCache")}
-      control={() => (
-        <code className="st-path" data-ui="global-dir-path" data-ui-key={k} title={settings.running[k].path}>{settings.running[k].display}</code>
-      )} />
+      control={() =>
+        // Changed in the file since the start: the new value here, the one still in use under the label.
+        settings.restartPending.includes(k) ? (
+          <code className="st-path" data-ui="global-dir-path" data-ui-key={k} data-state="file">{String(settings.values[k] ?? t("settings.advanced.defaultLocation"))}</code>
+        ) : (
+          <code className="st-path" data-ui="global-dir-path" data-ui-key={k} title={settings.running[k].path}>{settings.running[k].display}</code>
+        )
+      } />
   );
   return (
     <>
-      <Row state={state} k="port" label={t("settings.advanced.port")} control={(disabled) => (
+      <Row state={state} k="port" label={t("settings.advanced.port")}
+        hint={settings.restartPending.includes("port") || settings.running.port === null ? undefined : (
+          <span data-ui="port-in-use">{t("settings.row.inUse")}<code className="st-path">{settings.running.port}</code></span>
+        )}
+        control={(disabled) => (
         <TextSetting state={state} k="port" ui="port-input" label={t("settings.advanced.port")} mono numeric disabled={disabled}
           value={String(settings.values.port ?? "")} validate={port} />
       )} />

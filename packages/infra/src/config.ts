@@ -19,10 +19,11 @@
  *   global_dir        string   global data dir override (ADR 0007);
  *                              absolute
  *   global_cache_dir  string   global cache dir override; absolute
- *   auto_ingest_arxiv boolean  default true — Stage 15: automatically fetch
- *                              & compile the arXiv source when an added work
- *                              has an arXiv id (manual triggers stay on).
- *                              A switch of the settings page's Project group
+ *   auto_ingest_arxiv boolean  default true — automatically fetch the arXiv
+ *                              PDF (as a new PDF Doc) when an added work has
+ *                              an arXiv id; manual fetches stay on. The
+ *                              settings page's Project group switch "Fetch
+ *                              the arXiv PDF when adding literature"
  *                              (desktop-app ticket 11)
  *   log_level         string   default "info"; one of debug, info, warn,
  *                              error — the lowest level `serve` writes to

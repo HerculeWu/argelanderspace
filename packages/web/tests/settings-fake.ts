@@ -78,6 +78,7 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
       data_dir: { path: "/home/someone/project/literatures", display: "~/project/literatures" },
       global_dir: { path: "/home/someone/.local/share/argelanderspace", display: "~/.local/share/argelanderspace" },
       global_cache_dir: { path: "/home/someone/.cache/argelanderspace", display: "~/.cache/argelanderspace" },
+      from_flag: [],
     },
     legacy: [],
     writeDelays: [],
@@ -108,7 +109,7 @@ export function fakeSettings(file: Partial<Record<SettingKey, SettingValue>> = {
         startup: fake.startup,
         running: fake.running,
         restartPending: (Object.keys(SETTINGS_SCHEMA) as SettingKey[]).filter(
-          (key) => !readonly && SETTINGS_SCHEMA[key].restart && values[key] !== atStart[key]
+          (key) => !readonly && SETTINGS_SCHEMA[key].restart && !(fake.running.from_flag as string[]).includes(key) && values[key] !== atStart[key]
         ),
       };
     },

@@ -202,8 +202,13 @@ export function shownPath(path: string, home: string = homedir()): ShownPath {
 const RESTART_KEYS = SETTING_KEYS.filter((key) => settingDef(key).restart);
 
 /** The restart-only keys whose value in the file now is not the one it had when the server was made. */
-export function restartPending(now: SettingsValues, atStart: SettingsValues): SettingKey[] {
-  return RESTART_KEYS.filter((key) => now[key] !== atStart[key]);
+export function restartPending(
+  now: SettingsValues,
+  atStart: SettingsValues,
+  fromFlag: readonly SettingKey[] = []
+): SettingKey[] {
+  // A key given on the command line does not take the file's value at a restart either (with the same flag).
+  return RESTART_KEYS.filter((key) => !fromFlag.includes(key) && now[key] !== atStart[key]);
 }
 
 /** The lenient reading of the config file; never throws. */
@@ -255,6 +260,7 @@ export interface ProcessSettings {
 
 /** The settings as the page may see them. Never throws. */
 export function settingsSnapshot(path: string, proc: ProcessSettings): SettingsSnapshot {
+  const running = proc.running();
   const { reading, file } = readWithText(path);
   const readonly = reading.file === "unparseable" || reading.file === "unreadable";
   const uneditable: Partial<Record<SettingKey, SettingChangeRefusal>> = {};
@@ -279,9 +285,9 @@ export function settingsSnapshot(path: string, proc: ProcessSettings): SettingsS
     uneditable,
     legacy: reading.present.filter((key) => settingDef(key).deprecated === true),
     startup: proc.startup,
-    running: proc.running(),
+    running,
     // A file that cannot be read says nothing about what it sets: nothing is reported as pending then.
-    restartPending: readonly ? [] : restartPending(reading.values, proc.atStart),
+    restartPending: readonly ? [] : restartPending(reading.values, proc.atStart, running.from_flag),
   };
 }
 

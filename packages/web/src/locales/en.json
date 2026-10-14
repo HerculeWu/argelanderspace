@@ -2395,13 +2395,16 @@
       "stillUsing": "Still in use: ",
       "inUse": "In use: ",
       "fileOnly": "Editable in the file only",
-      "notInFile": "Not stored in the config file"
+      "notInFile": "Not stored in the config file",
+      "pendingRestartFile": "Changed in the file; applies after restart",
+      "fromFlag": "Given by {{flag}} on the command line for this run; the file's value applies only when started without {{flag}}.",
+      "changedOutside": "The value in the config file just changed; Enter saves what you typed, Escape takes the file's value."
     },
     "project": {
       "current": "Current project",
       "currentBrowser": "Decided by the directory serve was started in",
       "dataDir": "Project data directory",
-      "autoIngest": "Auto-ingest arXiv source when adding a work",
+      "autoIngest": "Fetch the arXiv PDF when adding literature",
       "absolute": "only relative paths are accepted"
     },
     "services": {
@@ -2410,7 +2413,7 @@
       "contactPlaceholder": "name@example.org",
       "notEmail": "not written like an email address",
       "legacyTitle": "The config file still has ads_dev_key",
-      "legacyBody": "This key is still read as the ADS token for now; it is about to be replaced by the ADS credential in this group, and will then have no effect."
+      "legacyBody": "This key is still read as the ADS token for now; once the workbench keeps the ADS credential on its own, it will have no effect."
     },
     "entries": {
       "provider": "Models and sign-in",
@@ -2422,7 +2425,8 @@
       "port": "Port",
       "portRange": "must be a whole number from 0 to 65535",
       "globalData": "Global data directory",
-      "globalCache": "Global cache directory"
+      "globalCache": "Global cache directory",
+      "defaultLocation": "the default location"
     }
   }
 }

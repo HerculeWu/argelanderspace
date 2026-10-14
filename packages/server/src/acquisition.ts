@@ -96,7 +96,7 @@ export interface AcquisitionDeps {
   makeSources: (offline: boolean) => MetadataSources;
   /** External current arXiv PDF bytes; absent → the PDF job fails ("arXiv PDF source is unavailable"). */
   fetchArxivPdf?: ((arxivId: string) => Promise<Buffer>) | undefined;
-  /** The hidden auto_ingest_arxiv gate, read fresh at every automatic submit. */
+  /** The `auto_ingest_arxiv` gate (the settings page's "fetch the arXiv PDF when adding literature" switch), read fresh at every automatic submit. */
   autoIngestArxiv: () => boolean;
   /** The Works whose doc_ids hold this Doc (the PDF owner rule). */
   pdfOwners: (docId: string) => Work[];
@@ -620,7 +620,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     return { kind: scenario, docId, title: w.title, docIds: [...w.doc_ids] };
   };
 
-  /** `POST /api/library/attach-arxiv` minus the HTTP shape. Not gated by the hidden auto_ingest_arxiv config. */
+  /** `POST /api/library/attach-arxiv` minus the HTTP shape. Not gated by `auto_ingest_arxiv`. */
   const startArxivSource = (workId: string): ArxivStart => {
     const plan = describeArxivSource(workId);
     if (

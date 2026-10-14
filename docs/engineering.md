@@ -115,7 +115,7 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
 
 - core 的 pyOr/pyTruthy/pyRe 保留有意移植的 Python 真值/Unicode 词边界语义；退出重构期不等于这些防御语义都是死代码。
 - `core/src/acquire/latexenc-data.ts` 是 bibtexparser 1.4.4 的 2394 对机械替换表，勿手改；`@retorquere/bibtex-parser` 10.0.1 发布缺声明，本地最小类型在 core/src/types/bibtex-parser.d.ts。
-- sources 缓存键通过 infra/lib/pyjson.ts 字节复现 `sha1(path + "?" + json.dumps(params, sort_keys=True))`（ensure_ascii/分隔符），存量缓存复用依赖此，不因旧 Python 删除而更换。
+- sources 缓存键通过 infra/lib/pyjson.ts 字节复现 `sha1(path + "?" + json.dumps(params, sort_keys=True))`（ensure_ascii/分隔符），存量缓存复用依赖此派生，不因旧 Python 删除而更换。（2026-10-14 局部修订，desktop-app 票 11。旧定位：Crossref / OpenAlex 的 params 含 `mailto`〔当时写死的地址〕。新结论：这两个来源的新键的 params 不含联系邮箱；新键查不到且设了联系邮箱时，再按「params 加当前邮箱作 `mailto`」的旧键〔派生逐字节同上〕查一次，命中则按新键另存一份、旧文件不删；没设联系邮箱时不查旧键。源码里不写任何地址。ADS 的键不变。原因：联系邮箱改为用户自己的可选设置，答复与邮箱无关，换地址不该丢缓存，又要让既有缓存继续命中——用户 2026-10-14 裁决「新键加旧键回退」。机制见 `infra/src/sources/cache.ts` 的 `readKeyed`。）
 - `statSync(p).mtimeNs` 在普通 stats 不存在，须 `{bigint:true}`；PaperCache/watcher 指纹依赖它。
 - canonical annotation text 在 **contracts** 而非旧 roadmap 字面的 core：web runtime 只依赖 contracts，需要共享纯函数。这是落地位置修订，不是 bug。
 

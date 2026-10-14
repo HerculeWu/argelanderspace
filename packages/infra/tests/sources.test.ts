@@ -5,11 +5,11 @@
  * data/library/cache/<source>/<key>.json filenames).
  */
 
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { AdsClient, normalizeAdsDoc, readAdsToken, titleMatches } from "../src/sources/ads.js";
 import { CrossrefClient } from "../src/sources/crossref.js";
 import { normalizeOpenAlex, OpenAlexClient } from "../src/sources/openalex.js";
@@ -267,5 +267,111 @@ describe("OpenAlexClient (library/sources/openalex.py)", () => {
     expect(calls[0]?.url).toContain("api_key=KEY-123");
     // same filename as the keyless client (see previous test)
     expect(readdirSync(cacheDir)).toEqual(["e26e62872e851df442f050a58641e9149815ffbb.json"]);
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// The legacy cache key (desktop-app ticket 11, user decision 2026-10-14)
+// --------------------------------------------------------------------------- //
+
+describe("Crossref / OpenAlex cache: the key without the contact email, then the legacy key with it", () => {
+  const made: string[] = [];
+  const dir = (): string => {
+    const d = mkdtempSync(join(tmpdir(), "aspace-legacy-key-"));
+    made.push(d);
+    return d;
+  };
+  afterEach(() => {
+    for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  // sha1(path + "?" + json.dumps({"mailto": MAILTO}, sort_keys=True)): the derivation of every entry written before
+  // ticket 11 (then with the built-in address), here with an example address — pinned byte for byte.
+  const CROSSREF_LEGACY = "762a4de5a0585a63006d982376714e112fbe0f5e";
+  const CROSSREF_NEW = "bc5d14e60bdaccd1bbbdcbfb24371bcfdac5653d";
+  const OPENALEX_LEGACY = "36921a745689a9c7af837abfbb1e89ab3109fe8e";
+  const OPENALEX_NEW = "e26e62872e851df442f050a58641e9149815ffbb";
+  const put = (d: string, key: string, body: unknown) =>
+    writeFileSync(join(d, `${key}.json`), JSON.stringify(body));
+  const noNetwork = () =>
+    stubFetch(() => {
+      throw new Error("network must not be touched");
+    });
+
+  test("a contact email set and only the legacy file: found without a request, copied under the new key, kept", async () => {
+    const d = dir();
+    put(d, CROSSREF_LEGACY, load("crossref-work.json"));
+    const { fetchImpl, calls } = noNetwork();
+    const cr = new CrossrefClient({ cacheDir: d, delay: 0, mailto: MAILTO, fetchImpl });
+    expect((await cr.resolve({ doi: "10.1086/161130" }))?.doi).toBe("10.3847/1538-4365/ae4fbb");
+    expect(calls).toHaveLength(0);
+    expect(readdirSync(d).sort()).toEqual([`${CROSSREF_LEGACY}.json`, `${CROSSREF_NEW}.json`]);
+    expect(JSON.parse(readFileSync(join(d, `${CROSSREF_NEW}.json`), "utf-8"))).toEqual(
+      load("crossref-work.json")
+    );
+    // OpenAlex the same
+    const o = dir();
+    put(o, OPENALEX_LEGACY, load("openalex-work.json"));
+    const oa = new OpenAlexClient({
+      cacheDir: o,
+      delay: 0,
+      mailto: MAILTO,
+      apiKey: null,
+      fetchImpl,
+    });
+    expect((await oa.resolve({ doi: "10.1051/0004-6361/202038192" }))?.openalex_id).toBe(
+      "W3017279354"
+    );
+    expect(calls).toHaveLength(0);
+    expect(readdirSync(o).sort()).toEqual([`${OPENALEX_LEGACY}.json`, `${OPENALEX_NEW}.json`]);
+  });
+
+  test("no contact email: the legacy key is not looked up", async () => {
+    const d = dir();
+    put(d, CROSSREF_LEGACY, { message: { DOI: "10.9/legacy", title: ["Legacy"] } });
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(load("crossref-work.json")));
+    const cr = new CrossrefClient({ cacheDir: d, delay: 0, mailto: null, fetchImpl });
+    expect((await cr.resolve({ doi: "10.1086/161130" }))?.doi).toBe("10.3847/1538-4365/ae4fbb");
+    expect(calls).toHaveLength(1);
+  });
+
+  test("the new key comes first", async () => {
+    const d = dir();
+    put(d, CROSSREF_LEGACY, { message: { DOI: "10.9/legacy", title: ["Legacy"] } });
+    put(d, CROSSREF_NEW, load("crossref-work.json"));
+    const { fetchImpl, calls } = noNetwork();
+    const cr = new CrossrefClient({ cacheDir: d, delay: 0, mailto: MAILTO, fetchImpl });
+    expect((await cr.resolve({ doi: "10.1086/161130" }))?.doi).toBe("10.3847/1538-4365/ae4fbb");
+    expect(calls).toHaveLength(0);
+    expect(JSON.parse(readFileSync(join(d, `${CROSSREF_LEGACY}.json`), "utf-8")).message.DOI).toBe(
+      "10.9/legacy"
+    );
+  });
+
+  test("offline (disabled client): the legacy key is found the same way", async () => {
+    const d = dir();
+    put(d, CROSSREF_LEGACY, load("crossref-work.json"));
+    const { fetchImpl, calls } = noNetwork();
+    const cr = new CrossrefClient({ cacheDir: d, enabled: false, mailto: MAILTO, fetchImpl });
+    expect((await cr.resolve({ doi: "10.1086/161130" }))?.doi).toBe("10.3847/1538-4365/ae4fbb");
+    const o = dir();
+    put(o, OPENALEX_LEGACY, load("openalex-work.json"));
+    const oa = new OpenAlexClient({
+      cacheDir: o,
+      enabled: false,
+      mailto: MAILTO,
+      apiKey: null,
+      fetchImpl,
+    });
+    expect((await oa.resolve({ doi: "10.1051/0004-6361/202038192" }))?.openalex_id).toBe(
+      "W3017279354"
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  test("a DOI lookup without a contact email has no `?` at the end of its URL", async () => {
+    const { fetchImpl, calls } = stubFetch(() => jsonResponse(load("crossref-work.json")));
+    const cr = new CrossrefClient({ cacheDir: dir(), delay: 0, mailto: null, fetchImpl });
+    await cr.resolve({ doi: "10.1086/161130" });
+    expect(calls[0]?.url).toBe("https://api.crossref.org/works/10.1086/161130");
   });
 });

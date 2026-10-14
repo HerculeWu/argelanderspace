@@ -259,6 +259,8 @@ export interface AppDeps {
    * reported as pending a restart. Default: the reading when the app is made.
    */
   settingsAtStart?: import("@argelanderspace/contracts").SettingsValues;
+  /** The restart-only keys `serve` was given on its command line (`--port`, `--data-dir`); default none. */
+  settingsFromFlags?: readonly import("@argelanderspace/contracts").RunningFlagKey[];
 }
 
 // --------------------------------------------------------------------------- //
@@ -527,6 +529,7 @@ export function createApp(deps: AppDeps): Hono {
         data_dir: shownPath(deps.paths.dataDir),
         global_dir: shownPath(dirs.dataDir),
         global_cache_dir: shownPath(dirs.cacheDir),
+        from_flag: [...(deps.settingsFromFlags ?? [])],
       };
     },
     written: () =>

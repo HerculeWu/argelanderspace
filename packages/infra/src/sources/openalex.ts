@@ -10,8 +10,9 @@
  * as the `api_key` query param on every request — the Python client ignores
  * the key entirely (OpenAlex's premium pool needs it). The key is NOT part of
  * the disk-cache key: the response content is key-independent. Nor is the
- * contact email (since desktop-app ticket 11; entries written before, keyed
- * with the address then built in, are fetched again once).
+ * contact email (since desktop-app ticket 11); entries keyed the old way, with
+ * the `mailto` param, are still found through the legacy-key fallback
+ * (`readKeyed` in cache.ts, user decision 2026-10-14).
  *
  * Resolution gotcha (from the Python docstring, preserved): an arXiv-DOI
  * lookup returns a bare stub (cited_by 0, no references) — the *published*
@@ -23,8 +24,7 @@ import type { OpenAlexResolution, OpenAlexSource } from "@argelanderspace/core";
 import { normArxiv, normDoi, normTitle } from "@argelanderspace/core";
 import { type AppConfig, getConfig, readContactEmail } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
-import { pyJsonStable } from "../lib/pyjson.js";
-import { SourceCache, sha1Hex } from "./cache.js";
+import { readKeyed, SourceCache } from "./cache.js";
 
 const BASE = "https://api.openalex.org";
 const TIMEOUT = 30;
@@ -157,14 +157,14 @@ export class OpenAlexClient implements OpenAlexSource {
 
   /**
    * `OpenAlex._get`: disk-cached GET. The cache key covers only the request's
-   * own params; `mailto` and `api_key` go on the wire but not into the key.
+   * own params; `mailto` and `api_key` go on the wire but not into the key
+   * (with the legacy `mailto` key as a fallback, see cache.ts).
    */
   private async get(
     path: string,
     params: Record<string, string | number> = {}
   ): Promise<Json | null> {
-    const key = sha1Hex(`${path}?${pyJsonStable(params)}`);
-    const hit = this.cache.read(key);
+    const { key, hit } = readKeyed(this.cache, path, params, this.mailto);
     if (hit !== undefined) return hit as Json;
     if (!this.enabled) return null;
     const wireParams: Record<string, string | number> = { ...params };

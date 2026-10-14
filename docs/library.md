@@ -69,7 +69,7 @@ CLI 裸 arXiv id 正文摄入路径不变。裸 id 只在 Web identifier 建条�
 新增 Work 自动任务仍只从既有 identifier、bibcode/Discovery 入库、以及既有解析链已解析出 arXiv ID 的 DOI 路径触发；没有 arXiv ID 不触发，批量 BibTeX 永不自动，不新增 DOI 反查。创建/exists 的 Work 响应仍同步返回；后续以持久 Job 获取 PDF。
 
 - 自动提交和执行时均按 Work 的真实关联/显式 PDF metadata 检查是否已有任意 PDF；已有 PDF（即使其当前文件不可读）会阻止自动获取。只有 LaTeX Doc 不阻止。打开详情、重启和遍历旧库不触发补抓。
-- `auto_ingest_arxiv` 默认 true 且提交时现读；false 只关闭自动 PDF 获取，手动仍可用。设置页「项目」组有它的开关（desktop-app 票 11），与手改配置文件同一个键。
+- `auto_ingest_arxiv` 默认 true 且提交时现读；false 只关闭自动 PDF 获取，手动仍可用。设置页「项目」组有它的开关「添加文献时自动获取 arXiv PDF」（desktop-app 票 11；键名仍是 `auto_ingest_arxiv`，名字里的「ingest」是 Stage 15 的旧称，它不再自动获取或编译 LaTeX 源码），与手改配置文件同一个键。
 - 手动 `POST /api/library/acquire-arxiv-pdf?id=<workId>` 需要现存 Work 和解析后的 arXiv ID；已有 PDF 不阻止用户主动再次获取。
 - 来源使用 `https://arxiv.org/pdf/<canonical-id>` 获取本次返回的原始 PDF bytes，不做 `export.arxiv.org` 版本查询。metadata 记录 `acquired_via="arxiv_pdf"`、规范 `arxiv_id`、Server 取得时间、原始 byte length、SHA-256、页数和 PDFium 页几何；**不声称已核实官方 `vN`、提交日期或“官方最新版”**。
 - 每次新的显式获取在成功后创建新的 `pdf-<UUID>` Doc，即使 bytes 与已有 PDF 完全相同也不去重。相同 Work/格式仍在 queued/running 的同一获取任务会被复用；Job 终态后的再次显式提交是新任务。上传 PDF 原有 same-Work identical-byte 去重完全不变。

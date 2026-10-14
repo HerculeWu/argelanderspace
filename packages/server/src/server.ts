@@ -22,6 +22,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_PORT,
+  type RunningFlagKey,
   type SettingsValues,
   type StartupLocations,
 } from "@argelanderspace/contracts";
@@ -118,6 +119,8 @@ export interface ServerOptions {
   startup?: StartupLocations;
   /** The values config.toml gave at the start (`serveStart`), for `restartPending`; default: the reading at creation. */
   settingsAtStart?: SettingsValues;
+  /** The restart-only keys given on `serve`'s command line (`--port`, `--data-dir`), for `running.from_flag`. */
+  settingsFromFlags?: readonly RunningFlagKey[];
 }
 
 export interface RunningServer {
@@ -243,6 +246,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     configPath: opts.configPath,
     startup: opts.startup ?? null,
     ...(opts.settingsAtStart ? { settingsAtStart: opts.settingsAtStart } : {}),
+    ...(opts.settingsFromFlags ? { settingsFromFlags: opts.settingsFromFlags } : {}),
   });
 
   const server = serve({
@@ -475,6 +479,10 @@ export async function startServer(
       globalDirs,
       startup,
       settingsAtStart: values,
+      settingsFromFlags: [
+        ...(argValue(argv, "port") !== undefined ? (["port"] as const) : []),
+        ...(argValue(argv, "data-dir") !== undefined ? (["data_dir"] as const) : []),
+      ],
     });
     port = await srv.ready();
   } catch (error) {

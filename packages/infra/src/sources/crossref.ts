@@ -12,9 +12,9 @@
  *
  * Cache key `sha1(path + "?" + json.dumps(params, sort_keys=True))` (lib/
  * pyjson.ts) over the request's own params — the contact email is not part
- * of it (the answer does not depend on it, and changing the address keeps the
- * cache; since desktop-app ticket 11, so entries written before, keyed with
- * the address then built in, are no longer found and are fetched again); a 404 is cached as the
+ * of it (desktop-app ticket 11); entries keyed the old way, with the `mailto`
+ * param, are still found through the legacy-key fallback (`readKeyed` in
+ * cache.ts, user decision 2026-10-14); a 404 is cached as the
  * `{"__notfound__": true}` sentinel exactly like Python so misses aren't
  * re-fetched.
  */
@@ -23,8 +23,7 @@ import type { CrossrefResolution, CrossrefSource } from "@argelanderspace/core";
 import { arxivFromDoi, normalizeCrossref, normDoi, normTitle } from "@argelanderspace/core";
 import { readContactEmail } from "../config.js";
 import { type FetchImpl, fetchText, HttpError, sleep, withQuery } from "../lib/http.js";
-import { pyJsonStable } from "../lib/pyjson.js";
-import { SourceCache, sha1Hex } from "./cache.js";
+import { readKeyed, SourceCache } from "./cache.js";
 
 const BASE = "https://api.crossref.org";
 const TIMEOUT = 30;
@@ -74,8 +73,7 @@ export class CrossrefClient implements CrossrefSource {
     path: string,
     params: Record<string, string | number> = {}
   ): Promise<Json | null> {
-    const key = sha1Hex(`${path}?${pyJsonStable(params)}`);
-    const hit = this.cache.read(key);
+    const { key, hit } = readKeyed(this.cache, path, params, this.mailto);
     if (hit !== undefined) return hit as Json;
     if (!this.enabled) return null;
     try {

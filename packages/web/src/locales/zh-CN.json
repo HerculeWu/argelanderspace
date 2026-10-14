@@ -2395,13 +2395,16 @@
       "stillUsing": "当前仍在用：",
       "inUse": "进程正在用：",
       "fileOnly": "只能在文件中修改",
-      "notInFile": "不保存在配置文件中"
+      "notInFile": "不保存在配置文件中",
+      "pendingRestartFile": "文件已改，重启后生效",
+      "fromFlag": "本次由命令行 {{flag}} 决定；配置文件里的值要到不带 {{flag}} 启动时才生效。",
+      "changedOutside": "配置文件里的值刚被改动；回车保存你输入的值，Esc 换成文件里的值。"
     },
     "project": {
       "current": "当前项目",
       "currentBrowser": "由启动 serve 时所在的目录决定",
       "dataDir": "项目数据目录",
-      "autoIngest": "添加文献时自动摄入 arXiv 源码",
+      "autoIngest": "添加文献时自动获取 arXiv PDF",
       "absolute": "只接受相对路径"
     },
     "services": {
@@ -2410,7 +2413,7 @@
       "contactPlaceholder": "name@example.org",
       "notEmail": "不是邮箱地址的写法",
       "legacyTitle": "配置文件里还有 ads_dev_key",
-      "legacyBody": "这个键目前仍被当作 ADS token 读取；它即将由设置页这一组里的 ADS 凭据取代，届时不再生效。"
+      "legacyBody": "这个键目前仍被当作 ADS token 读取；ADS 凭据改由工作台单独保存后，它将不再生效。"
     },
     "entries": {
       "provider": "模型与登录",
@@ -2422,7 +2425,8 @@
       "port": "端口",
       "portRange": "必须是 0 到 65535 之间的整数",
       "globalData": "全局数据目录",
-      "globalCache": "全局缓存目录"
+      "globalCache": "全局缓存目录",
+      "defaultLocation": "默认位置"
     }
   }
 }

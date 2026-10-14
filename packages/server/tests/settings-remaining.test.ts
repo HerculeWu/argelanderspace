@@ -15,11 +15,16 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { SettingChangeResponse, SettingsSnapshot } from "@argelanderspace/contracts";
-import { createLogger, pinnedGlobalDirs } from "@argelanderspace/infra";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+  configFilePath,
+  createLogger,
+  pinnedGlobalDirs,
+  resolveLogDir,
+} from "@argelanderspace/infra";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMemorySink, type MemorySink } from "../../infra/tests/log-memory-sink.js";
 import { SERVER_LOG_EVENTS, type ServerLog } from "../src/log.js";
-import { createServer, type RunningServer } from "../src/server.js";
+import { createServer, type RunningServer, startServer } from "../src/server.js";
 import { displayPath } from "../src/settings.js";
 import { makeDataDir, stubPipelines } from "./helpers.js";
 
@@ -59,7 +64,7 @@ const fetchStub = async (input: unknown, init?: RequestInit): Promise<Response> 
   return new Response("{}", { status: 404 });
 };
 
-async function start(): Promise<void> {
+async function start(configAt: string = configPath): Promise<void> {
   const made = memoryLog();
   sink = made.sink;
   srv = createServer({
@@ -75,7 +80,7 @@ async function start(): Promise<void> {
       },
     },
     watchIntervalMs: 40,
-    configPath,
+    configPath: configAt,
     log: made.log,
   });
   port = await srv.ready();
@@ -256,6 +261,15 @@ describe("the contact email", () => {
     const logged = sink.lines.join("\n");
     expect(logged).not.toContain(MARK);
     expect(logged).not.toContain("contact.mark");
+    const running = (await settings()).running;
+    expect(sink.lines.length).toBeGreaterThan(0);
+    for (const path of [
+      running.global_dir.path,
+      running.global_cache_dir.path,
+      running.project_root.path,
+    ]) {
+      expect(logged).not.toContain(path);
+    }
   });
 });
 
@@ -270,5 +284,109 @@ describe("the automatic arXiv fetch follows the page's switch", () => {
     expect((await put("auto_ingest_arxiv", { set: true })).status).toBe(200);
     expect((await addWork("arXiv:2603.00392")).status).toBe(200);
     expect(automatic()).toHaveLength(1);
+  });
+});
+
+describe("what `running` holds (desktop-app ticket 11, review round)", () => {
+  test("pathDisplay: a config file below the server's home is shown with ~", async () => {
+    const below = mkdtempSync(join(homedir(), "aspace-cfg-"));
+    try {
+      const file = join(below, "config.toml");
+      writeFileSync(file, "port = 1859\n");
+      await start(file);
+      const body = await settings();
+      expect(body.path).toBe(file);
+      expect(body.pathDisplay).toBe(`~/${below.slice(homedir().length + 1)}/config.toml`);
+      expect(body.pathDisplay.startsWith("~/aspace-cfg-")).toBe(true);
+    } finally {
+      rmSync(below, { recursive: true, force: true });
+    }
+  });
+
+  test("project_root is the working directory of the server", async () => {
+    await start();
+    const body = await settings();
+    expect(body.running.project_root.path).toBe(process.cwd());
+    expect(body.running.from_flag).toEqual([]);
+  });
+
+  test("global_dir / global_cache_dir are the directories fixed when the server was made, not the file now", async () => {
+    await start();
+    const before = (await settings()).running;
+    writeFileSync(
+      configPath,
+      'global_dir = "/elsewhere/data"\nglobal_cache_dir = "/elsewhere/cache"\n'
+    );
+    const after = await settings();
+    expect(after.values.global_dir).toBe("/elsewhere/data");
+    expect(after.running.global_dir).toEqual(before.global_dir);
+    expect(after.running.global_cache_dir).toEqual(before.global_cache_dir);
+    expect(after.running.global_dir.path).not.toBe("/elsewhere/data");
+    expect(after.restartPending).toEqual(["global_dir", "global_cache_dir"]);
+  });
+});
+
+describe("serve's start: the baseline of restartPending and the keys given on the command line", () => {
+  const cwd = process.cwd();
+  const made: string[] = [];
+  let served: RunningServer | undefined;
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await served?.close();
+    served = undefined;
+    process.chdir(cwd);
+    rmSync(dirname(configFilePath()), { recursive: true, force: true });
+    rmSync(resolveLogDir(), { recursive: true, force: true });
+    for (const d of made.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  const projectDir = (): string => {
+    const d = mkdtempSync(join(tmpdir(), "aspace-serve11-"));
+    made.push(d);
+    return d;
+  };
+  const writeDefaultConfig = (text: string) => {
+    mkdirSync(dirname(configFilePath()), { recursive: true });
+    writeFileSync(configFilePath(), text);
+  };
+  const get = async (base: string) =>
+    (await (await fetch(`${base}/api/settings`)).json()) as SettingsSnapshot;
+  const change = (base: string, key: string, body: unknown) =>
+    fetch(`${base}/api/settings/${key}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  test("without flags: the file's port and data_dir are in use; a change of either waits for a restart", async () => {
+    const project = projectDir();
+    process.chdir(project);
+    writeDefaultConfig('data_dir = "lit"\nport = 0\n');
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    served = await startServer(["--web-dist", project]);
+    const base = `http://127.0.0.1:${await served.ready()}`;
+    const body = await get(base);
+    expect(body.running.from_flag).toEqual([]);
+    expect(body.running.data_dir.path).toBe(join(process.cwd(), "lit"));
+    expect(body.running.project_root.path).toBe(process.cwd());
+    expect(body.restartPending).toEqual([]);
+    expect((await change(base, "port", { set: 1 })).status).toBe(200);
+    expect((await change(base, "data_dir", { set: "other" })).status).toBe(200);
+    expect((await get(base)).restartPending).toEqual(["data_dir", "port"]);
+  });
+
+  test("with --port and --data-dir: those keys are never pending, the file's value does not apply", async () => {
+    const project = projectDir();
+    const dataDir = join(project, "given");
+    process.chdir(project);
+    writeDefaultConfig("port = 1\n");
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    served = await startServer(["--port", "0", "--data-dir", dataDir, "--web-dist", project]);
+    const base = `http://127.0.0.1:${await served.ready()}`;
+    expect((await get(base)).running.from_flag).toEqual(["port", "data_dir"]);
+    expect((await change(base, "port", { set: 2 })).status).toBe(200);
+    expect((await change(base, "data_dir", { set: "elsewhere" })).status).toBe(200);
+    const body = await get(base);
+    expect(body.restartPending).toEqual([]);
+    expect(body.running.data_dir.path).toBe(dataDir);
   });
 });

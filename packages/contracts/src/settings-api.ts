@@ -99,7 +99,16 @@ export interface RunningSettings {
   global_dir: ShownPath;
   /** The global cache directory in use. */
   global_cache_dir: ShownPath;
+  /**
+   * The restart-only keys whose value in use was given on the command line (`--port`, `--data-dir`) when `serve`
+   * started: the file's value does not apply to this run, nor to a later one started with the same flag. Such a key is
+   * never in `restartPending`. Empty for a server not started by `serve`.
+   */
+  from_flag: RunningFlagKey[];
 }
+
+/** The keys a command-line flag of `serve` can give (`--port`, `--data-dir`). */
+export type RunningFlagKey = "port" | "data_dir";
 
 /** `GET /api/settings`: the settings as the page may see them. */
 export interface SettingsSnapshot {
