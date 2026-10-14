@@ -209,7 +209,7 @@ export interface AppDeps {
   /** External current arXiv PDF bytes; isolated tests replace only this network boundary. */
   fetchArxivPdf?: (arxivId: string) => Promise<Buffer>;
   /**
-   * Stage 15 hidden toggle (D15): gate for the AUTOMATIC arXiv fetch on work
+   * Stage 15 toggle (D15; on the settings page since desktop-app ticket 11): gate for the AUTOMATIC arXiv fetch on work
    * creation — the default reads `auto_ingest_arxiv` from config.toml fresh
    * at every submit (`false` disables auto only; manual triggers stay on).
    * The reading is the lenient one (desktop-app ticket 10): a config file that
@@ -2356,7 +2356,7 @@ export function createApp(deps: AppDeps): Hono {
   // Fetch the work's own arXiv e-print (the LATEST version, always fresh) and
   // attach it — or refresh the existing arXiv doc in place (D16 scenario
   // table). The manual entry point shares the auto trigger's queueing/attach
-  // implementation (acquisition.ts submitArxivFetch); it is NOT gated by the hidden
+  // implementation (acquisition.ts submitArxivFetch); it is NOT gated by the
   // auto_ingest_arxiv config (D15: an explicit user action).
   app.post("/api/library/attach-arxiv", (c) => {
     const rejected = guardCsrf(c.req.header("origin"));

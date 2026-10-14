@@ -224,6 +224,20 @@ describe("Advanced", () => {
     await waitFor(() => expect(q('[data-ui="setting-still-in-use"][data-ui-key="port"]')!.textContent).toBe("Still in use: 1859"));
   });
 
+  it("a field's own change is not taken for one made outside: clearing restores the default into the field, 01870 shows 1870", async () => {
+    settings = fakeSettings({ ...EN, port: 1870 });
+    await open();
+    await group("advanced");
+    type("port-input", "");
+    await waitFor(() => expect(settings.file.port).toBeUndefined());
+    await waitFor(() => expect(input("port-input").value).toBe("1859"));
+    expect(q('[data-ui="setting-changed-outside"]')).toBeNull();
+    type("port-input", "01870");
+    await waitFor(() => expect(settings.file.port).toBe(1870));
+    await waitFor(() => expect(input("port-input").value).toBe("1870"));
+    expect(q('[data-ui="setting-changed-outside"]')).toBeNull();
+  });
+
   it("the global directories: the directory in use, shown and not editable, with the real key name", async () => {
     await open();
     await group("advanced");

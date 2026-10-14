@@ -287,9 +287,13 @@ function TextSetting({ state, k, value, ui, label, disabled, validate, placehold
   const [changedOutside, setChangedOutside] = useState(false);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  // The text last sent: the value that comes back for it (a default after clearing, 1870 for "01870") is this
+  // field's own change, not one made outside.
+  const submitted = useRef<string | null>(null);
   useEffect(() => {
     const typed = draftRef.current;
-    if (typed === base.current || typed.trim() === value) {
+    if (typed === base.current || typed.trim() === value || typed.trim() === submitted.current) {
+      submitted.current = null;
       setDraft(value);
       setError(null);
       setChangedOutside(false);
@@ -316,6 +320,7 @@ function TextSetting({ state, k, value, ui, label, disabled, validate, placehold
     }
     setError(null);
     setChangedOutside(false);
+    submitted.current = text;
     void state.P.change(k, change, HERE);
   };
   return (
