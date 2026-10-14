@@ -88,7 +88,7 @@
 Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/locales/zh-CN.json` 是 key/中文源，`en.json` 同层级 key/插值对拍。`src/i18n.ts` 初始化，`i18next.d.ts` key 类型增强曾用错误 key 负例验证。纯 JSON、每语言单文件，不按域拆 i18next namespace；`writer.*` 是域 key 而非新 loader。
 
 - 英文语义域 key、`{{var}}` 整句命名插值；条件分支留代码、拆 key；枚举在渲染期取 t，不能模块初始化固化语言。
-- Tweaks 的 `argelander.tweaks` localStorage 存 language；默认 zh-CN，不用 languagedetector，changeLanguage 同步 html lang，无刷新。language 类型可选是当轮保持旧 fixtures 不动的实现兼容，实际默认有兜底。
+- 语言与其余界面偏好的权威位置是 `config.toml` 的 `[ui]`（desktop-app 票 10），经设置接口读写，机制见 [architecture](architecture.md#设置接口文件监视与界面偏好desktop-app-票-10)；浏览器本地存储里的 `argelander.ui` 只是页面写下的副本，旧键 `argelander.tweaks` 不再读取。默认 zh-CN，不用 languagedetector，changeLanguage 同步 html lang，无刷新。language 类型可选是当轮保持旧 fixtures 不动的实现兼容，实际默认有兜底。组件测试里页面的语言由（假的）设置接口决定：要让页面保持英文，就让它返回 `ui.language = "en"`（`packages/web/tests/settings-fake.ts`），只调 `i18n.changeLanguage("en")` 会在设置读到后被配置的语言盖掉。
 - Intl：zh 保原 `M月D日`/`YYYY年M月`，en 用 en-US 短月；有日期恒等回归。index.html 静态 zh-CN，title ArgelanderSpace 不变。
 - `no-hardcoded-copy` 扫 src ts/tsx 中文（含注释），白名单已空；locale-parity 检 key/插值。英文硬编码靠 review。Stage 9 既有 12 份中文断言测试零改动是迁移证据，不是永不准改测试的契约。
 - Stage 9 安装曾机械增加 react-i18next 的 minimumReleaseAgeExclude；不是以后依赖可任意绕过供应链策略的授权。headless Chrome oklch 强调色探针误算是当轮工具局限，不作为产品颜色 bug。

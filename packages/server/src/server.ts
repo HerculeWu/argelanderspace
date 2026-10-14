@@ -24,6 +24,9 @@ import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import { type LibraryPaths, libraryPaths } from "@argelanderspace/core";
 import {
   type AppConfig,
+  ConfigError,
+  configFilePath,
+  configOfReading,
   type FetchImpl,
   f,
   fetchArxivPdf as fetchCurrentArxivPdf,
@@ -47,6 +50,7 @@ import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { createDefaultMailWatcher, type MailWatcherOverrides } from "./mail-watch-default.js";
 import { ProviderSettings } from "./providers.js";
+import { readSettings, startSettingsWatcher } from "./settings.js";
 import { startWatcher } from "./watch.js";
 import { WsHub } from "./ws.js";
 
@@ -85,6 +89,11 @@ export interface ServerOptions {
   mailWatch?: false | true | MailWatcherOverrides;
   /** The user-level log (log.ts). Absent → nothing is recorded, and no log directory is resolved or made. */
   log?: ServerLog;
+  /**
+   * The config file the settings endpoints read and change and the server watches (settings.ts); default
+   * `configFilePath()`.
+   */
+  configPath?: string;
 }
 
 export interface RunningServer {
@@ -202,6 +211,7 @@ export function createServer(opts: ServerOptions): RunningServer {
       },
     },
     ...(mailWatcher ? { mailWatch: mailWatcher } : {}),
+    configPath: opts.configPath,
   });
 
   const server = serve({
@@ -271,6 +281,14 @@ export function createServer(opts: ServerOptions): RunningServer {
     },
   });
 
+  // config.toml changed on disk (an editor's save, or this server's own write): every page reads the settings again.
+  const settingsWatcher = startSettingsWatcher({
+    path: opts.configPath,
+    intervalMs: opts.watchIntervalMs,
+    onChange: () =>
+      hub.broadcast({ type: "settings.changed", cause: "external", at: new Date().toISOString() }),
+  });
+
   const ready = new Promise<number>((resolveReady, rejectReady) => {
     server.on("listening", () => resolveReady(boundPort(server) ?? port));
     server.on("error", rejectReady);
@@ -291,6 +309,7 @@ export function createServer(opts: ServerOptions): RunningServer {
         // Dropped page-error reports whose count was waiting for its window to end are counted in the log now.
         writePendingPageErrorCounts();
         watcher.stop();
+        settingsWatcher.stop();
         hub.close();
         providerSettings.close();
         // Connections and timers of the mail watcher end before the server is reported closed.
@@ -352,6 +371,24 @@ export function resolveServerConfig(
   return { dataDir, port: Number.isNaN(port) ? DEFAULT_PORT : port, webDist };
 }
 
+/**
+ * The config `serve` starts with: the lenient reading (desktop-app ticket 10). A file that is not TOML, or cannot be
+ * read, gives every default; a faulty key gives that key's default; the settings page says which. Nothing is
+ * rewritten.
+ *
+ * One fault still stops the start, as it stops every command: `data_dir` written as an absolute path. The hard
+ * contract names that fault a config error with exit 1 for the command line, and `serve` is a command; starting on
+ * `./literatures` instead would also open another project's data than the file asks for. The message is the strict
+ * reading's own sentence for the key.
+ */
+function serveConfig(): AppConfig {
+  const reading = readSettings();
+  if (reading.problems.some((p) => p.key === "data_dir" && p.reason === "must_be_relative")) {
+    throw new ConfigError(`${configFilePath()}: "data_dir" must be a relative path`);
+  }
+  return configOfReading(reading);
+}
+
 export interface StartOptions {
   /** The version of the program that is starting the server, for the start record. */
   version?: string;
@@ -359,18 +396,19 @@ export interface StartOptions {
 
 /**
  * Resolve config, create the server, wait for the listen, print the URL. This is the long-running process: it writes
- * the user-level log (a bad config.toml is reported before any log is opened, as before).
+ * the user-level log. It starts with a faulty config.toml (`serveConfig`); the one fault that still stops it is
+ * reported before any log is opened, as before.
  */
 export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
 ): Promise<RunningServer> {
-  const config = getConfig();
+  const config = serveConfig();
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   const serveLog = openServeLog(config);
   let sweepMailStagingIn: string | undefined;
   try {
-    sweepMailStagingIn = resolveGlobalDirs().cacheDir;
+    sweepMailStagingIn = resolveGlobalDirs({ config }).cacheDir;
   } catch {
     /* an unresolvable global directory is reported when Mail is used, not here */
   }

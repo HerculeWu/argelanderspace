@@ -66,6 +66,7 @@ const FRAMES: Record<WsServerMessage["type"], WsServerMessage> = {
   "text-source.changed": { type: "text-source.changed", doc_id: "d1" } as unknown as WsServerMessage,
   "text-doc.published": { type: "text-doc.published", doc_id: "d1" } as unknown as WsServerMessage,
   "mail.changed": { type: "mail.changed" } as unknown as WsServerMessage,
+  "settings.changed": { type: "settings.changed", cause: "external", at: "2026-10-14T00:00:00Z" },
 };
 const TYPES = Object.keys(FRAMES) as WsServerMessage["type"][];
 

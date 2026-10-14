@@ -12,7 +12,7 @@ ArgelanderSpace（npm `argelanderspace`，MIT，© Wenjie Wu）是单用户科�
 - **论证图**：Work 级项目数据（每个 Work 至多一张，不是 Doc，存于 `<dataDir>/argument-graphs/`），是文献页内与「探索相关文献」同级的模式，入口在 Work 详情与 Reader 顶部；论证为 Toulmin 六字段加种类与出处，边带角色，审计现算不落盘。页面可从空图手动整理；外部 agent 经 CLI `argument get` / `argument put` 整图读写（skill `argelander-argument-graph`），Copilot 经 `argument` 工具编辑，整图替换/清空须经真人确认卡。数据保护见 [contracts](contracts.md)，机制见 [argument-graph](argument-graph.md)，取舍见 [ADR 0009](adr/0009-argument-graph-work-owned.md)。
 - **计划页**：默认 landing，plans→tasks 的列表/看板/时间线/今日聚焦，webui 可独立 CRUD。详细模型和否决项见 [plans](plans.md)。
 - **Writer**：独立稿件、八型 cell、CodeMirror、显式 Render/Shift+Enter、共享编译→IR 预览及源码 zip；不展示 PDF。工作流见 [writer](writer.md)，文件协议沿用 [writer-data-model](writer-data-model.md)。
-- **web i18n**：zh-CN/en，默认中文、不探测浏览器，Tweaks 即时切换，偏好存 localStorage。server detail/job.error 和用户数据不纳入翻译；CLI 不变。
+- **web i18n**：zh-CN/en，默认中文、不探测浏览器，设置页与标题栏的外观速调即时切换；语言与其余界面偏好存在 `config.toml` 的 `[ui]`，经设置接口读写，浏览器本地存储只留一份不作权威的副本（desktop-app 票 10，见[设置接口、文件监视与界面偏好](#设置接口文件监视与界面偏好desktop-app-票-10)）。server detail/job.error 和用户数据不纳入翻译；CLI 不变。
 - **尚未完整的写路径**：文献 note tab 当前只读；持久 note/label 主要通过 CLI，右键色点 overlay 仅会话级。这是能力缺口，不推翻独立应用定位。
 - **不在 main**：OCR/出版商 HTML 摄入封存于 `ocr-features` 快照分支。现行 PDF 是不可变原文件阅读，不是 OCR/LaTeX 转换能力。
 
@@ -26,7 +26,7 @@ config.toml 的 `data_dir` 只接受相对路径，写绝对路径是配置错�
 
 工作台的配置只有一个来源：`config.toml`，加命令行参数（`--data-dir`、`--port`）作单次覆盖。工作台自己的环境变量（数据目录、端口、全局数据目录、全局缓存目录、web dist 位置）自 2026-10-13（desktop-app 票 05）起不再读取，设置了也不起作用；操作系统自己的变量（`XDG_CONFIG_HOME` 等）照旧。ADS token 与 OpenAlex 的 key、联系邮箱的环境变量不在这次改动内。默认端口 1859 是 contracts 的常量 `DEFAULT_PORT`，CLI 深链接、`serve` 与 web 的开发代理共用。
 
-配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。完整的键表、严格与宽松两种读取、按行修改与写入见本节末的 [Settings 的 schema、两种读取与按行修改](#settings-的-schema两种读取与按行修改desktop-app-票-09)。
+配置通常在 `~/.config/argelanderspace/config.toml`，支持 XDG_CONFIG_HOME；未知键忽略，已知键类型错只报键名、不回显值。隐藏 `auto_ingest_arxiv` 默认 true，语义见 library。`[ui]` 分组（`language`、`theme`、`accent`、`density`、`labels`）是界面偏好的权威位置，设置页与标题栏的外观速调都改它（desktop-app 票 10）。`log_level`（`debug` / `info` / `warn` / `error`，默认 `info`）是用户日志的最低级别，见[用户日志](#用户日志)。完整的键表、严格与宽松两种读取、按行修改与写入见本节末的 [Settings 的 schema、两种读取与按行修改](#settings-的-schema两种读取与按行修改desktop-app-票-09)。
 
 **全局数据**（[ADR 0007](adr/0007-global-data-scope.md)，2026-10-06 决定；目录解析已在 infra 实现，Mail 账户已使用）：属于用户本人、跨项目共享的数据（首个使用者是 Mail 账户）不放 dataDir。全局数据与可丢弃的全局缓存分开，按 `env-paths`（name `argelanderspace`、无 suffix）取各 OS 标准目录：Linux `$XDG_DATA_HOME`/`$XDG_CACHE_HOME`（默认 `~/.local/share`、`~/.cache`），macOS `~/Library/Application Support`、`~/Library/Caches`，Windows `%LOCALAPPDATA%\argelanderspace\Data`、`…\Cache`。覆盖优先级 config 键 `global_dir` > OS 默认；全局缓存对称：`global_cache_dir` > OS 默认，两者互不影响（改数据目录不移动缓存）；只认 config.toml 的键，不认环境变量（2026-10-13 起，desktop-app 票 05；此前各有一个优先于 config 的环境变量）。空白值视为未设，相对路径一律拒绝（ConfigError，只报键名；按探测到的平台判断绝对路径，避免随 cwd 分裂全局目录）；`global_dir`/`global_cache_dir` 类型错只报键名。`resolveGlobalDirs` 不访问文件系统（未传 config 时读 config.toml）；OS 默认目录由 env-paths 在 import 时固定 homedir，测试隔离须在导入前把 `HOME`/`XDG_*` 指向 tmp；目录由 `ensureGlobalDirs` 按需创建，权限 0700（infra `global-dirs.ts`）。既有 config.toml 位置不变，项目数据不迁移。
 
@@ -87,7 +87,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 ### Settings 的 schema、两种读取与按行修改（desktop-app 票 09）
 
-本节是 `config.toml` 的键表、读取方式与修改方式的权威位置。本票只交付这几样底层能力：HTTP 接口、设置页、文件监视和 `serve` 启动改用宽松读取都还没有；`contact_email`、`tex_dir`、`[ui]` 只定义和校验，没有任何代码读它们的值（主题仍来自浏览器本地存储，联系邮箱不发给任何服务，TeX 目录不参与查找）。
+本节是 `config.toml` 的键表、读取方式与修改方式的权威位置。票 09 只交付这几样底层能力；HTTP 接口、设置页、文件监视、`serve` 启动改用宽松读取和 `[ui]` 的使用是票 10 接上的，见下一小节[设置接口、文件监视与界面偏好](#设置接口文件监视与界面偏好desktop-app-票-10)。`contact_email`、`tex_dir` 仍只定义和校验，没有任何代码读它们的值（联系邮箱不发给任何服务，TeX 目录不参与查找）。
 
 **schema**：contracts 的 `settings-schema.ts`（`SETTINGS_SCHEMA`），纯数据加纯函数，不依赖 Node、平台或 TOML 解析器，web 运行时可以直接引用。它是键名的唯一来源：infra 的 `CONFIG_KEYS`（`configFileKeys` 与 server 启动记录用）就是全部键的标识符，按 schema 顺序，日志模块的 `LOG_LEVELS` 就是 `log_level` 的取值表。每个键有：所在的 TOML 表（顶层或 `[ui]`）、类型、默认值、设置页分组、界面形态（`edit` 有控件 / `readonly` 只显示、只能在文件里改 / `none` 不显示）、改后是否需要重启；`ads_dev_key` 另带「已失效」标记；两个凭据键 `openalex_api_key`、`ads_dev_key` 另带显式的「机密」标记（`secret: true`，其余键不带）。键的标识符是顶层键名，或 `表名.键名`。
 
@@ -152,6 +152,44 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 - 文件是符号链接时改它指向的文件（锁与临时文件在目标旁边），链接仍是链接；指向不存在目标的链接返回 `unreadable`。
 - 写入独有的拒绝类别：`busy`（等不到锁；或自己的锁被接管；或文件在三次尝试里每次都被别人改了——都没有写任何东西，重试即可）、`unreadable`（读不了，或不是普通文件）、`invalid_encoding`（不是合法 UTF-8，解码再写回会改动字节）、`not_writable`（用户对文件没有写权限——即使目录权限允许替换它——或目录不可写）、`write_failed`。
 - 并发范围：多个工作台进程可以同时调用；它不与严格/宽松读取互斥，读取方读到的是替换前或替换后的完整文件。
+
+### 设置接口、文件监视与界面偏好（desktop-app 票 10）
+
+实现在 server 的 `settings.ts`；应答的形状、拒绝类别表与 WebSocket 消息在 contracts 的 `settings-api.ts`。硬契约里对应的条文是 [contracts 的「设置与 config.toml」](contracts.md#设置与-configtoml2026-10-13-批准desktop-app-票-10-写入)。
+
+**接口**（应答一律 `Cache-Control: no-store`）：
+
+- `GET /api/settings` → `SettingsSnapshot`：`version: 1`；`path`（配置文件的绝对路径）；`file`（`missing` / `read` / `unparseable` / `unreadable`）；`readonly`（文件在却什么也取不出来，即后两种）；`values`（每个键的生效值，经 `redactSettingsValues`：机密键只有 `{ secret: true, set }`）；`sources`（每个键 `default` 或 `file`，有问题的键是 `default`）；`problems`（`{ key, reason }`，`key` 是已知键、表名 `ui` 或 `null`，从不带值）；`uneditable`（有控件的键里页面现在无法安全修改的那些及其类别；只读时为空）；`legacy`（文件里还留着的已失效键，今天只有 `ads_dev_key`）。读取是宽松读取，从不报错。`uneditable` 在读取时就算出来：对每个 `ui: "edit"` 的键，拿当前文件原文各问一次按行修改器「恢复默认」与「设成另一个合法值」（`editConfigText`，纯函数，不写任何东西），任一次被拒就记下类别；文件字节不是合法 UTF-8 时所有键都记 `invalid_encoding`。
+- `PUT /api/settings/:key`，请求体恰好是 `{ "set": 标量 }` 或 `{ "reset": true }`（至多 4096 字节）→ 成功 200 `{ ok: true, changed, settings }`（`settings` 是写入后的 `SettingsSnapshot`；新值与现值相同或恢复一个没设的键时 `changed: false`，不写文件）；被拒绝 `{ ok: false, reason }`，文件字节不变。经 `writeSetting` 落盘（锁、按行修改、原子替换，见上一小节）。与其他写接口相同的 CSRF 守卫（跨站 403 `{ detail }`）。接口只放行 schema 里 `ui: "edit"` 的键；`writeSetting` 的选项由接口自己构造，只给配置文件路径，请求里的任何东西（请求体的多余字段、查询串）都到不了它。
+
+| 状态码 | `reason` |
+| --- | --- |
+| 400 | `invalid_request`（请求体不是一次修改，或过大）、`invalid_value`（这个键不接受该值）、`unrepresentable_value` |
+| 404 | `unknown_key` |
+| 422 | `not_editable`（`readonly` 或 `none` 的键） |
+| 409 | 文件此刻的写法或状态：`unparseable`、`unsupported_layout`、`duplicate_key`、`dotted_key`、`inline_table`、`multiline_string`、`array_of_tables`、`not_a_scalar`、`table_not_a_table`、`self_check_failed`、`busy` |
+| 500 | 文件读不了或写不进：`unreadable`、`invalid_encoding`、`not_writable`、`write_failed` |
+
+应答、问题清单与拒绝原因都不带键的值，也不带文件原文或系统错误消息；接口不把请求里的值写进任何日志，也不新增日志事件。
+
+**文件变化通知**：`createServer` 起一个只看配置文件这一个路径的轮询（`startSettingsWatcher`，间隔与另一个外部写入 watcher 相同，默认 1.5 秒），比较文件的 inode、大小与纳秒级修改时间（或「不存在」），变了就广播 `{ type: "settings.changed", cause: "external", at }`。不用 `fs.watch`：文件是靠 rename 替换的（每次都是新 inode），所在目录可能还不存在，路径可以是符号链接，而写入时短暂出现在旁边的 `config.toml.lock/` 与 `config.toml.<pid>.<随机串>.tmp` 不该算变化——只看这一个路径就都覆盖了。接口自己写入成功且确有改动时立即另发一条 `cause: "write"`，随后轮询还会再发现一次（`external`），页面重取是幂等的。消息不带任何设置内容，页面收到后重新 `GET`；WebSocket 重连（`hello`）时也重取一次。
+
+**`serve` 的启动与运行中的读取**：
+
+- `startServer` 用宽松读取起步（`serveConfig`）：文件无法解析或读不了时全部用默认值，单个键出错时该键用默认值，都照常启动，问题由设置页显示；文件不被改写。**例外**：`data_dir` 写成绝对路径仍是 `ConfigError`、不启动，文案是严格读取对该键的原句——硬契约把它定为配置错误且 CLI exit 1，`serve` 是 CLI 的一个命令；改用默认的 `./literatures` 启动还会打开另一份项目数据。这一例外是否保留待用户裁决（票 10 的 Comments）。
+- server 进程里已改为宽松读取的调用点：`startServer` 自身（端口、`data_dir`、`log_level`、启动时清扫邮件暂存所用的全局缓存目录）；添加文献时是否自动摄入 arXiv 源码（`app.ts` 的 `autoIngestArxiv` 默认实现，坏文件时按默认值「开」）；设置接口；送出页面时写进 `<html>` 的界面偏好。
+- **仍是严格读取、每次调用现读的调用点**（文件在运行中被改坏时，走到这些地方的请求会以 `ConfigError` 失败，其余请求不受影响，进程不退出）：`resolveGlobalDirs()` / `ensureGlobalDirs()` 不带 `config` 参数的全部调用方——infra 的 `credential-store.ts`（凭据存储）与 `mail/account-store.ts`（邮箱账户），server 的 `mail-routes.ts` 与 `mail-compose-routes.ts`（邮件缓存、暂存附件与发送标记所在的全局缓存目录）；`sources/ads.ts` 取 `ads_dev_key`；`sources/openalex.ts` 取 `openalex_api_key`。此外 `global_dir` / `global_cache_dir` 是否为绝对路径，schema 按「任一平台的写法」判，`resolveGlobalDirs` 按本机平台判，两者对同一个值可以结论不同。这些没有在票 10 里切换。
+- CLI 的其余命令仍是严格读取，行为不变。
+
+**界面偏好**（`[ui]`）：权威是 `config.toml`。页面的状态在 web 的 `argelander/preferences.tsx`（Shell 持有一份，经 context 交给设置页；标题栏的主题切换、外观速调浮层与 Copilot 的 `set_appearance` 走同一个 setter）。改一项时页面先按新值显示，同时 `PUT` 那一个键；应答回来以应答里的设置为准，被拒绝时退回文件里的值并在页面底部的浮层说明。首次绘制前的值按这个顺序取：
+
+1. server 送出 `index.html` 时写在 `<html>` 上的属性（`lang`、`data-theme`、`data-density`、`data-accent`、`data-labels`，加 `data-ui-from="config"`；每次请求现读配置，取值只会是 schema 的枚举或默认值）。主题的颜色是 CSS 里按 `data-theme` 写的规则，所以从没打开过工作台的浏览器第一帧也是配置的主题；
+2. 没有这些属性时（页面不是 server 自己送出的，例如 Vite 开发服务器）用浏览器本地存储里的副本 `argelander.ui`——页面每次应用外观后写下的一份拷贝；
+3. 都没有则用默认值。
+
+设置读到之后一律以配置为准，副本随之改写；副本从不写回配置。旧版本存在浏览器里的偏好（本地存储键 `argelander.tweaks`）不再读取，也不迁移进配置，原样留在浏览器里。`ui.labels` 目前只被保存和显示，没有界面读它的值（改动前同样如此）。
+
+**设置页**：`settings/SettingsView.tsx`，是一个窗格视图（contracts 的 `SETTINGS_VIEW`；`PANE_VIEWS` 是五个工作视图加它，页面错误上报的 `pane` 枚举取自 `PANE_VIEWS`）。它不在 `WORKSPACE_VIEWS` 里，所以 Copilot 的 `switch_view` 不能切到它，发布给 Copilot 的页面上下文里它只有视图名、状态是 `unavailable`。入口是导航栏底部的齿轮。九个分组里票 10 只填了「外观」，其余分组列在导航里、内容为一行占位；`cli` 分组只属于桌面应用，浏览器形态不列出。
 
 ## 用户日志
 

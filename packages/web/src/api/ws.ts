@@ -77,6 +77,17 @@ export function onArgumentGraphChanged(cb: (msg: WsArgumentGraphChanged) => void
   };
 }
 
+/**
+ * config.toml changed (a key changed through the settings endpoint, or the file changed on disk). `onResync` fires on
+ * every (re)connect, when a change may have been missed.
+ */
+export function onSettingsChanged(cb: () => void, onResync?: () => void): () => void {
+  const offs = [bus.on("settings.changed", withoutMessage(cb)), ...(onResync ? [bus.onResync(onResync)] : [])];
+  return () => {
+    for (const off of offs) off();
+  };
+}
+
 /** Subscribe to writer mutations (`writer.changed`, Stage 10; wired in M2). */
 export const onWriterChanged = (cb: WriterListener): (() => void) => bus.on("writer.changed", cb);
 

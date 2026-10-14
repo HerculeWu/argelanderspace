@@ -48,6 +48,7 @@ import { statusDirFor } from "../src/deps.js";
 import { SERVER_LOG_EVENTS, type ServerLog } from "../src/log.js";
 import {
   PAGE_ERROR_BODY_MAX_BYTES,
+  PAGE_ERROR_PANES,
   PAGE_ERRORS_PER_LAUNCH,
   PAGE_ERRORS_PER_MINUTE,
 } from "../src/page-errors.js";
@@ -741,6 +742,20 @@ describe("an error the page reports", () => {
       },
     ]);
     expectNoMarkers();
+  });
+
+  test("every pane the workbench has is a pane a report can name, the settings page included (desktop-app ticket 10)", async () => {
+    await nextWindow();
+    const from = mark();
+    // The views of the navigation rail and its foot, as the Shell reports them (`notePane`), and `none`.
+    const panes = ["plan", "library", "doc", "write", "mail", "settings", "none"];
+    expect([...PAGE_ERROR_PANES]).toEqual(panes);
+    for (const pane of panes) {
+      expect(await (await report({ kind: "render", name: "TypeError", pane })).json()).toEqual({
+        recorded: true,
+      });
+    }
+    expect(eventsNamed("page.error", from).map((record) => record.pane)).toEqual(panes);
   });
 
   test("frames of every script a real build has are kept: a hyphen in the name, `_` and `-` in the hash, an .mjs", async () => {

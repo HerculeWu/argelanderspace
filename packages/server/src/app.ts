@@ -99,7 +99,6 @@ import {
 import {
   AdsDiscoveryError,
   ensureWriterSandboxProbe,
-  getConfig,
   type TexCompileFailure,
   writerSandboxAvailable,
   zipEntries,
@@ -161,6 +160,7 @@ import {
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
+import { mountSettingsRoutes, readSettings, withAppearance } from "./settings.js";
 import {
   mountTextDocRoutes,
   type PdfRegionOutcome,
@@ -208,6 +208,9 @@ export interface AppDeps {
    * Stage 15 hidden toggle (D15): gate for the AUTOMATIC arXiv fetch on work
    * creation — the default reads `auto_ingest_arxiv` from config.toml fresh
    * at every submit (`false` disables auto only; manual triggers stay on).
+   * The reading is the lenient one (desktop-app ticket 10): a config file that
+   * was broken while the server runs leaves the default (on) and fails no
+   * request.
    */
   autoIngestArxiv?: () => boolean;
   runner: JobRunner;
@@ -243,6 +246,8 @@ export interface AppDeps {
   acquisitionWaitMs?: number;
   /** The user-level log (see log.ts). Absent → nothing is recorded; only `serve` hands one in. */
   log?: ServerLog;
+  /** The config file the settings endpoints read and change (settings.ts); default `configFilePath()`. */
+  configPath?: string | undefined;
 }
 
 // --------------------------------------------------------------------------- //
@@ -491,6 +496,14 @@ export function createApp(deps: AppDeps): Hono {
   // What the page reports of its own errors (page-errors.ts): checked field by field, limited in number.
   mountPageErrorRoute(app, log, guardCsrf, { ...deps.pageErrors, webDist: deps.webDist });
 
+  // Settings (settings.ts): the page reads them and changes one key of config.toml at a time; a change that rewrote
+  // the file is told to every page at once (the file watcher of `createServer` finds it too, a moment later).
+  mountSettingsRoutes(app, guardCsrf, {
+    path: deps.configPath,
+    written: () =>
+      broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() }),
+  });
+
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
   mountProviderRoutes(app, providerSettings, guardCsrf);
   mountMailWatchRoutes(app, deps.mailWatch);
@@ -587,7 +600,9 @@ export function createApp(deps: AppDeps): Hono {
     makeSources: deps.makeSources,
     fetchArxivPdf: deps.fetchArxivPdf,
     /** Hidden config gate: re-read config.toml before automatic PDF submission. */
-    autoIngestArxiv: deps.autoIngestArxiv ?? (() => getConfig().auto_ingest_arxiv !== false),
+    autoIngestArxiv:
+      deps.autoIngestArxiv ??
+      (() => readSettings(deps.configPath).values.auto_ingest_arxiv !== false),
     pdfOwners: pdfAccess.owners,
     acquisitionWaitMs: deps.acquisitionWaitMs,
     log,
@@ -2455,6 +2470,15 @@ export function createApp(deps: AppDeps): Hono {
         rel = ""; // malformed percent-encoding → SPA fallback
       }
       const candidate = resolve(join(root, rel));
+      const index = join(root, "index.html");
+      // The page itself carries the configured appearance, so its first paint has the right theme (settings.ts).
+      const page = async () =>
+        c.body(
+          withAppearance(await readFile(index, "utf-8"), readSettings(deps.configPath).values),
+          200,
+          { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }
+        );
+      if (candidate === index && existsSync(index) && statSync(index).isFile()) return page();
       if (
         candidate.startsWith(root + sep) &&
         existsSync(candidate) &&
@@ -2465,13 +2489,7 @@ export function createApp(deps: AppDeps): Hono {
           "Cache-Control": cacheControlFor(candidate, root),
         });
       }
-      const index = join(root, "index.html");
-      if (existsSync(index)) {
-        return c.body(new Uint8Array(await readFile(index)), 200, {
-          "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": "no-cache",
-        });
-      }
+      if (existsSync(index)) return page();
       const e = detail("Not Found", 404);
       return c.json(e.body, e.status);
     });

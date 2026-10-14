@@ -5,7 +5,8 @@
       "library": "Literature",
       "doc": "Document",
       "write": "Write",
-      "mail": "Mail"
+      "mail": "Mail",
+      "settings": "Settings"
     },
     "tagline": "Literature",
     "split": "Split right",
@@ -16,7 +17,7 @@
     "titlebar": {
       "split": "Split right (⌘\\)",
       "toggleTheme": "Toggle theme",
-      "tweaks": "Appearance settings"
+      "tweaks": "Quick appearance"
     },
     "palette": {
       "placeholder": "Search commands, files, literature…",
@@ -2272,6 +2273,104 @@
         "pdf": "PDF",
         "latex": "LaTeX",
         "text": "Text"
+      }
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "groupsLabel": "Setting groups",
+    "groups": {
+      "appearance": "Appearance",
+      "project": "Project",
+      "services": "Literature services & credentials",
+      "tex": "TeX & environment",
+      "copilot": "Copilot",
+      "mail": "Mail",
+      "cli": "Command line & agents",
+      "diagnostics": "Diagnostics",
+      "advanced": "Advanced"
+    },
+    "groupProblems": "{{name}} ({{n}} keys with problems)",
+    "groupEmpty": "Nothing in this group yet.",
+    "loading": "Reading the settings…",
+    "unreachable": {
+      "title": "The settings could not be read",
+      "body": "The workbench service did not answer. The values below are the last ones the page knew; they cannot be changed right now."
+    },
+    "configFile": {
+      "label": "Config file",
+      "copyPath": "Copy path",
+      "pathCopied": "Path copied",
+      "copyFailed": "Not copied: the browser does not allow writing to the clipboard"
+    },
+    "source": {
+      "default": "Default",
+      "file": "From file",
+      "invalid": "Invalid value in the file; default used"
+    },
+    "restore": {
+      "label": "Restore default: {{key}}",
+      "tooltip": "Restore default"
+    },
+    "appearance": {
+      "language": "Language",
+      "theme": "Theme",
+      "accent": "Accent",
+      "density": "Density",
+      "labels": "Show labels"
+    },
+    "problems": {
+      "title_one": "{{count}} key in the config file is wrong; its default is used",
+      "title_other": "{{count}} keys in the config file are wrong; defaults are used",
+      "body": "Only key names and reasons are shown, never values. The page re-reads the file automatically once it is fixed.",
+      "reason": {
+        "wrong_type": "wrong type",
+        "out_of_range": "out of range",
+        "not_one_of": "not one of the allowed values",
+        "must_be_relative": "only relative paths are accepted",
+        "must_be_absolute": "must be an absolute path",
+        "not_a_table": "must be a table but is written as a plain value",
+        "unparseable": "cannot be parsed",
+        "unreadable": "cannot be read"
+      }
+    },
+    "readonly": {
+      "unparseableTitle": "The config file cannot be parsed; settings are read-only for now",
+      "unreadableTitle": "The config file cannot be read; settings are read-only for now",
+      "body": "Every key uses its default. The page will not rewrite this file; it re-reads it automatically once fixed. Credentials, the command-line tool and diagnostics are not affected."
+    },
+    "uneditable": {
+      "title": "The page cannot safely change {{key}}",
+      "tail": "Edit the config file directly; the page will not touch that line.",
+      "reason": {
+        "dotted_key": "In the file it, or its table, is written with a dotted key.",
+        "inline_table": "In the file it, or its table, is written as an inline table.",
+        "multiline_string": "In the file its value is a multi-line string.",
+        "array_of_tables": "In the file its table is written as an array of tables.",
+        "not_a_scalar": "In the file its value is an array or a table.",
+        "table_not_a_table": "In the file its table is written as a plain value.",
+        "duplicate_key": "It appears more than once in the file.",
+        "unsupported_layout": "The page cannot follow how this part of the file is written.",
+        "self_check_failed": "The page's trial edit did not check out, so it left the file alone.",
+        "invalid_encoding": "The config file is not valid UTF-8.",
+        "other": "The page cannot safely change this key right now."
+      }
+    },
+    "notices": {
+      "label": "Settings notices",
+      "saved": "Written to the config file",
+      "dismiss": "Dismiss",
+      "failedTitle": "{{key}} was not saved",
+      "failed": {
+        "layout": "{{why}} The file was not modified; edit it directly.",
+        "unparseable": "The config file cannot be parsed right now. The file was not modified; try again once it is fixed.",
+        "busy": "Another program is changing the config file. The file was not modified; try again.",
+        "unreadable": "The config file could not be read. The file was not modified.",
+        "not_writable": "The config file or its folder does not allow writing. The file was not modified.",
+        "write_failed": "The config file could not be written. The file was not modified.",
+        "invalid_value": "This value is not accepted. The file was not modified.",
+        "not_editable": "The page cannot change this key. The file was not modified.",
+        "unreachable": "The workbench service did not answer, so it is not known whether this was saved; the page has read the settings again."
       }
     }
   }

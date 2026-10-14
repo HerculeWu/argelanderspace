@@ -1,7 +1,7 @@
 /**
- * The page's own preferences (`argelander/theme.ts`, `i18n.ts`) and the `[ui]` keys of the Settings schema describe
- * the same choices. The page does not read the schema yet; this file is what turns red when one side gains, loses
- * or renames a choice, or changes a default, without the other.
+ * The page's own preferences (`argelander/theme.ts`, `argelander/preferences.tsx`, `i18n.ts`) and the `[ui]` keys of
+ * the Settings schema describe the same choices. The page's types and starting values are still its own; this file
+ * is what turns red when one side gains, loses or renames a choice, or changes a default, without the other.
  */
 
 import {
@@ -11,9 +11,9 @@ import {
   SETTINGS_UI_LANGUAGES,
   SETTINGS_UI_THEMES,
 } from "@argelanderspace/contracts";
-import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, test } from "vitest";
-import { ACCENTS, type Density, type ThemeName, useTweaks } from "../src/argelander/theme";
+import { bootTweaks, DEFAULT_TWEAKS } from "../src/argelander/preferences";
+import { ACCENTS, type Density, type ThemeName } from "../src/argelander/theme";
 import i18n, { type AppLanguage, DEFAULT_LANGUAGE } from "../src/i18n";
 
 // Each record must name every member of the page's type, and nothing else: adding a member to the type without
@@ -50,8 +50,9 @@ describe("the [ui] keys of the Settings schema and the page's preferences", () =
   });
 
   test("the defaults are the same on both sides", () => {
-    const { result } = renderHook(() => useTweaks());
-    const [tweaks] = result.current;
+    // What a page starts with when neither the server nor this browser says anything.
+    const tweaks = bootTweaks();
+    expect(tweaks).toEqual(DEFAULT_TWEAKS);
     expect({
       language: tweaks.language,
       theme: tweaks.theme,

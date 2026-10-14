@@ -12,7 +12,7 @@ import { createFakeBus } from "../src/api/ws-bus";
 
 export const fakeBus = createFakeBus();
 
-/** The exports of `api/ws` the argument graph view and the Library page use, on `fakeBus`. */
+/** The exports of `api/ws` the argument graph view, the Library page and the Shell's settings use, on `fakeBus`. */
 export function wsModule() {
   return {
     onArgumentGraphChanged: (cb: (msg: WsArgumentGraphChanged) => void, onResync?: () => void) => {
@@ -24,6 +24,10 @@ export function wsModule() {
     onPlanChanged: (cb: () => void) => fakeBus.on("plan.changed", () => cb()),
     onAnnotationChanged: (cb: (docId: string) => void) => fakeBus.on("annotation.changed", (msg) => cb(msg.doc_id)),
     onWriterChanged: (cb: Parameters<typeof fakeBus.on<"writer.changed">>[1]) => fakeBus.on("writer.changed", cb),
+    onSettingsChanged: (cb: () => void, onResync?: () => void) => {
+      const offs = [fakeBus.on("settings.changed", () => cb()), ...(onResync ? [fakeBus.onResync(onResync)] : [])];
+      return () => offs.forEach((off) => off());
+    },
   };
 }
 
