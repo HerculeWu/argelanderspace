@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { withTranslation, type WithTranslation } from "react-i18next";
+import { useTranslation, withTranslation, type WithTranslation } from "react-i18next";
 import { fetchDiagnostics } from "./api/diagnostics";
+import { useHostRequest } from "./host";
 import { Icon } from "./lib/icons";
 import { currentPaneName, errorNameOf, reportPageError, type PageErrorOutcome } from "./page-errors";
 import { Button } from "./ui";
@@ -27,6 +28,21 @@ const LOG_SENTENCES = [
   ["recorded", "pageError.recorded"],
   ["not_recorded", "pageError.notRecorded"],
 ] as const;
+
+/**
+ * The desktop app's "Show the log folder" (approved prototype; desktop-app ticket 17): a native request to the host,
+ * which knows where its log is. A browser has no host and no such button.
+ */
+function ShowLogFolder() {
+  const { t } = useTranslation();
+  const showLogs = useHostRequest("open_log_folder");
+  if (showLogs === null) return null;
+  return (
+    <Button data-ui="page-error-show-logs" onClick={() => void showLogs()}>
+      {t("settings.diagnostics.showLogs")}
+    </Button>
+  );
+}
 
 /**
  * The page's top-level error boundary: a render error shows a notice that can be recovered from instead of a blank
@@ -90,6 +106,7 @@ class Boundary extends Component<Props & WithTranslation, State> {
             <Button ref={this.focusReload} appearance="primary" data-ui="page-error-reload" onClick={this.props.reload ?? reloadPage}>
               {t("pageError.reload")}
             </Button>
+            <ShowLogFolder />
           </div>
         </div>
       </div>

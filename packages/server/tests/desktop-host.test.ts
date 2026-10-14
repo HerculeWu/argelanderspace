@@ -1,0 +1,612 @@
+/**
+ * The desktop host (desktop-app ticket 17), in this process: its line protocol over two in-memory streams, the host
+ * interface it gives the page, the port fallback, the shell's events in the log, and the graceful shutdown on a quit
+ * line and on the end of its input — with a mail send in its undo window, which must end up interrupted and unsent.
+ * The built program as a child process (ready line, page, exit, port released, a killed shell) is
+ * `packages/cli/tests/desktop-host.test.ts`.
+ *
+ * Everything below the home directory is the throwaway one of the isolation setup; the config file is written there.
+ */
+
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
+import { HOST_REQUEST_KINDS } from "@argelanderspace/contracts";
+import {
+  __setWriterSandboxForTests,
+  configFilePath,
+  createCredentialStore,
+  createMailAccountStore,
+  createNodeMailMailbox,
+  createNodeMailOutgoing,
+  extractZip,
+  type KeychainBackend,
+} from "@argelanderspace/infra";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import {
+  type FakeFolder,
+  type FakeMailbox,
+  startFakeMailbox,
+} from "../../infra/tests/mail/fake-mailbox.js";
+import { TEST_PASSWORD, TEST_USER } from "../../infra/tests/mail/fake-servers.js";
+import { type RecordingSmtp, startRecordingSmtp } from "../../infra/tests/mail/fake-smtp.js";
+import {
+  type DesktopHost,
+  type HostOutLine,
+  portIsFree,
+  runDesktopHost,
+} from "../src/desktop-host.js";
+import { MailComposeService } from "../src/mail-compose.js";
+import { MailOutbox } from "../src/mail-outbox.js";
+import { disposeMailSendServices, MailSendService } from "../src/mail-send.js";
+import { createServer, type RunningServer } from "../src/server.js";
+import { makeDataDir } from "./helpers.js";
+
+beforeAll(() => __setWriterSandboxForTests(false));
+afterAll(() => __setWriterSandboxForTests(null));
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const KEYCHAIN = async () => ({ state: "unavailable" as const, reason: "no_bus" as const });
+
+const cwd = process.cwd();
+const roots: string[] = [];
+const closers: Array<() => Promise<unknown>> = [];
+let project: string;
+
+afterEach(async () => {
+  for (const close of closers.splice(0).reverse()) await close().catch(() => {});
+  process.chdir(cwd);
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  rmSync(configFilePath(), { force: true });
+});
+
+beforeEach(() => {
+  project = mkdtempSync(join(tmpdir(), "aspace-host-project-"));
+  roots.push(project);
+  process.chdir(project);
+});
+
+/** A port nothing listens on now. */
+async function freePort(): Promise<number> {
+  const s = createHttpServer();
+  await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
+  const port = (s.address() as { port: number }).port;
+  await new Promise<void>((r) => s.close(() => r()));
+  return port;
+}
+
+function writeConfig(text: string): void {
+  mkdirSync(dirname(configFilePath()), { recursive: true });
+  writeFileSync(configFilePath(), text);
+}
+
+interface Running {
+  host: DesktopHost;
+  input: PassThrough;
+  lines: HostOutLine[];
+  /** Resolves with the next line of this type (including one already written and not yet taken). */
+  next<T extends HostOutLine["type"]>(type: T): Promise<Extract<HostOutLine, { type: T }>>;
+  url: string;
+  logFile: () => Array<Record<string, unknown>>;
+}
+
+async function startHost(
+  opts: { onFolderPicked?: (path: string | null) => void } = {}
+): Promise<Running> {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const lines: HostOutLine[] = [];
+  const taken = new Set<number>();
+  const waiters: Array<() => void> = [];
+  let rest = "";
+  output.on("data", (chunk: Buffer) => {
+    rest += chunk.toString("utf8");
+    let nl = rest.indexOf("\n");
+    while (nl !== -1) {
+      lines.push(JSON.parse(rest.slice(0, nl)) as HostOutLine);
+      rest = rest.slice(nl + 1);
+      nl = rest.indexOf("\n");
+    }
+    for (const w of waiters.splice(0)) w();
+  });
+  const next = async <T extends HostOutLine["type"]>(type: T) => {
+    for (let i = 0; i < 200; i++) {
+      const index = lines.findIndex((line, n) => line.type === type && !taken.has(n));
+      if (index !== -1) {
+        taken.add(index);
+        return lines[index] as Extract<HostOutLine, { type: T }>;
+      }
+      await new Promise<void>((r) => {
+        waiters.push(r);
+        setTimeout(r, 25);
+      });
+    }
+    throw new Error(`no ${type} line; got ${JSON.stringify(lines)}`);
+  };
+  const logDir = join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs");
+  const before = new Set(safeList(logDir));
+  const host = await runDesktopHost({
+    input,
+    output,
+    version: "9.9.9-test",
+    keychainProbe: KEYCHAIN,
+    webDist: join(project, "web"),
+    ...(opts.onFolderPicked ? { onFolderPicked: opts.onFolderPicked } : {}),
+  });
+  closers.push(() => host.stop());
+  const ready = await next("ready");
+  const mine = safeList(logDir).filter((name) => !before.has(name));
+  const logFile = () =>
+    readFileSync(join(logDir, mine[0] ?? "missing"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+  expect(mine).toHaveLength(1);
+  expect(mine[0]).toMatch(new RegExp(`-desktop-${process.pid}(-\\d+)?\\.jsonl$`));
+  return { host, input, lines, next, url: ready.url.replace(/\/$/, ""), logFile };
+}
+
+function safeList(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+const ORIGIN = (url: string) => ({ Origin: url });
+
+describe("start", () => {
+  beforeEach(() => {
+    mkdirSync(join(project, "web"), { recursive: true });
+    writeFileSync(
+      join(project, "web", "index.html"),
+      "<!doctype html><title>host test</title><div id=root></div>"
+    );
+  });
+
+  test("the ready line names the address, the port, no fallback and the project; the page and the API answer there", async () => {
+    const port = await freePort();
+    writeConfig(`port = ${port}\n`);
+    const h = await startHost();
+    expect(h.lines[0]).toEqual({
+      type: "ready",
+      url: `http://127.0.0.1:${port}/`,
+      port,
+      configuredPort: port,
+      portFallback: false,
+      portOccupant: null,
+      project: process.cwd(),
+    });
+    const page = await fetch(`${h.url}/`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("host test");
+    expect((await fetch(`${h.url}/api/papers`)).status).toBe(200);
+    const info = await (await fetch(`${h.url}/api/host`)).json();
+    expect(info).toEqual({
+      version: 1,
+      app: "argelanderspace",
+      mode: "desktop",
+      requests: [...HOST_REQUEST_KINDS],
+      portFallback: null,
+    });
+    // The project data are where `serve` run in the project folder puts them.
+    const settings = (await (await fetch(`${h.url}/api/settings`)).json()) as {
+      running: { project_root: { path: string }; port: number };
+    };
+    expect(settings.running.project_root.path).toBe(process.cwd());
+    expect(settings.running.port).toBe(port);
+    const started = h.logFile().find((r) => r.event === "server.started");
+    expect(started).toMatchObject({
+      mode: "desktop",
+      port,
+      port_fallback: "no",
+      version: "9.9.9-test",
+    });
+  });
+
+  test("the diagnostics' environment report says desktop", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    const res = await fetch(`${h.url}/api/diagnostics/export`, { method: "POST", body: "{}" });
+    expect(res.status).toBe(200);
+    const out = mkdtempSync(join(tmpdir(), "aspace-host-zip-"));
+    roots.push(out);
+    extractZip(new Uint8Array(await res.arrayBuffer()), out);
+    const report = JSON.parse(readFileSync(join(out, "environment-report.json"), "utf8")) as {
+      app: unknown;
+    };
+    expect(report.app).toEqual({ version: "9.9.9-test", mode: "desktop" });
+  });
+});
+
+describe("port fallback", () => {
+  test("a port another program holds: the host listens on a free one and says so, in the ready line, to the page and in the log", async () => {
+    const other: Server = createHttpServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ hello: "not the workbench" }));
+    });
+    await new Promise<void>((r) => other.listen(0, "127.0.0.1", r));
+    closers.push(() => new Promise<void>((r) => other.close(() => r())));
+    const taken = (other.address() as { port: number }).port;
+    writeConfig(`port = ${taken}\n`);
+    const h = await startHost();
+    const ready = h.lines[0] as Extract<HostOutLine, { type: "ready" }>;
+    expect(ready).toMatchObject({
+      configuredPort: taken,
+      portFallback: true,
+      portOccupant: "other",
+    });
+    expect(ready.port).not.toBe(taken);
+    expect(ready.url).toBe(`http://127.0.0.1:${ready.port}/`);
+    const info = (await (await fetch(`${h.url}/api/host`)).json()) as { portFallback: unknown };
+    expect(info.portFallback).toEqual({ configured: taken, actual: ready.port, occupant: "other" });
+    expect(h.logFile().find((r) => r.event === "server.started")).toMatchObject({
+      port: ready.port,
+      port_fallback: "yes",
+      port_configured: taken,
+      port_occupant: "other",
+    });
+    // The other program was only asked `GET /api/host`; it is still there and still answers.
+    expect((await fetch(`http://127.0.0.1:${taken}/`)).status).toBe(200);
+  });
+
+  test("a port another ArgelanderSpace server holds: told apart from another program", async () => {
+    const port = await freePort();
+    const own: RunningServer = createServer({
+      dataDir: makeDataDir(),
+      port,
+      webDist: null,
+      heartbeatMs: 0,
+    });
+    await own.ready();
+    closers.push(() => own.close());
+    writeConfig(`port = ${port}\n`);
+    const h = await startHost();
+    expect(h.lines[0]).toMatchObject({
+      configuredPort: port,
+      portFallback: true,
+      portOccupant: "argelanderspace",
+    });
+    const info = (await (await fetch(`${h.url}/api/host`)).json()) as { portFallback: unknown };
+    expect(info.portFallback).toMatchObject({ configured: port, occupant: "argelanderspace" });
+    // The other server is untouched.
+    expect((await fetch(`http://127.0.0.1:${port}/api/host`)).status).toBe(200);
+  });
+});
+
+describe("native requests", () => {
+  test("each kind asked through the host interface writes its line, built from what the host knows — nothing of the page's", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    const seen: HostOutLine[] = [];
+    for (const kind of HOST_REQUEST_KINDS) {
+      const res = await fetch(`${h.url}/api/host/requests/${kind}`, {
+        method: "POST",
+        headers: { ...ORIGIN(h.url), "Content-Type": "application/json" },
+        // Whatever the page puts here is never read.
+        body: JSON.stringify({
+          path: "/PAGE-PATH-MARKER",
+          url: "https://page-url-marker.example/",
+        }),
+      });
+      expect([kind, res.status, res.headers.get("cache-control")]).toEqual([kind, 202, "no-store"]);
+      seen.push(await h.next("request"));
+    }
+    const port = h.lines[0]?.type === "ready" ? h.lines[0].port : 0;
+    const pick = seen[0] as { id?: unknown };
+    expect(seen).toEqual([
+      { type: "request", kind: "pick_folder", id: expect.stringMatching(/^[0-9a-f-]{36}$/) },
+      { type: "request", kind: "open_in_browser", url: `http://127.0.0.1:${port}/` },
+      { type: "request", kind: "open_devtools" },
+      {
+        type: "request",
+        kind: "open_log_folder",
+        path: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+      },
+      { type: "request", kind: "open_config_file", path: configFilePath() },
+      { type: "request", kind: "open_skills_folder" },
+    ]);
+    expect(typeof pick.id).toBe("string");
+    const all = JSON.stringify(h.lines);
+    expect(all).not.toContain("MARKER");
+    expect(all).not.toContain("marker");
+    expect(
+      h
+        .logFile()
+        .filter((r) => r.event === "desktop.request")
+        .map((r) => r.kind)
+    ).toEqual([...HOST_REQUEST_KINDS]);
+  });
+
+  test("a cross-site request is refused and writes nothing; an unknown kind is 404", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    const before = h.lines.length;
+    const cross = await fetch(`${h.url}/api/host/requests/open_log_folder`, {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+    });
+    expect(cross.status).toBe(403);
+    const crossGet = await fetch(`${h.url}/api/host`, {
+      headers: { Origin: "https://evil.example" },
+    });
+    expect(crossGet.status).toBe(403);
+    const unknown = await fetch(`${h.url}/api/host/requests/open_anything`, {
+      method: "POST",
+      headers: ORIGIN(h.url),
+    });
+    expect([unknown.status, ((await unknown.json()) as { code: string }).code]).toEqual([
+      404,
+      "unknown_request",
+    ]);
+    await sleep(50);
+    expect(h.lines.length).toBe(before);
+  });
+
+  test("the folder picked comes back by the request's id; an unknown id or a relative path is not taken", async () => {
+    writeConfig("port = 0\n");
+    const picked: Array<string | null> = [];
+    const h = await startHost({ onFolderPicked: (p) => picked.push(p) });
+    await fetch(`${h.url}/api/host/requests/pick_folder`, {
+      method: "POST",
+      headers: ORIGIN(h.url),
+    });
+    const req = (await h.next("request")) as { id: string };
+    h.input.write(`${JSON.stringify({ type: "folder_picked", id: "nope", path: "/tmp/x" })}\n`);
+    h.input.write(
+      `${JSON.stringify({ type: "folder_picked", id: req.id, path: "relative/dir" })}\n`
+    );
+    h.input.write(
+      `${JSON.stringify({ type: "folder_picked", id: req.id, path: "/somewhere/picked" })}\n`
+    );
+    // Answered once: a second answer for the same id is unknown.
+    h.input.write(`${JSON.stringify({ type: "folder_picked", id: req.id, path: null })}\n`);
+    await sleep(100);
+    expect(picked).toEqual(["/somewhere/picked"]);
+    const log = h.logFile();
+    expect(log.filter((r) => r.event === "desktop.folder_picked")).toMatchObject([
+      { outcome: "picked" },
+    ]);
+    expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
+      ["unknown_id", "bad_shape", "unknown_id"]
+    );
+    // The picked path is not in the log.
+    expect(JSON.stringify(log)).not.toContain("somewhere");
+  });
+});
+
+describe("the shell's events", () => {
+  test("are written into the host's log by the same field rules; others are rejected or dropped", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    const send = (o: unknown) => h.input.write(`${JSON.stringify(o)}\n`);
+    send({
+      type: "shell_event",
+      event: "shell.started",
+      fields: { version: "0.1.0", webview: "webkitgtk-2.52.6" },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.host_exited",
+      fields: { exit_code: 1, expected: "no", signal: "SIGKILL" },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.dialog_answered",
+      fields: {
+        dialog: "host_crashed",
+        choice: "a sentence the shell made up",
+        extra: "SECRET-SHELL-TEXT",
+      },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.something_else",
+      fields: { text: "SECRET-SHELL-TEXT" },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.started",
+      fields: { version: "has spaces SECRET-SHELL-TEXT" },
+    });
+    h.input.write("not json at all\n");
+    send({ type: "dance" });
+    send([1, 2, 3]);
+    h.input.write(
+      `{"type":"shell_event","event":"shell.started","fields":{"version":"${"x".repeat(70 * 1024)}"}}\n`
+    );
+    await sleep(150);
+    const log = h.logFile();
+    const shell = log.filter(
+      (r) => String(r.event).startsWith("shell.") || r.event === "log.rejected"
+    );
+    expect(shell).toEqual([
+      {
+        t: expect.any(String),
+        level: "info",
+        event: "shell.started",
+        version: "0.1.0",
+        webview: "webkitgtk-2.52.6",
+      },
+      {
+        t: expect.any(String),
+        level: "warn",
+        event: "shell.host_exited",
+        exit_code: 1,
+        expected: "no",
+        signal: "SIGKILL",
+      },
+      {
+        t: expect.any(String),
+        level: "info",
+        event: "shell.dialog_answered",
+        dialog: "host_crashed",
+        choice: "<invalid-enum>",
+        dropped_fields: 1,
+      },
+      { t: expect.any(String), level: "error", event: "log.rejected" },
+      { t: expect.any(String), level: "info", event: "shell.started", version: "<invalid-id>" },
+    ]);
+    expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
+      ["not_json", "unknown_type", "bad_shape", "too_long"]
+    );
+    expect(JSON.stringify(log)).not.toContain("SECRET-SHELL-TEXT");
+    // The host still answers after all of that.
+    expect((await fetch(`${h.url}/api/host`)).status).toBe(200);
+  });
+});
+
+// ---- graceful shutdown, with a mail send in its undo window ------------------------------------------------------ //
+
+const ACC = "acc-0123456789ab";
+const keychain = new Map<string, string>();
+const backend = (): KeychainBackend => ({
+  get: (a) => keychain.get(a) ?? null,
+  set: (a, p) => void keychain.set(a, p),
+  delete: (a) => keychain.delete(a),
+});
+
+/** A send held in its undo window by a service registered for shutdown, as the server's own Mail services are. */
+async function sendInWindow(): Promise<{
+  service: MailSendService;
+  sendId: string;
+  smtp: RecordingSmtp;
+  drafts: FakeFolder;
+}> {
+  const root = mkdtempSync(join(tmpdir(), "aspace-host-mail-"));
+  roots.push(root);
+  const drafts: FakeFolder = { path: "Drafts", attrs: ["\\Drafts"], uidValidity: 31, messages: [] };
+  const sent: FakeFolder = { path: "Sent", attrs: ["\\Sent"], uidValidity: 32, messages: [] };
+  const imap: FakeMailbox = await startFakeMailbox([
+    { path: "INBOX", uidValidity: 30, messages: [] },
+    drafts,
+    sent,
+  ]);
+  const smtp = await startRecordingSmtp();
+  closers.push(
+    () => imap.close(),
+    () => smtp.close()
+  );
+  const store = createMailAccountStore({ dataDir: join(root, "global") });
+  const credentials = createCredentialStore({ backend: backend(), dataDir: join(root, "global") });
+  await credentials.set(ACC, TEST_PASSWORD, { fileFallbackConsent: false });
+  await store.update(0, async () => ({
+    accounts: [
+      {
+        id: ACC as never,
+        displayName: "Test Person",
+        address: "tester@fake.test",
+        preset: "custom",
+        imap: { host: "127.0.0.1", port: imap.port, security: "tls" },
+        smtp: { host: "127.0.0.1", port: smtp.port, security: "tls" },
+        imapUser: TEST_USER,
+        smtpUser: TEST_USER,
+        credentialRef: ACC as never,
+        credentialProtection: "keychain",
+      },
+    ],
+    result: null,
+  }));
+  const tls = { rejectUnauthorized: false };
+  const cache = join(root, "cache");
+  const outgoing = createNodeMailOutgoing({ timeoutMs: 3000, tls });
+  const compose = new MailComposeService({
+    accounts: store,
+    credentials,
+    mailbox: createNodeMailMailbox({ timeoutMs: 3000, tls }),
+    outgoing,
+    cacheDir: () => cache,
+  });
+  const service = new MailSendService({
+    compose,
+    outgoing,
+    outbox: new MailOutbox(() => cache),
+    undoMs: 1500,
+    registerForShutdown: true,
+  });
+  const sendId = "00000000-0000-4000-8000-000000000017";
+  await service.start(ACC, {
+    sendId,
+    draft: {
+      messageId: "<draft-host@fake.test>",
+      inReplyTo: null,
+      references: [],
+      to: "Ada <ada@fake.test>",
+      cc: "",
+      bcc: "",
+      subject: "host shutdown",
+      text: "body",
+      attachments: [],
+    } as never,
+  });
+  expect(service.status(ACC, sendId).state).toBe("pending");
+  expect(drafts.messages).toHaveLength(1);
+  return { service, sendId, smtp, drafts };
+}
+
+describe("graceful shutdown", () => {
+  afterEach(() => disposeMailSendServices());
+
+  for (const how of ["a quit line", "the end of the input"] as const) {
+    test(`on ${how}: the mail in its undo window is interrupted and stays in Drafts, never sent; the port is free`, async () => {
+      writeConfig("port = 0\n");
+      const h = await startHost();
+      const port = h.lines[0]?.type === "ready" ? h.lines[0].port : 0;
+      const mail = await sendInWindow();
+      if (how === "a quit line") h.input.write('{"type":"quit"}\n');
+      else h.input.end();
+      const reason = how === "a quit line" ? "quit" : "input_closed";
+      expect(await h.next("stopping")).toEqual({ type: "stopping", reason });
+      // The first step of the server's close is synchronous: the window is over before anything else stops.
+      expect(mail.service.status(ACC, mail.sendId).state).toBe("interrupted");
+      expect(await h.host.stopped).toBe(reason);
+      expect(h.lines.at(-1)).toEqual({ type: "stopped" });
+      expect(await portIsFree(port)).toBe(true);
+      // Past the end of the window: nothing went out, the draft is still there.
+      await sleep(1800);
+      expect(mail.smtp.dataStarted.count).toBe(0);
+      expect(mail.drafts.messages).toHaveLength(1);
+      expect(h.logFile().find((r) => r.event === "desktop.stopping")).toMatchObject({ reason });
+      // After the stop the host takes no more requests (nothing listens; the bridge refuses too).
+      expect(h.host.server.port).toBe(port);
+    });
+  }
+
+  test("a second quit, or the input ending after a quit, stops it once", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    h.input.write('{"type":"quit"}\n{"type":"quit"}\n');
+    h.input.end();
+    await h.host.stopped;
+    await sleep(50);
+    expect(h.lines.filter((l) => l.type === "stopping")).toHaveLength(1);
+    expect(h.lines.filter((l) => l.type === "stopped")).toHaveLength(1);
+  });
+});
+
+describe("the browser form", () => {
+  test("`serve` has no host: the page is told browser, and a native request is 404", async () => {
+    const srv = createServer({ dataDir: makeDataDir(), port: 0, webDist: null, heartbeatMs: 0 });
+    const port = await srv.ready();
+    closers.push(() => srv.close());
+    const url = `http://127.0.0.1:${port}`;
+    expect(await (await fetch(`${url}/api/host`)).json()).toEqual({
+      version: 1,
+      app: "argelanderspace",
+      mode: "browser",
+      requests: [],
+      portFallback: null,
+    });
+    const res = await fetch(`${url}/api/host/requests/open_log_folder`, {
+      method: "POST",
+      headers: ORIGIN(url),
+    });
+    expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([
+      404,
+      "not_desktop",
+    ]);
+  });
+});

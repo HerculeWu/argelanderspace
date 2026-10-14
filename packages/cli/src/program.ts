@@ -12,8 +12,8 @@
  * (Python's `data/output`).
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { statSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import {
   acquireReferences,
@@ -29,7 +29,7 @@ import {
   type Work,
 } from "@argelanderspace/core";
 import { ingestTexSource } from "@argelanderspace/infra";
-import { realPipelines, realSources, startServer } from "@argelanderspace/server";
+import { realPipelines, realSources, runDesktopHost, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
@@ -278,6 +278,34 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   process.on("SIGTERM", shutdown);
 }
 
+/**
+ * The desktop host (desktop-app ticket 17; server `desktop-host.ts`): the process the desktop shell starts and looks
+ * after, in the same bundle as the CLI. It serves one Project — the folder given — and speaks the line protocol on its
+ * stdin and stdout. Not for people: hidden from the help.
+ */
+async function runDesktopHostCommand(opts: { project: string; webDist?: string }): Promise<void> {
+  const project = resolve(opts.project);
+  let isDir = false;
+  try {
+    isDir = statSync(project).isDirectory();
+  } catch {
+    /* not there */
+  }
+  if (!isDir) throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
+  // The Project's folder is the process's working directory, as for `serve` run in it: the same relative `data_dir`
+  // rule finds the project data (ADR 0010), and the settings page shows it as the project.
+  process.chdir(project);
+  const host = await runDesktopHost({
+    input: process.stdin,
+    output: process.stdout,
+    version: APP_VERSION,
+    signals: true,
+    ...(opts.webDist === undefined ? {} : { webDist: resolve(opts.webDist) }),
+  });
+  await host.stopped;
+  process.exit(0);
+}
+
 export function buildProgram(): Command {
   const program = new Command();
   program
@@ -363,6 +391,21 @@ export function buildProgram(): Command {
         await runServe(opts, cmd.optsWithGlobals().dataDir as string | undefined);
       } catch (e) {
         fail(e);
+      }
+    });
+
+  program
+    .command("desktop-host", { hidden: true })
+    .description("Run as the desktop app's host (line protocol on stdin/stdout).")
+    .requiredOption("--project <dir>", "the Project folder to open")
+    .option("--web-dist <dir>", "built SPA directory (default: next to the bundle)")
+    .action(async (opts: { project: string; webDist?: string }) => {
+      try {
+        await runDesktopHostCommand(opts);
+      } catch (e) {
+        fail(e);
+        // A server that could not start may have left timers behind: the host's exit is its report to the shell.
+        process.exit(1);
       }
     });
 

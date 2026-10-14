@@ -56,8 +56,16 @@ import { appendArxivFetchLog } from "./arxiv-fetch-log.js";
 import { ingestFailureLog, sweepIngestPartials } from "./compile-failure-log.js";
 import { CopilotHost } from "./copilot.js";
 import { realDiscoverySource, realPipelines, realSources, statusDirFor } from "./deps.js";
+import type { HostBridge } from "./host-routes.js";
 import { JobRunner } from "./jobs.js";
-import { applyLogLevel, logServerStarted, openServeLog, type ServerLog, silentLog } from "./log.js";
+import {
+  applyLogLevel,
+  logServerStarted,
+  openServeLog,
+  type ServerLog,
+  type ServerMode,
+  silentLog,
+} from "./log.js";
 import {
   externalObserver,
   jobIdField,
@@ -151,6 +159,8 @@ export interface ServerOptions {
   logDir?: string;
   /** The program's version, for the diagnostics' environment report. */
   version?: string;
+  /** The desktop host this server runs under (desktop-app ticket 17, host-routes.ts); absent in the browser form. */
+  host?: HostBridge;
 }
 
 export interface RunningServer {
@@ -294,6 +304,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     startup: opts.startup ?? null,
     ...(opts.logDir === undefined ? {} : { logDir: opts.logDir }),
     ...(opts.version === undefined ? {} : { version: opts.version }),
+    ...(opts.host === undefined ? {} : { host: opts.host }),
     ...(opts.settingsAtStart ? { settingsAtStart: opts.settingsAtStart } : {}),
     ...(opts.settingsFromFlags ? { settingsFromFlags: opts.settingsFromFlags } : {}),
   });
@@ -502,6 +513,18 @@ export interface StartOptions {
   version?: string;
   /** Tests only: the keychain probe of the start record (default infra `probeKeychain`). */
   keychainProbe?: () => Promise<KeychainProbe>;
+  /**
+   * The desktop host (desktop-app ticket 17, desktop-host.ts): the form is `desktop` in the start record and the
+   * diagnostics, the page's native requests go to the bridge, the log file is the host's (`desktop`), and the three
+   * start lines go to stderr — the host's stdout is its line protocol. Absent: `serve`, the browser form.
+   */
+  desktop?: {
+    host: HostBridge;
+    /** The port to listen on, chosen by the host (the configured one, or 0 when it is taken); not a command-line key. */
+    listenPort: number;
+    /** Called with the bound port once listening, before the start record is written. */
+    onListening?: (port: number) => void;
+  };
 }
 
 /**
@@ -512,12 +535,15 @@ export interface StartOptions {
 export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
-): Promise<RunningServer & { environmentLogged: Promise<void> }> {
+): Promise<
+  RunningServer & { environmentLogged: Promise<void>; port: number; logDir: string; log: ServerLog }
+> {
   const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
+  const mode: ServerMode = start.desktop === undefined ? "browser" : "desktop";
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
   const logDir = join(globalDirs.dataDir, LOG_DIR_NAME);
-  const serveLog = openServeLog(config, logDir);
+  const serveLog = openServeLog(config, logDir, mode === "desktop" ? "desktop" : "serve");
   const sweepMailStagingIn = globalDirs.cacheDir;
   // Whatever stops the start — the server cannot be created, the port cannot be bound — the log file is closed and
   // the process is no longer watched.
@@ -526,9 +552,10 @@ export async function startServer(
   try {
     srv = createServer({
       dataDir: cfg.dataDir,
-      port: cfg.port,
+      port: start.desktop?.listenPort ?? cfg.port,
       webDist: cfg.webDist,
       mailWatch: true,
+      ...(start.desktop === undefined ? {} : { host: start.desktop.host }),
       log: serveLog.log,
       logDir,
       ...(start.version === undefined ? {} : { version: start.version }),
@@ -542,14 +569,16 @@ export async function startServer(
       ],
     });
     port = await srv.ready();
+    start.desktop?.onListening?.(port);
   } catch (error) {
     serveLog.close();
     throw error;
   }
   logServerStarted(serveLog.log, {
     version: start.version,
-    mode: "browser",
+    mode,
     port,
+    ...(start.desktop === undefined ? {} : { portFallback: start.desktop.host.portFallback }),
     projectRoot: process.cwd(),
     dataDir: cfg.dataDir,
     webDist: cfg.webDist,
@@ -563,14 +592,23 @@ export async function startServer(
     toolchain: currentToolchain(configFilePath()),
     ...(start.keychainProbe ? { keychain: start.keychainProbe } : {}),
   });
-  // These three lines are what `serve` prints to the terminal; the log does not replace them.
-  console.log(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
-  console.log(`  data dir: ${cfg.dataDir}`);
-  console.log(`  web dist: ${cfg.webDist ?? "(none — API only)"}`);
+  // These three lines are what `serve` prints to the terminal; the log does not replace them. The desktop host's
+  // stdout is its line protocol, so there they go to stderr.
+  const say = mode === "browser" ? console.log : console.error;
+  say(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
+  say(`  data dir: ${cfg.dataDir}`);
+  say(`  web dist: ${cfg.webDist ?? "(none — API only)"}`);
   // A faulty config.toml: named by key and category on the terminal too (never a value, never the parser's text).
   for (const line of configProblemLines(problems, { path: configFilePath(), startup })) {
     console.error(line);
   }
   const close = srv.close;
-  return { ...srv, environmentLogged, close: () => close().finally(() => serveLog.close()) };
+  return {
+    ...srv,
+    environmentLogged,
+    port,
+    logDir,
+    log: serveLog.log,
+    close: () => close().finally(() => serveLog.close()),
+  };
 }

@@ -146,6 +146,7 @@ import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
+import { type HostBridge, mountHostRoutes } from "./host-routes.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
@@ -292,6 +293,11 @@ export interface AppDeps {
   logDir?: string | undefined;
   /** The program's version, for the diagnostics' environment report. */
   version?: string | undefined;
+  /**
+   * The desktop host this server runs under (desktop-app ticket 17, host-routes.ts): the page's native requests go to
+   * it, and the start record and the diagnostics say `desktop`. Absent: the browser form (`serve`).
+   */
+  host?: HostBridge | undefined;
 }
 
 // --------------------------------------------------------------------------- //
@@ -588,6 +594,9 @@ export function createApp(deps: AppDeps): Hono {
     observer,
   });
 
+  // The host interface (host-routes.ts): which form the page runs in, and the desktop app's native requests.
+  mountHostRoutes(app, guardCsrf, deps.host);
+
   // Diagnostics (diagnostics.ts): the log directory, and a bundle made only when the user asks for one.
   mountDiagnosticsRoutes(app, guardCsrf, {
     dataDir: paths.dataDir,
@@ -603,8 +612,7 @@ export function createApp(deps: AppDeps): Hono {
     configPath: deps.configPath,
     log,
     version: deps.version,
-    // Only `serve` exists so far; the desktop host's ticket (second batch) hands in its own form here.
-    mode: "browser",
+    mode: deps.host === undefined ? "browser" : "desktop",
     running: () => ({
       project_root: shownPath(projectRoot),
       port: deps.boundPort?.() ?? null,

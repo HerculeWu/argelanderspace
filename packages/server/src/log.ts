@@ -17,6 +17,7 @@
  * path carries what the user asked for. The pattern is written only if it is one the app registered.
  */
 
+import { HOST_PORT_OCCUPANTS, type HostPortFallback } from "@argelanderspace/contracts";
 import {
   type AppConfig,
   CONFIG_KEYS,
@@ -78,6 +79,16 @@ export const SERVER_LOG_EVENTS = [
   "page.errors_dropped",
   // Desktop-app ticket 14 (diagnostics.ts): a diagnostics bundle was asked for; `compile_logs` yes / no only.
   "diagnostics.exported",
+  // Desktop-app ticket 17 (desktop-host.ts): the desktop host's own records, and the shell's events it is handed.
+  "desktop.request",
+  "desktop.folder_picked",
+  "desktop.protocol_rejected",
+  "desktop.stopping",
+  "shell.started",
+  "shell.host_started",
+  "shell.host_exited",
+  "shell.dialog_answered",
+  "shell.request_failed",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];
@@ -115,9 +126,11 @@ export function applyLogLevel(log: ServerLog, configPath?: string): void {
   }
 }
 
-/** How the workbench is delivered; only `serve` (the browser) exists so far. */
+/** How the workbench is delivered: `serve` (the browser) or the desktop host (desktop-host.ts). */
 export const SERVER_MODES = ["browser", "desktop"] as const;
 export type ServerMode = (typeof SERVER_MODES)[number];
+
+const YES_NO = ["yes", "no"] as const;
 
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] as const;
 
@@ -238,11 +251,16 @@ export interface ServeLog {
  * The log of a `serve` process: a new file in the user-level log directory, at the level config.toml asks for, and
  * a record of whatever ends the process. Never throws — a log that cannot be opened is a log that stays empty.
  */
-export function openServeLog(config: AppConfig, dir?: string): ServeLog {
+export function openServeLog(
+  config: AppConfig,
+  dir?: string,
+  kind: "serve" | "desktop" = "serve"
+): ServeLog {
   let file: LogFile;
   try {
     // `serve` hands in the log directory of the global directories it fixed at its start (server.ts `serveStart`).
-    file = openLogFile({ dir: dir ?? resolveLogDir({ config }), process: "serve" });
+    // The desktop host's file is named for it (`…-desktop-<pid>.jsonl`), in the same directory.
+    file = openLogFile({ dir: dir ?? resolveLogDir({ config }), process: kind });
   } catch {
     // The global data directory could not be resolved (a relative `global_dir`); Mail reports that when it is used.
     file = { path: null, write() {}, close() {} };
@@ -278,6 +296,8 @@ export function logServerStarted(
     webDist: string | null;
     /** What is wrong with config.toml (server.ts `serveStart`): by key and category, never a value. */
     configProblems?: readonly ConfigProblem[];
+    /** The desktop host only: whether the configured port was taken (null: it was not). */
+    portFallback?: HostPortFallback | null;
   }
 ): void {
   let keys: ReturnType<typeof configFileKeys> = { known: [], unknown: 0 };
@@ -290,6 +310,17 @@ export function logServerStarted(
     ...(info.version === undefined ? {} : { version: f.id(info.version) }),
     mode: f.oneOf(SERVER_MODES, info.mode),
     port: f.num(info.port),
+    ...(info.portFallback === undefined
+      ? {}
+      : {
+          port_fallback: f.oneOf(YES_NO, info.portFallback === null ? "no" : "yes"),
+          ...(info.portFallback === null
+            ? {}
+            : {
+                port_configured: f.num(info.portFallback.configured),
+                port_occupant: f.oneOf(HOST_PORT_OCCUPANTS, info.portFallback.occupant),
+              }),
+        }),
     project_root: f.path(info.projectRoot),
     data_dir: f.path(info.dataDir),
     ...(info.webDist === null ? {} : { web_dist: f.path(info.webDist) }),
