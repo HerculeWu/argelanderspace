@@ -16,7 +16,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import type {
   AnnotationsFile,
   ConversationSnapshot,
@@ -241,7 +241,7 @@ beforeAll(async () => {
   // 1. the ADS token: in the isolated home's key file, imported below into the credential store through the settings
   //    endpoint (desktop-app ticket 12; the clients no longer read the file itself)
   adsKeyFile = join(homedir(), ".ads", "dev_key");
-  expect(adsKeyFile.startsWith(tmpdir())).toBe(true);
+  expect(adsKeyFile.startsWith(tmpdir() + sep)).toBe(true);
   mkdirSync(join(homedir(), ".ads"), { recursive: true });
   writeFileSync(adsKeyFile, `${MARK.adsToken}\n`);
 

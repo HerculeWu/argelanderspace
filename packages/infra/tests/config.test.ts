@@ -8,7 +8,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   ConfigError,
@@ -185,7 +185,7 @@ describe("readAdsToken: only the credential store (desktop-app ticket 12)", () =
     // The HOME here is the isolated one (isolate-user-dirs.ts); the key file is a fake made for the test.
     const home = homedir();
     // Written only into a temporary home (isolate-user-dirs.ts): never the user's real ~/.ads.
-    const temporary = home.startsWith(tmpdir()) && home !== tmpdir();
+    const temporary = home.startsWith(tmpdir() + sep);
     expect(temporary).toBe(true);
     if (!temporary) return;
     mkdirSync(join(home, ".ads"), { recursive: true });

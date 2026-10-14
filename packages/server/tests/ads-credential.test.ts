@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { libraryPaths } from "@argelanderspace/core";
 import {
   createCredentialStore,
@@ -122,7 +122,7 @@ const writeDevKey = (content: string | Buffer) => {
   writeFileSync(devKeyPath(), content);
 };
 /** Only a home directory below the temporary directory may be written to (isolate-user-dirs.ts sets one). */
-const homeIsTemporary = () => homedir().startsWith(tmpdir()) && homedir() !== tmpdir();
+const homeIsTemporary = () => homedir().startsWith(tmpdir() + sep);
 
 beforeEach(async () => {
   keychainUp = true;
