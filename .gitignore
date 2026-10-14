@@ -69,3 +69,7 @@ literatures.*-backup.tar.gz
 
 # local npm pack output (ticket 33: never tracked)
 packages/app/*.tgz
+
+# The app package's version, written into the CLI's source at build time (packages/cli/scripts/app-version.mjs;
+# desktop-app ticket 16): change the version in packages/app/package.json, never here.
+packages/cli/src/generated/

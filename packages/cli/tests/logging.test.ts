@@ -24,6 +24,12 @@ const PKG = fileURLToPath(new URL("..", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 const BIN = join(PKG, "dist", "bin.js");
 const DOC_ID = "arxiv-2501.17225";
+/** The single source of the version (desktop-app ticket 16): the app package, as it is now. */
+const APP_VERSION_NOW = (
+  JSON.parse(readFileSync(join(REPO_ROOT, "packages", "app", "package.json"), "utf8")) as {
+    version: string;
+  }
+).version;
 
 const roots: string[] = [];
 afterEach(() => {
@@ -192,7 +198,7 @@ describe("serve", () => {
         {
           level: "info",
           event: "server.started",
-          version: "0.1.0",
+          version: APP_VERSION_NOW,
           mode: "browser",
           port,
           project_root: "~/project",

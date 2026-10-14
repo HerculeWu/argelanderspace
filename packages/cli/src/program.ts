@@ -35,6 +35,8 @@ import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
 import { DATA_DIR_HELP, fail, resolveDataDir, withDataDir } from "./common.js";
 import { detectSource } from "./detect.js";
+// The app package's version, written into the source at build time (scripts/app-version.mjs; desktop-app ticket 16).
+import { APP_VERSION } from "./generated/app-version.js";
 import { formatPlanRow, formatTexIngestSummary, planSortKey } from "./summary.js";
 
 // re-exported: the resolution chain now lives in ./common.js (shared with the
@@ -257,9 +259,6 @@ interface ServeOpts {
   webDist?: string;
 }
 
-/** Kept in step with the app package's version by hand (there is no single source). */
-const CLI_VERSION = "0.1.0";
-
 async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Promise<void> {
   // Defer to the server's resolution chain (flag > config file > default) by only
   // forwarding flags the user actually passed.
@@ -268,7 +267,7 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   if (dataDir !== undefined) argv.push("--data-dir", dataDir);
   if (opts.port !== undefined) argv.push("--port", opts.port);
   if (opts.webDist !== undefined) argv.push("--web-dist", opts.webDist);
-  const srv = await startServer(argv, { version: CLI_VERSION });
+  const srv = await startServer(argv, { version: APP_VERSION });
   const shutdown = () => {
     void srv.close().then(
       () => process.exit(0),
@@ -287,7 +286,7 @@ export function buildProgram(): Command {
       "ArgelanderSpace — ingest papers (arXiv / local LaTeX sources) into " +
         "structured JSON and manage the citation-graph library."
     )
-    .version(CLI_VERSION)
+    .version(APP_VERSION)
     .option("--data-dir <dir>", DATA_DIR_HELP);
 
   withDataDir(program.command("ingest"))
