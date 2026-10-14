@@ -164,7 +164,7 @@ describe("scripts/app-version.mjs", () => {
     expect(existsSync(out)).toBe(false);
   });
 
-  test("by default it reads the app package of this repository", () => {
+  test("the module the build generated holds this repository's app package version", () => {
     // The module the build generated (pretest builds) holds the app package's version.
     const text = readFileSync(join(PKG, "src", "generated", "app-version.ts"), "utf8");
     expect(text).toContain(`export const APP_VERSION = ${JSON.stringify(appVersion())};\n`);

@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 const argv = process.argv.slice(2);
 const flag = (name, fallback) => {
   const at = argv.indexOf(name);
-  return at === -1 ? fallback : argv[at + 1];
+  if (at === -1) return fallback;
+  const value = argv[at + 1];
+  if (value === undefined || value === "") fail(`${name} needs a value`);
+  return value;
 };
 const packagePath = flag(
   "--package",
