@@ -16,7 +16,7 @@ import { SelectionLayer, SelectionPluginPackage, useSelectionCapability } from "
 import { PdfAnnotationSubtype, type PdfLinkAnnoObject, type PdfLinkTarget, type SearchResult } from "@embedpdf/models";
 import { Viewport, ViewportPluginPackage, useViewportCapability } from "@embedpdf/plugin-viewport/react";
 import { ZoomMode, ZoomPluginPackage, useZoomCapability } from "@embedpdf/plugin-zoom/react";
-import { PDF_OUTLINE_MAX_ENTRIES, PDF_OUTLINE_TITLE_MAX, pdfFallbackFontPath, pdfFontFallbackConfig } from "@argelanderspace/contracts";
+import { PDF_OUTLINE_MAX_ENTRIES, PDF_OUTLINE_TITLE_MAX } from "@argelanderspace/contracts";
 import type { DocDescription, PdfAnnotation, PdfAnnotationsFile, PdfHighlightColor, PdfOutlineEntry, PdfPage, PdfReaderPositionRead, PdfReadingLocation, PdfReadingPosition, PdfReaderSnapshot, PdfSearchState, ReaderViewAction } from "@argelanderspace/contracts";
 import { PdfAnnotationToolButtons, PdfAnnotationsPanel, type PdfAnnotationTool } from "./PdfAnnotationsPanel";
 import { OutlineList, type OutlineEntry } from "../components/TocPanel";
@@ -27,6 +27,7 @@ import { usePdfBridge, type PdfViewHandle } from "./reader-bridge";
 import { type PanelSizes, useAutoFoldedPanels } from "./auto-fold";
 import { PDF_SEARCH_LIST_MAX, downloadPdfOriginal, pdfDraftsView, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
 import { PdfLinkHitLayer } from "./PdfLinkHitLayer";
+import { pageFontFallback } from "./pdf-font-fallback";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
 import { buildPdfTextTarget, pdfPageRectFromVisible, pdfPageRectToVisible, pdfSelectionQuote } from "./pdf-text-target";
@@ -107,10 +108,9 @@ function PdfEngineReader({ docId, filename, workTitle, bytes, annotations, pages
   const { t } = useTranslation();
   const [ready, setReady] = useState(false);
   const wasmUrl = useMemo(() => new URL(pdfiumWasmUrl, window.location.href).href, []);
-  // CJK fonts a PDF does not embed (desktop-app ticket 28), fetched by the worker from this page's own server — never a
-  // CDN. Absolute URLs: the worker runs from a blob: URL that relative paths cannot resolve against. One object for the
-  // reader's life (the hook re-creates the engine when it changes).
-  const fontFallback = useMemo(() => pdfFontFallbackConfig((pkg, font) => new URL(pdfFallbackFontPath(pkg, font), window.location.href).href), []);
+  // CJK fonts a PDF does not embed (desktop-app ticket 28), from this page's own server, never a CDN (see
+  // pageFontFallback). One object for the reader's life (the hook re-creates the engine when it changes).
+  const fontFallback = useMemo(() => pageFontFallback(window.location.href), []);
   const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl, worker: true, encoderPoolSize: 2, fontFallback });
   const markReady = useCallback(() => setReady(true), []);
   const plugins = useMemo(() => [

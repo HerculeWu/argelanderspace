@@ -43,7 +43,7 @@ export function serverFontFallback() {
       const found = pdfFallbackFont(name, version, file);
       if (!found) return null;
       try {
-        return new Uint8Array(readFileSync(fontFile(found.pkg, found.font)));
+        return readFileSync(fontFile(found.pkg, found.font));
       } catch {
         return null;
       }
@@ -59,13 +59,9 @@ export function mountPdfFontRoutes(app: Hono): void {
   app.get(`${PDF_FONT_ROUTE}/:name/:version/:file`, async (c) => {
     const found = pdfFallbackFont(c.req.param("name"), c.req.param("version"), c.req.param("file"));
     if (!found) return c.json({ detail: "Not Found" }, 404);
-    let bytes: Buffer;
-    try {
-      bytes = await readFile(fontFile(found.pkg, found.font));
-    } catch {
-      return c.json({ detail: "font not available" }, 404);
-    }
-    return c.body(new Uint8Array(bytes), 200, {
+    const bytes = await readFile(fontFile(found.pkg, found.font)).catch(() => null);
+    if (!bytes) return c.json({ detail: "font not available" }, 404);
+    return c.body(bytes, 200, {
       "Content-Type": "font/otf",
       "Cache-Control": "public, max-age=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
