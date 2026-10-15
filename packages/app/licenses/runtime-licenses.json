@@ -110,12 +110,36 @@
       "file": "earendil-works-pi-1.0.0-LICENSE"
     },
     {
+      "package": "@napi-rs/keyring-darwin-arm64",
+      "version": "2.1.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "napi-rs-keyring-2.1.0-LICENSE",
+      "note": "the platform package of @napi-rs/keyring 2.1.0, built from the same repository tag (desktop-app ticket 26: the registry tarball holds only package.json, README.md and the .node file; its package.json declares MIT and repository github.com/Brooooooklyn/keyring-node)"
+    },
+    {
+      "package": "@napi-rs/keyring-darwin-x64",
+      "version": "2.1.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "napi-rs-keyring-2.1.0-LICENSE",
+      "note": "the platform package of @napi-rs/keyring 2.1.0, built from the same repository tag (desktop-app ticket 26: the registry tarball holds only package.json, README.md and the .node file; its package.json declares MIT and repository github.com/Brooooooklyn/keyring-node)"
+    },
+    {
       "package": "@napi-rs/keyring-linux-x64-gnu",
       "version": "2.1.0",
       "license": "MIT",
       "kind": "upstream-file",
       "file": "napi-rs-keyring-2.1.0-LICENSE",
       "note": "the platform package of @napi-rs/keyring 2.1.0, built from the same repository tag"
+    },
+    {
+      "package": "@napi-rs/keyring-win32-x64-msvc",
+      "version": "2.1.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "napi-rs-keyring-2.1.0-LICENSE",
+      "note": "the platform package of @napi-rs/keyring 2.1.0, built from the same repository tag (desktop-app ticket 26: the registry tarball holds only package.json, README.md and the .node file; its package.json declares MIT and repository github.com/Brooooooklyn/keyring-node)"
     },
     {
       "package": "data-uri-to-buffer",

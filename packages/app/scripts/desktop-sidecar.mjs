@@ -26,7 +26,9 @@
 //   --online        passed to dep-dir.mjs (another target's native packages).
 //
 // Layout (relative to --out = the bundle's resource directory once installed):
-//   sidecar/node/bin/node, sidecar/node/LICENSE        the official Node runtime and its license (node.exe on Windows)
+//   sidecar/node/bin/node, sidecar/node/LICENSE        the official Node runtime and its license (sidecar/node/node.exe
+//                                                      on Windows: the archive's own layout; .zip unpacked with tar
+//                                                      on Windows and unzip elsewhere)
 //   sidecar/app/package.json, sidecar/app/LICENSE      the app package's own (version: the single source, ticket 16)
 //   sidecar/app/dist/                                  packages/app/dist: bin.js, web/, argelander.sty, notices
 //   sidecar/app/node_modules/                          the dependency directory (ticket 22)
@@ -34,6 +36,7 @@
 //   sidecar/app/licenses/                              packages/app/licenses (vendored texts and their manifest)
 //   sidecar/sidecar-manifest.json                      versions, checksums, sizes, the budget
 //   skills/                                            the repository's skills/ (desktop-app ticket 24 opens it)
+//   THIRD-PARTY-SHELL-NOTICES.txt                      the shell's Rust crates (shell-notices.mjs; needs cargo)
 //
 // Exit: 0 assembled and checked; 1 an error or a failed check (required file missing, license problem); 3 the
 // dependency directory is over its budget (500 MB of file content; ticket 22). Nothing outside --out, --node-cache and
@@ -62,8 +65,10 @@ import {
   licenseProblems,
   listInstalledPackages,
   nodeDist,
+  nodeExtractCommand,
   nodeSignaturePlan,
   parseStrictArgs,
+  SHELL_NOTICES_FILE,
   shaFromShasums,
   sidecarRequiredFiles,
   verifyNodeSignature,
@@ -120,9 +125,17 @@ process.on("exit", () => rmSync(work, { recursive: true, force: true }));
 const binJs = join(appRoot, "dist/bin.js");
 if (!existsSync(binJs))
   throw new Error("packages/app/dist/bin.js is missing: run `corepack pnpm -r build` first");
-const v = run(process.execPath, [binJs, "--version"], {
-  env: { PATH: "/usr/bin:/bin", HOME: work },
-});
+// A bare environment; Windows needs SystemRoot to start a process at all.
+const bareEnv =
+  process.platform === "win32"
+    ? {
+        SystemRoot: process.env.SystemRoot ?? "C:\\Windows",
+        USERPROFILE: work,
+        TEMP: work,
+        TMP: work,
+      }
+    : { PATH: "/usr/bin:/bin", HOME: work };
+const v = run(process.execPath, [binJs, "--version"], { env: bareEnv });
 if (v.status !== 0 || v.stdout.trim() !== appPkg.version)
   throw new Error(
     `dist/bin.js --version says ${JSON.stringify(v.stdout.trim())}, the app package is ${appPkg.version}: rebuild`
@@ -185,18 +198,11 @@ if (actual !== expected) {
   );
 }
 console.log(`node ${nodeVersion} ${dist.file}: sha256 matches SHASUMS256.txt`);
-if (dist.file.endsWith(".zip"))
-  throw new Error("extracting the Windows zip is ticket 26's (not done here)");
-const x = run("tar", [
-  "-xJf",
-  archive,
-  "-C",
-  work,
-  `${dist.base}/${dist.binary}`,
-  `${dist.base}/LICENSE`,
-]);
-if (x.status !== 0) throw new Error(`tar: ${x.stderr}`);
-mkdirSync(join(sidecar, "node/bin"), { recursive: true });
+const unpack = nodeExtractCommand(dist, archive, work, process.platform, process.env.SystemRoot);
+const x = run(unpack.cmd, unpack.args);
+if (x.error || x.status !== 0)
+  throw new Error(`${unpack.cmd} could not unpack ${dist.file}: ${x.error?.code ?? x.stderr}`);
+mkdirSync(join(sidecar, "node", dist.binary, ".."), { recursive: true });
 copyFileSync(join(work, dist.base, dist.binary), join(sidecar, "node", dist.binary));
 chmodSync(join(sidecar, "node", dist.binary), 0o755);
 copyFileSync(join(work, dist.base, "LICENSE"), join(sidecar, "node/LICENSE"));
@@ -243,6 +249,25 @@ cpSync(join(appRoot, "licenses"), join(sidecar, "app/licenses"), { recursive: tr
 // ---- skills (desktop-app ticket 24 opens this folder) ------------------------------------------------------------- //
 cpSync(join(repoRoot, "skills"), join(out, "skills"), { recursive: true });
 
+// ---- the shell's Rust crates: their notices (desktop-app ticket 26) ---------------------------------------------- //
+const notices = run(
+  process.execPath,
+  [
+    join(appRoot, "scripts/shell-notices.mjs"),
+    "--out",
+    join(out, SHELL_NOTICES_FILE),
+    "--target",
+    target,
+  ],
+  { stdio: "inherit" }
+);
+if (notices.status !== 0) {
+  console.error(
+    `shell-notices.mjs exited ${notices.status}: the shell's crate notices are not complete`
+  );
+  process.exit(1);
+}
+
 // ---- checks: required files, licenses, budget -------------------------------------------------------------------- //
 let failed = false;
 const nodeModules = join(sidecar, "app/node_modules");
@@ -261,6 +286,8 @@ const manifest = {
     archive: dist.file,
     url: dist.url,
     sha256: actual,
+    // The binary as assembled: a bundler that rewrites it (linuxdeploy sets a RUNPATH in an AppImage) shows up here.
+    binary_sha256: sha256(join(sidecar, "node", dist.binary)),
     shasums_sha256: sha256(shasums),
     signature: nodeSignature,
   },

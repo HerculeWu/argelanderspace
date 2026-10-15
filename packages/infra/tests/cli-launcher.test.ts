@@ -453,6 +453,87 @@ describe("the Windows script", () => {
   });
 });
 
+describe("the Windows script and the console code page (desktop-app ticket 26)", () => {
+  // A Chinese user name: cmd reads a batch file in the console's OEM code page (936, 437, …), not UTF-8, so these
+  // characters must not be in the file at all.
+  const local = "C:\\Users\\张三\\AppData\\Local";
+  const env = {
+    LOCALAPPDATA: local,
+    USERPROFILE: "C:\\Users\\张三",
+    APPDATA: `C:\\Users\\张三\\AppData\\Roaming`,
+  };
+  const target = {
+    node: `${local}\\ArgelanderSpace\\sidecar\\node\\node.exe`,
+    cli: `${local}\\ArgelanderSpace\\sidecar\\app\\dist\\bin.js`,
+  };
+  const file = `${local}\\Programs\\argelanderspace\\bin\\argelanderspace.cmd`;
+
+  test("paths under the user's folders are written through their variables, so the file is ASCII", () => {
+    const text = launcherScript(target, "win32", file, env);
+    expect([...text].every((c) => c.charCodeAt(0) < 0x80)).toBe(true);
+    expect(text).toContain(
+      'set "AS_NODE=%LOCALAPPDATA%\\ArgelanderSpace\\sidecar\\node\\node.exe"'
+    );
+    expect(text).toContain(
+      'set "AS_CLI=%LOCALAPPDATA%\\ArgelanderSpace\\sidecar\\app\\dist\\bin.js"'
+    );
+    expect(text).toContain(
+      'set "AS_SELF=%LOCALAPPDATA%\\Programs\\argelanderspace\\bin\\argelanderspace.cmd"'
+    );
+  });
+
+  test("the longest matching variable wins, the match ignores case and stops at a folder boundary", () => {
+    const text = launcherScript(
+      { node: "c:\\users\\张三\\appdata\\local\\A\\node.exe", cli: "C:\\Users\\zhang\\bin.js" },
+      "win32",
+      "C:\\Users\\张三\\f.cmd",
+      env
+    ).split("\r\n");
+    expect(text).toContain('set "AS_NODE=%LOCALAPPDATA%\\A\\node.exe"');
+    expect(text).toContain('set "AS_SELF=%USERPROFILE%\\f.cmd"');
+    expect(text).toContain('set "AS_CLI=C:\\Users\\zhang\\bin.js"');
+    // `张三x` is another folder than `张三`: no variable, and a non-ASCII character is left, so it is refused (below).
+    expect(() =>
+      launcherScript(
+        { node: "C:\\a\\node.exe", cli: "C:\\Users\\张三x\\bin.js" },
+        "win32",
+        "C:\\f.cmd",
+        env
+      )
+    ).toThrow(/non-ASCII/);
+  });
+
+  test("a percent sign after the variable is still doubled; ASCII paths outside the variables are written as they are", () => {
+    const text = launcherScript(
+      { node: `${local}\\a 100%\\node.exe`, cli: "D:\\Apps\\x!^)\\bin.js" },
+      "win32",
+      file,
+      env
+    );
+    expect(text).toContain('set "AS_NODE=%LOCALAPPDATA%\\a 100%%\\node.exe"');
+    expect(text).toContain('set "AS_CLI=D:\\Apps\\x!^)\\bin.js"');
+  });
+
+  test("a non-ASCII path no variable covers cannot be written into it", () => {
+    expect(() =>
+      launcherScript({ ...target, node: "D:\\软件\\node.exe" }, "win32", file, env)
+    ).toThrow(/non-ASCII/);
+    // Without the variables (an environment that has none), the user's own folder is not covered either.
+    expect(() => launcherScript(target, "win32", file, {})).toThrow(/non-ASCII/);
+  });
+
+  test("the status and the install use the process's variables", () => {
+    const home = tempHome();
+    const localDir = join(home, "Local");
+    const winEnv = { LOCALAPPDATA: localDir, PATH: "" };
+    const app = { node: join(localDir, "A", "node.exe"), cli: join(localDir, "A", "bin.js") };
+    // Not run on Windows: the paths are POSIX, so no variable is a Windows prefix of them and the text keeps them.
+    expect(cliLauncherStatus(app, { platform: "win32", home, env: winEnv }).state).toBe(
+      "not_installed"
+    );
+  });
+});
+
 /** The cmd metacharacters of an echo line's text that are outside double quotes and not escaped with `^`. */
 function unescapedMeta(rest: string): string[] {
   const bad: string[] = [];

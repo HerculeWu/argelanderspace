@@ -11,10 +11,13 @@
     "license": "MIT",
     "resources": {
       "target/package-resources/sidecar/": "sidecar/",
-      "target/package-resources/skills/": "skills/"
+      "target/package-resources/skills/": "skills/",
+      "target/package-resources/THIRD-PARTY-SHELL-NOTICES.txt": "THIRD-PARTY-SHELL-NOTICES.txt"
     },
     "linux": {
       "deb": { "desktopTemplate": "linux/argelanderspace.desktop.hbs" }
-    }
+    },
+    "macOS": { "signingIdentity": "-" },
+    "windows": { "nsis": { "installMode": "currentUser" } }
   }
 }

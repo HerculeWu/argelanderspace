@@ -7,18 +7,30 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED } from "../../../scripts/license-allowlist.mjs";
 import {
+  cargoLicenseExpression,
   DESKTOP_NODE_VERSION,
   evalLicense,
   hostProcess,
   keyringNativeFile,
+  keyringPackage,
+  keyringProblem,
   licenseProblems,
+  linkedCrates,
   listInstalledPackages,
+  lockfileVersions,
+  NODE_RELEASE_KEYS,
   nodeDist,
+  nodeExtractCommand,
   nodeSignatureFromManifest,
   nodeSignaturePlan,
   parseStrictArgs,
+  preflightProblems,
   RUNTIME_LICENSE_ALLOWED,
+  releaseTagFor,
+  releaseTagProblem,
+  rustTargetTriple,
   shaFromShasums,
+  shellNotices,
   sidecarRequiredFiles,
   vendoredLicense,
   verifyNodeSignature,
@@ -357,4 +369,205 @@ test("one license allowlist: the desktop package's check uses the production lis
   const scan = readFileSync(new URL("../../../scripts/license-scan.mjs", import.meta.url), "utf8");
   assert.match(scan, /from "\.\/license-allowlist\.mjs"/);
   assert.doesNotMatch(scan, /new Set\(\[\s*"MIT"/);
+});
+
+// ---- desktop-app ticket 26: the release workflow's rules ------------------------------------------------------------ //
+
+test("the Node release keyring is pinned to one commit of nodejs/release-keys and its sha256", () => {
+  assert.match(NODE_RELEASE_KEYS.commit, /^[0-9a-f]{40}$/);
+  assert.match(NODE_RELEASE_KEYS.sha256, /^[0-9a-f]{64}$/);
+  assert.equal(
+    NODE_RELEASE_KEYS.url,
+    `https://raw.githubusercontent.com/nodejs/release-keys/${NODE_RELEASE_KEYS.commit}/gpg/pubring.kbx`
+  );
+  const bytes = Buffer.from("keyring bytes");
+  const sha = createHash("sha256").update(bytes).digest("hex");
+  assert.equal(keyringProblem(bytes, sha), null);
+  assert.match(keyringProblem(Buffer.from("other bytes"), sha), /sha256/);
+});
+
+test("the release tag is v plus the app package's version, exactly", () => {
+  assert.equal(releaseTagProblem("v0.1.0", "0.1.0"), null);
+  assert.equal(releaseTagProblem("refs/tags/v0.1.0", "0.1.0"), null);
+  assert.match(releaseTagProblem("v0.1.1", "0.1.0"), /does not match/);
+  assert.match(releaseTagProblem("0.1.0", "0.1.0"), /does not match/);
+  assert.match(releaseTagProblem("v0.1.0-rc1", "0.1.0"), /does not match/);
+  assert.match(releaseTagProblem("refs/heads/v0.1.0", "0.1.0"), /not a tag/);
+  assert.match(releaseTagProblem("", "0.1.0"), /not a tag/);
+  assert.equal(releaseTagFor("0.1.0"), "v0.1.0");
+});
+
+test("each desktop target has its Rust target triple", () => {
+  assert.equal(rustTargetTriple("linux-x64"), "x86_64-unknown-linux-gnu");
+  assert.equal(rustTargetTriple("darwin-arm64"), "aarch64-apple-darwin");
+  assert.equal(rustTargetTriple("darwin-x64"), "x86_64-apple-darwin");
+  assert.equal(rustTargetTriple("win32-x64"), "x86_64-pc-windows-msvc");
+  assert.throws(() => rustTargetTriple("linux-ia32"), /unknown target/);
+});
+
+test("the vendored runtime licenses cover each release target's keychain package", () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../licenses/runtime-licenses.json", import.meta.url), "utf8")
+  );
+  for (const target of ["linux-x64", "darwin-arm64", "darwin-x64", "win32-x64"]) {
+    const name = keyringNativeFile(target).split("/").slice(0, 2).join("/");
+    assert.ok(vendoredLicense(manifest, name, "2.1.0"), `${target}: ${name}`);
+  }
+  assert.deepEqual(keyringPackage("win32-x64"), "@napi-rs/keyring-win32-x64-msvc");
+});
+
+test("the Node archive is unpacked with tar, a zip with tar on Windows and unzip elsewhere", () => {
+  const linux = nodeDist("24.15.0", "linux-x64");
+  assert.deepEqual(nodeExtractCommand(linux, "/a/node.tar.xz", "/w", "linux"), {
+    cmd: "tar",
+    args: [
+      "-xJf",
+      "/a/node.tar.xz",
+      "-C",
+      "/w",
+      "node-v24.15.0-linux-x64/bin/node",
+      "node-v24.15.0-linux-x64/LICENSE",
+    ],
+  });
+  const win = nodeDist("24.15.0", "win32-x64");
+  // System32's bsdtar by its full path: Git for Windows puts a GNU tar (no zip) earlier on a runner's PATH.
+  assert.deepEqual(nodeExtractCommand(win, "C:\\a\\node.zip", "C:\\w", "win32", "D:\\Win"), {
+    cmd: "D:\\Win\\System32\\tar.exe",
+    args: [
+      "-xf",
+      "C:\\a\\node.zip",
+      "-C",
+      "C:\\w",
+      "node-v24.15.0-win-x64/node.exe",
+      "node-v24.15.0-win-x64/LICENSE",
+    ],
+  });
+  assert.deepEqual(nodeExtractCommand(win, "/a/node.zip", "/w", "linux"), {
+    cmd: "unzip",
+    args: [
+      "-q",
+      "/a/node.zip",
+      "node-v24.15.0-win-x64/node.exe",
+      "node-v24.15.0-win-x64/LICENSE",
+      "-d",
+      "/w",
+    ],
+  });
+});
+
+test("the sidecar's required files include the shell's crate notices", () => {
+  for (const t of ["linux-x64", "darwin-arm64", "win32-x64"])
+    assert.ok(sidecarRequiredFiles(t).includes("THIRD-PARTY-SHELL-NOTICES.txt"), t);
+});
+
+// A cargo metadata document, cut down: the root, a normal dependency with a dependency of its own, a build-only
+// dependency, a dev-only one, and a crate both normal and build.
+const metadata = {
+  resolve: {
+    root: "root 0.0.0",
+    nodes: [
+      {
+        id: "root 0.0.0",
+        deps: [
+          { pkg: "a 1.0.0", dep_kinds: [{ kind: null, target: null }] },
+          { pkg: "build 1.0.0", dep_kinds: [{ kind: "build", target: null }] },
+          { pkg: "dev 1.0.0", dep_kinds: [{ kind: "dev", target: null }] },
+          { pkg: "both 1.0.0", dep_kinds: [{ kind: "build" }, { kind: null }] },
+        ],
+      },
+      { id: "a 1.0.0", deps: [{ pkg: "b 2.0.0", dep_kinds: [{ kind: null }] }] },
+      { id: "b 2.0.0", deps: [{ pkg: "a 1.0.0", dep_kinds: [{ kind: null }] }] },
+      { id: "build 1.0.0", deps: [{ pkg: "c 1.0.0", dep_kinds: [{ kind: null }] }] },
+      { id: "dev 1.0.0", deps: [] },
+      { id: "both 1.0.0", deps: [] },
+      { id: "c 1.0.0", deps: [] },
+    ],
+  },
+  packages: [
+    "root 0.0.0",
+    "a 1.0.0",
+    "b 2.0.0",
+    "build 1.0.0",
+    "dev 1.0.0",
+    "both 1.0.0",
+    "c 1.0.0",
+  ].map((id) => {
+    const [name, version] = id.split(" ");
+    return {
+      id,
+      name,
+      version,
+      license: "MIT",
+      manifest_path: `/reg/${name}-${version}/Cargo.toml`,
+    };
+  }),
+};
+
+test("the shell's linked crates: normal dependencies from the root, not build or dev ones, each once", () => {
+  assert.deepEqual(
+    linkedCrates(metadata).map((p) => `${p.name}@${p.version}`),
+    ["a@1.0.0", "b@2.0.0", "both@1.0.0"]
+  );
+});
+
+test("cargo's old slash license form reads as OR", () => {
+  assert.equal(cargoLicenseExpression("MIT/Apache-2.0"), "MIT OR Apache-2.0");
+  assert.equal(cargoLicenseExpression("Apache-2.0 / MIT"), "Apache-2.0 OR MIT");
+  assert.equal(cargoLicenseExpression("MIT OR Apache-2.0"), "MIT OR Apache-2.0");
+  assert.equal(cargoLicenseExpression(null), null);
+});
+
+test("shell notices: every crate needs an allowed license and a text, and the text is in the notice", () => {
+  const ok = shellNotices([
+    {
+      name: "a",
+      version: "1.0.0",
+      license: "MIT/Apache-2.0",
+      texts: [{ file: "LICENSE-MIT", text: "MIT text A" }],
+    },
+  ]);
+  assert.deepEqual(ok.problems, []);
+  assert.match(
+    ok.text,
+    /===== a@1\.0\.0 =====\nLicense: MIT OR Apache-2\.0\n-- LICENSE-MIT --\nMIT text A/
+  );
+  const bad = shellNotices([
+    { name: "m", version: "0.1.0", license: "MPL-2.0", texts: [{ file: "LICENSE", text: "x" }] },
+    { name: "n", version: "0.2.0", license: "MIT", texts: [] },
+    { name: "o", version: "0.3.0", license: null, texts: [{ file: "COPYING", text: "x" }] },
+  ]);
+  assert.equal(bad.problems.length, 3, bad.problems.join("\n"));
+  assert.match(bad.problems[0], /m@0\.1\.0: license "MPL-2\.0" is not in the allowed list/);
+  assert.match(bad.problems[1], /n@0\.2\.0: no license text/);
+  assert.match(bad.problems[2], /o@0\.3\.0: license null/);
+});
+
+test("the preflight finds a package's versions in the lockfile's packages section", () => {
+  const lock = [
+    "packages:",
+    "",
+    "  '@napi-rs/keyring-win32-x64-msvc@2.1.0':",
+    "    resolution: {integrity: sha512-x}",
+    "  '@napi-rs/keyring-win32-x64-msvc@2.2.0':",
+    "    resolution: {integrity: sha512-y}",
+    "  '@napi-rs/keyring@2.1.0':",
+    "snapshots:",
+    "  '@napi-rs/keyring-win32-x64-msvc@2.1.0':",
+  ].join("\n");
+  assert.deepEqual(lockfileVersions(lock, "@napi-rs/keyring-win32-x64-msvc"), ["2.1.0", "2.2.0"]);
+  assert.deepEqual(lockfileVersions(lock, "@napi-rs/keyring-darwin-x64"), []);
+  const lockText = readFileSync(new URL("../../../pnpm-lock.yaml", import.meta.url), "utf8");
+  const manifest = JSON.parse(
+    readFileSync(new URL("../licenses/runtime-licenses.json", import.meta.url), "utf8")
+  );
+  for (const target of ["linux-x64", "darwin-arm64", "darwin-x64", "win32-x64"])
+    assert.deepEqual(preflightProblems({ target, lockText, manifest }), [], target);
+  assert.match(
+    preflightProblems({
+      target: "win32-x64",
+      lockText: lock.replace("2.1.0", "2.0.9"),
+      manifest,
+    })[0],
+    /keyring-win32-x64-msvc@2\.0\.9 has no vendored license text/
+  );
 });

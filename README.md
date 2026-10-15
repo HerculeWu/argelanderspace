@@ -65,6 +65,52 @@ program (found or not, where, its version line, and what is unavailable
 without it) and whether the system keychain can be used; "Check again" re-runs
 it (`GET /api/environment`).
 
+## Installing the desktop app
+
+The desktop app carries its own Node, so it needs nothing but TeX (above) for
+LaTeX ingest. Packages are on the repository's GitHub Releases page: Linux x64
+(`.deb` and `.AppImage`), Windows x64 (an installer `.exe`), macOS on Apple
+silicon (`aarch64` `.dmg`) and on Intel (`x64` `.dmg`). There is no automatic
+update: install a newer package over the old one; your settings, credentials,
+logs and recent projects live in your user folders and stay.
+
+The packages are **not signed** by Apple or Microsoft (the project has no
+signing certificates), so both systems stop the app the first time. That is
+expected; this is how to let it open:
+
+**macOS.** Open the `.dmg` and drag the app into Applications. The app is
+signed ad hoc (locally, not by a known developer), so the first start is
+refused ("Apple could not verify …" / "… cannot be opened").
+
+1. Click **Done** (or **OK**) in that message.
+2. Open **System Settings → Privacy & Security**, scroll to **Security**, find
+   the line about the app and click **Open Anyway**; confirm with your password
+   or Touch ID, then **Open Anyway** once more in the next message.
+3. From then on it opens normally. On macOS 14 and earlier, Control-click the
+   app in Applications and choose **Open**, then **Open** again, does the same.
+
+If you prefer the Terminal: `xattr -dr com.apple.quarantine
+/Applications/argelanderspace.app` removes the download mark from that app
+only (do this only for a package you downloaded from this repository's
+Releases page).
+
+*To be confirmed on a real Mac:* after an update the system may ask again
+whether the app may use the items it saved in your keychain (the ADS token and
+mail passwords), because an app that is not signed by a known developer looks
+like a new app after each update. Choose **Always Allow**; nothing is lost if
+you deny — the app then asks you for the token or password again.
+
+**Windows.** Run the installer `.exe`. It installs for your user only (no
+administrator rights). SmartScreen may say "Windows protected your PC": click
+**More info**, check that the app is ArgelanderSpace, then **Run anyway**.
+
+**Linux.** `sudo apt install ./argelanderspace_<version>_amd64.deb` (it pulls
+in WebKitGTK; remove with `sudo apt remove argelanderspace`), or make the
+`.AppImage` executable (`chmod +x`) and run it. With the AppImage, the
+command-line tool installed from Settings → Command line & agents does not keep
+working after the app is closed (the AppImage runs from a temporary mount); use
+the `.deb` if agents should use the app's CLI.
+
 ## Quickstart
 
 ```bash
@@ -140,6 +186,14 @@ needs neither Node nor administrator rights:
 - If the app is moved or removed, the launcher says which file is missing and
   to install the tool again (or delete the launcher), instead of a bare "not
   found".
+- Windows: `cmd`, PowerShell and programs that start commands through a shell
+  find `argelanderspace.cmd` by its bare name; a program that starts it
+  without a shell (Node's `spawn` without `shell: true`, for one) does not —
+  give such a program `shell: true`. The app's folder must be under your user
+  folder (the installer's default) or Program Files if its path has characters
+  outside ASCII (a Chinese user name is fine): `cmd` reads the launcher in the
+  console's code page, so the launcher names those folders through
+  `%LOCALAPPDATA%` and its kin.
 - **Show the skills folder** opens the skills that ship with the app (the
   `skills/` of this repository, in the package's resources —
   `/usr/lib/argelanderspace/skills` for the Linux deb). Copy the ones you want

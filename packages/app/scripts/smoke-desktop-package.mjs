@@ -3,8 +3,16 @@
 // packaging steps (docs/engineering.md「桌面包」) and `corepack pnpm -r build` (the npm build it compares versions with).
 // Linux only (dpkg-deb, /proc). It never installs anything: the package is unpacked into a temp dir.
 //
-//   node packages/app/scripts/smoke-desktop-package.mjs --deb <file.deb> [--remove <path,...>] [--label <name>]
-//        [--evidence <dir>] [--shell] [--shell-bin <file>] [--keep]
+//   node packages/app/scripts/smoke-desktop-package.mjs (--deb <file.deb> | --appimage <file.AppImage>)
+//        [--remove <path,...>] [--label <name>] [--evidence <dir>] [--shell] [--shell-bin <file>] [--keep]
+//
+//   --appimage the same smoke on an AppImage (desktop-app ticket 26): unpacked with its own `--appimage-extract` (no
+//              FUSE, nothing mounted) into the temp dir; its usr/ tree has the deb's layout. Instead of the control
+//              file it checks the top-level launcher entry. linuxdeploy rewrites ELF files it bundles (it gave the
+//              sidecar's node and keychain .node a RUNPATH in ticket 23): the package's node is compared with the
+//              binary the sidecar was assembled with (sidecar-manifest.json `node.binary_sha256`) and the difference
+//              is reported, not failed -- the runtime checks below decide whether the rewritten files still work.
+//              The shell is started as the unpacked binary (usr/bin), not through AppRun.
 //
 //   --remove   comma list of paths relative to the package's resource directory (usr/lib/argelanderspace) to delete
 //              from the unpacked copy first, for a variant that must fail (e.g. sidecar/app/dist/argelander.sty,
@@ -65,7 +73,7 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 let args;
 try {
   args = parseStrictArgs(process.argv.slice(2), {
-    valued: ["--deb", "--remove", "--label", "--evidence", "--shell-bin"],
+    valued: ["--deb", "--appimage", "--remove", "--label", "--evidence", "--shell-bin"],
     flags: ["--shell", "--keep"],
   });
 } catch (e) {
@@ -73,15 +81,18 @@ try {
   process.exit(1);
 }
 const opt = args.values;
-if (!opt["--deb"]) {
-  console.error("smoke-desktop-package: --deb <file.deb> is required");
+if (!opt["--deb"] === !opt["--appimage"]) {
+  console.error(
+    "smoke-desktop-package: give one of --deb <file.deb> or --appimage <file.AppImage>"
+  );
   process.exit(1);
 }
 if (opt["--shell-bin"] && !args.flags.has("--shell")) {
   console.error("smoke-desktop-package: --shell-bin needs --shell");
   process.exit(1);
 }
-const deb = resolve(opt["--deb"]);
+const isAppImage = !!opt["--appimage"];
+const deb = resolve(opt["--deb"] ?? opt["--appimage"]);
 const label = opt["--label"] ?? "desktop-package";
 const removeList = (opt["--remove"] ?? "").split(",").filter(Boolean);
 const target = `${process.platform}-${process.arch}`;
@@ -124,33 +135,57 @@ const mb = (n) => `${(n / 1e6).toFixed(1)} MB`;
 const sizes = { deb_bytes: statSync(deb).size };
 
 // ---- unpack --------------------------------------------------------------------------------------------------------- //
-const root = join(work, "root");
-const x = spawnSync("dpkg-deb", ["-x", deb, root], { encoding: "utf8" });
-if (x.status !== 0) {
-  console.error(`dpkg-deb -x failed: ${x.stderr}`);
-  process.exit(1);
+let root = join(work, "root");
+let control = {};
+if (isAppImage) {
+  // The AppImage unpacks itself into ./squashfs-root of its working directory (its runtime, no FUSE needed).
+  const x = spawnSync(deb, ["--appimage-extract"], { cwd: work, encoding: "utf8" });
+  if (x.error || x.status !== 0) {
+    console.error(`--appimage-extract failed: ${x.error?.code ?? x.stderr}`);
+    process.exit(1);
+  }
+  root = join(work, "squashfs-root");
+  log(`variant ${label}: ${deb} (AppImage)`);
+  const top = readdirSync(root).filter((f) => f.endsWith(".desktop"));
+  const entry = top.length === 1 ? readFileSync(join(root, top[0]), "utf8") : "";
+  check(
+    /^Name=ArgelanderSpace$/m.test(entry) && /^Exec=argelanderspace-desktop/m.test(entry),
+    "the AppImage's launcher entry is named ArgelanderSpace and starts the shell",
+    top.join(",")
+  );
+  check(
+    deb.split(sep).pop().includes(`_${appPkg.version}_`),
+    "the AppImage's file name carries the app package's version (single source)",
+    deb.split(sep).pop()
+  );
+} else {
+  const x = spawnSync("dpkg-deb", ["-x", deb, root], { encoding: "utf8" });
+  if (x.status !== 0) {
+    console.error(`dpkg-deb -x failed: ${x.stderr}`);
+    process.exit(1);
+  }
+  const field = (name) =>
+    spawnSync("dpkg-deb", ["-f", deb, name], { encoding: "utf8" }).stdout.trim();
+  control = {
+    Package: field("Package"),
+    Version: field("Version"),
+    Maintainer: field("Maintainer"),
+    Architecture: field("Architecture"),
+    "Installed-Size": field("Installed-Size"),
+    Depends: field("Depends"),
+  };
+  log(`variant ${label}: ${deb} (${control.Package} ${control.Version} ${control.Architecture})`);
+  check(
+    control.Package === "argelanderspace" && control.Maintainer === "ArgelanderSpace",
+    "the package is named argelanderspace, maintainer ArgelanderSpace",
+    `Package ${JSON.stringify(control.Package)}, Maintainer ${JSON.stringify(control.Maintainer)}`
+  );
+  check(
+    control.Version === appPkg.version,
+    "the package version is the app package's (single source)",
+    `${control.Version} vs ${appPkg.version}`
+  );
 }
-const field = (name) =>
-  spawnSync("dpkg-deb", ["-f", deb, name], { encoding: "utf8" }).stdout.trim();
-const control = {
-  Package: field("Package"),
-  Version: field("Version"),
-  Maintainer: field("Maintainer"),
-  Architecture: field("Architecture"),
-  "Installed-Size": field("Installed-Size"),
-  Depends: field("Depends"),
-};
-log(`variant ${label}: ${deb} (${control.Package} ${control.Version} ${control.Architecture})`);
-check(
-  control.Package === "argelanderspace" && control.Maintainer === "ArgelanderSpace",
-  "the package is named argelanderspace, maintainer ArgelanderSpace",
-  `Package ${JSON.stringify(control.Package)}, Maintainer ${JSON.stringify(control.Maintainer)}`
-);
-check(
-  control.Version === appPkg.version,
-  "the package version is the app package's (single source)",
-  `${control.Version} vs ${appPkg.version}`
-);
 const libDirs = existsSync(join(root, "usr/lib")) ? readdirSync(join(root, "usr/lib")) : [];
 const productDir = libDirs.find((d) => existsSync(join(root, "usr/lib", d, "sidecar")));
 const resources = productDir ? join(root, "usr/lib", productDir) : join(root, "usr/lib/<none>");
@@ -163,13 +198,14 @@ const desktopFiles = existsSync(join(root, "usr/share/applications"))
 const desktopEntry = desktopFiles.length
   ? readFileSync(join(root, "usr/share/applications", desktopFiles[0]), "utf8")
   : "";
-check(
-  desktopFiles.length === 1 &&
-    /^Exec=argelanderspace-desktop$/m.test(desktopEntry) &&
-    /^Name=ArgelanderSpace$/m.test(desktopEntry),
-  "a launcher entry (usr/share/applications) named ArgelanderSpace starts the shell",
-  desktopFiles.join(",")
-);
+if (!isAppImage)
+  check(
+    desktopFiles.length === 1 &&
+      /^Exec=argelanderspace-desktop$/m.test(desktopEntry) &&
+      /^Name=ArgelanderSpace$/m.test(desktopEntry),
+    "a launcher entry (usr/share/applications) named ArgelanderSpace starts the shell",
+    desktopFiles.join(",")
+  );
 sizes.unpacked_bytes = du(root);
 
 for (const rel of removeList) {
@@ -207,6 +243,16 @@ else {
   log(`UNTESTED  the Node download's signature: ${nodeSignature.detail}`);
 }
 const nodeExe = join(sidecar, "node/bin/node");
+// A bundler that rewrites the node binary (linuxdeploy's RUNPATH in an AppImage): reported, the runtime checks decide.
+const nodeBinarySha = existsSync(nodeExe) ? sha256(nodeExe) : null;
+const assembledSha = sidecarManifest?.node?.binary_sha256 ?? null;
+if (!assembledSha) log("INFO  the manifest has no node.binary_sha256 (assembled before ticket 26)");
+else if (nodeBinarySha === assembledSha)
+  log("INFO  the package's node is byte for byte the assembled one");
+else
+  log(
+    "INFO  the package's node DIFFERS from the assembled one (rewritten by the bundler, e.g. a RUNPATH)"
+  );
 const binJs = join(sidecar, "app/dist/bin.js");
 const nodeModules = join(sidecar, "app/node_modules");
 const nodeLicense = join(sidecar, "node/LICENSE");
@@ -254,9 +300,9 @@ for (const [k, p] of [
   if (existsSync(p)) sizes[k] = du(p);
 const duK = spawnSync("du", ["-sk", root], { encoding: "utf8" }).stdout.split(/\s/)[0];
 sizes.unpacked_disk_kib = Number(duK);
-sizes.installed_size_kib = Number(control["Installed-Size"]);
+sizes.installed_size_kib = Number(control["Installed-Size"] ?? Number.NaN);
 log(
-  `sizes: deb ${mb(sizes.deb_bytes)}; unpacked ${mb(sizes.unpacked_bytes)} of file content, ${(sizes.unpacked_disk_kib / 1024).toFixed(1)} MiB on disk here; control Installed-Size ${sizes.installed_size_kib} KiB; node ${mb(sizes.node_runtime_bytes ?? 0)}, app dist ${mb(sizes.app_dist_bytes ?? 0)}, dependency directory ${mb(sizes.dependency_directory_bytes ?? 0)}, skills ${mb(sizes.skills_bytes ?? 0)}, shell ${mb(sizes.shell_bytes ?? 0)}`
+  `sizes: ${isAppImage ? "AppImage" : "deb"} ${mb(sizes.deb_bytes)}; unpacked ${mb(sizes.unpacked_bytes)} of file content, ${(sizes.unpacked_disk_kib / 1024).toFixed(1)} MiB on disk here; control Installed-Size ${sizes.installed_size_kib} KiB; node ${mb(sizes.node_runtime_bytes ?? 0)}, app dist ${mb(sizes.app_dist_bytes ?? 0)}, dependency directory ${mb(sizes.dependency_directory_bytes ?? 0)}, skills ${mb(sizes.skills_bytes ?? 0)}, shell ${mb(sizes.shell_bytes ?? 0)}`
 );
 
 // ---- isolated environment ------------------------------------------------------------------------------------------- //
@@ -488,7 +534,7 @@ if (args.flags.has("--shell")) {
 
 writeFileSync(
   join(evidenceDir, `${label}-package.json`),
-  `${JSON.stringify({ deb: deb.split(sep).pop(), control, removed: removeList, shell_bin: opt["--shell-bin"] ?? null, node: { version: nodeVersion, signature: nodeSignature }, bin_js_sha256: binSha, sizes }, null, 2)}\n`
+  `${JSON.stringify({ deb: deb.split(sep).pop(), kind: isAppImage ? "appimage" : "deb", node_binary_sha256: nodeBinarySha, node_binary_as_assembled: assembledSha ? nodeBinarySha === assembledSha : null, control, removed: removeList, shell_bin: opt["--shell-bin"] ?? null, node: { version: nodeVersion, signature: nodeSignature }, bin_js_sha256: binSha, sizes }, null, 2)}\n`
 );
 const verdict = smokeVerdict({ failures, untested, label });
 log(`\n${verdict.line}`);

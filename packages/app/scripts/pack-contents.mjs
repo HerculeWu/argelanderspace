@@ -6,6 +6,22 @@
 // Pi SDK come from the declared `dependencies`, installed next to the package). Nothing from the repository, a user library, a provider secret or a
 // private prototype may be in it.
 
+import { readFileSync } from "node:fs";
+
+/**
+ * The vendored license texts (packages/app/licenses, desktop-app tickets 23 and 26): the runtime packages that ship no
+ * license file of their own get their text from here, in the npm package as in the desktop package (the user's
+ * decision in ticket 23). Read from the manifest, so a new vendored text is required without editing this list.
+ */
+const vendored = JSON.parse(
+  readFileSync(new URL("../licenses/runtime-licenses.json", import.meta.url), "utf8")
+);
+export const VENDORED_LICENSE_FILES = [
+  "licenses/runtime-licenses.json",
+  ...Object.keys(vendored.files).map((f) => `licenses/${f}`),
+  "licenses/uiw-react-codemirror-4.25.11-LICENSE",
+];
+
 export const REQUIRED_FILES = [
   "package.json",
   "README.md",
@@ -25,10 +41,11 @@ export const REQUIRED_FILES = [
   "dist/web/THIRD-PARTY-EMBEDPDF-NOTICES.txt",
   "dist/web/THIRD-PARTY-BUNDLED-NOTICES.txt",
   "dist/web/THIRD-PARTY-MAIL-NOTICES.txt",
+  ...VENDORED_LICENSE_FILES,
 ];
 
 /** Only these top-level entries may exist in the tarball. */
-const ALLOWED_ROOT = /^(?:package\.json|README\.md|LICENSE|dist\/.+)$/;
+const ALLOWED_ROOT = /^(?:package\.json|README\.md|LICENSE|dist\/.+|licenses\/[^/]+)$/;
 
 const FORBIDDEN = [
   [/(^|\/)\.scratch(\/|$)/, "a private scratch/ticket file"],
