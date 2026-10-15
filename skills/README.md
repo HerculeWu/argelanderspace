@@ -77,7 +77,10 @@ same group's **Install the command-line tool** gives the skills their
 `argelanderspace` command: a launcher in `~/.local/bin` (Linux, macOS) or
 `%LOCALAPPDATA%\Programs\argelanderspace\bin` (Windows) that runs the app's own
 Node and CLI. The app changes no `PATH`; when that directory is not on it the
-page shows the line to add yourself.
+page shows the line to add yourself. The AppImage offers no such install (it
+runs from a mount that is gone once the app closes, so a launcher pointing
+into it would stop working); for an agent's command line use the `.deb` or the
+npm package.
 
 ## Prerequisites
 
