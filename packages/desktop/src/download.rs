@@ -46,7 +46,10 @@ use crate::protocol::Language;
 /// The save dialog's and the failure dialog's words.
 pub struct SaveText {
     pub title: &'static str,
+    /// The GTK dialog's buttons (Linux); the system dialogs of macOS and Windows have their own.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub cancel: &'static str,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     pub save: &'static str,
     pub failed_title: &'static str,
     pub failed: &'static str,

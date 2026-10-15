@@ -26,6 +26,8 @@
 import { spawn } from "node:child_process";
 import {
   appendFileSync,
+  chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -35,14 +37,17 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const argv = process.argv.slice(2);
 const opt = {};
+const flags = new Set();
 for (let i = 0; i < argv.length; i += 1) {
   if (["--shell", "--evidence", "--label"].includes(argv[i]) && argv[i + 1] !== undefined) {
     opt[argv[i]] = argv[i + 1];
     i += 1;
+  } else if (argv[i] === "--stand-in-host") {
+    flags.add(argv[i]);
   } else {
     console.error(`smoke-shell-probe: unknown argument ${argv[i]}`);
     process.exit(64);
@@ -56,6 +61,59 @@ const shellBin = resolve(opt["--shell"]);
 const label = opt["--label"] ?? process.platform;
 const evidence = opt["--evidence"] ? resolve(opt["--evidence"]) : null;
 if (evidence) mkdirSync(evidence, { recursive: true });
+
+// --stand-in-host: the shell's packaged launcher finds, next to it, a stand-in instead of the package's host: this
+// machine's Node (copied to sidecar/node/) running a small script (sidecar/app/dist/bin.js) that serves one page with
+// a data-ui element and `/api/host`, and speaks just enough of the line protocol (a `ready` line; ends on `quit` or
+// at the end of its input). It tests the shell alone (its page guard, single instance, quit) where the workspace
+// cannot be built; the project and the CJK check are left out. Removed again at the end.
+const standIn = flags.has("--stand-in-host");
+const STAND_IN_HOST = `
+import { createServer } from "node:http";
+import { createInterface } from "node:readline";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+const port = Number(process.env.ASPACE_STAND_IN_PORT);
+const logDir = join(process.env.XDG_STATE_HOME || process.cwd(), "stand-in-logs");
+mkdirSync(logDir, { recursive: true });
+const page = '<!doctype html><html><head><meta charset="utf-8"><title>ArgelanderSpace</title></head>' +
+  '<body><div id="root"><main data-ui="stand-in-host">stand-in host</main></div></body></html>';
+const server = createServer((req, res) => {
+  if (req.url === "/api/host") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ mode: "desktop", project: "none", standIn: true }));
+    return;
+  }
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+  res.end(page);
+});
+const end = () => server.close(() => process.exit(0));
+server.listen(port, "127.0.0.1", () => {
+  const ready = { type: "ready", url: "http://127.0.0.1:" + port + "/", port, configuredPort: port,
+    portFallback: false, portOccupant: null, project: null, logDir, language: "en" };
+  process.stdout.write(JSON.stringify(ready) + String.fromCharCode(10));
+});
+const lines = createInterface({ input: process.stdin });
+lines.on("line", (line) => { if (line.includes('"quit"')) end(); });
+lines.on("close", end);
+`;
+const placed = [];
+if (standIn) {
+  const side = join(dirname(shellBin), "sidecar");
+  if (existsSync(side)) {
+    console.error(`smoke-shell-probe: ${side} is there already: not replaced`);
+    process.exit(64);
+  }
+  const nodeDir = process.platform === "win32" ? join(side, "node") : join(side, "node", "bin");
+  mkdirSync(nodeDir, { recursive: true });
+  copyFileSync(process.execPath, join(nodeDir, process.platform === "win32" ? "node.exe" : "node"));
+  if (process.platform !== "win32") chmodSync(join(nodeDir, "node"), 0o755);
+  mkdirSync(join(side, "app", "dist"), { recursive: true });
+  writeFileSync(join(side, "app", "dist", "bin.js"), STAND_IN_HOST);
+  // ESM without a package.json "type": the .js must be read as a module.
+  writeFileSync(join(side, "app", "package.json"), '{"type":"module"}\n');
+  placed.push(side);
+}
 
 const results = [];
 const log = (line) => {
@@ -387,6 +445,7 @@ async function run(name, { keepEntries, cjk }) {
   env.ARGELANDERSPACE_SHELL_PROBE = probeFile;
   env.ARGELANDERSPACE_SHELL_PROBE_CONTROL = controlFile;
   if (keepEntries) env.ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES = "1";
+  if (standIn) env.ASPACE_STAND_IN_PORT = String(port);
   log(`--- ${name}: starting ${shellBin} (port ${port})`);
   const shell = startShell(env, home);
   const host = await waitHost(port, shell);
@@ -497,11 +556,11 @@ async function run(name, { keepEntries, cjk }) {
 }
 
 try {
-  await run("guarded", { keepEntries: false, cjk: true });
+  await run("guarded", { keepEntries: false, cjk: !standIn });
   await run("entries-kept", { keepEntries: true, cjk: false });
 } finally {
   cleanup();
-  for (const d of [work, ...runDirs]) {
+  for (const d of [work, ...runDirs, ...placed]) {
     try {
       rmSync(d, { recursive: true, force: true, maxRetries: 5 });
     } catch {}

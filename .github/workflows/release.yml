@@ -164,6 +164,18 @@ jobs:
           # guard step below; built here so that its platform code is compiled even when a later step fails.
           cargo build --locked --features smoke-probe,packaged 2>&1 | tail -n 3
 
+      - name: Shell page guard with a stand-in host (the shell alone, before the workspace build)
+        run: |
+          # desktop-app ticket 30: the test build runs a stand-in host (this runner's Node and a small script put in
+          # target/debug/sidecar, removed afterwards) so the page guard, the single instance and quit are checked on
+          # this platform's webview even when the workspace cannot be built here (Windows, aux.ts above).
+          ext=""; if [ "$RUNNER_OS" = Windows ]; then ext=.exe; fi
+          run=(node packages/app/scripts/smoke-shell-probe.mjs --stand-in-host \
+            --shell "packages/desktop/target/debug/argelanderspace-desktop$ext" \
+            --label "$TARGET-stand-in" --evidence "$EVIDENCE")
+          if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi
+          "${run[@]}"
+
       - name: Install the workspace (frozen lockfile)
         run: corepack pnpm install --frozen-lockfile
 
