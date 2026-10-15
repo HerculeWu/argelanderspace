@@ -70,7 +70,9 @@ function bridge(): HostBridge {
   return {
     portFallback: null,
     project: "open",
+    requests: [],
     request: () => true,
+    cli: null,
     recent: {
       list: () => ({ version: 1, projects: [], lastMissing: null }),
       open: (path, acknowledged) => {

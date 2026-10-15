@@ -37,6 +37,9 @@
 .st-root .tweak-seg-btn:disabled, .st-root .tweak-swatch:disabled, .st-root .tweak-switch:disabled { opacity: .5; cursor: default; }
 .st-root .tweak-swatch:disabled:hover { transform: none; }
 .st-inline-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* The line to add to PATH (desktop-app ticket 24, approved prototype): monospace, wraps, with its copy action. */
+.st-codeline { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 8px; border: 1px solid var(--border-soft); border-radius: var(--radius-sm); background: var(--bg-deep); }
+.st-codeline code { flex: 1; min-width: 0; font: var(--fs-sm) var(--font-mono); color: var(--text); overflow-wrap: anywhere; }
 
 @container st (max-width: 780px) {
   .st-layout { flex-direction: column; }

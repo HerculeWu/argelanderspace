@@ -43,6 +43,18 @@
  *                                       nothing else changes. Also 200 while the host stops. 400 `invalid_request`
  *                                       without an `id`, 413 `too_large` over 16 KiB.
  *
+ * The command-line tool (desktop-app ticket 24), desktop form only (404 `not_desktop` in the browser; 404
+ * `cli_unavailable` from a host that does not know its own Node and CLI). Neither request reads a body:
+ * - `GET  /api/host/cli`            → {@link HostCliStatus}: the launcher in the user's executable directory, whether that
+ *                                     directory is on PATH, and the line the user would add (the app changes no PATH).
+ * - `POST /api/host/cli/install`    → 200 {@link HostCliChange} `installed`; 409 `{code: "foreign", status}` when a file
+ *                                     without the app's mark has that name (it is not overwritten); 500
+ *                                     `{code: "write_failed", detail: <error code>}`.
+ * - `POST /api/host/cli/uninstall`  → 200 {@link HostCliChange} `removed` / `not_installed`; 409 `{code: "foreign",
+ *                                     status}` (only a file with the mark is removed); 500 `{code: "remove_failed", …}`.
+ *   `GET` answers 500 `{code: "unreadable", detail}` when what is at the launcher's path cannot be looked at. A 500's
+ *   `detail` is the error's code only (`EACCES`), never a path or a message.
+ *
  * All are `no-store` and behind the same cross-origin guard as every other endpoint. `serve` (the browser form) has
  * no host: its answer is `mode: "browser"` with no requests, and the page hides the desktop-only controls.
  *
@@ -61,7 +73,10 @@ export const HOST_APP = "argelanderspace";
 export const HOST_MODES = ["browser", "desktop"] as const;
 export type HostMode = (typeof HOST_MODES)[number];
 
-/** The native requests, a fixed list; none takes a path or an address from the page. */
+/**
+ * The native requests, a fixed list; none takes a path or an address from the page. `open_skills_folder` (desktop-app
+ * ticket 24) is offered only by a host that knows where the bundled skills are.
+ */
 export const HOST_REQUEST_KINDS = [
   "pick_folder",
   "open_in_browser",
@@ -328,4 +343,53 @@ export type WsHostSwitchConfirmation = z.infer<typeof WsHostSwitchConfirmationSc
 /** The page's check of a `host.switch-confirmation` message before it shows anything of it. */
 export function isWsHostSwitchConfirmation(value: unknown): value is WsHostSwitchConfirmation {
   return WsHostSwitchConfirmationSchema.safeParse(value).success;
+}
+
+// ---- the command-line tool (desktop-app ticket 24) ------------------------------------------------------------- //
+
+/**
+ * `not_installed`: nothing at the launcher's path. `installed`: the app's launcher, running this app. `outdated`: the
+ * app's launcher (it has the mark) for another place of the app — moved since, or another copy; installing points it
+ * here. `foreign`: a file (or link, or folder) without the app's mark: never overwritten or removed.
+ */
+export const HOST_CLI_STATES = ["not_installed", "installed", "outdated", "foreign"] as const;
+export type HostCliState = (typeof HOST_CLI_STATES)[number];
+
+/** `GET /api/host/cli`. */
+export interface HostCliStatus {
+  version: 1;
+  /** The command's name: the npm package's (`argelanderspace`). */
+  command: string;
+  state: HostCliState;
+  /** The launcher's path (`~/.local/bin/argelanderspace`, `…\argelanderspace.cmd` on Windows). */
+  file: HostShownPath;
+  /** The user's executable directory it is in. */
+  dir: HostShownPath;
+  /** Whether that directory is on PATH, as the app's own environment has it. */
+  inPath: boolean;
+  /** What the user would add themself: a shell line (`posix`), or the directory for the user PATH (`windows`). */
+  pathLine: string;
+  platform: "posix" | "windows";
+}
+
+/** The answer of `POST /api/host/cli/install` and `…/uninstall`. */
+export interface HostCliChange {
+  outcome: "installed" | "removed" | "not_installed";
+  status: HostCliStatus;
+}
+
+export function isHostCliStatus(value: unknown): value is HostCliStatus {
+  const v = value as Partial<HostCliStatus> | null;
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    v.version === 1 &&
+    typeof v.command === "string" &&
+    (HOST_CLI_STATES as readonly unknown[]).includes(v.state) &&
+    isShownPath(v.file) &&
+    isShownPath(v.dir) &&
+    typeof v.inPath === "boolean" &&
+    typeof v.pathLine === "string" &&
+    (v.platform === "posix" || v.platform === "windows")
+  );
 }

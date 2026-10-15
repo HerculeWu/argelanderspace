@@ -8,10 +8,19 @@
  * Everything below the home directory is the throwaway one of the isolation setup; the config file is written there.
  */
 
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { connect, type Socket } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { HOST_REQUEST_KINDS } from "@argelanderspace/contracts";
@@ -154,6 +163,10 @@ async function startHost(
   opts: {
     onFolderPicked?: (path: string | null) => void;
     stopDeadline?: { ms: number; onExpired: () => void };
+    /** The bundled skills; default a folder of the test's project. `null`: the host knows of none. */
+    skillsDir?: string | null;
+    /** The app's Node and CLI for the command-line tool; `null`: the host knows of none. */
+    cliLauncher?: { node: string; cli: string } | null;
   } = {}
 ): Promise<Running> {
   const input = new PassThrough();
@@ -194,6 +207,10 @@ async function startHost(
     version: "9.9.9-test",
     keychainProbe: KEYCHAIN,
     webDist: join(project, "web"),
+    ...(opts.skillsDir === null ? {} : { skillsDir: opts.skillsDir ?? join(project, "skills") }),
+    ...(opts.cliLauncher === null || opts.cliLauncher === undefined
+      ? {}
+      : { cliLauncher: opts.cliLauncher }),
     ...(opts.onFolderPicked ? { onFolderPicked: opts.onFolderPicked } : {}),
     ...(opts.stopDeadline ? { stopDeadline: opts.stopDeadline } : {}),
   });
@@ -430,7 +447,8 @@ describe("native requests", () => {
         path: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
       },
       { type: "request", kind: "open_config_file", path: configFilePath() },
-      { type: "request", kind: "open_skills_folder" },
+      // The bundled skills the host was told of (desktop-app ticket 24).
+      { type: "request", kind: "open_skills_folder", path: join(project, "skills") },
     ]);
     expect(typeof pick.id).toBe("string");
     const all = JSON.stringify(h.lines);
@@ -929,5 +947,211 @@ describe("the browser form", () => {
       404,
       "not_desktop",
     ]);
+    // The command-line tool is the desktop app's only (desktop-app ticket 24).
+    for (const [method, path] of [
+      ["GET", "/api/host/cli"],
+      ["POST", "/api/host/cli/install"],
+      ["POST", "/api/host/cli/uninstall"],
+    ] as const) {
+      const cli = await fetch(`${url}${path}`, { method, headers: ORIGIN(url) });
+      expect([path, cli.status, ((await cli.json()) as { code: string }).code]).toEqual([
+        path,
+        404,
+        "not_desktop",
+      ]);
+    }
+    expect(safeList(join(isolated(homedir()), ".local", "bin"))).toEqual([]);
+  });
+});
+
+describe("the bundled skills folder (desktop-app ticket 24)", () => {
+  test("a host that knows of none does not offer the request: not listed, 404, no line", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost({ skillsDir: null });
+    const info = (await (await fetch(`${h.url}/api/host`, { headers: ORIGIN(h.url) })).json()) as {
+      requests: string[];
+    };
+    expect(info.requests).toEqual(
+      HOST_REQUEST_KINDS.filter((kind) => kind !== "open_skills_folder")
+    );
+    const before = h.lines.length;
+    const res = await fetch(`${h.url}/api/host/requests/open_skills_folder`, {
+      method: "POST",
+      headers: ORIGIN(h.url),
+    });
+    expect([res.status, ((await res.json()) as { code: string }).code]).toEqual([
+      404,
+      "unknown_request",
+    ]);
+    await sleep(50);
+    expect(h.lines.length).toBe(before);
+  });
+});
+
+describe("the command-line tool (desktop-app ticket 24)", () => {
+  const savedPath = process.env.PATH;
+  afterEach(() => {
+    process.env.PATH = savedPath;
+    rmSync(join(isolated(homedir()), ".local", "bin"), { recursive: true, force: true });
+  });
+
+  /** A stand-in for the app's Node and CLI. */
+  function app(): { node: string; cli: string } {
+    const dir = join(project, "app", "dist");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "bin.js"), "console.log('cli', process.argv.slice(2).join(' '));\n");
+    return { node: process.execPath, cli: join(dir, "bin.js") };
+  }
+
+  const bin = () => join(isolated(homedir()), ".local", "bin");
+  const post = (h: Running, path: string) =>
+    fetch(`${h.url}${path}`, { method: "POST", headers: ORIGIN(h.url) });
+  const status = async (h: Running) => {
+    const res = await fetch(`${h.url}/api/host/cli`, { headers: ORIGIN(h.url) });
+    expect([res.status, res.headers.get("cache-control")]).toEqual([200, "no-store"]);
+    return (await res.json()) as Record<string, unknown>;
+  };
+
+  test("the status before: not installed, in ~/.local/bin, not on PATH, and the line to add", async () => {
+    writeConfig("port = 0\n");
+    process.env.PATH = "/usr/bin:/bin";
+    const h = await startHost({ cliLauncher: app() });
+    expect(await status(h)).toEqual({
+      version: 1,
+      command: "argelanderspace",
+      state: "not_installed",
+      file: { path: join(bin(), "argelanderspace"), display: "~/.local/bin/argelanderspace" },
+      dir: { path: bin(), display: "~/.local/bin" },
+      inPath: false,
+      pathLine: 'export PATH="$HOME/.local/bin:$PATH"',
+      platform: "posix",
+    });
+    // Looking writes nothing.
+    expect(existsSync(bin())).toBe(false);
+  });
+
+  test("install writes the marked launcher; the status then says installed, and on PATH when it is", async () => {
+    writeConfig("port = 0\n");
+    process.env.PATH = "/usr/bin:/bin";
+    const target = app();
+    const h = await startHost({ cliLauncher: target });
+    const res = await post(h, "/api/host/cli/install");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { outcome: string; status: Record<string, unknown> };
+    expect(body.outcome).toBe("installed");
+    expect(body.status.state).toBe("installed");
+    const text = readFileSync(join(bin(), "argelanderspace"), "utf8");
+    expect(text).toContain("argelanderspace-cli-launcher:");
+    expect(text).toContain(target.cli);
+    expect((await status(h)).inPath).toBe(false);
+    process.env.PATH = `/usr/bin:${bin()}`;
+    expect(await status(h)).toMatchObject({ state: "installed", inPath: true });
+    // Nothing of the environment is changed by the host: PATH is what the test set.
+    expect(process.env.PATH).toBe(`/usr/bin:${bin()}`);
+    const records = h.logFile().filter((r) => r.event === "desktop.cli_launcher");
+    expect(records.map((r) => [r.action, r.outcome])).toEqual([["install", "installed"]]);
+    expect(JSON.stringify(records)).not.toContain(project);
+  });
+
+  test("a file of that name without the mark: install and uninstall are 409 foreign, the file is untouched", async () => {
+    writeConfig("port = 0\n");
+    mkdirSync(bin(), { recursive: true });
+    writeFileSync(join(bin(), "argelanderspace"), "#!/bin/sh\necho someone else\n");
+    const h = await startHost({ cliLauncher: app() });
+    expect((await status(h)).state).toBe("foreign");
+    for (const path of ["/api/host/cli/install", "/api/host/cli/uninstall"]) {
+      const res = await post(h, path);
+      const body = (await res.json()) as { code: string; status: { state: string } };
+      expect([path, res.status, body.code, body.status.state]).toEqual([
+        path,
+        409,
+        "foreign",
+        "foreign",
+      ]);
+    }
+    expect(readFileSync(join(bin(), "argelanderspace"), "utf8")).toBe(
+      "#!/bin/sh\necho someone else\n"
+    );
+    expect(
+      h
+        .logFile()
+        .filter((r) => r.event === "desktop.cli_launcher")
+        .map((r) => [r.action, r.outcome])
+    ).toEqual([
+      ["install", "foreign"],
+      ["uninstall", "foreign"],
+    ]);
+  });
+
+  test("uninstall removes the marked launcher only; again: not installed", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost({ cliLauncher: app() });
+    expect((await post(h, "/api/host/cli/install")).status).toBe(200);
+    const first = await post(h, "/api/host/cli/uninstall");
+    expect([first.status, ((await first.json()) as { outcome: string }).outcome]).toEqual([
+      200,
+      "removed",
+    ]);
+    expect(safeList(bin())).toEqual([]);
+    const again = await post(h, "/api/host/cli/uninstall");
+    const body = (await again.json()) as { outcome: string; status: { state: string } };
+    expect([again.status, body.outcome, body.status.state]).toEqual([
+      200,
+      "not_installed",
+      "not_installed",
+    ]);
+  });
+
+  test("a directory that cannot be written: 500 write_failed with the error code only, nothing left", async () => {
+    if (process.getuid?.() === 0) return;
+    writeConfig("port = 0\n");
+    mkdirSync(bin(), { recursive: true });
+    chmodSync(bin(), 0o500);
+    try {
+      const h = await startHost({ cliLauncher: app() });
+      const res = await post(h, "/api/host/cli/install");
+      expect([res.status, await res.json()]).toEqual([
+        500,
+        { code: "write_failed", detail: "EACCES" },
+      ]);
+      expect(safeList(bin())).toEqual([]);
+      expect(
+        h
+          .logFile()
+          .filter((r) => r.event === "desktop.cli_launcher")
+          .map((r) => [r.action, r.outcome])
+      ).toEqual([["install", "failed"]]);
+    } finally {
+      chmodSync(bin(), 0o700);
+    }
+  });
+
+  test("a host that does not know its Node and CLI: 404 cli_unavailable; cross-site requests are refused", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    for (const [method, path] of [
+      ["GET", "/api/host/cli"],
+      ["POST", "/api/host/cli/install"],
+      ["POST", "/api/host/cli/uninstall"],
+    ] as const) {
+      const res = await fetch(`${h.url}${path}`, { method, headers: ORIGIN(h.url) });
+      expect([path, res.status, ((await res.json()) as { code: string }).code]).toEqual([
+        path,
+        404,
+        "cli_unavailable",
+      ]);
+      const cross = await fetch(`${h.url}${path}`, {
+        method,
+        headers: { Origin: "https://evil.example" },
+      });
+      expect([path, cross.status]).toEqual([path, 403]);
+    }
+    const h2 = await startHost({ cliLauncher: app() });
+    const cross = await fetch(`${h2.url}/api/host/cli/install`, {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+    });
+    expect(cross.status).toBe(403);
+    expect(safeList(bin())).toEqual([]);
   });
 });

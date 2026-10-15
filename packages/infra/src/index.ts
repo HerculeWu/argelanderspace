@@ -10,6 +10,7 @@
 // publisher-HTML fetcher, and PDF downloader are archived on `ocr-features`.
 
 export * from "./arxiv-pdf.js";
+export * from "./cli-launcher.js";
 export * from "./config.js";
 // The proposing step of the line editor (`proposeConfigEdit`) stays inside the package: callers get the checked edit.
 export {

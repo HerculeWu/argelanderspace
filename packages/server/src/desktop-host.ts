@@ -7,7 +7,8 @@
  *   - `ready`    once listening: `url`, `port`, `configuredPort`, `portFallback`, `portOccupant`, `project`.
  *   - `request`  a native request the page asked for (`kind`, one of contracts `HOST_REQUEST_KINDS`). What to open is
  *                filled in by the host from what it knows itself — its own address, the log directory, the config
- *                file — never from the page: the host interface does not read the request's body (host-routes.ts).
+ *                file, the bundled skills (desktop-app ticket 24) — never from the page: the host interface does not
+ *                read the request's body (host-routes.ts).
  *                `pick_folder` carries an `id` the shell answers with.
  *   - `stopping` / `stopped`  the graceful shutdown began / ended (`reason`: quit, input_closed, output_closed, signal,
  *                switch). On `switch` the `stopped` line carries `next`: the project folder the shell starts the next
@@ -82,8 +83,12 @@ import {
   switchAcknowledged,
 } from "@argelanderspace/contracts";
 import {
+  CLI_COMMAND,
+  type CliLauncherTarget,
+  cliLauncherStatus,
   configFilePath,
   f,
+  installCliLauncher,
   type KeychainProbe,
   type LogField,
   type LogLevel,
@@ -94,9 +99,11 @@ import {
   readRecentProjects,
   recordRecentProject,
   removeRecentProject,
+  uninstallCliLauncher,
 } from "@argelanderspace/infra";
 import type {
   HostBridge,
+  HostCli,
   HostWorkbench,
   RecentOpenOutcome,
   SwitchConfirmation,
@@ -153,6 +160,9 @@ function menuLabel(label: string): string {
 }
 /** Where a native request came from, as `desktop.request` records it. */
 const REQUEST_SOURCES = ["page", "menu"] as const;
+/** The command-line tool's record (desktop-app ticket 24): what was asked and what came of it, never a path. */
+const CLI_ACTIONS = ["install", "uninstall"] as const;
+const CLI_OUTCOMES = ["installed", "foreign", "removed", "not_installed", "failed"] as const;
 
 /** One recent project in the shell's menu: what it shows, and the id it sends back. No path: the label is to read. */
 export interface HostMenuRecent {
@@ -283,7 +293,8 @@ export type HostOutLine =
   | { type: "request"; kind: "open_devtools" }
   | { type: "request"; kind: "open_log_folder"; path: string }
   | { type: "request"; kind: "open_config_file"; path: string }
-  | { type: "request"; kind: "open_skills_folder" }
+  /** The skills that ship with the app (desktop-app ticket 24): only from a host that knows where they are. */
+  | { type: "request"; kind: "open_skills_folder"; path: string }
   /** What the shell's menu shows (desktop-app ticket 21): written after `ready` and whenever it changes. */
   | {
       type: "menu";
@@ -328,6 +339,16 @@ export interface DesktopHostOptions {
   keychainProbe?: () => Promise<KeychainProbe>;
   /** How often config.toml is looked at for a new language of the menu (ms; default the settings watcher's). */
   menuWatchIntervalMs?: number;
+  /**
+   * The skills that ship with the app (desktop-app ticket 24; the CLI entry finds them next to its own bundle, infra
+   * `bundledSkillsDir`): what `open_skills_folder` opens. Absent: the request is not offered.
+   */
+  skillsDir?: string;
+  /**
+   * The app's own Node and CLI entry, which the command-line tool's launcher runs (desktop-app ticket 24; the CLI entry
+   * gives its `process.execPath` and its bundle). Absent: the host interface answers that the tool is unavailable.
+   */
+  cliLauncher?: CliLauncherTarget;
 }
 
 export interface DesktopHost {
@@ -401,9 +422,9 @@ export async function portOccupant(
 /** The request line for a kind: everything in it is the host's own (its address, its log directory, its config file). */
 function requestLine(
   kind: HostRequestKind,
-  own: { port: number; logDir: string; configPath: string },
+  own: { port: number; logDir: string; configPath: string; skillsDir: string | null },
   pickId: () => string
-): HostOutLine {
+): HostOutLine | null {
   switch (kind) {
     case "pick_folder":
       return { type: "request", kind, id: pickId() };
@@ -416,8 +437,8 @@ function requestLine(
     case "open_config_file":
       return { type: "request", kind, path: own.configPath };
     case "open_skills_folder":
-      // Where the skills that ship with the app are is decided with their packaging (desktop-app ticket 24).
-      return { type: "request", kind };
+      // Offered only when the host knows the folder (`bridge.requests`); never a path of the page's.
+      return own.skillsDir === null ? null : { type: "request", kind, path: own.skillsDir };
   }
 }
 
@@ -679,23 +700,80 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     useWorkbench(given) {
       workbench = given;
     },
+    requests: HOST_REQUEST_KINDS.filter(
+      (kind) => kind !== "open_skills_folder" || options.skillsDir !== undefined
+    ),
     request: (kind) => request(kind, "page"),
+    cli: options.cliLauncher === undefined ? null : cliOf(options.cliLauncher),
   };
+
+  /** The command-line tool (desktop-app ticket 24): infra `cli-launcher.ts`, each change recorded by its outcome. */
+  function cliOf(target: CliLauncherTarget): HostCli {
+    const shown = (status: ReturnType<typeof cliLauncherStatus>) => ({
+      version: 1 as const,
+      command: CLI_COMMAND,
+      state: status.state,
+      file: shownPath(status.file),
+      dir: shownPath(status.dir),
+      inPath: status.inPath,
+      pathLine: status.pathLine,
+      platform: status.platform,
+    });
+    const status = () => shown(cliLauncherStatus(target));
+    const recorded = <T extends { outcome: string }>(
+      action: "install" | "uninstall",
+      act: () => T
+    ): T => {
+      try {
+        const result = act();
+        own?.log.info("desktop.cli_launcher", {
+          action: f.oneOf(CLI_ACTIONS, action),
+          outcome: f.oneOf(CLI_OUTCOMES, result.outcome),
+        });
+        return result;
+      } catch (error) {
+        own?.log.warn("desktop.cli_launcher", {
+          action: f.oneOf(CLI_ACTIONS, action),
+          outcome: f.oneOf(CLI_OUTCOMES, "failed"),
+          error: f.error(error, { omitSystemPath: true }),
+        });
+        throw error;
+      }
+    };
+    return {
+      status,
+      install: () =>
+        recorded("install", () => {
+          const { outcome } = installCliLauncher(target);
+          return { outcome, status: status() };
+        }),
+      uninstall: () =>
+        recorded("uninstall", () => {
+          const { outcome } = uninstallCliLauncher();
+          return { outcome, status: status() };
+        }),
+    };
+  }
 
   /** Writes the request line of a native request the page or the shell's menu asked for; false once stopping. */
   function request(kind: HostRequestKind, source: (typeof REQUEST_SOURCES)[number]): boolean {
     if (stopping !== null || own === null) return false;
+    const line = requestLine(
+      kind,
+      { ...own, configPath, skillsDir: options.skillsDir ?? null },
+      () => {
+        const id = randomUUID();
+        pending.add(id);
+        return id;
+      }
+    );
+    // A kind this host does not offer (the route answers 404 before it gets here).
+    if (line === null) return false;
     own.log.info("desktop.request", {
       kind: f.oneOf(HOST_REQUEST_KINDS, kind),
       source: f.oneOf(REQUEST_SOURCES, source),
     });
-    write(
-      requestLine(kind, { ...own, configPath }, () => {
-        const id = randomUUID();
-        pending.add(id);
-        return id;
-      })
-    );
+    write(line);
     return true;
   }
 

@@ -12,7 +12,7 @@
  * (Python's `data/output`).
  */
 
-import { statSync, writeFileSync } from "node:fs";
+import { realpathSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import {
@@ -28,7 +28,7 @@ import {
   rebuild,
   type Work,
 } from "@argelanderspace/core";
-import { ingestTexSource } from "@argelanderspace/infra";
+import { bundledSkillsDir, ingestTexSource } from "@argelanderspace/infra";
 import {
   projectUnavailableLine,
   realPipelines,
@@ -293,6 +293,10 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
 async function runDesktopHostCommand(opts: { project?: string; webDist?: string }): Promise<void> {
   // Like --project, a relative --web-dist is the caller's: resolved before any change of directory.
   const webDist = opts.webDist === undefined ? undefined : resolve(opts.webDist);
+  // This program's own Node and bundle (desktop-app ticket 24): what the command-line tool's launcher runs — in the
+  // desktop package the app's Node on the app's CLI — and where the bundled skills are found from (next to it).
+  const entry = process.argv[1] === undefined ? null : realpathOr(resolve(process.argv[1]));
+  const skillsDir = entry === null ? null : bundledSkillsDir(entry);
   if (opts.project !== undefined) {
     const project = resolve(opts.project);
     let isDir = false;
@@ -322,10 +326,21 @@ async function runDesktopHostCommand(opts: { project?: string; webDist?: string 
     // The shell is gone and its shutdown hangs: nobody else will end the process (server desktop-host.ts).
     stopDeadline: { onExpired: () => process.exit(1) },
     ...(webDist === undefined ? {} : { webDist }),
+    ...(skillsDir === null ? {} : { skillsDir }),
+    ...(entry === null ? {} : { cliLauncher: { node: process.execPath, cli: entry } }),
   });
   await host.stopped;
   await flushed(process.stdout);
   process.exit(0);
+}
+
+/** The path with its symbolic links resolved; the path itself when that fails. */
+function realpathOr(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 /**

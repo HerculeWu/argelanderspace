@@ -119,6 +119,32 @@ for s in argelander-paper-ingest argelander-read-paper argelander-query-paper-li
 done
 ```
 
+### In the desktop app
+
+The desktop app carries the same CLI and its own Node, so an agent in a terminal
+needs neither Node nor administrator rights:
+
+- **Settings → Command line & agents → Install the command-line tool** puts a
+  small launcher named `argelanderspace` (the npm package's command) in your
+  own executable directory — `~/.local/bin` on Linux and macOS,
+  `%LOCALAPPDATA%\Programs\argelanderspace\bin` (`argelanderspace.cmd`) on
+  Windows. It runs the app's Node on the app's CLI. The app changes **no**
+  environment variable, `PATH` or shell configuration: when that directory is
+  not on `PATH` the page shows the line to add yourself (for example
+  `export PATH="$HOME/.local/bin:$PATH"` in your shell's configuration; on
+  Windows, the directory for your user `PATH`), and you open a new terminal.
+- The launcher carries a marker line. Installing never overwrites a file of
+  that name without it (an npm global install into `~/.local`, for instance)
+  — the page says so instead; **Uninstall** removes only the marked launcher.
+- If the app is moved or removed, the launcher says which file is missing and
+  to install the tool again (or delete the launcher), instead of a bare "not
+  found".
+- **Show the skills folder** opens the skills that ship with the app (the
+  `skills/` of this repository, in the package's resources —
+  `/usr/lib/argelanderspace/skills` for the Linux deb). Copy the ones you want
+  into your agent's skills directory yourself (see above); the app writes
+  nothing into any agent tool's directory.
+
 The CLI–agent contract in one table (details + output conventions in
 `skills/README.md`):
 

@@ -66,10 +66,23 @@ done
 mkdir -p .pi/skills && cp -r /path/to/bibgraph/skills/argelander-* .pi/skills/
 ```
 
+### From the desktop app
+
+The desktop app ships these skills: **Settings → Command line & agents → Show
+the skills folder** opens them (in the package's resources —
+`/usr/lib/argelanderspace/skills` for the Linux deb; in a development run, this
+`skills/` folder). Copy (or symlink) the ones you want into your agent's skills
+directory as above — the app never writes into any agent tool's directory. The
+same group's **Install the command-line tool** gives the skills their
+`argelanderspace` command: a launcher in `~/.local/bin` (Linux, macOS) or
+`%LOCALAPPDATA%\Programs\argelanderspace\bin` (Windows) that runs the app's own
+Node and CLI. The app changes no `PATH`; when that directory is not on it the
+page shows the line to add yourself.
+
 ## Prerequisites
 
-- **The `argelanderspace` CLI**: either installed (`npm i -g argelanderspace`)
-  or from a built repo checkout — `corepack pnpm -r build`, then the skills use
+- **The `argelanderspace` CLI**: either installed (`npm i -g argelanderspace`,
+  or from the desktop app as above) or from a built repo checkout — `corepack pnpm -r build`, then the skills use
   `node <repo>/packages/app/dist/bin.js` (absolute path) in place of
   `argelanderspace`.
 - **TeX Live** (`latexmk` + `pdflatex`/`xelatex`) for the LaTeX (arXiv) ingest pipeline: in the directory `tex_dir` of `config.toml` names (an absolute path; the settings page's *TeX & environment* group sets it and shows what was found), else on PATH, else in the platform's usual install locations; optional `pdftocairo` (poppler-utils) + `gs` (ghostscript, EPS only) for vector figures.

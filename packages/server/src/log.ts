@@ -94,6 +94,8 @@ export const SERVER_LOG_EVENTS = [
   // Desktop-app ticket 19: a switch that would interrupt work waits for the user (counts only), or was cancelled.
   "desktop.switch_asked",
   "desktop.switch_cancelled",
+  // Desktop-app ticket 24: the command-line tool's launcher installed or removed (action and outcome only, no path).
+  "desktop.cli_launcher",
   "shell.started",
   "shell.host_started",
   "shell.host_exited",

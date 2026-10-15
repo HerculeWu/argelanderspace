@@ -2594,6 +2594,31 @@
       "exportSaved": "已保存 {{name}}（{{size}}）到你选择的位置。",
       "zipType": "Zip 压缩包"
     },
+    "cli": {
+      "tool": "命令行工具",
+      "target": "安装位置",
+      "before": "未安装",
+      "installed": "已安装",
+      "install": "安装命令行工具",
+      "uninstall": "卸载",
+      "reinstall": "重新安装",
+      "pathTitle": "安装位置不在 PATH 中",
+      "pathBody": "应用不会改你的环境变量。把下面这一行加到你的 shell 配置里，新开终端后生效：",
+      "pathWin": "把这个目录加入用户的 PATH：",
+      "copyLine": "复制路径",
+      "conflictTitle": "没有安装：目标位置已有别的同名文件",
+      "conflictBody": "{{path}} 不是本应用放的，所以没有覆盖。把它改名或删除后再安装。",
+      "uninstallTitle": "卸载命令行工具？",
+      "uninstallBody": "将删除 {{path}}。agent 之后在终端里找不到 {{command}} 命令，直到重新安装。",
+      "cancel": "取消",
+      "outdatedTitle": "已安装的命令行工具指向别处",
+      "outdatedBody": "{{path}} 运行的不是这个应用（可能是应用移动之前的位置）。重新安装后就指向这里。",
+      "installFailed": "没能安装（{{code}}），没有写入任何文件。",
+      "uninstallFailed": "没能卸载（{{code}}），文件没有改动。",
+      "unknown": "读不到命令行工具的状态。",
+      "skills": "skills",
+      "showSkills": "显示 skills 文件夹"
+    },
     "host": {
       "requestFailed": "桌面应用没有接受这个请求。",
       "portFallback": {
