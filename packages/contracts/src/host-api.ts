@@ -16,13 +16,19 @@
  *                                       404 `unknown_project` otherwise, 409 `folder_missing` when the folder is gone,
  *                                       409 `project_open` while a project is open (switching is ticket 19), 409
  *                                       `shutting_down` while the host stops.
- * - `POST /api/host/recent-projects/remove`  `{path}` → 200 {@link HostRecentProjects}, the list without it.
+ * - `POST /api/host/recent-projects/remove`  `{path}` → 200 {@link HostRecentProjects}, the list without it (a path
+ *                                       not in the list changes nothing); 500 `write_failed` when the list file
+ *                                       cannot be written (the old list stays).
+ *   For both: only the body's `path` is read, and it is only compared with the list's paths, character for
+ *   character. 400 `invalid_request` when the body is not a `{path}` with a non-empty string, 413 `too_large` when it
+ *   is over 16 KiB (server `RECENT_REQUEST_MAX_BYTES`; reading stops at the limit).
  *
  * Both are `no-store` and behind the same cross-origin guard as every other endpoint. `serve` (the browser form) has
  * no host: its answer is `mode: "browser"` with no requests, and the page hides the desktop-only controls.
  *
  * With no project open (the desktop host's welcome state, `project: "none"`) the server answers only the page, the
- * host interface and the settings interface; every other endpoint answers 409 {@link NO_PROJECT_CODE}.
+ * host interface, the settings interface and the page's own error reports (`POST /api/page-errors`, written to the
+ * user log only); every other endpoint answers 409 {@link NO_PROJECT_CODE}.
  */
 
 /** The name every answer carries, so a program on the port can be told from the workbench. */

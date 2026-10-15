@@ -106,9 +106,21 @@ function writeRecentProjects(file: string, projects: RecentProject[]): void {
     writeFileSync(tmp, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
     renameSync(tmp, file);
   } catch (error) {
-    rmSync(tmp, { force: true });
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      /* the write's own error is the one that counts */
+    }
     throw error;
   }
+}
+
+export interface RecordRecentOptions {
+  /**
+   * The path the folder was opened by, when it is another spelling of `path` (a symbolic link, say): its entry goes
+   * too, so that the folder is listed once.
+   */
+  replacing?: string;
 }
 
 /**
@@ -116,11 +128,16 @@ function writeRecentProjects(file: string, projects: RecentProject[]): void {
  * the new list. A file that could not be read counts as empty and is replaced. Throws when the file cannot be written
  * (the old bytes stay).
  */
-export function recordRecentProject(file: string, path: string, at: Date): RecentProject[] {
+export function recordRecentProject(
+  file: string,
+  path: string,
+  at: Date,
+  options: RecordRecentOptions = {}
+): RecentProject[] {
   const { projects } = readRecentProjects(file);
   const next = [
     { path, openedAt: at.toISOString() },
-    ...projects.filter((p) => p.path !== path),
+    ...projects.filter((p) => p.path !== path && p.path !== options.replacing),
   ].slice(0, RECENT_PROJECTS_MAX);
   writeRecentProjects(file, next);
   return next;

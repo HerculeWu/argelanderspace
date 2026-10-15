@@ -88,6 +88,7 @@ export const SERVER_LOG_EVENTS = [
   // Desktop-app ticket 18: the welcome state, the project the host leaves for, and the recent-projects file.
   "desktop.no_project",
   "desktop.leaving",
+  "desktop.pick_rejected",
   "recent_projects.unreadable",
   "recent_projects.write_failed",
   "shell.started",

@@ -9,8 +9,9 @@ import { WelcomePage } from "./WelcomePage";
 
 /**
  * The desktop app with no project open (desktop-app ticket 18): the title bar keeps the theme switch and the
- * appearance quick settings — the same `[ui]` settings as the workbench's — and the body is the welcome page. No
- * navigation rail, no panes, no Copilot: the server answers nothing of a project here.
+ * appearance quick settings — the same `[ui]` settings as the workbench's — and the body is the welcome page. No page
+ * name in the middle of the title bar (user decision 2026-10-15), no navigation rail, no panes, no Copilot: the server
+ * answers nothing of a project here.
  */
 export function WelcomeShell() {
   const { t } = useTranslation();
@@ -26,7 +27,6 @@ export function WelcomeShell() {
               <span className="wordmark-mark">✦</span>ArgelanderSpace
             </span>
           </div>
-          <div className="tb-center">{t("shell.tagline")}</div>
           <div className="tb-right" data-ui="titlebar-actions">
             <ActionButton
               mode="icon"

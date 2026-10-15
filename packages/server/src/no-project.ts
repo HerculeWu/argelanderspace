@@ -1,7 +1,8 @@
 /**
  * The server with no project open (desktop-app ticket 18; spec 「欢迎状态」): what the desktop host runs when it has no
  * project to enter — a first start, or the last project's folder is gone. It answers the page, the host interface
- * (host-routes.ts) and the settings interface (settings.ts), and every other endpoint with 409 `no_project`. It has
+ * (host-routes.ts), the settings interface (settings.ts) and the page's own error reports (page-errors.ts: they go to
+ * the user log only — user decision 2026-10-15), and every other endpoint with 409 `no_project`. It has
  * no project data directory and touches none: no job runner, no file watcher of project data, no Copilot, no Mail.
  * The browser form (`serve`) never runs it: there the project is the working directory.
  *
@@ -30,6 +31,7 @@ import { mountWebDist } from "./app.js";
 import { type HostBridge, mountHostRoutes } from "./host-routes.js";
 import { applyLogLevel, logRequests, type ServerLog, silentLog } from "./log.js";
 import { DEV_ORIGINS, ownOrigins } from "./origins.js";
+import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { mountSettingsRoutes, readSettings, shownPath, startSettingsWatcher } from "./settings.js";
 import { WsHub } from "./ws.js";
 
@@ -47,6 +49,8 @@ export interface NoProjectServerOptions {
   settingsAtStart?: SettingsValues;
   heartbeatMs?: number;
   watchIntervalMs?: number;
+  /** The rate window of the page-error reports (page-errors.ts); default a minute. */
+  pageErrors?: Pick<PageErrorOptions, "windowMs">;
 }
 
 export interface NoProjectServer {
@@ -84,6 +88,16 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
   const app = new Hono();
   logRequests(app, log);
   app.use("*", cors({ origin: [...DEV_ORIGINS], allowMethods: ["GET"] }));
+
+  // What the page reports of its own errors: the user log only, the same route and limits as with a project open.
+  let writePendingPageErrorCounts: () => void = () => {};
+  mountPageErrorRoute(app, log, guardCsrf, {
+    ...opts.pageErrors,
+    webDist: opts.webDist ?? null,
+    atClose: (writePending) => {
+      writePendingPageErrorCounts = writePending;
+    },
+  });
 
   const settingsAtStart = opts.settingsAtStart ?? readSettings(opts.configPath).values;
   mountSettingsRoutes(app, guardCsrf, {
@@ -151,6 +165,7 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
     close: () =>
       new Promise((resolveClose, rejectClose) => {
         settingsWatcher.stop();
+        writePendingPageErrorCounts();
         releaseGlobalDirs();
         hub.close();
         server.close((err) => (err ? rejectClose(err) : resolveClose()));

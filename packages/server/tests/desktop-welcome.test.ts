@@ -9,6 +9,7 @@
  */
 
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -16,6 +17,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -30,8 +32,10 @@ import {
   resolveRecentProjectsPath,
 } from "@argelanderspace/infra";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { WebSocket } from "ws";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { type DesktopHost, type HostOutLine, runDesktopHost } from "../src/desktop-host.js";
+import { RECENT_REQUEST_MAX_BYTES } from "../src/host-routes.js";
 import { createServer } from "../src/server.js";
 
 beforeAll(() => __setWriterSandboxForTests(false));
@@ -151,7 +155,10 @@ async function startHost(opts: { fromRecent?: boolean } = { fromRecent: true }):
       const r = await fetch(url + path, {
         method: "POST",
         headers: { Origin: origin, "Content-Type": "application/json" },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        // A string is sent as it is (a body of a given size); anything else as JSON.
+        ...(body === undefined
+          ? {}
+          : { body: typeof body === "string" ? body : JSON.stringify(body) }),
       });
       const text = await r.text();
       return { status: r.status, body: text.startsWith("{") ? JSON.parse(text) : text };
@@ -259,6 +266,16 @@ describe("which project the host enters", () => {
     });
   });
 
+  test("the last project entered by another spelling of its folder: recorded by its real path only", async () => {
+    const real = folder("real");
+    const link = join(folder("links"), "via-link");
+    symlinkSync(real, link);
+    recordRecentProject(recentFile(), link, new Date("2026-01-02T00:00:00Z"));
+    const h = await startHost();
+    expect(h.lines[0]).toMatchObject({ type: "ready", project: real });
+    expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([real]);
+  });
+
   test("without `fromRecent` the project is the current directory (ticket 17), and it is recorded", async () => {
     const h = await startHost({ fromRecent: false });
     expect(h.lines[0]).toMatchObject({ type: "ready", project: start });
@@ -279,7 +296,17 @@ describe("with no project open", () => {
     }
     const posted = await h.post("/api/library/works", { arxiv: "2401.00001" });
     expect([posted.status, (posted.body as { code: string }).code]).toEqual([409, "no_project"]);
-    expect((await h.post("/api/page-errors", { kind: "error" })).status).toBe(409);
+    // The page's own errors are taken (user decision 2026-10-15): they go to the user log only, no project data.
+    const reported = await h.post("/api/page-errors", {
+      kind: "render",
+      name: "TypeError",
+      pane: "none",
+    });
+    expect([reported.status, reported.body]).toEqual([200, { recorded: true }]);
+    expect(events(h, "page.error")[0]?.fields).toMatchObject({ kind: "render", pane: "none" });
+    expect(
+      (await h.post("/api/page-errors", { kind: "error" }, "http://evil.example")).status
+    ).toBe(403);
     const page = await h.get("/");
     expect(page.status).toBe(200);
     expect(String(page.body)).toContain("welcome test");
@@ -313,6 +340,106 @@ describe("with no project open", () => {
     expect(events(h, "desktop.leaving")[0]?.fields).toEqual({ source: "picked" });
     // The log never names the folder.
     expect(JSON.stringify(events(h, "desktop.leaving"))).not.toContain("empty-project");
+  });
+
+  test("a picked path that is not a folder is recorded as rejected, not as leaving", async () => {
+    const h = await startHost();
+    await h.post("/api/host/requests/pick_folder");
+    const request = (await h.next("request")) as { id: string };
+    const notFolder = join(start, "a-file.txt");
+    writeFileSync(notFolder, "x");
+    h.input.write(
+      `${JSON.stringify({ type: "folder_picked", id: request.id, path: notFolder })}\n`
+    );
+    await expect
+      .poll(() => events(h, "desktop.pick_rejected"))
+      .toEqual([{ fields: { reason: "not_a_folder" } }]);
+    expect(events(h, "desktop.leaving")).toEqual([]);
+    expect(JSON.stringify(h.log())).not.toContain("a-file.txt");
+  });
+
+  test("a recent project listed by another spelling of its folder: left for by its real path, the old spelling gone", async () => {
+    const real = folder("real");
+    const link = join(folder("links"), "via-link");
+    symlinkSync(real, link);
+    const other = folder("other");
+    recordRecentProject(recentFile(), other, new Date("2026-01-01T00:00:00Z"));
+    recordRecentProject(recentFile(), link, new Date("2026-01-02T00:00:00Z"));
+    // The most recent folder is gone: the host stays in the welcome state with the linked one still listed.
+    const gone = join(folder("parent"), "gone");
+    recordRecentProject(recentFile(), gone, new Date("2026-01-03T00:00:00Z"));
+    const h = await startHost();
+    expect((await h.post("/api/host/recent-projects/open", { path: link })).status).toBe(202);
+    expect(await h.next("stopped")).toEqual({ type: "stopped", next: real });
+    expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([
+      real,
+      gone,
+      other,
+    ]);
+  });
+
+  test("a body over the limit: 413, nothing opened or removed", async () => {
+    const a = folder("a");
+    recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
+    const h = await startHost({ fromRecent: false });
+    const big = JSON.stringify({ path: a, pad: "x".repeat(RECENT_REQUEST_MAX_BYTES) });
+    for (const route of ["open", "remove"]) {
+      const r = await h.post(`/api/host/recent-projects/${route}`, big);
+      expect([route, r.status, r.body]).toEqual([
+        route,
+        413,
+        { code: "too_large", detail: "the request is too large" },
+      ]);
+    }
+    expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([start, a]);
+  });
+
+  test("a list that cannot be written: remove answers 500 write_failed, the failure is logged, the old list stays", async () => {
+    const a = folder("a");
+    const gone = join(folder("parent"), "gone");
+    recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
+    recordRecentProject(recentFile(), gone, new Date("2026-01-02T00:00:00Z"));
+    const h = await startHost();
+    const dir = dirname(recentFile());
+    chmodSync(dir, 0o500);
+    try {
+      const r = await h.post("/api/host/recent-projects/remove", { path: gone });
+      expect([r.status, r.body]).toEqual([
+        500,
+        { code: "write_failed", detail: "the list could not be written" },
+      ]);
+    } finally {
+      chmodSync(dir, 0o700);
+    }
+    expect(events(h, "recent_projects.write_failed")).toHaveLength(1);
+    expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([gone, a]);
+  });
+
+  test("the WebSocket answers: a change of config.toml from outside reaches the page; another origin is refused", async () => {
+    const h = await startHost();
+    const wsUrl = `${h.url.replace(/^http/, "ws")}/ws`;
+    const refused = new WebSocket(wsUrl, { origin: "http://evil.example" });
+    const refusal = await new Promise<string>((resolve) => {
+      refused.once("unexpected-response", (_req, res) => resolve(`status ${res.statusCode}`));
+      refused.once("error", (error) => resolve(`error ${error.message}`));
+      refused.once("open", () => resolve("open"));
+    });
+    refused.terminate();
+    expect(refusal).toMatch(/403/);
+
+    const ws = new WebSocket(wsUrl, { origin: h.url });
+    closers.push(async () => ws.terminate());
+    const messages: Array<{ type: string; cause?: string }> = [];
+    ws.on("message", (data) => messages.push(JSON.parse(data.toString())));
+    await new Promise<void>((resolve, reject) => {
+      ws.once("open", () => resolve());
+      ws.once("error", reject);
+    });
+    await expect.poll(() => messages.some((m) => m.type === "hello")).toBe(true);
+    writeFileSync(isolated(configFilePath()), 'port = 0\n\n[ui]\ntheme = "dark"\n');
+    await expect
+      .poll(() => messages.find((m) => m.type === "settings.changed"), { timeout: 6000 })
+      .toMatchObject({ type: "settings.changed", cause: "external" });
   });
 
   test("a cancelled pick, and a path that is not a folder, leave nothing", async () => {

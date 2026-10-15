@@ -119,6 +119,17 @@ describe("recordRecentProject", () => {
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ version: 1, projects: list });
   });
 
+  test("`replacing`: the entry of another spelling of the same folder goes too, so the folder is listed once", () => {
+    const file = fileIn();
+    recordRecentProject(file, "/p/a", at("2026-10-01T10:00:00.000Z"));
+    recordRecentProject(file, "/p/link-to-b", at("2026-10-02T10:00:00.000Z"));
+    const list = recordRecentProject(file, "/p/b", at("2026-10-03T10:00:00.000Z"), {
+      replacing: "/p/link-to-b",
+    });
+    expect(list.map((p) => p.path)).toEqual(["/p/b", "/p/a"]);
+    expect(readRecentProjects(file).projects).toEqual(list);
+  });
+
   test("creates the global directory, and the file only its owner can read", () => {
     const file = fileIn();
     recordRecentProject(file, "/p/a", at("2026-10-01T10:00:00.000Z"));

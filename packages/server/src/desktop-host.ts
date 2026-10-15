@@ -307,6 +307,8 @@ function canonical(path: string): string {
 
 const WELCOME_REASONS = ["no_recent", "last_missing"] as const;
 const LEAVE_SOURCES = ["picked", "recent"] as const;
+/** Why a picked path is not left for (the path itself is never written). */
+const PICK_REJECT_REASONS = ["not_a_folder"] as const;
 
 /** The fields of a shell event, each through the constructor its catalog entry names; others are counted as dropped. */
 function shellFields(spec: ShellEventSpec, raw: unknown): Record<string, LogField | unknown> {
@@ -403,7 +405,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     const { projects } = readRecentProjects(recentFile);
     if (!projects.some((entry) => entry.path === path)) return "unknown_project";
     if (!isFolder(path)) return "folder_missing";
-    return leave(canonical(path), "recent") ? "leaving" : "shutting_down";
+    return leave(path, "recent") ? "leaving" : "shutting_down";
   }
 
   // Bound once the server listens; a request before that (there can be none: nothing listens) is refused.
@@ -472,7 +474,8 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   if (welcome !== null)
     log.info("desktop.no_project", { reason: f.oneOf(WELCOME_REASONS, welcome) });
   // The project is open: it goes first in the recent list (an unreadable list is written anew here).
-  else record(process.cwd());
+  // Entered by the list's spelling of the folder, a link say: that entry is replaced by the real path.
+  else record(process.cwd(), options.fromRecent ? recentAtStart.projects[0]?.path : undefined);
 
   let resolveStopped!: (reason: HostStopReason) => void;
   const stopped = new Promise<HostStopReason>((r) => {
@@ -516,18 +519,24 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   };
 
   /** Puts the project first in the recent list; a failure to write is recorded and changes nothing else. */
-  function record(path: string): void {
+  function record(path: string, openedAs?: string): void {
     try {
-      recordRecentProject(recentFile, path, new Date());
+      recordRecentProject(
+        recentFile,
+        path,
+        new Date(),
+        openedAs === undefined || openedAs === path ? {} : { replacing: openedAs }
+      );
     } catch (error) {
       log.warn("recent_projects.write_failed", { error: f.error(error) });
     }
   }
 
   /** Leaves for another project: recorded, then the host stops and tells its shell (`stopped`'s `next`). */
-  function leave(path: string, source: (typeof LEAVE_SOURCES)[number]): boolean {
+  function leave(openedAs: string, source: (typeof LEAVE_SOURCES)[number]): boolean {
     if (stopping !== null) return false;
-    record(path);
+    const path = canonical(openedAs);
+    record(path, openedAs);
     log.info("desktop.leaving", { source: f.oneOf(LEAVE_SOURCES, source) });
     next = path;
     void stop("switch");
@@ -574,8 +583,11 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
         options.onFolderPicked?.(path);
         // The welcome state leaves for the folder; with a project open, switching is ticket 19.
         if (path !== null && project === "none") {
-          if (isFolder(path)) leave(canonical(path), "picked");
-          else log.warn("desktop.leaving", { outcome: f.oneOf(["not_a_folder"], "not_a_folder") });
+          if (isFolder(path)) leave(path, "picked");
+          else
+            log.warn("desktop.pick_rejected", {
+              reason: f.oneOf(PICK_REJECT_REASONS, "not_a_folder"),
+            });
         }
         return;
       }

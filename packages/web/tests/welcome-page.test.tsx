@@ -92,6 +92,10 @@ describe("which page", () => {
     // The title bar keeps the theme switch and the appearance quick settings.
     expect(q('[data-ui="toggle-theme"]')).not.toBeNull();
     expect(q('[data-ui="open-tweaks"]')).not.toBeNull();
+    // No page name in the middle of the title bar (user decision 2026-10-15): there is no page to name.
+    const titlebar = q('[data-ui="app-titlebar"]');
+    expect(titlebar?.querySelector(".tb-center")).toBeNull();
+    expect(titlebar?.textContent).not.toContain("Literature");
     expect(business()).toEqual([]);
   });
 
