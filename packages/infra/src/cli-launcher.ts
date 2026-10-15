@@ -14,7 +14,9 @@
  *   a folder of its own, because adding a directory to PATH there is all-or-nothing for what it holds. The script is a
  *   `.cmd`, which `cmd` and PowerShell run by its bare name, and so does any program that starts it through a shell.
  *   A program that starts a child process by bare name without a shell (Node's `spawn` without `shell`, for one) does
- *   not find a `.cmd`: a known limit, to be checked on Windows with ticket 26.
+ *   not find a `.cmd`: a known limit, checked on the release workflow's Windows runner (ticket 26,
+ *   packages/app/scripts/windows-launcher-check.mjs). On Windows, paths under the user's folders are written through
+ *   their variables (`%LOCALAPPDATA%\…`) so that the script is ASCII whatever the user's name: see `windowsPath`.
  *
  * The file is named after the npm package's command, `argelanderspace` (`argelanderspace.cmd` on Windows), so the
  * desktop app's CLI and the npm one answer to the same name (User Story 62).
@@ -46,6 +48,7 @@ import {
   mkdirSync,
   openSync,
   readSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -195,7 +198,8 @@ function checkTarget(target: CliLauncherTarget, platform: LauncherPlatform, file
 export function launcherScript(
   target: CliLauncherTarget,
   platform: NodeJS.Platform,
-  file: string
+  file: string,
+  env: NodeJS.ProcessEnv = {}
 ): string {
   const p: LauncherPlatform =
     platform === "win32" ? "win32" : platform === "darwin" ? "darwin" : "linux";
@@ -206,8 +210,9 @@ export function launcherScript(
     "Install the command-line tool again from the app (Settings > Command line & agents), or delete";
   if (p === "win32") {
     // In a batch file `%` is doubled; inside the quotes of `set "…"` and of the run line the rest is taken as written
-    // (delayed expansion is off, so `!` is too).
-    const cmd = (path: string) => path.replace(/%/g, "%%");
+    // (delayed expansion is off, so `!` is too). A path under one of the user's folders is written through its
+    // variable (cmd expands it when the line runs), so that the file stays ASCII: see `windowsPath`.
+    const cmd = (path: string) => windowsPath(path, env);
     // An echo's own words are outside quotes: every cmd metacharacter in them is escaped with `^`.
     const echoText = (text: string) => text.replace(/[\^&|<>()]/g, "^$&");
     return [
@@ -246,6 +251,81 @@ export function launcherScript(
     'exec "$node" "$cli" "$@"',
     "",
   ].join("\n");
+}
+
+/**
+ * The variables a Windows path may be written through, so that a user name or another non-ASCII folder name is not in
+ * the launcher (desktop-app ticket 26). cmd reads a batch file in the console's OEM code page (437, 850, 936, …), not
+ * UTF-8, and has no way to be told the file's encoding; a non-ASCII byte sequence is read as other characters and the
+ * path does not exist. Expanded by cmd, a variable gives the path in full (cmd keeps the environment as UTF-16).
+ *
+ * `chcp 65001` at the top of the script was considered and not taken: it changes the code page of the user's console
+ * window for good (everything that window shows afterwards, after the command has ended), and restoring it means
+ * parsing `chcp`'s localised output. Encoding the file in the OEM code page cannot be done from here (the code page is
+ * the machine's, and Node has no encoder for it).
+ */
+const WINDOWS_PATH_VARIABLES = [
+  "LOCALAPPDATA",
+  "APPDATA",
+  "USERPROFILE",
+  // Before %ProgramFiles%, which a 32-bit process sees as the x86 folder; %ProgramW6432% is always the 64-bit one.
+  "ProgramW6432",
+  "ProgramFiles",
+];
+
+const isAscii = (text: string) => [...text].every((c) => c.charCodeAt(0) < 0x80);
+
+/**
+ * A Windows path as written in the launcher, `%` doubled. An ASCII path is written as it is. A path with a non-ASCII
+ * character is written through the longest of the variables above whose value is a folder that holds it (without
+ * regard to case; on a tie the earlier in the list); what is still not ASCII then cannot be written: refused (thrown),
+ * like a path with a double quote.
+ */
+function windowsPath(path: string, env: NodeJS.ProcessEnv): string {
+  if (isAscii(path)) return path.replace(/%/g, "%%");
+  let best: { name: string; length: number } | null = null;
+  for (const name of WINDOWS_PATH_VARIABLES) {
+    const value = envValue(env, name, "win32")?.replace(/[\\/]+$/, "");
+    if (!value || !win32.isAbsolute(value)) continue;
+    const head = path.slice(0, value.length);
+    const next = path[value.length];
+    if (head.toLowerCase() !== value.toLowerCase() || (next !== undefined && next !== "\\"))
+      continue;
+    if (!best || value.length > best.length) best = { name, length: value.length };
+  }
+  const rest = (best ? path.slice(best.length) : path).replace(/%/g, "%%");
+  if (!isAscii(rest))
+    throw new Error(
+      "a Windows launcher cannot hold a non-ASCII character outside %LOCALAPPDATA%, %APPDATA%, %USERPROFILE%, %ProgramW6432% or %ProgramFiles% (cmd reads it in the console's code page)"
+    );
+  return best ? `%${best.name}%${rest}` : rest;
+}
+
+/**
+ * Why this app cannot offer the command-line tool, or null when it can (desktop-app ticket 26; the user's decision of
+ * 2026-10-15). `appimage`: the CLI runs from an AppImage's own folder (`APPDIR`), a mount at a new `/tmp/.mount_*`
+ * each start that is gone once the app closes, so a launcher pointing into it would stop working — the app offers
+ * none there (the deb and the npm package have a fixed place). The AppImage runtime sets `APPIMAGE` and `APPDIR` before
+ * it runs `AppRun` (the AppRun hook of linuxdeploy's GTK plugin sets `APPDIR` for an extracted one as well); the shell
+ * and the host inherit them. The CLI entry must lie inside `APPDIR`, so a variable inherited from some other AppImage
+ * (a terminal started from one, say) does not count.
+ */
+export function cliLauncherUnavailable(
+  target: CliLauncherTarget,
+  env: NodeJS.ProcessEnv = process.env
+): "appimage" | null {
+  const raw = env.APPDIR;
+  if (!raw || !posix.isAbsolute(raw)) return null;
+  // The CLI entry is a resolved path (the host takes it through realpath); APPDIR is the runtime's `$TMPDIR/.mount_*`
+  // as written, so a doubled slash or a link in TMPDIR must not make it miss.
+  let appdir: string;
+  try {
+    appdir = realpathSync(raw);
+  } catch {
+    appdir = posix.resolve(raw);
+  }
+  appdir = appdir.replace(/\/+$/, "");
+  return target.cli.startsWith(`${appdir}/`) ? "appimage" : null;
 }
 
 /** Only the first bytes are read to find the mark (it is on the second line). */
@@ -314,7 +394,7 @@ export function cliLauncherStatus(
       ? "not_installed"
       : found.kind === "foreign"
         ? "foreign"
-        : found.text === launcherScript(target, platform, file)
+        : found.text === launcherScript(target, platform, file, env)
           ? "installed"
           : "outdated";
   return {
@@ -344,10 +424,10 @@ export function installCliLauncher(
   target: CliLauncherTarget,
   opts: CliLauncherOptions = {}
 ): CliLauncherChange {
-  const { platform } = settle(opts);
+  const { platform, env } = settle(opts);
   const dir = resolveUserBinDir(opts);
   const file = cliLauncherFile(opts);
-  const text = launcherScript(target, platform, file);
+  const text = launcherScript(target, platform, file, env);
   const before = inspect(file);
   if (before.kind === "foreign")
     return { outcome: "foreign", status: cliLauncherStatus(target, opts) };

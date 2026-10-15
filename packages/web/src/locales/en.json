@@ -2619,6 +2619,8 @@
       "uninstallFailed": "Not uninstalled ({{code}}); the file is unchanged.",
       "uninstallForeign": "Not uninstalled: {{path}} is no longer the app's file, so it was not deleted.",
       "unknown": "The command-line tool's state could not be read.",
+      "appimageTitle": "Not offered in the AppImage",
+      "appimageBody": "The AppImage runs from a temporary folder that disappears when the app closes, so a command-line tool installed from it would stop working. For agents to use the app's command line, install the .deb package instead, or the npm package argelanderspace.",
       "skills": "skills",
       "showSkills": "Show the skills folder"
     },

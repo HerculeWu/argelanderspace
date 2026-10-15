@@ -28,7 +28,12 @@ import {
   rebuild,
   type Work,
 } from "@argelanderspace/core";
-import { bundledSkillsDir, ingestTexSource } from "@argelanderspace/infra";
+import {
+  bundledSkillsDir,
+  type CliLauncherTarget,
+  cliLauncherUnavailable,
+  ingestTexSource,
+} from "@argelanderspace/infra";
 import {
   projectUnavailableLine,
   realPipelines,
@@ -327,11 +332,23 @@ async function runDesktopHostCommand(opts: { project?: string; webDist?: string 
     stopDeadline: { onExpired: () => process.exit(1) },
     ...(webDist === undefined ? {} : { webDist }),
     ...(skillsDir === null ? {} : { skillsDir }),
-    ...(entry === null ? {} : { cliLauncher: { node: process.execPath, cli: entry } }),
+    ...(entry === null ? {} : cliOffer({ node: process.execPath, cli: entry })),
   });
   await host.stopped;
   await flushed(process.stdout);
   process.exit(0);
+}
+
+/**
+ * What the host is told about the command-line tool: the launcher's target, or — run from an AppImage (desktop-app
+ * ticket 26; infra `cliLauncherUnavailable`) — that it offers none, because the AppImage's folder is gone once the app
+ * closes.
+ */
+function cliOffer(
+  target: CliLauncherTarget
+): { cliLauncher: CliLauncherTarget } | { cliUnavailable: "appimage" } {
+  const reason = cliLauncherUnavailable(target, process.env);
+  return reason === null ? { cliLauncher: target } : { cliUnavailable: reason };
 }
 
 /** The path with its symbolic links resolved; the path itself when that fails. */

@@ -23,7 +23,8 @@
     "argelanderspace": "./dist/bin.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "licenses"
   ],
   "scripts": {
     "build": "tsup && node scripts/copy-assets.mjs",

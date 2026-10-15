@@ -15,6 +15,8 @@
 import {
   HOST_APP,
   type HostCliStatus,
+  type HostCliUnavailable,
+  type HostCliUnavailableReason,
   type HostInfo,
   type HostPortFallback,
   type HostProjectState,
@@ -83,8 +85,13 @@ export interface HostBridge {
   requests: readonly HostRequestKind[];
   /** Writes the request line; false once the host is shutting down (nothing is written then). */
   request(kind: HostRequestKind): boolean;
-  /** The command-line tool (desktop-app ticket 24); null when the host does not know its own Node and CLI. */
+  /**
+   * The command-line tool (desktop-app ticket 24); null when the host does not know its own Node and CLI, or does not
+   * offer the tool (`cliUnavailable`).
+   */
   cli: HostCli | null;
+  /** Why the host does not offer the command-line tool (desktop-app ticket 26: `appimage`); absent otherwise. */
+  cliUnavailable?: HostCliUnavailableReason;
   /** Whether a project is open; `none`: the welcome state (desktop-app ticket 18). */
   project: HostProjectState;
   /** The recently opened projects (desktop-app ticket 18, desktop-host.ts). */
@@ -249,12 +256,17 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
-    if (bridge.cli === null)
-      return c.json(
-        { code: "cli_unavailable", detail: "this host does not know its command-line tool" },
-        404,
-        NO_STORE
-      );
+    if (bridge.cli === null) {
+      const body: HostCliUnavailable =
+        bridge.cliUnavailable === undefined
+          ? { code: "cli_unavailable", detail: "this host does not know its command-line tool" }
+          : {
+              code: "cli_unavailable",
+              detail: "this host does not offer the command-line tool",
+              reason: bridge.cliUnavailable,
+            };
+      return c.json(body, 404, NO_STORE);
+    }
     try {
       return act(bridge.cli);
     } catch (error) {

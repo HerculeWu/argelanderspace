@@ -1,6 +1,7 @@
 // Seam test for the published-tarball policy (ticket 31). Pure: it feeds path lists to checkPackContents, so it needs
 // no build; the real tarball is checked by scripts/smoke-pack.mjs.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { checkPackContents, REQUIRED_FILES } from "./pack-contents.mjs";
 
@@ -64,3 +65,23 @@ for (const forbidden of [
     );
   });
 }
+
+test("the vendored license texts ship with the npm package (desktop-app ticket 26)", () => {
+  const manifest = JSON.parse(
+    readFileSync(new URL("../licenses/runtime-licenses.json", import.meta.url), "utf8")
+  );
+  assert.ok(REQUIRED_FILES.includes("licenses/runtime-licenses.json"));
+  for (const file of Object.keys(manifest.files))
+    assert.ok(REQUIRED_FILES.includes(`licenses/${file}`), file);
+  // Every package entry's text is one of them: the 17 of ticket 22 and the other platforms' keychain packages.
+  for (const p of manifest.packages)
+    assert.ok(REQUIRED_FILES.includes(`licenses/${p.file}`), p.package);
+  assert.ok(manifest.packages.length >= 17);
+  // Only flat files in licenses/ are allowed there.
+  assert.ok(
+    checkPackContents([...good, "licenses/nested/x"]).some((p) => p.includes("licenses/nested/x"))
+  );
+  // The package's `files` carries the folder.
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.ok(pkg.files.includes("licenses"));
+});

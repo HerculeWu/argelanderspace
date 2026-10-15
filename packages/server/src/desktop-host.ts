@@ -70,6 +70,7 @@ import {
   DEFAULT_UI_LANGUAGE,
   EMPTY_SWITCH_IMPACT,
   HOST_REQUEST_KINDS,
+  type HostCliUnavailableReason,
   type HostPortFallback,
   type HostPortOccupant,
   type HostProjectState,
@@ -349,6 +350,12 @@ export interface DesktopHostOptions {
    * gives its `process.execPath` and its bundle). Absent: the host interface answers that the tool is unavailable.
    */
   cliLauncher?: CliLauncherTarget;
+  /**
+   * Why the host does not offer the command-line tool although it knows its Node and CLI (desktop-app ticket 26; the
+   * CLI entry finds it, infra `cliLauncherUnavailable`): `appimage`. The endpoints then answer 404 `cli_unavailable`
+   * with this reason, and `cliLauncher` is not used.
+   */
+  cliUnavailable?: HostCliUnavailableReason;
 }
 
 export interface DesktopHost {
@@ -704,7 +711,11 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       (kind) => kind !== "open_skills_folder" || options.skillsDir !== undefined
     ),
     request: (kind) => request(kind, "page"),
-    cli: options.cliLauncher === undefined ? null : cliOf(options.cliLauncher),
+    cli:
+      options.cliLauncher === undefined || options.cliUnavailable !== undefined
+        ? null
+        : cliOf(options.cliLauncher),
+    ...(options.cliUnavailable === undefined ? {} : { cliUnavailable: options.cliUnavailable }),
   };
 
   /** The command-line tool (desktop-app ticket 24): infra `cli-launcher.ts`, each change recorded by its outcome. */

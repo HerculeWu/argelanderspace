@@ -41,8 +41,8 @@ const STATUS = (over: Partial<HostCliStatus> = {}): HostCliStatus => ({
 
 let settings: FakeSettings;
 let host: HostInfo | number;
-/** What `GET /api/host/cli` answers: a status, or a status code without one. */
-let cli: HostCliStatus | number;
+/** What `GET /api/host/cli` answers: a status, a status code without one, or a status code with a body. */
+let cli: HostCliStatus | number | { status: number; body: unknown };
 /** What the next install / uninstall answers. */
 let change: { status: number; body: unknown } | null;
 let calls: Array<{ url: string; method: string | undefined; body: unknown }>;
@@ -70,7 +70,11 @@ beforeEach(async () => {
         const reply = change ?? { status: 500, body: { code: "write_failed", detail: "EIO" } };
         return ok(reply.body, reply.status);
       }
-      if (url === "/api/host/cli") return typeof cli === "number" ? ok({ code: "x" }, cli) : ok(cli);
+      if (url === "/api/host/cli") {
+        if (typeof cli === "number") return ok({ code: "x" }, cli);
+        if ("body" in cli) return ok(cli.body, cli.status);
+        return ok(cli);
+      }
       if (url === "/api/papers") return ok({ papers: [] });
       return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
     })
@@ -285,6 +289,24 @@ describe("the desktop form", () => {
     settings.state = "unparseable";
     const row = await openCli();
     expect(q('[data-ui="cli-install"]', row)!.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("a host run from an AppImage offers no tool: no install button, the reason and what to use instead", async () => {
+    cli = { status: 404, body: { code: "cli_unavailable", detail: "x", reason: "appimage" } };
+    const row = await openCli();
+    expect(q('[data-ui="cli-status"]')!.getAttribute("data-state")).toBe("appimage");
+    expect(q('[data-ui="cli-install"]', row)).toBeNull();
+    expect(q('[data-ui="cli-uninstall"]', row)).toBeNull();
+    expect(q('[data-ui="cli-status-unknown"]')).toBeNull();
+    const note = q('[data-ui="cli-appimage"]', row)!;
+    expect(note.textContent).toContain("AppImage");
+    expect(note.textContent).toContain(".deb");
+    expect(note.textContent).toContain("npm");
+    // The skills folder stays.
+    expect(q('[data-ui="show-skills-folder"]')).not.toBeNull();
+    await i18n.changeLanguage("zh-CN");
+    await waitFor(() => expect(q('[data-ui="cli-appimage"]')!.textContent).toContain("AppImage"));
+    expect(q('[data-ui="cli-appimage"]')!.textContent).toMatch(/命令行工具/);
   });
 
   it("no usable status: said, and nothing can be installed", async () => {

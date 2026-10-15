@@ -2619,6 +2619,8 @@
       "uninstallFailed": "没能卸载（{{code}}），文件没有改动。",
       "uninstallForeign": "没有卸载：{{path}} 已经不是本应用放的文件，所以没有删除。",
       "unknown": "读不到命令行工具的状态。",
+      "appimageTitle": "AppImage 中不提供命令行工具",
+      "appimageBody": "AppImage 从一个临时文件夹运行，应用关闭后这个文件夹就不存在了，从它安装的命令行工具会随之失效。要让 agent 使用命令行，请改装 .deb 包，或安装 npm 包 argelanderspace。",
       "skills": "skills",
       "showSkills": "显示 skills 文件夹"
     },
