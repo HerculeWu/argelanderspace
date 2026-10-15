@@ -422,13 +422,16 @@ async function cjkInPage(name, port, controlFile, probeFile, shell) {
     JSON.stringify(font)
   );
   if (!docId) return;
+  // The page leaves after 2 s: on macOS and Windows the probe reads a script's answer back from the page every 200 ms
+  // (probe.rs), so an earlier navigation would take the answer with it.
   const went = await pageJs(
     controlFile,
     probeFile,
     0,
-    `setTimeout(() => { location.href = "/doc/${encodeURIComponent(docId)}"; }, 100); return "going";`,
+    `setTimeout(() => { location.href = "/doc/${encodeURIComponent(docId)}"; }, 2000); return "going";`,
     shell
   );
+  await sleep(2500);
   check(
     went === "going",
     `${name}: the page was sent to the Reader of the PDF`,
