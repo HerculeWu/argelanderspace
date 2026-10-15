@@ -211,6 +211,37 @@ describe("the desktop form", () => {
   });
 });
 
+describe("the decorative window buttons of the title bar (desktop-app ticket 21, user decision 2026-10-15)", () => {
+  it("the browser form keeps them as they were", async () => {
+    host = BROWSER;
+    render(<Shell />);
+    await waitFor(() => expect(q('[data-ui="app-titlebar"]')).not.toBeNull());
+    await settled();
+    const controls = q('[data-ui="titlebar-actions"] .win-ctrl');
+    expect(controls).not.toBeNull();
+    expect(controls!.querySelectorAll(".win-b")).toHaveLength(3);
+    expect(controls!.querySelectorAll(".win-b.close")).toHaveLength(1);
+  });
+
+  it("no usable answer: the browser form, so they stay", async () => {
+    host = 500;
+    render(<Shell />);
+    await waitFor(() => expect(q('[data-ui="app-titlebar"]')).not.toBeNull());
+    await settled();
+    expect(q(".win-ctrl")).not.toBeNull();
+  });
+
+  it("the desktop app has the system's window frame: none of them", async () => {
+    render(<Shell />);
+    await waitFor(() => expect(q('[data-ui="open-tweaks"]')).not.toBeNull());
+    await waitFor(() => expect(q(".win-ctrl")).toBeNull());
+    expect(q(".win-b")).toBeNull();
+    // The other title bar actions stay.
+    expect(q('[data-ui="toggle-theme"]')).not.toBeNull();
+    expect(q('[data-ui="split-pane"]')).not.toBeNull();
+  });
+});
+
 describe("the port fallback banner", () => {
   it("absent without a fallback", async () => {
     await openSettings();

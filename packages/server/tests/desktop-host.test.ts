@@ -613,6 +613,71 @@ describe("the shell's events", () => {
   });
 });
 
+describe("the shell's events of the page's links, downloads and menu (desktop-app ticket 21)", () => {
+  test("are written with their fixed words only; a path or an address in a field is not", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    const send = (o: unknown) => h.input.write(`${JSON.stringify(o)}\n`);
+    send({
+      type: "shell_event",
+      event: "shell.link_opened",
+      fields: { source: "new_window", outcome: "opened" },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.link_opened",
+      fields: { source: "navigation", outcome: "open_failed" },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.navigation_blocked",
+      fields: { scheme: "other", source: "new_window" },
+    });
+    send({ type: "shell_event", event: "shell.download", fields: { outcome: "saved" } });
+    send({ type: "shell_event", event: "shell.download", fields: { outcome: "cancelled" } });
+    send({ type: "shell_event", event: "shell.download", fields: { outcome: "failed" } });
+    send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "about" } });
+    send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "open_recent" } });
+    send({
+      type: "shell_event",
+      event: "shell.link_opened",
+      fields: {
+        source: "https://example.org/SECRET-LINK",
+        outcome: "opened",
+        url: "https://example.org/SECRET-LINK",
+      },
+    });
+    send({
+      type: "shell_event",
+      event: "shell.download",
+      fields: { outcome: "/home/u/SECRET-FILE.zip" },
+    });
+    await sleep(150);
+    const log = h.logFile();
+    const pick = (event: string) =>
+      log.filter((r) => r.event === event).map(({ t: _t, event: _e, ...rest }) => rest);
+    expect(pick("shell.link_opened")).toEqual([
+      { level: "info", source: "new_window", outcome: "opened" },
+      { level: "info", source: "navigation", outcome: "open_failed" },
+      { level: "info", source: "<invalid-enum>", outcome: "opened", dropped_fields: 1 },
+    ]);
+    expect(pick("shell.navigation_blocked")).toEqual([
+      { level: "warn", scheme: "other", source: "new_window" },
+    ]);
+    expect(pick("shell.download")).toEqual([
+      { level: "info", outcome: "saved" },
+      { level: "info", outcome: "cancelled" },
+      { level: "warn", outcome: "failed" },
+      { level: "info", outcome: "<invalid-enum>" },
+    ]);
+    expect(pick("shell.menu_chosen")).toEqual([
+      { level: "info", item: "about" },
+      { level: "info", item: "open_recent" },
+    ]);
+    expect(JSON.stringify(log)).not.toContain("SECRET");
+  });
+});
+
 describe("the shell's events: names of the server's own records", () => {
   test("are not written as those records, but as one fixed rejection", async () => {
     writeConfig("port = 0\n");

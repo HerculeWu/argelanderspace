@@ -2587,6 +2587,7 @@
       "exporting": "正在生成…",
       "exportDone": "已生成 {{name}}（{{size}}）。",
       "exportDoneNote": "文件已交给浏览器下载，保存位置按浏览器的设置。",
+      "exportDoneNoteDesktop": "在弹出的保存窗口里选择保存位置。",
       "exportFailed": "没能生成诊断包。可以再试一次。",
       "exportFailedPicked": "所选位置可能留下了一个空文件，可以删掉。",
       "done": "完成",

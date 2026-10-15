@@ -2,6 +2,7 @@ import { DIAGNOSTICS_CLIENT_MAX_LENGTH, DIAGNOSTICS_COMPILE_LOGS_MAX_FILES, type
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { chooseSaveTarget, exportDiagnostics, fetchDiagnostics, saveBundle, suggestedBundleName, writeBundle } from "../api/diagnostics";
+import { useHostInfo } from "../host";
 import { Icon } from "../lib/icons";
 import { Button, Dialog, InlineMessage } from "../ui";
 
@@ -33,6 +34,8 @@ type Phase =
 
 export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
+  // The desktop app's downloads open its own save window (desktop-app ticket 21), not a browser's downloads.
+  const desktop = useHostInfo()?.mode === "desktop";
   const [info, setInfo] = useState<DiagnosticsInfo | null | "loading">("loading");
   const [include, setInclude] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -161,7 +164,7 @@ export function DiagnosticsExportDialog({ onClose }: { onClose: () => void }) {
         <InlineMessage tone="info" uiId="export-diagnostics-result">
           {phase.saved === "picker"
             ? t("settings.diagnostics.exportSaved", { name: phase.name, size: formatBytes(phase.bytes) })
-            : `${t("settings.diagnostics.exportDone", { name: phase.name, size: formatBytes(phase.bytes) })} ${t("settings.diagnostics.exportDoneNote")}`}
+            : `${t("settings.diagnostics.exportDone", { name: phase.name, size: formatBytes(phase.bytes) })} ${t(desktop ? "settings.diagnostics.exportDoneNoteDesktop" : "settings.diagnostics.exportDoneNote")}`}
         </InlineMessage>
       )}
       {phase.kind === "failed" && (

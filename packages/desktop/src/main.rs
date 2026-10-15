@@ -5,7 +5,8 @@
 //! decides nothing but what `supervisor.rs` says.
 //!
 //! The page gets nothing of Tauri: no permission, and no entry point (`page_guard.rs`); it cannot leave the local page
-//! either (`navigation.rs`).
+//! either (`navigation.rs`): its links to other sites open in the system browser (desktop-app ticket 21). Its
+//! downloads go through a save dialog (`download.rs`), and the window has the shell's menu (`menu.rs`).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -13,7 +14,9 @@
 #[cfg(all(feature = "smoke-probe", not(debug_assertions)))]
 compile_error!("the smoke-probe feature is for debug test builds only, never a release");
 
+mod download;
 mod launch;
+mod menu;
 mod navigation;
 mod page_guard;
 mod protocol;
@@ -32,13 +35,16 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::{AppHandle, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
 };
 
 use launch::HostLauncher;
-use protocol::{HostLine, Language, LineRead, Request};
+use menu::MenuText;
+use navigation::Verdict;
+use protocol::{HostLine, Language, LineRead, MenuModel, Request};
 use shell_log::ShellLog;
 use supervisor::{Action, CrashChoice, Supervisor, QUIT_DEADLINE_MS};
 
@@ -66,8 +72,20 @@ enum Ev {
     Deadline(u32),
     /// The window could not be made ready for the page (`page_guard.rs`, from the webview's thread).
     WindowFailed(&'static str),
-    /// A navigation away from the local page was stopped (`navigation.rs`); the scheme's category.
-    NavigationBlocked(&'static str),
+    /// A navigation away from the local page, or a new window, was stopped (`navigation.rs`): the scheme's category,
+    /// and `navigation` or `new_window`.
+    NavigationBlocked(&'static str, &'static str),
+    /// An `http`/`https` link for the system browser (`navigation` or `new_window`).
+    OpenLink(tauri::Url, &'static str),
+    /// A download ended: `saved`, `cancelled`, `failed`.
+    Download(&'static str),
+    /// A menu item's id (`menu.rs`).
+    Menu(String),
+    /// Test builds only: a script to run in the page (the smoke's control file, `probe.rs`).
+    #[cfg(feature = "smoke-probe")]
+    ProbeJs(String),
+    #[cfg(feature = "smoke-probe")]
+    ProbeDevtools,
     /// A line of host `attempt`'s output was skipped (`too_long`, `not_utf8`).
     LineRejected {
         attempt: u32,
@@ -96,6 +114,10 @@ struct Shell {
     instance: Option<single_instance::Owned>,
     /// The page the window shows now: navigations stay on its origin (`navigation.rs`).
     page: Arc<Mutex<Option<tauri::Url>>>,
+    /// The language of the shell's own words now (the save dialog asks it from WebKit's signal).
+    language: Arc<Mutex<Language>>,
+    /// The version shown in "about" (packages/app/package.json through tauri.conf.json, as the CLI's `--version`).
+    version: String,
 }
 
 fn main() {
@@ -116,8 +138,12 @@ fn main() {
     };
 
     let (tx, rx) = mpsc::channel::<Ev>();
+    let menu_tx = tx.clone();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .on_menu_event(move |_app, event| {
+            let _ = menu_tx.send(Ev::Menu(event.id().0.clone()));
+        })
         .build(tauri::generate_context!())
         .expect("the desktop shell could not start");
 
@@ -127,6 +153,18 @@ fn main() {
             let _ = tx.send(Ev::Raise);
         });
     }
+
+    #[cfg(feature = "smoke-probe")]
+    probe::control({
+        let tx = tx.clone();
+        move |command| {
+            let _ = tx.send(match command {
+                probe::Command::Menu(id) => Ev::Menu(id),
+                probe::Command::Js(code) => Ev::ProbeJs(code),
+                probe::Command::DevtoolsOpen => Ev::ProbeDevtools,
+            });
+        }
+    });
 
     let handle = app.handle().clone();
     let version = app.package_info().version.to_string();
@@ -145,6 +183,8 @@ fn main() {
             picking: false,
             instance,
             page: Arc::new(Mutex::new(None)),
+            language: Arc::new(Mutex::new(Language::Chinese)),
+            version: version.clone(),
         };
         shell.run(rx, &version, &webview, unguarded);
     });
@@ -169,7 +209,15 @@ impl Shell {
         webview: &str,
         unguarded: Option<&'static str>,
     ) {
-        let first = self.sup.start(version, webview, unguarded);
+        let mut first = self.sup.start(version, webview, unguarded);
+        // The menu before any host has said more: its own words, no recent projects yet.
+        first.insert(
+            0,
+            Action::SetMenu(MenuModel {
+                language: self.sup.language(),
+                recent: vec![],
+            }),
+        );
         self.act(first);
         while let Ok(ev) = rx.recv() {
             let actions = match ev {
@@ -241,7 +289,33 @@ impl Shell {
                     }
                     self.sup.on_window_failed(stage)
                 }
-                Ev::NavigationBlocked(scheme) => self.sup.on_navigation_blocked(scheme),
+                Ev::NavigationBlocked(scheme, source) => {
+                    self.sup.on_navigation_blocked(scheme, source)
+                }
+                Ev::OpenLink(url, source) => {
+                    // Only http/https reach here (navigation.rs); one argument to the system's opener, no shell.
+                    let opened = open::that_detached(url.as_str()).is_ok();
+                    self.sup.on_link_opened(source, opened)
+                }
+                Ev::Download(outcome) => self.sup.on_download(outcome),
+                Ev::Menu(id) => match menu::choice(&id) {
+                    Some(choice) => self.sup.on_menu(choice),
+                    None => vec![],
+                },
+                #[cfg(feature = "smoke-probe")]
+                Ev::ProbeDevtools => {
+                    if let Some(window) = &self.window {
+                        probe::report_devtools(window);
+                    }
+                    vec![]
+                }
+                #[cfg(feature = "smoke-probe")]
+                Ev::ProbeJs(code) => {
+                    if let Some(window) = &self.window {
+                        probe::eval(window, code);
+                    }
+                    vec![]
+                }
             };
             self.act(actions);
         }
@@ -260,6 +334,23 @@ impl Shell {
                 Action::Handle(request) => self.handle(request),
                 Action::CrashDialog(language) => {
                     self.crash_dialog(language);
+                    vec![]
+                }
+                Action::SetMenu(model) => {
+                    if let Ok(mut language) = self.language.lock() {
+                        *language = model.language;
+                    }
+                    if let Ok(menu) = menu::build(&self.app, &model) {
+                        let _ = self.app.set_menu(menu);
+                    }
+                    vec![]
+                }
+                Action::About(language) => {
+                    self.about(language);
+                    vec![]
+                }
+                Action::DownloadFailedDialog(language) => {
+                    self.download_failed(language);
                     vec![]
                 }
                 Action::OpenFolder(dir) => {
@@ -398,20 +489,29 @@ impl Shell {
         };
         let page = Arc::clone(&self.page);
         let tx = self.tx.clone();
+        let new_window_tx = self.tx.clone();
         let builder = WebviewWindowBuilder::new(&self.app, WINDOW, WebviewUrl::External(blank))
             .title("ArgelanderSpace")
             .inner_size(1280.0, 820.0)
             .min_inner_size(720.0, 480.0)
             .on_navigation(move |target| {
                 let shown = page.lock().ok().and_then(|p| p.clone());
-                match navigation::check(target, shown.as_ref()) {
-                    Ok(()) => true,
-                    Err(scheme) => {
-                        let _ = tx.send(Ev::NavigationBlocked(scheme));
-                        false
-                    }
-                }
-            });
+                link_verdict(
+                    &tx,
+                    navigation::on_navigation(target, shown.as_ref()),
+                    "navigation",
+                )
+            })
+            // `target=_blank` and `window.open`: never a second window; http(s) to the system browser.
+            .on_new_window(move |target, _features| {
+                link_verdict(
+                    &new_window_tx,
+                    navigation::on_new_window(&target),
+                    "new_window",
+                );
+                NewWindowResponse::Deny
+            })
+            .on_download(downloads(self.tx.clone(), Arc::clone(&self.language)));
         #[cfg(feature = "smoke-probe")]
         let builder = probe::attach(builder);
         // No window, or no way to keep Tauri out of it: no page, and the app quits (supervisor `on_window_failed`).
@@ -470,11 +570,54 @@ impl Shell {
             Request::OpenConfigFile { path } => self.open(kind, &path, false),
             // Where the bundled skills are is desktop-app ticket 24; the host sends no path yet.
             Request::OpenSkillsFolder => self.sup.request_failed(kind, "no_path"),
-            // Opening the page in the browser and the developer tools are desktop-app ticket 21.
-            Request::OpenInBrowser | Request::OpenDevtools => {
-                self.sup.request_failed(kind, "not_supported")
-            }
+            // The host's own page address (protocol.rs checked its form): the same page in the system browser.
+            Request::OpenInBrowser { url } => match open::that_detached(&url) {
+                Ok(()) => vec![],
+                Err(_) => self.sup.request_failed(kind, "open_failed"),
+            },
+            // Release builds too (the `devtools` feature): spec User Story 74.
+            Request::OpenDevtools => match &self.window {
+                Some(window) => {
+                    window.open_devtools();
+                    vec![]
+                }
+                None => self.sup.request_failed(kind, "no_window"),
+            },
         }
+    }
+
+    /// "About": the name and the version, in a native dialog.
+    fn about(&mut self, language: Language) {
+        let text = MenuText::of(language);
+        let mut dialog = self
+            .app
+            .dialog()
+            .message(text.about_message(&self.version))
+            .title(text.about_title)
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCustom(text.ok.into()));
+        if let Some(window) = &self.window {
+            dialog = dialog.parent(window);
+        }
+        dialog.show(|_| {});
+    }
+
+    /// A download that could not be saved: said in a native dialog (where it was to go is not said or recorded).
+    fn download_failed(&mut self, language: Language) {
+        let text = download::SaveText::of(language);
+        let mut dialog = self
+            .app
+            .dialog()
+            .message(text.failed)
+            .title(text.failed_title)
+            .kind(MessageDialogKind::Error)
+            .buttons(MessageDialogButtons::OkCustom(
+                MenuText::of(language).ok.into(),
+            ));
+        if let Some(window) = &self.window {
+            dialog = dialog.parent(window);
+        }
+        dialog.show(|_| {});
     }
 
     fn open(&mut self, kind: &'static str, path: &str, folder: bool) -> Vec<Action> {
@@ -519,6 +662,73 @@ impl Shell {
             };
             let _ = tx.send(Ev::CrashChoice(choice));
         });
+    }
+}
+
+/// What the window does with an address (`navigation.rs`): stays for the local page; an http(s) link goes to the
+/// system browser and a stopped one is recorded, by the shell's thread.
+fn link_verdict(tx: &Sender<Ev>, verdict: Verdict, source: &'static str) -> bool {
+    match verdict {
+        Verdict::Stay => true,
+        Verdict::Browser(url) => {
+            let _ = tx.send(Ev::OpenLink(url, source));
+            false
+        }
+        Verdict::Blocked(scheme) => {
+            let _ = tx.send(Ev::NavigationBlocked(scheme, source));
+            false
+        }
+    }
+}
+
+/// The page's downloads (`download.rs`): a save dialog decides where each goes; cancelled, it is cancelled.
+fn downloads(
+    tx: Sender<Ev>,
+    language: Arc<Mutex<Language>>,
+) -> impl Fn(tauri::Webview, DownloadEvent<'_>) -> bool + Send + Sync + 'static {
+    // WebKit reports a cancelled download as finished without success: that one is not a failure to tell about.
+    let cancelled: Arc<Mutex<Vec<tauri::Url>>> = Arc::new(Mutex::new(Vec::new()));
+    let tx = Mutex::new(tx);
+    move |webview, event| match event {
+        DownloadEvent::Requested { url, destination } => {
+            #[cfg(feature = "smoke-probe")]
+            if let Some(dir) = probe::save_to() {
+                let (_, name) = download::start_of(destination);
+                *destination = dir.join(name);
+                return true;
+            }
+            let language = language.lock().map(|l| *l).unwrap_or(Language::Chinese);
+            let parent = webview.window().gtk_window().ok();
+            match download::ask_where(parent.as_ref(), destination, language) {
+                Some(path) => {
+                    *destination = path;
+                    true
+                }
+                None => {
+                    if let Ok(mut c) = cancelled.lock() {
+                        c.push(url);
+                    }
+                    if let Ok(tx) = tx.lock() {
+                        let _ = tx.send(Ev::Download("cancelled"));
+                    }
+                    false
+                }
+            }
+        }
+        DownloadEvent::Finished { url, success, .. } => {
+            let was_cancelled = cancelled
+                .lock()
+                .ok()
+                .and_then(|mut c| c.iter().position(|u| *u == url).map(|i| c.remove(i)))
+                .is_some();
+            if !was_cancelled {
+                if let Ok(tx) = tx.lock() {
+                    let _ = tx.send(Ev::Download(if success { "saved" } else { "failed" }));
+                }
+            }
+            true
+        }
+        _ => true,
     }
 }
 

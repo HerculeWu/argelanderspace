@@ -4,7 +4,8 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::protocol::{self, FailedStage, HostLine, Language, LogLevel, Request};
+use crate::menu::MenuChoice;
+use crate::protocol::{self, FailedStage, HostLine, Language, LogLevel, MenuModel, Request};
 
 /// How the crash dialog was answered. Closing it without a button is `Quit` (user ruling 3, desktop-app ticket 20):
 /// the GTK dialog answers a close as its cancel button, which is the quit button, so the two cannot be told apart.
@@ -47,6 +48,12 @@ pub enum Action {
     Handle(Request),
     /// Show the host-crashed dialog.
     CrashDialog(Language),
+    /// Show this menu (desktop-app ticket 21).
+    SetMenu(MenuModel),
+    /// Show the about dialog.
+    About(Language),
+    /// Say that a download could not be saved.
+    DownloadFailedDialog(Language),
     OpenFolder(String),
     /// Write these events to the shell's own file in the log directory (no host to give them to).
     WriteEvents {
@@ -210,13 +217,77 @@ impl Supervisor {
         actions
     }
 
-    /// The page tried to go somewhere other than the local page (`scheme`: `http`, `https` or `other`); it was stopped.
-    pub fn on_navigation_blocked(&mut self, scheme: &'static str) -> Vec<Action> {
+    /// The page tried to go somewhere other than the local page, or asked for a new window (`source`: `navigation`,
+    /// `new_window`), at an address the system browser is not given (`scheme`: `other`); it was stopped.
+    pub fn on_navigation_blocked(
+        &mut self,
+        scheme: &'static str,
+        source: &'static str,
+    ) -> Vec<Action> {
         self.record(
             "shell.navigation_blocked",
             "warn",
-            [("scheme", json!(scheme))],
+            [("scheme", json!(scheme)), ("source", json!(source))],
         )
+    }
+
+    /// An `http`/`https` link of the page was handed to the system browser (`opened`: the opener started).
+    pub fn on_link_opened(&mut self, source: &'static str, opened: bool) -> Vec<Action> {
+        self.record(
+            "shell.link_opened",
+            "info",
+            [
+                ("source", json!(source)),
+                (
+                    "outcome",
+                    json!(if opened { "opened" } else { "open_failed" }),
+                ),
+            ],
+        )
+    }
+
+    /// A download of the page ended: `saved`, `cancelled` (in the save dialog) or `failed` (the user is told).
+    pub fn on_download(&mut self, outcome: &'static str) -> Vec<Action> {
+        let failed = outcome == "failed";
+        let mut actions = self.record(
+            "shell.download",
+            if failed { "warn" } else { "info" },
+            [("outcome", json!(outcome))],
+        );
+        if failed {
+            actions.push(Action::DownloadFailedDialog(self.language));
+        }
+        actions
+    }
+
+    /// The language the shell's own words are in now: the host's last report.
+    pub fn language(&self) -> Language {
+        self.language
+    }
+
+    /// A menu item was chosen. "About" is the shell's own; every other item goes to the running host, which carries it
+    /// out as the page's request of that kind or as opening that recent project. With no host ready to take it (none
+    /// running, starting, stopping, or the app quitting) nothing happens.
+    pub fn on_menu(&mut self, choice: MenuChoice) -> Vec<Action> {
+        let mut actions = self.record(
+            "shell.menu_chosen",
+            "info",
+            [("item", json!(choice.name()))],
+        );
+        let line = match choice {
+            MenuChoice::About => {
+                actions.push(Action::About(self.language));
+                return actions;
+            }
+            MenuChoice::OpenFolder => protocol::menu_request_line("pick_folder"),
+            MenuChoice::OpenInBrowser => protocol::menu_request_line("open_in_browser"),
+            MenuChoice::OpenDevtools => protocol::menu_request_line("open_devtools"),
+            MenuChoice::OpenRecent(id) => protocol::menu_recent_line(&id),
+        };
+        if self.host.alive && self.host.ready && !self.host.stopping && !self.quitting {
+            actions.push(Action::Send(line));
+        }
+        actions
     }
 
     /// A line of the host's output was skipped (`reason`: `too_long`, `not_utf8`).
@@ -289,6 +360,10 @@ impl Supervisor {
                     self.log_dir = log_dir;
                 }
                 vec![]
+            }
+            HostLine::Menu(model) => {
+                self.language = model.language;
+                vec![Action::SetMenu(model)]
             }
             HostLine::Unknown => vec![],
         }
@@ -802,7 +877,7 @@ mod tests {
                 "shell.host_started"
             ]
         );
-        s.on_navigation_blocked("https");
+        s.on_navigation_blocked("https", "navigation");
         s.on_line_rejected("not_utf8");
         // Written by the shell itself: only what the level admits (the info-level clean exit is left out).
         s.on_close_requested();
@@ -851,18 +926,118 @@ mod tests {
         s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(ready(None));
-        let actions = s.on_navigation_blocked("other");
+        let actions = s.on_navigation_blocked("other", "new_window");
         let Action::Send(line) = &actions[0] else {
             panic!("{actions:?}")
         };
         assert_eq!(
             serde_json::from_str::<Value>(line).unwrap(),
-            json!({"type":"shell_event","event":"shell.navigation_blocked","fields":{"scheme":"other"}})
+            json!({"type":"shell_event","event":"shell.navigation_blocked","fields":{"scheme":"other","source":"new_window"}})
         );
         assert_eq!(
             sent_events(&s.on_line_rejected("too_long")),
             vec!["shell.line_rejected"]
         );
+    }
+
+    fn sent_lines(actions: &[Action]) -> Vec<Value> {
+        actions
+            .iter()
+            .filter_map(|a| match a {
+                Action::Send(line) => serde_json::from_str::<Value>(line).ok(),
+                _ => None,
+            })
+            .filter(|v| v["type"] != "shell_event")
+            .collect()
+    }
+
+    #[test]
+    fn menu_items_go_to_the_ready_host_as_menu_lines_and_about_is_the_shells() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        s.spawned(None, 1);
+        // Not ready yet: nothing to send the item to (the choice is still recorded).
+        assert_eq!(
+            sent_lines(&s.on_menu(MenuChoice::OpenFolder)),
+            Vec::<Value>::new()
+        );
+        s.on_line(ready(None));
+        for (choice, line) in [
+            (
+                MenuChoice::OpenFolder,
+                json!({"type":"menu","item":"pick_folder"}),
+            ),
+            (
+                MenuChoice::OpenInBrowser,
+                json!({"type":"menu","item":"open_in_browser"}),
+            ),
+            (
+                MenuChoice::OpenDevtools,
+                json!({"type":"menu","item":"open_devtools"}),
+            ),
+            (
+                MenuChoice::OpenRecent("m1-0".into()),
+                json!({"type":"menu","item":"open_recent","id":"m1-0"}),
+            ),
+        ] {
+            let actions = s.on_menu(choice.clone());
+            assert_eq!(sent_lines(&actions), vec![line], "{choice:?}");
+            assert_eq!(sent_events(&actions), vec!["shell.menu_chosen"]);
+        }
+        let actions = s.on_menu(MenuChoice::About);
+        assert!(actions.contains(&Action::About(Language::Chinese)));
+        assert_eq!(sent_lines(&actions), Vec::<Value>::new());
+        // The menu line sets the language of the shell's words.
+        let actions = s.on_line(parse_host_line(
+            r#"{"type":"menu","language":"en","recent":[]}"#,
+        ));
+        assert_eq!(
+            actions,
+            vec![Action::SetMenu(MenuModel {
+                language: Language::English,
+                recent: vec![]
+            })]
+        );
+        assert!(s
+            .on_menu(MenuChoice::About)
+            .contains(&Action::About(Language::English)));
+        // Stopping, or quitting: no item goes to the host.
+        s.on_line(HostLine::Stopping {
+            reason: "switch".into(),
+        });
+        assert_eq!(
+            sent_lines(&s.on_menu(MenuChoice::OpenDevtools)),
+            Vec::<Value>::new()
+        );
+    }
+
+    #[test]
+    fn links_and_downloads_are_recorded_and_a_failed_download_is_said() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        s.spawned(None, 1);
+        s.on_line(ready(None));
+        let actions = s.on_link_opened("new_window", true);
+        let Action::Send(line) = &actions[0] else {
+            panic!("{actions:?}")
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(line).unwrap()["fields"],
+            json!({"source":"new_window","outcome":"opened"})
+        );
+        assert_eq!(
+            sent_events(&s.on_link_opened("navigation", false)),
+            vec!["shell.link_opened"]
+        );
+        for outcome in ["saved", "cancelled"] {
+            let actions = s.on_download(outcome);
+            assert_eq!(sent_events(&actions), vec!["shell.download"]);
+            assert!(!actions
+                .iter()
+                .any(|a| matches!(a, Action::DownloadFailedDialog(_))));
+        }
+        let actions = s.on_download("failed");
+        assert!(actions.contains(&Action::DownloadFailedDialog(Language::Chinese)));
     }
 
     #[test]

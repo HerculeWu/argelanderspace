@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { PreferencesProvider, usePreferencesState } from "../argelander/preferences";
 import { TweaksPopover } from "../argelander/TweaksPopover";
-import { Icon } from "../lib/icons";
+import { DecorativeWindowControls } from "../argelander/WindowControls";
 import { SettingsNotices } from "../settings/SettingsView";
 import { ActionButton } from "../ui";
 import { WelcomePage } from "./WelcomePage";
@@ -51,17 +51,7 @@ export function WelcomeShell() {
               onClick={() => setTweaksOpen((o) => !o)}
             />
             {tweaksOpen && <TweaksPopover tweaks={tweaks} set={setTweak} onClose={() => setTweaksOpen(false)} />}
-            <div className="win-ctrl">
-              <span className="win-b">
-                <Icon name="minus" cls="ico-sm" />
-              </span>
-              <span className="win-b">
-                <Icon name="square" cls="ico-sm" />
-              </span>
-              <span className="win-b close">
-                <Icon name="x" cls="ico-sm" />
-              </span>
-            </div>
+            <DecorativeWindowControls />
           </div>
         </div>
         <div className="app-body">

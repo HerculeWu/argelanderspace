@@ -21,7 +21,7 @@ import {
 } from "node:fs";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import type { HostSwitchImpact, WsHostSwitchConfirmation } from "@argelanderspace/contracts";
 import {
@@ -267,7 +267,7 @@ describe("nothing would be interrupted", () => {
     });
     await h.pick(current);
     await sleep(100);
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "request"]);
+    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu", "request"]);
     expect(h.log().find((r) => r.event === "desktop.pick_rejected")).toMatchObject({
       reason: "current_project",
     });
@@ -286,7 +286,7 @@ describe("nothing would be interrupted", () => {
       body: { code: "folder_missing" },
     });
     await sleep(100);
-    expect(h.lines.map((l) => l.type)).toEqual(["ready"]);
+    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu"]);
     expect((await h.get("/api/library")).status).toBe(200);
   });
 });
@@ -338,7 +338,7 @@ describe("a job running or queued", () => {
         [queued.id, "queued"],
       ])
     );
-    expect(h.lines.map((l) => l.type)).toEqual(["ready"]);
+    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu"]);
     // Confirming all of it: the host leaves.
     expect(
       (await h.post("/api/host/recent-projects/open", { path: other, acknowledged: ack(now) }))
@@ -388,7 +388,7 @@ describe("a job running or queued", () => {
     });
     expect(h.server.runner.get(job.id)?.status).toBe("running");
     expect(readFileSync(recentFile(), "utf8")).toBe(listBefore);
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "request"]);
+    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu", "request"]);
     // The cancelled id is gone.
     expect(
       await h.post("/api/host/switch/confirm", { id: asked.id, acknowledged: ack(asked.impact) })
@@ -413,6 +413,35 @@ describe("a job running or queued", () => {
       ).status
     ).toBe(202);
     expect(await h.next("stopped")).toEqual({ type: "stopped", next: other });
+  });
+
+  test("a recent project from the shell's menu (desktop-app ticket 21) is held and announced as a picked folder is; leaving records it as recent", async () => {
+    const other = folder("other");
+    recordRecentProject(recentFile(), other, new Date("2020-01-01T00:00:00Z"));
+    const h = await startHost();
+    const page = await listen(h.url);
+    const job = holdJob(h.server, {});
+    const menu = await h.next("menu");
+    const item = menu.recent.find((r) => r.label.includes(basename(other)));
+    if (item === undefined) throw new Error(`no menu item; got ${JSON.stringify(menu)}`);
+    h.input.write(`${JSON.stringify({ type: "menu", item: "open_recent", id: item.id })}\n`);
+    for (let i = 0; i < 100 && page.messages.length === 0; i++) await sleep(10);
+    const [asked] = page.messages;
+    if (asked === undefined) throw new Error("no confirmation");
+    expect(asked).toMatchObject({ target: { path: other }, impact: { jobs: [{ id: job.id }] } });
+    expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
+    expect(
+      (await h.post("/api/host/switch/confirm", { id: asked.id, acknowledged: ack(asked.impact) }))
+        .status
+    ).toBe(202);
+    expect(await h.next("stopped")).toEqual({ type: "stopped", next: other });
+    const asks = h
+      .log()
+      .filter((r) => r.event === "desktop.switch_asked" || r.event === "desktop.leaving");
+    expect(asks.map((r) => [r.event, r.source])).toEqual([
+      ["desktop.switch_asked", "recent"],
+      ["desktop.leaving", "recent"],
+    ]);
   });
 
   test("a held folder that is gone at the confirmation: 409 folder_missing, the host does not stop", async () => {

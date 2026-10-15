@@ -104,6 +104,10 @@ export const SERVER_LOG_EVENTS = [
   "shell.navigation_blocked",
   "shell.line_rejected",
   "shell.instance_unguarded",
+  // Desktop-app ticket 21: a link handed to the system browser, a download, a menu item.
+  "shell.link_opened",
+  "shell.download",
+  "shell.menu_chosen",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];

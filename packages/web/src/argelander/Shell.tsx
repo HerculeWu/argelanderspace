@@ -1,7 +1,6 @@
 import { DiscoverySavedViewActionSchema, APPEARANCE_DENSITIES, APPEARANCE_LANGUAGES, APPEARANCE_THEMES, type CopilotViewAction, MAX_PANES, type PageContext, SETTINGS_VIEW, type WorkspaceViewAction, WorkspaceViewActionSchema } from "@argelanderspace/contracts";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "../lib/icons";
 import { ActionButton } from "../ui";
 import { fetchPapers } from "../api";
 import { parseDocRoute, pushDocUrl, replaceDocUrl } from "../lib/deeplink";
@@ -17,6 +16,7 @@ import { claimViewId, loadViewIdentity, saveViewIdentity } from "./view-identity
 import { applyDocDeletion, askWorkspaceLeave, confirmWorkspaceLeave, type LeaveOrigin, WorkspaceProvider, type Workspace } from "./workspace";
 import { CommandPalette } from "./CommandPalette";
 import { TweaksPopover } from "./TweaksPopover";
+import { DecorativeWindowControls } from "./WindowControls";
 import { DocPane } from "../doc/DocPane";
 import { createDocPane, type DocPaneHost } from "../doc/doc-pane-adapter";
 import { LibraryView } from "../library/LibraryView";
@@ -637,17 +637,7 @@ export function Shell() {
             {tweaksOpen && (
               <TweaksPopover tweaks={tweaks} set={setTweak} onClose={() => setTweaksOpen(false)} />
             )}
-            <div className="win-ctrl">
-              <span className="win-b">
-                <Icon name="minus" cls="ico-sm" />
-              </span>
-              <span className="win-b">
-                <Icon name="square" cls="ico-sm" />
-              </span>
-              <span className="win-b close">
-                <Icon name="x" cls="ico-sm" />
-              </span>
-            </div>
+            <DecorativeWindowControls />
           </div>
         </div>
 

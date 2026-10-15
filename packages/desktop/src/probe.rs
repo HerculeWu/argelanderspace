@@ -5,6 +5,11 @@
 //! made through them is refused all the same (docs/engineering.md, desktop shell smoke). With
 //! `ARGELANDERSPACE_SHELL_PROBE_NAVIGATE=<address>` the page then tries to go there and reports where it is a moment
 //! later (the shell stops navigations away from the local page, `navigation.rs`).
+//!
+//! Desktop-app ticket 21: `ARGELANDERSPACE_SHELL_PROBE_CONTROL=<file>` is read for lines the smoke appends —
+//! `menu <id>` chooses a menu item as a click on it does (`menu.rs` ids), `js <script>` runs a script in the page and
+//! appends `{"js": <answer>}` to the probe file; `ARGELANDERSPACE_SHELL_PROBE_SAVE_TO=<dir>` saves the page's
+//! downloads there without the save dialog (so the files can be checked; the dialog itself is checked without it).
 
 use std::io::Write;
 use std::time::Duration;
@@ -55,6 +60,95 @@ if (NAVIGATE) {
 }
 return JSON.stringify(r);
 "##;
+
+/// A line of the control file.
+pub enum Command {
+    Menu(String),
+    Js(String),
+    /// `devtools?`: whether the window's developer tools are open, appended as `{"devtoolsOpen": …}`.
+    DevtoolsOpen,
+}
+
+/// Reads the control file (when named) from its start, polling for appended lines, and hands each command on.
+pub fn control(each: impl Fn(Command) + Send + 'static) {
+    let Some(path) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE_CONTROL") else {
+        return;
+    };
+    std::thread::spawn(move || {
+        let mut done = 0usize;
+        loop {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                let lines: Vec<&str> = text.lines().collect();
+                // Only whole lines (the last one has its newline).
+                let whole = if text.ends_with('\n') {
+                    lines.len()
+                } else {
+                    lines.len().saturating_sub(1)
+                };
+                for line in &lines[done.min(whole)..whole] {
+                    if let Some(id) = line.strip_prefix("menu ") {
+                        each(Command::Menu(id.to_owned()));
+                    } else if let Some(code) = line.strip_prefix("js ") {
+                        each(Command::Js(code.to_owned()));
+                    } else if *line == "devtools?" {
+                        each(Command::DevtoolsOpen);
+                    }
+                }
+                done = done.max(whole);
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    });
+}
+
+/// Where downloads go without the dialog, when the smoke says so.
+pub fn save_to() -> Option<std::path::PathBuf> {
+    std::env::var_os("ARGELANDERSPACE_SHELL_PROBE_SAVE_TO").map(Into::into)
+}
+
+/// Runs `code` (the body of an async function) in the page; its answer is appended to the probe file.
+pub fn eval<R: Runtime>(window: &tauri::WebviewWindow<R>, code: String) {
+    let Some(out) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE") else {
+        return;
+    };
+    let _ = window.with_webview(move |platform| {
+        platform.inner().call_async_javascript_function(
+            &code,
+            None,
+            None,
+            None,
+            None::<&gio::Cancellable>,
+            move |result| {
+                let answer = match result {
+                    Ok(value) => serde_json::Value::String(value.to_str().to_string()),
+                    Err(error) => serde_json::json!({ "error": error.to_string() }),
+                };
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&out)
+                {
+                    let _ = writeln!(f, "{}", serde_json::json!({ "js": answer }));
+                }
+            },
+        );
+    });
+}
+
+/// Appends whether the window's developer tools are open to the probe file.
+pub fn report_devtools<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let Some(out) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE") else {
+        return;
+    };
+    let open = window.is_devtools_open();
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(out)
+    {
+        let _ = writeln!(f, "{}", serde_json::json!({ "devtoolsOpen": open }));
+    }
+}
 
 /// Whether the shell should leave Tauri's entry points in the page (to show calls are refused anyway).
 pub fn keep_entries() -> bool {

@@ -235,7 +235,7 @@ test("with a project open: a recent folder that is gone is said so and the host 
     "folder_missing",
   ]);
   expect((await fetch(`${url}api/library`)).status).toBe(200);
-  expect(first.lines.map((l) => l.type)).toEqual(["ready"]);
+  expect(first.lines.map((l) => l.type)).toEqual(["ready", "menu"]);
 
   // Nothing is running: the folder the shell picked is left for at once.
   expect((await fetch(`${url}api/host/requests/pick_folder`, { method: "POST" })).status).toBe(202);

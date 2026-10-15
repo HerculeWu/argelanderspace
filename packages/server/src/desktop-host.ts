@@ -14,10 +14,17 @@
  *                host for (`--project`), the way the host leaves a project for another (spec 「进程结构」).
  *   - `ready`'s `project` is null in the welcome state (desktop-app ticket 18).
  *   - `failed`   the server could not start; the process then exits with 1.
+ *   - `menu`     after `ready`, and again whenever it changes (desktop-app ticket 21): what the shell's menu shows —
+ *                the language config.toml names now and the recent projects ({@link HOST_MENU_RECENT_MAX} at most,
+ *                not the open one), each with a label and an id only this host can turn back into its folder.
  *
  * Shell → host (stdin):
  *   - `{"type":"quit"}`                               shut down gracefully.
  *   - `{"type":"folder_picked","id":…,"path":…|null}` the answer to a `pick_folder` request (null: cancelled).
+ *   - `{"type":"menu","item":…}`                       a menu item (desktop-app ticket 21): `pick_folder`,
+ *     `open_in_browser`, `open_devtools` are carried out as the page's request of that kind; `open_recent` with the
+ *     `id` of the last `menu` line as opening that recent project (with a project open, held for the user's
+ *     confirmation when the switch would interrupt work, as a picked folder is).
  *   - `{"type":"shell_event","event":…,"fields":{…}}` one of the shell's own events, written into the host's log by
  *     the same rules as every other record: the event must be in {@link SHELL_EVENTS} and each field is put through
  *     the field constructor its catalog entry names; anything else is not written. An event name outside that table —
@@ -83,6 +90,7 @@ import {
   logDirIn,
   RECENT_PROJECTS_FILE,
   RECENT_PROJECTS_PROBLEMS,
+  readConfigLeniently,
   readRecentProjects,
   recordRecentProject,
   removeRecentProject,
@@ -103,7 +111,7 @@ import {
   startNoProjectServer,
   startServer,
 } from "./server.js";
-import { shownPath } from "./settings.js";
+import { shownPath, startSettingsWatcher } from "./settings.js";
 
 /** A line longer than this (bytes, without its newline) is dropped whole. */
 export const HOST_LINE_MAX_BYTES = 64 * 1024;
@@ -123,6 +131,21 @@ export type HostStopReason = (typeof HOST_STOP_REASONS)[number];
 export const HOST_STOP_DEADLINE_MS = 10_000;
 /** The stop reasons that mean the shell is gone, so the host itself must make sure it ends. */
 const SHELL_GONE: ReadonlySet<HostStopReason> = new Set(["input_closed", "output_closed"]);
+
+/** The native requests the shell's menu may ask for (desktop-app ticket 21); a recent project is `open_recent`. */
+export const MENU_REQUESTS = ["pick_folder", "open_in_browser", "open_devtools"] as const;
+/** At most this many recent projects in the shell's menu (the settings page and the welcome page list them all). */
+export const HOST_MENU_RECENT_MAX = 10;
+/** Where a native request came from, as `desktop.request` records it. */
+const REQUEST_SOURCES = ["page", "menu"] as const;
+
+/** One recent project in the shell's menu: what it shows, and the id it sends back. No path: the label is to read. */
+export interface HostMenuRecent {
+  id: string;
+  label: string;
+  /** False when the folder is not there now: shown, not openable. */
+  enabled: boolean;
+}
 
 /** Why a line from the shell was not acted on (recorded as `desktop.protocol_rejected`). */
 const REJECT_REASONS = [
@@ -154,9 +177,10 @@ const SIGNALS = [
 /** How one field of a shell event is written: by one of the log's field constructors. */
 type ShellFieldKind = "id" | "num" | "ms" | readonly string[];
 interface ShellEventSpec {
-  /** The level; `warn` for `shell.host_exited` with `expected: "no"`. */
+  /** The level; `warn` instead when the field `warnWhen` names has its value (`shell.host_exited` not expected). */
   level: "info" | "warn";
   fields: Readonly<Record<string, ShellFieldKind>>;
+  warnWhen?: { field: string; value: string };
 }
 
 /**
@@ -169,6 +193,7 @@ export const SHELL_EVENTS = {
   "shell.host_exited": {
     level: "info",
     fields: { exit_code: "num", signal: SIGNALS, expected: YES_NO, duration_ms: "ms" },
+    warnWhen: { field: "expected", value: "no" },
   },
   // Closing the crash dialog without a button is a quit (user ruling 3, desktop-app ticket 20): no answer of its own.
   "shell.dialog_answered": {
@@ -181,7 +206,28 @@ export const SHELL_EVENTS = {
   "shell.window_failed": { level: "warn", fields: { stage: ["create", "guard"] } },
   // The page tried to go to an address other than the local page's origin: stopped (desktop-app ticket 21 hands such
   // addresses to the system browser).
-  "shell.navigation_blocked": { level: "warn", fields: { scheme: ["http", "https", "other"] } },
+  // Desktop-app ticket 21: an http(s) address goes to the system browser instead (`shell.link_opened`); what is stopped
+  // is any other scheme, from a navigation of the window or a request for a new one (`source`).
+  "shell.navigation_blocked": {
+    level: "warn",
+    fields: { scheme: ["http", "https", "other"], source: ["navigation", "new_window"] },
+  },
+  // Desktop-app ticket 21: a link of the page handed to the system browser (never its address).
+  "shell.link_opened": {
+    level: "info",
+    fields: { source: ["navigation", "new_window"], outcome: ["opened", "open_failed"] },
+  },
+  // Desktop-app ticket 21: a download of the page, through the shell's save dialog (never the file's name or folder).
+  "shell.download": {
+    level: "info",
+    fields: { outcome: ["saved", "cancelled", "failed"] },
+    warnWhen: { field: "outcome", value: "failed" },
+  },
+  // Desktop-app ticket 21: an item of the shell's menu was chosen.
+  "shell.menu_chosen": {
+    level: "info",
+    fields: { item: ["open_folder", "open_recent", "open_in_browser", "open_devtools", "about"] },
+  },
   // A line from the host the shell could not read: longer than the limit, or not UTF-8. Dropped; reading goes on.
   "shell.line_rejected": { level: "warn", fields: { reason: ["too_long", "not_utf8"] } },
   // The shell runs without the single-instance guard: no socket to be had, or the socket's owner is another user.
@@ -221,6 +267,12 @@ export type HostOutLine =
   | { type: "request"; kind: "open_log_folder"; path: string }
   | { type: "request"; kind: "open_config_file"; path: string }
   | { type: "request"; kind: "open_skills_folder" }
+  /** What the shell's menu shows (desktop-app ticket 21): written after `ready` and whenever it changes. */
+  | {
+      type: "menu";
+      language: (typeof SETTINGS_UI_LANGUAGES)[number];
+      recent: HostMenuRecent[];
+    }
   | { type: "stopping"; reason: HostStopReason }
   | { type: "stopped"; next?: string }
   /**
@@ -257,6 +309,8 @@ export interface DesktopHostOptions {
   stopDeadline?: { ms?: number; onExpired: () => void };
   /** Tests only: the keychain probe of the start record. */
   keychainProbe?: () => Promise<KeychainProbe>;
+  /** How often config.toml is looked at for a new language of the menu (ms; default the settings watcher's). */
+  menuWatchIntervalMs?: number;
 }
 
 export interface DesktopHost {
@@ -466,7 +520,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   let workbench: HostWorkbench | null = null;
   const impactNow = (): HostSwitchImpact => workbench?.impact() ?? EMPTY_SWITCH_IMPACT;
   /** The folder the shell picked while a switch would interrupt work, waiting for the user's confirmation. */
-  let held: { id: string; path: string } | null = null;
+  let held: { id: string; path: string; source: (typeof LEAVE_SOURCES)[number] } | null = null;
 
   /** Where a switch goes, as the page shows it. */
   function targetOf(path: string): HostSwitchTarget {
@@ -525,15 +579,21 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       held = null;
       return "folder_missing";
     }
-    const ask = mayLeave(held.path, acknowledged, "picked");
+    const ask = mayLeave(held.path, acknowledged, held.source);
     if (ask !== null) return ask;
-    const { path } = held;
+    const { path, source } = held;
     held = null;
-    return leave(path, "picked") ? "leaving" : "shutting_down";
+    return leave(path, source) ? "leaving" : "shutting_down";
   }
 
-  /** A folder the shell picked with a project open: left for, held for the user's confirmation, or refused. */
-  function pickedWithProject(path: string): void {
+  /**
+   * A folder the shell picked (or a recent project its menu opened, `source: recent`) with a project open: left for,
+   * held for the user's confirmation, or refused.
+   */
+  function pickedWithProject(
+    path: string,
+    source: (typeof LEAVE_SOURCES)[number] = "picked"
+  ): void {
     // The host is stopping (the answer came in during the close): nothing is held or announced, and it is not left for.
     if (stopping !== null) {
       own?.log.info("desktop.pick_rejected", {
@@ -553,14 +613,14 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       });
       return;
     }
-    const ask = mayLeave(path, null, "picked");
+    const ask = mayLeave(path, null, source);
     if (ask === null) {
       held = null;
-      leave(path, "picked");
+      leave(path, source);
       return;
     }
     // A newer pick replaces an older one still waiting: confirming the older id then finds nothing.
-    held = { id: randomUUID(), path };
+    held = { id: randomUUID(), path, source };
     workbench?.broadcast({
       type: "host.switch-confirmation",
       id: held.id,
@@ -587,6 +647,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           own?.log.warn("recent_projects.write_failed", { error: f.error(error) });
           throw error;
         }
+        writeMenu();
         return recentList();
       },
     },
@@ -601,19 +662,66 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     useWorkbench(given) {
       workbench = given;
     },
-    request(kind) {
-      if (stopping !== null || own === null) return false;
-      own.log.info("desktop.request", { kind: f.oneOf(HOST_REQUEST_KINDS, kind) });
-      write(
-        requestLine(kind, { ...own, configPath }, () => {
-          const id = randomUUID();
-          pending.add(id);
-          return id;
-        })
-      );
-      return true;
-    },
+    request: (kind) => request(kind, "page"),
   };
+
+  /** Writes the request line of a native request the page or the shell's menu asked for; false once stopping. */
+  function request(kind: HostRequestKind, source: (typeof REQUEST_SOURCES)[number]): boolean {
+    if (stopping !== null || own === null) return false;
+    own.log.info("desktop.request", {
+      kind: f.oneOf(HOST_REQUEST_KINDS, kind),
+      source: f.oneOf(REQUEST_SOURCES, source),
+    });
+    write(
+      requestLine(kind, { ...own, configPath }, () => {
+        const id = randomUUID();
+        pending.add(id);
+        return id;
+      })
+    );
+    return true;
+  }
+
+  // The shell's menu (desktop-app ticket 21): the folders behind the ids of the last `menu` line, and what it showed.
+  let menuFolders = new Map<string, string>();
+  let menuShown = "";
+  let menuGeneration = 0;
+  /** Writes the `menu` line when what it would show differs from the last one written. */
+  function writeMenu(): void {
+    if (stopping !== null || own === null) return;
+    const language = readConfigLeniently(configPath).ui?.language ?? DEFAULT_UI_LANGUAGE;
+    const entries = readRecentProjects(recentFile)
+      .projects.filter((entry) => !isCurrent(entry.path))
+      .slice(0, HOST_MENU_RECENT_MAX)
+      .map((entry) => ({
+        path: entry.path,
+        label: `${basename(entry.path) || entry.path} — ${shownPath(entry.path).display}`,
+        enabled: isFolder(entry.path),
+      }));
+    const shown = JSON.stringify([language, entries.map(({ label, enabled }) => [label, enabled])]);
+    if (shown === menuShown) return;
+    menuShown = shown;
+    menuGeneration += 1;
+    menuFolders = new Map();
+    const recent = entries.map(({ path, label, enabled }, index) => {
+      const id = `m${menuGeneration}-${index}`;
+      menuFolders.set(id, path);
+      return { id, label, enabled };
+    });
+    write({ type: "menu", language, recent });
+  }
+
+  /** A recent project the shell's menu opened: as the page opening it, or as a picked folder with a project open. */
+  function openFromMenu(path: string): void {
+    if (stopping !== null) return;
+    if (!isFolder(path)) {
+      // Gone since the menu was written: the menu shows it as not there now.
+      writeMenu();
+      return;
+    }
+    if (project === "open") pickedWithProject(path, "recent");
+    else leave(path, "recent");
+  }
 
   const argv = options.webDist === undefined ? [] : ["--web-dist", options.webDist];
   let server: DesktopHost["server"];
@@ -659,6 +767,14 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   });
   const onSignal = () => void stop("signal");
   let next: string | null = null;
+  // A new language in config.toml reaches the menu while the host runs (its file watcher, as the pages' own).
+  const menuWatcher = startSettingsWatcher({
+    path: configPath,
+    ...(options.menuWatchIntervalMs === undefined
+      ? {}
+      : { intervalMs: options.menuWatchIntervalMs }),
+    onChange: () => writeMenu(),
+  });
   const stop = (reason: HostStopReason = "quit"): Promise<HostStopReason> => {
     if (stopping !== null) return stopping;
     stopping = (async () => {
@@ -682,6 +798,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       } finally {
         clearTimeout(deadline);
       }
+      menuWatcher.stop();
       if (options.signals) {
         process.off("SIGTERM", onSignal);
         process.off("SIGINT", onSignal);
@@ -768,6 +885,21 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           });
         return;
       }
+      case "menu": {
+        const item = m.item;
+        if (typeof item === "string" && (MENU_REQUESTS as readonly string[]).includes(item)) {
+          request(item as (typeof MENU_REQUESTS)[number], "menu");
+          return;
+        }
+        if (item === "open_recent" && typeof m.id === "string") {
+          const path = menuFolders.get(m.id);
+          if (path === undefined) reject("unknown_id");
+          else openFromMenu(path);
+          return;
+        }
+        reject("bad_shape");
+        return;
+      }
       case "shell_event": {
         const event = m.event;
         if (typeof event !== "string") {
@@ -782,12 +914,13 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
         }
         const spec: ShellEventSpec = SHELL_EVENTS[event as ShellEvent];
         const fields = shellFields(spec, m.fields) as Record<string, LogField>;
-        const unexpected =
-          event === "shell.host_exited" &&
+        const warnWhen = spec.warnWhen;
+        const warns =
+          warnWhen !== undefined &&
           typeof m.fields === "object" &&
           m.fields !== null &&
-          (m.fields as Record<string, unknown>).expected === "no";
-        if (spec.level === "warn" || unexpected) log.warn(event as ShellEvent, fields);
+          (m.fields as Record<string, unknown>)[warnWhen.field] === warnWhen.value;
+        if (spec.level === "warn" || warns) log.warn(event as ShellEvent, fields);
         else log.info(event as ShellEvent, fields);
         return;
       }
@@ -860,6 +993,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     language: atStart.config.ui?.language ?? DEFAULT_UI_LANGUAGE,
     logLevel: log.level(),
   });
+  writeMenu();
   input.resume();
 
   return { server, project, stopped, stop };
