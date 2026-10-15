@@ -1,9 +1,13 @@
 // Pure rules of the desktop dependency directory (desktop-app ticket 22). Used by dep-dir.mjs; tested by
 // dep-dir.test.mjs (part of `pnpm --filter argelanderspace test`). No I/O here (paths are computed, not touched).
 import nodePath, { posix as posixPath, win32 as win32Path } from "node:path";
+import { inflateSync } from "node:zlib";
 
 /** The three kinds of package the generator may remove, in the order the ticket names them. */
 export const PRUNE_CATEGORIES = ["fonts", "foreign", "esbuild"];
+
+/** The PDF engine's fallback font packages (`@embedpdf/fonts-<name>`), kept whole; a test checks them against contracts. */
+export const FALLBACK_FONT_PACKAGES = ["jp", "kr", "sc", "tc"];
 
 /**
  * The production closure of `importer` in a pnpm lockfile, as text pieces: the lockfile head (version, settings), the
@@ -90,15 +94,18 @@ export function matchesTarget(pkg, target) {
 
 /**
  * What to remove of an installed package, or null when it is not a candidate:
- *   fonts   - the font files (`fonts/`) of the PDF engine's font packages (`@embedpdf/fonts-*`). The package itself
- *             stays: `@embedpdf/engines/pdfium` imports each one's JS manifest statically, so removing the whole
- *             package breaks loading the engine (ticket 22 smoke).
+ *   fonts   - the font files (`fonts/`) of the PDF engine's font packages (`@embedpdf/fonts-*`) that are NOT its
+ *             font fallback. The four CJK packages (`FALLBACK_FONT_PACKAGES`, contracts' `PDF_FALLBACK_FONT_PACKAGES`)
+ *             are what the server and the page give PDFium for CJK text a PDF does not embed (ticket 28): they stay
+ *             whole. Of the others the package itself stays: `@embedpdf/engines/pdfium` imports each one's JS
+ *             manifest statically, so removing the whole package breaks loading the engine (ticket 22 smoke).
  *   foreign - a whole package whose os/cpu/libc fields exclude the target (another platform's native file)
  *   esbuild - esbuild and its platform binaries, the whole package
  * `remove` is relative to the package directory ("." is the package itself).
  */
 export function pruneAction(pkg, target) {
   const name = pkg.name ?? "";
+  if (FALLBACK_FONT_PACKAGES.some((n) => name === `@embedpdf/fonts-${n}`)) return null;
   if (/^@embedpdf\/fonts-/.test(name)) return { category: "fonts", remove: "fonts" };
   if (name === "esbuild" || name.startsWith("@esbuild/"))
     return { category: "esbuild", remove: "." };
@@ -305,4 +312,68 @@ export function smokeVerdict({ failures, untested, label }) {
   if (untested.length > 0)
     return { line: `SMOKE INCOMPLETE (${label}; untested: ${untested.join(", ")})`, code: 2 };
   return { line: `SMOKE OK (${label})`, code: 0 };
+}
+
+/**
+ * The dark pixels (luminance below half) inside a pixel box `[x0, x1) x [y0, y1)` of an 8-bit, non-interlaced PNG
+ * (grey, RGB or RGBA — what the server's page render writes), or null when the bytes are not such a PNG. The smoke
+ * uses it to tell a rendered line of text from a blank area (ticket 28: non-embedded CJK text and the font fallback).
+ */
+export function pngInk(png, box) {
+  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (png.length < 33 || signature.some((b, i) => png[i] !== b)) return null;
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  const [depth, colorType, , , interlace] = png.subarray(24, 29);
+  const bpp = { 0: 1, 2: 3, 6: 4 }[colorType];
+  if (depth !== 8 || !bpp || interlace !== 0) return null;
+  const idat = [];
+  for (let at = 8; at + 8 <= png.length; ) {
+    const length = png.readUInt32BE(at);
+    if (png.subarray(at + 4, at + 8).toString("latin1") === "IDAT")
+      idat.push(png.subarray(at + 8, at + 8 + length));
+    at += 12 + length;
+  }
+  let raw;
+  try {
+    raw = inflateSync(Buffer.concat(idat));
+  } catch {
+    return null;
+  }
+  const stride = width * bpp;
+  if (raw.length < height * (stride + 1)) return null;
+  const pixels = new Uint8Array(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    for (let i = 0; i < stride; i++) {
+      const x = raw[y * (stride + 1) + 1 + i];
+      const left = i >= bpp ? pixels[y * stride + i - bpp] : 0;
+      const up = y > 0 ? pixels[(y - 1) * stride + i] : 0;
+      const upLeft = y > 0 && i >= bpp ? pixels[(y - 1) * stride + i - bpp] : 0;
+      const p = left + up - upLeft;
+      const pa = Math.abs(p - left);
+      const pb = Math.abs(p - up);
+      const pc = Math.abs(p - upLeft);
+      const predictor = [
+        0,
+        left,
+        up,
+        (left + up) >> 1,
+        pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft,
+      ][filter];
+      if (predictor === undefined) return null;
+      pixels[y * stride + i] = (x + predictor) & 255;
+    }
+  }
+  let dark = 0;
+  for (let y = Math.max(0, box.y0); y < Math.min(height, box.y1); y++)
+    for (let x = Math.max(0, box.x0); x < Math.min(width, box.x1); x++) {
+      const at = y * stride + x * bpp;
+      const lum =
+        bpp === 1
+          ? pixels[at]
+          : 0.299 * pixels[at] + 0.587 * pixels[at + 1] + 0.114 * pixels[at + 2];
+      if (lum < 128) dark++;
+    }
+  return dark;
 }

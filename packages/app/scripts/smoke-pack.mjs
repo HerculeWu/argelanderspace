@@ -889,6 +889,14 @@ try {
     );
   });
   log(`PDF Doc ${pdfDocId} (sha256 ${sha256(pdf)})`);
+  // The PDF engine's CJK fallback fonts (desktop-app ticket 28) come with the npm install (dependencies of
+  // @embedpdf/engines); the page's PDFium worker fetches them from this server, which finds them from the engine.
+  const font = await api("GET", "/api/pdf-fonts/sc/1.0.0/NotoSansHans-Regular.otf");
+  check(
+    font.status === 200 && font.text.startsWith("OTTO"),
+    "the page can fetch a CJK fallback font from the installed package",
+    `status ${font.status}`
+  );
 
   // a figure Doc with an SVG, seeded on disk the way the ingest layout stores it (the server reads it by hash)
   const svg =

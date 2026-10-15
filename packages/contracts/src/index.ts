@@ -29,6 +29,7 @@ export * from "./mail-read.js";
 export * from "./math.js";
 export * from "./pdf-annotation-ops.js";
 export * from "./pdf-doc.js";
+export * from "./pdf-fonts.js";
 export * from "./pdf-ops.js";
 export * from "./pdf-text-target.js";
 export * from "./plan-ops.js";

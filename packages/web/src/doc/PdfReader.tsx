@@ -27,6 +27,7 @@ import { usePdfBridge, type PdfViewHandle } from "./reader-bridge";
 import { type PanelSizes, useAutoFoldedPanels } from "./auto-fold";
 import { PDF_SEARCH_LIST_MAX, downloadPdfOriginal, pdfDraftsView, runPdfViewAction, selectionPageRange } from "./pdf-view-actions";
 import { PdfLinkHitLayer } from "./PdfLinkHitLayer";
+import { pageFontFallback } from "./pdf-font-fallback";
 import { PdfAnnotationSession } from "./PdfAnnotationSession";
 import { PdfHighlightColorPicker } from "./PdfHighlightColorPicker";
 import { buildPdfTextTarget, pdfPageRectFromVisible, pdfPageRectToVisible, pdfSelectionQuote } from "./pdf-text-target";
@@ -107,7 +108,10 @@ function PdfEngineReader({ docId, filename, workTitle, bytes, annotations, pages
   const { t } = useTranslation();
   const [ready, setReady] = useState(false);
   const wasmUrl = useMemo(() => new URL(pdfiumWasmUrl, window.location.href).href, []);
-  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl, worker: true, encoderPoolSize: 2, fontFallback: null });
+  // CJK fonts a PDF does not embed (desktop-app ticket 28), from this page's own server, never a CDN (see
+  // pageFontFallback). One object for the reader's life (the hook re-creates the engine when it changes).
+  const fontFallback = useMemo(() => pageFontFallback(window.location.href), []);
+  const { engine, isLoading, error } = usePdfiumEngine({ wasmUrl, worker: true, encoderPoolSize: 2, fontFallback });
   const markReady = useCallback(() => setReady(true), []);
   const plugins = useMemo(() => [
     createPluginRegistration(DocumentManagerPluginPackage, {

@@ -2,6 +2,7 @@
 // The generator itself (dep-dir.mjs) installs from the pnpm store and is run by hand; see its header.
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { deflateSync } from "node:zlib";
 import {
   budgetCheck,
   corepackCommand,
@@ -12,6 +13,7 @@ import {
   foreignPrebuild,
   matchesTarget,
   PRUNE_CATEGORIES,
+  pngInk,
   pnpmVersion,
   pruneAction,
   removalPath,
@@ -178,15 +180,15 @@ test("matchesTarget follows npm's os/cpu/libc fields, including negations", () =
 test("pruneAction names what to remove for each candidate, and nothing else", () => {
   const target = { platform: "linux", arch: "x64", libc: "glibc" };
   assert.deepEqual(PRUNE_CATEGORIES, ["fonts", "foreign", "esbuild"]);
-  // fonts: only the font files; the package's JS manifest stays (engines imports it statically)
-  assert.deepEqual(pruneAction({ name: "@embedpdf/fonts-sc" }, target), {
-    category: "fonts",
-    remove: "fonts",
-  });
-  assert.deepEqual(pruneAction({ name: "@embedpdf/fonts-latin" }, target), {
-    category: "fonts",
-    remove: "fonts",
-  });
+  // fonts: the CJK packages are the PDF engine's font fallback (ticket 28) and stay whole; of the others only the
+  // font files go (the package's JS manifest stays: engines imports it statically)
+  for (const name of ["jp", "kr", "sc", "tc"])
+    assert.equal(pruneAction({ name: `@embedpdf/fonts-${name}` }, target), null, name);
+  for (const name of ["latin", "arabic", "hebrew"])
+    assert.deepEqual(pruneAction({ name: `@embedpdf/fonts-${name}` }, target), {
+      category: "fonts",
+      remove: "fonts",
+    });
   assert.equal(pruneAction({ name: "@embedpdf/engines" }, target), null);
   assert.equal(pruneAction({ name: "@embedpdf/pdfium" }, target), null);
   assert.deepEqual(pruneAction({ name: "esbuild" }, target), { category: "esbuild", remove: "." });
@@ -396,4 +398,64 @@ test("smokeVerdict never says OK when a path went untested", () => {
   const incomplete = smokeVerdict({ failures: 0, untested: ["LaTeX ingest"], label: "c" });
   assert.equal(incomplete.code, 2);
   assert.match(incomplete.line, /^SMOKE INCOMPLETE \(c; untested: LaTeX ingest\)$/);
+});
+
+test("the font packages kept whole are exactly the fallback fonts the server serves (contracts' table)", async () => {
+  const { PDF_FALLBACK_FONT_PACKAGES } = await import("../../contracts/dist/index.js");
+  const target = { platform: "linux", arch: "x64", libc: "glibc" };
+  const kept = ["jp", "kr", "sc", "tc", "latin", "arabic", "hebrew"].filter(
+    (name) => pruneAction({ name: `@embedpdf/fonts-${name}` }, target) === null
+  );
+  assert.deepEqual(kept, PDF_FALLBACK_FONT_PACKAGES.map((p) => p.name).sort());
+});
+
+/** A PNG of `rows` (arrays of grey values), each row with the given filter byte applied by hand. */
+function greyPng(rows, colorType = 0) {
+  const width = rows[0].length;
+  const bpp = colorType === 2 ? 3 : colorType === 6 ? 4 : 1;
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    return Buffer.concat([len, Buffer.from(type), data, Buffer.alloc(4)]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(rows.length, 4);
+  ihdr[8] = 8;
+  ihdr[9] = colorType;
+  const raw = [];
+  rows.forEach((row, y) => {
+    // row 0 unfiltered, the rest with the Up filter (residual against the row above)
+    raw.push(y === 0 ? 0 : 2);
+    row.forEach((v, x) => {
+      for (let k = 0; k < bpp; k++) {
+        const value = k === 3 ? 255 : v;
+        const above = y === 0 ? 0 : k === 3 ? 255 : rows[y - 1][x];
+        raw.push((value - (y === 0 ? 0 : above) + 256) & 255);
+      }
+    });
+  });
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(Buffer.from(raw))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+test("pngInk counts the dark pixels inside a box of a decoded PNG (grey, RGB, RGBA; filtered rows)", () => {
+  const rows = [
+    [255, 255, 255, 255],
+    [255, 0, 10, 255],
+    [255, 200, 0, 255],
+  ];
+  for (const colorType of [0, 2, 6]) {
+    const png = greyPng(rows, colorType);
+    assert.equal(pngInk(png, { x0: 0, x1: 4, y0: 0, y1: 3 }), 3, `type ${colorType}`);
+    assert.equal(pngInk(png, { x0: 0, x1: 4, y0: 0, y1: 1 }), 0);
+    assert.equal(pngInk(png, { x0: 2, x1: 3, y0: 1, y1: 3 }), 2);
+    // a box past the image is clipped
+    assert.equal(pngInk(png, { x0: 0, x1: 99, y0: 0, y1: 99 }), 3);
+  }
+  assert.equal(pngInk(Buffer.from("not a png"), { x0: 0, x1: 1, y0: 0, y1: 1 }), null);
 });

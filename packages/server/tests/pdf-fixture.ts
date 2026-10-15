@@ -122,3 +122,51 @@ export function syntheticPdf({
   );
   return Buffer.concat(parts);
 }
+
+/** The CJK sample of `cjkPdf`: its page box, and where each line's ink falls (PDF points, origin bottom-left). */
+export const CJK_PDF = {
+  width: 300,
+  height: 200,
+  /** "Latin line" in Helvetica (a standard font PDFium always has): baseline 150, 16 pt. */
+  latin: { x0: 20, x1: 200, y0: 145, y1: 166 },
+  /** "中文测试" in a NON-embedded CID font: baseline 100, 24 pt, four ideographs. */
+  cjk: { x0: 18, x1: 120, y0: 92, y1: 126 },
+};
+
+/**
+ * A one-page PDF (desktop-app ticket 28): a Latin line in Helvetica and the CJK text "中文测试" in a Type0 font whose
+ * CID font /STSong-Light is NOT embedded (Adobe-GB1, UniGB-UCS2-H) — the text renders only when the engine's font
+ * fallback supplies the glyphs; its text layer is there either way. With `ordering` the same four code points go to
+ * another CJK collection's standard font (CNS1 MSung-Light, Japan1 KozMinPro-Regular, Korea1 HYSMyeongJo-Medium; the
+ * text is then that script's own sample).
+ */
+export function cjkPdf(ordering: "GB1" | "CNS1" | "Japan1" | "Korea1" = "GB1"): Buffer {
+  const [font, cmap, hex] = {
+    GB1: ["STSong-Light", "UniGB-UCS2-H", "4E2D65876D4B8BD5"], // 中文测试
+    CNS1: ["MSung-Light", "UniCNS-UCS2-H", "4E2D65876E2C8A66"], // 中文測試
+    Japan1: ["KozMinPro-Regular", "UniJIS-UCS2-H", "65E5672C8A9E"], // 日本語
+    Korea1: ["HYSMyeongJo-Medium", "UniKS-UCS2-H", "D55CAD6DC5B4"], // 한국어
+  }[ordering];
+  const content = `BT /F1 16 Tf 20 150 Td (Latin line) Tj ET\nBT /F2 24 Tf 20 100 Td <${hex}> Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${CJK_PDF.width} ${CJK_PDF.height}] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Type /Font /Subtype /Type0 /BaseFont /${font} /Encoding /${cmap} /DescendantFonts [7 0 R] >>`,
+    `<< /Type /Font /Subtype /CIDFontType0 /BaseFont /${font} /CIDSystemInfo << /Registry (Adobe) /Ordering (${ordering}) /Supplement 2 >> /FontDescriptor 8 0 R >>`,
+    `<< /Type /FontDescriptor /FontName /${font} /Flags 6 /FontBBox [-25 -254 1000 880] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 880 /StemV 93 >>`,
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((body, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) out += `${String(o).padStart(10, "0")} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}

@@ -10,6 +10,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { init } from "@embedpdf/pdfium";
+import { serverFontFallback } from "./pdf-fonts.js";
 
 /** Waiting requests the queue admits, and the originals' bytes they may hold together. */
 export const PDF_QUEUE_MAX_WAITING = 8;
@@ -101,22 +102,29 @@ export interface RgbaImage {
   data: Uint8ClampedArray | Uint8Array;
 }
 interface PdfiumRuntime {
-  PdfiumNative: new (wasm: unknown, options: { fontFallback: null }) => unknown;
+  PdfiumNative: new (wasm: unknown, options: { fontFallback: object | null }) => unknown;
   PdfEngine: new (
     native: unknown,
     options: { imageConverter: (getData: () => RgbaImage, type: string) => unknown }
   ) => unknown;
 }
 
-/** One engine over a fresh WASM module (counted in `pdfiumResources.engines` until the caller destroys it). */
+/**
+ * One engine over a fresh WASM module (counted in `pdfiumResources.engines` until the caller destroys it). Its font
+ * fallback (desktop-app ticket 28) supplies the CJK fonts a PDF does not embed, read from the installed font packages
+ * (`pdf-fonts.ts`); `fontFallback: false` is only for the test that shows such text is blank without it.
+ */
 export async function createPdfiumEngine<E>(
   imageConverter: (getData: () => RgbaImage, type: string) => unknown,
-  deadline: number
+  deadline: number,
+  options: { fontFallback?: boolean } = {}
 ): Promise<E> {
   const wasm = await readFile(fileURLToPath(import.meta.resolve("@embedpdf/pdfium/pdfium.wasm")));
   const module = await timed(init({ wasmBinary: Uint8Array.from(wasm).buffer }), deadline);
   const runtime = (await import("@embedpdf/engines/pdfium")) as unknown as PdfiumRuntime;
-  const native = new runtime.PdfiumNative(module, { fontFallback: null });
+  const native = new runtime.PdfiumNative(module, {
+    fontFallback: options.fontFallback === false ? null : serverFontFallback(),
+  });
   const engine = new runtime.PdfEngine(native, { imageConverter });
   pdfiumResources.engines++;
   pdfiumResources.peakEngines = Math.max(pdfiumResources.peakEngines, pdfiumResources.engines);
