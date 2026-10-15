@@ -85,6 +85,7 @@ const portOpen = (port) =>
   });
 
 const work = mkdtempSync(join(tmpdir(), "aspace-shell-probe-"));
+const runDirs = [];
 const children = new Set();
 const cleanup = () => {
   for (const c of children) {
@@ -108,8 +109,12 @@ function isolatedEnv(dir, port, project = null) {
     XDG_DATA_HOME: join(home, ".local", "share"),
     XDG_STATE_HOME: join(home, ".local", "state"),
     XDG_CACHE_HOME: join(home, ".cache"),
-    XDG_RUNTIME_DIR: join(dir, "run"),
+    // The single-instance socket's folder (Unix): short, as a socket's path is at most 104 bytes on macOS (the
+    // temporary folder there is long). On Windows the pipe is named after USERNAME: a name of the smoke's own.
+    XDG_RUNTIME_DIR: process.platform === "win32" ? join(dir, "run") : mkdtempSync("/tmp/asp-"),
   });
+  if (process.platform === "win32") env.USERNAME = `aspace-smoke-${process.pid}-${port}`;
+  runDirs.push(env.XDG_RUNTIME_DIR);
   for (const d of [
     env.APPDATA,
     env.LOCALAPPDATA,
@@ -496,9 +501,11 @@ try {
   await run("entries-kept", { keepEntries: true, cjk: false });
 } finally {
   cleanup();
-  try {
-    rmSync(work, { recursive: true, force: true, maxRetries: 5 });
-  } catch {}
+  for (const d of [work, ...runDirs]) {
+    try {
+      rmSync(d, { recursive: true, force: true, maxRetries: 5 });
+    } catch {}
+  }
 }
 const failed = results.filter((r) => !r.ok);
 log(
