@@ -6,8 +6,8 @@
 //!   compiled, from this crate's location in the repository.
 //! - Packaged (desktop-app ticket 23; a build with `--features packaged`, which `tauri build` gets from the packaging
 //!   steps in docs/engineering.md): the Node runtime and the app's build ship as the bundle's resources, under
-//!   `sidecar/` in the resource directory Tauri resolves (for a deb: `/usr/lib/ArgelanderSpace`, found next to the
-//!   executable as `../lib/ArgelanderSpace`). `sidecar/node/bin/node` runs `sidecar/app/dist/bin.js`; Node finds the
+//!   `sidecar/` in the resource directory Tauri resolves (for a deb: `/usr/lib/argelanderspace`, found next to the
+//!   executable as `../lib/argelanderspace`). `sidecar/node/bin/node` runs `sidecar/app/dist/bin.js`; Node finds the
 //!   dependency directory `sidecar/app/node_modules` next to `dist/` by its own lookup. The system `PATH` is never
 //!   consulted for node. A build without the feature never looks in the resource directory, and a packaged build never
 //!   falls back to the repository.
@@ -119,21 +119,21 @@ mod tests {
 
     #[test]
     fn the_packaged_launcher_runs_the_bundles_node_and_build_from_the_resource_directory() {
-        let l = HostLauncher::packaged(Path::new("/usr/lib/ArgelanderSpace"));
+        let l = HostLauncher::packaged(Path::new("/usr/lib/argelanderspace"));
         assert_eq!(
             l.node,
-            PathBuf::from("/usr/lib/ArgelanderSpace/sidecar/node/bin/node")
+            PathBuf::from("/usr/lib/argelanderspace/sidecar/node/bin/node")
         );
         assert_eq!(
             l.entry,
-            PathBuf::from("/usr/lib/ArgelanderSpace/sidecar/app/dist/bin.js")
+            PathBuf::from("/usr/lib/argelanderspace/sidecar/app/dist/bin.js")
         );
         // An absolute path: never looked up on PATH.
         assert!(l.node.is_absolute());
         assert_eq!(
             l.args(Some("/p")),
             vec![
-                OsString::from("/usr/lib/ArgelanderSpace/sidecar/app/dist/bin.js"),
+                OsString::from("/usr/lib/argelanderspace/sidecar/app/dist/bin.js"),
                 "desktop-host".into(),
                 "--project".into(),
                 "/p".into()

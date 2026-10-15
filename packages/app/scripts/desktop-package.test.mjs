@@ -5,17 +5,23 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED } from "../../../scripts/license-allowlist.mjs";
 import {
+  DESKTOP_NODE_VERSION,
   evalLicense,
+  hostProcess,
   keyringNativeFile,
   licenseProblems,
   listInstalledPackages,
   nodeDist,
+  nodeSignatureFromManifest,
+  nodeSignaturePlan,
   parseStrictArgs,
   RUNTIME_LICENSE_ALLOWED,
   shaFromShasums,
   sidecarRequiredFiles,
   vendoredLicense,
+  verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
 
 test("the Node download names follow nodejs.org/dist for each target", () => {
@@ -224,4 +230,110 @@ test("installed packages are listed with their license files, scoped and nested 
       ["@s/c", "3.0.0", "Apache-2.0", ["COPYING"]],
     ]
   );
+});
+
+test("the desktop package's Node version is pinned in the repository (a 24.x release)", () => {
+  assert.match(DESKTOP_NODE_VERSION, /^24\.\d+\.\d+$/);
+  assert.equal(nodeDist(DESKTOP_NODE_VERSION, "linux-x64").file.startsWith("node-v24."), true);
+});
+
+test("the Node signature must be verified unless the unsafe skip is given explicitly, and not both", () => {
+  assert.throws(() => nodeSignaturePlan({}), /--node-keyring/);
+  assert.throws(
+    () => nodeSignaturePlan({ keyring: undefined, insecureSkip: false }),
+    /--node-keyring/
+  );
+  assert.deepEqual(nodeSignaturePlan({ keyring: "/k/pubring.kbx" }), {
+    verify: true,
+    keyring: "/k/pubring.kbx",
+  });
+  assert.deepEqual(nodeSignaturePlan({ insecureSkip: true }), { verify: false });
+  assert.throws(
+    () => nodeSignaturePlan({ keyring: "/k/pubring.kbx", insecureSkip: true }),
+    /not both/
+  );
+});
+
+test("a failed signature check removes the cached checksum list and its signature", () => {
+  const removed = [];
+  const calls = [];
+  const bad = () => {
+    calls.push("gpgv");
+    return { status: 1, stderr: "gpgv: BAD signature" };
+  };
+  assert.throws(
+    () =>
+      verifyNodeSignature({
+        keyring: "/k",
+        shasums: "/c/SHASUMS256.txt",
+        signature: "/c/SHASUMS256.txt.sig",
+        run: bad,
+        remove: (f) => removed.push(f),
+      }),
+    /did not verify/
+  );
+  assert.deepEqual(calls, ["gpgv"]);
+  assert.deepEqual(removed.sort(), ["/c/SHASUMS256.txt", "/c/SHASUMS256.txt.sig"]);
+
+  const args = [];
+  const good = (cmd, argv) => {
+    args.push([cmd, ...argv]);
+    return { status: 0, stderr: 'gpgv: Good signature from "Some Releaser <r@example.org>"' };
+  };
+  const removedOk = [];
+  const ok = verifyNodeSignature({
+    keyring: "/k",
+    shasums: "/c/S",
+    signature: "/c/S.sig",
+    run: good,
+    remove: (f) => removedOk.push(f),
+  });
+  assert.deepEqual(args, [["gpgv", "--keyring", "/k", "/c/S.sig", "/c/S"]]);
+  assert.deepEqual(removedOk, []);
+  assert.equal(ok.verified, true);
+  assert.match(ok.detail, /Some Releaser/);
+});
+
+test("the smoke reads the signature state from the sidecar manifest: only an explicit true counts", () => {
+  const verified = { node: { signature: { verified: true, detail: "gpgv: good signature" } } };
+  assert.deepEqual(nodeSignatureFromManifest(verified), {
+    verified: true,
+    detail: "gpgv: good signature",
+  });
+  assert.equal(
+    nodeSignatureFromManifest({ node: { signature: { verified: false, detail: "skipped" } } })
+      .verified,
+    false
+  );
+  assert.equal(
+    nodeSignatureFromManifest({ node: { signature: { verified: "yes" } } }).verified,
+    false
+  );
+  // The first round's string form, or no record at all, is not a verification.
+  assert.equal(
+    nodeSignatureFromManifest({ node: { shasums_signature: "verified with gpgv" } }).verified,
+    false
+  );
+  assert.equal(nodeSignatureFromManifest(null).verified, false);
+});
+
+test("the shell's host is the child running the package's node, not whichever child comes first", () => {
+  const node = "/tmp/x/usr/lib/argelanderspace/sidecar/node/bin/node";
+  const kids = [
+    { pid: "11", exe: "/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" },
+    { pid: "12", exe: node },
+    { pid: "13", exe: "" },
+  ];
+  assert.equal(hostProcess(kids, node)?.pid, "12");
+  assert.equal(hostProcess(kids.slice(0, 1), node), null);
+  assert.equal(hostProcess([], node), null);
+  assert.equal(hostProcess([...kids, { pid: "14", exe: node }], node), null);
+});
+
+test("one license allowlist: the desktop package's check uses the production list of scripts/license-scan.mjs", () => {
+  assert.equal(RUNTIME_LICENSE_ALLOWED, PROD_LICENSE_ALLOWED);
+  assert.equal(evalLicense("MIT", PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED), true);
+  const scan = readFileSync(new URL("../../../scripts/license-scan.mjs", import.meta.url), "utf8");
+  assert.match(scan, /from "\.\/license-allowlist\.mjs"/);
+  assert.doesNotMatch(scan, /new Set\(\[\s*"MIT"/);
 });

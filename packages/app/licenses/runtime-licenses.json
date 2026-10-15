@@ -139,7 +139,7 @@
       "license": "MIT",
       "kind": "no-upstream-text",
       "file": "spdx-MIT-v3.28.0.txt",
-      "note": "github.com/Rich-Harris/locate-character at 4f08a59ec248121f7002abd02ee7b94e8eda06bc (the gitHead) has no license file; its README says only \"MIT\". Author: Rich Harris"
+      "note": "the package's repository field is gitlab.com/Rich-Harris/locate-character; that repository has history only up to v2.0.1 (last commit 2018) and has no license file, and does not contain 3.0.0's gitHead 4f08a59ec248121f7002abd02ee7b94e8eda06bc. That commit is in github.com/Rich-Harris/locate-character, which has no license file there either; the README says only \"MIT\" (checked 2026-10-15). Author: Rich Harris"
     },
     {
       "package": "proxy-agent-negotiate",

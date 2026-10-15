@@ -1,6 +1,14 @@
 // Pure rules of the desktop package (desktop-app ticket 23), tested by desktop-package.test.mjs (part of the app
 // package's `test`). Used by desktop-sidecar.mjs (assembles the sidecar the Tauri bundle carries), dep-dir.mjs (the
 // vendored license texts in its notices) and smoke-desktop-package.mjs (unpacks a built package and runs it).
+import { PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED } from "../../../scripts/license-allowlist.mjs";
+
+/**
+ * The Node release the desktop package carries (official nodejs.org build). Change it HERE to move the package to
+ * another Node 24 release (desktop-sidecar.mjs `--node-version` overrides it for one run); the version is the one
+ * the repository's tests ran on when it was set.
+ */
+export const DESKTOP_NODE_VERSION = "24.15.0";
 
 const NODE_DIST = "https://nodejs.org/dist";
 
@@ -29,6 +37,61 @@ export function nodeDist(version, target) {
     signatureUrl: `${dir}/SHASUMS256.txt.sig`,
     binary: t.binary,
   };
+}
+
+/**
+ * Whether this run verifies the signature of Node's SHASUMS256.txt. Verifying is the default and needs a keyring;
+ * skipping must be asked for explicitly (`--insecure-skip-node-signature`), and the manifest then says so.
+ */
+export function nodeSignaturePlan({ keyring, insecureSkip } = {}) {
+  if (keyring && insecureSkip)
+    throw new Error("give --node-keyring or --insecure-skip-node-signature, not both");
+  if (keyring) return { verify: true, keyring };
+  if (insecureSkip) return { verify: false };
+  throw new Error(
+    "the signature of Node's SHASUMS256.txt must be verified: give --node-keyring <pubring.kbx> " +
+      "(gpg/pubring.kbx of github.com/nodejs/release-keys), or, unsafe, --insecure-skip-node-signature"
+  );
+}
+
+/**
+ * Checks the signature of SHASUMS256.txt with `gpgv` (only the given keyring; never the user's own). On failure the
+ * cached SHASUMS256.txt and its signature are removed (`remove(path)`), so that a later run downloads them again
+ * instead of reusing a list that did not verify. `run(cmd, argv)` returns {status, stderr}.
+ */
+export function verifyNodeSignature({ keyring, shasums, signature, run, remove }) {
+  const g = run("gpgv", ["--keyring", keyring, signature, shasums]);
+  if (g.status !== 0) {
+    remove(shasums);
+    remove(signature);
+    throw new Error(
+      `the signature of SHASUMS256.txt did not verify against ${keyring} (removed the cached list and signature): ${String(
+        g.stderr ?? ""
+      )
+        .trim()
+        .slice(-400)}`
+    );
+  }
+  const by = /Good signature from "([^"]+)"/.exec(g.stderr ?? "")?.[1] ?? "a key in the keyring";
+  return { verified: true, detail: `gpgv: good signature from ${by}` };
+}
+
+/** The Node signature state an assembled sidecar records (sidecar-manifest.json): only `verified: true` counts. */
+export function nodeSignatureFromManifest(manifest) {
+  const s = manifest?.node?.signature;
+  return {
+    verified: s?.verified === true,
+    detail: typeof s?.detail === "string" ? s.detail : "no signature record in the manifest",
+  };
+}
+
+/**
+ * The shell's host among its child processes ([{pid, exe}]): the one whose executable is the package's Node. None,
+ * or more than one, is null (the smoke then cannot say which process is the host).
+ */
+export function hostProcess(children, nodeExe) {
+  const hits = children.filter((c) => c.exe === nodeExe);
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /** The sha256 SHASUMS256.txt gives for exactly `file` (one line, `<64 hex>  <file>`). */
@@ -87,25 +150,17 @@ export function sidecarRequiredFiles(target) {
 }
 
 /**
- * The licenses accepted in the desktop package's runtime dependency directory: the production allowlist of
- * scripts/license-scan.mjs (keep the two in step; that scan still runs on the closure, this one on what is shipped).
+ * The licenses accepted in the desktop package's runtime dependency directory: the production allowlist that
+ * scripts/license-scan.mjs also uses (one list, scripts/license-allowlist.mjs; that scan runs on the lockfile's
+ * closure, this check on what is shipped).
  */
-export const RUNTIME_LICENSE_ALLOWED = new Set([
-  "MIT",
-  "MIT-0",
-  "ISC",
-  "BSD-2-Clause",
-  "BSD-3-Clause",
-  "Apache-2.0",
-  "0BSD",
-  "Unlicense",
-  "CC0-1.0",
-  "BlueOak-1.0.0",
-  "OFL-1.1",
-]);
+export const RUNTIME_LICENSE_ALLOWED = PROD_LICENSE_ALLOWED;
 
-/** Whether an SPDX expression is acceptable: OR takes any allowed branch, AND needs all; WITH and unparsable: no. */
-export function evalLicense(expr, allowed) {
+/**
+ * Whether an SPDX expression is acceptable: OR takes any allowed branch, AND needs all; `X WITH e` only when the
+ * whole phrase is in `withAllowed` (empty by default); unparsable: no.
+ */
+export function evalLicense(expr, allowed, withAllowed = new Set()) {
   if (typeof expr !== "string" || !expr.trim()) return false;
   const tokens = expr.match(/\(|\)|[^\s()]+/g) ?? [];
   let i = 0;
@@ -118,8 +173,11 @@ export function evalLicense(expr, allowed) {
     }
     if (!t || t === ")" || /^(AND|OR|WITH)$/i.test(t)) throw new Error("unexpected");
     if (/^WITH$/i.test(tokens[i] ?? "")) {
+      const exception = tokens[i + 1];
       i += 2;
-      return false;
+      if (!exception || exception === "(" || exception === ")")
+        throw new Error("missing exception");
+      return withAllowed.has(`${t} WITH ${exception}`);
     }
     return allowed.has(t);
   };
@@ -162,7 +220,7 @@ export function licenseProblems({ packages, manifest, vendoredSha }) {
   const problems = [];
   for (const p of packages) {
     const id = `${p.name}@${p.version}`;
-    if (!evalLicense(p.license, RUNTIME_LICENSE_ALLOWED))
+    if (!evalLicense(p.license, RUNTIME_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED))
       problems.push(
         `${id}: license ${JSON.stringify(p.license ?? null)} is not in the allowed list`
       );

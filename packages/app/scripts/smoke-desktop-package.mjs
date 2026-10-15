@@ -4,19 +4,24 @@
 // Linux only (dpkg-deb, /proc). It never installs anything: the package is unpacked into a temp dir.
 //
 //   node packages/app/scripts/smoke-desktop-package.mjs --deb <file.deb> [--remove <path,...>] [--label <name>]
-//        [--evidence <dir>] [--shell] [--keep]
+//        [--evidence <dir>] [--shell] [--shell-bin <file>] [--keep]
 //
-//   --remove   comma list of paths relative to the package's resource directory (usr/lib/ArgelanderSpace) to delete
+//   --remove   comma list of paths relative to the package's resource directory (usr/lib/argelanderspace) to delete
 //              from the unpacked copy first, for a variant that must fail (e.g. sidecar/app/dist/argelander.sty,
 //              sidecar/app/node_modules/@embedpdf/pdfium/dist/pdfium.wasm). Each must lie inside that directory.
 //   --shell    also start the unpacked shell (usr/bin/argelanderspace-desktop) on the caller's display and check that
 //              it runs the package's own Node and build; needs DISPLAY. Without it the shell is not started and the
 //              verdict says so (INCOMPLETE).
+//   --shell-bin  with --shell: put this file in place of the unpacked shell binary first -- for the counter-check only
+//              (a release shell built WITHOUT the `packaged` feature runs the system `node`, so the smoke must fail).
 //
-// What it checks: the control file (package name, version = packages/app/package.json); the files every resource class
+// What it checks: the control file (Package `argelanderspace`, Maintainer `ArgelanderSpace`, Version =
+// packages/app/package.json) and the launcher entry's name; the files every resource class
 // needs (desktop-package-lib.mjs `sidecarRequiredFiles`); the license check of what is shipped (every package in the
 // dependency directory has an allowed license and a text: its own file or a vendored one recorded for that exact
-// version; Node's LICENSE); the dependency directory's budget (500 MB of file content); the package's CLI `--version`
+// version; Node's LICENSE); the dependency directory's budget (500 MB of file content); sidecar-manifest.json's record
+// that the Node download's signature was verified (not verified: INCOMPLETE); the package's Node is the version the
+// manifest names; the package's bin.js is byte for byte packages/app/dist/bin.js (the same build) and its `--version`
 // equals the app version and the npm build's `--version`; then smoke-dep-dir.mjs runs the unpacked sidecar IN PLACE
 // with the package's Node (page resources, keychain module, PDFium, Copilot, argelander.sty via a CLI ingest, the
 // ready line's address), with a recording `node` first on PATH so any use of a system node fails.
@@ -30,6 +35,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -47,8 +53,10 @@ import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { budgetCheck, smokeVerdict } from "./dep-dir-lib.mjs";
 import {
+  hostProcess,
   licenseProblems,
   listInstalledPackages,
+  nodeSignatureFromManifest,
   parseStrictArgs,
   sidecarRequiredFiles,
 } from "./desktop-package-lib.mjs";
@@ -57,7 +65,7 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 let args;
 try {
   args = parseStrictArgs(process.argv.slice(2), {
-    valued: ["--deb", "--remove", "--label", "--evidence"],
+    valued: ["--deb", "--remove", "--label", "--evidence", "--shell-bin"],
     flags: ["--shell", "--keep"],
   });
 } catch (e) {
@@ -67,6 +75,10 @@ try {
 const opt = args.values;
 if (!opt["--deb"]) {
   console.error("smoke-desktop-package: --deb <file.deb> is required");
+  process.exit(1);
+}
+if (opt["--shell-bin"] && !args.flags.has("--shell")) {
+  console.error("smoke-desktop-package: --shell-bin needs --shell");
   process.exit(1);
 }
 const deb = resolve(opt["--deb"]);
@@ -123,11 +135,17 @@ const field = (name) =>
 const control = {
   Package: field("Package"),
   Version: field("Version"),
+  Maintainer: field("Maintainer"),
   Architecture: field("Architecture"),
   "Installed-Size": field("Installed-Size"),
   Depends: field("Depends"),
 };
 log(`variant ${label}: ${deb} (${control.Package} ${control.Version} ${control.Architecture})`);
+check(
+  control.Package === "argelanderspace" && control.Maintainer === "ArgelanderSpace",
+  "the package is named argelanderspace, maintainer ArgelanderSpace",
+  `Package ${JSON.stringify(control.Package)}, Maintainer ${JSON.stringify(control.Maintainer)}`
+);
 check(
   control.Version === appPkg.version,
   "the package version is the app package's (single source)",
@@ -146,8 +164,10 @@ const desktopEntry = desktopFiles.length
   ? readFileSync(join(root, "usr/share/applications", desktopFiles[0]), "utf8")
   : "";
 check(
-  /^Exec=argelanderspace-desktop/m.test(desktopEntry),
-  "a launcher entry (usr/share/applications) starts the shell",
+  desktopFiles.length === 1 &&
+    /^Exec=argelanderspace-desktop$/m.test(desktopEntry) &&
+    /^Name=ArgelanderSpace$/m.test(desktopEntry),
+  "a launcher entry (usr/share/applications) named ArgelanderSpace starts the shell",
   desktopFiles.join(",")
 );
 sizes.unpacked_bytes = du(root);
@@ -173,6 +193,19 @@ for (const rel of removeList) {
 const missing = sidecarRequiredFiles(target).filter((f) => !existsSync(join(resources, f)));
 check(missing.length === 0, "every required resource file is in the package", missing.join(", "));
 const sidecar = join(resources, "sidecar");
+const sidecarManifestPath = join(sidecar, "sidecar-manifest.json");
+let sidecarManifest = null;
+try {
+  sidecarManifest = JSON.parse(readFileSync(sidecarManifestPath, "utf8"));
+} catch {}
+check(!!sidecarManifest, "sidecar/sidecar-manifest.json is there and readable");
+const nodeSignature = nodeSignatureFromManifest(sidecarManifest);
+if (nodeSignature.verified)
+  check(true, "the Node download's signature was verified when assembled", nodeSignature.detail);
+else {
+  untested.push("the Node download's signature (not verified when the package was assembled)");
+  log(`UNTESTED  the Node download's signature: ${nodeSignature.detail}`);
+}
 const nodeExe = join(sidecar, "node/bin/node");
 const binJs = join(sidecar, "app/dist/bin.js");
 const nodeModules = join(sidecar, "app/node_modules");
@@ -251,11 +284,27 @@ const env = {
   NO_COLOR: "1",
 };
 
-// ---- the package's CLI --------------------------------------------------------------------------------------------- //
+// ---- the package's Node and CLI ------------------------------------------------------------------------------------ //
+const nodeVersion = existsSync(nodeExe)
+  ? spawnSync(nodeExe, ["--version"], { cwd: home, env, encoding: "utf8" }).stdout.trim()
+  : "";
+check(
+  !!sidecarManifest?.node?.version && nodeVersion === `v${sidecarManifest.node.version}`,
+  "the package's Node is the release the manifest names",
+  `${JSON.stringify(nodeVersion)} vs manifest ${JSON.stringify(sidecarManifest?.node?.version ?? null)}`
+);
+const npmBinJs = join(appRoot, "dist/bin.js");
+const binSha = existsSync(binJs) ? sha256(binJs) : null;
+const npmBinSha = existsSync(npmBinJs) ? sha256(npmBinJs) : null;
+check(
+  !!binSha && binSha === npmBinSha,
+  "the package's bin.js is packages/app/dist/bin.js (same build, sha256)",
+  `${binSha?.slice(0, 12) ?? "missing"} vs ${npmBinSha?.slice(0, 12) ?? "missing"}`
+);
 const cliVersion = existsSync(nodeExe)
   ? spawnSync(nodeExe, [binJs, "--version"], { cwd: home, env, encoding: "utf8" })
   : { status: null, stdout: "", stderr: "no node in the package" };
-const npmVersion = spawnSync(process.execPath, [join(appRoot, "dist/bin.js"), "--version"], {
+const npmVersion = spawnSync(process.execPath, [npmBinJs, "--version"], {
   cwd: home,
   env: { ...env, PATH: "/usr/bin:/bin" },
   encoding: "utf8",
@@ -320,6 +369,10 @@ if (args.flags.has("--shell")) {
     untested.push("the shell (no DISPLAY)");
     log("UNTESTED  the shell: no DISPLAY");
   } else {
+    if (opt["--shell-bin"]) {
+      copyFileSync(resolve(opt["--shell-bin"]), shellBin);
+      log(`replaced the unpacked shell with ${opt["--shell-bin"]} (counter-check)`);
+    }
     const port = await freePort();
     mkdirSync(join(env.XDG_CONFIG_HOME, "argelanderspace"), { recursive: true });
     writeFileSync(join(env.XDG_CONFIG_HOME, "argelanderspace/config.toml"), `port = ${port}\n`);
@@ -352,7 +405,8 @@ if (args.flags.has("--shell")) {
         ? JSON.stringify({ mode: info.mode, project: info.project })
         : `no answer; ${shellErr.slice(-300)}`
     );
-    // The host is the shell's child: which executable and entry does it run?
+    // The host is the shell's child: the one whose executable is the package's Node. WebKit's helper processes are
+    // children of the shell too, so the first child is not necessarily the host.
     const kids = readdirSync("/proc")
       .filter((p) => /^\d+$/.test(p))
       .filter((p) => {
@@ -364,19 +418,27 @@ if (args.flags.has("--shell")) {
         } catch {
           return false;
         }
+      })
+      .map((pid) => {
+        let exe = "";
+        try {
+          exe = readlinkSync(`/proc/${pid}/exe`);
+        } catch {}
+        return { pid, exe };
       });
-    const hostPid = kids[0];
-    let exe = "";
+    const host = hostProcess(kids, nodeExe);
+    const hostPid = host?.pid ?? null;
     let cmd = [];
     try {
-      exe = readlinkSync(`/proc/${hostPid}/exe`);
-      cmd = readFileSync(`/proc/${hostPid}/cmdline`, "utf8").split("\0").filter(Boolean);
+      if (hostPid)
+        cmd = readFileSync(`/proc/${hostPid}/cmdline`, "utf8").split("\0").filter(Boolean);
     } catch {}
     check(
-      exe === nodeExe && cmd[1] === binJs && cmd[2] === "desktop-host",
+      !!host && cmd[1] === binJs && cmd[2] === "desktop-host",
       "the shell's host is the package's Node running the package's bin.js",
       JSON.stringify({
-        exe: exe.replace(work, "<tmp>"),
+        children: kids.map((k) => k.exe.replace(work, "<tmp>")),
+        host: hostPid,
         argv: cmd.map((a) => a.replace(work, "<tmp>")),
       })
     );
@@ -395,9 +457,10 @@ if (args.flags.has("--shell")) {
     process.kill(-shell.pid, "SIGTERM");
     for (let i = 0; i < 100 && shell.exitCode === null && shell.signalCode === null; i += 1)
       await sleep(100);
+    // No host found means there is nothing to have seen end: hostGone stays false.
     let hostGone = false;
-    for (let i = 0; i < 150; i += 1) {
-      if (!hostPid || !existsSync(`/proc/${hostPid}`)) {
+    for (let i = 0; hostPid && i < 150; i += 1) {
+      if (!existsSync(`/proc/${hostPid}`)) {
         hostGone = true;
         break;
       }
@@ -425,7 +488,7 @@ if (args.flags.has("--shell")) {
 
 writeFileSync(
   join(evidenceDir, `${label}-package.json`),
-  `${JSON.stringify({ deb: deb.split(sep).pop(), control, removed: removeList, sizes }, null, 2)}\n`
+  `${JSON.stringify({ deb: deb.split(sep).pop(), control, removed: removeList, shell_bin: opt["--shell-bin"] ?? null, node: { version: nodeVersion, signature: nodeSignature }, bin_js_sha256: binSha, sizes }, null, 2)}\n`
 );
 const verdict = smokeVerdict({ failures, untested, label });
 log(`\n${verdict.line}`);

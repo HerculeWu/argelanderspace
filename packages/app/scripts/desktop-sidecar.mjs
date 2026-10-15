@@ -6,17 +6,22 @@
 //
 //   corepack pnpm -r build
 //   node packages/app/scripts/desktop-sidecar.mjs [--out <dir>] [--target linux-x64] [--node-version <x.y.z>]
-//        [--node-cache <dir>] [--node-keyring <pubring.kbx>] [--deps <dep-dir.mjs --out dir>] [--online]
+//        [--node-cache <dir>] (--node-keyring <pubring.kbx> | --insecure-skip-node-signature)
+//        [--deps <dep-dir.mjs --out dir>] [--online]
 //
 //   --out           default packages/desktop/target/package-resources (what tauri.package.conf.json maps). Removed and
 //                   rebuilt when it holds this script's marker file; any other non-empty directory is refused.
-//   --node-version  default: the version of the node running this script (the repo's tested runtime); major 24 only.
+//   --node-version  default: DESKTOP_NODE_VERSION in desktop-package-lib.mjs (pinned in the repository; change it
+//                   there); this option overrides it for one run. Major 24 only.
 //   --node-cache    where the official archive, SHASUMS256.txt and its signature are kept (default
 //                   packages/desktop/target/node-dist). Downloaded from nodejs.org when absent. The archive's sha256 is
 //                   checked against SHASUMS256.txt on every run.
-//   --node-keyring  a keyring with the Node release keys (e.g. gpg/pubring.kbx of github.com/nodejs/release-keys): the
-//                   signature of SHASUMS256.txt is then checked with `gpgv` (never touches your own keyring). Without
-//                   it the manifest records the signature as not verified.
+//   --node-keyring  REQUIRED (unless the next option): a keyring with the Node release keys (gpg/pubring.kbx of
+//                   github.com/nodejs/release-keys). The signature of SHASUMS256.txt is checked with `gpgv` (never
+//                   touches your own keyring) before the archive's checksum is read from it; when it does not verify,
+//                   the cached SHASUMS256.txt and .sig are removed and the run fails.
+//   --insecure-skip-node-signature  do not check the signature (unsafe; for a machine without the keyring). The
+//                   manifest records `signature.verified: false` and the desktop package smoke then reports INCOMPLETE.
 //   --deps          a dependency directory already made by dep-dir.mjs for the same target; default: run dep-dir.mjs.
 //   --online        passed to dep-dir.mjs (another target's native packages).
 //
@@ -53,12 +58,15 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { budgetCheck } from "./dep-dir-lib.mjs";
 import {
+  DESKTOP_NODE_VERSION,
   licenseProblems,
   listInstalledPackages,
   nodeDist,
+  nodeSignaturePlan,
   parseStrictArgs,
   shaFromShasums,
   sidecarRequiredFiles,
+  verifyNodeSignature,
 } from "./desktop-package-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -68,15 +76,25 @@ let args;
 try {
   args = parseStrictArgs(process.argv.slice(2), {
     valued: ["--out", "--target", "--node-version", "--node-cache", "--node-keyring", "--deps"],
-    flags: ["--online"],
+    flags: ["--online", "--insecure-skip-node-signature"],
   });
 } catch (e) {
   console.error(`desktop-sidecar: ${e.message}`);
   process.exit(1);
 }
 const opt = args.values;
+let signaturePlan;
+try {
+  signaturePlan = nodeSignaturePlan({
+    keyring: opt["--node-keyring"] && resolve(opt["--node-keyring"]),
+    insecureSkip: args.flags.has("--insecure-skip-node-signature"),
+  });
+} catch (e) {
+  console.error(`desktop-sidecar: ${e.message}`);
+  process.exit(1);
+}
 const target = opt["--target"] ?? `${process.platform}-${process.arch}`;
-const nodeVersion = opt["--node-version"] ?? process.versions.node;
+const nodeVersion = opt["--node-version"] ?? DESKTOP_NODE_VERSION;
 if (!nodeVersion.startsWith("24."))
   throw new Error(
     `the desktop package carries Node 24 (got ${nodeVersion}); give --node-version 24.x.y`
@@ -141,6 +159,22 @@ const signature = join(versionCache, "SHASUMS256.txt.sig");
 const archive = join(versionCache, dist.file);
 await fetchTo(dist.shasumsUrl, shasums);
 await fetchTo(dist.signatureUrl, signature);
+// The signature first: the checksum below is only as good as the list it is read from.
+let nodeSignature = {
+  verified: false,
+  detail: "NOT verified: --insecure-skip-node-signature was given",
+};
+if (signaturePlan.verify) {
+  nodeSignature = verifyNodeSignature({
+    keyring: signaturePlan.keyring,
+    shasums,
+    signature,
+    run: (cmd, argv) => run(cmd, argv),
+    remove: (f) => rmSync(f, { force: true }),
+  });
+  nodeSignature.keyring_sha256 = sha256(signaturePlan.keyring);
+  console.log(`SHASUMS256.txt signature: ${nodeSignature.detail}`);
+} else console.warn(`WARNING SHASUMS256.txt signature ${nodeSignature.detail}`);
 await fetchTo(dist.url, archive);
 const expected = shaFromShasums(readFileSync(shasums, "utf8"), dist.file);
 const actual = sha256(archive);
@@ -151,18 +185,6 @@ if (actual !== expected) {
   );
 }
 console.log(`node ${nodeVersion} ${dist.file}: sha256 matches SHASUMS256.txt`);
-let signatureState = "not verified (no --node-keyring given)";
-if (opt["--node-keyring"]) {
-  const keyring = resolve(opt["--node-keyring"]);
-  const g = run("gpgv", ["--keyring", keyring, signature, shasums]);
-  if (g.status !== 0) {
-    console.error(g.stderr);
-    throw new Error("the signature of SHASUMS256.txt did not verify against --node-keyring");
-  }
-  const by = /Good signature from "([^"]+)"/.exec(g.stderr)?.[1] ?? "a release key";
-  signatureState = `verified with gpgv (good signature from ${by}; keyring sha256 ${sha256(keyring)})`;
-  console.log(`SHASUMS256.txt signature: ${signatureState}`);
-}
 if (dist.file.endsWith(".zip"))
   throw new Error("extracting the Windows zip is ticket 26's (not done here)");
 const x = run("tar", [
@@ -240,7 +262,7 @@ const manifest = {
     url: dist.url,
     sha256: actual,
     shasums_sha256: sha256(shasums),
-    shasums_signature: signatureState,
+    signature: nodeSignature,
   },
   dependency_directory: {
     packages: report.packages_after,
