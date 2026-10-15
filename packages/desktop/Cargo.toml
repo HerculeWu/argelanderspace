@@ -23,7 +23,8 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `devtools`: the developer tools in release builds too (spec User Story 74; desktop-app ticket 21).
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 open = "5"
 # The host's process group (killpg) and the user id the single-instance socket must belong to.
@@ -32,6 +33,8 @@ libc = "0.2"
 serde_json = { version = "1", features = ["preserve_order"] }
 # The same WebKitGTK binding Tauri uses: the shell takes Tauri's scripts out of the page (src/page_guard.rs).
 webkit2gtk = "2.0"
+# The save dialog of the page's downloads (src/download.rs): the GTK Tauri itself uses.
+gtk = "0.18"
 # Test builds only (`--features smoke-probe`): reads what the page sees, for the smoke checks.
 javascriptcore-rs = { version = "1.1", optional = true }
 gio = { version = "0.18", optional = true }

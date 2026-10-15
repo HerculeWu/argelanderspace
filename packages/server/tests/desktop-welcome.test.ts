@@ -452,7 +452,7 @@ describe("with no project open", () => {
       h.input.write(`${JSON.stringify({ type: "folder_picked", id: request.id, path })}\n`);
     }
     await new Promise((r) => setTimeout(r, 100));
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "request", "request"]);
+    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu", "request", "request"]);
     expect(readRecentProjects(recentFile()).projects).toEqual([]);
   });
 
@@ -471,7 +471,7 @@ describe("with no project open", () => {
     expect(
       (await h.post("/api/host/recent-projects/open", { path: a }, "http://evil.example")).status
     ).toBe(403);
-    expect(h.lines.map((l) => l.type)).toEqual(["ready"]);
+    expect(h.lines.map((l) => l.type)).toEqual(["ready", "menu"]);
     expect((await h.post("/api/host/recent-projects/open", { path: a })).status).toBe(202);
     expect(await h.next("stopped")).toEqual({ type: "stopped", next: a });
     expect(readRecentProjects(recentFile()).projects.map((p) => p.path)).toEqual([a, gone]);

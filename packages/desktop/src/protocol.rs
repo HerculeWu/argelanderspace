@@ -61,11 +61,20 @@ pub struct Ready {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
-    PickFolder { id: String },
-    OpenInBrowser,
+    PickFolder {
+        id: String,
+    },
+    /// The host's own page address (`http://127.0.0.1:<port>/`; checked by `is_loopback_page`).
+    OpenInBrowser {
+        url: String,
+    },
     OpenDevtools,
-    OpenLogFolder { path: String },
-    OpenConfigFile { path: String },
+    OpenLogFolder {
+        path: String,
+    },
+    OpenConfigFile {
+        path: String,
+    },
     OpenSkillsFolder,
 }
 
@@ -74,7 +83,7 @@ impl Request {
     pub fn kind(&self) -> &'static str {
         match self {
             Request::PickFolder { .. } => "pick_folder",
-            Request::OpenInBrowser => "open_in_browser",
+            Request::OpenInBrowser { .. } => "open_in_browser",
             Request::OpenDevtools => "open_devtools",
             Request::OpenLogFolder { .. } => "open_log_folder",
             Request::OpenConfigFile { .. } => "open_config_file",
@@ -82,6 +91,27 @@ impl Request {
         }
     }
 }
+
+/// A recent project in the shell's menu (desktop-app ticket 21): the label to show, and the host's id for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuRecent {
+    pub id: String,
+    pub label: String,
+    pub enabled: bool,
+}
+
+/// What the shell's menu shows, as the host's `menu` line says (desktop-app ticket 21).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MenuModel {
+    pub language: Language,
+    pub recent: Vec<MenuRecent>,
+}
+
+/// At most this many recent projects are shown (the host sends no more, server `HOST_MENU_RECENT_MAX`).
+pub const MENU_RECENT_MAX: usize = 10;
+/// A menu id or label longer than this is not taken: that entry is left out (the host shortens its labels to far less,
+/// server `HOST_MENU_LABEL_MAX`).
+const MENU_TEXT_MAX: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailedStage {
@@ -107,6 +137,7 @@ pub enum HostLine {
         stage: FailedStage,
         log_dir: Option<String>,
     },
+    Menu(MenuModel),
     /// Anything else: not JSON, an unknown type, a known type of the wrong shape. Ignored.
     Unknown,
 }
@@ -128,6 +159,48 @@ pub fn is_local_page(url: &str, port: u16) -> bool {
     url == format!("http://127.0.0.1:{port}/")
 }
 
+/// Whether `url` is a page address of the host's form, `http://127.0.0.1:<port>/`, for any port.
+pub fn is_loopback_page(url: &str) -> bool {
+    url.strip_prefix("http://127.0.0.1:")
+        .and_then(|rest| rest.strip_suffix('/'))
+        .and_then(|port| port.parse::<u16>().ok())
+        .is_some_and(|port| is_local_page(url, port))
+}
+
+fn language_of(m: &Map<String, Value>) -> Language {
+    match m.get("language").and_then(Value::as_str) {
+        Some("en") => Language::English,
+        _ => Language::Chinese,
+    }
+}
+
+fn menu_model(m: &Map<String, Value>) -> Option<MenuModel> {
+    let short = |v: Option<&Value>| {
+        v.and_then(Value::as_str)
+            .filter(|s| !s.is_empty() && s.len() <= MENU_TEXT_MAX)
+            .map(str::to_owned)
+    };
+    // An entry that is not of the form (or too long) is left out; the others are still shown.
+    let recent = m
+        .get("recent")?
+        .as_array()?
+        .iter()
+        .filter_map(|item| {
+            let item = item.as_object()?;
+            Some(MenuRecent {
+                id: short(item.get("id"))?,
+                label: short(item.get("label"))?,
+                enabled: item.get("enabled")?.as_bool()?,
+            })
+        })
+        .take(MENU_RECENT_MAX)
+        .collect();
+    Some(MenuModel {
+        language: language_of(m),
+        recent,
+    })
+}
+
 /// One line from the host's stdout (without its newline).
 pub fn parse_host_line(line: &str) -> HostLine {
     let Ok(Value::Object(m)) = serde_json::from_str::<Value>(line) else {
@@ -145,10 +218,7 @@ pub fn parse_host_line(line: &str) -> HostLine {
                 Some(Value::String(p)) if is_absolute(p) => Some(Some(p.clone())),
                 _ => None,
             };
-            let language = match m.get("language").and_then(Value::as_str) {
-                Some("en") => Language::English,
-                _ => Language::Chinese,
-            };
+            let language = language_of(&m);
             match (port, url, project) {
                 (Some(port), Some(url), Some(project)) if is_local_page(&url, port) => {
                     HostLine::Ready(Ready {
@@ -170,7 +240,9 @@ pub fn parse_host_line(line: &str) -> HostLine {
         Some("request") => {
             let request = match m.get("kind").and_then(Value::as_str) {
                 Some("pick_folder") => string(&m, "id").map(|id| Request::PickFolder { id }),
-                Some("open_in_browser") => Some(Request::OpenInBrowser),
+                Some("open_in_browser") => string(&m, "url")
+                    .filter(|url| is_loopback_page(url))
+                    .map(|url| Request::OpenInBrowser { url }),
                 Some("open_devtools") => Some(Request::OpenDevtools),
                 Some("open_log_folder") => {
                     absolute(&m, "path").map(|path| Request::OpenLogFolder { path })
@@ -204,6 +276,7 @@ pub fn parse_host_line(line: &str) -> HostLine {
                 log_dir: absolute(&m, "logDir"),
             })
         }
+        Some("menu") => menu_model(&m).map_or(HostLine::Unknown, HostLine::Menu),
         _ => HostLine::Unknown,
     }
 }
@@ -281,6 +354,17 @@ pub fn quit_line() -> String {
 /// The answer to a `pick_folder` request: the folder chosen (absolute), or null when the dialog was cancelled.
 pub fn folder_picked_line(id: &str, path: Option<&str>) -> String {
     json!({ "type": "folder_picked", "id": id, "path": path }).to_string()
+}
+
+/// A menu item for the host to carry out as the page's request of that kind (`pick_folder`, `open_in_browser`,
+/// `open_devtools`; desktop-app ticket 21).
+pub fn menu_request_line(item: &str) -> String {
+    json!({ "type": "menu", "item": item }).to_string()
+}
+
+/// A recent project of the menu, by the id of the host's last `menu` line.
+pub fn menu_recent_line(id: &str) -> String {
+    json!({ "type": "menu", "item": "open_recent", "id": id }).to_string()
 }
 
 /// One of the shell's own events, for the host to write into the user log (its `SHELL_EVENTS` table decides what is
@@ -414,7 +498,9 @@ mod tests {
             ),
             (
                 r#"{"type":"request","kind":"open_in_browser","url":"http://127.0.0.1:1859/"}"#,
-                Request::OpenInBrowser,
+                Request::OpenInBrowser {
+                    url: "http://127.0.0.1:1859/".into(),
+                },
             ),
             (
                 r#"{"type":"request","kind":"open_devtools"}"#,
@@ -449,6 +535,12 @@ mod tests {
             r#"{"type":"request","kind":"open_log_folder","path":"relative"}"#,
             r#"{"type":"request","kind":"open_config_file"}"#,
             r#"{"type":"request","kind":"format_disk"}"#,
+            // Opening in the browser takes the host's own page address only.
+            r#"{"type":"request","kind":"open_in_browser"}"#,
+            r#"{"type":"request","kind":"open_in_browser","url":"https://example.org/"}"#,
+            r#"{"type":"request","kind":"open_in_browser","url":"http://127.0.0.1:1859/x"}"#,
+            r#"{"type":"request","kind":"open_in_browser","url":"file:///etc/passwd"}"#,
+            r#"{"type":"request","kind":"open_in_browser","url":"http://127.0.0.1:99999/"}"#,
             r#"{"type":"request"}"#,
         ] {
             assert_eq!(parse_host_line(line), HostLine::Unknown, "{line}");
@@ -521,7 +613,98 @@ mod tests {
     }
 
     #[test]
+    fn menu_lines() {
+        let line = r#"{"type":"menu","language":"en","recent":[{"id":"m1-0","label":"alpha — ~/p/alpha","enabled":true},{"id":"m1-1","label":"gone — ~/gone","enabled":false}]}"#;
+        assert_eq!(
+            parse_host_line(line),
+            HostLine::Menu(MenuModel {
+                language: Language::English,
+                recent: vec![
+                    MenuRecent {
+                        id: "m1-0".into(),
+                        label: "alpha — ~/p/alpha".into(),
+                        enabled: true
+                    },
+                    MenuRecent {
+                        id: "m1-1".into(),
+                        label: "gone — ~/gone".into(),
+                        enabled: false
+                    },
+                ],
+            })
+        );
+        assert_eq!(
+            parse_host_line(r#"{"type":"menu","language":"zh-CN","recent":[]}"#),
+            HostLine::Menu(MenuModel {
+                language: Language::Chinese,
+                recent: vec![]
+            })
+        );
+        // More than the limit: the first ten.
+        let many: Vec<Value> = (0..14)
+            .map(|i| json!({"id": format!("m-{i}"), "label": "x", "enabled": true}))
+            .collect();
+        let HostLine::Menu(model) =
+            parse_host_line(&json!({"type":"menu","recent": many}).to_string())
+        else {
+            panic!("menu")
+        };
+        assert_eq!(model.recent.len(), MENU_RECENT_MAX);
+        // Not a menu line: no recent list, or not a list.
+        for bad in [r#"{"type":"menu"}"#, r#"{"type":"menu","recent":{}}"#] {
+            assert_eq!(parse_host_line(bad), HostLine::Unknown, "{bad}");
+        }
+        // An entry not of the form, or with a label too long, is left out; the good ones stay.
+        let long = "y".repeat(MENU_TEXT_MAX + 1);
+        let good = json!({"id":"ok","label":"alpha","enabled":true});
+        let line = json!({"type":"menu","recent":[
+            {"id":"a","label":"b"},
+            {"id":"","label":"b","enabled":true},
+            {"id":1,"label":"b","enabled":true},
+            {"id":"a","label":long,"enabled":true},
+            "x",
+            good,
+        ]});
+        let HostLine::Menu(model) = parse_host_line(&line.to_string()) else {
+            panic!("menu")
+        };
+        assert_eq!(
+            model.recent,
+            vec![MenuRecent {
+                id: "ok".into(),
+                label: "alpha".into(),
+                enabled: true
+            }]
+        );
+    }
+
+    #[test]
+    fn loopback_page_addresses() {
+        assert!(is_loopback_page("http://127.0.0.1:1859/"));
+        assert!(is_loopback_page("http://127.0.0.1:40000/"));
+        for bad in [
+            "http://127.0.0.1:1859",
+            "http://127.0.0.1:/",
+            "http://127.0.0.1:01859/",
+            "http://127.0.0.1:1859/x",
+            "http://localhost:1859/",
+            "https://127.0.0.1:1859/",
+            "http://127.0.0.1:65536/",
+        ] {
+            assert!(!is_loopback_page(bad), "{bad}");
+        }
+    }
+
+    #[test]
     fn lines_to_the_host() {
+        assert_eq!(
+            menu_request_line("open_devtools"),
+            r#"{"type":"menu","item":"open_devtools"}"#
+        );
+        assert_eq!(
+            menu_recent_line("m2-0"),
+            r#"{"type":"menu","item":"open_recent","id":"m2-0"}"#
+        );
         assert_eq!(quit_line(), r#"{"type":"quit"}"#);
         let v: Value = serde_json::from_str(&folder_picked_line("i1", Some("/home/u/p"))).unwrap();
         assert_eq!(

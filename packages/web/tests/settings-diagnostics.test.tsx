@@ -3,10 +3,11 @@
  * page's error boundary. The settings endpoint is the in-memory fake (`settings-fake.ts`); the diagnostics endpoints
  * are fakes here. The real server, the real bundle and a real browser are covered elsewhere.
  */
-import type { DiagnosticsInfo } from "@argelanderspace/contracts";
+import { type DiagnosticsInfo, HOST_REQUEST_KINDS, type HostInfo } from "@argelanderspace/contracts";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Shell } from "../src/argelander/Shell";
+import { resetHostInfoForTests } from "../src/host";
 import i18n from "../src/i18n";
 import { PageErrorBoundary } from "../src/PageErrorBoundary";
 import { resetPageErrorReportingForTests } from "../src/page-errors";
@@ -28,6 +29,8 @@ let exports: unknown[];
 let exportFails: boolean;
 /** Set to hold the export answer until released. */
 let exportHold: Promise<void> | null;
+/** The answer of `GET /api/host`; none (404): the browser form. */
+let hostInfo: HostInfo | null;
 
 const JOB = "compile-failures/jobs/ingest-11111111-2222-4333-8444-555555555555.compile.log";
 const MS = "compile-failures/manuscripts/m_0a1b2c3d/build/compile-failure.log";
@@ -51,6 +54,8 @@ beforeEach(async () => {
   exports = [];
   exportFails = false;
   exportHold = null;
+  hostInfo = null;
+  resetHostInfoForTests();
   Reflect.deleteProperty(window, "showSaveFilePicker");
   vi.stubGlobal(
     "fetch",
@@ -58,6 +63,10 @@ beforeEach(async () => {
       const answer = settings.handle(input, init);
       if (answer) return answer;
       const url = String(input);
+      if (url === "/api/host" && hostInfo !== null) {
+        const body = structuredClone(hostInfo);
+        return { ok: true, status: 200, json: async () => body } as Response;
+      }
       if (url === "/api/diagnostics") {
         if (diagnostics === null) throw new TypeError("Failed to fetch");
         const body = structuredClone(diagnostics);
@@ -364,6 +373,18 @@ describe("saving in the system's save window (showSaveFilePicker)", () => {
     await waitFor(() => expect(q('[data-ui="export-diagnostics-result"]')).not.toBeNull());
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     expect(q('[data-ui="export-diagnostics-result"]')!.textContent).toContain("where it is saved follows the browser’s settings");
+  });
+
+  it("in the desktop app the bundle goes to the app's save window (desktop-app ticket 21), said as such", async () => {
+    hostInfo = { version: 1, app: "argelanderspace", mode: "desktop", requests: [...HOST_REQUEST_KINDS], portFallback: null, project: "open" };
+    await openDialog();
+    fireEvent.click(q('[data-ui="export-diagnostics-run"]')!);
+    await waitFor(() => expect(q('[data-ui="export-diagnostics-result"]')).not.toBeNull());
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const said = q('[data-ui="export-diagnostics-result"]')!.textContent ?? "";
+    expect(said).toContain("Created argelanderspace-diagnostics-20261014-101112.zip");
+    expect(said).toContain("Choose where to save it in the save window");
+    expect(said).not.toContain("browser");
   });
 });
 
