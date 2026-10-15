@@ -10,10 +10,10 @@
 # When it runs:
 #   - a pushed tag `v<version>`, where <version> is packages/app/package.json's `version` (the single source,
 #     ticket 16); any other tag fails in the preflight before anything is built. Builds linux-x64.
-#   - by hand (Actions > Release > Run workflow) on a branch or tag: it builds that commit and names the draft
-#     `v<version>`. `targets`: linux-x64 (the default), `all`, or one other target. A draft is made only when every
-#     chosen target succeeded. When a tag `v<version>` exists already it must name the commit built (or nothing is
-#     made); otherwise the tag is made when the draft is published.
+#   - by hand (Actions > Release > Run workflow) on a branch or tag: it builds that commit; with `draft` (off by
+#     default) it also names a draft `v<version>`. `targets`: linux-x64 (the default), `all`, or one other target. A
+#     draft is made only when `draft` is on and every chosen target succeeded. When a tag `v<version>` exists already
+#     it must name the commit built (or nothing is made); otherwise the tag is made when the draft is published.
 #
 # Pins: actions by commit (the tag in the comment); the build's Node = the Node the package carries
 # (DESKTOP_NODE_VERSION in packages/app/scripts/desktop-package-lib.mjs; the preflight checks they agree); pnpm from the
@@ -31,13 +31,19 @@ on:
         type: choice
         default: linux-x64
         options: [linux-x64, all, win32-x64, darwin-arm64, darwin-x64]
+      draft:
+        description: "Make the release draft when every chosen target succeeded (off: build and check only, nothing made)"
+        type: boolean
+        default: false
 
 # Nothing by default; each job asks for what it needs.
 permissions: {}
 
 concurrency:
-  # One release run at a time, whatever the ref: a tag run and a manual run must not both pass the duplicate check.
-  group: release
+  # One release run at a time, whatever the ref: a tag run and a manual run that makes a draft must not both pass the
+  # duplicate check. A run by hand without a draft makes nothing and has a group of its own (it neither waits nor holds
+  # the others up).
+  group: ${{ (github.event_name == 'push' || inputs.draft == true) && 'release' || format('check-{0}', github.run_id) }}
   cancel-in-progress: false
 
 env:
@@ -251,6 +257,9 @@ jobs:
   draft:
     name: Release draft
     needs: package
+    # A tag run always makes the draft; a run by hand only when asked (`draft`, off by default: desktop-app ticket 30
+    # builds and checks branches without making any draft).
+    if: github.event_name == 'push' || inputs.draft == true
     runs-on: ubuntu-24.04
     # Only this job may write, and only to make the draft.
     permissions:
