@@ -53,6 +53,7 @@ version = "0.0.0"
 dependencies = [
  "gio",
  "javascriptcore-rs",
+ "libc",
  "open",
  "serde_json",
  "tauri",

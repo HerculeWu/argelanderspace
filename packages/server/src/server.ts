@@ -40,7 +40,7 @@ import {
   type GlobalDirs,
   getConfig,
   type KeychainProbe,
-  LOG_DIR_NAME,
+  logDirIn,
   observedFetch,
   pinGlobalDirs,
   readAdsToken,
@@ -611,7 +611,7 @@ async function startWith<S extends { ready(): Promise<number>; close(): Promise<
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   const mode: ServerMode = start.desktop === undefined ? "browser" : "desktop";
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
-  const logDir = join(globalDirs.dataDir, LOG_DIR_NAME);
+  const logDir = logDirIn(globalDirs.dataDir);
   const serveLog = openServeLog(config, logDir, mode === "desktop" ? "desktop" : "serve");
   // Whatever stops the start — the server cannot be created, the port cannot be bound — the log file is closed and
   // the process is no longer watched.

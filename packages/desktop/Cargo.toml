@@ -4,6 +4,8 @@
 #
 # The version shown to people comes from packages/app/package.json (tauri.conf.json `version`); the crate's own
 # version below is not used anywhere.
+#
+# icons/icon.png is a placeholder; the real icon is desktop-app ticket 25.
 [package]
 name = "argelanderspace-desktop"
 version = "0.0.0"
@@ -24,6 +26,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 open = "5"
+# The host's process group (killpg) and the user id the single-instance socket must belong to.
+libc = "0.2"
 # Keys in the order written: the records and lines read like the host's (`t`, `level`, `event` first).
 serde_json = { version = "1", features = ["preserve_order"] }
 # The same WebKitGTK binding Tauri uses: the shell takes Tauri's scripts out of the page (src/page_guard.rs).

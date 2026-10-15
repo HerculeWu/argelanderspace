@@ -2,7 +2,9 @@
 //! the page can see of Tauri and one call into Tauri is attempted; the answer, with the window's title after the
 //! attempt, is appended as one JSON line to the file named by `ARGELANDERSPACE_SHELL_PROBE`. With
 //! `ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES=1` the shell leaves Tauri's entry points in the page, to show that a call
-//! made through them is refused all the same (docs/engineering.md, desktop shell smoke).
+//! made through them is refused all the same (docs/engineering.md, desktop shell smoke). With
+//! `ARGELANDERSPACE_SHELL_PROBE_NAVIGATE=<address>` the page then tries to go there and reports where it is a moment
+//! later (the shell stops navigations away from the local page, `navigation.rs`).
 
 use std::io::Write;
 use std::time::Duration;
@@ -45,6 +47,12 @@ try {
 } catch (e) {
   r.ipcFetch = "error: " + String(e).slice(0, 300);
 }
+const NAVIGATE = __NAVIGATE__;
+if (NAVIGATE) {
+  location.href = NAVIGATE;
+  await new Promise((done) => setTimeout(done, 1500));
+  r.navigate = { tried: NAVIGATE, after: location.href };
+}
 return JSON.stringify(r);
 "##;
 
@@ -59,16 +67,22 @@ pub fn attach<R: Runtime, M: tauri::Manager<R>>(
     let Some(out) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE") else {
         return builder;
     };
+    let navigate = std::env::var("ARGELANDERSPACE_SHELL_PROBE_NAVIGATE").ok();
+    let script = PROBE.replace(
+        "__NAVIGATE__",
+        &serde_json::to_string(&navigate).unwrap_or_else(|_| "null".into()),
+    );
     builder.on_page_load(move |webview, payload| {
         if payload.event() != PageLoadEvent::Finished || payload.url().scheme() == "about" {
             return;
         }
         let out = out.clone();
+        let script = script.clone();
         let window = webview.clone();
         let _ = webview.with_webview(move |platform| {
             let view = platform.inner();
             view.call_async_javascript_function(
-                PROBE,
+                &script,
                 None,
                 None,
                 None,

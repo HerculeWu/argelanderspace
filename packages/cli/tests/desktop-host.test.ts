@@ -210,6 +210,7 @@ describe("the built desktop host", () => {
       project: realpathSync(w.project),
       logDir: w.logDir,
       language: "zh-CN",
+      logLevel: "info",
     });
     const page = await fetch(String(ready.url));
     expect([page.status, (await page.text()).includes("desktop host page")]).toEqual([200, true]);

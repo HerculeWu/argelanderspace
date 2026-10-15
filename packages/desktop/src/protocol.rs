@@ -2,7 +2,42 @@
 //! host's stdout (host → shell) and stdin (shell → host). Parsing and writing only; what the shell does with a line
 //! is decided in `supervisor.rs` and carried out in `main.rs`.
 
+use std::io::BufRead;
+
 use serde_json::{json, Map, Value};
+
+/// A line from the host is at most this long, as a line to the host is (server `HOST_LINE_MAX_BYTES`).
+pub const LINE_MAX_BYTES: usize = 64 * 1024;
+
+/// The user log's levels, lowest first (contracts `SETTINGS_LOG_LEVELS`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LogLevel {
+    Debug,
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    /// The level a log starts with when config.toml names none (infra `DEFAULT_LOG_LEVEL`); the shell's file uses it
+    /// until a host reports its level.
+    pub const DEFAULT: LogLevel = LogLevel::Info;
+
+    pub fn parse(name: &str) -> Option<LogLevel> {
+        match name {
+            "debug" => Some(LogLevel::Debug),
+            "info" => Some(LogLevel::Info),
+            "warn" => Some(LogLevel::Warn),
+            "error" => Some(LogLevel::Error),
+            _ => None,
+        }
+    }
+
+    /// Whether a record of `level` (one of the names above) is written at this level.
+    pub fn admits(self, level: &str) -> bool {
+        LogLevel::parse(level).is_some_and(|l| l >= self)
+    }
+}
 
 /// The language the host reported (config.toml `[ui] language` when it started), for the shell's native dialogs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +55,8 @@ pub struct Ready {
     pub project: Option<String>,
     pub log_dir: Option<String>,
     pub language: Language,
+    /// The user log's level when the host was ready (default when the line has none).
+    pub log_level: LogLevel,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +157,11 @@ pub fn parse_host_line(line: &str) -> HostLine {
                         project,
                         log_dir: absolute(&m, "logDir"),
                         language,
+                        log_level: m
+                            .get("logLevel")
+                            .and_then(Value::as_str)
+                            .and_then(LogLevel::parse)
+                            .unwrap_or(LogLevel::DEFAULT),
                     })
                 }
                 _ => HostLine::Unknown,
@@ -166,6 +208,71 @@ pub fn parse_host_line(line: &str) -> HostLine {
     }
 }
 
+/// What reading the host's output gives, line by line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LineRead {
+    /// A line (without its newline, nor a `\r` before it).
+    Line(String),
+    /// A line longer than the limit: skipped up to its end.
+    TooLong,
+    /// A line that is not UTF-8: skipped.
+    NotUtf8,
+}
+
+/// Reads the host's output to its end: each line, or why a line was skipped, goes to `each` (which returns false to
+/// stop). A line longer than `max` bytes is not kept in memory past `max`; reading goes on after it, as after a line
+/// that is not UTF-8. A read error ends the reading.
+pub fn read_lines<R: BufRead>(mut reader: R, max: usize, mut each: impl FnMut(LineRead) -> bool) {
+    let mut line: Vec<u8> = Vec::new();
+    let mut skipping = false;
+    let finish = |line: &mut Vec<u8>| {
+        if line.last() == Some(&b'\r') {
+            line.pop();
+        }
+        match String::from_utf8(std::mem::take(line)) {
+            Ok(text) => LineRead::Line(text),
+            Err(_) => LineRead::NotUtf8,
+        }
+    };
+    loop {
+        let available = match reader.fill_buf() {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
+        };
+        if available.is_empty() {
+            if !skipping && !line.is_empty() {
+                each(finish(&mut line));
+            }
+            return;
+        }
+        let newline = available.iter().position(|&b| b == b'\n');
+        let part = &available[..newline.unwrap_or(available.len())];
+        let mut go_on = true;
+        if !skipping {
+            if line.len() + part.len() > max {
+                skipping = true;
+                line.clear();
+                go_on = each(LineRead::TooLong);
+            } else {
+                line.extend_from_slice(part);
+            }
+        }
+        let used = newline.map_or(available.len(), |i| i + 1);
+        reader.consume(used);
+        if !go_on {
+            return;
+        }
+        if newline.is_some() {
+            if skipping {
+                skipping = false;
+            } else if !each(finish(&mut line)) {
+                return;
+            }
+        }
+    }
+}
+
 /// `{"type":"quit"}`: shut down gracefully.
 pub fn quit_line() -> String {
     json!({ "type": "quit" }).to_string()
@@ -197,8 +304,63 @@ mod tests {
                 project: Some("/home/u/My Project".into()),
                 log_dir: Some("/home/u/.local/share/argelanderspace/logs".into()),
                 language: Language::English,
+                log_level: LogLevel::Info,
             })
         );
+        let with_level = line.replace(r#""language":"en""#, r#""language":"en","logLevel":"warn""#);
+        let HostLine::Ready(ready) = parse_host_line(&with_level) else {
+            panic!("ready")
+        };
+        assert_eq!(ready.log_level, LogLevel::Warn);
+    }
+
+    #[test]
+    fn log_levels() {
+        assert!(LogLevel::Info.admits("info"));
+        assert!(LogLevel::Info.admits("warn"));
+        assert!(!LogLevel::Warn.admits("info"));
+        assert!(LogLevel::Debug.admits("info"));
+        assert!(!LogLevel::Error.admits("warn"));
+        assert!(!LogLevel::Debug.admits("loud"));
+        assert_eq!(LogLevel::parse("verbose"), None);
+    }
+
+    fn read_all(input: &[u8], max: usize) -> Vec<LineRead> {
+        let mut out = Vec::new();
+        // A small buffer, so that lines arrive in pieces.
+        read_lines(std::io::BufReader::with_capacity(4, input), max, |l| {
+            out.push(l);
+            true
+        });
+        out
+    }
+
+    #[test]
+    fn reading_lines_with_a_limit_and_bytes_that_are_not_utf8() {
+        let mut input = b"one\r\n".to_vec();
+        input.extend_from_slice(&[b'x'; 20]);
+        input.extend_from_slice(b"\n\xff\xfe\nexact-16-bytes!!\ntwo\nlast");
+        assert_eq!(
+            read_all(&input, 16),
+            vec![
+                LineRead::Line("one".into()),
+                LineRead::TooLong,
+                LineRead::NotUtf8,
+                LineRead::Line("exact-16-bytes!!".into()),
+                LineRead::Line("two".into()),
+                LineRead::Line("last".into()),
+            ]
+        );
+        // A long line at the end, without a newline, is reported once and not kept.
+        assert_eq!(read_all(&[b'y'; 40], 16), vec![LineRead::TooLong]);
+        assert_eq!(read_all(b"", 16), vec![]);
+        // `each` returning false stops the reading.
+        let mut seen = 0;
+        read_lines(&b"a\nb\nc\n"[..], 16, |_| {
+            seen += 1;
+            seen < 2
+        });
+        assert_eq!(seen, 2);
     }
 
     #[test]
@@ -213,6 +375,7 @@ mod tests {
                 project: None,
                 log_dir: None,
                 language: Language::Chinese,
+                log_level: LogLevel::Info,
             })
         );
     }

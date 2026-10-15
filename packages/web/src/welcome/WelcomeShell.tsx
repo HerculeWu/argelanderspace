@@ -69,7 +69,7 @@ export function WelcomeShell() {
             <WelcomePage />
           </div>
         </div>
-        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} />
+        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} configFile={preferences.settings?.file} />
       </div>
     </PreferencesProvider>
   );

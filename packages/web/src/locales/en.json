@@ -2304,7 +2304,8 @@
       "copyPath": "Copy path",
       "pathCopied": "Path copied",
       "copyFailed": "Not copied: the browser does not allow writing to the clipboard",
-      "openInEditor": "Open config file"
+      "openInEditor": "Open config file",
+      "notYet": "There is no config file yet. Changing any setting on this page creates it."
     },
     "source": {
       "default": "Default",

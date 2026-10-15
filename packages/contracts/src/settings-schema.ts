@@ -74,6 +74,8 @@ const def = <const D extends SettingDef>(d: D): D => d;
 /** The levels of the user log, lowest first. */
 export const SETTINGS_LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 export const SETTINGS_UI_LANGUAGES = ["zh-CN", "en"] as const;
+/** The page's language when config.toml names none (the browser is not asked); the desktop host reports it too. */
+export const DEFAULT_UI_LANGUAGE: (typeof SETTINGS_UI_LANGUAGES)[number] = "zh-CN";
 export const SETTINGS_UI_THEMES = ["dark", "light"] as const;
 export const SETTINGS_UI_ACCENTS = ["azure", "teal", "violet", "amber", "neutral"] as const;
 export const SETTINGS_UI_DENSITIES = ["compact", "regular", "comfy"] as const;
@@ -184,7 +186,7 @@ export const SETTINGS_SCHEMA = {
     table: "ui",
     name: "language",
     type: { kind: "enum", values: SETTINGS_UI_LANGUAGES },
-    default: "zh-CN",
+    default: DEFAULT_UI_LANGUAGE,
     group: "appearance",
     ui: "edit",
     restart: false,

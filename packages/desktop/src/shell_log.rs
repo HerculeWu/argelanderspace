@@ -6,7 +6,12 @@
 //! fixed words, numbers, durations and the version strings (docs/contracts.md「用户日志」; no paths, no names).
 //!
 //! Created exclusively (an existing file or link of that name is neither appended to nor followed), mode 0600, at
-//! most `SHELL_LOG_MAX_BYTES`; nothing here fails the shell: a file that cannot be written loses its records.
+//! most `SHELL_LOG_MAX_BYTES`; nothing here fails the shell: a file that cannot be written loses its records. After a
+//! file could not be created the shell stops trying until a host reports the log directory again (`retry`).
+//!
+//! Which records are written follows the level the last host reported (`supervisor.rs`; the default before any did);
+//! this is the one place the shell writes records itself, an exception the contracts name (docs/contracts.md, the
+//! desktop shell's entry).
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -78,6 +83,11 @@ pub struct ShellLog {
 impl ShellLog {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// A host reported the log directory again: the next write may try to create the file again.
+    pub fn retry(&mut self) {
+        self.failed = false;
     }
 
     /// Appends the events. The directory is the user log directory (the host made it, 0700).
@@ -228,6 +238,26 @@ mod tests {
             .collect();
         log.write(&dir, &many);
         assert!(std::fs::metadata(&files[0]).unwrap().len() <= SHELL_LOG_MAX_BYTES);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn after_a_failure_it_tries_again_once_told_to() {
+        let dir =
+            std::env::temp_dir().join(format!("aspace-shell-log-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut log = ShellLog::new();
+        log.write(&dir, &[event("shell.started", json!({}))]);
+        std::fs::create_dir_all(&dir).unwrap();
+        log.write(&dir, &[event("shell.started", json!({}))]);
+        assert_eq!(
+            std::fs::read_dir(&dir).unwrap().count(),
+            0,
+            "not without a retry"
+        );
+        log.retry();
+        log.write(&dir, &[event("shell.host_exited", json!({}))]);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

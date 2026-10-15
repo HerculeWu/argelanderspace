@@ -16,6 +16,7 @@ import {
   type SettingChangeRequest,
   type SettingKey,
   type SettingsGroup,
+  type SettingsFileState,
   type SettingsProblem,
   type SettingsSnapshot,
 } from "@argelanderspace/contracts";
@@ -150,16 +151,32 @@ function askOrSay(ask: () => Promise<boolean>, notify: (text: string) => void, f
 }
 
 /**
+ * "Open config file" in the desktop app, or null in a browser. While there is no config file yet nothing is asked of
+ * the host and nothing is written (the settings' change endpoint is the only way the file is written; desktop-app
+ * ticket 20, user ruling 2): the page says that changing any setting creates it. A request the host did not take is
+ * said in the floating notice.
+ */
+function useOpenConfigFile(file: SettingsFileState | undefined, notify: (text: string) => void): (() => void) | null {
+  const { t } = useTranslation();
+  const openConfig = useHostRequest("open_config_file");
+  if (openConfig === null) return null;
+  return () => {
+    if (file === "missing") notify(t("settings.configFile.notYet"));
+    else askOrSay(openConfig, notify, t("settings.host.requestFailed"));
+  };
+}
+
+/**
  * The config file: its path (the home written as `~` by the server), and in the desktop app the button that opens it
  * in the system's editor, in a browser a copy action.
  */
 function ConfigPath({ P, settings, rowKey }: { P: Preferences; settings: SettingsSnapshot; rowKey?: SettingKey }) {
   const { t } = useTranslation();
   const path = settings.path;
-  const openConfig = useHostRequest("open_config_file");
+  const openConfig = useOpenConfigFile(settings.file, P.notify);
   if (openConfig !== null) {
     const button = (
-      <Button data-ui="open-config-file" data-ui-key={rowKey} onClick={() => askOrSay(openConfig, P.notify, t("settings.host.requestFailed"))}>
+      <Button data-ui="open-config-file" data-ui-key={rowKey} onClick={openConfig}>
         {t("settings.configFile.openInEditor")}
       </Button>
     );
@@ -836,10 +853,10 @@ const FAILED_TEXT = {
   unreachable: "settings.notices.failed.unreachable",
 } as const;
 
-function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsNotice, { kind: "failed" }>; onDismiss: () => void; notify: (text: string) => void }) {
+function FailedNotice({ notice, onDismiss, notify, configFile }: { notice: Extract<SettingsNotice, { kind: "failed" }>; onDismiss: () => void; notify: (text: string) => void; configFile: SettingsFileState | undefined }) {
   const { t } = useTranslation();
   // The desktop app: the file can be opened from here (approved prototype); a browser has no such action.
-  const openConfig = useHostRequest("open_config_file");
+  const openConfig = useOpenConfigFile(configFile, notify);
   const why = layoutReason(notice.reason);
   const text = why
     ? t("settings.notices.failed.layout", { why: t(why) })
@@ -854,7 +871,7 @@ function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsN
         {text}
       </span>
       {openConfig !== null && (
-        <Button data-ui="settings-save-failed-open-config" onClick={() => askOrSay(openConfig, notify, t("settings.host.requestFailed"))}>
+        <Button data-ui="settings-save-failed-open-config" onClick={openConfig}>
           {t("settings.configFile.openInEditor")}
         </Button>
       )}
@@ -864,13 +881,13 @@ function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsN
 }
 
 /** The floating notices of the settings: rendered once by the Shell, so a change made anywhere reports here. */
-export function SettingsNotices({ notices, dismiss, notify }: Pick<Preferences, "notices" | "dismiss" | "notify">) {
+export function SettingsNotices({ notices, dismiss, notify, configFile }: Pick<Preferences, "notices" | "dismiss" | "notify"> & { configFile: SettingsFileState | undefined }) {
   const { t } = useTranslation();
   return (
     <div className="st-notices" aria-live="polite" data-ui="settings-notices">
       {notices.map((notice) =>
         notice.kind === "failed" ? (
-          <FailedNotice key={notice.id} notice={notice} onDismiss={() => dismiss(notice.id)} notify={notify} />
+          <FailedNotice key={notice.id} notice={notice} onDismiss={() => dismiss(notice.id)} notify={notify} configFile={configFile} />
         ) : (
           <div key={notice.id} className="ag-toast view-in" data-ui="toast" data-ui-key={notice.kind === "saved" ? "settings-saved" : undefined} role="status">
             <Icon name={notice.kind === "saved" ? "check" : "info"} cls="ico-sm" />

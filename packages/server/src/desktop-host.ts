@@ -59,6 +59,7 @@ import { basename, isAbsolute, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
   DEFAULT_PORT,
+  DEFAULT_UI_LANGUAGE,
   EMPTY_SWITCH_IMPACT,
   HOST_REQUEST_KINDS,
   type HostPortFallback,
@@ -77,8 +78,9 @@ import {
   configFilePath,
   f,
   type KeychainProbe,
-  LOG_DIR_NAME,
   type LogField,
+  type LogLevel,
+  logDirIn,
   RECENT_PROJECTS_FILE,
   RECENT_PROJECTS_PROBLEMS,
   readRecentProjects,
@@ -168,14 +170,25 @@ export const SHELL_EVENTS = {
     level: "info",
     fields: { exit_code: "num", signal: SIGNALS, expected: YES_NO, duration_ms: "ms" },
   },
+  // Closing the crash dialog without a button is a quit (user ruling 3, desktop-app ticket 20): no answer of its own.
   "shell.dialog_answered": {
     level: "info",
-    fields: {
-      dialog: ["host_crashed"],
-      choice: ["restart", "show_log_folder", "quit", "closed"],
-    },
+    fields: { dialog: ["host_crashed"], choice: ["restart", "show_log_folder", "quit"] },
   },
   "shell.request_failed": { level: "warn", fields: { request: HOST_REQUEST_KINDS, code: "id" } },
+  // The window could not be made (`create`) or Tauri's entry points could not be taken out of it (`guard`): the shell
+  // does not load the page and ends as after a crash.
+  "shell.window_failed": { level: "warn", fields: { stage: ["create", "guard"] } },
+  // The page tried to go to an address other than the local page's origin: stopped (desktop-app ticket 21 hands such
+  // addresses to the system browser).
+  "shell.navigation_blocked": { level: "warn", fields: { scheme: ["http", "https", "other"] } },
+  // A line from the host the shell could not read: longer than the limit, or not UTF-8. Dropped; reading goes on.
+  "shell.line_rejected": { level: "warn", fields: { reason: ["too_long", "not_utf8"] } },
+  // The shell runs without the single-instance guard: no socket to be had, or the socket's owner is another user.
+  "shell.instance_unguarded": {
+    level: "warn",
+    fields: { reason: ["unavailable", "foreign_owner"] },
+  },
 } as const satisfies Record<string, ShellEventSpec>;
 type ShellEvent = keyof typeof SHELL_EVENTS;
 
@@ -196,6 +209,11 @@ export type HostOutLine =
       logDir: string;
       /** The language config.toml names when the host starts, for the shell's native dialogs. */
       language: (typeof SETTINGS_UI_LANGUAGES)[number];
+      /**
+       * The user log's level when the host is ready: the shell writes its own file (no host running) by it. A level
+       * changed later reaches the shell with the next host.
+       */
+      logLevel: LogLevel;
     }
   | { type: "request"; kind: "pick_folder"; id: string }
   | { type: "request"; kind: "open_in_browser"; url: string }
@@ -252,9 +270,6 @@ export interface DesktopHost {
   stop(reason?: HostStopReason): Promise<HostStopReason>;
 }
 
-/** The page's language when config.toml names none (web i18n: Chinese by default, the browser is not asked). */
-const DEFAULT_LANGUAGE: (typeof SETTINGS_UI_LANGUAGES)[number] = "zh-CN";
-
 /**
  * The line the CLI entry writes before it exits with 1 when the folder given with `--project` is not there or not a
  * folder (desktop-app ticket 20): the shell tells this apart from a crash and starts a host without `--project`, which
@@ -264,7 +279,7 @@ export function projectUnavailableLine(): Extract<HostOutLine, { type: "failed" 
   return {
     type: "failed",
     stage: "project",
-    logDir: join(serveStart(configFilePath()).globalDirs.dataDir, LOG_DIR_NAME),
+    logDir: logDirIn(serveStart(configFilePath()).globalDirs.dataDir),
   };
 }
 
@@ -622,7 +637,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     write({
       type: "failed",
       stage: "start",
-      logDir: join(atStart.globalDirs.dataDir, LOG_DIR_NAME),
+      logDir: logDirIn(atStart.globalDirs.dataDir),
     });
     throw error;
   }
@@ -842,7 +857,8 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     portOccupant: occupant,
     project: project === "open" ? process.cwd() : null,
     logDir: server.logDir,
-    language: atStart.config.ui?.language ?? DEFAULT_LANGUAGE,
+    language: atStart.config.ui?.language ?? DEFAULT_UI_LANGUAGE,
+    logLevel: log.level(),
   });
   input.resume();
 

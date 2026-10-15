@@ -4,16 +4,15 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::protocol::{self, FailedStage, HostLine, Language, Request};
+use crate::protocol::{self, FailedStage, HostLine, Language, LogLevel, Request};
 
-/// How the crash dialog was answered.
+/// How the crash dialog was answered. Closing it without a button is `Quit` (user ruling 3, desktop-app ticket 20):
+/// the GTK dialog answers a close as its cancel button, which is the quit button, so the two cannot be told apart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CrashChoice {
     Restart,
     ShowLogFolder,
     Quit,
-    /// The dialog was closed without a choice: treated as quit.
-    Closed,
 }
 
 impl CrashChoice {
@@ -22,7 +21,6 @@ impl CrashChoice {
             CrashChoice::Restart => "restart",
             CrashChoice::ShowLogFolder => "show_log_folder",
             CrashChoice::Quit => "quit",
-            CrashChoice::Closed => "closed",
         }
     }
 }
@@ -135,6 +133,8 @@ pub struct Supervisor {
     host: CurrentHost,
     quitting: bool,
     log_dir: Option<String>,
+    /// The level the shell's own file is written at: the last one a host reported, else the log's default.
+    log_level: LogLevel,
     language: Language,
     /// Events not handed to a host yet: given to the next ready host, or written to the shell's file.
     pending: Vec<ShellEvent>,
@@ -154,6 +154,7 @@ impl Supervisor {
             host: CurrentHost::default(),
             quitting: false,
             log_dir: None,
+            log_level: LogLevel::DEFAULT,
             language: Language::Chinese,
             pending: Vec::new(),
             exiting: false,
@@ -169,8 +170,19 @@ impl Supervisor {
         self.log_dir.as_deref()
     }
 
-    /// The shell started: its first event and its first host (which chooses the project itself).
-    pub fn start(&mut self, version: &str, webview: &str) -> Vec<Action> {
+    /// Whether the app is on its way out (the window was closed, or quit was chosen).
+    pub fn quitting(&self) -> bool {
+        self.quitting
+    }
+
+    /// The shell started: its first event and its first host (which chooses the project itself). `unguarded`: why
+    /// the shell runs without the single-instance guard (`unavailable`, `foreign_owner`), if it does.
+    pub fn start(
+        &mut self,
+        version: &str,
+        webview: &str,
+        unguarded: Option<&'static str>,
+    ) -> Vec<Action> {
         self.record(
             "shell.started",
             "info",
@@ -179,7 +191,37 @@ impl Supervisor {
                 ("webview", json!(id_value(webview))),
             ],
         );
+        if let Some(reason) = unguarded {
+            self.record(
+                "shell.instance_unguarded",
+                "warn",
+                [("reason", json!(reason))],
+            );
+        }
         vec![Action::Spawn { project: None }]
+    }
+
+    /// The window could not be made (`create`) or Tauri's entry points could not be taken out of it (`guard`): the
+    /// page is not loaded, and the app ends as on a close — the host is asked to quit, the limit applies — rather than
+    /// staying on without a window and holding the single instance.
+    pub fn on_window_failed(&mut self, stage: &'static str) -> Vec<Action> {
+        let mut actions = self.record("shell.window_failed", "warn", [("stage", json!(stage))]);
+        actions.extend(self.on_close_requested());
+        actions
+    }
+
+    /// The page tried to go somewhere other than the local page (`scheme`: `http`, `https` or `other`); it was stopped.
+    pub fn on_navigation_blocked(&mut self, scheme: &'static str) -> Vec<Action> {
+        self.record(
+            "shell.navigation_blocked",
+            "warn",
+            [("scheme", json!(scheme))],
+        )
+    }
+
+    /// A line of the host's output was skipped (`reason`: `too_long`, `not_utf8`).
+    pub fn on_line_rejected(&mut self, reason: &'static str) -> Vec<Action> {
+        self.record("shell.line_rejected", "warn", [("reason", json!(reason))])
     }
 
     /// A host was started (`Spawn` carried out) with this process id.
@@ -216,6 +258,7 @@ impl Supervisor {
                     self.log_dir = ready.log_dir.clone();
                 }
                 self.language = ready.language;
+                self.log_level = ready.log_level;
                 let mut actions = vec![Action::ShowPage(ready.url)];
                 for event in self.pending.drain(..) {
                     actions.push(Action::Send(protocol::shell_event_line(
@@ -348,7 +391,7 @@ impl Supervisor {
                 actions.push(Action::CrashDialog(self.language));
                 actions
             }
-            CrashChoice::Quit | CrashChoice::Closed => {
+            CrashChoice::Quit => {
                 self.quitting = true;
                 self.exit()
             }
@@ -386,7 +429,16 @@ impl Supervisor {
         if self.pending.is_empty() {
             return vec![];
         }
-        let events: Vec<ShellEvent> = self.pending.drain(..).collect();
+        // The shell's file follows the log's level, as the host's own records do.
+        let level = self.log_level;
+        let events: Vec<ShellEvent> = self
+            .pending
+            .drain(..)
+            .filter(|event| level.admits(event.level))
+            .collect();
+        if events.is_empty() {
+            return vec![];
+        }
         match &self.log_dir {
             Some(dir) => vec![Action::WriteEvents {
                 log_dir: dir.clone(),
@@ -448,6 +500,7 @@ mod tests {
             project: project.map(str::to_owned),
             log_dir: Some("/h/logs".into()),
             language: Language::Chinese,
+            log_level: LogLevel::Info,
         })
     }
 
@@ -515,7 +568,7 @@ mod tests {
     fn start_ready_then_close() {
         let mut s = Supervisor::new();
         assert_eq!(
-            s.start("0.1.0", "2.52.6"),
+            s.start("0.1.0", "2.52.6", None),
             vec![Action::Spawn { project: None }]
         );
         s.spawned(None, 100);
@@ -558,7 +611,7 @@ mod tests {
     #[test]
     fn the_deadline_kills_only_the_host_it_was_set_for() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(ready(None));
         s.on_close_requested();
@@ -577,7 +630,7 @@ mod tests {
     #[test]
     fn a_switch_starts_the_next_host_for_next_and_keeps_the_events_for_it() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(ready(None));
         s.on_line(parse_host_line(r#"{"type":"stopping","reason":"switch"}"#));
@@ -604,7 +657,7 @@ mod tests {
     #[test]
     fn the_next_project_gone_before_its_host_starts_is_the_welcome_state_not_a_crash() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(Some("/p/gone".into()), 1);
         s.on_line(parse_host_line(
             r#"{"type":"failed","stage":"project","logDir":"/h/logs"}"#,
@@ -632,7 +685,7 @@ mod tests {
     #[test]
     fn a_crash_shows_the_dialog_and_its_three_answers_act() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(Some("/p".into()), 1);
         s.on_line(ready(Some("/p")));
         let actions = s.on_exit(None, Some(9), 3000.0);
@@ -680,7 +733,7 @@ mod tests {
     #[test]
     fn a_server_that_cannot_start_is_a_crash_and_its_failed_line_names_the_log() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(parse_host_line(
             r#"{"type":"failed","stage":"start","logDir":"/x/logs"}"#,
@@ -700,16 +753,122 @@ mod tests {
     #[test]
     fn no_log_directory_known_the_events_are_dropped() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         let actions = s.spawn_failed(None);
         assert_eq!(actions, vec![Action::CrashDialog(Language::Chinese)]);
-        assert_eq!(s.on_crash_choice(CrashChoice::Closed), vec![Action::Exit]);
+        assert_eq!(s.on_crash_choice(CrashChoice::Quit), vec![Action::Exit]);
+    }
+
+    #[test]
+    fn a_window_that_cannot_be_made_is_recorded_and_the_app_quits() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        s.spawned(None, 1);
+        s.on_line(ready(None));
+        let actions = s.on_window_failed("guard");
+        assert_eq!(
+            sent_events(&actions),
+            vec!["shell.window_failed"],
+            "told to the running host"
+        );
+        assert_eq!(
+            actions[1..],
+            [
+                Action::Send(r#"{"type":"quit"}"#.into()),
+                Action::ArmDeadline { attempt: 1 }
+            ]
+        );
+        assert!(s.quitting());
+        let actions = s.on_exit(Some(0), None, 9.0);
+        assert_eq!(actions.last(), Some(&Action::Exit));
+    }
+
+    #[test]
+    fn the_shells_file_follows_the_reported_level() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", Some("foreign_owner"));
+        s.spawned(None, 1);
+        let HostLine::Ready(mut r) = ready(None) else {
+            unreachable!()
+        };
+        r.log_level = LogLevel::Warn;
+        let actions = s.on_line(HostLine::Ready(r));
+        // Handed to a host, every event goes: the host's logger applies its own level.
+        assert_eq!(
+            sent_events(&actions),
+            vec![
+                "shell.started",
+                "shell.instance_unguarded",
+                "shell.host_started"
+            ]
+        );
+        s.on_navigation_blocked("https");
+        s.on_line_rejected("not_utf8");
+        // Written by the shell itself: only what the level admits (the info-level clean exit is left out).
+        s.on_close_requested();
+        let actions = s.on_exit(None, Some(9), 10.0);
+        let names: Vec<_> = written(&actions).into_iter().map(|(e, _)| e).collect();
+        assert_eq!(
+            names,
+            Vec::<&str>::new(),
+            "host_exited after a quit is info"
+        );
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        s.spawned(None, 1);
+        s.on_line(parse_host_line(
+            r#"{"type":"ready","url":"http://127.0.0.1:1/","port":1,"project":null,"logDir":"/l","logLevel":"warn"}"#,
+        ));
+        let actions = s.on_exit(None, Some(9), 10.0);
+        let names: Vec<_> = written(&actions).into_iter().map(|(e, _)| e).collect();
+        assert_eq!(names, vec!["shell.host_exited"], "the crash is a warning");
+    }
+
+    #[test]
+    fn with_no_host_reporting_a_level_the_default_applies() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", Some("unavailable"));
+        s.spawned(None, 1);
+        s.on_line(parse_host_line(
+            r#"{"type":"failed","stage":"start","logDir":"/x/logs"}"#,
+        ));
+        let actions = s.on_exit(Some(1), None, 300.0);
+        let names: Vec<_> = written(&actions).into_iter().map(|(e, _)| e).collect();
+        assert_eq!(
+            names,
+            vec![
+                "shell.started",
+                "shell.instance_unguarded",
+                "shell.host_started",
+                "shell.host_exited"
+            ]
+        );
+    }
+
+    #[test]
+    fn navigation_and_line_events_go_to_the_running_host() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        s.spawned(None, 1);
+        s.on_line(ready(None));
+        let actions = s.on_navigation_blocked("other");
+        let Action::Send(line) = &actions[0] else {
+            panic!("{actions:?}")
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(line).unwrap(),
+            json!({"type":"shell_event","event":"shell.navigation_blocked","fields":{"scheme":"other"}})
+        );
+        assert_eq!(
+            sent_events(&s.on_line_rejected("too_long")),
+            vec!["shell.line_rejected"]
+        );
     }
 
     #[test]
     fn a_folder_answer_goes_only_to_the_host_that_asked() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(ready(None));
         assert_eq!(
@@ -729,7 +888,7 @@ mod tests {
     #[test]
     fn requests_are_handled_unless_the_host_or_the_shell_is_stopping() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(ready(None));
         let req = parse_host_line(r#"{"type":"request","kind":"open_devtools"}"#);
@@ -744,7 +903,7 @@ mod tests {
     #[test]
     fn a_failed_request_is_recorded_with_its_kind_and_code() {
         let mut s = Supervisor::new();
-        s.start("v", "w");
+        s.start("v", "w", None);
         s.spawned(None, 1);
         s.on_line(ready(None));
         let actions = s.request_failed("open_config_file", "not_found");

@@ -116,15 +116,16 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
 `packages/desktop/` 是 Tauri 2 的 Rust 工程，不是 pnpm 包，**不进四门**（硬契约见 [contracts](contracts.md)）：`pnpm -r` 不碰它，biome 排除 `packages/desktop`，`target/` 与 tauri-build 生成的 `gen/` 被 `.gitignore` 忽略。机制见 [architecture](architecture.md#桌面壳desktop-app-票-20)。
 
 - **前提**：Rust（`~/.cargo/bin` 的 cargo/rustc，本机 1.96）；Linux 上 `libwebkit2gtk-4.1-dev` 与 `libgtk-3-dev`；首次构建从 crates.io 下载依赖。开发形态的壳运行仓库里构建好的 `packages/app/dist/bin.js`，所以先 `corepack pnpm -r build`；node 取 `PATH` 上的（本机 v24）。
-- **构建与测试**（在 `packages/desktop/` 下）：`cargo build`（调试版，产物 `target/debug/argelanderspace-desktop`）、`cargo test`（行协议解析、退出后的决定与崩溃对话框的状态机、壳的日志文件、单实例、启动参数）。另可 `cargo clippy --all-targets` 与 `cargo fmt --check`。打包（`tauri build`、deb/AppImage）是票 23。
+- **构建与测试**（在 `packages/desktop/` 下）：`cargo build`（调试版，产物 `target/debug/argelanderspace-desktop`）、`cargo test`（行协议解析与按上限读行、退出后的决定与崩溃对话框的状态机、窗口建不出来与被拦的导航、壳的日志文件与级别、单实例与 socket 归属、启动参数与宿主的进程组）。另可 `cargo clippy --all-targets`（也带 `--features smoke-probe` 跑一次）与 `cargo fmt --check`。打包（`tauri build`、deb/AppImage）是票 23。
 - **运行**：`packages/desktop/target/debug/argelanderspace-desktop`。它会读写你真实的全局目录（配置、最近项目、日志）并按最近项目打开真实的 Project；只想看看壳时用下面冒烟的隔离环境（临时 `HOME`/`XDG_*`、`XDG_RUNTIME_DIR`、`DBUS_SESSION_BUS_ADDRESS` 指向不存在的 socket，只保留 `DISPLAY`/`XAUTHORITY`）。单实例的 socket 在 `$XDG_RUNTIME_DIR` 下，所以隔离环境里的壳与真实会话里的互不影响。
-- **测试构建**：`cargo build --features smoke-probe` 多出一个只用于冒烟的探针：每次页面载入后在页面里跑一段固定脚本（有没有 `__TAURI__`、`__TAURI_INTERNALS__`、`window.ipc`、Tauri 命名的全局量、WebKit 的 `ipc` 消息处理器，试一次 `invoke` 与一次裸 `ipc://` 请求），把结果追加到 `ARGELANDERSPACE_SHELL_PROBE` 指定的文件；`ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES=1` 时不去掉 Tauri 的入口，用来证明调用本身也被拒。它与普通构建共用 `target/debug/` 下的同名产物，冒烟后重新 `cargo build` 一次。发布构建不得带这个 feature。
-- **自动冒烟**：私有 `.scratch/desktop-app/checks/20/scripts/run.sh <临时目录>`（构建探针版与一个只发 `WM_DELETE_WINDOW` / `_NET_ACTIVE_WINDOW` 的 X 小工具，再跑 `smoke.sh`）：隔离环境、合成文件夹、假的 `xdg-open`（只记录被要求打开什么）、真实显示器。覆盖：首次启动欢迎页与上次文件夹不在；页面里没有 Tauri 入口；第二次启动只提到前面；四种原生请求与选文件夹对话框（关掉即取消）；打开最近项目后壳以 `--project` 起下一个宿主、窗口换成新页面；切换目标在两次启动之间消失时回到欢迎页、不弹崩溃对话框；杀宿主出现崩溃对话框、关掉它即退出；杀壳后宿主自行退出、端口释放；关窗后宿主收到 `quit`、端口释放；入口保留时 `invoke` 被拒；壳的记录里没有路径与文件夹名；结束时隔离环境里没有残留进程。截图用 `import -window`，截图前先把窗口提到前面，截完人工看一遍只有合成数据。
+- **测试构建**：`cargo build --features smoke-probe` 多出一个只用于冒烟的探针：每次页面载入后在页面里跑一段固定脚本（有没有 `__TAURI__`、`__TAURI_INTERNALS__`、`window.ipc`、Tauri 命名的全局量、WebKit 的 `ipc` 消息处理器，试一次 `invoke` 与一次裸 `ipc://` 请求），把结果追加到 `ARGELANDERSPACE_SHELL_PROBE` 指定的文件；`ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES=1` 时不去掉 Tauri 的入口，用来证明调用本身也被拒。`ARGELANDERSPACE_SHELL_PROBE_NAVIGATE=<地址>` 时页面随后试着导航到那里并报告片刻之后自己在哪（验证导航被拦）。它与普通构建共用 `target/debug/` 下的同名产物，冒烟后重新 `cargo build` 一次。发布构建不得带这个 feature：`--release` 带它编译不过（`compile_error!`）。
+- **升级 tauri / wry 之后必须重跑探针冒烟**：`page_guard.rs` 去掉 Tauri 入口的做法依赖 wry 0.57 放入脚本的方式（WebKit 用户脚本与 `ipc` 消息处理器）；升级后它可能静默失效，只有探针在页面里的检查（下条 A4–A9、I 段）能发现。
+- **自动冒烟**：私有 `.scratch/desktop-app/checks/20/scripts/run.sh <临时目录>`（构建探针版与一个只发 `WM_DELETE_WINDOW` / `_NET_ACTIVE_WINDOW` 的 X 小工具，再跑 `smoke.sh`）：隔离环境、合成文件夹、假的 `xdg-open`（只记录被要求打开什么）、真实显示器。覆盖：首次启动欢迎页与上次文件夹不在；页面里没有 Tauri 入口；第二次启动不另开窗口（「提到前面」本身要人看）；单实例 socket 的归属（第二次启动不删第一个壳的 socket 文件、关窗退出后删去、占着位置的不是本用户的 socket 时不动它）；页面导航到本地地址以外被拦；宿主独占进程组、关窗限时到后连同它的子进程一起被强制结束；四种原生请求与选文件夹对话框（关掉即取消）；打开最近项目后壳以 `--project` 起下一个宿主、窗口换成新页面；切换目标在两次启动之间消失时回到欢迎页、不弹崩溃对话框；杀宿主出现崩溃对话框、关掉它即退出；杀壳后宿主自行退出、端口释放；关窗后宿主收到 `quit`、端口释放；入口保留时 `invoke` 被拒；壳的记录里没有路径与文件夹名；结束时隔离环境里没有残留进程。截图用 `import -window`，截图前先把窗口提到前面，截完人工看一遍只有合成数据。
 - **手动冒烟清单**（本机没有输入注入工具，以下要人操作；在隔离环境或一个可丢弃的 Project 上做）：
   1. 首次启动（空的全局目录）见欢迎页；点「打开文件夹…」，系统对话框里选一个空文件夹 → 窗口换成该 Project 的工作台。
   2. 再次启动应用（双击或命令行）→ 不出现第二个窗口，已有窗口被提到前面（最小化时恢复）。
   3. 设置页「打开其他文件夹…」与最近项目各切换一次 → 窗口显示新 Project；有运行中的任务时先出切换提示（票 19）。
-  4. 「打开配置文件」「显示日志文件夹」（设置页与诊断分组）→ 系统编辑器 / 文件管理器打开对应位置；配置文件还不存在时什么都不发生（记 `shell.request_failed` `not_found`）。
+  4. 「打开配置文件」「显示日志文件夹」（设置页与诊断分组）→ 系统编辑器 / 文件管理器打开对应位置；配置文件还不存在时页面浮层说明还没有配置文件、改任何一项就会建立，不发请求、不建文件。
   5. 关窗 → 应用退出，`ss -ltn` 上端口释放，没有残留的 `desktop-host` 进程。
   6. `kill -9` 宿主 → 崩溃对话框；分别试「重新启动」（回到同一 Project）、「显示日志文件夹」（打开后对话框再出现）、「退出」（应用退出）。
   7. `kill -9` 壳 → 宿主几秒内自行退出、端口释放。

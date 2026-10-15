@@ -7,11 +7,16 @@
 //! - Packaged (desktop-app ticket 23): the Node runtime and the app's build shipped as the bundle's resources;
 //!   `HostLauncher` gets a constructor that finds them from the resource directory. Nothing else changes.
 //!
+//! The host runs in a process group of its own (its pid is the group's id), so that the shell's forced end after the
+//! shutdown limit (`kill_group`) takes the host's own children (latexmk and the like) with it instead of leaving them
+//! orphaned. A terminal's Ctrl-C reaches the shell only; the host then ends when its stdin closes (desktop-app ticket 17).
+//!
 //! The host's arguments are the desktop host's (docs/architecture.md「桌面宿主」): `desktop-host` and, when the shell
 //! knows the project (a switch's `next`, a restart after a crash), `--project <folder>`. Without it the host chooses
 //! from the recently opened projects, or goes to the welcome state.
 
 use std::ffi::OsString;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -56,9 +61,22 @@ impl HostLauncher {
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::inherit())
+            .process_group(0);
         command
     }
+}
+
+/// Ends the host's process group at once (SIGKILL to every process in it). `pgid` is the host's pid.
+pub fn kill_group(pgid: u32) -> bool {
+    let Ok(pgid) = libc::pid_t::try_from(pgid) else {
+        return false;
+    };
+    if pgid <= 1 {
+        return false;
+    }
+    // SAFETY: killpg only sends a signal; a group that no longer exists answers ESRCH.
+    unsafe { libc::killpg(pgid, libc::SIGKILL) == 0 }
 }
 
 /// The shell's working directory, set at its start so that nothing lands in whatever directory it was started from
@@ -73,6 +91,7 @@ pub fn shell_working_dir(home: Option<OsString>) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{BufRead, BufReader};
 
     #[test]
     fn the_development_launcher_runs_the_repositorys_bundle() {
@@ -101,6 +120,44 @@ mod tests {
                 "/home/u/My Project".into()
             ]
         );
+    }
+
+    #[test]
+    fn the_host_runs_in_a_group_of_its_own_and_the_forced_end_takes_its_children() {
+        let dir = std::env::temp_dir().join(format!("aspace-launch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A stand-in host: starts a child of its own, says its pid, and waits.
+        let script = dir.join("host.sh");
+        std::fs::write(&script, "sleep 60 &\necho $!\nwait\n").unwrap();
+        let l = HostLauncher {
+            node: "sh".into(),
+            entry: script,
+        };
+        let mut host = l.command(None, &dir).spawn().unwrap();
+        let pid = host.id();
+        let mut out = String::new();
+        BufReader::new(host.stdout.take().unwrap())
+            .read_line(&mut out)
+            .unwrap();
+        let grandchild: i32 = out.trim().parse().unwrap();
+        // SAFETY: getpgid only reads.
+        assert_eq!(unsafe { libc::getpgid(pid as i32) }, pid as i32);
+        assert_eq!(unsafe { libc::getpgid(grandchild) }, pid as i32);
+        assert_ne!(unsafe { libc::getpgid(0) }, pid as i32);
+        assert!(kill_group(pid));
+        host.wait().unwrap();
+        let mut gone = false;
+        for _ in 0..100 {
+            // The grandchild is reaped by init once killed; kill(0) then fails.
+            if unsafe { libc::kill(grandchild, 0) } != 0 {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(gone, "the host's child ended with it");
+        assert!(!kill_group(1));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
