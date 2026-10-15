@@ -155,8 +155,11 @@ const store = must(
     env: {
       ...env,
       HOME: realHome,
-      XDG_DATA_HOME: process.env.XDG_DATA_HOME ?? join(realHome, ".local/share"),
-      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME ?? join(realHome, ".config"),
+      // pnpm takes PNPM_HOME, then XDG_DATA_HOME, then the platform's own place (~/Library/pnpm, %LOCALAPPDATA%\pnpm,
+      // ~/.local/share/pnpm): the caller's own values only, so the platform default is not overridden.
+      XDG_DATA_HOME: process.env.XDG_DATA_HOME,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      PNPM_HOME: process.env.PNPM_HOME,
       ...realDirs,
     }, // read-only query of where the real store is
   }),

@@ -49,12 +49,14 @@ const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
 // An argument this script does not know stops it: a mistyped `--remove` must not quietly run an unbroken variant.
 const VALUED = new Set(["--deps", "--label", "--remove", "--evidence"]);
+const seenFlags = new Set();
 for (let i = 0; i < argv.length; i += 1) {
   if (argv[i] === "--keep") continue;
-  if (!VALUED.has(argv[i]) || argv[i + 1] === undefined) {
+  if (!VALUED.has(argv[i]) || !argv[i + 1] || seenFlags.has(argv[i])) {
     console.error(`smoke-dep-dir: unknown or incomplete argument ${JSON.stringify(argv[i])}`);
     process.exit(1);
   }
+  seenFlags.add(argv[i]);
   i += 1;
 }
 const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
