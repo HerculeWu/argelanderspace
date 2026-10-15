@@ -190,14 +190,19 @@ describe("no built-in address in the source", () => {
     );
     expect(files.length).toBeGreaterThan(100);
     // An address in a string: a local part, `@`, a domain with a dot. Allowed: the reserved example domains of RFC 2606
-    // (no one's mailbox), and the two example recipients of a tool description, by exact text.
+    // (no one's mailbox), the two example recipients of a tool description, by exact text, and an icon file name in
+    // Tauri's `<w>x<h>@2x.png` form (desktop-app ticket 25).
     const address = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
     const allowed = new Set(["a@x.org", "b@y.org"]);
     const found: string[] = [];
     for (const file of files) {
       const text = readFileSync(file, "utf-8");
       for (const match of text.matchAll(address)) {
-        if (!allowed.has(match[0]) && !/@example\.(?:org|com|net)$/.test(match[0]))
+        if (
+          !allowed.has(match[0]) &&
+          !/@example\.(?:org|com|net)$/.test(match[0]) &&
+          !/^\d+x\d+@\d+x\.png$/.test(match[0])
+        )
           found.push(`${relative(SRC, file)}: ${match[0]}`);
       }
       if (text.includes("OPENALEX_MAILTO")) found.push(`${relative(SRC, file)}: OPENALEX_MAILTO`);
