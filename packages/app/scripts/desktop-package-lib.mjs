@@ -2,7 +2,11 @@
 // package's `test`). Used by desktop-sidecar.mjs (assembles the sidecar the Tauri bundle carries), dep-dir.mjs (the
 // vendored license texts in its notices) and smoke-desktop-package.mjs (unpacks a built package and runs it).
 import { createHash } from "node:crypto";
-import { PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED } from "../../../scripts/license-allowlist.mjs";
+import {
+  PROD_LICENSE_ALLOWED,
+  SHELL_CRATE_LICENSE_ALLOWED,
+  WITH_LICENSE_ALLOWED,
+} from "../../../scripts/license-allowlist.mjs";
 
 /**
  * The Node release the desktop package carries (official nodejs.org build). Change it HERE to move the package to
@@ -132,16 +136,17 @@ export function keyringNativeFile(target) {
 }
 
 /**
- * The files a sidecar must have, relative to the bundle's resource directory: the Node runtime and its license; the
- * app's build (CLI bundle, page resources, argelander.sty, notices) with its package.json (version, module type) and
- * license; PDFium's WASM and the keychain module's native file in the dependency directory with its notices; the skills.
- */
-/**
  * The license notices of the Rust crates linked into the shell (desktop-app ticket 26), written by shell-notices.mjs
  * into the resource directory next to sidecar/ and skills/ (tauri.package.conf.json maps it).
  */
 export const SHELL_NOTICES_FILE = "THIRD-PARTY-SHELL-NOTICES.txt";
 
+/**
+ * The files a sidecar must have, relative to the bundle's resource directory: the Node runtime and its license; the
+ * app's build (CLI bundle, page resources, argelander.sty, notices) with its package.json (version, module type) and
+ * license; PDFium's WASM and the keychain module's native file in the dependency directory with its notices; the skills;
+ * the shell's crate notices.
+ */
 export function sidecarRequiredFiles(target) {
   const node = nodeDist("0.0.0", target).binary;
   return [
@@ -427,23 +432,85 @@ export function cargoLicenseExpression(license) {
   return license.replace(/\s*\/\s*/g, " OR ");
 }
 
+/** A crate's own license file (LICENSE*, LICENCE*, COPYING*, UNLICENSE*). Stricter than LICENSE_FILE: no NOTICE. */
+const CRATE_LICENSE_FILE = /^(licen[cs]e|copying|unlicense)([._-]|$)/i;
+/** A crate's NOTICE file: shipped with its license, but not a license text by itself. */
+const CRATE_NOTICE_FILE = /^notice([._-]|$)/i;
+
+/** Which of a crate's file names are its license texts and which its notices, each sorted. */
+export function crateLicenseFiles(names) {
+  const sorted = [...names].sort();
+  return {
+    license: sorted.filter((f) => CRATE_LICENSE_FILE.test(f)),
+    notice: sorted.filter((f) => CRATE_NOTICE_FILE.test(f)),
+  };
+}
+
+/** Whether an SPDX expression names `id` anywhere (any branch). */
+function namesLicense(expr, id) {
+  return (expr?.match(/[^\s()]+/g) ?? []).includes(id);
+}
+
 /**
- * The notices of the shell's crates and what is wrong with them. `crates`: [{name, version, license, texts: [{file,
- * text}]}] where texts are the crate's own license files. Each crate needs a license on the production allowlist (the
- * one list, scripts/license-allowlist.mjs) and at least one text; nothing is guessed or left out silently.
+ * The notices of the shell's crates and what is wrong with them. `crates`: [{name, version, license, repository?,
+ * vcs?: {sha1, path}, texts: [{file, text}], notices: [{file, text}]}] where texts are the crate's own license files
+ * (`crateLicenseFiles`) and notices its NOTICE files. `vendored`: {manifest, vendoredText(file)} — the crate license
+ * manifest (packages/desktop/licenses/crate-licenses.json) and the text of one of its files as shipped, or null.
+ *
+ * Each crate needs a license on the crate allowlist (scripts/license-allowlist.mjs `SHELL_CRATE_LICENSE_ALLOWED`) and a
+ * text: its own license files, or else the vendored texts recorded for exactly its name and version, for the same
+ * license and unchanged (sha256). An MPL-2.0 crate's notice also says where its source code is (MPL-2.0 §3.2): its
+ * crates.io release and, when known, its repository at the commit it was published from. Nothing is guessed or left
+ * out silently.
  */
-export function shellNotices(crates) {
+export function shellNotices(crates, vendored) {
   const problems = [];
   const parts = [];
   for (const c of crates) {
     const id = `${c.name}@${c.version}`;
     const expr = cargoLicenseExpression(c.license);
-    if (!evalLicense(expr, RUNTIME_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED))
+    if (!evalLicense(expr, SHELL_CRATE_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED))
       problems.push(`${id}: license ${JSON.stringify(expr)} is not in the allowed list`);
-    if (c.texts.length === 0)
-      problems.push(`${id}: no license text (the crate ships no license file)`);
+    let texts = c.texts.map((t) => ({ label: t.file, text: t.text }));
+    if (texts.length === 0) {
+      const entry = vendored.manifest.crates.find(
+        (v) => v.crate === c.name && v.version === c.version
+      );
+      if (!entry) {
+        problems.push(
+          `${id}: no license text (the crate ships no license file and none is vendored)`
+        );
+      } else {
+        if (entry.license !== expr)
+          problems.push(
+            `${id}: vendored text is for ${JSON.stringify(entry.license)}, the crate declares ${JSON.stringify(expr)}`
+          );
+        texts = entry.files.map((file) => {
+          const text = vendored.vendoredText(file);
+          const recorded = vendored.manifest.files[file];
+          const sha = text === null ? null : createHash("sha256").update(text).digest("hex");
+          if (!recorded || sha !== recorded.sha256)
+            problems.push(
+              `${id}: vendored text ${file} is missing or differs from its recorded sha256`
+            );
+          return {
+            label: `${file} (vendored; from ${recorded?.source ?? "?"})`,
+            text: text ?? "",
+          };
+        });
+      }
+    }
+    const source = namesLicense(expr, "MPL-2.0")
+      ? `Source code: https://crates.io/crates/${c.name}/${c.version} (the published crate: ` +
+        `https://static.crates.io/crates/${c.name}/${c.name}-${c.version}.crate)` +
+        (c.repository
+          ? `; repository ${c.repository}${c.vcs?.sha1 ? ` at commit ${c.vcs.sha1}` : ""}`
+          : "") +
+        "\n"
+      : "";
+    const all = [...texts, ...(c.notices ?? []).map((t) => ({ label: t.file, text: t.text }))];
     parts.push(
-      `===== ${id} =====\nLicense: ${expr}\n${c.texts.map((t) => `-- ${t.file} --\n${t.text.trimEnd()}`).join("\n\n")}`
+      `===== ${id} =====\nLicense: ${expr}\n${source}${all.map((t) => `-- ${t.label} --\n${t.text.trimEnd()}`).join("\n\n")}`
     );
   }
   const text =

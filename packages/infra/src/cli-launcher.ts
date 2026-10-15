@@ -267,16 +267,21 @@ const WINDOWS_PATH_VARIABLES = [
   "LOCALAPPDATA",
   "APPDATA",
   "USERPROFILE",
-  "ProgramFiles",
+  // Before %ProgramFiles%, which a 32-bit process sees as the x86 folder; %ProgramW6432% is always the 64-bit one.
   "ProgramW6432",
+  "ProgramFiles",
 ];
 
+const isAscii = (text: string) => [...text].every((c) => c.charCodeAt(0) < 0x80);
+
 /**
- * A Windows path as written in the launcher: through the longest of the variables above whose value is a folder that
- * holds it (without regard to case), `%` doubled in the rest. What is still not ASCII then cannot be written: refused
- * (thrown), like a path with a double quote.
+ * A Windows path as written in the launcher, `%` doubled. An ASCII path is written as it is. A path with a non-ASCII
+ * character is written through the longest of the variables above whose value is a folder that holds it (without
+ * regard to case; on a tie the earlier in the list); what is still not ASCII then cannot be written: refused (thrown),
+ * like a path with a double quote.
  */
 function windowsPath(path: string, env: NodeJS.ProcessEnv): string {
+  if (isAscii(path)) return path.replace(/%/g, "%%");
   let best: { name: string; length: number } | null = null;
   for (const name of WINDOWS_PATH_VARIABLES) {
     const value = envValue(env, name, "win32")?.replace(/[\\/]+$/, "");
@@ -288,11 +293,29 @@ function windowsPath(path: string, env: NodeJS.ProcessEnv): string {
     if (!best || value.length > best.length) best = { name, length: value.length };
   }
   const rest = (best ? path.slice(best.length) : path).replace(/%/g, "%%");
-  if (![...rest].every((c) => c.charCodeAt(0) < 0x80))
+  if (!isAscii(rest))
     throw new Error(
       "a Windows launcher cannot hold a non-ASCII character outside %LOCALAPPDATA%, %APPDATA%, %USERPROFILE% or %ProgramFiles% (cmd reads it in the console's code page)"
     );
   return best ? `%${best.name}%${rest}` : rest;
+}
+
+/**
+ * Why this app cannot offer the command-line tool, or null when it can (desktop-app ticket 26; the user's decision of
+ * 2026-10-15). `appimage`: the CLI runs from an AppImage's own folder (`APPDIR`), a mount at a new `/tmp/.mount_*`
+ * each start that is gone once the app closes, so a launcher pointing into it would stop working — the app offers
+ * none there (the deb and the npm package have a fixed place). The AppImage runtime sets `APPIMAGE` and `APPDIR` before
+ * it runs `AppRun` (the AppRun hook of linuxdeploy's GTK plugin sets `APPDIR` for an extracted one as well); the shell
+ * and the host inherit them. The CLI entry must lie inside `APPDIR`, so a variable inherited from some other AppImage
+ * (a terminal started from one, say) does not count.
+ */
+export function cliLauncherUnavailable(
+  target: CliLauncherTarget,
+  env: NodeJS.ProcessEnv = process.env
+): "appimage" | null {
+  const appdir = env.APPDIR?.replace(/\/+$/, "");
+  if (!appdir || !posix.isAbsolute(appdir)) return null;
+  return target.cli.startsWith(`${appdir}/`) ? "appimage" : null;
 }
 
 /** Only the first bytes are read to find the mark (it is on the second line). */

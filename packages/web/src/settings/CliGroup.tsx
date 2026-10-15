@@ -1,4 +1,4 @@
-import type { HostCliStatus } from "@argelanderspace/contracts";
+import type { HostCliStatus, HostCliUnavailableReason } from "@argelanderspace/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { changeCli, fetchCliStatus } from "../api/host";
@@ -9,12 +9,15 @@ import { ActionButton, Badge, Button, Dialog, InlineMessage } from "../ui";
  * "Command line & agents" (desktop-app ticket 24), the desktop app's only group, as in the approved prototype: the
  * command-line tool — a launcher in the user's own executable directory that runs the app's Node on its CLI — installed
  * or uninstalled by the host (`/api/host/cli`), and the bundled skills folder, shown by a native request. The app
- * changes no PATH: when the directory is not on it the page shows the line the user would add. None of this is in
+ * changes no PATH: when the directory is not on it the page shows the line the user would add. Run from an AppImage the
+ * host offers no tool (desktop-app ticket 26): no install button, the reason and what to use instead. None of this is in
  * config.toml, so it works whatever the state of that file.
  */
 export function CliGroup({ notify }: { notify: (text: string) => void }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<HostCliStatus | null | "loading">("loading");
+  /** The host offers no tool, and why (desktop-app ticket 26: run from an AppImage). */
+  const [unavailable, setUnavailable] = useState<HostCliUnavailableReason | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState(false);
@@ -27,7 +30,11 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
   useEffect(() => {
     let live = true;
     void fetchCliStatus().then((answer) => {
-      if (live) setStatus(answer);
+      if (!live) return;
+      if (answer !== null && "unavailable" in answer) {
+        setUnavailable(answer.unavailable);
+        setStatus(null);
+      } else setStatus(answer);
     });
     return () => {
       live = false;
@@ -78,7 +85,7 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
       <div className="st-row" data-ui="setting-row" data-ui-key="cli-tool">
         <div className="st-row-main">
           <div className="st-label"><span>{t("settings.cli.tool")}</span></div>
-          <div className="st-badges" data-ui="cli-status" data-state={known?.state ?? (status === null ? "unknown" : "loading")}>
+          <div className="st-badges" data-ui="cli-status" data-state={known?.state ?? unavailable ?? (status === null ? "unknown" : "loading")}>
             {known !== null && (installed ? <Badge tone="accent">{t("settings.cli.installed")}</Badge> : <Badge>{t("settings.cli.before")}</Badge>)}
           </div>
           {known !== null && (
@@ -86,9 +93,16 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
               {t("settings.cli.target")}: <code className="st-path" title={known.file.path}>{known.file.display}</code>
             </div>
           )}
-          {status === null && <div className="st-hint" data-ui="cli-status-unknown">{t("settings.cli.unknown")}</div>}
+          {status === null && unavailable === null && <div className="st-hint" data-ui="cli-status-unknown">{t("settings.cli.unknown")}</div>}
         </div>
-        <div className="st-control">
+        {unavailable === "appimage" && (
+          <div className="st-row-wide">
+            <InlineMessage uiId="cli-appimage" title={t("settings.cli.appimageTitle")}>
+              {t("settings.cli.appimageBody")}
+            </InlineMessage>
+          </div>
+        )}
+        {unavailable === null && <div className="st-control">
           {known !== null && known.state === "outdated" && (
             <Button appearance="primary" data-ui="cli-install" busy={busy} onClick={() => void install()}>
               {t("settings.cli.reinstall")}
@@ -103,7 +117,7 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
               {t("settings.cli.install")}
             </Button>
           )}
-        </div>
+        </div>}
         {known !== null && installed && !known.inPath && (
           <div className="st-row-wide">
             <InlineMessage tone="warning" uiId="cli-path-hint" title={t("settings.cli.pathTitle")}>

@@ -12,14 +12,17 @@
 //              sidecar's node and keychain .node a RUNPATH in ticket 23): the package's node is compared with the
 //              binary the sidecar was assembled with (sidecar-manifest.json `node.binary_sha256`) and the difference
 //              is reported, not failed -- the runtime checks below decide whether the rewritten files still work.
-//              The shell is started as the unpacked binary (usr/bin), not through AppRun.
+//              With --shell the shell is started through the unpacked AppRun (as the AppImage runtime does, minus
+//              the mount): AppRun sets APPDIR and the GTK variables, then runs usr/bin's shell; the host it starts
+//              must then offer no command-line tool (GET /api/host/cli: 404 cli_unavailable, reason appimage).
 //
 //   --remove   comma list of paths relative to the package's resource directory (usr/lib/argelanderspace) to delete
 //              from the unpacked copy first, for a variant that must fail (e.g. sidecar/app/dist/argelander.sty,
 //              sidecar/app/node_modules/@embedpdf/pdfium/dist/pdfium.wasm). Each must lie inside that directory.
-//   --shell    also start the unpacked shell (usr/bin/argelanderspace-desktop) on the caller's display and check that
-//              it runs the package's own Node and build; needs DISPLAY. Without it the shell is not started and the
-//              verdict says so (INCOMPLETE).
+//   --shell    also start the unpacked shell (usr/bin/argelanderspace-desktop; an AppImage's through its AppRun) on
+//              the caller's display and check that it runs the package's own Node and build, and what the host says
+//              of the command-line tool (offered by the deb's, not by the AppImage's); needs DISPLAY. Without it the
+//              shell is not started and the verdict says so (INCOMPLETE).
 //   --shell-bin  with --shell: put this file in place of the unpacked shell binary first -- for the counter-check only
 //              (a release shell built WITHOUT the `packaged` feature runs the system `node`, so the smoke must fail).
 //
@@ -425,7 +428,11 @@ if (args.flags.has("--shell")) {
     const shellEnv = { ...env, DISPLAY: process.env.DISPLAY, GDK_BACKEND: "x11" };
     if (process.env.XAUTHORITY) shellEnv.XAUTHORITY = process.env.XAUTHORITY;
     let shellErr = "";
-    const shell = spawn(shellBin, [], {
+    // An AppImage's shell is started the way its runtime starts it: AppRun (it execs down to usr/bin's shell, so the
+    // process is the shell's), which sets APPDIR and the GTK variables of linuxdeploy's hook.
+    const shellStart = isAppImage ? join(root, "AppRun") : shellBin;
+    log(`starting the shell through ${shellStart.replace(work, "<tmp>")}`);
+    const shell = spawn(shellStart, [], {
       cwd: home,
       env: shellEnv,
       detached: true,
@@ -497,6 +504,26 @@ if (args.flags.has("--shell")) {
         page.status === 200 && /<div id="root"/.test(page.text),
         "the page is served at the host's address"
       );
+      // The command-line tool (desktop-app ticket 26): the deb's host offers it, an AppImage's does not (its folder is
+      // a mount gone once the app closes). Only read: nothing is installed.
+      const cliAnswer = await fetch(`http://127.0.0.1:${port}/api/host/cli`).then(
+        async (r) => ({ status: r.status, body: await r.json().catch(() => null) }),
+        () => ({ status: 0, body: null })
+      );
+      if (isAppImage)
+        check(
+          cliAnswer.status === 404 &&
+            cliAnswer.body?.code === "cli_unavailable" &&
+            cliAnswer.body?.reason === "appimage",
+          "the AppImage's host offers no command-line tool (404 cli_unavailable, reason appimage)",
+          JSON.stringify(cliAnswer)
+        );
+      else
+        check(
+          cliAnswer.status === 200 && typeof cliAnswer.body?.state === "string",
+          "the deb's host offers the command-line tool (its status reads)",
+          JSON.stringify({ status: cliAnswer.status, state: cliAnswer.body?.state ?? null })
+        );
     }
     // The shell is ended by a signal (as when it is killed); its host, in a process group of its own, then reads the
     // end of its stdin and shuts down by itself (desktop-app ticket 17), within its 10-second limit.

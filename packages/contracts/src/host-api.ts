@@ -44,7 +44,9 @@
  *                                       without an `id`, 413 `too_large` over 16 KiB.
  *
  * The command-line tool (desktop-app ticket 24), desktop form only (404 `not_desktop` in the browser; 404
- * `cli_unavailable` from a host that does not know its own Node and CLI). Neither request reads a body:
+ * `cli_unavailable` from a host that does not know its own Node and CLI, or that does not offer the tool — then with a
+ * `reason` of {@link HOST_CLI_UNAVAILABLE_REASONS}: `appimage`, run from an AppImage, desktop-app ticket 26). Neither
+ * request reads a body:
  * - `GET  /api/host/cli`            → {@link HostCliStatus}: the launcher in the user's executable directory, whether that
  *                                     directory is on PATH, and the line the user would add (the app changes no PATH).
  * - `POST /api/host/cli/install`    → 200 {@link HostCliChange} `installed`; 409 `{code: "foreign", status}` when a file
@@ -370,6 +372,26 @@ export interface HostCliStatus {
   /** What the user would add themself: a shell line (`posix`), or the directory for the user PATH (`windows`). */
   pathLine: string;
   platform: "posix" | "windows";
+}
+
+/**
+ * Why a desktop host does not offer the command-line tool (desktop-app ticket 26): `appimage` — it runs from an
+ * AppImage, whose folder is a temporary mount that is gone once the app closes, so a launcher would stop working; the
+ * deb and the npm package offer it.
+ */
+export const HOST_CLI_UNAVAILABLE_REASONS = ["appimage"] as const;
+export type HostCliUnavailableReason = (typeof HOST_CLI_UNAVAILABLE_REASONS)[number];
+
+/** The 404 body of the command-line tool's endpoints from a host without the tool. */
+export interface HostCliUnavailable {
+  code: "cli_unavailable";
+  detail: string;
+  /** Absent when the host simply does not know its own Node and CLI. */
+  reason?: HostCliUnavailableReason;
+}
+
+export function isHostCliUnavailableReason(value: unknown): value is HostCliUnavailableReason {
+  return (HOST_CLI_UNAVAILABLE_REASONS as readonly unknown[]).includes(value);
 }
 
 /** The answer of `POST /api/host/cli/install` and `…/uninstall`. */

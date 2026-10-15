@@ -68,11 +68,23 @@ it (`GET /api/environment`).
 ## Installing the desktop app
 
 The desktop app carries its own Node, so it needs nothing but TeX (above) for
-LaTeX ingest. Packages are on the repository's GitHub Releases page: Linux x64
-(`.deb` and `.AppImage`), Windows x64 (an installer `.exe`), macOS on Apple
-silicon (`aarch64` `.dmg`) and on Intel (`x64` `.dmg`). There is no automatic
-update: install a newer package over the old one; your settings, credentials,
-logs and recent projects live in your user folders and stay.
+LaTeX ingest. Packages are on the repository's GitHub Releases page. **For now
+only Linux x64 packages are published** (`.deb` and `.AppImage`); macOS and
+Windows packages follow once the app's window runs on those systems. There is
+no automatic update: install a newer package over the old one; your settings,
+credentials, logs and recent projects live in your user folders and stay.
+
+**Linux.** `sudo apt install ./argelanderspace_<version>_amd64.deb` (it pulls
+in WebKitGTK; remove with `sudo apt remove argelanderspace`), or make the
+`.AppImage` executable (`chmod +x`) and run it. The AppImage needs FUSE 2
+(`libfuse2`, `libfuse2t64` on Ubuntu 24.04); without it, start it with
+`--appimage-extract-and-run`. The AppImage does not offer the command-line
+tool (Settings → Command line & agents says so): it runs from a temporary
+folder that is gone once the app closes, so a tool installed from it would
+stop working. Use the `.deb`, or the npm package, if agents should use the
+app's CLI.
+
+### macOS and Windows (when their packages are published)
 
 The packages are **not signed** by Apple or Microsoft (the project has no
 signing certificates), so both systems stop the app the first time. That is
@@ -90,26 +102,19 @@ refused ("Apple could not verify …" / "… cannot be opened").
    app in Applications and choose **Open**, then **Open** again, does the same.
 
 If you prefer the Terminal: `xattr -dr com.apple.quarantine
-/Applications/argelanderspace.app` removes the download mark from that app
+/Applications/ArgelanderSpace.app` removes the download mark from that app
 only (do this only for a package you downloaded from this repository's
 Releases page).
 
-*To be confirmed on a real Mac:* after an update the system may ask again
+*Not yet confirmed on a real Mac:* after an update the system may ask again
 whether the app may use the items it saved in your keychain (the ADS token and
-mail passwords), because an app that is not signed by a known developer looks
-like a new app after each update. Choose **Always Allow**; nothing is lost if
-you deny — the app then asks you for the token or password again.
+mail passwords), because an app that is not signed by a known developer can
+look like a new app after each update. What to choose there, and what the app
+does if you deny, will be written here once it has been tried on a Mac.
 
 **Windows.** Run the installer `.exe`. It installs for your user only (no
 administrator rights). SmartScreen may say "Windows protected your PC": click
 **More info**, check that the app is ArgelanderSpace, then **Run anyway**.
-
-**Linux.** `sudo apt install ./argelanderspace_<version>_amd64.deb` (it pulls
-in WebKitGTK; remove with `sudo apt remove argelanderspace`), or make the
-`.AppImage` executable (`chmod +x`) and run it. With the AppImage, the
-command-line tool installed from Settings → Command line & agents does not keep
-working after the app is closed (the AppImage runs from a temporary mount); use
-the `.deb` if agents should use the app's CLI.
 
 ## Quickstart
 
@@ -170,6 +175,8 @@ done
 The desktop app carries the same CLI and its own Node, so an agent in a terminal
 needs neither Node nor administrator rights:
 
+- Not in the AppImage: there the group says why and offers no install (see
+  [Installing the desktop app](#installing-the-desktop-app)).
 - **Settings → Command line & agents → Install the command-line tool** puts a
   small launcher named `argelanderspace` (the npm package's command) in your
   own executable directory — `~/.local/bin` on Linux and macOS,

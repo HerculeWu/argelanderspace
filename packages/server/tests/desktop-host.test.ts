@@ -167,6 +167,8 @@ async function startHost(
     skillsDir?: string | null;
     /** The app's Node and CLI for the command-line tool; `null`: the host knows of none. */
     cliLauncher?: { node: string; cli: string } | null;
+    /** Why the host offers no command-line tool (desktop-app ticket 26). */
+    cliUnavailable?: "appimage";
   } = {}
 ): Promise<Running> {
   const input = new PassThrough();
@@ -211,6 +213,7 @@ async function startHost(
     ...(opts.cliLauncher === null || opts.cliLauncher === undefined
       ? {}
       : { cliLauncher: opts.cliLauncher }),
+    ...(opts.cliUnavailable === undefined ? {} : { cliUnavailable: opts.cliUnavailable }),
     ...(opts.onFolderPicked ? { onFolderPicked: opts.onFolderPicked } : {}),
     ...(opts.stopDeadline ? { stopDeadline: opts.stopDeadline } : {}),
   });
@@ -1124,6 +1127,27 @@ describe("the command-line tool (desktop-app ticket 24)", () => {
     } finally {
       chmodSync(bin(), 0o700);
     }
+  });
+
+  test("a host run from an AppImage offers no command-line tool: 404 cli_unavailable with the reason, nothing written", async () => {
+    writeConfig("port = 0\n");
+    // It knows its Node and CLI, and still offers no tool.
+    const h = await startHost({ cliLauncher: app(), cliUnavailable: "appimage" });
+    for (const [method, path] of [
+      ["GET", "/api/host/cli"],
+      ["POST", "/api/host/cli/install"],
+      ["POST", "/api/host/cli/uninstall"],
+    ] as const) {
+      const res = await fetch(`${h.url}${path}`, { method, headers: ORIGIN(h.url) });
+      const body = (await res.json()) as { code: string; reason?: string };
+      expect([path, res.status, body.code, body.reason]).toEqual([
+        path,
+        404,
+        "cli_unavailable",
+        "appimage",
+      ]);
+    }
+    expect(safeList(bin())).toEqual([]);
   });
 
   test("a host that does not know its Node and CLI: 404 cli_unavailable; cross-site requests are refused", async () => {

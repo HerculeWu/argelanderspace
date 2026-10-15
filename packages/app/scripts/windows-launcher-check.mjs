@@ -13,13 +13,16 @@
 //   2. run through cmd with the console code page at 437, 936 and 65001, it runs the app's Node on the app's bin.js
 //      with the arguments as given and its exit code (a code page the machine cannot switch to is reported untested);
 //   3. the counter-check: the same script with the UTF-8 path written in literally (the ticket 24 form) does NOT run
-//      under 437 or 936 (if it did, check 2 would prove nothing);
+//      under 437 or 936 (if it did, check 2 would prove nothing) -- each only where that code page could be set (a
+//      `chcp` that fails stops the run as well, which would look like the expected failure); and its control: the
+//      literal script DOES run under 65001, so its failure elsewhere is the encoding and not some other fault;
 //   4. app moved: the launcher exits 1 and names the missing file;
 //   5. the known limit of ticket 24, observed and reported (not a failure either way): a program that starts
 //      `argelanderspace` by bare name without a shell (Node's spawn without `shell`) does not find the .cmd, and
 //      Node refuses to start a .cmd without a shell at all; through a shell (`shell: true`) it works.
 //
-// Exit: 0 `CHECK OK`; 1 `CHECK FAILED`; 2 not Windows (nothing was run).
+// Exit: 0 `CHECK OK`; 1 `CHECK FAILED`; 2 not Windows (nothing was run); 3 `CHECK INCOMPLETE`: none of the three code
+// pages could be set, so neither the launcher under them nor the counter-check was run.
 import { spawnSync } from "node:child_process";
 import {
   copyFileSync,
@@ -88,6 +91,8 @@ function runAt(cp, cmdFile) {
   });
   return s;
 }
+/** The code pages `chcp` could set here (in a process without a console it may not). */
+const settable = new Set();
 for (const cp of [437, 936, 65001]) {
   const probe = spawnSync(`chcp ${cp}`, { shell: true, encoding: "utf8" });
   if (probe.status !== 0) {
@@ -95,6 +100,7 @@ for (const cp of [437, 936, 65001]) {
     console.log(`UNTESTED  code page ${cp}: chcp exited ${probe.status}`);
     continue;
   }
+  settable.add(cp);
   const s = runAt(cp, file);
   let out = null;
   try {
@@ -112,16 +118,34 @@ for (const cp of [437, 936, 65001]) {
     );
 }
 
-// Counter-check: the literal UTF-8 path (what ticket 24 wrote).
+// Counter-check: the literal UTF-8 path (what ticket 24 wrote). Only under a code page `chcp` could set: otherwise the
+// run stops at `chcp`, which would look like the expected failure.
 const literal = join(work, "literal.cmd");
 writeFileSync(literal, text.replaceAll("%LOCALAPPDATA%", local));
 for (const cp of [437, 936]) {
+  if (!settable.has(cp)) {
+    untested.push(`counter-check at code page ${cp}`);
+    console.log(`UNTESTED  counter-check at code page ${cp}: chcp could not set it`);
+    continue;
+  }
   const s = runAt(cp, literal);
   check(
     s.status !== 7,
     `counter-check, code page ${cp}: the literal UTF-8 path does not run (so the check above means something)`,
     `exit ${s.status}`
   );
+}
+// Its control: the same literal script runs where cmd reads UTF-8, so the counter-check's failure is the encoding.
+if (settable.has(65001)) {
+  const s = runAt(65001, literal);
+  check(
+    s.status === 7,
+    "control, code page 65001: the literal UTF-8 script runs (it is not broken otherwise)",
+    `exit ${s.status}; stderr ${JSON.stringify(s.stderr).slice(0, 300)}`
+  );
+} else {
+  untested.push("the counter-check's control at code page 65001");
+  console.log("UNTESTED  the counter-check's control at code page 65001: chcp could not set it");
 }
 
 // Bare-name start without a shell (the known limit), observed and reported.
@@ -153,7 +177,8 @@ check(
 
 // The app moved away.
 renameSync(join(local, "ArgelanderSpace"), join(local, "Moved"));
-const moved = runAt(65001, file);
+// In the console's own code page (no chcp): the paths it reads are ASCII, so any code page will do.
+const moved = spawnSync(`"${file}" --x`, { shell: true, env, encoding: "utf8", timeout: 60000 });
 check(
   moved.status === 1 && /is missing/.test(moved.stderr),
   "after the app moved: exit 1 and the missing file is named",
@@ -162,8 +187,11 @@ check(
 
 if (keep) console.log(`kept ${work}`);
 else rmSync(work, { recursive: true, force: true });
+const incomplete = settable.size === 0;
 const line = failures
   ? `CHECK FAILED (${failures})`
-  : `CHECK OK${untested.length ? ` (untested: ${untested.join(", ")})` : ""}`;
+  : incomplete
+    ? `CHECK INCOMPLETE (no code page could be set; untested: ${untested.join(", ")})`
+    : `CHECK OK${untested.length ? ` (untested: ${untested.join(", ")})` : ""}`;
 console.log(`\n${line}`);
-process.exit(failures ? 1 : 0);
+process.exit(failures ? 1 : incomplete ? 3 : 0);

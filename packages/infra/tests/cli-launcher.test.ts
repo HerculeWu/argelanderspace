@@ -32,6 +32,7 @@ import {
   CLI_LAUNCHER_MARK,
   cliLauncherFile,
   cliLauncherStatus,
+  cliLauncherUnavailable,
   dirOnPath,
   installCliLauncher,
   launcherScript,
@@ -522,15 +523,102 @@ describe("the Windows script and the console code page (desktop-app ticket 26)",
     expect(() => launcherScript(target, "win32", file, {})).toThrow(/non-ASCII/);
   });
 
-  test("the status and the install use the process's variables", () => {
+  test("an ASCII path is written as it is, even under a variable's folder", () => {
+    const ascii = {
+      LOCALAPPDATA: "C:\\Users\\zhang\\AppData\\Local",
+      USERPROFILE: "C:\\Users\\zhang",
+    };
+    const text = launcherScript(
+      {
+        node: "C:\\Users\\zhang\\AppData\\Local\\ArgelanderSpace\\sidecar\\node\\node.exe",
+        cli: "C:\\Users\\zhang\\AppData\\Local\\ArgelanderSpace\\sidecar\\app\\dist\\bin.js",
+      },
+      "win32",
+      "C:\\Users\\zhang\\AppData\\Local\\Programs\\argelanderspace\\bin\\argelanderspace.cmd",
+      ascii
+    ).split("\r\n");
+    expect(text).toContain(
+      'set "AS_NODE=C:\\Users\\zhang\\AppData\\Local\\ArgelanderSpace\\sidecar\\node\\node.exe"'
+    );
+    expect(text).toContain(
+      'set "AS_SELF=C:\\Users\\zhang\\AppData\\Local\\Programs\\argelanderspace\\bin\\argelanderspace.cmd"'
+    );
+    expect(text.join("\n")).not.toMatch(/%(LOCALAPPDATA|USERPROFILE)%/);
+  });
+
+  test("Program Files: %ProgramW6432% (always the 64-bit folder) is taken before %ProgramFiles% when both fit", () => {
+    const pf = "C:\\程序文件";
+    const text = launcherScript(
+      { node: `${pf}\\ArgelanderSpace\\node.exe`, cli: `${pf}\\ArgelanderSpace\\bin.js` },
+      "win32",
+      "C:\\f.cmd",
+      { ProgramFiles: pf, ProgramW6432: pf }
+    ).split("\r\n");
+    expect(text).toContain('set "AS_NODE=%ProgramW6432%\\ArgelanderSpace\\node.exe"');
+    // Only %ProgramFiles% set (a 32-bit view has no %ProgramW6432%): that one.
+    expect(
+      launcherScript({ node: `${pf}\\A\\node.exe`, cli: "C:\\b.js" }, "win32", "C:\\f.cmd", {
+        ProgramFiles: pf,
+      }).split("\r\n")
+    ).toContain('set "AS_NODE=%ProgramFiles%\\A\\node.exe"');
+  });
+
+  test("the text the status compares and the install writes depends on the process's variables", () => {
+    // The same app, two environments that cover it differently: the texts differ, so a launcher written under one
+    // environment reads as `outdated` under the other (cliLauncherStatus compares this text; on Linux the Windows
+    // launcher's folder cannot be made, so the comparison itself is not run here).
+    const app = {
+      node: "C:\\Users\\张三\\AppData\\Roaming\\A\\node.exe",
+      cli: "C:\\Users\\张三\\AppData\\Roaming\\A\\bin.js",
+    };
+    const self = "C:\\Users\\张三\\f.cmd";
+    const one = launcherScript(app, "win32", self, { USERPROFILE: "C:\\Users\\张三" });
+    const two = launcherScript(app, "win32", self, {
+      USERPROFILE: "C:\\Users\\张三",
+      APPDATA: "C:\\Users\\张三\\AppData\\Roaming",
+    });
+    expect(one).toContain('set "AS_NODE=%USERPROFILE%\\AppData\\Roaming\\A\\node.exe"');
+    expect(two).toContain('set "AS_NODE=%APPDATA%\\A\\node.exe"');
+    expect(one).not.toBe(two);
+  });
+
+  test("a status for Windows read on another system's paths only reads (nothing there: not_installed)", () => {
     const home = tempHome();
     const localDir = join(home, "Local");
     const winEnv = { LOCALAPPDATA: localDir, PATH: "" };
     const app = { node: join(localDir, "A", "node.exe"), cli: join(localDir, "A", "bin.js") };
-    // Not run on Windows: the paths are POSIX, so no variable is a Windows prefix of them and the text keeps them.
     expect(cliLauncherStatus(app, { platform: "win32", home, env: winEnv }).state).toBe(
       "not_installed"
     );
+  });
+});
+
+describe("the AppImage offers no command-line tool (desktop-app ticket 26)", () => {
+  const mount = "/tmp/.mount_ArgelaB3xQ9z";
+  const inside = {
+    node: `${mount}/usr/lib/argelanderspace/sidecar/node/bin/node`,
+    cli: `${mount}/usr/lib/argelanderspace/sidecar/app/dist/bin.js`,
+  };
+
+  test("the CLI running from the AppImage's own folder (APPDIR) is the AppImage", () => {
+    // The AppImage runtime sets APPIMAGE and APPDIR; the AppRun hook sets APPDIR for an extracted one too.
+    expect(cliLauncherUnavailable(inside, { APPIMAGE: "/home/u/A.AppImage", APPDIR: mount })).toBe(
+      "appimage"
+    );
+    expect(cliLauncherUnavailable(inside, { APPDIR: `${mount}/` })).toBe("appimage");
+  });
+
+  test("anything else is not: no APPDIR, a CLI outside it (a variable inherited from another AppImage), a relative one", () => {
+    expect(cliLauncherUnavailable(inside, {})).toBeNull();
+    expect(cliLauncherUnavailable(inside, { APPIMAGE: "/home/u/A.AppImage" })).toBeNull();
+    const deb = {
+      node: "/usr/lib/argelanderspace/sidecar/node/bin/node",
+      cli: "/usr/lib/argelanderspace/sidecar/app/dist/bin.js",
+    };
+    expect(cliLauncherUnavailable(deb, { APPIMAGE: "/x.AppImage", APPDIR: mount })).toBeNull();
+    // Another folder whose name only begins like it.
+    expect(cliLauncherUnavailable(inside, { APPDIR: "/tmp/.mount_Argela" })).toBeNull();
+    expect(cliLauncherUnavailable(inside, { APPDIR: "tmp/.mount_ArgelaB3xQ9z" })).toBeNull();
   });
 });
 

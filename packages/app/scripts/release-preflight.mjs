@@ -13,7 +13,8 @@
 //   --ref   GITHUB_REF of a tag run (refs/tags/v0.1.0); omitted for a manual run, which builds the chosen commit and
 //           names the draft `v<version>` without a tag of its own (the tag is made only when the draft is published).
 //
-// Prints the version; with GITHUB_OUTPUT set, also writes `version=` and `tag=` lines there. Exit: 0 fine; 1 a problem.
+// Prints the version; with GITHUB_OUTPUT set, also writes a `version=` line there (the package job's output; the draft
+// job checks its form and makes the tag name from it). Exit: 0 fine; 1 a problem.
 import { appendFileSync, readFileSync } from "node:fs";
 import {
   DESKTOP_NODE_VERSION,
@@ -53,5 +54,4 @@ problems.push(
 for (const p of problems) console.error(`PREFLIGHT ${p}`);
 if (problems.length > 0) process.exit(1);
 console.log(`release-preflight: ${args.values["--target"]} ${releaseTagFor(version)} ok`);
-if (process.env.GITHUB_OUTPUT)
-  appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\ntag=${releaseTagFor(version)}\n`);
+if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);

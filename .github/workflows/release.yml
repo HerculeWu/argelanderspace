@@ -1,14 +1,19 @@
-# Desktop packages for the four targets, put into a DRAFT GitHub Release (desktop-app ticket 26; docs/engineering.md
-# 「发布工作流」). This is the repository's only workflow and it only releases: the four gates are not run here and
-# there is no CI (docs/contracts.md; the user's change 9 of 2026-10-13). Nothing is published: the draft is looked at
-# and made public by hand.
+# Desktop packages, put into a DRAFT GitHub Release (desktop-app ticket 26; docs/engineering.md 「发布工作流」). This is
+# the repository's only workflow and it only releases: the four gates are not run here and there is no CI
+# (docs/contracts.md; the user's change 9 of 2026-10-13). Nothing is published: the draft is looked at and made public
+# by hand.
+#
+# What it builds: Linux x64 (deb and AppImage) by default. The macOS and Windows targets are kept but not run unless
+# chosen by hand (the user's decision of 2026-10-15 in ticket 26: the shell builds only on Linux until it is ported,
+# ticket 30); choosing them now fails in the shell's build.
 #
 # When it runs:
 #   - a pushed tag `v<version>`, where <version> is packages/app/package.json's `version` (the single source,
-#     ticket 16); any other tag fails in the preflight before anything is built;
+#     ticket 16); any other tag fails in the preflight before anything is built. Builds linux-x64.
 #   - by hand (Actions > Release > Run workflow) on a branch or tag: it builds that commit and names the draft
-#     `v<version>`; the tag itself is made only when the draft is published. `targets` builds all four (the default) or
-#     one, for trying a runner; a draft is made only when every chosen target succeeded.
+#     `v<version>`. `targets`: linux-x64 (the default), `all`, or one other target. A draft is made only when every
+#     chosen target succeeded. When a tag `v<version>` exists already it must name the commit built (or nothing is
+#     made); otherwise the tag is made when the draft is published.
 #
 # Pins: actions by commit (the tag in the comment); the build's Node = the Node the package carries
 # (DESKTOP_NODE_VERSION in packages/app/scripts/desktop-package-lib.mjs; the preflight checks they agree); pnpm from the
@@ -22,10 +27,10 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Which targets to build (a draft is made only when all of them succeed)"
+        description: "Which targets to build (macOS and Windows wait for ticket 30; a draft only when all chosen succeed)"
         type: choice
-        default: all
-        options: [all, linux-x64, win32-x64, darwin-arm64, darwin-x64]
+        default: linux-x64
+        options: [linux-x64, all, win32-x64, darwin-arm64, darwin-x64]
 
 # Nothing by default; each job asks for what it needs.
 permissions: {}
@@ -51,7 +56,7 @@ jobs:
       - name: Choose the targets
         id: matrix
         env:
-          CHOSEN: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'all' }}
+          CHOSEN: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'linux-x64' }}
         run: |
           all='[
             {"target":"linux-x64","os":"ubuntu-24.04","bundles":"deb,appimage"},
@@ -70,6 +75,9 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 120
+    outputs:
+      # The app package's version the preflight read (the same commit on every target).
+      version: ${{ steps.preflight.outputs.version }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -94,6 +102,7 @@ jobs:
           package-manager-cache: false
 
       - name: Preflight (tag rule, build Node, vendored license texts)
+        id: preflight
         env:
           REF: ${{ github.ref }}
           REF_TYPE: ${{ github.ref_type }}
@@ -154,10 +163,14 @@ jobs:
       - name: Build the shell and bundle (${{ matrix.bundles }})
         working-directory: packages/desktop
         run: |
-          "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" build --features packaged \
-            --config tauri.package.conf.json --bundles "$BUNDLES" 2>&1 | tee "$EVIDENCE/tauri-build.txt"
+          configs=(--config tauri.package.conf.json)
+          # macOS and Windows show the product name ArgelanderSpace (the .app, the install folder); Linux keeps the
+          # lower-case package name argelanderspace (the user's decision (d) of 2026-10-15, ticket 26).
+          if [ "$RUNNER_OS" != Linux ]; then configs+=(--config tauri.package.macos-windows.conf.json); fi
+          "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" build --features packaged "${configs[@]}" \
+            --bundles "$BUNDLES" 2>&1 | tee "$EVIDENCE/tauri-build.txt"
 
-      - name: Desktop package smoke (deb and AppImage, shell on a virtual display)
+      - name: Desktop package smoke (deb and AppImage, shell on a virtual display; the AppImage's through its AppRun)
         if: runner.os == 'Linux'
         run: |
           deb=$(ls packages/desktop/target/release/bundle/deb/*.deb)
@@ -171,27 +184,37 @@ jobs:
         if: runner.os != 'Linux'
         run: |
           # NOT the desktop package smoke (smoke-desktop-package.mjs reads a deb or an AppImage and /proc): only that
-          # the bundle carries the sidecar and its Node runs the package's CLI at the app's version. Untested here: the
-          # host from the bundle, the page, PDFium, the keychain, Copilot, the ingest, the shell itself.
+          # the sidecar's Node runs the sidecar's CLI at the app's version and the shell's notices are there. On macOS
+          # this looks inside the built .app; on Windows only inside the build tree (target/release, where tauri-build
+          # copies the resources) -- NOT inside the NSIS installer, whose contents are not unpacked or checked here.
+          # Untested here: the host from the bundle, the page, PDFium, the keychain, Copilot, the ingest, the shell.
           version=$(node -p 'require("./packages/app/package.json").version')
           if [ "$RUNNER_OS" = macOS ]; then
             res=$(ls -d packages/desktop/target/release/bundle/macos/*.app)/Contents/Resources
             nodebin="$res/sidecar/node/bin/node"
+            where="the built .app"
           else
             res=packages/desktop/target/release
             nodebin="$res/sidecar/node/node.exe"
+            where="the build tree (not the installer)"
           fi
           got=$("$nodebin" "$res/sidecar/app/dist/bin.js" --version)
-          echo "package CLI --version: $got (app $version)" | tee "$EVIDENCE/partial-check.txt"
+          echo "package CLI --version in $where: $got (app $version)" | tee "$EVIDENCE/partial-check.txt"
           test "$got" = "$version"
           test -f "$res/THIRD-PARTY-SHELL-NOTICES.txt"
-          echo "UNTESTED on $RUNNER_OS: the desktop package smoke (host, page, PDFium, keychain, Copilot, ingest, shell)" \
-            | tee -a "$EVIDENCE/partial-check.txt" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "UNTESTED on $RUNNER_OS: the desktop package smoke (host, page, PDFium, keychain, Copilot, ingest, shell)"
+            if [ "$RUNNER_OS" = Windows ]; then echo "UNTESTED on Windows: the NSIS installer's contents"; fi
+          } | tee -a "$EVIDENCE/partial-check.txt" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: macOS icon (ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
+      - name: macOS icon (the built .app's ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
         if: runner.os == 'macOS'
         run: |
-          iconutil -c iconset packages/desktop/icons/icon.icns -o "$EVIDENCE/icon.iconset"
+          # The ICNS the bundle carries, not the repository's source file.
+          shopt -s nullglob
+          icns=(packages/desktop/target/release/bundle/macos/*.app/Contents/Resources/*.icns)
+          test "${#icns[@]}" -eq 1
+          iconutil -c iconset "${icns[0]}" -o "$EVIDENCE/icon.iconset"
           ls -l "$EVIDENCE/icon.iconset" | tee "$EVIDENCE/icon-iconset.txt"
           test -f "$EVIDENCE/icon.iconset/icon_16x16.png"
           test -f "$EVIDENCE/icon.iconset/icon_32x32.png"
@@ -228,9 +251,12 @@ jobs:
     name: Release draft
     needs: package
     runs-on: ubuntu-24.04
-    # Only the release job may write, and only to make the draft.
+    # Only this job may write, and only to make the draft.
     permissions:
       contents: write
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Download the packages
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -244,11 +270,47 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+          VERSION: ${{ needs.package.outputs.version }}
         run: |
-          version=$(gh api "repos/$GH_REPO/contents/packages/app/package.json?ref=$SHA" --jq .content | base64 -d | jq -r .version)
-          tag="v$version"
+          # The version the preflight read from packages/app/package.json at this commit; a semantic version or nothing.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if ! [[ "$VERSION" =~ $semver ]]; then
+            echo "::error::the preflight's version '$VERSION' is not a semantic version: nothing made"
+            exit 1
+          fi
+          tag="v$VERSION"
+
+          # A tag of that name must name this very commit: a draft is tied to its tag, so the packages and the tag
+          # would otherwise come from different commits. An annotated tag is unwrapped down to its commit.
+          found=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" \
+            --jq ".[] | select(.ref == \"refs/tags/$tag\") | .object.type + \" \" + .object.sha")
+          verify=()
+          if [ -n "$found" ]; then
+            read -r type sha <<<"$found"
+            for _ in 1 2 3 4 5; do
+              [ "$type" = tag ] || break
+              read -r type sha <<<"$(gh api "repos/$GH_REPO/git/tags/$sha" --jq '.object.type + " " + .object.sha')"
+            done
+            if [ "$type" != commit ] || [ "$sha" != "$SHA" ]; then
+              echo "::error::the tag $tag names $type $sha, not this run's commit $SHA: nothing made"
+              exit 1
+            fi
+            verify=(--verify-tag)
+          elif [ "$EVENT" = push ]; then
+            echo "::error::a tag run, but the tag $tag is not in the repository: nothing made"
+            exit 1
+          fi
+
+          # No release of that tag yet, drafts included (this token may see drafts): never a second one.
+          existing=$(gh api --paginate "repos/$GH_REPO/releases" --jq ".[] | select(.tag_name == \"$tag\") | .id")
+          if [ -n "$existing" ]; then
+            echo "::error::a release or draft for $tag exists already (id $existing): nothing made"
+            exit 1
+          fi
+
           (cd release-out && sha256sum -- * > SHA256SUMS.txt)
           cat release-out/SHA256SUMS.txt
-          gh release create "$tag" --draft --target "$SHA" --title "ArgelanderSpace $version" \
-            --notes "Draft made by the Release workflow from $SHA. Unsigned: see README (Installing the desktop app) for how to let macOS and Windows open it." \
+          gh release create "$tag" --draft "${verify[@]}" --target "$SHA" --title "ArgelanderSpace $VERSION" \
+            --notes "Draft made by the Release workflow from $SHA. The packages are not signed: see README (Installing the desktop app)." \
             release-out/*

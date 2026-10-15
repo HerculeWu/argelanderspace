@@ -5,9 +5,14 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED } from "../../../scripts/license-allowlist.mjs";
+import {
+  PROD_LICENSE_ALLOWED,
+  SHELL_CRATE_LICENSE_ALLOWED,
+  WITH_LICENSE_ALLOWED,
+} from "../../../scripts/license-allowlist.mjs";
 import {
   cargoLicenseExpression,
+  crateLicenseFiles,
   DESKTOP_NODE_VERSION,
   evalLicense,
   hostProcess,
@@ -517,29 +522,223 @@ test("cargo's old slash license form reads as OR", () => {
   assert.equal(cargoLicenseExpression(null), null);
 });
 
+const noVendored = { manifest: { files: {}, crates: [] }, vendoredText: () => null };
+
 test("shell notices: every crate needs an allowed license and a text, and the text is in the notice", () => {
-  const ok = shellNotices([
-    {
-      name: "a",
-      version: "1.0.0",
-      license: "MIT/Apache-2.0",
-      texts: [{ file: "LICENSE-MIT", text: "MIT text A" }],
-    },
-  ]);
+  const ok = shellNotices(
+    [
+      {
+        name: "a",
+        version: "1.0.0",
+        license: "MIT/Apache-2.0",
+        texts: [{ file: "LICENSE-MIT", text: "MIT text A" }],
+        notices: [],
+      },
+    ],
+    noVendored
+  );
   assert.deepEqual(ok.problems, []);
   assert.match(
     ok.text,
     /===== a@1\.0\.0 =====\nLicense: MIT OR Apache-2\.0\n-- LICENSE-MIT --\nMIT text A/
   );
-  const bad = shellNotices([
-    { name: "m", version: "0.1.0", license: "MPL-2.0", texts: [{ file: "LICENSE", text: "x" }] },
-    { name: "n", version: "0.2.0", license: "MIT", texts: [] },
-    { name: "o", version: "0.3.0", license: null, texts: [{ file: "COPYING", text: "x" }] },
-  ]);
+  const bad = shellNotices(
+    [
+      {
+        name: "m",
+        version: "0.1.0",
+        license: "GPL-3.0",
+        texts: [{ file: "LICENSE", text: "x" }],
+        notices: [],
+      },
+      { name: "n", version: "0.2.0", license: "MIT", texts: [], notices: [] },
+      {
+        name: "o",
+        version: "0.3.0",
+        license: null,
+        texts: [{ file: "COPYING", text: "x" }],
+        notices: [],
+      },
+    ],
+    noVendored
+  );
   assert.equal(bad.problems.length, 3, bad.problems.join("\n"));
-  assert.match(bad.problems[0], /m@0\.1\.0: license "MPL-2\.0" is not in the allowed list/);
+  assert.match(bad.problems[0], /m@0\.1\.0: license "GPL-3\.0" is not in the allowed list/);
   assert.match(bad.problems[1], /n@0\.2\.0: no license text/);
   assert.match(bad.problems[2], /o@0\.3\.0: license null/);
+});
+
+test("the shell's crates also accept Unicode-3.0, Zlib and MPL-2.0; the npm packages' list does not change", () => {
+  for (const id of ["Unicode-3.0", "Zlib", "MPL-2.0"]) {
+    assert.ok(SHELL_CRATE_LICENSE_ALLOWED.has(id), id);
+    assert.ok(!PROD_LICENSE_ALLOWED.has(id), id);
+  }
+  for (const id of PROD_LICENSE_ALLOWED) assert.ok(SHELL_CRATE_LICENSE_ALLOWED.has(id), id);
+  const crate = (license) => ({
+    name: "u",
+    version: "1.0.0",
+    license,
+    texts: [{ file: "LICENSE", text: "t" }],
+    notices: [],
+  });
+  assert.deepEqual(
+    shellNotices([crate("(MIT OR Apache-2.0) AND Unicode-3.0")], noVendored).problems,
+    []
+  );
+  assert.deepEqual(shellNotices([crate("Zlib")], noVendored).problems, []);
+  // The npm side is unchanged: the runtime check still refuses them.
+  assert.equal(evalLicense("Zlib", RUNTIME_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED), false);
+});
+
+test("an MPL-2.0 crate's notice says where its source code is: crates.io and the repository at the published commit", () => {
+  const { problems, text } = shellNotices(
+    [
+      {
+        name: "cssparser",
+        version: "0.37.0",
+        license: "MPL-2.0",
+        repository: "https://github.com/servo/rust-cssparser",
+        vcs: { sha1: "abc123", path: "" },
+        texts: [{ file: "LICENSE", text: "MPL text" }],
+        notices: [],
+      },
+      {
+        name: "plain",
+        version: "1.0.0",
+        license: "MIT",
+        repository: "https://example.org/plain",
+        texts: [{ file: "LICENSE", text: "MIT text" }],
+        notices: [],
+      },
+    ],
+    noVendored
+  );
+  assert.deepEqual(problems, []);
+  assert.match(
+    text,
+    /===== cssparser@0\.37\.0 =====\nLicense: MPL-2\.0\nSource code: https:\/\/crates\.io\/crates\/cssparser\/0\.37\.0 \(the published crate: https:\/\/static\.crates\.io\/crates\/cssparser\/cssparser-0\.37\.0\.crate\); repository https:\/\/github\.com\/servo\/rust-cssparser at commit abc123\n/
+  );
+  assert.doesNotMatch(text, /plain@1\.0\.0 =====\nLicense: MIT\nSource code/);
+});
+
+test("a crate's own license files are LICENSE, COPYING or UNLICENSE; a NOTICE goes with them but is not one", () => {
+  assert.deepEqual(
+    crateLicenseFiles([
+      "README.md",
+      "NOTICE",
+      "LICENSE-MIT",
+      "COPYING",
+      "license_apache.txt",
+      "UNLICENSE",
+      "Cargo.toml",
+    ]),
+    { license: ["COPYING", "LICENSE-MIT", "UNLICENSE", "license_apache.txt"], notice: ["NOTICE"] }
+  );
+  // Only a NOTICE: no license text of its own.
+  const { problems, text } = shellNotices(
+    [
+      {
+        name: "n",
+        version: "1.0.0",
+        license: "Apache-2.0",
+        texts: [],
+        notices: [{ file: "NOTICE", text: "notice n" }],
+      },
+      {
+        name: "m",
+        version: "1.0.0",
+        license: "Apache-2.0",
+        texts: [{ file: "LICENSE", text: "apache m" }],
+        notices: [{ file: "NOTICE", text: "notice m" }],
+      },
+    ],
+    noVendored
+  );
+  assert.deepEqual(problems, [
+    "n@1.0.0: no license text (the crate ships no license file and none is vendored)",
+  ]);
+  assert.match(text, /-- LICENSE --\napache m\n\n-- NOTICE --\nnotice m/);
+});
+
+test("a crate without a license file of its own takes the vendored text recorded for exactly its version", () => {
+  const body = "upstream MIT";
+  const sha = createHash("sha256").update(body).digest("hex");
+  const vendored = {
+    manifest: {
+      files: { "x-LICENSE": { sha256: sha, source: "https://example.org/x/LICENSE" } },
+      crates: [{ crate: "x", version: "1.0.0", license: "MIT", files: ["x-LICENSE"] }],
+    },
+    vendoredText: (file) => (file === "x-LICENSE" ? body : null),
+  };
+  const crate = (over) => ({
+    name: "x",
+    version: "1.0.0",
+    license: "MIT",
+    texts: [],
+    notices: [],
+    ...over,
+  });
+  const ok = shellNotices([crate({})], vendored);
+  assert.deepEqual(ok.problems, []);
+  assert.match(
+    ok.text,
+    /-- x-LICENSE \(vendored; from https:\/\/example\.org\/x\/LICENSE\) --\nupstream MIT/
+  );
+  assert.match(
+    shellNotices([crate({ version: "1.0.1" })], vendored).problems[0],
+    /x@1\.0\.1: no license text/
+  );
+  assert.match(
+    shellNotices([crate({ license: "Apache-2.0" })], vendored).problems[0],
+    /x@1\.0\.0: vendored text is for "MIT", the crate declares "Apache-2\.0"/
+  );
+  assert.match(
+    shellNotices([crate({})], { ...vendored, vendoredText: () => "changed" }).problems[0],
+    /x@1\.0\.0: vendored text x-LICENSE is missing or differs from its recorded sha256/
+  );
+  // A crate with its own file does not use the vendored one.
+  assert.doesNotMatch(
+    shellNotices([crate({ texts: [{ file: "LICENSE", text: "own" }] })], vendored).text,
+    /vendored/
+  );
+});
+
+test("the repository's vendored crate licenses are complete and unchanged and cover the Linux shell's crates", () => {
+  const dir = new URL("../../desktop/licenses/", import.meta.url);
+  const manifest = JSON.parse(readFileSync(new URL("crate-licenses.json", dir), "utf8"));
+  for (const [file, { sha256, source }] of Object.entries(manifest.files)) {
+    assert.match(source, /^https:\/\//, file);
+    assert.equal(
+      createHash("sha256")
+        .update(readFileSync(new URL(file, dir)))
+        .digest("hex"),
+      sha256,
+      file
+    );
+  }
+  for (const c of manifest.crates) {
+    assert.ok(c.files.length > 0, c.crate);
+    for (const f of c.files) assert.ok(manifest.files[f], `${c.crate}: ${f}`);
+    assert.ok(evalLicense(c.license, SHELL_CRATE_LICENSE_ALLOWED), c.crate);
+  }
+  // The crates of linux-x64 without a license file of their own (shell-notices.mjs on 2026-10-15), and Windows' three.
+  for (const id of [
+    "alloc-stdlib@0.3.0",
+    "defmt-parser@1.0.0",
+    "dlopen2@0.8.2",
+    "dlopen2_derive@0.4.3",
+    "libappindicator-sys@0.9.0",
+    "selectors@0.38.0",
+    "webview2-com@0.39.1",
+    "webview2-com-macros@0.8.1",
+    "webview2-com-sys@0.39.1",
+  ]) {
+    const [name, version] = id.split("@");
+    assert.ok(
+      manifest.crates.some((c) => c.crate === name && c.version === version),
+      id
+    );
+  }
 });
 
 test("the preflight finds a package's versions in the lockfile's packages section", () => {

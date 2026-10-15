@@ -1,5 +1,6 @@
 import {
   type HostCliStatus,
+  type HostCliUnavailableReason,
   type HostInfo,
   type HostRecentProjects,
   type HostRequestKind,
@@ -7,6 +8,7 @@ import {
   type HostSwitchImpact,
   type HostSwitchTarget,
   isHostCliStatus,
+  isHostCliUnavailableReason,
   isHostInfo,
   isHostRecentProjects,
   isHostSwitchImpact,
@@ -121,12 +123,21 @@ export async function removeRecentProject(path: string): Promise<HostRecentProje
   }
 }
 
-/** The command-line tool's status (desktop-app ticket 24); null when there is no usable answer. */
-export async function fetchCliStatus(): Promise<HostCliStatus | null> {
+/**
+ * The command-line tool's status (desktop-app ticket 24); `{unavailable}` when the host does not offer the tool and says
+ * why (desktop-app ticket 26: `appimage`); null when there is no usable answer.
+ */
+export async function fetchCliStatus(): Promise<
+  HostCliStatus | { unavailable: HostCliUnavailableReason } | null
+> {
   try {
     const body = await apiRequest<unknown>("/api/host/cli", { cache: "no-store" });
     return isHostCliStatus(body) ? body : null;
-  } catch {
+  } catch (error) {
+    if (error instanceof HttpError && error.code === "cli_unavailable") {
+      const reason = (error.body as { reason?: unknown } | null)?.reason;
+      if (isHostCliUnavailableReason(reason)) return { unavailable: reason };
+    }
     return null;
   }
 }

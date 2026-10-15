@@ -12,18 +12,22 @@
 //              feature (the build the package carries): `cargo metadata --filter-platform <triple> --features packaged`.
 //   --offline  passed to cargo (no index update; the crates must be in the local cache).
 //
-// Every linked crate (normal dependencies from the shell, not build-only or dev-only ones) needs a license on the
-// production allowlist (scripts/license-allowlist.mjs, the one list) and a license file of its own in its source; the
-// notice is each crate's name, version, license expression and the full text of its license files. Any crate without
-// both is reported and NOTHING is written (exit 1): the package must not go out without its notices.
+// Every linked crate (normal dependencies from the shell, not build-only or dev-only ones) needs a license on the crate
+// allowlist (scripts/license-allowlist.mjs `SHELL_CRATE_LICENSE_ALLOWED`: the production list plus Unicode-3.0, Zlib
+// and MPL-2.0, the user's decision of 2026-10-15) and a license text: a LICENSE/COPYING/UNLICENSE file of its own in
+// its source (a NOTICE alone is not one; NOTICE files are added to the notice), or else the upstream text vendored for
+// exactly that version in packages/desktop/licenses/crate-licenses.json (sha256-checked). The notice is each crate's
+// name, version, license expression, the full text of its license files and notices, and for an MPL-2.0 crate where
+// its source code is (crates.io and the repository commit from its .cargo_vcs_info.json). Any crate without an allowed
+// license and a text is reported and NOTHING is written (exit 1): the package must not go out without its notices.
 //
 // Exit: 0 written; 1 a problem (listed) or cargo failed.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  LICENSE_FILE,
+  crateLicenseFiles,
   linkedCrates,
   parseStrictArgs,
   rustTargetTriple,
@@ -67,20 +71,36 @@ if (m.error || m.status !== 0) {
   console.error(`shell-notices: cargo metadata failed: ${m.error ?? m.stderr.slice(-2000)}`);
   process.exit(1);
 }
+const read = (dir, f) => ({ file: f, text: readFileSync(join(dir, f), "utf8") });
 const crates = linkedCrates(JSON.parse(m.stdout)).map((p) => {
   const dir = dirname(p.manifest_path);
-  const files = readdirSync(dir)
-    .filter((f) => LICENSE_FILE.test(f) || /^unlicense(\.|$)/i.test(f))
-    .filter((f) => statSync(join(dir, f)).isFile())
-    .sort();
+  const names = readdirSync(dir).filter((f) => statSync(join(dir, f)).isFile());
+  const { license, notice } = crateLicenseFiles(names);
+  let vcs = null;
+  try {
+    const info = JSON.parse(readFileSync(join(dir, ".cargo_vcs_info.json"), "utf8"));
+    if (typeof info?.git?.sha1 === "string")
+      vcs = { sha1: info.git.sha1, path: info.path_in_vcs ?? "" };
+  } catch {
+    // A crate published without git information (or from a path): no commit to name.
+  }
   return {
     name: p.name,
     version: p.version,
     license: p.license ?? null,
-    texts: files.map((f) => ({ file: f, text: readFileSync(join(dir, f), "utf8") })),
+    repository: p.repository ?? null,
+    vcs,
+    texts: license.map((f) => read(dir, f)),
+    notices: notice.map((f) => read(dir, f)),
   };
 });
-const { problems, text } = shellNotices(crates);
+const vendoredDir = join(desktopRoot, "licenses");
+const vendored = {
+  manifest: JSON.parse(readFileSync(join(vendoredDir, "crate-licenses.json"), "utf8")),
+  vendoredText: (file) =>
+    existsSync(join(vendoredDir, file)) ? readFileSync(join(vendoredDir, file), "utf8") : null,
+};
+const { problems, text } = shellNotices(crates, vendored);
 for (const p of problems) console.error(`LICENSE ${p}`);
 console.log(
   `shell-notices: ${crates.length} crates linked into the shell for ${target} (${triple}); ${problems.length} problem(s)`
