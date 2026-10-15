@@ -80,7 +80,8 @@ Node and CLI. The app changes no `PATH`; when that directory is not on it the
 page shows the line to add yourself. The AppImage offers no such install (it
 runs from a mount that is gone once the app closes, so a launcher pointing
 into it would stop working); for an agent's command line use the `.deb` or the
-npm package.
+npm package; and copy the skills out of the AppImage rather than linking to
+them, for the same reason.
 
 ## Prerequisites
 
