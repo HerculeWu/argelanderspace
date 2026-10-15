@@ -378,9 +378,46 @@ pub fn shell_event_line(event: &str, fields: &Map<String, Value>) -> String {
     json!({ "type": "shell_event", "event": event, "fields": fields }).to_string()
 }
 
+/// Tests: parses a test line written with Unix paths (`"/h/logs"`) as this platform's host would write it (`"C:/h/logs"`
+/// on Windows, where `/h/logs` is not absolute), and gives the result back with the test's own paths. The same as
+/// `parse_host_line` elsewhere.
+#[cfg(test)]
+pub(crate) fn parse_test_line(line: &str) -> HostLine {
+    if !cfg!(windows) {
+        return parse_host_line(line);
+    }
+    let unix = |p: String| p.strip_prefix("C:").map(str::to_owned).unwrap_or(p);
+    match parse_host_line(&line.replace("\":\"/", "\":\"C:/")) {
+        HostLine::Ready(mut r) => {
+            r.project = r.project.map(unix);
+            r.log_dir = r.log_dir.map(unix);
+            HostLine::Ready(r)
+        }
+        HostLine::Stopped { next } => HostLine::Stopped {
+            next: next.map(unix),
+        },
+        HostLine::Failed { stage, log_dir } => HostLine::Failed {
+            stage,
+            log_dir: log_dir.map(unix),
+        },
+        HostLine::Request(Request::OpenLogFolder { path }) => {
+            HostLine::Request(Request::OpenLogFolder { path: unix(path) })
+        }
+        HostLine::Request(Request::OpenConfigFile { path }) => {
+            HostLine::Request(Request::OpenConfigFile { path: unix(path) })
+        }
+        HostLine::Request(Request::OpenSkillsFolder { path }) => {
+            HostLine::Request(Request::OpenSkillsFolder { path: unix(path) })
+        }
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The test lines are written with Unix paths (`parse_test_line`).
+    use super::parse_test_line as parse_host_line;
 
     #[test]
     fn ready_line_with_a_project() {

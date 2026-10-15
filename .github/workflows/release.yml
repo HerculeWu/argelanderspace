@@ -156,9 +156,13 @@ jobs:
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
           echo "RUSTUP_TOOLCHAIN=$RUST_TOOLCHAIN" >> "$GITHUB_ENV"
 
-      - name: The shell's unit tests on this platform (not a gate; desktop-app ticket 30)
+      - name: The shell's unit tests and its test build on this platform (not a gate; desktop-app ticket 30)
         working-directory: packages/desktop
-        run: cargo test --locked 2>&1 | tee "$EVIDENCE/shell-unit-tests.txt"
+        run: |
+          cargo test --locked 2>&1 | tee "$EVIDENCE/shell-unit-tests.txt"
+          # The test build with the probe (debug only: smoke-probe does not compile in a release), used by the page
+          # guard step below; built here so that its platform code is compiled even when a later step fails.
+          cargo build --locked --features smoke-probe,packaged 2>&1 | tail -n 3
 
       - name: Install the workspace (frozen lockfile)
         run: corepack pnpm install --frozen-lockfile
@@ -200,11 +204,10 @@ jobs:
 
       - name: Shell page guard on the platform's webview (a test build with the probe and the assembled resources)
         run: |
-          # desktop-app ticket 30: a debug build with the smoke probe (never a release: smoke-probe does not compile in
-          # one) and `packaged`, with the assembled resources (sidecar/, skills/) put next to it in target/debug, where
+          # desktop-app ticket 30: the debug build with the smoke probe and `packaged` (built with the unit tests above),
+          # with the assembled resources (sidecar/, skills/) put next to it in target/debug, where
           # a packaged build looks for them when run from cargo's output; so it runs the assembled Node and app build.
           # Not shipped: only release-out/ is uploaded.
-          (cd packages/desktop && cargo build --features smoke-probe,packaged 2>&1 | tail -n 3)
           res=packages/desktop/target/package-resources
           dbg=packages/desktop/target/debug
           rm -rf "$dbg/sidecar" "$dbg/skills"
