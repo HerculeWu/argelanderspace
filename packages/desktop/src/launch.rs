@@ -4,8 +4,13 @@
 //! - Development (now): the system `node` (looked up on `PATH`) runs the repository's built CLI bundle,
 //!   `packages/app/dist/bin.js` (build it with `corepack pnpm -r build` first). The path is fixed when the shell is
 //!   compiled, from this crate's location in the repository.
-//! - Packaged (desktop-app ticket 23): the Node runtime and the app's build shipped as the bundle's resources;
-//!   `HostLauncher` gets a constructor that finds them from the resource directory. Nothing else changes.
+//! - Packaged (desktop-app ticket 23; a build with `--features packaged`, which `tauri build` gets from the packaging
+//!   steps in docs/engineering.md): the Node runtime and the app's build ship as the bundle's resources, under
+//!   `sidecar/` in the resource directory Tauri resolves (for a deb: `/usr/lib/ArgelanderSpace`, found next to the
+//!   executable as `../lib/ArgelanderSpace`). `sidecar/node/bin/node` runs `sidecar/app/dist/bin.js`; Node finds the
+//!   dependency directory `sidecar/app/node_modules` next to `dist/` by its own lookup. The system `PATH` is never
+//!   consulted for node. A build without the feature never looks in the resource directory, and a packaged build never
+//!   falls back to the repository.
 //!
 //! The host runs in a process group of its own (its pid is the group's id), so that the shell's forced end after the
 //! shutdown limit (`kill_group`) takes the host's own children (latexmk and the like) with it instead of leaving them
@@ -30,6 +35,7 @@ pub struct HostLauncher {
 
 impl HostLauncher {
     /// The development launcher: the system `node` and the repository's built bundle.
+    #[cfg_attr(feature = "packaged", allow(dead_code))]
     pub fn development() -> Self {
         HostLauncher {
             node: PathBuf::from("node"),
@@ -38,6 +44,16 @@ impl HostLauncher {
                 .join("app")
                 .join("dist")
                 .join("bin.js"),
+        }
+    }
+
+    /// The packaged launcher: the bundle's own Node and app build, under `sidecar/` in `resource_dir`.
+    #[cfg_attr(not(feature = "packaged"), allow(dead_code))]
+    pub fn packaged(resource_dir: &Path) -> Self {
+        let sidecar = resource_dir.join("sidecar");
+        HostLauncher {
+            node: sidecar.join("node").join("bin").join("node"),
+            entry: sidecar.join("app").join("dist").join("bin.js"),
         }
     }
 
@@ -99,6 +115,30 @@ mod tests {
         assert_eq!(l.node, PathBuf::from("node"));
         assert!(l.entry.ends_with("app/dist/bin.js"));
         assert!(l.entry.is_absolute());
+    }
+
+    #[test]
+    fn the_packaged_launcher_runs_the_bundles_node_and_build_from_the_resource_directory() {
+        let l = HostLauncher::packaged(Path::new("/usr/lib/ArgelanderSpace"));
+        assert_eq!(
+            l.node,
+            PathBuf::from("/usr/lib/ArgelanderSpace/sidecar/node/bin/node")
+        );
+        assert_eq!(
+            l.entry,
+            PathBuf::from("/usr/lib/ArgelanderSpace/sidecar/app/dist/bin.js")
+        );
+        // An absolute path: never looked up on PATH.
+        assert!(l.node.is_absolute());
+        assert_eq!(
+            l.args(Some("/p")),
+            vec![
+                OsString::from("/usr/lib/ArgelanderSpace/sidecar/app/dist/bin.js"),
+                "desktop-host".into(),
+                "--project".into(),
+                "/p".into()
+            ]
+        );
     }
 
     #[test]

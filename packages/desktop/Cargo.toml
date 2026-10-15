@@ -43,6 +43,10 @@ gio = { version = "0.18", optional = true }
 # Never in a release: a probe that evaluates a fixed script in the page after each load and appends the answer to the
 # file named by ARGELANDERSPACE_SHELL_PROBE (docs/engineering.md, desktop shell smoke).
 smoke-probe = ["dep:javascriptcore-rs", "dep:gio"]
+# The desktop package (desktop-app ticket 23): the host is the bundle's own Node and app build, found in the resource
+# directory (src/launch.rs `HostLauncher::packaged`). Without it the shell runs the repository's build with the `node`
+# on PATH (development). Packaging passes it: `cargo tauri build --features packaged --config tauri.package.conf.json`.
+packaged = []
 
 [profile.release]
 opt-level = "s"

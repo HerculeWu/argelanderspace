@@ -72,6 +72,7 @@ import {
   subsetLockfile,
   toolEnv,
 } from "./dep-dir-lib.mjs";
+import { vendoredLicense } from "./desktop-package-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = resolve(appRoot, "../..");
@@ -312,6 +313,11 @@ const noticeParts = [
     "Each entry: the package, the license its package.json declares, and the license files it ships.\n",
 ];
 const withoutFile = [];
+// Packages that ship no license file get the version-qualified text vendored in packages/app/licenses (ticket 23,
+// the user's decision in ticket 22), when there is one for exactly that version.
+const licensesDir = join(appRoot, "licenses");
+const vendored = JSON.parse(readFileSync(join(licensesDir, "runtime-licenses.json"), "utf8"));
+const withoutText = [];
 const licenses = {};
 for (const { dir, pkg } of kept) {
   const id = `${pkg.name}@${pkg.version}`;
@@ -324,10 +330,14 @@ for (const { dir, pkg } of kept) {
   licenses[id] = license;
   const files = readdirSync(dir).filter((f) => LICENSE_FILE.test(f));
   if (files.length === 0) withoutFile.push(id);
+  const v = files.length === 0 ? vendoredLicense(vendored, pkg.name, pkg.version) : null;
+  if (files.length === 0 && !v) withoutText.push(id);
   noticeParts.push(
     `===== ${id} =====\nLicense: ${license}\n` +
       (files.length === 0
-        ? "(the package ships no license file; its declared license applies)\n"
+        ? v
+          ? `(the package ships no license file; text vendored as licenses/${v.file}, ${v.kind}: ${vendored.files[v.file].source}${v.note ? `; ${v.note}` : ""})\n--- licenses/${v.file} ---\n${readFileSync(join(licensesDir, v.file), "utf8").trimEnd()}\n`
+          : "(the package ships no license file; its declared license applies)\n"
         : files
             .map((f) => `--- ${f} ---\n${readFileSync(join(dir, f), "utf8").trimEnd()}\n`)
             .join(""))
@@ -367,6 +377,7 @@ const report = {
     ])
   ),
   packages_without_license_file: withoutFile,
+  packages_without_license_text: withoutText,
   budget: {
     measures: "sum of file sizes under node_modules after pruning (decimal MB = 1e6 bytes)",
     bytes: budget.bytes,
@@ -386,7 +397,9 @@ for (const c of PRUNE_CATEGORIES)
   console.log(
     `  ${c}: ${keep.has(c) ? "kept" : `removed ${report.removed[c].paths.length} paths, ${mb(report.removed[c].bytes)}`}`
   );
-console.log(`  packages without a license file: ${withoutFile.length}`);
+console.log(
+  `  packages without a license file: ${withoutFile.length} (of which without a vendored text: ${withoutText.length})`
+);
 if (scan.ran)
   console.log(`  license scan of the closure: exit ${scan.exit} (output in license-scan.txt)`);
 console.log(`  budget: ${budget.line}`);
