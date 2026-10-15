@@ -27,7 +27,7 @@
  *
  * Which project (desktop-app ticket 18): the one given (`--project`, the CLI has changed into it), or — with
  * `fromRecent` — the most recently opened one when its folder is still there; otherwise none, and the host runs the
- * server of the welcome state (no-project.ts), which answers only the page, the host and the settings interfaces.
+ * server of the welcome state (no-project.ts), which answers only the page, the host and the settings interfaces and the page-error report.
  * Every project the host opens is recorded first in the recently opened projects (infra `recent-projects.ts`, global
  * data). In the welcome state a picked folder (`folder_picked`) or a recent project the page opens is left for at
  * once: recorded, then the host stops with reason `switch` and the folder as `next`.

@@ -571,7 +571,7 @@ export async function startServer(
 /**
  * The desktop host's server with no project open (desktop-app ticket 18, no-project.ts): the same start — the lenient
  * reading, the log file, the start record (without a project root or data directory), the environment record — but
- * the server answers only the page, the host and the settings interfaces. `--data-dir` and `--port` are not read.
+ * the server answers only the page, the host and the settings interfaces and the page-error report. `--data-dir` and `--port` are not read.
  */
 export async function startNoProjectServer(
   argv: readonly string[],
