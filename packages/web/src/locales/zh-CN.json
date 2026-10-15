@@ -2304,7 +2304,8 @@
       "copyPath": "复制路径",
       "pathCopied": "路径已复制",
       "copyFailed": "没有复制成功：浏览器不允许写剪贴板",
-      "openInEditor": "打开配置文件"
+      "openInEditor": "打开配置文件",
+      "notYet": "还没有配置文件。在设置页改任何一项，就会建立它。"
     },
     "source": {
       "default": "默认值",

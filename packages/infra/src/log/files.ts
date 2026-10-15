@@ -33,9 +33,14 @@ export const LOG_DIR_NAME = "logs";
 export const LOG_KEEP_FILES = 20;
 export const LOG_MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 
+/** The user log directory inside a global data directory. */
+export function logDirIn(globalDataDir: string): string {
+  return join(globalDataDir, LOG_DIR_NAME);
+}
+
 /** The log directory. Like `resolveGlobalDirs`, this never touches the filesystem beyond reading config.toml. */
 export function resolveLogDir(opts: GlobalDirsOptions = {}): string {
-  return join(resolveGlobalDirs(opts).dataDir, LOG_DIR_NAME);
+  return logDirIn(resolveGlobalDirs(opts).dataDir);
 }
 
 // <UTC time to the millisecond>-<process kind>-<pid>[-<n>].jsonl; sorting by name is sorting by start time. The

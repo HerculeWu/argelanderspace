@@ -208,6 +208,9 @@ describe("the built desktop host", () => {
       portOccupant: null,
       // The project folder as the system resolves it (the host's working directory): symbolic links resolved.
       project: realpathSync(w.project),
+      logDir: w.logDir,
+      language: "zh-CN",
+      logLevel: "info",
     });
     const page = await fetch(String(ready.url));
     expect([page.status, (await page.text()).includes("desktop host page")]).toEqual([200, true]);
@@ -369,7 +372,7 @@ describe("the built desktop host", () => {
     expect(await portFree(port)).toBe(true);
   }, 60_000);
 
-  test("a project folder that is not there: exit 1, no ready line", () => {
+  test("a project folder that is not there: exit 1, no ready line; one failed line the shell tells apart from a crash", () => {
     const w = world();
     const r = spawnSync(
       process.execPath,
@@ -382,7 +385,10 @@ describe("the built desktop host", () => {
       }
     );
     expect(r.status).toBe(1);
-    expect(r.stdout).toBe("");
+    // The shell starts a host without --project then, which goes to the welcome state (desktop-app ticket 20).
+    expect(r.stdout).toBe(
+      `${JSON.stringify({ type: "failed", stage: "project", logDir: w.logDir })}\n`
+    );
     expect(r.stderr).toMatch(/^error: the project folder .* is not a directory\n$/);
   });
 

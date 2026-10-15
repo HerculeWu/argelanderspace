@@ -701,7 +701,7 @@ export function Shell() {
           onNav={(v) => setActiveView(v)}
           onSplit={() => splitFrom(activeId)}
         />
-        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} />
+        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} configFile={preferences.settings?.file} />
         <ProjectSwitchPrompt notify={preferences.notify} />
       </div>
     </WorkspaceProvider>

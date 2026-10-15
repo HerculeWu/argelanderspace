@@ -128,6 +128,39 @@ describe("the desktop form", () => {
     expect(requests[0]).toEqual({ url: "/api/host/requests/open_config_file", method: "POST", body: undefined });
   });
 
+  it("no config file yet: Open config file asks nothing and says how the file comes to be (desktop-app ticket 20)", async () => {
+    settings.state = "missing";
+    await openSettings();
+    const head = q('[data-ui="config-file"]')!;
+    await waitFor(() => expect(q('[data-ui="open-config-file"]', head)).not.toBeNull());
+    fireEvent.click(q('[data-ui="open-config-file"]', head)!);
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("There is no config file yet. Changing any setting on this page creates it.")
+    );
+    await settled();
+    expect(requests).toEqual([]);
+  });
+
+  it("no config file yet: a refused save's Open config file says the same and asks nothing", async () => {
+    settings.state = "missing";
+    settings.refuse["ui.density"] = "write_failed";
+    await openSettings();
+    await waitFor(() => expect(q('[data-ui="open-config-file"]')).not.toBeNull());
+    const densities = [...document.querySelectorAll<HTMLElement>('[data-ui="density-option"]')];
+    fireEvent.click(densities[densities.length - 1]!);
+    const notice = await waitFor(() => {
+      const el = q('[data-ui="settings-save-failed"][data-ui-key="ui.density"]');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    fireEvent.click(q('[data-ui="settings-save-failed-open-config"]', notice)!);
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("There is no config file yet. Changing any setting on this page creates it.")
+    );
+    await settled();
+    expect(requests).toEqual([]);
+  });
+
   it("a row the page cannot change: the button alone, for that key", async () => {
     settings.uneditable = { "ui.theme": "dotted_key" };
     await openSettings();

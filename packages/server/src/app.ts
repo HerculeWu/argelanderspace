@@ -103,7 +103,7 @@ import {
   createAdsCredentialStore,
   ensureWriterSandboxProbe,
   type FetchImpl,
-  LOG_DIR_NAME,
+  logDirIn,
   pinnedGlobalDirs,
   readConfigLeniently,
   resolveGlobalDirsLeniently,
@@ -654,12 +654,11 @@ export function createApp(deps: AppDeps): Hono {
     dataDir: paths.dataDir,
     logDir: () =>
       deps.logDir ??
-      join(
+      logDirIn(
         (
           pinnedGlobalDirs() ??
           resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs
-        ).dataDir,
-        LOG_DIR_NAME
+        ).dataDir
       ),
     configPath: deps.configPath,
     log,

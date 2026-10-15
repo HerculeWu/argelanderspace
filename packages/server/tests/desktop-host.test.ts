@@ -38,6 +38,7 @@ import {
   type DesktopHost,
   type HostOutLine,
   portIsFree,
+  projectUnavailableLine,
   runDesktopHost,
 } from "../src/desktop-host.js";
 import { MailComposeService } from "../src/mail-compose.js";
@@ -240,6 +241,12 @@ describe("start", () => {
       portFallback: false,
       portOccupant: null,
       project: process.cwd(),
+      // Where the shell's own events go while no host runs, and what its crash dialog's "show the log folder" opens
+      // (desktop-app ticket 20); the language its native dialogs speak.
+      logDir: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+      language: "zh-CN",
+      // The log's level now: the shell writes its own file by it while no host runs (desktop-app ticket 20 review).
+      logLevel: "info",
     });
     const page = await fetch(`${h.url}/`);
     expect(page.status).toBe(200);
@@ -281,6 +288,60 @@ describe("start", () => {
       app: unknown;
     };
     expect(report.app).toEqual({ version: "9.9.9-test", mode: "desktop" });
+  });
+});
+
+describe("what the shell is told about the log and the language (desktop-app ticket 20)", () => {
+  beforeEach(() => {
+    mkdirSync(join(project, "web"), { recursive: true });
+    writeFileSync(join(project, "web", "index.html"), "<!doctype html><title>t</title>");
+  });
+
+  test("the ready line's language is the one config.toml names", async () => {
+    writeConfig('port = 0\n[ui]\nlanguage = "en"\n');
+    const h = await startHost();
+    expect(h.lines[0]).toMatchObject({ type: "ready", language: "en" });
+  });
+
+  test("the ready line's log level is the one config.toml names", async () => {
+    writeConfig('port = 0\nlog_level = "warn"\n');
+    const h = await startHost();
+    expect(h.lines[0]).toMatchObject({ type: "ready", logLevel: "warn" });
+  });
+
+  test("a server that cannot start: the failed line names the log directory, the start's stage", async () => {
+    writeConfig("port = 0\n");
+    // The project's data directory cannot be made: a file stands where it would be.
+    writeFileSync(join(project, "literatures"), "not a folder");
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let text = "";
+    output.on("data", (chunk: Buffer) => {
+      text += chunk.toString("utf8");
+    });
+    await expect(
+      runDesktopHost({ input, output, keychainProbe: KEYCHAIN, webDist: join(project, "web") })
+    ).rejects.toBeDefined();
+    expect(
+      text
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    ).toEqual([
+      {
+        type: "failed",
+        stage: "start",
+        logDir: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+      },
+    ]);
+  });
+
+  test("a project folder that cannot be entered: the line the CLI writes before it exits", () => {
+    expect(projectUnavailableLine()).toEqual({
+      type: "failed",
+      stage: "project",
+      logDir: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+    });
   });
 });
 
@@ -464,6 +525,21 @@ describe("the shell's events", () => {
         extra: "SECRET-SHELL-TEXT",
       },
     });
+    // The crash dialog has three answers; closing it is a quit (user ruling 3), there is no "closed".
+    send({
+      type: "shell_event",
+      event: "shell.dialog_answered",
+      fields: { dialog: "host_crashed", choice: "closed" },
+    });
+    // The review round's events: no window, a navigation stopped, a line the shell could not read, no single instance.
+    send({ type: "shell_event", event: "shell.window_failed", fields: { stage: "guard" } });
+    send({ type: "shell_event", event: "shell.navigation_blocked", fields: { scheme: "https" } });
+    send({ type: "shell_event", event: "shell.line_rejected", fields: { reason: "not_utf8" } });
+    send({
+      type: "shell_event",
+      event: "shell.instance_unguarded",
+      fields: { reason: "foreign_owner" },
+    });
     send({
       type: "shell_event",
       event: "shell.something_else",
@@ -508,6 +584,22 @@ describe("the shell's events", () => {
         dialog: "host_crashed",
         choice: "<invalid-enum>",
         dropped_fields: 1,
+      },
+      {
+        t: expect.any(String),
+        level: "info",
+        event: "shell.dialog_answered",
+        dialog: "host_crashed",
+        choice: "<invalid-enum>",
+      },
+      { t: expect.any(String), level: "warn", event: "shell.window_failed", stage: "guard" },
+      { t: expect.any(String), level: "warn", event: "shell.navigation_blocked", scheme: "https" },
+      { t: expect.any(String), level: "warn", event: "shell.line_rejected", reason: "not_utf8" },
+      {
+        t: expect.any(String),
+        level: "warn",
+        event: "shell.instance_unguarded",
+        reason: "foreign_owner",
       },
       { t: expect.any(String), level: "info", event: "shell.started", version: "<invalid-id>" },
     ]);

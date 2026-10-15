@@ -99,6 +99,11 @@ export const SERVER_LOG_EVENTS = [
   "shell.host_exited",
   "shell.dialog_answered",
   "shell.request_failed",
+  // Desktop-app ticket 20 review round: no window, a navigation stopped, an unreadable line, no single-instance guard.
+  "shell.window_failed",
+  "shell.navigation_blocked",
+  "shell.line_rejected",
+  "shell.instance_unguarded",
 ] as const;
 
 export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];

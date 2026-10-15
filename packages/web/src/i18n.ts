@@ -1,10 +1,11 @@
+import { DEFAULT_UI_LANGUAGE } from "@argelanderspace/contracts";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import zhCN from "./locales/zh-CN.json";
 import en from "./locales/en.json";
 
 export type AppLanguage = "zh-CN" | "en";
-export const DEFAULT_LANGUAGE: AppLanguage = "zh-CN";
+export const DEFAULT_LANGUAGE: AppLanguage = DEFAULT_UI_LANGUAGE;
 
 /**
  * Where this browser keeps a copy of the appearance the page last applied (argelander/preferences.tsx). It is not
