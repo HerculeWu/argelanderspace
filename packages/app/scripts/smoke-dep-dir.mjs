@@ -29,8 +29,10 @@
 //
 // Paths exercised: the host's ready line and the SPA; the keychain probe (GET /api/environment: `no_module` means the
 // native module did not load, `no_bus` means it loaded and only the session bus is missing); a PDF upload (PDFium probe
-// in the server), its text layer and a page render, with a PDF whose CJK text uses a NON-embedded font (the case a
-// font fallback would serve); a Copilot run against a scripted local OpenAI-Responses endpoint (Pi SDK, provider, a
+// in the server), its text layer and a page render, with a PDF whose CJK text uses a NON-embedded font: the render
+// must have ink where that text is (ticket 28: the PDF engine's font fallback, from the CJK font packages kept in the
+// dependency directory), and the page's route for those fonts must answer (the page's PDFium worker fetches them from
+// the local server); a Copilot run against a scripted local OpenAI-Responses endpoint (Pi SDK, provider, a
 // reader tool that renders the PDF page); a LaTeX ingest through the CLI of the same sidecar (argelander.sty).
 // Nothing is written outside the temp dir (and the evidence dir); the temp dir is removed unless --keep.
 import { spawn, spawnSync } from "node:child_process";
@@ -50,7 +52,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { findTool, removalPath, runErrorCategory, smokeVerdict } from "./dep-dir-lib.mjs";
+import { findTool, pngInk, removalPath, runErrorCategory, smokeVerdict } from "./dep-dir-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
@@ -522,6 +524,31 @@ try {
       img.status === 200 && isPng,
       "PDFium renders page 0 to a PNG",
       JSON.stringify(observed.render)
+    );
+    // The page is 300x200 pt rendered at a 600 px long edge (2 px per pt). Dark pixels where each line's ink falls:
+    // the Latin line (Helvetica, baseline 150, 16 pt) and the CJK text (non-embedded STSong-Light, baseline 100,
+    // 24 pt). Without the font fallback the CJK area is blank (0), with it some thousands (ticket 28).
+    observed.ink = isPng
+      ? {
+          latin: pngInk(img.buf, { x0: 40, x1: 400, y0: 68, y1: 110 }),
+          cjk: pngInk(img.buf, { x0: 36, x1: 240, y0: 148, y1: 216 }),
+        }
+      : null;
+    check(
+      (observed.ink?.latin ?? 0) > 200 && (observed.ink?.cjk ?? 0) > 500,
+      "the render has ink on the Latin line and on the non-embedded CJK text (PDF engine's font fallback)",
+      JSON.stringify(observed.ink)
+    );
+    const font = await api("GET", "/api/pdf-fonts/sc/1.0.0/NotoSansHans-Regular.otf");
+    observed.pageFont = {
+      status: font.status,
+      bytes: font.buf.length,
+      otf: font.buf.subarray(0, 4).toString("latin1") === "OTTO",
+    };
+    check(
+      font.status === 200 && observed.pageFont.otf && font.buf.length > 1_000_000,
+      "the page's PDFium worker can fetch a CJK fallback font from the local server",
+      JSON.stringify(observed.pageFont)
     );
 
     mark("copilot");

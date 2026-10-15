@@ -26,8 +26,9 @@
 // installs with --prod --frozen-lockfile --ignore-scripts and --os/--cpu/--libc set to the target, so only the target's
 // optional native packages come in. The layout is `node-linker=hoisted` (a flat npm-style tree, no symlinks: installers
 // and Tauri resources copy it as plain files) with `package-import-method=copy` (no hard links into the real store, so
-// pruning can never touch it). Then the prune rules of dep-dir-lib.mjs remove the font files, other platforms'
-// prebuilt files and esbuild. The license scan (scripts/license-scan.mjs, unchanged) needs pnpm's isolated layout, so
+// pruning can never touch it). Then the prune rules of dep-dir-lib.mjs remove the font files of the PDF engine's
+// non-CJK font packages (the CJK ones are its font fallback and stay, ticket 28), other platforms' prebuilt files and
+// esbuild. The license scan (scripts/license-scan.mjs, unchanged) needs pnpm's isolated layout, so
 // it runs on a second, isolated install of the same lockfile in a temp dir.
 //
 // Isolation, stated exactly (the smoke-pack convention; NOT a fully isolated tree): pnpm runs with an env allowlist

@@ -164,6 +164,7 @@ import { DEV_ORIGINS, ownOrigins } from "./origins.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { PaperCache } from "./paper-cache.js";
 import { createPdfAccess } from "./pdf-access.js";
+import { mountPdfFontRoutes } from "./pdf-fonts.js";
 import {
   readPdfTextMaterial,
   readPdfTextMaterialCached,
@@ -1162,6 +1163,9 @@ export function createApp(deps: AppDeps): Hono {
     });
     return c.json(description);
   });
+
+  // The PDF engine's fallback fonts for the page's PDFium worker (desktop-app ticket 28), from the local server.
+  mountPdfFontRoutes(app);
 
   app.get("/api/paper/:doc_id/pdf/snapshot", (c) => {
     c.header("Cache-Control", "no-store");
