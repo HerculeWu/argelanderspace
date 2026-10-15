@@ -6,13 +6,18 @@
 //        [--evidence <dir>] [--keep]
 //
 //   --remove  comma list of paths relative to node_modules to delete from the COPY before running (to make a variant
-//             that should fail, e.g. a whole font package, or this platform's own keyring binary).
+//             that should fail, e.g. a whole font package, or this platform's own keyring binary). Each must lie
+//             inside node_modules (checked).
+//
+// Exit: 0 and `SMOKE OK` only when every path ran and passed; 1 and `SMOKE FAILED` when a check failed; 2 and
+// `SMOKE INCOMPLETE (...; untested: ...)` when nothing failed but a path could not run (latexmk not on PATH).
 //
 // It lays out a sidecar the way the desktop package will (`<tmp>/sidecar/app/dist` = packages/app/dist,
 // `<tmp>/sidecar/app/node_modules` = a copy of the dependency directory), then starts `bin.js desktop-host --project
 // <empty temp folder>` with this Node and an env allowlist: temp HOME / XDG_* / XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS
-// pointing at a socket that does not exist (the real keychain is never reached), PATH=/usr/bin:/bin (TeX only; the
-// repo's node_modules are never on any lookup path: the sidecar lives in the temp dir). A loader hook records every
+// pointing at a socket that does not exist (the real keychain is never reached), PATH=/usr/bin:/bin (the ingest step
+// alone adds the directory of the latexmk found on the caller's PATH; the repo's node_modules are never on any lookup
+// path: the sidecar lives in the temp dir). Linux only (/proc/<pid>/maps, DBus variables). A loader hook records every
 // module file Node loads, so the evidence shows which dependency files the run really touched.
 //
 // Paths exercised: the host's ready line and the SPA; the keychain probe (GET /api/environment: `no_module` means the
@@ -36,11 +41,22 @@ import {
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { findTool, removalPath, runErrorCategory, smokeVerdict } from "./dep-dir-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
+// An argument this script does not know stops it: a mistyped `--remove` must not quietly run an unbroken variant.
+const VALUED = new Set(["--deps", "--label", "--remove", "--evidence"]);
+for (let i = 0; i < argv.length; i += 1) {
+  if (argv[i] === "--keep") continue;
+  if (!VALUED.has(argv[i]) || argv[i + 1] === undefined) {
+    console.error(`smoke-dep-dir: unknown or incomplete argument ${JSON.stringify(argv[i])}`);
+    process.exit(1);
+  }
+  i += 1;
+}
 const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 const depsArg = flag("--deps");
 if (!depsArg) throw new Error("--deps <directory made by dep-dir.mjs> is required");
@@ -77,7 +93,7 @@ const sidecar = join(work, "sidecar/app");
 cpSync(join(appRoot, "dist"), join(sidecar, "dist"), { recursive: true });
 cpSync(depsDir, join(sidecar, "node_modules"), { recursive: true, verbatimSymlinks: true });
 for (const rel of removeList) {
-  const p = join(sidecar, "node_modules", rel);
+  const p = removalPath(join(sidecar, "node_modules"), rel);
   if (!existsSync(p)) throw new Error(`--remove ${rel}: not in the dependency directory`);
   rmSync(p, { recursive: true, force: true });
 }
@@ -524,6 +540,8 @@ try {
       run: snap?.conversation?.run?.status ?? null,
       readPageImage: renderOp?.status ?? null,
       modelRequests: seen.length,
+      // the run's error code only (the server keeps the message to itself), never a message
+      error: runErrorCategory(snap?.conversation?.run?.error ?? null),
     };
     check(
       snap?.conversation?.run?.status === "completed" &&
@@ -562,7 +580,13 @@ try {
 }
 
 // LaTeX ingest through the CLI of the same sidecar (proves argelander.sty; also loads the bundle's static imports).
-if (existsSync("/usr/bin/latexmk")) {
+const untested = [];
+const latexmk = findTool("latexmk", {
+  path: process.env.PATH ?? "",
+  platform: process.platform,
+  exists: existsSync,
+});
+if (latexmk) {
   mark("ingest");
   const texDir = join(work, "tex");
   mkdirSync(texDir);
@@ -574,7 +598,12 @@ if (existsSync("/usr/bin/latexmk")) {
   const ing = spawnSync(
     process.execPath,
     [...nodeArgs, binJs, "ingest", texDir, "--data-dir", dataDir],
-    { cwd: home, env, encoding: "utf8", timeout: 240000 }
+    {
+      cwd: home,
+      env: { ...env, PATH: [dirname(latexmk), env.PATH].join(delimiter) },
+      encoding: "utf8",
+      timeout: 240000,
+    }
   );
   const outDir = join(dataDir, "output");
   const doc = existsSync(outDir) ? readdirSync(outDir).find((d) => !d.startsWith(".")) : undefined;
@@ -585,7 +614,10 @@ if (existsSync("/usr/bin/latexmk")) {
     "CLI ingest of a LaTeX source wrote the argelander event stream",
     JSON.stringify(observed.ingest) + (ing.status === 0 ? "" : ` ${(ing.stderr || "").slice(-300)}`)
   );
-} else log("SKIP  LaTeX ingest: /usr/bin/latexmk not found");
+} else {
+  untested.push("LaTeX ingest");
+  log("UNTESTED  LaTeX ingest: latexmk is not on PATH");
+}
 
 // Which dependency files were loaded, by phase.
 const trace = existsSync(traceFile) ? readFileSync(traceFile, "utf8").split("\n") : [];
@@ -618,6 +650,7 @@ writeFileSync(
   join(evidenceDir, `${label}-observed.json`),
   `${JSON.stringify(observed, null, 2)}\n`
 );
+const verdict = smokeVerdict({ failures, untested, label });
+log(`\n${verdict.line}`);
 writeFileSync(join(evidenceDir, `${label}-result.txt`), `${results.join("\n")}\n`);
-console.log(failures === 0 ? `\nSMOKE OK (${label})` : `\nSMOKE FAILED (${label}, ${failures})`);
-process.exit(failures === 0 ? 0 : 1);
+process.exit(verdict.code);

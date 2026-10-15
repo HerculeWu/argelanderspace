@@ -5,7 +5,7 @@
 // dep-dir-lib.mjs and tested by dep-dir.test.mjs. The smoke that proves the pruned directory works is smoke-dep-dir.mjs.
 //
 //   node packages/app/scripts/dep-dir.mjs --out <new dir> [--target <os>-<arch>] [--online] [--keep <categories>]
-//        [--lock <pnpm-lock.yaml>] [--no-license-scan]
+//        [--lock <pnpm-lock.yaml>] [--no-license-scan] [--budget-mb <n>]
 //
 //   --out     a directory that does not exist yet (or is empty); it receives node_modules/ (the dependency directory),
 //             THIRD-PARTY-RUNTIME-NOTICES.txt, dep-dir-report.json, and the package.json + pnpm-lock.yaml it was
@@ -16,6 +16,11 @@
 //             lockfile (--frozen-lockfile); the registry's own resolution of the ranges is never used.
 //   --keep    comma list of categories NOT to prune: fonts, foreign, esbuild (all three = the unpruned control).
 //   --no-license-scan  skip the license scan of the closure (it needs a second, isolated install).
+//   --budget-mb  the size budget in decimal MB (default 500, the user's decision for ticket 22). What it measures: the
+//             sum of the sizes of the files under node_modules after pruning (`bytes_after` / `budget` in the report)
+//             -- NOT the installer's size, NOT the disk usage after install (cluster rounding adds ~30% on ext4), NOT
+//             the Node runtime (ticket 23 counts those separately). Over budget: the directory is kept for inspection,
+//             a line `OVER BUDGET` is printed and the exit code is 3 (a failed license scan exits 1).
 //
 // How: the repo lockfile's packages/app production closure becomes the lockfile of a standalone project, which pnpm
 // installs with --prod --frozen-lockfile --ignore-scripts and --os/--cpu/--libc set to the target, so only the target's
@@ -25,9 +30,20 @@
 // prebuilt files and esbuild. The license scan (scripts/license-scan.mjs, unchanged) needs pnpm's isolated layout, so
 // it runs on a second, isolated install of the same lockfile in a temp dir.
 //
-// Isolation: pnpm runs with an env allowlist (PATH of node + system dirs, temp HOME/XDG, empty npm userconfig); it reads
-// the real pnpm store (and with --online may add to it, a tool cache) and the real corepack home (cached pnpm). It never
-// runs install scripts. Nothing else outside --out and the temp dir is written.
+// Isolation, stated exactly (the smoke-pack convention; NOT a fully isolated tree): pnpm runs with an env allowlist
+// (dep-dir-lib.mjs toolEnv: PATH = a temp shim directory holding only `node` and `corepack` plus the system directories,
+// never the whole node bin directory, which with nvm also holds global tools such as `pi`; temp HOME/XDG_*; empty npm
+// user AND global configs). It READS the real corepack home (the cached pnpm, pinned by the root package.json's
+// packageManager; corepack may touch its lastKnownGood file) and the real pnpm store; with --online pnpm may also WRITE
+// to that store (adds the downloaded tarballs; a tool cache, never user data). It never runs install scripts. Nothing
+// else outside --out and the temp dir is written.
+//
+// Platforms: verified only on Linux x64, cross-generating all four targets there (--target, --online). Running it ON
+// Windows or macOS is unverified (ticket 26). What is already handled for Windows: corepack is started as
+// `node <corepack.js>` (a .cmd cannot be spawned without a shell), the env keeps SystemRoot/PATHEXT and gets temp
+// USERPROFILE/APPDATA/LOCALAPPDATA/TEMP, the system PATH is %SystemRoot%\System32, COREPACK_HOME follows corepack's
+// Windows default (%LOCALAPPDATA%\node\corepack). Not handled: symlink shims (Windows needs a privilege for them, so
+// the shim directory stays empty there and pnpm runs in-process under this node).
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -37,17 +53,24 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  budgetCheck,
+  corepackCommand,
+  DEP_DIR_BUDGET_BYTES,
   expectedPlatformPackages,
+  findTool,
   foreignPrebuild,
   PRUNE_CATEGORIES,
+  pnpmVersion,
   pruneAction,
   subsetLockfile,
+  toolEnv,
 } from "./dep-dir-lib.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -76,29 +99,40 @@ for (const k of keep)
 const online = argv.includes("--online");
 const licenseScan = !argv.includes("--no-license-scan");
 const lockPath = resolve(flag("--lock") ?? join(repoRoot, "pnpm-lock.yaml"));
+const budgetArg = flag("--budget-mb");
+const budgetBytes = budgetArg === undefined ? DEP_DIR_BUDGET_BYTES : Number(budgetArg) * 1e6;
+if (!(budgetBytes > 0)) throw new Error(`--budget-mb: not a positive number: ${budgetArg}`);
+const pnpm = pnpmVersion(readFileSync(join(repoRoot, "package.json"), "utf8"));
 
 // ---- environment allowlist for pnpm ------------------------------------------------------------------------------ //
 const work = mkdtempSync(join(tmpdir(), "argelander-dep-dir-"));
 process.on("exit", () => rmSync(work, { recursive: true, force: true }));
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(1));
 const realHome = homedir();
-const pnpmHome = join(work, "home");
-mkdirSync(pnpmHome);
-writeFileSync(join(work, "empty-npmrc"), "");
-const env = {
-  // node first: /usr/bin may hold an older node that the corepack pnpm refuses
-  PATH: [dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter),
-  HOME: pnpmHome,
-  XDG_CONFIG_HOME: join(pnpmHome, ".config"),
-  XDG_DATA_HOME: join(pnpmHome, ".local/share"),
-  XDG_CACHE_HOME: join(pnpmHome, ".cache"),
-  npm_config_userconfig: join(work, "empty-npmrc"),
-  COREPACK_HOME:
-    process.env.COREPACK_HOME ??
-    join(process.env.XDG_CACHE_HOME ?? join(realHome, ".cache"), "node", "corepack"),
-  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
-  NO_COLOR: "1",
-};
+writeFileSync(join(work, "empty-user-npmrc"), "");
+writeFileSync(join(work, "empty-global-npmrc"), "");
+// Tool shims (POSIX): only this node and its corepack are reachable on PATH. corepack's script runs under the `node`
+// it finds on PATH, so the node shim is this very node (an older /usr/bin/node is refused by the pinned pnpm).
+const bin = join(work, "bin");
+mkdirSync(bin);
+const corepackFound = findTool("corepack", {
+  path: [dirname(process.execPath), process.env.PATH ?? ""].join(delimiter),
+  platform: process.platform,
+  pathext: process.env.PATHEXT,
+  exists: existsSync,
+});
+if (!corepackFound) throw new Error("corepack not found next to this node or on PATH");
+if (process.platform !== "win32") {
+  symlinkSync(process.execPath, join(bin, "node"));
+  symlinkSync(corepackFound, join(bin, "corepack"));
+}
+const corepack = corepackCommand({
+  platform: process.platform,
+  corepack: process.platform === "win32" ? corepackFound : join(bin, "corepack"),
+  execPath: process.execPath,
+});
+const env = toolEnv({ platform: process.platform, env: process.env, realHome, work, bin });
+for (const d of [env.HOME, env.TEMP].filter(Boolean)) mkdirSync(d, { recursive: true });
 function run(cmd, args, options = {}) {
   const r = spawnSync(cmd, args, { encoding: "utf8", maxBuffer: 64 << 20, env, ...options });
   if (r.error) throw r.error;
@@ -108,14 +142,22 @@ function must(r, what) {
   if (r.status !== 0) throw new Error(`${what} failed (${r.status}): ${r.stderr || r.stdout}`);
   return r.stdout;
 }
+const pnpmCli = (args, options) =>
+  run(corepack.command, [...corepack.args, "pnpm", ...args], options);
+const realDirs = Object.fromEntries(
+  ["USERPROFILE", "APPDATA", "LOCALAPPDATA"]
+    .filter((k) => process.platform === "win32" && process.env[k])
+    .map((k) => [k, process.env[k]])
+);
 const store = must(
-  run("corepack", ["pnpm", "store", "path"], {
+  pnpmCli(["store", "path"], {
     cwd: repoRoot,
     env: {
       ...env,
       HOME: realHome,
       XDG_DATA_HOME: process.env.XDG_DATA_HOME ?? join(realHome, ".local/share"),
       XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME ?? join(realHome, ".config"),
+      ...realDirs,
     }, // read-only query of where the real store is
   }),
   "pnpm store path"
@@ -135,7 +177,7 @@ function writeProject(dir) {
         version: appVersion,
         private: true,
         description: `Runtime dependency directory of argelanderspace ${appVersion} for ${targetName} (generated by packages/app/scripts/dep-dir.mjs)`,
-        packageManager: "pnpm@11.24.0",
+        packageManager: `pnpm@${pnpm}`,
         dependencies: subset.dependencies,
       },
       null,
@@ -145,7 +187,6 @@ function writeProject(dir) {
 }
 function install(dir, linker) {
   const args = [
-    "pnpm",
     "install",
     "--frozen-lockfile",
     "--trust-lockfile",
@@ -164,7 +205,7 @@ function install(dir, linker) {
     ...(target.libc ? ["--libc", target.libc] : []),
     ...(online ? [] : ["--offline"]),
   ];
-  return must(run("corepack", args, { cwd: dir }), `pnpm install (${linker})`);
+  return must(pnpmCli(args, { cwd: dir }), `pnpm install (${linker})`);
 }
 
 // A failed generation leaves no half-made directory behind (a failed license scan keeps it, for inspection).
@@ -304,6 +345,7 @@ if (licenseScan) {
 }
 
 const sizeAfter = du(nm);
+const budget = budgetCheck(sizeAfter, budgetBytes);
 const report = {
   app: appVersion,
   target: targetName,
@@ -322,6 +364,12 @@ const report = {
     ])
   ),
   packages_without_license_file: withoutFile,
+  budget: {
+    measures: "sum of file sizes under node_modules after pruning (decimal MB = 1e6 bytes)",
+    bytes: budget.bytes,
+    budget_bytes: budget.budget,
+    ok: budget.ok,
+  },
   license_scan: scan.ran ? { exit: scan.exit } : "skipped",
   licenses,
 };
@@ -338,4 +386,5 @@ for (const c of PRUNE_CATEGORIES)
 console.log(`  packages without a license file: ${withoutFile.length}`);
 if (scan.ran)
   console.log(`  license scan of the closure: exit ${scan.exit} (output in license-scan.txt)`);
-process.exit(scan.ran && scan.exit !== 0 ? 1 : 0);
+console.log(`  budget: ${budget.line}`);
+process.exit(scan.ran && scan.exit !== 0 ? 1 : budget.ok ? 0 : 3);

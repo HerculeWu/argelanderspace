@@ -3,12 +3,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  budgetCheck,
+  corepackCommand,
+  corepackHome,
+  DEP_DIR_BUDGET_BYTES,
   expectedPlatformPackages,
+  findTool,
   foreignPrebuild,
   matchesTarget,
   PRUNE_CATEGORIES,
+  pnpmVersion,
   pruneAction,
+  removalPath,
+  runErrorCategory,
+  smokeVerdict,
   subsetLockfile,
+  toolEnv,
 } from "./dep-dir-lib.mjs";
 
 const LOCK = `lockfileVersion: '9.0'
@@ -231,4 +241,159 @@ test("expectedPlatformPackages lists the lockfile's platform packages that the t
     []
   );
   assert.deepEqual(expectedPlatformPackages(lockfile, { platform: "win32", arch: "x64" }), []);
+});
+
+test("the budget is 500 MB of file content per platform, and a directory over it is reported as over", () => {
+  assert.equal(DEP_DIR_BUDGET_BYTES, 500_000_000);
+  const under = budgetCheck(184_626_807);
+  assert.equal(under.ok, true);
+  assert.equal(under.budget, 500_000_000);
+  assert.match(under.line, /184\.6 MB of file content, budget 500\.0 MB: within/);
+  assert.equal(budgetCheck(500_000_000).ok, true);
+  const over = budgetCheck(500_000_001);
+  assert.equal(over.ok, false);
+  assert.match(over.line, /OVER BUDGET/);
+  assert.equal(budgetCheck(300_000_000, 200_000_000).ok, false);
+  assert.throws(() => budgetCheck(1, 0), /budget/);
+});
+
+test("pnpmVersion reads the pinned pnpm from packageManager, with or without a hash", () => {
+  assert.equal(pnpmVersion('{"packageManager": "pnpm@11.24.0"}'), "11.24.0");
+  assert.equal(pnpmVersion('{"packageManager": "pnpm@11.24.0+sha512.abc"}'), "11.24.0");
+  assert.throws(() => pnpmVersion('{"packageManager": "yarn@4.0.0"}'), /pnpm/);
+  assert.throws(() => pnpmVersion("{}"), /packageManager/);
+});
+
+test("corepackHome follows corepack's own default on each platform", () => {
+  assert.equal(corepackHome({ COREPACK_HOME: "/c" }, "/home/u", "linux"), "/c");
+  assert.equal(corepackHome({}, "/home/u", "linux"), "/home/u/.cache/node/corepack");
+  assert.equal(corepackHome({ XDG_CACHE_HOME: "/x" }, "/home/u", "darwin"), "/x/node/corepack");
+  assert.equal(
+    corepackHome({ LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local" }, "C:\\Users\\u", "win32"),
+    "C:\\Users\\u\\AppData\\Local\\node\\corepack"
+  );
+  assert.equal(
+    corepackHome({}, "C:\\Users\\u", "win32"),
+    "C:\\Users\\u\\AppData\\Local\\node\\corepack"
+  );
+});
+
+test("findTool looks a tool up on PATH, with PATHEXT on Windows", () => {
+  const files = new Set(["/opt/a/latexmk", "/usr/bin/corepack", "C:\\node\\corepack.CMD"]);
+  const exists = (f) => files.has(f);
+  assert.equal(
+    findTool("latexmk", { path: "/usr/bin:/opt/a", platform: "linux", exists }),
+    "/opt/a/latexmk"
+  );
+  assert.equal(findTool("pi", { path: "/usr/bin:/opt/a", platform: "linux", exists }), undefined);
+  assert.equal(findTool("x", { path: "", platform: "linux", exists }), undefined);
+  assert.equal(
+    findTool("corepack", {
+      path: "C:\\Windows;C:\\node",
+      platform: "win32",
+      pathext: ".EXE;.CMD",
+      exists,
+    }),
+    "C:\\node\\corepack.CMD"
+  );
+});
+
+test("corepackCommand runs corepack's JS with this node on Windows (a .cmd needs a shell), the shim elsewhere", () => {
+  assert.deepEqual(
+    corepackCommand({ platform: "linux", corepack: "/w/bin/corepack", execPath: "/n/node" }),
+    { command: "/w/bin/corepack", args: [] }
+  );
+  assert.deepEqual(
+    corepackCommand({
+      platform: "win32",
+      corepack: "C:\\Program Files\\nodejs\\corepack.cmd",
+      execPath: "C:\\Program Files\\nodejs\\node.exe",
+    }),
+    {
+      command: "C:\\Program Files\\nodejs\\node.exe",
+      args: ["C:\\Program Files\\nodejs\\node_modules\\corepack\\dist\\corepack.js"],
+    }
+  );
+});
+
+test("toolEnv is an allowlist: shim PATH, temp home, empty npm configs, the real corepack home", () => {
+  const real = {
+    PATH: "/home/u/.nvm/versions/node/v24/bin:/usr/bin:/bin",
+    HOME: "/home/u",
+    SECRET_TOKEN: "x",
+    npm_config_registry: "https://example.invalid",
+    XDG_CACHE_HOME: "/home/u/.xc",
+  };
+  const env = toolEnv({
+    platform: "linux",
+    env: real,
+    realHome: "/home/u",
+    work: "/w",
+    bin: "/w/bin",
+  });
+  assert.equal(env.PATH, "/w/bin:/usr/bin:/bin");
+  assert.equal(env.HOME, "/w/home");
+  assert.equal(env.XDG_CONFIG_HOME, "/w/home/.config");
+  assert.equal(env.npm_config_userconfig, "/w/empty-user-npmrc");
+  assert.equal(env.npm_config_globalconfig, "/w/empty-global-npmrc");
+  assert.equal(env.COREPACK_HOME, "/home/u/.xc/node/corepack");
+  assert.equal(env.SECRET_TOKEN, undefined);
+  assert.equal(env.npm_config_registry, undefined);
+  assert.ok(!env.PATH.includes(".nvm"), "never the whole node bin directory");
+  assert.equal(env.SystemRoot, undefined);
+
+  const win = toolEnv({
+    platform: "win32",
+    env: {
+      Path: "C:\\nodejs;C:\\Windows\\System32",
+      SystemRoot: "C:\\Windows",
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      LOCALAPPDATA: "C:\\Users\\u\\AppData\\Local",
+      USERPROFILE: "C:\\Users\\u",
+    },
+    realHome: "C:\\Users\\u",
+    work: "C:\\t\\w",
+    bin: "C:\\t\\w\\bin",
+  });
+  assert.equal(win.PATH, "C:\\t\\w\\bin;C:\\Windows\\System32;C:\\Windows");
+  assert.equal(win.SystemRoot, "C:\\Windows");
+  assert.equal(win.PATHEXT, ".COM;.EXE;.BAT;.CMD");
+  assert.equal(win.USERPROFILE, "C:\\t\\w\\home");
+  assert.equal(win.LOCALAPPDATA, "C:\\t\\w\\home\\AppData\\Local");
+  assert.equal(win.COREPACK_HOME, "C:\\Users\\u\\AppData\\Local\\node\\corepack");
+  assert.ok(!win.PATH.includes("nodejs"));
+});
+
+test("removalPath keeps --remove inside node_modules", () => {
+  assert.equal(removalPath("/s/node_modules", "openai"), "/s/node_modules/openai");
+  assert.equal(
+    removalPath("/s/node_modules", "@embedpdf/fonts-sc/fonts"),
+    "/s/node_modules/@embedpdf/fonts-sc/fonts"
+  );
+  for (const bad of ["../dist", "openai/../../dist", "/etc", ".", "", "a/../.."])
+    assert.throws(() => removalPath("/s/node_modules", bad), /inside node_modules/, bad);
+});
+
+test("runErrorCategory keeps only the run's error code, never a message", () => {
+  assert.deepEqual(runErrorCategory(null), { code: null });
+  assert.deepEqual(runErrorCategory("unavailable"), { code: "unavailable" });
+  assert.deepEqual(runErrorCategory("provider_capacity"), { code: "provider_capacity" });
+  assert.deepEqual(runErrorCategory("401 Unauthorized key=sk-SECRET"), { code: "other" });
+  assert.deepEqual(runErrorCategory("Cannot find package 'openai' imported from /tmp/x"), {
+    code: "other",
+  });
+});
+
+test("smokeVerdict never says OK when a path went untested", () => {
+  assert.deepEqual(smokeVerdict({ failures: 0, untested: [], label: "c" }), {
+    line: "SMOKE OK (c)",
+    code: 0,
+  });
+  assert.deepEqual(smokeVerdict({ failures: 2, untested: ["ingest"], label: "c" }), {
+    line: "SMOKE FAILED (c, 2)",
+    code: 1,
+  });
+  const incomplete = smokeVerdict({ failures: 0, untested: ["LaTeX ingest"], label: "c" });
+  assert.equal(incomplete.code, 2);
+  assert.match(incomplete.line, /^SMOKE INCOMPLETE \(c; untested: LaTeX ingest\)$/);
 });

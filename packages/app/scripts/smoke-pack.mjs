@@ -52,6 +52,7 @@ import { createServer } from "node:http";
 import { homedir, networkInterfaces, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { lockfileClosure, pnpmVersion } from "./dep-dir-lib.mjs";
 import { checkPackContents } from "./pack-contents.mjs";
 
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -257,49 +258,12 @@ writeFileSync(
 if (offlineLock) {
   // Offline machines: a lockfile made from the repo's, with the tarball as the only importer dependency, so pnpm
   // installs the already-stored exact versions. The registry's own resolution of the dependency ranges is NOT exercised.
-  const lock = readFileSync(offlineLock, "utf8");
-  const importer = /\n {2}packages\/app:\n {4}dependencies:\n((?: {6}.*\n)+)/.exec(lock);
-  if (!importer) throw new Error("lockfile has no packages/app importer");
-  const depBlock = importer[1];
-  const rawSpecs = [
-    ...depBlock.matchAll(/ {6}'?([^':\n]+)'?:\n {8}specifier: (.+)\n {8}version: (.+)\n/g),
-  ];
-  const snapshotDeps = rawSpecs.map((m) => `      '${m[1]}': ${m[3]}`).join("\n");
+  const closure = lockfileClosure(readFileSync(offlineLock, "utf8"), "packages/app");
+  const snapshotDeps = closure.specs.map((d) => `      '${d.name}': ${d.version}`).join("\n");
   const integrity = `sha512-${createHash("sha512").update(readFileSync(tarball)).digest("base64")}`;
-  const head = lock.slice(0, lock.indexOf("importers:"));
-  const rest = lock.slice(lock.indexOf("\npackages:\n"));
+  const { head, keptPackages, keptSnapshots } = closure; // only what the tarball's dependencies reach
   const entry = `  argelanderspace@file:${tgzName}:\n    resolution: {integrity: ${integrity}, tarball: file:${tgzName}}\n    version: ${packJson[0].version}\n    engines: {node: '>=24'}\n\n`;
   const snapshot = `  argelanderspace@file:${tgzName}:\n    dependencies:\n${snapshotDeps}\n\n`;
-  // Keep only what the tarball's dependencies reach, so the store is asked for nothing else.
-  const [packagesText, snapshotsText] = rest.split("\nsnapshots:\n");
-  const blocks = (text) =>
-    new Map(
-      [...text.matchAll(/^ {2}(\S.*?):(?: \{\}\n|\n(?: {4}.*\n)*)/gm)].map((m) => [
-        m[1].replace(/^'|'$/g, ""),
-        m[0],
-      ])
-    );
-  const snapshotBlocks = blocks(snapshotsText);
-  const packageBlocks = blocks(packagesText);
-  const wanted = new Set();
-  const queue = rawSpecs.map((m) => `${m[1]}@${m[3]}`);
-  while (queue.length > 0) {
-    const key = queue.pop();
-    if (wanted.has(key)) continue;
-    const block = snapshotBlocks.get(key);
-    if (!block) throw new Error(`lockfile has no snapshot ${key}`);
-    wanted.add(key);
-    for (const dep of block.matchAll(/^ {6}'?([^':\n]+)'?: (\S.*)$/gm))
-      queue.push(`${dep[1]}@${dep[2]}`);
-  }
-  const keptSnapshots = [...wanted].map((key) => snapshotBlocks.get(key)).join("\n");
-  const keptPackages = [...new Set([...wanted].map((key) => key.replace(/\(.*$/, "")))]
-    .map((key) => {
-      const block = packageBlocks.get(key);
-      if (!block) throw new Error(`lockfile has no package ${key}`);
-      return block;
-    })
-    .join("\n");
   const withPackage = `\npackages:\n\n${entry}${keptPackages}\n\nsnapshots:\n\n${snapshot}${keptSnapshots}\n`;
   const importers = `importers:\n\n  .:\n    dependencies:\n      argelanderspace:\n        specifier: file:${tgzName}\n        version: file:${tgzName}\n`;
   writeFileSync(join(clean, "pnpm-lock.yaml"), `${head}${importers}${withPackage}`);
@@ -309,7 +273,7 @@ if (offlineLock) {
       name: "clean-smoke",
       version: "1.0.0",
       private: true,
-      packageManager: "pnpm@11.24.0",
+      packageManager: `pnpm@${pnpmVersion(readFileSync(join(appRoot, "../../package.json"), "utf8"))}`,
       dependencies: { argelanderspace: `file:${tgzName}` },
     })
   );
