@@ -342,6 +342,33 @@ const ink = (x0, x1, y0, y1) => {
 return JSON.stringify({ href: location.href, tag: el.tagName, w, h, latin: ink(0.06, 0.8, 0.17, 0.27), cjk: ink(0.06, 0.4, 0.37, 0.54) });
 `;
 
+// The host's jobs as its WebSocket's hello message lists them (smoke-dep-dir.mjs does the same); [] when none came.
+async function jobs(port) {
+  try {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    return await new Promise((done) => {
+      const timer = setTimeout(() => done([]), 3000);
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(String(e.data));
+        if (msg.type === "hello") {
+          clearTimeout(timer);
+          ws.close();
+          done(
+            (msg.jobs ?? []).map((j) => ({
+              kind: j.kind,
+              status: j.status,
+              error: String(j.error ?? "").slice(0, 300),
+            }))
+          );
+        }
+      };
+      ws.onerror = () => done([]);
+    });
+  } catch {
+    return [];
+  }
+}
+
 async function cjkInPage(name, port, controlFile, probeFile, shell) {
   const host = await api(port, "GET", "/api/host");
   check(
@@ -364,7 +391,8 @@ async function cjkInPage(name, port, controlFile, probeFile, shell) {
       )
     : { status: 0 };
   let docId = null;
-  for (let i = 0; i < 300 && up.status === 202 && !docId; i += 1) {
+  // Up to three minutes: the upload job runs PDFium on the PDF first (slow on a busy runner).
+  for (let i = 0; i < 900 && up.status === 202 && !docId; i += 1) {
     const lib = await api(port, "GET", "/api/library");
     docId =
       lib.json?.refs?.find((r) => r.id === ref.id)?.doc_ids?.find((d) => d.startsWith("pdf-")) ??
@@ -374,7 +402,7 @@ async function cjkInPage(name, port, controlFile, probeFile, shell) {
   check(
     !!docId,
     `${name}: the CJK PDF was uploaded into the project`,
-    docId ?? `works ${works.status}, upload ${up.status}`
+    docId ?? `works ${works.status}, upload ${up.status}; jobs ${JSON.stringify(await jobs(port))}`
   );
   const font = await fetch(
     `http://127.0.0.1:${port}/api/pdf-fonts/sc/1.0.0/NotoSansHans-Regular.otf`
