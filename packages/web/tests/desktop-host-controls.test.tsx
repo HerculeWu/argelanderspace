@@ -107,7 +107,7 @@ describe("the browser form", () => {
       fireEvent.click(q('[data-ui="settings-group"][data-ui-key="diagnostics"]')!);
       await waitFor(() => expect(q('[data-ui="copy-log-path"]')).not.toBeNull());
       expect(q('[data-ui="show-log-folder"]')).toBeNull();
-      // The command-line group stays the desktop app's (ticket 24); not listed in either form yet.
+      // The command-line group is the desktop app's only (ticket 24): not listed in the browser form.
       expect(q('[data-ui="settings-group"][data-ui-key="cli"]')).toBeNull();
       expect(requests).toEqual([]);
     });

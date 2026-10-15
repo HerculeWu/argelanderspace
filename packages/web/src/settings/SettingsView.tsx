@@ -29,6 +29,7 @@ import { ACCENTS, type ThemeName } from "../argelander/theme";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
+import { CliGroup } from "./CliGroup";
 import { fetchDiagnostics } from "../api/diagnostics";
 import { useHostInfo, useHostRequest } from "../host";
 import { DEFAULT_LANGUAGE } from "../i18n";
@@ -49,14 +50,14 @@ import "./settings.css";
  */
 
 /** The groups this page fills; the others show one line saying so. */
-const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "tex", "copilot", "mail", "diagnostics", "advanced"]);
+const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "tex", "copilot", "mail", "cli", "diagnostics", "advanced"]);
 
 /**
  * The desktop app's own controls (desktop-app ticket 17): opening the config file in the system's editor and showing
  * the log folder are native requests to the desktop host (`useHostRequest`); the request names no path — the host
  * knows its config file and log folder. In a browser there is no host, and the page shows the path and a copy action.
  */
-/** `cli` belongs to the desktop app only; a page in a browser does not list it. */
+/** `cli` belongs to the desktop app only (desktop-app ticket 24); a page in a browser does not list it. */
 const BROWSER_GROUPS = SETTINGS_GROUPS.filter((group) => group !== "cli");
 
 const GROUP_ICON: Record<SettingsGroup, string> = {
@@ -762,6 +763,8 @@ export function SettingsView(_props: { paneId?: number }) {
   const { settings, unreachable } = P;
   const [group, setGroup] = useState<SettingsGroup>("appearance");
   const body = useRef<HTMLDivElement>(null);
+  const host = useHostInfo();
+  const groups = host?.mode === "desktop" ? SETTINGS_GROUPS : BROWSER_GROUPS;
   useEffect(() => {
     body.current?.scrollTo?.({ top: 0 });
   }, [group]);
@@ -811,7 +814,7 @@ export function SettingsView(_props: { paneId?: number }) {
       )}
       <div className="st-layout">
         <nav className="st-nav" data-ui="settings-groups" aria-label={t("settings.groupsLabel")}>
-          {BROWSER_GROUPS.map((g) => {
+          {groups.map((g) => {
             const n = badIn(g);
             const name = t(GROUP_LABEL[g]);
             return (
@@ -831,6 +834,9 @@ export function SettingsView(_props: { paneId?: number }) {
             ) : group === "copilot" || group === "mail" ? (
               // Kept outside config.toml: shown whatever the state of the file.
               <Entry kind={group} />
+            ) : group === "cli" ? (
+              // Not in config.toml either; the desktop app's only (the group is not listed in a browser).
+              host?.mode === "desktop" && <CliGroup notify={P.notify} />
             ) : settings ? (
               <GroupRows group={group} state={{ P, settings, locked: settings.readonly || unreachable }} />
             ) : (

@@ -1,10 +1,12 @@
 import {
+  type HostCliStatus,
   type HostInfo,
   type HostRecentProjects,
   type HostRequestKind,
   type HostSwitchAcknowledged,
   type HostSwitchImpact,
   type HostSwitchTarget,
+  isHostCliStatus,
   isHostInfo,
   isHostRecentProjects,
   isHostSwitchImpact,
@@ -116,5 +118,40 @@ export async function removeRecentProject(path: string): Promise<HostRecentProje
     return isHostRecentProjects(body) ? body : null;
   } catch {
     return null;
+  }
+}
+
+/** The command-line tool's status (desktop-app ticket 24); null when there is no usable answer. */
+export async function fetchCliStatus(): Promise<HostCliStatus | null> {
+  try {
+    const body = await apiRequest<unknown>("/api/host/cli", { cache: "no-store" });
+    return isHostCliStatus(body) ? body : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What became of installing or uninstalling the command-line tool: the status after it, `foreign` (someone else's file
+ * has that name: nothing was written or removed) with the status, or a failure with the error's code (null: no answer).
+ */
+export type CliChangeResult =
+  | { kind: "done"; status: HostCliStatus }
+  | { kind: "foreign"; status: HostCliStatus }
+  | { kind: "failed"; code: string | null };
+
+/** Installs (or uninstalls) the launcher; the request has no body: what goes where is the host's business. */
+export async function changeCli(action: "install" | "uninstall"): Promise<CliChangeResult> {
+  try {
+    const body = await apiRequest<{ status?: unknown }>(`/api/host/cli/${action}`, { method: "POST" });
+    return isHostCliStatus(body?.status) ? { kind: "done", status: body.status } : { kind: "failed", code: null };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      const body = error.body as { status?: unknown; detail?: unknown } | null;
+      if (error.code === "foreign" && isHostCliStatus(body?.status)) return { kind: "foreign", status: body.status };
+      const detail = typeof body?.detail === "string" && /^[A-Z0-9_]{1,32}$/.test(body.detail) ? body.detail : null;
+      return { kind: "failed", code: detail };
+    }
+    return { kind: "failed", code: null };
   }
 }

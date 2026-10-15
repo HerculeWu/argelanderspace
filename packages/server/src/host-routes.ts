@@ -14,7 +14,7 @@
 
 import {
   HOST_APP,
-  HOST_REQUEST_KINDS,
+  type HostCliStatus,
   type HostInfo,
   type HostPortFallback,
   type HostProjectState,
@@ -60,12 +60,31 @@ export type SwitchConfirmOutcome =
   | "shutting_down"
   | SwitchConfirmation;
 
+/**
+ * The command-line tool's launcher (desktop-app ticket 24; infra `cli-launcher.ts`). Each call throws a file system
+ * error as it is (its `code` is all the answer carries).
+ */
+export interface HostCli {
+  status(): HostCliStatus;
+  /** `foreign`: a file without the app's mark has that name; nothing was written. */
+  install(): { outcome: "installed" | "foreign"; status: HostCliStatus };
+  /** `foreign`: a file without the app's mark has that name; nothing was removed. */
+  uninstall(): { outcome: "removed" | "not_installed" | "foreign"; status: HostCliStatus };
+}
+
 /** What the desktop host gives the server it runs: present only in the desktop form. */
 export interface HostBridge {
   /** The configured port was taken and this run listens on another one; null otherwise. */
   portFallback: HostPortFallback | null;
+  /**
+   * The native requests this host takes: every kind, but `open_skills_folder` only when it knows where the bundled
+   * skills are (desktop-app ticket 24).
+   */
+  requests: readonly HostRequestKind[];
   /** Writes the request line; false once the host is shutting down (nothing is written then). */
   request(kind: HostRequestKind): boolean;
+  /** The command-line tool (desktop-app ticket 24); null when the host does not know its own Node and CLI. */
+  cli: HostCli | null;
   /** Whether a project is open; `none`: the welcome state (desktop-app ticket 18). */
   project: HostProjectState;
   /** The recently opened projects (desktop-app ticket 18, desktop-host.ts). */
@@ -193,7 +212,7 @@ export function hostInfo(bridge: HostBridge | undefined): HostInfo {
         version: 1,
         app: HOST_APP,
         mode: "desktop",
-        requests: [...HOST_REQUEST_KINDS],
+        requests: [...bridge.requests],
         portFallback: bridge.portFallback === null ? null : { ...bridge.portFallback },
         project: bridge.project,
       };
@@ -213,12 +232,65 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
     const kind = c.req.param("kind");
-    if (!isHostRequestKind(kind))
+    if (!isHostRequestKind(kind) || !bridge.requests.includes(kind))
       return c.json({ code: "unknown_request", detail: "unknown request" }, 404, NO_STORE);
     if (!bridge.request(kind))
       return c.json({ code: "shutting_down", detail: "the host is stopping" }, 409, NO_STORE);
     return c.json({ ok: true }, 202, NO_STORE);
   });
+
+  // The command-line tool (desktop-app ticket 24). No body is read: what is installed where is the host's business.
+  const withCli = (
+    c: Context,
+    act: (cli: HostCli) => Response,
+    failure: "unreadable" | "write_failed" | "remove_failed"
+  ) => {
+    const rejected = guardCsrf(c.req.header("origin"));
+    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
+    if (bridge === undefined)
+      return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
+    if (bridge.cli === null)
+      return c.json(
+        { code: "cli_unavailable", detail: "this host does not know its command-line tool" },
+        404,
+        NO_STORE
+      );
+    try {
+      return act(bridge.cli);
+    } catch (error) {
+      // The error's code only: no path, no message.
+      const code = (error as NodeJS.ErrnoException | null)?.code;
+      const detail = typeof code === "string" && /^[A-Z0-9_]{1,32}$/.test(code) ? code : "UNKNOWN";
+      return c.json({ code: failure, detail }, 500, NO_STORE);
+    }
+  };
+  app.get("/api/host/cli", (c) =>
+    withCli(c, (cli) => c.json(cli.status(), 200, NO_STORE), "unreadable")
+  );
+  app.post("/api/host/cli/install", (c) =>
+    withCli(
+      c,
+      (cli) => {
+        const { outcome, status } = cli.install();
+        return outcome === "foreign"
+          ? c.json({ code: "foreign", detail: "another file has that name", status }, 409, NO_STORE)
+          : c.json({ outcome, status }, 200, NO_STORE);
+      },
+      "write_failed"
+    )
+  );
+  app.post("/api/host/cli/uninstall", (c) =>
+    withCli(
+      c,
+      (cli) => {
+        const { outcome, status } = cli.uninstall();
+        return outcome === "foreign"
+          ? c.json({ code: "foreign", detail: "another file has that name", status }, 409, NO_STORE)
+          : c.json({ outcome, status }, 200, NO_STORE);
+      },
+      "remove_failed"
+    )
+  );
 
   // Recently opened projects (desktop-app ticket 18). The path of a request is only ever compared with the list's.
   app.get("/api/host/recent-projects", (c) => {

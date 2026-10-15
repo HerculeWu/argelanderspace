@@ -397,4 +397,59 @@ describe("the built desktop host", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).not.toContain("desktop-host");
   });
+
+  test("the skills that ship with it and the command-line tool (desktop-app ticket 24): the request line names the skills folder; the launcher, installed below the home, runs this CLI", async () => {
+    const w = world();
+    writeConfig(w, "port = 0\n");
+    const h = startHost(w);
+    const ready = await h.out.next("ready");
+    const url = String(ready.url);
+    const origin = { Origin: url.replace(/\/$/, "") };
+    const info = (await (await fetch(`${url}api/host`)).json()) as { requests: string[] };
+    expect(info.requests).toContain("open_skills_folder");
+    expect(
+      (
+        await fetch(`${url}api/host/requests/open_skills_folder`, {
+          method: "POST",
+          headers: origin,
+        })
+      ).status
+    ).toBe(202);
+    // The repository's skills: three levels up from packages/cli/dist/bin.js, as from sidecar/app/dist/bin.js.
+    expect(await h.out.next("request")).toEqual({
+      type: "request",
+      kind: "open_skills_folder",
+      path: realpathSync(join(PKG, "..", "..", "skills")),
+    });
+
+    const status = (await (await fetch(`${url}api/host/cli`)).json()) as Record<string, unknown>;
+    expect(status).toMatchObject({
+      state: "not_installed",
+      file: {
+        path: join(w.root, ".local", "bin", "argelanderspace"),
+        display: "~/.local/bin/argelanderspace",
+      },
+    });
+    const installed = await fetch(`${url}api/host/cli/install`, {
+      method: "POST",
+      headers: origin,
+    });
+    expect(installed.status).toBe(200);
+    h.child.stdin?.write('{"type":"quit"}\n');
+    expect(await h.exited).toBe(0);
+
+    const launcher = join(w.root, ".local", "bin", "argelanderspace");
+    const text = readFileSync(launcher, "utf8");
+    // This program's own Node and bundle.
+    expect(text).toContain(`node='${process.execPath}'`);
+    expect(text).toContain(`cli='${realpathSync(BIN)}'`);
+    // Both in the isolated environment (temporary home and XDG folders, no session bus), PATH without any node.
+    const isolated = { ...w.env, PATH: "/usr/bin:/bin" };
+    const version = spawnSync(process.execPath, [BIN, "--version"], {
+      encoding: "utf8",
+      env: isolated,
+    }).stdout;
+    const run = spawnSync(launcher, ["--version"], { encoding: "utf8", env: isolated });
+    expect([run.status, run.stdout]).toEqual([0, version]);
+  }, 60_000);
 });

@@ -631,8 +631,8 @@ impl Shell {
             }
             Request::OpenLogFolder { path } => self.open(kind, &path, true),
             Request::OpenConfigFile { path } => self.open(kind, &path, false),
-            // Where the bundled skills are is desktop-app ticket 24; the host sends no path yet.
-            Request::OpenSkillsFolder => self.sup.request_failed(kind, "no_path"),
+            // The bundled skills (desktop-app ticket 24): the folder the host found next to its bundle.
+            Request::OpenSkillsFolder { path } => self.open(kind, &path, true),
             // The host's own page address (protocol.rs checked its form): the same page in the system browser.
             Request::OpenInBrowser { url } => match open::that_detached(&url) {
                 Ok(()) => vec![],

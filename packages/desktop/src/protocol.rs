@@ -75,7 +75,10 @@ pub enum Request {
     OpenConfigFile {
         path: String,
     },
-    OpenSkillsFolder,
+    /// The skills that ship with the app (desktop-app ticket 24): the host's own path, as for the log folder.
+    OpenSkillsFolder {
+        path: String,
+    },
 }
 
 impl Request {
@@ -87,7 +90,7 @@ impl Request {
             Request::OpenDevtools => "open_devtools",
             Request::OpenLogFolder { .. } => "open_log_folder",
             Request::OpenConfigFile { .. } => "open_config_file",
-            Request::OpenSkillsFolder => "open_skills_folder",
+            Request::OpenSkillsFolder { .. } => "open_skills_folder",
         }
     }
 }
@@ -250,7 +253,9 @@ pub fn parse_host_line(line: &str) -> HostLine {
                 Some("open_config_file") => {
                     absolute(&m, "path").map(|path| Request::OpenConfigFile { path })
                 }
-                Some("open_skills_folder") => Some(Request::OpenSkillsFolder),
+                Some("open_skills_folder") => {
+                    absolute(&m, "path").map(|path| Request::OpenSkillsFolder { path })
+                }
                 _ => None,
             };
             request.map_or(HostLine::Unknown, HostLine::Request)
@@ -519,8 +524,10 @@ mod tests {
                 },
             ),
             (
-                r#"{"type":"request","kind":"open_skills_folder"}"#,
-                Request::OpenSkillsFolder,
+                r#"{"type":"request","kind":"open_skills_folder","path":"/usr/lib/argelanderspace/skills"}"#,
+                Request::OpenSkillsFolder {
+                    path: "/usr/lib/argelanderspace/skills".into(),
+                },
             ),
         ];
         for (line, request) in cases {
@@ -534,6 +541,10 @@ mod tests {
             r#"{"type":"request","kind":"pick_folder"}"#,
             r#"{"type":"request","kind":"open_log_folder","path":"relative"}"#,
             r#"{"type":"request","kind":"open_config_file"}"#,
+            // The skills folder is the host's own path (desktop-app ticket 24): absolute, and never left out.
+            r#"{"type":"request","kind":"open_skills_folder"}"#,
+            r#"{"type":"request","kind":"open_skills_folder","path":"skills"}"#,
+            r#"{"type":"request","kind":"open_skills_folder","path":7}"#,
             r#"{"type":"request","kind":"format_disk"}"#,
             // Opening in the browser takes the host's own page address only.
             r#"{"type":"request","kind":"open_in_browser"}"#,
