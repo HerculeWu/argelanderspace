@@ -158,6 +158,11 @@ jobs:
         run: node packages/app/scripts/fetch-node-keyring.mjs --out "$RUNNER_TEMP/node-release-keys.kbx"
 
       - name: Assemble the sidecar (dependency directory, Node with its signature checked, notices)
+        id: sidecar
+        # macOS: the shell's crate notices are not complete until the user decides how the objc2 crates' licenses are
+        # carried (desktop-app ticket 30): shell-notices.mjs fails, closed, and no macOS package is made. The run goes
+        # on only to test the shell (the page guard step below), and fails at its end ("No macOS package").
+        continue-on-error: ${{ startsWith(matrix.target, 'darwin-') }}
         run: |
           node packages/app/scripts/desktop-sidecar.mjs --target "$TARGET" \
             --node-keyring "$RUNNER_TEMP/node-release-keys.kbx" --online 2>&1 | tee "$EVIDENCE/sidecar.txt"
@@ -168,6 +173,7 @@ jobs:
         run: node packages/app/scripts/windows-launcher-check.mjs 2>&1 | tee "$EVIDENCE/windows-launcher.txt"
 
       - name: Build the shell and bundle (${{ matrix.bundles }})
+        if: steps.sidecar.outcome == 'success'
         working-directory: packages/desktop
         run: |
           configs=(--config tauri.package.conf.json)
@@ -177,19 +183,23 @@ jobs:
           "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" build --features packaged "${configs[@]}" \
             --bundles "$BUNDLES" 2>&1 | tee "$EVIDENCE/tauri-build.txt"
 
-      - name: Shell page guard on the platform's webview (a test build with the probe, next to the package's resources)
+      - name: Shell page guard on the platform's webview (a test build with the probe and the assembled resources)
         run: |
           # desktop-app ticket 30: a debug build with the smoke probe (never a release: smoke-probe does not compile in
-          # one) and `packaged`, put in target/release where `tauri build` left the package's resources (sidecar/,
-          # skills/), so that it runs the package's own Node and app build. Not shipped: only release-out/ is uploaded.
+          # one) and `packaged`, with the assembled resources (sidecar/, skills/) put next to it in target/debug, where
+          # a packaged build looks for them when run from cargo's output; so it runs the assembled Node and app build.
+          # Not shipped: only release-out/ is uploaded.
           (cd packages/desktop && cargo build --features smoke-probe,packaged 2>&1 | tail -n 3)
+          res=packages/desktop/target/package-resources
+          dbg=packages/desktop/target/debug
+          rm -rf "$dbg/sidecar" "$dbg/skills"
+          cp -R "$res/sidecar" "$res/skills" "$dbg/"
           ext=""; if [ "$RUNNER_OS" = Windows ]; then ext=.exe; fi
-          probe="packages/desktop/target/release/argelanderspace-desktop-probe$ext"
-          cp "packages/desktop/target/debug/argelanderspace-desktop$ext" "$probe"
-          run=(node packages/app/scripts/smoke-shell-probe.mjs --shell "$probe" --label "$TARGET" --evidence "$EVIDENCE")
+          run=(node packages/app/scripts/smoke-shell-probe.mjs --shell "$dbg/argelanderspace-desktop$ext" \
+            --label "$TARGET" --evidence "$EVIDENCE")
           if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi
           "${run[@]}"
-          rm -f "$probe"
+          rm -rf "$dbg/sidecar" "$dbg/skills"
 
       - name: Desktop package smoke (deb and AppImage, shell on a virtual display; the AppImage's through its AppRun)
         if: runner.os == 'Linux'
@@ -202,7 +212,7 @@ jobs:
             --label appimage --evidence "$EVIDENCE"
 
       - name: Partial check on macOS and Windows (the package smoke is Linux only)
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && steps.sidecar.outcome == 'success'
         run: |
           # NOT the desktop package smoke (smoke-desktop-package.mjs reads a deb or an AppImage and /proc): only that
           # the sidecar's Node runs the sidecar's CLI at the app's version and the shell's notices are there. On macOS
@@ -229,7 +239,7 @@ jobs:
           } | tee -a "$EVIDENCE/partial-check.txt" >> "$GITHUB_STEP_SUMMARY"
 
       - name: macOS icon (the built .app's ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.sidecar.outcome == 'success'
         run: |
           # The ICNS the bundle carries, not the repository's source file.
           shopt -s nullglob
@@ -239,6 +249,13 @@ jobs:
           ls -l "$EVIDENCE/icon.iconset" | tee "$EVIDENCE/icon-iconset.txt"
           test -f "$EVIDENCE/icon.iconset/icon_16x16.png"
           test -f "$EVIDENCE/icon.iconset/icon_32x32.png"
+
+      - name: No macOS package (the shell's crate notices wait for the user's decision, ticket 30)
+        if: steps.sidecar.outcome != 'success'
+        run: |
+          echo "::error::no package for $TARGET: the sidecar (the shell's crate notices) did not complete" \
+            | tee -a "$EVIDENCE/no-package.txt"
+          exit 1
 
       - name: Collect the packages
         run: |
