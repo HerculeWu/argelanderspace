@@ -2597,5 +2597,19 @@
         "ownServer": "Another ArgelanderSpace is running on port {{configured}}; those links open it, not this window."
       }
     }
+  },
+  "welcome": {
+    "title": "Open a project folder",
+    "openFolder": "Open folder…",
+    "recent": "Recent projects",
+    "recentEmpty": "No project opened yet",
+    "missing": "Folder missing",
+    "remove": "Remove {{name}} from recent projects",
+    "lastMissing": "The last project folder no longer exists",
+    "openedAt": "Last opened: {{when}}",
+    "listFailed": "Could not read the recent projects.",
+    "openFailed": "The project was not opened.",
+    "removeFailed": "It was not removed from the recent projects.",
+    "nowMissing": "This folder no longer exists."
   }
 }

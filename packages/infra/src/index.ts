@@ -57,6 +57,7 @@ export * from "./mail/outgoing.js";
 export * from "./mail/parse.js";
 export * from "./mail/protocol.js";
 export * from "./mail/protocol-manage.js";
+export * from "./recent-projects.js";
 export * from "./sources/ads.js";
 export * from "./sources/ads-discovery.js";
 export * from "./sources/ads-token-test.js";

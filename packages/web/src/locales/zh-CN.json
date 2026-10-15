@@ -2597,5 +2597,19 @@
         "ownServer": "端口 {{configured}} 上是另一个正在运行的 ArgelanderSpace，那些链接会打开它，而不是这个窗口。"
       }
     }
+  },
+  "welcome": {
+    "title": "打开一个项目文件夹",
+    "openFolder": "打开文件夹…",
+    "recent": "最近项目",
+    "recentEmpty": "还没有打开过项目",
+    "missing": "文件夹不存在",
+    "remove": "从最近项目中移除 {{name}}",
+    "lastMissing": "上次的项目文件夹已不存在",
+    "openedAt": "上次打开：{{when}}",
+    "listFailed": "无法读取最近项目。",
+    "openFailed": "没有打开这个项目。",
+    "removeFailed": "没有从最近项目中移除。",
+    "nowMissing": "这个文件夹已不存在。"
   }
 }

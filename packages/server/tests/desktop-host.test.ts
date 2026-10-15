@@ -252,6 +252,7 @@ describe("start", () => {
       mode: "desktop",
       requests: [...HOST_REQUEST_KINDS],
       portFallback: null,
+      project: "open",
     });
     // The project data are where `serve` run in the project folder puts them.
     const settings = (await (await fetch(`${h.url}/api/settings`)).json()) as {
@@ -759,6 +760,7 @@ describe("the browser form", () => {
       mode: "browser",
       requests: [],
       portFallback: null,
+      project: "open",
     });
     const res = await fetch(`${url}/api/host/requests/open_log_folder`, {
       method: "POST",

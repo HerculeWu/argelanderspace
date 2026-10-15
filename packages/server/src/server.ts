@@ -77,6 +77,7 @@ import { sweepStagedAttachmentsIn } from "./mail-compose.js";
 import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { createDefaultMailWatcher, type MailWatcherOverrides } from "./mail-watch-default.js";
+import { createNoProjectServer, type NoProjectServer } from "./no-project.js";
 import { ProviderSettings } from "./providers.js";
 import {
   type ConfigProblem,
@@ -527,6 +528,14 @@ export interface StartOptions {
   };
 }
 
+/** What a started server gives its caller, besides the server itself. */
+export interface StartedExtras {
+  environmentLogged: Promise<void>;
+  port: number;
+  logDir: string;
+  log: ServerLog;
+}
+
 /**
  * Resolve config, create the server, wait for the listen, print the URL. This is the long-running process: it writes
  * the user-level log. It starts with a faulty config.toml too (`serveStart`): the faulty keys have their defaults,
@@ -535,39 +544,82 @@ export interface StartOptions {
 export async function startServer(
   argv: readonly string[] = process.argv.slice(2),
   start: StartOptions = {}
-): Promise<
-  RunningServer & { environmentLogged: Promise<void>; port: number; logDir: string; log: ServerLog }
-> {
+): Promise<RunningServer & StartedExtras> {
+  return startWith(argv, start, (common, cfg) => ({
+    srv: createServer({
+      dataDir: cfg.dataDir,
+      port: start.desktop?.listenPort ?? cfg.port,
+      webDist: cfg.webDist,
+      mailWatch: true,
+      ...(start.desktop === undefined ? {} : { host: start.desktop.host }),
+      log: common.log,
+      logDir: common.logDir,
+      ...(start.version === undefined ? {} : { version: start.version }),
+      sweepMailStagingIn: common.globalDirs.cacheDir,
+      globalDirs: common.globalDirs,
+      startup: common.startup,
+      settingsAtStart: common.values,
+      settingsFromFlags: [
+        ...(argValue(argv, "port") !== undefined ? (["port"] as const) : []),
+        ...(argValue(argv, "data-dir") !== undefined ? (["data_dir"] as const) : []),
+      ],
+    }),
+    project: { root: process.cwd(), dataDir: cfg.dataDir },
+  }));
+}
+
+/**
+ * The desktop host's server with no project open (desktop-app ticket 18, no-project.ts): the same start — the lenient
+ * reading, the log file, the start record (without a project root or data directory), the environment record — but
+ * the server answers only the page, the host and the settings interfaces and the page-error report. `--data-dir` and `--port` are not read.
+ */
+export async function startNoProjectServer(
+  argv: readonly string[],
+  start: StartOptions & { desktop: NonNullable<StartOptions["desktop"]> }
+): Promise<NoProjectServer & StartedExtras> {
+  return startWith(argv, start, (common, cfg) => ({
+    srv: createNoProjectServer({
+      host: start.desktop.host,
+      port: start.desktop.listenPort,
+      webDist: cfg.webDist,
+      log: common.log,
+      globalDirs: common.globalDirs,
+      startup: common.startup,
+      settingsAtStart: common.values,
+    }),
+    project: null,
+  }));
+}
+
+interface StartCommon {
+  log: ServerLog;
+  logDir: string;
+  globalDirs: GlobalDirs;
+  startup: StartupLocations;
+  values: SettingsValues;
+}
+
+async function startWith<S extends { ready(): Promise<number>; close(): Promise<void> }>(
+  argv: readonly string[],
+  start: StartOptions,
+  create: (
+    common: StartCommon,
+    cfg: ResolvedConfig
+  ) => { srv: S; project: { root: string; dataDir: string } | null }
+): Promise<S & StartedExtras> {
   const { config, globalDirs, problems, startup, values } = serveStart(configFilePath(), argv);
   const cfg = resolveServerConfig(argv, process.cwd(), config);
   const mode: ServerMode = start.desktop === undefined ? "browser" : "desktop";
   // The log is in the global data directory this run uses, the one Mail and the credentials use too.
   const logDir = join(globalDirs.dataDir, LOG_DIR_NAME);
   const serveLog = openServeLog(config, logDir, mode === "desktop" ? "desktop" : "serve");
-  const sweepMailStagingIn = globalDirs.cacheDir;
   // Whatever stops the start — the server cannot be created, the port cannot be bound — the log file is closed and
   // the process is no longer watched.
-  let srv: RunningServer;
+  let srv: S;
+  let project: { root: string; dataDir: string } | null;
   let port: number;
   try {
-    srv = createServer({
-      dataDir: cfg.dataDir,
-      port: start.desktop?.listenPort ?? cfg.port,
-      webDist: cfg.webDist,
-      mailWatch: true,
-      ...(start.desktop === undefined ? {} : { host: start.desktop.host }),
-      log: serveLog.log,
-      logDir,
-      ...(start.version === undefined ? {} : { version: start.version }),
-      sweepMailStagingIn,
-      globalDirs,
-      startup,
-      settingsAtStart: values,
-      settingsFromFlags: [
-        ...(argValue(argv, "port") !== undefined ? (["port"] as const) : []),
-        ...(argValue(argv, "data-dir") !== undefined ? (["data_dir"] as const) : []),
-      ],
-    });
+    ({ srv, project } = create({ log: serveLog.log, logDir, globalDirs, startup, values }, cfg));
     port = await srv.ready();
     start.desktop?.onListening?.(port);
   } catch (error) {
@@ -579,8 +631,8 @@ export async function startServer(
     mode,
     port,
     ...(start.desktop === undefined ? {} : { portFallback: start.desktop.host.portFallback }),
-    projectRoot: process.cwd(),
-    dataDir: cfg.dataDir,
+    projectRoot: project?.root ?? null,
+    dataDir: project?.dataDir ?? null,
     webDist: cfg.webDist,
     configProblems: problems,
   });
@@ -596,19 +648,18 @@ export async function startServer(
   // stdout is its line protocol, so there they go to stderr.
   const say = mode === "browser" ? console.log : console.error;
   say(`ArgelanderSpace server listening on http://127.0.0.1:${port}`);
-  say(`  data dir: ${cfg.dataDir}`);
+  say(`  data dir: ${project === null ? "(no project open)" : project.dataDir}`);
   say(`  web dist: ${cfg.webDist ?? "(none — API only)"}`);
   // A faulty config.toml: named by key and category on the terminal too (never a value, never the parser's text).
   for (const line of configProblemLines(problems, { path: configFilePath(), startup })) {
     console.error(line);
   }
   const close = srv.close;
-  return {
-    ...srv,
+  return Object.assign(srv, {
     environmentLogged,
     port,
     logDir,
     log: serveLog.log,
     close: () => close().finally(() => serveLog.close()),
-  };
+  });
 }

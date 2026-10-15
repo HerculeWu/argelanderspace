@@ -9,6 +9,8 @@ import { askHost, fetchHostInfo } from "./api/host";
  */
 
 let info: HostInfo | null = null;
+/** Whether the server's answer (or its absence) is known. */
+let settled = false;
 let asked: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
@@ -16,6 +18,7 @@ function ask(): void {
   if (asked) return;
   asked = fetchHostInfo().then((answer) => {
     info = answer;
+    settled = true;
     for (const listener of listeners) listener();
   });
 }
@@ -31,6 +34,19 @@ export function useHostInfo(): HostInfo | null {
   return useSyncExternalStore(subscribe, () => info, () => null);
 }
 
+/**
+ * The answer once it is known: undefined while the page is still asking, null when there is no usable one. The page
+ * waits for it before choosing between the workbench and the welcome page (desktop-app ticket 18), so that neither
+ * asks the server for what it cannot give.
+ */
+export function useHostAnswer(): HostInfo | null | undefined {
+  return useSyncExternalStore(
+    subscribe,
+    () => (settled ? info : undefined),
+    () => undefined
+  );
+}
+
 /** In the desktop app: the native request, or null when this page cannot make it (the browser form). */
 export function useHostRequest(kind: HostRequestKind): (() => Promise<boolean>) | null {
   const host = useHostInfo();
@@ -40,5 +56,6 @@ export function useHostRequest(kind: HostRequestKind): (() => Promise<boolean>) 
 /** Tests only: forget the answer, so the next page asks again. */
 export function resetHostInfoForTests(): void {
   info = null;
+  settled = false;
   asked = null;
 }

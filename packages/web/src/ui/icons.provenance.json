@@ -1131,6 +1131,21 @@
         "root stroke-linecap round",
         "root stroke-linejoin round"
       ]
+    },
+    "recent-project-remove": {
+      "set": "dazzle-line-icons",
+      "file": "xmark.svg",
+      "originalHash": "7c8256026aee890779cac2eb760bf130652b2b029bf6dc81e78a9c815c823b8d",
+      "normalizedHash": "445d5f81daf53fab486c6834ca37fd2972dfe345e7984c02ae2c36e4c4ba2fd5",
+      "modifications": [
+        "removed XML declaration",
+        "removed comments",
+        "removed root download dimensions",
+        "monochrome paint to currentColor",
+        "removed explicit stroke widths (preset-owned)",
+        "root stroke-linecap round",
+        "root stroke-linejoin round"
+      ]
     }
   }
 }

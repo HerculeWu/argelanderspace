@@ -280,28 +280,33 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
 
 /**
  * The desktop host (desktop-app ticket 17; server `desktop-host.ts`): the process the desktop shell starts and looks
- * after, in the same bundle as the CLI. It serves one Project — the folder given — and speaks the line protocol on its
- * stdin and stdout. Not for people: hidden from the help.
+ * after, in the same bundle as the CLI. It serves one Project — the folder given, or without `--project` the most
+ * recently opened one whose folder is still there, or none (the welcome state, desktop-app ticket 18) — and speaks the
+ * line protocol on its stdin and stdout. Not for people: hidden from the help.
  */
-async function runDesktopHostCommand(opts: { project: string; webDist?: string }): Promise<void> {
-  const project = resolve(opts.project);
-  let isDir = false;
-  try {
-    isDir = statSync(project).isDirectory();
-  } catch {
-    /* not there */
-  }
-  if (!isDir) throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
-  // Like --project, a relative --web-dist is the caller's: resolved before the change of directory below.
+async function runDesktopHostCommand(opts: { project?: string; webDist?: string }): Promise<void> {
+  // Like --project, a relative --web-dist is the caller's: resolved before any change of directory.
   const webDist = opts.webDist === undefined ? undefined : resolve(opts.webDist);
-  // The Project's folder is the process's working directory, as for `serve` run in it: the same relative `data_dir`
-  // rule finds the project data (ADR 0010), and the settings page shows it as the project.
-  process.chdir(project);
+  if (opts.project !== undefined) {
+    const project = resolve(opts.project);
+    let isDir = false;
+    try {
+      isDir = statSync(project).isDirectory();
+    } catch {
+      /* not there */
+    }
+    if (!isDir) throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
+    // The Project's folder is the process's working directory, as for `serve` run in it: the same relative `data_dir`
+    // rule finds the project data (ADR 0010), and the settings page shows it as the project.
+    process.chdir(project);
+  }
   const host = await runDesktopHost({
     input: process.stdin,
     output: process.stdout,
     version: APP_VERSION,
     signals: true,
+    // Without --project the host chooses from the recently opened projects (and changes into the one it enters).
+    ...(opts.project === undefined ? { fromRecent: true } : {}),
     // The shell is gone and its shutdown hangs: nobody else will end the process (server desktop-host.ts).
     stopDeadline: { onExpired: () => process.exit(1) },
     ...(webDist === undefined ? {} : { webDist }),
@@ -422,9 +427,9 @@ export function buildProgram(): Command {
   program
     .command("desktop-host", { hidden: true })
     .description("Run as the desktop app's host (line protocol on stdin/stdout).")
-    .requiredOption("--project <dir>", "the Project folder to open")
+    .option("--project <dir>", "the Project folder to open (default: the most recent one)")
     .option("--web-dist <dir>", "built SPA directory (default: next to the bundle)")
-    .action(async (opts: { project: string; webDist?: string }) => {
+    .action(async (opts: { project?: string; webDist?: string }) => {
       try {
         await runDesktopHostCommand(opts);
       } catch (e) {

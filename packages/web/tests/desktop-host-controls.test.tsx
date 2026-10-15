@@ -26,8 +26,8 @@ vi.mock("../src/doc/DocPane", () => ({ DocPane: () => <div data-ui="stub-doc" />
 vi.mock("../src/mail/MailView", () => ({ MailView: () => <div data-ui="stub-mail" /> }));
 
 const EN = { "ui.language": "en" } as const;
-const DESKTOP: HostInfo = { version: 1, app: "argelanderspace", mode: "desktop", requests: [...HOST_REQUEST_KINDS], portFallback: null };
-const BROWSER: HostInfo = { version: 1, app: "argelanderspace", mode: "browser", requests: [], portFallback: null };
+const DESKTOP: HostInfo = { version: 1, app: "argelanderspace", mode: "desktop", requests: [...HOST_REQUEST_KINDS], portFallback: null, project: "open" };
+const BROWSER: HostInfo = { version: 1, app: "argelanderspace", mode: "browser", requests: [], portFallback: null, project: "open" };
 const DIAGNOSTICS: DiagnosticsInfo = {
   version: 1,
   logDir: { path: "/home/someone/.local/share/argelanderspace/logs", display: "~/.local/share/argelanderspace/logs" },

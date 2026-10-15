@@ -85,6 +85,12 @@ export const SERVER_LOG_EVENTS = [
   "desktop.protocol_rejected",
   "desktop.stopping",
   "desktop.stop_timed_out",
+  // Desktop-app ticket 18: the welcome state, the project the host leaves for, and the recent-projects file.
+  "desktop.no_project",
+  "desktop.leaving",
+  "desktop.pick_rejected",
+  "recent_projects.unreadable",
+  "recent_projects.write_failed",
   "shell.started",
   "shell.host_started",
   "shell.host_exited",
@@ -292,8 +298,9 @@ export function logServerStarted(
     version: string | undefined;
     mode: ServerMode;
     port: number;
-    projectRoot: string;
-    dataDir: string;
+    /** Null: the desktop host started with no project open (desktop-app ticket 18). */
+    projectRoot: string | null;
+    dataDir: string | null;
     webDist: string | null;
     /** What is wrong with config.toml (server.ts `serveStart`): by key and category, never a value. */
     configProblems?: readonly ConfigProblem[];
@@ -322,8 +329,9 @@ export function logServerStarted(
                 port_occupant: f.oneOf(HOST_PORT_OCCUPANTS, info.portFallback.occupant),
               }),
         }),
-    project_root: f.path(info.projectRoot),
-    data_dir: f.path(info.dataDir),
+    ...(info.projectRoot === null || info.dataDir === null
+      ? { project: f.oneOf(["none"], "none") }
+      : { project_root: f.path(info.projectRoot), data_dir: f.path(info.dataDir) }),
     ...(info.webDist === null ? {} : { web_dist: f.path(info.webDist) }),
     config_keys: f.someOf(CONFIG_KEYS, keys.known),
     config_unknown_keys: f.num(keys.unknown),

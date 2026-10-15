@@ -460,11 +460,11 @@ function Project({ state }: { state: RowState }) {
           <div className="st-badges"><Badge>{t("settings.row.notInFile")}</Badge></div>
         </div>
         <div className="st-control st-control-path">
-          <code className="st-path" data-ui="project-root-path" title={root.path}>{root.display}</code>
+          {root && <code className="st-path" data-ui="project-root-path" title={root.path}>{root.display}</code>}
         </div>
       </div>
       <Row state={state} k="data_dir" label={t("settings.project.dataDir")}
-        hint={settings.restartPending.includes("data_dir") ? undefined : (
+        hint={settings.restartPending.includes("data_dir") || settings.running.data_dir === null ? undefined : (
           <span data-ui="data-dir-in-use">{t("settings.row.inUse")}<code className="st-path" title={settings.running.data_dir.path}>{settings.running.data_dir.display}</code></span>
         )}
         control={(disabled) => (
