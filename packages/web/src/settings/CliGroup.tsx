@@ -19,6 +19,8 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
   const [failed, setFailed] = useState<string | null>(null);
   const [uninstalling, setUninstalling] = useState(false);
   const [uninstallFailed, setUninstallFailed] = useState<string | null>(null);
+  /** Uninstalling found someone else's file there by now: nothing of the app's is left to remove. */
+  const [uninstallForeign, setUninstallForeign] = useState(false);
   const cancelRef = useRef<HTMLButtonElement>(null);
   const showSkills = useHostRequest("open_skills_folder");
 
@@ -52,17 +54,21 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
       return;
     }
     setStatus(result.status);
-    setUninstalling(false);
+    // Someone else's file is there by now: said in the dialog, in uninstall's words; it stays until closed.
+    if (result.kind === "foreign") setUninstallForeign(true);
+    else setUninstalling(false);
   };
 
-  const copyLine = async (line: string) => {
+  /** On POSIX the whole shell line is copied, on Windows the directory. */
+  const copyLine = async (line: string, windows: boolean) => {
     let ok = true;
     try {
       await navigator.clipboard.writeText(line);
     } catch {
       ok = false;
     }
-    notify(ok ? t("settings.configFile.pathCopied") : t("settings.configFile.copyFailed"));
+    const done = windows ? t("settings.configFile.pathCopied") : t("settings.cli.lineCopied");
+    notify(ok ? done : t("settings.configFile.copyFailed"));
   };
 
   const known = status !== null && status !== "loading" ? status : null;
@@ -89,7 +95,7 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
             </Button>
           )}
           {known !== null && installed ? (
-            <Button data-ui="cli-uninstall" disabled={busy} onClick={() => { setUninstallFailed(null); setUninstalling(true); }}>
+            <Button data-ui="cli-uninstall" disabled={busy} onClick={() => { setUninstallFailed(null); setUninstallForeign(false); setUninstalling(true); }}>
               {t("settings.cli.uninstall")}
             </Button>
           ) : (
@@ -110,9 +116,9 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
                   iconSize="small"
                   tooltipAlign="end"
                   data-ui="copy-path-line"
-                  label={t("settings.cli.copyLine")}
-                  tooltip={t("settings.cli.copyLine")}
-                  onClick={() => void copyLine(known.pathLine)}
+                  label={known.platform === "windows" ? t("settings.cli.copyPath") : t("settings.cli.copyLine")}
+                  tooltip={known.platform === "windows" ? t("settings.cli.copyPath") : t("settings.cli.copyLine")}
+                  onClick={() => void copyLine(known.pathLine, known.platform === "windows")}
                 />
               </div>
             </InlineMessage>
@@ -162,7 +168,7 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
           footer={
             <>
               <Button ref={cancelRef} data-ui="uninstall-cli-cancel" onClick={() => setUninstalling(false)}>{t("settings.cli.cancel")}</Button>
-              <Button appearance="primary" tone="danger" data-ui="uninstall-cli-confirm" busy={busy} onClick={() => void uninstall()}>
+              <Button appearance="primary" tone="danger" data-ui="uninstall-cli-confirm" busy={busy} disabled={uninstallForeign} onClick={() => void uninstall()}>
                 {t("settings.cli.uninstall")}
               </Button>
             </>
@@ -170,6 +176,11 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
         >
           <p>{t("settings.cli.uninstallBody", { path: known.file.display, command: known.command })}</p>
           {uninstallFailed !== null && <InlineMessage tone="danger" uiId="cli-uninstall-failed">{uninstallFailed}</InlineMessage>}
+          {uninstallForeign && (
+            <InlineMessage tone="warning" uiId="cli-uninstall-foreign">
+              {t("settings.cli.uninstallForeign", { path: known.file.display })}
+            </InlineMessage>
+          )}
         </Dialog>
       )}
     </>

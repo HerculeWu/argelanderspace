@@ -128,8 +128,9 @@ needs neither Node nor administrator rights:
   small launcher named `argelanderspace` (the npm package's command) in your
   own executable directory — `~/.local/bin` on Linux and macOS,
   `%LOCALAPPDATA%\Programs\argelanderspace\bin` (`argelanderspace.cmd`) on
-  Windows. It runs the app's Node on the app's CLI. The app changes **no**
-  environment variable, `PATH` or shell configuration: when that directory is
+  Windows. It runs the app's Node on the app's CLI. The app changes **none**
+  of your system's or your own environment variables (`PATH` among them) and
+  no shell configuration: when that directory is
   not on `PATH` the page shows the line to add yourself (for example
   `export PATH="$HOME/.local/bin:$PATH"` in your shell's configuration; on
   Windows, the directory for your user `PATH`), and you open a new terminal.

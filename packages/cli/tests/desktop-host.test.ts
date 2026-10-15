@@ -443,11 +443,13 @@ describe("the built desktop host", () => {
     // This program's own Node and bundle.
     expect(text).toContain(`node='${process.execPath}'`);
     expect(text).toContain(`cli='${realpathSync(BIN)}'`);
-    const version = spawnSync(process.execPath, [BIN, "--version"], { encoding: "utf8" }).stdout;
-    const run = spawnSync(launcher, ["--version"], {
+    // Both in the isolated environment (temporary home and XDG folders, no session bus), PATH without any node.
+    const isolated = { ...w.env, PATH: "/usr/bin:/bin" };
+    const version = spawnSync(process.execPath, [BIN, "--version"], {
       encoding: "utf8",
-      env: { PATH: "/usr/bin:/bin", HOME: w.root },
-    });
+      env: isolated,
+    }).stdout;
+    const run = spawnSync(launcher, ["--version"], { encoding: "utf8", env: isolated });
     expect([run.status, run.stdout]).toEqual([0, version]);
   }, 60_000);
 });

@@ -12,14 +12,16 @@
  *   other user-level tools (pipx, uv) use, and the line to add is the same.
  * - Windows: `%LOCALAPPDATA%\Programs\argelanderspace\bin` — `%LOCALAPPDATA%\Programs` is where per-user installs go;
  *   a folder of its own, because adding a directory to PATH there is all-or-nothing for what it holds. The script is a
- *   `.cmd`, which `cmd`, PowerShell and the runtimes' child-process lookups all run by its bare name.
+ *   `.cmd`, which `cmd` and PowerShell run by its bare name, and so does any program that starts it through a shell.
+ *   A program that starts a child process by bare name without a shell (Node's `spawn` without `shell`, for one) does
+ *   not find a `.cmd`: a known limit, to be checked on Windows with ticket 26.
  *
  * The file is named after the npm package's command, `argelanderspace` (`argelanderspace.cmd` on Windows), so the
  * desktop app's CLI and the npm one answer to the same name (User Story 62).
  *
- * Hard contract (「应用不替用户修改系统 PATH，不往其他 agent 工具的目录里写文件」): nothing here changes an
- * environment variable, a shell configuration or the system PATH. The PATH report only reads PATH and gives the line
- * the user would add.
+ * Hard contract (「应用不替用户修改系统 PATH，不往其他 agent 工具的目录里写文件」): nothing here changes the system's or
+ * the user's environment variables (PATH among them) or a shell configuration. The PATH report only reads PATH and
+ * gives the line the user would add.
  *
  * The mark: a line `<comment> argelanderspace-cli-launcher: …` among the script's first lines. Installing never
  * replaces a file of that name without it (nor a symbolic link or a directory: what is there is someone else's —
@@ -38,6 +40,7 @@ import {
   closeSync,
   constants,
   copyFileSync,
+  fstatSync,
   linkSync,
   lstatSync,
   mkdirSync,
@@ -202,13 +205,16 @@ export function launcherScript(
   const todo =
     "Install the command-line tool again from the app (Settings > Command line & agents), or delete";
   if (p === "win32") {
-    // In a batch file `%` is doubled; inside the quotes of `set "…"` and of the run line the rest is taken as written.
+    // In a batch file `%` is doubled; inside the quotes of `set "…"` and of the run line the rest is taken as written
+    // (delayed expansion is off, so `!` is too).
     const cmd = (path: string) => path.replace(/%/g, "%%");
+    // An echo's own words are outside quotes: every cmd metacharacter in them is escaped with `^`.
+    const echoText = (text: string) => text.replace(/[\^&|<>()]/g, "^$&");
     return [
       "@echo off",
       `rem ${CLI_LAUNCHER_MARK}: placed by the ArgelanderSpace desktop app, which removes only a file with this line.`,
-      "rem It runs the app's own Node on the app's own CLI; the app changes no PATH and no environment variable.",
-      "setlocal",
+      "rem It runs the app's own Node on the app's own CLI; the app changes no PATH and no shell configuration.",
+      "setlocal DisableDelayedExpansion",
       `set "AS_NODE=${cmd(target.node)}"`,
       `set "AS_CLI=${cmd(target.cli)}"`,
       `set "AS_SELF=${cmd(file)}"`,
@@ -217,9 +223,8 @@ export function launcherScript(
       '"%AS_NODE%" "%AS_CLI%" %*',
       "exit /b %ERRORLEVEL%",
       ":missing",
-      `>&2 echo error: "%AS_MISSING%" ${what}`,
-      // `>` would redirect: written `^>`.
-      `>&2 echo ${todo.replace(/>/g, "^>")} "%AS_SELF%".`,
+      `>&2 echo error: "%AS_MISSING%" ${echoText(what)}`,
+      `>&2 echo ${echoText(todo)} "%AS_SELF%".`,
       "exit /b 1",
       "",
     ].join("\r\n");
@@ -243,8 +248,13 @@ export function launcherScript(
   ].join("\n");
 }
 
-/** Only the first bytes are read: the mark is on the second line. */
+/** Only the first bytes are read to find the mark (it is on the second line). */
 const HEAD_BYTES = 4096;
+/**
+ * A marked file up to this size is read whole to tell whether it runs this app; a script of the app's is far smaller
+ * (three paths and a few lines), so a larger marked file is the app's but not this one: outdated.
+ */
+const SCRIPT_MAX_BYTES = 256 * 1024;
 const MARK_LINE = new RegExp(`^(?:#|rem|::) ${CLI_LAUNCHER_MARK}:`, "i");
 
 type Found = { kind: "none" } | { kind: "foreign" } | { kind: "ours"; text: string };
@@ -260,19 +270,34 @@ function inspect(file: string): Found {
   }
   if (!st.isFile()) return { kind: "foreign" };
   const fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-  let text: string;
   try {
-    const buffer = Buffer.alloc(Math.min(HEAD_BYTES, st.size));
-    const read = readSync(fd, buffer, 0, buffer.length, 0);
-    text = buffer.subarray(0, read).toString("utf8");
+    const head = readFrom(fd, Math.min(HEAD_BYTES, st.size)).toString("utf8");
+    if (
+      !head
+        .split(/\r?\n/)
+        .slice(0, 3)
+        .some((line) => MARK_LINE.test(line))
+    )
+      return { kind: "foreign" };
+    // The whole text, to tell whether it runs this app; a marked file too large for a script of the app's is not read.
+    const size = fstatSync(fd).size;
+    if (size > SCRIPT_MAX_BYTES) return { kind: "ours", text: "" };
+    return { kind: "ours", text: readFrom(fd, size).toString("utf8") };
   } finally {
     closeSync(fd);
   }
-  const head = text.split(/\r?\n/).slice(0, 3);
-  if (!head.some((line) => MARK_LINE.test(line))) return { kind: "foreign" };
-  // The whole text, to tell whether it runs this app (a script of the app's is small).
-  if (st.size > HEAD_BYTES) return { kind: "ours", text: "" };
-  return { kind: "ours", text };
+}
+
+/** Up to `length` bytes from the start of the file. */
+function readFrom(fd: number, length: number): Buffer {
+  const buffer = Buffer.alloc(length);
+  let read = 0;
+  while (read < length) {
+    const n = readSync(fd, buffer, read, length - read, read);
+    if (n === 0) break;
+    read += n;
+  }
+  return buffer.subarray(0, read);
 }
 
 /** The launcher's state, the directory and whether it is on PATH. Reads only. */
@@ -335,10 +360,12 @@ export function installCliLauncher(
     if (before.kind === "ours") {
       renameSync(temp, file);
     } else if (!placeNew(temp, file)) {
-      // Something appeared there meanwhile: the app's own script is replaced, anything else is left.
-      if (inspect(file).kind !== "ours")
+      // Something appeared there meanwhile: the app's own script is replaced, anything else is left; when it has gone
+      // again by now, the file is placed once more (and only once: still in the way, it is reported as it is).
+      const now = inspect(file);
+      if (now.kind === "ours") renameSync(temp, file);
+      else if (now.kind === "foreign" || !placeNew(temp, file))
         return { outcome: "foreign", status: cliLauncherStatus(target, opts) };
-      renameSync(temp, file);
     }
   } finally {
     rmSync(temp, { force: true });

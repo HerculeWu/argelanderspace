@@ -203,6 +203,28 @@ describe("install", () => {
     expect(failing.status).toBe(3);
   });
 
+  test("a script longer than the first bytes read for the mark (long paths) is still known as installed", () => {
+    const home = tempHome();
+    const deep = (name: string) => `/${"d".repeat(250)}/`.repeat(12) + name;
+    const target = { node: deep("node"), cli: deep("bin.js") };
+    const result = installCliLauncher(target, linux(home));
+    const file = join(home, ".local", "bin", "argelanderspace");
+    expect(statSync(file).size).toBeGreaterThan(4096);
+    expect(result.status.state).toBe("installed");
+    expect(cliLauncherStatus(target, linux(home)).state).toBe("installed");
+  });
+
+  test("a marked file larger than any script of the app's is not read whole: outdated, and still removable", () => {
+    const home = tempHome();
+    const app = fakeApp(home);
+    const file = join(home, ".local", "bin", "argelanderspace");
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    const text = launcherScript(app, "linux", file);
+    writeFileSync(file, text + "#".repeat(2 * 1024 * 1024));
+    expect(cliLauncherStatus(app, linux(home)).state).toBe("outdated");
+    expect(uninstallCliLauncher(linux(home)).outcome).toBe("removed");
+  });
+
   test("again over its own script: replaced, still one file", () => {
     const home = tempHome();
     const app = fakeApp(home);
@@ -393,15 +415,72 @@ describe("the Windows script", () => {
     expect(() => launcherScript({ ...target, cli: "C:\\a\nb\\bin.js" }, "win32", file)).toThrow();
   });
 
-  test("its mark is recognised like the POSIX one", () => {
+  test("its mark is recognised like the POSIX one: rem and CRLF, at the launcher's own path", () => {
     const home = tempHome();
-    const dir = join(home, "bin");
-    mkdirSync(dir);
-    // Simulated on this machine: the Windows layout below the temporary home, only the reading of the mark matters.
-    writeFileSync(join(dir, "probe"), launcherScript(target, "win32", file));
-    expect(readFileSync(join(dir, "probe"), "utf8")).toContain(CLI_LAUNCHER_MARK);
+    const file = join(home, ".local", "bin", "argelanderspace");
+    mkdirSync(join(home, ".local", "bin"), { recursive: true });
+    // The Windows text at the path this platform reads: only the `rem` mark line and the CRLF lines can make it the
+    // app's, and it is not this platform's script, so it reads as the app's own but for elsewhere.
+    writeFileSync(
+      file,
+      launcherScript(target, "win32", file.replace(/\//g, "\\").replace(/^\\/, "C:\\"))
+    );
+    expect(
+      cliLauncherStatus({ node: "/opt/a/node", cli: "/opt/a/bin.js" }, linux(home)).state
+    ).toBe("outdated");
+    expect(uninstallCliLauncher(linux(home)).outcome).toBe("removed");
+    expect(existsSync(file)).toBe(false);
+  });
+
+  test("delayed expansion is off, so a `!` in a path is taken as written", () => {
+    const lines = launcherScript(target, "win32", file).split("\r\n");
+    expect(lines).toContain("setlocal DisableDelayedExpansion");
+    expect(lines).not.toContain("setlocal");
+  });
+
+  test("no echo line has a cmd metacharacter outside quotes that is not escaped, and what it shows is the message", () => {
+    const text = launcherScript(target, "win32", file);
+    const echoes = text
+      .split("\r\n")
+      .map((line) => /^(?:>&2 )?echo (.*)$/.exec(line)?.[1])
+      .filter((rest): rest is string => rest !== undefined);
+    expect(echoes.length).toBe(2);
+    for (const rest of echoes) expect(unescapedMeta(rest)).toEqual([]);
+    const shown = echoes.map(shownByEcho).join("\n");
+    expect(shown).toContain("(Settings > Command line & agents)");
+    expect(shown).toContain('"%AS_SELF%".');
+    expect(shown).toContain("moved or removed.");
   });
 });
+
+/** The cmd metacharacters of an echo line's text that are outside double quotes and not escaped with `^`. */
+function unescapedMeta(rest: string): string[] {
+  const bad: string[] = [];
+  let quoted = false;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i] as string;
+    if (c === '"') quoted = !quoted;
+    else if (quoted) continue;
+    else if (c === "^") i++;
+    else if ("&|<>()".includes(c)) bad.push(c);
+  }
+  return bad;
+}
+
+/** What cmd's echo shows of a text with no unescaped metacharacter: `^x` outside quotes is `x`. */
+function shownByEcho(rest: string): string {
+  let out = "";
+  let quoted = false;
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest[i] as string;
+    if (c === '"') quoted = !quoted;
+    if (!quoted && c === "^") {
+      i++;
+      out += rest[i] ?? "";
+    } else out += c;
+  }
+  return out;
+}
 
 describe("the bundled skills", () => {
   test("found three levels up from the CLI, as in the package (sidecar/app/dist) and the repository (packages/app/dist)", () => {

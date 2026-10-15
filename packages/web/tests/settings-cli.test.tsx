@@ -150,8 +150,13 @@ describe("the desktop form", () => {
     expect(q('[data-ui="cli-path-line"]', hint)!.textContent).toBe('export PATH="$HOME/.local/bin:$PATH"');
     const writeText = vi.fn(async () => {});
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    // What is copied is the whole line, so it is named a line, and so is the notice.
+    expect(q('[data-ui="copy-path-line"]', hint)!.getAttribute("aria-label")).toBe("Copy line");
     fireEvent.click(q('[data-ui="copy-path-line"]', hint)!);
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('export PATH="$HOME/.local/bin:$PATH"'));
+    await waitFor(() =>
+      expect([...document.querySelectorAll('[data-ui="toast"]')].map((el) => el.textContent)).toContain("Line copied")
+    );
     expect(q('[data-ui="cli-install"]')).toBeNull();
     expect(q('[data-ui="cli-uninstall"]')!.textContent).toBe("Uninstall");
   });
@@ -174,6 +179,8 @@ describe("the desktop form", () => {
     const hint = q('[data-ui="cli-path-hint"]')!;
     expect(hint.textContent).toContain("Add this directory to your user PATH:");
     expect(q('[data-ui="cli-path-line"]', hint)!.textContent).toBe("C:\\Users\\u\\AppData\\Local\\Programs\\argelanderspace\\bin");
+    // There it is a directory that is copied.
+    expect(q('[data-ui="copy-path-line"]', hint)!.getAttribute("aria-label")).toBe("Copy path");
   });
 
   it("someone else's file of that name: install is refused, the page says it was not overwritten", async () => {
@@ -227,11 +234,34 @@ describe("the desktop form", () => {
     ]);
   });
 
+  it("uninstall finds someone else's file there by now: said in the dialog in uninstall's words, the dialog stays", async () => {
+    cli = STATUS({ state: "installed", inPath: true });
+    await openCli();
+    fireEvent.click(q('[data-ui="cli-uninstall"]')!);
+    change = { status: 409, body: { code: "foreign", detail: "x", status: STATUS({ state: "foreign", inPath: true }) } };
+    fireEvent.click(q('[data-ui="uninstall-cli-confirm"]')!);
+    await waitFor(() => expect(q('[data-ui="cli-uninstall-foreign"]')).not.toBeNull());
+    const dialog = q('[data-ui="uninstall-cli"]')!;
+    expect(dialog).not.toBeNull();
+    expect(q('[data-ui="cli-uninstall-foreign"]', dialog)!.textContent).toBe(
+      "Not uninstalled: ~/.local/bin/argelanderspace is no longer the app's file, so it was not deleted."
+    );
+    expect(dialog.textContent).not.toContain("Not installed");
+    // Nothing of the app's is left to remove.
+    expect((q('[data-ui="uninstall-cli-confirm"]') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(q('[data-ui="uninstall-cli-cancel"]')!);
+    expect(q('[data-ui="uninstall-cli"]')).toBeNull();
+    expect(q('[data-ui="cli-status"]')!.getAttribute("data-state")).toBe("foreign");
+  });
+
   it("the app's launcher for another place of the app: said, and reinstalling points it here", async () => {
     cli = STATUS({ state: "outdated", inPath: true });
     await openCli();
     expect(q('[data-ui="cli-status"]')!.textContent).toBe("Installed");
     expect(q('[data-ui="cli-outdated"]')!.textContent).toContain("does not run this app");
+    // Either the app has moved, or the app was updated and writes its script differently now.
+    expect(q('[data-ui="cli-outdated"]')!.textContent).toContain("moved");
+    expect(q('[data-ui="cli-outdated"]')!.textContent).toContain("updated");
     change = { status: 200, body: { outcome: "installed", status: STATUS({ state: "installed", inPath: true }) } };
     expect(q('[data-ui="cli-install"]')!.textContent).toBe("Reinstall");
     fireEvent.click(q('[data-ui="cli-install"]')!);
