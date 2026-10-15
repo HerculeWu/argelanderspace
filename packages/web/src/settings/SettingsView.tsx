@@ -1,5 +1,7 @@
 import {
   type DiagnosticsInfo,
+  type HostRecentProject,
+  type HostRecentProjects,
   isEmailAddress,
   isAbsoluteOnAnyPlatform,
   SETTING_KEYS,
@@ -17,7 +19,7 @@ import {
   type SettingsProblem,
   type SettingsSnapshot,
 } from "@argelanderspace/contracts";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { SettingChangeFailure } from "../api/settings";
 import { type Preferences, type SettingsNotice, usePreferences } from "../argelander/preferences";
@@ -27,7 +29,10 @@ import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
 import { fetchDiagnostics } from "../api/diagnostics";
-import { useHostRequest } from "../host";
+import { useHostInfo, useHostRequest } from "../host";
+import { fetchRecentProjects, removeRecentProject } from "../api/host";
+import { RecentProjectList } from "../welcome/RecentProjectList";
+import { openFromList, useProjectSwitch } from "../welcome/ProjectSwitch";
 import { DiagnosticsExportDialog } from "./DiagnosticsExport";
 import { EnvironmentCheck, useEnvironment } from "./EnvironmentCheck";
 import "./settings.css";
@@ -449,20 +454,29 @@ function Project({ state }: { state: RowState }) {
   const { settings } = state;
   const dataDir = String(settings.values.data_dir ?? "");
   const root = settings.running.project_root;
+  const desktop = useHostInfo()?.mode === "desktop";
+  const pickFolder = useHostRequest("pick_folder");
+  const { leaving } = useProjectSwitch();
   return (
     <>
-      {/* The project is the directory serve was started in: shown, not stored in the file (the desktop app's "open
-          another folder" belongs to its host, a later ticket). */}
+      {/* The project: in a browser the directory serve was started in; in the desktop app the folder it opened, with
+          "Open another folder…" (desktop-app ticket 19, approved prototype). Shown, not stored in the file. */}
       <div className="st-row" data-ui="setting-row" data-ui-key="project-root">
         <div className="st-row-main">
           <div className="st-label"><span>{t("settings.project.current")}</span></div>
-          <div className="st-hint">{t("settings.project.currentBrowser")}</div>
+          {!desktop && <div className="st-hint">{t("settings.project.currentBrowser")}</div>}
           <div className="st-badges"><Badge>{t("settings.row.notInFile")}</Badge></div>
         </div>
-        <div className="st-control st-control-path">
+        <div className="st-control st-control-path st-control-project">
           {root && <code className="st-path" data-ui="project-root-path" title={root.path}>{root.display}</code>}
+          {pickFolder && (
+            <Button data-ui="open-other-folder" disabled={leaving} onClick={() => askOrSay(pickFolder, state.P.notify, t("settings.host.requestFailed"))}>
+              {t("settings.project.openOther")}
+            </Button>
+          )}
         </div>
       </div>
+      {desktop && <RecentProjects P={state.P} />}
       <Row state={state} k="data_dir" label={t("settings.project.dataDir")}
         hint={settings.restartPending.includes("data_dir") || settings.running.data_dir === null ? undefined : (
           <span data-ui="data-dir-in-use">{t("settings.row.inUse")}<code className="st-path" title={settings.running.data_dir.path}>{settings.running.data_dir.display}</code></span>
@@ -476,6 +490,57 @@ function Project({ state }: { state: RowState }) {
           onChange={(on) => void state.P.change("auto_ingest_arxiv", { set: on }, HERE)} />
       )} />
     </>
+  );
+}
+
+/**
+ * The recent projects with a project open (desktop-app ticket 19; outside the approved prototype, which shows the list
+ * only on the welcome page — to be confirmed by the user): the welcome page's rows, without the open project. Opening
+ * one asks first when the switch would interrupt work (`ProjectSwitch.tsx`).
+ */
+function RecentProjects({ P }: { P: Preferences }) {
+  const { t } = useTranslation();
+  const { leaving } = useProjectSwitch();
+  // undefined: not known yet; null: could not be read.
+  const [recent, setRecent] = useState<HostRecentProjects | null | undefined>(undefined);
+  const alive = useRef(true);
+  useEffect(() => () => void (alive.current = false), []);
+  const reload = useCallback(async () => {
+    const list = await fetchRecentProjects();
+    if (alive.current) setRecent(list);
+  }, []);
+  useEffect(() => void reload(), [reload]);
+
+  const open = async (project: HostRecentProject) => {
+    const result = await openFromList(project);
+    if (!alive.current) return;
+    if (result === "folder_missing" || result === "unknown_project" || result === "current_project") {
+      if (result === "folder_missing") P.notify(t("welcome.nowMissing"));
+      await reload();
+    } else if (result === "failed") P.notify(t("welcome.openFailed"));
+  };
+  const remove = async (project: HostRecentProject) => {
+    const list = await removeRecentProject(project.path);
+    if (!alive.current) return;
+    if (list === null) P.notify(t("welcome.removeFailed"));
+    else setRecent(list);
+  };
+  const others = recent ? recent.projects.filter((project) => !project.current) : [];
+  return (
+    <div className="st-row" data-ui="setting-row" data-ui-key="recent-projects">
+      <div className="st-row-main">
+        <div className="st-label"><span>{t("settings.project.recent")}</span></div>
+      </div>
+      <div className="st-row-wide">
+        {recent === null ? (
+          <InlineMessage tone="danger" uiId="settings-recent-failed">{t("welcome.listFailed")}</InlineMessage>
+        ) : recent === undefined ? null : others.length === 0 ? (
+          <p className="wl-empty" data-ui="settings-recent-empty">{t("settings.project.recentEmpty")}</p>
+        ) : (
+          <RecentProjectList ui="settings-recent-list" projects={others} disabled={leaving} onOpen={(project) => void open(project)} onRemove={(project) => void remove(project)} />
+        )}
+      </div>
+    </div>
   );
 }
 

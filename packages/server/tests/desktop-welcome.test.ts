@@ -500,22 +500,8 @@ describe("with no project open", () => {
   });
 });
 
+// Switching with a project open (desktop-app ticket 19) is `desktop-switch.test.ts`.
 describe("with a project open", () => {
-  test("opening a recent project is refused (switching is ticket 19); a picked folder does not stop the host", async () => {
-    const a = folder("a");
-    recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
-    const h = await startHost({ fromRecent: false });
-    expect((await h.post("/api/host/recent-projects/open", { path: a })).body).toEqual({
-      code: "project_open",
-      detail: "a project is open",
-    });
-    await h.post("/api/host/requests/pick_folder");
-    const request = (await h.next("request")) as { id: string };
-    h.input.write(`${JSON.stringify({ type: "folder_picked", id: request.id, path: a })}\n`);
-    await new Promise((r) => setTimeout(r, 100));
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "request"]);
-  });
-
   test("an empty folder opened as a project: the pages' first requests answer, empty", async () => {
     const empty = folder("empty");
     process.chdir(empty);

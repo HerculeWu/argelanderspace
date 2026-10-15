@@ -3054,6 +3054,20 @@ export class CopilotHost {
     this.emit(loaded);
     return { messageId, runId };
   }
+  /**
+   * The conversations whose run is working, waiting for the user or stopping: what closing this server would stop
+   * (desktop-app ticket 19, what switching projects interrupts). A stopped run can be resumed later.
+   */
+  liveRuns(): Array<{ id: string; title: string }> {
+    const out: Array<{ id: string; title: string }> = [];
+    for (const loaded of this.loaded.values()) {
+      const status = loaded.record.run?.status;
+      if (isLive(status) || status === "stopping")
+        out.push({ id: loaded.record.id, title: loaded.record.title });
+    }
+    return out;
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     for (const pending of this.pendingViewActions.values()) {

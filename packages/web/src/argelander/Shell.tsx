@@ -33,6 +33,7 @@ import { MailView } from "../mail/MailView";
 import { createMailPane } from "../mail/mail-pane";
 import { ConfigProblemsBanner } from "../settings/ConfigProblemsBanner";
 import { PortFallbackBanner } from "../settings/PortFallbackBanner";
+import { ProjectSwitchPrompt } from "../welcome/ProjectSwitch";
 import { SettingsNotices, SettingsView } from "../settings/SettingsView";
 import { createSettingsPane } from "../settings/settings-pane";
 
@@ -701,6 +702,7 @@ export function Shell() {
           onSplit={() => splitFrom(activeId)}
         />
         <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} />
+        <ProjectSwitchPrompt notify={preferences.notify} />
       </div>
     </WorkspaceProvider>
     </PreferencesProvider>

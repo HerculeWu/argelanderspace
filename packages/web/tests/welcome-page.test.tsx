@@ -38,8 +38,8 @@ beforeEach(async () => {
   recent = {
     version: 1,
     projects: [
-      { ...A, openedAt: new Date().toISOString(), missing: false },
-      { ...GONE, openedAt: "2025-01-01T00:00:00.000Z", missing: true },
+      { ...A, openedAt: new Date().toISOString(), missing: false, current: false },
+      { ...GONE, openedAt: "2025-01-01T00:00:00.000Z", missing: true, current: false },
     ],
     lastMissing: null,
   };

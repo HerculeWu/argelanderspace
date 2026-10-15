@@ -28,6 +28,8 @@ export function wsModule() {
       const offs = [fakeBus.on("settings.changed", () => cb()), ...(onResync ? [fakeBus.onResync(onResync)] : [])];
       return () => offs.forEach((off) => off());
     },
+    onHostSwitchConfirmation: (cb: Parameters<typeof fakeBus.on<"host.switch-confirmation">>[1]) =>
+      fakeBus.on("host.switch-confirmation", cb),
   };
 }
 

@@ -146,7 +146,7 @@ import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
-import { type HostBridge, mountHostRoutes } from "./host-routes.js";
+import { type HostBridge, mountHostRoutes, switchJobOf } from "./host-routes.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
@@ -157,6 +157,7 @@ import type { MailComposeServices } from "./mail-compose-routes.js";
 import type { MailManageService } from "./mail-manage.js";
 import type { MailReadService } from "./mail-read.js";
 import { mountMailRoutes } from "./mail-routes.js";
+import { mailSendsInWindow } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { mountMailWatchRoutes } from "./mail-watch-routes.js";
 import { DEV_ORIGINS, ownOrigins } from "./origins.js";
@@ -696,6 +697,16 @@ export function createApp(deps: AppDeps): Hono {
   // A host built here records where this app records; one handed in was given its log by whoever built it.
   if (deps.copilot === undefined) copilot.useLog(log);
   mountCopilotRoutes(app, copilot, guardCsrf);
+  // The desktop host asks what switching to another project would interrupt (desktop-app ticket 19): this server's
+  // queued and running jobs, its live Copilot runs, and the mail still in its undo window — what its close ends.
+  deps.host?.useWorkbench({
+    impact: () => ({
+      jobs: runner.list().flatMap((job) => switchJobOf(job) ?? []),
+      conversations: copilot.liveRuns(),
+      mail: mailSendsInWindow(),
+    }),
+    broadcast,
+  });
   // Text Docs (ticket 25): create under a Work, source save, validate and explicit generate.
   const textDocs = new TextDocService({
     paths,

@@ -91,6 +91,9 @@ export const SERVER_LOG_EVENTS = [
   "desktop.pick_rejected",
   "recent_projects.unreadable",
   "recent_projects.write_failed",
+  // Desktop-app ticket 19: a switch that would interrupt work waits for the user (counts only), or was cancelled.
+  "desktop.switch_asked",
+  "desktop.switch_cancelled",
   "shell.started",
   "shell.host_started",
   "shell.host_exited",

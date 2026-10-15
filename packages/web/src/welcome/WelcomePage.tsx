@@ -5,8 +5,8 @@ import { fetchRecentProjects, openRecentProject, removeRecentProject } from "../
 import { usePreferences } from "../argelander/preferences";
 import { useHostRequest } from "../host";
 import { Icon } from "../lib/icons";
-import { ActionButton, Badge, Button, InlineMessage } from "../ui";
-import { openedAtText } from "./opened-at";
+import { Button, InlineMessage } from "../ui";
+import { RecentProjectList } from "./RecentProjectList";
 import "../settings/settings.css";
 import "./welcome.css";
 
@@ -17,7 +17,7 @@ import "./welcome.css";
  * starts the next host for that folder, with a new page.
  */
 export function WelcomePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const P = usePreferences();
   const pickFolder = useHostRequest("pick_folder");
   // undefined: not known yet; null: could not be read.
@@ -55,7 +55,6 @@ export function WelcomePage() {
     });
   };
 
-  const language = i18n.language;
   return (
     <div className="wl-root" data-ui="welcome-page">
       <div className="wl-col">
@@ -81,22 +80,7 @@ export function WelcomePage() {
           ) : recent === undefined ? null : recent.projects.length === 0 ? (
             <p className="wl-empty" data-ui="welcome-recent-empty">{t("welcome.recentEmpty")}</p>
           ) : (
-            <ul className="wl-list" data-ui="welcome-recent-list">
-              {recent.projects.map((project) => (
-                <li key={project.path} className={`wl-item${project.missing ? " missing" : ""}`} data-ui="recent-project" data-ui-key={project.path} data-missing={project.missing ? "1" : "0"}>
-                  <Button unstyled className="wl-open" data-ui="recent-project-open" data-ui-key={project.path} disabled={project.missing || leaving} onClick={() => void open(project)}>
-                    <span className="wl-name">
-                      <Icon name="folder" cls="ico-sm" />
-                      {project.name}
-                      {project.missing && <Badge>{t("welcome.missing")}</Badge>}
-                    </span>
-                    <code className="st-path" title={project.path}>{project.display}</code>
-                    <span className="wl-when">{t("welcome.openedAt", { when: openedAtText(project.openedAt, language) })}</span>
-                  </Button>
-                  <ActionButton mode="icon" iconName="x" iconSize="small" data-ui="recent-project-remove" data-ui-key={project.path} label={t("welcome.remove", { name: project.name })} tooltip={t("welcome.remove", { name: project.name })} tooltipAlign="end" disabled={leaving} onClick={() => void remove(project)} />
-                </li>
-              ))}
-            </ul>
+            <RecentProjectList ui="welcome-recent-list" projects={recent.projects} disabled={leaving} onOpen={(project) => void open(project)} onRemove={(project) => void remove(project)} />
           )}
         </section>
       </div>
