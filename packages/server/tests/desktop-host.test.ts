@@ -38,6 +38,7 @@ import {
   type DesktopHost,
   type HostOutLine,
   portIsFree,
+  projectUnavailableLine,
   runDesktopHost,
 } from "../src/desktop-host.js";
 import { MailComposeService } from "../src/mail-compose.js";
@@ -240,6 +241,10 @@ describe("start", () => {
       portFallback: false,
       portOccupant: null,
       project: process.cwd(),
+      // Where the shell's own events go while no host runs, and what its crash dialog's "show the log folder" opens
+      // (desktop-app ticket 20); the language its native dialogs speak.
+      logDir: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+      language: "zh-CN",
     });
     const page = await fetch(`${h.url}/`);
     expect(page.status).toBe(200);
@@ -281,6 +286,54 @@ describe("start", () => {
       app: unknown;
     };
     expect(report.app).toEqual({ version: "9.9.9-test", mode: "desktop" });
+  });
+});
+
+describe("what the shell is told about the log and the language (desktop-app ticket 20)", () => {
+  beforeEach(() => {
+    mkdirSync(join(project, "web"), { recursive: true });
+    writeFileSync(join(project, "web", "index.html"), "<!doctype html><title>t</title>");
+  });
+
+  test("the ready line's language is the one config.toml names", async () => {
+    writeConfig('port = 0\n[ui]\nlanguage = "en"\n');
+    const h = await startHost();
+    expect(h.lines[0]).toMatchObject({ type: "ready", language: "en" });
+  });
+
+  test("a server that cannot start: the failed line names the log directory, the start's stage", async () => {
+    writeConfig("port = 0\n");
+    // The project's data directory cannot be made: a file stands where it would be.
+    writeFileSync(join(project, "literatures"), "not a folder");
+    const input = new PassThrough();
+    const output = new PassThrough();
+    let text = "";
+    output.on("data", (chunk: Buffer) => {
+      text += chunk.toString("utf8");
+    });
+    await expect(
+      runDesktopHost({ input, output, keychainProbe: KEYCHAIN, webDist: join(project, "web") })
+    ).rejects.toBeDefined();
+    expect(
+      text
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line))
+    ).toEqual([
+      {
+        type: "failed",
+        stage: "start",
+        logDir: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+      },
+    ]);
+  });
+
+  test("a project folder that cannot be entered: the line the CLI writes before it exits", () => {
+    expect(projectUnavailableLine()).toEqual({
+      type: "failed",
+      stage: "project",
+      logDir: join(process.env.XDG_DATA_HOME ?? "", "argelanderspace", "logs"),
+    });
   });
 });
 

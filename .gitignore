@@ -73,3 +73,7 @@ packages/app/*.tgz
 # The app package's version, written into the CLI's source at build time (packages/cli/scripts/app-version.mjs;
 # desktop-app ticket 16): change the version in packages/app/package.json, never here.
 packages/cli/src/generated/
+
+# Desktop shell (desktop-app ticket 20): Rust build output and the schemas tauri-build generates on every build.
+packages/desktop/target/
+packages/desktop/gen/

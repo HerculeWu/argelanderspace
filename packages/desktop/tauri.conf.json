@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ArgelanderSpace",
+  "mainBinaryName": "argelanderspace-desktop",
+  "version": "../app/package.json",
+  "identifier": "space.argelander.desktop",
+  "build": { "frontendDist": "./placeholder" },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": { "csp": null, "capabilities": [] }
+  },
+  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+}

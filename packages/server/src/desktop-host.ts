@@ -70,12 +70,14 @@ import {
   type HostSwitchImpact,
   type HostSwitchTarget,
   isHostInfo,
+  type SETTINGS_UI_LANGUAGES,
   switchAcknowledged,
 } from "@argelanderspace/contracts";
 import {
   configFilePath,
   f,
   type KeychainProbe,
+  LOG_DIR_NAME,
   type LogField,
   RECENT_PROJECTS_FILE,
   RECENT_PROJECTS_PROBLEMS,
@@ -187,6 +189,13 @@ export type HostOutLine =
       portOccupant: HostPortOccupant | null;
       /** Null in the welcome state (no project open). */
       project: string | null;
+      /**
+       * The user log directory (desktop-app ticket 20): where the shell writes its own events while no host runs, and
+       * what its crash dialog's "show the log folder" opens.
+       */
+      logDir: string;
+      /** The language config.toml names when the host starts, for the shell's native dialogs. */
+      language: (typeof SETTINGS_UI_LANGUAGES)[number];
     }
   | { type: "request"; kind: "pick_folder"; id: string }
   | { type: "request"; kind: "open_in_browser"; url: string }
@@ -196,7 +205,12 @@ export type HostOutLine =
   | { type: "request"; kind: "open_skills_folder" }
   | { type: "stopping"; reason: HostStopReason }
   | { type: "stopped"; next?: string }
-  | { type: "failed"; stage: "start" };
+  /**
+   * The host did not get to serve: `start`, the server could not start; `project`, the folder given with `--project`
+   * is not there or not a folder (the CLI entry, {@link projectUnavailableLine}) — the shell starts a host without
+   * `--project` then, which goes to the welcome state. Either way the process exits with 1 after it.
+   */
+  | { type: "failed"; stage: "start" | "project"; logDir: string };
 
 export interface DesktopHostOptions {
   /** The shell's lines (the process's stdin). */
@@ -236,6 +250,22 @@ export interface DesktopHost {
   stopped: Promise<HostStopReason>;
   /** Starts the graceful shutdown (as a `quit` line does). */
   stop(reason?: HostStopReason): Promise<HostStopReason>;
+}
+
+/** The page's language when config.toml names none (web i18n: Chinese by default, the browser is not asked). */
+const DEFAULT_LANGUAGE: (typeof SETTINGS_UI_LANGUAGES)[number] = "zh-CN";
+
+/**
+ * The line the CLI entry writes before it exits with 1 when the folder given with `--project` is not there or not a
+ * folder (desktop-app ticket 20): the shell tells this apart from a crash and starts a host without `--project`, which
+ * goes to the welcome state — the folder may have gone between a switch's `stopped` and the next host's start.
+ */
+export function projectUnavailableLine(): Extract<HostOutLine, { type: "failed" }> {
+  return {
+    type: "failed",
+    stage: "project",
+    logDir: join(serveStart(configFilePath()).globalDirs.dataDir, LOG_DIR_NAME),
+  };
 }
 
 /** Whether nothing listens on the port at 127.0.0.1, the address the server binds (any failure to bind: taken). */
@@ -589,7 +619,11 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     server =
       project === "open" ? await startServer(argv, start) : await startNoProjectServer(argv, start);
   } catch (error) {
-    write({ type: "failed", stage: "start" });
+    write({
+      type: "failed",
+      stage: "start",
+      logDir: join(atStart.globalDirs.dataDir, LOG_DIR_NAME),
+    });
     throw error;
   }
   const log = server.log;
@@ -807,6 +841,8 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     portFallback: occupant !== null,
     portOccupant: occupant,
     project: project === "open" ? process.cwd() : null,
+    logDir: server.logDir,
+    language: atStart.config.ui?.language ?? DEFAULT_LANGUAGE,
   });
   input.resume();
 

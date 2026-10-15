@@ -111,6 +111,27 @@ Stage 9 已关闭。`i18next 26.4.2` + `react-i18next 17.0.14`，MIT；`src/loca
   - **发布包声明**：`packages/app/scripts/copy-assets.mjs` 生成 `dist/THIRD-PARTY-MAIL-NOTICES.txt`（及 `dist/web/`，已列入 pack-contents 必需文件）。根为 infra 的 dependencies（去掉 workspace 包与 `@napi-rs/keyring`，新增依赖自动纳入；因此也含 smol-toml）加 web 的 dompurify，取传递生产闭包；keyring 经 app 的 require 解析，作为外部运行时依赖单独声明。取舍：tsup 内联的精确集合需要把 metafile 放进发布的 dist/，故**整闭包声明并标“dependency closure (may be partially inlined)”**（多声明少于漏声明），不声称每项都内联进 bin.js。许可证不在构建内允许表（MIT、MIT-0、ISC、BSD、Apache-2.0）内时构建失败，须人工决定后再改 `mailAllowed`/`mailElected`。katex/marked 另见 `THIRD-PARTY-BUNDLED-NOTICES.txt`；其余内联的 hono、zod 等仍属上条所述已知缺口。
 - Writer 内置模板为 contracts TS 单源，不按旧 Stage 10 方案寻找 dist/templates/*.json。稳定 latexmk 缓存须保未变文件 mtime；显式刷新仍让 latexmk 核系统依赖，不能以 main.tex hash 相同直接返回旧投影。
 
+## 桌面壳（desktop-app 票 20）
+
+`packages/desktop/` 是 Tauri 2 的 Rust 工程，不是 pnpm 包，**不进四门**（硬契约见 [contracts](contracts.md)）：`pnpm -r` 不碰它，biome 排除 `packages/desktop`，`target/` 与 tauri-build 生成的 `gen/` 被 `.gitignore` 忽略。机制见 [architecture](architecture.md#桌面壳desktop-app-票-20)。
+
+- **前提**：Rust（`~/.cargo/bin` 的 cargo/rustc，本机 1.96）；Linux 上 `libwebkit2gtk-4.1-dev` 与 `libgtk-3-dev`；首次构建从 crates.io 下载依赖。开发形态的壳运行仓库里构建好的 `packages/app/dist/bin.js`，所以先 `corepack pnpm -r build`；node 取 `PATH` 上的（本机 v24）。
+- **构建与测试**（在 `packages/desktop/` 下）：`cargo build`（调试版，产物 `target/debug/argelanderspace-desktop`）、`cargo test`（行协议解析、退出后的决定与崩溃对话框的状态机、壳的日志文件、单实例、启动参数）。另可 `cargo clippy --all-targets` 与 `cargo fmt --check`。打包（`tauri build`、deb/AppImage）是票 23。
+- **运行**：`packages/desktop/target/debug/argelanderspace-desktop`。它会读写你真实的全局目录（配置、最近项目、日志）并按最近项目打开真实的 Project；只想看看壳时用下面冒烟的隔离环境（临时 `HOME`/`XDG_*`、`XDG_RUNTIME_DIR`、`DBUS_SESSION_BUS_ADDRESS` 指向不存在的 socket，只保留 `DISPLAY`/`XAUTHORITY`）。单实例的 socket 在 `$XDG_RUNTIME_DIR` 下，所以隔离环境里的壳与真实会话里的互不影响。
+- **测试构建**：`cargo build --features smoke-probe` 多出一个只用于冒烟的探针：每次页面载入后在页面里跑一段固定脚本（有没有 `__TAURI__`、`__TAURI_INTERNALS__`、`window.ipc`、Tauri 命名的全局量、WebKit 的 `ipc` 消息处理器，试一次 `invoke` 与一次裸 `ipc://` 请求），把结果追加到 `ARGELANDERSPACE_SHELL_PROBE` 指定的文件；`ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES=1` 时不去掉 Tauri 的入口，用来证明调用本身也被拒。它与普通构建共用 `target/debug/` 下的同名产物，冒烟后重新 `cargo build` 一次。发布构建不得带这个 feature。
+- **自动冒烟**：私有 `.scratch/desktop-app/checks/20/scripts/run.sh <临时目录>`（构建探针版与一个只发 `WM_DELETE_WINDOW` / `_NET_ACTIVE_WINDOW` 的 X 小工具，再跑 `smoke.sh`）：隔离环境、合成文件夹、假的 `xdg-open`（只记录被要求打开什么）、真实显示器。覆盖：首次启动欢迎页与上次文件夹不在；页面里没有 Tauri 入口；第二次启动只提到前面；四种原生请求与选文件夹对话框（关掉即取消）；打开最近项目后壳以 `--project` 起下一个宿主、窗口换成新页面；切换目标在两次启动之间消失时回到欢迎页、不弹崩溃对话框；杀宿主出现崩溃对话框、关掉它即退出；杀壳后宿主自行退出、端口释放；关窗后宿主收到 `quit`、端口释放；入口保留时 `invoke` 被拒；壳的记录里没有路径与文件夹名；结束时隔离环境里没有残留进程。截图用 `import -window`，截图前先把窗口提到前面，截完人工看一遍只有合成数据。
+- **手动冒烟清单**（本机没有输入注入工具，以下要人操作；在隔离环境或一个可丢弃的 Project 上做）：
+  1. 首次启动（空的全局目录）见欢迎页；点「打开文件夹…」，系统对话框里选一个空文件夹 → 窗口换成该 Project 的工作台。
+  2. 再次启动应用（双击或命令行）→ 不出现第二个窗口，已有窗口被提到前面（最小化时恢复）。
+  3. 设置页「打开其他文件夹…」与最近项目各切换一次 → 窗口显示新 Project；有运行中的任务时先出切换提示（票 19）。
+  4. 「打开配置文件」「显示日志文件夹」（设置页与诊断分组）→ 系统编辑器 / 文件管理器打开对应位置；配置文件还不存在时什么都不发生（记 `shell.request_failed` `not_found`）。
+  5. 关窗 → 应用退出，`ss -ltn` 上端口释放，没有残留的 `desktop-host` 进程。
+  6. `kill -9` 宿主 → 崩溃对话框；分别试「重新启动」（回到同一 Project）、「显示日志文件夹」（打开后对话框再出现）、「退出」（应用退出）。
+  7. `kill -9` 壳 → 宿主几秒内自行退出、端口释放。
+  8. 调试版里在页面上右键「检查元素」打开 Web Inspector（调试构建默认带开发者工具；发布版的入口是票 21），控制台里 `typeof window.__TAURI_INTERNALS__`、`typeof window.ipc` 都是 `"undefined"`，`window.isTauri` 不存在。
+  9. 日志目录里能看到 `shell.*` 记录（宿主日志里或 `*-shell-<pid>.jsonl`），没有路径与文件夹名。
+  10. 02 探路列出的未验证项（中文输入法、原生下拉、文件选择框、剪贴板、右键菜单、触控板手势、窗口缩放与多显示器）在用户终验里看。
+
 ## 兼容实现：仍有实际作用
 
 - core 的 pyOr/pyTruthy/pyRe 保留有意移植的 Python 真值/Unicode 词边界语义；退出重构期不等于这些防御语义都是死代码。

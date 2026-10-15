@@ -29,7 +29,13 @@ import {
   type Work,
 } from "@argelanderspace/core";
 import { ingestTexSource } from "@argelanderspace/infra";
-import { realPipelines, realSources, runDesktopHost, startServer } from "@argelanderspace/server";
+import {
+  projectUnavailableLine,
+  realPipelines,
+  realSources,
+  runDesktopHost,
+  startServer,
+} from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
@@ -295,7 +301,13 @@ async function runDesktopHostCommand(opts: { project?: string; webDist?: string 
     } catch {
       /* not there */
     }
-    if (!isDir) throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
+    if (!isDir) {
+      // Said on the line protocol too: the folder may have gone since a switch named it, and the shell then starts a
+      // host without --project, the welcome state, rather than reporting a crash (desktop-app ticket 20).
+      process.stdout.write(`${JSON.stringify(projectUnavailableLine())}\n`);
+      await flushed(process.stdout);
+      throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
+    }
     // The Project's folder is the process's working directory, as for `serve` run in it: the same relative `data_dir`
     // rule finds the project data (ADR 0010), and the settings page shows it as the project.
     process.chdir(project);

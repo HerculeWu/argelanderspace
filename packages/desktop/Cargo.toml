@@ -1,0 +1,42 @@
+# The desktop shell (desktop-app ticket 20; ADR 0010): a Tauri window that loads the local server's page, looks
+# after the desktop host (a Node process speaking the line protocol on its stdin/stdout) and answers its native
+# requests. No business logic lives here, and this crate is not part of the four gates (docs/contracts.md).
+#
+# The version shown to people comes from packages/app/package.json (tauri.conf.json `version`); the crate's own
+# version below is not used anywhere.
+[package]
+name = "argelanderspace-desktop"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Not part of any Cargo workspace: the repository's workspace is pnpm's.
+[workspace]
+
+[[bin]]
+name = "argelanderspace-desktop"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+open = "5"
+# Keys in the order written: the records and lines read like the host's (`t`, `level`, `event` first).
+serde_json = { version = "1", features = ["preserve_order"] }
+# The same WebKitGTK binding Tauri uses: the shell takes Tauri's scripts out of the page (src/page_guard.rs).
+webkit2gtk = "2.0"
+# Test builds only (`--features smoke-probe`): reads what the page sees, for the smoke checks.
+javascriptcore-rs = { version = "1.1", optional = true }
+gio = { version = "0.18", optional = true }
+
+[features]
+# Never in a release: a probe that evaluates a fixed script in the page after each load and appends the answer to the
+# file named by ARGELANDERSPACE_SHELL_PROBE (docs/engineering.md, desktop shell smoke).
+smoke-probe = ["dep:javascriptcore-rs", "dep:gio"]
+
+[profile.release]
+opt-level = "s"
+strip = true
