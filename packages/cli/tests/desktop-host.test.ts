@@ -10,8 +10,16 @@
  */
 
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +30,7 @@ const BIN = join(PKG, "dist", "bin.js");
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
+/** Processes this file did not start itself (a host started by a stand-in shell), until they are seen gone. */
 const pids: number[] = [];
 afterEach(() => {
   for (const child of children.splice(0))
@@ -150,7 +159,10 @@ function lineReader(stream: NodeJS.ReadableStream): {
   };
 }
 
-function startHost(w: World): {
+function startHost(
+  w: World,
+  webDist: string = w.web
+): {
   child: ChildProcess;
   out: ReturnType<typeof lineReader>;
   err: () => string;
@@ -158,7 +170,7 @@ function startHost(w: World): {
 } {
   const child = spawn(
     process.execPath,
-    [BIN, "desktop-host", "--project", w.project, "--web-dist", w.web],
+    [BIN, "desktop-host", "--project", w.project, "--web-dist", webDist],
     {
       env: w.env,
       // The shell's working directory is not the project; the host must not depend on it.
@@ -194,7 +206,8 @@ describe("the built desktop host", () => {
       configuredPort: port,
       portFallback: false,
       portOccupant: null,
-      project: w.project,
+      // The project folder as the system resolves it (the host's working directory): symbolic links resolved.
+      project: realpathSync(w.project),
     });
     const page = await fetch(String(ready.url));
     expect([page.status, (await page.text()).includes("desktop host page")]).toEqual([200, true]);
@@ -278,7 +291,55 @@ describe("the built desktop host", () => {
     shell.kill("SIGKILL");
     // The host's input ends with the shell: it shuts down and exits.
     expect(await until(() => !alive(hostPid), 20_000)).toBe(true);
+    // Seen gone: its pid may be another process's by the end of the test, so it is not signalled again.
+    pids.splice(pids.indexOf(hostPid), 1);
     expect(await portFree(port)).toBe(true);
+  }, 60_000);
+
+  test("a relative --web-dist is the caller's, as --project is — not the project folder's", async () => {
+    const w = world();
+    writeConfig(w, "port = 0\n");
+    // Run from the folder that holds `web`; the project folder has none.
+    const h = startHost(w, "web");
+    const ready = await h.out.next("ready");
+    const page = await fetch(String(ready.url));
+    expect([page.status, (await page.text()).includes("desktop host page")]).toEqual([200, true]);
+    h.child.stdin?.end();
+    expect(await h.exited).toBe(0);
+  }, 60_000);
+
+  test("its input closed and its shutdown held up: after its limit the host exits anyway, port free", async () => {
+    const w = world();
+    writeConfig(w, "port = 0\n");
+    const h = startHost(w);
+    const ready = await h.out.next("ready");
+    // A request the server has begun to read and never sees the end of: the server's close waits for it.
+    const socket = connect({ host: "127.0.0.1", port: Number(ready.port) });
+    await new Promise<void>((r) => socket.once("connect", () => r()));
+    socket.on("error", () => {});
+    socket.write(`POST /api/host/requests/open_devtools HTTP/1.1\r\nHost: 127.0.0.1\r\n`);
+    const started = Date.now();
+    h.child.stdin?.end();
+    try {
+      expect(await h.exited).toBe(1);
+    } finally {
+      socket.destroy();
+    }
+    const took = Date.now() - started;
+    expect(took).toBeGreaterThanOrEqual(9_500);
+    expect(took).toBeLessThan(30_000);
+    expect(h.out.lines.slice(-1)).toEqual([{ type: "stopping", reason: "input_closed" }]);
+    expect(alive(h.child.pid as number)).toBe(false);
+    expect(await portFree(Number(ready.port))).toBe(true);
+    const files = readdirSync(w.logDir);
+    const records = readFileSync(join(w.logDir, files[0] as string), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(records.find((r) => r.event === "desktop.stop_timed_out")).toMatchObject({
+      level: "warn",
+      ms: 10_000,
+    });
   }, 60_000);
 
   test("its configured port held by another ArgelanderSpace: the second host falls back and says whose the port is", async () => {

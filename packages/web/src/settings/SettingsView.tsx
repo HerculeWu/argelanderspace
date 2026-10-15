@@ -771,7 +771,7 @@ const FAILED_TEXT = {
   unreachable: "settings.notices.failed.unreachable",
 } as const;
 
-function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsNotice, { kind: "failed" }>; onDismiss: () => void; notify?: (text: string) => void }) {
+function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsNotice, { kind: "failed" }>; onDismiss: () => void; notify: (text: string) => void }) {
   const { t } = useTranslation();
   // The desktop app: the file can be opened from here (approved prototype); a browser has no such action.
   const openConfig = useHostRequest("open_config_file");
@@ -789,7 +789,7 @@ function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsN
         {text}
       </span>
       {openConfig !== null && (
-        <Button data-ui="settings-save-failed-open-config" onClick={() => askOrSay(openConfig, notify ?? (() => {}), t("settings.host.requestFailed"))}>
+        <Button data-ui="settings-save-failed-open-config" onClick={() => askOrSay(openConfig, notify, t("settings.host.requestFailed"))}>
           {t("settings.configFile.openInEditor")}
         </Button>
       )}
@@ -799,13 +799,13 @@ function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsN
 }
 
 /** The floating notices of the settings: rendered once by the Shell, so a change made anywhere reports here. */
-export function SettingsNotices({ notices, dismiss, notify }: Pick<Preferences, "notices" | "dismiss"> & { notify?: Preferences["notify"] }) {
+export function SettingsNotices({ notices, dismiss, notify }: Pick<Preferences, "notices" | "dismiss" | "notify">) {
   const { t } = useTranslation();
   return (
     <div className="st-notices" aria-live="polite" data-ui="settings-notices">
       {notices.map((notice) =>
         notice.kind === "failed" ? (
-          <FailedNotice key={notice.id} notice={notice} onDismiss={() => dismiss(notice.id)} {...(notify ? { notify } : {})} />
+          <FailedNotice key={notice.id} notice={notice} onDismiss={() => dismiss(notice.id)} notify={notify} />
         ) : (
           <div key={notice.id} className="ag-toast view-in" data-ui="toast" data-ui-key={notice.kind === "saved" ? "settings-saved" : undefined} role="status">
             <Icon name={notice.kind === "saved" ? "check" : "info"} cls="ico-sm" />

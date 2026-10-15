@@ -17,7 +17,9 @@
  *   - `{"type":"folder_picked","id":…,"path":…|null}` the answer to a `pick_folder` request (null: cancelled).
  *   - `{"type":"shell_event","event":…,"fields":{…}}` one of the shell's own events, written into the host's log by
  *     the same rules as every other record: the event must be in {@link SHELL_EVENTS} and each field is put through
- *     the field constructor its catalog entry names; anything else is not written.
+ *     the field constructor its catalog entry names; anything else is not written. An event name outside that table —
+ *     the server's own record names included — is not written either: the host records the fixed
+ *     `desktop.protocol_rejected` with reason `unknown_event` instead, without the name.
  *   The end of stdin (the shell exited or was killed) is a quit too, so the host never outlives its shell.
  *
  * Port: the configured one (config.toml `port`, default 1859), which the CLI's links point to. When it is taken the
@@ -26,7 +28,11 @@
  *
  * Shutdown: the server's own graceful close (server.ts `createServer().close()`): first, synchronously, every mail send
  * still in its undo window is marked interrupted and stays in Drafts; then the watchers, the WebSocket hub, Copilot
- * and the listening socket. The port is free when `stopped` is written.
+ * and the listening socket. The port is free when `stopped` is written. When the shell is gone (the end of the input,
+ * a broken output) nobody is left to end a shutdown that hangs, so the host gives itself a limit ({@link
+ * HOST_STOP_DEADLINE_MS}, `stopDeadline`): past it, it records `desktop.stop_timed_out` and the entry exits the
+ * process. The mail undo window was closed by then — that is the close's first, synchronous step. On a quit line or a
+ * signal the shell is there, and ending a shutdown that takes too long is its job.
  */
 
 import { randomUUID } from "node:crypto";
@@ -54,8 +60,20 @@ export const PORT_PROBE_TIMEOUT_MS = 1500;
 export const HOST_STOP_REASONS = ["quit", "input_closed", "output_closed", "signal"] as const;
 export type HostStopReason = (typeof HOST_STOP_REASONS)[number];
 
+/** How long a shutdown with the shell gone (input closed, output broken) may take before the host gives up on it. */
+export const HOST_STOP_DEADLINE_MS = 10_000;
+/** The stop reasons that mean the shell is gone, so the host itself must make sure it ends. */
+const SHELL_GONE: ReadonlySet<HostStopReason> = new Set(["input_closed", "output_closed"]);
+
 /** Why a line from the shell was not acted on (recorded as `desktop.protocol_rejected`). */
-const REJECT_REASONS = ["too_long", "not_json", "unknown_type", "bad_shape", "unknown_id"] as const;
+const REJECT_REASONS = [
+  "too_long",
+  "not_json",
+  "unknown_type",
+  "bad_shape",
+  "unknown_id",
+  "unknown_event",
+] as const;
 type RejectReason = (typeof REJECT_REASONS)[number];
 
 const YES_NO = ["yes", "no"] as const;
@@ -137,6 +155,12 @@ export interface DesktopHostOptions {
   signals?: boolean;
   /** The answer to a `pick_folder` request: an absolute path, or null when the user cancelled (ticket 18 uses it). */
   onFolderPicked?: (path: string | null) => void;
+  /**
+   * The limit on a shutdown begun because the shell is gone (`input_closed`, `output_closed`): `onExpired` is called
+   * once `ms` (default {@link HOST_STOP_DEADLINE_MS}) have passed without the server having closed — the CLI entry
+   * exits the process there. Absent: no limit (a host run inside another process, as in tests).
+   */
+  stopDeadline?: { ms?: number; onExpired: () => void };
   /** Tests only: the keychain probe of the start record. */
   keychainProbe?: () => Promise<KeychainProbe>;
 }
@@ -316,10 +340,23 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     stopping = (async () => {
       log.info("desktop.stopping", { reason: f.oneOf(HOST_STOP_REASONS, reason) });
       write({ type: "stopping", reason });
+      let deadline: NodeJS.Timeout | undefined;
+      const limit = options.stopDeadline;
+      if (limit !== undefined && SHELL_GONE.has(reason)) {
+        const ms = limit.ms ?? HOST_STOP_DEADLINE_MS;
+        deadline = setTimeout(() => {
+          log.warn("desktop.stop_timed_out", { ms: f.ms(ms) });
+          limit.onExpired();
+        }, ms);
+        // What keeps the close from finishing keeps the process alive; the limit itself does not.
+        deadline.unref();
+      }
       try {
         await server.close();
       } catch {
         /* the socket was already closed; the port is free either way */
+      } finally {
+        clearTimeout(deadline);
       }
       if (options.signals) {
         process.off("SIGTERM", onSignal);
@@ -380,8 +417,9 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           return;
         }
         if (!Object.hasOwn(SHELL_EVENTS, event)) {
-          // Not in the catalog: the logger writes its fixed rejection record, without the name or any field.
-          log.info(event as never);
+          // Not the shell's: not written under its name — not even a name the logger knows, such as the server's own
+          // records. One fixed rejection, without the name or any field.
+          reject("unknown_event");
           return;
         }
         const spec: ShellEventSpec = SHELL_EVENTS[event as ShellEvent];
@@ -441,7 +479,8 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   input.on("data", onData);
   input.once("end", () => void stop("input_closed"));
   input.once("close", () => void stop("input_closed"));
-  input.once("error", () => void stop("input_closed"));
+  // Every error, not only the first: a second one with no listener would be thrown as an uncaught exception.
+  input.on("error", () => void stop("input_closed"));
   output.on("error", () => {
     outputBroken = true;
     void stop("output_closed");

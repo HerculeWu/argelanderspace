@@ -84,6 +84,7 @@ export const SERVER_LOG_EVENTS = [
   "desktop.folder_picked",
   "desktop.protocol_rejected",
   "desktop.stopping",
+  "desktop.stop_timed_out",
   "shell.started",
   "shell.host_started",
   "shell.host_exited",

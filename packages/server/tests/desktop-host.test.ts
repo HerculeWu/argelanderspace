@@ -10,8 +10,9 @@
 
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { HOST_REQUEST_KINDS } from "@argelanderspace/contracts";
 import {
@@ -32,6 +33,7 @@ import {
 } from "../../infra/tests/mail/fake-mailbox.js";
 import { TEST_PASSWORD, TEST_USER } from "../../infra/tests/mail/fake-servers.js";
 import { type RecordingSmtp, startRecordingSmtp } from "../../infra/tests/mail/fake-smtp.js";
+import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import {
   type DesktopHost,
   type HostOutLine,
@@ -59,8 +61,23 @@ afterEach(async () => {
   for (const close of closers.splice(0).reverse()) await close().catch(() => {});
   process.chdir(cwd);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
-  rmSync(configFilePath(), { force: true });
+  rmSync(isolated(configFilePath()), { force: true });
 });
+
+/** `path`, once it is seen to lie below the throwaway home of this test run; anything else is refused. */
+function isolated(path: string): string {
+  const isolation = (globalThis as Record<symbol, unknown>)[USER_DIRS_ISOLATION] as
+    | { root: string }
+    | undefined;
+  if (!isolation) throw new Error("isolate-user-dirs.ts did not run");
+  const rel = relative(isolation.root, path);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(
+      "a per-user path of this test run is outside its throwaway home; not touching it"
+    );
+  }
+  return path;
+}
 
 beforeEach(() => {
   project = mkdtempSync(join(tmpdir(), "aspace-host-project-"));
@@ -78,8 +95,48 @@ async function freePort(): Promise<number> {
 }
 
 function writeConfig(text: string): void {
-  mkdirSync(dirname(configFilePath()), { recursive: true });
-  writeFileSync(configFilePath(), text);
+  const file = isolated(configFilePath());
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, text);
+}
+
+/**
+ * A request the server has begun to read and not yet finished: its headers are sent all but the blank line that ends
+ * them. The server's close waits for it (it is not an idle connection), so the shutdown stays in its window until
+ * `finish` sends the rest; `finish` resolves with the status and body of the answer. It carries no `Origin`, as a
+ * program other than a browser would not: once the server's listening socket is closed the origin guard no longer
+ * knows the server's own address, so a request with the page's origin would be refused there (403) before it reached
+ * the host.
+ */
+async function heldRequest(
+  url: string,
+  path: string
+): Promise<{ socket: Socket; finish(): Promise<{ status: number; body: string }> }> {
+  const { hostname, port } = new URL(url);
+  const socket = connect({ host: hostname, port: Number(port) });
+  closers.push(async () => void socket.destroy());
+  await new Promise<void>((r, j) => {
+    socket.once("connect", () => r());
+    socket.once("error", j);
+  });
+  let answer = "";
+  socket.on("data", (d: Buffer) => {
+    answer += d.toString("utf8");
+  });
+  socket.write(`POST ${path} HTTP/1.1\r\nHost: ${hostname}:${port}\r\nContent-Length: 0\r\n`);
+  return {
+    socket,
+    async finish() {
+      const ended = new Promise<void>((r) => {
+        socket.once("end", () => r());
+        socket.once("close", () => r());
+      });
+      socket.write("Connection: close\r\n\r\n");
+      await ended;
+      const status = Number(/^HTTP\/1\.1 (\d{3})/.exec(answer)?.[1]);
+      return { status, body: answer.slice(answer.indexOf("\r\n\r\n") + 4) };
+    },
+  };
 }
 
 interface Running {
@@ -93,7 +150,10 @@ interface Running {
 }
 
 async function startHost(
-  opts: { onFolderPicked?: (path: string | null) => void } = {}
+  opts: {
+    onFolderPicked?: (path: string | null) => void;
+    stopDeadline?: { ms: number; onExpired: () => void };
+  } = {}
 ): Promise<Running> {
   const input = new PassThrough();
   const output = new PassThrough();
@@ -134,6 +194,7 @@ async function startHost(
     keychainProbe: KEYCHAIN,
     webDist: join(project, "web"),
     ...(opts.onFolderPicked ? { onFolderPicked: opts.onFolderPicked } : {}),
+    ...(opts.stopDeadline ? { stopDeadline: opts.stopDeadline } : {}),
   });
   closers.push(() => host.stop());
   const ready = await next("ready");
@@ -447,15 +508,49 @@ describe("the shell's events", () => {
         choice: "<invalid-enum>",
         dropped_fields: 1,
       },
-      { t: expect.any(String), level: "error", event: "log.rejected" },
       { t: expect.any(String), level: "info", event: "shell.started", version: "<invalid-id>" },
     ]);
     expect(log.filter((r) => r.event === "desktop.protocol_rejected").map((r) => r.reason)).toEqual(
-      ["not_json", "unknown_type", "bad_shape", "too_long"]
+      ["unknown_event", "not_json", "unknown_type", "bad_shape", "too_long"]
     );
     expect(JSON.stringify(log)).not.toContain("SECRET-SHELL-TEXT");
+    expect(JSON.stringify(log)).not.toContain("something_else");
     // The host still answers after all of that.
     expect((await fetch(`${h.url}/api/host`)).status).toBe(200);
+  });
+});
+
+describe("the shell's events: names of the server's own records", () => {
+  test("are not written as those records, but as one fixed rejection", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    const send = (o: unknown) => h.input.write(`${JSON.stringify(o)}\n`);
+    // Names the logger knows — the server's own — are still not the shell's to write.
+    for (const event of [
+      "server.started",
+      "process.uncaught_exception",
+      "desktop.stopping",
+      "log.rejected",
+      "toString",
+      "__proto__",
+    ]) {
+      send({ type: "shell_event", event, fields: { port: 1, mode: "browser", reason: "quit" } });
+    }
+    await sleep(150);
+    const log = h.logFile();
+    expect(log.filter((r) => r.event === "server.started")).toHaveLength(1);
+    expect(log.filter((r) => r.event === "server.started")[0]).toMatchObject({ mode: "desktop" });
+    expect(log.some((r) => r.event === "process.uncaught_exception")).toBe(false);
+    expect(log.some((r) => r.event === "desktop.stopping")).toBe(false);
+    expect(log.some((r) => r.event === "log.rejected")).toBe(false);
+    expect(log.filter((r) => r.event === "desktop.protocol_rejected")).toEqual(
+      Array.from({ length: 6 }, () => ({
+        t: expect.any(String),
+        level: "warn",
+        event: "desktop.protocol_rejected",
+        reason: "unknown_event",
+      }))
+    );
   });
 });
 
@@ -570,10 +665,75 @@ describe("graceful shutdown", () => {
       expect(mail.smtp.dataStarted.count).toBe(0);
       expect(mail.drafts.messages).toHaveLength(1);
       expect(h.logFile().find((r) => r.event === "desktop.stopping")).toMatchObject({ reason });
-      // After the stop the host takes no more requests (nothing listens; the bridge refuses too).
-      expect(h.host.server.port).toBe(port);
     });
   }
+
+  test("a request that reaches the host interface once the shutdown has begun is refused (409) and writes no line", async () => {
+    writeConfig("port = 0\n");
+    const h = await startHost();
+    // Accepted before the quit, finished after it: the server is still serving it while the host shuts down.
+    const held = await heldRequest(h.url, "/api/host/requests/open_devtools");
+    h.input.write('{"type":"quit"}\n');
+    await h.next("stopping");
+    const answer = await held.finish();
+    expect(answer.status).toBe(409);
+    expect(JSON.parse(answer.body)).toMatchObject({ code: "shutting_down" });
+    expect(await h.host.stopped).toBe("quit");
+    expect(h.lines.filter((l) => l.type === "request")).toEqual([]);
+    expect(h.logFile().some((r) => r.event === "desktop.request")).toBe(false);
+  });
+
+  test("on the end of the input, a shutdown that does not finish in time is given up: the mail was interrupted before", async () => {
+    writeConfig("port = 0\n");
+    let expiredAt: string | null = null;
+    let mail: Awaited<ReturnType<typeof sendInWindow>> | null = null;
+    const h = await startHost({
+      stopDeadline: {
+        ms: 300,
+        onExpired: () => {
+          expiredAt = mail ? mail.service.status(ACC, mail.sendId).state : "no mail";
+        },
+      },
+    });
+    mail = await sendInWindow();
+    // Something keeps the server's close from finishing.
+    const held = await heldRequest(h.url, "/api/host/requests/open_devtools");
+    h.input.end();
+    expect(await h.next("stopping")).toEqual({ type: "stopping", reason: "input_closed" });
+    await sleep(700);
+    expect(expiredAt).toBe("interrupted");
+    expect(h.lines.some((l) => l.type === "stopped")).toBe(false);
+    expect(h.logFile().filter((r) => r.event === "desktop.stop_timed_out")).toEqual([
+      { t: expect.any(String), level: "warn", event: "desktop.stop_timed_out", ms: 300 },
+    ]);
+    await held.finish();
+    expect(await h.host.stopped).toBe("input_closed");
+    expect(mail.smtp.dataStarted.count).toBe(0);
+  });
+
+  test("a quit line sets no such limit: ending a shutdown that takes long is the shell's", async () => {
+    writeConfig("port = 0\n");
+    let expired = 0;
+    const h = await startHost({ stopDeadline: { ms: 100, onExpired: () => void expired++ } });
+    const held = await heldRequest(h.url, "/api/host/requests/open_devtools");
+    h.input.write('{"type":"quit"}\n');
+    await h.next("stopping");
+    await sleep(400);
+    expect(expired).toBe(0);
+    await held.finish();
+    expect(await h.host.stopped).toBe("quit");
+  });
+
+  test("a shutdown that finishes in time does not run out its limit", async () => {
+    writeConfig("port = 0\n");
+    let expired = 0;
+    const h = await startHost({ stopDeadline: { ms: 300, onExpired: () => void expired++ } });
+    h.input.end();
+    expect(await h.host.stopped).toBe("input_closed");
+    await sleep(500);
+    expect(expired).toBe(0);
+    expect(h.logFile().some((r) => r.event === "desktop.stop_timed_out")).toBe(false);
+  });
 
   test("a second quit, or the input ending after a quit, stops it once", async () => {
     writeConfig("port = 0\n");

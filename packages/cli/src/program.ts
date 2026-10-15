@@ -292,6 +292,8 @@ async function runDesktopHostCommand(opts: { project: string; webDist?: string }
     /* not there */
   }
   if (!isDir) throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
+  // Like --project, a relative --web-dist is the caller's: resolved before the change of directory below.
+  const webDist = opts.webDist === undefined ? undefined : resolve(opts.webDist);
   // The Project's folder is the process's working directory, as for `serve` run in it: the same relative `data_dir`
   // rule finds the project data (ADR 0010), and the settings page shows it as the project.
   process.chdir(project);
@@ -300,10 +302,33 @@ async function runDesktopHostCommand(opts: { project: string; webDist?: string }
     output: process.stdout,
     version: APP_VERSION,
     signals: true,
-    ...(opts.webDist === undefined ? {} : { webDist: resolve(opts.webDist) }),
+    // The shell is gone and its shutdown hangs: nobody else will end the process (server desktop-host.ts).
+    stopDeadline: { onExpired: () => process.exit(1) },
+    ...(webDist === undefined ? {} : { webDist }),
   });
   await host.stopped;
+  await flushed(process.stdout);
   process.exit(0);
+}
+
+/**
+ * Resolves once what was written to the stream before has been handed on (the `stopped` line), so that exiting does
+ * not cut it off where stdout is asynchronous; at once when the stream is broken, and at the latest after a second.
+ */
+function flushed(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((done) => {
+    const timer = setTimeout(done, 1000);
+    timer.unref();
+    try {
+      stream.write("", () => {
+        clearTimeout(timer);
+        done();
+      });
+    } catch {
+      clearTimeout(timer);
+      done();
+    }
+  });
 }
 
 export function buildProgram(): Command {
