@@ -57,10 +57,15 @@ export function nodeSignaturePlan({ keyring, insecureSkip } = {}) {
 /**
  * Checks the signature of SHASUMS256.txt with `gpgv` (only the given keyring; never the user's own). On failure the
  * cached SHASUMS256.txt and its signature are removed (`remove(path)`), so that a later run downloads them again
- * instead of reusing a list that did not verify. `run(cmd, argv)` returns {status, stderr}.
+ * instead of reusing a list that did not verify. `run(cmd, argv)` returns {status, stderr, error}. A gpgv that cannot
+ * be run says so and leaves the cache alone: a missing tool is not a bad signature.
  */
 export function verifyNodeSignature({ keyring, shasums, signature, run, remove }) {
   const g = run("gpgv", ["--keyring", keyring, signature, shasums]);
+  if (g.error)
+    throw new Error(
+      `gpgv could not be run (${g.error.code ?? g.error.name}); install it (Debian/Ubuntu: gpgv) or name the insecure skip`
+    );
   if (g.status !== 0) {
     remove(shasums);
     remove(signature);

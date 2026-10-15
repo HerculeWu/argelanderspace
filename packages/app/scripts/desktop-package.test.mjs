@@ -294,6 +294,27 @@ test("a failed signature check removes the cached checksum list and its signatur
   assert.match(ok.detail, /Some Releaser/);
 });
 
+test("a gpgv that cannot be run is not a bad signature: it says so and keeps the cache", () => {
+  const removed = [];
+  const missing = () => ({
+    status: null,
+    stderr: undefined,
+    error: Object.assign(new Error("spawn gpgv ENOENT"), { code: "ENOENT" }),
+  });
+  assert.throws(
+    () =>
+      verifyNodeSignature({
+        keyring: "/k",
+        shasums: "/c/S",
+        signature: "/c/S.sig",
+        run: missing,
+        remove: (f) => removed.push(f),
+      }),
+    /gpgv could not be run \(ENOENT\)/
+  );
+  assert.deepEqual(removed, []);
+});
+
 test("the smoke reads the signature state from the sidecar manifest: only an explicit true counts", () => {
   const verified = { node: { signature: { verified: true, detail: "gpgv: good signature" } } };
   assert.deepEqual(nodeSignatureFromManifest(verified), {
