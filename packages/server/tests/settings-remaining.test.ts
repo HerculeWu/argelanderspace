@@ -131,7 +131,7 @@ describe("what the process uses for the restart-only keys", () => {
     await start();
     const body = await settings();
     expect(body.running.port).toBe(port);
-    expect(body.running.data_dir.path).toBe(dataDir);
+    expect(body.running.data_dir?.path).toBe(dataDir);
     const pinned = pinnedGlobalDirs();
     expect(pinned).not.toBeNull();
     expect(body.running.global_dir.path).toBe(pinned?.dataDir);
@@ -156,7 +156,7 @@ describe("what the process uses for the restart-only keys", () => {
       "data_dir",
       "port",
     ]);
-    expect(dirChange.body.ok && dirChange.body.settings.running.data_dir.path).toBe(dataDir);
+    expect(dirChange.body.ok && dirChange.body.settings.running.data_dir?.path).toBe(dataDir);
     expect(readFileSync(configPath, "utf-8")).toMatch(/^port = 186[23]\ndata_dir = "papers"\n$/);
     // Still the same server on the same port, with the same data.
     expect((await fetch(url("/api/library"))).status).toBe(200);
@@ -266,7 +266,7 @@ describe("the contact email", () => {
     for (const path of [
       running.global_dir.path,
       running.global_cache_dir.path,
-      running.project_root.path,
+      running.project_root?.path,
     ]) {
       expect(logged).not.toContain(path);
     }
@@ -306,7 +306,7 @@ describe("what `running` holds (desktop-app ticket 11, review round)", () => {
   test("project_root is the working directory of the server", async () => {
     await start();
     const body = await settings();
-    expect(body.running.project_root.path).toBe(process.cwd());
+    expect(body.running.project_root?.path).toBe(process.cwd());
     expect(body.running.from_flag).toEqual([]);
   });
 
@@ -366,8 +366,8 @@ describe("serve's start: the baseline of restartPending and the keys given on th
     const base = `http://127.0.0.1:${await served.ready()}`;
     const body = await get(base);
     expect(body.running.from_flag).toEqual([]);
-    expect(body.running.data_dir.path).toBe(join(process.cwd(), "lit"));
-    expect(body.running.project_root.path).toBe(process.cwd());
+    expect(body.running.data_dir?.path).toBe(join(process.cwd(), "lit"));
+    expect(body.running.project_root?.path).toBe(process.cwd());
     expect(body.restartPending).toEqual([]);
     expect((await change(base, "port", { set: 1 })).status).toBe(200);
     expect((await change(base, "data_dir", { set: "other" })).status).toBe(200);
@@ -387,6 +387,6 @@ describe("serve's start: the baseline of restartPending and the keys given on th
     expect((await change(base, "data_dir", { set: "elsewhere" })).status).toBe(200);
     const body = await get(base);
     expect(body.restartPending).toEqual([]);
-    expect(body.running.data_dir.path).toBe(dataDir);
+    expect(body.running.data_dir?.path).toBe(dataDir);
   });
 });

@@ -89,12 +89,15 @@ export interface ShownPath {
  * they are given to the settings page only (this answer is `no-store`) and never written to the user log.
  */
 export interface RunningSettings {
-  /** The project root: the working directory of the server, against which a relative `data_dir` is resolved. */
-  project_root: ShownPath;
+  /**
+   * The project root: the working directory of the server, against which a relative `data_dir` is resolved. Null when
+   * no project is open (the desktop host's welcome state, desktop-app ticket 18).
+   */
+  project_root: ShownPath | null;
   /** The port this server listens on; null when it is not listening (before the listen, after the close). */
   port: number | null;
   /** The project data directory in use (`--data-dir`, or `data_dir` resolved against the working directory). */
-  data_dir: ShownPath;
+  data_dir: ShownPath | null;
   /** The global data directory in use (Mail accounts, credentials, the user log). */
   global_dir: ShownPath;
   /** The global cache directory in use. */

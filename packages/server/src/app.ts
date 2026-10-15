@@ -404,6 +404,57 @@ function mimeFor(path: string): string {
   return MIME[extname(path).toLowerCase()] ?? "application/octet-stream";
 }
 
+/**
+ * The built page (SPA static hosting): last, so that it never shadows the API. Also used by the server of the desktop
+ * host's welcome state (no-project.ts).
+ */
+export function mountWebDist(
+  app: Hono,
+  webDistOption: string | null | undefined,
+  configPath: string | undefined
+): void {
+  const webDist = webDistOption && existsSync(webDistOption) ? resolve(webDistOption) : null;
+  if (webDist !== null) {
+    app.get("*", async (c) => {
+      // Unknown API paths must 404 as JSON, not fall into the SPA.
+      if (c.req.path.startsWith("/api/") || c.req.path.startsWith("/images/")) {
+        const e = detail("Not Found", 404);
+        return c.json(e.body, e.status);
+      }
+      const root = webDist;
+      let rel: string;
+      try {
+        rel = normalize(decodeURIComponent(c.req.path)).replace(/^[/\\]+/, "");
+      } catch {
+        rel = ""; // malformed percent-encoding → SPA fallback
+      }
+      const candidate = resolve(join(root, rel));
+      const index = join(root, "index.html");
+      // The page itself carries the configured appearance, so its first paint has the right theme (settings.ts).
+      const page = async () =>
+        c.body(
+          withAppearance(await readFile(index, "utf-8"), readSettings(configPath).values),
+          200,
+          { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }
+        );
+      if (candidate === index && existsSync(index) && statSync(index).isFile()) return page();
+      if (
+        candidate.startsWith(root + sep) &&
+        existsSync(candidate) &&
+        statSync(candidate).isFile()
+      ) {
+        return c.body(new Uint8Array(await readFile(candidate)), 200, {
+          "Content-Type": mimeFor(candidate),
+          "Cache-Control": cacheControlFor(candidate, root),
+        });
+      }
+      if (existsSync(index)) return page();
+      const e = detail("Not Found", 404);
+      return c.json(e.body, e.status);
+    });
+  }
+}
+
 // --------------------------------------------------------------------------- //
 // The app
 // --------------------------------------------------------------------------- //
@@ -2579,46 +2630,7 @@ export function createApp(deps: AppDeps): Hono {
 
   // ---- SPA static hosting (last, so it never shadows the API) ---------------- //
 
-  const webDist = deps.webDist && existsSync(deps.webDist) ? resolve(deps.webDist) : null;
-  if (webDist !== null) {
-    app.get("*", async (c) => {
-      // Unknown API paths must 404 as JSON, not fall into the SPA.
-      if (c.req.path.startsWith("/api/") || c.req.path.startsWith("/images/")) {
-        const e = detail("Not Found", 404);
-        return c.json(e.body, e.status);
-      }
-      const root = webDist;
-      let rel: string;
-      try {
-        rel = normalize(decodeURIComponent(c.req.path)).replace(/^[/\\]+/, "");
-      } catch {
-        rel = ""; // malformed percent-encoding → SPA fallback
-      }
-      const candidate = resolve(join(root, rel));
-      const index = join(root, "index.html");
-      // The page itself carries the configured appearance, so its first paint has the right theme (settings.ts).
-      const page = async () =>
-        c.body(
-          withAppearance(await readFile(index, "utf-8"), readSettings(deps.configPath).values),
-          200,
-          { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" }
-        );
-      if (candidate === index && existsSync(index) && statSync(index).isFile()) return page();
-      if (
-        candidate.startsWith(root + sep) &&
-        existsSync(candidate) &&
-        statSync(candidate).isFile()
-      ) {
-        return c.body(new Uint8Array(await readFile(candidate)), 200, {
-          "Content-Type": mimeFor(candidate),
-          "Cache-Control": cacheControlFor(candidate, root),
-        });
-      }
-      if (existsSync(index)) return page();
-      const e = detail("Not Found", 404);
-      return c.json(e.body, e.status);
-    });
-  }
+  mountWebDist(app, deps.webDist, deps.configPath);
 
   app.notFound((c) => {
     const e = detail("Not Found", 404);

@@ -9,7 +9,10 @@
  *                filled in by the host from what it knows itself — its own address, the log directory, the config
  *                file — never from the page: the host interface does not read the request's body (host-routes.ts).
  *                `pick_folder` carries an `id` the shell answers with.
- *   - `stopping` / `stopped`  the graceful shutdown began / ended (`reason`: quit, input_closed, output_closed, signal).
+ *   - `stopping` / `stopped`  the graceful shutdown began / ended (`reason`: quit, input_closed, output_closed, signal,
+ *                switch). On `switch` the `stopped` line carries `next`: the project folder the shell starts the next
+ *                host for (`--project`), the way the host leaves a project for another (spec 「进程结构」).
+ *   - `ready`'s `project` is null in the welcome state (desktop-app ticket 18).
  *   - `failed`   the server could not start; the process then exits with 1.
  *
  * Shell → host (stdin):
@@ -21,6 +24,13 @@
  *     the server's own record names included — is not written either: the host records the fixed
  *     `desktop.protocol_rejected` with reason `unknown_event` instead, without the name.
  *   The end of stdin (the shell exited or was killed) is a quit too, so the host never outlives its shell.
+ *
+ * Which project (desktop-app ticket 18): the one given (`--project`, the CLI has changed into it), or — with
+ * `fromRecent` — the most recently opened one when its folder is still there; otherwise none, and the host runs the
+ * server of the welcome state (no-project.ts), which answers only the page, the host and the settings interfaces.
+ * Every project the host opens is recorded first in the recently opened projects (infra `recent-projects.ts`, global
+ * data). In the welcome state a picked folder (`folder_picked`) or a recent project the page opens is left for at
+ * once: recorded, then the host stops with reason `switch` and the folder as `next`.
  *
  * Port: the configured one (config.toml `port`, default 1859), which the CLI's links point to. When it is taken the
  * host listens on a free port instead and says so in the ready line and to the page (`GET /api/host`), after asking the
@@ -36,28 +46,55 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { realpathSync, statSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
-import { isAbsolute } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
   DEFAULT_PORT,
   HOST_REQUEST_KINDS,
   type HostPortFallback,
   type HostPortOccupant,
+  type HostProjectState,
+  type HostRecentProjects,
   type HostRequestKind,
   isHostInfo,
 } from "@argelanderspace/contracts";
-import { configFilePath, f, type KeychainProbe, type LogField } from "@argelanderspace/infra";
-import type { HostBridge } from "./host-routes.js";
+import {
+  configFilePath,
+  f,
+  type KeychainProbe,
+  type LogField,
+  RECENT_PROJECTS_FILE,
+  RECENT_PROJECTS_PROBLEMS,
+  readRecentProjects,
+  recordRecentProject,
+  removeRecentProject,
+} from "@argelanderspace/infra";
+import type { HostBridge, RecentOpenOutcome } from "./host-routes.js";
 import type { ServerLog } from "./log.js";
-import { type RunningServer, serveStart, startServer } from "./server.js";
+import type { NoProjectServer } from "./no-project.js";
+import {
+  type RunningServer,
+  type StartedExtras,
+  serveStart,
+  startNoProjectServer,
+  startServer,
+} from "./server.js";
+import { shownPath } from "./settings.js";
 
 /** A line longer than this (bytes, without its newline) is dropped whole. */
 export const HOST_LINE_MAX_BYTES = 64 * 1024;
 /** How long the host waits for whatever holds the configured port to answer `GET /api/host`. */
 export const PORT_PROBE_TIMEOUT_MS = 1500;
 
-export const HOST_STOP_REASONS = ["quit", "input_closed", "output_closed", "signal"] as const;
+export const HOST_STOP_REASONS = [
+  "quit",
+  "input_closed",
+  "output_closed",
+  "signal",
+  "switch",
+] as const;
 export type HostStopReason = (typeof HOST_STOP_REASONS)[number];
 
 /** How long a shutdown with the shell gone (input closed, output broken) may take before the host gives up on it. */
@@ -130,7 +167,8 @@ export type HostOutLine =
       configuredPort: number;
       portFallback: boolean;
       portOccupant: HostPortOccupant | null;
-      project: string;
+      /** Null in the welcome state (no project open). */
+      project: string | null;
     }
   | { type: "request"; kind: "pick_folder"; id: string }
   | { type: "request"; kind: "open_in_browser"; url: string }
@@ -139,7 +177,7 @@ export type HostOutLine =
   | { type: "request"; kind: "open_config_file"; path: string }
   | { type: "request"; kind: "open_skills_folder" }
   | { type: "stopping"; reason: HostStopReason }
-  | { type: "stopped" }
+  | { type: "stopped"; next?: string }
   | { type: "failed"; stage: "start" };
 
 export interface DesktopHostOptions {
@@ -153,8 +191,14 @@ export interface DesktopHostOptions {
   webDist?: string;
   /** SIGTERM / SIGINT shut down gracefully too (the CLI entry turns this on). */
   signals?: boolean;
-  /** The answer to a `pick_folder` request: an absolute path, or null when the user cancelled (ticket 18 uses it). */
+  /** The answer to a `pick_folder` request: an absolute path, or null when the user cancelled. */
   onFolderPicked?: (path: string | null) => void;
+  /**
+   * Choose the project from the recently opened ones (desktop-app ticket 18; the CLI entry without `--project`): the
+   * most recent, when its folder is still there — the host changes into it — else none (the welcome state). Absent:
+   * the project is the current directory.
+   */
+  fromRecent?: boolean;
   /**
    * The limit on a shutdown begun because the shell is gone (`input_closed`, `output_closed`): `onExpired` is called
    * once `ms` (default {@link HOST_STOP_DEADLINE_MS}) have passed without the server having closed — the CLI entry
@@ -166,8 +210,10 @@ export interface DesktopHostOptions {
 }
 
 export interface DesktopHost {
-  /** The server, once ready, with the port it listens on and its log directory. */
-  server: RunningServer & { port: number; logDir: string };
+  /** The server, once ready, with the port it listens on and its log directory (no project: the welcome server). */
+  server: (RunningServer | NoProjectServer) & StartedExtras;
+  /** Whether a project is open. */
+  project: HostProjectState;
   /** Resolves with why the host stopped, once the server has closed and `stopped` was written. */
   stopped: Promise<HostStopReason>;
   /** Starts the graceful shutdown (as a `quit` line does). */
@@ -241,6 +287,27 @@ function requestLine(
   }
 }
 
+/** Whether the path is a folder now (anything that cannot be looked at counts as not). */
+function isFolder(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** The path with its symbolic links resolved, as the ready line gives the project; the path itself if that fails. */
+function canonical(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+}
+
+const WELCOME_REASONS = ["no_recent", "last_missing"] as const;
+const LEAVE_SOURCES = ["picked", "recent"] as const;
+
 /** The fields of a shell event, each through the constructor its catalog entry names; others are counted as dropped. */
 function shellFields(spec: ShellEventSpec, raw: unknown): Record<string, LogField | unknown> {
   const out: Record<string, LogField | unknown> = {};
@@ -277,7 +344,32 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
 
   // The port: the configured one when it is free, else one the system picks (and whose the configured one is).
   const configPath = configFilePath();
-  const configuredPort = serveStart(configPath).config.port ?? DEFAULT_PORT;
+  const atStart = serveStart(configPath);
+  const configuredPort = atStart.config.port ?? DEFAULT_PORT;
+
+  // The project: the current directory, or the most recent one when its folder is still there, or none.
+  const recentFile = join(atStart.globalDirs.dataDir, RECENT_PROJECTS_FILE);
+  const recentAtStart = readRecentProjects(recentFile);
+  let project: HostProjectState = "open";
+  let welcome: (typeof WELCOME_REASONS)[number] | null = null;
+  let lastMissing: string | null = null;
+  if (options.fromRecent) {
+    const last = recentAtStart.projects[0];
+    let entered = false;
+    if (last !== undefined && isFolder(last.path)) {
+      try {
+        process.chdir(last.path);
+        entered = true;
+      } catch {
+        /* cannot go in: as if it were gone */
+      }
+    }
+    if (!entered) {
+      project = "none";
+      welcome = last === undefined ? "no_recent" : "last_missing";
+      lastMissing = last?.path ?? null;
+    }
+  }
   let portFallback: HostPortFallback | null = null;
   let listenPort = configuredPort;
   let occupant: HostPortOccupant | null = null;
@@ -286,12 +378,54 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     listenPort = 0;
   }
 
+  /** The list as the page shows it, read now; whether each folder is there is looked at now too. */
+  function recentList(): HostRecentProjects {
+    const { projects } = readRecentProjects(recentFile);
+    return {
+      version: 1,
+      projects: projects.map((entry) => ({
+        ...shownPath(entry.path),
+        name: basename(entry.path) || entry.path,
+        openedAt: entry.openedAt,
+        missing: !isFolder(entry.path),
+      })),
+      lastMissing:
+        lastMissing !== null && projects.some((entry) => entry.path === lastMissing)
+          ? shownPath(lastMissing)
+          : null,
+    };
+  }
+
+  /** The page opens a project of the list: only in the welcome state, only a path of the list, only a folder. */
+  function openRecent(path: string): RecentOpenOutcome {
+    if (stopping !== null) return "shutting_down";
+    if (project === "open") return "project_open";
+    const { projects } = readRecentProjects(recentFile);
+    if (!projects.some((entry) => entry.path === path)) return "unknown_project";
+    if (!isFolder(path)) return "folder_missing";
+    return leave(canonical(path), "recent") ? "leaving" : "shutting_down";
+  }
+
   // Bound once the server listens; a request before that (there can be none: nothing listens) is refused.
   let own: { port: number; logDir: string; log: ServerLog } | null = null;
   const pending = new Set<string>();
   const bridge: HostBridge = {
     get portFallback() {
       return portFallback;
+    },
+    project,
+    recent: {
+      list: () => recentList(),
+      open: (path) => openRecent(path),
+      remove: (path) => {
+        try {
+          removeRecentProject(recentFile, path);
+        } catch (error) {
+          own?.log.warn("recent_projects.write_failed", { error: f.error(error) });
+          throw error;
+        }
+        return recentList();
+      },
     },
     request(kind) {
       if (stopping !== null || own === null) return false;
@@ -308,33 +442,44 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   };
 
   const argv = options.webDist === undefined ? [] : ["--web-dist", options.webDist];
-  let server: Awaited<ReturnType<typeof startServer>>;
+  let server: DesktopHost["server"];
   try {
-    server = await startServer(argv, {
+    const start = {
       ...(options.version === undefined ? {} : { version: options.version }),
       ...(options.keychainProbe ? { keychainProbe: options.keychainProbe } : {}),
       desktop: {
         host: bridge,
         listenPort,
         // Before the start record is written, so that it says whether the port fell back.
-        onListening: (port) => {
+        onListening: (port: number) => {
           if (occupant !== null)
             portFallback = { configured: configuredPort, actual: port, occupant };
         },
       },
-    });
+    };
+    server =
+      project === "open" ? await startServer(argv, start) : await startNoProjectServer(argv, start);
   } catch (error) {
     write({ type: "failed", stage: "start" });
     throw error;
   }
   const log = server.log;
   own = { port: server.port, logDir: server.logDir, log };
+  if (recentAtStart.problem !== null)
+    log.warn("recent_projects.unreadable", {
+      reason: f.oneOf(RECENT_PROJECTS_PROBLEMS, recentAtStart.problem),
+    });
+  if (welcome !== null)
+    log.info("desktop.no_project", { reason: f.oneOf(WELCOME_REASONS, welcome) });
+  // The project is open: it goes first in the recent list (an unreadable list is written anew here).
+  else record(process.cwd());
 
   let resolveStopped!: (reason: HostStopReason) => void;
   const stopped = new Promise<HostStopReason>((r) => {
     resolveStopped = r;
   });
   const onSignal = () => void stop("signal");
+  let next: string | null = null;
   const stop = (reason: HostStopReason = "quit"): Promise<HostStopReason> => {
     if (stopping !== null) return stopping;
     stopping = (async () => {
@@ -363,12 +508,31 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
         process.off("SIGINT", onSignal);
       }
       input.off("data", onData);
-      write({ type: "stopped" });
+      write(next === null ? { type: "stopped" } : { type: "stopped", next });
       resolveStopped(reason);
       return reason;
     })();
     return stopping;
   };
+
+  /** Puts the project first in the recent list; a failure to write is recorded and changes nothing else. */
+  function record(path: string): void {
+    try {
+      recordRecentProject(recentFile, path, new Date());
+    } catch (error) {
+      log.warn("recent_projects.write_failed", { error: f.error(error) });
+    }
+  }
+
+  /** Leaves for another project: recorded, then the host stops and tells its shell (`stopped`'s `next`). */
+  function leave(path: string, source: (typeof LEAVE_SOURCES)[number]): boolean {
+    if (stopping !== null) return false;
+    record(path);
+    log.info("desktop.leaving", { source: f.oneOf(LEAVE_SOURCES, source) });
+    next = path;
+    void stop("switch");
+    return true;
+  }
 
   const reject = (reason: RejectReason): void => {
     log.warn("desktop.protocol_rejected", { reason: f.oneOf(REJECT_REASONS, reason) });
@@ -408,6 +572,11 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           outcome: f.oneOf(["picked", "cancelled"], path === null ? "cancelled" : "picked"),
         });
         options.onFolderPicked?.(path);
+        // The welcome state leaves for the folder; with a project open, switching is ticket 19.
+        if (path !== null && project === "none") {
+          if (isFolder(path)) leave(canonical(path), "picked");
+          else log.warn("desktop.leaving", { outcome: f.oneOf(["not_a_folder"], "not_a_folder") });
+        }
         return;
       }
       case "shell_event": {
@@ -497,9 +666,9 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     configuredPort,
     portFallback: occupant !== null,
     portOccupant: occupant,
-    project: process.cwd(),
+    project: project === "open" ? process.cwd() : null,
   });
   input.resume();
 
-  return { server, stopped, stop };
+  return { server, project, stopped, stop };
 }
