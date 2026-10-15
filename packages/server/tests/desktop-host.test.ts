@@ -638,6 +638,7 @@ describe("the shell's events of the page's links, downloads and menu (desktop-ap
     send({ type: "shell_event", event: "shell.download", fields: { outcome: "failed" } });
     send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "about" } });
     send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "open_recent" } });
+    send({ type: "shell_event", event: "shell.menu_chosen", fields: { item: "quit" } });
     send({
       type: "shell_event",
       event: "shell.link_opened",
@@ -673,6 +674,7 @@ describe("the shell's events of the page's links, downloads and menu (desktop-ap
     expect(pick("shell.menu_chosen")).toEqual([
       { level: "info", item: "about" },
       { level: "info", item: "open_recent" },
+      { level: "info", item: "quit" },
     ]);
     expect(JSON.stringify(log)).not.toContain("SECRET");
   });

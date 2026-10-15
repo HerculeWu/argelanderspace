@@ -35,7 +35,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tauri::webview::{DownloadEvent, NewWindowResponse};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::{
     DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
@@ -86,6 +86,8 @@ enum Ev {
     ProbeJs(String),
     #[cfg(feature = "smoke-probe")]
     ProbeDevtools,
+    #[cfg(feature = "smoke-probe")]
+    ProbeRecent(usize),
     /// A line of host `attempt`'s output was skipped (`too_long`, `not_utf8`).
     LineRejected {
         attempt: u32,
@@ -118,6 +120,9 @@ struct Shell {
     language: Arc<Mutex<Language>>,
     /// The version shown in "about" (packages/app/package.json through tauri.conf.json, as the CLI's `--version`).
     version: String,
+    /// Test builds: the ids of the menu's recent projects now (the probe's `recent <n>`).
+    #[cfg(feature = "smoke-probe")]
+    recent_ids: Vec<String>,
 }
 
 fn main() {
@@ -162,6 +167,7 @@ fn main() {
                 probe::Command::Menu(id) => Ev::Menu(id),
                 probe::Command::Js(code) => Ev::ProbeJs(code),
                 probe::Command::DevtoolsOpen => Ev::ProbeDevtools,
+                probe::Command::Recent(n) => Ev::ProbeRecent(n),
             });
         }
     });
@@ -185,6 +191,8 @@ fn main() {
             page: Arc::new(Mutex::new(None)),
             language: Arc::new(Mutex::new(Language::Chinese)),
             version: version.clone(),
+            #[cfg(feature = "smoke-probe")]
+            recent_ids: vec![],
         };
         shell.run(rx, &version, &webview, unguarded);
     });
@@ -299,7 +307,23 @@ impl Shell {
                 }
                 Ev::Download(outcome) => self.sup.on_download(outcome),
                 Ev::Menu(id) => match menu::choice(&id) {
-                    Some(choice) => self.sup.on_menu(choice),
+                    Some(choice) => {
+                        // Quit is closing the window: it goes away at once, as on its close button.
+                        if choice == menu::MenuChoice::Quit && !self.sup.quitting() {
+                            if let Some(window) = &self.window {
+                                let _ = window.hide();
+                            }
+                        }
+                        self.sup.on_menu(choice)
+                    }
+                    None => vec![],
+                },
+                #[cfg(feature = "smoke-probe")]
+                Ev::ProbeRecent(n) => match self.recent_ids.get(n) {
+                    Some(id) => match menu::choice(&menu::recent_id(id)) {
+                        Some(choice) => self.sup.on_menu(choice),
+                        None => vec![],
+                    },
                     None => vec![],
                 },
                 #[cfg(feature = "smoke-probe")]
@@ -337,6 +361,10 @@ impl Shell {
                     vec![]
                 }
                 Action::SetMenu(model) => {
+                    #[cfg(feature = "smoke-probe")]
+                    {
+                        self.recent_ids = model.recent.iter().map(|r| r.id.clone()).collect();
+                    }
                     if let Ok(mut language) = self.language.lock() {
                         *language = model.language;
                     }
@@ -510,14 +538,30 @@ impl Shell {
                     "new_window",
                 );
                 NewWindowResponse::Deny
-            })
-            .on_download(downloads(self.tx.clone(), Arc::clone(&self.language)));
+            });
+        // No `on_download`: the shell connects to WebKit's downloads itself (download.rs), before the page loads.
         #[cfg(feature = "smoke-probe")]
         let builder = probe::attach(builder);
         // No window, or no way to keep Tauri out of it: no page, and the app quits (supervisor `on_window_failed`).
         let Ok(window) = builder.build() else {
             return self.sup.on_window_failed("create");
         };
+        let tx = self.tx.clone();
+        let language = Arc::clone(&self.language);
+        let attached = window.with_webview(move |platform| {
+            let report_tx = tx.clone();
+            let report = move |outcome: download::Outcome| {
+                let _ = report_tx.send(Ev::Download(outcome.name()));
+            };
+            // No context to take the downloads from: the window is not used (as an unguarded page is not).
+            if !download::attach(&platform.inner(), language, report) {
+                let _ = tx.send(Ev::WindowFailed("guard"));
+            }
+        });
+        if attached.is_err() {
+            let _ = window.destroy();
+            return self.sup.on_window_failed("guard");
+        }
         let tx = self.tx.clone();
         let on_failed = move || {
             let _ = tx.send(Ev::WindowFailed("guard"));
@@ -586,20 +630,17 @@ impl Shell {
         }
     }
 
-    /// "About": the name and the version, in a native dialog.
+    /// "About": the name and the version, in a native GTK message dialog. Its title is "About ArgelanderSpace"; the body
+    /// is the name and the version only (not the title again, as the dialog plugin's would put it: user ruling 2).
     fn about(&mut self, language: Language) {
         let text = MenuText::of(language);
-        let mut dialog = self
-            .app
-            .dialog()
-            .message(text.about_message(&self.version))
-            .title(text.about_title)
-            .kind(MessageDialogKind::Info)
-            .buttons(MessageDialogButtons::OkCustom(text.ok.into()));
-        if let Some(window) = &self.window {
-            dialog = dialog.parent(window);
-        }
-        dialog.show(|_| {});
+        let (name, version) = text.about_body(&self.version);
+        let (title, ok) = (text.about_title, text.ok);
+        let window = self.window.clone();
+        let _ = self.app.run_on_main_thread(move || {
+            let parent = window.as_ref().and_then(|w| w.gtk_window().ok());
+            menu::show_about(parent.as_ref(), title, name, &version, ok);
+        });
     }
 
     /// A download that could not be saved: said in a native dialog (where it was to go is not said or recorded).
@@ -678,57 +719,6 @@ fn link_verdict(tx: &Sender<Ev>, verdict: Verdict, source: &'static str) -> bool
             let _ = tx.send(Ev::NavigationBlocked(scheme, source));
             false
         }
-    }
-}
-
-/// The page's downloads (`download.rs`): a save dialog decides where each goes; cancelled, it is cancelled.
-fn downloads(
-    tx: Sender<Ev>,
-    language: Arc<Mutex<Language>>,
-) -> impl Fn(tauri::Webview, DownloadEvent<'_>) -> bool + Send + Sync + 'static {
-    // WebKit reports a cancelled download as finished without success: that one is not a failure to tell about.
-    let cancelled: Arc<Mutex<Vec<tauri::Url>>> = Arc::new(Mutex::new(Vec::new()));
-    let tx = Mutex::new(tx);
-    move |webview, event| match event {
-        DownloadEvent::Requested { url, destination } => {
-            #[cfg(feature = "smoke-probe")]
-            if let Some(dir) = probe::save_to() {
-                let (_, name) = download::start_of(destination);
-                *destination = dir.join(name);
-                return true;
-            }
-            let language = language.lock().map(|l| *l).unwrap_or(Language::Chinese);
-            let parent = webview.window().gtk_window().ok();
-            match download::ask_where(parent.as_ref(), destination, language) {
-                Some(path) => {
-                    *destination = path;
-                    true
-                }
-                None => {
-                    if let Ok(mut c) = cancelled.lock() {
-                        c.push(url);
-                    }
-                    if let Ok(tx) = tx.lock() {
-                        let _ = tx.send(Ev::Download("cancelled"));
-                    }
-                    false
-                }
-            }
-        }
-        DownloadEvent::Finished { url, success, .. } => {
-            let was_cancelled = cancelled
-                .lock()
-                .ok()
-                .and_then(|mut c| c.iter().position(|u| *u == url).map(|i| c.remove(i)))
-                .is_some();
-            if !was_cancelled {
-                if let Ok(tx) = tx.lock() {
-                    let _ = tx.send(Ev::Download(if success { "saved" } else { "failed" }));
-                }
-            }
-            true
-        }
-        _ => true,
     }
 }
 

@@ -27,7 +27,12 @@ import {
 } from "@argelanderspace/infra";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
-import { type DesktopHost, type HostOutLine, runDesktopHost } from "../src/desktop-host.js";
+import {
+  type DesktopHost,
+  HOST_MENU_LABEL_MAX,
+  type HostOutLine,
+  runDesktopHost,
+} from "../src/desktop-host.js";
 
 beforeAll(() => __setWriterSandboxForTests(false));
 afterAll(() => __setWriterSandboxForTests(null));
@@ -210,6 +215,42 @@ describe("the menu line", () => {
     const menu = await h.next("menu");
     expect(menu.language).toBe("en");
     expect(menu.recent.map((r) => r.label.includes("beta"))).toEqual([true]);
+  });
+
+  test("a long label is shortened (start and end kept), so the shell never leaves it out", async () => {
+    const deep = join(
+      folder("deep"),
+      ...Array.from({ length: 30 }, (_, i) => `level-${i}-folder`),
+      "the-end"
+    );
+    mkdirSync(deep, { recursive: true });
+    recordRecentProject(recentFile(), deep, new Date("2026-01-01T00:00:00Z"));
+    const h = await startHost({ fromRecent: false });
+    const label = (await h.next("menu")).recent[0]?.label ?? "";
+    expect(Array.from(label).length).toBeLessThanOrEqual(HOST_MENU_LABEL_MAX);
+    // Far under the shell's own limit (1024 bytes) whatever the characters.
+    expect(HOST_MENU_LABEL_MAX * 4).toBeLessThan(1024);
+    expect(label.startsWith("the-end — ")).toBe(true);
+    expect(label.endsWith("/the-end")).toBe(true);
+    expect(label).toContain("…");
+  });
+
+  test("ids differ from one host to the next for the same list (a click on an old menu never names another folder)", async () => {
+    recordRecentProject(recentFile(), folder("alpha"), new Date("2026-01-01T00:00:00Z"));
+    const first = await startHost({ fromRecent: false });
+    const a = (await first.next("menu")).recent[0]?.id;
+    await first.host.stop();
+    const second = await startHost({ fromRecent: false });
+    const b = (await second.next("menu")).recent[0]?.id;
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    expect(a).not.toBe(b);
+    // The first host's id means nothing to the second.
+    send(second, { type: "menu", item: "open_recent", id: a });
+    await waitFor(() => events(second, "desktop.protocol_rejected").length === 1);
+    expect(events(second, "desktop.protocol_rejected")[0]?.fields).toEqual({
+      reason: "unknown_id",
+    });
   });
 
   test("at most ten recent projects", async () => {

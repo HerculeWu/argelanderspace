@@ -7,7 +7,8 @@
 //! later (the shell stops navigations away from the local page, `navigation.rs`).
 //!
 //! Desktop-app ticket 21: `ARGELANDERSPACE_SHELL_PROBE_CONTROL=<file>` is read for lines the smoke appends —
-//! `menu <id>` chooses a menu item as a click on it does (`menu.rs` ids), `js <script>` runs a script in the page and
+//! `menu <id>` chooses a menu item as a click on it does (`menu.rs` ids), `recent <n>` the n-th recent project of the
+//! menu now, `js <script>` runs a script in the page and
 //! appends `{"js": <answer>}` to the probe file; `ARGELANDERSPACE_SHELL_PROBE_SAVE_TO=<dir>` saves the page's
 //! downloads there without the save dialog (so the files can be checked; the dialog itself is checked without it).
 
@@ -65,6 +66,9 @@ return JSON.stringify(r);
 pub enum Command {
     Menu(String),
     Js(String),
+    /// `recent <n>`: the n-th recent project of the menu now (from 0), chosen as a click on it (the ids are the host's,
+    /// different for each host).
+    Recent(usize),
     /// `devtools?`: whether the window's developer tools are open, appended as `{"devtoolsOpen": …}`.
     DevtoolsOpen,
 }
@@ -90,6 +94,10 @@ pub fn control(each: impl Fn(Command) + Send + 'static) {
                         each(Command::Menu(id.to_owned()));
                     } else if let Some(code) = line.strip_prefix("js ") {
                         each(Command::Js(code.to_owned()));
+                    } else if let Some(n) =
+                        line.strip_prefix("recent ").and_then(|n| n.parse().ok())
+                    {
+                        each(Command::Recent(n));
                     } else if *line == "devtools?" {
                         each(Command::DevtoolsOpen);
                     }

@@ -265,10 +265,14 @@ impl Supervisor {
         self.language
     }
 
-    /// A menu item was chosen. "About" is the shell's own; every other item goes to the running host, which carries it
-    /// out as the page's request of that kind or as opening that recent project. With no host ready to take it (none
-    /// running, starting, stopping, or the app quitting) nothing happens.
+    /// A menu item was chosen. "About" and "quit" are the shell's own (quit as the window's close button); every other
+    /// item goes to the running host, which carries it out as the page's request of that kind or as opening that recent
+    /// project. With no host ready to take it (none running, starting, stopping, or the app quitting) nothing happens.
     pub fn on_menu(&mut self, choice: MenuChoice) -> Vec<Action> {
+        // Quit is closing the window (user ruling 1, desktop-app ticket 21); once quitting, nothing more.
+        if choice == MenuChoice::Quit && self.quitting {
+            return vec![];
+        }
         let mut actions = self.record(
             "shell.menu_chosen",
             "info",
@@ -277,6 +281,10 @@ impl Supervisor {
         let line = match choice {
             MenuChoice::About => {
                 actions.push(Action::About(self.language));
+                return actions;
+            }
+            MenuChoice::Quit => {
+                actions.extend(self.on_close_requested());
                 return actions;
             }
             MenuChoice::OpenFolder => protocol::menu_request_line("pick_folder"),
@@ -1009,6 +1017,27 @@ mod tests {
             sent_lines(&s.on_menu(MenuChoice::OpenDevtools)),
             Vec::<Value>::new()
         );
+    }
+
+    #[test]
+    fn quit_from_the_menu_is_closing_the_window() {
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        s.spawned(None, 1);
+        s.on_line(ready(None));
+        let actions = s.on_menu(MenuChoice::Quit);
+        assert_eq!(sent_events(&actions), vec!["shell.menu_chosen"]);
+        // Recorded first, then the host is asked to quit and given the limit.
+        assert_eq!(sent_lines(&actions), vec![json!({"type":"quit"})]);
+        assert!(actions.contains(&Action::ArmDeadline { attempt: 1 }));
+        assert!(s.quitting());
+        // Chosen again, or the window closed meanwhile: nothing more.
+        assert_eq!(s.on_menu(MenuChoice::Quit), vec![]);
+        assert_eq!(s.on_close_requested(), vec![]);
+        // With no host running, the app ends at once.
+        let mut s = Supervisor::new();
+        s.start("v", "w", None);
+        assert!(s.on_menu(MenuChoice::Quit).contains(&Action::Exit));
     }
 
     #[test]

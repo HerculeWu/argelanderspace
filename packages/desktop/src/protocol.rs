@@ -109,7 +109,8 @@ pub struct MenuModel {
 
 /// At most this many recent projects are shown (the host sends no more, server `HOST_MENU_RECENT_MAX`).
 pub const MENU_RECENT_MAX: usize = 10;
-/// A menu id or label longer than this is not taken (the host's are far shorter).
+/// A menu id or label longer than this is not taken: that entry is left out (the host shortens its labels to far less,
+/// server `HOST_MENU_LABEL_MAX`).
 const MENU_TEXT_MAX: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -179,11 +180,12 @@ fn menu_model(m: &Map<String, Value>) -> Option<MenuModel> {
             .filter(|s| !s.is_empty() && s.len() <= MENU_TEXT_MAX)
             .map(str::to_owned)
     };
-    let recent = m.get("recent")?.as_array()?;
-    let recent = recent
+    // An entry that is not of the form (or too long) is left out; the others are still shown.
+    let recent = m
+        .get("recent")?
+        .as_array()?
         .iter()
-        .take(MENU_RECENT_MAX)
-        .map(|item| {
+        .filter_map(|item| {
             let item = item.as_object()?;
             Some(MenuRecent {
                 id: short(item.get("id"))?,
@@ -191,7 +193,8 @@ fn menu_model(m: &Map<String, Value>) -> Option<MenuModel> {
                 enabled: item.get("enabled")?.as_bool()?,
             })
         })
-        .collect::<Option<Vec<_>>>()?;
+        .take(MENU_RECENT_MAX)
+        .collect();
     Some(MenuModel {
         language: language_of(m),
         recent,
@@ -647,18 +650,32 @@ mod tests {
             panic!("menu")
         };
         assert_eq!(model.recent.len(), MENU_RECENT_MAX);
-        for bad in [
-            r#"{"type":"menu"}"#,
-            r#"{"type":"menu","recent":[{"id":"a","label":"b"}]}"#,
-            r#"{"type":"menu","recent":[{"id":"","label":"b","enabled":true}]}"#,
-            r#"{"type":"menu","recent":[{"id":1,"label":"b","enabled":true}]}"#,
-            r#"{"type":"menu","recent":{}}"#,
-        ] {
+        // Not a menu line: no recent list, or not a list.
+        for bad in [r#"{"type":"menu"}"#, r#"{"type":"menu","recent":{}}"#] {
             assert_eq!(parse_host_line(bad), HostLine::Unknown, "{bad}");
         }
+        // An entry not of the form, or with a label too long, is left out; the good ones stay.
         let long = "y".repeat(MENU_TEXT_MAX + 1);
-        let line = json!({"type":"menu","recent":[{"id":"a","label":long,"enabled":true}]});
-        assert_eq!(parse_host_line(&line.to_string()), HostLine::Unknown);
+        let good = json!({"id":"ok","label":"alpha","enabled":true});
+        let line = json!({"type":"menu","recent":[
+            {"id":"a","label":"b"},
+            {"id":"","label":"b","enabled":true},
+            {"id":1,"label":"b","enabled":true},
+            {"id":"a","label":long,"enabled":true},
+            "x",
+            good,
+        ]});
+        let HostLine::Menu(model) = parse_host_line(&line.to_string()) else {
+            panic!("menu")
+        };
+        assert_eq!(
+            model.recent,
+            vec![MenuRecent {
+                id: "ok".into(),
+                label: "alpha".into(),
+                enabled: true
+            }]
+        );
     }
 
     #[test]

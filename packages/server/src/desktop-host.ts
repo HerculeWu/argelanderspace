@@ -59,7 +59,7 @@
  * signal the shell is there, and ending a shutdown that takes too long is its job.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { realpathSync, statSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { basename, isAbsolute, join } from "node:path";
@@ -136,6 +136,21 @@ const SHELL_GONE: ReadonlySet<HostStopReason> = new Set(["input_closed", "output
 export const MENU_REQUESTS = ["pick_folder", "open_in_browser", "open_devtools"] as const;
 /** At most this many recent projects in the shell's menu (the settings page and the welcome page list them all). */
 export const HOST_MENU_RECENT_MAX = 10;
+/**
+ * A recent project's label in the shell's menu is at most this many characters: a longer one keeps its start (the
+ * folder's name) and its end (the end of the path) around "…". Far under the shell's own limit (1024 bytes, beyond
+ * which it leaves that entry out).
+ */
+export const HOST_MENU_LABEL_MAX = 120;
+
+/** `label` at most {@link HOST_MENU_LABEL_MAX} characters, its start and end kept around "…". */
+function menuLabel(label: string): string {
+  const chars = Array.from(label);
+  if (chars.length <= HOST_MENU_LABEL_MAX) return label;
+  const head = Math.floor((HOST_MENU_LABEL_MAX - 1) / 3);
+  const tail = HOST_MENU_LABEL_MAX - 1 - head;
+  return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - tail).join("")}`;
+}
 /** Where a native request came from, as `desktop.request` records it. */
 const REQUEST_SOURCES = ["page", "menu"] as const;
 
@@ -226,7 +241,9 @@ export const SHELL_EVENTS = {
   // Desktop-app ticket 21: an item of the shell's menu was chosen.
   "shell.menu_chosen": {
     level: "info",
-    fields: { item: ["open_folder", "open_recent", "open_in_browser", "open_devtools", "about"] },
+    fields: {
+      item: ["open_folder", "open_recent", "quit", "open_in_browser", "open_devtools", "about"],
+    },
   },
   // A line from the host the shell could not read: longer than the limit, or not UTF-8. Dropped; reading goes on.
   "shell.line_rejected": { level: "warn", fields: { reason: ["too_long", "not_utf8"] } },
@@ -686,6 +703,8 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
   let menuFolders = new Map<string, string>();
   let menuShown = "";
   let menuGeneration = 0;
+  // Each host's ids are its own: an id of another host's menu (a click on a menu not yet replaced) names nothing here.
+  const menuIdPrefix = randomBytes(4).toString("hex");
   /** Writes the `menu` line when what it would show differs from the last one written. */
   function writeMenu(): void {
     if (stopping !== null || own === null) return;
@@ -695,7 +714,9 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
       .slice(0, HOST_MENU_RECENT_MAX)
       .map((entry) => ({
         path: entry.path,
-        label: `${basename(entry.path) || entry.path} — ${shownPath(entry.path).display}`,
+        label: menuLabel(
+          `${basename(entry.path) || entry.path} — ${shownPath(entry.path).display}`
+        ),
         enabled: isFolder(entry.path),
       }));
     const shown = JSON.stringify([language, entries.map(({ label, enabled }) => [label, enabled])]);
@@ -704,7 +725,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     menuGeneration += 1;
     menuFolders = new Map();
     const recent = entries.map(({ path, label, enabled }, index) => {
-      const id = `m${menuGeneration}-${index}`;
+      const id = `m${menuIdPrefix}-${menuGeneration}-${index}`;
       menuFolders.set(id, path);
       return { id, label, enabled };
     });
