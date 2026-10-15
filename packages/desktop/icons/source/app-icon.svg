@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- ArgelanderSpace app icon (desktop-app ticket 25): candidate F "Comparison" with four-pointed stars. One
+       variable-star estimate in Argelander's step method, a 3 v 2 b: the brighter comparison star a, the star being
+       measured v (accent colour, measuring ring) and the fainter comparison star b on a chart page with faint field
+       stars; a bigger star is a brighter one, as on star charts. The line v-a has two ticks (three steps), v-b one
+       tick (two steps). Original artwork, hand-written for this project; no icon set, font, star chart or other
+       mark was used. -->
+  <defs>
+    <linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7f9fb"/>
+      <stop offset="1" stop-color="#dfe6ee"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="url(#plate)"/>
+  <!-- faint field stars of a chart page -->
+  <path fill="#10253d" fill-opacity="0.34" d="M374 97C375.2 107.5 378.5 110.8 389 112C378.5 113.2 375.2 116.5 374 127C372.8 116.5 369.5 113.2 359 112C369.5 110.8 372.8 107.5 374 97ZM300 141C300.9 148.7 303.3 151.1 311 152C303.3 152.9 300.9 155.3 300 163C299.1 155.3 296.7 152.9 289 152C296.7 151.1 299.1 148.7 300 141ZM146 371C147.5 384.3 151.7 388.5 165 390C151.7 391.5 147.5 395.7 146 409C144.5 395.7 140.3 391.5 127 390C140.3 388.5 144.5 384.3 146 371ZM414 369C415 378.1 417.9 381 427 382C417.9 383 415 385.9 414 395C413 385.9 410.1 383 401 382C410.1 381 413 378.1 414 369ZM92 257C92.9 264.7 95.3 267.1 103 268C95.3 268.9 92.9 271.3 92 279C91.1 271.3 88.7 268.9 81 268C88.7 267.1 91.1 264.7 92 257Z"/>
+  <!-- comparison lines: three steps from v to a, two from v to b -->
+  <path fill="none" stroke="#10253d" stroke-opacity="0.55" stroke-linecap="round" stroke-width="7" d="M216.8 246.9L144.7 154.5M329.8 261.7L380.3 223.4M201.4 209.3L184.1 222.9M177.4 178.5L160 192.1M361.7 251.3L348.4 233.8"/>
+  <path fill="#10253d" d="M124 56C128.3 109.3 142.7 123.7 196 128C142.7 132.3 128.3 146.7 124 200C119.7 146.7 105.3 132.3 52 128C105.3 123.7 119.7 109.3 124 56Z"/>
+  <path fill="#10253d" d="M398 176C400.7 199.8 408.2 207.3 432 210C408.2 212.7 400.7 220.2 398 244C395.3 220.2 387.8 212.7 364 210C387.8 207.3 395.3 199.8 398 176Z"/>
+  <path fill="#007bb2" d="M266 256C269.2 296 280 306.8 320 310C280 313.2 269.2 324 266 364C262.8 324 252 313.2 212 310C252 306.8 262.8 296 266 256Z"/>
+  <circle cx="266" cy="310" r="68" fill="none" stroke="#007bb2" stroke-width="7" stroke-opacity="0.6"/>
+  <rect x="33.5" y="33.5" width="445" height="445" rx="98.5" fill="none" stroke="#10253d" stroke-opacity="0.16" stroke-width="3"/>
+</svg>

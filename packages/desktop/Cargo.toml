@@ -5,7 +5,8 @@
 # The version shown to people comes from packages/app/package.json (tauri.conf.json `version`); the crate's own
 # version below is not used anywhere.
 #
-# icons/icon.png is a placeholder; the real icon is desktop-app ticket 25.
+# The app icon (desktop-app ticket 25) is generated into icons/ from icons/source/ by scripts/build-icons.mjs
+# (docs/engineering.md, desktop package).
 [package]
 name = "argelanderspace-desktop"
 version = "0.0.0"
