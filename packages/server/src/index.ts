@@ -6,6 +6,8 @@
 
 export * from "./app.js";
 export * from "./deps.js";
+export * from "./desktop-host.js";
+export * from "./host-routes.js";
 export * from "./jobs.js";
 export * from "./lock.js";
 export * from "./log.js";

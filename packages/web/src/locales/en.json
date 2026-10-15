@@ -2588,6 +2588,14 @@
       "done": "Done",
       "exportSaved": "Saved {{name}} ({{size}}) to the location you chose.",
       "zipType": "Zip archive"
+    },
+    "host": {
+      "requestFailed": "The desktop app did not take this request.",
+      "portFallback": {
+        "title": "Links from the CLI will not open this time",
+        "body": "The configured port {{configured}} was taken, so this run uses port {{actual}}; the links the CLI prints point to port {{configured}}. Once that port is free, restarting the app goes back to it.",
+        "ownServer": "Another ArgelanderSpace is running on port {{configured}}; those links open it, not this window."
+      }
     }
   }
 }

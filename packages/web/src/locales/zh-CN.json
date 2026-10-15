@@ -2588,6 +2588,14 @@
       "done": "完成",
       "exportSaved": "已保存 {{name}}（{{size}}）到你选择的位置。",
       "zipType": "Zip 压缩包"
+    },
+    "host": {
+      "requestFailed": "桌面应用没有接受这个请求。",
+      "portFallback": {
+        "title": "CLI 生成的链接这次打不开",
+        "body": "配置的端口 {{configured}} 被占用，这次改用端口 {{actual}}；CLI 生成的链接指向端口 {{configured}}。重启应用时端口空出来就会回到 {{configured}}。",
+        "ownServer": "端口 {{configured}} 上是另一个正在运行的 ArgelanderSpace，那些链接会打开它，而不是这个窗口。"
+      }
     }
   }
 }

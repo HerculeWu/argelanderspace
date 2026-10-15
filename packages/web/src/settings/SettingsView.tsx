@@ -27,6 +27,7 @@ import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
 import { fetchDiagnostics } from "../api/diagnostics";
+import { useHostRequest } from "../host";
 import { DiagnosticsExportDialog } from "./DiagnosticsExport";
 import { EnvironmentCheck, useEnvironment } from "./EnvironmentCheck";
 import "./settings.css";
@@ -44,13 +45,10 @@ import "./settings.css";
 const FILLED: ReadonlySet<SettingsGroup> = new Set(["appearance", "project", "services", "tex", "copilot", "mail", "diagnostics", "advanced"]);
 
 /**
- * Opening the config file in the system's editor belongs to the desktop app's host (a later ticket). Until a host
- * offers it, every page is the browser form: the path, shown and copied.
+ * The desktop app's own controls (desktop-app ticket 17): opening the config file in the system's editor and showing
+ * the log folder are native requests to the desktop host (`useHostRequest`); the request names no path — the host
+ * knows its config file and log folder. In a browser there is no host, and the page shows the path and a copy action.
  */
-const openConfigInHost: ((path: string) => void) | null = null;
-/** Showing the log folder in the system's file manager belongs to the desktop app's host too (a later ticket). */
-const openLogFolderInHost: (() => void) | null = null;
-
 /** `cli` belongs to the desktop app only; a page in a browser does not list it. */
 const BROWSER_GROUPS = SETTINGS_GROUPS.filter((group) => group !== "cli");
 
@@ -139,13 +137,35 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** The config file: in the browser form its path (the home written as `~` by the server) and a copy action. */
-function ConfigPath({ P, settings }: { P: Preferences; settings: SettingsSnapshot }) {
+/** A native request from a button: a request the host did not take is said in the page's floating notice. */
+function askOrSay(ask: () => Promise<boolean>, notify: (text: string) => void, failed: string): void {
+  void ask().then((ok) => {
+    if (!ok) notify(failed);
+  });
+}
+
+/**
+ * The config file: its path (the home written as `~` by the server), and in the desktop app the button that opens it
+ * in the system's editor, in a browser a copy action.
+ */
+function ConfigPath({ P, settings, rowKey }: { P: Preferences; settings: SettingsSnapshot; rowKey?: SettingKey }) {
   const { t } = useTranslation();
   const path = settings.path;
-  if (openConfigInHost !== null) {
-    const open = openConfigInHost;
-    return <Button data-ui="open-config-file" onClick={() => open(path)}>{t("settings.configFile.openInEditor")}</Button>;
+  const openConfig = useHostRequest("open_config_file");
+  if (openConfig !== null) {
+    const button = (
+      <Button data-ui="open-config-file" data-ui-key={rowKey} onClick={() => askOrSay(openConfig, P.notify, t("settings.host.requestFailed"))}>
+        {t("settings.configFile.openInEditor")}
+      </Button>
+    );
+    // Under a row the page cannot change, the button alone (approved prototype); at the head of the page, with the path.
+    if (rowKey !== undefined) return button;
+    return (
+      <>
+        <code className="st-path" data-ui="config-file-path" title={path}>{settings.pathDisplay}</code>
+        {button}
+      </>
+    );
   }
   return (
     <>
@@ -242,7 +262,7 @@ function Row({ state, k, label, control, hint, fileOnly, extra }: { state: RowSt
           <InlineMessage tone="warning" uiId="setting-unsafe" title={t("settings.uneditable.title", { key: k })}>
             {why ? t(why) : t("settings.uneditable.reason.other")} {t("settings.uneditable.tail")}
             <div className="st-inline-actions">
-              <ConfigPath P={P} settings={settings} />
+              <ConfigPath P={P} settings={settings} rowKey={k} />
             </div>
           </InlineMessage>
         </div>
@@ -580,6 +600,7 @@ function Diagnostics({ state }: { state: RowState }) {
     return () => ac.abort();
   }, []);
   const dir = info !== null && info !== "loading" ? info.logDir : null;
+  const showLogs = useHostRequest("open_log_folder");
   return (
     <>
       <div className="st-row" data-ui="setting-row" data-ui-key="log-folder">
@@ -594,8 +615,10 @@ function Diagnostics({ state }: { state: RowState }) {
               {info === null ? t("settings.diagnostics.logFolderUnknown") : "…"}
             </span>
           )}
-          {openLogFolderInHost !== null ? (
-            <Button data-ui="show-log-folder" onClick={() => openLogFolderInHost?.()}>{t("settings.diagnostics.showLogs")}</Button>
+          {showLogs !== null ? (
+            <Button data-ui="show-log-folder" onClick={() => askOrSay(showLogs, P.notify, t("settings.host.requestFailed"))}>
+              {t("settings.diagnostics.showLogs")}
+            </Button>
           ) : (
             dir !== null && (
               <ActionButton
@@ -748,8 +771,10 @@ const FAILED_TEXT = {
   unreachable: "settings.notices.failed.unreachable",
 } as const;
 
-function FailedNotice({ notice, onDismiss }: { notice: Extract<SettingsNotice, { kind: "failed" }>; onDismiss: () => void }) {
+function FailedNotice({ notice, onDismiss, notify }: { notice: Extract<SettingsNotice, { kind: "failed" }>; onDismiss: () => void; notify: (text: string) => void }) {
   const { t } = useTranslation();
+  // The desktop app: the file can be opened from here (approved prototype); a browser has no such action.
+  const openConfig = useHostRequest("open_config_file");
   const why = layoutReason(notice.reason);
   const text = why
     ? t("settings.notices.failed.layout", { why: t(why) })
@@ -763,19 +788,24 @@ function FailedNotice({ notice, onDismiss }: { notice: Extract<SettingsNotice, {
         <strong className="st-notice-title">{t("settings.notices.failedTitle", { key: notice.key })}</strong>
         {text}
       </span>
+      {openConfig !== null && (
+        <Button data-ui="settings-save-failed-open-config" onClick={() => askOrSay(openConfig, notify, t("settings.host.requestFailed"))}>
+          {t("settings.configFile.openInEditor")}
+        </Button>
+      )}
       <ActionButton mode="icon" iconName="x" iconSize="small" data-ui="settings-save-failed-dismiss" label={t("settings.notices.dismiss")} tooltip={t("settings.notices.dismiss")} onClick={onDismiss} />
     </div>
   );
 }
 
 /** The floating notices of the settings: rendered once by the Shell, so a change made anywhere reports here. */
-export function SettingsNotices({ notices, dismiss }: Pick<Preferences, "notices" | "dismiss">) {
+export function SettingsNotices({ notices, dismiss, notify }: Pick<Preferences, "notices" | "dismiss" | "notify">) {
   const { t } = useTranslation();
   return (
     <div className="st-notices" aria-live="polite" data-ui="settings-notices">
       {notices.map((notice) =>
         notice.kind === "failed" ? (
-          <FailedNotice key={notice.id} notice={notice} onDismiss={() => dismiss(notice.id)} />
+          <FailedNotice key={notice.id} notice={notice} onDismiss={() => dismiss(notice.id)} notify={notify} />
         ) : (
           <div key={notice.id} className="ag-toast view-in" data-ui="toast" data-ui-key={notice.kind === "saved" ? "settings-saved" : undefined} role="status">
             <Icon name={notice.kind === "saved" ? "check" : "info"} cls="ico-sm" />

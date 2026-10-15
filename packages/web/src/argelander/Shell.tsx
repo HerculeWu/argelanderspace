@@ -32,6 +32,7 @@ import { MailNavItem } from "../mail/MailNavItem";
 import { MailView } from "../mail/MailView";
 import { createMailPane } from "../mail/mail-pane";
 import { ConfigProblemsBanner } from "../settings/ConfigProblemsBanner";
+import { PortFallbackBanner } from "../settings/PortFallbackBanner";
 import { SettingsNotices, SettingsView } from "../settings/SettingsView";
 import { createSettingsPane } from "../settings/settings-pane";
 
@@ -650,6 +651,7 @@ export function Shell() {
         </div>
 
         <ConfigProblemsBanner settings={preferences.settings} onOpenSettings={() => setActiveView(SETTINGS_VIEW)} />
+        <PortFallbackBanner />
         <div className="app-body" data-ui="app-workspace">
           <div className="activity" data-ui="primary-navigation">
             {NAV.map((n) => {
@@ -698,7 +700,7 @@ export function Shell() {
           onNav={(v) => setActiveView(v)}
           onSplit={() => splitFrom(activeId)}
         />
-        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} />
+        <SettingsNotices notices={preferences.notices} dismiss={preferences.dismiss} notify={preferences.notify} />
       </div>
     </WorkspaceProvider>
     </PreferencesProvider>

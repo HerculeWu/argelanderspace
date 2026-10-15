@@ -582,11 +582,11 @@ describe("the workbench's banner for a faulty config.toml", () => {
     settings.problems = [{ key: "ui.theme", reason: "wrong_type" }];
     settings.startup = startup();
     render(<Shell />);
-    await waitFor(() => expect(banner()).not.toBeNull());
+    // The banner can show before the page has turned to the file's language: wait for the English text.
+    await waitFor(() => expect(banner()?.textContent).toContain("1 key in config.toml is faulty and has its default: ui.theme"));
     const b = banner()!;
     expect(b.getAttribute("data-severity")).toBe("keys");
     expect(b.getAttribute("role")).toBe("status");
-    expect(b.textContent).toContain("1 key in config.toml is faulty and has its default: ui.theme");
     expect(b.textContent).not.toContain("light");
     // Between the title bar and the workspace, whatever the view.
     expect(b.previousElementSibling?.getAttribute("data-ui")).toBe("app-titlebar");
@@ -623,7 +623,8 @@ describe("the workbench's banner for a faulty config.toml", () => {
     settings.startup = startup({ data_dir: { source: "default", problem: "must_be_relative" } });
     render(<Shell />);
     await waitFor(() => expect(banner()?.getAttribute("data-severity")).toBe("data-location"));
-    expect(banner()!.textContent).toContain("Restart the workbench");
+    // The banner can show before the page has turned to the file's language: wait for the English text.
+    await waitFor(() => expect(banner()!.textContent).toContain("Restart the workbench"));
     expect(q('[data-ui="config-problems-now"]')).toBeNull();
   });
 

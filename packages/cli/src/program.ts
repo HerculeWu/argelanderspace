@@ -12,8 +12,8 @@
  * (Python's `data/output`).
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { statSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { DEFAULT_PORT } from "@argelanderspace/contracts";
 import {
   acquireReferences,
@@ -29,7 +29,7 @@ import {
   type Work,
 } from "@argelanderspace/core";
 import { ingestTexSource } from "@argelanderspace/infra";
-import { realPipelines, realSources, startServer } from "@argelanderspace/server";
+import { realPipelines, realSources, runDesktopHost, startServer } from "@argelanderspace/server";
 import { Command } from "commander";
 import { registerAgentCommands } from "./agent.js";
 import { registerArgumentCommands } from "./argument.js";
@@ -278,6 +278,59 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   process.on("SIGTERM", shutdown);
 }
 
+/**
+ * The desktop host (desktop-app ticket 17; server `desktop-host.ts`): the process the desktop shell starts and looks
+ * after, in the same bundle as the CLI. It serves one Project — the folder given — and speaks the line protocol on its
+ * stdin and stdout. Not for people: hidden from the help.
+ */
+async function runDesktopHostCommand(opts: { project: string; webDist?: string }): Promise<void> {
+  const project = resolve(opts.project);
+  let isDir = false;
+  try {
+    isDir = statSync(project).isDirectory();
+  } catch {
+    /* not there */
+  }
+  if (!isDir) throw new Error(`the project folder ${JSON.stringify(project)} is not a directory`);
+  // Like --project, a relative --web-dist is the caller's: resolved before the change of directory below.
+  const webDist = opts.webDist === undefined ? undefined : resolve(opts.webDist);
+  // The Project's folder is the process's working directory, as for `serve` run in it: the same relative `data_dir`
+  // rule finds the project data (ADR 0010), and the settings page shows it as the project.
+  process.chdir(project);
+  const host = await runDesktopHost({
+    input: process.stdin,
+    output: process.stdout,
+    version: APP_VERSION,
+    signals: true,
+    // The shell is gone and its shutdown hangs: nobody else will end the process (server desktop-host.ts).
+    stopDeadline: { onExpired: () => process.exit(1) },
+    ...(webDist === undefined ? {} : { webDist }),
+  });
+  await host.stopped;
+  await flushed(process.stdout);
+  process.exit(0);
+}
+
+/**
+ * Resolves once what was written to the stream before has been handed on (the `stopped` line), so that exiting does
+ * not cut it off where stdout is asynchronous; at once when the stream is broken, and at the latest after a second.
+ */
+function flushed(stream: NodeJS.WriteStream): Promise<void> {
+  return new Promise((done) => {
+    const timer = setTimeout(done, 1000);
+    timer.unref();
+    try {
+      stream.write("", () => {
+        clearTimeout(timer);
+        done();
+      });
+    } catch {
+      clearTimeout(timer);
+      done();
+    }
+  });
+}
+
 export function buildProgram(): Command {
   const program = new Command();
   program
@@ -363,6 +416,21 @@ export function buildProgram(): Command {
         await runServe(opts, cmd.optsWithGlobals().dataDir as string | undefined);
       } catch (e) {
         fail(e);
+      }
+    });
+
+  program
+    .command("desktop-host", { hidden: true })
+    .description("Run as the desktop app's host (line protocol on stdin/stdout).")
+    .requiredOption("--project <dir>", "the Project folder to open")
+    .option("--web-dist <dir>", "built SPA directory (default: next to the bundle)")
+    .action(async (opts: { project: string; webDist?: string }) => {
+      try {
+        await runDesktopHostCommand(opts);
+      } catch (e) {
+        fail(e);
+        // A server that could not start may have left timers behind: the host's exit is its report to the shell.
+        process.exit(1);
       }
     });
 
