@@ -56,7 +56,7 @@ impl HostLauncher {
     /// The packaged launcher: the bundle's own Node and app build, under `sidecar/` in `resource_dir`.
     #[cfg_attr(not(feature = "packaged"), allow(dead_code))]
     pub fn packaged(resource_dir: &Path) -> Self {
-        let sidecar = resource_dir.join("sidecar");
+        let sidecar = plain_path(resource_dir).join("sidecar");
         HostLauncher {
             node: packaged_node(&sidecar.join("node")),
             entry: sidecar.join("app").join("dist").join("bin.js"),
@@ -96,6 +96,25 @@ impl HostLauncher {
         }
         command
     }
+}
+
+/// A Windows path without its verbatim prefix when it does not need one: Tauri may give the resource directory as
+/// `\\?\C:\…`, which Node cannot take as its entry (it looks up `C:` itself), so `\\?\C:\x` becomes `C:\x` and
+/// `\\?\UNC\server\share\x` becomes `\\server\share\x`. Any other path is kept as it is (on Unix every path).
+fn plain_path(path: &Path) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let b = rest.as_bytes();
+        if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
 }
 
 /// The packaged Node in the sidecar's `node/` folder: `node.exe` on Windows, `bin/node` elsewhere.
@@ -339,6 +358,27 @@ mod tests {
         assert!(gone, "the host's child ended with it");
         assert!(!kill_group(1));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_verbatim_windows_path_is_given_to_node_plainly() {
+        assert_eq!(
+            plain_path(Path::new(r"\\?\D:\a\target\debug")),
+            PathBuf::from(r"D:\a\target\debug")
+        );
+        assert_eq!(
+            plain_path(Path::new(r"\\?\UNC\srv\share\app")),
+            PathBuf::from(r"\\srv\share\app")
+        );
+        for kept in [
+            r"\\?\Volume{0}\app",
+            r"\\?\D:",
+            r"D:\a",
+            "/usr/lib/argelanderspace",
+            "relative",
+        ] {
+            assert_eq!(plain_path(Path::new(kept)), PathBuf::from(kept), "{kept}");
+        }
     }
 
     #[test]
