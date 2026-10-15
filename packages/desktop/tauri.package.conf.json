@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "argelanderspace",
+  "bundle": {
+    "active": true,
+    "targets": ["deb"],
+    "publisher": "ArgelanderSpace",
+    "category": "Education",
+    "shortDescription": "A research workbench: library, reading, planning and writing",
+    "longDescription": "ArgelanderSpace is a single-user research workbench with a literature library, a reader, plans and a writer, and an interface for working with AI agents. The package carries its own Node runtime.",
+    "license": "MIT",
+    "resources": {
+      "target/package-resources/sidecar/": "sidecar/",
+      "target/package-resources/skills/": "skills/"
+    },
+    "linux": {
+      "deb": { "desktopTemplate": "linux/argelanderspace.desktop.hbs" }
+    }
+  }
+}

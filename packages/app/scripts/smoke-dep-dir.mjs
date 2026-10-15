@@ -5,6 +5,13 @@
 //   node packages/app/scripts/smoke-dep-dir.mjs --deps <dep-dir.mjs --out dir> [--remove <path,...>] [--label <name>]
 //        [--evidence <dir>] [--keep]
 //
+//   node packages/app/scripts/smoke-dep-dir.mjs --sidecar <resource dir>/sidecar --node <its node> [--label <name>]
+//        [--evidence <dir>] [--keep]      (desktop-app ticket 23: run an unpacked desktop package's sidecar in place)
+//
+//   --sidecar / --node  instead of assembling a sidecar from packages/app/dist and --deps, run the given one as it is
+//             (its app/dist/bin.js and app/node_modules) with the given Node (the package's own). Then a `node` placed
+//             first on the child PATH records any use and fails: the check "no node from PATH was run" proves the
+//             package does not depend on the system's node (smoke-desktop-package.mjs calls it this way).
 //   --remove  comma list of paths relative to node_modules to delete from the COPY before running (to make a variant
 //             that should fail, e.g. a whole font package, or this platform's own keyring binary). Each must lie
 //             inside node_modules (checked).
@@ -48,7 +55,7 @@ import { findTool, removalPath, runErrorCategory, smokeVerdict } from "./dep-dir
 const appRoot = fileURLToPath(new URL("..", import.meta.url));
 const argv = process.argv.slice(2);
 // An argument this script does not know stops it: a mistyped `--remove` must not quietly run an unbroken variant.
-const VALUED = new Set(["--deps", "--label", "--remove", "--evidence"]);
+const VALUED = new Set(["--deps", "--label", "--remove", "--evidence", "--sidecar", "--node"]);
 const seenFlags = new Set();
 for (let i = 0; i < argv.length; i += 1) {
   if (argv[i] === "--keep") continue;
@@ -61,10 +68,23 @@ for (let i = 0; i < argv.length; i += 1) {
 }
 const flag = (name) => (argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined);
 const depsArg = flag("--deps");
-if (!depsArg) throw new Error("--deps <directory made by dep-dir.mjs> is required");
-const depsDir = existsSync(join(resolve(depsArg), "node_modules"))
-  ? join(resolve(depsArg), "node_modules")
-  : resolve(depsArg);
+const givenSidecar = flag("--sidecar") ? resolve(flag("--sidecar")) : null;
+const givenNode = flag("--node") ? resolve(flag("--node")) : null;
+if (!!givenSidecar === !!depsArg)
+  throw new Error(
+    "give either --deps <directory made by dep-dir.mjs> or --sidecar <dir> --node <node>"
+  );
+if (!!givenSidecar !== !!givenNode) throw new Error("--sidecar and --node go together");
+if (givenSidecar && flag("--remove"))
+  throw new Error(
+    "--remove works on an assembled copy (--deps); break a package before calling with --sidecar"
+  );
+const depsDir = !depsArg
+  ? null
+  : existsSync(join(resolve(depsArg), "node_modules"))
+    ? join(resolve(depsArg), "node_modules")
+    : resolve(depsArg);
+const nodeExe = givenNode ?? process.execPath;
 const label = flag("--label") ?? "run";
 const removeList = (flag("--remove") ?? "").split(",").filter(Boolean);
 const keep = argv.includes("--keep");
@@ -91,16 +111,18 @@ for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(1));
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 // ---- sidecar layout ---------------------------------------------------------------------------------------------- //
-const sidecar = join(work, "sidecar/app");
-cpSync(join(appRoot, "dist"), join(sidecar, "dist"), { recursive: true });
-cpSync(depsDir, join(sidecar, "node_modules"), { recursive: true, verbatimSymlinks: true });
+const sidecar = givenSidecar ? join(givenSidecar, "app") : join(work, "sidecar/app");
+if (!givenSidecar) {
+  cpSync(join(appRoot, "dist"), join(sidecar, "dist"), { recursive: true });
+  cpSync(depsDir, join(sidecar, "node_modules"), { recursive: true, verbatimSymlinks: true });
+}
 for (const rel of removeList) {
   const p = removalPath(join(sidecar, "node_modules"), rel);
   if (!existsSync(p)) throw new Error(`--remove ${rel}: not in the dependency directory`);
   rmSync(p, { recursive: true, force: true });
 }
 log(
-  `variant ${label}: deps ${depsDir}${removeList.length ? `, removed ${removeList.join(", ")}` : ""}`
+  `variant ${label}: ${givenSidecar ? `sidecar ${givenSidecar}, node ${givenNode}` : `deps ${depsDir}`}${removeList.length ? `, removed ${removeList.join(", ")}` : ""}`
 );
 const binJs = join(sidecar, "dist/bin.js");
 
@@ -109,8 +131,19 @@ const home = join(work, "home");
 const runtimeDir = join(work, "runtime");
 const project = join(work, "project");
 for (const d of [home, runtimeDir, project]) mkdirSync(d, { recursive: true, mode: 0o700 });
+// With a given Node, a `node` first on PATH records any use (the package must never need the system's node).
+const pathGuard = join(work, "path-guard");
+const pathNodeUsed = join(work, "path-node-used");
+if (givenNode) {
+  mkdirSync(pathGuard);
+  writeFileSync(
+    join(pathGuard, "node"),
+    `#!/bin/sh\necho "$0 $*" >> ${JSON.stringify(pathNodeUsed)}\necho "smoke: node from PATH was run" >&2\nexit 1\n`,
+    { mode: 0o755 }
+  );
+}
 const env = {
-  PATH: "/usr/bin:/bin",
+  PATH: givenNode ? `${pathGuard}:/usr/bin:/bin` : "/usr/bin:/bin",
   HOME: home,
   XDG_CONFIG_HOME: join(home, ".config"),
   XDG_DATA_HOME: join(home, ".local/share"),
@@ -251,7 +284,7 @@ let hostErr = "";
 const lines = [];
 async function startHost() {
   mark("host start");
-  host = spawn(process.execPath, [...nodeArgs, binJs, "desktop-host", "--project", project], {
+  host = spawn(nodeExe, [...nodeArgs, binJs, "desktop-host", "--project", project], {
     cwd: home,
     env,
     stdio: ["pipe", "pipe", "pipe"],
@@ -597,16 +630,19 @@ if (latexmk) {
     "\\documentclass{article}\n\\begin{document}\n\\section{Intro}\\label{s:i}\nHello $x^2$ see Section~\\ref{s:i}.\n\\begin{equation}\\label{e:1}E=mc^2\\end{equation}\n\\end{document}\n"
   );
   const dataDir = join(work, "ingest-data");
-  const ing = spawnSync(
-    process.execPath,
-    [...nodeArgs, binJs, "ingest", texDir, "--data-dir", dataDir],
-    {
-      cwd: home,
-      env: { ...env, PATH: [dirname(latexmk), env.PATH].join(delimiter) },
-      encoding: "utf8",
-      timeout: 240000,
-    }
-  );
+  const ing = spawnSync(nodeExe, [...nodeArgs, binJs, "ingest", texDir, "--data-dir", dataDir], {
+    cwd: home,
+    env: {
+      ...env,
+      // The recording `node` stays first: latexmk's directory is often /usr/bin, which may hold a system node.
+      PATH: (givenNode
+        ? [pathGuard, dirname(latexmk), "/usr/bin:/bin"]
+        : [dirname(latexmk), env.PATH]
+      ).join(delimiter),
+    },
+    encoding: "utf8",
+    timeout: 240000,
+  });
   const outDir = join(dataDir, "output");
   const doc = existsSync(outDir) ? readdirSync(outDir).find((d) => !d.startsWith(".")) : undefined;
   const events = doc ? join(outDir, doc, "build", "main.argelander.jsonl") : "";
@@ -620,6 +656,13 @@ if (latexmk) {
   untested.push("LaTeX ingest");
   log("UNTESTED  LaTeX ingest: latexmk is not on PATH");
 }
+
+if (givenNode)
+  check(
+    !existsSync(pathNodeUsed),
+    "no node from PATH was run (a recording `node` was first on every child's PATH)",
+    existsSync(pathNodeUsed) ? readFileSync(pathNodeUsed, "utf8").slice(0, 300) : ""
+  );
 
 // Which dependency files were loaded, by phase.
 const trace = existsSync(traceFile) ? readFileSync(traceFile, "utf8").split("\n") : [];

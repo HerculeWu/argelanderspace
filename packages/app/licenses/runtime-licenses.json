@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "about": "License texts for the desktop package's runtime packages that ship no license file of their own (desktop-app ticket 23; the user's decision in ticket 22: version-qualified official texts, as uiw-react-codemirror-4.25.11-LICENSE in Stage 11). Each entry is tied to one exact package version: when the dependency directory has another version, the desktop package's license check fails until the text is checked again. kind: upstream-file = the repository's license file at the commit or tag the version was released from; upstream-readme = the License section of the README at that commit (lines given), the only text upstream has; no-upstream-text = the repository has no license text at that commit and its README only says the license's name, so the SPDX text of the declared license is shipped with that statement (the copyright holder is the package.json author).",
+  "files": {
+    "aws-sdk-js-v3-3.1138.0-LICENSE": {
+      "sha256": "edea91454b811f127fbdea3d86f378f6719bd372ed440abf82b232f6fca06c3d",
+      "source": "https://raw.githubusercontent.com/aws/aws-sdk-js-v3/v3.1138.0/LICENSE"
+    },
+    "data-uri-to-buffer-4.0.1-LICENSE": {
+      "sha256": "3072ef4a004c4f92b37eae61cdc3e27225c0a7d2f5e144700e40b9c5a5a7a9b9",
+      "source": "https://raw.githubusercontent.com/TooTallNate/node-data-uri-to-buffer/85cd8c854aefbf1bb636789d80364cfac8ea1583/README.md lines 65-86 (tag 4.0.1)"
+    },
+    "earendil-works-pi-1.0.0-LICENSE": {
+      "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48",
+      "source": "https://raw.githubusercontent.com/earendil-works/pi/a13d35a742c6ef8462812a28fbe1d8c8b7431c32/LICENSE (the gitHead of all eight 1.0.0 packages; identical to tag v1.0.0)"
+    },
+    "napi-rs-keyring-2.1.0-LICENSE": {
+      "sha256": "02965ed67e29f871a53f7a7afa593a0ddc8020f86ccce0faaf1aa59215b5269e",
+      "source": "https://raw.githubusercontent.com/Brooooooklyn/keyring-node/v2.1.0/LICENSE"
+    },
+    "spdx-MIT-v3.28.0.txt": {
+      "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+      "source": "https://raw.githubusercontent.com/spdx/license-list-data/v3.28.0/text/MIT.txt"
+    },
+    "standard-webhooks-libraries-b4d2c14-LICENSE": {
+      "sha256": "5ec8c7b26b64d881a6706617bed25c049f97f2f35de034c756de8546fd6dbe27",
+      "source": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/b4d2c14fc5b4ccff3ff271e3b087dff812254c59/libraries/LICENSE (the gitHead of standardwebhooks 1.1.1; libraries/ is MIT, the repository root's Apache-2.0 LICENSE covers the specification)"
+    }
+  },
+  "packages": [
+    {
+      "package": "@aws-sdk/credential-provider-http",
+      "version": "3.972.74",
+      "license": "Apache-2.0",
+      "kind": "upstream-file",
+      "file": "aws-sdk-js-v3-3.1138.0-LICENSE",
+      "note": "published 2026-09-22 with release v3.1138.0, whose packages-internal/credential-provider-http/package.json has this version"
+    },
+    {
+      "package": "@aws-sdk/credential-provider-login",
+      "version": "3.972.79",
+      "license": "Apache-2.0",
+      "kind": "upstream-file",
+      "file": "aws-sdk-js-v3-3.1138.0-LICENSE",
+      "note": "released with v3.1138.0 (packages-internal/credential-provider-login/package.json has this version)"
+    },
+    {
+      "package": "@aws-sdk/nested-clients",
+      "version": "3.997.46",
+      "license": "Apache-2.0",
+      "kind": "upstream-file",
+      "file": "aws-sdk-js-v3-3.1138.0-LICENSE",
+      "note": "released with v3.1138.0 (packages-internal/nested-clients/package.json has this version)"
+    },
+    {
+      "package": "@earendil-works/chord",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@earendil-works/pi-agent-core",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@earendil-works/pi-ai",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@earendil-works/pi-codemode",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@earendil-works/pi-coding-agent",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@earendil-works/pi-mcp",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE",
+      "note": "its own LICENSES/ folder holds a third-party notice only"
+    },
+    {
+      "package": "@earendil-works/pi-telemetry",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@earendil-works/pi-tui",
+      "version": "1.0.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "earendil-works-pi-1.0.0-LICENSE"
+    },
+    {
+      "package": "@napi-rs/keyring-linux-x64-gnu",
+      "version": "2.1.0",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "napi-rs-keyring-2.1.0-LICENSE",
+      "note": "the platform package of @napi-rs/keyring 2.1.0, built from the same repository tag"
+    },
+    {
+      "package": "data-uri-to-buffer",
+      "version": "4.0.1",
+      "license": "MIT",
+      "kind": "upstream-readme",
+      "file": "data-uri-to-buffer-4.0.1-LICENSE",
+      "note": "the repository has no license file; the README's License section is the text"
+    },
+    {
+      "package": "is-reference",
+      "version": "3.0.3",
+      "license": "MIT",
+      "kind": "no-upstream-text",
+      "file": "spdx-MIT-v3.28.0.txt",
+      "note": "github.com/Rich-Harris/is-reference at 8bb053129bfabe2f6a7d7ed050159d67ebe82829 (the gitHead of 3.0.3) has no license file; its README says only \"MIT\". Author: Rich Harris"
+    },
+    {
+      "package": "locate-character",
+      "version": "3.0.0",
+      "license": "MIT",
+      "kind": "no-upstream-text",
+      "file": "spdx-MIT-v3.28.0.txt",
+      "note": "the package's repository field is gitlab.com/Rich-Harris/locate-character; that repository has history only up to v2.0.1 (last commit 2018) and has no license file, and does not contain 3.0.0's gitHead 4f08a59ec248121f7002abd02ee7b94e8eda06bc. That commit is in github.com/Rich-Harris/locate-character, which has no license file there either; the README says only \"MIT\" (checked 2026-10-15). Author: Rich Harris"
+    },
+    {
+      "package": "proxy-agent-negotiate",
+      "version": "1.1.0",
+      "license": "MIT",
+      "kind": "no-upstream-text",
+      "file": "spdx-MIT-v3.28.0.txt",
+      "note": "github.com/TooTallNate/proxy-agents at tag proxy-agent-negotiate@1.1.0: packages/negotiate has no license file and the repository root has none (sibling packages such as agent-base carry their own). Author: Nathan Rajlich"
+    },
+    {
+      "package": "standardwebhooks",
+      "version": "1.1.1",
+      "license": "MIT",
+      "kind": "upstream-file",
+      "file": "standard-webhooks-libraries-b4d2c14-LICENSE"
+    }
+  ]
+}

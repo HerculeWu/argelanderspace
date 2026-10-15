@@ -172,6 +172,7 @@ fn main() {
         }
     });
 
+    let launcher = host_launcher(&app);
     let handle = app.handle().clone();
     let version = app.package_info().version.to_string();
     let webview = tauri::webview_version().unwrap_or_else(|_| "unknown".into());
@@ -182,7 +183,7 @@ fn main() {
             tx: shell_tx,
             sup: Supervisor::new(),
             log: ShellLog::new(),
-            launcher: HostLauncher::development(),
+            launcher,
             cwd,
             host: None,
             window: None,
@@ -207,6 +208,24 @@ fn main() {
             let _ = tx.send(Ev::CloseRequested);
         }
     });
+}
+
+/// Which host to run: the bundle's own (a packaged build, `--features packaged`) or the repository's build.
+#[cfg(feature = "packaged")]
+fn host_launcher(app: &tauri::App) -> HostLauncher {
+    use tauri::Manager;
+    // No resource directory to be had: a path that does not exist, so the host fails to start and the crash dialog
+    // says so, instead of quietly running something else.
+    let resources = app
+        .path()
+        .resource_dir()
+        .unwrap_or_else(|_| PathBuf::from("/nonexistent/argelanderspace-resources"));
+    HostLauncher::packaged(&resources)
+}
+
+#[cfg(not(feature = "packaged"))]
+fn host_launcher(_app: &tauri::App) -> HostLauncher {
+    HostLauncher::development()
 }
 
 impl Shell {

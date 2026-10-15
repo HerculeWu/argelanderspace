@@ -10,6 +10,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PROD_LICENSE_ALLOWED, WITH_LICENSE_ALLOWED } from "./license-allowlist.mjs";
 
 const args = process.argv.slice(2);
 const rootArg = args.indexOf("--root");
@@ -17,22 +18,9 @@ const root =
   rootArg >= 0 ? resolve(args[rootArg + 1]) : fileURLToPath(new URL("..", import.meta.url));
 const listAll = args.includes("--list");
 
-// Production allowlist: the licenses that actually occur in the shipped closure and are acceptable.
-const PROD_ALLOWED = new Set([
-  "MIT",
-  "MIT-0",
-  "ISC",
-  "BSD-2-Clause",
-  "BSD-3-Clause",
-  "Apache-2.0",
-  "0BSD",
-  "Unlicense",
-  "CC0-1.0",
-  "BlueOak-1.0.0",
-  "OFL-1.1", // fonts (embedpdf)
-]);
-// `X WITH exception` is unknown unless the whole phrase is listed here.
-const WITH_ALLOWED = new Set([]);
+// Production allowlist and allowed `WITH` phrases: shared with the desktop package's license check.
+const PROD_ALLOWED = PROD_LICENSE_ALLOWED;
+const WITH_ALLOWED = WITH_LICENSE_ALLOWED;
 // Dev closure: denylist. Anything outside PROD_ALLOWED that is not forbidden is listed for a human.
 const FORBIDDEN =
   /(^|[^A-Z])(A?GPL|LGPL|EUPL|SSPL|BUSL|CC-BY-NC|Elastic|Commons-Clause|PolyForm|UNLICENSED|SEE LICENSE|Proprietary|Commercial)/i;
