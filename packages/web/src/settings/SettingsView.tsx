@@ -31,6 +31,7 @@ import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
 import { fetchDiagnostics } from "../api/diagnostics";
 import { useHostInfo, useHostRequest } from "../host";
+import { DEFAULT_LANGUAGE } from "../i18n";
 import { fetchRecentProjects, removeRecentProject } from "../api/host";
 import { RecentProjectList } from "../welcome/RecentProjectList";
 import { openFromList, useProjectSwitch } from "../welcome/ProjectSwitch";
@@ -436,7 +437,7 @@ function Appearance({ state }: { state: RowState }) {
   return (
     <>
       <Row state={state} k="ui.language" label={t("settings.appearance.language")} control={(disabled) => (
-        <Segments ui="language-option" label={t("settings.appearance.language")} disabled={disabled} value={tweaks.language ?? "zh-CN"} onChange={(v) => setTweak("language", v)}
+        <Segments ui="language-option" label={t("settings.appearance.language")} disabled={disabled} value={tweaks.language ?? DEFAULT_LANGUAGE} onChange={(v) => setTweak("language", v)}
           items={SETTINGS_UI_LANGUAGES.map((v) => ({ v, text: v === "zh-CN" ? t("shell.tweaks.language.zhCN") : t("shell.tweaks.language.en") }))} />
       )} />
       <Row state={state} k="ui.theme" label={t("settings.appearance.theme")} control={(disabled) => (
