@@ -2407,7 +2407,10 @@
       "currentBrowser": "由启动 serve 时所在的目录决定",
       "dataDir": "项目数据目录",
       "autoIngest": "添加文献时自动获取 arXiv PDF",
-      "absolute": "只接受相对路径"
+      "absolute": "只接受相对路径",
+      "openOther": "打开其他文件夹…",
+      "recent": "最近项目",
+      "recentEmpty": "没有其他最近项目"
     },
     "services": {
       "contactEmail": "联系邮箱",
@@ -2611,5 +2614,32 @@
     "openFailed": "没有打开这个项目。",
     "removeFailed": "没有从最近项目中移除。",
     "nowMissing": "这个文件夹已不存在。"
+  },
+  "projectSwitch": {
+    "title": "切换到「{{name}}」？",
+    "target": "将关闭当前项目并打开 {{path}}。",
+    "tasks_one": "有 {{count}} 个任务正在运行，切换会中断它们：",
+    "tasks_other": "有 {{count}} 个任务正在运行，切换会中断它们：",
+    "tasksQueued_one": "有 {{count}} 个任务正在运行或排队，切换会中断它们：",
+    "tasksQueued_other": "有 {{count}} 个任务正在运行或排队，切换会中断它们：",
+    "mail_one": "有 {{count}} 封邮件还在撤销窗口内，切换后它们留在草稿箱，不会发出：",
+    "mail_other": "有 {{count}} 封邮件还在撤销窗口内，切换后它们留在草稿箱，不会发出：",
+    "mailLeft": "「{{subject}}」· 还剩 {{seconds}} 秒",
+    "mailEnding": "「{{subject}}」· 撤销窗口已结束",
+    "noSubject": "（无主题）",
+    "jobIngest": "摄入 arXiv 源码",
+    "jobArxivPdf": "获取 arXiv PDF",
+    "jobPdf": "处理上传的 PDF",
+    "jobUpload": "处理上传的 LaTeX 源码",
+    "jobRefresh": "刷新文献库",
+    "jobQueued": "排队中",
+    "conversation": "Copilot 对话 · {{title}}",
+    "untitled": "未命名对话",
+    "changed": "切换前的情况有变化，下面是现在会被中断的内容。",
+    "failed": "没有切换。",
+    "cancel": "取消",
+    "confirm": "仍然切换",
+    "close": "关闭",
+    "gone": "这次切换已不在等待确认，没有切换。"
   }
 }

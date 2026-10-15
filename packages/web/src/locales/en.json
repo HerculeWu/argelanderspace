@@ -2407,7 +2407,10 @@
       "currentBrowser": "Decided by the directory serve was started in",
       "dataDir": "Project data directory",
       "autoIngest": "Fetch the arXiv PDF when adding literature",
-      "absolute": "only relative paths are accepted"
+      "absolute": "only relative paths are accepted",
+      "openOther": "Open another folder…",
+      "recent": "Recent projects",
+      "recentEmpty": "No other recent project"
     },
     "services": {
       "contactEmail": "Contact email",
@@ -2611,5 +2614,32 @@
     "openFailed": "The project was not opened.",
     "removeFailed": "It was not removed from the recent projects.",
     "nowMissing": "This folder no longer exists."
+  },
+  "projectSwitch": {
+    "title": "Switch to “{{name}}”?",
+    "target": "The current project will close and {{path}} will open.",
+    "tasks_one": "{{count}} task is running; switching interrupts it:",
+    "tasks_other": "{{count}} tasks are running; switching interrupts them:",
+    "tasksQueued_one": "{{count}} task is running or queued; switching interrupts it:",
+    "tasksQueued_other": "{{count}} tasks are running or queued; switching interrupts them:",
+    "mail_one": "{{count}} email is still in its undo window. After switching it stays in Drafts and is not sent:",
+    "mail_other": "{{count}} emails are still in their undo window. After switching they stay in Drafts and are not sent:",
+    "mailLeft": "“{{subject}}” · {{seconds}} s left",
+    "mailEnding": "“{{subject}}” · undo window over",
+    "noSubject": "(no subject)",
+    "jobIngest": "arXiv source ingest",
+    "jobArxivPdf": "arXiv PDF fetch",
+    "jobPdf": "Uploaded PDF processing",
+    "jobUpload": "Uploaded LaTeX source processing",
+    "jobRefresh": "Library refresh",
+    "jobQueued": "queued",
+    "conversation": "Copilot conversation · {{title}}",
+    "untitled": "Untitled conversation",
+    "changed": "Things changed before the switch; this is what it would interrupt now.",
+    "failed": "The project was not switched.",
+    "cancel": "Cancel",
+    "confirm": "Switch anyway",
+    "close": "Close",
+    "gone": "This switch is no longer waiting for confirmation; nothing was switched."
   }
 }

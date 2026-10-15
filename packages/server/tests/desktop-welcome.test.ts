@@ -35,7 +35,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { WebSocket } from "ws";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { type DesktopHost, type HostOutLine, runDesktopHost } from "../src/desktop-host.js";
-import { RECENT_REQUEST_MAX_BYTES } from "../src/host-routes.js";
+import { RECENT_REQUEST_MAX_BYTES, SWITCH_REQUEST_MAX_BYTES } from "../src/host-routes.js";
 import { createServer } from "../src/server.js";
 
 beforeAll(() => __setWriterSandboxForTests(false));
@@ -382,8 +382,10 @@ describe("with no project open", () => {
     const a = folder("a");
     recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
     const h = await startHost({ fromRecent: false });
-    const big = JSON.stringify({ path: a, pad: "x".repeat(RECENT_REQUEST_MAX_BYTES) });
-    for (const route of ["open", "remove"]) {
+    // `open` also carries what the user acknowledged (desktop-app ticket 19): its limit is the larger one.
+    const limits = { open: SWITCH_REQUEST_MAX_BYTES, remove: RECENT_REQUEST_MAX_BYTES };
+    for (const [route, limit] of Object.entries(limits)) {
+      const big = JSON.stringify({ path: a, pad: "x".repeat(limit) });
       const r = await h.post(`/api/host/recent-projects/${route}`, big);
       expect([route, r.status, r.body]).toEqual([
         route,
@@ -500,22 +502,8 @@ describe("with no project open", () => {
   });
 });
 
+// Switching with a project open (desktop-app ticket 19) is `desktop-switch.test.ts`.
 describe("with a project open", () => {
-  test("opening a recent project is refused (switching is ticket 19); a picked folder does not stop the host", async () => {
-    const a = folder("a");
-    recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
-    const h = await startHost({ fromRecent: false });
-    expect((await h.post("/api/host/recent-projects/open", { path: a })).body).toEqual({
-      code: "project_open",
-      detail: "a project is open",
-    });
-    await h.post("/api/host/requests/pick_folder");
-    const request = (await h.next("request")) as { id: string };
-    h.input.write(`${JSON.stringify({ type: "folder_picked", id: request.id, path: a })}\n`);
-    await new Promise((r) => setTimeout(r, 100));
-    expect(h.lines.map((l) => l.type)).toEqual(["ready", "request"]);
-  });
-
   test("an empty folder opened as a project: the pages' first requests answer, empty", async () => {
     const empty = folder("empty");
     process.chdir(empty);

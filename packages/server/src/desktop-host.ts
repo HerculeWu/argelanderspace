@@ -32,6 +32,13 @@
  * data). In the welcome state a picked folder (`folder_picked`) or a recent project the page opens is left for at
  * once: recorded, then the host stops with reason `switch` and the folder as `next`.
  *
+ * With a project open (desktop-app ticket 19) the same, unless the switch would interrupt work in progress — the
+ * server's queued or running jobs, a live Copilot run, mail in its undo window (`HostWorkbench.impact`, asked at the
+ * moment of each request, never remembered from an earlier one). Then a recent project is refused with the impact
+ * (409 `confirmation_required`) until the page sends back the ids the user confirmed, covering all that the switch
+ * would interrupt now; a picked folder is held and announced to the pages (`host.switch-confirmation`), and left for
+ * only on a confirmation that covers the impact as it is then. The current project itself is not switched to.
+ *
  * Port: the configured one (config.toml `port`, default 1859), which the CLI's links point to. When it is taken the
  * host listens on a free port instead and says so in the ready line and to the page (`GET /api/host`), after asking the
  * port whether it is another ArgelanderSpace server or some other program.
@@ -52,13 +59,18 @@ import { basename, isAbsolute, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import {
   DEFAULT_PORT,
+  EMPTY_SWITCH_IMPACT,
   HOST_REQUEST_KINDS,
   type HostPortFallback,
   type HostPortOccupant,
   type HostProjectState,
   type HostRecentProjects,
   type HostRequestKind,
+  type HostSwitchAcknowledged,
+  type HostSwitchImpact,
+  type HostSwitchTarget,
   isHostInfo,
+  switchAcknowledged,
 } from "@argelanderspace/contracts";
 import {
   configFilePath,
@@ -71,7 +83,13 @@ import {
   recordRecentProject,
   removeRecentProject,
 } from "@argelanderspace/infra";
-import type { HostBridge, RecentOpenOutcome } from "./host-routes.js";
+import type {
+  HostBridge,
+  HostWorkbench,
+  RecentOpenOutcome,
+  SwitchConfirmation,
+  SwitchConfirmOutcome,
+} from "./host-routes.js";
 import type { ServerLog } from "./log.js";
 import type { NoProjectServer } from "./no-project.js";
 import {
@@ -308,7 +326,7 @@ function canonical(path: string): string {
 const WELCOME_REASONS = ["no_recent", "last_missing"] as const;
 const LEAVE_SOURCES = ["picked", "recent"] as const;
 /** Why a picked path is not left for (the path itself is never written). */
-const PICK_REJECT_REASONS = ["not_a_folder"] as const;
+const PICK_REJECT_REASONS = ["not_a_folder", "current_project", "shutting_down"] as const;
 
 /** The fields of a shell event, each through the constructor its catalog entry names; others are counted as dropped. */
 function shellFields(spec: ShellEventSpec, raw: unknown): Record<string, LogField | unknown> {
@@ -390,6 +408,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
         name: basename(entry.path) || entry.path,
         openedAt: entry.openedAt,
         missing: !isFolder(entry.path),
+        current: isCurrent(entry.path),
       })),
       lastMissing:
         lastMissing !== null && projects.some((entry) => entry.path === lastMissing)
@@ -398,14 +417,111 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     };
   }
 
-  /** The page opens a project of the list: only in the welcome state, only a path of the list, only a folder. */
-  function openRecent(path: string): RecentOpenOutcome {
+  // What a switch would interrupt: handed over by the server of an open project (none in the welcome state).
+  let workbench: HostWorkbench | null = null;
+  const impactNow = (): HostSwitchImpact => workbench?.impact() ?? EMPTY_SWITCH_IMPACT;
+  /** The folder the shell picked while a switch would interrupt work, waiting for the user's confirmation. */
+  let held: { id: string; path: string } | null = null;
+
+  /** Where a switch goes, as the page shows it. */
+  function targetOf(path: string): HostSwitchTarget {
+    const real = canonical(path);
+    return { ...shownPath(real), name: basename(real) || real };
+  }
+  /** Whether the folder is the project open now (the host's working directory is its real path). */
+  const isCurrent = (path: string): boolean =>
+    project === "open" && canonical(path) === process.cwd();
+
+  /**
+   * Whether the switch may go ahead now: nothing would be interrupted, or the user confirmed all of it. Otherwise the
+   * confirmation the page must ask for, with the impact as it is now.
+   */
+  function mayLeave(
+    path: string,
+    acknowledged: HostSwitchAcknowledged | null,
+    source: (typeof LEAVE_SOURCES)[number]
+  ): SwitchConfirmation | null {
+    if (project !== "open") return null;
+    const impact = impactNow();
+    if (switchAcknowledged(impact, acknowledged)) return null;
+    own?.log.info("desktop.switch_asked", {
+      source: f.oneOf(LEAVE_SOURCES, source),
+      jobs: f.num(impact.jobs.length),
+      conversations: f.num(impact.conversations.length),
+      mail: f.num(impact.mail.length),
+    });
+    return { confirm: { target: targetOf(path), impact } };
+  }
+
+  /**
+   * The page opens a project of the list: only a path of the list, only a folder, not the open project; with a project
+   * open, only once the user confirmed what the switch would interrupt.
+   */
+  function openRecent(
+    path: string,
+    acknowledged: HostSwitchAcknowledged | null
+  ): RecentOpenOutcome {
     if (stopping !== null) return "shutting_down";
-    if (project === "open") return "project_open";
     const { projects } = readRecentProjects(recentFile);
     if (!projects.some((entry) => entry.path === path)) return "unknown_project";
     if (!isFolder(path)) return "folder_missing";
+    if (isCurrent(path)) return "current_project";
+    const ask = mayLeave(path, acknowledged, "recent");
+    if (ask !== null) return ask;
+    held = null;
     return leave(path, "recent") ? "leaving" : "shutting_down";
+  }
+
+  /** The user confirmed the switch to the held folder. */
+  function confirmHeld(id: string, acknowledged: HostSwitchAcknowledged): SwitchConfirmOutcome {
+    if (stopping !== null) return "shutting_down";
+    if (held === null || held.id !== id) return "unknown_switch";
+    if (!isFolder(held.path)) {
+      held = null;
+      return "folder_missing";
+    }
+    const ask = mayLeave(held.path, acknowledged, "picked");
+    if (ask !== null) return ask;
+    const { path } = held;
+    held = null;
+    return leave(path, "picked") ? "leaving" : "shutting_down";
+  }
+
+  /** A folder the shell picked with a project open: left for, held for the user's confirmation, or refused. */
+  function pickedWithProject(path: string): void {
+    // The host is stopping (the answer came in during the close): nothing is held or announced, and it is not left for.
+    if (stopping !== null) {
+      own?.log.info("desktop.pick_rejected", {
+        reason: f.oneOf(PICK_REJECT_REASONS, "shutting_down"),
+      });
+      return;
+    }
+    if (!isFolder(path)) {
+      own?.log.warn("desktop.pick_rejected", {
+        reason: f.oneOf(PICK_REJECT_REASONS, "not_a_folder"),
+      });
+      return;
+    }
+    if (isCurrent(path)) {
+      own?.log.info("desktop.pick_rejected", {
+        reason: f.oneOf(PICK_REJECT_REASONS, "current_project"),
+      });
+      return;
+    }
+    const ask = mayLeave(path, null, "picked");
+    if (ask === null) {
+      held = null;
+      leave(path, "picked");
+      return;
+    }
+    // A newer pick replaces an older one still waiting: confirming the older id then finds nothing.
+    held = { id: randomUUID(), path };
+    workbench?.broadcast({
+      type: "host.switch-confirmation",
+      id: held.id,
+      target: ask.confirm.target,
+      impact: ask.confirm.impact,
+    });
   }
 
   // Bound once the server listens; a request before that (there can be none: nothing listens) is refused.
@@ -418,7 +534,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     project,
     recent: {
       list: () => recentList(),
-      open: (path) => openRecent(path),
+      open: (path, acknowledged) => openRecent(path, acknowledged),
       remove: (path) => {
         try {
           removeRecentProject(recentFile, path);
@@ -428,6 +544,17 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
         }
         return recentList();
       },
+    },
+    switching: {
+      confirm: (id, acknowledged) => confirmHeld(id, acknowledged),
+      cancel: (id) => {
+        if (held?.id !== id) return;
+        held = null;
+        own?.log.info("desktop.switch_cancelled", {});
+      },
+    },
+    useWorkbench(given) {
+      workbench = given;
     },
     request(kind) {
       if (stopping !== null || own === null) return false;
@@ -581,14 +708,15 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
           outcome: f.oneOf(["picked", "cancelled"], path === null ? "cancelled" : "picked"),
         });
         options.onFolderPicked?.(path);
-        // The welcome state leaves for the folder; with a project open, switching is ticket 19.
-        if (path !== null && project === "none") {
-          if (isFolder(path)) leave(path, "picked");
-          else
-            log.warn("desktop.pick_rejected", {
-              reason: f.oneOf(PICK_REJECT_REASONS, "not_a_folder"),
-            });
-        }
+        if (path === null) return;
+        // The welcome state leaves for the folder; with a project open, only once nothing would be interrupted or the
+        // user confirmed it (desktop-app ticket 19).
+        if (project === "open") pickedWithProject(path);
+        else if (isFolder(path)) leave(path, "picked");
+        else
+          log.warn("desktop.pick_rejected", {
+            reason: f.oneOf(PICK_REJECT_REASONS, "not_a_folder"),
+          });
         return;
       }
       case "shell_event": {

@@ -137,3 +137,14 @@
 .st-export-files li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
 .st-export-files .st-path { flex: 1 1 auto; }
 .st-export-size { flex: none; font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* The confirmation before switching projects (desktop-app ticket 19): the approved prototype's `.dlg-stack` / `.dlg-list`. */
+.st-switch-stack { display: flex; flex-direction: column; gap: 12px; }
+.st-switch-stack p { margin: 0; line-height: 1.7; }
+.st-switch-list { margin: 6px 0 0; padding-left: 20px; line-height: 1.8; color: var(--text-dim); overflow-wrap: anywhere; }
+/* The open project's path and "Open another folder…" (desktop-app ticket 19) share one line as in the prototype, a short
+   path too: the auto column of a wrapping row is only as wide as its widest item, so the button would drop below. */
+.st-control-project { flex-wrap: nowrap; }
+@container st (max-width: 640px) {
+  .st-control-project { flex-wrap: wrap; }
+}

@@ -24,6 +24,7 @@
 
 import { randomBytes } from "node:crypto";
 import {
+  type HostSwitchMail,
   MAIL_UNDO_WINDOW_MS,
   type MailAccount,
   type MailComposeFailureCode,
@@ -47,6 +48,14 @@ export function disposeMailSendServices(): void {
   for (const s of shutdownRegistry) s.dispose();
 }
 const KEEP_PROBLEMS_MS = 30 * 24 * 3600 * 1000;
+
+/**
+ * The sends that `disposeMailSendServices()` would interrupt now: those still in their undo window, of the services
+ * registered for shutdown (the server's own). A send already handed to SMTP is not among them.
+ */
+export function mailSendsInWindow(): HostSwitchMail[] {
+  return [...shutdownRegistry].flatMap((s) => s.inWindow());
+}
 
 interface LiveSend {
   marker: MailOutboxMarker;
@@ -449,6 +458,24 @@ export class MailSendService {
         throw new MailComposeError("owned_elsewhere");
     }
     this.deps.outbox.remove(accountId, sendId);
+  }
+
+  /**
+   * This process's sends still in their undo window (in memory, never another process's marker), as the switch prompt
+   * shows them (desktop-app ticket 19): the send, its subject and when the window ends — not the account.
+   */
+  inWindow(): HostSwitchMail[] {
+    if (this.disposed) return [];
+    const out: HostSwitchMail[] = [];
+    for (const rec of this.live.values()) {
+      if (rec.marker.state !== "pending" || rec.timer === null) continue;
+      out.push({
+        sendId: rec.marker.sendId,
+        subject: rec.marker.subject,
+        endsAt: rec.marker.deadlineAt,
+      });
+    }
+    return out;
   }
 
   /** Test hook: resolves when the send has reached a final state in this process. */

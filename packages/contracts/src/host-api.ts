@@ -11,25 +11,48 @@
  *
  * Recently opened projects (desktop-app ticket 18), desktop form only (404 `not_desktop` in the browser):
  * - `GET  /api/host/recent-projects`         → {@link HostRecentProjects}.
- * - `POST /api/host/recent-projects/open`    `{path}` → 202 `{ ok: true }`: the host leaves for that project (it stops
- *                                       and tells its shell the next project). Only a path of the list is taken:
- *                                       404 `unknown_project` otherwise, 409 `folder_missing` when the folder is gone,
- *                                       409 `project_open` while a project is open (switching is ticket 19), 409
- *                                       `shutting_down` while the host stops.
+ * - `POST /api/host/recent-projects/open`    `{path, acknowledged?}` → 202 `{ ok: true }`: the host leaves for that
+ *                                       project (it stops and tells its shell the next project). Only a path of the
+ *                                       list is taken: 404 `unknown_project` otherwise, 409 `folder_missing` when the
+ *                                       folder is gone, 409 `current_project` for the project that is open, 409
+ *                                       `shutting_down` while the host stops. With a project open (desktop-app ticket
+ *                                       19) the switch would interrupt what {@link HostSwitchImpact} lists: unless
+ *                                       `acknowledged` names every one of those, 409 {@link SWITCH_CONFIRMATION_CODE}
+ *                                       with the `impact` as it is now, and nothing changes.
  * - `POST /api/host/recent-projects/remove`  `{path}` → 200 {@link HostRecentProjects}, the list without it (a path
  *                                       not in the list changes nothing); 500 `write_failed` when the list file
  *                                       cannot be written (the old list stays).
- *   For both: only the body's `path` is read, and it is only compared with the list's paths, character for
- *   character. 400 `invalid_request` when the body is not a `{path}` with a non-empty string, 413 `too_large` when it
- *   is over 16 KiB (server `RECENT_REQUEST_MAX_BYTES`; reading stops at the limit).
+ *   `remove` reads only the body's `path`; `open` reads `path` and `acknowledged` ({@link HostSwitchAcknowledgedSchema}).
+ *   The path is only compared with the list's paths, character for character. 400 `invalid_request` when the body is
+ *   not a `{path}` with a non-empty string, or (`open`) when `acknowledged` is there but not lists of ids within
+ *   {@link SWITCH_ACK_MAX_IDS} / {@link SWITCH_ACK_MAX_ID_LENGTH}. 413 `too_large` when the body is over the limit
+ *   (server `RECENT_REQUEST_MAX_BYTES`, 16 KiB, for `remove`; `SWITCH_REQUEST_MAX_BYTES` for `open`, room for a path
+ *   and the most ids `acknowledged` may hold; reading stops at the limit).
  *
- * Both are `no-store` and behind the same cross-origin guard as every other endpoint. `serve` (the browser form) has
+ * Switching to a folder the shell picked while a project is open (desktop-app ticket 19): when nothing would be
+ * interrupted the host leaves at once; otherwise it holds the folder and tells every page (WebSocket
+ * {@link WsHostSwitchConfirmation}: an `id`, the folder, the impact) and waits for the user:
+ * - `POST /api/host/switch/confirm`  `{id, acknowledged}` → 202 `{ ok: true }`, the host leaves; 404 `unknown_switch`
+ *                                       when the id is not the one held (cancelled, replaced, or never), 409
+ *                                       `folder_missing` when the folder has gone meanwhile (the hold ends), 409
+ *                                       {@link SWITCH_CONFIRMATION_CODE} with the impact now when something new would be
+ *                                       interrupted (the hold stays), 409 `shutting_down`. 400 `invalid_request` without
+ *                                       an `id` or an `acknowledged`, or with one that is not lists of ids as above;
+ *                                       413 `too_large` over `SWITCH_REQUEST_MAX_BYTES`.
+ * - `POST /api/host/switch/cancel`   `{id}` → 200 `{ ok: true }`: the hold of that id ends (another id: nothing);
+ *                                       nothing else changes. Also 200 while the host stops. 400 `invalid_request`
+ *                                       without an `id`, 413 `too_large` over 16 KiB.
+ *
+ * All are `no-store` and behind the same cross-origin guard as every other endpoint. `serve` (the browser form) has
  * no host: its answer is `mode: "browser"` with no requests, and the page hides the desktop-only controls.
  *
  * With no project open (the desktop host's welcome state, `project: "none"`) the server answers only the page, the
  * host interface, the settings interface and the page's own error reports (`POST /api/page-errors`, written to the
  * user log only); every other endpoint answers 409 {@link NO_PROJECT_CODE}.
  */
+
+import { z } from "zod";
+import { JobKindSchema } from "./job-status.js";
 
 /** The name every answer carries, so a program on the port can be told from the workbench. */
 export const HOST_APP = "argelanderspace";
@@ -74,6 +97,9 @@ export type HostProjectState = (typeof HOST_PROJECT_STATES)[number];
 /** The `code` of every business endpoint's answer (409) while no project is open. */
 export const NO_PROJECT_CODE = "no_project";
 
+/** The `code` of a switch the user has not yet confirmed: the 409's body carries the {@link HostSwitchImpact}. */
+export const SWITCH_CONFIRMATION_CODE = "confirmation_required";
+
 export interface HostInfo {
   version: 1;
   app: typeof HOST_APP;
@@ -100,6 +126,8 @@ export interface HostRecentProject extends HostShownPath {
   openedAt: string;
   /** The folder is not there (or is not a folder) now: it cannot be opened, only removed from the list. */
   missing: boolean;
+  /** The project that is open now (desktop-app ticket 19); never in the welcome state. */
+  current: boolean;
 }
 
 /** `GET /api/host/recent-projects`. */
@@ -166,8 +194,138 @@ export function isHostRecentProjects(value: unknown): value is HostRecentProject
         isShownPath(p) &&
         typeof p.name === "string" &&
         typeof p.openedAt === "string" &&
-        typeof p.missing === "boolean"
+        typeof p.missing === "boolean" &&
+        typeof p.current === "boolean"
     ) &&
     (v.lastMissing === null || isShownPath(v.lastMissing))
   );
+}
+
+// ---- switching projects (desktop-app ticket 19) ---------------------------------------------------------------- //
+// One source for each shape: the zod schemas below; the types are inferred from them and the guards are their
+// `safeParse` (the server's 409, the page's reading of it, and the WebSocket message share them).
+
+/** A job of the runner that is running or waiting to run: switching ends it (the next start of this project marks it interrupted). */
+export const HostSwitchJobSchema = z.object({
+  id: z.string(),
+  kind: JobKindSchema,
+  status: z.enum(["queued", "running"]),
+  /** The Work it is for, when the job says. */
+  workId: z.string().nullable(),
+  /** What an `upload` job takes in: an uploaded PDF, an arXiv PDF; null for a LaTeX archive and the other kinds. */
+  format: z.enum(["pdf", "arxiv-pdf"]).nullable(),
+  /** The arXiv id, for the jobs that fetch from arXiv. */
+  arxivId: z.string().nullable(),
+});
+export type HostSwitchJob = z.infer<typeof HostSwitchJobSchema>;
+
+/** A Copilot conversation whose run is working or waiting for the user: switching stops it (it can be resumed). */
+export const HostSwitchConversationSchema = z.object({ id: z.string(), title: z.string() });
+export type HostSwitchConversation = z.infer<typeof HostSwitchConversationSchema>;
+
+/**
+ * A mail send of this process still in its undo window: switching interrupts it — it stays in Drafts, unsent. Only
+ * what the prompt shows: no account, no address.
+ */
+export const HostSwitchMailSchema = z.object({
+  sendId: z.string(),
+  subject: z.string(),
+  /** When the window ends (milliseconds since the epoch). */
+  endsAt: z.number(),
+});
+export type HostSwitchMail = z.infer<typeof HostSwitchMailSchema>;
+
+/** What switching away from the open project now would interrupt, as the server knows it. */
+export const HostSwitchImpactSchema = z.object({
+  jobs: z.array(HostSwitchJobSchema),
+  conversations: z.array(HostSwitchConversationSchema),
+  mail: z.array(HostSwitchMailSchema),
+});
+export type HostSwitchImpact = z.infer<typeof HostSwitchImpactSchema>;
+
+/** Where a switch goes, as the page shows it: the path, as shown, and the folder's own name. */
+export const HostSwitchTargetSchema = z.object({
+  path: z.string(),
+  display: z.string(),
+  name: z.string(),
+});
+export type HostSwitchTarget = z.infer<typeof HostSwitchTargetSchema>;
+
+/**
+ * At most this many ids in each list of `acknowledged`, each at most this long. Every id the server hands out fits:
+ * a job's is `<kind>-<uuid>`, a conversation's a uuid, a send's a uuid.
+ */
+export const SWITCH_ACK_MAX_IDS = 1000;
+export const SWITCH_ACK_MAX_ID_LENGTH = 64;
+
+const ackIds = z.array(z.string().max(SWITCH_ACK_MAX_ID_LENGTH)).max(SWITCH_ACK_MAX_IDS);
+
+/** What the user saw and confirmed: the ids of the impact's items (a list left out is empty). */
+export const HostSwitchAcknowledgedSchema = z.object({
+  jobs: ackIds.default([]),
+  conversations: ackIds.default([]),
+  mail: ackIds.default([]),
+});
+export type HostSwitchAcknowledged = z.infer<typeof HostSwitchAcknowledgedSchema>;
+
+export const EMPTY_SWITCH_IMPACT: HostSwitchImpact = Object.freeze({
+  jobs: [],
+  conversations: [],
+  mail: [],
+}) as HostSwitchImpact;
+
+export function isSwitchImpactEmpty(impact: HostSwitchImpact): boolean {
+  return impact.jobs.length === 0 && impact.conversations.length === 0 && impact.mail.length === 0;
+}
+
+/** The ids of an impact, to send back as what the user confirmed. */
+export function acknowledgedOf(impact: HostSwitchImpact): HostSwitchAcknowledged {
+  return {
+    jobs: impact.jobs.map((j) => j.id),
+    conversations: impact.conversations.map((c) => c.id),
+    mail: impact.mail.map((m) => m.sendId),
+  };
+}
+
+/**
+ * Whether the user confirmed everything the switch would interrupt now: every item of `impact` is among the ones
+ * `acknowledged` names. Items that ended since (a job done, a mail sent) do not matter; a new one does.
+ */
+export function switchAcknowledged(
+  impact: HostSwitchImpact,
+  acknowledged: HostSwitchAcknowledged | null
+): boolean {
+  if (isSwitchImpactEmpty(impact)) return true;
+  if (acknowledged === null) return false;
+  const has = (list: string[], id: string) => list.includes(id);
+  return (
+    impact.jobs.every((j) => has(acknowledged.jobs, j.id)) &&
+    impact.conversations.every((c) => has(acknowledged.conversations, c.id)) &&
+    impact.mail.every((m) => has(acknowledged.mail, m.sendId))
+  );
+}
+
+export function isHostSwitchImpact(value: unknown): value is HostSwitchImpact {
+  return HostSwitchImpactSchema.safeParse(value).success;
+}
+
+export function isHostSwitchTarget(value: unknown): value is HostSwitchTarget {
+  return HostSwitchTargetSchema.safeParse(value).success;
+}
+
+/**
+ * Sent to every page when the host holds a folder the shell picked, because switching to it would interrupt what
+ * `impact` lists: the page asks the user, then confirms (`POST /api/host/switch/confirm`) or cancels.
+ */
+export const WsHostSwitchConfirmationSchema = z.object({
+  type: z.literal("host.switch-confirmation"),
+  id: z.string(),
+  target: HostSwitchTargetSchema,
+  impact: HostSwitchImpactSchema,
+});
+export type WsHostSwitchConfirmation = z.infer<typeof WsHostSwitchConfirmationSchema>;
+
+/** The page's check of a `host.switch-confirmation` message before it shows anything of it. */
+export function isWsHostSwitchConfirmation(value: unknown): value is WsHostSwitchConfirmation {
+  return WsHostSwitchConfirmationSchema.safeParse(value).success;
 }

@@ -3,7 +3,9 @@
  * `argelanderspace desktop-host` without `--project`, started as a child process the way the shell will — a
  * throwaway home, global directories and config file, a working directory that is not a project. The shell's part is
  * played here: it writes the folder picked, reads the next project from the `stopped` line and starts the next host.
- * The protocol's details are covered in this process by `packages/server/tests/desktop-welcome.test.ts`.
+ * The protocol's details are covered in this process by `packages/server/tests/desktop-welcome.test.ts`. The last
+ * test is switching with a project open (desktop-app ticket 19; in this process: `desktop-switch.test.ts` of the
+ * server, which also holds the prompts for running jobs and mail in its undo window).
  *
  * Runs the built `dist/bin.js`: build first (the four gates do).
  */
@@ -201,4 +203,70 @@ test("an unreadable list: the welcome state, and the file is written anew when a
   opened.child.stdin?.write('{"type":"quit"}\n');
   expect(await opened.exited).toBe(0);
   expect(recentPaths(w)).toEqual([project]);
+}, 60_000);
+
+test("with a project open: a recent folder that is gone is said so and the host stays; a picked folder and a recent project are left for", async () => {
+  const w = world();
+  const a = join(w.root, "Project A");
+  const c = join(w.root, "Project C");
+  const gone = join(w.root, "Project Gone");
+  mkdirSync(a);
+  mkdirSync(c);
+  mkdirSync(join(w.recentFile, ".."), { recursive: true });
+  writeFileSync(
+    w.recentFile,
+    JSON.stringify({ version: 1, projects: [{ path: gone, openedAt: "2026-01-01T00:00:00.000Z" }] })
+  );
+  const first = startHost(w, a);
+  const ready = await first.next("ready");
+  expect(ready.project).toBe(a);
+  const url = String(ready.url);
+  const post = (path: string, body: unknown) =>
+    fetch(`${url}${path}`, {
+      method: "POST",
+      headers: { Origin: url.replace(/\/$/, ""), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+  // The recent folder is gone: said so, and the host goes on serving the open project.
+  const missing = await post("api/host/recent-projects/open", { path: gone });
+  expect([missing.status, ((await missing.json()) as { code: string }).code]).toEqual([
+    409,
+    "folder_missing",
+  ]);
+  expect((await fetch(`${url}api/library`)).status).toBe(200);
+  expect(first.lines.map((l) => l.type)).toEqual(["ready"]);
+
+  // Nothing is running: the folder the shell picked is left for at once.
+  expect((await fetch(`${url}api/host/requests/pick_folder`, { method: "POST" })).status).toBe(202);
+  const request = await first.next("request");
+  first.child.stdin?.write(
+    `${JSON.stringify({ type: "folder_picked", id: request.id, path: c })}\n`
+  );
+  expect(await first.next("stopping")).toEqual({ type: "stopping", reason: "switch" });
+  expect(await first.next("stopped")).toEqual({ type: "stopped", next: c });
+  expect(await first.exited).toBe(0);
+  expect(recentPaths(w)).toEqual([c, a, gone]);
+
+  // The next host, for C: back to A from the recent list.
+  const second = startHost(w, c);
+  const entered = await second.next("ready");
+  expect(entered.project).toBe(c);
+  const list = (await (await fetch(`${entered.url}api/host/recent-projects`)).json()) as {
+    projects: { path: string; current: boolean }[];
+  };
+  expect(list.projects.map((p) => [p.path, p.current])).toEqual([
+    [c, true],
+    [a, false],
+    [gone, false],
+  ]);
+  const back = await fetch(`${entered.url}api/host/recent-projects/open`, {
+    method: "POST",
+    headers: { Origin: String(entered.url).replace(/\/$/, ""), "Content-Type": "application/json" },
+    body: JSON.stringify({ path: a }),
+  });
+  expect(back.status).toBe(202);
+  expect(await second.next("stopped")).toEqual({ type: "stopped", next: a });
+  expect(await second.exited).toBe(0);
+  expect(recentPaths(w)).toEqual([a, c, gone]);
 }, 60_000);
