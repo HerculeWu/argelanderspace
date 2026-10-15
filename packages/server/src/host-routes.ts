@@ -4,10 +4,11 @@
  *
  * Nothing of the page's reaches the shell. `requests/:kind` never reads the body, and the kind is one of a fixed list:
  * the line the desktop host writes to its shell is built only from what the host itself knows (desktop-host.ts).
- * `recent-projects/open` and `…/remove` read only the body's `path` (at most {@link RECENT_REQUEST_MAX_BYTES}), and
- * that path is only ever compared, character for character, with the paths of the list: a path that is acted on is
- * one the list holds, never one the page made up. `open` and `switch/confirm` also read `acknowledged`, the ids of
- * what the user saw would be interrupted (desktop-app ticket 19); `switch/*` read the `id` of the folder the host
+ * `recent-projects/open` and `…/remove` read the body's `path` (`remove` from a body of at most
+ * {@link RECENT_REQUEST_MAX_BYTES}, `open` from one of at most {@link SWITCH_REQUEST_MAX_BYTES}), and that path is only
+ * ever compared, character for character, with the paths of the list: a path that is acted on is one the list holds,
+ * never one the page made up. `open` and `switch/confirm` also read `acknowledged`, the ids of what the user saw would
+ * be interrupted (desktop-app ticket 19); `switch/*` read the `id` of the folder the host
  * holds — the folder itself came from the shell, never from the page.
  */
 
@@ -20,11 +21,14 @@ import {
   type HostRecentProjects,
   type HostRequestKind,
   type HostSwitchAcknowledged,
+  HostSwitchAcknowledgedSchema,
   type HostSwitchImpact,
   type HostSwitchJob,
   type HostSwitchTarget,
   isHostRequestKind,
   type Job,
+  SWITCH_ACK_MAX_ID_LENGTH,
+  SWITCH_ACK_MAX_IDS,
   SWITCH_CONFIRMATION_CODE,
   type WsHostSwitchConfirmation,
 } from "@argelanderspace/contracts";
@@ -118,20 +122,26 @@ export function switchJobOf(job: Job): HostSwitchJob | null {
   };
 }
 
-/** At most this many ids in each list of `acknowledged`, each at most this long. */
-const ACK_MAX_IDS = 1000;
-const ACK_MAX_ID_LENGTH = 200;
-
-/** A path in the body is at most this long (bytes of the whole body). */
+/** A body that names a path or an id only (`recent-projects/remove`, `switch/cancel`) is at most this long. */
 export const RECENT_REQUEST_MAX_BYTES = 16 * 1024;
+
+/**
+ * A body that also carries `acknowledged` (`recent-projects/open`, `switch/confirm`) is at most this long: room for a
+ * path (or an id) as above and for the most ids `acknowledged` may hold, each written in the longest way JSON allows
+ * (every character an escape of six bytes, plus its quotes and comma). Within the id limits a body is never refused as
+ * too large; one past them is 400.
+ */
+export const SWITCH_REQUEST_MAX_BYTES =
+  RECENT_REQUEST_MAX_BYTES + 3 * SWITCH_ACK_MAX_IDS * (SWITCH_ACK_MAX_ID_LENGTH * 6 + 3);
 
 /** The body as an object, or why there is none (over the limit, not a JSON object). */
 async function objectOfBody(
-  c: Context
+  c: Context,
+  limit: number
 ): Promise<Record<string, unknown> | "too_large" | "invalid"> {
   let bytes: Uint8Array | null;
   try {
-    bytes = await readLimited(c, RECENT_REQUEST_MAX_BYTES);
+    bytes = await readLimited(c, limit);
   } catch {
     return "invalid";
   }
@@ -151,26 +161,21 @@ function textField(body: Record<string, unknown>, name: string): string | null {
   return typeof value === "string" && value !== "" ? value : null;
 }
 
-/** `acknowledged`: absent → null; else three lists of ids, or "invalid". */
+/** `acknowledged`: absent → null; else three lists of ids within the limits (a list left out is empty), or "invalid". */
 function acknowledgedOfBody(
   body: Record<string, unknown>
 ): HostSwitchAcknowledged | null | "invalid" {
   const raw = body.acknowledged;
   if (raw === undefined || raw === null) return null;
-  if (typeof raw !== "object" || Array.isArray(raw)) return "invalid";
-  const ids = (value: unknown): string[] | null =>
-    Array.isArray(value) &&
-    value.length <= ACK_MAX_IDS &&
-    value.every((id) => typeof id === "string" && id.length <= ACK_MAX_ID_LENGTH)
-      ? (value as string[])
-      : null;
-  const r = raw as Record<string, unknown>;
-  const jobs = ids(r.jobs ?? []);
-  const conversations = ids(r.conversations ?? []);
-  const mail = ids(r.mail ?? []);
-  return jobs === null || conversations === null || mail === null
-    ? "invalid"
-    : { jobs, conversations, mail };
+  const parsed = HostSwitchAcknowledgedSchema.safeParse(raw);
+  return parsed.success ? parsed.data : "invalid";
+}
+
+/** The 400 of a request whose `acknowledged` is not lists of ids within the limits. */
+const ACK_INVALID_DETAIL = `acknowledged must be lists of ids (at most ${SWITCH_ACK_MAX_IDS} each, each at most ${SWITCH_ACK_MAX_ID_LENGTH} characters)`;
+
+function invalidRequest(c: Context, detail: string) {
+  return c.json({ code: "invalid_request", detail }, 400, NO_STORE);
 }
 
 /** The answer of `GET /api/host` for a server with this bridge (none: the browser form). */
@@ -229,12 +234,12 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
-    const body = await objectOfBody(c);
+    const body = await objectOfBody(c, SWITCH_REQUEST_MAX_BYTES);
     if (body === "too_large") return tooLarge(c);
     const path = body === "invalid" ? null : textField(body, "path");
-    const acknowledged = body === "invalid" ? "invalid" : acknowledgedOfBody(body);
-    if (path === null || acknowledged === "invalid")
-      return c.json({ code: "invalid_request", detail: "a path is required" }, 400, NO_STORE);
+    if (body === "invalid" || path === null) return invalidRequest(c, "a path is required");
+    const acknowledged = acknowledgedOfBody(body);
+    if (acknowledged === "invalid") return invalidRequest(c, ACK_INVALID_DETAIL);
     const outcome = bridge.recent.open(path, acknowledged);
     if (typeof outcome === "object") return confirmationRequired(c, outcome);
     switch (outcome) {
@@ -256,11 +261,10 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
-    const body = await objectOfBody(c);
+    const body = await objectOfBody(c, RECENT_REQUEST_MAX_BYTES);
     if (body === "too_large") return tooLarge(c);
     const path = body === "invalid" ? null : textField(body, "path");
-    if (path === null)
-      return c.json({ code: "invalid_request", detail: "a path is required" }, 400, NO_STORE);
+    if (path === null) return invalidRequest(c, "a path is required");
     try {
       return c.json(bridge.recent.remove(path), 200, NO_STORE);
     } catch {
@@ -278,16 +282,13 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
-    const body = await objectOfBody(c);
+    const body = await objectOfBody(c, SWITCH_REQUEST_MAX_BYTES);
     if (body === "too_large") return tooLarge(c);
     const id = body === "invalid" ? null : textField(body, "id");
-    const acknowledged = body === "invalid" ? "invalid" : acknowledgedOfBody(body);
-    if (id === null || acknowledged === "invalid" || acknowledged === null)
-      return c.json(
-        { code: "invalid_request", detail: "an id and what was acknowledged are required" },
-        400,
-        NO_STORE
-      );
+    if (body === "invalid" || id === null) return invalidRequest(c, "an id is required");
+    const acknowledged = acknowledgedOfBody(body);
+    if (acknowledged === "invalid") return invalidRequest(c, ACK_INVALID_DETAIL);
+    if (acknowledged === null) return invalidRequest(c, "what was acknowledged is required");
     const outcome = bridge.switching.confirm(id, acknowledged);
     if (typeof outcome === "object") return confirmationRequired(c, outcome);
     switch (outcome) {
@@ -307,11 +308,11 @@ export function mountHostRoutes(app: Hono, guardCsrf: Guard, bridge: HostBridge 
     if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     if (bridge === undefined)
       return c.json({ code: "not_desktop", detail: "no desktop host" }, 404, NO_STORE);
-    const body = await objectOfBody(c);
+    const body = await objectOfBody(c, RECENT_REQUEST_MAX_BYTES);
     if (body === "too_large") return tooLarge(c);
     const id = body === "invalid" ? null : textField(body, "id");
-    if (id === null)
-      return c.json({ code: "invalid_request", detail: "an id is required" }, 400, NO_STORE);
+    if (id === null) return invalidRequest(c, "an id is required");
+    // Also while the host stops: ending a hold changes nothing else.
     bridge.switching.cancel(id);
     return c.json({ ok: true }, 200, NO_STORE);
   });

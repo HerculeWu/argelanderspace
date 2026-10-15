@@ -326,7 +326,7 @@ function canonical(path: string): string {
 const WELCOME_REASONS = ["no_recent", "last_missing"] as const;
 const LEAVE_SOURCES = ["picked", "recent"] as const;
 /** Why a picked path is not left for (the path itself is never written). */
-const PICK_REJECT_REASONS = ["not_a_folder", "current_project"] as const;
+const PICK_REJECT_REASONS = ["not_a_folder", "current_project", "shutting_down"] as const;
 
 /** The fields of a shell event, each through the constructor its catalog entry names; others are counted as dropped. */
 function shellFields(spec: ShellEventSpec, raw: unknown): Record<string, LogField | unknown> {
@@ -489,6 +489,13 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
 
   /** A folder the shell picked with a project open: left for, held for the user's confirmation, or refused. */
   function pickedWithProject(path: string): void {
+    // The host is stopping (the answer came in during the close): nothing is held or announced, and it is not left for.
+    if (stopping !== null) {
+      own?.log.info("desktop.pick_rejected", {
+        reason: f.oneOf(PICK_REJECT_REASONS, "shutting_down"),
+      });
+      return;
+    }
     if (!isFolder(path)) {
       own?.log.warn("desktop.pick_rejected", {
         reason: f.oneOf(PICK_REJECT_REASONS, "not_a_folder"),

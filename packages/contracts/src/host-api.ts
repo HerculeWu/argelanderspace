@@ -22,9 +22,12 @@
  * - `POST /api/host/recent-projects/remove`  `{path}` → 200 {@link HostRecentProjects}, the list without it (a path
  *                                       not in the list changes nothing); 500 `write_failed` when the list file
  *                                       cannot be written (the old list stays).
- *   For both: only the body's `path` (and `acknowledged`) is read, and it is only compared with the list's paths, character for
- *   character. 400 `invalid_request` when the body is not a `{path}` with a non-empty string, 413 `too_large` when it
- *   is over 16 KiB (server `RECENT_REQUEST_MAX_BYTES`; reading stops at the limit).
+ *   `remove` reads only the body's `path`; `open` reads `path` and `acknowledged` ({@link HostSwitchAcknowledgedSchema}).
+ *   The path is only compared with the list's paths, character for character. 400 `invalid_request` when the body is
+ *   not a `{path}` with a non-empty string, or (`open`) when `acknowledged` is there but not lists of ids within
+ *   {@link SWITCH_ACK_MAX_IDS} / {@link SWITCH_ACK_MAX_ID_LENGTH}. 413 `too_large` when the body is over the limit
+ *   (server `RECENT_REQUEST_MAX_BYTES`, 16 KiB, for `remove`; `SWITCH_REQUEST_MAX_BYTES` for `open`, room for a path
+ *   and the most ids `acknowledged` may hold; reading stops at the limit).
  *
  * Switching to a folder the shell picked while a project is open (desktop-app ticket 19): when nothing would be
  * interrupted the host leaves at once; otherwise it holds the folder and tells every page (WebSocket
@@ -33,9 +36,12 @@
  *                                       when the id is not the one held (cancelled, replaced, or never), 409
  *                                       `folder_missing` when the folder has gone meanwhile (the hold ends), 409
  *                                       {@link SWITCH_CONFIRMATION_CODE} with the impact now when something new would be
- *                                       interrupted (the hold stays), 409 `shutting_down`.
- * - `POST /api/host/switch/cancel`   `{id}` → 200 `{ ok: true }`: the hold ends; nothing else changes.
- *   Bodies as above: 400 `invalid_request`, 413 `too_large`.
+ *                                       interrupted (the hold stays), 409 `shutting_down`. 400 `invalid_request` without
+ *                                       an `id` or an `acknowledged`, or with one that is not lists of ids as above;
+ *                                       413 `too_large` over `SWITCH_REQUEST_MAX_BYTES`.
+ * - `POST /api/host/switch/cancel`   `{id}` → 200 `{ ok: true }`: the hold of that id ends (another id: nothing);
+ *                                       nothing else changes. Also 200 while the host stops. 400 `invalid_request`
+ *                                       without an `id`, 413 `too_large` over 16 KiB.
  *
  * All are `no-store` and behind the same cross-origin guard as every other endpoint. `serve` (the browser form) has
  * no host: its answer is `mode: "browser"` with no requests, and the page hides the desktop-only controls.
@@ -46,6 +52,7 @@
  */
 
 import { z } from "zod";
+import { JobKindSchema } from "./job-status.js";
 
 /** The name every answer carries, so a program on the port can be told from the workbench. */
 export const HOST_APP = "argelanderspace";
@@ -195,48 +202,71 @@ export function isHostRecentProjects(value: unknown): value is HostRecentProject
 }
 
 // ---- switching projects (desktop-app ticket 19) ---------------------------------------------------------------- //
+// One source for each shape: the zod schemas below; the types are inferred from them and the guards are their
+// `safeParse` (the server's 409, the page's reading of it, and the WebSocket message share them).
 
 /** A job of the runner that is running or waiting to run: switching ends it (the next start of this project marks it interrupted). */
-export interface HostSwitchJob {
-  id: string;
-  kind: "upload" | "refresh" | "ingest";
-  status: "queued" | "running";
+export const HostSwitchJobSchema = z.object({
+  id: z.string(),
+  kind: JobKindSchema,
+  status: z.enum(["queued", "running"]),
   /** The Work it is for, when the job says. */
-  workId: string | null;
+  workId: z.string().nullable(),
   /** What an `upload` job takes in: an uploaded PDF, an arXiv PDF; null for a LaTeX archive and the other kinds. */
-  format: "pdf" | "arxiv-pdf" | null;
+  format: z.enum(["pdf", "arxiv-pdf"]).nullable(),
   /** The arXiv id, for the jobs that fetch from arXiv. */
-  arxivId: string | null;
-}
+  arxivId: z.string().nullable(),
+});
+export type HostSwitchJob = z.infer<typeof HostSwitchJobSchema>;
 
 /** A Copilot conversation whose run is working or waiting for the user: switching stops it (it can be resumed). */
-export interface HostSwitchConversation {
-  id: string;
-  title: string;
-}
+export const HostSwitchConversationSchema = z.object({ id: z.string(), title: z.string() });
+export type HostSwitchConversation = z.infer<typeof HostSwitchConversationSchema>;
 
-/** A mail send of this process still in its undo window: switching interrupts it — it stays in Drafts, unsent. */
-export interface HostSwitchMail {
-  sendId: string;
-  accountId: string;
-  subject: string;
+/**
+ * A mail send of this process still in its undo window: switching interrupts it — it stays in Drafts, unsent. Only
+ * what the prompt shows: no account, no address.
+ */
+export const HostSwitchMailSchema = z.object({
+  sendId: z.string(),
+  subject: z.string(),
   /** When the window ends (milliseconds since the epoch). */
-  endsAt: number;
-}
+  endsAt: z.number(),
+});
+export type HostSwitchMail = z.infer<typeof HostSwitchMailSchema>;
 
 /** What switching away from the open project now would interrupt, as the server knows it. */
-export interface HostSwitchImpact {
-  jobs: HostSwitchJob[];
-  conversations: HostSwitchConversation[];
-  mail: HostSwitchMail[];
-}
+export const HostSwitchImpactSchema = z.object({
+  jobs: z.array(HostSwitchJobSchema),
+  conversations: z.array(HostSwitchConversationSchema),
+  mail: z.array(HostSwitchMailSchema),
+});
+export type HostSwitchImpact = z.infer<typeof HostSwitchImpactSchema>;
 
-/** What the user saw and confirmed: the ids of the impact's items. */
-export interface HostSwitchAcknowledged {
-  jobs: string[];
-  conversations: string[];
-  mail: string[];
-}
+/** Where a switch goes, as the page shows it: the path, as shown, and the folder's own name. */
+export const HostSwitchTargetSchema = z.object({
+  path: z.string(),
+  display: z.string(),
+  name: z.string(),
+});
+export type HostSwitchTarget = z.infer<typeof HostSwitchTargetSchema>;
+
+/**
+ * At most this many ids in each list of `acknowledged`, each at most this long. Every id the server hands out fits:
+ * a job's is `<kind>-<uuid>`, a conversation's a uuid, a send's a uuid.
+ */
+export const SWITCH_ACK_MAX_IDS = 1000;
+export const SWITCH_ACK_MAX_ID_LENGTH = 64;
+
+const ackIds = z.array(z.string().max(SWITCH_ACK_MAX_ID_LENGTH)).max(SWITCH_ACK_MAX_IDS);
+
+/** What the user saw and confirmed: the ids of the impact's items (a list left out is empty). */
+export const HostSwitchAcknowledgedSchema = z.object({
+  jobs: ackIds.default([]),
+  conversations: ackIds.default([]),
+  mail: ackIds.default([]),
+});
+export type HostSwitchAcknowledged = z.infer<typeof HostSwitchAcknowledgedSchema>;
 
 export const EMPTY_SWITCH_IMPACT: HostSwitchImpact = Object.freeze({
   jobs: [],
@@ -275,59 +305,12 @@ export function switchAcknowledged(
   );
 }
 
-/** Where a switch goes, as the page shows it. */
-export interface HostSwitchTarget extends HostShownPath {
-  /** The folder's own name. */
-  name: string;
-}
-
-/** The 409 {@link SWITCH_CONFIRMATION_CODE} of a switch: what it would interrupt now. */
-export interface HostSwitchConfirmationRequired {
-  code: typeof SWITCH_CONFIRMATION_CODE;
-  detail: string;
-  target: HostSwitchTarget;
-  impact: HostSwitchImpact;
-}
-
-const isStr = (v: unknown): v is string => typeof v === "string";
-const isStrOrNull = (v: unknown): v is string | null => v === null || typeof v === "string";
-
 export function isHostSwitchImpact(value: unknown): value is HostSwitchImpact {
-  const v = value as Partial<HostSwitchImpact> | null;
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    Array.isArray(v.jobs) &&
-    v.jobs.every(
-      (j) =>
-        typeof j === "object" &&
-        j !== null &&
-        isStr(j.id) &&
-        ["upload", "refresh", "ingest"].includes(j.kind) &&
-        ["queued", "running"].includes(j.status) &&
-        isStrOrNull(j.workId) &&
-        (j.format === null || j.format === "pdf" || j.format === "arxiv-pdf") &&
-        isStrOrNull(j.arxivId)
-    ) &&
-    Array.isArray(v.conversations) &&
-    v.conversations.every(
-      (c) => typeof c === "object" && c !== null && isStr(c.id) && isStr(c.title)
-    ) &&
-    Array.isArray(v.mail) &&
-    v.mail.every(
-      (m) =>
-        typeof m === "object" &&
-        m !== null &&
-        isStr(m.sendId) &&
-        isStr(m.accountId) &&
-        isStr(m.subject) &&
-        typeof m.endsAt === "number"
-    )
-  );
+  return HostSwitchImpactSchema.safeParse(value).success;
 }
 
 export function isHostSwitchTarget(value: unknown): value is HostSwitchTarget {
-  return isShownPath(value) && typeof (value as HostSwitchTarget).name === "string";
+  return HostSwitchTargetSchema.safeParse(value).success;
 }
 
 /**
@@ -337,27 +320,12 @@ export function isHostSwitchTarget(value: unknown): value is HostSwitchTarget {
 export const WsHostSwitchConfirmationSchema = z.object({
   type: z.literal("host.switch-confirmation"),
   id: z.string(),
-  target: z.object({ path: z.string(), display: z.string(), name: z.string() }),
-  impact: z.object({
-    jobs: z.array(
-      z.object({
-        id: z.string(),
-        kind: z.enum(["upload", "refresh", "ingest"]),
-        status: z.enum(["queued", "running"]),
-        workId: z.string().nullable(),
-        format: z.enum(["pdf", "arxiv-pdf"]).nullable(),
-        arxivId: z.string().nullable(),
-      })
-    ),
-    conversations: z.array(z.object({ id: z.string(), title: z.string() })),
-    mail: z.array(
-      z.object({
-        sendId: z.string(),
-        accountId: z.string(),
-        subject: z.string(),
-        endsAt: z.number(),
-      })
-    ),
-  }),
+  target: HostSwitchTargetSchema,
+  impact: HostSwitchImpactSchema,
 });
 export type WsHostSwitchConfirmation = z.infer<typeof WsHostSwitchConfirmationSchema>;
+
+/** The page's check of a `host.switch-confirmation` message before it shows anything of it. */
+export function isWsHostSwitchConfirmation(value: unknown): value is WsHostSwitchConfirmation {
+  return WsHostSwitchConfirmationSchema.safeParse(value).success;
+}

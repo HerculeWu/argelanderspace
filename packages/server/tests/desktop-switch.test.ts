@@ -4,7 +4,7 @@
  * confirmation (409 `confirmation_required` for a recent project, a `host.switch-confirmation` message for a picked
  * folder) and checks again when the confirmation arrives. Cancelling changes nothing. A mail send in its undo window
  * is interrupted by the switch and never sent. The built program as a child process is
- * `packages/cli/tests/desktop-switch.test.ts`.
+ * `packages/cli/tests/desktop-welcome.test.ts`; the Copilot part of the impact is `copilot-switch-impact.test.ts`.
  *
  * Everything below the home directory is the throwaway one of the isolation setup (checked by `isolated`).
  */
@@ -19,6 +19,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { PassThrough } from "node:stream";
@@ -431,17 +432,108 @@ describe("a job running or queued", () => {
     expect(h.lines.some((l) => l.type === "stopping")).toBe(false);
   });
 
-  test("bodies: no id or acknowledged is 400; the browser form has no switch", async () => {
+  test("bodies: no id or acknowledged is 400, and the answer says which; the browser form has no switch", async () => {
     const h = await startHost();
-    expect((await h.post("/api/host/switch/confirm", { id: "x" })).status).toBe(400);
-    expect((await h.post("/api/host/switch/confirm", { acknowledged: NOTHING })).status).toBe(400);
+    expect(await h.post("/api/host/switch/confirm", { id: "x" })).toEqual({
+      status: 400,
+      body: { code: "invalid_request", detail: "what was acknowledged is required" },
+    });
+    expect(await h.post("/api/host/switch/confirm", { acknowledged: NOTHING })).toEqual({
+      status: 400,
+      body: { code: "invalid_request", detail: "an id is required" },
+    });
     expect(
-      (await h.post("/api/host/recent-projects/open", { path: "/x", acknowledged: { jobs: [1] } }))
-        .status
-    ).toBe(400);
+      await h.post("/api/host/recent-projects/open", { path: "/x", acknowledged: { jobs: [1] } })
+    ).toEqual({ status: 400, body: { code: "invalid_request", detail: ACK_INVALID } });
+    expect(
+      await h.post("/api/host/switch/confirm", { id: "x", acknowledged: { mail: "send-1" } })
+    ).toEqual({ status: 400, body: { code: "invalid_request", detail: ACK_INVALID } });
+    expect(await h.post("/api/host/recent-projects/open", { acknowledged: NOTHING })).toEqual({
+      status: 400,
+      body: { code: "invalid_request", detail: "a path is required" },
+    });
     expect((await h.post("/api/host/switch/cancel", {})).status).toBe(400);
   });
+
+  test("the size limit leaves room for every id acknowledged may hold, however they are written; one more is 400, a larger body 413", async () => {
+    const h = await startHost();
+    // The longest ids, each character written as an escape (six bytes): the most a body within the id limits takes.
+    const longest = (n: number) => `${String(n).padStart(4, "0")}${"\u0001".repeat(60)}`;
+    const lists = (count: number) => {
+      const ids = Array.from({ length: count }, (_, n) => longest(n));
+      return { jobs: ids, conversations: ids, mail: ids };
+    };
+    const full = lists(1000);
+    expect(full.jobs[0]).toHaveLength(64);
+    const path = `/${"p".repeat(8000)}`;
+    // Taken in whole: the path is read and is not one of the list.
+    expect(
+      await h.post("/api/host/recent-projects/open", { path, acknowledged: full })
+    ).toMatchObject({ status: 404, body: { code: "unknown_project" } });
+    expect(await h.post("/api/host/switch/confirm", { id: "x", acknowledged: full })).toMatchObject(
+      { status: 404, body: { code: "unknown_switch" } }
+    );
+    // One id too many, or one character too long: 400, not 413.
+    const many = lists(1001);
+    expect(
+      (await h.post("/api/host/recent-projects/open", { path: "/x", acknowledged: many })).status
+    ).toBe(400);
+    const long = { ...NOTHING, jobs: ["j".repeat(65)] };
+    expect((await h.post("/api/host/switch/confirm", { id: "x", acknowledged: long })).status).toBe(
+      400
+    );
+    // A body past the limit is not read: 413.
+    expect(
+      (await h.post("/api/host/recent-projects/open", { path: "/x", pad: "x".repeat(1_300_000) }))
+        .status
+    ).toBe(413);
+    // Removing a project and cancelling read a path or an id only: their limit stays 16 KiB.
+    expect(
+      (await h.post("/api/host/recent-projects/remove", { path: "/x", pad: "x".repeat(17_000) }))
+        .status
+    ).toBe(413);
+    expect(
+      (await h.post("/api/host/switch/cancel", { id: "x", pad: "x".repeat(17_000) })).status
+    ).toBe(413);
+  });
+
+  test("a folder picked while the host is stopping is not held or announced; the log says why", async () => {
+    const other = folder("other");
+    const h = await startHost();
+    const page = await listen(h.url);
+    holdJob(h.server, { workId: "w-1" });
+    expect((await h.post("/api/host/requests/pick_folder")).status).toBe(202);
+    const request = (await h.next("request")) as { id: string };
+    // A request whose body never finishes keeps the server's close waiting: the host stays in its stopping phase.
+    const port = Number(new URL(h.url).port);
+    const socket = connect(port, "127.0.0.1");
+    await new Promise<void>((resolve) => socket.once("connect", () => resolve()));
+    closers.push(async () => socket.destroy());
+    socket.write(
+      `POST /api/host/recent-projects/remove HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nOrigin: ${h.url}\r\n` +
+        "Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{"
+    );
+    await sleep(50);
+    const stopped = h.host.stop();
+    expect(await h.next("stopping")).toEqual({ type: "stopping", reason: "quit" });
+    h.input.write(`${JSON.stringify({ type: "folder_picked", id: request.id, path: other })}\n`);
+    await sleep(150);
+    expect(h.lines.some((l) => l.type === "stopped")).toBe(false);
+    const log = h.log();
+    expect(log.find((r) => r.event === "desktop.pick_rejected")).toMatchObject({
+      reason: "shutting_down",
+    });
+    expect(log.some((r) => r.event === "desktop.switch_asked")).toBe(false);
+    expect(page.messages).toEqual([]);
+    socket.destroy();
+    expect(await stopped).toBe("quit");
+    expect(await h.next("stopped")).toEqual({ type: "stopped" });
+  });
 });
+
+/** The 400 detail of an `acknowledged` that is not lists of ids within the limits. */
+const ACK_INVALID =
+  "acknowledged must be lists of ids (at most 1000 each, each at most 64 characters)";
 
 // ---- a mail send in its undo window ------------------------------------------------------------------------------ //
 
@@ -507,7 +599,7 @@ async function sendInWindow(): Promise<{
     compose,
     outgoing,
     outbox: new MailOutbox(() => cache),
-    undoMs: 1500,
+    undoMs: 5000,
     registerForShutdown: true,
   });
   const sendId = "00000000-0000-4000-8000-000000000019";
@@ -539,8 +631,9 @@ describe("a mail send in its undo window", () => {
     const refused = await h.post("/api/host/recent-projects/open", { path: other });
     expect(refused.status).toBe(409);
     const impact = (refused.body as { impact: HostSwitchImpact }).impact;
+    // Only what the prompt shows: the account is not handed to the page.
     expect(impact.mail).toEqual([
-      { sendId: mail.sendId, accountId: ACC, subject: "switch away", endsAt: expect.any(Number) },
+      { sendId: mail.sendId, subject: "switch away", endsAt: expect.any(Number) },
     ]);
     expect(impact.mail[0]?.endsAt).toBeGreaterThan(Date.now());
     expect(h.log().find((r) => r.event === "desktop.switch_asked")).toMatchObject({ mail: 1 });
@@ -556,8 +649,8 @@ describe("a mail send in its undo window", () => {
     expect(mail.service.status(ACC, mail.sendId).state).toBe("interrupted");
     expect(await h.next("stopped")).toEqual({ type: "stopped", next: other });
     // Past the end of the window: nothing went out, the draft is still there.
-    await sleep(1800);
+    await sleep(Math.max(0, (impact.mail[0]?.endsAt ?? 0) - Date.now()) + 500);
     expect(mail.smtp.dataStarted.count).toBe(0);
     expect(mail.drafts.messages).toHaveLength(1);
-  }, 15_000);
+  }, 20_000);
 });

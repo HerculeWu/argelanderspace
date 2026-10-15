@@ -22,7 +22,7 @@ import {
   WsCopilotViewActionSchema,
 } from "./copilot.js";
 import { WsHostSwitchConfirmationSchema } from "./host-api.js";
-import { JobStatusSchema } from "./job-status.js";
+import { JobKindSchema, JobStatusSchema } from "./job-status.js";
 import { WsMailChangedSchema } from "./mail-events.js";
 import { WsPdfReadingPositionChangedSchema } from "./pdf-doc.js";
 import { WsPlanChangedSchema } from "./plans.js";
@@ -32,15 +32,13 @@ import { WsWriterChangedSchema } from "./writer.js";
 
 // ---- jobs ------------------------------------------------------------------ //
 
-/** The long operations the runner executes (`upload` = user LaTeX-zip attach, MS2). */
-export const JobKindSchema = z.enum(["upload", "refresh", "ingest"]);
-
 /**
- * `interrupted`: the job was `queued`/`running` when the server stopped; the
- * runner rewrites it to this terminal state on boot (it is never re-run —
- * upload spool files are cleaned up with it).
+ * Both live in the leaf `job-status.ts` (so host-api.ts can share them without an import cycle). `JobKindSchema`: the
+ * long operations the runner executes (`upload` = user LaTeX-zip attach, MS2). `JobStatusSchema` `interrupted`: the
+ * job was `queued`/`running` when the server stopped; the runner rewrites it to this terminal state on boot (it is
+ * never re-run — upload spool files are cleaned up with it).
  */
-export { JobStatusSchema };
+export { JobKindSchema, JobStatusSchema };
 
 /** One progress entry; jobs with no intermediate milestones only have few. */
 export const JobProgressSchema = z.object({

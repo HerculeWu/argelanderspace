@@ -4,6 +4,7 @@ import {
   type HostSwitchImpact,
   type HostSwitchJob,
   type HostSwitchTarget,
+  isWsHostSwitchConfirmation,
 } from "@argelanderspace/contracts";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
@@ -168,7 +169,8 @@ export function ProjectSwitchPrompt({ notify }: { notify: (text: string) => void
   useEffect(() => {
     try {
       return onHostSwitchConfirmation((msg) => {
-        if (state.leaving) return;
+        // Checked with the contract's own schema before anything of it is shown; a malformed message shows nothing.
+        if (state.leaving || !isWsHostSwitchConfirmation(msg)) return;
         setChanged(false);
         setFailed(false);
         set({ prompt: { kind: "picked", id: msg.id, target: msg.target, impact: msg.impact } });
@@ -197,13 +199,14 @@ export function ProjectSwitchPrompt({ notify }: { notify: (text: string) => void
     setFailed(false);
     const acknowledged = acknowledgedOf(current.impact);
     const result = current.kind === "recent" ? await openRecentProject(current.path, acknowledged) : await confirmSwitch(current.id, acknowledged);
-    // Another prompt replaced this one meanwhile: its answer is not this dialog's business.
-    if (state.prompt !== current) return setBusy(false);
     if (result === "leaving") {
-      // The host is stopping; the dialog stays, busy, until the shell brings the next project's page.
+      // The host is stopping, whatever prompt is up now: the dialog stays, busy, and the entries are disabled until the
+      // shell brings the next project's page.
       set({ leaving: true });
       return;
     }
+    // Another prompt replaced this one meanwhile: its other answers are not this dialog's business.
+    if (state.prompt !== current) return setBusy(false);
     setBusy(false);
     if (typeof result === "object") {
       setChanged(true);

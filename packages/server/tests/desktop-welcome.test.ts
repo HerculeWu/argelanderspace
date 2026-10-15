@@ -35,7 +35,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { WebSocket } from "ws";
 import { USER_DIRS_ISOLATION } from "../../infra/tests/user-dirs-guard-key.js";
 import { type DesktopHost, type HostOutLine, runDesktopHost } from "../src/desktop-host.js";
-import { RECENT_REQUEST_MAX_BYTES } from "../src/host-routes.js";
+import { RECENT_REQUEST_MAX_BYTES, SWITCH_REQUEST_MAX_BYTES } from "../src/host-routes.js";
 import { createServer } from "../src/server.js";
 
 beforeAll(() => __setWriterSandboxForTests(false));
@@ -382,8 +382,10 @@ describe("with no project open", () => {
     const a = folder("a");
     recordRecentProject(recentFile(), a, new Date("2026-01-01T00:00:00Z"));
     const h = await startHost({ fromRecent: false });
-    const big = JSON.stringify({ path: a, pad: "x".repeat(RECENT_REQUEST_MAX_BYTES) });
-    for (const route of ["open", "remove"]) {
+    // `open` also carries what the user acknowledged (desktop-app ticket 19): its limit is the larger one.
+    const limits = { open: SWITCH_REQUEST_MAX_BYTES, remove: RECENT_REQUEST_MAX_BYTES };
+    for (const [route, limit] of Object.entries(limits)) {
+      const big = JSON.stringify({ path: a, pad: "x".repeat(limit) });
       const r = await h.post(`/api/host/recent-projects/${route}`, big);
       expect([route, r.status, r.body]).toEqual([
         route,

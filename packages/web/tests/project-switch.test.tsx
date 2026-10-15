@@ -38,14 +38,14 @@ const IMPACT: HostSwitchImpact = {
     { id: "job-2", kind: "upload", status: "queued", workId: "w-2", format: "pdf", arxivId: null },
   ],
   conversations: [{ id: "conv-1", title: "Halo masses" }],
-  mail: [{ sendId: "send-1", accountId: "acc-1", subject: "Re: catalogue", endsAt: Date.now() + 6500 }],
+  mail: [{ sendId: "send-1", subject: "Re: catalogue", endsAt: Date.now() + 6500 }],
 };
 
 let settings: FakeSettings;
 let host: HostInfo;
 let recent: HostRecentProjects;
-/** What the next `open` / `confirm` answers. */
-let answers: Array<{ status: number; body: unknown }>;
+/** What the next `open` / `confirm` answers (after `wait`, when given). */
+let answers: Array<{ status: number; body: unknown; wait?: Promise<void> }>;
 let calls: Array<{ url: string; body: unknown }>;
 
 beforeEach(async () => {
@@ -79,6 +79,7 @@ beforeEach(async () => {
       calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
       if (url === "/api/host/recent-projects/open" || url === "/api/host/switch/confirm") {
         const next = answers.shift() ?? { status: 202, body: { ok: true } };
+        if (next.wait) await next.wait;
         return ok(next.body, next.status);
       }
       if (url === "/api/host/switch/cancel") return ok({ ok: true });
@@ -244,5 +245,46 @@ describe("the confirmation before a switch", () => {
       },
     ]);
     await waitFor(() => expect(toasts().some((text) => text.includes("This switch is no longer waiting for confirmation; nothing was switched."))).toBe(true));
+  });
+
+  it("the host accepted a switch while another prompt replaced the dialog: the page is still leaving, entries disabled", async () => {
+    let answer!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    answers = [confirmation(IMPACT), { status: 202, body: { ok: true }, wait }];
+    await projectGroup();
+    await waitFor(() => expect(q('[data-ui="settings-recent-list"]')).not.toBeNull());
+    fireEvent.click(q(`[data-ui="recent-project-open"][data-ui-key="${OTHER.path}"]`) as HTMLElement);
+    await waitFor(() => expect(q('[data-ui="switch-project"]')).not.toBeNull());
+    fireEvent.click(q('[data-ui="switch-project-confirm"]') as HTMLElement);
+    await waitFor(() => expect(calls).toHaveLength(2));
+    // Meanwhile the shell picked another folder: its prompt replaces this one before the host's answer arrives.
+    act(() => fakeBus.emit("host.switch-confirmation", { id: "hold-3", target: { ...GONE }, impact: IMPACT }));
+    await waitFor(() => expect(q('[data-ui="switch-project"]')?.textContent).toContain("Switch to “old”?"));
+    await act(async () => {
+      answer();
+      await wait;
+    });
+    await waitFor(() => expect((q('[data-ui="open-other-folder"]') as HTMLButtonElement).disabled).toBe(true));
+    expect((q(`[data-ui="recent-project-open"][data-ui-key="${OTHER.path}"]`) as HTMLButtonElement).disabled).toBe(true);
+    // The host is stopping: the remaining dialog cannot be confirmed or cancelled any more.
+    expect((q('[data-ui="switch-project-confirm"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((q('[data-ui="switch-project-cancel"]') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a host message that is not a well-formed switch confirmation shows nothing", async () => {
+    await projectGroup();
+    const bad = [
+      { id: "hold-4", target: { ...OTHER } },
+      { id: "hold-5", target: { path: OTHER.path }, impact: IMPACT },
+      { id: "hold-6", target: { ...OTHER }, impact: { ...IMPACT, jobs: [{ id: "job-x", kind: "compile", status: "running", workId: null, format: null, arxivId: null }] } },
+    ];
+    for (const message of bad) act(() => fakeBus.emit("host.switch-confirmation", message as never));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(q('[data-ui="switch-project"]')).toBeNull();
+    // A well-formed one is shown.
+    act(() => fakeBus.emit("host.switch-confirmation", { id: "hold-7", target: { ...OTHER }, impact: IMPACT }));
+    await waitFor(() => expect(q('[data-ui="switch-project"]')).not.toBeNull());
   });
 });

@@ -24,6 +24,7 @@
 
 import { randomBytes } from "node:crypto";
 import {
+  type HostSwitchMail,
   MAIL_UNDO_WINDOW_MS,
   type MailAccount,
   type MailComposeFailureCode,
@@ -48,20 +49,11 @@ export function disposeMailSendServices(): void {
 }
 const KEEP_PROBLEMS_MS = 30 * 24 * 3600 * 1000;
 
-/** A send of this process still in its undo window (desktop-app ticket 19: what switching projects would interrupt). */
-export interface SendInWindow {
-  sendId: string;
-  accountId: string;
-  subject: string;
-  /** When the window ends (ms since the epoch). */
-  endsAt: number;
-}
-
 /**
  * The sends that `disposeMailSendServices()` would interrupt now: those still in their undo window, of the services
  * registered for shutdown (the server's own). A send already handed to SMTP is not among them.
  */
-export function mailSendsInWindow(): SendInWindow[] {
+export function mailSendsInWindow(): HostSwitchMail[] {
   return [...shutdownRegistry].flatMap((s) => s.inWindow());
 }
 
@@ -468,15 +460,17 @@ export class MailSendService {
     this.deps.outbox.remove(accountId, sendId);
   }
 
-  /** This process's sends still in their undo window (in memory, never another process's marker). */
-  inWindow(): SendInWindow[] {
+  /**
+   * This process's sends still in their undo window (in memory, never another process's marker), as the switch prompt
+   * shows them (desktop-app ticket 19): the send, its subject and when the window ends — not the account.
+   */
+  inWindow(): HostSwitchMail[] {
     if (this.disposed) return [];
-    const out: SendInWindow[] = [];
+    const out: HostSwitchMail[] = [];
     for (const rec of this.live.values()) {
       if (rec.marker.state !== "pending" || rec.timer === null) continue;
       out.push({
         sendId: rec.marker.sendId,
-        accountId: rec.marker.accountId,
         subject: rec.marker.subject,
         endsAt: rec.marker.deadlineAt,
       });
