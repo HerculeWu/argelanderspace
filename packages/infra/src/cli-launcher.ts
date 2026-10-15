@@ -48,6 +48,7 @@ import {
   mkdirSync,
   openSync,
   readSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -295,7 +296,7 @@ function windowsPath(path: string, env: NodeJS.ProcessEnv): string {
   const rest = (best ? path.slice(best.length) : path).replace(/%/g, "%%");
   if (!isAscii(rest))
     throw new Error(
-      "a Windows launcher cannot hold a non-ASCII character outside %LOCALAPPDATA%, %APPDATA%, %USERPROFILE% or %ProgramFiles% (cmd reads it in the console's code page)"
+      "a Windows launcher cannot hold a non-ASCII character outside %LOCALAPPDATA%, %APPDATA%, %USERPROFILE%, %ProgramW6432% or %ProgramFiles% (cmd reads it in the console's code page)"
     );
   return best ? `%${best.name}%${rest}` : rest;
 }
@@ -313,8 +314,17 @@ export function cliLauncherUnavailable(
   target: CliLauncherTarget,
   env: NodeJS.ProcessEnv = process.env
 ): "appimage" | null {
-  const appdir = env.APPDIR?.replace(/\/+$/, "");
-  if (!appdir || !posix.isAbsolute(appdir)) return null;
+  const raw = env.APPDIR;
+  if (!raw || !posix.isAbsolute(raw)) return null;
+  // The CLI entry is a resolved path (the host takes it through realpath); APPDIR is the runtime's `$TMPDIR/.mount_*`
+  // as written, so a doubled slash or a link in TMPDIR must not make it miss.
+  let appdir: string;
+  try {
+    appdir = realpathSync(raw);
+  } catch {
+    appdir = posix.resolve(raw);
+  }
+  appdir = appdir.replace(/\/+$/, "");
   return target.cli.startsWith(`${appdir}/`) ? "appimage" : null;
 }
 

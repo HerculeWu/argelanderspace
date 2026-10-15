@@ -36,7 +36,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  # One release run at a time, whatever the ref: a tag run and a manual run must not both pass the duplicate check.
+  group: release
   cancel-in-progress: false
 
 env:

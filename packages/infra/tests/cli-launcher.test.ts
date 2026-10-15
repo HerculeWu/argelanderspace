@@ -17,6 +17,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -606,6 +607,24 @@ describe("the AppImage offers no command-line tool (desktop-app ticket 26)", () 
       "appimage"
     );
     expect(cliLauncherUnavailable(inside, { APPDIR: `${mount}/` })).toBe("appimage");
+  });
+
+  test("APPDIR is compared after resolving it: a doubled slash or a link in TMPDIR still counts", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "cli-launcher-appdir-")));
+    made.push(root);
+    const real = join(root, "real", ".mount_ArgelaB3xQ9z");
+    mkdirSync(join(real, "usr"), { recursive: true });
+    symlinkSync(join(root, "real"), join(root, "link"));
+    const target = {
+      node: join(real, "usr", "node"),
+      cli: join(real, "usr", "bin.js"),
+    };
+    expect(
+      cliLauncherUnavailable(target, { APPDIR: join(root, "link", ".mount_ArgelaB3xQ9z") })
+    ).toBe("appimage");
+    expect(cliLauncherUnavailable(target, { APPDIR: `${root}/real//.mount_ArgelaB3xQ9z` })).toBe(
+      "appimage"
+    );
   });
 
   test("anything else is not: no APPDIR, a CLI outside it (a variable inherited from another AppImage), a relative one", () => {
