@@ -20,6 +20,9 @@ pub struct MenuText {
     pub no_recent: &'static str,
     pub quit: &'static str,
     pub view: &'static str,
+    /// macOS only (its Edit menu).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub edit: &'static str,
     pub open_in_browser: &'static str,
     pub devtools: &'static str,
     pub help: &'static str,
@@ -39,6 +42,7 @@ impl MenuText {
                 no_recent: "没有其他最近项目",
                 quit: "退出",
                 view: "视图",
+                edit: "编辑",
                 open_in_browser: "在浏览器中打开",
                 devtools: "开发者工具",
                 help: "帮助",
@@ -54,6 +58,7 @@ impl MenuText {
                 no_recent: "No other recent projects",
                 quit: "Quit",
                 view: "View",
+                edit: "Edit",
                 open_in_browser: "Open in Browser",
                 devtools: "Developer Tools",
                 help: "Help",
@@ -122,8 +127,9 @@ pub fn choice(id: &str) -> Option<MenuChoice> {
     }
 }
 
-/// The about dialog (main thread): `title` as the window's title, `name` as its text, `version` below it, one button.
+/// The about dialog (main thread; Linux): `title` as the window's title, `name` as its text, `version` below it, one button.
 /// It does not hold the shell up: it closes on its button or its close box.
+#[cfg(target_os = "linux")]
 pub fn show_about(
     parent: Option<&gtk::ApplicationWindow>,
     title: &str,
@@ -160,7 +166,12 @@ fn literal(label: &str) -> String {
 
 /// The menu for this model: File (open folder, recent projects, quit), View (open in browser, developer tools), Help
 /// (about). F12 opens the developer tools, Ctrl+O the folder dialog, Ctrl+Q quits.
+///
+/// macOS (desktop-app ticket 30), as Mac apps have it: the application menu first (about, hide, quit with Cmd+Q — the
+/// shell's own quit, as closing the window), then File without quit, Edit (the system's undo, cut, copy, paste and
+/// select all: without them those keys do nothing in the page), View, and Help without about.
 pub fn build<R: Runtime>(app: &AppHandle<R>, model: &MenuModel) -> tauri::Result<Menu<R>> {
+    let mac = cfg!(target_os = "macos");
     let text = MenuText::of(model.language);
     let mut recent = SubmenuBuilder::new(app, text.open_recent);
     if model.recent.is_empty() {
@@ -177,20 +188,21 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, model: &MenuModel) -> tauri::Result
                 .build(app)?,
         );
     }
-    let file = SubmenuBuilder::new(app, text.file)
+    let quit = MenuItemBuilder::with_id(ID_QUIT, text.quit)
+        .accelerator("CmdOrCtrl+Q")
+        .build(app)?;
+    let about = MenuItemBuilder::with_id(ID_ABOUT, text.about).build(app)?;
+    let mut file = SubmenuBuilder::new(app, text.file)
         .item(
             &MenuItemBuilder::with_id(ID_OPEN_FOLDER, text.open_folder)
                 .accelerator("CmdOrCtrl+O")
                 .build(app)?,
         )
-        .item(&recent.build()?)
-        .separator()
-        .item(
-            &MenuItemBuilder::with_id(ID_QUIT, text.quit)
-                .accelerator("CmdOrCtrl+Q")
-                .build(app)?,
-        )
-        .build()?;
+        .item(&recent.build()?);
+    if !mac {
+        file = file.separator().item(&quit);
+    }
+    let file = file.build()?;
     let view = SubmenuBuilder::new(app, text.view)
         .item(&MenuItemBuilder::with_id(ID_OPEN_IN_BROWSER, text.open_in_browser).build(app)?)
         .item(
@@ -199,9 +211,33 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, model: &MenuModel) -> tauri::Result
                 .build(app)?,
         )
         .build()?;
-    let help = SubmenuBuilder::new(app, text.help)
-        .item(&MenuItemBuilder::with_id(ID_ABOUT, text.about).build(app)?)
-        .build()?;
+    if mac {
+        let application = SubmenuBuilder::new(app, "ArgelanderSpace")
+            .item(&about)
+            .separator()
+            .services()
+            .separator()
+            .hide()
+            .hide_others()
+            .show_all()
+            .separator()
+            .item(&quit)
+            .build()?;
+        let edit = SubmenuBuilder::new(app, text.edit)
+            .undo()
+            .redo()
+            .separator()
+            .cut()
+            .copy()
+            .paste()
+            .select_all()
+            .build()?;
+        let help = SubmenuBuilder::new(app, text.help).build()?;
+        return MenuBuilder::new(app)
+            .items(&[&application, &file, &edit, &view, &help])
+            .build();
+    }
+    let help = SubmenuBuilder::new(app, text.help).item(&about).build()?;
     MenuBuilder::new(app).items(&[&file, &view, &help]).build()
 }
 

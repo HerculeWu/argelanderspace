@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Which targets to build (macOS and Windows wait for ticket 30; a draft only when all chosen succeed)"
+        description: "Which targets to build (macOS and Windows: being ported, ticket 30; a draft only when all chosen succeed)"
         type: choice
         default: linux-x64
         options: [linux-x64, all, win32-x64, darwin-arm64, darwin-x64]
@@ -176,6 +176,20 @@ jobs:
           if [ "$RUNNER_OS" != Linux ]; then configs+=(--config tauri.package.macos-windows.conf.json); fi
           "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" build --features packaged "${configs[@]}" \
             --bundles "$BUNDLES" 2>&1 | tee "$EVIDENCE/tauri-build.txt"
+
+      - name: Shell page guard on the platform's webview (a test build with the probe, next to the package's resources)
+        run: |
+          # desktop-app ticket 30: a debug build with the smoke probe (never a release: smoke-probe does not compile in
+          # one) and `packaged`, put in target/release where `tauri build` left the package's resources (sidecar/,
+          # skills/), so that it runs the package's own Node and app build. Not shipped: only release-out/ is uploaded.
+          (cd packages/desktop && cargo build --features smoke-probe,packaged 2>&1 | tail -n 3)
+          ext=""; if [ "$RUNNER_OS" = Windows ]; then ext=.exe; fi
+          probe="packages/desktop/target/release/argelanderspace-desktop-probe$ext"
+          cp "packages/desktop/target/debug/argelanderspace-desktop$ext" "$probe"
+          run=(node packages/app/scripts/smoke-shell-probe.mjs --shell "$probe" --label "$TARGET" --evidence "$EVIDENCE")
+          if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi
+          "${run[@]}"
+          rm -f "$probe"
 
       - name: Desktop package smoke (deb and AppImage, shell on a virtual display; the AppImage's through its AppRun)
         if: runner.os == 'Linux'

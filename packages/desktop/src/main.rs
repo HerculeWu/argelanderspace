@@ -97,7 +97,8 @@ enum Ev {
 
 struct Host {
     attempt: u32,
-    pid: u32,
+    /// Its process group or job object (launch.rs): the forced end takes its children too.
+    group: Option<launch::HostGroup>,
     child: Arc<Mutex<Child>>,
     stdin: Option<ChildStdin>,
 }
@@ -127,7 +128,7 @@ struct Shell {
 
 fn main() {
     // Nothing lands where the shell was started from (desktop-app ticket 02); the host starts here too.
-    let cwd = launch::shell_working_dir(std::env::var_os("HOME"));
+    let cwd = launch::shell_working_dir(launch::home_var());
     let _ = std::env::set_current_dir(&cwd);
 
     let socket = single_instance::default_socket_path();
@@ -417,9 +418,9 @@ impl Shell {
                     vec![]
                 }
                 Action::Kill => {
-                    // The host's whole process group (launch.rs): its own children go with it.
+                    // The host's whole process group or job (launch.rs): its own children go with it.
                     if let Some(host) = &self.host {
-                        if !launch::kill_group(host.pid) {
+                        if !host.group.as_ref().is_some_and(|g| g.kill()) {
                             let _ = host.child.lock().map(|mut c| c.kill());
                         }
                     }
@@ -444,6 +445,7 @@ impl Shell {
             Err(_) => return self.sup.spawn_failed(project),
         };
         let pid = child.id();
+        let group = launch::HostGroup::of(&child);
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
         self.sup.spawned(project, pid);
@@ -488,10 +490,14 @@ impl Shell {
             // Whatever the host wrote before it ended is read first (a child of its own may hold the output open).
             let _ = eof_rx.recv_timeout(Duration::from_secs(2));
             let (code, signal) = match status {
+                #[cfg(unix)]
                 Some(status) => {
                     use std::os::unix::process::ExitStatusExt;
                     (status.code(), status.signal())
                 }
+                // No signals on Windows: a forced end is an exit code.
+                #[cfg(not(unix))]
+                Some(status) => (status.code(), None),
                 None => (None, None),
             };
             let ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -504,7 +510,7 @@ impl Shell {
         });
         self.host = Some(Host {
             attempt,
-            pid,
+            group,
             child,
             stdin,
         });
@@ -558,28 +564,42 @@ impl Shell {
                 );
                 NewWindowResponse::Deny
             });
-        // No `on_download`: the shell connects to WebKit's downloads itself (download.rs), before the page loads.
+        // Linux: no `on_download`, the shell connects to WebKit's downloads itself (download.rs), before the page loads.
+        // macOS and Windows: Tauri's `on_download` with the system's save dialog (download.rs).
+        #[cfg(not(target_os = "linux"))]
+        let builder = {
+            let tx = self.tx.clone();
+            builder.on_download(download::on_download(
+                Arc::clone(&self.language),
+                move |outcome: download::Outcome| {
+                    let _ = tx.send(Ev::Download(outcome.name()));
+                },
+            ))
+        };
         #[cfg(feature = "smoke-probe")]
         let builder = probe::attach(builder);
         // No window, or no way to keep Tauri out of it: no page, and the app quits (supervisor `on_window_failed`).
         let Ok(window) = builder.build() else {
             return self.sup.on_window_failed("create");
         };
-        let tx = self.tx.clone();
-        let language = Arc::clone(&self.language);
-        let attached = window.with_webview(move |platform| {
-            let report_tx = tx.clone();
-            let report = move |outcome: download::Outcome| {
-                let _ = report_tx.send(Ev::Download(outcome.name()));
-            };
-            // No context to take the downloads from: the window is not used (as an unguarded page is not).
-            if !download::attach(&platform.inner(), language, report) {
-                let _ = tx.send(Ev::WindowFailed("guard"));
+        #[cfg(target_os = "linux")]
+        {
+            let tx = self.tx.clone();
+            let language = Arc::clone(&self.language);
+            let attached = window.with_webview(move |platform| {
+                let report_tx = tx.clone();
+                let report = move |outcome: download::Outcome| {
+                    let _ = report_tx.send(Ev::Download(outcome.name()));
+                };
+                // No context to take the downloads from: the window is not used (as an unguarded page is not).
+                if !download::attach(&platform.inner(), language, report) {
+                    let _ = tx.send(Ev::WindowFailed("guard"));
+                }
+            });
+            if attached.is_err() {
+                let _ = window.destroy();
+                return self.sup.on_window_failed("guard");
             }
-        });
-        if attached.is_err() {
-            let _ = window.destroy();
-            return self.sup.on_window_failed("guard");
         }
         let tx = self.tx.clone();
         let on_failed = move || {
@@ -649,8 +669,10 @@ impl Shell {
         }
     }
 
-    /// "About": the name and the version, in a native GTK message dialog. Its title is "About ArgelanderSpace"; the body
+    /// "About": the name and the version, in a native message dialog. Its title is "About ArgelanderSpace"; the body
     /// is the name and the version only (not the title again, as the dialog plugin's would put it: user ruling 2).
+    /// Linux: a GTK message dialog with the version as its secondary text.
+    #[cfg(target_os = "linux")]
     fn about(&mut self, language: Language) {
         let text = MenuText::of(language);
         let (name, version) = text.about_body(&self.version);
@@ -660,6 +682,24 @@ impl Shell {
             let parent = window.as_ref().and_then(|w| w.gtk_window().ok());
             menu::show_about(parent.as_ref(), title, name, &version, ok);
         });
+    }
+
+    /// macOS and Windows: the system's message dialog (the dialog plugin), the name and the version on two lines.
+    #[cfg(not(target_os = "linux"))]
+    fn about(&mut self, language: Language) {
+        let text = MenuText::of(language);
+        let (name, version) = text.about_body(&self.version);
+        let mut dialog = self
+            .app
+            .dialog()
+            .message(format!("{name}\n{version}"))
+            .title(text.about_title)
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCustom(text.ok.into()));
+        if let Some(window) = &self.window {
+            dialog = dialog.parent(window);
+        }
+        dialog.show(|_| {});
     }
 
     /// A download that could not be saved: said in a native dialog (where it was to go is not said or recorded).

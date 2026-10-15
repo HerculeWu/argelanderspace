@@ -29,15 +29,17 @@
 //!
 //! The dialog runs inside WebKit's signal on the main thread (GTK's own nested loop, as any modal GTK dialog): WebKit
 //! waits for the answer, the window stays drawn.
+//!
+//! macOS and Windows (desktop-app ticket 30): WKWebView and WebView2 go through Tauri's `on_download` (`on_download`
+//! below; wry's one-flag problem is WebKitGTK's only): when a download asks for its destination, the system's save
+//! dialog (rfd: `NSSavePanel`, `IFileSaveDialog`, which both ask before replacing a file) opens over the window, in
+//! the folder and with the name wry proposes (the download folder; wry has already numbered the name « (1) » when a
+//! file of the page's name is there). Cancelled, the download is refused and reported `cancelled` at once; wry then
+//! reports the refused download's end as a failure, which is not reported again (`Refused`). On macOS a file the user
+//! agreed in the dialog to replace is removed before WKWebView writes, since a WKDownload does not replace a file.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
-
-use gtk::prelude::*;
-use webkit2gtk::{DownloadError, DownloadExt, WebContextExt, WebViewExt};
 
 use crate::protocol::Language;
 
@@ -94,6 +96,7 @@ impl Outcome {
 /// What WebKit says about one download, in its order: the destination is decided (chosen in the dialog, or not), it
 /// may fail (`failed`, before `finished`; a cancel is a failure "by the user"), and it finishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub enum Step {
     Decided { chosen: bool },
     Failed { by_user: bool },
@@ -101,6 +104,7 @@ pub enum Step {
 }
 
 #[derive(Debug, Default)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 struct Track {
     declined: bool,
     failed: Option<bool>,
@@ -108,11 +112,13 @@ struct Track {
 
 /// The downloads under way, each with its own record: what one of them did never colours another's outcome.
 #[derive(Debug, Default)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub struct Downloads {
     next: u64,
     live: HashMap<u64, Track>,
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 impl Downloads {
     /// A download began: its number for the steps that follow.
     pub fn start(&mut self) -> u64 {
@@ -169,19 +175,28 @@ pub fn suggested_name(suggested: &str) -> String {
 }
 
 /// Where the dialog starts: the user's download folder when it is there, else the home directory.
+#[cfg(target_os = "linux")]
 fn start_folder() -> PathBuf {
     gtk::glib::user_special_dir(gtk::glib::UserDirectory::Downloads)
         .filter(|dir| dir.is_dir())
         .unwrap_or_else(gtk::glib::home_dir)
 }
 
-/// Connects the shell's save flow to the webview's downloads; false when the webview has no context to connect to
+/// Connects the shell's save flow to the webview's downloads (Linux); false when the webview has no context to connect to
 /// (the window is then not used, as when its page cannot be guarded). `report` gets each download's outcome.
+#[cfg(target_os = "linux")]
 pub fn attach(
     view: &webkit2gtk::WebView,
-    language: Arc<Mutex<Language>>,
+    language: std::sync::Arc<std::sync::Mutex<Language>>,
     report: impl Fn(Outcome) + 'static,
 ) -> bool {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    use gtk::prelude::*;
+    use webkit2gtk::{DownloadError, DownloadExt, WebContextExt, WebViewExt};
+
     let Some(context) = view.context() else {
         return false;
     };
@@ -242,6 +257,7 @@ pub fn attach(
 
 /// Blocks the `decide-destination` handlers connected to `download` so far (wry's): the shell's, connected next, is
 /// the one that decides.
+#[cfg(target_os = "linux")]
 fn block_earlier_deciders(download: &webkit2gtk::Download) {
     use gtk::glib::translate::{IntoGlib, ToGlibPtr};
     use gtk::glib::{gobject_ffi, StaticType};
@@ -268,6 +284,7 @@ fn block_earlier_deciders(download: &webkit2gtk::Download) {
 }
 
 /// Where a download goes, and whether a file there may be replaced; none when the dialog was cancelled or closed.
+#[cfg(target_os = "linux")]
 fn destination(
     parent: Option<&gtk::Window>,
     suggested: &str,
@@ -284,12 +301,14 @@ fn destination(
 
 /// Asks where to save: the chosen path, or none when the dialog was cancelled or closed. The dialog itself asks
 /// before a file of that name is replaced, so a path it answers may be replaced.
+#[cfg(target_os = "linux")]
 pub fn ask_where(
     parent: Option<&gtk::Window>,
     folder: &Path,
     name: &str,
     language: Language,
 ) -> Option<PathBuf> {
+    use gtk::prelude::*;
     let text = SaveText::of(language);
     let dialog = gtk::FileChooserDialog::with_buttons(
         Some(text.title),
@@ -313,6 +332,114 @@ pub fn ask_where(
         gtk::ResponseType::Accept => chosen.filter(|p| p.is_absolute()),
         _ => None,
     }
+}
+
+/// The downloads refused in the save dialog (macOS, Windows), by address: wry reports each one's end as a failure
+/// afterwards, which was reported as `cancelled` already and is not reported again.
+#[derive(Debug, Default)]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub struct Refused {
+    urls: HashMap<String, usize>,
+}
+
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+impl Refused {
+    /// A download of `url` was refused (reported `cancelled` now).
+    pub fn refuse(&mut self, url: &str) {
+        *self.urls.entry(url.to_owned()).or_default() += 1;
+    }
+
+    /// A download of `url` ended: its outcome to report, none for the end of one refused.
+    pub fn finished(&mut self, url: &str, success: bool) -> Option<Outcome> {
+        if success {
+            return Some(Outcome::Saved);
+        }
+        match self.urls.get_mut(url) {
+            Some(n) => {
+                *n -= 1;
+                if *n == 0 {
+                    self.urls.remove(url);
+                }
+                None
+            }
+            None => Some(Outcome::Failed),
+        }
+    }
+}
+
+/// Tauri's download handler for macOS and Windows: the save dialog for each download, and its outcome to `report`.
+#[cfg(not(target_os = "linux"))]
+pub fn on_download<R: tauri::Runtime>(
+    language: std::sync::Arc<std::sync::Mutex<Language>>,
+    report: impl Fn(Outcome) + Send + Sync + 'static,
+) -> impl Fn(tauri::Webview<R>, tauri::webview::DownloadEvent<'_>) -> bool + Send + Sync + 'static {
+    use tauri::webview::DownloadEvent;
+    let refused = std::sync::Mutex::new(Refused::default());
+    move |webview, event| match event {
+        DownloadEvent::Requested { url, destination } => {
+            let language = language.lock().map(|l| *l).unwrap_or(Language::Chinese);
+            let proposed = destination.clone();
+            match ask_where_native(&webview, &proposed, language) {
+                Some(path) => {
+                    *destination = path;
+                    true
+                }
+                None => {
+                    if let Ok(mut refused) = refused.lock() {
+                        refused.refuse(url.as_str());
+                    }
+                    report(Outcome::Cancelled);
+                    false
+                }
+            }
+        }
+        DownloadEvent::Finished { url, success, .. } => {
+            let outcome = refused
+                .lock()
+                .ok()
+                .and_then(|mut r| r.finished(url.as_str(), success));
+            if let Some(outcome) = outcome {
+                report(outcome);
+            }
+            true
+        }
+        _ => true,
+    }
+}
+
+/// The system's save dialog over the window (macOS, Windows), starting where wry proposed; the chosen path, or none
+/// when it was cancelled. Test builds with `ARGELANDERSPACE_SHELL_PROBE_SAVE_TO` save there without the dialog.
+#[cfg(not(target_os = "linux"))]
+fn ask_where_native<R: tauri::Runtime>(
+    webview: &tauri::Webview<R>,
+    proposed: &Path,
+    language: Language,
+) -> Option<PathBuf> {
+    let name = suggested_name(
+        &proposed
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    #[cfg(feature = "smoke-probe")]
+    if let Some(dir) = crate::probe::save_to() {
+        return Some(dir.join(name));
+    }
+    let text = SaveText::of(language);
+    let mut dialog = rfd::FileDialog::new()
+        .set_title(text.title)
+        .set_file_name(&name);
+    if let Some(folder) = proposed.parent().filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(folder);
+    }
+    let dialog = dialog.set_parent(&webview.window());
+    let chosen = dialog.save_file().filter(|p| p.is_absolute())?;
+    // The dialog asked before replacing; a WKDownload does not replace a file, so the one agreed to goes first.
+    #[cfg(target_os = "macos")]
+    if chosen.is_file() && std::fs::remove_file(&chosen).is_err() {
+        return None;
+    }
+    Some(chosen)
 }
 
 #[cfg(test)]
@@ -400,6 +527,29 @@ mod tests {
         );
         assert_eq!(d.step(a, Step::Finished), None);
         assert_eq!(d.step(99, Step::Finished), None);
+    }
+
+    #[test]
+    fn a_refused_downloads_end_is_not_reported_again() {
+        let mut r = Refused::default();
+        r.refuse("http://127.0.0.1:1/a.pdf");
+        r.refuse("http://127.0.0.1:1/a.pdf");
+        // wry's two failure reports for the two refused downloads: nothing more to say.
+        assert_eq!(r.finished("http://127.0.0.1:1/a.pdf", false), None);
+        assert_eq!(r.finished("http://127.0.0.1:1/a.pdf", false), None);
+        // A later failure of the same address is a failure; a success is a success.
+        assert_eq!(
+            r.finished("http://127.0.0.1:1/a.pdf", false),
+            Some(Outcome::Failed)
+        );
+        assert_eq!(
+            r.finished("http://127.0.0.1:1/b.pdf", true),
+            Some(Outcome::Saved)
+        );
+        assert_eq!(
+            r.finished("http://127.0.0.1:1/b.pdf", false),
+            Some(Outcome::Failed)
+        );
     }
 
     #[test]
