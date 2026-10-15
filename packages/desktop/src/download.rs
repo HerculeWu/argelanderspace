@@ -20,8 +20,9 @@
 //! handler that returns true). So for each download every `decide-destination` handler already connected is blocked
 //! before this module connects its own (`block_earlier_deciders`): this one is the only one that answers, and it always
 //! answers (returns true), so WebKit's own default is not run either. Should a later wry connect after this module,
-//! this handler, then the first, answers and ends the signal before it. wry's `failed` and `finished` handlers stay
-//! connected and only touch wry's own flag; without `on_download` they report to nobody.
+//! this handler, then the first, answers and ends the signal before it. wry's `failed` handler stays connected and
+//! only touches wry's own flag (wry connects `finished` only with a completed handler, which there is none of without
+//! `on_download`); it reports to nobody.
 //!
 //! The name offered is the page's own (`suggested_name`); no « (1) » is added when a file of that name is there — the
 //! dialog asks before replacing it (wry numbered names only to match Windows' WebView2, which never asks).
