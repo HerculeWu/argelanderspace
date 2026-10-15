@@ -396,7 +396,15 @@ mod windows {
     }
 
     pub fn serve(listener: Listener, on_raise: impl Fn() + Send + 'static) {
-        std::thread::spawn(move || loop {
+        std::thread::spawn(move || {
+            // The whole listener moves here (not only its handle field, which is not Send).
+            let listener = listener;
+            serve_loop(&listener, &on_raise);
+        });
+    }
+
+    fn serve_loop(listener: &Listener, on_raise: &impl Fn()) {
+        loop {
             let handle = listener.0;
             // SAFETY: the pipe handle is the listener's own; blocking calls on this thread only.
             unsafe {
@@ -419,7 +427,7 @@ mod windows {
                 }
                 DisconnectNamedPipe(handle);
             }
-        });
+        }
     }
 
     #[cfg(test)]

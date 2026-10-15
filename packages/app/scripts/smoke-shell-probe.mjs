@@ -11,6 +11,13 @@
 //      message handler, no entry to call); the window title is not changed by the attempted calls;
 //   2. single instance: a second start of the shell ends by itself and leaves the first running;
 //   3. quit: the probe's `menu quit` ends the shell, its host, and frees the port;
+//   2b. CJK in the shell's page (desktop-app ticket 28, handed to ticket 30): the guarded run starts in a fresh project
+//      (the only entry of a fresh recent list); a one-page PDF whose CJK text uses a NON-embedded font is uploaded, the
+//      page goes to its Reader (`/doc/<id>`), and the rendered page image is read in the page: ink on the Latin line
+//      and on the CJK text. The CJK glyphs come only from the font fallback, whose fonts the page's PDFium worker
+//      fetches from the local server (`/api/pdf-fonts/`; ticket 28's tests pin that the page hands the engine no
+//      other source); without it the CJK area is blank. The worker's own fetches are not visible to the page, so the
+//      route itself is only checked to answer from outside.
 //   4. counter-check (`ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES=1`): with Tauri's entry points left in, the same probe
 //      sees them (so the guarded run's "undefined" is not the probe's blindness) and the call is still refused (no
 //      capability): the title stays.
@@ -88,7 +95,7 @@ const cleanup = () => {
 };
 process.on("exit", cleanup);
 
-function isolatedEnv(dir, port) {
+function isolatedEnv(dir, port, project = null) {
   const home = join(dir, "home");
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (k.startsWith("ARGELANDERSPACE_")) delete env[k];
@@ -113,7 +120,20 @@ function isolatedEnv(dir, port) {
     mkdirSync(d, { recursive: true });
   mkdirSync(env.XDG_RUNTIME_DIR, { recursive: true, mode: 0o700 });
   mkdirSync(join(env.XDG_CONFIG_HOME, "argelanderspace"), { recursive: true });
-  writeFileSync(join(env.XDG_CONFIG_HOME, "argelanderspace", "config.toml"), `port = ${port}\n`);
+  // The global data directory in the temporary tree too (its recent list names the project to start in).
+  const global = join(dir, "global");
+  mkdirSync(global, { recursive: true });
+  writeFileSync(
+    join(env.XDG_CONFIG_HOME, "argelanderspace", "config.toml"),
+    `port = ${port}\nglobal_dir = '${global}'\n`
+  );
+  if (project) {
+    mkdirSync(project, { recursive: true });
+    writeFileSync(
+      join(global, "recent-projects.json"),
+      `${JSON.stringify({ version: 1, projects: [{ path: project, openedAt: new Date().toISOString() }] })}\n`
+    );
+  }
   return { env, home };
 }
 
@@ -169,17 +189,193 @@ async function waitProbe(file, shell) {
   return null;
 }
 
+// The PDF of smoke-dep-dir.mjs (ticket 28): Latin in Helvetica, "中文测试" in /STSong-Light, NOT embedded.
+function cjkPdf() {
+  const content =
+    "BT /F1 16 Tf 20 150 Td (Dependency smoke Latin line) Tj ET\nBT /F2 24 Tf 20 100 Td <4E2D65876D4B8BD5> Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>",
+    "<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 2 >> /FontDescriptor 8 0 R >>",
+    "<< /Type /FontDescriptor /FontName /STSong-Light /Flags 6 /FontBBox [-25 -254 1000 880] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 880 /StemV 93 >>",
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets = [];
+  objects.forEach((body, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) out += `${String(o).padStart(10, "0")} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+
+async function api(port, method, path, body, headers = {}) {
+  const init = { method, headers: { ...headers } };
+  if (Buffer.isBuffer(body)) init.body = body;
+  else if (body !== undefined) {
+    init.body = JSON.stringify(body);
+    init.headers["content-type"] = "application/json";
+  }
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, init);
+    const text = await r.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {}
+    return { status: r.status, text, json };
+  } catch (e) {
+    return { status: 0, text: String(e), json: null };
+  }
+}
+
+// Runs a script in the shell's page through the probe's control file; its answer (the n-th `js` line) or null.
+async function pageJs(controlFile, probeFile, n, script, shell, ms = 60000) {
+  appendFileSync(controlFile, `js ${script.replace(/\n/g, " ")}\n`);
+  for (let i = 0; i < ms / 200 && shell.exitCode === null; i += 1) {
+    const answers = readLines(probeFile).filter((l) => "js" in l);
+    if (answers.length > n) return answers[n].js;
+    await sleep(200);
+  }
+  return null;
+}
+
+// In the page: waits for the Reader's first page image, then counts dark pixels where each line's ink falls (as
+// fractions of the 300x200 pt page: the Latin line around 34-54 pt from the top, the CJK text around 76-106 pt).
+const READER_INK = `
+for (let i = 0; i < 300; i++) {
+  const el = document.querySelector('[data-ui="pdf-page-content"] img, [data-ui="pdf-page-content"] canvas');
+  if (el && (el.tagName === "CANVAS" || (el.complete && el.naturalWidth > 0))) break;
+  await new Promise((r) => setTimeout(r, 200));
+}
+await new Promise((r) => setTimeout(r, 2000));
+const el = document.querySelector('[data-ui="pdf-page-content"] img, [data-ui="pdf-page-content"] canvas');
+if (!el) return JSON.stringify({ error: "no page image", href: location.href, dataUi: [...new Set([...document.querySelectorAll("[data-ui]")].map((e) => e.dataset.ui))].slice(0, 40) });
+const w = el.tagName === "CANVAS" ? el.width : el.naturalWidth;
+const h = el.tagName === "CANVAS" ? el.height : el.naturalHeight;
+const c = document.createElement("canvas");
+c.width = w;
+c.height = h;
+const g = c.getContext("2d");
+g.drawImage(el, 0, 0, w, h);
+const d = g.getImageData(0, 0, w, h).data;
+const ink = (x0, x1, y0, y1) => {
+  let n = 0, all = 0;
+  for (let y = Math.floor(y0 * h); y < Math.ceil(y1 * h); y++)
+    for (let x = Math.floor(x0 * w); x < Math.ceil(x1 * w); x++) {
+      const k = (y * w + x) * 4;
+      all++;
+      if (d[k + 3] > 0 && d[k] + d[k + 1] + d[k + 2] < 384) n++;
+    }
+  return { dark: n, of: all };
+};
+return JSON.stringify({ href: location.href, tag: el.tagName, w, h, latin: ink(0.06, 0.8, 0.17, 0.27), cjk: ink(0.06, 0.4, 0.37, 0.54) });
+`;
+
+async function cjkInPage(name, port, controlFile, probeFile, shell) {
+  const host = await api(port, "GET", "/api/host");
+  check(
+    host.json?.project === "open",
+    `${name}: the host opened the project of the recent list`,
+    JSON.stringify(host.json?.project ?? null)
+  );
+  const works = await api(port, "POST", "/api/library/works", {
+    mode: "bib",
+    bib: "@article{shellcjk2026,\n  title = {Shell CJK Smoke},\n  author = {Doe, Jane},\n  year = {2026},\n  journal = {Smoke}\n}\n",
+  });
+  const ref = works.json?.results?.[0]?.ref;
+  const up = ref?.id
+    ? await api(
+        port,
+        "POST",
+        `/api/library/upload-pdf?id=${encodeURIComponent(ref.id)}`,
+        cjkPdf(),
+        { "x-filename": "cjk.pdf" }
+      )
+    : { status: 0 };
+  let docId = null;
+  for (let i = 0; i < 300 && up.status === 202 && !docId; i += 1) {
+    const lib = await api(port, "GET", "/api/library");
+    docId =
+      lib.json?.refs?.find((r) => r.id === ref.id)?.doc_ids?.find((d) => d.startsWith("pdf-")) ??
+      null;
+    if (!docId) await sleep(200);
+  }
+  check(
+    !!docId,
+    `${name}: the CJK PDF was uploaded into the project`,
+    docId ?? `works ${works.status}, upload ${up.status}`
+  );
+  const font = await fetch(
+    `http://127.0.0.1:${port}/api/pdf-fonts/sc/1.0.0/NotoSansHans-Regular.otf`
+  ).then(
+    async (r) => ({
+      status: r.status,
+      otf:
+        Buffer.from(await r.arrayBuffer())
+          .subarray(0, 4)
+          .toString("latin1") === "OTTO",
+    }),
+    () => ({ status: 0, otf: false })
+  );
+  check(
+    font.status === 200 && font.otf,
+    `${name}: the host answers the page's CJK font route`,
+    JSON.stringify(font)
+  );
+  if (!docId) return;
+  const went = await pageJs(
+    controlFile,
+    probeFile,
+    0,
+    `setTimeout(() => { location.href = "/doc/${encodeURIComponent(docId)}"; }, 100); return "going";`,
+    shell
+  );
+  check(
+    went === "going",
+    `${name}: the page was sent to the Reader of the PDF`,
+    JSON.stringify(went)
+  );
+  await sleep(1500);
+  const answer = await pageJs(controlFile, probeFile, 1, READER_INK, shell, 90000);
+  let seen = null;
+  try {
+    seen = JSON.parse(answer);
+  } catch {
+    seen = { unparsed: answer };
+  }
+  log(`${name}: the Reader's page image ${JSON.stringify(seen)}`);
+  const share = (r) => (r?.of ? r.dark / r.of : 0);
+  check(
+    share(seen?.latin) > 0.005,
+    `${name}: the shell's page renders the Latin line of the PDF`,
+    JSON.stringify(seen?.latin ?? seen)
+  );
+  check(
+    share(seen?.cjk) > 0.005,
+    `${name}: the shell's page renders the non-embedded CJK text (the PDF engine's font fallback, fonts from the local server)`,
+    JSON.stringify(seen?.cjk ?? seen)
+  );
+}
+
 async function waitExit(child, ms) {
   for (let i = 0; i < ms / 100 && child.exitCode === null && child.signalCode === null; i += 1)
     await sleep(100);
   return child.exitCode !== null || child.signalCode !== null;
 }
 
-async function run(name, { keepEntries }) {
+async function run(name, { keepEntries, cjk }) {
   const dir = join(work, name);
   mkdirSync(dir, { recursive: true });
   const port = await freePort();
-  const { env, home } = isolatedEnv(dir, port);
+  const { env, home } = isolatedEnv(dir, port, cjk ? join(dir, "project") : null);
   const probeFile = join(dir, "probe.jsonl");
   const controlFile = join(dir, "control.txt");
   writeFileSync(controlFile, "");
@@ -273,6 +469,7 @@ async function run(name, { keepEntries }) {
       })
     );
   }
+  if (cjk && host) await cjkInPage(name, port, controlFile, probeFile, shell);
   // Quit through the menu item (as Ctrl/Cmd+Q).
   appendFileSync(controlFile, "menu quit\n");
   const ended = await waitExit(shell, 30000);
@@ -295,8 +492,8 @@ async function run(name, { keepEntries }) {
 }
 
 try {
-  await run("guarded", { keepEntries: false });
-  await run("entries-kept", { keepEntries: true });
+  await run("guarded", { keepEntries: false, cjk: true });
+  await run("entries-kept", { keepEntries: true, cjk: false });
 } finally {
   cleanup();
   try {
