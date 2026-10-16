@@ -6,7 +6,7 @@
 
 - 开发、设计或修改前先读 `CONTEXT.md` 和 [硬契约](../contracts.md)；实施、调试、验收另读 [工程指南](../engineering.md)。
 - 阅读本任务涉及的 ADR。当前入口：[Work 与 Doc 分离](../adr/0001-work-doc-identity.md)、[编译事实与共享 IR](../adr/0002-compiled-ir.md)、[标注内容绑定与整批归档](../adr/0003-annotation-epochs.md)、[临时探索与持久文库](../adr/0004-discovery-library-separation.md)。新 ADR 创建后同步此入口。
-- Copilot 与新增文本输入的设计决定：[UI 能力对等与结构化上下文](../adr/0005-copilot-ui-parity.md)、[可读文本接入共享 IR](../adr/0006-text-input-to-shared-ir.md)。这些决定不代表新能力已经实现。
+- Copilot 与新增文本输入的设计决定：[UI 能力对等与结构化上下文](../adr/0005-copilot-ui-parity.md)、[可读文本接入共享 IR](../adr/0006-text-input-to-shared-ir.md)，以及局部取代 0005 能力上限的[通用文件与命令能力](../adr/0011-copilot-file-and-command-tools.md)（2026-10-16，尚未实施）。这些决定不代表新能力已经实现。
 - 全局数据与邮件：[全局数据范围](../adr/0007-global-data-scope.md)、[邮件以远端为准与真人确认](../adr/0008-mail-remote-authority.md)。尚未实施。
 - 论证图：[属于 Work，出处只作参考](../adr/0009-argument-graph-work-owned.md)。数据与读写接口、画布、视图（发布页面上下文）、手动编辑、Work 合并跟随、CLI、Copilot 工具与确认卡、整理 skill 均已实施并经工程核查；用户终验是独立的一步，CLI 新命令的冻结面（[contracts](../contracts.md)「CLI 论证图命令冻结契约」）在其通过后生效。
 - 桌面应用：[Tauri 壳加 Node sidecar，页面经本地 HTTP 加载](../adr/0010-desktop-app-tauri-node-sidecar.md)。尚未实施。

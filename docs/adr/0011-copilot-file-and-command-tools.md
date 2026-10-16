@@ -1,0 +1,31 @@
+---
+status: accepted
+---
+
+# Copilot 获得通用的文件与命令能力，不再以 UI 为能力上限
+
+Copilot 除了应用自有的业务工具，还获得 pi 自带的 read / bash / edit / write / grep / find / ls（Windows 上以 powershell 代替 bash），工作目录是当前 Project 文件夹。这局部取代 [ADR 0005](0005-copilot-ui-parity.md) 中「UI 没有的操作，Copilot 也不能做」和「不能……开放任意文件/进程权限」两句；ADR 0005 其余各条（页面上下文、后台业务操作与可见导航分开、会话持久、原 UI 的人工确认语义、停止与中断规则）不变。
+
+起因是 pre-release 试用：用户让 Copilot 把一个文件夹里的条目导入 Library，Copilot 只能回答它读不了文件。按 ADR 0005 的路线要先给 UI 补「从文件导入」等入口，再让 Copilot 得到同样的能力；用户认为 ArgelanderSpace 是 MIT 许可的开源软件、使用者应自理更多风险，选择直接放开。各平台专门的 Copilot 沙箱留给后续版本，本版没有。
+
+## Considered Options
+
+- **守住 ADR 0005，逐项补业务能力**（UI 加文件导入、ADS 自由搜索，Copilot 随之得到）：安全边界不变，但每类任务都要先做一套 UI；用户否决。
+- **只开放 Project 文件夹内的只读文件访问**：风险更小，但读完之后多数任务（整理文件、调用 CLI、批量处理）仍然做不了；用户否决。
+- **全开、不加任何门**：被下文的权限设置取代——放开能力，但默认逐次确认，是否全自动由用户在设置里决定。
+
+## Consequences
+
+- **业务数据仍走业务工具。** Library、标注、论证图、Plan、Manuscript、Mail 等的修改仍经原有业务工具，原有确认卡、rev 检查、三态归档等语义不变；提示词要求如此，edit / write 工具另外拒绝写入 dataDir 与全局数据目录。bash 无法设防：经文件或命令工具对项目数据、全局数据的直接改动等同于用户手改磁盘，不受[硬契约](../contracts.md)保护。
+- **权限设置**：设置里有「Copilot 的文件与命令权限：关闭 / 逐次确认 / 自动」，默认逐次确认。逐次确认时 bash 与 edit / write 每次出确认卡（显示完整命令或目标路径与改动摘要、工作目录），可选「本会话内允许」，按命令与写文件两类分别生效；read / grep / find / ls 不出卡。自动时不出卡，每次调用仍在对话里显示为可展开的工具卡片。
+- **提示词注入是被接受的风险。** 邮件与论文正文是不可信文本，注入可能让 Copilot 执行命令读取凭据并外发；逐次确认是默认的缓解，切到自动由用户自担。
+- 随包 skills 载入 Copilot；仍不自动发现项目或用户的 `.pi`、AGENTS、skills 与扩展。`argelanderspace` CLI 可经命令调用，只用于读：CLI 写入与 server 同时写同一对象不受支持（I013）。
+- 编译沙箱不再决定 Copilot 能否编译：没有 bwrap 的平台上 Copilot 也能触发 Writer 编译；Linux 上有 bwrap 时编译仍在沙箱里。这修订 [ADR 0010](0010-desktop-app-tauri-node-sidecar.md) 最后一条 Consequence。
+- 停止或 server 退出时，正在运行的命令连同子进程一起终止，结果报告为已中断，重启后不自动重跑。命令文本与输出属于 Copilot 对话内容，不进用户日志。
+- 新能力仍要同时考虑用户的 UI 入口；本决定不意味着以后的业务功能可以只给 Copilot、不做 UI。
+
+## 重新讨论的条件
+
+为某个平台实现了 Copilot 专用沙箱时，重议该平台的默认权限与 edit / write 护栏；出现实际的注入事故时，重议「自动」档是否保留。
+
+来源：2026-10-16 pre-release 反馈访谈，用户对 Q1（放开权限）与 Q9–Q17 的明确答复。本决定规定方向，尚未实施。
