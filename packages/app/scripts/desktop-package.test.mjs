@@ -293,19 +293,21 @@ test("a failed signature check removes the cached checksum list and its signatur
   assert.deepEqual(removed.sort(), ["/c/SHASUMS256.txt", "/c/SHASUMS256.txt.sig"]);
 
   const args = [];
-  const good = (cmd, argv) => {
-    args.push([cmd, ...argv]);
+  const good = (cmd, argv, options) => {
+    args.push([cmd, ...argv, options]);
     return { status: 0, stderr: 'gpgv: Good signature from "Some Releaser <r@example.org>"' };
   };
   const removedOk = [];
   const ok = verifyNodeSignature({
-    keyring: "/k",
+    keyring: "/t/keys.kbx",
     shasums: "/c/S",
     signature: "/c/S.sig",
     run: good,
     remove: (f) => removedOk.push(f),
   });
-  assert.deepEqual(args, [["gpgv", "--keyring", "/k", "/c/S.sig", "/c/S"]]);
+  // The keyring is named relative to its own directory (gpgv's working directory): gpgv reads a keyring name with a
+  // colon as a URL, so a Windows path (D:\...) would be refused (Git for Windows' gpgv, desktop-app ticket 30).
+  assert.deepEqual(args, [["gpgv", "--keyring", "./keys.kbx", "/c/S.sig", "/c/S", { cwd: "/t" }]]);
   assert.deepEqual(removedOk, []);
   assert.equal(ok.verified, true);
   assert.match(ok.detail, /Some Releaser/);
