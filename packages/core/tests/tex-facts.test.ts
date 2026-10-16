@@ -9,7 +9,7 @@
 
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import { parseAux } from "../src/pipelines/tex/facts/aux.js";
+import { parseAux } from "../src/pipelines/tex/facts/aux-file.js";
 import { parseBbl } from "../src/pipelines/tex/facts/bbl.js";
 import { parseTexEvents } from "../src/pipelines/tex/facts/events.js";
 import { parseFls } from "../src/pipelines/tex/facts/fls.js";

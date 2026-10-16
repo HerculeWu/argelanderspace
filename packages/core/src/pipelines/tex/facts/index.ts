@@ -9,13 +9,13 @@
  */
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { parseAux, type TexAuxFacts } from "./aux.js";
+import { parseAux, type TexAuxFacts } from "./aux-file.js";
 import { parseBbl, type TexBblFacts, type TexReferenceFact } from "./bbl.js";
 import { parseTexEvents, type TexEvent, type TexEventStream } from "./events.js";
 import { parseFls } from "./fls.js";
 import { parseToc, type TexTocEntry } from "./toc.js";
 
-export { parseAux, type TexAuxFacts, type TexLabelFact } from "./aux.js";
+export { parseAux, type TexAuxFacts, type TexLabelFact } from "./aux-file.js";
 export { parseBbl, type TexBblFacts, type TexReferenceFact } from "./bbl.js";
 export {
   parseTexEvents,
