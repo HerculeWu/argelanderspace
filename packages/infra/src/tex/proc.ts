@@ -19,7 +19,10 @@ import type { Readable } from "node:stream";
 import { type ExternalObserver, type ExternalProgram, reportProgram } from "../lib/observe.js";
 
 /** How the TeX child is spawned on `platform`. */
-export function texSpawnFlags(platform: NodeJS.Platform): { detached: boolean; windowsHide: boolean } {
+export function texSpawnFlags(platform: NodeJS.Platform): {
+  detached: boolean;
+  windowsHide: boolean;
+} {
   return { detached: platform !== "win32", windowsHide: true };
 }
 

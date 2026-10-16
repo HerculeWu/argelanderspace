@@ -3,15 +3,15 @@
 # (docs/contracts.md; the user's change 9 of 2026-10-13). Nothing is published: the draft is looked at and made public
 # by hand.
 #
-# What it builds: Linux x64 (deb and AppImage) by default. The macOS and Windows targets are kept but not run unless
-# chosen by hand (the user's decision of 2026-10-15 in ticket 26). The shell is ported to them (ticket 30); whether
-# they are built by default is the user's decision, still open.
+# What it builds: all four targets by default: Linux x64 (deb and AppImage), Windows x64 (NSIS), macOS arm64 and x64
+# (dmg); none of them signed by Apple or Microsoft (the user's decision B of 2026-10-16 in ticket 30, once the shell
+# was ported and every target had passed here; before, ticket 26: Linux only).
 #
 # When it runs:
 #   - a pushed tag `v<version>`, where <version> is packages/app/package.json's `version` (the single source,
-#     ticket 16); any other tag fails in the preflight before anything is built. Builds linux-x64.
+#     ticket 16); any other tag fails in the preflight before anything is built. Builds all four targets.
 #   - by hand (Actions > Release > Run workflow) on a branch or tag: it builds that commit; with `draft` (off by
-#     default) it also names a draft `v<version>`. `targets`: linux-x64 (the default), `all`, or one other target. A
+#     default) it also names a draft `v<version>`. `targets`: `all` (the default) or one target. A
 #     draft is made only when `draft` is on and every chosen target succeeded. When a tag `v<version>` exists already
 #     it must name the commit built (or nothing is made); otherwise the tag is made when the draft is published.
 #
@@ -27,10 +27,10 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Which targets to build (macOS and Windows: not by default yet, ticket 30; a draft only when all chosen succeed)"
+        description: "Which targets to build (all four by default; a draft only when all chosen succeed)"
         type: choice
-        default: linux-x64
-        options: [linux-x64, all, win32-x64, darwin-arm64, darwin-x64]
+        default: all
+        options: [all, linux-x64, win32-x64, darwin-arm64, darwin-x64]
       draft:
         description: "Make the release draft when every chosen target succeeded (off: build and check only, nothing made)"
         type: boolean
@@ -63,7 +63,7 @@ jobs:
       - name: Choose the targets
         id: matrix
         env:
-          CHOSEN: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'linux-x64' }}
+          CHOSEN: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'all' }}
         run: |
           all='[
             {"target":"linux-x64","os":"ubuntu-24.04","bundles":"deb,appimage"},

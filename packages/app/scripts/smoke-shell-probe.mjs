@@ -189,7 +189,8 @@ function isolatedEnv(dir, port, project = null) {
     // ARGELANDERSPACE_SHELL_PROBE_PIPE (below): a name of the smoke's own, not the runner user's SID.
     XDG_RUNTIME_DIR: process.platform === "win32" ? join(dir, "run") : mkdtempSync("/tmp/asp-"),
   });
-  if (process.platform === "win32") env.ARGELANDERSPACE_SHELL_PROBE_PIPE = `aspace-smoke-${process.pid}-${port}`;
+  if (process.platform === "win32")
+    env.ARGELANDERSPACE_SHELL_PROBE_PIPE = `aspace-smoke-${process.pid}-${port}`;
   runDirs.push(env.XDG_RUNTIME_DIR);
   for (const d of [
     env.APPDATA,
@@ -510,7 +511,10 @@ async function downloadInPage(name, saveDir, controlFile, probeFile, shell) {
   await sleep(1000);
   const left = readdirSync(saveDir);
   check(
-    answer === "clicked" && got === DOWNLOAD_TEXT && left.length === 1 && left[0] === "probe-download.txt",
+    answer === "clicked" &&
+      got === DOWNLOAD_TEXT &&
+      left.length === 1 &&
+      left[0] === "probe-download.txt",
     `${name}: a download is saved with the served bytes${replace ? ", replacing the file of that name," : ""} and nothing else is left`,
     JSON.stringify({ answer, got, left })
   );
@@ -537,7 +541,9 @@ async function leaveThePage(name, port, openedFile, controlFile, probeFile, shel
     opened = existsSync(openedFile) ? readLines(openedFile) : [];
     if (opened.length < 3) await sleep(200);
   }
-  log(`${name}: after leaving, the page is at ${href}; handed to the system browser: ${JSON.stringify(opened)}`);
+  log(
+    `${name}: after leaving, the page is at ${href}; handed to the system browser: ${JSON.stringify(opened)}`
+  );
   check(
     typeof href === "string" && href.startsWith(`http://127.0.0.1:${port}/`),
     `${name}: a navigation to an outside address leaves the window on the local page`,

@@ -76,7 +76,8 @@ test("classic entries: three planes R, G, B with no prefix, an uncompressed mask
     const px = Buffer.alloc(count * 4);
     const noise = bytes(count * 4, size);
     for (let i = 0; i < count; i++) {
-      const x = i % size, y = Math.floor(i / size);
+      const x = i % size,
+        y = Math.floor(i / size);
       const inside = x > 1 && y > 1 && x < size - 2 && y < size - 2;
       const edge = inside && (x === 2 || y === 2);
       px[i * 4] = inside ? (edge ? noise[i * 4] : 30) : 0;
@@ -130,7 +131,20 @@ test("ICNS container round trip", () => {
 test("the committed icon.icns holds 16 and 32 px as classic entries, no icp4/icp5, and they decode", () => {
   const entries = readIcns(readFileSync(join(iconsDir, "icon.icns")));
   const types = entries.map((e) => e.type);
-  assert.deepEqual(types, ["is32", "s8mk", "il32", "l8mk", "ic11", "ic12", "ic07", "ic13", "ic08", "ic14", "ic09", "ic10"]);
+  assert.deepEqual(types, [
+    "is32",
+    "s8mk",
+    "il32",
+    "l8mk",
+    "ic11",
+    "ic12",
+    "ic07",
+    "ic13",
+    "ic08",
+    "ic14",
+    "ic09",
+    "ic10",
+  ]);
   for (const size of [16, 32]) {
     const [colorType, maskType] = CLASSIC[size];
     const color = entries.find((e) => e.type === colorType).data;
