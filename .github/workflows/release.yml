@@ -256,6 +256,10 @@ jobs:
             test -x "$app/Contents/MacOS/$exe"
             res="$app/Contents/Resources"
             nodebin="$res/sidecar/node/bin/node"
+            # The app's ICNS, for the icon step below (tauri removes bundle/macos/*.app once the dmg is made).
+            icns=("$res"/*.icns)
+            test "${#icns[@]}" -eq 1
+            cp "${icns[0]}" "$EVIDENCE/app-icon.icns"
           else
             exes=("$b"/nsis/*.exe)
             test "${#exes[@]}" -eq 1
@@ -280,14 +284,11 @@ jobs:
             echo "UNTESTED on $RUNNER_OS from the package itself: the host, the page, PDFium, the keychain, Copilot, the ingest (the probe step runs them from a test build)"
           } | tee -a "$out" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: macOS icon (the built .app's ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
+      - name: macOS icon (the dmg's .app's ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
         if: runner.os == 'macOS'
         run: |
-          # The ICNS the bundle carries, not the repository's source file.
-          shopt -s nullglob
-          icns=(packages/desktop/target/release/bundle/macos/*.app/Contents/Resources/*.icns)
-          test "${#icns[@]}" -eq 1
-          iconutil -c iconset "${icns[0]}" -o "$EVIDENCE/icon.iconset"
+          # The ICNS the package carries (copied out of the dmg's .app by the step above), not the repository's file.
+          iconutil -c iconset "$EVIDENCE/app-icon.icns" -o "$EVIDENCE/icon.iconset"
           ls -l "$EVIDENCE/icon.iconset" | tee "$EVIDENCE/icon-iconset.txt"
           test -f "$EVIDENCE/icon.iconset/icon_16x16.png"
           test -f "$EVIDENCE/icon.iconset/icon_32x32.png"
