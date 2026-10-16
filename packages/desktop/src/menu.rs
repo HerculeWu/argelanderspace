@@ -169,7 +169,8 @@ fn literal(label: &str) -> String {
 ///
 /// macOS (desktop-app ticket 30), as Mac apps have it: the application menu first (about, hide, quit with Cmd+Q — the
 /// shell's own quit, as closing the window), then File without quit, Edit (the system's undo, cut, copy, paste and
-/// select all: without them those keys do nothing in the page), View, and Help without about.
+/// select all: without them those keys do nothing in the page) and View. No Help menu: its only item, about, is in the
+/// application menu (review of ticket 30: an empty Help menu was shown).
 pub fn build<R: Runtime>(app: &AppHandle<R>, model: &MenuModel) -> tauri::Result<Menu<R>> {
     let mac = cfg!(target_os = "macos");
     let text = MenuText::of(model.language);
@@ -232,9 +233,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>, model: &MenuModel) -> tauri::Result
             .paste()
             .select_all()
             .build()?;
-        let help = SubmenuBuilder::new(app, text.help).build()?;
         return MenuBuilder::new(app)
-            .items(&[&application, &file, &edit, &view, &help])
+            .items(&[&application, &file, &edit, &view])
             .build();
     }
     let help = SubmenuBuilder::new(app, text.help).item(&about).build()?;

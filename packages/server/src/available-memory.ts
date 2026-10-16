@@ -4,7 +4,9 @@
  * pages, not the inactive ones the kernel reclaims on demand, so a Mac that has plenty to give often reports less than
  * 512 MiB and every PDF upload was refused.
  *
- *  - Linux: `MemAvailable` from /proc/meminfo (the kernel's own estimate), read on every call (a small file).
+ *  - Linux: `MemAvailable` from /proc/meminfo (the kernel's own estimate), read on every call (a small file). Node
+ *    24's own `os.freemem()` (libuv) reads `MemAvailable` on Linux as well (checked on Node 24.15.0: the two agree);
+ *    the file is read here so the number does not depend on libuv's choice.
  *  - macOS: `vm_stat`'s free + inactive + speculative pages at its page size. Purgeable pages are NOT added: they sit
  *    in the active and inactive queues already, so adding them would count some pages twice. `vm_stat` is a child
  *    process, so its answer is kept for one second and concurrent calls share one run.
@@ -44,6 +46,7 @@ export interface AvailableMemorySources {
   now: () => number;
 }
 
+// macOS: one vm_stat answer (or its failure) serves every call for one second, so a burst of uploads runs one child.
 const DARWIN_CACHE_MS = 1000;
 
 /** The available-memory reader for one set of sources (the real ones in `availableMemory`; fakes in tests). */

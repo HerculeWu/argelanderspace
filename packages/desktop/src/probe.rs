@@ -11,6 +11,8 @@
 //! menu now, `js <script>` runs a script in the page and
 //! appends `{"js": <answer>}` to the probe file; `ARGELANDERSPACE_SHELL_PROBE_SAVE_TO=<dir>` saves the page's
 //! downloads there without the save dialog (so the files can be checked; the dialog itself is checked without it).
+//! Desktop-app ticket 30: `ARGELANDERSPACE_SHELL_PROBE_OPENED=<file>` records the addresses the shell would hand to the
+//! system browser instead of opening them (`record_opened`).
 //!
 //! Linux runs the scripts with WebKitGTK's `call_async_javascript_function`. macOS and Windows (desktop-app ticket 30)
 //! have no call that waits for an async function's answer: the script is started with `eval`, leaves its answer in
@@ -36,6 +38,15 @@ r.webkitIpcHandler = !!(window.webkit && window.webkit.messageHandlers && window
 r.webviewPostMessage = (() => {
   try {
     return typeof (window.chrome && window.chrome.webview && window.chrome.webview.postMessage);
+  } catch (e) {
+    return "error";
+  }
+})();
+// WebView2's own objects, to tell apart what the guard took away (desktop-app ticket 30 review).
+r.chrome = typeof window.chrome;
+r.chromeWebview = (() => {
+  try {
+    return typeof (window.chrome && window.chrome.webview);
   } catch (e) {
     return "error";
   }
@@ -128,6 +139,21 @@ pub fn control(each: impl Fn(Command) + Send + 'static) {
             std::thread::sleep(Duration::from_millis(150));
         }
     });
+}
+
+/// Test builds with `ARGELANDERSPACE_SHELL_PROBE_OPENED=<file>`: an address for the system browser is appended to the
+/// file (`{"opened": <url>, "source": <navigation|new_window>}`) instead of being opened; whether it was.
+pub fn record_opened(url: &str, source: &str) -> bool {
+    let Some(file) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE_OPENED") else {
+        return false;
+    };
+    let line = serde_json::json!({ "opened": url, "source": source }).to_string();
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .and_then(|mut f| writeln!(f, "{line}"))
+        .is_ok()
 }
 
 /// Where downloads go without the dialog, when the smoke says so.

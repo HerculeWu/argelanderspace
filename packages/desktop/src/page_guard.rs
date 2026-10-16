@@ -17,7 +17,7 @@
 //!      (`IsWebMessageEnabled` false).
 //!
 //! Fail-closed: when the scripts cannot be taken out (no user content manager or controller, an id that is not a
-//! number, a WebView2 call that fails), the page is not loaded and `on_failed` is called (the shell records
+//! number, a WebView2 call that fails, including the removal of any one id), the page is not loaded and `on_failed` is called (the shell records
 //! `shell.window_failed` `guard` and quits, `main.rs`).
 //!
 //! This leans on how wry 0.57 puts Tauri's scripts in (above): after an upgrade of tauri or wry, or of the system's
@@ -98,8 +98,9 @@ fn strip(platform: &tauri::webview::PlatformWebview) -> bool {
         let Ok(settings) = webview.Settings() else {
             return false;
         };
-        // FALSIFICATION ONLY (reverted in the next commit): web messages left on.
-        let _ = &settings;
+        if settings.SetIsWebMessageEnabled(false).is_err() {
+            return false;
+        }
         let marker: Rc<RefCell<Option<String>>> = Rc::default();
         let slot = Rc::clone(&marker);
         let added = AddScriptToExecuteOnDocumentCreatedCompletedHandler::wait_for_async_operation(
@@ -122,9 +123,15 @@ fn strip(platform: &tauri::webview::PlatformWebview) -> bool {
         let Ok(webview) = platform.controller().CoreWebView2() else {
             return false;
         };
+        // Every id from 1 to the shell's own names a script added before it; one that cannot be removed may be one of
+        // Tauri's left in the page, so any failure fails closed.
         for id in 1..=last {
-            // An id that names no script is refused by WebView2, which is harmless here.
-            let _ = webview.RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(id.to_string()));
+            if webview
+                .RemoveScriptToExecuteOnDocumentCreated(&HSTRING::from(id.to_string()))
+                .is_err()
+            {
+                return false;
+            }
         }
     }
     true

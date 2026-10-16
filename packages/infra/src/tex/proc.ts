@@ -5,6 +5,10 @@
  * runs take tens of seconds, so they must not block the event loop. The
  * child is spawned detached (own process group) so a timeout SIGKILL takes
  * the whole group down — latexmk otherwise orphans its engine children.
+ * Windows (desktop-app ticket 30 review) has no process groups, and a detached
+ * child there gets a console window of its own (the desktop host runs without
+ * one): the child is not detached, its window is hidden, and a kill ends the
+ * whole tree with `taskkill /T /F` (`texSpawnFlags`, `killTexTree`).
  *
  * `opts.env` (Stage 10 writer numbering compile) is merged over `process.env`
  * so callers can add e.g. TEXINPUTS without rebuilding the environment.
@@ -13,6 +17,26 @@
 import { type ChildProcessByStdio, spawn } from "node:child_process";
 import type { Readable } from "node:stream";
 import { type ExternalObserver, type ExternalProgram, reportProgram } from "../lib/observe.js";
+
+/** How the TeX child is spawned on `platform`. */
+export function texSpawnFlags(platform: NodeJS.Platform): { detached: boolean; windowsHide: boolean } {
+  return { detached: platform !== "win32", windowsHide: true };
+}
+
+/** Ends the TeX child `pid` and what it started (see the header); each way falls back to killing the child alone. */
+export function killTexTree(
+  pid: number | undefined,
+  platform: NodeJS.Platform,
+  deps: { killGroup: (pid: number) => void; killChild: () => void; taskkill: (pid: number) => void }
+): void {
+  try {
+    if (pid === undefined) deps.killChild();
+    else if (platform === "win32") deps.taskkill(pid);
+    else deps.killGroup(pid);
+  } catch {
+    deps.killChild();
+  }
+}
 
 export interface TexProcResult {
   code: number | null;
@@ -52,7 +76,7 @@ export function runTexProcess(
     const child = spawn(cmd, args, {
       cwd: opts.cwd,
       stdio: opts.fdInput ? ["ignore", "pipe", "pipe", "pipe"] : ["ignore", "pipe", "pipe"],
-      detached: true,
+      ...texSpawnFlags(process.platform),
       // additive merge (Stage 10: writer numbering compile needs TEXINPUTS);
       // existing callers pass no env and get the parent's unchanged.
       ...(opts.env !== undefined
@@ -63,14 +87,17 @@ export function runTexProcess(
     if (opts.fdInput)
       (child.stdio[3] as unknown as import("node:stream").Writable).end(opts.fdInput);
     let timedOut = false;
-    const kill = () => {
-      try {
-        if (child.pid !== undefined) process.kill(-child.pid, "SIGKILL");
-        else child.kill("SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
-    };
+    const kill = () =>
+      killTexTree(child.pid, process.platform, {
+        killGroup: (pid) => process.kill(-pid, "SIGKILL"),
+        killChild: () => child.kill("SIGKILL"),
+        taskkill: (pid) => {
+          spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
+            stdio: "ignore",
+            windowsHide: true,
+          }).on("error", () => child.kill("SIGKILL"));
+        },
+      });
     const timer = setTimeout(() => {
       timedOut = true;
       kill();

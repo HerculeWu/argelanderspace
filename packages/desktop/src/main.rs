@@ -322,6 +322,10 @@ impl Shell {
                 }
                 Ev::OpenLink(url, source) => {
                     // Only http/https reach here (navigation.rs); one argument to the system's opener, no shell.
+                    #[cfg(feature = "smoke-probe")]
+                    let opened = probe::record_opened(url.as_str(), source)
+                        || open::that_detached(url.as_str()).is_ok();
+                    #[cfg(not(feature = "smoke-probe"))]
                     let opened = open::that_detached(url.as_str()).is_ok();
                     self.sup.on_link_opened(source, opened)
                 }

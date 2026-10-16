@@ -292,6 +292,26 @@ jobs:
             echo "UNTESTED on $RUNNER_OS from the package itself: the host, the page, PDFium, the keychain, Copilot, the ingest (the probe step runs them from a test build)"
           } | tee -a "$out" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Windows uninstall (the NSIS uninstaller, silent, removes what the installer put there)
+        if: runner.os == 'Windows'
+        run: |
+          res="$(cygpath -u "$LOCALAPPDATA")/ArgelanderSpace"
+          out="$EVIDENCE/nsis-uninstall.txt"
+          test -f "$res/uninstall.exe"
+          uninstaller_win=$(cygpath -w "$res/uninstall.exe")
+          powershell -NoProfile -Command "Start-Process -Wait -FilePath '$uninstaller_win' -ArgumentList '/S'"
+          # NSIS's uninstaller copies itself away and runs from there: wait for it to finish removing.
+          for _ in $(seq 1 60); do
+            [ -e "$res/argelanderspace-desktop.exe" ] || [ -e "$res/sidecar" ] || break
+            sleep 1
+          done
+          { echo "after uninstall:"; ls -la "$res" 2>&1 || true; } | tee "$out"
+          test ! -e "$res/argelanderspace-desktop.exe"
+          test ! -e "$res/sidecar"
+          test ! -e "$res/skills"
+          test ! -e "$res/THIRD-PARTY-SHELL-NOTICES.txt"
+          echo "NSIS uninstall /S: shell, sidecar, skills and notices removed" | tee -a "$out" >> "$GITHUB_STEP_SUMMARY"
+
       - name: macOS icon (iconutil's 16/32 px of the dmg's ICNS, pixel for pixel against the source rendering)
         if: runner.os == 'macOS'
         run: |

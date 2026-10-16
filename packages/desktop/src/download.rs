@@ -35,10 +35,15 @@
 //! dialog (rfd: `NSSavePanel`, `IFileSaveDialog`, which both ask before replacing a file) opens over the window, in
 //! the folder and with the name wry proposes (the download folder; wry has already numbered the name « (1) » when a
 //! file of the page's name is there). Cancelled, the download is refused and reported `cancelled` at once; wry then
-//! reports the refused download's end as a failure, which is not reported again (`Refused`). On macOS a file the user
-//! agreed in the dialog to replace is removed before WKWebView writes, since a WKDownload does not replace a file.
+//! reports the refused download's end as a failure, which is not reported again (`Refused`, for a short while only).
+//! Chosen, the webview writes to a temporary name next to the chosen file (`Staged`; a WKDownload does not replace a
+//! file, and WebView2 numbers the name instead), and only a download that finished whole is renamed over the chosen
+//! name (which replaces a file the user agreed to replace); a failed one, or one that cannot be renamed, has its
+//! temporary file removed and is reported `failed` (the failure dialog), never `cancelled` (review of ticket 30: the
+//! file the user agreed to replace was removed before the download, and a failure to remove it was reported as a
+//! cancel).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use crate::protocol::Language;
@@ -337,37 +342,99 @@ pub fn ask_where(
     }
 }
 
+/// How long a refused download's end is waited for: wry reports it at once (the refusal ends it), so an end that never
+/// came does not swallow a real failure of the same address later.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub const REFUSED_FOR: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// The downloads refused in the save dialog (macOS, Windows), by address: wry reports each one's end as a failure
-/// afterwards, which was reported as `cancelled` already and is not reported again.
+/// afterwards, which was reported as `cancelled` already and is not reported again. A refusal is forgotten after
+/// `REFUSED_FOR`.
 #[derive(Debug, Default)]
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 pub struct Refused {
-    urls: HashMap<String, usize>,
+    urls: HashMap<String, VecDeque<std::time::Instant>>,
 }
 
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 impl Refused {
-    /// A download of `url` was refused (reported `cancelled` now).
-    pub fn refuse(&mut self, url: &str) {
-        *self.urls.entry(url.to_owned()).or_default() += 1;
+    /// A download of `url` was refused at `now` (reported `cancelled` now).
+    pub fn refuse(&mut self, url: &str, now: std::time::Instant) {
+        self.urls.entry(url.to_owned()).or_default().push_back(now);
     }
 
-    /// A download of `url` ended: its outcome to report, none for the end of one refused.
-    pub fn finished(&mut self, url: &str, success: bool) -> Option<Outcome> {
-        if success {
-            return Some(Outcome::Saved);
+    /// A failed end of a download of `url` at `now`: whether it is the end of one refused (and so not reported).
+    pub fn ended(&mut self, url: &str, now: std::time::Instant) -> bool {
+        let Some(times) = self.urls.get_mut(url) else {
+            return false;
+        };
+        while times
+            .front()
+            .is_some_and(|t| now.saturating_duration_since(*t) > REFUSED_FOR)
+        {
+            times.pop_front();
         }
-        match self.urls.get_mut(url) {
-            Some(n) => {
-                *n -= 1;
-                if *n == 0 {
-                    self.urls.remove(url);
-                }
-                None
-            }
-            None => Some(Outcome::Failed),
+        let refused = times.pop_front().is_some();
+        if times.is_empty() {
+            self.urls.remove(url);
         }
+        refused
     }
+}
+
+/// The downloads under way to a temporary name (macOS, Windows), by address, in the order started: the temporary
+/// file and the file the user chose.
+#[derive(Debug, Default)]
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub struct Staged {
+    urls: HashMap<String, VecDeque<(PathBuf, PathBuf)>>,
+    count: u64,
+}
+
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+impl Staged {
+    /// A download of `url` to `chosen`: the temporary name, in the same folder, the webview writes to instead.
+    pub fn stage(&mut self, url: &str, chosen: PathBuf) -> PathBuf {
+        self.count += 1;
+        let temp = temporary_name(&chosen, std::process::id(), self.count);
+        self.urls
+            .entry(url.to_owned())
+            .or_default()
+            .push_back((temp.clone(), chosen));
+        temp
+    }
+
+    /// The download of `url` that ended (the earliest started), if one is under way.
+    pub fn take(&mut self, url: &str) -> Option<(PathBuf, PathBuf)> {
+        let queue = self.urls.get_mut(url)?;
+        let next = queue.pop_front();
+        if queue.is_empty() {
+            self.urls.remove(url);
+        }
+        next
+    }
+}
+
+/// `<folder>/.<name>.<pid>-<n>.part`: hidden, next to the chosen file (the same volume, so the rename does not copy).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn temporary_name(chosen: &Path, pid: u32, n: u64) -> PathBuf {
+    let name = chosen
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    chosen.with_file_name(format!(".{name}.{pid}-{n}.part"))
+}
+
+/// The end of a staged download: whole, the temporary file is renamed over the chosen one (replacing a file there,
+/// which the dialog asked about); otherwise, or when it cannot be renamed, the temporary file is removed and the
+/// download failed.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub fn settle(temp: &Path, chosen: &Path, success: bool) -> Outcome {
+    if success && std::fs::rename(temp, chosen).is_ok() {
+        return Outcome::Saved;
+    }
+    let _ = std::fs::remove_file(temp);
+    Outcome::Failed
 }
 
 /// Tauri's download handler for macOS and Windows: the save dialog for each download, and its outcome to `report`.
@@ -376,20 +443,28 @@ pub fn on_download<R: tauri::Runtime>(
     language: std::sync::Arc<std::sync::Mutex<Language>>,
     report: impl Fn(Outcome) + Send + Sync + 'static,
 ) -> impl Fn(tauri::Webview<R>, tauri::webview::DownloadEvent<'_>) -> bool + Send + Sync + 'static {
+    use std::sync::Mutex;
+    use std::time::Instant;
     use tauri::webview::DownloadEvent;
-    let refused = std::sync::Mutex::new(Refused::default());
+    let refused = Mutex::new(Refused::default());
+    let staged = Mutex::new(Staged::default());
     move |webview, event| match event {
         DownloadEvent::Requested { url, destination } => {
             let language = language.lock().map(|l| *l).unwrap_or(Language::Chinese);
             let proposed = destination.clone();
-            match ask_where_native(&webview, &proposed, language) {
-                Some(path) => {
-                    *destination = path;
+            let chosen = ask_where_native(&webview, &proposed, language);
+            match (chosen, staged.lock()) {
+                (Some(path), Ok(mut staged)) => {
+                    *destination = staged.stage(url.as_str(), path);
                     true
                 }
-                None => {
+                (Some(_), Err(_)) => {
+                    report(Outcome::Failed);
+                    false
+                }
+                (None, _) => {
                     if let Ok(mut refused) = refused.lock() {
-                        refused.refuse(url.as_str());
+                        refused.refuse(url.as_str(), Instant::now());
                     }
                     report(Outcome::Cancelled);
                     false
@@ -397,13 +472,21 @@ pub fn on_download<R: tauri::Runtime>(
             }
         }
         DownloadEvent::Finished { url, success, .. } => {
-            let outcome = refused
-                .lock()
-                .ok()
-                .and_then(|mut r| r.finished(url.as_str(), success));
-            if let Some(outcome) = outcome {
-                report(outcome);
+            // A failed end of a refused download is that refusal's (refused downloads end at once, before any staged
+            // download of the same address could).
+            if !success
+                && refused
+                    .lock()
+                    .is_ok_and(|mut r| r.ended(url.as_str(), Instant::now()))
+            {
+                return true;
             }
+            let entry = staged.lock().ok().and_then(|mut s| s.take(url.as_str()));
+            report(match entry {
+                Some((temp, chosen)) => settle(&temp, &chosen, success),
+                None if success => Outcome::Saved,
+                None => Outcome::Failed,
+            });
             true
         }
         _ => true,
@@ -436,13 +519,8 @@ fn ask_where_native<R: tauri::Runtime>(
         dialog = dialog.set_directory(folder);
     }
     let dialog = dialog.set_parent(&webview.window());
-    let chosen = dialog.save_file().filter(|p| p.is_absolute())?;
-    // The dialog asked before replacing; a WKDownload does not replace a file, so the one agreed to goes first.
-    #[cfg(target_os = "macos")]
-    if chosen.is_file() && std::fs::remove_file(&chosen).is_err() {
-        return None;
-    }
-    Some(chosen)
+    // The dialog asked before replacing; the file is replaced only when the download has finished whole (`settle`).
+    dialog.save_file().filter(|p| p.is_absolute())
 }
 
 #[cfg(test)]
@@ -533,26 +611,94 @@ mod tests {
     }
 
     #[test]
-    fn a_refused_downloads_end_is_not_reported_again() {
+    fn a_refused_downloads_end_is_not_reported_again_for_a_while() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
         let mut r = Refused::default();
-        r.refuse("http://127.0.0.1:1/a.pdf");
-        r.refuse("http://127.0.0.1:1/a.pdf");
+        r.refuse("http://127.0.0.1:1/a.pdf", t0);
+        r.refuse("http://127.0.0.1:1/a.pdf", t0);
         // wry's two failure reports for the two refused downloads: nothing more to say.
-        assert_eq!(r.finished("http://127.0.0.1:1/a.pdf", false), None);
-        assert_eq!(r.finished("http://127.0.0.1:1/a.pdf", false), None);
-        // A later failure of the same address is a failure; a success is a success.
-        assert_eq!(
-            r.finished("http://127.0.0.1:1/a.pdf", false),
-            Some(Outcome::Failed)
+        assert!(r.ended("http://127.0.0.1:1/a.pdf", t0 + Duration::from_millis(5)));
+        assert!(r.ended("http://127.0.0.1:1/a.pdf", t0 + Duration::from_millis(5)));
+        // A later failure of the same address, or one of another, is a failure.
+        assert!(!r.ended("http://127.0.0.1:1/a.pdf", t0));
+        assert!(!r.ended("http://127.0.0.1:1/b.pdf", t0));
+        // A refusal whose end never came is forgotten: a real failure much later is reported.
+        r.refuse("http://127.0.0.1:1/c.pdf", t0);
+        assert!(!r.ended(
+            "http://127.0.0.1:1/c.pdf",
+            t0 + REFUSED_FOR + Duration::from_secs(1)
+        ));
+        assert!(r.urls.is_empty());
+    }
+
+    #[test]
+    fn staged_downloads_go_to_a_hidden_name_next_to_the_chosen_file_in_order() {
+        let mut s = Staged::default();
+        let chosen = std::env::temp_dir().join("x").join("paper.pdf");
+        let first = s.stage("http://h/a", chosen.clone());
+        let second = s.stage("http://h/a", chosen.clone());
+        assert_eq!(first.parent(), chosen.parent());
+        let name = first.file_name().unwrap().to_string_lossy().into_owned();
+        assert!(
+            name.starts_with(".paper.pdf.") && name.ends_with(".part"),
+            "{name}"
         );
+        assert_ne!(first, second);
+        assert_eq!(s.take("http://h/a"), Some((first, chosen.clone())));
+        assert_eq!(s.take("http://h/a"), Some((second, chosen)));
+        assert_eq!(s.take("http://h/a"), None);
+        assert_eq!(s.take("http://h/b"), None);
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("aspace-download-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_finished_download_replaces_the_chosen_file_only_when_whole() {
+        let dir = scratch("settle");
+        let chosen = dir.join("paper.pdf");
+        std::fs::write(&chosen, b"old").unwrap();
+        // Failed: the file the user agreed to replace is still there, and no temporary file is left.
+        let temp = temporary_name(&chosen, 1, 1);
+        std::fs::write(&temp, b"half").unwrap();
+        assert_eq!(settle(&temp, &chosen, false), Outcome::Failed);
+        assert_eq!(std::fs::read(&chosen).unwrap(), b"old");
+        assert!(!temp.exists());
+        // A failure before anything was written: still failed, nothing to remove.
+        assert_eq!(settle(&temp, &chosen, false), Outcome::Failed);
+        // Whole: renamed over the chosen file.
+        std::fs::write(&temp, b"new").unwrap();
+        assert_eq!(settle(&temp, &chosen, true), Outcome::Saved);
+        assert_eq!(std::fs::read(&chosen).unwrap(), b"new");
+        assert!(!temp.exists());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_download_that_cannot_be_renamed_failed_and_leaves_no_temporary_file() {
+        let dir = scratch("rename");
+        // The chosen name is a non-empty folder now: the rename cannot replace it.
+        let chosen = dir.join("paper.pdf");
+        std::fs::create_dir_all(chosen.join("inside")).unwrap();
+        let temp = temporary_name(&chosen, 1, 2);
+        std::fs::write(&temp, b"new").unwrap();
+        assert_eq!(settle(&temp, &chosen, true), Outcome::Failed);
+        assert!(!temp.exists());
+        assert!(chosen.join("inside").is_dir());
+        // Success reported but the file is not there: failed.
         assert_eq!(
-            r.finished("http://127.0.0.1:1/b.pdf", true),
-            Some(Outcome::Saved)
+            settle(&dir.join(".gone.part"), &dir.join("gone.pdf"), true),
+            Outcome::Failed
         );
-        assert_eq!(
-            r.finished("http://127.0.0.1:1/b.pdf", false),
-            Some(Outcome::Failed)
-        );
+        assert!(!dir.join("gone.pdf").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

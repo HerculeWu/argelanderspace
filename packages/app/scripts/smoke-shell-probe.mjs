@@ -18,6 +18,15 @@
 //      fetches from the local server (`/api/pdf-fonts/`; ticket 28's tests pin that the page hands the engine no
 //      other source); without it the CJK area is blank. The worker's own fetches are not visible to the page, so the
 //      route itself is only checked to answer from outside.
+//   2c. (--stand-in-host, guarded run) a download: the page clicks an <a download> of the stand-in's file; the test
+//      build saves it to the smoke's folder without the dialog (ARGELANDERSPACE_SHELL_PROBE_SAVE_TO): the file has the
+//      served bytes and nothing else is left there (no temporary file). On macOS and Windows a file of that name is
+//      there before and must be replaced (the shell writes to a temporary name and renames it over at the end).
+//   2d. (--stand-in-host, guarded run) leaving the page: window.open, an <a target=_blank> and a top-level navigation
+//      to an outside https address: the window stays on the local page and the three addresses go to the system
+//      browser's opener, which the test build records instead of opening (ARGELANDERSPACE_SHELL_PROBE_OPENED).
+//   2e. (--stand-in-host, Windows) forced end: a third run whose stand-in host ignores the end of its input; the shell
+//      is killed (TerminateProcess) and the host must end too (the job object's kill-on-close).
 //   4. counter-check (`ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES=1`): with Tauri's entry points left in, the same probe
 //      sees them (so the guarded run's "undefined" is not the probe's blindness) and the call is still refused (no
 //      capability): the title stays.
@@ -31,6 +40,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -79,6 +89,11 @@ mkdirSync(logDir, { recursive: true });
 const page = '<!doctype html><html><head><meta charset="utf-8"><title>ArgelanderSpace</title></head>' +
   '<body><div id="root"><main data-ui="stand-in-host">stand-in host</main></div></body></html>';
 const server = createServer((req, res) => {
+  if (req.url === "/probe-download.txt") {
+    res.writeHead(200, { "content-type": "text/plain", "content-disposition": 'attachment; filename="probe-download.txt"' });
+    res.end(process.env.ASPACE_STAND_IN_DOWNLOAD || "");
+    return;
+  }
   if (req.url === "/api/host") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ mode: "desktop", project: "none", standIn: true }));
@@ -95,7 +110,9 @@ server.listen(port, "127.0.0.1", () => {
 });
 const lines = createInterface({ input: process.stdin });
 lines.on("line", (line) => { if (line.includes('"quit"')) end(); });
-lines.on("close", end);
+// ASPACE_STAND_IN_IGNORE_EOF: stays when the shell's end of its input closes (the forced-end check: only the job
+// object can end it then).
+lines.on("close", () => { if (!process.env.ASPACE_STAND_IN_IGNORE_EOF) end(); });
 `;
 const placed = [];
 if (standIn) {
@@ -168,10 +185,11 @@ function isolatedEnv(dir, port, project = null) {
     XDG_STATE_HOME: join(home, ".local", "state"),
     XDG_CACHE_HOME: join(home, ".cache"),
     // The single-instance socket's folder (Unix): short, as a socket's path is at most 104 bytes on macOS (the
-    // temporary folder there is long). On Windows the pipe is named after USERNAME: a name of the smoke's own.
+    // temporary folder there is long). On Windows the test build takes the pipe's name from
+    // ARGELANDERSPACE_SHELL_PROBE_PIPE (below): a name of the smoke's own, not the runner user's SID.
     XDG_RUNTIME_DIR: process.platform === "win32" ? join(dir, "run") : mkdtempSync("/tmp/asp-"),
   });
-  if (process.platform === "win32") env.USERNAME = `aspace-smoke-${process.pid}-${port}`;
+  if (process.platform === "win32") env.ARGELANDERSPACE_SHELL_PROBE_PIPE = `aspace-smoke-${process.pid}-${port}`;
   runDirs.push(env.XDG_RUNTIME_DIR);
   for (const d of [
     env.APPDATA,
@@ -465,7 +483,76 @@ async function waitExit(child, ms) {
   return child.exitCode !== null || child.signalCode !== null;
 }
 
-async function run(name, { keepEntries, cjk }) {
+// A script's answer in the page: the next `js` line of the probe file.
+async function pageAnswer(controlFile, probeFile, script, shell, ms = 30000) {
+  const n = readLines(probeFile).filter((l) => "js" in l).length;
+  return pageJs(controlFile, probeFile, n, script, shell, ms);
+}
+
+const DOWNLOAD_TEXT = `argelanderspace probe download ${process.pid}-${Date.now()}\n`;
+const CLICK_DOWNLOAD = `const a = document.createElement("a"); a.href = "/probe-download.txt"; a.download = "probe-download.txt";
+document.body.appendChild(a); a.click(); return "clicked";`;
+
+// 2c: a download saved to the smoke's folder (the test build skips the dialog), replacing a file of that name on
+// macOS and Windows (the Linux test build never replaces: WebKitGTK's allow-overwrite stays off without the dialog).
+async function downloadInPage(name, saveDir, controlFile, probeFile, shell) {
+  const target = join(saveDir, "probe-download.txt");
+  const replace = process.platform !== "linux";
+  if (replace) writeFileSync(target, "an older file of the same name\n");
+  const answer = await pageAnswer(controlFile, probeFile, CLICK_DOWNLOAD, shell);
+  let got = null;
+  for (let i = 0; i < 150 && got !== DOWNLOAD_TEXT; i += 1) {
+    try {
+      got = readFileSync(target, "utf8");
+    } catch {}
+    if (got !== DOWNLOAD_TEXT) await sleep(200);
+  }
+  await sleep(1000);
+  const left = readdirSync(saveDir);
+  check(
+    answer === "clicked" && got === DOWNLOAD_TEXT && left.length === 1 && left[0] === "probe-download.txt",
+    `${name}: a download is saved with the served bytes${replace ? ", replacing the file of that name," : ""} and nothing else is left`,
+    JSON.stringify({ answer, got, left })
+  );
+}
+
+const OUTSIDE = "https://example.invalid/";
+const LEAVE = `window.open("${OUTSIDE}probe-window-open", "_blank");
+const a = document.createElement("a"); a.href = "${OUTSIDE}probe-target-blank"; a.target = "_blank";
+document.body.appendChild(a); a.click();
+await new Promise((r) => setTimeout(r, 1000));
+location.href = "${OUTSIDE}probe-away";
+await new Promise((r) => setTimeout(r, 2500));
+return JSON.stringify({ href: location.href });`;
+
+// 2d: the page tries to leave; the window stays and the system browser's opener gets the addresses (recorded only).
+async function leaveThePage(name, port, openedFile, controlFile, probeFile, shell) {
+  const answer = await pageAnswer(controlFile, probeFile, LEAVE, shell);
+  let href = null;
+  try {
+    href = JSON.parse(answer).href;
+  } catch {}
+  let opened = [];
+  for (let i = 0; i < 50 && opened.length < 3; i += 1) {
+    opened = existsSync(openedFile) ? readLines(openedFile) : [];
+    if (opened.length < 3) await sleep(200);
+  }
+  log(`${name}: after leaving, the page is at ${href}; handed to the system browser: ${JSON.stringify(opened)}`);
+  check(
+    typeof href === "string" && href.startsWith(`http://127.0.0.1:${port}/`),
+    `${name}: a navigation to an outside address leaves the window on the local page`,
+    String(href)
+  );
+  const got = (path, source) => opened.some((o) => o.opened === `${OUTSIDE}${path}` && o.source === source);
+  for (const [path, source, what] of [
+    ["probe-away", "navigation", "the outside navigation"],
+    ["probe-window-open", "new_window", "window.open"],
+    ["probe-target-blank", "new_window", "an <a target=_blank>"],
+  ])
+    check(got(path, source), `${name}: ${what} goes to the system browser (${source})`, JSON.stringify(opened));
+}
+
+async function run(name, { keepEntries, cjk, forcedEnd = false }) {
   const dir = join(work, name);
   mkdirSync(dir, { recursive: true });
   const port = await freePort();
@@ -477,6 +564,13 @@ async function run(name, { keepEntries, cjk }) {
   env.ARGELANDERSPACE_SHELL_PROBE_CONTROL = controlFile;
   if (keepEntries) env.ARGELANDERSPACE_SHELL_PROBE_KEEP_ENTRIES = "1";
   if (standIn) env.ASPACE_STAND_IN_PORT = String(port);
+  const saveDir = join(dir, "saved");
+  mkdirSync(saveDir, { recursive: true });
+  env.ARGELANDERSPACE_SHELL_PROBE_SAVE_TO = saveDir;
+  const openedFile = join(dir, "opened.jsonl");
+  env.ARGELANDERSPACE_SHELL_PROBE_OPENED = openedFile;
+  env.ASPACE_STAND_IN_DOWNLOAD = DOWNLOAD_TEXT;
+  if (forcedEnd) env.ASPACE_STAND_IN_IGNORE_EOF = "1";
   log(`--- ${name}: starting ${shellBin} (port ${port})`);
   const shell = startShell(env, home);
   const host = await waitHost(port, shell);
@@ -504,6 +598,23 @@ async function run(name, { keepEntries, cjk }) {
     `${name}: the window shows the host's page`,
     String(seen.href)
   );
+  if (forcedEnd) {
+    // 2e: TerminateProcess on the shell; its host (which ignores the end of its input here) must end with it.
+    shell.kill();
+    const killed = await waitExit(shell, 10000);
+    let free = false;
+    for (let i = 0; i < 150 && !free; i += 1) {
+      free = !(await portOpen(port));
+      if (!free) await sleep(100);
+    }
+    check(
+      killed && free,
+      `${name}: the shell killed, its host ends too (the job object's kill-on-close) and the port is free`,
+      JSON.stringify({ shell: shell.exitCode ?? shell.signalCode ?? "running", portFree: free })
+    );
+    cleanup();
+    return;
+  }
   check(
     Array.isArray(seen.dataUi) && seen.dataUi.length > 0,
     `${name}: the page rendered (data-ui elements)`,
@@ -583,6 +694,10 @@ async function run(name, { keepEntries, cjk }) {
       })
     );
   }
+  if (standIn && !keepEntries && probe) {
+    await downloadInPage(name, saveDir, controlFile, probeFile, shell);
+    await leaveThePage(name, port, openedFile, controlFile, probeFile, shell);
+  }
   if (cjk && host) await cjkInPage(name, port, controlFile, probeFile, shell);
   // Quit through the menu item (as Ctrl/Cmd+Q).
   appendFileSync(controlFile, "menu quit\n");
@@ -608,6 +723,8 @@ async function run(name, { keepEntries, cjk }) {
 try {
   await run("guarded", { keepEntries: false, cjk: !standIn });
   await run("entries-kept", { keepEntries: true, cjk: false });
+  if (standIn && process.platform === "win32")
+    await run("forced-end", { keepEntries: false, cjk: false, forcedEnd: true });
 } finally {
   cleanup();
   for (const d of [work, ...runDirs, ...placed]) {
