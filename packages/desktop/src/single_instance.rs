@@ -245,7 +245,8 @@ mod windows {
     use std::path::{Path, PathBuf};
 
     use windows_sys::Win32::Foundation::{
-        CloseHandle, GetLastError, LocalFree, ERROR_PIPE_CONNECTED, HANDLE, INVALID_HANDLE_VALUE,
+        CloseHandle, GetLastError, LocalFree, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, HANDLE,
+        INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_KERNEL_OBJECT};
     use windows_sys::Win32::Security::{
@@ -408,8 +409,11 @@ mod windows {
             let handle = listener.0;
             // SAFETY: the pipe handle is the listener's own; blocking calls on this thread only.
             unsafe {
+                // ERROR_PIPE_CONNECTED: a later start connected before this call; ERROR_NO_DATA: it also wrote and
+                // closed its end already (found on the Windows runner: the raise was lost). Its bytes are still in
+                // the pipe either way, so they are read.
                 let connected = ConnectNamedPipe(handle, std::ptr::null_mut()) != 0
-                    || GetLastError() == ERROR_PIPE_CONNECTED;
+                    || matches!(GetLastError(), ERROR_PIPE_CONNECTED | ERROR_NO_DATA);
                 if connected {
                     let mut buf = [0u8; 64];
                     let mut read = 0u32;
