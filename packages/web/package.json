@@ -36,6 +36,7 @@
     "@embedpdf/plugin-selection": "2.15.1",
     "@embedpdf/plugin-viewport": "2.15.1",
     "@embedpdf/plugin-zoom": "2.15.1",
+    "@floating-ui/dom": "^1.8.0",
     "@uiw/react-codemirror": "4.25.11",
     "dompurify": "^3.4.16",
     "framer-motion": "^11.3.0",

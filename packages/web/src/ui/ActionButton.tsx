@@ -3,15 +3,13 @@ import { Button } from "./Button";
 import { IconButton } from "./IconButton";
 import { getConfiguredIcon } from "./icon-resource";
 import type { ActionStyle } from "./action-style";
-import { Tooltip, type TooltipAlign } from "./Tooltip";
+import { Tooltip } from "./Tooltip";
 
 type SharedProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> & ActionStyle & {
   label: string;
   /** Stable UI identifier and icon-catalog key (required to resolve icon-mode resources). */
   "data-ui"?: string;
   tooltip?: string;
-  /** Where the tooltip opens (Tooltip `align`). */
-  tooltipAlign?: TooltipAlign;
   busy?: boolean;
   busyLabel?: ReactNode;
   /** Use an established local appearance while retaining names, tooltip, and action semantics. */
@@ -25,12 +23,12 @@ export type ActionButtonProps =
 /** Public shared action interface; presentation is selected in code, never by resource data. */
 export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(function ActionButton(props, ref) {
   if (props.mode === "text") {
-    const { mode: _mode, label, tooltip, tooltipAlign, children, ...buttonProps } = props;
+    const { mode: _mode, label, tooltip, children, ...buttonProps } = props;
     const button = <Button {...buttonProps} ref={ref} aria-label={label}>{props.busy && props.busyLabel !== undefined ? props.busyLabel : children}</Button>;
-    return tooltip ? <Tooltip content={tooltip} align={tooltipAlign}>{button}</Tooltip> : button;
+    return tooltip ? <Tooltip content={tooltip}>{button}</Tooltip> : button;
   }
 
-  const { mode: _mode, label, tooltip, tooltipAlign, iconName, busy, disabled, ...buttonProps } = props;
+  const { mode: _mode, label, tooltip, iconName, busy, disabled, ...buttonProps } = props;
   const icon = getConfiguredIcon(iconName, props["data-ui"]);
   if (!icon) {
     const { className, style, ...fallbackProps } = buttonProps;
@@ -43,7 +41,6 @@ export const ActionButton = forwardRef<HTMLButtonElement, ActionButtonProps>(fun
       unstyled={props.unstyled}
       label={label}
       tooltip={tooltip}
-      tooltipAlign={tooltipAlign}
       icon={icon}
       disabled={disabled || busy}
       aria-busy={busy || undefined}

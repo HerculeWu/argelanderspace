@@ -198,7 +198,6 @@ function ConfigPath({ P, settings, rowKey }: { P: Preferences; settings: Setting
         mode="icon"
         iconName="copy"
         iconSize="small"
-        tooltipAlign="end"
         data-ui="copy-config-path"
         label={t("settings.configFile.copyPath")}
         tooltip={t("settings.configFile.copyPath")}
@@ -271,7 +270,6 @@ function Row({ state, k, label, control, hint, fileOnly, extra }: { state: RowSt
               mode="icon"
               iconName="rotate-ccw"
               iconSize="small"
-              tooltipAlign="end"
               data-ui="restore-default"
               data-ui-key={k}
               label={t("settings.restore.label", { key: k })}
@@ -709,7 +707,6 @@ function Diagnostics({ state }: { state: RowState }) {
                 mode="icon"
                 iconName="copy"
                 iconSize="small"
-                tooltipAlign="end"
                 data-ui="copy-log-path"
                 label={t("settings.diagnostics.copyPath")}
                 tooltip={t("settings.diagnostics.copyPath")}

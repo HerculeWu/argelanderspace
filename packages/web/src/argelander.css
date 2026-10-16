@@ -149,9 +149,9 @@ input, textarea { font-family: inherit; color: inherit; }
 .ui-button.danger:hover:not(:disabled) { filter: brightness(.92); color: white; }
 
 .ui-tooltip-anchor { display: inline-flex; position: relative; }
-.ui-tooltip { display: none; position: absolute; left: 50%; top: calc(100% + 7px); z-index: 310; width: max-content; max-width: 240px; transform: translateX(-50%); padding: 5px 8px; border-radius: var(--radius-sm); background: var(--text); color: var(--bg); box-shadow: var(--shadow-2); font-size: var(--fs-sm); line-height: 1.4; pointer-events: none; }
-.ui-tooltip-anchor[data-tooltip-open="true"] > .ui-tooltip { display: block; }
-.ui-tooltip-anchor[data-tooltip-align="end"] > .ui-tooltip { left: auto; right: 0; transform: none; }
+/* A popover="manual" element in the top layer; Tooltip.tsx positions it with floating-ui (left/top), so no ancestor overflow or z-index applies. */
+.ui-tooltip { position: fixed; inset: auto; left: 0; top: 0; margin: 0; z-index: 310; width: max-content; max-width: min(240px, calc(100vw - 16px)); overflow: visible; border: 0; padding: 5px 8px; border-radius: var(--radius-sm); background: var(--text); color: var(--bg); box-shadow: var(--shadow-2); font-size: var(--fs-sm); line-height: 1.4; pointer-events: none; }
+.ui-tooltip[aria-hidden="true"] { display: none; } /* a closed bubble stays hidden even without the Popover API */
 
 .ui-tabs { display: flex; border-bottom: 1px solid var(--border-soft); }
 .ui-tab { flex: 1; min-width: 0; min-height: 38px; padding: 8px 4px 10px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-faint); font-size: var(--fs-sm); white-space: nowrap; }
@@ -444,14 +444,10 @@ input, textarea { font-family: inherit; color: inherit; }
 .ref-document-actions { margin-top: 6px; }
 .ref-document-actions > summary { display: flex; align-items: center; justify-content: center; width: var(--control-h); min-height: var(--control-h); margin-left: auto; padding: 4px; border-radius: var(--radius-sm); color: var(--text-dim); font-size: var(--fs-sm); cursor: pointer; list-style: none; }
 .ref-document-actions > summary::-webkit-details-marker { display: none; }
-.ref-document-actions > summary { position: relative; }
-.ref-document-actions > summary[data-tooltip-open="true"] > .ui-tooltip { display: block; left: auto; right: 0; transform: none; }
 .ref-document-actions > summary:hover,
 .ref-document-actions[open] > summary { color: var(--text); background: var(--hover); }
 .ref-document-action-list { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 2px; width: fit-content; max-width: 100%; margin: 6px 0 0 auto; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
 .ref-document-action-list > .ui-tooltip-anchor { display: flex; }
-/* A tooltip is anchored to its button's right edge so the long ones never leave the narrow detail panel at the page edge. */
-.ref-document-action-list .ui-tooltip { left: auto; right: 0; transform: none; }
 .ref-document-action-list .danger-text { color: var(--danger); }
 .add-to-lib { width: 100%; justify-content: center; margin-top: 16px; }
 .add-hint { margin-top: 8px; font-size: 10.5px; color: var(--text-faint); text-align: center; }

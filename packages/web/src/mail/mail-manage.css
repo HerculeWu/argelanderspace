@@ -20,4 +20,4 @@
 .mail-list-head .mail-search { flex: none; }
 .mail-search .ui-tooltip-anchor { flex: 1; min-width: 0; }
 .mail-search .ui-tooltip-anchor input { width: 100%; }
-.mail-search .ui-tooltip { white-space: normal; max-width: 300px; }
+.mail-search .ui-tooltip { white-space: normal; max-width: min(300px, calc(100vw - 16px)); }

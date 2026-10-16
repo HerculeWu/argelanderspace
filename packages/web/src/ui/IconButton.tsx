@@ -1,5 +1,5 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
-import { Tooltip, type TooltipAlign } from "./Tooltip";
+import { Tooltip } from "./Tooltip";
 
 import { actionClasses, sizedIcon, type ActionStyle } from "./action-style";
 
@@ -8,18 +8,16 @@ export type IconButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "chi
   tooltip?: string;
   icon: ReactNode;
   unstyled?: boolean;
-  /** Where the tooltip opens (Tooltip `align`). */
-  tooltipAlign?: TooltipAlign;
 }
 
 /** Icon-only action with one accessible name and the shared keyboard/pointer tooltip. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { label, tooltip = label, tooltipAlign, icon, appearance, tone, iconSize, variant = "default", unstyled = false, className = "", type = "button", ...props },
+  { label, tooltip = label, icon, appearance, tone, iconSize, variant = "default", unstyled = false, className = "", type = "button", ...props },
   ref
 ) {
   const surfaceVariant = appearance ? (tone === "danger" ? "danger" : appearance === "primary" ? "primary" : "default") : variant;
   return (
-    <Tooltip content={tooltip} align={tooltipAlign}>
+    <Tooltip content={tooltip}>
       <button
         data-ui="icon-button"
         {...props}

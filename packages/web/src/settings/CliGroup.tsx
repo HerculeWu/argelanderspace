@@ -128,7 +128,6 @@ export function CliGroup({ notify }: { notify: (text: string) => void }) {
                   mode="icon"
                   iconName="copy"
                   iconSize="small"
-                  tooltipAlign="end"
                   data-ui="copy-path-line"
                   label={known.platform === "windows" ? t("settings.cli.copyPath") : t("settings.cli.copyLine")}
                   tooltip={known.platform === "windows" ? t("settings.cli.copyPath") : t("settings.cli.copyLine")}

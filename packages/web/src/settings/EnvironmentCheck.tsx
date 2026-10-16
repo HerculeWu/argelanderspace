@@ -120,7 +120,6 @@ export function EnvironmentCheck({ state }: { state: EnvironmentState }) {
           mode="icon"
           iconName="refresh-cw"
           iconSize="small"
-          tooltipAlign="end"
           data-ui="environment-recheck"
           label={t("settings.tex.recheck")}
           tooltip={t("settings.tex.recheck")}

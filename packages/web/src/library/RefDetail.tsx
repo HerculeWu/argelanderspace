@@ -6,7 +6,7 @@ import { type DocProvenance, fetchDocProvenance, patchRef } from "../api/library
 import { deletePaperDoc, fetchAnnotations } from "../api/annotations";
 import { createTextDoc } from "../api/text-docs";
 import i18n from "../i18n";
-import { ActionButton, Badge, Dialog, InlineMessage, Tabs } from "../ui";
+import { ActionButton, Badge, Dialog, InlineMessage, Tabs, TooltipBubble, useSingleTooltip } from "../ui";
 import { cgKfmt } from "../graph/graphPhysics";
 import { AbstractHtml } from "../lib/abstract";
 import { WorkArgumentEntry } from "../argument/ArgumentEntry";
@@ -72,23 +72,25 @@ const isJobActive = (job: Job | null): boolean => job?.status === "queued" || jo
  */
 function DocActionsToggle({ label }: { label: string }) {
   const id = `tooltip-${useId().replace(/:/g, "")}`;
-  const [open, setOpen] = useState(false);
+  const { open, reveal, dismiss } = useSingleTooltip();
+  const summaryRef = useRef<HTMLElement>(null);
   return (
     <summary
+      ref={summaryRef}
       data-ui="toggle-doc-actions"
       aria-label={label}
       aria-describedby={id}
       data-tooltip-open={open || undefined}
-      onPointerEnter={() => setOpen(true)}
-      onPointerLeave={() => setOpen(false)}
-      onPointerDown={() => setOpen(false)}
-      onClick={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
-      onBlur={() => setOpen(false)}
-      onKeyDown={(event) => { if (event.key === "Escape") setOpen(false); }}
+      onPointerEnter={reveal}
+      onPointerLeave={dismiss}
+      onPointerDown={dismiss}
+      onClick={dismiss}
+      onFocus={reveal}
+      onBlur={dismiss}
+      onKeyDown={(event) => { if (event.key === "Escape") dismiss(); }}
     >
       <Icon name="ellipsis" cls="ico-sm" />
-      <span id={id} className="ui-tooltip" data-ui="control-tooltip" role="tooltip" aria-hidden={!open}>{label}</span>
+      <TooltipBubble id={id} open={open} anchorRef={summaryRef}>{label}</TooltipBubble>
     </summary>
   );
 }

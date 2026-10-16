@@ -33,7 +33,7 @@ export function RecentProjectList({ ui, projects, disabled, onOpen, onRemove }: 
             <code className="st-path" title={project.path}>{project.display}</code>
             <span className="wl-when">{t("welcome.openedAt", { when: openedAtText(project.openedAt, language) })}</span>
           </Button>
-          <ActionButton mode="icon" iconName="x" iconSize="small" data-ui="recent-project-remove" data-ui-key={project.path} label={t("welcome.remove", { name: project.name })} tooltip={t("welcome.remove", { name: project.name })} tooltipAlign="end" disabled={disabled} onClick={() => onRemove(project)} />
+          <ActionButton mode="icon" iconName="x" iconSize="small" data-ui="recent-project-remove" data-ui-key={project.path} label={t("welcome.remove", { name: project.name })} tooltip={t("welcome.remove", { name: project.name })} disabled={disabled} onClick={() => onRemove(project)} />
         </li>
       ))}
     </ul>

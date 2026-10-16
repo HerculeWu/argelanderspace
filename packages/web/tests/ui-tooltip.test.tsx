@@ -1,6 +1,7 @@
+import { useRef } from "react";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
-import { Tooltip } from "../src/ui/Tooltip";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { Tooltip, TooltipBubble, useSingleTooltip } from "../src/ui/Tooltip";
 
 afterEach(cleanup);
 
@@ -52,5 +53,56 @@ describe("Tooltip dismissal", () => {
     expect(visible()).toEqual(["First tip"]);
     fireEvent.click(first);
     expect(visible()).toEqual([]);
+  });
+});
+
+describe("Tooltip top layer", () => {
+  it("is a manual popover that is shown and hidden with the tooltip (happy-dom has no layout: placement is checked in a real browser)", () => {
+    const proto = HTMLElement.prototype as unknown as { showPopover?: () => void; hidePopover?: () => void };
+    const show = vi.fn();
+    const hide = vi.fn();
+    const saved = { show: proto.showPopover, hide: proto.hidePopover };
+    proto.showPopover = show;
+    proto.hidePopover = hide;
+    try {
+      const { anchors } = twoActions();
+      const tip = anchors[0].querySelector<HTMLElement>('[role="tooltip"]')!;
+      expect(tip.getAttribute("popover")).toBe("manual");
+      expect(show).not.toHaveBeenCalled();
+      fireEvent.pointerEnter(anchors[0]);
+      expect(show).toHaveBeenCalledTimes(1);
+      fireEvent.pointerLeave(anchors[0]);
+      expect(hide).toHaveBeenCalled();
+    } finally {
+      proto.showPopover = saved.show;
+      proto.hidePopover = saved.hide;
+    }
+  });
+});
+
+function Summary() {
+  const { open, reveal, dismiss } = useSingleTooltip();
+  const ref = useRef<HTMLElement>(null);
+  return (
+    <details><summary ref={ref} data-testid="sum" onPointerEnter={reveal} onPointerLeave={dismiss}>
+      x<TooltipBubble id="sum-tip" open={open} anchorRef={ref}>Summary tip</TooltipBubble>
+    </summary></details>
+  );
+}
+
+describe("Tooltip single registry", () => {
+  it("a control that renders TooltipBubble itself and a Tooltip never show together", () => {
+    const { container, getByTestId } = render(<>
+      <Tooltip content="Button tip"><button type="button">B</button></Tooltip>
+      <Summary />
+    </>);
+    const visible = () => Array.from(container.querySelectorAll('[role="tooltip"]:not([aria-hidden="true"])')).map((tip) => tip.textContent);
+    const anchor = container.querySelector<HTMLElement>(".ui-tooltip-anchor")!;
+    fireEvent.pointerEnter(anchor);
+    expect(visible()).toEqual(["Button tip"]);
+    fireEvent.pointerEnter(getByTestId("sum"));
+    expect(visible()).toEqual(["Summary tip"]);
+    fireEvent.pointerEnter(anchor);
+    expect(visible()).toEqual(["Button tip"]);
   });
 });
