@@ -26,28 +26,11 @@ export interface Tweaks {
   language?: AppLanguage;
 }
 
-// Representative hex swatch per accent/theme, computed once via an oklch probe
-// (so the tweaks panel can show real color chips without per-render DOM work).
-const ACCENT_HEX: Record<ThemeName, Record<string, string>> = (() => {
-  const out: Record<ThemeName, Record<string, string>> = { dark: {}, light: {} };
-  if (typeof document === "undefined") return out;
-  const probe = document.createElement("div");
-  probe.style.position = "absolute";
-  probe.style.visibility = "hidden";
-  document.body.appendChild(probe);
-  for (const [k, a] of Object.entries(ACCENTS)) {
-    for (const [theme, L] of [["dark", 0.72], ["light", 0.55]] as const) {
-      probe.style.color = `oklch(${L} ${a.c} ${a.h})`;
-      const m = getComputedStyle(probe).color.match(/\d+/g);
-      out[theme][k] = m
-        ? "#" + m.slice(0, 3).map((x) => (+x).toString(16).padStart(2, "0")).join("")
-        : "#888888";
-    }
-  }
-  probe.remove();
-  return out;
-})();
-
-export function accentHex(key: string, theme: ThemeName): string {
-  return (ACCENT_HEX[theme] || ACCENT_HEX.dark)[key] || "#888888";
+/**
+ * The swatch of an accent: the `oklch()` colour itself, left to the browser's own colour arithmetic. The Tweaks popover
+ * and the settings page both show it, so the two cannot disagree.
+ */
+export function accentSwatch(accent: string, theme: ThemeName): string {
+  const a = ACCENTS[accent] ?? ACCENTS.azure!;
+  return `oklch(${theme === "dark" ? 0.72 : 0.55} ${a.c} ${a.h})`;
 }

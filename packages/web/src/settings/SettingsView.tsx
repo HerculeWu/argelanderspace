@@ -25,7 +25,7 @@ import { useTranslation } from "react-i18next";
 import type { SettingChangeFailure } from "../api/settings";
 import { type Preferences, type SettingsNotice, usePreferences } from "../argelander/preferences";
 import { useWorkspace } from "../argelander/workspace";
-import { ACCENTS, type ThemeName } from "../argelander/theme";
+import { accentSwatch } from "../argelander/theme";
 import { Icon } from "../lib/icons";
 import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
 import { AdsCredential } from "./AdsCredential";
@@ -123,12 +123,6 @@ const DENSITY_LABEL = {
   regular: "shell.tweaks.density.regular",
   comfy: "shell.tweaks.density.comfy",
 } as const;
-
-/** The swatch of an accent, by the browser's own colour arithmetic. */
-function swatch(accent: string, theme: ThemeName): string {
-  const a = ACCENTS[accent] ?? ACCENTS.azure!;
-  return `oklch(${theme === "dark" ? 0.72 : 0.55} ${a.c} ${a.h})`;
-}
 
 /** The keys a problem is about: the key itself, or every key of a table that is not a table. */
 function problemKeys(problem: SettingsProblem): SettingKey[] {
@@ -446,7 +440,7 @@ function Appearance({ state }: { state: RowState }) {
       <Row state={state} k="ui.accent" label={t("settings.appearance.accent")} control={(disabled) => (
         <div className="tweak-swatches" role="group" aria-label={t("settings.appearance.accent")}>
           {SETTINGS_UI_ACCENTS.map((a) => (
-            <IconButton key={a} unstyled data-ui="accent-option" data-ui-key={a} disabled={disabled} label={t(ACCENT_LABEL[a])} aria-pressed={tweaks.accent === a} className={"tweak-swatch" + (tweaks.accent === a ? " on" : "")} style={{ background: swatch(a, tweaks.theme) }} icon={<span />} onClick={() => setTweak("accent", a)} />
+            <IconButton key={a} unstyled data-ui="accent-option" data-ui-key={a} disabled={disabled} label={t(ACCENT_LABEL[a])} aria-pressed={tweaks.accent === a} className={"tweak-swatch" + (tweaks.accent === a ? " on" : "")} style={{ background: accentSwatch(a, tweaks.theme) }} icon={<span />} onClick={() => setTweak("accent", a)} />
           ))}
         </div>
       )} />

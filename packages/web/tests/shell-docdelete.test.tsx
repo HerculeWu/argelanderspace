@@ -99,7 +99,7 @@ describe("Shell docDeleted wiring (Stage 8 §8)", () => {
     fireEvent.click(document.querySelector('[data-ui="density-option"][data-ui-key="compact"]') as HTMLElement);
     const accent = document.querySelector('[data-ui="accent-option"][data-ui-key="teal"]') as HTMLButtonElement;
     expect(accent.getAttribute("aria-label")).toBe("Teal");
-    expect(accent.querySelector("svg")).toBeTruthy();
+    expect(accent.querySelector("svg")).toBeNull(); // the chip is the colour alone, no ring icon over it
     expect(accent.classList.contains("ui-button")).toBe(false);
     expect((document.querySelector('[data-ui="density-option"]') as HTMLButtonElement).classList.contains("ui-button")).toBe(false);
     expect(document.querySelector('[data-ui="navigate-view"][data-ui-key="library"]')).toBe(nav);

@@ -39,3 +39,19 @@ describe("the option lists the Copilot may choose from are the Tweaks popover's 
     expect(contracts.WORKSPACE_VIEWS).toEqual(["plan", "library", "doc", "write", "mail"]); // the activity bar's NAV
   });
 });
+
+describe("the accent swatch is one oklch() value, shared by the Tweaks popover and the settings page", () => {
+  it("accentSwatch gives oklch(L c h) per theme, and both surfaces take it from there", async () => {
+    const { accentSwatch, ACCENTS } = await import("../src/argelander/theme");
+    expect(accentSwatch("teal", "dark")).toBe("oklch(0.72 0.11 178)");
+    expect(accentSwatch("teal", "light")).toBe("oklch(0.55 0.11 178)");
+    expect(accentSwatch("nonesuch", "dark")).toBe("oklch(0.72 0.13 235)"); // unknown falls back to azure
+    for (const k of Object.keys(ACCENTS)) expect(accentSwatch(k, "light")).toMatch(/^oklch\(0\.55 [\d.]+ \d+\)$/);
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const src = (f: string) => readFileSync(fileURLToPath(import.meta.url).replace(/tests[\\/]shell-layout\.test\.ts$/, f), "utf8");
+    for (const f of ["src/argelander/TweaksPopover.tsx", "src/settings/SettingsView.tsx"]) {
+      expect(src(f)).toContain("background: accentSwatch(");
+    }
+  });
+});

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { AppLanguage } from "../i18n";
-import { ActionButton } from "../ui";
-import { ACCENTS, accentHex, type Density, type ThemeName, type Tweaks } from "./theme";
+import { ActionButton, IconButton } from "../ui";
+import { ACCENTS, accentSwatch, type Density, type ThemeName, type Tweaks } from "./theme";
 
 const DENSITIES: Density[] = ["compact", "regular", "comfy"];
 const THEMES: ThemeName[] = ["dark", "light"];
@@ -61,17 +61,15 @@ export function TweaksPopover({
       <div className="tweak-sec">{t("shell.tweaks.accents.label")}</div>
       <div className="tweak-swatches">
         {Object.keys(ACCENTS).map((k) => (
-          <ActionButton
+          <IconButton
             key={k}
             unstyled
-            mode="icon"
-            iconName="circle"
             label={t(ACCENT_LABEL_KEYS[k as keyof typeof ACCENT_LABEL_KEYS])}
-            tooltip={t(ACCENT_LABEL_KEYS[k as keyof typeof ACCENT_LABEL_KEYS])}
+            icon={<span />}
             aria-pressed={tweaks.accent === k}
             data-ui="accent-option" data-ui-key={k}
             className={"tweak-swatch" + (tweaks.accent === k ? " on" : "")}
-            style={{ background: accentHex(k, tweaks.theme) }}
+            style={{ background: accentSwatch(k, tweaks.theme) }}
             onClick={() => set("accent", k)}
           />
         ))}
