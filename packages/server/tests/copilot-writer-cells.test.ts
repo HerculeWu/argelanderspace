@@ -16,6 +16,7 @@ import type {
 import { libraryPaths } from "@argelanderspace/core";
 import {
   __setWriterSandboxForTests,
+  createLogger,
   ensureWriterSandboxProbe,
   haveLatexmk,
 } from "@argelanderspace/infra";
@@ -30,6 +31,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { CopilotHost } from "../src/copilot.js";
 import { JobRunner } from "../src/jobs.js";
+import { SERVER_LOG_EVENTS } from "../src/log.js";
 import { ProviderSettings } from "../src/providers.js";
 import { __setNumberingComputeForTests, computeWriterNumbering } from "../src/writer-numbering.js";
 import { stubPipelines, stubSources } from "./helpers.js";
@@ -45,6 +47,7 @@ let originalEnv: NodeJS.ProcessEnv;
 let script: Step[];
 let seen: TranscriptContext[];
 let broadcasts: WsServerMessage[];
+let logLines: string[] = [];
 const choice = { provider: "openai", model: "gpt-4.1", thinking: null };
 const M = "m_0000000a";
 const _PNG = Buffer.concat([
@@ -178,6 +181,7 @@ beforeEach(async () => {
       return stream;
     },
   });
+  logLines = [];
   host = new CopilotHost(dataDir, settings, () => {});
   app = createApp({
     paths,
@@ -187,6 +191,11 @@ beforeEach(async () => {
     runner: new JobRunner({ dir: join(root, "jobs") }),
     providerSettings: settings,
     copilot: host,
+    log: createLogger({
+      events: SERVER_LOG_EVENTS,
+      sink: { write: (line) => logLines.push(line) },
+      level: "debug",
+    }),
     broadcast: (message) => broadcasts.push(message),
   });
 });
@@ -517,43 +526,67 @@ test("a cell operation on a malformed call, a template-unlisted type and a missi
   expect(readFileSync(manuscriptFile(), "utf8")).toBe(bytes);
 });
 
-test("without the OS sandbox the Copilot causes no compile: render_manuscript and commit_cell are rejected (no browser asked), edits still work", async () => {
-  __setWriterSandboxForTests(false);
-  let compiled = 0;
-  const restore = __setNumberingComputeForTests(async (dir, manuscriptId, signal) => {
-    compiled++;
-    return computeWriterNumbering(dir, manuscriptId, signal);
-  });
-  try {
-    script = [
-      call({ action: "render_manuscript", manuscriptId: M }),
-      call({ action: "commit_cell", manuscriptId: M, cellId: "c_00000001" }),
-      call({
-        action: "update_cell",
-        manuscriptId: M,
-        expectedRev: 3,
-        cellId: "c_00000001",
-        fields: { source: "Edited without a sandbox" },
-      }),
-      () => ({ text: "done" }),
-    ];
-    const { snapshot } = await run(editorPage());
-    expect(operations(snapshot)).toEqual([
-      "render_manuscript:rejected",
-      "commit_cell:rejected",
-      "update_cell:ok",
-    ]);
-    expect(compiled).toBe(0);
-    expect(existsSync(join(dataDir, "manuscripts", M, "build"))).toBe(false);
-    expect(broadcasts.some((m) => m.type === "copilot.view-action")).toBe(false);
-    expect((disk().cells[0] as unknown as { data: { source: string } }).data.source).toBe(
-      "Edited without a sandbox"
+test.skipIf(!haveLatexmk())(
+  "without the OS sandbox the Copilot's render_manuscript still compiles (no 'not available' rejection), and edits work too",
+  async () => {
+    __setWriterSandboxForTests(false);
+    let compiled = 0;
+    const restore = __setNumberingComputeForTests(
+      async (dir, manuscriptId, signal, observer, failed) => {
+        compiled++;
+        return computeWriterNumbering(dir, manuscriptId, signal, observer, failed);
+      }
     );
-  } finally {
-    restore();
-    __setWriterSandboxForTests(null);
-  }
-});
+    try {
+      script = [
+        call({
+          action: "update_cell",
+          manuscriptId: M,
+          expectedRev: 3,
+          cellId: "c_00000001",
+          fields: { source: "Edited without a sandbox" },
+        }),
+        call({ action: "render_manuscript", manuscriptId: M }),
+        () => ({ text: "done" }),
+      ];
+      const { snapshot } = await run(editorPage());
+      expect(operations(snapshot)).toEqual(["update_cell:ok", "render_manuscript:ok"]);
+      expect(compiled).toBe(1);
+      const numbering = JSON.parse(
+        readFileSync(join(dataDir, "manuscripts", M, "build", "numbering.json"), "utf8")
+      );
+      expect(numbering.lastError).toBeNull();
+      expect(numbering.preview).not.toBeNull();
+      const ran = logLines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((r) => r.event === "external_program.exited" && r.program === "latexmk");
+      expect(ran.length).toBeGreaterThan(0);
+      expect(ran.every((r) => r.sandboxed === "no")).toBe(true);
+    } finally {
+      restore();
+      __setWriterSandboxForTests(null);
+    }
+  },
+  120_000
+);
+
+// Whether bubblewrap really works here (the real probe, nothing forced): without it this test is skipped, not passed.
+const SANDBOX = haveLatexmk() && (await ensureWriterSandboxProbe());
+
+test.skipIf(!SANDBOX)(
+  "with the OS sandbox the Copilot's render_manuscript runs latexmk inside it (the log says sandboxed: yes)",
+  async () => {
+    script = [call({ action: "render_manuscript", manuscriptId: M }), () => ({ text: "done" })];
+    const { snapshot } = await run(editorPage());
+    expect(operations(snapshot)).toEqual(["render_manuscript:ok"]);
+    const runs = logLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((r) => r.event === "external_program.exited" && r.program === "latexmk");
+    expect(runs.length).toBeGreaterThan(0);
+    expect(runs.every((r) => r.sandboxed === "yes")).toBe(true);
+  },
+  120_000
+);
 
 test.skipIf(!haveLatexmk())(
   "render_manuscript compiles the saved manuscript only: the unsaved page draft is not in the preview, and the result names the rev compiled",

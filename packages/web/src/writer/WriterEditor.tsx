@@ -283,7 +283,7 @@ export function WriterEditor({
     return writeChain.current;
   };
 
-  /** The Render button (and Shift+Enter). `copilot` marks a render made for a Copilot view action (the service may refuse it). */
+  /** The Render button (and Shift+Enter). `copilot` marks a render made for a Copilot view action (the service no longer refuses it for lack of a sandbox). */
   async function requestPreview(opts: { copilot?: boolean } = {}): Promise<"ok" | "refused" | "failed"> {
     if (!dirtyRef.current) writeFailed.current = false;
     setNumberingBusy(true);
@@ -639,7 +639,7 @@ export function WriterEditor({
     commit: async (cellId) => {
       if (!docRef.current?.cells.some((c) => c.id === cellId)) return "not_found";
       if (editingId === cellId) setEditingId(null);
-      // The edit-mode and save half is the button's; the render half is marked as the Copilot's and may be refused.
+      // The edit-mode and save half is the button's; the render half is marked as the Copilot's.
       const rendered = await requestPreview({ copilot: true });
       return rendered === "refused" ? "refused" : "ok";
     },

@@ -45,7 +45,7 @@ export type EnvironmentFeature = (typeof ENVIRONMENT_FEATURES)[number];
  * What each program is needed for. latexmk runs every compile (ingest and Writer); without pdflatex the compile is
  * tried with xelatex only, and the other way round; bibtex and biber process bibliographies (biber is never run by the
  * Writer); pdftocairo converts the PDF and EPS figures of an ingest (without it they are left out), ghostscript the EPS
- * ones; bubblewrap is the Writer's compile sandbox, without which the Copilot never causes a compile.
+ * ones; bubblewrap is the Writer's compile sandbox (without it Writer compiles run unsandboxed).
  */
 export const TOOL_FEATURES: Readonly<Record<EnvironmentTool, readonly EnvironmentFeature[]>> = {
   latexmk: ["latex_ingest", "writer_render"],
@@ -120,7 +120,7 @@ export interface EnvironmentReport {
   texDir: { state: TexDirState; path: ShownPath | null };
   tools: EnvironmentToolStatus[];
   keychain: { state: KeychainState; reason: KeychainReason };
-  /** Whether the Writer's compile sandbox works (bubblewrap runs): without it the Copilot never causes a compile. */
+  /** Whether the Writer's compile sandbox works (bubblewrap runs): without it Writer compiles run unsandboxed. */
   sandbox: "available" | "unavailable";
   /** Which latexmk the sandbox would run, compared with the one found ({@link SANDBOX_TEX_STATES}). */
   writerSandboxTex: {

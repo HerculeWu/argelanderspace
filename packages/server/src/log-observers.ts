@@ -245,7 +245,7 @@ const NO_ANSWER = ["timeout", "aborted", "network"] as const;
  * The sandbox probe (`program: bwrap` — the only run reported under that name; a sandboxed compile is `latexmk`) is
  * repeated, at most once a minute, for as long as it fails, and on a machine without bubblewrap (macOS and Windows
  * have none) it fails every time. So: a bwrap that is not there is `info`, not a warning — it is what is expected
- * there, and Writer compiles are simply not offered to the Copilot; any other failed probe is `warn`; and a probe
+ * there, and Writer compiles simply run without a sandbox; any other failed probe is `warn`; and a probe
  * that ends the way the one before it ended is `debug`, so the default log has one line per change, not one a
  * minute.
  *

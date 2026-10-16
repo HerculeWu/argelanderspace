@@ -144,9 +144,9 @@ describe("TeX & environment", () => {
     expect(toolRow("latexmk").querySelector('[data-ui="environment-affects"]')!.textContent).toBe(
       "Unavailable without it: LaTeX ingest, Writer rendering"
     );
-    expect(toolRow("bwrap").textContent).toContain("Copilot-triggered compilation (Writer sandbox)");
+    expect(toolRow("bwrap").textContent).toContain("Sandboxed Writer compilation");
     expect(q('[data-ui="env-no-tex"]')!.textContent).toContain("TeX was not found");
-    expect(q('[data-ui="env-no-sandbox"]')!.textContent).toContain("Pressing Render yourself still compiles");
+    expect(q('[data-ui="env-no-sandbox"]')!.textContent).toContain("including the ones Copilot starts");
     expect(toolRow("keychain").textContent).toContain("Unavailable");
     expect(toolRow("keychain").textContent).toContain("No Secret Service on the session bus");
   });

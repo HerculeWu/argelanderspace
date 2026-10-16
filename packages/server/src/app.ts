@@ -108,7 +108,6 @@ import {
   readConfigLeniently,
   resolveGlobalDirsLeniently,
   type TexCompileFailure,
-  writerSandboxAvailable,
   zipEntries,
 } from "@argelanderspace/infra";
 import { type Context, Hono } from "hono";
@@ -520,7 +519,7 @@ export function createApp(deps: AppDeps): Hono {
   };
   const writerDataDir = paths.dataDir;
   // The Copilot `writer` tool and these routes share one lock, rev check, save and writer.changed notification.
-  // Find out (off the event loop) whether the OS sandbox for Writer compiles works; the gates read the cached answer.
+  // Find out (off the event loop) whether the OS sandbox for Writer compiles works; the compile reads the cached answer (no sandbox = it runs unsandboxed).
   void ensureWriterSandboxProbe(observer);
   // A failed render keeps its complete latexmk log in the manuscript's build directory; this is its log record.
   const writerCompileFailed = (id: string, failure: TexCompileFailure): void =>
@@ -537,7 +536,6 @@ export function createApp(deps: AppDeps): Hono {
         onCompileFailure: writerCompileFailed,
         ...(observer ? { observer } : {}),
       }),
-    sandboxed: () => writerSandboxAvailable(observer),
     // The References tab's list: the saved works' cite keys, read fresh at each use.
     citeKeys: () => new Set(LibraryStore.load(paths).works.map((work) => workToRef(work).cite)),
   };
@@ -2044,16 +2042,6 @@ export function createApp(deps: AppDeps): Hono {
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
       const e = detail("bad manuscript id", 400);
-      return c.json(e.body, e.status);
-    }
-    // A refresh the page makes while carrying out a Copilot view action (commit_cell) is marked by the page: without
-    // the OS sandbox the Copilot never causes a compile, so the server refuses it here (the service, not the page,
-    // decides). The user's own Render sends no marker and compiles as it always did.
-    if (c.req.header("x-copilot-action") && !writerOps.sandboxed()) {
-      const e = detail(
-        "render not available for the Copilot: this machine has no OS sandbox for the Writer's TeX compile",
-        403
-      );
       return c.json(e.body, e.status);
     }
     try {

@@ -2478,10 +2478,10 @@
         "biber": "用 biber 的参考文献处理",
         "figures": "LaTeX 摄入时 PDF 与 EPS 图片的转换",
         "eps_figures": "LaTeX 摄入时 EPS 图片的转换",
-        "copilot_compile": "Copilot 触发编译（Writer 沙箱）"
+        "copilot_compile": "Writer 沙箱编译"
       },
       "noSandboxTitle": "本机没有编译沙箱",
-      "noSandboxBody": "Copilot 可以修改稿件文字，但不会触发编译；你自己点 Render 仍可编译（不在沙箱里运行）。",
+      "noSandboxBody": "本机的 Writer 编译不在沙箱里运行，Copilot 触发的编译也一样。",
       "sandboxTexMissingTitle": "Writer 渲染在沙箱里找不到 TeX",
       "sandboxTexMissingBody": "编译沙箱只看得到系统目录，以及启动工作台时 PATH 上、可以放进沙箱的 TeX 目录；它看不到工作台找到的这一套 TeX（{{path}}），所以 Writer 渲染会失败，不会改为在沙箱外编译。LaTeX 摄入不受影响。",
       "sandboxTexOtherWhy": "沙箱总是先用系统目录里的 TeX，把别的目录加进 PATH 也改变不了这一点；目前页面上没有办法让它改用工作台找到的这一套。",

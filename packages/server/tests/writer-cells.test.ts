@@ -78,7 +78,6 @@ beforeEach(() => {
     writerLock: new AsyncLock(),
     changed: (cause, id) => changed.push(`${cause}:${id}`),
     cancelCompile: async () => {},
-    sandboxed: () => true,
     citeKeys: () => new Set(["smith2020", "bad key"]),
   };
   put(seed());
@@ -568,15 +567,17 @@ describe("read and render", () => {
   });
 });
 
-describe("no OS sandbox on this machine: the Copilot never causes a compile, but still edits (spec 14.1)", () => {
+describe("the Copilot edits and renders whether or not the machine has an OS sandbox (the sandbox is the compile's own business)", () => {
+  let compiles = 0;
   beforeEach(() => {
-    deps.sandboxed = () => false;
+    compiles = 0;
     deps.render = async () => {
-      throw new Error("a compile was started");
+      compiles++;
+      return { items: {}, preview: null, lastError: null } as never;
     };
   });
 
-  test("text edits work (the compile is the user's own and the Copilot cannot start one)", async () => {
+  test("text edits work", async () => {
     expect(
       await cellOperation(deps, {
         action: "update_cell",
@@ -598,7 +599,8 @@ describe("no OS sandbox on this machine: the Copilot never causes a compile, but
     ).toMatchObject({ ok: true });
   });
 
-  test("render is rejected and starts nothing", async () => {
-    expect(await renderManuscript(deps, M)).toMatchObject({ ok: false, status: "rejected" });
+  test("render starts the compile (no sandbox gate)", async () => {
+    expect(await renderManuscript(deps, M)).toMatchObject({ ok: true });
+    expect(compiles).toBe(1);
   });
 });

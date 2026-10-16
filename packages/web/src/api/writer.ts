@@ -153,7 +153,7 @@ export async function refreshNumbering(
   try {
     return await apiRequest<WriterNumberingResponse>(`/api/writer/manuscripts/${encodeURIComponent(id)}/numbering/refresh`, {
       method: "POST",
-      // The page marks a render it makes for a Copilot view action; the service decides whether that is allowed.
+      // The page marks a render it makes for a Copilot view action; the service no longer reads it (no sandbox gate since copilot ticket 59).
       ...(opts.copilot ? { headers: { "X-Copilot-Action": "1" } } : {}),
     });
   } catch (e) {

@@ -397,8 +397,7 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
       expect(isSafeTexRoot(good), good).toBe(true);
   });
 
-  test("without the sandbox the server refuses a Copilot-marked refresh (403, nothing compiled) and still compiles the user's own", async () => {
-    __setWriterSandboxForTests(false);
+  test("a Copilot-marked refresh compiles with or without the sandbox, like the user's own (no gate)", async () => {
     try {
       const dataDir = mkdtempSync(join(tmpdir(), "writer-gate-"));
       const app = createApp({
@@ -421,15 +420,11 @@ describe.skipIf(!HAVE)("a real Writer compile reads only its own workspace", () 
           method: "POST",
           headers,
         });
-      const marked = await refresh({ "X-Copilot-Action": "1" });
-      expect(marked.status).toBe(403);
-      expect(existsSync(join(dataDir, "manuscripts", doc.id, "build"))).toBe(false); // nothing ran
-      const own = await refresh();
-      expect(own.status).toBe(200);
-      expect(existsSync(join(dataDir, "manuscripts", doc.id, "build", "numbering.json"))).toBe(
-        true
-      );
-      // and with a sandbox the marker is allowed
+      const numberingFile = join(dataDir, "manuscripts", doc.id, "build", "numbering.json");
+      __setWriterSandboxForTests(false);
+      expect((await refresh({ "X-Copilot-Action": "1" })).status).toBe(200);
+      expect(existsSync(numberingFile)).toBe(true);
+      expect((await refresh()).status).toBe(200);
       __setWriterSandboxForTests(true);
       expect((await refresh({ "X-Copilot-Action": "1" })).status).toBe(200);
     } finally {

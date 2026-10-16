@@ -53,12 +53,6 @@ export interface WriterOpDeps {
   render?: (id: string) => Promise<WriterNumberingResponse>;
   /** The cite keys of the saved library, the References tab's list; absent = no key can be verified. */
   citeKeys?: () => ReadonlySet<string>;
-  /**
-   * Whether Writer compiles run inside the OS sandbox (bubblewrap), the real boundary against TeX reading files the
-   * engine's own settings cannot stop (pdfTeX \pdfobj file{}). Without it the Copilot never causes a compile: its
-   * render is rejected here and the server refuses its view-driven refresh (the user's own Render is unaffected).
-   */
-  sandboxed: () => boolean;
 }
 
 export type WriterOpStatus = "conflict" | "not_found" | "invalid" | "error" | "rejected";
@@ -564,15 +558,6 @@ export async function renderManuscript(
 ): Promise<WriterRenderOutcome> {
   if (!deps.render)
     return { ok: false, status: "error", detail: "rendering is not available in this host" };
-  // A render triggered by the Copilot compiles whatever the manuscript holds (some of it possibly agent-written): only
-  // with the OS sandbox. The user's own Render button is not affected.
-  if (!deps.sandboxed())
-    return {
-      ok: false,
-      status: "rejected",
-      detail:
-        "this machine has no working OS sandbox (bubblewrap) for the Writer's TeX compile, so the Copilot cannot start a render; the user can press Render themselves",
-    };
   let manuscript: WriterManuscript | null;
   try {
     manuscript = loadManuscript(deps.dataDir, id);

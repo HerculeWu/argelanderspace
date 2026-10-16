@@ -2478,10 +2478,10 @@
         "biber": "Bibliography processing with biber",
         "figures": "PDF and EPS figure conversion during LaTeX ingest",
         "eps_figures": "EPS figure conversion during LaTeX ingest",
-        "copilot_compile": "Copilot-triggered compilation (Writer sandbox)"
+        "copilot_compile": "Sandboxed Writer compilation"
       },
       "noSandboxTitle": "No compile sandbox on this machine",
-      "noSandboxBody": "Copilot can edit manuscript text but will not trigger compilation. Pressing Render yourself still compiles (outside a sandbox).",
+      "noSandboxBody": "Writer compiles on this machine run without a sandbox, including the ones Copilot starts.",
       "sandboxTexMissingTitle": "Writer rendering cannot find TeX in the sandbox",
       "sandboxTexMissingBody": "The compile sandbox sees only the system directories and the TeX directories on the PATH the workbench was started with that can be put into the sandbox. It does not see the TeX the workbench found ({{path}}), so Writer rendering fails; it never falls back to compiling outside the sandbox. LaTeX ingest is not affected.",
       "sandboxTexOtherWhy": "The sandbox always takes the TeX in the system directories first, and putting another directory on PATH does not change that; there is nothing to do on this page to make it use the TeX the workbench found.",

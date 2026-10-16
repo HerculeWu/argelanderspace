@@ -6,7 +6,7 @@
  * installation, the compile workspace read-write at the fixed path /work, no network, and nothing else of the
  * filesystem (no HOME, no data directory, no /tmp, no /etc beyond TeX's own). The sandbox gets a minimal PATH, HOME and
  * TMPDIR=/work, a fixed hostname, and its arguments through a file descriptor (so /proc/1/cmdline shows no host path).
- * Without bubblewrap there is no such boundary: the server then never lets the Copilot cause a compile.
+ * Without bubblewrap there is no such boundary and the compile runs unsandboxed (the user's Render and the Copilot's alike).
  */
 import { execFile, spawn } from "node:child_process";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
@@ -233,8 +233,8 @@ export function ensureWriterSandboxProbe(observer?: ExternalObserver): Promise<b
 }
 
 /**
- * The cached answer, never blocking: false until a probe has said true (so a gate that asks before the first probe
- * finished is conservative). A stale negative triggers a background re-probe, reported to `observer` like any other.
+ * The cached answer, never blocking: false until a probe has said true (so a caller that asks before the first probe
+ * finished is conservative). No product code calls it any more (the compile awaits `ensureWriterSandboxProbe`). A stale negative triggers a background re-probe, reported to `observer` like any other.
  */
 export function writerSandboxAvailable(observer?: ExternalObserver): boolean {
   if (override !== null) return override;

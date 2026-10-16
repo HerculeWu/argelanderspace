@@ -15,7 +15,7 @@ import { ActionButton, InlineMessage } from "../ui";
  * The environment check of the "TeX & environment" group (desktop-app ticket 13), as in the approved prototype: one row
  * per program — found or not; when found its version line and where it is (with the step of the lookup that found it);
  * when missing what is unavailable without it — and a row for the system keychain. Below: a warning when TeX was not
- * found, and the no-sandbox note (the Copilot does not cause compiles here; Render pressed by the user still compiles).
+ * found, and the no-sandbox note (Writer compiles, the Copilot's included, run unsandboxed here).
  */
 
 const SOURCE_LABEL = {
