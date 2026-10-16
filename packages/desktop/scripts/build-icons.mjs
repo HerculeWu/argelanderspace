@@ -5,7 +5,8 @@
 // Outputs: 16x16, 32x32, 48x48, 64x64, 128x128, 256x256 and icon.png (512) for Linux (the deb puts every PNG listed in
 // tauri.conf.json under /usr/share/icons/hicolor; the first PNG listed is also the window icon). No Tauri-style
 // 128x128@2x.png: the deb bundler would install a 256 px file as hicolor's 256x256@2 (a 512 px slot).
-// Also icon.ico for Windows (16, 24, 32, 48, 64 as 32-bit BMP, 256 as PNG); icon.icns for macOS (16 to 1024, PNG entries).
+// Also icon.ico for Windows (16, 24, 32, 48, 64 as 32-bit BMP, 256 as PNG); icon.icns for macOS: 16 and 32 px as
+// classic entries (`is32`+`s8mk`, `il32`+`l8mk`; desktop-app ticket 30, see icns-lib.mjs), the rest as PNG entries.
 // The macOS variants put the plate on Apple's grid instead: the 448 plate of the 512 canvas becomes 824 on a 1024
 // canvas, with a soft shadow in the margin; the drawing inside is scaled as a whole, not redrawn.
 //
@@ -13,22 +14,28 @@
 // (docs/engineering.md, desktop package); everything else is plain Node. The repository does not depend on it.
 // Usage (from anywhere): node packages/desktop/scripts/build-icons.mjs --tauri-cli <path to cargo-tauri>
 //   --tauri-cli defaults to `cargo-tauri` on PATH. Re-running with the same CLI gives the same bytes.
+// Check mode (the release workflow, macOS; writes nothing): --check-iconset <dir> [--check-iconset <dir> ...] renders
+//   the macOS 16 and 32 px variant again and compares it with `icon_16x16.png` and `icon_32x32.png` in each iconset
+//   (what `iconutil -c iconset` made of the package's ICNS): on every pixel with alpha > 0 in either, alpha and the
+//   premultiplied colour must agree within 1. Exit 1 on any difference.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inflateSync } from 'node:zlib';
+import { CLASSIC, classicEntries, compareRgba, decodePng, icns } from './icns-lib.mjs';
 
 const iconsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'icons');
 const sourceDir = join(iconsDir, 'source');
 
 const args = process.argv.slice(2);
 let tauriCli = 'cargo-tauri';
+const checkIconsets = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--tauri-cli' && args[i + 1]) tauriCli = args[++i];
+  else if (args[i] === '--check-iconset' && args[i + 1]) checkIconsets.push(args[++i]);
   else {
-    console.error(`unknown argument: ${args[i]}\nusage: node build-icons.mjs [--tauri-cli <path to cargo-tauri>]`);
+    console.error(`unknown argument: ${args[i]}\nusage: node build-icons.mjs [--tauri-cli <path to cargo-tauri>] [--check-iconset <dir> ...]`);
     process.exit(1);
   }
 }
@@ -53,40 +60,6 @@ function rasterise(svgText, name, sizes) {
   writeFileSync(src, svgText);
   execFileSync(tauriCli, ['icon', src, '-o', out, '--png', sizes.join(',')], { stdio: ['ignore', 'ignore', 'inherit'] });
   return Object.fromEntries(sizes.map(n => [n, readFileSync(join(out, `${n}x${n}.png`))]));
-}
-
-// ---- a minimal PNG reader (8-bit RGBA, not interlaced: what resvg writes) for the ICO's BMP entries ----
-function decodePng(buf) {
-  if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error('not a PNG');
-  let pos = 8, width = 0, height = 0;
-  const idat = [];
-  while (pos < buf.length) {
-    const len = buf.readUInt32BE(pos), type = buf.toString('latin1', pos + 4, pos + 8), data = buf.subarray(pos + 8, pos + 8 + len);
-    if (type === 'IHDR') {
-      width = data.readUInt32BE(0);
-      height = data.readUInt32BE(4);
-      if (data[8] !== 8 || data[9] !== 6 || data[12] !== 0) throw new Error('expected an 8-bit RGBA, non-interlaced PNG');
-    } else if (type === 'IDAT') idat.push(data);
-    pos += 12 + len;
-  }
-  const raw = inflateSync(Buffer.concat(idat)), stride = width * 4, px = Buffer.alloc(stride * height);
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)], line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
-    for (let x = 0; x < stride; x++) {
-      const left = x >= 4 ? px[y * stride + x - 4] : 0, up = y > 0 ? px[(y - 1) * stride + x] : 0;
-      const upLeft = x >= 4 && y > 0 ? px[(y - 1) * stride + x - 4] : 0;
-      let v = line[x];
-      if (filter === 1) v += left;
-      else if (filter === 2) v += up;
-      else if (filter === 3) v += (left + up) >> 1;
-      else if (filter === 4) {
-        const p = left + up - upLeft, pa = Math.abs(p - left), pb = Math.abs(p - up), pc = Math.abs(p - upLeft);
-        v += pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft;
-      } else if (filter !== 0) throw new Error(`unknown PNG filter ${filter}`);
-      px[y * stride + x] = v & 0xff;
-    }
-  }
-  return { width, height, px };
 }
 
 // A 32-bit BMP icon entry: BITMAPINFOHEADER (height doubled for the AND mask), BGRA rows bottom-up, an all-zero mask.
@@ -131,21 +104,21 @@ function ico(entries) {
   return Buffer.concat([dir, ...entries.map(e => e.data)]);
 }
 
-function icns(entries) {
-  const chunks = entries.map(({ type, data }) => {
-    const head = Buffer.alloc(8);
-    head.write(type, 0, 'latin1');
-    head.writeUInt32BE(data.length + 8, 4);
-    return Buffer.concat([head, data]);
-  });
-  const head = Buffer.alloc(8);
-  head.write('icns', 0, 'latin1');
-  head.writeUInt32BE(8 + chunks.reduce((n, c) => n + c.length, 0), 4);
-  return Buffer.concat([head, ...chunks]);
-}
-
 try {
   const version = execFileSync(tauriCli, ['--version'], { encoding: 'utf8' }).trim();
+  if (checkIconsets.length > 0) {
+    const ms = rasterise(macVariant(readFileSync(join(sourceDir, 'app-icon-small.svg'), 'utf8')), 'mac-small', [16, 32]);
+    let failed = false;
+    for (const dir of checkIconsets) {
+      for (const n of [16, 32]) {
+        const file = join(dir, `icon_${n}x${n}.png`);
+        const r = compareRgba(decodePng(ms[n]), decodePng(readFileSync(file)));
+        console.log(`${file}: ${r.ok ? 'MATCH' : 'DIFFERS'} from the source rendering (${version}): ${JSON.stringify(r)}`);
+        if (!r.ok) failed = true;
+      }
+    }
+    process.exitCode = failed ? 1 : 0;
+  } else {
   const full = readFileSync(join(sourceDir, 'app-icon.svg'), 'utf8');
   const small = readFileSync(join(sourceDir, 'app-icon-small.svg'), 'utf8');
   const f = rasterise(full, 'full', [48, 64, 128, 256, 512]);
@@ -169,11 +142,14 @@ try {
       { size: 64, data: bmpEntry(f[64]) },
       { size: 256, data: f[256] },
     ]),
-    // PNG entries: 16/32 pt at 1x and 2x, then 128/256/512 pt at 1x and 2x.
+    // 16 and 32 pt at 1x as classic entries (colour and mask), the rest PNG: 16 pt at 2x, 32 pt at 2x, then
+    // 128/256/512 pt at 1x and 2x.
     'icon.icns': icns([
-      { type: 'icp4', data: ms[16] },
+      ...[16, 32].flatMap(n => {
+        const { color, mask } = classicEntries(decodePng(ms[n]));
+        return [{ type: CLASSIC[n][0], data: color }, { type: CLASSIC[n][1], data: mask }];
+      }),
       { type: 'ic11', data: ms[32] },
-      { type: 'icp5', data: ms[32] },
       { type: 'ic12', data: mf[64] },
       { type: 'ic07', data: mf[128] },
       { type: 'ic13', data: mf[256] },
@@ -185,6 +161,7 @@ try {
   };
   for (const [name, data] of Object.entries(written)) writeFileSync(join(iconsDir, name), data);
   console.log(`${version}: wrote ${Object.keys(written).join(', ')} in ${iconsDir}`);
+  }
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

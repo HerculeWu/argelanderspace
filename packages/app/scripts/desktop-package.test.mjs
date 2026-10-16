@@ -293,19 +293,21 @@ test("a failed signature check removes the cached checksum list and its signatur
   assert.deepEqual(removed.sort(), ["/c/SHASUMS256.txt", "/c/SHASUMS256.txt.sig"]);
 
   const args = [];
-  const good = (cmd, argv) => {
-    args.push([cmd, ...argv]);
+  const good = (cmd, argv, options) => {
+    args.push([cmd, ...argv, options]);
     return { status: 0, stderr: 'gpgv: Good signature from "Some Releaser <r@example.org>"' };
   };
   const removedOk = [];
   const ok = verifyNodeSignature({
-    keyring: "/k",
+    keyring: "/t/keys.kbx",
     shasums: "/c/S",
     signature: "/c/S.sig",
     run: good,
     remove: (f) => removedOk.push(f),
   });
-  assert.deepEqual(args, [["gpgv", "--keyring", "/k", "/c/S.sig", "/c/S"]]);
+  // The keyring is named relative to its own directory (gpgv's working directory): gpgv reads a keyring name with a
+  // colon as a URL, so a Windows path (D:\...) would be refused (Git for Windows' gpgv, desktop-app ticket 30).
+  assert.deepEqual(args, [["gpgv", "--keyring", "./keys.kbx", "/c/S.sig", "/c/S", { cwd: "/t" }]]);
   assert.deepEqual(removedOk, []);
   assert.equal(ok.verified, true);
   assert.match(ok.detail, /Some Releaser/);
@@ -721,7 +723,8 @@ test("the repository's vendored crate licenses are complete and unchanged and co
     for (const f of c.files) assert.ok(manifest.files[f], `${c.crate}: ${f}`);
     assert.ok(evalLicense(c.license, SHELL_CRATE_LICENSE_ALLOWED), c.crate);
   }
-  // The crates of linux-x64 without a license file of their own (shell-notices.mjs on 2026-10-15), and Windows' three.
+  // The crates of linux-x64 without a license file of their own (shell-notices.mjs on 2026-10-15), Windows' three, and
+  // macOS's twelve objc2 crates (the user's decision of 2026-10-16, desktop-app ticket 30).
   for (const id of [
     "alloc-stdlib@0.3.0",
     "defmt-parser@1.0.0",
@@ -732,6 +735,18 @@ test("the repository's vendored crate licenses are complete and unchanged and co
     "webview2-com@0.39.1",
     "webview2-com-macros@0.8.1",
     "webview2-com-sys@0.39.1",
+    "block2@0.6.2",
+    "dispatch2@0.3.1",
+    "objc2@0.6.5",
+    "objc2-app-kit@0.3.2",
+    "objc2-core-foundation@0.3.2",
+    "objc2-core-graphics@0.3.2",
+    "objc2-encode@4.1.0",
+    "objc2-exception-helper@0.1.1",
+    "objc2-foundation@0.3.2",
+    "objc2-io-surface@0.3.2",
+    "objc2-quartz-core@0.3.2",
+    "objc2-web-kit@0.3.2",
   ]) {
     const [name, version] = id.split("@");
     assert.ok(

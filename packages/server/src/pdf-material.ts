@@ -15,7 +15,6 @@
  *    so a huge or tiny page is rendered at a sensible size instead of being refused.
  */
 import { createHash } from "node:crypto";
-import { freemem } from "node:os";
 import { crc32, deflateSync } from "node:zlib";
 import {
   buildPdfTextTarget,
@@ -35,6 +34,7 @@ import {
   pdfRectsWithinSlice,
   TEXT_PDF_IMAGE_MAX_PIXELS,
 } from "@argelanderspace/contracts";
+import { availableMemory } from "./available-memory.js";
 import {
   counted,
   createPdfiumEngine,
@@ -271,7 +271,8 @@ async function withEngine<T>(
     () =>
       counted(async () => {
         // Headroom first, THEN the one private copy: a waiting request holds no copy of its own.
-        if (freemem() < PDF_MIN_IN_FLIGHT_HEADROOM_BYTES) throw new PdfMaterialResourceError();
+        if ((await availableMemory()) < PDF_MIN_IN_FLIGHT_HEADROOM_BYTES)
+          throw new PdfMaterialResourceError();
         const snapshot = Buffer.from(bytes);
         if (sha256(snapshot) !== expectedHash) throw new PdfMaterialContentError();
         const deadline = Date.now() + 60_000;

@@ -2,6 +2,7 @@
 // package's `test`). Used by desktop-sidecar.mjs (assembles the sidecar the Tauri bundle carries), dep-dir.mjs (the
 // vendored license texts in its notices) and smoke-desktop-package.mjs (unpacks a built package and runs it).
 import { createHash } from "node:crypto";
+import { basename, dirname, resolve } from "node:path";
 import {
   PROD_LICENSE_ALLOWED,
   SHELL_CRATE_LICENSE_ALLOWED,
@@ -62,11 +63,17 @@ export function nodeSignaturePlan({ keyring, insecureSkip } = {}) {
 /**
  * Checks the signature of SHASUMS256.txt with `gpgv` (only the given keyring; never the user's own). On failure the
  * cached SHASUMS256.txt and its signature are removed (`remove(path)`), so that a later run downloads them again
- * instead of reusing a list that did not verify. `run(cmd, argv)` returns {status, stderr, error}. A gpgv that cannot
+ * instead of reusing a list that did not verify. `run(cmd, argv, {cwd})` returns {status, stderr, error}. A gpgv that cannot
  * be run says so and leaves the cache alone: a missing tool is not a bad signature.
  */
 export function verifyNodeSignature({ keyring, shasums, signature, run, remove }) {
-  const g = run("gpgv", ["--keyring", keyring, signature, shasums]);
+  // gpgv takes a keyring name with a colon for a URL ("invalid key resource URL" for D:\..., Git for Windows' gpgv):
+  // the keyring is named relative to its own directory, which is gpgv's working directory (desktop-app ticket 30).
+  const g = run(
+    "gpgv",
+    ["--keyring", `./${basename(keyring)}`, resolve(signature), resolve(shasums)],
+    { cwd: dirname(resolve(keyring)) }
+  );
   if (g.error)
     throw new Error(
       `gpgv could not be run (${g.error.code ?? g.error.name}); install it (Debian/Ubuntu: gpgv) or name the insecure skip`

@@ -28,17 +28,42 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 open = "5"
-# The host's process group (killpg) and the user id the single-instance socket must belong to.
-libc = "0.2"
 # Keys in the order written: the records and lines read like the host's (`t`, `level`, `event` first).
 serde_json = { version = "1", features = ["preserve_order"] }
+
+# Linux (desktop-app tickets 20, 21): the WebKitGTK and GTK Tauri itself uses.
+[target.'cfg(target_os = "linux")'.dependencies]
 # The same WebKitGTK binding Tauri uses: the shell takes Tauri's scripts out of the page (src/page_guard.rs).
 webkit2gtk = "2.0"
-# The save dialog of the page's downloads (src/download.rs): the GTK Tauri itself uses.
+# The save dialog of the page's downloads (src/download.rs) and the about dialog (src/menu.rs).
 gtk = "0.18"
 # Test builds only (`--features smoke-probe`): reads what the page sees, for the smoke checks.
 javascriptcore-rs = { version = "1.1", optional = true }
 gio = { version = "0.18", optional = true }
+
+# Unix (Linux and macOS): the host's process group (killpg) and the user id the single-instance socket must belong to.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# macOS (desktop-app ticket 30): the WKWebView binding wry uses, to take Tauri's scripts and message handler out of the
+# webview's user content controller (src/page_guard.rs). The versions wry 0.57 pulls in: no crate is added.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "objc2-app-kit", "WKUserContentController"] }
+
+# macOS and Windows (desktop-app ticket 30): the native save dialog of the page's downloads (src/download.rs); the same
+# rfd the dialog plugin uses, so no crate is added.
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+rfd = { version = "0.16", default-features = false }
+
+# Windows (desktop-app ticket 30): the job object the host runs in, the single-instance named pipe (windows-sys), and
+# the WebView2 binding wry uses, to take Tauri's scripts out of the page (src/page_guard.rs). The versions wry 0.57 and
+# tao pull in: no crate is added.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
+webview2-com = "0.39"
+windows-core = "0.62"
 
 [features]
 # Never in a release: a probe that evaluates a fixed script in the page after each load and appends the answer to the

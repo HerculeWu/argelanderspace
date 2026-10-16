@@ -182,7 +182,7 @@ if (signaturePlan.verify) {
     keyring: signaturePlan.keyring,
     shasums,
     signature,
-    run: (cmd, argv) => run(cmd, argv),
+    run: (cmd, argv, options) => run(cmd, argv, options),
     remove: (f) => rmSync(f, { force: true }),
   });
   nodeSignature.keyring_sha256 = sha256(signaturePlan.keyring);

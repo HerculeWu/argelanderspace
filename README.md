@@ -68,11 +68,12 @@ it (`GET /api/environment`).
 ## Installing the desktop app
 
 The desktop app carries its own Node, so it needs nothing but TeX (above) for
-LaTeX ingest. Packages are on the repository's GitHub Releases page. **For now
-only Linux x64 packages are published** (`.deb` and `.AppImage`); macOS and
-Windows packages follow once the app's window runs on those systems. There is
-no automatic update: install a newer package over the old one; your settings,
-credentials, logs and recent projects live in your user folders and stay.
+LaTeX ingest. Packages are on the repository's GitHub Releases page, for four
+platforms: Linux x64 (`.deb` and `.AppImage`), macOS on Apple silicon and on
+Intel (`.dmg`, `aarch64` and `x64`) and Windows x64 (the installer
+`ArgelanderSpace_<version>_x64-setup.exe`). There is no automatic update:
+install a newer package over the old one; your settings, credentials, logs
+and recent projects live in your user folders and stay.
 
 **Linux.** `sudo apt install ./argelanderspace_<version>_amd64.deb` (it pulls
 in WebKitGTK; remove with `sudo apt remove argelanderspace`), or make the
@@ -84,7 +85,7 @@ folder that is gone once the app closes, so a tool installed from it would
 stop working. Use the `.deb`, or the npm package, if agents should use the
 app's CLI.
 
-### macOS and Windows (when their packages are published)
+### macOS and Windows
 
 The packages are **not signed** by Apple or Microsoft (the project has no
 signing certificates), so both systems stop the app the first time. That is
@@ -115,6 +116,8 @@ does if you deny, will be written here once it has been tried on a Mac.
 **Windows.** Run the installer `.exe`. It installs for your user only (no
 administrator rights). SmartScreen may say "Windows protected your PC": click
 **More info**, check that the app is ArgelanderSpace, then **Run anyway**.
+To remove it, use **Settings → Apps**, or run `uninstall.exe` in
+`%LOCALAPPDATA%\ArgelanderSpace`.
 
 ## Quickstart
 

@@ -3,17 +3,17 @@
 # (docs/contracts.md; the user's change 9 of 2026-10-13). Nothing is published: the draft is looked at and made public
 # by hand.
 #
-# What it builds: Linux x64 (deb and AppImage) by default. The macOS and Windows targets are kept but not run unless
-# chosen by hand (the user's decision of 2026-10-15 in ticket 26: the shell builds only on Linux until it is ported,
-# ticket 30); choosing them now fails in the shell's build.
+# What it builds: all four targets by default: Linux x64 (deb and AppImage), Windows x64 (NSIS), macOS arm64 and x64
+# (dmg); none of them signed by Apple or Microsoft (the user's decision B of 2026-10-16 in ticket 30, once the shell
+# was ported and every target had passed here; before, ticket 26: Linux only).
 #
 # When it runs:
 #   - a pushed tag `v<version>`, where <version> is packages/app/package.json's `version` (the single source,
-#     ticket 16); any other tag fails in the preflight before anything is built. Builds linux-x64.
-#   - by hand (Actions > Release > Run workflow) on a branch or tag: it builds that commit and names the draft
-#     `v<version>`. `targets`: linux-x64 (the default), `all`, or one other target. A draft is made only when every
-#     chosen target succeeded. When a tag `v<version>` exists already it must name the commit built (or nothing is
-#     made); otherwise the tag is made when the draft is published.
+#     ticket 16); any other tag fails in the preflight before anything is built. Builds all four targets.
+#   - by hand (Actions > Release > Run workflow) on a branch or tag: it builds that commit; with `draft` (off by
+#     default) it also names a draft `v<version>`. `targets`: `all` (the default) or one target. A
+#     draft is made only when `draft` is on and every chosen target succeeded. When a tag `v<version>` exists already
+#     it must name the commit built (or nothing is made); otherwise the tag is made when the draft is published.
 #
 # Pins: actions by commit (the tag in the comment); the build's Node = the Node the package carries
 # (DESKTOP_NODE_VERSION in packages/app/scripts/desktop-package-lib.mjs; the preflight checks they agree); pnpm from the
@@ -27,17 +27,23 @@ on:
   workflow_dispatch:
     inputs:
       targets:
-        description: "Which targets to build (macOS and Windows wait for ticket 30; a draft only when all chosen succeed)"
+        description: "Which targets to build (all four by default; a draft only when all chosen succeed)"
         type: choice
-        default: linux-x64
-        options: [linux-x64, all, win32-x64, darwin-arm64, darwin-x64]
+        default: all
+        options: [all, linux-x64, win32-x64, darwin-arm64, darwin-x64]
+      draft:
+        description: "Make the release draft when every chosen target succeeded (off: build and check only, nothing made)"
+        type: boolean
+        default: false
 
 # Nothing by default; each job asks for what it needs.
 permissions: {}
 
 concurrency:
-  # One release run at a time, whatever the ref: a tag run and a manual run must not both pass the duplicate check.
-  group: release
+  # One release run at a time, whatever the ref: a tag run and a manual run that makes a draft must not both pass the
+  # duplicate check. A run by hand without a draft makes nothing and has a group of its own (it neither waits nor holds
+  # the others up).
+  group: ${{ (github.event_name == 'push' || inputs.draft == true) && 'release' || format('check-{0}', github.run_id) }}
   cancel-in-progress: false
 
 env:
@@ -57,7 +63,7 @@ jobs:
       - name: Choose the targets
         id: matrix
         env:
-          CHOSEN: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'linux-x64' }}
+          CHOSEN: ${{ github.event_name == 'workflow_dispatch' && inputs.targets || 'all' }}
         run: |
           all='[
             {"target":"linux-x64","os":"ubuntu-24.04","bundles":"deb,appimage"},
@@ -90,6 +96,13 @@ jobs:
       BUNDLES: ${{ matrix.bundles }}
       EVIDENCE: ${{ github.workspace }}/release-evidence/${{ matrix.target }}
     steps:
+      # The Windows runner's Git converts line endings to CRLF on checkout (core.autocrlf true); the release scripts
+      # read pnpm-lock.yaml and sha256-check vendored texts byte for byte, so the files are checked out as committed
+      # (desktop-app ticket 30: dep-dir.mjs found no importer in a CRLF lockfile).
+      - name: Windows only - check files out as committed (no CRLF conversion)
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -139,6 +152,26 @@ jobs:
           rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
           echo "RUSTUP_TOOLCHAIN=$RUST_TOOLCHAIN" >> "$GITHUB_ENV"
 
+      - name: The shell's unit tests and its test build on this platform (not a gate; desktop-app ticket 30)
+        working-directory: packages/desktop
+        run: |
+          cargo test --locked 2>&1 | tee "$EVIDENCE/shell-unit-tests.txt"
+          # The test build with the probe (debug only: smoke-probe does not compile in a release), used by the page
+          # guard step below; built here so that its platform code is compiled even when a later step fails.
+          cargo build --locked --features smoke-probe,packaged 2>&1 | tail -n 3
+
+      - name: Shell page guard with a stand-in host (the shell alone, before the workspace build)
+        run: |
+          # desktop-app ticket 30: the test build runs a stand-in host (this runner's Node and a small script put in
+          # target/debug/sidecar, removed afterwards) so the page guard, the single instance and quit are checked on
+          # this platform's webview before the workspace build (a failure there then still leaves the shell checked).
+          ext=""; if [ "$RUNNER_OS" = Windows ]; then ext=.exe; fi
+          run=(node packages/app/scripts/smoke-shell-probe.mjs --stand-in-host \
+            --shell "packages/desktop/target/debug/argelanderspace-desktop$ext" \
+            --label "$TARGET-stand-in" --evidence "$EVIDENCE")
+          if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi
+          "${run[@]}"
+
       - name: Install the workspace (frozen lockfile)
         run: corepack pnpm install --frozen-lockfile
 
@@ -171,6 +204,23 @@ jobs:
           "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" build --features packaged "${configs[@]}" \
             --bundles "$BUNDLES" 2>&1 | tee "$EVIDENCE/tauri-build.txt"
 
+      - name: Shell page guard on the platform's webview (a test build with the probe and the assembled resources)
+        run: |
+          # desktop-app ticket 30: the debug build with the smoke probe and `packaged` (built with the unit tests above),
+          # with the assembled resources (sidecar/, skills/) put next to it in target/debug, where
+          # a packaged build looks for them when run from cargo's output; so it runs the assembled Node and app build.
+          # Not shipped: only release-out/ is uploaded.
+          res=packages/desktop/target/package-resources
+          dbg=packages/desktop/target/debug
+          rm -rf "$dbg/sidecar" "$dbg/skills"
+          cp -R "$res/sidecar" "$res/skills" "$dbg/"
+          ext=""; if [ "$RUNNER_OS" = Windows ]; then ext=.exe; fi
+          run=(node packages/app/scripts/smoke-shell-probe.mjs --shell "$dbg/argelanderspace-desktop$ext" \
+            --label "$TARGET" --evidence "$EVIDENCE")
+          if [ "$RUNNER_OS" = Linux ]; then run=(xvfb-run -a "${run[@]}"); fi
+          "${run[@]}"
+          rm -rf "$dbg/sidecar" "$dbg/skills"
+
       - name: Desktop package smoke (deb and AppImage, shell on a virtual display; the AppImage's through its AppRun)
         if: runner.os == 'Linux'
         run: |
@@ -184,41 +234,103 @@ jobs:
       - name: Partial check on macOS and Windows (the package smoke is Linux only)
         if: runner.os != 'Linux'
         run: |
-          # NOT the desktop package smoke (smoke-desktop-package.mjs reads a deb or an AppImage and /proc): only that
-          # the sidecar's Node runs the sidecar's CLI at the app's version and the shell's notices are there. On macOS
-          # this looks inside the built .app; on Windows only inside the build tree (target/release, where tauri-build
-          # copies the resources) -- NOT inside the NSIS installer, whose contents are not unpacked or checked here.
-          # Untested here: the host from the bundle, the page, PDFium, the keychain, Copilot, the ingest, the shell.
+          # NOT the desktop package smoke (smoke-desktop-package.mjs reads a deb or an AppImage and /proc): the package
+          # itself, as a user gets it (desktop-app ticket 30). macOS: the dmg, mounted read-only, holds
+          # ArgelanderSpace.app (bundle name ArgelanderSpace); Windows: the NSIS installer, named ArgelanderSpace_*,
+          # installed silently for this runner's user into %LOCALAPPDATA%\ArgelanderSpace (the runner is thrown away
+          # afterwards). In both: the shell's binary, the shell's notices, and the sidecar's Node running the sidecar's
+          # CLI at the app's version. The page and the host are checked by the probe step above (a test build with the
+          # same assembled resources), not from the package.
           version=$(node -p 'require("./packages/app/package.json").version')
+          b=packages/desktop/target/release/bundle
+          out="$EVIDENCE/package-check.txt"
+          shopt -s nullglob
           if [ "$RUNNER_OS" = macOS ]; then
-            res=$(ls -d packages/desktop/target/release/bundle/macos/*.app)/Contents/Resources
+            dmgs=("$b"/dmg/*.dmg)
+            test "${#dmgs[@]}" -eq 1
+            mnt="$RUNNER_TEMP/dmg-mount"
+            mkdir -p "$mnt"
+            hdiutil attach -readonly -nobrowse -mountpoint "$mnt" "${dmgs[0]}" >/dev/null
+            trap 'hdiutil detach "$mnt" >/dev/null || true' EXIT
+            ls -la "$mnt" | tee "$out"
+            app="$mnt/ArgelanderSpace.app"
+            test -d "$app"
+            name=$(plutil -extract CFBundleName raw "$app/Contents/Info.plist")
+            exe=$(plutil -extract CFBundleExecutable raw "$app/Contents/Info.plist")
+            echo "dmg ${dmgs[0]##*/}: ArgelanderSpace.app, CFBundleName $name, executable $exe" | tee -a "$out"
+            test "$name" = ArgelanderSpace
+            test -x "$app/Contents/MacOS/$exe"
+            res="$app/Contents/Resources"
             nodebin="$res/sidecar/node/bin/node"
-            where="the built .app"
+            # The app's ICNS, for the icon step below (tauri removes bundle/macos/*.app once the dmg is made).
+            icns=("$res"/*.icns)
+            test "${#icns[@]}" -eq 1
+            cp "${icns[0]}" "$EVIDENCE/app-icon.icns"
+            # The dmg's volume icon, when the dmg has one (checked the same way below).
+            if [ -f "$mnt/.VolumeIcon.icns" ]; then cp "$mnt/.VolumeIcon.icns" "$EVIDENCE/volume-icon.icns"; fi
           else
-            res=packages/desktop/target/release
+            exes=("$b"/nsis/*.exe)
+            test "${#exes[@]}" -eq 1
+            installer="${exes[0]}"
+            echo "installer: ${installer##*/}" | tee "$out"
+            case "${installer##*/}" in ArgelanderSpace_*) ;; *) echo "::error::installer name"; exit 1 ;; esac
+            7z l "$installer" > "$EVIDENCE/nsis-listing.txt"
+            # Silent install for this user (installMode currentUser); NSIS waits when started this way.
+            installer_win=$(cygpath -w "$installer")
+            powershell -NoProfile -Command "Start-Process -Wait -FilePath '$installer_win' -ArgumentList '/S'"
+            res="$(cygpath -u "$LOCALAPPDATA")/ArgelanderSpace"
+            ls -la "$res" | tee -a "$out"
+            test -f "$res/argelanderspace-desktop.exe"
             nodebin="$res/sidecar/node/node.exe"
-            where="the build tree (not the installer)"
           fi
           got=$("$nodebin" "$res/sidecar/app/dist/bin.js" --version)
-          echo "package CLI --version in $where: $got (app $version)" | tee "$EVIDENCE/partial-check.txt"
+          echo "package CLI --version from the package: $got (app $version)" | tee -a "$out"
           test "$got" = "$version"
           test -f "$res/THIRD-PARTY-SHELL-NOTICES.txt"
+          test -d "$res/skills"
           {
-            echo "UNTESTED on $RUNNER_OS: the desktop package smoke (host, page, PDFium, keychain, Copilot, ingest, shell)"
-            if [ "$RUNNER_OS" = Windows ]; then echo "UNTESTED on Windows: the NSIS installer's contents"; fi
-          } | tee -a "$EVIDENCE/partial-check.txt" >> "$GITHUB_STEP_SUMMARY"
+            echo "UNTESTED on $RUNNER_OS from the package itself: the host, the page, PDFium, the keychain, Copilot, the ingest (the probe step runs them from a test build)"
+          } | tee -a "$out" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: macOS icon (the built .app's ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
+      - name: Windows uninstall (the NSIS uninstaller, silent, removes what the installer put there)
+        if: runner.os == 'Windows'
+        run: |
+          res="$(cygpath -u "$LOCALAPPDATA")/ArgelanderSpace"
+          out="$EVIDENCE/nsis-uninstall.txt"
+          test -f "$res/uninstall.exe"
+          uninstaller_win=$(cygpath -w "$res/uninstall.exe")
+          powershell -NoProfile -Command "Start-Process -Wait -FilePath '$uninstaller_win' -ArgumentList '/S'"
+          # NSIS's uninstaller copies itself away and runs from there: wait for it to finish removing.
+          for _ in $(seq 1 60); do
+            [ -e "$res/argelanderspace-desktop.exe" ] || [ -e "$res/sidecar" ] || break
+            sleep 1
+          done
+          { echo "after uninstall:"; ls -la "$res" 2>&1 || true; } | tee "$out"
+          test ! -e "$res/argelanderspace-desktop.exe"
+          test ! -e "$res/sidecar"
+          test ! -e "$res/skills"
+          test ! -e "$res/THIRD-PARTY-SHELL-NOTICES.txt"
+          echo "NSIS uninstall /S: shell, sidecar, skills and notices removed" | tee -a "$out" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: macOS icon (iconutil's 16/32 px of the dmg's ICNS, pixel for pixel against the source rendering)
         if: runner.os == 'macOS'
         run: |
-          # The ICNS the bundle carries, not the repository's source file.
-          shopt -s nullglob
-          icns=(packages/desktop/target/release/bundle/macos/*.app/Contents/Resources/*.icns)
-          test "${#icns[@]}" -eq 1
-          iconutil -c iconset "${icns[0]}" -o "$EVIDENCE/icon.iconset"
-          ls -l "$EVIDENCE/icon.iconset" | tee "$EVIDENCE/icon-iconset.txt"
-          test -f "$EVIDENCE/icon.iconset/icon_16x16.png"
-          test -f "$EVIDENCE/icon.iconset/icon_32x32.png"
+          # The ICNS the package carries (copied out of the dmg's .app by the step above, and the dmg's volume icon when
+          # there is one), not the repository's file. macOS's own decoder turns them into PNGs; build-icons.mjs renders
+          # the 16/32 px variant again and compares (alpha and premultiplied colour within 1 wherever alpha > 0):
+          # desktop-app ticket 30, the PNG-holding icp4/icp5 entries decoded as noise here.
+          sets=()
+          for name in app-icon volume-icon; do
+            [ -f "$EVIDENCE/$name.icns" ] || continue
+            iconutil -c iconset "$EVIDENCE/$name.icns" -o "$EVIDENCE/$name.iconset"
+            ls -l "$EVIDENCE/$name.iconset" | tee -a "$EVIDENCE/icon-iconset.txt"
+            sets+=(--check-iconset "$EVIDENCE/$name.iconset")
+          done
+          test "${#sets[@]}" -ge 1
+          echo "iconsets checked: ${#sets[@]} (volume icon present: $([ -f "$EVIDENCE/volume-icon.icns" ] && echo yes || echo no))" \
+            | tee -a "$EVIDENCE/icon-pixels.txt"
+          node packages/desktop/scripts/build-icons.mjs --tauri-cli "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" \
+            "${sets[@]}" 2>&1 | tee -a "$EVIDENCE/icon-pixels.txt"
 
       - name: Collect the packages
         run: |
@@ -251,6 +363,9 @@ jobs:
   draft:
     name: Release draft
     needs: package
+    # A tag run always makes the draft; a run by hand only when asked (`draft`, off by default: desktop-app ticket 30
+    # builds and checks branches without making any draft).
+    if: github.event_name == 'push' || inputs.draft == true
     runs-on: ubuntu-24.04
     # Only this job may write, and only to make the draft.
     permissions:

@@ -574,7 +574,8 @@ pub fn id_value(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::{parse_host_line, Ready};
+    // The test lines are written with Unix paths (`parse_test_line`).
+    use crate::protocol::{parse_test_line as parse_host_line, Ready};
 
     fn ready(project: Option<&str>) -> HostLine {
         HostLine::Ready(Ready {

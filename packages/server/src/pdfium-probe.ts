@@ -1,5 +1,5 @@
-import { freemem } from "node:os";
 import { PDF_MAX_PAGES, PDF_MIN_IN_FLIGHT_HEADROOM_BYTES } from "@argelanderspace/contracts";
+import { availableMemory } from "./available-memory.js";
 import {
   counted,
   createPdfiumEngine,
@@ -50,7 +50,7 @@ function toPromise<T>(task: PdfTask<T>): Promise<T> {
 }
 
 async function probe(bytes: Buffer): Promise<ProbedPdf> {
-  if (freemem() < PDF_MIN_IN_FLIGHT_HEADROOM_BYTES) throw new PdfResourceError();
+  if ((await availableMemory()) < PDF_MIN_IN_FLIGHT_HEADROOM_BYTES) throw new PdfResourceError();
   const deadline = Date.now() + 10_000;
   const withinLimit = async <T>(promise: Promise<T>): Promise<T> => {
     const result = await timed(promise, deadline);

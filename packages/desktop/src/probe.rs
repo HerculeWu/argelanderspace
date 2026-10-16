@@ -11,14 +11,19 @@
 //! menu now, `js <script>` runs a script in the page and
 //! appends `{"js": <answer>}` to the probe file; `ARGELANDERSPACE_SHELL_PROBE_SAVE_TO=<dir>` saves the page's
 //! downloads there without the save dialog (so the files can be checked; the dialog itself is checked without it).
+//! Desktop-app ticket 30: `ARGELANDERSPACE_SHELL_PROBE_OPENED=<file>` records the addresses the shell would hand to the
+//! system browser instead of opening them (`record_opened`).
+//!
+//! Linux runs the scripts with WebKitGTK's `call_async_javascript_function`. macOS and Windows (desktop-app ticket 30)
+//! have no call that waits for an async function's answer: the script is started with `eval`, leaves its answer in
+//! the page (`window.__aspaceProbe`, test builds only), and the answer is read back with `eval_with_callback`
+//! (`run_async`).
 
 use std::io::Write;
 use std::time::Duration;
 
-use javascriptcore::ValueExt;
 use tauri::webview::PageLoadEvent;
 use tauri::{Runtime, WebviewWindowBuilder};
-use webkit2gtk::WebViewExt;
 
 const PROBE: &str = r##"
 for (let i = 0; i < 80 && !document.querySelector("#root [data-ui]"); i++) {
@@ -30,6 +35,22 @@ r.internals = typeof window.__TAURI_INTERNALS__;
 r.ipc = typeof window.ipc;
 r.names = Object.getOwnPropertyNames(window).filter((k) => /tauri|^ipc$/i.test(k));
 r.webkitIpcHandler = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ipc);
+r.webviewPostMessage = (() => {
+  try {
+    return typeof (window.chrome && window.chrome.webview && window.chrome.webview.postMessage);
+  } catch (e) {
+    return "error";
+  }
+})();
+// WebView2's own objects, to tell apart what the guard took away (desktop-app ticket 30 review).
+r.chrome = typeof window.chrome;
+r.chromeWebview = (() => {
+  try {
+    return typeof (window.chrome && window.chrome.webview);
+  } catch (e) {
+    return "error";
+  }
+})();
 r.welcome = !!document.querySelector('[data-ui="welcome-page"]');
 r.title = document.title;
 r.dataUi = [...new Set([...document.querySelectorAll("#root [data-ui]")].map((e) => e.dataset.ui))].slice(0, 30);
@@ -52,6 +73,17 @@ try {
   r.ipcFetch = res.status + " " + (await res.text()).slice(0, 300);
 } catch (e) {
   r.ipcFetch = "error: " + String(e).slice(0, 300);
+}
+// Windows' Tauri takes its calls at http://ipc.localhost (the page's fetch reaches it as any address would).
+try {
+  const res = await fetch("http://ipc.localhost/plugin%3Awindow%7Cset_title", {
+    method: "POST",
+    body: JSON.stringify({ label: "main", value: "PROBE" }),
+    headers: { "Content-Type": "application/json" },
+  });
+  r.ipcHttpFetch = res.status + " " + (await res.text()).slice(0, 300);
+} catch (e) {
+  r.ipcHttpFetch = "error: " + String(e).slice(0, 300);
 }
 const NAVIGATE = __NAVIGATE__;
 if (NAVIGATE) {
@@ -109,13 +141,105 @@ pub fn control(each: impl Fn(Command) + Send + 'static) {
     });
 }
 
+/// Test builds with `ARGELANDERSPACE_SHELL_PROBE_OPENED=<file>`: an address for the system browser is appended to the
+/// file (`{"opened": <url>, "source": <navigation|new_window>}`) instead of being opened; whether it was.
+pub fn record_opened(url: &str, source: &str) -> bool {
+    let Some(file) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE_OPENED") else {
+        return false;
+    };
+    let line = serde_json::json!({ "opened": url, "source": source }).to_string();
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)
+        .and_then(|mut f| writeln!(f, "{line}"))
+        .is_ok()
+}
+
 /// Where downloads go without the dialog, when the smoke says so.
 pub fn save_to() -> Option<std::path::PathBuf> {
     std::env::var_os("ARGELANDERSPACE_SHELL_PROBE_SAVE_TO").map(Into::into)
 }
 
+/// Appends one line to the probe file (macOS, Windows).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn append(out: &std::ffi::OsStr, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(out)
+    {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+/// macOS and Windows: runs `code` (the body of an async function) in the page and waits (on the calling thread, never
+/// the main one) for its answer: the string it returned, or the error it threw. At most 30 seconds.
+#[cfg(not(target_os = "linux"))]
+fn run_async<R: Runtime>(window: &tauri::WebviewWindow<R>, code: &str) -> Result<String, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let token = NEXT.fetch_add(1, Ordering::Relaxed);
+    let start = format!(
+        "window.__aspaceProbe = window.__aspaceProbe || {{}};\n\
+         (async () => {{\n{code}\n}})().then(\n\
+           (v) => {{ window.__aspaceProbe[{token}] = {{ ok: v === undefined ? null : String(v) }}; }},\n\
+           (e) => {{ window.__aspaceProbe[{token}] = {{ error: String(e) }}; }});\n\
+         null;"
+    );
+    window.eval(start).map_err(|e| e.to_string())?;
+    let read =
+        format!("JSON.stringify((window.__aspaceProbe && window.__aspaceProbe[{token}]) || null)");
+    for _ in 0..150 {
+        std::thread::sleep(Duration::from_millis(200));
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        if window
+            .eval_with_callback(read.clone(), move |answer| {
+                let _ = tx.send(answer);
+            })
+            .is_err()
+        {
+            continue;
+        }
+        let Ok(answer) = rx.recv_timeout(Duration::from_secs(5)) else {
+            continue;
+        };
+        // The engine's JSON of the script's value (a string), which is itself the JSON of the record.
+        let inner = serde_json::from_str::<String>(&answer).unwrap_or(answer);
+        let Ok(record) = serde_json::from_str::<serde_json::Value>(&inner) else {
+            continue;
+        };
+        if let Some(ok) = record.get("ok") {
+            return Ok(ok.as_str().unwrap_or("null").to_owned());
+        }
+        if let Some(error) = record.get("error") {
+            return Err(error.as_str().unwrap_or("error").to_owned());
+        }
+    }
+    Err("no answer from the page in 30 seconds".into())
+}
+
 /// Runs `code` (the body of an async function) in the page; its answer is appended to the probe file.
+#[cfg(not(target_os = "linux"))]
 pub fn eval<R: Runtime>(window: &tauri::WebviewWindow<R>, code: String) {
+    let Some(out) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE") else {
+        return;
+    };
+    let window = window.clone();
+    std::thread::spawn(move || {
+        let answer = match run_async(&window, &code) {
+            Ok(value) => serde_json::Value::String(value),
+            Err(error) => serde_json::json!({ "error": error }),
+        };
+        append(&out, &serde_json::json!({ "js": answer }).to_string());
+    });
+}
+
+/// Runs `code` (the body of an async function) in the page; its answer is appended to the probe file.
+#[cfg(target_os = "linux")]
+pub fn eval<R: Runtime>(window: &tauri::WebviewWindow<R>, code: String) {
+    use javascriptcore::ValueExt;
+    use webkit2gtk::WebViewExt;
     let Some(out) = std::env::var_os("ARGELANDERSPACE_SHELL_PROBE") else {
         return;
     };
@@ -181,7 +305,24 @@ pub fn attach<R: Runtime, M: tauri::Manager<R>>(
         let out = out.clone();
         let script = script.clone();
         let window = webview.clone();
+        #[cfg(not(target_os = "linux"))]
+        std::thread::spawn(move || {
+            let answer = match run_async(&window, &script) {
+                Ok(value) => value,
+                Err(error) => serde_json::json!({ "error": error }).to_string(),
+            };
+            // The title after the attempted call: unchanged when the call was refused.
+            std::thread::sleep(Duration::from_millis(500));
+            let title = window.title().unwrap_or_default();
+            append(
+                &out,
+                &serde_json::json!({ "page": answer, "windowTitle": title }).to_string(),
+            );
+        });
+        #[cfg(target_os = "linux")]
         let _ = webview.with_webview(move |platform| {
+            use javascriptcore::ValueExt;
+            use webkit2gtk::WebViewExt;
             let view = platform.inner();
             view.call_async_javascript_function(
                 &script,
