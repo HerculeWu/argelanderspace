@@ -132,8 +132,7 @@
 }
 
 /* Diagnostics (desktop-app ticket 14): the log level's select and the export dialog's list of compile-failure logs. */
-.st-select { width: 120px; }
-.st-select:disabled { opacity: .55; cursor: not-allowed; }
+.st-select.ui-select.field { width: 120px; }
 .st-check.disabled { color: var(--text-faint); cursor: not-allowed; }
 .st-export-note { margin: 8px 0 0; font-size: var(--fs-sm); line-height: 1.6; color: var(--text-dim); }
 .st-export-files ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }

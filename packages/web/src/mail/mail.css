@@ -75,7 +75,8 @@
 .mail-account-form { display: flex; flex-direction: column; gap: 12px; }
 .mail-note { margin: 0; font-size: var(--fs-xs); color: var(--text-dim); line-height: 1.6; }
 .mail-dfield { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-xs); color: var(--text-dim); }
-.mail-dfield input, .mail-dfield select { height: var(--control-h); padding: 0 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: var(--fs-sm); }
+.mail-dfield .ui-select.field { width: 100%; min-width: 0; }
+.mail-dfield input { height: var(--control-h); padding: 0 9px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); font-size: var(--fs-sm); }
 .mail-server { display: grid; grid-template-columns: 1fr 72px 110px; gap: 8px; border: 1px solid var(--border-soft); border-radius: 7px; padding: 8px 10px 10px; margin: 0; }
 .mail-server legend { font-size: var(--fs-xs); color: var(--text-faint); padding: 0 4px; }
 .mail-server .full { grid-column: 1 / -1; }

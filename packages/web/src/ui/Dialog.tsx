@@ -84,6 +84,8 @@ export function Dialog({
     if (!dialog) return;
 
     const onDocumentKeyDown = (event: KeyboardEvent) => {
+      // Escape in an open Select list closes that list only (the Select handles it).
+      if (event.key === "Escape" && event.target instanceof Element && event.target.closest(".ui-select-list")) return;
       if (event.key === "Escape") {
         event.preventDefault();
         if (!busyRef.current) onCloseRef.current();
@@ -98,7 +100,11 @@ export function Dialog({
       }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      const activeIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      // Focus inside an open Select list counts as being on that Select's trigger: Tab closes the list onto the
+      // trigger, so the trap must judge the position from there.
+      const focused = document.activeElement;
+      const owner = focused instanceof Element ? focused.closest(".ui-select-list")?.closest(".ui-select")?.querySelector<HTMLElement>(".ui-select-trigger") : null;
+      const activeIndex = focusable.indexOf((owner ?? focused) as HTMLElement);
       if (activeIndex < 0) {
         event.preventDefault();
         (event.shiftKey ? last : first)?.focus();

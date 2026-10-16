@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { ActionButton } from "../ui";
+import { ActionButton, Select } from "../ui";
 import type { ManuscriptSummary, WriterTemplate } from "@argelanderspace/contracts";
 import {
   createManuscript,
@@ -74,16 +74,8 @@ function NewManuscriptModal({
           </div>
           <div className="w-field">
             <label htmlFor="w-new-template">{t("writer.newModal.templateLabel")}</label>
-            <select id="w-new-template" data-ui="new-manuscript-template" value={template} onChange={(e) => setTemplate(e.target.value)}>
-              <option value="" disabled>
-                {t("writer.newModal.templatePlaceholder")}
-              </option>
-              {templates.map((tp) => (
-                <option key={tp.id} value={tp.id}>
-                  {tp.label}
-                </option>
-              ))}
-            </select>
+            <Select id="w-new-template" data-ui="new-manuscript-template" aria-label={t("writer.newModal.templateLabel")} value={template} onChange={setTemplate}
+              options={[{ value: "", label: t("writer.newModal.templatePlaceholder"), disabled: true }, ...templates.map((tp) => ({ value: tp.id, label: tp.label }))]} />
           </div>
         </div>
         <div className="w-modal-foot">

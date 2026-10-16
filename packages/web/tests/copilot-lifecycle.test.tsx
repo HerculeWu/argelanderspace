@@ -3,6 +3,7 @@ import type { ConversationSnapshot, CopilotProvider, PageContext, WsCopilotEvent
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Copilot } from "../src/copilot/Copilot";
 import i18n from "../src/i18n";
+import { selectIsDisabled, selectOptionLabels, selectShown, selectTrigger } from "./select-helpers";
 
 const callbacks = vi.hoisted(() => ({ subscription: null as null | { conversationId: string; event: (event: WsCopilotEvent) => void; ready: () => void; connection: (value: boolean) => void } }));
 vi.mock("../src/api/ws", () => ({ subscribeCopilot: (subscription: NonNullable<typeof callbacks.subscription>) => { callbacks.subscription = subscription; queueMicrotask(subscription.ready); return () => { callbacks.subscription = null; }; } }));
@@ -34,7 +35,7 @@ beforeEach(async () => {
   }); vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const open = async (ctx: PageContext = context) => { const view = render(<Copilot open context={ctx} onClose={vi.fn()} />); await screen.findByText("Copilot"); await waitFor(() => expect((document.querySelector('[data-ui="copilot-thinking"]') as HTMLSelectElement).disabled).toBe(false)); return view; };
+const open = async (ctx: PageContext = context) => { const view = render(<Copilot open context={ctx} onClose={vi.fn()} />); await screen.findByText("Copilot"); await waitFor(() => expect(selectIsDisabled(document.querySelector('[data-ui="copilot-thinking"]')!)).toBe(false)); return view; };
 const input = () => document.querySelector('[data-ui="copilot-input"]') as HTMLTextAreaElement;
 
 test("while the run works, Enter steers (no second run), Stop is separate and closes sending", async () => {
@@ -205,14 +206,12 @@ test("the composer has no attach button, no file input, no scope hint and no emp
   const foot = document.querySelector(".copilot-composer-foot")!;
   expect(foot.children).toHaveLength(1);
   expect(foot.querySelector('[data-ui="copilot-thinking"]')).not.toBeNull();
-  expect(foot.querySelector("span")).toBeNull();
-  // The model name's arrow sits before the select (on its left).
-  const pick = document.querySelector(".copilot-model-pick")!;
-  expect(pick.firstElementChild!.tagName.toLowerCase()).toBe("svg");
-  expect(pick.lastElementChild!.getAttribute("data-ui")).toBe("copilot-model");
-  // A hidden mirror of the chosen name sizes the select in browsers without field-sizing; the chevron never takes clicks.
-  expect(pick.querySelector(".copilot-model-mirror")?.textContent).toBe("Test");
-  expect(pick.firstElementChild!.getAttribute("aria-hidden")).toBe("true");
+  expect([...foot.querySelectorAll("span")].every((span) => span.closest('[data-ui="copilot-thinking"]'))).toBe(true);
+  // The model control is the compact inline Select showing the chosen name; its arrow (drawn on the left by CSS) is decoration.
+  const pick = document.querySelector('[data-ui="copilot-model"]')!;
+  expect(pick.classList.contains("inline")).toBe(true);
+  expect(selectShown(pick)).toBe("Test");
+  expect(selectTrigger(pick).querySelector("svg")!.getAttribute("aria-hidden")).toBe("true");
   const en = (await import("../src/locales/en.json")).default as unknown as { copilot: Record<string, unknown> };
   const zh = (await import("../src/locales/zh-CN.json")).default as unknown as { copilot: Record<string, unknown> };
   for (const key of ["scope", "stoppedNote", "attach", "attachUploading", "attachRetry", "attachRemove", "attachFailed", "attachTooLarge", "attachRetryNamed"]) { expect(key in en.copilot).toBe(false); expect(key in zh.copilot).toBe(false); }
@@ -270,8 +269,8 @@ test("thinking levels, versions and due dates are translated at render time, not
   current = snap(ID1, null, { messages: [{ id: "m1", role: "user", text: "Hi", context: { contextId: "c1", view: "plan", status: "complete", revision: 1, objects: [{ id: "p_00000001", rev: 3, name: "Plan A" }] } }] });
   const planContext: PageContext = { ...context, view: "plan", status: "complete", plan: { rev: 3, mode: "list", selectedPlanId: "p_00000001", groups: [], detail: null, saveState: "saved", plans: [{ id: "p_00000001", name: "Plan A", icon: "target", due: "2026-12-01", created_at: "2026-10-02T00:00:00Z", tasks: [{ id: "t_00000001", title: "Task title", status: "todo", focused: false, due: "2026-12-01", links: [], created_at: "2026-10-02T00:00:00Z" }] }] } };
   await open(planContext);
-  const thinking = document.querySelector('[data-ui="copilot-thinking"]') as HTMLSelectElement;
-  expect([...thinking.options].map((option) => option.textContent)).toEqual(["Use default · High", "Off", "Low", "High"]);
+  const thinking = document.querySelector('[data-ui="copilot-thinking"]')!;
+  expect(selectOptionLabels(thinking)).toEqual(["Use default · High", "Off", "Low", "High"]);
   await screen.findByText("Hi");
   fireEvent.click(document.querySelector('[data-ui="copilot-message-context"] summary')!);
   expect(document.querySelector('[data-ui="copilot-message-context"]')!.textContent).toContain("Plan A · v3");
@@ -280,11 +279,14 @@ test("thinking levels, versions and due dates are translated at render time, not
   expect(detailEn.textContent).toContain("v3");
   expect(detailEn.textContent).not.toContain("2026-12-01");
   await act(async () => { await i18n.changeLanguage("zh-CN"); });
-  expect([...thinking.options].map((option) => option.textContent)).toEqual(["沿用默认 · 高", "关闭", "低", "高"]);
   expect(document.querySelector('[data-ui="copilot-message-context"]')!.textContent).toContain("Plan A · 版本 3");
   expect(detailEn.textContent).toContain("版本 3");
   expect(detailEn.textContent).not.toMatch(/\bv3\b/);
   expect(detailEn.textContent).toContain("12月1日");
+  // The context dialog is modal and keeps focus inside itself, so close it before opening the thinking list behind it.
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(document.querySelector(".copilot-context-detail")).toBeNull());
+  expect(selectOptionLabels(thinking)).toEqual(["沿用默认 · 高", "关闭", "低", "高"]);
 });
 
 test("after the service restarts the page is published again, so Resume is not refused as stale", async () => {

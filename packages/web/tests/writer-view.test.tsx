@@ -16,6 +16,7 @@ import type { ComponentProps } from "react";
 import type { LatexSourceField } from "../src/writer/latexSource";
 import type { LibraryData } from "../src/library/types";
 import { WriterView } from "../src/writer/WriterView";
+import { chooseOption } from "./select-helpers";
 
 // ---------------------------------------------------------------- mock ----
 
@@ -300,8 +301,7 @@ describe("manuscript list", () => {
     fireEvent.click(container.querySelector('[data-ui="create-manuscript"]')!);
     const create = getByRole("button", { name: /创建/ });
     expect(create.hasAttribute("disabled")).toBe(true);
-    const select = container.querySelector(".w-modal select")!;
-    fireEvent.change(select, { target: { value: "report" } });
+    chooseOption(container.querySelector('.w-modal [data-ui="new-manuscript-template"]')!, "report");
     expect(create.hasAttribute("disabled")).toBe(false);
     fireEvent.click(create);
     // created with the default title and opened straight into the editor
@@ -499,8 +499,7 @@ describe("editor", () => {
     const view = render(<WriterView />);
     await waitFor(() => view.container.querySelector('[data-ui="create-manuscript"]'));
     fireEvent.click(view.container.querySelector('[data-ui="create-manuscript"]')!);
-    const select = view.container.querySelector(".w-modal select")!;
-    fireEvent.change(select, { target: { value: "report" } });
+    chooseOption(view.container.querySelector('.w-modal [data-ui="new-manuscript-template"]')!, "report");
     fireEvent.click(view.getByRole("button", { name: /创建/ }));
     // editor opens on the empty manuscript: empty-state hint + visible ＋
     await waitFor(() => view.getByText("还没有内容块。点击 ＋ 添加第一个。"));

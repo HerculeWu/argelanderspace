@@ -15,6 +15,7 @@ import { ArgumentGraphMode } from "../src/argument/ArgumentGraphMode";
 import type { LibraryRef } from "../src/library/types";
 import { ARGUMENT_FIXTURES } from "./fixtures/argument-graphs";
 import { graphChanged } from "./fake-ws";
+import { chooseOption, openSelect, selectGroups, selectOptionLabels, selectRowDisabled, selectRows, selectTrigger } from "./select-helpers";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
 
@@ -232,15 +233,15 @@ describe("linking from the panel", () => {
     fireEvent.click(must(must(container, "argument-field", "backing"), "add-argument-link"));
     const picker = must(container, "argument-picker", "backing");
     expect(picker.getAttribute("data-scope")).toBe("near");
-    const titles = (el: Element) => [...el.querySelectorAll("option")].map((o) => o.textContent).filter((x) => x && !x.includes("选择论证"));
-    const select = must<HTMLSelectElement>(picker, "argument-picker-select");
+    const titles = (el: Element) => selectOptionLabels(el).filter((x) => x && !x.includes("选择论证"));
+    const select = must(picker, "argument-picker-select");
     const near = titles(select);
     expect(near).toEqual(expect.arrayContaining(["Gaia DR3 的自行精度足够", "收敛点法能识别共动恒星"]));
     expect(near).not.toContain("星团正在瓦解"); // higher up
     expect(near).not.toContain("成员延伸到潮汐半径之外"); // one layer above
     fireEvent.click(must(picker, "argument-picker-show-all"));
     expect(picker.getAttribute("data-scope")).toBe("all");
-    const groups = [...select.querySelectorAll("optgroup")].map((g) => g.label);
+    const groups = selectGroups(select).map((g) => g.split(":")[0]);
     expect(groups).toEqual(["低一层的论证", "其他论证"]);
     expect(titles(select)).toContain("星团正在瓦解");
     // Grounds: n1 already supports m1 as Grounds, so it is not offered there
@@ -275,7 +276,7 @@ describe("linking from the panel", () => {
     fireEvent.click(must(container, "edit-argument"));
     fireEvent.click(must(must(container, "argument-field", "backing"), "add-argument-link"));
     const picker = must(container, "argument-picker", "backing");
-    type(must(picker, "argument-picker-select"), "n3");
+    chooseOption(must(picker, "argument-picker-select"), "n3");
     await act(async () => fireEvent.click(must(picker, "add-picked-argument")));
     await waitFor(() => expect(puts).toHaveLength(1));
     expect(last(puts[0]!.edges)).toEqual({ from: "n3", to: "m1", role: "backing" });
@@ -284,10 +285,10 @@ describe("linking from the panel", () => {
     fireEvent.click(must(container, "add-argument-use"));
     const use = must(container, "argument-picker", "use");
     expect(use.getAttribute("data-scope")).toBe("near");
-    type(must(use, "argument-picker-select"), "m2");
-    const role = must<HTMLSelectElement>(use, "argument-picker-role");
-    expect([...role.options].find((o) => o.value === "grounds")!.disabled).toBe(true); // m1 -> m2 grounds exists
-    type(role, "rebuttal");
+    chooseOption(must(use, "argument-picker-select"), "m2");
+    const role = must(use, "argument-picker-role");
+    expect(selectRowDisabled(role, "grounds")).toBe(true); // m1 -> m2 grounds exists
+    chooseOption(role, "rebuttal");
     await act(async () => fireEvent.click(must(use, "add-picked-argument")));
     await waitFor(() => expect(puts).toHaveLength(2));
     expect(last(puts[1]!.edges)).toEqual({ from: "m1", to: "m2", role: "rebuttal" });
@@ -743,13 +744,15 @@ describe("form details", () => {
     const rows = container.querySelectorAll('[data-ui="argument-source-row"]');
     const doc = must(rows[rows.length - 1] as HTMLElement, "argument-source-doc");
     // the format and the main-Doc mark come before the id, so a narrow list that cuts the end still shows them
-    await waitFor(() => expect([...doc.querySelectorAll("option")].some((o) => /^PDF · /.test(o.textContent ?? ""))).toBe(true));
-    const labels = [...doc.querySelectorAll("option")].map((o) => o.textContent ?? "");
+    await waitFor(() => expect(selectOptionLabels(doc).some((l) => /^PDF · /.test(l ?? ""))).toBe(true));
+    const labels = selectOptionLabels(doc).map((l) => l ?? "");
     expect(labels.find((l) => l.endsWith(LATEX))).toMatch(/^LaTeX · 主 · /);
     expect(labels.find((l) => l.endsWith(PDF))).toBe(`PDF · ${PDF}`);
     // the whole label is also the tooltip of the closed list and of each option
-    fireEvent.change(doc, { target: { value: PDF } });
-    expect(doc.getAttribute("title")).toBe(`PDF · ${PDF}`);
+    chooseOption(doc, PDF);
+    expect(selectTrigger(doc).getAttribute("title")).toBe(`PDF · ${PDF}`);
+    openSelect(doc);
+    expect(selectRows(doc).find((row) => row.dataset.value === PDF)!.getAttribute("title")).toBe(`PDF · ${PDF}`);
   });
 
   it("while Clear is being written the dialog's Cancel is disabled and has no tooltip of its own", async () => {
@@ -781,18 +784,18 @@ describe("sources", () => {
     fireEvent.click(must(container, "add-argument-source"));
     const row = container.querySelectorAll('[data-ui="argument-source-row"]');
     const added = row[row.length - 1] as HTMLElement;
-    type(must(added, "argument-source-doc"), LATEX);
-    const anchor = await waitFor(() => must<HTMLSelectElement>(added, "argument-source-anchor"));
-    const groups = [...anchor.querySelectorAll("optgroup")].map((g) => `${g.label}:${[...g.querySelectorAll("option")].map((o) => o.textContent).join("|")}`);
+    chooseOption(must(added, "argument-source-doc"), LATEX);
+    const anchor = await waitFor(() => must(added, "argument-source-anchor"));
+    const groups = selectGroups(anchor);
     expect(groups).toEqual(["章节:1 Introduction|3 Method|3.2 Selection", "图:Figure 4", "表:Table 2", "公式:Equation 7"]); // the unnumbered equation and the paragraph are not offered
-    type(anchor, "sec-5");
+    chooseOption(anchor, "sec-5");
     expect(must<HTMLInputElement>(added, "argument-source-text-input").value).toBe("Section 3.2");
     type(must(added, "argument-source-text-input"), "");
-    type(anchor, "fig-4");
+    chooseOption(anchor, "fig-4");
     expect(must<HTMLInputElement>(added, "argument-source-text-input").value).toBe("Figure 4");
     // text the person wrote is kept
     type(must(added, "argument-source-text-input"), "见图 4 的上半");
-    type(anchor, "tab-2");
+    chooseOption(anchor, "tab-2");
     expect(must<HTMLInputElement>(added, "argument-source-text-input").value).toBe("见图 4 的上半");
     await act(async () => fireEvent.click(must(container, "save-argument")));
     await waitFor(() => expect(puts).toHaveLength(1));
@@ -807,7 +810,7 @@ describe("sources", () => {
     fireEvent.click(must(container, "add-argument-source"));
     const rows = container.querySelectorAll('[data-ui="argument-source-row"]');
     const added = rows[rows.length - 1] as HTMLElement;
-    type(must(added, "argument-source-doc"), PDF);
+    chooseOption(must(added, "argument-source-doc"), PDF);
     const page = await waitFor(() => must<HTMLInputElement>(added, "argument-source-page"));
     expect(page.max).toBe("14");
     type(page, "5");
@@ -825,7 +828,7 @@ describe("sources", () => {
     fireEvent.click(must(container, "add-argument-source"));
     let rows = container.querySelectorAll('[data-ui="argument-source-row"]');
     let added = rows[rows.length - 1] as HTMLElement;
-    type(must(added, "argument-source-doc"), LATEX); // a Doc but no location yet
+    chooseOption(must(added, "argument-source-doc"), LATEX); // a Doc but no location yet
     await act(async () => fireEvent.click(must(container, "save-argument")));
     await waitFor(() => expect(must(container, "argument-save-invalid").textContent).toMatch(/出处需要显示文字/));
     expect(puts).toHaveLength(0);
@@ -845,7 +848,7 @@ describe("sources", () => {
     const rows = container.querySelectorAll('[data-ui="argument-source-row"]');
     const added = rows[rows.length - 1] as HTMLElement;
     vi.mocked(fetch).mockImplementationOnce(async () => json(500, { detail: "x" })); // the description
-    type(must(added, "argument-source-doc"), LATEX);
+    chooseOption(must(added, "argument-source-doc"), LATEX);
     await waitFor(() => expect(added.textContent).toContain("没能读取该 Doc 的结构"));
     expect(q(added, "argument-source-text-input")).not.toBeNull();
   });

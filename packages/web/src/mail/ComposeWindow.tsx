@@ -5,10 +5,10 @@ import {
   type MailComposeDraft,
   type MailStagedAttachment,
 } from "@argelanderspace/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "../lib/icons";
-import { ActionButton, Button, Dialog, InlineMessage } from "../ui";
+import { ActionButton, Button, Dialog, InlineMessage, Select } from "../ui";
 import { fileSize } from "./format";
 import "./compose.css";
 
@@ -76,6 +76,7 @@ export interface ComposeWindowProps {
 const PROVIDER_NAME: Record<string, string> = { gmail: "Gmail", icloud: "iCloud" };
 
 export function ComposeWindow(p: ComposeWindowProps) {
+  const fromId = useId();
   const { t } = useTranslation();
   const { state: c } = p;
   const [confirmDiscard, setConfirmDiscard] = useState(false);
@@ -159,21 +160,18 @@ export function ComposeWindow(p: ComposeWindowProps) {
         />
       </header>
       <div className="mc-fields">
-        <label className="mc-field">
+        <label className="mc-field" htmlFor={fromId}>
           <span>{t("mail.compose.from")}</span>
-          <select
+          <Select
+            id={fromId}
             data-ui="mail-composer-from"
+            aria-label={t("mail.compose.from")}
             value={c.accountId}
             // While an earlier send's answer is unknown the sender stays fixed (see MailCompose `change`).
             disabled={c.sending || c.unconfirmed !== null}
-            onChange={(e) => p.onChange({ accountId: e.target.value })}
-          >
-            {p.accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.displayName} &lt;{a.address}&gt;
-              </option>
-            ))}
-          </select>
+            onChange={(accountId) => p.onChange({ accountId })}
+            options={p.accounts.map((a) => ({ value: a.id, label: `${a.displayName} <${a.address}>` }))}
+          />
         </label>
         <label className="mc-field">
           <span>{t("mail.compose.to")}</span>

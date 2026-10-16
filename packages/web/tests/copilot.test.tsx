@@ -4,6 +4,7 @@ import type { ConversationSnapshot, CopilotProvider, PageContext, WsCopilotEvent
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Copilot } from "../src/copilot/Copilot";
 import i18n from "../src/i18n";
+import { selectIsDisabled } from "./select-helpers";
 
 const callbacks = vi.hoisted(() => ({ subscription: null as null | { event: (event: WsCopilotEvent) => void; viewAction?: (message: { type: "copilot.view-action"; viewId: string; actionId: string; action: unknown }) => void; ready: () => void; connection: (value: boolean) => void } }));
 vi.mock("../src/api/ws", () => ({ subscribeCopilot: (subscription: NonNullable<typeof callbacks.subscription>) => { callbacks.subscription = subscription; queueMicrotask(subscription.ready); return () => { callbacks.subscription = null; }; } }));
@@ -23,7 +24,7 @@ beforeEach(async () => {
   }); vi.stubGlobal("fetch", fetchMock);
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const open = async () => { render(<Copilot open context={context} onClose={vi.fn()} />); await screen.findByText("Copilot"); await waitFor(() => expect((document.querySelector('[data-ui="copilot-thinking"]') as HTMLSelectElement).disabled).toBe(false)); };
+const open = async () => { render(<Copilot open context={context} onClose={vi.fn()} />); await screen.findByText("Copilot"); await waitFor(() => expect(selectIsDisabled(document.querySelector('[data-ui="copilot-thinking"]')!)).toBe(false)); };
 
 test("Enter respects IME and Shift, sends complete publication once, and retains input on failure", async () => {
   await open(); const input = document.querySelector('[data-ui="copilot-input"]') as HTMLTextAreaElement;

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { MailAccount, MailHeader, MailMessage, MailSendStatus } from "@argelanderspace/contracts";
 import { MailView } from "../src/mail/MailView";
 import i18n from "../src/i18n";
+import { selectIsDisabled, selectRows, selectTrigger } from "./select-helpers";
 
 const A1 = "acc-aaaaaaaaaaaa";
 const SEND_RE = /\/api\/mail\/compose\/accounts\/([^/]+)\/send$/;
@@ -1210,8 +1211,11 @@ test("while an earlier send's answer is unknown the sender cannot be changed", a
   }));
   fireEvent.click(ui("mail-composer-send")!);
   await waitFor(() => expect(ui("mail-composer-error")).toBeTruthy());
-  expect(ui("mail-composer-from")!.hasAttribute("disabled")).toBe(true);
-  fireEvent.change(ui("mail-composer-from")!, { target: { value: "acc-bbbbbbbbbbbb" } });
+  expect(selectIsDisabled(ui("mail-composer-from")!)).toBe(true);
+  // The list cannot be opened, so the other account cannot be picked.
+  fireEvent.click(selectTrigger(ui("mail-composer-from")!));
+  fireEvent.keyDown(selectTrigger(ui("mail-composer-from")!), { key: "ArrowDown" });
+  expect(selectRows(ui("mail-composer-from")!)).toHaveLength(0);
   fireEvent.click(ui("mail-composer-send")!);
   await waitFor(() => expect(calls(SEND_RE)).toHaveLength(2));
   expect(calls(SEND_RE)[1]!.url).toContain(A1);

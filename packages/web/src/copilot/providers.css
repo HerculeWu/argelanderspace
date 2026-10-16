@@ -7,7 +7,9 @@
 .provider-heading .ui-badge { margin-left: auto; }
 .provider-settings fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 .provider-field { display: flex; flex-direction: column; gap: 7px; margin: 12px 0; font-size: 11px; color: var(--text-dim); }
-.provider-field input, .provider-field select { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 12px var(--font-mono); }
+.provider-field .ui-select.field { width: 100%; min-width: 0; }
+.provider-field .ui-select.field .ui-select-trigger { height: auto; padding: 9px 10px; border-radius: 6px; background: var(--bg); font: 12px var(--font-mono); }
+.provider-field input { width: 100%; min-width: 0; box-sizing: border-box; padding: 9px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: 12px var(--font-mono); }
 .provider-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .provider-actions small { font-size: 10px; color: var(--text-faint); }
 .provider-advanced { margin-top: 20px; font-size: 12px; }

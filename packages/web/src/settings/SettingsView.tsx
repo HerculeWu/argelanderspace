@@ -27,7 +27,7 @@ import { type Preferences, type SettingsNotice, usePreferences } from "../argela
 import { useWorkspace } from "../argelander/workspace";
 import { accentSwatch } from "../argelander/theme";
 import { Icon } from "../lib/icons";
-import { ActionButton, Badge, Button, IconButton, InlineMessage } from "../ui";
+import { ActionButton, Badge, Button, IconButton, InlineMessage, Select } from "../ui";
 import { AdsCredential } from "./AdsCredential";
 import { CliGroup } from "./CliGroup";
 import { fetchDiagnostics } from "../api/diagnostics";
@@ -711,10 +711,9 @@ function Diagnostics({ state }: { state: RowState }) {
         </div>
       </div>
       <Row state={state} k="log_level" label={t("settings.diagnostics.logLevel")} control={(disabled) => (
-        <select data-ui="log-level-select" className="plan-field-input st-select" aria-label={t("settings.diagnostics.logLevel")} disabled={disabled}
-          value={String(settings.values.log_level ?? "info")} onChange={(e) => void P.change("log_level", { set: e.target.value }, HERE)}>
-          {SETTINGS_LOG_LEVELS.map((level) => <option key={level} value={level}>{level}</option>)}
-        </select>
+        <Select data-ui="log-level-select" className="st-select" aria-label={t("settings.diagnostics.logLevel")} disabled={disabled}
+          value={String(settings.values.log_level ?? "info")} onChange={(level) => void P.change("log_level", { set: level }, HERE)}
+          options={SETTINGS_LOG_LEVELS.map((level) => ({ value: level, label: level }))} />
       )} />
       <div className="st-row" data-ui="setting-row" data-ui-key="export-diagnostics">
         <div className="st-row-main">

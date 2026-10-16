@@ -50,7 +50,8 @@
   white-space: nowrap;
 }
 .w-save-status { font-size: var(--fs-xs); color: var(--paper-muted); white-space: nowrap; }
-.w-template-select {
+.w-template-select.ui-select.field { min-width: 0; }
+.w-template-select.ui-select.field .ui-select-trigger {
   height: 28px;
   border: 1px solid var(--paper-line);
   border-radius: 6px;
@@ -512,9 +513,10 @@ table.w-preview th { background: var(--paper-panel); font-weight: 650; }
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+.w-field .ui-select.field { width: 100%; min-width: 0; }
+.w-field .ui-select.field .ui-select-trigger { height: auto; padding: 7px 8px; border-color: var(--paper-line); border-radius: 6px; background: var(--paper-card); color: var(--paper-ink); }
 .w-field input,
-.w-field textarea,
-.w-field select {
+.w-field textarea {
   width: 100%;
   border: 1px solid var(--paper-line);
   border-radius: 6px;
@@ -531,8 +533,7 @@ table.w-preview th { background: var(--paper-panel); font-weight: 650; }
 .w-field textarea.w-short { min-height: 52px; }
 .w-field textarea.w-readonly { color: var(--text-faint); }
 .w-field input:focus,
-.w-field textarea:focus,
-.w-field select:focus { border-color: var(--accent-line); box-shadow: 0 0 0 2px var(--accent-soft); }
+.w-field textarea:focus { border-color: var(--accent-line); box-shadow: 0 0 0 2px var(--accent-soft); }
 .w-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .w-editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .w-editor-buttons { display: flex; gap: 8px; }
@@ -587,7 +588,7 @@ table.w-preview th { background: var(--paper-panel); font-weight: 650; }
 .w-modal .w-field label, .w-modal .w-field .w-field-label { color: var(--text-faint); }
 .w-modal .w-field input,
 .w-modal .w-field textarea,
-.w-modal .w-field select { background: var(--bg-deep); border-color: var(--border); color: var(--text); }
+.w-modal .w-field .ui-select.field .ui-select-trigger { background: var(--bg-deep); border-color: var(--border); color: var(--text); }
 .w-modal-note { font-size: 11px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; }
 .w-modal-sec { margin-top: 14px; }
 .w-author-row { display: grid; grid-template-columns: 1.2fr 0.5fr 1fr 30px; gap: 6px; margin-bottom: 6px; }

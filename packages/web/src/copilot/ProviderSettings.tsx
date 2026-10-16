@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ProviderModelConfigSchema, type CopilotModel, type CopilotProvider, type ProviderModelConfig, type ProviderTestCode, type ThinkingLevel } from "@argelanderspace/contracts";
 import { fetchProviders, logoutProvider, removeProviderKey, saveProviderConfig, saveProviderKey, testProviderConnection, ProviderApiError } from "../api/providers";
-import { Badge, Button, Dialog } from "../ui";
+import { Badge, Button, Dialog, Select } from "../ui";
 import { OAuthLogin } from "./ProviderLogin";
 import "./providers.css";
 
@@ -44,6 +44,7 @@ function modelConfig(model: CopilotModel): ProviderModelConfig {
 }
 
 function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: { provider: CopilotProvider; onBusy: (busy: boolean) => boolean; globalBusy: boolean; initiallyOpen: boolean }) {
+  const uid = useId();
   const { t } = useTranslation();
   const [provider, setProvider] = useState(initial);
   const [key, setKey] = useState("");
@@ -101,7 +102,7 @@ function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: 
         onProvider={(next) => { setProvider(next); setSaveState(next.catalogStatus === "error" ? "catalog_error" : "idle"); }} />}
       <details className="provider-advanced" data-ui={`provider-advanced-${provider.id}`}>
         <summary>{t("providers.advanced")}</summary>
-        <label className="provider-field">{t("providers.model")}<select value={selected ? selected.id : ""} data-ui="provider-model" onChange={(event) => selectModel(event.target.value)}>{!selected && <option value="">{t("providers.customModel")}</option>}{provider.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</select></label>
+        <label className="provider-field" htmlFor={`${uid}-model`}>{t("providers.model")}<Select id={`${uid}-model`} data-ui="provider-model" aria-label={t("providers.model")} value={selected ? selected.id : ""} onChange={selectModel} options={[...(selected ? [] : [{ value: "", label: t("providers.customModel") }]), ...provider.models.map((model) => ({ value: model.id, label: model.name }))]} /></label>
         <label className="provider-field">{t("providers.baseUrl")}<input value={config.baseUrl} data-ui="provider-base-url" onChange={(event) => update({ baseUrl: event.target.value })} /></label>
         <label className="provider-field">{t("providers.modelId")}<input value={config.modelId} data-ui="provider-model-id" onChange={(event) => selectModel(event.target.value)} /></label>
         <label className="provider-field">{t("providers.name")}<input value={config.name} data-ui="provider-model-name" onChange={(event) => update({ name: event.target.value })} /></label>
@@ -110,12 +111,12 @@ function ProviderCard({ provider: initial, onBusy, globalBusy, initiallyOpen }: 
           <label className="provider-field">{t("providers.output")}<input type="number" min={1} value={config.maxTokens} data-ui="provider-output" onChange={(event) => update({ maxTokens: Number(event.target.value) })} /></label>
         </div>
         <div className="provider-capabilities"><label><input type="checkbox" checked={config.image} data-ui="provider-image" onChange={(event) => update({ image: event.target.checked })} />{t("providers.image")}</label><label><input type="checkbox" checked={config.tools} data-ui="provider-tools" onChange={(event) => update({ tools: event.target.checked })} />{t("providers.tools")}</label></div>
-        <label className="provider-field">{t("providers.defaultThinking")}<select data-ui={`provider-default-thinking-${provider.id}`} disabled={!editableThinking} value={config.defaultThinking ?? ""} onChange={(event) => update({ defaultThinking: event.target.value === "" ? null : event.target.value as ThinkingLevel })}>
-          <option value="">{levels.length === 0 ? t("providers.unknownCapabilities") : levels.length === 1 ? t("providers.noThinking") : t("providers.sdkDefault")}</option>
-          {!validThinking && <option value={config.defaultThinking!}>{t("providers.invalidThinking")}</option>}
-          {editableThinking && levels.map((level) => <option key={level} value={level}>{t(`providers.levels.${level}`)}</option>)}
-          {levels.length === 1 && config.defaultThinking === "off" && <option value="off">{t("providers.noThinking")}</option>}
-        </select></label>
+        <label className="provider-field" htmlFor={`${uid}-thinking`}>{t("providers.defaultThinking")}<Select id={`${uid}-thinking`} data-ui={`provider-default-thinking-${provider.id}`} aria-label={t("providers.defaultThinking")} disabled={!editableThinking} value={config.defaultThinking ?? ""} onChange={(next) => update({ defaultThinking: next === "" ? null : next as ThinkingLevel })} options={[
+          { value: "", label: levels.length === 0 ? t("providers.unknownCapabilities") : levels.length === 1 ? t("providers.noThinking") : t("providers.sdkDefault") },
+          ...(!validThinking ? [{ value: config.defaultThinking!, label: t("providers.invalidThinking") }] : []),
+          ...(editableThinking ? levels.map((level) => ({ value: level, label: t(`providers.levels.${level}`) })) : []),
+          ...(levels.length === 1 && config.defaultThinking === "off" ? [{ value: "off", label: t("providers.noThinking") }] : []),
+        ]} /></label>
         {!validThinking && <p role="alert" className="provider-error">{t("providers.invalidThinking")}</p>}
         <p className="provider-hint">{levels.length === 0 ? t("providers.unknownCapabilities") : t("providers.defaultHint")}</p>
         <div className="provider-actions"><Button disabled={!valid} data-ui={`provider-save-config-${provider.id}`} onClick={() => void mutate("config")}>{t("providers.saveConfig")}</Button><Button disabled={!valid || check === "checking"} busy={check === "checking"} data-ui={`provider-test-${provider.id}`} onClick={() => void test()}>{t("providers.test")}</Button>{check === "checking" && <Button data-ui="provider-cancel-test" onClick={cancel}>{t("providers.cancel")}</Button>}</div>

@@ -1,9 +1,9 @@
 import { MAIL_PRESETS, MAIL_SERVER_SAVES_SENT, type MailAccount, type MailAccountCreate, type MailPresetId } from "@argelanderspace/contracts";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createMailAccount, MailApiError, removeMailAccount, updateMailAccount } from "../api/mail";
 import { Icon } from "../lib/icons";
-import { Button, Dialog, InlineMessage } from "../ui";
+import { Button, Dialog, InlineMessage, Select } from "../ui";
 
 const PRESETS: { id: MailPresetId; icon: string }[] = [
   { id: "gmail", icon: "mail" },
@@ -101,6 +101,7 @@ export function AddAccountDialog({
   onClose: () => void;
   onAdded: (account: MailAccount) => void;
 }) {
+  const uid = useId();
   const { t } = useTranslation();
   const [preset, setPreset] = useState<MailPresetId | null>(null);
   const [email, setEmail] = useState("");
@@ -178,12 +179,10 @@ export function AddAccountDialog({
         <span>{t("mail.add.port")}</span>
         <input inputMode="numeric" value={value.port} onChange={(e) => { set({ ...value, port: e.target.value }); edited(); }} />
       </label>
-      <label className="mail-dfield sec">
+      <label className="mail-dfield sec" htmlFor={`${uid}-${key}-security`}>
         <span>{t("mail.add.security")}</span>
-        <select value={value.security} onChange={(e) => { set({ ...value, security: e.target.value as Security }); edited(); }}>
-          <option value="tls">{t("mail.add.tls")}</option>
-          <option value="starttls">{t("mail.add.starttls")}</option>
-        </select>
+        <Select id={`${uid}-${key}-security`} aria-label={t("mail.add.security")} value={value.security} onChange={(v) => { set({ ...value, security: v as Security }); edited(); }}
+          options={[{ value: "tls", label: t("mail.add.tls") }, { value: "starttls", label: t("mail.add.starttls") }]} />
       </label>
       <label className="mail-dfield full">
         <span>{t("mail.add.username")}</span>

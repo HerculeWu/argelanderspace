@@ -76,24 +76,22 @@
   min-width: 0;
 }
 .topbar .doc-meta { font-size: 12px; color: var(--muted); white-space: nowrap; flex: none; }
-.topbar .paper-switch {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 200px;
+.topbar .paper-switch.ui-select { flex: 0 1 auto; min-width: 0; max-width: 200px; }
+.topbar .paper-switch.ui-select.field .ui-select-trigger {
+  height: auto;
   font-size: 12px;
   padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface-1);
   color: inherit;
-  cursor: pointer;
 }
 
 /* a narrow pane (a split pane beside Copilot) keeps the title on one line with an ellipsis (the full title is its
    tooltip), shrinks the doc select instead of letting it overlap, and tightens the bar's padding */
 @container (max-width: 480px) {
   .topbar { gap: 8px; padding: 8px 10px; }
-  .topbar .paper-switch { max-width: 110px; }
+  .topbar .paper-switch.ui-select { max-width: 110px; }
   .topbar h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 

@@ -7,6 +7,7 @@ import type { ConversationSnapshot, CopilotProvider, PageContext, PdfContextSumm
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Copilot, messageContextStatus } from "../src/copilot/Copilot";
 import i18n from "../src/i18n";
+import { selectIsDisabled } from "./select-helpers";
 
 vi.mock("../src/api/ws", () => ({ subscribeCopilot: (s: { ready: () => void }) => { queueMicrotask(s.ready); return () => {}; } }));
 const SHA = "a".repeat(64);
@@ -22,7 +23,7 @@ function serve(image: boolean, snapshot: ConversationSnapshot) {
 }
 beforeEach(async () => { await i18n.changeLanguage("en"); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-const ready = async () => { await screen.findByText("Copilot"); await waitFor(() => expect((document.querySelector('[data-ui="copilot-thinking"]') as HTMLSelectElement).disabled).toBe(false)); };
+const ready = async () => { await screen.findByText("Copilot"); await waitFor(() => expect(selectIsDisabled(document.querySelector('[data-ui="copilot-thinking"]')!)).toBe(false)); };
 
 describe("the composer warning for a text-only model (approved prototype A)", () => {
   it("shows on a PDF page when the selected model cannot take images, in both languages", async () => {

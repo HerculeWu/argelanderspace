@@ -12,6 +12,7 @@ import i18n from "../src/i18n";
 import { PageErrorBoundary } from "../src/PageErrorBoundary";
 import { resetPageErrorReportingForTests } from "../src/page-errors";
 import { type FakeSettings, fakeSettings } from "./settings-fake";
+import { chooseOption, selectOptionValues, selectShown } from "./select-helpers";
 
 vi.mock("../src/api/ws", async () => (await import("./fake-ws")).wsModule());
 vi.mock("../src/copilot/Copilot", () => ({ Copilot: () => <div data-ui="stub-copilot" /> }));
@@ -139,12 +140,12 @@ describe("the Diagnostics group", () => {
 
   it("the log level is a select of the four levels; a change is one PUT of log_level", async () => {
     await openDiagnostics();
-    const select = q('[data-ui="log-level-select"]') as HTMLSelectElement;
-    expect([...select.options].map((o) => o.value)).toEqual(["debug", "info", "warn", "error"]);
-    expect(select.value).toBe("info");
-    fireEvent.change(select, { target: { value: "debug" } });
+    const select = q('[data-ui="log-level-select"]')!;
+    expect(selectOptionValues(select)).toEqual(["debug", "info", "warn", "error"]);
+    expect(selectShown(select)).toBe("info");
+    chooseOption(select, "debug");
     await waitFor(() => expect(settings.puts).toEqual([{ key: "log_level", body: { set: "debug" } }]));
-    await waitFor(() => expect((q('[data-ui="log-level-select"]') as HTMLSelectElement).value).toBe("debug"));
+    await waitFor(() => expect(selectShown(q('[data-ui="log-level-select"]')!)).toBe("debug"));
   });
 
   it("when the location cannot be fetched, the log location says it is not known", async () => {

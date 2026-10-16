@@ -17,7 +17,7 @@ import type { DocDescription, PdfPage, ReaderPage, ReaderPanel, ReaderRightTab, 
 import { PdfReader } from "./PdfReader";
 import { autoFold, MIN_READING_COLUMN, useAutoFoldedPanels } from "./auto-fold";
 import { TextDocPane, TextPublishSync } from "./TextDocPane";
-import { ActionButton } from "../ui";
+import { ActionButton, Select } from "../ui";
 import { PdfBridgeContext, type PdfBridge, type PdfViewHandle, ReaderBridgeContext, type ReaderViewController, useReaderBridge, useReaderPublisher } from "./reader-bridge";
 import { useActiveSectionId, useVisibleIds } from "../store";
 
@@ -193,19 +193,15 @@ function DocWorkspace({
           {ir.title ? <MathText as="span" text={ir.title} /> : ir.docId}
         </h1>
         {papers.length > 1 && (
-          <select
+          <Select
             className="paper-switch"
             data-ui="switch-doc"
+            aria-label={t("doc.switchPaper")}
             value={currentId}
-            onChange={(e) => onSelect(e.target.value)}
+            onChange={onSelect}
             title={t("doc.switchPaper")}
-          >
-            {papers.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+            options={papers.map((p) => ({ value: p, label: p }))}
+          />
         )}
         <span className="doc-meta">
           {ir.nPages !== undefined && t("doc.metaPages", { n: ir.nPages })}

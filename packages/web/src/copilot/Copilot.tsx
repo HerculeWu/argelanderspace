@@ -10,7 +10,7 @@ import { fmtDate } from "../plan/model";
 import { fetchProviders } from "../api/providers";
 import { onPlanChanged, subscribeCopilot } from "../api/ws";
 import { fetchUndoableState } from "../api/plans";
-import { ActionButton, Badge, Button, Dialog, getConfiguredIcon } from "../ui";
+import { ActionButton, Badge, Button, Dialog, getConfiguredIcon, Select } from "../ui";
 import { ProviderSettingsDialog } from "./ProviderSettings";
 import { LiveRunStatus, ThinkingBlock } from "./LiveStatus";
 import { Icon } from "../lib/icons";
@@ -485,19 +485,20 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void send(); }
         }} />
         <div className="copilot-composer-actions">
-          <span className="copilot-model-pick"><Icon name="chevron-down" cls="ico-sm" aria-hidden="true" />
-            {/* The select is as wide as the chosen name without relying on field-sizing (WebKit has none): this hidden mirror sizes the cell. */}
-            <span className="copilot-model-mirror" aria-hidden="true">{model?.name ?? t("copilot.model")}</span>
-            <select aria-label={t("copilot.model")} data-ui="copilot-model" value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy} onChange={(event) => {
-              const [providerId, modelId] = event.target.value.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null });
-            }}><option value="" disabled>{t("copilot.model")}</option>{providers.map((item) => <optgroup key={item.id} label={item.name}>{item.models.filter((model) => model.tools).map((model) => <option key={model.id} value={`${item.id}\n${model.id}`}>{model.name}</option>)}</optgroup>)}</select></span>
+          <Select variant="inline" data-ui="copilot-model" aria-label={t("copilot.model")} value={choice ? `${choice.provider}\n${choice.model}` : ""} disabled={busy}
+            onChange={(next) => { const [providerId, modelId] = next.split("\n"); void choose({ provider: providerId, model: modelId, thinking: null }); }}
+            options={[{ value: "", label: t("copilot.model"), disabled: true }, ...providers.flatMap((item) => item.models.filter((model) => model.tools).map((model) => ({ value: `${item.id}\n${model.id}`, label: model.name, group: item.name })))]} />
           <span className="copilot-spacer" />
           <ComposerAction kind={stopping || running ? "stop" : resumeAction ? "resume" : "send"} stopping={stopping} disabled={stopping ? true : running ? !connected : resumeAction ? busy || (!!id && !connected) : busy || !text.trim() || !thinkingValid || (!!id && !connected)} onSend={() => void send()} onStop={() => void stop()} onResume={() => void resume()} />
         </div>
       </div>
-      <div className="copilot-composer-foot"><select aria-label={t("copilot.thinking")} data-ui="copilot-thinking" value={choice?.thinking ?? "default"} disabled={busy || !model || (levels.length <= 1 && thinkingValid)} onChange={(event) => { if (choice) void choose({ ...choice, thinking: event.target.value === "default" ? null : event.target.value as ThinkingLevel }); }}>
-        <option value="default">{t("copilot.defaultChoice")}{model?.defaultThinking ? ` · ${thinkingLabel(model.defaultThinking)}` : ""}</option>{choice?.thinking && !levels.includes(choice.thinking) && <option value={choice.thinking} disabled>{thinkingLabel(choice.thinking)}</option>}{levels.length > 1 && levels.map((level) => <option key={level} value={level}>{thinkingLabel(level)}</option>)}
-      </select></div>
+      <div className="copilot-composer-foot"><Select variant="inline" data-ui="copilot-thinking" aria-label={t("copilot.thinking")} value={choice?.thinking ?? "default"} disabled={busy || !model || (levels.length <= 1 && thinkingValid)}
+        onChange={(next) => { if (choice) void choose({ ...choice, thinking: next === "default" ? null : next as ThinkingLevel }); }}
+        options={[
+          { value: "default", label: `${t("copilot.defaultChoice")}${model?.defaultThinking ? ` · ${thinkingLabel(model.defaultThinking)}` : ""}` },
+          ...(choice?.thinking && !levels.includes(choice.thinking) ? [{ value: choice.thinking, label: thinkingLabel(choice.thinking), disabled: true }] : []),
+          ...(levels.length > 1 ? levels.map((level) => ({ value: level, label: thinkingLabel(level) })) : []),
+        ]} /></div>
       {!thinkingValid && choice && <p role="alert">{t("copilot.errors.capabilities")}</p>}
       {context.pdf && model && !model.image && <div className="copilot-notice warning" data-ui="copilot-pdf-no-image" role="status"><span>{t("copilot.pdf.noImage")}</span></div>}
     </div>

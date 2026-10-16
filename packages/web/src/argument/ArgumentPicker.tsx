@@ -8,7 +8,7 @@
 import type { Argument, ArgumentEdgeRole } from "@argelanderspace/contracts";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ActionButton } from "../ui";
+import { ActionButton, Select } from "../ui";
 import { ARGUMENT_ROLES } from "./canvasModel";
 
 export function ArgumentPicker({
@@ -45,34 +45,19 @@ export function ArgumentPicker({
   const scopeId = useId();
   const showAll = wide || near.length === 0;
   const rest = all.filter((a) => !near.includes(a));
-  const opt = (a: Argument) => (
-    <option key={a.id} value={a.id}>
-      {a.title || "—"}
-    </option>
-  );
+  const opt = (a: Argument, group?: string) => ({ value: a.id, label: a.title || "—", group });
+  const argumentOptions = [
+    { value: "", label: t("argument.edit.pickArg") },
+    ...(showAll ? [...near.map((a) => opt(a, nearLabel)), ...rest.map((a) => opt(a, t("argument.edit.pickOther")))] : near.map((a) => opt(a))),
+  ];
   const taken = id !== "" && withRole && disabledFor?.(id, role);
   return (
     <div className="ag-picker-wrap" data-ui="argument-picker" data-ui-key={uiKey} data-scope={showAll ? "all" : "near"}>
       <div className="ag-picker">
-        <select className="ag-input" data-ui="argument-picker-select" value={id} aria-label={t("argument.edit.pickArg")} onChange={(e) => setId(e.target.value)}>
-          <option value="">{t("argument.edit.pickArg")}</option>
-          {showAll ? (
-            <>
-              {near.length > 0 && <optgroup label={nearLabel}>{near.map(opt)}</optgroup>}
-              {rest.length > 0 && <optgroup label={t("argument.edit.pickOther")}>{rest.map(opt)}</optgroup>}
-            </>
-          ) : (
-            near.map(opt)
-          )}
-        </select>
+        <Select className="ag-select" data-ui="argument-picker-select" aria-label={t("argument.edit.pickArg")} value={id} onChange={setId} options={argumentOptions} />
         {withRole && (
-          <select className="ag-input narrow" data-ui="argument-picker-role" value={role} aria-label={t("argument.edit.pickRole")} onChange={(e) => setRole(e.target.value as ArgumentEdgeRole)}>
-            {ARGUMENT_ROLES.map((r) => (
-              <option key={r} value={r} disabled={!!id && !!disabledFor?.(id, r)}>
-                {roleName(r)}
-              </option>
-            ))}
-          </select>
+          <Select className="ag-select narrow" data-ui="argument-picker-role" aria-label={t("argument.edit.pickRole")} value={role} onChange={(next) => setRole(next as ArgumentEdgeRole)}
+            options={ARGUMENT_ROLES.map((r) => ({ value: r, label: roleName(r), disabled: !!id && !!disabledFor?.(id, r) }))} />
         )}
         <ActionButton
           mode="text"

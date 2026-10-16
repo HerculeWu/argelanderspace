@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { CopilotProvider, ProviderTestResult } from "@argelanderspace/contracts";
 import { ProviderSettingsDialog } from "../src/copilot/ProviderSettings";
 import i18n from "../src/i18n";
+import { chooseOption, selectIsDisabled, selectOptionValues, selectRows, selectShown, selectTrigger } from "./select-helpers";
 
 const catalog = (id = "openai"): CopilotProvider => ({ id, name: id === "openai" ? "OpenAI" : "Anthropic", method: "api_key", credential: { configured: false, stored: false, source: "none" }, catalogStatus: "ready", models: [
   { id: "reasoning", name: "Reasoning", baseUrl: "https://offline.invalid", contextWindow: 1000, maxTokens: 128, image: true, tools: true, thinkingLevels: ["off", "low", "high"], capabilitiesKnown: true, defaultThinking: "high", defaultThinkingValid: true },
@@ -36,16 +37,19 @@ const open = async () => {
 
 test("uses current capability options, lets an invalid old default be cleared, and disables invented custom levels", async () => {
   const card = await open();
-  const thinking = card.querySelector('[data-ui="provider-default-thinking-openai"]') as HTMLSelectElement;
-  expect([...thinking.options].map((option) => option.value)).toEqual(["", "off", "low", "high"]);
-  fireEvent.change(card.querySelector('[data-ui="provider-model"]')!, { target: { value: "plain" } });
-  expect(thinking.disabled).toBe(false);
+  const thinking = card.querySelector('[data-ui="provider-default-thinking-openai"]')!;
+  expect(selectOptionValues(thinking)).toEqual(["", "off", "low", "high"]);
+  chooseOption(card.querySelector('[data-ui="provider-model"]')!, "plain");
+  expect(selectIsDisabled(thinking)).toBe(false);
   expect(within(card).getAllByText(/saved thinking level is unsupported/).length).toBeGreaterThan(0);
-  fireEvent.change(thinking, { target: { value: "" } });
+  chooseOption(thinking, "");
   expect((card.querySelector('[data-ui="provider-save-config-openai"]') as HTMLButtonElement).disabled).toBe(false);
   fireEvent.change(card.querySelector('[data-ui="provider-model-id"]')!, { target: { value: "custom" } });
-  expect(thinking.disabled).toBe(true);
-  expect([...thinking.options].map((option) => option.value)).toEqual([""]);
+  expect(selectIsDisabled(thinking)).toBe(true);
+  // disabled, it offers nothing to choose: only the one "" entry shows
+  expect(selectShown(thinking)).toBe("Capabilities unknown. Thinking levels are unavailable.");
+  fireEvent.click(selectTrigger(thinking)); // an attempt to open it changes nothing
+  expect(selectRows(thinking)).toHaveLength(0);
 });
 
 test("editing and credential changes invalidate connection results; cancellation ignores a late reply", async () => {
@@ -59,7 +63,7 @@ test("editing and credential changes invalidate connection results; cancellation
   expect(testSignal?.aborted).toBe(true);
   first(json({ code: "success", retryable: false } satisfies ProviderTestResult));
   await waitFor(() => expect(check().textContent).toBe("Not tested"));
-  fireEvent.change(card.querySelector('[data-ui="provider-default-thinking-openai"]')!, { target: { value: "" } });
+  chooseOption(card.querySelector('[data-ui="provider-default-thinking-openai"]')!, "");
   start(); await waitFor(() => expect(check().textContent).toContain("Testing"));
   const second = testResolve!;
   fireEvent.click(within(card).getByRole("button", { name: "Cancel" }));
@@ -87,12 +91,15 @@ test("all cards and dismissal are protected during credential save; secret is cl
 
 test("custom endpoint invalidates known-model thinking until its saved default is cleared", async () => {
   const card = await open();
-  const thinking = card.querySelector('[data-ui="provider-default-thinking-openai"]') as HTMLSelectElement;
+  const thinking = card.querySelector('[data-ui="provider-default-thinking-openai"]')!;
   fireEvent.change(card.querySelector('[data-ui="provider-base-url"]')!, { target: { value: "https://custom.invalid" } });
-  expect([...thinking.options].map((option) => option.value)).toEqual(["", "high"]);
+  expect(selectOptionValues(thinking)).toEqual(["", "high"]);
   expect((card.querySelector('[data-ui="provider-save-config-openai"]') as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(thinking, { target: { value: "" } });
-  expect(thinking.disabled).toBe(true);
-  expect([...thinking.options].map((option) => option.value)).toEqual([""]);
+  chooseOption(thinking, "");
+  expect(selectIsDisabled(thinking)).toBe(true);
+  // disabled, it offers nothing to choose: only the one "" entry shows
+  expect(selectShown(thinking)).toBe("Capabilities unknown. Thinking levels are unavailable.");
+  fireEvent.click(selectTrigger(thinking)); // an attempt to open it changes nothing
+  expect(selectRows(thinking)).toHaveLength(0);
   expect((card.querySelector('[data-ui="provider-save-config-openai"]') as HTMLButtonElement).disabled).toBe(false);
 });

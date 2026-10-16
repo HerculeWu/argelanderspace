@@ -5,6 +5,7 @@ export { Dialog, type DialogProps } from "./Dialog";
 export { IconButton, type IconButtonProps } from "./IconButton";
 export { getConfiguredIcon } from "./icon-resource";
 export { InlineMessage } from "./InlineMessage";
+export { Select, type SelectOption, type SelectProps } from "./Select";
 export { Tabs, type TabItem, type TabsProps } from "./Tabs";
 export { Tooltip, TooltipBubble, useSingleTooltip } from "./Tooltip";
 export type { ActionStyle, IconSize } from "./action-style";

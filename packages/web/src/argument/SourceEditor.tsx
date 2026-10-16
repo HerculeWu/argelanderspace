@@ -11,7 +11,7 @@ import { useTranslation } from "react-i18next";
 import { fetchDocDescription } from "../api/doc";
 import { type DocStructure, type StructureOption, fetchDocStructure } from "../api/doc-structure";
 import { Icon } from "../lib/icons";
-import { ActionButton } from "../ui";
+import { ActionButton, Select } from "../ui";
 
 /** A source while it is being edited: the target may be half chosen (a Doc without a location yet). */
 export interface DraftSource {
@@ -113,42 +113,26 @@ export function SourceEditor({ sources, onChange, workDocIds }: { sources: Draft
           <div className="ag-source-row" key={i} data-ui="argument-source-row" data-ui-key={i}>
             <input className="ag-input ag-source-text" data-ui="argument-source-text-input" aria-label={t("argument.edit.sourceText")} placeholder={t("argument.edit.sourceText")} value={s.text} onChange={(e) => set(i, { ...s, text: e.target.value })} />
             <ActionButton unstyled mode="icon" iconName="x" className="btn icon ghost" data-ui="remove-argument-source" label={t("argument.edit.sourceRemove")} tooltip={t("argument.edit.sourceRemove")} onClick={() => onChange(sources.filter((_, k) => k !== i))} />
-            <select className="ag-input ag-source-doc" data-ui="argument-source-doc" aria-label={t("argument.edit.sourceDoc")} title={s.docId ? docLabel(s.docId, docIds.indexOf(s.docId)) : undefined} value={s.docId} onChange={(e) => set(i, { text: s.text, docId: e.target.value })}>
-              <option value="">{t("argument.edit.sourceNone")}</option>
-              {docIds.map((id, k) => (
-                <option key={id} value={id} title={docLabel(id, k)}>
-                  {docLabel(id, k)}
-                </option>
-              ))}
-            </select>
+            <Select className="ag-select ag-source-doc" data-ui="argument-source-doc" aria-label={t("argument.edit.sourceDoc")} title={s.docId ? docLabel(s.docId, docIds.indexOf(s.docId)) : undefined} value={s.docId} onChange={(docId) => set(i, { text: s.text, docId })}
+              options={[{ value: "", label: t("argument.edit.sourceNone") }, ...docIds.map((id, k) => ({ value: id, label: docLabel(id, k), title: docLabel(id, k) }))]} />
             {s.docId && known?.status === "loading" && <span className="ag-hint ag-source-note" role="status">{t("argument.edit.sourceLoading")}</span>}
             {s.docId && known?.status === "failed" && <span className="ag-hint warn ag-source-note">{t("argument.edit.sourceStructureFailed")}</span>}
             {structure?.format === "ir" && (
-              <select
-                className="ag-input"
+              <Select
+                className="ag-select"
                 data-ui="argument-source-anchor"
                 aria-label={t("argument.edit.sourceAnchor")}
                 value={s.anchor ?? ""}
-                onChange={(e) => {
-                  const option = structure.options.find((o) => o.anchor === e.target.value);
-                  set(i, { ...s, anchor: e.target.value || undefined, auto: option?.autoText, text: s.text.trim() ? s.text : (option?.autoText ?? "") });
+                onChange={(anchor) => {
+                  const option = structure.options.find((o) => o.anchor === anchor);
+                  set(i, { ...s, anchor: anchor || undefined, auto: option?.autoText, text: s.text.trim() ? s.text : (option?.autoText ?? "") });
                 }}
-              >
-                <option value="">{structure.options.length ? t("argument.edit.sourceAnchorPick") : t("argument.edit.sourceNoStructure")}</option>
-                {s.anchor && !structure.options.some((o) => o.anchor === s.anchor) && <option value={s.anchor}>{s.anchor}</option>}
-                {GROUPS.map((k) => {
-                  const list = structure.options.filter((o) => o.kind === k);
-                  return list.length > 0 ? (
-                    <optgroup key={k} label={groupName(k)}>
-                      {list.map((o) => (
-                        <option key={o.anchor} value={o.anchor}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ) : null;
-                })}
-              </select>
+                options={[
+                  { value: "", label: structure.options.length ? t("argument.edit.sourceAnchorPick") : t("argument.edit.sourceNoStructure") },
+                  ...(s.anchor && !structure.options.some((o) => o.anchor === s.anchor) ? [{ value: s.anchor, label: s.anchor }] : []),
+                  ...GROUPS.flatMap((k) => structure.options.filter((o) => o.kind === k).map((o) => ({ value: o.anchor, label: o.label, group: groupName(k) }))),
+                ]}
+              />
             )}
             {structure?.format === "pdf" && (
               <input
