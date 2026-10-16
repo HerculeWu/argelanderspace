@@ -543,13 +543,20 @@ async function leaveThePage(name, port, openedFile, controlFile, probeFile, shel
     `${name}: a navigation to an outside address leaves the window on the local page`,
     String(href)
   );
-  const got = (path, source) => opened.some((o) => o.opened === `${OUTSIDE}${path}` && o.source === source);
-  for (const [path, source, what] of [
-    ["probe-away", "navigation", "the outside navigation"],
-    ["probe-window-open", "new_window", "window.open"],
-    ["probe-target-blank", "new_window", "an <a target=_blank>"],
+  // WKWebView reports a click on an <a target=_blank> as a navigation of the window (no new-window request): the
+  // shell hands it to the system browser either way, so either source is right for it.
+  const got = (path, sources) =>
+    opened.some((o) => o.opened === `${OUTSIDE}${path}` && sources.includes(o.source));
+  for (const [path, sources, what] of [
+    ["probe-away", ["navigation"], "the outside navigation"],
+    ["probe-window-open", ["new_window"], "window.open"],
+    ["probe-target-blank", ["new_window", "navigation"], "an <a target=_blank>"],
   ])
-    check(got(path, source), `${name}: ${what} goes to the system browser (${source})`, JSON.stringify(opened));
+    check(
+      got(path, sources),
+      `${name}: ${what} goes to the system browser (${sources.join(" or ")})`,
+      JSON.stringify(opened)
+    );
 }
 
 async function run(name, { keepEntries, cjk, forcedEnd = false }) {
