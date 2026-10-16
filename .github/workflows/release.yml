@@ -96,6 +96,13 @@ jobs:
       BUNDLES: ${{ matrix.bundles }}
       EVIDENCE: ${{ github.workspace }}/release-evidence/${{ matrix.target }}
     steps:
+      # The Windows runner's Git converts line endings to CRLF on checkout (core.autocrlf true); the release scripts
+      # read pnpm-lock.yaml and sha256-check vendored texts byte for byte, so the files are checked out as committed
+      # (desktop-app ticket 30: dep-dir.mjs found no importer in a CRLF lockfile).
+      - name: Windows only - check files out as committed (no CRLF conversion)
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
