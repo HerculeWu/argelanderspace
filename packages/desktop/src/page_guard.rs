@@ -98,9 +98,8 @@ fn strip(platform: &tauri::webview::PlatformWebview) -> bool {
         let Ok(settings) = webview.Settings() else {
             return false;
         };
-        if settings.SetIsWebMessageEnabled(false).is_err() {
-            return false;
-        }
+        // FALSIFICATION ONLY (reverted in the next commit): web messages left on.
+        let _ = &settings;
         let marker: Rc<RefCell<Option<String>>> = Rc::default();
         let slot = Rc::clone(&marker);
         let added = AddScriptToExecuteOnDocumentCreatedCompletedHandler::wait_for_async_operation(

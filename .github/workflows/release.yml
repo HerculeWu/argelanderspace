@@ -185,7 +185,6 @@ jobs:
         run: node packages/app/scripts/fetch-node-keyring.mjs --out "$RUNNER_TEMP/node-release-keys.kbx"
 
       - name: Assemble the sidecar (dependency directory, Node with its signature checked, notices)
-        id: sidecar
         run: |
           node packages/app/scripts/desktop-sidecar.mjs --target "$TARGET" \
             --node-keyring "$RUNNER_TEMP/node-release-keys.kbx" --online 2>&1 | tee "$EVIDENCE/sidecar.txt"
@@ -267,6 +266,8 @@ jobs:
             icns=("$res"/*.icns)
             test "${#icns[@]}" -eq 1
             cp "${icns[0]}" "$EVIDENCE/app-icon.icns"
+            # The dmg's volume icon, when the dmg has one (checked the same way below).
+            if [ -f "$mnt/.VolumeIcon.icns" ]; then cp "$mnt/.VolumeIcon.icns" "$EVIDENCE/volume-icon.icns"; fi
           else
             exes=("$b"/nsis/*.exe)
             test "${#exes[@]}" -eq 1
@@ -291,14 +292,25 @@ jobs:
             echo "UNTESTED on $RUNNER_OS from the package itself: the host, the page, PDFium, the keychain, Copilot, the ingest (the probe step runs them from a test build)"
           } | tee -a "$out" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: macOS icon (the dmg's .app's ICNS 16/32 px entries parse; look at them in Finder and the Dock by hand)
+      - name: macOS icon (iconutil's 16/32 px of the dmg's ICNS, pixel for pixel against the source rendering)
         if: runner.os == 'macOS'
         run: |
-          # The ICNS the package carries (copied out of the dmg's .app by the step above), not the repository's file.
-          iconutil -c iconset "$EVIDENCE/app-icon.icns" -o "$EVIDENCE/icon.iconset"
-          ls -l "$EVIDENCE/icon.iconset" | tee "$EVIDENCE/icon-iconset.txt"
-          test -f "$EVIDENCE/icon.iconset/icon_16x16.png"
-          test -f "$EVIDENCE/icon.iconset/icon_32x32.png"
+          # The ICNS the package carries (copied out of the dmg's .app by the step above, and the dmg's volume icon when
+          # there is one), not the repository's file. macOS's own decoder turns them into PNGs; build-icons.mjs renders
+          # the 16/32 px variant again and compares (alpha and premultiplied colour within 1 wherever alpha > 0):
+          # desktop-app ticket 30, the PNG-holding icp4/icp5 entries decoded as noise here.
+          sets=()
+          for name in app-icon volume-icon; do
+            [ -f "$EVIDENCE/$name.icns" ] || continue
+            iconutil -c iconset "$EVIDENCE/$name.icns" -o "$EVIDENCE/$name.iconset"
+            ls -l "$EVIDENCE/$name.iconset" | tee -a "$EVIDENCE/icon-iconset.txt"
+            sets+=(--check-iconset "$EVIDENCE/$name.iconset")
+          done
+          test "${#sets[@]}" -ge 1
+          echo "iconsets checked: ${#sets[@]} (volume icon present: $([ -f "$EVIDENCE/volume-icon.icns" ] && echo yes || echo no))" \
+            | tee -a "$EVIDENCE/icon-pixels.txt"
+          node packages/desktop/scripts/build-icons.mjs --tauri-cli "$RUNNER_TEMP/tauri-cli/bin/cargo-tauri" \
+            "${sets[@]}" 2>&1 | tee -a "$EVIDENCE/icon-pixels.txt"
 
       - name: Collect the packages
         run: |

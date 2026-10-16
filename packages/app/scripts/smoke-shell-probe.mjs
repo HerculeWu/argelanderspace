@@ -535,6 +535,19 @@ async function run(name, { keepEntries, cjk }) {
       `${name}: with the entries left in, the call is refused (no capability)`,
       String(seen.invoke)
     );
+    // The handle the guarded run takes away is really there without the guard (so its absence there means something).
+    if (process.platform === "win32")
+      check(
+        seen.webviewPostMessage === "function",
+        `${name}: with the entries left in, chrome.webview.postMessage is there (WebView2 web messages on)`,
+        String(seen.webviewPostMessage)
+      );
+    else
+      check(
+        seen.webkitIpcHandler === true,
+        `${name}: with the entries left in, the WebKit ipc message handler is there`,
+        String(seen.webkitIpcHandler)
+      );
   } else {
     check(
       seen.tauri === "undefined" && seen.internals === "undefined" && seen.ipc === "undefined",
@@ -551,6 +564,12 @@ async function run(name, { keepEntries, cjk }) {
       `${name}: no WebKit ipc message handler`,
       String(seen.webkitIpcHandler)
     );
+    if (process.platform === "win32")
+      check(
+        seen.webviewPostMessage === "undefined",
+        `${name}: no chrome.webview.postMessage (WebView2 web messages off: Tauri's ipc has no way out)`,
+        String(seen.webviewPostMessage)
+      );
     check(seen.invoke === "no entry", `${name}: no entry to call Tauri`, String(seen.invoke));
     // Single instance: a second start ends by itself and the first keeps running.
     const second = startShell(env, home);
