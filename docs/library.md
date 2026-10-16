@@ -21,7 +21,7 @@
 
 ### 本地 PDF（Web）
 
-- `POST /api/library/upload-pdf?id=<work-id>` 接收原始 PDF bytes，可信服务端 PDFium (EmbedPDF 2.15.1) 检查可读性、加密状态、页数与页几何。上限 50 MiB、100 页，25 MiB 起显示资源警告；可信解析串行，进程空闲内存不足 512 MiB 时拒绝继续。不可用 OCR 或密码解锁，不以 MIME/文件名/magic 代替解析。
+- `POST /api/library/upload-pdf?id=<work-id>` 接收原始 PDF bytes，可信服务端 PDFium (EmbedPDF 2.15.1) 检查可读性、加密状态、页数与页几何。上限 50 MiB、100 页，25 MiB 起显示资源警告；可信解析串行，进程空闲内存不足 512 MiB 时拒绝继续。（2026-10-16 局部修订，desktop-app 票 30。旧定位：「空闲内存」在实现里是 `os.freemem()`。新结论：按平台取可用内存——Linux 读 `/proc/meminfo` 的 `MemAvailable`；macOS 取 `vm_stat` 的 free＋inactive＋speculative 页（不加 purgeable，它已在 active/inactive 队列里，加了会重复计），结果缓存 1 秒、并发调用共用一次；Windows 用 `os.freemem()`（可用物理内存）；取不到时退回 `os.freemem()`。范围：探测与原件页材料两处的余量检查（`server/src/available-memory.ts`）；阈值 512 MiB 与「不足即拒绝」不变。原因：macOS 上 `os.freemem()` 不算可回收的 inactive 页，runner 与平常的 Mac 都常不足 512 MiB，PDF 上传被误拒。批准：用户 2026-10-16 在票 30 的裁决。）不可用 OCR 或密码解锁，不以 MIME/文件名/magic 代替解析。
 - 每次成功创建 `pdf-<UUID>` 独立 Doc，保存 `original.pdf`、明确 `format=pdf` 的元数据、绑定 hash 的空标注 sidecar 和 null 阅读位置 sidecar，全部完成后才挂 Library 关系。PDF 原文件永不原位替换。
 - 完全相同字节仅在目标 Work 内返回既有 Doc，不重建或重置用户 sidecar；另一个 Work 接收相同 bytes 时建立独立物理副本、Doc 与用户状态。文件名/论文身份不会改挂目标 Work。首 Doc 成为主，向有正文 Work 新增 PDF 不抢主位，现有“设为主/全局删除”仍由条目内管理。
 - build 只保留合法 Library 关联，不按 PDF 标题 seed Work，也不跨 Work 合并相同 bytes。孤立/损坏 PDF 不自动回挂或删除；唯一 owner 检查失败时 Reader 读取拒绝。
