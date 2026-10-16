@@ -721,7 +721,8 @@ test("the repository's vendored crate licenses are complete and unchanged and co
     for (const f of c.files) assert.ok(manifest.files[f], `${c.crate}: ${f}`);
     assert.ok(evalLicense(c.license, SHELL_CRATE_LICENSE_ALLOWED), c.crate);
   }
-  // The crates of linux-x64 without a license file of their own (shell-notices.mjs on 2026-10-15), and Windows' three.
+  // The crates of linux-x64 without a license file of their own (shell-notices.mjs on 2026-10-15), Windows' three, and
+  // macOS's twelve objc2 crates (the user's decision of 2026-10-16, desktop-app ticket 30).
   for (const id of [
     "alloc-stdlib@0.3.0",
     "defmt-parser@1.0.0",
@@ -732,6 +733,18 @@ test("the repository's vendored crate licenses are complete and unchanged and co
     "webview2-com@0.39.1",
     "webview2-com-macros@0.8.1",
     "webview2-com-sys@0.39.1",
+    "block2@0.6.2",
+    "dispatch2@0.3.1",
+    "objc2@0.6.5",
+    "objc2-app-kit@0.3.2",
+    "objc2-core-foundation@0.3.2",
+    "objc2-core-graphics@0.3.2",
+    "objc2-encode@4.1.0",
+    "objc2-exception-helper@0.1.1",
+    "objc2-foundation@0.3.2",
+    "objc2-io-surface@0.3.2",
+    "objc2-quartz-core@0.3.2",
+    "objc2-web-kit@0.3.2",
   ]) {
     const [name, version] = id.split("@");
     assert.ok(
