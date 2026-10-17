@@ -56,7 +56,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, posix, resolve, win32 } from "node:path";
+import { basename, dirname, join, posix, resolve, win32 } from "node:path";
 
 /** The npm package's command (`packages/app/package.json` `bin`), and the launcher's file name. */
 export const CLI_COMMAND = "argelanderspace";
@@ -510,8 +510,23 @@ export function uninstallCliLauncher(opts: CliLauncherOptions = {}): CliLauncher
  * its README. That is `<resources>/skills` next to `<resources>/sidecar/app/dist/bin.js` in the desktop package, and
  * the repository's `skills/` next to `packages/app/dist/bin.js` (or `packages/cli/dist/bin.js`) in the development
  * form. Null elsewhere (an npm install has none).
+ *
+ * The entry must sit in one of those two layouts (`sidecar/app/dist` or `packages/{app,cli}/dist`), not merely have a
+ * `skills/README.md` three levels up: a local install `<project>/node_modules/argelanderspace/dist/bin.js` reaches
+ * the project's own `skills/` that way, and a project's folder is not the application's (the Copilot reads its
+ * skills from here, copilot ticket 58).
  */
 export function bundledSkillsDir(cliEntry: string): string | null {
+  const bin = dirname(cliEntry);
+  const pkg = dirname(bin);
+  const outer = dirname(pkg);
+  const packaged =
+    basename(bin) === "dist" && basename(pkg) === "app" && basename(outer) === "sidecar";
+  const development =
+    basename(bin) === "dist" &&
+    (basename(pkg) === "app" || basename(pkg) === "cli") &&
+    basename(outer) === "packages";
+  if (!packaged && !development) return null;
   const dir = resolve(dirname(cliEntry), "..", "..", "..", "skills");
   try {
     if (statSync(dir).isDirectory() && statSync(join(dir, "README.md")).isFile()) return dir;

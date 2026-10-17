@@ -540,7 +540,8 @@ test("the base instruction plus the tool schemas stay within the measured footpr
   // Argument graph ticket 09 added the argument tool (description, parameter schema, one system-prompt sentence), about 2.5 KB. Measured 71928.
   // Review round A added the read tool's `field` parameter (and reworded its read line): +30 bytes. Measured 71958.
   expect(footprint).toBeGreaterThan(70_000);
-  expect(footprint).toBeLessThan(71_958 + 300);
+  // Copilot ticket 58: the closing paragraph (data rules and the file-tools-off sentence) added 1400 bytes (data rules and the off sentence). Measured 73358.
+  expect(footprint).toBeLessThan(73_358 + 300);
   expect(Buffer.byteLength(instruction?.text ?? "")).toBeGreaterThan(3_000);
 });
 

@@ -2,14 +2,45 @@
  * The ONE application resource loader of the Copilot's Pi sessions (copilot tickets 03, 08 and 30).
  *
  * Everything the model is instructed with comes through here and nowhere else: the base system prompt (small and
- * always present) and the versioned instructions, which are held in memory (not Pi skills, not files). They are NOT written into the
+ * always present), the versioned instructions, which are held in memory (not Pi skills, not files), and the skills that
+ * ship with the application (copilot ticket 58, ADR 0011), which are files. The instructions are NOT written into the
  * system prompt: they cost the window nothing until the model asks for one (the `text` tool's `load_instruction`),
- * and then the loader hands over exactly the version this application ships. Nothing is read from a file system, the
+ * and then the loader hands over exactly the version this application ships. Nothing is discovered from a file system, the
  * environment or the working directory, so no `.pi`, AGENTS file or skill directory of the machine can reach a
- * session (spec §8.1), and the instruction is part of the bundle rather than a loose asset.
+ * session (spec §8.1), and the instruction is part of the bundle rather than a loose asset. The ONE place a skill
+ * comes from is the bundled skills folder (`bundledSkillsDir`, the folder the desktop app's "show the skills folder"
+ * opens); it is read only here, and only when the file tools are on (a skill is read with the `read` tool).
  */
-import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
+
+import {
+  type LoadSkillsResult,
+  loadSkillsFromDir,
+  type ResourceLoader,
+} from "@earendil-works/pi-coding-agent";
 import { PDF_TRANSCRIPTION_INSTRUCTION } from "./copilot-transcription-instruction.js";
+
+/**
+ * The only bundled skills the Copilot sees (copilot ticket 58, user decision 2026-10-17): the read-only ones. The others
+ * stay in the bundle for external agents but are not for the Copilot: `argelander-paper-ingest` and
+ * `argelander-argument-graph` write through the command-line tool (the Copilot writes only through its business tools),
+ * and `argelander-find-papers` is the free ADS search that the Copilot does not do (spec §19, "not doing").
+ * `argelander-query-paper-library` has one `note` write; the prompt rule "a write with no business tool is something you
+ * cannot do" covers it.
+ */
+export const COPILOT_SKILL_NAMES: readonly string[] = [
+  "argelander-read-paper",
+  "argelander-query-paper-library",
+];
+
+/** The Copilot's skills from the folder that ships with the application: the allow-list above, nothing from any other place. */
+export function loadBundledSkills(dir: string | null | undefined): LoadSkillsResult {
+  if (!dir) return { skills: [], diagnostics: [] };
+  const loaded = loadSkillsFromDir({ dir, source: "bundled" });
+  return {
+    skills: loaded.skills.filter((skill) => COPILOT_SKILL_NAMES.includes(skill.name)),
+    diagnostics: loaded.diagnostics,
+  };
+}
 
 export interface AppInstruction {
   /** The name the model asks for. */
@@ -39,14 +70,16 @@ export type ApplicationResourceLoader = ResourceLoader & {
 export function createApplicationResourceLoader(options: {
   extensions: ReturnType<ResourceLoader["getExtensions"]>;
   systemPrompt: () => string;
+  /** The bundled skills this session lists (`loadBundledSkills`); none when absent. */
+  skills?: () => LoadSkillsResult;
   /** Throws what a session would when asked to extend its resources (nothing may add any). */
   refuseExtension: () => never;
 }): ApplicationResourceLoader {
   return {
     getExtensions: () => options.extensions,
-    // No Pi skills: a skill has a file path a `/skill:` command would read, and the instructions are not files. They are
-    // reachable only through `getInstruction` (the `load_instruction` tool).
-    getSkills: () => ({ skills: [], diagnostics: [] }),
+    // The versioned instructions are not Pi skills (a skill has a file path; they are not files): they are reachable only
+    // through `getInstruction` (the `load_instruction` tool). The only skills are the bundled ones, given by the host.
+    getSkills: () => options.skills?.() ?? { skills: [], diagnostics: [] },
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),

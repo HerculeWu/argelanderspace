@@ -1307,7 +1307,9 @@ test("the prompt and the tool say what the agent can and cannot do with acquisit
   expect(tool?.description).not.toContain("fetches full text");
   const sent = JSON.stringify(seen[0]?.messages);
   expect(sent).toMatch(/acquire_arxiv_pdf fetches the current arXiv PDF as a new Doc/);
-  expect(sent).toMatch(/You have no file, path or URL access/);
+  // the old denial is gone (copilot ticket 58); with the file tools off the prompt says they are off, and claims none
+  expect(sent).not.toMatch(/You have no file, path or URL access/);
+  expect(sent).toMatch(/File and command tools are turned off in the settings/);
   expect(sent).toMatch(/pending means it had not finished/);
 });
 

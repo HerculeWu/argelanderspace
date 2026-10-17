@@ -278,7 +278,14 @@ async function runServe(opts: ServeOpts, globalDataDir: string | undefined): Pro
   if (dataDir !== undefined) argv.push("--data-dir", dataDir);
   if (opts.port !== undefined) argv.push("--port", opts.port);
   if (opts.webDist !== undefined) argv.push("--web-dist", opts.webDist);
-  const srv = await startServer(argv, { version: APP_VERSION });
+  // The skills that ship with the program, found from its own bundle like the desktop host does: the Copilot reads its
+  // skills from there and nowhere else.
+  const entry = process.argv[1] === undefined ? null : realpathOr(resolve(process.argv[1]));
+  const skillsDir = entry === null ? null : bundledSkillsDir(entry);
+  const srv = await startServer(argv, {
+    version: APP_VERSION,
+    ...(skillsDir === null ? {} : { skillsDir }),
+  });
   const shutdown = () => {
     void srv.close().then(
       () => process.exit(0),

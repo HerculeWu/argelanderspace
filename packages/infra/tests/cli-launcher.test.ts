@@ -695,4 +695,35 @@ describe("the bundled skills", () => {
     mkdirSync(join(home, "skills"));
     expect(bundledSkillsDir(join(home, "a", "b", "c", "bin.js"))).toBeNull();
   });
+
+  test("a project's own skills/README.md is not the application's: a local npm install is not taken for a package (copilot ticket 58)", () => {
+    const project = tempHome();
+    mkdirSync(join(project, "node_modules", "argelanderspace", "dist"), { recursive: true });
+    mkdirSync(join(project, "skills"));
+    writeFileSync(join(project, "skills", "README.md"), "# the project's own skills\n");
+    expect(
+      bundledSkillsDir(join(project, "node_modules", "argelanderspace", "dist", "bin.js"))
+    ).toBeNull();
+    // the same folder reached from a pnpm-style store path
+    mkdirSync(
+      join(project, "node_modules", ".pnpm", "x", "node_modules", "argelanderspace", "dist"),
+      {
+        recursive: true,
+      }
+    );
+    expect(
+      bundledSkillsDir(
+        join(
+          project,
+          "node_modules",
+          ".pnpm",
+          "x",
+          "node_modules",
+          "argelanderspace",
+          "dist",
+          "bin.js"
+        )
+      )
+    ).toBeNull();
+  });
 });

@@ -696,7 +696,7 @@ test("the import request is only the dialog's text: the system prompt and tool s
   await run(page());
   const tool = getCurrentTools(seen[0]?.messages ?? []).find((t) => t.name === "library");
   expect(tool?.description).toContain("import_works");
-  expect(tool?.description).toContain("it cannot read files");
+  expect(tool?.description).toContain("never a path");
   const sent = JSON.stringify(seen[0]?.messages);
   expect(sent).toMatch(/import_works[\s\S]*never a file path/);
   expect(sent).toMatch(/never saves recommendation candidates/);

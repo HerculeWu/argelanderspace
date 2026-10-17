@@ -205,7 +205,7 @@ export function workspaceCapabilities(
  * permission-gated browser capability. `user_only` means the agent cannot perform it, whatever it
  * asks for; `limited` (downloads) means only the named `agent_actions`, each a page control the
  * agent presses through its own tool (the same handler as the user's button), and nothing else.
- * The agent works only with material the application already admitted (library, app assets); a file chooser or a local path never becomes a way to read an arbitrary file.
+ * The page-driving tools work only with material the application already admitted (library, app assets); a file chooser or a local path is never an object of the page they operate. This says nothing about the Copilot's separate file and command tools (ADR 0011), which are not page operations.
  */
 export const PLATFORM_BOUNDARIES = [
   { capability: "clipboard", agent: "user_only", reason: "browser_permission" },
@@ -219,5 +219,6 @@ export const PLATFORM_BOUNDARIES = [
   },
   { capability: "file_picker", agent: "user_only", reason: "user_gesture" },
   { capability: "external_link", agent: "user_only", reason: "user_gesture" },
+  // Not an object the page (or a page-driving tool) can operate; the Copilot's file tools (ADR 0011) are separate.
   { capability: "local_path", agent: "never", reason: "not_an_application_object" },
 ] as const;

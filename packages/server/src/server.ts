@@ -122,6 +122,11 @@ export interface ServerOptions {
    * so a test server never reads the real global mail accounts; `startServer` turns it on.
    */
   mailWatch?: false | true | MailWatcherOverrides;
+  /**
+   * The folder of the skills that ship with the program (infra `bundledSkillsDir`): the only place the Copilot reads a
+   * skill from (copilot ticket 58). Absent: it has none.
+   */
+  skillsDir?: string;
   /** The user-level log (log.ts). Absent → nothing is recorded, and no log directory is resolved or made. */
   log?: ServerLog;
   /**
@@ -248,6 +253,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   const providerSettings = opts.providerSettings ?? new ProviderSettings();
   const copilot = new CopilotHost(opts.dataDir, providerSettings, (event) => hub.broadcast(event));
   copilot.useLog(log);
+  copilot.useSkillsDir(opts.skillsDir);
   if (opts.mailWatch) {
     mailWatcher = createDefaultMailWatcher(
       (msg) => hub.broadcast(msg),
@@ -514,6 +520,8 @@ export interface StartOptions {
   version?: string;
   /** Tests only: the keychain probe of the start record (default infra `probeKeychain`). */
   keychainProbe?: () => Promise<KeychainProbe>;
+  /** The folder of the skills that ship with the program, found from the CLI entry (infra `bundledSkillsDir`); absent: none. */
+  skillsDir?: string;
   /**
    * The desktop host (desktop-app ticket 17, desktop-host.ts): the form is `desktop` in the start record and the
    * diagnostics, the page's native requests go to the bridge, the log file is the host's (`desktop`), and the three
@@ -552,6 +560,7 @@ export async function startServer(
       webDist: cfg.webDist,
       mailWatch: true,
       ...(start.desktop === undefined ? {} : { host: start.desktop.host }),
+      ...(start.skillsDir === undefined ? {} : { skillsDir: start.skillsDir }),
       log: common.log,
       logDir: common.logDir,
       ...(start.version === undefined ? {} : { version: start.version }),

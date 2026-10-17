@@ -146,7 +146,7 @@ const parameters = Type.Object(
 
 const description = [
   "Operate the shell like the user's controls: switch a pane's view, open a Doc, split/close/select/resize panes (max 3), set theme/accent/density/language, show or hide the Copilot panel, open its settings dialog (it only opens; you never see keys).",
-  "capabilities reports layout, appearance, disabled controls and why, and what the browser platform does not allow you (clipboard, file choosers, links, local paths; downloads only through the named actions reader download_original and writer export_manuscript). provider_status reads redacted provider state; select_model sets this conversation's model and thinking from it.",
+  "capabilities reports layout, appearance, disabled controls and why, and what the browser platform does not allow you (clipboard, file choosers, links; a local path is not an object of the page, so this tool never takes one, and the file tools reach files when they are on; downloads only through the named actions reader download_original and writer export_manuscript). provider_status reads redacted provider state; select_model sets this conversation's model and thinking from it.",
 ].join(" ");
 
 const record = (id: string, action: string, partial: Partial<CopilotOperation>) =>

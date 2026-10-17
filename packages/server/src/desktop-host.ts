@@ -839,6 +839,7 @@ export async function runDesktopHost(options: DesktopHostOptions): Promise<Deskt
     const start = {
       ...(options.version === undefined ? {} : { version: options.version }),
       ...(options.keychainProbe ? { keychainProbe: options.keychainProbe } : {}),
+      ...(options.skillsDir === undefined ? {} : { skillsDir: options.skillsDir }),
       desktop: {
         host: bridge,
         listenPort,
