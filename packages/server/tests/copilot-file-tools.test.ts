@@ -1178,6 +1178,7 @@ test("a write permission cannot plant the program grep would run: edit and write
   expect(op).toMatchObject({ status: "rejected" });
   expect(op?.fileTool?.guard).toMatchObject({ inside: "tools_dir" });
   expect(existsSync(join(piBin, "rg"))).toBe(false);
+  rmSync(join(homedir(), ".pi"), { recursive: true, force: true }); // later tests count on no rg/fd there
 });
 
 test("an edit of a file too big to read for the card still shows what it adds and removes, and says the context is left out", async () => {

@@ -1813,7 +1813,7 @@
       "approvedOnce": "You allowed this one call",
       "approvedSession": "Allowed for this session (no more asking)",
       "approvedAuto": "Automatic: not asked",
-      "guardTitle": "Nothing was written: the target is inside the application's data, config or cache folder",
+      "guardTitle": "Nothing was written: the target is inside the application's data, config, cache or helper-program folder",
       "guardWhereData": "the data folder",
       "guardWhereGlobal": "the global data folder",
       "guardDirect": "The resolved path is inside {{where}} {{folder}}. Library, annotation, argument graph and other business data can only be changed through the business tools (library, reader, argument, …); use those instead.",
@@ -1859,6 +1859,7 @@
       "guardWhereConfig": "the config folder",
       "guardWhereCache": "the global cache folder",
       "guardDirectSettings": "The resolved path is inside {{where}} {{folder}}. The application's settings and caches are changed by the application (the settings page); Copilot's file writes cannot change them, so use the settings page.",
+      "guardDirectTools": "The resolved path is inside {{where}} {{folder}}. Searching (grep / find) runs the programs there, so Copilot's file writes cannot change them.",
       "guardWhereTools": "the helper-program folder",
       "contextOmitted": "The file is too large: the lines around the change are not shown. Added and removed lines are shown whole.",
       "editInfoBare": "{{edits}} replacement(s) · +{{added}} −{{removed}} lines"
@@ -2705,7 +2706,7 @@
       "permAsk": "Ask each time",
       "permAuto": "Automatic",
       "permOffHint": "Off: Copilot has no file or command tools, only the application’s own business tools.",
-      "permAskHint": "Ask each time: reading and searching do not ask; running commands and changing files show a confirmation card each time, with “allow for this session”.",
+      "permAskHint": "Ask each time: reading files and listing folders do not ask; running commands (searching with grep / find included) and changing files show a confirmation card each time, with “allow for this session”.",
       "permAutoHint": "Automatic: no confirmation cards; every call still appears in the conversation as an expandable tool card.",
       "autoWarnTitle": "Automatic is at your own risk",
       "autoWarnBody": "Malicious text in mail or papers it reads could make Copilot run commands, read credentials and send them out. You can switch back to “Ask each time” at any time; Stop terminates a running command."

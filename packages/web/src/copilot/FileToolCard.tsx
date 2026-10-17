@@ -177,8 +177,17 @@ function guardText(t: TFunction, record: FileToolRecord): string {
             ? "copilot.tools.guardWhereTools"
             : "copilot.tools.guardWhereCache"
   );
-  const settingsKind = guard.inside === "config_dir" || guard.inside === "cache_dir" || guard.inside === "tools_dir";
-  const key = guard.via === "symlink" ? "guardSymlink" : guard.via === "parent_ref" ? "guardParent" : settingsKind ? "guardDirectSettings" : "guardDirect";
+  const settingsKind = guard.inside === "config_dir" || guard.inside === "cache_dir";
+  const key =
+    guard.via === "symlink"
+      ? "guardSymlink"
+      : guard.via === "parent_ref"
+        ? "guardParent"
+        : guard.inside === "tools_dir"
+          ? "guardDirectTools"
+          : settingsKind
+            ? "guardDirectSettings"
+            : "guardDirect";
   return t(`copilot.tools.${key}`, { path: record.path ?? record.target, where, folder: guard.folder, resolved: guard.resolved });
 }
 

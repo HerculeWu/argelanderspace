@@ -4,7 +4,7 @@ status: accepted
 
 # Copilot 与用户共享 UI 能力和页面上下文
 
-> 2026-10-16 局部取代：「UI 没有的操作，Copilot 也不能做」与「不能……开放任意文件/进程权限」两句由 [ADR 0011](0011-copilot-file-and-command-tools.md) 取代，Copilot 另获通用的文件与命令能力；本 ADR 其余各条不变。
+> 2026-10-16 局部取代：「UI 没有的操作，Copilot 也不能做」与「不能……开放任意文件/进程权限」两句（以及 Consequences 中「仅有内部函数、文件路径或旧 CLI 命令，不自动成为 Copilot 可执行的操作」里关于文件路径与 CLI 的部分，2026-10-17 补注）由 [ADR 0011](0011-copilot-file-and-command-tools.md) 取代，Copilot 另获通用的文件与命令能力；本 ADR 其余各条不变。
 
 工作台向 Copilot 提供能力和上下文，具体任务由用户决定。用户能在 UI 上完成的操作，Copilot 也能完成；UI 没有的操作，Copilot 也不能做。由此按 UI 能力设计接入，不预先将助手限定为文献问答、只读检索或只能生成修改草稿的任务集合。
 

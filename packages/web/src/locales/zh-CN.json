@@ -1813,7 +1813,7 @@
       "approvedOnce": "你允许了这一次",
       "approvedSession": "本会话内已允许（不再询问）",
       "approvedAuto": "自动档：未询问",
-      "guardTitle": "没有写入：目标在应用自己的数据、配置或缓存目录内",
+      "guardTitle": "没有写入：目标在应用的数据、配置、缓存或辅助程序目录内",
       "guardWhereData": "数据目录",
       "guardWhereGlobal": "全局数据目录",
       "guardDirect": "解析后的路径在{{where}} {{folder}} 内。文献库、标注、论证图等业务数据只能经业务工具（library、reader、argument 等）修改，请改用它们。",
@@ -1859,6 +1859,7 @@
       "guardWhereConfig": "配置目录",
       "guardWhereCache": "全局缓存目录",
       "guardDirectSettings": "解析后的路径在{{where}} {{folder}} 内。应用的设置和缓存由应用自己（设置页）修改，Copilot 的写文件不能改，请到设置页操作。",
+      "guardDirectTools": "解析后的路径在{{where}} {{folder}} 内。查找（grep / find）会运行这里的程序，Copilot 的写文件不能改动它们。",
       "guardWhereTools": "辅助程序目录",
       "contextOmitted": "文件太大，未显示改动处的上下文；增删的行完整显示。",
       "editInfoBare": "{{edits}} 处替换 · +{{added}} −{{removed}} 行"
@@ -2705,7 +2706,7 @@
       "permAsk": "逐次确认",
       "permAuto": "自动",
       "permOffHint": "关闭：Copilot 没有文件和命令工具，只能用应用自己的业务工具。",
-      "permAskHint": "逐次确认：读取与查找不询问；运行命令、修改文件每次出确认卡，可选「本会话内允许」。",
+      "permAskHint": "逐次确认：读取文件与列目录不询问；运行命令（含查找 grep / find）、修改文件每次出确认卡，可选「本会话内允许」。",
       "permAutoHint": "自动：不出确认卡，每次调用仍在对话里显示为可展开的工具卡片。",
       "autoWarnTitle": "自动档由你自担风险",
       "autoWarnBody": "读到的邮件或论文里的恶意文字可能让 Copilot 运行命令、读取凭据并发出去。需要时可随时切回「逐次确认」；停止按钮会终止正在运行的命令。"

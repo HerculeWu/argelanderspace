@@ -278,6 +278,8 @@ test("a change to a file too big to read says its context is left out; the tool 
   await open();
   await waitFor(() => expect(ui("copilot-tool-guard")).not.toBeNull());
   expect(ui("copilot-tool-guard")?.textContent).toContain("the helper-program folder");
+  expect(ui("copilot-tool-guard")?.textContent).toContain("Searching (grep / find) runs the programs there");
+  expect(ui("copilot-tool-guard")?.textContent).not.toContain("settings page");
 });
 
 test("every invisible character is a mark, in the confirmation, the guard text and the error of a tool card; tag characters by code point", async () => {
