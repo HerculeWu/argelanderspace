@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import type {
   CopilotOperation,
   DocReplaceImpact,
+  FileToolChange,
   TextReplacementImpact,
   WriterDeleteImpact,
 } from "@argelanderspace/contracts";
@@ -43,7 +44,8 @@ export type JournalObject = {
 
 /** How a requested confirmation was settled by the human (or by the host when the request stopped being valid). */
 export type ConfirmationOutcome =
-  | { outcome: "approved" }
+  /** `remember`: the user also allowed the rest of this class of call in the conversation (file and command tools). */
+  | { outcome: "approved"; remember?: boolean }
   | { outcome: "declined" }
   | { outcome: "expired"; reason: "stale" | "stopped" | "restart" | "closed" }
   /** A system error at click time (data unreadable): not a change, and never reported as one. */
@@ -163,6 +165,37 @@ export type ConfirmationRequest =
       next: { arguments: number; edges: number };
       baseRev: number;
       objectDigest: string;
+    }
+  | {
+      toolCallId: string;
+      /** Copilot ticket 57: one command of the shell tool, asked before it runs (permission "ask"). */
+      action: "run_command";
+      shell: "bash" | "powershell";
+      command: string;
+      cwd: string;
+      baseRev: number;
+    }
+  | {
+      toolCallId: string;
+      /** Copilot ticket 57: one edit of a file, shown as the diff it would make. */
+      action: "edit_file";
+      path: string;
+      /** The absolute path it really lands on, links and `..` resolved. */
+      resolved: string;
+      cwd: string;
+      change: FileToolChange;
+      baseRev: number;
+    }
+  | {
+      toolCallId: string;
+      /** Copilot ticket 57: creating or overwriting a file. */
+      action: "write_file";
+      path: string;
+      /** The absolute path it really lands on, links and `..` resolved. */
+      resolved: string;
+      cwd: string;
+      change: FileToolChange;
+      baseRev: number;
     }
   | {
       toolCallId: string;

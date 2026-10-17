@@ -38,8 +38,9 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { extname, join, normalize, relative, resolve, sep } from "node:path";
+import { dirname, extname, join, normalize, relative, resolve, sep } from "node:path";
 import type {
+  CopilotFileToolsSetting,
   DocDescription,
   PdfSourceMaterial,
   WsServerMessage,
@@ -49,6 +50,7 @@ import {
   ARGUMENT_GRAPH_UNREADABLE_PREFIX,
   ArgumentGraphSchema,
   buildReaderReading,
+  DEFAULT_COPILOT_FILE_TOOLS,
   DocDescriptionSchema,
   ManualWorkRequestSchema,
   ManuscriptSchema,
@@ -58,6 +60,7 @@ import {
   PdfPagesResponseSchema,
   PdfReadingPositionSchema,
   PlansFileSchema,
+  SETTINGS_COPILOT_FILE_TOOLS,
   TexDocIrSchema,
 } from "@argelanderspace/contracts";
 import {
@@ -145,6 +148,7 @@ import { createDocDeletion } from "./doc-delete.js";
 import { badDocId, badFileName } from "./doc-id.js";
 import { DocMutationRegistry } from "./doc-mutations.js";
 import { environmentReport, mountEnvironmentRoutes } from "./environment.js";
+import { fileToolsDefault } from "./file-tools-default.js";
 import { type HostBridge, mountHostRoutes, switchJobOf } from "./host-routes.js";
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
@@ -262,6 +266,8 @@ export interface AppDeps {
   log?: ServerLog;
   /** The config file the settings endpoints read and change (settings.ts); default `configFilePath()`. */
   configPath?: string | undefined;
+  /** The Project folder: where Copilot's commands run and relative paths start (copilot ticket 57); default the working directory. */
+  projectRoot?: string;
   /**
    * The ADS token's credential store (desktop-app ticket 12), the one the sources read the token from: `createServer`
    * hands in the same store to both. Default: the `ads` purpose over the OS keychain, wrapped for the log.
@@ -602,7 +608,7 @@ export function createApp(deps: AppDeps): Hono {
   // What the process actually uses for the restart-only keys: its own data directory, the port it listens on, and the
   // global directories pinned for its life (or, for an app made without a server, as the file gives them now).
   const settingsAtStart = deps.settingsAtStart ?? readSettings(deps.configPath).values;
-  const projectRoot = process.cwd();
+  const projectRoot = deps.projectRoot ?? process.cwd();
   mountSettingsRoutes(app, guardCsrf, {
     startup: deps.startup ?? null,
     path: deps.configPath,
@@ -1008,6 +1014,33 @@ export function createApp(deps: AppDeps): Hono {
     },
   };
   copilot.useWorkbench({
+    // Copilot's file and command tools (copilot ticket 57): commands run in the Project folder; the permission is read
+    // from config.toml at every run and every call; edit and write may not reach the two data folders.
+    fileTools: {
+      cwd: projectRoot,
+      permission: () => {
+        const reading = readSettings(deps.configPath);
+        const value = reading.values.copilot_file_tools;
+        // A key the file does not set (or sets wrongly) is the default; tests may install another default.
+        return reading.sources.copilot_file_tools === "file" &&
+          (SETTINGS_COPILOT_FILE_TOOLS as readonly unknown[]).includes(value)
+          ? (value as CopilotFileToolsSetting)
+          : (fileToolsDefault.value ?? DEFAULT_COPILOT_FILE_TOOLS);
+      },
+      // Where edit and write may not reach: the two data folders, the folder of config.toml (a write permission must not
+      // become the right to rewrite the settings) and the global cache folder.
+      protectedFolders: () => {
+        const dirs =
+          pinnedGlobalDirs() ??
+          resolveGlobalDirsLeniently(readConfigLeniently(deps.configPath ?? configFilePath())).dirs;
+        return [
+          { inside: "data_dir" as const, folder: paths.dataDir },
+          { inside: "global_dir" as const, folder: dirs.dataDir },
+          { inside: "config_dir" as const, folder: dirname(deps.configPath ?? configFilePath()) },
+          { inside: "cache_dir" as const, folder: dirs.cacheDir },
+        ];
+      },
+    },
     library: libraryOps,
     reader: readerOps,
     text: textDocs,

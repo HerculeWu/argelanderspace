@@ -1161,6 +1161,71 @@
         "root stroke-linecap round",
         "root stroke-linejoin round"
       ]
+    },
+    "copilot-tool-category": {
+      "terminal": {
+        "set": "lucide",
+        "file": "terminal",
+        "originalHash": "3cf6c86e07eed0dadf2d731f7f74471a280c04d762a4ce0542c30386e5e10e04",
+        "normalizedHash": "3cf6c86e07eed0dadf2d731f7f74471a280c04d762a4ce0542c30386e5e10e04",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "file-text": {
+        "set": "lucide",
+        "file": "file-text",
+        "originalHash": "3af5add902ede9356cbef02738c564d733ac1855c46d1f893c0b033f6ffd95c5",
+        "normalizedHash": "3af5add902ede9356cbef02738c564d733ac1855c46d1f893c0b033f6ffd95c5",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "search": {
+        "set": "lucide",
+        "file": "search",
+        "originalHash": "74af02bedbd9571d40cbea6d34a7c53ec276b0d9ae8cd472f729a6c29617f05f",
+        "normalizedHash": "74af02bedbd9571d40cbea6d34a7c53ec276b0d9ae8cd472f729a6c29617f05f",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "folder-search": {
+        "set": "lucide",
+        "file": "folder-search",
+        "originalHash": "1c360c037920ac02403f8441cdc66076d27330a82034cc29e7032d9bccfae522",
+        "normalizedHash": "1c360c037920ac02403f8441cdc66076d27330a82034cc29e7032d9bccfae522",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "folder": {
+        "set": "lucide",
+        "file": "folder",
+        "originalHash": "33ed4a9bd6960f2d640a4903d1812e87898e63f098141890aba047fc4a0d3422",
+        "normalizedHash": "33ed4a9bd6960f2d640a4903d1812e87898e63f098141890aba047fc4a0d3422",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "file-pen": {
+        "set": "lucide",
+        "file": "file-pen",
+        "originalHash": "9155796deb824eda0c7037c2a816720446dacc1e016c693efd51a7a88e68ee07",
+        "normalizedHash": "9155796deb824eda0c7037c2a816720446dacc1e016c693efd51a7a88e68ee07",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      },
+      "file-plus": {
+        "set": "lucide",
+        "file": "file-plus",
+        "originalHash": "f2df1a7311710ca56c1ce36311beac828392da31b89b25c5c6f6848154070f2e",
+        "normalizedHash": "f2df1a7311710ca56c1ce36311beac828392da31b89b25c5c6f6848154070f2e",
+        "modifications": [
+          "serialized installed lucide-react 0.460.0 icon nodes as restricted inline SVG; React keys omitted"
+        ]
+      }
     }
   }
 }

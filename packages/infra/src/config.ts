@@ -81,6 +81,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  type CopilotFileToolsSetting,
   evaluateSettings,
   isSettingKey,
   SETTING_KEYS,
@@ -123,6 +124,8 @@ export interface AppConfig {
   contact_email?: string;
   /** As written; a blank string means not set. Absolute otherwise. */
   tex_dir?: string;
+  /** Copilot's file and command tools: `off`, `ask` (default) or `auto` (copilot ticket 57). */
+  copilot_file_tools?: CopilotFileToolsSetting;
   ui?: AppUiConfig;
 }
 

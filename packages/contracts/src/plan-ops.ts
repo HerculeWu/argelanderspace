@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 import { ContextCoverageSchema } from "./context-batch.js";
+import { FileToolRecordSchema } from "./copilot-file-tools.js";
 import { JobStatusSchema } from "./job-status.js";
 import { type Task, type TaskStatus, TaskStatusSchema } from "./plans.js";
 
@@ -212,6 +213,8 @@ export const CopilotOperationSchema = z
       "declined",
       /** The confirmation is no longer valid (changed, stopped or restarted). Nothing was written. */
       "expired",
+      /** The call was cut short by Stop or by the server ending: a command may have partly run (copilot ticket 57). */
+      "interrupted",
       /** A background job was submitted and had not finished when the call ended; its outcome is `job.id` in the Job table. */
       "pending",
     ]),
@@ -255,6 +258,8 @@ export const CopilotOperationSchema = z
     docId: z.string().optional(),
     /** A `reader read` that delivered a part of a reading (copilot ticket 24): its range, total and what is not yet read. */
     batch: ContextCoverageSchema.optional(),
+    /** A file or command tool call (copilot ticket 57): what the tool card shows. */
+    fileTool: FileToolRecordSchema.optional(),
   })
   .strict();
 export type CopilotOperation = z.infer<typeof CopilotOperationSchema>;

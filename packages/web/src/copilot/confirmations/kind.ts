@@ -3,7 +3,7 @@ import type { TFunction } from "i18next";
 import type { JSX } from "react";
 
 /** Which family of decision-problem copy a failed or expired decision on this card is told in. */
-export type ConfirmationProblemScope = "plan" | "doc" | "deleteDoc" | "manuscript" | "mail" | "argument";
+export type ConfirmationProblemScope = "plan" | "doc" | "deleteDoc" | "manuscript" | "mail" | "argument" | "file";
 
 /**
  * One kind of human confirmation card (ticket 36): what the card shows, its confirm label and tone, how a failed
@@ -16,6 +16,11 @@ export interface ConfirmationCardKind<C extends CopilotConfirmation = CopilotCon
   /** The card's facts, with their `data-ui`. */
   Body(props: { card: C }): JSX.Element;
   confirmLabel(t: TFunction, card: C): string;
+  /**
+   * Cards of Copilot's command and file tools (ticket 57) have three decisions: the cancel button reads "Deny", and a
+   * middle button approves AND allows this class of call for the rest of the conversation.
+   */
+  session?: { label(t: TFunction): string };
   tone?: "danger";
   problemScope: ConfirmationProblemScope;
   /** The page's guard before an approval; false keeps the card and sends nothing. */

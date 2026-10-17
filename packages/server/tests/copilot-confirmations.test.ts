@@ -60,6 +60,32 @@ const textImpact = {
   newFingerprint: sha("b"),
 };
 const requests: { [A in ConfirmationAction]: Extract<ConfirmationRequest, { action: A }> } = {
+  run_command: {
+    toolCallId: "call",
+    action: "run_command",
+    shell: "bash",
+    command: "ls -la",
+    cwd: "~/project",
+    baseRev: 0,
+  },
+  edit_file: {
+    toolCallId: "call",
+    action: "edit_file",
+    path: "notes/a.md",
+    resolved: "~/project/notes/a.md",
+    cwd: "~/project",
+    change: { edits: 1, added: 1, removed: 1 },
+    baseRev: 0,
+  },
+  write_file: {
+    toolCallId: "call",
+    action: "write_file",
+    path: "notes/b.md",
+    resolved: "~/project/notes/b.md",
+    cwd: "~/project",
+    change: { bytes: 3, lines: 1, overwrite: false },
+    baseRev: 0,
+  },
   send_mail: {
     toolCallId: "call",
     action: "send_mail",
@@ -365,6 +391,9 @@ test("background trigger and bound-view rule per kind are what the host had", ()
     send_mail: [null, false],
     delete_mail: [null, false],
     move_mail: [null, false],
+    run_command: [null, false],
+    edit_file: [null, false],
+    write_file: [null, false],
   });
   for (const [action, kind] of Object.entries(kinds)) expect(kind.action).toBe(action);
 });
@@ -435,4 +464,30 @@ test("records and resume lines keep their fields and wording", () => {
       workId: "w",
     })
   ).toBe("replace_argument_graph w");
+});
+
+test("file and command cards: nothing on disk to recheck, the record keeps no command and no path, and the allowance class is per kind", async () => {
+  const run = kinds.run_command.card("c1", "r1", requests.run_command);
+  expect(run).toMatchObject({
+    action: "run_command",
+    object: { kind: "command", id: "call" },
+    shell: "bash",
+    command: "ls -la",
+    cwd: "~/project",
+  });
+  expect(kinds.run_command.requestedFields(requests.run_command)).toEqual({
+    action: "run_command",
+  });
+  expect(kinds.run_command.resolvedFields(run)).toEqual({ action: "run_command" });
+  const edit = kinds.edit_file.card("c2", "r1", requests.edit_file);
+  expect(kinds.edit_file.requestedFields(requests.edit_file)).toEqual({ action: "edit_file" });
+  expect(JSON.stringify(kinds.edit_file.resolvedFields(edit))).not.toContain("notes");
+  expect(await kinds.run_command.check(run)).toBe("valid");
+  expect(await kinds.write_file.check(kinds.write_file.card("c3", "r1", requests.write_file))).toBe(
+    "valid"
+  );
+  expect(kinds.run_command.remembers).toBe("command");
+  expect(kinds.edit_file.remembers).toBe("write");
+  expect(kinds.write_file.remembers).toBe("write");
+  expect(kinds.delete_plan.remembers).toBeUndefined();
 });

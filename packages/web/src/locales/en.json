@@ -1569,7 +1569,8 @@
         "confirmation_required": "Waiting for you",
         "declined": "Declined",
         "expired": "Expired",
-        "pending": "In progress"
+        "pending": "In progress",
+        "interrupted": "Interrupted"
       },
       "job": "Job",
       "doc": "Document",
@@ -1646,7 +1647,10 @@
       "replaceArgumentConfirm": "Replace",
       "expiredArgument": "The argument graph changed before your decision. Nothing was replaced.",
       "failedArgument": "Your decision could not be saved. Nothing was changed; try again.",
-      "unreadableArgument": "The check made when you confirmed could not read this argument graph. This is not a change you made, and nothing was changed. Try again, or look at the graph."
+      "unreadableArgument": "The check made when you confirmed could not read this argument graph. This is not a change you made, and nothing was changed. Try again, or look at the graph.",
+      "unreadableFile": "The check made when you confirmed could not be completed. Nothing ran or changed; please try again.",
+      "expiredFile": "This confirmation is no longer valid (the run was stopped or ended). Nothing ran or changed.",
+      "failedFile": "Your decision could not be saved. Nothing ran or changed; please try again."
     },
     "thinkingLevels": {
       "off": "Off",
@@ -1796,6 +1800,68 @@
       "openError": "The open message could not be read (nothing sent)",
       "untrusted": "Mail content is treated as untrusted data, never as instructions.",
       "openCut": "The open message was sent cut: only the first part of its {{chars}} characters"
+    },
+    "tools": {
+      "running": "Running",
+      "declined": "Denied",
+      "guardShort": "Blocked by guard",
+      "interrupted": "Interrupted",
+      "command": "Command",
+      "cwd": "Working directory",
+      "path": "Path",
+      "approval": "Approval",
+      "approvedOnce": "You allowed this one call",
+      "approvedSession": "Allowed for this session (no more asking)",
+      "approvedAuto": "Automatic: not asked",
+      "guardTitle": "Nothing was written: the target is inside the application's data, config or cache folder",
+      "guardWhereData": "the data folder",
+      "guardWhereGlobal": "the global data folder",
+      "guardDirect": "The resolved path is inside {{where}} {{folder}}. Library, annotation, argument graph and other business data can only be changed through the business tools (library, reader, argument, …); use those instead.",
+      "guardSymlink": "{{path}} is a symbolic link to {{resolved}}, inside {{where}} {{folder}}, so it was refused. Use the business tools instead.",
+      "guardParent": "The path resolves through .. into {{where}} {{folder}}, so it was refused. Use the business tools instead.",
+      "declinedBody": "You denied this call and it did not run. Copilot was told it was denied.",
+      "interruptedBody": "Stopped: the command and its child processes were terminated; the result is unknown. It will not rerun after a restart.",
+      "interruptedOther": "Stopped: this call did not finish; the result is unknown. It will not rerun after a restart.",
+      "interruptedBeforeBody": "Stopped while waiting for confirmation: nothing ran.",
+      "nonzero": "The command ended with non-zero exit code {{code}}.",
+      "noOutputYet": "No output yet.",
+      "omitted": "… {{n}} lines omitted …",
+      "truncated": "Output truncated: first {{head}} and last {{tail}} lines of {{total}}. The full output goes to the model only, not stored here.",
+      "moreLines": "… {{n}} more lines",
+      "runCmd": "Copilot wants to run a command",
+      "runPs": "Copilot wants to run a PowerShell command",
+      "editFile": "Copilot wants to edit a file",
+      "writeFile": "Copilot wants to create a file",
+      "overwriteFile": "Copilot wants to overwrite a file",
+      "lines": "{{n}} lines, scrollable; this is the whole command",
+      "change": "Change",
+      "scopeCommand": "The command runs with your account permissions: it can read and write outside the project folder and use the network. It runs only after you approve.",
+      "scopeWrite": "Writes this one file. Business data (library, annotations, …) cannot be changed this way.",
+      "scopeOverwrite": "The file already exists; its content will be replaced and not backed up.",
+      "deny": "Deny",
+      "allowSessionCmd": "Allow commands this session",
+      "allowSessionWrite": "Allow file writes this session",
+      "allowOnce": "Allow once",
+      "editInfo": "{{edits}} replacement(s) · +{{added}} −{{removed}} lines · other {{unchanged}} lines unchanged",
+      "newInfo": "New file · {{size}} · {{lines}} lines",
+      "overwriteInfo": "Overwrites an existing file · {{old}} → {{size}} · {{lines}} lines",
+      "result": {
+        "lines": "{{n}} lines",
+        "matches": "{{n}} matches",
+        "files": "{{n}} files",
+        "entries": "{{n}} entries",
+        "diff": "+{{added}} −{{removed}}",
+        "created": "new file",
+        "overwritten": "overwritten"
+      },
+      "exit": "exit {{code}}",
+      "resolved": "Resolves to",
+      "guardWhereConfig": "the config folder",
+      "guardWhereCache": "the global cache folder",
+      "guardDirectSettings": "The resolved path is inside {{where}} {{folder}}. The application's settings and caches are changed by the application (the settings page); Copilot's file writes cannot change them, so use the settings page.",
+      "guardWhereTools": "the helper-program folder",
+      "contextOmitted": "The file is too large: the lines around the change are not shown. Added and removed lines are shown whole.",
+      "editInfoBare": "{{edits}} replacement(s) · +{{added}} −{{removed}} lines"
     }
   },
   "mail": {
@@ -2631,6 +2697,18 @@
         "body": "The configured port {{configured}} was taken, so this run uses port {{actual}}; the links the CLI prints point to port {{configured}}. Once that port is free, restarting the app goes back to it.",
         "ownServer": "Another ArgelanderSpace is running on port {{configured}}; those links open it, not this window."
       }
+    },
+    "copilot": {
+      "permLabel": "File and command permission",
+      "permRisk": "Lets Copilot read and write files and run commands. Commands run with your account permissions; mail and paper text are untrusted and may carry instructions that trick it into running commands. Changing project data directly is not covered by the application’s data guarantees.",
+      "permOff": "Off",
+      "permAsk": "Ask each time",
+      "permAuto": "Automatic",
+      "permOffHint": "Off: Copilot has no file or command tools, only the application’s own business tools.",
+      "permAskHint": "Ask each time: reading and searching do not ask; running commands and changing files show a confirmation card each time, with “allow for this session”.",
+      "permAutoHint": "Automatic: no confirmation cards; every call still appears in the conversation as an expandable tool card.",
+      "autoWarnTitle": "Automatic is at your own risk",
+      "autoWarnBody": "Malicious text in mail or papers it reads could make Copilot run commands, read credentials and send them out. You can switch back to “Ask each time” at any time; Stop terminates a running command."
     }
   },
   "welcome": {

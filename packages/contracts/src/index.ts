@@ -9,6 +9,7 @@ export * from "./argument-ops.js";
 export * from "./config-defaults.js";
 export * from "./context-batch.js";
 export * from "./copilot.js";
+export * from "./copilot-file-tools.js";
 export * from "./copilot-history.js";
 export * from "./diagnostics-api.js";
 export * from "./discovery.js";

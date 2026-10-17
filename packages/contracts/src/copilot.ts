@@ -7,6 +7,12 @@ import {
 } from "./argument-ops.js";
 import { type ContextCoverage, ContextCoverageSchema } from "./context-batch.js";
 import {
+  CopilotCommandConfirmationSchema,
+  CopilotEditFileConfirmationSchema,
+  CopilotWriteFileConfirmationSchema,
+  FILE_TOOL_CONFIRMATION_ACTIONS,
+} from "./copilot-file-tools.js";
+import {
   type DiscoveryContextSummary,
   DiscoveryContextSummarySchema,
   DiscoveryPageSchema,
@@ -501,6 +507,9 @@ export const CopilotConfirmationSchema = z.union([
   CopilotDocDeleteConfirmationSchema,
   CopilotManuscriptDeleteConfirmationSchema,
   CopilotArgumentReplaceConfirmationSchema,
+  CopilotCommandConfirmationSchema,
+  CopilotEditFileConfirmationSchema,
+  CopilotWriteFileConfirmationSchema,
 ]);
 export type CopilotDocDeleteConfirmation = z.infer<typeof CopilotDocDeleteConfirmationSchema>;
 export type CopilotPlanConfirmation = z.infer<typeof CopilotPlanConfirmationSchema>;
@@ -522,9 +531,15 @@ export const CopilotConfirmationDecisionSchema = z
       "send_mail",
       "delete_mail",
       "move_mail",
+      ...FILE_TOOL_CONFIRMATION_ACTIONS,
     ]),
     objectId: z.string().min(1),
     baseRev: z.number().int().nonnegative(),
+    /**
+     * With an approval of a file or command tool call (copilot ticket 57): also allow every later call of its class
+     * (commands, or file writes) in this conversation until the service restarts. Only a real view's click sends it.
+     */
+    remember: z.boolean().optional(),
   })
   .strict();
 export type CopilotConfirmationDecision = z.infer<typeof CopilotConfirmationDecisionSchema>;
@@ -602,6 +617,13 @@ export const OperationConfirmationSchema = z.discriminatedUnion("action", [
       ...OperationConfirmationBase,
       action: z.literal("replace_argument_graph"),
       workId: z.string().min(1),
+    })
+    .strict(),
+  // A file or command tool call (copilot ticket 57): the record keeps no command and no path.
+  z
+    .object({
+      ...OperationConfirmationBase,
+      action: z.enum(FILE_TOOL_CONFIRMATION_ACTIONS),
     })
     .strict(),
 ]);

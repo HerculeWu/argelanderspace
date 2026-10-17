@@ -36,6 +36,7 @@ describe("the Settings schema", () => {
       ["log_level", null, "log_level", "enum", "info", "diagnostics", "edit", false],
       ["contact_email", null, "contact_email", "string", null, "services", "edit", false],
       ["tex_dir", null, "tex_dir", "string", null, "tex", "edit", false],
+      ["copilot_file_tools", null, "copilot_file_tools", "enum", "ask", "copilot", "edit", false],
       ["ui.language", "ui", "language", "enum", "zh-CN", "appearance", "edit", false],
       ["ui.theme", "ui", "theme", "enum", "dark", "appearance", "edit", false],
       ["ui.accent", "ui", "accent", "enum", "azure", "appearance", "edit", false],
@@ -166,6 +167,12 @@ describe("checkSettingValue", () => {
     ["tex_dir", "~/texlive/bin", "must_be_absolute"],
     ["tex_dir", "C:texlive", "must_be_absolute"],
     ["tex_dir", true, "wrong_type"],
+    // copilot_file_tools: off / ask / auto only (copilot ticket 57)
+    ["copilot_file_tools", "off", null],
+    ["copilot_file_tools", "ask", null],
+    ["copilot_file_tools", "auto", null],
+    ["copilot_file_tools", "yolo", "not_one_of"],
+    ["copilot_file_tools", true, "wrong_type"],
     // [ui]
     ["ui.language", "zh-CN", null],
     ["ui.language", "en", null],

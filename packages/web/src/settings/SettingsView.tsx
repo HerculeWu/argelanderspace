@@ -1,10 +1,13 @@
 import {
+  type CopilotFileToolsSetting,
+  DEFAULT_COPILOT_FILE_TOOLS,
   type DiagnosticsInfo,
   type HostRecentProject,
   type HostRecentProjects,
   isEmailAddress,
   isAbsoluteOnAnyPlatform,
   SETTING_KEYS,
+  SETTINGS_COPILOT_FILE_TOOLS,
   SETTINGS_GROUPS,
   SETTINGS_LOG_LEVELS,
   SETTINGS_SCHEMA,
@@ -607,6 +610,31 @@ function Tex({ state }: { state: RowState }) {
   );
 }
 
+/** The Copilot group's file and command permission (copilot ticket 57, ADR 0011): off, ask each time (the default), automatic. */
+function CopilotTools({ state }: { state: RowState }) {
+  const { t } = useTranslation();
+  const value = (SETTINGS_COPILOT_FILE_TOOLS as readonly unknown[]).includes(state.settings.values.copilot_file_tools)
+    ? (state.settings.values.copilot_file_tools as CopilotFileToolsSetting)
+    : DEFAULT_COPILOT_FILE_TOOLS;
+  const items: { v: CopilotFileToolsSetting; text: string }[] = [
+    { v: "off", text: t("settings.copilot.permOff") },
+    { v: "ask", text: t("settings.copilot.permAsk") },
+    { v: "auto", text: t("settings.copilot.permAuto") },
+  ];
+  const hint = value === "off" ? "settings.copilot.permOffHint" : value === "ask" ? "settings.copilot.permAskHint" : "settings.copilot.permAutoHint";
+  return (
+    <Row state={state} k="copilot_file_tools" label={t("settings.copilot.permLabel")}
+      hint={<><div data-ui="copilot-permission-hint">{t("settings.copilot.permRisk")}</div><div data-ui="copilot-permission-mode-hint">{t(hint)}</div></>}
+      control={(disabled) => (
+        <Segments ui="copilot-permission-option" label={t("settings.copilot.permLabel")} disabled={disabled} value={value}
+          items={items} onChange={(v) => void state.P.change("copilot_file_tools", { set: v }, HERE)} />
+      )}
+      extra={value === "auto" && (
+        <InlineMessage tone="warning" uiId="copilot-permission-auto-warning" title={t("settings.copilot.autoWarnTitle")}>{t("settings.copilot.autoWarnBody")}</InlineMessage>
+      )} />
+  );
+}
+
 /** An entry to a setting kept outside config.toml: the Copilot's providers, the Mail accounts. */
 function Entry({ kind }: { kind: "copilot" | "mail" }) {
   const { t } = useTranslation();
@@ -822,8 +850,11 @@ export function SettingsView(_props: { paneId?: number }) {
             {!FILLED.has(group) ? (
               <p className="st-note" data-ui="settings-group-empty">{t("settings.groupEmpty")}</p>
             ) : group === "copilot" || group === "mail" ? (
-              // Kept outside config.toml: shown whatever the state of the file.
-              <Entry kind={group} />
+              // The entry is kept outside config.toml: shown whatever the state of the file. The Copilot's permission is a key.
+              <>
+                <Entry kind={group} />
+                {group === "copilot" && settings && <CopilotTools state={{ P, settings, locked: settings.readonly || unreachable }} />}
+              </>
             ) : group === "cli" ? (
               // Not in config.toml either; the desktop app's only (the group is not listed in a browser).
               host?.mode === "desktop" && <CliGroup notify={P.notify} />

@@ -58,6 +58,7 @@ describe("the key list comes from the schema", () => {
       "log_level",
       "contact_email",
       "tex_dir",
+      "copilot_file_tools",
       "ui.language",
       "ui.theme",
       "ui.accent",

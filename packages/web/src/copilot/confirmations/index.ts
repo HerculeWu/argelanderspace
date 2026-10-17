@@ -1,4 +1,5 @@
 import type { CopilotConfirmation } from "@argelanderspace/contracts";
+import { editFile, runCommand, writeFile } from "./file-tools";
 import { deleteDoc } from "./delete-doc";
 import { deleteManuscript } from "./delete-manuscript";
 import { deletePlan } from "./delete-plan";
@@ -11,7 +12,7 @@ import { replaceTextReading } from "./replace-text-reading";
 export type { ConfirmationCardKind, ConfirmationGuards, ConfirmationProblemScope } from "./kind";
 
 /** Every kind of human confirmation card, in lookup order. */
-export const CONFIRMATION_KINDS = [sendMail, deleteMail, moveMail, replaceTextReading, deletePlan, deleteManuscript, deleteDoc, refreshArxivSource, replaceArgumentGraph] as const;
+export const CONFIRMATION_KINDS = [sendMail, deleteMail, moveMail, replaceTextReading, deletePlan, deleteManuscript, deleteDoc, refreshArxivSource, replaceArgumentGraph, runCommand, editFile, writeFile] as const;
 
 // Compile-time check: every confirmation the contracts define has a card kind.
 type KindCard<K> = K extends ConfirmationCardKind<infer C> ? C : never;

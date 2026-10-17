@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { ContextCoverage, Conversation, ConversationModel, CopilotConfirmation, ConversationSnapshot, CopilotOperation, CopilotProvider, CopilotViewAction, CopilotViewActionResult, PageContext, ThinkingLevel, WsCopilotEvent } from "@argelanderspace/contracts";
 import { type ArgumentContextSummary, type PdfContextSummary, summarizeArgumentPage, summarizeDiscoveryPage, summarizeMailPage, summarizePdfPage, summarizeReaderPage, summarizeWriterPage } from "@argelanderspace/contracts";
+import { FileToolCard } from "./FileToolCard";
 import { MailSendUndo, MailSummary } from "./MailConfirmation";
 import { type ConfirmationGuards, type ConfirmationProblemScope, kindOf } from "./confirmations";
 import { CopilotApiError, createConversation, decideConfirmation, fetchConversation, listConversations, postViewActionResult, publishPageContext, resumeConversation, selectConversationModel, sendCopilotMessage, stopConversation, undoOperation } from "../api/copilot";
@@ -24,6 +25,7 @@ const UNREADABLE_COPY = {
   manuscript: "copilot.confirmation.unreadableManuscript",
   mail: "copilot.confirmation.unreadableMail",
   argument: "copilot.confirmation.unreadableArgument",
+  file: "copilot.confirmation.unreadableFile",
 } as const satisfies Record<ConfirmationProblemScope, string>;
 
 export const OPERATION_ACTION_KEYS = {
@@ -68,7 +70,7 @@ const OPERATION_STATUS_KEYS = {
   ok: "copilot.operations.status.ok", noop: "copilot.operations.status.noop", conflict: "copilot.operations.status.conflict", not_found: "copilot.operations.status.not_found",
   rejected: "copilot.operations.status.rejected", invalid: "copilot.operations.status.invalid", not_displayed: "copilot.operations.status.not_displayed",
   unsupported: "copilot.operations.status.unsupported", unknown: "copilot.operations.status.unknown", error: "copilot.operations.status.error",
-  confirmation_required: "copilot.operations.status.confirmation_required", declined: "copilot.operations.status.declined", expired: "copilot.operations.status.expired", pending: "copilot.operations.status.pending",
+  confirmation_required: "copilot.operations.status.confirmation_required", declined: "copilot.operations.status.declined", expired: "copilot.operations.status.expired", interrupted: "copilot.operations.status.interrupted", pending: "copilot.operations.status.pending",
 } as const;
 const THINKING_KEYS = { off: "copilot.thinkingLevels.off", minimal: "copilot.thinkingLevels.minimal", low: "copilot.thinkingLevels.low", medium: "copilot.thinkingLevels.medium", high: "copilot.thinkingLevels.high", xhigh: "copilot.thinkingLevels.xhigh", max: "copilot.thinkingLevels.max" } as const;
 const RUN_STATUS_KEYS = { "waiting-for-user": "copilot.status.waiting-for-user", running: "copilot.status.running", stopping: "copilot.status.stopping", completed: "copilot.status.completed", failed: "copilot.status.failed", stopped: "copilot.status.stopped", interrupted: "copilot.status.interrupted" } as const;
@@ -459,12 +461,12 @@ export function Copilot({ open, context, onClose, onViewAction, onOpenPanel, set
     }}>
       {!snapshot?.messages.length && <div className="copilot-empty"><Icon name="sparkles" /><h2>{t("copilot.emptyTitle")}</h2><p>{t("copilot.empty")}</p></div>}
       {snapshot?.messages.map((message, index) => { const continued = message.role === "assistant" && snapshot.messages[index - 1]?.role === "assistant"; return <article key={message.id} className={`copilot-message copilot-message-${message.role}${continued ? " copilot-message-continued" : ""}`} data-ui="copilot-message" data-ui-key={message.id}>
-        {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item, at) => <span key={at} className="copilot-attachment" data-ui="copilot-message-attachment" title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.thinking && <ThinkingBlock text={message.thinking} />}{message.operations && message.operations.length > 0 && <OperationRecord operations={message.operations} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
+        {message.role === "user" ? <><div className={message.kind === "resume" ? "copilot-user copilot-user-resume" : "copilot-user"} data-ui={message.kind === "resume" ? "copilot-resume-marker" : undefined}>{message.kind === "resume" ? t("copilot.resumed") : message.text}</div>{!!message.attachments?.length && <div className="copilot-attachments sent" data-ui="copilot-message-attachments">{message.attachments.map((item, at) => <span key={at} className="copilot-attachment" data-ui="copilot-message-attachment" title={item.filename}><Icon name="paperclip" /><span className="copilot-attachment-name">{item.filename}</span></span>)}</div>}{message.pending && <div className="copilot-queued" data-ui="copilot-queued" role="status">{t("copilot.queued")}</div>}</> : <>{!continued && <div className="copilot-assistant-label">{t("copilot.title")}</div>}{message.thinking && <ThinkingBlock text={message.thinking} />}{message.operations && message.operations.length > 0 && <MessageOperations operations={message.operations} confirmations={snapshot.confirmations ?? []} renderConfirmation={(confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />} />}{message.text && <><div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(message.text) }} /><ActionButton unstyled mode="icon" iconName="copy" label={t("copilot.copy")} data-ui="copilot-copy" className="btn icon ghost" onClick={() => void failCopy(message.text)} /></>}</>}
         {message.context && <details className="copilot-message-context" data-ui="copilot-message-context"><summary>{message.context.objects[0]?.name ?? viewName(message.context?.view ?? "")}</summary><p>{t(`copilot.${messageContextStatus(message.context)}`)}</p>{message.context.library && <LibrarySummary summary={message.context.library} />}{message.context.discovery && <DiscoverySummary summary={message.context.discovery} />}{message.context.argument && <ArgumentSummary summary={message.context.argument} />}{message.context.coverage && <CoverageSummary coverage={message.context.coverage} />}{message.context.reader && <ReaderSummary summary={message.context.reader} title={message.context.objects[0]?.name} sent={!message.context.coverage || message.context.coverage.status === "complete"} />}{message.context.pdf && <PdfSummary summary={message.context.pdf} title={message.context.objects[0]?.name} />}{message.context.writer && <WriterSummary summary={message.context.writer} title={message.context.objects[0]?.name} />}{message.context.mail && <MailSummary summary={message.context.mail} />}{message.context.view !== "mail" && message.context.objects.map((object) => <p key={object.id}>{message.context?.view === "library" || message.context?.view === "doc" ? (object.name ?? object.id) : t("copilot.objectVersion", { name: object.name ?? viewName(message.context?.view ?? ""), rev: object.rev })}</p>)}</details>}
       </article>; })}
       {(snapshot?.stream || snapshot?.live?.thinking) && <article className="copilot-message" data-ui="copilot-stream"><div className="copilot-assistant-label">{t("copilot.title")}</div>{snapshot.live?.thinking && <ThinkingBlock text={snapshot.live.thinking} live={snapshot.live.phase === "thinking"} />}{snapshot.stream && <div className="copilot-markdown" dangerouslySetInnerHTML={{ __html: copilotMarkdown(snapshot.stream) }} />}</article>}
-      {snapshot?.confirmations?.map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
-      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t(UNREADABLE_COPY[decisionProblem.scope]) : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : decisionProblem.scope === "mail" ? "Mail" : decisionProblem.scope === "argument" ? "Argument" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
+      {snapshot?.confirmations?.filter((confirmation) => !inlineConfirmation(snapshot, confirmation)).map((confirmation) => <ConfirmationCard key={confirmation.id} confirmation={confirmation} viewId={context.viewId} connected={connected} guards={cardGuards} onProblem={setDecisionProblem} onSettled={() => void refreshCurrent.current?.()} />)}
+      {decisionProblem && <div className="copilot-notice error" data-ui="copilot-confirmation-problem" role="alert"><span>{decisionProblem.kind === "unreadable" ? t(UNREADABLE_COPY[decisionProblem.scope]) : t(`copilot.confirmation.${decisionProblem.kind}${decisionProblem.scope === "plan" ? "" : decisionProblem.scope === "deleteDoc" ? "DeleteDoc" : decisionProblem.scope === "manuscript" ? "Manuscript" : decisionProblem.scope === "mail" ? "Mail" : decisionProblem.scope === "argument" ? "Argument" : decisionProblem.scope === "file" ? "File" : "Doc"}`)}</span><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-confirmation-problem-dismiss" className="btn icon ghost" onClick={() => setDecisionProblem(null)} /></div>}
       <div className="copilot-run-live" role="status" aria-atomic="false" data-ui="copilot-run-live">{((running && !waiting) || stopping) && <div className="copilot-run-card" data-ui="copilot-running"><span className="copilot-pulse" aria-hidden="true" /><LiveRunStatus live={stopping ? null : snapshot?.live ?? null} stopping={stopping} actionLabel={(operation) => operation.action && operation.action in OPERATION_ACTION_KEYS ? operationActionLabel(t, operation.tool, operation.action) : null} />{elsewhere && <small data-ui="copilot-work-continues">{workObject?.name ? t("copilot.workContinues", { name: workObject.name }) : t("copilot.workContinuesOriginal")}</small>}</div>}</div>
       <MailSendUndo operations={(snapshot?.messages ?? []).flatMap((message) => message.operations ?? [])} />
       {undoable && <div className="copilot-notice" data-ui="copilot-undo" role="status"><span>{t("plan.undo.deleted", { title: undoable.label ?? "" })}</span><Button data-ui="copilot-undo-delete" onClick={() => void undo()}>{t("plan.undo.action")}</Button><ActionButton unstyled mode="icon" iconName="x" label={t("plan.action.dismissUndo")} tooltip={t("plan.action.dismissUndo")} data-ui="copilot-undo-dismiss" className="btn icon ghost" onClick={() => setUndone((previous) => new Set(previous).add(undoable.id))} /></div>}
@@ -526,23 +528,51 @@ function ConfirmationCard({ confirmation, viewId, connected, onSettled, onProble
   // Unreachable within the contracts (every member of the union has a kind; `confirmations/index.ts` checks that at compile time):
   // only an older bundle meeting a newer action lands here, and drawing nothing is safer than passing it off as another card.
   if (!kind) return null;
-  const decide = async (decision: "approve" | "decline") => {
+  const decide = async (decision: "approve" | "decline", remember = false) => {
     if (guard.current) return;
     // The page's own guard first (the open Doc's leave guard, an open manuscript's unsaved edits); a refusal keeps the card.
     if (decision === "approve" && kind.beforeApprove && !kind.beforeApprove(confirmation, guards)) return;
     guard.current = true; setBusy(true); onProblem(null);
-    try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev }); }
+    try { await decideConfirmation(confirmation.id, { decision, viewId, action: confirmation.action, objectId: confirmation.object.id, baseRev: confirmation.baseRev, ...(remember ? { remember: true } : {}) }); }
     catch (reason) { onProblem({ kind: reason instanceof CopilotApiError && reason.code === "stale" ? "expired" : reason instanceof CopilotApiError && reason.code === "unreadable" ? "unreadable" : "failed", scope: kind.problemScope }); }
     finally { guard.current = false; setBusy(false); onSettled(); }
   };
   return <section className="copilot-confirmation" data-ui="copilot-confirmation" data-action={confirmation.action} aria-label={t("copilot.confirmation.needed")}>
     <div className="copilot-confirmation-warn" role="status"><Icon name="triangle-alert" />{t("copilot.confirmation.needed")}</div>
     <kind.Body card={confirmation} />
-    <div className="copilot-confirmation-actions">
-      <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
-      <Button appearance="primary" tone={kind.tone} data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{kind.confirmLabel(t, confirmation)}</Button>
-    </div>
+    {kind.session
+      ? <div className="copilot-confirmation-actions copilot-tool-actions">
+        <Button data-ui="copilot-confirmation-deny" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("copilot.tools.deny")}</Button>
+        <Button data-ui="copilot-confirmation-allow-session" disabled={busy || !connected} onClick={() => void decide("approve", true)}>{kind.session.label(t)}</Button>
+        <Button appearance="primary" tone={kind.tone} data-ui="copilot-confirmation-allow-once" disabled={busy || !connected} onClick={() => void decide("approve")}>{kind.confirmLabel(t, confirmation)}</Button>
+      </div>
+      : <div className="copilot-confirmation-actions">
+        <Button data-ui="copilot-confirmation-cancel" disabled={busy || !connected} onClick={() => void decide("decline")}>{t("common.cancel")}</Button>
+        <Button appearance="primary" tone={kind.tone} data-ui="copilot-confirmation-confirm" disabled={busy || !connected} onClick={() => void decide("approve")}>{kind.confirmLabel(t, confirmation)}</Button>
+      </div>}
   </section>;
+}
+
+/** File and command calls are shown one card each (ticket 57); the other operations of a message stay one grouped record. */
+const isFileToolOperation = (operation: CopilotOperation) => operation.fileTool !== undefined;
+/** A file or command confirmation sits where its call is, in the message that requested it. */
+const FILE_TOOL_ACTIONS: ReadonlySet<string> = new Set(["run_command", "edit_file", "write_file"]);
+function inlineConfirmation(snapshot: ConversationSnapshot, confirmation: CopilotConfirmation): boolean {
+  return FILE_TOOL_ACTIONS.has(confirmation.action) && snapshot.messages.some((message) => message.operations?.some((operation) => operation.id === confirmation.toolCallId && isFileToolOperation(operation)));
+}
+function MessageOperations({ operations, confirmations, renderConfirmation }: { operations: CopilotOperation[]; confirmations: CopilotConfirmation[]; renderConfirmation: (confirmation: CopilotConfirmation) => JSX.Element }) {
+  const parts: JSX.Element[] = [];
+  let group: CopilotOperation[] = [];
+  const flush = () => { if (group.length) parts.push(<OperationRecord key={`group-${group[0]?.id}`} operations={group} />); group = []; };
+  for (const operation of operations) {
+    if (!isFileToolOperation(operation)) { group.push(operation); continue; }
+    flush();
+    // The waiting call is its confirmation card; once decided, the same place shows the tool card.
+    const waiting = FILE_TOOL_ACTIONS.size && confirmations.find((confirmation) => confirmation.toolCallId === operation.id && FILE_TOOL_ACTIONS.has(confirmation.action));
+    parts.push(waiting ? renderConfirmation(waiting) : <FileToolCard key={operation.id} operation={operation} />);
+  }
+  flush();
+  return <>{parts}</>;
 }
 
 function OperationRecord({ operations }: { operations: CopilotOperation[] }) {

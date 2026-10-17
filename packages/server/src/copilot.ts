@@ -17,6 +17,7 @@ import {
   type CopilotContextReference,
   CopilotContextReferenceSchema,
   type CopilotConversationList,
+  type CopilotFileToolsSetting,
   type CopilotLive,
   type CopilotMessage,
   type CopilotMessageRequest,
@@ -31,6 +32,8 @@ import {
   copilotContextObjects,
   DELIVERY_LEDGER_TYPE,
   DeliveryLedgerEntrySchema,
+  FILE_TOOL_NAMES,
+  type FileToolAllowClass,
   IMAGE_BYTES_PER_TOKEN,
   imageTokens,
   mailKey,
@@ -83,6 +86,13 @@ import {
   type ConfirmationTrigger,
   createConfirmationKinds,
 } from "./copilot-confirmations/index.js";
+import {
+  createFileTools,
+  fileToolRowFor,
+  isFileToolName,
+  type ProtectedFolder,
+  settledFileToolCall,
+} from "./copilot-file-tools.js";
 import { atomicCopilotFile, readCopilotHistory, saveCopilotHistory } from "./copilot-history.js";
 import {
   annotateCoverage,
@@ -199,6 +209,11 @@ interface Loaded {
   live?: LiveState;
   lock: AsyncLock;
   pending?: Promise<void>;
+  /**
+   * "Allow for this session" of the file and command tools (copilot ticket 57), per class. Set only by the real view's
+   * click on a card (`decide`), never by a tool; in memory only, so a restart asks again.
+   */
+  fileAllow: Record<FileToolAllowClass, boolean>;
 }
 interface LiveState {
   /** Calls this run has submitted and not yet saved a result for: shown as pending, never as unknown. */
@@ -362,6 +377,17 @@ export interface Workbench {
   mail?: MailOpDeps;
   /** The argument graph store, its lock and the library lookup of the page's PUT (argument graph ticket 09); absent in headless hosts. */
   argument?: ArgumentOpDeps;
+  /**
+   * Copilot's file and command tools (copilot ticket 57, ADR 0011): where commands run (the Project folder), the
+   * permission setting as it is now, and the folders an edit or write may not reach. Absent in headless hosts: then
+   * the tools are not offered at all.
+   */
+  fileTools?: {
+    cwd: string;
+    permission: () => CopilotFileToolsSetting;
+    protectedFolders: () => ProtectedFolder[];
+    platform?: NodeJS.Platform;
+  };
   /** Milliseconds a view action may wait for its bound browser to report (default 10 s). */
   viewActionTimeoutMs?: number;
   /** Milliseconds a view action waits for an offline bound browser to reconnect (default 30 s). */
@@ -712,6 +738,7 @@ export class CopilotHost {
     saveCopilotHistory(this.history(record), manager);
     this.save(record);
     this.loaded.set(id, {
+      fileAllow: { command: false, write: false },
       record,
       manager,
       stream: "",
@@ -744,11 +771,13 @@ export class CopilotHost {
       if (record.id !== id) throw new CopilotError("storage");
       const entries = readCopilotHistory(this.history(record), record.sessionId);
       const manager = SessionManager.inMemory(this.cwd, { id: record.sessionId }, entries);
-      if (isLive(record.run?.status) || record.run?.status === "stopping") {
+      const wasLive = isLive(record.run?.status) || record.run?.status === "stopping";
+      if (record.run && wasLive) {
         record.run = { ...record.run, status: "interrupted", error: "interrupted" };
         this.save(record);
       }
       const loaded: Loaded = {
+        fileAllow: { command: false, write: false },
         record,
         manager,
         stream: "",
@@ -758,6 +787,16 @@ export class CopilotHost {
         historyBytes: readFileSync(this.history(record), "utf8"),
       };
       this.loaded.set(id, loaded);
+      // A file or command call that never got a result (the process ended while it waited or ran) is settled at once as
+      // interrupted: it is shown so from the start, and nothing reruns it. Best effort; the next run settles the rest.
+      if (wasLive) {
+        try {
+          this.settleOrphanCalls(loaded, true);
+          this.flush(loaded);
+        } catch {
+          /* the settled calls stay in memory and are saved with the next write */
+        }
+      }
       return loaded;
     } catch {
       throw new CopilotError("storage");
@@ -857,6 +896,13 @@ export class CopilotHost {
               outcomes.has(part.id) ? outcomes.get(part.id) : journaled?.result?.operation
             );
             const action = ledger.gone.get(deliveryKey("tool", part.id));
+            const fileRow = stored.success
+              ? null
+              : fileToolRowFor(
+                  part.name,
+                  part.arguments,
+                  this.workbench?.fileTools?.cwd ?? this.cwd
+                );
             operations.push(
               stored.success
                 ? this.withLiveJob(
@@ -867,10 +913,25 @@ export class CopilotHost {
                 : {
                     id: part.id,
                     tool: part.name,
-                    action:
-                      typeof part.arguments?.action === "string"
+                    action: fileRow
+                      ? fileRow.kind
+                      : typeof part.arguments?.action === "string"
                         ? part.arguments.action
                         : "unknown",
+                    ...(fileRow
+                      ? {
+                          fileTool: {
+                            ...fileRow,
+                            ...(this.fileToolStarts.has(`${loaded.record.id}:${part.id}`)
+                              ? {
+                                  startedAt: this.fileToolStarts.get(
+                                    `${loaded.record.id}:${part.id}`
+                                  ),
+                                }
+                              : {}),
+                          },
+                        }
+                      : {}),
                     // No result at all: the outcome is unknown, unless the saved record proves the call
                     // is only waiting for the user (or its confirmation ended without any write). A result
                     // the SDK produced itself (for example schema validation) carries no details and wrote nothing.
@@ -1371,6 +1432,9 @@ export class CopilotHost {
       confirmation.baseRev !== body.baseRev
     )
       throw new CopilotError("stale");
+    // "Allow for this session" exists for the file and command cards only, and only goes with an approval.
+    if (body.remember && (!kind.remembers || wanted !== "approved"))
+      throw new CopilotError("invalid_input");
     if (wanted === "approved") {
       const check = await kind.check(confirmation);
       // The check awaited: another decision, a Stop or a recheck may have settled this card meanwhile. Never append a
@@ -1403,7 +1467,14 @@ export class CopilotHost {
     } catch (error) {
       throw this.failure(error);
     }
-    this.settleConfirmation(id, { outcome: wanted });
+    // The standing allowance is set here, by the click, before the tool hears the answer; the tool can only read it.
+    if (body.remember && kind.remembers) pending.loaded.fileAllow[kind.remembers] = true;
+    this.settleConfirmation(
+      id,
+      wanted === "approved" && body.remember
+        ? { outcome: "approved", remember: true }
+        : { outcome: wanted }
+    );
     return { status: wanted };
   }
   private registerUndo(
@@ -1643,7 +1714,7 @@ export class CopilotHost {
     ].join("\n\n");
   }
   /** A result for every call the interrupted run made, so the next request has no dangling tool call. */
-  private settleOrphanCalls(loaded: Loaded): void {
+  private settleOrphanCalls(loaded: Loaded, fileToolsOnly = false): void {
     const entries = loaded.manager.getEntries();
     const answered = new Set<string>();
     for (const entry of entries)
@@ -1654,6 +1725,7 @@ export class CopilotHost {
       if (entry.type !== "message" || entry.message.role !== "assistant") continue;
       for (const part of entry.message.content) {
         if (part.type !== "toolCall" || answered.has(part.id)) continue;
+        if (fileToolsOnly && !isFileToolName(part.name)) continue;
         const done = journal.find(
           (item) => item.toolCallId === part.id && item.phase === "done" && item.result
         );
@@ -1665,16 +1737,27 @@ export class CopilotHost {
             : null;
         const expired = confirmed === "expired";
         const declined = confirmed === "declined";
-        const operation = done?.result?.operation ?? {
-          id: part.id,
-          tool: part.name,
-          action: typeof part.arguments?.action === "string" ? part.arguments.action : "unknown",
-          status: expired
-            ? ("expired" as const)
-            : declined
-              ? ("declined" as const)
-              : ("unknown" as const),
-        };
+        // A file or command call is never rerun: with no result it is interrupted (or never started, or declined).
+        const interruptedFile = done
+          ? null
+          : settledFileToolCall(
+              part.id,
+              part.name,
+              part.arguments,
+              this.workbench?.fileTools?.cwd ?? this.cwd,
+              declined ? "declined" : expired ? "not_started" : "interrupted"
+            );
+        const operation = interruptedFile?.operation ??
+          done?.result?.operation ?? {
+            id: part.id,
+            tool: part.name,
+            action: typeof part.arguments?.action === "string" ? part.arguments.action : "unknown",
+            status: expired
+              ? ("expired" as const)
+              : declined
+                ? ("declined" as const)
+                : ("unknown" as const),
+          };
         // A Doc replacement or upload (library tool) is not a delete; a Doc delete and a Plan delete are.
         const outcomeWord =
           part.name === TEXT_TOOL_NAME
@@ -1685,6 +1768,7 @@ export class CopilotHost {
                 ? "replaced and no job was started"
                 : "deleted";
         const payload =
+          interruptedFile?.payload ??
           done?.result?.payload ??
           (declined
             ? {
@@ -2021,7 +2105,7 @@ export class CopilotHost {
   private systemMissingBytes(loaded: Loaded, mailOn: boolean): number {
     const raw = loaded.manager.getEntries();
     if (raw.some((entry) => entry.type === "message" && entry.message.role === "system")) return 0;
-    return this.systemFootprint(mailOn);
+    return this.systemFootprint(mailOn) + this.fileToolsFootprint();
   }
   /** The one application resource loader (copilot-resources.ts) for a session with these tools. */
   private resources(
@@ -2093,6 +2177,33 @@ export class CopilotHost {
     return { ...page, mail: null, status: page.view === "mail" ? "unavailable" : page.status };
   }
 
+  /** When each running file or command call began (key: conversation id and call id), for the card's clock. */
+  private readonly fileToolStarts = new Map<string, string>();
+  /** What the file and command tools' schemas add to the system side of the window while they are offered. */
+  private fileFootprint?: number;
+  private fileToolsFootprint(): number {
+    const config = this.workbench?.fileTools;
+    if (!config || config.permission() === "off") return 0;
+    if (this.fileFootprint === undefined) {
+      let bytes = 0;
+      try {
+        const { tools } = createFileTools({
+          cwd: config.cwd,
+          permission: () => "ask",
+          protectedFolders: () => [],
+          allowed: () => false,
+          admitting: () => true,
+          ...(config.platform ? { platform: config.platform } : {}),
+        });
+        for (const { name, description, parameters } of tools)
+          bytes += Buffer.byteLength(JSON.stringify({ name, description, parameters }));
+      } catch {
+        bytes = 12 * 1024;
+      }
+      this.fileFootprint = bytes;
+    }
+    return this.fileFootprint;
+  }
   private readonly footprints = new Map<boolean, number>();
   private systemFootprint(mounted = this.mailMounted()): number {
     const known = this.footprints.get(mounted);
@@ -2523,6 +2634,29 @@ export class CopilotHost {
             },
           })
         : undefined;
+    const fileTools =
+      workbench?.fileTools && planTool && workspaceTool
+        ? createFileTools({
+            cwd: workbench.fileTools.cwd,
+            permission: workbench.fileTools.permission,
+            protectedFolders: workbench.fileTools.protectedFolders,
+            ...(workbench.fileTools.platform ? { platform: workbench.fileTools.platform } : {}),
+            // Read-only here: only a real view's click on a card sets the standing allowance (`decide`).
+            allowed: (kind) => loaded.fileAllow[kind],
+            confirm: this.confirmationPort(loaded, state),
+            admitting: () => !this.closed && !state.stopRequested,
+            track: (work) => {
+              state.inflight.add(work);
+              const forget = () => state.inflight.delete(work);
+              work.then(forget, forget);
+              return work;
+            },
+            lifecycle: {
+              started: (id, at) => this.fileToolStarts.set(`${loaded.record.id}:${id}`, at),
+              ended: (id) => this.fileToolStarts.delete(`${loaded.record.id}:${id}`),
+            },
+          })
+        : undefined;
     const toolNames =
       planTool && workspaceTool
         ? [
@@ -2534,6 +2668,7 @@ export class CopilotHost {
             ...(textTool ? [TEXT_TOOL_NAME] : []),
             ...(mailTool ? [MAIL_TOOL_NAME] : []),
             ...(argumentTool ? [ARGUMENT_TOOL_NAME] : []),
+            ...(fileTools?.names ?? []),
           ]
         : [];
     const { session } = await pi.createAgentSession({
@@ -2554,6 +2689,7 @@ export class CopilotHost {
               ...(textTool ? [textTool] : []),
               ...(mailTool ? [mailTool] : []),
               ...(argumentTool ? [argumentTool] : []),
+              ...(fileTools?.tools ?? []),
             ],
           }
         : { tools: [], customTools: [], noTools: "all" as const }),
@@ -2890,6 +3026,10 @@ export class CopilotHost {
           tool: f.oneOf(COPILOT_TOOL_NAMES, event.toolName),
           result: f.oneOf(COPILOT_TOOL_RESULTS, category),
           ...(began === undefined ? {} : { duration_ms: f.ms(performance.now() - began) }),
+          // A command's exit code (copilot ticket 57): a number only, never the command or its output.
+          ...(fileToolExitCode(event.result) === undefined
+            ? {}
+            : { exit_code: f.num(fileToolExitCode(event.result) as number) }),
         };
         // A call that did what was asked is one of many (debug); every other end — refused, conflicting, failed,
         // thrown, nothing to do, waiting for the user — is kept at the default level.
@@ -3087,6 +3227,7 @@ export class CopilotHost {
 
 /** The tools a run can be given (each tool's file names its own). */
 const COPILOT_TOOL_NAMES = [
+  ...FILE_TOOL_NAMES,
   PLAN_TOOL_NAME,
   WORKSPACE_TOOL_NAME,
   LIBRARY_TOOL_NAME,
@@ -3117,6 +3258,7 @@ const COPILOT_TOOL_RESULTS = allOf<CopilotToolResult>()([
   "pending",
   "declined",
   "expired",
+  "interrupted",
   "thrown",
   "other",
 ]);
@@ -3159,6 +3301,13 @@ const COPILOT_RUN_ERROR_CODES = allOf<CopilotRunErrorCode>()([
   "transient",
   "quota",
 ]);
+/** The exit code a file or command tool's operation row carries; nothing else of it is read. */
+function fileToolExitCode(result: unknown): number | undefined {
+  const code = (result as { details?: { fileTool?: { exitCode?: unknown } } } | null | undefined)
+    ?.details?.fileTool?.exitCode;
+  return typeof code === "number" && Number.isInteger(code) ? code : undefined;
+}
+
 /** Only the status word of the result's operation row is read: nothing else of what the tool returned. */
 function toolResultCategory(result: unknown, isError: boolean): CopilotToolResult {
   if (isError) return "thrown";

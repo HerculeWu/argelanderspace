@@ -73,6 +73,13 @@ const def = <const D extends SettingDef>(d: D): D => d;
 
 /** The levels of the user log, lowest first. */
 export const SETTINGS_LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
+/**
+ * Copilot's file and command tools (ADR 0011): `off` registers none, `ask` asks the real user before a command or a
+ * file write (the default), `auto` never asks. Reading and searching files never asks.
+ */
+export const SETTINGS_COPILOT_FILE_TOOLS = ["off", "ask", "auto"] as const;
+export type CopilotFileToolsSetting = (typeof SETTINGS_COPILOT_FILE_TOOLS)[number];
+export const DEFAULT_COPILOT_FILE_TOOLS: CopilotFileToolsSetting = "ask";
 export const SETTINGS_UI_LANGUAGES = ["zh-CN", "en"] as const;
 /** The page's language when config.toml names none (the browser is not asked); the desktop host reports it too. */
 export const DEFAULT_UI_LANGUAGE: (typeof SETTINGS_UI_LANGUAGES)[number] = "zh-CN";
@@ -179,6 +186,16 @@ export const SETTINGS_SCHEMA = {
     type: { kind: "string", path: "absolute", blankIsUnset: true },
     default: null,
     group: "tex",
+    ui: "edit",
+    restart: false,
+  }),
+  // Read fresh at every run and every tool call (copilot ticket 57); `off` is applied from the next run.
+  copilot_file_tools: def({
+    table: null,
+    name: "copilot_file_tools",
+    type: { kind: "enum", values: SETTINGS_COPILOT_FILE_TOOLS },
+    default: DEFAULT_COPILOT_FILE_TOOLS,
+    group: "copilot",
     ui: "edit",
     restart: false,
   }),

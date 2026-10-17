@@ -3,7 +3,11 @@
  * the user sees, the durable "requested"/"resolved" record fields, the resume line, and the click/background check.
  * The host keeps only persistence, the wait and the decision sequence; it looks a kind up by `action`.
  */
-import type { CopilotConfirmation, OperationConfirmation } from "@argelanderspace/contracts";
+import type {
+  CopilotConfirmation,
+  FileToolAllowClass,
+  OperationConfirmation,
+} from "@argelanderspace/contracts";
 import type { ConfirmationRequest } from "../copilot-tool-kit.js";
 
 export type ConfirmationAction = ConfirmationRequest["action"];
@@ -47,6 +51,11 @@ export interface ConfirmationKind<A extends ConfirmationAction = ConfirmationAct
   revalidateOn: ConfirmationTrigger | null;
   /** Only the view the run is bound to may decide it (the rule of ticket 12). */
   boundToNavView: boolean;
+  /**
+   * File and command tools (copilot ticket 57): the class of call an approval can be extended to for the rest of the
+   * conversation. Only a real view's click can ask for it; the tool never sees an id or a way to answer.
+   */
+  remembers?: FileToolAllowClass;
 }
 
 /** Every kind, keyed by its action. */

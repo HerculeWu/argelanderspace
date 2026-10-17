@@ -2,6 +2,7 @@ import type { Workbench } from "../copilot.js";
 import { deleteDocKind } from "./delete-doc.js";
 import { deleteManuscriptKind } from "./delete-manuscript.js";
 import { deletePlanKind } from "./delete-plan.js";
+import { editFileKind, runCommandKind, writeFileKind } from "./file-tools.js";
 import type { ConfirmationKinds } from "./kind.js";
 import { deleteMailKind, moveMailKind } from "./mail-message.js";
 import { refreshArxivSourceKind } from "./refresh-arxiv-source.js";
@@ -29,5 +30,8 @@ export function createConfirmationKinds(workbench: Workbench | undefined): Confi
     delete_doc: deleteDocKind(workbench),
     refresh_arxiv_source: refreshArxivSourceKind(workbench),
     replace_argument_graph: replaceArgumentGraphKind(workbench),
+    run_command: runCommandKind,
+    edit_file: editFileKind,
+    write_file: writeFileKind,
   };
 }
