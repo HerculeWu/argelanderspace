@@ -3,6 +3,10 @@
  * that takes text, so there is no way to hand it a sentence built from runtime values. Where the records go is the
  * sink, which is injected: a file per process run in production (files.ts); tests bring their own.
  *
+ * The catalog is a table: each event names its fields and the constructor each is made by, so the types refuse a
+ * field the event does not have, or one of another kind, wherever the fields object was put together. The run-time
+ * checks do not rely on that: they are the same whatever the types let through.
+ *
  * Logging never throws and never fails its caller: an unknown event, a malformed field or a sink that cannot write
  * costs at most the record.
  */
@@ -29,26 +33,72 @@ export interface LogSink {
 /** A sink that keeps nothing; a logger on it does no work at all. */
 export const discardSink: LogSink = { write() {} };
 
+/** What a record's fields are at run time: any names, each a field or left out. */
 export type LogFields = Readonly<Record<string, LogField | undefined>>;
 
-/** `E` is the catalog: the event names this logger accepts. */
-export interface Logger<E extends string> {
-  debug(event: E, fields?: LogFields): void;
-  info(event: E, fields?: LogFields): void;
-  warn(event: E, fields?: LogFields): void;
-  error(event: E, fields?: LogFields): void;
+/** One of the constructors of `f`. */
+export type LogFieldConstructor = (...args: never) => LogField;
+/**
+ * The fields of one event: each name with the constructor of `f` it is made by, or several when either makes it. A
+ * table whose names are not listed (typed `Record<string, …>`) takes any name.
+ */
+export type LogFieldTable = Readonly<
+  Record<string, LogFieldConstructor | readonly LogFieldConstructor[]>
+>;
+/** The catalog: every event name a logger accepts, with its fields. */
+export type LogEventTable = Readonly<Record<string, LogFieldTable>>;
+/** The event names of a catalog. */
+export type LogEvent<T extends LogEventTable> = Extract<keyof T, string>;
+
+// Not `ReturnType`: a constructor here has `never` parameters, and `ReturnType` asks for `any` ones, which they are not.
+type Made<C> = C extends (...args: never) => infer R ? R : never;
+type FieldMadeBy<C> = C extends readonly LogFieldConstructor[] ? Made<C[number]> : Made<C>;
+/** The fields an event of the catalog takes, each optional; for several events, those of any one of them. */
+export type LogEventFields<T extends LogEventTable, E extends LogEvent<T>> = E extends unknown
+  ? { readonly [N in keyof T[E]]?: FieldMadeBy<T[E][N]> | undefined }
+  : never;
+
+// Every key of every member of a union: `keyof` of a union has only the keys all members share, so a name that only
+// one branch of a conditional spread has would get past a plain `keyof`.
+type KeysOf<F> = F extends unknown ? keyof F : never;
+/** `F` itself when it has no name `A` lacks; otherwise each such name is required to be `never`, which no field is. */
+type Listed<F, A> = [Exclude<KeysOf<F>, KeysOf<A>>] extends [never]
+  ? F
+  : F & { readonly [N in Exclude<KeysOf<F>, KeysOf<A>>]: never };
+
+/** `T` is the catalog: the event names this logger accepts, and the fields each of them takes. */
+export interface Logger<T extends LogEventTable> {
+  debug<E extends LogEvent<T>, F extends LogEventFields<T, E>>(
+    event: E,
+    fields?: Listed<F, LogEventFields<T, E>>
+  ): void;
+  info<E extends LogEvent<T>, F extends LogEventFields<T, E>>(
+    event: E,
+    fields?: Listed<F, LogEventFields<T, E>>
+  ): void;
+  warn<E extends LogEvent<T>, F extends LogEventFields<T, E>>(
+    event: E,
+    fields?: Listed<F, LogEventFields<T, E>>
+  ): void;
+  error<E extends LogEvent<T>, F extends LogEventFields<T, E>>(
+    event: E,
+    fields?: Listed<F, LogEventFields<T, E>>
+  ): void;
   /** The lowest level that is written. */
   level(): LogLevel;
   /** Takes effect from the next record; a value that is not a level is ignored. */
   setLevel(level: LogLevel): void;
 }
 
-/** Rejects a catalog whose type has widened to `string`: event names are literals written in code. */
-type Literal<E extends string> = string extends E ? never : E;
+/** Rejects a catalog whose names have widened to `string`: event names are literals written in code. */
+type Literal<T extends LogEventTable> = string extends keyof T ? never : T;
 
-export interface LoggerOptions<E extends string> {
-  /** Every event name this logger may write: lower-case words joined by dots, such as `request.failed`. */
-  events: readonly Literal<E>[];
+export interface LoggerOptions<T extends LogEventTable> {
+  /**
+   * Every event name this logger may write — lower-case words joined by dots, such as `request.failed` — with the
+   * fields it takes. At run time only the names are checked against it.
+   */
+  events: Literal<T>;
   sink: LogSink;
   /** Default `info`. */
   level?: LogLevel;
@@ -74,12 +124,13 @@ function homes(home: string): string[] {
   return out.filter((h) => h.length > 0);
 }
 
-export function createLogger<E extends string>(options: LoggerOptions<E>): Logger<E> {
-  for (const name of options.events) {
+export function createLogger<T extends LogEventTable>(options: LoggerOptions<T>): Logger<T> {
+  const names = Object.keys(options.events);
+  for (const name of names) {
     if (!EVENT_NAME.test(name))
       throw new TypeError("a log event name is lower-case words joined by dots");
   }
-  const events = new Set<string>(options.events);
+  const events = new Set<string>(names);
   const sink = options.sink;
   const now = options.now ?? (() => new Date());
   let context: RenderContext | undefined;
@@ -113,11 +164,12 @@ export function createLogger<E extends string>(options: LoggerOptions<E>): Logge
     }
   }
 
+  // The fields arrive as whatever the caller built; at run time they are only a record of names (`LogFields`).
   return {
-    debug: (event, fields) => write("debug", event, fields),
-    info: (event, fields) => write("info", event, fields),
-    warn: (event, fields) => write("warn", event, fields),
-    error: (event, fields) => write("error", event, fields),
+    debug: (event, fields) => write("debug", event, fields as LogFields | undefined),
+    info: (event, fields) => write("info", event, fields as LogFields | undefined),
+    warn: (event, fields) => write("warn", event, fields as LogFields | undefined),
+    error: (event, fields) => write("error", event, fields as LogFields | undefined),
     level: () => LOG_LEVELS[threshold] as LogLevel,
     setLevel: (level) => {
       if (isLogLevel(level)) threshold = LOG_LEVELS.indexOf(level);

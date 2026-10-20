@@ -27,6 +27,9 @@ import {
   f,
   installProcessLogging,
   LOG_LEVELS,
+  type LogEvent,
+  type LogEventFields,
+  type LogEventTable,
   type LogFile,
   type Logger,
   openLogFile,
@@ -40,80 +43,204 @@ import {
   configProblemEntry,
   readSettings,
 } from "./settings.js";
+import { SHELL_EVENTS, type ShellEvent, type ShellEventSpec } from "./shell-events.js";
 
-export const SERVER_LOG_EVENTS = [
-  "server.started",
-  "request.failed",
-  "request.completed",
-  "process.uncaught_exception",
-  "process.unhandled_rejection",
+/** The writer of each kind a shell event's field can have (shell-events.ts): an enum is a list of values. */
+const SHELL_FIELD_WRITERS = { id: f.id, num: f.num, ms: f.ms } as const;
+type ShellFieldWriter<K> = K extends keyof typeof SHELL_FIELD_WRITERS
+  ? (typeof SHELL_FIELD_WRITERS)[K]
+  : typeof f.oneOf;
+type ShellLogEvents = {
+  readonly [E in ShellEvent]: {
+    readonly [N in keyof (typeof SHELL_EVENTS)[E]["fields"]]: ShellFieldWriter<
+      (typeof SHELL_EVENTS)[E]["fields"][N]
+    >;
+  };
+};
+/** The shell's events with their fields, as the host's table (shell-events.ts) has them: not listed a second time. */
+const SHELL_LOG_EVENTS = Object.fromEntries(
+  Object.entries(SHELL_EVENTS).map(([event, spec]) => [
+    event,
+    Object.fromEntries(
+      Object.entries(spec.fields as ShellEventSpec["fields"]).map(([name, kind]) => [
+        name,
+        typeof kind === "string" ? SHELL_FIELD_WRITERS[kind] : f.oneOf,
+      ])
+    ),
+  ])
+) as ShellLogEvents;
+
+/**
+ * The server's events, each with its fields and the constructor of `f` each is made by (architecture 「用户日志」 lists
+ * them): a field an event does not list, or one made by another constructor, is a type error at the call. Every field
+ * is optional to the types; which ones a record has is decided where it is written.
+ */
+export const SERVER_LOG_EVENTS = {
+  "server.started": {
+    version: f.id,
+    mode: f.oneOf,
+    port: f.num,
+    port_fallback: f.oneOf,
+    port_configured: f.num,
+    port_occupant: f.oneOf,
+    project: f.oneOf,
+    project_root: f.path,
+    data_dir: f.path,
+    web_dist: f.path,
+    config_keys: f.someOf,
+    config_unknown_keys: f.num,
+    config_problems: f.someOf,
+    log_level: f.oneOf,
+    pid: f.num,
+    node: f.id,
+    platform: f.id,
+    arch: f.id,
+  },
+  "request.failed": {
+    method: f.oneOf,
+    route: f.oneOf,
+    status: f.num,
+    duration_ms: f.ms,
+    code: f.id,
+    error: f.error,
+  },
+  "request.completed": { method: f.oneOf, route: f.oneOf, status: f.num, duration_ms: f.ms },
+  "process.uncaught_exception": { error: f.error },
+  "process.unhandled_rejection": { error: f.error },
   // What used to be printed to the console by the server:
-  "library.argument_graph_merged",
-  "argument_graph.broadcast_failed",
-  "arxiv_fetch.log_append_failed",
-  "arxiv_ingest.auto_submit_failed",
-  "copilot.observation_not_recordable",
-  "copilot.mail_accounts_unreadable",
+  "library.argument_graph_merged": {
+    outcome: f.oneOf,
+    absorbed: f.workId,
+    survivor: f.workId,
+    reason: f.oneOf,
+    survivor_unreadable: f.oneOf,
+    absorbed_file_left: f.oneOf,
+  },
+  "argument_graph.broadcast_failed": { work: f.workId, error: f.error },
+  "arxiv_fetch.log_append_failed": { job: f.id, error: f.error },
+  "arxiv_ingest.auto_submit_failed": { work: f.workId, error: f.error },
+  "copilot.observation_not_recordable": {},
+  "copilot.mail_accounts_unreadable": {},
   // Desktop-app ticket 07 (log-observers.ts, and the call sites named there):
-  "server.environment",
-  "job.created",
-  "job.started",
-  "job.progress",
-  "job.done",
-  "job.failed",
-  "job.interrupted",
-  "external_program.exited",
-  "external_program.not_started",
-  "external_service.answered",
-  "external_service.no_answer",
-  "mail.remote_call",
-  "mail_watch.state_changed",
-  "mail_watch.connection_ended",
-  "credentials.keychain_state",
-  "copilot.run_started",
-  "copilot.run_finished",
-  "copilot.tool_called",
+  "server.environment": {
+    tools_found: f.someOf,
+    tools_missing: f.someOf,
+    tools_from_tex_dir: f.someOf,
+    tools_from_common: f.someOf,
+    tex_dir: f.oneOf,
+    keychain: f.oneOf,
+    keychain_reason: f.oneOf,
+  },
+  "job.created": { job: f.id, kind: f.oneOf, work: f.workId, doc: f.docId },
+  "job.started": { job: f.id, kind: f.oneOf, queued_ms: f.ms },
+  "job.progress": { job: f.id, kind: f.oneOf, step: f.num, stage: f.oneOf },
+  "job.done": { job: f.id, kind: f.oneOf, duration_ms: f.ms },
+  "job.failed": {
+    job: f.id,
+    kind: f.oneOf,
+    stage: f.oneOf,
+    category: f.oneOf,
+    error_code: f.oneOf,
+    duration_ms: f.ms,
+    error: f.error,
+  },
+  "job.interrupted": { job: f.id, kind: f.oneOf, stage: f.oneOf },
+  "external_program.exited": {
+    program: f.oneOf,
+    sandboxed: f.oneOf,
+    exit_code: f.num,
+    signal: f.oneOf,
+    timed_out: f.oneOf,
+    duration_ms: f.ms,
+  },
+  "external_program.not_started": {
+    program: f.oneOf,
+    sandboxed: f.oneOf,
+    code: f.oneOf,
+    duration_ms: f.ms,
+  },
+  "external_service.answered": { service: f.oneOf, host: f.url, status: f.num, duration_ms: f.ms },
+  "external_service.no_answer": {
+    service: f.oneOf,
+    host: f.url,
+    reason: f.oneOf,
+    duration_ms: f.ms,
+  },
+  "mail.remote_call": {
+    protocol: f.oneOf,
+    call: f.oneOf,
+    provider: f.oneOf,
+    outcome: f.oneOf,
+    code: f.oneOf,
+    duration_ms: f.ms,
+  },
+  "mail_watch.state_changed": { account: f.id, state: f.oneOf, previous: f.oneOf },
+  "mail_watch.connection_ended": {
+    account: f.id,
+    code: f.oneOf,
+    temporary_refusal: f.oneOf,
+    connected_ms: f.ms,
+  },
+  "credentials.keychain_state": { state: f.oneOf },
+  "copilot.run_started": { conversation: f.id, run: f.id },
+  "copilot.run_finished": {
+    conversation: f.id,
+    run: f.id,
+    status: f.oneOf,
+    code: f.oneOf,
+    duration_ms: f.ms,
+  },
+  "copilot.tool_called": {
+    conversation: f.id,
+    run: f.id,
+    tool: f.oneOf,
+    result: f.oneOf,
+    duration_ms: f.ms,
+    exit_code: f.num,
+  },
   // Desktop-app ticket 08 (compile-failure-log.ts, page-errors.ts):
-  "tex.compile_failed",
-  "page.error",
-  "page.errors_dropped",
+  "tex.compile_failed": {
+    source: f.oneOf,
+    job: f.id,
+    manuscript: f.id,
+    kind: f.oneOf,
+    engine: f.oneOf,
+    exit_code: f.num,
+    timed_out: f.oneOf,
+    missing_tex_files: f.ids,
+    missing_other_files: f.someOf,
+    // `jobs/<job id>.compile.log` for an ingest, a fixed value for a Writer render.
+    log_file: [f.id, f.oneOf],
+  },
+  "page.error": { kind: f.oneOf, pane: f.oneOf, error: f.error },
+  "page.errors_dropped": { reason: f.oneOf, count: f.num, recorded_this_launch: f.num },
   // Desktop-app ticket 14 (diagnostics.ts): a diagnostics bundle was asked for; `compile_logs` yes / no only.
-  "diagnostics.exported",
+  "diagnostics.exported": { compile_logs: f.oneOf },
   // Desktop-app ticket 17 (desktop-host.ts): the desktop host's own records, and the shell's events it is handed.
-  "desktop.request",
-  "desktop.folder_picked",
-  "desktop.protocol_rejected",
-  "desktop.stopping",
-  "desktop.stop_timed_out",
+  "desktop.request": { kind: f.oneOf, source: f.oneOf },
+  "desktop.folder_picked": { outcome: f.oneOf },
+  "desktop.protocol_rejected": { reason: f.oneOf },
+  "desktop.stopping": { reason: f.oneOf },
+  "desktop.stop_timed_out": { ms: f.ms },
   // Desktop-app ticket 18: the welcome state, the project the host leaves for, and the recent-projects file.
-  "desktop.no_project",
-  "desktop.leaving",
-  "desktop.pick_rejected",
-  "recent_projects.unreadable",
-  "recent_projects.write_failed",
+  "desktop.no_project": { reason: f.oneOf },
+  "desktop.leaving": { source: f.oneOf },
+  "desktop.pick_rejected": { reason: f.oneOf },
+  "recent_projects.unreadable": { reason: f.oneOf },
+  "recent_projects.write_failed": { error: f.error },
   // Desktop-app ticket 19: a switch that would interrupt work waits for the user (counts only), or was cancelled.
-  "desktop.switch_asked",
-  "desktop.switch_cancelled",
+  "desktop.switch_asked": { source: f.oneOf, jobs: f.num, conversations: f.num, mail: f.num },
+  "desktop.switch_cancelled": {},
   // Desktop-app ticket 24: the command-line tool's launcher installed or removed (action and outcome only, no path).
-  "desktop.cli_launcher",
-  "shell.started",
-  "shell.host_started",
-  "shell.host_exited",
-  "shell.dialog_answered",
-  "shell.request_failed",
-  // Desktop-app ticket 20 review round: no window, a navigation stopped, an unreadable line, no single-instance guard.
-  "shell.window_failed",
-  "shell.navigation_blocked",
-  "shell.line_rejected",
-  "shell.instance_unguarded",
-  // Desktop-app ticket 21: a link handed to the system browser, a download, a menu item.
-  "shell.link_opened",
-  "shell.download",
-  "shell.menu_chosen",
-] as const;
+  "desktop.cli_launcher": { action: f.oneOf, outcome: f.oneOf, error: f.error },
+  // Desktop-app tickets 20 and 21: the shell's own events, from its table.
+  ...SHELL_LOG_EVENTS,
+} as const satisfies LogEventTable;
 
-export type ServerLogEvent = (typeof SERVER_LOG_EVENTS)[number];
-export type ServerLog = Logger<ServerLogEvent>;
+export type ServerLogEvent = LogEvent<typeof SERVER_LOG_EVENTS>;
+export type ServerLog = Logger<typeof SERVER_LOG_EVENTS>;
+/** The fields an event of the server takes (several events: those of any one of them), for a record built in parts. */
+export type ServerLogFields<E extends ServerLogEvent> = LogEventFields<typeof SERVER_LOG_EVENTS, E>;
 
 /**
  * A list of enum values for a record, written out in code and checked against the type its values come from: a

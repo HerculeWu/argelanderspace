@@ -236,7 +236,7 @@ TexDocIr 直接落盘，含 source/meta 身份、references/bib/refsManifest/cit
 
 desktop-app 票 06、07（2026-10-13）。「什么不进日志」与日志目录的并发范围是硬契约，见 [contracts](contracts.md#用户日志2026-10-13-新增)；这里记机制和不属于硬契约的运行约定。它与项目数据目录里的 `logs/arxiv-fetch.jsonl`、任务记录和 Copilot 的操作记录无关，那些都不动。
 
-- **模块**在 infra `log/`（`fields.ts` / `logger.ts` / `files.ts` / `process.ts`），server 与桌面宿主共用，web 运行时不引用。一条记录＝事件名＋字段。事件名来自创建 logger 时给出的目录（`createLogger({ events })`，类型上是字面量联合，运行时不在目录里的名字写成 `log.rejected`、原名与字段都丢弃）；字段值只能由 `f` 的构造函数产生，logger 没有接收文本的方法，不是 `LogField` 的值（字符串、对象）在类型上不通过，运行时被丢弃并计入 `dropped_fields`；字段名须是 `[a-z][a-z0-9_]{0,39}`，否则同样丢弃。
+- **模块**在 infra `log/`（`fields.ts` / `logger.ts` / `files.ts` / `process.ts`），server 与桌面宿主共用，web 运行时不引用。一条记录＝事件名＋字段。事件名来自创建 logger 时给出的目录（`createLogger({ events })`）。目录是一张表：每个事件列出它的字段名，以及每个字段由 `f` 的哪个构造函数产生（可由两种之一产生的字段列两个，如 `tex.compile_failed` 的 `log_file`）；server 的表是 `log.ts` 的 `SERVER_LOG_EVENTS`，其中 12 个 `shell.*` 事件连同字段取自 `shell-events.ts` 的 `SHELL_EVENTS`（宿主按它检查壳事件，不另抄一份）。类型上，事件名是表键的字面量联合（键宽化成 `string` 的表不收）；给某个事件传表外的字段名——直接写在字面对象里的、预先拼好的变量里的、展开进来的、只出现在条件展开某一分支里的——或由别的构造函数产生的值都是编译错误（`LogField<种类>` 的种类只存在于类型里，`fields.ts` 的运行期代码不因此变化）；字段在类型上一律可选，哪些出现由写记录的地方决定。运行时只按表里的事件名检查，不在目录里的名字写成 `log.rejected`、原名与字段都丢弃；字段的运行期检查与表无关、照旧：字段值只能由 `f` 的构造函数产生，logger 没有接收文本的方法，不是 `LogField` 的值（字符串、对象）在类型上不通过，运行时被丢弃并计入 `dropped_fields`；字段名须是 `[a-z][a-z0-9_]{0,39}`，否则同样丢弃。
 - **字段种类与各自的检查**（`fields.ts`）：
   - `f.id` 标识符：ASCII、无空白、无 `@`、至多 128 字符，否则写 `<invalid-id>`。带空格的标题、邮件地址、中文因此进不来，单个英文单词拦不住。以 `work:`、`latex-`、`upload-` 开头的值（`upload-<uuid>` 这种任务 id 除外）按下面的 Work / Doc 规则写出，不原样写。
   - `f.workId` / `f.docId`：Work / Doc 标识符，判定表见下。
