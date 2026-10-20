@@ -415,7 +415,13 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
       return { kind: "error" };
     }
     if (file.rev === candidate.rev) return { kind: "unchanged", file };
-    annotationChanged(docId, "put");
+    // The file is written by now; a notification that throws is answered as the save's error, as the route
+    // did when it held the notification inside its own try (architecture-deepening ticket 13 review).
+    try {
+      annotationChanged(docId, "put");
+    } catch {
+      return { kind: "error" };
+    }
     return { kind: "saved", file };
   };
   const saveReadingPosition = async (
@@ -438,7 +444,13 @@ export function createPdfAccess(deps: PdfAccessDeps): PdfAccess {
       if (error instanceof PdfContentChangedError) return { kind: "changed" };
       return { kind: "error" };
     }
-    if (file.rev !== candidate.rev) onReadingPositionChanged(docId, file.rev);
+    if (file.rev !== candidate.rev) {
+      try {
+        onReadingPositionChanged(docId, file.rev);
+      } catch {
+        return { kind: "error" };
+      }
+    }
     return { kind: "saved", file };
   };
   /** The status a failed `pdfSource` answers on the PDF material routes. */

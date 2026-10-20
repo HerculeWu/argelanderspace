@@ -487,6 +487,26 @@ test("saveAnnotations: keys the page does not send stay as stored, on the file a
   expect(stored.annotations[0].x_note).toBe("kept");
 });
 
+test("saveAnnotations: a notification that throws is the save's error; the file is already written (ticket 13 review)", async () => {
+  const throwing = createPdfAccess({
+    paths,
+    docMutations: registry,
+    lock,
+    onChanged: () => {
+      throw new Error("hub down");
+    },
+    readingPositionLock: positionLock,
+    onReadingPositionChanged: () => {},
+  });
+  const outcome = await throwing.saveAnnotations(
+    doc,
+    submitted({ annotations: [comment("a1", "first")] })
+  );
+  expect(outcome).toEqual({ kind: "error" });
+  expect(sidecar().rev).toBe(1);
+  expect((sidecar() as PdfAnnotationsFile).annotations.map((a) => a.body)).toEqual(["first"]);
+});
+
 // ---- saveReadingPosition (the page's reading-position PUT) ---------------------------------------------------- //
 
 const positionBody = (over: Partial<PdfReadingPosition> = {}): PdfReadingPosition => ({
@@ -639,4 +659,19 @@ test("sourceFailure: every row", () => {
     body: { detail: "PDF document 'pdf-x' cannot be verified" },
     status: 500,
   });
+});
+
+test("saveReadingPosition: a notification that throws is the save's error; the position is already written (ticket 13 review)", async () => {
+  const throwing = createPdfAccess({
+    paths,
+    docMutations: registry,
+    lock,
+    onChanged: () => {},
+    readingPositionLock: positionLock,
+    onReadingPositionChanged: () => {
+      throw new Error("hub down");
+    },
+  });
+  expect(await throwing.saveReadingPosition(doc, positionBody())).toEqual({ kind: "error" });
+  expect(positionFile()).toEqual({ ...positionBody(), rev: 1 });
 });
