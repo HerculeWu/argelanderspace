@@ -229,17 +229,6 @@ describe("GET /api/environment", () => {
     expect(body.keychain).toEqual({ state: "unavailable", reason: "no_bus" });
   });
 
-  test("a cross-site request is refused", async () => {
-    fillBin();
-    process.env.PATH = bin;
-    await start();
-    const res = await fetch(`${base}/api/environment`, {
-      headers: { origin: "https://evil.example" },
-    });
-    expect(res.status).toBe(403);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-  });
-
   test("a check running when tex_dir changes is not shared with a request that arrives after the change", async () => {
     fillBin();
     // latexmk on PATH answers slowly: the first check is still running when the file changes

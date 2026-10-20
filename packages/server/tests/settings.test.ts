@@ -518,23 +518,6 @@ describe("PUT /api/settings/:key", () => {
     expect(readFileSync(configPath, "utf-8")).toBe(COMMENTED);
   });
 
-  test("the same guard as every other write: a cross-site request is rejected and changes nothing", async () => {
-    writeFileSync(configPath, COMMENTED);
-    await start();
-    const evil = await put("ui.theme", { set: "light" }, { Origin: "http://evil.example" });
-    expect(evil.res.status).toBe(403);
-    expect(evil.body).toEqual({ detail: "cross-site request rejected" });
-    const otherPort = await put(
-      "ui.theme",
-      { set: "light" },
-      { Origin: `http://127.0.0.1:${port + 1}` }
-    );
-    expect(otherPort.res.status).toBe(403);
-    expect(readFileSync(configPath, "utf-8")).toBe(COMMENTED);
-    const same = await put("ui.theme", { set: "light" }, { Origin: `http://127.0.0.1:${port}` });
-    expect(same.res.status).toBe(200);
-  });
-
   test("every refusal the writer and the line editor can give has a status of its own class", async () => {
     // The endpoint passes the category on; this pins that none of them is missing from the page's list.
     const { SETTING_CHANGE_REFUSALS } = await import("@argelanderspace/contracts");

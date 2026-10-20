@@ -53,13 +53,11 @@ import {
   isLogFileName,
   zipEntriesAsync,
 } from "@argelanderspace/infra";
-import type { Hono } from "hono";
 import { WRITER_FAILURE_LOG_NAME } from "./compile-failure-log.js";
 import type { ServerLog, ServerMode } from "./log.js";
 import { readLimited } from "./page-errors.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 import { readSettings, shownPath } from "./settings.js";
-
-type Guard = (origin: string | undefined) => { body: { detail: string }; status: 403 } | null;
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const YES_NO = ["yes", "no"] as const;
@@ -420,19 +418,15 @@ function exportRequestOf(body: unknown): ExportRequest | null {
 }
 
 export function mountDiagnosticsRoutes(
-  app: Hono,
-  guardCsrf: Guard,
+  routes: ProtectedRoutes,
   options: DiagnosticsRouteOptions
 ): void {
-  app.get("/api/diagnostics", (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
+  const app = routes.withDefaults({ noStore: true });
+  app.get("/api/diagnostics", { guard: true }, (c) => {
     return c.json(diagnosticsInfo(options), 200, NO_STORE);
   });
 
   app.post("/api/diagnostics/export", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status, NO_STORE);
     let body: unknown;
     try {
       const bytes = await readLimited(c, DIAGNOSTICS_EXPORT_BODY_MAX_BYTES);

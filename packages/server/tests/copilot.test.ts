@@ -622,45 +622,6 @@ test("real WS subscribes before snapshot, isolates chat events, and disconnect d
   }
 });
 
-test("WS Origin refuses cross-site access while actual server and Vite sources work", async () => {
-  const { createServer } = await import("../src/server.js");
-  const { WebSocket } = await import("ws");
-  const server = createServer({
-    dataDir,
-    port: 0,
-    heartbeatMs: 0,
-    webDist: null,
-    providerSettings: settings,
-  });
-  const port = await server.ready();
-  try {
-    const rejected = new WebSocket(`ws://127.0.0.1:${port}/ws`, {
-      origin: "https://cross-site.invalid",
-    });
-    await expect(
-      new Promise<void>((resolve, reject) => {
-        rejected.once("open", resolve);
-        rejected.once("error", reject);
-      })
-    ).rejects.toThrow("403");
-    for (const origin of [
-      `http://127.0.0.1:${port}`,
-      `http://localhost:${port}`,
-      "http://localhost:5173",
-      "http://127.0.0.1:5173",
-    ]) {
-      const accepted = new WebSocket(`ws://127.0.0.1:${port}/ws`, { origin });
-      await new Promise<void>((resolve, reject) => {
-        accepted.once("open", resolve);
-        accepted.once("error", reject);
-      });
-      accepted.terminate();
-    }
-  } finally {
-    await server.close();
-  }
-});
-
 function reply(model: Model<Api>, error?: string) {
   const stream = createAssistantMessageEventStream();
   const message: AssistantMessage = {

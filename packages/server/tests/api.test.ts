@@ -1,5 +1,5 @@
 /**
- * The REST endpoints + images + SPA hosting + CSRF/CORS, against a fixture
+ * The REST endpoints + images + SPA hosting + CORS, against a fixture
  * data dir, using Hono's `app.request` (no socket). The WS channel has its
  * own suite (ws.test.ts); the LaTeX-zip upload endpoint lives in
  * upload.test.ts.
@@ -73,18 +73,6 @@ const patch = async (
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
-const put = async (
-  path: string,
-  body?: unknown,
-  headers?: Record<string, string>
-): Promise<Response> =>
-  app.request(path, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-  });
-const del = async (path: string, headers?: Record<string, string>): Promise<Response> =>
-  app.request(path, { method: "DELETE", headers });
 
 // --------------------------------------------------------------------------- //
 // papers
@@ -347,49 +335,8 @@ describe("POST /api/library/refresh", () => {
 });
 
 // --------------------------------------------------------------------------- //
-// CSRF + CORS
+// CORS (the cross-site guard itself is tested on the protected base: protected-app.test.ts)
 // --------------------------------------------------------------------------- //
-
-describe("CSRF guard (Origin check on mutations)", () => {
-  const cases: [string, (h?: Record<string, string>) => Promise<Response>][] = [
-    ["PATCH /api/library/refs", (h) => patch("/api/library/refs", { id: KNOWN_WORK_ID }, h)],
-    ["POST /api/library/refresh", (h) => post("/api/library/refresh?offline=true", undefined, h)],
-    ["PUT /api/plans", (h) => put("/api/plans", { version: 1, rev: 0, plans: [] }, h)],
-    [
-      "PUT /api/paper/:doc_id/annotations",
-      (h) =>
-        put(
-          "/api/paper/demo/annotations",
-          { version: 1, rev: 0, content_fingerprint: "f".repeat(64), annotations: [] },
-          h
-        ),
-    ],
-    ["DELETE /api/paper/:doc_id", (h) => del("/api/paper/demo", h)],
-  ];
-  for (const [name, call] of cases) {
-    test(`${name}: evil Origin → 403`, async () => {
-      const res = await call({ Origin: "http://evil.example" });
-      expect(res.status).toBe(403);
-      expect(await res.json()).toEqual({ detail: "cross-site request rejected" });
-    });
-    test(`${name}: Vite dev Origin → pass`, async () => {
-      const res = await call({ Origin: "http://localhost:5173" });
-      expect(res.status).not.toBe(403);
-    });
-    test(`${name}: no Origin (local tool) → pass`, async () => {
-      expect((await call()).status).not.toBe(403);
-    });
-    test(`${name}: same-origin SPA port → pass`, async () => {
-      const res = await call({ Origin: `http://localhost:${TEST_PORT}` });
-      expect(res.status).not.toBe(403);
-    });
-  }
-
-  test("GETs are never origin-checked", async () => {
-    const res = await get("/api/papers", { Origin: "http://evil.example" });
-    expect(res.status).toBe(200);
-  });
-});
 
 describe("CORS (Vite dev origin, GET only)", () => {
   test("preflight from 5173 reflects origin + requested headers, GET only", async () => {

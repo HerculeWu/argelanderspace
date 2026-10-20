@@ -27,6 +27,7 @@ import { mailAccountDetail, mailHttpStatus } from "./mail-failures.js";
 import { createDefaultMailManageService, type MailManageService } from "./mail-manage.js";
 import { mountMailManageRoutes } from "./mail-manage-routes.js";
 import { MailReadError, MailReadService } from "./mail-read.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 /** Production wiring of the reading service over the real global directories. */
 export function createDefaultMailReadService(log: ServerLog = silentLog): MailReadService {
@@ -61,9 +62,8 @@ function invalid(issues: { path: PropertyKey[] }[]) {
 }
 
 export function mountMailRoutes(
-  host: Hono,
+  host: ProtectedRoutes,
   injected: MailAccountService | undefined,
-  guardCsrf: (origin: string | undefined) => { body: { detail: string }; status: 403 } | null,
   injectedRead?: MailReadService,
   injectedManage?: MailManageService,
   injectedCompose?: MailComposeServices,
@@ -71,7 +71,7 @@ export function mountMailRoutes(
   log: ServerLog = silentLog
 ): MailOpDeps {
   // Writing and sending (ticket 07) has its own router, registered first so that its larger upload limit applies.
-  const compose = mountMailComposeRoutes(host, injectedCompose, guardCsrf, log);
+  const compose = mountMailComposeRoutes(host, injectedCompose, log);
   let service = injected;
   const get = () => (service ??= createDefaultMailAccountService(log));
   let reader = injectedRead;
@@ -79,12 +79,9 @@ export function mountMailRoutes(
   let manager = injectedManage;
   const manage = () => (manager ??= createDefaultMailManageService(read(), log));
   const app = new Hono();
+  // Every method but GET is guarded where this router is mounted (protected-app.ts), before anything below.
   app.use("*", async (c, next) => {
     c.header("Cache-Control", "no-store");
-    if (c.req.method !== "GET") {
-      const blocked = guardCsrf(c.req.header("Origin"));
-      if (blocked) return c.json(blocked.body, blocked.status);
-    }
     await next();
   });
   app.use(
@@ -197,7 +194,7 @@ export function mountMailRoutes(
   });
   // ---- managing and searching (ticket 06) ----------------------------------
   mountMailManageRoutes(app, manage);
-  host.route("/api/mail", app);
+  host.mount("/api/mail", app, { guard: "non-GET", noStore: true });
   // The Copilot's mail tool (ticket 09) uses these very services, so there is one send path and one cache.
   return { accounts: get, read, manage, services: compose };
 }

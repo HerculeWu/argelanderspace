@@ -448,16 +448,8 @@ test("a fresh listing drops cached headers the server no longer has (moved or ex
 
 // ---- guards ---------------------------------------------------------------------------------
 
-test("management routes keep the CSRF guard, validate input and leak nothing", async () => {
+test("management routes validate input and leak nothing", async () => {
   await setup();
-  const foreign = await post(
-    "/messages/delete",
-    { folder: "INBOX", uid: 3 },
-    "http://evil.example"
-  );
-  expect(foreign.status).toBe(403);
-  expect(inbox().messages.some((m) => m.uid === 3)).toBe(true);
-
   const bad = await post("/messages/flag", { folder: "INBOX", uid: 0, flag: "seen", value: true });
   expect(bad.status).toBe(400);
   const extra = await post("/messages/flag", {

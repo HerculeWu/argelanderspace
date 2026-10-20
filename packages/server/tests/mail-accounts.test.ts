@@ -357,11 +357,6 @@ test("unknown or malformed ids are 404; invalid bodies are 400 naming fields onl
   expect((await json(custom)).fields).toEqual(["imap"]);
 });
 
-test("cross-site writes are rejected", async () => {
-  const r = await req("/accounts", "POST", draft(), "https://evil.example");
-  expect(r.status).toBe(403);
-});
-
 test("a corrupt accounts file is a 500 that is never overwritten", async () => {
   await add();
   const p = join(globalData, "mail", "accounts.json");

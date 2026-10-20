@@ -25,13 +25,12 @@ import {
 } from "@argelanderspace/infra";
 import type { ServerType } from "@hono/node-server";
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
+import type { Hono } from "hono";
 import { mountWebDist } from "./app.js";
 import { type HostBridge, mountHostRoutes } from "./host-routes.js";
-import { applyLogLevel, logRequests, type ServerLog, silentLog } from "./log.js";
-import { DEV_ORIGINS, ownOrigins } from "./origins.js";
+import { applyLogLevel, type ServerLog, silentLog } from "./log.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
+import { createProtectedApp, listeningPort } from "./protected-app.js";
 import { mountSettingsRoutes, readSettings, shownPath, startSettingsWatcher } from "./settings.js";
 import { WsHub } from "./ws.js";
 
@@ -63,35 +62,17 @@ export interface NoProjectServer {
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
-function boundPort(server: ServerType): number | undefined {
-  const address = server.address();
-  return typeof address === "object" && address !== null ? address.port : undefined;
-}
-
 export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectServer {
   const log = opts.log ?? silentLog;
   let hub: WsHub;
   const broadcast = (msg: Parameters<WsHub["broadcast"]>[0]) => hub.broadcast(msg);
 
-  const originAllowed = (origin: string): boolean => {
-    if ((DEV_ORIGINS as readonly string[]).includes(origin)) return true;
-    const port = boundPort(server);
-    return port !== undefined && ownOrigins(port).includes(origin);
-  };
-  const guardCsrf = (
-    origin: string | undefined
-  ): { body: { detail: string }; status: 403 } | null =>
-    origin !== undefined && !originAllowed(origin)
-      ? { body: { detail: "cross-site request rejected" }, status: 403 }
-      : null;
-
-  const app = new Hono();
-  logRequests(app, log);
-  app.use("*", cors({ origin: [...DEV_ORIGINS], allowMethods: ["GET"] }));
+  // The protected base (protected-app.ts): the same record of requests, cors and cross-site guard as createApp's.
+  const { hono, routes: app } = createProtectedApp({ log, boundPort: () => listeningPort(server) });
 
   // What the page reports of its own errors: the user log only, the same route and limits as with a project open.
   let writePendingPageErrorCounts: () => void = () => {};
-  mountPageErrorRoute(app, log, guardCsrf, {
+  mountPageErrorRoute(app, log, {
     ...opts.pageErrors,
     webDist: opts.webDist ?? null,
     atClose: (writePending) => {
@@ -100,7 +81,7 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
   });
 
   const settingsAtStart = opts.settingsAtStart ?? readSettings(opts.configPath).values;
-  mountSettingsRoutes(app, guardCsrf, {
+  mountSettingsRoutes(app, {
     startup: opts.startup ?? null,
     path: opts.configPath,
     atStart: settingsAtStart,
@@ -110,7 +91,7 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
         resolveGlobalDirsLeniently(readConfigLeniently(opts.configPath ?? configFilePath())).dirs;
       return {
         project_root: null,
-        port: boundPort(server) ?? null,
+        port: listeningPort(server) ?? null,
         data_dir: null,
         global_dir: shownPath(dirs.dataDir),
         global_cache_dir: shownPath(dirs.cacheDir),
@@ -122,19 +103,20 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
       broadcast({ type: "settings.changed", cause: "write", at: new Date().toISOString() });
     },
   });
-  mountHostRoutes(app, guardCsrf, opts.host);
+  mountHostRoutes(app, opts.host);
 
   // Everything else of the API (and a Doc's images) is project data: there is none.
   const noProject = (c: import("hono").Context) =>
     c.json({ code: NO_PROJECT_CODE, detail: "no project is open" }, 409, NO_STORE);
-  app.all("/api/*", noProject);
-  app.all("/images/*", noProject);
+  // Not guarded: a cross-site request learns only that no project is open, as it did before the base.
+  app.all("/api/*", { exempt: "no project: answers 409 no_project to anyone" }, noProject);
+  app.all("/images/*", { exempt: "no project: answers 409 no_project to anyone" }, noProject);
 
   mountWebDist(app, opts.webDist, opts.configPath);
   app.notFound((c) => c.json({ detail: "Not Found" }, 404));
 
   const port = opts.port ?? 0;
-  const server = serve({ fetch: app.fetch, port, hostname: opts.hostname ?? "127.0.0.1" });
+  const server = serve({ fetch: hono.fetch, port, hostname: opts.hostname ?? "127.0.0.1" });
   hub = new WsHub(server as import("node:http").Server, {
     heartbeatMs: opts.heartbeatMs,
     snapshot: () => [],
@@ -153,12 +135,12 @@ export function createNoProjectServer(opts: NoProjectServerOptions): NoProjectSe
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {
-    server.on("listening", () => resolveReady(boundPort(server) ?? port));
+    server.on("listening", () => resolveReady(listeningPort(server) ?? port));
     server.on("error", rejectReady);
   });
 
   return {
-    app,
+    app: hono,
     hub,
     server,
     ready: () => ready,

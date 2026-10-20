@@ -47,7 +47,7 @@ Stage 12：enrichAndPlan 中有 bibcode 且无已存字段时，批量 ADS expor
 
 ## Web 手动建立条目（Stage 13）
 
-入口为侧栏导入菜单三个真模式；旧“从浏览器抓取”假占位已删。统一 `POST /api/library/works`，guardCsrf + libraryLock，同步就地 upsert/planFor/assignCiteKey/save/广播，**不触发全库 rebuild、不走创建 job**，复用现有解析链。
+入口为侧栏导入菜单三个真模式；旧“从浏览器抓取”假占位已删。统一 `POST /api/library/works`，跨站守卫（受保护的 Hono 底座 `server/src/protected-app.ts`，写路由默认受守卫）+ libraryLock，同步就地 upsert/planFor/assignCiteKey/save/广播，**不触发全库 rebuild、不走创建 job**，复用现有解析链。
 
 | 模式 | 接受输入与失败语义 |
 |---|---|

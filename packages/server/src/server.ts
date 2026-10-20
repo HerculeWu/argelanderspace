@@ -78,6 +78,7 @@ import { disposeMailSendServices } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { createDefaultMailWatcher, type MailWatcherOverrides } from "./mail-watch-default.js";
 import { createNoProjectServer, type NoProjectServer } from "./no-project.js";
+import { listeningPort } from "./protected-app.js";
 import { ProviderSettings } from "./providers.js";
 import {
   type ConfigProblem,
@@ -178,12 +179,6 @@ export interface RunningServer {
   /** Resolves with the bound port once listening (matters for port 0). */
   ready(): Promise<number>;
   close(): Promise<void>;
-}
-
-/** The port the server is listening on; undefined before it listens and after it closed. */
-function boundPort(server: ServerType): number | undefined {
-  const address = server.address();
-  return typeof address === "object" && address !== null ? address.port : undefined;
 }
 
 export function createServer(opts: ServerOptions): RunningServer {
@@ -288,7 +283,7 @@ export function createServer(opts: ServerOptions): RunningServer {
     broadcast: (msg) => hub.broadcast(msg),
     webDist: opts.webDist,
     // Read at request time: with port 0 the port is only known once the server listens.
-    boundPort: () => boundPort(server),
+    boundPort: () => listeningPort(server),
     providerSettings,
     copilot,
     log,
@@ -401,7 +396,7 @@ export function createServer(opts: ServerOptions): RunningServer {
   });
 
   const ready = new Promise<number>((resolveReady, rejectReady) => {
-    server.on("listening", () => resolveReady(boundPort(server) ?? port));
+    server.on("listening", () => resolveReady(listeningPort(server) ?? port));
     server.on("error", rejectReady);
   });
 

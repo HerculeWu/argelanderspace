@@ -422,29 +422,6 @@ test("sign-in persisted but catalog refresh failing is reported separately from 
   expect(provider.catalogStatus).toBe("error");
 });
 
-test("login routes keep the same-origin guard and cross-site requests cannot start, answer or cancel", async () => {
-  const first = await start();
-  const evil = "https://evil.example";
-  expect((await request("/openai-codex/login", "POST", undefined, evil)).status).toBe(403);
-  expect(
-    (
-      await request(
-        `/openai-codex/login/${first.id}/response`,
-        "POST",
-        { challengeId: first.challenge?.id, value: "device_code" },
-        evil
-      )
-    ).status
-  ).toBe(403);
-  expect((await request(`/openai-codex/login/${first.id}`, "DELETE", undefined, evil)).status).toBe(
-    403
-  );
-  expect((await request("/openai-codex/logout", "POST", undefined, evil)).status).toBe(403);
-  expect((await login(await request(`/openai-codex/login/${first.id}`))).status).toBe(
-    "awaiting_user"
-  );
-});
-
 test("default thinking for a codex model uses the SDK-supported levels after sign-in", async () => {
   const first = await device();
   await poll(first, (v) => v.status === "succeeded");

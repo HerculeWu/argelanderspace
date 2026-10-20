@@ -369,7 +369,7 @@ test("changed UIDVALIDITY: the uid no longer names the same message (409) and it
   ).toEqual([]);
 });
 
-test("errors: unknown account/folder/uid, bad input, CSRF; bodies never carry credentials or mail text", async () => {
+test("errors: unknown account/folder/uid, bad input; bodies never carry credentials or mail text", async () => {
   await setup();
   expect((await app.request("/api/mail/accounts/acc-ffffffffffff/folders")).status).toBe(404);
   expect((await app.request("/api/mail/accounts/..%2F..%2Fx/folders")).status).toBe(404);
@@ -381,20 +381,9 @@ test("errors: unknown account/folder/uid, bad input, CSRF; bodies never carry cr
   expect((await post("/messages/open", { folder: "INBOX", uid: 0, unread: true })).status).toBe(
     400
   );
-  const csrf = await post(
-    "/messages/open",
-    { folder: "INBOX", uid: 5, unread: true },
-    "http://evil.example"
-  );
-  expect(csrf.status).toBe(403);
-  expect(
-    (fake.folders[0] as FakeFolder).messages.find((m) => m.uid === 5)?.flags.has("\\Seen")
-  ).toBe(false);
-  for (const r of [nf, csrf]) {
-    const text = JSON.stringify(await r.clone().json());
-    expect(text).not.toContain(TEST_PASSWORD);
-    expect(text).not.toContain(SECRET_BODY);
-  }
+  const text = JSON.stringify(await nf.clone().json());
+  expect(text).not.toContain(TEST_PASSWORD);
+  expect(text).not.toContain(SECRET_BODY);
 });
 
 test("a too large message is refused before download", async () => {

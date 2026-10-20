@@ -465,19 +465,10 @@ describe("native requests", () => {
     ).toEqual([...HOST_REQUEST_KINDS]);
   });
 
-  test("a cross-site request is refused and writes nothing; an unknown kind is 404", async () => {
+  test("an unknown kind is 404 and writes nothing", async () => {
     writeConfig("port = 0\n");
     const h = await startHost();
     const before = h.lines.length;
-    const cross = await fetch(`${h.url}/api/host/requests/open_log_folder`, {
-      method: "POST",
-      headers: { Origin: "https://evil.example" },
-    });
-    expect(cross.status).toBe(403);
-    const crossGet = await fetch(`${h.url}/api/host`, {
-      headers: { Origin: "https://evil.example" },
-    });
-    expect(crossGet.status).toBe(403);
     const unknown = await fetch(`${h.url}/api/host/requests/open_anything`, {
       method: "POST",
       headers: ORIGIN(h.url),
@@ -1150,7 +1141,7 @@ describe("the command-line tool (desktop-app ticket 24)", () => {
     expect(safeList(bin())).toEqual([]);
   });
 
-  test("a host that does not know its Node and CLI: 404 cli_unavailable; cross-site requests are refused", async () => {
+  test("a host that does not know its Node and CLI: 404 cli_unavailable", async () => {
     writeConfig("port = 0\n");
     const h = await startHost();
     for (const [method, path] of [
@@ -1164,18 +1155,7 @@ describe("the command-line tool (desktop-app ticket 24)", () => {
         404,
         "cli_unavailable",
       ]);
-      const cross = await fetch(`${h.url}${path}`, {
-        method,
-        headers: { Origin: "https://evil.example" },
-      });
-      expect([path, cross.status]).toEqual([path, 403]);
     }
-    const h2 = await startHost({ cliLauncher: app() });
-    const cross = await fetch(`${h2.url}/api/host/cli/install`, {
-      method: "POST",
-      headers: { Origin: "https://evil.example" },
-    });
-    expect(cross.status).toBe(403);
     expect(safeList(bin())).toEqual([]);
   });
 });

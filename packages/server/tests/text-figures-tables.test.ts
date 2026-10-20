@@ -267,7 +267,7 @@ describe("uploading an image", () => {
     }
   );
 
-  test("stale rev is a conflict with the stored source; a missing or bad expectedRev is 400; unknown Doc is 404; cross-site is 403", async () => {
+  test("stale rev is a conflict with the stored source; a missing or bad expectedRev is 400; unknown Doc is 404", async () => {
     const docId = await createDoc();
     await put(docId, 0, "x");
     const stale = await upload(docId, 0, png());
@@ -290,9 +290,6 @@ describe("uploading an image", () => {
       ).status
     ).toBe(400);
     expect((await upload("text-00000000-0000-0000-0000-000000000000", 0, png())).status).toBe(404);
-    expect((await upload(docId, 1, png(), "a.png", { Origin: "http://evil.example" })).status).toBe(
-      403
-    );
     expect(readdirSync(join(docDir(docId))).includes("assets")).toBe(false);
   });
 

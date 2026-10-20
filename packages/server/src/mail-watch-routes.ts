@@ -1,5 +1,5 @@
-import type { Hono } from "hono";
 import type { MailWatcher } from "./mail-watch.js";
+import type { ProtectedRoutes } from "./protected-app.js";
 
 /**
  * Live-update endpoints of Mail (ticket 08), kept apart from `mail-routes.ts`.
@@ -10,7 +10,10 @@ import type { MailWatcher } from "./mail-watch.js";
  * newly added account starts being watched without waiting for the next tick.
  * Without a watcher (tests, API-only embeddings) the summary is simply empty.
  */
-export function mountMailWatchRoutes(host: Hono, watcher: MailWatcher | undefined): void {
+export function mountMailWatchRoutes(
+  host: ProtectedRoutes,
+  watcher: MailWatcher | undefined
+): void {
   const nudge = async (
     c: { req: { method: string }; res: { ok: boolean } },
     next: () => Promise<void>

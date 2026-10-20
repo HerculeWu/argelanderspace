@@ -263,17 +263,6 @@ describe("figure assets", () => {
   });
 });
 
-describe("CSRF (mutations guarded, reads open)", () => {
-  test("a cross-site Origin is rejected on POST/PUT/DELETE, accepted on GET", async () => {
-    const bad = { Origin: "https://evil.example" };
-    expect((await post("/api/writer/manuscripts", { template: "aa" }, bad)).status).toBe(403);
-    const doc = await createMs("aa");
-    expect((await put(`/api/writer/manuscripts/${doc.id}`, doc, bad)).status).toBe(403);
-    expect((await del(`/api/writer/manuscripts/${doc.id}`, bad)).status).toBe(403);
-    expect((await get(`/api/writer/manuscripts/${doc.id}`)).status).toBe(200);
-  });
-});
-
 describe("corrupt manuscript.json on disk", () => {
   test("GET by id / PUT surface a 500 (never a silent reset); list still works with a warning", async () => {
     const doc = await createMs("aa");

@@ -1,7 +1,8 @@
 /**
  * The Hono port of `server/app.py` (FastAPI): the REST endpoints with paths
  * and response shapes preserved verbatim (decision 15), the image route, CORS
- * for the Vite dev origin, the Origin-check CSRF guard on mutations, the
+ * for the Vite dev origin and the Origin-check CSRF guard on mutations (both
+ * from the protected base, protected-app.ts), the
  * mtime+size paper cache, and static SPA hosting with API precedence.
  *
  * Intentional divergences from app.py (all flagged in the M4 memory note):
@@ -113,8 +114,7 @@ import {
   type TexCompileFailure,
   zipEntries,
 } from "@argelanderspace/infra";
-import { type Context, Hono } from "hono";
-import { cors } from "hono/cors";
+import type { Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
   createAcquisition,
@@ -153,7 +153,7 @@ import { type HostBridge, mountHostRoutes, switchJobOf } from "./host-routes.js"
 import type { JobRunner } from "./jobs.js";
 import { commitWorkPatch, type LibraryOpDeps } from "./library-actions.js";
 import { AsyncLock } from "./lock.js";
-import { applyLogLevel, logRequests, type ServerLog, silentLog } from "./log.js";
+import { applyLogLevel, type ServerLog, silentLog } from "./log.js";
 import { externalObserver, jobLogger, observedCredentials } from "./log-observers.js";
 import type { MailAccountService } from "./mail-accounts.js";
 import type { MailComposeServices } from "./mail-compose-routes.js";
@@ -163,7 +163,6 @@ import { mountMailRoutes } from "./mail-routes.js";
 import { mailSendsInWindow } from "./mail-send.js";
 import type { MailWatcher } from "./mail-watch.js";
 import { mountMailWatchRoutes } from "./mail-watch-routes.js";
-import { DEV_ORIGINS, ownOrigins } from "./origins.js";
 import { mountPageErrorRoute, type PageErrorOptions } from "./page-errors.js";
 import { PaperCache } from "./paper-cache.js";
 import { createPdfAccess } from "./pdf-access.js";
@@ -175,6 +174,7 @@ import {
   renderPdfRegionImage,
 } from "./pdf-material.js";
 import { isLinkableDoc, readPlans, replacePlans } from "./plans-actions.js";
+import { createProtectedApp, type ProtectedRoutes } from "./protected-app.js";
 import { mountProviderRoutes } from "./provider-routes.js";
 import { ProviderSettings } from "./providers.js";
 import { mountSettingsRoutes, readSettings, shownPath, withAppearance } from "./settings.js";
@@ -416,7 +416,7 @@ function mimeFor(path: string): string {
  * host's welcome state (no-project.ts).
  */
 export function mountWebDist(
-  app: Hono,
+  app: ProtectedRoutes,
   webDistOption: string | null | undefined,
   configPath: string | undefined
 ): void {
@@ -570,38 +570,12 @@ export function createApp(deps: AppDeps): Hono {
     lock: annotationLock,
     onChanged: annotationChanged,
   });
-  // Mutations may come from the Vite dev server or from the page this server itself serves.
-  const originAllowed = (origin: string): boolean => {
-    if ((DEV_ORIGINS as readonly string[]).includes(origin)) return true;
-    const port = deps.boundPort?.();
-    return port !== undefined && ownOrigins(port).includes(origin);
-  };
-
-  const app = new Hono();
-  // First, so that it sees every request: the record of failed requests (the answers themselves are not changed).
-  logRequests(app, log);
-
-  // Dev: the Vite dev server (localhost:5173) calls this API directly.
-  // allowHeaders left empty → hono reflects the requested headers, matching
-  // Starlette's `allow_headers=["*"]`.
-  app.use(
-    "*",
-    cors({
-      origin: [...DEV_ORIGINS],
-      allowMethods: ["GET"],
-    })
-  );
-
-  /** `_guard_csrf`: reject cross-site mutations; no-Origin local tools pass. */
-  const guardCsrf = (
-    origin: string | undefined
-  ): { body: { detail: string }; status: 403 } | null =>
-    origin !== undefined && !originAllowed(origin)
-      ? { body: { detail: "cross-site request rejected" }, status: 403 }
-      : null;
+  // The protected base (protected-app.ts): the record of requests, cors, and the cross-site guard of every write
+  // registered through `app` — from the Vite dev server or the page this server itself serves only.
+  const { hono, routes: app } = createProtectedApp({ log, boundPort: () => deps.boundPort?.() });
 
   // What the page reports of its own errors (page-errors.ts): checked field by field, limited in number.
-  mountPageErrorRoute(app, log, guardCsrf, { ...deps.pageErrors, webDist: deps.webDist });
+  mountPageErrorRoute(app, log, { ...deps.pageErrors, webDist: deps.webDist });
 
   // Settings (settings.ts): the page reads them and changes one key of config.toml at a time; a change that rewrote
   // the file is told to every page at once (the file watcher of `createServer` finds it too, a moment later).
@@ -609,7 +583,7 @@ export function createApp(deps: AppDeps): Hono {
   // global directories pinned for its life (or, for an app made without a server, as the file gives them now).
   const settingsAtStart = deps.settingsAtStart ?? readSettings(deps.configPath).values;
   const projectRoot = deps.projectRoot ?? process.cwd();
-  mountSettingsRoutes(app, guardCsrf, {
+  mountSettingsRoutes(app, {
     startup: deps.startup ?? null,
     path: deps.configPath,
     atStart: settingsAtStart,
@@ -637,14 +611,14 @@ export function createApp(deps: AppDeps): Hono {
   // The ADS token (ads-credential.ts): kept in the credential store, never in config.toml; no answer carries it.
   const adsCredentials =
     deps.adsCredentials ?? observedCredentials(createAdsCredentialStore(), log);
-  mountAdsCredentialRoutes(app, guardCsrf, {
+  mountAdsCredentialRoutes(app, {
     store: adsCredentials,
     fetchImpl: deps.adsTestFetch,
     devKeyPath: deps.adsDevKeyPath,
   });
 
   // The environment check (environment.ts): where TeX and the other programs are, their versions, the keychain.
-  mountEnvironmentRoutes(app, guardCsrf, {
+  mountEnvironmentRoutes(app, {
     configPath: deps.configPath,
     keychain: deps.keychainProbe,
     sandboxView: deps.sandboxView,
@@ -652,10 +626,10 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   // The host interface (host-routes.ts): which form the page runs in, and the desktop app's native requests.
-  mountHostRoutes(app, guardCsrf, deps.host);
+  mountHostRoutes(app, deps.host);
 
   // Diagnostics (diagnostics.ts): the log directory, and a bundle made only when the user asks for one.
-  mountDiagnosticsRoutes(app, guardCsrf, {
+  mountDiagnosticsRoutes(app, {
     dataDir: paths.dataDir,
     logDir: () =>
       deps.logDir ??
@@ -686,12 +660,11 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   const providerSettings = deps.providerSettings ?? new ProviderSettings();
-  mountProviderRoutes(app, providerSettings, guardCsrf);
+  mountProviderRoutes(app, providerSettings);
   mountMailWatchRoutes(app, deps.mailWatch);
   const mailOps = mountMailRoutes(
     app,
     deps.mailAccounts,
-    guardCsrf,
     deps.mailRead,
     deps.mailManage,
     deps.mailCompose,
@@ -700,7 +673,7 @@ export function createApp(deps: AppDeps): Hono {
   const copilot = deps.copilot ?? new CopilotHost(paths.dataDir, providerSettings, broadcast);
   // A host built here records where this app records; one handed in was given its log by whoever built it.
   if (deps.copilot === undefined) copilot.useLog(log);
-  mountCopilotRoutes(app, copilot, guardCsrf);
+  mountCopilotRoutes(app, copilot);
   // The desktop host asks what switching to another project would interrupt (desktop-app ticket 19): this server's
   // queued and running jobs, its live Copilot runs, and the mail still in its undo window — what its close ends.
   deps.host?.useWorkbench({
@@ -753,7 +726,7 @@ export function createApp(deps: AppDeps): Hono {
     },
     ...(deps.textDocHooks ?? {}),
   });
-  mountTextDocRoutes(app, textDocs, guardCsrf);
+  mountTextDocRoutes(app, textDocs);
   // The Copilot `plan` tool shares the Plan lock, store and plan.changed notification with PUT.
   const currentGraph = () =>
     loadCurrentGraph(paths) ??
@@ -1270,7 +1243,7 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
-  app.put("/api/paper/:doc_id/pdf/reading-position", async (c) => {
+  app.put("/api/paper/:doc_id/pdf/reading-position", { noStore: true }, async (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badDocId(docId)) return c.json({ detail: "bad doc id" }, 400);
@@ -1347,7 +1320,7 @@ export function createApp(deps: AppDeps): Hono {
     }
   });
 
-  app.put("/api/paper/:doc_id/pdf/annotations", async (c) => {
+  app.put("/api/paper/:doc_id/pdf/annotations", { noStore: true }, async (c) => {
     c.header("Cache-Control", "no-store");
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badDocId(docId)) {
@@ -1627,10 +1600,8 @@ export function createApp(deps: AppDeps): Hono {
   // plans-style optimistic lock; its 409 carries the current rev).
   // Fingerprint/corruption failures are 500, NEVER 409. The ensure + checks +
   // save are one critical section on annotationLock.
-  app.put("/api/paper/:doc_id/annotations", async (c) => {
+  app.put("/api/paper/:doc_id/annotations", { noStore: true }, async (c) => {
     c.header("Cache-Control", "no-store");
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const docId = c.req.param("doc_id");
     if (!docId.trim() || badDocId(docId)) {
       const e = detail("bad doc id", 400);
@@ -1673,8 +1644,6 @@ export function createApp(deps: AppDeps): Hono {
   // The one global physical delete (see doc-delete.ts), shared with the Copilot `library` tool's `delete_doc`; this
   // route maps its outcome to 400/404/409/500 and never passes a holders binding.
   app.delete("/api/paper/:doc_id", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const docId = c.req.param("doc_id");
     const outcome = await docDeletion.delete(docId);
     switch (outcome.kind) {
@@ -1795,8 +1764,6 @@ export function createApp(deps: AppDeps): Hono {
   // The same restore the Copilot's `undo_delete_task` runs: 200 restored (or already back), 409 expired or
   // conflict (nothing written), 404 nothing to undo.
   app.post("/api/plans/undo", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
     if (!body || typeof body.id !== "string") {
       const e = detail("request body needs the undo id", 400);
@@ -1818,8 +1785,6 @@ export function createApp(deps: AppDeps): Hono {
   // client can reload + rebase. The rev check and the save are one critical
   // section on planLock.
   app.put("/api/plans", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const body: unknown = await c.req.json().catch(() => null);
     const parsed = PlansFileSchema.safeParse(body);
     if (!parsed.success) {
@@ -1885,8 +1850,6 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.put("/api/works/:workId/argument-graph", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const workId = c.req.param("workId");
     const known = knownWork(workId);
     if (known === "error") {
@@ -1968,8 +1931,6 @@ export function createApp(deps: AppDeps): Hono {
   // Create requires a known template (built-in or user file). 201 carries the
   // full fresh manuscript; `writer.changed` cause:"create".
   app.post("/api/writer/manuscripts", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const body: unknown = await c.req.json().catch(() => null);
     const rec =
       body !== null && typeof body === "object" && !Array.isArray(body)
@@ -2014,8 +1975,6 @@ export function createApp(deps: AppDeps): Hono {
   // Whole-document replace with the persisted rev optimistic lock (the plans
   // PUT's exact shape); the save bumps rev + updated_at.
   app.put("/api/writer/manuscripts/:id", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
       const e = detail("bad manuscript id", 400);
@@ -2070,8 +2029,6 @@ export function createApp(deps: AppDeps): Hono {
 
   // Manual refresh: bypass the debounce, run one compile now (single-flight).
   app.post("/api/writer/manuscripts/:id/numbering/refresh", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
       const e = detail("bad manuscript id", 400);
@@ -2098,8 +2055,6 @@ export function createApp(deps: AppDeps): Hono {
 
   // Physical delete of the whole m_<id>/ directory (assets included).
   app.delete("/api/writer/manuscripts/:id", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
       const e = detail("bad manuscript id", 400);
@@ -2119,8 +2074,6 @@ export function createApp(deps: AppDeps): Hono {
   // 20 MB cap; the extension allowlist + collision renaming live in the
   // store (writeManuscriptAsset). 201 carries the stored name.
   app.post("/api/writer/manuscripts/:id/assets", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = c.req.param("id");
     if (badManuscriptId(id)) {
       const e = detail("bad manuscript id", 400);
@@ -2277,8 +2230,6 @@ export function createApp(deps: AppDeps): Hono {
   // lockedRebuild makes). No full rebuild: in-place upsert + incremental
   // graph, then one libraryChanged broadcast.
   app.post("/api/library/works", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const body: unknown = await c.req.json().catch(() => null);
     const parsed = ManualWorkRequestSchema.safeParse(body);
     if (!parsed.success) {
@@ -2308,8 +2259,6 @@ export function createApp(deps: AppDeps): Hono {
   app.patch("/api/library/refs", async (c) => {
     // work ids contain slashes/colons (e.g. "doi:10.1051/..."), so the id
     // rides in the body rather than the path.
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const body: unknown = await c.req.json().catch(() => null);
     const rec =
       body !== null && typeof body === "object" && !Array.isArray(body)
@@ -2333,8 +2282,6 @@ export function createApp(deps: AppDeps): Hono {
   // ---- POST /api/library/refresh?offline= ------------------------------------ //
 
   app.post("/api/library/refresh", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const offline = parseBoolQuery(c.req.query("offline"));
     if (offline === null) {
       const e = detail("invalid boolean value for query param 'offline'", 422);
@@ -2355,8 +2302,6 @@ export function createApp(deps: AppDeps): Hono {
   // Raw PDF upload is a distinct path: the selected Work identity is never
   // inferred from filename or document metadata, and PDF bytes are immutable.
   app.post("/api/library/upload-pdf", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const workId = c.req.query("id");
     if (!workId) {
       const e = detail("id query param required", 400);
@@ -2442,8 +2387,6 @@ export function createApp(deps: AppDeps): Hono {
   // job / 404s otherwise — the endpoint never creates works). The payload is a
   // LaTeX source zip; tarballs/bare .tex stay with the CLI local ingest.
   app.post("/api/library/upload", async (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = c.req.query("id");
     const doi = c.req.query("doi");
     const arxiv = c.req.query("arxiv");
@@ -2504,8 +2447,6 @@ export function createApp(deps: AppDeps): Hono {
   // ---- POST /api/library/acquire-arxiv-pdf?id=<workId> ----------------------- //
 
   app.post("/api/library/acquire-arxiv-pdf", (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const workId = c.req.query("id");
     if (!workId) return c.json(detail("id query param required", 400).body, 400);
     // As before: a library that cannot be loaded is the framework's own 500, outside the try below.
@@ -2538,8 +2479,6 @@ export function createApp(deps: AppDeps): Hono {
   // implementation (acquisition.ts submitArxivFetch); it is NOT gated by the
   // auto_ingest_arxiv config (D15: an explicit user action).
   app.post("/api/library/attach-arxiv", (c) => {
-    const rejected = guardCsrf(c.req.header("origin"));
-    if (rejected) return c.json(rejected.body, rejected.status);
     const id = c.req.query("id");
     if (!id) {
       const e = detail("id query param required", 400);
@@ -2672,5 +2611,5 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(e.body, e.status);
   });
 
-  return app;
+  return hono;
 }
