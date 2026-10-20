@@ -11,6 +11,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import {
+  DOCUMENT_BUSY,
+  markDocumentBusy,
   PDF_MAX_BYTES,
   PDF_MAX_PAGES,
   type PdfAnnotationsFile,
@@ -44,7 +46,7 @@ export class PdfAnnotationConflictError extends Error {
         ? "rev mismatch"
         : conflict === "content"
           ? "document changed"
-          : "document busy"
+          : DOCUMENT_BUSY
     );
     this.name = "PdfAnnotationConflictError";
   }
@@ -145,7 +147,7 @@ export function findMatchingPdfDoc(
   for (const docId of work.doc_ids) {
     const metadata = readPdfMetadataIfPresent(paths, docId);
     if (!metadata || metadata.sha256 !== sha256) continue;
-    if (isBusy(docId)) throw new Error("document busy");
+    if (isBusy(docId)) throw markDocumentBusy(new Error(DOCUMENT_BUSY));
     const owners = store.works.filter((candidate) => candidate.doc_ids.includes(docId));
     if (owners.length !== 1) throw new Error("PDF Doc has inconsistent Work ownership");
     const existingBytes = readVerifiedPdf(paths, docId);

@@ -17,7 +17,6 @@ import {
   type AcquisitionFlow,
   initialWorkJobState,
   isJobSnapshotRegression,
-  jobWorkId,
   loadDeleteCount,
   reduceAcquisitionRisk,
   reduceWorkJob,
@@ -103,10 +102,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("job snapshot helpers", () => {
-  it("reads the target Work from the payload and orders snapshots by phase", () => {
-    expect(jobWorkId(zipJob())).toBe(A);
-    expect(jobWorkId({ ...zipJob(), payload: null })).toBeNull();
-    expect(jobWorkId({ ...zipJob(), payload: { workId: "" } })).toBeNull();
+  it("orders snapshots by phase", () => {
     expect(isJobSnapshotRegression(undefined, zipJob())).toBe(false);
     expect(isJobSnapshotRegression(zipJob({ status: "running" }), zipJob())).toBe(true);
     expect(isJobSnapshotRegression(zipJob({ status: "failed" }), zipJob({ status: "running" }))).toBe(true);

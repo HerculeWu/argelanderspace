@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import type { Job } from "@argelanderspace/contracts";
+import { DOCUMENT_BUSY, isJobFormat, JOB_FORMAT, type Job, jobTarget } from "@argelanderspace/contracts";
 import { acquireArxivPdf, attachArxiv, type StartResult, uploadLatexZip, uploadPdf } from "../api/library";
 import { type FetchAnnotationsResult, fetchAnnotations } from "../api/annotations";
 import { fetchPdfAnnotationCount } from "../api/pdf-annotations";
@@ -19,14 +19,6 @@ export { jobMergeNotes } from "./merge-notices";
 
 export type { StartResult };
 
-/** The job's target work id rides in `payload.workId` (server app.ts). */
-export function jobWorkId(job: Job): string | null {
-  const p = job.payload;
-  if (p === null || p === undefined || typeof p !== "object" || Array.isArray(p)) return null;
-  const w = (p as Record<string, unknown>).workId;
-  return typeof w === "string" && w !== "" ? w : null;
-}
-
 export const JOB_STATUS_PHASE: Record<Job["status"], number> = {
   queued: 0,
   running: 1,
@@ -42,7 +34,6 @@ export function isJobSnapshotRegression(previous: Job | undefined, next: Job): b
 const isActive = (job: Job): boolean => job.status === "queued" || job.status === "running";
 const isFailure = (job: Job): boolean => job.status === "failed" || job.status === "interrupted";
 const isTerminal = (job: Job): boolean => job.status === "done" || isFailure(job);
-const payloadFormat = (job: Job): unknown => (job.payload as { format?: unknown } | undefined)?.format;
 
 // ---- kinds ---------------------------------------------------------------- //
 
@@ -83,11 +74,11 @@ const arxivFailMessage = (job: Job | null): string =>
  * A busy document (DocMutationRegistry): the server's 409 with the literal detail "document busy". Other 409s (an
  * arXiv source the Work cannot take, a Work that changed, a job that could not be queued) are ordinary failures.
  */
-const isDocumentBusy = (status: number, detail: string): boolean => status === 409 && detail === "document busy";
+const isDocumentBusy = (status: number, detail: string): boolean => status === 409 && detail === DOCUMENT_BUSY;
 
 // The API functions are referenced inside each start so a partially mocked api module still loads.
 const zip: WorkJobKind<undefined, [File]> = {
-  match: (job) => job.kind === "upload" && payloadFormat(job) !== "pdf" && payloadFormat(job) !== "arxiv-pdf",
+  match: (job) => job.kind === "upload" && !isJobFormat(jobTarget(job).format),
   start: (workId, file) => uploadLatexZip(workId, file),
   failMessage: zipFailMessage,
   rejectMessage: (status, detail) => (isDocumentBusy(status, detail) ? i18n.t("library.detail.upload.busy") : zipFailMessage(null)),
@@ -99,7 +90,7 @@ const zip: WorkJobKind<undefined, [File]> = {
 };
 
 const pdf: WorkJobKind<undefined, [File]> = {
-  match: (job) => job.kind === "upload" && payloadFormat(job) === "pdf",
+  match: (job) => job.kind === "upload" && jobTarget(job).format === JOB_FORMAT.pdf,
   start: (workId, file) => uploadPdf(workId, file),
   failMessage: (job) => job?.error ?? i18n.t("library.detail.pdfUpload.failedGeneric"),
   rejectMessage: (status, detail) => (status === 409 ? i18n.t("library.detail.pdfUpload.busy") : detail),
@@ -125,7 +116,7 @@ const arxiv: WorkJobKind<string | null> = {
 };
 
 const arxivPdf: WorkJobKind = {
-  match: (job) => job.kind === "upload" && payloadFormat(job) === "arxiv-pdf",
+  match: (job) => job.kind === "upload" && jobTarget(job).format === JOB_FORMAT.arxivPdf,
   start: (workId) => acquireArxivPdf(workId),
   failMessage: (job) => job?.error ?? i18n.t("library.detail.arxivPdf.failedGeneric"),
   rejectMessage: (status, detail) =>
@@ -349,7 +340,7 @@ export function useWorkJobs(workId: string, options: { onReload?: () => void } =
   useEffect(
     () =>
       onJobEvent((job) => {
-        const targetWorkId = jobWorkId(job);
+        const targetWorkId = jobTarget(job).workId || null;
         if (targetWorkId && isTerminal(job)) {
           for (const name of WORK_JOB_NAMES) {
             if (WORK_JOB_KINDS[name].oneSubmissionPerWork && WORK_JOB_KINDS[name].match(job)) {

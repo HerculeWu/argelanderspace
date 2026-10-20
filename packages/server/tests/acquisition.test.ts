@@ -209,6 +209,90 @@ test("startPdf / startSource answer not_found and no_arxiv without queueing", ()
   expect(runner.list()).toEqual([]);
 });
 
+// ---- the payload each submit writes ---------------------------------------------------------------------- //
+
+/** The `payload` member of a job file, exactly as it is on disk (it is the record's last member). */
+function payloadOnDisk(job: Job): string {
+  const text = readFileSync(join(root, "jobs", `${job.id}.json`), "utf8");
+  const at = text.indexOf('\n  "payload": ');
+  if (at < 0 || !text.endsWith("\n}")) throw new Error(`no trailing payload in ${job.id}.json`);
+  return text.slice(at + 1, -2);
+}
+
+test("the five submits write their payloads to the job files byte for byte as before (ticket 02)", async () => {
+  const hold = holdRunner();
+  const ingest = acquisition.startSource(W_ARXIV);
+  const arxivPdf = acquisition.startPdf(W_ARXIV);
+  const pdfUpload = acquisition.startPdfUpload(W_PLAIN, readFileSync(PDF_FIXTURE), "paper.pdf");
+  const zip = acquisition.startZipJob({ workId: W_PLAIN, doi: null, arxiv: null }, UPLOAD_ZIP);
+  const zipByArxiv = acquisition.startZipJob(
+    { workId: "", doi: null, arxiv: "2603.00301" },
+    UPLOAD_ZIP
+  );
+  const refreshing = acquisition.refreshLibrary(true);
+  if (ingest.kind !== "queued" || arxivPdf.kind !== "queued" || pdfUpload.kind !== "queued")
+    throw new Error("not queued");
+  if (zip.kind !== "queued" || zipByArxiv.kind !== "queued") throw new Error("zip not queued");
+  const refresh = runner.list().find((job) => job.kind === "refresh" && job.id !== hold.job.id);
+  if (!refresh) throw new Error("refresh not queued");
+
+  expect(payloadOnDisk(ingest.job)).toBe(
+    [
+      '  "payload": {',
+      '    "workId": "arxiv:2603.00301",',
+      '    "arxivId": "2603.00301"',
+      "  }",
+    ].join("\n")
+  );
+  expect(payloadOnDisk(arxivPdf.job)).toMatch(
+    new RegExp(
+      [
+        '^  "payload": \\{',
+        '    "workId": "arxiv:2603\\.00301",',
+        '    "docId": "pdf-[0-9a-f-]{36}",',
+        '    "format": "arxiv-pdf",',
+        '    "arxivId": "2603\\.00301",',
+        '    "automatic": false',
+        "  \\}$",
+      ].join("\\n")
+    )
+  );
+  expect(payloadOnDisk(pdfUpload.job)).toMatch(
+    new RegExp(
+      [
+        '^  "payload": \\{',
+        '    "workId": "doi:10\\.1000/plain",',
+        '    "docId": "pdf-[0-9a-f-]{36}",',
+        '    "format": "pdf"',
+        "  \\}$",
+      ].join("\\n")
+    )
+  );
+  expect(payloadOnDisk(zip.job)).toBe(
+    [
+      '  "payload": {',
+      '    "workId": "doi:10.1000/plain",',
+      '    "doi": null,',
+      '    "arxiv": null',
+      "  }",
+    ].join("\n")
+  );
+  expect(payloadOnDisk(zipByArxiv.job)).toBe(
+    [
+      '  "payload": {',
+      '    "workId": "",',
+      '    "doi": null,',
+      '    "arxiv": "2603.00301"',
+      "  }",
+    ].join("\n")
+  );
+  expect(payloadOnDisk(refresh)).toBe(['  "payload": {', '    "offline": true', "  }"].join("\n"));
+
+  hold.release();
+  await refreshing;
+  await drain();
+});
+
 // ---- describeSource: the five plans --------------------------------------------------------------------- //
 
 test("describeSource: attach, append, refresh, skip and busy", () => {

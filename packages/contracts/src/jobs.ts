@@ -71,7 +71,10 @@ export const JobSchema = z.object({
    * the web UI show targeted guidance without matching `error` prose.
    */
   errorCode: z.string().optional(),
-  /** Submission context (e.g. the upload query params); for forensics only. */
+  /**
+   * What the job is for and which acquisition it is: the Work, Doc, arXiv id and format a submit names. Any value on
+   * the wire and on disk; the five shapes a submit writes and the lenient reading `jobTarget` are in job-payload.ts.
+   */
   payload: z.unknown().optional(),
 });
 

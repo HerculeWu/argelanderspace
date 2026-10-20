@@ -18,12 +18,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   ArgumentGraphMergeNote,
+  ArxivPdfPayload,
+  IngestPayload,
   Job,
+  LatexZipPayload,
   LibraryRef,
   ManualWorkRequest,
+  PdfUploadPayload,
+  RefreshPayload,
   RefreshResponse,
 } from "@argelanderspace/contracts";
-import { PDF_MAX_BYTES, PDF_RESOURCE_WARNING_BYTES } from "@argelanderspace/contracts";
+import {
+  DOCUMENT_BUSY,
+  isDocumentBusyError,
+  JOB_FORMAT,
+  jobTarget,
+  markDocumentBusy,
+  PDF_MAX_BYTES,
+  PDF_RESOURCE_WARNING_BYTES,
+} from "@argelanderspace/contracts";
 import {
   appendDocIdNarrow,
   arxivAttachScenario,
@@ -106,8 +119,8 @@ export interface AcquisitionDeps {
   log?: ServerLog | undefined;
 }
 
-/** The zip upload's Work query (`?id=|doi=|arxiv=`). */
-export type ZipQuery = { workId: string | null; doi: string | null; arxiv: string | null };
+/** The zip upload's Work query (`?id=|doi=|arxiv=`); it is the zip job's payload as it is. */
+export type ZipQuery = LatexZipPayload;
 
 /** The PDF upload's submit: queued, or why not (busy → 409, failed → 500 at the route). */
 export type PdfUploadStart =
@@ -406,7 +419,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
         (j) =>
           j.kind === "ingest" &&
           (j.status === "queued" || j.status === "running") &&
-          (j.payload as { workId?: unknown } | undefined)?.workId === workId
+          jobTarget(j).workId === workId
       );
     if (dupe) return dupe;
     if (docMutations.isDeleting(docId)) return null; // busy; the endpoint pre-409s
@@ -459,7 +472,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             throw e;
           }
         },
-        { workId, arxivId }
+        { workId, arxivId } satisfies IngestPayload
       );
     } catch (err) {
       // No job exists → no terminal hook will ever fire; release directly.
@@ -516,14 +529,12 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
     if (!work || !arxivId) return null;
     if (automatic && registeredPdfDocIds(workId).length > 0) return null;
     const dupe = runner.list().find((job) => {
-      const payload = job.payload as
-        | { workId?: unknown; format?: unknown; automatic?: unknown }
-        | undefined;
+      const target = jobTarget(job);
       return (
         job.kind === "upload" &&
-        payload?.format === "arxiv-pdf" &&
-        payload.workId === workId &&
-        payload.automatic === automatic &&
+        target.format === JOB_FORMAT.arxivPdf &&
+        target.workId === workId &&
+        target.automatic === automatic &&
         (job.status === "queued" || job.status === "running")
       );
     });
@@ -572,7 +583,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             return { status: "created", doc: metadata };
           });
         },
-        { workId, docId, format: "arxiv-pdf", arxivId, automatic }
+        { workId, docId, format: "arxiv-pdf", arxivId, automatic } satisfies ArxivPdfPayload
       );
     } catch (error) {
       docMutations.unpinWriter(docId);
@@ -667,8 +678,11 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
         (id) => docMutations.isBusy(id) || docMutations.isDeleting(id)
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "PDF identity check failed";
-      return message === "document busy" ? { kind: "busy" } : { kind: "failed", detail: message };
+      if (isDocumentBusyError(error)) return { kind: "busy" };
+      return {
+        kind: "failed",
+        detail: error instanceof Error ? error.message : "PDF identity check failed",
+      };
     }
     const docId = existing?.doc_id ?? `pdf-${randomUUID()}`;
     if (docMutations.isBusy(docId) || docMutations.isDeleting(docId)) {
@@ -689,7 +703,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             const pinDuplicate = (duplicateId: string) => {
               if (duplicateId === docId) return;
               if (docMutations.isBusy(duplicateId) || docMutations.isDeleting(duplicateId))
-                throw new Error("document busy");
+                throw markDocumentBusy(new Error(DOCUMENT_BUSY));
               docMutations.pinWriter(duplicateId);
               const pins = pdfPinsByJob.get(j.id);
               if (!pins) {
@@ -711,7 +725,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             const probe = await probePdf(uploadBytes);
             report("Publishing PDF Doc");
             const metadata = await libraryLock.run(() => {
-              if (docMutations.isDeleting(docId)) throw new Error("document busy");
+              if (docMutations.isDeleting(docId)) throw markDocumentBusy(new Error(DOCUMENT_BUSY));
               const matching = findMatchingPdfDoc(
                 paths,
                 workId,
@@ -735,7 +749,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             rmSync(spool, { force: true });
           }
         },
-        { workId, docId, format: "pdf" }
+        { workId, docId, format: "pdf" } satisfies PdfUploadPayload
       );
       pdfPinsByJob.set(job.id, [docId]);
     } catch (error) {
@@ -859,7 +873,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             rmSync(zip, { force: true });
           }
         },
-        query
+        query satisfies LatexZipPayload
       );
     } catch (err) {
       // No job exists → no terminal hook will ever fire; release directly.
@@ -941,7 +955,7 @@ export function createAcquisition(deps: AcquisitionDeps): Acquisition {
             throw error;
           }
         },
-        { offline }
+        { offline } satisfies RefreshPayload
       );
       const done = await runner.waitFor(job.id);
       if (done.status !== "done") {

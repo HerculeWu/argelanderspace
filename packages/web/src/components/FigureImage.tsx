@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { DOCUMENT_BUSY } from "@argelanderspace/contracts";
 import { useReaderSession, type AssetBinding } from "../doc/ReaderSession";
 import { imageUrl } from "../api";
 import { useThemeName } from "../lib/theme-watch";
@@ -122,7 +123,7 @@ export function FigureImage({ imgPath, alt, controls = false, width, height }: {
         if (!valid()) return;
         if (r.status !== 200) {
           const body = await r.json().catch(() => null);
-          if (valid()) controller.reportAssetFailure(binding, r.status === 409 && body?.detail === "asset changed" ? "changed" : r.status === 409 && body?.detail === "document busy" ? "busy" : "error");
+          if (valid()) controller.reportAssetFailure(binding, r.status === 409 && body?.detail === "asset changed" ? "changed" : r.status === 409 && body?.detail === DOCUMENT_BUSY ? "busy" : "error");
           return;
         }
         const bytes = await r.arrayBuffer();

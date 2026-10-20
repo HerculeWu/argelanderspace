@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type ContextCoverage,
   type CopilotOperation,
+  DOCUMENT_BUSY,
   type PageContext,
   TEXT_OPERATION_ACTIONS,
   TEXT_PDF_IMAGE_LONG_EDGE,
@@ -179,7 +180,7 @@ function failure(
         payload: { ok: false, status: "not_found", detail: `${detail}; nothing was changed` },
       };
     case 409: {
-      const busy = detail === "document busy";
+      const busy = detail === DOCUMENT_BUSY;
       if (busy)
         return {
           status: "rejected",

@@ -24,6 +24,7 @@ import { join } from "node:path";
 import {
   AddPdfImageRequestSchema,
   CreateTextDocRequestSchema,
+  DOCUMENT_BUSY,
   type DocDescription,
   GenerateTextDocRequestSchema,
   PutTextSourceRequestSchema,
@@ -346,7 +347,7 @@ export class TextDocService {
     try {
       const outcome = await this.textLock.run(() => {
         // synchronous from here to the write: a delete that started first is refused, one that starts later removes it
-        if (this.deps.docMutations.isDeleting(docId)) return failed(409, "document busy");
+        if (this.deps.docMutations.isDeleting(docId)) return failed(409, DOCUMENT_BUSY);
         const saved = saveTextSource(this.paths, docId, parsed.data);
         if (saved.kind === "conflict")
           return failed(409, "rev mismatch", {
@@ -384,7 +385,7 @@ export class TextDocService {
       return failed(413, "the image is too large", { code: "too_large" });
     try {
       const outcome = await this.textLock.run(() => {
-        if (this.deps.docMutations.isDeleting(docId)) return failed(409, "document busy");
+        if (this.deps.docMutations.isDeleting(docId)) return failed(409, DOCUMENT_BUSY);
         const added = addTextAsset(this.paths, docId, {
           expectedRev: input.expectedRev,
           bytes: input.bytes,
@@ -494,7 +495,7 @@ export class TextDocService {
       case "not_found":
         return failed(404, "no such PDF Doc");
       case "busy":
-        return failed(409, "document busy");
+        return failed(409, DOCUMENT_BUSY);
       case "changed":
         return failed(409, "document changed", { code: "document_changed" });
       case "invalid":
@@ -595,7 +596,7 @@ export class TextDocService {
     const { docMutations } = this.deps;
     // one generation per Doc, and never beside a delete: the pin also stops a delete from starting
     if (docMutations.isDeleting(docId) || this.generating.has(docId))
-      return failed(409, "document busy");
+      return failed(409, DOCUMENT_BUSY);
     this.generating.add(docId);
     docMutations.pinWriter(docId);
     try {
@@ -679,7 +680,7 @@ export class TextDocService {
 
     const outcome = await this.textLock.run(() =>
       this.deps.annotationLock.run((): Result<TextGenerationResult> => {
-        if (this.deps.docMutations.isDeleting(docId)) return failed(409, "document busy");
+        if (this.deps.docMutations.isDeleting(docId)) return failed(409, DOCUMENT_BUSY);
         if (!existsSync(docDir) || !statSync(docDir).isDirectory())
           return failed(404, "document not found");
         const latest = readTextSource(this.paths, docId);

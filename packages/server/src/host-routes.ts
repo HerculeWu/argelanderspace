@@ -28,7 +28,9 @@ import {
   type HostSwitchJob,
   type HostSwitchTarget,
   isHostRequestKind,
+  isJobFormat,
   type Job,
+  jobTarget,
   SWITCH_ACK_MAX_ID_LENGTH,
   SWITCH_ACK_MAX_IDS,
   SWITCH_CONFIRMATION_CODE,
@@ -124,27 +126,18 @@ export type RecentOpenOutcome =
   | "shutting_down"
   | SwitchConfirmation;
 
-/** An upload job's `payload.format` the page names (a LaTeX archive has none). */
-const JOB_FORMATS = ["pdf", "arxiv-pdf"] as const;
-
 /** A job as the switch prompt lists it: its kind and the Work and arXiv id its payload names. */
 export function switchJobOf(job: Job): HostSwitchJob | null {
   if (job.status !== "queued" && job.status !== "running") return null;
-  const p =
-    typeof job.payload === "object" && job.payload !== null && !Array.isArray(job.payload)
-      ? (job.payload as Record<string, unknown>)
-      : {};
-  const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : null);
-  const format = (JOB_FORMATS as readonly unknown[]).includes(p.format)
-    ? (p.format as HostSwitchJob["format"])
-    : null;
+  // An empty id is none; a format the page does not name (a LaTeX archive has none) is null.
+  const target = jobTarget(job);
   return {
     id: job.id,
     kind: job.kind,
     status: job.status,
-    workId: str(p.workId),
-    format,
-    arxivId: str(p.arxivId),
+    workId: target.workId || null,
+    format: isJobFormat(target.format) ? target.format : null,
+    arxivId: target.arxivId || null,
   };
 }
 

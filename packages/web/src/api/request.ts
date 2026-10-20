@@ -3,6 +3,7 @@
  * result shape (discriminated unions, typed error classes); only the transport and the reading of a failed answer live
  * here. Nothing in this file changes what is sent or what the server's details say.
  */
+import { DOCUMENT_BUSY } from "@argelanderspace/contracts";
 
 /**
  * A request that produced no ok answer. `status` is the HTTP status, or 0 when the server did not answer at all
@@ -41,7 +42,7 @@ export type ConflictKind = "busy" | "changed" | "rev-mismatch" | "stale";
 
 // The contract's 409 details (docs/contracts.md): matched literally, never loosened.
 const CONFLICT_DETAILS = new Map<unknown, ConflictKind>([
-  ["document busy", "busy"],
+  [DOCUMENT_BUSY, "busy"],
   ["document changed", "changed"],
   ["rev mismatch", "rev-mismatch"],
 ]);
